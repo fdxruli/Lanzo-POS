@@ -4,7 +4,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 const recoveryRuntime = vi.hoisted(() => ({
-  markTakeoverCompleted: vi.fn()
+  markTakeoverCompleted: vi.fn(),
+  scopeKey: (licenseKey, adminUser) => {
+    const tenant = String(licenseKey || '').trim();
+    const actorId = String(adminUser?.id || '').trim();
+    const username = String(adminUser?.username || '').trim().toLowerCase();
+    const actor = actorId ? 'id:' + actorId : username ? 'username:' + username : null;
+    return tenant && actor ? JSON.stringify([tenant, actor]) : null;
+  }
 }));
 
 const storeState = vi.hoisted(() => ({
@@ -19,14 +26,18 @@ const storeState = vi.hoisted(() => ({
     product_name: 'Lanzo Local',
     plan_code: 'free_trial',
     max_devices: 1
-  }
+  },
+  currentDeviceRole: null,
+  currentAdminUser: null
 }));
 
 vi.mock('../../../store/useAppStore', () => ({
-  useAppStore: (selector) => selector(storeState)
+  useAppStore: (selector) => selector(storeState),
+  getState: () => storeState
 }));
 
 vi.mock('../../../hooks/usePostDowngradeCashPending', () => ({
+  getPostDowngradeCashPendingScopeKey: recoveryRuntime.scopeKey,
   markFreeDeviceTakeoverCompleted: recoveryRuntime.markTakeoverCompleted
 }));
 
@@ -44,6 +55,8 @@ beforeEach(() => {
   storeState.logout.mockReset();
   storeState.returnToLicenseAccessChoice.mockReset();
   recoveryRuntime.markTakeoverCompleted.mockReset();
+  storeState.currentDeviceRole = null;
+  storeState.currentAdminUser = null;
   storeState.adminLoginMessage = null;
   Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: true });
 });
@@ -135,7 +148,15 @@ describe('AdminLoginModal local database recovery', () => {
       code: 'FREE_DEVICE_TAKEOVER_REQUIRED',
       takeoverRequired: true
     });
-    storeState.handleFreeDeviceTakeover.mockResolvedValueOnce({ success: true });
+    storeState.handleFreeDeviceTakeover.mockImplementationOnce(async () => {
+      storeState.currentDeviceRole = 'admin';
+      storeState.currentAdminUser = {
+        id: 'owner-id',
+        username: 'owner',
+        is_owner: true
+      };
+      return { success: true };
+    });
 
     render(<AdminLoginModal />);
     submitCredentials();
@@ -149,6 +170,9 @@ describe('AdminLoginModal local database recovery', () => {
     }));
     expect(storeState.handleFreeDeviceTakeover).toHaveBeenCalledTimes(1);
     expect(recoveryRuntime.markTakeoverCompleted).toHaveBeenCalledTimes(1);
+    expect(recoveryRuntime.markTakeoverCompleted).toHaveBeenCalledWith(
+      JSON.stringify(['LANZO-TAKEOVER-TEST', 'id:owner-id'])
+    );
   });
 
   it('cancels takeover locally without displacing any device', async () => {
@@ -179,4 +203,20 @@ describe('AdminLoginModal local database recovery', () => {
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Entrar' })).toBeEnabled());
   });
+  it('does not emit an unscoped success when owner bootstrap state is missing', async () => {
+    storeState.handleAdminLogin.mockResolvedValueOnce({
+      success: false,
+      code: 'FREE_DEVICE_TAKEOVER_REQUIRED',
+      takeoverRequired: true
+    });
+    storeState.handleFreeDeviceTakeover.mockResolvedValueOnce({ success: true });
+
+    render(<AdminLoginModal />);
+    submitCredentials();
+    fireEvent.click(await screen.findByRole('button', { name: 'Usar este dispositivo' }));
+
+    await waitFor(() => expect(storeState.handleFreeDeviceTakeover).toHaveBeenCalledTimes(1));
+    expect(recoveryRuntime.markTakeoverCompleted).not.toHaveBeenCalled();
+  });
+
 });
