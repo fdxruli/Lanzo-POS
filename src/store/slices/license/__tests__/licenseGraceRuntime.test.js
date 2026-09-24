@@ -182,6 +182,55 @@ describe('license runtime Active → Grace → Free admission', () => {
     });
   });
 
+  it('recovers an end-of-grace transition to canonical Free without leaving a renewal loop', async () => {
+    const state = createStore(makeLicense({
+      valid: false,
+      status: 'expired',
+      expires_at: ENDED_EXPIRY,
+      grace_period_ends: ENDED_GRACE
+    }));
+    state.appStatus = 'locked_renewal';
+    state.licenseStatus = 'expired';
+
+    mocks.revalidateLicense.mockResolvedValue({
+      valid: true,
+      status: 'active',
+      license_key: 'TEST-LICENSE-GRACE',
+      plan_code: 'free_trial',
+      plan_name: 'Lanzo Local',
+      product_name: 'Lanzo POS Free',
+      max_devices: 1,
+      expires_at: null,
+      grace_period_ends: null,
+      device_role: 'admin',
+      features: {
+        realtime_license_sync: false,
+        cloud_cash_sync: false
+      }
+    });
+
+    const resolved = await state.verifySessionIntegrity({
+      reason: 'license_expiry_transition_retry',
+      forceRemote: true,
+      refreshProfile: true,
+      transactionMode: false,
+      allowLocalOnly: false
+    });
+
+    expect(resolved).toBe(true);
+    expect(mocks.revalidateLicense).toHaveBeenCalledTimes(1);
+    expect(state.appStatus).toBe('ready');
+    expect(state.licenseStatus).toBe('active');
+    expect(state.licenseDetails).toMatchObject({
+      valid: true,
+      status: 'active',
+      plan_code: 'free_trial',
+      plan_name: 'Lanzo Local',
+      max_devices: 1
+    });
+    expect(state.lastIntegrityFailure).toBeNull();
+  });
+
   it.each(['revoked', 'suspended', 'banned', 'CLONING_DETECTED'])(
     'blocks fatal administrative/security status %s even inside grace',
     (status) => {
