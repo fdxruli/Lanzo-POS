@@ -313,3 +313,33 @@ describe('Ticker Pro cloud inventory summary', () => {
     expect(screen.getByText(/Inventario requiere atención/i)).toBeInTheDocument();
   });
 });
+
+
+describe('Ticker license lifecycle copy', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.actorRuntime = adminRuntime;
+    mocks.ticker = { catalogSize: 0, alerts: [] };
+  });
+
+  it('keeps valid grace operational and explains the later Lanzo Local transition without a fake hard block', () => {
+    mocks.app = createAppState({
+      licenseStatus: 'grace_period',
+      gracePeriodEnds: '2026-09-25T18:00:00.000Z',
+      licenseDetails: {
+        ...localLicense,
+        status: 'grace_period',
+        plan_code: 'pro_monthly',
+        plan_name: 'Lanzo Nube',
+        expires_at: '2026-09-18T18:00:00.000Z',
+        grace_period_ends: '2026-09-25T18:00:00.000Z'
+      }
+    });
+
+    renderTicker();
+
+    expect(screen.getAllByText(/Tu plan Lanzo Nube terminó/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Lanzo Local/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/el sistema se bloqueará/i)).not.toBeInTheDocument();
+  });
+});
