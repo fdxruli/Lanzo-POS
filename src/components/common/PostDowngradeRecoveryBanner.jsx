@@ -1,9 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { CheckCircle2, CloudOff, RefreshCw, Store, WalletCards } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import usePostDowngradeCashPending, {
-  consumeFreeDeviceTakeoverCompleted
-} from '../../hooks/usePostDowngradeCashPending';
+import usePostDowngradeCashPending from '../../hooks/usePostDowngradeCashPending';
 
 export default function PostDowngradeRecoveryBanner() {
   const navigate = useNavigate();
@@ -14,10 +12,18 @@ export default function PostDowngradeRecoveryBanner() {
     pendingCount,
     isPostDowngrade,
     error,
-    refresh
+    refresh,
+    scopeKey,
+    takeoverCompleted
   } = usePostDowngradeCashPending();
-  const [takeoverCompleted] = useState(() => consumeFreeDeviceTakeoverCompleted());
-  const [dismissed, setDismissed] = useState(false);
+  const [dismissal, setDismissal] = useState({ scopeKey: null, dismissed: false });
+  const dismissed = dismissal.scopeKey === scopeKey && dismissal.dismissed;
+
+  useEffect(() => {
+    if (dismissal.scopeKey !== scopeKey) {
+      setDismissal({ scopeKey, dismissed: false });
+    }
+  }, [dismissal.scopeKey, scopeKey]);
 
   if (!eligible || dismissed) return null;
 
@@ -104,7 +110,7 @@ export default function PostDowngradeRecoveryBanner() {
           <button
             type="button"
             className="ui-button ui-button--ghost"
-            onClick={() => setDismissed(true)}
+            onClick={() => setDismissal({ scopeKey, dismissed: true })}
           >
             Entendido
           </button>
