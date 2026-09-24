@@ -149,6 +149,10 @@ describe('AdminLoginModal local database recovery', () => {
     }));
     expect(storeState.handleFreeDeviceTakeover).toHaveBeenCalledTimes(1);
     expect(recoveryRuntime.markTakeoverCompleted).toHaveBeenCalledTimes(1);
+    expect(recoveryRuntime.markTakeoverCompleted).toHaveBeenCalledWith({
+      licenseKey: 'LANZO-TAKEOVER-TEST',
+      username: 'owner'
+    });
   });
 
   it('cancels takeover locally without displacing any device', async () => {
