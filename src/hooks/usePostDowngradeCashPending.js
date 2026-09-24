@@ -10,6 +10,7 @@ const OWNER_ONLY_CODE = 'POST_DOWNGRADE_CASH_OWNER_REQUIRED';
 
 const emptySnapshot = () => ({
   scopeKey: null,
+  takeoverCompletedScopeKey: null,
   status: 'idle',
   pendingCount: null,
   cashSessions: [],
@@ -21,7 +22,10 @@ const emptySnapshot = () => ({
 
 let snapshot = emptySnapshot();
 let inFlight = null;
-let takeoverCompleted = false;
+let activeScopeKey = null;
+let requestGeneration = 0;
+let takeoverCompletedScopeKey = null;
+let runtimeOnline = true;
 const listeners = new Set();
 
 const emit = (next) => {
@@ -37,8 +41,29 @@ const subscribe = (listener) => {
 const getSnapshot = () => snapshot;
 
 const resetRuntime = () => {
+  requestGeneration += 1;
+  activeScopeKey = null;
   inFlight = null;
+  takeoverCompletedScopeKey = null;
   emit(emptySnapshot());
+};
+
+const activateScope = (scopeKey) => {
+  if (activeScopeKey === scopeKey) return;
+
+  activeScopeKey = scopeKey;
+  requestGeneration += 1;
+  inFlight = null;
+
+  if (takeoverCompletedScopeKey && takeoverCompletedScopeKey !== scopeKey) {
+    takeoverCompletedScopeKey = null;
+  }
+
+  emit({
+    ...emptySnapshot(),
+    scopeKey,
+    takeoverCompletedScopeKey
+  });
 };
 
 const normalizePlanCode = (licenseDetails = {}) => String(
@@ -67,18 +92,21 @@ const loadPending = async ({
   force = false
 }) => {
   if (!scopeKey || !licenseKey) {
-    if (snapshot.scopeKey !== null || snapshot.status !== 'idle') resetRuntime();
+    if (
+      activeScopeKey !== null ||
+      snapshot.scopeKey !== null ||
+      inFlight !== null ||
+      takeoverCompletedScopeKey !== null
+    ) resetRuntime();
     return snapshot;
   }
 
+  activateScope(scopeKey);
+  runtimeOnline = online;
   const sameScope = snapshot.scopeKey === scopeKey;
 
   if (!online) {
-    if (
-      sameScope &&
-      ['success', 'offline_known', 'error'].includes(snapshot.status) &&
-      snapshot.pendingCount !== null
-    ) {
+    if (sameScope && snapshot.pendingCount !== null) {
       emit({
         ...snapshot,
         status: 'offline_known',
@@ -90,7 +118,8 @@ const loadPending = async ({
         ...emptySnapshot(),
         scopeKey,
         status: 'unknown',
-        online: false
+        online: false,
+        takeoverCompletedScopeKey: takeoverCompletedScopeKey === scopeKey ? scopeKey : null
       });
     }
     return snapshot;
@@ -103,25 +132,47 @@ const loadPending = async ({
   if (inFlight?.scopeKey === scopeKey) return inFlight.promise;
 
   const previous = sameScope ? snapshot : emptySnapshot();
+  const requestId = ++requestGeneration;
+  const isCurrentRequest = () => (
+    requestId === requestGeneration &&
+    activeScopeKey === scopeKey
+  );
+
   emit({
     ...previous,
     scopeKey,
     status: 'loading',
     error: null,
-    online: true
+    online: true,
+    takeoverCompletedScopeKey: takeoverCompletedScopeKey === scopeKey ? scopeKey : null
   });
 
   const promise = (async () => {
     try {
       const result = await postDowngradeCashReconciliation.list({ licenseKey });
 
+      if (!isCurrentRequest()) return snapshot;
+
       if (result?.success === false) {
         if (isOwnerRequired(result)) {
+          takeoverCompletedScopeKey = null;
           emit({
             ...emptySnapshot(),
             scopeKey,
             status: 'hidden',
-            online: true
+            online: runtimeOnline
+          });
+          return snapshot;
+        }
+
+        if (!runtimeOnline) {
+          emit({
+            ...previous,
+            scopeKey,
+            status: previous.pendingCount === null ? 'unknown' : 'offline_known',
+            online: false,
+            error: null,
+            takeoverCompletedScopeKey: takeoverCompletedScopeKey === scopeKey ? scopeKey : null
           });
           return snapshot;
         }
@@ -131,34 +182,73 @@ const loadPending = async ({
           scopeKey,
           status: 'error',
           online: true,
-          error: result?.message || 'No se pudieron consultar las cajas pendientes del plan anterior.'
+          error: result?.message || 'No se pudieron consultar las cajas pendientes del plan anterior.',
+          takeoverCompletedScopeKey: takeoverCompletedScopeKey === scopeKey ? scopeKey : null
         });
         return snapshot;
       }
 
-      const cashSessions = Array.isArray(result?.cashSessions) ? result.cashSessions : [];
-      const pendingCount = Number.isFinite(Number(result?.pendingCount))
-        ? Number(result.pendingCount)
+      const hasCashSessions = Array.isArray(result?.cashSessions);
+      const cashSessions = hasCashSessions ? result.cashSessions : [];
+      const rawPendingCount = result?.pendingCount;
+      const hasPendingCount = rawPendingCount !== null
+        && rawPendingCount !== undefined
+        && !(typeof rawPendingCount === 'string' && rawPendingCount.trim() === '');
+      const parsedPendingCount = hasPendingCount ? Number(rawPendingCount) : Number.NaN;
+
+      if (!hasCashSessions && (!Number.isInteger(parsedPendingCount) || parsedPendingCount < 0)) {
+        emit({
+          ...previous,
+          scopeKey,
+          status: runtimeOnline ? 'error' : 'unknown',
+          online: runtimeOnline,
+          error: runtimeOnline
+            ? 'No se pudo verificar cuántas cajas del plan anterior siguen pendientes.'
+            : null,
+          takeoverCompletedScopeKey: takeoverCompletedScopeKey === scopeKey ? scopeKey : null
+        });
+        return snapshot;
+      }
+
+      const pendingCount = Number.isInteger(parsedPendingCount) && parsedPendingCount >= 0
+        ? parsedPendingCount
         : cashSessions.length;
+      const isOnlineNow = runtimeOnline;
 
       emit({
         scopeKey,
-        status: 'success',
+        status: isOnlineNow ? 'success' : 'offline_known',
         pendingCount,
         cashSessions,
         isPostDowngrade: Boolean(result?.downgradedAt || result?.previousPlanCode),
         downgradedAt: result?.downgradedAt || null,
         error: null,
-        online: true
+        online: isOnlineNow,
+        takeoverCompletedScopeKey: takeoverCompletedScopeKey === scopeKey ? scopeKey : null
       });
       return snapshot;
     } catch (error) {
+      if (!isCurrentRequest()) return snapshot;
+
       if (isOwnerRequired(error)) {
+        takeoverCompletedScopeKey = null;
         emit({
           ...emptySnapshot(),
           scopeKey,
           status: 'hidden',
-          online: true
+          online: runtimeOnline
+        });
+        return snapshot;
+      }
+
+      if (!runtimeOnline) {
+        emit({
+          ...previous,
+          scopeKey,
+          status: previous.pendingCount === null ? 'unknown' : 'offline_known',
+          online: false,
+          error: null,
+          takeoverCompletedScopeKey: takeoverCompletedScopeKey === scopeKey ? scopeKey : null
         });
         return snapshot;
       }
@@ -168,30 +258,40 @@ const loadPending = async ({
         scopeKey,
         status: 'error',
         online: true,
-        error: error?.message || 'No se pudieron consultar las cajas pendientes del plan anterior.'
+        error: error?.message || 'No se pudieron consultar las cajas pendientes del plan anterior.',
+        takeoverCompletedScopeKey: takeoverCompletedScopeKey === scopeKey ? scopeKey : null
       });
       return snapshot;
     } finally {
-      if (inFlight?.scopeKey === scopeKey) inFlight = null;
+      if (inFlight?.requestId === requestId) inFlight = null;
     }
   })();
 
-  inFlight = { scopeKey, promise };
+  inFlight = { scopeKey, requestId, promise };
   return promise;
 };
 
-export const markFreeDeviceTakeoverCompleted = () => {
-  takeoverCompleted = true;
+export const getPostDowngradeCashPendingScopeKey = (licenseKey, adminUser) => {
+  const tenantKey = String(licenseKey || '').trim();
+  const adminId = String(adminUser?.id || '').trim();
+  const username = String(adminUser?.username || '').trim().toLowerCase();
+  const actorKey = adminId ? `id:${adminId}` : username ? `username:${username}` : null;
+
+  return tenantKey && actorKey ? JSON.stringify([tenantKey, actorKey]) : null;
 };
 
-export const consumeFreeDeviceTakeoverCompleted = () => {
-  const value = takeoverCompleted;
-  takeoverCompleted = false;
-  return value;
+export const markFreeDeviceTakeoverCompleted = (scopeKey) => {
+  if (!scopeKey) return false;
+
+  takeoverCompletedScopeKey = String(scopeKey);
+  emit({
+    ...snapshot,
+    takeoverCompletedScopeKey
+  });
+  return true;
 };
 
 export const resetPostDowngradeCashPendingRuntime = () => {
-  takeoverCompleted = false;
   resetRuntime();
 };
 
@@ -219,9 +319,10 @@ export default function usePostDowngradeCashPending() {
   );
   const scopeKey = useMemo(() => (
     eligible
-      ? `${licenseKey}:${currentAdminUser?.id || currentAdminUser?.username || 'owner'}`
+      ? getPostDowngradeCashPendingScopeKey(licenseKey, currentAdminUser)
       : null
   ), [currentAdminUser?.id, currentAdminUser?.username, eligible, licenseKey]);
+  const scopedEligible = eligible && Boolean(scopeKey);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -236,8 +337,13 @@ export default function usePostDowngradeCashPending() {
   }, []);
 
   useEffect(() => {
-    if (!eligible || !scopeKey) {
-      if (runtimeSnapshot.scopeKey) resetRuntime();
+    if (!scopedEligible || !scopeKey) {
+      if (
+        activeScopeKey !== null ||
+        runtimeSnapshot.scopeKey !== null ||
+        inFlight !== null ||
+        takeoverCompletedScopeKey !== null
+      ) resetRuntime();
       return;
     }
 
@@ -247,30 +353,35 @@ export default function usePostDowngradeCashPending() {
       online,
       force: false
     });
-  }, [eligible, licenseKey, online, runtimeSnapshot.scopeKey, scopeKey]);
+  }, [licenseKey, online, runtimeSnapshot.scopeKey, scopeKey, scopedEligible]);
 
   const refresh = useCallback(() => {
-    if (!eligible || !scopeKey) return Promise.resolve(emptySnapshot());
+    if (!scopedEligible || !scopeKey) return Promise.resolve(emptySnapshot());
     return loadPending({
       scopeKey,
       licenseKey,
       online,
       force: true
     });
-  }, [eligible, licenseKey, online, scopeKey]);
+  }, [licenseKey, online, scopeKey, scopedEligible]);
 
   const scopedSnapshot = runtimeSnapshot.scopeKey === scopeKey
     ? runtimeSnapshot
     : {
       ...emptySnapshot(),
       scopeKey,
-      status: eligible ? (online ? 'loading' : 'unknown') : 'idle',
-      online
+      status: scopedEligible ? (online ? 'loading' : 'unknown') : 'idle',
+      online,
+      takeoverCompletedScopeKey: null
     };
 
   return {
     ...scopedSnapshot,
-    eligible,
+    eligible: scopedEligible,
+    takeoverCompleted: Boolean(
+      scopeKey &&
+      runtimeSnapshot.takeoverCompletedScopeKey === scopeKey
+    ),
     online,
     refresh
   };
