@@ -9,6 +9,14 @@ const evidenceCycleHardening = readFileSync(
   new URL('../../../supabase/migrations/20260924052752_license_free_owner_device_takeover_evidence_cycle_hardening_r1.sql', import.meta.url),
   'utf8'
 );
+const currentCycleHardening = readFileSync(
+  new URL('../../../supabase/migrations/20260924211248_license_free_owner_takeover_current_cycle_hardening_r1.sql', import.meta.url),
+  'utf8'
+);
+const finalLifecycleMatrix = readFileSync(
+  new URL('../../../supabase/tests/license_pro_to_free_lifecycle_final_r1_test.sql', import.meta.url),
+  'utf8'
+);
 const sqlMatrix = readFileSync(
   new URL('../../../supabase/tests/license_free_owner_device_takeover_r1_test.sql', import.meta.url),
   'utf8'
@@ -84,6 +92,32 @@ describe('Free owner device takeover contract', () => {
     expect(evidenceCycleHardening).toMatch(
       /revoke all on function private\.resolve_free_device_takeover_evidence_v1\(text\)[\s\S]*from public, anon, authenticated, service_role/iu
     );
+  });
+
+  it('binds recovery evidence to the current active Free transition across later lifecycle cycles', () => {
+    expect(currentCycleHardening).toContain("p.code = 'free_trial'");
+    expect(currentCycleHardening).toContain("e.event_type = 'PLAN_CHANGED'");
+    expect(currentCycleHardening).toContain("e.metadata->>'source' = 'licenses_update_trigger'");
+    expect(currentCycleHardening).toContain("e.metadata->>'to_plan' = 'free_trial'");
+    expect(currentCycleHardening).toContain('transition.triggered_at = e.triggered_at');
+    expect(currentCycleHardening).toContain("e.metadata->>'over_limit_devices_blocked'");
+    expect(currentCycleHardening).toMatch(
+      /revoke all on function private\.resolve_free_device_takeover_evidence_v1\(text\)[\s\S]*from public, anon, authenticated, service_role/iu
+    );
+
+    for (const finalMarker of [
+      'FINAL_GRACE_BOUNDARY_FAILED',
+      'FINAL_TAKEOVER_RETRY_FAILED',
+      'FINAL_CASH_IDEMPOTENCY_FAILED',
+      'FINAL_CYCLE1_TAKEOVER_EVIDENCE_SURVIVED_UPGRADE',
+      'FINAL_SECOND_CYCLE_TAKEOVER_EVIDENCE_NOT_FRESH',
+      'FINAL_SECOND_CYCLE_PENDING_MISMATCH',
+      'FINAL_CROSS_TENANT_MUTATION_DETECTED'
+    ]) {
+      expect(finalLifecycleMatrix).toContain(finalMarker);
+    }
+    expect(finalLifecycleMatrix).toMatch(/begin;/iu);
+    expect(finalLifecycleMatrix).toMatch(/rollback;/iu);
   });
 
   it('revokes displaced sessions and stale device tokens, then creates one fresh Admin session', () => {
