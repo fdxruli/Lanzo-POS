@@ -110,7 +110,10 @@ export default function AdminLoginModal() {
         return;
       }
 
-      markFreeDeviceTakeoverCompleted({\n        licenseKey,\n        username: username.trim()\n      });
+      markFreeDeviceTakeoverCompleted({
+        licenseKey,
+        username: username.trim()
+      });
     } catch (takeoverError) {
       setError(describeLoginError(takeoverError));
     } finally {
