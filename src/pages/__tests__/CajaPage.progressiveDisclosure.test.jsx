@@ -75,7 +75,8 @@ vi.mock('../../components/caja/sections', () => ({
     return <div data-testid="staff-audit"><button type="button" onClick={listCashSessionsForAudit}>Actualizar</button></div>;
   },
   CajaAdminCashAuditModal: () => null, CajaOpeningPanel: () => null,
-  CajaLegacyCashTransition: () => null, FinancialDiagnosticsPanel: () => null
+  CajaLegacyCashTransition: () => null, CajaPostDowngradeReconciliationPanel: () => null,
+  FinancialDiagnosticsPanel: () => null
 }));
 
 import React from 'react';

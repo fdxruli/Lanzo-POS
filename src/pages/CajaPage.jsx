@@ -32,6 +32,7 @@ import {
   CajaStaffAuditPanel,
   CajaBusinessCashSummary,
   CajaAdminCashAuditModal,
+  CajaPostDowngradeReconciliationPanel,
   CajaOpeningPanel,
   CajaLegacyCashTransition,
   FinancialDiagnosticsPanel,
@@ -627,6 +628,7 @@ export default function CajaPage() {
           </div>
         </header>
         <section className="ui-section caja-grid caja-grid--opening" role="main" aria-label="Resolución financiera">
+          <CajaPostDowngradeReconciliationPanel />
           {networkUnavailable ? (
             <CashNetworkRecoveryBanner onRetry={handleRetryVerification} isRetrying={isRetrying} />
           ) : handoffRequired ? (
@@ -691,6 +693,7 @@ export default function CajaPage() {
           </div>
         </header>
       <section className="ui-section caja-grid caja-grid--opening" role="main" aria-label="Apertura de Caja">
+        <CajaPostDowngradeReconciliationPanel />
         {networkUnavailable && (
           <CashNetworkRecoveryBanner onRetry={handleRetryVerification} isRetrying={isRetrying} />
         )}
@@ -739,6 +742,7 @@ export default function CajaPage() {
         </header>
       )}
       <section className="ui-section caja-grid" role="main" aria-label="Gestion de Caja">
+        <CajaPostDowngradeReconciliationPanel />
         {networkUnavailable && (
           <CashNetworkRecoveryBanner onRetry={handleRetryVerification} isRetrying={isRetrying} />
         )}

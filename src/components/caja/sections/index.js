@@ -10,3 +10,5 @@ export { default as CajaOpeningPanel } from './CajaOpeningPanel.jsx';
 export { default as CajaLegacyCashTransition } from './CajaLegacyCashTransition.jsx';
 export { default as FinancialDiagnosticsPanel } from './FinancialDiagnosticsPanel.jsx';
 export { default as CajaSectionTabs } from './CajaSectionTabs.jsx';
+
+export { default as CajaPostDowngradeReconciliationPanel } from './CajaPostDowngradeReconciliationPanel.jsx';

@@ -1,0 +1,3 @@
+-- Production ledger alignment for Phase 3 feature-evidence hardening.
+-- The effective function definition is already applied in Supabase production by migration 20260924162309.
+-- See the preceding 20260924152624 migration for the fail-closed entitlement logic.
