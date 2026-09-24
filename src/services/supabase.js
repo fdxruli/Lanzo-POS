@@ -1442,11 +1442,16 @@ export const acceptLegalTerms = async (licenseKey, termId) => {
 
 const buildAdminSessionResult = async (data, licenseKey, { beforeLocalPersistence = null } = {}) => {
     if (!data?.success) {
+        const takeoverRequired = data?.code === 'FREE_DEVICE_TAKEOVER_REQUIRED';
         return {
             success: false,
             valid: false,
             code: data?.code || 'ADMIN_AUTH_FAILED',
-            message: data?.message || 'No se pudo validar la sesion administrativa.'
+            message: data?.message || 'No se pudo validar la sesion administrativa.',
+            ...(takeoverRequired ? {
+                takeoverRequired: true,
+                details: data?.details || null
+            } : {})
         };
     }
 
@@ -1549,6 +1554,43 @@ export const adminLoginOnDevice = async ({
         if (String(error?.code || '').startsWith('LOCAL_TENANT_')) throw error;
         Logger.error('Error iniciando sesion admin:', error);
         return { success: false, code: error?.code || 'ADMIN_LOGIN_ERROR', message: error?.message || 'No se pudo iniciar sesion administrativa.' };
+    }
+};
+
+export const adminTakeoverFreeDevice = async ({
+    licenseKey,
+    username,
+    password,
+    beforeLocalPersistence = null
+}) => {
+    try {
+        if (!navigator.onLine) {
+            return {
+                success: false,
+                code: 'ONLINE_REQUIRED',
+                message: 'Necesitas internet para recuperar este dispositivo.'
+            };
+        }
+
+        const deviceFingerprint = await getStableDeviceId();
+        const { data, error } = await supabaseClient.rpc('admin_takeover_free_device', {
+            p_license_key: licenseKey,
+            p_username: username.trim(),
+            p_password: password,
+            p_device_fingerprint: deviceFingerprint,
+            p_device_name: getFriendlyDeviceName(navigator.userAgent),
+            p_device_info: { userAgent: navigator.userAgent, platform: navigator.platform }
+        });
+        if (error) throw error;
+        return buildAdminSessionResult(data, licenseKey, { beforeLocalPersistence });
+    } catch (error) {
+        if (String(error?.code || '').startsWith('LOCAL_TENANT_')) throw error;
+        Logger.error('Error recuperando dispositivo Free:', error);
+        return {
+            success: false,
+            code: error?.code || 'FREE_DEVICE_TAKEOVER_ERROR',
+            message: error?.message || 'No se pudo recuperar este dispositivo.'
+        };
     }
 };
 
