@@ -29,6 +29,7 @@ import {
   selectLocalTickerAlerts
 } from '../../services/tickerAlerts';
 import { canReadSalesReports } from '../../services/auth/salesPermissionPolicy';
+import { getLicenseStatusPresentation } from '../../utils/licenseStatusPresentation';
 import { useActorRuntimeSnapshot } from '../../services/auth/useActorRuntimeSnapshot';
 import {
   canStaffAccessNotifications,
@@ -422,20 +423,29 @@ export default function Ticker() {
     }
 
     const now = new Date();
+    const licenseForPresentation = {
+      ...licenseDetails,
+      status: licenseStatus || licenseDetails?.status,
+      grace_period_ends: licenseDetails?.grace_period_ends || gracePeriodEnds || null
+    };
+    const effectiveLicenseStatus = getLicenseStatusPresentation(
+      licenseForPresentation,
+      now
+    ).status;
     const effectiveGracePeriodEnds =
-      gracePeriodEnds ||
-      (licenseStatus === 'grace_period'
+      licenseForPresentation.grace_period_ends ||
+      (effectiveLicenseStatus === 'grace_period'
         ? deriveGracePeriodEnd(licenseDetails?.expires_at)
         : null);
     const graceDate = effectiveGracePeriodEnds ? new Date(effectiveGracePeriodEnds) : null;
     const expiryDate = licenseDetails?.expires_at
       ? new Date(licenseDetails.expires_at)
       : null;
-    const isGracePeriod = licenseStatus === 'grace_period'
-      || (expiryDate && graceDate && expiryDate < now && graceDate > now);
+    const isGracePeriod = effectiveLicenseStatus === 'grace_period'
+      || (effectiveLicenseStatus !== 'expired' && expiryDate && graceDate && expiryDate < now && graceDate > now);
 
     if (isGracePeriod) {
-      const canonicalGraceEnd = gracePeriodEnds || licenseDetails?.grace_period_ends || null;
+      const canonicalGraceEnd = effectiveGracePeriodEnds;
       const parsedGraceEnd = canonicalGraceEnd ? new Date(canonicalGraceEnd) : null;
       const hasReliableGraceEnd = parsedGraceEnd && !Number.isNaN(parsedGraceEnd.getTime());
       const graceCopy = hasReliableGraceEnd
