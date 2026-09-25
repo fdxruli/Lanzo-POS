@@ -61,6 +61,89 @@ describe('commercial AI context boundary', () => {
     expect(JSON.stringify(context)).not.toContain('secret-id');
   });
 
+  it('preserves missing-cost nulls in the context accepted by the deployed Edge contract', () => {
+    const context = buildSalesProfitabilityContext({
+      period: { dateFrom: '2026-09-01', dateTo: '2026-09-07', label: 'Periodo actual' },
+      source: 'cloud',
+      report: {
+        overview: {
+          netSales: 100,
+          unitCosts: null,
+          knownCostOfSale: 20,
+          profit: null,
+          margin: null,
+          costCoverage: 0.5,
+          missingCostProducts: 1,
+          profitabilityStatus: 'undetermined',
+          profitabilityExplanation: 'Falta evidencia de costo.'
+        },
+        products: [{
+          name: 'Producto sintético',
+          quantity: 2,
+          netSales: 100,
+          unitCost: null,
+          profit: null,
+          margin: null,
+          averagePrice: 50,
+          costKnown: false,
+          costStatus: 'incomplete',
+          costSource: 'missing'
+        }],
+        coverage: {
+          validSales: 1,
+          productsIncluded: 1,
+          productsMissingCost: 1,
+          costCoverage: 0.5,
+          knownCostOfSale: 20,
+          costStatus: 'incomplete',
+          complete: false,
+          itemsComplete: true,
+          paginationComplete: true,
+          sourceComplete: true
+        },
+        calculations: [],
+        assumptions: [],
+        limitations: ['Falta evidencia de costo.'],
+        scenarios: []
+      }
+    });
+
+    const validation = validatePayload({
+      auth: {
+        licenseKey: 'synthetic-license',
+        deviceFingerprint: 'synthetic-device',
+        deviceSecurityToken: 'synthetic-device-token',
+        staffSessionToken: null
+      },
+      agentKey: 'salesProfitability',
+      intent: 'product_risk',
+      question: '¿Qué productos requieren revisar su costo?',
+      requestKey: 'missing-cost-context-test',
+      period: { from: '2026-09-01', to: '2026-09-07', timezone: 'America/Mexico_City' },
+      scenario: {},
+      context,
+      options: { temperature: 0.2, maxTokens: 2048 }
+    });
+
+    expect(validation.ok).toBe(true);
+    expect(context.sales.summary).toMatchObject({
+      unitCosts: null,
+      profit: null,
+      margin: null,
+      costCoverage: 0.5,
+      missingCostProducts: 1,
+      profitabilityStatus: 'undetermined'
+    });
+    expect(context.sales.products[0]).toMatchObject({
+      unitCost: null,
+      profit: null,
+      margin: null,
+      costKnown: false,
+      costStatus: 'incomplete',
+      costSource: 'missing'
+    });
+  });
+
   it('produces a sales context accepted by the Edge contract, including cost provenance', () => {
     const context = buildSalesProfitabilityContext({
       period: {
