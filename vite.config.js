@@ -84,6 +84,10 @@ export default defineConfig(() => ({
       injectManifest: {
         globPatterns: ADMIN_SHELL_GLOB_PATTERNS,
       },
+      // Build the worker before the startup audit reads the completed dist output.
+      integration: {
+        closeBundleOrder: 'pre',
+      },
     }),
     createAdminStartupPrecacheAuditPlugin(),
   ],
