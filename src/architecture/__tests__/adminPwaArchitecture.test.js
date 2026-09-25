@@ -67,7 +67,8 @@ describe('ECOM.PUBLIC.PWA.1 architecture', () => {
     const packageJson = JSON.parse(packageSource);
 
     expect(config).not.toContain('createAdminStartupPrecacheAuditPlugin');
-    expect(packageJson.scripts.build).toBe('vite build && node scripts/admin-startup-precache-audit.mjs');
+    expect(packageJson.scripts.build).toBe('vite build');
+    expect(packageJson.scripts.postbuild).toBe('node scripts/admin-startup-precache-audit.mjs');
     expect(audit).toContain('findMissingStartupPrecacheAssets');
     expect(audit).toContain('Administrative startup assets are missing from the Service Worker precache');
     expect(audit).toContain("const outDir = path.resolve(process.cwd(), 'dist');");
