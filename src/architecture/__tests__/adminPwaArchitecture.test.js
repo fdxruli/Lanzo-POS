@@ -65,9 +65,11 @@ describe('ECOM.PUBLIC.PWA.1 architecture', () => {
     ]);
 
     expect(config).toContain('createAdminStartupPrecacheAuditPlugin()');
+    expect(config).toMatch(/closeBundleOrder:\s*'pre'/);
     expect(audit).toContain('findMissingStartupPrecacheAssets');
     expect(audit).toContain('Administrative startup assets are missing from the Service Worker precache');
-    expect(audit).toMatch(/async closeBundle\(\)[\s\S]*auditAdminStartupPrecache/);
+    expect(audit).toContain('shouldAudit = config.configFile !== false');
+    expect(audit).toMatch(/async closeBundle\(\)[\s\S]*if \(!shouldAudit\) return;[\s\S]*auditAdminStartupPrecache/);
   });
 
   it('starts install and worker infrastructure only in the administrative branch', async () => {
