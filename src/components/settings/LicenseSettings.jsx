@@ -19,6 +19,10 @@ import { useAppStore } from '../../store/useAppStore';
 import StaffUsersSettings from './StaffUsersSettings';
 import { showConfirmModal, showMessageModal } from '../../services/utils';
 import { getCommercialPlanName, getCommercialPlanShortName } from '../../utils/planDisplay';
+import {
+    getLicenseExpirationPresentation,
+    getLicenseStatusPresentation
+} from '../../utils/licenseStatusPresentation';
 import NoPermission from '../common/NoPermission';
 import {
     useSettingsAccess,
@@ -99,53 +103,7 @@ function getGracePeriodState(licenseDetails) {
     const expiryDate = new Date(expiryValue);
     if (Number.isNaN(expiryDate.getTime())) return { inGracePeriod: false, graceEndDate: null };
 
-    const now = new Date();
-    return {
-        inGracePeriod: expiryDate < now && graceEndDate > now,
-        graceEndDate
-    };
-}
-
-function getExpirationInfo(licenseDetails) {
-    const status = String(licenseDetails?.status || '').trim().toLowerCase();
-    const planCode = getPlanCode(licenseDetails);
-    const isPaidPlan = planCode.includes('pro') || planCode.includes('basic');
-    const expiryDateString = licenseDetails?.expires_at;
-    const graceEndValue = licenseDetails?.grace_period_ends || null;
-    const graceEndDate = graceEndValue ? new Date(graceEndValue) : null;
-    const hasReliableGraceEnd = graceEndDate && !Number.isNaN(graceEndDate.getTime());
-
-    if (status === 'grace_period') {
-        return {
-            label: 'Período de gracia',
-            tone: 'warning',
-            note: hasReliableGraceEnd
-                ? `Lanzo Nube terminó. Puedes seguir operando durante la gracia hasta ${graceEndDate.toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' })}. Después, si no renuevas, se aplicará Lanzo Local.`
-                : 'Lanzo Nube terminó. Puedes seguir operando durante la gracia; después, si no renuevas, se aplicará Lanzo Local.'
-        };
-    }
-
-    if (status === 'expired' && isPaidPlan) {
-        return {
-            label: 'Cambio a Lanzo Local pendiente',
-            tone: 'warning',
-            note: 'El período de gracia terminó y Lanzo está confirmando el cambio de plan.'
-        };
-    }
-
-    if (!expiryDateString) return { label: 'Permanente', tone: 'success', note: '' };
-
-    const expiryDate = new Date(expiryDateString);
-    if (Number.isNaN(expiryDate.getTime())) return { label: 'No disponible', tone: 'neutral', note: '' };
-
-    const now = new Date();
-    const formattedDate = expiryDate.toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' });
-
-    if (expiryDate < now) {
-        return {
-            label: 'Revisión requerida',
-            tone: 'warning',
-            note: `Fecha anterior: ${formattedDate}`
+    con   note: `Fecha anterior: ${formattedDate}`
         };
     }
 
@@ -156,15 +114,9 @@ function LicenseHero({
     selectedCount,
     maxRubrosAllowed,
     planName,
-    licenseStatus
+    licenseDetails
 }) {
-    const statusLabel = licenseStatus === 'active'
-        ? 'Activa'
-        : licenseStatus === 'grace_period'
-            ? 'Período de gracia'
-            : licenseStatus === 'expired'
-                ? 'Actualizando a Lanzo Local'
-                : licenseStatus || 'Inactiva';
+    const statusPresentation = getLicenseStatusPresentation(licenseDetails);
 
     return (
         <header className="license-settings-hero">
@@ -187,7 +139,7 @@ function LicenseHero({
                     </span>
                     <span>
                         <small>Estado</small>
-                        <strong>{statusLabel}</strong>
+                        <strong>{statusPresentation.label}</strong>
                     </span>
                     <span>
                         <small>Rubros</small>
@@ -301,7 +253,7 @@ function LicenseDetail({ label, value, children }) {
 }
 
 function LicenseCriticalAlerts({ licenseDetails, showFreeCompatibilityUpdate, isUpdatingFree, freeUpdateError, onFreeCompatibilityUpdate }) {
-    const expirationInfo = getExpirationInfo(licenseDetails);
+    const expirationInfo = getLicenseExpirationPresentation(licenseDetails);
     const hasExpirationAlert = expirationInfo.tone === 'warning' || expirationInfo.tone === 'danger';
 
     if (!hasExpirationAlert && !showFreeCompatibilityUpdate && !freeUpdateError) return null;
@@ -337,7 +289,7 @@ function LicenseCriticalAlerts({ licenseDetails, showFreeCompatibilityUpdate, is
 }
 
 function LicenseSummaryPanel({ licenseDetails, selectedCount, maxRubrosAllowed, activeRubroLabels }) {
-    const expirationInfo = getExpirationInfo(licenseDetails);
+    const expirationInfo = getLicenseExpirationPresentation(licenseDetails);
 
     return (
         <section className="license-panel license-summary-panel">
@@ -375,7 +327,7 @@ function LicenseInfoPanel({
         currentStaffUser,
         staffRolesEnabled
     } = licenseContext;
-    const expirationInfo = getExpirationInfo(licenseDetails);
+    const expirationInfo = getLicenseExpirationPresentation(licenseDetails);
     const [copiedLicense, setCopiedLicense] = useState(false);
     const commercialPlanName = getCommercialPlanName(licenseDetails);
     const commercialPlanShortName = getCommercialPlanShortName(licenseDetails);
@@ -424,8 +376,8 @@ function LicenseInfoPanel({
                         <strong>Informacion de licencia</strong>
                         <small>Ver detalles de licencia · Datos de activacion, vigencia y capacidades.</small>
                     </span>
-                    <span className={`license-status-pill ${licenseDetails.status === 'active' ? 'is-active' : 'is-expired'}`}>
-                        {licenseDetails.status === 'active' ? 'Activa' : licenseDetails.status || 'Inactiva'}
+                    <span className={`license-status-pill is-${statusPresentation.tone}`}>
+                        {statusPresentation.label}
                     </span>
                 </summary>
 
@@ -728,7 +680,7 @@ export default function LicenseSettings() {
                 selectedCount={selectedRubros.length}
                 maxRubrosAllowed={maxRubrosAllowed}
                 planName={commercialPlanName}
-                licenseStatus={licenseDetails?.status}
+                licenseDetails={licenseDetails}
             />
 
             <nav className="license-section-tabs" role="tablist" aria-label="Secciones de licencia">
