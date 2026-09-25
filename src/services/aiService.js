@@ -147,8 +147,7 @@ const normalizeUsageNumber = (value) => {
 export const normalizeUsageStatus = (payload = {}) => {
   const explicitUnlimited = payload.isUnlimited === true
     || payload.is_unlimited === true
-    || payload.unlimited === true
-    || payload.limit === null;
+    || payload.unlimited === true;
   const limit = explicitUnlimited ? null : normalizeUsageNumber(payload.limit);
   const used = normalizeUsageNumber(payload.used);
   const explicitRemaining = normalizeUsageNumber(payload.remaining);
