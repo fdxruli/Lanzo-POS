@@ -12,6 +12,7 @@ const runtime = vi.hoisted(() => ({
   actorSnapshot: null,
   runAgent: vi.fn(),
   loadProducts: vi.fn(),
+  getUsage: vi.fn(),
   createObjectURL: vi.fn(),
   revokeObjectURL: vi.fn()
 }));
@@ -24,6 +25,10 @@ vi.mock('../../../services/ai/salesProfitabilityAgentService', () => ({
     || companyProfile?.time_zone
     || 'America/Mexico_City'
   )
+}));
+
+vi.mock('../../../services/aiService', () => ({
+  getAIAgentUsageStatus: runtime.getUsage
 }));
 
 vi.mock('../../../store/useAppStore', () => ({
@@ -64,6 +69,16 @@ describe('commercial AI center', () => {
     runtime.actorSnapshot = boundAdmin;
     runtime.runAgent.mockReset();
     runtime.loadProducts.mockReset();
+    runtime.getUsage.mockReset();
+    runtime.getUsage.mockResolvedValue({
+      used: 2,
+      limit: 15,
+      remaining: 13,
+      isUnlimited: false,
+      isLimitConfigured: true,
+      isLimitReached: false,
+      period_end: '2026-10-01T00:00:00Z'
+    });
     runtime.loadProducts.mockResolvedValue({
       source: 'cloud_final',
       products: [
@@ -115,6 +130,107 @@ describe('commercial AI center', () => {
     expect(screen.getByRole('button', { name: 'Analizar' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Descargar reporte completo' })).toBeDisabled();
     expect(runtime.runAgent).not.toHaveBeenCalled();
+  });
+
+  it('loads and shows IA usage on the main screen without opening technical details', async () => {
+    renderCenter();
+
+    expect(await screen.findByText('Usados: 2 · Límite: 15 · Disponibles: 13')).toBeInTheDocument();
+    expect(screen.getByText(/Periodo actual hasta/i)).toBeInTheDocument();
+    expect(runtime.getUsage).toHaveBeenCalledTimes(1);
+    expect(runtime.runAgent).not.toHaveBeenCalled();
+  });
+
+  it('keeps usage query failures visible and retries explicitly', async () => {
+    runtime.getUsage
+      .mockRejectedValueOnce(new Error('usage unavailable'))
+      .mockResolvedValueOnce({
+        used: 3,
+        limit: 15,
+        remaining: 12,
+        isUnlimited: false,
+        isLimitConfigured: true,
+        isLimitReached: false
+      });
+
+    renderCenter();
+    expect(await screen.findByText('No se pudo consultar el uso de IA. Puedes reintentar.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
+
+    expect(await screen.findByText('Usados: 3 · Límite: 15 · Disponibles: 12')).toBeInTheDocument();
+    expect(runtime.getUsage).toHaveBeenCalledTimes(2);
+  });
+
+  it('refreshes the main usage indicator after an IA response', async () => {
+    runtime.getUsage
+      .mockResolvedValueOnce({
+        used: 2,
+        limit: 15,
+        remaining: 13,
+        isUnlimited: false,
+        isLimitConfigured: true,
+        isLimitReached: false
+      })
+      .mockResolvedValueOnce({
+        used: 3,
+        limit: 15,
+        remaining: 12,
+        isUnlimited: false,
+        isLimitConfigured: true,
+        isLimitReached: false
+      });
+    runtime.runAgent.mockResolvedValueOnce({
+      response: {
+        status: 'completed',
+        executiveSummary: 'Resumen de prueba',
+        explanation: 'Explicación de prueba',
+        confidence: 'medium',
+        source: 'cloud',
+        coverage: { validSales: 1, costCoverage: 1 },
+        facts: [],
+        calculations: [],
+        assumptions: [],
+        limitations: [],
+        recommendations: [],
+        scenarios: []
+      },
+      usageStatus: { used: 3, limit: 15, remaining: 12 },
+      providerCalled: true
+    });
+
+    renderCenter();
+    await screen.findByText('Usados: 2 · Límite: 15 · Disponibles: 13');
+    fireEvent.click(screen.getByRole('button', { name: '¿Mi negocio es rentable?' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+
+    await waitFor(() => expect(runtime.getUsage).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText('Usados: 3 · Límite: 15 · Disponibles: 12')).toBeInTheDocument();
+  });
+
+  it('keeps the last known usage visible after an analysis 400 and a failed refresh', async () => {
+    runtime.getUsage
+      .mockResolvedValueOnce({
+        used: 2,
+        limit: 15,
+        remaining: 13,
+        isUnlimited: false,
+        isLimitConfigured: true,
+        isLimitReached: false
+      })
+      .mockRejectedValueOnce(new Error('usage refresh failed'));
+    runtime.runAgent.mockRejectedValueOnce(Object.assign(new Error('contract details'), {
+      code: 'INVALID_REQUEST',
+      statusCode: 400
+    }));
+
+    renderCenter();
+    await screen.findByText('Usados: 2 · Límite: 15 · Disponibles: 13');
+    fireEvent.click(screen.getByRole('button', { name: '¿Qué combos puedo formar?' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+
+    await waitFor(() => expect(screen.getByText('No pudimos procesar esta consulta. Revisa las opciones seleccionadas e inténtalo nuevamente.')).toBeInTheDocument());
+    expect(screen.getByText('Usados: 2 · Límite: 15 · Disponibles: 13')).toBeInTheDocument();
+    expect(await screen.findByText('No se pudo consultar el uso de IA. El último dato disponible se conserva.')).toBeInTheDocument();
   });
 
   it('consumes the analysis path only after the user submits a question and propagates the company timezone', async () => {
@@ -207,6 +323,7 @@ describe('commercial AI center', () => {
     expect(screen.getByText('Los agentes IA comerciales requieren un plan compatible.')).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Ventas y rentabilidad' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(runtime.getUsage).not.toHaveBeenCalled();
   });
 
   it('blocks direct access when actor, tenant or device context is not authorized', () => {
