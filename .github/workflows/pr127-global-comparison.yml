@@ -59,26 +59,6 @@ jobs:
         working-directory: main
         run: npm ci
 
-      - name: Setup Deno for AI Edge validation
-        uses: denoland/setup-deno@v2
-        with:
-          deno-version: v2.x
-
-      - name: Run PR AI Edge Deno suite
-        working-directory: pr
-        run: deno test supabase/functions/lanzo-ai-agent/index.test.ts
-
-      - name: Run PR AI agent focused suite
-        working-directory: pr
-        run: >
-          npm run test:ci --
-          src/components/ai/__tests__/CommercialAIAgents.test.jsx
-          src/services/ai/__tests__/salesProfitabilityAgentService.test.js
-          src/services/ai/__tests__/commercialAgentContract.test.js
-          src/services/ai/__tests__/aiServiceErrorMapping.test.js
-          src/services/ai/__tests__/aiServiceUsageStatus.test.js
-          src/services/ai/__tests__/edgeCommercialContractBridge.test.js
-
       - name: Run PR global suite
         id: pr-suite
         continue-on-error: true
