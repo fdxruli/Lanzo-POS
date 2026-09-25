@@ -59,17 +59,19 @@ describe('ECOM.PUBLIC.PWA.1 architecture', () => {
   });
 
   it('fails the production build when the generated startup closure is not completely precached', async () => {
-    const [config, audit] = await Promise.all([
+    const [config, packageSource, audit] = await Promise.all([
       readProjectFile('vite.config.js'),
+      readProjectFile('package.json'),
       readProjectFile('scripts/admin-startup-precache-audit.mjs'),
     ]);
+    const packageJson = JSON.parse(packageSource);
 
-    expect(config).toContain('createAdminStartupPrecacheAuditPlugin()');
-    expect(config).toMatch(/closeBundleOrder:\s*'pre'/);
+    expect(config).not.toContain('createAdminStartupPrecacheAuditPlugin');
+    expect(packageJson.scripts.build).toBe('vite build && node scripts/admin-startup-precache-audit.mjs');
     expect(audit).toContain('findMissingStartupPrecacheAssets');
     expect(audit).toContain('Administrative startup assets are missing from the Service Worker precache');
-    expect(audit).toContain('shouldAudit = config.configFile !== false');
-    expect(audit).toMatch(/async closeBundle\(\)[\s\S]*if \(!shouldAudit\) return;[\s\S]*auditAdminStartupPrecache/);
+    expect(audit).toContain("const outDir = path.resolve(process.cwd(), 'dist');");
+    expect(audit).toMatch(/if \(invokedPath === modulePath\)[\s\S]*auditAdminStartupPrecache/);
   });
 
   it('starts install and worker infrastructure only in the administrative branch', async () => {
