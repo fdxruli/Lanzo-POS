@@ -32,6 +32,14 @@ describe('AI Edge error mapping', () => {
       limit: null,
       used: 8,
       remaining: null,
+      isUnlimited: false,
+      isLimitConfigured: false,
+      isLimitReached: false
+    });
+    expect(normalizeUsageStatus({ unlimited: true, limit: null, used: 8 })).toMatchObject({
+      limit: null,
+      used: 8,
+      remaining: null,
       isUnlimited: true,
       isLimitConfigured: false,
       isLimitReached: false
