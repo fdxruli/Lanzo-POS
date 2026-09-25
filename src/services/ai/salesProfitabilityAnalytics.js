@@ -3,6 +3,7 @@ import {
   resolveCommercialIntent,
   normalizeScenarioForIntent
 } from './commercialAgentContract';
+import { isMissingUnitCost } from '../sales/financialPolicy';
 
 export const SALES_PROFITABILITY_INTENTS = Object.freeze([
   'profitability_summary',
@@ -142,7 +143,8 @@ const normalizeItem = (item = {}) => {
   );
   const providedTotal = numberOrNull(source.total ?? source.line_total ?? source.subtotal ?? source.net_total);
   const total = providedTotal !== null ? providedTotal : (unitPrice !== null ? unitPrice * quantity : null);
-  const unitCost = numberOrNull(source.cost ?? source.unit_cost ?? source.cost_snapshot ?? source.costPrice);
+  const parsedUnitCost = numberOrNull(source.cost ?? source.unit_cost ?? source.cost_snapshot ?? source.costPrice);
+  const unitCost = isMissingUnitCost(parsedUnitCost) ? null : parsedUnitCost;
   const discount = numberOrNull(source.discount ?? source.discount_amount ?? source.discountAmount);
 
   return {
