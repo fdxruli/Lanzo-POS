@@ -54,7 +54,7 @@ const confidenceLabel = (value) => ({ high: 'Alta', medium: 'Media', low: 'Baja'
 const priorityLabel = (value) => ({ high: 'Alta', medium: 'Media', low: 'Baja' }[value] || 'Media');
 
 const usagePeriodEndLabel = (usage = {}) => {
-  const raw = usage.period_end || usage.periodEnd || usage.periodEndAt;
+  const raw = usage?.period_end || usage?.periodEnd || usage?.periodEndAt;
   if (!raw) return null;
   const date = new Date(raw);
   if (Number.isNaN(date.getTime())) return null;
