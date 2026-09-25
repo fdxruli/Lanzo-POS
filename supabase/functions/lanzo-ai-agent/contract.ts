@@ -216,6 +216,33 @@ const COMMERCIAL_SCENARIO_OUTPUT_KEYS = new Set([
   'isDemandPrediction'
 ]);
 
+const COMMERCIAL_SCENARIO_TEXT_KEYS = new Set(['label', 'note', 'opportunity']);
+const COMMERCIAL_SCENARIO_BOOLEAN_KEYS = new Set(['isPrediction', 'isDemandPrediction']);
+const COMMERCIAL_SCENARIO_NUMBER_KEYS = new Set([
+  'volume',
+  'utility',
+  'margin',
+  'impactVsCurrent',
+  'tickets',
+  'frequency',
+  'ticketPercentage',
+  'comboPrice',
+  'discount',
+  'currentPrice',
+  'newPrice',
+  'unitCost',
+  'historicalJointSales',
+  'averageJointSale',
+  'cost',
+  'profit',
+  'costCoverage',
+  'historicalVolume',
+  'breakEvenVolume'
+]);
+const COMMERCIAL_SCENARIO_RATIO_KEYS = new Set(['frequency', 'ticketPercentage', 'costCoverage']);
+const COMMERCIAL_SCENARIO_CONFIDENCE = new Set(['high', 'medium', 'low']);
+const COMMERCIAL_SCENARIO_COST_STATUS = new Set(['complete', 'incomplete']);
+
 const isRecord = (value: unknown): value is Record<string, unknown> => (
   typeof value === 'object' && value !== null && !Array.isArray(value)
 );
@@ -252,6 +279,39 @@ function validOptionalEnum(
   return value === undefined
     || value === null
     || (typeof value === 'string' && value.length <= maxLength && allowed.has(value));
+}
+
+function validCommercialScenarioOutput(value: unknown): value is Record<string, unknown> {
+  if (!isRecord(value) || !assertOnlyKeys(value, COMMERCIAL_SCENARIO_OUTPUT_KEYS)) return false;
+
+  return Object.entries(value).every(([key, entry]) => {
+    if (key === 'products') {
+      return Array.isArray(entry)
+        && entry.length > 0
+        && entry.length <= 4
+        && entry.every((product) => typeof product === 'string' && product.trim().length > 0 && product.length <= 120);
+    }
+
+    if (key === 'confidence' || key === 'evidenceLevel') {
+      return typeof entry === 'string' && COMMERCIAL_SCENARIO_CONFIDENCE.has(entry);
+    }
+
+    if (key === 'costStatus') {
+      return typeof entry === 'string' && COMMERCIAL_SCENARIO_COST_STATUS.has(entry);
+    }
+
+    if (COMMERCIAL_SCENARIO_BOOLEAN_KEYS.has(key)) return typeof entry === 'boolean';
+
+    if (COMMERCIAL_SCENARIO_TEXT_KEYS.has(key)) {
+      return typeof entry === 'string' && entry.length > 0 && entry.length <= 480;
+    }
+
+    if (!COMMERCIAL_SCENARIO_NUMBER_KEYS.has(key) || !validFiniteOrNull(entry)) return false;
+    if (entry === null) return true;
+    if (key === 'tickets') return Number.isInteger(entry) && entry >= 0;
+    if (COMMERCIAL_SCENARIO_RATIO_KEYS.has(key)) return entry >= 0 && entry <= 1;
+    return true;
+  });
 }
 
 function validCommercialPeriod(value: unknown, intent = 'explain_change'): value is Record<string, unknown> {
@@ -329,7 +389,7 @@ function validCommercialContext(value: unknown): value is Record<string, unknown
   if (!sales.calculations.every((item) => isRecord(item) && assertOnlyKeys(item, COMMERCIAL_CALCULATION_KEYS))) return false;
   if (!Array.isArray(sales.assumptions) || sales.assumptions.length > 24 || !sales.assumptions.every((item) => typeof item === 'string')) return false;
   if (!Array.isArray(sales.scenarios) || sales.scenarios.length > 16) return false;
-  if (!sales.scenarios.every((item) => isRecord(item) && assertOnlyKeys(item, COMMERCIAL_SCENARIO_OUTPUT_KEYS))) return false;
+  if (!sales.scenarios.every((item) => validCommercialScenarioOutput(item))) return false;
   if (sales.coverage !== undefined && !isRecord(sales.coverage)) return false;
 
   return new TextEncoder().encode(JSON.stringify(value)).byteLength <= MAX_COMMERCIAL_CONTEXT_BYTES;
