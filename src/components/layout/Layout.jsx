@@ -36,6 +36,7 @@ import {
 } from '../../services/auth/actorOperationalHandoff';
 import { canReadSalesReports } from '../../services/auth/salesPermissionPolicy';
 import { useActorRuntimeSnapshot } from '../../services/auth/useActorRuntimeSnapshot';
+import { getLicenseStatusPresentation } from '../../utils/licenseStatusPresentation';
 import './Layout.css';
 
 registerActorOperationalActiveOrders({ useActiveOrders, db, STORES });
@@ -59,6 +60,7 @@ function Layout() {
   const showAssistantBot = useAppStore((state) => state.showAssistantBot);
   const showTicker = useAppStore((state) => state.showTicker);
   const licenseStatus = useAppStore((state) => state.licenseStatus);
+  const gracePeriodEnds = useAppStore((state) => state.gracePeriodEnds);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
   const currentDeviceRole = useAppStore((state) => state.currentDeviceRole);
   const currentStaffUser = useAppStore((state) => state.currentStaffUser);
@@ -69,10 +71,15 @@ function Layout() {
   const isPosPage = pathname === '/';
   const isAboutPage = pathname === '/acerca-de';
 
+  const effectiveLicenseStatus = getLicenseStatusPresentation({
+    ...licenseDetails,
+    status: licenseStatus || licenseDetails?.status,
+    grace_period_ends: licenseDetails?.grace_period_ends || gracePeriodEnds || null
+  }).status;
   const isLicenseCritical = (
-    licenseStatus === 'grace_period' ||
-    licenseStatus === 'expired' ||
-    licenseStatus === 'locked_renewal'
+    effectiveLicenseStatus === 'grace_period' ||
+    effectiveLicenseStatus === 'expired' ||
+    effectiveLicenseStatus === 'locked_renewal'
   );
   const shouldShowTicker = !isAboutPage && (showTicker || isLicenseCritical);
   const dataSafetyEligible = isDataSafetyModalEligible({
