@@ -209,6 +209,33 @@ function structuredCommercialRequestWithProduct(product: Record<string, unknown>
   return payload;
 }
 
+function structuredCommercialRequestWithScenarioOutput(
+  outputScenario: Record<string, unknown>,
+  overrides: Record<string, unknown> = {}
+) {
+  const payload = structuredCommercialRequest({
+    intent: 'combo_opportunity',
+    question: '¿Qué combos puedo formar?',
+    period: {
+      from: '2026-09-01',
+      to: '2026-09-07',
+      previousFrom: null,
+      previousTo: null,
+      timezone: 'America/Mexico_City'
+    },
+    scenario: {},
+    ...overrides
+  });
+  payload.context = {
+    ...payload.context,
+    sales: {
+      ...payload.context.sales,
+      scenarios: [outputScenario]
+    }
+  };
+  return payload;
+}
+
 function analysisClient(beginData: Record<string, unknown> = successBegin(), completeData: Record<string, unknown> = successComplete()) {
   return fakeClient(async (name) => {
     if (name === 'get_ai_agent_usage_unlimited') return { data: { success: true, limit: 15, used: 0, remaining: 15, ai_agents: true }, error: null };
@@ -283,13 +310,22 @@ Deno.test('usage funciona sin variables del proveedor', async () => {
   assertEquals(client.calls[0].name, 'get_ai_agent_usage');
 });
 
-Deno.test('usage propaga staffSessionToken y no llama proveedor', async () => {
+Deno.test('usage propaga staffSessionToken y no llama proveedor ni reserva cuota', async () => {
   const staffAuth = { ...auth, staffSessionToken: 'synthetic-staff-session' };
   const client = fakeClient(async () => ({ data: { success: true, limit: 15, used: 0, remaining: 15 }, error: null }));
-  const response = await makeHandler(client)(request({ action: 'usage', auth: staffAuth }));
+  let providerCalls = 0;
+  const response = await makeHandler(client, {
+    fetchImpl: async () => {
+      providerCalls += 1;
+      return chatResponse();
+    }
+  })(request({ action: 'usage', auth: staffAuth }));
   assertEquals(response.status, 200);
   assertEquals(client.calls[0].args.p_staff_session_token, 'synthetic-staff-session');
   assertEquals(client.calls[0].name, 'get_ai_agent_usage');
+  assertEquals(client.calls.filter((call) => call.name === 'begin_ai_agent_analysis').length, 0);
+  assertEquals(client.calls.filter((call) => call.name === 'complete_ai_agent_analysis').length, 0);
+  assertEquals(providerCalls, 0);
 });
 
 Deno.test('usage conserva código RPC de error y estado 429', async () => {
@@ -918,6 +954,137 @@ Deno.test('contrato comercial acepta combos con scenario vacío y sin periodo an
   assertEquals(response.status, 200);
   assertEquals(providerCalls, 1);
   assertEquals(client.calls.filter((call) => call.name === 'begin_ai_agent_analysis').length, 1);
+});
+
+Deno.test('contrato comercial acepta contexto realista de combo con metadatos tipados', async () => {
+  const combo = {
+    products: ['Producto A', 'Producto B'],
+    tickets: 4,
+    frequency: 0.4,
+    ticketPercentage: 0.4,
+    historicalJointSales: 600,
+    averageJointSale: 150,
+    cost: 90,
+    costCoverage: 1,
+    costStatus: 'complete',
+    comboPrice: 150,
+    profit: 60,
+    margin: 0.4,
+    evidenceLevel: 'medium',
+    confidence: 'medium',
+    opportunity: 'Evaluar presentar Producto A y Producto B juntos.',
+    isPrediction: false,
+    note: 'Correlación histórica; no implica causalidad.'
+  };
+  let providerCalls = 0;
+  const client = analysisClient();
+  const response = await makeHandler(client, {
+    fetchImpl: async () => {
+      providerCalls += 1;
+      return chatResponse(structuredCommercialResponse());
+    }
+  })(request(structuredCommercialRequestWithScenarioOutput(combo)));
+
+  assertEquals(response.status, 200);
+  assertEquals(providerCalls, 1);
+  assertEquals(client.calls.filter((call) => call.name === 'begin_ai_agent_analysis').length, 1);
+});
+
+Deno.test('combo sin costo completo y evidencia baja sigue siendo contrato válido', async () => {
+  const combo = {
+    products: ['Producto A', 'Producto B'],
+    tickets: 2,
+    frequency: 0.08,
+    ticketPercentage: 0.08,
+    historicalJointSales: 180,
+    averageJointSale: 90,
+    costCoverage: 0.5,
+    costStatus: 'incomplete',
+    comboPrice: 90,
+    evidenceLevel: 'low',
+    confidence: 'low',
+    opportunity: 'Hay evidencia limitada para evaluar el combo.',
+    isPrediction: false,
+    note: 'Faltan costos completos en parte de los tickets.'
+  };
+  const client = analysisClient();
+  const response = await makeHandler(client, {
+    fetchImpl: async () => chatResponse(structuredCommercialResponse())
+  })(request(structuredCommercialRequestWithScenarioOutput(combo)));
+
+  assertEquals(response.status, 200);
+  assertEquals(client.calls.filter((call) => call.name === 'begin_ai_agent_analysis').length, 1);
+});
+
+Deno.test('combo rechaza claves o enums desconocidos antes de cuota y proveedor', async () => {
+  const baseCombo = {
+    products: ['Producto A', 'Producto B'],
+    tickets: 4,
+    frequency: 0.4,
+    ticketPercentage: 0.4,
+    costCoverage: 1,
+    costStatus: 'complete',
+    confidence: 'medium',
+    evidenceLevel: 'medium',
+    opportunity: 'Evaluar combo.',
+    isPrediction: false,
+    note: 'Evidencia histórica.'
+  };
+
+  for (const invalidCombo of [
+    { ...baseCombo, unexpectedInternalKey: true },
+    { ...baseCombo, costStatus: 'definitive' },
+    { ...baseCombo, confidence: 'unknown' }
+  ]) {
+    const client = analysisClient();
+    let providerCalls = 0;
+    const response = await makeHandler(client, {
+      fetchImpl: async () => {
+        providerCalls += 1;
+        return chatResponse(structuredCommercialResponse());
+      }
+    })(request(structuredCommercialRequestWithScenarioOutput(invalidCombo)));
+
+    assertEquals(response.status, 400);
+    assertEquals((await json(response)).code, 'INVALID_REQUEST');
+    assertEquals(client.calls.length, 0);
+    assertEquals(providerCalls, 0);
+  }
+});
+
+Deno.test('escenarios de precio y promoción conservan compatibilidad con la allowlist tipada', async () => {
+  const outputScenario = {
+    label: 'Volumen sin cambio',
+    volume: 2,
+    utility: 60,
+    margin: 0.6,
+    impactVsCurrent: 10,
+    isPrediction: false,
+    currentPrice: 50,
+    newPrice: 55,
+    note: 'Escenario ilustrativo; no es una predicción de demanda.'
+  };
+
+  for (const overrides of [
+    {
+      intent: 'price_simulation',
+      question: '¿Qué pasa si aumento el precio?',
+      scenario: { productName: 'Producto A', newPrice: 55, historicalVolume: 2 }
+    },
+    {
+      intent: 'promotion_opportunity',
+      question: '¿Qué promoción puedo simular?',
+      scenario: { productName: 'Producto A', discountPercent: 10, historicalVolume: 2 }
+    }
+  ]) {
+    const client = analysisClient();
+    const response = await makeHandler(client, {
+      fetchImpl: async () => chatResponse(structuredCommercialResponse())
+    })(request(structuredCommercialRequestWithScenarioOutput(outputScenario, overrides)));
+
+    assertEquals(response.status, 200);
+    assertEquals(client.calls.filter((call) => call.name === 'begin_ai_agent_analysis').length, 1);
+  }
 });
 
 Deno.test('contrato comercial no acepta strings numéricos ni escenarios stale de otra intención', async () => {
