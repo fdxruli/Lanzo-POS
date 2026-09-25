@@ -127,6 +127,40 @@ describe('sales profitability deterministic analysis', () => {
     expect(result.limitations.join(' ')).toContain('Faltan costos unitarios');
   });
 
+  it('never produces 100% margin from an unverified zero unit cost', () => {
+    const result = buildSalesProfitabilityAnalysis({
+      period,
+      currentHistory: { rows: [sale('zero-cost-default', [item('Costo no verificado', 2, 50, 0)])] }
+    });
+
+    expect(result.current.netSales).toBe(100);
+    expect(result.current.costComplete).toBe(false);
+    expect(result.current.costOfSale).toBe(0);
+    expect(result.current.profit).toBeNull();
+    expect(result.current.margin).toBeNull();
+    expect(result.current.products[0]).toMatchObject({
+      name: 'Costo no verificado',
+      cost: null,
+      unitCost: null,
+      profit: null,
+      margin: null,
+      costKnown: false,
+      missingCostLines: 1
+    });
+    expect(result.profitability).toMatchObject({
+      status: 'undetermined',
+      netSales: 100,
+      costOfSale: null,
+      profit: null,
+      margin: null
+    });
+    expect(result.coverage).toMatchObject({
+      productsMissingCost: 1,
+      costCoverage: 0,
+      complete: false
+    });
+  });
+
   it('deduplicates ecommerce order plus converted POS sale', () => {
     const result = buildSalesProfitabilityAnalysis({
       period,
