@@ -3,7 +3,6 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import { execSync } from 'node:child_process';
 import packageJson from './package.json';
-import { createAdminStartupPrecacheAuditPlugin } from './scripts/admin-startup-precache-audit.mjs';
 import { serializeAdminManifest } from './src/pwa/adminManifest';
 
 const ADMIN_SHELL_GLOB_PATTERNS = Object.freeze([
@@ -84,12 +83,7 @@ export default defineConfig(() => ({
       injectManifest: {
         globPatterns: ADMIN_SHELL_GLOB_PATTERNS,
       },
-      // Build the worker before the startup audit reads the completed dist output.
-      integration: {
-        closeBundleOrder: 'pre',
-      },
     }),
-    createAdminStartupPrecacheAuditPlugin(),
   ],
 
   test: {
