@@ -293,9 +293,17 @@ function Recommendations({ recommendations }) {
   );
 }
 
+const technicalUsageLabel = (usageStatus) => {
+  if (!usageStatus) return null;
+  if (usageStatus.isUnlimited) return `Uso IA: ${usageStatus.used ?? '—'} · sin límite`;
+  if (Number.isFinite(usageStatus.limit)) return `Uso IA: ${usageStatus.used ?? '—'} / ${usageStatus.limit}`;
+  return `Uso IA: ${usageStatus.used ?? '—'} · límite no configurado`;
+};
+
 function TechnicalDetails({ response, usageStatus }) {
   const assumptions = asArray(response.assumptions);
   const limitations = asArray(response.limitations);
+  const usageLabel = technicalUsageLabel(usageStatus);
   return (
     <details className="commercial-ai-technical">
       <summary><Calculator size={16} aria-hidden="true" /> Ver cálculos y evidencia técnica</summary>
@@ -304,7 +312,7 @@ function TechnicalDetails({ response, usageStatus }) {
           <span>Fuente: {response.source || 'mixed'}</span>
           <span>Ventas válidas: {response.coverage?.validSales ?? '—'}</span>
           <span>Cobertura de costos: {formatAnalysisValue.formatPercent(response.coverage?.costCoverage)}</span>
-          {usageStatus && <span>Uso IA: {usageStatus.used} / {usageStatus.limit}</span>}
+          {usageLabel && <span>{usageLabel}</span>}
         </div>
         {(assumptions.length > 0 || limitations.length > 0) && (
           <div className="commercial-ai-technical__notes">
