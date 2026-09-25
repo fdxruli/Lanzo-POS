@@ -59,6 +59,15 @@ jobs:
         working-directory: main
         run: npm ci
 
+      - name: Setup Deno for AI Edge validation
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Run PR AI Edge Deno suite
+        working-directory: pr
+        run: deno test supabase/functions/lanzo-ai-agent/index.test.ts
+
       - name: Run PR AI agent focused suite
         working-directory: pr
         run: >
