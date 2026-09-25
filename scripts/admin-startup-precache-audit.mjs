@@ -1,5 +1,6 @@
 import { access, readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const STARTUP_ASSET_PATTERN = /["'](assets\/[^"']+\.(?:js|css))["']/g;
 
@@ -70,18 +71,18 @@ export async function auditAdminStartupPrecache({ outDir }) {
   };
 }
 
-export function createAdminStartupPrecacheAuditPlugin() {
-  let resolvedOutDir = '';
+const modulePath = fileURLToPath(import.meta.url);
+const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : null;
 
-  return {
-    name: 'lanzo-admin-startup-precache-audit',
-    apply: 'build',
-    enforce: 'post',
-    configResolved(config) {
-      resolvedOutDir = path.resolve(config.root, config.build.outDir);
-    },
-    async closeBundle() {
-      await auditAdminStartupPrecache({ outDir: resolvedOutDir });
-    },
-  };
+if (invokedPath === modulePath) {
+  const outDir = path.resolve(process.cwd(), 'dist');
+  try {
+    const result = await auditAdminStartupPrecache({ outDir });
+    console.info(
+      `[lanzo-admin-startup-precache-audit] Verified ${result.referenced.length} startup assets in ${result.bootstrapAsset}.`
+    );
+  } catch (error) {
+    console.error('[lanzo-admin-startup-precache-audit] Failed:', error);
+    process.exitCode = 1;
+  }
 }

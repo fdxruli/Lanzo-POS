@@ -43,9 +43,20 @@ import {
 } from './pendingAdminSession';
 
 const completeAdminSession = async (set, get, licenseKey, result, reason) => {
+  const confirmedFreeTakeover = reason === 'admin_free_device_takeover'
+    && String(result.details?.plan_code || '').trim().toLowerCase() === 'free_trial'
+    && Number(result.details?.max_devices) === 1
+    && result.details?.expires_at === null;
   const licenseData = {
     ...get().licenseDetails,
     ...result.details,
+    ...(confirmedFreeTakeover ? {
+      status: 'active',
+      lifecycle_state: 'active',
+      grace_period_ends: null,
+      is_in_grace: false,
+      is_entitled: true
+    } : {}),
     license_key: result.details?.license_key || licenseKey,
     valid: true,
     device_role: 'admin',
@@ -57,6 +68,7 @@ const completeAdminSession = async (set, get, licenseKey, result, reason) => {
   await saveLicenseToStorage(licenseData);
   set({
     licenseDetails: licenseData,
+    ...(confirmedFreeTakeover ? { licenseStatus: 'active', gracePeriodEnds: null } : {}),
     _isLoggingOut: false,
     currentDeviceRole: 'admin',
     currentAdminUser: result.admin_user || null,

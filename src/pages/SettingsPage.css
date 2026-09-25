@@ -2173,10 +2173,21 @@ input[type="radio"]:checked + .theme-radio-text {
   border-color: var(--ui-border-success);
 }
 
+.license-status-pill.is-warning {
+  color: var(--ui-text-warning, #8a4d00);
+  background: var(--ui-bg-warning-soft, #fff6db);
+  border-color: var(--ui-border-warning, #e1bd6c);
+}
+
+.license-status-pill.is-danger,
 .license-status-pill.is-expired {
   color: var(--ui-text-danger);
   background: var(--ui-bg-danger-soft);
   border-color: var(--ui-border-danger);
+}
+
+.license-status-pill.is-neutral {
+  color: var(--text-light);
 }
 
 .license-linked-alert {
