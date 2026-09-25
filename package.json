@@ -9,7 +9,8 @@
   "scripts": {
     "dev": "vite",
     "dev:store": "vite --config vite.store.config.js",
-    "build": "vite build && node scripts/admin-startup-precache-audit.mjs",
+    "build": "vite build",
+    "postbuild": "node scripts/admin-startup-precache-audit.mjs",
     "build:store": "vite build --config vite.store.config.js",
     "build:store:vercel": "node scripts/build-store-vercel.mjs",
     "deploy:store:prepare": "node scripts/prepare-store-deployment.mjs",
