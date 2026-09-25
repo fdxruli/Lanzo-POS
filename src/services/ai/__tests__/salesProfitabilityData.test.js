@@ -149,6 +149,108 @@ describe('sales profitability data', () => {
     });
   });
 
+  it.each([
+    ['inventory_movement', {
+      movement_cost: 0,
+      unit_cost: null,
+      cost_source: 'inventory_movement',
+      profit_status: 'definitive'
+    }],
+    ['sale_item_snapshot', {
+      movement_cost: null,
+      unit_cost: 0,
+      cost_source: 'sale_item_snapshot',
+      profit_status: 'estimated'
+    }]
+  ])('fails closed for unverified zero cost from %s because the current contract has no capture provenance', (_source, fields) => {
+    expect(normalizeSalesProfitLine({
+      quantity: 2,
+      line_total: 100,
+      cogs: 0,
+      gross_profit: 100,
+      gross_margin_percent: 100,
+      ...fields
+    })).toMatchObject({
+      lineCost: null,
+      unitCost: null,
+      costKnown: false,
+      costStatus: 'incomplete',
+      costSource: 'missing',
+      profitStatus: 'incomplete'
+    });
+  });
+
+  it('keeps full item coverage but incomplete cost coverage when one line of the same product has unverified zero cost', () => {
+    const dataset = buildSalesProfitabilityDataset({
+      history: {
+        rows: [{
+          id: 'sale-mixed-cost',
+          status: 'closed',
+          total: 100,
+          itemsCount: 2,
+          itemsQuantity: 2
+        }],
+        paginationComplete: true,
+        sourceComplete: true,
+        sourceMode: 'cloud_final',
+        warnings: []
+      },
+      profit: {
+        rows: [{
+          sale_id: 'sale-mixed-cost',
+          product_name: 'Producto sintético',
+          quantity: 1,
+          line_total: 50,
+          movement_cost: 20,
+          cost_source: 'inventory_movement',
+          profit_status: 'definitive'
+        }, {
+          sale_id: 'sale-mixed-cost',
+          product_name: 'Producto sintético',
+          quantity: 1,
+          line_total: 50,
+          unit_cost: 0,
+          cost_source: 'sale_item_snapshot',
+          profit_status: 'estimated'
+        }],
+        paginationComplete: true,
+        sourceComplete: true,
+        sourceMode: 'cloud_final',
+        warnings: []
+      },
+      queryRange: {}
+    });
+
+    expect(dataset.metadata).toMatchObject({
+      expectedDetailLines: 2,
+      matchedDetailLines: 2,
+      itemCoverage: 1,
+      detailComplete: true,
+      knownCost: 20,
+      knownSales: 50,
+      detailedSales: 100,
+      costCoverage: 0.5,
+      costComplete: false,
+      costStatus: 'incomplete'
+    });
+    expect(dataset.metadata.products).toEqual([
+      expect.objectContaining({
+        name: 'Producto sintético',
+        knownCost: 20,
+        knownSales: 50,
+        detailLines: 2,
+        missingCostLines: 1,
+        costKnown: false,
+        costStatus: 'incomplete',
+        costSource: 'missing'
+      })
+    ]);
+    expect(dataset.history.rows[0].items).toEqual([
+      expect.objectContaining({ cost: 20, cost_source: 'inventory_movement', profit_status: 'definitive' }),
+      expect.objectContaining({ cost: null, cost_source: 'missing', profit_status: 'incomplete' })
+    ]);
+  });
+
   it('marks sales with missing product detail as incomplete instead of zero-cost complete', () => {
     const dataset = buildSalesProfitabilityDataset({
       history: {
