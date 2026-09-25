@@ -68,6 +68,7 @@ const completeAdminSession = async (set, get, licenseKey, result, reason) => {
   await saveLicenseToStorage(licenseData);
   set({
     licenseDetails: licenseData,
+    ...(confirmedFreeTakeover ? { licenseStatus: 'active', gracePeriodEnds: null } : {}),
     _isLoggingOut: false,
     currentDeviceRole: 'admin',
     currentAdminUser: result.admin_user || null,
