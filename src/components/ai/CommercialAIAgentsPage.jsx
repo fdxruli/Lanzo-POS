@@ -11,7 +11,7 @@ import {
   ShieldCheck,
   Sparkles
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   loadSalesProfitabilityProducts,
   resolveBusinessTimezone,
@@ -28,6 +28,7 @@ import {
   normalizeScenarioForIntent,
   resolveCommercialIntent
 } from '../../services/ai/commercialAgentContract';
+import { getAIAgentUsageStatus } from '../../services/aiService';
 import { useAppStore } from '../../store/useAppStore';
 import './CommercialAIAgentsPage.css';
 
@@ -51,6 +52,46 @@ const EMPTY_ARRAY = Object.freeze([]);
 const asArray = (value) => Array.isArray(value) ? value : EMPTY_ARRAY;
 const confidenceLabel = (value) => ({ high: 'Alta', medium: 'Media', low: 'Baja' }[value] || 'Baja');
 const priorityLabel = (value) => ({ high: 'Alta', medium: 'Media', low: 'Baja' }[value] || 'Media');
+
+const usagePeriodEndLabel = (usage = {}) => {
+  const raw = usage.period_end || usage.periodEnd || usage.periodEndAt;
+  if (!raw) return null;
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
+};
+
+function UsageStatusPanel({ usageStatus, isLoading, error, onRetry }) {
+  const used = Number.isFinite(usageStatus?.used) ? usageStatus.used : null;
+  const limit = Number.isFinite(usageStatus?.limit) ? usageStatus.limit : null;
+  const remaining = Number.isFinite(usageStatus?.remaining) ? usageStatus.remaining : null;
+  const periodEnd = usagePeriodEndLabel(usageStatus);
+
+  let summary = 'Límite de IA no configurado';
+  if (usageStatus?.isUnlimited) {
+    summary = used === null ? 'Uso IA sin límite' : `Usados: ${used} · Disponibles: sin límite`;
+  } else if (limit === 0) {
+    summary = 'No hay análisis IA disponibles en este periodo';
+  } else if (limit !== null) {
+    summary = `Usados: ${used ?? '—'} · Límite: ${limit} · Disponibles: ${remaining ?? '—'}`;
+  } else if (used !== null) {
+    summary = `Usados: ${used} · Límite no configurado`;
+  }
+
+  return (
+    <section className={`commercial-ai-usage ${usageStatus?.isLimitReached ? 'commercial-ai-usage--limit' : ''}`} aria-label="Uso de IA">
+      <div>
+        <span className="commercial-ai-usage__label">Uso de IA</span>
+        <strong>{isLoading && !usageStatus ? 'Consultando uso de IA…' : summary}</strong>
+        {periodEnd && <small>Periodo actual hasta {periodEnd}</small>}
+        {usageStatus?.isLimitReached && <small>Límite alcanzado para el periodo actual.</small>}
+        {isLoading && usageStatus && <small>Actualizando contador…</small>}
+        {error && <small className="commercial-ai-usage__error">{error}</small>}
+      </div>
+      {error && <button className="commercial-ai-usage__retry" type="button" onClick={onRetry} disabled={isLoading}>Reintentar</button>}
+    </section>
+  );
+}
 
 function Metric({ label, value, note = null }) {
   return (
@@ -406,6 +447,41 @@ export default function CommercialAIAgentsPage() {
   const [downloadContext, setDownloadContext] = useState(null);
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadError, setDownloadError] = useState(null);
+  const [usageStatus, setUsageStatus] = useState(null);
+  const [isLoadingUsage, setIsLoadingUsage] = useState(true);
+  const [usageError, setUsageError] = useState(null);
+
+  const refreshUsage = useCallback(async () => {
+    setIsLoadingUsage(true);
+    setUsageError(null);
+    try {
+      const nextUsage = await getAIAgentUsageStatus();
+      setUsageStatus(nextUsage);
+      return nextUsage;
+    } catch {
+      setUsageError('No se pudo consultar el uso de IA. El último dato disponible se conserva.');
+      return null;
+    } finally {
+      setIsLoadingUsage(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    setIsLoadingUsage(true);
+    setUsageError(null);
+    getAIAgentUsageStatus()
+      .then((nextUsage) => {
+        if (active) setUsageStatus(nextUsage);
+      })
+      .catch(() => {
+        if (active) setUsageError('No se pudo consultar el uso de IA. Puedes reintentar.');
+      })
+      .finally(() => {
+        if (active) setIsLoadingUsage(false);
+      });
+    return () => { active = false; };
+  }, []);
 
   const period = useMemo(
     () => buildPeriodRange({ days: periodDays, timezone: businessTimezone }),
@@ -541,6 +617,7 @@ export default function CommercialAIAgentsPage() {
         requestKey
       });
       setResult(response);
+      if (response?.usageStatus) setUsageStatus(response.usageStatus);
       setDownloadContext({
         ...requestContext,
         period: {
@@ -548,6 +625,7 @@ export default function CommercialAIAgentsPage() {
           timezone: response?.response?.queryRange?.current?.timezone || businessTimezone
         }
       });
+      if (response?.providerCalled) void refreshUsage();
     } catch (error) {
       console.error('[CommercialAIAgentsPage] No se pudo procesar la consulta.', {
         code: error?.code || error?.originalError?.code || 'COMMERCIAL_ANALYSIS_FAILED',
@@ -556,6 +634,7 @@ export default function CommercialAIAgentsPage() {
         cause: error?.originalError?.message || error?.message || null
       });
       setAnalysisError('No pudimos procesar esta consulta. Revisa las opciones seleccionadas e inténtalo nuevamente.');
+      void refreshUsage();
     } finally {
       setIsAnalyzing(false);
     }
@@ -607,6 +686,13 @@ export default function CommercialAIAgentsPage() {
           <div><p className="commercial-ai-eyebrow">Agente activo</p><h2 id="sales-agent-title">Pregunta sobre tu negocio</h2></div>
           <span className="commercial-ai-readonly"><ShieldCheck size={15} /> Solo lectura y simulación</span>
         </div>
+
+        <UsageStatusPanel
+          usageStatus={usageStatus}
+          isLoading={isLoadingUsage}
+          error={usageError}
+          onRetry={refreshUsage}
+        />
 
         <form onSubmit={handleAnalyze}>
           <label className="commercial-ai-label" htmlFor="sales-agent-question">Pregunta libre</label>
