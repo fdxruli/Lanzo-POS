@@ -306,8 +306,9 @@ function validCommercialScenarioOutput(value: unknown): value is Record<string, 
       return typeof entry === 'string' && entry.length > 0 && entry.length <= 480;
     }
 
-    if (!COMMERCIAL_SCENARIO_NUMBER_KEYS.has(key) || !validFiniteOrNull(entry)) return false;
+    if (!COMMERCIAL_SCENARIO_NUMBER_KEYS.has(key)) return false;
     if (entry === null) return true;
+    if (typeof entry !== 'number' || !Number.isFinite(entry)) return false;
     if (key === 'tickets') return Number.isInteger(entry) && entry >= 0;
     if (COMMERCIAL_SCENARIO_RATIO_KEYS.has(key)) return entry >= 0 && entry <= 1;
     return true;
