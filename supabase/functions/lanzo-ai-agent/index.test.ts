@@ -213,7 +213,7 @@ function structuredCommercialRequestWithScenarioOutput(
   outputScenario: Record<string, unknown>,
   overrides: Record<string, unknown> = {}
 ) {
-  const payload = structuredCommercialRequest({
+  const rawPayload = structuredCommercialRequest({
     intent: 'combo_opportunity',
     question: '¿Qué combos puedo formar?',
     period: {
@@ -226,10 +226,13 @@ function structuredCommercialRequestWithScenarioOutput(
     scenario: {},
     ...overrides
   });
+  const payload = rawPayload as unknown as Record<string, unknown>;
+  const context = rawPayload.context as unknown as Record<string, unknown>;
+  const sales = rawPayload.context.sales as unknown as Record<string, unknown>;
   payload.context = {
-    ...payload.context,
+    ...context,
     sales: {
-      ...payload.context.sales,
+      ...sales,
       scenarios: [outputScenario]
     }
   };
