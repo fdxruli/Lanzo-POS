@@ -132,6 +132,16 @@ describe('commercial AI center', () => {
     expect(runtime.runAgent).not.toHaveBeenCalled();
   });
 
+  it('renders the usage loading state safely while the initial lookup is pending', () => {
+    runtime.getUsage.mockImplementation(() => new Promise(() => {}));
+
+    renderCenter();
+
+    expect(screen.getByText('Consultando uso de IA…')).toBeInTheDocument();
+    expect(runtime.getUsage).toHaveBeenCalledTimes(1);
+    expect(runtime.runAgent).not.toHaveBeenCalled();
+  });
+
   it('loads and shows IA usage on the main screen without opening technical details', async () => {
     renderCenter();
 
