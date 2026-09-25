@@ -13,6 +13,7 @@ import { reportsLocalRepository } from './reportsLocalRepository';
 import { reportsMapper } from './reportsMapper';
 import { reportsCacheService } from './reportsCacheService';
 import { REPORT_SOURCE_MODES, buildReportSource } from './reportSourceBadges';
+import { isMissingUnitCost } from '../sales/financialPolicy';
 
 export const REPORT_SYNC_UPDATED_EVENT = 'lanzo:reports-sync-updated';
 
@@ -301,9 +302,9 @@ const buildLocalSalesProfitFallback = async (filters = {}, warnings = []) => {
       const lineTotal = numberOrNull(item.total ?? item.line_total ?? item.subtotal ?? item.net_total)
         ?? (unitPrice !== null ? unitPrice * quantity : 0);
       const unitCost = numberOrNull(item.cost ?? item.unit_cost ?? item.cost_snapshot ?? item.costPrice);
-      const costKnown = unitCost !== null && unitCost >= 0;
-      const cogs = costKnown ? unitCost * quantity : 0;
-      const grossProfit = costKnown ? lineTotal - cogs : 0;
+      const costKnown = !isMissingUnitCost(unitCost);
+      const cogs = costKnown ? unitCost * quantity : null;
+      const grossProfit = costKnown ? lineTotal - cogs : null;
 
       allRows.push({
         sale_id: saleId,
@@ -317,7 +318,7 @@ const buildLocalSalesProfitFallback = async (filters = {}, warnings = []) => {
         movement_cost: null,
         cogs,
         gross_profit: grossProfit,
-        gross_margin_percent: costKnown && lineTotal > 0 ? (grossProfit / lineTotal) * 100 : 0,
+        gross_margin_percent: costKnown && lineTotal > 0 ? (grossProfit / lineTotal) * 100 : null,
         cost_source: costKnown ? 'sale_item_snapshot' : 'missing',
         profit_status: costKnown ? 'estimated' : 'incomplete'
       });
