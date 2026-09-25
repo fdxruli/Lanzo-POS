@@ -251,10 +251,18 @@ export const getAIAgentUsageStatus = async (config = {}) => {
   if (error) {
     const functionPayload = await parseFunctionError(error);
     const payload = functionPayload || { code: error.code, message: error.message };
+    const code = payload.code || payload.reason;
+    if (code === 'AI_AGENT_LIMIT_REACHED' || code === 'AI_AGENT_LIMIT_DISABLED') {
+      return normalizeUsageStatus(payload);
+    }
     throw new AIApiError(mapEdgeErrorMessage(payload), error.context?.status || error.status || mapEdgeErrorStatus(payload, 500), payload, payload.code || 'EDGE_FUNCTION_ERROR');
   }
 
   if (!data?.success) {
+    const code = data?.code || data?.reason;
+    if (code === 'AI_AGENT_LIMIT_REACHED' || code === 'AI_AGENT_LIMIT_DISABLED') {
+      return normalizeUsageStatus(data);
+    }
     throw new AIApiError(mapEdgeErrorMessage(data), 403, data, data?.code || 'EDGE_REJECTED');
   }
 
