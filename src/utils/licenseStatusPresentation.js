@@ -127,14 +127,6 @@ export const getLicenseExpirationPresentation = (licenseDetails = {}, now = new 
 
     if (statusPresentation.status === 'grace_period') {
         const graceEndDate = parseDate(licenseDetails?.grace_period_ends);
-        if (graceEndDate && graceEndDate <= now) {
-            return {
-                label: isPaidPlan ? 'Cambio a Lanzo Local pendiente' : 'Vencida',
-                tone: 'warning',
-                note: 'El período de gracia terminó. Lanzo está confirmando el cambio a Lanzo Local.'
-            };
-        }
-
         return {
             label: 'Período de gracia',
             tone: 'warning',
@@ -148,7 +140,7 @@ export const getLicenseExpirationPresentation = (licenseDetails = {}, now = new 
         return {
             label: 'Cambio a Lanzo Local pendiente',
             tone: 'warning',
-            note: 'El período de gracia terminó y Lanzo está confirmando el cambio de plan.'
+            note: 'El período de gracia terminó. Lanzo está confirmando el cambio a Lanzo Local.'
         };
     }
 
