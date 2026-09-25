@@ -1,32 +1,28 @@
 import PublicStoreErrorBoundary from '../components/ecommerce/public/PublicStoreErrorBoundary';
-import PublicStoreState from '../components/ecommerce/public/PublicStoreState';
+import PublicStoreStatusScreen from '../components/ecommerce/public/PublicStoreStatusScreen';
 import PublicLanzoLandingPage from '../pages/PublicLanzoLandingPage';
 import PublicOrderTrackingPage from '../pages/PublicOrderTrackingPage';
 import PublicStorePage from '../pages/PublicStorePage';
 
 export function PublicStoreNotFoundPage() {
   return (
-    <main className="public-store-shell public-store-shell--centered">
-      <PublicStoreState
-        type="unavailable"
-        title="Esta tienda no está disponible"
-        description="Abre el enlace completo que te compartió el negocio."
-      />
-    </main>
+    <PublicStoreStatusScreen
+      type="unavailable"
+      title="Esta tienda no está disponible"
+      description="Abre el enlace completo que te compartió el negocio."
+    />
   );
 }
 
 export function PublicStoreRouteErrorPage() {
   return (
-    <main className="public-store-shell public-store-shell--centered">
-      <PublicStoreState
-        type="error"
-        title="No se pudo abrir la tienda"
-        description="Recarga la página para intentarlo nuevamente."
-        actionLabel="Recargar"
-        onAction={() => window.location.reload()}
-      />
-    </main>
+    <PublicStoreStatusScreen
+      type="error"
+      title="No se pudo abrir la tienda"
+      description="Recarga la página para intentarlo nuevamente."
+      actionLabel="Recargar"
+      onAction={() => window.location.reload()}
+    />
   );
 }
 
