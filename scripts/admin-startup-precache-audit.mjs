@@ -72,6 +72,7 @@ export async function auditAdminStartupPrecache({ outDir }) {
 
 export function createAdminStartupPrecacheAuditPlugin() {
   let resolvedOutDir = '';
+  let shouldAudit = false;
 
   return {
     name: 'lanzo-admin-startup-precache-audit',
@@ -79,8 +80,12 @@ export function createAdminStartupPrecacheAuditPlugin() {
     enforce: 'post',
     configResolved(config) {
       resolvedOutDir = path.resolve(config.root, config.build.outDir);
+      // vite-plugin-pwa uses a configFile:false Vite build for injectManifest.
+      // The startup audit belongs to the completed application build only.
+      shouldAudit = config.configFile !== false;
     },
     async closeBundle() {
+      if (!shouldAudit) return;
       await auditAdminStartupPrecache({ outDir: resolvedOutDir });
     },
   };
