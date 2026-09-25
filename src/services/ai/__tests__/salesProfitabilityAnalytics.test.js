@@ -372,6 +372,13 @@ describe('phase 3.2 intent routing and focused deterministic outputs', () => {
     expect(insufficient.comboOpportunities).toHaveLength(0);
     expect(insufficient.limitations.join(' ')).toContain('tickets con productos compartidos');
     expect(sufficient.comboOpportunities[0]).toMatchObject({ products: ['A', 'B'], tickets: 3, evidenceLevel: 'medium' });
+    expect(sufficient.comboOpportunities[0]).toMatchObject({
+      ticketPercentage: 1,
+      costCoverage: 1,
+      costStatus: 'complete',
+      confidence: 'medium'
+    });
+    expect(sufficient.limitations.join(' ')).toContain('correlación histórica');
   });
 
   it('calculates combo utility from the actual quantities and costs in shared tickets', () => {
@@ -419,5 +426,16 @@ describe('phase 3.2 intent routing and focused deterministic outputs', () => {
     expect(options).toHaveLength(2);
     expect(JSON.stringify(options)).not.toContain('private-id');
     expect(options.every((row) => !Object.prototype.hasOwnProperty.call(row, 'id'))).toBe(true);
+  });
+
+  it('keeps an explicit zero historical volume instead of falling back to the product volume', () => {
+    const result = buildSalesProfitabilityAnalysis({
+      period,
+      currentHistory: { rows: [sale('zero-volume', [item('Producto A', 10, 100, 60)])] },
+      intent: 'price_simulation',
+      scenario: { productName: 'Producto A', newPrice: '120', historicalVolume: '0' }
+    });
+
+    expect(result.priceSimulation).toMatchObject({ historicalVolume: 0, currentProfit: 0, simulatedProfit: 0 });
   });
 });

@@ -510,7 +510,7 @@ export const loadSalesProfitabilityDataset = async ({
   return buildSalesProfitabilityDataset({ history, profit, queryRange });
 };
 
-export const buildSalesProfitabilityProductOptionsFromDataset = (dataset = {}) => (
+const productOptionsFromDataset = (dataset = {}) => (
   (Array.isArray(dataset?.metadata?.products) ? dataset.metadata.products : [])
     .map((product) => ({
       name: product.name,
@@ -522,7 +522,30 @@ export const buildSalesProfitabilityProductOptionsFromDataset = (dataset = {}) =
       costStatus: product.costStatus,
       costSource: product.costSource
     }))
+);
+
+const productSimulationEligibility = (product) => {
+  if (typeof product?.name !== 'string' || !product.name.trim()) return { eligible: false, reason: 'sin nombre de producto válido' };
+  if (!(Number(product.units) > 0) || !(Number(product.netSales) > 0) || !(Number(product.averagePrice) > 0)) {
+    return { eligible: false, reason: 'sin ventas válidas o precio histórico suficiente' };
+  }
+  if (product.costKnown !== true || !Number.isFinite(Number(product.unitCost)) || Number(product.unitCost) < 0) {
+    return { eligible: false, reason: 'sin costo unitario completo para simular utilidad y margen' };
+  }
+  return { eligible: true, reason: null };
+};
+
+export const buildSalesProfitabilityProductOptionsFromDataset = (dataset = {}) => (
+  productOptionsFromDataset(dataset)
+    .filter((product) => productSimulationEligibility(product).eligible)
     .sort((a, b) => b.netSales - a.netSales || a.name.localeCompare(b.name, 'es'))
+);
+
+export const buildSalesProfitabilityProductExclusionsFromDataset = (dataset = {}) => (
+  productOptionsFromDataset(dataset)
+    .map((product) => ({ ...product, ...productSimulationEligibility(product) }))
+    .filter((product) => product.eligible === false)
+    .map(({ name, reason }) => ({ name: name || 'Producto sin nombre', reason }))
 );
 
 export default {
@@ -532,5 +555,6 @@ export default {
   normalizeSalesProfitLine,
   buildSalesProfitabilityDataset,
   loadSalesProfitabilityDataset,
-  buildSalesProfitabilityProductOptionsFromDataset
+  buildSalesProfitabilityProductOptionsFromDataset,
+  buildSalesProfitabilityProductExclusionsFromDataset
 };

@@ -3,6 +3,8 @@ import {
   addCalendarDays,
   buildSalesProfitabilityDataset,
   buildSalesProfitabilityQueryRange,
+  buildSalesProfitabilityProductExclusionsFromDataset,
+  buildSalesProfitabilityProductOptionsFromDataset,
   loadSalesProfitabilityDataset,
   normalizeSalesProfitLine
 } from '../salesProfitabilityData';
@@ -257,5 +259,24 @@ describe('sales profitability data', () => {
       costStatus: 'estimated'
     });
     expect(dataset.metadata.products.map((product) => product.name)).toEqual(['A', 'B']);
+  });
+
+  it('exposes every eligible period product and explains why other products cannot be simulated', () => {
+    const dataset = {
+      metadata: {
+        products: [
+          { name: 'A', quantity: 2, netSales: 100, knownCost: 40, costKnown: true, costStatus: 'definitive' },
+          { name: 'B', quantity: 1, netSales: 60, knownCost: 25, costKnown: true, costStatus: 'estimated' },
+          { name: 'Sin ventas', quantity: 0, netSales: 0, knownCost: 0, costKnown: true },
+          { name: 'Sin costo', quantity: 1, netSales: 20, knownCost: 0, costKnown: false }
+        ]
+      }
+    };
+
+    expect(buildSalesProfitabilityProductOptionsFromDataset(dataset).map((product) => product.name)).toEqual(['A', 'B']);
+    expect(buildSalesProfitabilityProductExclusionsFromDataset(dataset)).toEqual([
+      { name: 'Sin ventas', reason: 'sin ventas válidas o precio histórico suficiente' },
+      { name: 'Sin costo', reason: 'sin costo unitario completo para simular utilidad y margen' }
+    ]);
   });
 });

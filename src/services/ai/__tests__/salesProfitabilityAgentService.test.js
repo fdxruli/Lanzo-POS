@@ -441,4 +441,168 @@ describe('sales profitability agent service', () => {
     expect(result.response.status).toBe('incomplete');
     expect(analyze).not.toHaveBeenCalled();
   });
+
+  it('returns insufficient_data for combos without enough shared tickets and skips quota/provider', async () => {
+    const reports = repository();
+    const analyze = vi.fn();
+    const runner = createSalesProfitabilityAgentRunner({ repository: reports, analyze, assertActor: vi.fn() });
+    const result = await runner({
+      question: '¿Qué combos puedo formar?',
+      intent: 'combo_opportunity',
+      period: { from: '2026-09-01', to: '2026-09-07', days: 7 },
+      compare: true,
+      scenario: { productName: 'Producto A', newPrice: '120' }
+    });
+
+    expect(result.response.status).toBe('insufficient_data');
+    expect(result.response.comboOpportunities).toEqual([]);
+    expect(result.response.coverage.validSales).toBe(1);
+    expect(result.response.executiveSummary).toMatch(/No hay evidencia suficiente de compras conjuntas/i);
+    expect(result.providerCalled).toBe(false);
+    expect(result.usageStatus).toBeNull();
+    expect(analyze).not.toHaveBeenCalled();
+    expect(reports.getSalesFinalHistory).toHaveBeenCalledTimes(1);
+    expect(reports.getSalesProfitReport).toHaveBeenCalledTimes(1);
+  });
+
+  it('normalizes and validates the scenario before loading data or invoking Supabase', async () => {
+    const reports = repository();
+    const analyze = vi.fn(async () => ({ rawResultContent: providerResponse }));
+    const runner = createSalesProfitabilityAgentRunner({ repository: reports, analyze, assertActor: vi.fn() });
+    await runner({
+      question: '¿Qué pasa si aumento el precio?',
+      intent: 'combo_opportunity',
+      period: { from: '2026-09-01', to: '2026-09-07', days: 7 },
+      compare: true,
+      scenario: {
+        productName: 'Producto A',
+        newPrice: '80',
+        historicalVolume: '0',
+        discountPercent: '20',
+        stalePromotionPrice: '50'
+      }
+    });
+
+    expect(analyze).toHaveBeenCalledTimes(1);
+    expect(analyze.mock.calls[0][0]).toMatchObject({
+      intent: 'price_simulation',
+      period: { previousFrom: null, previousTo: null },
+      scenario: { productName: 'Producto A', newPrice: 80, historicalVolume: 0 }
+    });
+    expect(reports.getSalesFinalHistory).toHaveBeenCalledTimes(1);
+    expect(reports.getSalesProfitReport).toHaveBeenCalledTimes(1);
+    expect(typeof analyze.mock.calls[0][0].scenario.newPrice).toBe('number');
+    expect(typeof analyze.mock.calls[0][0].scenario.historicalVolume).toBe('number');
+    expect(analyze.mock.calls[0][0].scenario).not.toHaveProperty('discountPercent');
+    expect(analyze.mock.calls[0][0].scenario).not.toHaveProperty('stalePromotionPrice');
+
+    const invalidReports = repository();
+    const invalidAnalyze = vi.fn();
+    const invalidRunner = createSalesProfitabilityAgentRunner({
+      repository: invalidReports,
+      analyze: invalidAnalyze,
+      assertActor: vi.fn()
+    });
+    await expect(invalidRunner({
+      question: '¿Qué pasa si aumento el precio?',
+      period: { from: '2026-09-01', to: '2026-09-07', days: 7 },
+      scenario: { productName: 'Producto A', newPrice: '-1' }
+    })).rejects.toMatchObject({ code: 'SCENARIO_VALUE_MUST_BE_POSITIVE' });
+    expect(invalidReports.getSalesFinalHistory).not.toHaveBeenCalled();
+    expect(invalidReports.getSalesProfitReport).not.toHaveBeenCalled();
+    expect(invalidAnalyze).not.toHaveBeenCalled();
+  });
+
+  it('resolves out-of-scope questions locally without actor, sales, Edge or provider access', async () => {
+    const reports = repository();
+    const assertActor = vi.fn();
+    const analyze = vi.fn();
+    const runner = createSalesProfitabilityAgentRunner({ repository: reports, analyze, assertActor });
+
+    const result = await runner({
+      question: '¿Cómo te llamas?',
+      intent: 'combo_opportunity',
+      period: { from: '2026-09-01', to: '2026-09-07', days: 7 },
+      compare: true,
+      scenario: { productName: 'Producto A', newPrice: '120' }
+    });
+
+    expect(result.response.status).toBe('out_of_scope');
+    expect(result.response.executiveSummary).toContain('Soy el asistente de Ventas y Rentabilidad');
+    expect(result.providerCalled).toBe(false);
+    expect(result.usageStatus).toBeNull();
+    expect(assertActor).not.toHaveBeenCalled();
+    expect(reports.getSalesFinalHistory).not.toHaveBeenCalled();
+    expect(reports.getSalesProfitReport).not.toHaveBeenCalled();
+    expect(analyze).not.toHaveBeenCalled();
+
+    for (const question of ['Hola', '¿Qué receta preparo?', '¿Cuáles son mis clientes frecuentes?', '¿Qué hay en ecommerce?']) {
+      const outOfScope = await runner({
+        question,
+        intent: 'profitability_summary',
+        period: { from: '2026-09-01', to: '2026-09-07', days: 7 },
+        compare: true,
+        scenario: { productName: 'Producto A', discountPercent: '20' }
+      });
+      expect(outOfScope.response.status).toBe('out_of_scope');
+      expect(outOfScope.providerCalled).toBe(false);
+      expect(outOfScope.usageStatus).toBeNull();
+    }
+    expect(assertActor).not.toHaveBeenCalled();
+    expect(reports.getSalesFinalHistory).not.toHaveBeenCalled();
+    expect(reports.getSalesProfitReport).not.toHaveBeenCalled();
+    expect(analyze).not.toHaveBeenCalled();
+  });
+
+  it('forces comparison off for every intent except explain_change', async () => {
+    const analyze = vi.fn(async () => ({ rawResultContent: providerResponse }));
+    const reports = repository();
+    const runner = createSalesProfitabilityAgentRunner({ repository: reports, analyze, assertActor: vi.fn() });
+
+    await runner({
+      question: '¿Mi negocio es rentable?',
+      intent: 'profitability_summary',
+      period: { from: '2026-09-01', to: '2026-09-07', days: 7 },
+      compare: true,
+      requestKey: 'summary-no-comparison'
+    });
+
+    expect(reports.getSalesFinalHistory).toHaveBeenCalledTimes(1);
+    expect(reports.getSalesProfitReport).toHaveBeenCalledTimes(1);
+    expect(analyze.mock.calls[0][0]).toMatchObject({
+      intent: 'profitability_summary',
+      period: { previousFrom: null, previousTo: null }
+    });
+  });
+
+  it('preserves deterministic results when the provider narrative fails', async () => {
+    const providerFailure = Object.assign(new Error('provider unavailable'), {
+      code: 'AI_PROVIDER_ERROR',
+      statusCode: 502,
+      originalError: { requestId: 'request-narrative-1' }
+    });
+    const analyze = vi.fn(async () => { throw providerFailure; });
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const runner = createSalesProfitabilityAgentRunner({
+      repository: repository(),
+      analyze,
+      assertActor: vi.fn()
+    });
+
+    const result = await runner({
+      question: '¿Mi negocio es rentable?',
+      period: { from: '2026-09-01', to: '2026-09-07', days: 7 },
+      compare: false,
+      requestKey: 'provider-failure-preserves-deterministic'
+    });
+
+    expect(result.providerCalled).toBe(true);
+    expect(result.response.status).toBe('completed');
+    expect(result.response.current.netSales).toBe(100);
+    expect(result.response.calculations.some((row) => row.label === 'Ventas netas')).toBe(true);
+    expect(result.response.aiNarrative).toMatchObject({ status: 'unavailable', recommendations: [] });
+    expect(result.response.limitations.join(' ')).toContain('narrativa opcional');
+    expect(errorSpy).toHaveBeenCalled();
+    errorSpy.mockRestore();
+  });
 });

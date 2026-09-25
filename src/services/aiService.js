@@ -113,7 +113,7 @@ export const mapEdgeErrorMessage = (payload = {}) => {
     AI_REQUEST_FAILED: payload.message || 'No se pudo contactar al proveedor de IA.',
     AI_EMPTY_RESPONSE: payload.message || 'El proveedor IA devolvió una respuesta vacía.',
     AI_INVALID_RESPONSE: payload.message || 'El proveedor IA devolvió una respuesta estructurada inválida.',
-    INVALID_REQUEST: 'La solicitud del agente no coincide con el contrato de datos. Actualiza el Preview o contacta al administrador.'
+    INVALID_REQUEST: 'No pudimos procesar esta consulta. Revisa las opciones seleccionadas e inténtalo nuevamente.'
   };
 
   return messages[code] || payload.message || 'No se pudo generar el análisis de IA.';

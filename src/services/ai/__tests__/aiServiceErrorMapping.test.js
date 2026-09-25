@@ -6,6 +6,6 @@ describe('AI Edge error mapping', () => {
     expect(mapEdgeErrorMessage({
       code: 'INVALID_REQUEST',
       message: 'secret context should not be shown'
-    })).toBe('La solicitud del agente no coincide con el contrato de datos. Actualiza el Preview o contacta al administrador.');
+    })).toBe('No pudimos procesar esta consulta. Revisa las opciones seleccionadas e inténtalo nuevamente.');
   });
 });

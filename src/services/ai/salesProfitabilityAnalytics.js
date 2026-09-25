@@ -1,4 +1,8 @@
-import { COMMERCIAL_AGENT_KEYS } from './commercialAgentContract';
+import {
+  COMMERCIAL_AGENT_KEYS,
+  resolveCommercialIntent,
+  normalizeScenarioForIntent
+} from './commercialAgentContract';
 
 export const SALES_PROFITABILITY_INTENTS = Object.freeze([
   'profitability_summary',
@@ -183,7 +187,7 @@ const salesSourceCategory = (source) => {
 const excludedSaleReason = (sale) => {
   const status = normalizedStatus(sale);
   const source = normalizedSource(sale);
-  if (Boolean(sale?.cancelledAt || sale?.cancelled_at || sale?.cancellationId || sale?.cancellation_id)) {
+  if (sale?.cancelledAt || sale?.cancelled_at || sale?.cancellationId || sale?.cancellation_id) {
     return { reason: 'cancelled_marker', source, status };
   }
   if (isExcludedSalesStatus(status)) return { reason: 'status', source, status };
@@ -620,7 +624,8 @@ const simulatePrice = (aggregate, scenario, period) => {
   const currentPrice = positiveNumberOrNull(scenario.currentPrice) || positiveNumberOrNull(product.averagePrice);
   const newPrice = positiveNumberOrNull(scenario.newPrice);
   const unitCost = numberOrNull(scenario.unitCost) ?? product.unitCost;
-  const volume = positiveNumberOrNull(scenario.historicalVolume) || product.quantity;
+  const requestedVolume = numberOrNull(scenario.historicalVolume);
+  const volume = requestedVolume !== null ? requestedVolume : product.quantity;
   if (currentPrice === null || newPrice === null || unitCost === null || volume === null) {
     return {
       product: product.name,
@@ -691,7 +696,8 @@ const simulatePromotion = (aggregate, scenario, period) => {
   const promotionalPrice = positiveNumberOrNull(scenario.promotionalPrice)
     || (currentPrice !== null && discountPercent !== null ? currentPrice * (1 - discountPercent / 100) : null);
   const unitCost = numberOrNull(scenario.unitCost) ?? product.unitCost;
-  const volume = positiveNumberOrNull(scenario.historicalVolume) || product.quantity;
+  const requestedVolume = numberOrNull(scenario.historicalVolume);
+  const volume = requestedVolume !== null ? requestedVolume : product.quantity;
   if (currentPrice === null || promotionalPrice === null || unitCost === null || volume === null) {
     return {
       product: product.name,
@@ -816,14 +822,18 @@ const buildComboSimulation = (validRows, period) => {
         products: [first, second],
         tickets: pair.tickets,
         frequency,
+        ticketPercentage: frequency,
         historicalJointSales: pair.jointSales,
         averageJointSale,
         cost: averageJointCost,
+        costCoverage: pair.tickets > 0 ? pair.completeCostTickets / pair.tickets : 0,
+        costStatus: costComplete ? 'complete' : 'incomplete',
         comboPrice: averageJointSale,
         discount: null,
         profit,
         margin: averageJointSale > 0 && profit !== null ? profit / averageJointSale : null,
         evidenceLevel,
+        confidence: evidenceLevel,
         opportunity: `Evaluar presentar ${first} y ${second} juntos; aparecen en ${pair.tickets} tickets compartidos.`,
         isPrediction: false,
         note: 'La relación proviene de tickets históricos compartidos; no implica que un producto cause la compra del otro.'
@@ -853,9 +863,12 @@ const buildComboSimulation = (validRows, period) => {
       calculation(`Margen observado de referencia: ${candidate.products.join(' + ')}`, candidate.margin, '(venta conjunta promedio - costo conjunto promedio) / venta conjunta promedio', period, 'sales_history', formatPercent)
     ]),
     assumptions: ['La coocurrencia describe asociación histórica y no demuestra causalidad.'],
-    limitations: candidates.some((candidate) => candidate.margin === null)
-      ? ['Algunos tickets compartidos no tienen costo completo; el margen de esas oportunidades no puede confirmarse.']
-      : []
+    limitations: [
+      ...(candidates.some((candidate) => candidate.margin === null)
+        ? ['Algunos tickets compartidos no tienen costo completo; el margen de esas oportunidades no puede confirmarse.']
+        : []),
+      'La asociación es una correlación histórica de tickets; no garantiza demanda futura.'
+    ]
   };
 };
 const normalizeSimulationResult = (simulation = {}) => ({
@@ -1089,16 +1102,8 @@ const buildAgentContext = ({ current, comparison, period, source, profitability,
   };
 };
 export const inferSalesProfitabilityIntent = (question = '') => {
-  const text = normalize(question);
-  const containsAny = (terms) => terms.some((term) => text.includes(term));
-
-  if (containsAny(['precio', 'subir precio', 'aumentar precio'])) return 'price_simulation';
-  if (containsAny(['combo', 'juntos', 'combinacion', 'combinaciones'])) return 'combo_opportunity';
-  if (containsAny(['promocion', 'descuento', 'oferta'])) return 'promotion_opportunity';
-  if (containsAny(['problematico', 'problematicos', 'problema', 'afectando', 'bajo margen', 'productos malos'])) return 'product_risk';
-  if (containsAny(['rentable', 'rentabilidad', 'utilidad', 'ganancia', 'gano', 'pierdo', 'perdida'])) return 'profitability_summary';
-  if (containsAny(['margen', 'cambio', 'cambio mi', 'cambio el', 'subio', 'bajo', 'variacion'])) return 'explain_change';
-  return 'profitability_summary';
+  const resolution = resolveCommercialIntent(question);
+  return resolution.kind === 'supported' ? resolution.intent : 'profitability_summary';
 };
 export const buildSalesProfitabilityProductOptions = ({ currentHistory } = {}) => {
   const productMap = new Map();
@@ -1130,6 +1135,16 @@ export const buildSalesProfitabilityProductOptions = ({ currentHistory } = {}) =
       unitCost: product.missingCostLines === 0 && product.units > 0 ? product.knownCost / product.units : null,
       costKnown: product.missingCostLines === 0
     }))
+    .filter((product) => (
+      typeof product.name === 'string'
+      && product.name.trim()
+      && Number(product.units) > 0
+      && Number(product.netSales) > 0
+      && Number(product.averagePrice) > 0
+      && product.costKnown === true
+      && Number.isFinite(Number(product.unitCost))
+      && Number(product.unitCost) >= 0
+    ))
     .sort((a, b) => b.netSales - a.netSales || a.name.localeCompare(b.name, 'es'));
 };
 
@@ -1142,6 +1157,12 @@ export const buildSalesProfitabilityAnalysis = ({
   scenario = {}
 } = {}) => {
   const resolvedIntent = SALES_PROFITABILITY_INTENTS.includes(intent) ? intent : 'profitability_summary';
+  let normalizedScenario = {};
+  try {
+    normalizedScenario = normalizeScenarioForIntent(resolvedIntent, scenario);
+  } catch {
+    normalizedScenario = {};
+  }
   const current = aggregateSales(currentHistory, period);
   const previous = previousHistory ? aggregateSales(previousHistory, period.previous || {}) : null;
   const comparison = previous ? buildComparison(current, previous) : null;
@@ -1151,8 +1172,8 @@ export const buildSalesProfitabilityAnalysis = ({
   const productRisks = buildProductRisks(current);
 
   let simulation = normalizeSimulationResult();
-  if (resolvedIntent === 'price_simulation') simulation = normalizeSimulationResult(simulatePrice(current, scenario, period));
-  if (resolvedIntent === 'promotion_opportunity') simulation = normalizeSimulationResult(simulatePromotion(current, scenario, period));
+  if (resolvedIntent === 'price_simulation') simulation = normalizeSimulationResult(simulatePrice(current, normalizedScenario, period));
+  if (resolvedIntent === 'promotion_opportunity') simulation = normalizeSimulationResult(simulatePromotion(current, normalizedScenario, period));
   if (resolvedIntent === 'combo_opportunity') simulation = normalizeSimulationResult(buildComboSimulation(validRows, period));
 
   let calculations = [];
@@ -1336,7 +1357,9 @@ export const buildSalesProfitabilityAnalysis = ({
     version: 1,
     agentKey: COMMERCIAL_AGENT_KEYS.SALES_PROFITABILITY,
     intent: resolvedIntent,
-    status: current.salesCount > 0 ? 'completed' : 'insufficient_data',
+    status: current.salesCount === 0 || (resolvedIntent === 'combo_opportunity' && simulation.comboOpportunities.length === 0)
+      ? 'insufficient_data'
+      : 'completed',
     executiveSummary,
     answer: executiveSummary,
     explanation,

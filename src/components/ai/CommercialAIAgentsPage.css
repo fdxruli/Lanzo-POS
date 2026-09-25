@@ -777,6 +777,37 @@
   color: #991b1b;
 }
 
+.commercial-ai-inline-note {
+  margin: 0.65rem 0 0;
+  color: #92400e;
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.commercial-ai-narrative {
+  color: #475569;
+  line-height: 1.55;
+}
+
+.commercial-ai-narrative p {
+  margin: 0;
+}
+
+.commercial-ai-narrative p + p {
+  margin-top: 0.55rem;
+}
+
+.commercial-ai-narrative__recommendations {
+  margin-top: 0.75rem;
+  padding-top: 0.65rem;
+  border-top: 1px solid #e2e8f0;
+}
+
+.commercial-ai-narrative__recommendations ul {
+  margin: 0.45rem 0 0;
+  padding-left: 1.15rem;
+}
+
 .commercial-ai-table th:first-child span,
 .commercial-ai-table th:first-child small {
   display: block;

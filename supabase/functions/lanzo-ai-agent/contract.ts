@@ -111,14 +111,10 @@ const COMMERCIAL_TOP_LEVEL_KEYS = new Set([
 const COMMERCIAL_PERIOD_KEYS = new Set(['from', 'to', 'previousFrom', 'previousTo', 'timezone', 'label']);
 const COMMERCIAL_SCENARIO_KEYS = new Set([
   'productName',
-  'currentPrice',
   'newPrice',
-  'unitCost',
   'historicalVolume',
-  'expectedVolume',
   'discountPercent',
-  'promotionalPrice',
-  'comboDiscount'
+  'promotionalPrice'
 ]);
 const COMMERCIAL_CONTEXT_KEYS = new Set(['agentKey', 'scope', 'period', 'source', 'sales']);
 const COMMERCIAL_SALES_KEYS = new Set([
@@ -197,6 +193,7 @@ const COMMERCIAL_SCENARIO_OUTPUT_KEYS = new Set([
   'impactVsCurrent',
   'tickets',
   'frequency',
+  'ticketPercentage',
   'comboPrice',
   'discount',
   'products',
@@ -210,6 +207,9 @@ const COMMERCIAL_SCENARIO_OUTPUT_KEYS = new Set([
   'cost',
   'profit',
   'evidenceLevel',
+  'confidence',
+  'costCoverage',
+  'costStatus',
   'opportunity',
   'historicalVolume',
   'breakEvenVolume',
@@ -254,19 +254,30 @@ function validOptionalEnum(
     || (typeof value === 'string' && value.length <= maxLength && allowed.has(value));
 }
 
-function validCommercialPeriod(value: unknown): value is Record<string, unknown> {
+function validCommercialPeriod(value: unknown, intent = 'explain_change'): value is Record<string, unknown> {
   if (!isRecord(value) || !assertOnlyKeys(value, COMMERCIAL_PERIOD_KEYS)) return false;
+  if (intent !== 'explain_change' && (value.previousFrom !== null && value.previousFrom !== undefined
+    || value.previousTo !== null && value.previousTo !== undefined)) return false;
   return Object.values(value).every((entry) => entry === null || (typeof entry === 'string' && entry.length <= 80));
 }
 
-function validCommercialScenario(value: unknown): value is Record<string, unknown> {
-  if (!isRecord(value) || !assertOnlyKeys(value, COMMERCIAL_SCENARIO_KEYS)) return false;
+function scenarioKeysForIntent(intent: string): Set<string> {
+  if (intent === 'price_simulation') return new Set(['productName', 'newPrice', 'historicalVolume']);
+  if (intent === 'promotion_opportunity') return new Set(['productName', 'promotionalPrice', 'discountPercent', 'historicalVolume']);
+  return new Set();
+}
+
+function validCommercialScenario(value: unknown, intent: string): value is Record<string, unknown> {
+  const allowedKeys = scenarioKeysForIntent(intent);
+  if (!isRecord(value) || !assertOnlyKeys(value, COMMERCIAL_SCENARIO_KEYS) || !assertOnlyKeys(value, allowedKeys)) return false;
+  if (intent === 'promotion_opportunity'
+    && value.promotionalPrice !== undefined
+    && value.discountPercent !== undefined) return false;
   return Object.entries(value).every(([key, entry]) => {
-    if (key === 'productName') return entry === null || (typeof entry === 'string' && entry.length <= 120);
-    if (entry === null) return true;
+    if (key === 'productName') return typeof entry === 'string' && entry.trim().length > 0 && entry.length <= 120;
     if (typeof entry !== 'number' || !Number.isFinite(entry)) return false;
-    if (key.toLowerCase().includes('volume') && entry < 0) return false;
-    if (key.toLowerCase().includes('price') || key === 'unitCost') return entry < 0 ? false : true;
+    if (key.toLowerCase().includes('volume')) return entry >= 0;
+    if (key.toLowerCase().includes('price')) return entry > 0;
     if (key.toLowerCase().includes('discount')) return entry < 0 || entry > 100 ? false : true;
     return true;
   });
@@ -337,7 +348,7 @@ function validateCommercialRequest(value: Record<string, unknown>, auth: AuthPay
     && (typeof value.requestKey !== 'string' || value.requestKey.length > 128)) {
     return invalid('La clave de solicitud no es válida.');
   }
-  if (!validCommercialPeriod(value.period) || !validCommercialScenario(value.scenario)
+  if (!validCommercialPeriod(value.period, value.intent as string) || !validCommercialScenario(value.scenario, value.intent as string)
     || !validCommercialContext(value.context)) {
     return invalid('El contexto comercial no es válido.');
   }

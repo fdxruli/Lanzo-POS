@@ -181,9 +181,9 @@ const normalizeCalculations = (calculations = []) => (
 
 const SAFE_SCENARIO_KEYS = new Set([
   'label', 'volume', 'utility', 'margin', 'impactVsCurrent', 'tickets', 'frequency',
-  'comboPrice', 'discount', 'products', 'note', 'isPrediction', 'currentPrice', 'newPrice',
+  'ticketPercentage', 'comboPrice', 'discount', 'products', 'note', 'isPrediction', 'currentPrice', 'newPrice',
   'unitCost', 'historicalJointSales', 'averageJointSale', 'cost', 'profit', 'evidenceLevel',
-  'opportunity', 'historicalVolume', 'breakEvenVolume', 'isDemandPrediction'
+  'confidence', 'costCoverage', 'costStatus', 'opportunity', 'historicalVolume', 'breakEvenVolume', 'isDemandPrediction'
 ]);
 
 const buildEvidenceKeys = (source = {}) => {

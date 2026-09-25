@@ -21,9 +21,13 @@ import { downloadSalesProfitabilityReport } from '../../services/ai/salesProfita
 import {
   buildPeriodRange,
   buildPreviousPeriod,
-  formatAnalysisValue,
-  inferSalesProfitabilityIntent
+  formatAnalysisValue
 } from '../../services/ai/salesProfitabilityAnalytics';
+import {
+  createOutOfScopeResponse,
+  normalizeScenarioForIntent,
+  resolveCommercialIntent
+} from '../../services/ai/commercialAgentContract';
 import { useAppStore } from '../../store/useAppStore';
 import './CommercialAIAgentsPage.css';
 
@@ -196,23 +200,27 @@ function ComboEvidence({ response }) {
   const combos = asArray(response.comboOpportunities);
   if (!combos.length) return <p className="commercial-ai-muted">No hay suficientes tickets con productos compartidos para recomendar un combo confiable.</p>;
   return (
-    <div className="commercial-ai-table-wrap">
-      <table className="commercial-ai-table">
-        <caption className="sr-only">Oportunidades de combos basadas en tickets compartidos</caption>
-        <thead><tr><th>Productos</th><th>Tickets</th><th>Frecuencia</th><th>Venta conjunta prom.</th><th>Utilidad ref.</th><th>Margen</th><th>Evidencia</th></tr></thead>
+    <>
+      <div className="commercial-ai-table-wrap">
+        <table className="commercial-ai-table">
+      <caption className="sr-only">Oportunidades de combos basadas en tickets compartidos</caption>
+        <thead><tr><th>Productos</th><th>Tickets compartidos</th><th>% tickets válidos</th><th>Ticket promedio</th><th>Utilidad</th><th>Margen</th><th>Cobertura de costos</th><th>Confianza</th></tr></thead>
         <tbody>{combos.map((combo) => (
           <tr key={combo.products.join('|')}>
             <th scope="row"><span>{combo.products.join(' + ')}</span><small>{combo.opportunity}</small></th>
             <td>{formatAnalysisValue.formatNumber(combo.tickets, 0)}</td>
-            <td>{formatAnalysisValue.formatPercent(combo.frequency)}</td>
+            <td>{formatAnalysisValue.formatPercent(combo.ticketPercentage ?? combo.frequency)}</td>
             <td>{formatAnalysisValue.formatMoney(combo.averageJointSale)}</td>
             <td>{formatAnalysisValue.formatMoney(combo.profit)}</td>
             <td>{formatAnalysisValue.formatPercent(combo.margin)}</td>
-            <td>{confidenceLabel(combo.evidenceLevel)}</td>
+            <td>{combo.costStatus === 'complete' ? 'Completa' : 'Incompleta'} · {formatAnalysisValue.formatPercent(combo.costCoverage)}</td>
+            <td>{confidenceLabel(combo.confidence || combo.evidenceLevel)}</td>
           </tr>
         ))}</tbody>
-      </table>
-    </div>
+        </table>
+      </div>
+      <p className="commercial-ai-caution">Limitación: la oportunidad muestra correlación histórica de tickets; no garantiza demanda futura.</p>
+    </>
   );
 }
 
@@ -257,7 +265,6 @@ function TechnicalDetails({ response, usageStatus }) {
           <span>Cobertura de costos: {formatAnalysisValue.formatPercent(response.coverage?.costCoverage)}</span>
           {usageStatus && <span>Uso IA: {usageStatus.used} / {usageStatus.limit}</span>}
         </div>
-        <CalculationList calculations={response.calculations} />
         {(assumptions.length > 0 || limitations.length > 0) && (
           <div className="commercial-ai-technical__notes">
             {assumptions.length > 0 && <div><strong>Supuestos</strong><ul>{assumptions.map((item) => <li key={`a-${item}`}>{item}</li>)}</ul></div>}
@@ -266,6 +273,43 @@ function TechnicalDetails({ response, usageStatus }) {
         )}
       </div>
     </details>
+  );
+}
+
+function CoverageEvidence({ response }) {
+  const coverage = response.coverage || {};
+  const sourceLabel = ({ cloud: 'Nube', local: 'Local', mixed: 'Mixta' }[response.source] || 'Mixta');
+  return (
+    <MetricGrid>
+      <Metric label="Ventas válidas" value={formatAnalysisValue.formatNumber(coverage.validSales, 0)} />
+      <Metric label="Productos incluidos" value={formatAnalysisValue.formatNumber(coverage.productsIncluded, 0)} />
+      <Metric label="Cobertura de costos" value={formatAnalysisValue.formatPercent(coverage.costCoverage)} />
+      <Metric label="Detalle de artículos" value={coverage.itemsComplete === true ? 'Completo' : 'Incompleto'} />
+      <Metric label="Paginación" value={coverage.paginationComplete === true ? 'Completa' : 'Incompleta'} />
+      <Metric label="Fuente de datos" value={coverage.sourceComplete === true ? sourceLabel : `${sourceLabel} · revisar`} />
+    </MetricGrid>
+  );
+}
+
+function NarrativeEvidence({ response }) {
+  const narrative = response.aiNarrative;
+  if (narrative?.status === 'unavailable') {
+    return <p className="commercial-ai-muted">La narrativa opcional de IA no está disponible; el reporte determinístico se conserva completo.</p>;
+  }
+  if (!narrative?.executiveSummary && !narrative?.explanation && !asArray(narrative?.recommendations).length) {
+    return <p className="commercial-ai-muted">No se generó una narrativa IA para esta consulta. Los datos visibles son determinísticos.</p>;
+  }
+  return (
+    <div className="commercial-ai-narrative">
+      {narrative.executiveSummary && <p><strong>{narrative.executiveSummary}</strong></p>}
+      {narrative.explanation && <p>{narrative.explanation}</p>}
+      {asArray(narrative.recommendations).length > 0 && (
+        <div className="commercial-ai-narrative__recommendations">
+          <strong>Observaciones narrativas</strong>
+          <ul>{asArray(narrative.recommendations).map((item) => <li key={`${item.title}-${item.priority || 'medium'}`}>{item.title}: {item.explanation}</li>)}</ul>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -288,32 +332,57 @@ function AnalysisResult({ result, onDownload, isDownloading }) {
     <div className="commercial-ai-result" aria-live="polite">
       <div className="commercial-ai-result__header">
         <div><p className="commercial-ai-eyebrow">Conclusión</p><h2>{response.executiveSummary || response.answer}</h2></div>
-        <button type="button" className="commercial-ai-download" onClick={onDownload} disabled={isDownloading} aria-label="Descargar reporte completo">
-          <Download size={16} aria-hidden="true" /> {isDownloading ? 'Preparando descarga…' : 'Descargar reporte completo'}
-        </button>
+        {response.status !== 'out_of_scope' && (
+          <button type="button" className="commercial-ai-download" onClick={onDownload} disabled={isDownloading} aria-label="Descargar reporte completo">
+            <Download size={16} aria-hidden="true" /> {isDownloading ? 'Preparando descarga…' : 'Descargar reporte completo'}
+          </button>
+        )}
       </div>
 
-      <section className="commercial-ai-executive-block">
-        <h3>Qué está ocurriendo</h3>
-        <p>{response.explanation || 'No hay explicación adicional disponible.'}</p>
-      </section>
+      {response.status !== 'out_of_scope' && (
+        <>
+          <section className="commercial-ai-executive-block">
+            <h3>Hechos determinísticos</h3>
+            <p>{response.explanation || 'No hay explicación adicional disponible.'}</p>
+          </section>
 
-      <section className="commercial-ai-executive-block">
-        <h3>Evidencia principal</h3>
-        <IntentEvidence response={response} />
-      </section>
+          <section className="commercial-ai-executive-block">
+            <h3>Hechos y resultados por intención</h3>
+            <IntentEvidence response={response} />
+          </section>
 
-      <section className="commercial-ai-executive-block commercial-ai-executive-block--recommendation">
-        <div className="commercial-ai-section__heading"><Lightbulb size={17} aria-hidden="true" /><h3>Qué conviene revisar</h3></div>
-        <Recommendations recommendations={response.recommendations} />
-      </section>
+          <section className="commercial-ai-executive-block">
+            <h3>Cálculos</h3>
+            <CalculationList calculations={response.calculations} />
+          </section>
 
-      <div className="commercial-ai-confidence-row">
-        <span>Nivel de confianza</span>
-        <b className={`commercial-ai-confidence commercial-ai-confidence--${response.confidence || 'low'}`}>{confidenceLabel(response.confidence)}</b>
-      </div>
+          <section className="commercial-ai-executive-block">
+            <h3>Cobertura y calidad de datos</h3>
+            <CoverageEvidence response={response} />
+          </section>
 
-      <TechnicalDetails response={response} usageStatus={result.usageStatus} />
+          <section className="commercial-ai-executive-block">
+            <h3>Narrativa opcional de IA</h3>
+            <NarrativeEvidence response={response} />
+          </section>
+
+          <section className="commercial-ai-executive-block commercial-ai-executive-block--recommendation">
+            <div className="commercial-ai-section__heading"><Lightbulb size={17} aria-hidden="true" /><h3>Recomendaciones derivadas</h3></div>
+            <Recommendations recommendations={response.recommendations} />
+          </section>
+        </>
+      )}
+
+      {response.status !== 'out_of_scope' && (
+        <>
+          <div className="commercial-ai-confidence-row">
+            <span>Nivel de confianza</span>
+            <b className={`commercial-ai-confidence commercial-ai-confidence--${response.confidence || 'low'}`}>{confidenceLabel(response.confidence)}</b>
+          </div>
+
+          <TechnicalDetails response={response} usageStatus={result.usageStatus} />
+        </>
+      )}
     </div>
   );
 }
@@ -322,12 +391,12 @@ export default function CommercialAIAgentsPage() {
   const companyProfile = useAppStore((state) => state.companyProfile);
   const businessTimezone = resolveBusinessTimezone(companyProfile);
   const [question, setQuestion] = useState('');
-  const [intent, setIntent] = useState('profitability_summary');
-  const [intentOverride, setIntentOverride] = useState(false);
   const [periodDays, setPeriodDays] = useState(30);
-  const [compare, setCompare] = useState(true);
+  const [compare, setCompare] = useState(false);
   const [scenario, setScenario] = useState({});
+  const [promotionMode, setPromotionMode] = useState('discountPercent');
   const [productOptions, setProductOptions] = useState([]);
+  const [excludedProducts, setExcludedProducts] = useState([]);
   const [productSearch, setProductSearch] = useState('');
   const [isLoadingProducts, setIsLoadingProducts] = useState(false);
   const [productLoadError, setProductLoadError] = useState(null);
@@ -342,13 +411,41 @@ export default function CommercialAIAgentsPage() {
     () => buildPeriodRange({ days: periodDays, timezone: businessTimezone }),
     [periodDays, businessTimezone]
   );
+  const questionResolution = useMemo(() => resolveCommercialIntent(question), [question]);
+  const intent = questionResolution.kind === 'supported'
+    ? questionResolution.intent
+    : (!question.trim() ? 'profitability_summary' : null);
   const filteredProductOptions = useMemo(() => {
     const search = productSearch.trim().toLocaleLowerCase('es-MX');
     if (!search) return productOptions;
     return productOptions.filter((product) => product.name.toLocaleLowerCase('es-MX').includes(search));
   }, [productOptions, productSearch]);
+  const excludedProductSummary = useMemo(() => {
+    const counts = new Map();
+    excludedProducts.forEach(({ reason }) => {
+      if (!reason) return;
+      counts.set(reason, (counts.get(reason) || 0) + 1);
+    });
+    return Array.from(counts, ([reason, count]) => ({ reason, count }));
+  }, [excludedProducts]);
 
   useEffect(() => {
+    setScenario({});
+    setProductSearch('');
+    setPromotionMode('discountPercent');
+    setCompare(intent === 'explain_change');
+  }, [intent]);
+
+  useEffect(() => {
+    const loadsProducts = intent === 'price_simulation' || intent === 'promotion_opportunity';
+    if (!loadsProducts) {
+      setProductOptions([]);
+      setExcludedProducts([]);
+      setProductLoadError(null);
+      setIsLoadingProducts(false);
+      return undefined;
+    }
+
     let active = true;
     setIsLoadingProducts(true);
     setProductLoadError(null);
@@ -356,30 +453,41 @@ export default function CommercialAIAgentsPage() {
       .then((prepared) => {
         if (!active) return;
         setProductOptions(Array.isArray(prepared?.products) ? prepared.products : []);
+        setExcludedProducts(Array.isArray(prepared?.excludedProducts) ? prepared.excludedProducts : []);
       })
       .catch(() => {
         if (!active) return;
         setProductOptions([]);
+        setExcludedProducts([]);
         setProductLoadError('No se pudieron preparar los productos de este periodo.');
       })
       .finally(() => {
         if (active) setIsLoadingProducts(false);
       });
     return () => { active = false; };
-  }, [period]);
+  }, [period, intent]);
 
-  const selectIntent = (nextIntent, text) => {
-    setIntent(nextIntent);
-    setIntentOverride(true);
+  const selectIntent = (text) => {
+    setScenario({});
+    setProductSearch('');
+    setPromotionMode('discountPercent');
+    setResult(null);
+    setDownloadContext(null);
+    setDownloadError(null);
     setQuestion(text);
     setAnalysisError(null);
   };
 
   const handleQuestionChange = (event) => {
     const nextQuestion = event.target.value;
+    setScenario({});
+    setProductSearch('');
+    setPromotionMode('discountPercent');
+    setResult(null);
+    setDownloadContext(null);
+    setDownloadError(null);
+    setAnalysisError(null);
     setQuestion(nextQuestion);
-    setIntentOverride(false);
-    setIntent(inferSalesProfitabilityIntent(nextQuestion));
   };
 
   const handleScenarioChange = (event) => {
@@ -396,13 +504,25 @@ export default function CommercialAIAgentsPage() {
     setResult(null);
     setDownloadContext(null);
     try {
+      const resolution = resolveCommercialIntent(question);
+      if (resolution.kind === 'out_of_scope') {
+        setResult({
+          response: createOutOfScopeResponse(resolution),
+          usageStatus: null,
+          providerCalled: false
+        });
+        return;
+      }
+
+      const resolvedIntent = resolution.intent;
+      const normalizedScenario = normalizeScenarioForIntent(resolvedIntent, scenario);
+      const compareEnabled = resolvedIntent === 'explain_change' && compare === true;
       const requestKey = typeof crypto?.randomUUID === 'function' ? crypto.randomUUID() : `${Date.now()}-${question}`;
-      const resolvedIntent = intentOverride ? intent : inferSalesProfitabilityIntent(question);
-      const previousPeriod = compare ? buildPreviousPeriod(period) : null;
+      const previousPeriod = compareEnabled ? buildPreviousPeriod(period) : null;
       const requestContext = {
         question: question.trim(),
         resolvedIntent,
-        compare,
+        compare: compareEnabled,
         period: {
           from: period.from,
           to: period.to,
@@ -410,14 +530,14 @@ export default function CommercialAIAgentsPage() {
           previousTo: previousPeriod?.to || null,
           timezone: businessTimezone
         },
-        scenario: { ...scenario }
+        scenario: normalizedScenario
       };
       const response = await runSalesProfitabilityAgent({
         question,
         intent: resolvedIntent,
         period: { ...period, timezone: businessTimezone },
-        compare,
-        scenario,
+        compare: compareEnabled,
+        scenario: normalizedScenario,
         requestKey
       });
       setResult(response);
@@ -429,7 +549,13 @@ export default function CommercialAIAgentsPage() {
         }
       });
     } catch (error) {
-      setAnalysisError(error?.message || 'No se pudo completar el análisis.');
+      console.error('[CommercialAIAgentsPage] No se pudo procesar la consulta.', {
+        code: error?.code || error?.originalError?.code || 'COMMERCIAL_ANALYSIS_FAILED',
+        statusCode: error?.statusCode || null,
+        requestId: error?.originalError?.requestId || error?.originalError?.request_id || null,
+        cause: error?.originalError?.message || error?.message || null
+      });
+      setAnalysisError('No pudimos procesar esta consulta. Revisa las opciones seleccionadas e inténtalo nuevamente.');
     } finally {
       setIsAnalyzing(false);
     }
@@ -487,23 +613,27 @@ export default function CommercialAIAgentsPage() {
           <textarea id="sales-agent-question" value={question} onChange={handleQuestionChange} placeholder="Ej. ¿Mi negocio es rentable?" rows={3} maxLength={1200} />
           <div className="commercial-ai-suggestions" aria-label="Preguntas sugeridas">
             {SUGGESTED_QUESTIONS.map((suggestion) => (
-              <button type="button" className={`commercial-ai-suggestion ${intent === suggestion.intent ? 'is-selected' : ''}`} key={suggestion.intent} onClick={() => selectIntent(suggestion.intent, suggestion.label)}>
+              <button type="button" className={`commercial-ai-suggestion ${intent === suggestion.intent ? 'is-selected' : ''}`} key={suggestion.intent} onClick={() => selectIntent(suggestion.label)}>
                 {suggestion.label}
               </button>
             ))}
           </div>
 
-          <div className="commercial-ai-filters">
-            <label className="commercial-ai-label" htmlFor="sales-agent-period">Periodo
-              <span className="commercial-ai-select-wrap">
-                <select id="sales-agent-period" value={periodDays} onChange={(event) => setPeriodDays(Number(event.target.value))}>
-                  {PERIOD_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
-                </select>
-                <ChevronDown size={15} aria-hidden="true" />
-              </span>
-            </label>
-            <label className="commercial-ai-checkbox"><input type="checkbox" checked={compare} onChange={(event) => setCompare(event.target.checked)} /> Comparar con el periodo anterior</label>
-          </div>
+          {(questionResolution.kind === 'supported' || !question.trim()) && (
+            <div className="commercial-ai-filters">
+              <label className="commercial-ai-label" htmlFor="sales-agent-period">Periodo
+                <span className="commercial-ai-select-wrap">
+                  <select id="sales-agent-period" value={periodDays} onChange={(event) => setPeriodDays(Number(event.target.value))}>
+                    {PERIOD_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                  </select>
+                  <ChevronDown size={15} aria-hidden="true" />
+                </span>
+              </label>
+              {intent === 'explain_change' && (
+                <label className="commercial-ai-checkbox"><input type="checkbox" checked={compare} onChange={(event) => setCompare(event.target.checked)} /> Comparar con el periodo anterior</label>
+              )}
+            </div>
+          )}
 
           {showsProductScenario && (
             <div className="commercial-ai-scenario-panel">
@@ -522,21 +652,51 @@ export default function CommercialAIAgentsPage() {
                     <ChevronDown size={15} aria-hidden="true" />
                   </span>
                 </label>
-                <label className="commercial-ai-label">{intent === 'price_simulation' ? 'Precio nuevo' : 'Precio promocional'}
-                  <input name={intent === 'price_simulation' ? 'newPrice' : 'promotionalPrice'} type="number" min="0" step="0.01" placeholder="Opcional" value={scenario[intent === 'price_simulation' ? 'newPrice' : 'promotionalPrice'] || ''} onChange={handleScenarioChange} />
-                </label>
-                {intent === 'promotion_opportunity' && <label className="commercial-ai-label">Descuento %<input name="discountPercent" type="number" min="0" max="100" step="0.1" placeholder="Opcional" value={scenario.discountPercent || ''} onChange={handleScenarioChange} /></label>}
-                <label className="commercial-ai-label">Volumen para simular
-                  <input name="historicalVolume" type="number" min="0" step="1" placeholder="Usar volumen histórico" value={scenario.historicalVolume || ''} onChange={handleScenarioChange} />
+                {intent === 'price_simulation' && (
+                  <label className="commercial-ai-label" htmlFor="sales-agent-new-price">Nuevo precio
+                    <input id="sales-agent-new-price" name="newPrice" type="number" min="0.01" step="0.01" placeholder="Obligatorio" value={scenario.newPrice ?? ''} onChange={handleScenarioChange} />
+                  </label>
+                )}
+                {intent === 'promotion_opportunity' && (
+                  <>
+                    <label className="commercial-ai-label" htmlFor="sales-agent-promotion-mode">Tipo de promoción
+                      <span className="commercial-ai-select-wrap">
+                        <select id="sales-agent-promotion-mode" value={promotionMode} onChange={(event) => {
+                          const nextMode = event.target.value;
+                          setPromotionMode(nextMode);
+                          setScenario((current) => ({ ...current, promotionalPrice: undefined, discountPercent: undefined }));
+                        }}>
+                          <option value="discountPercent">Descuento porcentual</option>
+                          <option value="promotionalPrice">Precio promocional</option>
+                        </select>
+                        <ChevronDown size={15} aria-hidden="true" />
+                      </span>
+                    </label>
+                    {promotionMode === 'discountPercent' ? (
+                      <label className="commercial-ai-label" htmlFor="sales-agent-discount">Descuento porcentual
+                        <input id="sales-agent-discount" name="discountPercent" type="number" min="0" max="100" step="0.1" placeholder="Opcional" value={scenario.discountPercent ?? ''} onChange={handleScenarioChange} />
+                      </label>
+                    ) : (
+                      <label className="commercial-ai-label" htmlFor="sales-agent-promotional-price">Precio promocional
+                        <input id="sales-agent-promotional-price" name="promotionalPrice" type="number" min="0.01" step="0.01" placeholder="Opcional" value={scenario.promotionalPrice ?? ''} onChange={handleScenarioChange} />
+                      </label>
+                    )}
+                  </>
+                )}
+                <label className="commercial-ai-label" htmlFor="sales-agent-historical-volume">Volumen esperado (opcional)
+                  <input id="sales-agent-historical-volume" name="historicalVolume" type="number" min="0" step="1" placeholder="Usar histórico" value={scenario.historicalVolume ?? ''} onChange={handleScenarioChange} />
                 </label>
               </div>
               {productLoadError && <p className="commercial-ai-inline-error">{productLoadError}</p>}
               {!isLoadingProducts && productOptions.length > 0 && <p className="commercial-ai-product-count">{productOptions.length} producto(s) elegible(s) del periodo · cargados sin usar IA ni cuota.</p>}
+              {!isLoadingProducts && excludedProductSummary.map(({ reason, count }) => (
+                <p className="commercial-ai-inline-note" key={reason}>Se excluyeron {count} producto(s): {reason}.</p>
+              ))}
             </div>
           )}
 
           <div className="commercial-ai-submit-row">
-            <p>Periodo: <b>{period.from} a {period.to}</b>{compare && ' · con comparación'}</p>
+            <p>Periodo: <b>{period.from} a {period.to}</b>{intent === 'explain_change' && compare && ' · con comparación'}</p>
             <button className="commercial-ai-analyze" type="submit" disabled={!question.trim() || isAnalyzing}><Send size={16} aria-hidden="true" /> {isAnalyzing ? 'Analizando…' : 'Analizar'}</button>
           </div>
         </form>

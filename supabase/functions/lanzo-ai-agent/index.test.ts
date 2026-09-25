@@ -801,7 +801,14 @@ Deno.test('ventas y rentabilidad acepta profitability_summary como intención pr
     }))
   })(request(structuredCommercialRequest({
     intent: 'profitability_summary',
-    question: '¿Mi negocio es rentable?'
+    question: '¿Mi negocio es rentable?',
+    period: {
+      from: '2026-09-01',
+      to: '2026-09-07',
+      previousFrom: null,
+      previousTo: null,
+      timezone: 'America/Mexico_City'
+    }
   })));
   const body = await json(response);
   assertEquals(response.status, 200);
@@ -883,6 +890,66 @@ Deno.test('recomendación genérica sin evidenceKey permitido se descarta', asyn
 Deno.test('escenario con volumen negativo es rechazado server-side', async () => {
   const client = analysisClient();
   const response = await makeHandler(client)(request(structuredCommercialRequest({ scenario: { historicalVolume: -1 } })));
+  assertEquals(response.status, 400);
+  assertEquals(client.calls.length, 0);
+});
+
+Deno.test('contrato comercial acepta combos con scenario vacío y sin periodo anterior', async () => {
+  const client = analysisClient();
+  let providerCalls = 0;
+  const response = await makeHandler(client, {
+    fetchImpl: async () => {
+      providerCalls += 1;
+      return chatResponse(structuredCommercialResponse());
+    }
+  })(request(structuredCommercialRequest({
+    intent: 'combo_opportunity',
+    question: '¿Qué combos puedo formar?',
+    period: {
+      from: '2026-09-01',
+      to: '2026-09-07',
+      previousFrom: null,
+      previousTo: null,
+      timezone: 'America/Mexico_City'
+    },
+    scenario: {}
+  })));
+
+  assertEquals(response.status, 200);
+  assertEquals(providerCalls, 1);
+  assertEquals(client.calls.filter((call) => call.name === 'begin_ai_agent_analysis').length, 1);
+});
+
+Deno.test('contrato comercial no acepta strings numéricos ni escenarios stale de otra intención', async () => {
+  const cases = [
+    { scenario: { newPrice: '120' } },
+    { intent: 'combo_opportunity', question: '¿Qué combos puedo formar?', scenario: { productName: 'Producto A', newPrice: 120 } },
+    { intent: 'profitability_summary', question: '¿Mi negocio es rentable?', scenario: { historicalVolume: 0 } },
+    { intent: 'promotion_opportunity', question: '¿Qué promoción puedo simular?', scenario: { promotionalPrice: 80, discountPercent: 20 } }
+  ];
+
+  for (const overrides of cases) {
+    const client = analysisClient();
+    const response = await makeHandler(client)(request(structuredCommercialRequest(overrides)));
+    assertEquals(response.status, 400);
+    assertEquals((await json(response)).code, 'INVALID_REQUEST');
+    assertEquals(client.calls.length, 0);
+  }
+});
+
+Deno.test('periodo anterior sólo es válido para explain_change', async () => {
+  const client = analysisClient();
+  const response = await makeHandler(client)(request(structuredCommercialRequest({
+    intent: 'combo_opportunity',
+    question: '¿Qué combos puedo formar?',
+    period: {
+      from: '2026-09-01',
+      to: '2026-09-07',
+      previousFrom: '2026-08-25',
+      previousTo: '2026-08-31',
+      timezone: 'America/Mexico_City'
+    }
+  })));
   assertEquals(response.status, 400);
   assertEquals(client.calls.length, 0);
 });

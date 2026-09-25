@@ -100,6 +100,7 @@ describe('commercial AI center', () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it('shows the functional sales agent and keeps ecommerce blocked', () => {
@@ -127,9 +128,7 @@ describe('commercial AI center', () => {
       compare: true,
       period: { timezone: 'America/New_York' }
     });
-    expect(runtime.loadProducts.mock.calls[0][0]).toMatchObject({
-      period: { timezone: 'America/New_York' }
-    });
+    expect(runtime.loadProducts).not.toHaveBeenCalled();
     expect(screen.getByText('Resumen de prueba')).toBeInTheDocument();
     expect(screen.getByText('Uso IA: 1 / 15')).toBeInTheDocument();
   });
@@ -229,6 +228,18 @@ describe('commercial AI center', () => {
 
 
   it('removes the redundant intent filter and prepares several products before the first analysis', async () => {
+    runtime.loadProducts.mockResolvedValueOnce({
+      source: 'cloud_final',
+      products: [
+        { name: 'Producto A', units: 2, netSales: 100, averagePrice: 50, unitCost: 20, costKnown: true },
+        { name: 'Producto B', units: 1, netSales: 60, averagePrice: 60, unitCost: 25, costKnown: true }
+      ],
+      excludedProducts: [
+        { name: 'Sin costo', reason: 'sin costo unitario completo para simular utilidad y margen' },
+        { name: 'Sin ventas', reason: 'sin ventas válidas o precio histórico suficiente' },
+        { name: 'Otro sin costo', reason: 'sin costo unitario completo para simular utilidad y margen' }
+      ]
+    });
     renderCenter();
 
     expect(screen.queryByLabelText('Intención')).not.toBeInTheDocument();
@@ -242,6 +253,8 @@ describe('commercial AI center', () => {
     expect(screen.getByRole('option', { name: 'Producto A' })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'Producto B' })).toBeInTheDocument();
     expect(screen.getByText(/2 producto\(s\) elegible\(s\).*sin usar IA ni cuota/i)).toBeInTheDocument();
+    expect(screen.getByText('Se excluyeron 2 producto(s): sin costo unitario completo para simular utilidad y margen.')).toBeInTheDocument();
+    expect(screen.getByText('Se excluyeron 1 producto(s): sin ventas válidas o precio histórico suficiente.')).toBeInTheDocument();
     expect(runtime.runAgent).not.toHaveBeenCalled();
   });
 
@@ -254,6 +267,7 @@ describe('commercial AI center', () => {
     }));
 
     renderCenter();
+    fireEvent.click(screen.getByRole('button', { name: '¿Qué pasa si aumento el precio?' }));
     await waitFor(() => expect(runtime.loadProducts).toHaveBeenCalledTimes(1));
     expect(runtime.loadProducts.mock.calls[0][0].period).toMatchObject({ days: 30, timezone: 'America/New_York' });
 
@@ -261,7 +275,6 @@ describe('commercial AI center', () => {
     await waitFor(() => expect(runtime.loadProducts).toHaveBeenCalledTimes(2));
     expect(runtime.loadProducts.mock.calls[1][0].period).toMatchObject({ days: 7, timezone: 'America/New_York' });
 
-    fireEvent.click(screen.getByRole('button', { name: '¿Qué pasa si aumento el precio?' }));
     const productSelect = screen.getByRole('combobox', { name: 'Producto' });
     expect(productSelect).toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'Producto 7 días' })).toBeInTheDocument();
@@ -275,6 +288,245 @@ describe('commercial AI center', () => {
 
     await waitFor(() => expect(runtime.runAgent).toHaveBeenCalledTimes(1));
     expect(runtime.runAgent.mock.calls[0][0]).toMatchObject({ intent: 'profitability_summary' });
+  });
+
+  it('sends an empty scenario for combos after a price simulation', async () => {
+    renderCenter();
+    fireEvent.click(screen.getByRole('button', { name: '¿Qué pasa si aumento el precio?' }));
+    await waitFor(() => expect(runtime.loadProducts).toHaveBeenCalledTimes(1));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Producto' }), { target: { value: 'Producto A' } });
+    fireEvent.change(screen.getByLabelText('Nuevo precio'), { target: { value: '120' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+    await waitFor(() => expect(runtime.runAgent).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole('button', { name: '¿Qué combos puedo formar?' }));
+    await waitFor(() => expect(screen.queryByRole('combobox', { name: 'Producto' })).not.toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+    await waitFor(() => expect(runtime.runAgent).toHaveBeenCalledTimes(2));
+
+    expect(runtime.runAgent.mock.calls[1][0]).toMatchObject({
+      intent: 'combo_opportunity',
+      compare: false,
+      scenario: {}
+    });
+  });
+
+  it('sends an empty scenario for combos after a promotion simulation', async () => {
+    renderCenter();
+    fireEvent.click(screen.getByRole('button', { name: '¿Qué promoción puedo simular?' }));
+    await waitFor(() => expect(runtime.loadProducts).toHaveBeenCalledTimes(1));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Producto' }), { target: { value: 'Producto B' } });
+    fireEvent.change(screen.getByLabelText('Descuento porcentual'), { target: { value: '20' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+    await waitFor(() => expect(runtime.runAgent).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole('button', { name: '¿Qué combos puedo formar?' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+    await waitFor(() => expect(runtime.runAgent).toHaveBeenCalledTimes(2));
+    expect(runtime.runAgent.mock.calls[1][0].scenario).toEqual({});
+  });
+
+  it('keeps combo requests empty after switching repeatedly between simulation intents', async () => {
+    renderCenter();
+    const productPicker = async (name) => {
+      const picker = await screen.findByRole('combobox', { name: 'Producto' });
+      await waitFor(() => expect(picker).toBeEnabled());
+      fireEvent.change(picker, { target: { value: name } });
+    };
+    const submit = async (count) => {
+      fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+      await waitFor(() => expect(runtime.runAgent).toHaveBeenCalledTimes(count));
+    };
+
+    fireEvent.click(screen.getByRole('button', { name: '¿Qué pasa si aumento el precio?' }));
+    await productPicker('Producto A');
+    fireEvent.change(screen.getByLabelText('Nuevo precio'), { target: { value: '120' } });
+    await submit(1);
+
+    fireEvent.click(screen.getByRole('button', { name: '¿Qué promoción puedo simular?' }));
+    await productPicker('Producto B');
+    fireEvent.change(screen.getByLabelText('Descuento porcentual'), { target: { value: '20' } });
+    await submit(2);
+
+    fireEvent.click(screen.getByRole('button', { name: '¿Por qué cambió mi margen?' }));
+    expect(screen.getByRole('checkbox', { name: /comparar/i })).toBeChecked();
+    await submit(3);
+
+    fireEvent.click(screen.getByRole('button', { name: '¿Qué pasa si aumento el precio?' }));
+    await productPicker('Producto A');
+    fireEvent.change(screen.getByLabelText('Nuevo precio'), { target: { value: '95' } });
+    await submit(4);
+
+    fireEvent.click(screen.getByRole('button', { name: '¿Qué combos puedo formar?' }));
+    expect(screen.queryByRole('combobox', { name: 'Producto' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: /comparar/i })).not.toBeInTheDocument();
+    await submit(5);
+    expect(runtime.runAgent.mock.calls[4][0]).toMatchObject({
+      intent: 'combo_opportunity',
+      compare: false,
+      scenario: {}
+    });
+  });
+
+  it('converts numeric scenario inputs and removes irrelevant fields before submitting', async () => {
+    renderCenter();
+    fireEvent.click(screen.getByRole('button', { name: '¿Qué pasa si aumento el precio?' }));
+    await waitFor(() => expect(runtime.loadProducts).toHaveBeenCalledTimes(1));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Producto' }), { target: { value: 'Producto A' } });
+    fireEvent.change(screen.getByLabelText('Nuevo precio'), { target: { value: '120' } });
+    fireEvent.change(screen.getByLabelText('Volumen esperado (opcional)'), { target: { value: '0' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+    await waitFor(() => expect(runtime.runAgent).toHaveBeenCalledTimes(1));
+    expect(runtime.runAgent.mock.calls[0][0].scenario).toEqual({
+      productName: 'Producto A',
+      newPrice: 120,
+      historicalVolume: 0
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: '¿Qué combos puedo formar?' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+    await waitFor(() => expect(runtime.runAgent).toHaveBeenCalledTimes(2));
+    expect(runtime.runAgent.mock.calls[1][0].scenario).toEqual({});
+  });
+
+  it('clears scenario fields when the question changes even if the intent stays the same', async () => {
+    renderCenter();
+    fireEvent.click(screen.getByRole('button', { name: '¿Qué pasa si aumento el precio?' }));
+    await waitFor(() => expect(runtime.loadProducts).toHaveBeenCalledTimes(1));
+    const product = screen.getByRole('combobox', { name: 'Producto' });
+    await waitFor(() => expect(product).toBeEnabled());
+    fireEvent.change(product, { target: { value: 'Producto A' } });
+    fireEvent.change(screen.getByLabelText('Nuevo precio'), { target: { value: '120' } });
+    fireEvent.change(screen.getByLabelText('Volumen esperado (opcional)'), { target: { value: '4' } });
+    expect(product.value).toBe('Producto A');
+    expect(screen.getByLabelText('Nuevo precio').value).toBe('120');
+    expect(screen.getByLabelText('Volumen esperado (opcional)').value).toBe('4');
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), {
+      target: { value: '¿Cómo afectaría cambiar el precio?' }
+    });
+    expect(screen.getByRole('combobox', { name: 'Producto' }).value).toBe('');
+    expect(screen.getByLabelText('Nuevo precio').value).toBe('');
+    expect(screen.getByLabelText('Volumen esperado (opcional)').value).toBe('');
+  });
+
+  it('shows only contextual filters and defaults comparison to explain_change', async () => {
+    renderCenter();
+    fireEvent.click(screen.getByRole('button', { name: '¿Qué combos puedo formar?' }));
+    expect(screen.queryByRole('combobox', { name: 'Producto' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: /comparar/i })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: '¿Por qué cambió mi margen?' }));
+    const comparison = screen.getByRole('checkbox', { name: /comparar/i });
+    expect(comparison).toBeChecked();
+    fireEvent.click(comparison);
+    fireEvent.click(screen.getByRole('button', { name: '¿Qué combos puedo formar?' }));
+    expect(screen.queryByRole('checkbox', { name: /comparar/i })).not.toBeInTheDocument();
+  });
+
+  it('shows the deterministic combo report alongside optional AI narrative', async () => {
+    runtime.runAgent.mockResolvedValueOnce({
+      response: {
+        status: 'completed',
+        intent: 'combo_opportunity',
+        executiveSummary: 'Producto A y Producto B aparecen juntos en 4 tickets.',
+        explanation: 'El dato determinístico usa 10 tickets válidos.',
+        confidence: 'medium',
+        source: 'cloud',
+        coverage: { validSales: 10, productsIncluded: 2, costCoverage: 1, itemsComplete: true, paginationComplete: true, sourceComplete: true },
+        facts: [],
+        calculations: [{ label: 'Tickets compartidos', value: 4, formula: 'Conteo determinístico', formattedValue: '4' }],
+        assumptions: [],
+        limitations: ['La oportunidad describe correlación histórica y no garantiza demanda futura.'],
+        recommendations: [],
+        scenarios: [],
+        comboOpportunities: [{
+          products: ['Producto A', 'Producto B'],
+          tickets: 4,
+          ticketPercentage: 0.4,
+          averageJointSale: 150,
+          profit: 60,
+          margin: 0.4,
+          costStatus: 'complete',
+          costCoverage: 1,
+          confidence: 'medium',
+          opportunity: 'Aparecen juntos en ventas válidas.'
+        }],
+        aiNarrative: { status: 'available', executiveSummary: 'La IA describe cuatro tickets.' }
+      },
+      usageStatus: null,
+      providerCalled: false
+    });
+    renderCenter();
+    fireEvent.click(screen.getByRole('button', { name: '¿Qué combos puedo formar?' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+
+    await waitFor(() => expect(screen.getByRole('row', { name: /Producto A \+ Producto B/ })).toBeInTheDocument());
+    const comboRow = screen.getByRole('row', { name: /Producto A \+ Producto B/ });
+    expect(comboRow).toHaveTextContent('4');
+    expect(comboRow).toHaveTextContent(/40%/);
+    expect(comboRow).toHaveTextContent(/150/);
+    expect(comboRow).toHaveTextContent(/60/);
+    expect(comboRow).toHaveTextContent(/Completa · 100%/);
+    expect(screen.getByText('El dato determinístico usa 10 tickets válidos.')).toBeInTheDocument();
+    expect(screen.getByText('Limitación: la oportunidad muestra correlación histórica de tickets; no garantiza demanda futura.')).toBeInTheDocument();
+    expect(screen.getByText('La IA describe cuatro tickets.')).toBeInTheDocument();
+  });
+
+  it('does not load sales or invoke the agent for identity and out-of-scope questions', async () => {
+    const networkRequest = vi.fn();
+    vi.stubGlobal('fetch', networkRequest);
+    renderCenter();
+    expect(runtime.loadProducts).not.toHaveBeenCalled();
+    const question = screen.getByRole('textbox', { name: 'Pregunta libre' });
+    const outOfScopeCases = [
+      ['¿Cómo te llamas?', 'Soy el asistente de Ventas y Rentabilidad de Lanzo POS. Puedo ayudarte con rentabilidad, márgenes, productos problemáticos, precios, promociones y combos.'],
+      ['¿Qué hay en inventario?', 'Esta consulta corresponde al módulo de Diagnósticos Operativos. Desde aquí puedo ayudarte únicamente con ventas y rentabilidad.'],
+      ['¿Qué clima hará mañana?', 'Puedo ayudarte a analizar ventas y rentabilidad de tu negocio. Prueba con una de las preguntas sugeridas.']
+    ];
+    for (const [prompt, answer] of outOfScopeCases) {
+      fireEvent.change(question, { target: { value: prompt } });
+      fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+      await waitFor(() => expect(screen.getByRole('heading', { name: answer })).toBeInTheDocument());
+      expect(screen.queryByRole('button', { name: 'Descargar reporte completo' })).not.toBeInTheDocument();
+      expect(screen.queryByText('Nivel de confianza')).not.toBeInTheDocument();
+      expect(screen.queryByText('Ventas válidas')).not.toBeInTheDocument();
+    }
+    expect(runtime.loadProducts).not.toHaveBeenCalled();
+    expect(runtime.runAgent).not.toHaveBeenCalled();
+    expect(networkRequest).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Actualiza el Preview/i)).not.toBeInTheDocument();
+  });
+
+  it('maps all six suggested questions to supported intents', async () => {
+    renderCenter();
+    const expected = [
+      ['¿Mi negocio es rentable?', 'profitability_summary'],
+      ['¿Por qué cambió mi margen?', 'explain_change'],
+      ['¿Qué productos están afectando mi rentabilidad?', 'product_risk'],
+      ['¿Qué pasa si aumento el precio?', 'price_simulation'],
+      ['¿Qué combos puedo formar?', 'combo_opportunity'],
+      ['¿Qué promoción puedo simular?', 'promotion_opportunity']
+    ];
+    for (const [label, expectedIntent] of expected) {
+      fireEvent.click(screen.getByRole('button', { name: label }));
+      fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+      await waitFor(() => expect(runtime.runAgent).toHaveBeenCalledTimes(expected.indexOf(expected.find(([item]) => item === label)) + 1));
+      expect(runtime.runAgent.mock.calls.at(-1)[0].intent).toBe(expectedIntent);
+    }
+  });
+
+  it('uses the safe UI error and keeps technical details out of the visible message', async () => {
+    runtime.runAgent.mockRejectedValueOnce(Object.assign(new Error('contract details'), {
+      code: 'INVALID_REQUEST',
+      statusCode: 400,
+      originalError: { requestId: 'request-1', cause: 'stale scenario' }
+    }));
+    renderCenter();
+    fireEvent.click(screen.getByRole('button', { name: '¿Mi negocio es rentable?' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+    await waitFor(() => expect(screen.getByText('No pudimos procesar esta consulta. Revisa las opciones seleccionadas e inténtalo nuevamente.')).toBeInTheDocument());
+    expect(screen.queryByText(/Actualiza el Preview|request-1|stale scenario/i)).not.toBeInTheDocument();
   });
 
 });

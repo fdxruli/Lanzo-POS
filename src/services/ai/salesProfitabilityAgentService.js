@@ -5,16 +5,19 @@ import { reportsRepository } from '../reports/reportsRepository';
 import { useAppStore } from '../../store/useAppStore';
 import {
   buildPreviousPeriod,
-  buildSalesProfitabilityAnalysis,
-  inferSalesProfitabilityIntent
+  buildSalesProfitabilityAnalysis
 } from './salesProfitabilityAnalytics';
 import {
+  buildSalesProfitabilityProductExclusionsFromDataset,
   buildSalesProfitabilityProductOptionsFromDataset,
   loadSalesProfitabilityDataset
 } from './salesProfitabilityData';
 import {
   COMMERCIAL_AGENT_KEYS,
+  createOutOfScopeResponse,
+  normalizeScenarioForIntent,
   parseCommercialAgentResponse,
+  resolveCommercialIntent,
   validateCommercialAgentRequest
 } from './commercialAgentContract';
 import { buildSalesProfitabilityContext } from './commercialAgentContext';
@@ -315,6 +318,7 @@ const intentHasUsefulEvidence = (response) => {
 
 const intentStatus = (response) => {
   if (response.coverage?.validSales === 0) return 'insufficient_data';
+  if (response.intent === 'combo_opportunity' && response.comboOpportunities?.length === 0) return 'insufficient_data';
   return intentHasUsefulEvidence(response) ? 'completed' : 'incomplete';
 };
 
@@ -546,6 +550,7 @@ export const createSalesProfitabilityProductLoader = ({
   });
   return {
     products: buildSalesProfitabilityProductOptionsFromDataset(dataset),
+    excludedProducts: buildSalesProfitabilityProductExclusionsFromDataset(dataset),
     source: dataset.metadata.sourceMode,
     coverage: {
       itemsComplete: dataset.metadata.detailComplete,
@@ -564,21 +569,46 @@ export const createSalesProfitabilityAgentRunner = ({
   assertActor = assertCurrentAIAgentActor
 } = {}) => async ({
   question = '',
-  intent = inferSalesProfitabilityIntent(question),
   period = {},
   compare = true,
   scenario = {},
   requestKey = null
 } = {}) => {
+  const questionText = String(question || '').trim();
+  const resolution = resolveCommercialIntent(questionText);
+  if (resolution.kind === 'out_of_scope') {
+    return {
+      response: createOutOfScopeResponse(resolution),
+      usageStatus: null,
+      providerCalled: false,
+      reportSource: 'local',
+      intentResolution: resolution
+    };
+  }
+
+  const resolvedIntent = resolution.intent;
+  let normalizedScenario;
+  try {
+    normalizedScenario = normalizeScenarioForIntent(resolvedIntent, scenario);
+  } catch (error) {
+    throw new AIApiError(
+      'La configuración de la simulación no es válida.',
+      400,
+      { code: error?.code || 'INVALID_SCENARIO' },
+      error?.code || 'INVALID_SCENARIO'
+    );
+  }
+
   const normalizedPeriod = normalizePeriod(period);
   const currentPeriod = { ...normalizedPeriod, previous: null };
-  const previousPeriod = compare ? buildPreviousPeriod(currentPeriod) : null;
+  const comparisonEnabled = resolvedIntent === 'explain_change' && compare === true;
+  const previousPeriod = comparisonEnabled ? buildPreviousPeriod(currentPeriod) : null;
   if (previousPeriod) previousPeriod.timezone = currentPeriod.timezone;
 
   const request = {
     agentKey: COMMERCIAL_AGENT_KEYS.SALES_PROFITABILITY,
-    intent,
-    question: String(question || '').trim(),
+    intent: resolvedIntent,
+    question: questionText,
     period: {
       from: currentPeriod.from,
       to: currentPeriod.to,
@@ -586,7 +616,7 @@ export const createSalesProfitabilityAgentRunner = ({
       previousTo: previousPeriod?.to || null,
       timezone: currentPeriod.timezone
     },
-    scenario: { ...scenario },
+    scenario: normalizedScenario,
     context: null,
     requestKey
   };
@@ -613,8 +643,8 @@ export const createSalesProfitabilityAgentRunner = ({
       currentHistory: currentDataset.history,
       previousHistory: previousDataset?.history || null,
       sourceMode: currentDataset.metadata.sourceMode,
-      intent,
-      scenario
+      intent: resolvedIntent,
+      scenario: normalizedScenario
     });
     const deterministic = hardenDeterministicResult({
       deterministic: deterministicBase,
@@ -645,22 +675,49 @@ export const createSalesProfitabilityAgentRunner = ({
       source: deterministic.source
     });
 
-    const providerResult = await analyze({
-      ...request,
-      context,
-      requestKey: requestKey || null
-    }, { temperature: 0.2, maxTokens: 2048 });
-    const response = mergeProviderResponse(
-      deterministic,
-      providerResult.rawResultContent || providerResult.content || ''
-    );
+    try {
+      const providerResult = await analyze({
+        ...request,
+        context,
+        requestKey: requestKey || null
+      }, { temperature: 0.2, maxTokens: 2048 });
+      const response = mergeProviderResponse(
+        deterministic,
+        providerResult.rawResultContent || providerResult.content || ''
+      );
 
-    return {
-      response,
-      usageStatus: providerResult.usageStatus || null,
-      providerCalled: true,
-      reportSource: deterministic.source
-    };
+      return {
+        response,
+        usageStatus: providerResult.usageStatus || null,
+        providerCalled: true,
+        reportSource: deterministic.source
+      };
+    } catch (error) {
+      console.error('[SalesProfitabilityAgent] narrativa IA no disponible; se conserva el reporte determinístico.', {
+        code: error?.code || error?.originalError?.code || 'AI_NARRATIVE_UNAVAILABLE',
+        statusCode: error?.statusCode || null,
+        cause: error?.originalError?.message || error?.message || null
+      });
+      return {
+        response: {
+          ...deterministic,
+          limitations: unique([
+            ...(deterministic.limitations || []),
+            'La narrativa opcional del proveedor IA no está disponible; se conserva el reporte determinístico.'
+          ]),
+          aiNarrative: {
+            status: 'unavailable',
+            executiveSummary: null,
+            explanation: 'La narrativa opcional de IA no está disponible. Las cifras, cálculos, cobertura y recomendaciones visibles provienen del análisis determinístico.',
+            recommendations: []
+          }
+        },
+        usageStatus: null,
+        providerCalled: true,
+        narrativeAvailable: false,
+        reportSource: deterministic.source
+      };
+    }
   })();
 
   inflightRequests.set(dedupeKey, execution);
