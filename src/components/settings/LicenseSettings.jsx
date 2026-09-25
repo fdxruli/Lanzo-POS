@@ -103,11 +103,11 @@ function getGracePeriodState(licenseDetails) {
     const expiryDate = new Date(expiryValue);
     if (Number.isNaN(expiryDate.getTime())) return { inGracePeriod: false, graceEndDate: null };
 
-    con   note: `Fecha anterior: ${formattedDate}`
-        };
-    }
-
-    return { label: formattedDate, tone: 'neutral', note: '' };
+    const now = new Date();
+    return {
+        inGracePeriod: expiryDate < now && graceEndDate > now,
+        graceEndDate
+    };
 }
 
 function LicenseHero({
