@@ -145,6 +145,13 @@ describe('license admin actions', () => {
 
   it('completes the explicit Free owner takeover as a fresh Admin session', async () => {
     const state = setup();
+    state.licenseDetails = {
+      ...state.licenseDetails,
+      plan_code: 'pro_monthly',
+      status: 'grace_period',
+      expires_at: '2026-09-17T02:56:31.721Z',
+      grace_period_ends: '2026-09-24T02:56:31.721Z'
+    };
     mocks.adminTakeoverFreeDevice.mockResolvedValue({
       success: true,
       admin_user: { id: 'admin-1', username: 'owner', display_name: 'Owner' },
@@ -152,6 +159,7 @@ describe('license admin actions', () => {
         license_key: 'LANZO-ADMIN-TEST',
         plan_code: 'free_trial',
         max_devices: 1,
+        expires_at: null,
         device_role: 'admin'
       }
     });
@@ -173,6 +181,15 @@ describe('license admin actions', () => {
       actor: expect.objectContaining({ id: 'admin-1' })
     });
     expect(state.currentAdminUser).toMatchObject({ id: 'admin-1' });
+    expect(state.licenseDetails).toMatchObject({
+      plan_code: 'free_trial',
+      status: 'active',
+      lifecycle_state: 'active',
+      expires_at: null,
+      grace_period_ends: null,
+      is_in_grace: false,
+      is_entitled: true
+    });
     expect(state.appStatus).toBe('ready');
     expect(state._loadProfile).toHaveBeenCalledWith(
       'LANZO-ADMIN-TEST',
