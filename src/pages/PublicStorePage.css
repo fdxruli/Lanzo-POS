@@ -1124,6 +1124,79 @@ body.public-store-body {
   }
 }
 
+/* Shared status screens: full viewport on mobile, roomier two-column layout on desktop. */
+.public-store-shell.public-store-status-page {
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  place-items: stretch;
+  width: 100%;
+  min-width: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: 0;
+}
+
+.public-store-shell.public-store-status-page > .public-store-status-surface {
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  place-items: center;
+  width: 100%;
+  min-width: 0;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: 1.25rem;
+}
+
+.public-store-shell.public-store-status-page .public-store-state {
+  width: min(34rem, 100%);
+  max-width: 100%;
+  padding: 2rem 1.25rem;
+  border: 1px solid var(--ui-border-color);
+  border-radius: var(--ui-radius-lg);
+  background: var(--ui-bg-surface);
+  box-shadow: var(--ui-shadow-md);
+}
+
+@media (min-width: 48rem) {
+  .public-store-shell.public-store-status-page > .public-store-status-surface {
+    padding: 2.5rem;
+  }
+
+  .public-store-shell.public-store-status-page .public-store-state {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas:
+      "icon copy"
+      "icon action";
+    align-items: center;
+    justify-items: stretch;
+    gap: 0.5rem 1.5rem;
+    width: min(100%, 48rem);
+    padding: 2.5rem;
+    text-align: left;
+  }
+
+  .public-store-shell.public-store-status-page .public-store-state > svg {
+    grid-area: icon;
+  }
+
+  .public-store-shell.public-store-status-page .public-store-state > div {
+    grid-area: copy;
+    min-width: 0;
+  }
+
+  .public-store-shell.public-store-status-page .public-store-state > button {
+    grid-area: action;
+    justify-self: start;
+  }
+
+  .public-store-shell.public-store-status-page .public-store-state h2 {
+    font-size: clamp(1.25rem, 2vw, 1.55rem);
+    line-height: 1.25;
+  }
+}
+
 @container ecommerce-site (min-width: 68rem) {
   .ecommerce-site-surface .ecommerce-site-renderer .public-store-header__details {
     grid-template-columns: repeat(4, minmax(0, 1fr));
