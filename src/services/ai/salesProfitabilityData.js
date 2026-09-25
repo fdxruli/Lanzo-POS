@@ -276,7 +276,7 @@ export const normalizeSalesProfitLine = (row = {}) => {
     costStatus = 'estimated';
   }
 
-  const normalizedProfitStatus = lineCost === null ? 'incomplete' : profitStatus;
+  const normalizedProfitStatus = lineCost === null ? 'incomplete' : costStatus;
 
   return {
     saleKey: profitSaleKey(source),
