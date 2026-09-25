@@ -267,6 +267,137 @@ describe('sales profitability download report', () => {
     expect(report.deterministic).not.toHaveProperty('recommendations');
   });
 
+  it('exports missing product costs as null with incomplete coverage instead of zero or 100% margin', () => {
+    const missingCostResult = {
+      ...completedResult,
+      providerCalled: false,
+      usageStatus: null,
+      response: {
+        ...completedResult.response,
+        status: 'incomplete',
+        coverage: {
+          ...completedResult.response.coverage,
+          productsIncluded: 2,
+          productsMissingCost: 1,
+          costCoverage: 0.5,
+          knownCostOfSale: 40,
+          costStatus: 'incomplete',
+          complete: false
+        },
+        context: {
+          ...completedResult.response.context,
+          summary: {
+            ...completedResult.response.context.summary,
+            unitCosts: null,
+            knownCostOfSale: 40,
+            profit: null,
+            margin: null,
+            costCoverage: 0.5,
+            missingCostProducts: 1,
+            profitabilityStatus: 'undetermined'
+          }
+        },
+        current: {
+          ...completedResult.response.current,
+          costOfSale: null,
+          knownCostOfSale: 40,
+          costComplete: false,
+          knownSales: 100,
+          missingCostLines: 1,
+          missingCostProducts: ['Producto sintético'],
+          profit: null,
+          margin: null,
+          costCoverage: 0.5,
+          products: [{
+            name: 'Producto sintético',
+            quantity: 2,
+            netSales: 100,
+            cost: null,
+            unitCost: null,
+            knownCost: 40,
+            profit: null,
+            margin: null,
+            averagePrice: 50,
+            costKnown: false,
+            costStatus: 'incomplete',
+            costSource: 'missing',
+            missingCostLines: 1
+          }]
+        },
+        profitability: {
+          ...completedResult.response.profitability,
+          status: 'undetermined',
+          netSales: 200,
+          costOfSale: null,
+          profit: null,
+          margin: null,
+          costCoverage: 0.5,
+          missingCostProducts: 1,
+          explanation: 'La rentabilidad es indeterminada por costo faltante.'
+        },
+        calculations: [{
+          label: 'Costo de venta',
+          value: null,
+          formattedValue: 'No disponible',
+          formula: 'suma de costos sólo cuando la cobertura es completa',
+          source: 'sales_history',
+          period: null
+        }, {
+          label: 'Costo conocido parcial',
+          value: 40,
+          formattedValue: '$40.00',
+          formula: 'costo conocido parcial; no representa el costo total',
+          source: 'sales_profit_report',
+          period: null
+        }]
+      }
+    };
+
+    const report = buildSalesProfitabilityDownloadReport(missingCostResult, {
+      ...requestContext,
+      resolvedIntent: 'product_risk'
+    });
+
+    expect(report.result.coverage).toMatchObject({
+      productsMissingCost: 1,
+      costCoverage: 0.5,
+      knownCostOfSale: 40,
+      costStatus: 'incomplete',
+      complete: false
+    });
+    expect(report.deterministic.summary).toMatchObject({
+      unitCosts: null,
+      knownCostOfSale: 40,
+      profit: null,
+      margin: null,
+      costCoverage: 0.5,
+      missingCostProducts: 1,
+      profitabilityStatus: 'undetermined'
+    });
+    expect(report.deterministic.current).toMatchObject({
+      costOfSale: null,
+      knownCostOfSale: 40,
+      costComplete: false,
+      profit: null,
+      margin: null,
+      costCoverage: 0.5
+    });
+    expect(report.deterministic.current.products[0]).toMatchObject({
+      cost: null,
+      unitCost: null,
+      knownCost: 40,
+      profit: null,
+      margin: null,
+      costKnown: false,
+      costStatus: 'incomplete',
+      costSource: 'missing',
+      missingCostLines: 1
+    });
+    expect(report.deterministic.calculations[0].value).toBeNull();
+    expect(report.deterministic.calculations[1].value).toBe(40);
+    expect(JSON.stringify(report)).not.toContain('"margin":1');
+  });
+
   it('excludes credentials, raw rows, internal ids, UUIDs and personal data', () => {
     const report = buildSalesProfitabilityDownloadReport(completedResult, requestContext);
     const serialized = JSON.stringify(report);
