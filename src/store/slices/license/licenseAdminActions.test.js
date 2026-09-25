@@ -152,6 +152,8 @@ describe('license admin actions', () => {
       expires_at: '2026-09-17T02:56:31.721Z',
       grace_period_ends: '2026-09-24T02:56:31.721Z'
     };
+    state.licenseStatus = 'grace_period';
+    state.gracePeriodEnds = '2026-09-24T02:56:31.721Z';
     mocks.adminTakeoverFreeDevice.mockResolvedValue({
       success: true,
       admin_user: { id: 'admin-1', username: 'owner', display_name: 'Owner' },
@@ -190,6 +192,8 @@ describe('license admin actions', () => {
       is_in_grace: false,
       is_entitled: true
     });
+    expect(state.licenseStatus).toBe('active');
+    expect(state.gracePeriodEnds).toBeNull();
     expect(state.appStatus).toBe('ready');
     expect(state._loadProfile).toHaveBeenCalledWith(
       'LANZO-ADMIN-TEST',
