@@ -22,9 +22,11 @@ const storeState = vi.hoisted(() => ({
   }
 }));
 
-vi.mock('../../../store/useAppStore', () => ({
-  useAppStore: (selector) => selector(storeState)
-}));
+vi.mock('../../../store/useAppStore', () => {
+  const useAppStore = (selector) => selector(storeState);
+  useAppStore.getState = () => storeState;
+  return { useAppStore };
+});
 
 vi.mock('../../../hooks/usePostDowngradeCashPending', () => ({
   markFreeDeviceTakeoverCompleted: recoveryRuntime.markTakeoverCompleted
@@ -45,6 +47,8 @@ beforeEach(() => {
   storeState.returnToLicenseAccessChoice.mockReset();
   recoveryRuntime.markTakeoverCompleted.mockReset();
   storeState.adminLoginMessage = null;
+  storeState.currentDeviceRole = null;
+  storeState.currentAdminUser = null;
   Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: true });
 });
 
@@ -135,7 +139,15 @@ describe('AdminLoginModal local database recovery', () => {
       code: 'FREE_DEVICE_TAKEOVER_REQUIRED',
       takeoverRequired: true
     });
-    storeState.handleFreeDeviceTakeover.mockResolvedValueOnce({ success: true });
+    storeState.handleFreeDeviceTakeover.mockImplementationOnce(async () => {
+      storeState.currentDeviceRole = 'admin';
+      storeState.currentAdminUser = {
+        id: 'owner-id',
+        username: 'owner',
+        is_owner: true
+      };
+      return { success: true };
+    });
 
     render(<AdminLoginModal />);
     submitCredentials();
@@ -149,6 +161,14 @@ describe('AdminLoginModal local database recovery', () => {
     }));
     expect(storeState.handleFreeDeviceTakeover).toHaveBeenCalledTimes(1);
     expect(recoveryRuntime.markTakeoverCompleted).toHaveBeenCalledTimes(1);
+    expect(recoveryRuntime.markTakeoverCompleted).toHaveBeenCalledWith({
+      licenseKey: 'LANZO-TAKEOVER-TEST',
+      adminUser: {
+        id: 'owner-id',
+        username: 'owner',
+        is_owner: true
+      }
+    });
   });
 
   it('cancels takeover locally without displacing any device', async () => {
@@ -178,5 +198,44 @@ describe('AdminLoginModal local database recovery', () => {
     submitCredentials();
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Entrar' })).toBeEnabled());
+  });
+
+  it('does not show raw Postgres or RPC errors when takeover fails', async () => {
+    storeState.handleAdminLogin.mockResolvedValueOnce({
+      success: false,
+      code: 'FREE_DEVICE_TAKEOVER_REQUIRED',
+      takeoverRequired: true
+    });
+    storeState.handleFreeDeviceTakeover.mockResolvedValueOnce({
+      success: false,
+      code: 'P0001',
+      message: 'POST_DOWNGRADE_CASH_OWNER_REQUIRED from private.function at SQL line 42'
+    });
+
+    render(<AdminLoginModal />);
+    submitCredentials();
+    fireEvent.click(await screen.findByRole('button', { name: 'Usar este dispositivo' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(
+      'No se pudo completar la acción. Tus datos permanecen intactos. Revisa tu conexión e inténtalo nuevamente.'
+    );
+    expect(screen.queryByText(/POST_DOWNGRADE_CASH_OWNER_REQUIRED|SQL line 42|P0001/)).not.toBeInTheDocument();
+  });
+
+  it('does not emit takeover completion when owner bootstrap state is missing', async () => {
+    storeState.handleAdminLogin.mockResolvedValueOnce({
+      success: false,
+      code: 'FREE_DEVICE_TAKEOVER_REQUIRED',
+      takeoverRequired: true
+    });
+    storeState.handleFreeDeviceTakeover.mockResolvedValueOnce({ success: true });
+
+    render(<AdminLoginModal />);
+    submitCredentials();
+    fireEvent.click(await screen.findByRole('button', { name: 'Usar este dispositivo' }));
+
+    await waitFor(() => expect(storeState.handleFreeDeviceTakeover).toHaveBeenCalledTimes(1));
+    expect(recoveryRuntime.markTakeoverCompleted).not.toHaveBeenCalled();
   });
 });

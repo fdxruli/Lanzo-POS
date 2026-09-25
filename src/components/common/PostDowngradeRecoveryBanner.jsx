@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { CheckCircle2, CloudOff, RefreshCw, Store, WalletCards } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import usePostDowngradeCashPending, {
@@ -14,10 +14,16 @@ export default function PostDowngradeRecoveryBanner() {
     pendingCount,
     isPostDowngrade,
     error,
-    refresh
+    refresh,
+    scopeKey
   } = usePostDowngradeCashPending();
-  const [takeoverCompleted] = useState(() => consumeFreeDeviceTakeoverCompleted());
+  const [takeoverCompleted, setTakeoverCompleted] = useState(false);
   const [dismissed, setDismissed] = useState(false);
+
+  useEffect(() => {
+    setDismissed(false);
+    setTakeoverCompleted(consumeFreeDeviceTakeoverCompleted(scopeKey));
+  }, [scopeKey]);
 
   if (!eligible || dismissed) return null;
 

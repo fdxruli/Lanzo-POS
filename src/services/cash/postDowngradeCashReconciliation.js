@@ -43,23 +43,27 @@ const assertSupabase = () => {
   if (!supabaseClient) throw new Error('SUPABASE_NOT_CONFIGURED');
 };
 
-const buildBridgeArgs = async (licenseKey) => {
-  if (!licenseKey) throw new Error('LICENSE_KEY_REQUIRED');
-  const context = await buildPosSyncAuthContext({ licenseKey });
-  if (!context?.licenseKey || !context?.deviceFingerprint || !context?.securityToken) {
-    throw new Error('POS_SYNC_AUTH_CONTEXT_INCOMPLETE');
+const buildBridgeArgs = async (licenseKey, fallbackMessage) => {
+  try {
+    if (!licenseKey) throw new Error('LICENSE_KEY_REQUIRED');
+    const context = await buildPosSyncAuthContext({ licenseKey });
+    if (!context?.licenseKey || !context?.deviceFingerprint || !context?.securityToken) {
+      throw new Error('POS_SYNC_AUTH_CONTEXT_INCOMPLETE');
+    }
+    return {
+      p_license_key: context.licenseKey,
+      p_device_fingerprint: context.deviceFingerprint,
+      p_security_token: context.securityToken,
+      p_actor_session_token: context.staffSessionToken || null
+    };
+  } catch (error) {
+    throw bridgeError(error, fallbackMessage);
   }
-  return {
-    p_license_key: context.licenseKey,
-    p_device_fingerprint: context.deviceFingerprint,
-    p_security_token: context.securityToken,
-    p_actor_session_token: context.staffSessionToken || null
-  };
 };
 
 const invoke = async (rpcName, args, fallbackMessage) => {
-  assertSupabase();
   try {
+    assertSupabase();
     const { data, error } = await supabaseClient.rpc(rpcName, args);
     if (error) throw error;
     return parseRpcPayload(data);
@@ -70,7 +74,7 @@ const invoke = async (rpcName, args, fallbackMessage) => {
 
 const normalizeFailure = (payload, fallbackMessage) => {
   const internalCode = payload?.code || 'POST_DOWNGRADE_CASH_RECONCILIATION_FAILED';
-  const message = BRIDGE_MESSAGES[internalCode] || payload?.message || fallbackMessage;
+  const message = BRIDGE_MESSAGES[internalCode] || fallbackMessage;
   return {
     ...payload,
     success: false,
@@ -82,17 +86,25 @@ const normalizeFailure = (payload, fallbackMessage) => {
 
 export const postDowngradeCashReconciliation = {
   async list({ licenseKey }) {
-    const base = await buildBridgeArgs(licenseKey);
+    const fallbackMessage = 'No se pudieron consultar las cajas pendientes del plan anterior.';
+    const base = await buildBridgeArgs(licenseKey, fallbackMessage);
     const payload = await invoke(
       'pos_list_post_downgrade_cash_sessions',
       base,
-      'No se pudieron consultar las cajas pendientes del plan anterior.'
+      fallbackMessage
     );
-    if (payload?.success === false) return normalizeFailure(payload, 'No se pudieron consultar las cajas pendientes del plan anterior.');
+    if (payload?.success === false) return normalizeFailure(payload, fallbackMessage);
+
+    const hasSessions = Array.isArray(payload?.cash_sessions);
+    const hasCount = Number.isInteger(payload?.pending_count) && payload.pending_count >= 0;
+    if (!hasSessions || !hasCount || payload.pending_count !== payload.cash_sessions.length) {
+      return normalizeFailure({ code: 'POST_DOWNGRADE_CASH_RESPONSE_INVALID' }, fallbackMessage);
+    }
+
     return {
       success: true,
-      cashSessions: Array.isArray(payload.cash_sessions) ? payload.cash_sessions : [],
-      pendingCount: Number(payload.pending_count || 0),
+      cashSessions: payload.cash_sessions,
+      pendingCount: payload.pending_count,
       downgradedAt: payload.downgraded_at || null,
       previousPlanCode: payload.previous_plan_code || null,
       currentPlanCode: payload.current_plan_code || null
@@ -100,13 +112,14 @@ export const postDowngradeCashReconciliation = {
   },
 
   async detail({ licenseKey, cashSessionId }) {
-    const base = await buildBridgeArgs(licenseKey);
+    const fallbackMessage = 'No se pudo cargar el detalle de esta caja.';
+    const base = await buildBridgeArgs(licenseKey, fallbackMessage);
     const payload = await invoke(
       'pos_get_post_downgrade_cash_session_detail',
       { ...base, p_cash_session_id: cashSessionId },
-      'No se pudo cargar el detalle de esta caja.'
+      fallbackMessage
     );
-    if (payload?.success === false) return normalizeFailure(payload, 'No se pudo cargar el detalle de esta caja.');
+    if (payload?.success === false) return normalizeFailure(payload, fallbackMessage);
     return {
       success: true,
       cashSession: payload.cash_session || null,
@@ -126,7 +139,8 @@ export const postDowngradeCashReconciliation = {
     expectedVersion,
     idempotencyKey
   }) {
-    const base = await buildBridgeArgs(licenseKey);
+    const fallbackMessage = 'No se pudo completar la conciliación de esta caja.';
+    const base = await buildBridgeArgs(licenseKey, fallbackMessage);
     const payload = await invoke(
       'pos_close_post_downgrade_cash_session',
       {
@@ -140,10 +154,10 @@ export const postDowngradeCashReconciliation = {
         p_expected_version: expectedVersion ?? null,
         p_idempotency_key: idempotencyKey
       },
-      'No se pudo completar la conciliación de esta caja.'
+      fallbackMessage
     );
     if (payload?.success === false) {
-      return { ...normalizeFailure(payload, 'No se pudo completar la conciliación de esta caja.'), response: payload };
+      return { ...normalizeFailure(payload, fallbackMessage), response: payload };
     }
     return {
       success: true,

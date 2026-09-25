@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),
   refresh: vi.fn(),
   takeoverCompleted: false,
+  consumeTakeover: vi.fn(),
   pending: null
 }));
 
@@ -17,7 +18,7 @@ vi.mock('react-router-dom', () => ({
 
 vi.mock('../../../hooks/usePostDowngradeCashPending', () => ({
   default: () => mocks.pending,
-  consumeFreeDeviceTakeoverCompleted: () => mocks.takeoverCompleted
+  consumeFreeDeviceTakeoverCompleted: (scopeKey) => mocks.consumeTakeover(scopeKey)
 }));
 
 import PostDowngradeRecoveryBanner from '../PostDowngradeRecoveryBanner';
@@ -30,12 +31,15 @@ const basePending = (overrides = {}) => ({
   isPostDowngrade: true,
   error: null,
   refresh: mocks.refresh,
+  scopeKey: 'LANZO-A:owner-a',
   ...overrides
 });
 
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.takeoverCompleted = false;
+  mocks.consumeTakeover.mockReset();
+  mocks.consumeTakeover.mockImplementation(() => mocks.takeoverCompleted);
   mocks.pending = basePending();
 });
 
@@ -94,4 +98,26 @@ describe('PostDowngradeRecoveryBanner', () => {
     const { container } = render(<PostDowngradeRecoveryBanner />);
     expect(container).toBeEmptyDOMElement();
   });
+
+  it('resets dismissed takeover UI when the authenticated tenant/owner scope changes', () => {
+    mocks.takeoverCompleted = true;
+    mocks.pending = basePending({ pendingCount: 0, scopeKey: 'LANZO-A:owner-a' });
+
+    const view = render(<PostDowngradeRecoveryBanner />);
+    fireEvent.click(screen.getByRole('button', { name: 'Entendido' }));
+    expect(screen.queryByText('Este dispositivo ya está activo')).not.toBeInTheDocument();
+
+    mocks.takeoverCompleted = false;
+    mocks.pending = basePending({
+      pendingCount: 1,
+      scopeKey: 'LANZO-B:owner-b'
+    });
+    view.rerender(<PostDowngradeRecoveryBanner />);
+
+    expect(screen.getByText('Tu negocio ahora usa Lanzo Local')).toBeInTheDocument();
+    expect(screen.getByText(/1 caja del plan anterior pendiente de revisar/i)).toBeInTheDocument();
+    expect(mocks.consumeTakeover).toHaveBeenCalledWith('LANZO-A:owner-a');
+    expect(mocks.consumeTakeover).toHaveBeenCalledWith('LANZO-B:owner-b');
+  });
+
 });
