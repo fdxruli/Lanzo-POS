@@ -18,7 +18,8 @@ vi.mock('../../supabase', () => ({
 vi.mock('../../auth/actorRuntimeController', () => ({
   actorRuntimeController: {
     assertGranted: runtime.assertGranted,
-    getState: () => ({ actorType: 'admin' })
+    getState: () => ({ actorType: 'admin' }),
+    subscribe: vi.fn(() => () => {})
   }
 }));
 
