@@ -138,19 +138,32 @@ const parseFunctionError = async (error) => {
   return null;
 };
 
-const normalizeUsageStatus = (payload = {}) => {
-  const limit = Math.max(Number(payload.limit ?? 0), 0);
-  const used = Math.max(Number(payload.used ?? 0), 0);
-  const remaining = Number.isFinite(Number(payload.remaining))
-    ? Math.max(Number(payload.remaining), 0)
-    : Math.max(limit - used, 0);
+const normalizeUsageNumber = (value) => {
+  if (value === undefined || value === null || value === '') return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric >= 0 ? numeric : null;
+};
+
+export const normalizeUsageStatus = (payload = {}) => {
+  const explicitUnlimited = payload.isUnlimited === true
+    || payload.is_unlimited === true
+    || payload.unlimited === true
+    || payload.limit === null;
+  const limit = explicitUnlimited ? null : normalizeUsageNumber(payload.limit);
+  const used = normalizeUsageNumber(payload.used);
+  const explicitRemaining = normalizeUsageNumber(payload.remaining);
+  const remaining = explicitUnlimited
+    ? null
+    : explicitRemaining ?? (limit !== null && used !== null ? Math.max(limit - used, 0) : null);
 
   return {
     ...payload,
     limit,
     used,
     remaining,
-    isLimitReached: limit > 0 && remaining <= 0
+    isUnlimited: explicitUnlimited,
+    isLimitConfigured: limit !== null,
+    isLimitReached: !explicitUnlimited && limit !== null && limit > 0 && remaining !== null && remaining <= 0
   };
 };
 
