@@ -1,3 +1,4 @@
+import { isMissingUnitCost } from '../sales/financialPolicy';
 import { normalizeValidSales } from './salesProfitabilityAnalytics';
 
 const DEFAULT_TIMEZONE = 'America/Mexico_City';
@@ -267,13 +268,15 @@ export const normalizeSalesProfitLine = (row = {}) => {
 
   let lineCost = null;
   let costStatus = 'incomplete';
-  if (!invalidEvidence && costSource === 'inventory_movement' && movementCost !== null && movementCost >= 0) {
+  if (!invalidEvidence && costSource === 'inventory_movement' && !isMissingUnitCost(movementCost)) {
     lineCost = movementCost;
     costStatus = 'definitive';
-  } else if (!invalidEvidence && costSource === 'sale_item_snapshot' && unitCost !== null && unitCost >= 0) {
+  } else if (!invalidEvidence && costSource === 'sale_item_snapshot' && !isMissingUnitCost(unitCost)) {
     lineCost = unitCost * quantity;
     costStatus = 'estimated';
   }
+
+  const normalizedProfitStatus = lineCost === null ? 'incomplete' : profitStatus;
 
   return {
     saleKey: profitSaleKey(source),
@@ -285,7 +288,7 @@ export const normalizeSalesProfitLine = (row = {}) => {
     unitCost: quantity && lineCost !== null ? lineCost / quantity : null,
     costSource: lineCost === null ? 'missing' : costSource,
     costStatus: lineCost === null ? 'incomplete' : costStatus,
-    profitStatus,
+    profitStatus: normalizedProfitStatus,
     costKnown: lineCost !== null
   };
 };
@@ -324,9 +327,15 @@ const buildProductEvidence = (lines) => {
       const costStatus = product.missingCostLines > 0
         ? 'incomplete'
         : (product.statuses.has('estimated') ? 'estimated' : 'definitive');
-      const costSource = product.sources.size === 1
-        ? Array.from(product.sources)[0]
-        : 'mixed';
+      const costSource = product.missingCostLines > 0
+        ? 'missing'
+        : product.sources.size === 1
+          ? Array.from(product.sources)[0]
+          : product.sources.has('sale_item_snapshot')
+            ? 'sale_item_snapshot'
+            : product.sources.has('inventory_movement')
+              ? 'inventory_movement'
+              : 'missing';
       return {
         name: product.name,
         quantity: product.quantity,
