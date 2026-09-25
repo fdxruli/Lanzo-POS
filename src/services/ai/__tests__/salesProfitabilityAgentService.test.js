@@ -132,6 +132,93 @@ describe('sales profitability agent service', () => {
     });
   });
 
+  it('sends missing historical cost to mocked IA as null and never lets narrative restore a 100% margin', async () => {
+    const zeroCostProfit = {
+      ...profit,
+      rows: [{
+        ...profit.rows[0],
+        unit_cost: 0,
+        movement_cost: null,
+        cogs: 0,
+        gross_profit: 100,
+        gross_margin_percent: 100,
+        cost_source: 'sale_item_snapshot',
+        profit_status: 'estimated'
+      }]
+    };
+    const analyze = vi.fn(async (request) => {
+      expect(request.context.sales.summary).toMatchObject({
+        unitCosts: null,
+        profit: null,
+        margin: null,
+        costCoverage: 0,
+        missingCostProducts: 1,
+        profitabilityStatus: 'undetermined'
+      });
+      expect(request.context.sales.products).toEqual([
+        expect.objectContaining({
+          name: 'Producto A',
+          unitCost: null,
+          profit: null,
+          margin: null,
+          costKnown: false,
+          costStatus: 'incomplete',
+          costSource: 'missing'
+        })
+      ]);
+      return {
+        rawResultContent: providerResponse,
+        usageStatus: { used: 0, limit: 15, remaining: 15 }
+      };
+    });
+    const runner = createSalesProfitabilityAgentRunner({
+      repository: repository(history, zeroCostProfit),
+      analyze,
+      assertActor: vi.fn()
+    });
+
+    const result = await runner({
+      question: '¿Qué productos están afectando mi rentabilidad?',
+      intent: 'product_risk',
+      period: { from: '2026-09-01', to: '2026-09-07', days: 7 },
+      compare: false,
+      requestKey: 'missing-cost-product-risk'
+    });
+
+    expect(analyze).toHaveBeenCalledTimes(1);
+    expect(result.providerCalled).toBe(true);
+    expect(result.response.current).toMatchObject({
+      netSales: 100,
+      costOfSale: null,
+      profit: null,
+      margin: null,
+      costComplete: false,
+      costCoverage: 0
+    });
+    expect(result.response.coverage).toMatchObject({
+      productsMissingCost: 1,
+      costCoverage: 0,
+      knownCostOfSale: 0,
+      costStatus: 'incomplete',
+      complete: false
+    });
+    expect(result.response.profitability).toMatchObject({
+      status: 'undetermined',
+      netSales: 100,
+      costOfSale: null,
+      profit: null,
+      margin: null
+    });
+    expect(result.response.current.products[0]).toMatchObject({
+      unitCost: null,
+      profit: null,
+      margin: null,
+      costKnown: false,
+      costStatus: 'incomplete',
+      costSource: 'missing'
+    });
+  });
+
   it('deduplicates concurrent submissions with the same request key', async () => {
     let release;
     const gate = new Promise((resolve) => { release = resolve; });
