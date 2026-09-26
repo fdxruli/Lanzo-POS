@@ -22,7 +22,7 @@ const findReports = (dir, label) => {
 const findFocusedReports = (dir, label) => {
   if (!fs.existsSync(dir)) throw new Error(`${label} report directory missing: ${dir}`);
   return fs.readdirSync(dir)
-    .filter((name) => /^public-store-(?:bfcache|site-version)-\d+\.json$/.test(name))
+    .filter((name) => /^public-store-[a-z0-9-]+-\d+\.json$/.test(name))
     .sort()
     .map((name) => path.join(dir, name));
 };
@@ -111,15 +111,15 @@ const candidatePaths = findReports(candidateDir, 'CANDIDATE');
 const baseFocusedPaths = findFocusedReports(baseDir, 'BASE');
 const candidateFocusedPaths = findFocusedReports(candidateDir, 'CANDIDATE');
 if (baseFocusedPaths.length !== candidateFocusedPaths.length) {
-  throw new Error(`BASE/CANDIDATE focused BFCache evidence count differs: ${baseFocusedPaths.length} vs ${candidateFocusedPaths.length}`);
+  throw new Error(`BASE/CANDIDATE focused regression evidence count differs: ${baseFocusedPaths.length} vs ${candidateFocusedPaths.length}`);
 }
 if (baseFocusedPaths.length > 0 && baseFocusedPaths.length < 10) {
   throw new Error(`Focused BFCache evidence requires at least 10 repetitions when present; found ${baseFocusedPaths.length}`);
 }
 const baseReports = basePaths.map((reportPath, index) => readReport(reportPath, `BASE#${index + 1}`));
 const candidateReports = candidatePaths.map((reportPath, index) => readReport(reportPath, `CANDIDATE#${index + 1}`));
-const baseFocusedReports = baseFocusedPaths.map((reportPath, index) => readReport(reportPath, `BASE focused PublicStore#${index + 1}`));
-const candidateFocusedReports = candidateFocusedPaths.map((reportPath, index) => readReport(reportPath, `CANDIDATE focused PublicStore#${index + 1}`));
+const baseFocusedReports = baseFocusedPaths.map((reportPath, index) => readReport(reportPath, `BASE focused regression#${index + 1}`));
+const candidateFocusedReports = candidateFocusedPaths.map((reportPath, index) => readReport(reportPath, `CANDIDATE focused regression#${index + 1}`));
 const baseFailuresByRun = baseReports.map(collectFailures);
 const candidateFailuresByRun = candidateReports.map(collectFailures);
 const baseFocusedFailuresByRun = baseFocusedReports.map(collectFailures);
@@ -279,8 +279,8 @@ const markdown = [
   ...(baseFocusedRunCounts.length
     ? [
         '',
-        ...runLine('BASE focused PublicStore', baseFocusedRunCounts),
-        ...runLine('CANDIDATE focused PublicStore', candidateFocusedRunCounts)
+        ...runLine('BASE focused regression', baseFocusedRunCounts),
+        ...runLine('CANDIDATE focused regression', candidateFocusedRunCounts)
       ]
     : []),
   `- NEW/CHANGED REGRESSIONS: ${summary.newRegressionCount}`,
