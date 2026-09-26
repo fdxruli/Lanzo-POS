@@ -501,6 +501,19 @@ describe('ecommercePublicService', () => {
     expect(cache.getPortal).not.toHaveBeenCalled();
   });
 
+  it('does not revive a cached published portal after authoritative not found', async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: { success: false, error: { code: 'ECOMMERCE_PORTAL_NOT_FOUND' } },
+      error: null,
+    });
+    const cache = { getPortal: vi.fn().mockResolvedValue({ portal: { name: 'Old store' } }) };
+    const service = createEcommercePublicService({ rpc }, { cache });
+    await expect(service.getPublicPortalBySlug('missing-store', {
+      portalId: '00000000-0000-0000-0000-000000000001',
+    })).rejects.toMatchObject({ code: 'ECOMMERCE_PORTAL_NOT_FOUND' });
+    expect(cache.getPortal).not.toHaveBeenCalled();
+  });
+
   it('retries one transient public portal read and returns the recovered store', async () => {
     const retryDelay = vi.fn(async () => {});
     const rpc = vi.fn()

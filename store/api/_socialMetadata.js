@@ -1,6 +1,5 @@
-export const STORE_SLUG_PATTERN = /^[a-z0-9][a-z0-9-]*[a-z0-9]$/;
-export const MIN_STORE_SLUG_LENGTH = 3;
-export const MAX_STORE_SLUG_LENGTH = 64;
+import { isValidStoreSlug } from './_storeSlug.js';
+export { STORE_SLUG_PATTERN, MIN_STORE_SLUG_LENGTH, MAX_STORE_SLUG_LENGTH } from './_storeSlug.js';
 export const MAX_STORE_NAME_LENGTH = 80;
 export const MAX_SOCIAL_TITLE_LENGTH = 110;
 export const MAX_SOCIAL_DESCRIPTION_LENGTH = 200;
@@ -49,12 +48,7 @@ export class SocialMetadataValidationError extends TypeError {
 }
 
 export function validateStoreSlug(value) {
-  if (
-    typeof value !== 'string'
-    || value.length < MIN_STORE_SLUG_LENGTH
-    || value.length > MAX_STORE_SLUG_LENGTH
-    || !STORE_SLUG_PATTERN.test(value)
-  ) {
+  if (!isValidStoreSlug(value)) {
     throw new SocialMetadataValidationError(
       'INVALID_STORE_SLUG',
       'El identificador de la tienda no es válido.',

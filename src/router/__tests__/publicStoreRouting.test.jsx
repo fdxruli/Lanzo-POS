@@ -75,7 +75,7 @@ describe('public store routing', () => {
   it('shows a friendly public state for /tienda', () => {
     const router = createMemoryRouter(publicStoreRoutes, { initialEntries: ['/tienda'] });
     render(<RouterProvider router={router} />);
-    expect(screen.getByRole('heading', { name: 'Esta tienda no está disponible' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Enlace de tienda no válido' })).toBeInTheDocument();
   });
 
   it('opens the Lanzo landing without mounting the POS shell', () => {

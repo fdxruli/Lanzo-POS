@@ -15,6 +15,7 @@ export const MAX_PUBLIC_PORTAL_RESPONSE_BYTES = 256 * 1024;
 
 const RPC_PATH = '/rest/v1/rpc/ecommerce_get_portal_by_slug';
 const PORTAL_NOT_FOUND_CODE = 'ECOMMERCE_PORTAL_NOT_FOUND';
+const PORTAL_PAUSED_CODE = 'ECOMMERCE_PORTAL_PAUSED';
 const DEFAULT_PORTAL_NAME = 'Tienda online';
 const MAX_PORTAL_NAME_LENGTH = 80;
 const MAX_PORTAL_HEADLINE_LENGTH = 200;
@@ -418,7 +419,7 @@ export function createPublicPortalSocialClient({
       if (hasDangerousOwnKeys(parsed.payload)) return unavailable('invalid_response');
       if (!response || response.ok !== true) return unavailable('http_error');
       const remoteCode = getContractErrorCode(parsed.payload);
-      if (remoteCode === PORTAL_NOT_FOUND_CODE) return notFound;
+      if (remoteCode === PORTAL_NOT_FOUND_CODE || remoteCode === PORTAL_PAUSED_CODE) return notFound;
       if (parsed.payload?.success !== true) return unavailable('remote_error');
 
       const projected = projectPortal(parsed.payload, validSlug);
