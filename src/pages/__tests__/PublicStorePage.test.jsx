@@ -538,6 +538,15 @@ describe('PublicStorePage', () => {
     expect(serviceMocks.getPublicCatalog).not.toHaveBeenCalled();
   });
 
+  it('keeps a paused portal out of catalog loading', async () => {
+    serviceMocks.getPublicPortalBySlug.mockRejectedValue(
+      new EcommercePublicError('ECOMMERCE_PORTAL_PAUSED', 'Esta tienda no está disponible.')
+    );
+    renderPage();
+    expect(await screen.findByRole('heading', { name: 'Esta tienda no está disponible' })).toBeInTheDocument();
+    expect(serviceMocks.getPublicCatalog).not.toHaveBeenCalled();
+  });
+
   it('restores the previous document title on unmount', async () => {
     document.title = 'Lanzo POS';
     const view = renderPage();

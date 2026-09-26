@@ -342,7 +342,7 @@ function PublicStorePage() {
       } catch (error) {
         if (!isCurrentRequest()) return;
         const unavailable = error instanceof EcommercePublicError
-          && error.code === 'ECOMMERCE_PORTAL_NOT_FOUND';
+          && ['ECOMMERCE_PORTAL_NOT_FOUND', 'ECOMMERCE_PORTAL_PAUSED'].includes(error.code);
         setStoreStatus(unavailable ? 'unavailable' : 'error');
         setCatalogLoading(false);
         setCatalogValidated(false);
