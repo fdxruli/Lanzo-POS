@@ -5,13 +5,15 @@ import {
   ChevronDown,
   Download,
   Globe2,
+  History,
   Lightbulb,
   Search,
   Send,
   ShieldCheck,
-  Sparkles
+  Sparkles,
+  Trash2
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   loadSalesProfitabilityProducts,
   resolveBusinessTimezone,
@@ -29,6 +31,18 @@ import {
   resolveCommercialIntent
 } from '../../services/ai/commercialAgentContract';
 import { getAIAgentUsageStatus } from '../../services/aiService';
+import { getLicenseKeyFromDetails } from '../../services/sync/syncConstants';
+import { useActorRuntimeSnapshot } from '../../services/auth/useActorRuntimeSnapshot';
+import {
+  buildSalesProfitabilityHistoryEntry,
+  buildSalesProfitabilityHistoryScopeKey,
+  clearSalesProfitabilityHistory,
+  deleteSalesProfitabilityHistoryEntry,
+  downloadSalesProfitabilityHistoryEntry,
+  loadSalesProfitabilityHistory,
+  saveSalesProfitabilityHistoryEntry,
+  salesProfitabilityHistoryLabels
+} from '../../services/ai/salesProfitabilityHistory';
 import { useAppStore } from '../../store/useAppStore';
 import './CommercialAIAgentsPage.css';
 
@@ -436,9 +450,265 @@ function AnalysisResult({ result, onDownload, isDownloading }) {
   );
 }
 
+const INTENT_LABELS = Object.freeze({
+  profitability_summary: 'Rentabilidad general',
+  explain_change: 'Cambio de margen',
+  product_risk: 'Riesgo de productos',
+  price_simulation: 'Simulación de precio',
+  promotion_opportunity: 'Simulación de promoción',
+  combo_opportunity: 'Oportunidad de combos',
+  out_of_scope: 'Fuera del alcance'
+});
+
+const HISTORY_ISSUE_MESSAGES = Object.freeze({
+  context_unavailable: 'No se pudo confirmar un contexto seguro para guardar este historial. El resultado seguirá visible mientras esta pantalla permanezca abierta.',
+  history_recovered: 'No se pudo leer el historial anterior. Se inició uno vacío y puedes seguir usando el agente.',
+  storage_unavailable: 'El almacenamiento local no pudo guardar el historial. El resultado actual sigue disponible en pantalla.',
+  entry_too_large: 'El reporte supera el límite local del historial y no se guardó.',
+  invalid_entry: 'La respuesta no tenía un formato válido para guardarse en el historial.',
+  download_error: 'No se pudo descargar esta consulta. El resultado original sigue disponible en el historial.'
+});
+
+const formatHistoryDateOnly = (value) => {
+  if (typeof value !== 'string') return null;
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return value;
+  const date = new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12));
+  return new Intl.DateTimeFormat('es-MX', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'UTC'
+  }).format(date);
+};
+
+const formatHistoryTimestamp = (entry) => {
+  const date = new Date(entry?.queriedAt);
+  if (Number.isNaN(date.getTime())) return 'Fecha no disponible';
+  try {
+    return new Intl.DateTimeFormat('es-MX', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: entry.timezone || undefined,
+      timeZoneName: 'short'
+    }).format(date);
+  } catch {
+    return date.toLocaleString('es-MX');
+  }
+};
+
+const historyFilterDetails = (entry) => {
+  const request = entry?.report?.request || {};
+  const period = request.period || {};
+  const scenario = request.scenario || {};
+  const details = [];
+  const from = formatHistoryDateOnly(period.from);
+  const to = formatHistoryDateOnly(period.to);
+  if (from || to) details.push(`Periodo: ${from || '—'} a ${to || '—'}`);
+
+  const intent = request.resolvedIntent;
+  if (intent) details.push(`Intención: ${INTENT_LABELS[intent] || intent}`);
+
+  const previousFrom = formatHistoryDateOnly(period.previousFrom);
+  const previousTo = formatHistoryDateOnly(period.previousTo);
+  if (previousFrom || previousTo) details.push(`Comparación: ${previousFrom || '—'} a ${previousTo || '—'}`);
+  else if (request.compare === true) details.push('Comparación: activada');
+
+  if (scenario.productName) details.push(`Producto: ${scenario.productName}`);
+  if (Number.isFinite(scenario.newPrice)) details.push(`Precio nuevo: ${formatAnalysisValue.formatMoney(scenario.newPrice)}`);
+  if (Number.isFinite(scenario.promotionalPrice)) details.push(`Precio promocional: ${formatAnalysisValue.formatMoney(scenario.promotionalPrice)}`);
+  if (Number.isFinite(scenario.discountPercent)) details.push(`Descuento: ${formatAnalysisValue.formatPercent(scenario.discountPercent / 100)}`);
+  if (Number.isFinite(scenario.historicalVolume)) details.push(`Volumen histórico: ${formatAnalysisValue.formatNumber(scenario.historicalVolume, 0)}`);
+  if (Number.isFinite(scenario.expectedVolume)) details.push(`Volumen esperado: ${formatAnalysisValue.formatNumber(scenario.expectedVolume, 0)}`);
+  return details;
+};
+
+const historyEntryToAnalysisResult = (entry) => {
+  const report = entry?.report;
+  const deterministic = report?.deterministic || {};
+  const ai = report?.ai || {};
+  if (!report?.result) return null;
+  return {
+    response: {
+      status: report.result.status,
+      executiveSummary: report.result.executiveSummary,
+      answer: report.result.answer,
+      explanation: report.result.explanation,
+      confidence: report.result.confidence,
+      source: report.result.source,
+      coverage: report.result.coverage,
+      intent: report.request?.resolvedIntent,
+      profitability: deterministic.profitability,
+      current: deterministic.current,
+      previous: deterministic.previous,
+      comparison: deterministic.comparison,
+      contributors: deterministic.contributors,
+      productRisks: deterministic.productRisks,
+      priceSimulation: deterministic.priceSimulation,
+      promotionSimulation: deterministic.promotionSimulation,
+      comboOpportunities: deterministic.comboOpportunities,
+      calculations: deterministic.calculations,
+      scenarios: deterministic.scenarios,
+      recommendations: deterministic.recommendations,
+      assumptions: deterministic.assumptions,
+      limitations: deterministic.limitations,
+      queryRange: deterministic.queryRange,
+      aiNarrative: {
+        status: ai.status,
+        executiveSummary: ai.executiveSummary,
+        explanation: ai.explanation,
+        recommendations: ai.recommendations
+      }
+    },
+    usageStatus: report.usage?.available === true ? report.usage : null,
+    providerCalled: report.result.providerCalled === true
+  };
+};
+
+function HistoryPanel({
+  entries,
+  isLoading,
+  issue,
+  selectedEntryId,
+  onSelect,
+  onDelete,
+  onClear,
+  onDownload,
+  isDownloading
+}) {
+  const [confirmClear, setConfirmClear] = useState(false);
+  const selectedEntry = entries.find((entry) => entry.id === selectedEntryId) || null;
+
+  return (
+    <section className="commercial-ai-history" aria-labelledby="commercial-ai-history-title">
+      <div className="commercial-ai-history__header">
+        <div>
+          <p className="commercial-ai-eyebrow"><History size={15} aria-hidden="true" /> Consultas guardadas</p>
+          <h2 id="commercial-ai-history-title">Historial de consultas</h2>
+        </div>
+        <button
+          type="button"
+          className="commercial-ai-history__clear"
+          onClick={() => setConfirmClear(true)}
+          disabled={isLoading || entries.length === 0}
+        >
+          <Trash2 size={16} aria-hidden="true" /> Limpiar historial
+        </button>
+      </div>
+      <p className="commercial-ai-history__privacy">Se conserva sólo en este dispositivo y navegador. Al cambiar de negocio, licencia o sesión se separa del historial anterior.</p>
+      {issue && <p className="commercial-ai-history__notice" role="status">{HISTORY_ISSUE_MESSAGES[issue] || HISTORY_ISSUE_MESSAGES.storage_unavailable}</p>}
+
+      {confirmClear && entries.length > 0 && (
+        <div className="commercial-ai-history__confirm" role="group" aria-label="Confirmar limpieza del historial">
+          <p>¿Eliminar todas las consultas guardadas en este contexto?</p>
+          <button type="button" onClick={() => setConfirmClear(false)}>Conservar historial</button>
+          <button type="button" onClick={() => { onClear(); setConfirmClear(false); }}>Sí, limpiar historial</button>
+        </div>
+      )}
+
+      {isLoading ? (
+        <p className="commercial-ai-history__empty" role="status">Cargando historial local…</p>
+      ) : entries.length === 0 ? (
+        <p className="commercial-ai-history__empty">Todavía no hay consultas completadas en este contexto.</p>
+      ) : (
+        <ul className="commercial-ai-history__list">
+          {entries.map((entry) => {
+            const filters = historyFilterDetails(entry);
+            const mode = salesProfitabilityHistoryLabels.executionMode[entry.execution.mode];
+            const usage = salesProfitabilityHistoryLabels.usageStatus[entry.quota.status];
+            const snapshot = entry.report?.usage;
+            const snapshotLabel = snapshot?.available === true
+              ? (snapshot.isUnlimited
+                ? `Snapshot del contador: ${snapshot.used ?? '—'} usados · sin límite`
+                : `Snapshot del contador: ${snapshot.used ?? '—'} usados · límite ${snapshot.limit ?? '—'} · disponibles ${snapshot.remaining ?? '—'}`)
+              : 'Snapshot del contador: no disponible';
+            const detailId = `commercial-ai-history-detail-${entry.id}`;
+
+            return (
+              <li key={entry.id}>
+                <article className="commercial-ai-history__item">
+                  <div className="commercial-ai-history__item-main">
+                    <p className="commercial-ai-history__date">{formatHistoryTimestamp(entry)}</p>
+                    <h3>{entry.report?.request?.question || 'Pregunta no disponible'}</h3>
+                    <p className="commercial-ai-history__filters">{filters.length ? filters.join(' · ') : 'Filtros no disponibles'}</p>
+                    <div className="commercial-ai-history__labels">
+                      <span>Modo: <strong>{mode}</strong></span>
+                      <span>Usó cuota: <strong>{usage}</strong></span>
+                    </div>
+                    <small>{salesProfitabilityHistoryLabels.usageExplanation[entry.quota.reason]}</small>
+                    <small>{snapshotLabel}</small>
+                  </div>
+                  <div className="commercial-ai-history__actions">
+                    <button
+                      type="button"
+                      aria-expanded={selectedEntryId === entry.id}
+                      aria-controls={detailId}
+                      onClick={() => onSelect(selectedEntryId === entry.id ? null : entry.id)}
+                    >
+                      {selectedEntryId === entry.id ? 'Cerrar respuesta' : 'Ver respuesta'}
+                    </button>
+                    <button
+                      type="button"
+                      className="commercial-ai-history__delete"
+                      aria-label="Eliminar consulta del historial"
+                      onClick={() => onDelete(entry.id)}
+                    >
+                      <Trash2 size={15} aria-hidden="true" /> Eliminar
+                    </button>
+                  </div>
+                </article>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {selectedEntry && (
+        <section
+          className="commercial-ai-history__detail"
+          id={`commercial-ai-history-detail-${selectedEntry.id}`}
+          aria-labelledby="commercial-ai-history-answer-title"
+        >
+          <div className="commercial-ai-history__detail-header">
+            <div>
+              <p className="commercial-ai-eyebrow">Respuesta guardada · {formatHistoryTimestamp(selectedEntry)}</p>
+              <h3 id="commercial-ai-history-answer-title">{selectedEntry.report?.request?.question || 'Pregunta no disponible'}</h3>
+            </div>
+            <button type="button" onClick={() => onSelect(null)}>Cerrar</button>
+          </div>
+          <AnalysisResult
+            result={historyEntryToAnalysisResult(selectedEntry)}
+            onDownload={() => onDownload(selectedEntry)}
+            isDownloading={isDownloading}
+          />
+        </section>
+      )}
+    </section>
+  );
+}
+
 export default function CommercialAIAgentsPage() {
   const companyProfile = useAppStore((state) => state.companyProfile);
+  const licenseDetails = useAppStore((state) => state.licenseDetails);
+  const actorSnapshot = useActorRuntimeSnapshot();
   const businessTimezone = resolveBusinessTimezone(companyProfile);
+  const licenseKey = getLicenseKeyFromDetails(licenseDetails);
+  const tenantOpaqueId = actorSnapshot?.tenant?.opaqueId || '';
+  const actorKey = actorSnapshot?.actorKey || '';
+  const sessionId = actorSnapshot?.sessionId || '';
+  const historyContext = useMemo(() => ({
+    tenantOpaqueId,
+    actorKey,
+    sessionId,
+    licenseKey: licenseKey || ''
+  }), [tenantOpaqueId, actorKey, sessionId, licenseKey]);
+  const historyContextToken = useMemo(() => {
+    if (!tenantOpaqueId || !actorKey || !sessionId || !licenseKey) return null;
+    return JSON.stringify([tenantOpaqueId, actorKey, sessionId, licenseKey]);
+  }, [tenantOpaqueId, actorKey, sessionId, licenseKey]);
   const [question, setQuestion] = useState('');
   const [periodDays, setPeriodDays] = useState(30);
   const [compare, setCompare] = useState(false);
@@ -458,6 +728,18 @@ export default function CommercialAIAgentsPage() {
   const [usageStatus, setUsageStatus] = useState(null);
   const [isLoadingUsage, setIsLoadingUsage] = useState(true);
   const [usageError, setUsageError] = useState(null);
+  const [historyState, setHistoryState] = useState({
+    contextToken: null,
+    entries: [],
+    isLoading: true,
+    issue: null
+  });
+  const [selectedHistoryEntryId, setSelectedHistoryEntryId] = useState(null);
+  const [isDownloadingHistory, setIsDownloadingHistory] = useState(false);
+  const analysisInFlightRef = useRef(false);
+  const historyContextTokenRef = useRef(historyContextToken);
+  const historyScopeRef = useRef({ contextToken: null, scopeKey: null });
+  historyContextTokenRef.current = historyContextToken;
 
   const refreshUsage = useCallback(async () => {
     setIsLoadingUsage(true);
@@ -477,6 +759,7 @@ export default function CommercialAIAgentsPage() {
   useEffect(() => {
     let active = true;
     setIsLoadingUsage(true);
+    setUsageStatus(null);
     setUsageError(null);
     getAIAgentUsageStatus()
       .then((nextUsage) => {
@@ -489,7 +772,63 @@ export default function CommercialAIAgentsPage() {
         if (active) setIsLoadingUsage(false);
       });
     return () => { active = false; };
-  }, []);
+  }, [historyContextToken]);
+
+  useEffect(() => {
+    let active = true;
+    historyScopeRef.current = { contextToken: null, scopeKey: null };
+    setHistoryState({
+      contextToken: historyContextToken,
+      entries: [],
+      isLoading: true,
+      issue: null
+    });
+    setSelectedHistoryEntryId(null);
+    setResult(null);
+    setDownloadContext(null);
+    setDownloadError(null);
+    setQuestion('');
+    setScenario({});
+    setUsageStatus(null);
+    setUsageError(null);
+    setIsLoadingUsage(true);
+
+    if (!historyContextToken) {
+      setHistoryState({
+        contextToken: null,
+        entries: [],
+        isLoading: false,
+        issue: 'context_unavailable'
+      });
+      return () => { active = false; };
+    }
+
+    const loadHistory = async () => {
+      const scopeKey = await buildSalesProfitabilityHistoryScopeKey(historyContext);
+      if (!active || historyContextTokenRef.current !== historyContextToken) return;
+      if (!scopeKey) {
+        setHistoryState({
+          contextToken: historyContextToken,
+          entries: [],
+          isLoading: false,
+          issue: 'context_unavailable'
+        });
+        return;
+      }
+
+      historyScopeRef.current = { contextToken: historyContextToken, scopeKey };
+      const loaded = loadSalesProfitabilityHistory({ scopeKey });
+      setHistoryState({
+        contextToken: historyContextToken,
+        entries: loaded.entries,
+        isLoading: false,
+        issue: loaded.issue
+      });
+    };
+
+    void loadHistory();
+    return () => { active = false; };
+  }, [historyContext, historyContextToken]);
 
   const period = useMemo(
     () => buildPeriodRange({ days: periodDays, timezone: businessTimezone }),
@@ -579,9 +918,51 @@ export default function CommercialAIAgentsPage() {
     setScenario((current) => ({ ...current, [name]: value === '' ? undefined : value }));
   };
 
+  const persistHistoryEntry = useCallback(async ({ completedResult, requestContext, queriedAt, contextToken }) => {
+    if (!contextToken || historyContextTokenRef.current !== contextToken) return;
+    const entry = buildSalesProfitabilityHistoryEntry({
+      result: completedResult,
+      requestContext,
+      queriedAt
+    });
+    if (!entry) {
+      setHistoryState((current) => current.contextToken === contextToken
+        ? { ...current, issue: 'invalid_entry' }
+        : current);
+      return;
+    }
+
+    let scopeKey = historyScopeRef.current.contextToken === contextToken
+      ? historyScopeRef.current.scopeKey
+      : null;
+    if (!scopeKey) scopeKey = await buildSalesProfitabilityHistoryScopeKey(historyContext);
+    if (historyContextTokenRef.current !== contextToken) return;
+    if (!scopeKey) {
+      setHistoryState((current) => current.contextToken === contextToken
+        ? { ...current, entries: [entry, ...current.entries], isLoading: false, issue: 'context_unavailable' }
+        : current);
+      return;
+    }
+
+    historyScopeRef.current = { contextToken, scopeKey };
+    const saved = saveSalesProfitabilityHistoryEntry({ scopeKey, entry });
+    if (historyContextTokenRef.current !== contextToken) return;
+    setHistoryState((current) => current.contextToken === contextToken
+      ? {
+        ...current,
+        entries: saved.entries,
+        isLoading: false,
+        issue: saved.issue
+      }
+      : current);
+  }, [historyContext]);
+
   const handleAnalyze = async (event) => {
     event.preventDefault();
-    if (!question.trim() || isAnalyzing) return;
+    if (!question.trim() || isAnalyzing || analysisInFlightRef.current) return;
+    analysisInFlightRef.current = true;
+    const queriedAt = new Date().toISOString();
+    const requestContextToken = historyContextToken;
     setIsAnalyzing(true);
     setAnalysisError(null);
     setDownloadError(null);
@@ -589,22 +970,16 @@ export default function CommercialAIAgentsPage() {
     setDownloadContext(null);
     try {
       const resolution = resolveCommercialIntent(question);
-      if (resolution.kind === 'out_of_scope') {
-        setResult({
-          response: createOutOfScopeResponse(resolution),
-          usageStatus: null,
-          providerCalled: false
-        });
-        return;
-      }
-
-      const resolvedIntent = resolution.intent;
-      const normalizedScenario = normalizeScenarioForIntent(resolvedIntent, scenario);
-      const compareEnabled = resolvedIntent === 'explain_change' && compare === true;
-      const requestKey = typeof crypto?.randomUUID === 'function' ? crypto.randomUUID() : `${Date.now()}-${question}`;
+      const resolvedIntent = resolution.kind === 'supported' ? resolution.intent : 'out_of_scope';
+      const normalizedScenario = resolution.kind === 'supported'
+        ? normalizeScenarioForIntent(resolvedIntent, scenario)
+        : {};
+      const compareEnabled = resolution.kind === 'supported'
+        && resolvedIntent === 'explain_change'
+        && compare === true;
       const previousPeriod = compareEnabled ? buildPreviousPeriod(period) : null;
       const requestContext = {
-        question: question.trim(),
+        question,
         resolvedIntent,
         compare: compareEnabled,
         period: {
@@ -616,6 +991,21 @@ export default function CommercialAIAgentsPage() {
         },
         scenario: normalizedScenario
       };
+
+      if (resolution.kind === 'out_of_scope') {
+        const completedResult = {
+          response: createOutOfScopeResponse(resolution),
+          usageStatus: null,
+          providerCalled: false,
+          quotaOutcome: 'not_consumed'
+        };
+        setResult(completedResult);
+        setDownloadContext(requestContext);
+        void persistHistoryEntry({ completedResult, requestContext, queriedAt, contextToken: requestContextToken });
+        return;
+      }
+
+      const requestKey = typeof crypto?.randomUUID === 'function' ? crypto.randomUUID() : `${Date.now()}-${question}`;
       const response = await runSalesProfitabilityAgent({
         question,
         intent: resolvedIntent,
@@ -624,8 +1014,26 @@ export default function CommercialAIAgentsPage() {
         scenario: normalizedScenario,
         requestKey
       });
-      setResult(response);
-      if (response?.usageStatus) setUsageStatus(response.usageStatus);
+      if (historyContextTokenRef.current !== requestContextToken) return;
+      const responseStatus = response?.response?.status;
+      const hasVisibleAnswer = [
+        response?.response?.executiveSummary,
+        response?.response?.answer,
+        response?.response?.explanation
+      ].some((value) => typeof value === 'string' && value.trim().length > 0);
+      if (
+        !['completed', 'incomplete', 'insufficient_data'].includes(responseStatus)
+        || !hasVisibleAnswer
+      ) {
+        throw new Error('INVALID_AGENT_RESPONSE');
+      }
+
+      const completedResult = {
+        ...response,
+        quotaOutcome: response?.quotaOutcome || 'not_confirmed'
+      };
+      setResult(completedResult);
+      if (completedResult.usageStatus) setUsageStatus(completedResult.usageStatus);
       setDownloadContext({
         ...requestContext,
         period: {
@@ -633,7 +1041,19 @@ export default function CommercialAIAgentsPage() {
           timezone: response?.response?.queryRange?.current?.timezone || businessTimezone
         }
       });
-      if (response?.providerCalled) void refreshUsage();
+      if (completedResult.providerCalled) void refreshUsage();
+      void persistHistoryEntry({
+        completedResult,
+        requestContext: {
+          ...requestContext,
+          period: {
+            ...requestContext.period,
+            timezone: completedResult?.response?.queryRange?.current?.timezone || businessTimezone
+          }
+        },
+        queriedAt,
+        contextToken: requestContextToken
+      });
     } catch (error) {
       console.error('[CommercialAIAgentsPage] No se pudo procesar la consulta.', {
         code: error?.code || error?.originalError?.code || 'COMMERCIAL_ANALYSIS_FAILED',
@@ -644,6 +1064,7 @@ export default function CommercialAIAgentsPage() {
       setAnalysisError('No pudimos procesar esta consulta. Revisa las opciones seleccionadas e inténtalo nuevamente.');
       void refreshUsage();
     } finally {
+      analysisInFlightRef.current = false;
       setIsAnalyzing(false);
     }
   };
@@ -664,6 +1085,42 @@ export default function CommercialAIAgentsPage() {
         setIsDownloading(false);
       }
     }, 0);
+  };
+
+  const activeHistoryState = historyState.contextToken === historyContextToken
+    ? historyState
+    : { contextToken: historyContextToken, entries: [], isLoading: true, issue: null };
+
+  const handleDeleteHistoryEntry = (entryId) => {
+    const scope = historyScopeRef.current;
+    if (!historyContextToken || scope.contextToken !== historyContextToken || !scope.scopeKey) return;
+    const deleted = deleteSalesProfitabilityHistoryEntry({ scopeKey: scope.scopeKey, id: entryId });
+    setHistoryState((current) => current.contextToken === historyContextToken
+      ? { ...current, entries: deleted.entries, issue: deleted.issue }
+      : current);
+    if (selectedHistoryEntryId === entryId) setSelectedHistoryEntryId(null);
+  };
+
+  const handleClearHistory = () => {
+    const scope = historyScopeRef.current;
+    if (!historyContextToken || scope.contextToken !== historyContextToken || !scope.scopeKey) return;
+    const cleared = clearSalesProfitabilityHistory();
+    setHistoryState((current) => current.contextToken === historyContextToken
+      ? { ...current, entries: [], issue: cleared.issue }
+      : current);
+    setSelectedHistoryEntryId(null);
+  };
+
+  const handleDownloadHistoryEntry = (entry) => {
+    setIsDownloadingHistory(true);
+    try {
+      downloadSalesProfitabilityHistoryEntry(entry);
+      setHistoryState((current) => ({ ...current, issue: null }));
+    } catch {
+      setHistoryState((current) => ({ ...current, issue: 'download_error' }));
+    } finally {
+      setIsDownloadingHistory(false);
+    }
   };
 
   const showsProductScenario = intent === 'price_simulation' || intent === 'promotion_opportunity';
@@ -800,6 +1257,18 @@ export default function CommercialAIAgentsPage() {
         {downloadError && <div className="commercial-ai-error" role="alert"><AlertTriangle size={18} /> {downloadError}</div>}
         <AnalysisResult result={result} onDownload={handleDownload} isDownloading={isDownloading} />
       </section>
+
+      <HistoryPanel
+        entries={activeHistoryState.entries}
+        isLoading={activeHistoryState.isLoading}
+        issue={activeHistoryState.issue}
+        selectedEntryId={selectedHistoryEntryId}
+        onSelect={setSelectedHistoryEntryId}
+        onDelete={handleDeleteHistoryEntry}
+        onClear={handleClearHistory}
+        onDownload={handleDownloadHistoryEntry}
+        isDownloading={isDownloadingHistory}
+      />
 
       <aside className="commercial-ai-notice" role="note"><ShieldCheck size={18} aria-hidden="true" /><p>Lanzo-POS calcula ventas, costos, utilidad y escenarios. La IA explica esos resultados y no ejecuta cambios.</p></aside>
     </main>

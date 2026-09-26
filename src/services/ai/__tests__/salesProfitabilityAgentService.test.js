@@ -123,6 +123,7 @@ describe('sales profitability agent service', () => {
     });
     expect(analyze).toHaveBeenCalledTimes(1);
     expect(result.providerCalled).toBe(true);
+    expect(result.quotaOutcome).toBe('consumed');
     expect(result.usageStatus.remaining).toBe(14);
     expect(result.response.coverage.complete).toBe(true);
     expect(result.response.current.costStatus).toBe('estimated');
@@ -267,6 +268,7 @@ describe('sales profitability agent service', () => {
     expect(result.response.limitations.some((item) => /no hay ventas válidas/i.test(item))).toBe(true);
     expect(result.usageStatus).toBeNull();
     expect(result.providerCalled).toBe(false);
+    expect(result.quotaOutcome).toBe('not_consumed');
   });
 
   it('never turns four sales without item detail into $120 profit or 100% margin', async () => {
@@ -547,6 +549,7 @@ describe('sales profitability agent service', () => {
     expect(result.response.executiveSummary).toMatch(/No hay evidencia suficiente de compras conjuntas/i);
     expect(result.providerCalled).toBe(false);
     expect(result.usageStatus).toBeNull();
+    expect(result.quotaOutcome).toBe('not_consumed');
     expect(analyze).not.toHaveBeenCalled();
     expect(reports.getSalesFinalHistory).toHaveBeenCalledTimes(1);
     expect(reports.getSalesProfitReport).toHaveBeenCalledTimes(1);
@@ -618,6 +621,7 @@ describe('sales profitability agent service', () => {
     expect(result.response.executiveSummary).toContain('Soy el asistente de Ventas y Rentabilidad');
     expect(result.providerCalled).toBe(false);
     expect(result.usageStatus).toBeNull();
+    expect(result.quotaOutcome).toBe('not_consumed');
     expect(assertActor).not.toHaveBeenCalled();
     expect(reports.getSalesFinalHistory).not.toHaveBeenCalled();
     expect(reports.getSalesProfitReport).not.toHaveBeenCalled();
@@ -634,6 +638,7 @@ describe('sales profitability agent service', () => {
       expect(outOfScope.response.status).toBe('out_of_scope');
       expect(outOfScope.providerCalled).toBe(false);
       expect(outOfScope.usageStatus).toBeNull();
+      expect(outOfScope.quotaOutcome).toBe('not_consumed');
     }
     expect(assertActor).not.toHaveBeenCalled();
     expect(reports.getSalesFinalHistory).not.toHaveBeenCalled();
@@ -684,6 +689,7 @@ describe('sales profitability agent service', () => {
     });
 
     expect(result.providerCalled).toBe(true);
+    expect(result.quotaOutcome).toBe('not_confirmed');
     expect(result.response.status).toBe('completed');
     expect(result.response.current.netSales).toBe(100);
     expect(result.response.calculations.some((row) => row.label === 'Ventas netas')).toBe(true);

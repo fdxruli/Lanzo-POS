@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   buildSalesProfitabilityDownloadFilename,
   buildSalesProfitabilityDownloadReport,
-  downloadSalesProfitabilityReport
+  downloadSalesProfitabilityReport,
+  sanitizeSalesProfitabilityDownloadReport
 } from '../salesProfitabilityDownloadReport';
 
 const internalUuid = '123e4567-e89b-12d3-a456-426614174000';
@@ -250,7 +251,13 @@ describe('sales profitability download report', () => {
     expect(report.result.providerCalled).toBe(true);
     expect(report.result.coverage.sourcePolicy).toMatchObject({ legacySources: 1, shadowSources: 1 });
     expect(report.result.coverage.sourceWarnings.join(' ')).toMatch(/legacy.*shadow/i);
-    expect(report.usage).toEqual({ used: 3, limit: 15, remaining: 12 });
+    expect(report.usage).toEqual({
+      available: true,
+      used: 3,
+      limit: 15,
+      remaining: 12,
+      isUnlimited: false
+    });
   });
 
   it('keeps deterministic evidence separate from normalized AI narrative', () => {
@@ -264,7 +271,7 @@ describe('sales profitability download report', () => {
     expect(report.ai.explanation).toBe('Explicación narrativa sin mezclar los cálculos locales.');
     expect(report.ai.recommendations[0].title).toBe('Probar el precio');
     expect(report.deterministic.queryRange.current.fromInclusiveUtc).toBe('2026-09-01T06:00:00.000Z');
-    expect(report.deterministic).not.toHaveProperty('recommendations');
+    expect(report.deterministic.recommendations).toMatchObject([{ title: 'Probar el precio' }]);
   });
 
   it('exports missing product costs as null with incomplete coverage instead of zero or 100% margin', () => {
@@ -456,7 +463,13 @@ describe('sales profitability download report', () => {
 
     expect(result.report.result.status).toBe('incomplete');
     expect(result.report.result.providerCalled).toBe(false);
-    expect(result.report.ai).toEqual({ executiveSummary: null, explanation: null, recommendations: [], confidence: null });
+    expect(result.report.ai).toEqual({
+      status: 'not_generated',
+      executiveSummary: null,
+      explanation: null,
+      recommendations: [],
+      confidence: null
+    });
     expect(click).toHaveBeenCalledTimes(1);
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:incomplete');
   });
@@ -473,6 +486,37 @@ describe('sales profitability download report', () => {
     expect(result).toBeNull();
     expect(createObjectURL).not.toHaveBeenCalled();
     expect(revokeObjectURL).not.toHaveBeenCalled();
+  });
+
+  it('marks a missing usage snapshot as unavailable instead of inventing zeroes', () => {
+    const report = buildSalesProfitabilityDownloadReport({
+      ...completedResult,
+      usageStatus: null
+    }, requestContext);
+
+    expect(report.usage).toEqual({ available: false });
+  });
+
+  it('re-sanitizes stored report data before rendering or exporting it', () => {
+    const report = buildSalesProfitabilityDownloadReport(completedResult, requestContext);
+    const unsafeStoredCopy = {
+      ...report,
+      internalUuid,
+      auth: { deviceSecurityToken: 'secret-token' },
+      deterministic: {
+        ...report.deterministic,
+        rawRows: [{ sale_id: internalUuid, customer_email: 'hidden@example.test' }]
+      }
+    };
+
+    const safe = sanitizeSalesProfitabilityDownloadReport(unsafeStoredCopy);
+    const serialized = JSON.stringify(safe);
+    expect(safe).not.toHaveProperty('internalUuid');
+    expect(safe).not.toHaveProperty('auth');
+    expect(safe.deterministic).not.toHaveProperty('rawRows');
+    expect(serialized).not.toContain(internalUuid);
+    expect(serialized).not.toContain('hidden@example.test');
+    expect(serialized).not.toContain('secret-token');
   });
 
   it('releases the temporary URL and creates a safe readable filename for completed results', () => {

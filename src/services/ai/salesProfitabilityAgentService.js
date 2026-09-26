@@ -581,6 +581,7 @@ export const createSalesProfitabilityAgentRunner = ({
       response: createOutOfScopeResponse(resolution),
       usageStatus: null,
       providerCalled: false,
+      quotaOutcome: 'not_consumed',
       reportSource: 'local',
       intentResolution: resolution
     };
@@ -657,6 +658,7 @@ export const createSalesProfitabilityAgentRunner = ({
         response: deterministic,
         usageStatus: null,
         providerCalled: false,
+        quotaOutcome: 'not_consumed',
         reportSource: deterministic.source
       };
     }
@@ -690,6 +692,7 @@ export const createSalesProfitabilityAgentRunner = ({
         response,
         usageStatus: providerResult.usageStatus || null,
         providerCalled: true,
+        quotaOutcome: 'consumed',
         reportSource: deterministic.source
       };
     } catch (error) {
@@ -714,6 +717,7 @@ export const createSalesProfitabilityAgentRunner = ({
         },
         usageStatus: null,
         providerCalled: true,
+        quotaOutcome: 'not_confirmed',
         narrativeAvailable: false,
         reportSource: deterministic.source
       };

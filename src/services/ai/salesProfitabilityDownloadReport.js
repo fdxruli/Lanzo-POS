@@ -1,5 +1,5 @@
 const REPORT_SCHEMA_VERSION = 'sales-profitability-report-v2';
-const VALID_STATUSES = new Set(['completed', 'incomplete', 'insufficient_data']);
+const VALID_STATUSES = new Set(['completed', 'incomplete', 'insufficient_data', 'out_of_scope']);
 const VALID_CONFIDENCE = new Set(['high', 'medium', 'low']);
 const VALID_SOURCES = new Set(['cloud', 'local', 'mixed']);
 const UUID_PATTERN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/giu;
@@ -372,13 +372,21 @@ const safeScenarioRequest = (scenario) => {
 
 const safeUsage = (usageStatus) => {
   const source = asRecord(usageStatus);
-  const used = finiteNumber(source.used) ?? 0;
-  const limit = finiteNumber(source.limit) ?? 0;
+  const used = finiteNumber(source.used);
+  const limit = finiteNumber(source.limit);
   const remaining = finiteNumber(source.remaining);
+  const isUnlimited = source.isUnlimited === true
+    || source.is_unlimited === true
+    || source.unlimited === true;
+  if (source.available === false || (used === null && limit === null && remaining === null && !isUnlimited)) {
+    return { available: false };
+  }
   return {
+    available: true,
     used,
     limit,
-    remaining: remaining ?? Math.max(limit - used, 0)
+    remaining,
+    isUnlimited
   };
 };
 
@@ -388,6 +396,8 @@ export const buildSalesProfitabilityDownloadReport = (result, requestContext = {
 
   const request = asRecord(requestContext);
   const providerCalled = result?.providerCalled === true;
+  const explicitCacheHit = result?.cacheHit === true || result?.cache?.hit === true;
+  const hasNarrative = providerCalled || explicitCacheHit;
   const now = options.generatedAt instanceof Date ? options.generatedAt : new Date(options.generatedAt || Date.now());
   const current = safeAggregate(response.current);
 
@@ -414,7 +424,8 @@ export const buildSalesProfitabilityDownloadReport = (result, requestContext = {
       confidence: safeConfidence(response.confidence),
       source: safeSource(response.source),
       coverage: safeCoverage(response.coverage),
-      providerCalled
+      providerCalled,
+      cacheHit: explicitCacheHit
     },
     deterministic: {
       summary: safeSummary(response),
@@ -431,14 +442,23 @@ export const buildSalesProfitabilityDownloadReport = (result, requestContext = {
       channels: Array.isArray(current.channels) ? current.channels : [],
       calculations: (Array.isArray(response.calculations) ? response.calculations : []).slice(0, 80).map(safeCalculation),
       scenarios: (Array.isArray(response.scenarios) ? response.scenarios : []).slice(0, 30).map(safeScenario),
+      recommendations: (Array.isArray(response.recommendations) ? response.recommendations : []).slice(0, 20).map(safeRecommendation),
       assumptions: safeTextArray(response.assumptions, 40, 700),
       limitations: safeTextArray(response.limitations, 40, 700),
       queryRange: safeQueryRange(response.queryRange)
     },
     ai: {
-      executiveSummary: providerCalled ? sanitizeText(response.aiNarrative?.executiveSummary, 2400) : null,
-      explanation: providerCalled ? sanitizeText(response.aiNarrative?.explanation, 4000) : null,
-      recommendations: providerCalled
+      status: !hasNarrative
+        ? 'not_generated'
+        : response.aiNarrative?.status === 'unavailable'
+        ? 'unavailable'
+        : (response.aiNarrative?.executiveSummary || response.aiNarrative?.explanation
+          || (Array.isArray(response.aiNarrative?.recommendations) && response.aiNarrative.recommendations.length)
+          ? 'available'
+          : 'not_generated'),
+      executiveSummary: hasNarrative ? sanitizeText(response.aiNarrative?.executiveSummary, 2400) || null : null,
+      explanation: hasNarrative ? sanitizeText(response.aiNarrative?.explanation, 4000) || null : null,
+      recommendations: hasNarrative
         ? (Array.isArray(response.aiNarrative?.recommendations) ? response.aiNarrative.recommendations : []).slice(0, 20).map(safeRecommendation)
         : [],
       confidence: null
@@ -446,6 +466,58 @@ export const buildSalesProfitabilityDownloadReport = (result, requestContext = {
     usage: safeUsage(result?.usageStatus),
     redactions: [...SALES_PROFITABILITY_REPORT_REDACTIONS]
   };
+};
+
+// Reapply the report allowlist before an already-sanitized report is rendered
+// from local history or written to a history download. This never reads live
+// sales data, auth state, quota, or provider state.
+export const sanitizeSalesProfitabilityDownloadReport = (value) => {
+  const source = asRecord(value);
+  if (source.schemaVersion !== REPORT_SCHEMA_VERSION) return null;
+
+  const result = asRecord(source.result);
+  const deterministic = asRecord(source.deterministic);
+  const ai = asRecord(source.ai);
+  const generatedAt = new Date(source.generatedAt);
+  if (Number.isNaN(generatedAt.getTime())) return null;
+
+  return buildSalesProfitabilityDownloadReport({
+    providerCalled: result.providerCalled === true,
+    cacheHit: result.cacheHit === true,
+    usageStatus: source.usage?.available === true ? source.usage : null,
+    response: {
+      status: result.status,
+      executiveSummary: result.executiveSummary,
+      answer: result.answer,
+      explanation: result.explanation,
+      confidence: result.confidence,
+      source: result.source,
+      coverage: result.coverage,
+      intent: source.request?.resolvedIntent,
+      context: { summary: deterministic.summary },
+      current: deterministic.current,
+      previous: deterministic.previous,
+      comparison: deterministic.comparison,
+      profitability: deterministic.profitability,
+      contributors: deterministic.contributors,
+      productRisks: deterministic.productRisks,
+      priceSimulation: deterministic.priceSimulation,
+      promotionSimulation: deterministic.promotionSimulation,
+      comboOpportunities: deterministic.comboOpportunities,
+      calculations: deterministic.calculations,
+      scenarios: deterministic.scenarios,
+      recommendations: deterministic.recommendations,
+      assumptions: deterministic.assumptions,
+      limitations: deterministic.limitations,
+      queryRange: deterministic.queryRange,
+      aiNarrative: {
+        status: ai.status,
+        executiveSummary: ai.executiveSummary,
+        explanation: ai.explanation,
+        recommendations: ai.recommendations
+      }
+    }
+  }, source.request, { generatedAt });
 };
 
 export const buildSalesProfitabilityDownloadFilename = (date = new Date()) => {

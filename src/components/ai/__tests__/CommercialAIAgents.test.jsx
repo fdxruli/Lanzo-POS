@@ -10,6 +10,7 @@ const runtime = vi.hoisted(() => ({
   licenseDetails: null,
   companyProfile: null,
   actorSnapshot: null,
+  historyStorage: new Map(),
   runAgent: vi.fn(),
   loadProducts: vi.fn(),
   getUsage: vi.fn(),
@@ -42,7 +43,14 @@ vi.mock('../../../services/auth/useActorRuntimeSnapshot', () => ({
   useActorRuntimeSnapshot: () => runtime.actorSnapshot
 }));
 
-const entitledLicense = { valid: true, plan_code: 'nube', features: { ai_agents: true } };
+vi.mock('../../../services/tenant/tenantScopedStorage', () => ({
+  getTenantStorageState: () => ({ ready: true, writesSuspended: false }),
+  getTenantStorageItem: (key) => runtime.historyStorage.get(key) ?? null,
+  setTenantStorageItem: (key, value) => runtime.historyStorage.set(key, value),
+  removeTenantStorageItem: (key) => runtime.historyStorage.delete(key)
+}));
+
+const entitledLicense = { valid: true, plan_code: 'nube', license_key: 'license-a', features: { ai_agents: true } };
 const boundAdmin = {
   status: 'granted',
   actorType: 'admin',
@@ -67,6 +75,7 @@ describe('commercial AI center', () => {
     runtime.licenseDetails = entitledLicense;
     runtime.companyProfile = { timezone: 'America/New_York' };
     runtime.actorSnapshot = boundAdmin;
+    runtime.historyStorage.clear();
     runtime.runAgent.mockReset();
     runtime.loadProducts.mockReset();
     runtime.getUsage.mockReset();
@@ -108,7 +117,8 @@ describe('commercial AI center', () => {
         scenarios: []
       },
       usageStatus: { used: 1, limit: 15, remaining: 14 },
-      providerCalled: true
+      providerCalled: true,
+      quotaOutcome: 'consumed'
     });
   });
 
@@ -257,6 +267,181 @@ describe('commercial AI center', () => {
     expect(runtime.loadProducts).not.toHaveBeenCalled();
     expect(screen.getByText('Resumen de prueba')).toBeInTheDocument();
     expect(screen.getByText('Uso IA: 1 / 15')).toBeInTheDocument();
+  });
+
+  it('adds a deterministic completed analysis to local history with confirmed zero use', async () => {
+    runtime.runAgent.mockResolvedValueOnce({
+      response: {
+        status: 'completed',
+        executiveSummary: 'Resumen determinístico guardado',
+        explanation: 'El resumen usa hechos determinísticos.',
+        confidence: 'medium',
+        source: 'cloud',
+        intent: 'profitability_summary',
+        coverage: { validSales: 4, costCoverage: 1 },
+        calculations: [{ label: 'Ventas', value: 300, formula: 'suma' }],
+        assumptions: [],
+        limitations: [],
+        recommendations: [],
+        scenarios: [],
+        aiNarrative: null
+      },
+      usageStatus: null,
+      providerCalled: false,
+      quotaOutcome: 'not_consumed'
+    });
+
+    renderCenter();
+    const question = '¿Mi negocio es rentable?';
+    fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), { target: { value: question } });
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+
+    expect(await screen.findByRole('heading', { name: question })).toBeInTheDocument();
+    expect(screen.getByText('Análisis automático')).toBeInTheDocument();
+    expect(screen.getByText('No', { exact: true })).toBeInTheDocument();
+    expect(screen.getByText('Snapshot del contador: no disponible')).toBeInTheDocument();
+    expect(screen.getByText('Historial de consultas')).toBeInTheDocument();
+    expect(runtime.getUsage).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ver respuesta' }));
+    expect(screen.getAllByText('Resumen determinístico guardado')).toHaveLength(2);
+    expect(screen.getAllByText('Hechos determinísticos')).toHaveLength(2);
+    expect(screen.getAllByText('Narrativa opcional de IA')).toHaveLength(2);
+  });
+
+  it('labels a response as Caché only when a cache-hit flag is explicit', async () => {
+    runtime.runAgent.mockResolvedValueOnce({
+      response: {
+        status: 'completed',
+        executiveSummary: 'Respuesta reutilizada',
+        explanation: 'Datos guardados del análisis previo.',
+        confidence: 'medium',
+        source: 'cloud',
+        coverage: { validSales: 1, costCoverage: 1 },
+        calculations: [],
+        assumptions: [],
+        limitations: [],
+        recommendations: [],
+        scenarios: [],
+        aiNarrative: null
+      },
+      providerCalled: false,
+      quotaOutcome: 'not_consumed',
+      cacheHit: true,
+      usageStatus: null
+    });
+
+    renderCenter();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), { target: { value: '¿Mi negocio es rentable?' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+
+    expect(await screen.findByText('Caché')).toBeInTheDocument();
+    expect(screen.getByText('No', { exact: true })).toBeInTheDocument();
+    expect(runtime.getUsage).toHaveBeenCalledTimes(1);
+  });
+
+  it('blocks same-turn duplicate submits so one UI action creates one analysis and one history entry', async () => {
+    let resolveRun;
+    runtime.runAgent.mockImplementationOnce(() => new Promise((resolve) => { resolveRun = resolve; }));
+    renderCenter();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), { target: { value: '¿Mi negocio es rentable?' } });
+    const form = screen.getByRole('button', { name: 'Analizar' }).closest('form');
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+
+    await waitFor(() => expect(runtime.runAgent).toHaveBeenCalledTimes(1));
+    resolveRun({
+      response: {
+        status: 'completed',
+        executiveSummary: 'Una respuesta guardada',
+        explanation: 'Hechos fijos.',
+        confidence: 'medium',
+        source: 'cloud',
+        coverage: { validSales: 1 },
+        calculations: [],
+        assumptions: [],
+        limitations: [],
+        recommendations: [],
+        scenarios: [],
+        aiNarrative: { executiveSummary: 'Narrativa válida' }
+      },
+      providerCalled: true,
+      quotaOutcome: 'consumed',
+      usageStatus: { used: 3, limit: 15, remaining: 12 }
+    });
+
+    expect(await screen.findByText('Narrativa válida')).toBeInTheDocument();
+    let raw;
+    await waitFor(() => {
+      raw = runtime.historyStorage.get('commercial-ai-sales-profitability-history-v1');
+      expect(raw).toBeTruthy();
+    });
+    expect(JSON.parse(raw).entries).toHaveLength(1);
+    expect(runtime.runAgent).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not put errors or invalid response shapes in history', async () => {
+    runtime.runAgent.mockResolvedValueOnce({
+      response: { status: 'invalid', executiveSummary: 'No mostrar como exitoso' },
+      providerCalled: true,
+      quotaOutcome: 'consumed'
+    });
+    renderCenter();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), { target: { value: '¿Mi negocio es rentable?' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+
+    expect(await screen.findByText('No pudimos procesar esta consulta. Revisa las opciones seleccionadas e inténtalo nuevamente.')).toBeInTheDocument();
+    expect(screen.queryByText('No mostrar como exitoso')).not.toBeInTheDocument();
+    expect(screen.getByText('Todavía no hay consultas completadas en este contexto.')).toBeInTheDocument();
+  });
+
+  it('opens, downloads, deletes, and clears snapshots without rerunning analysis or refreshing quota', async () => {
+    renderCenter();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), { target: { value: '¿Por qué cambió mi margen?' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+    await waitFor(() => expect(screen.getByRole('heading', { name: '¿Por qué cambió mi margen?' })).toBeInTheDocument());
+    fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), { target: { value: '¿Mi negocio es rentable?' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+    await waitFor(() => expect(screen.getAllByRole('button', { name: 'Ver respuesta' })).toHaveLength(2));
+    await waitFor(() => expect(runtime.getUsage).toHaveBeenCalledTimes(3));
+
+    const runnerCalls = runtime.runAgent.mock.calls.length;
+    const usageCalls = runtime.getUsage.mock.calls.length;
+    fireEvent.click(screen.getAllByRole('button', { name: 'Ver respuesta' })[0]);
+    const historyDownload = screen.getAllByRole('button', { name: 'Descargar reporte completo' }).at(-1);
+    fireEvent.click(historyDownload);
+    await waitFor(() => expect(runtime.createObjectURL).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getAllByRole('button', { name: 'Eliminar consulta del historial' })[0]);
+    expect(screen.getAllByRole('button', { name: 'Ver respuesta' })).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Limpiar historial' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sí, limpiar historial' }));
+
+    expect(screen.getByText('Todavía no hay consultas completadas en este contexto.')).toBeInTheDocument();
+    expect(runtime.runAgent).toHaveBeenCalledTimes(runnerCalls);
+    expect(runtime.getUsage).toHaveBeenCalledTimes(usageCalls);
+  });
+
+  it('hides the previous history when the actor session and tenant context change', async () => {
+    const view = renderCenter();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), { target: { value: '¿Mi negocio es rentable?' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+    expect(await screen.findByRole('heading', { name: '¿Mi negocio es rentable?' })).toBeInTheDocument();
+
+    runtime.actorSnapshot = {
+      ...boundAdmin,
+      actorKey: 'admin:admin-b',
+      actorId: 'admin-b',
+      sessionId: 'session-b',
+      tenant: { opaqueId: 'tenant-b', databaseName: 'LanzoDB_t_tenant-b', generation: 2 }
+    };
+    view.rerender(
+      <MemoryRouter initialEntries={['/agentes-ia']}>
+        <CommercialAIAgentsRoute><CommercialAIAgentsPage /></CommercialAIAgentsRoute>
+      </MemoryRouter>
+    );
+
+    expect(await screen.findByText('Todavía no hay consultas completadas en este contexto.')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: '¿Mi negocio es rentable?' })).not.toBeInTheDocument();
   });
 
   it('offers only the documented selectable periods 7/30/90/365 days', () => {
