@@ -6,6 +6,7 @@ import EcommerceSiteRenderer from '../components/ecommerce/site/EcommerceSiteRen
 import PublicCartDrawer, { PublicMobileCartBar } from '../components/ecommerce/public/PublicCartDrawer';
 import PublicCheckoutDialog from '../components/ecommerce/public/PublicCheckoutDialog';
 import PublicStoreStatusScreen from '../components/ecommerce/public/PublicStoreStatusScreen';
+import { buildPausedWhatsappUrl } from '../utils/pausedWhatsappContact';
 import usePublicCart from '../hooks/ecommerce/usePublicCart';
 import {
   EcommercePublicError,
@@ -95,6 +96,7 @@ function PublicStorePage() {
 
   const [portalResult, setPortalResult] = useState(null);
   const [storeStatus, setStoreStatus] = useState('loading');
+  const [pausedContactUrl, setPausedContactUrl] = useState('');
   const [storeReloadKey, setStoreReloadKey] = useState(0);
   const [products, setProducts] = useState([]);
   const [pagination, setPagination] = useState(INITIAL_PAGINATION);
@@ -285,6 +287,7 @@ function PublicStorePage() {
     hiddenAtRef.current = null;
 
     setStoreStatus('loading');
+    setPausedContactUrl('');
     setPortalResult(null);
     setProducts([]);
     setPagination(INITIAL_PAGINATION);
@@ -349,6 +352,8 @@ function PublicStorePage() {
       } catch (error) {
         if (!isCurrentRequest()) return;
         const code = error instanceof EcommercePublicError ? error.code : null;
+        setPausedContactUrl(code === 'ECOMMERCE_PORTAL_PAUSED'
+          ? buildPausedWhatsappUrl(error.pausedContact?.whatsappPhone) : '');
         setStoreStatus(code === 'ECOMMERCE_PORTAL_PAUSED' ? 'paused'
           : code === 'ECOMMERCE_PORTAL_NOT_FOUND' ? 'not_found' : 'error');
         setCatalogLoading(false);
@@ -920,6 +925,8 @@ function PublicStorePage() {
         type="paused"
         title="Esta tienda está pausada temporalmente"
         description="El negocio ha pausado temporalmente su portal en línea."
+        actionLabel={pausedContactUrl ? 'Contactar por WhatsApp' : undefined}
+        actionHref={pausedContactUrl || undefined}
       />
     );
   }

@@ -104,6 +104,18 @@ const deferred = () => {
 };
 
 describe('PublicStorePage', () => {
+  it('shows a safe WhatsApp link only for a paused contact', async () => {
+    serviceMocks.getPublicPortalBySlug.mockRejectedValueOnce(new EcommercePublicError(
+      'ECOMMERCE_PORTAL_PAUSED', 'Pausada', null,
+      { pausedContact: { whatsappPhone: '529610000000' } }
+    ));
+    renderPage();
+    expect(await screen.findByRole('heading', { name: 'Esta tienda está pausada temporalmente' })).toBeInTheDocument();
+    expect(screen.getByText('El negocio ha pausado temporalmente su portal en línea.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Contactar por WhatsApp' }))
+      .toHaveAttribute('href', 'https://wa.me/529610000000');
+  });
+
   beforeEach(() => {
     window.sessionStorage.clear();
     serviceMocks.getPublicPortalBySlug.mockReset().mockResolvedValue(portalResult);

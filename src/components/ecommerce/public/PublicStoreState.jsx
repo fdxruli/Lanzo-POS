@@ -11,7 +11,7 @@ const ICONS = {
   noResults: SearchX,
 };
 
-function PublicStoreState({ type = 'empty', title, description, actionLabel, onAction, compact = false }) {
+function PublicStoreState({ type = 'empty', title, description, actionLabel, actionHref, onAction, compact = false }) {
   const Icon = ICONS[type] || Store;
 
   return (
@@ -29,7 +29,11 @@ function PublicStoreState({ type = 'empty', title, description, actionLabel, onA
         <h2>{title}</h2>
         {description ? <p>{description}</p> : null}
       </div>
-      {actionLabel && onAction ? (
+      {actionLabel && actionHref ? (
+        <a className="ui-button ui-button--secondary" href={actionHref} target="_blank" rel="noopener noreferrer">
+          {actionLabel}
+        </a>
+      ) : actionLabel && onAction ? (
         <button type="button" className="ui-button ui-button--secondary" onClick={onAction}>
           {actionLabel}
         </button>
