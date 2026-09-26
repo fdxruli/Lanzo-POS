@@ -8,6 +8,11 @@ export const TARGET_EXECUTED_PASS = 'TARGET_EXECUTED_PASS';
 export const TARGET_EXECUTED_FAIL = 'TARGET_EXECUTED_FAIL';
 export const TARGET_NOT_EXECUTED = 'TARGET_NOT_EXECUTED';
 export const EVIDENCE_UNREADABLE = 'EVIDENCE_UNREADABLE';
+
+export function escapeTestNamePattern(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\export const EVIDENCE_UNREADABLE = 'EVIDENCE_UNREADABLE';
+');
+}
 const clean = (v = '') => String(v).replace(/\s+/g, ' ').trim();
 
 export const normalizeFile = (v = '') => {
@@ -177,7 +182,7 @@ function main() {
     const stem = `public-store-${target.slug}-${repetition}`;
     const jsonPath = path.join(outputDir, `${stem}.json`);
     const result = spawnSync(process.execPath, [
-      './node_modules/vitest/vitest.mjs', 'run', target.file, '-t', target.testName,
+      './node_modules/vitest/vitest.mjs', 'run', target.file, '-t', escapeTestNamePattern(target.testName),
       `--maxWorkers=${maxWorkers}`, '--reporter=default', '--reporter=json', `--outputFile.json=${jsonPath}`,
     ], { cwd: subjectDir, encoding: 'utf8' });
     fs.writeFileSync(path.join(outputDir, `${stem}.log`), `${result.stdout || ''}${result.stderr || ''}`);
