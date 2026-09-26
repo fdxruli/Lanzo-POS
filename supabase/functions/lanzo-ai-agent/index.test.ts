@@ -132,8 +132,116 @@ function responsesResponse(content = 'respuesta responses sintética') {
   });
 }
 
+function structuredCommercialResponse() {
+  return JSON.stringify({
+    version: 1,
+    agentKey: 'salesProfitability',
+    status: 'completed',
+    executiveSummary: 'El margen requiere revisión.',
+    explanation: 'Explicación basada en cálculos determinísticos.',
+    facts: [],
+    calculations: [],
+    assumptions: [],
+    scenarios: [],
+    recommendations: [{
+      title: 'Revisar mezcla',
+      explanation: 'Validar productos de bajo margen.',
+      expectedImpact: 'Por determinar.',
+      effort: 'medium',
+      evidence: ['ventas válidas'],
+      requiresConfirmation: true
+    }],
+    limitations: [],
+    confidence: 'medium',
+    source: 'cloud',
+    coverage: { complete: true },
+    citations: [],
+    actionDrafts: []
+  });
+}
+
+function structuredCommercialRequest(overrides: Record<string, unknown> = {}) {
+  return {
+    auth,
+    agentKey: 'salesProfitability',
+    intent: 'explain_change',
+    question: 'Explica el cambio de mi margen',
+    requestKey: 'request-structured-1',
+    period: { from: '2026-09-01', to: '2026-09-07', previousFrom: '2026-08-25', previousTo: '2026-08-31', timezone: 'America/Mexico_City' },
+    scenario: {},
+    context: {
+      agentKey: 'salesProfitability',
+      scope: 'current_authenticated_tenant',
+      period: { from: '2026-09-01', to: '2026-09-07', label: 'Periodo actual' },
+      source: 'cloud',
+      sales: {
+        summary: { netSales: 100, units: 2, salesCount: 1, averageTicket: 100, discounts: 0, unitCosts: 40, profit: 60, margin: 0.6, costCoverage: 1, missingCostProducts: 0, excludedSales: 0, ecommerceDuplicates: 0 },
+        products: [{ name: 'Producto A', quantity: 2, netSales: 100, unitCost: 20, profit: 60, margin: 0.6, averagePrice: 50, costKnown: true }],
+        channels: [{ channel: 'Físico', netSales: 100, orders: 1, units: 2, averageTicket: 100, share: 1 }],
+        comparison: null,
+        evidenceKeys: [
+          'profitability.margin',
+          'profitability.profit',
+          'comparison.deltaMargin',
+          'products.risks',
+          'scenarios.values'
+        ],
+        coverage: { validSales: 1, complete: true },
+        calculations: [],
+        assumptions: [],
+        scenarios: []
+      }
+    },
+    options: { temperature: 0.2, maxTokens: 2048 },
+    ...overrides
+  };
+}
+
+function structuredCommercialRequestWithProduct(product: Record<string, unknown>) {
+  const payload = structuredCommercialRequest();
+  payload.context = {
+    ...payload.context,
+    sales: {
+      ...payload.context.sales,
+      products: [product as unknown as typeof payload.context.sales.products[number]]
+    }
+  };
+  return payload;
+}
+
+function structuredCommercialRequestWithScenarioOutput(
+  outputScenario: Record<string, unknown>,
+  overrides: Record<string, unknown> = {}
+) {
+  const rawPayload = structuredCommercialRequest({
+    intent: 'combo_opportunity',
+    question: '¿Qué combos puedo formar?',
+    period: {
+      from: '2026-09-01',
+      to: '2026-09-07',
+      previousFrom: null,
+      previousTo: null,
+      timezone: 'America/Mexico_City'
+    },
+    scenario: {},
+    ...overrides
+  });
+  const payload = rawPayload as unknown as Record<string, unknown>;
+  const context = rawPayload.context as unknown as Record<string, unknown>;
+  const sales = rawPayload.context.sales as unknown as Record<string, unknown>;
+  payload.context = {
+    ...context,
+    sales: {
+      ...sales,
+      scenarios: [outputScenario]
+    }
+  };
+  return payload;
+}
+
 function analysisClient(beginData: Record<string, unknown> = successBegin(), completeData: Record<string, unknown> = successComplete()) {
   return fakeClient(async (name) => {
+    if (name === 'get_ai_agent_usage_unlimited') return { data: { success: true, limit: 15, used: 0, remaining: 15, ai_agents: true }, error: null };
     if (name === 'begin_ai_agent_analysis') return { data: beginData, error: null };
     if (name === 'complete_ai_agent_analysis') return { data: completeData, error: null };
     return { data: null, error: { code: 'unexpected-rpc' } };
@@ -205,13 +313,22 @@ Deno.test('usage funciona sin variables del proveedor', async () => {
   assertEquals(client.calls[0].name, 'get_ai_agent_usage');
 });
 
-Deno.test('usage propaga staffSessionToken y no llama proveedor', async () => {
+Deno.test('usage propaga staffSessionToken y no llama proveedor ni reserva cuota', async () => {
   const staffAuth = { ...auth, staffSessionToken: 'synthetic-staff-session' };
   const client = fakeClient(async () => ({ data: { success: true, limit: 15, used: 0, remaining: 15 }, error: null }));
-  const response = await makeHandler(client)(request({ action: 'usage', auth: staffAuth }));
+  let providerCalls = 0;
+  const response = await makeHandler(client, {
+    fetchImpl: async () => {
+      providerCalls += 1;
+      return chatResponse();
+    }
+  })(request({ action: 'usage', auth: staffAuth }));
   assertEquals(response.status, 200);
   assertEquals(client.calls[0].args.p_staff_session_token, 'synthetic-staff-session');
   assertEquals(client.calls[0].name, 'get_ai_agent_usage');
+  assertEquals(client.calls.filter((call) => call.name === 'begin_ai_agent_analysis').length, 0);
+  assertEquals(client.calls.filter((call) => call.name === 'complete_ai_agent_analysis').length, 0);
+  assertEquals(providerCalls, 0);
 });
 
 Deno.test('usage conserva código RPC de error y estado 429', async () => {
@@ -367,7 +484,8 @@ Deno.test('provider chat success devuelve contenido y usageStatus', async () => 
   assertEquals(client.calls[1].name, 'complete_ai_agent_analysis');
   assertEquals(client.calls[1].args.p_success, true);
   assert(providerBody !== null, 'El proveedor debe recibir un body');
-  assertEquals(providerBody.temperature, 0.2);
+  const capturedProviderBody = providerBody as Record<string, unknown>;
+  assertEquals(capturedProviderBody.temperature, 0.2);
   const metadata = client.calls[1].args.p_metadata as Record<string, unknown>;
   assertEquals(metadata.provider, 'openai-compatible');
   assertEquals(metadata.protocol, 'chat-completions');
@@ -393,9 +511,10 @@ Deno.test('Moonshot Kimi K2.6 omite temperature y admite thinking', async () => 
   })(request({ auth, systemPrompt: 's', userPrompt: 'u', options: { temperature: 0.2, maxTokens: 2048 } }));
   assertEquals(response.status, 200);
   assert(providerBody !== null, 'Moonshot debe recibir un body');
-  assertEquals(providerBody.model, 'kimi-k2.6');
-  assertEquals((providerBody.thinking as Record<string, unknown>)?.type, 'disabled');
-  assert(!Object.prototype.hasOwnProperty.call(providerBody, 'temperature'), 'Moonshot no debe recibir temperature');
+  const capturedK2Body = providerBody as Record<string, unknown>;
+  assertEquals(capturedK2Body.model, 'kimi-k2.6');
+  assertEquals((capturedK2Body.thinking as Record<string, unknown>)?.type, 'disabled');
+  assert(!Object.prototype.hasOwnProperty.call(capturedK2Body, 'temperature'), 'Moonshot no debe recibir temperature');
 });
 
 Deno.test('Moonshot Kimi K3 usa reasoning_effort y omite temperature', async () => {
@@ -416,10 +535,11 @@ Deno.test('Moonshot Kimi K3 usa reasoning_effort y omite temperature', async () 
   })(request({ auth, systemPrompt: 's', userPrompt: 'u', options: { temperature: 0.2, maxTokens: 2048 } }));
   assertEquals(response.status, 200);
   assert(providerBody !== null, 'Moonshot debe recibir un body');
-  assertEquals(providerBody.model, 'kimi-k3');
-  assertEquals(providerBody.reasoning_effort, 'low');
-  assertEquals(providerBody.thinking, undefined);
-  assert(!Object.prototype.hasOwnProperty.call(providerBody, 'temperature'), 'Moonshot no debe recibir temperature');
+  const capturedK3Body = providerBody as Record<string, unknown>;
+  assertEquals(capturedK3Body.model, 'kimi-k3');
+  assertEquals(capturedK3Body.reasoning_effort, 'low');
+  assertEquals(capturedK3Body.thinking, undefined);
+  assert(!Object.prototype.hasOwnProperty.call(capturedK3Body, 'temperature'), 'Moonshot no debe recibir temperature');
 });
 
 Deno.test('provider Responses-style success devuelve contenido', async () => {
@@ -550,7 +670,7 @@ Deno.test('RPC fijas reciben sólo nombres permitidos', async () => {
   const client = analysisClient();
   const response = await makeHandler(client, { fetchImpl: async () => chatResponse() })(request({ auth, systemPrompt: 's', userPrompt: 'u' }));
   assertEquals(response.status, 200);
-  assert(client.calls.every((call) => ['begin_ai_agent_analysis', 'complete_ai_agent_analysis'].includes(call.name)), 'RPC arbitraria detectada');
+  assert(client.calls.every((call) => ['begin_ai_agent_analysis', 'complete_ai_agent_analysis', 'get_ai_agent_usage_unlimited'].includes(call.name)), 'RPC arbitraria detectada');
 });
 
 Deno.test('respuesta de error no filtra prompts ni secretos', async () => {
@@ -561,4 +681,480 @@ Deno.test('respuesta de error no filtra prompts ni secretos', async () => {
   assert(!body.includes('secret-user-prompt'), 'userPrompt filtrado');
   assert(!body.includes('synthetic-ai-key'), 'API key filtrada');
   assert(!body.includes('secret-provider-body'), 'body del proveedor filtrado');
+});
+
+Deno.test('ventas y rentabilidad acepta sólo contexto estructurado y completa cuota una vez', async () => {
+  const client = analysisClient();
+  let providerBody: Record<string, unknown> | null = null;
+  const response = await makeHandler(client, {
+    fetchImpl: async (_url, init) => {
+      providerBody = JSON.parse(String(init?.body || '{}')) as Record<string, unknown>;
+      return chatResponse(structuredCommercialResponse());
+    }
+  })(request(structuredCommercialRequest()));
+  const body = await json(response);
+  assertEquals(response.status, 200);
+  assertEquals(body.success, true);
+  assertEquals(body.agentKey, 'salesProfitability');
+  assertEquals(client.calls.filter((call) => call.name === 'begin_ai_agent_analysis').length, 1);
+  assertEquals(client.calls.filter((call) => call.name === 'complete_ai_agent_analysis').length, 1);
+  assert(providerBody !== null, 'provider body missing');
+  const capturedCommercialBody = providerBody as Record<string, unknown>;
+  assert(Array.isArray(capturedCommercialBody.messages), 'server prompt missing');
+  assert(!Object.prototype.hasOwnProperty.call(structuredCommercialRequest(), 'systemPrompt'), 'arbitrary prompt accepted by fixture');
+});
+
+Deno.test('ventas y rentabilidad rechaza prompts arbitrarios en la solicitud estructurada', async () => {
+  const client = analysisClient();
+  const response = await makeHandler(client)(request(structuredCommercialRequest({ systemPrompt: 'prompt no permitido' })));
+  assertEquals(response.status, 400);
+  assertEquals((await json(response)).code, 'INVALID_REQUEST');
+  assertEquals(client.calls.length, 0);
+});
+
+Deno.test('contrato comercial acepta costos de producto estrictos y rechaza valores no permitidos sin llamadas', async () => {
+  const product = {
+    name: 'Producto A',
+    quantity: 2,
+    netSales: 100,
+    unitCost: 20,
+    profit: 60,
+    margin: 0.6,
+    averagePrice: 50,
+    costKnown: true,
+    costStatus: 'definitive',
+    costSource: 'inventory_movement',
+    riskType: 'margin',
+    riskReason: 'Margen estable'
+  };
+  let providerCalls = 0;
+  const validClient = analysisClient();
+  const validResponse = await makeHandler(validClient, {
+    fetchImpl: async () => {
+      providerCalls += 1;
+      return chatResponse(structuredCommercialResponse());
+    }
+  })(request(structuredCommercialRequestWithProduct(product)));
+  assertEquals(validResponse.status, 200);
+  assertEquals(validClient.calls.filter((call) => call.name === 'begin_ai_agent_analysis').length, 1);
+
+  const legacyClient = analysisClient();
+  const legacyResponse = await makeHandler(legacyClient, {
+    fetchImpl: async () => {
+      providerCalls += 1;
+      return chatResponse(structuredCommercialResponse());
+    }
+  })(request(structuredCommercialRequest()));
+  assertEquals(legacyResponse.status, 200);
+  assertEquals(legacyClient.calls.filter((call) => call.name === 'begin_ai_agent_analysis').length, 1);
+
+  const invalidProducts = [
+    { ...product, unexpected: true },
+    { ...product, costStatus: 'unknown' },
+    { ...product, costSource: 'internal' },
+    { ...product, costStatus: 'd'.repeat(49) },
+    { ...product, costSource: 'm'.repeat(65) },
+    { ...product, costStatus: ['definitive'] },
+    { ...product, costSource: { source: 'missing' } }
+  ];
+
+  for (const invalidProduct of invalidProducts) {
+    const client = analysisClient();
+    const response = await makeHandler(client, {
+      fetchImpl: async () => {
+        providerCalls += 1;
+        return chatResponse(structuredCommercialResponse());
+      }
+    })(request(structuredCommercialRequestWithProduct(invalidProduct)));
+    assertEquals(response.status, 400);
+    assertEquals((await json(response)).code, 'INVALID_REQUEST');
+    assertEquals(client.calls.length, 0);
+  }
+
+  assertEquals(providerCalls, 2);
+});
+
+Deno.test('respuesta comercial parcialmente inválida se normaliza y conserva cálculos determinísticos', async () => {
+  const client = analysisClient();
+  const malformed = JSON.stringify({
+    version: 1,
+    agentKey: 'salesProfitability',
+    status: 'completed',
+    executiveSummary: 'El negocio requiere revisión.',
+    explanation: 'Respuesta narrativa del proveedor.',
+    facts: {},
+    calculations: { ventas: 100 },
+    assumptions: 'una cadena',
+    scenarios: {},
+    recommendations: [{ title: 'Revisar', explanation: 'Confirmar datos.', expectedImpact: 'Por determinar.', effort: 'medium', evidence: [], requiresConfirmation: false }],
+    limitations: {},
+    confidence: 'medium',
+    source: 'cloud',
+    coverage: {},
+    citations: {},
+    actionDrafts: []
+  });
+  const response = await makeHandler(client, { fetchImpl: async () => chatResponse(malformed) })(request(structuredCommercialRequest()));
+  const body = await json(response);
+  assertEquals(response.status, 200);
+  assertEquals(body.success, true);
+  assert(typeof body.rawResultContent === 'string', 'Debe devolver contenido normalizado');
+  const normalized = JSON.parse(body.rawResultContent as string);
+  assertEquals(normalized.aiNarrative.status, 'available');
+  assertEquals(normalized.aiNarrative.diagnosticCode, 'AI_NARRATIVE_PARTIAL_CONTENT');
+  assertEquals(normalized.aiNarrative.executiveSummary, 'El negocio requiere revisión.');
+  assert(Array.isArray(normalized.calculations), 'calculations debe ser arreglo');
+  assert(Array.isArray(normalized.assumptions), 'assumptions debe ser arreglo');
+  assert(Array.isArray(normalized.scenarios), 'scenarios debe ser arreglo');
+  assertEquals(normalized.actionDrafts.length, 0);
+  const completions = client.calls.filter((call) => call.name === 'complete_ai_agent_analysis');
+  assertEquals(completions.length, 1);
+  assertEquals(completions[0].args.p_success, true);
+});
+
+Deno.test('narrativa inválida o vacía queda unavailable, conserva métricas y consume una sola finalización', async () => {
+  const cases = [
+    { label: 'cuerpo narrativo vacío', content: '', code: 'AI_NARRATIVE_EMPTY' },
+    { label: 'texto no JSON', content: 'No puedo responder en JSON.', code: 'AI_NARRATIVE_INVALID_JSON' },
+    { label: 'prosa alrededor de un fragmento JSON', content: 'Respuesta: {"executiveSummary":"Narrativa parcial"}', code: 'AI_NARRATIVE_INVALID_JSON' },
+    { label: 'objeto JSON vacío', content: '{}', code: 'AI_NARRATIVE_MISSING_CONTENT' },
+    { label: 'campos narrativos faltantes', content: JSON.stringify({ confidence: 'high', recommendations: [] }), code: 'AI_NARRATIVE_MISSING_CONTENT' }
+  ];
+
+  for (const sample of cases) {
+    const client = analysisClient();
+    let providerCalls = 0;
+    const response = await makeHandler(client, {
+      fetchImpl: async () => {
+        providerCalls += 1;
+        return chatResponse(sample.content);
+      }
+    })(request(structuredCommercialRequest()));
+    const body = await json(response);
+    const normalized = JSON.parse(body.rawResultContent as string);
+    const beginCalls = client.calls.filter((call) => call.name === 'begin_ai_agent_analysis');
+    const completionCalls = client.calls.filter((call) => call.name === 'complete_ai_agent_analysis');
+
+    assertEquals(response.status, 200, sample.label);
+    assertEquals(body.success, true, sample.label);
+    assertEquals(normalized.aiNarrative.status, 'unavailable', sample.label);
+    assertEquals(normalized.aiNarrative.diagnosticCode, sample.code, sample.label);
+    assertEquals(normalized.aiNarrative.executiveSummary, null, sample.label);
+    assertEquals(normalized.aiNarrative.explanation, null, sample.label);
+    assertEquals(normalized.aiNarrative.recommendations.length, 0, sample.label);
+    assert(Array.isArray(normalized.calculations), `${sample.label}: cálculos determinísticos preservados`);
+    assertEquals(normalized.facts[0].label, 'Producto A', `${sample.label}: facts vienen del contexto deterministic`);
+    if (sample.content) {
+      assert(!JSON.stringify(body).includes(sample.content), `${sample.label}: no se devuelve texto crudo del proveedor`);
+    }
+    assertEquals(providerCalls, 1, `${sample.label}: no hay reintento oculto`);
+    assertEquals(beginCalls.length, 1, `${sample.label}: una reserva`);
+    assertEquals(completionCalls.length, 1, `${sample.label}: una finalización`);
+    assertEquals(completionCalls[0].args.p_success, true, `${sample.label}: conserva la política de uso del intento`);
+  }
+});
+
+
+Deno.test('ventas y rentabilidad acepta profitability_summary como intención propia', async () => {
+  const client = analysisClient();
+  const response = await makeHandler(client, {
+    fetchImpl: async () => chatResponse(JSON.stringify({
+      executiveSummary: 'El periodo genera utilidad con los costos registrados.',
+      explanation: 'La conclusión se limita a la evidencia recibida.',
+      recommendations: [{
+        title: 'Revisar el margen',
+        explanation: 'Confirmar si el margen actual cumple el objetivo del negocio.',
+        expectedImpact: 'Mantener decisiones basadas en el resultado del periodo.',
+        priority: 'medium',
+        evidenceKeys: ['profitability.margin'],
+        requiresConfirmation: true
+      }],
+      confidence: 'high'
+    }))
+  })(request(structuredCommercialRequest({
+    intent: 'profitability_summary',
+    question: '¿Mi negocio es rentable?',
+    period: {
+      from: '2026-09-01',
+      to: '2026-09-07',
+      previousFrom: null,
+      previousTo: null,
+      timezone: 'America/Mexico_City'
+    }
+  })));
+  const body = await json(response);
+  assertEquals(response.status, 200);
+  assertEquals(body.success, true);
+  assertEquals(body.intent, 'profitability_summary');
+  const normalized = JSON.parse(body.rawResultContent as string);
+  assertEquals(normalized.executiveSummary, 'El periodo genera utilidad con los costos registrados.');
+  assertEquals(normalized.aiNarrative.status, 'available');
+  assertEquals(normalized.aiNarrative.diagnosticCode, undefined);
+  assertEquals(normalized.recommendations.length, 1);
+  assertEquals(normalized.recommendations[0].priority, 'medium');
+  assertEquals(normalized.recommendations[0].evidenceKeys[0], 'profitability.margin');
+  assertEquals(normalized.actionDrafts.length, 0);
+});
+
+Deno.test('la capa narrativa no puede sustituir cálculos determinísticos recibidos', async () => {
+  const client = analysisClient();
+  const requestPayload = structuredCommercialRequest();
+  const context = requestPayload.context as Record<string, unknown>;
+  const sales = context.sales as Record<string, unknown>;
+  sales.calculations = [{
+    label: 'Margen actual',
+    value: 0.6,
+    formattedValue: '60%',
+    formula: 'utilidad / ventas',
+    source: 'sales_history',
+    period: { from: '2026-09-01', to: '2026-09-07' }
+  }];
+
+  const response = await makeHandler(client, {
+    fetchImpl: async () => chatResponse(JSON.stringify({
+      executiveSummary: 'Resumen narrativo.',
+      explanation: 'Explicación narrativa.',
+      calculations: [{
+        label: 'Cálculo inventado',
+        value: 999,
+        formattedValue: '999',
+        formula: 'inventada',
+        source: 'provider',
+        period: {}
+      }],
+      facts: [{ label: 'Producto inventado' }],
+      recommendations: [],
+      confidence: 'medium'
+    }))
+  })(request(requestPayload));
+  const body = await json(response);
+  const normalized = JSON.parse(body.rawResultContent as string);
+  assertEquals(response.status, 200);
+  assertEquals(normalized.executiveSummary, 'Resumen narrativo.');
+  assertEquals(normalized.calculations.length, 1);
+  assertEquals(normalized.calculations[0].label, 'Margen actual');
+  assertEquals(normalized.facts[0].label, 'Producto A');
+});
+
+
+Deno.test('recomendación genérica sin evidenceKey permitido se descarta', async () => {
+  const client = analysisClient();
+  const response = await makeHandler(client, {
+    fetchImpl: async () => chatResponse(JSON.stringify({
+      executiveSummary: 'Resumen narrativo.',
+      explanation: 'Explicación breve.',
+      recommendations: [{
+        title: 'Cambiar todo',
+        explanation: 'Recomendación genérica sin respaldo.',
+        expectedImpact: 'Mejorar resultados.',
+        priority: 'high',
+        evidenceKeys: ['evidence.invented'],
+        requiresConfirmation: true
+      }],
+      confidence: 'medium'
+    }))
+  })(request(structuredCommercialRequest()));
+  const body = await json(response);
+  const normalized = JSON.parse(body.rawResultContent as string);
+  assertEquals(response.status, 200);
+  assertEquals(normalized.recommendations.length, 0);
+  assertEquals(normalized.executiveSummary, 'Resumen narrativo.');
+});
+
+Deno.test('escenario con volumen negativo es rechazado server-side', async () => {
+  const client = analysisClient();
+  const response = await makeHandler(client)(request(structuredCommercialRequest({ scenario: { historicalVolume: -1 } })));
+  assertEquals(response.status, 400);
+  assertEquals(client.calls.length, 0);
+});
+
+Deno.test('contrato comercial acepta combos con scenario vacío y sin periodo anterior', async () => {
+  const client = analysisClient();
+  let providerCalls = 0;
+  const response = await makeHandler(client, {
+    fetchImpl: async () => {
+      providerCalls += 1;
+      return chatResponse(structuredCommercialResponse());
+    }
+  })(request(structuredCommercialRequest({
+    intent: 'combo_opportunity',
+    question: '¿Qué combos puedo formar?',
+    period: {
+      from: '2026-09-01',
+      to: '2026-09-07',
+      previousFrom: null,
+      previousTo: null,
+      timezone: 'America/Mexico_City'
+    },
+    scenario: {}
+  })));
+
+  assertEquals(response.status, 200);
+  assertEquals(providerCalls, 1);
+  assertEquals(client.calls.filter((call) => call.name === 'begin_ai_agent_analysis').length, 1);
+});
+
+Deno.test('contrato comercial acepta contexto realista de combo con metadatos tipados', async () => {
+  const combo = {
+    products: ['Producto A', 'Producto B'],
+    tickets: 4,
+    frequency: 0.4,
+    ticketPercentage: 0.4,
+    historicalJointSales: 600,
+    averageJointSale: 150,
+    cost: 90,
+    costCoverage: 1,
+    costStatus: 'complete',
+    comboPrice: 150,
+    profit: 60,
+    margin: 0.4,
+    evidenceLevel: 'medium',
+    confidence: 'medium',
+    opportunity: 'Evaluar presentar Producto A y Producto B juntos.',
+    isPrediction: false,
+    note: 'Correlación histórica; no implica causalidad.'
+  };
+  let providerCalls = 0;
+  const client = analysisClient();
+  const response = await makeHandler(client, {
+    fetchImpl: async () => {
+      providerCalls += 1;
+      return chatResponse(structuredCommercialResponse());
+    }
+  })(request(structuredCommercialRequestWithScenarioOutput(combo)));
+
+  assertEquals(response.status, 200);
+  assertEquals(providerCalls, 1);
+  assertEquals(client.calls.filter((call) => call.name === 'begin_ai_agent_analysis').length, 1);
+});
+
+Deno.test('combo sin costo completo y evidencia baja sigue siendo contrato válido', async () => {
+  const combo = {
+    products: ['Producto A', 'Producto B'],
+    tickets: 2,
+    frequency: 0.08,
+    ticketPercentage: 0.08,
+    historicalJointSales: 180,
+    averageJointSale: 90,
+    costCoverage: 0.5,
+    costStatus: 'incomplete',
+    comboPrice: 90,
+    evidenceLevel: 'low',
+    confidence: 'low',
+    opportunity: 'Hay evidencia limitada para evaluar el combo.',
+    isPrediction: false,
+    note: 'Faltan costos completos en parte de los tickets.'
+  };
+  const client = analysisClient();
+  const response = await makeHandler(client, {
+    fetchImpl: async () => chatResponse(structuredCommercialResponse())
+  })(request(structuredCommercialRequestWithScenarioOutput(combo)));
+
+  assertEquals(response.status, 200);
+  assertEquals(client.calls.filter((call) => call.name === 'begin_ai_agent_analysis').length, 1);
+});
+
+Deno.test('combo rechaza claves o enums desconocidos antes de cuota y proveedor', async () => {
+  const baseCombo = {
+    products: ['Producto A', 'Producto B'],
+    tickets: 4,
+    frequency: 0.4,
+    ticketPercentage: 0.4,
+    costCoverage: 1,
+    costStatus: 'complete',
+    confidence: 'medium',
+    evidenceLevel: 'medium',
+    opportunity: 'Evaluar combo.',
+    isPrediction: false,
+    note: 'Evidencia histórica.'
+  };
+
+  for (const invalidCombo of [
+    { ...baseCombo, unexpectedInternalKey: true },
+    { ...baseCombo, costStatus: 'definitive' },
+    { ...baseCombo, confidence: 'unknown' }
+  ]) {
+    const client = analysisClient();
+    let providerCalls = 0;
+    const response = await makeHandler(client, {
+      fetchImpl: async () => {
+        providerCalls += 1;
+        return chatResponse(structuredCommercialResponse());
+      }
+    })(request(structuredCommercialRequestWithScenarioOutput(invalidCombo)));
+
+    assertEquals(response.status, 400);
+    assertEquals((await json(response)).code, 'INVALID_REQUEST');
+    assertEquals(client.calls.length, 0);
+    assertEquals(providerCalls, 0);
+  }
+});
+
+Deno.test('escenarios de precio y promoción conservan compatibilidad con la allowlist tipada', async () => {
+  const outputScenario = {
+    label: 'Volumen sin cambio',
+    volume: 2,
+    utility: 60,
+    margin: 0.6,
+    impactVsCurrent: 10,
+    isPrediction: false,
+    currentPrice: 50,
+    newPrice: 55,
+    note: 'Escenario ilustrativo; no es una predicción de demanda.'
+  };
+
+  for (const overrides of [
+    {
+      intent: 'price_simulation',
+      question: '¿Qué pasa si aumento el precio?',
+      scenario: { productName: 'Producto A', newPrice: 55, historicalVolume: 2 }
+    },
+    {
+      intent: 'promotion_opportunity',
+      question: '¿Qué promoción puedo simular?',
+      scenario: { productName: 'Producto A', discountPercent: 10, historicalVolume: 2 }
+    }
+  ]) {
+    const client = analysisClient();
+    const response = await makeHandler(client, {
+      fetchImpl: async () => chatResponse(structuredCommercialResponse())
+    })(request(structuredCommercialRequestWithScenarioOutput(outputScenario, overrides)));
+
+    assertEquals(response.status, 200);
+    assertEquals(client.calls.filter((call) => call.name === 'begin_ai_agent_analysis').length, 1);
+  }
+});
+
+Deno.test('contrato comercial no acepta strings numéricos ni escenarios stale de otra intención', async () => {
+  const cases = [
+    { scenario: { newPrice: '120' } },
+    { intent: 'combo_opportunity', question: '¿Qué combos puedo formar?', scenario: { productName: 'Producto A', newPrice: 120 } },
+    { intent: 'profitability_summary', question: '¿Mi negocio es rentable?', scenario: { historicalVolume: 0 } },
+    { intent: 'promotion_opportunity', question: '¿Qué promoción puedo simular?', scenario: { promotionalPrice: 80, discountPercent: 20 } }
+  ];
+
+  for (const overrides of cases) {
+    const client = analysisClient();
+    const response = await makeHandler(client)(request(structuredCommercialRequest(overrides)));
+    assertEquals(response.status, 400);
+    assertEquals((await json(response)).code, 'INVALID_REQUEST');
+    assertEquals(client.calls.length, 0);
+  }
+});
+
+Deno.test('periodo anterior sólo es válido para explain_change', async () => {
+  const client = analysisClient();
+  const response = await makeHandler(client)(request(structuredCommercialRequest({
+    intent: 'combo_opportunity',
+    question: '¿Qué combos puedo formar?',
+    period: {
+      from: '2026-09-01',
+      to: '2026-09-07',
+      previousFrom: '2026-08-25',
+      previousTo: '2026-08-31',
+      timezone: 'America/Mexico_City'
+    }
+  })));
+  assertEquals(response.status, 400);
+  assertEquals(client.calls.length, 0);
 });

@@ -1,14 +1,24 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import {
   EVIDENCE_UNREADABLE, TARGET_EXECUTED_FAIL, TARGET_EXECUTED_PASS, TARGET_NOT_EXECUTED,
-  classifyFocusedTargetReport, compareFocusedSummaries, readAndClassifyFocusedTarget, summarizeFocusedRuns,
+  classifyFocusedTargetReport, compareFocusedSummaries, escapeTestNamePattern, readAndClassifyFocusedTarget, summarizeFocusedRuns,
 } from './focused-target-evidence.mjs';
 
 const target = { slug: 'example', file: 'src/example.test.jsx', testName: 'requested assertion' };
+
+test('focused test name pattern escapes regex metacharacters literally', () => {
+  const title = 'EcommercePortalSettings + EcommerceProductPublishModal (catalog)';
+  const pattern = escapeTestNamePattern(title);
+  assert.equal(pattern, 'EcommercePortalSettings \\+ EcommerceProductPublishModal \\(catalog\\)');
+  assert.equal(new RegExp(pattern).test(title), true);
+  assert.equal(new RegExp(pattern).test('EcommercePortalSettings x EcommerceProductPublishModal catalog'), false);
+});
 const report = (status, options = {}) => ({
   testResults: [{
     name: options.file || '/home/runner/work/repo/repo/src/example.test.jsx',
@@ -74,6 +84,37 @@ test('comparison detects a materially higher candidate failure frequency', () =>
   assert.equal(comparison.candidateOnlySemanticRegressionCount, 0);
   assert.equal(comparison.candidateFailureRateRegressionCount, 1);
 });
+
+test('comparison records a single candidate-only failure as an observation when rates are not significantly different', () => {
+  const makeRuns = (failureCount) => Array.from({ length: 50 }, (_, index) => ({
+    slug: target.slug,
+    repetition: index + 1,
+    status: index < failureCount ? TARGET_EXECUTED_FAIL : TARGET_EXECUTED_PASS,
+    failures: index < failureCount ? [{ errorClass: 'AssertionError', signature: 'expected 1 to be 2', semanticResolved: true, semanticSource: 'JSON' }] : [],
+  }));
+  const base = summarizeFocusedRuns([target], makeRuns(0), 50, 4);
+  const candidate = summarizeFocusedRuns([target], makeRuns(1), 50, 4);
+  const comparison = compareFocusedSummaries(base, candidate);
+  assert.equal(comparison.candidateOnlySemanticObservationCount, 1);
+  assert.equal(comparison.singleRunCandidateOnlySemanticObservationCount, 1);
+  assert.equal(comparison.candidateOnlySemanticRegressionCount, 0);
+  assert.equal(comparison.candidateFailureRateRegressionCount, 0);
+});
+
+test('comparison blocks a candidate-only failure repeated across independent runs', () => {
+  const makeRuns = (failureCount) => Array.from({ length: 50 }, (_, index) => ({
+    slug: target.slug,
+    repetition: index + 1,
+    status: index < failureCount ? TARGET_EXECUTED_FAIL : TARGET_EXECUTED_PASS,
+    failures: index < failureCount ? [{ errorClass: 'AssertionError', signature: 'expected 1 to be 2', semanticResolved: true, semanticSource: 'JSON' }] : [],
+  }));
+  const base = summarizeFocusedRuns([target], makeRuns(0), 50, 4);
+  const candidate = summarizeFocusedRuns([target], makeRuns(2), 50, 4);
+  const comparison = compareFocusedSummaries(base, candidate);
+  assert.equal(comparison.candidateOnlySemanticObservationCount, 1);
+  assert.equal(comparison.singleRunCandidateOnlySemanticObservationCount, 0);
+  assert.equal(comparison.candidateOnlySemanticRegressionCount, 1);
+});
 test('comparison fails closed when opaque failure semantics remain unresolved', () => {
   const opaque = report('failed');
   opaque.testResults[0].assertionResults[0].failureMessages = ['Error: STACK_TRACE_ERROR'];
@@ -85,4 +126,113 @@ test('comparison fails closed when opaque failure semantics remain unresolved', 
   }));
   const summary = summarizeFocusedRuns([target], runs, 50, 4);
   assert.throws(() => compareFocusedSummaries(summary, summary), /SEMANTIC_IDENTITY_UNRESOLVED/);
+});
+
+const publicStoreTarget = {
+  slug: 'site-version',
+  file: 'src/pages/__tests__/PublicStorePage.siteVersion.test.jsx',
+  testName: 'keeps v1 while only the draft changes, then renders v2 without changing catalogRevision',
+};
+const ecommerceTarget = {
+  slug: 'ecommerce-same-search-next-page',
+  file: 'src/components/ecommerce/__tests__/EcommercePortalSettings.productModalLifecycle.test.jsx',
+  testName: 'appends the next page of the same active search without duplicates',
+};
+const opaqueFullSuiteFailure = 'Error: STACK_TRACE_ERROR';
+const focusedFailure = {
+  errorClass: 'AssertionError',
+  signature: 'expected 1 to be 2',
+  semanticResolved: true,
+  semanticSource: 'JSON',
+};
+const fullSuiteReport = (target, status, error = '') => ({
+  numPassedTests: status === 'passed' ? 1 : 0,
+  numFailedTests: status === 'failed' ? 1 : 0,
+  numPendingTests: 0,
+  numTotalTests: 1,
+  testResults: [{
+    name: `/home/runner/work/Lanzo-POS/Lanzo-POS/${target.file}`,
+    status,
+    assertionResults: [{
+      title: target.testName,
+      fullName: target.testName,
+      status,
+      failureMessages: status === 'failed' ? [error] : [],
+    }],
+  }],
+});
+const writeFullSuiteEvidence = (directory, focusedFailureCount, target) => {
+  fs.mkdirSync(directory, { recursive: true });
+  fs.writeFileSync(path.join(directory, 'full-suite-1.json'), JSON.stringify(fullSuiteReport(target, 'passed')));
+  fs.writeFileSync(path.join(directory, 'full-suite-2.json'), JSON.stringify(fullSuiteReport(target, 'passed')));
+  const focusedRuns = Array.from({ length: 50 }, (_, index) => {
+    const failed = index < focusedFailureCount;
+    const reportPath = path.join(directory, `public-store-${target.slug}-${index + 1}.json`);
+    fs.writeFileSync(
+      reportPath,
+      JSON.stringify(fullSuiteReport(target, failed ? 'failed' : 'passed', 'AssertionError: expected 1 to be 2')),
+    );
+    return {
+      slug: target.slug,
+      repetition: index + 1,
+      status: failed ? TARGET_EXECUTED_FAIL : TARGET_EXECUTED_PASS,
+      failures: failed ? [focusedFailure] : [],
+    };
+  });
+  fs.writeFileSync(
+    path.join(directory, 'focused-target-summary.json'),
+    JSON.stringify(summarizeFocusedRuns([target], focusedRuns, 50, 4)),
+  );
+};
+const runFullSuiteComparator = (baseFailureCount, candidateFailureCount, target = publicStoreTarget) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'full-suite-differential-'));
+  const baseDir = path.join(root, 'base');
+  const candidateDir = path.join(root, 'candidate');
+  const markdownPath = path.join(root, 'differential.md');
+  const jsonPath = path.join(root, 'differential.json');
+  try {
+    writeFullSuiteEvidence(baseDir, baseFailureCount, target);
+    writeFullSuiteEvidence(candidateDir, candidateFailureCount, target);
+    const scriptPath = fileURLToPath(new URL('../compare-shared-terminal-full-suite.mjs', import.meta.url));
+    // The raw full suite has one opaque candidate-only failure; focused JSON carries its visible assertion.
+    const candidateRuns = JSON.parse(fs.readFileSync(path.join(candidateDir, 'full-suite-2.json'), 'utf8'));
+    candidateRuns.testResults[0].assertionResults[0].status = 'failed';
+    candidateRuns.testResults[0].assertionResults[0].failureMessages = [opaqueFullSuiteFailure];
+    candidateRuns.testResults[0].status = 'failed';
+    candidateRuns.numPassedTests = 0;
+    candidateRuns.numFailedTests = 1;
+    fs.writeFileSync(path.join(candidateDir, 'full-suite-2.json'), JSON.stringify(candidateRuns));
+    const run = spawnSync(process.execPath, [scriptPath, baseDir, candidateDir, markdownPath, jsonPath], { encoding: 'utf8' });
+    return {
+      run,
+      summary: fs.existsSync(jsonPath) ? JSON.parse(fs.readFileSync(jsonPath, 'utf8')) : null,
+      markdown: fs.existsSync(markdownPath) ? fs.readFileSync(markdownPath, 'utf8') : '',
+    };
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+};
+
+test('full-suite comparator uses focused repetitions to classify one opaque PublicStore failure', () => {
+  const result = runFullSuiteComparator(4, 2);
+  assert.equal(result.run.status, 0, result.run.stderr);
+  assert.equal(result.summary.newRegressionCount, 0);
+  assert.equal(result.summary.incidentalFocusedEvidenceCount, 1);
+  assert.equal(result.summary.matrix[0].classification, 'INCIDENTAL_FOCUSED_EVIDENCE_NO_REGRESSION');
+  assert.match(result.markdown, /BASE failed 4\/50, CANDIDATE failed 2\/50/);
+});
+
+test('full-suite comparator uses focused evidence for an exact Ecommerce test', () => {
+  const result = runFullSuiteComparator(0, 0, ecommerceTarget);
+  assert.equal(result.run.status, 0, result.run.stderr);
+  assert.equal(result.summary.newRegressionCount, 0);
+  assert.equal(result.summary.incidentalFocusedEvidenceCount, 1);
+});
+
+test('full-suite comparator still blocks an opaque failure when focused evidence shows a regression', () => {
+  const result = runFullSuiteComparator(0, 10);
+  assert.equal(result.run.status, 1);
+  assert.equal(result.summary.newRegressionCount, 1);
+  assert.equal(result.summary.incidentalFocusedEvidenceCount, 0);
+  assert.equal(result.summary.matrix[0].classification, 'PR_REGRESSION');
 });

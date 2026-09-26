@@ -83,7 +83,11 @@ const normalizeSource = (payload = {}, modeOverride = null, { stale = false } = 
 const normalizeSalesFinalHistoryRow = (row = {}) => {
   const cloudSaleId = pick(row, ['cloudSaleId', 'cloud_sale_id', 'sale_id', 'id']);
   const localSaleId = pick(row, ['localSaleId', 'local_sale_id', 'local_id']);
-  const sourceMode = pick(row, ['sourceMode', 'source_mode'], row.status === 'shadow' ? 'shadow' : 'cloud_committed');
+  const explicitSourceMode = pick(row, ['sourceMode', 'source_mode'], null);
+  const sourceModeKnown = explicitSourceMode !== null && explicitSourceMode !== undefined && String(explicitSourceMode).trim() !== '';
+  const sourceMode = sourceModeKnown
+    ? explicitSourceMode
+    : (row.status === 'shadow' ? 'shadow' : 'cloud_committed');
   const status = String(pick(row, ['status', 'sale_status'], 'closed') || 'closed').toLowerCase();
   const soldAt = pick(row, ['soldAt', 'sold_at', 'timestamp', 'created_at']);
   const cancelledAt = pick(row, ['cancelledAt', 'cancelled_at']);
@@ -120,6 +124,8 @@ const normalizeSalesFinalHistoryRow = (row = {}) => {
     soldAt,
     sourceMode,
     source_mode: sourceMode,
+    sourceModeKnown,
+    source_mode_known: sourceModeKnown,
     status,
     customerName: pick(row, ['customerName', 'customer_name', 'customer_snapshot_name'], 'Publico general'),
     paymentMethod: pick(row, ['paymentMethod', 'payment_method'], ''),

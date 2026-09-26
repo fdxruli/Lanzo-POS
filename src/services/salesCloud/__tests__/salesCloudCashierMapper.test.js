@@ -23,6 +23,34 @@ describe('salesCloudMapper operational folio', () => {
   });
 });
 
+describe('sales cloud cost snapshot nullability', () => {
+  const sale = { id: 'cost-nullability-sale', timestamp: '2026-09-25T12:00:00.000Z', total: 25 };
+  const baseItem = { id: 'product-cost', lineId: 'line-cost', name: 'Producto sintético', price: 25, quantity: 1, exactTotal: 25, lineTotal: 25 };
+
+  it.each([
+    ['missing', { ...baseItem }, null],
+    ['explicit null', { ...baseItem, cost: null }, null],
+    ['blank', { ...baseItem, cost: '   ' }, null],
+    ['fallback unitCost', { ...baseItem, cost: null, unitCost: 7 }, 7],
+    ['explicit zero', { ...baseItem, cost: 0 }, 0],
+    ['positive', { ...baseItem, cost: 9.5 }, 9.5]
+  ])('preserves %s unit cost in cashier and shadow payloads', (_caseName, item, expected) => {
+    const cashier = mapLocalCheckoutToCloudSale({
+      sale,
+      processedItems: [item],
+      paymentData: { paymentMethod: 'efectivo', amountPaid: 25 },
+      total: 25
+    });
+    const shadow = localSaleToCloudShadowPayload({
+      ...sale,
+      items: [item]
+    });
+
+    expect(cashier.items[0].unit_cost).toBe(expected);
+    expect(shadow.items[0].unit_cost).toBe(expected);
+  });
+});
+
 describe('salesCloudCashierMapper discounts', () => {
   it('maps line discount as net line_total', () => {
     const payload = mapLocalCheckoutToCloudSale({
