@@ -13,6 +13,15 @@ begin
     raise exception 'missing portal contract failed';
   end if;
 
+  -- Synthetic deleted fixture. The enclosing transaction always rolls back.
+  insert into public.ecommerce_portals (license_id, slug, name, status, deleted_at)
+  select license_id, 'phase1-deleted-contract-000000', 'Phase 1 rollback fixture', 'draft', clock_timestamp()
+    from public.ecommerce_portals
+   limit 1;
+  if public.ecommerce_get_portal_by_slug_v2('phase1-deleted-contract-000000') <> v_missing then
+    raise exception 'deleted portal differs from nonexistent';
+  end if;
+
   for p in
     select slug, status
       from public.ecommerce_portals
