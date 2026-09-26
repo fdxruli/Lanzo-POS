@@ -31,6 +31,7 @@ import {
 } from '../utils/ecommerceSiteDocument';
 import { preparePublicStoreDocument } from '../router/preparePublicStoreDocument';
 import { resetPublicDocumentScroll } from '../utils/publicDocumentScroll';
+import { isValidStoreSlug } from '../../store/api/_storeSlug';
 import '../components/ecommerce/public/PublicCheckout.css';
 import './PublicStorePage.css';
 
@@ -313,6 +314,12 @@ function PublicStorePage() {
       && requestGenerationRef.current === generation
     );
 
+    if (!isValidStoreSlug(slug)) {
+      setStoreStatus('invalid_link');
+      setCatalogLoading(false);
+      return undefined;
+    }
+
     const loadStore = async () => {
       try {
         const result = await getPublicPortalBySlug(slug, { portalId: activePortalIdRef.current });
@@ -341,9 +348,9 @@ function PublicStorePage() {
         }
       } catch (error) {
         if (!isCurrentRequest()) return;
-        const unavailable = error instanceof EcommercePublicError
-          && ['ECOMMERCE_PORTAL_NOT_FOUND', 'ECOMMERCE_PORTAL_PAUSED'].includes(error.code);
-        setStoreStatus(unavailable ? 'unavailable' : 'error');
+        const code = error instanceof EcommercePublicError ? error.code : null;
+        setStoreStatus(code === 'ECOMMERCE_PORTAL_PAUSED' ? 'paused'
+          : code === 'ECOMMERCE_PORTAL_NOT_FOUND' ? 'not_found' : 'error');
         setCatalogLoading(false);
         setCatalogValidated(false);
       }
@@ -887,12 +894,32 @@ function PublicStorePage() {
     );
   }
 
-  if (storeStatus === 'unavailable') {
+  if (storeStatus === 'invalid_link') {
     return (
       <PublicStoreStatusScreen
-        type="unavailable"
-        title="Esta tienda no está disponible"
-        description="El enlace puede ser incorrecto o el negocio puede haber pausado temporalmente su portal."
+        type="invalid"
+        title="Enlace de tienda no válido"
+        description="No pudimos identificar la tienda. Revisa que el enlace esté completo y vuelve a intentarlo."
+      />
+    );
+  }
+
+  if (storeStatus === 'not_found') {
+    return (
+      <PublicStoreStatusScreen
+        type="notFound"
+        title="No encontramos esta tienda"
+        description="Verifica que la dirección sea correcta o solicita nuevamente el enlace al negocio."
+      />
+    );
+  }
+
+  if (storeStatus === 'paused') {
+    return (
+      <PublicStoreStatusScreen
+        type="paused"
+        title="Esta tienda está pausada temporalmente"
+        description="El negocio ha pausado temporalmente su portal en línea."
       />
     );
   }

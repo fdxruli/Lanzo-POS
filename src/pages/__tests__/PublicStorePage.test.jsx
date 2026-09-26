@@ -131,7 +131,7 @@ describe('PublicStorePage', () => {
       'ECOMMERCE_PORTAL_NOT_FOUND', 'No encontrada'
     ));
     const { unmount } = renderPage();
-    expect(await screen.findByRole('heading', { name: 'Esta tienda no está disponible' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'No encontramos esta tienda' })).toBeInTheDocument();
     expect(document.querySelector('.ecommerce-site-visual-surface')).toHaveStyle({
       '--store-surface': '#ffffff'
     });
@@ -527,14 +527,15 @@ describe('PublicStorePage', () => {
     });
   });
 
-  it('shows the same generic state for an unavailable portal', async () => {
+  it('shows not found without exposing hidden portal states', async () => {
     serviceMocks.getPublicPortalBySlug.mockRejectedValue(
       new EcommercePublicError('ECOMMERCE_PORTAL_NOT_FOUND', 'Esta tienda no está disponible.')
     );
     renderPage();
 
-    expect(await screen.findByRole('heading', { name: 'Esta tienda no está disponible' })).toBeInTheDocument();
-    expect(screen.getByText(/El enlace puede ser incorrecto/)).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'No encontramos esta tienda' })).toBeInTheDocument();
+    expect(screen.getByText(/Verifica que la dirección sea correcta/)).toBeInTheDocument();
+    expect(screen.queryByText(/WhatsApp|draft|deleted/i)).not.toBeInTheDocument();
     expect(serviceMocks.getPublicCatalog).not.toHaveBeenCalled();
   });
 
@@ -543,7 +544,16 @@ describe('PublicStorePage', () => {
       new EcommercePublicError('ECOMMERCE_PORTAL_PAUSED', 'Esta tienda no está disponible.')
     );
     renderPage();
-    expect(await screen.findByRole('heading', { name: 'Esta tienda no está disponible' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Esta tienda está pausada temporalmente' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reintentar' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/WhatsApp/)).not.toBeInTheDocument();
+    expect(serviceMocks.getPublicCatalog).not.toHaveBeenCalled();
+  });
+
+  it('rejects malformed slugs locally without an RPC', async () => {
+    renderPage('/tienda/AB_bad');
+    expect(await screen.findByRole('heading', { name: 'Enlace de tienda no válido' })).toBeInTheDocument();
+    expect(serviceMocks.getPublicPortalBySlug).not.toHaveBeenCalled();
     expect(serviceMocks.getPublicCatalog).not.toHaveBeenCalled();
   });
 

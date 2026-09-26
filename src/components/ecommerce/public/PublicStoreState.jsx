@@ -3,6 +3,9 @@ import { LoaderCircle, RefreshCw, SearchX, Store } from 'lucide-react';
 const ICONS = {
   loading: LoaderCircle,
   unavailable: Store,
+  invalid: SearchX,
+  notFound: SearchX,
+  paused: Store,
   error: RefreshCw,
   empty: Store,
   noResults: SearchX,
@@ -14,7 +17,7 @@ function PublicStoreState({ type = 'empty', title, description, actionLabel, onA
   return (
     <section
       className={`public-store-state${compact ? ' public-store-state--compact' : ''}`}
-      role={type === 'error' || type === 'unavailable' ? 'alert' : 'status'}
+      role={['error', 'unavailable', 'invalid', 'notFound', 'paused'].includes(type) ? 'alert' : 'status'}
       aria-live="polite"
     >
       <Icon

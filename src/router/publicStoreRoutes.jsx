@@ -7,9 +7,9 @@ import PublicStorePage from '../pages/PublicStorePage';
 export function PublicStoreNotFoundPage() {
   return (
     <PublicStoreStatusScreen
-      type="unavailable"
-      title="Esta tienda no está disponible"
-      description="Abre el enlace completo que te compartió el negocio."
+      type="invalid"
+      title="Enlace de tienda no válido"
+      description="No pudimos identificar la tienda. Revisa que el enlace esté completo y vuelve a intentarlo."
     />
   );
 }

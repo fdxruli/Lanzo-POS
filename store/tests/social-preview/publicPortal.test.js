@@ -396,12 +396,20 @@ describe('respuesta válida y proyección estricta', () => {
 });
 
 describe('not_found y fallos seguros', () => {
-  it('clasifica exclusivamente el código contractual como not_found', async () => {
+  it('clasifica el código contractual como not_found', async () => {
     const client = createClient(vi.fn(async () => mockResponse({
       success: false,
       error: { code: 'ECOMMERCE_PORTAL_NOT_FOUND', message: 'detalle remoto' },
     })));
 
+    await expect(client.getPortalBySlug(SLUG)).resolves.toEqual({ status: 'not_found' });
+  });
+
+  it('oculta un portal pausado como not_found en la vista social', async () => {
+    const client = createClient(vi.fn(async () => mockResponse({
+      success: false,
+      error: { code: 'ECOMMERCE_PORTAL_PAUSED', message: 'detalle remoto' },
+    })));
     await expect(client.getPortalBySlug(SLUG)).resolves.toEqual({ status: 'not_found' });
   });
 
