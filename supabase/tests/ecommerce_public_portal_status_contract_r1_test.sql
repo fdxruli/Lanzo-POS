@@ -23,7 +23,7 @@ begin
   end if;
 
   for p in
-    select slug, status
+    select id, slug, status
       from public.ecommerce_portals
      where deleted_at is null
        and status in ('published', 'paused', 'draft', 'disabled')
@@ -34,6 +34,9 @@ begin
       if v_result->>'success' <> 'true'
          or not (v_result ?& array['portal', 'hours', 'availability', 'features', 'catalogRevision', 'site', 'cachePolicy']) then
         raise exception 'published portal contract failed';
+      end if;
+      if v_result #>> '{portal,portalId}' <> p.id::text then
+        raise exception 'published portal crossed tenant identity';
       end if;
     elsif p.status = 'paused' then
       if v_result <> '{"success":false,"error":{"code":"ECOMMERCE_PORTAL_PAUSED"}}'::jsonb then
