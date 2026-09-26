@@ -5,10 +5,18 @@ import path from 'node:path';
 import test from 'node:test';
 import {
   EVIDENCE_UNREADABLE, TARGET_EXECUTED_FAIL, TARGET_EXECUTED_PASS, TARGET_NOT_EXECUTED,
-  classifyFocusedTargetReport, compareFocusedSummaries, readAndClassifyFocusedTarget, summarizeFocusedRuns,
+  classifyFocusedTargetReport, compareFocusedSummaries, escapeTestNamePattern, readAndClassifyFocusedTarget, summarizeFocusedRuns,
 } from './focused-target-evidence.mjs';
 
 const target = { slug: 'example', file: 'src/example.test.jsx', testName: 'requested assertion' };
+
+test('focused test name pattern escapes regex metacharacters literally', () => {
+  const title = 'EcommercePortalSettings + EcommerceProductPublishModal (catalog)';
+  const pattern = escapeTestNamePattern(title);
+  assert.equal(pattern, 'EcommercePortalSettings \\+ EcommerceProductPublishModal \\(catalog\\)');
+  assert.equal(new RegExp(pattern).test(title), true);
+  assert.equal(new RegExp(pattern).test('EcommercePortalSettings x EcommerceProductPublishModal catalog'), false);
+});
 const report = (status, options = {}) => ({
   testResults: [{
     name: options.file || '/home/runner/work/repo/repo/src/example.test.jsx',
