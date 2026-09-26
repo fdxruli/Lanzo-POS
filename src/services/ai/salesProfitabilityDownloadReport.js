@@ -1,3 +1,5 @@
+import { normalizeCommercialAINarrativeDiagnosticCode } from './commercialAgentContract';
+
 const REPORT_SCHEMA_VERSION = 'sales-profitability-report-v2';
 const VALID_STATUSES = new Set(['completed', 'incomplete', 'insufficient_data', 'out_of_scope']);
 const VALID_CONFIDENCE = new Set(['high', 'medium', 'low']);
@@ -397,7 +399,27 @@ export const buildSalesProfitabilityDownloadReport = (result, requestContext = {
   const request = asRecord(requestContext);
   const providerCalled = result?.providerCalled === true;
   const explicitCacheHit = result?.cacheHit === true || result?.cache?.hit === true;
-  const hasNarrative = providerCalled || explicitCacheHit;
+  const narrative = asRecord(response.aiNarrative);
+  const narrativeSummary = sanitizeText(narrative.executiveSummary, 2400) || null;
+  const narrativeExplanation = sanitizeText(narrative.explanation, 4000) || null;
+  const narrativeRecommendations = (Array.isArray(narrative.recommendations) ? narrative.recommendations : [])
+    .slice(0, 20)
+    .map(safeRecommendation)
+    .filter((recommendation) => recommendation.title && recommendation.explanation && recommendation.expectedImpact);
+  const hasNarrativeContent = Boolean(
+    narrativeSummary || narrativeExplanation || narrativeRecommendations.length
+  );
+  const narrativeAttempted = providerCalled || explicitCacheHit
+    || narrative.status === 'available' || narrative.status === 'unavailable';
+  const aiStatus = narrative.status === 'unavailable'
+    ? 'unavailable'
+    : hasNarrativeContent
+      ? 'available'
+      : narrativeAttempted
+        ? 'unavailable'
+        : 'not_generated';
+  const diagnosticCode = normalizeCommercialAINarrativeDiagnosticCode(narrative.diagnosticCode)
+    || (aiStatus === 'unavailable' ? 'AI_NARRATIVE_UNAVAILABLE' : null);
   const now = options.generatedAt instanceof Date ? options.generatedAt : new Date(options.generatedAt || Date.now());
   const current = safeAggregate(response.current);
 
@@ -448,19 +470,11 @@ export const buildSalesProfitabilityDownloadReport = (result, requestContext = {
       queryRange: safeQueryRange(response.queryRange)
     },
     ai: {
-      status: !hasNarrative
-        ? 'not_generated'
-        : response.aiNarrative?.status === 'unavailable'
-        ? 'unavailable'
-        : (response.aiNarrative?.executiveSummary || response.aiNarrative?.explanation
-          || (Array.isArray(response.aiNarrative?.recommendations) && response.aiNarrative.recommendations.length)
-          ? 'available'
-          : 'not_generated'),
-      executiveSummary: hasNarrative ? sanitizeText(response.aiNarrative?.executiveSummary, 2400) || null : null,
-      explanation: hasNarrative ? sanitizeText(response.aiNarrative?.explanation, 4000) || null : null,
-      recommendations: hasNarrative
-        ? (Array.isArray(response.aiNarrative?.recommendations) ? response.aiNarrative.recommendations : []).slice(0, 20).map(safeRecommendation)
-        : [],
+      status: aiStatus,
+      diagnosticCode,
+      executiveSummary: aiStatus === 'available' ? narrativeSummary : null,
+      explanation: aiStatus === 'available' ? narrativeExplanation : null,
+      recommendations: aiStatus === 'available' ? narrativeRecommendations : [],
       confidence: null
     },
     usage: safeUsage(result?.usageStatus),
@@ -512,6 +526,7 @@ export const sanitizeSalesProfitabilityDownloadReport = (value) => {
       queryRange: deterministic.queryRange,
       aiNarrative: {
         status: ai.status,
+        diagnosticCode: normalizeCommercialAINarrativeDiagnosticCode(ai.diagnosticCode),
         executiveSummary: ai.executiveSummary,
         explanation: ai.explanation,
         recommendations: ai.recommendations

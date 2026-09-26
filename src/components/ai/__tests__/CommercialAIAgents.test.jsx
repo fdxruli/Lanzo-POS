@@ -267,6 +267,11 @@ describe('commercial AI center', () => {
     expect(runtime.loadProducts).not.toHaveBeenCalled();
     expect(screen.getByText('Resumen de prueba')).toBeInTheDocument();
     expect(screen.getByText('Uso IA: 1 / 15')).toBeInTheDocument();
+    await waitFor(() => {
+      const raw = runtime.historyStorage.get('commercial-ai-sales-profitability-history-v1');
+      expect(raw).toBeTruthy();
+      expect(JSON.parse(raw).entries).toHaveLength(1);
+    });
   });
 
   it('adds a deterministic completed analysis to local history with confirmed zero use', async () => {
@@ -338,6 +343,50 @@ describe('commercial AI center', () => {
     expect(await screen.findByText('Caché')).toBeInTheDocument();
     expect(screen.getByText('No', { exact: true })).toBeInTheDocument();
     expect(runtime.getUsage).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows and saves a called but unusable AI narrative without replacing deterministic results', async () => {
+    runtime.runAgent.mockResolvedValueOnce({
+      response: {
+        status: 'completed',
+        executiveSummary: 'Ventas netas de $300 con utilidad determinística de $120.',
+        explanation: 'Este resumen proviene de los cálculos de Lanzo-POS.',
+        confidence: 'medium',
+        source: 'cloud',
+        coverage: { validSales: 3, costCoverage: 1 },
+        calculations: [{ label: 'Utilidad', value: 120, formula: 'ventas netas - costo de venta' }],
+        assumptions: [],
+        limitations: [],
+        recommendations: [],
+        scenarios: [],
+        aiNarrative: {
+          status: 'unavailable',
+          diagnosticCode: 'AI_NARRATIVE_INVALID_JSON',
+          executiveSummary: null,
+          explanation: null,
+          recommendations: []
+        }
+      },
+      providerCalled: true,
+      quotaOutcome: 'consumed',
+      usageStatus: { used: 3, limit: 15, remaining: 12 }
+    });
+
+    renderCenter();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), { target: { value: '¿Mi negocio es rentable?' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+
+    expect(await screen.findByRole('heading', { name: 'Ventas netas de $300 con utilidad determinística de $120.' })).toBeInTheDocument();
+    expect(screen.getByText('Este resumen proviene de los cálculos de Lanzo-POS.')).toBeInTheDocument();
+    expect(screen.getByText(/La narrativa opcional de IA no está disponible/)).toBeInTheDocument();
+    expect(screen.getByText(/AI_NARRATIVE_INVALID_JSON/)).toBeInTheDocument();
+    expect(await screen.findByText('IA no disponible')).toBeInTheDocument();
+    expect(screen.getByText('IA no disponible').closest('article')).toHaveTextContent('Usó cuota: Sí');
+    expect(runtime.runAgent).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ver respuesta' }));
+    expect(screen.getAllByText('AI_NARRATIVE_INVALID_JSON').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText('Utilidad').length).toBeGreaterThanOrEqual(2);
   });
 
   it('blocks same-turn duplicate submits so one UI action creates one analysis and one history entry', async () => {

@@ -27,6 +27,7 @@ import {
 } from '../../services/ai/salesProfitabilityAnalytics';
 import {
   createOutOfScopeResponse,
+  normalizeCommercialAINarrativeDiagnosticCode,
   normalizeScenarioForIntent,
   resolveCommercialIntent
 } from '../../services/ai/commercialAgentContract';
@@ -66,6 +67,15 @@ const EMPTY_ARRAY = Object.freeze([]);
 const asArray = (value) => Array.isArray(value) ? value : EMPTY_ARRAY;
 const confidenceLabel = (value) => ({ high: 'Alta', medium: 'Media', low: 'Baja' }[value] || 'Baja');
 const priorityLabel = (value) => ({ high: 'Alta', medium: 'Media', low: 'Baja' }[value] || 'Media');
+const NARRATIVE_DIAGNOSTIC_LABELS = Object.freeze({
+  AI_NARRATIVE_EMPTY: 'El proveedor respondió sin contenido narrativo.',
+  AI_NARRATIVE_INVALID_JSON: 'El proveedor devolvió un formato narrativo no válido.',
+  AI_NARRATIVE_MISSING_CONTENT: 'La respuesta no incluyó contenido narrativo utilizable.',
+  AI_NARRATIVE_UNSAFE_CONTENT: 'El contenido narrativo no superó la validación de seguridad.',
+  AI_NARRATIVE_PARTIAL_CONTENT: 'Se omitieron partes de la narrativa que no superaron la validación.',
+  AI_NARRATIVE_PROVIDER_ERROR: 'No se pudo confirmar una narrativa utilizable del proveedor.',
+  AI_NARRATIVE_UNAVAILABLE: 'No se pudo confirmar una narrativa utilizable.'
+});
 
 const usagePeriodEndLabel = (usage = {}) => {
   const raw = usage?.period_end || usage?.periodEnd || usage?.periodEndAt;
@@ -357,22 +367,42 @@ function CoverageEvidence({ response }) {
 function NarrativeEvidence({ response }) {
   const narrative = response.aiNarrative;
   if (narrative?.status === 'unavailable') {
-    return <p className="commercial-ai-muted">La narrativa opcional de IA no está disponible; el reporte determinístico se conserva completo.</p>;
+    const diagnosticCode = normalizeCommercialAINarrativeDiagnosticCode(narrative.diagnosticCode);
+    return (
+      <div>
+        <p className="commercial-ai-muted">La narrativa opcional de IA no está disponible; el reporte determinístico se conserva completo.</p>
+        {diagnosticCode && (
+          <p className="commercial-ai-muted" role="status">
+            Diagnóstico: {NARRATIVE_DIAGNOSTIC_LABELS[diagnosticCode]} <code>{diagnosticCode}</code>
+          </p>
+        )}
+      </div>
+    );
   }
   if (!narrative?.executiveSummary && !narrative?.explanation && !asArray(narrative?.recommendations).length) {
     return <p className="commercial-ai-muted">No se generó una narrativa IA para esta consulta. Los datos visibles son determinísticos.</p>;
   }
   return (
-    <div className="commercial-ai-narrative">
-      {narrative.executiveSummary && <p><strong>{narrative.executiveSummary}</strong></p>}
-      {narrative.explanation && <p>{narrative.explanation}</p>}
-      {asArray(narrative.recommendations).length > 0 && (
-        <div className="commercial-ai-narrative__recommendations">
-          <strong>Observaciones narrativas</strong>
-          <ul>{asArray(narrative.recommendations).map((item) => <li key={`${item.title}-${item.priority || 'medium'}`}>{item.title}: {item.explanation}</li>)}</ul>
-        </div>
+    <>
+      {narrative.status === 'available' && (
+        <p className="commercial-ai-muted">Narrativa generada por IA.</p>
       )}
-    </div>
+      <div className="commercial-ai-narrative">
+        {narrative.executiveSummary && <p><strong>{narrative.executiveSummary}</strong></p>}
+        {narrative.explanation && <p>{narrative.explanation}</p>}
+        {asArray(narrative.recommendations).length > 0 && (
+          <div className="commercial-ai-narrative__recommendations">
+            <strong>Observaciones narrativas</strong>
+            <ul>{asArray(narrative.recommendations).map((item) => <li key={`${item.title}-${item.priority || 'medium'}`}>{item.title}: {item.explanation}</li>)}</ul>
+          </div>
+        )}
+      </div>
+      {narrative.status === 'available' && narrative.diagnosticCode === 'AI_NARRATIVE_PARTIAL_CONTENT' && (
+        <p className="commercial-ai-muted" role="status">
+          {NARRATIVE_DIAGNOSTIC_LABELS.AI_NARRATIVE_PARTIAL_CONTENT} <code>AI_NARRATIVE_PARTIAL_CONTENT</code>
+        </p>
+      )}
+    </>
   );
 }
 
@@ -558,6 +588,7 @@ const historyEntryToAnalysisResult = (entry) => {
       queryRange: deterministic.queryRange,
       aiNarrative: {
         status: ai.status,
+        diagnosticCode: ai.diagnosticCode,
         executiveSummary: ai.executiveSummary,
         explanation: ai.explanation,
         recommendations: ai.recommendations

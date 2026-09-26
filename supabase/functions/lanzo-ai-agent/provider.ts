@@ -316,10 +316,6 @@ function normalizeResponsePayload(payload: unknown, config: ProviderConfig, resp
     content = nonEmptyText(message.content) || textFromContentParts(message.content);
   }
 
-  if (!content) {
-    throw new ProviderError('AI_EMPTY_RESPONSE', 'El proveedor IA devolvió una respuesta vacía.', 502);
-  }
-
   const normalizedUsage = normalizeUsage(usage);
   return {
     content,

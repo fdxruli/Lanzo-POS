@@ -433,6 +433,7 @@ describe('sales profitability download report', () => {
       usageStatus: null,
       response: {
         ...completedResult.response,
+        aiNarrative: null,
         status: 'incomplete',
         executiveSummary: 'No hay ventas válidas suficientes.',
         answer: 'No hay ventas válidas suficientes.',
@@ -465,6 +466,7 @@ describe('sales profitability download report', () => {
     expect(result.report.result.providerCalled).toBe(false);
     expect(result.report.ai).toEqual({
       status: 'not_generated',
+      diagnosticCode: null,
       executiveSummary: null,
       explanation: null,
       recommendations: [],
@@ -472,6 +474,68 @@ describe('sales profitability download report', () => {
     });
     expect(click).toHaveBeenCalledTimes(1);
     expect(revokeObjectURL).toHaveBeenCalledWith('blob:incomplete');
+  });
+
+  it('exports an attempted but unusable narrative as unavailable with a safe diagnostic', () => {
+    const invalidNarrative = {
+      ...completedResult,
+      providerCalled: true,
+      response: {
+        ...completedResult.response,
+        aiNarrative: {
+          status: 'unavailable',
+          diagnosticCode: 'AI_NARRATIVE_INVALID_JSON',
+          executiveSummary: null,
+          explanation: null,
+          recommendations: []
+        }
+      }
+    };
+    const report = buildSalesProfitabilityDownloadReport(invalidNarrative, requestContext);
+
+    expect(report.result.providerCalled).toBe(true);
+    expect(report.deterministic.summary.profit).toBe(120);
+    expect(report.ai).toEqual({
+      status: 'unavailable',
+      diagnosticCode: 'AI_NARRATIVE_INVALID_JSON',
+      executiveSummary: null,
+      explanation: null,
+      recommendations: [],
+      confidence: null
+    });
+  });
+
+  it('upgrades legacy provider-called reports from not_generated to unavailable when narrative content is absent', () => {
+    const legacy = buildSalesProfitabilityDownloadReport({
+      ...completedResult,
+      response: { ...completedResult.response, aiNarrative: null }
+    }, requestContext);
+    const sanitized = sanitizeSalesProfitabilityDownloadReport({
+      ...legacy,
+      ai: { ...legacy.ai, status: 'not_generated' }
+    });
+
+    expect(sanitized.ai.status).toBe('unavailable');
+    expect(sanitized.ai.diagnosticCode).toBe('AI_NARRATIVE_UNAVAILABLE');
+  });
+
+  it('drops unallowlisted diagnostic strings instead of exporting provider text', () => {
+    const report = buildSalesProfitabilityDownloadReport({
+      ...completedResult,
+      response: {
+        ...completedResult.response,
+        aiNarrative: {
+          status: 'unavailable',
+          diagnosticCode: 'raw-provider-response-secret',
+          executiveSummary: null,
+          explanation: null,
+          recommendations: []
+        }
+      }
+    }, requestContext);
+
+    expect(report.ai.diagnosticCode).toBe('AI_NARRATIVE_UNAVAILABLE');
+    expect(JSON.stringify(report)).not.toContain('raw-provider-response-secret');
   });
 
   it('does nothing and does not allocate a URL when there is no result', () => {

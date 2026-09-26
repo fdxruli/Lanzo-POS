@@ -1,6 +1,7 @@
 import {
   MAX_BODY_BYTES,
   cleanText,
+  isCommercialNarrativeDiagnosticCode,
   isJsonContentType,
   isRecordValue,
   validateCommercialModelResponse,
@@ -326,11 +327,6 @@ function parseJsonRecord(content: string): Record<string, unknown> | null {
   const candidates: string[] = [trimmed];
   const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/iu);
   if (fenced?.[1]) candidates.unshift(fenced[1].trim());
-  const firstObject = trimmed.indexOf('{');
-  const lastObject = trimmed.lastIndexOf('}');
-  if (firstObject >= 0 && lastObject > firstObject) {
-    candidates.push(trimmed.slice(firstObject, lastObject + 1));
-  }
 
   for (const candidate of candidates) {
     try {
@@ -454,14 +450,74 @@ function normalizeCommercialProviderResponse(content: string, request: Commercia
       : []
   );
   const providerRecommendations = normalizeProviderRecommendations(parsed?.recommendations, allowedEvidenceKeys);
+  const safeNarrativeText = (value: unknown) => safeCommercialText(value, '');
+  const summaryCandidates = parsed
+    ? [parsed.executiveSummary, parsed.answer].filter((value) => typeof value === 'string')
+    : [];
+  const executiveSummary = summaryCandidates
+    .map(safeNarrativeText)
+    .find((value) => value.length > 0) || '';
+  const explanation = safeNarrativeText(parsed?.explanation);
+  const hasNarrativeContent = Boolean(executiveSummary || explanation || providerRecommendations.length);
+  const unsafeNarrativeText = parsed
+    ? [parsed.executiveSummary, parsed.answer, parsed.explanation]
+      .filter((value) => typeof value === 'string' && value.trim().length > 0)
+      .some((value) => !safeNarrativeText(value))
+    : false;
+  const hasPartialNarrativeInput = Boolean(parsed && (
+    (Object.prototype.hasOwnProperty.call(parsed, 'executiveSummary')
+      && parsed.executiveSummary !== undefined
+      && typeof parsed.executiveSummary !== 'string')
+    || (Object.prototype.hasOwnProperty.call(parsed, 'answer')
+      && parsed.answer !== undefined
+      && typeof parsed.answer !== 'string')
+    || (Object.prototype.hasOwnProperty.call(parsed, 'explanation')
+      && parsed.explanation !== undefined
+      && typeof parsed.explanation !== 'string')
+    || (Object.prototype.hasOwnProperty.call(parsed, 'recommendations')
+      && (!Array.isArray(parsed.recommendations)
+        || parsed.recommendations.length > providerRecommendations.length))
+  ));
+  let diagnosticCode: string | null = null;
+  if (!content.trim()) diagnosticCode = 'AI_NARRATIVE_EMPTY';
+  else if (!parsed) diagnosticCode = 'AI_NARRATIVE_INVALID_JSON';
+  else if (!hasNarrativeContent) {
+    diagnosticCode = unsafeNarrativeText
+      ? 'AI_NARRATIVE_UNSAFE_CONTENT'
+      : 'AI_NARRATIVE_MISSING_CONTENT';
+  } else if (hasPartialNarrativeInput || unsafeNarrativeText) {
+    diagnosticCode = 'AI_NARRATIVE_PARTIAL_CONTENT';
+  }
+  if (diagnosticCode && !isCommercialNarrativeDiagnosticCode(diagnosticCode)) {
+    diagnosticCode = 'AI_NARRATIVE_UNAVAILABLE';
+  }
   const normalized: Record<string, unknown> = {
     ...fallback,
-    executiveSummary: safeCommercialText(parsed?.executiveSummary ?? parsed?.answer, ''),
-    explanation: safeCommercialText(parsed?.explanation, ''),
+    executiveSummary,
+    explanation,
     confidence: parsedConfidence,
-    recommendations: providerRecommendations
+    recommendations: providerRecommendations,
+    aiNarrative: {
+      status: hasNarrativeContent ? 'available' : 'unavailable',
+      ...(diagnosticCode ? { diagnosticCode } : {}),
+      executiveSummary: executiveSummary || null,
+      explanation: explanation || null,
+      recommendations: providerRecommendations
+    }
   };
-  return validateCommercialModelResponse(normalized) ? JSON.stringify(normalized) : JSON.stringify(fallback);
+  if (validateCommercialModelResponse(normalized)) return JSON.stringify(normalized);
+
+  const unavailable: Record<string, unknown> = {
+    ...fallback,
+    aiNarrative: {
+      status: 'unavailable',
+      diagnosticCode: 'AI_NARRATIVE_UNAVAILABLE',
+      executiveSummary: null,
+      explanation: null,
+      recommendations: []
+    }
+  };
+  return JSON.stringify(unavailable);
 }
 
 async function completeUsage(
@@ -583,6 +639,9 @@ async function handleAnalysis(
       fetchImpl,
       providerTimeoutMs
     );
+    if (!providerResult.content.trim()) {
+      throw new ProviderError('AI_EMPTY_RESPONSE', 'El proveedor IA devolvió una respuesta vacía.', 502);
+    }
   } catch (error) {
     const failure = providerFailure(error);
     let completion: RpcResult;

@@ -26,12 +26,23 @@ export const SALES_PROFITABILITY_AGENT_INTENTS = Object.freeze([
 
 export const COMMERCIAL_AGENT_RESPONSE_VERSION = 1;
 export const FEATURE_NOT_READY = 'FEATURE_NOT_READY';
+export const COMMERCIAL_AI_NARRATIVE_DIAGNOSTIC_CODES = Object.freeze([
+  'AI_NARRATIVE_EMPTY',
+  'AI_NARRATIVE_INVALID_JSON',
+  'AI_NARRATIVE_MISSING_CONTENT',
+  'AI_NARRATIVE_UNSAFE_CONTENT',
+  'AI_NARRATIVE_PARTIAL_CONTENT',
+  'AI_NARRATIVE_PROVIDER_ERROR',
+  'AI_NARRATIVE_UNAVAILABLE'
+]);
 
 const VALID_AGENT_KEYS = new Set(Object.values(COMMERCIAL_AGENT_KEYS));
 const VALID_INTENTS = new Set(COMMERCIAL_AGENT_INTENTS);
 const VALID_RESPONSE_STATUSES = new Set(['completed', 'incomplete', 'insufficient_data', 'out_of_scope', 'not_ready', 'error']);
 const VALID_SOURCES = new Set(['cloud', 'local', 'mixed']);
 const VALID_CONFIDENCE = new Set(['high', 'medium', 'low']);
+const VALID_AI_NARRATIVE_STATUSES = new Set(['available', 'unavailable']);
+const VALID_AI_NARRATIVE_DIAGNOSTICS = new Set(COMMERCIAL_AI_NARRATIVE_DIAGNOSTIC_CODES);
 const ARRAY_RESPONSE_FIELDS = [
   'facts',
   'calculations',
@@ -268,6 +279,10 @@ export const isCommercialAgentKey = (value) => VALID_AGENT_KEYS.has(value);
 
 export const isCommercialAgentIntent = (value) => VALID_INTENTS.has(value);
 
+export const normalizeCommercialAINarrativeDiagnosticCode = (value) => (
+  typeof value === 'string' && VALID_AI_NARRATIVE_DIAGNOSTICS.has(value) ? value : null
+);
+
 export const normalizeCommercialAgentRequest = (request = {}) => ({
   agentKey: typeof request.agentKey === 'string' ? request.agentKey.trim() : '',
   intent: typeof request.intent === 'string' ? request.intent.trim() : '',
@@ -346,6 +361,35 @@ export const validateCommercialAgentResponse = (response, { expectedAgentKey = n
   if (!isRecord(response.coverage)) return invalid('COVERAGE_OBJECT_REQUIRED');
   if (response.confidence !== undefined && !VALID_CONFIDENCE.has(response.confidence)) {
     return invalid('INVALID_CONFIDENCE');
+  }
+
+  if (response.aiNarrative !== undefined) {
+    if (!isRecord(response.aiNarrative)) return invalid('INVALID_AI_NARRATIVE');
+    const narrative = response.aiNarrative;
+    if (!VALID_AI_NARRATIVE_STATUSES.has(narrative.status)) return invalid('INVALID_AI_NARRATIVE_STATUS');
+    if (narrative.executiveSummary !== undefined && narrative.executiveSummary !== null && typeof narrative.executiveSummary !== 'string') {
+      return invalid('INVALID_AI_NARRATIVE_CONTENT');
+    }
+    if (narrative.explanation !== undefined && narrative.explanation !== null && typeof narrative.explanation !== 'string') {
+      return invalid('INVALID_AI_NARRATIVE_CONTENT');
+    }
+    if (narrative.recommendations !== undefined && !Array.isArray(narrative.recommendations)) {
+      return invalid('INVALID_AI_NARRATIVE_CONTENT');
+    }
+    if (narrative.diagnosticCode !== undefined
+      && !normalizeCommercialAINarrativeDiagnosticCode(narrative.diagnosticCode)) {
+      return invalid('INVALID_AI_NARRATIVE_DIAGNOSTIC');
+    }
+    const hasNarrativeContent = (
+      typeof narrative.executiveSummary === 'string' && narrative.executiveSummary.trim().length > 0
+    ) || (
+      typeof narrative.explanation === 'string' && narrative.explanation.trim().length > 0
+    ) || (Array.isArray(narrative.recommendations) && narrative.recommendations.length > 0);
+    if (narrative.status === 'available' && !hasNarrativeContent) return invalid('AI_NARRATIVE_CONTENT_REQUIRED');
+    if (narrative.status === 'unavailable'
+      && (hasNarrativeContent || !normalizeCommercialAINarrativeDiagnosticCode(narrative.diagnosticCode))) {
+      return invalid('INVALID_AI_NARRATIVE_UNAVAILABLE');
+    }
   }
 
   for (const field of ARRAY_RESPONSE_FIELDS) {

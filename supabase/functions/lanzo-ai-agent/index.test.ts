@@ -800,6 +800,9 @@ Deno.test('respuesta comercial parcialmente inválida se normaliza y conserva c�
   assertEquals(body.success, true);
   assert(typeof body.rawResultContent === 'string', 'Debe devolver contenido normalizado');
   const normalized = JSON.parse(body.rawResultContent as string);
+  assertEquals(normalized.aiNarrative.status, 'available');
+  assertEquals(normalized.aiNarrative.diagnosticCode, 'AI_NARRATIVE_PARTIAL_CONTENT');
+  assertEquals(normalized.aiNarrative.executiveSummary, 'El negocio requiere revisión.');
   assert(Array.isArray(normalized.calculations), 'calculations debe ser arreglo');
   assert(Array.isArray(normalized.assumptions), 'assumptions debe ser arreglo');
   assert(Array.isArray(normalized.scenarios), 'scenarios debe ser arreglo');
@@ -809,16 +812,46 @@ Deno.test('respuesta comercial parcialmente inválida se normaliza y conserva c�
   assertEquals(completions[0].args.p_success, true);
 });
 
-Deno.test('respuesta no JSON usa fallback determinístico válido', async () => {
-  const client = analysisClient();
-  const response = await makeHandler(client, { fetchImpl: async () => chatResponse('No puedo responder en JSON.') })(request(structuredCommercialRequest()));
-  const body = await json(response);
-  assertEquals(response.status, 200);
-  assertEquals(body.success, true);
-  const normalized = JSON.parse(body.rawResultContent as string);
-  assertEquals(normalized.agentKey, 'salesProfitability');
-  assert(Array.isArray(normalized.calculations), 'fallback calculations debe ser arreglo');
-  assertEquals(normalized.actionDrafts.length, 0);
+Deno.test('narrativa inválida o vacía queda unavailable, conserva métricas y consume una sola finalización', async () => {
+  const cases = [
+    { label: 'cuerpo narrativo vacío', content: '', code: 'AI_NARRATIVE_EMPTY' },
+    { label: 'texto no JSON', content: 'No puedo responder en JSON.', code: 'AI_NARRATIVE_INVALID_JSON' },
+    { label: 'prosa alrededor de un fragmento JSON', content: 'Respuesta: {"executiveSummary":"Narrativa parcial"}', code: 'AI_NARRATIVE_INVALID_JSON' },
+    { label: 'objeto JSON vacío', content: '{}', code: 'AI_NARRATIVE_MISSING_CONTENT' },
+    { label: 'campos narrativos faltantes', content: JSON.stringify({ confidence: 'high', recommendations: [] }), code: 'AI_NARRATIVE_MISSING_CONTENT' }
+  ];
+
+  for (const sample of cases) {
+    const client = analysisClient();
+    let providerCalls = 0;
+    const response = await makeHandler(client, {
+      fetchImpl: async () => {
+        providerCalls += 1;
+        return chatResponse(sample.content);
+      }
+    })(request(structuredCommercialRequest()));
+    const body = await json(response);
+    const normalized = JSON.parse(body.rawResultContent as string);
+    const beginCalls = client.calls.filter((call) => call.name === 'begin_ai_agent_analysis');
+    const completionCalls = client.calls.filter((call) => call.name === 'complete_ai_agent_analysis');
+
+    assertEquals(response.status, 200, sample.label);
+    assertEquals(body.success, true, sample.label);
+    assertEquals(normalized.aiNarrative.status, 'unavailable', sample.label);
+    assertEquals(normalized.aiNarrative.diagnosticCode, sample.code, sample.label);
+    assertEquals(normalized.aiNarrative.executiveSummary, null, sample.label);
+    assertEquals(normalized.aiNarrative.explanation, null, sample.label);
+    assertEquals(normalized.aiNarrative.recommendations.length, 0, sample.label);
+    assert(Array.isArray(normalized.calculations), `${sample.label}: cálculos determinísticos preservados`);
+    assertEquals(normalized.facts[0].label, 'Producto A', `${sample.label}: facts vienen del contexto deterministic`);
+    if (sample.content) {
+      assert(!JSON.stringify(body).includes(sample.content), `${sample.label}: no se devuelve texto crudo del proveedor`);
+    }
+    assertEquals(providerCalls, 1, `${sample.label}: no hay reintento oculto`);
+    assertEquals(beginCalls.length, 1, `${sample.label}: una reserva`);
+    assertEquals(completionCalls.length, 1, `${sample.label}: una finalización`);
+    assertEquals(completionCalls[0].args.p_success, true, `${sample.label}: conserva la política de uso del intento`);
+  }
 });
 
 
@@ -855,6 +888,8 @@ Deno.test('ventas y rentabilidad acepta profitability_summary como intención pr
   assertEquals(body.intent, 'profitability_summary');
   const normalized = JSON.parse(body.rawResultContent as string);
   assertEquals(normalized.executiveSummary, 'El periodo genera utilidad con los costos registrados.');
+  assertEquals(normalized.aiNarrative.status, 'available');
+  assertEquals(normalized.aiNarrative.diagnosticCode, undefined);
   assertEquals(normalized.recommendations.length, 1);
   assertEquals(normalized.recommendations[0].priority, 'medium');
   assertEquals(normalized.recommendations[0].evidenceKeys[0], 'profitability.margin');

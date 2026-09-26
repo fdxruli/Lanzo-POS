@@ -71,6 +71,39 @@ const providerResponse = JSON.stringify({
   actionDrafts: []
 });
 
+const unavailableNarrativeResponse = JSON.stringify({
+  version: 1,
+  agentKey: 'salesProfitability',
+  status: 'completed',
+  executiveSummary: '',
+  explanation: '',
+  facts: [{ label: 'dato alterado por proveedor' }],
+  calculations: [{
+    label: 'cálculo alterado por proveedor',
+    value: 999,
+    formattedValue: '999',
+    formula: 'inventada',
+    source: 'provider',
+    period: { from: '2026-09-01', to: '2026-09-07' }
+  }],
+  assumptions: [],
+  scenarios: [],
+  recommendations: [],
+  limitations: [],
+  confidence: 'medium',
+  source: 'cloud',
+  coverage: { complete: true },
+  citations: [],
+  actionDrafts: [],
+  aiNarrative: {
+    status: 'unavailable',
+    diagnosticCode: 'AI_NARRATIVE_INVALID_JSON',
+    executiveSummary: null,
+    explanation: null,
+    recommendations: []
+  }
+});
+
 const repository = (historyValue = history, profitValue = profit) => ({
   getSalesFinalHistory: vi.fn(async () => historyValue),
   getSalesProfitReport: vi.fn(async () => profitValue)
@@ -131,6 +164,65 @@ describe('sales profitability agent service', () => {
       fromInclusiveUtc: '2026-09-01T06:00:00.000Z',
       toExclusiveUtc: '2026-09-08T06:00:00.000Z'
     });
+  });
+
+  it('preserves deterministic results and the Edge unavailable diagnostic after one consumed provider call', async () => {
+    const analyze = vi.fn(async () => ({
+      rawResultContent: unavailableNarrativeResponse,
+      usageStatus: { used: 3, limit: 15, remaining: 12 }
+    }));
+    const runner = createSalesProfitabilityAgentRunner({
+      repository: repository(),
+      analyze,
+      assertActor: vi.fn()
+    });
+
+    const result = await runner({
+      question: '¿Mi negocio es rentable?',
+      period: { from: '2026-09-01', to: '2026-09-07', days: 7, timezone: 'America/Mexico_City' },
+      compare: false,
+      requestKey: 'narrative-unavailable-once'
+    });
+
+    expect(analyze).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ providerCalled: true, quotaOutcome: 'consumed', usageStatus: { used: 3, remaining: 12 } });
+    expect(result.response.aiNarrative).toEqual({
+      status: 'unavailable',
+      diagnosticCode: 'AI_NARRATIVE_INVALID_JSON',
+      executiveSummary: null,
+      explanation: null,
+      recommendations: []
+    });
+    expect(result.response.current).toMatchObject({ netSales: 100, costOfSale: 40, profit: 60, margin: 0.6 });
+    expect(result.response.calculations).not.toContainEqual(expect.objectContaining({ label: 'cálculo alterado por proveedor' }));
+    expect(result.response.facts || []).not.toContainEqual(expect.objectContaining({ label: 'dato alterado por proveedor' }));
+  });
+
+  it('turns a successful Edge call with non-JSON narrative into safe unavailable status without losing confirmed usage', async () => {
+    const rawProviderText = 'raw provider text with a secret token';
+    const analyze = vi.fn(async () => ({
+      rawResultContent: rawProviderText,
+      usageStatus: { used: 3, limit: 15, remaining: 12 }
+    }));
+    const runner = createSalesProfitabilityAgentRunner({ repository: repository(), analyze, assertActor: vi.fn() });
+    const result = await runner({
+      question: '¿Mi negocio es rentable?',
+      period: { from: '2026-09-01', to: '2026-09-07', days: 7, timezone: 'America/Mexico_City' },
+      compare: false,
+      requestKey: 'non-json-narrative'
+    });
+
+    expect(analyze).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ providerCalled: true, quotaOutcome: 'consumed', usageStatus: { used: 3, remaining: 12 } });
+    expect(result.response.aiNarrative).toEqual({
+      status: 'unavailable',
+      diagnosticCode: 'AI_NARRATIVE_INVALID_JSON',
+      executiveSummary: null,
+      explanation: null,
+      recommendations: []
+    });
+    expect(result.response.current).toMatchObject({ netSales: 100, costOfSale: 40, profit: 60, margin: 0.6 });
+    expect(JSON.stringify(result)).not.toContain(rawProviderText);
   });
 
   it('sends missing historical cost to mocked IA as null and never lets narrative restore a 100% margin', async () => {

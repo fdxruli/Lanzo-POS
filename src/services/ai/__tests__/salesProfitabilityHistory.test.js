@@ -156,14 +156,34 @@ describe('sales profitability local history', () => {
         ...response,
         aiNarrative: {
           status: 'unavailable',
+          diagnosticCode: 'AI_NARRATIVE_INVALID_JSON',
           explanation: 'La narrativa opcional de IA no está disponible.'
         }
       },
       quotaOutcome: 'not_confirmed',
       usageStatus: null
     });
-    expect(failedNarrative.execution.mode).toBe('automatic');
+    expect(failedNarrative.execution.mode).toBe('ai_unavailable');
     expect(failedNarrative.quota.status).toBe('unknown');
+    expect(failedNarrative.report.ai.status).toBe('unavailable');
+
+    const consumedUnavailableNarrative = buildEntry({
+      response: {
+        ...response,
+        aiNarrative: {
+          status: 'unavailable',
+          diagnosticCode: 'AI_NARRATIVE_INVALID_JSON',
+          executiveSummary: null,
+          explanation: null,
+          recommendations: []
+        }
+      },
+      quotaOutcome: 'consumed'
+    });
+    expect(consumedUnavailableNarrative.execution.mode).toBe('ai_unavailable');
+    expect(consumedUnavailableNarrative.quota.status).toBe('yes');
+    expect(consumedUnavailableNarrative.report.ai.status).toBe('unavailable');
+    expect(consumedUnavailableNarrative.report.ai.diagnosticCode).toBe('AI_NARRATIVE_INVALID_JSON');
   });
 
   it('keeps 15 intentional repetitions as 15 entries when each has a confirmed new generation', () => {

@@ -85,6 +85,37 @@ describe('commercial AI agent contract', () => {
       .toBe('UNSAFE_RESPONSE_CONTENT');
   });
 
+  it('requires non-empty content for available AI narrative and allowlisted diagnostics when unavailable', () => {
+    const availableNarrative = {
+      status: 'available',
+      executiveSummary: 'La narrativa se basa en los datos revisados.',
+      explanation: null,
+      recommendations: []
+    };
+    expect(validateCommercialAgentResponse(baseResponse({ aiNarrative: availableNarrative })).valid).toBe(true);
+    expect(validateCommercialAgentResponse(baseResponse({
+      aiNarrative: { ...availableNarrative, executiveSummary: ' ' }
+    })).code).toBe('AI_NARRATIVE_CONTENT_REQUIRED');
+    expect(validateCommercialAgentResponse(baseResponse({
+      aiNarrative: {
+        status: 'unavailable',
+        diagnosticCode: 'AI_NARRATIVE_INVALID_JSON',
+        executiveSummary: null,
+        explanation: null,
+        recommendations: []
+      }
+    })).valid).toBe(true);
+    expect(validateCommercialAgentResponse(baseResponse({
+      aiNarrative: {
+        status: 'unavailable',
+        diagnosticCode: 'raw-provider-text',
+        executiveSummary: null,
+        explanation: null,
+        recommendations: []
+      }
+    })).code).toBe('INVALID_AI_NARRATIVE_DIAGNOSTIC');
+  });
+
   it('normalizes only the scenario fields allowed by each intent', () => {
     expect(normalizeScenarioForIntent('price_simulation', {
       productName: ' Producto A ',

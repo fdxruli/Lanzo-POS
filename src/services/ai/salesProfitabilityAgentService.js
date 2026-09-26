@@ -16,6 +16,7 @@ import {
   COMMERCIAL_AGENT_KEYS,
   createOutOfScopeResponse,
   normalizeScenarioForIntent,
+  normalizeCommercialAINarrativeDiagnosticCode,
   parseCommercialAgentResponse,
   resolveCommercialIntent,
   validateCommercialAgentRequest
@@ -106,29 +107,62 @@ const normalizeNarrativeRecommendations = (recommendations = []) => (
     ))
 );
 
+const narrativeDiagnosticFromContractFailure = (code) => {
+  if (code === 'MALFORMED_JSON') return 'AI_NARRATIVE_INVALID_JSON';
+  if (code === 'UNSAFE_RESPONSE_CONTENT') return 'AI_NARRATIVE_UNSAFE_CONTENT';
+  if (code === 'AI_NARRATIVE_CONTENT_REQUIRED' || code === 'EXECUTIVE_SUMMARY_REQUIRED') {
+    return 'AI_NARRATIVE_MISSING_CONTENT';
+  }
+  return 'AI_NARRATIVE_UNAVAILABLE';
+};
+
 const mergeProviderResponse = (deterministic, providerResponse) => {
   const parsed = parseCommercialAgentResponse(providerResponse, {
     expectedAgentKey: COMMERCIAL_AGENT_KEYS.SALES_PROFITABILITY
   });
   if (!parsed.valid) {
-    throw new AIApiError(
-      'El proveedor IA devolvió una respuesta estructurada inválida.',
-      502,
-      parsed,
-      'AI_INVALID_RESPONSE'
-    );
+    return {
+      ...deterministic,
+      aiNarrative: {
+        status: 'unavailable',
+        diagnosticCode: narrativeDiagnosticFromContractFailure(parsed.code),
+        executiveSummary: null,
+        explanation: null,
+        recommendations: []
+      },
+      actionDrafts: [],
+      citations: []
+    };
   }
 
-  const narrative = parsed.response;
-  const providerRecommendations = normalizeNarrativeRecommendations(narrative.recommendations);
+  const response = parsed.response;
+  const hasNestedNarrative = response.aiNarrative && typeof response.aiNarrative === 'object'
+    && !Array.isArray(response.aiNarrative);
+  const narrative = hasNestedNarrative ? response.aiNarrative : response;
+  const executiveSummary = String(
+    hasNestedNarrative
+      ? (narrative.executiveSummary || narrative.answer || '')
+      : (response.executiveSummary || response.answer || '')
+  ).trim() || null;
+  const explanation = String(narrative.explanation || '').trim() || null;
+  const providerRecommendations = normalizeNarrativeRecommendations(
+    hasNestedNarrative ? narrative.recommendations : response.recommendations
+  );
+  const hasNarrativeContent = Boolean(executiveSummary || explanation || providerRecommendations.length);
+  const requestedStatus = narrative.status === 'unavailable' ? 'unavailable' : null;
+  const status = hasNarrativeContent && requestedStatus !== 'unavailable' ? 'available' : 'unavailable';
+  const diagnosticCode = normalizeCommercialAINarrativeDiagnosticCode(narrative.diagnosticCode)
+    || (status === 'unavailable' ? 'AI_NARRATIVE_MISSING_CONTENT' : null);
 
   return {
     ...deterministic,
     recommendations: deterministic.recommendations,
     aiNarrative: {
-      executiveSummary: String(narrative.executiveSummary || narrative.answer || '').trim() || null,
-      explanation: String(narrative.explanation || '').trim() || null,
-      recommendations: providerRecommendations
+      status,
+      ...(diagnosticCode ? { diagnosticCode } : {}),
+      executiveSummary: status === 'available' ? executiveSummary : null,
+      explanation: status === 'available' ? explanation : null,
+      recommendations: status === 'available' ? providerRecommendations : []
     },
     actionDrafts: [],
     citations: []
@@ -696,8 +730,14 @@ export const createSalesProfitabilityAgentRunner = ({
         reportSource: deterministic.source
       };
     } catch (error) {
+      const errorCode = error?.code || error?.originalError?.code;
+      const diagnosticCode = errorCode === 'AI_EMPTY_RESPONSE'
+        ? 'AI_NARRATIVE_EMPTY'
+        : ['MALFORMED_JSON', 'AI_INVALID_RESPONSE'].includes(errorCode)
+          ? 'AI_NARRATIVE_INVALID_JSON'
+          : 'AI_NARRATIVE_PROVIDER_ERROR';
       console.error('[SalesProfitabilityAgent] narrativa IA no disponible; se conserva el reporte determinístico.', {
-        code: error?.code || error?.originalError?.code || 'AI_NARRATIVE_UNAVAILABLE',
+        code: diagnosticCode,
         statusCode: error?.statusCode || null,
         cause: error?.originalError?.message || error?.message || null
       });
@@ -710,6 +750,7 @@ export const createSalesProfitabilityAgentRunner = ({
           ]),
           aiNarrative: {
             status: 'unavailable',
+            diagnosticCode,
             executiveSummary: null,
             explanation: 'La narrativa opcional de IA no está disponible. Las cifras, cálculos, cobertura y recomendaciones visibles provienen del análisis determinístico.',
             recommendations: []

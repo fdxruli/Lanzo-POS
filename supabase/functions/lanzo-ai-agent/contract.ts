@@ -17,6 +17,23 @@ export const AGENT_TYPES = [
   'unknown'
 ] as const;
 
+export const COMMERCIAL_NARRATIVE_DIAGNOSTIC_CODES = [
+  'AI_NARRATIVE_EMPTY',
+  'AI_NARRATIVE_INVALID_JSON',
+  'AI_NARRATIVE_MISSING_CONTENT',
+  'AI_NARRATIVE_UNSAFE_CONTENT',
+  'AI_NARRATIVE_PARTIAL_CONTENT',
+  'AI_NARRATIVE_PROVIDER_ERROR',
+  'AI_NARRATIVE_UNAVAILABLE'
+] as const;
+
+export type CommercialNarrativeDiagnosticCode = typeof COMMERCIAL_NARRATIVE_DIAGNOSTIC_CODES[number];
+
+export function isCommercialNarrativeDiagnosticCode(value: unknown): value is CommercialNarrativeDiagnosticCode {
+  return typeof value === 'string'
+    && (COMMERCIAL_NARRATIVE_DIAGNOSTIC_CODES as readonly string[]).includes(value);
+}
+
 export type AgentType = typeof AGENT_TYPES[number];
 
 export type AuthPayload = {
@@ -586,6 +603,19 @@ export function validateCommercialModelResponse(value: unknown): boolean {
     || !Array.isArray(value.actionDrafts)
     || !Array.isArray(value.citations)) return false;
   if (value.actionDrafts.length !== 0) return false;
+  if (value.aiNarrative !== undefined) {
+    if (!isRecord(value.aiNarrative)) return false;
+    const narrative = value.aiNarrative;
+    if (narrative.status !== 'available' && narrative.status !== 'unavailable') return false;
+    if (!Array.isArray(narrative.recommendations)) return false;
+    if (narrative.diagnosticCode !== undefined && !isCommercialNarrativeDiagnosticCode(narrative.diagnosticCode)) return false;
+    const hasNarrativeContent = (typeof narrative.executiveSummary === 'string' && narrative.executiveSummary.trim().length > 0)
+      || (typeof narrative.explanation === 'string' && narrative.explanation.trim().length > 0)
+      || narrative.recommendations.length > 0;
+    if (narrative.status === 'available' && !hasNarrativeContent) return false;
+    if (narrative.status === 'unavailable'
+      && (!isCommercialNarrativeDiagnosticCode(narrative.diagnosticCode) || hasNarrativeContent)) return false;
+  }
   if (value.calculations.some((item) => !isRecord(item)
     || typeof item.label !== 'string'
     || !Object.prototype.hasOwnProperty.call(item, 'value')
