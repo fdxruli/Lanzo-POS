@@ -9,14 +9,18 @@ const asRecord = (value) => value !== null && typeof value === 'object' && !Arra
   : {};
 
 const asFiniteNumber = (value) => {
+  if (value === null || value === undefined || value === '') return null;
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
 };
 
-const asSafeText = (value, maxLength = MAX_PRODUCT_NAME_LENGTH) => {
-  if (typeof value !== 'string') return null;
+const asSafeText = (value, fallbackOrMaxLength = null, maxLength = MAX_PRODUCT_NAME_LENGTH) => {
+  const legacyMaxLength = typeof fallbackOrMaxLength === 'number' ? fallbackOrMaxLength : null;
+  const fallback = legacyMaxLength === null ? fallbackOrMaxLength : null;
+  const limit = legacyMaxLength ?? maxLength;
+  if (typeof value !== 'string') return fallback;
   const text = value.trim();
-  return text ? text.slice(0, maxLength) : null;
+  return text ? text.slice(0, limit) : fallback;
 };
 
 const asSafeSource = (value) => SAFE_SOURCES.has(value) ? value : 'mixed';
@@ -46,7 +50,13 @@ const normalizeProduct = (row = {}) => {
     netSales: pickNumber(source, ['netSales', 'net_sales', 'sales', 'revenue']),
     unitCost: pickNumber(source, ['unitCost', 'unit_cost', 'cost']),
     profit: pickNumber(source, ['profit', 'gross_profit', 'utility']),
-    margin: pickNumber(source, ['margin', 'gross_margin'])
+    margin: pickNumber(source, ['margin', 'gross_margin']),
+    averagePrice: pickNumber(source, ['averagePrice', 'average_price', 'unit_price']),
+    costKnown: source.costKnown === undefined ? null : source.costKnown === true,
+    costStatus: asSafeText(source.costStatus, null, 48),
+    costSource: asSafeText(source.costSource, null, 64),
+    riskType: asSafeText(source.riskType, null, 48),
+    riskReason: asSafeText(source.riskReason, null, 240)
   };
 };
 
@@ -74,16 +84,144 @@ const normalizeChannels = (rows = []) => (
     .filter((row) => row.channel || row.netSales !== null || row.orders !== null)
 );
 
+const normalizeMixRows = (rows = [], key = 'name') => (
+  (Array.isArray(rows) ? rows : [])
+    .slice(0, 8)
+    .map((row = {}) => {
+      const source = asRecord(row);
+      return {
+        [key]: asSafeText(source[key], null, 80),
+        currentShare: pickNumber(source, ['currentShare']),
+        previousShare: pickNumber(source, ['previousShare']),
+        deltaShare: pickNumber(source, ['deltaShare'])
+      };
+    })
+    .filter((row) => row[key])
+);
+
 const normalizeComparison = (comparison = {}) => {
   const source = asRecord(comparison);
   return {
     previousNetSales: pickNumber(source, ['previousNetSales', 'previous_net_sales']),
+    previousUnits: pickNumber(source, ['previousUnits', 'previous_units']),
+    previousTicket: pickNumber(source, ['previousTicket', 'previous_ticket']),
+    previousCost: pickNumber(source, ['previousCost', 'previous_cost']),
     previousProfit: pickNumber(source, ['previousProfit', 'previous_profit']),
     previousMargin: pickNumber(source, ['previousMargin', 'previous_margin']),
     deltaNetSales: pickNumber(source, ['deltaNetSales', 'delta_net_sales']),
+    deltaUnits: pickNumber(source, ['deltaUnits', 'delta_units']),
+    deltaTicket: pickNumber(source, ['deltaTicket', 'delta_ticket']),
+    deltaCost: pickNumber(source, ['deltaCost', 'delta_cost']),
     deltaProfit: pickNumber(source, ['deltaProfit', 'delta_profit']),
-    deltaMargin: pickNumber(source, ['deltaMargin', 'delta_margin'])
+    deltaMargin: pickNumber(source, ['deltaMargin', 'delta_margin']),
+    deltaMarginRelative: pickNumber(source, ['deltaMarginRelative', 'delta_margin_relative']),
+    deltaDiscounts: pickNumber(source, ['deltaDiscounts', 'delta_discounts']),
+    productMixChanges: normalizeMixRows(source.productMixChanges, 'name'),
+    channelMixChanges: normalizeMixRows(source.channelMixChanges, 'channel')
   };
+};
+
+const normalizeContributors = (contributors = []) => (
+  (Array.isArray(contributors) ? contributors : [])
+    .slice(0, 3)
+    .map((row = {}) => {
+      const source = asRecord(row);
+      return {
+        key: asSafeText(source.key, null, 80),
+        title: asSafeText(source.title, null, 120),
+        contribution: pickNumber(source, ['contribution', 'value']),
+        direction: ['positive', 'negative', 'context'].includes(source.direction) ? source.direction : 'context',
+        explanation: asSafeText(source.explanation, null, 300),
+        evidenceKeys: Array.isArray(source.evidenceKeys)
+          ? source.evidenceKeys.filter((item) => typeof item === 'string').slice(0, 8).map((item) => item.slice(0, 120))
+          : []
+      };
+    })
+    .filter((row) => row.key && row.title && row.explanation)
+);
+const normalizeCoverage = (coverage = {}) => {
+  const source = asRecord(coverage);
+  return {
+    validSales: pickNumber(source, ['validSales', 'valid_sales']),
+    rawSales: pickNumber(source, ['rawSales', 'raw_sales']),
+    excludedSales: pickNumber(source, ['excludedSales', 'excluded_sales']),
+    ecommerceDuplicatesExcluded: pickNumber(source, ['ecommerceDuplicatesExcluded', 'ecommerce_duplicates_excluded']),
+    productsIncluded: pickNumber(source, ['productsIncluded', 'products_included']),
+    productsMissingCost: pickNumber(source, ['productsMissingCost', 'products_missing_cost']),
+    costCoverage: pickNumber(source, ['costCoverage', 'cost_coverage']),
+    itemCoverage: pickNumber(source, ['itemCoverage', 'item_coverage']),
+    detailLines: pickNumber(source, ['detailLines', 'detail_lines']),
+    expectedDetailLines: pickNumber(source, ['expectedDetailLines', 'expected_detail_lines']),
+    knownCostOfSale: pickNumber(source, ['knownCostOfSale', 'known_cost_of_sale']),
+    costStatus: asSafeText(source.costStatus, null, 48),
+    itemsComplete: source.itemsComplete === true,
+    paginationComplete: source.paginationComplete === true,
+    sourceComplete: source.sourceComplete === true,
+    comparisonAvailable: source.comparisonAvailable === true,
+    complete: source.complete === true
+  };
+};
+
+const normalizeCalculations = (calculations = []) => (
+  (Array.isArray(calculations) ? calculations : [])
+    .slice(0, 32)
+    .map((calculation = {}) => {
+      const source = asRecord(calculation);
+      return {
+        label: asSafeText(source.label, null, 100),
+        value: source.value === null || typeof source.value === 'number' ? source.value : null,
+        formattedValue: asSafeText(source.formattedValue, 'No disponible', 80),
+        formula: asSafeText(source.formula, '', 180),
+        source: asSafeText(source.source, 'deterministic', 40),
+        period: normalizePeriod(source.period)
+      };
+    })
+    .filter((calculation) => calculation.label && calculation.formula)
+);
+
+const SAFE_SCENARIO_KEYS = new Set([
+  'label', 'volume', 'utility', 'margin', 'impactVsCurrent', 'tickets', 'frequency',
+  'ticketPercentage', 'comboPrice', 'discount', 'products', 'note', 'isPrediction', 'currentPrice', 'newPrice',
+  'unitCost', 'historicalJointSales', 'averageJointSale', 'cost', 'profit', 'evidenceLevel',
+  'confidence', 'costCoverage', 'costStatus', 'opportunity', 'historicalVolume', 'breakEvenVolume', 'isDemandPrediction'
+]);
+
+const buildEvidenceKeys = (source = {}) => {
+  const value = asRecord(source);
+  const comparison = asRecord(value.comparison || value.previous);
+  const contributors = normalizeContributors(value.contributors);
+  const keys = [
+    'profitability.status',
+    'profitability.netSales',
+    'profitability.costOfSale',
+    'profitability.profit',
+    'profitability.margin',
+    'profitability.costCoverage',
+    'coverage.itemsComplete',
+    'coverage.costCoverage',
+    'coverage.paginationComplete',
+    'coverage.sourceComplete',
+    'coverage.costStatus',
+    'summary.discountsKnown',
+    'products.risks'
+  ];
+  if (Object.keys(comparison).length) {
+    keys.push(
+      'comparison.deltaMargin',
+      'comparison.deltaMarginRelative',
+      'comparison.deltaCost',
+      'comparison.deltaDiscounts',
+      'comparison.deltaUnits',
+      'comparison.deltaTicket',
+      'comparison.productMixChanges',
+      'comparison.channelMixChanges'
+    );
+  }
+  contributors.forEach((item) => keys.push(`contributors.${item.key}`));
+  if (Array.isArray(value.scenarios) && value.scenarios.length) {
+    keys.push('scenarios.values');
+  }
+  return Array.from(new Set(keys)).slice(0, 40);
 };
 
 const normalizeSalesPayload = (payload = {}) => {
@@ -91,6 +229,24 @@ const normalizeSalesPayload = (payload = {}) => {
   const overview = asRecord(source.overview || source.metrics || source.summary);
 
   return {
+    summary: {
+      netSales: pickNumber(overview, ['netSales', 'net_sales', 'sales', 'revenue']),
+      units: pickNumber(overview, ['units', 'items', 'items_sold']),
+      salesCount: pickNumber(overview, ['salesCount', 'sales_count', 'orders', 'order_count']),
+      averageTicket: pickNumber(overview, ['averageTicket', 'average_ticket', 'avg_ticket']),
+      discounts: pickNumber(overview, ['discounts', 'discount_amount', 'total_discounts']),
+      discountsKnown: overview.discountsKnown === true,
+      unitCosts: pickNumber(overview, ['unitCosts', 'unit_costs', 'cogs', 'costs']),
+      knownCostOfSale: pickNumber(overview, ['knownCostOfSale', 'known_cost_of_sale']),
+      profit: pickNumber(overview, ['profit', 'gross_profit', 'utility']),
+      margin: pickNumber(overview, ['margin', 'gross_margin']),
+      costCoverage: pickNumber(asRecord(source.coverage), ['costCoverage', 'cost_coverage']),
+      missingCostProducts: pickNumber(asRecord(source.coverage), ['productsMissingCost', 'products_missing_cost']),
+      excludedSales: pickNumber(asRecord(source.coverage), ['excludedSales', 'excluded_sales']),
+      ecommerceDuplicates: pickNumber(asRecord(source.coverage), ['ecommerceDuplicatesExcluded', 'ecommerce_duplicates_excluded']),
+      profitabilityStatus: asSafeText(overview.profitabilityStatus, null, 40),
+      profitabilityExplanation: asSafeText(overview.profitabilityExplanation, null, 300)
+    },
     netSales: pickNumber(overview, ['netSales', 'net_sales', 'sales', 'revenue']),
     grossSales: pickNumber(overview, ['grossSales', 'gross_sales']),
     discounts: pickNumber(overview, ['discounts', 'discount_amount', 'total_discounts']),
@@ -100,7 +256,24 @@ const normalizeSalesPayload = (payload = {}) => {
     averageTicket: pickNumber(overview, ['averageTicket', 'average_ticket', 'avg_ticket']),
     products: normalizeProducts(source.products || source.byProduct || source.by_product),
     channels: normalizeChannels(source.channels || source.byChannel || source.by_channel),
-    comparison: normalizeComparison(source.comparison || source.previous)
+    comparison: normalizeComparison(source.comparison || source.previous),
+    contributors: normalizeContributors(source.contributors),
+    evidenceKeys: buildEvidenceKeys(source),
+    coverage: normalizeCoverage(source.coverage),
+    calculations: normalizeCalculations(source.calculations),
+    assumptions: Array.isArray(source.assumptions)
+      ? source.assumptions.filter((item) => typeof item === 'string').slice(0, 20).map((item) => item.slice(0, 180))
+      : [],
+    limitations: Array.isArray(source.limitations)
+      ? source.limitations.filter((item) => typeof item === 'string').slice(0, 20).map((item) => item.slice(0, 240))
+      : [],
+    scenarios: Array.isArray(source.scenarios) ? source.scenarios.slice(0, 12).map((scenario) => {
+      const safeScenario = asRecord(scenario);
+      return Object.fromEntries(Object.entries(safeScenario).filter(([key, value]) => (
+        SAFE_SCENARIO_KEYS.has(key)
+        && (typeof value === 'number' || typeof value === 'string' || typeof value === 'boolean' || Array.isArray(value))
+      )));
+    }) : []
   };
 };
 
