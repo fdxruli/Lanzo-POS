@@ -23,5 +23,15 @@
     "slug": "ecommerce-clear-search-restore-catalog",
     "file": "src/components/ecommerce/__tests__/EcommercePortalSettings.productModalLifecycle.test.jsx",
     "testName": "restores the opening catalog when the user explicitly clears an active search"
+  },
+  {
+    "slug": "ecommerce-stale-search-response",
+    "file": "src/components/ecommerce/__tests__/EcommercePortalSettings.productModalLifecycle.test.jsx",
+    "testName": "ignores a stale search response that resolves after the newest request"
+  },
+  {
+    "slug": "ecommerce-stale-load-more-loading",
+    "file": "src/components/ecommerce/__tests__/EcommercePortalSettings.productModalLifecycle.test.jsx",
+    "testName": "releases stale load-more loading after a newer search wins the catalog race"
   }
 ]
