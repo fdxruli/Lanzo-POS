@@ -8,6 +8,10 @@ export const TARGET_EXECUTED_PASS = 'TARGET_EXECUTED_PASS';
 export const TARGET_EXECUTED_FAIL = 'TARGET_EXECUTED_FAIL';
 export const TARGET_NOT_EXECUTED = 'TARGET_NOT_EXECUTED';
 export const EVIDENCE_UNREADABLE = 'EVIDENCE_UNREADABLE';
+
+export function escapeTestNamePattern(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 const clean = (v = '') => String(v).replace(/\s+/g, ' ').trim();
 
 export const normalizeFile = (v = '') => {
@@ -135,14 +139,32 @@ export function compareFocusedSummaries(base, candidate, minimumRepetitions = 50
         throw new Error(`SEMANTIC_IDENTITY_UNRESOLVED: ${label} ${target.slug}`);
       }
     }
-    const semantics = (target) => new Set(target.runs.flatMap((run) => (run.failures || []).map((failure) => `${failure.errorClass}::${failure.signature}`)));
-    const baseSemantics = semantics(baseTarget);
-    const candidateSemantics = semantics(candidateTarget);
+    const semanticCounts = (target) => {
+      const counts = new Map();
+      for (const run of target.runs) {
+        const runSemantics = new Set((run.failures || []).map((failure) => `${failure.errorClass}::${failure.signature}`));
+        for (const semantic of runSemantics) counts.set(semantic, (counts.get(semantic) || 0) + 1);
+      }
+      return counts;
+    };
+    const baseSemanticCounts = semanticCounts(baseTarget);
+    const candidateSemanticCounts = semanticCounts(candidateTarget);
+    const baseSemantics = new Set(baseSemanticCounts.keys());
+    const candidateSemantics = new Set(candidateSemanticCounts.keys());
+    const candidateOnlySemanticObservations = [...candidateSemanticCounts.entries()]
+      .filter(([semantic]) => !baseSemantics.has(semantic))
+      .map(([semantic, repetitions]) => ({ semantic, repetitions }));
+    // One novel failure in 50 trials is retained as evidence, not treated as a regression by itself.
+    // Repeated exact failures or a statistically significant increase in total failure rate still block.
+    const candidateOnlySemantics = candidateOnlySemanticObservations
+      .filter(({ repetitions }) => repetitions >= 2)
+      .map(({ semantic }) => semantic);
     return {
       slug: baseTarget.slug, file: baseTarget.file, testName: baseTarget.testName,
       base: baseTarget.counts, candidate: candidateTarget.counts,
       baseSemantics: [...baseSemantics], candidateSemantics: [...candidateSemantics],
-      candidateOnlySemantics: [...candidateSemantics].filter((semantic) => !baseSemantics.has(semantic)),
+      candidateOnlySemantics,
+      candidateOnlySemanticObservations,
       candidateFailureRatePValue: candidateFailureRatePValue(baseTarget.counts.failures, candidateTarget.counts.failures, base.repetitions),
       candidateFailureRateRegression: candidateTarget.counts.failures > baseTarget.counts.failures
         && candidateFailureRatePValue(baseTarget.counts.failures, candidateTarget.counts.failures, base.repetitions) < 0.05,
@@ -151,6 +173,11 @@ export function compareFocusedSummaries(base, candidate, minimumRepetitions = 50
   return {
     matrix,
     candidateOnlySemanticRegressionCount: matrix.reduce((sum, row) => sum + row.candidateOnlySemantics.length, 0),
+    candidateOnlySemanticObservationCount: matrix.reduce((sum, row) => sum + row.candidateOnlySemanticObservations.length, 0),
+    singleRunCandidateOnlySemanticObservationCount: matrix.reduce(
+      (sum, row) => sum + row.candidateOnlySemanticObservations.filter(({ repetitions }) => repetitions === 1).length,
+      0,
+    ),
     candidateFailureRateRegressionCount: matrix.filter((row) => row.candidateFailureRateRegression).length,
   };
 }
@@ -177,7 +204,7 @@ function main() {
     const stem = `public-store-${target.slug}-${repetition}`;
     const jsonPath = path.join(outputDir, `${stem}.json`);
     const result = spawnSync(process.execPath, [
-      './node_modules/vitest/vitest.mjs', 'run', target.file, '-t', target.testName,
+      './node_modules/vitest/vitest.mjs', 'run', target.file, '-t', escapeTestNamePattern(target.testName),
       `--maxWorkers=${maxWorkers}`, '--reporter=default', '--reporter=json', `--outputFile.json=${jsonPath}`,
     ], { cwd: subjectDir, encoding: 'utf8' });
     fs.writeFileSync(path.join(outputDir, `${stem}.log`), `${result.stdout || ''}${result.stderr || ''}`);

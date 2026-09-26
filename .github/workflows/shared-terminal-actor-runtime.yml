@@ -28,13 +28,35 @@ permissions:
 env:
   # Immutable SHARED.TERMINAL.1 ActorRuntime contract baseline.
   SHARED_TERMINAL_CONTRACT_BASE_SHA: 2f3457313b81f09937acab6fe4bac4399e79035f
-  # Current PR refs drive new-regression attribution. Manual runs have no PR base.
-  SHARED_TERMINAL_PR_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
+  # PR regression comparisons resolve the current base branch tip once per workflow run.
   SHARED_TERMINAL_CANDIDATE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
 
 jobs:
+  resolve-pr-base:
+    name: Resolve current PR base commit
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+    steps:
+      - name: Checkout current base branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.ref || github.event.repository.default_branch }}
+          fetch-depth: 1
+      - name: Capture immutable base SHA
+        id: resolve
+        shell: bash
+        run: |
+          base_sha="$(git rev-parse HEAD)"
+          echo "PR_BASE_SHA=${base_sha}"
+          echo "sha=${base_sha}" >> "$GITHUB_OUTPUT"
+
   focused-validation:
     name: Focused ActorRuntime / tenant / auth / lint / builds
+    needs:
+      - resolve-pr-base
+    env:
+      SHARED_TERMINAL_PR_BASE_SHA: ${{ github.event_name == 'pull_request' && needs.resolve-pr-base.outputs.sha || '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -158,6 +180,10 @@ jobs:
   full-suite-baseline:
     name: Full suite BASE repeated (observational)
     if: github.event_name == 'pull_request'
+    needs:
+      - resolve-pr-base
+    env:
+      SHARED_TERMINAL_PR_BASE_SHA: ${{ needs.resolve-pr-base.outputs.sha }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     outputs:

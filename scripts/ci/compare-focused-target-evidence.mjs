@@ -9,17 +9,18 @@ const result = compareFocusedSummaries(read(basePath), read(candidatePath), 50);
 const lines = [
   '# Focused target differential',
   '',
-  '| Target | File | BASE pass/fail/not-executed/unreadable | CANDIDATE pass/fail/not-executed/unreadable | Candidate-only semantics | Failure-rate p-value |',
+  '| Target | File | BASE pass/fail/not-executed/unreadable | CANDIDATE pass/fail/not-executed/unreadable | Candidate-only semantics (repeated / observed) | Failure-rate p-value |',
   '|---|---|---|---|---|---|',
   ...result.matrix.map((row) => {
     const count = (value) => `${value.passes}/${value.failures}/${value.notExecuted}/${value.unreadable}`;
-    return `| ${row.slug} | ${row.file} | ${count(row.base)} | ${count(row.candidate)} | ${row.candidateOnlySemantics.length} | ${row.candidateFailureRatePValue.toFixed(4)} |`;
+    return `| ${row.slug} | ${row.file} | ${count(row.base)} | ${count(row.candidate)} | ${row.candidateOnlySemantics.length} / ${row.candidateOnlySemanticObservations.length} | ${row.candidateFailureRatePValue.toFixed(4)} |`;
   }),
   '',
   `- FOCUSED_TARGET_NOT_EXECUTED: 0`,
   `- EVIDENCE_UNREADABLE: 0`,
   `- SEMANTIC_IDENTITY_UNRESOLVED: 0`,
-  `- CANDIDATE-ONLY SEMANTIC REGRESSIONS: ${result.candidateOnlySemanticRegressionCount}`,
+  `- CANDIDATE-ONLY SEMANTIC REGRESSIONS (same error in 2+ independent runs): ${result.candidateOnlySemanticRegressionCount}`,
+  `- SINGLE-RUN CANDIDATE-ONLY SEMANTIC OBSERVATIONS: ${result.singleRunCandidateOnlySemanticObservationCount}`,
   `- CANDIDATE FAILURE-RATE REGRESSIONS: ${result.candidateFailureRateRegressionCount}`,
   '',
 ];

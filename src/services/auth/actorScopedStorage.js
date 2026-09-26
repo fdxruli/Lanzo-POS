@@ -11,7 +11,8 @@ export const ACTOR_SCOPED_STORAGE_ERROR_CODES = Object.freeze({
 });
 
 export const ACTOR_SCOPED_LOGICAL_KEYS = Object.freeze([
-  'lanzo-active-orders-storage'
+  'lanzo-active-orders-storage',
+  'commercial-ai-sales-profitability-history-v1'
 ]);
 
 const actorScopedLogicalKeys = new Set(ACTOR_SCOPED_LOGICAL_KEYS);

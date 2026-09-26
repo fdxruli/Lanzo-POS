@@ -72,6 +72,22 @@ const buildFinalFilters = ({ dateFrom = null, dateTo = null, scope = 'mine', sta
   p_category_id: categoryId || null
 });
 
+export const buildSalesProfitFilters = ({
+  dateFrom = null,
+  dateTo = null,
+  scope = 'mine',
+  staffUserId = null,
+  productId = null,
+  categoryId = null
+} = {}) => ({
+  p_date_from: dateFrom,
+  p_date_to: dateTo,
+  p_scope: scope || 'mine',
+  p_staff_user_id: staffUserId || null,
+  p_product_id: productId || null,
+  p_category_id: categoryId || null
+});
+
 const buildReportTags = (licenseKey, extraTags = []) => [
   CLOUD_REQUEST_TAGS.REPORTS,
   cloudRequestTags.license(licenseKey),
@@ -205,7 +221,7 @@ export const reportsCloudRepository = {
     const params = {
       p_limit: normalizeLimit(limit),
       p_offset: Math.max(Number(offset) || 0, 0),
-      ...buildFinalFilters(filters)
+      ...buildSalesProfitFilters(filters)
     };
     return cachedReportRpc({
       rpcName: 'pos_get_sales_profit_report',

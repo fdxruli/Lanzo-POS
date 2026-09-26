@@ -1,7 +1,19 @@
+const isMissingNumber = (value) => value === undefined || value === null || (typeof value === 'string' && value.trim() === '');
+
 const toNumber = (value, fallback = 0) => {
   const parsed = Number(String(value ?? '').replace(/[^0-9.-]/g, ''));
   return Number.isFinite(parsed) ? parsed : fallback;
 };
+
+const toNullableNumber = (value) => {
+  if (isMissingNumber(value)) return null;
+  const normalized = String(value).replace(/[^0-9.-]/g, '');
+  if (normalized === '' || normalized === '-' || normalized === '.' || normalized === '-.') return null;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const firstNumberValue = (...values) => values.find((value) => !isMissingNumber(value));
 
 const toIsoString = (value, fallback = new Date().toISOString()) => {
   if (!value) return fallback;
@@ -75,9 +87,7 @@ const mapItem = (item = {}, index = 0) => {
   const productId = firstText(item.productId, item.parentId, item.id);
   const quantity = toNumber(item.quantity, 0);
   const unitPrice = toNumber(item.price ?? item.unitPrice, 0);
-  const unitCost = item.cost === undefined && item.unitCost === undefined
-    ? null
-    : toNumber(item.cost ?? item.unitCost, 0);
+  const unitCost = toNullableNumber(firstNumberValue(item.cost, item.unitCost));
   const discountMetadata = getDiscountMetadata(item);
   const discountAmount = getDiscountAmount(item);
 

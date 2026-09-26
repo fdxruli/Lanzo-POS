@@ -28,7 +28,7 @@ export type ProviderResult = {
   style: ProviderStyle;
 };
 
-export type ProviderFailureCode = 'AI_PROVIDER_ERROR' | 'AI_REQUEST_FAILED' | 'AI_EMPTY_RESPONSE';
+export type ProviderFailureCode = 'AI_PROVIDER_ERROR' | 'AI_REQUEST_FAILED' | 'AI_EMPTY_RESPONSE' | 'AI_INVALID_RESPONSE';
 
 export class ProviderError extends Error {
   code: ProviderFailureCode;
@@ -314,10 +314,6 @@ function normalizeResponsePayload(payload: unknown, config: ProviderConfig, resp
     const firstChoice = isRecord(choices[0]) ? choices[0] : {};
     const message = isRecord(firstChoice.message) ? firstChoice.message : {};
     content = nonEmptyText(message.content) || textFromContentParts(message.content);
-  }
-
-  if (!content) {
-    throw new ProviderError('AI_EMPTY_RESPONSE', 'El proveedor IA devolvió una respuesta vacía.', 502);
   }
 
   const normalizedUsage = normalizeUsage(usage);
