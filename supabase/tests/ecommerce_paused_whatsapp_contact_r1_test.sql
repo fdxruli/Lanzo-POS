@@ -73,7 +73,9 @@ begin
     raise exception 'absent feature must fail closed';
   end if;
   if has_function_privilege('anon', 'private.ecommerce_site_public_payload(text,boolean)', 'EXECUTE')
-     or has_function_privilege('authenticated', 'private.ecommerce_site_public_payload(text,boolean)', 'EXECUTE') then
+     or has_function_privilege('authenticated', 'private.ecommerce_site_public_payload(text,boolean)', 'EXECUTE')
+     or has_function_privilege('anon', 'private.ecommerce_resolve_public_portal_status(text)', 'EXECUTE')
+     or has_function_privilege('authenticated', 'private.ecommerce_resolve_public_portal_status(text)', 'EXECUTE') then
     raise exception 'private helper has client EXECUTE grant';
   end if;
   if public.ecommerce_get_catalog('phase3-fixture-pro-phone', 1, 0) #>> '{error,code}' <> 'ECOMMERCE_PORTAL_NOT_FOUND' then

@@ -152,6 +152,7 @@ describe('PublicStorePage', () => {
     serviceMocks.getPublicPortalBySlug.mockRejectedValueOnce(new Error('offline'));
     renderPage();
     expect(await screen.findByRole('heading', { name: 'No se pudo cargar la tienda' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Contactar por WhatsApp' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Reintentar' })).toBeInTheDocument();
     expect(document.querySelector('.ecommerce-site-visual-surface').style
       .getPropertyValue('--store-focus-ring')).toMatch(/^#[0-9a-f]{6}$/);
@@ -541,13 +542,15 @@ describe('PublicStorePage', () => {
 
   it('shows not found without exposing hidden portal states', async () => {
     serviceMocks.getPublicPortalBySlug.mockRejectedValue(
-      new EcommercePublicError('ECOMMERCE_PORTAL_NOT_FOUND', 'Esta tienda no está disponible.')
+      new EcommercePublicError('ECOMMERCE_PORTAL_NOT_FOUND', 'Esta tienda no está disponible.', null,
+        { pausedContact: { whatsappPhone: '529610000000' } })
     );
     renderPage();
 
     expect(await screen.findByRole('heading', { name: 'No encontramos esta tienda' })).toBeInTheDocument();
     expect(screen.getByText(/Verifica que la dirección sea correcta/)).toBeInTheDocument();
     expect(screen.queryByText(/WhatsApp|draft|deleted/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Contactar por WhatsApp' })).not.toBeInTheDocument();
     expect(serviceMocks.getPublicCatalog).not.toHaveBeenCalled();
   });
 
@@ -565,6 +568,7 @@ describe('PublicStorePage', () => {
   it('rejects malformed slugs locally without an RPC', async () => {
     renderPage('/tienda/AB_bad');
     expect(await screen.findByRole('heading', { name: 'Enlace de tienda no válido' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Contactar por WhatsApp' })).not.toBeInTheDocument();
     expect(serviceMocks.getPublicPortalBySlug).not.toHaveBeenCalled();
     expect(serviceMocks.getPublicCatalog).not.toHaveBeenCalled();
   });
