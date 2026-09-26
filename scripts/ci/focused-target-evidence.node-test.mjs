@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import {
   EVIDENCE_UNREADABLE, TARGET_EXECUTED_FAIL, TARGET_EXECUTED_PASS, TARGET_NOT_EXECUTED,
   classifyFocusedTargetReport, compareFocusedSummaries, escapeTestNamePattern, readAndClassifyFocusedTarget, summarizeFocusedRuns,
@@ -124,4 +126,97 @@ test('comparison fails closed when opaque failure semantics remain unresolved', 
   }));
   const summary = summarizeFocusedRuns([target], runs, 50, 4);
   assert.throws(() => compareFocusedSummaries(summary, summary), /SEMANTIC_IDENTITY_UNRESOLVED/);
+});
+
+const fullSuiteSourceFile = 'src/pages/__tests__/PublicStorePage.siteVersion.test.jsx';
+const fullSuiteTestName = 'PublicStorePage published site versions keeps v1 while only the draft changes, then renders v2 without changing catalogRevision';
+const focusedTestName = 'keeps v1 while only the draft changes, then renders v2 without changing catalogRevision';
+const fullSuiteTarget = { slug: 'site-version', file: fullSuiteSourceFile, testName: focusedTestName };
+const opaqueFullSuiteFailure = 'Error: STACK_TRACE_ERROR';
+const focusedFailure = {
+  errorClass: 'AssertionError',
+  signature: 'expected 1 to be 2',
+  semanticResolved: true,
+  semanticSource: 'JSON',
+};
+const fullSuiteReport = (status, error = '') => ({
+  numPassedTests: status === 'passed' ? 1 : 0,
+  numFailedTests: status === 'failed' ? 1 : 0,
+  numPendingTests: 0,
+  numTotalTests: 1,
+  testResults: [{
+    name: `/home/runner/work/Lanzo-POS/Lanzo-POS/${fullSuiteSourceFile}`,
+    status,
+    assertionResults: [{
+      title: fullSuiteTestName,
+      fullName: fullSuiteTestName,
+      status,
+      failureMessages: status === 'failed' ? [error] : [],
+    }],
+  }],
+});
+const writeFullSuiteEvidence = (directory, focusedFailureCount) => {
+  fs.mkdirSync(directory, { recursive: true });
+  fs.writeFileSync(path.join(directory, 'full-suite-1.json'), JSON.stringify(fullSuiteReport('passed')));
+  fs.writeFileSync(path.join(directory, 'full-suite-2.json'), JSON.stringify(fullSuiteReport('passed')));
+  const focusedRuns = Array.from({ length: 50 }, (_, index) => {
+    const failed = index < focusedFailureCount;
+    const reportPath = path.join(directory, `public-store-site-version-${index + 1}.json`);
+    fs.writeFileSync(reportPath, JSON.stringify(fullSuiteReport(failed ? 'failed' : 'passed', 'AssertionError: expected 1 to be 2')));
+    return {
+      slug: fullSuiteTarget.slug,
+      repetition: index + 1,
+      status: failed ? TARGET_EXECUTED_FAIL : TARGET_EXECUTED_PASS,
+      failures: failed ? [focusedFailure] : [],
+    };
+  });
+  fs.writeFileSync(
+    path.join(directory, 'focused-target-summary.json'),
+    JSON.stringify(summarizeFocusedRuns([fullSuiteTarget], focusedRuns, 50, 4)),
+  );
+};
+const runFullSuiteComparator = (baseFailureCount, candidateFailureCount) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'full-suite-differential-'));
+  const baseDir = path.join(root, 'base');
+  const candidateDir = path.join(root, 'candidate');
+  const markdownPath = path.join(root, 'differential.md');
+  const jsonPath = path.join(root, 'differential.json');
+  try {
+    writeFullSuiteEvidence(baseDir, baseFailureCount);
+    writeFullSuiteEvidence(candidateDir, candidateFailureCount);
+    const scriptPath = fileURLToPath(new URL('../compare-shared-terminal-full-suite.mjs', import.meta.url));
+    // The raw full suite has one opaque candidate-only failure; focused JSON carries its visible assertion.
+    const candidateRuns = JSON.parse(fs.readFileSync(path.join(candidateDir, 'full-suite-2.json'), 'utf8'));
+    candidateRuns.testResults[0].assertionResults[0].status = 'failed';
+    candidateRuns.testResults[0].assertionResults[0].failureMessages = [opaqueFullSuiteFailure];
+    candidateRuns.testResults[0].status = 'failed';
+    candidateRuns.numPassedTests = 0;
+    candidateRuns.numFailedTests = 1;
+    fs.writeFileSync(path.join(candidateDir, 'full-suite-2.json'), JSON.stringify(candidateRuns));
+    const run = spawnSync(process.execPath, [scriptPath, baseDir, candidateDir, markdownPath, jsonPath], { encoding: 'utf8' });
+    return {
+      run,
+      summary: fs.existsSync(jsonPath) ? JSON.parse(fs.readFileSync(jsonPath, 'utf8')) : null,
+      markdown: fs.existsSync(markdownPath) ? fs.readFileSync(markdownPath, 'utf8') : '',
+    };
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+};
+
+test('full-suite comparator uses 50-run focused evidence to clear one opaque flaky failure', () => {
+  const result = runFullSuiteComparator(4, 2);
+  assert.equal(result.run.status, 0, result.run.stderr);
+  assert.equal(result.summary.newRegressionCount, 0);
+  assert.equal(result.summary.incidentalFocusedEvidenceCount, 1);
+  assert.equal(result.summary.matrix[0].classification, 'INCIDENTAL_FOCUSED_EVIDENCE_NO_REGRESSION');
+  assert.match(result.markdown, /BASE failed 4\/50, CANDIDATE failed 2\/50/);
+});
+
+test('full-suite comparator still blocks an opaque failure when focused evidence shows a regression', () => {
+  const result = runFullSuiteComparator(0, 10);
+  assert.equal(result.run.status, 1);
+  assert.equal(result.summary.newRegressionCount, 1);
+  assert.equal(result.summary.incidentalFocusedEvidenceCount, 0);
+  assert.equal(result.summary.matrix[0].classification, 'PR_REGRESSION');
 });
