@@ -128,10 +128,16 @@ test('comparison fails closed when opaque failure semantics remain unresolved', 
   assert.throws(() => compareFocusedSummaries(summary, summary), /SEMANTIC_IDENTITY_UNRESOLVED/);
 });
 
-const fullSuiteSourceFile = 'src/pages/__tests__/PublicStorePage.siteVersion.test.jsx';
-const fullSuiteTestName = 'PublicStorePage published site versions keeps v1 while only the draft changes, then renders v2 without changing catalogRevision';
-const focusedTestName = 'keeps v1 while only the draft changes, then renders v2 without changing catalogRevision';
-const fullSuiteTarget = { slug: 'site-version', file: fullSuiteSourceFile, testName: focusedTestName };
+const publicStoreTarget = {
+  slug: 'site-version',
+  file: 'src/pages/__tests__/PublicStorePage.siteVersion.test.jsx',
+  testName: 'keeps v1 while only the draft changes, then renders v2 without changing catalogRevision',
+};
+const ecommerceTarget = {
+  slug: 'ecommerce-same-search-next-page',
+  file: 'src/components/ecommerce/__tests__/EcommercePortalSettings.productModalLifecycle.test.jsx',
+  testName: 'appends the next page of the same active search without duplicates',
+};
 const opaqueFullSuiteFailure = 'Error: STACK_TRACE_ERROR';
 const focusedFailure = {
   errorClass: 'AssertionError',
@@ -139,32 +145,35 @@ const focusedFailure = {
   semanticResolved: true,
   semanticSource: 'JSON',
 };
-const fullSuiteReport = (status, error = '') => ({
+const fullSuiteReport = (target, status, error = '') => ({
   numPassedTests: status === 'passed' ? 1 : 0,
   numFailedTests: status === 'failed' ? 1 : 0,
   numPendingTests: 0,
   numTotalTests: 1,
   testResults: [{
-    name: `/home/runner/work/Lanzo-POS/Lanzo-POS/${fullSuiteSourceFile}`,
+    name: `/home/runner/work/Lanzo-POS/Lanzo-POS/${target.file}`,
     status,
     assertionResults: [{
-      title: fullSuiteTestName,
-      fullName: fullSuiteTestName,
+      title: target.testName,
+      fullName: target.testName,
       status,
       failureMessages: status === 'failed' ? [error] : [],
     }],
   }],
 });
-const writeFullSuiteEvidence = (directory, focusedFailureCount) => {
+const writeFullSuiteEvidence = (directory, focusedFailureCount, target) => {
   fs.mkdirSync(directory, { recursive: true });
-  fs.writeFileSync(path.join(directory, 'full-suite-1.json'), JSON.stringify(fullSuiteReport('passed')));
-  fs.writeFileSync(path.join(directory, 'full-suite-2.json'), JSON.stringify(fullSuiteReport('passed')));
+  fs.writeFileSync(path.join(directory, 'full-suite-1.json'), JSON.stringify(fullSuiteReport(target, 'passed')));
+  fs.writeFileSync(path.join(directory, 'full-suite-2.json'), JSON.stringify(fullSuiteReport(target, 'passed')));
   const focusedRuns = Array.from({ length: 50 }, (_, index) => {
     const failed = index < focusedFailureCount;
-    const reportPath = path.join(directory, `public-store-site-version-${index + 1}.json`);
-    fs.writeFileSync(reportPath, JSON.stringify(fullSuiteReport(failed ? 'failed' : 'passed', 'AssertionError: expected 1 to be 2')));
+    const reportPath = path.join(directory, `public-store-${target.slug}-${index + 1}.json`);
+    fs.writeFileSync(
+      reportPath,
+      JSON.stringify(fullSuiteReport(target, failed ? 'failed' : 'passed', 'AssertionError: expected 1 to be 2')),
+    );
     return {
-      slug: fullSuiteTarget.slug,
+      slug: target.slug,
       repetition: index + 1,
       status: failed ? TARGET_EXECUTED_FAIL : TARGET_EXECUTED_PASS,
       failures: failed ? [focusedFailure] : [],
@@ -172,18 +181,18 @@ const writeFullSuiteEvidence = (directory, focusedFailureCount) => {
   });
   fs.writeFileSync(
     path.join(directory, 'focused-target-summary.json'),
-    JSON.stringify(summarizeFocusedRuns([fullSuiteTarget], focusedRuns, 50, 4)),
+    JSON.stringify(summarizeFocusedRuns([target], focusedRuns, 50, 4)),
   );
 };
-const runFullSuiteComparator = (baseFailureCount, candidateFailureCount) => {
+const runFullSuiteComparator = (baseFailureCount, candidateFailureCount, target = publicStoreTarget) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'full-suite-differential-'));
   const baseDir = path.join(root, 'base');
   const candidateDir = path.join(root, 'candidate');
   const markdownPath = path.join(root, 'differential.md');
   const jsonPath = path.join(root, 'differential.json');
   try {
-    writeFullSuiteEvidence(baseDir, baseFailureCount);
-    writeFullSuiteEvidence(candidateDir, candidateFailureCount);
+    writeFullSuiteEvidence(baseDir, baseFailureCount, target);
+    writeFullSuiteEvidence(candidateDir, candidateFailureCount, target);
     const scriptPath = fileURLToPath(new URL('../compare-shared-terminal-full-suite.mjs', import.meta.url));
     // The raw full suite has one opaque candidate-only failure; focused JSON carries its visible assertion.
     const candidateRuns = JSON.parse(fs.readFileSync(path.join(candidateDir, 'full-suite-2.json'), 'utf8'));
@@ -204,13 +213,20 @@ const runFullSuiteComparator = (baseFailureCount, candidateFailureCount) => {
   }
 };
 
-test('full-suite comparator uses 50-run focused evidence to clear one opaque flaky failure', () => {
+test('full-suite comparator uses focused repetitions to classify one opaque PublicStore failure', () => {
   const result = runFullSuiteComparator(4, 2);
   assert.equal(result.run.status, 0, result.run.stderr);
   assert.equal(result.summary.newRegressionCount, 0);
   assert.equal(result.summary.incidentalFocusedEvidenceCount, 1);
   assert.equal(result.summary.matrix[0].classification, 'INCIDENTAL_FOCUSED_EVIDENCE_NO_REGRESSION');
   assert.match(result.markdown, /BASE failed 4\/50, CANDIDATE failed 2\/50/);
+});
+
+test('full-suite comparator uses focused evidence for an exact Ecommerce test', () => {
+  const result = runFullSuiteComparator(0, 0, ecommerceTarget);
+  assert.equal(result.run.status, 0, result.run.stderr);
+  assert.equal(result.summary.newRegressionCount, 0);
+  assert.equal(result.summary.incidentalFocusedEvidenceCount, 1);
 });
 
 test('full-suite comparator still blocks an opaque failure when focused evidence shows a regression', () => {
