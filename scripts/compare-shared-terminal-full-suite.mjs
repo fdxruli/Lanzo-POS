@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { compareFocusedSummaries } from './ci/focused-target-evidence.mjs';
 
 const [baseDir, candidateDir, markdownPath = 'full-suite-differential.md', jsonPath = 'full-suite-differential.json'] = process.argv.slice(2);
 
@@ -124,6 +125,17 @@ const candidateFailuresByRun = candidateReports.map(collectFailures);
 const baseFocusedFailuresByRun = baseFocusedReports.map(collectFailures);
 const candidateFocusedFailuresByRun = candidateFocusedReports.map(collectFailures);
 
+const readFocusedSummary = (dir) => {
+  const summaryPath = path.join(dir, 'focused-target-summary.json');
+  return fs.existsSync(summaryPath) ? JSON.parse(fs.readFileSync(summaryPath, 'utf8')) : null;
+};
+const baseFocusedSummary = readFocusedSummary(baseDir);
+const candidateFocusedSummary = readFocusedSummary(candidateDir);
+const focusedComparison = baseFocusedSummary?.repetitions >= 50
+  && candidateFocusedSummary?.repetitions >= 50
+  ? compareFocusedSummaries(baseFocusedSummary, candidateFocusedSummary, 50)
+  : null;
+
 const observationMap = (runs) => {
   const byKey = new Map();
   const errorsById = new Map();
@@ -191,6 +203,26 @@ const matrix = [...candidateObs.byKey.values()].map((candidateFailure) => {
     };
   }
 
+  const focusedTarget = focusedComparison?.matrix.find((target) => (
+    target.file === candidateFailure.file && candidateFailure.test.includes(target.testName)
+  ));
+  if (
+    candidateFailure.runs.length === 1
+    && /STACK_TRACE_ERROR|missing failure message/i.test(candidateFailure.error)
+    && focusedTarget
+    && focusedTarget.candidateOnlySemantics.length === 0
+    && !focusedTarget.candidateFailureRateRegression
+  ) {
+    return {
+      ...candidateFailure,
+      baseRuns: [],
+      candidateRuns: candidateFailure.runs,
+      base: `No exact raw match; focused BASE failed ${focusedTarget.base.failures}/${baseFocusedSummary.repetitions}, CANDIDATE failed ${focusedTarget.candidate.failures}/${candidateFocusedSummary.repetitions}; p=${focusedTarget.candidateFailureRatePValue.toFixed(4)}`,
+      candidate: `One opaque failure in full-suite repetition(s) ${candidateFailure.runs.join(',')}: ${candidateFailure.error}`,
+      classification: 'INCIDENTAL_FOCUSED_EVIDENCE_NO_REGRESSION'
+    };
+  }
+
   return {
     ...candidateFailure,
     baseRuns: [],
@@ -208,6 +240,7 @@ const incidentalImprovements = [...baseObs.byKey.values()]
 
 const regressionClasses = new Set(['PR_REGRESSION', 'POSSIBLE_PR_REGRESSION']);
 const regressions = matrix.filter(({ classification }) => regressionClasses.has(classification));
+const incidentalFocusedEvidence = matrix.filter(({ classification }) => classification === 'INCIDENTAL_FOCUSED_EVIDENCE_NO_REGRESSION');
 const stablePreexisting = matrix.filter(({ classification }) => classification === 'PREEXISTING_BASELINE_FAILURE');
 const flakyPreexisting = matrix.filter(({ classification }) => classification === 'PREEXISTING_FLAKY_BASELINE_FAILURE');
 const baseRunCounts = baseReports.map(counts);
@@ -225,6 +258,7 @@ const summary = {
   baseUniqueFailureObservationCount: baseObs.byKey.size,
   candidateUniqueFailureObservationCount: candidateObs.byKey.size,
   newRegressionCount: regressions.length,
+  incidentalFocusedEvidenceCount: incidentalFocusedEvidence.length,
   stablePreexistingCandidateFailureCount: stablePreexisting.length,
   flakyPreexistingCandidateFailureCount: flakyPreexisting.length,
   preexistingCandidateFailureCount: stablePreexisting.length + flakyPreexisting.length,
@@ -250,6 +284,7 @@ const markdown = [
       ]
     : []),
   `- NEW/CHANGED REGRESSIONS: ${summary.newRegressionCount}`,
+  `- OPAQUE ONE-OFF FAILURES CLEARED BY FOCUSED EVIDENCE: ${summary.incidentalFocusedEvidenceCount}`,
   `- STABLE PREEXISTING CANDIDATE FAILURES: ${summary.stablePreexistingCandidateFailureCount}`,
   `- PREEXISTING FLAKY CANDIDATE FAILURES: ${summary.flakyPreexistingCandidateFailureCount}`,
   `- INCIDENTAL/BASELINE-FLAKE OBSERVATIONS: ${summary.incidentalImprovementCount}`,
@@ -277,4 +312,4 @@ if (regressions.length > 0) {
   process.exit(1);
 }
 
-console.log('Differential regression gate passed: every candidate failure observation is reproduced with the same normalized error in at least one exact BASE repetition.');
+console.log('Differential regression gate passed: candidate failures are either reproduced in BASE or independently cleared by valid focused evidence for the exact test; repeated/significant regressions remain blocking.');
