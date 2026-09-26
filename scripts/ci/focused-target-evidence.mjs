@@ -10,8 +10,7 @@ export const TARGET_NOT_EXECUTED = 'TARGET_NOT_EXECUTED';
 export const EVIDENCE_UNREADABLE = 'EVIDENCE_UNREADABLE';
 
 export function escapeTestNamePattern(value) {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\export const EVIDENCE_UNREADABLE = 'EVIDENCE_UNREADABLE';
-');
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 const clean = (v = '') => String(v).replace(/\s+/g, ' ').trim();
 
