@@ -485,6 +485,22 @@ describe('ecommercePublicService', () => {
     );
   });
 
+  it('preserves a paused code without exposing the RPC message or cached portal', async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: { success: false, error: { code: 'ECOMMERCE_PORTAL_PAUSED', message: 'private detail' } },
+      error: null,
+    });
+    const cache = { getPortal: vi.fn() };
+    const service = createEcommercePublicService({ rpc }, { cache });
+    await expect(service.getPublicPortalBySlug('paused-store', {
+      portalId: '00000000-0000-0000-0000-000000000001',
+    })).rejects.toMatchObject({
+      code: 'ECOMMERCE_PORTAL_PAUSED',
+      message: 'Esta tienda no está disponible.',
+    });
+    expect(cache.getPortal).not.toHaveBeenCalled();
+  });
+
   it('retries one transient public portal read and returns the recovered store', async () => {
     const retryDelay = vi.fn(async () => {});
     const rpc = vi.fn()

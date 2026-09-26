@@ -176,6 +176,7 @@ function getSafeMessage(code, operation) {
     return CONFIGURATION_REQUEST_MESSAGE;
   }
   if (code === 'ECOMMERCE_PORTAL_NOT_FOUND') return 'Esta tienda no está disponible.';
+  if (code === 'ECOMMERCE_PORTAL_PAUSED') return 'Esta tienda no está disponible.';
   if (code === 'ECOMMERCE_CATALOG_REVISION_CHANGED') {
     return 'El catálogo cambió mientras se cargaba. Se actualizará automáticamente.';
   }
@@ -783,6 +784,7 @@ export function createEcommercePublicService(
           !cache
           || options.cache === false
           || error?.code === 'ECOMMERCE_PORTAL_NOT_FOUND'
+          || error?.code === 'ECOMMERCE_PORTAL_PAUSED'
           || !knownPortalId
         ) throw error;
         const cached = await safely(() => cache.getPortal({
