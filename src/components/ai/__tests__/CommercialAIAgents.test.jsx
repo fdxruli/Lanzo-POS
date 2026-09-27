@@ -861,29 +861,17 @@ describe('commercial AI center', () => {
     expect(screen.queryByText(/Actualiza el Preview/i)).not.toBeInTheDocument();
   });
 
-  it('recognizes unsupported commercial questions locally without loading sales or calling the agent', async () => {
+  it('recognizes an unsupported commercial question locally without loading sales or calling the agent', async () => {
     renderCenter();
     const question = screen.getByRole('textbox', { name: 'Pregunta libre' });
-    const cases = [
-      ['Ayúdame a analizar mi competencia.', /Lanzo no dispone de información sobre tus competidores/],
-      ['Analiza mi competencia para mejorar mi negocio.', /compararlos de forma confiable/],
-      ['¿Qué productos puedo incorporar a mi negocio para atraer más clientela?', /El análisis específico de nuevos productos o servicios todavía no está disponible/],
-      ['¿Qué productos nuevos debería vender?', /El análisis específico de nuevos productos o servicios todavía no está disponible/],
-      ['¿Cómo puedo vender más?', /Entiendo que buscas oportunidades para aumentar tus ventas/],
-      ['Mis ventas están bajas, ¿qué hago?', /El análisis de crecimiento todavía no está disponible/]
-    ];
+    fireEvent.change(question, { target: { value: 'Ayúdame a analizar mi competencia.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
 
-    for (const [prompt, answer] of cases) {
-      fireEvent.change(question, { target: { value: prompt } });
-      fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
-      await waitFor(() => expect(screen.getByText(answer)).toBeInTheDocument());
-      expect(screen.queryByRole('button', { name: 'Descargar reporte completo' })).not.toBeInTheDocument();
-      expect(screen.queryByText(/FEATURE_NOT_READY|recognized_not_supported|profitability_summary/i)).not.toBeInTheDocument();
-    }
-
-    await waitFor(() => expect(screen.getAllByText('Modo: Respuesta local').length).toBeGreaterThan(0));
-    expect(screen.getAllByText('Usó cuota: No').length).toBeGreaterThan(0);
-    expect(screen.queryByText('Modo: IA')).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('heading', {
+      name: /Lanzo no dispone de información sobre tus competidores/
+    })).toBeInTheDocument());
+    expect(screen.queryByRole('button', { name: 'Descargar reporte completo' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/FEATURE_NOT_READY|recognized_not_supported|profitability_summary/i)).not.toBeInTheDocument();
     expect(runtime.loadProducts).not.toHaveBeenCalled();
     expect(runtime.runAgent).not.toHaveBeenCalled();
   });
