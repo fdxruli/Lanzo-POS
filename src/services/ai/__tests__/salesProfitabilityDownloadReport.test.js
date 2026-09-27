@@ -468,6 +468,7 @@ describe('sales profitability download report', () => {
     expect(result.report.ai).toEqual({
       status: 'not_generated',
       diagnosticCode: null,
+      directAnswer: null,
       executiveSummary: null,
       explanation: null,
       recommendations: [],
@@ -499,11 +500,117 @@ describe('sales profitability download report', () => {
     expect(report.ai).toEqual({
       status: 'unavailable',
       diagnosticCode: 'AI_NARRATIVE_INVALID_JSON',
+      directAnswer: null,
       executiveSummary: null,
       explanation: null,
       recommendations: [],
       confidence: null
     });
+  });
+
+  it('exports action, measurement and non-null confidence as AI content separate from deterministic data', () => {
+    const recommendation = {
+      title: 'Probar mayor visibilidad para Producto A',
+      focus: { type: 'product', key: 'Producto A' },
+      recommendationType: 'growth_experiment',
+      explanation: 'Producto A representa una señal comercial relevante.',
+      action: 'Probar una ubicación más visible durante una semana.',
+      measurement: 'Comparar unidades diarias con la semana previa.',
+      expectedImpact: 'Permitirá validar si la exposición coincide con más unidades.',
+      priority: 'high',
+      evidenceKeys: ['product:Producto A'],
+      requiresConfirmation: true
+    };
+    const result = {
+      ...completedResult,
+      response: {
+        ...completedResult.response,
+        aiNarrative: {
+          status: 'available',
+          directAnswer: 'Prueba dar más visibilidad a Producto A y mide si aumentan las unidades.',
+          executiveSummary: 'Hay una prueba concreta para Producto A.',
+          explanation: 'La señal permite evaluar una acción acotada.',
+          recommendations: [recommendation],
+          confidence: 'high'
+        }
+      }
+    };
+    const report = buildSalesProfitabilityDownloadReport(result, {
+      ...requestContext,
+      resolvedIntent: 'sales_growth'
+    });
+    const sanitized = sanitizeSalesProfitabilityDownloadReport(report);
+
+    expect(report.deterministic.recommendations).toMatchObject([{ title: 'Probar el precio' }]);
+    expect(report.ai).toMatchObject({
+      status: 'available',
+      directAnswer: 'Prueba dar más visibilidad a Producto A y mide si aumentan las unidades.',
+      confidence: 'high',
+      recommendations: [{
+        focus: { type: 'product', key: 'Producto A' },
+        recommendationType: 'growth_experiment',
+        action: 'Probar una ubicación más visible durante una semana.',
+        measurement: 'Comparar unidades diarias con la semana previa.',
+        evidenceKeys: ['product:Producto A']
+      }]
+    });
+    expect(sanitized.ai.confidence).toBe('high');
+    expect(sanitized.ai.recommendations[0]).toMatchObject({
+      action: recommendation.action,
+      measurement: recommendation.measurement,
+      evidenceKeys: recommendation.evidenceKeys
+    });
+  });
+
+  it('exports truncated provider output with confirmed no-consumption telemetry', () => {
+    const invalidNarrative = {
+      ...completedResult,
+      providerCalled: true,
+      quotaOutcome: 'not_consumed',
+      usageStatus: { used: 6, limit: 15, remaining: 9 },
+      response: {
+        ...completedResult.response,
+        aiNarrative: {
+          status: 'unavailable',
+          diagnosticCode: 'AI_NARRATIVE_TRUNCATED',
+          executiveSummary: null,
+          explanation: null,
+          recommendations: []
+        }
+      }
+    };
+    const report = buildSalesProfitabilityDownloadReport(invalidNarrative, requestContext);
+    const sanitized = sanitizeSalesProfitabilityDownloadReport(report);
+
+    expect(report.result).toMatchObject({ providerCalled: true, quotaOutcome: 'not_consumed' });
+    expect(report.ai).toMatchObject({ status: 'unavailable', diagnosticCode: 'AI_NARRATIVE_TRUNCATED' });
+    expect(sanitized.result).toMatchObject({ providerCalled: true, quotaOutcome: 'not_consumed' });
+    expect(sanitized.ai).toMatchObject({ status: 'unavailable', diagnosticCode: 'AI_NARRATIVE_TRUNCATED' });
+  });
+
+  it('exports a pre-provider rejection with explicit no-call and no-consumption telemetry', () => {
+    const rejected = {
+      ...completedResult,
+      providerCalled: false,
+      quotaOutcome: 'not_consumed',
+      response: {
+        ...completedResult.response,
+        aiNarrative: {
+          status: 'unavailable',
+          diagnosticCode: 'AI_REQUEST_REJECTED',
+          executiveSummary: null,
+          explanation: null,
+          recommendations: []
+        }
+      }
+    };
+    const report = buildSalesProfitabilityDownloadReport(rejected, requestContext);
+    const sanitized = sanitizeSalesProfitabilityDownloadReport(report);
+
+    expect(report.result).toMatchObject({ providerCalled: false, quotaOutcome: 'not_consumed' });
+    expect(report.ai.status).toBe('unavailable');
+    expect(report.ai.diagnosticCode).toBe('AI_REQUEST_REJECTED');
+    expect(sanitized.result).toMatchObject({ providerCalled: false, quotaOutcome: 'not_consumed' });
   });
 
   it('upgrades legacy provider-called reports from not_generated to unavailable when narrative content is absent', () => {

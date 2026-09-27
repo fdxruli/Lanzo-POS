@@ -54,7 +54,9 @@ const SUGGESTED_QUESTIONS = [
   { label: '¿Qué productos están afectando mi rentabilidad?', intent: 'product_risk' },
   { label: '¿Qué pasa si aumento el precio?', intent: 'price_simulation' },
   { label: '¿Qué combos puedo formar?', intent: 'combo_opportunity' },
-  { label: '¿Qué promoción puedo simular?', intent: 'promotion_opportunity' }
+  { label: '¿Qué promoción puedo simular?', intent: 'promotion_opportunity' },
+  { label: '¿Cómo puedo aumentar mis ventas?', intent: 'sales_growth' },
+  { label: '¿Cómo puedo aumentar mi ticket promedio?', intent: 'ticket_growth' }
 ];
 
 const PERIOD_OPTIONS = [
@@ -73,7 +75,10 @@ const NARRATIVE_DIAGNOSTIC_LABELS = Object.freeze({
   AI_NARRATIVE_INVALID_JSON: 'El proveedor devolvió un formato narrativo no válido.',
   AI_NARRATIVE_MISSING_CONTENT: 'La respuesta no incluyó contenido narrativo utilizable.',
   AI_NARRATIVE_UNSAFE_CONTENT: 'El contenido narrativo no superó la validación de seguridad.',
+  AI_NARRATIVE_TRUNCATED: 'La respuesta del proveedor alcanzó el límite de salida antes de completarse.',
   AI_NARRATIVE_PARTIAL_CONTENT: 'Se omitieron partes de la narrativa que no superaron la validación.',
+  AI_REQUEST_REJECTED: 'La solicitud fue rechazada antes de generar una explicación.',
+  AI_NARRATIVE_LOW_VALUE: 'La respuesta no incluyó una recomendación accionable con evidencia suficiente. Este intento no consumió un uso de IA.',
   AI_NARRATIVE_PROVIDER_ERROR: 'No se pudo confirmar una narrativa utilizable del proveedor.',
   AI_NARRATIVE_UNAVAILABLE: 'No se pudo confirmar una narrativa utilizable.'
 });
@@ -290,11 +295,138 @@ function ComboEvidence({ response }) {
   );
 }
 
+const productDirectionLabel = (direction) => ({
+  new_in_period: 'Sin venta anterior',
+  not_sold_current: 'Sin venta actual',
+  growing: 'Creció',
+  declining: 'Disminuyó',
+  stable: 'Sin cambio relevante'
+}[direction] || 'Sin comparación');
+
+const PRODUCT_SIGNAL_LABELS = Object.freeze({
+  growing: 'Ventas crecientes',
+  declining: 'Ventas decrecientes',
+  new_in_period: 'Sin venta anterior',
+  not_sold_current: 'Sin venta actual',
+  stable: 'Sin cambio relevante',
+  high_sales_share: 'Participación alta',
+  healthy_margin: 'Margen conocido ≥ 20%',
+  low_margin: 'Margen conocido < 20%',
+  cost_unknown: 'Falta costo para evaluar margen'
+});
+
+function ProductGrowthTable({ products, emptyMessage }) {
+  const rows = asArray(products).slice(0, 10);
+  if (!rows.length) return <p className="commercial-ai-muted">{emptyMessage}</p>;
+  return (
+    <div className="commercial-ai-table-wrap">
+      <table className="commercial-ai-table">
+        <caption className="sr-only">Comparación de ventas y señales de productos existentes</caption>
+        <thead><tr><th>Producto</th><th>Ventas actuales</th><th>Variación</th><th>Unidades</th><th>Participación</th><th>Margen</th><th>Señal</th></tr></thead>
+        <tbody>{rows.map((product) => (
+          <tr key={product.name}>
+            <th scope="row"><span>{product.name}</span><small>{asArray(product.signals).map((signal) => PRODUCT_SIGNAL_LABELS[signal]).filter(Boolean).join(' · ') || productDirectionLabel(product.direction)}</small></th>
+            <td>{formatAnalysisValue.formatMoney(product.currentSales)}</td>
+            <td>{formatAnalysisValue.formatMoney(product.salesDelta)}{product.salesDeltaPercent !== null && product.salesDeltaPercent !== undefined ? ` · ${formatAnalysisValue.formatPercent(product.salesDeltaPercent)}` : ''}</td>
+            <td>{formatAnalysisValue.formatNumber(product.currentUnits, 0)}{product.unitsDelta !== null && product.unitsDelta !== undefined ? ` · ${product.unitsDelta > 0 ? '+' : ''}${formatAnalysisValue.formatNumber(product.unitsDelta, 0)}` : ''}</td>
+            <td>{formatAnalysisValue.formatPercent(product.currentShare)}</td>
+            <td>{product.costKnown === true ? formatAnalysisValue.formatPercent(product.currentMargin) : 'No disponible'}</td>
+            <td>{product.opportunityReason || productDirectionLabel(product.direction)}{product.costKnown !== true && product.direction !== 'not_sold_current' ? ' · costo sin confirmar' : ''}</td>
+          </tr>
+        ))}</tbody>
+      </table>
+    </div>
+  );
+}
+
+function SalesGrowthEvidence({ response }) {
+  const current = response.current || {};
+  const comparison = response.comparison;
+  const channels = asArray(current.channels).slice(0, 4);
+  const productRows = response.intent === 'product_opportunity'
+    ? asArray(comparison?.productChanges)
+    : asArray(response.productOpportunities).length
+      ? asArray(response.productOpportunities)
+      : asArray(response.growthSignals?.productsGrowing);
+  return (
+    <>
+      <MetricGrid>
+        <Metric label="Ventas actuales" value={formatAnalysisValue.formatMoney(current.netSales)} />
+        <Metric label="Ventas anteriores" value={formatAnalysisValue.formatMoney(comparison?.previousNetSales)} />
+        <Metric label="Variación de ventas" value={formatAnalysisValue.formatMoney(comparison?.deltaNetSales)} note={comparison?.deltaNetSalesPercent === null || comparison?.deltaNetSalesPercent === undefined ? 'Porcentaje no disponible si el periodo anterior fue cero' : formatAnalysisValue.formatPercent(comparison.deltaNetSalesPercent)} />
+        <Metric label="Tickets actuales" value={formatAnalysisValue.formatNumber(current.salesCount, 0)} />
+        <Metric label="Tickets anteriores" value={formatAnalysisValue.formatNumber(comparison?.previousSalesCount, 0)} />
+        <Metric label="Ticket promedio actual" value={formatAnalysisValue.formatMoney(current.averageTicket)} />
+        <Metric label="Unidades por ticket" value={formatAnalysisValue.formatNumber(current.unitsPerTicket)} />
+        <Metric label="Unidades actuales" value={formatAnalysisValue.formatNumber(current.units, 0)} note={response.coverage?.itemsComplete === true ? null : 'Detalle incompleto'} />
+      </MetricGrid>
+      {response.intent !== 'sales_trend' && (
+        <>
+          <h4 className="commercial-ai-subheading">Productos con señales para revisar</h4>
+          {response.intent === 'product_opportunity' && response.coverage?.comparisonItemsAvailable !== true
+            ? <p className="commercial-ai-muted">El detalle de artículos o la comparación está incompleta; no se puede confiar en una clasificación exhaustiva por producto.</p>
+            : <ProductGrowthTable products={productRows} emptyMessage="No hay productos con una señal de crecimiento o participación suficiente para priorizar." />}
+        </>
+      )}
+      <h4 className="commercial-ai-subheading">Canales de venta</h4>
+      {channels.length ? (
+        <div className="commercial-ai-channel-list">
+          {channels.map((channel) => {
+            const movement = asArray(comparison?.channelMixChanges).find((item) => item.channel === channel.channel);
+            return <div className="commercial-ai-channel-row" key={channel.channel}>
+              <strong>{channel.channel}</strong><span>{formatAnalysisValue.formatMoney(channel.netSales)} · {formatAnalysisValue.formatPercent(channel.share)} de las ventas</span>
+              {movement && <small>Participación anterior {formatAnalysisValue.formatPercent(movement.previousShare)} · variación {formatAnalysisValue.formatPercent(movement.deltaShare)}</small>}
+            </div>;
+          })}
+        </div>
+      ) : <p className="commercial-ai-muted">No hay canales disponibles para este periodo.</p>}
+      {response.intent === 'sales_trend' && response.coverage?.comparisonItemsAvailable !== true
+        && <p className="commercial-ai-caution">La comparación no tiene detalle completo en ambos periodos; no se presenta un ranking de productos.</p>}
+      <p className="commercial-ai-caution">Las variaciones describen periodos históricos y no demuestran causalidad ni garantizan crecimiento futuro.</p>
+    </>
+  );
+}
+
+function TicketGrowthEvidence({ response }) {
+  const current = response.current || {};
+  const comparison = response.comparison;
+  const combos = asArray(response.comboOpportunities);
+  return (
+    <>
+      <MetricGrid>
+        <Metric label="Ticket promedio actual" value={formatAnalysisValue.formatMoney(current.averageTicket)} />
+        <Metric label="Ticket promedio anterior" value={formatAnalysisValue.formatMoney(comparison?.previousTicket)} />
+        <Metric label="Variación absoluta" value={formatAnalysisValue.formatMoney(comparison?.deltaTicket)} />
+        <Metric label="Variación porcentual" value={comparison?.deltaTicketPercent === null || comparison?.deltaTicketPercent === undefined ? 'No disponible' : formatAnalysisValue.formatPercent(comparison.deltaTicketPercent)} />
+        <Metric label="Tickets actuales" value={formatAnalysisValue.formatNumber(current.salesCount, 0)} />
+        <Metric label="Unidades por ticket actual" value={formatAnalysisValue.formatNumber(current.unitsPerTicket)} />
+        <Metric label="Unidades por ticket anterior" value={formatAnalysisValue.formatNumber(comparison?.previousUnitsPerTicket)} />
+      </MetricGrid>
+      {combos.length ? (
+        <div className="commercial-ai-ticket-signals">
+          <h4 className="commercial-ai-subheading">Combinaciones observadas en tickets</h4>
+          {combos.slice(0, 3).map((combo) => (
+            <article className="commercial-ai-ticket-signal" key={combo.products.join('|')}>
+              <strong>{combo.products.join(' + ')}</strong>
+              <span>{formatAnalysisValue.formatNumber(combo.tickets, 0)} tickets · ticket conjunto histórico {formatAnalysisValue.formatMoney(combo.averageJointSale)}</span>
+              <small>Asociación histórica; no demuestra causalidad ni garantiza un ticket mayor.</small>
+            </article>
+          ))}
+        </div>
+      ) : <p className="commercial-ai-muted">No hay una combinación con la frecuencia histórica mínima en este periodo.</p>}
+    </>
+  );
+}
+
 function IntentEvidence({ response }) {
   switch (response.intent) {
     case 'profitability_summary': return <ProfitabilityEvidence response={response} />;
     case 'explain_change': return <MarginEvidence response={response} />;
     case 'product_risk': return <ProductRiskEvidence response={response} />;
+    case 'sales_growth':
+    case 'sales_trend': return <SalesGrowthEvidence response={response} />;
+    case 'product_opportunity': return <SalesGrowthEvidence response={response} />;
+    case 'ticket_growth': return <TicketGrowthEvidence response={response} />;
     case 'price_simulation': return <PriceEvidence response={response} />;
     case 'promotion_opportunity': return <PromotionEvidence response={response} />;
     case 'combo_opportunity': return <ComboEvidence response={response} />;
@@ -371,45 +503,84 @@ function NarrativeEvidence({ response }) {
     const diagnosticCode = normalizeCommercialAINarrativeDiagnosticCode(narrative.diagnosticCode);
     return (
       <div>
-        <p className="commercial-ai-muted">La narrativa opcional de IA no está disponible; el reporte determinístico se conserva completo.</p>
+        <p className="commercial-ai-muted">La respuesta de Lía no está disponible; el análisis calculado por Lanzo se conserva completo.</p>
         {diagnosticCode && (
           <p className="commercial-ai-muted" role="status">
-            Diagnóstico: {NARRATIVE_DIAGNOSTIC_LABELS[diagnosticCode]} <code>{diagnosticCode}</code>
+            {NARRATIVE_DIAGNOSTIC_LABELS[diagnosticCode]}
           </p>
         )}
       </div>
     );
   }
-  if (!narrative?.executiveSummary && !narrative?.explanation && !asArray(narrative?.recommendations).length) {
+  if (!narrative?.directAnswer && !narrative?.executiveSummary && !narrative?.explanation && !asArray(narrative?.recommendations).length) {
     return <p className="commercial-ai-muted">No se generó una narrativa IA para esta consulta. Los datos visibles son determinísticos.</p>;
   }
   return (
     <>
-      {narrative.status === 'available' && (
-        <p className="commercial-ai-muted">Narrativa generada por IA.</p>
-      )}
       <div className="commercial-ai-narrative">
-        {narrative.executiveSummary && <p><strong>{narrative.executiveSummary}</strong></p>}
-        {narrative.explanation && <p>{narrative.explanation}</p>}
         {asArray(narrative.recommendations).length > 0 && (
           <div className="commercial-ai-narrative__recommendations">
-            <strong>Observaciones narrativas</strong>
-            <ul>{asArray(narrative.recommendations).map((item) => <li key={`${item.title}-${item.priority || 'medium'}`}>{item.title}: {item.explanation}</li>)}</ul>
+            <strong>Oportunidades priorizadas por Lía</strong>
+            <div className="commercial-ai-narrative__recommendation-list">
+              {asArray(narrative.recommendations).map((item) => (
+                <article className="commercial-ai-narrative__recommendation" key={`${item.title}-${item.priority || 'medium'}`}>
+                  <div>
+                    <b>{item.title}</b>
+                    <span>
+                      {item.recommendationType === 'investigation' || item.recommendationType === 'data_quality'
+                        ? 'Revisión'
+                        : item.recommendationType === 'optimization' ? 'Optimización' : 'Prueba de crecimiento'}
+                      {item.focus?.key ? ` · ${item.focus.type === 'product' ? 'Producto' : item.focus.type === 'channel' ? 'Canal' : 'Métrica'}: ${item.focus.key}` : ''}
+                      {` · Prioridad ${priorityLabel(item.priority)}`}
+                    </span>
+                  </div>
+                  <p><strong>Por qué:</strong> {item.explanation}</p>
+                  {item.action && <p><strong>Qué probar:</strong> {item.action}</p>}
+                  {item.measurement && <p><strong>Qué medir:</strong> {item.measurement}</p>}
+                  {item.expectedImpact && <small>Qué permitirá validar: {item.expectedImpact} · Requiere confirmación manual</small>}
+                </article>
+              ))}
+            </div>
           </div>
         )}
+        {narrative.explanation && <p><strong>Por qué Lía llega a esta conclusión:</strong> {narrative.explanation}</p>}
+        {narrative.confidence && <small>Confianza de esta interpretación: {confidenceLabel(narrative.confidence)}.</small>}
       </div>
       {narrative.status === 'available' && narrative.diagnosticCode === 'AI_NARRATIVE_PARTIAL_CONTENT' && (
         <p className="commercial-ai-muted" role="status">
-          {NARRATIVE_DIAGNOSTIC_LABELS.AI_NARRATIVE_PARTIAL_CONTENT} <code>AI_NARRATIVE_PARTIAL_CONTENT</code>
+          {NARRATIVE_DIAGNOSTIC_LABELS.AI_NARRATIVE_PARTIAL_CONTENT}
         </p>
       )}
     </>
   );
 }
 
+function NarrativeStatusNotice({ result }) {
+  if (result?.response?.aiNarrative?.status !== 'unavailable') return null;
+
+  const message = result.quotaOutcome === 'not_consumed'
+    ? (result.providerCalled === true
+      ? 'El proveedor respondió, pero no entregó una narrativa válida. Este intento no consumió un uso de IA.'
+      : 'No pude generar la explicación con IA. Este intento no consumió un uso de IA.')
+    : result.quotaOutcome === 'consumed'
+      ? 'La explicación con IA no estuvo disponible. El uso de IA quedó registrado.'
+      : 'No pude completar la explicación con IA. Estamos verificando el estado del uso de IA.';
+
+  return (
+    <div className="commercial-ai-narrative-notice" role="status">
+      <strong>Análisis calculado por Lanzo.</strong> {message}
+    </div>
+  );
+}
+
 function AnalysisResult({ result, onDownload, isDownloading }) {
   const response = result?.response || null;
   const isLocalAnswer = ['out_of_scope', 'not_ready', 'local_answer'].includes(response?.status);
+  const narrative = response?.aiNarrative || null;
+  const directAnswer = typeof narrative?.directAnswer === 'string' && narrative.directAnswer.trim()
+    ? narrative.directAnswer
+    : (typeof narrative?.executiveSummary === 'string' && narrative.executiveSummary.trim() ? narrative.executiveSummary : null);
+  const narrativeAvailable = narrative?.status === 'available' && Boolean(directAnswer);
   if (!response) {
     return (
       <div className="commercial-ai-result commercial-ai-result--empty" aria-live="polite">
@@ -426,7 +597,10 @@ function AnalysisResult({ result, onDownload, isDownloading }) {
   return (
     <div className="commercial-ai-result" aria-live="polite">
       <div className="commercial-ai-result__header">
-        <div><p className="commercial-ai-eyebrow">Conclusión</p><h2>{response.executiveSummary || response.answer}</h2></div>
+        <div>
+          <p className="commercial-ai-eyebrow">{isLocalAnswer ? 'Respuesta' : narrativeAvailable ? 'Respuesta de Lía' : 'Análisis calculado por Lanzo'}</p>
+          <h2>{narrativeAvailable ? directAnswer : (response.executiveSummary || response.answer)}</h2>
+        </div>
         {!isLocalAnswer && (
           <button type="button" className="commercial-ai-download" onClick={onDownload} disabled={isDownloading} aria-label="Descargar reporte completo">
             <Download size={16} aria-hidden="true" /> {isDownloading ? 'Preparando descarga…' : 'Descargar reporte completo'}
@@ -434,15 +608,29 @@ function AnalysisResult({ result, onDownload, isDownloading }) {
         )}
       </div>
 
+      <NarrativeStatusNotice result={result} />
+
       {!isLocalAnswer && (
         <>
-          <section className="commercial-ai-executive-block">
-            <h3>Hechos determinísticos</h3>
-            <p>{response.explanation || 'No hay explicación adicional disponible.'}</p>
-          </section>
+          {narrativeAvailable ? (
+            <section className="commercial-ai-executive-block commercial-ai-executive-block--recommendation">
+              <h3>Qué probar</h3>
+              <NarrativeEvidence response={response} />
+            </section>
+          ) : (
+            <section className="commercial-ai-executive-block">
+              <h3>Análisis calculado por Lanzo</h3>
+              <p>{response.explanation || 'No hay explicación adicional disponible.'}</p>
+              {narrative?.status === 'unavailable' && <NarrativeEvidence response={response} />}
+            </section>
+          )}
 
           <section className="commercial-ai-executive-block">
-            <h3>Hechos y resultados por intención</h3>
+            <h3>Datos que respaldan esta respuesta</h3>
+            {narrativeAvailable && response.explanation && (
+              <p><strong>Análisis calculado por Lanzo:</strong> {response.explanation}</p>
+            )}
+            <h4>Hechos y resultados por intención</h4>
             <IntentEvidence response={response} />
           </section>
 
@@ -456,13 +644,8 @@ function AnalysisResult({ result, onDownload, isDownloading }) {
             <CoverageEvidence response={response} />
           </section>
 
-          <section className="commercial-ai-executive-block">
-            <h3>Narrativa opcional de IA</h3>
-            <NarrativeEvidence response={response} />
-          </section>
-
           <section className="commercial-ai-executive-block commercial-ai-executive-block--recommendation">
-            <div className="commercial-ai-section__heading"><Lightbulb size={17} aria-hidden="true" /><h3>Recomendaciones derivadas</h3></div>
+            <div className="commercial-ai-section__heading"><Lightbulb size={17} aria-hidden="true" /><h3>Otras recomendaciones calculadas por Lanzo</h3></div>
             <Recommendations recommendations={response.recommendations} />
           </section>
         </>
@@ -486,6 +669,10 @@ const INTENT_LABELS = Object.freeze({
   profitability_summary: 'Rentabilidad general',
   explain_change: 'Cambio de margen',
   product_risk: 'Riesgo de productos',
+  sales_growth: 'Crecimiento de ventas',
+  ticket_growth: 'Ticket promedio',
+  product_opportunity: 'Oportunidad en productos actuales',
+  sales_trend: 'Tendencia de ventas',
   price_simulation: 'Simulación de precio',
   promotion_opportunity: 'Simulación de promoción',
   combo_opportunity: 'Oportunidad de combos',
@@ -499,6 +686,10 @@ const RESOLUTION_LABELS = Object.freeze({
   competition: 'Consulta sobre competencia',
   assortment: 'Consulta sobre nuevos productos y servicios',
   growth: 'Consulta sobre crecimiento de ventas',
+  sales_growth: 'Crecimiento de ventas',
+  ticket_growth: 'Ticket promedio',
+  product_opportunity: 'Oportunidades en productos actuales',
+  sales_trend: 'Tendencia de ventas',
   commercial_question: 'Consulta comercial por aclarar',
   price_simulation: 'Simulación de precio; faltan datos',
   greeting: 'Saludo',
@@ -595,6 +786,8 @@ const historyEntryToAnalysisResult = (entry) => {
       previous: deterministic.previous,
       comparison: deterministic.comparison,
       contributors: deterministic.contributors,
+      growthSignals: deterministic.growthSignals,
+      productOpportunities: deterministic.productOpportunities,
       productRisks: deterministic.productRisks,
       priceSimulation: deterministic.priceSimulation,
       promotionSimulation: deterministic.promotionSimulation,
@@ -614,7 +807,8 @@ const historyEntryToAnalysisResult = (entry) => {
       }
     },
     usageStatus: report.usage?.available === true ? report.usage : null,
-    providerCalled: report.result.providerCalled === true,
+    providerCalled: typeof report.result.providerCalled === 'boolean' ? report.result.providerCalled : null,
+    quotaOutcome: report.result.quotaOutcome || 'not_confirmed',
     intentResolution: report.request?.resolution || null
   };
 };
@@ -907,7 +1101,7 @@ export default function CommercialAIAgentsPage() {
     setScenario({});
     setProductSearch('');
     setPromotionMode('discountPercent');
-    setCompare(intent === 'explain_change');
+    setCompare(intent === 'explain_change' || ['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend'].includes(intent));
   }, [intent]);
 
   useEffect(() => {
@@ -1026,8 +1220,8 @@ export default function CommercialAIAgentsPage() {
         ? normalizeScenarioForIntent(resolvedIntent, scenario)
         : {};
       const compareEnabled = resolution.kind === 'supported'
-        && resolvedIntent === 'explain_change'
-        && compare === true;
+        && (['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend'].includes(resolvedIntent)
+          || (resolvedIntent === 'explain_change' && compare === true));
       const previousPeriod = compareEnabled ? buildPreviousPeriod(period) : null;
       const requestContext = {
         question,
@@ -1246,6 +1440,8 @@ export default function CommercialAIAgentsPage() {
               {intent === 'explain_change' && (
                 <label className="commercial-ai-checkbox"><input type="checkbox" checked={compare} onChange={(event) => setCompare(event.target.checked)} /> Comparar con el periodo anterior</label>
               )}
+              {['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend'].includes(intent)
+                && <p className="commercial-ai-comparison-note">Se incluirá el periodo anterior de duración equivalente cuando haya datos disponibles.</p>}
             </div>
           )}
 
@@ -1310,7 +1506,7 @@ export default function CommercialAIAgentsPage() {
           )}
 
           <div className="commercial-ai-submit-row">
-            <p>Periodo: <b>{period.from} a {period.to}</b>{intent === 'explain_change' && compare && ' · con comparación'}</p>
+            <p>Periodo: <b>{period.from} a {period.to}</b>{(intent === 'explain_change' && compare || ['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend'].includes(intent)) && ' · con comparación'}</p>
             <button className="commercial-ai-analyze" type="submit" disabled={!question.trim() || isAnalyzing}><Send size={16} aria-hidden="true" /> {isAnalyzing ? 'Analizando…' : 'Analizar'}</button>
           </div>
         </form>

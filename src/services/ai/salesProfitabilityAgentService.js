@@ -25,6 +25,68 @@ import { buildSalesProfitabilityContext } from './commercialAgentContext';
 
 const DEFAULT_BUSINESS_TIMEZONE = 'America/Mexico_City';
 const inflightRequests = new Map();
+const VALID_QUOTA_OUTCOMES = new Set(['consumed', 'not_consumed', 'not_confirmed']);
+
+const readFailureExecution = (error) => {
+  const payload = error?.originalError && typeof error.originalError === 'object'
+    ? error.originalError
+    : {};
+  const payloadQuotaOutcome = VALID_QUOTA_OUTCOMES.has(payload.quotaOutcome)
+    ? payload.quotaOutcome
+    : null;
+  if (typeof payload.providerCalled === 'boolean' && payloadQuotaOutcome) {
+    return { providerCalled: payload.providerCalled, quotaOutcome: payloadQuotaOutcome };
+  }
+
+  // A successful Edge response proves that the provider call and usage
+  // completion both finished, even when the returned narrative is unusable.
+  if (payload.success === true) {
+    return {
+      providerCalled: true,
+      quotaOutcome: payloadQuotaOutcome || 'consumed'
+    };
+  }
+
+  const code = error?.code || payload.code || payload.reason;
+  const statusCode = Number(error?.statusCode || error?.status || 0);
+  if (code === 'INVALID_REQUEST' && statusCode === 400) {
+    // This is compatible with deployed Edge v39, which predates the
+    // structured execution fields but validates before usage reservation.
+    return { providerCalled: false, quotaOutcome: 'not_consumed' };
+  }
+
+  const confirmedPreProviderCodes = new Set([
+    'AUTH_PAYLOAD_REQUIRED',
+    'LICENSE_NOT_FOUND',
+    'LICENSE_NOT_ACTIVE',
+    'LICENSE_EXPIRED',
+    'AI_AGENTS_NOT_AVAILABLE',
+    'AI_AGENT_PERIOD_NOT_FOUND',
+    'AI_AGENT_LIMIT_DISABLED',
+    'AI_AGENT_LIMIT_REACHED',
+    'DEVICE_NOT_ALLOWED',
+    'DEVICE_TOKEN_REQUIRED',
+    'DEVICE_TOKEN_INVALID',
+    'STAFF_SESSION_REQUIRED',
+    'STAFF_SESSION_INVALID',
+    'AI_AGENT_PERMISSION_REQUIRED',
+    'AI_RATE_LIMITED',
+    'AI_KEY_MISSING',
+    'PROMPT_TOO_LARGE'
+  ]);
+  if (
+    confirmedPreProviderCodes.has(code)
+    || (code === 'AI_PROVIDER_ERROR' && statusCode === 500)
+  ) {
+    return { providerCalled: false, quotaOutcome: 'not_consumed' };
+  }
+
+  if (['AI_REQUEST_FAILED', 'AI_EMPTY_RESPONSE', 'AI_INVALID_RESPONSE', 'MALFORMED_JSON'].includes(code)) {
+    return { providerCalled: true, quotaOutcome: 'not_confirmed' };
+  }
+
+  return { providerCalled: null, quotaOutcome: 'not_confirmed' };
+};
 
 export const resolveBusinessTimezone = (companyProfile = {}) => (
   companyProfile?.timezone
@@ -72,6 +134,8 @@ const ALLOWED_EVIDENCE_PREFIXES = Object.freeze([
   'comparison.',
   'current.',
   'product:',
+  'channel:',
+  'metric:',
   'priceSimulation.',
   'promotionSimulation.',
   'comboOpportunities.'
@@ -82,12 +146,23 @@ const allowedEvidenceKey = (value) => (
   && ALLOWED_EVIDENCE_PREFIXES.some((prefix) => value.startsWith(prefix))
 );
 
-const normalizeNarrativeRecommendations = (recommendations = []) => (
+const normalizeNarrativeRecommendations = (recommendations = [], requireUtility = false) => (
   (Array.isArray(recommendations) ? recommendations : [])
     .slice(0, 3)
     .map((recommendation = {}) => ({
       title: String(recommendation.title || '').trim(),
       explanation: String(recommendation.explanation || '').trim(),
+      action: typeof recommendation.action === 'string' ? recommendation.action.trim() : '',
+      measurement: typeof recommendation.measurement === 'string' ? recommendation.measurement.trim() : '',
+      ...(recommendation.focus && typeof recommendation.focus === 'object' && !Array.isArray(recommendation.focus)
+        ? { focus: {
+          type: String(recommendation.focus.type || '').trim(),
+          key: String(recommendation.focus.key || '').trim()
+        } }
+        : {}),
+      ...(typeof recommendation.recommendationType === 'string'
+        ? { recommendationType: recommendation.recommendationType.trim() }
+        : {}),
       expectedImpact: String(recommendation.expectedImpact || '').trim(),
       priority: ['high', 'medium', 'low'].includes(recommendation.priority)
         ? recommendation.priority
@@ -103,6 +178,8 @@ const normalizeNarrativeRecommendations = (recommendations = []) => (
       recommendation.title
       && recommendation.explanation
       && recommendation.expectedImpact
+      && (!requireUtility || (recommendation.action && recommendation.measurement))
+      && (!requireUtility || (recommendation.focus?.type && recommendation.focus?.key && recommendation.recommendationType))
       && recommendation.evidenceKeys.length > 0
     ))
 );
@@ -116,9 +193,11 @@ const narrativeDiagnosticFromContractFailure = (code) => {
   return 'AI_NARRATIVE_UNAVAILABLE';
 };
 
-const mergeProviderResponse = (deterministic, providerResponse) => {
+const mergeProviderResponse = (deterministic, providerResponse, intent = null) => {
+  const requireNarrativeUtility = ['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend'].includes(intent);
   const parsed = parseCommercialAgentResponse(providerResponse, {
-    expectedAgentKey: COMMERCIAL_AGENT_KEYS.SALES_PROFITABILITY
+    expectedAgentKey: COMMERCIAL_AGENT_KEYS.SALES_PROFITABILITY,
+    requireNarrativeUtility
   });
   if (!parsed.valid) {
     return {
@@ -139,14 +218,20 @@ const mergeProviderResponse = (deterministic, providerResponse) => {
   const hasNestedNarrative = response.aiNarrative && typeof response.aiNarrative === 'object'
     && !Array.isArray(response.aiNarrative);
   const narrative = hasNestedNarrative ? response.aiNarrative : response;
+  const directAnswer = String(
+    hasNestedNarrative
+      ? (narrative.directAnswer || '')
+      : (response.directAnswer || '')
+  ).trim() || null;
   const executiveSummary = String(
     hasNestedNarrative
-      ? (narrative.executiveSummary || narrative.answer || '')
-      : (response.executiveSummary || response.answer || '')
+      ? (narrative.executiveSummary || narrative.answer || directAnswer || '')
+      : (response.executiveSummary || response.answer || directAnswer || '')
   ).trim() || null;
   const explanation = String(narrative.explanation || '').trim() || null;
   const providerRecommendations = normalizeNarrativeRecommendations(
-    hasNestedNarrative ? narrative.recommendations : response.recommendations
+    hasNestedNarrative ? narrative.recommendations : response.recommendations,
+    requireNarrativeUtility
   );
   const hasNarrativeContent = Boolean(executiveSummary || explanation || providerRecommendations.length);
   const requestedStatus = narrative.status === 'unavailable' ? 'unavailable' : null;
@@ -156,13 +241,23 @@ const mergeProviderResponse = (deterministic, providerResponse) => {
 
   return {
     ...deterministic,
+    ...(Array.isArray(response.opportunityCandidates)
+      ? { opportunityCandidates: response.opportunityCandidates }
+      : {}),
+    ...(Number.isInteger(response.minimumUsefulRecommendations)
+      ? { minimumUsefulRecommendations: response.minimumUsefulRecommendations }
+      : {}),
     recommendations: deterministic.recommendations,
     aiNarrative: {
       status,
       ...(diagnosticCode ? { diagnosticCode } : {}),
+      directAnswer: status === 'available' ? directAnswer : null,
       executiveSummary: status === 'available' ? executiveSummary : null,
       explanation: status === 'available' ? explanation : null,
-      recommendations: status === 'available' ? providerRecommendations : []
+      recommendations: status === 'available' ? providerRecommendations : [],
+      ...(status === 'available' && ['high', 'medium', 'low'].includes(String(narrative.confidence || response.confidence))
+        ? { confidence: narrative.confidence || response.confidence }
+        : {})
     },
     actionDrafts: [],
     citations: []
@@ -205,6 +300,9 @@ const hardenAggregate = (aggregate, metadata = {}) => {
   return {
     ...aggregate,
     units,
+    unitsPerTicket: metadata.detailComplete === true && aggregate.salesCount > 0
+      ? units / aggregate.salesCount
+      : null,
     products,
     costOfSale: complete ? aggregate.costOfSale : null,
     knownCostOfSale: Number(metadata.knownCost) || 0,
@@ -223,7 +321,9 @@ const hardenAggregate = (aggregate, metadata = {}) => {
 const hardenCalculations = (calculations, {
   currentComplete,
   comparisonComplete,
-  currentMetadata
+  comparisonDataAvailable,
+  currentMetadata,
+  previousMetadata
 }) => {
   const currentUnsafe = new Set([
     'Costo de venta',
@@ -238,10 +338,26 @@ const hardenCalculations = (calculations, {
     'Variación relativa del margen',
     'Utilidad anterior'
   ]);
+  const comparisonSalesUnsafe = new Set([
+    'Ventas netas anteriores',
+    'Variación absoluta de ventas',
+    'Variación relativa de ventas',
+    'Tickets anteriores',
+    'Ticket promedio anterior',
+    'Variación absoluta del ticket',
+    'Variación relativa del ticket',
+    'Unidades por ticket anteriores',
+    'Variación de unidades por ticket'
+  ]);
+  const currentItemUnsafe = new Set(['Unidades por ticket', 'Unidades por ticket actuales']);
+  const previousItemUnsafe = new Set(['Unidades por ticket anteriores', 'Variación de unidades por ticket']);
 
   const rows = (Array.isArray(calculations) ? calculations : []).map((row) => {
     const unsafe = (!currentComplete && currentUnsafe.has(row.label))
-      || (!comparisonComplete && comparisonUnsafe.has(row.label));
+      || (!comparisonComplete && comparisonUnsafe.has(row.label))
+      || (!comparisonDataAvailable && comparisonSalesUnsafe.has(row.label))
+      || (currentMetadata?.detailComplete !== true && currentItemUnsafe.has(row.label))
+      || (previousMetadata?.detailComplete !== true && previousItemUnsafe.has(row.label));
     if (!unsafe) {
       if (row.label === 'Cobertura de costos') {
         const value = Number(currentMetadata?.knownSales) > 0 ? row.value : 0;
@@ -273,12 +389,33 @@ const buildCoverage = ({
   deterministic,
   current,
   currentMetadata,
-  comparisonComplete
+  comparisonComplete,
+  previousMetadata,
+  hasPrevious
 }) => ({
   ...deterministic.coverage,
   productsIncluded: current.products.length,
   costCoverage: current.costCoverage,
   comparisonAvailable: comparisonComplete,
+  comparisonDataAvailable: hasPrevious === true
+    && current.sourceComplete === true
+    && current.paginationComplete === true
+    && previousMetadata?.sourceComplete === true
+    && previousMetadata?.paginationComplete === true,
+  comparisonItemsAvailable: hasPrevious === true
+    && current.sourceComplete === true
+    && current.paginationComplete === true
+    && current.detailComplete === true
+    && previousMetadata?.sourceComplete === true
+    && previousMetadata?.paginationComplete === true
+    && previousMetadata?.detailComplete === true,
+  salesDataComplete: current.salesCount > 0
+    && current.sourceComplete === true
+    && current.paginationComplete === true,
+  growthDataComplete: current.salesCount > 0
+    && current.sourceComplete === true
+    && current.paginationComplete === true
+    && current.detailComplete === true,
   detailLines: Number(currentMetadata.matchedDetailLines) || 0,
   expectedDetailLines: Number(currentMetadata.expectedDetailLines) || 0,
   itemCoverage: Number(currentMetadata.itemCoverage) || 0,
@@ -336,6 +473,20 @@ const intentHasUsefulEvidence = (response) => {
         && response.coverage?.paginationComplete === true
         && response.coverage?.sourceComplete === true
         && response.current?.products?.length > 0;
+    case 'sales_growth':
+      return response.coverage?.growthDataComplete === true;
+    case 'ticket_growth':
+      return response.coverage?.salesDataComplete === true
+        && response.current?.averageTicket !== null
+        && response.current?.averageTicket !== undefined;
+    case 'product_opportunity':
+      return response.coverage?.comparisonItemsAvailable === true
+        && response.comparison?.productChanges?.length > 0
+        && response.current?.products?.length > 0;
+    case 'sales_trend':
+      return response.coverage?.comparisonItemsAvailable === true
+        && response.comparison
+        && response.coverage?.validSales > 0;
     case 'price_simulation':
       return Boolean(response.priceSimulation) && response.coverage?.sourceComplete === true;
     case 'promotion_opportunity':
@@ -404,6 +555,41 @@ const buildSafeNarrative = (response) => {
     };
   }
 
+  if (response.intent === 'sales_growth' && response.coverage?.growthDataComplete !== true) {
+    return {
+      executiveSummary: `Se registraron ${sales} venta(s) por ${money.format(netSales)}, pero la cobertura de artículos, paginación o fuente no permite priorizar señales de crecimiento con suficiente confianza.`,
+      explanation: 'Las ventas del periodo se conservan como evidencia determinística. No se genera una narrativa de proveedor ni se presenta un ranking exhaustivo con datos incompletos.'
+    };
+  }
+
+  if (response.intent === 'ticket_growth' && response.coverage?.salesDataComplete !== true) {
+    return {
+      executiveSummary: `Se registraron ${sales} venta(s) por ${money.format(netSales)}, pero la cobertura no permite confirmar el ticket promedio del periodo.`,
+      explanation: 'Se requiere una lectura completa de las ventas válidas del periodo antes de explicar el ticket.'
+    };
+  }
+
+  if (response.intent === 'ticket_growth' && response.coverage?.itemsComplete !== true) {
+    return {
+      executiveSummary: `El ticket promedio fue ${money.format(Number(response.current?.averageTicket) || 0)} en ${sales} venta(s).`,
+      explanation: 'El detalle de artículos está incompleto, así que las unidades por ticket y las combinaciones históricas no se presentan como completas.'
+    };
+  }
+
+  if (response.intent === 'product_opportunity' && response.coverage?.comparisonItemsAvailable !== true) {
+    return {
+      executiveSummary: 'No hay detalle comparable completo para priorizar productos actuales con confianza.',
+      explanation: 'La comparación por producto requiere artículos, paginación y fuentes completos en ambos periodos. Los costos faltantes se mantienen desconocidos.'
+    };
+  }
+
+  if (response.intent === 'sales_trend' && response.coverage?.comparisonItemsAvailable !== true) {
+    return {
+      executiveSummary: 'No hay una comparación completa de periodos equivalentes para confirmar la tendencia de ventas.',
+      explanation: 'La lectura requiere rangos temporales equivalentes, ventas completas y detalle de artículos disponible en ambos periodos.'
+    };
+  }
+
   if (response.intent === 'product_risk' && response.coverage?.itemsComplete !== true) {
     return {
       executiveSummary: 'No hay detalle de productos suficiente para identificar productos problemáticos con confianza.',
@@ -452,13 +638,25 @@ const hardenDeterministicResult = ({
   const currentComplete = current?.costComplete === true;
   const previousComplete = previous ? previous.costComplete === true : false;
   const comparisonComplete = Boolean(deterministic.comparison && currentComplete && previousComplete);
-  const comparison = hardenComparison(deterministic.comparison, currentComplete, previousComplete);
+  let comparison = hardenComparison(deterministic.comparison, currentComplete, previousComplete);
   const coverage = buildCoverage({
     deterministic,
     current,
     currentMetadata,
-    comparisonComplete
+    comparisonComplete,
+    previousMetadata,
+    hasPrevious: Boolean(previous)
   });
+  if (['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend'].includes(deterministic.intent)
+    && coverage.comparisonDataAvailable !== true) {
+    comparison = null;
+  } else if (comparison && coverage.comparisonItemsAvailable !== true) {
+    comparison = {
+      ...comparison,
+      previousUnitsPerTicket: null,
+      deltaUnitsPerTicket: null
+    };
+  }
 
   const profitability = {
     ...deterministic.profitability,
@@ -485,6 +683,8 @@ const hardenDeterministicResult = ({
   let comboOpportunities = deterministic.comboOpportunities;
   let scenarios = deterministic.scenarios;
   let contributors = deterministic.contributors;
+  let growthSignals = deterministic.growthSignals;
+  let productOpportunities = deterministic.productOpportunities;
   if (currentMetadata.detailComplete !== true || currentMetadata.paginationComplete !== true) {
     if (deterministic.intent === 'combo_opportunity') {
       comboOpportunities = [];
@@ -492,6 +692,46 @@ const hardenDeterministicResult = ({
     }
   }
   if (!comparisonComplete && deterministic.intent === 'explain_change') contributors = [];
+  if (currentMetadata.detailComplete !== true || currentMetadata.paginationComplete !== true
+    || current.sourceComplete !== true) {
+    if (['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend'].includes(deterministic.intent)) {
+      growthSignals = {
+        ...(growthSignals || {}),
+        productsGrowing: [],
+        productsDeclining: [],
+        productOpportunities: [],
+        channelChanges: [],
+        comparisonAvailable: false
+      };
+      productOpportunities = [];
+    }
+  }
+  if (!coverage.comparisonItemsAvailable
+    && ['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend'].includes(deterministic.intent)) {
+    productOpportunities = [];
+    if (growthSignals) {
+      growthSignals = {
+        ...growthSignals,
+        productsGrowing: [],
+        productsDeclining: [],
+        productOpportunities: [],
+        channelChanges: [],
+        comparisonAvailable: false,
+        previousNetSales: coverage.comparisonDataAvailable ? growthSignals.previousNetSales : null,
+        deltaNetSales: coverage.comparisonDataAvailable ? growthSignals.deltaNetSales : null,
+        deltaNetSalesPercent: coverage.comparisonDataAvailable ? growthSignals.deltaNetSalesPercent : null,
+        previousSalesCount: coverage.comparisonDataAvailable ? growthSignals.previousSalesCount : null,
+        deltaSalesCount: coverage.comparisonDataAvailable ? growthSignals.deltaSalesCount : null,
+        previousUnits: coverage.comparisonDataAvailable ? growthSignals.previousUnits : null,
+        deltaUnits: coverage.comparisonDataAvailable ? growthSignals.deltaUnits : null,
+        previousAverageTicket: coverage.comparisonDataAvailable ? growthSignals.previousAverageTicket : null,
+        deltaTicket: coverage.comparisonDataAvailable ? growthSignals.deltaTicket : null,
+        deltaTicketPercent: coverage.comparisonDataAvailable ? growthSignals.deltaTicketPercent : null,
+        previousUnitsPerTicket: coverage.comparisonItemsAvailable ? growthSignals.previousUnitsPerTicket : null,
+        deltaUnitsPerTicket: coverage.comparisonItemsAvailable ? growthSignals.deltaUnitsPerTicket : null
+      };
+    }
+  }
 
   const hardened = {
     ...deterministic,
@@ -499,6 +739,8 @@ const hardenDeterministicResult = ({
     previous,
     comparison,
     contributors,
+    growthSignals,
+    productOpportunities,
     comboOpportunities,
     scenarios,
     profitability,
@@ -507,13 +749,22 @@ const hardenDeterministicResult = ({
     calculations: hardenCalculations(deterministic.calculations, {
       currentComplete,
       comparisonComplete,
-      currentMetadata
+      comparisonDataAvailable: coverage.comparisonDataAvailable,
+      currentMetadata,
+      previousMetadata
     }),
     confidence: current.salesCount === 0
       ? 'low'
-      : currentComplete
-        ? (current.costStatus === 'definitive' ? deterministic.confidence : 'medium')
-        : 'low',
+      : ['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend'].includes(deterministic.intent)
+        ? (deterministic.intent === 'ticket_growth'
+          ? (coverage.salesDataComplete ? 'high' : 'low')
+          : (coverage.growthDataComplete
+            && (['sales_growth'].includes(deterministic.intent) || coverage.comparisonItemsAvailable)
+            ? 'high'
+            : 'low'))
+        : currentComplete
+          ? (current.costStatus === 'definitive' ? deterministic.confidence : 'medium')
+          : 'low',
     queryRange: {
       current: currentMetadata.queryRange,
       previous: previousMetadata?.queryRange || null
@@ -542,6 +793,7 @@ const hardenDeterministicResult = ({
     summary: {
       ...(hardened.context?.summary || {}),
       units: current.units,
+      unitsPerTicket: current.unitsPerTicket,
       discounts: current.discountsKnown ? current.discounts : null,
       discountsKnown: current.discountsKnown === true,
       unitCosts: currentComplete ? current.costOfSale : null,
@@ -564,7 +816,18 @@ const hardenDeterministicResult = ({
       costStatus: product.costStatus,
       costSource: product.costSource
     })),
-    comparison: comparisonComplete ? hardened.context?.comparison : null
+    comparison: (comparisonComplete || coverage.comparisonDataAvailable)
+      ? {
+        ...hardened.context?.comparison,
+        ...(coverage.comparisonItemsAvailable ? {} : {
+          previousUnitsPerTicket: null,
+          deltaUnitsPerTicket: null
+        })
+      }
+      : null,
+    growthSignals: ['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend'].includes(deterministic.intent)
+      ? growthSignals
+      : hardened.context?.growthSignals
   };
 
   return hardened;
@@ -636,7 +899,8 @@ export const createSalesProfitabilityAgentRunner = ({
 
   const normalizedPeriod = normalizePeriod(period);
   const currentPeriod = { ...normalizedPeriod, previous: null };
-  const comparisonEnabled = resolvedIntent === 'explain_change' && compare === true;
+  const comparisonEnabled = ['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend'].includes(resolvedIntent)
+    || (resolvedIntent === 'explain_change' && compare === true);
   const previousPeriod = comparisonEnabled ? buildPreviousPeriod(currentPeriod) : null;
   if (previousPeriod) previousPeriod.timezone = currentPeriod.timezone;
 
@@ -699,6 +963,7 @@ export const createSalesProfitabilityAgentRunner = ({
     }
 
     const context = buildSalesProfitabilityContext({
+      intent: request.intent,
       period: request.period,
       report: {
         ...deterministic.context,
@@ -712,28 +977,45 @@ export const createSalesProfitabilityAgentRunner = ({
       source: deterministic.source
     });
 
+    let providerOutcome = null;
     try {
       const providerResult = await analyze({
         ...request,
         context,
         requestKey: requestKey || null
       }, { temperature: 0.2, maxTokens: 2048 });
+      providerOutcome = {
+        providerCalled: typeof providerResult?.providerCalled === 'boolean'
+          ? providerResult.providerCalled
+          : true,
+        quotaOutcome: VALID_QUOTA_OUTCOMES.has(providerResult?.quotaOutcome)
+          ? providerResult.quotaOutcome
+          : 'consumed'
+      };
       const response = mergeProviderResponse(
         deterministic,
-        providerResult.rawResultContent || providerResult.content || ''
+        providerResult.rawResultContent || providerResult.content || '',
+        request.intent
       );
 
       return {
         response,
         usageStatus: providerResult.usageStatus || null,
-        providerCalled: true,
-        quotaOutcome: 'consumed',
+        providerCalled: providerOutcome.providerCalled,
+        quotaOutcome: providerOutcome.quotaOutcome,
         reportSource: deterministic.source,
         intentResolution: resolution
       };
     } catch (error) {
       const errorCode = error?.code || error?.originalError?.code;
-      const diagnosticCode = errorCode === 'AI_EMPTY_RESPONSE'
+      const execution = providerOutcome || readFailureExecution(error);
+      const diagnosticCode = errorCode === 'INVALID_REQUEST'
+        && execution.providerCalled === false
+        && execution.quotaOutcome === 'not_consumed'
+        ? 'AI_REQUEST_REJECTED'
+        : execution.providerCalled !== true
+          ? 'AI_NARRATIVE_UNAVAILABLE'
+        : errorCode === 'AI_EMPTY_RESPONSE'
         ? 'AI_NARRATIVE_EMPTY'
         : ['MALFORMED_JSON', 'AI_INVALID_RESPONSE'].includes(errorCode)
           ? 'AI_NARRATIVE_INVALID_JSON'
@@ -759,8 +1041,8 @@ export const createSalesProfitabilityAgentRunner = ({
           }
         },
         usageStatus: null,
-        providerCalled: true,
-        quotaOutcome: 'not_confirmed',
+        providerCalled: execution.providerCalled,
+        quotaOutcome: execution.quotaOutcome,
         narrativeAvailable: false,
         reportSource: deterministic.source,
         intentResolution: resolution

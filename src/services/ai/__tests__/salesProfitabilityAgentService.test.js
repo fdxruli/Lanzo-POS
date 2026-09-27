@@ -155,6 +155,7 @@ describe('sales profitability agent service', () => {
       scope: 'mine'
     });
     expect(analyze).toHaveBeenCalledTimes(1);
+    expect(analyze.mock.calls[0][1]).toEqual({ temperature: 0.2, maxTokens: 2048 });
     expect(result.providerCalled).toBe(true);
     expect(result.quotaOutcome).toBe('consumed');
     expect(result.usageStatus.remaining).toBe(14);
@@ -189,6 +190,7 @@ describe('sales profitability agent service', () => {
     expect(result.response.aiNarrative).toEqual({
       status: 'unavailable',
       diagnosticCode: 'AI_NARRATIVE_INVALID_JSON',
+      directAnswer: null,
       executiveSummary: null,
       explanation: null,
       recommendations: []
@@ -196,6 +198,31 @@ describe('sales profitability agent service', () => {
     expect(result.response.current).toMatchObject({ netSales: 100, costOfSale: 40, profit: 60, margin: 0.6 });
     expect(result.response.calculations).not.toContainEqual(expect.objectContaining({ label: 'cálculo alterado por proveedor' }));
     expect(result.response.facts || []).not.toContainEqual(expect.objectContaining({ label: 'dato alterado por proveedor' }));
+  });
+
+  it('preserves provider-called, not-consumed telemetry for a truncated Edge narrative', async () => {
+    const fallback = JSON.parse(unavailableNarrativeResponse);
+    fallback.aiNarrative.diagnosticCode = 'AI_NARRATIVE_TRUNCATED';
+    const analyze = vi.fn(async () => ({
+      rawResultContent: JSON.stringify(fallback),
+      usageStatus: { used: 6, limit: 15, remaining: 9 },
+      providerCalled: true,
+      quotaOutcome: 'not_consumed'
+    }));
+    const runner = createSalesProfitabilityAgentRunner({ repository: repository(), analyze, assertActor: vi.fn() });
+    const result = await runner({
+      question: '¿Cómo puedo aumentar mis ventas?',
+      period: { from: '2026-09-01', to: '2026-09-07', days: 7, timezone: 'America/Mexico_City' },
+      requestKey: 'truncated-narrative-not-consumed'
+    });
+
+    expect(analyze).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      providerCalled: true,
+      quotaOutcome: 'not_consumed',
+      usageStatus: { used: 6, remaining: 9 },
+      response: { aiNarrative: { status: 'unavailable', diagnosticCode: 'AI_NARRATIVE_TRUNCATED' } }
+    });
   });
 
   it('turns a successful Edge call with non-JSON narrative into safe unavailable status without losing confirmed usage', async () => {
@@ -593,6 +620,88 @@ describe('sales profitability agent service', () => {
     expect(result.response.recommendations).toEqual(expect.any(Array));
   });
 
+  it('preserves Phase 2 action, measurement, evidence and provider confidence', async () => {
+    const recommendation = {
+      title: 'Probar mayor exposición de Producto A',
+      focus: { type: 'product', key: 'Producto A' },
+      recommendationType: 'growth_experiment',
+      explanation: 'Producto A tiene una señal de ventas actual relevante.',
+      action: 'Probar una ubicación más visible durante una semana.',
+      measurement: 'Comparar unidades diarias con la semana previa.',
+      expectedImpact: 'Permitirá evaluar si la exposición coincide con más unidades.',
+      priority: 'high',
+      evidenceKeys: ['product:Producto A'],
+      requiresConfirmation: true
+    };
+    const phase2Response = JSON.stringify({
+      version: 1,
+      agentKey: 'salesProfitability',
+      status: 'completed',
+      intent: 'sales_growth',
+      executiveSummary: 'Hay una oportunidad concreta para probar con Producto A.',
+      directAnswer: 'Prueba mayor visibilidad para Producto A y compara sus unidades con la semana previa.',
+      explanation: 'La señal de Producto A justifica una prueba pequeña y medible.',
+      facts: [],
+      calculations: [],
+      assumptions: [],
+      scenarios: [],
+      recommendations: [recommendation],
+      limitations: [],
+      confidence: 'high',
+      source: 'cloud',
+      coverage: { complete: true },
+      citations: [],
+      actionDrafts: [],
+      opportunityCandidates: [{
+        key: 'product:Producto A',
+        type: 'product',
+        focus: { type: 'product', key: 'Producto A' },
+        recommendationType: 'growth_experiment',
+        strength: 'strong',
+        evidenceKeys: ['product:Producto A']
+      }],
+      minimumUsefulRecommendations: 1,
+      aiNarrative: {
+        status: 'available',
+        directAnswer: 'Prueba mayor visibilidad para Producto A y compara sus unidades con la semana previa.',
+        executiveSummary: 'Hay una oportunidad concreta para probar con Producto A.',
+        explanation: 'La señal de Producto A justifica una prueba pequeña y medible.',
+        recommendations: [recommendation],
+        confidence: 'high'
+      }
+    });
+    const runner = createSalesProfitabilityAgentRunner({
+      repository: repository(),
+      analyze: vi.fn(async () => ({
+        rawResultContent: phase2Response,
+        providerCalled: true,
+        quotaOutcome: 'consumed'
+      })),
+      assertActor: vi.fn()
+    });
+
+    const result = await runner({
+      question: '¿Cómo puedo aumentar mis ventas?',
+      intent: 'sales_growth',
+      period: { from: '2026-09-01', to: '2026-09-07', days: 7 },
+      compare: true
+    });
+
+    expect(result.response.aiNarrative).toMatchObject({
+      status: 'available',
+      directAnswer: 'Prueba mayor visibilidad para Producto A y compara sus unidades con la semana previa.',
+      confidence: 'high',
+      recommendations: [{
+        title: 'Probar mayor exposición de Producto A',
+        action: 'Probar una ubicación más visible durante una semana.',
+        measurement: 'Comparar unidades diarias con la semana previa.',
+        evidenceKeys: ['product:Producto A'],
+        requiresConfirmation: true
+      }]
+    });
+    expect(result.quotaOutcome).toBe('consumed');
+  });
+
   it('does not call the provider for a price simulation without a reliable cost', async () => {
     const missingProfit = {
       ...profit,
@@ -739,7 +848,7 @@ describe('sales profitability agent service', () => {
     expect(analyze).not.toHaveBeenCalled();
   });
 
-  it('recognizes unsupported and context-incomplete commercial requests before accessing data or quota', async () => {
+  it('recognizes out-of-scope and context-incomplete commercial requests before accessing data or quota', async () => {
     const reports = repository();
     const assertActor = vi.fn();
     const analyze = vi.fn();
@@ -750,11 +859,8 @@ describe('sales profitability agent service', () => {
       ['Analiza mi competencia para mejorar mi negocio.', 'competition', 'competencia'],
       ['¿Qué productos o servicios puedo incorporar a mi negocio para atraer más clientela?', 'assortment', 'ampliar tu oferta'],
       ['¿Qué productos nuevos debería vender?', 'assortment', 'ampliar tu oferta'],
-      ['¿Cómo puedo vender más?', 'growth', 'crecimiento'],
-      ['¿Cómo puedo aumentar mis ventas?', 'growth', 'crecimiento'],
-      ['¿Cómo hago crecer mi negocio?', 'growth', 'crecimiento'],
-      ['¿Dónde tengo oportunidades de crecimiento?', 'growth', 'crecimiento'],
-      ['¿Cómo puedo aumentar mi ticket promedio?', 'growth', 'ticket promedio']
+      ['¿Qué productos nuevos debería vender?', 'assortment', 'ampliar tu oferta'],
+      ['¿Qué productos puedo incorporar?', 'assortment', 'ampliar tu oferta']
     ];
 
     for (const [question, topic, copy] of unsupportedCases) {
@@ -789,7 +895,7 @@ describe('sales profitability agent service', () => {
     expect(analyze).not.toHaveBeenCalled();
   });
 
-  it('forces comparison off for every intent except explain_change', async () => {
+  it('keeps comparison off for a profitability summary', async () => {
     const analyze = vi.fn(async () => ({ rawResultContent: providerResponse }));
     const reports = repository();
     const runner = createSalesProfitabilityAgentRunner({ repository: reports, analyze, assertActor: vi.fn() });
@@ -808,6 +914,76 @@ describe('sales profitability agent service', () => {
       intent: 'profitability_summary',
       period: { previousFrom: null, previousTo: null }
     });
+  });
+
+  it.each([
+    ['¿Cómo puedo aumentar mis ventas?', 'sales_growth'],
+    ['¿Cómo puedo aumentar mi ticket promedio?', 'ticket_growth'],
+    ['¿Qué productos debería impulsar?', 'product_opportunity'],
+    ['¿Mis ventas están creciendo?', 'sales_trend']
+  ])('calls the provider for %s when complete deterministic evidence exists', async (question, intent) => {
+    const reports = repository();
+    const analyze = vi.fn(async () => ({ rawResultContent: providerResponse, usageStatus: { used: 1, limit: 15, remaining: 14 } }));
+    const runner = createSalesProfitabilityAgentRunner({ repository: reports, analyze, assertActor: vi.fn() });
+
+    const result = await runner({
+      question,
+      period: { from: '2026-09-01', to: '2026-09-07', days: 7 },
+      requestKey: `growth-supported-${intent}`
+    });
+
+    expect(result.response.intent).toBe(intent);
+    expect(result.response.coverage.itemsComplete).toBe(true);
+    expect(result.providerCalled).toBe(true);
+    expect(result.quotaOutcome).toBe('consumed');
+    expect(analyze).toHaveBeenCalledTimes(1);
+    expect(analyze.mock.calls[0][0].period.previousFrom).toBe('2026-08-25');
+    expect(analyze.mock.calls[0][0].context.sales).toHaveProperty('growthSignals');
+  });
+
+  it('does not call the provider or consume quota for growth without complete item evidence', async () => {
+    const noDetail = { ...profit, rows: [], total_count: 0 };
+    const reports = repository(history, noDetail);
+    const analyze = vi.fn();
+    const runner = createSalesProfitabilityAgentRunner({ repository: reports, analyze, assertActor: vi.fn() });
+
+    const result = await runner({
+      question: '¿Cómo puedo aumentar mis ventas?',
+      period: { from: '2026-09-01', to: '2026-09-07', days: 7 },
+      requestKey: 'growth-without-item-evidence'
+    });
+
+    expect(result.response.intent).toBe('sales_growth');
+    expect(result.response.coverage.growthDataComplete).toBe(false);
+    expect(result.response.status).toBe('incomplete');
+    expect(result.providerCalled).toBe(false);
+    expect(result.quotaOutcome).toBe('not_consumed');
+    expect(analyze).not.toHaveBeenCalled();
+  });
+
+  it('does not narrate a trend when comparison pagination is incomplete', async () => {
+    const reports = {
+      getSalesFinalHistory: vi.fn(async ({ offset }) => offset > 0
+        ? { source: { mode: 'cloud_final' }, rows: [], has_more: true }
+        : { ...history, has_more: true }),
+      getSalesProfitReport: vi.fn(async ({ offset }) => offset > 0
+        ? { source: { mode: 'cloud_final' }, rows: [], has_more: true }
+        : { ...profit, has_more: true })
+    };
+    const analyze = vi.fn();
+    const runner = createSalesProfitabilityAgentRunner({ repository: reports, analyze, assertActor: vi.fn() });
+    const result = await runner({
+      question: '¿Mis ventas están creciendo?',
+      period: { from: '2026-09-01', to: '2026-09-07', days: 7 },
+      requestKey: 'trend-with-incomplete-comparison'
+    });
+
+    expect(result.response.intent).toBe('sales_trend');
+    expect(result.response.coverage.comparisonItemsAvailable).toBe(false);
+    expect(result.response.executiveSummary).toContain('No hay una comparación completa');
+    expect(result.providerCalled).toBe(false);
+    expect(result.quotaOutcome).toBe('not_consumed');
+    expect(analyze).not.toHaveBeenCalled();
   });
 
   it('preserves deterministic results when the provider narrative fails', async () => {
@@ -831,7 +1007,7 @@ describe('sales profitability agent service', () => {
       requestKey: 'provider-failure-preserves-deterministic'
     });
 
-    expect(result.providerCalled).toBe(true);
+    expect(result.providerCalled).toBe(null);
     expect(result.quotaOutcome).toBe('not_confirmed');
     expect(result.response.status).toBe('completed');
     expect(result.response.current.netSales).toBe(100);
@@ -840,5 +1016,71 @@ describe('sales profitability agent service', () => {
     expect(result.response.limitations.join(' ')).toContain('narrativa opcional');
     expect(errorSpy).toHaveBeenCalled();
     errorSpy.mockRestore();
+  });
+
+  it('treats a legacy Edge v39 INVALID_REQUEST as a confirmed pre-provider rejection', async () => {
+    const rejection = Object.assign(new Error('No se pudo procesar la solicitud.'), {
+      code: 'INVALID_REQUEST',
+      statusCode: 400,
+      originalError: { success: false, code: 'INVALID_REQUEST' }
+    });
+    const analyze = vi.fn(async () => { throw rejection; });
+    const runner = createSalesProfitabilityAgentRunner({ repository: repository(), analyze, assertActor: vi.fn() });
+    const result = await runner({
+      question: '¿Cómo puedo aumentar mis ventas?',
+      period: { from: '2026-09-01', to: '2026-09-07', days: 7 },
+      requestKey: 'legacy-edge-invalid-request'
+    });
+
+    expect(analyze).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ providerCalled: false, quotaOutcome: 'not_consumed' });
+    expect(result.response.status).toBe('completed');
+    expect(result.response.current.netSales).toBe(100);
+    expect(result.response.aiNarrative).toMatchObject({
+      status: 'unavailable',
+      diagnosticCode: 'AI_REQUEST_REJECTED'
+    });
+  });
+
+  it.each([
+    ['AI_REQUEST_FAILED', 'not_consumed'],
+    ['AI_EMPTY_RESPONSE', 'not_confirmed'],
+    ['AI_INVALID_RESPONSE', 'consumed'],
+    ['MALFORMED_JSON', 'not_confirmed']
+  ])('preserves authoritative provider and quota telemetry for %s', async (code, quotaOutcome) => {
+    const providerFailure = Object.assign(new Error('narrative unavailable'), {
+      code,
+      statusCode: 502,
+      originalError: { code, providerCalled: true, quotaOutcome }
+    });
+    const analyze = vi.fn(async () => { throw providerFailure; });
+    const runner = createSalesProfitabilityAgentRunner({ repository: repository(), analyze, assertActor: vi.fn() });
+    const result = await runner({
+      question: '¿Mi negocio es rentable?',
+      period: { from: '2026-09-01', to: '2026-09-07', days: 7 },
+      requestKey: `provider-telemetry-${code}`
+    });
+
+    expect(result.providerCalled).toBe(true);
+    expect(result.quotaOutcome).toBe(quotaOutcome);
+    expect(result.response.aiNarrative.status).toBe('unavailable');
+    expect(result.response.current.netSales).toBe(100);
+  });
+
+  it('keeps provider and quota unknown when an unstructured failure cannot establish the Edge outcome', async () => {
+    const analyze = vi.fn(async () => { throw new Error('connection interrupted'); });
+    const runner = createSalesProfitabilityAgentRunner({ repository: repository(), analyze, assertActor: vi.fn() });
+    const result = await runner({
+      question: '¿Mi negocio es rentable?',
+      period: { from: '2026-09-01', to: '2026-09-07', days: 7 },
+      requestKey: 'unknown-edge-execution'
+    });
+
+    expect(result).toMatchObject({ providerCalled: null, quotaOutcome: 'not_confirmed' });
+    expect(result.response.aiNarrative).toMatchObject({
+      status: 'unavailable',
+      diagnosticCode: 'AI_NARRATIVE_UNAVAILABLE'
+    });
+    expect(result.response.current.netSales).toBe(100);
   });
 });

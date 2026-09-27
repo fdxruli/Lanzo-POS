@@ -64,6 +64,19 @@ El cliente Supabase server-side usa el endpoint RPC REST con sesión persistente
 automático desactivados. Las RPC están fijadas en el código; el cliente no puede elegir
 una RPC arbitraria.
 
+## Contrato de ventas comerciales
+
+El análisis estructurado de `salesProfitability` acepta los intentos `profitability_summary`,
+`product_risk`, `explain_change`, `sales_growth`, `ticket_growth`, `product_opportunity` y
+`sales_trend`. Los últimos cuatro pueden incluir un periodo anterior comparable y métricas
+agregadas de ventas, unidades, productos y canales. El contrato filtra campos y enums, limita
+el tamaño de las listas y conserva costos, utilidad y margen como `null` cuando no hay evidencia.
+La narrativa del proveedor no debe atribuir causas ni presentar resultados futuros como seguros;
+las métricas y oportunidades calculadas por la aplicación siguen siendo la fuente determinística.
+
+El contrato debe desplegarse junto con el cliente que envía esos intentos para habilitarlos en
+Preview y producción.
+
 ### Moonshot/Kimi
 
 Para usar Kimi, configura el endpoint OpenAI-compatible de Moonshot:

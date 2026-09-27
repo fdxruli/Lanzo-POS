@@ -22,11 +22,15 @@ export type ProviderResult = {
   content: string;
   promptTokens: number | null;
   completionTokens: number | null;
+  reasoningTokens: number | null;
   totalTokens: number | null;
   model: string | null;
   requestId: string | null;
+  finishReason: string | null;
   style: ProviderStyle;
 };
+
+export type ProviderRequestMode = 'default' | 'commercial-narrative';
 
 export type ProviderFailureCode = 'AI_PROVIDER_ERROR' | 'AI_REQUEST_FAILED' | 'AI_EMPTY_RESPONSE' | 'AI_INVALID_RESPONSE';
 
@@ -213,7 +217,8 @@ function buildRequestBody(
   config: ProviderConfig,
   systemPrompt: string,
   userPrompt: string,
-  options: AnalysisOptions
+  options: AnalysisOptions,
+  requestMode: ProviderRequestMode
 ): Record<string, unknown> {
   const requestBody: Record<string, unknown> = config.style === 'responses'
     ? {
@@ -234,6 +239,16 @@ function buildRequestBody(
         max_tokens: options.maxTokens,
         stream: false
       };
+
+  if (
+    requestMode === 'commercial-narrative'
+    && config.vendor === 'openai-compatible'
+    && config.style === 'chat-completions'
+    && config.model.trim().toLowerCase() === 'deepseek-v4-flash'
+  ) {
+    requestBody.response_format = { type: 'json_object' };
+    requestBody.thinking = { type: 'disabled' };
+  }
 
   if (config.vendor !== 'moonshot') {
     requestBody.temperature = options.temperature;
@@ -267,9 +282,15 @@ async function readBodyWithLimit(response: Response): Promise<string> {
 
 function normalizeUsage(usage: unknown) {
   const record = isRecord(usage) ? usage : {};
+  const completionDetails = isRecord(record.completion_tokens_details)
+    ? record.completion_tokens_details
+    : isRecord(record.output_tokens_details)
+      ? record.output_tokens_details
+      : {};
   return {
     promptTokens: nonNegativeInteger(record.prompt_tokens ?? record.input_tokens),
     completionTokens: nonNegativeInteger(record.completion_tokens ?? record.output_tokens),
+    reasoningTokens: nonNegativeInteger(completionDetails.reasoning_tokens),
     totalTokens: nonNegativeInteger(record.total_tokens)
   };
 }
@@ -294,10 +315,14 @@ function normalizeResponsePayload(payload: unknown, config: ProviderConfig, resp
   let content = '';
   let usage: unknown;
   let model: string | null = nonEmptyText(payload.model);
+  let finishReason: string | null = null;
 
   if (config.style === 'responses') {
     content = nonEmptyText(payload.output_text) || '';
     usage = payload.usage;
+    const incompleteDetails = isRecord(payload.incomplete_details) ? payload.incomplete_details : {};
+    finishReason = nonEmptyText(incompleteDetails.reason)
+      || nonEmptyText(payload.status);
 
     if (!content && Array.isArray(payload.output)) {
       content = payload.output
@@ -314,6 +339,7 @@ function normalizeResponsePayload(payload: unknown, config: ProviderConfig, resp
     const firstChoice = isRecord(choices[0]) ? choices[0] : {};
     const message = isRecord(firstChoice.message) ? firstChoice.message : {};
     content = nonEmptyText(message.content) || textFromContentParts(message.content);
+    finishReason = nonEmptyText(firstChoice.finish_reason);
   }
 
   const normalizedUsage = normalizeUsage(usage);
@@ -321,7 +347,8 @@ function normalizeResponsePayload(payload: unknown, config: ProviderConfig, resp
     content,
     ...normalizedUsage,
     model,
-    requestId: nonEmptyText(response.headers.get('x-request-id')),
+    requestId: nonEmptyText(response.headers.get('x-request-id')) || nonEmptyText(payload.id),
+    finishReason,
     style: config.style
   };
 }
@@ -332,7 +359,8 @@ export async function requestProvider(
   userPrompt: string,
   options: AnalysisOptions,
   fetchImpl: typeof fetch,
-  timeoutMs = PROVIDER_TIMEOUT_MS
+  timeoutMs = PROVIDER_TIMEOUT_MS,
+  requestMode: ProviderRequestMode = 'default'
 ): Promise<ProviderResult> {
   const controller = new AbortController();
   let timedOut = false;
@@ -348,7 +376,7 @@ export async function requestProvider(
         'Content-Type': 'application/json',
         Authorization: 'Bearer ' + config.apiKey
       },
-      body: JSON.stringify(buildRequestBody(config, systemPrompt, userPrompt, options)),
+      body: JSON.stringify(buildRequestBody(config, systemPrompt, userPrompt, options, requestMode)),
       signal: controller.signal
     });
 

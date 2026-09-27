@@ -312,8 +312,8 @@ describe('commercial AI center', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Ver respuesta' }));
     expect(screen.getAllByText('Resumen determinístico guardado')).toHaveLength(2);
-    expect(screen.getAllByText('Hechos determinísticos')).toHaveLength(2);
-    expect(screen.getAllByText('Narrativa opcional de IA')).toHaveLength(2);
+    expect(screen.getAllByText('Datos que respaldan esta respuesta')).toHaveLength(2);
+    expect(screen.queryByText('Narrativa opcional de IA')).not.toBeInTheDocument();
   });
 
   it('labels a response as Caché only when a cache-hit flag is explicit', async () => {
@@ -380,15 +380,127 @@ describe('commercial AI center', () => {
 
     expect(await screen.findByRole('heading', { name: 'Ventas netas de $300 con utilidad determinística de $120.' })).toBeInTheDocument();
     expect(screen.getByText('Este resumen proviene de los cálculos de Lanzo-POS.')).toBeInTheDocument();
-    expect(screen.getByText(/La narrativa opcional de IA no está disponible/)).toBeInTheDocument();
-    expect(screen.getByText(/AI_NARRATIVE_INVALID_JSON/)).toBeInTheDocument();
+    expect(screen.getByText(/La respuesta de Lía no está disponible/)).toBeInTheDocument();
+    expect(screen.getByText(/El proveedor devolvió un formato narrativo no válido/)).toBeInTheDocument();
+    expect(screen.getByText(/El uso de IA quedó registrado/)).toBeInTheDocument();
     expect(await screen.findByText('IA no disponible')).toBeInTheDocument();
     expect(screen.getByText('IA no disponible').closest('article')).toHaveTextContent('Usó cuota: Sí');
     expect(runtime.runAgent).toHaveBeenCalledTimes(1);
 
     fireEvent.click(screen.getByRole('button', { name: 'Ver respuesta' }));
-    expect(screen.getAllByText('AI_NARRATIVE_INVALID_JSON').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText(/formato narrativo no válido/).length).toBeGreaterThanOrEqual(2);
     expect(screen.getAllByText('Utilidad').length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('shows the Lanzo-calculated fallback and confirmed no-use notice after a pre-provider rejection', async () => {
+    runtime.runAgent.mockResolvedValueOnce({
+      response: {
+        status: 'completed',
+        executiveSummary: 'Las ventas netas fueron $300.',
+        explanation: 'Cálculo a partir del historial del periodo.',
+        confidence: 'medium',
+        source: 'cloud',
+        coverage: { validSales: 3 },
+        calculations: [],
+        assumptions: [],
+        limitations: [],
+        recommendations: [],
+        scenarios: [],
+        aiNarrative: {
+          status: 'unavailable',
+          diagnosticCode: 'AI_REQUEST_REJECTED',
+          executiveSummary: null,
+          explanation: null,
+          recommendations: []
+        }
+      },
+      providerCalled: false,
+      quotaOutcome: 'not_consumed',
+      usageStatus: null
+    });
+
+    renderCenter();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), { target: { value: '¿Cómo puedo aumentar mis ventas?' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+
+    expect(await screen.findByRole('heading', { name: 'Las ventas netas fueron $300.' })).toBeInTheDocument();
+    const notice = screen.getByText(/Este intento no consumió un uso de IA/).closest('[role="status"]');
+    expect(notice).toHaveTextContent('Análisis calculado por Lanzo.');
+    expect(notice).toHaveTextContent('Este intento no consumió un uso de IA.');
+    expect(screen.getByText(/solicitud fue rechazada antes de generar una explicación/)).toBeInTheDocument();
+    expect(screen.queryByText('Narrativa generada por IA.')).not.toBeInTheDocument();
+    expect(screen.getAllByText('Análisis calculado por Lanzo').length).toBeGreaterThan(0);
+    expect(screen.queryByText(/AI_REQUEST_REJECTED/)).not.toBeInTheDocument();
+  });
+
+  it('explains that a truncated provider response was attempted but did not consume quota', async () => {
+    runtime.runAgent.mockResolvedValueOnce({
+      response: {
+        status: 'completed',
+        executiveSummary: 'Las ventas netas fueron $300.',
+        explanation: 'Cálculo a partir del historial del periodo.',
+        confidence: 'medium',
+        source: 'cloud',
+        coverage: { validSales: 3 },
+        calculations: [],
+        assumptions: [],
+        limitations: [],
+        recommendations: [],
+        scenarios: [],
+        aiNarrative: {
+          status: 'unavailable',
+          diagnosticCode: 'AI_NARRATIVE_TRUNCATED',
+          executiveSummary: null,
+          explanation: null,
+          recommendations: []
+        }
+      },
+      providerCalled: true,
+      quotaOutcome: 'not_consumed',
+      usageStatus: { used: 6, limit: 15, remaining: 9 }
+    });
+
+    renderCenter();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), { target: { value: '¿Cómo puedo aumentar mis ventas?' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+
+    expect(await screen.findByRole('heading', { name: 'Las ventas netas fueron $300.' })).toBeInTheDocument();
+    const notice = screen.getByText(/El proveedor respondió, pero no entregó una narrativa válida/).closest('[role="status"]');
+    expect(notice).toHaveTextContent('Este intento no consumió un uso de IA.');
+    expect(screen.getByText(/alcanzó el límite de salida antes de completarse/i)).toBeInTheDocument();
+    expect(screen.queryByText('Narrativa generada por IA.')).not.toBeInTheDocument();
+  });
+
+  it('does not claim that quota was not consumed when Edge usage is unknown', async () => {
+    runtime.runAgent.mockResolvedValueOnce({
+      response: {
+        status: 'completed',
+        executiveSummary: 'Las ventas netas fueron $300.',
+        explanation: 'Cálculo a partir del historial del periodo.',
+        confidence: 'medium',
+        source: 'cloud',
+        coverage: { validSales: 3 },
+        calculations: [],
+        assumptions: [],
+        limitations: [],
+        recommendations: [],
+        scenarios: [],
+        aiNarrative: { status: 'unavailable' }
+      },
+      providerCalled: null,
+      quotaOutcome: 'not_confirmed',
+      usageStatus: null
+    });
+
+    renderCenter();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), { target: { value: '¿Cómo puedo aumentar mis ventas?' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+
+    expect(await screen.findByRole('heading', { name: 'Las ventas netas fueron $300.' })).toBeInTheDocument();
+    const notice = screen.getByText(/Estamos verificando el estado del uso de IA/).closest('[role="status"]');
+    expect(notice).toBeInTheDocument();
+    expect(screen.queryByText(/no consumió un uso de IA/i)).not.toBeInTheDocument();
+    expect(screen.queryByText('Narrativa generada por IA.')).not.toBeInTheDocument();
   });
 
   it('blocks same-turn duplicate submits so one UI action creates one analysis and one history entry', async () => {
@@ -414,7 +526,7 @@ describe('commercial AI center', () => {
         limitations: [],
         recommendations: [],
         scenarios: [],
-        aiNarrative: { executiveSummary: 'Narrativa válida' }
+        aiNarrative: { status: 'available', executiveSummary: 'Narrativa válida' }
       },
       providerCalled: true,
       quotaOutcome: 'consumed',
@@ -422,6 +534,7 @@ describe('commercial AI center', () => {
     });
 
     expect(await screen.findByText('Narrativa válida')).toBeInTheDocument();
+    expect(screen.getByText('Respuesta de Lía')).toBeInTheDocument();
     let raw;
     await waitFor(() => {
       raw = runtime.historyStorage.get('commercial-ai-sales-profitability-history-v1');
@@ -429,6 +542,69 @@ describe('commercial AI center', () => {
     });
     expect(JSON.parse(raw).entries).toHaveLength(1);
     expect(runtime.runAgent).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows Phase 2 AI recommendations as why, action, measurement and confidence', async () => {
+    runtime.runAgent.mockResolvedValueOnce({
+      response: {
+        status: 'completed',
+        intent: 'sales_growth',
+        executiveSummary: 'Hay una prueba concreta para Producto A.',
+        explanation: 'Los hechos calculados se muestran aparte.',
+        confidence: 'medium',
+        source: 'cloud',
+        coverage: { validSales: 1 },
+        calculations: [],
+        assumptions: [],
+        limitations: [],
+        recommendations: [],
+        scenarios: [],
+        opportunityCandidates: [{
+          key: 'product:Producto A',
+          type: 'product',
+          focus: { type: 'product', key: 'Producto A' },
+          recommendationType: 'growth_experiment',
+          evidenceKeys: ['product:Producto A']
+        }],
+        minimumUsefulRecommendations: 1,
+        aiNarrative: {
+          status: 'available',
+          directAnswer: 'Prueba una ubicación más visible para Producto A y mide sus unidades durante una semana.',
+          executiveSummary: 'Hay una prueba concreta para Producto A.',
+          explanation: 'La señal de Producto A justifica una prueba acotada.',
+          confidence: 'high',
+          recommendations: [{
+            title: 'Probar mayor visibilidad para Producto A',
+            focus: { type: 'product', key: 'Producto A' },
+            recommendationType: 'growth_experiment',
+            explanation: 'Producto A tiene una señal de ventas actual relevante.',
+            action: 'Probar una ubicación más visible durante una semana.',
+            measurement: 'Comparar unidades diarias con la semana previa.',
+            expectedImpact: 'Permitirá evaluar si la exposición coincide con más unidades.',
+            priority: 'high',
+            evidenceKeys: ['product:Producto A'],
+            requiresConfirmation: true
+          }]
+        }
+      },
+      providerCalled: true,
+      quotaOutcome: 'consumed',
+      usageStatus: { used: 3, limit: 15, remaining: 12 }
+    });
+    renderCenter();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), {
+      target: { value: '¿Cómo puedo aumentar mis ventas?' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+
+    expect(await screen.findByText('Oportunidades priorizadas por Lía')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Prueba una ubicación más visible para Producto A y mide sus unidades durante una semana.' })).toBeInTheDocument();
+    expect(screen.getByText('Por qué:')).toBeInTheDocument();
+    expect(screen.getByText('Qué probar:')).toBeInTheDocument();
+    expect(screen.getByText('Qué medir:')).toBeInTheDocument();
+    expect(screen.getByText(/Confianza de esta interpretación: Alta/)).toBeInTheDocument();
+    expect(screen.getByText(/Requiere confirmación manual/)).toBeInTheDocument();
+    expect(screen.queryByText('product:Producto A')).not.toBeInTheDocument();
   });
 
   it('does not put errors or invalid response shapes in history', async () => {
@@ -834,6 +1010,74 @@ describe('commercial AI center', () => {
     expect(screen.getByText('El dato determinístico usa 10 tickets válidos.')).toBeInTheDocument();
     expect(screen.getByText('Limitación: la oportunidad muestra correlación histórica de tickets; no garantiza demanda futura.')).toBeInTheDocument();
     expect(screen.getByText('La IA describe cuatro tickets.')).toBeInTheDocument();
+  });
+
+  it('puts Lía’s direct answer and grounded actions before the deterministic evidence', async () => {
+    runtime.runAgent.mockResolvedValueOnce({
+      response: {
+        status: 'completed',
+        intent: 'sales_growth',
+        executiveSummary: 'El periodo registró ventas por $300.',
+        explanation: 'El producto aparece con ventas en el periodo comparable y hay espacio para probar una mejor exposición.',
+        confidence: 'medium',
+        source: 'cloud',
+        coverage: { validSales: 3, costCoverage: 1 },
+        facts: [],
+        calculations: [{ label: 'Ventas del periodo', value: 300, formula: 'suma de ventas válidas' }],
+        assumptions: [],
+        limitations: [],
+        recommendations: [],
+        scenarios: [],
+        opportunityCandidates: [{
+          key: 'product:Producto A',
+          type: 'product',
+          focus: { type: 'product', key: 'Producto A' },
+          recommendationType: 'growth_experiment',
+          evidenceKeys: ['product:Producto A']
+        }],
+        minimumUsefulRecommendations: 1,
+        aiNarrative: {
+          status: 'available',
+          directAnswer: 'Prueba dar mayor visibilidad a Producto A y mide si aumentan sus unidades vendidas.',
+          explanation: 'Producto A cuenta con una señal observada que permite hacer una prueba pequeña.',
+          confidence: 'medium',
+          recommendations: [{
+            title: 'Probar más visibilidad para Producto A',
+            focus: { type: 'product', key: 'Producto A' },
+            recommendationType: 'growth_experiment',
+            explanation: 'Producto A registró ventas en el periodo y puede evaluarse con una prueba controlada.',
+            action: 'Destaca Producto A en una ubicación visible durante una semana.',
+            measurement: 'Compara las unidades de Producto A con la semana comparable.',
+            expectedImpact: 'Permitirá observar si la exposición coincide con más unidades.',
+            priority: 'high',
+            evidenceKeys: ['product:Producto A'],
+            requiresConfirmation: true
+          }]
+        }
+      },
+      providerCalled: true,
+      quotaOutcome: 'consumed',
+      usageStatus: { used: 3, limit: 15, remaining: 12 }
+    });
+
+    renderCenter();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), { target: { value: '¿Cómo puedo aumentar mis ventas?' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+
+    const answer = await screen.findByRole('heading', {
+      name: 'Prueba dar mayor visibilidad a Producto A y mide si aumentan sus unidades vendidas.'
+    });
+    const action = screen.getByText('Destaca Producto A en una ubicación visible durante una semana.');
+    const measurement = screen.getByText('Compara las unidades de Producto A con la semana comparable.');
+    const evidence = screen.getByRole('heading', { name: 'Datos que respaldan esta respuesta' });
+    const appearsBefore = (earlier, later) => Boolean(earlier.compareDocumentPosition(later) & Node.DOCUMENT_POSITION_FOLLOWING);
+
+    expect(screen.getByText('Respuesta de Lía')).toBeInTheDocument();
+    expect(appearsBefore(answer, action)).toBe(true);
+    expect(appearsBefore(action, measurement)).toBe(true);
+    expect(appearsBefore(measurement, evidence)).toBe(true);
+    expect(screen.getByText(/Análisis calculado por Lanzo:/)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Cálculos' })).toBeInTheDocument();
   });
 
   it('does not load sales or invoke the agent for identity and out-of-scope questions', async () => {
