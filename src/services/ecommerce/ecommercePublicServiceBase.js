@@ -16,6 +16,7 @@ import {
   normalizeEcommerceDeliveryAddress
 } from '../../utils/ecommerceDeliveryAddress';
 import { normalizeEcommerceSiteDocument } from '../../utils/ecommerceSiteDocument';
+import { normalizePausedWhatsappPhone } from '../../utils/pausedWhatsappContact';
 
 const PUBLIC_RPC_TIMEOUT_MS = 12_000;
 const PUBLIC_READ_MAX_ATTEMPTS = 2;
@@ -357,7 +358,11 @@ function normalizeRpcFailure(data, error, operation = 'store') {
   }
   const responseError = asObject(data?.error);
   const code = asText(responseError.code, 'ECOMMERCE_PUBLIC_REQUEST_FAILED');
-  return new EcommercePublicError(code, getSafeMessage(code, operation));
+  const phone = code === 'ECOMMERCE_PORTAL_PAUSED' && operation === 'store'
+    ? normalizePausedWhatsappPhone(asObject(data?.pausedContact).whatsappPhone)
+    : '';
+  return new EcommercePublicError(code, getSafeMessage(code, operation), null,
+    phone ? { pausedContact: { whatsappPhone: phone } } : {});
 }
 
 function normalizeFeatures(rawFeatures) {

@@ -501,6 +501,30 @@ describe('ecommercePublicService', () => {
     expect(cache.getPortal).not.toHaveBeenCalled();
   });
 
+  it('allowlists only a valid paused contact from the RPC error', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: {
+      success: false,
+      error: { code: 'ECOMMERCE_PORTAL_PAUSED', message: 'secret', license: 'secret' },
+      pausedContact: { whatsappPhone: '+52 (961) 000-0000', licenseId: 'secret' },
+      plan: 'pro_monthly',
+    }, error: null });
+    const service = createEcommercePublicService({ rpc });
+    const failure = await service.getPublicPortalBySlug('paused-store').catch((error) => error);
+    expect(failure.pausedContact).toEqual({ whatsappPhone: '529610000000' });
+    expect(JSON.stringify(failure)).not.toContain('secret');
+    expect(JSON.stringify(failure)).not.toContain('pro_monthly');
+  });
+
+  it('ignores contact metadata on not found', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: {
+      success: false, error: { code: 'ECOMMERCE_PORTAL_NOT_FOUND' },
+      pausedContact: { whatsappPhone: '529610000000' },
+    }, error: null });
+    const failure = await createEcommercePublicService({ rpc })
+      .getPublicPortalBySlug('missing-store').catch((error) => error);
+    expect(failure.pausedContact).toBeUndefined();
+  });
+
   it('does not revive a cached published portal after authoritative not found', async () => {
     const rpc = vi.fn().mockResolvedValue({
       data: { success: false, error: { code: 'ECOMMERCE_PORTAL_NOT_FOUND' } },

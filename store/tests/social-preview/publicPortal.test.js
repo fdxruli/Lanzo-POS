@@ -409,6 +409,7 @@ describe('not_found y fallos seguros', () => {
     const client = createClient(vi.fn(async () => mockResponse({
       success: false,
       error: { code: 'ECOMMERCE_PORTAL_PAUSED', message: 'detalle remoto' },
+      pausedContact: { whatsappPhone: '529610000000' },
     })));
     await expect(client.getPortalBySlug(SLUG)).resolves.toEqual({ status: 'not_found' });
   });

@@ -1159,6 +1159,35 @@ body.public-store-body {
   box-shadow: var(--ui-shadow-md);
 }
 
+.public-store-shell.public-store-status-page .public-store-state__action--link {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-self: center;
+  max-width: 100%;
+  min-height: 2.75rem;
+  padding: 0.35rem 0;
+  color: var(--store-text-brand, #0369a1);
+  font: inherit;
+  font-weight: 700;
+  line-height: 1.25;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
+  white-space: nowrap;
+}
+
+.public-store-shell.public-store-status-page .public-store-state__action--link:hover {
+  color: var(--store-text-brand, #0369a1);
+  text-decoration-thickness: 2px;
+}
+
+.public-store-shell.public-store-status-page .public-store-state__action--link:focus-visible {
+  border-radius: var(--ui-radius-sm);
+  outline: 2px solid var(--store-text-brand, #0369a1);
+  outline-offset: 3px;
+}
+
 @media (min-width: 48rem) {
   .public-store-shell.public-store-status-page > .public-store-status-surface {
     padding: 2.5rem;
@@ -1186,7 +1215,8 @@ body.public-store-body {
     min-width: 0;
   }
 
-  .public-store-shell.public-store-status-page .public-store-state > button {
+  .public-store-shell.public-store-status-page .public-store-state > button,
+  .public-store-shell.public-store-status-page .public-store-state > .public-store-state__action {
     grid-area: action;
     justify-self: start;
   }
