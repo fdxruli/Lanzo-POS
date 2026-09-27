@@ -226,6 +226,10 @@ export const productRepository = {
     return productLocalRepository.listProductsPage(options);
   },
 
+  async getAssortmentCatalogSnapshot(options = {}) {
+    return productLocalRepository.getAssortmentCatalogSnapshot(options);
+  },
+
   async listCategories(options = {}) {
     void options;
     return productLocalRepository.listCategories();

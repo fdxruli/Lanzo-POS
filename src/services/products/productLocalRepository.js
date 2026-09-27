@@ -98,6 +98,37 @@ export const productLocalRepository = {
     return loadDataPaginated(STORES.MENU, options);
   },
 
+  async getAssortmentCatalogSnapshot({ maxProducts = 5000, maxCategories = 500 } = {}) {
+    await ensureOpen();
+    const productLimit = Math.min(Math.max(Number(maxProducts) || 5000, 1), 5000);
+    const categoryLimit = Math.min(Math.max(Number(maxCategories) || 500, 1), 500);
+    const [productRows, categoryRows] = await Promise.all([
+      db.table(STORES.MENU)
+        .filter((row) => Boolean(row?.id)
+          && !row?.deletedAt && !row?.deletedTimestamp && !row?.deleted_at && !row?.deleted_timestamp)
+        .limit(productLimit + 1)
+        .toArray(),
+      db.table(STORES.CATEGORIES)
+        .filter((row) => Boolean(row?.id))
+        .limit(categoryLimit + 1)
+        .toArray()
+    ]);
+
+    const productsTruncated = productRows.length > productLimit;
+    const categoriesTruncated = categoryRows.length > categoryLimit;
+    const products = productRows.slice(0, productLimit);
+    const categories = categoryRows.slice(0, categoryLimit);
+
+    return {
+      source: 'local_tenant_catalog',
+      products,
+      categories,
+      productsTruncated,
+      categoriesTruncated,
+      complete: !productsTruncated && !categoriesTruncated
+    };
+  },
+
   async listCategories() {
     return categoriesRepository.getActiveCategories();
   },

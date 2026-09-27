@@ -7,6 +7,57 @@ import {
 import { validatePayload } from '../../../../supabase/functions/lanzo-ai-agent/contract.ts';
 
 describe('commercial AI context boundary', () => {
+  it('sends assortment names and aggregates only, excluding internal ids, stock, costs and barcodes', () => {
+    const context = buildSalesProfitabilityContext({
+      intent: 'assortment_analysis',
+      period: { from: '2026-09-01', to: '2026-09-07', previousFrom: '2026-08-25', previousTo: '2026-08-31' },
+      source: 'mixed',
+      report: {
+        overview: { netSales: 100, units: 2, salesCount: 1, unitCosts: 10, profit: 90 },
+        assortment: {
+          catalog: { source: 'local_tenant_catalog', complete: true, productsRead: 2, categoriesRead: 1, productsTruncated: false, categoriesTruncated: false, tenantId: 'private-tenant-id' },
+          health: {
+            activeCatalogProducts: 2, inactiveCatalogProducts: 0, soldProducts: 1, unsoldProducts: 1,
+            activeCategories: 1, soldCategories: 1, currentSalesCoverageComplete: true, previousComparisonAvailable: true,
+            productSalesJoinCoverage: 1, categorySalesCoverage: 1,
+            concentration: { topProductShare: 1, top3ProductShare: 1, topCategoryShare: 1, categoryRevenueCoverage: 1 }
+          },
+          categoryPerformance: [{ name: 'Bebidas', active: true, netSales: 100, salesShare: 1, activeProducts: 2, soldProducts: 1, unsoldProducts: 1, stock: 99 }],
+          categoryOpportunities: [{ candidateRef: 'category_candidate_1', name: 'Bebidas', active: true, netSales: 100, salesDelta: 20, salesShare: 1, activeProducts: 2, soldProducts: 1, unsoldProducts: 1, signals: ['category_growing'] }],
+          dormantProducts: [{ candidateRef: null, name: 'Sin venta', category: 'Bebidas', activity: 'never_sold_in_window', currentSales: 0, currentUnits: 0, availability: 'availability_unknown', id: 'private-product-id', stock: 99, cost: 12, barcode: 'private-barcode' }],
+          reactivationCandidates: [{ candidateRef: 'product_candidate_1', name: 'Reactivar', category: 'Bebidas', activity: 'previously_sold_now_inactive', currentSales: 0, previousSales: 50, currentUnits: 0, previousUnits: 1, availability: 'availability_unknown', reason: 'Ventas anteriores verificadas.' }],
+          opportunityCandidates: [{
+            key: 'category_candidate_1', type: 'category', focus: { type: 'category', key: 'category_candidate_1' }, entity: 'Bebidas',
+            signal: ['category_growing'], recommendationType: 'growth_experiment', strength: 'strong',
+            metrics: { currentSales: 100, salesShare: 1, activeProducts: 2, soldProducts: 1, unsoldProducts: 1 },
+            evidenceKeys: ['assortment.category:category_candidate_1']
+          }],
+          evidenceKeys: ['assortment.metric:activeCatalogProducts', 'assortment.metric:soldProducts', 'assortment.metric:unsoldProducts', 'assortment.metric:topProductShare', 'assortment.metric:top3ProductShare', 'assortment.metric:topCategoryShare', 'assortment.category:category_candidate_1'],
+          minimumUsefulRecommendations: 1,
+          currentPeriod: { netSales: 100, units: 2, complete: true },
+          previousPeriod: { netSales: 80, units: 1, complete: true },
+          comparisonAvailable: true,
+          narrativeEligible: true,
+          limitations: ['No se confirmó disponibilidad histórica.']
+        },
+        coverage: { validSales: 1, itemsComplete: true, paginationComplete: true, sourceComplete: true, complete: true },
+        calculations: [], assumptions: [], scenarios: [], limitations: []
+      }
+    });
+    const serialized = JSON.stringify(context);
+
+    expect(context.sales.assortment).toMatchObject({
+      catalog: { source: 'local_tenant_catalog', complete: true },
+      health: { activeCatalogProducts: 2, unsoldProducts: 1 },
+      reactivationCandidates: [expect.objectContaining({ name: 'Reactivar', availability: 'availability_unknown' })]
+    });
+    expect(context.sales.opportunityCandidates).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'category', focus: { type: 'category', key: 'category_candidate_1' }, entity: 'Bebidas' })
+    ]));
+    expect(serialized).not.toMatch(/private-tenant-id|private-product-id|private-barcode/);
+    expect(serialized).not.toMatch(/"(?:stock|cost|unitCost|unit_cost|barcode|profit|margin)"/u);
+  });
+
   it('keeps sales context aggregated and excludes PII/internal identifiers', () => {
     const context = buildSalesProfitabilityContext({
       period: { dateFrom: '2026-09-01', dateTo: '2026-09-21' },

@@ -55,6 +55,7 @@ const SUGGESTED_QUESTIONS = [
   { label: '¿Qué pasa si aumento el precio?', intent: 'price_simulation' },
   { label: '¿Qué combos puedo formar?', intent: 'combo_opportunity' },
   { label: '¿Qué promoción puedo simular?', intent: 'promotion_opportunity' },
+  { label: '¿Dónde tengo oportunidades en mi surtido?', intent: 'assortment_analysis' },
   { label: '¿Cómo puedo aumentar mis ventas?', intent: 'sales_growth' },
   { label: '¿Cómo puedo aumentar mi ticket promedio?', intent: 'ticket_growth' }
 ];
@@ -418,6 +419,84 @@ function TicketGrowthEvidence({ response }) {
   );
 }
 
+const ASSORTMENT_SIGNAL_LABELS = Object.freeze({
+  category_growing: 'En crecimiento',
+  new_category_activity: 'Actividad nueva',
+  category_declining: 'En descenso',
+  strong_category_few_products: 'Categoría fuerte, pocos productos',
+  single_product_concentration: 'Concentración en un producto',
+  many_unsold_products: 'Varios productos sin ventas'
+});
+const ASSORTMENT_ACTIVITY_LABELS = Object.freeze({
+  never_sold_in_window: 'Sin ventas en el periodo',
+  previously_sold_now_inactive: 'Vendió antes; sin ventas actuales',
+  low_activity: 'Actividad baja',
+  declining: 'Ventas a la baja'
+});
+
+function AssortmentEvidence({ response }) {
+  const assortment = response.assortment || {};
+  const health = assortment.health || {};
+  const concentration = health.concentration || {};
+  const categories = asArray(assortment.categoryPerformance).slice(0, 10);
+  const dormant = asArray(assortment.dormantProducts).slice(0, 12);
+  return (
+    <>
+      <MetricGrid>
+        <Metric label="Productos activos en catálogo" value={formatAnalysisValue.formatNumber(health.activeCatalogProducts, 0)} />
+        <Metric label="Productos inactivos" value={formatAnalysisValue.formatNumber(health.inactiveCatalogProducts, 0)} />
+        <Metric label="Productos con ventas" value={health.soldProducts === null ? 'No disponible' : formatAnalysisValue.formatNumber(health.soldProducts, 0)} />
+        <Metric label="Productos sin ventas" value={health.unsoldProducts === null ? 'No disponible' : formatAnalysisValue.formatNumber(health.unsoldProducts, 0)} note={health.currentSalesCoverageComplete ? 'Periodo con detalle completo' : 'No se clasifica con detalle parcial'} />
+        <Metric label="Ventas concentradas en el producto principal" value={formatAnalysisValue.formatPercent(concentration.topProductShare)} />
+        <Metric label="Ventas concentradas en los 3 principales" value={formatAnalysisValue.formatPercent(concentration.top3ProductShare)} />
+        <Metric label="Ventas de la categoría principal" value={formatAnalysisValue.formatPercent(concentration.topCategoryShare)} />
+        <Metric label="Cobertura por categoría" value={formatAnalysisValue.formatPercent(health.categoryRevenueCoverage)} />
+      </MetricGrid>
+
+      <h4 className="commercial-ai-subheading">Desempeño por categoría</h4>
+      {categories.length ? (
+        <div className="commercial-ai-table-wrap">
+          <table className="commercial-ai-table">
+            <caption className="sr-only">Ventas y señales por categoría</caption>
+            <thead><tr><th>Categoría</th><th>Ventas</th><th>Unidades</th><th>Participación</th><th>Productos activos / vendidos</th><th>Señales</th></tr></thead>
+            <tbody>{categories.map((category) => (
+              <tr key={category.name}>
+                <th scope="row">{category.name}</th>
+                <td>{formatAnalysisValue.formatMoney(category.netSales)}</td>
+                <td>{formatAnalysisValue.formatNumber(category.units, 0)}</td>
+                <td>{formatAnalysisValue.formatPercent(category.salesShare)}</td>
+                <td>{category.soldProducts === null ? '—' : `${formatAnalysisValue.formatNumber(category.soldProducts, 0)} / ${formatAnalysisValue.formatNumber(category.activeProducts, 0)}`}</td>
+                <td>{asArray(category.signals).map((signal) => ASSORTMENT_SIGNAL_LABELS[signal]).filter(Boolean).join(' · ') || 'Sin señal destacada'}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      ) : <p className="commercial-ai-muted">No hay categorías con ventas para este periodo.</p>}
+
+      <h4 className="commercial-ai-subheading">Productos para revisar</h4>
+      {dormant.length ? (
+        <div className="commercial-ai-table-wrap">
+          <table className="commercial-ai-table">
+            <caption className="sr-only">Productos con actividad baja, sin ventas o en reactivación</caption>
+            <thead><tr><th>Producto</th><th>Categoría</th><th>Estado</th><th>Ventas actuales</th><th>Ventas anteriores</th><th>Disponibilidad</th></tr></thead>
+            <tbody>{dormant.map((product) => (
+              <tr key={`${product.candidateRef || product.name}-${product.activity}`}>
+                <th scope="row">{product.name}</th>
+                <td>{product.category || 'Sin categoría'}</td>
+                <td>{ASSORTMENT_ACTIVITY_LABELS[product.activity] || 'Revisar actividad'}</td>
+                <td>{formatAnalysisValue.formatMoney(product.currentSales)}</td>
+                <td>{formatAnalysisValue.formatMoney(product.previousSales)}</td>
+                <td>{product.availability === 'availability_unknown' ? 'No confirmada' : 'No evaluada'}</td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </div>
+      ) : <p className="commercial-ai-muted">No se encontraron productos de baja actividad en los datos completos disponibles.</p>}
+      <p className="commercial-ai-caution">Los productos sin ventas no implican demanda baja. Lanzo no infiere disponibilidad histórica ni usa inventario, costo o margen para estas señales.</p>
+    </>
+  );
+}
+
 function IntentEvidence({ response }) {
   switch (response.intent) {
     case 'profitability_summary': return <ProfitabilityEvidence response={response} />;
@@ -426,6 +505,7 @@ function IntentEvidence({ response }) {
     case 'sales_growth':
     case 'sales_trend': return <SalesGrowthEvidence response={response} />;
     case 'product_opportunity': return <SalesGrowthEvidence response={response} />;
+    case 'assortment_analysis': return <AssortmentEvidence response={response} />;
     case 'ticket_growth': return <TicketGrowthEvidence response={response} />;
     case 'price_simulation': return <PriceEvidence response={response} />;
     case 'promotion_opportunity': return <PromotionEvidence response={response} />;
@@ -468,7 +548,7 @@ function TechnicalDetails({ response, usageStatus }) {
         <div className="commercial-ai-result__meta">
           <span>Fuente: {response.source || 'mixed'}</span>
           <span>Ventas válidas: {response.coverage?.validSales ?? '—'}</span>
-          <span>Cobertura de costos: {formatAnalysisValue.formatPercent(response.coverage?.costCoverage)}</span>
+          {response.intent !== 'assortment_analysis' && <span>Cobertura de costos: {formatAnalysisValue.formatPercent(response.coverage?.costCoverage)}</span>}
           {usageLabel && <span>{usageLabel}</span>}
         </div>
         {(assumptions.length > 0 || limitations.length > 0) && (
@@ -489,7 +569,7 @@ function CoverageEvidence({ response }) {
     <MetricGrid>
       <Metric label="Ventas válidas" value={formatAnalysisValue.formatNumber(coverage.validSales, 0)} />
       <Metric label="Productos incluidos" value={formatAnalysisValue.formatNumber(coverage.productsIncluded, 0)} />
-      <Metric label="Cobertura de costos" value={formatAnalysisValue.formatPercent(coverage.costCoverage)} />
+      {response.intent !== 'assortment_analysis' && <Metric label="Cobertura de costos" value={formatAnalysisValue.formatPercent(coverage.costCoverage)} />}
       <Metric label="Detalle de artículos" value={coverage.itemsComplete === true ? 'Completo' : 'Incompleto'} />
       <Metric label="Paginación" value={coverage.paginationComplete === true ? 'Completa' : 'Incompleta'} />
       <Metric label="Fuente de datos" value={coverage.sourceComplete === true ? sourceLabel : `${sourceLabel} · revisar`} />
@@ -499,6 +579,7 @@ function CoverageEvidence({ response }) {
 
 function NarrativeEvidence({ response }) {
   const narrative = response.aiNarrative;
+  const candidates = asArray(response.assortment?.opportunityCandidates);
   if (narrative?.status === 'unavailable') {
     const diagnosticCode = normalizeCommercialAINarrativeDiagnosticCode(narrative.diagnosticCode);
     return (
@@ -530,7 +611,7 @@ function NarrativeEvidence({ response }) {
                       {item.recommendationType === 'investigation' || item.recommendationType === 'data_quality'
                         ? 'Revisión'
                         : item.recommendationType === 'optimization' ? 'Optimización' : 'Prueba de crecimiento'}
-                      {item.focus?.key ? ` · ${item.focus.type === 'product' ? 'Producto' : item.focus.type === 'channel' ? 'Canal' : 'Métrica'}: ${item.focus.key}` : ''}
+                      {item.focus?.key ? ` · ${item.focus.type === 'category' ? 'Categoría' : item.focus.type === 'product' ? 'Producto' : item.focus.type === 'channel' ? 'Canal' : 'Métrica'}: ${candidates.find((candidate) => candidate.key === item.focus.key)?.entity || item.focus.key}` : ''}
                       {` · Prioridad ${priorityLabel(item.priority)}`}
                     </span>
                   </div>
@@ -672,6 +753,7 @@ const INTENT_LABELS = Object.freeze({
   sales_growth: 'Crecimiento de ventas',
   ticket_growth: 'Ticket promedio',
   product_opportunity: 'Oportunidad en productos actuales',
+  assortment_analysis: 'Inteligencia de surtido',
   sales_trend: 'Tendencia de ventas',
   price_simulation: 'Simulación de precio',
   promotion_opportunity: 'Simulación de promoción',
@@ -785,6 +867,7 @@ const historyEntryToAnalysisResult = (entry) => {
       current: deterministic.current,
       previous: deterministic.previous,
       comparison: deterministic.comparison,
+      assortment: deterministic.assortment,
       contributors: deterministic.contributors,
       growthSignals: deterministic.growthSignals,
       productOpportunities: deterministic.productOpportunities,
@@ -1101,7 +1184,7 @@ export default function CommercialAIAgentsPage() {
     setScenario({});
     setProductSearch('');
     setPromotionMode('discountPercent');
-    setCompare(intent === 'explain_change' || ['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend'].includes(intent));
+    setCompare(intent === 'explain_change' || ['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend', 'assortment_analysis'].includes(intent));
   }, [intent]);
 
   useEffect(() => {
@@ -1220,7 +1303,7 @@ export default function CommercialAIAgentsPage() {
         ? normalizeScenarioForIntent(resolvedIntent, scenario)
         : {};
       const compareEnabled = resolution.kind === 'supported'
-        && (['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend'].includes(resolvedIntent)
+        && (['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend', 'assortment_analysis'].includes(resolvedIntent)
           || (resolvedIntent === 'explain_change' && compare === true));
       const previousPeriod = compareEnabled ? buildPreviousPeriod(period) : null;
       const requestContext = {
@@ -1440,7 +1523,7 @@ export default function CommercialAIAgentsPage() {
               {intent === 'explain_change' && (
                 <label className="commercial-ai-checkbox"><input type="checkbox" checked={compare} onChange={(event) => setCompare(event.target.checked)} /> Comparar con el periodo anterior</label>
               )}
-              {['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend'].includes(intent)
+              {['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend', 'assortment_analysis'].includes(intent)
                 && <p className="commercial-ai-comparison-note">Se incluirá el periodo anterior de duración equivalente cuando haya datos disponibles.</p>}
             </div>
           )}
@@ -1506,7 +1589,7 @@ export default function CommercialAIAgentsPage() {
           )}
 
           <div className="commercial-ai-submit-row">
-            <p>Periodo: <b>{period.from} a {period.to}</b>{(intent === 'explain_change' && compare || ['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend'].includes(intent)) && ' · con comparación'}</p>
+            <p>Periodo: <b>{period.from} a {period.to}</b>{(intent === 'explain_change' && compare || ['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend', 'assortment_analysis'].includes(intent)) && ' · con comparación'}</p>
             <button className="commercial-ai-analyze" type="submit" disabled={!question.trim() || isAnalyzing}><Send size={16} aria-hidden="true" /> {isAnalyzing ? 'Analizando…' : 'Analizar'}</button>
           </div>
         </form>

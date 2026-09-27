@@ -829,6 +829,54 @@ describe('commercial AI center', () => {
     expect(runtime.runAgent.mock.calls[0][0]).toMatchObject({ intent: 'profitability_summary' });
   });
 
+  it('routes the assortment suggestion, renders grounded catalogue evidence, and reopens it from history', async () => {
+    runtime.runAgent.mockResolvedValueOnce({
+      response: {
+        status: 'completed',
+        executiveSummary: 'El catálogo tiene una concentración visible en Bebidas.',
+        answer: 'El catálogo tiene una concentración visible en Bebidas.',
+        explanation: 'Los cálculos usan catálogo y ventas internas.',
+        confidence: 'medium',
+        source: 'mixed',
+        intent: 'assortment_analysis',
+        coverage: { validSales: 1, costCoverage: null },
+        assortment: {
+          catalog: { complete: true, productsRead: 2, categoriesRead: 1 },
+          health: {
+            activeCatalogProducts: 2, inactiveCatalogProducts: 0, soldProducts: 1, unsoldProducts: 1,
+            activeCategories: 1, soldCategories: 1, currentSalesCoverageComplete: true,
+            previousComparisonAvailable: true,
+            concentration: { topProductShare: 0.7, top3ProductShare: 1, topCategoryShare: 1, categoryRevenueCoverage: 1 }
+          },
+          categoryPerformance: [{ name: 'Bebidas', active: true, netSales: 100, salesShare: 1, activeProducts: 2, soldProducts: 1, unsoldProducts: 1, signals: ['category_growing'] }],
+          categoryOpportunities: [],
+          dormantProducts: [{ candidateRef: null, name: 'Producto sin movimiento', category: 'Bebidas', activity: 'never_sold_in_window', currentSales: 0, previousSales: 0, availability: 'availability_unknown' }],
+          reactivationCandidates: [], opportunityCandidates: [], evidenceKeys: [], minimumUsefulRecommendations: 0,
+          currentPeriod: { netSales: 100, units: 2, complete: true }, previousPeriod: { netSales: 80, units: 1, complete: true },
+          comparisonAvailable: true, narrativeEligible: false, limitations: []
+        },
+        calculations: [], assumptions: [], limitations: [], recommendations: [], scenarios: [], aiNarrative: null
+      },
+      usageStatus: null,
+      providerCalled: false,
+      quotaOutcome: 'not_consumed'
+    });
+
+    renderCenter();
+    fireEvent.click(screen.getByRole('button', { name: '¿Dónde tengo oportunidades en mi surtido?' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+
+    expect(await screen.findByRole('heading', { name: 'El catálogo tiene una concentración visible en Bebidas.' })).toBeInTheDocument();
+    expect(runtime.runAgent.mock.calls[0][0]).toMatchObject({ intent: 'assortment_analysis', compare: true });
+    expect(screen.getAllByText('Bebidas')).toHaveLength(2);
+    expect(screen.getByText('Producto sin movimiento')).toBeInTheDocument();
+    expect(screen.getByText('No confirmada')).toBeInTheDocument();
+    expect(screen.getByText('Ventas concentradas en el producto principal')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ver respuesta' }));
+    expect(screen.getAllByText('Producto sin movimiento')).toHaveLength(2);
+  });
+
   it('sends an empty scenario for combos after a price simulation', async () => {
     renderCenter();
     fireEvent.click(screen.getByRole('button', { name: '¿Qué pasa si aumento el precio?' }));

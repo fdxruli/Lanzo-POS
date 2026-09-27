@@ -15,6 +15,7 @@ export const COMMERCIAL_AGENT_INTENTS = Object.freeze([
   'ticket_growth',
   'product_opportunity',
   'sales_trend',
+  'assortment_analysis',
   'price_simulation',
   'combo_opportunity',
   'promotion_opportunity',
@@ -31,6 +32,7 @@ export const SALES_PROFITABILITY_AGENT_INTENTS = Object.freeze([
   'ticket_growth',
   'product_opportunity',
   'sales_trend',
+  'assortment_analysis',
   'price_simulation',
   'combo_opportunity',
   'promotion_opportunity'
@@ -376,7 +378,7 @@ export const validateCommercialAgentResponse = (response, {
       if (!isRecord(item)) return true;
       if (!requireNarrativeUtility) return false;
       return !isRecord(item.focus)
-        || !['product', 'channel', 'ticket', 'units_per_ticket', 'tickets', 'general'].includes(String(item.focus.type))
+        || !['product', 'category', 'channel', 'ticket', 'units_per_ticket', 'tickets', 'general'].includes(String(item.focus.type))
         || typeof item.focus.key !== 'string' || !item.focus.key.trim()
         || !['growth_experiment', 'investigation', 'data_quality', 'optimization'].includes(String(item.recommendationType))
         || typeof item.action !== 'string' || !item.action.trim()
