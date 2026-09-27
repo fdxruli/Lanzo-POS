@@ -154,7 +154,7 @@ export const resolveCommercialIntent = (question = '', options = {}) => {
     return resolution('recognized_not_supported', { topic: 'assortment', confidence: 'high' });
   }
 
-  if (containsAny(text, /\b(?:vender mas|(?:aumentar|aumenta|aumento|incrementar|incrementa|incremento)\\s+(?:mis\\s+)?ventas|mejorar (?:mis )?ventas|impulsar (?:mis )?ventas|recuperar (?:mis )?ventas|crecer|crecimiento|crezca|hacer crecer|ticket promedio|aumentar el ticket|subir el ticket|ventas bajas?|mis ventas estan bajas|mejorar mi negocio|mejorar el negocio|oportunidades de crecimiento|atraer mas clientes|conseguir mas clientes|(?:aumentar|aumento|subir|subo)\s+(?:mi\s+|el\s+)?ticket)\b/u)) {
+  if (containsAny(text, /\b(?:vender mas|(?:aumentar|aumenta|aumento|incrementar|incrementa|incremento)\s+(?:mis\s+)?ventas|mejorar (?:mis )?ventas|impulsar (?:mis )?ventas|recuperar (?:mis )?ventas|crecer|crecimiento|crezca|hacer crecer|ticket promedio|aumentar el ticket|subir el ticket|ventas bajas?|mis ventas estan bajas|mejorar mi negocio|mejorar el negocio|oportunidades de crecimiento|atraer mas clientes|conseguir mas clientes|(?:aumentar|aumento|subir|subo)\s+(?:mi\s+|el\s+)?ticket)\b/u)) {
     return resolution('recognized_not_supported', { topic: 'growth', confidence: 'high' });
   }
 
