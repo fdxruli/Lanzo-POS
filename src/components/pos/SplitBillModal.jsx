@@ -5,10 +5,9 @@ import { Money } from '../../utils/moneyMath';
 import { getCartLineId } from '../../utils/cartLineIdentity';
 import { normalizeStock, STOCK_DECIMALS } from '../../services/db/utils';
 import {
-  buildByItemsRoundingAdjustments,
+  calculateByItemsTicketFinancials,
   RESTAURANT_SPLIT_INTENTS,
-  roundSplitAmountToCents,
-  splitHasCashPayment
+  splitRequiresCashSessionCompatibility
 } from '../../services/sales/splitOrderContract';
 import './SplitBillModal.css';
 
@@ -58,36 +57,30 @@ const buildInitialAllocations = (order = [], ticketCount = 2) => {
  * @param {Object} params
  * @returns {Object} Math results for all tickets
  */
-const calculateTicketMath = ({ order = [], allocations = [], total = 0 }) => {
+const calculateTicketMath = ({ order = [], allocations = [], total = 0, saleDiscount = null }) => {
   const ticketCount = allocations[0]?.ticketQuantities?.length || MIN_TICKETS;
-  const baseCents = Array(ticketCount).fill(0);
-
-  (order || []).forEach((item, index) => {
-    const allocation = allocations[index];
-    if (!allocation) return;
-
-    const price = item?.price || 0;
-
-    allocation.ticketQuantities.forEach((qty, ticketIdx) => {
-      const lineTotal = Money.multiply(price, qty);
-      baseCents[ticketIdx] += roundSplitAmountToCents(lineTotal);
-    });
+  const financials = calculateByItemsTicketFinancials({
+    items: order,
+    saleDiscount,
+    tickets: Array.from({ length: ticketCount }, (_, ticketIdx) => ({
+      label: `T${ticketIdx + 1}`,
+      lines: buildTicketLines(allocations, ticketIdx)
+    })),
+    parentTotal: total
   });
-
-  const parentCents = Money.toCents(total || 0);
-  const roundingPlan = buildByItemsRoundingAdjustments(
-    parentCents,
-    baseCents,
-    baseCents.map((base, index) => (base > 0 ? index : null)).filter((index) => index !== null)
-  );
-  const adjustments = roundingPlan.adjustments;
+  const ticketFinancials = financials.tickets.length === ticketCount
+    ? financials.tickets
+    : Array(ticketCount).fill(null);
+  const baseCents = ticketFinancials.map((ticket) => ticket?.baseCents || 0);
+  const adjustments = ticketFinancials.map((ticket) => ticket?.roundingAdjustmentCents || 0);
 
   return {
-    parentCents,
+    parentCents: financials.parentTotalCents,
     baseCents,
     adjustments,
     totalsCents: baseCents.map((base, idx) => base + adjustments[idx]),
-    roundingError: roundingPlan.valid ? null : 'La diferencia de la cuenta supera el redondeo permitido. No se alterarán precios; revisa los productos y el total.',
+    discountCents: ticketFinancials.map((ticket) => ticket?.discountTotalCents || 0),
+    roundingError: financials.valid ? null : 'La diferencia entre productos, descuentos y total supera el redondeo permitido. No se alterarán precios ni descuentos; revisa la cuenta.',
     ticketCount
   };
 };
@@ -147,6 +140,7 @@ export default function SplitBillModal({
   onClose,
   order = [],
   total = 0,
+  saleDiscount = null,
   onConfirm,
   isCajaOpen = true
 }) {
@@ -170,7 +164,8 @@ export default function SplitBillModal({
     const initialMath = calculateTicketMath({
       order,
       allocations: initialAllocations,
-      total
+      total,
+      saleDiscount
     });
 
     setAllocations(initialAllocations);
@@ -183,7 +178,7 @@ export default function SplitBillModal({
     };
 
     fetchCustomers();
-  }, [show, order, total, splitCount]);
+  }, [show, order, total, saleDiscount, splitCount]);
 
   useEffect(() => {
     if (!show) return undefined;
@@ -234,8 +229,8 @@ export default function SplitBillModal({
   }, [show, order, splitCount]);
 
   const ticketMath = useMemo(
-    () => calculateTicketMath({ order, allocations, total }),
-    [order, allocations, total]
+    () => calculateTicketMath({ order, allocations, total, saleDiscount }),
+    [order, allocations, total, saleDiscount]
   );
 
   const assignmentProgress = useMemo(() => {
@@ -385,7 +380,7 @@ export default function SplitBillModal({
 
   const willAutoOpenCaja = useMemo(() => (
     !isCajaOpen &&
-    splitHasCashPayment(ticketLabels.map((label) => ({ paymentData: payments[label] })))
+    splitRequiresCashSessionCompatibility(ticketLabels.map((label) => ({ paymentData: payments[label] })))
   ), [isCajaOpen, payments, ticketLabels]);
 
   /**
@@ -727,6 +722,7 @@ export default function SplitBillModal({
                 {ticketLabels.map((label, tIdx) => {
                   const ticketTotalCents = ticketMath.totalsCents[tIdx];
                   const adjustment = ticketMath.adjustments[tIdx];
+                  const discountCents = ticketMath.discountCents[tIdx] || 0;
                   const payment = payments[label] || {};
                   const ticketItems = order.reduce((items, item, idx) => {
                     const qty = toQuantity(allocations[idx]?.ticketQuantities?.[tIdx] || 0);
@@ -751,9 +747,15 @@ export default function SplitBillModal({
                         </p>
                       </div>
 
+                      {discountCents > 0 && (
+                        <p className="split-ticket-discount">
+                          Descuento aplicado: -${formatMoneyFromCents(discountCents)}
+                        </p>
+                      )}
+
                       {adjustment !== 0 && (
                         <p className="split-ticket-adjustment">
-                          Ajuste de redondeo: {adjustment > 0 ? '+' : ''}{formatMoneyFromCents(adjustment)}
+                          Ajuste de redondeo: {adjustment > 0 ? '+' : '-'}${formatMoneyFromCents(Math.abs(adjustment))}
                         </p>
                       )}
 
@@ -770,8 +772,8 @@ export default function SplitBillModal({
                                 className="btn-item-remove"
                                 onClick={() => moveToPool(lineIndex, tIdx, isUnitItem(item) ? 1 : (10 ** -STOCK_DECIMALS))}
                                 disabled={isSubmitting}
-                                aria-label={`Quitar una unidad de ${item.name} del ticket ${label}`}
-                                title="Quitar uno"
+                                aria-label={`Quitar ${isUnitItem(item) ? 'una unidad' : formatQuantity(10 ** -STOCK_DECIMALS)} de ${item.name} del ticket ${label}`}
+                                title={isUnitItem(item) ? 'Quitar una unidad' : `Quitar ${formatQuantity(10 ** -STOCK_DECIMALS)}`}
                               >
                                 <Minus size={14} aria-hidden="true" />
                               </button>
@@ -864,7 +866,7 @@ export default function SplitBillModal({
 
           {!splitValidationError && willAutoOpenCaja && (
             <p className="split-validation-warning">
-              La caja se abrirá automáticamente al confirmar el cobro en efectivo.
+              Este cobro requiere una sesión de caja activa. Se verificará al confirmar.
             </p>
           )}
 

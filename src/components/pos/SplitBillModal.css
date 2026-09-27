@@ -465,6 +465,16 @@
   white-space: nowrap;
 }
 
+.split-ticket-discount {
+  margin: 0;
+  padding: 7px var(--ui-space-md);
+  color: var(--ui-text-success);
+  background: var(--ui-bg-success-soft);
+  border-bottom: 1px solid var(--ui-border-color);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
 .split-ticket-adjustment {
   margin: 0;
   padding: 7px var(--ui-space-md);

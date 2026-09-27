@@ -2,7 +2,7 @@
 import { useCallback } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { splitOpenTableOrder } from '../../services/salesService';
-import { splitHasCashPayment } from '../../services/sales/splitOrderContract';
+import { splitRequiresCashSessionCompatibility } from '../../services/sales/splitOrderContract';
 import Logger from '../../services/Logger';
 import { showConfirmModal, showMessageModal } from '../../services/utils';
 import { db, STORES } from '../../services/db/dexie';
@@ -725,9 +725,12 @@ export function useTableManagement({
             return;
         }
 
-        const hasCashPayment = splitHasCashPayment(splitPayload?.tickets);
+        const requiresCashSessionCompatibility = splitRequiresCashSessionCompatibility(splitPayload?.tickets);
 
-        if (hasCashPayment && (!cajaActual || cajaActual.estado !== 'abierta')) {
+        // The current cloud sale.split contract still requires an active cash
+        // session for credit-only tickets. Keep that prerequisite temporarily;
+        // fiado remains credit and creates no cash movement from this check.
+        if (requiresCashSessionCompatibility && (!cajaActual || cajaActual.estado !== 'abierta')) {
             if (typeof asegurarCajaAbierta !== 'function') {
                 showMessageModal('No se pudo abrir la caja automáticamente.', null, { type: 'error' });
                 return;

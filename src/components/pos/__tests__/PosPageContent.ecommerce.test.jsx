@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   activeState: null,
-  appState: null
+  appState: null,
+  posModalData: null
 }));
 
 vi.mock('../../../hooks/pos/useActiveOrders', () => ({
@@ -33,7 +34,10 @@ vi.mock('../MobilePosCart', () => ({
   default: () => <div data-testid="mobile-cart" />
 }));
 vi.mock('../PosModals', () => ({
-  default: () => <div data-testid="pos-modals" />
+  default: ({ data: modalData }) => {
+    mocks.posModalData = modalData;
+    return <div data-testid="pos-modals" />;
+  }
 }));
 vi.mock('../PosToast', () => ({
   default: () => <div data-testid="pos-toast" />
@@ -59,6 +63,7 @@ const data = {
   hasExpiredItems: false,
   activeOrderId: 'active-order',
   total: 20,
+  saleDiscount: { type: 'amount', value: 3, amount: 3, reason: 'Promoción' },
   toastMsg: '',
   order: [],
   customer: null,
@@ -118,6 +123,7 @@ const setOrder = (origin) => {
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.appState = { enableMultipleOrders: false };
+  mocks.posModalData = null;
   setOrder('ecommerce');
 });
 
@@ -152,5 +158,6 @@ describe('PosPageContent ecommerce discount surface', () => {
 
     expect(await screen.findByTestId('order-summary')).toBeInTheDocument();
     expect(screen.queryByTestId('discount-panel')).not.toBeInTheDocument();
+    expect(mocks.posModalData.saleDiscount).toEqual(data.saleDiscount);
   });
 });

@@ -251,6 +251,7 @@ const PosPageContent = ({ data, ui, actions, features }) => {
                 data={{
                     order: data.order,
                     total: data.total,
+                    saleDiscount: data.saleDiscount,
                     customer: data.customer,
                     prescriptionItems: data.prescriptionItems,
                     cajaActual: data.cajaActual,

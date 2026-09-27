@@ -51,7 +51,10 @@ const makeDeps = (parentSale = buildParentSale(), overrides = {}) => ({
   }),
   loadMultipleData: vi.fn(async (store) => {
     if (store === 'customers') return [{ id: 'cust-1', debt: '0', creditLimit: '1000' }];
-    return [{ id: 'prod-1', name: 'Producto 1', trackStock: true, cost: 100 }];
+    return [
+      { id: 'prod-1', name: 'Producto 1', trackStock: true, cost: 100 },
+      { id: 'prod-2', name: 'Producto 2', trackStock: true, cost: 100 }
+    ];
   }),
   STORES: { SALES: 'sales', MENU: 'menu', CUSTOMERS: 'customers' },
   executeSplitOpenTableOrderTransactionSafe: vi.fn(async () => ({ success: true })),
@@ -101,7 +104,7 @@ describe('splitOpenTableOrderCore', () => {
 
     const result = await splitOpenTableOrderCore(makeParams(parentSale), deps);
 
-    expect(result.success).toBe(true);
+    expect(result.success, result.message).toBe(true);
     expect(result.splitGroupId).toBeTruthy();
     expect(result.parentOrderId).toBe(parentSale.id);
     expect(result.childSaleIds).toHaveLength(2);
@@ -202,7 +205,7 @@ describe('splitOpenTableOrderCore', () => {
 
     const result = await splitOpenTableOrderCore(makeParams(parentSale, { tickets }), deps);
 
-    expect(result.success).toBe(true);
+    expect(result.success, result.message).toBe(true);
     const children = deps.executeSplitOpenTableOrderTransactionSafe.mock.calls[0][0].childPayloads;
     const childQuantityTotal = children.reduce((sum, child) => sum + child.sale.items[0].quantity, 0);
     expect(childQuantityTotal).toBeCloseTo(quantity, 4);
@@ -242,10 +245,204 @@ describe('splitOpenTableOrderCore', () => {
     const deps = makeDeps(parentSale);
     const result = await splitOpenTableOrderCore(makeParams(parentSale), deps);
 
-    expect(result.success).toBe(true);
+    expect(result.success, result.message).toBe(true);
     const children = deps.executeSplitOpenTableOrderTransactionSafe.mock.calls[0][0].childPayloads;
     expect(children.map((child) => child.sale.items[0].quantity)).toEqual([1, 1]);
     expect(children.map((child) => child.sale.items[0].price)).toEqual([25, 25]);
+  });
+
+  it('splits a discounted $100 line as $90 without changing its unit price', async () => {
+    const parentSale = {
+      ...buildParentSale(),
+      total: '110',
+      items: [
+        {
+          id: 'prod-1', name: 'Producto con descuento', quantity: 1, price: 100,
+          discount: { type: 'amount', value: 10, amount: 10, reason: 'Promoción', scope: 'line', applied_at: '2026-09-01T12:00:00.000Z', applied_by_role: 'owner', applied_by_staff_user_id: 'staff-1', appliedByDeviceId: 'device-1' },
+          inventoryReservation: { source: 'table', committedQuantity: 1, committedBatches: [] }
+        },
+        {
+          id: 'prod-2', name: 'Producto sin descuento', quantity: 1, price: 20,
+          inventoryReservation: { source: 'table', committedQuantity: 1, committedBatches: [] }
+        }
+      ]
+    };
+    const deps = makeDeps(parentSale);
+    const result = await splitOpenTableOrderCore(makeParams(parentSale, {
+      tickets: [
+        { label: 'A', paymentData: { paymentMethod: 'efectivo', amountPaid: '90' }, lines: [{ lineIndex: 0, quantity: 1 }] },
+        { label: 'B', paymentData: { paymentMethod: 'efectivo', amountPaid: '20' }, lines: [{ lineIndex: 1, quantity: 1 }] }
+      ]
+    }), deps);
+
+    expect(result.success).toBe(true);
+    const children = deps.executeSplitOpenTableOrderTransactionSafe.mock.calls[0][0].childPayloads.map((child) => child.sale);
+    expect(children.map((sale) => sale.total)).toEqual(['90', '20']);
+    expect(children[0].items[0]).toMatchObject({
+      price: 100,
+      quantity: 1,
+      discountAmount: '10',
+      discount_amount: '10',
+      lineSubtotal: '100',
+      lineTotal: '90',
+      discount: expect.objectContaining({ amount: 10, value: 10, reason: 'Promoción', scope: 'line', appliedAt: '2026-09-01T12:00:00.000Z', appliedByRole: 'owner', appliedByStaffUserId: 'staff-1', applied_by_staff_user_id: 'staff-1', appliedByDeviceId: 'device-1', applied_by_device_id: 'device-1', applied_at: '2026-09-01T12:00:00.000Z' })
+    });
+    expect(children[0]).toMatchObject({ subtotal: '100', lineDiscountTotal: '10', discountTotal: '10', total: '90' });
+  });
+
+  it('splits line discounts by quantity, including fractional quantities and a cent remainder', async () => {
+    const cases = [
+      { quantity: 2, discount: 20, parts: [1, 1], expectedDiscounts: ['10', '10'], total: '180' },
+      { quantity: 1.5, discount: 20, parts: [0.5, 1], expectedDiscounts: ['6.67', '13.33'], total: '130' },
+      { quantity: 3, discount: 10.01, parts: [1, 1, 1], expectedDiscounts: ['3.34', '3.34', '3.33'], total: '289.99' }
+    ];
+
+    for (const { quantity, discount, parts, expectedDiscounts, total } of cases) {
+      const parentSale = {
+        ...buildParentSale(),
+        total,
+        items: [{
+          id: 'prod-1', name: 'Producto', quantity, price: 100,
+          discount: { type: 'amount', value: discount, amount: discount, reason: 'Promoción de línea' },
+          inventoryReservation: { source: 'table', committedQuantity: quantity, committedBatches: [] }
+        }]
+      };
+      const deps = makeDeps(parentSale);
+      const tickets = parts.map((part, index) => ({
+        label: `T${index + 1}`,
+        paymentData: { paymentMethod: 'efectivo', amountPaid: '500' },
+        lines: [{ lineIndex: 0, quantity: part }]
+      }));
+      const result = await splitOpenTableOrderCore(makeParams(parentSale, { tickets }), deps);
+
+      expect(result.success).toBe(true);
+      const children = deps.executeSplitOpenTableOrderTransactionSafe.mock.calls[0][0].childPayloads.map((child) => child.sale);
+      expect(children.map((sale) => sale.items[0].price)).toEqual(parts.map(() => 100));
+      expect(children.map((sale) => sale.items[0].quantity)).toEqual(parts);
+      expect(children.map((sale) => sale.items[0].discountAmount)).toEqual(expectedDiscounts);
+      expect(children.reduce((sum, sale) => sum + Number(sale.discountTotal), 0)).toBeCloseTo(discount, 2);
+      expect(children.reduce((sum, sale) => sum + Number(sale.total), 0)).toBeCloseTo(Number(total), 2);
+      expect(children.every((sale) => sale.splitRoundingAdjustment === '0')).toBe(true);
+    }
+  });
+
+  it('distributes a general sale discount proportionally and preserves its audit metadata', async () => {
+    const parentSale = {
+      ...buildParentSale(),
+      total: '270',
+      saleDiscount: { type: 'amount', value: 30, amount: 30, reason: 'Promoción de cuenta', scope: 'sale', appliedByRole: 'owner', appliedByStaffUserId: 'staff-1', appliedByDeviceId: 'device-1' },
+      items: [
+        { id: 'prod-1', name: 'Producto 100', quantity: 1, price: 100, inventoryReservation: { source: 'table', committedQuantity: 1, committedBatches: [] } },
+        { id: 'prod-2', name: 'Producto 200', quantity: 1, price: 200, inventoryReservation: { source: 'table', committedQuantity: 1, committedBatches: [] } }
+      ]
+    };
+    const deps = makeDeps(parentSale);
+    const result = await splitOpenTableOrderCore(makeParams(parentSale, {
+      tickets: [
+        { label: 'A', paymentData: { paymentMethod: 'efectivo', amountPaid: '90' }, lines: [{ lineIndex: 0, quantity: 1 }] },
+        { label: 'B', paymentData: { paymentMethod: 'efectivo', amountPaid: '180' }, lines: [{ lineIndex: 1, quantity: 1 }] }
+      ]
+    }), deps);
+
+    expect(result.success, result.message).toBe(true);
+    const children = deps.executeSplitOpenTableOrderTransactionSafe.mock.calls[0][0].childPayloads.map((child) => child.sale);
+    expect(children.map((sale) => sale.saleDiscount.amount)).toEqual([10, 20]);
+    expect(children.map((sale) => sale.total)).toEqual(['90', '180']);
+    expect(children.map((sale) => sale.discountTotal)).toEqual(['10', '20']);
+    expect(children[0].saleDiscount).toMatchObject({ reason: 'Promoción de cuenta', scope: 'sale', appliedByStaffUserId: 'staff-1', appliedByDeviceId: 'device-1' });
+    expect(children[0].metadata).toMatchObject({ saleDiscount: children[0].saleDiscount, discountTotal: '10' });
+    expect(children.reduce((sum, sale) => sum + Number(sale.discountTotal), 0)).toBe(30);
+    expect(children.reduce((sum, sale) => sum + Number(sale.total), 0)).toBe(270);
+  });
+
+  it('combines line and sale discounts and distributes general-discount cents deterministically', async () => {
+    const parentSale = {
+      ...buildParentSale(),
+      total: '243',
+      saleDiscount: { type: 'amount', value: 27, reason: 'Promoción general' },
+      items: [
+        { id: 'prod-1', quantity: 1, price: 100, discount: { type: 'amount', value: 10, reason: 'Promoción de línea' }, inventoryReservation: { source: 'table', committedQuantity: 1, committedBatches: [] } },
+        { id: 'prod-2', quantity: 1, price: 200, discount: { type: 'amount', value: 20, reason: 'Promoción de línea' }, inventoryReservation: { source: 'table', committedQuantity: 1, committedBatches: [] } }
+      ]
+    };
+    const deps = makeDeps(parentSale);
+    const result = await splitOpenTableOrderCore(makeParams(parentSale, {
+      tickets: [
+        { label: 'A', paymentData: { paymentMethod: 'efectivo', amountPaid: '81' }, lines: [{ lineIndex: 0, quantity: 1 }] },
+        { label: 'B', paymentData: { paymentMethod: 'efectivo', amountPaid: '162' }, lines: [{ lineIndex: 1, quantity: 1 }] }
+      ]
+    }), deps);
+
+    expect(result.success, result.message).toBe(true);
+    const children = deps.executeSplitOpenTableOrderTransactionSafe.mock.calls[0][0].childPayloads.map((child) => child.sale);
+    expect(children.map((sale) => sale.items[0].discountAmount)).toEqual(['10', '20']);
+    expect(children.map((sale) => sale.saleDiscount.amount)).toEqual([9, 18]);
+    expect(children.map((sale) => sale.total)).toEqual(['81', '162']);
+    expect(children.reduce((sum, sale) => sum + Number(sale.discountTotal), 0)).toBe(57);
+    expect(children.reduce((sum, sale) => sum + Number(sale.total), 0)).toBe(243);
+  });
+
+  it('uses identical discounted ticket amounts in Free/local and Pro/cloud paths', async () => {
+    const parentSale = {
+      ...buildParentSale(),
+      total: '180',
+      items: [{
+        id: 'prod-1', name: 'Producto', quantity: 2, price: 100,
+        discount: { type: 'amount', value: 20, amount: 20, reason: 'Promoción de línea' },
+        inventoryReservation: { source: 'table', committedQuantity: 2, committedBatches: [] }
+      }]
+    };
+    const tickets = [0, 1].map((index) => ({
+      label: `T${index + 1}`,
+      paymentData: { paymentMethod: 'efectivo', amountPaid: '90' },
+      lines: [{ lineIndex: 0, quantity: 1 }]
+    }));
+    const localDeps = makeDeps(parentSale);
+    const localResult = await splitOpenTableOrderCore(makeParams(parentSale, { tickets }), localDeps);
+    expect(localResult.success, localResult.message).toBe(true);
+    const localChildren = localDeps.executeSplitOpenTableOrderTransactionSafe.mock.calls[0][0].childPayloads.map((child) => child.sale);
+
+    salesCloudCashierService.processCloudSplitTableSale.mockResolvedValueOnce({ success: false, errorType: 'TEST_CAPTURE' });
+    const cloudDeps = makeDeps(parentSale);
+    const cloudResult = await splitOpenTableOrderCore(makeParams(parentSale, { tickets, cloudSpecialFlows: true }), cloudDeps);
+    expect(cloudResult).toMatchObject({ success: false, errorType: 'TEST_CAPTURE' });
+    const cloudDefinitions = salesCloudCashierService.processCloudSplitTableSale.mock.calls.at(-1)[0].childDefinitions;
+    const cloudChildren = cloudDefinitions.map((child) => child.sale);
+
+    const financials = (sales) => sales.map((sale) => ({
+      total: sale.total,
+      price: sale.items[0].price,
+      quantity: sale.items[0].quantity,
+      lineDiscount: sale.items[0].discountAmount,
+      discountTotal: sale.discountTotal,
+      rounding: sale.splitRoundingAdjustment
+    }));
+    expect(financials(cloudChildren)).toEqual(financials(localChildren));
+    expect(financials(localChildren)).toEqual([
+      { total: '90', price: 100, quantity: 1, lineDiscount: '10', discountTotal: '10', rounding: '0' },
+      { total: '90', price: 100, quantity: 1, lineDiscount: '10', discountTotal: '10', rounding: '0' }
+    ]);
+  });
+
+  it('rejects a real commercial mismatch consistently before either local or cloud writes', async () => {
+    const parentSale = {
+      ...buildParentSale(),
+      total: '80',
+      items: [{ id: 'prod-1', quantity: 1, price: 100, discount: { type: 'amount', value: 10, reason: 'Promoción' }, inventoryReservation: { source: 'table', committedQuantity: 1, committedBatches: [] } },
+        { id: 'prod-2', quantity: 1, price: 0, inventoryReservation: { source: 'table', committedQuantity: 1, committedBatches: [] } }]
+    };
+    const tickets = [
+      { label: 'A', paymentData: { paymentMethod: 'efectivo', amountPaid: '80' }, lines: [{ lineIndex: 0, quantity: 1 }] },
+      { label: 'B', paymentData: { paymentMethod: 'efectivo', amountPaid: '0' }, lines: [{ lineIndex: 1, quantity: 1 }] }
+    ];
+
+    for (const cloudSpecialFlows of [false, true]) {
+      const deps = makeDeps(parentSale);
+      const result = await splitOpenTableOrderCore(makeParams(parentSale, { tickets, cloudSpecialFlows }), deps);
+      expect(result).toMatchObject({ success: false, errorType: 'SPLIT_ROUNDING_INVALID', code: 'SPLIT_ROUNDING_INVALID' });
+      expectNoCommitOrShadow(deps);
+      expect(salesCloudCashierService.processCloudSplitTableSale).not.toHaveBeenCalled();
+    }
   });
 
   it('accepts the kitchen-reconciled snapshot and excludes an already-cancelled product line', async () => {

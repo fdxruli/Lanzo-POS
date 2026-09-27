@@ -33,6 +33,7 @@ export default function PosModals({
     const {
         order,
         total,
+        saleDiscount,
         customer,
         prescriptionItems,
         cajaActual,
@@ -98,6 +99,7 @@ export default function PosModals({
                 onClose={dismissActiveModal}
                 order={order}
                 total={total}
+                saleDiscount={saleDiscount}
                 isCajaOpen={Boolean(cajaActual && cajaActual.estado === 'abierta')}
                 onConfirm={handleConfirmSplitBill}
             />
@@ -149,6 +151,7 @@ PosModals.propTypes = {
     data: PropTypes.shape({
         order: PropTypes.array.isRequired,
         total: PropTypes.number.isRequired,
+        saleDiscount: PropTypes.object,
         customer: PropTypes.object,
         prescriptionItems: PropTypes.array.isRequired,
         cajaActual: PropTypes.object,

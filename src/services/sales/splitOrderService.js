@@ -7,7 +7,7 @@ import { runPostSaleEffects, runPostSaleEffectsForCloudCommittedSale } from './p
 import { salesCloudShadowService } from '../salesCloud/salesCloudShadowService';
 import { salesCloudCashierService } from '../salesCloud/salesCloudCashierService';
 import {
-    buildByItemsRoundingAdjustments,
+    calculateByItemsTicketFinancials,
     normalizeRestaurantSplitIntent,
     RESTAURANT_SPLIT_INTENTS,
     roundSplitAmountToCents
@@ -23,6 +23,10 @@ const DERIVED_SPLIT_ITEM_AMOUNT_FIELDS = new Set([
     'line_total',
     'subtotal',
     'total',
+    'discountAmount',
+    'discount_amount',
+    'discountTotal',
+    'discount_total',
     'splitBasePrice',
     'split_base_price',
     'splitRoundingAdjustment',
@@ -260,9 +264,13 @@ const buildAllocationMap = (tickets = [], itemCount = 0) => {
  */
 const buildChildItemsFromAllocation = ({ parentItems, allocationMap, ticketLabels }) => {
     const childItems = new Map();
+    const childSourceLineIndices = new Map();
 
     // Initialize empty arrays for each ticket
-    ticketLabels.forEach((label) => childItems.set(label, []));
+    ticketLabels.forEach((label) => {
+        childItems.set(label, []);
+        childSourceLineIndices.set(label, []);
+    });
 
     parentItems.forEach((item, lineIndex) => {
         const totalQuantity = normalizeQuantity(item.quantity || 0);
@@ -303,20 +311,44 @@ const buildChildItemsFromAllocation = ({ parentItems, allocationMap, ticketLabel
                     inventoryReservation: splitReservations[idx]
                 };
                 childItems.get(label).push(childItem);
+                childSourceLineIndices.get(label).push(lineIndex);
             }
         });
     });
 
-    return childItems;
+    return { childItems, childSourceLineIndices };
 };
 
-const calculateItemsTotalCents = (items = []) => (
-    (items || []).reduce((totalCents, item) => (
-        totalCents + roundSplitAmountToCents(Money.multiply(item.price || 0, item.quantity || 0))
-    ), 0)
-);
-
 const centsToMoneyString = (cents) => Money.toExactString(Money.fromCents(cents));
+
+const applySplitLineFinancials = (item, financialLine) => {
+    const grossSubtotal = centsToMoneyString(financialLine.grossSubtotalCents);
+    const lineTotal = centsToMoneyString(financialLine.lineTotalCents);
+    const discountAmount = centsToMoneyString(financialLine.discountCents);
+    const discount = financialLine.discount;
+
+    return {
+        ...item,
+        exactTotal: grossSubtotal,
+        lineSubtotal: grossSubtotal,
+        line_subtotal: grossSubtotal,
+        lineTotal,
+        line_total: lineTotal,
+        discount: discount || null,
+        discountAmount,
+        discount_amount: discountAmount,
+        discountReason: discount?.reason ?? item.discountReason ?? item.discount_reason ?? null,
+        discount_reason: discount?.reason ?? item.discount_reason ?? item.discountReason ?? null,
+        discountAppliedAt: discount?.appliedAt ?? item.discountAppliedAt ?? item.discount_applied_at ?? null,
+        discount_applied_at: discount?.applied_at ?? item.discount_applied_at ?? item.discountAppliedAt ?? null,
+        discountAppliedByRole: discount?.appliedByRole ?? item.discountAppliedByRole ?? item.discount_applied_by_role ?? null,
+        discount_applied_by_role: discount?.applied_by_role ?? item.discount_applied_by_role ?? item.discountAppliedByRole ?? null,
+        discountAppliedByStaffUserId: discount?.appliedByStaffUserId ?? item.discountAppliedByStaffUserId ?? item.discount_applied_by_staff_user_id ?? null,
+        discount_applied_by_staff_user_id: discount?.applied_by_staff_user_id ?? item.discount_applied_by_staff_user_id ?? item.discountAppliedByStaffUserId ?? null,
+        discountAppliedByDeviceId: discount?.appliedByDeviceId ?? item.discountAppliedByDeviceId ?? item.discount_applied_by_device_id ?? null,
+        discount_applied_by_device_id: discount?.applied_by_device_id ?? item.discount_applied_by_device_id ?? item.discountAppliedByDeviceId ?? null
+    };
+};
 
 const toMoneySafe = (value, fallback = '0') => {
     try {
@@ -450,6 +482,7 @@ const buildChildSaleRecord = ({
     splitIntent,
     ticketTotalCents,
     ticketAdjustmentCents,
+    ticketFinancials,
     normalizedPayment,
     processedItems,
     currentIsoTime,
@@ -458,6 +491,16 @@ const buildChildSaleRecord = ({
     id: saleId || generateID('sal'),
     timestamp: currentIsoTime,
     items: processedItems,
+    subtotal: centsToMoneyString(ticketFinancials.grossSubtotalCents),
+    grossSubtotal: centsToMoneyString(ticketFinancials.grossSubtotalCents),
+    subtotalAfterLineDiscounts: centsToMoneyString(ticketFinancials.subtotalAfterLineDiscountsCents),
+    lineDiscountTotal: centsToMoneyString(ticketFinancials.lineDiscountCents),
+    saleDiscount: ticketFinancials.saleDiscount,
+    sale_discount: ticketFinancials.saleDiscount,
+    saleDiscountAmount: centsToMoneyString(ticketFinancials.saleDiscountCents),
+    discount: centsToMoneyString(ticketFinancials.discountTotalCents),
+    discountTotal: centsToMoneyString(ticketFinancials.discountTotalCents),
+    discount_total: centsToMoneyString(ticketFinancials.discountTotalCents),
     total: centsToMoneyString(ticketTotalCents),
     customerId: normalizedPayment.customerId,
     paymentMethod: normalizedPayment.paymentMethod,
@@ -483,7 +526,11 @@ const buildChildSaleRecord = ({
         splitParentId: parentSale.id,
         splitLabel: label,
         splitIntent,
-        splitRoundingAdjustment: centsToMoneyString(ticketAdjustmentCents)
+        splitRoundingAdjustment: centsToMoneyString(ticketAdjustmentCents),
+        saleDiscount: ticketFinancials.saleDiscount,
+        discountTotal: centsToMoneyString(ticketFinancials.discountTotalCents),
+        lineDiscountTotal: centsToMoneyString(ticketFinancials.lineDiscountCents),
+        subtotalAfterLineDiscounts: centsToMoneyString(ticketFinancials.subtotalAfterLineDiscountsCents)
     }
 });
 
@@ -587,7 +634,7 @@ export const splitOpenTableOrderCore = async ({
         const ticketLabels = tickets.map((t) => toLabel(t.label));
 
         const allocationMap = buildAllocationMap(tickets, parentItems.length);
-        const childItems = buildChildItemsFromAllocation({
+        const { childItems, childSourceLineIndices } = buildChildItemsFromAllocation({
             parentItems,
             allocationMap,
             ticketLabels
@@ -602,37 +649,44 @@ export const splitOpenTableOrderCore = async ({
 
         const allProducts = await getRelevantProducts({ parentItems, loadMultipleData, STORES });
 
-        // Calculate base cents for each ticket
-        const baseCentsByLabel = new Map();
-        ticketLabels.forEach((label) => {
-            baseCentsByLabel.set(label, calculateItemsTotalCents(childItems.get(label)));
+        const parentSaleDiscount = parentSale.saleDiscount
+            || parentSale.sale_discount
+            || parentSale.metadata?.discount
+            || (parentSale.discount && typeof parentSale.discount === 'object' ? parentSale.discount : null);
+        const splitFinancials = calculateByItemsTicketFinancials({
+            items: parentItems,
+            saleDiscount: parentSaleDiscount,
+            tickets: ticketLabels.map((label) => ({
+                label,
+                lines: Array.from(allocationMap.get(label) || new Map(), ([lineIndex, quantity]) => ({ lineIndex, quantity }))
+            })),
+            parentTotal: parentSale.total
         });
-
-        const parentTotalCents = Money.toCents(parentSale.total || 0);
-        const baseCentsArray = ticketLabels.map((label) => baseCentsByLabel.get(label));
-
-        const eligibleTicketIndices = ticketLabels
-            .map((label, index) => (
-                childItems.get(label).some((item) => (
-                    roundSplitAmountToCents(Money.multiply(item.price || 0, item.quantity || 0)) > 0
-                )) ? index : null
-            ))
-            .filter((index) => index !== null);
-        const roundingPlan = buildByItemsRoundingAdjustments(
-            parentTotalCents,
-            baseCentsArray,
-            eligibleTicketIndices
-        );
-        if (!roundingPlan.valid) {
+        if (!splitFinancials.valid) {
             return {
                 success: false,
                 errorType: 'SPLIT_ROUNDING_INVALID',
                 code: 'SPLIT_ROUNDING_INVALID',
                 splitIntent,
-                message: 'La diferencia entre los productos asignados y el total supera el redondeo permitido. No se alteraron precios; revisa la cuenta antes de cobrar.'
+                message: 'La diferencia entre los productos, descuentos y total de la cuenta supera el redondeo permitido. No se alteraron precios ni descuentos; revisa la cuenta antes de cobrar.'
             };
         }
-        const adjustments = roundingPlan.adjustments;
+        const parentTotalCents = splitFinancials.parentTotalCents;
+        const ticketFinancialsByLabel = new Map(
+            splitFinancials.tickets.map((financials) => [toLabel(financials.label), financials])
+        );
+
+        ticketLabels.forEach((label) => {
+            const ticketFinancials = ticketFinancialsByLabel.get(label);
+            const financialByLineIndex = new Map(ticketFinancials.lines.map((line) => [line.lineIndex, line]));
+            const sourceLineIndices = childSourceLineIndices.get(label) || [];
+            childItems.set(label, childItems.get(label).map((item, childIndex) => {
+                const lineIndex = sourceLineIndices[childIndex];
+                const lineFinancials = financialByLineIndex.get(lineIndex);
+                if (!lineFinancials) throw new Error(`No se pudo calcular el descuento de la línea ${lineIndex + 1}.`);
+                return applySplitLineFinancials(item, lineFinancials);
+            }));
+        });
 
         const childDefinitions = [];
         const customerDebtAccumulator = new Map();
@@ -665,9 +719,9 @@ export const splitOpenTableOrderCore = async ({
             const label = ticketLabels[i];
             const ticketDefinition = getTicketDefinitionByLabel(tickets, label);
             const ticketItems = childItems.get(label);
-            const baseTicketCents = baseCentsByLabel.get(label);
-            const ticketAdjustmentCents = adjustments[i];
-            const ticketTotalCents = baseTicketCents + ticketAdjustmentCents;
+            const ticketFinancials = ticketFinancialsByLabel.get(label);
+            const ticketAdjustmentCents = ticketFinancials.roundingAdjustmentCents;
+            const ticketTotalCents = ticketFinancials.totalCents;
 
             if (ticketTotalCents < 0) {
                 throw new Error(`El total del ticket ${label} no puede ser negativo.`);
@@ -687,10 +741,6 @@ export const splitOpenTableOrderCore = async ({
                     };
                 }
                 itemToAdjust.splitRoundingAdjustment = centsToMoneyString(ticketAdjustmentCents);
-                const adjustedLineCents = roundSplitAmountToCents(
-                    Money.multiply(itemToAdjust.price || 0, itemToAdjust.quantity || 0)
-                ) + ticketAdjustmentCents;
-                itemToAdjust.lineSubtotal = centsToMoneyString(adjustedLineCents);
             }
 
             const normalizedPayment = await normalizeTicketPayment({
@@ -715,6 +765,7 @@ export const splitOpenTableOrderCore = async ({
                 splitIntent,
                 ticketTotalCents,
                 ticketAdjustmentCents,
+                ticketFinancials,
                 normalizedPayment,
                 processedItems,
                 currentIsoTime,

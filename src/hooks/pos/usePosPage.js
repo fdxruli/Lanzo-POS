@@ -83,5 +83,27 @@ export function usePosPage() {
         clearOrder();
     }, [clearOrder]);
 
-    return { order, customer, activeOrderId, tableData, cajaActual, aperturaPendiente, cashActor, isCloudCash, isCloudCashReadOnly, companyName, total, totalItemsCount, toastMsg, verifySessionIntegrity, abrirCaja, asegurarCajaAbierta, saveOrderAsOpen, clearCurrentOrder, processBarcode, showToast };
+    return {
+        order,
+        customer,
+        activeOrderId,
+        tableData,
+        saleDiscount: activeOrder?.saleDiscount || activeOrder?.metadata?.discount || null,
+        cajaActual,
+        aperturaPendiente,
+        cashActor,
+        isCloudCash,
+        isCloudCashReadOnly,
+        companyName,
+        total,
+        totalItemsCount,
+        toastMsg,
+        verifySessionIntegrity,
+        abrirCaja,
+        asegurarCajaAbierta,
+        saveOrderAsOpen,
+        clearCurrentOrder,
+        processBarcode,
+        showToast
+    };
 }
