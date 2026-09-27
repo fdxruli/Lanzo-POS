@@ -136,6 +136,45 @@ function PublicStorePage() {
     && connectionOnline
   );
 
+  const applyAuthoritativePortalStatus = useCallback((error) => {
+    const code = error instanceof EcommercePublicError ? error.code : '';
+    if (code !== 'ECOMMERCE_PORTAL_PAUSED' && code !== 'ECOMMERCE_PORTAL_NOT_FOUND') {
+      return false;
+    }
+
+    const paused = code === 'ECOMMERCE_PORTAL_PAUSED';
+    requestGenerationRef.current += 1;
+    activePortalIdRef.current = null;
+    activeCatalogRevisionRef.current = null;
+    cachePolicyRef.current = null;
+    requestedOffsetsRef.current = new Set();
+    paginationRef.current = INITIAL_PAGINATION;
+    availabilityRef.current = null;
+    catalogReadyRef.current = false;
+    productsRef.current = [];
+
+    setStoreStatus(paused ? 'paused' : 'not_found');
+    setPausedContactUrl(paused
+      ? buildPausedWhatsappUrl(error.pausedContact?.whatsappPhone) : '');
+    setPortalResult(null);
+    setProducts([]);
+    setPagination(INITIAL_PAGINATION);
+    setCatalogLoading(false);
+    setCatalogLoadingMore(false);
+    setCatalogReady(false);
+    setCatalogError(null);
+    setCatalogRefreshError(null);
+    setCatalogSource('network');
+    setCatalogRevision(null);
+    setCatalogValidated(false);
+    setCatalogRefreshing(false);
+    setOfflineCatalog(false);
+    setIsCartOpen(false);
+    setCheckoutOpen(false);
+    setCheckoutOpening(false);
+    return true;
+  }, []);
+
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -351,11 +390,9 @@ function PublicStorePage() {
         }
       } catch (error) {
         if (!isCurrentRequest()) return;
-        const code = error instanceof EcommercePublicError ? error.code : null;
-        setPausedContactUrl(code === 'ECOMMERCE_PORTAL_PAUSED'
-          ? buildPausedWhatsappUrl(error.pausedContact?.whatsappPhone) : '');
-        setStoreStatus(code === 'ECOMMERCE_PORTAL_PAUSED' ? 'paused'
-          : code === 'ECOMMERCE_PORTAL_NOT_FOUND' ? 'not_found' : 'error');
+        if (applyAuthoritativePortalStatus(error)) return;
+        setPausedContactUrl('');
+        setStoreStatus('error');
         setCatalogLoading(false);
         setCatalogValidated(false);
       }
@@ -368,7 +405,7 @@ function PublicStorePage() {
         requestGenerationRef.current += 1;
       }
     };
-  }, [loadCatalog, slug, storeReloadKey]);
+  }, [applyAuthoritativePortalStatus, loadCatalog, slug, storeReloadKey]);
 
   const revalidateCatalogRevision = useCallback((reason = 'visible') => {
     if (recoveryPromiseRef.current) return recoveryPromiseRef.current;
@@ -428,8 +465,9 @@ function PublicStorePage() {
           expectedRevision: nextRevision,
           offline: false
         });
-      } catch {
+      } catch (error) {
         if (!isCurrentRequest()) return false;
+        if (applyAuthoritativePortalStatus(error)) return false;
         setConnectionOnline(isOnlineNow());
         setOfflineCatalog(true);
         setCatalogValidated(false);
@@ -445,7 +483,7 @@ function PublicStorePage() {
     };
     request.then(release, release);
     return request;
-  }, [catalogReady, loadCatalog, portal]);
+  }, [applyAuthoritativePortalStatus, catalogReady, loadCatalog, portal]);
 
   const closeTransientPublicOverlaysForRecovery = useCallback(async () => {
     const protectedCheckout = (
@@ -524,6 +562,7 @@ function PublicStorePage() {
         return true;
       } catch (error) {
         if (!isCurrentRequest()) return false;
+        if (applyAuthoritativePortalStatus(error)) return false;
         setConnectionOnline(isOnlineNow());
         setOfflineCatalog(!isOnlineNow());
         if (catalogReadyRef.current && productsRef.current.length > 0) {
@@ -543,7 +582,7 @@ function PublicStorePage() {
     };
     request.then(release, release);
     return request;
-  }, [closeTransientPublicOverlaysForRecovery, portal]);
+  }, [applyAuthoritativePortalStatus, closeTransientPublicOverlaysForRecovery, portal]);
 
   useEffect(() => {
     if (!portal) return undefined;
