@@ -17,12 +17,14 @@ export const SALES_PROFITABILITY_HISTORY_MAX_BYTES = 2 * 1024 * 1024;
 
 const HISTORY_SCHEMA_VERSION = 1;
 const VALID_RESPONSE_STATUSES = new Set(['completed', 'incomplete', 'insufficient_data', 'out_of_scope', 'not_ready', 'local_answer']);
-const VALID_EXECUTION_MODES = new Set(['automatic', 'cache', 'ai', 'ai_unavailable', 'local']);
+const VALID_EXECUTION_MODES = new Set(['automatic', 'cache', 'ai', 'ai_unavailable', 'deterministic', 'local']);
 const VALID_USAGE_STATUSES = new Set(['yes', 'no', 'unknown']);
 const VALID_USAGE_REASONS = new Set([
   'edge_generation_completed',
   'no_provider_path',
   'explicit_cache_hit',
+  'provider_failed_without_consumption',
+  'server_confirmed_no_consumption',
   'provider_or_response_not_confirmed',
   'quota_not_confirmed'
 ]);
@@ -32,6 +34,7 @@ const MODE_LABELS = Object.freeze({
   cache: 'Caché',
   ai: 'IA',
   ai_unavailable: 'IA no disponible',
+  deterministic: 'Análisis calculado por Lanzo',
   local: 'Respuesta local'
 });
 
@@ -45,6 +48,8 @@ const USAGE_EXPLANATIONS = Object.freeze({
   edge_generation_completed: 'La Edge Function devolvió una generación exitosa y confirmó la finalización del uso.',
   no_provider_path: 'La consulta se resolvió sin entrar a la ruta del proveedor ni a la reserva de cuota.',
   explicit_cache_hit: 'El resultado incluyó una señal explícita de cache hit; no se registró un nuevo uso.',
+  provider_failed_without_consumption: 'La Edge Function confirmó que el intento del proveedor terminó como fallido y no consumió cuota.',
+  server_confirmed_no_consumption: 'El servidor confirmó que no se consumió cuota, pero no se pudo determinar si se llamó al proveedor.',
   provider_or_response_not_confirmed: 'No hay una señal fiable para confirmar si esta consulta consumió cuota.',
   quota_not_confirmed: 'La respuesta no incluyó confirmación suficiente del estado de cuota.'
 });
@@ -68,7 +73,8 @@ const createLocalEntryId = (timestamp) => {
 const hasNarrative = (narrative) => (
   narrative?.status !== 'unavailable'
   && (
-    (typeof narrative?.executiveSummary === 'string' && narrative.executiveSummary.trim().length > 0)
+    (typeof narrative?.directAnswer === 'string' && narrative.directAnswer.trim().length > 0)
+    || (typeof narrative?.executiveSummary === 'string' && narrative.executiveSummary.trim().length > 0)
     || (typeof narrative?.explanation === 'string' && narrative.explanation.trim().length > 0)
     || (Array.isArray(narrative?.recommendations) && narrative.recommendations.length > 0)
   )
@@ -81,12 +87,15 @@ const hasExplicitCacheHit = (result) => (
 
 export const classifySalesProfitabilityExecution = (result = {}) => {
   const explicitCacheHit = hasExplicitCacheHit(result);
-  const providerCalled = result.providerCalled === true;
+  const providerCalled = typeof result.providerCalled === 'boolean' ? result.providerCalled : null;
   const localRoute = ['out_of_scope', 'not_ready', 'local_answer'].includes(result.response?.status);
+  const narrativeUnavailable = result.response?.aiNarrative?.status === 'unavailable';
   const mode = explicitCacheHit && !providerCalled
     ? 'cache'
-    : providerCalled
+    : providerCalled === true
       ? (hasNarrative(result.response?.aiNarrative) ? 'ai' : 'ai_unavailable')
+      : narrativeUnavailable
+        ? 'deterministic'
       : localRoute
         ? 'local'
         : 'automatic';
@@ -101,8 +110,12 @@ export const classifySalesProfitabilityExecution = (result = {}) => {
     usageReason = 'edge_generation_completed';
   } else if (result.quotaOutcome === 'not_consumed') {
     usageStatus = 'no';
-    usageReason = 'no_provider_path';
-  } else if (providerCalled || result.quotaOutcome === 'not_confirmed') {
+    usageReason = providerCalled === true
+      ? 'provider_failed_without_consumption'
+      : providerCalled === false
+        ? 'no_provider_path'
+        : 'server_confirmed_no_consumption';
+  } else if (providerCalled !== false || result.quotaOutcome === 'not_confirmed') {
     usageReason = 'provider_or_response_not_confirmed';
   }
 

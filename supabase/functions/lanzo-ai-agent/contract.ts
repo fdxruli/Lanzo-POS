@@ -22,8 +22,10 @@ export const COMMERCIAL_NARRATIVE_DIAGNOSTIC_CODES = [
   'AI_NARRATIVE_INVALID_JSON',
   'AI_NARRATIVE_MISSING_CONTENT',
   'AI_NARRATIVE_UNSAFE_CONTENT',
+  'AI_NARRATIVE_TRUNCATED',
   'AI_NARRATIVE_PARTIAL_CONTENT',
   'AI_NARRATIVE_PROVIDER_ERROR',
+  'AI_NARRATIVE_LOW_VALUE',
   'AI_NARRATIVE_UNAVAILABLE'
 ] as const;
 
@@ -67,6 +69,10 @@ export const COMMERCIAL_AGENT_INTENTS = [
   'profitability_summary',
   'explain_change',
   'product_risk',
+  'sales_growth',
+  'ticket_growth',
+  'product_opportunity',
+  'sales_trend',
   'price_simulation',
   'combo_opportunity',
   'promotion_opportunity'
@@ -143,22 +149,27 @@ const COMMERCIAL_SALES_KEYS = new Set([
   'profit',
   'margin',
   'averageTicket',
+  'unitsPerTicket',
   'products',
   'channels',
   'comparison',
+  'growthSignals',
   'contributors',
   'evidenceKeys',
   'coverage',
   'calculations',
   'assumptions',
   'limitations',
-  'scenarios'
+  'scenarios',
+  'opportunityCandidates',
+  'minimumUsefulRecommendations'
 ]);
 const COMMERCIAL_SUMMARY_KEYS = new Set([
   'netSales',
   'units',
   'salesCount',
   'averageTicket',
+  'unitsPerTicket',
   'discounts',
   'discountsKnown',
   'unitCosts',
@@ -173,7 +184,7 @@ const COMMERCIAL_SUMMARY_KEYS = new Set([
   'profitabilityExplanation'
 ]);
 const COMMERCIAL_PRODUCT_KEYS = new Set([
-  'name', 'quantity', 'netSales', 'unitCost', 'profit', 'margin', 'averagePrice', 'costKnown',
+  'name', 'quantity', 'netSales', 'salesShare', 'unitCost', 'profit', 'margin', 'averagePrice', 'costKnown',
   'costStatus', 'costSource', 'riskType', 'riskReason'
 ]);
 const COMMERCIAL_PRODUCT_COST_STATUS = new Set(['definitive', 'estimated', 'incomplete']);
@@ -182,24 +193,68 @@ const MAX_PRODUCT_COST_STATUS_LENGTH = 48;
 const MAX_PRODUCT_COST_SOURCE_LENGTH = 64;
 const COMMERCIAL_CHANNEL_KEYS = new Set(['channel', 'netSales', 'orders', 'units', 'averageTicket', 'share']);
 const COMMERCIAL_COMPARISON_KEYS = new Set([
+  'currentSalesCount',
+  'previousSalesCount',
+  'deltaSalesCount',
   'previousNetSales',
   'previousUnits',
   'previousTicket',
+  'previousUnitsPerTicket',
   'previousCost',
   'previousProfit',
   'previousMargin',
   'deltaNetSales',
+  'deltaNetSalesPercent',
   'deltaUnits',
   'deltaTicket',
+  'deltaTicketPercent',
+  'deltaUnitsPerTicket',
   'deltaCost',
   'deltaProfit',
   'deltaMargin',
   'deltaMarginRelative',
   'deltaDiscounts',
   'productMixChanges',
-  'channelMixChanges'
+  'channelMixChanges',
+  'productChanges'
 ]);
 const COMMERCIAL_MIX_KEYS = new Set(['name', 'channel', 'currentShare', 'previousShare', 'deltaShare']);
+const COMMERCIAL_PRODUCT_CHANGE_KEYS = new Set([
+  'name', 'currentSales', 'previousSales', 'salesDelta', 'salesDeltaPercent',
+  'currentUnits', 'previousUnits', 'unitsDelta', 'unitsDeltaPercent',
+  'currentShare', 'previousShare', 'salesShareDelta', 'currentMargin',
+  'previousMargin', 'currentProfit', 'previousProfit', 'costKnown', 'costStatus',
+  'direction', 'signals'
+]);
+const COMMERCIAL_PRODUCT_DIRECTIONS = new Set(['new_in_period', 'not_sold_current', 'growing', 'declining', 'stable']);
+const COMMERCIAL_PRODUCT_SIGNALS = new Set([
+  'new_in_period', 'not_sold_current', 'growing', 'declining', 'stable',
+  'high_sales_share', 'healthy_margin', 'cost_unknown', 'low_margin'
+]);
+const COMMERCIAL_CHANNEL_CHANGE_KEYS = new Set([
+  'channel', 'currentShare', 'previousShare', 'deltaShare', 'currentSales', 'previousSales', 'salesDelta'
+]);
+const COMMERCIAL_GROWTH_SIGNAL_KEYS = new Set([
+  'currentNetSales', 'currentSalesCount', 'currentUnits', 'currentAverageTicket',
+  'currentUnitsPerTicket', 'previousNetSales', 'deltaNetSales', 'deltaNetSalesPercent',
+  'previousSalesCount', 'deltaSalesCount', 'previousUnits', 'deltaUnits',
+  'previousAverageTicket', 'deltaTicket', 'deltaTicketPercent',
+  'previousUnitsPerTicket', 'deltaUnitsPerTicket', 'productsGrowing', 'productsDeclining',
+  'productOpportunities', 'channels', 'channelChanges', 'comparisonAvailable'
+]);
+const COMMERCIAL_OPPORTUNITY_TYPES = new Set(['product', 'channel', 'ticket', 'units_per_ticket', 'tickets', 'general']);
+const COMMERCIAL_OPPORTUNITY_SIGNALS = new Set([
+  'high_sales_share', 'growing', 'healthy_margin', 'new_in_period', 'ticket_increased',
+  'ticket_baseline_available', 'units_per_ticket_increased', 'units_per_ticket_baseline_available',
+  'tickets_increased', 'ticket_count_baseline_available', 'channel_sales_disappeared',
+  'channel_sales_increased', 'channel_change_to_check'
+]);
+const COMMERCIAL_RECOMMENDATION_TYPES = new Set(['growth_experiment', 'investigation', 'data_quality', 'optimization']);
+const COMMERCIAL_OPPORTUNITY_METRIC_KEYS = new Set([
+  'currentSales', 'currentShare', 'salesDelta', 'currentUnits', 'costKnown',
+  'currentAverageTicket', 'deltaTicket', 'currentUnitsPerTicket', 'deltaUnitsPerTicket',
+  'currentSalesCount', 'deltaSalesCount', 'previousSales', 'previousShare', 'deltaShare'
+]);
 const COMMERCIAL_CONTRIBUTOR_KEYS = new Set(['key', 'title', 'contribution', 'direction', 'explanation', 'evidenceKeys']);
 const COMMERCIAL_CALCULATION_KEYS = new Set(['label', 'value', 'formattedValue', 'formula', 'source', 'period']);
 const COMMERCIAL_SCENARIO_OUTPUT_KEYS = new Set([
@@ -334,7 +389,8 @@ function validCommercialScenarioOutput(value: unknown): value is Record<string, 
 
 function validCommercialPeriod(value: unknown, intent = 'explain_change'): value is Record<string, unknown> {
   if (!isRecord(value) || !assertOnlyKeys(value, COMMERCIAL_PERIOD_KEYS)) return false;
-  if (intent !== 'explain_change' && (value.previousFrom !== null && value.previousFrom !== undefined
+  const comparableIntent = ['explain_change', 'sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend'].includes(intent);
+  if (!comparableIntent && (value.previousFrom !== null && value.previousFrom !== undefined
     || value.previousTo !== null && value.previousTo !== undefined)) return false;
   return Object.values(value).every((entry) => entry === null || (typeof entry === 'string' && entry.length <= 80));
 }
@@ -383,13 +439,96 @@ function validCommercialContext(value: unknown): value is Record<string, unknown
     const comparison = sales.comparison;
     if (comparison.productMixChanges !== undefined && (!Array.isArray(comparison.productMixChanges) || comparison.productMixChanges.length > 12)) return false;
     if (comparison.channelMixChanges !== undefined && (!Array.isArray(comparison.channelMixChanges) || comparison.channelMixChanges.length > 12)) return false;
-    for (const mix of [...(comparison.productMixChanges || []), ...(comparison.channelMixChanges || [])]) {
+    if (comparison.productChanges !== undefined && (!Array.isArray(comparison.productChanges) || comparison.productChanges.length > MAX_COMMERCIAL_ROWS)) return false;
+    if (comparison.productChanges !== undefined && !comparison.productChanges.every((product) => (
+      isRecord(product)
+      && assertOnlyKeys(product, COMMERCIAL_PRODUCT_CHANGE_KEYS)
+      && typeof product.name === 'string'
+      && COMMERCIAL_PRODUCT_DIRECTIONS.has(String(product.direction))
+      && (product.costStatus === null || ['known', 'missing', 'not_sold_current'].includes(String(product.costStatus)))
+      && (product.signals === undefined || (Array.isArray(product.signals)
+        && product.signals.length <= 8
+        && product.signals.every((signal) => typeof signal === 'string' && COMMERCIAL_PRODUCT_SIGNALS.has(signal))))
+      && Object.entries(product).every(([key, entry]) => ['name', 'costStatus', 'direction', 'signals'].includes(key)
+        || key === 'costKnown' && typeof entry === 'boolean'
+        || key !== 'costKnown' && validFiniteOrNull(entry))
+    ))) return false;
+    for (const mix of comparison.productMixChanges || []) {
       if (!isRecord(mix) || !assertOnlyKeys(mix, COMMERCIAL_MIX_KEYS)) return false;
+    }
+    if (comparison.channelMixChanges !== undefined && !comparison.channelMixChanges.every((channel) => (
+      isRecord(channel) && assertOnlyKeys(channel, COMMERCIAL_CHANNEL_CHANGE_KEYS)
+      && typeof channel.channel === 'string'
+      && Object.entries(channel).every(([key, entry]) => key === 'channel' ? typeof entry === 'string' : validFiniteOrNull(entry))
+    ))) return false;
+  }
+  if (sales.growthSignals !== undefined && sales.growthSignals !== null) {
+    const signals = sales.growthSignals;
+    if (!isRecord(signals) || !assertOnlyKeys(signals, COMMERCIAL_GROWTH_SIGNAL_KEYS)) return false;
+    for (const key of ['productsGrowing', 'productsDeclining', 'productOpportunities']) {
+      if (signals[key] !== undefined && (!Array.isArray(signals[key]) || signals[key].length > MAX_COMMERCIAL_ROWS)) return false;
+      if (signals[key] !== undefined && !signals[key].every((product) => (
+        isRecord(product) && assertOnlyKeys(product, new Set([...COMMERCIAL_PRODUCT_CHANGE_KEYS, 'opportunityReason']))
+        && typeof product.name === 'string'
+        && (product.opportunityReason === undefined || (typeof product.opportunityReason === 'string' && product.opportunityReason.length <= 240))
+        && Object.entries(product).every(([field, entry]) => ['name', 'costStatus', 'direction', 'signals', 'opportunityReason'].includes(field)
+          || field === 'costKnown' && typeof entry === 'boolean'
+          || field !== 'costKnown' && validFiniteOrNull(entry))
+      ))) return false;
+    }
+    if (signals.channelChanges !== undefined && (!Array.isArray(signals.channelChanges) || signals.channelChanges.length > 12
+      || !signals.channelChanges.every((channel) => isRecord(channel)
+        && assertOnlyKeys(channel, COMMERCIAL_CHANNEL_CHANGE_KEYS)
+        && typeof channel.channel === 'string'
+        && Object.entries(channel).every(([key, entry]) => key === 'channel' ? typeof entry === 'string' : validFiniteOrNull(entry))))) return false;
+    if (signals.channels !== undefined && (!Array.isArray(signals.channels) || signals.channels.length > MAX_COMMERCIAL_ROWS
+      || !signals.channels.every((channel) => isRecord(channel) && assertOnlyKeys(channel, COMMERCIAL_CHANNEL_KEYS)))) return false;
+    if (signals.comparisonAvailable !== undefined && typeof signals.comparisonAvailable !== 'boolean') return false;
+    for (const [key, entry] of Object.entries(signals)) {
+      if (['productsGrowing', 'productsDeclining', 'productOpportunities', 'channels', 'channelChanges', 'comparisonAvailable'].includes(key)) continue;
+      if (!validFiniteOrNull(entry)) return false;
     }
   }
   if (sales.evidenceKeys !== undefined) {
-    if (!Array.isArray(sales.evidenceKeys) || sales.evidenceKeys.length > 40) return false;
+    if (!Array.isArray(sales.evidenceKeys) || sales.evidenceKeys.length > 80) return false;
     if (!sales.evidenceKeys.every((entry) => typeof entry === 'string' && entry.length > 0 && entry.length <= 160)) return false;
+  }
+  if (sales.minimumUsefulRecommendations !== undefined
+    && (!Number.isInteger(sales.minimumUsefulRecommendations)
+      || Number(sales.minimumUsefulRecommendations) < 0
+      || Number(sales.minimumUsefulRecommendations) > 3)) return false;
+  if (sales.opportunityCandidates !== undefined) {
+    if (!Array.isArray(sales.opportunityCandidates) || sales.opportunityCandidates.length > 8) return false;
+    const evidenceKeys = new Set(Array.isArray(sales.evidenceKeys) ? sales.evidenceKeys : []);
+    const candidateKeys = new Set<string>();
+    if (!sales.opportunityCandidates.every((candidate) => {
+      if (!isRecord(candidate)
+        || !assertOnlyKeys(candidate, new Set([
+          'key', 'type', 'focus', 'entity', 'signal', 'recommendationType', 'strength', 'metrics', 'evidenceKeys'
+        ]))
+        || typeof candidate.key !== 'string' || candidate.key.length === 0 || candidate.key.length > 160
+        || candidateKeys.has(candidate.key)
+        || typeof candidate.type !== 'string' || !COMMERCIAL_OPPORTUNITY_TYPES.has(candidate.type)
+        || !isRecord(candidate.focus) || !assertOnlyKeys(candidate.focus, new Set(['type', 'key']))
+        || candidate.focus.type !== candidate.type
+        || typeof candidate.focus.key !== 'string' || candidate.focus.key.length === 0 || candidate.focus.key.length > 120
+        || !(candidate.entity === null || (typeof candidate.entity === 'string' && candidate.entity.length <= 120))
+        || !Array.isArray(candidate.signal) || candidate.signal.length === 0 || candidate.signal.length > 5
+        || !candidate.signal.every((signal) => typeof signal === 'string' && COMMERCIAL_OPPORTUNITY_SIGNALS.has(signal))
+        || typeof candidate.recommendationType !== 'string' || !COMMERCIAL_RECOMMENDATION_TYPES.has(candidate.recommendationType)
+        || !['strong', 'moderate', 'weak'].includes(String(candidate.strength))
+        || !isRecord(candidate.metrics)
+        || !Object.entries(candidate.metrics).every(([key, entry]) => COMMERCIAL_OPPORTUNITY_METRIC_KEYS.has(key)
+          && (validFiniteOrNull(entry) || typeof entry === 'boolean'))
+        || !Array.isArray(candidate.evidenceKeys) || candidate.evidenceKeys.length === 0 || candidate.evidenceKeys.length > 8
+        || !candidate.evidenceKeys.every((entry) => typeof entry === 'string' && evidenceKeys.has(entry))) return false;
+      if (candidate.type === 'product'
+        && (candidate.entity !== candidate.focus.key || !candidate.evidenceKeys.includes(`product:${candidate.entity}`))) return false;
+      if (candidate.type === 'channel'
+        && (candidate.entity !== candidate.focus.key || !candidate.evidenceKeys.includes(`channel:${candidate.entity}`))) return false;
+      candidateKeys.add(candidate.key);
+      return true;
+    })) return false;
   }
   if (sales.contributors !== undefined) {
     if (!Array.isArray(sales.contributors) || sales.contributors.length > 3) return false;
@@ -608,6 +747,14 @@ export function validateCommercialModelResponse(value: unknown): boolean {
     const narrative = value.aiNarrative;
     if (narrative.status !== 'available' && narrative.status !== 'unavailable') return false;
     if (!Array.isArray(narrative.recommendations)) return false;
+    if (narrative.directAnswer !== undefined
+      && narrative.directAnswer !== null
+      && typeof narrative.directAnswer !== 'string') return false;
+    if (narrative.status === 'available'
+      && narrative.directAnswer !== undefined
+      && narrative.directAnswer !== null
+      && (typeof narrative.directAnswer !== 'string' || !narrative.directAnswer.trim())) return false;
+    if (narrative.confidence !== undefined && !['high', 'medium', 'low'].includes(String(narrative.confidence))) return false;
     if (narrative.diagnosticCode !== undefined && !isCommercialNarrativeDiagnosticCode(narrative.diagnosticCode)) return false;
     const hasNarrativeContent = (typeof narrative.executiveSummary === 'string' && narrative.executiveSummary.trim().length > 0)
       || (typeof narrative.explanation === 'string' && narrative.explanation.trim().length > 0)
@@ -631,7 +778,21 @@ export function validateCommercialModelResponse(value: unknown): boolean {
       || item.requiresConfirmation !== true) return true;
     const legacy = typeof item.effort === 'string' && Array.isArray(item.evidence);
     const narrative = ['high', 'medium', 'low'].includes(String(item.priority)) && Array.isArray(item.evidenceKeys);
-    return !legacy && !narrative;
+    const hasAction = typeof item.action === 'string' && item.action.trim().length > 0;
+    const hasMeasurement = typeof item.measurement === 'string' && item.measurement.trim().length > 0;
+    const hasFocus = item.focus === undefined || (isRecord(item.focus)
+      && Object.keys(item.focus).every((key) => ['type', 'key'].includes(key))
+      && ['product', 'channel', 'ticket', 'units_per_ticket', 'tickets', 'general'].includes(String(item.focus.type))
+      && typeof item.focus.key === 'string' && item.focus.key.trim().length > 0);
+    const hasRecommendationType = item.recommendationType === undefined
+      || ['growth_experiment', 'investigation', 'data_quality', 'optimization'].includes(String(item.recommendationType));
+    return (!legacy && !narrative)
+      || !hasFocus
+      || !hasRecommendationType
+      || (item.focus === undefined) !== (item.recommendationType === undefined)
+      || (hasAction !== hasMeasurement)
+      || (item.action !== undefined && !hasAction)
+      || (item.measurement !== undefined && !hasMeasurement);
   })) return false;
   return !hasForbiddenKey(value) && !Object.values(value).some((entry) => hasForbiddenKey(entry));
 }

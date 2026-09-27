@@ -412,6 +412,10 @@ export const analyzeCommercialAgent = async (request = {}, config = {}) => {
     rawResultContent,
     resultFormat: 'json',
     usageStatus: normalizeUsageStatus(data.usageStatus || data),
+    providerCalled: typeof data.providerCalled === 'boolean' ? data.providerCalled : true,
+    quotaOutcome: ['consumed', 'not_consumed', 'not_confirmed'].includes(data.quotaOutcome)
+      ? data.quotaOutcome
+      : 'consumed',
     providerMetadata: data.providerMetadata || null,
     status: data.status || 'completed',
     agentKey: data.agentKey || validation.request.agentKey,
