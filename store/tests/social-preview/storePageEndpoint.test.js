@@ -139,6 +139,31 @@ describe('metadatos, fallbacks y caché', () => {
     expect(html).not.toMatch(/canonical|og:url|og:image|twitter:image/iu);
   });
 
+  it('keeps paused portals generic and hides contact and entitlement metadata', async () => {
+    const privateValues = [
+      '529610000000',
+      'Negocio Pro Privado',
+      'pro_monthly',
+      'licencia-interna',
+      'ecommerce_paused_contact_whatsapp',
+    ];
+    const { handler } = createHandler({
+      result: {
+        status: 'not_found',
+        pausedContact: { whatsappPhone: privateValues[0] },
+        portal: { name: privateValues[1], plan: privateValues[2], licenseId: privateValues[3] },
+        feature: privateValues[4],
+      },
+    });
+    const response = await handler(new Request(ENDPOINT));
+    const html = await response.text();
+
+    expect(response.headers.get('cache-control')).toBe(NOT_FOUND_HTML_CACHE);
+    expect(html).toContain('<title>Tienda no disponible | Lanzo</title>');
+    expect(html).not.toMatch(/canonical|og:url|og:image|twitter:image/iu);
+    privateValues.forEach((value) => expect(html).not.toContain(value));
+  });
+
   it.each([
     [{ status: 'unavailable', reason: 'timeout' }, 'fallo temporal'],
     [undefined, 'configuración faltante'],

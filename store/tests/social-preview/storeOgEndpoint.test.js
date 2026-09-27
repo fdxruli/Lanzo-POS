@@ -197,6 +197,31 @@ describe('estados, imágenes y privacidad', () => {
     expect(imageLoader).not.toHaveBeenCalled();
   });
 
+  it('paused portal projections render generic OG content without contact metadata', async () => {
+    const privateValues = [
+      '529610000000',
+      'Negocio Pro Privado',
+      'pro_monthly',
+      'licencia-interna',
+      'ecommerce_paused_contact_whatsapp',
+    ];
+    const result = {
+      status: 'not_found',
+      pausedContact: { whatsappPhone: privateValues[0] },
+      portal: { name: privateValues[1], plan: privateValues[2], licenseId: privateValues[3] },
+      feature: privateValues[4],
+    };
+    const { handler, imageLoader } = createHandler({ result });
+    const response = await handler(new Request(ENDPOINT));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get('content-type')).toBe('image/png');
+    expect(imageLoader).not.toHaveBeenCalled();
+    const serialized = JSON.stringify(imageCalls[0].element);
+    expect(serialized).toContain('Tienda no disponible');
+    privateValues.forEach((value) => expect(serialized).not.toContain(value));
+  });
+
   it('configuración faltante produce fallback temporal sin credenciales', async () => {
     const handler = createStoreOgHandler({
       ImageResponseImpl: FakeImageResponse,

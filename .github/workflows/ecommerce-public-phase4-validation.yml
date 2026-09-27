@@ -1,0 +1,71 @@
+name: Ecommerce Public Phase 4 Validation
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'src/components/ecommerce/public/**'
+      - 'src/pages/PublicStorePage.jsx'
+      - 'src/pages/__tests__/PublicStorePage.test.jsx'
+      - 'src/services/ecommerce/ecommercePublicServiceBase.js'
+      - 'src/services/ecommerce/__tests__/ecommercePublicService.test.js'
+      - 'src/utils/pausedWhatsappContact*'
+      - 'store/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/ecommerce-public-phase4-validation.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  phase4-validation:
+    name: public-ecommerce-phase4
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout pull request and base history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Focused public portal and WhatsApp tests
+        run: >-
+          npx vitest run --maxWorkers=4
+          src/pages/__tests__/PublicStorePage.test.jsx
+          src/utils/pausedWhatsappContact.test.js
+
+      - name: Focused authoritative public status service tests
+        run: >-
+          npx vitest run --maxWorkers=4
+          --testNamePattern="preserves a paused code|allowlists only a valid paused contact|ignores contact metadata on not found|does not revive a cached published portal after authoritative not found"
+          src/services/ecommerce/__tests__/ecommercePublicService.test.js
+
+      - name: Lint touched public store components and utilities
+        run: >-
+          npx eslint
+          src/components/ecommerce/public/PublicStoreState.jsx
+          src/components/ecommerce/public/PublicStoreStatusScreen.jsx
+          src/pages/PublicStorePage.jsx
+          src/pages/__tests__/PublicStorePage.test.jsx
+          src/utils/pausedWhatsappContact.js
+          src/utils/pausedWhatsappContact.test.js
+
+      - name: Build Vite public store
+        run: npm run build:store
+
+      - name: Build Vercel public store artifact
+        run: npm run build:store:vercel
+
+      - name: Check pull request diff whitespace
+        run: git diff --check origin/main...HEAD

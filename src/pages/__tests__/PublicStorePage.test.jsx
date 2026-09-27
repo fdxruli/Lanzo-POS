@@ -566,8 +566,111 @@ describe('PublicStorePage', () => {
     expect(serviceMocks.getPublicCatalog).not.toHaveBeenCalled();
   });
 
-  it('rejects malformed slugs locally without an RPC', async () => {
-    renderPage('/tienda/AB_bad');
+  it.each([
+    ['focus', 'ECOMMERCE_PORTAL_PAUSED', 'Esta tienda está pausada temporalmente', true],
+    ['focus', 'ECOMMERCE_PORTAL_NOT_FOUND', 'No encontramos esta tienda', false],
+    ['pageshow', 'ECOMMERCE_PORTAL_PAUSED', 'Esta tienda está pausada temporalmente', true],
+    ['pageshow', 'ECOMMERCE_PORTAL_NOT_FOUND', 'No encontramos esta tienda', false],
+  ])('replaces cached published content with authoritative %s status %s', async (
+    refreshMode, code, title, paused
+  ) => {
+    serviceMocks.getPublicPortalBySlug
+      .mockResolvedValueOnce({
+        ...portalResult,
+        source: 'cache',
+        offline: true,
+        catalogRevision: 7,
+        cachePolicy: { schemaVersion: 2, freshSeconds: 300, maxStaleSeconds: 86400 },
+      })
+      .mockRejectedValueOnce(new EcommercePublicError(
+        code,
+        'Esta tienda no está disponible.',
+        null,
+        paused ? { pausedContact: { whatsappPhone: '529610000000' } } : {}
+      ));
+    serviceMocks.getPublicCatalog.mockResolvedValueOnce({
+      ...catalogResult,
+      source: 'cache',
+      offline: true,
+      catalogRevision: 7,
+    });
+
+    renderPage();
+    expect(await screen.findByRole('heading', { name: 'Alitas BBQ' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Mi negocio' })).toBeInTheDocument();
+
+    act(() => {
+      if (refreshMode === 'focus') {
+        window.dispatchEvent(new Event('focus'));
+      } else {
+        const pageShow = new Event('pageshow');
+        Object.defineProperty(pageShow, 'persisted', { value: true });
+        fireEvent(window, pageShow);
+      }
+    });
+
+    await waitFor(() => {
+      expect(serviceMocks.getPublicPortalBySlug).toHaveBeenCalledTimes(2);
+    }, { timeout: 3000 });
+    expect(await screen.findByRole('heading', { name: title })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Mi negocio' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Alitas BBQ' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Agregar Alitas BBQ' })).not.toBeInTheDocument();
+    expect(serviceMocks.getPublicCatalog).toHaveBeenCalledTimes(1);
+    if (paused) {
+      expect(screen.getByRole('link', { name: 'Contactar por WhatsApp' }))
+        .toHaveAttribute('href', 'https://wa.me/529610000000');
+    } else {
+      expect(screen.queryByRole('link', { name: 'Contactar por WhatsApp' })).not.toBeInTheDocument();
+    }
+  });
+
+  it('clears a paused WhatsApp contact when navigating to hidden and published slugs', async () => {
+    serviceMocks.getPublicPortalBySlug.mockImplementation((slug) => {
+      if (slug === 'tienda-pausada') {
+        return Promise.reject(new EcommercePublicError(
+          'ECOMMERCE_PORTAL_PAUSED',
+          'Esta tienda no está disponible.',
+          null,
+          { pausedContact: { whatsappPhone: '529610000000' } }
+        ));
+      }
+      if (slug === 'tienda-oculta') {
+        return Promise.reject(new EcommercePublicError(
+          'ECOMMERCE_PORTAL_NOT_FOUND',
+          'Esta tienda no está disponible.',
+          null,
+          { pausedContact: { whatsappPhone: '529610000000' } }
+        ));
+      }
+      return Promise.resolve({
+        ...portalResult,
+        portal: { ...portalResult.portal, slug, name: 'Tienda publicada' },
+      });
+    });
+    const router = createMemoryRouter([
+      { path: '/tienda/:slug', element: <PublicStorePage /> },
+    ], { initialEntries: ['/tienda/tienda-pausada'] });
+    render(<RouterProvider router={router} />);
+
+    expect(await screen.findByRole('link', { name: 'Contactar por WhatsApp' }))
+      .toHaveAttribute('href', 'https://wa.me/529610000000');
+    await act(async () => router.navigate('/tienda/tienda-oculta'));
+    expect(await screen.findByRole('heading', { name: 'No encontramos esta tienda' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Contactar por WhatsApp' })).not.toBeInTheDocument();
+
+    await act(async () => router.navigate('/tienda/tienda-publicada'));
+    expect(await screen.findByRole('heading', { name: 'Tienda publicada' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Contactar por WhatsApp' })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ['/tienda/AB_bad', 'mayúsculas y guion bajo'],
+    ['/tienda/ab', 'slug demasiado corto'],
+    [`/tienda/${'a'.repeat(65)}`, 'slug demasiado largo'],
+    ['/tienda/abc_', 'carácter inválido'],
+  ])('rejects %s locally without an RPC (%s)', async (path) => {
+    renderPage(path);
     expect(await screen.findByRole('heading', { name: 'Enlace de tienda no válido' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Contactar por WhatsApp' })).not.toBeInTheDocument();
     expect(serviceMocks.getPublicPortalBySlug).not.toHaveBeenCalled();
