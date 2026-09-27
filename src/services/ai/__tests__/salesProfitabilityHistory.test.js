@@ -105,6 +105,70 @@ describe('sales profitability local history', () => {
     expect(entry.report.ai.status).toBe('not_generated');
   });
 
+  it('stores local routed answers as local with confirmed no quota and no generated AI narrative', () => {
+    const storage = memoryStorage();
+    const localEntry = buildSalesProfitabilityHistoryEntry({
+      result: {
+        response: {
+          status: 'not_ready',
+          executiveSummary: 'La consulta comercial todavía necesita más información.',
+          answer: 'La consulta comercial todavía necesita más información.',
+          explanation: 'No se consultaron datos ni se llamó a IA.',
+          confidence: 'high',
+          source: 'local',
+          coverage: { ready: false, complete: false, validSales: 0 },
+          calculations: [],
+          facts: [],
+          assumptions: [],
+          limitations: [],
+          recommendations: [],
+          scenarios: []
+        },
+        providerCalled: false,
+        quotaOutcome: 'not_consumed',
+        usageStatus: null,
+        intentResolution: {
+          kind: 'recognized_not_supported',
+          topic: 'competition',
+          confidence: 'high',
+          requiresData: false,
+          requiresProvider: false
+        }
+      },
+      requestContext: {
+        question: 'Ayúdame a analizar mi competencia.',
+        resolvedIntent: null,
+        resolution: {
+          kind: 'recognized_not_supported',
+          topic: 'competition',
+          confidence: 'high',
+          missingContext: []
+        },
+        compare: false,
+        period: {},
+        scenario: {}
+      },
+      queriedAt,
+      storage
+    });
+
+    expect(localEntry.execution.mode).toBe('local');
+    expect(localEntry.quota).toEqual({ status: 'no', reason: 'no_provider_path' });
+    expect(localEntry.report.result.providerCalled).toBe(false);
+    expect(localEntry.report.result.status).toBe('not_ready');
+    expect(localEntry.report.ai.status).toBe('not_generated');
+    expect(localEntry.report.request.resolution).toMatchObject({
+      kind: 'recognized_not_supported',
+      topic: 'competition',
+      confidence: 'high'
+    });
+
+    saveSalesProfitabilityHistoryEntry({ scopeKey: 'scope-local', entry: localEntry, storage });
+    const loaded = loadSalesProfitabilityHistory({ scopeKey: 'scope-local', storage });
+    expect(loaded.entries[0].execution.mode).toBe('local');
+    expect(loaded.entries[0].quota.status).toBe('no');
+  });
+
   it('preserves the submitted question text in the local snapshot', () => {
     const question = '  ¿Qué pasa si aumento el precio?  ';
     const entry = buildSalesProfitabilityHistoryEntry({

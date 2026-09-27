@@ -26,11 +26,12 @@ import {
   formatAnalysisValue
 } from '../../services/ai/salesProfitabilityAnalytics';
 import {
-  createOutOfScopeResponse,
+  createCommercialLocalResponse,
   normalizeCommercialAINarrativeDiagnosticCode,
   normalizeScenarioForIntent,
   resolveCommercialIntent
 } from '../../services/ai/commercialAgentContract';
+import { LIA_IDENTITY } from '../../services/ai/liaIdentity';
 import { getAIAgentUsageStatus } from '../../services/aiService';
 import { getLicenseKeyFromDetails } from '../../services/sync/syncConstants';
 import { useActorRuntimeSnapshot } from '../../services/auth/useActorRuntimeSnapshot';
@@ -408,6 +409,7 @@ function NarrativeEvidence({ response }) {
 
 function AnalysisResult({ result, onDownload, isDownloading }) {
   const response = result?.response || null;
+  const isLocalAnswer = ['out_of_scope', 'not_ready', 'local_answer'].includes(response?.status);
   if (!response) {
     return (
       <div className="commercial-ai-result commercial-ai-result--empty" aria-live="polite">
@@ -425,14 +427,14 @@ function AnalysisResult({ result, onDownload, isDownloading }) {
     <div className="commercial-ai-result" aria-live="polite">
       <div className="commercial-ai-result__header">
         <div><p className="commercial-ai-eyebrow">Conclusión</p><h2>{response.executiveSummary || response.answer}</h2></div>
-        {response.status !== 'out_of_scope' && (
+        {!isLocalAnswer && (
           <button type="button" className="commercial-ai-download" onClick={onDownload} disabled={isDownloading} aria-label="Descargar reporte completo">
             <Download size={16} aria-hidden="true" /> {isDownloading ? 'Preparando descarga…' : 'Descargar reporte completo'}
           </button>
         )}
       </div>
 
-      {response.status !== 'out_of_scope' && (
+      {!isLocalAnswer && (
         <>
           <section className="commercial-ai-executive-block">
             <h3>Hechos determinísticos</h3>
@@ -466,7 +468,7 @@ function AnalysisResult({ result, onDownload, isDownloading }) {
         </>
       )}
 
-      {response.status !== 'out_of_scope' && (
+      {!isLocalAnswer && (
         <>
           <div className="commercial-ai-confidence-row">
             <span>Nivel de confianza</span>
@@ -487,7 +489,21 @@ const INTENT_LABELS = Object.freeze({
   price_simulation: 'Simulación de precio',
   promotion_opportunity: 'Simulación de promoción',
   combo_opportunity: 'Oportunidad de combos',
-  out_of_scope: 'Fuera del alcance'
+  out_of_scope: 'Fuera del alcance',
+  local_answer: 'Respuesta local',
+  not_ready: 'Capacidad todavía no disponible'
+});
+
+const RESOLUTION_LABELS = Object.freeze({
+  identity: 'Respuesta local sobre Lía',
+  competition: 'Consulta sobre competencia',
+  assortment: 'Consulta sobre nuevos productos y servicios',
+  growth: 'Consulta sobre crecimiento de ventas',
+  commercial_question: 'Consulta comercial por aclarar',
+  price_simulation: 'Simulación de precio; faltan datos',
+  greeting: 'Saludo',
+  unrelated: 'Consulta fuera del alcance',
+  module: 'Consulta de otro módulo'
 });
 
 const HISTORY_ISSUE_MESSAGES = Object.freeze({
@@ -540,7 +556,10 @@ const historyFilterDetails = (entry) => {
   if (from || to) details.push(`Periodo: ${from || '—'} a ${to || '—'}`);
 
   const intent = request.resolvedIntent;
-  if (intent) details.push(`Intención: ${INTENT_LABELS[intent] || intent}`);
+  if (!intent && request.resolution?.topic) {
+    details.push(RESOLUTION_LABELS[request.resolution.topic] || 'Respuesta local');
+  }
+  if (intent) details.push('Intención: ' + (INTENT_LABELS[intent] || 'Consulta comercial'));
 
   const previousFrom = formatHistoryDateOnly(period.previousFrom);
   const previousTo = formatHistoryDateOnly(period.previousTo);
@@ -595,7 +614,8 @@ const historyEntryToAnalysisResult = (entry) => {
       }
     },
     usageStatus: report.usage?.available === true ? report.usage : null,
-    providerCalled: report.result.providerCalled === true
+    providerCalled: report.result.providerCalled === true,
+    intentResolution: report.request?.resolution || null
   };
 };
 
@@ -1000,8 +1020,8 @@ export default function CommercialAIAgentsPage() {
     setResult(null);
     setDownloadContext(null);
     try {
-      const resolution = resolveCommercialIntent(question);
-      const resolvedIntent = resolution.kind === 'supported' ? resolution.intent : 'out_of_scope';
+      const resolution = resolveCommercialIntent(question, { scenario });
+      const resolvedIntent = resolution.kind === 'supported' ? resolution.intent : null;
       const normalizedScenario = resolution.kind === 'supported'
         ? normalizeScenarioForIntent(resolvedIntent, scenario)
         : {};
@@ -1012,27 +1032,39 @@ export default function CommercialAIAgentsPage() {
       const requestContext = {
         question,
         resolvedIntent,
-        compare: compareEnabled,
-        period: {
-          from: period.from,
-          to: period.to,
-          previousFrom: previousPeriod?.from || null,
-          previousTo: previousPeriod?.to || null,
-          timezone: businessTimezone
+        resolution: {
+          kind: resolution.kind,
+          topic: resolution.topic || resolution.reason || null,
+          confidence: resolution.confidence || 'high',
+          missingContext: Array.isArray(resolution.missingContext) ? resolution.missingContext : []
         },
+        compare: compareEnabled,
+        period: resolution.kind === 'supported'
+          ? {
+            from: period.from,
+            to: period.to,
+            previousFrom: previousPeriod?.from || null,
+            previousTo: previousPeriod?.to || null,
+            timezone: businessTimezone
+          }
+          : {},
         scenario: normalizedScenario
       };
 
-      if (resolution.kind === 'out_of_scope') {
+      if (resolution.kind !== 'supported') {
         const completedResult = {
-          response: createOutOfScopeResponse(resolution),
+          response: createCommercialLocalResponse(resolution),
           usageStatus: null,
           providerCalled: false,
-          quotaOutcome: 'not_consumed'
+          quotaOutcome: 'not_consumed',
+          intentResolution: resolution,
+          reportSource: 'local'
         };
         setResult(completedResult);
-        setDownloadContext(requestContext);
-        void persistHistoryEntry({ completedResult, requestContext, queriedAt, contextToken: requestContextToken });
+        setDownloadContext(null);
+        if (resolution.kind !== 'identity') {
+          void persistHistoryEntry({ completedResult, requestContext, queriedAt, contextToken: requestContextToken });
+        }
         return;
       }
 
@@ -1171,15 +1203,15 @@ export default function CommercialAIAgentsPage() {
           <div className="commercial-ai-card__availability"><ShieldCheck size={16} aria-hidden="true" /><span>Solo lectura: no modifica precios, productos ni datos financieros.</span></div>
         </article>
         <article className="commercial-ai-card commercial-ai-card--blue commercial-ai-card--disabled" aria-disabled="true">
-          <div className="commercial-ai-card__topline"><span className="commercial-ai-card__icon" aria-hidden="true"><Globe2 size={22} /></span><span className="commercial-ai-status commercial-ai-status--muted">FEATURE_NOT_READY</span></div>
+          <div className="commercial-ai-card__topline"><span className="commercial-ai-card__icon" aria-hidden="true"><Globe2 size={22} /></span><span className="commercial-ai-status commercial-ai-status--muted">Próximamente</span></div>
           <h2>Ecommerce</h2><p>Analiza pedidos, catálogo y oportunidades de tu tienda en línea.</p>
-          <div className="commercial-ai-card__availability"><ShieldCheck size={16} aria-hidden="true" /><span>Disponible en una siguiente fase.</span></div>
+          <div className="commercial-ai-card__availability"><ShieldCheck size={16} aria-hidden="true" /><span>Este agente aún no está disponible.</span></div>
         </article>
       </section>
 
       <section className="commercial-ai-workspace" aria-labelledby="sales-agent-title">
         <div className="commercial-ai-workspace__heading">
-          <div><p className="commercial-ai-eyebrow">Agente activo</p><h2 id="sales-agent-title">Pregunta sobre tu negocio</h2></div>
+          <div><p className="commercial-ai-eyebrow">Agente activo</p><h2 id="sales-agent-title">Pregúntale a {LIA_IDENTITY.name} sobre tu negocio</h2><p className="commercial-ai-intro">{LIA_IDENTITY.capabilities}</p></div>
           <span className="commercial-ai-readonly"><ShieldCheck size={15} /> Solo lectura y simulación</span>
         </div>
 

@@ -695,7 +695,7 @@ describe('sales profitability agent service', () => {
     expect(invalidAnalyze).not.toHaveBeenCalled();
   });
 
-  it('resolves out-of-scope questions locally without actor, sales, Edge or provider access', async () => {
+  it('resolves identity and out-of-scope questions locally without actor, sales, Edge or provider access', async () => {
     const reports = repository();
     const assertActor = vi.fn();
     const analyze = vi.fn();
@@ -709,8 +709,9 @@ describe('sales profitability agent service', () => {
       scenario: { productName: 'Producto A', newPrice: '120' }
     });
 
-    expect(result.response.status).toBe('out_of_scope');
-    expect(result.response.executiveSummary).toContain('Soy el asistente de Ventas y Rentabilidad');
+    expect(result.response.status).toBe('local_answer');
+    expect(result.response.executiveSummary).toContain('Soy Lía, la asistente de análisis comercial de Lanzo.');
+    expect(result.intentResolution).toMatchObject({ kind: 'identity', topic: 'name' });
     expect(result.providerCalled).toBe(false);
     expect(result.usageStatus).toBeNull();
     expect(result.quotaOutcome).toBe('not_consumed');
@@ -732,6 +733,53 @@ describe('sales profitability agent service', () => {
       expect(outOfScope.usageStatus).toBeNull();
       expect(outOfScope.quotaOutcome).toBe('not_consumed');
     }
+    expect(assertActor).not.toHaveBeenCalled();
+    expect(reports.getSalesFinalHistory).not.toHaveBeenCalled();
+    expect(reports.getSalesProfitReport).not.toHaveBeenCalled();
+    expect(analyze).not.toHaveBeenCalled();
+  });
+
+  it('recognizes unsupported and context-incomplete commercial requests before accessing data or quota', async () => {
+    const reports = repository();
+    const assertActor = vi.fn();
+    const analyze = vi.fn();
+    const runner = createSalesProfitabilityAgentRunner({ repository: reports, analyze, assertActor });
+
+    const unsupportedCases = [
+      ['Ayúdame a analizar mi competencia.', 'competition'],
+      ['Analiza mi competencia para mejorar mi negocio.', 'competition'],
+      ['¿Qué productos o servicios puedo incorporar a mi negocio para atraer más clientela?', 'assortment'],
+      ['¿Qué productos nuevos debería vender?', 'assortment'],
+      ['¿Cómo puedo vender más?', 'growth'],
+      ['¿Cómo hago crecer mi negocio?', 'growth'],
+      ['¿Dónde tengo oportunidades de crecimiento?', 'growth'],
+      ['¿Cómo aumento mi ticket promedio?', 'growth']
+    ];
+
+    for (const [question, topic] of unsupportedCases) {
+      const result = await runner({ question, scenario: {} });
+      expect(result.response.status).toBe('not_ready');
+      expect(result.intentResolution).toMatchObject({
+        kind: 'recognized_not_supported',
+        topic,
+        requiresData: false,
+        requiresProvider: false
+      });
+      expect(result.providerCalled).toBe(false);
+      expect(result.quotaOutcome).toBe('not_consumed');
+    }
+
+    for (const scenario of [{}, { productName: 'Producto A' }]) {
+      const result = await runner({
+        question: '¿Qué pasa si aumento el precio?',
+        scenario
+      });
+      expect(result.response.status).toBe('not_ready');
+      expect(result.intentResolution.kind).toBe('needs_context');
+      expect(result.providerCalled).toBe(false);
+      expect(result.quotaOutcome).toBe('not_consumed');
+    }
+
     expect(assertActor).not.toHaveBeenCalled();
     expect(reports.getSalesFinalHistory).not.toHaveBeenCalled();
     expect(reports.getSalesProfitReport).not.toHaveBeenCalled();

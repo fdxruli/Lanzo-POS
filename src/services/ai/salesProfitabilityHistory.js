@@ -16,8 +16,8 @@ export const SALES_PROFITABILITY_HISTORY_RETENTION_MS = 90 * 24 * 60 * 60 * 1000
 export const SALES_PROFITABILITY_HISTORY_MAX_BYTES = 2 * 1024 * 1024;
 
 const HISTORY_SCHEMA_VERSION = 1;
-const VALID_RESPONSE_STATUSES = new Set(['completed', 'incomplete', 'insufficient_data', 'out_of_scope']);
-const VALID_EXECUTION_MODES = new Set(['automatic', 'cache', 'ai', 'ai_unavailable']);
+const VALID_RESPONSE_STATUSES = new Set(['completed', 'incomplete', 'insufficient_data', 'out_of_scope', 'not_ready', 'local_answer']);
+const VALID_EXECUTION_MODES = new Set(['automatic', 'cache', 'ai', 'ai_unavailable', 'local']);
 const VALID_USAGE_STATUSES = new Set(['yes', 'no', 'unknown']);
 const VALID_USAGE_REASONS = new Set([
   'edge_generation_completed',
@@ -31,7 +31,8 @@ const MODE_LABELS = Object.freeze({
   automatic: 'Análisis automático',
   cache: 'Caché',
   ai: 'IA',
-  ai_unavailable: 'IA no disponible'
+  ai_unavailable: 'IA no disponible',
+  local: 'Respuesta local'
 });
 
 const USAGE_LABELS = Object.freeze({
@@ -81,11 +82,14 @@ const hasExplicitCacheHit = (result) => (
 export const classifySalesProfitabilityExecution = (result = {}) => {
   const explicitCacheHit = hasExplicitCacheHit(result);
   const providerCalled = result.providerCalled === true;
+  const localRoute = ['out_of_scope', 'not_ready', 'local_answer'].includes(result.response?.status);
   const mode = explicitCacheHit && !providerCalled
     ? 'cache'
     : providerCalled
       ? (hasNarrative(result.response?.aiNarrative) ? 'ai' : 'ai_unavailable')
-      : 'automatic';
+      : localRoute
+        ? 'local'
+        : 'automatic';
 
   let usageStatus = 'unknown';
   let usageReason = 'quota_not_confirmed';

@@ -3,6 +3,7 @@ import {
   COMMERCIAL_AGENT_KEYS,
   COMMERCIAL_AGENT_INTENTS,
   FEATURE_NOT_READY,
+  createCommercialLocalResponse,
   createOutOfScopeResponse,
   normalizeScenarioForIntent,
   parseCommercialAgentResponse,
@@ -171,15 +172,122 @@ describe('commercial AI agent contract', () => {
     })).toMatchObject({ valid: false, code: 'INVALID_SCENARIO_KEYS' });
   });
 
-  it('resolves only six supported commercial intents and gives deterministic out-of-scope responses', () => {
-    expect(resolveCommercialIntent('¿Mi negocio es rentable?')).toEqual({ kind: 'supported', intent: 'profitability_summary' });
-    expect(resolveCommercialIntent('¿Por qué cambió mi margen?')).toEqual({ kind: 'supported', intent: 'explain_change' });
-    expect(resolveCommercialIntent('¿Qué productos están afectando mi rentabilidad?')).toEqual({ kind: 'supported', intent: 'product_risk' });
-    expect(resolveCommercialIntent('¿Qué pasa si aumento el precio?')).toEqual({ kind: 'supported', intent: 'price_simulation' });
-    expect(resolveCommercialIntent('¿Qué combos puedo formar?')).toEqual({ kind: 'supported', intent: 'combo_opportunity' });
-    expect(resolveCommercialIntent('¿Qué promoción puedo simular?')).toEqual({ kind: 'supported', intent: 'promotion_opportunity' });
-    expect(resolveCommercialIntent('¿Cómo te llamas?')).toEqual({ kind: 'out_of_scope', reason: 'identity' });
-    expect(resolveCommercialIntent('¿Qué hay en inventario?')).toEqual({ kind: 'out_of_scope', reason: 'module' });
+  it('keeps all six implemented commercial intents supported', () => {
+    const expected = [
+      ['¿Mi negocio es rentable?', 'profitability_summary'],
+      ['¿Por qué cambió mi margen?', 'explain_change'],
+      ['¿Qué productos están afectando mi rentabilidad?', 'product_risk'],
+      ['¿Qué pasa si aumento el precio?', 'price_simulation'],
+      ['¿Qué combos puedo formar?', 'combo_opportunity'],
+      ['¿Qué promoción puedo simular?', 'promotion_opportunity']
+    ];
+    for (const [question, intent] of expected) {
+      expect(resolveCommercialIntent(question)).toMatchObject({
+        kind: 'supported',
+        intent,
+        confidence: 'high',
+        requiresData: true,
+        requiresProvider: true
+      });
+    }
+  });
+
+  it('answers identity questions from Lía locally and explains the acronym', () => {
+    const expectedTopics = [
+      ['¿Cómo te llamas?', 'name'],
+      ['como te llamas', 'name'],
+      ['¿Cuál es tu nombre?', 'name'],
+      ['¿Quién eres?', 'identity'],
+      ['quien eres', 'identity'],
+      ['¿Qué eres?', 'identity'],
+      ['¿Eres una IA?', 'ai'],
+      ['¿Qué puedes hacer?', 'capabilities'],
+      ['¿Qué sabes hacer?', 'capabilities'],
+      ['¿Para qué sirves?', 'capabilities'],
+      ['¿Por qué te llamas Lía?', 'name_meaning'],
+      ['porque te llamas lia', 'name_meaning'],
+      ['¿Por qué Lía?', 'name_meaning'],
+      ['¿Qué significa Lía?', 'name_meaning'],
+      ['¿Qué significa tu nombre?', 'name_meaning'],
+      ['¿Qué quiere decir Lía?', 'name_meaning'],
+      ['que quiere decir lia', 'name_meaning'],
+      ['¿De dónde salió tu nombre?', 'name_meaning'],
+      ['¿De dónde viene el nombre Lía?', 'name_meaning'],
+      ['de donde salio tu nombre', 'name_meaning'],
+      ['¿Por qué ese nombre?', 'name_meaning']
+    ];
+
+    for (const [question, topic] of expectedTopics) {
+      expect(resolveCommercialIntent(question)).toMatchObject({
+        kind: 'identity',
+        topic,
+        requiresData: false,
+        requiresProvider: false
+      });
+    }
+
+    const meaning = createCommercialLocalResponse(resolveCommercialIntent('¿Por qué te llamas Lía?'));
+    expect(meaning.status).toBe('local_answer');
+    expect(meaning.executiveSummary).toContain('Lanzo Inteligencia Analítica');
+    expect(meaning.source).toBe('local');
+    expect(validateCommercialAgentResponse(meaning).valid).toBe(true);
+  });
+
+  it('recognizes competition, assortment and growth without redirecting them to profitability', () => {
+    const cases = [
+      ['Ayúdame a analizar mi competencia.', 'competition'],
+      ['Analiza mi competencia para mejorar mi negocio.', 'competition'],
+      ['¿Qué está haciendo mejor mi competencia?', 'competition'],
+      ['Ayúdame con mis competidores.', 'competition'],
+      ['Quiero ver qué hace mi competencia.', 'competition'],
+      ['¿Qué productos puedo incorporar a mi negocio?', 'assortment'],
+      ['¿Qué productos nuevos debería vender?', 'assortment'],
+      ['¿Qué productos nuevos puedo agregar a mi catálogo?', 'assortment'],
+      ['¿Qué productos o servicios puedo incorporar para atraer más clientela?', 'assortment'],
+      ['Quiero meter productos nuevos.', 'assortment'],
+      ['¿Qué otra cosa puedo vender?', 'assortment'],
+      ['¿Qué puedo incorporar para atraer más clientela?', 'assortment'],
+      ['¿Cómo puedo vender más?', 'growth'],
+      ['¿Cómo puedo aumentar mis ventas?', 'growth'],
+      ['¿Cómo hago crecer mi negocio?', 'growth'],
+      ['¿Dónde tengo oportunidades de crecimiento?', 'growth'],
+      ['¿Cómo aumento mi ticket promedio?', 'growth'],
+      ['Mis ventas están bajas, ¿qué hago?', 'growth'],
+      ['Quiero mejorar mi negocio.', 'growth']
+    ];
+
+    for (const [question, topic] of cases) {
+      expect(resolveCommercialIntent(question)).toMatchObject({
+        kind: 'recognized_not_supported',
+        topic,
+        confidence: 'high',
+        requiresData: false,
+        requiresProvider: false
+      });
+      expect(resolveCommercialIntent(question).intent).not.toBe('profitability_summary');
+    }
+  });
+
+  it('does not let generic business words trigger profitability and asks for missing context', () => {
+    for (const question of ['mi negocio', 'ventas', 'precio', 'clientes', 'quiero mejorar esto']) {
+      const result = resolveCommercialIntent(question);
+      expect(result.kind).not.toBe('supported');
+      expect(result.intent).not.toBe('profitability_summary');
+    }
+
+    expect(resolveCommercialIntent('¿Qué pasa si aumento el precio?', { scenario: {} })).toMatchObject({
+      kind: 'needs_context',
+      intent: 'price_simulation',
+      missingContext: ['productName', 'newPrice'],
+      requiresData: false,
+      requiresProvider: false
+    });
+    expect(resolveCommercialIntent('¿Qué pasa si aumento el precio?', {
+      scenario: { productName: 'Producto A', newPrice: '120' }
+    }).kind).toBe('supported');
+  });
+
+  it('reserves out-of-scope for unrelated questions and builds Lía-branded local responses', () => {
     for (const question of [
       'Hola',
       '¿Qué clima hará mañana?',
@@ -187,10 +295,15 @@ describe('commercial AI agent contract', () => {
       'Dame una receta de sopa',
       '¿Cuáles son mis clientes frecuentes?',
       '¿Qué pedidos hay en ecommerce?',
-      '¿Qué puedes hacer?'
+      '¿Quién ganó el partido?'
     ]) {
-      expect(resolveCommercialIntent(question).kind).toBe('out_of_scope');
+      const resolution = resolveCommercialIntent(question);
+      expect(resolution.kind).toBe('out_of_scope');
+      expect(resolution.requiresProvider).toBe(false);
+      expect(createCommercialLocalResponse(resolution).executiveSummary).toContain('Soy Lía');
     }
-    expect(createOutOfScopeResponse({ reason: 'identity' }).executiveSummary).toContain('Soy el asistente de Ventas y Rentabilidad');
+
+    expect(resolveCommercialIntent('¿Qué hay en inventario?').kind).toBe('out_of_scope');
+    expect(createOutOfScopeResponse({ reason: 'identity' }).executiveSummary).toContain('Soy Lía');
   });
 });

@@ -1,3 +1,7 @@
+import { getCommercialResolutionMessage } from './commercialQuestionRouter.js';
+
+export { resolveCommercialIntent } from './commercialQuestionRouter.js';
+
 export const COMMERCIAL_AGENT_KEYS = Object.freeze({
   SALES_PROFITABILITY: 'salesProfitability',
   ECOMMERCE: 'ecommerce'
@@ -38,7 +42,7 @@ export const COMMERCIAL_AI_NARRATIVE_DIAGNOSTIC_CODES = Object.freeze([
 
 const VALID_AGENT_KEYS = new Set(Object.values(COMMERCIAL_AGENT_KEYS));
 const VALID_INTENTS = new Set(COMMERCIAL_AGENT_INTENTS);
-const VALID_RESPONSE_STATUSES = new Set(['completed', 'incomplete', 'insufficient_data', 'out_of_scope', 'not_ready', 'error']);
+const VALID_RESPONSE_STATUSES = new Set(['completed', 'incomplete', 'insufficient_data', 'out_of_scope', 'not_ready', 'local_answer', 'error']);
 const VALID_SOURCES = new Set(['cloud', 'local', 'mixed']);
 const VALID_CONFIDENCE = new Set(['high', 'medium', 'low']);
 const VALID_AI_NARRATIVE_STATUSES = new Set(['available', 'unavailable']);
@@ -71,21 +75,6 @@ const SCENARIO_KEYS_BY_INTENT = Object.freeze({
   product_risk: Object.freeze([]),
   explain_change: Object.freeze([])
 });
-
-const OUT_OF_SCOPE_MESSAGES = Object.freeze({
-  identity: 'Soy el asistente de Ventas y Rentabilidad de Lanzo POS. Puedo ayudarte con rentabilidad, márgenes, productos problemáticos, precios, promociones y combos.',
-  module: 'Esta consulta corresponde al módulo de Diagnósticos Operativos. Desde aquí puedo ayudarte únicamente con ventas y rentabilidad.',
-  greeting: 'Puedo ayudarte a analizar ventas y rentabilidad de tu negocio. Prueba con una de las preguntas sugeridas.',
-  unrelated: 'Puedo ayudarte a analizar ventas y rentabilidad de tu negocio. Prueba con una de las preguntas sugeridas.'
-});
-
-const normalizedQuestion = (value) => String(value || '')
-  .toLowerCase()
-  .normalize('NFD')
-  .replace(/[\u0300-\u036f]/g, '')
-  .replace(/[¿?¡!.,;:()[\]{}]/g, ' ')
-  .replace(/\s+/g, ' ')
-  .trim();
 
 const scenarioHasValue = (value) => value !== undefined
   && value !== null
@@ -183,55 +172,24 @@ export const validateCommercialAgentScenario = (intent, scenario = {}) => {
   return { valid: true, scenario };
 };
 
-export const resolveCommercialIntent = (question = '') => {
-  const text = normalizedQuestion(question);
-  if (!text) return { kind: 'out_of_scope', reason: 'unrelated' };
+export const getOutOfScopeMessage = (reason) => getCommercialResolutionMessage({
+  kind: 'out_of_scope',
+  reason
+});
 
-  if (/\b(?:como te llamas|cual es tu nombre|quien eres|que puedes hacer|que sabes hacer|para que sirves)\b/u.test(text)) {
-    return { kind: 'out_of_scope', reason: 'identity' };
-  }
-  if (/^(?:hola|buenas|buenos dias|buenas tardes|buenas noches|que tal|saludos)$/u.test(text)) {
-    return { kind: 'out_of_scope', reason: 'greeting' };
-  }
-  if (/\b(?:inventario|stock|existencias|clientes?|ecommerce|tienda en linea|pedidos?|catalogo)\b/u.test(text)) {
-    return { kind: 'out_of_scope', reason: 'module' };
-  }
-  if (/\b(?:clima|tiempo hace|politic|presidente|receta|cocinar|cocina|futbol|deporte|musica|pelicula)\b/u.test(text)) {
-    return { kind: 'out_of_scope', reason: 'unrelated' };
-  }
-
-  if (/\b(?:combo|combos|juntos|juntas|combinacion|combinaciones|compran juntos|tickets compartidos)\b/u.test(text)) {
-    return { kind: 'supported', intent: 'combo_opportunity' };
-  }
-  if (/\b(?:promocion|promociones|descuento|descuentos|oferta|ofertas|rebaja|rebajas)\b/u.test(text)) {
-    return { kind: 'supported', intent: 'promotion_opportunity' };
-  }
-  if (/\b(?:precio|precios|subir precio|subo el precio|aumentar precio|aumento el precio|ajustar precio)\b/u.test(text)) {
-    return { kind: 'supported', intent: 'price_simulation' };
-  }
-  if (/\b(?:problematico|problematicos|problema|problemas|afectando|bajo margen|margen negativo|productos malos)\b/u.test(text)) {
-    return { kind: 'supported', intent: 'product_risk' };
-  }
-  if (/(?:por que|porque|explica|cambio|cambio mi|cambio el|subio|bajo|variacion|comparar|periodo anterior).*(?:margen|utilidad|ganancia|rentabilidad|ventas)?/u.test(text)
-    && /\b(?:margen|utilidad|ganancia|rentabilidad|ventas|costo|costos)\b/u.test(text)) {
-    return { kind: 'supported', intent: 'explain_change' };
-  }
-  if (/\b(?:rentable|rentabilidad|utilidad|utilidades|ganancia|ganancias|gano|pierdo|perdida|perdidas|ventas|venta|vendimos|vendi|ingresos|facturacion|margen|negocio)\b/u.test(text)) {
-    return { kind: 'supported', intent: 'profitability_summary' };
-  }
-
-  return { kind: 'out_of_scope', reason: 'unrelated' };
-};
-
-export const getOutOfScopeMessage = (reason) => OUT_OF_SCOPE_MESSAGES[reason] || OUT_OF_SCOPE_MESSAGES.unrelated;
-
-export const createOutOfScopeResponse = ({ reason = 'unrelated' } = {}) => {
-  const message = getOutOfScopeMessage(reason);
+export const createCommercialLocalResponse = (resolution = {}) => {
+  const kind = resolution.kind || 'out_of_scope';
+  const status = kind === 'identity'
+    ? 'local_answer'
+    : kind === 'out_of_scope'
+      ? 'out_of_scope'
+      : 'not_ready';
+  const message = getCommercialResolutionMessage(resolution);
   return {
     version: COMMERCIAL_AGENT_RESPONSE_VERSION,
     agentKey: COMMERCIAL_AGENT_KEYS.SALES_PROFITABILITY,
-    intent: null,
-    status: 'out_of_scope',
+    intent: resolution.intent || null,
+    status,
     executiveSummary: message,
     answer: message,
     explanation: message,
@@ -240,14 +198,31 @@ export const createOutOfScopeResponse = ({ reason = 'unrelated' } = {}) => {
     assumptions: [],
     scenarios: [],
     recommendations: [],
-    limitations: ['OUT_OF_SCOPE_NO_DATA_ACCESS'],
-    confidence: 'high',
+    limitations: [],
+    confidence: resolution.confidence || 'high',
     source: 'local',
-    coverage: { ready: false, complete: false, validSales: 0, outOfScope: true, reason },
+    coverage: {
+      ready: false,
+      complete: false,
+      validSales: 0,
+      localAnswer: true,
+      outOfScope: kind === 'out_of_scope',
+      reason: resolution.reason || kind,
+      topic: resolution.topic || null
+    },
     citations: [],
     actionDrafts: []
   };
 };
+
+export const createOutOfScopeResponse = ({ reason = 'unrelated' } = {}) => createCommercialLocalResponse({
+  kind: 'out_of_scope',
+  reason,
+  topic: reason,
+  confidence: 'high',
+  requiresData: false,
+  requiresProvider: false
+});
 
 const hasForbiddenContent = (value, seen = new Set()) => {
   if (typeof value === 'string') {
