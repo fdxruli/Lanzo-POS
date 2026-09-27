@@ -108,11 +108,15 @@ function makeHandler(
   });
 }
 
-function chatResponse(content = 'respuesta sintética', usage = { prompt_tokens: 3, completion_tokens: 5, total_tokens: 8 }) {
+function chatResponse(
+  content = 'respuesta sintética',
+  usage = { prompt_tokens: 3, completion_tokens: 5, total_tokens: 8 },
+  finishReason = 'stop'
+) {
   return new Response(JSON.stringify({
     id: 'provider-request-synthetic',
     model: 'reported-synthetic-model',
-    choices: [{ message: { role: 'assistant', content } }],
+    choices: [{ message: { role: 'assistant', content }, finish_reason: finishReason }],
     usage
   }), {
     status: 200,
@@ -120,10 +124,12 @@ function chatResponse(content = 'respuesta sintética', usage = { prompt_tokens:
   });
 }
 
-function responsesResponse(content = 'respuesta responses sintética') {
+function responsesResponse(content = 'respuesta responses sintética', status = 'completed', incompleteReason?: string) {
   return new Response(JSON.stringify({
     id: 'responses-request-synthetic',
     model: 'reported-responses-model',
+    status,
+    ...(incompleteReason ? { incomplete_details: { reason: incompleteReason } } : {}),
     output_text: content,
     usage: { input_tokens: 4, output_tokens: 6, total_tokens: 10 }
   }), {
@@ -474,6 +480,7 @@ Deno.test('provider chat success devuelve contenido y usageStatus', async () => 
   const client = analysisClient();
   let providerBody: Record<string, unknown> | null = null;
   const response = await makeHandler(client, {
+    env: { AI_MODEL: 'deepseek-v4-flash' },
     fetchImpl: async (_url, init) => {
       providerBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
       return chatResponse();
@@ -488,10 +495,13 @@ Deno.test('provider chat success devuelve contenido y usageStatus', async () => 
   assert(providerBody !== null, 'El proveedor debe recibir un body');
   const capturedProviderBody = providerBody as Record<string, unknown>;
   assertEquals(capturedProviderBody.temperature, 0.2);
+  assertEquals(capturedProviderBody.max_tokens, 2048, 'el límite no comercial conserva su valor');
+  assertEquals(capturedProviderBody.response_format, undefined, 'JSON mode es exclusivo de narrativa comercial');
   const metadata = client.calls[1].args.p_metadata as Record<string, unknown>;
   assertEquals(metadata.provider, 'openai-compatible');
   assertEquals(metadata.protocol, 'chat-completions');
-  assertEquals(metadata.model, 'synthetic-model');
+  assertEquals(metadata.model, 'deepseek-v4-flash');
+  assertEquals(metadata.finish_reason, 'stop');
 });
 
 
@@ -517,6 +527,7 @@ Deno.test('Moonshot Kimi K2.6 omite temperature y admite thinking', async () => 
   assertEquals(capturedK2Body.model, 'kimi-k2.6');
   assertEquals((capturedK2Body.thinking as Record<string, unknown>)?.type, 'disabled');
   assert(!Object.prototype.hasOwnProperty.call(capturedK2Body, 'temperature'), 'Moonshot no debe recibir temperature');
+  assertEquals(capturedK2Body.response_format, undefined, 'Moonshot no recibe JSON mode de DeepSeek');
 });
 
 Deno.test('Moonshot Kimi K3 usa reasoning_effort y omite temperature', async () => {
@@ -541,6 +552,7 @@ Deno.test('Moonshot Kimi K3 usa reasoning_effort y omite temperature', async () 
   assertEquals(capturedK3Body.model, 'kimi-k3');
   assertEquals(capturedK3Body.reasoning_effort, 'low');
   assertEquals(capturedK3Body.thinking, undefined);
+  assertEquals(capturedK3Body.response_format, undefined);
   assert(!Object.prototype.hasOwnProperty.call(capturedK3Body, 'temperature'), 'Moonshot no debe recibir temperature');
 });
 
@@ -556,6 +568,26 @@ Deno.test('provider Responses-style success devuelve contenido', async () => {
   assertEquals(body.content, 'respuesta responses sintética');
   assertEquals(client.calls[1].args.p_prompt_tokens, 4);
   assertEquals(client.calls[1].args.p_completion_tokens, 6);
+  assertEquals((client.calls[1].args.p_metadata as Record<string, unknown>).finish_reason, 'completed');
+});
+
+Deno.test('Responses API informa max_output_tokens como narrativa truncada y no consume uso', async () => {
+  const client = analysisClient(successBegin(), { success: true, usage_id: 'usage-synthetic-1', status: 'failed' });
+  const response = await makeHandler(client, {
+    env: { AI_MODEL: 'deepseek-v4-flash', AI_API_URL: 'https://provider.test/v1/responses' },
+    fetchImpl: async () => responsesResponse(structuredCommercialResponse(), 'incomplete', 'max_output_tokens')
+  })(request(structuredCommercialRequest()));
+  const body = await json(response);
+  const normalized = JSON.parse(body.rawResultContent as string);
+  const completion = client.calls.find((call) => call.name === 'complete_ai_agent_analysis');
+  const metadata = completion?.args.p_metadata as Record<string, unknown>;
+
+  assertEquals(response.status, 200);
+  assertEquals(body.providerCalled, true);
+  assertEquals(body.quotaOutcome, 'not_consumed');
+  assertEquals(normalized.aiNarrative.diagnosticCode, 'AI_NARRATIVE_TRUNCATED');
+  assertEquals(completion?.args.p_success, false);
+  assertEquals(metadata.finish_reason, 'max_output_tokens');
 });
 
 Deno.test('AI_API_KEY tiene precedencia sobre OPENAI_API_KEY fallback', async () => {
@@ -694,6 +726,7 @@ Deno.test('ventas y rentabilidad acepta sólo contexto estructurado y completa c
   const client = analysisClient();
   let providerBody: Record<string, unknown> | null = null;
   const response = await makeHandler(client, {
+    env: { AI_MODEL: 'deepseek-v4-flash' },
     fetchImpl: async (_url, init) => {
       providerBody = JSON.parse(String(init?.body || '{}')) as Record<string, unknown>;
       return chatResponse(structuredCommercialResponse());
@@ -710,7 +743,44 @@ Deno.test('ventas y rentabilidad acepta sólo contexto estructurado y completa c
   assert(providerBody !== null, 'provider body missing');
   const capturedCommercialBody = providerBody as Record<string, unknown>;
   assert(Array.isArray(capturedCommercialBody.messages), 'server prompt missing');
+  assertEquals(capturedCommercialBody.max_tokens, 1024, 'max tokens comercial limitado en servidor');
+  assertEquals(JSON.stringify(capturedCommercialBody.response_format), JSON.stringify({ type: 'json_object' }));
+  const userMessage = (capturedCommercialBody.messages as Array<Record<string, unknown>>)[1];
+  const sentPrompt = JSON.parse(String(userMessage.content)) as Record<string, unknown>;
+  const sentSales = (sentPrompt.deterministicEvidence as Record<string, unknown>).sales as Record<string, unknown>;
+  assertEquals(sentSales.netSales, undefined, 'no repetir métricas planas del resumen');
+  assertEquals(sentSales.evidenceKeys, undefined, 'no repetir las claves de evidencia permitidas');
+  assert(Array.isArray(sentPrompt.allowedEvidenceKeys), 'las claves de evidencia permitidas siguen disponibles');
+  assert(sentSales.summary !== undefined, 'el resumen determinístico debe conservarse');
   assert(!Object.prototype.hasOwnProperty.call(structuredCommercialRequest(), 'systemPrompt'), 'arbitrary prompt accepted by fixture');
+});
+
+Deno.test('JSON mode DeepSeek no cambia Kimi, otros modelos compatibles ni Responses', async () => {
+  const cases = [
+    { label: 'Kimi chat completions', env: { AI_PROVIDER: 'moonshot', AI_API_URL: 'https://api.moonshot.ai/v1/chat/completions', AI_MODEL: 'kimi-k3' }, expected: false },
+    { label: 'modelo compatible distinto', env: { AI_MODEL: 'deepseek-v4-flash-lite' }, expected: false },
+    { label: 'DeepSeek Responses API', env: { AI_MODEL: 'deepseek-v4-flash', AI_API_URL: 'https://provider.test/v1/responses' }, expected: false }
+  ];
+  for (const sample of cases) {
+    const client = analysisClient();
+    let providerBody: Record<string, unknown> | null = null;
+    const response = await makeHandler(client, {
+      env: sample.env,
+      fetchImpl: async (_url, init) => {
+        providerBody = JSON.parse(String(init?.body || '{}')) as Record<string, unknown>;
+        return sample.env.AI_API_URL?.endsWith('/responses')
+          ? responsesResponse(structuredCommercialResponse())
+          : chatResponse(structuredCommercialResponse());
+      }
+    })(request(structuredCommercialRequest()));
+    assertEquals(response.status, 200, sample.label);
+    assert(providerBody !== null, `${sample.label}: provider body missing`);
+    assertEquals(
+      Object.prototype.hasOwnProperty.call(providerBody, 'response_format'),
+      sample.expected,
+      sample.label
+    );
+  }
 });
 
 Deno.test('ventas y rentabilidad rechaza prompts arbitrarios en la solicitud estructurada', async () => {
@@ -830,16 +900,19 @@ Deno.test('narrativa inválida o vacía queda unavailable, conserva métricas y 
     { label: 'texto no JSON', content: 'No puedo responder en JSON.', code: 'AI_NARRATIVE_INVALID_JSON' },
     { label: 'prosa alrededor de un fragmento JSON', content: 'Respuesta: {"executiveSummary":"Narrativa parcial"}', code: 'AI_NARRATIVE_INVALID_JSON' },
     { label: 'objeto JSON vacío', content: '{}', code: 'AI_NARRATIVE_MISSING_CONTENT' },
-    { label: 'campos narrativos faltantes', content: JSON.stringify({ confidence: 'high', recommendations: [] }), code: 'AI_NARRATIVE_MISSING_CONTENT' }
+    { label: 'campos narrativos faltantes', content: JSON.stringify({ confidence: 'high', recommendations: [] }), code: 'AI_NARRATIVE_MISSING_CONTENT' },
+    { label: 'respuesta JSON truncada por límite', content: structuredCommercialResponse(), finishReason: 'length', code: 'AI_NARRATIVE_TRUNCATED' },
+    { label: 'respuesta JSON con límite de tokens', content: structuredCommercialResponse(), finishReason: 'max_tokens', code: 'AI_NARRATIVE_TRUNCATED' },
+    { label: 'respuesta filtrada por el proveedor', content: structuredCommercialResponse(), finishReason: 'content_filter', code: 'AI_NARRATIVE_PROVIDER_ERROR' }
   ];
 
   for (const sample of cases) {
-    const client = analysisClient();
+    const client = analysisClient(successBegin(), { success: true, usage_id: 'usage-synthetic-1', status: 'failed' });
     let providerCalls = 0;
     const response = await makeHandler(client, {
       fetchImpl: async () => {
         providerCalls += 1;
-        return chatResponse(sample.content);
+        return chatResponse(sample.content, undefined, sample.finishReason || 'stop');
       }
     })(request(structuredCommercialRequest()));
     const body = await json(response);
@@ -849,6 +922,8 @@ Deno.test('narrativa inválida o vacía queda unavailable, conserva métricas y 
 
     assertEquals(response.status, 200, sample.label);
     assertEquals(body.success, true, sample.label);
+    assertEquals(body.providerCalled, true, sample.label);
+    assertEquals(body.quotaOutcome, 'not_consumed', sample.label);
     assertEquals(normalized.aiNarrative.status, 'unavailable', sample.label);
     assertEquals(normalized.aiNarrative.diagnosticCode, sample.code, sample.label);
     assertEquals(normalized.aiNarrative.executiveSummary, null, sample.label);
@@ -862,8 +937,67 @@ Deno.test('narrativa inválida o vacía queda unavailable, conserva métricas y 
     assertEquals(providerCalls, 1, `${sample.label}: no hay reintento oculto`);
     assertEquals(beginCalls.length, 1, `${sample.label}: una reserva`);
     assertEquals(completionCalls.length, 1, `${sample.label}: una finalización`);
-    assertEquals(completionCalls[0].args.p_success, true, `${sample.label}: conserva la política de uso del intento`);
+    assertEquals(completionCalls[0].args.p_success, false, `${sample.label}: narrativa inválida no consume`);
+    assertEquals(completionCalls[0].args.p_prompt_tokens, 3, `${sample.label}: prompt tokens persistidos`);
+    assertEquals(completionCalls[0].args.p_completion_tokens, 5, `${sample.label}: completion tokens persistidos`);
+    assertEquals(completionCalls[0].args.p_total_tokens, 8, `${sample.label}: total tokens persistidos`);
+    const metadata = completionCalls[0].args.p_metadata as Record<string, unknown>;
+    assertEquals(metadata.request_id, 'provider-request-synthetic', `${sample.label}: provider request id persistido`);
+    assertEquals(metadata.finish_reason, sample.finishReason || 'stop', `${sample.label}: finish reason persistido`);
+    assertEquals(metadata.narrative_status, 'unavailable', `${sample.label}: narrative status persistido`);
+    assertEquals(metadata.narrative_diagnostic, sample.code, `${sample.label}: diagnostic persistido`);
+    assertEquals(client.calls.filter((call) => call.name === 'get_ai_agent_usage_unlimited').length, 2, `${sample.label}: uso refrescado tras fallo`);
+    assertEquals((body.usageStatus as Record<string, unknown>).used, 0, `${sample.label}: snapshot autoritativo devuelto`);
   }
+});
+
+Deno.test('completion ambiguo después de narrativa inválida conserva fallback y no confirma cuota', async () => {
+  const client = analysisClient(successBegin(), { success: true, usage_id: 'usage-synthetic-1', status: 'completed' });
+  let providerCalls = 0;
+  const response = await makeHandler(client, {
+    fetchImpl: async () => {
+      providerCalls += 1;
+      return chatResponse('no es json');
+    }
+  })(request(structuredCommercialRequest()));
+  const body = await json(response);
+  const normalized = JSON.parse(body.rawResultContent as string);
+  assertEquals(response.status, 200);
+  assertEquals(normalized.aiNarrative.status, 'unavailable');
+  assertEquals(body.providerCalled, true);
+  assertEquals(body.quotaOutcome, 'not_confirmed');
+  assertEquals(body.usageStatus, null);
+  assertEquals(providerCalls, 1);
+  assertEquals(client.calls.filter((call) => call.name === 'complete_ai_agent_analysis').length, 1);
+  assertEquals(client.calls.filter((call) => call.name === 'get_ai_agent_usage_unlimited').length, 1);
+});
+
+Deno.test('tras fallar la narrativa se devuelve el contador autoritativo posterior a complete', async () => {
+  let usageLookupCount = 0;
+  const client = fakeClient(async (name) => {
+    if (name === 'get_ai_agent_usage_unlimited') {
+      usageLookupCount += 1;
+      return {
+        data: usageLookupCount === 1
+          ? { success: true, limit: 15, used: 7, remaining: 8, ai_agents: true }
+          : { success: true, limit: 15, used: 6, remaining: 9, ai_agents: true },
+        error: null
+      };
+    }
+    if (name === 'begin_ai_agent_analysis') return { data: successBegin({ used: 7, remaining: 8 }), error: null };
+    if (name === 'complete_ai_agent_analysis') return { data: { success: true, usage_id: 'usage-synthetic-1', status: 'failed' }, error: null };
+    return { data: null, error: { code: 'unexpected-rpc' } };
+  });
+  const response = await makeHandler(client, {
+    fetchImpl: async () => chatResponse('not json')
+  })(request(structuredCommercialRequest()));
+  const body = await json(response);
+
+  assertEquals(response.status, 200);
+  assertEquals(usageLookupCount, 2);
+  assertEquals((body.usageStatus as Record<string, unknown>).used, 6);
+  assertEquals((body.usageStatus as Record<string, unknown>).remaining, 9);
+  assertEquals(body.quotaOutcome, 'not_consumed');
 });
 
 

@@ -433,6 +433,44 @@ describe('commercial AI center', () => {
     expect(screen.queryByText(/AI_REQUEST_REJECTED/)).not.toBeInTheDocument();
   });
 
+  it('explains that a truncated provider response was attempted but did not consume quota', async () => {
+    runtime.runAgent.mockResolvedValueOnce({
+      response: {
+        status: 'completed',
+        executiveSummary: 'Las ventas netas fueron $300.',
+        explanation: 'Cálculo a partir del historial del periodo.',
+        confidence: 'medium',
+        source: 'cloud',
+        coverage: { validSales: 3 },
+        calculations: [],
+        assumptions: [],
+        limitations: [],
+        recommendations: [],
+        scenarios: [],
+        aiNarrative: {
+          status: 'unavailable',
+          diagnosticCode: 'AI_NARRATIVE_TRUNCATED',
+          executiveSummary: null,
+          explanation: null,
+          recommendations: []
+        }
+      },
+      providerCalled: true,
+      quotaOutcome: 'not_consumed',
+      usageStatus: { used: 6, limit: 15, remaining: 9 }
+    });
+
+    renderCenter();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), { target: { value: '¿Cómo puedo aumentar mis ventas?' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+
+    expect(await screen.findByRole('heading', { name: 'Las ventas netas fueron $300.' })).toBeInTheDocument();
+    const notice = screen.getByText(/El proveedor respondió, pero no entregó una narrativa válida/).closest('[role="status"]');
+    expect(notice).toHaveTextContent('Este intento no consumió un uso de IA.');
+    expect(screen.getByText(/alcanzó el límite de salida antes de completarse/i)).toBeInTheDocument();
+    expect(screen.queryByText('Narrativa generada por IA.')).not.toBeInTheDocument();
+  });
+
   it('does not claim that quota was not consumed when Edge usage is unknown', async () => {
     runtime.runAgent.mockResolvedValueOnce({
       response: {

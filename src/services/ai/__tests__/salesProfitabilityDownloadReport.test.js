@@ -506,6 +506,32 @@ describe('sales profitability download report', () => {
     });
   });
 
+  it('exports truncated provider output with confirmed no-consumption telemetry', () => {
+    const invalidNarrative = {
+      ...completedResult,
+      providerCalled: true,
+      quotaOutcome: 'not_consumed',
+      usageStatus: { used: 6, limit: 15, remaining: 9 },
+      response: {
+        ...completedResult.response,
+        aiNarrative: {
+          status: 'unavailable',
+          diagnosticCode: 'AI_NARRATIVE_TRUNCATED',
+          executiveSummary: null,
+          explanation: null,
+          recommendations: []
+        }
+      }
+    };
+    const report = buildSalesProfitabilityDownloadReport(invalidNarrative, requestContext);
+    const sanitized = sanitizeSalesProfitabilityDownloadReport(report);
+
+    expect(report.result).toMatchObject({ providerCalled: true, quotaOutcome: 'not_consumed' });
+    expect(report.ai).toMatchObject({ status: 'unavailable', diagnosticCode: 'AI_NARRATIVE_TRUNCATED' });
+    expect(sanitized.result).toMatchObject({ providerCalled: true, quotaOutcome: 'not_consumed' });
+    expect(sanitized.ai).toMatchObject({ status: 'unavailable', diagnosticCode: 'AI_NARRATIVE_TRUNCATED' });
+  });
+
   it('exports a pre-provider rejection with explicit no-call and no-consumption telemetry', () => {
     const rejected = {
       ...completedResult,

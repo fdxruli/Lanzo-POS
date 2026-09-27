@@ -949,7 +949,7 @@ export const createSalesProfitabilityAgentRunner = ({
         ...request,
         context,
         requestKey: requestKey || null
-      }, { temperature: 0.2, maxTokens: 2048 });
+      }, { temperature: 0.2, maxTokens: 1024 });
       providerOutcome = {
         providerCalled: typeof providerResult?.providerCalled === 'boolean'
           ? providerResult.providerCalled

@@ -75,6 +75,7 @@ const NARRATIVE_DIAGNOSTIC_LABELS = Object.freeze({
   AI_NARRATIVE_INVALID_JSON: 'El proveedor devolvió un formato narrativo no válido.',
   AI_NARRATIVE_MISSING_CONTENT: 'La respuesta no incluyó contenido narrativo utilizable.',
   AI_NARRATIVE_UNSAFE_CONTENT: 'El contenido narrativo no superó la validación de seguridad.',
+  AI_NARRATIVE_TRUNCATED: 'La respuesta del proveedor alcanzó el límite de salida antes de completarse.',
   AI_NARRATIVE_PARTIAL_CONTENT: 'Se omitieron partes de la narrativa que no superaron la validación.',
   AI_REQUEST_REJECTED: 'La solicitud fue rechazada antes de generar una explicación.',
   AI_NARRATIVE_PROVIDER_ERROR: 'No se pudo confirmar una narrativa utilizable del proveedor.',
@@ -541,7 +542,9 @@ function NarrativeStatusNotice({ result }) {
   if (result?.response?.aiNarrative?.status !== 'unavailable') return null;
 
   const message = result.quotaOutcome === 'not_consumed'
-    ? 'No pude generar la explicación con IA. Este intento no consumió un uso de IA.'
+    ? (result.providerCalled === true
+      ? 'El proveedor respondió, pero no entregó una narrativa válida. Este intento no consumió un uso de IA.'
+      : 'No pude generar la explicación con IA. Este intento no consumió un uso de IA.')
     : result.quotaOutcome === 'consumed'
       ? 'La explicación con IA no estuvo disponible. El uso de IA quedó registrado.'
       : 'No pude completar la explicación con IA. Estamos verificando el estado del uso de IA.';

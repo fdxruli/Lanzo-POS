@@ -6,6 +6,7 @@ import {
   createCommercialLocalResponse,
   createOutOfScopeResponse,
   normalizeScenarioForIntent,
+  normalizeCommercialAINarrativeDiagnosticCode,
   parseCommercialAgentResponse,
   resolveCommercialIntent,
   resolveCommercialAgentRequest,
@@ -119,6 +120,7 @@ describe('commercial AI agent contract', () => {
         recommendations: []
       }
     })).code).toBe('INVALID_AI_NARRATIVE_DIAGNOSTIC');
+    expect(normalizeCommercialAINarrativeDiagnosticCode('AI_NARRATIVE_TRUNCATED')).toBe('AI_NARRATIVE_TRUNCATED');
   });
 
   it('normalizes only the scenario fields allowed by each intent', () => {

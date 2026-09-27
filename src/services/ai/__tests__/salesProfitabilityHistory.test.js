@@ -122,6 +122,29 @@ describe('sales profitability local history', () => {
     expect(entry.report.ai.status).toBe('unavailable');
   });
 
+  it('retains provider-called, not-consumed telemetry and truncated diagnostic in history', () => {
+    const entry = buildEntry({
+      response: {
+        ...response,
+        aiNarrative: {
+          status: 'unavailable',
+          diagnosticCode: 'AI_NARRATIVE_TRUNCATED',
+          executiveSummary: null,
+          explanation: null,
+          recommendations: []
+        }
+      },
+      providerCalled: true,
+      quotaOutcome: 'not_consumed',
+      usageStatus: { used: 6, limit: 15, remaining: 9 }
+    });
+
+    expect(entry.execution).toMatchObject({ mode: 'ai_unavailable' });
+    expect(entry.quota).toEqual({ status: 'no', reason: 'provider_failed_without_consumption' });
+    expect(entry.report.result).toMatchObject({ providerCalled: true, quotaOutcome: 'not_consumed' });
+    expect(entry.report.ai).toMatchObject({ status: 'unavailable', diagnosticCode: 'AI_NARRATIVE_TRUNCATED' });
+  });
+
   it('stores local routed answers as local with confirmed no quota and no generated AI narrative', () => {
     const storage = memoryStorage();
     const localEntry = buildSalesProfitabilityHistoryEntry({

@@ -155,6 +155,7 @@ describe('sales profitability agent service', () => {
       scope: 'mine'
     });
     expect(analyze).toHaveBeenCalledTimes(1);
+    expect(analyze.mock.calls[0][1]).toEqual({ temperature: 0.2, maxTokens: 1024 });
     expect(result.providerCalled).toBe(true);
     expect(result.quotaOutcome).toBe('consumed');
     expect(result.usageStatus.remaining).toBe(14);
@@ -196,6 +197,31 @@ describe('sales profitability agent service', () => {
     expect(result.response.current).toMatchObject({ netSales: 100, costOfSale: 40, profit: 60, margin: 0.6 });
     expect(result.response.calculations).not.toContainEqual(expect.objectContaining({ label: 'cálculo alterado por proveedor' }));
     expect(result.response.facts || []).not.toContainEqual(expect.objectContaining({ label: 'dato alterado por proveedor' }));
+  });
+
+  it('preserves provider-called, not-consumed telemetry for a truncated Edge narrative', async () => {
+    const fallback = JSON.parse(unavailableNarrativeResponse);
+    fallback.aiNarrative.diagnosticCode = 'AI_NARRATIVE_TRUNCATED';
+    const analyze = vi.fn(async () => ({
+      rawResultContent: JSON.stringify(fallback),
+      usageStatus: { used: 6, limit: 15, remaining: 9 },
+      providerCalled: true,
+      quotaOutcome: 'not_consumed'
+    }));
+    const runner = createSalesProfitabilityAgentRunner({ repository: repository(), analyze, assertActor: vi.fn() });
+    const result = await runner({
+      question: '¿Cómo puedo aumentar mis ventas?',
+      period: { from: '2026-09-01', to: '2026-09-07', days: 7, timezone: 'America/Mexico_City' },
+      requestKey: 'truncated-narrative-not-consumed'
+    });
+
+    expect(analyze).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({
+      providerCalled: true,
+      quotaOutcome: 'not_consumed',
+      usageStatus: { used: 6, remaining: 9 },
+      response: { aiNarrative: { status: 'unavailable', diagnosticCode: 'AI_NARRATIVE_TRUNCATED' } }
+    });
   });
 
   it('turns a successful Edge call with non-JSON narrative into safe unavailable status without losing confirmed usage', async () => {
