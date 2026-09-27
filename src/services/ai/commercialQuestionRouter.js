@@ -207,15 +207,15 @@ export const getCommercialResolutionMessage = (value = {}) => {
   if (kind === 'identity') return createLiaIdentityAnswer(topic);
 
   if (kind === 'recognized_not_supported' && topic === 'competition') {
-    return 'Soy ' + LIA_IDENTITY.name + ', ' + LIA_IDENTITY.role + '. Entiendo que quieres analizar a tu competencia. Lanzo no dispone de información sobre tus competidores para compararlos de forma confiable. Puedo analizar el desempeño de tu negocio usando los datos disponibles.';
+    return 'Entiendo que quieres analizar a tu competencia. Lanzo todavía no dispone de información externa suficiente sobre tus competidores para hacer una comparación confiable. Por ahora puedo ayudarte a analizar el desempeño interno de tu negocio con los datos disponibles.';
   }
 
   if (kind === 'recognized_not_supported' && topic === 'assortment') {
-    return 'Soy ' + LIA_IDENTITY.name + ', ' + LIA_IDENTITY.role + '. Entiendo que buscas oportunidades para ampliar tu oferta. El análisis específico de nuevos productos o servicios todavía no está disponible.';
+    return 'Entiendo que buscas ampliar tu oferta con nuevos productos o servicios para atraer más clientela. Esa evaluación todavía no está disponible con suficiente evidencia; Lanzo trabaja por ahora con la información de los productos y ventas que ya existen en tu negocio, así que no voy a sustituirla por un análisis diferente.';
   }
 
   if (kind === 'recognized_not_supported' && topic === 'growth') {
-    return 'Soy ' + LIA_IDENTITY.name + ', ' + LIA_IDENTITY.role + '. Entiendo que buscas oportunidades para aumentar tus ventas. El análisis de crecimiento todavía no está disponible. En esta etapa puedo analizar rentabilidad, productos actuales, precios, promociones y combos usando los datos de Lanzo.';
+    return 'Entiendo que buscas aumentar tus ventas y el ticket promedio, es decir, el valor promedio de cada venta. El análisis específico de crecimiento todavía no está disponible. Por ahora puedo analizar productos actuales, precios, promociones, combos y rentabilidad con los datos de Lanzo.';
   }
 
   if (kind === 'needs_context' && value.intent === 'price_simulation') {

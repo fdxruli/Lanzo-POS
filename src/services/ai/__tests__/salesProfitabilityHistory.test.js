@@ -111,9 +111,9 @@ describe('sales profitability local history', () => {
       result: {
         response: {
           status: 'not_ready',
-          executiveSummary: 'La consulta comercial todavía necesita más información.',
-          answer: 'La consulta comercial todavía necesita más información.',
-          explanation: 'No se consultaron datos ni se llamó a IA.',
+          executiveSummary: 'Entiendo que quieres analizar a tu competencia. Lanzo todavía no dispone de información externa suficiente sobre tus competidores para hacer una comparación confiable.',
+          answer: 'Entiendo que quieres analizar a tu competencia. Lanzo todavía no dispone de información externa suficiente sobre tus competidores para hacer una comparación confiable.',
+          explanation: 'Entiendo que quieres analizar a tu competencia. Lanzo todavía no dispone de información externa suficiente sobre tus competidores para hacer una comparación confiable.',
           confidence: 'high',
           source: 'local',
           coverage: { ready: false, complete: false, validSales: 0 },
@@ -157,6 +157,7 @@ describe('sales profitability local history', () => {
     expect(localEntry.report.result.providerCalled).toBe(false);
     expect(localEntry.report.result.status).toBe('not_ready');
     expect(localEntry.report.ai.status).toBe('not_generated');
+    expect(localEntry.report.result.executiveSummary).toContain('analizar a tu competencia');
     expect(localEntry.report.request.resolution).toMatchObject({
       kind: 'recognized_not_supported',
       topic: 'competition',

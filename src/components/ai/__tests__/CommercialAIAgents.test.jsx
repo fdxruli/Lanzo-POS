@@ -868,8 +868,10 @@ describe('commercial AI center', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
 
     await waitFor(() => expect(screen.getByRole('heading', {
-      name: /Lanzo no dispone de información sobre tus competidores/
+      name: /Entiendo que quieres analizar a tu competencia/
     })).toBeInTheDocument());
+    expect(screen.getByText(/Consulta sobre competencia/)).toBeInTheDocument();
+    expect(screen.queryByText('Respuesta local sobre Lía')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Descargar reporte completo' })).not.toBeInTheDocument();
     expect(screen.queryByText(/FEATURE_NOT_READY|recognized_not_supported|profitability_summary/i)).not.toBeInTheDocument();
     expect(runtime.loadProducts).not.toHaveBeenCalled();

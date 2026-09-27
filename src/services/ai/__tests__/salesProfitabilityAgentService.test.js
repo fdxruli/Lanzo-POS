@@ -746,19 +746,22 @@ describe('sales profitability agent service', () => {
     const runner = createSalesProfitabilityAgentRunner({ repository: reports, analyze, assertActor });
 
     const unsupportedCases = [
-      ['Ayúdame a analizar mi competencia.', 'competition'],
-      ['Analiza mi competencia para mejorar mi negocio.', 'competition'],
-      ['¿Qué productos o servicios puedo incorporar a mi negocio para atraer más clientela?', 'assortment'],
-      ['¿Qué productos nuevos debería vender?', 'assortment'],
-      ['¿Cómo puedo vender más?', 'growth'],
-      ['¿Cómo hago crecer mi negocio?', 'growth'],
-      ['¿Dónde tengo oportunidades de crecimiento?', 'growth'],
-      ['¿Cómo aumento mi ticket promedio?', 'growth']
+      ['Ayúdame a analizar mi competencia.', 'competition', 'competencia'],
+      ['Analiza mi competencia para mejorar mi negocio.', 'competition', 'competencia'],
+      ['¿Qué productos o servicios puedo incorporar a mi negocio para atraer más clientela?', 'assortment', 'ampliar tu oferta'],
+      ['¿Qué productos nuevos debería vender?', 'assortment', 'ampliar tu oferta'],
+      ['¿Cómo puedo vender más?', 'growth', 'crecimiento'],
+      ['¿Cómo puedo aumentar mis ventas?', 'growth', 'crecimiento'],
+      ['¿Cómo hago crecer mi negocio?', 'growth', 'crecimiento'],
+      ['¿Dónde tengo oportunidades de crecimiento?', 'growth', 'crecimiento'],
+      ['¿Cómo puedo aumentar mi ticket promedio?', 'growth', 'ticket promedio']
     ];
 
-    for (const [question, topic] of unsupportedCases) {
+    for (const [question, topic, copy] of unsupportedCases) {
       const result = await runner({ question, scenario: {} });
       expect(result.response.status).toBe('not_ready');
+      expect(result.response.executiveSummary).toContain(copy);
+      expect(result.response.executiveSummary).not.toMatch(/^Soy Lía\b/u);
       expect(result.intentResolution).toMatchObject({
         kind: 'recognized_not_supported',
         topic,

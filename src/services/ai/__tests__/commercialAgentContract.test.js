@@ -244,6 +244,7 @@ describe('commercial AI agent contract', () => {
       ['¿Qué productos nuevos debería vender?', 'assortment'],
       ['¿Qué productos nuevos puedo agregar a mi catálogo?', 'assortment'],
       ['¿Qué productos o servicios puedo incorporar para atraer más clientela?', 'assortment'],
+      ['¿Qué productos o servicios puedo incorporar a mi negocio para atraer más clientela?', 'assortment'],
       ['Quiero meter productos nuevos.', 'assortment'],
       ['¿Qué otra cosa puedo vender?', 'assortment'],
       ['¿Qué puedo incorporar para atraer más clientela?', 'assortment'],
@@ -252,6 +253,7 @@ describe('commercial AI agent contract', () => {
       ['¿Cómo hago crecer mi negocio?', 'growth'],
       ['¿Dónde tengo oportunidades de crecimiento?', 'growth'],
       ['¿Cómo aumento mi ticket promedio?', 'growth'],
+      ['¿Cómo puedo aumentar mi ticket promedio?', 'growth'],
       ['Mis ventas están bajas, ¿qué hago?', 'growth'],
       ['Quiero mejorar mi negocio.', 'growth']
     ];
@@ -266,6 +268,35 @@ describe('commercial AI agent contract', () => {
       });
       expect(resolveCommercialIntent(question).intent).not.toBe('profitability_summary');
     }
+  });
+
+  it('builds distinct local copy for assortment, growth and competition while preserving identity copy', () => {
+    const cases = [
+      ['¿Qué productos o servicios puedo incorporar a mi negocio para atraer más clientela?', 'assortment', /ampliar tu oferta|productos nuevos|productos o servicios/i],
+      ['¿Qué productos nuevos debería vender?', 'assortment', /ampliar tu oferta|productos nuevos|productos o servicios/i],
+      ['¿Cómo puedo aumentar mi ticket promedio?', 'growth', /ticket promedio|valor promedio de cada venta|crecimiento/i],
+      ['¿Cómo puedo aumentar mis ventas?', 'growth', /ticket promedio|valor promedio de cada venta|crecimiento/i],
+      ['Ayúdame a analizar mi competencia', 'competition', /competencia|competidores/i]
+    ];
+    const messagesByTopic = new Map();
+
+    for (const [question, topic, copyPattern] of cases) {
+      const resolution = resolveCommercialIntent(question);
+      expect(resolution).toMatchObject({ kind: 'recognized_not_supported', topic });
+
+      const message = createCommercialLocalResponse(resolution).executiveSummary;
+      expect(message).toMatch(copyPattern);
+      expect(message).not.toMatch(/^Soy Lía\b/u);
+      messagesByTopic.set(topic, message);
+    }
+
+    expect(messagesByTopic.size).toBe(3);
+    expect(new Set(messagesByTopic.values()).size).toBe(3);
+
+    const identity = createCommercialLocalResponse(resolveCommercialIntent('¿Cómo te llamas?'));
+    const nameMeaning = createCommercialLocalResponse(resolveCommercialIntent('¿Por qué te llamas Lía?'));
+    expect(identity.executiveSummary).toMatch(/^Soy Lía\b/u);
+    expect(nameMeaning.executiveSummary).toContain('Lanzo Inteligencia Analítica');
   });
 
   it('does not let generic business words trigger profitability and asks for missing context', () => {
