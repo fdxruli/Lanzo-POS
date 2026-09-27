@@ -9,6 +9,10 @@ export const SALES_PROFITABILITY_INTENTS = Object.freeze([
   'profitability_summary',
   'explain_change',
   'product_risk',
+  'sales_growth',
+  'ticket_growth',
+  'product_opportunity',
+  'sales_trend',
   'price_simulation',
   'combo_opportunity',
   'promotion_opportunity'
@@ -399,6 +403,7 @@ const aggregateSales = (history, period) => {
         name: product.name,
         quantity: product.quantity,
         netSales: product.netSales,
+        salesShare: aggregate.netSales > 0 ? product.netSales / aggregate.netSales : null,
         cost: costKnown ? product.cost : null,
         unitCost: costKnown && product.quantity > 0 ? product.cost / product.quantity : null,
         profit,
@@ -420,6 +425,7 @@ const aggregateSales = (history, period) => {
     .sort((a, b) => b.netSales - a.netSales)
     .slice(0, MAX_CHANNELS);
   aggregate.averageTicket = aggregate.salesCount > 0 ? aggregate.netSales / aggregate.salesCount : null;
+  aggregate.unitsPerTicket = aggregate.salesCount > 0 ? aggregate.units / aggregate.salesCount : null;
   aggregate.profit = aggregate.costComplete ? aggregate.netSales - aggregate.costOfSale : null;
   aggregate.margin = aggregate.costComplete && aggregate.netSales > 0 ? aggregate.profit / aggregate.netSales : null;
   aggregate.costCoverage = aggregate.netSales > 0 ? aggregate.knownSales / aggregate.netSales : DEFAULT_COST_COVERAGE;
@@ -438,22 +444,119 @@ const delta = (current, previous) => (
 );
 
 const buildComparison = (current, previous) => {
-  if (!previous || previous.salesCount === 0) return null;
-  const currentMix = new Map(current.products.map((product) => [product.name, product.netSales / Math.max(current.netSales, 1)]));
-  const previousMix = new Map(previous.products.map((product) => [product.name, product.netSales / Math.max(previous.netSales, 1)]));
-  const names = new Set([...currentMix.keys(), ...previousMix.keys()]);
+  if (!previous) return null;
+  const currentByName = new Map(current.products.map((product) => [product.name, product]));
+  const previousByName = new Map(previous.products.map((product) => [product.name, product]));
+  const names = new Set([...currentByName.keys(), ...previousByName.keys()]);
+  const shareOf = (sales, total) => total > 0 ? sales / total : null;
+  const percentChange = (now, before) => before > 0 && now !== null && now !== undefined
+    ? (now - before) / before
+    : null;
+  const productChanges = Array.from(names).map((name) => {
+    const now = currentByName.get(name) || null;
+    const before = previousByName.get(name) || null;
+    const currentSales = now?.netSales ?? 0;
+    const previousSales = before?.netSales ?? 0;
+    const currentUnits = now?.quantity ?? 0;
+    const previousUnits = before?.quantity ?? 0;
+    const salesDelta = currentSales - previousSales;
+    const unitsDelta = currentUnits - previousUnits;
+    const currentShare = shareOf(currentSales, current.netSales);
+    const previousShare = shareOf(previousSales, previous.netSales);
+    const salesShareDelta = currentShare !== null && previousShare !== null
+      ? currentShare - previousShare
+      : null;
+    const direction = !before
+      ? 'new_in_period'
+      : !now
+        ? 'not_sold_current'
+        : salesDelta > 0.005
+          ? 'growing'
+          : salesDelta < -0.005
+            ? 'declining'
+            : 'stable';
+    const signals = [direction];
+    if (currentShare !== null && currentShare >= 0.1) signals.push('high_sales_share');
+    if (now?.costKnown === true && now.margin !== null && now.margin >= LOW_MARGIN_THRESHOLD) {
+      signals.push('healthy_margin');
+    }
+    if (now && now.costKnown !== true) signals.push('cost_unknown');
+    if (now?.costKnown === true && now.margin !== null && now.margin < LOW_MARGIN_THRESHOLD) {
+      signals.push('low_margin');
+    }
+    return {
+      name,
+      currentSales,
+      previousSales,
+      salesDelta,
+      salesDeltaPercent: percentChange(currentSales, previousSales),
+      currentUnits,
+      previousUnits,
+      unitsDelta,
+      unitsDeltaPercent: percentChange(currentUnits, previousUnits),
+      currentShare,
+      previousShare,
+      salesShareDelta,
+      currentMargin: now?.margin ?? null,
+      previousMargin: before?.margin ?? null,
+      currentProfit: now?.profit ?? null,
+      previousProfit: before?.profit ?? null,
+      costKnown: now?.costKnown === true,
+      costStatus: now?.costKnown === true ? 'known' : (now ? 'missing' : 'not_sold_current'),
+      direction,
+      signals
+    };
+  }).sort((a, b) => Math.abs(b.salesDelta) - Math.abs(a.salesDelta) || b.currentSales - a.currentSales)
+    .slice(0, MAX_PRODUCTS);
+
+  const currentMix = new Map(current.products.map((product) => [product.name, shareOf(product.netSales, current.netSales)]));
+  const previousMix = new Map(previous.products.map((product) => [product.name, shareOf(product.netSales, previous.netSales)]));
+  const productMixChanges = Array.from(names).map((name) => {
+    const currentShare = currentMix.has(name) ? currentMix.get(name) : (current.netSales > 0 ? 0 : null);
+    const previousShare = previousMix.has(name) ? previousMix.get(name) : (previous.netSales > 0 ? 0 : null);
+    return {
+      name,
+      currentShare,
+      previousShare,
+      deltaShare: currentShare !== null && previousShare !== null ? currentShare - previousShare : null
+    };
+  }).sort((a, b) => Math.abs(b.deltaShare || 0) - Math.abs(a.deltaShare || 0)).slice(0, 8);
+
+  const channelNames = new Set([...current.channels.map((item) => item.channel), ...previous.channels.map((item) => item.channel)]);
+  const channelMixChanges = Array.from(channelNames).map((channelName) => {
+    const now = current.channels.find((item) => item.channel === channelName);
+    const before = previous.channels.find((item) => item.channel === channelName);
+    const currentShare = now?.share ?? (current.netSales > 0 ? 0 : null);
+    const previousShare = before?.share ?? (previous.netSales > 0 ? 0 : null);
+    return {
+      channel: channelName,
+      currentShare,
+      previousShare,
+      deltaShare: currentShare !== null && previousShare !== null ? currentShare - previousShare : null,
+      currentSales: now?.netSales ?? 0,
+      previousSales: before?.netSales ?? 0,
+      salesDelta: (now?.netSales ?? 0) - (before?.netSales ?? 0)
+    };
+  }).sort((a, b) => Math.abs(b.deltaShare || 0) - Math.abs(a.deltaShare || 0)).slice(0, 6);
 
   return {
+    currentSalesCount: current.salesCount,
+    previousSalesCount: previous.salesCount,
+    deltaSalesCount: current.salesCount - previous.salesCount,
     previousNetSales: previous.netSales,
     previousUnits: previous.units,
     previousTicket: previous.averageTicket,
+    previousUnitsPerTicket: previous.unitsPerTicket,
     previousCost: previous.costComplete ? previous.costOfSale : null,
     previousProfit: previous.profit,
     previousMargin: previous.margin,
     previousDiscounts: previous.discountsKnown ? previous.discounts : null,
     deltaNetSales: delta(current.netSales, previous.netSales),
+    deltaNetSalesPercent: percentChange(current.netSales, previous.netSales),
     deltaUnits: delta(current.units, previous.units),
     deltaTicket: delta(current.averageTicket, previous.averageTicket),
+    deltaTicketPercent: percentChange(current.averageTicket, previous.averageTicket),
+    deltaUnitsPerTicket: delta(current.unitsPerTicket, previous.unitsPerTicket),
     deltaCost: delta(current.costComplete ? current.costOfSale : null, previous.costComplete ? previous.costOfSale : null),
     deltaProfit: delta(current.profit, previous.profit),
     deltaMargin: delta(current.margin, previous.margin),
@@ -461,21 +564,9 @@ const buildComparison = (current, previous) => {
       ? (current.margin - previous.margin) / Math.abs(previous.margin)
       : null,
     deltaDiscounts: delta(current.discountsKnown ? current.discounts : null, previous.discountsKnown ? previous.discounts : null),
-    productMixChanges: Array.from(names).map((name) => ({
-      name,
-      currentShare: currentMix.get(name) || 0,
-      previousShare: previousMix.get(name) || 0,
-      deltaShare: (currentMix.get(name) || 0) - (previousMix.get(name) || 0)
-    })).sort((a, b) => Math.abs(b.deltaShare) - Math.abs(a.deltaShare)).slice(0, 8),
-    channelMixChanges: current.channels.map((channel) => {
-      const previousChannel = previous.channels.find((item) => item.channel === channel.channel);
-      return {
-        channel: channel.channel,
-        currentShare: channel.share,
-        previousShare: previousChannel?.share || 0,
-        deltaShare: (channel.share || 0) - (previousChannel?.share || 0)
-      };
-    }).sort((a, b) => Math.abs(b.deltaShare) - Math.abs(a.deltaShare)).slice(0, 6)
+    productMixChanges,
+    channelMixChanges,
+    productChanges
   };
 };
 
@@ -971,7 +1062,48 @@ const buildProductRisks = (current) => {
   }).filter(Boolean).sort((a, b) => b.severity - a.severity || b.netSales - a.netSales);
 };
 
-const fallbackRecommendation = (intent, { profitability, productRisks, contributors, simulation }) => {
+const buildGrowthSignals = (current, comparison) => {
+  const productChanges = Array.isArray(comparison?.productChanges) ? comparison.productChanges : [];
+  const productsGrowing = productChanges.filter((product) => product.direction === 'growing').slice(0, 5);
+  const productsDeclining = productChanges.filter((product) => product.direction === 'declining' || product.direction === 'not_sold_current').slice(0, 5);
+  const productOpportunities = productChanges
+    .filter((product) => product.direction === 'growing' || product.signals.includes('high_sales_share'))
+    .slice(0, 8)
+    .map((product) => ({
+      ...product,
+      opportunityReason: product.direction === 'growing'
+        ? 'Las ventas históricas del producto aumentaron frente al periodo anterior.'
+        : 'El producto representa al menos 10% de las ventas netas actuales.'
+    }));
+
+  return {
+    currentNetSales: current.netSales,
+    currentSalesCount: current.salesCount,
+    currentUnits: current.units,
+    currentAverageTicket: current.averageTicket,
+    currentUnitsPerTicket: current.unitsPerTicket,
+    previousNetSales: comparison?.previousNetSales ?? null,
+    deltaNetSales: comparison?.deltaNetSales ?? null,
+    deltaNetSalesPercent: comparison?.deltaNetSalesPercent ?? null,
+    previousSalesCount: comparison?.previousSalesCount ?? null,
+    deltaSalesCount: comparison?.deltaSalesCount ?? null,
+    previousUnits: comparison?.previousUnits ?? null,
+    deltaUnits: comparison?.deltaUnits ?? null,
+    previousAverageTicket: comparison?.previousTicket ?? null,
+    deltaTicket: comparison?.deltaTicket ?? null,
+    deltaTicketPercent: comparison?.deltaTicketPercent ?? null,
+    previousUnitsPerTicket: comparison?.previousUnitsPerTicket ?? null,
+    deltaUnitsPerTicket: comparison?.deltaUnitsPerTicket ?? null,
+    productsGrowing,
+    productsDeclining,
+    productOpportunities,
+    channels: current.channels,
+    channelChanges: comparison?.channelMixChanges || [],
+    comparisonAvailable: Boolean(comparison)
+  };
+};
+
+const fallbackRecommendation = (intent, { profitability, productRisks, contributors, simulation, growthSignals }) => {
   if (intent === 'profitability_summary') {
     if (profitability.status === 'undetermined') {
       return [{
@@ -1042,17 +1174,62 @@ const fallbackRecommendation = (intent, { profitability, productRisks, contribut
       requiresConfirmation: true
     }];
   }
+  if (intent === 'sales_growth' && growthSignals?.productOpportunities?.length) {
+    const product = growthSignals.productOpportunities[0];
+    return [{
+      title: `Revisar la señal de ${product.name}`,
+      explanation: product.opportunityReason,
+      expectedImpact: 'Priorizar una revisión comercial con base en el movimiento histórico observado; no garantiza crecimiento.',
+      priority: product.direction === 'growing' ? 'high' : 'medium',
+      evidenceKeys: ['growthSignals.productOpportunities', 'comparison.productChanges'],
+      requiresConfirmation: true
+    }];
+  }
+  if (intent === 'product_opportunity' && growthSignals?.productOpportunities?.length) {
+    const product = growthSignals.productOpportunities[0];
+    return [{
+      title: `Evaluar si conviene impulsar ${product.name}`,
+      explanation: product.opportunityReason,
+      expectedImpact: 'Usar la señal para decidir una prueba comercial y revisar su resultado después.',
+      priority: product.direction === 'growing' ? 'high' : 'medium',
+      evidenceKeys: ['growthSignals.productOpportunities', 'comparison.productChanges'],
+      requiresConfirmation: true
+    }];
+  }
+  if (intent === 'ticket_growth' && simulation.comboOpportunities.length) {
+    const combo = simulation.comboOpportunities[0];
+    return [{
+      title: `Revisar la combinación ${combo.products.join(' + ')}`,
+      explanation: `Los productos aparecieron juntos en ${formatNumber(combo.tickets, 0)} tickets (${formatPercent(combo.frequency)} de los tickets del periodo). Es una asociación histórica, no evidencia de que uno cause la compra del otro.`,
+      expectedImpact: 'Considerar una prueba comercial pequeña y comparar sus resultados antes de ampliarla.',
+      priority: combo.evidenceLevel === 'high' ? 'high' : 'medium',
+      evidenceKeys: ['comboOpportunities.0.tickets', 'comboOpportunities.0.frequency'],
+      requiresConfirmation: true
+    }];
+  }
+  if (intent === 'sales_trend' && growthSignals?.comparisonAvailable) {
+    return [{
+      title: 'Revisar los movimientos que coincidieron con la tendencia',
+      explanation: 'Compara el cambio de tickets, ticket promedio, productos y canales por separado; el reporte no demuestra causalidad.',
+      expectedImpact: 'Elegir qué señal observar en el siguiente periodo comparable.',
+      priority: 'medium',
+      evidenceKeys: ['comparison.deltaNetSales', 'comparison.deltaSalesCount', 'comparison.deltaTicket'],
+      requiresConfirmation: true
+    }];
+  }
   return [];
 };
 
-const buildAgentContext = ({ current, comparison, period, source, profitability, productRisks, contributors }) => {
+const buildAgentContext = ({ current, comparison, period, source, profitability, productRisks, contributors, growthSignals, intent }) => {
   const risksByProduct = new Map(productRisks.map((risk) => [risk.product, risk]));
+  const isGrowthIntent = ['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend'].includes(intent);
   return {
     summary: {
       netSales: current.netSales,
       units: current.units,
       salesCount: current.salesCount,
       averageTicket: current.averageTicket,
+      ...(isGrowthIntent ? { unitsPerTicket: current.unitsPerTicket } : {}),
       discounts: current.discountsKnown ? current.discounts : null,
       unitCosts: current.costComplete ? current.costOfSale : null,
       profit: current.profit,
@@ -1070,6 +1247,7 @@ const buildAgentContext = ({ current, comparison, period, source, profitability,
         name: product.name,
         quantity: product.quantity,
         netSales: product.netSales,
+        salesShare: product.salesShare,
         unitCost: product.unitCost,
         profit: product.profit,
         margin: product.margin,
@@ -1089,15 +1267,49 @@ const buildAgentContext = ({ current, comparison, period, source, profitability,
       previousMargin: comparison.previousMargin,
       deltaNetSales: comparison.deltaNetSales,
       deltaUnits: comparison.deltaUnits,
+      currentSalesCount: comparison.currentSalesCount,
+      previousSalesCount: comparison.previousSalesCount,
+      deltaSalesCount: comparison.deltaSalesCount,
       deltaTicket: comparison.deltaTicket,
+      deltaNetSalesPercent: comparison.deltaNetSalesPercent,
+      deltaTicketPercent: comparison.deltaTicketPercent,
+      previousUnitsPerTicket: comparison.previousUnitsPerTicket,
+      deltaUnitsPerTicket: comparison.deltaUnitsPerTicket,
       deltaCost: comparison.deltaCost,
       deltaProfit: comparison.deltaProfit,
       deltaMargin: comparison.deltaMargin,
       deltaMarginRelative: comparison.deltaMarginRelative,
       deltaDiscounts: comparison.deltaDiscounts,
       productMixChanges: comparison.productMixChanges,
-      channelMixChanges: comparison.channelMixChanges
+      channelMixChanges: comparison.channelMixChanges,
+      productChanges: comparison.productChanges
     } : null,
+    ...(isGrowthIntent ? {
+      growthSignals: {
+        currentNetSales: growthSignals.currentNetSales,
+        currentSalesCount: growthSignals.currentSalesCount,
+        currentUnits: growthSignals.currentUnits,
+        currentAverageTicket: growthSignals.currentAverageTicket,
+        currentUnitsPerTicket: growthSignals.currentUnitsPerTicket,
+        previousNetSales: growthSignals.previousNetSales,
+        deltaNetSales: growthSignals.deltaNetSales,
+        deltaNetSalesPercent: growthSignals.deltaNetSalesPercent,
+        previousSalesCount: growthSignals.previousSalesCount,
+        deltaSalesCount: growthSignals.deltaSalesCount,
+        previousUnits: growthSignals.previousUnits,
+        deltaUnits: growthSignals.deltaUnits,
+        previousAverageTicket: growthSignals.previousAverageTicket,
+        deltaTicket: growthSignals.deltaTicket,
+        deltaTicketPercent: growthSignals.deltaTicketPercent,
+        previousUnitsPerTicket: growthSignals.previousUnitsPerTicket,
+        deltaUnitsPerTicket: growthSignals.deltaUnitsPerTicket,
+        productsGrowing: growthSignals.productsGrowing,
+        productsDeclining: growthSignals.productsDeclining,
+        productOpportunities: growthSignals.productOpportunities,
+        channelChanges: growthSignals.channelChanges,
+        comparisonAvailable: growthSignals.comparisonAvailable
+      }
+    } : {}),
     contributors,
     period,
     source
@@ -1167,16 +1379,21 @@ export const buildSalesProfitabilityAnalysis = ({
   }
   const current = aggregateSales(currentHistory, period);
   const previous = previousHistory ? aggregateSales(previousHistory, period.previous || {}) : null;
-  const comparison = previous ? buildComparison(current, previous) : null;
+  const comparison = previous
+    ? (resolvedIntent === 'explain_change' && previous.salesCount === 0 ? null : buildComparison(current, previous))
+    : null;
   const contributors = comparison ? buildContributors(current, previous, comparison) : [];
   const validRows = normalizeValidSales(currentHistory).rows;
   const profitability = buildProfitabilitySummary(current);
   const productRisks = buildProductRisks(current);
+  const growthSignals = buildGrowthSignals(current, comparison);
 
   let simulation = normalizeSimulationResult();
   if (resolvedIntent === 'price_simulation') simulation = normalizeSimulationResult(simulatePrice(current, normalizedScenario, period));
   if (resolvedIntent === 'promotion_opportunity') simulation = normalizeSimulationResult(simulatePromotion(current, normalizedScenario, period));
-  if (resolvedIntent === 'combo_opportunity') simulation = normalizeSimulationResult(buildComboSimulation(validRows, period));
+  if (resolvedIntent === 'combo_opportunity' || resolvedIntent === 'ticket_growth') {
+    simulation = normalizeSimulationResult(buildComboSimulation(validRows, period));
+  }
 
   let calculations = [];
   if (resolvedIntent === 'profitability_summary') {
@@ -1207,6 +1424,35 @@ export const buildSalesProfitabilityAnalysis = ({
       calculation('Productos con margen negativo', productRisks.filter((product) => product.riskType === 'negative_margin').length, 'conteo de productos con margen < 0', period, 'sales_history', formatNumber),
       calculation('Productos con costo faltante', productRisks.filter((product) => product.riskType === 'missing_cost').length, 'conteo de productos vendidos sin costo completo', period, 'sales_history', formatNumber)
     ];
+  } else if (['sales_growth', 'sales_trend'].includes(resolvedIntent)) {
+    calculations = [
+      calculation('Ventas netas actuales', current.netSales, 'suma de ventas válidas del periodo actual', period),
+      calculation('Ventas netas anteriores', comparison?.previousNetSales ?? null, 'suma de ventas válidas del periodo anterior comparable', period, 'comparison'),
+      calculation('Variación absoluta de ventas', comparison?.deltaNetSales ?? null, 'ventas actuales - ventas anteriores', period, 'comparison'),
+      calculation('Variación relativa de ventas', comparison?.deltaNetSalesPercent ?? null, '(ventas actuales - ventas anteriores) / ventas anteriores', period, 'comparison', formatPercent),
+      calculation('Tickets actuales', current.salesCount, 'conteo de ventas válidas del periodo actual', period, 'sales_history', formatNumber),
+      calculation('Tickets anteriores', comparison?.previousSalesCount ?? null, 'conteo de ventas válidas del periodo anterior', period, 'comparison', formatNumber),
+      calculation('Unidades por ticket', current.unitsPerTicket, 'unidades válidas / ventas válidas', period, 'sales_history', formatNumber),
+      calculation('Ticket promedio', current.averageTicket, 'ventas netas / ventas válidas', period)
+    ];
+  } else if (resolvedIntent === 'ticket_growth') {
+    calculations = [
+      calculation('Ticket promedio actual', current.averageTicket, 'ventas netas actuales / tickets actuales', period),
+      calculation('Ticket promedio anterior', comparison?.previousTicket ?? null, 'ventas netas anteriores / tickets anteriores', period, 'comparison'),
+      calculation('Variación absoluta del ticket', comparison?.deltaTicket ?? null, 'ticket promedio actual - anterior', period, 'comparison'),
+      calculation('Variación relativa del ticket', comparison?.deltaTicketPercent ?? null, '(ticket actual - anterior) / ticket anterior', period, 'comparison', formatPercent),
+      calculation('Tickets actuales', current.salesCount, 'conteo de ventas válidas del periodo actual', period, 'sales_history', formatNumber),
+      calculation('Unidades por ticket actuales', current.unitsPerTicket, 'unidades válidas / ventas válidas', period, 'sales_history', formatNumber),
+      calculation('Unidades por ticket anteriores', comparison?.previousUnitsPerTicket ?? null, 'unidades anteriores / tickets anteriores', period, 'comparison', formatNumber),
+      calculation('Variación de unidades por ticket', comparison?.deltaUnitsPerTicket ?? null, 'unidades por ticket actuales - anteriores', period, 'comparison', formatNumber)
+    ];
+  } else if (resolvedIntent === 'product_opportunity') {
+    calculations = [
+      calculation('Productos comparados', comparison?.productChanges?.length ?? current.products.length, 'conteo de productos con ventas o detalle de artículos en los periodos', period, 'sales_history', formatNumber),
+      calculation('Productos con ventas crecientes', growthSignals.productsGrowing.length, 'conteo de productos con ventas actuales mayores al periodo anterior', period, 'comparison', formatNumber),
+      calculation('Productos con ventas decrecientes', growthSignals.productsDeclining.length, 'conteo de productos con ventas actuales menores al periodo anterior o sin venta actual', period, 'comparison', formatNumber),
+      calculation('Productos con costo faltante', current.products.filter((product) => product.costKnown !== true).length, 'conteo de productos actuales sin costo completo conocido', period, 'sales_history', formatNumber)
+    ];
   } else {
     calculations = simulation.calculations;
   }
@@ -1218,6 +1464,12 @@ export const buildSalesProfitabilityAnalysis = ({
   }
   if (resolvedIntent === 'explain_change' && !comparison) {
     limitations.push('No hay un periodo anterior comparable con ventas válidas para explicar un cambio de margen.');
+  }
+  if (resolvedIntent === 'sales_trend' && !comparison) {
+    limitations.push('No se cargó un periodo anterior comparable; no se puede afirmar una tendencia.');
+  }
+  if (resolvedIntent === 'product_opportunity' && comparison?.productChanges?.length) {
+    limitations.push('Las señales de participación alta usan el umbral descriptivo de 10% de las ventas netas actuales; no son una predicción.');
   }
   if (resolvedIntent === 'explain_change' && !current.discountsKnown) {
     limitations.push('No todas las ventas tienen descuento registrado; ese factor puede estar incompleto.');
@@ -1319,6 +1571,30 @@ export const buildSalesProfitabilityAnalysis = ({
     explanation = productRisks.length
       ? `${productRisks[0].product} aparece primero porque: ${productRisks[0].reason}`
       : 'El análisis sólo usa ventas, costos, utilidad y margen; no infiere rotación, stock detenido ni disponibilidad.';
+  } else if (resolvedIntent === 'sales_growth') {
+    const change = comparison
+      ? ` Las ventas ${comparison.deltaNetSales > 0 ? 'subieron' : comparison.deltaNetSales < 0 ? 'bajaron' : 'se mantuvieron'} ${formatMoney(Math.abs(comparison.deltaNetSales))} frente al periodo anterior.`
+      : '';
+    executiveSummary = `El periodo registra ${formatMoney(current.netSales)} en ventas netas y ${formatNumber(current.salesCount, 0)} tickets.${change}`;
+    const leading = growthSignals.productOpportunities[0];
+    explanation = `${leading ? `${leading.name} muestra una señal para revisar: ${leading.opportunityReason}` : 'No hay productos con señales comparables suficientes para priorizar.'} El canal con mayor venta fue ${current.channels[0]?.channel || 'no disponible'}; esto describe volumen y no atribuye una causa.`;
+  } else if (resolvedIntent === 'sales_trend') {
+    executiveSummary = comparison
+      ? `Las ventas netas ${comparison.deltaNetSales > 0 ? 'aumentaron' : comparison.deltaNetSales < 0 ? 'disminuyeron' : 'se mantuvieron'} ${formatMoney(Math.abs(comparison.deltaNetSales))} (${formatPercent(comparison.deltaNetSalesPercent)}) frente al periodo anterior.`
+      : 'No hay un periodo anterior comparable suficiente para determinar una tendencia de ventas.';
+    explanation = comparison
+      ? `Los tickets cambiaron ${formatNumber(comparison.deltaSalesCount, 0)} y el ticket promedio ${formatMoney(comparison.deltaTicket)}. Estos movimientos ocurrieron en los mismos periodos; el reporte no demuestra que uno haya causado el otro.`
+      : 'La comparación requiere rangos equivalentes con datos completos de ambos periodos.';
+  } else if (resolvedIntent === 'ticket_growth') {
+    executiveSummary = comparison?.previousTicket !== null && comparison?.previousTicket !== undefined
+      ? `El ticket promedio fue ${formatMoney(current.averageTicket)} frente a ${formatMoney(comparison.previousTicket)} en el periodo anterior (${formatMoney(comparison.deltaTicket)}; ${formatPercent(comparison.deltaTicketPercent)}).`
+      : `El ticket promedio actual es ${formatMoney(current.averageTicket)} con ${formatNumber(current.salesCount, 0)} tickets; no hay un ticket anterior válido para calcular una variación.`;
+    explanation = `Se registraron ${formatNumber(current.units, 0)} unidades, equivalentes a ${formatNumber(current.unitsPerTicket)} por ticket.${simulation.comboOpportunities.length ? ` La combinación histórica más frecuente fue ${simulation.comboOpportunities[0].products.join(' + ')} en ${formatNumber(simulation.comboOpportunities[0].tickets, 0)} tickets.` : ' No se encontró una combinación histórica con la frecuencia mínima.'} Estas señales pueden orientar pruebas; no garantizan un ticket mayor.`;
+  } else if (resolvedIntent === 'product_opportunity') {
+    executiveSummary = `Se compararon ${formatNumber(growthSignals.productOpportunities.length, 0)} señal(es) entre productos actuales y ${formatNumber(current.products.length, 0)} producto(s) con ventas en el periodo.`;
+    const growing = growthSignals.productsGrowing[0];
+    const declining = growthSignals.productsDeclining[0];
+    explanation = `${growing ? `${growing.name} tuvo la mayor señal positiva de ventas (${formatMoney(growing.salesDelta)}).` : 'No se observan productos con aumento de ventas frente al periodo anterior.'} ${declining ? `${declining.name} muestra una disminución de ${formatMoney(Math.abs(declining.salesDelta))}.` : ''} El margen sólo se muestra cuando el costo del producto está completo.`;
   } else if (resolvedIntent === 'price_simulation') {
     facts = simulation.priceSimulation ? [{ label: simulation.priceSimulation.product, ...simulation.priceSimulation }] : [];
     executiveSummary = simulation.priceSimulation
@@ -1352,7 +1628,7 @@ export const buildSalesProfitabilityAnalysis = ({
   }
 
   const recommendations = current.salesCount > 0
-    ? fallbackRecommendation(resolvedIntent, { profitability, productRisks, contributors, simulation })
+    ? fallbackRecommendation(resolvedIntent, { profitability, productRisks, contributors, simulation, growthSignals })
     : [];
 
   return {
@@ -1378,6 +1654,8 @@ export const buildSalesProfitabilityAnalysis = ({
     contributors,
     profitability,
     productRisks,
+    growthSignals,
+    productOpportunities: growthSignals.productOpportunities,
     priceSimulation: simulation.priceSimulation,
     promotionSimulation: simulation.promotionSimulation,
     comboOpportunities: simulation.comboOpportunities,
@@ -1388,7 +1666,9 @@ export const buildSalesProfitabilityAnalysis = ({
       source,
       profitability,
       productRisks,
-      contributors
+      contributors,
+      growthSignals,
+      intent: resolvedIntent
     }),
     current,
     previous,

@@ -48,6 +48,7 @@ const normalizeProduct = (row = {}) => {
     name: asSafeText(source.name || source.product_name || source.productName),
     quantity: pickNumber(source, ['quantity', 'units', 'items_sold']),
     netSales: pickNumber(source, ['netSales', 'net_sales', 'sales', 'revenue']),
+    salesShare: pickNumber(source, ['salesShare', 'sales_share']),
     unitCost: pickNumber(source, ['unitCost', 'unit_cost', 'cost']),
     profit: pickNumber(source, ['profit', 'gross_profit', 'utility']),
     margin: pickNumber(source, ['margin', 'gross_margin']),
@@ -66,7 +67,37 @@ const normalizeChannel = (row = {}) => {
     channel: asSafeText(source.channel || source.sales_channel || source.canal, 32),
     netSales: pickNumber(source, ['netSales', 'net_sales', 'sales', 'revenue']),
     orders: pickNumber(source, ['orders', 'order_count', 'orders_count']),
-    averageTicket: pickNumber(source, ['averageTicket', 'average_ticket', 'avg_ticket'])
+    units: pickNumber(source, ['units', 'quantity', 'items_sold']),
+    averageTicket: pickNumber(source, ['averageTicket', 'average_ticket', 'avg_ticket']),
+    share: pickNumber(source, ['share', 'salesShare', 'sales_share'])
+  };
+};
+
+const PRODUCT_CHANGE_NUMBER_KEYS = [
+  'currentSales', 'previousSales', 'salesDelta', 'salesDeltaPercent', 'currentUnits', 'previousUnits',
+  'unitsDelta', 'unitsDeltaPercent', 'currentShare', 'previousShare', 'salesShareDelta',
+  'currentMargin', 'previousMargin', 'currentProfit', 'previousProfit'
+];
+const PRODUCT_DIRECTIONS = new Set(['new_in_period', 'not_sold_current', 'growing', 'declining', 'stable']);
+const PRODUCT_SIGNALS = new Set([
+  'new_in_period', 'not_sold_current', 'growing', 'declining', 'stable',
+  'high_sales_share', 'healthy_margin', 'cost_unknown', 'low_margin'
+]);
+
+const normalizeProductChange = (row = {}) => {
+  const source = asRecord(row);
+  return {
+    name: asSafeText(source.name, null, MAX_PRODUCT_NAME_LENGTH),
+    ...Object.fromEntries(PRODUCT_CHANGE_NUMBER_KEYS.map((key) => [key, pickNumber(source, [key])])),
+    costKnown: source.costKnown === true,
+    costStatus: asSafeText(source.costStatus, null, 32),
+    direction: PRODUCT_DIRECTIONS.has(source.direction) ? source.direction : 'stable',
+    signals: Array.isArray(source.signals)
+      ? source.signals.filter((signal) => typeof signal === 'string' && PRODUCT_SIGNALS.has(signal)).slice(0, 8)
+      : [],
+    ...(typeof source.opportunityReason === 'string'
+      ? { opportunityReason: asSafeText(source.opportunityReason, null, 240) }
+      : {})
   };
 };
 
@@ -102,22 +133,45 @@ const normalizeMixRows = (rows = [], key = 'name') => (
 const normalizeComparison = (comparison = {}) => {
   const source = asRecord(comparison);
   return {
+    currentSalesCount: pickNumber(source, ['currentSalesCount', 'current_sales_count']),
+    previousSalesCount: pickNumber(source, ['previousSalesCount', 'previous_sales_count']),
+    deltaSalesCount: pickNumber(source, ['deltaSalesCount', 'delta_sales_count']),
     previousNetSales: pickNumber(source, ['previousNetSales', 'previous_net_sales']),
     previousUnits: pickNumber(source, ['previousUnits', 'previous_units']),
     previousTicket: pickNumber(source, ['previousTicket', 'previous_ticket']),
+    previousUnitsPerTicket: pickNumber(source, ['previousUnitsPerTicket', 'previous_units_per_ticket']),
     previousCost: pickNumber(source, ['previousCost', 'previous_cost']),
     previousProfit: pickNumber(source, ['previousProfit', 'previous_profit']),
     previousMargin: pickNumber(source, ['previousMargin', 'previous_margin']),
     deltaNetSales: pickNumber(source, ['deltaNetSales', 'delta_net_sales']),
+    deltaNetSalesPercent: pickNumber(source, ['deltaNetSalesPercent', 'delta_net_sales_percent']),
     deltaUnits: pickNumber(source, ['deltaUnits', 'delta_units']),
     deltaTicket: pickNumber(source, ['deltaTicket', 'delta_ticket']),
+    deltaTicketPercent: pickNumber(source, ['deltaTicketPercent', 'delta_ticket_percent']),
+    deltaUnitsPerTicket: pickNumber(source, ['deltaUnitsPerTicket', 'delta_units_per_ticket']),
     deltaCost: pickNumber(source, ['deltaCost', 'delta_cost']),
     deltaProfit: pickNumber(source, ['deltaProfit', 'delta_profit']),
     deltaMargin: pickNumber(source, ['deltaMargin', 'delta_margin']),
     deltaMarginRelative: pickNumber(source, ['deltaMarginRelative', 'delta_margin_relative']),
     deltaDiscounts: pickNumber(source, ['deltaDiscounts', 'delta_discounts']),
     productMixChanges: normalizeMixRows(source.productMixChanges, 'name'),
-    channelMixChanges: normalizeMixRows(source.channelMixChanges, 'channel')
+    channelMixChanges: (Array.isArray(source.channelMixChanges) ? source.channelMixChanges : [])
+      .slice(0, 12)
+      .map((row = {}) => {
+        const item = asRecord(row);
+        return {
+          channel: asSafeText(item.channel, null, 80),
+          currentShare: pickNumber(item, ['currentShare']),
+          previousShare: pickNumber(item, ['previousShare']),
+          deltaShare: pickNumber(item, ['deltaShare']),
+          currentSales: pickNumber(item, ['currentSales']),
+          previousSales: pickNumber(item, ['previousSales']),
+          salesDelta: pickNumber(item, ['salesDelta'])
+        };
+      })
+      .filter((row) => row.channel),
+    productChanges: (Array.isArray(source.productChanges) ? source.productChanges : [])
+      .slice(0, 20).map(normalizeProductChange).filter((row) => row.name)
   };
 };
 
@@ -157,6 +211,10 @@ const normalizeCoverage = (coverage = {}) => {
     itemsComplete: source.itemsComplete === true,
     paginationComplete: source.paginationComplete === true,
     sourceComplete: source.sourceComplete === true,
+    comparisonDataAvailable: source.comparisonDataAvailable === true,
+    comparisonItemsAvailable: source.comparisonItemsAvailable === true,
+    salesDataComplete: source.salesDataComplete === true,
+    growthDataComplete: source.growthDataComplete === true,
     comparisonAvailable: source.comparisonAvailable === true,
     complete: source.complete === true
   };
@@ -203,6 +261,7 @@ const buildEvidenceKeys = (source = {}) => {
     'coverage.sourceComplete',
     'coverage.costStatus',
     'summary.discountsKnown',
+    'summary.unitsPerTicket',
     'products.risks'
   ];
   if (Object.keys(comparison).length) {
@@ -213,9 +272,17 @@ const buildEvidenceKeys = (source = {}) => {
       'comparison.deltaDiscounts',
       'comparison.deltaUnits',
       'comparison.deltaTicket',
+      'comparison.deltaNetSales',
+      'comparison.deltaNetSalesPercent',
+      'comparison.deltaSalesCount',
+      'comparison.deltaUnitsPerTicket',
       'comparison.productMixChanges',
-      'comparison.channelMixChanges'
+      'comparison.channelMixChanges',
+      'comparison.productChanges'
     );
+  }
+  if (Object.keys(asRecord(value.growthSignals)).length) {
+    keys.push('growthSignals.currentNetSales', 'growthSignals.deltaNetSales', 'growthSignals.productOpportunities');
   }
   contributors.forEach((item) => keys.push(`contributors.${item.key}`));
   if (Array.isArray(value.scenarios) && value.scenarios.length) {
@@ -234,6 +301,7 @@ const normalizeSalesPayload = (payload = {}) => {
       units: pickNumber(overview, ['units', 'items', 'items_sold']),
       salesCount: pickNumber(overview, ['salesCount', 'sales_count', 'orders', 'order_count']),
       averageTicket: pickNumber(overview, ['averageTicket', 'average_ticket', 'avg_ticket']),
+      unitsPerTicket: pickNumber(overview, ['unitsPerTicket', 'units_per_ticket']),
       discounts: pickNumber(overview, ['discounts', 'discount_amount', 'total_discounts']),
       discountsKnown: overview.discountsKnown === true,
       unitCosts: pickNumber(overview, ['unitCosts', 'unit_costs', 'cogs', 'costs']),
@@ -254,9 +322,13 @@ const normalizeSalesPayload = (payload = {}) => {
     profit: pickNumber(overview, ['profit', 'gross_profit', 'utility']),
     margin: pickNumber(overview, ['margin', 'gross_margin']),
     averageTicket: pickNumber(overview, ['averageTicket', 'average_ticket', 'avg_ticket']),
+    unitsPerTicket: pickNumber(overview, ['unitsPerTicket', 'units_per_ticket']),
     products: normalizeProducts(source.products || source.byProduct || source.by_product),
     channels: normalizeChannels(source.channels || source.byChannel || source.by_channel),
     comparison: normalizeComparison(source.comparison || source.previous),
+    ...(source.growthSignals && Object.keys(asRecord(source.growthSignals)).length
+      ? { growthSignals: normalizeGrowthSignals(source.growthSignals) }
+      : {}),
     contributors: normalizeContributors(source.contributors),
     evidenceKeys: buildEvidenceKeys(source),
     coverage: normalizeCoverage(source.coverage),
@@ -274,6 +346,35 @@ const normalizeSalesPayload = (payload = {}) => {
         && (typeof value === 'number' || typeof value === 'string' || typeof value === 'boolean' || Array.isArray(value))
       )));
     }) : []
+  };
+};
+
+const normalizeGrowthSignals = (signals = {}) => {
+  const source = asRecord(signals);
+  const numericKeys = [
+    'currentNetSales', 'currentSalesCount', 'currentUnits', 'currentAverageTicket', 'currentUnitsPerTicket',
+    'previousNetSales', 'deltaNetSales', 'deltaNetSalesPercent', 'previousSalesCount', 'deltaSalesCount',
+    'previousUnits', 'deltaUnits', 'previousAverageTicket', 'deltaTicket', 'deltaTicketPercent',
+    'previousUnitsPerTicket', 'deltaUnitsPerTicket'
+  ];
+  return {
+    ...Object.fromEntries(numericKeys.map((key) => [key, pickNumber(source, [key])])),
+    productsGrowing: (Array.isArray(source.productsGrowing) ? source.productsGrowing : []).slice(0, 5).map(normalizeProductChange),
+    productsDeclining: (Array.isArray(source.productsDeclining) ? source.productsDeclining : []).slice(0, 5).map(normalizeProductChange),
+    productOpportunities: (Array.isArray(source.productOpportunities) ? source.productOpportunities : []).slice(0, 8).map(normalizeProductChange),
+    channelChanges: (Array.isArray(source.channelChanges) ? source.channelChanges : []).slice(0, 12).map((row = {}) => {
+      const item = asRecord(row);
+      return {
+        channel: asSafeText(item.channel, null, 80),
+        currentShare: pickNumber(item, ['currentShare']),
+        previousShare: pickNumber(item, ['previousShare']),
+        deltaShare: pickNumber(item, ['deltaShare']),
+        currentSales: pickNumber(item, ['currentSales']),
+        previousSales: pickNumber(item, ['previousSales']),
+        salesDelta: pickNumber(item, ['salesDelta'])
+      };
+    }).filter((row) => row.channel),
+    comparisonAvailable: source.comparisonAvailable === true
   };
 };
 

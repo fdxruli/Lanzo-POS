@@ -37,6 +37,10 @@ describe('commercial AI agent contract', () => {
       'profitability_summary',
       'explain_change',
       'product_risk',
+      'sales_growth',
+      'ticket_growth',
+      'product_opportunity',
+      'sales_trend',
       'price_simulation',
       'combo_opportunity',
       'promotion_opportunity',
@@ -248,34 +252,43 @@ describe('commercial AI agent contract', () => {
       ['Quiero meter productos nuevos.', 'assortment'],
       ['¿Qué otra cosa puedo vender?', 'assortment'],
       ['¿Qué puedo incorporar para atraer más clientela?', 'assortment'],
-      ['¿Cómo puedo vender más?', 'growth'],
-      ['¿Cómo puedo aumentar mis ventas?', 'growth'],
-      ['¿Cómo hago crecer mi negocio?', 'growth'],
-      ['¿Dónde tengo oportunidades de crecimiento?', 'growth'],
-      ['¿Cómo aumento mi ticket promedio?', 'growth'],
-      ['¿Cómo puedo aumentar mi ticket promedio?', 'growth'],
-      ['Mis ventas están bajas, ¿qué hago?', 'growth'],
-      ['Quiero mejorar mi negocio.', 'growth']
+      ['¿Cómo puedo vender más?', 'sales_growth'],
+      ['¿Cómo puedo aumentar mis ventas?', 'sales_growth'],
+      ['¿Cómo hago crecer mi negocio?', 'sales_growth'],
+      ['¿Dónde tengo oportunidades de crecimiento?', 'sales_growth'],
+      ['¿Cómo aumento mi ticket promedio?', 'ticket_growth'],
+      ['¿Cómo puedo aumentar mi ticket promedio?', 'ticket_growth'],
+      ['¿Qué productos debería impulsar?', 'product_opportunity'],
+      ['¿Mis ventas están creciendo?', 'sales_trend']
     ];
 
     for (const [question, topic] of cases) {
-      expect(resolveCommercialIntent(question)).toMatchObject({
-        kind: 'recognized_not_supported',
-        topic,
-        confidence: 'high',
-        requiresData: false,
-        requiresProvider: false
-      });
-      expect(resolveCommercialIntent(question).intent).not.toBe('profitability_summary');
+      const resolution = resolveCommercialIntent(question);
+      if (['competition', 'assortment'].includes(topic)) {
+        expect(resolution).toMatchObject({
+          kind: 'recognized_not_supported',
+          topic,
+          confidence: 'high',
+          requiresData: false,
+          requiresProvider: false
+        });
+      } else {
+        expect(resolution).toMatchObject({
+          kind: 'supported',
+          intent: topic,
+          topic,
+          confidence: 'high',
+          requiresData: true,
+          requiresProvider: true
+        });
+      }
     }
   });
 
-  it('builds distinct local copy for assortment, growth and competition while preserving identity copy', () => {
+  it('builds local copy for assortment and competition while preserving identity copy', () => {
     const cases = [
       ['¿Qué productos o servicios puedo incorporar a mi negocio para atraer más clientela?', 'assortment', /ampliar tu oferta|productos nuevos|productos o servicios/i],
       ['¿Qué productos nuevos debería vender?', 'assortment', /ampliar tu oferta|productos nuevos|productos o servicios/i],
-      ['¿Cómo puedo aumentar mi ticket promedio?', 'growth', /ticket promedio|valor promedio de cada venta|crecimiento/i],
-      ['¿Cómo puedo aumentar mis ventas?', 'growth', /ticket promedio|valor promedio de cada venta|crecimiento/i],
       ['Ayúdame a analizar mi competencia', 'competition', /competencia|competidores/i]
     ];
     const messagesByTopic = new Map();
@@ -290,8 +303,8 @@ describe('commercial AI agent contract', () => {
       messagesByTopic.set(topic, message);
     }
 
-    expect(messagesByTopic.size).toBe(3);
-    expect(new Set(messagesByTopic.values()).size).toBe(3);
+    expect(messagesByTopic.size).toBe(2);
+    expect(new Set(messagesByTopic.values()).size).toBe(2);
 
     const identity = createCommercialLocalResponse(resolveCommercialIntent('¿Cómo te llamas?'));
     const nameMeaning = createCommercialLocalResponse(resolveCommercialIntent('¿Por qué te llamas Lía?'));
@@ -300,7 +313,7 @@ describe('commercial AI agent contract', () => {
   });
 
   it('does not let generic business words trigger profitability and asks for missing context', () => {
-    for (const question of ['mi negocio', 'ventas', 'precio', 'clientes', 'quiero mejorar esto']) {
+    for (const question of ['mi negocio', 'ventas', 'precio', 'clientes', 'quiero mejorar esto', 'quiero mejorar mi negocio']) {
       const result = resolveCommercialIntent(question);
       expect(result.kind).not.toBe('supported');
       expect(result.intent).not.toBe('profitability_summary');

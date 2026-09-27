@@ -125,7 +125,7 @@ describe('commercial AI context boundary', () => {
       options: { temperature: 0.2, maxTokens: 2048 }
     });
 
-    expect(validation.ok).toBe(true);
+    expect(validation.ok, JSON.stringify(validation)).toBe(true);
     expect(context.sales.summary).toMatchObject({
       unitCosts: null,
       profit: null,
@@ -215,11 +215,115 @@ describe('commercial AI context boundary', () => {
       options: { temperature: 0.2, maxTokens: 2048 }
     });
 
-    expect(validation.ok).toBe(true);
+    expect(validation.ok, JSON.stringify(validation)).toBe(true);
     expect(context.sales.products[0]).toMatchObject({
       costStatus: 'definitive',
       costSource: 'inventory_movement'
     });
     expect(JSON.stringify(context)).not.toContain('product-secret');
+  });
+
+  it('preserves typed growth, product and channel evidence accepted by the Edge contract', () => {
+    const productChange = {
+      name: 'Producto A',
+      currentSales: 300,
+      previousSales: 200,
+      salesDelta: 100,
+      salesDeltaPercent: 0.5,
+      currentUnits: 6,
+      previousUnits: 4,
+      unitsDelta: 2,
+      currentShare: 0.25,
+      previousShare: 0.2,
+      salesShareDelta: 0.05,
+      currentMargin: null,
+      previousMargin: null,
+      currentProfit: null,
+      previousProfit: null,
+      costKnown: false,
+      costStatus: 'incomplete',
+      direction: 'growing',
+      signals: ['growing', 'cost_unknown'],
+      opportunityReason: 'Creció en ventas y unidades.'
+    };
+    const context = buildSalesProfitabilityContext({
+      period: { dateFrom: '2026-09-01', dateTo: '2026-09-07', label: 'Periodo actual' },
+      source: 'cloud',
+      report: {
+        overview: { netSales: 1200, units: 24, salesCount: 8, averageTicket: 150, unitsPerTicket: 3 },
+        products: [{ name: 'Producto A', quantity: 6, netSales: 300, salesShare: 0.25, unitCost: null, costKnown: false }],
+        channels: [{ channel: 'Físico', netSales: 900, orders: 6, units: 18, averageTicket: 150, share: 0.75 }],
+        comparison: {
+          previousNetSales: 1000,
+          previousUnits: 20,
+          previousTicket: 125,
+          previousUnitsPerTicket: 2.5,
+          deltaNetSales: 200,
+          deltaNetSalesPercent: 0.2,
+          deltaUnits: 4,
+          deltaTicket: 25,
+          deltaUnitsPerTicket: 0.5,
+          currentSalesCount: 8,
+          previousSalesCount: 8,
+          deltaSalesCount: 0,
+          productChanges: [productChange],
+          channelMixChanges: [{ channel: 'Físico', currentShare: 0.75, previousShare: 0.7, deltaShare: 0.05, currentSales: 900, previousSales: 700, salesDelta: 200 }]
+        },
+        growthSignals: {
+          currentNetSales: 1200,
+          currentSalesCount: 8,
+          currentUnits: 24,
+          currentAverageTicket: 150,
+          currentUnitsPerTicket: 3,
+          previousNetSales: 1000,
+          deltaNetSales: 200,
+          deltaNetSalesPercent: 0.2,
+          productsGrowing: [productChange],
+          productOpportunities: [productChange],
+          channelChanges: [{ channel: 'Físico', currentShare: 0.75, previousShare: 0.7, deltaShare: 0.05, currentSales: 900, previousSales: 700, salesDelta: 200 }],
+          comparisonAvailable: true
+        },
+        coverage: {
+          validSales: 8,
+          complete: true,
+          itemsComplete: true,
+          paginationComplete: true,
+          sourceComplete: true,
+          comparisonDataAvailable: true,
+          comparisonItemsAvailable: true,
+          salesDataComplete: true,
+          growthDataComplete: true
+        }
+      }
+    });
+
+    const validation = validatePayload({
+      auth: {
+        licenseKey: 'synthetic-license',
+        deviceFingerprint: 'synthetic-device',
+        deviceSecurityToken: 'synthetic-device-token',
+        staffSessionToken: null
+      },
+      agentKey: 'salesProfitability',
+      intent: 'sales_growth',
+      question: '¿Cómo crecieron mis ventas?',
+      requestKey: 'growth-context-contract-test',
+      period: {
+        from: '2026-09-01', to: '2026-09-07', previousFrom: '2026-08-25', previousTo: '2026-08-31', timezone: 'America/Mexico_City'
+      },
+      scenario: {},
+      context,
+      options: { temperature: 0.2, maxTokens: 2048 }
+    });
+
+    expect(validation.ok, JSON.stringify(validation)).toBe(true);
+    expect(context.sales.unitsPerTicket).toBe(3);
+    expect(context.sales.comparison.productChanges[0]).toMatchObject({
+      direction: 'growing',
+      costKnown: false,
+      currentMargin: null,
+      signals: ['growing', 'cost_unknown']
+    });
+    expect(context.sales.growthSignals.productOpportunities).toHaveLength(1);
   });
 });

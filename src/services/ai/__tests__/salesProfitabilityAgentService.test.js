@@ -739,7 +739,7 @@ describe('sales profitability agent service', () => {
     expect(analyze).not.toHaveBeenCalled();
   });
 
-  it('recognizes unsupported and context-incomplete commercial requests before accessing data or quota', async () => {
+  it('recognizes out-of-scope and context-incomplete commercial requests before accessing data or quota', async () => {
     const reports = repository();
     const assertActor = vi.fn();
     const analyze = vi.fn();
@@ -750,11 +750,8 @@ describe('sales profitability agent service', () => {
       ['Analiza mi competencia para mejorar mi negocio.', 'competition', 'competencia'],
       ['¿Qué productos o servicios puedo incorporar a mi negocio para atraer más clientela?', 'assortment', 'ampliar tu oferta'],
       ['¿Qué productos nuevos debería vender?', 'assortment', 'ampliar tu oferta'],
-      ['¿Cómo puedo vender más?', 'growth', 'crecimiento'],
-      ['¿Cómo puedo aumentar mis ventas?', 'growth', 'crecimiento'],
-      ['¿Cómo hago crecer mi negocio?', 'growth', 'crecimiento'],
-      ['¿Dónde tengo oportunidades de crecimiento?', 'growth', 'crecimiento'],
-      ['¿Cómo puedo aumentar mi ticket promedio?', 'growth', 'ticket promedio']
+      ['¿Qué productos nuevos debería vender?', 'assortment', 'ampliar tu oferta'],
+      ['¿Qué productos puedo incorporar?', 'assortment', 'ampliar tu oferta']
     ];
 
     for (const [question, topic, copy] of unsupportedCases) {
@@ -789,7 +786,7 @@ describe('sales profitability agent service', () => {
     expect(analyze).not.toHaveBeenCalled();
   });
 
-  it('forces comparison off for every intent except explain_change', async () => {
+  it('keeps comparison off for a profitability summary', async () => {
     const analyze = vi.fn(async () => ({ rawResultContent: providerResponse }));
     const reports = repository();
     const runner = createSalesProfitabilityAgentRunner({ repository: reports, analyze, assertActor: vi.fn() });
@@ -808,6 +805,76 @@ describe('sales profitability agent service', () => {
       intent: 'profitability_summary',
       period: { previousFrom: null, previousTo: null }
     });
+  });
+
+  it.each([
+    ['¿Cómo puedo aumentar mis ventas?', 'sales_growth'],
+    ['¿Cómo puedo aumentar mi ticket promedio?', 'ticket_growth'],
+    ['¿Qué productos debería impulsar?', 'product_opportunity'],
+    ['¿Mis ventas están creciendo?', 'sales_trend']
+  ])('calls the provider for %s when complete deterministic evidence exists', async (question, intent) => {
+    const reports = repository();
+    const analyze = vi.fn(async () => ({ rawResultContent: providerResponse, usageStatus: { used: 1, limit: 15, remaining: 14 } }));
+    const runner = createSalesProfitabilityAgentRunner({ repository: reports, analyze, assertActor: vi.fn() });
+
+    const result = await runner({
+      question,
+      period: { from: '2026-09-01', to: '2026-09-07', days: 7 },
+      requestKey: `growth-supported-${intent}`
+    });
+
+    expect(result.response.intent).toBe(intent);
+    expect(result.response.coverage.itemsComplete).toBe(true);
+    expect(result.providerCalled).toBe(true);
+    expect(result.quotaOutcome).toBe('consumed');
+    expect(analyze).toHaveBeenCalledTimes(1);
+    expect(analyze.mock.calls[0][0].period.previousFrom).toBe('2026-08-25');
+    expect(analyze.mock.calls[0][0].context.sales).toHaveProperty('growthSignals');
+  });
+
+  it('does not call the provider or consume quota for growth without complete item evidence', async () => {
+    const noDetail = { ...profit, rows: [], total_count: 0 };
+    const reports = repository(history, noDetail);
+    const analyze = vi.fn();
+    const runner = createSalesProfitabilityAgentRunner({ repository: reports, analyze, assertActor: vi.fn() });
+
+    const result = await runner({
+      question: '¿Cómo puedo aumentar mis ventas?',
+      period: { from: '2026-09-01', to: '2026-09-07', days: 7 },
+      requestKey: 'growth-without-item-evidence'
+    });
+
+    expect(result.response.intent).toBe('sales_growth');
+    expect(result.response.coverage.growthDataComplete).toBe(false);
+    expect(result.response.status).toBe('incomplete');
+    expect(result.providerCalled).toBe(false);
+    expect(result.quotaOutcome).toBe('not_consumed');
+    expect(analyze).not.toHaveBeenCalled();
+  });
+
+  it('does not narrate a trend when comparison pagination is incomplete', async () => {
+    const reports = {
+      getSalesFinalHistory: vi.fn(async ({ offset }) => offset > 0
+        ? { source: { mode: 'cloud_final' }, rows: [], has_more: true }
+        : { ...history, has_more: true }),
+      getSalesProfitReport: vi.fn(async ({ offset }) => offset > 0
+        ? { source: { mode: 'cloud_final' }, rows: [], has_more: true }
+        : { ...profit, has_more: true })
+    };
+    const analyze = vi.fn();
+    const runner = createSalesProfitabilityAgentRunner({ repository: reports, analyze, assertActor: vi.fn() });
+    const result = await runner({
+      question: '¿Mis ventas están creciendo?',
+      period: { from: '2026-09-01', to: '2026-09-07', days: 7 },
+      requestKey: 'trend-with-incomplete-comparison'
+    });
+
+    expect(result.response.intent).toBe('sales_trend');
+    expect(result.response.coverage.comparisonItemsAvailable).toBe(false);
+    expect(result.response.executiveSummary).toContain('No hay una comparación completa');
+    expect(result.providerCalled).toBe(false);
+    expect(result.quotaOutcome).toBe('not_consumed');
+    expect(analyze).not.toHaveBeenCalled();
   });
 
   it('preserves deterministic results when the provider narrative fails', async () => {

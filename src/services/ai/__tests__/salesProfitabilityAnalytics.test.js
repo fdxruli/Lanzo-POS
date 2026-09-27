@@ -473,3 +473,102 @@ describe('phase 3.2 intent routing and focused deterministic outputs', () => {
     expect(result.priceSimulation).toMatchObject({ historicalVolume: 0, currentProfit: 0, simulatedProfit: 0 });
   });
 });
+
+describe('Lía sales growth deterministic analytics', () => {
+  it('calculates positive sales, ticket, ticket-count and units-per-ticket changes', () => {
+    const currentHistory = { rows: [
+      sale('now-1', [item('Producto A', 2, 120, 60)], { salesChannel: 'Físico' }),
+      sale('now-2', [item('Producto nuevo del periodo', 3, 50, null)], { salesChannel: 'En línea' })
+    ] };
+    const previousHistory = { rows: [
+      sale('before-1', [item('Producto A', 1, 100, 50)], { salesChannel: 'Físico' }),
+      sale('before-2', [item('Producto desaparecido', 1, 20, 10)], { salesChannel: 'En línea' })
+    ] };
+    const result = buildSalesProfitabilityAnalysis({ period, currentHistory, previousHistory, intent: 'sales_trend' });
+
+    expect(result.current).toMatchObject({ netSales: 390, salesCount: 2, units: 5, averageTicket: 195, unitsPerTicket: 2.5 });
+    expect(result.comparison).toMatchObject({
+      previousNetSales: 120,
+      deltaNetSales: 270,
+      deltaNetSalesPercent: 2.25,
+      previousSalesCount: 2,
+      deltaSalesCount: 0,
+      previousUnitsPerTicket: 1,
+      deltaUnitsPerTicket: 1.5,
+      deltaTicket: 135,
+      deltaTicketPercent: 2.25
+    });
+    expect(result.growthSignals.productsGrowing.map((product) => product.name)).toContain('Producto A');
+    expect(result.growthSignals.productsDeclining.map((product) => product.name)).toContain('Producto desaparecido');
+    expect(result.comparison.productChanges.find((product) => product.name === 'Producto nuevo del periodo')).toMatchObject({
+      currentSales: 150,
+      previousSales: 0,
+      salesDelta: 150,
+      salesDeltaPercent: null,
+      direction: 'new_in_period'
+    });
+    expect(result.comparison.productChanges.find((product) => product.name === 'Producto desaparecido')).toMatchObject({
+      currentSales: 0,
+      previousSales: 20,
+      salesDelta: -20,
+      direction: 'not_sold_current'
+    });
+  });
+
+  it('calculates negative sales and ticket movement and keeps percentages null for a zero baseline', () => {
+    const currentHistory = { rows: [sale('now', [item('Producto A', 1, 50, 25)])] };
+    const previousHistory = { rows: [sale('before', [item('Producto A', 1, 100, 50)])] };
+    const falling = buildSalesProfitabilityAnalysis({ period, currentHistory, previousHistory, intent: 'ticket_growth' });
+    expect(falling.comparison).toMatchObject({ deltaNetSales: -50, deltaNetSalesPercent: -0.5, deltaTicket: -50, deltaTicketPercent: -0.5 });
+
+    const fromZero = buildSalesProfitabilityAnalysis({
+      period,
+      currentHistory,
+      previousHistory: { rows: [] },
+      intent: 'sales_trend'
+    });
+    expect(fromZero.comparison).toMatchObject({ previousNetSales: 0, deltaNetSales: 50, deltaNetSalesPercent: null, previousTicket: null });
+    expect(fromZero.calculations.find((row) => row.label === 'Variación relativa de ventas').value).toBeNull();
+  });
+
+  it('keeps absent comparison unavailable and guards divisions when there are no tickets', () => {
+    const withoutPrevious = buildSalesProfitabilityAnalysis({
+      period,
+      currentHistory: { rows: [sale('only', [item('Producto A', 3, 40, 20)])] },
+      intent: 'ticket_growth'
+    });
+    const withoutSales = buildSalesProfitabilityAnalysis({ period, currentHistory: { rows: [] }, intent: 'sales_growth' });
+    expect(withoutPrevious.comparison).toBeNull();
+    expect(withoutPrevious.current.unitsPerTicket).toBe(3);
+    expect(withoutSales.current.averageTicket).toBeNull();
+    expect(withoutSales.current.unitsPerTicket).toBeNull();
+    expect(withoutSales.status).toBe('insufficient_data');
+  });
+
+  it('reports channel sales and mix changes without treating volume as a strategy', () => {
+    const currentHistory = { rows: [sale('now', [item('A', 1, 100, 50)], { salesChannel: 'En línea' })] };
+    const previousHistory = { rows: [sale('before', [item('A', 1, 50, 25)], { salesChannel: 'Físico' })] };
+    const result = buildSalesProfitabilityAnalysis({ period, currentHistory, previousHistory, intent: 'sales_growth' });
+    expect(result.current.channels.find((channel) => channel.channel === 'En línea')).toMatchObject({ share: 1, netSales: 100 });
+    expect(result.comparison.channelMixChanges).toEqual(expect.arrayContaining([
+      expect.objectContaining({ channel: 'En línea', currentShare: 1, previousShare: 0, salesDelta: 100 }),
+      expect.objectContaining({ channel: 'Físico', currentShare: 0, previousShare: 1, salesDelta: -50 })
+    ]));
+  });
+
+  it('preserves unknown product costs while still emitting sales signals', () => {
+    const currentHistory = { rows: [sale('now', [item('Sin costo', 2, 75, null)])] };
+    const previousHistory = { rows: [sale('before', [item('Sin costo', 1, 50, null)])] };
+    const result = buildSalesProfitabilityAnalysis({ period, currentHistory, previousHistory, intent: 'product_opportunity' });
+    const product = result.comparison.productChanges.find((entry) => entry.name === 'Sin costo');
+    expect(product).toMatchObject({
+      costKnown: false,
+      costStatus: 'missing',
+      currentProfit: null,
+      currentMargin: null,
+      direction: 'growing',
+      signals: expect.arrayContaining(['growing', 'cost_unknown'])
+    });
+    expect(result.productOpportunities).toContainEqual(expect.objectContaining({ name: 'Sin costo', currentMargin: null }));
+  });
+});

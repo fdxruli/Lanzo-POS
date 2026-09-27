@@ -205,6 +205,9 @@ const hardenAggregate = (aggregate, metadata = {}) => {
   return {
     ...aggregate,
     units,
+    unitsPerTicket: metadata.detailComplete === true && aggregate.salesCount > 0
+      ? units / aggregate.salesCount
+      : null,
     products,
     costOfSale: complete ? aggregate.costOfSale : null,
     knownCostOfSale: Number(metadata.knownCost) || 0,
@@ -223,7 +226,9 @@ const hardenAggregate = (aggregate, metadata = {}) => {
 const hardenCalculations = (calculations, {
   currentComplete,
   comparisonComplete,
-  currentMetadata
+  comparisonDataAvailable,
+  currentMetadata,
+  previousMetadata
 }) => {
   const currentUnsafe = new Set([
     'Costo de venta',
@@ -238,10 +243,26 @@ const hardenCalculations = (calculations, {
     'Variación relativa del margen',
     'Utilidad anterior'
   ]);
+  const comparisonSalesUnsafe = new Set([
+    'Ventas netas anteriores',
+    'Variación absoluta de ventas',
+    'Variación relativa de ventas',
+    'Tickets anteriores',
+    'Ticket promedio anterior',
+    'Variación absoluta del ticket',
+    'Variación relativa del ticket',
+    'Unidades por ticket anteriores',
+    'Variación de unidades por ticket'
+  ]);
+  const currentItemUnsafe = new Set(['Unidades por ticket', 'Unidades por ticket actuales']);
+  const previousItemUnsafe = new Set(['Unidades por ticket anteriores', 'Variación de unidades por ticket']);
 
   const rows = (Array.isArray(calculations) ? calculations : []).map((row) => {
     const unsafe = (!currentComplete && currentUnsafe.has(row.label))
-      || (!comparisonComplete && comparisonUnsafe.has(row.label));
+      || (!comparisonComplete && comparisonUnsafe.has(row.label))
+      || (!comparisonDataAvailable && comparisonSalesUnsafe.has(row.label))
+      || (currentMetadata?.detailComplete !== true && currentItemUnsafe.has(row.label))
+      || (previousMetadata?.detailComplete !== true && previousItemUnsafe.has(row.label));
     if (!unsafe) {
       if (row.label === 'Cobertura de costos') {
         const value = Number(currentMetadata?.knownSales) > 0 ? row.value : 0;
@@ -273,12 +294,33 @@ const buildCoverage = ({
   deterministic,
   current,
   currentMetadata,
-  comparisonComplete
+  comparisonComplete,
+  previousMetadata,
+  hasPrevious
 }) => ({
   ...deterministic.coverage,
   productsIncluded: current.products.length,
   costCoverage: current.costCoverage,
   comparisonAvailable: comparisonComplete,
+  comparisonDataAvailable: hasPrevious === true
+    && current.sourceComplete === true
+    && current.paginationComplete === true
+    && previousMetadata?.sourceComplete === true
+    && previousMetadata?.paginationComplete === true,
+  comparisonItemsAvailable: hasPrevious === true
+    && current.sourceComplete === true
+    && current.paginationComplete === true
+    && current.detailComplete === true
+    && previousMetadata?.sourceComplete === true
+    && previousMetadata?.paginationComplete === true
+    && previousMetadata?.detailComplete === true,
+  salesDataComplete: current.salesCount > 0
+    && current.sourceComplete === true
+    && current.paginationComplete === true,
+  growthDataComplete: current.salesCount > 0
+    && current.sourceComplete === true
+    && current.paginationComplete === true
+    && current.detailComplete === true,
   detailLines: Number(currentMetadata.matchedDetailLines) || 0,
   expectedDetailLines: Number(currentMetadata.expectedDetailLines) || 0,
   itemCoverage: Number(currentMetadata.itemCoverage) || 0,
@@ -336,6 +378,20 @@ const intentHasUsefulEvidence = (response) => {
         && response.coverage?.paginationComplete === true
         && response.coverage?.sourceComplete === true
         && response.current?.products?.length > 0;
+    case 'sales_growth':
+      return response.coverage?.growthDataComplete === true;
+    case 'ticket_growth':
+      return response.coverage?.salesDataComplete === true
+        && response.current?.averageTicket !== null
+        && response.current?.averageTicket !== undefined;
+    case 'product_opportunity':
+      return response.coverage?.comparisonItemsAvailable === true
+        && response.comparison?.productChanges?.length > 0
+        && response.current?.products?.length > 0;
+    case 'sales_trend':
+      return response.coverage?.comparisonItemsAvailable === true
+        && response.comparison
+        && response.coverage?.validSales > 0;
     case 'price_simulation':
       return Boolean(response.priceSimulation) && response.coverage?.sourceComplete === true;
     case 'promotion_opportunity':
@@ -404,6 +460,41 @@ const buildSafeNarrative = (response) => {
     };
   }
 
+  if (response.intent === 'sales_growth' && response.coverage?.growthDataComplete !== true) {
+    return {
+      executiveSummary: `Se registraron ${sales} venta(s) por ${money.format(netSales)}, pero la cobertura de artículos, paginación o fuente no permite priorizar señales de crecimiento con suficiente confianza.`,
+      explanation: 'Las ventas del periodo se conservan como evidencia determinística. No se genera una narrativa de proveedor ni se presenta un ranking exhaustivo con datos incompletos.'
+    };
+  }
+
+  if (response.intent === 'ticket_growth' && response.coverage?.salesDataComplete !== true) {
+    return {
+      executiveSummary: `Se registraron ${sales} venta(s) por ${money.format(netSales)}, pero la cobertura no permite confirmar el ticket promedio del periodo.`,
+      explanation: 'Se requiere una lectura completa de las ventas válidas del periodo antes de explicar el ticket.'
+    };
+  }
+
+  if (response.intent === 'ticket_growth' && response.coverage?.itemsComplete !== true) {
+    return {
+      executiveSummary: `El ticket promedio fue ${money.format(Number(response.current?.averageTicket) || 0)} en ${sales} venta(s).`,
+      explanation: 'El detalle de artículos está incompleto, así que las unidades por ticket y las combinaciones históricas no se presentan como completas.'
+    };
+  }
+
+  if (response.intent === 'product_opportunity' && response.coverage?.comparisonItemsAvailable !== true) {
+    return {
+      executiveSummary: 'No hay detalle comparable completo para priorizar productos actuales con confianza.',
+      explanation: 'La comparación por producto requiere artículos, paginación y fuentes completos en ambos periodos. Los costos faltantes se mantienen desconocidos.'
+    };
+  }
+
+  if (response.intent === 'sales_trend' && response.coverage?.comparisonItemsAvailable !== true) {
+    return {
+      executiveSummary: 'No hay una comparación completa de periodos equivalentes para confirmar la tendencia de ventas.',
+      explanation: 'La lectura requiere rangos temporales equivalentes, ventas completas y detalle de artículos disponible en ambos periodos.'
+    };
+  }
+
   if (response.intent === 'product_risk' && response.coverage?.itemsComplete !== true) {
     return {
       executiveSummary: 'No hay detalle de productos suficiente para identificar productos problemáticos con confianza.',
@@ -452,13 +543,25 @@ const hardenDeterministicResult = ({
   const currentComplete = current?.costComplete === true;
   const previousComplete = previous ? previous.costComplete === true : false;
   const comparisonComplete = Boolean(deterministic.comparison && currentComplete && previousComplete);
-  const comparison = hardenComparison(deterministic.comparison, currentComplete, previousComplete);
+  let comparison = hardenComparison(deterministic.comparison, currentComplete, previousComplete);
   const coverage = buildCoverage({
     deterministic,
     current,
     currentMetadata,
-    comparisonComplete
+    comparisonComplete,
+    previousMetadata,
+    hasPrevious: Boolean(previous)
   });
+  if (['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend'].includes(deterministic.intent)
+    && coverage.comparisonDataAvailable !== true) {
+    comparison = null;
+  } else if (comparison && coverage.comparisonItemsAvailable !== true) {
+    comparison = {
+      ...comparison,
+      previousUnitsPerTicket: null,
+      deltaUnitsPerTicket: null
+    };
+  }
 
   const profitability = {
     ...deterministic.profitability,
@@ -485,6 +588,8 @@ const hardenDeterministicResult = ({
   let comboOpportunities = deterministic.comboOpportunities;
   let scenarios = deterministic.scenarios;
   let contributors = deterministic.contributors;
+  let growthSignals = deterministic.growthSignals;
+  let productOpportunities = deterministic.productOpportunities;
   if (currentMetadata.detailComplete !== true || currentMetadata.paginationComplete !== true) {
     if (deterministic.intent === 'combo_opportunity') {
       comboOpportunities = [];
@@ -492,6 +597,46 @@ const hardenDeterministicResult = ({
     }
   }
   if (!comparisonComplete && deterministic.intent === 'explain_change') contributors = [];
+  if (currentMetadata.detailComplete !== true || currentMetadata.paginationComplete !== true
+    || current.sourceComplete !== true) {
+    if (['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend'].includes(deterministic.intent)) {
+      growthSignals = {
+        ...(growthSignals || {}),
+        productsGrowing: [],
+        productsDeclining: [],
+        productOpportunities: [],
+        channelChanges: [],
+        comparisonAvailable: false
+      };
+      productOpportunities = [];
+    }
+  }
+  if (!coverage.comparisonItemsAvailable
+    && ['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend'].includes(deterministic.intent)) {
+    productOpportunities = [];
+    if (growthSignals) {
+      growthSignals = {
+        ...growthSignals,
+        productsGrowing: [],
+        productsDeclining: [],
+        productOpportunities: [],
+        channelChanges: [],
+        comparisonAvailable: false,
+        previousNetSales: coverage.comparisonDataAvailable ? growthSignals.previousNetSales : null,
+        deltaNetSales: coverage.comparisonDataAvailable ? growthSignals.deltaNetSales : null,
+        deltaNetSalesPercent: coverage.comparisonDataAvailable ? growthSignals.deltaNetSalesPercent : null,
+        previousSalesCount: coverage.comparisonDataAvailable ? growthSignals.previousSalesCount : null,
+        deltaSalesCount: coverage.comparisonDataAvailable ? growthSignals.deltaSalesCount : null,
+        previousUnits: coverage.comparisonDataAvailable ? growthSignals.previousUnits : null,
+        deltaUnits: coverage.comparisonDataAvailable ? growthSignals.deltaUnits : null,
+        previousAverageTicket: coverage.comparisonDataAvailable ? growthSignals.previousAverageTicket : null,
+        deltaTicket: coverage.comparisonDataAvailable ? growthSignals.deltaTicket : null,
+        deltaTicketPercent: coverage.comparisonDataAvailable ? growthSignals.deltaTicketPercent : null,
+        previousUnitsPerTicket: coverage.comparisonItemsAvailable ? growthSignals.previousUnitsPerTicket : null,
+        deltaUnitsPerTicket: coverage.comparisonItemsAvailable ? growthSignals.deltaUnitsPerTicket : null
+      };
+    }
+  }
 
   const hardened = {
     ...deterministic,
@@ -499,6 +644,8 @@ const hardenDeterministicResult = ({
     previous,
     comparison,
     contributors,
+    growthSignals,
+    productOpportunities,
     comboOpportunities,
     scenarios,
     profitability,
@@ -507,13 +654,22 @@ const hardenDeterministicResult = ({
     calculations: hardenCalculations(deterministic.calculations, {
       currentComplete,
       comparisonComplete,
-      currentMetadata
+      comparisonDataAvailable: coverage.comparisonDataAvailable,
+      currentMetadata,
+      previousMetadata
     }),
     confidence: current.salesCount === 0
       ? 'low'
-      : currentComplete
-        ? (current.costStatus === 'definitive' ? deterministic.confidence : 'medium')
-        : 'low',
+      : ['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend'].includes(deterministic.intent)
+        ? (deterministic.intent === 'ticket_growth'
+          ? (coverage.salesDataComplete ? 'high' : 'low')
+          : (coverage.growthDataComplete
+            && (['sales_growth'].includes(deterministic.intent) || coverage.comparisonItemsAvailable)
+            ? 'high'
+            : 'low'))
+        : currentComplete
+          ? (current.costStatus === 'definitive' ? deterministic.confidence : 'medium')
+          : 'low',
     queryRange: {
       current: currentMetadata.queryRange,
       previous: previousMetadata?.queryRange || null
@@ -542,6 +698,7 @@ const hardenDeterministicResult = ({
     summary: {
       ...(hardened.context?.summary || {}),
       units: current.units,
+      unitsPerTicket: current.unitsPerTicket,
       discounts: current.discountsKnown ? current.discounts : null,
       discountsKnown: current.discountsKnown === true,
       unitCosts: currentComplete ? current.costOfSale : null,
@@ -564,7 +721,18 @@ const hardenDeterministicResult = ({
       costStatus: product.costStatus,
       costSource: product.costSource
     })),
-    comparison: comparisonComplete ? hardened.context?.comparison : null
+    comparison: (comparisonComplete || coverage.comparisonDataAvailable)
+      ? {
+        ...hardened.context?.comparison,
+        ...(coverage.comparisonItemsAvailable ? {} : {
+          previousUnitsPerTicket: null,
+          deltaUnitsPerTicket: null
+        })
+      }
+      : null,
+    growthSignals: ['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend'].includes(deterministic.intent)
+      ? growthSignals
+      : hardened.context?.growthSignals
   };
 
   return hardened;
@@ -636,7 +804,8 @@ export const createSalesProfitabilityAgentRunner = ({
 
   const normalizedPeriod = normalizePeriod(period);
   const currentPeriod = { ...normalizedPeriod, previous: null };
-  const comparisonEnabled = resolvedIntent === 'explain_change' && compare === true;
+  const comparisonEnabled = ['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend'].includes(resolvedIntent)
+    || (resolvedIntent === 'explain_change' && compare === true);
   const previousPeriod = comparisonEnabled ? buildPreviousPeriod(currentPeriod) : null;
   if (previousPeriod) previousPeriod.timezone = currentPeriod.timezone;
 

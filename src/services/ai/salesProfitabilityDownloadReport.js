@@ -14,6 +14,10 @@ const VALID_RESOLUTION_TOPICS = new Set([
   'competition',
   'assortment',
   'growth',
+  'sales_growth',
+  'ticket_growth',
+  'product_opportunity',
+  'sales_trend',
   'commercial_question',
   'price_simulation',
   'profitability_summary',
@@ -149,6 +153,10 @@ const safeCoverage = (coverage) => {
     historyTruncated: safeBoolean(source.historyTruncated),
     detailTruncated: safeBoolean(source.detailTruncated),
     comparisonAvailable: safeBoolean(source.comparisonAvailable),
+    comparisonDataAvailable: safeBoolean(source.comparisonDataAvailable),
+    comparisonItemsAvailable: safeBoolean(source.comparisonItemsAvailable),
+    salesDataComplete: safeBoolean(source.salesDataComplete),
+    growthDataComplete: safeBoolean(source.growthDataComplete),
     sourcePolicy: {
       excludedSources: finiteNumber(source.sourcePolicy?.excludedSources),
       excludedStatuses: finiteNumber(source.sourcePolicy?.excludedStatuses),
@@ -190,6 +198,7 @@ const safeChannel = (channel) => {
     netSales: finiteNumber(source.netSales),
     orders: finiteNumber(source.orders),
     units: finiteNumber(source.units),
+    unitsPerTicket: finiteNumber(source.unitsPerTicket),
     averageTicket: finiteNumber(source.averageTicket),
     share: finiteNumber(source.share)
   };
@@ -240,23 +249,90 @@ const safeComparison = (comparison) => {
   const source = asRecord(comparison);
   if (!Object.keys(source).length) return {};
   return {
+    currentSalesCount: finiteNumber(source.currentSalesCount),
+    previousSalesCount: finiteNumber(source.previousSalesCount),
+    deltaSalesCount: finiteNumber(source.deltaSalesCount),
     previousNetSales: finiteNumber(source.previousNetSales),
     previousUnits: finiteNumber(source.previousUnits),
     previousTicket: finiteNumber(source.previousTicket),
+    previousUnitsPerTicket: finiteNumber(source.previousUnitsPerTicket),
     previousCost: finiteNumber(source.previousCost),
     previousProfit: finiteNumber(source.previousProfit),
     previousMargin: finiteNumber(source.previousMargin),
     previousDiscounts: finiteNumber(source.previousDiscounts),
     deltaNetSales: finiteNumber(source.deltaNetSales),
+    deltaNetSalesPercent: finiteNumber(source.deltaNetSalesPercent),
     deltaUnits: finiteNumber(source.deltaUnits),
     deltaTicket: finiteNumber(source.deltaTicket),
+    deltaTicketPercent: finiteNumber(source.deltaTicketPercent),
+    deltaUnitsPerTicket: finiteNumber(source.deltaUnitsPerTicket),
     deltaCost: finiteNumber(source.deltaCost),
     deltaProfit: finiteNumber(source.deltaProfit),
     deltaMargin: finiteNumber(source.deltaMargin),
     deltaMarginRelative: finiteNumber(source.deltaMarginRelative),
     deltaDiscounts: finiteNumber(source.deltaDiscounts),
     productMixChanges: (Array.isArray(source.productMixChanges) ? source.productMixChanges : []).slice(0, 20).map((item) => safeMixChange(item, 'name')),
-    channelMixChanges: (Array.isArray(source.channelMixChanges) ? source.channelMixChanges : []).slice(0, 20).map((item) => safeMixChange(item, 'channel'))
+    channelMixChanges: (Array.isArray(source.channelMixChanges) ? source.channelMixChanges : []).slice(0, 20).map((item) => ({
+      ...safeMixChange(item, 'channel'),
+      currentSales: finiteNumber(item.currentSales),
+      previousSales: finiteNumber(item.previousSales),
+      salesDelta: finiteNumber(item.salesDelta)
+    })),
+    productChanges: (Array.isArray(source.productChanges) ? source.productChanges : []).slice(0, 30).map(safeProductChange)
+  };
+};
+
+const safeProductChange = (product) => {
+  const source = asRecord(product);
+  return {
+    name: sanitizeText(source.name, 160),
+    currentSales: finiteNumber(source.currentSales),
+    previousSales: finiteNumber(source.previousSales),
+    salesDelta: finiteNumber(source.salesDelta),
+    salesDeltaPercent: finiteNumber(source.salesDeltaPercent),
+    currentUnits: finiteNumber(source.currentUnits),
+    previousUnits: finiteNumber(source.previousUnits),
+    unitsDelta: finiteNumber(source.unitsDelta),
+    unitsDeltaPercent: finiteNumber(source.unitsDeltaPercent),
+    currentShare: finiteNumber(source.currentShare),
+    previousShare: finiteNumber(source.previousShare),
+    salesShareDelta: finiteNumber(source.salesShareDelta),
+    currentMargin: finiteNumber(source.currentMargin),
+    previousMargin: finiteNumber(source.previousMargin),
+    currentProfit: finiteNumber(source.currentProfit),
+    previousProfit: finiteNumber(source.previousProfit),
+    costKnown: safeBoolean(source.costKnown),
+    costStatus: sanitizeText(source.costStatus, 32) || null,
+    direction: sanitizeText(source.direction, 32),
+    signals: safeTextArray(source.signals, 8, 32),
+    opportunityReason: sanitizeText(source.opportunityReason, 300) || null
+  };
+};
+
+const safeGrowthSignals = (signals) => {
+  const source = asRecord(signals);
+  if (!Object.keys(source).length) return null;
+  const numberKeys = [
+    'currentNetSales', 'currentSalesCount', 'currentUnits', 'currentAverageTicket', 'currentUnitsPerTicket',
+    'previousNetSales', 'deltaNetSales', 'deltaNetSalesPercent', 'previousSalesCount', 'deltaSalesCount',
+    'previousUnits', 'deltaUnits', 'previousAverageTicket', 'deltaTicket', 'deltaTicketPercent',
+    'previousUnitsPerTicket', 'deltaUnitsPerTicket'
+  ];
+  return {
+    ...Object.fromEntries(numberKeys.map((key) => [key, finiteNumber(source[key])])),
+    productsGrowing: (Array.isArray(source.productsGrowing) ? source.productsGrowing : []).slice(0, 10).map(safeProductChange),
+    productsDeclining: (Array.isArray(source.productsDeclining) ? source.productsDeclining : []).slice(0, 10).map(safeProductChange),
+    productOpportunities: (Array.isArray(source.productOpportunities) ? source.productOpportunities : []).slice(0, 12).map(safeProductChange),
+    channelChanges: (Array.isArray(source.channelChanges) ? source.channelChanges : []).slice(0, 20).map((item) => ({
+      channel: sanitizeText(item.channel, 80),
+      currentShare: finiteNumber(item.currentShare),
+      previousShare: finiteNumber(item.previousShare),
+      deltaShare: finiteNumber(item.deltaShare),
+      currentSales: finiteNumber(item.currentSales),
+      previousSales: finiteNumber(item.previousSales),
+      salesDelta: finiteNumber(item.salesDelta)
+    })),
+    comparisonAvailable: safeBoolean(source.comparisonAvailable)
   };
 };
 
@@ -364,7 +440,8 @@ const safeSummary = (response) => {
     netSales: finiteNumber(source.netSales),
     units: finiteNumber(source.units),
     salesCount: finiteNumber(source.salesCount),
-    averageTicket: finiteNumber(source.averageTicket),
+      averageTicket: finiteNumber(source.averageTicket),
+    unitsPerTicket: finiteNumber(source.unitsPerTicket),
     discounts: finiteNumber(source.discounts),
     discountsKnown: source.discountsKnown === true,
     unitCosts: finiteNumber(source.unitCosts ?? source.costOfSale),
@@ -490,6 +567,8 @@ export const buildSalesProfitabilityDownloadReport = (result, requestContext = {
       current,
       previous: safeAggregate(response.previous),
       comparison: safeComparison(response.comparison),
+      growthSignals: safeGrowthSignals(response.growthSignals),
+      productOpportunities: (Array.isArray(response.productOpportunities) ? response.productOpportunities : []).slice(0, 20).map(safeProductChange),
       profitability: safeProfitability(response.profitability),
       contributors: (Array.isArray(response.contributors) ? response.contributors : []).slice(0, 20).map(safeContributor),
       productRisks: (Array.isArray(response.productRisks) ? response.productRisks : []).slice(0, 50).map(safeProductRisk),
@@ -548,6 +627,8 @@ export const sanitizeSalesProfitabilityDownloadReport = (value) => {
       current: deterministic.current,
       previous: deterministic.previous,
       comparison: deterministic.comparison,
+      growthSignals: deterministic.growthSignals,
+      productOpportunities: deterministic.productOpportunities,
       profitability: deterministic.profitability,
       contributors: deterministic.contributors,
       productRisks: deterministic.productRisks,

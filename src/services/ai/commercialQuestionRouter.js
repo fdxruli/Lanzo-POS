@@ -154,8 +154,25 @@ export const resolveCommercialIntent = (question = '', options = {}) => {
     return resolution('recognized_not_supported', { topic: 'assortment', confidence: 'high' });
   }
 
-  if (containsAny(text, /\b(?:vender mas|(?:aumentar|aumenta|aumento|incrementar|incrementa|incremento)\s+(?:mis\s+)?ventas|mejorar (?:mis )?ventas|impulsar (?:mis )?ventas|recuperar (?:mis )?ventas|crecer|crecimiento|crezca|hacer crecer|ticket promedio|aumentar el ticket|subir el ticket|ventas bajas?|mis ventas estan bajas|mejorar mi negocio|mejorar el negocio|oportunidades de crecimiento|atraer mas clientes|conseguir mas clientes|(?:aumentar|aumento|subir|subo)\s+(?:mi\s+|el\s+)?ticket)\b/u)) {
-    return resolution('recognized_not_supported', { topic: 'growth', confidence: 'high' });
+  if (containsAny(text, /\b(?:ticket promedio|ticket medio|subir el ticket|aumentar el ticket|subir mi ticket|aumentar mi ticket|aumentar cada venta|cada venta sea mayor)\b/u)
+    || (containsAny(text, /\b(?:ticket|valor promedio de cada venta)\b/u)
+      && containsAny(text, /\b(?:como esta|esta subiendo|esta bajando|creciendo|subir|aumentar|incrementar|elevar|mayor|promedio)\b/u))) {
+    return supported('ticket_growth', optionValues);
+  }
+
+  if (containsAny(text, /\b(?:que|cuales?)\s+(?:productos?|articulos?)\b/u)
+    && containsAny(text, /\b(?:impulsar|promover|estan creciendo|crecen|crecimiento|perdiendo fuerza|bajando|aportan mas|aportan|funcionando mejor|mejor desempeño|vender mas|oportunidad(?:es)? de crecer|revisar para vender mas)\b/u)) {
+    return supported('product_opportunity', optionValues);
+  }
+
+  if ((containsAny(text, /\b(?:ventas?)\b/u)
+      && containsAny(text, /\b(?:estan creciendo|estan bajando|estan cayendo|crecen|creciendo|tendencia|cambiaron|han cambiado|cambio|variacion|subiendo|bajando|vendiendo mas que antes|vendiendo menos que antes)\b/u))
+    || containsAny(text, /\b(?:estoy vendiendo mas que antes|estoy vendiendo menos que antes)\b/u)) {
+    return supported('sales_trend', optionValues);
+  }
+
+  if (containsAny(text, /\b(?:como puedo aumentar mis ventas|como puedo vender mas|vender mas|aumentar (?:mis )?ventas|incrementar (?:mis )?ventas|hacer crecer mi negocio|hago crecer mi negocio|hacer crecer el negocio|crecer mi negocio|oportunidades? de crecimiento|oportunidades? para vender mas|ventas bajas?|mis ventas estan bajas|que puedo revisar para vender mas|mejorar mis ventas|impulsar mis ventas|recuperar mis ventas|atraer mas clientes|conseguir mas clientes)\b/u)) {
+    return supported('sales_growth', optionValues);
   }
 
   if (containsAny(text, /\b(?:combo|combos|juntos|juntas|combinacion|combinaciones|compran juntos|tickets compartidos)\b/u)) {
@@ -212,10 +229,6 @@ export const getCommercialResolutionMessage = (value = {}) => {
 
   if (kind === 'recognized_not_supported' && topic === 'assortment') {
     return 'Entiendo que buscas ampliar tu oferta con nuevos productos o servicios para atraer más clientela. Esa evaluación todavía no está disponible con suficiente evidencia; Lanzo trabaja por ahora con la información de los productos y ventas que ya existen en tu negocio, así que no voy a sustituirla por un análisis diferente.';
-  }
-
-  if (kind === 'recognized_not_supported' && topic === 'growth') {
-    return 'Entiendo que buscas aumentar tus ventas y el ticket promedio, es decir, el valor promedio de cada venta. El análisis específico de crecimiento todavía no está disponible. Por ahora puedo analizar productos actuales, precios, promociones, combos y rentabilidad con los datos de Lanzo.';
   }
 
   if (kind === 'needs_context' && value.intent === 'price_simulation') {

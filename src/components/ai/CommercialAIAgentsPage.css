@@ -814,6 +814,48 @@
   white-space: normal;
 }
 
+.commercial-ai-subheading {
+  margin: 1rem 0 0.45rem;
+  color: #334155;
+  font-size: 0.88rem;
+}
+
+.commercial-ai-comparison-note {
+  align-self: center;
+  margin: 0;
+  color: #64748b;
+  font-size: 0.8rem;
+}
+
+.commercial-ai-channel-list,
+.commercial-ai-ticket-signals {
+  display: grid;
+  gap: 0.55rem;
+  margin-top: 0.6rem;
+}
+
+.commercial-ai-channel-row,
+.commercial-ai-ticket-signal {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.65rem;
+  color: #475569;
+  font-size: 0.82rem;
+}
+
+.commercial-ai-channel-row strong,
+.commercial-ai-ticket-signal strong {
+  color: #1e293b;
+}
+
+.commercial-ai-channel-row small,
+.commercial-ai-ticket-signal small {
+  color: #64748b;
+  line-height: 1.4;
+}
+
 .commercial-ai-table th:first-child small {
   max-width: 360px;
   margin-top: 0.2rem;

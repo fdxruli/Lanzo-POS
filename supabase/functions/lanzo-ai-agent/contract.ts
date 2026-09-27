@@ -67,6 +67,10 @@ export const COMMERCIAL_AGENT_INTENTS = [
   'profitability_summary',
   'explain_change',
   'product_risk',
+  'sales_growth',
+  'ticket_growth',
+  'product_opportunity',
+  'sales_trend',
   'price_simulation',
   'combo_opportunity',
   'promotion_opportunity'
@@ -143,9 +147,11 @@ const COMMERCIAL_SALES_KEYS = new Set([
   'profit',
   'margin',
   'averageTicket',
+  'unitsPerTicket',
   'products',
   'channels',
   'comparison',
+  'growthSignals',
   'contributors',
   'evidenceKeys',
   'coverage',
@@ -159,6 +165,7 @@ const COMMERCIAL_SUMMARY_KEYS = new Set([
   'units',
   'salesCount',
   'averageTicket',
+  'unitsPerTicket',
   'discounts',
   'discountsKnown',
   'unitCosts',
@@ -173,7 +180,7 @@ const COMMERCIAL_SUMMARY_KEYS = new Set([
   'profitabilityExplanation'
 ]);
 const COMMERCIAL_PRODUCT_KEYS = new Set([
-  'name', 'quantity', 'netSales', 'unitCost', 'profit', 'margin', 'averagePrice', 'costKnown',
+  'name', 'quantity', 'netSales', 'salesShare', 'unitCost', 'profit', 'margin', 'averagePrice', 'costKnown',
   'costStatus', 'costSource', 'riskType', 'riskReason'
 ]);
 const COMMERCIAL_PRODUCT_COST_STATUS = new Set(['definitive', 'estimated', 'incomplete']);
@@ -182,24 +189,55 @@ const MAX_PRODUCT_COST_STATUS_LENGTH = 48;
 const MAX_PRODUCT_COST_SOURCE_LENGTH = 64;
 const COMMERCIAL_CHANNEL_KEYS = new Set(['channel', 'netSales', 'orders', 'units', 'averageTicket', 'share']);
 const COMMERCIAL_COMPARISON_KEYS = new Set([
+  'currentSalesCount',
+  'previousSalesCount',
+  'deltaSalesCount',
   'previousNetSales',
   'previousUnits',
   'previousTicket',
+  'previousUnitsPerTicket',
   'previousCost',
   'previousProfit',
   'previousMargin',
   'deltaNetSales',
+  'deltaNetSalesPercent',
   'deltaUnits',
   'deltaTicket',
+  'deltaTicketPercent',
+  'deltaUnitsPerTicket',
   'deltaCost',
   'deltaProfit',
   'deltaMargin',
   'deltaMarginRelative',
   'deltaDiscounts',
   'productMixChanges',
-  'channelMixChanges'
+  'channelMixChanges',
+  'productChanges'
 ]);
 const COMMERCIAL_MIX_KEYS = new Set(['name', 'channel', 'currentShare', 'previousShare', 'deltaShare']);
+const COMMERCIAL_PRODUCT_CHANGE_KEYS = new Set([
+  'name', 'currentSales', 'previousSales', 'salesDelta', 'salesDeltaPercent',
+  'currentUnits', 'previousUnits', 'unitsDelta', 'unitsDeltaPercent',
+  'currentShare', 'previousShare', 'salesShareDelta', 'currentMargin',
+  'previousMargin', 'currentProfit', 'previousProfit', 'costKnown', 'costStatus',
+  'direction', 'signals'
+]);
+const COMMERCIAL_PRODUCT_DIRECTIONS = new Set(['new_in_period', 'not_sold_current', 'growing', 'declining', 'stable']);
+const COMMERCIAL_PRODUCT_SIGNALS = new Set([
+  'new_in_period', 'not_sold_current', 'growing', 'declining', 'stable',
+  'high_sales_share', 'healthy_margin', 'cost_unknown', 'low_margin'
+]);
+const COMMERCIAL_CHANNEL_CHANGE_KEYS = new Set([
+  'channel', 'currentShare', 'previousShare', 'deltaShare', 'currentSales', 'previousSales', 'salesDelta'
+]);
+const COMMERCIAL_GROWTH_SIGNAL_KEYS = new Set([
+  'currentNetSales', 'currentSalesCount', 'currentUnits', 'currentAverageTicket',
+  'currentUnitsPerTicket', 'previousNetSales', 'deltaNetSales', 'deltaNetSalesPercent',
+  'previousSalesCount', 'deltaSalesCount', 'previousUnits', 'deltaUnits',
+  'previousAverageTicket', 'deltaTicket', 'deltaTicketPercent',
+  'previousUnitsPerTicket', 'deltaUnitsPerTicket', 'productsGrowing', 'productsDeclining',
+  'productOpportunities', 'channels', 'channelChanges', 'comparisonAvailable'
+]);
 const COMMERCIAL_CONTRIBUTOR_KEYS = new Set(['key', 'title', 'contribution', 'direction', 'explanation', 'evidenceKeys']);
 const COMMERCIAL_CALCULATION_KEYS = new Set(['label', 'value', 'formattedValue', 'formula', 'source', 'period']);
 const COMMERCIAL_SCENARIO_OUTPUT_KEYS = new Set([
@@ -334,7 +372,8 @@ function validCommercialScenarioOutput(value: unknown): value is Record<string, 
 
 function validCommercialPeriod(value: unknown, intent = 'explain_change'): value is Record<string, unknown> {
   if (!isRecord(value) || !assertOnlyKeys(value, COMMERCIAL_PERIOD_KEYS)) return false;
-  if (intent !== 'explain_change' && (value.previousFrom !== null && value.previousFrom !== undefined
+  const comparableIntent = ['explain_change', 'sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend'].includes(intent);
+  if (!comparableIntent && (value.previousFrom !== null && value.previousFrom !== undefined
     || value.previousTo !== null && value.previousTo !== undefined)) return false;
   return Object.values(value).every((entry) => entry === null || (typeof entry === 'string' && entry.length <= 80));
 }
@@ -383,8 +422,54 @@ function validCommercialContext(value: unknown): value is Record<string, unknown
     const comparison = sales.comparison;
     if (comparison.productMixChanges !== undefined && (!Array.isArray(comparison.productMixChanges) || comparison.productMixChanges.length > 12)) return false;
     if (comparison.channelMixChanges !== undefined && (!Array.isArray(comparison.channelMixChanges) || comparison.channelMixChanges.length > 12)) return false;
-    for (const mix of [...(comparison.productMixChanges || []), ...(comparison.channelMixChanges || [])]) {
+    if (comparison.productChanges !== undefined && (!Array.isArray(comparison.productChanges) || comparison.productChanges.length > MAX_COMMERCIAL_ROWS)) return false;
+    if (comparison.productChanges !== undefined && !comparison.productChanges.every((product) => (
+      isRecord(product)
+      && assertOnlyKeys(product, COMMERCIAL_PRODUCT_CHANGE_KEYS)
+      && typeof product.name === 'string'
+      && COMMERCIAL_PRODUCT_DIRECTIONS.has(String(product.direction))
+      && (product.costStatus === null || ['known', 'missing', 'not_sold_current'].includes(String(product.costStatus)))
+      && (product.signals === undefined || (Array.isArray(product.signals)
+        && product.signals.length <= 8
+        && product.signals.every((signal) => typeof signal === 'string' && COMMERCIAL_PRODUCT_SIGNALS.has(signal))))
+      && Object.entries(product).every(([key, entry]) => ['name', 'costStatus', 'direction', 'signals'].includes(key)
+        || key === 'costKnown' && typeof entry === 'boolean'
+        || key !== 'costKnown' && validFiniteOrNull(entry))
+    ))) return false;
+    for (const mix of comparison.productMixChanges || []) {
       if (!isRecord(mix) || !assertOnlyKeys(mix, COMMERCIAL_MIX_KEYS)) return false;
+    }
+    if (comparison.channelMixChanges !== undefined && !comparison.channelMixChanges.every((channel) => (
+      isRecord(channel) && assertOnlyKeys(channel, COMMERCIAL_CHANNEL_CHANGE_KEYS)
+      && typeof channel.channel === 'string'
+      && Object.entries(channel).every(([key, entry]) => key === 'channel' ? typeof entry === 'string' : validFiniteOrNull(entry))
+    ))) return false;
+  }
+  if (sales.growthSignals !== undefined && sales.growthSignals !== null) {
+    const signals = sales.growthSignals;
+    if (!isRecord(signals) || !assertOnlyKeys(signals, COMMERCIAL_GROWTH_SIGNAL_KEYS)) return false;
+    for (const key of ['productsGrowing', 'productsDeclining', 'productOpportunities']) {
+      if (signals[key] !== undefined && (!Array.isArray(signals[key]) || signals[key].length > MAX_COMMERCIAL_ROWS)) return false;
+      if (signals[key] !== undefined && !signals[key].every((product) => (
+        isRecord(product) && assertOnlyKeys(product, new Set([...COMMERCIAL_PRODUCT_CHANGE_KEYS, 'opportunityReason']))
+        && typeof product.name === 'string'
+        && (product.opportunityReason === undefined || (typeof product.opportunityReason === 'string' && product.opportunityReason.length <= 240))
+        && Object.entries(product).every(([field, entry]) => ['name', 'costStatus', 'direction', 'signals', 'opportunityReason'].includes(field)
+          || field === 'costKnown' && typeof entry === 'boolean'
+          || field !== 'costKnown' && validFiniteOrNull(entry))
+      ))) return false;
+    }
+    if (signals.channelChanges !== undefined && (!Array.isArray(signals.channelChanges) || signals.channelChanges.length > 12
+      || !signals.channelChanges.every((channel) => isRecord(channel)
+        && assertOnlyKeys(channel, COMMERCIAL_CHANNEL_CHANGE_KEYS)
+        && typeof channel.channel === 'string'
+        && Object.entries(channel).every(([key, entry]) => key === 'channel' ? typeof entry === 'string' : validFiniteOrNull(entry))))) return false;
+    if (signals.channels !== undefined && (!Array.isArray(signals.channels) || signals.channels.length > MAX_COMMERCIAL_ROWS
+      || !signals.channels.every((channel) => isRecord(channel) && assertOnlyKeys(channel, COMMERCIAL_CHANNEL_KEYS)))) return false;
+    if (signals.comparisonAvailable !== undefined && typeof signals.comparisonAvailable !== 'boolean') return false;
+    for (const [key, entry] of Object.entries(signals)) {
+      if (['productsGrowing', 'productsDeclining', 'productOpportunities', 'channels', 'channelChanges', 'comparisonAvailable'].includes(key)) continue;
+      if (!validFiniteOrNull(entry)) return false;
     }
   }
   if (sales.evidenceKeys !== undefined) {

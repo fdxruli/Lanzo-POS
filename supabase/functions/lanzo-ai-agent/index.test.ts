@@ -1142,7 +1142,24 @@ Deno.test('contrato comercial no acepta strings numéricos ni escenarios stale d
   }
 });
 
-Deno.test('periodo anterior sólo es válido para explain_change', async () => {
+Deno.test('los intentos de crecimiento aceptan un periodo anterior comparable', async () => {
+  for (const entry of [
+    { intent: 'sales_growth', question: '¿Cómo crecieron mis ventas?' },
+    { intent: 'ticket_growth', question: '¿Cómo puedo aumentar mi ticket promedio?' },
+    { intent: 'product_opportunity', question: '¿Qué productos puedo impulsar?' },
+    { intent: 'sales_trend', question: '¿Cuál es la tendencia de mis ventas?' }
+  ]) {
+    const client = analysisClient();
+    const response = await makeHandler(client, {
+      fetchImpl: async () => chatResponse(structuredCommercialResponse())
+    })(request(structuredCommercialRequest({ ...entry, requestKey: `growth-period-${entry.intent}` })));
+
+    assertEquals(response.status, 200, entry.intent);
+    assertEquals(client.calls.filter((call) => call.name === 'begin_ai_agent_analysis').length, 1, entry.intent);
+  }
+});
+
+Deno.test('un periodo anterior sigue rechazado para intentos que no comparan periodos', async () => {
   const client = analysisClient();
   const response = await makeHandler(client)(request(structuredCommercialRequest({
     intent: 'combo_opportunity',
