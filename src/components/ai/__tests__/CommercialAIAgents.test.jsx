@@ -544,6 +544,56 @@ describe('commercial AI center', () => {
     expect(runtime.runAgent).toHaveBeenCalledTimes(1);
   });
 
+  it('shows Phase 2 AI recommendations as why, action, measurement and confidence', async () => {
+    runtime.runAgent.mockResolvedValueOnce({
+      response: {
+        status: 'completed',
+        executiveSummary: 'Hay una prueba concreta para Producto A.',
+        explanation: 'Los hechos calculados se muestran aparte.',
+        confidence: 'medium',
+        source: 'cloud',
+        coverage: { validSales: 1 },
+        calculations: [],
+        assumptions: [],
+        limitations: [],
+        recommendations: [],
+        scenarios: [],
+        aiNarrative: {
+          status: 'available',
+          executiveSummary: 'Hay una prueba concreta para Producto A.',
+          explanation: 'La señal de Producto A justifica una prueba acotada.',
+          confidence: 'high',
+          recommendations: [{
+            title: 'Probar mayor visibilidad para Producto A',
+            explanation: 'Producto A tiene una señal de ventas actual relevante.',
+            action: 'Probar una ubicación más visible durante una semana.',
+            measurement: 'Comparar unidades diarias con la semana previa.',
+            expectedImpact: 'Permitirá evaluar si la exposición coincide con más unidades.',
+            priority: 'high',
+            evidenceKeys: ['product:Producto A'],
+            requiresConfirmation: true
+          }]
+        }
+      },
+      providerCalled: true,
+      quotaOutcome: 'consumed',
+      usageStatus: { used: 3, limit: 15, remaining: 12 }
+    });
+    renderCenter();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), {
+      target: { value: '¿Cómo puedo aumentar mis ventas?' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+
+    expect(await screen.findByText('Recomendaciones para probar')).toBeInTheDocument();
+    expect(screen.getByText('Por qué:')).toBeInTheDocument();
+    expect(screen.getByText('Qué probar:')).toBeInTheDocument();
+    expect(screen.getByText('Qué medir:')).toBeInTheDocument();
+    expect(screen.getByText(/Confianza de esta interpretación: Alta/)).toBeInTheDocument();
+    expect(screen.getByText(/Requiere confirmación manual/)).toBeInTheDocument();
+    expect(screen.queryByText('product:Producto A')).not.toBeInTheDocument();
+  });
+
   it('does not put errors or invalid response shapes in history', async () => {
     runtime.runAgent.mockResolvedValueOnce({
       response: { status: 'invalid', executiveSummary: 'No mostrar como exitoso' },

@@ -25,6 +25,7 @@ export const COMMERCIAL_NARRATIVE_DIAGNOSTIC_CODES = [
   'AI_NARRATIVE_TRUNCATED',
   'AI_NARRATIVE_PARTIAL_CONTENT',
   'AI_NARRATIVE_PROVIDER_ERROR',
+  'AI_NARRATIVE_LOW_VALUE',
   'AI_NARRATIVE_UNAVAILABLE'
 ] as const;
 
@@ -474,7 +475,7 @@ function validCommercialContext(value: unknown): value is Record<string, unknown
     }
   }
   if (sales.evidenceKeys !== undefined) {
-    if (!Array.isArray(sales.evidenceKeys) || sales.evidenceKeys.length > 40) return false;
+    if (!Array.isArray(sales.evidenceKeys) || sales.evidenceKeys.length > 80) return false;
     if (!sales.evidenceKeys.every((entry) => typeof entry === 'string' && entry.length > 0 && entry.length <= 160)) return false;
   }
   if (sales.contributors !== undefined) {
@@ -694,6 +695,7 @@ export function validateCommercialModelResponse(value: unknown): boolean {
     const narrative = value.aiNarrative;
     if (narrative.status !== 'available' && narrative.status !== 'unavailable') return false;
     if (!Array.isArray(narrative.recommendations)) return false;
+    if (narrative.confidence !== undefined && !['high', 'medium', 'low'].includes(String(narrative.confidence))) return false;
     if (narrative.diagnosticCode !== undefined && !isCommercialNarrativeDiagnosticCode(narrative.diagnosticCode)) return false;
     const hasNarrativeContent = (typeof narrative.executiveSummary === 'string' && narrative.executiveSummary.trim().length > 0)
       || (typeof narrative.explanation === 'string' && narrative.explanation.trim().length > 0)
@@ -717,7 +719,12 @@ export function validateCommercialModelResponse(value: unknown): boolean {
       || item.requiresConfirmation !== true) return true;
     const legacy = typeof item.effort === 'string' && Array.isArray(item.evidence);
     const narrative = ['high', 'medium', 'low'].includes(String(item.priority)) && Array.isArray(item.evidenceKeys);
-    return !legacy && !narrative;
+    const hasAction = typeof item.action === 'string' && item.action.trim().length > 0;
+    const hasMeasurement = typeof item.measurement === 'string' && item.measurement.trim().length > 0;
+    return (!legacy && !narrative)
+      || (hasAction !== hasMeasurement)
+      || (item.action !== undefined && !hasAction)
+      || (item.measurement !== undefined && !hasMeasurement);
   })) return false;
   return !hasForbiddenKey(value) && !Object.values(value).some((entry) => hasForbiddenKey(entry));
 }

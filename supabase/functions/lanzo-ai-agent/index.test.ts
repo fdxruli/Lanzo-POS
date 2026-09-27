@@ -167,6 +167,73 @@ function structuredCommercialResponse() {
   });
 }
 
+function usefulGrowthResponse(productName = 'Producto A', evidenceKey = `product:${productName}`) {
+  return JSON.stringify({
+    version: 1,
+    agentKey: 'salesProfitability',
+    status: 'completed',
+    executiveSummary: `Hay una oportunidad concreta para probar con ${productName}.`,
+    explanation: `La evidencia de ${productName} permite evaluar una acción pequeña antes de ampliar surtido o aplicar descuentos generales.`,
+    facts: [],
+    calculations: [],
+    assumptions: [],
+    scenarios: [],
+    recommendations: [{
+      title: `Probar mayor visibilidad para ${productName}`,
+      explanation: `${productName} tiene una señal de ventas actual que merece una prueba acotada.`,
+      action: `Durante siete días, prueba una ubicación más visible para ${productName} sin cambiar su precio.`,
+      measurement: `Compara las unidades diarias de ${productName} con los siete días previos.`,
+      expectedImpact: 'Permitirá comprobar si una mayor exposición coincide con más unidades, sin asumir que el resultado se repetirá.',
+      priority: 'high',
+      evidenceKeys: [evidenceKey],
+      requiresConfirmation: true
+    }],
+    limitations: [],
+    confidence: 'high',
+    source: 'cloud',
+    coverage: { complete: true },
+    citations: [],
+    actionDrafts: []
+  });
+}
+
+function actionableGrowthRequest(intent = 'sales_growth', productName = 'Producto A') {
+  const base = structuredCommercialRequest({ intent }) as unknown as {
+    context: { sales: Record<string, unknown> };
+  };
+  const sales = base.context.sales;
+  sales.growthSignals = {
+    comparisonAvailable: true,
+    productOpportunities: [{
+      name: productName,
+      currentSales: 510,
+      previousSales: 340,
+      salesDelta: 170,
+      currentShare: 0.37,
+      costKnown: false,
+      costStatus: 'missing',
+      direction: 'growing',
+      signals: ['growing', 'high_sales_share']
+    }]
+  };
+  sales.comparison = {
+    deltaNetSales: 175,
+    deltaTicket: 5,
+    deltaUnitsPerTicket: 0.1,
+    deltaSalesCount: 2,
+    deltaUnits: 4
+  };
+  sales.evidenceKeys = [
+    `product:${productName}`,
+    'metric:deltaNetSales',
+    'metric:deltaTicket',
+    'metric:deltaUnitsPerTicket',
+    'metric:deltaSalesCount',
+    'metric:deltaUnits'
+  ];
+  return base;
+}
+
 function structuredCommercialRequest(overrides: Record<string, unknown> = {}) {
   return {
     auth,
@@ -875,7 +942,13 @@ Deno.test('sales_growth envía un prompt breve, acotado y explícito para una na
     'comparison.deltaSalesCount', 'comparison.deltaUnits', 'comparison.deltaTicket',
     'comparison.deltaTicketPercent', 'comparison.deltaUnitsPerTicket', 'comparison.productChanges',
     'comparison.channelMixChanges', 'growthSignals.productOpportunities', 'summary.unitsPerTicket',
-    'scenarios.values'
+    'scenarios.values',
+    ...products.map((product) => `product:${product.name}`),
+    ...declining.map((product) => `product:${product.name}`),
+    ...channels.map((channel) => `channel:${channel.channel}`),
+    'metric:deltaNetSales', 'metric:deltaSalesCount', 'metric:deltaUnits', 'metric:deltaTicket',
+    'metric:deltaUnitsPerTicket', 'metric:currentNetSales', 'metric:currentAverageTicket',
+    'metric:currentUnitsPerTicket'
   ];
   sales.calculations = [{ label: 'No incluir', value: 1, formattedValue: '1', formula: '1', source: 'fixture', period: {} }];
   sales.assumptions = ['No incluir'];
@@ -909,12 +982,15 @@ Deno.test('sales_growth envía un prompt breve, acotado y explícito para una na
   assertEquals(JSON.stringify(body.response_format), JSON.stringify({ type: 'json_object' }));
   assertEquals(JSON.stringify(body.thinking), JSON.stringify({ type: 'disabled' }));
   assert(systemPrompt.includes('exclusivamente el objeto JSON solicitado'), 'prompt sólo permite JSON');
-  assert(systemPrompt.includes('no repitas los datos de entrada'), 'prompt evita repetir entrada');
-  assert(systemPrompt.includes('no reproduzcas la evidencia completa'), 'prompt evita reescribir evidencia');
+  assert(systemPrompt.includes('no repitas todo el reporte'), 'prompt permite seleccionar datos útiles');
+  assert(systemPrompt.includes('acción revisable y medible'), 'prompt exige asesoría accionable');
+  assert(systemPrompt.includes('citar su clave product: o channel:'), 'prompt exige evidencia de entidad específica');
+  assert(systemPrompt.includes('new_in_period sólo significa'), 'prompt define correctamente la señal de producto');
   assert(systemPrompt.includes('máximo 2 frases y 300 caracteres'), 'prompt limita el resumen');
   assert(systemPrompt.includes('máximo 2 recomendaciones'), 'prompt limita recomendaciones');
+  assert(systemPrompt.includes('action, measurement'), 'contrato del prompt exige acción y medición');
   assert(systemPrompt.includes('no recalcules cifras'), 'prompt prohíbe recalcular');
-  assert(systemPrompt.includes('ni inventes datos, causalidad'), 'prompt prohíbe inventar datos o causalidad');
+  assert(systemPrompt.includes('ni inventes datos, entidades, causalidad'), 'prompt prohíbe inventar datos o causalidad');
   assert(systemPrompt.toLowerCase().includes('no añadas campos'), 'prompt prohíbe campos adicionales');
   assertEquals(Object.prototype.hasOwnProperty.call(prompt, 'scenario'), false);
   assertEquals(Object.prototype.hasOwnProperty.call(prompt, 'agentKey'), false);
@@ -933,6 +1009,8 @@ Deno.test('sales_growth envía un prompt breve, acotado y explícito para una na
   assertEquals((growth.productsDeclining as unknown[]).length, 3);
   assertEquals((growth.channelChanges as unknown[]).length, 2);
   assert(allowedKeys.length <= 12, 'claves permitidas acotadas');
+  assert(allowedKeys.includes('product:Producto 7'), 'claves específicas priorizan productos reales');
+  assert(allowedKeys.includes('channel:Canal 4'), 'claves específicas incluyen canales reales');
   assert(userMessage.length < 3500, `prompt de usuario inesperadamente grande: ${userMessage.length} caracteres`);
 
   for (const intent of ['ticket_growth', 'product_opportunity', 'sales_trend']) {
@@ -954,39 +1032,195 @@ Deno.test('sales_growth envía un prompt breve, acotado y explícito para una na
 });
 
 Deno.test('la narrativa comercial normalizada respeta los límites compactos del contrato', async () => {
-  const response = JSON.parse(structuredCommercialResponse()) as Record<string, unknown>;
+  const response = JSON.parse(usefulGrowthResponse()) as Record<string, unknown>;
   response.executiveSummary = 'S'.repeat(350);
   response.explanation = 'E'.repeat(850);
   response.extraProviderField = 'drop this field';
   response.recommendations = Array.from({ length: 4 }, (_, index) => ({
-    title: `Title ${index} ${'T'.repeat(100)}`,
+    title: `Producto A ${index} ${'T'.repeat(100)}`,
     explanation: `Reason ${index} ${'R'.repeat(300)}`,
+    action: `Probar más visibilidad para Producto A ${index} ${'A'.repeat(300)}`,
+    measurement: `Comparar las unidades de Producto A ${index} ${'M'.repeat(240)}`,
     expectedImpact: `Impact ${index} ${'I'.repeat(220)}`,
     priority: 'medium',
-    evidenceKeys: ['profitability.margin', 'profitability.profit', 'comparison.deltaMargin', 'products.risks'],
+    evidenceKeys: ['product:Producto A'],
     requiresConfirmation: true
   }));
   const client = analysisClient();
   const responseFromEdge = await makeHandler(client, {
     env: { AI_MODEL: 'deepseek-v4-flash' },
     fetchImpl: async () => chatResponse(JSON.stringify(response))
-  })(request(structuredCommercialRequest({ intent: 'sales_growth', question: '¿Cómo puedo aumentar mis ventas?' })));
+  })(request(actionableGrowthRequest('sales_growth')));
   const body = await json(responseFromEdge);
   const content = JSON.parse(String(body.content)) as Record<string, unknown>;
   const recommendations = content.recommendations as Array<Record<string, unknown>>;
+  const aiNarrative = content.aiNarrative as Record<string, unknown>;
   assertEquals(responseFromEdge.status, 200);
   assertEquals(body.quotaOutcome, 'consumed');
   assert((content.executiveSummary as string).length <= 300, 'resumen queda dentro del máximo');
   assert((content.explanation as string).length <= 800, 'explicación queda dentro del máximo');
   assertEquals(recommendations.length, 2, 'no más de dos recomendaciones');
+  assertEquals(aiNarrative.confidence, 'high', 'conserva confidence del proveedor');
   assertEquals(Object.prototype.hasOwnProperty.call(content, 'extraProviderField'), false, 'se descartan campos añadidos');
   for (const recommendation of recommendations) {
     assert((recommendation.title as string).length <= 80, 'título acotado');
-    assert((recommendation.explanation as string).length <= 240, 'explicación de recomendación acotada');
+    assert((recommendation.explanation as string).length <= 300, 'explicación de recomendación acotada');
+    assert((recommendation.action as string).length <= 280, 'acción acotada');
+    assert((recommendation.measurement as string).length <= 220, 'medición acotada');
     assert((recommendation.expectedImpact as string).length <= 180, 'impacto acotado');
     assert((recommendation.evidenceKeys as unknown[]).length <= 3, 'evidenceKeys acotadas');
     assertEquals(recommendation.requiresConfirmation, true);
   }
+});
+
+Deno.test('una narrativa genérica o sin vínculo entre entidad y evidencia no consume cuota', async () => {
+  const poorResponses = [
+    {
+      executiveSummary: 'Las ventas crecieron.',
+      explanation: 'Revisa tus productos.',
+      recommendations: []
+    },
+    {
+      ...JSON.parse(usefulGrowthResponse()),
+      executiveSummary: ''
+    },
+    {
+      ...JSON.parse(usefulGrowthResponse()),
+      explanation: ''
+    },
+    {
+      executiveSummary: 'Hay una oportunidad para vender más.',
+      explanation: 'Revisa tus productos.',
+      recommendations: [{
+        title: 'Impulsar Producto Inventado',
+        explanation: 'Los productos son importantes.',
+        action: 'Mejorar la promoción.',
+        measurement: 'Analizar las ventas.',
+        expectedImpact: 'Puede ayudar a vender más.',
+        priority: 'high',
+        evidenceKeys: ['product:Producto A'],
+        requiresConfirmation: true
+      }]
+    },
+    {
+      ...JSON.parse(usefulGrowthResponse()),
+      recommendations: [{
+        ...JSON.parse(usefulGrowthResponse()).recommendations[0],
+        evidenceKeys: ['metric:deltaNetSales']
+      }]
+    }
+  ];
+
+  for (const [index, poorResponse] of poorResponses.entries()) {
+    const client = analysisClient(successBegin(), { success: true, status: 'failed' });
+    const response = await makeHandler(client, {
+      fetchImpl: async () => chatResponse(JSON.stringify(poorResponse))
+    })(request(actionableGrowthRequest('sales_growth')));
+    const body = await json(response);
+    const normalized = JSON.parse(String(body.content)) as Record<string, unknown>;
+    const narrative = normalized.aiNarrative as Record<string, unknown>;
+    const complete = client.calls.find((call) => call.name === 'complete_ai_agent_analysis');
+
+    assertEquals(response.status, 200, `case ${index}: Edge conserva fallback determinístico`);
+    assertEquals(body.providerCalled, true, `case ${index}: el proveedor sí fue llamado`);
+    assertEquals(body.quotaOutcome, 'not_consumed', `case ${index}: la respuesta de bajo valor no consume uso`);
+    assertEquals(narrative.status, 'unavailable', `case ${index}: la narrativa se marca unavailable`);
+    assertEquals(narrative.diagnosticCode, 'AI_NARRATIVE_LOW_VALUE', `case ${index}: diagnóstico estructural`);
+    assertEquals((complete?.args as Record<string, unknown>).p_success, false, `case ${index}: Edge completa el uso como fallido`);
+  }
+});
+
+Deno.test('golden intents reciben recomendaciones útiles y tendencia directa', async () => {
+  const recommendationIntents = ['sales_growth', 'ticket_growth', 'product_opportunity'];
+  for (const intent of recommendationIntents) {
+    const client = analysisClient();
+    const providerResponse = JSON.parse(usefulGrowthResponse()) as Record<string, unknown>;
+    if (intent === 'ticket_growth') {
+      providerResponse.executiveSummary = 'Prueba una forma de aumentar los artículos por compra y mide si cambia el ticket.';
+      providerResponse.recommendations = [{
+        title: 'Probar una sugerencia de artículo adicional',
+        explanation: 'Las unidades por ticket son una señal directa para evaluar si los clientes agregan más artículos.',
+        action: 'Durante una semana, prueba sugerir un artículo adicional en compras donde tenga sentido.',
+        measurement: 'Compara las unidades por ticket con la semana previa.',
+        expectedImpact: 'Permitirá validar si la sugerencia coincide con más artículos por compra, sin prometer un aumento.',
+        priority: 'medium',
+        evidenceKeys: ['metric:deltaUnitsPerTicket'],
+        requiresConfirmation: true
+      }];
+    }
+    const response = await makeHandler(client, {
+      fetchImpl: async () => chatResponse(JSON.stringify(providerResponse))
+    })(request(actionableGrowthRequest(intent)));
+    const body = await json(response);
+    const content = JSON.parse(String(body.content)) as Record<string, unknown>;
+    const narrative = content.aiNarrative as Record<string, unknown>;
+    const recommendations = narrative.recommendations as Array<Record<string, unknown>>;
+
+    assertEquals(body.quotaOutcome, 'consumed', `${intent}: estructura de recomendación válida`);
+    assertEquals(narrative.status, 'available', `${intent}: narrativa disponible`);
+    assert(recommendations.length >= 1, `${intent}: al menos una recomendación con evidencia`);
+    assert(typeof recommendations[0].action === 'string' && String(recommendations[0].action).trim(), `${intent}: action requerida`);
+    assert(typeof recommendations[0].measurement === 'string' && String(recommendations[0].measurement).trim(), `${intent}: measurement requerida`);
+    assert((recommendations[0].evidenceKeys as string[]).some((key) => key === (intent === 'ticket_growth' ? 'metric:deltaUnitsPerTicket' : 'product:Producto A')), `${intent}: grounding compatible con el intent`);
+    assertEquals(recommendations[0].requiresConfirmation, true, `${intent}: ninguna acción se ejecuta automáticamente`);
+  }
+
+  const trendClient = analysisClient();
+  const trendRequest = actionableGrowthRequest('sales_trend');
+  const trendResponse = {
+    ...JSON.parse(usefulGrowthResponse()),
+    executiveSummary: 'Sí: las ventas crecieron frente al periodo comparable.',
+    recommendations: []
+  };
+  const response = await makeHandler(trendClient, {
+    fetchImpl: async () => chatResponse(JSON.stringify(trendResponse))
+  })(request(trendRequest));
+  const body = await json(response);
+  const content = JSON.parse(String(body.content)) as Record<string, unknown>;
+  const narrative = content.aiNarrative as Record<string, unknown>;
+  assertEquals(body.quotaOutcome, 'consumed', 'sales_trend permite una respuesta de tendencia directa sin asesoría forzada');
+  assert(String(narrative.executiveSummary).startsWith('Sí:'), 'sales_trend contesta primero la tendencia');
+});
+
+Deno.test('una oportunidad de canal debe citar el canal existente y su clave channel específica', async () => {
+  const channelRequest = actionableGrowthRequest('sales_growth');
+  const sales = channelRequest.context.sales;
+  const growthSignals = sales.growthSignals as Record<string, unknown>;
+  growthSignals.channelChanges = [{
+    channel: 'Ecommerce',
+    currentSales: 0,
+    previousSales: 200,
+    salesDelta: -200,
+    currentShare: 0,
+    previousShare: 0.2,
+    deltaShare: -0.2
+  }];
+  (sales.evidenceKeys as string[]).push('channel:Ecommerce');
+  const responseContent = JSON.parse(usefulGrowthResponse()) as Record<string, unknown>;
+  responseContent.executiveSummary = 'Ecommerce pasó de registrar ventas a cero; conviene verificar el canal antes de inferir demanda.';
+  responseContent.recommendations = [{
+    title: 'Verificar la actividad de Ecommerce',
+    explanation: 'Ecommerce pasó de ventas registradas a cero en el periodo actual.',
+    action: 'Comprueba si Ecommerce estuvo activo y si los pedidos se registraron correctamente.',
+    measurement: 'Compara pedidos registrados y ventas de Ecommerce con el periodo comparable.',
+    expectedImpact: 'Permitirá distinguir una anomalía operativa de una señal de demanda.',
+    priority: 'high',
+    evidenceKeys: ['channel:Ecommerce'],
+    requiresConfirmation: true
+  }];
+  const client = analysisClient();
+  const response = await makeHandler(client, {
+    fetchImpl: async () => chatResponse(JSON.stringify(responseContent))
+  })(request(channelRequest));
+  const body = await json(response);
+  const content = JSON.parse(String(body.content)) as Record<string, unknown>;
+  const narrative = content.aiNarrative as Record<string, unknown>;
+  const recommendation = (narrative.recommendations as Array<Record<string, unknown>>)[0];
+
+  assertEquals(body.quotaOutcome, 'consumed');
+  assertEquals(narrative.status, 'available');
+  assert((recommendation.evidenceKeys as string[]).includes('channel:Ecommerce'), 'cita la clave exacta del canal');
+  assert(String(recommendation.action).includes('Ecommerce'), 'propone una acción sobre el canal citado');
 });
 
 Deno.test('respuesta comercial completa en el techo de tokens se acepta y consume una cuota', async () => {

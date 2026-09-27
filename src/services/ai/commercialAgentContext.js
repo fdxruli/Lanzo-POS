@@ -91,23 +91,35 @@ const NARRATIVE_EVIDENCE_KEYS = {
   sales_growth: [
     'comparison.deltaNetSales', 'comparison.deltaNetSalesPercent', 'comparison.deltaSalesCount',
     'comparison.deltaUnits', 'comparison.deltaTicket', 'comparison.deltaTicketPercent',
-    'comparison.deltaUnitsPerTicket', 'comparison.productChanges', 'comparison.channelMixChanges',
-    'growthSignals.productOpportunities', 'summary.unitsPerTicket'
+    'comparison.deltaUnitsPerTicket', 'summary.unitsPerTicket',
+    'metric:deltaNetSales', 'metric:deltaSalesCount', 'metric:deltaUnits', 'metric:deltaTicket',
+    'metric:deltaUnitsPerTicket', 'metric:currentNetSales', 'metric:currentAverageTicket',
+    'metric:currentUnitsPerTicket'
   ],
   ticket_growth: [
     'summary.unitsPerTicket', 'comparison.deltaTicket', 'comparison.deltaTicketPercent',
-    'comparison.deltaUnitsPerTicket', 'comparison.deltaSalesCount', 'comparison.productChanges',
-    'growthSignals.productOpportunities'
+    'comparison.deltaUnitsPerTicket', 'comparison.deltaSalesCount', 'comparison.deltaUnits',
+    'metric:deltaTicket', 'metric:deltaUnitsPerTicket', 'metric:deltaSalesCount', 'metric:deltaUnits',
+    'metric:currentAverageTicket', 'metric:currentUnitsPerTicket'
   ],
   product_opportunity: [
-    'comparison.productChanges', 'comparison.productMixChanges', 'growthSignals.productOpportunities',
-    'products.risks', 'profitability.costCoverage', 'coverage.costCoverage'
+    'products.risks', 'profitability.costCoverage', 'coverage.costCoverage',
+    'metric:currentNetSales', 'metric:costCoverage'
   ],
   sales_trend: [
     'comparison.deltaNetSales', 'comparison.deltaNetSalesPercent', 'comparison.deltaSalesCount',
     'comparison.deltaUnits', 'comparison.deltaTicket', 'comparison.deltaUnitsPerTicket',
-    'comparison.channelMixChanges', 'summary.unitsPerTicket'
+    'summary.unitsPerTicket',
+    'metric:deltaNetSales', 'metric:deltaSalesCount', 'metric:deltaUnits', 'metric:deltaTicket',
+    'metric:deltaUnitsPerTicket'
   ]
+};
+
+const NARRATIVE_ENTITY_PREFIXES = {
+  sales_growth: ['product:', 'channel:'],
+  ticket_growth: ['product:'],
+  product_opportunity: ['product:'],
+  sales_trend: ['channel:']
 };
 
 const narrativeImpact = (row) => {
@@ -135,7 +147,10 @@ const projectNarrativeProduct = (product, intent) => {
     ]
     : intent === 'ticket_growth'
       ? ['name', 'currentSales', 'salesDelta', 'salesDeltaPercent', 'unitsDelta', 'direction', 'signals']
-      : ['name', 'currentSales', 'salesDelta', 'salesDeltaPercent', 'unitsDelta', 'costKnown', 'costStatus', 'direction', 'signals'];
+      : [
+        'name', 'currentSales', 'salesDelta', 'unitsDelta', 'currentShare',
+        'costKnown', 'costStatus', 'direction', 'signals'
+      ];
   const projected = Object.fromEntries([
     ...keys
   ].filter((key) => Object.prototype.hasOwnProperty.call(product, key)).map((key) => [key, product[key]]));
@@ -200,9 +215,23 @@ const buildNarrativeEvidence = (intent, sales) => {
   }
 
   const availableEvidence = new Set(Array.isArray(sales.evidenceKeys) ? sales.evidenceKeys : []);
-  const evidenceKeys = (NARRATIVE_EVIDENCE_KEYS[intent] || [])
-    .filter((key) => availableEvidence.has(key))
-    .slice(0, 12);
+  const entityPrefixes = NARRATIVE_ENTITY_PREFIXES[intent] || [];
+  const selectedEntityKeys = [
+    ...(entityPrefixes.includes('product:')
+      ? [
+        ...(Array.isArray(growthSignals.productOpportunities) ? growthSignals.productOpportunities : []),
+        ...(Array.isArray(growthSignals.productsDeclining) ? growthSignals.productsDeclining : [])
+      ].map((product) => asRecord(product).name).filter((name) => typeof name === 'string').map((name) => `product:${name}`)
+      : []),
+    ...(entityPrefixes.includes('channel:') && Array.isArray(growthSignals.channelChanges)
+      ? growthSignals.channelChanges.map((channel) => asRecord(channel).channel)
+        .filter((channel) => typeof channel === 'string').map((channel) => `channel:${channel}`)
+      : [])
+  ].filter((key) => availableEvidence.has(key));
+  const evidenceKeys = [
+    ...selectedEntityKeys,
+    ...(NARRATIVE_EVIDENCE_KEYS[intent] || []).filter((key) => availableEvidence.has(key))
+  ].filter((key, index, values) => values.indexOf(key) === index).slice(0, 24);
 
   return {
     summary: pickOwnFields(asRecord(sales.summary), summaryFields),
@@ -385,6 +414,9 @@ const SAFE_SCENARIO_KEYS = new Set([
 const buildEvidenceKeys = (source = {}) => {
   const value = asRecord(source);
   const comparison = asRecord(value.comparison || value.previous);
+  const overview = asRecord(value.overview || value.metrics || value.summary);
+  const coverage = asRecord(value.coverage);
+  const growthSignals = asRecord(value.growthSignals);
   const contributors = normalizeContributors(value.contributors);
   const keys = [
     'profitability.status',
@@ -422,11 +454,57 @@ const buildEvidenceKeys = (source = {}) => {
   if (Object.keys(asRecord(value.growthSignals)).length) {
     keys.push('growthSignals.currentNetSales', 'growthSignals.deltaNetSales', 'growthSignals.productOpportunities');
   }
+  const productRows = [
+    ...(Array.isArray(value.products) ? value.products : []),
+    ...(Array.isArray(value.byProduct) ? value.byProduct : []),
+    ...(Array.isArray(comparison.productChanges) ? comparison.productChanges : []),
+    ...(Array.isArray(growthSignals.productOpportunities) ? growthSignals.productOpportunities : []),
+    ...(Array.isArray(growthSignals.productsGrowing) ? growthSignals.productsGrowing : []),
+    ...(Array.isArray(growthSignals.productsDeclining) ? growthSignals.productsDeclining : [])
+  ];
+  for (const item of productRows) {
+    const row = asRecord(item);
+    const name = asSafeText(row.name || row.product_name || row.productName, null, MAX_PRODUCT_NAME_LENGTH);
+    const hasSalesEvidence = [
+      'netSales', 'net_sales', 'sales', 'revenue', 'currentSales', 'previousSales', 'salesDelta',
+      'quantity', 'units', 'currentUnits', 'previousUnits', 'currentShare', 'salesShare'
+    ].some((field) => pickNumber(row, [field]) !== null);
+    if (name && hasSalesEvidence) keys.push(`product:${name}`);
+  }
+  const channelRows = [
+    ...(Array.isArray(value.channels) ? value.channels : []),
+    ...(Array.isArray(value.byChannel) ? value.byChannel : []),
+    ...(Array.isArray(comparison.channelMixChanges) ? comparison.channelMixChanges : []),
+    ...(Array.isArray(growthSignals.channelChanges) ? growthSignals.channelChanges : [])
+  ];
+  for (const item of channelRows) {
+    const row = asRecord(item);
+    const name = asSafeText(row.channel || row.sales_channel || row.canal, null, 80);
+    const hasChannelEvidence = [
+      'netSales', 'net_sales', 'sales', 'revenue', 'currentSales', 'previousSales', 'salesDelta',
+      'share', 'salesShare', 'currentShare', 'previousShare', 'deltaShare'
+    ].some((field) => pickNumber(row, [field]) !== null);
+    if (name && hasChannelEvidence) keys.push(`channel:${name}`);
+  }
+  const metricValues = {
+    deltaNetSales: pickNumber(comparison, ['deltaNetSales', 'delta_net_sales']) ?? pickNumber(growthSignals, ['deltaNetSales']),
+    deltaSalesCount: pickNumber(comparison, ['deltaSalesCount', 'delta_sales_count']) ?? pickNumber(growthSignals, ['deltaSalesCount']),
+    deltaUnits: pickNumber(comparison, ['deltaUnits', 'delta_units']) ?? pickNumber(growthSignals, ['deltaUnits']),
+    deltaTicket: pickNumber(comparison, ['deltaTicket', 'delta_ticket']) ?? pickNumber(growthSignals, ['deltaTicket']),
+    deltaUnitsPerTicket: pickNumber(comparison, ['deltaUnitsPerTicket', 'delta_units_per_ticket']) ?? pickNumber(growthSignals, ['deltaUnitsPerTicket']),
+    currentNetSales: pickNumber(overview, ['netSales', 'net_sales', 'sales', 'revenue']) ?? pickNumber(growthSignals, ['currentNetSales']),
+    currentAverageTicket: pickNumber(overview, ['averageTicket', 'average_ticket', 'avg_ticket']) ?? pickNumber(growthSignals, ['currentAverageTicket']),
+    currentUnitsPerTicket: pickNumber(overview, ['unitsPerTicket', 'units_per_ticket']) ?? pickNumber(growthSignals, ['currentUnitsPerTicket']),
+    costCoverage: pickNumber(coverage, ['costCoverage', 'cost_coverage'])
+  };
+  Object.entries(metricValues).forEach(([key, metric]) => {
+    if (metric !== null) keys.push(`metric:${key}`);
+  });
   contributors.forEach((item) => keys.push(`contributors.${item.key}`));
   if (Array.isArray(value.scenarios) && value.scenarios.length) {
     keys.push('scenarios.values');
   }
-  return Array.from(new Set(keys)).slice(0, 40);
+  return Array.from(new Set(keys)).slice(0, 80);
 };
 
 const normalizeSalesPayload = (payload = {}, intent = null) => {

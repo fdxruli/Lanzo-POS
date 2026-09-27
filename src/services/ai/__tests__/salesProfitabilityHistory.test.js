@@ -145,6 +145,49 @@ describe('sales profitability local history', () => {
     expect(entry.report.ai).toMatchObject({ status: 'unavailable', diagnosticCode: 'AI_NARRATIVE_TRUNCATED' });
   });
 
+  it('stores the complete Phase 2 AI recommendation and confidence for history review', () => {
+    const storage = memoryStorage();
+    const recommendation = {
+      title: 'Probar mayor exposición para Producto A',
+      explanation: 'Producto A concentra una señal actual.',
+      action: 'Probar una ubicación más visible durante una semana.',
+      measurement: 'Comparar unidades diarias con la semana previa.',
+      expectedImpact: 'Permitirá evaluar si la exposición coincide con más unidades.',
+      priority: 'high',
+      evidenceKeys: ['product:Producto A'],
+      requiresConfirmation: true
+    };
+    const entry = buildSalesProfitabilityHistoryEntry({
+      result: result({
+        response: {
+          ...response,
+          aiNarrative: {
+            status: 'available',
+            executiveSummary: 'Hay una prueba concreta para Producto A.',
+            explanation: 'La señal comercial justifica una prueba acotada.',
+            recommendations: [recommendation],
+            confidence: 'high'
+          }
+        }
+      }),
+      requestContext: { ...requestContext, resolvedIntent: 'sales_growth' },
+      queriedAt,
+      storage
+    });
+
+    saveSalesProfitabilityHistoryEntry({ scopeKey: 'scope-phase-2', entry, storage });
+    const loaded = loadSalesProfitabilityHistory({ scopeKey: 'scope-phase-2', storage });
+    expect(loaded.entries[0].report.ai).toMatchObject({
+      confidence: 'high',
+      recommendations: [{
+        action: recommendation.action,
+        measurement: recommendation.measurement,
+        evidenceKeys: recommendation.evidenceKeys
+      }]
+    });
+    expect(loaded.entries[0].report.request.question).toBe('¿Qué pasa si aumento el precio?');
+  });
+
   it('stores local routed answers as local with confirmed no quota and no generated AI narrative', () => {
     const storage = memoryStorage();
     const localEntry = buildSalesProfitabilityHistoryEntry({

@@ -445,7 +445,10 @@ describe('commercial AI context boundary', () => {
     expect(context.sales.growthSignals.channelChanges).toHaveLength(2);
     expect(context.sales.growthSignals.productOpportunities[0].name).toBe('Producto 9');
     expect(context.sales.growthSignals.productOpportunities[0]).not.toHaveProperty('currentMargin');
-    expect(context.sales.evidenceKeys.length).toBeLessThanOrEqual(12);
+    expect(context.sales.evidenceKeys.length).toBeLessThanOrEqual(24);
+    expect(context.sales.evidenceKeys).toContain('product:Producto 9');
+    expect(context.sales.evidenceKeys).toContain('channel:Canal 4');
+    expect(context.sales.evidenceKeys).toContain('metric:deltaNetSales');
     expect(context.sales.calculations).toEqual([]);
     expect(context.sales.assumptions).toEqual([]);
     expect(context.sales.scenarios).toEqual([]);

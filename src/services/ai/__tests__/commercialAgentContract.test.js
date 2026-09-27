@@ -121,6 +121,39 @@ describe('commercial AI agent contract', () => {
       }
     })).code).toBe('INVALID_AI_NARRATIVE_DIAGNOSTIC');
     expect(normalizeCommercialAINarrativeDiagnosticCode('AI_NARRATIVE_TRUNCATED')).toBe('AI_NARRATIVE_TRUNCATED');
+    expect(normalizeCommercialAINarrativeDiagnosticCode('AI_NARRATIVE_LOW_VALUE')).toBe('AI_NARRATIVE_LOW_VALUE');
+  });
+
+  it('requires action, measurement, grounded keys and preserves confidence for Phase 2 narratives', () => {
+    const recommendation = {
+      title: 'Probar mayor exposición de Producto A',
+      explanation: 'Producto A tiene una señal de ventas actual.',
+      action: 'Probar una ubicación más visible durante una semana.',
+      measurement: 'Comparar unidades diarias con la semana previa.',
+      expectedImpact: 'Permitirá evaluar si la exposición coincide con más unidades.',
+      priority: 'high',
+      evidenceKeys: ['product:Producto A'],
+      requiresConfirmation: true
+    };
+    const narrative = {
+      status: 'available',
+      executiveSummary: 'Hay una prueba comercial que priorizar.',
+      explanation: 'Producto A concentra una señal relevante.',
+      recommendations: [recommendation],
+      confidence: 'medium'
+    };
+    expect(validateCommercialAgentResponse(baseResponse({ aiNarrative: narrative }), {
+      requireNarrativeUtility: true
+    })).toMatchObject({ valid: true });
+    expect(validateCommercialAgentResponse(baseResponse({
+      aiNarrative: {
+        ...narrative,
+        recommendations: [{ ...recommendation, measurement: '' }]
+      }
+    }), { requireNarrativeUtility: true }).valid).toBe(false);
+    expect(validateCommercialAgentResponse(baseResponse({
+      aiNarrative: { ...narrative, confidence: null }
+    }), { requireNarrativeUtility: true }).code).toBe('INVALID_AI_NARRATIVE_CONTENT');
   });
 
   it('normalizes only the scenario fields allowed by each intent', () => {

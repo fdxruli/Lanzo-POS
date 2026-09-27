@@ -506,6 +506,54 @@ describe('sales profitability download report', () => {
     });
   });
 
+  it('exports action, measurement and non-null confidence as AI content separate from deterministic data', () => {
+    const recommendation = {
+      title: 'Probar mayor visibilidad para Producto A',
+      explanation: 'Producto A representa una señal comercial relevante.',
+      action: 'Probar una ubicación más visible durante una semana.',
+      measurement: 'Comparar unidades diarias con la semana previa.',
+      expectedImpact: 'Permitirá validar si la exposición coincide con más unidades.',
+      priority: 'high',
+      evidenceKeys: ['product:Producto A'],
+      requiresConfirmation: true
+    };
+    const result = {
+      ...completedResult,
+      response: {
+        ...completedResult.response,
+        aiNarrative: {
+          status: 'available',
+          executiveSummary: 'Hay una prueba concreta para Producto A.',
+          explanation: 'La señal permite evaluar una acción acotada.',
+          recommendations: [recommendation],
+          confidence: 'high'
+        }
+      }
+    };
+    const report = buildSalesProfitabilityDownloadReport(result, {
+      ...requestContext,
+      resolvedIntent: 'sales_growth'
+    });
+    const sanitized = sanitizeSalesProfitabilityDownloadReport(report);
+
+    expect(report.deterministic.recommendations).toMatchObject([{ title: 'Probar el precio' }]);
+    expect(report.ai).toMatchObject({
+      status: 'available',
+      confidence: 'high',
+      recommendations: [{
+        action: 'Probar una ubicación más visible durante una semana.',
+        measurement: 'Comparar unidades diarias con la semana previa.',
+        evidenceKeys: ['product:Producto A']
+      }]
+    });
+    expect(sanitized.ai.confidence).toBe('high');
+    expect(sanitized.ai.recommendations[0]).toMatchObject({
+      action: recommendation.action,
+      measurement: recommendation.measurement,
+      evidenceKeys: recommendation.evidenceKeys
+    });
+  });
+
   it('exports truncated provider output with confirmed no-consumption telemetry', () => {
     const invalidNarrative = {
       ...completedResult,

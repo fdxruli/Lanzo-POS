@@ -144,12 +144,14 @@ const allowedEvidenceKey = (value) => (
   && ALLOWED_EVIDENCE_PREFIXES.some((prefix) => value.startsWith(prefix))
 );
 
-const normalizeNarrativeRecommendations = (recommendations = []) => (
+const normalizeNarrativeRecommendations = (recommendations = [], requireUtility = false) => (
   (Array.isArray(recommendations) ? recommendations : [])
     .slice(0, 3)
     .map((recommendation = {}) => ({
       title: String(recommendation.title || '').trim(),
       explanation: String(recommendation.explanation || '').trim(),
+      action: typeof recommendation.action === 'string' ? recommendation.action.trim() : '',
+      measurement: typeof recommendation.measurement === 'string' ? recommendation.measurement.trim() : '',
       expectedImpact: String(recommendation.expectedImpact || '').trim(),
       priority: ['high', 'medium', 'low'].includes(recommendation.priority)
         ? recommendation.priority
@@ -165,6 +167,7 @@ const normalizeNarrativeRecommendations = (recommendations = []) => (
       recommendation.title
       && recommendation.explanation
       && recommendation.expectedImpact
+      && (!requireUtility || (recommendation.action && recommendation.measurement))
       && recommendation.evidenceKeys.length > 0
     ))
 );
@@ -178,9 +181,11 @@ const narrativeDiagnosticFromContractFailure = (code) => {
   return 'AI_NARRATIVE_UNAVAILABLE';
 };
 
-const mergeProviderResponse = (deterministic, providerResponse) => {
+const mergeProviderResponse = (deterministic, providerResponse, intent = null) => {
+  const requireNarrativeUtility = ['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend'].includes(intent);
   const parsed = parseCommercialAgentResponse(providerResponse, {
-    expectedAgentKey: COMMERCIAL_AGENT_KEYS.SALES_PROFITABILITY
+    expectedAgentKey: COMMERCIAL_AGENT_KEYS.SALES_PROFITABILITY,
+    requireNarrativeUtility
   });
   if (!parsed.valid) {
     return {
@@ -208,7 +213,8 @@ const mergeProviderResponse = (deterministic, providerResponse) => {
   ).trim() || null;
   const explanation = String(narrative.explanation || '').trim() || null;
   const providerRecommendations = normalizeNarrativeRecommendations(
-    hasNestedNarrative ? narrative.recommendations : response.recommendations
+    hasNestedNarrative ? narrative.recommendations : response.recommendations,
+    requireNarrativeUtility
   );
   const hasNarrativeContent = Boolean(executiveSummary || explanation || providerRecommendations.length);
   const requestedStatus = narrative.status === 'unavailable' ? 'unavailable' : null;
@@ -224,7 +230,10 @@ const mergeProviderResponse = (deterministic, providerResponse) => {
       ...(diagnosticCode ? { diagnosticCode } : {}),
       executiveSummary: status === 'available' ? executiveSummary : null,
       explanation: status === 'available' ? explanation : null,
-      recommendations: status === 'available' ? providerRecommendations : []
+      recommendations: status === 'available' ? providerRecommendations : [],
+      ...(status === 'available' && ['high', 'medium', 'low'].includes(String(narrative.confidence || response.confidence))
+        ? { confidence: narrative.confidence || response.confidence }
+        : {})
     },
     actionDrafts: [],
     citations: []
@@ -961,7 +970,8 @@ export const createSalesProfitabilityAgentRunner = ({
       };
       const response = mergeProviderResponse(
         deterministic,
-        providerResult.rawResultContent || providerResult.content || ''
+        providerResult.rawResultContent || providerResult.content || '',
+        request.intent
       );
 
       return {

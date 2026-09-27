@@ -78,6 +78,7 @@ const NARRATIVE_DIAGNOSTIC_LABELS = Object.freeze({
   AI_NARRATIVE_TRUNCATED: 'La respuesta del proveedor alcanzó el límite de salida antes de completarse.',
   AI_NARRATIVE_PARTIAL_CONTENT: 'Se omitieron partes de la narrativa que no superaron la validación.',
   AI_REQUEST_REJECTED: 'La solicitud fue rechazada antes de generar una explicación.',
+  AI_NARRATIVE_LOW_VALUE: 'La respuesta no incluyó una recomendación accionable con evidencia suficiente. Este intento no consumió un uso de IA.',
   AI_NARRATIVE_PROVIDER_ERROR: 'No se pudo confirmar una narrativa utilizable del proveedor.',
   AI_NARRATIVE_UNAVAILABLE: 'No se pudo confirmar una narrativa utilizable.'
 });
@@ -524,10 +525,21 @@ function NarrativeEvidence({ response, result }) {
         {narrative.explanation && <p>{narrative.explanation}</p>}
         {asArray(narrative.recommendations).length > 0 && (
           <div className="commercial-ai-narrative__recommendations">
-            <strong>Observaciones narrativas</strong>
-            <ul>{asArray(narrative.recommendations).map((item) => <li key={`${item.title}-${item.priority || 'medium'}`}>{item.title}: {item.explanation}</li>)}</ul>
+            <strong>Recomendaciones para probar</strong>
+            <div className="commercial-ai-narrative__recommendation-list">
+              {asArray(narrative.recommendations).map((item) => (
+                <article className="commercial-ai-narrative__recommendation" key={`${item.title}-${item.priority || 'medium'}`}>
+                  <div><b>{item.title}</b><span>Prioridad {priorityLabel(item.priority)}</span></div>
+                  <p><strong>Por qué:</strong> {item.explanation}</p>
+                  {item.action && <p><strong>Qué probar:</strong> {item.action}</p>}
+                  {item.measurement && <p><strong>Qué medir:</strong> {item.measurement}</p>}
+                  {item.expectedImpact && <small>Qué permitirá validar: {item.expectedImpact} · Requiere confirmación manual</small>}
+                </article>
+              ))}
+            </div>
           </div>
         )}
+        {narrative.confidence && <small>Confianza de esta interpretación: {confidenceLabel(narrative.confidence)}.</small>}
       </div>
       {narrative.status === 'available' && narrative.diagnosticCode === 'AI_NARRATIVE_PARTIAL_CONTENT' && (
         <p className="commercial-ai-muted" role="status">

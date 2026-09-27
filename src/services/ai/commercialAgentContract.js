@@ -47,6 +47,7 @@ export const COMMERCIAL_AI_NARRATIVE_DIAGNOSTIC_CODES = Object.freeze([
   'AI_NARRATIVE_PARTIAL_CONTENT',
   'AI_REQUEST_REJECTED',
   'AI_NARRATIVE_PROVIDER_ERROR',
+  'AI_NARRATIVE_LOW_VALUE',
   'AI_NARRATIVE_UNAVAILABLE'
 ]);
 
@@ -333,7 +334,10 @@ export const createFeatureNotReadyResponse = ({ agentKey, intent } = {}) => ({
   citations: []
 });
 
-export const validateCommercialAgentResponse = (response, { expectedAgentKey = null } = {}) => {
+export const validateCommercialAgentResponse = (response, {
+  expectedAgentKey = null,
+  requireNarrativeUtility = false
+} = {}) => {
   if (!isRecord(response)) return invalid('RESPONSE_OBJECT_REQUIRED');
   if (response.version !== COMMERCIAL_AGENT_RESPONSE_VERSION) return invalid('UNSUPPORTED_RESPONSE_VERSION');
   if (!isCommercialAgentKey(response.agentKey)) return invalid('INVALID_AGENT_KEY');
@@ -361,6 +365,16 @@ export const validateCommercialAgentResponse = (response, { expectedAgentKey = n
     if (narrative.recommendations !== undefined && !Array.isArray(narrative.recommendations)) {
       return invalid('INVALID_AI_NARRATIVE_CONTENT');
     }
+    if (narrative.confidence !== undefined && !VALID_CONFIDENCE.has(narrative.confidence)) {
+      return invalid('INVALID_AI_NARRATIVE_CONTENT');
+    }
+    if (Array.isArray(narrative.recommendations) && narrative.recommendations.some((item) => {
+      if (!isRecord(item)) return true;
+      if (!requireNarrativeUtility) return false;
+      return typeof item.action !== 'string' || !item.action.trim()
+        || typeof item.measurement !== 'string' || !item.measurement.trim()
+        || !Array.isArray(item.evidenceKeys) || item.evidenceKeys.length === 0;
+    })) return invalid('INVALID_AI_NARRATIVE_CONTENT');
     if (narrative.diagnosticCode !== undefined
       && !normalizeCommercialAINarrativeDiagnosticCode(narrative.diagnosticCode)) {
       return invalid('INVALID_AI_NARRATIVE_DIAGNOSTIC');
@@ -403,11 +417,16 @@ export const validateCommercialAgentResponse = (response, { expectedAgentKey = n
     const narrativeRecommendation = isRecord(item)
       && ['high', 'medium', 'low'].includes(String(item.priority))
       && Array.isArray(item.evidenceKeys);
+    const utilityMissing = requireNarrativeUtility && narrativeRecommendation
+      && (typeof item.action !== 'string' || !item.action.trim()
+        || typeof item.measurement !== 'string' || !item.measurement.trim()
+        || item.evidenceKeys.length === 0);
     if (!isRecord(item)
       || typeof item.title !== 'string'
       || typeof item.explanation !== 'string'
       || typeof item.expectedImpact !== 'string'
       || (!legacyRecommendation && !narrativeRecommendation)
+      || utilityMissing
       || item.requiresConfirmation !== true) {
       return invalid('RECOMMENDATION_CONTRACT_INVALID');
     }

@@ -813,9 +813,45 @@
   border-top: 1px solid #e2e8f0;
 }
 
-.commercial-ai-narrative__recommendations ul {
-  margin: 0.45rem 0 0;
-  padding-left: 1.15rem;
+.commercial-ai-narrative__recommendation-list {
+  display: grid;
+  gap: 0.6rem;
+  margin-top: 0.55rem;
+}
+
+.commercial-ai-narrative__recommendation {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid #dbeafe;
+  border-radius: 0.65rem;
+  background: #f8fbff;
+}
+
+.commercial-ai-narrative__recommendation > div {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.65rem;
+  color: #1e293b;
+}
+
+.commercial-ai-narrative__recommendation > div span {
+  flex: none;
+  color: #475569;
+  font-size: 0.74rem;
+}
+
+.commercial-ai-narrative__recommendation p {
+  color: #334155;
+  font-size: 0.84rem;
+}
+
+.commercial-ai-narrative__recommendation small,
+.commercial-ai-narrative > small {
+  color: #64748b;
+  font-size: 0.76rem;
+  line-height: 1.45;
 }
 
 .commercial-ai-table th:first-child span,

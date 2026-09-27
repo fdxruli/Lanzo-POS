@@ -463,6 +463,8 @@ const safeRecommendation = (recommendation) => {
   return {
     title: sanitizeText(source.title, 200),
     explanation: sanitizeText(source.explanation, 1000),
+    ...(typeof source.action === 'string' ? { action: sanitizeText(source.action, 700) } : {}),
+    ...(typeof source.measurement === 'string' ? { measurement: sanitizeText(source.measurement, 500) } : {}),
     expectedImpact: sanitizeText(source.expectedImpact, 400),
     priority: sanitizeText(source.priority, 40) || null,
     evidenceKeys: safeTextArray(source.evidenceKeys, 12, 300),
@@ -595,7 +597,7 @@ export const buildSalesProfitabilityDownloadReport = (result, requestContext = {
       executiveSummary: aiStatus === 'available' ? narrativeSummary : null,
       explanation: aiStatus === 'available' ? narrativeExplanation : null,
       recommendations: aiStatus === 'available' ? narrativeRecommendations : [],
-      confidence: null
+      confidence: aiStatus === 'available' ? safeConfidence(narrative.confidence) : null
     },
     usage: safeUsage(result?.usageStatus),
     redactions: [...SALES_PROFITABILITY_REPORT_REDACTIONS]
@@ -652,7 +654,8 @@ export const sanitizeSalesProfitabilityDownloadReport = (value) => {
         diagnosticCode: normalizeCommercialAINarrativeDiagnosticCode(ai.diagnosticCode),
         executiveSummary: ai.executiveSummary,
         explanation: ai.explanation,
-        recommendations: ai.recommendations
+        recommendations: ai.recommendations,
+        confidence: ai.confidence
       }
     }
   }, source.request, { generatedAt });

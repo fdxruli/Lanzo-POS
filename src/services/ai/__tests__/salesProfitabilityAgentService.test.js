@@ -619,6 +619,73 @@ describe('sales profitability agent service', () => {
     expect(result.response.recommendations).toEqual(expect.any(Array));
   });
 
+  it('preserves Phase 2 action, measurement, evidence and provider confidence', async () => {
+    const recommendation = {
+      title: 'Probar mayor exposición de Producto A',
+      explanation: 'Producto A tiene una señal de ventas actual relevante.',
+      action: 'Probar una ubicación más visible durante una semana.',
+      measurement: 'Comparar unidades diarias con la semana previa.',
+      expectedImpact: 'Permitirá evaluar si la exposición coincide con más unidades.',
+      priority: 'high',
+      evidenceKeys: ['product:Producto A'],
+      requiresConfirmation: true
+    };
+    const phase2Response = JSON.stringify({
+      version: 1,
+      agentKey: 'salesProfitability',
+      status: 'completed',
+      executiveSummary: 'Hay una oportunidad concreta para probar con Producto A.',
+      explanation: 'La señal de Producto A justifica una prueba pequeña y medible.',
+      facts: [],
+      calculations: [],
+      assumptions: [],
+      scenarios: [],
+      recommendations: [recommendation],
+      limitations: [],
+      confidence: 'high',
+      source: 'cloud',
+      coverage: { complete: true },
+      citations: [],
+      actionDrafts: [],
+      aiNarrative: {
+        status: 'available',
+        executiveSummary: 'Hay una oportunidad concreta para probar con Producto A.',
+        explanation: 'La señal de Producto A justifica una prueba pequeña y medible.',
+        recommendations: [recommendation],
+        confidence: 'high'
+      }
+    });
+    const runner = createSalesProfitabilityAgentRunner({
+      repository: repository(),
+      analyze: vi.fn(async () => ({
+        rawResultContent: phase2Response,
+        providerCalled: true,
+        quotaOutcome: 'consumed'
+      })),
+      assertActor: vi.fn()
+    });
+
+    const result = await runner({
+      question: '¿Cómo puedo aumentar mis ventas?',
+      intent: 'sales_growth',
+      period: { from: '2026-09-01', to: '2026-09-07', days: 7 },
+      compare: true
+    });
+
+    expect(result.response.aiNarrative).toMatchObject({
+      status: 'available',
+      confidence: 'high',
+      recommendations: [{
+        title: 'Probar mayor exposición de Producto A',
+        action: 'Probar una ubicación más visible durante una semana.',
+        measurement: 'Comparar unidades diarias con la semana previa.',
+        evidenceKeys: ['product:Producto A'],
+        requiresConfirmation: true
+      }]
+    });
+    expect(result.quotaOutcome).toBe('consumed');
+  });
+
   it('does not call the provider for a price simulation without a reliable cost', async () => {
     const missingProfit = {
       ...profit,

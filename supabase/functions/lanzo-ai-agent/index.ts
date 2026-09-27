@@ -125,24 +125,36 @@ const NARRATIVE_EVIDENCE_KEY_ALLOWLIST: Record<string, string[]> = {
   sales_growth: [
     'comparison.deltaNetSales', 'comparison.deltaNetSalesPercent', 'comparison.deltaSalesCount',
     'comparison.deltaUnits', 'comparison.deltaTicket', 'comparison.deltaTicketPercent',
-    'comparison.deltaUnitsPerTicket', 'comparison.productChanges', 'comparison.channelMixChanges',
-    'growthSignals.productOpportunities', 'summary.unitsPerTicket'
+    'comparison.deltaUnitsPerTicket', 'summary.unitsPerTicket',
+    'metric:deltaNetSales', 'metric:deltaSalesCount', 'metric:deltaUnits', 'metric:deltaTicket',
+    'metric:deltaUnitsPerTicket', 'metric:currentNetSales', 'metric:currentAverageTicket',
+    'metric:currentUnitsPerTicket'
   ],
   ticket_growth: [
     'summary.unitsPerTicket', 'comparison.deltaTicket', 'comparison.deltaTicketPercent',
-    'comparison.deltaUnitsPerTicket', 'comparison.deltaSalesCount', 'comparison.productChanges',
-    'growthSignals.productOpportunities'
+    'comparison.deltaUnitsPerTicket', 'comparison.deltaSalesCount', 'comparison.deltaUnits',
+    'metric:deltaTicket', 'metric:deltaUnitsPerTicket', 'metric:deltaSalesCount', 'metric:deltaUnits',
+    'metric:currentAverageTicket', 'metric:currentUnitsPerTicket'
   ],
   product_opportunity: [
-    'comparison.productChanges', 'comparison.productMixChanges', 'growthSignals.productOpportunities',
-    'products.risks', 'profitability.costCoverage', 'coverage.costCoverage'
+    'products.risks', 'profitability.costCoverage', 'coverage.costCoverage',
+    'metric:currentNetSales', 'metric:costCoverage'
   ],
   sales_trend: [
     'comparison.deltaNetSales', 'comparison.deltaNetSalesPercent', 'comparison.deltaSalesCount',
     'comparison.deltaUnits', 'comparison.deltaTicket', 'comparison.deltaUnitsPerTicket',
-    'comparison.channelMixChanges', 'summary.unitsPerTicket'
+    'summary.unitsPerTicket',
+    'metric:deltaNetSales', 'metric:deltaSalesCount', 'metric:deltaUnits', 'metric:deltaTicket',
+    'metric:deltaUnitsPerTicket'
   ]
 };
+const NARRATIVE_ENTITY_EVIDENCE_PREFIXES: Record<string, string[]> = {
+  sales_growth: ['product:', 'channel:'],
+  ticket_growth: ['product:'],
+  product_opportunity: ['product:'],
+  sales_trend: ['channel:']
+};
+const ACTIONABLE_NARRATIVE_INTENTS = new Set(['sales_growth', 'ticket_growth', 'product_opportunity']);
 
 type UsageFailure = {
   code: string;
@@ -369,7 +381,10 @@ function compactNarrativeProduct(value: Record<string, unknown>, intent: string)
     ]
     : intent === 'ticket_growth'
       ? ['name', 'currentSales', 'salesDelta', 'salesDeltaPercent', 'unitsDelta', 'direction', 'signals']
-      : ['name', 'currentSales', 'salesDelta', 'salesDeltaPercent', 'unitsDelta', 'costKnown', 'costStatus', 'direction', 'signals'];
+      : [
+        'name', 'currentSales', 'salesDelta', 'unitsDelta', 'currentShare',
+        'costKnown', 'costStatus', 'direction', 'signals'
+      ];
   const product = pickRecordFields(value, [
     ...fields
   ]);
@@ -501,20 +516,146 @@ function compactCommercialEvidence(context: Record<string, unknown>, intent: str
   };
 }
 
+function buildNarrativeEvidenceKeyAllowlist(
+  context: Record<string, unknown>,
+  intent: string
+): string[] {
+  const sales = isRecordValue(context.sales) ? context.sales : {};
+  const availableKeys = new Set(
+    Array.isArray(sales.evidenceKeys)
+      ? sales.evidenceKeys.filter((entry): entry is string => typeof entry === 'string')
+      : []
+  );
+  const metricAndLegacyKeys = (NARRATIVE_EVIDENCE_KEY_ALLOWLIST[intent] || [])
+    .filter((key) => availableKeys.has(key));
+  const entityEvidenceKeys: string[] = [];
+  const compactEvidence = compactCommercialEvidence(context, intent);
+  const evidenceSales = isRecordValue(compactEvidence.sales) ? compactEvidence.sales : {};
+  const growthSignals = isRecordValue(evidenceSales.growthSignals) ? evidenceSales.growthSignals : {};
+  const productRows = [
+    ...(Array.isArray(growthSignals.productOpportunities) ? growthSignals.productOpportunities : []),
+    ...(Array.isArray(growthSignals.productsDeclining) ? growthSignals.productsDeclining : [])
+  ];
+  const channelRows = Array.isArray(growthSignals.channelChanges) ? growthSignals.channelChanges : [];
+  const prefixes = NARRATIVE_ENTITY_EVIDENCE_PREFIXES[intent] || [];
+  if (prefixes.includes('product:')) {
+    for (const item of productRows) {
+      if (!isRecordValue(item) || typeof item.name !== 'string' || !item.name.trim()) continue;
+      const key = `product:${item.name.trim()}`;
+      if (availableKeys.has(key)) entityEvidenceKeys.push(key);
+    }
+  }
+  if (prefixes.includes('channel:')) {
+    for (const item of channelRows) {
+      if (!isRecordValue(item) || typeof item.channel !== 'string' || !item.channel.trim()) continue;
+      const key = `channel:${item.channel.trim()}`;
+      if (availableKeys.has(key)) entityEvidenceKeys.push(key);
+    }
+  }
+  return Array.from(new Set([...entityEvidenceKeys, ...metricAndLegacyKeys]));
+}
+
+function foldCommercialEntityText(value: string): string {
+  return value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLocaleLowerCase();
+}
+
+function recommendationHasGroundedEvidence(
+  recommendation: Record<string, unknown>,
+  evidenceKeys: string[],
+  intent: string,
+  evidence: Record<string, unknown>,
+  allowedEvidenceKeys: Set<string>
+): boolean {
+  if (!ACTIONABLE_NARRATIVE_INTENTS.has(intent)) return true;
+  const narrativeText = [recommendation.title, recommendation.explanation, recommendation.action, recommendation.measurement]
+    .filter((value): value is string => typeof value === 'string')
+    .join(' ');
+  const normalizedText = foldCommercialEntityText(narrativeText);
+  const sales = isRecordValue(evidence.sales) ? evidence.sales : {};
+  const growth = isRecordValue(sales.growthSignals) ? sales.growthSignals : {};
+  const productRows = [
+    ...(Array.isArray(growth.productOpportunities) ? growth.productOpportunities : []),
+    ...(Array.isArray(growth.productsDeclining) ? growth.productsDeclining : [])
+  ].filter(isRecordValue);
+  const channelRows = (Array.isArray(growth.channelChanges) ? growth.channelChanges : []).filter(isRecordValue);
+  const mentionedProducts = productRows
+    .filter((row) => typeof row.name === 'string' && normalizedText.includes(foldCommercialEntityText(row.name)))
+    .map((row) => String(row.name));
+  const mentionedChannels = channelRows
+    .filter((row) => typeof row.channel === 'string' && normalizedText.includes(foldCommercialEntityText(row.channel)))
+    .map((row) => String(row.channel));
+  const productEvidenceKeys = evidenceKeys.filter((key) => key.startsWith('product:'));
+  const channelEvidenceKeys = evidenceKeys.filter((key) => key.startsWith('channel:'));
+  const metricEvidenceKeys = evidenceKeys.filter((key) => key.startsWith('metric:'));
+
+  if (mentionedProducts.some((name) => !productEvidenceKeys.includes(`product:${name}`))) return false;
+  if (mentionedChannels.some((name) => !channelEvidenceKeys.includes(`channel:${name}`))) return false;
+  if (productEvidenceKeys.some((key) => !normalizedText.includes(foldCommercialEntityText(key.slice('product:'.length))))) return false;
+  if (channelEvidenceKeys.some((key) => !normalizedText.includes(foldCommercialEntityText(key.slice('channel:'.length))))) return false;
+
+  if (intent === 'product_opportunity') return productEvidenceKeys.length > 0;
+  if (intent === 'ticket_growth') {
+    const ticketMetrics = new Map<string, string[]>([
+      ['metric:deltaTicket', ['ticket promedio']],
+      ['metric:currentAverageTicket', ['ticket promedio']],
+      ['metric:deltaUnitsPerTicket', ['unidades por ticket', 'unidades por compra', 'articulos por ticket', 'articulos por compra']],
+      ['metric:currentUnitsPerTicket', ['unidades por ticket', 'unidades por compra', 'articulos por ticket', 'articulos por compra']]
+    ]);
+    const citedTicketMetrics = evidenceKeys.filter((key) => ticketMetrics.has(key));
+    const measurementText = foldCommercialEntityText(typeof recommendation.measurement === 'string'
+      ? recommendation.measurement
+      : '');
+    return citedTicketMetrics.some((key) => (ticketMetrics.get(key) || [])
+      .some((label) => measurementText.includes(label)));
+  }
+  if (intent === 'sales_growth') {
+    const hasProductEvidence = Array.from(allowedEvidenceKeys).some((key) => key.startsWith('product:'));
+    const hasChannelEvidence = Array.from(allowedEvidenceKeys).some((key) => key.startsWith('channel:'));
+    if (hasProductEvidence || hasChannelEvidence) {
+      return productEvidenceKeys.length + channelEvidenceKeys.length > 0;
+    }
+  }
+  if (mentionedProducts.length || mentionedChannels.length) return productEvidenceKeys.length + channelEvidenceKeys.length > 0;
+  return metricEvidenceKeys.length > 0;
+}
+
+function hasActionableNarrativeEvidence(evidenceKeys: string[], intent: string): boolean {
+  if (intent === 'product_opportunity') return evidenceKeys.some((key) => key.startsWith('product:'));
+  if (intent === 'ticket_growth') return evidenceKeys.some((key) => [
+    'metric:deltaTicket', 'metric:currentAverageTicket', 'metric:deltaUnitsPerTicket', 'metric:currentUnitsPerTicket'
+  ].includes(key));
+  return evidenceKeys.some((key) => key.startsWith('product:')
+    || key.startsWith('channel:')
+    || key.startsWith('metric:'));
+}
+
 function buildCommercialPrompts(request: Extract<ValidatedRequest, { kind: 'commercialAnalysis' }>): { systemPrompt: string; userPrompt: string } {
   const compactNarrative = COMPACT_NARRATIVE_INTENTS.has(request.intent);
   const recommendationLimit = compactNarrative ? 2 : 3;
+  const intentGuidance: Record<string, string> = {
+    sales_growth: 'Responde qué oportunidades concretas vale la pena probar para vender más. Conecta ventas, número de tickets y ticket promedio cuando coincidan, sin atribuir causalidad. Prioriza productos y canales con evidencia; si ecommerce pasó de ventas a cero, plantea revisar si estuvo activo y si los pedidos se registraron antes de inferir demanda.',
+    ticket_growth: 'Responde cómo probar un aumento del valor o de las unidades por compra. Compara cambios del ticket con unidades por ticket; usa productos concretos sólo cuando haya evidencia y no inventes relaciones de complemento.',
+    product_opportunity: 'Nombra productos existentes con evidencia. Explica por qué destacan, qué acción pequeña evaluar y qué medir. Si falta costo, di que aún no puede juzgarse rentabilidad; usa margen sólo con costKnown=true.',
+    sales_trend: 'Contesta primero si las ventas crecieron, bajaron o no hay evidencia suficiente. Después explica qué señales coinciden y qué conviene vigilar.'
+  };
   const systemPrompt = [
     'Eres la capa narrativa del agente de Ventas y rentabilidad de Lanzo-POS.',
-    'Devuelve exclusivamente el objeto JSON solicitado, sin markdown ni texto fuera del JSON. Sé extremadamente concisa: no repitas los datos de entrada, no enumeres todas las métricas y no reproduzcas la evidencia completa.',
-    'No añadas campos. Los hechos y cálculos ya son determinísticos: no recalcules cifras ni inventes datos, causalidad o resultados futuros. Usa sólo las claves de evidencia recibidas.',
+    'Devuelve exclusivamente el objeto JSON solicitado, sin markdown ni texto fuera del JSON. Contesta directamente la pregunta con una interpretación comercial priorizada; no narres el reporte.',
+    'No añadas campos fuera del contrato de respuesta.',
+    'Los hechos y cálculos ya son determinísticos: no recalcules cifras ni inventes datos, entidades, causalidad o resultados futuros. Selecciona las cifras que justifican tu interpretación; no repitas todo el reporte.',
+    'Cada recomendación debe convertir una señal concreta de Lanzo en una acción revisable y medible. Evita consejos intercambiables como revisar productos, mejorar promociones o impulsar ventas si no identificas qué entidad o métrica lo justifica.',
+    'Si mencionas un producto o canal, debe aparecer en la evidencia recibida y debes citar su clave product: o channel: exacta. Si hablas de una métrica, cita su clave metric: correspondiente. Usa sólo claves permitidas.',
+    'new_in_period sólo significa que un producto apareció con ventas en el periodo actual y no tuvo ventas en el comparable; no afirmes que se acaba de crear o agregar al catálogo.',
     ...(compactNarrative ? [
       'El resumen debe tener máximo 2 frases y 300 caracteres. La explicación debe tener 2–4 frases y máximo 800 caracteres.',
-      'Usa como máximo 2 recomendaciones. Cada título admite hasta 80 caracteres, cada explicación hasta 240 y cada impacto esperado hasta 180; cita hasta 3 evidenceKeys existentes.'
+      'Usa como máximo 2 recomendaciones. Cada recomendación requiere title, explanation (por qué), action, measurement, expectedImpact, priority, evidenceKeys y requiresConfirmation=true.',
+      'La action debe describir una prueba pequeña y concreta; measurement debe indicar qué comparar y durante qué periodo si hay base para proponerlo. expectedImpact expresa qué permitirá validar, sin prometer ni cuantificar resultados futuros.',
+      'Cada título admite hasta 80 caracteres, cada explicación hasta 300, action hasta 280, measurement hasta 220 e impacto esperado hasta 180; cita hasta 3 evidenceKeys existentes.'
     ] : ['Resume en 1–2 frases y da una explicación breve. Incluye hasta tres recomendaciones breves.']),
     'Para tendencias compara periodos equivalentes y describe coincidencias, nunca causalidad. Sin costo conocido no afirmes utilidad o margen; las señales no predicen demanda ni garantizan crecimiento.',
     `Cada recomendación debe ser prudente, revisable y llevar requiresConfirmation=true; devuelve como máximo ${recommendationLimit}.`,
-    'No ejecutes ni sugieras cambios automáticos de precios, promociones, inventario o datos.'
+    'No ejecutes ni sugieras cambios automáticos de precios, promociones, inventario o datos.',
+    intentGuidance[request.intent] || ''
   ].join(' ');
 
   const period = compactNarrative
@@ -527,8 +668,7 @@ function buildCommercialPrompts(request: Extract<ValidatedRequest, { kind: 'comm
     deterministicEvidence: compactCommercialEvidence(request.context, request.intent),
     allowedEvidenceKeys: isRecordValue(request.context.sales) && Array.isArray(request.context.sales.evidenceKeys)
       ? (compactNarrative
-        ? request.context.sales.evidenceKeys.filter((entry): entry is string => typeof entry === 'string'
-          && (NARRATIVE_EVIDENCE_KEY_ALLOWLIST[request.intent] || []).includes(entry)).slice(0, 12)
+        ? buildNarrativeEvidenceKeyAllowlist(request.context, request.intent).slice(0, 12)
         : request.context.sales.evidenceKeys)
       : [],
     responseContract: {
@@ -536,14 +676,16 @@ function buildCommercialPrompts(request: Extract<ValidatedRequest, { kind: 'comm
       explanation: compactNarrative ? 'texto, 2–4 frases y máximo 800 caracteres' : 'breve y clara',
       recommendations: [{
         title: compactNarrative ? 'acción (máximo 80 caracteres)' : 'acción sugerida',
-        explanation: compactNarrative ? 'motivo (máximo 240 caracteres)' : 'por qué',
+        explanation: compactNarrative ? 'por qué (máximo 300 caracteres)' : 'por qué',
+        ...(compactNarrative ? { action: 'prueba concreta (máximo 280 caracteres)', measurement: 'qué comparar y cómo (máximo 220 caracteres)' } : {}),
         expectedImpact: compactNarrative ? 'impacto (máximo 180 caracteres)' : 'impacto esperado',
         priority: 'high | medium | low',
         evidenceKeys: compactNarrative ? ['hasta 3 claves existentes'] : ['clave de evidencia existente'],
         requiresConfirmation: true
       }],
       confidence: 'high | medium | low'
-    }
+    },
+    ...(compactNarrative ? { intentGuidance: intentGuidance[request.intent] } : {})
   };
   if (Object.keys(request.scenario).length) userPromptPayload.scenario = request.scenario;
   const userPrompt = JSON.stringify(userPromptPayload);
@@ -636,7 +778,8 @@ function buildDeterministicCommercialResponse(request: CommercialAnalysisRequest
 function normalizeProviderRecommendations(
   value: unknown,
   allowedEvidenceKeys: Set<string>,
-  intent: string
+  intent: string,
+  evidence: Record<string, unknown>
 ): Array<Record<string, unknown>> {
   if (!Array.isArray(value)) return [];
   const compactNarrative = COMPACT_NARRATIVE_INTENTS.has(intent);
@@ -644,7 +787,9 @@ function normalizeProviderRecommendations(
   for (const item of value) {
     if (!isRecordValue(item)) continue;
     const title = safeCommercialText(item.title, '', compactNarrative ? 80 : 160);
-    const explanation = safeCommercialText(item.explanation, '', compactNarrative ? 240 : 600);
+    const explanation = safeCommercialText(item.explanation, '', compactNarrative ? 300 : 600);
+    const action = safeCommercialText(item.action, '', compactNarrative ? 280 : 600);
+    const measurement = safeCommercialText(item.measurement, '', compactNarrative ? 220 : 600);
     const expectedImpact = safeCommercialText(item.expectedImpact, '', compactNarrative ? 180 : 240);
     const legacyEffort = safeCommercialText(item.effort, '', 40);
     const priorityValue = safeCommercialText(item.priority, '', 40);
@@ -659,15 +804,20 @@ function normalizeProviderRecommendations(
       .map((entry) => safeCommercialText(entry, '', 160))
       .filter((entry) => entry && allowedEvidenceKeys.has(entry))
       .slice(0, compactNarrative ? 3 : 8);
-    if (title && explanation && expectedImpact && evidenceKeys.length > 0) {
-      recommendations.push({
-        title,
-        explanation,
-        expectedImpact,
-        priority,
-        evidenceKeys,
-        requiresConfirmation: true
-      });
+    const recommendation: Record<string, unknown> = {
+      title,
+      explanation,
+      expectedImpact,
+      priority,
+      evidenceKeys,
+      requiresConfirmation: true
+    };
+    if (action) recommendation.action = action;
+    if (measurement) recommendation.measurement = measurement;
+    if (title && explanation && expectedImpact && evidenceKeys.length > 0
+      && (!compactNarrative || (action && measurement))
+      && recommendationHasGroundedEvidence(recommendation, evidenceKeys, intent, evidence, allowedEvidenceKeys)) {
+      recommendations.push(recommendation);
     }
   }
   return recommendations.slice(0, compactNarrative ? 2 : 3);
@@ -716,13 +866,19 @@ function normalizeCommercialProviderResponse(
     ? String(parsed.confidence)
     : fallback.confidence;
   const contextSales = isRecordValue(request.context.sales) ? request.context.sales : {};
-  const allowedEvidenceKeys = new Set(
-    Array.isArray(contextSales.evidenceKeys)
-      ? contextSales.evidenceKeys.filter((entry): entry is string => typeof entry === 'string')
-      : []
-  );
   const compactNarrative = COMPACT_NARRATIVE_INTENTS.has(request.intent);
-  const providerRecommendations = normalizeProviderRecommendations(parsed?.recommendations, allowedEvidenceKeys, request.intent);
+  const allowedEvidenceKeys = new Set(compactNarrative
+    ? buildNarrativeEvidenceKeyAllowlist(request.context, request.intent)
+    : (Array.isArray(contextSales.evidenceKeys)
+      ? contextSales.evidenceKeys.filter((entry): entry is string => typeof entry === 'string')
+      : []));
+  const compactEvidence = compactCommercialEvidence(request.context, request.intent);
+  const providerRecommendations = normalizeProviderRecommendations(
+    parsed?.recommendations,
+    allowedEvidenceKeys,
+    request.intent,
+    compactEvidence
+  );
   const safeNarrativeText = (value: unknown, maxLength: number) => safeCommercialText(value, '', maxLength);
   const summaryMaxLength = compactNarrative ? 300 : 1600;
   const explanationMaxLength = compactNarrative ? 800 : 1600;
@@ -734,6 +890,12 @@ function normalizeCommercialProviderResponse(
     .find((value) => value.length > 0) || '';
   const explanation = safeNarrativeText(parsed?.explanation, explanationMaxLength);
   const hasNarrativeContent = Boolean(executiveSummary || explanation || providerRecommendations.length);
+  const requiresActionableRecommendation = ACTIONABLE_NARRATIVE_INTENTS.has(request.intent)
+    && hasActionableNarrativeEvidence(Array.from(allowedEvidenceKeys), request.intent);
+  if (requiresActionableRecommendation
+    && (!executiveSummary || !explanation || providerRecommendations.length === 0)) {
+    return unavailableCommercialNormalization(request, 'AI_NARRATIVE_LOW_VALUE');
+  }
   const unsafeNarrativeText = parsed
     ? [
       [parsed.executiveSummary, summaryMaxLength],
@@ -781,7 +943,8 @@ function normalizeCommercialProviderResponse(
       ...(diagnosticCode ? { diagnosticCode } : {}),
       executiveSummary: executiveSummary || null,
       explanation: explanation || null,
-      recommendations: providerRecommendations
+      recommendations: providerRecommendations,
+      confidence: parsedConfidence
     }
   };
   if (!usable) {
