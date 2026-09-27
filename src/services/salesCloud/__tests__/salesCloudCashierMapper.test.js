@@ -56,7 +56,11 @@ describe('salesCloudCashierMapper discounts', () => {
     const lineDiscount = {
       type: 'amount', value: 0.17, amount: 0.17,
       splitParentDiscountType: 'percent', splitParentDiscountValue: 33.3333, splitParentDiscountScope: 'line',
-      reason: 'Promoción de línea'
+      reason: 'Promoción de línea', scope: 'line',
+      appliedAt: '2026-09-27T12:00:00.000Z', appliedByRole: 'owner',
+      appliedByStaffUserId: 'staff-1', appliedByDeviceId: 'device-1',
+      applied_at: '2026-09-27T12:00:00.000Z', applied_by_role: 'owner',
+      applied_by_staff_user_id: 'staff-1', applied_by_device_id: 'device-1'
     };
     const saleDiscount = {
       type: 'amount', value: 0.11, amount: 0.11,
@@ -77,16 +81,61 @@ describe('salesCloudCashierMapper discounts', () => {
       total: 0.22
     });
 
-    expect(payload.items[0].discount_amount).toBe(0.17);
-    expect(payload.items[0].metadata.discount).toMatchObject({
-      type: 'amount', value: 0.17, amount: 0.17,
-      splitParentDiscountType: 'percent', splitParentDiscountValue: 33.3333, splitParentDiscountScope: 'line'
+    expect(payload.items[0].discount).toMatchObject({
+      type: 'amount',
+      value: 0.17,
+      amount: 0.17,
+      reason: 'Promoción de línea',
+      scope: 'line',
+      splitParentDiscountType: 'percent',
+      splitParentDiscountValue: 33.3333,
+      splitParentDiscountScope: 'line'
     });
+    expect(payload.items[0].discount).toEqual(lineDiscount);
+    expect(payload.items[0].discount_amount).toBe(0.17);
+    expect(payload.items[0].metadata.discount).toEqual(lineDiscount);
     expect(payload.sale.discount_total).toBe(0.28);
     expect(payload.sale.metadata.discount).toMatchObject({
       type: 'amount', value: 0.11, amount: 0.11,
       splitParentDiscountType: 'percent', splitParentDiscountValue: 33.3333, splitParentDiscountScope: 'sale'
     });
+  });
+
+  it('maps a normal fixed-amount line discount at the cloud item level', () => {
+    const payload = mapLocalCheckoutToCloudSale({
+      sale: { id: 'sale-fixed-discount', timestamp: '2026-07-03T12:00:00.000Z', subtotal: 100, discountTotal: 10, total: 90 },
+      processedItems: [{
+        id: 'product-fixed-discount', lineId: 'line-fixed-discount', name: 'Producto',
+        price: 100, quantity: 1, exactTotal: 100, lineTotal: 90,
+        discount: { type: 'amount', value: 10, amount: 10, reason: 'Promoción fija', scope: 'line' },
+        discountAmount: 10
+      }],
+      paymentData: { paymentMethod: 'efectivo', amountPaid: 90 },
+      total: 90
+    });
+
+    expect(payload.items[0].discount).toMatchObject({
+      type: 'amount', value: 10, amount: 10, reason: 'Promoción fija', scope: 'line'
+    });
+    expect(payload.items[0].discount_amount).toBe(10);
+    expect(payload.items[0].line_total).toBe(90);
+  });
+
+  it('does not add a discount object for an item without a discount', () => {
+    const payload = mapLocalCheckoutToCloudSale({
+      sale: { id: 'sale-no-discount', timestamp: '2026-07-03T12:00:00.000Z', subtotal: 100, total: 100 },
+      processedItems: [{
+        id: 'product-no-discount', lineId: 'line-no-discount', name: 'Producto',
+        price: 100, quantity: 1, exactTotal: 100, lineTotal: 100
+      }],
+      paymentData: { paymentMethod: 'efectivo', amountPaid: 100 },
+      total: 100
+    });
+
+    expect(payload.items[0]).not.toHaveProperty('discount');
+    expect(payload.items[0].discount_amount).toBe(0);
+    expect(payload.items[0].line_total).toBe(100);
+    expect(payload.items[0].metadata.discount).toBeNull();
   });
 
   it('maps line discount as net line_total', () => {

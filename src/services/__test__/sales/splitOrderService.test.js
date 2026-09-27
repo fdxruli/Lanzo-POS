@@ -17,6 +17,7 @@ vi.mock('../../salesCloud/salesCloudCashierService', () => ({
 }));
 
 import { splitOpenTableOrderCore } from '../../sales/splitOrderService';
+import { mapLocalCheckoutToCloudSale } from '../../salesCloud/salesCloudCashierMapper';
 import { salesCloudCashierService } from '../../salesCloud/salesCloudCashierService';
 import { runPostSaleEffects } from '../../sales/postSaleEffects';
 import { salesCloudShadowService } from '../../salesCloud/salesCloudShadowService';
@@ -459,6 +460,33 @@ describe('splitOpenTableOrderCore', () => {
     expect(cloudResult).toMatchObject({ success: false, errorType: 'TEST_CAPTURE' });
     const cloudDefinitions = salesCloudCashierService.processCloudSplitTableSale.mock.calls.at(-1)[0].childDefinitions;
     const cloudChildren = cloudDefinitions.map((child) => child.sale);
+    const expectedLineDiscounts = [
+      expect.objectContaining({
+        type: 'amount', value: 0.17, amount: 0.17, reason: 'Promoción de línea', scope: 'line',
+        splitParentDiscountType: 'percent', splitParentDiscountValue: 33.3333, splitParentDiscountScope: 'line',
+        appliedAt: lineAppliedAt, appliedByRole: 'owner', appliedByStaffUserId: 'staff-1', appliedByDeviceId: 'device-1',
+        applied_at: lineAppliedAt, applied_by_role: 'owner', applied_by_staff_user_id: 'staff-1', applied_by_device_id: 'device-1'
+      }),
+      expect.objectContaining({
+        type: 'amount', value: 0.16, amount: 0.16, reason: 'Promoción de línea', scope: 'line',
+        splitParentDiscountType: 'percent', splitParentDiscountValue: 33.3333, splitParentDiscountScope: 'line',
+        appliedAt: lineAppliedAt, appliedByRole: 'owner', appliedByStaffUserId: 'staff-1', appliedByDeviceId: 'device-1',
+        applied_at: lineAppliedAt, applied_by_role: 'owner', applied_by_staff_user_id: 'staff-1', applied_by_device_id: 'device-1'
+      })
+    ];
+    const mappedCloudChildren = cloudDefinitions.map((child) => mapLocalCheckoutToCloudSale({
+      sale: child.sale,
+      processedItems: child.processedItems,
+      paymentData: child.paymentData,
+      total: child.sale.total
+    }));
+    expect(cloudDefinitions.map((child) => child.sale.items[0].discount)).toEqual(expectedLineDiscounts);
+    expect(mappedCloudChildren.map((child) => child.items[0].discount)).toEqual(expectedLineDiscounts);
+    expect(mappedCloudChildren.map((child) => [
+      child.items[0].unit_price,
+      child.items[0].quantity,
+      child.items[0].discount_amount
+    ])).toEqual([[0.5, 1, 0.17], [0.5, 1, 0.16]]);
     const financials = (sales) => sales.map((sale) => ({
       total: sale.total,
       price: sale.items[0].price,

@@ -149,6 +149,7 @@ const mapItem = (item = {}, index = 0, options = {}) => {
     quantity: toNumber(item.quantity, 0),
     unit_price: toNumber(splitBasePrice ?? item.price ?? item.unitPrice, 0),
     unit_cost: toNullableNumber(firstValue(item.cost, item.unitCost)),
+    discount: discount || undefined,
     discount_amount: discountAmount,
     tax_amount: toNumber(item.taxAmount ?? item.tax, 0),
     line_subtotal: lineSubtotal,
