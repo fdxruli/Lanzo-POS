@@ -1,9 +1,31 @@
 import { normalizeCommercialAINarrativeDiagnosticCode } from './commercialAgentContract';
 
 const REPORT_SCHEMA_VERSION = 'sales-profitability-report-v2';
-const VALID_STATUSES = new Set(['completed', 'incomplete', 'insufficient_data', 'out_of_scope']);
+const VALID_STATUSES = new Set(['completed', 'incomplete', 'insufficient_data', 'out_of_scope', 'not_ready', 'local_answer']);
 const VALID_CONFIDENCE = new Set(['high', 'medium', 'low']);
 const VALID_SOURCES = new Set(['cloud', 'local', 'mixed']);
+const VALID_RESOLUTION_KINDS = new Set(['identity', 'supported', 'recognized_not_supported', 'needs_context', 'out_of_scope']);
+const VALID_RESOLUTION_TOPICS = new Set([
+  'name',
+  'name_meaning',
+  'ai',
+  'capabilities',
+  'identity',
+  'competition',
+  'assortment',
+  'growth',
+  'commercial_question',
+  'price_simulation',
+  'profitability_summary',
+  'explain_change',
+  'product_risk',
+  'promotion_opportunity',
+  'combo_opportunity',
+  'greeting',
+  'unrelated',
+  'module'
+]);
+const VALID_CONTEXT_SLOTS = new Set(['question', 'objective', 'productName', 'newPrice']);
 const UUID_PATTERN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/giu;
 const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/giu;
 const PHONE_PATTERN = /\+?\d(?:[\s().-]*\d){9,14}\b/gu;
@@ -50,6 +72,18 @@ const safeTextArray = (value, limit = 30, maxLength = 500) => (
 const safeStatus = (value) => VALID_STATUSES.has(value) ? value : 'insufficient_data';
 const safeConfidence = (value) => VALID_CONFIDENCE.has(value) ? value : 'low';
 const safeSource = (value) => VALID_SOURCES.has(value) ? value : 'mixed';
+const safeResolution = (value) => {
+  const source = asRecord(value);
+  if (!VALID_RESOLUTION_KINDS.has(source.kind)) return null;
+  return {
+    kind: source.kind,
+    topic: VALID_RESOLUTION_TOPICS.has(source.topic) ? source.topic : null,
+    confidence: safeConfidence(source.confidence),
+    missingContext: (Array.isArray(source.missingContext) ? source.missingContext : [])
+      .filter((item) => VALID_CONTEXT_SLOTS.has(item))
+      .slice(0, 4)
+  };
+};
 
 const safeRequestPeriod = (period) => {
   const source = asRecord(period);
@@ -422,6 +456,7 @@ export const buildSalesProfitabilityDownloadReport = (result, requestContext = {
     || (aiStatus === 'unavailable' ? 'AI_NARRATIVE_UNAVAILABLE' : null);
   const now = options.generatedAt instanceof Date ? options.generatedAt : new Date(options.generatedAt || Date.now());
   const current = safeAggregate(response.current);
+  const resolution = safeResolution(request.resolution);
 
   return {
     schemaVersion: REPORT_SCHEMA_VERSION,
@@ -433,6 +468,7 @@ export const buildSalesProfitabilityDownloadReport = (result, requestContext = {
     request: {
       question: sanitizeText(request.question, 1200),
       resolvedIntent: sanitizeText(request.resolvedIntent ?? request.intent, 80),
+      ...(resolution ? { resolution } : {}),
       period: safeRequestPeriod(request.period),
       queryRange: safeQueryRange(response.queryRange),
       compare: request.compare === true,

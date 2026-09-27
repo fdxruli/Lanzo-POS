@@ -135,7 +135,9 @@ describe('commercial AI center', () => {
     expect(screen.getByRole('heading', { name: 'Ventas y rentabilidad' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Ecommerce' })).toBeInTheDocument();
     expect(screen.getByText('Disponible')).toBeInTheDocument();
-    expect(screen.getByText('FEATURE_NOT_READY')).toBeInTheDocument();
+    expect(screen.getByText('Próximamente')).toBeInTheDocument();
+    expect(screen.getByText('Este agente aún no está disponible.')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Pregúntale a Lía sobre tu negocio' })).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: 'Pregunta libre' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Analizar' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Descargar reporte completo' })).toBeDisabled();
@@ -841,9 +843,9 @@ describe('commercial AI center', () => {
     expect(runtime.loadProducts).not.toHaveBeenCalled();
     const question = screen.getByRole('textbox', { name: 'Pregunta libre' });
     const outOfScopeCases = [
-      ['¿Cómo te llamas?', 'Soy el asistente de Ventas y Rentabilidad de Lanzo POS. Puedo ayudarte con rentabilidad, márgenes, productos problemáticos, precios, promociones y combos.'],
-      ['¿Qué hay en inventario?', 'Esta consulta corresponde al módulo de Diagnósticos Operativos. Desde aquí puedo ayudarte únicamente con ventas y rentabilidad.'],
-      ['¿Qué clima hará mañana?', 'Puedo ayudarte a analizar ventas y rentabilidad de tu negocio. Prueba con una de las preguntas sugeridas.']
+      ['¿Cómo te llamas?', 'Soy Lía, la asistente de análisis comercial de Lanzo.'],
+      ['¿Qué hay en inventario?', 'Soy Lía, la asistente de análisis comercial de Lanzo. Esa consulta corresponde a otro módulo de Lanzo. En este espacio puedo ayudarte con ventas y rentabilidad.'],
+      ['¿Qué clima hará mañana?', 'Soy Lía, la asistente de análisis comercial de Lanzo. Esa pregunta queda fuera de mi función, pero puedo ayudarte a entender ventas, rentabilidad y escenarios comerciales de tu negocio.']
     ];
     for (const [prompt, answer] of outOfScopeCases) {
       fireEvent.change(question, { target: { value: prompt } });
@@ -859,6 +861,23 @@ describe('commercial AI center', () => {
     expect(screen.queryByText(/Actualiza el Preview/i)).not.toBeInTheDocument();
   });
 
+  it('recognizes an unsupported commercial question locally without loading sales or calling the agent', async () => {
+    renderCenter();
+    const question = screen.getByRole('textbox', { name: 'Pregunta libre' });
+    fireEvent.change(question, { target: { value: 'Ayúdame a analizar mi competencia.' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+
+    await waitFor(() => expect(screen.getByRole('heading', {
+      name: /Entiendo que quieres analizar a tu competencia/
+    })).toBeInTheDocument());
+    expect(screen.getByText(/Consulta sobre competencia/)).toBeInTheDocument();
+    expect(screen.queryByText('Respuesta local sobre Lía')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Descargar reporte completo' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/FEATURE_NOT_READY|recognized_not_supported|profitability_summary/i)).not.toBeInTheDocument();
+    expect(runtime.loadProducts).not.toHaveBeenCalled();
+    expect(runtime.runAgent).not.toHaveBeenCalled();
+  });
+
   it('maps all six suggested questions to supported intents', async () => {
     renderCenter();
     const expected = [
@@ -871,10 +890,26 @@ describe('commercial AI center', () => {
     ];
     for (const [label, expectedIntent] of expected) {
       fireEvent.click(screen.getByRole('button', { name: label }));
+      if (expectedIntent === 'price_simulation') {
+        await waitFor(() => expect(screen.getByRole('option', { name: 'Producto A' })).toBeInTheDocument());
+        fireEvent.change(screen.getByLabelText('Producto'), { target: { value: 'Producto A' } });
+        fireEvent.change(screen.getByLabelText('Nuevo precio'), { target: { value: '80' } });
+      }
       fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
       await waitFor(() => expect(runtime.runAgent).toHaveBeenCalledTimes(expected.indexOf(expected.find(([item]) => item === label)) + 1));
       expect(runtime.runAgent.mock.calls.at(-1)[0].intent).toBe(expectedIntent);
     }
+  });
+
+  it('keeps an incomplete price scenario local until the required product and price are supplied', async () => {
+    renderCenter();
+    fireEvent.click(screen.getByRole('button', { name: '¿Qué pasa si aumento el precio?' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+
+    await waitFor(() => expect(screen.getByText(/selecciona un producto y captura el nuevo precio/)).toBeInTheDocument());
+    expect(runtime.runAgent).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Descargar reporte completo' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Narrativa opcional de IA')).not.toBeInTheDocument();
   });
 
   it('uses the safe UI error and keeps technical details out of the visible message', async () => {

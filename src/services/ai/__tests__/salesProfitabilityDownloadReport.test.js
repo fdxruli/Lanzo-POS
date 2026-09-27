@@ -239,6 +239,7 @@ describe('sales profitability download report', () => {
         expectedVolume: 24
       }
     });
+    expect(report.request).not.toHaveProperty('resolution');
     expect(report.request.queryRange.current).toMatchObject({
       timezone: 'America/Mexico_City',
       fromInclusiveUtc: '2026-09-01T06:00:00.000Z',

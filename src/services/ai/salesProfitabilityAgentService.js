@@ -14,7 +14,7 @@ import {
 } from './salesProfitabilityData';
 import {
   COMMERCIAL_AGENT_KEYS,
-  createOutOfScopeResponse,
+  createCommercialLocalResponse,
   normalizeScenarioForIntent,
   normalizeCommercialAINarrativeDiagnosticCode,
   parseCommercialAgentResponse,
@@ -609,10 +609,10 @@ export const createSalesProfitabilityAgentRunner = ({
   requestKey = null
 } = {}) => {
   const questionText = String(question || '').trim();
-  const resolution = resolveCommercialIntent(questionText);
-  if (resolution.kind === 'out_of_scope') {
+  const resolution = resolveCommercialIntent(questionText, { scenario });
+  if (resolution.kind !== 'supported') {
     return {
-      response: createOutOfScopeResponse(resolution),
+      response: createCommercialLocalResponse(resolution),
       usageStatus: null,
       providerCalled: false,
       quotaOutcome: 'not_consumed',
@@ -693,7 +693,8 @@ export const createSalesProfitabilityAgentRunner = ({
         usageStatus: null,
         providerCalled: false,
         quotaOutcome: 'not_consumed',
-        reportSource: deterministic.source
+        reportSource: deterministic.source,
+        intentResolution: resolution
       };
     }
 
@@ -727,7 +728,8 @@ export const createSalesProfitabilityAgentRunner = ({
         usageStatus: providerResult.usageStatus || null,
         providerCalled: true,
         quotaOutcome: 'consumed',
-        reportSource: deterministic.source
+        reportSource: deterministic.source,
+        intentResolution: resolution
       };
     } catch (error) {
       const errorCode = error?.code || error?.originalError?.code;
@@ -760,7 +762,8 @@ export const createSalesProfitabilityAgentRunner = ({
         providerCalled: true,
         quotaOutcome: 'not_confirmed',
         narrativeAvailable: false,
-        reportSource: deterministic.source
+        reportSource: deterministic.source,
+        intentResolution: resolution
       };
     }
   })();
