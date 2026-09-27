@@ -241,9 +241,12 @@ describe('commercial AI context boundary', () => {
       currentProfit: null,
       previousProfit: null,
       costKnown: false,
-      costStatus: 'incomplete',
+      costStatus: 'missing',
       direction: 'growing',
-      signals: ['growing', 'cost_unknown'],
+      signals: ['growing', 'cost_unknown']
+    };
+    const productOpportunity = {
+      ...productChange,
       opportunityReason: 'Creció en ventas y unidades.'
     };
     const context = buildSalesProfitabilityContext({
@@ -279,7 +282,7 @@ describe('commercial AI context boundary', () => {
           deltaNetSales: 200,
           deltaNetSalesPercent: 0.2,
           productsGrowing: [productChange],
-          productOpportunities: [productChange],
+          productOpportunities: [productOpportunity],
           channelChanges: [{ channel: 'Físico', currentShare: 0.75, previousShare: 0.7, deltaShare: 0.05, currentSales: 900, previousSales: 700, salesDelta: 200 }],
           comparisonAvailable: true
         },
@@ -321,9 +324,11 @@ describe('commercial AI context boundary', () => {
     expect(context.sales.comparison.productChanges[0]).toMatchObject({
       direction: 'growing',
       costKnown: false,
+      costStatus: 'missing',
       currentMargin: null,
       signals: ['growing', 'cost_unknown']
     });
     expect(context.sales.growthSignals.productOpportunities).toHaveLength(1);
+    expect(context.sales.growthSignals.productOpportunities[0].opportunityReason).toBe('Creció en ventas y unidades.');
   });
 });
