@@ -112,8 +112,9 @@ describe('PublicStorePage', () => {
     renderPage();
     expect(await screen.findByRole('heading', { name: 'Esta tienda está pausada temporalmente' })).toBeInTheDocument();
     expect(screen.getByText('El negocio ha pausado temporalmente su portal en línea.')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Contactar por WhatsApp' }))
-      .toHaveAttribute('href', 'https://wa.me/529610000000');
+    const whatsappAction = screen.getByRole('link', { name: 'Contactar por WhatsApp' });
+    expect(whatsappAction).toHaveAttribute('href', 'https://wa.me/529610000000');
+    expect(whatsappAction).toHaveClass('public-store-state__action--link');
   });
 
   beforeEach(() => {

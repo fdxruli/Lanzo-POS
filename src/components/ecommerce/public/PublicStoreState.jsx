@@ -11,8 +11,20 @@ const ICONS = {
   noResults: SearchX,
 };
 
-function PublicStoreState({ type = 'empty', title, description, actionLabel, actionHref, onAction, compact = false }) {
+function PublicStoreState({
+  type = 'empty',
+  title,
+  description,
+  actionLabel,
+  actionHref,
+  actionVariant = 'button',
+  onAction,
+  compact = false,
+}) {
   const Icon = ICONS[type] || Store;
+  const actionClassName = actionVariant === 'link'
+    ? 'public-store-state__action public-store-state__action--link'
+    : 'ui-button ui-button--secondary public-store-state__action';
 
   return (
     <section
@@ -30,11 +42,11 @@ function PublicStoreState({ type = 'empty', title, description, actionLabel, act
         {description ? <p>{description}</p> : null}
       </div>
       {actionLabel && actionHref ? (
-        <a className="ui-button ui-button--secondary" href={actionHref} target="_blank" rel="noopener noreferrer">
+        <a className={actionClassName} href={actionHref} target="_blank" rel="noopener noreferrer">
           {actionLabel}
         </a>
       ) : actionLabel && onAction ? (
-        <button type="button" className="ui-button ui-button--secondary" onClick={onAction}>
+        <button type="button" className={actionClassName} onClick={onAction}>
           {actionLabel}
         </button>
       ) : null}

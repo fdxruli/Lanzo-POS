@@ -927,6 +927,7 @@ function PublicStorePage() {
         description="El negocio ha pausado temporalmente su portal en línea."
         actionLabel={pausedContactUrl ? 'Contactar por WhatsApp' : undefined}
         actionHref={pausedContactUrl || undefined}
+        actionVariant="link"
       />
     );
   }
