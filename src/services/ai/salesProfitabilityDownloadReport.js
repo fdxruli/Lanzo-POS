@@ -3,6 +3,7 @@ import { normalizeCommercialAINarrativeDiagnosticCode } from './commercialAgentC
 const REPORT_SCHEMA_VERSION = 'sales-profitability-report-v2';
 const VALID_STATUSES = new Set(['completed', 'incomplete', 'insufficient_data', 'out_of_scope', 'not_ready', 'local_answer']);
 const VALID_CONFIDENCE = new Set(['high', 'medium', 'low']);
+const VALID_QUOTA_OUTCOMES = new Set(['consumed', 'not_consumed', 'not_confirmed']);
 const VALID_SOURCES = new Set(['cloud', 'local', 'mixed']);
 const VALID_RESOLUTION_KINDS = new Set(['identity', 'supported', 'recognized_not_supported', 'needs_context', 'out_of_scope']);
 const VALID_RESOLUTION_TOPICS = new Set([
@@ -508,7 +509,10 @@ export const buildSalesProfitabilityDownloadReport = (result, requestContext = {
   if (!Object.keys(response).length) return null;
 
   const request = asRecord(requestContext);
-  const providerCalled = result?.providerCalled === true;
+  const providerCalled = typeof result?.providerCalled === 'boolean' ? result.providerCalled : null;
+  const quotaOutcome = VALID_QUOTA_OUTCOMES.has(result?.quotaOutcome)
+    ? result.quotaOutcome
+    : 'not_confirmed';
   const explicitCacheHit = result?.cacheHit === true || result?.cache?.hit === true;
   const narrative = asRecord(response.aiNarrative);
   const narrativeSummary = sanitizeText(narrative.executiveSummary, 2400) || null;
@@ -560,6 +564,7 @@ export const buildSalesProfitabilityDownloadReport = (result, requestContext = {
       source: safeSource(response.source),
       coverage: safeCoverage(response.coverage),
       providerCalled,
+      quotaOutcome,
       cacheHit: explicitCacheHit
     },
     deterministic: {
@@ -611,7 +616,8 @@ export const sanitizeSalesProfitabilityDownloadReport = (value) => {
   if (Number.isNaN(generatedAt.getTime())) return null;
 
   return buildSalesProfitabilityDownloadReport({
-    providerCalled: result.providerCalled === true,
+    providerCalled: typeof result.providerCalled === 'boolean' ? result.providerCalled : null,
+    quotaOutcome: result.quotaOutcome,
     cacheHit: result.cacheHit === true,
     usageStatus: source.usage?.available === true ? source.usage : null,
     response: {

@@ -25,6 +25,68 @@ import { buildSalesProfitabilityContext } from './commercialAgentContext';
 
 const DEFAULT_BUSINESS_TIMEZONE = 'America/Mexico_City';
 const inflightRequests = new Map();
+const VALID_QUOTA_OUTCOMES = new Set(['consumed', 'not_consumed', 'not_confirmed']);
+
+const readFailureExecution = (error) => {
+  const payload = error?.originalError && typeof error.originalError === 'object'
+    ? error.originalError
+    : {};
+  const payloadQuotaOutcome = VALID_QUOTA_OUTCOMES.has(payload.quotaOutcome)
+    ? payload.quotaOutcome
+    : null;
+  if (typeof payload.providerCalled === 'boolean' && payloadQuotaOutcome) {
+    return { providerCalled: payload.providerCalled, quotaOutcome: payloadQuotaOutcome };
+  }
+
+  // A successful Edge response proves that the provider call and usage
+  // completion both finished, even when the returned narrative is unusable.
+  if (payload.success === true) {
+    return {
+      providerCalled: true,
+      quotaOutcome: payloadQuotaOutcome || 'consumed'
+    };
+  }
+
+  const code = error?.code || payload.code || payload.reason;
+  const statusCode = Number(error?.statusCode || error?.status || 0);
+  if (code === 'INVALID_REQUEST' && statusCode === 400) {
+    // This is compatible with deployed Edge v39, which predates the
+    // structured execution fields but validates before usage reservation.
+    return { providerCalled: false, quotaOutcome: 'not_consumed' };
+  }
+
+  const confirmedPreProviderCodes = new Set([
+    'AUTH_PAYLOAD_REQUIRED',
+    'LICENSE_NOT_FOUND',
+    'LICENSE_NOT_ACTIVE',
+    'LICENSE_EXPIRED',
+    'AI_AGENTS_NOT_AVAILABLE',
+    'AI_AGENT_PERIOD_NOT_FOUND',
+    'AI_AGENT_LIMIT_DISABLED',
+    'AI_AGENT_LIMIT_REACHED',
+    'DEVICE_NOT_ALLOWED',
+    'DEVICE_TOKEN_REQUIRED',
+    'DEVICE_TOKEN_INVALID',
+    'STAFF_SESSION_REQUIRED',
+    'STAFF_SESSION_INVALID',
+    'AI_AGENT_PERMISSION_REQUIRED',
+    'AI_RATE_LIMITED',
+    'AI_KEY_MISSING',
+    'PROMPT_TOO_LARGE'
+  ]);
+  if (
+    confirmedPreProviderCodes.has(code)
+    || (code === 'AI_PROVIDER_ERROR' && statusCode === 500)
+  ) {
+    return { providerCalled: false, quotaOutcome: 'not_consumed' };
+  }
+
+  if (['AI_REQUEST_FAILED', 'AI_EMPTY_RESPONSE', 'AI_INVALID_RESPONSE', 'MALFORMED_JSON'].includes(code)) {
+    return { providerCalled: true, quotaOutcome: 'not_confirmed' };
+  }
+
+  return { providerCalled: null, quotaOutcome: 'not_confirmed' };
+};
 
 export const resolveBusinessTimezone = (companyProfile = {}) => (
   companyProfile?.timezone
@@ -881,12 +943,21 @@ export const createSalesProfitabilityAgentRunner = ({
       source: deterministic.source
     });
 
+    let providerOutcome = null;
     try {
       const providerResult = await analyze({
         ...request,
         context,
         requestKey: requestKey || null
       }, { temperature: 0.2, maxTokens: 2048 });
+      providerOutcome = {
+        providerCalled: typeof providerResult?.providerCalled === 'boolean'
+          ? providerResult.providerCalled
+          : true,
+        quotaOutcome: VALID_QUOTA_OUTCOMES.has(providerResult?.quotaOutcome)
+          ? providerResult.quotaOutcome
+          : 'consumed'
+      };
       const response = mergeProviderResponse(
         deterministic,
         providerResult.rawResultContent || providerResult.content || ''
@@ -895,14 +966,21 @@ export const createSalesProfitabilityAgentRunner = ({
       return {
         response,
         usageStatus: providerResult.usageStatus || null,
-        providerCalled: true,
-        quotaOutcome: 'consumed',
+        providerCalled: providerOutcome.providerCalled,
+        quotaOutcome: providerOutcome.quotaOutcome,
         reportSource: deterministic.source,
         intentResolution: resolution
       };
     } catch (error) {
       const errorCode = error?.code || error?.originalError?.code;
-      const diagnosticCode = errorCode === 'AI_EMPTY_RESPONSE'
+      const execution = providerOutcome || readFailureExecution(error);
+      const diagnosticCode = errorCode === 'INVALID_REQUEST'
+        && execution.providerCalled === false
+        && execution.quotaOutcome === 'not_consumed'
+        ? 'AI_REQUEST_REJECTED'
+        : execution.providerCalled !== true
+          ? 'AI_NARRATIVE_UNAVAILABLE'
+        : errorCode === 'AI_EMPTY_RESPONSE'
         ? 'AI_NARRATIVE_EMPTY'
         : ['MALFORMED_JSON', 'AI_INVALID_RESPONSE'].includes(errorCode)
           ? 'AI_NARRATIVE_INVALID_JSON'
@@ -928,8 +1006,8 @@ export const createSalesProfitabilityAgentRunner = ({
           }
         },
         usageStatus: null,
-        providerCalled: true,
-        quotaOutcome: 'not_confirmed',
+        providerCalled: execution.providerCalled,
+        quotaOutcome: execution.quotaOutcome,
         narrativeAvailable: false,
         reportSource: deterministic.source,
         intentResolution: resolution

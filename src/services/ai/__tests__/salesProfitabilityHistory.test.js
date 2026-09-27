@@ -105,6 +105,23 @@ describe('sales profitability local history', () => {
     expect(entry.report.ai.status).toBe('not_generated');
   });
 
+  it('records a pre-provider narrative rejection as Lanzo-calculated and not consumed', () => {
+    const entry = buildEntry({
+      response: {
+        ...response,
+        aiNarrative: { status: 'unavailable', diagnosticCode: 'AI_REQUEST_REJECTED' }
+      },
+      providerCalled: false,
+      quotaOutcome: 'not_consumed',
+      usageStatus: null
+    });
+
+    expect(entry.execution.mode).toBe('deterministic');
+    expect(entry.quota).toEqual({ status: 'no', reason: 'no_provider_path' });
+    expect(entry.report.result).toMatchObject({ providerCalled: false, quotaOutcome: 'not_consumed' });
+    expect(entry.report.ai.status).toBe('unavailable');
+  });
+
   it('stores local routed answers as local with confirmed no quota and no generated AI narrative', () => {
     const storage = memoryStorage();
     const localEntry = buildSalesProfitabilityHistoryEntry({
@@ -215,6 +232,18 @@ describe('sales profitability local history', () => {
 
     const unknown = buildEntry({ quotaOutcome: 'not_confirmed' });
     expect(unknown.quota.status).toBe('unknown');
+
+    const unknownProviderOutcome = buildEntry({
+      response: { ...response, aiNarrative: { status: 'unavailable' } },
+      providerCalled: null,
+      quotaOutcome: 'not_confirmed',
+      usageStatus: null
+    });
+    expect(unknownProviderOutcome.execution.mode).toBe('deterministic');
+    expect(unknownProviderOutcome.quota).toEqual({
+      status: 'unknown',
+      reason: 'provider_or_response_not_confirmed'
+    });
 
     const failedNarrative = buildEntry({
       response: {

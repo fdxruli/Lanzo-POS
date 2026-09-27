@@ -100,6 +100,23 @@ type ServerClientOptions = {
 };
 
 type UsageSnapshot = Record<string, unknown>;
+type ExecutionTelemetry = {
+  providerCalled: boolean;
+  quotaOutcome: 'consumed' | 'not_consumed' | 'not_confirmed';
+};
+
+const NO_PROVIDER_NO_QUOTA: ExecutionTelemetry = {
+  providerCalled: false,
+  quotaOutcome: 'not_consumed'
+};
+const NO_PROVIDER_QUOTA_UNKNOWN: ExecutionTelemetry = {
+  providerCalled: false,
+  quotaOutcome: 'not_confirmed'
+};
+const PROVIDER_QUOTA_UNKNOWN: ExecutionTelemetry = {
+  providerCalled: true,
+  quotaOutcome: 'not_confirmed'
+};
 
 function createRestClient(url: string, key: string, _options: ServerClientOptions): RpcClient {
   const baseUrl = url.replace(/\/+$/u, '');
@@ -159,13 +176,15 @@ function errorResponse(
   status: number,
   code: string,
   requestId: string,
-  extra: Record<string, unknown> = {}
+  extra: Record<string, unknown> = {},
+  execution?: ExecutionTelemetry
 ): Response {
   return jsonResponse(status, {
     success: false,
     code,
     message: publicMessage(code),
-    ...extra
+    ...extra,
+    ...(execution || {})
   }, requestId);
 }
 
@@ -267,13 +286,13 @@ async function validateCommercialAccess(
       p_staff_session_token: auth.staffSessionToken
     });
   } catch {
-    return errorResponse(500, 'USAGE_LOOKUP_ERROR', requestId);
+    return errorResponse(500, 'USAGE_LOOKUP_ERROR', requestId, {}, NO_PROVIDER_NO_QUOTA);
   }
   const snapshot = asSnapshot(result.data);
-  if (result.error || !snapshot) return errorResponse(500, 'USAGE_LOOKUP_ERROR', requestId);
+  if (result.error || !snapshot) return errorResponse(500, 'USAGE_LOOKUP_ERROR', requestId, {}, NO_PROVIDER_NO_QUOTA);
   if (snapshot.success !== true) {
     const code = safeCode(snapshot.code, 'USAGE_LOOKUP_ERROR');
-    return errorResponse(statusForRpcCode(code), code, requestId, usageFields(snapshot));
+    return errorResponse(statusForRpcCode(code), code, requestId, usageFields(snapshot), NO_PROVIDER_NO_QUOTA);
   }
   return null;
 }
@@ -615,21 +634,21 @@ async function handleAnalysis(
       }
     });
   } catch {
-    return errorResponse(500, 'USAGE_RESERVATION_ERROR', requestId);
+    return errorResponse(500, 'USAGE_RESERVATION_ERROR', requestId, {}, NO_PROVIDER_QUOTA_UNKNOWN);
   }
 
   const beginSnapshot = asSnapshot(begin.data);
   if (begin.error || !beginSnapshot) {
-    return errorResponse(500, 'USAGE_RESERVATION_ERROR', requestId);
+    return errorResponse(500, 'USAGE_RESERVATION_ERROR', requestId, {}, NO_PROVIDER_QUOTA_UNKNOWN);
   }
 
   if (beginSnapshot.success !== true) {
     const code = safeCode(beginSnapshot.code, 'USAGE_RESERVATION_ERROR');
-    return errorResponse(statusForRpcCode(code, 500), code, requestId, usageFields(beginSnapshot));
+    return errorResponse(statusForRpcCode(code, 500), code, requestId, usageFields(beginSnapshot), NO_PROVIDER_NO_QUOTA);
   }
 
   const usageId = cleanText(beginSnapshot.usage_id);
-  if (!usageId) return errorResponse(500, 'USAGE_RESERVATION_ERROR', requestId);
+  if (!usageId) return errorResponse(500, 'USAGE_RESERVATION_ERROR', requestId, {}, NO_PROVIDER_QUOTA_UNKNOWN);
 
   const startedAt = now();
   let providerResult: ProviderResult;
@@ -651,31 +670,38 @@ async function handleAnalysis(
     try {
       completion = await completeUsage(client, usageId, false, provider, request, startedAt, now, null, failure);
     } catch {
-      return errorResponse(500, 'USAGE_RESERVATION_ERROR', requestId);
+      return errorResponse(500, 'USAGE_RESERVATION_ERROR', requestId, {}, PROVIDER_QUOTA_UNKNOWN);
     }
 
-    if (completion.error || asSnapshot(completion.data)?.success !== true) {
-      return errorResponse(500, 'USAGE_RESERVATION_ERROR', requestId);
+    const completionSnapshot = asSnapshot(completion.data);
+    if (completion.error || completionSnapshot?.success !== true) {
+      return errorResponse(500, 'USAGE_RESERVATION_ERROR', requestId, {}, PROVIDER_QUOTA_UNKNOWN);
     }
 
-    return errorResponse(failure.status, failure.code, requestId);
+    return errorResponse(failure.status, failure.code, requestId, {}, {
+      providerCalled: true,
+      quotaOutcome: completionSnapshot.status === 'failed' ? 'not_consumed' : 'not_confirmed'
+    });
   }
 
   let completion: RpcResult;
   try {
     completion = await completeUsage(client, usageId, true, provider, request, startedAt, now, providerResult, null);
   } catch {
-    return errorResponse(500, 'USAGE_RESERVATION_ERROR', requestId);
+    return errorResponse(500, 'USAGE_RESERVATION_ERROR', requestId, {}, PROVIDER_QUOTA_UNKNOWN);
   }
 
-  if (completion.error || asSnapshot(completion.data)?.success !== true) {
-    return errorResponse(500, 'USAGE_RESERVATION_ERROR', requestId);
+  const completionSnapshot = asSnapshot(completion.data);
+  if (completion.error || completionSnapshot?.success !== true || completionSnapshot.status !== 'completed') {
+    return errorResponse(500, 'USAGE_RESERVATION_ERROR', requestId, {}, PROVIDER_QUOTA_UNKNOWN);
   }
 
   return jsonResponse(200, {
     success: true,
     content: providerResult.content,
-    usageStatus: analysisUsageStatus(beginSnapshot)
+    usageStatus: analysisUsageStatus(beginSnapshot),
+    providerCalled: true,
+    quotaOutcome: 'consumed'
   }, requestId);
 }
 
@@ -707,18 +733,18 @@ async function handleCommercialAnalysis(
       }
     });
   } catch {
-    return errorResponse(500, 'USAGE_RESERVATION_ERROR', requestId);
+    return errorResponse(500, 'USAGE_RESERVATION_ERROR', requestId, {}, NO_PROVIDER_QUOTA_UNKNOWN);
   }
 
   const beginSnapshot = asSnapshot(begin.data);
-  if (begin.error || !beginSnapshot) return errorResponse(500, 'USAGE_RESERVATION_ERROR', requestId);
+  if (begin.error || !beginSnapshot) return errorResponse(500, 'USAGE_RESERVATION_ERROR', requestId, {}, NO_PROVIDER_QUOTA_UNKNOWN);
   if (beginSnapshot.success !== true) {
     const code = safeCode(beginSnapshot.code, 'USAGE_RESERVATION_ERROR');
-    return errorResponse(statusForRpcCode(code, 500), code, requestId, usageFields(beginSnapshot));
+    return errorResponse(statusForRpcCode(code, 500), code, requestId, usageFields(beginSnapshot), NO_PROVIDER_NO_QUOTA);
   }
 
   const usageId = cleanText(beginSnapshot.usage_id);
-  if (!usageId) return errorResponse(500, 'USAGE_RESERVATION_ERROR', requestId);
+  if (!usageId) return errorResponse(500, 'USAGE_RESERVATION_ERROR', requestId, {}, NO_PROVIDER_QUOTA_UNKNOWN);
 
   const prompts = buildCommercialPrompts(request);
   const startedAt = now();
@@ -753,12 +779,16 @@ async function handleCommercialAnalysis(
         { system: prompts.systemPrompt.length, user: prompts.userPrompt.length }
       );
     } catch {
-      return errorResponse(500, 'USAGE_RESERVATION_ERROR', requestId);
+      return errorResponse(500, 'USAGE_RESERVATION_ERROR', requestId, {}, PROVIDER_QUOTA_UNKNOWN);
     }
-    if (completion.error || asSnapshot(completion.data)?.success !== true) {
-      return errorResponse(500, 'USAGE_RESERVATION_ERROR', requestId);
+    const completionSnapshot = asSnapshot(completion.data);
+    if (completion.error || completionSnapshot?.success !== true) {
+      return errorResponse(500, 'USAGE_RESERVATION_ERROR', requestId, {}, PROVIDER_QUOTA_UNKNOWN);
     }
-    return errorResponse(failure.status, failure.code, requestId);
+    return errorResponse(failure.status, failure.code, requestId, {}, {
+      providerCalled: true,
+      quotaOutcome: completionSnapshot.status === 'failed' ? 'not_consumed' : 'not_confirmed'
+    });
   }
 
   let completion: RpcResult;
@@ -776,10 +806,11 @@ async function handleCommercialAnalysis(
       { system: prompts.systemPrompt.length, user: prompts.userPrompt.length }
     );
   } catch {
-    return errorResponse(500, 'USAGE_RESERVATION_ERROR', requestId);
+    return errorResponse(500, 'USAGE_RESERVATION_ERROR', requestId, {}, PROVIDER_QUOTA_UNKNOWN);
   }
-  if (completion.error || asSnapshot(completion.data)?.success !== true) {
-    return errorResponse(500, 'USAGE_RESERVATION_ERROR', requestId);
+  const completionSnapshot = asSnapshot(completion.data);
+  if (completion.error || completionSnapshot?.success !== true || completionSnapshot.status !== 'completed') {
+    return errorResponse(500, 'USAGE_RESERVATION_ERROR', requestId, {}, PROVIDER_QUOTA_UNKNOWN);
   }
 
   return jsonResponse(200, {
@@ -790,7 +821,9 @@ async function handleCommercialAnalysis(
     rawResultContent: providerResult.content,
     resultFormat: 'json',
     status: 'completed',
-    usageStatus: analysisUsageStatus(beginSnapshot)
+    usageStatus: analysisUsageStatus(beginSnapshot),
+    providerCalled: true,
+    quotaOutcome: 'consumed'
   }, requestId);
 }
 
@@ -805,35 +838,35 @@ export function createHandler(dependencies: HandlerDependencies = {}) {
     const requestId = requestIdFactory();
 
     if (req.method === 'OPTIONS') return jsonResponse(200, { success: true }, requestId);
-    if (req.method !== 'POST') return errorResponse(405, 'INVALID_REQUEST', requestId);
-    if (!isJsonContentType(req.headers.get('content-type'))) return errorResponse(400, 'INVALID_REQUEST', requestId);
+    if (req.method !== 'POST') return errorResponse(405, 'INVALID_REQUEST', requestId, {}, NO_PROVIDER_NO_QUOTA);
+    if (!isJsonContentType(req.headers.get('content-type'))) return errorResponse(400, 'INVALID_REQUEST', requestId, {}, NO_PROVIDER_NO_QUOTA);
 
     const declaredLength = Number(req.headers.get('content-length'));
     if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) {
-      return errorResponse(413, 'PROMPT_TOO_LARGE', requestId);
+      return errorResponse(413, 'PROMPT_TOO_LARGE', requestId, {}, NO_PROVIDER_NO_QUOTA);
     }
 
     let rawBody: ArrayBuffer;
     try {
       rawBody = await req.arrayBuffer();
     } catch {
-      return errorResponse(400, 'INVALID_REQUEST', requestId);
+      return errorResponse(400, 'INVALID_REQUEST', requestId, {}, NO_PROVIDER_NO_QUOTA);
     }
 
-    if (rawBody.byteLength > MAX_BODY_BYTES) return errorResponse(413, 'PROMPT_TOO_LARGE', requestId);
+    if (rawBody.byteLength > MAX_BODY_BYTES) return errorResponse(413, 'PROMPT_TOO_LARGE', requestId, {}, NO_PROVIDER_NO_QUOTA);
 
     let payload: unknown;
     try {
       payload = JSON.parse(new TextDecoder().decode(rawBody));
     } catch {
-      return errorResponse(400, 'INVALID_REQUEST', requestId);
+      return errorResponse(400, 'INVALID_REQUEST', requestId, {}, NO_PROVIDER_NO_QUOTA);
     }
 
     const validation = validatePayload(payload);
-    if (!validation.ok) return errorResponse(validation.status, validation.code, requestId);
+    if (!validation.ok) return errorResponse(validation.status, validation.code, requestId, {}, NO_PROVIDER_NO_QUOTA);
 
     const client = createServerClient(env, factory);
-    if (isResponse(client)) return errorResponse(500, 'USAGE_LOOKUP_ERROR', requestId);
+    if (isResponse(client)) return errorResponse(500, 'USAGE_LOOKUP_ERROR', requestId, {}, NO_PROVIDER_NO_QUOTA);
 
     if (validation.request.kind === 'usage') {
       return handleUsage(client, validation.request.auth, requestId);
@@ -842,7 +875,7 @@ export function createHandler(dependencies: HandlerDependencies = {}) {
     const providerConfig = resolveProviderConfig(env);
     if (providerConfig instanceof ProviderError) {
       const code = providerConfig.message.includes('clave') ? 'AI_KEY_MISSING' : providerConfig.code;
-      return errorResponse(providerConfig.status, code, requestId);
+      return errorResponse(providerConfig.status, code, requestId, {}, NO_PROVIDER_NO_QUOTA);
     }
 
     if (validation.request.kind === 'commercialAnalysis') {

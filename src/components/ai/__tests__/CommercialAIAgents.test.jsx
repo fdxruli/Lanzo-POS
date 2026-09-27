@@ -381,14 +381,88 @@ describe('commercial AI center', () => {
     expect(await screen.findByRole('heading', { name: 'Ventas netas de $300 con utilidad determinística de $120.' })).toBeInTheDocument();
     expect(screen.getByText('Este resumen proviene de los cálculos de Lanzo-POS.')).toBeInTheDocument();
     expect(screen.getByText(/La narrativa opcional de IA no está disponible/)).toBeInTheDocument();
-    expect(screen.getByText(/AI_NARRATIVE_INVALID_JSON/)).toBeInTheDocument();
+    expect(screen.getByText(/El proveedor devolvió un formato narrativo no válido/)).toBeInTheDocument();
+    expect(screen.getByText(/El uso de IA quedó registrado/)).toBeInTheDocument();
     expect(await screen.findByText('IA no disponible')).toBeInTheDocument();
     expect(screen.getByText('IA no disponible').closest('article')).toHaveTextContent('Usó cuota: Sí');
     expect(runtime.runAgent).toHaveBeenCalledTimes(1);
 
     fireEvent.click(screen.getByRole('button', { name: 'Ver respuesta' }));
-    expect(screen.getAllByText('AI_NARRATIVE_INVALID_JSON').length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText(/formato narrativo no válido/).length).toBeGreaterThanOrEqual(2);
     expect(screen.getAllByText('Utilidad').length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('shows the Lanzo-calculated fallback and confirmed no-use notice after a pre-provider rejection', async () => {
+    runtime.runAgent.mockResolvedValueOnce({
+      response: {
+        status: 'completed',
+        executiveSummary: 'Las ventas netas fueron $300.',
+        explanation: 'Cálculo a partir del historial del periodo.',
+        confidence: 'medium',
+        source: 'cloud',
+        coverage: { validSales: 3 },
+        calculations: [],
+        assumptions: [],
+        limitations: [],
+        recommendations: [],
+        scenarios: [],
+        aiNarrative: {
+          status: 'unavailable',
+          diagnosticCode: 'AI_REQUEST_REJECTED',
+          executiveSummary: null,
+          explanation: null,
+          recommendations: []
+        }
+      },
+      providerCalled: false,
+      quotaOutcome: 'not_consumed',
+      usageStatus: null
+    });
+
+    renderCenter();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), { target: { value: '¿Cómo puedo aumentar mis ventas?' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+
+    expect(await screen.findByRole('heading', { name: 'Las ventas netas fueron $300.' })).toBeInTheDocument();
+    const notice = screen.getByText(/Este intento no consumió un uso de IA/).closest('[role="status"]');
+    expect(notice).toHaveTextContent('Análisis calculado por Lanzo.');
+    expect(notice).toHaveTextContent('Este intento no consumió un uso de IA.');
+    expect(screen.getByText(/solicitud fue rechazada antes de generar una explicación/)).toBeInTheDocument();
+    expect(screen.queryByText('Narrativa generada por IA.')).not.toBeInTheDocument();
+    expect(await screen.findByText('Análisis calculado por Lanzo')).toBeInTheDocument();
+    expect(screen.queryByText(/AI_REQUEST_REJECTED/)).not.toBeInTheDocument();
+  });
+
+  it('does not claim that quota was not consumed when Edge usage is unknown', async () => {
+    runtime.runAgent.mockResolvedValueOnce({
+      response: {
+        status: 'completed',
+        executiveSummary: 'Las ventas netas fueron $300.',
+        explanation: 'Cálculo a partir del historial del periodo.',
+        confidence: 'medium',
+        source: 'cloud',
+        coverage: { validSales: 3 },
+        calculations: [],
+        assumptions: [],
+        limitations: [],
+        recommendations: [],
+        scenarios: [],
+        aiNarrative: { status: 'unavailable' }
+      },
+      providerCalled: null,
+      quotaOutcome: 'not_confirmed',
+      usageStatus: null
+    });
+
+    renderCenter();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), { target: { value: '¿Cómo puedo aumentar mis ventas?' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+
+    expect(await screen.findByRole('heading', { name: 'Las ventas netas fueron $300.' })).toBeInTheDocument();
+    const notice = screen.getByText(/Estamos verificando el estado del uso de IA/).closest('[role="status"]');
+    expect(notice).toBeInTheDocument();
+    expect(screen.queryByText(/no consumió un uso de IA/i)).not.toBeInTheDocument();
+    expect(screen.queryByText('Narrativa generada por IA.')).not.toBeInTheDocument();
   });
 
   it('blocks same-turn duplicate submits so one UI action creates one analysis and one history entry', async () => {
@@ -414,7 +488,7 @@ describe('commercial AI center', () => {
         limitations: [],
         recommendations: [],
         scenarios: [],
-        aiNarrative: { executiveSummary: 'Narrativa válida' }
+        aiNarrative: { status: 'available', executiveSummary: 'Narrativa válida' }
       },
       providerCalled: true,
       quotaOutcome: 'consumed',
@@ -422,6 +496,7 @@ describe('commercial AI center', () => {
     });
 
     expect(await screen.findByText('Narrativa válida')).toBeInTheDocument();
+    expect(screen.getByText('Narrativa generada por IA.')).toBeInTheDocument();
     let raw;
     await waitFor(() => {
       raw = runtime.historyStorage.get('commercial-ai-sales-profitability-history-v1');

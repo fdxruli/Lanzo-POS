@@ -262,6 +262,8 @@ Deno.test('GET es rechazado', async () => {
   assertEquals(response.status, 405);
   assertEquals(body.success, false);
   assertEquals(body.code, 'INVALID_REQUEST');
+  assertEquals(body.providerCalled, false);
+  assertEquals(body.quotaOutcome, 'not_consumed');
 });
 
 Deno.test('content-type incorrecto es rechazado', async () => {
@@ -602,13 +604,15 @@ Deno.test('provider no recibe auth, usage_id ni secretos Supabase', async () => 
 });
 
 Deno.test('provider failure finaliza uso como failed una sola vez', async () => {
-  const client = analysisClient();
+  const client = analysisClient(successBegin(), { success: true, usage_id: 'usage-synthetic-1', status: 'failed' });
   const response = await makeHandler(client, {
     fetchImpl: async () => new Response('provider failure body', { status: 500 })
   })(request({ auth, systemPrompt: 's', userPrompt: 'u' }));
   const body = await json(response);
   assertEquals(response.status, 502);
   assertEquals(body.code, 'AI_REQUEST_FAILED');
+  assertEquals(body.providerCalled, true);
+  assertEquals(body.quotaOutcome, 'not_consumed');
   assertEquals(client.calls.length, 2);
   assertEquals(client.calls[1].args.p_success, false);
   assertEquals((client.calls[1].args.p_error_message as string).includes('provider failure body'), false);
@@ -661,7 +665,10 @@ Deno.test('complete fallido no reintenta y devuelve error controlado', async () 
   let fetchCalls = 0;
   const response = await makeHandler(client, { fetchImpl: async () => { fetchCalls += 1; return chatResponse(); } })(request({ auth, systemPrompt: 's', userPrompt: 'u' }));
   assertEquals(response.status, 500);
-  assertEquals((await json(response)).code, 'USAGE_RESERVATION_ERROR');
+  const body = await json(response);
+  assertEquals(body.code, 'USAGE_RESERVATION_ERROR');
+  assertEquals(body.providerCalled, true);
+  assertEquals(body.quotaOutcome, 'not_confirmed');
   assertEquals(fetchCalls, 1);
   assertEquals(client.calls.filter((call) => call.name === 'complete_ai_agent_analysis').length, 1);
 });
@@ -695,6 +702,8 @@ Deno.test('ventas y rentabilidad acepta sólo contexto estructurado y completa c
   const body = await json(response);
   assertEquals(response.status, 200);
   assertEquals(body.success, true);
+  assertEquals(body.providerCalled, true);
+  assertEquals(body.quotaOutcome, 'consumed');
   assertEquals(body.agentKey, 'salesProfitability');
   assertEquals(client.calls.filter((call) => call.name === 'begin_ai_agent_analysis').length, 1);
   assertEquals(client.calls.filter((call) => call.name === 'complete_ai_agent_analysis').length, 1);
@@ -767,7 +776,10 @@ Deno.test('contrato comercial acepta costos de producto estrictos y rechaza valo
       }
     })(request(structuredCommercialRequestWithProduct(invalidProduct)));
     assertEquals(response.status, 400);
-    assertEquals((await json(response)).code, 'INVALID_REQUEST');
+    const body = await json(response);
+    assertEquals(body.code, 'INVALID_REQUEST');
+    assertEquals(body.providerCalled, false);
+    assertEquals(body.quotaOutcome, 'not_consumed');
     assertEquals(client.calls.length, 0);
   }
 

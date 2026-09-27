@@ -898,7 +898,7 @@ describe('sales profitability agent service', () => {
       requestKey: 'provider-failure-preserves-deterministic'
     });
 
-    expect(result.providerCalled).toBe(true);
+    expect(result.providerCalled).toBe(null);
     expect(result.quotaOutcome).toBe('not_confirmed');
     expect(result.response.status).toBe('completed');
     expect(result.response.current.netSales).toBe(100);
@@ -907,5 +907,71 @@ describe('sales profitability agent service', () => {
     expect(result.response.limitations.join(' ')).toContain('narrativa opcional');
     expect(errorSpy).toHaveBeenCalled();
     errorSpy.mockRestore();
+  });
+
+  it('treats a legacy Edge v39 INVALID_REQUEST as a confirmed pre-provider rejection', async () => {
+    const rejection = Object.assign(new Error('No se pudo procesar la solicitud.'), {
+      code: 'INVALID_REQUEST',
+      statusCode: 400,
+      originalError: { success: false, code: 'INVALID_REQUEST' }
+    });
+    const analyze = vi.fn(async () => { throw rejection; });
+    const runner = createSalesProfitabilityAgentRunner({ repository: repository(), analyze, assertActor: vi.fn() });
+    const result = await runner({
+      question: '¿Cómo puedo aumentar mis ventas?',
+      period: { from: '2026-09-01', to: '2026-09-07', days: 7 },
+      requestKey: 'legacy-edge-invalid-request'
+    });
+
+    expect(analyze).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ providerCalled: false, quotaOutcome: 'not_consumed' });
+    expect(result.response.status).toBe('completed');
+    expect(result.response.current.netSales).toBe(100);
+    expect(result.response.aiNarrative).toMatchObject({
+      status: 'unavailable',
+      diagnosticCode: 'AI_REQUEST_REJECTED'
+    });
+  });
+
+  it.each([
+    ['AI_REQUEST_FAILED', 'not_consumed'],
+    ['AI_EMPTY_RESPONSE', 'not_confirmed'],
+    ['AI_INVALID_RESPONSE', 'consumed'],
+    ['MALFORMED_JSON', 'not_confirmed']
+  ])('preserves authoritative provider and quota telemetry for %s', async (code, quotaOutcome) => {
+    const providerFailure = Object.assign(new Error('narrative unavailable'), {
+      code,
+      statusCode: 502,
+      originalError: { code, providerCalled: true, quotaOutcome }
+    });
+    const analyze = vi.fn(async () => { throw providerFailure; });
+    const runner = createSalesProfitabilityAgentRunner({ repository: repository(), analyze, assertActor: vi.fn() });
+    const result = await runner({
+      question: '¿Mi negocio es rentable?',
+      period: { from: '2026-09-01', to: '2026-09-07', days: 7 },
+      requestKey: `provider-telemetry-${code}`
+    });
+
+    expect(result.providerCalled).toBe(true);
+    expect(result.quotaOutcome).toBe(quotaOutcome);
+    expect(result.response.aiNarrative.status).toBe('unavailable');
+    expect(result.response.current.netSales).toBe(100);
+  });
+
+  it('keeps provider and quota unknown when an unstructured failure cannot establish the Edge outcome', async () => {
+    const analyze = vi.fn(async () => { throw new Error('connection interrupted'); });
+    const runner = createSalesProfitabilityAgentRunner({ repository: repository(), analyze, assertActor: vi.fn() });
+    const result = await runner({
+      question: '¿Mi negocio es rentable?',
+      period: { from: '2026-09-01', to: '2026-09-07', days: 7 },
+      requestKey: 'unknown-edge-execution'
+    });
+
+    expect(result).toMatchObject({ providerCalled: null, quotaOutcome: 'not_confirmed' });
+    expect(result.response.aiNarrative).toMatchObject({
+      status: 'unavailable',
+      diagnosticCode: 'AI_NARRATIVE_UNAVAILABLE'
+    });
+    expect(result.response.current.netSales).toBe(100);
   });
 });

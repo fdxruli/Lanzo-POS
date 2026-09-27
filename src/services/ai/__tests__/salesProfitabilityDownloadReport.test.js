@@ -506,6 +506,31 @@ describe('sales profitability download report', () => {
     });
   });
 
+  it('exports a pre-provider rejection with explicit no-call and no-consumption telemetry', () => {
+    const rejected = {
+      ...completedResult,
+      providerCalled: false,
+      quotaOutcome: 'not_consumed',
+      response: {
+        ...completedResult.response,
+        aiNarrative: {
+          status: 'unavailable',
+          diagnosticCode: 'AI_REQUEST_REJECTED',
+          executiveSummary: null,
+          explanation: null,
+          recommendations: []
+        }
+      }
+    };
+    const report = buildSalesProfitabilityDownloadReport(rejected, requestContext);
+    const sanitized = sanitizeSalesProfitabilityDownloadReport(report);
+
+    expect(report.result).toMatchObject({ providerCalled: false, quotaOutcome: 'not_consumed' });
+    expect(report.ai.status).toBe('unavailable');
+    expect(report.ai.diagnosticCode).toBe('AI_REQUEST_REJECTED');
+    expect(sanitized.result).toMatchObject({ providerCalled: false, quotaOutcome: 'not_consumed' });
+  });
+
   it('upgrades legacy provider-called reports from not_generated to unavailable when narrative content is absent', () => {
     const legacy = buildSalesProfitabilityDownloadReport({
       ...completedResult,

@@ -76,6 +76,7 @@ const NARRATIVE_DIAGNOSTIC_LABELS = Object.freeze({
   AI_NARRATIVE_MISSING_CONTENT: 'La respuesta no incluyó contenido narrativo utilizable.',
   AI_NARRATIVE_UNSAFE_CONTENT: 'El contenido narrativo no superó la validación de seguridad.',
   AI_NARRATIVE_PARTIAL_CONTENT: 'Se omitieron partes de la narrativa que no superaron la validación.',
+  AI_REQUEST_REJECTED: 'La solicitud fue rechazada antes de generar una explicación.',
   AI_NARRATIVE_PROVIDER_ERROR: 'No se pudo confirmar una narrativa utilizable del proveedor.',
   AI_NARRATIVE_UNAVAILABLE: 'No se pudo confirmar una narrativa utilizable.'
 });
@@ -494,7 +495,7 @@ function CoverageEvidence({ response }) {
   );
 }
 
-function NarrativeEvidence({ response }) {
+function NarrativeEvidence({ response, result }) {
   const narrative = response.aiNarrative;
   if (narrative?.status === 'unavailable') {
     const diagnosticCode = normalizeCommercialAINarrativeDiagnosticCode(narrative.diagnosticCode);
@@ -503,7 +504,7 @@ function NarrativeEvidence({ response }) {
         <p className="commercial-ai-muted">La narrativa opcional de IA no está disponible; el reporte determinístico se conserva completo.</p>
         {diagnosticCode && (
           <p className="commercial-ai-muted" role="status">
-            Diagnóstico: {NARRATIVE_DIAGNOSTIC_LABELS[diagnosticCode]} <code>{diagnosticCode}</code>
+            {NARRATIVE_DIAGNOSTIC_LABELS[diagnosticCode]}
           </p>
         )}
       </div>
@@ -514,7 +515,7 @@ function NarrativeEvidence({ response }) {
   }
   return (
     <>
-      {narrative.status === 'available' && (
+      {narrative.status === 'available' && result?.providerCalled === true && (
         <p className="commercial-ai-muted">Narrativa generada por IA.</p>
       )}
       <div className="commercial-ai-narrative">
@@ -529,10 +530,26 @@ function NarrativeEvidence({ response }) {
       </div>
       {narrative.status === 'available' && narrative.diagnosticCode === 'AI_NARRATIVE_PARTIAL_CONTENT' && (
         <p className="commercial-ai-muted" role="status">
-          {NARRATIVE_DIAGNOSTIC_LABELS.AI_NARRATIVE_PARTIAL_CONTENT} <code>AI_NARRATIVE_PARTIAL_CONTENT</code>
+          {NARRATIVE_DIAGNOSTIC_LABELS.AI_NARRATIVE_PARTIAL_CONTENT}
         </p>
       )}
     </>
+  );
+}
+
+function NarrativeStatusNotice({ result }) {
+  if (result?.response?.aiNarrative?.status !== 'unavailable') return null;
+
+  const message = result.quotaOutcome === 'not_consumed'
+    ? 'No pude generar la explicación con IA. Este intento no consumió un uso de IA.'
+    : result.quotaOutcome === 'consumed'
+      ? 'La explicación con IA no estuvo disponible. El uso de IA quedó registrado.'
+      : 'No pude completar la explicación con IA. Estamos verificando el estado del uso de IA.';
+
+  return (
+    <div className="commercial-ai-narrative-notice" role="status">
+      <strong>Análisis calculado por Lanzo.</strong> {message}
+    </div>
   );
 }
 
@@ -563,6 +580,8 @@ function AnalysisResult({ result, onDownload, isDownloading }) {
         )}
       </div>
 
+      <NarrativeStatusNotice result={result} />
+
       {!isLocalAnswer && (
         <>
           <section className="commercial-ai-executive-block">
@@ -587,7 +606,7 @@ function AnalysisResult({ result, onDownload, isDownloading }) {
 
           <section className="commercial-ai-executive-block">
             <h3>Narrativa opcional de IA</h3>
-            <NarrativeEvidence response={response} />
+            <NarrativeEvidence response={response} result={result} />
           </section>
 
           <section className="commercial-ai-executive-block commercial-ai-executive-block--recommendation">
@@ -753,7 +772,8 @@ const historyEntryToAnalysisResult = (entry) => {
       }
     },
     usageStatus: report.usage?.available === true ? report.usage : null,
-    providerCalled: report.result.providerCalled === true,
+    providerCalled: typeof report.result.providerCalled === 'boolean' ? report.result.providerCalled : null,
+    quotaOutcome: report.result.quotaOutcome || 'not_confirmed',
     intentResolution: report.request?.resolution || null
   };
 };
