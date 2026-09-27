@@ -94,13 +94,13 @@ const NARRATIVE_EVIDENCE_KEYS = {
     'comparison.deltaUnitsPerTicket', 'summary.unitsPerTicket',
     'metric:deltaNetSales', 'metric:deltaSalesCount', 'metric:deltaUnits', 'metric:deltaTicket',
     'metric:deltaUnitsPerTicket', 'metric:currentNetSales', 'metric:currentAverageTicket',
-    'metric:currentUnitsPerTicket'
+    'metric:currentUnitsPerTicket', 'metric:currentSalesCount', 'metric:currentUnits'
   ],
   ticket_growth: [
     'summary.unitsPerTicket', 'comparison.deltaTicket', 'comparison.deltaTicketPercent',
     'comparison.deltaUnitsPerTicket', 'comparison.deltaSalesCount', 'comparison.deltaUnits',
     'metric:deltaTicket', 'metric:deltaUnitsPerTicket', 'metric:deltaSalesCount', 'metric:deltaUnits',
-    'metric:currentAverageTicket', 'metric:currentUnitsPerTicket'
+    'metric:currentAverageTicket', 'metric:currentUnitsPerTicket', 'metric:currentSalesCount', 'metric:currentUnits'
   ],
   product_opportunity: [
     'products.risks', 'profitability.costCoverage', 'coverage.costCoverage',
@@ -120,6 +120,185 @@ const NARRATIVE_ENTITY_PREFIXES = {
   ticket_growth: ['product:'],
   product_opportunity: ['product:'],
   sales_trend: ['channel:']
+};
+
+const candidateNumber = (value) => (typeof value === 'number' && Number.isFinite(value) ? value : null);
+
+const candidateEvidence = (keys, availableEvidence) => Array.from(new Set(keys.filter((key) => availableEvidence.has(key))));
+
+const makeOpportunityCandidate = ({ type, key, entity = null, signal, recommendationType, strength, score, metrics, evidenceKeys }) => ({
+  key,
+  type,
+  focus: { type, key: entity || key },
+  entity,
+  signal: Array.isArray(signal) ? signal : [signal],
+  recommendationType,
+  strength,
+  metrics,
+  evidenceKeys,
+  score
+});
+
+export const buildCommercialOpportunityCandidates = (intent, sales = {}) => {
+  const summary = asRecord(sales.summary);
+  const comparison = asRecord(sales.comparison);
+  const signals = asRecord(sales.growthSignals);
+  const availableEvidence = new Set(Array.isArray(sales.evidenceKeys) ? sales.evidenceKeys : []);
+  const candidates = [];
+  const add = (candidate) => {
+    if (candidate.evidenceKeys.length) candidates.push(candidate);
+  };
+
+  const productRows = ['sales_growth', 'product_opportunity'].includes(intent) ? [
+    ...(Array.isArray(signals.productOpportunities) ? signals.productOpportunities : []),
+    ...(Array.isArray(signals.productsGrowing) ? signals.productsGrowing : [])
+  ] : [];
+  const uniqueProducts = new Map();
+  productRows.forEach((row) => {
+    const product = asRecord(row);
+    const name = asSafeText(product.name, null, MAX_PRODUCT_NAME_LENGTH);
+    const key = name ? `product:${name}` : null;
+    if (!key || !availableEvidence.has(key) || (candidateNumber(product.currentSales) ?? 0) <= 0) return;
+    const productSignals = Array.isArray(product.signals) ? product.signals : [];
+    const positiveSignals = productSignals.filter((signal) => [
+      'high_sales_share', 'growing', 'healthy_margin', 'new_in_period'
+    ].includes(signal) && (signal !== 'healthy_margin' || product.costKnown === true));
+    if (!positiveSignals.length) return;
+    const strong = positiveSignals.some((signal) => ['high_sales_share', 'growing', 'healthy_margin'].includes(signal));
+    const evidenceKeys = candidateEvidence([key, 'metric:currentNetSales'], availableEvidence);
+    if (!evidenceKeys.includes(key)) return;
+    const candidate = makeOpportunityCandidate({
+      type: 'product',
+      key,
+      entity: name,
+      signal: positiveSignals,
+      recommendationType: 'growth_experiment',
+      strength: strong ? 'strong' : 'moderate',
+      score: positiveSignals.includes('high_sales_share') ? 100
+        : positiveSignals.includes('growing') ? 90
+          : positiveSignals.includes('healthy_margin') ? 80 : 60,
+      metrics: {
+        currentSales: candidateNumber(product.currentSales),
+        currentShare: candidateNumber(product.currentShare),
+        salesDelta: candidateNumber(product.salesDelta),
+        currentUnits: candidateNumber(product.currentUnits),
+        costKnown: product.costKnown === true
+      },
+      evidenceKeys
+    });
+    const prior = uniqueProducts.get(key);
+    if (!prior || candidate.score > prior.score) uniqueProducts.set(key, candidate);
+  });
+  uniqueProducts.forEach(add);
+
+  if (intent === 'sales_growth' || intent === 'ticket_growth') {
+    const currentAverageTicket = candidateNumber(summary.averageTicket);
+    const deltaTicket = candidateNumber(comparison.deltaTicket);
+    const currentUnitsPerTicket = candidateNumber(summary.unitsPerTicket);
+    const deltaUnitsPerTicket = candidateNumber(comparison.deltaUnitsPerTicket);
+    const ticketEvidence = candidateEvidence([
+      'metric:currentAverageTicket', 'metric:deltaTicket'
+    ], availableEvidence);
+    if (currentAverageTicket !== null && ticketEvidence.some((key) => key.startsWith('metric:'))) {
+      const strong = deltaTicket !== null && deltaTicket > 0;
+      add(makeOpportunityCandidate({
+        type: 'ticket',
+        key: 'ticket',
+        signal: strong ? 'ticket_increased' : 'ticket_baseline_available',
+        recommendationType: 'growth_experiment',
+        strength: strong ? 'strong' : 'moderate',
+        score: strong ? 75 : 35,
+        metrics: { currentAverageTicket, deltaTicket },
+        evidenceKeys: ticketEvidence
+      }));
+    }
+    const unitsEvidence = candidateEvidence([
+      'metric:currentUnitsPerTicket', 'metric:deltaUnitsPerTicket'
+    ], availableEvidence);
+    if (currentUnitsPerTicket !== null && unitsEvidence.some((key) => key.startsWith('metric:'))) {
+      const strong = deltaUnitsPerTicket !== null && deltaUnitsPerTicket > 0;
+      add(makeOpportunityCandidate({
+        type: 'units_per_ticket',
+        key: 'units_per_ticket',
+        signal: strong ? 'units_per_ticket_increased' : 'units_per_ticket_baseline_available',
+        recommendationType: 'growth_experiment',
+        strength: strong ? 'strong' : 'moderate',
+        score: strong ? 70 : 30,
+        metrics: { currentUnitsPerTicket, deltaUnitsPerTicket },
+        evidenceKeys: unitsEvidence
+      }));
+    }
+  }
+
+  if (intent === 'sales_growth') {
+    const deltaSalesCount = candidateNumber(comparison.deltaSalesCount);
+    const currentSalesCount = candidateNumber(summary.salesCount);
+    const ticketEvidence = candidateEvidence(['metric:deltaSalesCount', 'metric:currentSalesCount'], availableEvidence);
+    if (ticketEvidence.length && (deltaSalesCount !== null || currentSalesCount !== null)) {
+      const strong = deltaSalesCount !== null && deltaSalesCount > 0;
+      add(makeOpportunityCandidate({
+        type: 'tickets',
+        key: 'tickets',
+        signal: strong ? 'tickets_increased' : 'ticket_count_baseline_available',
+        recommendationType: strong ? 'optimization' : 'investigation',
+        strength: strong ? 'strong' : 'moderate',
+        score: strong ? 65 : 20,
+        metrics: { currentSalesCount, deltaSalesCount },
+        evidenceKeys: ticketEvidence
+      }));
+    }
+
+    const channelRows = Array.isArray(signals.channelChanges) ? signals.channelChanges : [];
+    channelRows.forEach((row) => {
+      const channel = asRecord(row);
+      const name = asSafeText(channel.channel, null, 80);
+      const entityKey = name ? `channel:${name}` : null;
+      if (!entityKey || !availableEvidence.has(entityKey)) return;
+      const currentSales = candidateNumber(channel.currentSales);
+      const previousSales = candidateNumber(channel.previousSales);
+      const salesDelta = candidateNumber(channel.salesDelta);
+      const disappeared = currentSales === 0 && previousSales !== null && previousSales > 0;
+      const positive = salesDelta !== null && salesDelta > 0;
+      const recommendationType = disappeared ? 'investigation' : positive ? 'optimization' : 'investigation';
+      const candidate = makeOpportunityCandidate({
+        type: 'channel',
+        key: entityKey,
+        entity: name,
+        signal: disappeared ? 'channel_sales_disappeared' : positive ? 'channel_sales_increased' : 'channel_change_to_check',
+        recommendationType,
+        strength: positive ? 'strong' : 'moderate',
+        score: disappeared ? 15 : positive ? 55 : 18,
+        metrics: {
+          currentSales,
+          previousSales,
+          salesDelta,
+          currentShare: candidateNumber(channel.currentShare),
+          previousShare: candidateNumber(channel.previousShare),
+          deltaShare: candidateNumber(channel.deltaShare)
+        },
+        evidenceKeys: candidateEvidence([entityKey], availableEvidence)
+      });
+      add(candidate);
+    });
+  }
+
+  const sorted = candidates
+    .sort((left, right) => right.score - left.score || left.key.localeCompare(right.key));
+  const selected = sorted.slice(0, intent === 'sales_growth' ? 7 : 4)
+    .map(({ score: _score, ...candidate }) => candidate);
+  const actionableCandidates = selected.filter((candidate) => candidate.strength === 'strong'
+    && ['growth_experiment', 'optimization'].includes(candidate.recommendationType)).length;
+  const strongCount = intent === 'ticket_growth'
+    ? selected.filter((candidate) => candidate.strength === 'strong'
+      && ['ticket', 'units_per_ticket'].includes(candidate.type)).length
+    : actionableCandidates;
+  const minimumUsefulRecommendations = intent === 'sales_growth'
+    ? Math.min(2, strongCount)
+    : intent === 'ticket_growth'
+      ? Math.min(1, strongCount || selected.filter((candidate) => ['ticket', 'units_per_ticket'].includes(candidate.type)).length)
+      : intent === 'product_opportunity' ? Math.min(1, selected.length) : 0;
+
+  return { candidates: selected, minimumUsefulRecommendations };
 };
 
 const narrativeImpact = (row) => {
@@ -232,6 +411,13 @@ const buildNarrativeEvidence = (intent, sales) => {
     ...selectedEntityKeys,
     ...(NARRATIVE_EVIDENCE_KEYS[intent] || []).filter((key) => availableEvidence.has(key))
   ].filter((key, index, values) => values.indexOf(key) === index).slice(0, 24);
+  const opportunityPlan = buildCommercialOpportunityCandidates(intent, {
+    summary: sales.summary,
+    comparison,
+    growthSignals,
+    evidenceKeys,
+    coverage: sales.coverage
+  });
 
   return {
     summary: pickOwnFields(asRecord(sales.summary), summaryFields),
@@ -240,6 +426,8 @@ const buildNarrativeEvidence = (intent, sales) => {
     comparison: pickOwnFields(comparison, comparisonFields),
     growthSignals,
     evidenceKeys,
+    opportunityCandidates: opportunityPlan.candidates,
+    minimumUsefulRecommendations: opportunityPlan.minimumUsefulRecommendations,
     coverage: pickOwnFields(asRecord(sales.coverage), [
       'validSales', 'comparisonAvailable', 'comparisonDataAvailable', 'growthDataComplete',
       'salesDataComplete', 'itemsComplete', 'paginationComplete', 'sourceComplete', 'complete'
@@ -495,6 +683,8 @@ const buildEvidenceKeys = (source = {}) => {
     currentNetSales: pickNumber(overview, ['netSales', 'net_sales', 'sales', 'revenue']) ?? pickNumber(growthSignals, ['currentNetSales']),
     currentAverageTicket: pickNumber(overview, ['averageTicket', 'average_ticket', 'avg_ticket']) ?? pickNumber(growthSignals, ['currentAverageTicket']),
     currentUnitsPerTicket: pickNumber(overview, ['unitsPerTicket', 'units_per_ticket']) ?? pickNumber(growthSignals, ['currentUnitsPerTicket']),
+    currentSalesCount: pickNumber(overview, ['salesCount', 'sales_count', 'orders', 'order_count']) ?? pickNumber(growthSignals, ['currentSalesCount']),
+    currentUnits: pickNumber(overview, ['units', 'items', 'items_sold']) ?? pickNumber(growthSignals, ['currentUnits']),
     costCoverage: pickNumber(coverage, ['costCoverage', 'cost_coverage'])
   };
   Object.entries(metricValues).forEach(([key, metric]) => {

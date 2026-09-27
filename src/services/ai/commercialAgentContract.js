@@ -336,7 +336,8 @@ export const createFeatureNotReadyResponse = ({ agentKey, intent } = {}) => ({
 
 export const validateCommercialAgentResponse = (response, {
   expectedAgentKey = null,
-  requireNarrativeUtility = false
+  requireNarrativeUtility = false,
+  minimumUsefulRecommendations = null
 } = {}) => {
   if (!isRecord(response)) return invalid('RESPONSE_OBJECT_REQUIRED');
   if (response.version !== COMMERCIAL_AGENT_RESPONSE_VERSION) return invalid('UNSUPPORTED_RESPONSE_VERSION');
@@ -356,6 +357,9 @@ export const validateCommercialAgentResponse = (response, {
     if (!isRecord(response.aiNarrative)) return invalid('INVALID_AI_NARRATIVE');
     const narrative = response.aiNarrative;
     if (!VALID_AI_NARRATIVE_STATUSES.has(narrative.status)) return invalid('INVALID_AI_NARRATIVE_STATUS');
+    if (narrative.directAnswer !== undefined && narrative.directAnswer !== null && typeof narrative.directAnswer !== 'string') {
+      return invalid('INVALID_AI_NARRATIVE_CONTENT');
+    }
     if (narrative.executiveSummary !== undefined && narrative.executiveSummary !== null && typeof narrative.executiveSummary !== 'string') {
       return invalid('INVALID_AI_NARRATIVE_CONTENT');
     }
@@ -371,7 +375,11 @@ export const validateCommercialAgentResponse = (response, {
     if (Array.isArray(narrative.recommendations) && narrative.recommendations.some((item) => {
       if (!isRecord(item)) return true;
       if (!requireNarrativeUtility) return false;
-      return typeof item.action !== 'string' || !item.action.trim()
+      return !isRecord(item.focus)
+        || !['product', 'channel', 'ticket', 'units_per_ticket', 'tickets', 'general'].includes(String(item.focus.type))
+        || typeof item.focus.key !== 'string' || !item.focus.key.trim()
+        || !['growth_experiment', 'investigation', 'data_quality', 'optimization'].includes(String(item.recommendationType))
+        || typeof item.action !== 'string' || !item.action.trim()
         || typeof item.measurement !== 'string' || !item.measurement.trim()
         || !Array.isArray(item.evidenceKeys) || item.evidenceKeys.length === 0;
     })) return invalid('INVALID_AI_NARRATIVE_CONTENT');
@@ -380,11 +388,37 @@ export const validateCommercialAgentResponse = (response, {
       return invalid('INVALID_AI_NARRATIVE_DIAGNOSTIC');
     }
     const hasNarrativeContent = (
+      typeof narrative.directAnswer === 'string' && narrative.directAnswer.trim().length > 0
+    ) || (
       typeof narrative.executiveSummary === 'string' && narrative.executiveSummary.trim().length > 0
     ) || (
       typeof narrative.explanation === 'string' && narrative.explanation.trim().length > 0
     ) || (Array.isArray(narrative.recommendations) && narrative.recommendations.length > 0);
     if (narrative.status === 'available' && !hasNarrativeContent) return invalid('AI_NARRATIVE_CONTENT_REQUIRED');
+    if (narrative.status === 'available' && requireNarrativeUtility
+      && (typeof narrative.directAnswer !== 'string' || !narrative.directAnswer.trim())) {
+      return invalid('AI_NARRATIVE_DIRECT_ANSWER_REQUIRED');
+    }
+    if (narrative.status === 'available' && requireNarrativeUtility) {
+      const requiredCount = Number.isInteger(minimumUsefulRecommendations)
+        ? minimumUsefulRecommendations
+        : (Number.isInteger(response.minimumUsefulRecommendations) ? response.minimumUsefulRecommendations : 0);
+      const recommendations = Array.isArray(narrative.recommendations) ? narrative.recommendations : [];
+      const focusKeys = recommendations.map((item) => `${item.focus.type}:${item.focus.key}`);
+      if (recommendations.length < requiredCount || new Set(focusKeys).size !== focusKeys.length) {
+        return invalid('AI_NARRATIVE_LOW_VALUE');
+      }
+      const candidates = Array.isArray(response.opportunityCandidates) ? response.opportunityCandidates : [];
+      if (recommendations.some((item) => !candidates.some((candidate) => (
+        isRecord(candidate)
+        && isRecord(candidate.focus)
+        && candidate.focus.type === item.focus.type
+        && candidate.focus.key === item.focus.key
+        && candidate.recommendationType === item.recommendationType
+        && Array.isArray(candidate.evidenceKeys)
+        && item.evidenceKeys.every((key) => candidate.evidenceKeys.includes(key))
+      )))) return invalid('AI_NARRATIVE_GROUNDING_INVALID');
+    }
     if (narrative.status === 'unavailable'
       && (hasNarrativeContent || !normalizeCommercialAINarrativeDiagnosticCode(narrative.diagnosticCode))) {
       return invalid('INVALID_AI_NARRATIVE_UNAVAILABLE');

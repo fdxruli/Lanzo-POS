@@ -190,6 +190,7 @@ describe('sales profitability agent service', () => {
     expect(result.response.aiNarrative).toEqual({
       status: 'unavailable',
       diagnosticCode: 'AI_NARRATIVE_INVALID_JSON',
+      directAnswer: null,
       executiveSummary: null,
       explanation: null,
       recommendations: []
@@ -622,6 +623,8 @@ describe('sales profitability agent service', () => {
   it('preserves Phase 2 action, measurement, evidence and provider confidence', async () => {
     const recommendation = {
       title: 'Probar mayor exposición de Producto A',
+      focus: { type: 'product', key: 'Producto A' },
+      recommendationType: 'growth_experiment',
       explanation: 'Producto A tiene una señal de ventas actual relevante.',
       action: 'Probar una ubicación más visible durante una semana.',
       measurement: 'Comparar unidades diarias con la semana previa.',
@@ -634,7 +637,9 @@ describe('sales profitability agent service', () => {
       version: 1,
       agentKey: 'salesProfitability',
       status: 'completed',
+      intent: 'sales_growth',
       executiveSummary: 'Hay una oportunidad concreta para probar con Producto A.',
+      directAnswer: 'Prueba mayor visibilidad para Producto A y compara sus unidades con la semana previa.',
       explanation: 'La señal de Producto A justifica una prueba pequeña y medible.',
       facts: [],
       calculations: [],
@@ -647,8 +652,18 @@ describe('sales profitability agent service', () => {
       coverage: { complete: true },
       citations: [],
       actionDrafts: [],
+      opportunityCandidates: [{
+        key: 'product:Producto A',
+        type: 'product',
+        focus: { type: 'product', key: 'Producto A' },
+        recommendationType: 'growth_experiment',
+        strength: 'strong',
+        evidenceKeys: ['product:Producto A']
+      }],
+      minimumUsefulRecommendations: 1,
       aiNarrative: {
         status: 'available',
+        directAnswer: 'Prueba mayor visibilidad para Producto A y compara sus unidades con la semana previa.',
         executiveSummary: 'Hay una oportunidad concreta para probar con Producto A.',
         explanation: 'La señal de Producto A justifica una prueba pequeña y medible.',
         recommendations: [recommendation],
@@ -674,6 +689,7 @@ describe('sales profitability agent service', () => {
 
     expect(result.response.aiNarrative).toMatchObject({
       status: 'available',
+      directAnswer: 'Prueba mayor visibilidad para Producto A y compara sus unidades con la semana previa.',
       confidence: 'high',
       recommendations: [{
         title: 'Probar mayor exposición de Producto A',

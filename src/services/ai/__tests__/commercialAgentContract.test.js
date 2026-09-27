@@ -127,6 +127,8 @@ describe('commercial AI agent contract', () => {
   it('requires action, measurement, grounded keys and preserves confidence for Phase 2 narratives', () => {
     const recommendation = {
       title: 'Probar mayor exposición de Producto A',
+      focus: { type: 'product', key: 'Producto A' },
+      recommendationType: 'growth_experiment',
       explanation: 'Producto A tiene una señal de ventas actual.',
       action: 'Probar una ubicación más visible durante una semana.',
       measurement: 'Comparar unidades diarias con la semana previa.',
@@ -137,15 +139,34 @@ describe('commercial AI agent contract', () => {
     };
     const narrative = {
       status: 'available',
+      directAnswer: 'Prueba mayor exposición para Producto A y compara sus unidades con la semana anterior.',
       executiveSummary: 'Hay una prueba comercial que priorizar.',
       explanation: 'Producto A concentra una señal relevante.',
       recommendations: [recommendation],
       confidence: 'medium'
     };
-    expect(validateCommercialAgentResponse(baseResponse({ aiNarrative: narrative }), {
+    expect(validateCommercialAgentResponse(baseResponse({
+      intent: 'sales_growth',
+      opportunityCandidates: [{
+        key: 'product:Producto A',
+        type: 'product',
+        focus: { type: 'product', key: 'Producto A' },
+        recommendationType: 'growth_experiment',
+        evidenceKeys: ['product:Producto A']
+      }],
+      minimumUsefulRecommendations: 1,
+      aiNarrative: narrative
+    }), {
       requireNarrativeUtility: true
     })).toMatchObject({ valid: true });
     expect(validateCommercialAgentResponse(baseResponse({
+      intent: 'sales_growth',
+      opportunityCandidates: [{
+        key: 'product:Producto A', type: 'product',
+        focus: { type: 'product', key: 'Producto A' },
+        recommendationType: 'growth_experiment', evidenceKeys: ['product:Producto A']
+      }],
+      minimumUsefulRecommendations: 1,
       aiNarrative: {
         ...narrative,
         recommendations: [{ ...recommendation, measurement: '' }]

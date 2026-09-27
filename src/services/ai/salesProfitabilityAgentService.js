@@ -134,6 +134,8 @@ const ALLOWED_EVIDENCE_PREFIXES = Object.freeze([
   'comparison.',
   'current.',
   'product:',
+  'channel:',
+  'metric:',
   'priceSimulation.',
   'promotionSimulation.',
   'comboOpportunities.'
@@ -152,6 +154,15 @@ const normalizeNarrativeRecommendations = (recommendations = [], requireUtility 
       explanation: String(recommendation.explanation || '').trim(),
       action: typeof recommendation.action === 'string' ? recommendation.action.trim() : '',
       measurement: typeof recommendation.measurement === 'string' ? recommendation.measurement.trim() : '',
+      ...(recommendation.focus && typeof recommendation.focus === 'object' && !Array.isArray(recommendation.focus)
+        ? { focus: {
+          type: String(recommendation.focus.type || '').trim(),
+          key: String(recommendation.focus.key || '').trim()
+        } }
+        : {}),
+      ...(typeof recommendation.recommendationType === 'string'
+        ? { recommendationType: recommendation.recommendationType.trim() }
+        : {}),
       expectedImpact: String(recommendation.expectedImpact || '').trim(),
       priority: ['high', 'medium', 'low'].includes(recommendation.priority)
         ? recommendation.priority
@@ -168,6 +179,7 @@ const normalizeNarrativeRecommendations = (recommendations = [], requireUtility 
       && recommendation.explanation
       && recommendation.expectedImpact
       && (!requireUtility || (recommendation.action && recommendation.measurement))
+      && (!requireUtility || (recommendation.focus?.type && recommendation.focus?.key && recommendation.recommendationType))
       && recommendation.evidenceKeys.length > 0
     ))
 );
@@ -206,10 +218,15 @@ const mergeProviderResponse = (deterministic, providerResponse, intent = null) =
   const hasNestedNarrative = response.aiNarrative && typeof response.aiNarrative === 'object'
     && !Array.isArray(response.aiNarrative);
   const narrative = hasNestedNarrative ? response.aiNarrative : response;
+  const directAnswer = String(
+    hasNestedNarrative
+      ? (narrative.directAnswer || '')
+      : (response.directAnswer || '')
+  ).trim() || null;
   const executiveSummary = String(
     hasNestedNarrative
-      ? (narrative.executiveSummary || narrative.answer || '')
-      : (response.executiveSummary || response.answer || '')
+      ? (narrative.executiveSummary || narrative.answer || directAnswer || '')
+      : (response.executiveSummary || response.answer || directAnswer || '')
   ).trim() || null;
   const explanation = String(narrative.explanation || '').trim() || null;
   const providerRecommendations = normalizeNarrativeRecommendations(
@@ -224,10 +241,17 @@ const mergeProviderResponse = (deterministic, providerResponse, intent = null) =
 
   return {
     ...deterministic,
+    ...(Array.isArray(response.opportunityCandidates)
+      ? { opportunityCandidates: response.opportunityCandidates }
+      : {}),
+    ...(Number.isInteger(response.minimumUsefulRecommendations)
+      ? { minimumUsefulRecommendations: response.minimumUsefulRecommendations }
+      : {}),
     recommendations: deterministic.recommendations,
     aiNarrative: {
       status,
       ...(diagnosticCode ? { diagnosticCode } : {}),
+      directAnswer: status === 'available' ? directAnswer : null,
       executiveSummary: status === 'available' ? executiveSummary : null,
       explanation: status === 'available' ? explanation : null,
       recommendations: status === 'available' ? providerRecommendations : [],

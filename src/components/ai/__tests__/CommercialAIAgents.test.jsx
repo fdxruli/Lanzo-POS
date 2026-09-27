@@ -312,8 +312,8 @@ describe('commercial AI center', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Ver respuesta' }));
     expect(screen.getAllByText('Resumen determinístico guardado')).toHaveLength(2);
-    expect(screen.getAllByText('Hechos determinísticos')).toHaveLength(2);
-    expect(screen.getAllByText('Narrativa opcional de IA')).toHaveLength(2);
+    expect(screen.getAllByText('Datos que respaldan esta respuesta')).toHaveLength(2);
+    expect(screen.queryByText('Narrativa opcional de IA')).not.toBeInTheDocument();
   });
 
   it('labels a response as Caché only when a cache-hit flag is explicit', async () => {
@@ -380,7 +380,7 @@ describe('commercial AI center', () => {
 
     expect(await screen.findByRole('heading', { name: 'Ventas netas de $300 con utilidad determinística de $120.' })).toBeInTheDocument();
     expect(screen.getByText('Este resumen proviene de los cálculos de Lanzo-POS.')).toBeInTheDocument();
-    expect(screen.getByText(/La narrativa opcional de IA no está disponible/)).toBeInTheDocument();
+    expect(screen.getByText(/La respuesta de Lía no está disponible/)).toBeInTheDocument();
     expect(screen.getByText(/El proveedor devolvió un formato narrativo no válido/)).toBeInTheDocument();
     expect(screen.getByText(/El uso de IA quedó registrado/)).toBeInTheDocument();
     expect(await screen.findByText('IA no disponible')).toBeInTheDocument();
@@ -429,7 +429,7 @@ describe('commercial AI center', () => {
     expect(notice).toHaveTextContent('Este intento no consumió un uso de IA.');
     expect(screen.getByText(/solicitud fue rechazada antes de generar una explicación/)).toBeInTheDocument();
     expect(screen.queryByText('Narrativa generada por IA.')).not.toBeInTheDocument();
-    expect(await screen.findByText('Análisis calculado por Lanzo')).toBeInTheDocument();
+    expect(screen.getAllByText('Análisis calculado por Lanzo').length).toBeGreaterThan(0);
     expect(screen.queryByText(/AI_REQUEST_REJECTED/)).not.toBeInTheDocument();
   });
 
@@ -534,7 +534,7 @@ describe('commercial AI center', () => {
     });
 
     expect(await screen.findByText('Narrativa válida')).toBeInTheDocument();
-    expect(screen.getByText('Narrativa generada por IA.')).toBeInTheDocument();
+    expect(screen.getByText('Respuesta de Lía')).toBeInTheDocument();
     let raw;
     await waitFor(() => {
       raw = runtime.historyStorage.get('commercial-ai-sales-profitability-history-v1');
@@ -548,6 +548,7 @@ describe('commercial AI center', () => {
     runtime.runAgent.mockResolvedValueOnce({
       response: {
         status: 'completed',
+        intent: 'sales_growth',
         executiveSummary: 'Hay una prueba concreta para Producto A.',
         explanation: 'Los hechos calculados se muestran aparte.',
         confidence: 'medium',
@@ -558,13 +559,24 @@ describe('commercial AI center', () => {
         limitations: [],
         recommendations: [],
         scenarios: [],
+        opportunityCandidates: [{
+          key: 'product:Producto A',
+          type: 'product',
+          focus: { type: 'product', key: 'Producto A' },
+          recommendationType: 'growth_experiment',
+          evidenceKeys: ['product:Producto A']
+        }],
+        minimumUsefulRecommendations: 1,
         aiNarrative: {
           status: 'available',
+          directAnswer: 'Prueba una ubicación más visible para Producto A y mide sus unidades durante una semana.',
           executiveSummary: 'Hay una prueba concreta para Producto A.',
           explanation: 'La señal de Producto A justifica una prueba acotada.',
           confidence: 'high',
           recommendations: [{
             title: 'Probar mayor visibilidad para Producto A',
+            focus: { type: 'product', key: 'Producto A' },
+            recommendationType: 'growth_experiment',
             explanation: 'Producto A tiene una señal de ventas actual relevante.',
             action: 'Probar una ubicación más visible durante una semana.',
             measurement: 'Comparar unidades diarias con la semana previa.',
@@ -585,7 +597,8 @@ describe('commercial AI center', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
 
-    expect(await screen.findByText('Recomendaciones para probar')).toBeInTheDocument();
+    expect(await screen.findByText('Oportunidades priorizadas por Lía')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Prueba una ubicación más visible para Producto A y mide sus unidades durante una semana.' })).toBeInTheDocument();
     expect(screen.getByText('Por qué:')).toBeInTheDocument();
     expect(screen.getByText('Qué probar:')).toBeInTheDocument();
     expect(screen.getByText('Qué medir:')).toBeInTheDocument();
@@ -997,6 +1010,74 @@ describe('commercial AI center', () => {
     expect(screen.getByText('El dato determinístico usa 10 tickets válidos.')).toBeInTheDocument();
     expect(screen.getByText('Limitación: la oportunidad muestra correlación histórica de tickets; no garantiza demanda futura.')).toBeInTheDocument();
     expect(screen.getByText('La IA describe cuatro tickets.')).toBeInTheDocument();
+  });
+
+  it('puts Lía’s direct answer and grounded actions before the deterministic evidence', async () => {
+    runtime.runAgent.mockResolvedValueOnce({
+      response: {
+        status: 'completed',
+        intent: 'sales_growth',
+        executiveSummary: 'El periodo registró ventas por $300.',
+        explanation: 'El producto aparece con ventas en el periodo comparable y hay espacio para probar una mejor exposición.',
+        confidence: 'medium',
+        source: 'cloud',
+        coverage: { validSales: 3, costCoverage: 1 },
+        facts: [],
+        calculations: [{ label: 'Ventas del periodo', value: 300, formula: 'suma de ventas válidas' }],
+        assumptions: [],
+        limitations: [],
+        recommendations: [],
+        scenarios: [],
+        opportunityCandidates: [{
+          key: 'product:Producto A',
+          type: 'product',
+          focus: { type: 'product', key: 'Producto A' },
+          recommendationType: 'growth_experiment',
+          evidenceKeys: ['product:Producto A']
+        }],
+        minimumUsefulRecommendations: 1,
+        aiNarrative: {
+          status: 'available',
+          directAnswer: 'Prueba dar mayor visibilidad a Producto A y mide si aumentan sus unidades vendidas.',
+          explanation: 'Producto A cuenta con una señal observada que permite hacer una prueba pequeña.',
+          confidence: 'medium',
+          recommendations: [{
+            title: 'Probar más visibilidad para Producto A',
+            focus: { type: 'product', key: 'Producto A' },
+            recommendationType: 'growth_experiment',
+            explanation: 'Producto A registró ventas en el periodo y puede evaluarse con una prueba controlada.',
+            action: 'Destaca Producto A en una ubicación visible durante una semana.',
+            measurement: 'Compara las unidades de Producto A con la semana comparable.',
+            expectedImpact: 'Permitirá observar si la exposición coincide con más unidades.',
+            priority: 'high',
+            evidenceKeys: ['product:Producto A'],
+            requiresConfirmation: true
+          }]
+        }
+      },
+      providerCalled: true,
+      quotaOutcome: 'consumed',
+      usageStatus: { used: 3, limit: 15, remaining: 12 }
+    });
+
+    renderCenter();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), { target: { value: '¿Cómo puedo aumentar mis ventas?' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+
+    const answer = await screen.findByRole('heading', {
+      name: 'Prueba dar mayor visibilidad a Producto A y mide si aumentan sus unidades vendidas.'
+    });
+    const action = screen.getByText('Destaca Producto A en una ubicación visible durante una semana.');
+    const measurement = screen.getByText('Compara las unidades de Producto A con la semana comparable.');
+    const evidence = screen.getByRole('heading', { name: 'Datos que respaldan esta respuesta' });
+    const appearsBefore = (earlier, later) => Boolean(earlier.compareDocumentPosition(later) & Node.DOCUMENT_POSITION_FOLLOWING);
+
+    expect(screen.getByText('Respuesta de Lía')).toBeInTheDocument();
+    expect(appearsBefore(answer, action)).toBe(true);
+    expect(appearsBefore(action, measurement)).toBe(true);
+    expect(appearsBefore(measurement, evidence)).toBe(true);
+    expect(screen.getByText(/Análisis calculado por Lanzo:/)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Cálculos' })).toBeInTheDocument();
   });
 
   it('does not load sales or invoke the agent for identity and out-of-scope questions', async () => {

@@ -497,13 +497,13 @@ function CoverageEvidence({ response }) {
   );
 }
 
-function NarrativeEvidence({ response, result }) {
+function NarrativeEvidence({ response }) {
   const narrative = response.aiNarrative;
   if (narrative?.status === 'unavailable') {
     const diagnosticCode = normalizeCommercialAINarrativeDiagnosticCode(narrative.diagnosticCode);
     return (
       <div>
-        <p className="commercial-ai-muted">La narrativa opcional de IA no está disponible; el reporte determinístico se conserva completo.</p>
+        <p className="commercial-ai-muted">La respuesta de Lía no está disponible; el análisis calculado por Lanzo se conserva completo.</p>
         {diagnosticCode && (
           <p className="commercial-ai-muted" role="status">
             {NARRATIVE_DIAGNOSTIC_LABELS[diagnosticCode]}
@@ -512,24 +512,28 @@ function NarrativeEvidence({ response, result }) {
       </div>
     );
   }
-  if (!narrative?.executiveSummary && !narrative?.explanation && !asArray(narrative?.recommendations).length) {
+  if (!narrative?.directAnswer && !narrative?.executiveSummary && !narrative?.explanation && !asArray(narrative?.recommendations).length) {
     return <p className="commercial-ai-muted">No se generó una narrativa IA para esta consulta. Los datos visibles son determinísticos.</p>;
   }
   return (
     <>
-      {narrative.status === 'available' && result?.providerCalled === true && (
-        <p className="commercial-ai-muted">Narrativa generada por IA.</p>
-      )}
       <div className="commercial-ai-narrative">
-        {narrative.executiveSummary && <p><strong>{narrative.executiveSummary}</strong></p>}
-        {narrative.explanation && <p>{narrative.explanation}</p>}
         {asArray(narrative.recommendations).length > 0 && (
           <div className="commercial-ai-narrative__recommendations">
-            <strong>Recomendaciones para probar</strong>
+            <strong>Oportunidades priorizadas por Lía</strong>
             <div className="commercial-ai-narrative__recommendation-list">
               {asArray(narrative.recommendations).map((item) => (
                 <article className="commercial-ai-narrative__recommendation" key={`${item.title}-${item.priority || 'medium'}`}>
-                  <div><b>{item.title}</b><span>Prioridad {priorityLabel(item.priority)}</span></div>
+                  <div>
+                    <b>{item.title}</b>
+                    <span>
+                      {item.recommendationType === 'investigation' || item.recommendationType === 'data_quality'
+                        ? 'Revisión'
+                        : item.recommendationType === 'optimization' ? 'Optimización' : 'Prueba de crecimiento'}
+                      {item.focus?.key ? ` · ${item.focus.type === 'product' ? 'Producto' : item.focus.type === 'channel' ? 'Canal' : 'Métrica'}: ${item.focus.key}` : ''}
+                      {` · Prioridad ${priorityLabel(item.priority)}`}
+                    </span>
+                  </div>
                   <p><strong>Por qué:</strong> {item.explanation}</p>
                   {item.action && <p><strong>Qué probar:</strong> {item.action}</p>}
                   {item.measurement && <p><strong>Qué medir:</strong> {item.measurement}</p>}
@@ -539,6 +543,7 @@ function NarrativeEvidence({ response, result }) {
             </div>
           </div>
         )}
+        {narrative.explanation && <p><strong>Por qué Lía llega a esta conclusión:</strong> {narrative.explanation}</p>}
         {narrative.confidence && <small>Confianza de esta interpretación: {confidenceLabel(narrative.confidence)}.</small>}
       </div>
       {narrative.status === 'available' && narrative.diagnosticCode === 'AI_NARRATIVE_PARTIAL_CONTENT' && (
@@ -571,6 +576,11 @@ function NarrativeStatusNotice({ result }) {
 function AnalysisResult({ result, onDownload, isDownloading }) {
   const response = result?.response || null;
   const isLocalAnswer = ['out_of_scope', 'not_ready', 'local_answer'].includes(response?.status);
+  const narrative = response?.aiNarrative || null;
+  const directAnswer = typeof narrative?.directAnswer === 'string' && narrative.directAnswer.trim()
+    ? narrative.directAnswer
+    : (typeof narrative?.executiveSummary === 'string' && narrative.executiveSummary.trim() ? narrative.executiveSummary : null);
+  const narrativeAvailable = narrative?.status === 'available' && Boolean(directAnswer);
   if (!response) {
     return (
       <div className="commercial-ai-result commercial-ai-result--empty" aria-live="polite">
@@ -587,7 +597,10 @@ function AnalysisResult({ result, onDownload, isDownloading }) {
   return (
     <div className="commercial-ai-result" aria-live="polite">
       <div className="commercial-ai-result__header">
-        <div><p className="commercial-ai-eyebrow">Conclusión</p><h2>{response.executiveSummary || response.answer}</h2></div>
+        <div>
+          <p className="commercial-ai-eyebrow">{isLocalAnswer ? 'Respuesta' : narrativeAvailable ? 'Respuesta de Lía' : 'Análisis calculado por Lanzo'}</p>
+          <h2>{narrativeAvailable ? directAnswer : (response.executiveSummary || response.answer)}</h2>
+        </div>
         {!isLocalAnswer && (
           <button type="button" className="commercial-ai-download" onClick={onDownload} disabled={isDownloading} aria-label="Descargar reporte completo">
             <Download size={16} aria-hidden="true" /> {isDownloading ? 'Preparando descarga…' : 'Descargar reporte completo'}
@@ -599,13 +612,25 @@ function AnalysisResult({ result, onDownload, isDownloading }) {
 
       {!isLocalAnswer && (
         <>
-          <section className="commercial-ai-executive-block">
-            <h3>Hechos determinísticos</h3>
-            <p>{response.explanation || 'No hay explicación adicional disponible.'}</p>
-          </section>
+          {narrativeAvailable ? (
+            <section className="commercial-ai-executive-block commercial-ai-executive-block--recommendation">
+              <h3>Qué probar</h3>
+              <NarrativeEvidence response={response} />
+            </section>
+          ) : (
+            <section className="commercial-ai-executive-block">
+              <h3>Análisis calculado por Lanzo</h3>
+              <p>{response.explanation || 'No hay explicación adicional disponible.'}</p>
+              {narrative?.status === 'unavailable' && <NarrativeEvidence response={response} />}
+            </section>
+          )}
 
           <section className="commercial-ai-executive-block">
-            <h3>Hechos y resultados por intención</h3>
+            <h3>Datos que respaldan esta respuesta</h3>
+            {narrativeAvailable && response.explanation && (
+              <p><strong>Análisis calculado por Lanzo:</strong> {response.explanation}</p>
+            )}
+            <h4>Hechos y resultados por intención</h4>
             <IntentEvidence response={response} />
           </section>
 
@@ -619,13 +644,8 @@ function AnalysisResult({ result, onDownload, isDownloading }) {
             <CoverageEvidence response={response} />
           </section>
 
-          <section className="commercial-ai-executive-block">
-            <h3>Narrativa opcional de IA</h3>
-            <NarrativeEvidence response={response} result={result} />
-          </section>
-
           <section className="commercial-ai-executive-block commercial-ai-executive-block--recommendation">
-            <div className="commercial-ai-section__heading"><Lightbulb size={17} aria-hidden="true" /><h3>Recomendaciones derivadas</h3></div>
+            <div className="commercial-ai-section__heading"><Lightbulb size={17} aria-hidden="true" /><h3>Otras recomendaciones calculadas por Lanzo</h3></div>
             <Recommendations recommendations={response.recommendations} />
           </section>
         </>

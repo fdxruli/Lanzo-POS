@@ -73,7 +73,8 @@ const createLocalEntryId = (timestamp) => {
 const hasNarrative = (narrative) => (
   narrative?.status !== 'unavailable'
   && (
-    (typeof narrative?.executiveSummary === 'string' && narrative.executiveSummary.trim().length > 0)
+    (typeof narrative?.directAnswer === 'string' && narrative.directAnswer.trim().length > 0)
+    || (typeof narrative?.executiveSummary === 'string' && narrative.executiveSummary.trim().length > 0)
     || (typeof narrative?.explanation === 'string' && narrative.explanation.trim().length > 0)
     || (Array.isArray(narrative?.recommendations) && narrative.recommendations.length > 0)
   )

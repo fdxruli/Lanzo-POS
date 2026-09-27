@@ -160,7 +160,9 @@ const COMMERCIAL_SALES_KEYS = new Set([
   'calculations',
   'assumptions',
   'limitations',
-  'scenarios'
+  'scenarios',
+  'opportunityCandidates',
+  'minimumUsefulRecommendations'
 ]);
 const COMMERCIAL_SUMMARY_KEYS = new Set([
   'netSales',
@@ -239,6 +241,19 @@ const COMMERCIAL_GROWTH_SIGNAL_KEYS = new Set([
   'previousAverageTicket', 'deltaTicket', 'deltaTicketPercent',
   'previousUnitsPerTicket', 'deltaUnitsPerTicket', 'productsGrowing', 'productsDeclining',
   'productOpportunities', 'channels', 'channelChanges', 'comparisonAvailable'
+]);
+const COMMERCIAL_OPPORTUNITY_TYPES = new Set(['product', 'channel', 'ticket', 'units_per_ticket', 'tickets', 'general']);
+const COMMERCIAL_OPPORTUNITY_SIGNALS = new Set([
+  'high_sales_share', 'growing', 'healthy_margin', 'new_in_period', 'ticket_increased',
+  'ticket_baseline_available', 'units_per_ticket_increased', 'units_per_ticket_baseline_available',
+  'tickets_increased', 'ticket_count_baseline_available', 'channel_sales_disappeared',
+  'channel_sales_increased', 'channel_change_to_check'
+]);
+const COMMERCIAL_RECOMMENDATION_TYPES = new Set(['growth_experiment', 'investigation', 'data_quality', 'optimization']);
+const COMMERCIAL_OPPORTUNITY_METRIC_KEYS = new Set([
+  'currentSales', 'currentShare', 'salesDelta', 'currentUnits', 'costKnown',
+  'currentAverageTicket', 'deltaTicket', 'currentUnitsPerTicket', 'deltaUnitsPerTicket',
+  'currentSalesCount', 'deltaSalesCount', 'previousSales', 'previousShare', 'deltaShare'
 ]);
 const COMMERCIAL_CONTRIBUTOR_KEYS = new Set(['key', 'title', 'contribution', 'direction', 'explanation', 'evidenceKeys']);
 const COMMERCIAL_CALCULATION_KEYS = new Set(['label', 'value', 'formattedValue', 'formula', 'source', 'period']);
@@ -478,6 +493,43 @@ function validCommercialContext(value: unknown): value is Record<string, unknown
     if (!Array.isArray(sales.evidenceKeys) || sales.evidenceKeys.length > 80) return false;
     if (!sales.evidenceKeys.every((entry) => typeof entry === 'string' && entry.length > 0 && entry.length <= 160)) return false;
   }
+  if (sales.minimumUsefulRecommendations !== undefined
+    && (!Number.isInteger(sales.minimumUsefulRecommendations)
+      || Number(sales.minimumUsefulRecommendations) < 0
+      || Number(sales.minimumUsefulRecommendations) > 3)) return false;
+  if (sales.opportunityCandidates !== undefined) {
+    if (!Array.isArray(sales.opportunityCandidates) || sales.opportunityCandidates.length > 8) return false;
+    const evidenceKeys = new Set(Array.isArray(sales.evidenceKeys) ? sales.evidenceKeys : []);
+    const candidateKeys = new Set<string>();
+    if (!sales.opportunityCandidates.every((candidate) => {
+      if (!isRecord(candidate)
+        || !assertOnlyKeys(candidate, new Set([
+          'key', 'type', 'focus', 'entity', 'signal', 'recommendationType', 'strength', 'metrics', 'evidenceKeys'
+        ]))
+        || typeof candidate.key !== 'string' || candidate.key.length === 0 || candidate.key.length > 160
+        || candidateKeys.has(candidate.key)
+        || typeof candidate.type !== 'string' || !COMMERCIAL_OPPORTUNITY_TYPES.has(candidate.type)
+        || !isRecord(candidate.focus) || !assertOnlyKeys(candidate.focus, new Set(['type', 'key']))
+        || candidate.focus.type !== candidate.type
+        || typeof candidate.focus.key !== 'string' || candidate.focus.key.length === 0 || candidate.focus.key.length > 120
+        || !(candidate.entity === null || (typeof candidate.entity === 'string' && candidate.entity.length <= 120))
+        || !Array.isArray(candidate.signal) || candidate.signal.length === 0 || candidate.signal.length > 5
+        || !candidate.signal.every((signal) => typeof signal === 'string' && COMMERCIAL_OPPORTUNITY_SIGNALS.has(signal))
+        || typeof candidate.recommendationType !== 'string' || !COMMERCIAL_RECOMMENDATION_TYPES.has(candidate.recommendationType)
+        || !['strong', 'moderate', 'weak'].includes(String(candidate.strength))
+        || !isRecord(candidate.metrics)
+        || !Object.entries(candidate.metrics).every(([key, entry]) => COMMERCIAL_OPPORTUNITY_METRIC_KEYS.has(key)
+          && (validFiniteOrNull(entry) || typeof entry === 'boolean'))
+        || !Array.isArray(candidate.evidenceKeys) || candidate.evidenceKeys.length === 0 || candidate.evidenceKeys.length > 8
+        || !candidate.evidenceKeys.every((entry) => typeof entry === 'string' && evidenceKeys.has(entry))) return false;
+      if (candidate.type === 'product'
+        && (candidate.entity !== candidate.focus.key || !candidate.evidenceKeys.includes(`product:${candidate.entity}`))) return false;
+      if (candidate.type === 'channel'
+        && (candidate.entity !== candidate.focus.key || !candidate.evidenceKeys.includes(`channel:${candidate.entity}`))) return false;
+      candidateKeys.add(candidate.key);
+      return true;
+    })) return false;
+  }
   if (sales.contributors !== undefined) {
     if (!Array.isArray(sales.contributors) || sales.contributors.length > 3) return false;
     if (!sales.contributors.every((item) => isRecord(item)
@@ -695,6 +747,13 @@ export function validateCommercialModelResponse(value: unknown): boolean {
     const narrative = value.aiNarrative;
     if (narrative.status !== 'available' && narrative.status !== 'unavailable') return false;
     if (!Array.isArray(narrative.recommendations)) return false;
+    if (narrative.directAnswer !== undefined
+      && narrative.directAnswer !== null
+      && typeof narrative.directAnswer !== 'string') return false;
+    if (narrative.status === 'available'
+      && narrative.directAnswer !== undefined
+      && narrative.directAnswer !== null
+      && (typeof narrative.directAnswer !== 'string' || !narrative.directAnswer.trim())) return false;
     if (narrative.confidence !== undefined && !['high', 'medium', 'low'].includes(String(narrative.confidence))) return false;
     if (narrative.diagnosticCode !== undefined && !isCommercialNarrativeDiagnosticCode(narrative.diagnosticCode)) return false;
     const hasNarrativeContent = (typeof narrative.executiveSummary === 'string' && narrative.executiveSummary.trim().length > 0)
@@ -721,7 +780,16 @@ export function validateCommercialModelResponse(value: unknown): boolean {
     const narrative = ['high', 'medium', 'low'].includes(String(item.priority)) && Array.isArray(item.evidenceKeys);
     const hasAction = typeof item.action === 'string' && item.action.trim().length > 0;
     const hasMeasurement = typeof item.measurement === 'string' && item.measurement.trim().length > 0;
+    const hasFocus = item.focus === undefined || (isRecord(item.focus)
+      && Object.keys(item.focus).every((key) => ['type', 'key'].includes(key))
+      && ['product', 'channel', 'ticket', 'units_per_ticket', 'tickets', 'general'].includes(String(item.focus.type))
+      && typeof item.focus.key === 'string' && item.focus.key.trim().length > 0);
+    const hasRecommendationType = item.recommendationType === undefined
+      || ['growth_experiment', 'investigation', 'data_quality', 'optimization'].includes(String(item.recommendationType));
     return (!legacy && !narrative)
+      || !hasFocus
+      || !hasRecommendationType
+      || (item.focus === undefined) !== (item.recommendationType === undefined)
       || (hasAction !== hasMeasurement)
       || (item.action !== undefined && !hasAction)
       || (item.measurement !== undefined && !hasMeasurement);

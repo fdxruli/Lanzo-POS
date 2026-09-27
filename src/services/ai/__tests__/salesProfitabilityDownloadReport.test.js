@@ -468,6 +468,7 @@ describe('sales profitability download report', () => {
     expect(result.report.ai).toEqual({
       status: 'not_generated',
       diagnosticCode: null,
+      directAnswer: null,
       executiveSummary: null,
       explanation: null,
       recommendations: [],
@@ -499,6 +500,7 @@ describe('sales profitability download report', () => {
     expect(report.ai).toEqual({
       status: 'unavailable',
       diagnosticCode: 'AI_NARRATIVE_INVALID_JSON',
+      directAnswer: null,
       executiveSummary: null,
       explanation: null,
       recommendations: [],
@@ -509,6 +511,8 @@ describe('sales profitability download report', () => {
   it('exports action, measurement and non-null confidence as AI content separate from deterministic data', () => {
     const recommendation = {
       title: 'Probar mayor visibilidad para Producto A',
+      focus: { type: 'product', key: 'Producto A' },
+      recommendationType: 'growth_experiment',
       explanation: 'Producto A representa una señal comercial relevante.',
       action: 'Probar una ubicación más visible durante una semana.',
       measurement: 'Comparar unidades diarias con la semana previa.',
@@ -523,6 +527,7 @@ describe('sales profitability download report', () => {
         ...completedResult.response,
         aiNarrative: {
           status: 'available',
+          directAnswer: 'Prueba dar más visibilidad a Producto A y mide si aumentan las unidades.',
           executiveSummary: 'Hay una prueba concreta para Producto A.',
           explanation: 'La señal permite evaluar una acción acotada.',
           recommendations: [recommendation],
@@ -539,8 +544,11 @@ describe('sales profitability download report', () => {
     expect(report.deterministic.recommendations).toMatchObject([{ title: 'Probar el precio' }]);
     expect(report.ai).toMatchObject({
       status: 'available',
+      directAnswer: 'Prueba dar más visibilidad a Producto A y mide si aumentan las unidades.',
       confidence: 'high',
       recommendations: [{
+        focus: { type: 'product', key: 'Producto A' },
+        recommendationType: 'growth_experiment',
         action: 'Probar una ubicación más visible durante una semana.',
         measurement: 'Comparar unidades diarias con la semana previa.',
         evidenceKeys: ['product:Producto A']

@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { buildEcommerceContext, buildSalesProfitabilityContext } from '../commercialAgentContext';
+import {
+  buildCommercialOpportunityCandidates,
+  buildEcommerceContext,
+  buildSalesProfitabilityContext
+} from '../commercialAgentContext';
 import { validatePayload } from '../../../../supabase/functions/lanzo-ai-agent/contract.ts';
 
 describe('commercial AI context boundary', () => {
@@ -449,11 +453,21 @@ describe('commercial AI context boundary', () => {
     expect(context.sales.evidenceKeys).toContain('product:Producto 9');
     expect(context.sales.evidenceKeys).toContain('channel:Canal 4');
     expect(context.sales.evidenceKeys).toContain('metric:deltaNetSales');
+    expect(context.sales.opportunityCandidates.length).toBeGreaterThanOrEqual(2);
+    expect(context.sales.minimumUsefulRecommendations).toBe(2);
+    expect(context.sales.opportunityCandidates[0]).toMatchObject({
+      type: 'product',
+      focus: { type: 'product', key: 'Producto 7' },
+      recommendationType: 'growth_experiment',
+      strength: 'strong',
+      evidenceKeys: expect.arrayContaining(['product:Producto 7'])
+    });
+    expect(context.sales.opportunityCandidates.some((candidate) => candidate.type === 'ticket')).toBe(true);
     expect(context.sales.calculations).toEqual([]);
     expect(context.sales.assumptions).toEqual([]);
     expect(context.sales.scenarios).toEqual([]);
     expect(context.sales.limitations).toEqual([]);
-    expect(JSON.stringify(context).length).toBeLessThan(4000);
+    expect(JSON.stringify(context).length).toBeLessThan(6000);
 
     const validation = validatePayload({
       auth: {
@@ -474,6 +488,41 @@ describe('commercial AI context boundary', () => {
       options: { temperature: 0.2, maxTokens: 2048 }
     });
     expect(validation.ok, JSON.stringify(validation)).toBe(true);
+  });
+
+  it('sets the minimum actionable recommendations from independent strong candidates', () => {
+    const plan = buildCommercialOpportunityCandidates('sales_growth', {
+      summary: { averageTicket: 100, salesCount: 8 },
+      comparison: { deltaTicket: 10, deltaSalesCount: 2 },
+      growthSignals: {
+        productOpportunities: [{
+          name: 'Producto con señal',
+          currentSales: 500,
+          currentShare: 0.3,
+          costKnown: false,
+          direction: 'growing',
+          signals: ['growing', 'high_sales_share']
+        }]
+      },
+      evidenceKeys: [
+        'product:Producto con señal',
+        'metric:currentNetSales',
+        'metric:currentAverageTicket',
+        'metric:deltaTicket',
+        'metric:deltaSalesCount'
+      ]
+    });
+
+    expect(plan.minimumUsefulRecommendations).toBe(2);
+    expect(plan.candidates.map((candidate) => candidate.type)).toEqual(expect.arrayContaining(['product', 'ticket', 'tickets']));
+    expect(plan.candidates.find((candidate) => candidate.type === 'product').metrics).toMatchObject({ costKnown: false });
+    expect(plan.candidates.find((candidate) => candidate.type === 'product').metrics).not.toHaveProperty('margin');
+
+    const limited = buildCommercialOpportunityCandidates('sales_growth', {
+      summary: {}, comparison: {}, growthSignals: {}, evidenceKeys: []
+    });
+    expect(limited.minimumUsefulRecommendations).toBe(0);
+    expect(limited.candidates).toEqual([]);
   });
 
   it('only sends product margin evidence when the cost is known', () => {

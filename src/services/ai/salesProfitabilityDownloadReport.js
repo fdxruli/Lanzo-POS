@@ -460,17 +460,46 @@ const safeSummary = (response) => {
 
 const safeRecommendation = (recommendation) => {
   const source = asRecord(recommendation);
+  const focus = asRecord(source.focus);
   return {
     title: sanitizeText(source.title, 200),
     explanation: sanitizeText(source.explanation, 1000),
     ...(typeof source.action === 'string' ? { action: sanitizeText(source.action, 700) } : {}),
     ...(typeof source.measurement === 'string' ? { measurement: sanitizeText(source.measurement, 500) } : {}),
+    ...(typeof focus.type === 'string' && typeof focus.key === 'string'
+      ? { focus: { type: sanitizeText(focus.type, 40), key: sanitizeText(focus.key, 160) } }
+      : {}),
+    ...(typeof source.recommendationType === 'string'
+      ? { recommendationType: sanitizeText(source.recommendationType, 48) }
+      : {}),
     expectedImpact: sanitizeText(source.expectedImpact, 400),
     priority: sanitizeText(source.priority, 40) || null,
     evidenceKeys: safeTextArray(source.evidenceKeys, 12, 300),
     effort: sanitizeText(source.effort, 80) || null,
     evidence: safeTextArray(source.evidence, 12, 300),
     requiresConfirmation: source.requiresConfirmation === true
+  };
+};
+
+const safeOpportunityCandidate = (candidate) => {
+  const source = asRecord(candidate);
+  const focus = asRecord(source.focus);
+  const metrics = asRecord(source.metrics);
+  return {
+    key: sanitizeText(source.key, 180),
+    type: sanitizeText(source.type, 40),
+    focus: {
+      type: sanitizeText(focus.type, 40),
+      key: sanitizeText(focus.key, 160)
+    },
+    entity: sanitizeText(source.entity, 160) || null,
+    signal: safeTextArray(source.signal, 5, 80),
+    recommendationType: sanitizeText(source.recommendationType, 48),
+    strength: sanitizeText(source.strength, 24),
+    metrics: Object.fromEntries(Object.entries(metrics)
+      .filter(([, value]) => value === null || typeof value === 'boolean' || (typeof value === 'number' && Number.isFinite(value)))
+      .slice(0, 16)),
+    evidenceKeys: safeTextArray(source.evidenceKeys, 8, 180)
   };
 };
 
@@ -518,13 +547,14 @@ export const buildSalesProfitabilityDownloadReport = (result, requestContext = {
   const explicitCacheHit = result?.cacheHit === true || result?.cache?.hit === true;
   const narrative = asRecord(response.aiNarrative);
   const narrativeSummary = sanitizeText(narrative.executiveSummary, 2400) || null;
+  const narrativeDirectAnswer = sanitizeText(narrative.directAnswer, 2400) || null;
   const narrativeExplanation = sanitizeText(narrative.explanation, 4000) || null;
   const narrativeRecommendations = (Array.isArray(narrative.recommendations) ? narrative.recommendations : [])
     .slice(0, 20)
     .map(safeRecommendation)
     .filter((recommendation) => recommendation.title && recommendation.explanation && recommendation.expectedImpact);
   const hasNarrativeContent = Boolean(
-    narrativeSummary || narrativeExplanation || narrativeRecommendations.length
+    narrativeDirectAnswer || narrativeSummary || narrativeExplanation || narrativeRecommendations.length
   );
   const narrativeAttempted = providerCalled || explicitCacheHit
     || narrative.status === 'available' || narrative.status === 'unavailable';
@@ -575,6 +605,11 @@ export const buildSalesProfitabilityDownloadReport = (result, requestContext = {
       previous: safeAggregate(response.previous),
       comparison: safeComparison(response.comparison),
       growthSignals: safeGrowthSignals(response.growthSignals),
+      opportunityCandidates: (Array.isArray(response.opportunityCandidates) ? response.opportunityCandidates : [])
+        .slice(0, 8).map(safeOpportunityCandidate),
+      minimumUsefulRecommendations: Number.isInteger(response.minimumUsefulRecommendations)
+        ? Math.max(0, Math.min(3, response.minimumUsefulRecommendations))
+        : 0,
       productOpportunities: (Array.isArray(response.productOpportunities) ? response.productOpportunities : []).slice(0, 20).map(safeProductChange),
       profitability: safeProfitability(response.profitability),
       contributors: (Array.isArray(response.contributors) ? response.contributors : []).slice(0, 20).map(safeContributor),
@@ -594,6 +629,7 @@ export const buildSalesProfitabilityDownloadReport = (result, requestContext = {
     ai: {
       status: aiStatus,
       diagnosticCode,
+      directAnswer: aiStatus === 'available' ? narrativeDirectAnswer : null,
       executiveSummary: aiStatus === 'available' ? narrativeSummary : null,
       explanation: aiStatus === 'available' ? narrativeExplanation : null,
       recommendations: aiStatus === 'available' ? narrativeRecommendations : [],
@@ -636,6 +672,8 @@ export const sanitizeSalesProfitabilityDownloadReport = (value) => {
       previous: deterministic.previous,
       comparison: deterministic.comparison,
       growthSignals: deterministic.growthSignals,
+      opportunityCandidates: deterministic.opportunityCandidates,
+      minimumUsefulRecommendations: deterministic.minimumUsefulRecommendations,
       productOpportunities: deterministic.productOpportunities,
       profitability: deterministic.profitability,
       contributors: deterministic.contributors,
@@ -652,6 +690,7 @@ export const sanitizeSalesProfitabilityDownloadReport = (value) => {
       aiNarrative: {
         status: ai.status,
         diagnosticCode: normalizeCommercialAINarrativeDiagnosticCode(ai.diagnosticCode),
+        directAnswer: ai.directAnswer || null,
         executiveSummary: ai.executiveSummary,
         explanation: ai.explanation,
         recommendations: ai.recommendations,
