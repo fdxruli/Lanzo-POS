@@ -2,6 +2,7 @@
 import { useCallback } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { splitOpenTableOrder } from '../../services/salesService';
+import { splitHasCashPayment } from '../../services/sales/splitOrderContract';
 import Logger from '../../services/Logger';
 import { showConfirmModal, showMessageModal } from '../../services/utils';
 import { db, STORES } from '../../services/db/dexie';
@@ -724,11 +725,9 @@ export function useTableManagement({
             return;
         }
 
-        const hasCashBackedPayment = splitPayload?.tickets?.some((ticket) => (
-            ['efectivo', 'fiado'].includes(String(ticket?.paymentData?.paymentMethod || '').trim().toLowerCase())
-        ));
+        const hasCashPayment = splitHasCashPayment(splitPayload?.tickets);
 
-        if (hasCashBackedPayment && (!cajaActual || cajaActual.estado !== 'abierta')) {
+        if (hasCashPayment && (!cajaActual || cajaActual.estado !== 'abierta')) {
             if (typeof asegurarCajaAbierta !== 'function') {
                 showMessageModal('No se pudo abrir la caja automáticamente.', null, { type: 'error' });
                 return;
@@ -776,8 +775,11 @@ export function useTableManagement({
                 resolvedCashSessionId = currentCashSession.id;
             } catch (cashStateError) {
                 Logger.error('[SalesCloud/Cashier] No se pudo resolver la caja antes del split cloud:', cashStateError);
-                showMessageModal(cashStateError?.message || 'No se pudo verificar la caja abierta antes de cobrar.', null, { type: 'error' });
-                return { success: false, errorType: 'CASH_SESSION_NOT_OPEN', message: cashStateError?.message || 'No se pudo verificar la caja abierta antes de cobrar.' };
+                const message = cashStateError?.message === 'CASH_SESSION_NOT_OPEN'
+                    ? 'El cobro cloud de una cuenta dividida requiere una caja abierta. Ábrela y vuelve a intentarlo; no se aplicaron cobros.'
+                    : 'No se pudo verificar la caja abierta antes de cobrar. No se aplicaron cobros.';
+                showMessageModal(message, null, { type: 'error' });
+                return { success: false, errorType: 'CASH_SESSION_NOT_OPEN', message };
             }
         }
 
@@ -785,7 +787,7 @@ export function useTableManagement({
             const result = await splitOpenTableOrder({
                 parentOrderId: activeOrderId,
                 orderSnapshot: kitchenReview.orderItems,
-                mode: splitPayload.mode,
+                splitIntent: splitPayload.splitIntent,
                 tickets: splitPayload.tickets,
                 features,
                 companyName,

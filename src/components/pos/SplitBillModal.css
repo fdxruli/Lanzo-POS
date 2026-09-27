@@ -170,38 +170,29 @@
   font-size: 0.92rem;
 }
 
-.split-mode-row {
-  justify-self: end;
-  display: inline-flex;
+.split-strategy-card {
+  justify-self: stretch;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
   gap: 4px;
-  padding: 4px;
+  padding: 9px 12px;
+  color: var(--ui-text);
   background: var(--ui-bg-muted);
   border: 1px solid var(--ui-border-color);
+  border-left: 3px solid var(--ui-color-primary);
   border-radius: var(--ui-radius-sm);
 }
 
-.split-mode-row .btn-method {
-  min-height: 36px;
-  padding: 7px 13px;
-  color: var(--ui-text-muted);
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: var(--ui-radius-xs);
-  font: inherit;
-  font-size: 0.9rem;
-  font-weight: 800;
-  cursor: pointer;
-}
-
-.split-mode-row .btn-method:hover:not(:disabled) {
+.split-strategy-card strong {
   color: var(--ui-text-strong);
-  background: var(--ui-bg-surface);
+  font-size: 0.9rem;
 }
 
-.split-mode-row .btn-method.active {
-  color: var(--ui-text-on-primary);
-  background: var(--ui-color-primary);
-  border-color: var(--ui-color-primary);
+.split-strategy-card span {
+  color: var(--ui-text-muted);
+  font-size: 0.8rem;
+  line-height: 1.35;
 }
 
 .split-bill-form {
@@ -573,7 +564,6 @@
 .split-ticket-payment select:focus,
 .split-count-selector select:focus,
 .split-close-button:focus-visible,
-.split-mode-row .btn-method:focus-visible,
 .btn-pool-move:focus-visible,
 .btn-pool-move-all:focus-visible,
 .btn-item-remove:focus-visible,
@@ -694,12 +684,6 @@
     grid-template-columns: 1fr;
   }
 
-  .split-mode-row {
-    justify-self: stretch;
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-  }
-
   .split-tickets-grid {
     grid-template-columns: 1fr;
   }
@@ -732,7 +716,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .split-close-button,
-  .split-mode-row .btn-method,
   .btn-pool-move,
   .btn-pool-move-all,
   .btn-item-remove,
