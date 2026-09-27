@@ -331,4 +331,202 @@ describe('commercial AI context boundary', () => {
     expect(context.sales.growthSignals.productOpportunities).toHaveLength(1);
     expect(context.sales.growthSignals.productOpportunities[0].opportunityReason).toBe('Creció en ventas y unidades.');
   });
+
+  it('sends a bounded, intent-specific narrative context for sales growth', () => {
+    const products = Array.from({ length: 10 }, (_, index) => ({
+      name: `Producto ${index}`,
+      currentSales: 1000 - index * 10,
+      previousSales: 500,
+      salesDelta: index * 25,
+      salesDeltaPercent: index / 10,
+      currentUnits: 12,
+      previousUnits: 8,
+      unitsDelta: 4,
+      currentShare: 0.2,
+      previousShare: 0.1,
+      salesShareDelta: 0.1,
+      currentMargin: 0.4,
+      previousMargin: 0.35,
+      currentProfit: 400,
+      previousProfit: 175,
+      costKnown: index % 2 === 0,
+      costStatus: index % 2 === 0 ? 'definitive' : 'missing',
+      direction: 'growing',
+      signals: ['growing', 'high_sales_share', 'healthy_margin'],
+      opportunityReason: 'Señal sintética de crecimiento.'
+    }));
+    const declining = products.map((product, index) => ({
+      ...product,
+      name: `Caída ${index}`,
+      salesDelta: -(index + 1) * 20,
+      direction: 'declining',
+      signals: ['declining']
+    }));
+    const channelChanges = Array.from({ length: 5 }, (_, index) => ({
+      channel: `Canal ${index}`,
+      currentShare: 0.4,
+      previousShare: 0.3,
+      deltaShare: 0.1,
+      currentSales: 100 + index,
+      previousSales: 50,
+      salesDelta: index * 30
+    }));
+    const context = buildSalesProfitabilityContext({
+      intent: 'sales_growth',
+      period: { from: '2026-09-01', to: '2026-09-07', previousFrom: '2026-08-25', previousTo: '2026-08-31' },
+      source: 'cloud',
+      report: {
+        overview: { netSales: 2400, units: 48, salesCount: 16, averageTicket: 150, unitsPerTicket: 3 },
+        products,
+        channels: channelChanges,
+        comparison: {
+          previousNetSales: 2000,
+          previousUnits: 40,
+          previousTicket: 125,
+          previousUnitsPerTicket: 2.5,
+          previousSalesCount: 16,
+          deltaNetSales: 400,
+          deltaNetSalesPercent: 0.2,
+          deltaUnits: 8,
+          deltaTicket: 25,
+          deltaUnitsPerTicket: 0.5,
+          deltaSalesCount: 0,
+          productChanges: [...products, ...declining],
+          channelMixChanges: channelChanges
+        },
+        growthSignals: {
+          currentNetSales: 2400,
+          previousNetSales: 2000,
+          deltaNetSales: 400,
+          productsGrowing: products,
+          productsDeclining: declining,
+          productOpportunities: products,
+          channelChanges,
+          comparisonAvailable: true
+        },
+        coverage: {
+          validSales: 16,
+          complete: true,
+          itemsComplete: true,
+          paginationComplete: true,
+          sourceComplete: true,
+          comparisonDataAvailable: true,
+          salesDataComplete: true,
+          growthDataComplete: true
+        },
+        calculations: Array.from({ length: 20 }, (_, index) => ({
+          label: `Cálculo ${index}`,
+          value: index,
+          formattedValue: String(index),
+          formula: 'deterministic fixture',
+          source: 'fixture',
+          period: { from: '2026-09-01', to: '2026-09-07' }
+        })),
+        assumptions: ['No mandar a la narrativa'],
+        scenarios: [{ label: 'No mandar a la narrativa' }],
+        limitations: ['No mandar a la narrativa']
+      }
+    });
+
+    expect(context.sales.summary).toEqual({
+      netSales: 2400,
+      salesCount: 16,
+      units: 48,
+      averageTicket: 150,
+      unitsPerTicket: 3
+    });
+    expect(context.sales.products).toEqual([]);
+    expect(context.sales.channels).toEqual([]);
+    expect(context.sales.comparison).not.toHaveProperty('productChanges');
+    expect(context.sales.comparison).not.toHaveProperty('channelMixChanges');
+    expect(context.sales.growthSignals).not.toHaveProperty('currentNetSales');
+    expect(context.sales.growthSignals.productOpportunities).toHaveLength(3);
+    expect(context.sales.growthSignals.productsDeclining).toHaveLength(3);
+    expect(context.sales.growthSignals.channelChanges).toHaveLength(2);
+    expect(context.sales.growthSignals.productOpportunities[0].name).toBe('Producto 9');
+    expect(context.sales.growthSignals.productOpportunities[0]).not.toHaveProperty('currentMargin');
+    expect(context.sales.evidenceKeys.length).toBeLessThanOrEqual(12);
+    expect(context.sales.calculations).toEqual([]);
+    expect(context.sales.assumptions).toEqual([]);
+    expect(context.sales.scenarios).toEqual([]);
+    expect(context.sales.limitations).toEqual([]);
+    expect(JSON.stringify(context).length).toBeLessThan(4000);
+
+    const validation = validatePayload({
+      auth: {
+        licenseKey: 'synthetic-license',
+        deviceFingerprint: 'synthetic-device',
+        deviceSecurityToken: 'synthetic-device-token',
+        staffSessionToken: null
+      },
+      agentKey: 'salesProfitability',
+      intent: 'sales_growth',
+      question: '¿Cómo puedo aumentar mis ventas?',
+      requestKey: 'compact-growth-context-test',
+      period: {
+        from: '2026-09-01', to: '2026-09-07', previousFrom: '2026-08-25', previousTo: '2026-08-31'
+      },
+      scenario: {},
+      context,
+      options: { temperature: 0.2, maxTokens: 2048 }
+    });
+    expect(validation.ok, JSON.stringify(validation)).toBe(true);
+  });
+
+  it('only sends product margin evidence when the cost is known', () => {
+    const context = buildSalesProfitabilityContext({
+      intent: 'product_opportunity',
+      period: { from: '2026-09-01', to: '2026-09-07' },
+      source: 'cloud',
+      report: {
+        overview: { netSales: 1200, salesCount: 8 },
+        growthSignals: {
+          productOpportunities: [{
+            name: 'Con costo',
+            currentSales: 300,
+            previousSales: 200,
+            salesDelta: 100,
+            salesDeltaPercent: 0.5,
+            currentShare: 0.25,
+            previousShare: 0.2,
+            salesShareDelta: 0.05,
+            currentMargin: 0.4,
+            previousMargin: 0.3,
+            currentProfit: 120,
+            previousProfit: 60,
+            costKnown: true,
+            costStatus: 'known',
+            direction: 'growing',
+            signals: ['growing', 'healthy_margin'],
+            opportunityReason: 'Costos confirmados.'
+          }, {
+            name: 'Sin costo',
+            currentSales: 250,
+            previousSales: 200,
+            salesDelta: 50,
+            salesDeltaPercent: 0.25,
+            currentShare: 0.2,
+            previousShare: 0.18,
+            salesShareDelta: 0.02,
+            currentMargin: 0.99,
+            previousMargin: 0.99,
+            currentProfit: 247.5,
+            previousProfit: 198,
+            costKnown: false,
+            costStatus: 'missing',
+            direction: 'growing',
+            signals: ['growing', 'cost_unknown'],
+            opportunityReason: 'El costo no está disponible.'
+          }],
+          comparisonAvailable: true
+        },
+        coverage: { costCoverage: 0.5, complete: true }
+      }
+    });
+    const opportunities = context.sales.growthSignals.productOpportunities;
+    expect(opportunities).toHaveLength(2);
+    expect(opportunities[0]).toMatchObject({ currentMargin: 0.4, currentProfit: 120, costKnown: true });
+    expect(opportunities[1]).not.toHaveProperty('currentMargin');
+    expect(opportunities[1]).not.toHaveProperty('currentProfit');
+  });
 });

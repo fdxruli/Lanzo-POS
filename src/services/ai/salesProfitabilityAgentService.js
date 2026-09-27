@@ -930,6 +930,7 @@ export const createSalesProfitabilityAgentRunner = ({
     }
 
     const context = buildSalesProfitabilityContext({
+      intent: request.intent,
       period: request.period,
       report: {
         ...deterministic.context,
@@ -949,7 +950,7 @@ export const createSalesProfitabilityAgentRunner = ({
         ...request,
         context,
         requestKey: requestKey || null
-      }, { temperature: 0.2, maxTokens: 1024 });
+      }, { temperature: 0.2, maxTokens: 2048 });
       providerOutcome = {
         providerCalled: typeof providerResult?.providerCalled === 'boolean'
           ? providerResult.providerCalled

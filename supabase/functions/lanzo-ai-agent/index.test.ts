@@ -2,6 +2,7 @@ import { createHandler } from './index.ts';
 import {
   MAX_BODY_BYTES,
   MAX_USER_PROMPT_CHARS,
+  validatePayload,
   type AuthPayload
 } from './contract.ts';
 
@@ -497,6 +498,7 @@ Deno.test('provider chat success devuelve contenido y usageStatus', async () => 
   assertEquals(capturedProviderBody.temperature, 0.2);
   assertEquals(capturedProviderBody.max_tokens, 2048, 'el límite no comercial conserva su valor');
   assertEquals(capturedProviderBody.response_format, undefined, 'JSON mode es exclusivo de narrativa comercial');
+  assertEquals(capturedProviderBody.thinking, undefined, 'thinking disabled es exclusivo de narrativa comercial');
   const metadata = client.calls[1].args.p_metadata as Record<string, unknown>;
   assertEquals(metadata.provider, 'openai-compatible');
   assertEquals(metadata.protocol, 'chat-completions');
@@ -743,8 +745,9 @@ Deno.test('ventas y rentabilidad acepta sólo contexto estructurado y completa c
   assert(providerBody !== null, 'provider body missing');
   const capturedCommercialBody = providerBody as Record<string, unknown>;
   assert(Array.isArray(capturedCommercialBody.messages), 'server prompt missing');
-  assertEquals(capturedCommercialBody.max_tokens, 1024, 'max tokens comercial limitado en servidor');
+  assertEquals(capturedCommercialBody.max_tokens, 2048, 'margen comercial configurado en servidor');
   assertEquals(JSON.stringify(capturedCommercialBody.response_format), JSON.stringify({ type: 'json_object' }));
+  assertEquals(JSON.stringify(capturedCommercialBody.thinking), JSON.stringify({ type: 'disabled' }));
   const userMessage = (capturedCommercialBody.messages as Array<Record<string, unknown>>)[1];
   const sentPrompt = JSON.parse(String(userMessage.content)) as Record<string, unknown>;
   const sentSales = (sentPrompt.deterministicEvidence as Record<string, unknown>).sales as Record<string, unknown>;
@@ -780,7 +783,259 @@ Deno.test('JSON mode DeepSeek no cambia Kimi, otros modelos compatibles ni Respo
       sample.expected,
       sample.label
     );
+    assertEquals(Object.prototype.hasOwnProperty.call(providerBody, 'thinking'), false, `${sample.label}: thinking no debe filtrarse`);
   }
+});
+
+Deno.test('sales_growth envía un prompt breve, acotado y explícito para una narrativa compacta', async () => {
+  const payload = structuredCommercialRequest({
+    intent: 'sales_growth',
+    question: '¿Cómo puedo aumentar mis ventas?'
+  }) as unknown as Record<string, unknown>;
+  const context = payload.context as Record<string, unknown>;
+  const sales = context.sales as Record<string, unknown>;
+  const products = Array.from({ length: 8 }, (_, index) => ({
+    name: `Producto ${index}`,
+    currentSales: 900 + index,
+    previousSales: 400,
+    salesDelta: index * 50,
+    salesDeltaPercent: index / 8,
+    currentUnits: 10,
+    previousUnits: 5,
+    unitsDelta: 5,
+    currentShare: 0.3,
+    previousShare: 0.2,
+    salesShareDelta: 0.1,
+    currentMargin: index % 2 === 0 ? 0.4 : null,
+    previousMargin: index % 2 === 0 ? 0.3 : null,
+    currentProfit: index % 2 === 0 ? 360 : null,
+    previousProfit: index % 2 === 0 ? 120 : null,
+    costKnown: index % 2 === 0,
+    costStatus: index % 2 === 0 ? 'known' : 'missing',
+    direction: 'growing',
+    signals: ['growing', 'high_sales_share', 'healthy_margin'],
+    opportunityReason: 'Evidencia sintética compactable.'
+  }));
+  const declining = Array.from({ length: 8 }, (_, index) => ({
+    ...products[index],
+    name: `Declive ${index}`,
+    salesDelta: -(index + 1) * 40,
+    direction: 'declining',
+    signals: ['declining']
+  }));
+  const channels = Array.from({ length: 5 }, (_, index) => ({
+    channel: `Canal ${index}`,
+    currentShare: 0.4,
+    previousShare: 0.3,
+    deltaShare: 0.1,
+    currentSales: 500 + index,
+    previousSales: 250,
+    salesDelta: index * 100
+  }));
+  sales.comparison = {
+    previousNetSales: 2000,
+    previousUnits: 40,
+    previousTicket: 125,
+    previousUnitsPerTicket: 2.5,
+    previousSalesCount: 16,
+    deltaNetSales: 400,
+    deltaNetSalesPercent: 0.2,
+    deltaUnits: 8,
+    deltaTicket: 25,
+    deltaTicketPercent: 0.2,
+    deltaUnitsPerTicket: 0.5,
+    deltaSalesCount: 0,
+    productChanges: [...products, ...declining].map(({ opportunityReason: _ignored, ...product }) => product),
+    productMixChanges: [],
+    channelMixChanges: channels
+  };
+  sales.growthSignals = {
+    currentNetSales: 2400,
+    deltaNetSales: 400,
+    productsGrowing: products,
+    productsDeclining: declining,
+    productOpportunities: products,
+    channelChanges: channels,
+    comparisonAvailable: true
+  };
+  sales.products = products.map((product) => ({
+    name: product.name,
+    quantity: product.currentUnits,
+    netSales: product.currentSales,
+    unitCost: product.costKnown ? 20 : null,
+    profit: product.costKnown ? product.currentProfit : null,
+    margin: product.costKnown ? product.currentMargin : null,
+    averagePrice: 50,
+    costKnown: product.costKnown,
+    costStatus: product.costKnown ? 'definitive' : 'incomplete'
+  }));
+  sales.channels = channels.map((channel) => ({ channel: channel.channel, netSales: channel.currentSales, orders: 10, units: 20 }));
+  sales.evidenceKeys = [
+    'profitability.margin', 'comparison.deltaNetSales', 'comparison.deltaNetSalesPercent',
+    'comparison.deltaSalesCount', 'comparison.deltaUnits', 'comparison.deltaTicket',
+    'comparison.deltaTicketPercent', 'comparison.deltaUnitsPerTicket', 'comparison.productChanges',
+    'comparison.channelMixChanges', 'growthSignals.productOpportunities', 'summary.unitsPerTicket',
+    'scenarios.values'
+  ];
+  sales.calculations = [{ label: 'No incluir', value: 1, formattedValue: '1', formula: '1', source: 'fixture', period: {} }];
+  sales.assumptions = ['No incluir'];
+  sales.scenarios = [];
+  sales.coverage = { validSales: 16, complete: true, comparisonDataAvailable: true, growthDataComplete: true };
+  const validation = validatePayload(payload);
+  assert(validation.ok, `fixture comercial debe validar: ${JSON.stringify(validation)}`);
+
+  let providerBody: Record<string, unknown> | null = null;
+  const response = await makeHandler(analysisClient(), {
+    env: { AI_MODEL: 'deepseek-v4-flash' },
+    fetchImpl: async (_url, init) => {
+      providerBody = JSON.parse(String(init?.body || '{}')) as Record<string, unknown>;
+      return chatResponse(structuredCommercialResponse());
+    }
+  })(request(payload));
+  assertEquals(response.status, 200);
+  assert(providerBody !== null, 'provider body missing');
+  const body = providerBody as Record<string, unknown>;
+  const messages = body.messages as Array<Record<string, unknown>>;
+  const systemPrompt = String(messages[0].content);
+  const userMessage = String(messages[1].content);
+  const prompt = JSON.parse(userMessage) as Record<string, unknown>;
+  const evidence = prompt.deterministicEvidence as Record<string, unknown>;
+  const compactSales = evidence.sales as Record<string, unknown>;
+  const growth = compactSales.growthSignals as Record<string, unknown>;
+  const allowedKeys = prompt.allowedEvidenceKeys as unknown[];
+  const opportunities = growth.productOpportunities as Array<Record<string, unknown>>;
+
+  assertEquals(body.max_tokens, 2048);
+  assertEquals(JSON.stringify(body.response_format), JSON.stringify({ type: 'json_object' }));
+  assertEquals(JSON.stringify(body.thinking), JSON.stringify({ type: 'disabled' }));
+  assert(systemPrompt.includes('exclusivamente el objeto JSON solicitado'), 'prompt sólo permite JSON');
+  assert(systemPrompt.includes('no repitas los datos de entrada'), 'prompt evita repetir entrada');
+  assert(systemPrompt.includes('no reproduzcas la evidencia completa'), 'prompt evita reescribir evidencia');
+  assert(systemPrompt.includes('máximo 2 frases y 300 caracteres'), 'prompt limita el resumen');
+  assert(systemPrompt.includes('máximo 2 recomendaciones'), 'prompt limita recomendaciones');
+  assert(systemPrompt.includes('no recalcules cifras'), 'prompt prohíbe recalcular');
+  assert(systemPrompt.includes('ni inventes datos, causalidad'), 'prompt prohíbe inventar datos o causalidad');
+  assert(systemPrompt.toLowerCase().includes('no añadas campos'), 'prompt prohíbe campos adicionales');
+  assertEquals(Object.prototype.hasOwnProperty.call(prompt, 'scenario'), false);
+  assertEquals(Object.prototype.hasOwnProperty.call(prompt, 'agentKey'), false);
+  assertEquals(Object.prototype.hasOwnProperty.call(compactSales, 'netSales'), false);
+  assertEquals(Object.prototype.hasOwnProperty.call(compactSales, 'evidenceKeys'), false);
+  assertEquals(Object.prototype.hasOwnProperty.call(compactSales, 'calculations'), false);
+  assertEquals(Object.prototype.hasOwnProperty.call(compactSales, 'assumptions'), false);
+  assertEquals(Object.prototype.hasOwnProperty.call(compactSales, 'scenarios'), false);
+  assertEquals((compactSales.products as unknown[]).length, 0);
+  assertEquals((compactSales.channels as unknown[]).length, 0);
+  assertEquals(Object.prototype.hasOwnProperty.call(compactSales.comparison, 'productChanges'), false);
+  assertEquals(Object.prototype.hasOwnProperty.call(compactSales.comparison, 'channelMixChanges'), false);
+  assertEquals(opportunities.length, 3);
+  assertEquals(opportunities[0].name, 'Producto 7');
+  assertEquals(Object.prototype.hasOwnProperty.call(opportunities[0], 'currentMargin'), false);
+  assertEquals((growth.productsDeclining as unknown[]).length, 3);
+  assertEquals((growth.channelChanges as unknown[]).length, 2);
+  assert(allowedKeys.length <= 12, 'claves permitidas acotadas');
+  assert(userMessage.length < 3500, `prompt de usuario inesperadamente grande: ${userMessage.length} caracteres`);
+
+  for (const intent of ['ticket_growth', 'product_opportunity', 'sales_trend']) {
+    let intentProviderBody: Record<string, unknown> | null = null;
+    const intentResponse = await makeHandler(analysisClient(), {
+      env: { AI_MODEL: 'deepseek-v4-flash' },
+      fetchImpl: async (_url, init) => {
+        intentProviderBody = JSON.parse(String(init?.body || '{}')) as Record<string, unknown>;
+        return chatResponse(structuredCommercialResponse());
+      }
+    })(request(structuredCommercialRequest({ intent })));
+    assertEquals(intentResponse.status, 200, `${intent}: valid Edge request`);
+    assert(intentProviderBody !== null, `${intent}: provider request exists`);
+    const intentMessages = (intentProviderBody as Record<string, unknown>).messages as Array<Record<string, unknown>>;
+    const intentSystemPrompt = String(intentMessages[0].content).toLowerCase();
+    assert(intentSystemPrompt.includes('máximo 2 frases y 300 caracteres'), `${intent}: brief summary prompt`);
+    assert(intentSystemPrompt.includes('máximo 2 recomendaciones'), `${intent}: max-two recommendations prompt`);
+  }
+});
+
+Deno.test('la narrativa comercial normalizada respeta los límites compactos del contrato', async () => {
+  const response = JSON.parse(structuredCommercialResponse()) as Record<string, unknown>;
+  response.executiveSummary = 'S'.repeat(350);
+  response.explanation = 'E'.repeat(850);
+  response.extraProviderField = 'drop this field';
+  response.recommendations = Array.from({ length: 4 }, (_, index) => ({
+    title: `Title ${index} ${'T'.repeat(100)}`,
+    explanation: `Reason ${index} ${'R'.repeat(300)}`,
+    expectedImpact: `Impact ${index} ${'I'.repeat(220)}`,
+    priority: 'medium',
+    evidenceKeys: ['profitability.margin', 'profitability.profit', 'comparison.deltaMargin', 'products.risks'],
+    requiresConfirmation: true
+  }));
+  const client = analysisClient();
+  const responseFromEdge = await makeHandler(client, {
+    env: { AI_MODEL: 'deepseek-v4-flash' },
+    fetchImpl: async () => chatResponse(JSON.stringify(response))
+  })(request(structuredCommercialRequest({ intent: 'sales_growth', question: '¿Cómo puedo aumentar mis ventas?' })));
+  const body = await json(responseFromEdge);
+  const content = JSON.parse(String(body.content)) as Record<string, unknown>;
+  const recommendations = content.recommendations as Array<Record<string, unknown>>;
+  assertEquals(responseFromEdge.status, 200);
+  assertEquals(body.quotaOutcome, 'consumed');
+  assert((content.executiveSummary as string).length <= 300, 'resumen queda dentro del máximo');
+  assert((content.explanation as string).length <= 800, 'explicación queda dentro del máximo');
+  assertEquals(recommendations.length, 2, 'no más de dos recomendaciones');
+  assertEquals(Object.prototype.hasOwnProperty.call(content, 'extraProviderField'), false, 'se descartan campos añadidos');
+  for (const recommendation of recommendations) {
+    assert((recommendation.title as string).length <= 80, 'título acotado');
+    assert((recommendation.explanation as string).length <= 240, 'explicación de recomendación acotada');
+    assert((recommendation.expectedImpact as string).length <= 180, 'impacto acotado');
+    assert((recommendation.evidenceKeys as unknown[]).length <= 3, 'evidenceKeys acotadas');
+    assertEquals(recommendation.requiresConfirmation, true);
+  }
+});
+
+Deno.test('respuesta comercial completa en el techo de tokens se acepta y consume una cuota', async () => {
+  const client = analysisClient();
+  const response = await makeHandler(client, {
+    env: { AI_MODEL: 'deepseek-v4-flash' },
+    fetchImpl: async () => chatResponse(
+      structuredCommercialResponse(),
+      { prompt_tokens: 4669, completion_tokens: 2048, total_tokens: 6717 },
+      'stop'
+    )
+  })(request(structuredCommercialRequest({ intent: 'sales_growth', question: '¿Cómo puedo aumentar mis ventas?' })));
+  const body = await json(response);
+  const complete = client.calls.find((call) => call.name === 'complete_ai_agent_analysis');
+  assertEquals(response.status, 200);
+  assertEquals(body.providerCalled, true);
+  assertEquals(body.quotaOutcome, 'consumed');
+  assertEquals((complete?.args as Record<string, unknown>).p_success, true);
+});
+
+Deno.test('razonamiento del proveedor no se conserva; sólo se registra el conteo agregado', async () => {
+  const client = analysisClient();
+  const reasoningSecret = 'synthetic-private-reasoning-must-not-persist';
+  const response = await makeHandler(client, {
+    env: { AI_MODEL: 'deepseek-v4-flash' },
+    fetchImpl: async () => new Response(JSON.stringify({
+      id: 'provider-reasoning-fixture',
+      model: 'deepseek-v4-flash',
+      choices: [{
+        message: { role: 'assistant', content: structuredCommercialResponse(), reasoning_content: reasoningSecret },
+        finish_reason: 'stop'
+      }],
+      usage: {
+        prompt_tokens: 32,
+        completion_tokens: 64,
+        total_tokens: 96,
+        completion_tokens_details: { reasoning_tokens: 0 }
+      }
+    }), { status: 200, headers: { 'content-type': 'application/json' } })
+  })(request(structuredCommercialRequest()));
+  const bodyText = await response.text();
+  const complete = client.calls.find((call) => call.name === 'complete_ai_agent_analysis');
+  const args = complete?.args as Record<string, unknown>;
+  const metadata = args.p_metadata as Record<string, unknown>;
+  assertEquals(response.status, 200);
+  assert(!bodyText.includes(reasoningSecret), 'texto de razonamiento no se devuelve al cliente');
+  assertEquals(metadata.reasoning_tokens, 0);
+  assert(!JSON.stringify(metadata).includes(reasoningSecret), 'texto de razonamiento no se guarda en metadatos');
+  assert(!JSON.stringify(args).includes(reasoningSecret), 'texto de razonamiento no se guarda en argumentos RPC');
 });
 
 Deno.test('ventas y rentabilidad rechaza prompts arbitrarios en la solicitud estructurada', async () => {

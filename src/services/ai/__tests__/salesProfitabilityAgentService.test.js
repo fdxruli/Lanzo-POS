@@ -155,7 +155,7 @@ describe('sales profitability agent service', () => {
       scope: 'mine'
     });
     expect(analyze).toHaveBeenCalledTimes(1);
-    expect(analyze.mock.calls[0][1]).toEqual({ temperature: 0.2, maxTokens: 1024 });
+    expect(analyze.mock.calls[0][1]).toEqual({ temperature: 0.2, maxTokens: 2048 });
     expect(result.providerCalled).toBe(true);
     expect(result.quotaOutcome).toBe('consumed');
     expect(result.usageStatus.remaining).toBe(14);

@@ -22,6 +22,7 @@ export type ProviderResult = {
   content: string;
   promptTokens: number | null;
   completionTokens: number | null;
+  reasoningTokens: number | null;
   totalTokens: number | null;
   model: string | null;
   requestId: string | null;
@@ -246,6 +247,7 @@ function buildRequestBody(
     && config.model.trim().toLowerCase() === 'deepseek-v4-flash'
   ) {
     requestBody.response_format = { type: 'json_object' };
+    requestBody.thinking = { type: 'disabled' };
   }
 
   if (config.vendor !== 'moonshot') {
@@ -280,9 +282,15 @@ async function readBodyWithLimit(response: Response): Promise<string> {
 
 function normalizeUsage(usage: unknown) {
   const record = isRecord(usage) ? usage : {};
+  const completionDetails = isRecord(record.completion_tokens_details)
+    ? record.completion_tokens_details
+    : isRecord(record.output_tokens_details)
+      ? record.output_tokens_details
+      : {};
   return {
     promptTokens: nonNegativeInteger(record.prompt_tokens ?? record.input_tokens),
     completionTokens: nonNegativeInteger(record.completion_tokens ?? record.output_tokens),
+    reasoningTokens: nonNegativeInteger(completionDetails.reasoning_tokens),
     totalTokens: nonNegativeInteger(record.total_tokens)
   };
 }
