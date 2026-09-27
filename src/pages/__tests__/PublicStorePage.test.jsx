@@ -599,10 +599,9 @@ describe('PublicStorePage', () => {
     expect(await screen.findByRole('heading', { name: 'Alitas BBQ' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Mi negocio' })).toBeInTheDocument();
 
-    await act(async () => {
+    act(() => {
       if (refreshMode === 'focus') {
-        fireEvent.focus(window);
-        await new Promise((resolve) => window.setTimeout(resolve, 100));
+        window.dispatchEvent(new Event('focus'));
       } else {
         const pageShow = new Event('pageshow');
         Object.defineProperty(pageShow, 'persisted', { value: true });
@@ -610,6 +609,9 @@ describe('PublicStorePage', () => {
       }
     });
 
+    await waitFor(() => {
+      expect(serviceMocks.getPublicPortalBySlug).toHaveBeenCalledTimes(2);
+    }, { timeout: 3000 });
     expect(await screen.findByRole('heading', { name: title })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Mi negocio' })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Alitas BBQ' })).not.toBeInTheDocument();
