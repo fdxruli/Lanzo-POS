@@ -52,6 +52,43 @@ describe('sales cloud cost snapshot nullability', () => {
 });
 
 describe('salesCloudCashierMapper discounts', () => {
+  it('keeps prorated percentage-origin child discounts as fixed amounts with traceability', () => {
+    const lineDiscount = {
+      type: 'amount', value: 0.17, amount: 0.17,
+      splitParentDiscountType: 'percent', splitParentDiscountValue: 33.3333, splitParentDiscountScope: 'line',
+      reason: 'Promoción de línea'
+    };
+    const saleDiscount = {
+      type: 'amount', value: 0.11, amount: 0.11,
+      splitParentDiscountType: 'percent', splitParentDiscountValue: 33.3333, splitParentDiscountScope: 'sale',
+      reason: 'Promoción general'
+    };
+    const payload = mapLocalCheckoutToCloudSale({
+      sale: {
+        id: 'sale-split-percent', timestamp: '2026-09-27T12:00:00.000Z', subtotal: 0.5,
+        saleDiscount, discountTotal: 0.28, total: 0.22
+      },
+      processedItems: [{
+        id: 'product-split-percent', lineId: 'line-split-percent', name: 'Producto',
+        price: 0.5, quantity: 1, exactTotal: 0.5, lineTotal: 0.33,
+        discount: lineDiscount, discountAmount: 0.17
+      }],
+      paymentData: { paymentMethod: 'efectivo', amountPaid: 0.22 },
+      total: 0.22
+    });
+
+    expect(payload.items[0].discount_amount).toBe(0.17);
+    expect(payload.items[0].metadata.discount).toMatchObject({
+      type: 'amount', value: 0.17, amount: 0.17,
+      splitParentDiscountType: 'percent', splitParentDiscountValue: 33.3333, splitParentDiscountScope: 'line'
+    });
+    expect(payload.sale.discount_total).toBe(0.28);
+    expect(payload.sale.metadata.discount).toMatchObject({
+      type: 'amount', value: 0.11, amount: 0.11,
+      splitParentDiscountType: 'percent', splitParentDiscountValue: 33.3333, splitParentDiscountScope: 'sale'
+    });
+  });
+
   it('maps line discount as net line_total', () => {
     const payload = mapLocalCheckoutToCloudSale({
       sale: { id: 'sale-1', timestamp: '2026-07-03T12:00:00.000Z', subtotal: 200, discountTotal: 20, total: 180 },

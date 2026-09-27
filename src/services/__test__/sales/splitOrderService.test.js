@@ -424,6 +424,67 @@ describe('splitOpenTableOrderCore', () => {
     ]);
   });
 
+  it('hands off prorated percentage discounts as identical fixed amounts in Free/local and Pro/cloud', async () => {
+    const lineAppliedAt = '2026-09-27T12:00:00.000Z';
+    const saleAppliedAt = '2026-09-27T12:05:00.000Z';
+    const parentSale = {
+      ...buildParentSale(),
+      total: '0.45',
+      saleDiscount: {
+        type: 'percent', value: 33.3333, reason: 'Promoción general', scope: 'sale',
+        appliedAt: saleAppliedAt, appliedByRole: 'owner', appliedByStaffUserId: 'staff-2', appliedByDeviceId: 'device-2'
+      },
+      items: [{
+        id: 'prod-1', name: 'Producto de cincuenta centavos', quantity: 2, price: 0.5,
+        discount: {
+          type: 'percent', value: 33.3333, reason: 'Promoción de línea', scope: 'line',
+          appliedAt: lineAppliedAt, appliedByRole: 'owner', appliedByStaffUserId: 'staff-1', appliedByDeviceId: 'device-1'
+        },
+        inventoryReservation: { source: 'table', committedQuantity: 2, committedBatches: [] }
+      }]
+    };
+    const tickets = [
+      { label: 'T1', paymentData: { paymentMethod: 'efectivo', amountPaid: '0.22' }, lines: [{ lineIndex: 0, quantity: 1 }] },
+      { label: 'T2', paymentData: { paymentMethod: 'efectivo', amountPaid: '0.23' }, lines: [{ lineIndex: 0, quantity: 1 }] }
+    ];
+
+    const localDeps = makeDeps(parentSale);
+    const localResult = await splitOpenTableOrderCore(makeParams(parentSale, { tickets }), localDeps);
+    expect(localResult.success, localResult.message).toBe(true);
+    const localChildren = localDeps.executeSplitOpenTableOrderTransactionSafe.mock.calls[0][0].childPayloads.map((child) => child.sale);
+
+    salesCloudCashierService.processCloudSplitTableSale.mockResolvedValueOnce({ success: false, errorType: 'TEST_CAPTURE' });
+    const cloudDeps = makeDeps(parentSale);
+    const cloudResult = await splitOpenTableOrderCore(makeParams(parentSale, { tickets, cloudSpecialFlows: true }), cloudDeps);
+    expect(cloudResult).toMatchObject({ success: false, errorType: 'TEST_CAPTURE' });
+    const cloudDefinitions = salesCloudCashierService.processCloudSplitTableSale.mock.calls.at(-1)[0].childDefinitions;
+    const cloudChildren = cloudDefinitions.map((child) => child.sale);
+    const financials = (sales) => sales.map((sale) => ({
+      total: sale.total,
+      price: sale.items[0].price,
+      quantity: sale.items[0].quantity,
+      lineDiscount: sale.items[0].discount,
+      saleDiscount: sale.saleDiscount,
+      discountTotal: sale.discountTotal
+    }));
+
+    expect(financials(cloudChildren)).toEqual(financials(localChildren));
+    expect(localChildren.map((sale) => sale.items[0].discount)).toEqual([
+      expect.objectContaining({ type: 'amount', value: 0.17, amount: 0.17, splitParentDiscountType: 'percent', splitParentDiscountValue: 33.3333, splitParentDiscountScope: 'line', appliedAt: lineAppliedAt }),
+      expect.objectContaining({ type: 'amount', value: 0.16, amount: 0.16, splitParentDiscountType: 'percent', splitParentDiscountValue: 33.3333, splitParentDiscountScope: 'line', appliedAt: lineAppliedAt })
+    ]);
+    expect(localChildren.map((sale) => sale.saleDiscount)).toEqual([
+      expect.objectContaining({ type: 'amount', value: 0.11, amount: 0.11, splitParentDiscountType: 'percent', splitParentDiscountValue: 33.3333, splitParentDiscountScope: 'sale', appliedAt: saleAppliedAt }),
+      expect.objectContaining({ type: 'amount', value: 0.11, amount: 0.11, splitParentDiscountType: 'percent', splitParentDiscountValue: 33.3333, splitParentDiscountScope: 'sale', appliedAt: saleAppliedAt })
+    ]);
+    expect(localChildren.map((sale) => [sale.items[0].price, sale.items[0].quantity, sale.total])).toEqual([
+      [0.5, 1, '0.22'],
+      [0.5, 1, '0.23']
+    ]);
+    expect(localChildren.reduce((sum, sale) => sum + Number(sale.discountTotal), 0)).toBe(0.55);
+    expect(localChildren.reduce((sum, sale) => sum + Number(sale.total), 0)).toBe(0.45);
+  });
+
   it('rejects a real commercial mismatch consistently before either local or cloud writes', async () => {
     const parentSale = {
       ...buildParentSale(),

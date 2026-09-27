@@ -270,12 +270,33 @@ const buildAllocatedDiscount = ({ source, normalized, amountCents, scope }) => {
   if (!normalized || amountCents <= 0) return null;
 
   const amount = Money.toNumber(Money.fromCents(amountCents));
-  const type = normalized.type || source?.type || 'amount';
+  const parentType = String(
+    source?.splitParentDiscountType ?? normalized.type ?? source?.type ?? 'amount'
+  ).toLowerCase();
+  const parentValue = source?.splitParentDiscountValue
+    ?? source?.value
+    ?? source?.percent
+    ?? source?.percentage
+    ?? source?.amount
+    ?? normalized.value
+    ?? amount;
+  const parentScope = source?.splitParentDiscountScope
+    ?? source?.scope
+    ?? normalized.scope
+    ?? scope;
+
+  // A distributed discount is now a fixed child amount. Keep the original
+  // percentage separately for audit; it must not be executable by cloud again.
   return addDiscountAliases({
     ...(discountObjectOf(source) || {}),
     ...normalized,
-    type,
-    value: type === 'percent' ? normalized.value : amount,
+    ...(parentType === 'percent' ? {
+      splitParentDiscountType: parentType,
+      splitParentDiscountValue: parentValue,
+      splitParentDiscountScope: parentScope
+    } : {}),
+    type: 'amount',
+    value: amount,
     amount,
     scope,
     reason: normalized.reason || source?.reason || '',

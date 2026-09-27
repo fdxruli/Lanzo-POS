@@ -238,4 +238,143 @@ describe('restaurant split contract', () => {
     expect(result.valid).toBe(false);
     expect(result.roundingPlan.differenceCents).toBe(-1000);
   });
+
+  it('materializes a percentage line discount as an amount and preserves parent audit fields', () => {
+    const appliedAt = '2026-09-27T12:00:00.000Z';
+    const result = calculateByItemsTicketFinancials({
+      items: [{
+        id: 'p1', quantity: 1, price: 100,
+        discount: {
+          type: 'percent', value: 10, reason: 'Promoción de línea', scope: 'line',
+          appliedAt, appliedByRole: 'owner', appliedByStaffUserId: 'staff-1', appliedByDeviceId: 'device-1'
+        }
+      }],
+      tickets: [{ label: 'T1', lines: [{ lineIndex: 0, quantity: 1 }] }],
+      parentTotal: 90
+    });
+
+    expect(result.valid).toBe(true);
+    expect(result.tickets[0].lines[0].discount).toMatchObject({
+      type: 'amount', value: 10, amount: 10, scope: 'line',
+      splitParentDiscountType: 'percent', splitParentDiscountValue: 10, splitParentDiscountScope: 'line',
+      reason: 'Promoción de línea', appliedAt,
+      appliedByRole: 'owner', appliedByStaffUserId: 'staff-1', appliedByDeviceId: 'device-1'
+    });
+  });
+
+  it('materializes a divided percentage line discount as exact ticket amounts', () => {
+    const result = calculateByItemsTicketFinancials({
+      items: [{ id: 'p1', quantity: 2, price: 50, discount: { type: 'percent', value: 15, reason: 'Promoción' } }],
+      tickets: [1, 1].map((quantity, index) => ({
+        label: `T${index + 1}`,
+        lines: [{ lineIndex: 0, quantity }]
+      })),
+      parentTotal: 85
+    });
+
+    expect(result.valid).toBe(true);
+    expect(result.tickets.map((ticket) => ticket.lines[0].discount)).toEqual([
+      expect.objectContaining({ type: 'amount', value: 7.5, amount: 7.5, splitParentDiscountType: 'percent', splitParentDiscountValue: 15 }),
+      expect.objectContaining({ type: 'amount', value: 7.5, amount: 7.5, splitParentDiscountType: 'percent', splitParentDiscountValue: 15 })
+    ]);
+    expect(result.tickets.reduce((sum, ticket) => sum + ticket.lineDiscountCents, 0)).toBe(1500);
+  });
+
+  it('keeps fractional quantities and prices while prorating a percentage line discount', () => {
+    const result = calculateByItemsTicketFinancials({
+      items: [{ id: 'p1', quantity: 1.5, price: 100, discount: { type: 'percent', value: 20, reason: 'Promoción' } }],
+      tickets: [0.5, 1].map((quantity, index) => ({
+        label: `T${index + 1}`,
+        lines: [{ lineIndex: 0, quantity }]
+      })),
+      parentTotal: 120
+    });
+
+    expect(result.valid).toBe(true);
+    expect(result.tickets.map((ticket) => ticket.lines[0])).toEqual([
+      expect.objectContaining({ quantity: 0.5, grossSubtotalCents: 5000, discountCents: 1000, lineTotalCents: 4000, discount: expect.objectContaining({ type: 'amount', value: 10, amount: 10 }) }),
+      expect.objectContaining({ quantity: 1, grossSubtotalCents: 10000, discountCents: 2000, lineTotalCents: 8000, discount: expect.objectContaining({ type: 'amount', value: 20, amount: 20 }) })
+    ]);
+    expect(result.tickets.reduce((sum, ticket) => sum + ticket.lineDiscountCents, 0)).toBe(3000);
+  });
+
+  it('assigns a percentage cent remainder once and matches server amount normalization', () => {
+    const result = calculateByItemsTicketFinancials({
+      items: [{ id: 'p1', quantity: 2, price: 0.5, discount: { type: 'percent', value: 33.3333, reason: 'Promoción' } }],
+      tickets: [0, 1].map((index) => ({ label: `T${index + 1}`, lines: [{ lineIndex: 0, quantity: 1 }] })),
+      parentTotal: 0.67
+    });
+    const discounts = result.tickets.map((ticket) => ticket.lines[0].discount);
+    const roundLikeServer = (amount) => Math.floor((amount * 100) + 0.5) / 100;
+    const serverAmountResults = discounts.map((discount) => roundLikeServer(discount.value));
+    const serverPercentResults = [0.5, 0.5].map((subtotal) => roundLikeServer(subtotal * 33.3333 / 100));
+
+    expect(result.valid).toBe(true);
+    expect(result.parentTotals.items[0].discountAmount).toBe(0.33);
+    expect(discounts.map((discount) => ({ type: discount.type, value: discount.value, amount: discount.amount }))).toEqual([
+      { type: 'amount', value: 0.17, amount: 0.17 },
+      { type: 'amount', value: 0.16, amount: 0.16 }
+    ]);
+    expect(discounts.every((discount) => discount.splitParentDiscountType === 'percent' && discount.splitParentDiscountValue === 33.3333)).toBe(true);
+    expect(serverAmountResults).toEqual([0.17, 0.16]);
+    expect(serverAmountResults.reduce((sum, amount) => sum + amount, 0)).toBe(0.33);
+    expect(serverPercentResults).toEqual([0.17, 0.17]);
+    expect(serverPercentResults.reduce((sum, amount) => sum + amount, 0)).toBe(0.34);
+    expect(result.tickets.reduce((sum, ticket) => sum + ticket.totalCents, 0)).toBe(67);
+  });
+
+  it('materializes a general percentage discount as amounts and preserves its source metadata', () => {
+    const appliedAt = '2026-09-27T12:30:00.000Z';
+    const result = calculateByItemsTicketFinancials({
+      items: [{ id: 'p1', quantity: 1, price: 40 }, { id: 'p2', quantity: 1, price: 60 }],
+      saleDiscount: {
+        type: 'percent', value: 33.3333, reason: 'Promoción de cuenta', scope: 'sale',
+        appliedAt, appliedByRole: 'owner', appliedByStaffUserId: 'staff-2', appliedByDeviceId: 'device-2'
+      },
+      tickets: [0, 1].map((lineIndex) => ({ label: `T${lineIndex + 1}`, lines: [{ lineIndex, quantity: 1 }] })),
+      parentTotal: 66.67
+    });
+    const discounts = result.tickets.map((ticket) => ticket.saleDiscount);
+
+    expect(result.valid).toBe(true);
+    expect(result.parentTotals.saleDiscountAmount).toBe(33.33);
+    expect(discounts.map((discount) => ({ type: discount.type, value: discount.value, amount: discount.amount }))).toEqual([
+      { type: 'amount', value: 13.33, amount: 13.33 },
+      { type: 'amount', value: 20, amount: 20 }
+    ]);
+    expect(discounts[0]).toMatchObject({
+      scope: 'sale', splitParentDiscountType: 'percent', splitParentDiscountValue: 33.3333, splitParentDiscountScope: 'sale',
+      reason: 'Promoción de cuenta', appliedAt,
+      appliedByRole: 'owner', appliedByStaffUserId: 'staff-2', appliedByDeviceId: 'device-2'
+    });
+    expect(result.tickets.reduce((sum, ticket) => sum + ticket.saleDiscountCents, 0)).toBe(3333);
+    expect(result.tickets.reduce((sum, ticket) => sum + ticket.totalCents, 0)).toBe(6667);
+  });
+
+  it('combines line and sale percentage discounts without rounding drift', () => {
+    const result = calculateByItemsTicketFinancials({
+      items: [
+        { id: 'p1', quantity: 1, price: 100, discount: { type: 'percent', value: 10, reason: 'Descuento línea A' } },
+        { id: 'p2', quantity: 1, price: 200, discount: { type: 'percent', value: 20, reason: 'Descuento línea B' } }
+      ],
+      saleDiscount: { type: 'percent', value: 10, reason: 'Descuento general', scope: 'sale' },
+      tickets: [0, 1].map((lineIndex) => ({ label: `T${lineIndex + 1}`, lines: [{ lineIndex, quantity: 1 }] })),
+      parentTotal: 225
+    });
+    const discounts = result.tickets.map((ticket) => ({ line: ticket.lines[0].discount, sale: ticket.saleDiscount }));
+
+    expect(result.valid).toBe(true);
+    expect(result.roundingPlan.differenceCents).toBe(0);
+    expect(discounts.map(({ line }) => [line.type, line.amount, line.splitParentDiscountType])).toEqual([
+      ['amount', 10, 'percent'],
+      ['amount', 40, 'percent']
+    ]);
+    expect(discounts.map(({ sale }) => [sale.type, sale.amount, sale.splitParentDiscountType])).toEqual([
+      ['amount', 9, 'percent'],
+      ['amount', 16, 'percent']
+    ]);
+    expect(result.tickets.reduce((sum, ticket) => sum + ticket.discountTotalCents, 0)).toBe(7500);
+    expect(result.tickets.map((ticket) => ticket.totalCents)).toEqual([8100, 14400]);
+    expect(result.tickets.reduce((sum, ticket) => sum + ticket.totalCents, 0)).toBe(22500);
+  });
 });
