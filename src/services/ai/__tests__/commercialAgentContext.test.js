@@ -632,4 +632,40 @@ describe('commercial AI context boundary', () => {
     expect(opportunities[1]).not.toHaveProperty('currentMargin');
     expect(opportunities[1]).not.toHaveProperty('currentProfit');
   });
+
+  it('sends allowlisted goal and what-if snapshots without raw rows or internal identifiers', () => {
+    const report = {
+      overview: { netSales: 76000, units: 80, salesCount: 76, averageTicket: 1000, profit: 30400, margin: 0.4 },
+      coverage: { validSales: 76, complete: true, costCoverage: 1 },
+      goalSimulation: {
+        type: 'revenue', targetValue: 100000, currentValue: 76000, ready: true, state: 'remaining',
+        gap: 24000, gapPercent: 24, excess: 0, progress: 0.76, revenueGap: 24000,
+        currentSales: 76000, currentTickets: 76, currentAverageTicket: 1000,
+        requiredAdditionalTicketsAtCurrentTicket: 24,
+        requiredAverageTicketAtCurrentTicketCount: 1315.79, assumptions: [], limitations: [],
+        saleIds: ['internal-sale-id']
+      },
+      whatIfSimulation: {
+        changeType: 'sales', changePercent: -10, ready: true, currentSales: 76000,
+        simulatedSales: 68400, salesDelta: -7600, currentCost: null, simulatedCost: null,
+        currentProfit: null, simulatedProfit: null, profitDelta: null, currentMargin: null,
+        simulatedMargin: null, assumptions: [], limitations: [], customerEmail: 'hidden@example.test'
+      },
+      rawRows: [{ sale_id: 'internal-sale-id' }]
+    };
+    const goalContext = buildSalesProfitabilityContext({
+      intent: 'goal_simulation', period: { from: '2026-09-01', to: '2026-09-30' }, report
+    });
+    const whatIfContext = buildSalesProfitabilityContext({
+      intent: 'what_if_analysis', period: { from: '2026-09-01', to: '2026-09-30' }, report
+    });
+
+    expect(goalContext.sales.goalSimulation).toMatchObject({ type: 'revenue', targetValue: 100000, requiredAdditionalTicketsAtCurrentTicket: 24 });
+    expect(whatIfContext.sales.whatIfSimulation).toMatchObject({ changeType: 'sales', changePercent: -10, simulatedSales: 68400 });
+    const serialized = JSON.stringify([goalContext, whatIfContext]);
+    expect(serialized).not.toContain('saleIds');
+    expect(serialized).not.toContain('internal-sale-id');
+    expect(serialized).not.toContain('hidden@example.test');
+    expect(goalContext.sales).not.toHaveProperty('rawRows');
+  });
 });

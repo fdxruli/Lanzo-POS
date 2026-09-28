@@ -13,7 +13,7 @@ import {
   Sparkles,
   Trash2
 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   loadSalesProfitabilityProducts,
   resolveBusinessTimezone,
@@ -31,6 +31,7 @@ import {
   normalizeScenarioForIntent,
   resolveCommercialIntent
 } from '../../services/ai/commercialAgentContract';
+import { inferCommercialScenarioFromQuestion, isCommercialStrategyQuestion } from '../../services/ai/commercialQuestionRouter';
 import { LIA_IDENTITY } from '../../services/ai/liaIdentity';
 import { getAIAgentUsageStatus } from '../../services/aiService';
 import { getLicenseKeyFromDetails } from '../../services/sync/syncConstants';
@@ -296,6 +297,184 @@ function ComboEvidence({ response }) {
   );
 }
 
+const GOAL_TYPE_LABELS = Object.freeze({
+  revenue: 'Ventas netas',
+  gross_profit: 'Utilidad bruta',
+  average_ticket: 'Ticket promedio',
+  gross_margin: 'Margen bruto',
+  product_margin: 'Margen de producto'
+});
+
+function GoalSimulationEvidence({ response }) {
+  const goal = response.goalSimulation || {};
+  const percentValue = (value) => value === null || value === undefined
+    ? 'No disponible'
+    : `${formatAnalysisValue.formatNumber(value, 1)}%`;
+  if (!goal.type) return <p className="commercial-ai-muted">Indica el tipo de meta y su valor objetivo para calcular el escenario.</p>;
+  if (!goal.ready) {
+    return <>
+      <p className="commercial-ai-evidence-lead">Meta de {GOAL_TYPE_LABELS[goal.type] || 'valor comercial'}: {goal.type.includes('margin') ? percentValue(goal.targetValue) : formatAnalysisValue.formatMoney(goal.targetValue)}</p>
+      <p className="commercial-ai-caution">{goal.limitation || 'No hay datos suficientes para realizar este cálculo.'}</p>
+    </>;
+  }
+  if (goal.type === 'revenue') {
+    return <>
+      <MetricGrid>
+        <Metric label="Meta de ventas" value={formatAnalysisValue.formatMoney(goal.targetValue)} />
+        <Metric label="Ventas actuales" value={formatAnalysisValue.formatMoney(goal.currentSales)} />
+        <Metric label={goal.state === 'achieved' ? 'Excedente' : 'Brecha'} value={formatAnalysisValue.formatMoney(goal.state === 'achieved' ? goal.excess : goal.revenueGap)} />
+        <Metric label="Brecha porcentual" value={goal.state === 'achieved' ? 'Meta alcanzada' : percentValue(goal.gapPercent)} note="Proporción faltante de la meta" />
+        <Metric label="Progreso" value={formatAnalysisValue.formatPercent(goal.progress)} />
+        <Metric label="Tickets actuales" value={formatAnalysisValue.formatNumber(goal.currentTickets, 0)} />
+        <Metric label="Ticket promedio actual" value={formatAnalysisValue.formatMoney(goal.currentAverageTicket)} />
+        <Metric label="Tickets adicionales" value={goal.state === 'achieved' ? 'Meta alcanzada' : formatAnalysisValue.formatNumber(goal.requiredAdditionalTicketsAtCurrentTicket, 0)} note="Si se mantiene el ticket promedio" />
+        <Metric label="Ticket requerido" value={formatAnalysisValue.formatMoney(goal.requiredAverageTicketAtCurrentTicketCount)} note="Si se mantiene el número de tickets" />
+      </MetricGrid>
+    </>;
+  }
+  if (goal.type === 'gross_profit') {
+    return <>
+      <MetricGrid>
+        <Metric label="Utilidad actual" value={formatAnalysisValue.formatMoney(goal.currentProfit)} />
+        <Metric label="Meta de utilidad" value={formatAnalysisValue.formatMoney(goal.targetProfit)} />
+        <Metric label={goal.state === 'achieved' ? 'Excedente' : 'Brecha'} value={formatAnalysisValue.formatMoney(goal.state === 'achieved' ? goal.excess : goal.profitGap)} />
+        <Metric label="Margen bruto actual" value={formatAnalysisValue.formatPercent(goal.currentMargin)} />
+        <Metric label="Ventas requeridas" value={formatAnalysisValue.formatMoney(goal.requiredRevenue)} />
+        <Metric label="Ventas adicionales" value={formatAnalysisValue.formatMoney(goal.additionalRevenue)} />
+        <Metric label="Tickets equivalentes" value={formatAnalysisValue.formatNumber(goal.equivalentAdditionalTickets, 0)} note="Al ticket promedio actual" />
+      </MetricGrid>
+      <p className="commercial-ai-caution">Supone mezcla de productos y margen bruto constantes; no es una predicción.</p>
+    </>;
+  }
+  if (goal.type === 'average_ticket') {
+    return <MetricGrid>
+      <Metric label="Ticket promedio actual" value={formatAnalysisValue.formatMoney(goal.currentAverageTicket)} />
+      <Metric label="Meta de ticket" value={formatAnalysisValue.formatMoney(goal.targetValue)} />
+      <Metric label={goal.state === 'achieved' ? 'Meta alcanzada · excedente' : 'Diferencia'} value={formatAnalysisValue.formatMoney(goal.state === 'achieved' ? goal.excess : goal.ticketDifference)} />
+      <Metric label="Cambio matemático" value={goal.state === 'achieved' ? 'Meta alcanzada' : goal.ticketChangePercent === null ? 'No disponible' : percentValue(goal.ticketChangePercent)} />
+      <Metric label="Tickets actuales" value={formatAnalysisValue.formatNumber(goal.currentTickets, 0)} />
+      <Metric label="Ventas al conteo actual" value={formatAnalysisValue.formatMoney(goal.requiredSalesAtCurrentTicketCount)} />
+      <Metric label={goal.state === 'achieved' ? 'Excedente frente a ventas requeridas' : 'Incremento matemático de ventas'} value={formatAnalysisValue.formatMoney(Math.abs(goal.salesIncreaseAtCurrentTicketCount))} />
+    </MetricGrid>;
+  }
+  if (goal.type === 'gross_margin') {
+    return <>
+      <MetricGrid>
+        <Metric label="Margen actual" value={formatAnalysisValue.formatPercent(goal.currentMargin)} />
+        <Metric label="Meta de margen" value={percentValue(goal.targetValue)} />
+        <Metric label={goal.state === 'achieved' ? 'Estado de meta' : 'Brecha de margen'} value={goal.state === 'achieved' ? 'Meta alcanzada' : percentValue(goal.gap)} />
+        <Metric label="Ventas actuales" value={formatAnalysisValue.formatMoney(goal.currentSales)} />
+        <Metric label="Utilidad actual" value={formatAnalysisValue.formatMoney(goal.currentProfit)} />
+        <Metric label="Utilidad requerida" value={formatAnalysisValue.formatMoney(goal.requiredProfitAtCurrentSales)} />
+        <Metric label={goal.state === 'achieved' ? 'Excedente de utilidad' : 'Brecha de utilidad'} value={formatAnalysisValue.formatMoney(Math.abs(goal.additionalProfitRequired))} />
+      </MetricGrid>
+      <p className="commercial-ai-caution">La brecha no determina si se cerrará con cambios de precio, costo o mezcla de productos.</p>
+    </>;
+  }
+  return <>
+    <p className="commercial-ai-evidence-lead">{goal.productName || 'Producto seleccionado'}</p>
+    <MetricGrid>
+      <Metric label="Precio promedio actual" value={formatAnalysisValue.formatMoney(goal.currentPrice)} />
+      <Metric label="Costo unitario conocido" value={formatAnalysisValue.formatMoney(goal.unitCost)} />
+      <Metric label="Margen actual" value={formatAnalysisValue.formatPercent(goal.currentMargin)} />
+      <Metric label="Margen objetivo" value={percentValue(goal.targetValue)} />
+      <Metric label="Precio matemático requerido" value={formatAnalysisValue.formatMoney(goal.requiredPrice)} />
+      <Metric label="Diferencia frente al precio actual" value={formatAnalysisValue.formatMoney(goal.priceDifference)} note={goal.priceChangePercent === null ? null : percentValue(goal.priceChangePercent)} />
+    </MetricGrid>
+    <p className="commercial-ai-caution">No se modifica el precio real ni se predice la demanda a ese precio.</p>
+  </>;
+}
+
+function WhatIfEvidence({ response }) {
+  const scenario = response.whatIfSimulation || {};
+  if (!scenario.ready) return <p className="commercial-ai-muted">{asArray(scenario.limitations).join(' ') || 'No hay datos suficientes para simular este escenario.'}</p>;
+  const percent = `${formatAnalysisValue.formatNumber(scenario.changePercent, 1)}%`;
+  if (scenario.changeType === 'product') {
+    return <>
+      <p className="commercial-ai-evidence-lead">{scenario.productName} · cambio simulado {percent}</p>
+      <MetricGrid>
+        <Metric label="Unidades históricas" value={formatAnalysisValue.formatNumber(scenario.historicalUnits)} />
+        <Metric label="Unidades simuladas" value={formatAnalysisValue.formatNumber(scenario.simulatedUnits)} note="Permite fracciones en el cálculo" />
+        <Metric label="Precio promedio histórico" value={formatAnalysisValue.formatMoney(scenario.averagePrice)} />
+        <Metric label="Ventas históricas" value={formatAnalysisValue.formatMoney(scenario.historicalSales)} />
+        <Metric label="Ventas simuladas" value={formatAnalysisValue.formatMoney(scenario.simulatedSales)} />
+        <Metric label="Costo actual" value={formatAnalysisValue.formatMoney(scenario.currentCost)} />
+        <Metric label="Costo simulado" value={formatAnalysisValue.formatMoney(scenario.simulatedCost)} />
+        <Metric label="Utilidad actual" value={formatAnalysisValue.formatMoney(scenario.currentProfit)} />
+        <Metric label="Utilidad simulada" value={formatAnalysisValue.formatMoney(scenario.simulatedProfit)} />
+        <Metric label="Margen actual" value={formatAnalysisValue.formatPercent(scenario.currentMargin)} />
+        <Metric label="Margen simulado" value={formatAnalysisValue.formatPercent(scenario.simulatedMargin)} />
+        <Metric label="Cambio en utilidad" value={formatAnalysisValue.formatMoney(scenario.profitDelta)} />
+      </MetricGrid>
+      <p className="commercial-ai-caution">Mantiene el precio promedio histórico y no predice cómo reaccionará la demanda. Si el costo es desconocido, la utilidad y el margen permanecen no disponibles.</p>
+    </>;
+  }
+  if (scenario.changeType === 'ticket') {
+    return <>
+      <MetricGrid>
+        <Metric label="Cambio simulado" value={percent} />
+        <Metric label="Tickets mantenidos" value={formatAnalysisValue.formatNumber(scenario.ticketCount, 0)} />
+        <Metric label="Ticket promedio actual" value={formatAnalysisValue.formatMoney(scenario.currentTicket)} />
+        <Metric label="Ticket promedio simulado" value={formatAnalysisValue.formatMoney(scenario.simulatedTicket)} />
+        <Metric label="Ventas actuales" value={formatAnalysisValue.formatMoney(scenario.currentSales)} />
+        <Metric label="Ventas simuladas" value={formatAnalysisValue.formatMoney(scenario.simulatedSales)} />
+        <Metric label="Variación de ventas" value={formatAnalysisValue.formatMoney(scenario.salesDelta)} />
+        <Metric label="Costo actual" value={formatAnalysisValue.formatMoney(scenario.currentCost)} />
+        <Metric label="Costo simulado" value={formatAnalysisValue.formatMoney(scenario.simulatedCost)} />
+        <Metric label="Utilidad actual" value={formatAnalysisValue.formatMoney(scenario.currentProfit)} />
+        <Metric label="Utilidad simulada" value={formatAnalysisValue.formatMoney(scenario.simulatedProfit)} />
+        <Metric label="Margen actual" value={formatAnalysisValue.formatPercent(scenario.currentMargin)} />
+        <Metric label="Margen simulado" value={formatAnalysisValue.formatPercent(scenario.simulatedMargin)} />
+      </MetricGrid>
+      <p className="commercial-ai-caution">Mantiene el mismo número de tickets; sólo proyecta utilidad y margen si los costos están completos. No predice la reacción de la demanda ni afirma que el cambio sea alcanzable.</p>
+    </>;
+  }
+  return <>
+    <MetricGrid>
+      <Metric label="Cambio simulado" value={percent} />
+      <Metric label="Ventas actuales" value={formatAnalysisValue.formatMoney(scenario.currentSales)} />
+      <Metric label="Ventas simuladas" value={formatAnalysisValue.formatMoney(scenario.simulatedSales)} />
+      <Metric label="Variación de ventas" value={formatAnalysisValue.formatMoney(scenario.salesDelta)} />
+      <Metric label="Costo actual" value={formatAnalysisValue.formatMoney(scenario.currentCost)} />
+      <Metric label="Costo simulado" value={formatAnalysisValue.formatMoney(scenario.simulatedCost)} />
+      <Metric label="Utilidad actual" value={formatAnalysisValue.formatMoney(scenario.currentProfit)} />
+      <Metric label="Utilidad simulada" value={formatAnalysisValue.formatMoney(scenario.simulatedProfit)} />
+      <Metric label="Cambio en utilidad" value={formatAnalysisValue.formatMoney(scenario.profitDelta)} />
+      <Metric label="Margen actual" value={formatAnalysisValue.formatPercent(scenario.currentMargin)} />
+      <Metric label="Margen simulado" value={formatAnalysisValue.formatPercent(scenario.simulatedMargin)} />
+    </MetricGrid>
+    <p className="commercial-ai-caution">Escala las ventas y, si hay costos completos, los costos por el mismo factor para conservar la mezcla y el margen. No predice la reacción de la demanda.</p>
+  </>;
+}
+
+const STRATEGY_REASON_LABELS = Object.freeze({
+  ticket_down_sales_stable: 'El ticket bajó mientras ventas y número de tickets se mantuvieron relativamente estables.',
+  sales_declining: 'Las ventas netas disminuyeron frente al periodo comparable.',
+  margin_deteriorating: 'El margen bruto completo disminuyó frente al periodo comparable.',
+  product_cost_missing: 'Falta evidencia completa del costo de este producto.',
+  product_low_margin: 'El producto registra volumen o ventas relevantes y margen bajo con costos completos.',
+  product_growing: 'El producto muestra crecimiento en el periodo comparable.',
+  category_concentrated: 'Una proporción alta de las ventas se concentra en esta categoría.',
+  category_growing: 'La categoría aumentó sus ventas frente a un periodo comparable completo.',
+  products_without_sales: 'Hay productos activos sin ventas registradas en un periodo con detalle completo.',
+  historical_combo: 'Estos productos aparecieron juntos en tickets históricos.'
+});
+
+function StrategyEvidence({ response }) {
+  const candidates = asArray(response.strategyCandidates);
+  if (!candidates.length) return <p className="commercial-ai-muted">No hay señales completas suficientes para priorizar una estrategia comercial.</p>;
+  return <div className="commercial-ai-recommendations">
+    {candidates.slice(0, 8).map((candidate) => (
+      <article className="commercial-ai-recommendation" key={`${candidate.type}:${candidate.key}`}>
+        <div><strong>{candidate.title}</strong><span>Prioridad {priorityLabel(candidate.priority)}</span></div>
+        <p>{STRATEGY_REASON_LABELS[candidate.reasonCode] || 'Señal comercial observada en los datos.'}</p>
+        {candidate.entity && candidate.type !== 'general' && <small>Enfoque: {candidate.type === 'product' ? 'Producto' : candidate.type === 'category' ? 'Categoría' : 'Ticket'} · {candidate.entity}</small>}
+        {candidate.reasonCode === 'historical_combo' && <small>La coocurrencia histórica no garantiza demanda futura.</small>}
+      </article>
+    ))}
+  </div>;
+}
+
 const productDirectionLabel = (direction) => ({
   new_in_period: 'Sin venta anterior',
   not_sold_current: 'Sin venta actual',
@@ -510,6 +689,9 @@ function IntentEvidence({ response }) {
     case 'price_simulation': return <PriceEvidence response={response} />;
     case 'promotion_opportunity': return <PromotionEvidence response={response} />;
     case 'combo_opportunity': return <ComboEvidence response={response} />;
+    case 'goal_simulation': return <GoalSimulationEvidence response={response} />;
+    case 'what_if_analysis': return <WhatIfEvidence response={response} />;
+    case 'commercial_strategy': return <StrategyEvidence response={response} />;
     default: return <ProfitabilityEvidence response={response} />;
   }
 }
@@ -758,6 +940,9 @@ const INTENT_LABELS = Object.freeze({
   price_simulation: 'Simulación de precio',
   promotion_opportunity: 'Simulación de promoción',
   combo_opportunity: 'Oportunidad de combos',
+  goal_simulation: 'Simulación de meta',
+  what_if_analysis: 'Simulación what-if',
+  commercial_strategy: 'Estrategia comercial',
   out_of_scope: 'Fuera del alcance',
   local_answer: 'Respuesta local',
   not_ready: 'Capacidad todavía no disponible'
@@ -840,6 +1025,10 @@ const historyFilterDetails = (entry) => {
   else if (request.compare === true) details.push('Comparación: activada');
 
   if (scenario.productName) details.push(`Producto: ${scenario.productName}`);
+  if (scenario.goalType) details.push(`Tipo de meta: ${GOAL_TYPE_LABELS[scenario.goalType] || scenario.goalType}`);
+  if (Number.isFinite(scenario.targetValue)) details.push(`Objetivo: ${['gross_margin', 'product_margin'].includes(scenario.goalType) ? `${scenario.targetValue}%` : formatAnalysisValue.formatMoney(scenario.targetValue)}`);
+  if (scenario.changeType) details.push(`Variable: ${{ sales: 'ventas', ticket: 'ticket promedio', product: 'producto' }[scenario.changeType] || scenario.changeType}`);
+  if (Number.isFinite(scenario.changePercent)) details.push(`Cambio simulado: ${scenario.changePercent}%`);
   if (Number.isFinite(scenario.newPrice)) details.push(`Precio nuevo: ${formatAnalysisValue.formatMoney(scenario.newPrice)}`);
   if (Number.isFinite(scenario.promotionalPrice)) details.push(`Precio promocional: ${formatAnalysisValue.formatMoney(scenario.promotionalPrice)}`);
   if (Number.isFinite(scenario.discountPercent)) details.push(`Descuento: ${formatAnalysisValue.formatPercent(scenario.discountPercent / 100)}`);
@@ -875,6 +1064,10 @@ const historyEntryToAnalysisResult = (entry) => {
       priceSimulation: deterministic.priceSimulation,
       promotionSimulation: deterministic.promotionSimulation,
       comboOpportunities: deterministic.comboOpportunities,
+      goalSimulation: deterministic.goalSimulation,
+      whatIfSimulation: deterministic.whatIfSimulation,
+      strategyRequested: deterministic.strategyRequested,
+      strategyCandidates: deterministic.strategyCandidates,
       calculations: deterministic.calculations,
       scenarios: deterministic.scenarios,
       recommendations: deterministic.recommendations,
@@ -1067,7 +1260,9 @@ export default function CommercialAIAgentsPage() {
   const analysisInFlightRef = useRef(false);
   const historyContextTokenRef = useRef(historyContextToken);
   const historyScopeRef = useRef({ contextToken: null, scopeKey: null });
-  historyContextTokenRef.current = historyContextToken;
+  useLayoutEffect(() => {
+    historyContextTokenRef.current = historyContextToken;
+  }, [historyContextToken]);
 
   const refreshUsage = useCallback(async () => {
     setIsLoadingUsage(true);
@@ -1165,7 +1360,12 @@ export default function CommercialAIAgentsPage() {
   const questionResolution = useMemo(() => resolveCommercialIntent(question), [question]);
   const intent = questionResolution.kind === 'supported'
     ? questionResolution.intent
-    : (!question.trim() ? 'profitability_summary' : null);
+    : (questionResolution.kind === 'needs_context' && ['goal_simulation', 'what_if_analysis'].includes(questionResolution.intent)
+      ? questionResolution.intent
+      : (!question.trim() ? 'profitability_summary' : null));
+  const strategyRequested = intent === 'commercial_strategy'
+    || (intent === 'goal_simulation' && isCommercialStrategyQuestion(question));
+  const scenarioIntent = ['goal_simulation', 'what_if_analysis'].includes(intent);
   const filteredProductOptions = useMemo(() => {
     const search = productSearch.trim().toLocaleLowerCase('es-MX');
     if (!search) return productOptions;
@@ -1181,14 +1381,19 @@ export default function CommercialAIAgentsPage() {
   }, [excludedProducts]);
 
   useEffect(() => {
-    setScenario({});
+    const inferred = inferCommercialScenarioFromQuestion(question);
+    setScenario(inferred.intent === intent ? inferred.scenario : {});
     setProductSearch('');
     setPromotionMode('discountPercent');
-    setCompare(intent === 'explain_change' || ['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend', 'assortment_analysis'].includes(intent));
-  }, [intent]);
+    setCompare(intent === 'explain_change' || strategyRequested
+      || ['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend', 'assortment_analysis'].includes(intent));
+  }, [intent, question, strategyRequested]);
 
   useEffect(() => {
-    const loadsProducts = intent === 'price_simulation' || intent === 'promotion_opportunity';
+    const loadsProducts = intent === 'price_simulation' || intent === 'promotion_opportunity'
+      || (intent === 'goal_simulation' && scenario.goalType === 'product_margin')
+      || (intent === 'what_if_analysis' && scenario.changeType === 'product');
+    const includeUnknownCosts = intent === 'what_if_analysis' && scenario.changeType === 'product';
     if (!loadsProducts) {
       setProductOptions([]);
       setExcludedProducts([]);
@@ -1200,7 +1405,7 @@ export default function CommercialAIAgentsPage() {
     let active = true;
     setIsLoadingProducts(true);
     setProductLoadError(null);
-    loadSalesProfitabilityProducts({ period })
+    loadSalesProfitabilityProducts({ period, includeUnknownCosts })
       .then((prepared) => {
         if (!active) return;
         setProductOptions(Array.isArray(prepared?.products) ? prepared.products : []);
@@ -1216,10 +1421,11 @@ export default function CommercialAIAgentsPage() {
         if (active) setIsLoadingProducts(false);
       });
     return () => { active = false; };
-  }, [period, intent]);
+  }, [period, intent, scenario.goalType, scenario.changeType]);
 
   const selectIntent = (text) => {
-    setScenario({});
+    const inferred = inferCommercialScenarioFromQuestion(text);
+    setScenario(inferred.scenario || {});
     setProductSearch('');
     setPromotionMode('discountPercent');
     setResult(null);
@@ -1231,7 +1437,8 @@ export default function CommercialAIAgentsPage() {
 
   const handleQuestionChange = (event) => {
     const nextQuestion = event.target.value;
-    setScenario({});
+    const inferred = inferCommercialScenarioFromQuestion(nextQuestion);
+    setScenario(inferred.scenario || {});
     setProductSearch('');
     setPromotionMode('discountPercent');
     setResult(null);
@@ -1304,6 +1511,7 @@ export default function CommercialAIAgentsPage() {
         : {};
       const compareEnabled = resolution.kind === 'supported'
         && (['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend', 'assortment_analysis'].includes(resolvedIntent)
+          || (resolvedIntent === 'commercial_strategy' || (resolvedIntent === 'goal_simulation' && isCommercialStrategyQuestion(question)))
           || (resolvedIntent === 'explain_change' && compare === true));
       const previousPeriod = compareEnabled ? buildPreviousPeriod(period) : null;
       const requestContext = {
@@ -1510,7 +1718,7 @@ export default function CommercialAIAgentsPage() {
             ))}
           </div>
 
-          {(questionResolution.kind === 'supported' || !question.trim()) && (
+          {(questionResolution.kind === 'supported' || scenarioIntent || !question.trim()) && (
             <div className="commercial-ai-filters">
               <label className="commercial-ai-label" htmlFor="sales-agent-period">Periodo
                 <span className="commercial-ai-select-wrap">
@@ -1523,8 +1731,114 @@ export default function CommercialAIAgentsPage() {
               {intent === 'explain_change' && (
                 <label className="commercial-ai-checkbox"><input type="checkbox" checked={compare} onChange={(event) => setCompare(event.target.checked)} /> Comparar con el periodo anterior</label>
               )}
-              {['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend', 'assortment_analysis'].includes(intent)
+              {(['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend', 'assortment_analysis'].includes(intent) || strategyRequested)
                 && <p className="commercial-ai-comparison-note">Se incluirá el periodo anterior de duración equivalente cuando haya datos disponibles.</p>}
+            </div>
+          )}
+
+          {scenarioIntent && (
+            <div className="commercial-ai-scenario-panel">
+              <p className="commercial-ai-label">Parámetros del escenario</p>
+              <div className="commercial-ai-scenario-form">
+                {intent === 'goal_simulation' ? (
+                  <>
+                    <label className="commercial-ai-label" htmlFor="sales-agent-goal-type">Tipo de meta
+                      <span className="commercial-ai-select-wrap">
+                        <select id="sales-agent-goal-type" name="goalType" value={scenario.goalType || ''} onChange={(event) => {
+                          const goalType = event.target.value;
+                          setScenario((current) => ({ ...current, goalType, ...(goalType === 'product_margin' ? {} : { productName: undefined }) }));
+                        }}>
+                          <option value="">Selecciona una meta</option>
+                          <option value="revenue">Ventas netas</option>
+                          <option value="gross_profit">Utilidad bruta</option>
+                          <option value="average_ticket">Ticket promedio</option>
+                          <option value="gross_margin">Margen bruto</option>
+                          <option value="product_margin">Margen de un producto</option>
+                        </select>
+                        <ChevronDown size={15} aria-hidden="true" />
+                      </span>
+                    </label>
+                    <label className="commercial-ai-label" htmlFor="sales-agent-goal-target">{['gross_margin', 'product_margin'].includes(scenario.goalType) ? 'Margen objetivo (%)' : 'Valor objetivo'}
+                      <input id="sales-agent-goal-target" name="targetValue" type="number" min="0.01" max={['gross_margin', 'product_margin'].includes(scenario.goalType) ? '99.9' : undefined} step={['gross_margin', 'product_margin'].includes(scenario.goalType) ? '0.1' : '0.01'} placeholder="Obligatorio" value={scenario.targetValue ?? ''} onChange={handleScenarioChange} />
+                    </label>
+                    {scenario.goalType === 'product_margin' && (
+                      <label className="commercial-ai-label" htmlFor="sales-agent-goal-product">Producto con costo conocido
+                        <span className="commercial-ai-select-wrap">
+                          <select id="sales-agent-goal-product" name="productName" value={scenario.productName || ''} onChange={handleScenarioChange} disabled={isLoadingProducts || productOptions.length === 0}>
+                            <option value="">{isLoadingProducts ? 'Cargando productos…' : 'Selecciona un producto'}</option>
+                            {scenario.productName && !productOptions.some((product) => product.name === scenario.productName) && <option value={scenario.productName}>{scenario.productName} · verificar historial</option>}
+                            {filteredProductOptions.map((product) => <option key={product.name} value={product.name}>{product.name}</option>)}
+                          </select>
+                          <ChevronDown size={15} aria-hidden="true" />
+                        </span>
+                      </label>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <label className="commercial-ai-label" htmlFor="sales-agent-what-if-type">Variable a modificar
+                      <span className="commercial-ai-select-wrap">
+                        <select id="sales-agent-what-if-type" name="changeType" value={scenario.changeType || ''} onChange={(event) => {
+                          const changeType = event.target.value;
+                          setScenario((current) => ({ ...current, changeType, ...(changeType === 'product' ? {} : { productName: undefined }) }));
+                        }}>
+                          <option value="">Selecciona una variable</option>
+                          <option value="sales">Ventas netas</option>
+                          <option value="ticket">Ticket promedio</option>
+                          <option value="product">Producto</option>
+                        </select>
+                        <ChevronDown size={15} aria-hidden="true" />
+                      </span>
+                    </label>
+                    <label className="commercial-ai-label" htmlFor="sales-agent-what-if-preset">Cambios rápidos
+                      <span className="commercial-ai-select-wrap">
+                        <select id="sales-agent-what-if-preset" aria-label="Cambios rápidos"
+                          value={scenario.changePercent !== undefined && scenario.changePercent !== null && scenario.changePercent !== ''
+                            && [-50, -25, -10, 10, 25, 50, 100].includes(Number(scenario.changePercent))
+                            ? String(scenario.changePercent) : ''}
+                          onChange={(event) => setScenario((current) => ({
+                            ...current, changePercent: event.target.value === '' ? undefined : event.target.value
+                          }))}>
+                          <option value="">Selecciona un ejemplo (opcional)</option>
+                          <option value="-50">−50% · reducir a la mitad</option>
+                          <option value="-25">−25% · disminuir una cuarta parte</option>
+                          <option value="-10">−10% · disminuir una décima parte</option>
+                          <option value="10">+10% · aumentar una décima parte</option>
+                          <option value="25">+25% · aumentar una cuarta parte</option>
+                          <option value="50">+50% · multiplicar por 1.5</option>
+                          <option value="100">+100% · duplicar</option>
+                        </select>
+                        <ChevronDown size={15} aria-hidden="true" />
+                      </span>
+                    </label>
+                    <label className="commercial-ai-label" htmlFor="sales-agent-what-if-percent">Cambio porcentual
+                      <input id="sales-agent-what-if-percent" name="changePercent" type="number" min="-99.9" max="500" step="0.1"
+                        placeholder="Ejemplo: 15 o -20" aria-describedby="sales-agent-what-if-percent-help"
+                        value={scenario.changePercent ?? ''} onChange={handleScenarioChange} />
+                    </label>
+                    <p className="commercial-ai-muted" id="sales-agent-what-if-percent-help" style={{ flexBasis: '100%', margin: 0 }}>
+                      Indica cuánto cambiaría la variable elegida respecto al valor actual. +50% significa multiplicar por 1.5,
+                      +100% significa duplicar y −50% significa reducir a la mitad. Si escribes un porcentaje en la pregunta,
+                      Lía lo completa automáticamente; si no, selecciona un ejemplo o escribe tu propio valor.
+                    </p>
+                    {scenario.changeType === 'product' && (
+                      <label className="commercial-ai-label" htmlFor="sales-agent-what-if-product">Producto con ventas históricas
+                        <span className="commercial-ai-select-wrap">
+                          <select id="sales-agent-what-if-product" name="productName" value={scenario.productName || ''} onChange={handleScenarioChange} disabled={isLoadingProducts || productOptions.length === 0}>
+                            <option value="">{isLoadingProducts ? 'Cargando productos…' : 'Selecciona un producto'}</option>
+                            {scenario.productName && !productOptions.some((product) => product.name === scenario.productName) && <option value={scenario.productName}>{scenario.productName} · verificar historial</option>}
+                            {filteredProductOptions.map((product) => <option key={product.name} value={product.name}>{product.name}</option>)}
+                          </select>
+                          <ChevronDown size={15} aria-hidden="true" />
+                        </span>
+                      </label>
+                    )}
+                  </>
+                )}
+              </div>
+              {intent === 'goal_simulation' && <p className="commercial-ai-caution">Las metas describen una brecha matemática. El precio objetivo de producto requiere costo completo y no cambia el precio real.</p>}
+              {intent === 'what_if_analysis' && <p className="commercial-ai-caution">Rango técnico permitido: −99.9% a +500%. Es un escenario hipotético, no una estimación automática de crecimiento ni una predicción de demanda.</p>}
+              {scenario.goalType === 'product_margin' && productLoadError && <p className="commercial-ai-inline-error">{productLoadError}</p>}
             </div>
           )}
 
@@ -1589,7 +1903,7 @@ export default function CommercialAIAgentsPage() {
           )}
 
           <div className="commercial-ai-submit-row">
-            <p>Periodo: <b>{period.from} a {period.to}</b>{(intent === 'explain_change' && compare || ['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend', 'assortment_analysis'].includes(intent)) && ' · con comparación'}</p>
+            <p>Periodo: <b>{period.from} a {period.to}</b>{(intent === 'explain_change' && compare || strategyRequested || ['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend', 'assortment_analysis'].includes(intent)) && ' · con comparación'}</p>
             <button className="commercial-ai-analyze" type="submit" disabled={!question.trim() || isAnalyzing}><Send size={16} aria-hidden="true" /> {isAnalyzing ? 'Analizando…' : 'Analizar'}</button>
           </div>
         </form>

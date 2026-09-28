@@ -12,6 +12,91 @@ const hasValue = (value) => value !== undefined
   && value !== null
   && !(typeof value === 'string' && value.trim() === '');
 const normalizedName = LIA_IDENTITY.name.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+export const COMMERCIAL_WHAT_IF_CHANGE_LIMITS = Object.freeze({ minimum: -99.9, maximum: 500 });
+
+const parseLocalizedNumber = (value) => {
+  const source = String(value || '').replace(/\s+/g, '');
+  if (!/^-?(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d{1,2})?$/u.test(source)) return null;
+  const parsed = Number(source.replace(/,/g, ''));
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const questionPercent = (question) => {
+  const match = String(question || '').match(/(?<![\d.,])(-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?)\s*%/u);
+  return match ? parseLocalizedNumber(match[1]) : null;
+};
+
+const questionAmount = (question) => {
+  const matches = String(question || '').matchAll(/(?<![\d.,])(?:\$\s*)?(-?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d{1,2})?)(?![\d.]|,(?=\d))(?!(?:\s*%))/gu);
+  for (const match of matches) {
+    const value = parseLocalizedNumber(match[1]);
+    if (value !== null) return value;
+  }
+  return null;
+};
+
+const questionProductName = (question) => {
+  const explicit = String(question || '').match(/\bproducto\s+([^,?!\n]+?)(?:\s*[?.!]|$)/iu);
+  const candidate = explicit?.[1]?.trim().replace(/["“”'`]/gu, '') || '';
+  if (!candidate || /^(?:este|esta|ese|esa|el|la|un|una|actual)$/iu.test(candidate)) return null;
+  return `Producto ${candidate}`.slice(0, 120);
+};
+
+export const isCommercialStrategyQuestion = (question = '') => /\b(?:estrategia comercial|mejor estrategia|priorizar|enfocar mis esfuerzos|enfocar esfuerzos|trabajar primero|que tendria que cambiar|que puedo cambiar)\b/u.test(normalizeQuestion(question));
+
+export const inferCommercialScenarioFromQuestion = (question = '') => {
+  const text = normalizeQuestion(question);
+  const raw = String(question || '');
+  const percent = questionPercent(raw);
+  const amount = questionAmount(raw);
+
+  const whatIfCue = /\b(?:que pasa si|que sucederia si|simula(?:r|cion)?|escenario si)\b/u.test(text);
+  if (whatIfCue && /\b(?:ventas?|vender|vendo|ticket|producto|articulo)\b/u.test(text)) {
+    const changeType = /\b(?:producto|articulo)\b/u.test(text) ? 'product'
+      : /\b(?:ticket|ticket promedio|ticket medio)\b/u.test(text) ? 'ticket'
+        : 'sales';
+    const falling = /\b(?:menos|caen|caiga|bajan|disminuyen|disminuya|baje|bajar)\b/u.test(text) || (percent !== null && percent < 0);
+    const scenario = {};
+    if (percent !== null) scenario.changePercent = falling ? -Math.abs(percent) : Math.abs(percent);
+    if (changeType) scenario.changeType = changeType;
+    if (changeType === 'product') {
+      const productName = questionProductName(raw);
+      if (productName) scenario.productName = productName;
+    }
+    return { intent: 'what_if_analysis', scenario };
+  }
+
+  const marginQuestion = /\b(?:margen|margenes)\b/u.test(text);
+  const productMarginQuestion = marginQuestion && /\b(?:que precio|cual precio|precio necesito|precio para|precio que necesito)\b/u.test(text);
+  const profitQuestion = /\b(?:utilidad|ganar|ganancia|ganancias)\b/u.test(text);
+  const ticketQuestion = /\b(?:ticket promedio|ticket medio)\b/u.test(text);
+  const revenueGoalQuestion = /\b(?:facturar|meta de ventas|llegar a.*ventas|llegar a.*facturar|alcanzar.*meta)\b/u.test(text)
+    || (/\b(?:quiero|meta|llegar|alcanzar)\b/u.test(text) && /\b(?:vender|ventas)\b/u.test(text) && amount !== null);
+
+  let goalType = null;
+  if (productMarginQuestion) goalType = 'product_margin';
+  else if (marginQuestion && (percent !== null || /\b(?:quiero|meta|llegar|alcanzar|objetivo|tener)\b/u.test(text))) goalType = 'gross_margin';
+  else if (profitQuestion) goalType = 'gross_profit';
+  else if (ticketQuestion && /\b(?:quiero|meta|llevar|llegar|necesito|tener|objetivo)\b/u.test(text)) goalType = 'average_ticket';
+  else if (revenueGoalQuestion && (amount !== null || /\b(?:quiero|meta|llegar|alcanzar|cuanto necesito|cuanto me falta)\b/u.test(text))) goalType = 'revenue';
+
+  if (!goalType && /\b(?:llegar a una meta|alcanzar mi meta|definir una meta|mi objetivo comercial)\b/u.test(text)) {
+    return { intent: 'goal_simulation', scenario: {} };
+  }
+  if (!goalType && /\b(?:que escenario me acerca mas a mi objetivo|que escenario me acerca a mi objetivo|escenario me acerca mas)\b/u.test(text)) {
+    return { intent: 'goal_simulation', scenario: {} };
+  }
+  if (!goalType) return { intent: null, scenario: {} };
+
+  const targetValue = ['gross_margin', 'product_margin'].includes(goalType) ? percent : amount;
+  const scenario = { goalType };
+  if (targetValue !== null) scenario.targetValue = targetValue;
+  if (goalType === 'product_margin') {
+    const productName = questionProductName(raw);
+    if (productName) scenario.productName = productName;
+  }
+  return { intent: 'goal_simulation', scenario };
+};
 
 const route = (kind, details = {}) => ({
   kind,
@@ -82,6 +167,39 @@ const resolveIdentity = (text) => {
 const resolution = (kind, details = {}) => route(kind, details);
 
 const supported = (intent, options) => {
+  if (intent === 'goal_simulation' || intent === 'what_if_analysis') {
+    const inferred = inferCommercialScenarioFromQuestion(options?.question || '');
+    const scenario = { ...inferred.scenario, ...(options?.scenario && typeof options.scenario === 'object' ? options.scenario : {}) };
+    const missingContext = [];
+    if (intent === 'goal_simulation') {
+      if (!hasValue(scenario.goalType)) missingContext.push('goalType');
+      if (!hasValue(scenario.targetValue)) missingContext.push('targetValue');
+      if (scenario.goalType === 'product_margin' && !hasValue(scenario.productName)) missingContext.push('productName');
+      const target = Number(scenario.targetValue);
+      if (hasValue(scenario.targetValue) && (!Number.isFinite(target) || target <= 0
+        || (['gross_margin', 'product_margin'].includes(scenario.goalType) && target >= 100))) {
+        missingContext.push('targetValue');
+      }
+    } else {
+      if (!hasValue(scenario.changeType)) missingContext.push('changeType');
+      if (!hasValue(scenario.changePercent)) missingContext.push('changePercent');
+      if (scenario.changeType === 'product' && !hasValue(scenario.productName)) missingContext.push('productName');
+      const percent = Number(scenario.changePercent);
+      if (hasValue(scenario.changePercent) && (!Number.isFinite(percent)
+        || percent < COMMERCIAL_WHAT_IF_CHANGE_LIMITS.minimum || percent > COMMERCIAL_WHAT_IF_CHANGE_LIMITS.maximum)) missingContext.push('changePercent');
+    }
+    if (missingContext.length) {
+      return resolution('needs_context', {
+        topic: intent,
+        intent,
+        confidence: 'high',
+        requiresData: false,
+        requiresProvider: false,
+        missingContext: Array.from(new Set(missingContext))
+      });
+    }
+    return resolution('supported', { intent, topic: intent, confidence: 'high' });
+  }
   if (intent === 'price_simulation' && Object.prototype.hasOwnProperty.call(options, 'scenario')) {
     const scenario = options.scenario && typeof options.scenario === 'object' ? options.scenario : {};
     const missingContext = [];
@@ -107,7 +225,7 @@ const EXPLICIT_OUT_OF_SCOPE = /\b(?:clima|tiempo hace|pronostico|receta|cocinar|
 const EXPLICIT_MODULE_QUERY = /\b(?:inventario|stock|existencias|ecommerce|tienda en linea|pedidos?)\b/u;
 
 export const resolveCommercialIntent = (question = '', options = {}) => {
-  const optionValues = options && typeof options === 'object' ? options : {};
+  const optionValues = options && typeof options === 'object' ? { ...options, question } : { question };
   const text = normalizeQuestion(question);
   if (!text) {
     return resolution('needs_context', {
@@ -141,6 +259,19 @@ export const resolveCommercialIntent = (question = '', options = {}) => {
 
   if (containsAny(text, /\b(?:competencia|competencias|competidor(?:es)?|rivales?)\b/u)) {
     return resolution('recognized_not_supported', { topic: 'competition', confidence: 'high' });
+  }
+
+  const parsedScenario = inferCommercialScenarioFromQuestion(question);
+  if (parsedScenario.intent === 'what_if_analysis' || parsedScenario.intent === 'goal_simulation') {
+    return supported(parsedScenario.intent, {
+      ...optionValues,
+      question,
+      scenario: { ...parsedScenario.scenario, ...(optionValues.scenario && typeof optionValues.scenario === 'object' ? optionValues.scenario : {}) }
+    });
+  }
+
+  if (isCommercialStrategyQuestion(question)) {
+    return supported('commercial_strategy', optionValues);
   }
 
   if ((containsAny(text, /\b(?:incorpor|agreg|anad|introduc|meter)\w*\b/u)
@@ -241,6 +372,14 @@ export const getCommercialResolutionMessage = (value = {}) => {
 
   if (kind === 'needs_context' && value.intent === 'price_simulation') {
     return 'Para simular el cambio, selecciona un producto y captura el nuevo precio. Lía analizará el escenario cuando ambos datos estén completos.';
+  }
+
+  if (kind === 'needs_context' && value.intent === 'goal_simulation') {
+    return 'Para calcular la meta, indica qué quieres alcanzar y el valor objetivo. Para una meta de margen por producto, selecciona también el producto.';
+  }
+
+  if (kind === 'needs_context' && value.intent === 'what_if_analysis') {
+    return 'Para simular el escenario, indica qué variable cambiará y el porcentaje. Para un producto, selecciona uno con ventas históricas. El rango permitido es mayor que -100% y hasta 500%.';
   }
 
   if (kind === 'needs_context') {

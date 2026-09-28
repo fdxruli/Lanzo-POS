@@ -546,9 +546,12 @@ const productSimulationEligibility = (product) => {
   return { eligible: true, reason: null };
 };
 
-export const buildSalesProfitabilityProductOptionsFromDataset = (dataset = {}) => (
+export const buildSalesProfitabilityProductOptionsFromDataset = (dataset = {}, { includeUnknownCosts = false } = {}) => (
   productOptionsFromDataset(dataset)
-    .filter((product) => productSimulationEligibility(product).eligible)
+    .filter((product) => includeUnknownCosts
+      ? typeof product.name === 'string' && product.name.trim()
+        && Number(product.units) > 0 && Number(product.netSales) > 0 && Number(product.averagePrice) > 0
+      : productSimulationEligibility(product).eligible)
     .sort((a, b) => b.netSales - a.netSales || a.name.localeCompare(b.name, 'es'))
 );
 

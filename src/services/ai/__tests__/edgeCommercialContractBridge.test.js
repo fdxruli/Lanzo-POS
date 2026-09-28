@@ -46,7 +46,7 @@ const baseContext = (scenarios = []) => ({
   }
 });
 
-const commercialPayload = ({ intent = 'combo_opportunity', scenario = {}, scenarios = [] } = {}) => ({
+const commercialPayload = ({ intent = 'combo_opportunity', scenario = {}, scenarios = [], context } = {}) => ({
   auth,
   agentKey: 'salesProfitability',
   intent,
@@ -64,7 +64,7 @@ const commercialPayload = ({ intent = 'combo_opportunity', scenario = {}, scenar
     timezone: 'America/Mexico_City'
   },
   scenario,
-  context: baseContext(scenarios),
+  context: context || baseContext(scenarios),
   options: { temperature: 0.2, maxTokens: 2048 }
 });
 
@@ -90,6 +90,50 @@ const completeCombo = {
 };
 
 describe('deployed Edge commercial contract bridge', () => {
+  it('accepts validated goal and what-if contracts, including a bounded negative scenario', () => {
+    const goalContext = baseContext();
+    goalContext.sales.goalSimulation = {
+      type: 'revenue', targetValue: 100000, currentValue: 76000, ready: true,
+      state: 'remaining', gap: 24000, gapPercent: 24, excess: 0, progress: 0.76,
+      revenueGap: 24000, currentSales: 76000, currentTickets: 76, currentAverageTicket: 1000,
+      requiredAdditionalTicketsAtCurrentTicket: 24,
+      requiredAverageTicketAtCurrentTicketCount: 1315.79, assumptions: [], limitations: []
+    };
+    expect(validatePayload(commercialPayload({
+      intent: 'goal_simulation', scenario: { goalType: 'revenue', targetValue: 100000 }, context: goalContext
+    })).ok).toBe(true);
+
+    const whatIfContext = baseContext();
+    whatIfContext.sales.whatIfSimulation = {
+      changeType: 'sales', changePercent: -10, ready: true,
+      currentSales: 600, simulatedSales: 540, salesDelta: -60,
+      currentCost: 360, simulatedCost: 324, currentProfit: 240, simulatedProfit: 216,
+      profitDelta: -24, currentMargin: 0.4, simulatedMargin: 0.4, assumptions: [], limitations: []
+    };
+    expect(validatePayload(commercialPayload({
+      intent: 'what_if_analysis', scenario: { changeType: 'sales', changePercent: -10 }, context: whatIfContext
+    })).ok).toBe(true);
+  });
+
+  it('rejects stale or unsafe new scenario fields before a commercial request is accepted', () => {
+    expect(validatePayload(commercialPayload({
+      intent: 'goal_simulation',
+      scenario: { goalType: 'revenue', targetValue: 100000, newPrice: 50 }
+    }))).toMatchObject({ ok: false, code: 'INVALID_REQUEST' });
+    expect(validatePayload(commercialPayload({
+      intent: 'goal_simulation',
+      scenario: { goalType: 'gross_margin', targetValue: 100 }
+    }))).toMatchObject({ ok: false, code: 'INVALID_REQUEST' });
+    expect(validatePayload(commercialPayload({
+      intent: 'what_if_analysis',
+      scenario: { changeType: 'sales', changePercent: -100 }
+    }))).toMatchObject({ ok: false, code: 'INVALID_REQUEST' });
+    expect(validatePayload(commercialPayload({
+      intent: 'what_if_analysis',
+      scenario: { changeType: 'sales', changePercent: -99.91 }
+    }))).toMatchObject({ ok: false, code: 'INVALID_REQUEST' });
+  });
+
   it('accepts the realistic combo fields emitted by the deterministic analytics', () => {
     const result = validatePayload(commercialPayload({ scenarios: [completeCombo] }));
     expect(result.ok).toBe(true);

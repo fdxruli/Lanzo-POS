@@ -3,6 +3,11 @@ import { COMMERCIAL_AGENT_KEYS } from './commercialAgentContract';
 const MAX_PRODUCT_NAME_LENGTH = 120;
 const MAX_ROWS = 20;
 const SAFE_SOURCES = new Set(['cloud', 'local', 'mixed']);
+const STRATEGY_SUMMARY_EVIDENCE_KEYS = new Set([
+  'profitability.netSales', 'profitability.profit', 'profitability.margin', 'profitability.costCoverage',
+  'coverage.itemsComplete', 'coverage.costCoverage', 'coverage.paginationComplete', 'coverage.sourceComplete',
+  'metric:currentNetSales', 'metric:currentAverageTicket', 'metric:currentSalesCount'
+]);
 
 const asRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
   ? value
@@ -85,7 +90,8 @@ const PRODUCT_SIGNALS = new Set([
   'high_sales_share', 'healthy_margin', 'cost_unknown', 'low_margin'
 ]);
 const COMPACT_NARRATIVE_INTENTS = new Set([
-  'sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend', 'assortment_analysis'
+  'sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend', 'assortment_analysis',
+  'goal_simulation', 'what_if_analysis', 'commercial_strategy'
 ]);
 
 const NARRATIVE_EVIDENCE_KEYS = {
@@ -490,6 +496,73 @@ const normalizeAssortmentPayload = (value = {}) => {
 };
 
 const buildNarrativeEvidence = (intent, sales) => {
+  if (['goal_simulation', 'what_if_analysis', 'commercial_strategy'].includes(intent)) {
+    const strategyCandidates = sales.strategyRequested === true
+      ? sales.strategyCandidates.filter((candidate) => candidate.priority !== 'low').slice(0, 3)
+      : [];
+    const opportunityCandidates = strategyCandidates.map((candidate) => ({
+      key: candidate.key,
+      type: candidate.type,
+      focus: candidate.focus,
+      entity: candidate.entity,
+      signal: candidate.signal,
+      recommendationType: candidate.recommendationType,
+      strength: candidate.strength,
+      metrics: candidate.metrics,
+      evidenceKeys: candidate.evidenceKeys
+    }));
+    const candidateProductNames = new Set(strategyCandidates.filter((candidate) => candidate.type === 'product').map((candidate) => candidate.entity));
+    const candidateGrowthNames = new Set(strategyCandidates.filter((candidate) => candidate.reasonCode === 'product_growing').map((candidate) => candidate.entity));
+    const evidenceKeys = Array.from(new Set([
+      ...(sales.strategyRequested ? opportunityCandidates.flatMap((candidate) => candidate.evidenceKeys) : []),
+      ...(sales.evidenceKeys || []).filter((key) => STRATEGY_SUMMARY_EVIDENCE_KEYS.has(key)),
+      ...(sales.whatIfSimulation ? ['scenarios.values'] : [])
+    ])).slice(0, 40);
+    const assortment = sales.assortment;
+    return {
+      summary: pickOwnFields(asRecord(sales.summary), [
+        'netSales', 'salesCount', 'averageTicket', 'units', 'profit', 'margin', 'costCoverage', 'profitabilityStatus'
+      ]),
+      products: sales.strategyProducts.filter((product) => candidateProductNames.has(product.name)).slice(0, 8),
+      channels: [],
+      comparison: pickOwnFields(asRecord(sales.comparison), [
+        'previousNetSales', 'deltaNetSales', 'deltaNetSalesPercent', 'previousSalesCount', 'deltaSalesCount',
+        'previousTicket', 'deltaTicket', 'deltaTicketPercent', 'deltaMargin'
+      ]),
+      ...(sales.goalSimulation ? { goalSimulation: sales.goalSimulation } : {}),
+      ...(sales.whatIfSimulation ? { whatIfSimulation: sales.whatIfSimulation } : {}),
+      strategyRequested: sales.strategyRequested === true,
+      strategyCandidates,
+      ...(sales.growthSignals ? { growthSignals: {
+        comparisonAvailable: sales.growthSignals.comparisonAvailable === true,
+        productsGrowing: sales.growthSignals.productsGrowing.filter((product) => candidateGrowthNames.has(product.name)).slice(0, 8)
+      } } : {}),
+      ...(assortment ? { assortment: {
+        catalog: assortment.catalog,
+        health: assortment.health,
+        categoryPerformance: assortment.categoryPerformance.slice(0, 10),
+        categoryOpportunities: assortment.categoryOpportunities,
+        dormantProducts: assortment.dormantProducts.slice(0, 12),
+        reactivationCandidates: assortment.reactivationCandidates,
+        currentPeriod: assortment.currentPeriod,
+        previousPeriod: assortment.previousPeriod,
+        comparisonAvailable: assortment.comparisonAvailable,
+        limitations: assortment.limitations.slice(0, 6)
+      } } : {}),
+      comboOpportunities: sales.comboOpportunities || [],
+      evidenceKeys,
+      opportunityCandidates,
+      minimumUsefulRecommendations: Math.min(2, strategyCandidates.length),
+      coverage: pickOwnFields(asRecord(sales.coverage), [
+        'validSales', 'complete', 'itemsComplete', 'paginationComplete', 'sourceComplete', 'comparisonAvailable',
+        'comparisonDataAvailable', 'comparisonItemsAvailable', 'strategyEvidenceAvailable', 'strategyCatalogComplete'
+      ]),
+      calculations: sales.calculations.slice(0, 20),
+      assumptions: sales.assumptions.slice(0, 8),
+      scenarios: sales.scenarios.slice(0, 8),
+      limitations: sales.limitations.slice(0, 12)
+    };
+  }
   if (intent === 'assortment_analysis') {
     const assortment = normalizeAssortmentPayload(sales.assortment);
     const availableEvidence = new Set(assortment.evidenceKeys);
@@ -752,6 +825,8 @@ const normalizeCoverage = (coverage = {}) => {
     salesDataComplete: source.salesDataComplete === true,
     growthDataComplete: source.growthDataComplete === true,
     comparisonAvailable: source.comparisonAvailable === true,
+    strategyEvidenceAvailable: source.strategyEvidenceAvailable === true,
+    strategyCatalogComplete: source.strategyCatalogComplete === true,
     complete: source.complete === true
   };
 };
@@ -780,12 +855,109 @@ const SAFE_SCENARIO_KEYS = new Set([
   'confidence', 'costCoverage', 'costStatus', 'opportunity', 'historicalVolume', 'breakEvenVolume', 'isDemandPrediction'
 ]);
 
+const GOAL_TYPES = new Set(['revenue', 'gross_profit', 'average_ticket', 'gross_margin', 'product_margin']);
+const STRATEGY_REASON_CODES = new Set([
+  'ticket_down_sales_stable', 'sales_declining', 'margin_deteriorating', 'product_cost_missing',
+  'product_low_margin', 'product_growing', 'category_concentrated', 'category_growing', 'products_without_sales', 'historical_combo'
+]);
+const STRATEGY_TYPES = new Set(['product', 'category', 'ticket', 'general']);
+const STRATEGY_METRICS = new Set([
+  'currentSales', 'currentShare', 'salesDelta', 'deltaSales', 'deltaSalesPercent', 'currentUnits', 'costKnown', 'currentAverageTicket',
+  'deltaTicket', 'deltaNetSalesPercent', 'deltaSalesCount', 'currentMargin', 'deltaMargin',
+  'previousSales', 'currentProfit', 'unsoldProducts', 'topProductShare', 'tickets', 'frequency'
+]);
+
+const normalizeSimulationResult = (value, keys, enums = {}) => {
+  const source = asRecord(value);
+  if (!Object.keys(source).length) return null;
+  const result = {};
+  keys.forEach((key) => {
+    if (!Object.prototype.hasOwnProperty.call(source, key)) return;
+    const entry = source[key];
+    if (key === 'assumptions' || key === 'limitations') {
+      if (Array.isArray(entry)) result[key] = entry.filter((item) => typeof item === 'string').slice(0, 8).map((item) => item.slice(0, 240));
+      return;
+    }
+    if (key === 'ready' || key === 'costKnown') {
+      if (typeof entry === 'boolean') result[key] = entry;
+      return;
+    }
+    if (key === 'state') {
+      if (['achieved', 'remaining', 'unavailable'].includes(entry)) result[key] = entry;
+      return;
+    }
+    if (key === 'type' || key === 'changeType') {
+      if ((enums[key] || new Set()).has(entry)) result[key] = entry;
+      return;
+    }
+    if (key === 'productName' || key === 'limitation') {
+      const text = asSafeText(entry, null, key === 'productName' ? 120 : 240);
+      if (text) result[key] = text;
+      return;
+    }
+    if (entry === null || (typeof entry === 'number' && Number.isFinite(entry))) result[key] = entry;
+  });
+  return Object.keys(result).length ? result : null;
+};
+
+const normalizeGoalSimulation = (value) => normalizeSimulationResult(value, [
+  'type', 'targetValue', 'currentValue', 'ready', 'state', 'gap', 'gapPercent', 'excess', 'progress', 'limitation',
+  'revenueGap', 'requiredAdditionalTicketsAtCurrentTicket', 'requiredAverageTicketAtCurrentTicketCount',
+  'currentSales', 'currentTickets', 'currentAverageTicket', 'currentProfit', 'targetProfit', 'profitGap',
+  'currentRevenue', 'currentMargin', 'requiredRevenue', 'additionalRevenue', 'equivalentAdditionalTickets',
+  'costOfSale', 'requiredSalesAtCurrentTicketCount', 'salesIncreaseAtCurrentTicketCount', 'ticketDifference',
+  'ticketChangePercent', 'targetMargin', 'requiredProfitAtCurrentSales', 'additionalProfitRequired', 'productName',
+  'currentPrice', 'unitCost', 'requiredPrice', 'priceDifference', 'priceChangePercent', 'assumptions', 'limitations'
+], { type: GOAL_TYPES });
+
+const normalizeWhatIfSimulation = (value) => normalizeSimulationResult(value, [
+  'changeType', 'changePercent', 'ready', 'currentSales', 'simulatedSales', 'salesDelta', 'currentCost',
+  'simulatedCost', 'currentProfit', 'simulatedProfit', 'profitDelta', 'currentMargin', 'simulatedMargin',
+  'ticketCount', 'currentTicket', 'simulatedTicket', 'productName', 'historicalUnits', 'simulatedUnits',
+  'averagePrice', 'historicalSales', 'costKnown', 'currentCost', 'simulatedCost', 'assumptions', 'limitations'
+], { changeType: new Set(['sales', 'ticket', 'product']) });
+
+const normalizeStrategyCandidates = (rows, availableEvidence) => (Array.isArray(rows) ? rows : [])
+  .slice(0, 8)
+  .flatMap((raw) => {
+    const source = asRecord(raw);
+    const type = STRATEGY_TYPES.has(source.type) ? source.type : null;
+    const key = asSafeText(source.key, null, 120);
+    const focus = asRecord(source.focus);
+    const focusKey = asSafeText(focus.key, null, 120);
+    const reasonCode = STRATEGY_REASON_CODES.has(source.reasonCode) ? source.reasonCode : null;
+    const priority = ['high', 'medium', 'low'].includes(source.priority) ? source.priority : null;
+    const recommendationType = ['growth_experiment', 'investigation', 'data_quality', 'optimization'].includes(source.recommendationType)
+      ? source.recommendationType : null;
+    const evidenceKeys = Array.isArray(source.evidenceKeys)
+      ? Array.from(new Set(source.evidenceKeys.filter((entry) => typeof entry === 'string' && availableEvidence.has(entry)))).slice(0, 8)
+      : [];
+    if (!type || !key || !reasonCode || !priority || !recommendationType || focus.type !== type || focusKey !== key || !evidenceKeys.length) return [];
+    const rawMetrics = asRecord(source.metrics);
+    const metrics = Object.fromEntries(Object.entries(rawMetrics).filter(([metric, value]) => STRATEGY_METRICS.has(metric)
+      && ((typeof value === 'number' && Number.isFinite(value)) || typeof value === 'boolean')));
+    const entity = source.entity === null ? null : asSafeText(source.entity, null, 180);
+    if (['product', 'category'].includes(type) && (!entity || entity !== focusKey)) return [];
+    return [{
+      key, type, focus: { type, key: focusKey }, priority, reasonCode,
+      title: asSafeText(source.title, null, 120),
+      entity,
+      recommendationType,
+      strength: ['strong', 'moderate', 'weak'].includes(source.strength) ? source.strength : 'weak',
+      metrics,
+      signal: [reasonCode],
+      evidenceKeys
+    }].filter((candidate) => candidate.title);
+  });
+
 const buildEvidenceKeys = (source = {}) => {
   const value = asRecord(source);
   const comparison = asRecord(value.comparison || value.previous);
   const overview = asRecord(value.overview || value.metrics || value.summary);
   const coverage = asRecord(value.coverage);
   const growthSignals = asRecord(value.growthSignals);
+  const assortment = asRecord(value.assortment);
+  const assortmentHealth = asRecord(assortment.health);
   const contributors = normalizeContributors(value.contributors);
   const keys = [
     'profitability.status',
@@ -855,8 +1027,30 @@ const buildEvidenceKeys = (source = {}) => {
     ].some((field) => pickNumber(row, [field]) !== null);
     if (name && hasChannelEvidence) keys.push(`channel:${name}`);
   }
+  const categoryRows = Array.isArray(assortment.categoryPerformance) ? assortment.categoryPerformance : [];
+  categoryRows.forEach((item) => {
+    const row = asRecord(item);
+    const name = asSafeText(row.name, null, MAX_PRODUCT_NAME_LENGTH);
+    if (name && pickNumber(row, ['netSales']) !== null) keys.push(`assortment.category:${name}`);
+  });
+  const topCategoryShare = pickNumber(asRecord(assortmentHealth.concentration), ['topCategoryShare']);
+  const topProductShare = pickNumber(asRecord(assortmentHealth.concentration), ['topProductShare']);
+  const top3ProductShare = pickNumber(asRecord(assortmentHealth.concentration), ['top3ProductShare']);
+  if (topCategoryShare !== null) keys.push('assortment.metric:topCategoryShare');
+  if (topProductShare !== null) keys.push('assortment.metric:topProductShare');
+  if (top3ProductShare !== null) keys.push('assortment.metric:top3ProductShare');
+  if (pickNumber(assortmentHealth, ['unsoldProducts']) !== null) keys.push('assortment.metric:unsoldProducts');
+  const comboRows = Array.isArray(value.comboOpportunities) ? value.comboOpportunities : [];
+  comboRows.slice(0, 3).forEach((item, index) => {
+    const row = asRecord(item);
+    if (Array.isArray(row.products) && row.products.length === 2 && pickNumber(row, ['tickets']) !== null) {
+      keys.push(`comboOpportunities.${index}.tickets`);
+      if (pickNumber(row, ['frequency']) !== null) keys.push(`comboOpportunities.${index}.frequency`);
+    }
+  });
   const metricValues = {
     deltaNetSales: pickNumber(comparison, ['deltaNetSales', 'delta_net_sales']) ?? pickNumber(growthSignals, ['deltaNetSales']),
+    deltaNetSalesPercent: pickNumber(comparison, ['deltaNetSalesPercent']) ?? pickNumber(growthSignals, ['deltaNetSalesPercent']),
     deltaSalesCount: pickNumber(comparison, ['deltaSalesCount', 'delta_sales_count']) ?? pickNumber(growthSignals, ['deltaSalesCount']),
     deltaUnits: pickNumber(comparison, ['deltaUnits', 'delta_units']) ?? pickNumber(growthSignals, ['deltaUnits']),
     deltaTicket: pickNumber(comparison, ['deltaTicket', 'delta_ticket']) ?? pickNumber(growthSignals, ['deltaTicket']),
@@ -866,7 +1060,9 @@ const buildEvidenceKeys = (source = {}) => {
     currentUnitsPerTicket: pickNumber(overview, ['unitsPerTicket', 'units_per_ticket']) ?? pickNumber(growthSignals, ['currentUnitsPerTicket']),
     currentSalesCount: pickNumber(overview, ['salesCount', 'sales_count', 'orders', 'order_count']) ?? pickNumber(growthSignals, ['currentSalesCount']),
     currentUnits: pickNumber(overview, ['units', 'items', 'items_sold']) ?? pickNumber(growthSignals, ['currentUnits']),
-    costCoverage: pickNumber(coverage, ['costCoverage', 'cost_coverage'])
+    costCoverage: pickNumber(coverage, ['costCoverage', 'cost_coverage']),
+    currentMargin: pickNumber(overview, ['margin', 'gross_margin']),
+    deltaMargin: pickNumber(comparison, ['deltaMargin'])
   };
   Object.entries(metricValues).forEach(([key, metric]) => {
     if (metric !== null) keys.push(`metric:${key}`);
@@ -881,6 +1077,27 @@ const buildEvidenceKeys = (source = {}) => {
 const normalizeSalesPayload = (payload = {}, intent = null) => {
   const source = asRecord(payload);
   const overview = asRecord(source.overview || source.metrics || source.summary);
+  const evidenceKeys = buildEvidenceKeys(source);
+  const availableEvidence = new Set(evidenceKeys);
+  const strategyCandidates = normalizeStrategyCandidates(source.strategyCandidates, availableEvidence);
+  const strategyProductNames = new Set(strategyCandidates.filter((candidate) => candidate.type === 'product').map((candidate) => candidate.entity));
+  const rawProductRows = source.products || source.byProduct || source.by_product;
+  const strategyProducts = (Array.isArray(rawProductRows) ? rawProductRows : [])
+    .filter((row) => strategyProductNames.has(asSafeText(asRecord(row).name || asRecord(row).product_name || asRecord(row).productName)))
+    .slice(0, 8)
+    .map(normalizeProduct)
+    .filter((product) => product.name);
+  const opportunityCandidates = strategyCandidates.map((candidate) => ({
+    key: candidate.key,
+    type: candidate.type,
+    focus: candidate.focus,
+    entity: candidate.entity,
+    signal: candidate.signal,
+    recommendationType: candidate.recommendationType,
+    strength: candidate.strength,
+    metrics: candidate.metrics,
+    evidenceKeys: candidate.evidenceKeys
+  }));
 
   return {
     summary: {
@@ -919,8 +1136,25 @@ const normalizeSalesPayload = (payload = {}, intent = null) => {
     ...(source.growthSignals && Object.keys(asRecord(source.growthSignals)).length
       ? { growthSignals: normalizeGrowthSignals(source.growthSignals, COMPACT_NARRATIVE_INTENTS.has(intent)) }
       : {}),
+    ...(normalizeGoalSimulation(source.goalSimulation) ? { goalSimulation: normalizeGoalSimulation(source.goalSimulation) } : {}),
+    ...(normalizeWhatIfSimulation(source.whatIfSimulation) ? { whatIfSimulation: normalizeWhatIfSimulation(source.whatIfSimulation) } : {}),
+    ...(Array.isArray(source.comboOpportunities) ? {
+      comboOpportunities: source.comboOpportunities.slice(0, 3).map((combo) => {
+        const row = asRecord(combo);
+        return {
+          products: Array.isArray(row.products) ? row.products.filter((name) => typeof name === 'string').slice(0, 2).map((name) => name.slice(0, 120)) : [],
+          tickets: pickNumber(row, ['tickets']),
+          frequency: pickNumber(row, ['frequency']),
+          evidenceLevel: ['high', 'medium', 'low'].includes(row.evidenceLevel) ? row.evidenceLevel : 'low'
+        };
+      }).filter((combo) => combo.products.length === 2 && combo.tickets !== null)
+    } : {}),
+    strategyRequested: source.strategyRequested === true,
+    strategyCandidates,
+    strategyProducts,
+    opportunityCandidates,
     contributors: normalizeContributors(source.contributors),
-    evidenceKeys: buildEvidenceKeys(source),
+    evidenceKeys,
     coverage: normalizeCoverage(source.coverage),
     calculations: normalizeCalculations(source.calculations),
     assumptions: Array.isArray(source.assumptions)
@@ -1003,12 +1237,13 @@ const normalizeEcommercePayload = (payload = {}) => {
 
 export const buildSalesProfitabilityContext = ({ period, report, source = 'mixed', intent = null } = {}) => {
   const sales = normalizeSalesPayload(report, intent);
+  const standardSales = Object.fromEntries(Object.entries(sales).filter(([key]) => key !== 'strategyProducts'));
   return {
     agentKey: COMMERCIAL_AGENT_KEYS.SALES_PROFITABILITY,
     scope: 'current_authenticated_tenant',
     period: normalizePeriod(period),
     source: asSafeSource(source),
-    sales: COMPACT_NARRATIVE_INTENTS.has(intent) ? buildNarrativeEvidence(intent, sales) : sales
+    sales: COMPACT_NARRATIVE_INTENTS.has(intent) ? buildNarrativeEvidence(intent, sales) : standardSales
   };
 };
 

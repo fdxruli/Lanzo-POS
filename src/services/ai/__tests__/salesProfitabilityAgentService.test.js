@@ -4,6 +4,7 @@ import {
   createSalesProfitabilityProductLoader,
   resolveBusinessTimezone
 } from '../salesProfitabilityAgentService';
+import { validatePayload } from '../../../../supabase/functions/lanzo-ai-agent/contract.ts';
 
 const history = {
   source: { mode: 'cloud_final', stale: false },
@@ -759,6 +760,162 @@ describe('sales profitability agent service', () => {
     expect(result.response.priceSimulation).toBeNull();
     expect(result.response.status).toBe('incomplete');
     expect(analyze).not.toHaveBeenCalled();
+  });
+
+  it('keeps an incomplete gross-profit goal local without reserving quota', async () => {
+    const missingProfit = {
+      ...profit,
+      rows: [{
+        ...profit.rows[0], unit_cost: null, cogs: 0, gross_profit: null,
+        gross_margin_percent: null, cost_source: 'missing', profit_status: 'incomplete'
+      }]
+    };
+    const analyze = vi.fn();
+    const runner = createSalesProfitabilityAgentRunner({
+      repository: repository(history, missingProfit), analyze, assertActor: vi.fn()
+    });
+    const result = await runner({
+      question: 'Quiero ganar $20,000',
+      period: { from: '2026-09-01', to: '2026-09-07', days: 7 },
+      requestKey: 'profit-goal-incomplete-cost'
+    });
+
+    expect(result.response).toMatchObject({
+      intent: 'goal_simulation', status: 'incomplete',
+      goalSimulation: { type: 'gross_profit', ready: false, state: 'unavailable', currentValue: null }
+    });
+    expect(result.response.goalSimulation).not.toHaveProperty('requiredRevenue');
+    expect(result).toMatchObject({ providerCalled: false, quotaOutcome: 'not_consumed', usageStatus: null });
+    expect(analyze).not.toHaveBeenCalled();
+  });
+
+  it('sends Lanzo-calculated goal evidence and ignores provider-supplied financial recalculations', async () => {
+    const alteredProviderResult = JSON.stringify({
+      version: 1, agentKey: 'salesProfitability', status: 'completed', intent: 'goal_simulation',
+      executiveSummary: 'Narrativa suplementaria.', answer: 'Narrativa suplementaria.',
+      explanation: 'La explicación usa las cifras que recibió de Lanzo.',
+      facts: [], calculations: [{ label: 'Ventas requeridas', value: 999999, formattedValue: '999999', formula: 'inventada', source: 'provider', period: null }],
+      assumptions: [], scenarios: [], recommendations: [], limitations: [], source: 'cloud',
+      coverage: { complete: true }, citations: [], actionDrafts: []
+    });
+    const analyze = vi.fn(async (request) => {
+      expect(request.intent).toBe('goal_simulation');
+      expect(request.context.sales.goalSimulation).toMatchObject({
+        type: 'revenue', targetValue: 150, currentSales: 100,
+        requiredAdditionalTicketsAtCurrentTicket: 1,
+        requiredAverageTicketAtCurrentTicketCount: 150
+      });
+      const validation = validatePayload({
+        auth: { licenseKey: 'synthetic-license', deviceFingerprint: 'synthetic-device', deviceSecurityToken: 'synthetic-token', staffSessionToken: null },
+        agentKey: request.agentKey, intent: request.intent, question: request.question,
+        requestKey: request.requestKey, period: request.period, scenario: request.scenario,
+        context: request.context, options: { temperature: 0.2, maxTokens: 2048 }
+      });
+      expect(validation.ok, JSON.stringify(validation)).toBe(true);
+      return { rawResultContent: alteredProviderResult, providerCalled: true, quotaOutcome: 'consumed' };
+    });
+    const runner = createSalesProfitabilityAgentRunner({ repository: repository(), analyze, assertActor: vi.fn() });
+    const result = await runner({
+      question: '¿Cuánto necesito vender para facturar $150?',
+      period: { from: '2026-09-01', to: '2026-09-07', days: 7 },
+      requestKey: 'revenue-goal-deterministic'
+    });
+
+    expect(result).toMatchObject({ providerCalled: true, quotaOutcome: 'consumed' });
+    expect(result.response.goalSimulation).toMatchObject({ currentSales: 100, targetValue: 150, revenueGap: 50 });
+    expect(result.response.calculations.find((row) => row.label === 'Ventas requeridas')).toBeUndefined();
+    expect(result.response.calculations.find((row) => row.label === 'Ticket promedio requerido al conteo actual').value).toBe(150);
+    expect(result.response.calculations.some((row) => row.value === 999999)).toBe(false);
+    expect(analyze).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends strategy only from deterministic candidates grounded in complete comparison evidence', async () => {
+    const dateForPeriod = (dateFrom) => dateFrom === '2026-08-25T06:00:00.000Z';
+    const makeDataset = (saleId, total) => ({
+      history: {
+        source: { mode: 'cloud_final', stale: false },
+        rows: [{ id: saleId, status: 'closed', sourceMode: 'cloud_committed', sourceModeKnown: true, total, discount: null, itemsCount: 1, itemsQuantity: 2 }],
+        total_count: 1, limit: 100, offset: 0, has_more: false
+      },
+      profit: {
+        source: { mode: 'cloud_final', stale: false },
+        rows: [{
+          sale_id: saleId, product_id: 'private-product-id', product_name: 'Producto A', quantity: 2,
+          line_total: total, unit_cost: total * 0.2, movement_cost: null, cogs: total * 0.4,
+          gross_profit: total * 0.6, gross_margin_percent: 60,
+          cost_source: 'sale_item_snapshot', profit_status: 'estimated'
+        }],
+        total_count: 1, limit: 100, offset: 0, has_more: false
+      }
+    });
+    const currentDataset = makeDataset('current-sale-id', 100);
+    const previousDataset = makeDataset('previous-sale-id', 110);
+    const reports = {
+      getSalesFinalHistory: vi.fn(async ({ dateFrom }) => dateForPeriod(dateFrom) ? previousDataset.history : currentDataset.history),
+      getSalesProfitReport: vi.fn(async ({ dateFrom }) => dateForPeriod(dateFrom) ? previousDataset.profit : currentDataset.profit)
+    };
+    const catalogLoader = vi.fn(async () => ({
+      source: 'local_tenant_catalog', complete: true, productsTruncated: false, categoriesTruncated: false,
+      products: [{ id: 'private-product-id', name: 'Producto A', categoryId: 'private-category-id', isActive: true }],
+      categories: [{ id: 'private-category-id', name: 'Bebidas', isActive: true }]
+    }));
+    const analyze = vi.fn(async ({ agentKey, intent, question, requestKey, period, scenario, context }) => {
+      expect(['commercial_strategy', 'goal_simulation']).toContain(intent);
+      expect(context.sales.strategyRequested).toBe(true);
+      if (intent === 'goal_simulation') {
+        expect(context.sales.goalSimulation).toMatchObject({ type: 'revenue', targetValue: 150000, revenueGap: 149900 });
+      }
+      expect(context.sales.strategyCandidates).toEqual(expect.arrayContaining([
+        expect.objectContaining({ reasonCode: 'ticket_down_sales_stable', priority: 'medium' })
+      ]));
+      expect(context.sales.opportunityCandidates).toEqual(expect.arrayContaining([
+        expect.objectContaining({ signal: ['ticket_down_sales_stable'] })
+      ]));
+      const serialized = JSON.stringify(context);
+      expect(serialized).not.toContain('private-product-id');
+      expect(serialized).not.toContain('current-sale-id');
+      const validation = validatePayload({
+        auth: { licenseKey: 'synthetic-license', deviceFingerprint: 'synthetic-device', deviceSecurityToken: 'synthetic-token', staffSessionToken: null },
+        agentKey, intent, question, requestKey, period, scenario, context,
+        options: { temperature: 0.2, maxTokens: 2048 }
+      });
+      expect(validation.ok, JSON.stringify(validation)).toBe(true);
+      return { rawResultContent: providerResponse, providerCalled: true, quotaOutcome: 'consumed' };
+    });
+    const runner = createSalesProfitabilityAgentRunner({
+      repository: reports, catalogLoader, analyze, assertActor: vi.fn(assortmentActor)
+    });
+    const result = await runner({
+      question: '¿Qué debería priorizar para mejorar el negocio?',
+      period: { from: '2026-09-01', to: '2026-09-07', days: 7 },
+      requestKey: 'commercial-strategy-grounded'
+    });
+
+    expect(result.response.strategyRequested).toBe(true);
+    expect(result.response.strategyCandidates).toEqual(expect.arrayContaining([
+      expect.objectContaining({ reasonCode: 'ticket_down_sales_stable', priority: 'medium' })
+    ]));
+    expect(result).toMatchObject({ providerCalled: true, quotaOutcome: 'consumed' });
+    expect(catalogLoader).toHaveBeenCalledTimes(1);
+    expect(reports.getSalesFinalHistory).toHaveBeenCalledTimes(2);
+    expect(analyze).toHaveBeenCalledTimes(1);
+
+    const goalWithStrategy = await runner({
+      question: 'Quiero facturar $150,000, ¿qué tendría que cambiar?',
+      period: { from: '2026-09-01', to: '2026-09-07', days: 7 },
+      requestKey: 'goal-with-grounded-strategy'
+    });
+    expect(goalWithStrategy.response).toMatchObject({
+      intent: 'goal_simulation', goalSimulation: { type: 'revenue', targetValue: 150000, revenueGap: 149900 },
+      strategyRequested: true
+    });
+    expect(goalWithStrategy.response.strategyCandidates).toEqual(expect.arrayContaining([
+      expect.objectContaining({ reasonCode: 'ticket_down_sales_stable', priority: 'medium' })
+    ]));
+    expect(goalWithStrategy).toMatchObject({ providerCalled: true, quotaOutcome: 'consumed' });
+    expect(catalogLoader).toHaveBeenCalledTimes(2);
+    expect(reports.getSalesFinalHistory).toHaveBeenCalledTimes(4);
+    expect(analyze).toHaveBeenCalledTimes(2);
   });
 
   it('returns insufficient_data for combos without enough shared tickets and skips quota/provider', async () => {

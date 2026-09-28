@@ -1,4 +1,4 @@
-import { getCommercialResolutionMessage } from './commercialQuestionRouter.js';
+import { COMMERCIAL_WHAT_IF_CHANGE_LIMITS, getCommercialResolutionMessage } from './commercialQuestionRouter.js';
 
 export { resolveCommercialIntent } from './commercialQuestionRouter.js';
 
@@ -19,6 +19,9 @@ export const COMMERCIAL_AGENT_INTENTS = Object.freeze([
   'price_simulation',
   'combo_opportunity',
   'promotion_opportunity',
+  'goal_simulation',
+  'what_if_analysis',
+  'commercial_strategy',
   'store_health',
   'order_funnel',
   'catalog_health'
@@ -35,7 +38,10 @@ export const SALES_PROFITABILITY_AGENT_INTENTS = Object.freeze([
   'assortment_analysis',
   'price_simulation',
   'combo_opportunity',
-  'promotion_opportunity'
+  'promotion_opportunity',
+  'goal_simulation',
+  'what_if_analysis',
+  'commercial_strategy'
 ]);
 
 export const COMMERCIAL_AGENT_RESPONSE_VERSION = 1;
@@ -83,6 +89,9 @@ const isRecord = (value) => value !== null && typeof value === 'object' && !Arra
 const SCENARIO_KEYS_BY_INTENT = Object.freeze({
   price_simulation: Object.freeze(['productName', 'newPrice', 'historicalVolume']),
   promotion_opportunity: Object.freeze(['productName', 'promotionalPrice', 'discountPercent', 'historicalVolume']),
+  goal_simulation: Object.freeze(['goalType', 'targetValue', 'productName']),
+  what_if_analysis: Object.freeze(['changeType', 'changePercent', 'productName']),
+  commercial_strategy: Object.freeze([]),
   combo_opportunity: Object.freeze([]),
   profitability_summary: Object.freeze([]),
   product_risk: Object.freeze([]),
@@ -122,11 +131,38 @@ const normalizeScenarioProductName = (value) => {
 };
 
 export const normalizeScenarioForIntent = (intent, scenario = {}) => {
-  if (intent !== 'price_simulation' && intent !== 'promotion_opportunity') return {};
-
   if (!isRecord(scenario)) throw scenarioError('INVALID_SCENARIO');
   const source = scenario;
   const normalized = {};
+
+  if (intent === 'goal_simulation') {
+    const goalType = scenarioHasValue(source.goalType) ? String(source.goalType).trim() : undefined;
+    const allowedGoalTypes = new Set(['revenue', 'gross_profit', 'average_ticket', 'gross_margin', 'product_margin']);
+    if (goalType && !allowedGoalTypes.has(goalType)) throw scenarioError('INVALID_GOAL_TYPE');
+    const targetValue = normalizeScenarioNumber(source.targetValue, { positive: true });
+    if (targetValue !== undefined && ['gross_margin', 'product_margin'].includes(goalType) && targetValue >= 100) {
+      throw scenarioError('SCENARIO_VALUE_OUT_OF_RANGE');
+    }
+    const productName = normalizeScenarioProductName(source.productName);
+    if (goalType) normalized.goalType = goalType;
+    if (targetValue !== undefined) normalized.targetValue = targetValue;
+    if (productName) normalized.productName = productName;
+    return normalized;
+  }
+
+  if (intent === 'what_if_analysis') {
+    const changeType = scenarioHasValue(source.changeType) ? String(source.changeType).trim() : undefined;
+    if (changeType && !['sales', 'ticket', 'product'].includes(changeType)) throw scenarioError('INVALID_CHANGE_TYPE');
+    const changePercent = normalizeScenarioNumber(source.changePercent, COMMERCIAL_WHAT_IF_CHANGE_LIMITS);
+    const productName = normalizeScenarioProductName(source.productName);
+    if (changeType) normalized.changeType = changeType;
+    if (changePercent !== undefined) normalized.changePercent = changePercent;
+    if (productName) normalized.productName = productName;
+    return normalized;
+  }
+
+  if (intent === 'commercial_strategy') return {};
+  if (intent !== 'price_simulation' && intent !== 'promotion_opportunity') return {};
   const productName = normalizeScenarioProductName(source.productName);
 
   if (productName) normalized.productName = productName;
@@ -166,7 +202,7 @@ export const validateCommercialAgentScenario = (intent, scenario = {}) => {
     }
   }
 
-  const numericFields = ['newPrice', 'promotionalPrice', 'historicalVolume', 'discountPercent'];
+  const numericFields = ['newPrice', 'promotionalPrice', 'historicalVolume', 'discountPercent', 'targetValue', 'changePercent'];
   for (const key of numericFields) {
     if (!Object.prototype.hasOwnProperty.call(scenario, key)) continue;
     const value = scenario[key];
@@ -174,6 +210,25 @@ export const validateCommercialAgentScenario = (intent, scenario = {}) => {
     if (['newPrice', 'promotionalPrice'].includes(key) && value <= 0) return invalid('SCENARIO_VALUE_MUST_BE_POSITIVE');
     if (key === 'historicalVolume' && value < 0) return invalid('SCENARIO_VALUE_OUT_OF_RANGE');
     if (key === 'discountPercent' && (value < 0 || value > 100)) return invalid('SCENARIO_VALUE_OUT_OF_RANGE');
+    if (key === 'targetValue' && value <= 0) return invalid('SCENARIO_VALUE_MUST_BE_POSITIVE');
+    if (key === 'changePercent' && (value < COMMERCIAL_WHAT_IF_CHANGE_LIMITS.minimum || value > COMMERCIAL_WHAT_IF_CHANGE_LIMITS.maximum)) return invalid('SCENARIO_VALUE_OUT_OF_RANGE');
+  }
+
+  if (intent === 'goal_simulation') {
+    if (!['revenue', 'gross_profit', 'average_ticket', 'gross_margin', 'product_margin'].includes(scenario.goalType)) {
+      return invalid('INVALID_GOAL_TYPE');
+    }
+    if (!Object.prototype.hasOwnProperty.call(scenario, 'targetValue')) return invalid('GOAL_TARGET_REQUIRED');
+    if (['gross_margin', 'product_margin'].includes(scenario.goalType) && scenario.targetValue >= 100) {
+      return invalid('SCENARIO_VALUE_OUT_OF_RANGE');
+    }
+    if (scenario.goalType === 'product_margin' && !scenario.productName) return invalid('PRODUCT_REQUIRED');
+  }
+
+  if (intent === 'what_if_analysis') {
+    if (!['sales', 'ticket', 'product'].includes(scenario.changeType)) return invalid('INVALID_CHANGE_TYPE');
+    if (!Object.prototype.hasOwnProperty.call(scenario, 'changePercent')) return invalid('CHANGE_PERCENT_REQUIRED');
+    if (scenario.changeType === 'product' && !scenario.productName) return invalid('PRODUCT_REQUIRED');
   }
 
   if (intent === 'promotion_opportunity'

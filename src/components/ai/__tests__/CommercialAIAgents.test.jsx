@@ -765,6 +765,118 @@ describe('commercial AI center', () => {
     expect(runtime.runAgent.mock.calls[0][0]).toMatchObject({ intent: 'profitability_summary' });
   });
 
+  it('prefills and lets the user correct a revenue goal before displaying the deterministic result', async () => {
+    runtime.runAgent.mockResolvedValueOnce({
+      response: {
+        status: 'completed', intent: 'goal_simulation', executiveSummary: 'La meta de ventas está a $24,000.',
+        explanation: 'Con el ticket promedio actual, el resultado es matemático y no una predicción.',
+        confidence: 'high', source: 'cloud', coverage: { validSales: 76, complete: true },
+        goalSimulation: {
+          type: 'revenue', targetValue: 100000, ready: true, state: 'remaining', gap: 24000,
+          gapPercent: 24, excess: 0, progress: 0.76, revenueGap: 24000,
+          currentSales: 76000, currentTickets: 76, currentAverageTicket: 1000,
+          requiredAdditionalTicketsAtCurrentTicket: 24, requiredAverageTicketAtCurrentTicketCount: 1315.79,
+          assumptions: [], limitations: []
+        },
+        calculations: [], assumptions: [], limitations: [], recommendations: [], scenarios: []
+      },
+      providerCalled: false, quotaOutcome: 'not_consumed', usageStatus: null
+    });
+
+    renderCenter();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), {
+      target: { value: '¿Cuánto necesito vender para facturar $100,000?' }
+    });
+    expect(screen.getByRole('combobox', { name: 'Tipo de meta' })).toHaveValue('revenue');
+    expect(screen.getByLabelText('Valor objetivo')).toHaveValue(100000);
+    expect(screen.getByText(/Las metas describen una brecha matemática/)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Valor objetivo'), { target: { value: '120000' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+
+    await waitFor(() => expect(runtime.runAgent).toHaveBeenCalledTimes(1));
+    expect(runtime.runAgent.mock.calls[0][0]).toMatchObject({
+      intent: 'goal_simulation', scenario: { goalType: 'revenue', targetValue: 120000 }
+    });
+    expect(await screen.findByRole('heading', { name: '¿Cuánto necesito vender para facturar $100,000?' })).toBeInTheDocument();
+    expect(screen.getByText('Tickets adicionales')).toBeInTheDocument();
+    expect(screen.getByText('Ticket requerido')).toBeInTheDocument();
+    expect(runtime.getUsage).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers explicit what-if percentage presets without guessing a default or consuming quota', () => {
+    renderCenter();
+    const question = screen.getByRole('textbox', { name: 'Pregunta libre' });
+    fireEvent.change(question, { target: { value: '¿Qué pasa si vendo más?' } });
+    const presets = screen.getByRole('combobox', { name: 'Cambios rápidos' });
+    const custom = screen.getByLabelText('Cambio porcentual');
+
+    expect(presets).toHaveValue('');
+    expect(custom).toHaveValue(null);
+    expect(screen.getByText(/si escribes un porcentaje en la pregunta/i)).toBeInTheDocument();
+    expect(screen.getByText(/es un escenario hipotético/i)).toBeInTheDocument();
+
+    fireEvent.change(presets, { target: { value: '100' } });
+    expect(custom).toHaveValue(100);
+    expect(presets).toHaveValue('100');
+
+    fireEvent.change(custom, { target: { value: '37' } });
+    expect(custom).toHaveValue(37);
+    expect(presets).toHaveValue('');
+
+    fireEvent.change(presets, { target: { value: '-50' } });
+    expect(custom).toHaveValue(-50);
+    expect(runtime.runAgent).not.toHaveBeenCalled();
+  });
+
+  it('keeps an incomplete product what-if local, then loads historical products and submits only after correction', async () => {
+    runtime.runAgent.mockResolvedValueOnce({
+      response: {
+        status: 'completed', intent: 'what_if_analysis',
+        executiveSummary: 'Producto A: de $100 a $120 (+20%).',
+        explanation: 'Se conserva el precio promedio histórico; la simulación no predice demanda.',
+        confidence: 'medium', source: 'cloud', coverage: { validSales: 1, complete: false },
+        whatIfSimulation: {
+          changeType: 'product', changePercent: 20, ready: true, productName: 'Producto A',
+          historicalUnits: 2, simulatedUnits: 2.4, averagePrice: 50,
+          historicalSales: 100, simulatedSales: 120, currentCost: null, simulatedCost: null,
+          currentProfit: null, simulatedProfit: null, profitDelta: null,
+          currentMargin: null, simulatedMargin: null, assumptions: [],
+          limitations: ['El costo del producto es desconocido; utilidad y margen permanecen no disponibles.']
+        },
+        calculations: [], assumptions: [], limitations: [], recommendations: [], scenarios: []
+      },
+      providerCalled: false, quotaOutcome: 'not_consumed', usageStatus: null
+    });
+    renderCenter();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), {
+      target: { value: '¿Qué pasa si vendo más de este producto?' }
+    });
+    const submit = screen.getByRole('button', { name: 'Analizar' });
+    fireEvent.click(submit);
+    expect(await screen.findByText(/indica qué variable cambiará y el porcentaje/i)).toBeInTheDocument();
+    expect(runtime.runAgent).not.toHaveBeenCalled();
+    expect(runtime.getUsage).toHaveBeenCalledTimes(1);
+
+    fireEvent.change(screen.getByLabelText('Cambio porcentual'), { target: { value: '20' } });
+    await waitFor(() => expect(runtime.loadProducts).toHaveBeenCalledTimes(1));
+    expect(runtime.loadProducts.mock.calls[0][0]).toMatchObject({ includeUnknownCosts: true });
+    const productPicker = await screen.findByRole('combobox', { name: 'Producto con ventas históricas' });
+    await waitFor(() => expect(productPicker).toBeEnabled());
+    fireEvent.change(productPicker, { target: { value: 'Producto A' } });
+    expect(submit).toBeEnabled();
+    fireEvent.click(submit);
+
+    await waitFor(() => expect(runtime.runAgent).toHaveBeenCalledTimes(1));
+    expect(runtime.runAgent.mock.calls[0][0]).toMatchObject({
+      intent: 'what_if_analysis', scenario: { changeType: 'product', changePercent: 20, productName: 'Producto A' }
+    });
+    expect(await screen.findAllByRole('heading', { name: '¿Qué pasa si vendo más de este producto?' })).toHaveLength(2);
+    expect(screen.getByText('Costo actual')).toBeInTheDocument();
+    expect(screen.getByText('Costo simulado')).toBeInTheDocument();
+    expect(screen.getByText(/Si el costo es desconocido, la utilidad y el margen permanecen no disponibles/i)).toBeInTheDocument();
+    expect(screen.getAllByText('No disponible').length).toBeGreaterThan(0);
+  });
+
 
   it('removes the redundant intent filter and prepares several products before the first analysis', async () => {
     runtime.loadProducts.mockResolvedValueOnce({
