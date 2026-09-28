@@ -991,7 +991,9 @@ describe('commercial AI center', () => {
     expect(screen.getByText('No confirmada')).toBeInTheDocument();
     expect(screen.getByText('Ventas concentradas en el producto principal')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Ver respuesta' }));
+    expect(runtime.runAgent).toHaveBeenCalledTimes(1);
+    const historyResponseButtons = await screen.findAllByRole('button', { name: 'Ver respuesta' });
+    fireEvent.click(historyResponseButtons[0]);
     expect(screen.getAllByText('Producto sin movimiento')).toHaveLength(2);
   }, 30000);
 
