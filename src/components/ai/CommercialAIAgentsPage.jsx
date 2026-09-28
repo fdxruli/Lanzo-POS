@@ -1790,9 +1790,37 @@ export default function CommercialAIAgentsPage() {
                         <ChevronDown size={15} aria-hidden="true" />
                       </span>
                     </label>
-                    <label className="commercial-ai-label" htmlFor="sales-agent-what-if-percent">Cambio porcentual
-                      <input id="sales-agent-what-if-percent" name="changePercent" type="number" min="-99.9" max="500" step="0.1" placeholder="De -99.9% a 500%" value={scenario.changePercent ?? ''} onChange={handleScenarioChange} />
+                    <label className="commercial-ai-label" htmlFor="sales-agent-what-if-preset">Cambios rápidos
+                      <span className="commercial-ai-select-wrap">
+                        <select id="sales-agent-what-if-preset" aria-label="Cambios rápidos"
+                          value={scenario.changePercent !== undefined && scenario.changePercent !== null && scenario.changePercent !== ''
+                            && [-50, -25, -10, 10, 25, 50, 100].includes(Number(scenario.changePercent))
+                            ? String(scenario.changePercent) : ''}
+                          onChange={(event) => setScenario((current) => ({
+                            ...current, changePercent: event.target.value === '' ? undefined : event.target.value
+                          }))}>
+                          <option value="">Selecciona un ejemplo (opcional)</option>
+                          <option value="-50">−50% · reducir a la mitad</option>
+                          <option value="-25">−25% · disminuir una cuarta parte</option>
+                          <option value="-10">−10% · disminuir una décima parte</option>
+                          <option value="10">+10% · aumentar una décima parte</option>
+                          <option value="25">+25% · aumentar una cuarta parte</option>
+                          <option value="50">+50% · multiplicar por 1.5</option>
+                          <option value="100">+100% · duplicar</option>
+                        </select>
+                        <ChevronDown size={15} aria-hidden="true" />
+                      </span>
                     </label>
+                    <label className="commercial-ai-label" htmlFor="sales-agent-what-if-percent">Cambio porcentual
+                      <input id="sales-agent-what-if-percent" name="changePercent" type="number" min="-99.9" max="500" step="0.1"
+                        placeholder="Ejemplo: 15 o -20" aria-describedby="sales-agent-what-if-percent-help"
+                        value={scenario.changePercent ?? ''} onChange={handleScenarioChange} />
+                    </label>
+                    <p className="commercial-ai-muted" id="sales-agent-what-if-percent-help">
+                      Indica cuánto cambiaría la variable elegida respecto al valor actual. +50% significa multiplicar por 1.5,
+                      +100% significa duplicar y −50% significa reducir a la mitad. Si escribes un porcentaje en la pregunta,
+                      Lía lo completa automáticamente; si no, selecciona un ejemplo o escribe tu propio valor.
+                    </p>
                     {scenario.changeType === 'product' && (
                       <label className="commercial-ai-label" htmlFor="sales-agent-what-if-product">Producto con ventas históricas
                         <span className="commercial-ai-select-wrap">
@@ -1809,7 +1837,7 @@ export default function CommercialAIAgentsPage() {
                 )}
               </div>
               {intent === 'goal_simulation' && <p className="commercial-ai-caution">Las metas describen una brecha matemática. El precio objetivo de producto requiere costo completo y no cambia el precio real.</p>}
-              {intent === 'what_if_analysis' && <p className="commercial-ai-caution">El límite admite cambios de −99.9% a 500%. La simulación no predice la demanda.</p>}
+              {intent === 'what_if_analysis' && <p className="commercial-ai-caution">Rango técnico permitido: −99.9% a +500%. Es un escenario hipotético, no una estimación automática de crecimiento ni una predicción de demanda.</p>}
               {scenario.goalType === 'product_margin' && productLoadError && <p className="commercial-ai-inline-error">{productLoadError}</p>}
             </div>
           )}
