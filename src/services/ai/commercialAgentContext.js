@@ -3,6 +3,11 @@ import { COMMERCIAL_AGENT_KEYS } from './commercialAgentContract';
 const MAX_PRODUCT_NAME_LENGTH = 120;
 const MAX_ROWS = 20;
 const SAFE_SOURCES = new Set(['cloud', 'local', 'mixed']);
+const STRATEGY_SUMMARY_EVIDENCE_KEYS = new Set([
+  'profitability.netSales', 'profitability.profit', 'profitability.margin', 'profitability.costCoverage',
+  'coverage.itemsComplete', 'coverage.costCoverage', 'coverage.paginationComplete', 'coverage.sourceComplete',
+  'metric:currentNetSales', 'metric:currentAverageTicket', 'metric:currentSalesCount'
+]);
 
 const asRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
   ? value
@@ -510,11 +515,7 @@ const buildNarrativeEvidence = (intent, sales) => {
     const candidateGrowthNames = new Set(strategyCandidates.filter((candidate) => candidate.reasonCode === 'product_growing').map((candidate) => candidate.entity));
     const evidenceKeys = Array.from(new Set([
       ...(sales.strategyRequested ? opportunityCandidates.flatMap((candidate) => candidate.evidenceKeys) : []),
-      ...(sales.evidenceKeys || []).filter((key) => [
-        'profitability.netSales', 'profitability.profit', 'profitability.margin', 'profitability.costCoverage',
-        'coverage.itemsComplete', 'coverage.costCoverage', 'coverage.paginationComplete', 'coverage.sourceComplete',
-        'metric:currentNetSales', 'metric:currentAverageTicket', 'metric:currentSalesCount'
-      ].includes(key)),
+      ...(sales.evidenceKeys || []).filter((key) => STRATEGY_SUMMARY_EVIDENCE_KEYS.has(key)),
       ...(sales.whatIfSimulation ? ['scenarios.values'] : [])
     ])).slice(0, 40);
     const assortment = sales.assortment;

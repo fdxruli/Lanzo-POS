@@ -82,6 +82,20 @@ const EXCLUDED_SALES_SOURCES = new Set([
 ]);
 
 const HISTORICAL_SOURCE_TOKEN_PATTERN = /(?:^|_)(?:legacy|historical|history|imported)(?:_|$)/u;
+const MONEY_FORMATTER = new Intl.NumberFormat('es-MX', {
+  style: 'currency',
+  currency: 'MXN',
+  maximumFractionDigits: 2
+});
+const PERCENT_FORMATTER = new Intl.NumberFormat('es-MX', { maximumFractionDigits: 1 });
+const NUMBER_FORMATTERS = new Map();
+
+const numberFormatter = (maximumFractionDigits) => {
+  if (!NUMBER_FORMATTERS.has(maximumFractionDigits)) {
+    NUMBER_FORMATTERS.set(maximumFractionDigits, new Intl.NumberFormat('es-MX', { maximumFractionDigits }));
+  }
+  return NUMBER_FORMATTERS.get(maximumFractionDigits);
+};
 
 const asRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
   ? value
@@ -112,19 +126,19 @@ const normalize = (value = '') => String(value)
 
 const formatMoney = (value) => value === null || value === undefined || !Number.isFinite(Number(value))
   ? 'No disponible'
-  : new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 2 }).format(Number(value));
+  : MONEY_FORMATTER.format(Number(value));
 
 const formatNumber = (value, maximumFractionDigits = 2) => value === null || value === undefined || !Number.isFinite(Number(value))
   ? 'No disponible'
-  : new Intl.NumberFormat('es-MX', { maximumFractionDigits }).format(Number(value));
+  : numberFormatter(maximumFractionDigits).format(Number(value));
 
 const formatPercent = (value) => value === null || value === undefined || !Number.isFinite(Number(value))
   ? 'No disponible'
-  : `${new Intl.NumberFormat('es-MX', { maximumFractionDigits: 1 }).format(Number(value) * 100)}%`;
+  : `${PERCENT_FORMATTER.format(Number(value) * 100)}%`;
 
 const formatPercentPoints = (value) => value === null || value === undefined || !Number.isFinite(Number(value))
   ? 'No disponible'
-  : `${new Intl.NumberFormat('es-MX', { maximumFractionDigits: 1 }).format(Number(value))}%`;
+  : `${PERCENT_FORMATTER.format(Number(value))}%`;
 
 const calculation = (label, value, formula, period, source = 'sales_history', formatter = formatMoney) => ({
   label,
