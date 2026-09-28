@@ -275,6 +275,55 @@ describe('sales profitability download report', () => {
     expect(report.deterministic.recommendations).toMatchObject([{ title: 'Probar el precio' }]);
   });
 
+  it('exports and re-sanitizes goal and what-if snapshots without unallowlisted internals', () => {
+    const result = {
+      ...completedResult,
+      response: {
+        ...completedResult.response,
+        intent: 'goal_simulation',
+        goalSimulation: {
+          type: 'revenue', targetValue: 100000, currentValue: 76000, ready: true,
+          state: 'remaining', gap: 24000, gapPercent: 24, excess: 0, progress: 0.76,
+          revenueGap: 24000, requiredAdditionalTicketsAtCurrentTicket: 24,
+          requiredAverageTicketAtCurrentTicketCount: 1315.79, currentSales: 76000,
+          currentTickets: 76, currentAverageTicket: 1000, assumptions: ['Supuesto'], limitations: [],
+          internalId: internalUuid
+        },
+        whatIfSimulation: {
+          changeType: 'sales', changePercent: -10, ready: true,
+          currentSales: 76000, simulatedSales: 68400, salesDelta: -7600,
+          currentCost: null, simulatedCost: null, currentProfit: null, simulatedProfit: null,
+          profitDelta: null, currentMargin: null, simulatedMargin: null, assumptions: [], limitations: [],
+          rawRows: [{ sale_id: internalUuid }]
+        },
+        strategyRequested: true,
+        strategyCandidates: [{
+          key: 'candidate', type: 'general', focus: { type: 'general', key: 'candidate' },
+          priority: 'high', reasonCode: 'sales_declining', title: 'Investigar la caída', entity: null,
+          recommendationType: 'investigation', strength: 'strong', metrics: {},
+          signal: ['sales_declining'], evidenceKeys: ['metric:deltaNetSalesPercent'], internalId: internalUuid
+        }]
+      }
+    };
+    const request = {
+      ...requestContext, resolvedIntent: 'goal_simulation',
+      scenario: { goalType: 'revenue', targetValue: 100000, stalePrice: 500 }
+    };
+    const report = buildSalesProfitabilityDownloadReport(result, request);
+    const sanitized = sanitizeSalesProfitabilityDownloadReport(report);
+    const serialized = JSON.stringify(sanitized);
+
+    expect(sanitized.request).toMatchObject({
+      resolvedIntent: 'goal_simulation', scenario: { goalType: 'revenue', targetValue: 100000 }
+    });
+    expect(sanitized.deterministic.goalSimulation).toMatchObject({ type: 'revenue', revenueGap: 24000, progress: 0.76 });
+    expect(sanitized.deterministic.whatIfSimulation).toMatchObject({ changeType: 'sales', changePercent: -10, simulatedSales: 68400, simulatedCost: null, simulatedProfit: null });
+    expect(sanitized.deterministic.strategyCandidates[0]).toMatchObject({ reasonCode: 'sales_declining', priority: 'high' });
+    expect(serialized).not.toContain(internalUuid);
+    expect(serialized).not.toContain('stalePrice');
+    expect(serialized).not.toContain('rawRows');
+  });
+
   it('exports missing product costs as null with incomplete coverage instead of zero or 100% margin', () => {
     const missingCostResult = {
       ...completedResult,

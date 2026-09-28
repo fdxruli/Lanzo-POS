@@ -24,9 +24,18 @@ import {
 } from './commercialAgentContract';
 import { buildSalesProfitabilityContext } from './commercialAgentContext';
 import { buildAssortmentAnalysis } from './assortmentAnalytics';
+import { inferCommercialScenarioFromQuestion, isCommercialStrategyQuestion } from './commercialQuestionRouter';
+import {
+  buildCommercialStrategyCandidates,
+  buildGoalSimulation,
+  buildWhatIfAnalysis,
+  summarizeGoalSimulation,
+  summarizeWhatIfAnalysis
+} from './commercialScenarioAnalytics';
 
 const DEFAULT_BUSINESS_TIMEZONE = 'America/Mexico_City';
 const ASSORTMENT_INTENT = 'assortment_analysis';
+const STRATEGY_INTENT = 'commercial_strategy';
 const ASSORTMENT_MAX_PRODUCTS = 5000;
 const ASSORTMENT_MAX_CATEGORIES = 500;
 const ASSORTMENT_PERCENT_FORMATTER = new Intl.NumberFormat('es-MX', { maximumFractionDigits: 1 });
@@ -553,6 +562,17 @@ const intentHasUsefulEvidence = (response) => {
         && response.coverage?.validSales > 0;
     case ASSORTMENT_INTENT:
       return response.assortment?.narrativeEligible === true;
+    case 'goal_simulation':
+      return response.strategyRequested === true
+        ? response.goalSimulation?.ready === true
+          && Array.isArray(response.strategyCandidates)
+          && response.strategyCandidates.some((candidate) => candidate.priority !== 'low')
+        : response.goalSimulation?.ready === true;
+    case 'what_if_analysis':
+      return response.whatIfSimulation?.ready === true;
+    case STRATEGY_INTENT:
+      return Array.isArray(response.strategyCandidates)
+        && response.strategyCandidates.some((candidate) => candidate.priority !== 'low');
     case 'price_simulation':
       return Boolean(response.priceSimulation) && response.coverage?.sourceComplete === true;
     case 'promotion_opportunity':
@@ -570,6 +590,7 @@ const intentHasUsefulEvidence = (response) => {
 const intentStatus = (response) => {
   if (response.coverage?.validSales === 0) return 'insufficient_data';
   if (response.intent === 'combo_opportunity' && response.comboOpportunities?.length === 0) return 'insufficient_data';
+  if (response.intent === STRATEGY_INTENT && response.strategyCandidates?.length === 0) return 'incomplete';
   return intentHasUsefulEvidence(response) ? 'completed' : 'incomplete';
 };
 
@@ -693,7 +714,8 @@ const buildSafeNarrative = (response) => {
 const hardenDeterministicResult = ({
   deterministic,
   currentDataset,
-  previousDataset
+  previousDataset,
+  scenario = {}
 }) => {
   const currentMetadata = currentDataset.metadata;
   const previousMetadata = previousDataset?.metadata || null;
@@ -837,6 +859,31 @@ const hardenDeterministicResult = ({
     }
   };
 
+  if (hardened.intent === 'goal_simulation') {
+    hardened.goalSimulation = buildGoalSimulation({ current, scenario, coverage });
+    const narrative = summarizeGoalSimulation(hardened.goalSimulation || {});
+    hardened.executiveSummary = narrative.executiveSummary;
+    hardened.answer = narrative.executiveSummary;
+    hardened.explanation = narrative.explanation;
+    hardened.assumptions = hardened.goalSimulation?.assumptions || [];
+    hardened.calculations = buildCommercialScenarioCalculations(hardened, 'goal_simulation');
+    hardened.limitations = unique([
+      ...hardened.limitations,
+      ...(hardened.goalSimulation?.limitation ? [hardened.goalSimulation.limitation] : []),
+      ...(hardened.goalSimulation?.limitations || [])
+    ]);
+  }
+  if (hardened.intent === 'what_if_analysis') {
+    hardened.whatIfSimulation = buildWhatIfAnalysis({ current, scenario, coverage });
+    const narrative = summarizeWhatIfAnalysis(hardened.whatIfSimulation || {});
+    hardened.executiveSummary = narrative.executiveSummary;
+    hardened.answer = narrative.executiveSummary;
+    hardened.explanation = narrative.explanation;
+    hardened.assumptions = hardened.whatIfSimulation?.assumptions || [];
+    hardened.calculations = buildCommercialScenarioCalculations(hardened, 'what_if_analysis');
+    hardened.limitations = unique([...hardened.limitations, ...(hardened.whatIfSimulation?.limitations || [])]);
+  }
+
   hardened.status = intentStatus(hardened);
   if (!intentHasUsefulEvidence(hardened)) {
     hardened.recommendations = incompleteRecommendations(hardened);
@@ -899,10 +946,82 @@ const hardenDeterministicResult = ({
   return hardened;
 };
 
+const SCENARIO_CALCULATION_MONEY = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 2 });
+const SCENARIO_CALCULATION_NUMBER = new Intl.NumberFormat('es-MX', { maximumFractionDigits: 2 });
+
+const buildCommercialScenarioCalculations = (response, kind) => {
+  const source = kind === 'goal_simulation' ? response.goalSimulation : response.whatIfSimulation;
+  if (!source) return [];
+  const period = {
+    from: response.queryRange?.current?.from || null,
+    to: response.queryRange?.current?.to || null,
+    label: response.current?.period?.label || null
+  };
+  const rows = [];
+  const push = (label, value, formula, format = 'money') => {
+    const valid = typeof value === 'number' && Number.isFinite(value) ? value : null;
+    rows.push({
+      label,
+      value: valid,
+      formattedValue: valid === null
+        ? 'No disponible'
+        : format === 'percent'
+          ? `${SCENARIO_CALCULATION_NUMBER.format(valid)}%`
+          : format === 'number'
+            ? SCENARIO_CALCULATION_NUMBER.format(valid)
+            : SCENARIO_CALCULATION_MONEY.format(valid),
+      formula,
+      source: 'deterministic_simulation',
+      period
+    });
+  };
+  if (kind === 'goal_simulation') {
+    const marginPoints = ['gross_margin', 'product_margin'].includes(source.type);
+    push('Objetivo', source.targetValue, source.type?.includes('margin') ? 'margen objetivo indicado por el usuario' : 'valor objetivo indicado por el usuario', source.type?.includes('margin') ? 'percent' : 'money');
+    push('Valor actual', source.currentValue, 'valor observado en ventas históricas y costos con cobertura válida', marginPoints ? 'percent' : 'money');
+    push('Brecha de la meta', source.gap, 'máximo entre objetivo - valor actual y cero', marginPoints ? 'percent' : 'money');
+    if (source.type === 'revenue') push('Brecha porcentual de ventas', source.gapPercent, 'brecha de ventas / meta × 100', 'percent');
+    if (source.type === 'revenue') {
+      push('Tickets adicionales al ticket actual', source.requiredAdditionalTicketsAtCurrentTicket, 'techo de brecha de ventas / ticket promedio actual', 'number');
+      push('Ticket promedio requerido al conteo actual', source.requiredAverageTicketAtCurrentTicketCount, 'meta de ventas / tickets actuales');
+    }
+    if (source.type === 'gross_profit') {
+      push('Ventas requeridas con margen constante', source.requiredRevenue, 'utilidad objetivo / margen bruto actual');
+      push('Tickets adicionales equivalentes', source.equivalentAdditionalTickets, 'techo de ventas adicionales / ticket promedio actual', 'number');
+    }
+    if (source.type === 'average_ticket') {
+      push('Cambio porcentual del ticket promedio', source.ticketChangePercent, 'diferencia de ticket / ticket actual × 100', 'percent');
+      push('Ventas al ticket objetivo', source.requiredSalesAtCurrentTicketCount, 'ticket objetivo × tickets actuales');
+      push('Incremento de ventas al conteo actual', source.salesIncreaseAtCurrentTicketCount, 'ventas requeridas - ventas actuales');
+    }
+    if (source.type === 'gross_margin') {
+      push('Utilidad requerida al volumen actual', source.requiredProfitAtCurrentSales, 'ventas actuales × margen objetivo');
+      push('Brecha de utilidad bruta', source.additionalProfitRequired, 'utilidad requerida - utilidad actual');
+    }
+    if (source.type === 'product_margin') {
+      push('Precio para el margen objetivo', source.requiredPrice, 'costo unitario / (1 - margen objetivo)');
+      push('Diferencia frente al precio promedio actual', source.priceDifference, 'precio requerido - precio histórico promedio');
+      push('Cambio porcentual del precio', source.priceChangePercent, 'diferencia de precio / precio actual × 100', 'percent');
+    }
+  } else {
+    push('Valor actual', source.currentSales ?? source.historicalSales, 'valor observado en las ventas históricas');
+    push('Porcentaje simulado', source.changePercent, 'porcentaje indicado por el usuario', 'percent');
+    push('Valor simulado', source.simulatedSales, 'valor actual × (1 + cambio porcentual / 100)');
+    push('Diferencia simulada', source.salesDelta, 'valor simulado - valor actual');
+    if (source.changeType === 'product') push('Unidades simuladas', source.simulatedUnits, 'unidades históricas × (1 + cambio porcentual / 100)', 'number');
+    if (source.changeType === 'ticket') push('Ticket promedio simulado', source.simulatedTicket, 'ticket actual × (1 + cambio porcentual / 100)');
+    if (source.simulatedProfit !== null && source.simulatedProfit !== undefined) {
+      push('Utilidad bruta simulada', source.simulatedProfit, 'utilidad actual × factor con margen constante');
+      push('Variación de utilidad', source.profitDelta, 'utilidad simulada - utilidad actual');
+    }
+  }
+  return rows;
+};
+
 export const createSalesProfitabilityProductLoader = ({
   repository = reportsRepository,
   assertActor = assertCurrentAIAgentActor
-} = {}) => async ({ period = {} } = {}) => {
+} = {}) => async ({ period = {}, includeUnknownCosts = false } = {}) => {
   const normalizedPeriod = normalizePeriod(period);
   const actor = assertActor();
   const scope = getSalesFinalHistoryScope(actor);
@@ -912,7 +1031,7 @@ export const createSalesProfitabilityProductLoader = ({
     scope
   });
   return {
-    products: buildSalesProfitabilityProductOptionsFromDataset(dataset),
+    products: buildSalesProfitabilityProductOptionsFromDataset(dataset, { includeUnknownCosts: includeUnknownCosts === true }),
     excludedProducts: buildSalesProfitabilityProductExclusionsFromDataset(dataset),
     source: dataset.metadata.sourceMode,
     coverage: {
@@ -940,7 +1059,11 @@ export const createSalesProfitabilityAgentRunner = ({
   requestKey = null
 } = {}) => {
   const questionText = String(question || '').trim();
-  const resolution = resolveCommercialIntent(questionText, { scenario });
+  const inferredScenario = inferCommercialScenarioFromQuestion(questionText).scenario;
+  const scenarioValues = scenario && typeof scenario === 'object' && !Array.isArray(scenario)
+    ? { ...inferredScenario, ...scenario }
+    : scenario;
+  const resolution = resolveCommercialIntent(questionText, { scenario: scenarioValues });
   if (resolution.kind !== 'supported') {
     return {
       response: createCommercialLocalResponse(resolution),
@@ -953,9 +1076,11 @@ export const createSalesProfitabilityAgentRunner = ({
   }
 
   const resolvedIntent = resolution.intent;
+  const strategyRequested = resolvedIntent === STRATEGY_INTENT
+    || (resolvedIntent === 'goal_simulation' && isCommercialStrategyQuestion(questionText));
   let normalizedScenario;
   try {
-    normalizedScenario = normalizeScenarioForIntent(resolvedIntent, scenario);
+    normalizedScenario = normalizeScenarioForIntent(resolvedIntent, scenarioValues);
   } catch (error) {
     throw new AIApiError(
       'La configuración de la simulación no es válida.',
@@ -968,6 +1093,7 @@ export const createSalesProfitabilityAgentRunner = ({
   const normalizedPeriod = normalizePeriod(period);
   const currentPeriod = { ...normalizedPeriod, previous: null };
   const comparisonEnabled = ['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend', ASSORTMENT_INTENT].includes(resolvedIntent)
+    || strategyRequested
     || (resolvedIntent === 'explain_change' && compare === true);
   const previousPeriod = comparisonEnabled ? buildPreviousPeriod(currentPeriod) : null;
   if (previousPeriod) previousPeriod.timezone = currentPeriod.timezone;
@@ -1003,11 +1129,11 @@ export const createSalesProfitabilityAgentRunner = ({
       previousPeriod
         ? loadSalesProfitabilityDataset({ repository, period: previousPeriod, scope })
         : Promise.resolve(null),
-      resolvedIntent === ASSORTMENT_INTENT
+      resolvedIntent === ASSORTMENT_INTENT || strategyRequested
         ? catalogLoader({ repository: catalogRepository, actor, assertActor })
         : Promise.resolve(null)
     ]);
-    if (resolvedIntent === ASSORTMENT_INTENT) assertTenantUnchanged(actor, assertActor());
+    if (resolvedIntent === ASSORTMENT_INTENT || strategyRequested) assertTenantUnchanged(actor, assertActor());
 
     const deterministicBase = buildSalesProfitabilityAnalysis({
       period: currentPeriod,
@@ -1015,28 +1141,32 @@ export const createSalesProfitabilityAgentRunner = ({
       previousHistory: previousDataset?.history || null,
       sourceMode: currentDataset.metadata.sourceMode,
       intent: resolvedIntent,
-      scenario: normalizedScenario
+      scenario: normalizedScenario,
+      includeCommercialStrategyEvidence: strategyRequested
     });
     const deterministic = hardenDeterministicResult({
       deterministic: deterministicBase,
       currentDataset,
-      previousDataset
+      previousDataset,
+      scenario: normalizedScenario
     });
 
-    if (resolvedIntent === ASSORTMENT_INTENT) {
+    if (resolvedIntent === ASSORTMENT_INTENT || strategyRequested) {
       const assortment = buildAssortmentAnalysis({ catalog, currentDataset, previousDataset });
       const currentSales = assortment.currentPeriod.netSales;
       const percent = (value) => value === null || value === undefined
         ? 'no disponible'
         : `${ASSORTMENT_PERCENT_FORMATTER.format(value * 100)}%`;
       deterministic.assortment = assortment;
-      deterministic.status = assortment.narrativeEligible ? 'completed' : 'insufficient_data';
-      deterministic.source = deterministic.source === 'cloud' ? 'mixed' : deterministic.source;
-      deterministic.executiveSummary = assortment.catalog.complete
-        ? `Tu catálogo activo tiene ${assortment.health.activeCatalogProducts} producto(s) y ${assortment.health.activeCategories} categoría(s).${assortment.health.unsoldProducts === null ? '' : ` ${assortment.health.unsoldProducts} producto(s) activos no registraron ventas en el periodo.`}`
-        : `Se revisó una parte del catálogo (${assortment.catalog.productsRead} producto(s) y ${assortment.catalog.categoriesRead} categoría(s)); el análisis es parcial.`;
-      deterministic.answer = deterministic.executiveSummary;
-      deterministic.explanation = `Ventas netas identificadas en el detalle: ${currentSales === null ? 'no disponibles' : `$${ASSORTMENT_CURRENCY_FORMATTER.format(currentSales)}`}. Participación de los tres productos principales: ${percent(assortment.health.concentration.top3ProductShare)}. ${assortment.health.previousComparisonAvailable ? 'La comparación usa periodos equivalentes.' : 'No se pudo confirmar una comparación completa con el periodo anterior.'}`;
+      if (resolvedIntent === ASSORTMENT_INTENT) {
+        deterministic.status = assortment.narrativeEligible ? 'completed' : 'insufficient_data';
+        deterministic.source = deterministic.source === 'cloud' ? 'mixed' : deterministic.source;
+        deterministic.executiveSummary = assortment.catalog.complete
+          ? `Tu catálogo activo tiene ${assortment.health.activeCatalogProducts} producto(s) y ${assortment.health.activeCategories} categoría(s).${assortment.health.unsoldProducts === null ? '' : ` ${assortment.health.unsoldProducts} producto(s) activos no registraron ventas en el periodo.`}`
+          : `Se revisó una parte del catálogo (${assortment.catalog.productsRead} producto(s) y ${assortment.catalog.categoriesRead} categoría(s)); el análisis es parcial.`;
+        deterministic.answer = deterministic.executiveSummary;
+        deterministic.explanation = `Ventas netas identificadas en el detalle: ${currentSales === null ? 'no disponibles' : `$${ASSORTMENT_CURRENCY_FORMATTER.format(currentSales)}`}. Participación de los tres productos principales: ${percent(assortment.health.concentration.top3ProductShare)}. ${assortment.health.previousComparisonAvailable ? 'La comparación usa periodos equivalentes.' : 'No se pudo confirmar una comparación completa con el periodo anterior.'}`;
+      }
       deterministic.limitations = unique([...(deterministic.limitations || []), ...assortment.limitations]);
       deterministic.coverage = {
         ...deterministic.coverage,
@@ -1044,6 +1174,41 @@ export const createSalesProfitabilityAgentRunner = ({
         assortmentSalesComplete: assortment.health.currentSalesCoverageComplete,
         assortmentComparisonAvailable: assortment.comparisonAvailable
       };
+    }
+
+    if (strategyRequested) {
+      deterministic.strategyRequested = true;
+      deterministic.strategyCandidates = buildCommercialStrategyCandidates({
+        current: deterministic.current,
+        comparison: deterministic.comparison,
+        growthSignals: deterministic.growthSignals,
+        productRisks: deterministic.productRisks,
+        assortment: deterministic.assortment,
+        comboOpportunities: deterministic.comboOpportunities,
+        coverage: {
+          ...deterministic.coverage,
+          comparisonAvailable: deterministic.coverage?.comparisonAvailable === true
+            && deterministic.assortment?.comparisonAvailable === true,
+          comparisonItemsAvailable: deterministic.coverage?.comparisonItemsAvailable === true
+            && deterministic.assortment?.comparisonAvailable === true
+        }
+      });
+      deterministic.coverage = {
+        ...deterministic.coverage,
+        strategyEvidenceAvailable: deterministic.strategyCandidates.length > 0,
+        strategyCatalogComplete: deterministic.assortment?.catalog?.complete === true
+      };
+      if (resolvedIntent === STRATEGY_INTENT) {
+        const usefulCandidates = deterministic.strategyCandidates.filter((candidate) => candidate.priority !== 'low');
+        deterministic.status = usefulCandidates.length ? 'completed' : 'incomplete';
+        deterministic.executiveSummary = usefulCandidates.length
+          ? `Con la evidencia del periodo, conviene revisar primero: ${usefulCandidates.slice(0, 3).map((item) => item.title).join('; ')}.`
+          : 'No hay señales completas suficientes para priorizar una estrategia comercial en este periodo.';
+        deterministic.answer = deterministic.executiveSummary;
+        deterministic.explanation = usefulCandidates.length
+          ? 'Estas prioridades se derivan de ventas, costos, comparación, surtido y combinaciones históricas disponibles. Son áreas para revisar, no garantías de resultado.'
+          : 'La evidencia incompleta o sin señales accionables no justifica una recomendación priorizada ni una llamada al proveedor.';
+      }
     }
 
     if (!intentHasUsefulEvidence(deterministic)) {
@@ -1063,6 +1228,11 @@ export const createSalesProfitabilityAgentRunner = ({
       report: {
         ...deterministic.context,
         assortment: deterministic.assortment || null,
+        comboOpportunities: deterministic.comboOpportunities || [],
+        goalSimulation: deterministic.goalSimulation || null,
+        whatIfSimulation: deterministic.whatIfSimulation || null,
+        strategyCandidates: deterministic.strategyCandidates || [],
+        strategyRequested: deterministic.strategyRequested === true,
         coverage: deterministic.coverage,
         calculations: deterministic.calculations,
         assumptions: deterministic.assumptions,

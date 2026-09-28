@@ -4,6 +4,7 @@ import {
   normalizeScenarioForIntent
 } from './commercialAgentContract';
 import { isMissingUnitCost } from '../sales/financialPolicy';
+import { buildGoalSimulation, buildWhatIfAnalysis } from './commercialScenarioAnalytics';
 
 export const SALES_PROFITABILITY_INTENTS = Object.freeze([
   'profitability_summary',
@@ -16,7 +17,10 @@ export const SALES_PROFITABILITY_INTENTS = Object.freeze([
   'assortment_analysis',
   'price_simulation',
   'combo_opportunity',
-  'promotion_opportunity'
+  'promotion_opportunity',
+  'goal_simulation',
+  'what_if_analysis',
+  'commercial_strategy'
 ]);
 
 const DEFAULT_COST_COVERAGE = 0;
@@ -117,6 +121,10 @@ const formatNumber = (value, maximumFractionDigits = 2) => value === null || val
 const formatPercent = (value) => value === null || value === undefined || !Number.isFinite(Number(value))
   ? 'No disponible'
   : `${new Intl.NumberFormat('es-MX', { maximumFractionDigits: 1 }).format(Number(value) * 100)}%`;
+
+const formatPercentPoints = (value) => value === null || value === undefined || !Number.isFinite(Number(value))
+  ? 'No disponible'
+  : `${new Intl.NumberFormat('es-MX', { maximumFractionDigits: 1 }).format(Number(value))}%`;
 
 const calculation = (label, value, formula, period, source = 'sales_history', formatter = formatMoney) => ({
   label,
@@ -1221,9 +1229,10 @@ const fallbackRecommendation = (intent, { profitability, productRisks, contribut
   return [];
 };
 
-const buildAgentContext = ({ current, comparison, period, source, profitability, productRisks, contributors, growthSignals, intent }) => {
+const buildAgentContext = ({ current, comparison, period, source, profitability, productRisks, contributors, growthSignals, intent, includeCommercialStrategyEvidence = false, comboOpportunities = [] }) => {
   const risksByProduct = new Map(productRisks.map((risk) => [risk.product, risk]));
-  const isGrowthIntent = ['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend'].includes(intent);
+  const isGrowthIntent = ['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend', 'commercial_strategy'].includes(intent)
+    || includeCommercialStrategyEvidence === true;
   return {
     summary: {
       netSales: current.netSales,
@@ -1311,6 +1320,7 @@ const buildAgentContext = ({ current, comparison, period, source, profitability,
         comparisonAvailable: growthSignals.comparisonAvailable
       }
     } : {}),
+    ...(includeCommercialStrategyEvidence === true ? { comboOpportunities: comboOpportunities.slice(0, 3) } : {}),
     contributors,
     period,
     source
@@ -1369,7 +1379,8 @@ export const buildSalesProfitabilityAnalysis = ({
   previousHistory = null,
   sourceMode = 'mixed',
   intent = 'profitability_summary',
-  scenario = {}
+  scenario = {},
+  includeCommercialStrategyEvidence = false
 } = {}) => {
   const resolvedIntent = SALES_PROFITABILITY_INTENTS.includes(intent) ? intent : 'profitability_summary';
   let normalizedScenario = {};
@@ -1392,9 +1403,16 @@ export const buildSalesProfitabilityAnalysis = ({
   let simulation = normalizeSimulationResult();
   if (resolvedIntent === 'price_simulation') simulation = normalizeSimulationResult(simulatePrice(current, normalizedScenario, period));
   if (resolvedIntent === 'promotion_opportunity') simulation = normalizeSimulationResult(simulatePromotion(current, normalizedScenario, period));
-  if (resolvedIntent === 'combo_opportunity' || resolvedIntent === 'ticket_growth') {
+  if (resolvedIntent === 'combo_opportunity' || resolvedIntent === 'ticket_growth' || resolvedIntent === 'commercial_strategy' || includeCommercialStrategyEvidence) {
     simulation = normalizeSimulationResult(buildComboSimulation(validRows, period));
   }
+  const initialCoverage = { complete: current.salesCount > 0 && current.costComplete === true };
+  const goalSimulation = resolvedIntent === 'goal_simulation'
+    ? buildGoalSimulation({ current, scenario: normalizedScenario, coverage: initialCoverage })
+    : null;
+  const whatIfSimulation = resolvedIntent === 'what_if_analysis'
+    ? buildWhatIfAnalysis({ current, scenario: normalizedScenario, coverage: initialCoverage })
+    : null;
 
   let calculations = [];
   if (resolvedIntent === 'profitability_summary') {
@@ -1454,6 +1472,55 @@ export const buildSalesProfitabilityAnalysis = ({
       calculation('Productos con ventas decrecientes', growthSignals.productsDeclining.length, 'conteo de productos con ventas actuales menores al periodo anterior o sin venta actual', period, 'comparison', formatNumber),
       calculation('Productos con costo faltante', current.products.filter((product) => product.costKnown !== true).length, 'conteo de productos actuales sin costo completo conocido', period, 'sales_history', formatNumber)
     ];
+  } else if (resolvedIntent === 'goal_simulation') {
+    const goalPercentPoints = ['gross_margin', 'product_margin'].includes(goalSimulation?.type);
+    calculations = [
+      calculation('Objetivo', goalSimulation?.targetValue ?? null, goalPercentPoints ? 'porcentaje objetivo indicado por el usuario' : 'valor objetivo indicado por el usuario', period, 'scenario', goalPercentPoints ? formatPercentPoints : formatMoney),
+      calculation('Valor actual', goalSimulation?.currentValue ?? null, 'valor observado en las ventas históricas y costos con cobertura válida', period, 'sales_history', goalPercentPoints ? formatPercentPoints : formatMoney),
+      calculation('Brecha de la meta', goalSimulation?.gap ?? null, 'máximo entre objetivo - valor actual y cero', period, 'deterministic_simulation', goalPercentPoints ? formatPercentPoints : formatMoney),
+      ...(goalSimulation?.type === 'revenue' ? [
+        calculation('Brecha porcentual de ventas', goalSimulation.gapPercent ?? null, 'brecha de ventas / meta × 100', period, 'deterministic_simulation', formatPercentPoints)
+      ] : []),
+      ...(goalSimulation?.requiredRevenue !== undefined ? [
+        calculation('Ventas requeridas con margen constante', goalSimulation.requiredRevenue, 'utilidad objetivo / margen bruto actual', period, 'deterministic_simulation'),
+        calculation('Tickets adicionales equivalentes', goalSimulation.equivalentAdditionalTickets, 'techo de ventas adicionales requeridas / ticket promedio actual', period, 'deterministic_simulation', formatNumber)
+      ] : []),
+      ...(goalSimulation?.requiredAdditionalTicketsAtCurrentTicket !== undefined ? [
+        calculation('Tickets adicionales al ticket actual', goalSimulation.requiredAdditionalTicketsAtCurrentTicket, 'techo de brecha de ventas / ticket promedio actual', period, 'deterministic_simulation', formatNumber),
+        calculation('Ticket promedio requerido al conteo actual', goalSimulation.requiredAverageTicketAtCurrentTicketCount, 'meta de ventas / tickets actuales', period, 'deterministic_simulation')
+      ] : []),
+      ...(goalSimulation?.requiredProfitAtCurrentSales !== undefined ? [
+        calculation('Utilidad bruta requerida al volumen actual', goalSimulation.requiredProfitAtCurrentSales, 'ventas actuales × margen objetivo', period, 'deterministic_simulation'),
+        calculation('Brecha de utilidad bruta', goalSimulation.additionalProfitRequired, 'utilidad requerida - utilidad actual', period, 'deterministic_simulation')
+      ] : []),
+      ...(goalSimulation?.requiredSalesAtCurrentTicketCount !== undefined ? [
+        calculation('Cambio porcentual del ticket promedio', goalSimulation.ticketChangePercent, 'diferencia de ticket / ticket actual × 100', period, 'deterministic_simulation', formatPercentPoints),
+        calculation('Ventas al ticket objetivo', goalSimulation.requiredSalesAtCurrentTicketCount, 'ticket objetivo × tickets actuales', period, 'deterministic_simulation'),
+        calculation('Incremento de ventas al conteo actual', goalSimulation.salesIncreaseAtCurrentTicketCount, 'ventas requeridas - ventas actuales', period, 'deterministic_simulation')
+      ] : []),
+      ...(goalSimulation?.requiredPrice !== undefined ? [
+        calculation('Precio para el margen objetivo', goalSimulation.requiredPrice, 'costo unitario / (1 - margen objetivo)', period, 'deterministic_simulation'),
+        calculation('Diferencia frente al precio promedio actual', goalSimulation.priceDifference, 'precio requerido - precio histórico promedio', period, 'deterministic_simulation'),
+        calculation('Cambio porcentual del precio', goalSimulation.priceChangePercent, 'diferencia de precio / precio actual × 100', period, 'deterministic_simulation', formatPercentPoints)
+      ] : [])
+    ];
+  } else if (resolvedIntent === 'what_if_analysis') {
+    calculations = [
+      calculation('Valor actual', whatIfSimulation?.currentSales ?? whatIfSimulation?.historicalSales ?? null, 'valor observado en las ventas históricas', period, 'sales_history'),
+      calculation('Porcentaje simulado', whatIfSimulation?.changePercent ?? null, 'porcentaje indicado por el usuario', period, 'scenario', formatPercentPoints),
+      calculation('Valor simulado', whatIfSimulation?.simulatedSales ?? null, 'valor actual × (1 + cambio porcentual / 100)', period, 'deterministic_simulation'),
+      calculation('Diferencia simulada', whatIfSimulation?.salesDelta ?? null, 'valor simulado - valor actual', period, 'deterministic_simulation'),
+      ...(whatIfSimulation?.simulatedProfit !== undefined && whatIfSimulation.simulatedProfit !== null ? [
+        calculation('Utilidad bruta simulada', whatIfSimulation.simulatedProfit, 'utilidad actual × factor de cambio con margen constante', period, 'deterministic_simulation'),
+        calculation('Variación de utilidad', whatIfSimulation.profitDelta, 'utilidad simulada - utilidad actual', period, 'deterministic_simulation')
+      ] : []),
+      ...(whatIfSimulation?.simulatedUnits !== undefined ? [
+        calculation('Unidades simuladas', whatIfSimulation.simulatedUnits, 'unidades históricas × (1 + cambio porcentual / 100)', period, 'deterministic_simulation', formatNumber)
+      ] : []),
+      ...(whatIfSimulation?.simulatedTicket !== undefined ? [
+        calculation('Ticket promedio simulado', whatIfSimulation.simulatedTicket, 'ticket actual × (1 + cambio porcentual / 100)', period, 'deterministic_simulation')
+      ] : [])
+    ];
   } else {
     calculations = simulation.calculations;
   }
@@ -1475,6 +1542,12 @@ export const buildSalesProfitabilityAnalysis = ({
   if (resolvedIntent === 'explain_change' && !current.discountsKnown) {
     limitations.push('No todas las ventas tienen descuento registrado; ese factor puede estar incompleto.');
   }
+  if (goalSimulation?.limitation) limitations.push(goalSimulation.limitation);
+  if (Array.isArray(goalSimulation?.limitations)) limitations.push(...goalSimulation.limitations);
+  if (Array.isArray(whatIfSimulation?.limitations)) limitations.push(...whatIfSimulation.limitations);
+  if (resolvedIntent === 'goal_simulation' && goalSimulation?.type === 'gross_margin' && goalSimulation.ready) {
+    limitations.push('La brecha de utilidad no determina si el cambio vendrá de precio, costo o mezcla de productos.');
+  }
   const sourcePolicy = current.meta.sourcePolicy || {};
   const sourceWarnings = [];
   if ((sourcePolicy.legacySources || 0) > 0) {
@@ -1493,7 +1566,9 @@ export const buildSalesProfitabilityAnalysis = ({
 
   const assumptions = [
     ...(resolvedIntent === 'price_simulation' || resolvedIntent === 'promotion_opportunity' ? simulation.assumptions : []),
-    ...(resolvedIntent === 'combo_opportunity' ? simulation.assumptions : [])
+    ...(resolvedIntent === 'combo_opportunity' || resolvedIntent === 'commercial_strategy' ? simulation.assumptions : []),
+    ...(Array.isArray(goalSimulation?.assumptions) ? goalSimulation.assumptions : []),
+    ...(Array.isArray(whatIfSimulation?.assumptions) ? whatIfSimulation.assumptions : [])
   ];
 
   const source = sourceModeToContractSource(sourceMode);
@@ -1626,6 +1701,53 @@ export const buildSalesProfitabilityAnalysis = ({
     explanation = simulation.comboOpportunities.length
       ? 'La oportunidad se basa exclusivamente en coocurrencias históricas y no presupone que una compra cause la otra.'
       : 'Se requieren al menos tres tickets compartidos de la misma combinación.';
+  } else if (resolvedIntent === 'goal_simulation') {
+    if (!goalSimulation?.ready) {
+      executiveSummary = goalSimulation?.limitation || 'No hay datos suficientes para calcular esta meta con confianza.';
+      explanation = goalSimulation?.type === 'gross_profit'
+        ? 'Las ventas requeridas para utilidad sólo se calculan con costos completos y margen positivo.'
+        : 'Los valores faltantes permanecen como no disponibles y no se sustituyen por cero.';
+    } else if (goalSimulation.type === 'revenue') {
+      executiveSummary = goalSimulation.state === 'achieved'
+        ? `La meta de ventas de ${formatMoney(goalSimulation.targetValue)} ya se alcanzó; llevas ${formatMoney(goalSimulation.currentSales)}.`
+        : `Llevas ${formatMoney(goalSimulation.currentSales)} de una meta de ${formatMoney(goalSimulation.targetValue)}; la brecha es ${formatMoney(goalSimulation.revenueGap)}.`;
+      explanation = goalSimulation.requiredAdditionalTicketsAtCurrentTicket === null
+        ? 'No hay un ticket promedio positivo para traducir la brecha a tickets adicionales.'
+        : `Al ticket promedio actual de ${formatMoney(goalSimulation.currentAverageTicket)}, serían aproximadamente ${formatNumber(goalSimulation.requiredAdditionalTicketsAtCurrentTicket, 0)} tickets adicionales; con el conteo actual, el ticket promedio sería ${formatMoney(goalSimulation.requiredAverageTicketAtCurrentTicketCount)}.`;
+    } else if (goalSimulation.type === 'gross_profit') {
+      executiveSummary = goalSimulation.state === 'achieved'
+        ? `La meta de utilidad bruta de ${formatMoney(goalSimulation.targetProfit)} ya se alcanzó con ${formatMoney(goalSimulation.currentProfit)}.`
+        : `La utilidad bruta actual es ${formatMoney(goalSimulation.currentProfit)}; la meta de ${formatMoney(goalSimulation.targetProfit)} deja una brecha de ${formatMoney(goalSimulation.profitGap)}.`;
+      explanation = `Manteniendo mezcla y margen bruto de ${(goalSimulation.currentMargin * 100).toFixed(1)}%, las ventas del escenario serían ${formatMoney(goalSimulation.requiredRevenue)}. Este escenario no es una predicción.`;
+    } else if (goalSimulation.type === 'average_ticket') {
+      executiveSummary = `El ticket promedio actual es ${formatMoney(goalSimulation.currentAverageTicket)} y la meta es ${formatMoney(goalSimulation.targetValue)}.`;
+      explanation = `Con ${formatNumber(goalSimulation.currentTickets, 0)} tickets, las ventas totales serían ${formatMoney(goalSimulation.requiredSalesAtCurrentTicketCount)}; el incremento matemático es ${formatMoney(goalSimulation.salesIncreaseAtCurrentTicketCount)}.`;
+    } else if (goalSimulation.type === 'gross_margin') {
+      executiveSummary = `El margen bruto actual es ${(goalSimulation.currentMargin * 100).toFixed(1)}% y la meta es ${goalSimulation.targetValue}%.`;
+      explanation = `Con ventas actuales de ${formatMoney(goalSimulation.currentSales)}, la utilidad bruta requerida sería ${formatMoney(goalSimulation.requiredProfitAtCurrentSales)}, ${formatMoney(goalSimulation.additionalProfitRequired)} respecto a la actual. El cálculo no determina qué cambio comercial lo produciría.`;
+    } else {
+      executiveSummary = `${goalSimulation.productName}: precio histórico promedio ${formatMoney(goalSimulation.currentPrice)}, costo unitario ${formatMoney(goalSimulation.unitCost)} y margen ${((goalSimulation.currentMargin || 0) * 100).toFixed(1)}%.`;
+      explanation = `El precio matemático para el margen objetivo de ${goalSimulation.targetValue}% sería ${formatMoney(goalSimulation.requiredPrice)} (diferencia ${formatMoney(goalSimulation.priceDifference)}). No cambia el precio real ni predice demanda.`;
+    }
+  } else if (resolvedIntent === 'what_if_analysis') {
+    if (!whatIfSimulation?.ready) {
+      executiveSummary = whatIfSimulation?.limitations?.[1] || 'No hay datos históricos suficientes para construir este escenario.';
+      explanation = 'Completa los parámetros y usa productos con ventas históricas para que Lanzo calcule la simulación.';
+    } else {
+      const label = whatIfSimulation.changeType === 'sales' ? 'ventas'
+        : whatIfSimulation.changeType === 'ticket' ? 'ticket promedio'
+          : `ventas de ${whatIfSimulation.productName}`;
+      const baseValue = whatIfSimulation.currentSales ?? whatIfSimulation.historicalSales;
+      executiveSummary = `${label}: de ${formatMoney(baseValue)} a ${formatMoney(whatIfSimulation.simulatedSales)} (${whatIfSimulation.changePercent > 0 ? '+' : ''}${formatNumber(whatIfSimulation.changePercent)}%).`;
+      explanation = whatIfSimulation.changeType === 'product'
+        ? `Las unidades pasarían matemáticamente de ${formatNumber(whatIfSimulation.historicalUnits)} a ${formatNumber(whatIfSimulation.simulatedUnits)} al precio promedio histórico. El escenario no predice demanda.`
+        : whatIfSimulation.changeType === 'ticket'
+          ? `Supone el mismo número de ${formatNumber(whatIfSimulation.ticketCount, 0)} tickets. El escenario no predice demanda.`
+          : 'La simulación escala las ventas y, sólo con costos completos, también la estructura de margen. No es un pronóstico.';
+    }
+  } else if (resolvedIntent === 'commercial_strategy') {
+    executiveSummary = 'Lanzo está reuniendo señales internas para ordenar prioridades comerciales.';
+    explanation = 'Las prioridades se derivan de rentabilidad, cambios de ventas y ticket, oportunidades de producto, surtido y coocurrencias históricas disponibles.';
   }
 
   const recommendations = current.salesCount > 0
@@ -1660,6 +1782,10 @@ export const buildSalesProfitabilityAnalysis = ({
     priceSimulation: simulation.priceSimulation,
     promotionSimulation: simulation.promotionSimulation,
     comboOpportunities: simulation.comboOpportunities,
+    goalSimulation,
+    whatIfSimulation,
+    strategyCandidates: [],
+    includeCommercialStrategyEvidence: includeCommercialStrategyEvidence === true,
     context: buildAgentContext({
       current,
       comparison,
@@ -1669,7 +1795,9 @@ export const buildSalesProfitabilityAnalysis = ({
       productRisks,
       contributors,
       growthSignals,
-      intent: resolvedIntent
+      intent: resolvedIntent,
+      includeCommercialStrategyEvidence,
+      comboOpportunities: simulation.comboOpportunities
     }),
     current,
     previous,

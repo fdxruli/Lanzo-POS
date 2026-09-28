@@ -105,6 +105,56 @@ describe('sales profitability local history', () => {
     expect(entry.report.ai.status).toBe('not_generated');
   });
 
+  it('persists goal, what-if and strategy results as snapshots that reopen without querying live data', () => {
+    const storage = memoryStorage();
+    const entry = buildSalesProfitabilityHistoryEntry({
+      result: result({
+        providerCalled: false,
+        quotaOutcome: 'not_consumed',
+        usageStatus: null,
+        response: {
+          ...response,
+          intent: 'goal_simulation',
+          goalSimulation: {
+            type: 'revenue', targetValue: 100000, currentValue: 76000, ready: true,
+            state: 'remaining', gap: 24000, gapPercent: 24, excess: 0, progress: 0.76,
+            revenueGap: 24000, requiredAdditionalTicketsAtCurrentTicket: 24,
+            requiredAverageTicketAtCurrentTicketCount: 1315.79, currentSales: 76000,
+            currentTickets: 76, currentAverageTicket: 1000, assumptions: [], limitations: []
+          },
+          whatIfSimulation: {
+            changeType: 'sales', changePercent: -10, ready: true,
+            currentSales: 76000, simulatedSales: 68400, salesDelta: -7600,
+            currentCost: null, simulatedCost: null, currentProfit: null, simulatedProfit: null,
+            profitDelta: null, currentMargin: null, simulatedMargin: null, assumptions: [], limitations: []
+          },
+          strategyRequested: true,
+          strategyCandidates: [{
+            key: 'sales_trend', type: 'general', focus: { type: 'general', key: 'sales_trend' },
+            priority: 'high', reasonCode: 'sales_declining', title: 'Investigar la caída', entity: null,
+            recommendationType: 'investigation', strength: 'strong', metrics: {},
+            signal: ['sales_declining'], evidenceKeys: ['metric:deltaNetSalesPercent']
+          }]
+        }
+      }),
+      requestContext: {
+        ...requestContext,
+        resolvedIntent: 'goal_simulation',
+        scenario: { goalType: 'revenue', targetValue: 100000 }
+      },
+      queriedAt,
+      storage
+    });
+
+    saveSalesProfitabilityHistoryEntry({ scopeKey: 'scope-scenarios', entry, storage });
+    const opened = loadSalesProfitabilityHistory({ scopeKey: 'scope-scenarios', storage }).entries[0];
+    expect(opened.report.deterministic.goalSimulation).toMatchObject({ type: 'revenue', revenueGap: 24000 });
+    expect(opened.report.deterministic.whatIfSimulation).toMatchObject({ simulatedSales: 68400, simulatedProfit: null });
+    expect(opened.report.deterministic.strategyCandidates).toMatchObject([{ reasonCode: 'sales_declining' }]);
+    expect(opened.report.result).toMatchObject({ providerCalled: false, quotaOutcome: 'not_consumed' });
+    expect(JSON.stringify(opened.report)).not.toContain('sale_id');
+  });
+
   it('records a pre-provider narrative rejection as Lanzo-calculated and not consumed', () => {
     const entry = buildEntry({
       response: {

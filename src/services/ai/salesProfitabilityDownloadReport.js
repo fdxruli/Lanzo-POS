@@ -158,6 +158,8 @@ const safeCoverage = (coverage) => {
     comparisonItemsAvailable: safeBoolean(source.comparisonItemsAvailable),
     salesDataComplete: safeBoolean(source.salesDataComplete),
     growthDataComplete: safeBoolean(source.growthDataComplete),
+    strategyEvidenceAvailable: safeBoolean(source.strategyEvidenceAvailable),
+    strategyCatalogComplete: safeBoolean(source.strategyCatalogComplete),
     sourcePolicy: {
       excludedSources: finiteNumber(source.sourcePolicy?.excludedSources),
       excludedStatuses: finiteNumber(source.sourcePolicy?.excludedStatuses),
@@ -503,9 +505,79 @@ const safeOpportunityCandidate = (candidate) => {
   };
 };
 
+const STRATEGY_REASON_CODES = new Set([
+  'ticket_down_sales_stable', 'sales_declining', 'margin_deteriorating', 'product_cost_missing',
+  'product_low_margin', 'product_growing', 'category_concentrated', 'category_growing', 'products_without_sales', 'historical_combo'
+]);
+
+const GOAL_RESULT_NUMBER_KEYS = [
+  'targetValue', 'currentValue', 'gap', 'gapPercent', 'excess', 'progress', 'revenueGap',
+  'requiredAdditionalTicketsAtCurrentTicket', 'requiredAverageTicketAtCurrentTicketCount', 'currentSales',
+  'currentTickets', 'currentAverageTicket', 'currentProfit', 'targetProfit', 'profitGap', 'currentRevenue',
+  'currentMargin', 'requiredRevenue', 'additionalRevenue', 'equivalentAdditionalTickets', 'costOfSale',
+  'requiredSalesAtCurrentTicketCount', 'salesIncreaseAtCurrentTicketCount', 'ticketDifference',
+  'ticketChangePercent', 'targetMargin', 'requiredProfitAtCurrentSales', 'additionalProfitRequired',
+  'currentPrice', 'unitCost', 'requiredPrice', 'priceDifference', 'priceChangePercent'
+];
+const WHAT_IF_RESULT_NUMBER_KEYS = [
+  'changePercent', 'currentSales', 'simulatedSales', 'salesDelta', 'currentCost', 'simulatedCost',
+  'currentProfit', 'simulatedProfit', 'profitDelta', 'currentMargin', 'simulatedMargin', 'ticketCount',
+  'currentTicket', 'simulatedTicket', 'historicalUnits', 'simulatedUnits', 'averagePrice', 'historicalSales'
+];
+const safeSimulationResult = (value, kind) => {
+  const source = asRecord(value);
+  if (!Object.keys(source).length) return null;
+  const goal = kind === 'goal';
+  const result = {
+    ...(goal
+      ? { type: ['revenue', 'gross_profit', 'average_ticket', 'gross_margin', 'product_margin'].includes(source.type) ? source.type : null }
+      : { changeType: ['sales', 'ticket', 'product'].includes(source.changeType) ? source.changeType : null }),
+    ...(goal ? {} : { ready: safeBoolean(source.ready), changePercent: finiteNumber(source.changePercent) }),
+    ...(goal ? { ready: safeBoolean(source.ready), state: ['achieved', 'remaining', 'unavailable'].includes(source.state) ? source.state : 'unavailable' } : {}),
+    ...Object.fromEntries((goal ? GOAL_RESULT_NUMBER_KEYS : WHAT_IF_RESULT_NUMBER_KEYS)
+      .filter((key) => Object.prototype.hasOwnProperty.call(source, key))
+      .map((key) => [key, finiteNumber(source[key])])),
+    ...(typeof source.productName === 'string' ? { productName: sanitizeText(source.productName, 160) || null } : {}),
+    ...(typeof source.limitation === 'string' ? { limitation: sanitizeText(source.limitation, 700) || null } : {}),
+    ...(typeof source.costKnown === 'boolean' ? { costKnown: source.costKnown } : {}),
+    assumptions: safeTextArray(source.assumptions, 12, 700),
+    limitations: safeTextArray(source.limitations, 12, 700)
+  };
+  return result;
+};
+
+const safeStrategyCandidate = (candidate) => {
+  const source = asRecord(candidate);
+  const focus = asRecord(source.focus);
+  const metrics = asRecord(source.metrics);
+  return {
+    key: sanitizeText(source.key, 120),
+    type: ['product', 'category', 'ticket', 'general'].includes(source.type) ? source.type : 'general',
+    focus: {
+      type: ['product', 'category', 'ticket', 'general'].includes(focus.type) ? focus.type : 'general',
+      key: sanitizeText(focus.key, 120)
+    },
+    priority: ['high', 'medium', 'low'].includes(source.priority) ? source.priority : 'low',
+    reasonCode: STRATEGY_REASON_CODES.has(source.reasonCode) ? source.reasonCode : null,
+    title: sanitizeText(source.title, 160),
+    entity: sanitizeText(source.entity, 180) || null,
+    recommendationType: sanitizeText(source.recommendationType, 48),
+    strength: ['strong', 'moderate', 'weak'].includes(source.strength) ? source.strength : 'weak',
+    metrics: Object.fromEntries(Object.entries(metrics)
+      .filter(([, value]) => value === null || typeof value === 'boolean' || (typeof value === 'number' && Number.isFinite(value)))
+      .slice(0, 16)),
+    signal: safeTextArray(source.signal, 2, 80),
+    evidenceKeys: safeTextArray(source.evidenceKeys, 8, 180)
+  };
+};
+
 const safeScenarioRequest = (scenario) => {
   const source = asRecord(scenario);
   return {
+    goalType: ['revenue', 'gross_profit', 'average_ticket', 'gross_margin', 'product_margin'].includes(source.goalType) ? source.goalType : null,
+    targetValue: finiteNumber(source.targetValue),
+    changeType: ['sales', 'ticket', 'product'].includes(source.changeType) ? source.changeType : null,
+    changePercent: finiteNumber(source.changePercent),
     productName: sanitizeText(source.productName, 160) || null,
     newPrice: finiteNumber(source.newPrice),
     promotionalPrice: finiteNumber(source.promotionalPrice),
@@ -726,6 +798,10 @@ export const buildSalesProfitabilityDownloadReport = (result, requestContext = {
       priceSimulation: response.priceSimulation ? safeScenario(response.priceSimulation) : null,
       promotionSimulation: response.promotionSimulation ? safeScenario(response.promotionSimulation) : null,
       comboOpportunities: (Array.isArray(response.comboOpportunities) ? response.comboOpportunities : []).slice(0, 30).map(safeScenario),
+      goalSimulation: safeSimulationResult(response.goalSimulation, 'goal'),
+      whatIfSimulation: safeSimulationResult(response.whatIfSimulation, 'whatIf'),
+      strategyRequested: response.strategyRequested === true,
+      strategyCandidates: (Array.isArray(response.strategyCandidates) ? response.strategyCandidates : []).slice(0, 8).map(safeStrategyCandidate),
       products: Array.isArray(current.products) ? current.products : [],
       channels: Array.isArray(current.channels) ? current.channels : [],
       calculations: (Array.isArray(response.calculations) ? response.calculations : []).slice(0, 80).map(safeCalculation),
@@ -791,6 +867,10 @@ export const sanitizeSalesProfitabilityDownloadReport = (value) => {
       priceSimulation: deterministic.priceSimulation,
       promotionSimulation: deterministic.promotionSimulation,
       comboOpportunities: deterministic.comboOpportunities,
+      goalSimulation: deterministic.goalSimulation,
+      whatIfSimulation: deterministic.whatIfSimulation,
+      strategyRequested: deterministic.strategyRequested,
+      strategyCandidates: deterministic.strategyCandidates,
       calculations: deterministic.calculations,
       scenarios: deterministic.scenarios,
       recommendations: deterministic.recommendations,

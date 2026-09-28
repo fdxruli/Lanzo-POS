@@ -11,6 +11,7 @@ import {
   resolveCommercialIntent,
   resolveCommercialAgentRequest,
   validateCommercialAgentRequest,
+  validateCommercialAgentScenario,
   validateCommercialAgentResponse
 } from '../commercialAgentContract';
 
@@ -46,6 +47,9 @@ describe('commercial AI agent contract', () => {
       'price_simulation',
       'combo_opportunity',
       'promotion_opportunity',
+      'goal_simulation',
+      'what_if_analysis',
+      'commercial_strategy',
       'store_health',
       'order_funnel',
       'catalog_health'
@@ -231,6 +235,41 @@ describe('commercial AI agent contract', () => {
       period: { from: '2026-09-01', to: '2026-09-07' },
       scenario: { newPrice: '120' }
     })).toMatchObject({ valid: false, code: 'INVALID_SCENARIO_KEYS' });
+  });
+
+  it('normalizes only the fields for goal, what-if and strategy scenarios', () => {
+    expect(normalizeScenarioForIntent('goal_simulation', {
+      goalType: 'product_margin', targetValue: '30', productName: ' Producto A ',
+      newPrice: '80', staleChangePercent: '15'
+    })).toEqual({ goalType: 'product_margin', targetValue: 30, productName: 'Producto A' });
+    expect(normalizeScenarioForIntent('what_if_analysis', {
+      changeType: 'product', changePercent: '-20', productName: ' Producto A ', goalType: 'revenue'
+    })).toEqual({ changeType: 'product', changePercent: -20, productName: 'Producto A' });
+    expect(normalizeScenarioForIntent('commercial_strategy', { goalType: 'revenue', productName: 'stale' })).toEqual({});
+
+    expect(validateCommercialAgentScenario('goal_simulation', {
+      goalType: 'product_margin', targetValue: 30, productName: 'Producto A'
+    })).toMatchObject({ valid: true });
+    expect(validateCommercialAgentScenario('goal_simulation', {
+      goalType: 'product_margin', targetValue: 30
+    })).toMatchObject({ valid: false, code: 'PRODUCT_REQUIRED' });
+    expect(validateCommercialAgentScenario('goal_simulation', {
+      goalType: 'gross_margin', targetValue: 100
+    })).toMatchObject({ valid: false, code: 'SCENARIO_VALUE_OUT_OF_RANGE' });
+    expect(validateCommercialAgentScenario('what_if_analysis', {
+      changeType: 'sales', changePercent: -99.9
+    })).toMatchObject({ valid: true });
+    expect(validateCommercialAgentScenario('what_if_analysis', {
+      changeType: 'sales', changePercent: -99.91
+    })).toMatchObject({ valid: false, code: 'SCENARIO_VALUE_OUT_OF_RANGE' });
+    expect(validateCommercialAgentScenario('what_if_analysis', {
+      changeType: 'sales', changePercent: 500
+    })).toMatchObject({ valid: true });
+    expect(validateCommercialAgentScenario('what_if_analysis', {
+      changeType: 'sales', changePercent: 10, newPrice: 100
+    })).toMatchObject({ valid: false, code: 'INVALID_SCENARIO_KEYS' });
+    expect(validateCommercialAgentScenario('commercial_strategy', { productName: 'stale' }))
+      .toMatchObject({ valid: false, code: 'INVALID_SCENARIO_KEYS' });
   });
 
   it('keeps all implemented commercial intents supported', () => {
