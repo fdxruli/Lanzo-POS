@@ -89,7 +89,7 @@ const normalizeSource = (value, errors, path) => {
   const type = SOURCE_TYPES.has(source.type) ? source.type : null;
   if (!type) errors.push(`${path}.type`);
   const safeUrl = sanitizePublicHttpUrl(source.url);
-  if (!safeUrl.valid) errors.push(`${path}.url`);
+  if (type === 'public_url' && !safeUrl.valid) errors.push(`${path}.url`);
   const label = cleanText(source.label, MAX_TEXT_LENGTH.sourceLabel);
   const text = cleanText(source.text, MAX_TEXT_LENGTH.sourceText);
   if (type === 'copied_text' && !text) errors.push(`${path}.text`);

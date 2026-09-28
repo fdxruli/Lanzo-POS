@@ -52,6 +52,20 @@ describe('competitive evidence validation', () => {
     expect(result.evidence.competitors[0].source).toMatchObject({ type: 'manual', verified: false });
   });
 
+  it('keeps public URL and copied text requirements conditional and accepts observations without a price', () => {
+    const manual = evidenceFor({ price: '', currency: '', comparableConfirmed: false });
+    manual.competitors[0].source = { type: 'manual', url: 'javascript:unused', text: '' };
+    expect(validateCompetitiveEvidence(manual, { now: NOW }).valid).toBe(true);
+
+    const publicUrl = evidenceFor();
+    publicUrl.competitors[0].source = { type: 'public_url', url: '', text: '' };
+    expect(validateCompetitiveEvidence(publicUrl, { now: NOW }).errors).toContain('competitors.0.source.url');
+
+    const copiedText = evidenceFor();
+    copiedText.competitors[0].source = { type: 'copied_text', url: '', text: '  ' };
+    expect(validateCompetitiveEvidence(copiedText, { now: NOW }).errors).toContain('competitors.0.source.text');
+  });
+
   it('rejects empty names, invalid dates, malformed URLs and insecure protocols', () => {
     const missingName = evidenceFor();
     missingName.competitors[0].name = '  ';

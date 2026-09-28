@@ -198,9 +198,14 @@ export const validateCommercialAgentScenario = (intent, scenario = {}) => {
   const allowedKeys = new Set(SCENARIO_KEYS_BY_INTENT[intent] || []);
   if (!Object.keys(scenario).every((key) => allowedKeys.has(key))) return invalid('INVALID_SCENARIO_KEYS');
 
+  const errors = [];
+  const addError = (code, path) => {
+    if (!errors.some((error) => error.code === code && error.path === path)) errors.push({ code, path });
+  };
+
   if (Object.prototype.hasOwnProperty.call(scenario, 'productName')) {
     if (typeof scenario.productName !== 'string' || !scenario.productName.trim() || scenario.productName.length > 120) {
-      return invalid('INVALID_SCENARIO_PRODUCT');
+      addError('INVALID_SCENARIO_PRODUCT', 'productName');
     }
   }
 
@@ -208,37 +213,53 @@ export const validateCommercialAgentScenario = (intent, scenario = {}) => {
   for (const key of numericFields) {
     if (!Object.prototype.hasOwnProperty.call(scenario, key)) continue;
     const value = scenario[key];
-    if (typeof value !== 'number' || !Number.isFinite(value)) return invalid('INVALID_SCENARIO_NUMBER');
-    if (['newPrice', 'promotionalPrice'].includes(key) && value <= 0) return invalid('SCENARIO_VALUE_MUST_BE_POSITIVE');
-    if (key === 'historicalVolume' && value < 0) return invalid('SCENARIO_VALUE_OUT_OF_RANGE');
-    if (key === 'discountPercent' && (value < 0 || value > 100)) return invalid('SCENARIO_VALUE_OUT_OF_RANGE');
-    if (key === 'targetValue' && value <= 0) return invalid('SCENARIO_VALUE_MUST_BE_POSITIVE');
-    if (key === 'changePercent' && (value < COMMERCIAL_WHAT_IF_CHANGE_LIMITS.minimum || value > COMMERCIAL_WHAT_IF_CHANGE_LIMITS.maximum)) return invalid('SCENARIO_VALUE_OUT_OF_RANGE');
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+      addError('INVALID_SCENARIO_NUMBER', key);
+      continue;
+    }
+    if (['newPrice', 'promotionalPrice'].includes(key) && value <= 0) addError('SCENARIO_VALUE_MUST_BE_POSITIVE', key);
+    if (key === 'historicalVolume' && value < 0) addError('SCENARIO_VALUE_OUT_OF_RANGE', key);
+    if (key === 'discountPercent' && (value < 0 || value > 100)) addError('SCENARIO_VALUE_OUT_OF_RANGE', key);
+    if (key === 'targetValue' && value <= 0) addError('SCENARIO_VALUE_MUST_BE_POSITIVE', key);
+    if (key === 'changePercent'
+      && (value < COMMERCIAL_WHAT_IF_CHANGE_LIMITS.minimum || value > COMMERCIAL_WHAT_IF_CHANGE_LIMITS.maximum)) {
+      addError('SCENARIO_VALUE_OUT_OF_RANGE', key);
+    }
   }
 
   if (intent === 'goal_simulation') {
     if (!['revenue', 'gross_profit', 'average_ticket', 'gross_margin', 'product_margin'].includes(scenario.goalType)) {
-      return invalid('INVALID_GOAL_TYPE');
+      addError('INVALID_GOAL_TYPE', 'goalType');
     }
-    if (!Object.prototype.hasOwnProperty.call(scenario, 'targetValue')) return invalid('GOAL_TARGET_REQUIRED');
+    if (!Object.prototype.hasOwnProperty.call(scenario, 'targetValue')) addError('GOAL_TARGET_REQUIRED', 'targetValue');
     if (['gross_margin', 'product_margin'].includes(scenario.goalType) && scenario.targetValue >= 100) {
-      return invalid('SCENARIO_VALUE_OUT_OF_RANGE');
+      addError('SCENARIO_VALUE_OUT_OF_RANGE', 'targetValue');
     }
-    if (scenario.goalType === 'product_margin' && !scenario.productName) return invalid('PRODUCT_REQUIRED');
+    if (scenario.goalType === 'product_margin' && !scenario.productName) addError('PRODUCT_REQUIRED', 'productName');
   }
 
   if (intent === 'what_if_analysis') {
-    if (!['sales', 'ticket', 'product'].includes(scenario.changeType)) return invalid('INVALID_CHANGE_TYPE');
-    if (!Object.prototype.hasOwnProperty.call(scenario, 'changePercent')) return invalid('CHANGE_PERCENT_REQUIRED');
-    if (scenario.changeType === 'product' && !scenario.productName) return invalid('PRODUCT_REQUIRED');
+    if (!['sales', 'ticket', 'product'].includes(scenario.changeType)) addError('INVALID_CHANGE_TYPE', 'changeType');
+    if (!Object.prototype.hasOwnProperty.call(scenario, 'changePercent')) addError('CHANGE_PERCENT_REQUIRED', 'changePercent');
+    if (scenario.changeType === 'product' && !scenario.productName) addError('PRODUCT_REQUIRED', 'productName');
+  }
+
+  if (intent === 'price_simulation') {
+    if (!scenario.productName) addError('PRODUCT_REQUIRED', 'productName');
+    if (!Object.prototype.hasOwnProperty.call(scenario, 'newPrice')) addError('NEW_PRICE_REQUIRED', 'newPrice');
+  }
+
+  if (intent === 'promotion_opportunity') {
+    if (!scenario.productName) addError('PRODUCT_REQUIRED', 'productName');
   }
 
   if (intent === 'promotion_opportunity'
     && Object.prototype.hasOwnProperty.call(scenario, 'promotionalPrice')
     && Object.prototype.hasOwnProperty.call(scenario, 'discountPercent')) {
-    return invalid('PROMOTION_SCENARIO_AMBIGUOUS');
+    addError('PROMOTION_SCENARIO_AMBIGUOUS', 'promotionMode');
   }
 
+  if (errors.length) return invalid(errors[0].code, { errors });
   return { valid: true, scenario };
 };
 

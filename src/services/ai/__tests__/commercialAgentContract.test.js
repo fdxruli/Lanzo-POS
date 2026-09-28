@@ -273,6 +273,30 @@ describe('commercial AI agent contract', () => {
       .toMatchObject({ valid: false, code: 'INVALID_SCENARIO_KEYS' });
   });
 
+  it('reports all missing scenario parameters and blocks incomplete price and promotion requests', () => {
+    expect(validateCommercialAgentScenario('goal_simulation', {})).toMatchObject({
+      valid: false,
+      code: 'INVALID_GOAL_TYPE',
+      errors: [
+        { code: 'INVALID_GOAL_TYPE', path: 'goalType' },
+        { code: 'GOAL_TARGET_REQUIRED', path: 'targetValue' }
+      ]
+    });
+    expect(validateCommercialAgentScenario('what_if_analysis', { changeType: 'product' }).errors).toEqual([
+      { code: 'CHANGE_PERCENT_REQUIRED', path: 'changePercent' },
+      { code: 'PRODUCT_REQUIRED', path: 'productName' }
+    ]);
+    expect(validateCommercialAgentScenario('price_simulation', {}).errors).toEqual([
+      { code: 'PRODUCT_REQUIRED', path: 'productName' },
+      { code: 'NEW_PRICE_REQUIRED', path: 'newPrice' }
+    ]);
+    expect(validateCommercialAgentScenario('promotion_opportunity', {}).errors).toEqual([
+      { code: 'PRODUCT_REQUIRED', path: 'productName' }
+    ]);
+    expect(validateCommercialAgentScenario('promotion_opportunity', { productName: 'Producto A' }))
+      .toMatchObject({ valid: true });
+  });
+
   it('keeps all implemented commercial intents supported', () => {
     const expected = [
       ['¿Mi negocio es rentable?', 'profitability_summary'],

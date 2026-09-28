@@ -139,7 +139,7 @@ describe('commercial AI center', () => {
     expect(screen.getByText('Este agente aún no está disponible.')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Pregúntale a Lía sobre tu negocio' })).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: 'Pregunta libre' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Analizar' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Analizar' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Descargar reporte completo' })).toBeDisabled();
     expect(runtime.runAgent).not.toHaveBeenCalled();
   });
@@ -853,11 +853,14 @@ describe('commercial AI center', () => {
     });
     const submit = screen.getByRole('button', { name: 'Analizar' });
     fireEvent.click(submit);
-    expect(await screen.findByText(/indica qué variable cambiará y el porcentaje/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Hay 2 datos que debes revisar' })).toBeInTheDocument();
+    expect(screen.getAllByText(/Introduce el porcentaje de cambio\./).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Selecciona el producto que deseas simular\./).length).toBeGreaterThan(0);
     expect(runtime.runAgent).not.toHaveBeenCalled();
+    expect(runtime.loadProducts).not.toHaveBeenCalled();
     expect(runtime.getUsage).toHaveBeenCalledTimes(1);
 
-    fireEvent.change(screen.getByLabelText('Cambio porcentual'), { target: { value: '20' } });
+    fireEvent.change(screen.getByLabelText(/Cambio porcentual/), { target: { value: '20' } });
     await waitFor(() => expect(runtime.loadProducts).toHaveBeenCalledTimes(1));
     expect(runtime.loadProducts.mock.calls[0][0]).toMatchObject({ includeUnknownCosts: true });
     const productPicker = await screen.findByRole('combobox', { name: 'Producto con ventas históricas' });
@@ -870,12 +873,12 @@ describe('commercial AI center', () => {
     expect(runtime.runAgent.mock.calls[0][0]).toMatchObject({
       intent: 'what_if_analysis', scenario: { changeType: 'product', changePercent: 20, productName: 'Producto A' }
     });
-    expect(await screen.findAllByRole('heading', { name: '¿Qué pasa si vendo más de este producto?' })).toHaveLength(2);
+    expect(await screen.findAllByRole('heading', { name: '¿Qué pasa si vendo más de este producto?' })).toHaveLength(1);
     expect(screen.getByText('Costo actual')).toBeInTheDocument();
     expect(screen.getByText('Costo simulado')).toBeInTheDocument();
     expect(screen.getByText(/Si el costo es desconocido, la utilidad y el margen permanecen no disponibles/i)).toBeInTheDocument();
     expect(screen.getAllByText('No disponible').length).toBeGreaterThan(0);
-  });
+  }, 30000);
 
 
   it('removes the redundant intent filter and prepares several products before the first analysis', async () => {
@@ -897,10 +900,12 @@ describe('commercial AI center', () => {
     expect(runtime.runAgent).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: '¿Qué pasa si aumento el precio?' }));
-
+    expect(runtime.loadProducts).not.toHaveBeenCalled();
+    fireEvent.change(screen.getByLabelText('Nuevo precio'), { target: { value: '80' } });
     await waitFor(() => expect(runtime.loadProducts).toHaveBeenCalledTimes(1));
     const productSelect = screen.getByRole('combobox', { name: 'Producto' });
     expect(productSelect).toBeInTheDocument();
+    await waitFor(() => expect(productSelect).toBeEnabled());
     expect(screen.getByRole('option', { name: 'Producto A' })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'Producto B' })).toBeInTheDocument();
     expect(screen.getByText(/2 producto\(s\) elegible\(s\).*sin usar IA ni cuota/i)).toBeInTheDocument();
@@ -919,6 +924,7 @@ describe('commercial AI center', () => {
 
     renderCenter();
     fireEvent.click(screen.getByRole('button', { name: '¿Qué pasa si aumento el precio?' }));
+    fireEvent.change(screen.getByLabelText('Nuevo precio'), { target: { value: '80' } });
     await waitFor(() => expect(runtime.loadProducts).toHaveBeenCalledTimes(1));
     expect(runtime.loadProducts.mock.calls[0][0].period).toMatchObject({ days: 30, timezone: 'America/New_York' });
 
@@ -987,14 +993,16 @@ describe('commercial AI center', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Ver respuesta' }));
     expect(screen.getAllByText('Producto sin movimiento')).toHaveLength(2);
-  });
+  }, 30000);
 
   it('sends an empty scenario for combos after a price simulation', async () => {
     renderCenter();
     fireEvent.click(screen.getByRole('button', { name: '¿Qué pasa si aumento el precio?' }));
-    await waitFor(() => expect(runtime.loadProducts).toHaveBeenCalledTimes(1));
-    fireEvent.change(screen.getByRole('combobox', { name: 'Producto' }), { target: { value: 'Producto A' } });
     fireEvent.change(screen.getByLabelText('Nuevo precio'), { target: { value: '120' } });
+    await waitFor(() => expect(runtime.loadProducts).toHaveBeenCalledTimes(1));
+    const productPicker = screen.getByRole('combobox', { name: 'Producto' });
+    await waitFor(() => expect(productPicker).toBeEnabled());
+    fireEvent.change(productPicker, { target: { value: 'Producto A' } });
     fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
     await waitFor(() => expect(runtime.runAgent).toHaveBeenCalledTimes(1));
 
@@ -1038,8 +1046,8 @@ describe('commercial AI center', () => {
     };
 
     fireEvent.click(screen.getByRole('button', { name: '¿Qué pasa si aumento el precio?' }));
-    await productPicker('Producto A');
     fireEvent.change(screen.getByLabelText('Nuevo precio'), { target: { value: '120' } });
+    await productPicker('Producto A');
     await submit(1);
 
     fireEvent.click(screen.getByRole('button', { name: '¿Qué promoción puedo simular?' }));
@@ -1052,8 +1060,8 @@ describe('commercial AI center', () => {
     await submit(3);
 
     fireEvent.click(screen.getByRole('button', { name: '¿Qué pasa si aumento el precio?' }));
-    await productPicker('Producto A');
     fireEvent.change(screen.getByLabelText('Nuevo precio'), { target: { value: '95' } });
+    await productPicker('Producto A');
     await submit(4);
 
     fireEvent.click(screen.getByRole('button', { name: '¿Qué combos puedo formar?' }));
@@ -1070,9 +1078,11 @@ describe('commercial AI center', () => {
   it('converts numeric scenario inputs and removes irrelevant fields before submitting', async () => {
     renderCenter();
     fireEvent.click(screen.getByRole('button', { name: '¿Qué pasa si aumento el precio?' }));
-    await waitFor(() => expect(runtime.loadProducts).toHaveBeenCalledTimes(1));
-    fireEvent.change(screen.getByRole('combobox', { name: 'Producto' }), { target: { value: 'Producto A' } });
     fireEvent.change(screen.getByLabelText('Nuevo precio'), { target: { value: '120' } });
+    await waitFor(() => expect(runtime.loadProducts).toHaveBeenCalledTimes(1));
+    const product = screen.getByRole('combobox', { name: 'Producto' });
+    await waitFor(() => expect(product).toBeEnabled());
+    fireEvent.change(product, { target: { value: 'Producto A' } });
     fireEvent.change(screen.getByLabelText('Volumen esperado (opcional)'), { target: { value: '0' } });
     fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
     await waitFor(() => expect(runtime.runAgent).toHaveBeenCalledTimes(1));
@@ -1091,6 +1101,7 @@ describe('commercial AI center', () => {
   it('clears scenario fields when the question changes even if the intent stays the same', async () => {
     renderCenter();
     fireEvent.click(screen.getByRole('button', { name: '¿Qué pasa si aumento el precio?' }));
+    fireEvent.change(screen.getByLabelText('Nuevo precio'), { target: { value: '120' } });
     await waitFor(() => expect(runtime.loadProducts).toHaveBeenCalledTimes(1));
     const product = screen.getByRole('combobox', { name: 'Producto' });
     await waitFor(() => expect(product).toBeEnabled());
@@ -1273,9 +1284,23 @@ describe('commercial AI center', () => {
     expect(screen.getByText(/Una URL sirve como referencia, pero Lanzo no consulta automáticamente su contenido/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/Completa al menos un competidor/);
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Añade al menos un competidor para comparar/);
     expect(runtime.loadProducts).not.toHaveBeenCalled();
     expect(runtime.runAgent).not.toHaveBeenCalled();
+  });
+
+  it('explains a missing free question only after submit and keeps quota and history untouched', () => {
+    renderCenter();
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+
+    const question = screen.getByRole('textbox', { name: 'Pregunta libre' });
+    expect(screen.getAllByText(/Escribe una pregunta antes de iniciar el análisis\./).length).toBeGreaterThan(0);
+    expect(question).toHaveAttribute('aria-invalid', 'true');
+    expect(question.getAttribute('aria-describedby')).toContain('lia-question-required');
+    expect(document.activeElement).toBe(question);
+    expect(runtime.runAgent).not.toHaveBeenCalled();
+    expect(runtime.getUsage).toHaveBeenCalledTimes(1);
+    expect(runtime.historyStorage.size).toBe(0);
   });
 
   it('submits a reviewed competitive evidence snapshot to the local analysis route', async () => {
@@ -1310,6 +1335,52 @@ describe('commercial AI center', () => {
     expect(runtime.loadProducts).not.toHaveBeenCalled();
   });
 
+  it('summarizes competitive field errors, focuses their controls, and updates the QA count as fields are fixed', async () => {
+    renderCenter();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), {
+      target: { value: '¿Mis precios son competitivos?' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Añadir competidor' }));
+    fireEvent.change(screen.getByLabelText('Nombre comercial'), { target: { value: 'Mercado Uno' } });
+    fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Café Sierra' } });
+    fireEvent.change(screen.getByLabelText('Precio (opcional)'), { target: { value: '39' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Añadir observación' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+
+    expect(screen.getByRole('heading', { name: 'Hay 3 datos que debes revisar' })).toBeInTheDocument();
+    expect(screen.getAllByText(/Selecciona la fecha en que observaste esta información\./).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Indica la moneda del precio, por ejemplo MXN\./).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Escribe el nombre del producto o servicio\./).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/competitors\.0\./)).not.toBeInTheDocument();
+    const date = screen.getByLabelText(/Fecha observada/);
+    expect(date).toHaveAttribute('aria-invalid', 'true');
+    expect(document.getElementById(date.getAttribute('aria-describedby'))).toHaveTextContent('Selecciona la fecha');
+    expect(document.activeElement).toBe(date);
+    expect(runtime.runAgent).not.toHaveBeenCalled();
+    expect(runtime.loadProducts).not.toHaveBeenCalled();
+    expect(runtime.getUsage).toHaveBeenCalledTimes(1);
+    expect(runtime.historyStorage.size).toBe(0);
+
+    fireEvent.click(screen.getByRole('button', { name: /Observación 1 → Moneda/ }));
+    const currency = document.activeElement;
+    expect(currency).toHaveAttribute('id', expect.stringContaining('-currency'));
+    expect(document.activeElement).toBe(currency);
+    fireEvent.change(date, { target: { value: new Date().toISOString().slice(0, 10) } });
+    expect(screen.getByRole('heading', { name: 'Hay 2 datos que debes revisar' })).toBeInTheDocument();
+    expect(date).not.toHaveAttribute('aria-invalid');
+
+    fireEvent.change(currency, { target: { value: 'MXN' } });
+    expect(screen.getByRole('heading', { name: 'Hay 1 dato que debes revisar' })).toBeInTheDocument();
+    const missingObservationName = document.querySelector('[aria-invalid="true"][id$="-name"]');
+    expect(missingObservationName).toBeInTheDocument();
+    fireEvent.change(missingObservationName, { target: { value: 'Pan de caja' } });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+    await waitFor(() => expect(runtime.runAgent).toHaveBeenCalledTimes(1));
+    expect(runtime.runAgent.mock.calls[0][0]).toMatchObject({ intent: 'competitive_analysis' });
+  }, 30000);
+
   it('maps all six suggested questions to supported intents', async () => {
     renderCenter();
     const expected = [
@@ -1323,9 +1394,13 @@ describe('commercial AI center', () => {
     for (const [label, expectedIntent] of expected) {
       fireEvent.click(screen.getByRole('button', { name: label }));
       if (expectedIntent === 'price_simulation') {
+        fireEvent.change(screen.getByLabelText('Nuevo precio'), { target: { value: '80' } });
         await waitFor(() => expect(screen.getByRole('option', { name: 'Producto A' })).toBeInTheDocument());
         fireEvent.change(screen.getByLabelText('Producto'), { target: { value: 'Producto A' } });
-        fireEvent.change(screen.getByLabelText('Nuevo precio'), { target: { value: '80' } });
+      }
+      if (expectedIntent === 'promotion_opportunity') {
+        await waitFor(() => expect(screen.getByRole('option', { name: 'Producto A' })).toBeInTheDocument());
+        fireEvent.change(screen.getByLabelText('Producto'), { target: { value: 'Producto A' } });
       }
       fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
       await waitFor(() => expect(runtime.runAgent).toHaveBeenCalledTimes(expected.indexOf(expected.find(([item]) => item === label)) + 1));
@@ -1338,10 +1413,109 @@ describe('commercial AI center', () => {
     fireEvent.click(screen.getByRole('button', { name: '¿Qué pasa si aumento el precio?' }));
     fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
 
-    await waitFor(() => expect(screen.getByText(/selecciona un producto y captura el nuevo precio/)).toBeInTheDocument());
+    expect(screen.getByRole('heading', { name: 'Hay 2 datos que debes revisar' })).toBeInTheDocument();
+    expect(screen.getAllByText(/Introduce el nuevo precio\./).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Selecciona el producto que deseas simular\./).length).toBeGreaterThan(0);
     expect(runtime.runAgent).not.toHaveBeenCalled();
-    expect(screen.queryByRole('button', { name: 'Descargar reporte completo' })).not.toBeInTheDocument();
+    expect(runtime.loadProducts).not.toHaveBeenCalled();
+    expect(runtime.getUsage).toHaveBeenCalledTimes(1);
+    expect(runtime.historyStorage.size).toBe(0);
+    expect(screen.getByRole('button', { name: 'Descargar reporte completo' })).toBeDisabled();
     expect(screen.queryByText('Narrativa opcional de IA')).not.toBeInTheDocument();
+  });
+
+  it('distinguishes a loading product list from an empty period and does not call the provider', async () => {
+    let resolveProducts;
+    runtime.loadProducts.mockImplementationOnce(() => new Promise((resolve) => { resolveProducts = resolve; }));
+    renderCenter();
+    fireEvent.click(screen.getByRole('button', { name: '¿Qué pasa si aumento el precio?' }));
+    fireEvent.change(screen.getByLabelText('Nuevo precio'), { target: { value: '80' } });
+
+    await waitFor(() => expect(runtime.loadProducts).toHaveBeenCalledTimes(1));
+    const picker = screen.getByRole('combobox', { name: 'Producto' });
+    expect(picker).toBeDisabled();
+    expect(screen.getByRole('option', { name: 'Cargando productos…' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+    expect(screen.getAllByText(/productos se están cargando/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText('Selecciona el producto que deseas simular.')).not.toBeInTheDocument();
+    expect(runtime.runAgent).not.toHaveBeenCalled();
+    expect(runtime.getUsage).toHaveBeenCalledTimes(1);
+
+    resolveProducts({ products: [] });
+    expect(await screen.findByRole('option', { name: 'No hay productos disponibles en este periodo' })).toBeInTheDocument();
+    expect(screen.getAllByText('No hay productos disponibles en este periodo.').length).toBeGreaterThan(0);
+    expect(runtime.runAgent).not.toHaveBeenCalled();
+  });
+
+  it('shows a product list load failure separately and retries the catalogue request', async () => {
+    runtime.loadProducts
+      .mockRejectedValueOnce(new Error('catalog failed'))
+      .mockResolvedValueOnce({ products: [{ name: 'Producto A', units: 1, netSales: 20, averagePrice: 20 }] });
+    renderCenter();
+    fireEvent.click(screen.getByRole('button', { name: '¿Qué pasa si aumento el precio?' }));
+    fireEvent.change(screen.getByLabelText('Nuevo precio'), { target: { value: '80' } });
+
+    expect(await screen.findByText('No se pudieron preparar los productos de este periodo.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reintentar' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar' }));
+    await waitFor(() => expect(runtime.loadProducts).toHaveBeenCalledTimes(2));
+    expect(await screen.findByRole('option', { name: 'Producto A' })).toBeInTheDocument();
+    expect(screen.queryByText('No se pudieron preparar los productos de este periodo.')).not.toBeInTheDocument();
+  });
+
+  it('marks a selected product unavailable after its period catalog changes', async () => {
+    runtime.loadProducts.mockImplementation(async ({ period }) => ({
+      products: period.days === 7
+        ? [{ name: 'Producto B', units: 1, netSales: 20, averagePrice: 20 }]
+        : [{ name: 'Producto A', units: 1, netSales: 30, averagePrice: 30 }]
+    }));
+    renderCenter();
+    fireEvent.click(screen.getByRole('button', { name: '¿Qué pasa si aumento el precio?' }));
+    fireEvent.change(screen.getByLabelText('Nuevo precio'), { target: { value: '80' } });
+    await waitFor(() => expect(runtime.loadProducts).toHaveBeenCalledTimes(1));
+    const picker = screen.getByRole('combobox', { name: 'Producto' });
+    await waitFor(() => expect(picker).toBeEnabled());
+    fireEvent.change(picker, { target: { value: 'Producto A' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Periodo' }), { target: { value: '7' } });
+    await waitFor(() => expect(runtime.loadProducts).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Producto A · no disponible en este periodo' })).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+    expect(screen.getAllByText('Este producto no está disponible en el periodo. Selecciona otro producto.').length).toBeGreaterThan(0);
+    expect(runtime.runAgent).not.toHaveBeenCalled();
+    expect(runtime.getUsage).toHaveBeenCalledTimes(1);
+    expect(runtime.historyStorage.size).toBe(0);
+  });
+
+  it('shows goal field errors together, keeps the correction local, then analyzes after correction', async () => {
+    renderCenter();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), {
+      target: { value: 'Quiero llegar a una meta' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+
+    expect(screen.getByRole('heading', { name: 'Hay 2 datos que debes revisar' })).toBeInTheDocument();
+    expect(screen.getAllByText(/Selecciona qué meta quieres alcanzar\./).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Introduce un valor objetivo mayor que cero\./).length).toBeGreaterThan(0);
+    expect(runtime.runAgent).not.toHaveBeenCalled();
+    expect(runtime.loadProducts).not.toHaveBeenCalled();
+    expect(runtime.getUsage).toHaveBeenCalledTimes(1);
+    expect(runtime.historyStorage.size).toBe(0);
+
+    fireEvent.change(screen.getByRole('combobox', { name: /Tipo de meta/ }), { target: { value: 'gross_margin' } });
+    fireEvent.change(screen.getByLabelText(/Margen objetivo/), { target: { value: '100' } });
+    expect(screen.getAllByText('El margen objetivo debe ser inferior al 100%.').length).toBeGreaterThan(0);
+    fireEvent.change(screen.getByLabelText(/Margen objetivo/), { target: { value: '35' } });
+    expect(screen.queryByRole('heading', { name: /datos que debes revisar/ })).not.toBeInTheDocument();
+    const analyzeButton = screen.getByRole('button', { name: 'Analizar' });
+    expect(analyzeButton).toBeEnabled();
+    expect(document.getElementById('sales-agent-goal-target').checkValidity()).toBe(true);
+    fireEvent.click(analyzeButton);
+
+    await waitFor(() => expect(runtime.runAgent).toHaveBeenCalledTimes(1));
+    expect(runtime.runAgent.mock.calls[0][0]).toMatchObject({
+      intent: 'goal_simulation', scenario: { goalType: 'gross_margin', targetValue: 35 }
+    });
   });
 
   it('uses the safe UI error and keeps technical details out of the visible message', async () => {

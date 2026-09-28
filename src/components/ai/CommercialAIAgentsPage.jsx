@@ -29,12 +29,19 @@ import {
 import {
   createCommercialLocalResponse,
   normalizeCommercialAINarrativeDiagnosticCode,
-  normalizeScenarioForIntent,
   resolveCommercialIntent
 } from '../../services/ai/commercialAgentContract';
 import { inferCommercialScenarioFromQuestion, isCommercialStrategyQuestion } from '../../services/ai/commercialQuestionRouter';
 import { LIA_IDENTITY } from '../../services/ai/liaIdentity';
 import { COMPETITIVE_ANALYSIS_LIMITS, validateCompetitiveEvidence } from '../../services/ai/competitiveAnalysis';
+import LiaFormErrorSummary, { LiaFieldIssue } from './LiaFormValidationComponents';
+import {
+  focusLiaValidationTarget,
+  getValidationFieldProps,
+  presentCompetitiveValidation,
+  presentQuestionValidation,
+  validateLiaScenarioForm
+} from './liaFormValidation';
 import { getAIAgentUsageStatus } from '../../services/aiService';
 import { getLicenseKeyFromDetails } from '../../services/sync/syncConstants';
 import { useActorRuntimeSnapshot } from '../../services/auth/useActorRuntimeSnapshot';
@@ -482,7 +489,7 @@ const priceReasonLabel = (reason) => ({
   presentation_mismatch: 'Presentación no comparable'
 }[reason] || 'No comparable');
 
-function CompetitiveEvidenceBuilder({ value, onChange, error, disabled = false }) {
+function CompetitiveEvidenceBuilder({ value, onChange, showValidation = false, disabled = false }) {
   const competitors = Array.isArray(value?.competitors) ? value.competitors : [];
   const updateCompetitor = (index, update) => onChange((current) => ({
     ...current,
@@ -504,6 +511,17 @@ function CompetitiveEvidenceBuilder({ value, onChange, error, disabled = false }
     competitors: current.competitors.filter((_, competitorIndex) => competitorIndex !== index)
   }));
   const validation = validateCompetitiveEvidence(value);
+  const issues = showValidation ? presentCompetitiveValidation(validation, value) : [];
+  const issuesFor = (targetId) => issues.filter((issue) => issue.targetId === targetId);
+  const issueFor = (targetId) => issuesFor(targetId).find((issue) => issue.severity === 'error') || null;
+  const fieldProps = (targetId, describedBy = []) => {
+    const linkedIssues = issuesFor(targetId);
+    return getValidationFieldProps(
+      linkedIssues.find((issue) => issue.severity === 'error') || linkedIssues[0],
+      [...describedBy, ...linkedIssues.map((issue) => issue.id)]
+    );
+  };
+  const renderFieldIssues = (targetId) => issuesFor(targetId).map((issue) => <LiaFieldIssue key={issue.id} issue={issue} />);
   const reviewRows = competitors.flatMap((competitor) => (competitor.observations || []).map((item) => ({ competitor, item })));
 
   return (
@@ -519,16 +537,19 @@ function CompetitiveEvidenceBuilder({ value, onChange, error, disabled = false }
 
       <div className="commercial-ai-competitive-list">
         {competitors.map((competitor, competitorIndex) => {
-          const prefix = `competitive-${competitorIndex}`;
+          const competitorKey = competitor.uiKey || `competitor-${competitorIndex + 1}`;
+          const prefix = `lia-${competitorKey}`;
           return (
-            <fieldset className="commercial-ai-competitor" key={prefix} disabled={disabled}>
+            <fieldset className="commercial-ai-competitor" key={competitorKey} disabled={disabled}>
               <legend>Competidor {competitorIndex + 1}</legend>
               <div className="commercial-ai-competitive-grid">
                 <label className="commercial-ai-label" htmlFor={`${prefix}-name`}>Nombre comercial
-                  <input id={`${prefix}-name`} maxLength={100} value={competitor.name} onChange={(event) => updateCompetitor(competitorIndex, { name: event.target.value })} />
+                  <input id={`${prefix}-name`} maxLength={100} value={competitor.name} className={issueFor(`${prefix}-name`) ? 'lia-form-control--invalid' : undefined} {...fieldProps(`${prefix}-name`)} onChange={(event) => updateCompetitor(competitorIndex, { name: event.target.value })} />
+                  {renderFieldIssues(`${prefix}-name`)}
                 </label>
                 <label className="commercial-ai-label" htmlFor={`${prefix}-observed`}>Fecha observada
-                  <input id={`${prefix}-observed`} type="date" value={competitor.observedAt} onChange={(event) => updateCompetitor(competitorIndex, { observedAt: event.target.value })} />
+                  <input id={`${prefix}-observed`} type="date" value={competitor.observedAt} className={issueFor(`${prefix}-observed`) ? 'lia-form-control--invalid' : undefined} {...fieldProps(`${prefix}-observed`)} onChange={(event) => updateCompetitor(competitorIndex, { observedAt: event.target.value })} />
+                  {renderFieldIssues(`${prefix}-observed`)}
                 </label>
                 <label className="commercial-ai-label" htmlFor={`${prefix}-location`}>Ubicación o ámbito <span>(opcional)</span>
                   <input id={`${prefix}-location`} maxLength={160} value={competitor.location} onChange={(event) => updateCompetitor(competitorIndex, { location: event.target.value })} />
@@ -537,24 +558,27 @@ function CompetitiveEvidenceBuilder({ value, onChange, error, disabled = false }
                   <input id={`${prefix}-description`} maxLength={600} value={competitor.description} onChange={(event) => updateCompetitor(competitorIndex, { description: event.target.value })} />
                 </label>
                 <label className="commercial-ai-label" htmlFor={`${prefix}-source`}>Procedencia
-                  <select id={`${prefix}-source`} value={competitor.source.type} onChange={(event) => updateCompetitor(competitorIndex, { source: { ...competitor.source, type: event.target.value } })}>
+                  <select id={`${prefix}-source`} value={competitor.source.type} className={issueFor(`${prefix}-source-type`) ? 'lia-form-control--invalid' : undefined} {...fieldProps(`${prefix}-source-type`)} onChange={(event) => updateCompetitor(competitorIndex, { source: { ...competitor.source, type: event.target.value } })}>
                     <option value="manual">Captura manual</option>
                     <option value="user_observation">Observación propia</option>
                     <option value="public_url">Referencia URL pública</option>
                     <option value="copied_text">Texto copiado</option>
                   </select>
+                  {renderFieldIssues(`${prefix}-source-type`)}
                 </label>
                 <label className="commercial-ai-label" htmlFor={`${prefix}-source-label`}>Nombre de la fuente <span>(opcional)</span>
                   <input id={`${prefix}-source-label`} maxLength={160} value={competitor.source.label} onChange={(event) => updateCompetitor(competitorIndex, { source: { ...competitor.source, label: event.target.value } })} />
                 </label>
                 {competitor.source.type === 'public_url' && (
                   <label className="commercial-ai-label commercial-ai-competitive-grid__wide" htmlFor={`${prefix}-url`}>URL pública de referencia
-                    <input id={`${prefix}-url`} type="url" maxLength={2048} placeholder="https://ejemplo.com/catalogo" value={competitor.source.url} onChange={(event) => updateCompetitor(competitorIndex, { source: { ...competitor.source, url: event.target.value } })} />
+                    <input id={`${prefix}-url`} type="url" maxLength={2048} placeholder="https://ejemplo.com/catalogo" value={competitor.source.url} className={issueFor(`${prefix}-source-url`) ? 'lia-form-control--invalid' : undefined} {...fieldProps(`${prefix}-source-url`)} onChange={(event) => updateCompetitor(competitorIndex, { source: { ...competitor.source, url: event.target.value } })} />
+                    {renderFieldIssues(`${prefix}-source-url`)}
                   </label>
                 )}
                 {competitor.source.type === 'copied_text' && (
                   <label className="commercial-ai-label commercial-ai-competitive-grid__wide" htmlFor={`${prefix}-source-text`}>Texto copiado
-                    <textarea id={`${prefix}-source-text`} maxLength={3000} rows={3} value={competitor.source.text} onChange={(event) => updateCompetitor(competitorIndex, { source: { ...competitor.source, text: event.target.value } })} />
+                    <textarea id={`${prefix}-source-text`} maxLength={3000} rows={3} value={competitor.source.text} className={issueFor(`${prefix}-source-text`) ? 'lia-form-control--invalid' : undefined} {...fieldProps(`${prefix}-source-text`)} onChange={(event) => updateCompetitor(competitorIndex, { source: { ...competitor.source, text: event.target.value } })} />
+                    {renderFieldIssues(`${prefix}-source-text`)}
                   </label>
                 )}
               </div>
@@ -562,14 +586,15 @@ function CompetitiveEvidenceBuilder({ value, onChange, error, disabled = false }
               <div className="commercial-ai-observations">
                 <div className="commercial-ai-observations__header">
                   <h3>Productos o servicios observados</h3>
-                  <button type="button" className="commercial-ai-secondary-button" disabled={(competitor.observations || []).length >= COMPETITIVE_ANALYSIS_LIMITS.observationsPerCompetitor} onClick={() => updateCompetitor(competitorIndex, { observations: [...competitor.observations, createCompetitiveObservation()] })}>
+                  <button type="button" id={`${prefix}-add-observation`} className="commercial-ai-secondary-button" disabled={(competitor.observations || []).length >= COMPETITIVE_ANALYSIS_LIMITS.observationsPerCompetitor} onClick={() => updateCompetitor(competitorIndex, { observations: [...competitor.observations, createCompetitiveObservation()] })}>
                     <Plus size={15} aria-hidden="true" /> Añadir observación
                   </button>
                 </div>
                 {(competitor.observations || []).map((item, observationIndex) => {
-                  const itemPrefix = `${prefix}-observation-${observationIndex}`;
+                  const observationKey = item.uiKey || `observation-${observationIndex + 1}`;
+                  const itemPrefix = `${prefix}-${observationKey}`;
                   return (
-                    <fieldset className="commercial-ai-observation" key={itemPrefix} disabled={disabled}>
+                    <fieldset className="commercial-ai-observation" key={observationKey} disabled={disabled}>
                       <legend>Observación {observationIndex + 1}</legend>
                       <div className="commercial-ai-competitive-grid">
                         <label className="commercial-ai-label" htmlFor={`${itemPrefix}-type`}>Tipo
@@ -578,13 +603,16 @@ function CompetitiveEvidenceBuilder({ value, onChange, error, disabled = false }
                           </select>
                         </label>
                         <label className="commercial-ai-label" htmlFor={`${itemPrefix}-name`}>Nombre
-                          <input id={`${itemPrefix}-name`} maxLength={120} value={item.name} onChange={(event) => updateObservation(competitorIndex, observationIndex, { name: event.target.value })} />
+                          <input id={`${itemPrefix}-name`} maxLength={120} value={item.name} className={issueFor(`${itemPrefix}-name`) ? 'lia-form-control--invalid' : undefined} {...fieldProps(`${itemPrefix}-name`)} onChange={(event) => updateObservation(competitorIndex, observationIndex, { name: event.target.value })} />
+                          {renderFieldIssues(`${itemPrefix}-name`)}
                         </label>
                         <label className="commercial-ai-label" htmlFor={`${itemPrefix}-price`}>Precio <span>(opcional)</span>
-                          <input id={`${itemPrefix}-price`} type="number" min="0" max="1000000000" step="0.01" value={item.price} onChange={(event) => updateObservation(competitorIndex, observationIndex, { price: event.target.value })} />
+                          <input id={`${itemPrefix}-price`} type="number" min="0" max="1000000000" step="0.01" value={item.price} className={issueFor(`${itemPrefix}-price`) ? 'lia-form-control--invalid' : undefined} {...fieldProps(`${itemPrefix}-price`)} onChange={(event) => updateObservation(competitorIndex, observationIndex, { price: event.target.value })} />
+                          {renderFieldIssues(`${itemPrefix}-price`)}
                         </label>
                         <label className="commercial-ai-label" htmlFor={`${itemPrefix}-currency`}>Moneda
-                          <input id={`${itemPrefix}-currency`} maxLength={3} placeholder="MXN" value={item.currency} onChange={(event) => updateObservation(competitorIndex, observationIndex, { currency: event.target.value.toUpperCase() })} />
+                          <input id={`${itemPrefix}-currency`} maxLength={3} placeholder="MXN" value={item.currency} className={issueFor(`${itemPrefix}-currency`) ? 'lia-form-control--invalid' : undefined} {...fieldProps(`${itemPrefix}-currency`)} onChange={(event) => updateObservation(competitorIndex, observationIndex, { currency: event.target.value.toUpperCase() })} />
+                          {renderFieldIssues(`${itemPrefix}-currency`)}
                         </label>
                         <label className="commercial-ai-label" htmlFor={`${itemPrefix}-unit`}>Unidad o presentación
                           <input id={`${itemPrefix}-unit`} maxLength={80} placeholder="500 ml, 1 pieza" value={item.unit} onChange={(event) => updateObservation(competitorIndex, observationIndex, { unit: event.target.value })} />
@@ -629,14 +657,14 @@ function CompetitiveEvidenceBuilder({ value, onChange, error, disabled = false }
         })}
       </div>
 
-      <button type="button" className="commercial-ai-secondary-button" disabled={disabled || competitors.length >= COMPETITIVE_ANALYSIS_LIMITS.competitors} onClick={() => onChange((current) => ({ ...current, competitors: [...current.competitors, createCompetitiveEntry()] }))}>
+      <button type="button" id="lia-competitive-add-competitor" className="commercial-ai-secondary-button" disabled={disabled || competitors.length >= COMPETITIVE_ANALYSIS_LIMITS.competitors} onClick={() => onChange((current) => ({ ...current, competitors: [...current.competitors, createCompetitiveEntry()] }))}>
         <Plus size={16} aria-hidden="true" /> Añadir competidor
       </button>
-      {error && <p className="commercial-ai-inline-error" role="alert">{error}</p>}
+      <LiaFormErrorSummary issues={issues} />
       <details className="commercial-ai-competitive-review">
         <summary>Revisar {reviewRows.length} observación(es) antes de analizar</summary>
         <ul>{reviewRows.map(({ competitor, item }) => <li key={`${competitor.uiKey}-${item.uiKey}`}><strong>{item.name || 'Sin nombre'}</strong> · {competitor.name || 'Competidor sin nombre'} · {competitor.observedAt || 'Sin fecha'} · {competitor.source?.type === 'public_url' ? 'URL declarada, no consultada' : 'Información proporcionada'}</li>)}</ul>
-        {!validation.valid && <small>Para analizar, completa nombre, fecha, procedencia y al menos una observación por competidor.</small>}
+        {showValidation && !validation.valid && <small>Revisa los campos marcados arriba antes de iniciar el análisis.</small>}
       </details>
     </section>
   );
@@ -1526,13 +1554,17 @@ export default function CommercialAIAgentsPage() {
   const [compare, setCompare] = useState(false);
   const [scenario, setScenario] = useState({});
   const [competitiveEvidence, setCompetitiveEvidence] = useState({ competitors: [] });
-  const [competitiveEvidenceError, setCompetitiveEvidenceError] = useState(null);
+  const [questionValidationSubmitted, setQuestionValidationSubmitted] = useState(false);
+  const [scenarioValidationSubmitted, setScenarioValidationSubmitted] = useState(false);
+  const [competitiveValidationSubmitted, setCompetitiveValidationSubmitted] = useState(false);
   const [promotionMode, setPromotionMode] = useState('discountPercent');
   const [productOptions, setProductOptions] = useState([]);
   const [excludedProducts, setExcludedProducts] = useState([]);
   const [productSearch, setProductSearch] = useState('');
   const [isLoadingProducts, setIsLoadingProducts] = useState(false);
+  const [productCatalogStatus, setProductCatalogStatus] = useState('idle');
   const [productLoadError, setProductLoadError] = useState(null);
+  const [productLoadRetry, setProductLoadRetry] = useState(0);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState(null);
   const [result, setResult] = useState(null);
@@ -1606,7 +1638,9 @@ export default function CommercialAIAgentsPage() {
     setQuestion('');
     setScenario({});
     setCompetitiveEvidence({ competitors: [] });
-    setCompetitiveEvidenceError(null);
+    setQuestionValidationSubmitted(false);
+    setScenarioValidationSubmitted(false);
+    setCompetitiveValidationSubmitted(false);
     setUsageStatus(null);
     setUsageError(null);
     setIsLoadingUsage(true);
@@ -1663,6 +1697,69 @@ export default function CommercialAIAgentsPage() {
   const strategyRequested = intent === 'commercial_strategy'
     || (intent === 'goal_simulation' && isCommercialStrategyQuestion(question));
   const scenarioIntent = ['goal_simulation', 'what_if_analysis'].includes(intent);
+  const validatesScenarioIntent = ['goal_simulation', 'what_if_analysis', 'price_simulation', 'promotion_opportunity'].includes(intent);
+  const scenarioValidation = useMemo(() => validateLiaScenarioForm(intent, scenario), [intent, scenario]);
+  const productCatalogPrerequisites = useMemo(() => {
+    if (!validatesScenarioIntent) return { valid: true };
+    return validateLiaScenarioForm(intent, {
+      ...scenario,
+      productName: scenario.productName || '__lia_catalog_prerequisite__'
+    });
+  }, [validatesScenarioIntent, intent, scenario]);
+  const questionIssue = presentQuestionValidation(question, questionValidationSubmitted)[0] || null;
+  const scenarioIssues = useMemo(() => {
+    if (!scenarioValidationSubmitted || !validatesScenarioIntent) return [];
+    const issues = [...scenarioValidation.issues];
+    const productIssue = issues.find((issue) => issue.path === 'productName');
+    const productIsRequired = ['price_simulation', 'promotion_opportunity'].includes(intent)
+      || (intent === 'goal_simulation' && scenario.goalType === 'product_margin')
+      || (intent === 'what_if_analysis' && scenario.changeType === 'product');
+    const productCatalogIsLoading = isLoadingProducts || productCatalogStatus === 'loading'
+      || (productCatalogPrerequisites.valid && productCatalogStatus === 'idle' && !productLoadError);
+    const productUnavailable = productIsRequired && productCatalogStatus === 'ready'
+      && (productOptions.length === 0
+        || (scenario.productName && !productOptions.some((product) => product.name === scenario.productName)));
+    if (productIsRequired && productCatalogPrerequisites.valid
+      && (productCatalogIsLoading || productLoadError || productIssue || productUnavailable)) {
+      const message = productLoadError
+        ? 'No se pudo preparar la lista de productos. Reintenta antes de continuar.'
+        : productCatalogIsLoading
+          ? 'Los productos se están cargando. Espera a que termine la lista antes de elegir uno.'
+          : productCatalogStatus === 'ready' && productOptions.length === 0
+            ? 'No hay productos disponibles en este periodo.'
+            : productCatalogStatus === 'ready' && scenario.productName && !productOptions.some((product) => product.name === scenario.productName)
+              ? 'Este producto no está disponible en el periodo. Selecciona otro producto.'
+              : productIssue?.message;
+      if (message) {
+        const issue = productIssue || {
+          id: 'lia-scenario-product-availability',
+          path: 'productName',
+          targetId: intent === 'goal_simulation' ? 'sales-agent-goal-product'
+            : intent === 'what_if_analysis' ? 'sales-agent-what-if-product' : 'sales-agent-product',
+          fieldLabel: 'Producto',
+          severity: 'error'
+        };
+        const index = productIssue ? issues.indexOf(productIssue) : -1;
+        const nextIssue = { ...issue, message };
+        if (index >= 0) issues.splice(index, 1, nextIssue);
+        else issues.push(nextIssue);
+      }
+    }
+    return issues;
+  }, [
+    scenarioValidationSubmitted,
+    validatesScenarioIntent,
+    productCatalogPrerequisites.valid,
+    scenarioValidation,
+    intent,
+    productCatalogStatus,
+    scenario.goalType,
+    scenario.changeType,
+    scenario.productName,
+    isLoadingProducts,
+    productLoadError,
+    productOptions
+  ]);
   const filteredProductOptions = useMemo(() => {
     const search = productSearch.trim().toLocaleLowerCase('es-MX');
     if (!search) return productOptions;
@@ -1687,19 +1784,21 @@ export default function CommercialAIAgentsPage() {
   }, [intent, question, strategyRequested]);
 
   useEffect(() => {
-    const loadsProducts = intent === 'price_simulation' || intent === 'promotion_opportunity'
+    const needsProducts = intent === 'price_simulation' || intent === 'promotion_opportunity'
       || (intent === 'goal_simulation' && scenario.goalType === 'product_margin')
       || (intent === 'what_if_analysis' && scenario.changeType === 'product');
     const includeUnknownCosts = intent === 'what_if_analysis' && scenario.changeType === 'product';
-    if (!loadsProducts) {
+    if (!needsProducts || !productCatalogPrerequisites.valid) {
       setProductOptions([]);
       setExcludedProducts([]);
       setProductLoadError(null);
+      setProductCatalogStatus('idle');
       setIsLoadingProducts(false);
       return undefined;
     }
 
     let active = true;
+    setProductCatalogStatus('loading');
     setIsLoadingProducts(true);
     setProductLoadError(null);
     loadSalesProfitabilityProducts({ period, includeUnknownCosts })
@@ -1707,18 +1806,20 @@ export default function CommercialAIAgentsPage() {
         if (!active) return;
         setProductOptions(Array.isArray(prepared?.products) ? prepared.products : []);
         setExcludedProducts(Array.isArray(prepared?.excludedProducts) ? prepared.excludedProducts : []);
+        setProductCatalogStatus('ready');
       })
       .catch(() => {
         if (!active) return;
         setProductOptions([]);
         setExcludedProducts([]);
         setProductLoadError('No se pudieron preparar los productos de este periodo.');
+        setProductCatalogStatus('error');
       })
       .finally(() => {
         if (active) setIsLoadingProducts(false);
       });
     return () => { active = false; };
-  }, [period, intent, scenario.goalType, scenario.changeType]);
+  }, [period, intent, scenario.goalType, scenario.changeType, productCatalogPrerequisites.valid, productLoadRetry]);
 
   const selectIntent = (text) => {
     const inferred = inferCommercialScenarioFromQuestion(text);
@@ -1728,7 +1829,9 @@ export default function CommercialAIAgentsPage() {
     setResult(null);
     setDownloadContext(null);
     setDownloadError(null);
-    setCompetitiveEvidenceError(null);
+    setQuestionValidationSubmitted(false);
+    setScenarioValidationSubmitted(false);
+    setCompetitiveValidationSubmitted(false);
     setQuestion(text);
     setAnalysisError(null);
   };
@@ -1743,7 +1846,8 @@ export default function CommercialAIAgentsPage() {
     setDownloadContext(null);
     setDownloadError(null);
     setAnalysisError(null);
-    setCompetitiveEvidenceError(null);
+    setScenarioValidationSubmitted(false);
+    setCompetitiveValidationSubmitted(false);
     setQuestion(nextQuestion);
   };
 
@@ -1793,7 +1897,79 @@ export default function CommercialAIAgentsPage() {
 
   const handleAnalyze = async (event) => {
     event.preventDefault();
-    if (!question.trim() || isAnalyzing || analysisInFlightRef.current) return;
+    if (isAnalyzing || analysisInFlightRef.current) return;
+    if (!question.trim()) {
+      setQuestionValidationSubmitted(true);
+      focusLiaValidationTarget('sales-agent-question');
+      return;
+    }
+
+    const resolution = resolveCommercialIntent(question, { scenario, competitiveEvidence });
+    if (resolution.topic === 'competition' || resolution.intent === 'competitive_analysis') {
+      const competitiveValidation = validateCompetitiveEvidence(competitiveEvidence);
+      const competitiveIssues = presentCompetitiveValidation(competitiveValidation, competitiveEvidence);
+      setCompetitiveValidationSubmitted(true);
+      if (!competitiveValidation.valid) {
+        focusLiaValidationTarget(competitiveIssues.find((issue) => issue.severity === 'error')?.targetId);
+        return;
+      }
+    }
+
+    const supportedIntent = resolution.kind === 'supported' ? resolution.intent : null;
+    const scenarioFormIntents = ['goal_simulation', 'what_if_analysis', 'price_simulation', 'promotion_opportunity'];
+    const scenarioFormIntent = scenarioFormIntents.includes(supportedIntent) ? supportedIntent
+      : resolution.kind === 'needs_context' && scenarioFormIntents.includes(resolution.intent)
+        ? resolution.intent
+        : null;
+    const formScenarioValidation = scenarioFormIntent
+      ? validateLiaScenarioForm(scenarioFormIntent, scenario)
+      : { valid: true, normalized: {}, issues: [] };
+    const scenarioIssuesToShow = [...formScenarioValidation.issues];
+    const productIsRequired = scenarioFormIntent === 'price_simulation'
+      || scenarioFormIntent === 'promotion_opportunity'
+      || (scenarioFormIntent === 'goal_simulation' && scenario.goalType === 'product_margin')
+      || (scenarioFormIntent === 'what_if_analysis' && scenario.changeType === 'product');
+    const productIssue = scenarioIssuesToShow.find((issue) => issue.path === 'productName');
+    const selectedProductUnavailable = Boolean(scenario.productName)
+      && productCatalogStatus === 'ready'
+      && !productLoadError
+      && productOptions.length > 0
+      && !productOptions.some((product) => product.name === scenario.productName);
+    const productCatalogIsLoading = isLoadingProducts || productCatalogStatus === 'loading'
+      || (productCatalogPrerequisites.valid && productCatalogStatus === 'idle' && !productLoadError);
+    if (productIsRequired && productCatalogPrerequisites.valid
+      && (productCatalogIsLoading || productLoadError || productCatalogStatus !== 'ready'
+        || productOptions.length === 0 || selectedProductUnavailable || productIssue)) {
+      const message = productLoadError
+        ? 'No se pudo preparar la lista de productos. Reintenta antes de continuar.'
+        : productCatalogIsLoading
+          ? 'Los productos se están cargando. Espera a que termine la lista antes de elegir uno.'
+          : productCatalogStatus === 'ready' && productOptions.length === 0
+            ? 'No hay productos disponibles en este periodo.'
+            : productCatalogStatus === 'ready' && selectedProductUnavailable
+              ? 'Este producto no está disponible en el periodo. Selecciona otro producto.'
+              : productIssue?.message;
+      const availabilityIssue = {
+        ...(productIssue || {
+          id: 'lia-scenario-product-availability',
+          path: 'productName',
+          targetId: scenarioFormIntent === 'goal_simulation' ? 'sales-agent-goal-product'
+            : scenarioFormIntent === 'what_if_analysis' ? 'sales-agent-what-if-product' : 'sales-agent-product',
+          fieldLabel: 'Producto',
+          severity: 'error'
+        }),
+        message
+      };
+      if (productIssue) scenarioIssuesToShow.splice(scenarioIssuesToShow.indexOf(productIssue), 1, availabilityIssue);
+      else scenarioIssuesToShow.push(availabilityIssue);
+    }
+    setScenarioValidationSubmitted(Boolean(scenarioFormIntent));
+    if (!formScenarioValidation.valid || scenarioIssuesToShow.length > 0) {
+      focusLiaValidationTarget(scenarioIssuesToShow[0]?.targetId);
+      return;
+    }
+    setQuestionValidationSubmitted(false);
+
     analysisInFlightRef.current = true;
     const queriedAt = new Date().toISOString();
     const requestContextToken = historyContextToken;
@@ -1803,16 +1979,8 @@ export default function CommercialAIAgentsPage() {
     setResult(null);
     setDownloadContext(null);
     try {
-      const resolution = resolveCommercialIntent(question, { scenario, competitiveEvidence });
-      if (resolution.topic === 'competition' && !validateCompetitiveEvidence(competitiveEvidence).valid) {
-        setCompetitiveEvidenceError('Completa al menos un competidor con nombre, fecha, procedencia y una observación válida antes de analizar.');
-        return;
-      }
-      setCompetitiveEvidenceError(null);
       const resolvedIntent = resolution.kind === 'supported' ? resolution.intent : null;
-      const normalizedScenario = resolution.kind === 'supported'
-        ? normalizeScenarioForIntent(resolvedIntent, scenario)
-        : {};
+      const normalizedScenario = scenarioFormIntent ? formScenarioValidation.normalized : {};
       const compareEnabled = resolution.kind === 'supported'
         && (['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend', 'assortment_analysis'].includes(resolvedIntent)
           || (resolvedIntent === 'commercial_strategy' || (resolvedIntent === 'goal_simulation' && isCommercialStrategyQuestion(question)))
@@ -1943,6 +2111,19 @@ export default function CommercialAIAgentsPage() {
   const activeHistoryState = historyState.contextToken === historyContextToken
     ? historyState
     : { contextToken: historyContextToken, entries: [], isLoading: true, issue: null };
+  const scenarioIssueFor = (targetId) => scenarioIssues.find((issue) => issue.targetId === targetId) || null;
+  const scenarioFieldProps = (targetId, describedBy = []) => getValidationFieldProps(scenarioIssueFor(targetId), describedBy);
+  const productPickerPlaceholder = isLoadingProducts
+    ? 'Cargando productos…'
+    : productLoadError
+      ? 'No se pudo cargar la lista de productos'
+      : !productCatalogPrerequisites.valid
+        ? 'Completa los datos obligatorios para cargar productos'
+        : productCatalogStatus === 'ready' && productOptions.length
+          ? 'Selecciona un producto'
+          : productCatalogStatus === 'ready'
+            ? 'No hay productos disponibles en este periodo'
+            : 'Cargando productos…';
 
   const handleDeleteHistoryEntry = (entryId) => {
     const scope = historyScopeRef.current;
@@ -2014,7 +2195,11 @@ export default function CommercialAIAgentsPage() {
 
         <form onSubmit={handleAnalyze}>
           <label className="commercial-ai-label" htmlFor="sales-agent-question">Pregunta libre</label>
-          <textarea id="sales-agent-question" value={question} onChange={handleQuestionChange} placeholder="Ej. ¿Mi negocio es rentable?" rows={3} maxLength={1200} />
+          <textarea id="sales-agent-question" value={question} onChange={handleQuestionChange} placeholder="Ej. ¿Mi negocio es rentable?" rows={3} maxLength={1200}
+            className={questionIssue ? 'lia-form-control--invalid' : undefined}
+            {...getValidationFieldProps(questionIssue)} />
+          <LiaFieldIssue issue={questionIssue} />
+          <LiaFormErrorSummary issues={questionIssue ? [questionIssue] : []} />
           <div className="commercial-ai-suggestions" aria-label="Preguntas sugeridas">
             {SUGGESTED_QUESTIONS.map((suggestion) => (
               <button type="button" className={`commercial-ai-suggestion ${intent === suggestion.intent ? 'is-selected' : ''}`} key={suggestion.intent} onClick={() => selectIntent(suggestion.label)}>
@@ -2026,11 +2211,8 @@ export default function CommercialAIAgentsPage() {
           {(questionResolution.topic === 'competition' || intent === 'competitive_analysis') && (
             <CompetitiveEvidenceBuilder
               value={competitiveEvidence}
-              onChange={(update) => {
-                setCompetitiveEvidence(update);
-                setCompetitiveEvidenceError(null);
-              }}
-              error={competitiveEvidenceError}
+              onChange={setCompetitiveEvidence}
+              showValidation={competitiveValidationSubmitted}
               disabled={isAnalyzing}
             />
           )}
@@ -2056,12 +2238,15 @@ export default function CommercialAIAgentsPage() {
           {scenarioIntent && (
             <div className="commercial-ai-scenario-panel">
               <p className="commercial-ai-label">Parámetros del escenario</p>
+              <LiaFormErrorSummary issues={scenarioIssues} />
               <div className="commercial-ai-scenario-form">
                 {intent === 'goal_simulation' ? (
                   <>
                     <label className="commercial-ai-label" htmlFor="sales-agent-goal-type">Tipo de meta
                       <span className="commercial-ai-select-wrap">
-                        <select id="sales-agent-goal-type" name="goalType" value={scenario.goalType || ''} onChange={(event) => {
+                        <select id="sales-agent-goal-type" name="goalType" value={scenario.goalType || ''}
+                          className={scenarioIssueFor('sales-agent-goal-type') ? 'lia-form-control--invalid' : undefined}
+                          {...scenarioFieldProps('sales-agent-goal-type')} onChange={(event) => {
                           const goalType = event.target.value;
                           setScenario((current) => ({ ...current, goalType, ...(goalType === 'product_margin' ? {} : { productName: undefined }) }));
                         }}>
@@ -2074,20 +2259,27 @@ export default function CommercialAIAgentsPage() {
                         </select>
                         <ChevronDown size={15} aria-hidden="true" />
                       </span>
+                      <LiaFieldIssue issue={scenarioIssueFor('sales-agent-goal-type')} />
                     </label>
                     <label className="commercial-ai-label" htmlFor="sales-agent-goal-target">{['gross_margin', 'product_margin'].includes(scenario.goalType) ? 'Margen objetivo (%)' : 'Valor objetivo'}
-                      <input id="sales-agent-goal-target" name="targetValue" type="number" min="0.01" max={['gross_margin', 'product_margin'].includes(scenario.goalType) ? '99.9' : undefined} step={['gross_margin', 'product_margin'].includes(scenario.goalType) ? '0.1' : '0.01'} placeholder="Obligatorio" value={scenario.targetValue ?? ''} onChange={handleScenarioChange} />
+                      <input id="sales-agent-goal-target" name="targetValue" type="number" min={['gross_margin', 'product_margin'].includes(scenario.goalType) ? '0.1' : '0.01'} max={['gross_margin', 'product_margin'].includes(scenario.goalType) ? '99.9' : undefined} step={['gross_margin', 'product_margin'].includes(scenario.goalType) ? '0.1' : '0.01'} placeholder="Obligatorio" value={scenario.targetValue ?? ''}
+                        className={scenarioIssueFor('sales-agent-goal-target') ? 'lia-form-control--invalid' : undefined}
+                        {...scenarioFieldProps('sales-agent-goal-target')} onChange={handleScenarioChange} />
+                      <LiaFieldIssue issue={scenarioIssueFor('sales-agent-goal-target')} />
                     </label>
                     {scenario.goalType === 'product_margin' && (
                       <label className="commercial-ai-label" htmlFor="sales-agent-goal-product">Producto con costo conocido
                         <span className="commercial-ai-select-wrap">
-                          <select id="sales-agent-goal-product" name="productName" value={scenario.productName || ''} onChange={handleScenarioChange} disabled={isLoadingProducts || productOptions.length === 0}>
-                            <option value="">{isLoadingProducts ? 'Cargando productos…' : 'Selecciona un producto'}</option>
-                            {scenario.productName && !productOptions.some((product) => product.name === scenario.productName) && <option value={scenario.productName}>{scenario.productName} · verificar historial</option>}
+                          <select id="sales-agent-goal-product" name="productName" value={scenario.productName || ''} onChange={handleScenarioChange} disabled={isLoadingProducts || productOptions.length === 0 || Boolean(productLoadError)}
+                            className={scenarioIssueFor('sales-agent-goal-product') ? 'lia-form-control--invalid' : undefined}
+                            {...scenarioFieldProps('sales-agent-goal-product')}>
+                            <option value="">{productPickerPlaceholder}</option>
+                            {scenario.productName && !productOptions.some((product) => product.name === scenario.productName) && <option value={scenario.productName}>{scenario.productName} · no disponible en este periodo</option>}
                             {filteredProductOptions.map((product) => <option key={product.name} value={product.name}>{product.name}</option>)}
                           </select>
                           <ChevronDown size={15} aria-hidden="true" />
                         </span>
+                        <LiaFieldIssue issue={scenarioIssueFor('sales-agent-goal-product')} />
                       </label>
                     )}
                   </>
@@ -2095,7 +2287,9 @@ export default function CommercialAIAgentsPage() {
                   <>
                     <label className="commercial-ai-label" htmlFor="sales-agent-what-if-type">Variable a modificar
                       <span className="commercial-ai-select-wrap">
-                        <select id="sales-agent-what-if-type" name="changeType" value={scenario.changeType || ''} onChange={(event) => {
+                        <select id="sales-agent-what-if-type" name="changeType" value={scenario.changeType || ''}
+                          className={scenarioIssueFor('sales-agent-what-if-type') ? 'lia-form-control--invalid' : undefined}
+                          {...scenarioFieldProps('sales-agent-what-if-type')} onChange={(event) => {
                           const changeType = event.target.value;
                           setScenario((current) => ({ ...current, changeType, ...(changeType === 'product' ? {} : { productName: undefined }) }));
                         }}>
@@ -2106,6 +2300,7 @@ export default function CommercialAIAgentsPage() {
                         </select>
                         <ChevronDown size={15} aria-hidden="true" />
                       </span>
+                      <LiaFieldIssue issue={scenarioIssueFor('sales-agent-what-if-type')} />
                     </label>
                     <label className="commercial-ai-label" htmlFor="sales-agent-what-if-preset">Cambios rápidos
                       <span className="commercial-ai-select-wrap">
@@ -2130,8 +2325,10 @@ export default function CommercialAIAgentsPage() {
                     </label>
                     <label className="commercial-ai-label" htmlFor="sales-agent-what-if-percent">Cambio porcentual
                       <input id="sales-agent-what-if-percent" name="changePercent" type="number" min="-99.9" max="500" step="0.1"
-                        placeholder="Ejemplo: 15 o -20" aria-describedby="sales-agent-what-if-percent-help"
+                        placeholder="Ejemplo: 15 o -20" className={scenarioIssueFor('sales-agent-what-if-percent') ? 'lia-form-control--invalid' : undefined}
+                        {...scenarioFieldProps('sales-agent-what-if-percent', ['sales-agent-what-if-percent-help'])}
                         value={scenario.changePercent ?? ''} onChange={handleScenarioChange} />
+                      <LiaFieldIssue issue={scenarioIssueFor('sales-agent-what-if-percent')} />
                     </label>
                     <p className="commercial-ai-muted" id="sales-agent-what-if-percent-help" style={{ flexBasis: '100%', margin: 0 }}>
                       Indica cuánto cambiaría la variable elegida respecto al valor actual. +50% significa multiplicar por 1.5,
@@ -2141,13 +2338,16 @@ export default function CommercialAIAgentsPage() {
                     {scenario.changeType === 'product' && (
                       <label className="commercial-ai-label" htmlFor="sales-agent-what-if-product">Producto con ventas históricas
                         <span className="commercial-ai-select-wrap">
-                          <select id="sales-agent-what-if-product" name="productName" value={scenario.productName || ''} onChange={handleScenarioChange} disabled={isLoadingProducts || productOptions.length === 0}>
-                            <option value="">{isLoadingProducts ? 'Cargando productos…' : 'Selecciona un producto'}</option>
-                            {scenario.productName && !productOptions.some((product) => product.name === scenario.productName) && <option value={scenario.productName}>{scenario.productName} · verificar historial</option>}
+                          <select id="sales-agent-what-if-product" name="productName" value={scenario.productName || ''} onChange={handleScenarioChange} disabled={isLoadingProducts || productOptions.length === 0 || Boolean(productLoadError)}
+                            className={scenarioIssueFor('sales-agent-what-if-product') ? 'lia-form-control--invalid' : undefined}
+                            {...scenarioFieldProps('sales-agent-what-if-product')}>
+                            <option value="">{productPickerPlaceholder}</option>
+                            {scenario.productName && !productOptions.some((product) => product.name === scenario.productName) && <option value={scenario.productName}>{scenario.productName} · no disponible en este periodo</option>}
                             {filteredProductOptions.map((product) => <option key={product.name} value={product.name}>{product.name}</option>)}
                           </select>
                           <ChevronDown size={15} aria-hidden="true" />
                         </span>
+                        <LiaFieldIssue issue={scenarioIssueFor('sales-agent-what-if-product')} />
                       </label>
                     )}
                   </>
@@ -2155,7 +2355,12 @@ export default function CommercialAIAgentsPage() {
               </div>
               {intent === 'goal_simulation' && <p className="commercial-ai-caution">Las metas describen una brecha matemática. El precio objetivo de producto requiere costo completo y no cambia el precio real.</p>}
               {intent === 'what_if_analysis' && <p className="commercial-ai-caution">Rango técnico permitido: −99.9% a +500%. Es un escenario hipotético, no una estimación automática de crecimiento ni una predicción de demanda.</p>}
-              {scenario.goalType === 'product_margin' && productLoadError && <p className="commercial-ai-inline-error">{productLoadError}</p>}
+              {scenario.goalType === 'product_margin' && productLoadError && (
+                <div className="commercial-ai-product-load-error" role="alert">
+                  <span>{productLoadError}</span>
+                  <button type="button" onClick={() => setProductLoadRetry((current) => current + 1)}>Reintentar</button>
+                </div>
+              )}
             </div>
           )}
 
@@ -2166,26 +2371,36 @@ export default function CommercialAIAgentsPage() {
                   <span className="commercial-ai-search-wrap"><Search size={15} aria-hidden="true" /><input id="sales-agent-product-search" value={productSearch} onChange={(event) => setProductSearch(event.target.value)} placeholder="Escribe el nombre" /></span>
                 </label>
               )}
+              <LiaFormErrorSummary issues={scenarioIssues} />
               <div className="commercial-ai-scenario-form">
                 <label className="commercial-ai-label" htmlFor="sales-agent-product">Producto
                   <span className="commercial-ai-select-wrap">
-                    <select id="sales-agent-product" name="productName" value={scenario.productName || ''} onChange={handleScenarioChange} disabled={isLoadingProducts || productOptions.length === 0}>
-                      <option value="">{isLoadingProducts ? 'Cargando productos…' : productOptions.length ? 'Selecciona un producto' : 'No hay productos en este periodo'}</option>
+                    <select id="sales-agent-product" name="productName" value={scenario.productName || ''} onChange={handleScenarioChange} disabled={isLoadingProducts || productOptions.length === 0 || Boolean(productLoadError)}
+                      className={scenarioIssueFor('sales-agent-product') ? 'lia-form-control--invalid' : undefined}
+                      {...scenarioFieldProps('sales-agent-product')}>
+                      <option value="">{productPickerPlaceholder}</option>
+                      {scenario.productName && !productOptions.some((product) => product.name === scenario.productName) && <option value={scenario.productName}>{scenario.productName} · no disponible en este periodo</option>}
                       {filteredProductOptions.map((product) => <option key={product.name} value={product.name}>{product.name}</option>)}
                     </select>
                     <ChevronDown size={15} aria-hidden="true" />
                   </span>
+                  <LiaFieldIssue issue={scenarioIssueFor('sales-agent-product')} />
                 </label>
                 {intent === 'price_simulation' && (
                   <label className="commercial-ai-label" htmlFor="sales-agent-new-price">Nuevo precio
-                    <input id="sales-agent-new-price" name="newPrice" type="number" min="0.01" step="0.01" placeholder="Obligatorio" value={scenario.newPrice ?? ''} onChange={handleScenarioChange} />
+                    <input id="sales-agent-new-price" name="newPrice" type="number" min="0.01" step="0.01" placeholder="Obligatorio" value={scenario.newPrice ?? ''}
+                      className={scenarioIssueFor('sales-agent-new-price') ? 'lia-form-control--invalid' : undefined}
+                      {...scenarioFieldProps('sales-agent-new-price')} onChange={handleScenarioChange} />
+                    <LiaFieldIssue issue={scenarioIssueFor('sales-agent-new-price')} />
                   </label>
                 )}
                 {intent === 'promotion_opportunity' && (
                   <>
                     <label className="commercial-ai-label" htmlFor="sales-agent-promotion-mode">Tipo de promoción
                       <span className="commercial-ai-select-wrap">
-                        <select id="sales-agent-promotion-mode" value={promotionMode} onChange={(event) => {
+                        <select id="sales-agent-promotion-mode" value={promotionMode}
+                          className={scenarioIssueFor('sales-agent-promotion-mode') ? 'lia-form-control--invalid' : undefined}
+                          {...scenarioFieldProps('sales-agent-promotion-mode')} onChange={(event) => {
                           const nextMode = event.target.value;
                           setPromotionMode(nextMode);
                           setScenario((current) => ({ ...current, promotionalPrice: undefined, discountPercent: undefined }));
@@ -2195,23 +2410,33 @@ export default function CommercialAIAgentsPage() {
                         </select>
                         <ChevronDown size={15} aria-hidden="true" />
                       </span>
+                      <LiaFieldIssue issue={scenarioIssueFor('sales-agent-promotion-mode')} />
                     </label>
                     {promotionMode === 'discountPercent' ? (
                       <label className="commercial-ai-label" htmlFor="sales-agent-discount">Descuento porcentual
-                        <input id="sales-agent-discount" name="discountPercent" type="number" min="0" max="100" step="0.1" placeholder="Opcional" value={scenario.discountPercent ?? ''} onChange={handleScenarioChange} />
+                        <input id="sales-agent-discount" name="discountPercent" type="number" min="0" max="100" step="0.1" placeholder="Opcional" value={scenario.discountPercent ?? ''}
+                          className={scenarioIssueFor('sales-agent-discount') ? 'lia-form-control--invalid' : undefined}
+                          {...scenarioFieldProps('sales-agent-discount')} onChange={handleScenarioChange} />
+                        <LiaFieldIssue issue={scenarioIssueFor('sales-agent-discount')} />
                       </label>
                     ) : (
                       <label className="commercial-ai-label" htmlFor="sales-agent-promotional-price">Precio promocional
-                        <input id="sales-agent-promotional-price" name="promotionalPrice" type="number" min="0.01" step="0.01" placeholder="Opcional" value={scenario.promotionalPrice ?? ''} onChange={handleScenarioChange} />
+                        <input id="sales-agent-promotional-price" name="promotionalPrice" type="number" min="0.01" step="0.01" placeholder="Opcional" value={scenario.promotionalPrice ?? ''}
+                          className={scenarioIssueFor('sales-agent-promotional-price') ? 'lia-form-control--invalid' : undefined}
+                          {...scenarioFieldProps('sales-agent-promotional-price')} onChange={handleScenarioChange} />
+                        <LiaFieldIssue issue={scenarioIssueFor('sales-agent-promotional-price')} />
                       </label>
                     )}
                   </>
                 )}
                 <label className="commercial-ai-label" htmlFor="sales-agent-historical-volume">Volumen esperado (opcional)
-                  <input id="sales-agent-historical-volume" name="historicalVolume" type="number" min="0" step="1" placeholder="Usar histórico" value={scenario.historicalVolume ?? ''} onChange={handleScenarioChange} />
+                  <input id="sales-agent-historical-volume" name="historicalVolume" type="number" min="0" step="1" placeholder="Usar histórico" value={scenario.historicalVolume ?? ''}
+                    className={scenarioIssueFor('sales-agent-historical-volume') ? 'lia-form-control--invalid' : undefined}
+                    {...scenarioFieldProps('sales-agent-historical-volume')} onChange={handleScenarioChange} />
+                  <LiaFieldIssue issue={scenarioIssueFor('sales-agent-historical-volume')} />
                 </label>
               </div>
-              {productLoadError && <p className="commercial-ai-inline-error">{productLoadError}</p>}
+              {productLoadError && <div className="commercial-ai-product-load-error" role="alert"><span>{productLoadError}</span><button type="button" onClick={() => setProductLoadRetry((current) => current + 1)}>Reintentar</button></div>}
               {!isLoadingProducts && productOptions.length > 0 && <p className="commercial-ai-product-count">{productOptions.length} producto(s) elegible(s) del periodo · cargados sin usar IA ni cuota.</p>}
               {!isLoadingProducts && excludedProductSummary.map(({ reason, count }) => (
                 <p className="commercial-ai-inline-note" key={reason}>Se excluyeron {count} producto(s): {reason}.</p>
@@ -2221,7 +2446,7 @@ export default function CommercialAIAgentsPage() {
 
           <div className="commercial-ai-submit-row">
             <p>{intent !== 'competitive_analysis' && <>Periodo: <b>{period.from} a {period.to}</b>{(intent === 'explain_change' && compare || strategyRequested || ['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend', 'assortment_analysis'].includes(intent)) && ' · con comparación'}</>}</p>
-            <button className="commercial-ai-analyze" type="submit" disabled={!question.trim() || isAnalyzing}><Send size={16} aria-hidden="true" /> {isAnalyzing ? 'Analizando…' : 'Analizar'}</button>
+            <button className="commercial-ai-analyze" type="submit" disabled={isAnalyzing}><Send size={16} aria-hidden="true" /> {isAnalyzing ? 'Analizando…' : 'Analizar'}</button>
           </div>
         </form>
 
