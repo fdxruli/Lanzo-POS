@@ -803,6 +803,31 @@ describe('commercial AI center', () => {
     expect(runtime.getUsage).toHaveBeenCalledTimes(1);
   });
 
+  it('offers explicit what-if percentage presets without guessing a default or consuming quota', () => {
+    renderCenter();
+    const question = screen.getByRole('textbox', { name: 'Pregunta libre' });
+    fireEvent.change(question, { target: { value: '¿Qué pasa si vendo más?' } });
+    const presets = screen.getByRole('combobox', { name: 'Cambios rápidos' });
+    const custom = screen.getByLabelText('Cambio porcentual');
+
+    expect(presets).toHaveValue('');
+    expect(custom).toHaveValue(null);
+    expect(screen.getByText(/si escribes un porcentaje en la pregunta/i)).toBeInTheDocument();
+    expect(screen.getByText(/es un escenario hipotético/i)).toBeInTheDocument();
+
+    fireEvent.change(presets, { target: { value: '100' } });
+    expect(custom).toHaveValue(100);
+    expect(presets).toHaveValue('100');
+
+    fireEvent.change(custom, { target: { value: '37' } });
+    expect(custom).toHaveValue(37);
+    expect(presets).toHaveValue('');
+
+    fireEvent.change(presets, { target: { value: '-50' } });
+    expect(custom).toHaveValue(-50);
+    expect(runtime.runAgent).not.toHaveBeenCalled();
+  });
+
   it('keeps an incomplete product what-if local, then loads historical products and submits only after correction', async () => {
     runtime.runAgent.mockResolvedValueOnce({
       response: {
