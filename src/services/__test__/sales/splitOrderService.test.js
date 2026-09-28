@@ -425,6 +425,53 @@ describe('splitOpenTableOrderCore', () => {
     ]);
   });
 
+  it('maps one restaurant line split 1+1 to distinct cloud item IDs before any RPC', async () => {
+    const parentSale = {
+      ...buildParentSale(),
+      total: '60',
+      items: [{
+        id: 'product-1', productId: 'product-1', lineId: 'line-parent-1',
+        name: 'Producto', quantity: 2, price: 30, exactTotal: 60, lineTotal: 60,
+        inventoryReservation: { source: 'table', committedQuantity: 2, committedBatches: [] }
+      }]
+    };
+    const tickets = [
+      { label: 'T1', paymentData: { paymentMethod: 'efectivo', amountPaid: '30' }, lines: [{ lineIndex: 0, quantity: 1 }] },
+      { label: 'T2', paymentData: { paymentMethod: 'efectivo', amountPaid: '30' }, lines: [{ lineIndex: 0, quantity: 1 }] }
+    ];
+    salesCloudCashierService.processCloudSplitTableSale.mockResolvedValueOnce({ success: false, errorType: 'TEST_CAPTURE' });
+    const deps = makeDeps(parentSale, {
+      loadMultipleData: vi.fn(async (store) => (
+        store === 'customers'
+          ? [{ id: 'cust-1', debt: '0', creditLimit: '1000' }]
+          : [{ id: 'product-1', name: 'Producto', trackStock: true, cost: 10 }]
+      ))
+    });
+    const result = await splitOpenTableOrderCore(
+      makeParams(parentSale, { tickets, cloudSpecialFlows: true }),
+      deps
+    );
+
+    expect(result).toMatchObject({ success: false, errorType: 'TEST_CAPTURE' });
+    const cloudDefinitions = salesCloudCashierService.processCloudSplitTableSale.mock.calls.at(-1)[0].childDefinitions;
+    const mappedChildren = cloudDefinitions.map((child) => mapLocalCheckoutToCloudSale({
+      sale: child.sale,
+      processedItems: child.processedItems,
+      paymentData: child.paymentData,
+      total: child.sale.total
+    }));
+
+    expect(mappedChildren).toHaveLength(2);
+    expect(mappedChildren[0].items[0].id).not.toBe(mappedChildren[1].items[0].id);
+    expect(mappedChildren.map((child) => child.items[0].metadata.lineId)).toEqual(['line-parent-1', 'line-parent-1']);
+    expect(mappedChildren.map((child) => [child.items[0].product_id, child.items[0].quantity, child.items[0].unit_price])).toEqual([
+      ['product-1', 1, 30],
+      ['product-1', 1, 30]
+    ]);
+    expect(mappedChildren.reduce((sum, child) => sum + child.items[0].line_total, 0)).toBe(60);
+    expect(deps.executeSplitOpenTableOrderTransactionSafe).not.toHaveBeenCalled();
+  });
+
   it('hands off prorated percentage discounts as identical fixed amounts in Free/local and Pro/cloud', async () => {
     const lineAppliedAt = '2026-09-27T12:00:00.000Z';
     const saleAppliedAt = '2026-09-27T12:05:00.000Z';

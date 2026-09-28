@@ -208,8 +208,164 @@ describe('salesCloudMapper product and line identity', () => {
       items: [item]
     });
 
-    expect(cashierPayload.items[0]).toMatchObject({ id: 'line-1', product_id: 'product-1' });
+    expect(cashierPayload.items[0]).toMatchObject({ id: 'identity-sale-1:item:line-1:1', product_id: 'product-1' });
     expect(shadowPayload.items[0]).toMatchObject({ id: 'line-1', product_id: 'product-1' });
+  });
+
+  it('namespaces the same source line by child sale while preserving product and price', () => {
+    const parentLine = {
+      id: 'product-1',
+      productId: 'product-1',
+      lineId: 'line-parent-1',
+      name: 'Producto',
+      price: 30,
+      quantity: 1,
+      exactTotal: 30,
+      lineTotal: 30
+    };
+    const mapChild = (saleId) => mapLocalCheckoutToCloudSale({
+      sale: { id: saleId, timestamp: '2026-09-28T12:00:00.000Z', subtotal: 30, total: 30 },
+      processedItems: [parentLine],
+      paymentData: { paymentMethod: 'efectivo', amountPaid: 30 },
+      total: 30
+    });
+    const child1 = mapChild('sale_split_A');
+    const child2 = mapChild('sale_split_B');
+
+    expect(child1.items[0].id).not.toBe(child2.items[0].id);
+    expect(child1.items[0].metadata.lineId).toBe('line-parent-1');
+    expect(child2.items[0].metadata.lineId).toBe('line-parent-1');
+    expect([child1.items[0], child2.items[0]]).toEqual([
+      expect.objectContaining({ product_id: 'product-1', quantity: 1, unit_price: 30, line_total: 30 }),
+      expect.objectContaining({ product_id: 'product-1', quantity: 1, unit_price: 30, line_total: 30 })
+    ]);
+    expect(child1.items[0].line_total + child2.items[0].line_total).toBe(60);
+  });
+
+  it('keeps fractional quantities and unit price across distinct child sale IDs', () => {
+    const parentLine = {
+      id: 'product-fractional',
+      productId: 'product-fractional',
+      lineId: 'line-fractional',
+      name: 'Producto fraccionable',
+      price: 100,
+      quantity: 0.5,
+      exactTotal: 50,
+      lineTotal: 50
+    };
+    const child1 = mapLocalCheckoutToCloudSale({
+      sale: { id: 'sale-fraction-A', total: 50 }, processedItems: [parentLine],
+      paymentData: { paymentMethod: 'cash', amountPaid: 50 }, total: 50
+    });
+    const child2 = mapLocalCheckoutToCloudSale({
+      sale: { id: 'sale-fraction-B', total: 100 },
+      processedItems: [{ ...parentLine, quantity: 1, exactTotal: 100, lineTotal: 100 }],
+      paymentData: { paymentMethod: 'cash', amountPaid: 100 }, total: 100
+    });
+
+    expect(child1.items[0].id).not.toBe(child2.items[0].id);
+    expect(child1.items[0].metadata.lineId).toBe('line-fractional');
+    expect(child2.items[0].metadata.lineId).toBe('line-fractional');
+    expect([child1.items[0].quantity, child2.items[0].quantity]).toEqual([0.5, 1]);
+    expect([child1.items[0].unit_price, child2.items[0].unit_price]).toEqual([100, 100]);
+    expect(child1.items[0].line_total + child2.items[0].line_total).toBe(150);
+  });
+
+  it('keeps split percentage discounts materialized as traceable fixed amounts', () => {
+    const parentLine = {
+      id: 'product-discount', productId: 'product-discount', lineId: 'line-discount',
+      name: 'Producto con descuento', price: 50, quantity: 1, exactTotal: 50, lineTotal: 42.5,
+      discountAmount: 7.5,
+      discount: {
+        type: 'amount', value: 7.5, amount: 7.5, reason: 'Promoción 15%', scope: 'line',
+        splitParentDiscountType: 'percent', splitParentDiscountValue: 15, splitParentDiscountScope: 'line'
+      }
+    };
+    const child1 = mapLocalCheckoutToCloudSale({
+      sale: { id: 'sale-discount-A', total: 42.5 }, processedItems: [parentLine],
+      paymentData: { paymentMethod: 'cash', amountPaid: 42.5 }, total: 42.5
+    });
+    const child2 = mapLocalCheckoutToCloudSale({
+      sale: { id: 'sale-discount-B', total: 42.5 }, processedItems: [parentLine],
+      paymentData: { paymentMethod: 'cash', amountPaid: 42.5 }, total: 42.5
+    });
+
+    expect(child1.items[0].id).not.toBe(child2.items[0].id);
+    for (const child of [child1, child2]) {
+      expect(child.items[0]).toMatchObject({ product_id: 'product-discount', unit_price: 50, quantity: 1, discount_amount: 7.5, line_total: 42.5 });
+      expect(child.items[0].metadata.lineId).toBe('line-discount');
+      expect(child.items[0].discount).toMatchObject({
+        type: 'amount', value: 7.5, amount: 7.5, reason: 'Promoción 15%',
+        splitParentDiscountType: 'percent', splitParentDiscountValue: 15, splitParentDiscountScope: 'line'
+      });
+    }
+  });
+
+  it('uses the sale namespace and item ordinal when no line identity is available', () => {
+    const item = { id: 'product-1', productId: 'product-1', name: 'Producto', price: 30, quantity: 1, exactTotal: 30, lineTotal: 30 };
+    const mapChild = (saleId) => mapLocalCheckoutToCloudSale({
+      sale: { id: saleId, total: 30 }, processedItems: [item],
+      paymentData: { paymentMethod: 'cash', amountPaid: 30 }, total: 30
+    });
+    const childA = mapChild('sale-A');
+    const childB = mapChild('sale-B');
+
+    expect(childA.items[0].id).toBe('sale-A:item:index-1:1');
+    expect(childB.items[0].id).toBe('sale-B:item:index-1:1');
+    expect(childA.items[0].id).not.toBe(childB.items[0].id);
+    expect(childA.items[0].id).not.toBe('product-1:1');
+  });
+
+  it('preserves an item ID used as the source line without replacing product_id', () => {
+    const payload = mapLocalCheckoutToCloudSale({
+      sale: { id: 'sale-item-id-source', total: 30 },
+      processedItems: [{
+        id: 'local-line-from-item-id', productId: 'product-1',
+        name: 'Producto', price: 30, quantity: 1, exactTotal: 30, lineTotal: 30
+      }],
+      paymentData: { paymentMethod: 'cash', amountPaid: 30 },
+      total: 30
+    });
+
+    expect(payload.items[0]).toMatchObject({
+      id: 'sale-item-id-source:item:local-line-from-item-id:1',
+      product_id: 'product-1'
+    });
+    expect(payload.items[0].metadata).toMatchObject({ sourceLineId: 'local-line-from-item-id' });
+  });
+
+  it('keeps same-product lines distinct and returns stable IDs on retries', () => {
+    const sale = { id: 'sale-retry', total: 40 };
+    const processedItems = [
+      { id: 'product-1', productId: 'product-1', lineId: 'line-one', price: 20, quantity: 1, exactTotal: 20, lineTotal: 20 },
+      { id: 'product-1', productId: 'product-1', lineId: 'line-two', price: 20, quantity: 1, exactTotal: 20, lineTotal: 20 }
+    ];
+    const mapSale = () => mapLocalCheckoutToCloudSale({
+      sale, processedItems, paymentData: { paymentMethod: 'cash', amountPaid: 40 }, total: 40
+    });
+    const firstAttempt = mapSale();
+    const retry = mapSale();
+
+    expect(firstAttempt.items[0].id).not.toBe(firstAttempt.items[1].id);
+    expect(retry.items.map((item) => item.id)).toEqual(firstAttempt.items.map((item) => item.id));
+  });
+
+  it('preserves all source line aliases and applies the sale namespace to credit items', () => {
+    const payload = mapLocalCreditCheckoutToCloudSale({
+      sale: { id: 'sale-credit-identity', total: 60 },
+      processedItems: [{
+        id: 'product-credit', productId: 'product-credit', lineId: 'line-credit',
+        cartLineId: 'cart-line-credit', local_line_id: 'local-line-credit',
+        price: 60, quantity: 1, exactTotal: 60, lineTotal: 60
+      }],
+      paymentData: { customerId: 'customer-1', amountPaid: 0, saldoPendiente: 60 },
+      total: 60
+    });
+
+    expect(payload.items[0].id).toBe('sale-credit-identity:item:line-credit:1');
+    expect(payload.items[0].metadata).toMatchObject({
+      lineId: 'line-credit', cartLineId: 'cart-line-credit', localLineId: 'local-line-credit'
+    });
   });
 });
 
