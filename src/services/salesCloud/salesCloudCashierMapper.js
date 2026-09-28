@@ -20,6 +20,44 @@ const compactObject = (value = {}) => Object.fromEntries(Object.entries(value).f
 const firstValue = (...values) => values.find((value) => !isMissingNumber(value));
 const firstText = (...values) => values.map((value) => String(value ?? '').trim()).find(Boolean) || null;
 
+const getExplicitSourceLineId = (item = {}) => firstText(
+    item.lineId,
+    item.cartLineId,
+    item.localLineId,
+    item.local_line_id,
+    item.sourceLineId,
+    item.source_line_id,
+    item.metadata?.lineId,
+    item.metadata?.cartLineId,
+    item.metadata?.localLineId,
+    item.metadata?.local_line_id,
+    item.metadata?.sourceLineId,
+    item.metadata?.source_line_id
+  );
+
+const getSourceLineId = (item = {}) => {
+  const explicitLineId = getExplicitSourceLineId(item);
+  if (explicitLineId) return explicitLineId;
+
+  const itemId = firstText(item.id);
+  const productId = firstText(item.productId, item.parentId, item.id);
+  return itemId && itemId !== productId ? itemId : null;
+};
+
+const buildCloudSaleItemId = ({ saleId, item, index }) => {
+  const sourceLineId = getSourceLineId(item);
+  const ordinal = index + 1;
+  const saleNamespace = firstText(saleId);
+
+  if (!saleNamespace) {
+    const legacyIdentity = sourceLineId || firstText(item.productId, item.parentId, item.id);
+    return legacyIdentity ? `${legacyIdentity}:${ordinal}` : null;
+  }
+
+  const lineIdentity = sourceLineId ? encodeURIComponent(sourceLineId) : `index-${ordinal}`;
+  return `${saleNamespace}:item:${lineIdentity}:${ordinal}`;
+};
+
 const getSaleTraceability = (sale = {}) => {
   const ecommerceOrderId = firstText(
     sale.ecommerceOrderId,
@@ -139,7 +177,7 @@ const mapItem = (item = {}, index = 0, options = {}) => {
   const splitRoundingAdjustment = item.splitRoundingAdjustment ?? item.split_rounding_adjustment;
 
   return compactObject({
-    id: firstText(item.lineId, item.cartLineId) || (productId ? `${productId}:${index + 1}` : null),
+    id: buildCloudSaleItemId({ saleId: options.saleId, item, index }),
     product_id: productId,
     product_name: firstText(item.name, item.productName) || 'Producto',
     product_sku: firstText(item.sku, item.productSku),
@@ -149,6 +187,7 @@ const mapItem = (item = {}, index = 0, options = {}) => {
     quantity: toNumber(item.quantity, 0),
     unit_price: toNumber(splitBasePrice ?? item.price ?? item.unitPrice, 0),
     unit_cost: toNullableNumber(firstValue(item.cost, item.unitCost)),
+    discount: discount || undefined,
     discount_amount: discountAmount,
     tax_amount: toNumber(item.taxAmount ?? item.tax, 0),
     line_subtotal: lineSubtotal,
@@ -159,10 +198,12 @@ const mapItem = (item = {}, index = 0, options = {}) => {
     batch_expiry_date: explicitBatchId ? firstText(item.batchExpiryDate, item.expiryDate) : undefined,
     rubro: firstText(item.rubro, item.categoryName, item.category),
     metadata: compactObject({
-      parentId: item.parentId || null,
+      parentId: firstText(item.parentId, item.metadata?.parentId) || null,
       productIdSource,
-      lineId: item.lineId || null,
-      cartLineId: item.cartLineId || null,
+      lineId: firstText(item.lineId, item.metadata?.lineId) || null,
+      cartLineId: firstText(item.cartLineId, item.metadata?.cartLineId) || null,
+      localLineId: firstText(item.localLineId, item.local_line_id, item.metadata?.localLineId, item.metadata?.local_line_id) || null,
+      sourceLineId: getExplicitSourceLineId(item) ? undefined : getSourceLineId(item) || undefined,
       selectedModifiers: selectedModifiers.length > 0 ? selectedModifiers : undefined,
       batchesUsed: explicitBatchesUsed ?? undefined,
       stockDeducted: item.stockDeducted ?? null,
@@ -342,7 +383,7 @@ export const mapLocalCheckoutToCloudSale = ({ sale = {}, processedItems = [], pa
   const discountTotal = getSaleDiscountTotal(sale, paymentData, processedItems);
   const traceability = getSaleTraceability(sale);
 
-  const itemMapOptions = { allowLocalBatches: !inventoryEnabled };
+  const itemMapOptions = { allowLocalBatches: !inventoryEnabled, saleId: sale.id };
   const payments = extractPayments({
     ...sale,
     ...paymentData,
@@ -439,7 +480,7 @@ export const mapLocalCreditCheckoutToCloudSale = ({ sale = {}, processedItems = 
     metadata: buildSaleMetadata({ sale, paymentData, discount, discountTotal, inventoryEnabled, credit: true, origin: 'cloud_credit_checkout', phase: 'fase6d_cloud_sales_credit_ledger' })
   });
 
-  return { sale: cloudSale, items: (Array.isArray(processedItems) ? processedItems : []).map((item, index) => mapItem(item, index, { allowLocalBatches: !inventoryEnabled })), payments: extractInitialCreditPayments({ sale, paymentData, amountPaid }), customerId, idempotencyKey: `sales.cloud_credit:${sale.id}` };
+  return { sale: cloudSale, items: (Array.isArray(processedItems) ? processedItems : []).map((item, index) => mapItem(item, index, { allowLocalBatches: !inventoryEnabled, saleId: sale.id })), payments: extractInitialCreditPayments({ sale, paymentData, amountPaid }), customerId, idempotencyKey: `sales.cloud_credit:${sale.id}` };
 };
 
 export default {

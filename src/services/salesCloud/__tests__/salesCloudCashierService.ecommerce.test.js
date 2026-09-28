@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   createCloudCashierSale: vi.fn(),
   createCloudCashierInventorySale: vi.fn(),
   createCloudCreditSale: vi.fn(),
+  createCloudSplitTableSale: vi.fn(),
   executeFinancialOperation: vi.fn(),
   markProjectionApplied: vi.fn(),
   markProjectionFailed: vi.fn(),
@@ -102,6 +103,14 @@ vi.mock('../../auth/actorRuntimeController', () => ({
     subscribe: () => () => {}
   }
 }));
+vi.mock('../../cash/cashRepository', () => ({
+  cashRepository: {
+    getCurrentCashSession: vi.fn(async () => ({
+      success: true,
+      cashSession: { id: 'cash-session-1', estado: 'abierta' }
+    }))
+  }
+}));
 vi.mock('../../financial/financialIntentLedger', () => ({
   markFinancialIntentProjectionApplied: (...args) => mocks.markProjectionApplied(...args),
   markFinancialIntentProjectionFailed: (...args) => mocks.markProjectionFailed(...args)
@@ -112,7 +121,8 @@ vi.mock('../salesCloudRepository', () => ({
     pullSalesSnapshot: (...args) => mocks.pullSalesSnapshot(...args),
     createCloudCashierSale: (...args) => mocks.createCloudCashierSale(...args),
     createCloudCashierInventorySale: (...args) => mocks.createCloudCashierInventorySale(...args),
-    createCloudCreditSale: (...args) => mocks.createCloudCreditSale(...args)
+    createCloudCreditSale: (...args) => mocks.createCloudCreditSale(...args),
+    createCloudSplitTableSale: (...args) => mocks.createCloudSplitTableSale(...args)
   }
 }));
 vi.mock('../salesCloudLocalRepository', () => ({
@@ -137,6 +147,10 @@ beforeEach(() => {
   mocks.markProjectionApplied.mockResolvedValue(undefined);
   mocks.markProjectionFailed.mockResolvedValue(undefined);
   mocks.pullCatalogChanges.mockResolvedValue(undefined);
+  mocks.createCloudSplitTableSale.mockResolvedValue({
+    success: true,
+    projection: { outcome: 'projection_applied', result: { localSales: [{ id: 'child-a' }, { id: 'child-b' }] } }
+  });
   Object.defineProperty(globalThis, 'navigator', {
     configurable: true,
     value: { onLine: true }
@@ -186,6 +200,58 @@ const projectResponse = async (options, response, operationType = 'sale.cashier_
 };
 
 describe('salesCloudCashierService ecommerce idempotency', () => {
+  it('requires a preflight version and forwards the exact timestamp to the split RPC', async () => {
+    const childDefinitions = ['T1', 'T2'].map((label, index) => ({
+      label,
+      sale: { id: `child-${index}`, timestamp: '2026-09-28T16:00:00Z', status: 'closed', total: '30', items: [] },
+      processedItems: [],
+      paymentData: { paymentMethod: 'cash', amountPaid: '30' }
+    }));
+    const exactVersion = '2026-09-28T16:05:05.123456789Z';
+
+    await expect(salesCloudCashierService.processCloudSplitTableSale({
+      parentOrderId: 'parent-1', splitGroupId: 'split-1', childDefinitions, total: '60'
+    })).rejects.toThrow('No se pudo verificar la versión cloud actual de la mesa. Actualiza la mesa antes de cobrar.');
+    expect(mocks.createCloudSplitTableSale).not.toHaveBeenCalled();
+
+    const result = await salesCloudCashierService.processCloudSplitTableSale({
+      parentOrderId: 'parent-1',
+      parentExpectedVersion: exactVersion,
+      splitGroupId: 'split-1',
+      childDefinitions,
+      total: '60'
+    });
+
+    expect(result).toMatchObject({ success: true, childSaleIds: ['child-a', 'child-b'] });
+    const request = mocks.createCloudSplitTableSale.mock.calls[0][0];
+    expect(request.split.parent_order_version).toBe(exactVersion);
+    expect(request.idempotencyKey).toBe('sales.cloud_split:split-1');
+    expect(mocks.createCloudSplitTableSale).toHaveBeenCalledOnce();
+  });
+
+  it('surfaces a server version race safely without dispatching a second split', async () => {
+    const childDefinitions = ['T1', 'T2'].map((label, index) => ({
+      label,
+      sale: { id: `child-${index}`, timestamp: '2026-09-28T16:00:00Z', status: 'closed', total: '30', items: [] },
+      processedItems: [],
+      paymentData: { paymentMethod: 'cash', amountPaid: '30' }
+    }));
+    mocks.createCloudSplitTableSale.mockResolvedValueOnce({
+      success: false,
+      code: 'RESTAURANT_ORDER_VERSION_CONFLICT'
+    });
+
+    await expect(salesCloudCashierService.processCloudSplitTableSale({
+      parentOrderId: 'parent-1',
+      parentExpectedVersion: '2026-09-28T16:05:05.123456Z',
+      splitGroupId: 'split-1',
+      childDefinitions,
+      total: '60'
+    })).rejects.toThrow('La mesa cambió en otro dispositivo. Actualiza la mesa y vuelve a dividirla para proteger el cobro.');
+
+    expect(mocks.createCloudSplitTableSale).toHaveBeenCalledOnce();
+  });
+
   it('routes Local/Free feature-disabled licenses to the local checkout path', async () => {
     mocks.cloudCashierEnabled = false;
 

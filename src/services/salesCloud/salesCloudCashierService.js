@@ -297,6 +297,7 @@ const friendlyCloudCashierError = (error) => {
     RESTAURANT_ORDER_NOT_FOUND: 'No se encontró la comanda cloud de la mesa. Actualiza las mesas antes de cobrar.',
     RESTAURANT_ORDER_ALREADY_PAID: 'La comanda de esta mesa ya fue cobrada en otro dispositivo. Actualiza las mesas.',
     RESTAURANT_ORDER_ALREADY_CANCELLED: 'La comanda de esta mesa ya fue cerrada o cancelada. Actualiza las mesas.',
+    RESTAURANT_ORDER_PREFLIGHT_REQUIRED: 'No se pudo verificar la versión cloud actual de la mesa. Actualiza la mesa antes de cobrar.',
     RESTAURANT_SPLIT_TOTAL_MISMATCH: 'El total de los tickets no coincide con el total vigente de la comanda. Actualiza la mesa y vuelve a dividir.',
     RESTAURANT_ORDER_VERSION_CONFLICT: 'La mesa cambió en otro dispositivo. Actualiza la mesa y vuelve a dividirla para proteger el cobro.',
     SPLIT_ROUNDING_INVALID: 'El reparto cloud solo admite diferencias de centavos. Usa reparto manual o ajusta los productos antes de cobrar.',
@@ -853,6 +854,9 @@ export const salesCloudCashierService = {
     if (!parentOrderId || !splitGroupId || !Array.isArray(childDefinitions) || childDefinitions.length < 2) {
       throw friendlyCloudCashierError(new Error('FINANCIAL_SPLIT_CONTRACT_INVALID'));
     }
+    if (typeof parentExpectedVersion !== 'string' || !parentExpectedVersion.trim()) {
+      throw friendlyCloudCashierError(new Error('RESTAURANT_ORDER_PREFLIGHT_REQUIRED'));
+    }
 
     const actorHandle = actorRuntimeController.capture();
 
@@ -913,7 +917,7 @@ export const salesCloudCashierService = {
 
       const request = {
         parent_order_id: parentOrderId,
-        parent_order_version: parentExpectedVersion || null,
+        parent_order_version: parentExpectedVersion,
         split_group_id: splitGroupId,
         cash_session_id: resolvedCashSessionId,
         children

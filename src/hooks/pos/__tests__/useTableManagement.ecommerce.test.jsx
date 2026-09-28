@@ -13,7 +13,12 @@ const mocks = vi.hoisted(() => ({
   cloudUpsert: vi.fn(),
   closeCloudAfterSplit: vi.fn(),
   dbGet: vi.fn(),
-  dbUpdate: vi.fn()
+  dbUpdate: vi.fn(),
+  canUseCloudSplitTableSale: vi.fn(),
+  cashGetCurrentSession: vi.fn(),
+  cashRegisterMovement: vi.fn(),
+  licenseKey: 'license-key',
+  cloudEnabled: true
 }));
 
 vi.mock('../../../store/useAppStore', () => ({
@@ -74,8 +79,8 @@ vi.mock('../../../services/restaurant/restaurantOrderReconciliation', () => ({
 }));
 
 vi.mock('../../../services/sync/syncConstants', () => ({
-  getLicenseKeyFromDetails: () => 'license-key',
-  isRestaurantOrdersCloudEnabled: () => true,
+  getLicenseKeyFromDetails: () => mocks.licenseKey,
+  isRestaurantOrdersCloudEnabled: () => mocks.cloudEnabled,
   SYNC_ENTITY_TYPES: {
     CUSTOMER: 'customer',
     CUSTOMER_LEDGER: 'customer_ledger',
@@ -146,6 +151,19 @@ vi.mock('../../../services/restaurant/restaurantOrderCheckoutClose', () => ({
   closeRestaurantCloudOrderAfterSuccessfulSplitPayment: mocks.closeCloudAfterSplit
 }));
 
+vi.mock('../../../services/salesCloud/salesCloudCashierService', () => ({
+  salesCloudCashierService: {
+    canUseCloudSplitTableSale: mocks.canUseCloudSplitTableSale
+  }
+}));
+
+vi.mock('../../../services/cash/cashRepository', () => ({
+  cashRepository: {
+    getCurrentCashSession: mocks.cashGetCurrentSession,
+    registerMovement: mocks.cashRegisterMovement
+  }
+}));
+
 import { useTableManagement } from '../useTableManagement';
 import { ECOMMERCE_POS_CHECKOUT_NOT_ENABLED } from '../../../services/ecommerce/ecommercePosDraftGuards';
 
@@ -196,6 +214,15 @@ beforeEach(() => {
   mocks.splitOpenTableOrder.mockResolvedValue({ success: true, total: 20 });
   mocks.dbGet.mockResolvedValue(null);
   mocks.dbUpdate.mockResolvedValue(1);
+  mocks.licenseKey = 'license-key';
+  mocks.cloudEnabled = true;
+  mocks.canUseCloudSplitTableSale.mockResolvedValue(true);
+  mocks.cashGetCurrentSession.mockResolvedValue({
+    success: true,
+    cashSession: { id: 'cloud-session', estado: 'abierta' },
+    readOnly: false,
+    stateKnown: true
+  });
 });
 
 describe('useTableManagement ecommerce guard', () => {
@@ -286,5 +313,74 @@ describe('useTableManagement ecommerce guard', () => {
 
     expect(mocks.cloudStatus).toHaveBeenCalledTimes(1);
     expect(deps.openModal).toHaveBeenCalledWith('split');
+  });
+
+  it.each([
+    { label: 'Free/local 100% fiado', cloud: false, methods: ['fiado', 'fiado'] },
+    { label: 'Pro/cloud 100% fiado', cloud: true, methods: ['fiado', 'fiado'] },
+    { label: '100% efectivo', cloud: false, methods: ['efectivo', 'efectivo'] },
+    { label: 'split mixto efectivo/fiado', cloud: true, methods: ['efectivo', 'fiado'] }
+  ])('ensures one session for $label when caja is closed', async ({ cloud, methods }) => {
+    setActiveOrder(undefined);
+    mocks.licenseKey = cloud ? 'license-key' : null;
+    mocks.cloudEnabled = cloud;
+    const deps = {
+      ...makeDeps(),
+      cajaActual: { estado: 'cerrada' },
+      asegurarCajaAbierta: vi.fn().mockResolvedValue({ id: 'opened-session' })
+    };
+    const { result } = renderHook(() => useTableManagement(deps));
+
+    let response;
+    await act(async () => {
+      response = await result.current.handleConfirmSplitBill({
+        splitIntent: 'by_items',
+        tickets: methods.map((paymentMethod, index) => ({
+          label: `T${index + 1}`,
+          paymentData: { paymentMethod, amountPaid: '0', customerId: paymentMethod === 'fiado' ? 'cust-1' : null },
+          lines: [{ lineIndex: index, quantity: 1 }]
+        }))
+      });
+    });
+
+    expect(response.success).toBe(true);
+    expect(deps.asegurarCajaAbierta).toHaveBeenCalledTimes(1);
+    expect(mocks.cashRegisterMovement).not.toHaveBeenCalled();
+    expect(mocks.splitOpenTableOrder).toHaveBeenCalledTimes(1);
+    if (cloud) {
+      expect(mocks.canUseCloudSplitTableSale).toHaveBeenCalledTimes(1);
+      expect(mocks.cashGetCurrentSession).toHaveBeenCalledTimes(1);
+      expect(mocks.splitOpenTableOrder.mock.calls[0][0]).toMatchObject({
+        cloudSpecialFlows: true,
+        cashSessionId: 'cloud-session'
+      });
+    } else {
+      expect(mocks.canUseCloudSplitTableSale).not.toHaveBeenCalled();
+    }
+  });
+
+  it('does not ensure another session when caja is already open, and fiado stays non-cash', async () => {
+    setActiveOrder(undefined);
+    const deps = {
+      ...makeDeps(),
+      cajaActual: { id: 'existing-session', estado: 'abierta' },
+      asegurarCajaAbierta: vi.fn()
+    };
+    const { result } = renderHook(() => useTableManagement(deps));
+
+    let response;
+    await act(async () => {
+      response = await result.current.handleConfirmSplitBill({
+        splitIntent: 'by_items',
+        tickets: [
+          { label: 'T1', paymentData: { paymentMethod: 'fiado', customerId: 'cust-1', amountPaid: '0' }, lines: [{ lineIndex: 0, quantity: 1 }] },
+          { label: 'T2', paymentData: { paymentMethod: 'fiado', customerId: 'cust-1', amountPaid: '0' }, lines: [{ lineIndex: 1, quantity: 1 }] }
+        ]
+      });
+    });
+
+    expect(response.success).toBe(true);
+    expect(deps.asegurarCajaAbierta).not.toHaveBeenCalled();
+    expect(mocks.cashRegisterMovement).not.toHaveBeenCalled();
   });
 });
