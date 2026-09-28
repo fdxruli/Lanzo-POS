@@ -1,4 +1,5 @@
 import { LIA_IDENTITY, createLiaIdentityAnswer } from './liaIdentity.js';
+import { validateCompetitiveEvidence } from './competitiveAnalysis.js';
 
 const normalizeQuestion = (value) => String(value || '')
   .toLowerCase()
@@ -257,16 +258,35 @@ export const resolveCommercialIntent = (question = '', options = {}) => {
     return resolution('out_of_scope', { reason: 'module', topic: 'module' });
   }
 
-  if (containsAny(text, /\b(?:competencia|competencias|competidor(?:es)?|rivales?)\b/u)) {
-    return resolution('recognized_not_supported', { topic: 'competition', confidence: 'high' });
-  }
-
   const parsedScenario = inferCommercialScenarioFromQuestion(question);
   if (parsedScenario.intent === 'what_if_analysis' || parsedScenario.intent === 'goal_simulation') {
     return supported(parsedScenario.intent, {
       ...optionValues,
       question,
       scenario: { ...parsedScenario.scenario, ...(optionValues.scenario && typeof optionValues.scenario === 'object' ? optionValues.scenario : {}) }
+    });
+  }
+
+  const competitiveQuestion = containsAny(text, /\b(?:competencia|competencias|competidor(?:es)?|rivales?|competitiv[oa]s?)\b/u)
+    || containsAny(text, /\b(?:frente a|comparar con|compara con)\s+(?:otro\s+)?negocio\b/u);
+  if (competitiveQuestion) {
+    const evidenceValidation = validateCompetitiveEvidence(options?.competitiveEvidence);
+    if (!evidenceValidation.valid) {
+      return resolution('needs_context', {
+        topic: 'competition',
+        intent: 'competitive_analysis',
+        confidence: 'high',
+        requiresData: false,
+        requiresProvider: false,
+        missingContext: ['competitorEvidence']
+      });
+    }
+    return resolution('supported', {
+      intent: 'competitive_analysis',
+      topic: 'competition',
+      confidence: 'high',
+      requiresData: true,
+      requiresProvider: false
     });
   }
 
@@ -363,7 +383,11 @@ export const getCommercialResolutionMessage = (value = {}) => {
   if (kind === 'identity') return createLiaIdentityAnswer(topic);
 
   if (kind === 'recognized_not_supported' && topic === 'competition') {
-    return 'Entiendo que quieres analizar a tu competencia. Lanzo todavía no dispone de información externa suficiente sobre tus competidores para hacer una comparación confiable. Por ahora puedo ayudarte a analizar el desempeño interno de tu negocio con los datos disponibles.';
+    return 'Puedo ayudarte a comparar tu negocio con la competencia. Para hacerlo necesito información del competidor, como productos, precios, servicios o alguna referencia pública. Puedes agregar esos datos aquí. Una URL queda como referencia; Lanzo no consulta automáticamente su contenido.';
+  }
+
+  if (kind === 'needs_context' && value.topic === 'competition') {
+    return 'Puedo ayudarte a comparar tu negocio con la competencia. Agrega uno o más productos, precios o servicios observados, junto con la fecha y procedencia. Una URL queda como referencia; Lanzo no consulta automáticamente su contenido.';
   }
 
   if (kind === 'recognized_not_supported' && topic === 'assortment') {

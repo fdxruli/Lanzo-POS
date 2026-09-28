@@ -1,4 +1,5 @@
 import { normalizeCommercialAINarrativeDiagnosticCode } from './commercialAgentContract';
+import { sanitizePublicHttpUrl, validateCompetitiveEvidence } from './competitiveAnalysis';
 
 const REPORT_SCHEMA_VERSION = 'sales-profitability-report-v2';
 const VALID_STATUSES = new Set(['completed', 'incomplete', 'insufficient_data', 'out_of_scope', 'not_ready', 'local_answer']);
@@ -30,7 +31,7 @@ const VALID_RESOLUTION_TOPICS = new Set([
   'unrelated',
   'module'
 ]);
-const VALID_CONTEXT_SLOTS = new Set(['question', 'objective', 'productName', 'newPrice']);
+const VALID_CONTEXT_SLOTS = new Set(['question', 'objective', 'productName', 'newPrice', 'competitorEvidence']);
 const UUID_PATTERN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/giu;
 const EMAIL_PATTERN = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/giu;
 const PHONE_PATTERN = /\+?\d(?:[\s().-]*\d){9,14}\b/gu;
@@ -160,6 +161,11 @@ const safeCoverage = (coverage) => {
     growthDataComplete: safeBoolean(source.growthDataComplete),
     strategyEvidenceAvailable: safeBoolean(source.strategyEvidenceAvailable),
     strategyCatalogComplete: safeBoolean(source.strategyCatalogComplete),
+    competitorCount: finiteNumber(source.competitorCount),
+    observationCount: finiteNumber(source.observationCount),
+    comparablePriceCount: finiteNumber(source.comparablePriceCount),
+    catalogComplete: safeBoolean(source.catalogComplete),
+    verifiedExternalSources: finiteNumber(source.verifiedExternalSources),
     sourcePolicy: {
       excludedSources: finiteNumber(source.sourcePolicy?.excludedSources),
       excludedStatuses: finiteNumber(source.sourcePolicy?.excludedStatuses),
@@ -715,6 +721,152 @@ const safeAssortment = (value) => {
   };
 };
 
+const safeExternalSource = (value) => {
+  const source = asRecord(value);
+  const publicUrl = sanitizePublicHttpUrl(source.url);
+  return {
+    type: ['manual', 'public_url', 'copied_text', 'user_observation'].includes(source.type) ? source.type : 'manual',
+    label: sanitizeText(source.label, 160) || null,
+    url: publicUrl.valid ? publicUrl.url : null,
+    text: sanitizeText(source.text, 3000) || null,
+    evidenceType: 'user_provided',
+    verified: false
+  };
+};
+
+const safeCompetitiveAnalysis = (value) => {
+  const source = asRecord(value);
+  if (!Object.keys(source).length) return null;
+  const validation = validateCompetitiveEvidence({
+    capturedAt: source.capturedAt,
+    competitors: source.competitors
+  });
+  if (!validation.valid) return null;
+  const safeCompetitors = validation.evidence.competitors.map((competitor) => ({
+    ...competitor,
+    name: sanitizeText(competitor.name, 100),
+    description: sanitizeText(competitor.description, 600) || null,
+    location: sanitizeText(competitor.location, 160) || null,
+    source: safeExternalSource(competitor.source),
+    observations: competitor.observations.map((item) => ({
+      ...item,
+      name: sanitizeText(item.name, 120),
+      description: sanitizeText(item.description, 600) || null,
+      category: sanitizeText(item.category, 100) || null,
+      promotion: sanitizeText(item.promotion, 300) || null,
+      note: sanitizeText(item.note, 600) || null
+    }))
+  }));
+  const safeOffer = (value) => {
+    const row = asRecord(value);
+    return {
+      competitorName: sanitizeText(row.competitorName, 100),
+      observedAt: /^\d{4}-\d{2}-\d{2}$/u.test(String(row.observedAt || '')) ? row.observedAt : null,
+      source: safeExternalSource(row.source),
+      type: ['product', 'service'].includes(row.type) ? row.type : 'product',
+      name: sanitizeText(row.name, 120),
+      description: sanitizeText(row.description, 600) || null,
+      category: sanitizeText(row.category, 100) || null,
+      price: finiteNumber(row.price),
+      currency: /^[A-Z]{3}$/u.test(String(row.currency || '')) ? row.currency : null,
+      unit: sanitizeText(row.unit, 80) || null,
+      priceType: ['regular', 'promotion', 'unknown'].includes(row.priceType) ? row.priceType : 'unknown',
+      promotion: sanitizeText(row.promotion, 300) || null,
+      taxStatus: ['included', 'excluded', 'unknown'].includes(row.taxStatus) ? row.taxStatus : 'unknown',
+      shippingStatus: ['included', 'excluded', 'not_applicable', 'unknown'].includes(row.shippingStatus) ? row.shippingStatus : 'unknown',
+      note: sanitizeText(row.note, 600) || null,
+      evidenceKey: /^external\.observation:\d+$/u.test(String(row.evidenceKey || '')) ? row.evidenceKey : null
+    };
+  };
+  const internal = asRecord(source.internalBusiness);
+  const offer = asRecord(source.offerComparison);
+  const sourceCapturedAt = typeof source.capturedAt === 'string' && !Number.isNaN(Date.parse(source.capturedAt))
+    ? new Date(source.capturedAt).toISOString()
+    : validation.evidence.capturedAt;
+  return {
+    status: 'completed',
+    evidenceType: 'user_provided',
+    verified: false,
+    capturedAt: sourceCapturedAt,
+    competitors: safeCompetitors,
+    internalBusiness: {
+      source: 'local_tenant_catalog',
+      catalogComplete: safeBoolean(internal.catalogComplete),
+      currency: /^[A-Z]{3}$/u.test(String(internal.currency || '')) ? internal.currency : null,
+      activeProductCount: finiteNumber(internal.activeProductCount),
+      activeCategoryCount: finiteNumber(internal.activeCategoryCount),
+      categories: safeTextArray(internal.categories, 100, 100)
+    },
+    priceComparisons: (Array.isArray(source.priceComparisons) ? source.priceComparisons : []).slice(0, 100).map((value) => {
+      const row = asRecord(value);
+      const url = sanitizePublicHttpUrl(row.source?.url);
+      return {
+        competitorName: sanitizeText(row.competitorName, 100),
+        observedAt: /^\d{4}-\d{2}-\d{2}$/u.test(String(row.observedAt || '')) ? row.observedAt : null,
+        source: { ...safeExternalSource(row.source), url: url.valid ? url.url : null },
+        productName: sanitizeText(row.productName, 120),
+        ownProductName: sanitizeText(row.ownProductName, 120) || null,
+        ownPrice: finiteNumber(row.ownPrice),
+        ownCurrency: /^[A-Z]{3}$/u.test(String(row.ownCurrency || '')) ? row.ownCurrency : null,
+        ownUnit: sanitizeText(row.ownUnit, 80) || null,
+        externalPrice: finiteNumber(row.externalPrice),
+        externalCurrency: /^[A-Z]{3}$/u.test(String(row.externalCurrency || '')) ? row.externalCurrency : null,
+        externalUnit: sanitizeText(row.externalUnit, 80) || null,
+        externalPriceType: ['regular', 'promotion', 'unknown'].includes(row.externalPriceType) ? row.externalPriceType : 'unknown',
+        ownTaxStatus: ['included', 'excluded', 'unknown'].includes(row.ownTaxStatus) ? row.ownTaxStatus : 'unknown',
+        comparisonStatus: ['comparable', 'comparable_with_conditions', 'not_comparable'].includes(row.comparisonStatus) ? row.comparisonStatus : 'not_comparable',
+        reason: sanitizeText(row.reason, 80) || null,
+        difference: finiteNumber(row.difference),
+        differencePercent: finiteNumber(row.differencePercent),
+        normalizedOwnPrice: finiteNumber(row.normalizedOwnPrice),
+        normalizedExternalPrice: finiteNumber(row.normalizedExternalPrice),
+        basis: ['ml', 'g', 'pza'].includes(row.basis) ? row.basis : null,
+        normalizedPresentation: safeBoolean(row.normalizedPresentation),
+        taxStatus: ['included', 'excluded', 'unknown'].includes(row.taxStatus) ? row.taxStatus : 'unknown',
+        shippingStatus: ['included', 'excluded', 'not_applicable', 'unknown'].includes(row.shippingStatus) ? row.shippingStatus : 'unknown',
+        conditionNotes: safeTextArray(row.conditionNotes, 4, 160),
+        evidenceKeys: safeTextArray(row.evidenceKeys, 4, 100).filter((key) => /^(?:external\.observation|internal\.product|comparison\.price):\d+$/u.test(key))
+      };
+    }),
+    offerComparison: {
+      observedFromCompetitor: (Array.isArray(offer.observedFromCompetitor) ? offer.observedFromCompetitor : []).slice(0, 100).map(safeOffer),
+      observedObservationCount: finiteNumber(offer.observedObservationCount),
+      observedButNotMatchedToOwnCatalog: (Array.isArray(offer.observedButNotMatchedToOwnCatalog) ? offer.observedButNotMatchedToOwnCatalog : []).slice(0, 100).map(safeOffer),
+      observedButNotMatchedCount: finiteNumber(offer.observedButNotMatchedCount),
+      ownProductsNotFoundInCapturedEvidence: (Array.isArray(offer.ownProductsNotFoundInCapturedEvidence) ? offer.ownProductsNotFoundInCapturedEvidence : []).slice(0, 100).map((row) => ({
+        name: sanitizeText(row?.name, 120), category: sanitizeText(row?.category, 100) || null,
+        price: finiteNumber(row?.price), currency: /^[A-Z]{3}$/u.test(String(row?.currency || '')) ? row.currency : null,
+        unit: sanitizeText(row?.unit, 80) || null
+      })),
+      ownProductsNotFoundInCapturedEvidenceCount: finiteNumber(offer.ownProductsNotFoundInCapturedEvidenceCount),
+      ownProductsNotFoundInCapturedEvidenceTruncated: safeBoolean(offer.ownProductsNotFoundInCapturedEvidenceTruncated),
+      catalogComplete: safeBoolean(offer.catalogComplete),
+      observedCategories: safeTextArray(offer.observedCategories, 100, 100),
+      businessCategories: safeTextArray(offer.businessCategories, 100, 100),
+      sharedCategories: safeTextArray(offer.sharedCategories, 100, 100),
+      observedCategoriesNotInBusinessCatalog: safeTextArray(offer.observedCategoriesNotInBusinessCatalog, 100, 100),
+      categoryComparisonAvailable: safeBoolean(offer.categoryComparisonAvailable)
+    },
+    recommendations: (Array.isArray(source.recommendations) ? source.recommendations : []).slice(0, 3).map((row) => ({
+      key: sanitizeText(row?.key, 64),
+      type: 'investigation',
+      title: sanitizeText(row?.title, 160),
+      explanation: sanitizeText(row?.explanation, 600),
+      expectedImpact: sanitizeText(row?.expectedImpact, 300),
+      priority: ['high', 'medium', 'low'].includes(row?.priority) ? row.priority : 'medium',
+      evidenceKeys: safeTextArray(row?.evidenceKeys, 4, 100).filter((key) => /^(?:external\.observation|internal\.product|comparison\.price):\d+$/u.test(key)),
+      requiresConfirmation: true
+    })),
+    limitations: safeTextArray(source.limitations, 12, 300),
+    staleCompetitors: safeTextArray(source.staleCompetitors, 5, 100),
+    executiveSummary: sanitizeText(source.executiveSummary, 1000),
+    answer: sanitizeText(source.answer, 1000),
+    explanation: sanitizeText(source.explanation, 1500),
+    confidence: safeConfidence(source.confidence),
+    evidenceWarnings: safeTextArray(source.evidenceWarnings, 20, 120)
+  };
+};
+
 export const buildSalesProfitabilityDownloadReport = (result, requestContext = {}, options = {}) => {
   const response = asRecord(result?.response);
   if (!Object.keys(response).length) return null;
@@ -756,7 +908,7 @@ export const buildSalesProfitabilityDownloadReport = (result, requestContext = {
     generatedAt: now.toISOString(),
     agent: {
       key: 'salesProfitability',
-      title: 'Ventas y rentabilidad'
+      title: (request.resolvedIntent ?? request.intent) === 'competitive_analysis' ? 'Análisis de competencia' : 'Ventas y rentabilidad'
     },
     request: {
       question: sanitizeText(request.question, 1200),
@@ -802,6 +954,7 @@ export const buildSalesProfitabilityDownloadReport = (result, requestContext = {
       whatIfSimulation: safeSimulationResult(response.whatIfSimulation, 'whatIf'),
       strategyRequested: response.strategyRequested === true,
       strategyCandidates: (Array.isArray(response.strategyCandidates) ? response.strategyCandidates : []).slice(0, 8).map(safeStrategyCandidate),
+      competitiveAnalysis: safeCompetitiveAnalysis(response.competitiveAnalysis),
       products: Array.isArray(current.products) ? current.products : [],
       channels: Array.isArray(current.channels) ? current.channels : [],
       calculations: (Array.isArray(response.calculations) ? response.calculations : []).slice(0, 80).map(safeCalculation),
@@ -871,6 +1024,7 @@ export const sanitizeSalesProfitabilityDownloadReport = (value) => {
       whatIfSimulation: deterministic.whatIfSimulation,
       strategyRequested: deterministic.strategyRequested,
       strategyCandidates: deterministic.strategyCandidates,
+      competitiveAnalysis: deterministic.competitiveAnalysis,
       calculations: deterministic.calculations,
       scenarios: deterministic.scenarios,
       recommendations: deterministic.recommendations,

@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { inferCommercialScenarioFromQuestion, resolveCommercialIntent } from '../commercialQuestionRouter';
 
+const competitiveEvidence = {
+  competitors: [{
+    name: 'Mercado Uno',
+    observedAt: '2026-09-28',
+    source: { type: 'manual' },
+    observations: [{ type: 'product', name: 'Café Sierra', price: 39, currency: 'MXN', unit: '500 ml', priceType: 'regular' }]
+  }]
+};
+
 describe('commercial question router: Lía sales growth', () => {
   it.each([
     ['Quiero vender 100000', { intent: 'goal_simulation', scenario: { goalType: 'revenue', targetValue: 100000 } }],
@@ -130,10 +139,11 @@ describe('commercial question router: Lía sales growth', () => {
     });
   });
 
-  it('keeps competition outside the provider-backed capabilities', () => {
+  it('asks for competitive evidence without loading internal data or calling a provider', () => {
     expect(resolveCommercialIntent('Ayúdame a analizar mi competencia')).toMatchObject({
-      kind: 'recognized_not_supported',
+      kind: 'needs_context',
       topic: 'competition',
+      intent: 'competitive_analysis',
       requiresProvider: false,
       requiresData: false
     });
@@ -152,5 +162,33 @@ describe('commercial question router: Lía sales growth', () => {
     const resolved = resolveCommercialIntent(question);
     expect(resolved.kind).toBe(kind);
     expect(kind === 'identity' ? resolved.topic : resolved.intent).toBe(value);
+  });
+});
+
+describe('commercial question router: competitive analysis', () => {
+  it.each([
+    'Ayúdame a analizar mi competencia',
+    '¿Cómo estoy frente a mi competencia?',
+    '¿Mis precios son competitivos?',
+    '¿Qué productos vende mi competencia?',
+    '¿Qué hace diferente mi competidor?'
+  ])('requests evidence before supporting %s', (question) => {
+    const result = resolveCommercialIntent(question);
+    expect(result).toMatchObject({ kind: 'needs_context', topic: 'competition', intent: 'competitive_analysis', requiresData: false, requiresProvider: false });
+  });
+
+  it('routes a competitive question to analysis once user evidence is present', () => {
+    expect(resolveCommercialIntent('¿Cómo están mis precios frente a este competidor?', { competitiveEvidence })).toMatchObject({
+      kind: 'supported', topic: 'competition', intent: 'competitive_analysis', requiresProvider: false
+    });
+  });
+
+  it('keeps growth, assortment and strategy questions on their existing intents', () => {
+    expect(resolveCommercialIntent('¿Qué debería priorizar para aumentar mis ventas?')).toMatchObject({ kind: 'supported', intent: 'commercial_strategy' });
+    expect(resolveCommercialIntent('¿Qué productos nuevos debería vender?')).toMatchObject({ kind: 'supported', intent: 'assortment_analysis' });
+    expect(resolveCommercialIntent('¿Qué precio necesito para un margen del 30%?')).toMatchObject({
+      kind: 'needs_context', intent: 'goal_simulation', missingContext: ['productName']
+    });
+    expect(resolveCommercialIntent('¿Qué pasa si vendo 25% más?')).toMatchObject({ kind: 'supported', intent: 'what_if_analysis' });
   });
 });

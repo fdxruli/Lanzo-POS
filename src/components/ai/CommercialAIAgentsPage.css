@@ -1219,6 +1219,120 @@
   background: transparent;
 }
 
+.commercial-ai-competitive-form {
+  display: grid;
+  gap: 0.9rem;
+  margin-top: 1rem;
+  padding: clamp(0.85rem, 2vw, 1.25rem);
+  border: 1px solid #bfdbfe;
+  border-radius: 0.9rem;
+  background: #f8fbff;
+}
+
+.commercial-ai-competitive-form__header,
+.commercial-ai-observations__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.commercial-ai-competitive-form__header h2,
+.commercial-ai-competitive-report h3 {
+  margin: 0.2rem 0 0;
+  color: #1e3a8a;
+  font-size: 1.05rem;
+}
+
+.commercial-ai-competitive-form__count {
+  color: #1d4ed8;
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.commercial-ai-competitive-list,
+.commercial-ai-observations {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.commercial-ai-competitor,
+.commercial-ai-observation {
+  min-width: 0;
+  margin: 0;
+  padding: 0.85rem;
+  border: 1px solid #dbeafe;
+  border-radius: 0.75rem;
+  background: #fff;
+}
+
+.commercial-ai-competitor > legend,
+.commercial-ai-observation > legend {
+  padding: 0 0.35rem;
+  color: #1e40af;
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.commercial-ai-competitive-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.commercial-ai-competitive-grid > * { min-width: 0; }
+.commercial-ai-competitive-grid__wide { grid-column: 1 / -1; }
+.commercial-ai-label span { color: #64748b; font-weight: 400; }
+
+.commercial-ai-observations {
+  margin-top: 1rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid #e2e8f0;
+}
+
+.commercial-ai-observations__header { align-items: flex-start; }
+.commercial-ai-observations__header h3 { margin: 0.25rem 0; font-size: 0.92rem; }
+
+.commercial-ai-secondary-button,
+.commercial-ai-competitive-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: 2.3rem;
+  padding: 0.4rem 0.65rem;
+  border: 1px solid #bfdbfe;
+  border-radius: 0.6rem;
+  color: #1d4ed8;
+  background: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.commercial-ai-secondary-button:disabled { opacity: 0.55; cursor: not-allowed; }
+.commercial-ai-competitive-remove { margin-top: 0.55rem; border-color: #fecaca; color: #b91c1c; }
+.commercial-ai-competitive-review { padding: 0.6rem 0.75rem; border: 1px solid #dbeafe; border-radius: 0.6rem; color: #334155; font-size: 0.82rem; }
+.commercial-ai-competitive-review summary { cursor: pointer; font-weight: 700; }
+.commercial-ai-competitive-review ul { display: grid; gap: 0.35rem; margin: 0.65rem 0; padding-left: 1.1rem; }
+.commercial-ai-competitive-review small { color: #64748b; }
+
+.commercial-ai-competitive-report { display: grid; gap: 1rem; }
+.commercial-ai-competitive-report > section { padding: 0.8rem; border: 1px solid #e2e8f0; border-radius: 0.7rem; background: #fff; }
+.commercial-ai-competitive-report h3 { margin: 0 0 0.55rem; }
+.commercial-ai-competitive-report p { margin: 0.45rem 0; color: #475569; font-size: 0.84rem; line-height: 1.5; }
+.commercial-ai-competitive-source { padding: 0.55rem 0; border-top: 1px solid #e2e8f0; overflow-wrap: anywhere; }
+.commercial-ai-competitive-source:first-of-type { border-top: 0; }
+.commercial-ai-competitive-source > strong { color: #1e3a8a; }
+.commercial-ai-competitive-source ul { display: grid; gap: 0.3rem; margin: 0.5rem 0 0; padding-left: 1.1rem; color: #475569; font-size: 0.82rem; }
+.commercial-ai-competitive-source p { overflow-wrap: anywhere; }
+.commercial-ai-competitive-report .commercial-ai-table small { display: block; margin-top: 0.2rem; color: #64748b; font-weight: 400; }
+.commercial-ai-competitive-report .commercial-ai-caution { border-color: #fde68a; background: #fffbeb; }
+.commercial-ai-competitive-report .commercial-ai-caution ul { margin: 0.35rem 0 0; padding-left: 1.15rem; }
+
 @media (max-width: 720px) {
   .commercial-ai-history__header,
   .commercial-ai-history__item,
@@ -1238,4 +1352,11 @@
   .commercial-ai-history__detail-header button {
     align-self: flex-start;
   }
+
+  .commercial-ai-competitive-grid { grid-template-columns: 1fr; }
+  .commercial-ai-competitive-grid__wide { grid-column: auto; }
+  .commercial-ai-competitive-form__header,
+  .commercial-ai-observations__header { align-items: flex-start; flex-direction: column; }
+  .commercial-ai-competitive-form__header .commercial-ai-competitive-form__count { white-space: normal; }
+  .commercial-ai-competitive-report .commercial-ai-table-wrap { overflow-x: auto; }
 }

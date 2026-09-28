@@ -22,6 +22,7 @@ export const COMMERCIAL_AGENT_INTENTS = Object.freeze([
   'goal_simulation',
   'what_if_analysis',
   'commercial_strategy',
+  'competitive_analysis',
   'store_health',
   'order_funnel',
   'catalog_health'
@@ -41,7 +42,8 @@ export const SALES_PROFITABILITY_AGENT_INTENTS = Object.freeze([
   'promotion_opportunity',
   'goal_simulation',
   'what_if_analysis',
-  'commercial_strategy'
+  'commercial_strategy',
+  'competitive_analysis'
 ]);
 
 export const COMMERCIAL_AGENT_RESPONSE_VERSION = 1;

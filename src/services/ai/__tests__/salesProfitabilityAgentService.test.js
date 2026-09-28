@@ -1051,8 +1051,9 @@ describe('sales profitability agent service', () => {
       expect(result.response.executiveSummary).toContain(copy);
       expect(result.response.executiveSummary).not.toMatch(/^Soy Lía\b/u);
       expect(result.intentResolution).toMatchObject({
-        kind: 'recognized_not_supported',
+        kind: 'needs_context',
         topic,
+        intent: 'competitive_analysis',
         requiresData: false,
         requiresProvider: false
       });

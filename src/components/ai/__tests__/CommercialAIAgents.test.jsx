@@ -1265,21 +1265,49 @@ describe('commercial AI center', () => {
     expect(screen.queryByText(/Actualiza el Preview/i)).not.toBeInTheDocument();
   });
 
-  it('recognizes an unsupported commercial question locally without loading sales or calling the agent', async () => {
+  it('shows the competitive evidence form and keeps a missing-evidence query local', async () => {
     renderCenter();
     const question = screen.getByRole('textbox', { name: 'Pregunta libre' });
     fireEvent.change(question, { target: { value: 'Ayúdame a analizar mi competencia.' } });
+    expect(screen.getByRole('heading', { name: 'Agrega evidencia para comparar' })).toBeInTheDocument();
+    expect(screen.getByText(/Una URL sirve como referencia, pero Lanzo no consulta automáticamente su contenido/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
 
-    await waitFor(() => expect(screen.getByRole('heading', {
-      name: /Entiendo que quieres analizar a tu competencia/
-    })).toBeInTheDocument());
-    expect(screen.getByText(/Consulta sobre competencia/)).toBeInTheDocument();
-    expect(screen.queryByText('Respuesta local sobre Lía')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Descargar reporte completo' })).not.toBeInTheDocument();
-    expect(screen.queryByText(/FEATURE_NOT_READY|recognized_not_supported|profitability_summary/i)).not.toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Completa al menos un competidor/);
     expect(runtime.loadProducts).not.toHaveBeenCalled();
     expect(runtime.runAgent).not.toHaveBeenCalled();
+  });
+
+  it('submits a reviewed competitive evidence snapshot to the local analysis route', async () => {
+    renderCenter();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), {
+      target: { value: '¿Mis precios son competitivos?' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Añadir competidor' }));
+    fireEvent.change(screen.getByLabelText('Nombre comercial'), { target: { value: 'Mercado Uno' } });
+    fireEvent.change(screen.getByLabelText('Fecha observada'), { target: { value: new Date().toISOString().slice(0, 10) } });
+    fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Café Sierra' } });
+    fireEvent.change(screen.getByLabelText('Precio (opcional)'), { target: { value: '39' } });
+    fireEvent.change(screen.getByLabelText('Moneda'), { target: { value: 'MXN' } });
+    fireEvent.change(screen.getByLabelText('Unidad o presentación'), { target: { value: '500 ml' } });
+    fireEvent.change(screen.getByLabelText('Condición de precio'), { target: { value: 'regular' } });
+    fireEvent.change(screen.getByLabelText('Impuestos'), { target: { value: 'included' } });
+    fireEvent.change(screen.getByLabelText('Envío'), { target: { value: 'not_applicable' } });
+    fireEvent.click(screen.getByLabelText(/Confirmo que el nombre corresponde al mismo producto/));
+    expect(screen.getByText(/Revisar 1 observación/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+    await waitFor(() => expect(runtime.runAgent).toHaveBeenCalledTimes(1));
+    expect(runtime.runAgent.mock.calls[0][0]).toMatchObject({
+      intent: 'competitive_analysis',
+      competitiveEvidence: {
+        competitors: [{
+          name: 'Mercado Uno',
+          observations: [{ name: 'Café Sierra', price: '39', comparableConfirmed: true }]
+        }]
+      }
+    });
+    expect(runtime.loadProducts).not.toHaveBeenCalled();
   });
 
   it('maps all six suggested questions to supported intents', async () => {

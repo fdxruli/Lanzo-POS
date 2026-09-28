@@ -50,6 +50,7 @@ describe('commercial AI agent contract', () => {
       'goal_simulation',
       'what_if_analysis',
       'commercial_strategy',
+      'competitive_analysis',
       'store_health',
       'order_funnel',
       'catalog_health'
@@ -363,8 +364,9 @@ describe('commercial AI agent contract', () => {
       const resolution = resolveCommercialIntent(question);
       if (topic === 'competition') {
         expect(resolution).toMatchObject({
-          kind: 'recognized_not_supported',
+          kind: 'needs_context',
           topic,
+          intent: 'competitive_analysis',
           confidence: 'high',
           requiresData: false,
           requiresProvider: false
@@ -390,7 +392,7 @@ describe('commercial AI agent contract', () => {
 
     for (const [question, topic, copyPattern] of cases) {
       const resolution = resolveCommercialIntent(question);
-      expect(resolution).toMatchObject({ kind: 'recognized_not_supported', topic });
+      expect(resolution).toMatchObject({ kind: 'needs_context', topic, intent: 'competitive_analysis' });
 
       const message = createCommercialLocalResponse(resolution).executiveSummary;
       expect(message).toMatch(copyPattern);

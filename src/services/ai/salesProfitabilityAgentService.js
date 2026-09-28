@@ -24,6 +24,7 @@ import {
 } from './commercialAgentContract';
 import { buildSalesProfitabilityContext } from './commercialAgentContext';
 import { buildAssortmentAnalysis } from './assortmentAnalytics';
+import { buildCompetitiveAnalysis, validateCompetitiveEvidence } from './competitiveAnalysis';
 import { inferCommercialScenarioFromQuestion, isCommercialStrategyQuestion } from './commercialQuestionRouter';
 import {
   buildCommercialStrategyCandidates,
@@ -1056,6 +1057,7 @@ export const createSalesProfitabilityAgentRunner = ({
   period = {},
   compare = true,
   scenario = {},
+  competitiveEvidence = null,
   requestKey = null
 } = {}) => {
   const questionText = String(question || '').trim();
@@ -1063,7 +1065,7 @@ export const createSalesProfitabilityAgentRunner = ({
   const scenarioValues = scenario && typeof scenario === 'object' && !Array.isArray(scenario)
     ? { ...inferredScenario, ...scenario }
     : scenario;
-  const resolution = resolveCommercialIntent(questionText, { scenario: scenarioValues });
+  const resolution = resolveCommercialIntent(questionText, { scenario: scenarioValues, competitiveEvidence });
   if (resolution.kind !== 'supported') {
     return {
       response: createCommercialLocalResponse(resolution),
@@ -1076,6 +1078,94 @@ export const createSalesProfitabilityAgentRunner = ({
   }
 
   const resolvedIntent = resolution.intent;
+  if (resolvedIntent === 'competitive_analysis') {
+    const evidenceValidation = validateCompetitiveEvidence(competitiveEvidence);
+    if (!evidenceValidation.valid) {
+      const needsEvidence = {
+        kind: 'needs_context',
+        topic: 'competition',
+        intent: 'competitive_analysis',
+        confidence: 'high',
+        requiresData: false,
+        requiresProvider: false,
+        missingContext: ['competitorEvidence']
+      };
+      return {
+        response: createCommercialLocalResponse(needsEvidence),
+        usageStatus: null,
+        providerCalled: false,
+        quotaOutcome: 'not_consumed',
+        reportSource: 'local',
+        intentResolution: needsEvidence
+      };
+    }
+
+    const actor = assertActor();
+    const catalog = await catalogLoader({ repository: catalogRepository, actor, assertActor });
+    assertTenantUnchanged(actor, assertActor());
+    const companyProfile = useAppStore.getState()?.companyProfile || {};
+    // Retail catalog amounts are formatted as MXN throughout Lanzo when no tenant currency is set.
+    const ownCurrency = companyProfile.currency || companyProfile.currencyCode || 'MXN';
+    const capturedEvidence = {
+      ...evidenceValidation.evidence,
+      capturedAt: new Date().toISOString()
+    };
+    const competitiveAnalysis = buildCompetitiveAnalysis({
+      evidence: capturedEvidence,
+      catalog,
+      ownCurrency
+    });
+    const response = {
+      version: 1,
+      agentKey: COMMERCIAL_AGENT_KEYS.SALES_PROFITABILITY,
+      intent: 'competitive_analysis',
+      status: 'completed',
+      executiveSummary: competitiveAnalysis.executiveSummary,
+      answer: competitiveAnalysis.answer,
+      explanation: competitiveAnalysis.explanation,
+      facts: [],
+      calculations: competitiveAnalysis.priceComparisons
+        .filter((row) => ['comparable', 'comparable_with_conditions'].includes(row.comparisonStatus))
+        .map((row) => ({
+          label: `${row.productName} · ${row.competitorName}`,
+          value: row.difference,
+          formattedValue: row.difference === null ? 'No disponible' : `${row.difference >= 0 ? '+' : ''}${row.difference.toFixed(2)} ${row.ownCurrency}${row.basis ? ` / ${row.basis}` : ''}`,
+          formula: 'precio observado normalizado − precio registrado en el catálogo propio',
+          source: 'competitive_analysis_deterministic',
+          period: { from: row.observedAt, to: row.observedAt, label: `Observación ${row.observedAt}`, days: null }
+        })),
+      assumptions: [],
+      scenarios: [],
+      recommendations: competitiveAnalysis.recommendations,
+      limitations: competitiveAnalysis.limitations,
+      confidence: competitiveAnalysis.confidence,
+      source: 'mixed',
+      coverage: {
+        ready: true,
+        complete: competitiveAnalysis.internalBusiness.catalogComplete,
+        validSales: 0,
+        localAnswer: false,
+        outOfScope: false,
+        competitorCount: competitiveAnalysis.competitors.length,
+        observationCount: competitiveAnalysis.competitors.reduce((sum, competitor) => sum + competitor.observations.length, 0),
+        comparablePriceCount: competitiveAnalysis.priceComparisons.filter((row) => ['comparable', 'comparable_with_conditions'].includes(row.comparisonStatus)).length,
+        catalogComplete: competitiveAnalysis.internalBusiness.catalogComplete,
+        verifiedExternalSources: 0
+      },
+      citations: [],
+      actionDrafts: [],
+      competitiveAnalysis
+    };
+    return {
+      response,
+      usageStatus: null,
+      providerCalled: false,
+      quotaOutcome: 'not_consumed',
+      reportSource: 'mixed',
+      intentResolution: resolution
+    };
+  }
+
   const strategyRequested = resolvedIntent === STRATEGY_INTENT
     || (resolvedIntent === 'goal_simulation' && isCommercialStrategyQuestion(questionText));
   let normalizedScenario;

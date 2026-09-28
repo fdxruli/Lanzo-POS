@@ -7,6 +7,7 @@ import {
   Globe2,
   History,
   Lightbulb,
+  Plus,
   Search,
   Send,
   ShieldCheck,
@@ -33,6 +34,7 @@ import {
 } from '../../services/ai/commercialAgentContract';
 import { inferCommercialScenarioFromQuestion, isCommercialStrategyQuestion } from '../../services/ai/commercialQuestionRouter';
 import { LIA_IDENTITY } from '../../services/ai/liaIdentity';
+import { COMPETITIVE_ANALYSIS_LIMITS, validateCompetitiveEvidence } from '../../services/ai/competitiveAnalysis';
 import { getAIAgentUsageStatus } from '../../services/aiService';
 import { getLicenseKeyFromDetails } from '../../services/sync/syncConstants';
 import { useActorRuntimeSnapshot } from '../../services/auth/useActorRuntimeSnapshot';
@@ -57,6 +59,7 @@ const SUGGESTED_QUESTIONS = [
   { label: '¿Qué combos puedo formar?', intent: 'combo_opportunity' },
   { label: '¿Qué promoción puedo simular?', intent: 'promotion_opportunity' },
   { label: '¿Dónde tengo oportunidades en mi surtido?', intent: 'assortment_analysis' },
+  { label: '¿Cómo estoy frente a mi competencia?', intent: 'competitive_analysis' },
   { label: '¿Cómo puedo aumentar mis ventas?', intent: 'sales_growth' },
   { label: '¿Cómo puedo aumentar mi ticket promedio?', intent: 'ticket_growth' }
 ];
@@ -447,6 +450,291 @@ function WhatIfEvidence({ response }) {
   </>;
 }
 
+let competitiveUiKeySequence = 0;
+const nextCompetitiveUiKey = (type) => `${type}-${++competitiveUiKeySequence}`;
+
+const createCompetitiveObservation = () => ({
+  uiKey: nextCompetitiveUiKey('observation'),
+  type: 'product', name: '', description: '', category: '', price: '', currency: '', unit: '',
+  priceType: 'unknown', promotion: '', taxStatus: 'unknown', shippingStatus: 'unknown', note: '', comparableConfirmed: false
+});
+
+const createCompetitiveEntry = () => ({
+  uiKey: nextCompetitiveUiKey('competitor'),
+  name: '', description: '', location: '', observedAt: '',
+  source: { type: 'manual', label: '', url: '', text: '' },
+  observations: [createCompetitiveObservation()]
+});
+
+const priceReasonLabel = (reason) => ({
+  service: 'Servicio: no hay precio de producto comparable',
+  confirmation_required: 'Confirma la equivalencia del producto para comparar',
+  price_unknown: 'Precio observado desconocido',
+  currency_mismatch_or_unknown: 'Moneda distinta o desconocida',
+  temporary_promotion: 'Promoción temporal frente a precio regular',
+  price_type_unknown: 'No se sabe si el precio es regular o promocional',
+  shipping_included: 'El precio del competidor incluye envío',
+  internal_product_not_found: 'No hay coincidencia exacta en el catálogo propio',
+  internal_catalog_incomplete: 'El catálogo propio está incompleto',
+  ambiguous_internal_product: 'Hay nombres duplicados en el catálogo propio',
+  own_price_unknown: 'Precio propio no disponible',
+  presentation_unknown: 'Presentación desconocida',
+  presentation_mismatch: 'Presentación no comparable'
+}[reason] || 'No comparable');
+
+function CompetitiveEvidenceBuilder({ value, onChange, error, disabled = false }) {
+  const competitors = Array.isArray(value?.competitors) ? value.competitors : [];
+  const updateCompetitor = (index, update) => onChange((current) => ({
+    ...current,
+    competitors: current.competitors.map((competitor, competitorIndex) => competitorIndex === index
+      ? { ...competitor, ...update }
+      : competitor)
+  }));
+  const updateObservation = (competitorIndex, observationIndex, update) => onChange((current) => ({
+    ...current,
+    competitors: current.competitors.map((competitor, index) => index !== competitorIndex ? competitor : ({
+      ...competitor,
+      observations: competitor.observations.map((observation, itemIndex) => itemIndex === observationIndex
+        ? { ...observation, ...update }
+        : observation)
+    }))
+  }));
+  const removeCompetitor = (index) => onChange((current) => ({
+    ...current,
+    competitors: current.competitors.filter((_, competitorIndex) => competitorIndex !== index)
+  }));
+  const validation = validateCompetitiveEvidence(value);
+  const reviewRows = competitors.flatMap((competitor) => (competitor.observations || []).map((item) => ({ competitor, item })));
+
+  return (
+    <section className="commercial-ai-competitive-form" aria-labelledby="commercial-ai-competitive-title">
+      <div className="commercial-ai-competitive-form__header">
+        <div>
+          <p className="commercial-ai-eyebrow"><Globe2 size={15} aria-hidden="true" /> Contexto competitivo</p>
+          <h2 id="commercial-ai-competitive-title">Agrega evidencia para comparar</h2>
+        </div>
+        <span className="commercial-ai-competitive-form__count">{competitors.length}/{COMPETITIVE_ANALYSIS_LIMITS.competitors} competidores</span>
+      </div>
+      <p className="commercial-ai-muted">Puedes compartir precios, productos o información pública del competidor para que Lía los compare. Una URL sirve como referencia, pero Lanzo no consulta automáticamente su contenido.</p>
+
+      <div className="commercial-ai-competitive-list">
+        {competitors.map((competitor, competitorIndex) => {
+          const prefix = `competitive-${competitorIndex}`;
+          return (
+            <fieldset className="commercial-ai-competitor" key={prefix} disabled={disabled}>
+              <legend>Competidor {competitorIndex + 1}</legend>
+              <div className="commercial-ai-competitive-grid">
+                <label className="commercial-ai-label" htmlFor={`${prefix}-name`}>Nombre comercial
+                  <input id={`${prefix}-name`} maxLength={100} value={competitor.name} onChange={(event) => updateCompetitor(competitorIndex, { name: event.target.value })} />
+                </label>
+                <label className="commercial-ai-label" htmlFor={`${prefix}-observed`}>Fecha observada
+                  <input id={`${prefix}-observed`} type="date" value={competitor.observedAt} onChange={(event) => updateCompetitor(competitorIndex, { observedAt: event.target.value })} />
+                </label>
+                <label className="commercial-ai-label" htmlFor={`${prefix}-location`}>Ubicación o ámbito <span>(opcional)</span>
+                  <input id={`${prefix}-location`} maxLength={160} value={competitor.location} onChange={(event) => updateCompetitor(competitorIndex, { location: event.target.value })} />
+                </label>
+                <label className="commercial-ai-label" htmlFor={`${prefix}-description`}>Descripción <span>(opcional)</span>
+                  <input id={`${prefix}-description`} maxLength={600} value={competitor.description} onChange={(event) => updateCompetitor(competitorIndex, { description: event.target.value })} />
+                </label>
+                <label className="commercial-ai-label" htmlFor={`${prefix}-source`}>Procedencia
+                  <select id={`${prefix}-source`} value={competitor.source.type} onChange={(event) => updateCompetitor(competitorIndex, { source: { ...competitor.source, type: event.target.value } })}>
+                    <option value="manual">Captura manual</option>
+                    <option value="user_observation">Observación propia</option>
+                    <option value="public_url">Referencia URL pública</option>
+                    <option value="copied_text">Texto copiado</option>
+                  </select>
+                </label>
+                <label className="commercial-ai-label" htmlFor={`${prefix}-source-label`}>Nombre de la fuente <span>(opcional)</span>
+                  <input id={`${prefix}-source-label`} maxLength={160} value={competitor.source.label} onChange={(event) => updateCompetitor(competitorIndex, { source: { ...competitor.source, label: event.target.value } })} />
+                </label>
+                {competitor.source.type === 'public_url' && (
+                  <label className="commercial-ai-label commercial-ai-competitive-grid__wide" htmlFor={`${prefix}-url`}>URL pública de referencia
+                    <input id={`${prefix}-url`} type="url" maxLength={2048} placeholder="https://ejemplo.com/catalogo" value={competitor.source.url} onChange={(event) => updateCompetitor(competitorIndex, { source: { ...competitor.source, url: event.target.value } })} />
+                  </label>
+                )}
+                {competitor.source.type === 'copied_text' && (
+                  <label className="commercial-ai-label commercial-ai-competitive-grid__wide" htmlFor={`${prefix}-source-text`}>Texto copiado
+                    <textarea id={`${prefix}-source-text`} maxLength={3000} rows={3} value={competitor.source.text} onChange={(event) => updateCompetitor(competitorIndex, { source: { ...competitor.source, text: event.target.value } })} />
+                  </label>
+                )}
+              </div>
+
+              <div className="commercial-ai-observations">
+                <div className="commercial-ai-observations__header">
+                  <h3>Productos o servicios observados</h3>
+                  <button type="button" className="commercial-ai-secondary-button" disabled={(competitor.observations || []).length >= COMPETITIVE_ANALYSIS_LIMITS.observationsPerCompetitor} onClick={() => updateCompetitor(competitorIndex, { observations: [...competitor.observations, createCompetitiveObservation()] })}>
+                    <Plus size={15} aria-hidden="true" /> Añadir observación
+                  </button>
+                </div>
+                {(competitor.observations || []).map((item, observationIndex) => {
+                  const itemPrefix = `${prefix}-observation-${observationIndex}`;
+                  return (
+                    <fieldset className="commercial-ai-observation" key={itemPrefix} disabled={disabled}>
+                      <legend>Observación {observationIndex + 1}</legend>
+                      <div className="commercial-ai-competitive-grid">
+                        <label className="commercial-ai-label" htmlFor={`${itemPrefix}-type`}>Tipo
+                          <select id={`${itemPrefix}-type`} value={item.type} onChange={(event) => updateObservation(competitorIndex, observationIndex, { type: event.target.value })}>
+                            <option value="product">Producto</option><option value="service">Servicio</option>
+                          </select>
+                        </label>
+                        <label className="commercial-ai-label" htmlFor={`${itemPrefix}-name`}>Nombre
+                          <input id={`${itemPrefix}-name`} maxLength={120} value={item.name} onChange={(event) => updateObservation(competitorIndex, observationIndex, { name: event.target.value })} />
+                        </label>
+                        <label className="commercial-ai-label" htmlFor={`${itemPrefix}-price`}>Precio <span>(opcional)</span>
+                          <input id={`${itemPrefix}-price`} type="number" min="0" max="1000000000" step="0.01" value={item.price} onChange={(event) => updateObservation(competitorIndex, observationIndex, { price: event.target.value })} />
+                        </label>
+                        <label className="commercial-ai-label" htmlFor={`${itemPrefix}-currency`}>Moneda
+                          <input id={`${itemPrefix}-currency`} maxLength={3} placeholder="MXN" value={item.currency} onChange={(event) => updateObservation(competitorIndex, observationIndex, { currency: event.target.value.toUpperCase() })} />
+                        </label>
+                        <label className="commercial-ai-label" htmlFor={`${itemPrefix}-unit`}>Unidad o presentación
+                          <input id={`${itemPrefix}-unit`} maxLength={80} placeholder="500 ml, 1 pieza" value={item.unit} onChange={(event) => updateObservation(competitorIndex, observationIndex, { unit: event.target.value })} />
+                        </label>
+                        <label className="commercial-ai-label" htmlFor={`${itemPrefix}-category`}>Categoría <span>(opcional)</span>
+                          <input id={`${itemPrefix}-category`} maxLength={100} value={item.category} onChange={(event) => updateObservation(competitorIndex, observationIndex, { category: event.target.value })} />
+                        </label>
+                        <label className="commercial-ai-label" htmlFor={`${itemPrefix}-price-type`}>Condición de precio
+                          <select id={`${itemPrefix}-price-type`} value={item.priceType} onChange={(event) => updateObservation(competitorIndex, observationIndex, { priceType: event.target.value })}>
+                            <option value="unknown">Desconocida</option><option value="regular">Regular</option><option value="promotion">Promoción temporal</option>
+                          </select>
+                        </label>
+                        <label className="commercial-ai-label" htmlFor={`${itemPrefix}-promotion`}>Promoción o condición <span>(opcional)</span>
+                          <input id={`${itemPrefix}-promotion`} maxLength={300} value={item.promotion} onChange={(event) => updateObservation(competitorIndex, observationIndex, { promotion: event.target.value })} />
+                        </label>
+                        <label className="commercial-ai-label" htmlFor={`${itemPrefix}-tax`}>Impuestos
+                          <select id={`${itemPrefix}-tax`} value={item.taxStatus} onChange={(event) => updateObservation(competitorIndex, observationIndex, { taxStatus: event.target.value })}>
+                            <option value="unknown">Desconocidos</option><option value="included">Incluidos</option><option value="excluded">Excluidos</option>
+                          </select>
+                        </label>
+                        <label className="commercial-ai-label" htmlFor={`${itemPrefix}-shipping`}>Envío
+                          <select id={`${itemPrefix}-shipping`} value={item.shippingStatus} onChange={(event) => updateObservation(competitorIndex, observationIndex, { shippingStatus: event.target.value })}>
+                            <option value="unknown">Desconocido</option><option value="not_applicable">No aplica</option><option value="excluded">No incluido</option><option value="included">Incluido</option>
+                          </select>
+                        </label>
+                        <label className="commercial-ai-label commercial-ai-competitive-grid__wide" htmlFor={`${itemPrefix}-description`}>Descripción u observación <span>(opcional)</span>
+                          <textarea id={`${itemPrefix}-description`} maxLength={600} rows={2} value={item.description} onChange={(event) => updateObservation(competitorIndex, observationIndex, { description: event.target.value })} />
+                        </label>
+                        <label className="commercial-ai-label commercial-ai-competitive-grid__wide" htmlFor={`${itemPrefix}-note`}>Nota propia <span>(opcional)</span>
+                          <input id={`${itemPrefix}-note`} maxLength={600} value={item.note} onChange={(event) => updateObservation(competitorIndex, observationIndex, { note: event.target.value })} />
+                        </label>
+                        {item.type === 'product' && <label className="commercial-ai-checkbox commercial-ai-competitive-grid__wide"><input type="checkbox" checked={item.comparableConfirmed} onChange={(event) => updateObservation(competitorIndex, observationIndex, { comparableConfirmed: event.target.checked })} /> Confirmo que el nombre corresponde al mismo producto del catálogo propio; la presentación también debe coincidir o permitir normalización.</label>}
+                        <button type="button" className="commercial-ai-competitive-remove" onClick={() => updateCompetitor(competitorIndex, { observations: competitor.observations.filter((_, itemIndex) => itemIndex !== observationIndex) })}><Trash2 size={14} aria-hidden="true" /> Eliminar observación</button>
+                      </div>
+                    </fieldset>
+                  );
+                })}
+              </div>
+              <button type="button" className="commercial-ai-competitive-remove" onClick={() => removeCompetitor(competitorIndex)}><Trash2 size={14} aria-hidden="true" /> Eliminar competidor</button>
+            </fieldset>
+          );
+        })}
+      </div>
+
+      <button type="button" className="commercial-ai-secondary-button" disabled={disabled || competitors.length >= COMPETITIVE_ANALYSIS_LIMITS.competitors} onClick={() => onChange((current) => ({ ...current, competitors: [...current.competitors, createCompetitiveEntry()] }))}>
+        <Plus size={16} aria-hidden="true" /> Añadir competidor
+      </button>
+      {error && <p className="commercial-ai-inline-error" role="alert">{error}</p>}
+      <details className="commercial-ai-competitive-review">
+        <summary>Revisar {reviewRows.length} observación(es) antes de analizar</summary>
+        <ul>{reviewRows.map(({ competitor, item }) => <li key={`${competitor.uiKey}-${item.uiKey}`}><strong>{item.name || 'Sin nombre'}</strong> · {competitor.name || 'Competidor sin nombre'} · {competitor.observedAt || 'Sin fecha'} · {competitor.source?.type === 'public_url' ? 'URL declarada, no consultada' : 'Información proporcionada'}</li>)}</ul>
+        {!validation.valid && <small>Para analizar, completa nombre, fecha, procedencia y al menos una observación por competidor.</small>}
+      </details>
+    </section>
+  );
+}
+
+const COMPETITIVE_SOURCE_LABELS = Object.freeze({
+  manual: 'captura manual',
+  user_observation: 'observación propia',
+  public_url: 'URL pública declarada',
+  copied_text: 'texto copiado'
+});
+
+const formatCompetitiveCurrency = (value, currency = 'MXN') => {
+  if (value === null || value === undefined) return 'No disponible';
+  try {
+    return new Intl.NumberFormat('es-MX', { style: 'currency', currency, maximumFractionDigits: 4 }).format(value);
+  } catch {
+    return `${Number(value).toFixed(2)} ${currency}`;
+  }
+};
+
+function CompetitiveCompetitorEvidence({ analysis, competitors, offer }) {
+  const staleCompetitors = new Set(asArray(analysis.staleCompetitors));
+  return (
+    <section aria-labelledby="competitive-external-title">
+      <h3 id="competitive-external-title">Competencia (información proporcionada)</h3>
+      {competitors.map((competitor) => (
+        <article className="commercial-ai-competitive-source" key={`${competitor.name}-${competitor.observedAt}-${competitor.location}`}>
+          <strong>{competitor.name}</strong>{competitor.location && <span> · {competitor.location}</span>}
+          {competitor.description && <p>{competitor.description}</p>}
+          <p>Observado el {competitor.observedAt} · Fuente: {competitor.source?.label || COMPETITIVE_SOURCE_LABELS[competitor.source?.type] || 'información proporcionada'} · No verificado automáticamente.</p>
+          {staleCompetitors.has(competitor.name) && <p className="commercial-ai-caution">La observación tiene más de 90 días; confirma su vigencia antes de usarla.</p>}
+          {competitor.source?.url && <p><a href={competitor.source.url} target="_blank" rel="noreferrer noopener">Abrir referencia pública</a></p>}
+          <ul>{asArray(competitor.observations).map((item) => <li key={item.evidenceKey}>
+            <strong>{item.type === 'service' ? 'Servicio' : 'Producto'}: {item.name}</strong>{item.unit ? ` · ${item.unit}` : ''}{item.price !== null ? ` · ${formatCompetitiveCurrency(item.price, item.currency || 'MXN')}` : ''}{item.priceType === 'promotion' ? ` · promoción: ${item.promotion || 'condición no detallada'}` : ''}{item.description ? ` · ${item.description}` : ''}{item.note ? ` · ${item.note}` : ''}
+          </li>)}</ul>
+        </article>
+      ))}
+      {offer.observedButNotMatchedCount > 0 && <p>{offer.observedButNotMatchedCount} artículo(s) observado(s) sin coincidencia exacta por nombre en el catálogo propio. Esto no demuestra demanda.</p>}
+      {asArray(offer.observedCategories).length > 0 && <p>Categorías en la evidencia: {offer.observedCategories.join(', ')}.</p>}
+      {offer.categoryComparisonAvailable && asArray(offer.sharedCategories).length > 0 && <p>Categorías con nombre coincidente en ambos registros: {offer.sharedCategories.join(', ')}.</p>}
+      {offer.categoryComparisonAvailable && asArray(offer.observedCategoriesNotInBusinessCatalog).length > 0 && <p>Categorías observadas sin coincidencia exacta por nombre en el catálogo propio: {offer.observedCategoriesNotInBusinessCatalog.join(', ')}. Investiga antes de interpretarlas como una oportunidad.</p>}
+    </section>
+  );
+}
+
+function CompetitivePriceComparisonEvidence({ comparisons, offer }) {
+  return (
+    <section aria-labelledby="competitive-comparison-title">
+      <h3 id="competitive-comparison-title">Comparación calculada por Lanzo</h3>
+      {comparisons.length ? <div className="commercial-ai-table-wrap"><table className="commercial-ai-table">
+        <caption className="sr-only">Precios propios y precios observados de competencia</caption>
+        <thead><tr><th>Producto</th><th>Tu catálogo</th><th>Observado</th><th>Diferencia</th><th>Estado y condiciones</th></tr></thead>
+        <tbody>{comparisons.map((item) => <tr key={item.evidenceKeys?.[0]}>
+          <th scope="row">{item.productName}<small>{item.competitorName} · {item.observedAt}</small></th>
+          <td>{item.ownPrice === null ? 'No disponible' : `${formatCompetitiveCurrency(item.ownPrice, item.ownCurrency)}${item.ownUnit ? ` · ${item.ownUnit}` : ''}`}</td>
+          <td>{item.externalPrice === null ? 'No disponible' : `${formatCompetitiveCurrency(item.externalPrice, item.externalCurrency)}${item.externalUnit ? ` · ${item.externalUnit}` : ''}`}</td>
+          <td>{item.difference === null ? '—' : `${item.difference >= 0 ? '+' : ''}${formatCompetitiveCurrency(item.difference, item.ownCurrency)}${item.differencePercent === null ? '' : ` (${item.differencePercent >= 0 ? '+' : ''}${item.differencePercent}%)`}${item.basis ? ` / ${item.basis}` : ''}`}</td>
+          <td>{item.comparisonStatus === 'not_comparable' ? priceReasonLabel(item.reason) : item.comparisonStatus === 'comparable_with_conditions' ? asArray(item.conditionNotes).join('; ') : 'Presentación y moneda comparables'}{item.source?.url && <small><a href={item.source.url} target="_blank" rel="noreferrer noopener">Fuente declarada</a></small>}</td>
+        </tr>)}</tbody>
+      </table></div> : <p className="commercial-ai-muted">No hay observaciones de precio para comparar.</p>}
+      {asArray(offer.ownProductsNotFoundInCapturedEvidence).length > 0 && <p>{offer.ownProductsNotFoundInCapturedEvidenceCount} producto(s) propio(s) no aparecen en las observaciones capturadas; no se afirma que el competidor no los ofrezca.</p>}
+    </section>
+  );
+}
+
+function CompetitiveInterpretationEvidence({ response }) {
+  return (
+    <section aria-labelledby="competitive-interpretation-title">
+      <h3 id="competitive-interpretation-title">Interpretación de Lía</h3>
+      <p>{response.executiveSummary}</p>
+      <p>{response.explanation}</p>
+    </section>
+  );
+}
+
+function CompetitiveAnalysisEvidence({ response }) {
+  const analysis = response.competitiveAnalysis || {};
+  const own = analysis.internalBusiness || {};
+  const offer = analysis.offerComparison || {};
+  const comparisons = asArray(analysis.priceComparisons);
+  const competitors = asArray(analysis.competitors);
+  const limitations = asArray(response.limitations);
+  return (
+    <div className="commercial-ai-competitive-report">
+      <section aria-labelledby="competitive-own-title">
+        <h3 id="competitive-own-title">Tu negocio (Lanzo)</h3>
+        <p>{own.activeProductCount ?? 0} productos activos en catálogo · {own.activeCategoryCount ?? 0} categorías · {own.catalogComplete ? 'catálogo completo' : 'catálogo parcial'}.</p>
+        {asArray(own.categories).length > 0 && <p>Categorías: {own.categories.join(', ')}</p>}
+      </section>
+      <CompetitiveCompetitorEvidence analysis={analysis} competitors={competitors} offer={offer} />
+      <CompetitivePriceComparisonEvidence comparisons={comparisons} offer={offer} />
+      <CompetitiveInterpretationEvidence response={response} />
+      {limitations.length > 0 && <section className="commercial-ai-caution" aria-label="Limitaciones"><strong>Limitaciones</strong><ul>{limitations.map((item) => <li key={item}>{item}</li>)}</ul></section>}
+    </div>
+  );
+}
+
 const STRATEGY_REASON_LABELS = Object.freeze({
   ticket_down_sales_stable: 'El ticket bajó mientras ventas y número de tickets se mantuvieron relativamente estables.',
   sales_declining: 'Las ventas netas disminuyeron frente al periodo comparable.',
@@ -692,6 +980,7 @@ function IntentEvidence({ response }) {
     case 'goal_simulation': return <GoalSimulationEvidence response={response} />;
     case 'what_if_analysis': return <WhatIfEvidence response={response} />;
     case 'commercial_strategy': return <StrategyEvidence response={response} />;
+    case 'competitive_analysis': return <CompetitiveAnalysisEvidence response={response} />;
     default: return <ProfitabilityEvidence response={response} />;
   }
 }
@@ -943,6 +1232,7 @@ const INTENT_LABELS = Object.freeze({
   goal_simulation: 'Simulación de meta',
   what_if_analysis: 'Simulación what-if',
   commercial_strategy: 'Estrategia comercial',
+  competitive_analysis: 'Análisis de competencia',
   out_of_scope: 'Fuera del alcance',
   local_answer: 'Respuesta local',
   not_ready: 'Capacidad todavía no disponible'
@@ -1068,6 +1358,7 @@ const historyEntryToAnalysisResult = (entry) => {
       whatIfSimulation: deterministic.whatIfSimulation,
       strategyRequested: deterministic.strategyRequested,
       strategyCandidates: deterministic.strategyCandidates,
+      competitiveAnalysis: deterministic.competitiveAnalysis,
       calculations: deterministic.calculations,
       scenarios: deterministic.scenarios,
       recommendations: deterministic.recommendations,
@@ -1234,6 +1525,8 @@ export default function CommercialAIAgentsPage() {
   const [periodDays, setPeriodDays] = useState(30);
   const [compare, setCompare] = useState(false);
   const [scenario, setScenario] = useState({});
+  const [competitiveEvidence, setCompetitiveEvidence] = useState({ competitors: [] });
+  const [competitiveEvidenceError, setCompetitiveEvidenceError] = useState(null);
   const [promotionMode, setPromotionMode] = useState('discountPercent');
   const [productOptions, setProductOptions] = useState([]);
   const [excludedProducts, setExcludedProducts] = useState([]);
@@ -1312,6 +1605,8 @@ export default function CommercialAIAgentsPage() {
     setDownloadError(null);
     setQuestion('');
     setScenario({});
+    setCompetitiveEvidence({ competitors: [] });
+    setCompetitiveEvidenceError(null);
     setUsageStatus(null);
     setUsageError(null);
     setIsLoadingUsage(true);
@@ -1357,10 +1652,12 @@ export default function CommercialAIAgentsPage() {
     () => buildPeriodRange({ days: periodDays, timezone: businessTimezone }),
     [periodDays, businessTimezone]
   );
-  const questionResolution = useMemo(() => resolveCommercialIntent(question), [question]);
+  const questionResolution = useMemo(() => resolveCommercialIntent(question, { competitiveEvidence }), [question, competitiveEvidence]);
   const intent = questionResolution.kind === 'supported'
     ? questionResolution.intent
-    : (questionResolution.kind === 'needs_context' && ['goal_simulation', 'what_if_analysis'].includes(questionResolution.intent)
+    : (questionResolution.kind === 'needs_context' && questionResolution.topic === 'competition'
+      ? 'competitive_analysis'
+      : questionResolution.kind === 'needs_context' && ['goal_simulation', 'what_if_analysis'].includes(questionResolution.intent)
       ? questionResolution.intent
       : (!question.trim() ? 'profitability_summary' : null));
   const strategyRequested = intent === 'commercial_strategy'
@@ -1431,6 +1728,7 @@ export default function CommercialAIAgentsPage() {
     setResult(null);
     setDownloadContext(null);
     setDownloadError(null);
+    setCompetitiveEvidenceError(null);
     setQuestion(text);
     setAnalysisError(null);
   };
@@ -1445,6 +1743,7 @@ export default function CommercialAIAgentsPage() {
     setDownloadContext(null);
     setDownloadError(null);
     setAnalysisError(null);
+    setCompetitiveEvidenceError(null);
     setQuestion(nextQuestion);
   };
 
@@ -1504,7 +1803,12 @@ export default function CommercialAIAgentsPage() {
     setResult(null);
     setDownloadContext(null);
     try {
-      const resolution = resolveCommercialIntent(question, { scenario });
+      const resolution = resolveCommercialIntent(question, { scenario, competitiveEvidence });
+      if (resolution.topic === 'competition' && !validateCompetitiveEvidence(competitiveEvidence).valid) {
+        setCompetitiveEvidenceError('Completa al menos un competidor con nombre, fecha, procedencia y una observación válida antes de analizar.');
+        return;
+      }
+      setCompetitiveEvidenceError(null);
       const resolvedIntent = resolution.kind === 'supported' ? resolution.intent : null;
       const normalizedScenario = resolution.kind === 'supported'
         ? normalizeScenarioForIntent(resolvedIntent, scenario)
@@ -1524,7 +1828,7 @@ export default function CommercialAIAgentsPage() {
           missingContext: Array.isArray(resolution.missingContext) ? resolution.missingContext : []
         },
         compare: compareEnabled,
-        period: resolution.kind === 'supported'
+        period: resolution.kind === 'supported' && resolvedIntent !== 'competitive_analysis'
           ? {
             from: period.from,
             to: period.to,
@@ -1560,6 +1864,7 @@ export default function CommercialAIAgentsPage() {
         period: { ...period, timezone: businessTimezone },
         compare: compareEnabled,
         scenario: normalizedScenario,
+        competitiveEvidence: resolvedIntent === 'competitive_analysis' ? competitiveEvidence : null,
         requestKey
       });
       if (historyContextTokenRef.current !== requestContextToken) return;
@@ -1718,7 +2023,19 @@ export default function CommercialAIAgentsPage() {
             ))}
           </div>
 
-          {(questionResolution.kind === 'supported' || scenarioIntent || !question.trim()) && (
+          {(questionResolution.topic === 'competition' || intent === 'competitive_analysis') && (
+            <CompetitiveEvidenceBuilder
+              value={competitiveEvidence}
+              onChange={(update) => {
+                setCompetitiveEvidence(update);
+                setCompetitiveEvidenceError(null);
+              }}
+              error={competitiveEvidenceError}
+              disabled={isAnalyzing}
+            />
+          )}
+
+          {((questionResolution.kind === 'supported' && intent !== 'competitive_analysis') || scenarioIntent || !question.trim()) && (
             <div className="commercial-ai-filters">
               <label className="commercial-ai-label" htmlFor="sales-agent-period">Periodo
                 <span className="commercial-ai-select-wrap">
@@ -1903,7 +2220,7 @@ export default function CommercialAIAgentsPage() {
           )}
 
           <div className="commercial-ai-submit-row">
-            <p>Periodo: <b>{period.from} a {period.to}</b>{(intent === 'explain_change' && compare || strategyRequested || ['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend', 'assortment_analysis'].includes(intent)) && ' · con comparación'}</p>
+            <p>{intent !== 'competitive_analysis' && <>Periodo: <b>{period.from} a {period.to}</b>{(intent === 'explain_change' && compare || strategyRequested || ['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend', 'assortment_analysis'].includes(intent)) && ' · con comparación'}</>}</p>
             <button className="commercial-ai-analyze" type="submit" disabled={!question.trim() || isAnalyzing}><Send size={16} aria-hidden="true" /> {isAnalyzing ? 'Analizando…' : 'Analizar'}</button>
           </div>
         </form>
