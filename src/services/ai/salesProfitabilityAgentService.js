@@ -2,6 +2,7 @@ import { AIApiError, analyzeCommercialAgent } from '../aiService';
 import { assertCurrentAIAgentActor } from '../auth/aiAgentAuthorization';
 import { getSalesFinalHistoryScope } from '../auth/salesPermissionPolicy';
 import { reportsRepository } from '../reports/reportsRepository';
+import { productRepository } from '../products/productRepository';
 import { useAppStore } from '../../store/useAppStore';
 import {
   buildPreviousPeriod,
@@ -22,10 +23,70 @@ import {
   validateCommercialAgentRequest
 } from './commercialAgentContract';
 import { buildSalesProfitabilityContext } from './commercialAgentContext';
+import { buildAssortmentAnalysis } from './assortmentAnalytics';
 
 const DEFAULT_BUSINESS_TIMEZONE = 'America/Mexico_City';
+const ASSORTMENT_INTENT = 'assortment_analysis';
+const ASSORTMENT_MAX_PRODUCTS = 5000;
+const ASSORTMENT_MAX_CATEGORIES = 500;
+const ASSORTMENT_PERCENT_FORMATTER = new Intl.NumberFormat('es-MX', { maximumFractionDigits: 1 });
+const ASSORTMENT_CURRENCY_FORMATTER = new Intl.NumberFormat('es-MX', { maximumFractionDigits: 2 });
 const inflightRequests = new Map();
 const VALID_QUOTA_OUTCOMES = new Set(['consumed', 'not_consumed', 'not_confirmed']);
+
+const tenantContextKey = (actor) => {
+  const tenant = actor?.tenant;
+  if (!tenant?.opaqueId || !tenant?.databaseName || !Number.isFinite(tenant?.generation)) return null;
+  return `${tenant.opaqueId}\u0000${tenant.databaseName}\u0000${tenant.generation}`;
+};
+
+const assertTenantUnchanged = (initialActor, currentActor) => {
+  const initialKey = tenantContextKey(initialActor);
+  const currentKey = tenantContextKey(currentActor);
+  if (!initialKey || !currentKey || initialKey !== currentKey) {
+    throw new AIApiError(
+      'La sesión o el negocio activo cambió durante la lectura del catálogo. Vuelve a intentar el análisis.',
+      409,
+      { code: 'AI_AGENT_TENANT_CHANGED' },
+      'AI_AGENT_TENANT_CHANGED'
+    );
+  }
+};
+
+export const loadAssortmentCatalogSnapshot = async ({
+  repository = productRepository,
+  actor,
+  assertActor = assertCurrentAIAgentActor
+} = {}) => {
+  if (typeof repository?.getAssortmentCatalogSnapshot !== 'function') {
+    throw new AIApiError('No se pudo cargar el catálogo del negocio.', 503, { code: 'ASSORTMENT_CATALOG_UNAVAILABLE' }, 'ASSORTMENT_CATALOG_UNAVAILABLE');
+  }
+  if (!tenantContextKey(actor)) {
+    throw new AIApiError('No se pudo confirmar el negocio activo para leer el catálogo.', 409, { code: 'AI_AGENT_TENANT_CHANGED' }, 'AI_AGENT_TENANT_CHANGED');
+  }
+  let snapshot;
+  try {
+    snapshot = await repository.getAssortmentCatalogSnapshot({
+      maxProducts: ASSORTMENT_MAX_PRODUCTS,
+      maxCategories: ASSORTMENT_MAX_CATEGORIES
+    });
+  } catch {
+    assertTenantUnchanged(actor, assertActor());
+    return {
+      source: 'local_tenant_catalog',
+      products: [],
+      categories: [],
+      productsTruncated: false,
+      categoriesTruncated: false,
+      complete: false
+    };
+  }
+  assertTenantUnchanged(actor, assertActor());
+  if (!snapshot || !Array.isArray(snapshot.products) || !Array.isArray(snapshot.categories)) {
+    throw new AIApiError('El catálogo devuelto no está completo.', 503, { code: 'ASSORTMENT_CATALOG_INVALID' }, 'ASSORTMENT_CATALOG_INVALID');
+  }
+  return snapshot;
+};
 
 const readFailureExecution = (error) => {
   const payload = error?.originalError && typeof error.originalError === 'object'
@@ -138,7 +199,8 @@ const ALLOWED_EVIDENCE_PREFIXES = Object.freeze([
   'metric:',
   'priceSimulation.',
   'promotionSimulation.',
-  'comboOpportunities.'
+  'comboOpportunities.',
+  'assortment.'
 ]);
 
 const allowedEvidenceKey = (value) => (
@@ -194,7 +256,7 @@ const narrativeDiagnosticFromContractFailure = (code) => {
 };
 
 const mergeProviderResponse = (deterministic, providerResponse, intent = null) => {
-  const requireNarrativeUtility = ['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend'].includes(intent);
+  const requireNarrativeUtility = ['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend', ASSORTMENT_INTENT].includes(intent);
   const parsed = parseCommercialAgentResponse(providerResponse, {
     expectedAgentKey: COMMERCIAL_AGENT_KEYS.SALES_PROFITABILITY,
     requireNarrativeUtility
@@ -462,7 +524,9 @@ const limitationMessages = (metadata, prefix = 'periodo') => {
 };
 
 const intentHasUsefulEvidence = (response) => {
-  if (!response || response.coverage?.validSales === 0) return false;
+  if (!response) return false;
+  if (response.intent === ASSORTMENT_INTENT) return response.assortment?.narrativeEligible === true;
+  if (response.coverage?.validSales === 0) return false;
   switch (response.intent) {
     case 'profitability_summary':
       return response.coverage?.complete === true;
@@ -487,6 +551,8 @@ const intentHasUsefulEvidence = (response) => {
       return response.coverage?.comparisonItemsAvailable === true
         && response.comparison
         && response.coverage?.validSales > 0;
+    case ASSORTMENT_INTENT:
+      return response.assortment?.narrativeEligible === true;
     case 'price_simulation':
       return Boolean(response.priceSimulation) && response.coverage?.sourceComplete === true;
     case 'promotion_opportunity':
@@ -862,6 +928,8 @@ export const loadSalesProfitabilityProducts = createSalesProfitabilityProductLoa
 
 export const createSalesProfitabilityAgentRunner = ({
   repository = reportsRepository,
+  catalogRepository = productRepository,
+  catalogLoader = loadAssortmentCatalogSnapshot,
   analyze = analyzeCommercialAgent,
   assertActor = assertCurrentAIAgentActor
 } = {}) => async ({
@@ -899,7 +967,7 @@ export const createSalesProfitabilityAgentRunner = ({
 
   const normalizedPeriod = normalizePeriod(period);
   const currentPeriod = { ...normalizedPeriod, previous: null };
-  const comparisonEnabled = ['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend'].includes(resolvedIntent)
+  const comparisonEnabled = ['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend', ASSORTMENT_INTENT].includes(resolvedIntent)
     || (resolvedIntent === 'explain_change' && compare === true);
   const previousPeriod = comparisonEnabled ? buildPreviousPeriod(currentPeriod) : null;
   if (previousPeriod) previousPeriod.timezone = currentPeriod.timezone;
@@ -930,12 +998,16 @@ export const createSalesProfitabilityAgentRunner = ({
   const execution = (async () => {
     const actor = assertActor();
     const scope = getSalesFinalHistoryScope(actor);
-    const [currentDataset, previousDataset] = await Promise.all([
+    const [currentDataset, previousDataset, catalog] = await Promise.all([
       loadSalesProfitabilityDataset({ repository, period: currentPeriod, scope }),
       previousPeriod
         ? loadSalesProfitabilityDataset({ repository, period: previousPeriod, scope })
+        : Promise.resolve(null),
+      resolvedIntent === ASSORTMENT_INTENT
+        ? catalogLoader({ repository: catalogRepository, actor, assertActor })
         : Promise.resolve(null)
     ]);
+    if (resolvedIntent === ASSORTMENT_INTENT) assertTenantUnchanged(actor, assertActor());
 
     const deterministicBase = buildSalesProfitabilityAnalysis({
       period: currentPeriod,
@@ -950,6 +1022,29 @@ export const createSalesProfitabilityAgentRunner = ({
       currentDataset,
       previousDataset
     });
+
+    if (resolvedIntent === ASSORTMENT_INTENT) {
+      const assortment = buildAssortmentAnalysis({ catalog, currentDataset, previousDataset });
+      const currentSales = assortment.currentPeriod.netSales;
+      const percent = (value) => value === null || value === undefined
+        ? 'no disponible'
+        : `${ASSORTMENT_PERCENT_FORMATTER.format(value * 100)}%`;
+      deterministic.assortment = assortment;
+      deterministic.status = assortment.narrativeEligible ? 'completed' : 'insufficient_data';
+      deterministic.source = deterministic.source === 'cloud' ? 'mixed' : deterministic.source;
+      deterministic.executiveSummary = assortment.catalog.complete
+        ? `Tu catálogo activo tiene ${assortment.health.activeCatalogProducts} producto(s) y ${assortment.health.activeCategories} categoría(s).${assortment.health.unsoldProducts === null ? '' : ` ${assortment.health.unsoldProducts} producto(s) activos no registraron ventas en el periodo.`}`
+        : `Se revisó una parte del catálogo (${assortment.catalog.productsRead} producto(s) y ${assortment.catalog.categoriesRead} categoría(s)); el análisis es parcial.`;
+      deterministic.answer = deterministic.executiveSummary;
+      deterministic.explanation = `Ventas netas identificadas en el detalle: ${currentSales === null ? 'no disponibles' : `$${ASSORTMENT_CURRENCY_FORMATTER.format(currentSales)}`}. Participación de los tres productos principales: ${percent(assortment.health.concentration.top3ProductShare)}. ${assortment.health.previousComparisonAvailable ? 'La comparación usa periodos equivalentes.' : 'No se pudo confirmar una comparación completa con el periodo anterior.'}`;
+      deterministic.limitations = unique([...(deterministic.limitations || []), ...assortment.limitations]);
+      deterministic.coverage = {
+        ...deterministic.coverage,
+        assortmentCatalogComplete: assortment.catalog.complete,
+        assortmentSalesComplete: assortment.health.currentSalesCoverageComplete,
+        assortmentComparisonAvailable: assortment.comparisonAvailable
+      };
+    }
 
     if (!intentHasUsefulEvidence(deterministic)) {
       return {
@@ -967,6 +1062,7 @@ export const createSalesProfitabilityAgentRunner = ({
       period: request.period,
       report: {
         ...deterministic.context,
+        assortment: deterministic.assortment || null,
         coverage: deterministic.coverage,
         calculations: deterministic.calculations,
         assumptions: deterministic.assumptions,

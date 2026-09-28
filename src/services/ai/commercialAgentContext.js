@@ -7,6 +7,7 @@ const SAFE_SOURCES = new Set(['cloud', 'local', 'mixed']);
 const asRecord = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
   ? value
   : {};
+const asArray = (value) => (Array.isArray(value) ? value : []);
 
 const asFiniteNumber = (value) => {
   if (value === null || value === undefined || value === '') return null;
@@ -84,7 +85,7 @@ const PRODUCT_SIGNALS = new Set([
   'high_sales_share', 'healthy_margin', 'cost_unknown', 'low_margin'
 ]);
 const COMPACT_NARRATIVE_INTENTS = new Set([
-  'sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend'
+  'sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend', 'assortment_analysis'
 ]);
 
 const NARRATIVE_EVIDENCE_KEYS = {
@@ -112,6 +113,11 @@ const NARRATIVE_EVIDENCE_KEYS = {
     'summary.unitsPerTicket',
     'metric:deltaNetSales', 'metric:deltaSalesCount', 'metric:deltaUnits', 'metric:deltaTicket',
     'metric:deltaUnitsPerTicket'
+  ],
+  assortment_analysis: [
+    'assortment.metric:activeCatalogProducts', 'assortment.metric:soldProducts',
+    'assortment.metric:unsoldProducts', 'assortment.metric:topProductShare',
+    'assortment.metric:top3ProductShare', 'assortment.metric:topCategoryShare'
   ]
 };
 
@@ -350,7 +356,182 @@ const pickOwnFields = (value, keys) => Object.fromEntries(
   keys.filter((key) => Object.prototype.hasOwnProperty.call(value, key)).map((key) => [key, value[key]])
 );
 
+const ASSORTMENT_SIGNALS = new Set([
+  'category_growing', 'new_category_activity', 'category_declining',
+  'strong_category_few_products', 'single_product_concentration', 'many_unsold_products'
+]);
+const ASSORTMENT_ACTIVITY = new Set([
+  'never_sold_in_window', 'previously_sold_now_inactive', 'low_activity', 'declining'
+]);
+
+const normalizeAssortmentPayload = (value = {}) => {
+  const source = asRecord(value);
+  const health = asRecord(source.health);
+  const concentration = asRecord(health.concentration);
+  const catalog = asRecord(source.catalog);
+  const safeCategory = (row) => {
+    const item = asRecord(row);
+    return {
+      name: asSafeText(item.name, null, 120),
+      active: item.active === true,
+      netSales: pickNumber(item, ['netSales', 'currentSales']),
+      previousNetSales: pickNumber(item, ['previousNetSales', 'previousSales']),
+      salesDelta: pickNumber(item, ['salesDelta']),
+      salesDeltaPercent: pickNumber(item, ['salesDeltaPercent']),
+      units: pickNumber(item, ['units']),
+      previousUnits: pickNumber(item, ['previousUnits']),
+      salesShare: pickNumber(item, ['salesShare']),
+      activeProducts: pickNumber(item, ['activeProducts']),
+      soldProducts: pickNumber(item, ['soldProducts']),
+      unsoldProducts: pickNumber(item, ['unsoldProducts']),
+      topProductShare: pickNumber(item, ['topProductShare']),
+      signals: Array.isArray(item.signals) ? item.signals.filter((signal) => ASSORTMENT_SIGNALS.has(signal)).slice(0, 4) : []
+    };
+  };
+  const safeProduct = (row) => {
+    const item = asRecord(row);
+    return {
+      candidateRef: typeof item.candidateRef === 'string' && /^product_candidate_\d+$/u.test(item.candidateRef) ? item.candidateRef : null,
+      name: asSafeText(item.name, null, MAX_PRODUCT_NAME_LENGTH),
+      category: asSafeText(item.category, null, 120),
+      activity: ASSORTMENT_ACTIVITY.has(item.activity) ? item.activity : null,
+      currentSales: pickNumber(item, ['currentSales']),
+      previousSales: pickNumber(item, ['previousSales']),
+      currentUnits: pickNumber(item, ['currentUnits']),
+      previousUnits: pickNumber(item, ['previousUnits']),
+      availability: item.availability === 'availability_unknown' ? item.availability : null
+    };
+  };
+  const opportunityRows = asArray(source.categoryOpportunities).slice(0, 8).map((row) => {
+    const item = safeCategory(row);
+    const candidateRef = asRecord(row).candidateRef;
+    return {
+      candidateRef: typeof candidateRef === 'string' && /^category_candidate_\d+$/u.test(candidateRef) ? candidateRef : null,
+      ...item
+    };
+  }).filter((row) => row.name);
+  const candidates = asArray(source.opportunityCandidates).slice(0, 8).flatMap((rawCandidate) => {
+    const item = asRecord(rawCandidate);
+    const focus = asRecord(item.focus);
+    const type = item.type === 'category' || item.type === 'product' ? item.type : null;
+    const key = typeof focus.key === 'string' && /^(?:category|product)_candidate_\d+$/u.test(focus.key) ? focus.key : null;
+    if (!type || !key || focus.type !== type || !asSafeText(item.entity, null, MAX_PRODUCT_NAME_LENGTH)) return [];
+    const expectedPrefix = type === 'category' ? `assortment.category:${key}` : `assortment.product:${key}`;
+    const evidenceKeys = asArray(item.evidenceKeys).filter((entry) => entry === expectedPrefix).slice(0, 2);
+    if (!evidenceKeys.length) return [];
+    const metrics = asRecord(item.metrics);
+    return [{
+      key,
+      type,
+      focus: { type, key },
+      entity: asSafeText(item.entity, null, MAX_PRODUCT_NAME_LENGTH),
+      signal: asArray(item.signal).filter((signal) => ASSORTMENT_SIGNALS.has(signal) || signal === 'previously_sold_now_inactive' || signal === 'availability_unknown').slice(0, 4),
+      recommendationType: ['growth_experiment', 'investigation', 'data_quality', 'optimization'].includes(item.recommendationType)
+        ? item.recommendationType
+        : 'investigation',
+      strength: ['strong', 'moderate'].includes(item.strength) ? item.strength : 'moderate',
+      metrics: pickOwnFields(metrics, [
+        'currentSales', 'previousSales', 'salesDelta', 'salesShare',
+        'activeProducts', 'soldProducts', 'unsoldProducts', 'topProductShare',
+        'currentUnits', 'previousUnits', 'costKnown'
+      ]),
+      evidenceKeys
+    }];
+  });
+  const candidateEvidence = candidates.flatMap((candidate) => candidate.evidenceKeys);
+  const evidenceKeys = [
+    ...asArray(source.evidenceKeys).filter((key) => typeof key === 'string' && /^assortment\.(?:metric:[A-Za-z0-9]+|(?:category|product):(?:category|product)_candidate_\d+)$/u.test(key)),
+    ...candidateEvidence
+  ].slice(0, 24);
+
+  return {
+    catalog: {
+      source: catalog.source === 'local_tenant_catalog' ? catalog.source : 'local_tenant_catalog',
+      complete: catalog.complete === true,
+      productsRead: pickNumber(catalog, ['productsRead']),
+      categoriesRead: pickNumber(catalog, ['categoriesRead']),
+      productsTruncated: catalog.productsTruncated === true,
+      categoriesTruncated: catalog.categoriesTruncated === true
+    },
+    health: {
+      activeCatalogProducts: pickNumber(health, ['activeCatalogProducts']),
+      inactiveCatalogProducts: pickNumber(health, ['inactiveCatalogProducts']),
+      soldProducts: pickNumber(health, ['soldProducts']),
+      unsoldProducts: pickNumber(health, ['unsoldProducts']),
+      activeCategories: pickNumber(health, ['activeCategories']),
+      soldCategories: pickNumber(health, ['soldCategories']),
+      currentSalesCoverageComplete: health.currentSalesCoverageComplete === true,
+      previousComparisonAvailable: health.previousComparisonAvailable === true,
+      productSalesJoinCoverage: pickNumber(health, ['productSalesJoinCoverage']),
+      categorySalesCoverage: pickNumber(health, ['categorySalesCoverage']),
+      concentration: pickOwnFields(concentration, ['topProductShare', 'top3ProductShare', 'topCategoryShare', 'categoryRevenueCoverage'])
+    },
+    categoryPerformance: asArray(source.categoryPerformance).slice(0, 10).map(safeCategory).filter((row) => row.name),
+    categoryOpportunities: opportunityRows,
+    dormantProducts: asArray(source.dormantProducts).slice(0, 12).map(safeProduct).filter((row) => row.name),
+    reactivationCandidates: asArray(source.reactivationCandidates).slice(0, 12).map((row) => {
+      const item = safeProduct(row);
+      return {
+        ...item,
+        reason: asSafeText(asRecord(row).reason, null, 200)
+      };
+    }).filter((row) => row.name),
+    opportunityCandidates: candidates,
+    evidenceKeys,
+    minimumUsefulRecommendations: Number.isInteger(source.minimumUsefulRecommendations)
+      ? Math.max(0, Math.min(source.minimumUsefulRecommendations, 2))
+      : 0,
+    narrativeEligible: source.narrativeEligible === true,
+    currentPeriod: pickOwnFields(asRecord(source.currentPeriod), ['netSales', 'units', 'complete']),
+    previousPeriod: pickOwnFields(asRecord(source.previousPeriod), ['netSales', 'units', 'complete']),
+    comparisonAvailable: source.comparisonAvailable === true,
+    limitations: asArray(source.limitations).filter((item) => typeof item === 'string').slice(0, 12).map((item) => item.slice(0, 240))
+  };
+};
+
 const buildNarrativeEvidence = (intent, sales) => {
+  if (intent === 'assortment_analysis') {
+    const assortment = normalizeAssortmentPayload(sales.assortment);
+    const availableEvidence = new Set(assortment.evidenceKeys);
+    const evidenceKeys = [
+      ...(NARRATIVE_EVIDENCE_KEYS.assortment_analysis || []).filter((key) => availableEvidence.has(key)),
+      ...assortment.opportunityCandidates.flatMap((candidate) => candidate.evidenceKeys)
+    ].filter((key, index, values) => values.indexOf(key) === index).slice(0, 24);
+    const candidateKeys = new Set(evidenceKeys);
+    const opportunityCandidates = assortment.opportunityCandidates.filter((candidate) => (
+      candidate.evidenceKeys.every((key) => candidateKeys.has(key))
+    ));
+    return {
+      summary: pickOwnFields(asRecord(sales.summary), ['netSales', 'salesCount', 'units']),
+      products: [],
+      channels: [],
+      comparison: pickOwnFields(asRecord(sales.comparison), ['previousNetSales', 'deltaNetSales', 'deltaNetSalesPercent', 'previousUnits', 'deltaUnits']),
+      growthSignals: { comparisonAvailable: assortment.comparisonAvailable },
+      assortment: {
+        catalog: assortment.catalog,
+        health: assortment.health,
+        categoryPerformance: assortment.categoryPerformance.slice(0, 10),
+        categoryOpportunities: assortment.categoryOpportunities,
+        dormantProducts: assortment.dormantProducts.slice(0, 12),
+        reactivationCandidates: assortment.reactivationCandidates,
+        currentPeriod: assortment.currentPeriod,
+        previousPeriod: assortment.previousPeriod,
+        comparisonAvailable: assortment.comparisonAvailable,
+        limitations: assortment.limitations.slice(0, 8)
+      },
+      evidenceKeys,
+      opportunityCandidates,
+      minimumUsefulRecommendations: assortment.minimumUsefulRecommendations,
+      coverage: pickOwnFields(asRecord(sales.coverage), [
+        'validSales', 'comparisonAvailable', 'comparisonDataAvailable', 'growthDataComplete',
+        'salesDataComplete', 'itemsComplete', 'paginationComplete', 'sourceComplete', 'complete'
+      ]),
+      calculations: [],
+      assumptions: [],
+      scenarios: [],
+      limitations: assortment.limitations.slice(0, 8)
+    };
+  }
   const summaryFields = intent === 'ticket_growth'
     ? ['averageTicket', 'unitsPerTicket', 'salesCount', 'units']
     : intent === 'product_opportunity'
@@ -732,6 +913,9 @@ const normalizeSalesPayload = (payload = {}, intent = null) => {
     products: normalizeProducts(source.products || source.byProduct || source.by_product),
     channels: normalizeChannels(source.channels || source.byChannel || source.by_channel),
     comparison: normalizeComparison(source.comparison || source.previous),
+    ...(Object.keys(asRecord(source.assortment)).length
+      ? { assortment: normalizeAssortmentPayload(source.assortment) }
+      : {}),
     ...(source.growthSignals && Object.keys(asRecord(source.growthSignals)).length
       ? { growthSignals: normalizeGrowthSignals(source.growthSignals, COMPACT_NARRATIVE_INTENTS.has(intent)) }
       : {}),

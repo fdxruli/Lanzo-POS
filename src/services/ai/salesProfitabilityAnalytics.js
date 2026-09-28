@@ -13,6 +13,7 @@ export const SALES_PROFITABILITY_INTENTS = Object.freeze([
   'ticket_growth',
   'product_opportunity',
   'sales_trend',
+  'assortment_analysis',
   'price_simulation',
   'combo_opportunity',
   'promotion_opportunity'

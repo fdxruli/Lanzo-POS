@@ -45,14 +45,32 @@ describe('commercial question router: Lía sales growth', () => {
   });
 
   it.each([
-    ['¿Qué productos nuevos debería vender?', 'assortment'],
-    ['¿Qué productos puedo incorporar?', 'assortment'],
-    ['¿Qué productos o servicios puedo incorporar para atraer más clientela?', 'assortment'],
-    ['Ayúdame a analizar mi competencia', 'competition']
-  ])('keeps future capacities local: %s', (question, topic) => {
+    '¿Cómo está mi surtido?',
+    'Analiza mi catálogo',
+    '¿Dónde tengo oportunidades en mi catálogo?',
+    '¿Qué productos tengo y casi no vendo?',
+    '¿Qué productos dejaron de venderse?',
+    '¿Tengo productos sin movimiento?',
+    '¿Qué categorías venden más?',
+    '¿En qué categorías tengo más oportunidad?',
+    '¿Qué productos debería revisar antes de agregar nuevos?',
+    '¿Qué productos nuevos debería vender?',
+    '¿Qué productos puedo incorporar?',
+    '¿Qué más podría vender?',
+    '¿Qué servicios puedo agregar?'
+  ])('routes assortment question to supported analysis: %s', (question) => {
     expect(resolveCommercialIntent(question)).toMatchObject({
+      kind: 'supported',
+      intent: 'assortment_analysis',
+      requiresProvider: true,
+      requiresData: true
+    });
+  });
+
+  it('keeps competition outside the provider-backed capabilities', () => {
+    expect(resolveCommercialIntent('Ayúdame a analizar mi competencia')).toMatchObject({
       kind: 'recognized_not_supported',
-      topic,
+      topic: 'competition',
       requiresProvider: false,
       requiresData: false
     });

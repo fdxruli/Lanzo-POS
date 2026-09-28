@@ -280,6 +280,7 @@ export const normalizeSalesProfitLine = (row = {}) => {
 
   return {
     saleKey: profitSaleKey(source),
+    productId: textOrNull(source.product_id ?? source.productId, 180),
     productName: textOrNull(source.product_name ?? source.productName ?? source.name, 180) || 'Producto sin nombre',
     quantity: quantity ?? 0,
     lineTotal,
@@ -375,6 +376,7 @@ const mergeProfitLinesIntoHistory = ({ historyRows, profitRows }) => {
     }
     matchedLines.push(line);
     sales[index].items.push({
+      productId: line.productId,
       name: line.productName,
       quantity: line.quantity,
       total: line.lineTotal,

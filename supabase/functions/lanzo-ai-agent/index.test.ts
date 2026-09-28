@@ -341,6 +341,71 @@ function structuredCommercialRequest(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function assortmentAnalysisRequest() {
+  const rawPayload = structuredCommercialRequest({
+    intent: 'assortment_analysis',
+    question: '¿Dónde tengo oportunidades en mi surtido?',
+    requestKey: 'assortment-analysis-test'
+  });
+  const payload = rawPayload as unknown as Record<string, unknown>;
+  const context = rawPayload.context as unknown as Record<string, unknown>;
+  const sales = rawPayload.context.sales as unknown as Record<string, unknown>;
+  const categoryRow = {
+    name: 'Bebidas', active: true, netSales: 100, previousNetSales: 70, units: 2, previousUnits: 1,
+    salesDelta: 30, salesDeltaPercent: 30 / 70, salesShare: 1, activeProducts: 2, soldProducts: 1,
+    unsoldProducts: 1, topProductShare: 0.7, signals: ['category_growing', 'strong_category_few_products']
+  };
+  const evidenceKey = 'assortment.category:category_candidate_1';
+  const categoryCandidate = {
+    key: 'category_candidate_1', type: 'category',
+    focus: { type: 'category', key: 'category_candidate_1' }, entity: 'Bebidas',
+    signal: ['category_growing', 'strong_category_few_products'], recommendationType: 'growth_experiment', strength: 'strong',
+    metrics: { currentSales: 100, previousSales: 70, salesDelta: 30, salesShare: 1, activeProducts: 2, soldProducts: 1, unsoldProducts: 1, topProductShare: 0.7 },
+    evidenceKeys: [evidenceKey]
+  };
+  const assortment = {
+    catalog: { source: 'local_tenant_catalog', complete: true, productsRead: 2, categoriesRead: 1, productsTruncated: false, categoriesTruncated: false },
+    health: {
+      activeCatalogProducts: 2, inactiveCatalogProducts: 0, soldProducts: 1, unsoldProducts: 1,
+      activeCategories: 1, soldCategories: 1, currentSalesCoverageComplete: true, previousComparisonAvailable: true,
+      productSalesJoinCoverage: 1, categorySalesCoverage: 1,
+      concentration: { topProductShare: 0.7, top3ProductShare: 1, topCategoryShare: 1, categoryRevenueCoverage: 1 }
+    },
+    categoryPerformance: [categoryRow],
+    categoryOpportunities: [{ ...categoryRow, candidateRef: 'category_candidate_1' }],
+    dormantProducts: [{ candidateRef: null, name: 'Producto sin ventas', category: 'Bebidas', activity: 'never_sold_in_window', currentSales: 0, previousSales: 0, currentUnits: 0, previousUnits: 0, availability: 'availability_unknown' }],
+    reactivationCandidates: [],
+    currentPeriod: { netSales: 100, units: 2, complete: true },
+    previousPeriod: { netSales: 70, units: 1, complete: true },
+    comparisonAvailable: true,
+    limitations: ['La disponibilidad histórica no se confirmó.']
+  };
+  payload.context = {
+    ...context,
+    sales: {
+      ...sales,
+      summary: { netSales: 100, units: 2, salesCount: 1 },
+      products: [],
+      channels: [],
+      comparison: { previousNetSales: 70, deltaNetSales: 30, deltaNetSalesPercent: 30 / 70 },
+      growthSignals: { comparisonAvailable: true },
+      assortment,
+      coverage: { validSales: 1, itemsComplete: true, paginationComplete: true, sourceComplete: true, complete: true },
+      calculations: [],
+      assumptions: [],
+      scenarios: [],
+      evidenceKeys: [
+        'assortment.metric:activeCatalogProducts', 'assortment.metric:soldProducts',
+        'assortment.metric:unsoldProducts', 'assortment.metric:topProductShare',
+        'assortment.metric:top3ProductShare', 'assortment.metric:topCategoryShare', evidenceKey
+      ],
+      minimumUsefulRecommendations: 1,
+      opportunityCandidates: [categoryCandidate]
+    }
+  };
+  return payload;
+}
+
 function structuredCommercialRequestWithProduct(product: Record<string, unknown>) {
   const payload = structuredCommercialRequest();
   payload.context = {
@@ -1927,4 +1992,75 @@ Deno.test('un periodo anterior sigue rechazado para intentos que no comparan per
   })));
   assertEquals(response.status, 400);
   assertEquals(client.calls.length, 0);
+});
+
+Deno.test('valida el snapshot allowlisted de surtido y rechaza campos de inventario o claves internas', () => {
+  const payload = assortmentAnalysisRequest();
+  const valid = validatePayload(payload);
+  assert(valid.ok, `contexto de surtido válido: ${JSON.stringify(valid)}`);
+
+  const unsafe = structuredClone(payload) as Record<string, unknown>;
+  const context = unsafe.context as Record<string, unknown>;
+  const sales = context.sales as Record<string, unknown>;
+  const assortment = sales.assortment as Record<string, unknown>;
+  const dormant = assortment.dormantProducts as Array<Record<string, unknown>>;
+  dormant[0].stock = 0;
+  assert(!validatePayload(unsafe).ok, 'stock no debe atravesar el contrato de surtido');
+
+  const unknownCandidate = assortmentAnalysisRequest();
+  const unknownSales = (unknownCandidate.context as Record<string, unknown>).sales as Record<string, unknown>;
+  unknownSales.assortment = {
+    ...(unknownSales.assortment as Record<string, unknown>),
+    categoryOpportunities: []
+  };
+  assert(!validatePayload(unknownCandidate).ok, 'un candidato sin categoría de catálogo respaldada debe rechazarse');
+});
+
+Deno.test('la narrativa de surtido sólo puede recomendar una categoría y evidencia ya presentes', async () => {
+  const client = analysisClient();
+  let providerUserMessage = '';
+  const response = await makeHandler(client, {
+    fetchImpl: async (_url, init) => {
+      const body = JSON.parse(String(init?.body || '{}')) as Record<string, unknown>;
+      const messages = body.messages as Array<Record<string, unknown>>;
+      providerUserMessage = String(messages[1].content);
+      return chatResponse(JSON.stringify({
+        version: 1,
+        agentKey: 'salesProfitability',
+        status: 'completed',
+        directAnswer: 'Bebidas muestra una señal de crecimiento y conviene revisar si el catálogo actual puede cubrir mejor esa categoría.',
+        explanation: 'Las ventas de Bebidas crecieron frente al periodo comparable. La categoría activa tiene pocos productos vendidos dentro del catálogo disponible.',
+        facts: [], calculations: [], assumptions: [], scenarios: [],
+        recommendations: [{
+          title: 'Revisar la cobertura de Bebidas',
+          focus: { type: 'category', key: 'category_candidate_1' },
+          recommendationType: 'growth_experiment',
+          explanation: 'Bebidas creció y sólo una parte de sus productos activos registró ventas.',
+          action: 'Revisa primero los productos existentes de Bebidas y prueba una exhibición acotada de uno de ellos.',
+          measurement: 'Compara unidades y ventas de Bebidas con el periodo comparable.',
+          expectedImpact: 'Permitirá comprobar si la prueba coincide con más movimiento, sin afirmar demanda futura.',
+          priority: 'high',
+          evidenceKeys: ['assortment.category:category_candidate_1'],
+          requiresConfirmation: true
+        }],
+        limitations: [], confidence: 'high', source: 'mixed', coverage: { complete: true }, citations: [], actionDrafts: []
+      }));
+    }
+  })(request(assortmentAnalysisRequest()));
+
+  const body = await json(response);
+  const content = JSON.parse(String(body.content)) as Record<string, unknown>;
+  const narrative = content.aiNarrative as Record<string, unknown>;
+  const recommendations = narrative.recommendations as Array<Record<string, unknown>>;
+
+  assertEquals(response.status, 200);
+  assertEquals(body.providerCalled, true);
+  assertEquals(body.quotaOutcome, 'consumed', JSON.stringify(body));
+  assertEquals(narrative.status, 'available');
+  assertEquals((recommendations[0].focus as Record<string, unknown>).key, 'category_candidate_1');
+  assert(recommendations[0].evidenceKeys instanceof Array
+    && (recommendations[0].evidenceKeys as string[]).includes('assortment.category:category_candidate_1'), 'la evidencia conserva la referencia de categoría validada');
+  assert(!/"(?:stock|cost|costs|unitCost|unit_cost|barcode|id)"/u.test(providerUserMessage), 'el prompt no incluye campos de inventario, costo o identificadores');
+  assert(providerUserMessage.includes('Bebidas'), 'el prompt incluye la categoría real respaldada');
+  assertEquals(client.calls.filter((call) => call.name === 'complete_ai_agent_analysis').length, 1);
 });

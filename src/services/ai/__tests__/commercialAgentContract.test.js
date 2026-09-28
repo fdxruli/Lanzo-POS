@@ -42,6 +42,7 @@ describe('commercial AI agent contract', () => {
       'ticket_growth',
       'product_opportunity',
       'sales_trend',
+      'assortment_analysis',
       'price_simulation',
       'combo_opportunity',
       'promotion_opportunity',
@@ -232,14 +233,15 @@ describe('commercial AI agent contract', () => {
     })).toMatchObject({ valid: false, code: 'INVALID_SCENARIO_KEYS' });
   });
 
-  it('keeps all six implemented commercial intents supported', () => {
+  it('keeps all implemented commercial intents supported', () => {
     const expected = [
       ['¿Mi negocio es rentable?', 'profitability_summary'],
       ['¿Por qué cambió mi margen?', 'explain_change'],
       ['¿Qué productos están afectando mi rentabilidad?', 'product_risk'],
       ['¿Qué pasa si aumento el precio?', 'price_simulation'],
       ['¿Qué combos puedo formar?', 'combo_opportunity'],
-      ['¿Qué promoción puedo simular?', 'promotion_opportunity']
+      ['¿Qué promoción puedo simular?', 'promotion_opportunity'],
+      ['¿Cómo está mi surtido?', 'assortment_analysis']
     ];
     for (const [question, intent] of expected) {
       expect(resolveCommercialIntent(question)).toMatchObject({
@@ -300,14 +302,14 @@ describe('commercial AI agent contract', () => {
       ['¿Qué está haciendo mejor mi competencia?', 'competition'],
       ['Ayúdame con mis competidores.', 'competition'],
       ['Quiero ver qué hace mi competencia.', 'competition'],
-      ['¿Qué productos puedo incorporar a mi negocio?', 'assortment'],
-      ['¿Qué productos nuevos debería vender?', 'assortment'],
-      ['¿Qué productos nuevos puedo agregar a mi catálogo?', 'assortment'],
-      ['¿Qué productos o servicios puedo incorporar para atraer más clientela?', 'assortment'],
-      ['¿Qué productos o servicios puedo incorporar a mi negocio para atraer más clientela?', 'assortment'],
-      ['Quiero meter productos nuevos.', 'assortment'],
-      ['¿Qué otra cosa puedo vender?', 'assortment'],
-      ['¿Qué puedo incorporar para atraer más clientela?', 'assortment'],
+      ['¿Qué productos puedo incorporar a mi negocio?', 'assortment_analysis'],
+      ['¿Qué productos nuevos debería vender?', 'assortment_analysis'],
+      ['¿Qué productos nuevos puedo agregar a mi catálogo?', 'assortment_analysis'],
+      ['¿Qué productos o servicios puedo incorporar para atraer más clientela?', 'assortment_analysis'],
+      ['¿Qué productos o servicios puedo incorporar a mi negocio para atraer más clientela?', 'assortment_analysis'],
+      ['Quiero meter productos nuevos.', 'assortment_analysis'],
+      ['¿Qué otra cosa puedo vender?', 'assortment_analysis'],
+      ['¿Qué puedo incorporar para atraer más clientela?', 'assortment_analysis'],
       ['¿Cómo puedo vender más?', 'sales_growth'],
       ['¿Cómo puedo aumentar mis ventas?', 'sales_growth'],
       ['¿Cómo hago crecer mi negocio?', 'sales_growth'],
@@ -320,7 +322,7 @@ describe('commercial AI agent contract', () => {
 
     for (const [question, topic] of cases) {
       const resolution = resolveCommercialIntent(question);
-      if (['competition', 'assortment'].includes(topic)) {
+      if (topic === 'competition') {
         expect(resolution).toMatchObject({
           kind: 'recognized_not_supported',
           topic,
@@ -341,10 +343,8 @@ describe('commercial AI agent contract', () => {
     }
   });
 
-  it('builds local copy for assortment and competition while preserving identity copy', () => {
+  it('keeps competition local and preserves identity copy while assortment is provider-backed', () => {
     const cases = [
-      ['¿Qué productos o servicios puedo incorporar a mi negocio para atraer más clientela?', 'assortment', /ampliar tu oferta|productos nuevos|productos o servicios/i],
-      ['¿Qué productos nuevos debería vender?', 'assortment', /ampliar tu oferta|productos nuevos|productos o servicios/i],
       ['Ayúdame a analizar mi competencia', 'competition', /competencia|competidores/i]
     ];
     const messagesByTopic = new Map();
@@ -359,8 +359,10 @@ describe('commercial AI agent contract', () => {
       messagesByTopic.set(topic, message);
     }
 
-    expect(messagesByTopic.size).toBe(2);
-    expect(new Set(messagesByTopic.values()).size).toBe(2);
+    expect(messagesByTopic.size).toBe(1);
+    expect(resolveCommercialIntent('¿Qué productos nuevos debería vender?')).toMatchObject({
+      kind: 'supported', intent: 'assortment_analysis', requiresProvider: true, requiresData: true
+    });
 
     const identity = createCommercialLocalResponse(resolveCommercialIntent('¿Cómo te llamas?'));
     const nameMeaning = createCommercialLocalResponse(resolveCommercialIntent('¿Por qué te llamas Lía?'));

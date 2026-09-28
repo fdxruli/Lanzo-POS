@@ -149,6 +149,17 @@ describe('sales profitability data', () => {
     });
   });
 
+  it('retains the stable product id from sales detail for catalogue joins', () => {
+    expect(normalizeSalesProfitLine({
+      sale_id: 'sale-a',
+      product_id: 'catalog-product-a',
+      id: 'detail-row-a',
+      product_name: 'Producto A',
+      quantity: 1,
+      line_total: 25
+    })).toMatchObject({ productId: 'catalog-product-a', productName: 'Producto A' });
+  });
+
   it.each([
     ['inventory_movement', {
       movement_cost: 0,

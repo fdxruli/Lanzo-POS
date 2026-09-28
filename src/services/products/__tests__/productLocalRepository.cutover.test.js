@@ -82,6 +82,49 @@ describe('product local catalog cutover intent', () => {
     databaseMocks.softDeleteWithCascadeSafe.mockResolvedValue({ success: true });
   });
 
+  it('reads one bounded tenant-local product/category snapshot and excludes soft-deleted products', async () => {
+    rows.menu.push(
+      { id: 'p1', name: 'Producto activo', isActive: true, stock: 5, cost: 2 },
+      { id: 'p2', name: 'Producto inactivo', isActive: false },
+      { id: 'deleted-camel', name: 'Baja 1', deletedAt: '2026-01-01' },
+      { id: 'deleted-snake', name: 'Baja 2', deleted_timestamp: '2026-01-01' }
+    );
+    rows.categories.push(
+      { id: 'c1', name: 'Categoría 1' },
+      { id: 'c2', name: 'Categoría 2' }
+    );
+    const queries = [];
+    for (const [tableName, storeName] of [['menu', 'menu'], ['categories', 'categories']]) {
+      const table = {
+        filter: vi.fn((predicate) => ({
+          limit: vi.fn((maximum) => ({
+            toArray: vi.fn(async () => {
+              queries.push({ tableName, maximum });
+              return rows[storeName].filter(predicate).slice(0, maximum);
+            })
+          }))
+        }))
+      };
+      tables.set(tableName, table);
+    }
+
+    const snapshot = await productLocalRepository.getAssortmentCatalogSnapshot({ maxProducts: 2, maxCategories: 1 });
+
+    expect(snapshot).toMatchObject({
+      source: 'local_tenant_catalog',
+      complete: false,
+      productsTruncated: false,
+      categoriesTruncated: true,
+      products: [{ id: 'p1', stock: 5, cost: 2 }, { id: 'p2' }],
+      categories: [{ id: 'c1' }]
+    });
+    expect(snapshot.products.some((product) => product.id.startsWith('deleted'))).toBe(false);
+    expect(queries).toEqual(expect.arrayContaining([
+      { tableName: 'menu', maximum: 3 },
+      { tableName: 'categories', maximum: 2 }
+    ]));
+  });
+
   it('exposes active mutations and product/category/batch tombstones to cutover recovery', async () => {
     rows.menu.push({ id: 'updated-product', name: 'Updated', syncStatus: 'local', serverVersion: 4 });
     rows.menu.push({
