@@ -1,3 +1,8 @@
+import {
+  buildRestaurantOrderCommercialSnapshot,
+  buildRestaurantOrderLineCommercialSnapshot
+} from './restaurantSplitCommercialSnapshot';
+
 const DEFAULT_STATION = Object.freeze({
   code: 'kitchen',
   name: 'Cocina'
@@ -99,7 +104,8 @@ export const buildRestaurantOrderPayloadFromOpenSale = ({
       phase: 'REST.2',
       source: 'useTableManagement',
       localStatus: sale.status || null,
-      localFulfillmentStatus: sale.fulfillmentStatus || null
+      localFulfillmentStatus: sale.fulfillmentStatus || null,
+      restaurantSplitCommercialSnapshot: buildRestaurantOrderCommercialSnapshot(sale)
     }
   };
 
@@ -111,15 +117,18 @@ export const buildRestaurantOrderPayloadFromOpenSale = ({
       const productId = normalizeText(item.productId || item.id, null);
       const product = productId && productsById instanceof Map ? productsById.get(productId) : null;
       const station = resolveRestaurantItemStation({ item, product, stations });
-      const unitPrice = toNumber(item.unitPrice ?? item.price, 0);
+      const unitPrice = toNumber(item.unitPrice ?? item.unit_price ?? item.price, 0);
 
       return {
-        localLineId: normalizeText(item.lineId || item.uniqueLineId || item.localLineId, `${sale.id}_${index}`),
+        localLineId: normalizeText(
+          item.lineId || item.cartLineId || item.cartItemId || item.orderItemId || item.uniqueLineId || item.localLineId,
+          `${sale.id}_${index}`
+        ),
         productId,
         productName: normalizeText(item.productName || item.name || item.nombre, 'Producto'),
         quantity,
         unitPrice,
-        lineTotal: toNumber(item.lineTotal, unitPrice * quantity),
+        lineTotal: toNumber(item.lineTotal ?? item.line_total, unitPrice * quantity),
         notes: normalizeText(item.notes || item.kitchenNotes, null),
         selectedModifiers: Array.isArray(item.selectedModifiers) ? item.selectedModifiers : [],
         stationCode: station.code,
@@ -129,7 +138,8 @@ export const buildRestaurantOrderPayloadFromOpenSale = ({
           phase: 'REST.2',
           source: 'local_sale',
           batchId: item.batchId || null,
-          isVariant: Boolean(item.isVariant)
+          isVariant: Boolean(item.isVariant),
+          restaurantSplitCommercialSnapshot: buildRestaurantOrderLineCommercialSnapshot(item)
         }
       };
     })

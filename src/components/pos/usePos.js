@@ -93,6 +93,7 @@ export function usePos() {
             cajaActual: pos.cajaActual,
             aperturaPendiente: pos.aperturaPendiente,
             total: pos.total,
+            saleDiscount: pos.saleDiscount,
             totalItemsCount: pos.totalItemsCount,
             menuVisual: search.menuVisual,
             categories: search.categories,

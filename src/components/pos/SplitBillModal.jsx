@@ -3,7 +3,12 @@ import { Check, Minus, Plus, RotateCcw, X } from 'lucide-react';
 import { loadData, STORES } from '../../services/database';
 import { Money } from '../../utils/moneyMath';
 import { getCartLineId } from '../../utils/cartLineIdentity';
-import { normalizeStock } from '../../services/db/utils';
+import { normalizeStock, STOCK_DECIMALS } from '../../services/db/utils';
+import {
+  calculateByItemsTicketFinancials,
+  RESTAURANT_SPLIT_INTENTS,
+  splitRequiresCashSessionCompatibility
+} from '../../services/sales/splitOrderContract';
 import './SplitBillModal.css';
 
 const MIN_TICKETS = 2;
@@ -26,13 +31,13 @@ const generateTicketLabels = (count) =>
   Array.from({ length: count }, (_, i) => `T${i + 1}`);
 
 /**
- * Build equal allocations for N tickets.
+ * Initialize every product in the unassigned pool for N tickets.
  * All products start in the Pool (unassigned), not auto-distributed.
  * @param {Array} order - Order items
  * @param {number} ticketCount - Number of tickets
  * @returns {Array} Allocations array with pool quantities
  */
-const buildEqualAllocations = (order = [], ticketCount = 2) => {
+const buildInitialAllocations = (order = [], ticketCount = 2) => {
   if (ticketCount < MIN_TICKETS) ticketCount = MIN_TICKETS;
   if (ticketCount > MAX_TICKETS) ticketCount = MAX_TICKETS;
 
@@ -52,45 +57,30 @@ const buildEqualAllocations = (order = [], ticketCount = 2) => {
  * @param {Object} params
  * @returns {Object} Math results for all tickets
  */
-const calculateTicketMath = ({ order = [], allocations = [], mode = 'manual', total = 0 }) => {
+const calculateTicketMath = ({ order = [], allocations = [], total = 0, saleDiscount = null }) => {
   const ticketCount = allocations[0]?.ticketQuantities?.length || MIN_TICKETS;
-  const baseCents = Array(ticketCount).fill(0);
-
-  (order || []).forEach((item, index) => {
-    const allocation = allocations[index];
-    if (!allocation) return;
-
-    const price = item?.price || 0;
-
-    allocation.ticketQuantities.forEach((qty, ticketIdx) => {
-      const lineTotal = Money.multiply(price, qty);
-      baseCents[ticketIdx] += Money.toCents(lineTotal);
-    });
+  const financials = calculateByItemsTicketFinancials({
+    items: order,
+    saleDiscount,
+    tickets: Array.from({ length: ticketCount }, (_, ticketIdx) => ({
+      label: `T${ticketIdx + 1}`,
+      lines: buildTicketLines(allocations, ticketIdx)
+    })),
+    parentTotal: total
   });
-
-  const parentCents = Money.toCents(total || 0);
-  const adjustments = Array(ticketCount).fill(0);
-
-  if (mode === 'equal') {
-    // Distribute remainder to first tickets
-    const basePerTicket = Math.floor(parentCents / ticketCount);
-    const remainder = parentCents % ticketCount;
-
-    baseCents.forEach((base, idx) => {
-      const target = basePerTicket + (idx < remainder ? 1 : 0);
-      adjustments[idx] = target - base;
-    });
-  } else {
-    // Manual: remainder goes to first ticket
-    const totalBase = baseCents.reduce((a, b) => a + b, 0);
-    adjustments[0] = parentCents - totalBase;
-  }
+  const ticketFinancials = financials.tickets.length === ticketCount
+    ? financials.tickets
+    : Array(ticketCount).fill(null);
+  const baseCents = ticketFinancials.map((ticket) => ticket?.baseCents || 0);
+  const adjustments = ticketFinancials.map((ticket) => ticket?.roundingAdjustmentCents || 0);
 
   return {
-    parentCents,
+    parentCents: financials.parentTotalCents,
     baseCents,
     adjustments,
     totalsCents: baseCents.map((base, idx) => base + adjustments[idx]),
+    discountCents: ticketFinancials.map((ticket) => ticket?.discountTotalCents || 0),
+    roundingError: financials.valid ? null : 'La diferencia entre productos, descuentos y total supera el redondeo permitido. No se alterarán precios ni descuentos; revisa la cuenta.',
     ticketCount
   };
 };
@@ -108,7 +98,7 @@ const formatMoneyFromCents = (cents) => Money.toNumber(Money.fromCents(cents)).t
 const formatQuantity = (value) => {
   const quantity = toQuantity(value);
   if (Number.isInteger(quantity)) return String(quantity);
-  return quantity.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
+  return quantity.toFixed(STOCK_DECIMALS).replace(/0+$/, '').replace(/\.$/, '');
 };
 
 /**
@@ -150,11 +140,11 @@ export default function SplitBillModal({
   onClose,
   order = [],
   total = 0,
+  saleDiscount = null,
   onConfirm,
   isCajaOpen = true
 }) {
   const [splitCount, setSplitCount] = useState(2);
-  const [mode, setMode] = useState('manual');
   const [allocations, setAllocations] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [payments, setPayments] = useState({});
@@ -170,15 +160,14 @@ export default function SplitBillModal({
   useEffect(() => {
     if (!show) return;
 
-    const initialAllocations = buildEqualAllocations(order, splitCount);
+    const initialAllocations = buildInitialAllocations(order, splitCount);
     const initialMath = calculateTicketMath({
       order,
       allocations: initialAllocations,
-      mode: 'manual',
-      total
+      total,
+      saleDiscount
     });
 
-    setMode('manual');
     setAllocations(initialAllocations);
     setPayments(initialPaymentsState(splitCount, initialMath.totalsCents));
     setIsSubmitting(false);
@@ -189,7 +178,7 @@ export default function SplitBillModal({
     };
 
     fetchCustomers();
-  }, [show, order, total, splitCount]);
+  }, [show, order, total, saleDiscount, splitCount]);
 
   useEffect(() => {
     if (!show) return undefined;
@@ -240,8 +229,8 @@ export default function SplitBillModal({
   }, [show, order, splitCount]);
 
   const ticketMath = useMemo(
-    () => calculateTicketMath({ order, allocations, mode, total }),
-    [order, allocations, mode, total]
+    () => calculateTicketMath({ order, allocations, total, saleDiscount }),
+    [order, allocations, total, saleDiscount]
   );
 
   const assignmentProgress = useMemo(() => {
@@ -323,6 +312,10 @@ export default function SplitBillModal({
       }
     }
 
+    if (ticketMath.roundingError) {
+      return ticketMath.roundingError;
+    }
+
     // Verify totals sum correctly
     const totalChildren = ticketMath.totalsCents.reduce((a, b) => a + b, 0);
     if (totalChildren !== ticketMath.parentCents) {
@@ -387,7 +380,7 @@ export default function SplitBillModal({
 
   const willAutoOpenCaja = useMemo(() => (
     !isCajaOpen &&
-    ticketLabels.some((label) => payments[label]?.paymentMethod === 'efectivo')
+    splitRequiresCashSessionCompatibility(ticketLabels.map((label) => ({ paymentData: payments[label] })))
   ), [isCajaOpen, payments, ticketLabels]);
 
   /**
@@ -519,32 +512,6 @@ export default function SplitBillModal({
     setSplitCount(count);
   };
 
-  const handleModeChange = (nextMode) => {
-    setMode(nextMode);
-    if (nextMode === 'equal') {
-      // Auto-distribute pool equally among all tickets
-      setAllocations((prev) =>
-        prev.map((alloc) => {
-          const total = toQuantity(alloc.poolQuantity) +
-            alloc.ticketQuantities.reduce((a, b) => a + b, 0);
-          const perTicket = Math.floor(total / splitCount);
-          const remainder = total % splitCount;
-
-          const newTicketQuantities = Array(splitCount).fill(perTicket);
-          // Add remainder to first tickets
-          for (let i = 0; i < remainder; i++) {
-            newTicketQuantities[i] += 1;
-          }
-
-          return {
-            poolQuantity: 0,
-            ticketQuantities: newTicketQuantities
-          };
-        })
-      );
-    }
-  };
-
   const handleSubmit = async (event) => {
     event.preventDefault();
 
@@ -556,7 +523,7 @@ export default function SplitBillModal({
 
     try {
       const payload = {
-        mode,
+        splitIntent: RESTAURANT_SPLIT_INTENTS.BY_ITEMS,
         tickets: ticketLabels.map((label, idx) => {
           const ticketTotal = Money.fromCents(ticketMath.totalsCents[idx]);
           const paidInput = toMoneySafe(payments[label]?.amountPaid || 0, '0');
@@ -609,7 +576,7 @@ export default function SplitBillModal({
             <span className="split-bill-kicker">Separación de cobro</span>
             <h2 id="split-bill-title">Dividir cuenta</h2>
             <p id="split-bill-description">
-              Asigna lo pendiente a cada ticket y confirma el método de pago.
+              Asigna los productos que pagará cada persona y confirma el método de pago.
             </p>
           </div>
           <button
@@ -659,25 +626,9 @@ export default function SplitBillModal({
             </select>
           </div>
 
-          <div className="split-mode-row" aria-label="Modo de división">
-            <button
-              type="button"
-              className={`btn-method ${mode === 'manual' ? 'active' : ''}`}
-              onClick={() => handleModeChange('manual')}
-              aria-pressed={mode === 'manual'}
-              disabled={isSubmitting}
-            >
-              Manual
-            </button>
-            <button
-              type="button"
-              className={`btn-method ${mode === 'equal' ? 'active' : ''}`}
-              onClick={() => handleModeChange('equal')}
-              aria-pressed={mode === 'equal'}
-              disabled={isSubmitting}
-            >
-              Equitativo
-            </button>
+          <div className="split-strategy-card" aria-label="Estrategia de división">
+            <strong>Cada quien paga lo suyo</strong>
+            <span>Asigna los productos que pagará cada persona. Cada ticket conserva el precio original de sus artículos.</span>
           </div>
         </div>
 
@@ -698,7 +649,7 @@ export default function SplitBillModal({
 
                   const poolQty = toQuantity(allocation.poolQuantity);
                   const totalQty = toQuantity(item.quantity || 0);
-                  const step = isUnitItem(item) ? 1 : 0.0001;
+                  const step = isUnitItem(item) ? 1 : (10 ** -STOCK_DECIMALS);
                   const isCompleted = poolQty <= 0;
 
                   return (
@@ -771,6 +722,7 @@ export default function SplitBillModal({
                 {ticketLabels.map((label, tIdx) => {
                   const ticketTotalCents = ticketMath.totalsCents[tIdx];
                   const adjustment = ticketMath.adjustments[tIdx];
+                  const discountCents = ticketMath.discountCents[tIdx] || 0;
                   const payment = payments[label] || {};
                   const ticketItems = order.reduce((items, item, idx) => {
                     const qty = toQuantity(allocations[idx]?.ticketQuantities?.[tIdx] || 0);
@@ -795,9 +747,15 @@ export default function SplitBillModal({
                         </p>
                       </div>
 
+                      {discountCents > 0 && (
+                        <p className="split-ticket-discount">
+                          Descuento aplicado: -${formatMoneyFromCents(discountCents)}
+                        </p>
+                      )}
+
                       {adjustment !== 0 && (
                         <p className="split-ticket-adjustment">
-                          Ajuste: {adjustment >= 0 ? '+' : ''}${formatMoneyFromCents(adjustment)}
+                          Ajuste de redondeo: {adjustment > 0 ? '+' : '-'}${formatMoneyFromCents(Math.abs(adjustment))}
                         </p>
                       )}
 
@@ -812,10 +770,10 @@ export default function SplitBillModal({
                               <button
                                 type="button"
                                 className="btn-item-remove"
-                                onClick={() => moveToPool(lineIndex, tIdx, isUnitItem(item) ? 1 : 0.0001)}
+                                onClick={() => moveToPool(lineIndex, tIdx, isUnitItem(item) ? 1 : (10 ** -STOCK_DECIMALS))}
                                 disabled={isSubmitting}
-                                aria-label={`Quitar una unidad de ${item.name} del ticket ${label}`}
-                                title="Quitar uno"
+                                aria-label={`Quitar ${isUnitItem(item) ? 'una unidad' : formatQuantity(10 ** -STOCK_DECIMALS)} de ${item.name} del ticket ${label}`}
+                                title={isUnitItem(item) ? 'Quitar una unidad' : `Quitar ${formatQuantity(10 ** -STOCK_DECIMALS)}`}
                               >
                                 <Minus size={14} aria-hidden="true" />
                               </button>
@@ -908,7 +866,7 @@ export default function SplitBillModal({
 
           {!splitValidationError && willAutoOpenCaja && (
             <p className="split-validation-warning">
-              La caja se abrirá automáticamente al confirmar el cobro en efectivo.
+              Este cobro requiere una sesión de caja activa. Se verificará al confirmar.
             </p>
           )}
 
