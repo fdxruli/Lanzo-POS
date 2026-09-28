@@ -1816,7 +1816,7 @@ export default function CommercialAIAgentsPage() {
                         placeholder="Ejemplo: 15 o -20" aria-describedby="sales-agent-what-if-percent-help"
                         value={scenario.changePercent ?? ''} onChange={handleScenarioChange} />
                     </label>
-                    <p className="commercial-ai-muted" id="sales-agent-what-if-percent-help">
+                    <p className="commercial-ai-muted" id="sales-agent-what-if-percent-help" style={{ flexBasis: '100%', margin: 0 }}>
                       Indica cuánto cambiaría la variable elegida respecto al valor actual. +50% significa multiplicar por 1.5,
                       +100% significa duplicar y −50% significa reducir a la mitad. Si escribes un porcentaje en la pregunta,
                       Lía lo completa automáticamente; si no, selecciona un ejemplo o escribe tu propio valor.
