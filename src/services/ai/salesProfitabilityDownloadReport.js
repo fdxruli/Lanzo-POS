@@ -535,6 +535,114 @@ const safeUsage = (usageStatus) => {
   };
 };
 
+const ASSORTMENT_SIGNAL_KEYS = new Set([
+  'category_growing', 'new_category_activity', 'category_declining',
+  'strong_category_few_products', 'single_product_concentration', 'many_unsold_products'
+]);
+const ASSORTMENT_ACTIVITY_KEYS = new Set([
+  'never_sold_in_window', 'previously_sold_now_inactive', 'low_activity', 'declining'
+]);
+
+const safeAssortment = (value) => {
+  const source = asRecord(value);
+  if (!Object.keys(source).length) return null;
+  const catalog = asRecord(source.catalog);
+  const health = asRecord(source.health);
+  const concentration = asRecord(health.concentration);
+  const safeCategory = (value) => {
+    const row = asRecord(value);
+    return {
+      name: sanitizeText(row.name, 120),
+      active: safeBoolean(row.active),
+      netSales: finiteNumber(row.netSales),
+      previousNetSales: finiteNumber(row.previousNetSales),
+      units: finiteNumber(row.units),
+      previousUnits: finiteNumber(row.previousUnits),
+      salesDelta: finiteNumber(row.salesDelta),
+      salesDeltaPercent: finiteNumber(row.salesDeltaPercent),
+      salesShare: finiteNumber(row.salesShare),
+      activeProducts: finiteNumber(row.activeProducts),
+      soldProducts: finiteNumber(row.soldProducts),
+      unsoldProducts: finiteNumber(row.unsoldProducts),
+      topProductShare: finiteNumber(row.topProductShare),
+      signals: safeTextArray(row.signals, 6, 48).filter((signal) => ASSORTMENT_SIGNAL_KEYS.has(signal))
+    };
+  };
+  const safeProduct = (value) => {
+    const row = asRecord(value);
+    const activity = ASSORTMENT_ACTIVITY_KEYS.has(row.activity) ? row.activity : null;
+    return {
+      candidateRef: /^product_candidate_\d+$/u.test(String(row.candidateRef || '')) ? row.candidateRef : null,
+      name: sanitizeText(row.name, 180),
+      category: sanitizeText(row.category, 120) || null,
+      activity,
+      currentSales: finiteNumber(row.currentSales),
+      previousSales: finiteNumber(row.previousSales),
+      currentUnits: finiteNumber(row.currentUnits),
+      previousUnits: finiteNumber(row.previousUnits),
+      availability: row.availability === 'availability_unknown' ? row.availability : null,
+      reason: sanitizeText(row.reason, 200) || null
+    };
+  };
+  return {
+    version: Number.isInteger(source.version) ? source.version : 1,
+    catalog: {
+      source: catalog.source === 'local_tenant_catalog' ? catalog.source : null,
+      complete: safeBoolean(catalog.complete),
+      productsRead: finiteNumber(catalog.productsRead),
+      categoriesRead: finiteNumber(catalog.categoriesRead),
+      productsTruncated: safeBoolean(catalog.productsTruncated),
+      categoriesTruncated: safeBoolean(catalog.categoriesTruncated)
+    },
+    health: {
+      activeCatalogProducts: finiteNumber(health.activeCatalogProducts),
+      inactiveCatalogProducts: finiteNumber(health.inactiveCatalogProducts),
+      soldProducts: finiteNumber(health.soldProducts),
+      unsoldProducts: finiteNumber(health.unsoldProducts),
+      activeCategories: finiteNumber(health.activeCategories),
+      soldCategories: finiteNumber(health.soldCategories),
+      currentSalesCoverageComplete: safeBoolean(health.currentSalesCoverageComplete),
+      previousComparisonAvailable: safeBoolean(health.previousComparisonAvailable),
+      productSalesJoinCoverage: finiteNumber(health.productSalesJoinCoverage),
+      categorySalesCoverage: finiteNumber(health.categorySalesCoverage),
+      concentration: {
+        topProductShare: finiteNumber(concentration.topProductShare),
+        top3ProductShare: finiteNumber(concentration.top3ProductShare),
+        topCategoryShare: finiteNumber(concentration.topCategoryShare),
+        categoryRevenueCoverage: finiteNumber(concentration.categoryRevenueCoverage)
+      }
+    },
+    categoryPerformance: (Array.isArray(source.categoryPerformance) ? source.categoryPerformance : []).slice(0, 10).map(safeCategory),
+    categoryOpportunities: (Array.isArray(source.categoryOpportunities) ? source.categoryOpportunities : []).slice(0, 8).map((value) => {
+      const row = asRecord(value);
+      return {
+        ...safeCategory({ ...row, netSales: row.currentSales, previousNetSales: row.previousSales }),
+        candidateRef: /^category_candidate_\d+$/u.test(String(row.candidateRef || '')) ? row.candidateRef : null
+      };
+    }),
+    dormantProducts: (Array.isArray(source.dormantProducts) ? source.dormantProducts : []).slice(0, 12).map(safeProduct),
+    reactivationCandidates: (Array.isArray(source.reactivationCandidates) ? source.reactivationCandidates : []).slice(0, 12).map(safeProduct),
+    opportunityCandidates: (Array.isArray(source.opportunityCandidates) ? source.opportunityCandidates : []).slice(0, 8).map(safeOpportunityCandidate),
+    evidenceKeys: safeTextArray(source.evidenceKeys, 24, 120).filter((key) => /^assortment\.(?:metric:[A-Za-z0-9]+|(?:category|product):(?:category|product)_candidate_\d+)$/u.test(key)),
+    minimumUsefulRecommendations: Number.isInteger(source.minimumUsefulRecommendations)
+      ? Math.max(0, Math.min(2, source.minimumUsefulRecommendations))
+      : 0,
+    currentPeriod: {
+      netSales: finiteNumber(source.currentPeriod?.netSales),
+      units: finiteNumber(source.currentPeriod?.units),
+      complete: safeBoolean(source.currentPeriod?.complete)
+    },
+    previousPeriod: {
+      netSales: finiteNumber(source.previousPeriod?.netSales),
+      units: finiteNumber(source.previousPeriod?.units),
+      complete: safeBoolean(source.previousPeriod?.complete)
+    },
+    comparisonAvailable: safeBoolean(source.comparisonAvailable),
+    narrativeEligible: safeBoolean(source.narrativeEligible),
+    limitations: safeTextArray(source.limitations, 8, 240)
+  };
+};
+
 export const buildSalesProfitabilityDownloadReport = (result, requestContext = {}, options = {}) => {
   const response = asRecord(result?.response);
   if (!Object.keys(response).length) return null;
@@ -605,6 +713,7 @@ export const buildSalesProfitabilityDownloadReport = (result, requestContext = {
       previous: safeAggregate(response.previous),
       comparison: safeComparison(response.comparison),
       growthSignals: safeGrowthSignals(response.growthSignals),
+      assortment: safeAssortment(response.assortment),
       opportunityCandidates: (Array.isArray(response.opportunityCandidates) ? response.opportunityCandidates : [])
         .slice(0, 8).map(safeOpportunityCandidate),
       minimumUsefulRecommendations: Number.isInteger(response.minimumUsefulRecommendations)
@@ -672,6 +781,7 @@ export const sanitizeSalesProfitabilityDownloadReport = (value) => {
       previous: deterministic.previous,
       comparison: deterministic.comparison,
       growthSignals: deterministic.growthSignals,
+      assortment: deterministic.assortment,
       opportunityCandidates: deterministic.opportunityCandidates,
       minimumUsefulRecommendations: deterministic.minimumUsefulRecommendations,
       productOpportunities: deterministic.productOpportunities,

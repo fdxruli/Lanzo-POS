@@ -148,10 +148,18 @@ export const resolveCommercialIntent = (question = '', options = {}) => {
     || containsAny(text, /\b(?:productos?|servicios?)\s+nuevos?\b/u)
     || containsAny(text, /\b(?:nuevos?|nuevas?)\s+(?:productos?|servicios?)\b/u)
     || containsAny(text, /\bque otra cosa puedo vender\b/u)
+    || containsAny(text, /\bque\s+mas\s+(?:podria|puedo)\s+vender\b/u)
     || containsAny(text, /\b(?:ampliar|mejorar)\s+(?:mi\s+)?(?:oferta|surtido|catalogo)\b/u)
     || (containsAny(text, /\b(?:producto|productos|servicio|servicios)\b/u)
-      && containsAny(text, /\b(?:atraer|conseguir)\s+(?:mas\s+)?(?:clientela|clientes)\b/u))) {
-    return resolution('recognized_not_supported', { topic: 'assortment', confidence: 'high' });
+      && containsAny(text, /\b(?:atraer|conseguir)\s+(?:mas\s+)?(?:clientela|clientes)\b/u))
+    || containsAny(text, /\b(?:surtido|catalogo)\b/u)
+    || (containsAny(text, /\b(?:producto|productos|articulo|articulos)\b/u)
+      && containsAny(text, /\b(?:casi no vendo|casi no se venden|poco movimiento|sin movimiento|no estoy vendiendo|no vendo|dejaron de venderse|dejo de venderse|perdiendo movimiento|antes de agregar|antes de incorporar)\b/u))
+    || (containsAny(text, /\b(?:categorias?)\b/u)
+      && containsAny(text, /\b(?:venden mas|mas oportunidad|oportunidad|perdiendo fuerza|estan cayendo|estan creciendo|crecimiento|concentrad)\w*\b/u))
+    || containsAny(text, /\b(?:productos?)\s+(?:del|de mi)\s+catalogo\b/u)
+    || containsAny(text, /\b(?:donde|como)\s+(?:tengo\s+)?oportunidades?\s+(?:en|para ampliar)\s+(?:mi\s+)?(?:catalogo|surtido)\b/u)) {
+    return supported('assortment_analysis', optionValues);
   }
 
   if (containsAny(text, /\b(?:ticket promedio|ticket medio|subir el ticket|aumentar el ticket|subir mi ticket|aumentar mi ticket|aumentar cada venta|cada venta sea mayor)\b/u)

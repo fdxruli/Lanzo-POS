@@ -73,6 +73,7 @@ export const COMMERCIAL_AGENT_INTENTS = [
   'ticket_growth',
   'product_opportunity',
   'sales_trend',
+  'assortment_analysis',
   'price_simulation',
   'combo_opportunity',
   'promotion_opportunity'
@@ -162,7 +163,8 @@ const COMMERCIAL_SALES_KEYS = new Set([
   'limitations',
   'scenarios',
   'opportunityCandidates',
-  'minimumUsefulRecommendations'
+  'minimumUsefulRecommendations',
+  'assortment'
 ]);
 const COMMERCIAL_SUMMARY_KEYS = new Set([
   'netSales',
@@ -242,18 +244,55 @@ const COMMERCIAL_GROWTH_SIGNAL_KEYS = new Set([
   'previousUnitsPerTicket', 'deltaUnitsPerTicket', 'productsGrowing', 'productsDeclining',
   'productOpportunities', 'channels', 'channelChanges', 'comparisonAvailable'
 ]);
-const COMMERCIAL_OPPORTUNITY_TYPES = new Set(['product', 'channel', 'ticket', 'units_per_ticket', 'tickets', 'general']);
+const COMMERCIAL_OPPORTUNITY_TYPES = new Set(['product', 'category', 'channel', 'ticket', 'units_per_ticket', 'tickets', 'general']);
 const COMMERCIAL_OPPORTUNITY_SIGNALS = new Set([
   'high_sales_share', 'growing', 'healthy_margin', 'new_in_period', 'ticket_increased',
   'ticket_baseline_available', 'units_per_ticket_increased', 'units_per_ticket_baseline_available',
   'tickets_increased', 'ticket_count_baseline_available', 'channel_sales_disappeared',
-  'channel_sales_increased', 'channel_change_to_check'
+  'channel_sales_increased', 'channel_change_to_check', 'category_growing', 'new_category_activity',
+  'category_declining', 'strong_category_few_products', 'single_product_concentration',
+  'many_unsold_products', 'previously_sold_now_inactive', 'availability_unknown'
 ]);
 const COMMERCIAL_RECOMMENDATION_TYPES = new Set(['growth_experiment', 'investigation', 'data_quality', 'optimization']);
 const COMMERCIAL_OPPORTUNITY_METRIC_KEYS = new Set([
   'currentSales', 'currentShare', 'salesDelta', 'currentUnits', 'costKnown',
   'currentAverageTicket', 'deltaTicket', 'currentUnitsPerTicket', 'deltaUnitsPerTicket',
-  'currentSalesCount', 'deltaSalesCount', 'previousSales', 'previousShare', 'deltaShare'
+  'currentSalesCount', 'deltaSalesCount', 'previousSales', 'previousShare', 'deltaShare',
+  'salesShare', 'activeProducts', 'soldProducts', 'unsoldProducts', 'topProductShare',
+  'currentUnits', 'previousUnits'
+]);
+const COMMERCIAL_ASSORTMENT_KEYS = new Set([
+  'catalog', 'health', 'categoryPerformance', 'categoryOpportunities', 'dormantProducts',
+  'reactivationCandidates', 'currentPeriod', 'previousPeriod', 'comparisonAvailable', 'limitations'
+]);
+const COMMERCIAL_ASSORTMENT_CATALOG_KEYS = new Set([
+  'source', 'complete', 'productsRead', 'categoriesRead', 'productsTruncated', 'categoriesTruncated'
+]);
+const COMMERCIAL_ASSORTMENT_HEALTH_KEYS = new Set([
+  'activeCatalogProducts', 'inactiveCatalogProducts', 'soldProducts', 'unsoldProducts',
+  'activeCategories', 'soldCategories', 'currentSalesCoverageComplete', 'previousComparisonAvailable',
+  'productSalesJoinCoverage', 'categorySalesCoverage', 'concentration'
+]);
+const COMMERCIAL_ASSORTMENT_CONCENTRATION_KEYS = new Set([
+  'topProductShare', 'top3ProductShare', 'topCategoryShare', 'categoryRevenueCoverage'
+]);
+const COMMERCIAL_ASSORTMENT_CATEGORY_KEYS = new Set([
+  'name', 'active', 'netSales', 'previousNetSales', 'units', 'previousUnits', 'salesDelta', 'salesDeltaPercent',
+  'salesShare', 'activeProducts', 'soldProducts', 'unsoldProducts', 'topProductShare', 'signals'
+]);
+const COMMERCIAL_ASSORTMENT_OPPORTUNITY_KEYS = new Set([...COMMERCIAL_ASSORTMENT_CATEGORY_KEYS, 'candidateRef']);
+const COMMERCIAL_ASSORTMENT_PRODUCT_KEYS = new Set([
+  'candidateRef', 'name', 'category', 'activity', 'currentSales', 'previousSales',
+  'currentUnits', 'previousUnits', 'availability'
+]);
+const COMMERCIAL_ASSORTMENT_REACTIVATION_KEYS = new Set([...COMMERCIAL_ASSORTMENT_PRODUCT_KEYS, 'reason']);
+const COMMERCIAL_ASSORTMENT_PERIOD_KEYS = new Set(['netSales', 'units', 'complete']);
+const COMMERCIAL_ASSORTMENT_SIGNALS = new Set([
+  'category_growing', 'new_category_activity', 'category_declining', 'strong_category_few_products',
+  'single_product_concentration', 'many_unsold_products'
+]);
+const COMMERCIAL_ASSORTMENT_ACTIVITY = new Set([
+  'never_sold_in_window', 'previously_sold_now_inactive', 'low_activity', 'declining'
 ]);
 const COMMERCIAL_CONTRIBUTOR_KEYS = new Set(['key', 'title', 'contribution', 'direction', 'explanation', 'evidenceKeys']);
 const COMMERCIAL_CALCULATION_KEYS = new Set(['label', 'value', 'formattedValue', 'formula', 'source', 'period']);
@@ -389,10 +428,105 @@ function validCommercialScenarioOutput(value: unknown): value is Record<string, 
 
 function validCommercialPeriod(value: unknown, intent = 'explain_change'): value is Record<string, unknown> {
   if (!isRecord(value) || !assertOnlyKeys(value, COMMERCIAL_PERIOD_KEYS)) return false;
-  const comparableIntent = ['explain_change', 'sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend'].includes(intent);
+  const comparableIntent = ['explain_change', 'sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend', 'assortment_analysis'].includes(intent);
   if (!comparableIntent && (value.previousFrom !== null && value.previousFrom !== undefined
     || value.previousTo !== null && value.previousTo !== undefined)) return false;
   return Object.values(value).every((entry) => entry === null || (typeof entry === 'string' && entry.length <= 80));
+}
+
+const validNonnegativeIntegerOrNull = (value: unknown): boolean => (
+  value === null || (typeof value === 'number' && Number.isInteger(value) && value >= 0)
+);
+const validRatioOrNull = (value: unknown): boolean => (
+  value === null || (typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1)
+);
+const validAssortmentText = (value: unknown, maximum = 120): boolean => (
+  value === null || (typeof value === 'string' && value.length <= maximum)
+);
+
+function validCommercialAssortment(value: unknown): boolean {
+  if (!isRecord(value) || !assertOnlyKeys(value, COMMERCIAL_ASSORTMENT_KEYS)) return false;
+  const catalog = value.catalog;
+  const health = value.health;
+  const concentration = isRecord(health) ? health.concentration : null;
+  if (!isRecord(catalog) || !assertOnlyKeys(catalog, COMMERCIAL_ASSORTMENT_CATALOG_KEYS)
+    || catalog.source !== 'local_tenant_catalog'
+    || typeof catalog.complete !== 'boolean'
+    || !validNonnegativeIntegerOrNull(catalog.productsRead)
+    || !validNonnegativeIntegerOrNull(catalog.categoriesRead)
+    || catalog.productsRead !== null && Number(catalog.productsRead) > 5000
+    || catalog.categoriesRead !== null && Number(catalog.categoriesRead) > 500
+    || typeof catalog.productsTruncated !== 'boolean'
+    || typeof catalog.categoriesTruncated !== 'boolean') return false;
+  if (!isRecord(health) || !assertOnlyKeys(health, COMMERCIAL_ASSORTMENT_HEALTH_KEYS)
+    || !validNonnegativeIntegerOrNull(health.activeCatalogProducts)
+    || !validNonnegativeIntegerOrNull(health.inactiveCatalogProducts)
+    || !validNonnegativeIntegerOrNull(health.soldProducts)
+    || !validNonnegativeIntegerOrNull(health.unsoldProducts)
+    || !validNonnegativeIntegerOrNull(health.activeCategories)
+    || !validNonnegativeIntegerOrNull(health.soldCategories)
+    || typeof health.currentSalesCoverageComplete !== 'boolean'
+    || typeof health.previousComparisonAvailable !== 'boolean'
+    || !validRatioOrNull(health.productSalesJoinCoverage)
+    || !validRatioOrNull(health.categorySalesCoverage)
+    || !isRecord(concentration)
+    || !assertOnlyKeys(concentration, COMMERCIAL_ASSORTMENT_CONCENTRATION_KEYS)
+    || !Object.values(concentration).every(validRatioOrNull)) return false;
+
+  const validCategoryRow = (row: unknown, opportunity = false): boolean => {
+    if (!isRecord(row) || !assertOnlyKeys(row, opportunity ? COMMERCIAL_ASSORTMENT_OPPORTUNITY_KEYS : COMMERCIAL_ASSORTMENT_CATEGORY_KEYS)
+      || typeof row.name !== 'string' || row.name.length === 0 || row.name.length > 120
+      || typeof row.active !== 'boolean'
+      || !validFiniteOrNull(row.netSales)
+      || !validFiniteOrNull(row.previousNetSales)
+      || !validFiniteOrNull(row.units)
+      || !validFiniteOrNull(row.previousUnits)
+      || !validFiniteOrNull(row.salesDelta)
+      || !validFiniteOrNull(row.salesDeltaPercent)
+      || !validRatioOrNull(row.salesShare)
+      || !validNonnegativeIntegerOrNull(row.activeProducts)
+      || !validNonnegativeIntegerOrNull(row.soldProducts)
+      || !validNonnegativeIntegerOrNull(row.unsoldProducts)
+      || !validRatioOrNull(row.topProductShare)
+      || !Array.isArray(row.signals) || row.signals.length > 6
+      || !row.signals.every((signal) => typeof signal === 'string' && COMMERCIAL_ASSORTMENT_SIGNALS.has(signal))) return false;
+    return !opportunity || (typeof row.candidateRef === 'string' && /^category_candidate_\d+$/u.test(row.candidateRef));
+  };
+  if (!Array.isArray(value.categoryPerformance) || value.categoryPerformance.length > 10
+    || !value.categoryPerformance.every((row) => validCategoryRow(row))) return false;
+  if (!Array.isArray(value.categoryOpportunities) || value.categoryOpportunities.length > 8
+    || !value.categoryOpportunities.every((row) => validCategoryRow(row, true))) return false;
+
+  const validProductRow = (row: unknown, reactivation = false): boolean => {
+    if (!isRecord(row) || !assertOnlyKeys(row, reactivation ? COMMERCIAL_ASSORTMENT_REACTIVATION_KEYS : COMMERCIAL_ASSORTMENT_PRODUCT_KEYS)
+      || typeof row.name !== 'string' || row.name.length === 0 || row.name.length > 180
+      || !validAssortmentText(row.category)
+      || !COMMERCIAL_ASSORTMENT_ACTIVITY.has(String(row.activity))
+      || !validFiniteOrNull(row.currentSales)
+      || !validFiniteOrNull(row.previousSales)
+      || !validFiniteOrNull(row.currentUnits)
+      || !validFiniteOrNull(row.previousUnits)
+      || !(row.availability === null || row.availability === 'availability_unknown')) return false;
+    if (row.candidateRef !== null && (typeof row.candidateRef !== 'string' || !/^product_candidate_\d+$/u.test(row.candidateRef))) return false;
+    return !reactivation || (typeof row.candidateRef === 'string'
+      && /^product_candidate_\d+$/u.test(row.candidateRef)
+      && typeof row.reason === 'string' && row.reason.length <= 200);
+  };
+  if (!Array.isArray(value.dormantProducts) || value.dormantProducts.length > 12
+    || !value.dormantProducts.every((row) => validProductRow(row))) return false;
+  if (!Array.isArray(value.reactivationCandidates) || value.reactivationCandidates.length > 12
+    || !value.reactivationCandidates.every((row) => validProductRow(row, true))) return false;
+
+  const validPeriod = (period: unknown): boolean => (
+    isRecord(period) && assertOnlyKeys(period, COMMERCIAL_ASSORTMENT_PERIOD_KEYS)
+    && validFiniteOrNull(period.netSales) && validFiniteOrNull(period.units)
+    && typeof period.complete === 'boolean'
+  );
+  if (!validPeriod(value.currentPeriod) || !validPeriod(value.previousPeriod)
+    || typeof value.comparisonAvailable !== 'boolean'
+    || !Array.isArray(value.limitations) || value.limitations.length > 8
+    || !value.limitations.every((item) => typeof item === 'string' && item.length <= 240)) return false;
+  return true;
 }
 
 function scenarioKeysForIntent(intent: string): Set<string> {
@@ -417,7 +551,7 @@ function validCommercialScenario(value: unknown, intent: string): value is Recor
   });
 }
 
-function validCommercialContext(value: unknown): value is Record<string, unknown> {
+function validCommercialContext(value: unknown, intent: unknown = null): value is Record<string, unknown> {
   if (!isRecord(value) || !assertOnlyKeys(value, COMMERCIAL_CONTEXT_KEYS)) return false;
   if (value.agentKey !== 'salesProfitability' || value.scope !== 'current_authenticated_tenant') return false;
   if (typeof value.source !== 'string' || !['cloud', 'local', 'mixed'].includes(value.source)) return false;
@@ -425,6 +559,8 @@ function validCommercialContext(value: unknown): value is Record<string, unknown
   if (!isRecord(value.sales) || !assertOnlyKeys(value.sales, COMMERCIAL_SALES_KEYS)) return false;
 
   const sales = value.sales;
+  if (intent === 'assortment_analysis' && !validCommercialAssortment(sales.assortment)) return false;
+  if (sales.assortment !== undefined && !validCommercialAssortment(sales.assortment)) return false;
   if (!isRecord(sales.summary) || !assertOnlyKeys(sales.summary, COMMERCIAL_SUMMARY_KEYS)) return false;
   if (!Array.isArray(sales.products) || sales.products.length > MAX_COMMERCIAL_ROWS) return false;
   if (!sales.products.every((product) => isRecord(product) && assertOnlyKeys(product, COMMERCIAL_PRODUCT_KEYS)
@@ -512,7 +648,7 @@ function validCommercialContext(value: unknown): value is Record<string, unknown
         || !isRecord(candidate.focus) || !assertOnlyKeys(candidate.focus, new Set(['type', 'key']))
         || candidate.focus.type !== candidate.type
         || typeof candidate.focus.key !== 'string' || candidate.focus.key.length === 0 || candidate.focus.key.length > 120
-        || !(candidate.entity === null || (typeof candidate.entity === 'string' && candidate.entity.length <= 120))
+        || !(candidate.entity === null || (typeof candidate.entity === 'string' && candidate.entity.length <= 180))
         || !Array.isArray(candidate.signal) || candidate.signal.length === 0 || candidate.signal.length > 5
         || !candidate.signal.every((signal) => typeof signal === 'string' && COMMERCIAL_OPPORTUNITY_SIGNALS.has(signal))
         || typeof candidate.recommendationType !== 'string' || !COMMERCIAL_RECOMMENDATION_TYPES.has(candidate.recommendationType)
@@ -522,8 +658,32 @@ function validCommercialContext(value: unknown): value is Record<string, unknown
           && (validFiniteOrNull(entry) || typeof entry === 'boolean'))
         || !Array.isArray(candidate.evidenceKeys) || candidate.evidenceKeys.length === 0 || candidate.evidenceKeys.length > 8
         || !candidate.evidenceKeys.every((entry) => typeof entry === 'string' && evidenceKeys.has(entry))) return false;
-      if (candidate.type === 'product'
+      const candidateFocus = isRecord(candidate.focus) ? candidate.focus : {};
+      if (candidate.type === 'product' && intent === 'assortment_analysis') {
+        const assortment = isRecord(sales.assortment) ? sales.assortment : {};
+        const reactivationCandidates = Array.isArray(assortment.reactivationCandidates)
+          ? assortment.reactivationCandidates.filter(isRecord)
+          : [];
+        const supportedCandidate = reactivationCandidates.some((row) => (
+          row.candidateRef === candidateFocus.key
+          && row.name === candidate.entity
+          && row.activity === 'previously_sold_now_inactive'
+        ));
+        if (!supportedCandidate || candidate.key !== candidateFocus.key
+          || !candidate.evidenceKeys.includes(`assortment.product:${candidateFocus.key}`)) return false;
+      } else if (candidate.type === 'product'
         && (candidate.entity !== candidate.focus.key || !candidate.evidenceKeys.includes(`product:${candidate.entity}`))) return false;
+      if (candidate.type === 'category') {
+        const assortment = isRecord(sales.assortment) ? sales.assortment : {};
+        const categoryOpportunities = Array.isArray(assortment.categoryOpportunities)
+          ? assortment.categoryOpportunities.filter(isRecord)
+          : [];
+        const supportedCandidate = categoryOpportunities.some((row) => (
+          row.candidateRef === candidateFocus.key && row.name === candidate.entity
+        ));
+        if (intent !== 'assortment_analysis' || !supportedCandidate || candidate.key !== candidateFocus.key
+          || !candidate.evidenceKeys.includes(`assortment.category:${candidateFocus.key}`)) return false;
+      }
       if (candidate.type === 'channel'
         && (candidate.entity !== candidate.focus.key || !candidate.evidenceKeys.includes(`channel:${candidate.entity}`))) return false;
       candidateKeys.add(candidate.key);
@@ -566,7 +726,7 @@ function validateCommercialRequest(value: Record<string, unknown>, auth: AuthPay
     return invalid('La clave de solicitud no es válida.');
   }
   if (!validCommercialPeriod(value.period, value.intent as string) || !validCommercialScenario(value.scenario, value.intent as string)
-    || !validCommercialContext(value.context)) {
+    || !validCommercialContext(value.context, value.intent)) {
     return invalid('El contexto comercial no es válido.');
   }
   const options = validateOptions(value.options);
@@ -782,7 +942,7 @@ export function validateCommercialModelResponse(value: unknown): boolean {
     const hasMeasurement = typeof item.measurement === 'string' && item.measurement.trim().length > 0;
     const hasFocus = item.focus === undefined || (isRecord(item.focus)
       && Object.keys(item.focus).every((key) => ['type', 'key'].includes(key))
-      && ['product', 'channel', 'ticket', 'units_per_ticket', 'tickets', 'general'].includes(String(item.focus.type))
+      && ['product', 'category', 'channel', 'ticket', 'units_per_ticket', 'tickets', 'general'].includes(String(item.focus.type))
       && typeof item.focus.key === 'string' && item.focus.key.trim().length > 0);
     const hasRecommendationType = item.recommendationType === undefined
       || ['growth_experiment', 'investigation', 'data_quality', 'optimization'].includes(String(item.recommendationType));

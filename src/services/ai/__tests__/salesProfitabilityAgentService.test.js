@@ -109,6 +109,35 @@ const repository = (historyValue = history, profitValue = profit) => ({
   getSalesProfitReport: vi.fn(async () => profitValue)
 });
 
+const assortmentActor = () => ({
+  status: 'granted',
+  actorType: 'admin',
+  actorId: 'admin-1',
+  sessionId: 'session-1',
+  tenant: { opaqueId: 'tenant-one', databaseName: 'tenant_db_one', generation: 1 }
+});
+
+const assortmentRepository = () => {
+  const makeHistory = (saleId) => ({
+    source: { mode: 'cloud_final', stale: false },
+    rows: [{ id: saleId, status: 'closed', sourceMode: 'cloud_committed', sourceModeKnown: true, total: 100, itemsCount: 1, itemsQuantity: 1 }],
+    total_count: 1, limit: 100, offset: 0, has_more: false
+  });
+  const makeProfit = (saleId, productId, productName, total) => ({
+    source: { mode: 'cloud_final', stale: false },
+    rows: [{ sale_id: saleId, product_id: productId, product_name: productName, quantity: 1, line_total: total, unit_cost: null, movement_cost: null, cogs: null, cost_source: 'missing', profit_status: 'incomplete' }],
+    total_count: 1, limit: 100, offset: 0, has_more: false
+  });
+  return {
+    getSalesFinalHistory: vi.fn(async ({ dateFrom }) => dateFrom === '2026-08-25T06:00:00.000Z'
+      ? makeHistory('previous-sale')
+      : makeHistory('current-sale')),
+    getSalesProfitReport: vi.fn(async ({ dateFrom }) => dateFrom === '2026-08-25T06:00:00.000Z'
+      ? makeProfit('previous-sale', 'private-old-id', 'Older Product', 80)
+      : makeProfit('current-sale', 'private-current-id', 'Current Product', 100))
+  };
+};
+
 describe('sales profitability agent service', () => {
   it.each([
     [{ timezone: 'America/New_York', time_zone: 'America/Mexico_City' }, 'America/New_York'],
@@ -856,11 +885,7 @@ describe('sales profitability agent service', () => {
 
     const unsupportedCases = [
       ['Ayúdame a analizar mi competencia.', 'competition', 'competencia'],
-      ['Analiza mi competencia para mejorar mi negocio.', 'competition', 'competencia'],
-      ['¿Qué productos o servicios puedo incorporar a mi negocio para atraer más clientela?', 'assortment', 'ampliar tu oferta'],
-      ['¿Qué productos nuevos debería vender?', 'assortment', 'ampliar tu oferta'],
-      ['¿Qué productos nuevos debería vender?', 'assortment', 'ampliar tu oferta'],
-      ['¿Qué productos puedo incorporar?', 'assortment', 'ampliar tu oferta']
+      ['Analiza mi competencia para mejorar mi negocio.', 'competition', 'competencia']
     ];
 
     for (const [question, topic, copy] of unsupportedCases) {
@@ -892,6 +917,105 @@ describe('sales profitability agent service', () => {
     expect(assertActor).not.toHaveBeenCalled();
     expect(reports.getSalesFinalHistory).not.toHaveBeenCalled();
     expect(reports.getSalesProfitReport).not.toHaveBeenCalled();
+    expect(analyze).not.toHaveBeenCalled();
+  });
+
+  it('uses complete tenant catalog and comparable sales, while sending only allowlisted assortment evidence to IA', async () => {
+    const reports = assortmentRepository();
+    const actor = assortmentActor();
+    const assertActor = vi.fn(() => actor);
+    const catalogLoader = vi.fn(async () => ({
+      source: 'local_tenant_catalog',
+      complete: true,
+      productsTruncated: false,
+      categoriesTruncated: false,
+      products: [
+        { id: 'private-current-id', name: 'Current Product', categoryId: 'private-category-id', isActive: true, stock: 9, cost: 12, barcode: 'secret-barcode' },
+        { id: 'private-old-id', name: 'Older Product', categoryId: 'private-category-id', isActive: true, stock: 0, cost: null, barcode: 'secret-barcode-2' },
+        { id: 'private-new-id', name: 'Never Sold Product', categoryId: 'private-category-id', isActive: true }
+      ],
+      categories: [{ id: 'private-category-id', name: 'Bebidas', isActive: true }]
+    }));
+    const analyze = vi.fn(async ({ context }) => {
+      const serialized = JSON.stringify(context);
+      expect(serialized).toContain('Bebidas');
+      expect(serialized).toContain('Older Product');
+      expect(serialized).not.toContain('private-current-id');
+      expect(serialized).not.toContain('private-old-id');
+      expect(serialized).not.toContain('private-category-id');
+      expect(serialized).not.toContain('secret-barcode');
+      expect(serialized).not.toMatch(/"(?:stock|cost|unitCost|unit_cost|barcode)"/u);
+      return { rawResultContent: providerResponse, providerCalled: true, quotaOutcome: 'consumed' };
+    });
+    const runner = createSalesProfitabilityAgentRunner({ repository: reports, catalogLoader, analyze, assertActor });
+    const result = await runner({
+      question: '¿Qué productos debería revisar antes de agregar nuevos?',
+      period: { from: '2026-09-01', to: '2026-09-07', days: 7 },
+      requestKey: 'assortment-grounded-context'
+    });
+
+    expect(catalogLoader).toHaveBeenCalledTimes(1);
+    expect(catalogLoader).toHaveBeenCalledWith(expect.objectContaining({ actor, assertActor }));
+    expect(reports.getSalesFinalHistory).toHaveBeenCalledTimes(2);
+    expect(reports.getSalesProfitReport).toHaveBeenCalledTimes(2);
+    expect(result.response.intent).toBe('assortment_analysis');
+    expect(result.response.assortment.reactivationCandidates).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'Older Product', availability: 'availability_unknown', previousSales: 80, currentSales: 0 })
+    ]));
+    expect(result.providerCalled).toBe(true);
+    expect(analyze).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not call IA or consume quota when the catalogue has no usable assortment evidence', async () => {
+    const analyze = vi.fn();
+    const runner = createSalesProfitabilityAgentRunner({
+      repository: assortmentRepository(),
+      catalogLoader: vi.fn(async () => ({
+        source: 'local_tenant_catalog', complete: true, productsTruncated: false, categoriesTruncated: false,
+        products: [], categories: []
+      })),
+      analyze,
+      assertActor: vi.fn(assortmentActor)
+    });
+    const result = await runner({
+      question: '¿Dónde tengo oportunidades en mi surtido?',
+      period: { from: '2026-09-01', to: '2026-09-07', days: 7 },
+      requestKey: 'assortment-empty-catalog'
+    });
+
+    expect(result.response.assortment.health.activeCatalogProducts).toBe(0);
+    expect(result.response.status).toBe('insufficient_data');
+    expect(result.providerCalled).toBe(false);
+    expect(result.quotaOutcome).toBe('not_consumed');
+    expect(result.usageStatus).toBeNull();
+    expect(analyze).not.toHaveBeenCalled();
+  });
+
+  it('aborts the catalogue analysis if the tenant generation changes during the read', async () => {
+    const original = assortmentActor();
+    const changed = { ...original, tenant: { ...original.tenant, generation: 2 } };
+    const assertActor = vi.fn()
+      .mockReturnValueOnce(original)
+      .mockReturnValue(changed);
+    const analyze = vi.fn();
+    const runner = createSalesProfitabilityAgentRunner({
+      repository: assortmentRepository(),
+      catalogRepository: {
+        getAssortmentCatalogSnapshot: vi.fn(async () => ({
+          complete: true, productsTruncated: false, categoriesTruncated: false,
+          products: [{ id: 'private-current-id', name: 'Producto', categoryId: 'category' }],
+          categories: [{ id: 'category', name: 'Categoría' }]
+        }))
+      },
+      analyze,
+      assertActor
+    });
+
+    await expect(runner({
+      question: '¿Cómo está mi surtido?',
+      period: { from: '2026-09-01', to: '2026-09-07', days: 7 },
+      requestKey: 'assortment-tenant-switch'
+    })).rejects.toMatchObject({ code: 'AI_AGENT_TENANT_CHANGED', statusCode: 409 });
     expect(analyze).not.toHaveBeenCalled();
   });
 

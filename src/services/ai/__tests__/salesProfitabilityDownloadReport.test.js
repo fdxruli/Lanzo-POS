@@ -669,6 +669,50 @@ describe('sales profitability download report', () => {
     expect(report.usage).toEqual({ available: false });
   });
 
+  it('includes an allowlisted assortment snapshot in reports and preserves it through history sanitization', () => {
+    const result = {
+      ...completedResult,
+      response: {
+        ...completedResult.response,
+        assortment: {
+          version: 1,
+          catalog: { source: 'local_tenant_catalog', complete: true, productsRead: 3, categoriesRead: 1, productsTruncated: false, categoriesTruncated: false, tenantId: internalUuid },
+          health: {
+            activeCatalogProducts: 3, inactiveCatalogProducts: 0, soldProducts: 1, unsoldProducts: 2,
+            activeCategories: 1, soldCategories: 1, currentSalesCoverageComplete: true, previousComparisonAvailable: false,
+            productSalesJoinCoverage: 1, categorySalesCoverage: 1,
+            concentration: { topProductShare: 1, top3ProductShare: 1, topCategoryShare: 1, categoryRevenueCoverage: 1, cost: 100 }
+          },
+          categoryPerformance: [{ name: 'Bebidas', active: true, netSales: 200, salesShare: 1, activeProducts: 3, soldProducts: 1, unsoldProducts: 2, stock: 99 }],
+          categoryOpportunities: [],
+          dormantProducts: [{ candidateRef: 'product_candidate_1', id: internalUuid, name: 'Sin venta', activity: 'never_sold_in_window', currentSales: 0, previousSales: null, availability: 'availability_unknown', stock: 99, cost: 12 }],
+          reactivationCandidates: [{ candidateRef: 'product_candidate_2', name: 'Reactivar', activity: 'previously_sold_now_inactive', currentSales: 0, previousSales: 100, reason: 'Tuvo ventas previas.', availability: 'availability_unknown' }],
+          opportunityCandidates: [{ key: 'product_candidate_2', type: 'product', focus: { type: 'product', key: 'product_candidate_2' }, entity: 'Reactivar', signal: ['previously_sold_now_inactive'], recommendationType: 'investigation', strength: 'moderate', metrics: { currentSales: 0, previousSales: 100 }, evidenceKeys: ['assortment.product:product_candidate_2'] }],
+          evidenceKeys: ['assortment.metric:activeCatalogProducts', 'assortment.product:product_candidate_2'],
+          minimumUsefulRecommendations: 1,
+          currentPeriod: { netSales: 200, units: 2, complete: true },
+          previousPeriod: { netSales: null, units: null, complete: false },
+          comparisonAvailable: false,
+          narrativeEligible: true,
+          limitations: ['Disponibilidad histórica no confirmada.'],
+          internalId: internalUuid
+        }
+      }
+    };
+    const report = buildSalesProfitabilityDownloadReport(result, requestContext);
+    const sanitized = sanitizeSalesProfitabilityDownloadReport(report);
+    const serialized = JSON.stringify(sanitized.deterministic.assortment);
+
+    expect(report.deterministic.assortment).toMatchObject({
+      health: { activeCatalogProducts: 3, unsoldProducts: 2 },
+      categoryPerformance: [expect.objectContaining({ name: 'Bebidas', netSales: 200 })],
+      reactivationCandidates: [expect.objectContaining({ name: 'Reactivar', availability: 'availability_unknown' })]
+    });
+    expect(sanitized.deterministic.assortment).toEqual(report.deterministic.assortment);
+    expect(serialized).not.toContain(internalUuid);
+    expect(serialized).not.toMatch(/"(?:tenantId|internalId|stock|cost)"/u);
+  });
+
   it('re-sanitizes stored report data before rendering or exporting it', () => {
     const report = buildSalesProfitabilityDownloadReport(completedResult, requestContext);
     const unsafeStoredCopy = {
