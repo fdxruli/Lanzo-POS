@@ -120,7 +120,10 @@ const PROVIDER_QUOTA_UNKNOWN: ExecutionTelemetry = {
 };
 const COMMERCIAL_MAX_TOKENS = 2048;
 const COMMERCIAL_PROVIDER_REQUEST_MODE: ProviderRequestMode = 'commercial-narrative';
-const COMPACT_NARRATIVE_INTENTS = new Set(['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend', 'assortment_analysis']);
+const COMPACT_NARRATIVE_INTENTS = new Set([
+  'sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend', 'assortment_analysis',
+  'goal_simulation', 'what_if_analysis', 'commercial_strategy'
+]);
 const NARRATIVE_EVIDENCE_KEY_ALLOWLIST: Record<string, string[]> = {
   sales_growth: [
     'comparison.deltaNetSales', 'comparison.deltaNetSalesPercent', 'comparison.deltaSalesCount',
@@ -404,6 +407,71 @@ function compactCommercialEvidence(context: Record<string, unknown>, intent: str
   const comparison = isRecordValue(sales.comparison) ? sales.comparison : {};
   const growthSignals = isRecordValue(sales.growthSignals) ? sales.growthSignals : {};
   if (COMPACT_NARRATIVE_INTENTS.has(intent)) {
+    if (['goal_simulation', 'what_if_analysis', 'commercial_strategy'].includes(intent)) {
+      const availableEvidence = new Set(Array.isArray(sales.evidenceKeys)
+        ? sales.evidenceKeys.filter((entry): entry is string => typeof entry === 'string')
+        : []);
+      const validOpportunityCandidates = (Array.isArray(sales.opportunityCandidates) ? sales.opportunityCandidates : [])
+        .filter((candidate) => isRecordValue(candidate)
+          && Array.isArray(candidate.evidenceKeys)
+          && candidate.evidenceKeys.length > 0
+          && candidate.evidenceKeys.every((key) => typeof key === 'string' && availableEvidence.has(key)))
+        .slice(0, 8);
+      const strategyCandidates = sales.strategyRequested === true && Array.isArray(sales.strategyCandidates)
+        ? sales.strategyCandidates.filter((candidate) => isRecordValue(candidate)
+          && candidate.priority !== 'low'
+          && validOpportunityCandidates.some((opportunity) => opportunity.key === candidate.key))
+          .slice(0, 3)
+        : [];
+      const candidateKeys = new Set(strategyCandidates.map((candidate) => String(candidate.key || '')));
+      const opportunityCandidates = validOpportunityCandidates.filter((candidate) => candidateKeys.has(String(candidate.key || '')));
+      const selectedEvidence = Array.from(new Set([
+        ...strategyCandidates.flatMap((candidate) => Array.isArray(candidate.evidenceKeys) ? candidate.evidenceKeys : []),
+        ...availableEvidence.values()
+      ])).filter((key) => typeof key === 'string').slice(0, 40);
+      const compactGrowthSignals: Record<string, unknown> = {};
+      if (isRecordValue(growthSignals)) {
+        compactGrowthSignals.comparisonAvailable = growthSignals.comparisonAvailable === true;
+        const growingNames = new Set(strategyCandidates.filter((candidate) => candidate.reasonCode === 'product_growing')
+          .map((candidate) => String(candidate.entity || '')));
+        if (Array.isArray(growthSignals.productsGrowing)) {
+          compactGrowthSignals.productsGrowing = growthSignals.productsGrowing.filter((row) => isRecordValue(row)
+            && growingNames.has(String(row.name || ''))).slice(0, 8);
+        }
+      }
+      return {
+        sales: {
+          summary: pickRecordFields(sales.summary, [
+            'netSales', 'units', 'salesCount', 'averageTicket', 'unitsPerTicket', 'profit', 'margin', 'costCoverage', 'profitabilityStatus'
+          ]),
+          products: Array.isArray(sales.products) ? sales.products.filter((product) => isRecordValue(product)
+            && strategyCandidates.some((candidate) => candidate.type === 'product' && candidate.entity === product.name)).slice(0, 8) : [],
+          channels: [],
+          comparison: pickRecordFields(comparison, [
+            'previousNetSales', 'deltaNetSales', 'deltaNetSalesPercent', 'previousSalesCount', 'deltaSalesCount',
+            'previousTicket', 'deltaTicket', 'deltaTicketPercent', 'deltaMargin'
+          ]),
+          ...(Object.keys(compactGrowthSignals).length ? { growthSignals: compactGrowthSignals } : {}),
+          ...(isRecordValue(sales.assortment) ? { assortment: sales.assortment } : {}),
+          ...(Array.isArray(sales.comboOpportunities) ? { comboOpportunities: sales.comboOpportunities.slice(0, 3) } : {}),
+          ...(sales.goalSimulation !== undefined ? { goalSimulation: sales.goalSimulation } : {}),
+          ...(sales.whatIfSimulation !== undefined ? { whatIfSimulation: sales.whatIfSimulation } : {}),
+          strategyRequested: sales.strategyRequested === true,
+          strategyCandidates,
+          evidenceKeys: selectedEvidence,
+          opportunityCandidates,
+          minimumUsefulRecommendations: minimumUsefulRecommendationsForIntent(intent, opportunityCandidates),
+          coverage: pickRecordFields(sales.coverage, [
+            'validSales', 'complete', 'itemsComplete', 'paginationComplete', 'sourceComplete', 'comparisonAvailable',
+            'comparisonDataAvailable', 'comparisonItemsAvailable', 'strategyEvidenceAvailable', 'strategyCatalogComplete'
+          ]),
+          calculations: Array.isArray(sales.calculations) ? sales.calculations.slice(0, 20) : [],
+          assumptions: Array.isArray(sales.assumptions) ? sales.assumptions.slice(0, 8) : [],
+          scenarios: Array.isArray(sales.scenarios) ? sales.scenarios.slice(0, 8) : [],
+          limitations: Array.isArray(sales.limitations) ? sales.limitations.slice(0, 12) : []
+        }
+      };
+    }
     const summaryFields = intent === 'ticket_growth'
       ? ['averageTicket', 'unitsPerTicket', 'salesCount', 'units']
       : intent === 'product_opportunity'
@@ -574,6 +642,9 @@ function minimumUsefulRecommendationsForIntent(intent: string, candidates: unkno
       .filter(Boolean));
     return Math.min(2, distinctCandidates.size);
   }
+  if (['commercial_strategy', 'goal_simulation'].includes(intent)) {
+    return Math.min(2, rows.filter((candidate) => candidate.strength !== 'weak').length);
+  }
   return 0;
 }
 
@@ -675,7 +746,10 @@ function buildCommercialPrompts(request: Extract<ValidatedRequest, { kind: 'comm
     ticket_growth: 'directAnswer debe decir qué probar para elevar el valor promedio de compra. Prioriza candidatos ticket o units_per_ticket y liga la acción y medición a esas métricas; no inventes relaciones de complemento entre productos.',
     product_opportunity: 'directAnswer debe nombrar productos existentes concretos respaldados por candidatos product. Explica la señal, una prueba pequeña y cómo medirla. Si costKnown=false, no afirmes rentabilidad; menciona la limitación si afecta la recomendación.',
     sales_trend: 'directAnswer debe decir primero si la tendencia es positiva, negativa, estable o insuficiente según comparison.deltaNetSales. Después explica brevemente qué señales coinciden y qué conviene vigilar.',
-    assortment_analysis: 'Analiza sólo el catálogo local y las ventas internas recibidas. Usa únicamente nombres de productos/categorías incluidos en assortment y candidates. Nunca propongas un SKU, producto o servicio inexistente ni afirmes demanda externa o futura. Para expansión, describe una categoría o señal interna que valga la pena explorar y aclara que no confirma demanda; prioriza revisar/reactivar productos existentes antes de agregar nuevos. Si la disponibilidad histórica es desconocida, no interpretes cero ventas como falta de demanda. Si no hay comparación anterior completa, no afirmes crecimiento ni caída.'
+    assortment_analysis: 'Analiza sólo el catálogo local y las ventas internas recibidas. Usa únicamente nombres de productos/categorías incluidos en assortment y candidates. Nunca propongas un SKU, producto o servicio inexistente ni afirmes demanda externa o futura. Para expansión, describe una categoría o señal interna que valga la pena explorar y aclara que no confirma demanda; prioriza revisar/reactivar productos existentes antes de agregar nuevos. Si la disponibilidad histórica es desconocida, no interpretes cero ventas como falta de demanda. Si no hay comparación anterior completa, no afirmes crecimiento ni caída.',
+    goal_simulation: 'Explica la meta usando goalSimulation y los cálculos recibidos. No cambies el objetivo ni recalcules cifras. Declara los supuestos matemáticos y no describas tickets como clientes nuevos. Si strategyRequested=true, las recomendaciones deben basarse exclusivamente en opportunityCandidates.',
+    what_if_analysis: 'Explica el escenario usando whatIfSimulation y los cálculos recibidos. No recalcules cifras ni lo presentes como pronóstico. Si strategyRequested=true, las recomendaciones deben basarse exclusivamente en opportunityCandidates.',
+    commercial_strategy: 'Prioriza únicamente señales presentes en strategyCandidates y opportunityCandidates. Cada recomendación debe usar exactamente el focus, recommendationType y evidenceKeys del candidato correspondiente. No añadas áreas, productos, categorías ni combos que no estén en esos candidatos.'
   };
   const systemPrompt = [
     'Eres la capa narrativa del agente de Ventas y rentabilidad de Lanzo-POS.',
