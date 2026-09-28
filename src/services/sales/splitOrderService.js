@@ -6,6 +6,9 @@ import { buildProcessedItemsAndDeductions } from './inventoryFlow';
 import { runPostSaleEffects, runPostSaleEffectsForCloudCommittedSale } from './postSaleEffects';
 import { salesCloudShadowService } from '../salesCloud/salesCloudShadowService';
 import { salesCloudCashierService } from '../salesCloud/salesCloudCashierService';
+import { restaurantOrdersRepository } from '../restaurant/restaurantOrdersRepository';
+import { preflightCloudRestaurantOrderSplit } from '../restaurant/restaurantSplitCloudPreflight';
+import { getLicenseKeyFromDetails } from '../sync/syncConstants';
 import {
     calculateByItemsTicketFinancials,
     normalizeRestaurantSplitIntent,
@@ -575,7 +578,7 @@ export const splitOpenTableOrderCore = async ({
     cloudSpecialFlows = false,
     licenseDetails = null,
     cashSessionId = null
-}, {
+} = {}, {
     loadData,
     loadMultipleData,
     STORES,
@@ -583,8 +586,9 @@ export const splitOpenTableOrderCore = async ({
     useStatsStore,
     roundCurrency,
     sendReceiptWhatsApp,
-    Logger
-}) => {
+    Logger,
+    restaurantOrdersRepository: restaurantOrdersRepositoryOverride = restaurantOrdersRepository
+} = {}) => {
     Logger.time('Service:SplitOpenTableOrder');
 
     try {
@@ -791,9 +795,17 @@ export const splitOpenTableOrderCore = async ({
         }
 
         if (cloudSpecialFlows) {
+            const cloudPreflight = await preflightCloudRestaurantOrderSplit({
+                licenseKey: getLicenseKeyFromDetails(licenseDetails),
+                parentOrderId,
+                parentSale,
+                repository: restaurantOrdersRepositoryOverride
+            });
+            if (!cloudPreflight.success) return cloudPreflight;
+
             const cloudResult = await salesCloudCashierService.processCloudSplitTableSale({
                 parentOrderId,
-                parentExpectedVersion: buildParentSnapshotVersion(parentSale),
+                parentExpectedVersion: cloudPreflight.parentExpectedVersion,
                 splitGroupId,
                 childDefinitions,
                 total: centsToMoneyString(totalChildrenCents),

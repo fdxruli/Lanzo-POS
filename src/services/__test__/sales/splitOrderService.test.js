@@ -19,6 +19,7 @@ vi.mock('../../salesCloud/salesCloudCashierService', () => ({
 import { splitOpenTableOrderCore } from '../../sales/splitOrderService';
 import { mapLocalCheckoutToCloudSale } from '../../salesCloud/salesCloudCashierMapper';
 import { salesCloudCashierService } from '../../salesCloud/salesCloudCashierService';
+import { buildRestaurantOrderPayloadFromOpenSale } from '../../restaurant/restaurantOrderMapper';
 import { runPostSaleEffects } from '../../sales/postSaleEffects';
 import { salesCloudShadowService } from '../../salesCloud/salesCloudShadowService';
 
@@ -29,6 +30,9 @@ const buildParentSale = () => ({
   status: 'open',
   orderType: 'table',
   tableData: 'Mesa 5',
+  subtotal: '500',
+  discountTotal: '0',
+  currency: 'MXN',
   total: '500',
   items: [
     {
@@ -36,6 +40,11 @@ const buildParentSale = () => ({
       name: 'Producto 1',
       quantity: 2,
       price: 250,
+      unitPrice: 250,
+      lineId: 'line-prod-1',
+      lineTotal: 500,
+      discountAmount: 0,
+      selectedModifiers: [],
       inventoryReservation: {
         source: 'table',
         committedQuantity: 2,
@@ -63,6 +72,26 @@ const makeDeps = (parentSale = buildParentSale(), overrides = {}) => ({
   roundCurrency: (value) => Math.round(value * 100) / 100,
   sendReceiptWhatsApp: vi.fn(async () => true),
   Logger: { time: vi.fn(), timeEnd: vi.fn(), warn: vi.fn(), error: vi.fn() },
+  restaurantOrdersRepository: {
+    getRestaurantOrderByLocalOrder: vi.fn(async () => {
+      const payload = buildRestaurantOrderPayloadFromOpenSale({ sale: parentSale });
+      return {
+        success: true,
+        found: true,
+        order: {
+          ...payload.order,
+          id: 'restaurant-order-test',
+          status: 'delivered',
+          fulfillmentStatus: 'delivered',
+          paymentStatus: 'unpaid',
+          archivedAt: null,
+          checkoutClosedAt: null,
+          updatedAt: '2026-09-28T16:05:05.123456Z',
+          items: payload.items.map((item) => ({ ...item, status: 'delivered' }))
+        }
+      };
+    })
+  },
   ...overrides
 });
 
@@ -84,6 +113,7 @@ const makeParams = (parentSale = buildParentSale(), overrides = {}) => ({
   ],
   features: { hasKDS: false },
   companyName: 'Mi negocio',
+  licenseDetails: { license_key: 'test-license' },
   ...overrides
 });
 
@@ -386,9 +416,12 @@ describe('splitOpenTableOrderCore', () => {
   it('uses identical discounted ticket amounts in Free/local and Pro/cloud paths', async () => {
     const parentSale = {
       ...buildParentSale(),
+      subtotal: '200',
+      discountTotal: '20',
       total: '180',
       items: [{
-        id: 'prod-1', name: 'Producto', quantity: 2, price: 100,
+        id: 'prod-1', name: 'Producto', quantity: 2, price: 100, unitPrice: 100,
+        lineId: 'line-prod-1', lineTotal: 180, discountAmount: 20,
         discount: { type: 'amount', value: 20, amount: 20, reason: 'Promoción de línea' },
         inventoryReservation: { source: 'table', committedQuantity: 2, committedBatches: [] }
       }]
@@ -428,10 +461,13 @@ describe('splitOpenTableOrderCore', () => {
   it('maps one restaurant line split 1+1 to distinct cloud item IDs before any RPC', async () => {
     const parentSale = {
       ...buildParentSale(),
+      subtotal: '60',
+      discountTotal: '0',
       total: '60',
       items: [{
         id: 'product-1', productId: 'product-1', lineId: 'line-parent-1',
-        name: 'Producto', quantity: 2, price: 30, exactTotal: 60, lineTotal: 60,
+        name: 'Producto', quantity: 2, price: 30, unitPrice: 30,
+        exactTotal: 60, lineTotal: 60, discountAmount: 0, selectedModifiers: [],
         inventoryReservation: { source: 'table', committedQuantity: 2, committedBatches: [] }
       }]
     };
@@ -460,9 +496,16 @@ describe('splitOpenTableOrderCore', () => {
       paymentData: child.paymentData,
       total: child.sale.total
     }));
+    const repeatedFirstChild = mapLocalCheckoutToCloudSale({
+      sale: cloudDefinitions[0].sale,
+      processedItems: cloudDefinitions[0].processedItems,
+      paymentData: cloudDefinitions[0].paymentData,
+      total: cloudDefinitions[0].sale.total
+    });
 
     expect(mappedChildren).toHaveLength(2);
     expect(mappedChildren[0].items[0].id).not.toBe(mappedChildren[1].items[0].id);
+    expect(repeatedFirstChild.items[0].id).toBe(mappedChildren[0].items[0].id);
     expect(mappedChildren.map((child) => child.items[0].metadata.lineId)).toEqual(['line-parent-1', 'line-parent-1']);
     expect(mappedChildren.map((child) => [child.items[0].product_id, child.items[0].quantity, child.items[0].unit_price])).toEqual([
       ['product-1', 1, 30],
@@ -472,18 +515,135 @@ describe('splitOpenTableOrderCore', () => {
     expect(deps.executeSplitOpenTableOrderTransactionSafe).not.toHaveBeenCalled();
   });
 
+  it('uses a force-refreshed cloud version for a kitchen-delivered split without mutating the local sale', async () => {
+    const parentSale = buildParentSale();
+    const deps = makeDeps(parentSale);
+    salesCloudCashierService.processCloudSplitTableSale.mockResolvedValueOnce({ success: false, code: 'TEST_CAPTURE' });
+
+    const result = await splitOpenTableOrderCore(
+      makeParams(parentSale, { cloudSpecialFlows: true }),
+      deps
+    );
+
+    expect(result).toMatchObject({ success: false, code: 'TEST_CAPTURE' });
+    expect(deps.restaurantOrdersRepository.getRestaurantOrderByLocalOrder).toHaveBeenCalledWith({
+      licenseKey: 'test-license', localOrderId: parentSale.id, force: true
+    });
+    expect(salesCloudCashierService.processCloudSplitTableSale).toHaveBeenCalledOnce();
+    expect(salesCloudCashierService.processCloudSplitTableSale.mock.calls[0][0].parentExpectedVersion)
+      .toBe('2026-09-28T16:05:05.123456Z');
+    expect(parentSale.updatedAt).toBe('2026-03-19T18:10:00.000Z');
+    expect(deps.executeSplitOpenTableOrderTransactionSafe).not.toHaveBeenCalled();
+    expect(runPostSaleEffects).not.toHaveBeenCalled();
+  });
+
+  it('keeps split and child sale identities stable when only the remote kitchen version changes', async () => {
+    const parentSale = buildParentSale();
+    const firstDeps = makeDeps(parentSale);
+    const secondDeps = makeDeps(parentSale, {
+      restaurantOrdersRepository: {
+        getRestaurantOrderByLocalOrder: vi.fn(async () => {
+          const payload = buildRestaurantOrderPayloadFromOpenSale({ sale: parentSale });
+          return {
+            success: true,
+            found: true,
+            order: {
+              ...payload.order,
+              id: 'restaurant-order-test',
+              status: 'preparing',
+              fulfillmentStatus: 'ready',
+              paymentStatus: 'unpaid',
+              updatedAt: '2026-09-28T16:06:06.654321Z',
+              items: payload.items.map((item) => ({ ...item, status: 'delivered' }))
+            }
+          };
+        })
+      }
+    });
+    salesCloudCashierService.processCloudSplitTableSale
+      .mockResolvedValueOnce({ success: false, code: 'TEST_CAPTURE' })
+      .mockResolvedValueOnce({ success: false, code: 'TEST_CAPTURE' });
+
+    await splitOpenTableOrderCore(makeParams(parentSale, { cloudSpecialFlows: true }), firstDeps);
+    await splitOpenTableOrderCore(makeParams(parentSale, { cloudSpecialFlows: true }), secondDeps);
+
+    const firstCall = salesCloudCashierService.processCloudSplitTableSale.mock.calls[0][0];
+    const secondCall = salesCloudCashierService.processCloudSplitTableSale.mock.calls[1][0];
+    expect(firstCall.parentExpectedVersion).toBe('2026-09-28T16:05:05.123456Z');
+    expect(secondCall.parentExpectedVersion).toBe('2026-09-28T16:06:06.654321Z');
+    expect(secondCall.splitGroupId).toBe(firstCall.splitGroupId);
+    expect(secondCall.childDefinitions.map((child) => child.sale.id))
+      .toEqual(firstCall.childDefinitions.map((child) => child.sale.id));
+  });
+
+  it('fails closed on a cloud commercial mismatch before dispatching the cashier', async () => {
+    const parentSale = buildParentSale();
+    const deps = makeDeps(parentSale);
+    const originalLookup = deps.restaurantOrdersRepository.getRestaurantOrderByLocalOrder;
+    deps.restaurantOrdersRepository.getRestaurantOrderByLocalOrder = vi.fn(async (args) => {
+      const response = await originalLookup(args);
+      response.order.items[0].quantity = 3;
+      return response;
+    });
+
+    const result = await splitOpenTableOrderCore(
+      makeParams(parentSale, { cloudSpecialFlows: true }),
+      deps
+    );
+
+    expect(result).toMatchObject({ success: false, code: 'RESTAURANT_ORDER_COMMERCIAL_CONFLICT' });
+    expect(salesCloudCashierService.processCloudSplitTableSale).not.toHaveBeenCalled();
+    expectNoCommitOrShadow(deps);
+    expect(runPostSaleEffects).not.toHaveBeenCalled();
+  });
+
+  it('keeps the server race guard authoritative and does not retry a version conflict', async () => {
+    const parentSale = buildParentSale();
+    const deps = makeDeps(parentSale);
+    const versionConflict = Object.assign(new Error('RESTAURANT_ORDER_VERSION_CONFLICT'), {
+      code: 'RESTAURANT_ORDER_VERSION_CONFLICT'
+    });
+    salesCloudCashierService.processCloudSplitTableSale.mockRejectedValueOnce(versionConflict);
+
+    const result = await splitOpenTableOrderCore(
+      makeParams(parentSale, { cloudSpecialFlows: true }),
+      deps
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.message).toBe('RESTAURANT_ORDER_VERSION_CONFLICT');
+    expect(salesCloudCashierService.processCloudSplitTableSale).toHaveBeenCalledOnce();
+    expect(deps.executeSplitOpenTableOrderTransactionSafe).not.toHaveBeenCalled();
+    expect(runPostSaleEffects).not.toHaveBeenCalled();
+    expect(salesCloudShadowService.syncSaleShadowAfterLocalCommit).not.toHaveBeenCalled();
+  });
+
+  it('keeps the Free/local path independent of the cloud order preflight', async () => {
+    const parentSale = buildParentSale();
+    const deps = makeDeps(parentSale);
+    const result = await splitOpenTableOrderCore(makeParams(parentSale), deps);
+
+    expect(result.success).toBe(true);
+    expect(deps.restaurantOrdersRepository.getRestaurantOrderByLocalOrder).not.toHaveBeenCalled();
+    expect(deps.executeSplitOpenTableOrderTransactionSafe).toHaveBeenCalledOnce();
+  });
+
   it('hands off prorated percentage discounts as identical fixed amounts in Free/local and Pro/cloud', async () => {
     const lineAppliedAt = '2026-09-27T12:00:00.000Z';
     const saleAppliedAt = '2026-09-27T12:05:00.000Z';
     const parentSale = {
       ...buildParentSale(),
+      subtotal: '1',
+      discountTotal: '0.55',
+      saleDiscountAmount: '0.22',
       total: '0.45',
       saleDiscount: {
         type: 'percent', value: 33.3333, reason: 'Promoción general', scope: 'sale',
         appliedAt: saleAppliedAt, appliedByRole: 'owner', appliedByStaffUserId: 'staff-2', appliedByDeviceId: 'device-2'
       },
       items: [{
-        id: 'prod-1', name: 'Producto de cincuenta centavos', quantity: 2, price: 0.5,
+        id: 'prod-1', name: 'Producto de cincuenta centavos', quantity: 2, price: 0.5, unitPrice: 0.5,
+        lineId: 'line-prod-1', exactTotal: 1, lineSubtotal: 1, lineTotal: 0.67, discountAmount: 0.33,
         discount: {
           type: 'percent', value: 33.3333, reason: 'Promoción de línea', scope: 'line',
           appliedAt: lineAppliedAt, appliedByRole: 'owner', appliedByStaffUserId: 'staff-1', appliedByDeviceId: 'device-1'
@@ -828,6 +988,8 @@ describe('splitOpenTableOrderCore', () => {
   it('keeps proportional inventory reservations for N-way split without batch loss', async () => {
     const parentSale = {
       ...buildParentSale(),
+      subtotal: '600',
+      discountTotal: '0',
       total: '600',
       items: [
         {
@@ -878,16 +1040,28 @@ describe('splitOpenTableOrderCore', () => {
       items: [
         {
           id: 'prod-1',
+          productId: 'prod-1',
+          lineId: 'line-prod-1',
           name: 'Producto caro',
           quantity: 1,
           price: 500,
+          unitPrice: 500,
+          lineTotal: 500,
+          discountAmount: 0,
+          selectedModifiers: [],
           inventoryReservation: { source: 'table', committedQuantity: 1, committedBatches: [] }
         },
         {
           id: 'prod-2',
+          productId: 'prod-2',
+          lineId: 'line-prod-2',
           name: 'Producto barato',
           quantity: 1,
           price: 100,
+          unitPrice: 100,
+          lineTotal: 100,
+          discountAmount: 0,
+          selectedModifiers: [],
           inventoryReservation: { source: 'table', committedQuantity: 1, committedBatches: [] }
         }
       ]
