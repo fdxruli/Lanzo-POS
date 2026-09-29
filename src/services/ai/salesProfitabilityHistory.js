@@ -94,6 +94,8 @@ export const classifySalesProfitabilityExecution = (result = {}) => {
     ? 'cache'
     : providerCalled === true
       ? (hasNarrative(result.response?.aiNarrative) ? 'ai' : 'ai_unavailable')
+      : result.response?.intent === 'competitive_analysis' && providerCalled === false
+        ? 'deterministic'
       : narrativeUnavailable
         ? 'deterministic'
       : localRoute

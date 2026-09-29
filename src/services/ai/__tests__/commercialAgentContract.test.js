@@ -50,6 +50,7 @@ describe('commercial AI agent contract', () => {
       'goal_simulation',
       'what_if_analysis',
       'commercial_strategy',
+      'competitive_analysis',
       'store_health',
       'order_funnel',
       'catalog_health'
@@ -272,6 +273,30 @@ describe('commercial AI agent contract', () => {
       .toMatchObject({ valid: false, code: 'INVALID_SCENARIO_KEYS' });
   });
 
+  it('reports all missing scenario parameters and blocks incomplete price and promotion requests', () => {
+    expect(validateCommercialAgentScenario('goal_simulation', {})).toMatchObject({
+      valid: false,
+      code: 'INVALID_GOAL_TYPE',
+      errors: [
+        { code: 'INVALID_GOAL_TYPE', path: 'goalType' },
+        { code: 'GOAL_TARGET_REQUIRED', path: 'targetValue' }
+      ]
+    });
+    expect(validateCommercialAgentScenario('what_if_analysis', { changeType: 'product' }).errors).toEqual([
+      { code: 'CHANGE_PERCENT_REQUIRED', path: 'changePercent' },
+      { code: 'PRODUCT_REQUIRED', path: 'productName' }
+    ]);
+    expect(validateCommercialAgentScenario('price_simulation', {}).errors).toEqual([
+      { code: 'PRODUCT_REQUIRED', path: 'productName' },
+      { code: 'NEW_PRICE_REQUIRED', path: 'newPrice' }
+    ]);
+    expect(validateCommercialAgentScenario('promotion_opportunity', {}).errors).toEqual([
+      { code: 'PRODUCT_REQUIRED', path: 'productName' }
+    ]);
+    expect(validateCommercialAgentScenario('promotion_opportunity', { productName: 'Producto A' }))
+      .toMatchObject({ valid: true });
+  });
+
   it('keeps all implemented commercial intents supported', () => {
     const expected = [
       ['¿Mi negocio es rentable?', 'profitability_summary'],
@@ -363,8 +388,9 @@ describe('commercial AI agent contract', () => {
       const resolution = resolveCommercialIntent(question);
       if (topic === 'competition') {
         expect(resolution).toMatchObject({
-          kind: 'recognized_not_supported',
+          kind: 'needs_context',
           topic,
+          intent: 'competitive_analysis',
           confidence: 'high',
           requiresData: false,
           requiresProvider: false
@@ -390,7 +416,7 @@ describe('commercial AI agent contract', () => {
 
     for (const [question, topic, copyPattern] of cases) {
       const resolution = resolveCommercialIntent(question);
-      expect(resolution).toMatchObject({ kind: 'recognized_not_supported', topic });
+      expect(resolution).toMatchObject({ kind: 'needs_context', topic, intent: 'competitive_analysis' });
 
       const message = createCommercialLocalResponse(resolution).executiveSummary;
       expect(message).toMatch(copyPattern);
