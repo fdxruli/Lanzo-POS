@@ -1,18 +1,32 @@
-import { useEffect, useMemo, useState, useCallback } from 'react';
-import { Check, Minus, Plus, RotateCcw, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Check, ChevronLeft, ChevronRight, Minus, Plus, RotateCcw, X } from 'lucide-react';
 import { loadData, STORES } from '../../services/database';
 import { Money } from '../../utils/moneyMath';
 import { getCartLineId } from '../../utils/cartLineIdentity';
+import { formatSelectedModifiersForDisplay } from '../../utils/restaurantModifierDisplay';
 import { normalizeStock, STOCK_DECIMALS } from '../../services/db/utils';
 import {
   calculateByItemsTicketFinancials,
   RESTAURANT_SPLIT_INTENTS,
   splitRequiresCashSessionCompatibility
 } from '../../services/sales/splitOrderContract';
+import {
+  buildRestaurantSplitOrderSnapshot,
+  clearRestaurantSplitDraft,
+  readRestaurantSplitDraft,
+  saveRestaurantSplitDraft
+} from '../../services/sales/restaurantSplitDraft';
 import './SplitBillModal.css';
 
-const MIN_TICKETS = 2;
-const MAX_TICKETS = 8;
+const MIN_GUESTS = 2;
+const MAX_GUESTS = 8;
+const MAX_GUEST_NAME_LENGTH = 40;
+const WIZARD_STEPS = [
+  { id: 'people', title: 'Personas' },
+  { id: 'items', title: 'Platos' },
+  { id: 'payment', title: 'Cobro' },
+  { id: 'review', title: 'Revisar' }
+];
 
 const toQuantity = (value) => {
   const parsed = Number(value);
@@ -21,50 +35,65 @@ const toQuantity = (value) => {
 };
 
 const isUnitItem = (item) => item?.saleType === 'unit' || !item?.saleType;
+const getQuantityStep = (item) => (isUnitItem(item) ? 1 : (10 ** -STOCK_DECIMALS));
 
-/**
- * Generate ticket labels: T1, T2, T3... (avoiding A/B bias)
- * @param {number} count - Number of tickets
- * @returns {string[]} Array of labels
- */
-const generateTicketLabels = (count) =>
-  Array.from({ length: count }, (_, i) => `T${i + 1}`);
+const makeGuest = (index, guest = {}) => ({
+  // T labels stay stable for the existing financial/cloud contract. Guest names
+  // are presentation-only and are never used as payment or line identifiers.
+  id: guest.id || `T${index + 1}`,
+  displayName: typeof guest.displayName === 'string' ? guest.displayName.slice(0, MAX_GUEST_NAME_LENGTH) : ''
+});
 
-/**
- * Initialize every product in the unassigned pool for N tickets.
- * All products start in the Pool (unassigned), not auto-distributed.
- * @param {Array} order - Order items
- * @param {number} ticketCount - Number of tickets
- * @returns {Array} Allocations array with pool quantities
- */
-const buildInitialAllocations = (order = [], ticketCount = 2) => {
-  if (ticketCount < MIN_TICKETS) ticketCount = MIN_TICKETS;
-  if (ticketCount > MAX_TICKETS) ticketCount = MAX_TICKETS;
+const makeDefaultGuests = (count = MIN_GUESTS) => (
+  Array.from({ length: Math.min(MAX_GUESTS, Math.max(MIN_GUESTS, count)) }, (_, index) => makeGuest(index))
+);
 
-  return (order || []).map((item) => {
-    const totalQuantity = toQuantity(item?.quantity || 0);
+const guestName = (guest, index) => guest?.displayName?.trim() || `Comensal ${index + 1}`;
+const guestContextName = (guest, index) => `${guestName(guest, index)} · Comensal ${index + 1}`;
 
-    // All quantity starts in pool
-    return {
-      poolQuantity: totalQuantity,
-      ticketQuantities: Array(ticketCount).fill(0)
-    };
-  });
+const getItemDetails = (item = {}) => {
+  const modifiers = item.selectedModifiers
+    || item.selected_modifiers
+    || item.metadata?.selectedModifiers
+    || item.metadata?.selected_modifiers;
+  const modifierText = formatSelectedModifiersForDisplay(modifiers || []).join(', ');
+  const variant = item.variantName
+    || item.variant_name
+    || item.selectedVariant?.name
+    || item.selected_variant?.name
+    || '';
+  const note = item.notes
+    || item.kitchenNotes
+    || item.kitchen_notes
+    || item.specifications
+    || item.especificaciones
+    || '';
+  return [variant, modifierText, note ? `Nota: ${note}` : ''].filter(Boolean).join(' · ');
 };
 
-/**
- * Calculate ticket totals and adjustments for N tickets.
- * @param {Object} params
- * @returns {Object} Math results for all tickets
- */
-const calculateTicketMath = ({ order = [], allocations = [], total = 0, saleDiscount = null }) => {
-  const ticketCount = allocations[0]?.ticketQuantities?.length || MIN_TICKETS;
+/** Initialize every item in the unassigned pool. */
+const buildInitialAllocations = (order = [], guestCount = MIN_GUESTS) => (
+  (Array.isArray(order) ? order : []).map((item) => ({
+    poolQuantity: toQuantity(item?.quantity || 0),
+    ticketQuantities: Array(Math.min(MAX_GUESTS, Math.max(MIN_GUESTS, guestCount))).fill(0)
+  }))
+);
+
+const buildTicketLines = (allocations, guestIdx) => (
+  (allocations || []).flatMap((allocation, lineIndex) => {
+    const quantity = toQuantity(allocation?.ticketQuantities?.[guestIdx] || 0);
+    return quantity <= 0 ? [] : [{ lineIndex, quantity }];
+  })
+);
+
+const calculateTicketMath = ({ order = [], allocations = [], guests = [], total = 0, saleDiscount = null }) => {
+  const ticketCount = guests.length || MIN_GUESTS;
   const financials = calculateByItemsTicketFinancials({
     items: order,
     saleDiscount,
-    tickets: Array.from({ length: ticketCount }, (_, ticketIdx) => ({
-      label: `T${ticketIdx + 1}`,
-      lines: buildTicketLines(allocations, ticketIdx)
+    tickets: guests.map((guest, guestIdx) => ({
+      label: guest.id,
+      lines: buildTicketLines(allocations, guestIdx)
     })),
     parentTotal: total
   });
@@ -76,12 +105,47 @@ const calculateTicketMath = ({ order = [], allocations = [], total = 0, saleDisc
 
   return {
     parentCents: financials.parentTotalCents,
-    baseCents,
     adjustments,
-    totalsCents: baseCents.map((base, idx) => base + adjustments[idx]),
+    totalsCents: baseCents.map((base, index) => base + adjustments[index]),
     discountCents: ticketFinancials.map((ticket) => ticket?.discountTotalCents || 0),
-    roundingError: financials.valid ? null : 'La diferencia entre productos, descuentos y total supera el redondeo permitido. No se alterarán precios ni descuentos; revisa la cuenta.',
-    ticketCount
+    roundingError: financials.valid ? null : 'La diferencia entre productos, descuentos y total supera el redondeo permitido. No se alterarán precios ni descuentos; revisa la cuenta.'
+  };
+};
+
+const formatMoneyFromCents = (cents) => Money.toNumber(Money.fromCents(cents || 0)).toFixed(2);
+const formatQuantity = (value) => {
+  const quantity = toQuantity(value);
+  if (Number.isInteger(quantity)) return String(quantity);
+  return quantity.toFixed(STOCK_DECIMALS).replace(/0+$/, '').replace(/\.$/, '');
+};
+
+const initialPaymentsState = (guests, totalsCents = []) => Object.fromEntries(
+  guests.map((guest, index) => [guest.id, {
+    paymentMethod: 'efectivo',
+    amountPaid: formatMoneyFromCents(totalsCents[index] || 0),
+    customerId: '',
+    sendReceipt: false
+  }])
+);
+
+const calculateAssignmentProgress = (order, allocations) => {
+  let totalQuantity = 0;
+  let pendingQuantity = 0;
+  let pendingLines = 0;
+
+  (Array.isArray(order) ? order : []).forEach((item, index) => {
+    const lineTotal = toQuantity(item?.quantity || 0);
+    const poolQuantity = toQuantity(allocations[index]?.poolQuantity || 0);
+    totalQuantity = toQuantity(totalQuantity + lineTotal);
+    pendingQuantity = toQuantity(pendingQuantity + poolQuantity);
+    if (poolQuantity > 0) pendingLines += 1;
+  });
+
+  return {
+    assignedQuantity: toQuantity(totalQuantity - pendingQuantity),
+    pendingQuantity,
+    pendingLines,
+    totalQuantity
   };
 };
 
@@ -93,48 +157,6 @@ const toMoneySafe = (value, fallback = '0') => {
   }
 };
 
-const formatMoneyFromCents = (cents) => Money.toNumber(Money.fromCents(cents)).toFixed(2);
-
-const formatQuantity = (value) => {
-  const quantity = toQuantity(value);
-  if (Number.isInteger(quantity)) return String(quantity);
-  return quantity.toFixed(STOCK_DECIMALS).replace(/0+$/, '').replace(/\.$/, '');
-};
-
-/**
- * Build ticket lines for a specific ticket index.
- * @param {Array} allocations - Full allocations array
- * @param {number} ticketIdx - Ticket index
- * @returns {Array} Line items for the ticket
- */
-const buildTicketLines = (allocations, ticketIdx) =>
-  (allocations || []).flatMap((allocation, lineIndex) => {
-    const quantity = toQuantity(allocation?.ticketQuantities?.[ticketIdx] || 0);
-    return quantity <= 0 ? [] : [{ lineIndex, quantity }];
-  });
-
-/**
- * Initialize payments state for N tickets.
- * @param {number} count - Number of tickets
- * @param {number[]} totalsCents - Initial totals per ticket
- * @returns {Object} Payments state
- */
-const initialPaymentsState = (count, totalsCents = []) => {
-  const state = {};
-  const labels = generateTicketLabels(count);
-
-  labels.forEach((label, idx) => {
-    state[label] = {
-      paymentMethod: 'efectivo',
-      amountPaid: formatMoneyFromCents(totalsCents[idx] || 0),
-      customerId: '',
-      sendReceipt: false
-    };
-  });
-
-  return state;
-};
-
 export default function SplitBillModal({
   show,
   onClose,
@@ -142,414 +164,486 @@ export default function SplitBillModal({
   total = 0,
   saleDiscount = null,
   onConfirm,
-  isCajaOpen = true
+  isCajaOpen = true,
+  orderId = null,
+  tableName = ''
 }) {
-  const [splitCount, setSplitCount] = useState(2);
+  const [guests, setGuests] = useState(() => makeDefaultGuests());
   const [allocations, setAllocations] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [payments, setPayments] = useState({});
+  const [assignmentAmounts, setAssignmentAmounts] = useState({});
+  const [currentStep, setCurrentStep] = useState('people');
+  const [assignmentPanel, setAssignmentPanel] = useState('pending');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSessionReady, setIsSessionReady] = useState(false);
+  const [draftNotice, setDraftNotice] = useState('');
+  const [pendingGuestRemoval, setPendingGuestRemoval] = useState(null);
+  const [assignmentNotice, setAssignmentNotice] = useState('');
+  const initializedSessionRef = useRef(null);
+  const latestInputsRef = useRef({ order, total, saleDiscount });
+  latestInputsRef.current = { order, total, saleDiscount };
 
-  const ticketLabels = useMemo(() => generateTicketLabels(splitCount), [splitCount]);
+  const safeOrder = useMemo(() => (Array.isArray(order) ? order : []), [order]);
+  const orderSnapshot = useMemo(
+    () => buildRestaurantSplitOrderSnapshot({ order: safeOrder, total, saleDiscount }),
+    [safeOrder, total, saleDiscount]
+  );
+  const sessionIdentity = `${String(orderId || '')}\u0000${orderSnapshot}`;
+  const guestLabels = useMemo(() => guests.map((guest) => guest.id), [guests]);
+  const guestIdentity = guestLabels.join('|');
   const customersById = useMemo(
     () => new Map(customers.map((customer) => [customer.id, customer])),
     [customers]
   );
 
-  // Initialize modal state when shown
+  // Start or restore only when the modal opens or the commercial order snapshot
+  // changes. React reference changes and derived totals never restart a session.
   useEffect(() => {
-    if (!show) return;
+    if (!show) {
+      initializedSessionRef.current = null;
+      setIsSessionReady(false);
+      setPendingGuestRemoval(null);
+      return;
+    }
+    if (initializedSessionRef.current === sessionIdentity) return;
 
-    const initialAllocations = buildInitialAllocations(order, splitCount);
+    const hadOpenSession = initializedSessionRef.current !== null;
+    const current = latestInputsRef.current;
+    const currentOrder = Array.isArray(current.order) ? current.order : [];
+    const restored = orderId
+      ? readRestaurantSplitDraft({ orderId, order: currentOrder, orderSnapshot })
+      : { status: 'missing' };
+    const nextGuests = restored.status === 'restored'
+      ? restored.guests.map((guest, index) => makeGuest(index, guest))
+      : makeDefaultGuests();
+    const nextAllocations = restored.status === 'restored'
+      ? restored.allocations
+      : buildInitialAllocations(currentOrder, nextGuests.length);
     const initialMath = calculateTicketMath({
-      order,
-      allocations: initialAllocations,
-      total,
-      saleDiscount
+      order: currentOrder,
+      allocations: nextAllocations,
+      guests: nextGuests,
+      total: current.total,
+      saleDiscount: current.saleDiscount
     });
 
-    setAllocations(initialAllocations);
-    setPayments(initialPaymentsState(splitCount, initialMath.totalsCents));
+    initializedSessionRef.current = sessionIdentity;
+    setGuests(nextGuests);
+    setAllocations(nextAllocations);
+    setPayments(initialPaymentsState(nextGuests, initialMath.totalsCents));
+    setAssignmentAmounts({});
+    setCurrentStep(restored.status === 'restored' ? restored.step : 'people');
+    setAssignmentPanel('pending');
     setIsSubmitting(false);
-
-    const fetchCustomers = async () => {
-      const customerData = await loadData(STORES.CUSTOMERS);
-      setCustomers(customerData || []);
-    };
-
-    fetchCustomers();
-  }, [show, order, total, saleDiscount, splitCount]);
+    setPendingGuestRemoval(null);
+    setAssignmentNotice('');
+    setDraftNotice(restored.status === 'restored'
+      ? 'Se restauró el reparto local de esta mesa. Revisa los nombres y las cantidades antes de cobrar.'
+      : restored.status === 'stale' || (hadOpenSession && restored.status !== 'restored')
+        ? 'La cuenta cambió desde que se guardó el reparto. Se descartó el borrador anterior y los productos volvieron a quedar pendientes.'
+        : restored.status === 'invalid'
+          ? 'No se pudo validar el reparto guardado. Se descartó por seguridad.'
+          : '');
+    setIsSessionReady(true);
+  }, [show, sessionIdentity, orderId, orderSnapshot]);
 
   useEffect(() => {
     if (!show) return undefined;
-
-    const handleKeyDown = (event) => {
-      if (event.key === 'Escape') {
-        onClose();
+    let active = true;
+    const fetchCustomers = async () => {
+      try {
+        const customerData = await loadData(STORES.CUSTOMERS);
+        if (active) setCustomers(customerData || []);
+      } catch {
+        if (active) setCustomers([]);
       }
     };
+    void fetchCustomers();
+    return () => { active = false; };
+  }, [show]);
 
+  // Persist presentation state only. Payment methods, credit customers,
+  // amounts and other financial data always start from the current contract.
+  useEffect(() => {
+    if (!show || !isSessionReady || !orderId) return;
+    const stored = saveRestaurantSplitDraft({
+      orderId,
+      order: safeOrder,
+      orderSnapshot,
+      guests,
+      allocations,
+      step: currentStep
+    });
+    if (!stored && !draftNotice) {
+      setDraftNotice('No se pudo guardar el reparto localmente en este dispositivo. Puedes continuar, pero quizá debas repetir la asignación si cierras esta ventana.');
+    }
+  }, [show, isSessionReady, orderId, safeOrder, orderSnapshot, guests, allocations, currentStep, draftNotice]);
+
+  useEffect(() => {
+    if (!show) return undefined;
+    const handleKeyDown = (event) => {
+      if (event.key !== 'Escape') return;
+      if (pendingGuestRemoval) {
+        event.preventDefault();
+        setPendingGuestRemoval(null);
+        return;
+      }
+      onClose();
+    };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [show, onClose]);
-
-  // Recalculate when splitCount changes
-  useEffect(() => {
-    if (!show) return;
-
-    // Rebuild allocations for new ticket count, preserving pool
-    setAllocations((currentAllocations) => {
-      if (currentAllocations.length === 0) return currentAllocations;
-
-      return order.map((item, idx) => {
-        const current = currentAllocations[idx];
-        const totalQuantity = toQuantity(item?.quantity || 0);
-
-        // Sum currently assigned quantities
-        const currentlyAssigned = current?.ticketQuantities
-          ? current.ticketQuantities.reduce((a, b) => a + b, 0)
-          : 0;
-
-        const poolQuantity = toQuantity(totalQuantity - currentlyAssigned);
-
-        // Resize ticket quantities array
-        const newTicketQuantities = Array(splitCount).fill(0);
-        if (current?.ticketQuantities) {
-          current.ticketQuantities.forEach((qty, i) => {
-            if (i < splitCount) newTicketQuantities[i] = qty;
-          });
-        }
-
-        return {
-          poolQuantity,
-          ticketQuantities: newTicketQuantities
-        };
-      });
-    });
-  }, [show, order, splitCount]);
+  }, [show, onClose, pendingGuestRemoval]);
 
   const ticketMath = useMemo(
-    () => calculateTicketMath({ order, allocations, total, saleDiscount }),
-    [order, allocations, total, saleDiscount]
+    () => calculateTicketMath({ order: safeOrder, allocations, guests, total, saleDiscount }),
+    [safeOrder, allocations, guests, total, saleDiscount]
+  );
+  const assignmentProgress = useMemo(
+    () => calculateAssignmentProgress(safeOrder, allocations),
+    [safeOrder, allocations]
   );
 
-  const assignmentProgress = useMemo(() => {
-    let totalQuantity = 0;
-    let pendingQuantity = 0;
-    let pendingLines = 0;
-
-    (order || []).forEach((item, index) => {
-      const lineTotal = toQuantity(item?.quantity || 0);
-      const poolQuantity = toQuantity(allocations[index]?.poolQuantity || 0);
-
-      totalQuantity = toQuantity(totalQuantity + lineTotal);
-      pendingQuantity = toQuantity(pendingQuantity + poolQuantity);
-      if (poolQuantity > 0) pendingLines += 1;
-    });
-
-    const assignedQuantity = toQuantity(totalQuantity - pendingQuantity);
-
-    return {
-      assignedQuantity,
-      pendingQuantity,
-      pendingLines,
-      totalQuantity
-    };
-  }, [order, allocations]);
-
-  // Update payment amounts when totals change
+  // Reconcile only payment defaults after a ticket total changes. Guest names,
+  // allocations and the current wizard step remain untouched.
   useEffect(() => {
-    if (!show) return;
-
-    setPayments((prev) => {
-      const newPayments = {};
-      ticketLabels.forEach((label, idx) => {
-        const current = prev[label] || {};
-        const newTotal = formatMoneyFromCents(ticketMath.totalsCents[idx] || 0);
-        
-        newPayments[label] = {
+    if (!show || !isSessionReady) return;
+    setPayments((previous) => {
+      const next = {};
+      guestIdentity.split('|').filter(Boolean).forEach((guestId, index) => {
+        const guest = { id: guestId };
+        const current = previous[guestId] || {};
+        const totalForGuest = formatMoneyFromCents(ticketMath.totalsCents[index] || 0);
+        next[guestId] = {
+          ...initialPaymentsState([guest], [ticketMath.totalsCents[index] || 0])[guestId],
           ...current,
-          amountPaid: current.paymentMethod === 'fiado' ? current.amountPaid : newTotal
+          amountPaid: current.paymentMethod === 'fiado'
+            ? (current.amountPaid ?? '0')
+            : totalForGuest
         };
       });
-      return newPayments;
+      return next;
     });
-  }, [ticketMath.totalsCents, ticketLabels, show]);
+  }, [show, isSessionReady, guestIdentity, ticketMath.totalsCents]);
 
-  /**
-   * Validation for N-way split.
-   * Validates: pool empty, each ticket has items, totals match, credit limits.
-   */
-  const splitValidationError = useMemo(() => {
-    if (!Array.isArray(order) || order.length === 0) {
-      return 'No hay productos para dividir.';
-    }
+  const assignmentError = useMemo(() => {
+    if (safeOrder.length === 0) return 'No hay productos para dividir.';
+    if (allocations.length !== safeOrder.length) return 'La cuenta se está preparando. Vuelve a intentar en un momento.';
 
-    const ticketCount = ticketLabels.length;
-
-    // Check pool is empty (all items assigned)
-    for (let index = 0; index < order.length; index += 1) {
-      const item = order[index];
-      const allocation = allocations[index];
-
-      if (!allocation) continue;
-
+    for (let lineIndex = 0; lineIndex < safeOrder.length; lineIndex += 1) {
+      const item = safeOrder[lineIndex];
+      const allocation = allocations[lineIndex];
       const totalQuantity = toQuantity(item?.quantity || 0);
-      const assigned = allocation.ticketQuantities.reduce((a, b) => a + b, 0);
-
-      if (toQuantity(assigned) !== totalQuantity) {
-        return `El producto "${item.name}" tiene cantidad sin asignar en el Pool.`;
+      const assigned = (allocation?.ticketQuantities || []).reduce((sum, quantity) => sum + toQuantity(quantity), 0);
+      if (toQuantity(assigned + toQuantity(allocation?.poolQuantity || 0)) !== totalQuantity) {
+        return `No se pudo comprobar la cantidad de “${item?.name || 'un producto'}”. Revisa el reparto.`;
+      }
+      if (toQuantity(allocation?.poolQuantity || 0) > 0) {
+        return `Asigna las ${formatQuantity(allocation.poolQuantity)} unidades pendientes de “${item?.name || 'un producto'}”.`;
       }
     }
 
-    // Check each ticket has at least one item
-    for (let t = 0; t < ticketCount; t++) {
-      const hasItems = allocations.some((alloc) =>
-        toQuantity(alloc?.ticketQuantities?.[t] || 0) > 0
-      );
-      if (!hasItems) {
-        return `El Ticket ${ticketLabels[t]} debe tener al menos un producto.`;
+    for (let guestIdx = 0; guestIdx < guests.length; guestIdx += 1) {
+      if (!buildTicketLines(allocations, guestIdx).length) {
+        return `${guestContextName(guests[guestIdx], guestIdx)} necesita al menos un producto.`;
       }
     }
 
-    if (ticketMath.roundingError) {
-      return ticketMath.roundingError;
-    }
+    if (ticketMath.roundingError) return ticketMath.roundingError;
+    const totalChildren = ticketMath.totalsCents.reduce((sum, amount) => sum + amount, 0);
+    if (totalChildren !== ticketMath.parentCents) return 'Los totales asignados no coinciden con la cuenta original.';
+    return null;
+  }, [safeOrder, allocations, guests, ticketMath]);
 
-    // Verify totals sum correctly
-    const totalChildren = ticketMath.totalsCents.reduce((a, b) => a + b, 0);
-    if (totalChildren !== ticketMath.parentCents) {
-      return 'Los totales de los tickets no cuadran con la orden padre.';
-    }
-
-    // Payment validation with debt accumulator
+  const paymentValidationError = useMemo(() => {
+    if (assignmentError) return assignmentError;
     const debtAccumulator = new Map();
 
-    for (let t = 0; t < ticketCount; t++) {
-      const label = ticketLabels[t];
-      const ticketTotal = Money.fromCents(ticketMath.totalsCents[t]);
-      const payment = payments[label];
-
-      if (!payment) {
-        return `Configuración de pago faltante para ticket ${label}.`;
-      }
-
+    for (let guestIdx = 0; guestIdx < guests.length; guestIdx += 1) {
+      const guest = guests[guestIdx];
+      const displayName = guestContextName(guest, guestIdx);
+      const ticketTotal = Money.fromCents(ticketMath.totalsCents[guestIdx]);
+      const payment = payments[guest.id];
+      if (!payment) return `Falta configurar el cobro de ${displayName}.`;
       const paid = toMoneySafe(payment.amountPaid, '0');
-
-      if (paid.lt(0)) {
-        return `Monto inválido en ticket ${label}.`;
-      }
+      if (paid.lt(0)) return `El monto de ${displayName} no es válido.`;
 
       if (payment.paymentMethod === 'efectivo') {
-        if (paid.lt(ticketTotal)) {
-          return `El ticket ${label} en efectivo requiere monto completo.`;
-        }
+        if (paid.lt(ticketTotal)) return `El pago en efectivo de ${displayName} debe cubrir su total.`;
         continue;
       }
 
       if (payment.paymentMethod === 'fiado') {
-        if (!payment.customerId) {
-          return `El ticket ${label} a fiado requiere cliente.`;
-        }
-
-        if (paid.gt(ticketTotal)) {
-          return `El abono del ticket ${label} no puede ser mayor al total.`;
-        }
-
+        if (!payment.customerId) return `Selecciona el cliente registrado que recibirá el fiado de ${displayName}.`;
+        if (paid.gt(ticketTotal)) return `El abono de ${displayName} no puede superar su total.`;
         const customer = customersById.get(payment.customerId);
-        if (!customer) {
-          return `Cliente inválido en ticket ${label}.`;
-        }
-
-        const saldo = Money.subtract(ticketTotal, paid);
+        if (!customer) return `El cliente financiero seleccionado para ${displayName} ya no está disponible.`;
+        const balance = Money.subtract(ticketTotal, paid);
         const currentDebt = toMoneySafe(customer.debt, '0');
-        const limit = toMoneySafe(customer.creditLimit, '0');
+        const creditLimit = toMoneySafe(customer.creditLimit, '0');
         const pending = debtAccumulator.get(customer.id) || Money.init(0);
-        const projected = Money.add(Money.add(currentDebt, pending), saldo);
-
-        if (limit.eq(0) || projected.gt(limit)) {
-          return `El ticket ${label} excede el límite de crédito de ${customer.name}.`;
+        const projected = Money.add(Money.add(currentDebt, pending), balance);
+        if (creditLimit.eq(0) || projected.gt(creditLimit)) {
+          return `El fiado de ${displayName} supera el límite de crédito de ${customer.name}.`;
         }
-
-        debtAccumulator.set(customer.id, Money.add(pending, saldo));
+        debtAccumulator.set(customer.id, Money.add(pending, balance));
       }
     }
-
     return null;
-  }, [order, allocations, ticketLabels, ticketMath, payments, customersById]);
+  }, [assignmentError, guests, payments, customersById, ticketMath]);
 
   const willAutoOpenCaja = useMemo(() => (
-    !isCajaOpen &&
-    splitRequiresCashSessionCompatibility(ticketLabels.map((label) => ({ paymentData: payments[label] })))
-  ), [isCajaOpen, payments, ticketLabels]);
+    !isCajaOpen && splitRequiresCashSessionCompatibility(
+      guestIdentity.split('|').filter(Boolean).map((guestId) => ({ paymentData: payments[guestId] }))
+    )
+  ), [isCajaOpen, payments, guestIdentity]);
 
-  /**
-   * Move quantity from Pool to a specific ticket.
-   * @param {number} lineIndex - Product line index
-   * @param {number} ticketIdx - Ticket index to add to
-   * @param {number} delta - Amount to move (positive)
-   */
-  const moveToTicket = useCallback((lineIndex, ticketIdx, delta) => {
-    setAllocations((prev) => {
-      const next = [...prev];
-      const current = next[lineIndex];
-      if (!current) return prev;
-
-      const poolQty = toQuantity(current.poolQuantity);
-      const moveQty = Math.min(delta, poolQty);
-
-      if (moveQty <= 0) return prev;
-
-      const newTicketQuantities = [...current.ticketQuantities];
-      newTicketQuantities[ticketIdx] = toQuantity(newTicketQuantities[ticketIdx] + moveQty);
-
-      next[lineIndex] = {
-        ...current,
-        poolQuantity: toQuantity(poolQty - moveQty),
-        ticketQuantities: newTicketQuantities
-      };
-
-      return next;
-    });
-  }, []);
-
-  /**
-   * Move quantity from a ticket back to Pool.
-   * @param {number} lineIndex - Product line index
-   * @param {number} ticketIdx - Ticket index to remove from
-   * @param {number} delta - Amount to move (positive)
-   */
-  const moveToPool = useCallback((lineIndex, ticketIdx, delta) => {
-    setAllocations((prev) => {
-      const next = [...prev];
-      const current = next[lineIndex];
-      if (!current) return prev;
-
-      const ticketQty = toQuantity(current.ticketQuantities[ticketIdx]);
-      const moveQty = Math.min(delta, ticketQty);
-
-      if (moveQty <= 0) return prev;
-
-      const newTicketQuantities = [...current.ticketQuantities];
-      newTicketQuantities[ticketIdx] = toQuantity(ticketQty - moveQty);
-
-      next[lineIndex] = {
-        ...current,
-        poolQuantity: toQuantity(current.poolQuantity + moveQty),
-        ticketQuantities: newTicketQuantities
-      };
-
-      return next;
-    });
-  }, []);
-
-  /**
-   * Move all remaining quantity from Pool to a specific ticket.
-   * @param {number} lineIndex - Product line index
-   * @param {number} ticketIdx - Ticket index
-   */
-  const moveAllToTicket = useCallback((lineIndex, ticketIdx) => {
-    setAllocations((prev) => {
-      const next = [...prev];
-      const current = next[lineIndex];
-      if (!current) return prev;
-
-      const poolQty = toQuantity(current.poolQuantity);
-      if (poolQty <= 0) return prev;
-
-      const newTicketQuantities = [...current.ticketQuantities];
-      newTicketQuantities[ticketIdx] = toQuantity(newTicketQuantities[ticketIdx] + poolQty);
-
-      next[lineIndex] = {
-        ...current,
-        poolQuantity: 0,
-        ticketQuantities: newTicketQuantities
-      };
-
-      return next;
-    });
-  }, []);
-
-  /**
-   * Move all quantity from a ticket back to Pool.
-   * @param {number} lineIndex - Product line index
-   * @param {number} ticketIdx - Ticket index
-   */
-  const moveAllToPool = useCallback((lineIndex, ticketIdx) => {
-    setAllocations((prev) => {
-      const next = [...prev];
-      const current = next[lineIndex];
-      if (!current) return prev;
-
-      const ticketQty = toQuantity(current.ticketQuantities[ticketIdx]);
-      if (ticketQty <= 0) return prev;
-
-      const newTicketQuantities = [...current.ticketQuantities];
-      newTicketQuantities[ticketIdx] = 0;
-
-      next[lineIndex] = {
-        ...current,
-        poolQuantity: toQuantity(current.poolQuantity + ticketQty),
-        ticketQuantities: newTicketQuantities
-      };
-
-      return next;
-    });
-  }, []);
-
-  const updatePayment = (label, field, value) => {
-    setPayments((prev) => ({
-      ...prev,
-      [label]: {
-        ...prev[label],
-        [field]: value
+  const resizeGuests = useCallback((newCount) => {
+    const count = Math.max(MIN_GUESTS, Math.min(MAX_GUESTS, Number(newCount) || MIN_GUESTS));
+    setGuests((currentGuests) => {
+      if (count > currentGuests.length) {
+        return [
+          ...currentGuests,
+          ...Array.from({ length: count - currentGuests.length }, (_, offset) => makeGuest(currentGuests.length + offset))
+        ];
       }
+      return currentGuests.slice(0, count);
+    });
+    setAllocations((currentAllocations) => currentAllocations.map((allocation) => {
+      const ticketQuantities = allocation.ticketQuantities || [];
+      if (count > ticketQuantities.length) {
+        return { ...allocation, ticketQuantities: [...ticketQuantities, ...Array(count - ticketQuantities.length).fill(0)] };
+      }
+      const returned = ticketQuantities.slice(count).reduce((sum, quantity) => sum + toQuantity(quantity), 0);
+      return {
+        poolQuantity: toQuantity(allocation.poolQuantity + returned),
+        ticketQuantities: ticketQuantities.slice(0, count)
+      };
+    }));
+    setPayments((current) => Object.fromEntries(
+      Object.entries(current).filter(([id]) => Number(id.slice(1)) <= count)
+    ));
+    setPendingGuestRemoval(null);
+  }, []);
+
+  const handleGuestCountChange = (requestedCount) => {
+    const count = Math.max(MIN_GUESTS, Math.min(MAX_GUESTS, Number(requestedCount) || MIN_GUESTS));
+    if (count >= guests.length) {
+      resizeGuests(count);
+      return;
+    }
+
+    const removedGuestIndexes = Array.from({ length: guests.length - count }, (_, index) => count + index);
+    const affected = allocations.reduce((summary, allocation) => {
+      const returned = removedGuestIndexes.reduce((sum, guestIdx) => sum + toQuantity(allocation?.ticketQuantities?.[guestIdx] || 0), 0);
+      if (returned > 0) {
+        summary.quantity = toQuantity(summary.quantity + returned);
+        summary.lines += 1;
+      }
+      return summary;
+    }, { quantity: 0, lines: 0 });
+
+    if (affected.quantity > 0) {
+      setPendingGuestRemoval({ count, quantity: affected.quantity, lines: affected.lines });
+      return;
+    }
+    resizeGuests(count);
+  };
+
+  const updateGuestName = (guestId, value) => {
+    setGuests((previous) => previous.map((guest) => (
+      guest.id === guestId
+        ? { ...guest, displayName: String(value).slice(0, MAX_GUEST_NAME_LENGTH) }
+        : guest
+    )));
+  };
+
+  const updatePayment = (guestId, field, value) => {
+    setPayments((previous) => ({
+      ...previous,
+      [guestId]: { ...(previous[guestId] || {}), [field]: value }
     }));
   };
 
-  const handleSplitCountChange = (newCount) => {
-    const count = Math.max(MIN_TICKETS, Math.min(MAX_TICKETS, Number(newCount) || MIN_TICKETS));
-    setSplitCount(count);
+  const getAssignmentAmount = (item, lineIndex, pending) => {
+    const lineKey = String(getCartLineId(item, lineIndex));
+    const defaultAmount = isUnitItem(item) ? Math.min(1, pending) : Math.min(1, pending);
+    const entered = assignmentAmounts[lineKey];
+    if (entered === undefined || entered === '') return formatQuantity(defaultAmount);
+    return entered;
+  };
+
+  const getNormalizedAssignmentAmount = (item, lineIndex, pending) => {
+    const requested = getAssignmentAmount(item, lineIndex, pending);
+    if (requested === '' || !Number.isFinite(Number(requested))) return 0;
+    return Math.min(pending, toQuantity(requested));
+  };
+
+  const moveToGuest = useCallback((lineIndex, guestIdx, delta) => {
+    setAllocations((previous) => {
+      const next = [...previous];
+      const current = next[lineIndex];
+      if (!current || !Number.isInteger(guestIdx) || guestIdx < 0 || guestIdx >= guests.length) return previous;
+      const poolQuantity = toQuantity(current.poolQuantity);
+      const moveQuantity = Math.min(toQuantity(delta), poolQuantity);
+      if (moveQuantity <= 0) return previous;
+      const ticketQuantities = [...current.ticketQuantities];
+      ticketQuantities[guestIdx] = toQuantity(ticketQuantities[guestIdx] + moveQuantity);
+      next[lineIndex] = { ...current, poolQuantity: toQuantity(poolQuantity - moveQuantity), ticketQuantities };
+      return next;
+    });
+  }, [guests.length]);
+
+  const moveAllToGuest = useCallback((lineIndex, guestIdx) => {
+    setAllocations((previous) => {
+      const next = [...previous];
+      const current = next[lineIndex];
+      if (!current || current.poolQuantity <= 0 || guestIdx < 0 || guestIdx >= guests.length) return previous;
+      const ticketQuantities = [...current.ticketQuantities];
+      ticketQuantities[guestIdx] = toQuantity(ticketQuantities[guestIdx] + current.poolQuantity);
+      next[lineIndex] = { ...current, poolQuantity: 0, ticketQuantities };
+      return next;
+    });
+  }, [guests.length]);
+
+  const returnToPending = useCallback((lineIndex, guestIdx, delta) => {
+    setAllocations((previous) => {
+      const next = [...previous];
+      const current = next[lineIndex];
+      if (!current) return previous;
+      const ticketQuantity = toQuantity(current.ticketQuantities[guestIdx]);
+      const moveQuantity = Math.min(toQuantity(delta), ticketQuantity);
+      if (moveQuantity <= 0) return previous;
+      const ticketQuantities = [...current.ticketQuantities];
+      ticketQuantities[guestIdx] = toQuantity(ticketQuantity - moveQuantity);
+      next[lineIndex] = {
+        ...current,
+        poolQuantity: toQuantity(current.poolQuantity + moveQuantity),
+        ticketQuantities
+      };
+      return next;
+    });
+  }, []);
+
+  const returnAllToPending = useCallback((lineIndex, guestIdx) => {
+    setAllocations((previous) => {
+      const next = [...previous];
+      const current = next[lineIndex];
+      if (!current) return previous;
+      const ticketQuantity = toQuantity(current.ticketQuantities[guestIdx]);
+      if (ticketQuantity <= 0) return previous;
+      const ticketQuantities = [...current.ticketQuantities];
+      ticketQuantities[guestIdx] = 0;
+      next[lineIndex] = {
+        ...current,
+        poolQuantity: toQuantity(current.poolQuantity + ticketQuantity),
+        ticketQuantities
+      };
+      return next;
+    });
+  }, []);
+
+  const moveBetweenGuests = useCallback((lineIndex, fromGuestIdx, toGuestIdx) => {
+    if (!Number.isInteger(toGuestIdx) || toGuestIdx < 0 || toGuestIdx >= guests.length || toGuestIdx === fromGuestIdx) return;
+    setAllocations((previous) => {
+      const next = [...previous];
+      const current = next[lineIndex];
+      if (!current) return previous;
+      const ticketQuantities = [...current.ticketQuantities];
+      const quantity = toQuantity(ticketQuantities[fromGuestIdx]);
+      if (quantity <= 0) return previous;
+      ticketQuantities[fromGuestIdx] = 0;
+      ticketQuantities[toGuestIdx] = toQuantity(ticketQuantities[toGuestIdx] + quantity);
+      next[lineIndex] = { ...current, ticketQuantities };
+      return next;
+    });
+    setAssignmentNotice('');
+  }, [guests.length]);
+
+  const guestLineItems = (guestIdx) => safeOrder.reduce((items, item, lineIndex) => {
+    const quantity = toQuantity(allocations[lineIndex]?.ticketQuantities?.[guestIdx] || 0);
+    if (quantity > 0) items.push({ item, quantity, lineIndex });
+    return items;
+  }, []);
+
+  const goToStep = (step) => {
+    const targetIndex = WIZARD_STEPS.findIndex((candidate) => candidate.id === step);
+    const currentIndex = WIZARD_STEPS.findIndex((candidate) => candidate.id === currentStep);
+    if (targetIndex < 0) return;
+    if (targetIndex <= currentIndex) {
+      setCurrentStep(step);
+      setAssignmentNotice('');
+      return;
+    }
+    if (targetIndex >= 2 && assignmentError) {
+      setAssignmentNotice(assignmentError);
+      return;
+    }
+    if (targetIndex >= 3 && paymentValidationError) {
+      setAssignmentNotice(paymentValidationError);
+      return;
+    }
+    setCurrentStep(step);
+    setAssignmentNotice('');
+  };
+
+  const goForward = () => {
+    const currentIndex = WIZARD_STEPS.findIndex((candidate) => candidate.id === currentStep);
+    if (currentStep === 'people') return goToStep('items');
+    if (currentStep === 'items') return goToStep('payment');
+    if (currentStep === 'payment') return goToStep('review');
+    if (currentIndex < 0) return;
+    setCurrentStep(WIZARD_STEPS[Math.min(currentIndex + 1, WIZARD_STEPS.length - 1)].id);
   };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-
-    if (splitValidationError || isSubmitting) {
+    if (currentStep !== 'review' || paymentValidationError || isSubmitting || !isSessionReady) return;
+    if (
+      initializedSessionRef.current !== sessionIdentity
+      || buildRestaurantSplitOrderSnapshot({ order: safeOrder, total, saleDiscount }) !== orderSnapshot
+    ) {
+      setDraftNotice('La cuenta cambió durante la revisión. El reparto se reinició para proteger el cobro.');
+      initializedSessionRef.current = null;
+      setIsSessionReady(false);
       return;
     }
 
     setIsSubmitting(true);
-
     try {
       const payload = {
         splitIntent: RESTAURANT_SPLIT_INTENTS.BY_ITEMS,
-        tickets: ticketLabels.map((label, idx) => {
-          const ticketTotal = Money.fromCents(ticketMath.totalsCents[idx]);
-          const paidInput = toMoneySafe(payments[label]?.amountPaid || 0, '0');
-          const amountPaid = payments[label]?.paymentMethod === 'efectivo'
+        tickets: guests.map((guest, guestIdx) => {
+          const ticketTotal = Money.fromCents(ticketMath.totalsCents[guestIdx]);
+          const paidInput = toMoneySafe(payments[guest.id]?.amountPaid || 0, '0');
+          const amountPaid = payments[guest.id]?.paymentMethod === 'efectivo'
             ? (paidInput.gt(ticketTotal) ? ticketTotal : paidInput)
             : paidInput;
-
-          const saldoPendiente = payments[label]?.paymentMethod === 'fiado'
+          const saldoPendiente = payments[guest.id]?.paymentMethod === 'fiado'
             ? Money.subtract(ticketTotal, amountPaid)
             : Money.init(0);
 
+          // Intentionally preserve the financial contract: presentation names
+          // never replace its stable ticket labels or introduce RPC fields.
           return {
-            label,
+            label: guest.id,
             paymentData: {
-              paymentMethod: payments[label]?.paymentMethod,
+              paymentMethod: payments[guest.id]?.paymentMethod,
               amountPaid: Money.toExactString(amountPaid),
               saldoPendiente: Money.toExactString(saldoPendiente),
-              customerId: payments[label]?.customerId || null,
-              sendReceipt: Boolean(payments[label]?.sendReceipt)
+              customerId: payments[guest.id]?.customerId || null,
+              sendReceipt: Boolean(payments[guest.id]?.sendReceipt)
             },
-            lines: buildTicketLines(allocations, idx)
+            lines: buildTicketLines(allocations, guestIdx)
           };
         })
       };
 
-      await onConfirm(payload);
+      const result = await onConfirm(payload);
+      if (result?.success === true) {
+        clearRestaurantSplitDraft(orderId);
+        setIsSessionReady(false);
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -557,12 +651,12 @@ export default function SplitBillModal({
 
   if (!show) return null;
 
+  const currentStepIndex = Math.max(0, WIZARD_STEPS.findIndex((step) => step.id === currentStep));
+  const isFinalStep = currentStep === 'review';
+  const activeError = assignmentNotice || (currentStep === 'items' ? assignmentError : currentStep === 'payment' || currentStep === 'review' ? paymentValidationError : '');
+
   return (
-    <div
-      className="modal split-bill-overlay"
-      style={{ display: 'flex', zIndex: 'var(--z-modal-top)' }}
-      onClick={onClose}
-    >
+    <div className="modal split-bill-overlay" style={{ display: 'flex', zIndex: 'var(--z-modal-top)' }} onClick={onClose}>
       <div
         className="modal-content split-bill-modal"
         onClick={(event) => event.stopPropagation()}
@@ -573,33 +667,23 @@ export default function SplitBillModal({
       >
         <div className="split-bill-header">
           <div className="split-bill-title-block">
-            <span className="split-bill-kicker">Separación de cobro</span>
-            <h2 id="split-bill-title">Dividir cuenta</h2>
-            <p id="split-bill-description">
-              Asigna los productos que pagará cada persona y confirma el método de pago.
-            </p>
+            <span className="split-bill-kicker">División de cuenta</span>
+            <h2 id="split-bill-title">¿Qué productos pagará cada persona?</h2>
+            <p id="split-bill-description">El reparto se guarda en este dispositivo para esta mesa mientras preparas el cobro.</p>
           </div>
-          <button
-            type="button"
-            className="split-close-button"
-            onClick={onClose}
-            disabled={isSubmitting}
-            aria-label="Cerrar división de cuenta"
-          >
+          <button type="button" className="split-close-button" onClick={onClose} disabled={isSubmitting} aria-label="Cerrar división de cuenta">
             <X size={20} aria-hidden="true" />
           </button>
         </div>
 
         <div className="split-status-strip" aria-label="Resumen de división">
           <div className="split-status-card">
-            <span>Total cuenta</span>
+            <span>Total de la cuenta</span>
             <strong>${formatMoneyFromCents(ticketMath.parentCents)}</strong>
           </div>
           <div className="split-status-card">
             <span>Asignado</span>
-            <strong>
-              {formatQuantity(assignmentProgress.assignedQuantity)} / {formatQuantity(assignmentProgress.totalQuantity)}
-            </strong>
+            <strong>{formatQuantity(assignmentProgress.assignedQuantity)} / {formatQuantity(assignmentProgress.totalQuantity)}</strong>
           </div>
           <div className={`split-status-card ${assignmentProgress.pendingQuantity > 0 ? 'is-pending' : 'is-ready'}`}>
             <span>Pendiente</span>
@@ -607,285 +691,518 @@ export default function SplitBillModal({
           </div>
         </div>
 
-        <div className="split-controls-row">
-          <div className="split-count-selector">
-            <label htmlFor="splitCount">Tickets</label>
-            <select
-              id="splitCount"
-              value={splitCount}
-              onChange={(e) => handleSplitCountChange(e.target.value)}
-              disabled={isSubmitting}
-            >
-              {Array.from({ length: MAX_TICKETS - MIN_TICKETS + 1 }, (_, i) => i + MIN_TICKETS).map(
-                (num) => (
-                  <option key={num} value={num}>
-                    {num} tickets
-                  </option>
-                )
-              )}
-            </select>
-          </div>
+        <nav className="split-wizard-nav" aria-label="Pasos para dividir la cuenta">
+          {WIZARD_STEPS.map((step, index) => {
+            const isCurrent = step.id === currentStep;
+            const canVisit = index <= currentStepIndex || (index === 1) || (index === 2 && !assignmentError) || (index === 3 && !paymentValidationError);
+            return (
+              <button
+                key={step.id}
+                type="button"
+                className={`split-wizard-step ${isCurrent ? 'is-current' : ''} ${index < currentStepIndex ? 'is-complete' : ''}`}
+                onClick={() => goToStep(step.id)}
+                aria-current={isCurrent ? 'step' : undefined}
+                disabled={isSubmitting || !canVisit}
+              >
+                <span className="split-wizard-step-number" aria-hidden="true">{index < currentStepIndex ? <Check size={15} /> : index + 1}</span>
+                <span>{step.title}</span>
+              </button>
+            );
+          })}
+        </nav>
 
-          <div className="split-strategy-card" aria-label="Estrategia de división">
-            <strong>Cada quien paga lo suyo</strong>
-            <span>Asigna los productos que pagará cada persona. Cada ticket conserva el precio original de sus artículos.</span>
-          </div>
-        </div>
+        {draftNotice && <p className="split-draft-notice" role="status">{draftNotice}</p>}
 
-        <form className="split-bill-form" onSubmit={handleSubmit}>
-          <div className="split-main-content">
-            <section className="split-pool-section" aria-labelledby="split-pool-title">
-              <div className="split-section-heading">
-                <div>
-                  <h3 id="split-pool-title">Pendiente por asignar</h3>
-                  <p>{assignmentProgress.pendingLines} productos con cantidad disponible</p>
+        <form className="split-bill-form" onSubmit={handleSubmit} noValidate>
+          <div className="split-step-content" key={currentStep}>
+            {currentStep === 'people' && (
+              <section className="split-step-panel" aria-labelledby="split-people-title">
+                <div className="split-step-heading">
+                  <div>
+                    <p className="split-step-eyebrow">Paso 1 de 4</p>
+                    <h3 id="split-people-title" tabIndex={-1}>Personas</h3>
+                    <p>Indica quiénes pagarán. Los nombres son opcionales y solo sirven para identificar a cada persona en esta cuenta.</p>
+                  </div>
+                  <label className="split-count-selector" htmlFor="splitGuestCount">
+                    <span>¿Cuántas personas?</span>
+                    <select id="splitGuestCount" value={guests.length} onChange={(event) => handleGuestCountChange(event.target.value)} disabled={isSubmitting}>
+                      {Array.from({ length: MAX_GUESTS - MIN_GUESTS + 1 }, (_, index) => index + MIN_GUESTS).map((count) => (
+                        <option key={count} value={count}>{count} personas</option>
+                      ))}
+                    </select>
+                  </label>
                 </div>
-              </div>
 
-              <div className="split-pool-list">
-                {order.map((item, index) => {
-                  const allocation = allocations[index];
-                  if (!allocation) return null;
-
-                  const poolQty = toQuantity(allocation.poolQuantity);
-                  const totalQty = toQuantity(item.quantity || 0);
-                  const step = isUnitItem(item) ? 1 : (10 ** -STOCK_DECIMALS);
-                  const isCompleted = poolQty <= 0;
-
-                  return (
-                    <article
-                      key={getCartLineId(item, index)}
-                      className={`split-pool-item ${isCompleted ? 'completed' : ''}`}
-                    >
-                      <div className="split-pool-item-head">
-                        <div className="split-pool-item-info">
-                          <span className="split-pool-item-name">{item.name}</span>
-                          <span className="split-pool-item-price">
-                            ${Money.toNumber(item.price || 0).toFixed(2)} c/u
-                          </span>
-                        </div>
-                        <span className={`split-pool-badge ${isCompleted ? 'is-complete' : ''}`}>
-                          {isCompleted ? (
-                            <>
-                              <Check size={14} aria-hidden="true" /> Asignado
-                            </>
-                          ) : (
-                            `${formatQuantity(poolQty)} de ${formatQuantity(totalQty)}`
-                          )}
-                        </span>
+                <div className="split-guest-list split-guest-list--names">
+                  {guests.map((guest, index) => (
+                    <article className="split-guest-name-card" key={guest.id}>
+                      <span className="split-guest-avatar" aria-hidden="true">{index + 1}</span>
+                      <div className="split-guest-name-field">
+                        <label htmlFor={`splitGuestName-${guest.id}`}>Nombre de Comensal {index + 1} <span>(opcional)</span></label>
+                        <input
+                          id={`splitGuestName-${guest.id}`}
+                          type="text"
+                          value={guest.displayName}
+                          maxLength={MAX_GUEST_NAME_LENGTH}
+                          autoComplete="off"
+                          placeholder={`Comensal ${index + 1}`}
+                          aria-describedby={`splitGuestHelp-${guest.id}`}
+                          disabled={isSubmitting}
+                          onChange={(event) => updateGuestName(guest.id, event.target.value)}
+                          onBlur={() => updateGuestName(guest.id, guest.displayName.trim())}
+                        />
+                        <small id={`splitGuestHelp-${guest.id}`}>Este nombre no se guarda como cliente ni cambia la cuenta de crédito.</small>
                       </div>
-
-                      {!isCompleted && (
-                        <div className="split-pool-item-actions">
-                          <span className="split-action-label">Sumar</span>
-                          <div className="split-assign-grid">
-                            {ticketLabels.map((label, tIdx) => (
-                              <button
-                                key={label}
-                                type="button"
-                                className="btn-pool-move"
-                                onClick={() => moveToTicket(index, tIdx, step)}
-                                disabled={poolQty < step || isSubmitting}
-                                title={`Sumar ${formatQuantity(step)} a ${label}`}
-                              >
-                                <Plus size={14} aria-hidden="true" />
-                                {label}
-                              </button>
-                            ))}
-                          </div>
-
-                          <span className="split-action-label">Todo a</span>
-                          <div className="split-assign-grid split-assign-grid--compact">
-                            {ticketLabels.map((label, tIdx) => (
-                              <button
-                                key={label}
-                                type="button"
-                                className="btn-pool-move-all"
-                                onClick={() => moveAllToTicket(index, tIdx)}
-                                disabled={poolQty <= 0 || isSubmitting}
-                                title={`Asignar todo a ${label}`}
-                              >
-                                {label}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
                     </article>
-                  );
-                })}
-              </div>
-            </section>
+                  ))}
+                </div>
 
-            <section className="split-tickets-section" aria-label="Tickets separados">
-              <div className="split-tickets-grid">
-                {ticketLabels.map((label, tIdx) => {
-                  const ticketTotalCents = ticketMath.totalsCents[tIdx];
-                  const adjustment = ticketMath.adjustments[tIdx];
-                  const discountCents = ticketMath.discountCents[tIdx] || 0;
-                  const payment = payments[label] || {};
-                  const ticketItems = order.reduce((items, item, idx) => {
-                    const qty = toQuantity(allocations[idx]?.ticketQuantities?.[tIdx] || 0);
-                    if (qty > 0) {
-                      items.push({ item, qty, lineIndex: idx });
-                    }
-                    return items;
-                  }, []);
+                {pendingGuestRemoval && (
+                  <div className="split-confirm-removal" role="alertdialog" aria-labelledby="split-remove-guest-title" aria-describedby="split-remove-guest-description">
+                    <div>
+                      <h4 id="split-remove-guest-title">¿Quitar a las personas seleccionadas?</h4>
+                      <p id="split-remove-guest-description">
+                        {formatQuantity(pendingGuestRemoval.quantity)} cantidades de {pendingGuestRemoval.lines} productos volverán a “Platos pendientes”. Las demás asignaciones se conservarán.
+                      </p>
+                    </div>
+                    <div className="split-confirm-removal-actions">
+                      <button type="button" className="split-secondary-button" onClick={() => setPendingGuestRemoval(null)}>Conservar personas</button>
+                      <button type="button" className="split-danger-button" onClick={() => resizeGuests(pendingGuestRemoval.count)}>Quitar y devolver cantidades</button>
+                    </div>
+                  </div>
+                )}
+              </section>
+            )}
 
-                  return (
-                    <article
-                      key={label}
-                      className={`split-ticket-card ${ticketItems.length === 0 ? 'is-empty' : ''}`}
-                    >
-                      <div className="split-ticket-header">
-                        <div>
-                          <h3>Ticket {label}</h3>
-                          <span>{ticketItems.length} productos</span>
-                        </div>
-                        <p className="split-ticket-total">
-                          ${formatMoneyFromCents(ticketTotalCents)}
-                        </p>
+            {currentStep === 'items' && (
+              <section className="split-step-panel" aria-labelledby="split-items-title">
+                <div className="split-step-heading">
+                  <div>
+                    <p className="split-step-eyebrow">Paso 2 de 4</p>
+                    <h3 id="split-items-title" tabIndex={-1}>Asigna los platos</h3>
+                    <p>Asigna cada unidad a quien la pagará. Puedes devolverla al pendiente o moverla directamente a otra persona.</p>
+                  </div>
+                </div>
+
+                <aside className="split-sharing-note">
+                  <strong>¿Van a compartir un solo plato?</strong>
+                  <span>La división del importe estará disponible en una siguiente fase. Por ahora asigna el plato completo a una persona; no cambiaremos su precio ni inventaremos cantidades.</span>
+                </aside>
+
+                <div className="split-assignment-tabs" role="tablist" aria-label="Vista de asignación">
+                  <button type="button" role="tab" aria-selected={assignmentPanel === 'pending'} aria-controls="split-pending-panel" onClick={() => setAssignmentPanel('pending')}>
+                    Platos pendientes · {formatQuantity(assignmentProgress.pendingQuantity)}
+                  </button>
+                  <button type="button" role="tab" aria-selected={assignmentPanel === 'assigned'} aria-controls="split-assigned-panel" onClick={() => setAssignmentPanel('assigned')}>
+                    Personas · {guests.length}
+                  </button>
+                </div>
+
+                <div className="split-allocation-layout">
+                  <section
+                    id="split-pending-panel"
+                    role="tabpanel"
+                    tabIndex={0}
+                    className={`split-pool-section ${assignmentPanel !== 'pending' ? 'is-mobile-inactive' : ''}`}
+                    aria-labelledby="split-pool-title"
+                  >
+                    <div className="split-section-heading">
+                      <div>
+                        <h4 id="split-pool-title">Platos pendientes</h4>
+                        <p>{assignmentProgress.pendingLines} productos con cantidad disponible</p>
                       </div>
-
-                      {discountCents > 0 && (
-                        <p className="split-ticket-discount">
-                          Descuento aplicado: -${formatMoneyFromCents(discountCents)}
-                        </p>
-                      )}
-
-                      {adjustment !== 0 && (
-                        <p className="split-ticket-adjustment">
-                          Ajuste de redondeo: {adjustment > 0 ? '+' : '-'}${formatMoneyFromCents(Math.abs(adjustment))}
-                        </p>
-                      )}
-
-                      <div className="split-ticket-items">
-                        {ticketItems.length === 0 ? (
-                          <p className="split-ticket-empty">Sin productos asignados</p>
-                        ) : (
-                          ticketItems.map(({ item, qty, lineIndex }) => (
-                            <div key={lineIndex} className="split-ticket-item">
-                              <span className="split-ticket-item-name">{item.name}</span>
-                              <span className="split-ticket-item-qty">x {formatQuantity(qty)}</span>
-                              <button
-                                type="button"
-                                className="btn-item-remove"
-                                onClick={() => moveToPool(lineIndex, tIdx, isUnitItem(item) ? 1 : (10 ** -STOCK_DECIMALS))}
-                                disabled={isSubmitting}
-                                aria-label={`Quitar ${isUnitItem(item) ? 'una unidad' : formatQuantity(10 ** -STOCK_DECIMALS)} de ${item.name} del ticket ${label}`}
-                                title={isUnitItem(item) ? 'Quitar una unidad' : `Quitar ${formatQuantity(10 ** -STOCK_DECIMALS)}`}
-                              >
-                                <Minus size={14} aria-hidden="true" />
-                              </button>
-                              <button
-                                type="button"
-                                className="btn-item-remove-all"
-                                onClick={() => moveAllToPool(lineIndex, tIdx)}
-                                disabled={isSubmitting}
-                                aria-label={`Regresar todo ${item.name} al pendiente`}
-                                title="Regresar todo"
-                              >
-                                <RotateCcw size={14} aria-hidden="true" />
-                              </button>
+                    </div>
+                    <div className="split-pool-list">
+                      {safeOrder.map((item, lineIndex) => {
+                        const allocation = allocations[lineIndex];
+                        if (!allocation) return null;
+                        const pending = toQuantity(allocation.poolQuantity);
+                        const totalQuantity = toQuantity(item.quantity || 0);
+                        const step = getQuantityStep(item);
+                        const assignedByGuests = toQuantity((allocation.ticketQuantities || []).reduce((sum, quantity) => sum + toQuantity(quantity), 0));
+                        const isCompleted = pending <= 0;
+                        const assignmentState = isCompleted ? 'is-complete' : assignedByGuests > 0 ? 'is-partial' : 'is-unassigned';
+                        return (
+                          <article key={getCartLineId(item, lineIndex)} className={`split-pool-item ${isCompleted ? 'completed' : assignedByGuests > 0 ? 'partial' : 'unassigned'}`}>
+                            <div className="split-pool-item-head">
+                              <div className="split-pool-item-info">
+                                <span className="split-pool-item-name">{item.name}</span>
+                                <span className="split-pool-item-price">${Money.toNumber(item.price || 0).toFixed(2)} c/u · {formatQuantity(totalQuantity)} en la cuenta</span>
+                                {getItemDetails(item) && <span className="split-pool-item-details">{getItemDetails(item)}</span>}
+                              </div>
+                              <span className={`split-pool-badge ${isCompleted ? 'is-complete' : ''}`}>
+                                {isCompleted
+                                  ? <><Check size={14} aria-hidden="true" /> Completamente repartido</>
+                                  : assignedByGuests > 0 ? 'Reparto parcial' : `${formatQuantity(pending)} sin asignar`}
+                              </span>
                             </div>
-                          ))
-                        )}
-                      </div>
+                            <div className={`split-assignment-summary ${assignmentState}`} aria-live="polite" aria-atomic="true">
+                              <strong className="split-assignment-summary-title">Asignación de este producto:</strong>
+                              <div className="split-assignment-people">
+                                {guests.map((guest, guestIdx) => {
+                                  const guestQuantity = toQuantity(allocation.ticketQuantities?.[guestIdx] || 0);
+                                  return (
+                                    <span key={guest.id} className={`split-assignment-person ${guestQuantity > 0 ? 'has-quantity' : 'is-zero'}`}>
+                                      <span>{guestName(guest, guestIdx)}</span>
+                                      <strong>× {formatQuantity(guestQuantity)}</strong>
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                              <p className={`split-assignment-pending ${pending > 0 ? 'is-pending' : 'is-clear'}`}>
+                                Pendiente: {formatQuantity(pending)} de {formatQuantity(totalQuantity)}.
+                              </p>
+                            </div>
+                            {!isCompleted && (
+                              <div className="split-pool-item-actions">
+                                <p className="split-assignment-hint">
+                                  {isUnitItem(item)
+                                    ? 'Cada clic añade una unidad a la persona elegida. Puedes pulsar varias veces.'
+                                    : 'Cada clic añade la cantidad indicada a la persona elegida. Puedes pulsar varias veces.'}
+                                </p>
+                                <span className="split-action-label">{isUnitItem(item) ? 'Añadir una unidad' : 'Añadir cantidad'}</span>
+                                <div className="split-assign-grid">
+                                  {guests.map((guest, guestIdx) => (
+                                    <button
+                                      key={guest.id}
+                                      type="button"
+                                      className="split-action-button"
+                                      onClick={() => moveToGuest(lineIndex, guestIdx, step)}
+                                      disabled={pending < step || isSubmitting}
+                                    >
+                                      <Plus size={16} aria-hidden="true" />
+                                      {isUnitItem(item)
+                                        ? `+1 a ${guestName(guest, guestIdx)}`
+                                        : `+${formatQuantity(step)} a ${guestName(guest, guestIdx)}`}
+                                    </button>
+                                  ))}
+                                </div>
+                                {!isUnitItem(item) && (
+                                  <>
+                                    <label className="split-custom-quantity-label" htmlFor={`splitAmount-${lineIndex}`}>
+                                      O asignar otra cantidad
+                                      <input
+                                        id={`splitAmount-${lineIndex}`}
+                                        className="split-custom-quantity"
+                                        type="number"
+                                        min={10 ** -STOCK_DECIMALS}
+                                        max={pending}
+                                        step={10 ** -STOCK_DECIMALS}
+                                        value={getAssignmentAmount(item, lineIndex, pending)}
+                                        onChange={(event) => setAssignmentAmounts((previous) => ({
+                                          ...previous,
+                                          [String(getCartLineId(item, lineIndex))]: event.target.value
+                                        }))}
+                                        disabled={isSubmitting}
+                                      />
+                                    </label>
+                                    <div className="split-assign-grid">
+                                      {guests.map((guest, guestIdx) => (
+                                        <button
+                                          key={guest.id}
+                                          type="button"
+                                          className="split-action-button"
+                                          onClick={() => moveToGuest(lineIndex, guestIdx, getNormalizedAssignmentAmount(item, lineIndex, pending))}
+                                          disabled={pending <= 0 || isSubmitting || getNormalizedAssignmentAmount(item, lineIndex, pending) <= 0}
+                                          aria-label={`Asignar cantidad de ${item.name} a ${guestContextName(guest, guestIdx)}`}
+                                        >
+                                          Asignar {formatQuantity(getNormalizedAssignmentAmount(item, lineIndex, pending))} a {guestContextName(guest, guestIdx)}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </>
+                                )}
+                                <span className="split-action-label">Asignar todas las restantes</span>
+                                <div className="split-assign-grid">
+                                  {guests.map((guest, guestIdx) => (
+                                    <button
+                                      key={guest.id}
+                                      type="button"
+                                      className="split-action-button split-action-button--all"
+                                      onClick={() => moveAllToGuest(lineIndex, guestIdx)}
+                                      disabled={pending <= 0 || isSubmitting}
+                                      aria-label={`Asignar todas las unidades restantes de ${item.name} a ${guestContextName(guest, guestIdx)}`}
+                                    >
+                                      Todas las restantes a {guestName(guest, guestIdx)}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </article>
+                        );
+                      })}
+                    </div>
+                  </section>
 
-                      <div className="split-ticket-payment">
-                        <label>
-                          Método de pago
+                  <section
+                    id="split-assigned-panel"
+                    role="tabpanel"
+                    tabIndex={0}
+                    className={`split-tickets-section ${assignmentPanel !== 'assigned' ? 'is-mobile-inactive' : ''}`}
+                    aria-labelledby="split-assigned-title"
+                  >
+                    <div className="split-section-heading split-section-heading--plain">
+                      <div>
+                        <h4 id="split-assigned-title">Asignado a cada persona</h4>
+                        <p>Los importes estimados se actualizan en cuanto cambias el reparto.</p>
+                      </div>
+                    </div>
+                    <div className="split-tickets-grid">
+                      {guests.map((guest, guestIdx) => {
+                        const items = guestLineItems(guestIdx);
+                        return (
+                          <article key={guest.id} className={`split-ticket-card ${items.length === 0 ? 'is-empty' : ''}`}>
+                            <div className="split-ticket-header">
+                              <div>
+                                <h4>{guestContextName(guest, guestIdx)}</h4>
+                                <span>{items.length} {items.length === 1 ? 'producto' : 'productos'}</span>
+                              </div>
+                              <strong className="split-ticket-total">${formatMoneyFromCents(ticketMath.totalsCents[guestIdx])}</strong>
+                            </div>
+                            {ticketMath.discountCents[guestIdx] > 0 && (
+                              <p className="split-ticket-discount">Descuento: -${formatMoneyFromCents(ticketMath.discountCents[guestIdx])}</p>
+                            )}
+                            {ticketMath.adjustments[guestIdx] !== 0 && (
+                              <p className="split-ticket-adjustment">Ajuste de redondeo: {ticketMath.adjustments[guestIdx] > 0 ? '+' : '-'}${formatMoneyFromCents(Math.abs(ticketMath.adjustments[guestIdx]))}</p>
+                            )}
+                            <div className="split-ticket-items">
+                              {items.length === 0 ? <p className="split-ticket-empty">Todavía no tiene productos.</p> : items.map(({ item, quantity, lineIndex }) => (
+                                <div key={getCartLineId(item, lineIndex)} className="split-ticket-item">
+                                  <div className="split-ticket-item-copy">
+                                    <strong>{item.name}</strong>
+                                    {getItemDetails(item) && <small>{getItemDetails(item)}</small>}
+                                    <span>× {formatQuantity(quantity)}</span>
+                                  </div>
+                                  <div className="split-ticket-item-actions">
+                                    <button
+                                      type="button"
+                                      className="split-icon-button"
+                                      onClick={() => returnToPending(lineIndex, guestIdx, getQuantityStep(item))}
+                                      disabled={isSubmitting}
+                                      aria-label={`Regresar una unidad de ${item.name} de ${guestContextName(guest, guestIdx)} a platos pendientes`}
+                                      title="Regresar una unidad"
+                                    ><Minus size={17} aria-hidden="true" /></button>
+                                    <button
+                                      type="button"
+                                      className="split-icon-button split-icon-button--muted"
+                                      onClick={() => returnAllToPending(lineIndex, guestIdx)}
+                                      disabled={isSubmitting}
+                                      aria-label={`Regresar todo ${item.name} de ${guestContextName(guest, guestIdx)} a platos pendientes`}
+                                      title="Regresar todo"
+                                    ><RotateCcw size={17} aria-hidden="true" /></button>
+                                    {guests.length > 1 && (
+                                      <select
+                                        className="split-move-select"
+                                        defaultValue=""
+                                        aria-label={`Mover ${item.name} de ${guestContextName(guest, guestIdx)} a otra persona`}
+                                        onChange={(event) => {
+                                          if (event.target.value) moveBetweenGuests(lineIndex, guestIdx, Number(event.target.value));
+                                          event.target.value = '';
+                                        }}
+                                        disabled={isSubmitting}
+                                      >
+                                        <option value="">Mover todo…</option>
+                                        {guests.map((targetGuest, targetIdx) => targetIdx !== guestIdx && (
+                                          <option key={targetGuest.id} value={targetIdx}>A {guestContextName(targetGuest, targetIdx)}</option>
+                                        ))}
+                                      </select>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  </section>
+                </div>
+              </section>
+            )}
+
+            {currentStep === 'payment' && (
+              <section className="split-step-panel" aria-labelledby="split-payment-title">
+                <div className="split-step-heading">
+                  <div>
+                    <p className="split-step-eyebrow">Paso 3 de 4</p>
+                    <h3 id="split-payment-title" tabIndex={-1}>Configura el cobro</h3>
+                    <p>El nombre de la persona solo identifica su reparto. Si eliges Fiado, selecciona aparte al cliente financiero registrado.</p>
+                  </div>
+                </div>
+
+                <div className="split-payment-grid">
+                  {guests.map((guest, guestIdx) => {
+                    const payment = payments[guest.id] || {};
+                    const items = guestLineItems(guestIdx);
+                    return (
+                      <article className="split-payment-card" key={guest.id}>
+                        <div className="split-payment-card-heading">
+                          <div>
+                            <h4>{guestContextName(guest, guestIdx)}</h4>
+                            <ul className="split-payment-items">
+                              {items.map(({ item, quantity, lineIndex }) => (
+                                <li key={getCartLineId(item, lineIndex)}>
+                                  <span>{item.name}{getItemDetails(item) ? ` · ${getItemDetails(item)}` : ''}</span>
+                                  <strong>× {formatQuantity(quantity)}</strong>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                          <strong>${formatMoneyFromCents(ticketMath.totalsCents[guestIdx])}</strong>
+                        </div>
+                        {ticketMath.discountCents[guestIdx] > 0 && (
+                          <p className="split-ticket-discount">Descuento aplicado: -${formatMoneyFromCents(ticketMath.discountCents[guestIdx])}</p>
+                        )}
+                        {ticketMath.adjustments[guestIdx] !== 0 && (
+                          <p className="split-ticket-adjustment">Ajuste de redondeo: {ticketMath.adjustments[guestIdx] > 0 ? '+' : '-'}${formatMoneyFromCents(Math.abs(ticketMath.adjustments[guestIdx]))}</p>
+                        )}
+                        <div className="split-ticket-payment">
+                          <label htmlFor={`splitPaymentMethod-${guest.id}`}>Método de pago</label>
                           <select
-                            value={payment.paymentMethod}
-                            onChange={(e) => {
-                              const newMethod = e.target.value;
-                              updatePayment(label, 'paymentMethod', newMethod);
-                              if (newMethod === 'fiado') {
-                                updatePayment(label, 'amountPaid', '0');
-                              } else {
-                                updatePayment(label, 'amountPaid', formatMoneyFromCents(ticketMath.totalsCents[tIdx] || 0));
-                              }
+                            id={`splitPaymentMethod-${guest.id}`}
+                            value={payment.paymentMethod || 'efectivo'}
+                            onChange={(event) => {
+                              const method = event.target.value;
+                              updatePayment(guest.id, 'paymentMethod', method);
+                              updatePayment(guest.id, 'amountPaid', method === 'fiado' ? '0' : formatMoneyFromCents(ticketMath.totalsCents[guestIdx] || 0));
                             }}
                             disabled={isSubmitting}
                           >
                             <option value="efectivo">Efectivo</option>
                             <option value="fiado">Fiado</option>
                           </select>
-                        </label>
 
-                        <label>
-                          {payment.paymentMethod === 'efectivo' ? 'Monto recibido' : 'Abono'}
+                          <label htmlFor={`splitPaid-${guest.id}`}>{payment.paymentMethod === 'fiado' ? 'Abono' : 'Monto recibido'}</label>
                           <input
+                            id={`splitPaid-${guest.id}`}
                             type="number"
                             min="0"
                             step="0.01"
-                            value={payment.amountPaid || '0'}
-                            onChange={(e) => updatePayment(label, 'amountPaid', e.target.value)}
+                            value={payment.amountPaid ?? '0'}
+                            aria-invalid={Boolean(activeError && currentStep === 'payment')}
+                            aria-describedby={activeError && currentStep === 'payment' ? 'split-validation-error' : undefined}
+                            onChange={(event) => updatePayment(guest.id, 'amountPaid', event.target.value)}
                             disabled={isSubmitting}
                           />
-                        </label>
 
-                        {payment.paymentMethod === 'fiado' && (
-                          <label>
-                            Cliente
-                            <select
-                              value={payment.customerId || ''}
-                              onChange={(e) => updatePayment(label, 'customerId', e.target.value)}
-                              disabled={isSubmitting}
-                            >
-                              <option value="">Selecciona cliente</option>
-                              {customers.map((customer) => (
-                                <option key={customer.id} value={customer.id}>
-                                  {customer.name} ({customer.phone})
-                                </option>
-                              ))}
-                            </select>
+                          {payment.paymentMethod === 'fiado' && (
+                            <>
+                              <label htmlFor={`splitCustomer-${guest.id}`}>Cliente financiero registrado</label>
+                              <select
+                                id={`splitCustomer-${guest.id}`}
+                                value={payment.customerId || ''}
+                                onChange={(event) => updatePayment(guest.id, 'customerId', event.target.value)}
+                                disabled={isSubmitting}
+                                aria-invalid={Boolean(activeError && currentStep === 'payment')}
+                                aria-describedby={activeError && currentStep === 'payment' ? 'split-validation-error' : undefined}
+                              >
+                                <option value="">Selecciona cliente</option>
+                                {customers.map((customer) => (
+                                  <option key={customer.id} value={customer.id}>{customer.name}{customer.phone ? ` (${customer.phone})` : ''}</option>
+                                ))}
+                              </select>
+                            </>
+                          )}
+
+                          <label className="split-receipt-toggle" htmlFor={`splitReceipt-${guest.id}`}>
+                            <input
+                              id={`splitReceipt-${guest.id}`}
+                              type="checkbox"
+                              checked={Boolean(payment.sendReceipt)}
+                              onChange={(event) => updatePayment(guest.id, 'sendReceipt', event.target.checked)}
+                              disabled={isSubmitting || (payment.paymentMethod === 'fiado' && !payment.customerId)}
+                            />
+                            Enviar ticket por WhatsApp
                           </label>
-                        )}
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              </section>
+            )}
 
-                        <label className="split-receipt-toggle">
-                          <input
-                            type="checkbox"
-                            checked={payment.sendReceipt || false}
-                            onChange={(e) => updatePayment(label, 'sendReceipt', e.target.checked)}
-                            disabled={payment.paymentMethod === 'fiado' && !payment.customerId}
-                          />
-                          Enviar ticket por WhatsApp
-                        </label>
-                      </div>
-                    </article>
-                  );
-                })}
-              </div>
-            </section>
+            {currentStep === 'review' && (
+              <section className="split-step-panel" aria-labelledby="split-review-title">
+                <div className="split-step-heading">
+                  <div>
+                    <p className="split-step-eyebrow">Paso 4 de 4</p>
+                    <h3 id="split-review-title" tabIndex={-1}>Revisa antes de confirmar</h3>
+                    <p>Confirma que los productos, importes y cobros sean correctos. No se registra una venta hasta que pulses el botón final.</p>
+                  </div>
+                  {tableName && <span className="split-table-label">{tableName}</span>}
+                </div>
+
+                <div className="split-review-list">
+                  {guests.map((guest, guestIdx) => {
+                    const payment = payments[guest.id] || {};
+                    const items = guestLineItems(guestIdx);
+                    return (
+                      <article className="split-review-card" key={guest.id}>
+                        <div className="split-review-card-heading">
+                          <div>
+                            <h4>{guestContextName(guest, guestIdx)}</h4>
+                            <p>{payment.paymentMethod === 'fiado' ? 'Fiado' : 'Efectivo'}{payment.paymentMethod === 'fiado' && payment.customerId ? ` · ${customersById.get(payment.customerId)?.name || ''}` : ''}</p>
+                          </div>
+                          <strong>${formatMoneyFromCents(ticketMath.totalsCents[guestIdx])}</strong>
+                        </div>
+                        <ul className="split-review-items">
+                          {items.map(({ item, quantity, lineIndex }) => (
+                            <li key={getCartLineId(item, lineIndex)}>
+                              <div><span>{item.name}</span>{getItemDetails(item) && <small>{getItemDetails(item)}</small>}</div>
+                              <span>× {formatQuantity(quantity)}</span>
+                            </li>
+                          ))}
+                        </ul>
+                        {ticketMath.discountCents[guestIdx] > 0 && <p className="split-ticket-discount">Descuento: -${formatMoneyFromCents(ticketMath.discountCents[guestIdx])}</p>}
+                        {ticketMath.adjustments[guestIdx] !== 0 && <p className="split-ticket-adjustment">Ajuste de redondeo: {ticketMath.adjustments[guestIdx] > 0 ? '+' : '-'}${formatMoneyFromCents(Math.abs(ticketMath.adjustments[guestIdx]))}</p>}
+                        {payment.paymentMethod === 'fiado' && <p className="split-review-payment-detail">Abono: ${Money.toNumber(toMoneySafe(payment.amountPaid, '0')).toFixed(2)} · Saldo pendiente: ${Money.toNumber(Money.subtract(Money.fromCents(ticketMath.totalsCents[guestIdx]), toMoneySafe(payment.amountPaid, '0'))).toFixed(2)}</p>}
+                        {payment.sendReceipt && <p className="split-review-payment-detail">Se enviará el ticket por WhatsApp.</p>}
+                        <div className="split-review-edit-actions">
+                          <button type="button" className="split-link-button" onClick={() => goToStep('items')}>Cambiar productos</button>
+                          <button type="button" className="split-link-button" onClick={() => goToStep('payment')}>Editar cobro</button>
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+                <div className="split-review-total">
+                  <div><span>Total original</span><strong>${formatMoneyFromCents(ticketMath.parentCents)}</strong></div>
+                  <div><span>Total asignado</span><strong>${formatMoneyFromCents(ticketMath.totalsCents.reduce((sum, amount) => sum + amount, 0))}</strong></div>
+                  <div><span>Pendiente por asignar</span><strong>{formatQuantity(assignmentProgress.pendingQuantity)}</strong></div>
+                </div>
+              </section>
+            )}
           </div>
 
-          {splitValidationError && (
-            <p className="split-validation-error">{splitValidationError}</p>
+          {!draftNotice && willAutoOpenCaja && (currentStep === 'payment' || currentStep === 'review') && (
+            <p className="split-validation-warning">Este cobro requiere una sesión de caja activa. Se verificará al confirmar.</p>
           )}
 
-          {!splitValidationError && willAutoOpenCaja && (
-            <p className="split-validation-warning">
-              Este cobro requiere una sesión de caja activa. Se verificará al confirmar.
-            </p>
+          {activeError && (currentStep === 'items' || currentStep === 'payment' || currentStep === 'review') && (
+            <p id="split-validation-error" className="split-validation-error" role="alert">{activeError}</p>
           )}
 
           <div className="split-actions">
-            <button
-              type="button"
-              className="btn btn-cancel-payment"
-              onClick={onClose}
-              disabled={isSubmitting}
-            >
-              Cancelar
+            <button type="button" className="split-secondary-button" onClick={currentStepIndex === 0 ? onClose : () => goToStep(WIZARD_STEPS[currentStepIndex - 1].id)} disabled={isSubmitting}>
+              {currentStepIndex === 0 ? 'Guardar y cerrar' : <><ChevronLeft size={18} aria-hidden="true" /> {WIZARD_STEPS[currentStepIndex - 1].title}</>}
             </button>
-            <button
-              type="submit"
-              className="btn btn-confirm"
-              disabled={Boolean(splitValidationError) || isSubmitting}
-            >
-              {isSubmitting ? 'Procesando...' : 'Confirmar división y cobro'}
-            </button>
+            {isFinalStep ? (
+              <button type="submit" className="split-primary-button" disabled={Boolean(paymentValidationError) || isSubmitting || !isSessionReady}>
+                {isSubmitting ? 'Procesando…' : 'Confirmar división y cobro'}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="split-primary-button"
+                onClick={goForward}
+                disabled={isSubmitting || (currentStep === 'items' && Boolean(assignmentError)) || (currentStep === 'payment' && Boolean(paymentValidationError))}
+              >
+                {currentStep === 'people' ? 'Asignar platos' : currentStep === 'items' ? 'Configurar cobro' : 'Revisar división'}
+                <ChevronRight size={18} aria-hidden="true" />
+              </button>
+            )}
           </div>
         </form>
       </div>
