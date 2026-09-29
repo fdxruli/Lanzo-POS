@@ -44,6 +44,9 @@ test('canonical identity pins monetary intent, payer cents, and stable payment-t
   assert.match(canonicalRequest, /v_credit_customer_id/u);
   assert.match(canonicalRequest, /parent_order_version is null/u);
   assert.match(canonicalRequest, /parent_order_version !~ /u);
+  assert.match(canonicalRequest, /v_split_payer_count < 2 or v_split_payer_count > 8/u);
+  assert.match(canonicalRequest, /when v_split_intent in \('equal_payment', 'custom_payment'\) then v_parent_order_version\s+else private\.financial_text_v1\(private\.financial_first_nonblank_scalar_v1/u);
+  assert.match(canonicalRequest, /else coalesce\(\s+nullif\(btrim\(value->>'customer_id'\), ''\),\s+nullif\(btrim\(value->'sale'->>'customer_id'\), ''\),\s+nullif\(btrim\(value->'sale'->>'customerId'\), ''\)\s+\)\s+end/u);
 });
 
 test('one-sale monetary executor validates payer tenders and reuses atomic sale plus table-close effects', () => {

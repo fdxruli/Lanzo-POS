@@ -150,6 +150,13 @@ begin
         private.financial_first_nonblank_scalar_v1(v_request, array['parent_order_version','parentOrderVersion'])
       )), '');
       if v_split_intent in ('equal_payment', 'custom_payment') then
+        if jsonb_typeof(coalesce(v_request->'split_payers', v_request->'splitPayers')) <> 'array' then
+          raise exception 'FINANCIAL_SPLIT_PAYER_CONTRACT_INVALID' using errcode = 'P0001';
+        end if;
+        v_split_payer_count := jsonb_array_length(coalesce(v_request->'split_payers', v_request->'splitPayers'));
+        if v_split_payer_count < 2 or v_split_payer_count > 8 then
+          raise exception 'FINANCIAL_SPLIT_PAYER_CONTRACT_INVALID' using errcode = 'P0001';
+        end if;
         if v_parent_order_version is null
            or v_parent_order_version !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,6})?([zZ]|[+-][0-9]{2}:[0-9]{2})$' then
           raise exception 'RESTAURANT_ORDER_VERSION_CONFLICT' using errcode = 'P0001';
@@ -225,7 +232,10 @@ begin
       end if;
       return jsonb_build_object(
         'parent_order_id', private.financial_text_v1(private.financial_first_nonblank_scalar_v1(v_request, array['parent_order_id','parentOrderId'])),
-        'parent_order_version', v_parent_order_version,
+        'parent_order_version', case
+          when v_split_intent in ('equal_payment', 'custom_payment') then v_parent_order_version
+          else private.financial_text_v1(private.financial_first_nonblank_scalar_v1(v_request, array['parent_order_version','parentOrderVersion']))
+        end,
         'split_group_id', private.financial_text_v1(private.financial_first_nonblank_scalar_v1(v_request, array['split_group_id','splitGroupId'])),
         'cash_session_id', private.financial_text_v1(private.financial_first_nonblank_scalar_v1(v_request, array['cash_session_id','cashSessionId'])),
         'children', (
@@ -274,17 +284,20 @@ begin
               ),
               'customer_id', private.financial_text_v1(
                 to_jsonb(
-                  coalesce(
-                    nullif(btrim(value->>'customer_id'), ''),
-                    nullif(btrim(value->>'customerId'), ''),
-                    nullif(btrim(value->'sale'->>'customer_id'), ''),
-                    nullif(btrim(value->'sale'->>'customerId'), ''),
-                    case
-                      when v_split_intent in ('equal_payment', 'custom_payment') and v_credit_payer_count = 1
-                        then v_credit_customer_id
-                      else null
-                    end
-                  )
+                  case
+                    when v_split_intent in ('equal_payment', 'custom_payment') then coalesce(
+                      nullif(btrim(value->>'customer_id'), ''),
+                      nullif(btrim(value->>'customerId'), ''),
+                      nullif(btrim(value->'sale'->>'customer_id'), ''),
+                      nullif(btrim(value->'sale'->>'customerId'), ''),
+                      case when v_credit_payer_count = 1 then v_credit_customer_id else null end
+                    )
+                    else coalesce(
+                      nullif(btrim(value->>'customer_id'), ''),
+                      nullif(btrim(value->'sale'->>'customer_id'), ''),
+                      nullif(btrim(value->'sale'->>'customerId'), '')
+                    )
+                  end
                 )
               )
             ) order by ordinality
