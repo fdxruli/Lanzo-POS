@@ -127,7 +127,7 @@ describe('SplitBillModal four-step restaurant split', () => {
     expect(within(confirmation).getByRole('button', { name: 'Conservar personas' })).toBeInTheDocument();
     fireEvent.click(within(confirmation).getByRole('button', { name: 'Quitar y devolver cantidades' }));
     goToItems();
-    expect(screen.getByText('2 pendientes')).toBeInTheDocument();
+    expect(getPendingLine('Producto B')).toHaveTextContent('Pendiente: 2 de 2.');
     expect(screen.getByRole('button', { name: 'Configurar cobro' })).toBeDisabled();
   });
 
@@ -270,7 +270,7 @@ describe('SplitBillModal four-step restaurant split', () => {
 
     const sodaLine = within(getGuestCard('Comensal 1')).getByText('Refresco').closest('.split-ticket-item');
     fireEvent.click(within(sodaLine).getByRole('button', { name: 'Regresar una unidad de Refresco de Comensal 1 · Comensal 1 a platos pendientes' }));
-    expect(getPendingLine('Refresco')).toHaveTextContent('1 pendientes');
+    expect(getPendingLine('Refresco')).toHaveTextContent('Pendiente: 1 de 3.');
     fireEvent.click(within(getPendingLine('Refresco')).getByRole('button', { name: '+1 a Comensal 2' }));
     const pastaLine = within(getGuestCard('Comensal 2')).getByText('Pasta').closest('.split-ticket-item');
     fireEvent.change(within(pastaLine).getByRole('combobox', { name: 'Mover Pasta de Comensal 2 · Comensal 2 a otra persona' }), { target: { value: '0' } });
@@ -278,7 +278,7 @@ describe('SplitBillModal four-step restaurant split', () => {
     expect(getGuestCard('Comensal 2').querySelector('.split-ticket-items')).not.toHaveTextContent('Pasta');
     const pastaInFirst = within(getGuestCard('Comensal 1')).getByText('Pasta').closest('.split-ticket-item');
     fireEvent.click(within(pastaInFirst).getByRole('button', { name: 'Regresar todo Pasta de Comensal 1 · Comensal 1 a platos pendientes' }));
-    expect(getPendingLine('Pasta')).toHaveTextContent('2 pendientes');
+    expect(getPendingLine('Pasta')).toHaveTextContent('Pendiente: 2 de 2.');
   });
 
   it('keeps same-name product lines separate and shows their modifiers and notes', async () => {
@@ -324,7 +324,7 @@ describe('SplitBillModal four-step restaurant split', () => {
     expect(screen.getByRole('tabpanel', { name: 'Asignado a cada persona' })).toHaveTextContent('Producto A');
     expect(screen.getByRole('tab', { name: 'Personas · 2' })).toHaveAttribute('aria-selected', 'true');
     fireEvent.click(screen.getByRole('tab', { name: 'Platos pendientes · 1' }));
-    expect(getPendingLine('Producto B')).toHaveTextContent('1 pendientes');
+    expect(getPendingLine('Producto B')).toHaveTextContent('Pendiente: 1 de 1.');
     expect(screen.getByRole('tabpanel', { name: 'Asignado a cada persona' })).toHaveTextContent('Producto A');
   });
 
@@ -389,7 +389,7 @@ describe('SplitBillModal four-step restaurant split', () => {
     view.setShow(true);
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Se restauró el reparto local'));
     expect(screen.getByRole('heading', { name: /Ana · Comensal 1/ })).toBeInTheDocument();
-    expect(screen.getByRole('tabpanel', { name: 'Platos pendientes' })).toHaveTextContent('Asignado');
+    expect(screen.getByRole('tabpanel', { name: 'Platos pendientes' })).toHaveTextContent('Completamente repartido');
   });
 
   it('discards a draft when the order snapshot changes, and does not leak it between tenants or tables', async () => {
@@ -404,7 +404,7 @@ describe('SplitBillModal four-step restaurant split', () => {
     view.rerender(<SplitBillModal show order={changedOrder} total={300} onConfirm={vi.fn()} onClose={vi.fn()} orderId="table-4" />);
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('La cuenta cambió'));
     goToItems();
-    expect(screen.getByRole('tabpanel', { name: 'Platos pendientes' })).toHaveTextContent('3 pendientes');
+    expect(getPendingLine('Producto A')).toHaveTextContent('Pendiente: 3 de 3.');
 
     tenantStorage.namespace = 'tenant-other';
     view.setShow(false);
