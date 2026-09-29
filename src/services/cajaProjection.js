@@ -1,5 +1,6 @@
 import { Money } from '../utils/moneyMath';
 import { isFinanciallyClosedSale } from './sales/financialStats';
+import { normalizeRestaurantSplitPaymentMethod } from './sales/paymentMethodContract';
 import { STORES } from './db/dexie';
 import { buildCashReconciliation } from './layawayFinancialProjection';
 import {
@@ -149,6 +150,20 @@ export const calculateSessionTotals = (sales = []) => {
 
     const method = sale.paymentMethod?.toLowerCase();
     const paymentAmount = sale.paymentData?.amount;
+    const explicitPayments = sale.payments || sale.paymentBreakdown || sale.paymentDetails?.payments;
+    if (Array.isArray(explicitPayments)) {
+      const cashApplied = explicitPayments.reduce((sum, payment) => {
+        const paymentMethod = String(payment?.method || payment?.paymentMethod || '').trim().toLowerCase();
+        if (!['cash', 'efectivo'].includes(paymentMethod)) return sum;
+        return Money.add(sum, payment?.amount ?? payment?.total ?? 0);
+      }, Money.init(0));
+      if (normalizeRestaurantSplitPaymentMethod(method) === 'credit') {
+        abonosFiado = Money.add(abonosFiado, cashApplied);
+      } else {
+        contado = Money.add(contado, cashApplied);
+      }
+      continue;
+    }
     const isCash = method === 'efectivo' || method === 'cash' ||
       (!method && Number(paymentAmount) > 0);
 

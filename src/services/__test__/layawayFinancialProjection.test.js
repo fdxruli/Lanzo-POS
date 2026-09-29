@@ -35,6 +35,32 @@ const paymentMovements = pendingLayaway.payments.map((payment) => ({
   referenceId: 'layaway-1', layawayId: 'layaway-1', paymentId: payment.id
 }));
 
+describe('restaurant split cash reconciliation', () => {
+  it('uses applied cash rows for physical cash while retaining the one-sale revenue total', () => {
+    const reconciliation = buildCashReconciliation({
+      cashSession: session,
+      sales: [{
+        id: 'sale-shared-table',
+        timestamp: '2026-07-25T10:00:00.000Z',
+        cash_session_id: 'cash-1',
+        status: 'closed',
+        paymentMethod: 'mixed',
+        total: 100,
+        payments: [
+          { method: 'cash', amount: 25, received_amount: 30, change_amount: 5 },
+          { method: 'card', amount: 75, received_amount: 75, change_amount: 0 }
+        ]
+      }],
+      layaways: [],
+      cashMovements: []
+    });
+
+    expect(reconciliation.directCashSales).toBe(25);
+    expect(reconciliation.recognizedSales).toBe(100);
+    expect(reconciliation.theoreticalCash).toBe(25);
+  });
+});
+
 const buildExplicitLinkProjection = ({ payment = {}, movement, layaway = {} } = {}) => {
   const explicitPayment = {
     id: 'payment-explicit',

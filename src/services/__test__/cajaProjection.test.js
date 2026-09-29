@@ -43,6 +43,46 @@ describe('loadCashSessionProjection', () => {
     ])).toEqual({ ventasContado: '125', abonosFiado: '0' });
   });
 
+  it('counts only applied cash from explicit mixed tender rows, excluding received overage and card', () => {
+    expect(calculateSessionTotals([{
+      id: 'sale-mixed-tender',
+      status: 'closed',
+      paymentMethod: 'mixed',
+      total: '100',
+      payments: [
+        { method: 'cash', amount: '25', received_amount: '30', change_amount: '5' },
+        { method: 'card', amount: '75', received_amount: '75', change_amount: '0' }
+      ]
+    }])).toEqual({ ventasContado: '25', abonosFiado: '0' });
+  });
+
+  it('counts cash tender on a Fiado sale as abono rather than contado revenue', () => {
+    expect(calculateSessionTotals([{
+      id: 'sale-credit-split',
+      status: 'closed',
+      paymentMethod: 'fiado',
+      total: '200',
+      amountPaid: '100',
+      saldoPendiente: '100',
+      payments: [
+        { method: 'cash', amount: '40', received_amount: '45', change_amount: '5' },
+        { method: 'transfer', amount: '60', received_amount: '60', change_amount: '0' }
+      ]
+    }])).toEqual({ ventasContado: '0', abonosFiado: '40' });
+  });
+
+  it('keeps an initial cash tender on a mixed credit sale in Fiado abonos', () => {
+    expect(calculateSessionTotals([{
+      id: 'sale-credit-initial-payment',
+      status: 'closed',
+      paymentMethod: 'mixed_credit',
+      total: '200',
+      amountPaid: '40',
+      saldoPendiente: '160',
+      payments: [{ method: 'cash', amount: '40', received_amount: '45', change_amount: '5' }]
+    }])).toEqual({ ventasContado: '0', abonosFiado: '40' });
+  });
+
   it('ignora movimientos null al construir una proyección real', async () => {
     const movementTable = testDb.table('movimientos_caja');
     vi.spyOn(movementTable, 'where').mockReturnValue({

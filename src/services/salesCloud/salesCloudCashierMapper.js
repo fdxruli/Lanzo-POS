@@ -1,3 +1,5 @@
+import { normalizeRestaurantSplitPaymentMethod } from '../sales/paymentMethodContract';
+
 const isMissingNumber = (value) => value === undefined || value === null || (typeof value === 'string' && value.trim() === '');
 
 const toNumber = (value, fallback = 0) => {
@@ -137,12 +139,7 @@ const getExplicitBatchesUsed = (item = {}, allowLocalBatches = true) => {
 
 export const normalizeCloudCashierPaymentMethod = (method) => {
   const raw = String(method || '').trim().toLowerCase();
-  if (['cash', 'efectivo'].includes(raw)) return 'cash';
-  if (['card', 'tarjeta', 'tarjeta_credito', 'tarjeta_debito', 'debit', 'credit_card', 'debit_card'].includes(raw)) return 'card';
-  if (['transfer', 'transferencia', 'spei', 'bank_transfer'].includes(raw)) return 'transfer';
-  if (['mixed', 'mixto'].includes(raw)) return 'mixed';
-  if (['fiado', 'credit', 'credito', 'crédito', 'debt', 'customer_credit', 'cuenta_cliente', 'mixed_credit', 'partial_credit'].includes(raw)) return 'credit';
-  return raw || 'unknown';
+  return normalizeRestaurantSplitPaymentMethod(raw) || raw || 'unknown';
 };
 
 export const isCreditLikePaymentMethod = (method) => normalizeCloudCashierPaymentMethod(method) === 'credit';

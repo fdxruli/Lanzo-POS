@@ -120,8 +120,12 @@ export const applySplitSalesFinancialResponseProjection = async ({ requestPayloa
   const response = responsePayload || intent?.responsePayload || {};
   const requestChildren = Array.isArray(request.children) ? request.children : [];
   const responseChildren = Array.isArray(response.children) ? response.children : [];
+  const splitIntent = request.split_intent || request.splitIntent || 'by_items';
+  const monetarySplit = ['equal_payment', 'custom_payment'].includes(splitIntent);
 
-  if (requestChildren.length < 2 || responseChildren.length !== requestChildren.length) {
+  if ((monetarySplit ? requestChildren.length !== 1 : requestChildren.length < 2)
+    || requestChildren.length > 8
+    || responseChildren.length !== requestChildren.length) {
     throw Object.assign(new Error('FINANCIAL_SPLIT_RESPONSE_INVALID'), { code: 'FINANCIAL_SPLIT_RESPONSE_INVALID' });
   }
 
@@ -833,6 +837,7 @@ export const salesCloudCashierService = {
     parentOrderId,
     parentExpectedVersion = null,
     splitGroupId,
+    splitIntent = 'by_items',
     childDefinitions = [],
     total,
     licenseDetails = null,
@@ -851,7 +856,10 @@ export const salesCloudCashierService = {
     if (hasCredit && !isCloudSalesCreditEnabled(details)) {
       throw friendlyCloudCashierError(new Error('CLOUD_SALES_CREDIT_DISABLED'));
     }
-    if (!parentOrderId || !splitGroupId || !Array.isArray(childDefinitions) || childDefinitions.length < 2) {
+    const monetarySplit = ['equal_payment', 'custom_payment'].includes(splitIntent);
+    if (!parentOrderId || !splitGroupId || !Array.isArray(childDefinitions)
+      || childDefinitions.length > 8
+      || (monetarySplit ? childDefinitions.length !== 1 : childDefinitions.length < 2)) {
       throw friendlyCloudCashierError(new Error('FINANCIAL_SPLIT_CONTRACT_INVALID'));
     }
     if (typeof parentExpectedVersion !== 'string' || !parentExpectedVersion.trim()) {
@@ -919,6 +927,8 @@ export const salesCloudCashierService = {
         parent_order_id: parentOrderId,
         parent_order_version: parentExpectedVersion,
         split_group_id: splitGroupId,
+        split_intent: splitIntent,
+        split_payers: monetarySplit ? (childDefinitions[0]?.paymentData?.payers || []) : [],
         cash_session_id: resolvedCashSessionId,
         children
       };

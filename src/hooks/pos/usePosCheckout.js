@@ -6,6 +6,7 @@ import { showConfirmModal, showMessageModal } from '../../services/utils';
 import { db, STORES } from '../../services/db/dexie';
 import { useActiveOrders } from './useActiveOrders';
 import { Money } from '../../utils/moneyMath';
+import { normalizeRestaurantSplitPaymentMethod } from '../../services/sales/paymentMethodContract';
 import {
     prepareCustomerMessageOutbox,
     showCustomerMessageOutboxModal
@@ -84,14 +85,7 @@ const getPosCheckoutSnapshotStaleResult = () => ({
 
 const normalizePaymentMethod = (method) => {
     const raw = String(method || '').trim().toLowerCase();
-
-    if (['cash', 'efectivo'].includes(raw)) return 'cash';
-    if (['card', 'tarjeta', 'tarjeta_credito', 'tarjeta_debito', 'debit', 'credit_card', 'debit_card'].includes(raw)) return 'card';
-    if (['transfer', 'transferencia', 'spei', 'bank_transfer'].includes(raw)) return 'transfer';
-    if (['mixed', 'mixto'].includes(raw)) return 'mixed';
-    if (['fiado', 'credit', 'credito', 'crédito', 'customer_credit', 'mixed_credit', 'partial_credit'].includes(raw)) return 'credit';
-
-    return raw;
+    return normalizeRestaurantSplitPaymentMethod(raw) || raw;
 };
 
 const deepClone = (value) => {

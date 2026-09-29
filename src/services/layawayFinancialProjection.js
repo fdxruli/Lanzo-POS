@@ -76,8 +76,28 @@ const isCashEntryMovement = (movement = {}) => (
 );
 const isCashSale = (sale = {}) => {
   const safeSale = asRecord(sale);
+  const payments = safeSale.payments || safeSale.paymentBreakdown || safeSale.paymentDetails?.payments;
+  if (Array.isArray(payments)) {
+    return payments.some((payment) => (
+      ['cash', 'efectivo'].includes(String(payment?.method || payment?.paymentMethod || '').trim().toLowerCase())
+      && amount(payment?.amount ?? payment?.total).gt(0)
+    ));
+  }
   const method = String(safeSale.paymentMethod || safeSale.payment_method || '').toLowerCase();
   return method === 'efectivo' || method === 'cash' || (!method && Number(safeSale.paymentData?.amount) > 0);
+};
+
+const appliedCashAmount = (sale = {}) => {
+  const safeSale = asRecord(sale);
+  const payments = safeSale.payments || safeSale.paymentBreakdown || safeSale.paymentDetails?.payments;
+  if (Array.isArray(payments)) {
+    return payments.reduce((total, payment) => (
+      ['cash', 'efectivo'].includes(String(payment?.method || payment?.paymentMethod || '').trim().toLowerCase())
+        ? total.plus(payment?.amount ?? payment?.total ?? 0)
+        : total
+    ), amount(0));
+  }
+  return amount(safeSale.total || safeSale.paymentData?.amount || 0);
 };
 const lineCost = (item = {}) => {
   const safeItem = asRecord(item);
@@ -490,7 +510,7 @@ export const buildCashReconciliation = ({ cashSession = {}, sales = [], layaways
 
   for (const sale of sessionSales) {
     if (isFinanciallyClosedSale(sale) && sale.isLayawayConversion !== true && isCashSale(sale)) {
-      directCashSales = directCashSales.plus(sale.total || sale.paymentData?.amount || 0);
+      directCashSales = directCashSales.plus(appliedCashAmount(sale));
     }
   }
   for (const movement of sessionMovements) {
