@@ -3,142 +3,367 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import SplitBillModal from '../SplitBillModal';
 
-const { loadData } = vi.hoisted(() => ({ loadData: vi.fn(async () => []) }));
+const { loadData, tenantStorage } = vi.hoisted(() => ({
+  loadData: vi.fn(async () => []),
+  tenantStorage: { ready: true, namespace: 'tenant-test', values: new Map() }
+}));
 
 vi.mock('../../../services/database', () => ({
   loadData: (...args) => loadData(...args),
   STORES: { CUSTOMERS: 'customers' }
 }));
 
-const renderModal = ({ order, total, saleDiscount = null, onConfirm = vi.fn(), isCajaOpen = true }) => {
-  render(
-    <SplitBillModal
-      show
-      onClose={vi.fn()}
-      order={order}
-      total={total}
-      saleDiscount={saleDiscount}
-      onConfirm={onConfirm}
-      isCajaOpen={isCajaOpen}
-    />
-  );
-  return { onConfirm };
+vi.mock('../../../services/tenant/tenantScopedStorage', () => ({
+  getTenantStorageState: () => ({ ready: tenantStorage.ready, opaqueId: tenantStorage.namespace }),
+  getTenantStorageItem: (key) => tenantStorage.ready ? (tenantStorage.values.get(`${tenantStorage.namespace}:${key}`) ?? null) : null,
+  setTenantStorageItem: (key, value) => {
+    if (tenantStorage.ready) tenantStorage.values.set(`${tenantStorage.namespace}:${key}`, value);
+  },
+  removeTenantStorageItem: (key) => {
+    if (tenantStorage.ready) tenantStorage.values.delete(`${tenantStorage.namespace}:${key}`);
+  }
+}));
+
+const renderModal = ({
+  order,
+  total,
+  saleDiscount = null,
+  onConfirm = vi.fn(async () => ({ success: true })),
+  onClose = vi.fn(),
+  isCajaOpen = true,
+  orderId = 'order-1',
+  tableName = 'Mesa 4',
+  show = true
+}) => {
+  const props = { order, total, saleDiscount, onConfirm, onClose, isCajaOpen, orderId, tableName };
+  const view = render(<SplitBillModal {...props} show={show} />);
+  return {
+    ...view,
+    onConfirm,
+    onClose,
+    setShow: (nextShow) => view.rerender(<SplitBillModal {...props} show={nextShow} />)
+  };
 };
 
-describe('SplitBillModal item allocation', () => {
+const goToItems = () => fireEvent.click(screen.getByRole('button', { name: 'Asignar platos' }));
+const goToPayment = () => fireEvent.click(screen.getByRole('button', { name: 'Configurar cobro' }));
+const goToReview = () => fireEvent.click(screen.getByRole('button', { name: 'Revisar división' }));
+const getPendingLine = (name) => {
+  const pending = screen.getByRole('tabpanel', { name: 'Platos pendientes' });
+  return within(pending).getByText(name).closest('.split-pool-item');
+};
+const getGuestCard = (name) => {
+  const heading = screen.getByRole('heading', { name: new RegExp(name) });
+  return heading.closest('.split-ticket-card');
+};
+
+describe('SplitBillModal four-step restaurant split', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    tenantStorage.ready = true;
+    tenantStorage.namespace = 'tenant-test';
+    tenantStorage.values.clear();
     loadData.mockResolvedValue([]);
   });
 
   afterEach(() => cleanup());
 
-  it('uses explicit by-items language and removes the old Manual/Equitativo choices', () => {
-    renderModal({ order: [{ id: 'prod-a', name: 'Producto A', quantity: 1, price: 100 }], total: 100 });
+  it('starts with two guests, supports optional names up to eight, and keeps names separate from financial IDs', async () => {
+    const { onConfirm } = renderModal({
+      order: [
+        { lineId: 'line-a', id: 'product-a', name: 'Producto A', quantity: 1, price: 100 },
+        { lineId: 'line-b', id: 'product-b', name: 'Producto B', quantity: 1, price: 50 }
+      ],
+      total: 150
+    });
 
-    expect(screen.getByText('Cada quien paga lo suyo')).toBeInTheDocument();
-    expect(
-      within(screen.getByLabelText('Estrategia de división')).getByText(/Asigna los productos que pagará cada persona/)
-    ).toBeInTheDocument();
-    expect(screen.queryByText('Manual')).not.toBeInTheDocument();
-    expect(screen.queryByText('Equitativo')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Confirmar división y cobro' })).toBeDisabled();
-  });
+    expect(screen.getByLabelText('Nombre de Comensal 1 (opcional)')).toBeInTheDocument();
+    expect(screen.getByLabelText('Nombre de Comensal 2 (opcional)')).toBeInTheDocument();
+    const guestCount = screen.getByLabelText('¿Cuántas personas?');
+    fireEvent.change(guestCount, { target: { value: '8' } });
+    expect(screen.getByLabelText('Nombre de Comensal 8 (opcional)')).toBeInTheDocument();
 
-  it('shows pending quantities and preserves a fractional quantity of 1.5 when assigned', () => {
-    const order = [{ id: 'bulk-a', name: 'Producto a granel', saleType: 'weight', quantity: 1.5, price: 20 }];
-    renderModal({ order, total: 30 });
+    fireEvent.change(guestCount, { target: { value: '2' } });
+    fireEvent.change(screen.getByLabelText('Nombre de Comensal 1 (opcional)'), { target: { value: ' Ana ' } });
+    fireEvent.blur(screen.getByLabelText('Nombre de Comensal 1 (opcional)'));
+    goToItems();
 
-    expect(screen.getByText('1.5 de 1.5')).toBeInTheDocument();
-    const poolItem = screen.getByText('Producto a granel').closest('.split-pool-item');
-    fireEvent.click(within(poolItem).getByTitle('Asignar todo a T1'));
-
-    const ticketOne = screen.getByRole('heading', { name: 'Ticket T1' }).closest('.split-ticket-card');
-    expect(within(ticketOne).getByText('x 1.5')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Confirmar división y cobro' })).toBeDisabled();
-  });
-
-  it('submits by_items after assigning each product and calculating each ticket from its items', async () => {
-    const order = [
-      { id: 'prod-a', name: 'Producto A', quantity: 1, price: 100 },
-      { id: 'prod-b', name: 'Producto B', quantity: 1, price: 200 }
-    ];
-    const { onConfirm } = renderModal({ order, total: 300 });
-    const poolA = screen.getByText('Producto A').closest('.split-pool-item');
-    const poolB = screen.getByText('Producto B').closest('.split-pool-item');
-
-    fireEvent.click(within(poolA).getByTitle('Asignar todo a T1'));
-    fireEvent.click(within(poolB).getByTitle('Asignar todo a T2'));
-
-    const ticketOne = screen.getByRole('heading', { name: 'Ticket T1' }).closest('.split-ticket-card');
-    const ticketTwo = screen.getByRole('heading', { name: 'Ticket T2' }).closest('.split-ticket-card');
-    expect(within(ticketOne).getByText('$100.00')).toBeInTheDocument();
-    expect(within(ticketTwo).getByText('$200.00')).toBeInTheDocument();
-
+    const productA = getPendingLine('Producto A');
+    const productB = getPendingLine('Producto B');
+    fireEvent.click(within(productA).getByRole('button', { name: 'Asignar todo Producto A a Ana · Comensal 1' }));
+    fireEvent.click(within(productB).getByRole('button', { name: 'Asignar todo Producto B a Comensal 2 · Comensal 2' }));
+    goToPayment();
+    goToReview();
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar división y cobro' }));
-    await waitFor(() => expect(onConfirm).toHaveBeenCalledOnce());
 
+    await waitFor(() => expect(onConfirm).toHaveBeenCalledOnce());
+    const payload = onConfirm.mock.calls[0][0];
+    expect(payload.splitIntent).toBe('by_items');
+    expect(payload.tickets.map((ticket) => ticket.label)).toEqual(['T1', 'T2']);
+    expect(payload.tickets[0]).not.toHaveProperty('displayName');
+  });
+
+  it('preserves existing assignments when adding a guest and confirms before returning a removed guest’s quantities', () => {
+    renderModal({
+      order: [
+        { lineId: 'line-a', id: 'product-a', name: 'Producto A', quantity: 1, price: 100 },
+        { lineId: 'line-b', id: 'product-b', name: 'Producto B', quantity: 2, price: 20 }
+      ],
+      total: 140
+    });
+    goToItems();
+    fireEvent.click(within(getPendingLine('Producto A')).getByRole('button', { name: 'Asignar todo Producto A a Comensal 1 · Comensal 1' }));
+    fireEvent.click(screen.getAllByRole('button', { name: 'Personas' })[0]);
+    fireEvent.change(screen.getByLabelText('¿Cuántas personas?'), { target: { value: '3' } });
+    goToItems();
+    expect(getGuestCard('Comensal 1').querySelector('.split-ticket-items')).toHaveTextContent('Producto A');
+
+    fireEvent.click(within(getPendingLine('Producto B')).getByRole('button', { name: 'Asignar todo Producto B a Comensal 3 · Comensal 3' }));
+    fireEvent.click(screen.getAllByRole('button', { name: 'Personas' })[0]);
+    fireEvent.change(screen.getByLabelText('¿Cuántas personas?'), { target: { value: '2' } });
+
+    const confirmation = screen.getByRole('alertdialog');
+    expect(confirmation).toHaveTextContent('volverán a “Platos pendientes”');
+    expect(within(confirmation).getByRole('button', { name: 'Conservar personas' })).toBeInTheDocument();
+    fireEvent.click(within(confirmation).getByRole('button', { name: 'Quitar y devolver cantidades' }));
+    goToItems();
+    expect(screen.getByText('2 pendientes')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Configurar cobro' })).toBeDisabled();
+  });
+
+  it('assigns the Mesa 4 example, shows per-person totals, and confirms the unchanged by_items contract once', async () => {
+    const order = [
+      { lineId: 'hamb-1', id: 'hamburger', name: 'Hamburguesa', quantity: 2, price: 100 },
+      { lineId: 'pasta-1', id: 'pasta', name: 'Pasta', quantity: 1, price: 150 },
+      { lineId: 'drink-1', id: 'soda', name: 'Refresco', quantity: 3, price: 30 }
+    ];
+    const { onConfirm } = renderModal({ order, total: 440, orderId: 'mesa-4' });
+    fireEvent.change(screen.getByLabelText('¿Cuántas personas?'), { target: { value: '3' } });
+    fireEvent.change(screen.getByLabelText('Nombre de Comensal 1 (opcional)'), { target: { value: 'Ana' } });
+    fireEvent.change(screen.getByLabelText('Nombre de Comensal 2 (opcional)'), { target: { value: 'Luis' } });
+    fireEvent.change(screen.getByLabelText('Nombre de Comensal 3 (opcional)'), { target: { value: 'Carlos' } });
+    goToItems();
+
+    fireEvent.click(within(getPendingLine('Hamburguesa')).getByRole('button', { name: 'Asignar una unidad de Hamburguesa a Ana · Comensal 1' }));
+    fireEvent.click(within(getPendingLine('Hamburguesa')).getByRole('button', { name: 'Asignar una unidad de Hamburguesa a Luis · Comensal 2' }));
+    fireEvent.click(within(getPendingLine('Pasta')).getByRole('button', { name: 'Asignar todo Pasta a Carlos · Comensal 3' }));
+    fireEvent.click(within(getPendingLine('Refresco')).getByRole('button', { name: 'Asignar una unidad de Refresco a Ana · Comensal 1' }));
+    fireEvent.click(within(getPendingLine('Refresco')).getByRole('button', { name: 'Asignar una unidad de Refresco a Luis · Comensal 2' }));
+    fireEvent.click(within(getPendingLine('Refresco')).getByRole('button', { name: 'Asignar una unidad de Refresco a Carlos · Comensal 3' }));
+
+    expect(getGuestCard('Ana').querySelector('.split-ticket-total')).toHaveTextContent('$130.00');
+    expect(getGuestCard('Luis').querySelector('.split-ticket-total')).toHaveTextContent('$130.00');
+    expect(getGuestCard('Carlos').querySelector('.split-ticket-total')).toHaveTextContent('$180.00');
+    goToPayment();
+    goToReview();
+    expect(screen.getByText('Mesa 4')).toBeInTheDocument();
+    expect(screen.getByText('Total asignado')).toBeInTheDocument();
+    expect(document.querySelector('.split-review-total')).toHaveTextContent('Pendiente por asignar0');
+    const confirmButton = screen.getByRole('button', { name: 'Confirmar división y cobro' });
+    fireEvent.click(confirmButton);
+    fireEvent.click(confirmButton);
+    await waitFor(() => expect(onConfirm).toHaveBeenCalledOnce());
     expect(onConfirm).toHaveBeenCalledWith({
       splitIntent: 'by_items',
       tickets: [
-        expect.objectContaining({ label: 'T1', lines: [{ lineIndex: 0, quantity: 1 }] }),
-        expect.objectContaining({ label: 'T2', lines: [{ lineIndex: 1, quantity: 1 }] })
+        expect.objectContaining({ label: 'T1', lines: [{ lineIndex: 0, quantity: 1 }, { lineIndex: 2, quantity: 1 }] }),
+        expect.objectContaining({ label: 'T2', lines: [{ lineIndex: 0, quantity: 1 }, { lineIndex: 2, quantity: 1 }] }),
+        expect.objectContaining({ label: 'T3', lines: [{ lineIndex: 1, quantity: 1 }, { lineIndex: 2, quantity: 1 }] })
       ]
     });
   });
 
-  it('shows line and general discounts in item-ticket totals without changing source prices', () => {
+  it('supports fractional quantities without changing unit prices or creating a fictional shared unit', () => {
+    renderModal({
+      order: [{ lineId: 'bulk-line', id: 'bulk-a', name: 'Queso', saleType: 'weight', quantity: 1.5, price: 20 }],
+      total: 30
+    });
+    goToItems();
+    const pendingLine = getPendingLine('Queso');
+    fireEvent.change(within(pendingLine).getByLabelText('O asignar otra cantidad'), { target: { value: '0.5' } });
+    fireEvent.click(within(pendingLine).getByRole('button', { name: 'Asignar cantidad de Queso a Comensal 1 · Comensal 1' }));
+    fireEvent.click(within(getPendingLine('Queso')).getByRole('button', { name: 'Asignar todo Queso a Comensal 2 · Comensal 2' }));
+    expect(getGuestCard('Comensal 1').querySelector('.split-ticket-items')).toHaveTextContent('× 0.5');
+    expect(getGuestCard('Comensal 2').querySelector('.split-ticket-items')).toHaveTextContent('× 1');
+    expect(screen.getByText(/La división del importe estará disponible/)).toBeInTheDocument();
+    expect(screen.queryByText('SPLIT_INTENT_NOT_SUPPORTED')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Configurar cobro' })).toBeEnabled();
+  });
+
+  it('returns one or all items to pending and can move a line directly between people', () => {
+    renderModal({
+      order: [
+        { lineId: 'soda-line', id: 'soda', name: 'Refresco', quantity: 3, price: 30 },
+        { lineId: 'pasta-line', id: 'pasta', name: 'Pasta', quantity: 2, price: 100 }
+      ],
+      total: 290
+    });
+    goToItems();
+    fireEvent.click(within(getPendingLine('Refresco')).getByRole('button', { name: 'Asignar todo Refresco a Comensal 1 · Comensal 1' }));
+    fireEvent.click(within(getPendingLine('Pasta')).getByRole('button', { name: 'Asignar todo Pasta a Comensal 2 · Comensal 2' }));
+    expect(getGuestCard('Comensal 1').querySelector('.split-ticket-items')).not.toHaveTextContent('Pasta');
+    expect(getGuestCard('Comensal 2').querySelector('.split-ticket-items')).toHaveTextContent('Pasta× 2');
+
+    const sodaLine = within(getGuestCard('Comensal 1')).getByText('Refresco').closest('.split-ticket-item');
+    fireEvent.click(within(sodaLine).getByRole('button', { name: 'Regresar una unidad de Refresco de Comensal 1 · Comensal 1 a platos pendientes' }));
+    expect(getPendingLine('Refresco')).toHaveTextContent('1 pendientes');
+    fireEvent.click(within(getPendingLine('Refresco')).getByRole('button', { name: 'Asignar una unidad de Refresco a Comensal 2 · Comensal 2' }));
+    const pastaLine = within(getGuestCard('Comensal 2')).getByText('Pasta').closest('.split-ticket-item');
+    fireEvent.change(within(pastaLine).getByRole('combobox', { name: 'Mover Pasta de Comensal 2 · Comensal 2 a otra persona' }), { target: { value: '0' } });
+    expect(getGuestCard('Comensal 1').querySelector('.split-ticket-items')).toHaveTextContent('Pasta× 2');
+    expect(getGuestCard('Comensal 2').querySelector('.split-ticket-items')).not.toHaveTextContent('Pasta');
+    const pastaInFirst = within(getGuestCard('Comensal 1')).getByText('Pasta').closest('.split-ticket-item');
+    fireEvent.click(within(pastaInFirst).getByRole('button', { name: 'Regresar todo Pasta de Comensal 1 · Comensal 1 a platos pendientes' }));
+    expect(getPendingLine('Pasta')).toHaveTextContent('2 pendientes');
+  });
+
+  it('keeps same-name product lines separate and shows their modifiers and notes', async () => {
     const order = [
-      { id: 'prod-a', name: 'Producto A', quantity: 1, price: 100, discount: { type: 'amount', value: 10, amount: 10, reason: 'Promoción de línea' } },
-      { id: 'prod-b', name: 'Producto B', quantity: 1, price: 200 }
+      { lineId: 'burger-line-a', id: 'burger', name: 'Hamburguesa', quantity: 1, price: 100, selectedModifiers: [{ name: 'Sin cebolla' }], notes: 'Bien cocida' },
+      { lineId: 'burger-line-b', id: 'burger', name: 'Hamburguesa', quantity: 1, price: 100, selectedModifiers: [{ name: 'Sin pepinillos' }], notes: 'Pan tostado' }
+    ];
+    const { onConfirm } = renderModal({ order, total: 200 });
+    fireEvent.change(screen.getByLabelText('Nombre de Comensal 1 (opcional)'), { target: { value: 'Ana' } });
+    fireEvent.change(screen.getByLabelText('Nombre de Comensal 2 (opcional)'), { target: { value: 'Ana' } });
+    goToItems();
+
+    const productLines = within(screen.getByRole('tabpanel', { name: 'Platos pendientes' })).getAllByText('Hamburguesa').map((node) => node.closest('.split-pool-item'));
+    expect(productLines).toHaveLength(2);
+    fireEvent.click(within(productLines[0]).getByRole('button', { name: 'Asignar todo Hamburguesa a Ana · Comensal 1' }));
+    fireEvent.click(within(productLines[1]).getByRole('button', { name: 'Asignar todo Hamburguesa a Ana · Comensal 2' }));
+    expect(getGuestCard('Comensal 1').querySelector('.split-ticket-items')).toHaveTextContent('Sin cebolla');
+    expect(getGuestCard('Comensal 1').querySelector('.split-ticket-items')).toHaveTextContent('Bien cocida');
+    expect(getGuestCard('Comensal 2').querySelector('.split-ticket-items')).toHaveTextContent('Sin pepinillos');
+    expect(getGuestCard('Comensal 2').querySelector('.split-ticket-items')).toHaveTextContent('Pan tostado');
+
+    goToPayment();
+    goToReview();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar división y cobro' }));
+    await waitFor(() => expect(onConfirm).toHaveBeenCalledOnce());
+    expect(onConfirm.mock.calls[0][0].tickets.map((ticket) => ticket.lines)).toEqual([
+      [{ lineIndex: 0, quantity: 1 }],
+      [{ lineIndex: 1, quantity: 1 }]
+    ]);
+  });
+
+  it('lets mobile users switch between pending dishes and people without losing assignment state', () => {
+    renderModal({
+      order: [
+        { lineId: 'a', id: 'product-a', name: 'Producto A', quantity: 1, price: 100 },
+        { lineId: 'b', id: 'product-b', name: 'Producto B', quantity: 1, price: 50 }
+      ],
+      total: 150
+    });
+    goToItems();
+    fireEvent.click(within(getPendingLine('Producto A')).getByRole('button', { name: 'Asignar todo Producto A a Comensal 1 · Comensal 1' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Personas · 2' }));
+    expect(screen.getByRole('tabpanel', { name: 'Asignado a cada persona' })).toHaveTextContent('Producto A');
+    expect(screen.getByRole('tab', { name: 'Personas · 2' })).toHaveAttribute('aria-selected', 'true');
+    fireEvent.click(screen.getByRole('tab', { name: 'Platos pendientes · 1' }));
+    expect(getPendingLine('Producto B')).toHaveTextContent('1 pendientes');
+    expect(screen.getByRole('tabpanel', { name: 'Asignado a cada persona' })).toHaveTextContent('Producto A');
+  });
+
+  it('keeps line and sale discounts in canonical ticket totals', () => {
+    const order = [
+      { lineId: 'a', id: 'product-a', name: 'Producto A', quantity: 1, price: 100, discount: { type: 'amount', value: 10, amount: 10, reason: 'Promoción de línea' } },
+      { lineId: 'b', id: 'product-b', name: 'Producto B', quantity: 1, price: 200 }
     ];
     const saleDiscount = { type: 'amount', value: 30, amount: 30, reason: 'Promoción general', scope: 'sale' };
     renderModal({ order, total: 260, saleDiscount });
-
-    const poolA = screen.getByText('Producto A').closest('.split-pool-item');
-    const poolB = screen.getByText('Producto B').closest('.split-pool-item');
-    fireEvent.click(within(poolA).getByTitle('Asignar todo a T1'));
-    fireEvent.click(within(poolB).getByTitle('Asignar todo a T2'));
-
-    const ticketOne = screen.getByRole('heading', { name: 'Ticket T1' }).closest('.split-ticket-card');
-    const ticketTwo = screen.getByRole('heading', { name: 'Ticket T2' }).closest('.split-ticket-card');
-    expect(ticketOne.querySelector('.split-ticket-total')).toHaveTextContent('$80.69');
-    expect(ticketTwo.querySelector('.split-ticket-total')).toHaveTextContent('$179.31');
-    expect(ticketOne.querySelector('.split-ticket-discount')).toHaveTextContent('Descuento aplicado: -$19.31');
-    expect(ticketTwo.querySelector('.split-ticket-discount')).toHaveTextContent('Descuento aplicado: -$20.69');
-    expect(ticketOne.querySelector('.split-ticket-adjustment')).toBeNull();
+    goToItems();
+    fireEvent.click(within(getPendingLine('Producto A')).getByRole('button', { name: 'Asignar todo Producto A a Comensal 1 · Comensal 1' }));
+    fireEvent.click(within(getPendingLine('Producto B')).getByRole('button', { name: 'Asignar todo Producto B a Comensal 2 · Comensal 2' }));
+    expect(getGuestCard('Comensal 1').querySelector('.split-ticket-total')).toHaveTextContent('$80.69');
+    expect(getGuestCard('Comensal 2').querySelector('.split-ticket-total')).toHaveTextContent('$179.31');
+    expect(getGuestCard('Comensal 1').querySelector('.split-ticket-discount')).toHaveTextContent('Descuento: -$19.31');
+    expect(getGuestCard('Comensal 2').querySelector('.split-ticket-discount')).toHaveTextContent('Descuento: -$20.69');
+    expect(getGuestCard('Comensal 1').querySelector('.split-ticket-adjustment')).toBeNull();
   });
 
-  it('describes a closed cash-session requirement neutrally', () => {
+  it('keeps guest names separate from Fiado customer selection, credit validation and receipt controls', async () => {
+    loadData.mockResolvedValue([{ id: 'customer-1', name: 'Cliente registrado', phone: '555', debt: 0, creditLimit: 500 }]);
     renderModal({
       order: [
-        { id: 'prod-a', name: 'Producto A', quantity: 1, price: 100 },
-        { id: 'prod-b', name: 'Producto B', quantity: 1, price: 20 }
+        { lineId: 'a', id: 'product-a', name: 'Producto A', quantity: 1, price: 100 },
+        { lineId: 'b', id: 'product-b', name: 'Producto B', quantity: 1, price: 50 }
+      ],
+      total: 150
+    });
+    fireEvent.change(screen.getByLabelText('Nombre de Comensal 1 (opcional)'), { target: { value: 'Ana' } });
+    goToItems();
+    fireEvent.click(within(getPendingLine('Producto A')).getByRole('button', { name: 'Asignar todo Producto A a Ana · Comensal 1' }));
+    fireEvent.click(within(getPendingLine('Producto B')).getByRole('button', { name: 'Asignar todo Producto B a Comensal 2 · Comensal 2' }));
+    goToPayment();
+
+    const paymentCard = screen.getByRole('heading', { name: /Ana · Comensal 1/ }).closest('.split-payment-card');
+    const method = within(paymentCard).getByLabelText('Método de pago');
+    fireEvent.change(method, { target: { value: 'fiado' } });
+    expect(within(paymentCard).getByLabelText('Cliente financiero registrado')).toBeInTheDocument();
+    expect(within(paymentCard).getByLabelText('Enviar ticket por WhatsApp')).toBeDisabled();
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Cliente registrado (555)' })).toBeInTheDocument());
+    fireEvent.change(within(paymentCard).getByLabelText('Cliente financiero registrado'), { target: { value: 'customer-1' } });
+    expect(screen.getByRole('button', { name: 'Revisar división' })).toBeEnabled();
+  });
+
+  it('restores a matching local draft after closing and reopening without restoring payment data', async () => {
+    const order = [
+      { lineId: 'a', id: 'product-a', name: 'Producto A', quantity: 1, price: 100 },
+      { lineId: 'b', id: 'product-b', name: 'Producto B', quantity: 1, price: 50 }
+    ];
+    const view = renderModal({ order, total: 150, orderId: 'table-4' });
+    fireEvent.change(screen.getByLabelText('Nombre de Comensal 1 (opcional)'), { target: { value: 'Ana' } });
+    goToItems();
+    fireEvent.click(within(getPendingLine('Producto A')).getByRole('button', { name: 'Asignar todo Producto A a Ana · Comensal 1' }));
+    fireEvent.click(within(getPendingLine('Producto B')).getByRole('button', { name: 'Asignar todo Producto B a Comensal 2 · Comensal 2' }));
+    await waitFor(() => expect([...tenantStorage.values.values()].some((value) => value.includes('Ana'))).toBe(true));
+    const serialized = [...tenantStorage.values.values()][0];
+    expect(serialized).not.toContain('amountPaid');
+    expect(serialized).not.toContain('customerId');
+
+    view.setShow(false);
+    view.setShow(true);
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Se restauró el reparto local'));
+    expect(screen.getByRole('heading', { name: /Ana · Comensal 1/ })).toBeInTheDocument();
+    expect(screen.getByRole('tabpanel', { name: 'Platos pendientes' })).toHaveTextContent('Asignado');
+  });
+
+  it('discards a draft when the order snapshot changes, and does not leak it between tenants or tables', async () => {
+    const order = [{ lineId: 'a', id: 'product-a', name: 'Producto A', quantity: 2, price: 100 }];
+    const view = renderModal({ order, total: 200, orderId: 'table-4' });
+    goToItems();
+    fireEvent.click(within(getPendingLine('Producto A')).getByRole('button', { name: 'Asignar todo Producto A a Comensal 1 · Comensal 1' }));
+    await waitFor(() => expect(tenantStorage.values.size).toBeGreaterThan(0));
+
+    view.setShow(false);
+    const changedOrder = [{ ...order[0], quantity: 3 }];
+    view.rerender(<SplitBillModal show order={changedOrder} total={300} onConfirm={vi.fn()} onClose={vi.fn()} orderId="table-4" />);
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('La cuenta cambió'));
+    goToItems();
+    expect(screen.getByRole('tabpanel', { name: 'Platos pendientes' })).toHaveTextContent('3 pendientes');
+
+    tenantStorage.namespace = 'tenant-other';
+    view.setShow(false);
+    view.setShow(true);
+    await waitFor(() => expect(screen.queryByText('La cuenta cambió')).not.toBeInTheDocument());
+  });
+
+  it('shows the active cash-session requirement and supports Escape without losing the draft', async () => {
+    const view = renderModal({
+      order: [
+        { lineId: 'a', id: 'product-a', name: 'Producto A', quantity: 1, price: 100 },
+        { lineId: 'b', id: 'product-b', name: 'Producto B', quantity: 1, price: 20 }
       ],
       total: 120,
       isCajaOpen: false
     });
-    const poolA = screen.getByText('Producto A').closest('.split-pool-item');
-    const poolB = screen.getByText('Producto B').closest('.split-pool-item');
-    fireEvent.click(within(poolA).getByTitle('Asignar todo a T1'));
-    fireEvent.click(within(poolB).getByTitle('Asignar todo a T2'));
+    goToItems();
+    fireEvent.click(within(getPendingLine('Producto A')).getByRole('button', { name: 'Asignar todo Producto A a Comensal 1 · Comensal 1' }));
+    fireEvent.click(within(getPendingLine('Producto B')).getByRole('button', { name: 'Asignar todo Producto B a Comensal 2 · Comensal 2' }));
+    goToPayment();
     expect(screen.getByText('Este cobro requiere una sesión de caja activa. Se verificará al confirmar.')).toBeInTheDocument();
-    expect(screen.queryByText(/se abrirá automáticamente.*efectivo/i)).not.toBeInTheDocument();
-  });
-
-  it('shows rounding adjustments with a currency symbol and fractional accessible step', () => {
-    const order = [
-      { id: 'bulk-a', name: 'Fracción A', saleType: 'weight', quantity: 0.5, price: 5.01 },
-      { id: 'bulk-b', name: 'Fracción B', saleType: 'weight', quantity: 0.5, price: 5.01 }
-    ];
-    renderModal({ order, total: 5.01 });
-    const poolA = screen.getByText('Fracción A').closest('.split-pool-item');
-    const poolB = screen.getByText('Fracción B').closest('.split-pool-item');
-    fireEvent.click(within(poolA).getByTitle('Asignar todo a T1'));
-    fireEvent.click(within(poolB).getByTitle('Asignar todo a T2'));
-
-    expect(screen.getByText('Ajuste de redondeo: -$0.01')).toBeInTheDocument();
-    const ticketOne = screen.getByRole('heading', { name: 'Ticket T1' }).closest('.split-ticket-card');
-    expect(within(ticketOne).getByRole('button', { name: /^Quitar 0\.\d+ de Fracción A del ticket T1$/ })).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(view.onClose).toHaveBeenCalledOnce();
+    await waitFor(() => expect(tenantStorage.values.size).toBeGreaterThan(0));
   });
 });
