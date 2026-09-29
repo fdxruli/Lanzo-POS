@@ -1,7 +1,12 @@
 import Dexie from 'dexie';
 import { IDBKeyRange, indexedDB } from 'fake-indexeddb';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { calculateSessionTotals, loadCashSessionProjection, resolveCashSessionAmounts } from '../cajaProjection';
+import {
+  calculateSessionTotals,
+  loadCashSessionProjection,
+  normalizeSaleMovements,
+  resolveCashSessionAmounts
+} from '../cajaProjection';
 
 describe('loadCashSessionProjection', () => {
   let testDb;
@@ -53,14 +58,65 @@ describe('loadCashSessionProjection', () => {
     ])).toEqual({ ventasContado: '200', abonosFiado: '100' });
   });
 
-  it('falls back to legacy cash fields when payment rows contain no positive tender', () => {
+  it('does not fall back to legacy cash fields when an explicit cash row is zero', () => {
     expect(calculateSessionTotals([{
-      id: 'legacy-cash-zero-payment-row',
+      id: 'sale-explicit-zero',
       status: 'closed',
       paymentMethod: 'cash',
       total: '100',
       payments: [{ method: 'cash', amount: 0 }]
-    }])).toEqual({ ventasContado: '100', abonosFiado: '0' });
+    }])).toEqual({ ventasContado: '0', abonosFiado: '0' });
+  });
+
+  it.each([
+    ['cash', { method: 'cash', amount: 0 }],
+    ['card', { method: 'card', amount: 0 }],
+    ['transfer', { method: 'transfer', amount: 0 }]
+  ])('does not infer cash from an explicit zero %s payment', (method, payment) => {
+    expect(calculateSessionTotals([{
+      id: `sale-explicit-zero-${method}`,
+      status: 'closed',
+      paymentMethod: method,
+      total: '100',
+      payments: [payment]
+    }])).toEqual({ ventasContado: '0', abonosFiado: '0' });
+  });
+
+  it('does not use the sale total for an explicit non-cash payment', () => {
+    expect(calculateSessionTotals([{
+      id: 'sale-card-applied',
+      status: 'closed',
+      paymentMethod: 'card',
+      total: '100',
+      payments: [{ method: 'card', amount: '100' }]
+    }])).toEqual({ ventasContado: '0', abonosFiado: '0' });
+  });
+
+  it('does not infer a cash share when explicit cash is zero and card was applied', () => {
+    expect(calculateSessionTotals([{
+      id: 'sale-zero-cash-card-applied',
+      status: 'closed',
+      paymentMethod: 'mixed',
+      total: '100',
+      payments: [
+        { method: 'cash', amount: 0 },
+        { method: 'card', amount: '100' }
+      ]
+    }])).toEqual({ ventasContado: '0', abonosFiado: '0' });
+  });
+
+  it.each([
+    ['negative', { method: 'cash', amount: -10 }],
+    ['invalid', { method: 'cash', amount: 'invalid' }],
+    ['unknown method', { method: 'crypto', amount: '100' }]
+  ])('does not fall back to the legacy total for an explicit %s payment row', (_label, payment) => {
+    expect(calculateSessionTotals([{
+      id: 'sale-invalid-explicit-row',
+      status: 'closed',
+      paymentMethod: 'cash',
+      total: '100',
+      payments: [payment]
+    }])).toEqual({ ventasContado: '0', abonosFiado: '0' });
   });
 
   it('uses explicit mixed tender rows without adding the legacy sale total again', () => {
@@ -90,6 +146,16 @@ describe('loadCashSessionProjection', () => {
     }])).toEqual({ ventasContado: '25', abonosFiado: '0' });
   });
 
+  it('counts applied cash instead of amount received when change is returned', () => {
+    expect(calculateSessionTotals([{
+      id: 'sale-cash-with-change',
+      status: 'closed',
+      paymentMethod: 'cash',
+      total: '100',
+      payments: [{ method: 'cash', amount: '100', received_amount: '120', change_amount: '20' }]
+    }])).toEqual({ ventasContado: '100', abonosFiado: '0' });
+  });
+
   it('counts cash tender on a Fiado sale as abono rather than contado revenue', () => {
     expect(calculateSessionTotals([{
       id: 'sale-credit-split',
@@ -115,6 +181,39 @@ describe('loadCashSessionProjection', () => {
       saldoPendiente: '160',
       payments: [{ method: 'cash', amount: '40', received_amount: '45', change_amount: '5' }]
     }])).toEqual({ ventasContado: '0', abonosFiado: '40' });
+  });
+
+  it('does not infer a Fiado down payment from a zero explicit payment', () => {
+    expect(calculateSessionTotals([{
+      id: 'sale-credit-explicit-zero',
+      status: 'closed',
+      paymentMethod: 'fiado',
+      total: '250',
+      abono: '100',
+      payments: [{ method: 'cash', amount: 0 }]
+    }])).toEqual({ ventasContado: '0', abonosFiado: '0' });
+  });
+
+  it('does not synthesize a cash movement from an explicit zero applied payment', () => {
+    expect(normalizeSaleMovements([{
+      id: 'sale-explicit-zero-movement',
+      status: 'closed',
+      paymentMethod: 'cash',
+      total: '100',
+      payments: [{ method: 'cash', amount: 0 }]
+    }])).toEqual([]);
+  });
+
+  it('uses explicit applied amount in the synthetic non-cash movement', () => {
+    expect(normalizeSaleMovements([{
+      id: 'sale-explicit-card-movement',
+      status: 'closed',
+      paymentMethod: 'mixed',
+      total: '200',
+      payments: [{ method: 'card', amount: '75' }]
+    }])).toMatchObject([
+      { id: 'sale-explicit-card-movement', tipo: 'venta_tarjeta', monto: '75' }
+    ]);
   });
 
   it('ignora movimientos null al construir una proyección real', async () => {

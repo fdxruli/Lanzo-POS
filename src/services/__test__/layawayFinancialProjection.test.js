@@ -75,6 +75,26 @@ describe('restaurant split cash reconciliation', () => {
     expect(reconciliation.directCashSales).toBe(100);
   });
 
+  it('does not infer legacy cash from an explicit zero payment during reconciliation', () => {
+    const reconciliation = buildCashReconciliation({
+      cashSession: { ...session, entradas_efectivo: 0 },
+      sales: [{
+        id: 'sale-explicit-zero',
+        timestamp: '2026-07-25T12:00:00.000Z',
+        cash_session_id: 'cash-1',
+        status: 'closed',
+        paymentMethod: 'cash',
+        total: 100,
+        payments: [{ method: 'cash', amount: 0 }]
+      }],
+      layaways: [],
+      cashMovements: []
+    });
+
+    expect(reconciliation.directCashSales).toBe(0);
+    expect(reconciliation.theoreticalCash).toBe(0);
+  });
+
 
   it('uses applied cash rows for physical cash while retaining the one-sale revenue total', () => {
     const reconciliation = buildCashReconciliation({

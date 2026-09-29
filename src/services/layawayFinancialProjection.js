@@ -82,7 +82,7 @@ const isCashEntryMovement = (movement = {}) => (
 const isCashSale = (sale = {}) => {
   const safeSale = asRecord(sale);
   const payments = getExplicitSalePaymentRows(safeSale);
-  if (payments) {
+  if (payments !== null) {
     return payments.some((payment) => (
       isRestaurantSplitCashPayment(payment)
       && amount(payment?.amount ?? payment?.total).gt(0)
@@ -97,7 +97,7 @@ const isCashSale = (sale = {}) => {
 const appliedCashAmount = (sale = {}) => {
   const safeSale = asRecord(sale);
   const payments = getExplicitSalePaymentRows(safeSale);
-  if (payments) {
+  if (payments !== null) {
     return payments.reduce((total, payment) => (
       isRestaurantSplitCashPayment(payment)
         ? total.plus(payment?.amount ?? payment?.total ?? 0)

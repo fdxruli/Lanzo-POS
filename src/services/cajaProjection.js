@@ -155,7 +155,7 @@ export const calculateSessionTotals = (sales = []) => {
     const method = sale.paymentMethod?.toLowerCase();
     const paymentAmount = sale.paymentData?.amount;
     const explicitPayments = getExplicitSalePaymentRows(sale);
-    if (explicitPayments) {
+    if (explicitPayments !== null) {
       const cashApplied = explicitPayments.reduce((sum, payment) => {
         if (!isRestaurantSplitCashPayment(payment)) return sum;
         return Money.add(sum, payment?.amount ?? payment?.total ?? 0);
@@ -268,13 +268,78 @@ export const normalizeSaleMovements = (sales = []) => {
 
     const method = sale.paymentMethod?.toLowerCase();
     const paymentAmount = sale.paymentData?.amount;
+    const explicitPayments = getExplicitSalePaymentRows(sale);
     const isCash = method === 'efectivo' || method === 'cash' ||
       (!method && Number(paymentAmount) > 0);
-    const isCredit = method === 'fiado';
     const saleLabel = getSaleDisplayReference(sale) || sale.ticketNumber || sale.id;
     const traceability = normalizeSaleTraceability(sale);
     const secondaryReference = getSaleSecondaryReference(sale);
 
+    if (explicitPayments !== null) {
+      const cashApplied = explicitPayments.reduce((sum, payment) => (
+        isRestaurantSplitCashPayment(payment)
+          ? Money.add(sum, payment?.amount ?? payment?.total ?? 0)
+          : sum
+      ), Money.init(0));
+      const nonCashApplied = explicitPayments.reduce((sum, payment) => (
+        ['card', 'transfer'].includes(normalizeRestaurantSplitPaymentMethod(
+          payment?.method || payment?.paymentMethod || payment?.payment_method
+        ))
+          ? Money.add(sum, payment?.amount ?? payment?.total ?? 0)
+          : sum
+      ), Money.init(0));
+      const isCredit = normalizeRestaurantSplitPaymentMethod(method) === 'credit';
+
+      if (isCredit && cashApplied.gt(0)) {
+        movements.push({
+          id: sale.id || `abono-${sale.timestamp}`,
+          sale,
+          saleId: sale.id || null,
+          sale_id: sale.id || null,
+          referenceType: 'sale',
+          referenceId: sale.id || null,
+          tipo: 'abono',
+          monto: Money.toExactString(cashApplied),
+          concepto: saleLabel,
+          secondaryReference: `Abono fiado · ${secondaryReference}`,
+          ...traceability,
+          fecha: sale.timestamp
+        });
+      } else if (!isCredit && cashApplied.gt(0)) {
+        movements.push({
+          id: sale.id || `venta-${sale.timestamp}`,
+          sale,
+          saleId: sale.id || null,
+          sale_id: sale.id || null,
+          referenceType: 'sale',
+          referenceId: sale.id || null,
+          tipo: 'venta',
+          monto: Money.toExactString(cashApplied),
+          concepto: saleLabel,
+          secondaryReference,
+          ...traceability,
+          fecha: sale.timestamp
+        });
+      } else if (!isCredit && nonCashApplied.gt(0)) {
+        movements.push({
+          id: sale.id || `venta-${sale.timestamp}`,
+          sale,
+          saleId: sale.id || null,
+          sale_id: sale.id || null,
+          referenceType: 'sale',
+          referenceId: sale.id || null,
+          tipo: 'venta_tarjeta',
+          monto: Money.toExactString(nonCashApplied),
+          concepto: saleLabel,
+          secondaryReference: `${secondaryReference} · ${sale.paymentMethod || 'Otro'}`,
+          ...traceability,
+          fecha: sale.timestamp
+        });
+      }
+      continue;
+    }
+
+    const isCredit = method === 'fiado';
     if (isCash) {
       movements.push({
         id: sale.id || `venta-${sale.timestamp}`,

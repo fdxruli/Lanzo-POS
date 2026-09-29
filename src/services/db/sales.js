@@ -35,7 +35,7 @@ const hasBatchDeductions = (item) => Array.isArray(item?.batchesUsed) && item.ba
 const saleHasCashComponent = (sale = {}) => {
     const paymentMethod = String(sale.paymentMethod || '').trim().toLowerCase();
     const explicitPayments = getExplicitSalePaymentRows(sale);
-    if (explicitPayments) {
+    if (explicitPayments !== null) {
         return explicitPayments.some((payment) => (
             isRestaurantSplitCashPayment(payment)
             && Money.init(payment?.amount ?? payment?.total ?? 0).gt(0)

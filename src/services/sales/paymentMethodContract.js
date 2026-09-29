@@ -44,6 +44,12 @@ const isValidSalePaymentRow = (payment) => {
     && amountValue !== '' && Number.isFinite(numericAmount) && numericAmount > 0;
 };
 
+/**
+ * `null` means there is no non-empty explicit payment source, so legacy fields
+ * remain usable. An empty array means a non-empty explicit source was present
+ * but contained no valid positive applied payments; callers must not fall back
+ * to the legacy sale total in that case.
+ */
 export const getExplicitSalePaymentRows = (sale = {}) => {
   const safeSale = sale && typeof sale === 'object' && !Array.isArray(sale) ? sale : {};
   const candidates = [
@@ -52,9 +58,10 @@ export const getExplicitSalePaymentRows = (sale = {}) => {
     safeSale.paymentDetails?.payments
   ];
   for (const candidate of candidates) {
-    if (!Array.isArray(candidate)) continue;
-    const validRows = candidate.filter(isValidSalePaymentRow);
-    if (validRows.length > 0) return validRows;
+    if (!Array.isArray(candidate) || candidate.length === 0) continue;
+    // The first non-empty source is authoritative, including when every row
+    // is zero, malformed, negative, or uses an unknown payment method.
+    return candidate.filter(isValidSalePaymentRow);
   }
   return null;
 };
