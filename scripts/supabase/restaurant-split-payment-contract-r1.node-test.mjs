@@ -51,6 +51,7 @@ test('canonical identity pins monetary intent, payer cents, and stable payment-t
 
 test('one-sale monetary executor validates payer tenders and reuses atomic sale plus table-close effects', () => {
   const executor = functionBody(migration, 'create or replace function private.execute_split_sale_financial_v1(');
+  assert.match(executor, /\bv_credit_customer_id\s+text;/u);
   assert.match(executor, /language plpgsql\s+security definer\s+set search_path = ''/u);
   assert.match(executor, /v_child_count <> 1/u);
   assert.match(executor, /FINANCIAL_SPLIT_EQUAL_DISTRIBUTION_INVALID/u);
