@@ -15,6 +15,7 @@ import { playBeep, playErrorBeep } from '../../services/audioBeep';
 import { useCallback, useRef, useState, useEffect } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { showMessageModal } from '../../services/utils';
+import { clearRestaurantSplitDraft } from '../../services/sales/restaurantSplitDraft';
 import './RestaurantCloudStatus.css';
 import './EcommercePosConversionPanel.css';
 
@@ -32,7 +33,8 @@ const ActiveOrderControls = () => {
     const handleDeleteOrder = async (id) => {
         try {
             setIsPausing(true);
-            await cancelOrder(id);
+            const result = await cancelOrder(id);
+            if (result?.success) clearRestaurantSplitDraft(id);
         } catch (error) {
             console.error('Error eliminando orden:', error);
             showMessageModal(error.message || 'Error al eliminar la orden', null, { type: 'error' });
@@ -260,6 +262,7 @@ const PosPageContent = ({ data, ui, actions, features }) => {
                     isCloudCash: data.isCloudCash,
                     isCloudCashReadOnly: data.isCloudCashReadOnly,
                     activeOrderId: data.activeOrderId,
+                    tableName: currentOrder?.tableData || '',
                     features
                 }}
             />
