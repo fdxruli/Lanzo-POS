@@ -138,6 +138,7 @@ Esta adenda registra únicamente las observaciones B y E informadas en QA manual
 | `MAIN_SYNC_PERFORMED` | Sí; merge de `origin/main` en la rama existente del PR, commit `cde359683` |
 | `PR337_HEAD_INITIAL` | `537cf10487a158bc3ee09ade6fc081f2e77eb20c` |
 | `PR337_HEAD_FINAL` | HEAD vigente de la rama `test/ai-lia-phase6-hardening-r1` al cierre del PR |
+| Commit de implementación y pruebas locales | `0679a5e1cfa3bac68972c7ff9d935ba2d09139f1` |
 | `PR336_MERGED_CONFIRMED` | Sí; squash merge en `3736dc6262afc34c6046efe81988eae9801d3919` |
 | Estado de PR #337 | Debe permanecer `OPEN / DRAFT`; sin merge |
 
