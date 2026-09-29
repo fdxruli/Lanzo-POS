@@ -118,6 +118,36 @@ const assortmentActor = () => ({
   tenant: { opaqueId: 'tenant-one', databaseName: 'tenant_db_one', generation: 1 }
 });
 
+const scopedActor = (tenantId, actorId, sessionId = `session-${actorId}`) => ({
+  status: 'granted',
+  actorType: 'admin',
+  actorId,
+  actorKey: `admin:${actorId}`,
+  sessionId,
+  deviceRef: `device-${actorId}`,
+  tenant: { opaqueId: tenantId, databaseName: `tenant_db_${tenantId}`, generation: 1 }
+});
+
+const salesRepositoryFor = (amount, saleId) => repository(
+  {
+    ...history,
+    rows: [{ ...history.rows[0], id: saleId, total: amount }]
+  },
+  {
+    ...profit,
+    rows: [{
+      ...profit.rows[0],
+      sale_id: saleId,
+      quantity: 1,
+      line_total: amount,
+      unit_cost: amount / 2,
+      cogs: amount / 2,
+      gross_profit: amount / 2,
+      gross_margin_percent: 50
+    }]
+  }
+);
+
 const assortmentRepository = () => {
   const makeHistory = (saleId) => ({
     source: { mode: 'cloud_final', stale: false },
@@ -205,7 +235,7 @@ describe('sales profitability agent service', () => {
     const runner = createSalesProfitabilityAgentRunner({
       repository: repository(),
       analyze,
-      assertActor: vi.fn()
+      assertActor: () => scopedActor('tenant-a', 'admin-a')
     });
 
     const result = await runner({
@@ -379,7 +409,7 @@ describe('sales profitability agent service', () => {
     const runner = createSalesProfitabilityAgentRunner({
       repository: repository(),
       analyze,
-      assertActor: vi.fn()
+      assertActor: () => scopedActor('tenant-a', 'admin-a')
     });
     const options = {
       question: 'Explica mi margen',
@@ -393,6 +423,86 @@ describe('sales profitability agent service', () => {
     const [firstResult, secondResult] = await Promise.all([first, second]);
     expect(analyze).toHaveBeenCalledTimes(1);
     expect(firstResult.response.executiveSummary).toBe(secondResult.response.executiveSummary);
+  });
+
+  it('does not share an in-flight request key across tenant, actor, or session contexts', async () => {
+    let releaseFirst;
+    const firstGate = new Promise((resolve) => { releaseFirst = resolve; });
+    const actorA = scopedActor('tenant-a', 'admin-a');
+    const actorB = scopedActor('tenant-b', 'admin-b');
+    const repoA = salesRepositoryFor(100, 'sale-a');
+    const repoB = salesRepositoryFor(250, 'sale-b');
+    const analyzeA = vi.fn(async () => {
+      await firstGate;
+      return { rawResultContent: providerResponse };
+    });
+    const analyzeB = vi.fn(async () => ({ rawResultContent: providerResponse }));
+    const runnerA = createSalesProfitabilityAgentRunner({ repository: repoA, analyze: analyzeA, assertActor: () => actorA });
+    const runnerB = createSalesProfitabilityAgentRunner({ repository: repoB, analyze: analyzeB, assertActor: () => actorB });
+    const options = {
+      question: '¿Mi negocio es rentable?',
+      period: { from: '2026-09-01', to: '2026-09-07', days: 7 },
+      requestKey: 'same-request-key-across-tenants'
+    };
+
+    const resultA = runnerA(options);
+    const resultB = runnerB(options);
+    releaseFirst();
+    const [firstResult, secondResult] = await Promise.all([resultA, resultB]);
+
+    expect(firstResult.response.current.netSales).toBe(100);
+    expect(secondResult.response.current.netSales).toBe(250);
+    expect(analyzeA).toHaveBeenCalledTimes(1);
+    expect(analyzeB).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops before narrative when the authorized actor changes during sales reads', async () => {
+    let releaseRead;
+    const readGate = new Promise((resolve) => { releaseRead = resolve; });
+    const reports = repository();
+    reports.getSalesFinalHistory = vi.fn(async () => {
+      await readGate;
+      return history;
+    });
+    const originalActor = scopedActor('tenant-a', 'admin-a');
+    const changedActor = scopedActor('tenant-b', 'admin-b');
+    const assertActor = vi.fn().mockReturnValueOnce(originalActor).mockReturnValue(changedActor);
+    const analyze = vi.fn(async () => ({ rawResultContent: providerResponse }));
+    const runner = createSalesProfitabilityAgentRunner({ repository: reports, analyze, assertActor });
+    const pending = runner({
+      question: '¿Mi negocio es rentable?',
+      period: { from: '2026-09-01', to: '2026-09-07', days: 7 },
+      requestKey: 'actor-switch-during-sales-read'
+    });
+
+    releaseRead();
+    await expect(pending).rejects.toMatchObject({ code: 'AI_AGENT_TENANT_CHANGED', statusCode: 409 });
+    expect(analyze).not.toHaveBeenCalled();
+  });
+
+  it('does not return a provider result after the actor changes during the provider call', async () => {
+    let releaseProvider;
+    const providerGate = new Promise((resolve) => { releaseProvider = resolve; });
+    const originalActor = scopedActor('tenant-a', 'admin-a');
+    const changedActor = scopedActor('tenant-b', 'admin-b');
+    const assertActor = vi.fn()
+      .mockReturnValueOnce(originalActor)
+      .mockReturnValueOnce(originalActor)
+      .mockReturnValue(changedActor);
+    const analyze = vi.fn(async () => {
+      await providerGate;
+      return { rawResultContent: providerResponse };
+    });
+    const runner = createSalesProfitabilityAgentRunner({ repository: repository(), analyze, assertActor });
+    const pending = runner({
+      question: '¿Mi negocio es rentable?',
+      period: { from: '2026-09-01', to: '2026-09-07', days: 7 },
+      requestKey: 'actor-switch-during-provider'
+    });
+    await vi.waitFor(() => expect(analyze).toHaveBeenCalledTimes(1));
+    releaseProvider();
+
+    await expect(pending).rejects.toMatchObject({ code: 'AI_AGENT_TENANT_CHANGED', statusCode: 409 });
   });
 
   it('does not call the provider when the period has no valid sales', async () => {

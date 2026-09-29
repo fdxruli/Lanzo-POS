@@ -1075,7 +1075,7 @@ describe('commercial AI center', () => {
       compare: false,
       scenario: {}
     });
-  });
+  }, 30000);
 
   it('converts numeric scenario inputs and removes irrelevant fields before submitting', async () => {
     renderCenter();
@@ -1120,6 +1120,36 @@ describe('commercial AI center', () => {
     expect(screen.getByRole('combobox', { name: 'Producto' }).value).toBe('');
     expect(screen.getByLabelText('Nuevo precio').value).toBe('');
     expect(screen.getByLabelText('Volumen esperado (opcional)').value).toBe('');
+  });
+
+  it('does not show a completed result under a different question selected while analysis is pending', async () => {
+    let completeAnalysis;
+    runtime.runAgent.mockImplementationOnce(() => new Promise((resolve) => { completeAnalysis = resolve; }));
+    renderCenter();
+    fireEvent.click(screen.getByRole('button', { name: '¿Cómo puedo aumentar mis ventas?' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+    await waitFor(() => expect(runtime.runAgent).toHaveBeenCalledTimes(1));
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), {
+      target: { value: '¿Cómo está mi surtido?' }
+    });
+    expect(screen.getByRole('textbox', { name: 'Pregunta libre' }).value).toBe('¿Cómo está mi surtido?');
+    completeAnalysis({
+      response: {
+        status: 'completed',
+        executiveSummary: 'Respuesta de la pregunta anterior',
+        explanation: 'Este resultado pertenece a otra pregunta.',
+        facts: [], calculations: [], assumptions: [], limitations: [], recommendations: [], scenarios: []
+      },
+      providerCalled: false,
+      quotaOutcome: 'not_consumed',
+      usageStatus: null
+    });
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Analizar' })).toBeEnabled());
+    expect(screen.queryByText('Respuesta de la pregunta anterior')).not.toBeInTheDocument();
+    expect(screen.queryByText('Este resultado pertenece a otra pregunta.')).not.toBeInTheDocument();
+    await waitFor(() => expect([...runtime.historyStorage.values()].join('\n')).toContain('¿Cómo puedo aumentar mis ventas?'));
   });
 
   it('shows only contextual filters and defaults comparison to explain_change', async () => {

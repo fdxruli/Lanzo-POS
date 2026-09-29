@@ -34,7 +34,15 @@ const catalog = {
   products: [{ id: 'private-product-id', name: 'Café Sierra', categoryId: 'cat-1', price: 35, unit: '500 ml', isActive: true }]
 };
 
-const actor = { tenant: { opaqueId: 'tenant-a', databaseName: 'tenant-db-a', generation: 4 } };
+const actor = {
+  status: 'granted',
+  actorType: 'admin',
+  actorId: 'admin-a',
+  actorKey: 'admin:admin-a',
+  sessionId: 'session-a',
+  deviceRef: 'device-a',
+  tenant: { opaqueId: 'tenant-a', databaseName: 'tenant-db-a', generation: 4 }
+};
 
 const memoryStorage = () => {
   const values = new Map();

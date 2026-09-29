@@ -4,6 +4,7 @@ import { getSalesFinalHistoryScope } from '../auth/salesPermissionPolicy';
 import { reportsRepository } from '../reports/reportsRepository';
 import { productRepository } from '../products/productRepository';
 import { useAppStore } from '../../store/useAppStore';
+import { getLicenseKeyFromDetails } from '../sync/syncConstants';
 import {
   buildPreviousPeriod,
   buildSalesProfitabilityAnalysis
@@ -169,6 +170,32 @@ const stableSerialize = (value) => {
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(stableSerialize).join(',')}]`;
   return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableSerialize(value[key])}`).join(',')}}`;
+};
+
+const actorRequestContextKey = (actor, licenseKey = getLicenseKeyFromDetails(useAppStore.getState()?.licenseDetails || {})) => {
+  const tenantKey = tenantContextKey(actor);
+  const actorKey = actor?.actorKey
+    || (actor?.actorType && actor?.actorId ? `${actor.actorType}:${actor.actorId}` : null);
+  if (!tenantKey || !actorKey || !actor?.sessionId) return null;
+  return stableSerialize({
+    tenantKey,
+    actorKey,
+    sessionId: actor.sessionId,
+    deviceRef: actor.deviceRef || null,
+    licenseKey: licenseKey || null
+  });
+};
+
+const assertActorContextUnchanged = (initialActor, currentActor, initialKey = actorRequestContextKey(initialActor)) => {
+  const currentKey = actorRequestContextKey(currentActor);
+  if (!initialKey || !currentKey || initialKey !== currentKey) {
+    throw new AIApiError(
+      'La sesión, el negocio o la licencia cambiaron durante la consulta. Vuelve a intentar el análisis.',
+      409,
+      { code: 'AI_AGENT_TENANT_CHANGED' },
+      'AI_AGENT_TENANT_CHANGED'
+    );
+  }
 };
 
 const defaultRequestKey = (request) => {
@@ -1101,8 +1128,9 @@ export const createSalesProfitabilityAgentRunner = ({
     }
 
     const actor = assertActor();
+    const actorContextKey = actorRequestContextKey(actor);
     const catalog = await catalogLoader({ repository: catalogRepository, actor, assertActor });
-    assertTenantUnchanged(actor, assertActor());
+    assertActorContextUnchanged(actor, assertActor(), actorContextKey);
     const companyProfile = useAppStore.getState()?.companyProfile || {};
     // Retail catalog amounts are formatted as MXN throughout Lanzo when no tenant currency is set.
     const ownCurrency = companyProfile.currency || companyProfile.currencyCode || 'MXN';
@@ -1208,11 +1236,19 @@ export const createSalesProfitabilityAgentRunner = ({
     throw new AIApiError('La pregunta del agente de ventas no es válida.', 400, validation, validation.code);
   }
 
-  const dedupeKey = requestKey || defaultRequestKey(request);
+  const actor = assertActor();
+  const actorContextKey = actorRequestContextKey(actor);
+  const assertCurrentActor = () => {
+    const currentActor = assertActor();
+    if (actorContextKey) assertActorContextUnchanged(actor, currentActor, actorContextKey);
+    return currentActor;
+  };
+  const dedupeKey = actorContextKey
+    ? `${actorContextKey}\u0000${requestKey || defaultRequestKey(request)}`
+    : Symbol(`unbound-ai-request:${requestKey || 'no-key'}`);
   if (inflightRequests.has(dedupeKey)) return inflightRequests.get(dedupeKey);
 
   const execution = (async () => {
-    const actor = assertActor();
     const scope = getSalesFinalHistoryScope(actor);
     const [currentDataset, previousDataset, catalog] = await Promise.all([
       loadSalesProfitabilityDataset({ repository, period: currentPeriod, scope }),
@@ -1223,7 +1259,7 @@ export const createSalesProfitabilityAgentRunner = ({
         ? catalogLoader({ repository: catalogRepository, actor, assertActor })
         : Promise.resolve(null)
     ]);
-    if (resolvedIntent === ASSORTMENT_INTENT || strategyRequested) assertTenantUnchanged(actor, assertActor());
+    assertCurrentActor();
 
     const deterministicBase = buildSalesProfitabilityAnalysis({
       period: currentPeriod,
@@ -1340,6 +1376,7 @@ export const createSalesProfitabilityAgentRunner = ({
         context,
         requestKey: requestKey || null
       }, { temperature: 0.2, maxTokens: 2048 });
+      assertCurrentActor();
       providerOutcome = {
         providerCalled: typeof providerResult?.providerCalled === 'boolean'
           ? providerResult.providerCalled
@@ -1363,6 +1400,8 @@ export const createSalesProfitabilityAgentRunner = ({
         intentResolution: resolution
       };
     } catch (error) {
+      if (error?.code === 'AI_AGENT_TENANT_CHANGED') throw error;
+      assertCurrentActor();
       const errorCode = error?.code || error?.originalError?.code;
       const execution = providerOutcome || readFailureExecution(error);
       const diagnosticCode = errorCode === 'INVALID_REQUEST'
