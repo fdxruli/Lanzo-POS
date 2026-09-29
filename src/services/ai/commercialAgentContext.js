@@ -2,6 +2,8 @@ import { COMMERCIAL_AGENT_KEYS } from './commercialAgentContract';
 
 const MAX_PRODUCT_NAME_LENGTH = 120;
 const MAX_ROWS = 20;
+const MAX_PRODUCT_CANDIDATE_ROWS = 10000;
+const MAX_INTERNAL_EVIDENCE_KEYS = MAX_PRODUCT_CANDIDATE_ROWS + 128;
 const SAFE_SOURCES = new Set(['cloud', 'local', 'mixed']);
 const STRATEGY_SUMMARY_EVIDENCE_KEYS = new Set([
   'profitability.netSales', 'profitability.profit', 'profitability.margin', 'profitability.costCoverage',
@@ -186,9 +188,10 @@ export const buildCommercialOpportunityCandidates = (intent, sales = {}) => {
       signal: positiveSignals,
       recommendationType: 'growth_experiment',
       strength: strong ? 'strong' : 'moderate',
-      score: positiveSignals.includes('high_sales_share') ? 100
-        : positiveSignals.includes('growing') ? 90
-          : positiveSignals.includes('healthy_margin') ? 80 : 60,
+      score: positiveSignals.includes('high_sales_share') && positiveSignals.includes('growing') ? 100
+        : positiveSignals.includes('high_sales_share') ? 90
+          : positiveSignals.includes('growing') ? 80
+            : positiveSignals.includes('healthy_margin') ? 70 : 60,
       metrics: {
         currentSales: candidateNumber(product.currentSales),
         currentShare: candidateNumber(product.currentShare),
@@ -198,8 +201,16 @@ export const buildCommercialOpportunityCandidates = (intent, sales = {}) => {
       },
       evidenceKeys
     });
-    const prior = uniqueProducts.get(key);
-    if (!prior || candidate.score > prior.score) uniqueProducts.set(key, candidate);
+    const prior = uniqueProducts.get(name);
+    const priorCurrentSales = candidateNumber(prior?.metrics?.currentSales) ?? 0;
+    const candidateCurrentSales = candidateNumber(candidate.metrics.currentSales) ?? 0;
+    const priorSalesDelta = Math.abs(candidateNumber(prior?.metrics?.salesDelta) ?? 0);
+    const candidateSalesDelta = Math.abs(candidateNumber(candidate.metrics.salesDelta) ?? 0);
+    if (!prior || candidate.score > prior.score
+      || (candidate.score === prior.score && candidateCurrentSales > priorCurrentSales)
+      || (candidate.score === prior.score && candidateCurrentSales === priorCurrentSales && candidateSalesDelta > priorSalesDelta)) {
+      uniqueProducts.set(name, candidate);
+    }
   });
   uniqueProducts.forEach(add);
 
@@ -295,8 +306,35 @@ export const buildCommercialOpportunityCandidates = (intent, sales = {}) => {
   }
 
   const sorted = candidates
-    .sort((left, right) => right.score - left.score || left.key.localeCompare(right.key));
-  const selected = sorted.slice(0, intent === 'sales_growth' ? 7 : 4)
+    .map((candidate, index) => ({ candidate, index }))
+    .sort((left, right) => {
+      const scoreDelta = right.candidate.score - left.candidate.score;
+      if (scoreDelta) return scoreDelta;
+      const leftMetrics = asRecord(left.candidate.metrics);
+      const rightMetrics = asRecord(right.candidate.metrics);
+      const shareDelta = (candidateNumber(rightMetrics.currentShare) ?? 0)
+        - (candidateNumber(leftMetrics.currentShare) ?? 0);
+      if (shareDelta) return shareDelta;
+      const salesDelta = Math.abs(candidateNumber(rightMetrics.salesDelta) ?? 0)
+        - Math.abs(candidateNumber(leftMetrics.salesDelta) ?? 0);
+      if (salesDelta) return salesDelta;
+      const unitsDelta = (candidateNumber(rightMetrics.currentUnits) ?? 0)
+        - (candidateNumber(leftMetrics.currentUnits) ?? 0);
+      if (unitsDelta) return unitsDelta;
+      const currentSalesDelta = (candidateNumber(rightMetrics.currentSales) ?? 0)
+        - (candidateNumber(leftMetrics.currentSales) ?? 0);
+      return currentSalesDelta || left.index - right.index;
+    })
+    .map(({ candidate }) => candidate);
+  const candidateLimit = intent === 'sales_growth' ? 7 : 4;
+  const productCandidateLimit = intent === 'sales_growth' ? 4 : candidateLimit;
+  let selectedProductCount = 0;
+  const selected = sorted.filter((candidate) => {
+    if (candidate.type !== 'product') return true;
+    if (selectedProductCount >= productCandidateLimit) return false;
+    selectedProductCount += 1;
+    return true;
+  }).slice(0, candidateLimit)
     .map(({ score: _score, ...candidate }) => candidate);
   const actionableCandidates = selected.filter((candidate) => candidate.strength === 'strong'
     && ['growth_experiment', 'optimization'].includes(candidate.recommendationType)).length;
@@ -333,7 +371,8 @@ const selectNarrativeRows = (rows, limit) => (
 const projectNarrativeProduct = (product, intent) => {
   const keys = intent === 'product_opportunity'
     ? [
-      'name', 'currentSales', 'previousSales', 'salesDelta', 'salesDeltaPercent', 'currentShare', 'previousShare',
+      'name', 'currentSales', 'previousSales', 'salesDelta', 'salesDeltaPercent', 'currentUnits', 'previousUnits', 'unitsDelta',
+      'currentShare', 'previousShare',
       'salesShareDelta', 'costKnown', 'costStatus', 'direction', 'signals', 'opportunityReason'
     ]
     : intent === 'ticket_growth'
@@ -634,13 +673,14 @@ const buildNarrativeEvidence = (intent, sales) => {
 
   const growthSignals = { comparisonAvailable: signals.comparisonAvailable === true };
   if (intent === 'sales_growth') {
-    growthSignals.productOpportunities = selectNarrativeRows(opportunities, 3).map((product) => projectNarrativeProduct(product, intent));
+    growthSignals.productOpportunities = opportunities.slice(0, MAX_PRODUCT_CANDIDATE_ROWS)
+      .map((product) => projectNarrativeProduct(product, intent));
     growthSignals.productsDeclining = selectNarrativeRows(declining, 3).map((product) => projectNarrativeProduct(product, intent));
   } else if (intent === 'ticket_growth') {
     growthSignals.productOpportunities = selectNarrativeRows(opportunities.length ? opportunities : growing, 2)
       .map((product) => projectNarrativeProduct(product, intent));
   } else if (intent === 'product_opportunity') {
-    growthSignals.productOpportunities = selectNarrativeRows(opportunities, 3)
+    growthSignals.productOpportunities = opportunities.slice(0, MAX_PRODUCT_CANDIDATE_ROWS)
       .map((product) => projectNarrativeProduct(product, intent));
   }
   if (['sales_growth', 'sales_trend'].includes(intent)) {
@@ -648,6 +688,33 @@ const buildNarrativeEvidence = (intent, sales) => {
   }
 
   const availableEvidence = new Set(Array.isArray(sales.evidenceKeys) ? sales.evidenceKeys : []);
+  const opportunityPlan = buildCommercialOpportunityCandidates(intent, {
+    summary: sales.summary,
+    comparison,
+    growthSignals,
+    // Rank against the full bounded internal evidence set. Compact only after
+    // candidates are selected so an early product name cannot consume the
+    // narrative evidence budget and hide a stronger later candidate.
+    evidenceKeys: Array.from(availableEvidence),
+    coverage: sales.coverage
+  });
+  if (['sales_growth', 'product_opportunity'].includes(intent)) {
+    const selectedProductNames = opportunityPlan.candidates
+      .filter((candidate) => candidate.type === 'product')
+      .slice(0, 3)
+      .map((candidate) => candidate.entity);
+    const opportunityByName = new Map();
+    opportunities.forEach((product) => {
+      if (typeof product?.name === 'string' && !opportunityByName.has(product.name)) {
+        opportunityByName.set(product.name, product);
+      }
+    });
+    growthSignals.productOpportunities = selectedProductNames
+      .map((name) => opportunityByName.get(name))
+      .filter(Boolean)
+      .map((product) => projectNarrativeProduct(product, intent));
+  }
+
   const entityPrefixes = NARRATIVE_ENTITY_PREFIXES[intent] || [];
   const selectedEntityKeys = [
     ...(entityPrefixes.includes('product:')
@@ -661,17 +728,12 @@ const buildNarrativeEvidence = (intent, sales) => {
         .filter((channel) => typeof channel === 'string').map((channel) => `channel:${channel}`)
       : [])
   ].filter((key) => availableEvidence.has(key));
+  const candidateEvidenceKeys = opportunityPlan.candidates.flatMap((candidate) => candidate.evidenceKeys);
   const evidenceKeys = [
+    ...candidateEvidenceKeys,
     ...selectedEntityKeys,
     ...(NARRATIVE_EVIDENCE_KEYS[intent] || []).filter((key) => availableEvidence.has(key))
   ].filter((key, index, values) => values.indexOf(key) === index).slice(0, 24);
-  const opportunityPlan = buildCommercialOpportunityCandidates(intent, {
-    summary: sales.summary,
-    comparison,
-    growthSignals,
-    evidenceKeys,
-    coverage: sales.coverage
-  });
 
   return {
     summary: pickOwnFields(asRecord(sales.summary), summaryFields),
@@ -1071,7 +1133,7 @@ const buildEvidenceKeys = (source = {}) => {
   if (Array.isArray(value.scenarios) && value.scenarios.length) {
     keys.push('scenarios.values');
   }
-  return Array.from(new Set(keys)).slice(0, 80);
+  return Array.from(new Set(keys)).slice(0, MAX_INTERNAL_EVIDENCE_KEYS);
 };
 
 const normalizeSalesPayload = (payload = {}, intent = null) => {
@@ -1178,6 +1240,9 @@ const normalizeGrowthSignals = (signals = {}, prioritizeNarrativeEvidence = fals
   const rows = (value, limit) => (prioritizeNarrativeEvidence
     ? selectNarrativeRows(value, limit)
     : (Array.isArray(value) ? value.slice(0, limit) : []));
+  const productOpportunityRows = Array.isArray(source.productOpportunities)
+    ? source.productOpportunities.slice(0, MAX_PRODUCT_CANDIDATE_ROWS)
+    : [];
   const numericKeys = [
     'currentNetSales', 'currentSalesCount', 'currentUnits', 'currentAverageTicket', 'currentUnitsPerTicket',
     'previousNetSales', 'deltaNetSales', 'deltaNetSalesPercent', 'previousSalesCount', 'deltaSalesCount',
@@ -1188,7 +1253,7 @@ const normalizeGrowthSignals = (signals = {}, prioritizeNarrativeEvidence = fals
     ...Object.fromEntries(numericKeys.map((key) => [key, pickNumber(source, [key])])),
     productsGrowing: rows(source.productsGrowing, 5).map(normalizeProductChange),
     productsDeclining: rows(source.productsDeclining, 5).map(normalizeProductChange),
-    productOpportunities: rows(source.productOpportunities, 8).map(normalizeProductChange),
+    productOpportunities: productOpportunityRows.map(normalizeProductChange),
     channelChanges: rows(source.channelChanges, 12).map((row = {}) => {
       const item = asRecord(row);
       return {

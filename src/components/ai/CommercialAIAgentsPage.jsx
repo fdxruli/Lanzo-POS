@@ -1701,6 +1701,7 @@ export default function CommercialAIAgentsPage() {
   const [selectedHistoryEntryId, setSelectedHistoryEntryId] = useState(null);
   const [isDownloadingHistory, setIsDownloadingHistory] = useState(false);
   const analysisInFlightRef = useRef(false);
+  const analysisInputsRevisionRef = useRef(0);
   const historyContextTokenRef = useRef(historyContextToken);
   const historyScopeRef = useRef({ contextToken: null, scopeKey: null });
   useLayoutEffect(() => {
@@ -1742,6 +1743,7 @@ export default function CommercialAIAgentsPage() {
 
   useEffect(() => {
     let active = true;
+    analysisInputsRevisionRef.current += 1;
     historyScopeRef.current = { contextToken: null, scopeKey: null };
     setHistoryState({
       contextToken: historyContextToken,
@@ -1940,6 +1942,7 @@ export default function CommercialAIAgentsPage() {
   }, [period, intent, scenario.goalType, scenario.changeType, productCatalogPrerequisites.valid, productLoadRetry]);
 
   const selectIntent = (text) => {
+    analysisInputsRevisionRef.current += 1;
     const inferred = inferCommercialScenarioFromQuestion(text);
     setScenario(inferred.scenario || {});
     setProductSearch('');
@@ -1955,6 +1958,7 @@ export default function CommercialAIAgentsPage() {
   };
 
   const handleQuestionChange = (event) => {
+    analysisInputsRevisionRef.current += 1;
     const nextQuestion = event.target.value;
     const inferred = inferCommercialScenarioFromQuestion(nextQuestion);
     setScenario(inferred.scenario || {});
@@ -1970,6 +1974,7 @@ export default function CommercialAIAgentsPage() {
   };
 
   const handleScenarioChange = (event) => {
+    analysisInputsRevisionRef.current += 1;
     const { name, value } = event.target;
     setScenario((current) => ({ ...current, [name]: value === '' ? undefined : value }));
   };
@@ -2089,6 +2094,7 @@ export default function CommercialAIAgentsPage() {
     setQuestionValidationSubmitted(false);
 
     analysisInFlightRef.current = true;
+    const analysisInputsRevision = analysisInputsRevisionRef.current;
     const queriedAt = new Date().toISOString();
     const requestContextToken = historyContextToken;
     setIsAnalyzing(true);
@@ -2171,15 +2177,7 @@ export default function CommercialAIAgentsPage() {
         ...response,
         quotaOutcome: response?.quotaOutcome || 'not_confirmed'
       };
-      setResult(completedResult);
       if (completedResult.usageStatus) setUsageStatus(completedResult.usageStatus);
-      setDownloadContext({
-        ...requestContext,
-        period: {
-          ...requestContext.period,
-          timezone: response?.response?.queryRange?.current?.timezone || businessTimezone
-        }
-      });
       if (completedResult.providerCalled) void refreshUsage();
       void persistHistoryEntry({
         completedResult,
@@ -2193,14 +2191,26 @@ export default function CommercialAIAgentsPage() {
         queriedAt,
         contextToken: requestContextToken
       });
+      if (analysisInputsRevisionRef.current !== analysisInputsRevision) return;
+      setResult(completedResult);
+      setDownloadContext({
+        ...requestContext,
+        period: {
+          ...requestContext.period,
+          timezone: response?.response?.queryRange?.current?.timezone || businessTimezone
+        }
+      });
     } catch (error) {
+      if (historyContextTokenRef.current !== requestContextToken) return;
       console.error('[CommercialAIAgentsPage] No se pudo procesar la consulta.', {
         code: error?.code || error?.originalError?.code || 'COMMERCIAL_ANALYSIS_FAILED',
         statusCode: error?.statusCode || null,
         requestId: error?.originalError?.requestId || error?.originalError?.request_id || null,
         cause: error?.originalError?.message || error?.message || null
       });
-      setAnalysisError('No pudimos procesar esta consulta. Revisa las opciones seleccionadas e inténtalo nuevamente.');
+      if (analysisInputsRevisionRef.current === analysisInputsRevision) {
+        setAnalysisError('No pudimos procesar esta consulta. Revisa las opciones seleccionadas e inténtalo nuevamente.');
+      }
       void refreshUsage();
     } finally {
       analysisInFlightRef.current = false;
@@ -2329,7 +2339,10 @@ export default function CommercialAIAgentsPage() {
           {(questionResolution.topic === 'competition' || intent === 'competitive_analysis') && (
             <CompetitiveEvidenceBuilder
               value={competitiveEvidence}
-              onChange={setCompetitiveEvidence}
+              onChange={(nextEvidence) => {
+                analysisInputsRevisionRef.current += 1;
+                setCompetitiveEvidence(nextEvidence);
+              }}
               showValidation={competitiveValidationSubmitted}
               disabled={isAnalyzing}
             />
@@ -2339,14 +2352,20 @@ export default function CommercialAIAgentsPage() {
             <div className="commercial-ai-filters">
               <label className="commercial-ai-label" htmlFor="sales-agent-period">Periodo
                 <span className="commercial-ai-select-wrap">
-                  <select id="sales-agent-period" value={periodDays} onChange={(event) => setPeriodDays(Number(event.target.value))}>
+                  <select id="sales-agent-period" value={periodDays} onChange={(event) => {
+                    analysisInputsRevisionRef.current += 1;
+                    setPeriodDays(Number(event.target.value));
+                  }}>
                     {PERIOD_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                   </select>
                   <ChevronDown size={15} aria-hidden="true" />
                 </span>
               </label>
               {intent === 'explain_change' && (
-                <label className="commercial-ai-checkbox"><input type="checkbox" checked={compare} onChange={(event) => setCompare(event.target.checked)} /> Comparar con el periodo anterior</label>
+                <label className="commercial-ai-checkbox"><input type="checkbox" checked={compare} onChange={(event) => {
+                  analysisInputsRevisionRef.current += 1;
+                  setCompare(event.target.checked);
+                }} /> Comparar con el periodo anterior</label>
               )}
               {(['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend', 'assortment_analysis'].includes(intent) || strategyRequested)
                 && <p className="commercial-ai-comparison-note">Se incluirá el periodo anterior de duración equivalente cuando haya datos disponibles.</p>}
@@ -2518,7 +2537,8 @@ export default function CommercialAIAgentsPage() {
                       <span className="commercial-ai-select-wrap">
                         <select id="sales-agent-promotion-mode" value={promotionMode}
                           className={scenarioIssueFor('sales-agent-promotion-mode') ? 'lia-form-control--invalid' : undefined}
-                          {...scenarioFieldProps('sales-agent-promotion-mode')} onChange={(event) => {
+                        {...scenarioFieldProps('sales-agent-promotion-mode')} onChange={(event) => {
+                          analysisInputsRevisionRef.current += 1;
                           const nextMode = event.target.value;
                           setPromotionMode(nextMode);
                           setScenario((current) => ({ ...current, promotionalPrice: undefined, discountPercent: undefined }));

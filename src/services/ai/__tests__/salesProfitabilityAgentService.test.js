@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { useAppStore } from '../../../store/useAppStore';
 import {
   createSalesProfitabilityAgentRunner,
   createSalesProfitabilityProductLoader,
@@ -118,6 +119,36 @@ const assortmentActor = () => ({
   tenant: { opaqueId: 'tenant-one', databaseName: 'tenant_db_one', generation: 1 }
 });
 
+const scopedActor = (tenantId, actorId, sessionId = `session-${actorId}`) => ({
+  status: 'granted',
+  actorType: 'admin',
+  actorId,
+  actorKey: `admin:${actorId}`,
+  sessionId,
+  deviceRef: `device-${actorId}`,
+  tenant: { opaqueId: tenantId, databaseName: `tenant_db_${tenantId}`, generation: 1 }
+});
+
+const salesRepositoryFor = (amount, saleId) => repository(
+  {
+    ...history,
+    rows: [{ ...history.rows[0], id: saleId, total: amount }]
+  },
+  {
+    ...profit,
+    rows: [{
+      ...profit.rows[0],
+      sale_id: saleId,
+      quantity: 1,
+      line_total: amount,
+      unit_cost: amount / 2,
+      cogs: amount / 2,
+      gross_profit: amount / 2,
+      gross_margin_percent: 50
+    }]
+  }
+);
+
 const assortmentRepository = () => {
   const makeHistory = (saleId) => ({
     source: { mode: 'cloud_final', stale: false },
@@ -191,6 +222,8 @@ describe('sales profitability agent service', () => {
     expect(result.usageStatus.remaining).toBe(14);
     expect(result.response.coverage.complete).toBe(true);
     expect(result.response.current.costStatus).toBe('estimated');
+    expect(JSON.stringify(result.response)).not.toContain('private-product-id');
+    expect(JSON.stringify(result.response)).not.toContain('internal-sale-id');
     expect(result.response.queryRange.current).toMatchObject({
       fromInclusiveUtc: '2026-09-01T06:00:00.000Z',
       toExclusiveUtc: '2026-09-08T06:00:00.000Z'
@@ -205,7 +238,7 @@ describe('sales profitability agent service', () => {
     const runner = createSalesProfitabilityAgentRunner({
       repository: repository(),
       analyze,
-      assertActor: vi.fn()
+      assertActor: () => scopedActor('tenant-a', 'admin-a')
     });
 
     const result = await runner({
@@ -379,7 +412,7 @@ describe('sales profitability agent service', () => {
     const runner = createSalesProfitabilityAgentRunner({
       repository: repository(),
       analyze,
-      assertActor: vi.fn()
+      assertActor: () => scopedActor('tenant-a', 'admin-a')
     });
     const options = {
       question: 'Explica mi margen',
@@ -393,6 +426,133 @@ describe('sales profitability agent service', () => {
     const [firstResult, secondResult] = await Promise.all([first, second]);
     expect(analyze).toHaveBeenCalledTimes(1);
     expect(firstResult.response.executiveSummary).toBe(secondResult.response.executiveSummary);
+  });
+
+  it.each([
+    {
+      dimension: 'tenant',
+      changeActor: (actor) => ({
+        ...actor,
+        tenant: { ...actor.tenant, opaqueId: 'tenant-b', databaseName: 'tenant_db_tenant-b' }
+      })
+    },
+    {
+      dimension: 'actor',
+      changeActor: (actor) => ({ ...actor, actorId: 'admin-b', actorKey: 'admin:admin-b' })
+    },
+    {
+      dimension: 'session',
+      changeActor: (actor) => ({ ...actor, sessionId: 'session-b' })
+    },
+    {
+      dimension: 'device',
+      changeActor: (actor) => ({ ...actor, deviceRef: 'device-b' })
+    },
+    { dimension: 'license', changeActor: (actor) => actor }
+  ])('does not share an in-flight request when only the $dimension context changes', async ({ dimension, changeActor }) => {
+    let releaseFirst;
+    const firstGate = new Promise((resolve) => { releaseFirst = resolve; });
+    const originalLicenseDetails = useAppStore.getState()?.licenseDetails;
+    const actorA = scopedActor('tenant-a', 'admin-a', 'session-shared');
+    const actorB = changeActor(actorA);
+    const repoA = salesRepositoryFor(100, 'sale-a');
+    const repoB = salesRepositoryFor(250, 'sale-b');
+    const analyzeA = vi.fn(async () => {
+      await firstGate;
+      return { rawResultContent: providerResponse };
+    });
+    const analyzeB = vi.fn(async () => ({ rawResultContent: providerResponse }));
+    const runnerA = createSalesProfitabilityAgentRunner({ repository: repoA, analyze: analyzeA, assertActor: () => actorA });
+    const runnerB = createSalesProfitabilityAgentRunner({ repository: repoB, analyze: analyzeB, assertActor: () => actorB });
+    const options = {
+      question: '¿Mi negocio es rentable?',
+      period: { from: '2026-09-01', to: '2026-09-07', days: 7 },
+      requestKey: `same-request-key-different-${dimension}`
+    };
+
+    if (dimension === 'license') {
+      useAppStore.setState({ licenseDetails: { license_key: 'synthetic-license-a' } });
+    }
+
+    const resultA = runnerA(options);
+    let resultB;
+    try {
+      if (dimension === 'license') {
+        await vi.waitFor(() => expect(analyzeA).toHaveBeenCalledTimes(1));
+        useAppStore.setState({ licenseDetails: { license_key: 'synthetic-license-b' } });
+      }
+
+      resultB = runnerB(options);
+      await vi.waitFor(() => expect(analyzeB).toHaveBeenCalledTimes(1));
+      releaseFirst();
+      const [firstResult, secondResult] = await Promise.allSettled([resultA, resultB]);
+
+      expect(secondResult.status).toBe('fulfilled');
+      expect(secondResult.value.response.current.netSales).toBe(250);
+      expect(analyzeA).toHaveBeenCalledTimes(1);
+      expect(analyzeB).toHaveBeenCalledTimes(1);
+      if (dimension === 'license') {
+        expect(firstResult).toMatchObject({ status: 'rejected', reason: { code: 'AI_AGENT_TENANT_CHANGED' } });
+      } else {
+        expect(firstResult.status).toBe('fulfilled');
+        expect(firstResult.value.response.current.netSales).toBe(100);
+      }
+    } finally {
+      releaseFirst();
+      await Promise.allSettled(resultB ? [resultA, resultB] : [resultA]);
+      if (dimension === 'license') {
+        useAppStore.setState({ licenseDetails: originalLicenseDetails });
+      }
+    }
+  });
+
+  it('stops before narrative when the authorized actor changes during sales reads', async () => {
+    let releaseRead;
+    const readGate = new Promise((resolve) => { releaseRead = resolve; });
+    const reports = repository();
+    reports.getSalesFinalHistory = vi.fn(async () => {
+      await readGate;
+      return history;
+    });
+    const originalActor = scopedActor('tenant-a', 'admin-a');
+    const changedActor = scopedActor('tenant-b', 'admin-b');
+    const assertActor = vi.fn().mockReturnValueOnce(originalActor).mockReturnValue(changedActor);
+    const analyze = vi.fn(async () => ({ rawResultContent: providerResponse }));
+    const runner = createSalesProfitabilityAgentRunner({ repository: reports, analyze, assertActor });
+    const pending = runner({
+      question: '¿Mi negocio es rentable?',
+      period: { from: '2026-09-01', to: '2026-09-07', days: 7 },
+      requestKey: 'actor-switch-during-sales-read'
+    });
+
+    releaseRead();
+    await expect(pending).rejects.toMatchObject({ code: 'AI_AGENT_TENANT_CHANGED', statusCode: 409 });
+    expect(analyze).not.toHaveBeenCalled();
+  });
+
+  it('does not return a provider result after the actor changes during the provider call', async () => {
+    let releaseProvider;
+    const providerGate = new Promise((resolve) => { releaseProvider = resolve; });
+    const originalActor = scopedActor('tenant-a', 'admin-a');
+    const changedActor = scopedActor('tenant-b', 'admin-b');
+    const assertActor = vi.fn()
+      .mockReturnValueOnce(originalActor)
+      .mockReturnValueOnce(originalActor)
+      .mockReturnValue(changedActor);
+    const analyze = vi.fn(async () => {
+      await providerGate;
+      return { rawResultContent: providerResponse };
+    });
+    const runner = createSalesProfitabilityAgentRunner({ repository: repository(), analyze, assertActor });
+    const pending = runner({
+      question: '¿Mi negocio es rentable?',
+      period: { from: '2026-09-01', to: '2026-09-07', days: 7 },
+      requestKey: 'actor-switch-during-provider'
+    });
+    await vi.waitFor(() => expect(analyze).toHaveBeenCalledTimes(1));
+    releaseProvider();
+
+    await expect(pending).rejects.toMatchObject({ code: 'AI_AGENT_TENANT_CHANGED', statusCode: 409 });
   });
 
   it('does not call the provider when the period has no valid sales', async () => {
@@ -418,6 +578,29 @@ describe('sales profitability agent service', () => {
     expect(result.usageStatus).toBeNull();
     expect(result.providerCalled).toBe(false);
     expect(result.quotaOutcome).toBe('not_consumed');
+  });
+
+  it('answers that profitability cannot be evaluated when the period has no valid sales', async () => {
+    const analyze = vi.fn();
+    const runner = createSalesProfitabilityAgentRunner({
+      repository: repository(
+        { source: { mode: 'cloud_final' }, rows: [], has_more: false },
+        { source: { mode: 'cloud_final' }, rows: [], has_more: false }
+      ),
+      analyze,
+      assertActor: vi.fn()
+    });
+    const result = await runner({
+      question: '¿Mi negocio es rentable?',
+      intent: 'profitability_summary',
+      period: { from: '2026-09-01', to: '2026-09-07', days: 7 },
+      compare: false
+    });
+
+    expect(result.response.executiveSummary).toBe('No hay ventas válidas suficientes en el periodo seleccionado para evaluar la rentabilidad.');
+    expect(result.providerCalled).toBe(false);
+    expect(result.quotaOutcome).toBe('not_consumed');
+    expect(analyze).not.toHaveBeenCalled();
   });
 
   it('never turns four sales without item detail into $120 profit or 100% margin', async () => {
@@ -473,6 +656,9 @@ describe('sales profitability agent service', () => {
     expect(result.response.confidence).toBe('low');
     expect(result.response.executiveSummary).not.toContain('100%');
     expect(result.response.executiveSummary).not.toContain('$120.00 con margen');
+    expect(result.response.profitability.explanation).toMatch(/no puedo determinar/i);
+    expect(result.response.profitability.explanation).toMatch(/cobertura de costos registrada es 0%/i);
+    expect(result.response.explanation).toMatch(/ventas registradas por \$120.00/i);
     expect(analyze).not.toHaveBeenCalled();
     expect(result.providerCalled).toBe(false);
   });
@@ -507,6 +693,9 @@ describe('sales profitability agent service', () => {
     expect(result.response.current.margin).toBeNull();
     expect(result.response.coverage.complete).toBe(false);
     expect(result.response.current.knownCostOfSale).toBe(0);
+    expect(result.response.executiveSummary).toMatch(/no puedo determinar/i);
+    expect(result.response.executiveSummary).toMatch(/faltan costos/i);
+    expect(result.response.executiveSummary).toMatch(/cobertura de costos registrada es 0%/i);
     expect(analyze).not.toHaveBeenCalled();
   });
 
@@ -643,11 +832,35 @@ describe('sales profitability agent service', () => {
     expect(result.response.calculations.some((row) => row.label === 'Utilidad inventada')).toBe(false);
     expect(result.response.coverage.validSales).toBe(1);
     expect(result.response.source).toBe('cloud');
-    expect(result.response.aiNarrative.executiveSummary).toContain('999999');
-    expect(result.response.aiNarrative.executiveSummary).toContain('Inventado');
-    expect(result.response.aiNarrative.executiveSummary).toContain('sin descuentos');
-    expect(result.response.aiNarrative.explanation).toMatch(/margen\s+100%/i);
+    expect(result.response.aiNarrative.directAnswer).toBe(result.response.profitability.explanation);
+    expect(result.response.aiNarrative.executiveSummary).toBe(result.response.profitability.explanation);
+    expect(result.response.aiNarrative.explanation).toBe(result.response.explanation);
+    expect(result.response.aiNarrative.directAnswer).toMatch(/^Sí\./);
+    expect(JSON.stringify(result.response.aiNarrative)).not.toContain('999999');
+    expect(JSON.stringify(result.response.aiNarrative)).not.toContain('margen 100%');
     expect(result.response.recommendations).toEqual(expect.any(Array));
+  });
+
+  it('uses the deterministic profitability answer when the provider returns only a sales summary', async () => {
+    const runner = createSalesProfitabilityAgentRunner({
+      repository: repository(),
+      analyze: vi.fn(async () => ({ rawResultContent: providerResponse })),
+      assertActor: vi.fn()
+    });
+
+    const result = await runner({
+      question: '¿Mi negocio es rentable?',
+      intent: 'profitability_summary',
+      period: { from: '2026-09-01', to: '2026-09-07', days: 7 },
+      compare: false
+    });
+
+    expect(result.providerCalled).toBe(true);
+    expect(result.response.aiNarrative.directAnswer).toBe(result.response.profitability.explanation);
+    expect(result.response.aiNarrative.directAnswer).toMatch(/^Sí\./);
+    expect(result.response.aiNarrative.directAnswer).toContain('$60.00');
+    expect(result.response.aiNarrative.directAnswer).not.toBe('Narrativa suplementaria del proveedor.');
+    expect(result.response.executiveSummary).toContain('utilidad bruta positiva');
   });
 
   it('preserves Phase 2 action, measurement, evidence and provider confidence', async () => {

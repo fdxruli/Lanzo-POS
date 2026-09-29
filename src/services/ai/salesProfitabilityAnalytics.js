@@ -25,7 +25,7 @@ export const SALES_PROFITABILITY_INTENTS = Object.freeze([
 
 const DEFAULT_COST_COVERAGE = 0;
 const DEFAULT_BUSINESS_TIMEZONE = 'America/Mexico_City';
-const MAX_PRODUCTS = 20;
+const MAX_PRODUCT_OPPORTUNITIES = 8;
 const MAX_CHANNELS = 12;
 const MIN_COMBO_TICKETS = 3;
 const LOW_MARGIN_THRESHOLD = 0.2;
@@ -175,6 +175,7 @@ const normalizeItem = (item = {}) => {
   const discount = numberOrNull(source.discount ?? source.discount_amount ?? source.discountAmount);
 
   return {
+    productId: safeText(source.productId ?? source.product_id, null, 180),
     name: safeText(source.name ?? source.product_name ?? source.productName ?? source.description, 'Producto sin nombre'),
     quantity,
     unitPrice: unitPrice !== null ? unitPrice : (quantity > 0 && total !== null ? total / quantity : null),
@@ -183,6 +184,10 @@ const normalizeItem = (item = {}) => {
     discount
   };
 };
+
+const productIdentityKey = (product = {}) => product.productId
+  ? `id:${product.productId}`
+  : `name:${product.name}`;
 
 const normalizedSource = (sale) => {
   if (sale?.sourceModeKnown === false || sale?.source_mode_known === false) return '';
@@ -379,7 +384,10 @@ const aggregateSales = (history, period) => {
     sale.items.forEach((item) => {
       aggregate.units += item.quantity;
       channel.units += item.quantity;
-      const product = productMap.get(item.name) || {
+      const identityKey = productIdentityKey(item);
+      const product = productMap.get(identityKey) || {
+        identityKey,
+        productId: item.productId,
         name: item.name,
         quantity: 0,
         netSales: 0,
@@ -408,7 +416,7 @@ const aggregateSales = (history, period) => {
         product.cost += lineCost;
         product.knownCostSales += lineTotal;
       }
-      productMap.set(item.name, product);
+      productMap.set(identityKey, product);
     });
 
     channelMap.set(sale.channel, channel);
@@ -423,6 +431,8 @@ const aggregateSales = (history, period) => {
       const averagePrice = product.quantity > 0 ? product.averagePriceWeighted / product.quantity : null;
       const profit = costKnown ? product.netSales - product.cost : null;
       return {
+        identityKey: product.identityKey,
+        productId: product.productId,
         name: product.name,
         quantity: product.quantity,
         netSales: product.netSales,
@@ -437,8 +447,8 @@ const aggregateSales = (history, period) => {
         discounts: product.discountKnown ? product.discount : null
       };
     })
-    .sort((a, b) => b.netSales - a.netSales)
-    .slice(0, MAX_PRODUCTS);
+    .sort((a, b) => b.netSales - a.netSales || a.name.localeCompare(b.name, 'es')
+      || String(a.identityKey).localeCompare(String(b.identityKey)));
   aggregate.channels = Array.from(channelMap.values())
     .map((channel) => ({
       ...channel,
@@ -468,16 +478,17 @@ const delta = (current, previous) => (
 
 const buildComparison = (current, previous) => {
   if (!previous) return null;
-  const currentByName = new Map(current.products.map((product) => [product.name, product]));
-  const previousByName = new Map(previous.products.map((product) => [product.name, product]));
-  const names = new Set([...currentByName.keys(), ...previousByName.keys()]);
+  const currentByIdentity = new Map(current.products.map((product) => [productIdentityKey(product), product]));
+  const previousByIdentity = new Map(previous.products.map((product) => [productIdentityKey(product), product]));
+  const identities = new Set([...currentByIdentity.keys(), ...previousByIdentity.keys()]);
   const shareOf = (sales, total) => total > 0 ? sales / total : null;
   const percentChange = (now, before) => before > 0 && now !== null && now !== undefined
     ? (now - before) / before
     : null;
-  const productChanges = Array.from(names).map((name) => {
-    const now = currentByName.get(name) || null;
-    const before = previousByName.get(name) || null;
+  const productChanges = Array.from(identities).map((identityKey) => {
+    const now = currentByIdentity.get(identityKey) || null;
+    const before = previousByIdentity.get(identityKey) || null;
+    const name = now?.name || before?.name || 'Producto sin nombre';
     const currentSales = now?.netSales ?? 0;
     const previousSales = before?.netSales ?? 0;
     const currentUnits = now?.quantity ?? 0;
@@ -508,6 +519,8 @@ const buildComparison = (current, previous) => {
       signals.push('low_margin');
     }
     return {
+      identityKey,
+      productId: now?.productId || before?.productId || null,
       name,
       currentSales,
       previousSales,
@@ -529,21 +542,27 @@ const buildComparison = (current, previous) => {
       direction,
       signals
     };
-  }).sort((a, b) => Math.abs(b.salesDelta) - Math.abs(a.salesDelta) || b.currentSales - a.currentSales)
-    .slice(0, MAX_PRODUCTS);
+  }).sort((a, b) => Math.abs(b.salesDelta) - Math.abs(a.salesDelta) || b.currentSales - a.currentSales
+    || a.name.localeCompare(b.name, 'es') || String(a.identityKey).localeCompare(String(b.identityKey)));
 
-  const currentMix = new Map(current.products.map((product) => [product.name, shareOf(product.netSales, current.netSales)]));
-  const previousMix = new Map(previous.products.map((product) => [product.name, shareOf(product.netSales, previous.netSales)]));
-  const productMixChanges = Array.from(names).map((name) => {
-    const currentShare = currentMix.has(name) ? currentMix.get(name) : (current.netSales > 0 ? 0 : null);
-    const previousShare = previousMix.has(name) ? previousMix.get(name) : (previous.netSales > 0 ? 0 : null);
+  const currentMix = new Map(current.products.map((product) => [productIdentityKey(product), shareOf(product.netSales, current.netSales)]));
+  const previousMix = new Map(previous.products.map((product) => [productIdentityKey(product), shareOf(product.netSales, previous.netSales)]));
+  const productMixChanges = Array.from(identities).map((identityKey) => {
+    const now = currentByIdentity.get(identityKey);
+    const before = previousByIdentity.get(identityKey);
+    const name = now?.name || before?.name || 'Producto sin nombre';
+    const currentShare = currentMix.has(identityKey) ? currentMix.get(identityKey) : (current.netSales > 0 ? 0 : null);
+    const previousShare = previousMix.has(identityKey) ? previousMix.get(identityKey) : (previous.netSales > 0 ? 0 : null);
     return {
+      identityKey,
+      productId: now?.productId || before?.productId || null,
       name,
       currentShare,
       previousShare,
       deltaShare: currentShare !== null && previousShare !== null ? currentShare - previousShare : null
     };
-  }).sort((a, b) => Math.abs(b.deltaShare || 0) - Math.abs(a.deltaShare || 0)).slice(0, 8);
+  }).sort((a, b) => Math.abs(b.deltaShare || 0) - Math.abs(a.deltaShare || 0)
+    || a.name.localeCompare(b.name, 'es') || String(a.identityKey).localeCompare(String(b.identityKey))).slice(0, 8);
 
   const channelNames = new Set([...current.channels.map((item) => item.channel), ...previous.channels.map((item) => item.channel)]);
   const channelMixChanges = Array.from(channelNames).map((channelName) => {
@@ -1008,10 +1027,10 @@ const buildProfitabilitySummary = (current) => {
   const explanation = status === 'insufficient_data'
     ? 'No hay ventas válidas suficientes en el periodo para evaluar la rentabilidad.'
     : status === 'undetermined'
-      ? `No puedo confirmar la rentabilidad completa porque faltan costos unitarios en ${current.missingCostProducts.length} producto(s).`
+      ? `No puedo determinar la rentabilidad bruta completa de este periodo porque la cobertura de costos o ventas está incompleta.${current.missingCostProducts.length > 0 ? ` Faltan costos de ${current.missingCostProducts.length} producto(s) vendido(s).` : ''} La cobertura de costos registrada es ${formatPercent(current.costCoverage)}.`
       : status === 'profitable'
-        ? `Con los costos registrados, el negocio genera utilidad bruta en este periodo: ${formatMoney(current.profit)} con margen de ${formatPercent(current.margin)}.`
-        : `Con los costos registrados, el periodo no genera utilidad bruta positiva: ${formatMoney(current.profit)} con margen de ${formatPercent(current.margin)}.`;
+        ? `Sí. Tus ventas generaron utilidad bruta positiva de ${formatMoney(current.profit)} y un margen bruto de ${formatPercent(current.margin)}. Este cálculo usa los costos de producto registrados y no necesariamente incluye todos los gastos operativos; no determina la rentabilidad neta del negocio.`
+        : `No se registró utilidad bruta positiva durante este periodo. El resultado fue ${formatMoney(current.profit)} y el margen bruto ${formatPercent(current.margin)}, con los costos de producto registrados. El cálculo no necesariamente incluye todos los gastos operativos.`;
 
   return {
     status,
@@ -1069,6 +1088,8 @@ const buildProductRisks = (current) => {
 
     if (!riskType) return null;
     return {
+      identityKey: productIdentityKey(product),
+      productId: product.productId,
       product: product.name,
       units: product.quantity,
       netSales: product.netSales,
@@ -1089,15 +1110,44 @@ const buildGrowthSignals = (current, comparison) => {
   const productChanges = Array.isArray(comparison?.productChanges) ? comparison.productChanges : [];
   const productsGrowing = productChanges.filter((product) => product.direction === 'growing').slice(0, 5);
   const productsDeclining = productChanges.filter((product) => product.direction === 'declining' || product.direction === 'not_sold_current').slice(0, 5);
-  const productOpportunities = productChanges
+  const opportunityRows = productChanges
     .filter((product) => product.direction === 'growing' || product.signals.includes('high_sales_share'))
-    .slice(0, 8)
-    .map((product) => ({
-      ...product,
-      opportunityReason: product.direction === 'growing'
-        ? 'Las ventas históricas del producto aumentaron frente al periodo anterior.'
-        : 'El producto representa al menos 10% de las ventas netas actuales.'
-    }));
+    .sort((a, b) => {
+      const priority = (product) => Number(product.direction === 'growing')
+        + Number(product.signals.includes('high_sales_share'))
+        + Number(product.signals.includes('healthy_margin'));
+      return priority(b) - priority(a)
+        || (b.currentShare ?? 0) - (a.currentShare ?? 0)
+        || Math.abs(b.salesDelta) - Math.abs(a.salesDelta)
+        || b.currentSales - a.currentSales
+        || a.name.localeCompare(b.name, 'es')
+        || String(a.identityKey).localeCompare(String(b.identityKey));
+    });
+  const opportunityByDisplayName = new Map();
+  opportunityRows.forEach((product) => {
+    // Equal labels remain separate in sales and comparisons. For the narrative, keep
+    // the strongest individual row so the provider cannot confuse two same-named items.
+    if (!opportunityByDisplayName.has(product.name)) opportunityByDisplayName.set(product.name, product);
+  });
+  const productOpportunities = Array.from(opportunityByDisplayName.values())
+    .slice(0, MAX_PRODUCT_OPPORTUNITIES)
+    .map((product) => {
+      const reasons = [];
+      if (product.direction === 'growing') {
+        const percent = product.salesDeltaPercent === null ? '' : ` (${formatPercent(product.salesDeltaPercent)})`;
+        reasons.push(`sus ventas aumentaron ${formatMoney(product.salesDelta)} frente al periodo anterior${percent}`);
+      }
+      if (product.signals.includes('high_sales_share')) {
+        reasons.push(`representa ${formatPercent(product.currentShare)} de las ventas actuales`);
+      }
+      if (product.signals.includes('healthy_margin') && product.costKnown === true) {
+        reasons.push(`tiene un margen bruto conocido de ${formatPercent(product.currentMargin)}`);
+      }
+      return {
+        ...product,
+        opportunityReason: `${product.name}: ${reasons.join('; ')}.`
+      };
+    });
 
   return {
     currentNetSales: current.netSales,
@@ -1120,6 +1170,9 @@ const buildGrowthSignals = (current, comparison) => {
     productsGrowing,
     productsDeclining,
     productOpportunities,
+    productsGrowingCount: productChanges.filter((product) => product.direction === 'growing').length,
+    productsDecliningCount: productChanges.filter((product) => product.direction === 'declining' || product.direction === 'not_sold_current').length,
+    productsComparedCount: productChanges.length,
     channels: current.channels,
     channelChanges: comparison?.channelMixChanges || [],
     comparisonAvailable: Boolean(comparison)
@@ -1244,7 +1297,10 @@ const fallbackRecommendation = (intent, { profitability, productRisks, contribut
 };
 
 const buildAgentContext = ({ current, comparison, period, source, profitability, productRisks, contributors, growthSignals, intent, includeCommercialStrategyEvidence = false, comboOpportunities = [] }) => {
-  const risksByProduct = new Map(productRisks.map((risk) => [risk.product, risk]));
+  const risksByProduct = new Map(productRisks.map((risk) => [productIdentityKey({
+    productId: risk.productId,
+    name: risk.product
+  }), risk]));
   const isGrowthIntent = ['sales_growth', 'ticket_growth', 'product_opportunity', 'sales_trend', 'commercial_strategy'].includes(intent)
     || includeCommercialStrategyEvidence === true;
   return {
@@ -1266,7 +1322,7 @@ const buildAgentContext = ({ current, comparison, period, source, profitability,
       profitabilityExplanation: profitability.explanation
     },
     products: current.products.map((product) => {
-      const risk = risksByProduct.get(product.name);
+      const risk = risksByProduct.get(productIdentityKey(product));
       return {
         name: product.name,
         quantity: product.quantity,
@@ -1482,8 +1538,8 @@ export const buildSalesProfitabilityAnalysis = ({
   } else if (resolvedIntent === 'product_opportunity') {
     calculations = [
       calculation('Productos comparados', comparison?.productChanges?.length ?? current.products.length, 'conteo de productos con ventas o detalle de artículos en los periodos', period, 'sales_history', formatNumber),
-      calculation('Productos con ventas crecientes', growthSignals.productsGrowing.length, 'conteo de productos con ventas actuales mayores al periodo anterior', period, 'comparison', formatNumber),
-      calculation('Productos con ventas decrecientes', growthSignals.productsDeclining.length, 'conteo de productos con ventas actuales menores al periodo anterior o sin venta actual', period, 'comparison', formatNumber),
+      calculation('Productos con ventas crecientes', growthSignals.productsGrowingCount, 'conteo de productos con ventas actuales mayores al periodo anterior', period, 'comparison', formatNumber),
+      calculation('Productos con ventas decrecientes', growthSignals.productsDecliningCount, 'conteo de productos con ventas actuales menores al periodo anterior o sin venta actual', period, 'comparison', formatNumber),
       calculation('Productos con costo faltante', current.products.filter((product) => product.costKnown !== true).length, 'conteo de productos actuales sin costo completo conocido', period, 'sales_history', formatNumber)
     ];
   } else if (resolvedIntent === 'goal_simulation') {
@@ -1681,10 +1737,10 @@ export const buildSalesProfitabilityAnalysis = ({
       : `El ticket promedio actual es ${formatMoney(current.averageTicket)} con ${formatNumber(current.salesCount, 0)} tickets; no hay un ticket anterior válido para calcular una variación.`;
     explanation = `Se registraron ${formatNumber(current.units, 0)} unidades, equivalentes a ${formatNumber(current.unitsPerTicket)} por ticket.${simulation.comboOpportunities.length ? ` La combinación histórica más frecuente fue ${simulation.comboOpportunities[0].products.join(' + ')} en ${formatNumber(simulation.comboOpportunities[0].tickets, 0)} tickets.` : ' No se encontró una combinación histórica con la frecuencia mínima.'} Estas señales pueden orientar pruebas; no garantizan un ticket mayor.`;
   } else if (resolvedIntent === 'product_opportunity') {
-    executiveSummary = `Se compararon ${formatNumber(growthSignals.productOpportunities.length, 0)} señal(es) entre productos actuales y ${formatNumber(current.products.length, 0)} producto(s) con ventas en el periodo.`;
-    const growing = growthSignals.productsGrowing[0];
+    executiveSummary = `Se evaluaron ${formatNumber(growthSignals.productsComparedCount, 0)} producto(s) comparable(s) y se priorizaron ${formatNumber(growthSignals.productOpportunities.length, 0)} oportunidad(es) entre ${formatNumber(current.products.length, 0)} producto(s) vendidos en el periodo.`;
     const declining = growthSignals.productsDeclining[0];
-    explanation = `${growing ? `${growing.name} tuvo la mayor señal positiva de ventas (${formatMoney(growing.salesDelta)}).` : 'No se observan productos con aumento de ventas frente al periodo anterior.'} ${declining ? `${declining.name} muestra una disminución de ${formatMoney(Math.abs(declining.salesDelta))}.` : ''} El margen sólo se muestra cuando el costo del producto está completo.`;
+    const leadingOpportunity = growthSignals.productOpportunities[0];
+    explanation = `${leadingOpportunity ? leadingOpportunity.opportunityReason : 'No se observan productos con señales comparables suficientes para priorizar.'} ${declining ? `${declining.name} muestra una disminución de ${formatMoney(Math.abs(declining.salesDelta))}.` : ''} El margen sólo se muestra cuando el costo del producto está completo.`;
   } else if (resolvedIntent === 'price_simulation') {
     facts = simulation.priceSimulation ? [{ label: simulation.priceSimulation.product, ...simulation.priceSimulation }] : [];
     executiveSummary = simulation.priceSimulation
@@ -1767,7 +1823,6 @@ export const buildSalesProfitabilityAnalysis = ({
   const recommendations = current.salesCount > 0
     ? fallbackRecommendation(resolvedIntent, { profitability, productRisks, contributors, simulation, growthSignals })
     : [];
-
   return {
     version: 1,
     agentKey: COMMERCIAL_AGENT_KEYS.SALES_PROFITABILITY,

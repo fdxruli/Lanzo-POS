@@ -374,6 +374,47 @@ describe('sales profitability data', () => {
     expect(dataset.metadata.products.map((product) => product.name)).toEqual(['A', 'B']);
   });
 
+  it('keeps same-named product IDs separate in the sales-detail aggregation', () => {
+    const dataset = buildSalesProfitabilityDataset({
+      history: historyReport([{
+        id: 'sale-same-name',
+        status: 'closed',
+        total: 350,
+        itemsCount: 2,
+        itemsQuantity: 2
+      }]),
+      profit: profitReport([
+        {
+          sale_id: 'sale-same-name',
+          product_id: 'private-product-a',
+          product_name: 'Agua',
+          quantity: 1,
+          line_total: 300,
+          movement_cost: 100,
+          cost_source: 'inventory_movement',
+          profit_status: 'definitive'
+        },
+        {
+          sale_id: 'sale-same-name',
+          product_id: 'private-product-b',
+          product_name: 'Agua',
+          quantity: 1,
+          line_total: 50,
+          movement_cost: 20,
+          cost_source: 'inventory_movement',
+          profit_status: 'definitive'
+        }
+      ]),
+      queryRange: {}
+    });
+
+    expect(dataset.metadata.products).toHaveLength(2);
+    expect(dataset.metadata.products.map((product) => [product.productId, product.netSales])).toEqual([
+      ['private-product-a', 300],
+      ['private-product-b', 50]
+    ]);
+  });
+
   it('exposes every eligible period product and explains why other products cannot be simulated', () => {
     const dataset = {
       metadata: {

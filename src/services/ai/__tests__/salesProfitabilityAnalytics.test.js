@@ -342,9 +342,27 @@ describe('phase 3.2 intent routing and focused deterministic outputs', () => {
 
     expect(complete.profitability.status).toBe('profitable');
     expect(complete.profitability.profit).toBe(80);
+    expect(complete.profitability.explanation).toMatch(/^Sí\./);
+    expect(complete.profitability.explanation).toMatch(/utilidad bruta positiva/i);
+    expect(complete.profitability.explanation).toMatch(/gastos operativos/i);
     expect(incomplete.profitability.status).toBe('undetermined');
     expect(incomplete.profitability.profit).toBeNull();
+    expect(incomplete.profitability.explanation).toMatch(/no puedo determinar/i);
+    expect(incomplete.profitability.explanation).toMatch(/cobertura de costos/i);
     expect(empty.profitability.status).toBe('insufficient_data');
+    expect(empty.profitability.explanation).toMatch(/no hay ventas válidas/i);
+  });
+
+  it('answers directly when complete costs produce exactly zero gross profit', () => {
+    const result = buildSalesProfitabilityAnalysis({
+      period,
+      currentHistory: { rows: [sale('break-even', [item('Equilibrio', 1, 100, 100)])] },
+      intent: 'profitability_summary'
+    });
+
+    expect(result.profitability).toMatchObject({ status: 'not_profitable', profit: 0, margin: 0 });
+    expect(result.profitability.explanation).toMatch(/no se registró utilidad bruta positiva/i);
+    expect(result.profitability.explanation).toContain('$0.00');
   });
 
   it('classifies non-profitable periods without treating missing costs as zero', () => {
@@ -570,5 +588,82 @@ describe('Lía sales growth deterministic analytics', () => {
       signals: expect.arrayContaining(['growing', 'cost_unknown'])
     });
     expect(result.productOpportunities).toContainEqual(expect.objectContaining({ name: 'Sin costo', currentMargin: null }));
+  });
+
+  it('compares the full sold-product universe before selecting product opportunities', () => {
+    const currentItems = Array.from({ length: 21 }, (_, index) => item(`Producto ${index + 1}`, 1, 100, 50));
+    const previousItems = currentItems.map((row) => ({ ...row }));
+    currentItems[20] = item('Producto fuera de los primeros 20', 1, 90, 45);
+    previousItems[20] = item('Producto fuera de los primeros 20', 1, 1, 0.5);
+
+    const result = buildSalesProfitabilityAnalysis({
+      period,
+      currentHistory: { rows: [sale('now', currentItems)] },
+      previousHistory: { rows: [sale('before', previousItems)] },
+      intent: 'product_opportunity'
+    });
+
+    expect(result.current.products).toHaveLength(21);
+    expect(result.growthSignals.productsComparedCount).toBe(21);
+    expect(result.comparison.productChanges).toHaveLength(21);
+    expect(result.growthSignals.productOpportunities[0]).toMatchObject({
+      name: 'Producto fuera de los primeros 20',
+      currentSales: 90,
+      salesDelta: 89,
+      direction: 'growing'
+    });
+    expect(result.growthSignals.productOpportunities[0].opportunityReason).toMatch(/aumentaron \$89/i);
+  });
+
+  it('keeps same-named products distinct while comparing each product identity independently', () => {
+    const current = sale('same-name-now', [
+      { ...item('Agua', 1, 200, 100), productId: 'product-a' },
+      { ...item('Agua', 1, 300, 100), productId: 'product-b' }
+    ]);
+    const previous = sale('same-name-before', [
+      { ...item('Agua', 1, 100, 80), productId: 'product-a' },
+      { ...item('Agua', 1, 1, 0.5), productId: 'product-b' }
+    ]);
+    const result = buildSalesProfitabilityAnalysis({
+      period,
+      currentHistory: { rows: [current] },
+      previousHistory: { rows: [previous] },
+      intent: 'product_opportunity'
+    });
+
+    expect(result.current.products.filter((product) => product.name === 'Agua').map((product) => product.netSales))
+      .toEqual([300, 200]);
+    expect(result.comparison.productChanges.filter((product) => product.name === 'Agua').map((product) => product.salesDelta))
+      .toEqual([299, 100]);
+    expect(result.growthSignals.productOpportunities.filter((product) => product.name === 'Agua'))
+      .toHaveLength(1);
+    expect(result.growthSignals.productOpportunities.find((product) => product.name === 'Agua').currentSales)
+      .toBe(300);
+  });
+
+  it('prioritizes several solid candidates across growth and sales participation signals', () => {
+    const current = sale('signal-now', [
+      item('Participación alta', 1, 500, 250),
+      item('Crecimiento combinado', 1, 300, 150),
+      item('Crecimiento menor', 1, 20, 10)
+    ]);
+    const previous = sale('signal-before', [
+      item('Participación alta', 1, 500, 250),
+      item('Crecimiento combinado', 1, 200, 100),
+      item('Crecimiento menor', 1, 10, 5)
+    ]);
+    const result = buildSalesProfitabilityAnalysis({
+      period,
+      currentHistory: { rows: [current] },
+      previousHistory: { rows: [previous] },
+      intent: 'product_opportunity'
+    });
+
+    expect(result.growthSignals.productOpportunities.map((product) => product.name)).toEqual([
+      'Crecimiento combinado', 'Participación alta', 'Crecimiento menor'
+    ]);
+    expect(result.growthSignals.productOpportunities[0].opportunityReason).toMatch(/aumentaron/i);
+    expect(result.growthSignals.productOpportunities[0].opportunityReason).toMatch(/representa/i);
+    expect(result.growthSignals.productOpportunities[1].opportunityReason).toMatch(/representa/i);
   });
 });
