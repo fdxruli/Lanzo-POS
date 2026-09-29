@@ -296,6 +296,7 @@ const friendlyCloudCashierError = (error) => {
     FINANCIAL_SPLIT_CONTRACT_INVALID: 'Los datos de la cuenta dividida no son válidos. Vuelve a abrir Separar pago y revisa los tickets.',
     FINANCIAL_SPLIT_CHILD_COUNT_INVALID: 'La cuenta dividida debe contener entre 2 y 8 tickets válidos.',
     FINANCIAL_SPLIT_CHILD_INVALID: 'Uno de los tickets de la cuenta dividida no es válido.',
+    FINANCIAL_SPLIT_CREDIT_CUSTOMER_MISMATCH: 'El cliente seleccionado para Fiado debe coincidir en todo el cobro dividido. Revisa el cliente y vuelve a confirmar.',
     FINANCIAL_SPLIT_LABEL_DUPLICATE: 'Los tickets de la cuenta dividida deben tener nombres únicos.',
     FINANCIAL_SPLIT_SALE_ID_DUPLICATE: 'La cuenta dividida generó identificadores repetidos. Vuelve a abrir Separar pago.',
     RESTAURANT_ORDER_NOT_FOUND: 'No se encontró la comanda cloud de la mesa. Actualiza las mesas antes de cobrar.',

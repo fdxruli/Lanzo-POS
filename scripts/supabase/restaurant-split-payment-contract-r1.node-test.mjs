@@ -38,6 +38,12 @@ test('canonical identity pins monetary intent, payer cents, and stable payment-t
   assert.match(payerCanonical, /'payment_method'/u);
   assert.match(canonicalPayment, /'split_payer_id'/u);
   assert.match(canonicalPayment, /p_payment->'metadata'/u);
+  assert.match(canonicalRequest, /FINANCIAL_SPLIT_CREDIT_CUSTOMER_MISMATCH/u);
+  assert.match(canonicalRequest, /value->>'customerId'/u);
+  assert.match(canonicalRequest, /value->'sale'->>'customerId'/u);
+  assert.match(canonicalRequest, /v_credit_customer_id/u);
+  assert.match(canonicalRequest, /parent_order_version is null/u);
+  assert.match(canonicalRequest, /parent_order_version !~ /u);
 });
 
 test('one-sale monetary executor validates payer tenders and reuses atomic sale plus table-close effects', () => {
@@ -53,4 +59,16 @@ test('one-sale monetary executor validates payer tenders and reuses atomic sale 
   assert.match(executor, /public\.pos_create_cloud_sale_credit_unlimited\(/u);
   assert.match(executor, /public\.pos_close_restaurant_order_after_checkout_unlimited\(/u);
   assert.match(executor, /'splitPayers', case when v_split_intent/u);
+  assert.match(executor, /FINANCIAL_SPLIT_CREDIT_CUSTOMER_MISMATCH/u);
+  assert.match(executor, /v_child_sale := jsonb_set/u);
+  assert.match(executor, /to_jsonb\(v_credit_customer_id\)/u);
+  assert.match(executor, /v_order\.updated_at is distinct from v_parent_order_version_at/u);
+  assert.match(executor, /v_split_intent in \('equal_payment', 'custom_payment'\)[\s\S]*?v_parent_order_version is null/u);
+  assert.match(executor, /v_parent_order_version !~ /u);
+  assert.match(executor, /if v_parent_order_version is not null then/u);
+  assert.match(executor, /then v_credit_customer_id[\s\S]*?v_child_key/u);
+  const firstSaleEffect = executor.indexOf('v_child_response := public.pos_create_cloud_sale_');
+  assert.ok(firstSaleEffect > 0);
+  assert.ok(executor.indexOf('v_order.updated_at is distinct from v_parent_order_version_at') < firstSaleEffect);
+  assert.ok(executor.indexOf('FINANCIAL_SPLIT_CREDIT_CUSTOMER_MISMATCH') < firstSaleEffect);
 });

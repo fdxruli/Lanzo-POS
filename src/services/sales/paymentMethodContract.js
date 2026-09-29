@@ -30,5 +30,31 @@ export const toLegacyRestaurantSplitPaymentMethod = (value) => {
 };
 
 export const isRestaurantSplitCashPayment = (payment = {}) => (
-  normalizeRestaurantSplitPaymentMethod(payment.method || payment.paymentMethod) === 'cash'
+  normalizeRestaurantSplitPaymentMethod(payment.method || payment.paymentMethod || payment.payment_method) === 'cash'
 );
+
+const isValidSalePaymentRow = (payment) => {
+  if (!payment || typeof payment !== 'object' || Array.isArray(payment)) return false;
+  const method = normalizeRestaurantSplitPaymentMethod(
+    payment.method || payment.paymentMethod || payment.payment_method
+  );
+  const amountValue = payment.amount ?? payment.total;
+  const numericAmount = Number(amountValue);
+  return Boolean(method) && amountValue !== null && amountValue !== undefined
+    && amountValue !== '' && Number.isFinite(numericAmount) && numericAmount > 0;
+};
+
+export const getExplicitSalePaymentRows = (sale = {}) => {
+  const safeSale = sale && typeof sale === 'object' && !Array.isArray(sale) ? sale : {};
+  const candidates = [
+    safeSale.payments,
+    safeSale.paymentBreakdown,
+    safeSale.paymentDetails?.payments
+  ];
+  for (const candidate of candidates) {
+    if (!Array.isArray(candidate)) continue;
+    const validRows = candidate.filter(isValidSalePaymentRow);
+    if (validRows.length > 0) return validRows;
+  }
+  return null;
+};

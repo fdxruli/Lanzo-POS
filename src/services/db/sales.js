@@ -12,6 +12,7 @@ import { generateID } from '../utils';
 import { normalizeCustomerDebtCents } from './customerDebtIndex';
 import { Money } from '../../utils/moneyMath';
 import { SALE_STATUS } from '../sales/financialStats';
+import { getExplicitSalePaymentRows, isRestaurantSplitCashPayment } from '../sales/paymentMethodContract';
 import Logger from '../Logger';
 
 const LOCAL_STATION_KEY_PREFIX = 'local:device:';
@@ -33,10 +34,10 @@ const isCommittedSaleItem = (item) => item?.inventoryReservation?.source === 'ta
 const hasBatchDeductions = (item) => Array.isArray(item?.batchesUsed) && item.batchesUsed.length > 0;
 const saleHasCashComponent = (sale = {}) => {
     const paymentMethod = String(sale.paymentMethod || '').trim().toLowerCase();
-    const explicitPayments = sale.payments || sale.paymentBreakdown || sale.paymentDetails?.payments;
-    if (Array.isArray(explicitPayments)) {
+    const explicitPayments = getExplicitSalePaymentRows(sale);
+    if (explicitPayments) {
         return explicitPayments.some((payment) => (
-            ['cash', 'efectivo'].includes(String(payment?.method || payment?.paymentMethod || '').trim().toLowerCase())
+            isRestaurantSplitCashPayment(payment)
             && Money.init(payment?.amount ?? payment?.total ?? 0).gt(0)
         ));
     }

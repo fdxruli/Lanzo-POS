@@ -51,6 +51,17 @@ declare
   v_split_intent text;
   v_split_child_count integer;
   v_split_payer_count integer;
+  v_split_payer jsonb;
+  v_split_child jsonb;
+  v_parent_order_version text;
+  v_parent_order_version_at timestamptz;
+  v_credit_payer_count integer := 0;
+  v_credit_customer_id text;
+  v_payer_customer_id text;
+  v_customer_id_snake text;
+  v_customer_id_camel text;
+  v_child_customer_id text;
+  v_child_sale_customer_id text;
 begin
   if jsonb_typeof(v_request) <> 'object' then
     raise exception 'FINANCIAL_REQUEST_CONTRACT_INVALID' using errcode = 'P0001';
@@ -135,18 +146,86 @@ begin
          or (v_split_intent in ('equal_payment', 'custom_payment') and v_split_child_count <> 1) then
         raise exception 'FINANCIAL_SPLIT_CONTRACT_INVALID' using errcode = 'P0001';
       end if;
+      v_parent_order_version := nullif(btrim(private.financial_text_v1(
+        private.financial_first_nonblank_scalar_v1(v_request, array['parent_order_version','parentOrderVersion'])
+      )), '');
       if v_split_intent in ('equal_payment', 'custom_payment') then
-        if jsonb_typeof(coalesce(v_request->'split_payers', v_request->'splitPayers')) <> 'array' then
-          raise exception 'FINANCIAL_SPLIT_PAYER_CONTRACT_INVALID' using errcode = 'P0001';
+        if v_parent_order_version is null
+           or v_parent_order_version !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,6})?([zZ]|[+-][0-9]{2}:[0-9]{2})$' then
+          raise exception 'RESTAURANT_ORDER_VERSION_CONFLICT' using errcode = 'P0001';
         end if;
-        v_split_payer_count := jsonb_array_length(coalesce(v_request->'split_payers', v_request->'splitPayers'));
-        if v_split_payer_count < 2 or v_split_payer_count > 8 then
-          raise exception 'FINANCIAL_SPLIT_PAYER_CONTRACT_INVALID' using errcode = 'P0001';
+        begin
+          v_parent_order_version_at := v_parent_order_version::timestamptz;
+        exception
+          when invalid_text_representation or datetime_field_overflow or invalid_datetime_format then
+            raise exception 'RESTAURANT_ORDER_VERSION_CONFLICT' using errcode = 'P0001';
+        end;
+
+        for v_split_payer in
+          select value
+            from jsonb_array_elements(coalesce(v_request->'split_payers', v_request->'splitPayers', '[]'::jsonb))
+        loop
+          if private.financial_payment_method_v1(
+               'sale.credit',
+               private.financial_text_v1(private.financial_first_nonblank_scalar_v1(
+                 v_split_payer, array['payment_method','paymentMethod','method']
+               ))
+             ) in ('credit', 'mixed_credit') then
+            v_customer_id_snake := nullif(btrim(v_split_payer->>'customer_id'), '');
+            v_customer_id_camel := nullif(btrim(v_split_payer->>'customerId'), '');
+            if v_customer_id_snake is not null
+               and v_customer_id_camel is not null
+               and v_customer_id_snake <> v_customer_id_camel then
+              raise exception 'FINANCIAL_SPLIT_CREDIT_CUSTOMER_MISMATCH' using errcode = 'P0001';
+            end if;
+            v_payer_customer_id := coalesce(v_customer_id_snake, v_customer_id_camel);
+            if v_payer_customer_id is null then
+              raise exception 'FINANCIAL_SPLIT_CREDIT_PAYER_INVALID' using errcode = 'P0001';
+            end if;
+            v_credit_payer_count := v_credit_payer_count + 1;
+            if v_credit_payer_count = 1 then
+              v_credit_customer_id := v_payer_customer_id;
+            end if;
+          end if;
+        end loop;
+
+        if v_credit_payer_count > 1 then
+          raise exception 'FINANCIAL_SPLIT_CREDIT_PAYER_INVALID' using errcode = 'P0001';
+        end if;
+
+        if v_credit_payer_count = 1 then
+          for v_split_child in
+            select value
+              from jsonb_array_elements(coalesce(v_request->'children', '[]'::jsonb))
+          loop
+            v_customer_id_snake := nullif(btrim(v_split_child->>'customer_id'), '');
+            v_customer_id_camel := nullif(btrim(v_split_child->>'customerId'), '');
+            if v_customer_id_snake is not null
+               and v_customer_id_camel is not null
+               and v_customer_id_snake <> v_customer_id_camel then
+              raise exception 'FINANCIAL_SPLIT_CREDIT_CUSTOMER_MISMATCH' using errcode = 'P0001';
+            end if;
+            v_child_customer_id := coalesce(v_customer_id_snake, v_customer_id_camel);
+
+            v_customer_id_snake := nullif(btrim(v_split_child->'sale'->>'customer_id'), '');
+            v_customer_id_camel := nullif(btrim(v_split_child->'sale'->>'customerId'), '');
+            if v_customer_id_snake is not null
+               and v_customer_id_camel is not null
+               and v_customer_id_snake <> v_customer_id_camel then
+              raise exception 'FINANCIAL_SPLIT_CREDIT_CUSTOMER_MISMATCH' using errcode = 'P0001';
+            end if;
+            v_child_sale_customer_id := coalesce(v_customer_id_snake, v_customer_id_camel);
+
+            if (v_child_customer_id is not null and v_child_customer_id <> v_credit_customer_id)
+               or (v_child_sale_customer_id is not null and v_child_sale_customer_id <> v_credit_customer_id) then
+              raise exception 'FINANCIAL_SPLIT_CREDIT_CUSTOMER_MISMATCH' using errcode = 'P0001';
+            end if;
+          end loop;
         end if;
       end if;
       return jsonb_build_object(
         'parent_order_id', private.financial_text_v1(private.financial_first_nonblank_scalar_v1(v_request, array['parent_order_id','parentOrderId'])),
-        'parent_order_version', private.financial_text_v1(private.financial_first_nonblank_scalar_v1(v_request, array['parent_order_version','parentOrderVersion'])),
+        'parent_order_version', v_parent_order_version,
         'split_group_id', private.financial_text_v1(private.financial_first_nonblank_scalar_v1(v_request, array['split_group_id','splitGroupId'])),
         'cash_session_id', private.financial_text_v1(private.financial_first_nonblank_scalar_v1(v_request, array['cash_session_id','cashSessionId'])),
         'children', (
@@ -165,7 +244,12 @@ begin
                   else 'sale.cashier'
                 end,
                 value->'sale'
-              ),
+              ) ||
+                case
+                  when v_split_intent in ('equal_payment', 'custom_payment') and v_credit_payer_count = 1
+                    then jsonb_build_object('customer_id', v_credit_customer_id)
+                  else '{}'::jsonb
+                end,
               'items', (
                 select coalesce(jsonb_agg(private.canonical_financial_sale_item_v1(item_value) order by item_ordinality), '[]'::jsonb)
                 from jsonb_array_elements(coalesce(value->'items', '[]'::jsonb)) with ordinality as item_rows(item_value, item_ordinality)
@@ -192,8 +276,14 @@ begin
                 to_jsonb(
                   coalesce(
                     nullif(btrim(value->>'customer_id'), ''),
+                    nullif(btrim(value->>'customerId'), ''),
                     nullif(btrim(value->'sale'->>'customer_id'), ''),
-                    nullif(btrim(value->'sale'->>'customerId'), '')
+                    nullif(btrim(value->'sale'->>'customerId'), ''),
+                    case
+                      when v_split_intent in ('equal_payment', 'custom_payment') and v_credit_payer_count = 1
+                        then v_credit_customer_id
+                      else null
+                    end
                   )
                 )
               )
@@ -264,7 +354,13 @@ declare
   v_split_group_id text;
   v_cash_session_id text;
   v_parent_order_version text;
-  v_split_intent text := coalesce(nullif(btrim(coalesce(p_split->>'split_intent', p_split->>'splitIntent', '')), ''), 'by_items');
+  v_parent_order_version_at timestamptz;
+  v_split_intent text := coalesce(
+    private.financial_text_v1(private.financial_first_nonblank_scalar_v1(
+      coalesce(p_split, '{}'::jsonb), array['split_intent','splitIntent']
+    )),
+    'by_items'
+  );
   v_split_payers jsonb := coalesce(p_split->'split_payers', p_split->'splitPayers', '[]'::jsonb);
   v_split_payer jsonb;
   v_payment jsonb;
@@ -276,6 +372,13 @@ declare
   v_split_payer_total numeric := 0;
   v_payer_id text;
   v_payer_method text;
+  v_payer_customer_id text;
+  v_customer_id_snake text;
+  v_customer_id_camel text;
+  v_child_customer_id text;
+  v_child_customer_alias_id text;
+  v_sale_customer_id text;
+  v_sale_customer_alias_id text;
   v_payer_initial_method text;
   v_payer_amount numeric;
   v_payer_initial_amount numeric;
@@ -326,6 +429,19 @@ begin
   v_split_group_id := nullif(btrim(coalesce(p_split->>'split_group_id', p_split->>'splitGroupId', '')), '');
   v_cash_session_id := nullif(btrim(coalesce(p_split->>'cash_session_id', p_split->>'cashSessionId', '')), '');
   v_parent_order_version := nullif(btrim(coalesce(p_split->>'parent_order_version', p_split->>'parentOrderVersion', '')), '');
+  if v_split_intent in ('equal_payment', 'custom_payment')
+     and (v_parent_order_version is null
+       or v_parent_order_version !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,6})?([zZ]|[+-][0-9]{2}:[0-9]{2})$') then
+    raise exception 'RESTAURANT_ORDER_VERSION_CONFLICT' using errcode = 'P0001';
+  end if;
+  if v_parent_order_version is not null then
+    begin
+      v_parent_order_version_at := v_parent_order_version::timestamptz;
+    exception
+      when invalid_text_representation or datetime_field_overflow or invalid_datetime_format then
+        raise exception 'RESTAURANT_ORDER_VERSION_CONFLICT' using errcode = 'P0001';
+    end;
+  end if;
   if v_parent_order_id is null then
     raise exception 'RESTAURANT_PARENT_ORDER_REQUIRED' using errcode = 'P0001';
   end if;
@@ -366,15 +482,9 @@ begin
   if v_order.id is null then
     raise exception 'RESTAURANT_ORDER_NOT_FOUND' using errcode = 'P0001';
   end if;
-  if v_parent_order_version is not null then
-    begin
-      if v_order.updated_at <> v_parent_order_version::timestamptz then
-        raise exception 'RESTAURANT_ORDER_VERSION_CONFLICT' using errcode = 'P0001';
-      end if;
-    exception
-      when invalid_text_representation or datetime_field_overflow then
-        raise exception 'RESTAURANT_ORDER_VERSION_CONFLICT' using errcode = 'P0001';
-    end;
+  if v_parent_order_version is not null
+     and v_order.updated_at is distinct from v_parent_order_version_at then
+    raise exception 'RESTAURANT_ORDER_VERSION_CONFLICT' using errcode = 'P0001';
   end if;
   if v_order.status = 'cancelled' then
     raise exception 'RESTAURANT_ORDER_ALREADY_CANCELLED' using errcode = 'P0001';
@@ -436,14 +546,23 @@ begin
         v_credit_payer_count := v_credit_payer_count + 1;
         v_payer_initial_amount := coalesce(private.pos_sale_jsonb_numeric(v_split_payer, array['initial_amount_paid','initialAmountPaid'], null), 0);
         v_payer_initial_method := private.normalize_pos_sale_payment_method(coalesce(v_split_payer->>'initial_payment_method', v_split_payer->>'initialPaymentMethod', 'cash'));
+        v_customer_id_snake := nullif(btrim(v_split_payer->>'customer_id'), '');
+        v_customer_id_camel := nullif(btrim(v_split_payer->>'customerId'), '');
+        if v_customer_id_snake is not null
+           and v_customer_id_camel is not null
+           and v_customer_id_snake <> v_customer_id_camel then
+          raise exception 'FINANCIAL_SPLIT_CREDIT_CUSTOMER_MISMATCH' using errcode = 'P0001';
+        end if;
+        v_payer_customer_id := coalesce(v_customer_id_snake, v_customer_id_camel);
         if v_credit_payer_count > 1
-           or nullif(btrim(coalesce(v_split_payer->>'customer_id', v_split_payer->>'customerId', '')), '') is null
+           or v_payer_customer_id is null
            or v_payer_initial_amount < 0
            or v_payer_initial_amount >= v_payer_amount
            or v_payer_initial_amount <> round(v_payer_initial_amount, 2)
            or v_payer_initial_method not in ('cash', 'card', 'transfer') then
           raise exception 'FINANCIAL_SPLIT_CREDIT_PAYER_INVALID' using errcode = 'P0001';
         end if;
+        v_credit_customer_id := v_payer_customer_id;
         v_expected_payment_amount := v_payer_initial_amount;
         v_expected_payment_method := v_payer_initial_method;
       else
@@ -477,6 +596,33 @@ begin
         raise exception 'FINANCIAL_SPLIT_PAYER_PAYMENT_MISMATCH' using errcode = 'P0001';
       end if;
     end loop;
+
+    if v_credit_payer_count = 1 then
+      v_child := coalesce(p_split->'children'->0, '{}'::jsonb);
+      v_child_sale := coalesce(v_child->'sale', '{}'::jsonb);
+      v_child_customer_id := nullif(btrim(v_child->>'customer_id'), '');
+      v_child_customer_alias_id := nullif(btrim(v_child->>'customerId'), '');
+      if v_child_customer_id is not null
+         and v_child_customer_alias_id is not null
+         and v_child_customer_id <> v_child_customer_alias_id then
+        raise exception 'FINANCIAL_SPLIT_CREDIT_CUSTOMER_MISMATCH' using errcode = 'P0001';
+      end if;
+      v_child_customer_id := coalesce(v_child_customer_id, v_child_customer_alias_id);
+
+      v_sale_customer_id := nullif(btrim(v_child_sale->>'customer_id'), '');
+      v_sale_customer_alias_id := nullif(btrim(v_child_sale->>'customerId'), '');
+      if v_sale_customer_id is not null
+         and v_sale_customer_alias_id is not null
+         and v_sale_customer_id <> v_sale_customer_alias_id then
+        raise exception 'FINANCIAL_SPLIT_CREDIT_CUSTOMER_MISMATCH' using errcode = 'P0001';
+      end if;
+      v_sale_customer_id := coalesce(v_sale_customer_id, v_sale_customer_alias_id);
+
+      if (v_child_customer_id is not null and v_child_customer_id <> v_credit_customer_id)
+         or (v_sale_customer_id is not null and v_sale_customer_id <> v_credit_customer_id) then
+        raise exception 'FINANCIAL_SPLIT_CREDIT_CUSTOMER_MISMATCH' using errcode = 'P0001';
+      end if;
+    end if;
 
     if abs(v_split_payer_total - coalesce(v_order.total, 0)) > 0.005 then
       raise exception 'FINANCIAL_SPLIT_PAYER_TOTAL_MISMATCH' using errcode = 'P0001';
@@ -530,6 +676,13 @@ begin
     ));
     v_is_credit := private.normalize_pos_sale_payment_method(v_payment_method) = 'credit'
       or private.financial_payment_method_v1('sale.credit', v_payment_method) = 'mixed_credit';
+    if v_split_intent in ('equal_payment', 'custom_payment')
+       and (v_credit_payer_count = 1) is distinct from v_is_credit then
+      raise exception 'FINANCIAL_SPLIT_CREDIT_PAYER_INVALID' using errcode = 'P0001';
+    end if;
+    if v_split_intent in ('equal_payment', 'custom_payment') and v_credit_payer_count = 1 then
+      v_child_sale := jsonb_set(v_child_sale, '{customer_id}', to_jsonb(v_credit_customer_id), true);
+    end if;
     v_inventory := coalesce((v_child_sale->'metadata'->>'cloudInventoryEffects')::boolean, false);
 
     if v_is_credit then
@@ -543,11 +696,15 @@ begin
         coalesce(v_child->'items', '[]'::jsonb),
         coalesce(v_child->'payments', '[]'::jsonb),
         v_cash_session_id,
-        coalesce(
-          nullif(btrim(v_child->>'customer_id'), ''),
-          nullif(btrim(v_child_sale->>'customer_id'), ''),
-          nullif(btrim(v_child_sale->>'customerId'), '')
-        ),
+        case
+          when v_split_intent in ('equal_payment', 'custom_payment') and v_credit_payer_count = 1
+            then v_credit_customer_id
+          else coalesce(
+            nullif(btrim(v_child->>'customer_id'), ''),
+            nullif(btrim(v_child_sale->>'customer_id'), ''),
+            nullif(btrim(v_child_sale->>'customerId'), '')
+          )
+        end,
         v_child_key
       );
     elsif v_inventory then

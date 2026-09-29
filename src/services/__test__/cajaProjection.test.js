@@ -43,6 +43,40 @@ describe('loadCashSessionProjection', () => {
     ])).toEqual({ ventasContado: '125', abonosFiado: '0' });
   });
 
+  it('uses legacy cash and credit fields when explicit payments are empty or absent', () => {
+    expect(calculateSessionTotals([
+      { id: 'legacy-cash-empty', status: 'closed', paymentMethod: 'cash', total: '100', payments: [] },
+      { id: 'legacy-cash-absent', status: 'closed', paymentMethod: 'cash', total: '100' },
+      { id: 'legacy-card-empty', status: 'closed', paymentMethod: 'card', total: '100', payments: [] },
+      { id: 'legacy-credit-down-payment-empty', status: 'closed', paymentMethod: 'fiado', total: '250', abono: '100', payments: [] },
+      { id: 'legacy-credit-no-down-payment', status: 'closed', paymentMethod: 'fiado', total: '250', abono: '0', payments: [] }
+    ])).toEqual({ ventasContado: '200', abonosFiado: '100' });
+  });
+
+  it('falls back to legacy cash fields when payment rows contain no positive tender', () => {
+    expect(calculateSessionTotals([{
+      id: 'legacy-cash-zero-payment-row',
+      status: 'closed',
+      paymentMethod: 'cash',
+      total: '100',
+      payments: [{ method: 'cash', amount: 0 }]
+    }])).toEqual({ ventasContado: '100', abonosFiado: '0' });
+  });
+
+  it('uses explicit mixed tender rows without adding the legacy sale total again', () => {
+    expect(calculateSessionTotals([{
+      id: 'sale-explicit-mixed-tender',
+      status: 'closed',
+      paymentMethod: 'mixed',
+      total: '450',
+      payments: [
+        { method: 'cash', amount: '100' },
+        { method: 'card', amount: '200' },
+        { method: 'transfer', amount: '150' }
+      ]
+    }])).toEqual({ ventasContado: '100', abonosFiado: '0' });
+  });
+
   it('counts only applied cash from explicit mixed tender rows, excluding received overage and card', () => {
     expect(calculateSessionTotals([{
       id: 'sale-mixed-tender',

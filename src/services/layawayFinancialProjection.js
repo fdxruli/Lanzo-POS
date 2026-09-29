@@ -1,5 +1,10 @@
 import { Money } from '../utils/moneyMath';
 import { isFinanciallyClosedSale } from './sales/financialStats';
+import {
+  getExplicitSalePaymentRows,
+  isRestaurantSplitCashPayment,
+  normalizeRestaurantSplitPaymentMethod
+} from './sales/paymentMethodContract';
 
 const amount = (value) => Money.init(value || 0);
 const number = (value) => Money.toNumber(value);
@@ -76,27 +81,31 @@ const isCashEntryMovement = (movement = {}) => (
 );
 const isCashSale = (sale = {}) => {
   const safeSale = asRecord(sale);
-  const payments = safeSale.payments || safeSale.paymentBreakdown || safeSale.paymentDetails?.payments;
-  if (Array.isArray(payments)) {
+  const payments = getExplicitSalePaymentRows(safeSale);
+  if (payments) {
     return payments.some((payment) => (
-      ['cash', 'efectivo'].includes(String(payment?.method || payment?.paymentMethod || '').trim().toLowerCase())
+      isRestaurantSplitCashPayment(payment)
       && amount(payment?.amount ?? payment?.total).gt(0)
     ));
   }
-  const method = String(safeSale.paymentMethod || safeSale.payment_method || '').toLowerCase();
-  return method === 'efectivo' || method === 'cash' || (!method && Number(safeSale.paymentData?.amount) > 0);
+  const method = normalizeRestaurantSplitPaymentMethod(safeSale.paymentMethod || safeSale.payment_method);
+  return method === 'cash'
+    || (method === 'credit' && amount(safeSale.abono || 0).gt(0))
+    || (!method && Number(safeSale.paymentData?.amount) > 0);
 };
 
 const appliedCashAmount = (sale = {}) => {
   const safeSale = asRecord(sale);
-  const payments = safeSale.payments || safeSale.paymentBreakdown || safeSale.paymentDetails?.payments;
-  if (Array.isArray(payments)) {
+  const payments = getExplicitSalePaymentRows(safeSale);
+  if (payments) {
     return payments.reduce((total, payment) => (
-      ['cash', 'efectivo'].includes(String(payment?.method || payment?.paymentMethod || '').trim().toLowerCase())
+      isRestaurantSplitCashPayment(payment)
         ? total.plus(payment?.amount ?? payment?.total ?? 0)
         : total
     ), amount(0));
   }
+  const method = normalizeRestaurantSplitPaymentMethod(safeSale.paymentMethod || safeSale.payment_method);
+  if (method === 'credit') return amount(safeSale.abono || 0);
   return amount(safeSale.total || safeSale.paymentData?.amount || 0);
 };
 const lineCost = (item = {}) => {
