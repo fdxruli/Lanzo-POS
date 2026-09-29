@@ -10,7 +10,10 @@ import {
   RESTAURANT_SPLIT_INTENTS,
   splitRequiresCashSessionCompatibility
 } from '../../services/sales/splitOrderContract';
-import { normalizeRestaurantSplitPaymentMethod } from '../../services/sales/paymentMethodContract';
+import {
+  normalizeRestaurantSplitPaymentMethod,
+  toLegacyRestaurantSplitPaymentMethod
+} from '../../services/sales/paymentMethodContract';
 import {
   calculateEqualPaymentCents,
   validateCustomPaymentCents
@@ -131,12 +134,14 @@ const formatQuantity = (value) => {
   return quantity.toFixed(STOCK_DECIMALS).replace(/0+$/, '').replace(/\.$/, '');
 };
 
-const initialPaymentsState = (guests, totalsCents = []) => Object.fromEntries(
+const initialPaymentsState = (guests, totalsCents = [], payerPaymentMethods = []) => Object.fromEntries(
   guests.map((guest, index) => [guest.id, {
-    paymentMethod: 'efectivo',
-    amountPaid: formatMoneyFromCents(totalsCents[index] || 0),
+    paymentMethod: toLegacyRestaurantSplitPaymentMethod(payerPaymentMethods[index]?.paymentMethod) || 'efectivo',
+    amountPaid: payerPaymentMethods[index]?.paymentMethod === 'credit'
+      ? '0'
+      : formatMoneyFromCents(totalsCents[index] || 0),
     customerId: '',
-    initialPaymentMethod: 'efectivo',
+    initialPaymentMethod: toLegacyRestaurantSplitPaymentMethod(payerPaymentMethods[index]?.initialPaymentMethod) || 'efectivo',
     paymentReference: '',
     sendReceipt: false
   }])
@@ -263,7 +268,7 @@ export default function SplitBillModal({
     setCustomAmountsCents(restored.status === 'restored'
       ? restored.customAmountsCents
       : Array(nextGuests.length).fill(0));
-    setPayments(initialPaymentsState(nextGuests, initialMath.totalsCents));
+    setPayments(initialPaymentsState(nextGuests, initialMath.totalsCents, restored.payerPaymentMethods || []));
     setAssignmentAmounts({});
     setCurrentStep(restored.status === 'restored' ? restored.step : 'people');
     setAssignmentPanel('pending');
@@ -296,8 +301,8 @@ export default function SplitBillModal({
     return () => { active = false; };
   }, [show]);
 
-  // Persist presentation state only. Payment methods, credit customers,
-  // amounts and other financial data always start from the current contract.
+  // Persist safe method selections only. Credit customers, amounts, references
+  // and receipt choices always start fresh from the current financial contract.
   useEffect(() => {
     if (!show || !isSessionReady || !orderId) return;
     const stored = saveRestaurantSplitDraft({
@@ -308,12 +313,16 @@ export default function SplitBillModal({
       allocations,
       step: currentStep,
       splitIntent,
-      customAmountsCents
+      customAmountsCents,
+      payerPaymentMethods: guests.map((guest) => ({
+        paymentMethod: payments[guest.id]?.paymentMethod,
+        initialPaymentMethod: payments[guest.id]?.initialPaymentMethod
+      }))
     });
     if (!stored && !draftNotice) {
       setDraftNotice('No se pudo guardar el reparto localmente en este dispositivo. Puedes continuar, pero quizá debas repetir la asignación si cierras esta ventana.');
     }
-  }, [show, isSessionReady, orderId, safeOrder, orderSnapshot, guests, allocations, currentStep, splitIntent, customAmountsCents, draftNotice]);
+  }, [show, isSessionReady, orderId, safeOrder, orderSnapshot, guests, allocations, currentStep, splitIntent, customAmountsCents, payments, draftNotice]);
 
   useEffect(() => {
     if (!show) return undefined;
@@ -826,7 +835,7 @@ export default function SplitBillModal({
           <div className="split-bill-title-block">
             <span className="split-bill-kicker">División de cuenta</span>
             <h2 id="split-bill-title">{splitIntent === RESTAURANT_SPLIT_INTENTS.BY_ITEMS ? '¿Qué productos pagará cada persona?' : '¿Cómo dividirán esta cuenta?'}</h2>
-            <p id="split-bill-description">La estrategia, los nombres y la distribución se guardan en este dispositivo para esta mesa mientras preparas el cobro.</p>
+            <p id="split-bill-description">La estrategia, los nombres, la distribución y los métodos de pago se guardan en este dispositivo para esta mesa. No se guardan clientes, abonos ni referencias.</p>
           </div>
           <button type="button" className="split-close-button" onClick={onClose} disabled={isSubmitting} aria-label="Cerrar división de cuenta">
             <X size={20} aria-hidden="true" />

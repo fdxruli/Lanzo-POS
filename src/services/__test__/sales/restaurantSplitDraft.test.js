@@ -69,23 +69,42 @@ describe('restaurant split local draft', () => {
       status: 'restored',
       splitIntent: 'by_items',
       customAmountsCents: [],
+      payerPaymentMethods: [
+        { paymentMethod: 'cash', initialPaymentMethod: 'cash' },
+        { paymentMethod: 'cash', initialPaymentMethod: 'cash' }
+      ],
       allocations: draft.allocations
     });
   });
 
-  it('stores custom monetary amounts as integer cents with names and assignments only', () => {
+  it('stores custom cents and normalized tender choices without customer or transaction data', () => {
     const draft = makeDraft({
       splitIntent: 'custom_payment',
-      customAmountsCents: [3750, 2250]
+      customAmountsCents: [3750, 2250],
+      payerPaymentMethods: [
+        { paymentMethod: 'TARJETA', initialPaymentMethod: 'efectivo' },
+        { paymentMethod: 'fiado', initialPaymentMethod: 'transferencia', customerId: 'secret-customer', amountPaid: '8.20', paymentReference: 'secret-reference' }
+      ]
     });
     expect(saveRestaurantSplitDraft(draft)).toBe(true);
     const restored = readRestaurantSplitDraft(draft);
-    expect(restored).toMatchObject({ splitIntent: 'custom_payment', customAmountsCents: [3750, 2250] });
+    expect(restored).toMatchObject({
+      splitIntent: 'custom_payment',
+      customAmountsCents: [3750, 2250],
+      payerPaymentMethods: [
+        { paymentMethod: 'card', initialPaymentMethod: 'cash' },
+        { paymentMethod: 'credit', initialPaymentMethod: 'transfer' }
+      ]
+    });
     const currentKey = getRestaurantSplitDraftStorageKey(draft.orderId);
     const serialized = tenantStorage.values.get(`tenant-a:${currentKey}`);
-    expect(serialized).not.toContain('paymentMethod');
+    expect(serialized).toContain('"paymentMethod":"card"');
+    expect(serialized).toContain('"initialPaymentMethod":"transfer"');
     expect(serialized).not.toContain('customerId');
     expect(serialized).not.toContain('amountPaid');
+    expect(serialized).not.toContain('paymentReference');
+    expect(serialized).not.toContain('secret-customer');
+    expect(serialized).not.toContain('secret-reference');
   });
 
   it('isolates identical order identifiers across businesses and clears only the active tenant draft', () => {

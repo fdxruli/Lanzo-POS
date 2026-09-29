@@ -381,6 +381,27 @@ describe('SplitBillModal four-step restaurant split', () => {
     expect(payload.tickets.map((ticket) => ticket.paymentData.paymentMethod)).toEqual(['tarjeta', 'transferencia']);
   });
 
+  it('restores a valid monetary draft with integer-cent custom shares', async () => {
+    const view = renderModal({
+      order: [{ lineId: 'draft-shared', id: 'shared', name: 'Cuenta', quantity: 1, price: 100 }],
+      total: 100,
+      orderId: 'monetary-draft'
+    });
+    fireEvent.click(screen.getByRole('radio', { name: /Ingresar montos personalizados/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Ingresar montos' }));
+    fireEvent.change(document.getElementById('splitCustomAmount-T1'), { target: { value: '30.00' } });
+    fireEvent.change(document.getElementById('splitCustomAmount-T2'), { target: { value: '70.00' } });
+    await waitFor(() => expect([...tenantStorage.values.values()].some((value) => value.includes('custom_payment'))).toBe(true));
+
+    view.setShow(false);
+    view.setShow(true);
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Se restauró el borrador local'));
+    expect(screen.getByRole('heading', { name: 'Ingresa los montos de cada persona' })).toBeInTheDocument();
+    expect(document.getElementById('splitCustomAmount-T1')).toHaveValue(30);
+    expect(document.getElementById('splitCustomAmount-T2')).toHaveValue(70);
+    expect(screen.getByText('Total distribuido').parentElement).toHaveTextContent('$100.00');
+  });
+
   it('returns one or all items to pending and can move a line directly between people', () => {
     renderModal({
       order: [
@@ -497,7 +518,8 @@ describe('SplitBillModal four-step restaurant split', () => {
     expect(screen.getByRole('button', { name: 'Revisar división' })).toBeEnabled();
   });
 
-  it('restores a matching local draft after closing and reopening without restoring payment data', async () => {
+  it('restores safe payment method choices without restoring amounts, references or customers', async () => {
+    loadData.mockResolvedValue([{ id: 'customer-1', name: 'Cliente registrado', phone: '555', debt: 0, creditLimit: 500 }]);
     const order = [
       { lineId: 'a', id: 'product-a', name: 'Producto A', quantity: 1, price: 100 },
       { lineId: 'b', id: 'product-b', name: 'Producto B', quantity: 1, price: 50 }
@@ -507,16 +529,35 @@ describe('SplitBillModal four-step restaurant split', () => {
     goToItems();
     fireEvent.click(within(getPendingLine('Producto A')).getByRole('button', { name: 'Asignar todas las unidades restantes de Producto A a Ana · Comensal 1' }));
     fireEvent.click(within(getPendingLine('Producto B')).getByRole('button', { name: 'Asignar todas las unidades restantes de Producto B a Comensal 2 · Comensal 2' }));
+    goToPayment();
+    const methods = screen.getAllByLabelText('Método de pago');
+    fireEvent.change(methods[0], { target: { value: 'tarjeta' } });
+    fireEvent.change(methods[1], { target: { value: 'fiado' } });
+    fireEvent.change(screen.getByLabelText('Método del abono inicial'), { target: { value: 'transferencia' } });
+    fireEvent.change(screen.getByLabelText('Referencia o folio (opcional)'), { target: { value: 'sensitive-reference' } });
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Cliente registrado (555)' })).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText('Cliente financiero registrado'), { target: { value: 'customer-1' } });
     await waitFor(() => expect([...tenantStorage.values.values()].some((value) => value.includes('Ana'))).toBe(true));
     const serialized = [...tenantStorage.values.values()][0];
+    expect(serialized).toContain('"paymentMethod":"card"');
+    expect(serialized).toContain('"paymentMethod":"credit"');
+    expect(serialized).toContain('"initialPaymentMethod":"transfer"');
     expect(serialized).not.toContain('amountPaid');
     expect(serialized).not.toContain('customerId');
+    expect(serialized).not.toContain('paymentReference');
+    expect(serialized).not.toContain('sensitive-reference');
+    expect(serialized).not.toContain('customer-1');
 
     view.setShow(false);
     view.setShow(true);
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Se restauró el borrador local'));
     expect(screen.getByRole('heading', { name: /Ana · Comensal 1/ })).toBeInTheDocument();
-    expect(screen.getByRole('tabpanel', { name: 'Platos pendientes' })).toHaveTextContent('Completamente repartido');
+    const restoredMethods = screen.getAllByLabelText('Método de pago');
+    expect(restoredMethods[0]).toHaveValue('tarjeta');
+    expect(restoredMethods[1]).toHaveValue('fiado');
+    expect(screen.getByLabelText('Método del abono inicial')).toHaveValue('transferencia');
+    expect(screen.getByLabelText('Abono inicial aplicado')).toHaveValue(0);
+    expect(screen.getByLabelText('Cliente financiero registrado')).toHaveValue('');
   });
 
   it('discards a draft when the order snapshot changes, and does not leak it between tenants or tables', async () => {

@@ -6,6 +6,7 @@ import {
   setTenantStorageItem
 } from '../tenant/tenantScopedStorage';
 import { normalizeStock } from '../db/utils';
+import { normalizeRestaurantSplitPaymentMethod } from './paymentMethodContract';
 import { RESTAURANT_SPLIT_INTENTS } from './splitOrderContract';
 
 export const RESTAURANT_SPLIT_DRAFT_VERSION = 2;
@@ -104,6 +105,21 @@ const normalizeDraftCustomAmounts = (amounts, guestCount) => {
   return [...amounts];
 };
 
+const normalizeDraftPaymentMethods = (paymentMethods, guestCount) => {
+  const source = Array.isArray(paymentMethods) && paymentMethods.length === guestCount
+    ? paymentMethods
+    : [];
+  return Array.from({ length: guestCount }, (_, index) => {
+    const payment = source[index] || {};
+    const method = normalizeRestaurantSplitPaymentMethod(payment.paymentMethod);
+    const initialMethod = normalizeRestaurantSplitPaymentMethod(payment.initialPaymentMethod);
+    return {
+      paymentMethod: ['cash', 'card', 'transfer', 'credit'].includes(method) ? method : 'cash',
+      initialPaymentMethod: ['cash', 'card', 'transfer'].includes(initialMethod) ? initialMethod : 'cash'
+    };
+  });
+};
+
 const readStoredDraft = (key) => {
   const raw = getTenantStorageItem(key);
   if (!raw) return { status: 'missing' };
@@ -144,6 +160,9 @@ export const readRestaurantSplitDraft = ({ orderId, order = [], orderSnapshot } 
   const customAmountsCents = version === 1 || splitIntent !== RESTAURANT_SPLIT_INTENTS.CUSTOM_PAYMENT
     ? []
     : normalizeDraftCustomAmounts(draft.customAmountsCents, guests?.length || 0);
+  const payerPaymentMethods = guests
+    ? normalizeDraftPaymentMethods(version === 1 ? null : draft.payerPaymentMethods, guests.length)
+    : [];
   if (
     !guests
     || !splitIntent
@@ -160,6 +179,7 @@ export const readRestaurantSplitDraft = ({ orderId, order = [], orderSnapshot } 
     guests,
     splitIntent,
     customAmountsCents,
+    payerPaymentMethods,
     allocations: draft.allocations.map((allocation) => ({
       poolQuantity: normalizeStock(Number(allocation.poolQuantity)),
       ticketQuantities: allocation.ticketQuantities.map((quantity) => normalizeStock(Number(quantity)))
@@ -176,13 +196,17 @@ export const saveRestaurantSplitDraft = ({
   allocations,
   step,
   splitIntent = RESTAURANT_SPLIT_INTENTS.BY_ITEMS,
-  customAmountsCents = []
+  customAmountsCents = [],
+  payerPaymentMethods = []
 } = {}) => {
   if (!orderId || !getTenantStorageState().ready) return false;
   const normalizedGuests = normalizeGuests(guests);
   const normalizedIntent = normalizeSplitIntent(splitIntent);
   const normalizedCustomAmounts = normalizedIntent === RESTAURANT_SPLIT_INTENTS.CUSTOM_PAYMENT
     ? normalizeDraftCustomAmounts(customAmountsCents, normalizedGuests?.length || 0)
+    : [];
+  const normalizedPaymentMethods = normalizedGuests
+    ? normalizeDraftPaymentMethods(payerPaymentMethods, normalizedGuests.length)
     : [];
   if (
     !normalizedGuests
@@ -200,6 +224,7 @@ export const saveRestaurantSplitDraft = ({
     guests: normalizedGuests,
     splitIntent: normalizedIntent,
     customAmountsCents: normalizedCustomAmounts,
+    payerPaymentMethods: normalizedPaymentMethods,
     allocations: allocations.map((allocation) => ({
       poolQuantity: normalizeStock(Number(allocation.poolQuantity)),
       ticketQuantities: allocation.ticketQuantities.map((quantity) => normalizeStock(Number(quantity)))
