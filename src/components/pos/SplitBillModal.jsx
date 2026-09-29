@@ -596,7 +596,8 @@ export default function SplitBillModal({
     setCurrentStep(WIZARD_STEPS[Math.min(currentIndex + 1, WIZARD_STEPS.length - 1)].id);
   };
 
-  const handleSubmit = async (event) => {
+  // Only the explicit final confirmation may initiate a financial operation.
+  const handleConfirmClick = async (event) => {
     event.preventDefault();
     if (currentStep !== 'review' || paymentValidationError || isSubmitting || !isSessionReady) return;
     if (
@@ -713,7 +714,7 @@ export default function SplitBillModal({
 
         {draftNotice && <p className="split-draft-notice" role="status">{draftNotice}</p>}
 
-        <form className="split-bill-form" onSubmit={handleSubmit} noValidate>
+        <form className="split-bill-form" onSubmit={(event) => event.preventDefault()} noValidate>
           <div className="split-step-content" key={currentStep}>
             {currentStep === 'people' && (
               <section className="split-step-panel" aria-labelledby="split-people-title">
@@ -1189,14 +1190,15 @@ export default function SplitBillModal({
               {currentStepIndex === 0 ? 'Guardar y cerrar' : <><ChevronLeft size={18} aria-hidden="true" /> {WIZARD_STEPS[currentStepIndex - 1].title}</>}
             </button>
             {isFinalStep ? (
-              <button type="submit" className="split-primary-button" disabled={Boolean(paymentValidationError) || isSubmitting || !isSessionReady}>
+              <button key="confirm-split" type="button" className="split-primary-button" onClick={handleConfirmClick} disabled={Boolean(paymentValidationError) || isSubmitting || !isSessionReady}>
                 {isSubmitting ? 'Procesando…' : 'Confirmar división y cobro'}
               </button>
             ) : (
               <button
+                key="advance-split"
                 type="button"
                 className="split-primary-button"
-                onClick={goForward}
+                onClick={(event) => { event.preventDefault(); goForward(); }}
                 disabled={isSubmitting || (currentStep === 'items' && Boolean(assignmentError)) || (currentStep === 'payment' && Boolean(paymentValidationError))}
               >
                 {currentStep === 'people' ? 'Asignar platos' : currentStep === 'items' ? 'Configurar cobro' : 'Revisar división'}
