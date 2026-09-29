@@ -40,6 +40,8 @@ export default function PosModals({
         aperturaPendiente,
         cashActor,
         isCloudCashReadOnly,
+        activeOrderId,
+        tableName,
         features
     } = data;
 
@@ -101,6 +103,8 @@ export default function PosModals({
                 total={total}
                 saleDiscount={saleDiscount}
                 isCajaOpen={Boolean(cajaActual && cajaActual.estado === 'abierta')}
+                orderId={activeOrderId}
+                tableName={tableName}
                 onConfirm={handleConfirmSplitBill}
             />
 
@@ -162,6 +166,7 @@ PosModals.propTypes = {
         cashActor: PropTypes.object,
         isCloudCashReadOnly: PropTypes.bool,
         activeOrderId: PropTypes.string,
+        tableName: PropTypes.string,
         features: PropTypes.object.isRequired
     }).isRequired
 };
