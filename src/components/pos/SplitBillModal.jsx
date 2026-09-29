@@ -181,6 +181,7 @@ export default function SplitBillModal({
   const [pendingGuestRemoval, setPendingGuestRemoval] = useState(null);
   const [assignmentNotice, setAssignmentNotice] = useState('');
   const initializedSessionRef = useRef(null);
+  const submissionInFlightRef = useRef(false);
   const latestInputsRef = useRef({ order, total, saleDiscount });
   latestInputsRef.current = { order, total, saleDiscount };
 
@@ -235,7 +236,7 @@ export default function SplitBillModal({
     setAssignmentAmounts({});
     setCurrentStep(restored.status === 'restored' ? restored.step : 'people');
     setAssignmentPanel('pending');
-    setIsSubmitting(false);
+    setIsSubmitting(submissionInFlightRef.current);
     setPendingGuestRemoval(null);
     setAssignmentNotice('');
     setDraftNotice(restored.status === 'restored'
@@ -599,7 +600,7 @@ export default function SplitBillModal({
   // Only the explicit final confirmation may initiate a financial operation.
   const handleConfirmClick = async (event) => {
     event.preventDefault();
-    if (currentStep !== 'review' || paymentValidationError || isSubmitting || !isSessionReady) return;
+    if (currentStep !== 'review' || paymentValidationError || isSubmitting || submissionInFlightRef.current || !isSessionReady) return;
     if (
       initializedSessionRef.current !== sessionIdentity
       || buildRestaurantSplitOrderSnapshot({ order: safeOrder, total, saleDiscount }) !== orderSnapshot
@@ -610,6 +611,7 @@ export default function SplitBillModal({
       return;
     }
 
+    submissionInFlightRef.current = true;
     setIsSubmitting(true);
     try {
       const payload = {
@@ -646,6 +648,7 @@ export default function SplitBillModal({
         setIsSessionReady(false);
       }
     } finally {
+      submissionInFlightRef.current = false;
       setIsSubmitting(false);
     }
   };

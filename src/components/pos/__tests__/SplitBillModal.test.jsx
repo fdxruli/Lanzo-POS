@@ -103,6 +103,38 @@ describe('SplitBillModal four-step restaurant split', () => {
     await waitFor(() => expect(onConfirm).toHaveBeenCalledOnce());
   });
 
+  it('submits only once if confirmation is re-entered before the first request settles', async () => {
+    let resolveConfirmation;
+    let confirmButton;
+    const onConfirm = vi.fn(() => {
+      if (onConfirm.mock.calls.length === 1) {
+        confirmButton.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      }
+      return new Promise((resolve) => { resolveConfirmation = resolve; });
+    });
+    renderModal({
+      order: [
+        { lineId: 'double-submit-a', id: 'product-a', name: 'Producto A', quantity: 1, price: 100 },
+        { lineId: 'double-submit-b', id: 'product-b', name: 'Producto B', quantity: 1, price: 50 }
+      ],
+      total: 150,
+      onConfirm
+    });
+    goToItems();
+    fireEvent.click(within(getPendingLine('Producto A')).getByRole('button', { name: 'Asignar todas las unidades restantes de Producto A a Comensal 1 · Comensal 1' }));
+    fireEvent.click(within(getPendingLine('Producto B')).getByRole('button', { name: 'Asignar todas las unidades restantes de Producto B a Comensal 2 · Comensal 2' }));
+    goToPayment();
+    goToReview();
+
+    confirmButton = screen.getByRole('button', { name: 'Confirmar división y cobro' });
+    fireEvent.click(confirmButton);
+    expect(onConfirm).toHaveBeenCalledOnce();
+    expect(confirmButton).toBeDisabled();
+
+    resolveConfirmation({ success: true });
+    await waitFor(() => expect(confirmButton).toBeDisabled());
+  });
+
   it('starts with two guests, supports optional names up to eight, and keeps names separate from financial IDs', async () => {
     const { onConfirm } = renderModal({
       order: [
