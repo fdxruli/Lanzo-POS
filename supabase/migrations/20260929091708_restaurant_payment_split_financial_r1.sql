@@ -386,6 +386,7 @@ declare
   v_payer_id text;
   v_payer_method text;
   v_payer_customer_id text;
+  v_credit_customer_id text;
   v_customer_id_snake text;
   v_customer_id_camel text;
   v_child_customer_id text;
