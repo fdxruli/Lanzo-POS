@@ -466,6 +466,60 @@ const createCompetitiveObservation = () => ({
   priceType: 'unknown', promotion: '', taxStatus: 'unknown', shippingStatus: 'unknown', note: '', comparableConfirmed: false
 });
 
+const COMPETITIVE_CURRENCY_OPTIONS = Object.freeze([
+  { value: 'MXN', label: 'MXN · Peso mexicano (México)' },
+  { value: 'USD', label: 'USD · Dólar estadounidense (EE. UU.)' },
+  { value: 'GTQ', label: 'GTQ · Quetzal guatemalteco (Guatemala)' }
+]);
+const EMPTY_COMPETITORS = Object.freeze([]);
+
+const getObservationComparisonNotice = (item, itemPath, errors) => {
+  const name = String(item?.name || '').trim();
+  if (!name || errors.some((error) => error.startsWith(`${itemPath}.`))) return null;
+
+  const hasPrice = item.price !== '' && item.price !== null && item.price !== undefined;
+  const hasUnit = Boolean(String(item.unit || '').trim());
+  if (item.type === 'service') {
+    return {
+      prepared: false,
+      guidance: 'Puedes continuar con el análisis de oferta. Los servicios no se comparan como productos equivalentes.'
+    };
+  }
+
+  const currency = String(item.currency || '').trim().toUpperCase();
+  const hasValidCurrency = /^[A-Z]{3}$/u.test(currency);
+  if (hasPrice && hasValidCurrency && hasUnit && item.priceType === 'regular' && item.comparableConfirmed === true) {
+    return {
+      prepared: true,
+      guidance: 'El catálogo propio aún se valida durante el análisis; esto no confirma que exista una comparación equivalente.'
+    };
+  }
+
+  if (hasPrice && hasValidCurrency && !hasUnit) {
+    return {
+      prepared: false,
+      guidance: 'Falta indicar la presentación para evaluar una comparación equivalente.'
+    };
+  }
+
+  if (!hasPrice) {
+    return {
+      prepared: false,
+      guidance: 'Puedes continuar con el análisis de oferta. Si quieres comparar precios, completa los datos correspondientes.'
+    };
+  }
+
+  const missingDetails = [];
+  if (item.priceType !== 'regular') missingDetails.push('indica si el precio es regular');
+  if (item.comparableConfirmed !== true) missingDetails.push('confirma la equivalencia del producto');
+  return {
+    prepared: false,
+    guidance: missingDetails.length
+      ? `Completa los datos para comparar precios: ${missingDetails.join(' y ')}.`
+      : 'Completa los datos de presentación para evaluar una comparación equivalente.'
+  };
+};
+
 const createCompetitiveEntry = () => ({
   uiKey: nextCompetitiveUiKey('competitor'),
   name: '', description: '', location: '', observedAt: '',
@@ -490,7 +544,22 @@ const priceReasonLabel = (reason) => ({
 }[reason] || 'No comparable');
 
 function CompetitiveEvidenceBuilder({ value, onChange, showValidation = false, disabled = false }) {
-  const competitors = Array.isArray(value?.competitors) ? value.competitors : [];
+  const competitors = Array.isArray(value?.competitors) ? value.competitors : EMPTY_COMPETITORS;
+  const pendingObservationFocusRef = useRef(null);
+  useEffect(() => {
+    const pendingFocus = pendingObservationFocusRef.current;
+    if (!pendingFocus || typeof document === 'undefined') return;
+    const target = document.getElementById(pendingFocus.targetId);
+    if (!target) return;
+
+    pendingObservationFocusRef.current = null;
+    if (pendingFocus.shouldScroll) {
+      const prefersReducedMotion = typeof window !== 'undefined'
+        && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+      target.scrollIntoView?.({ behavior: prefersReducedMotion ? 'instant' : 'smooth', block: 'center' });
+    }
+    target.focus({ preventScroll: true });
+  }, [competitors]);
   const updateCompetitor = (index, update) => onChange((current) => ({
     ...current,
     competitors: current.competitors.map((competitor, competitorIndex) => competitorIndex === index
@@ -523,6 +592,30 @@ function CompetitiveEvidenceBuilder({ value, onChange, showValidation = false, d
   };
   const renderFieldIssues = (targetId) => issuesFor(targetId).map((issue) => <LiaFieldIssue key={issue.id} issue={issue} />);
   const reviewRows = competitors.flatMap((competitor) => (competitor.observations || []).map((item) => ({ competitor, item })));
+  const addObservation = (competitor, competitorIndex) => {
+    const observations = Array.isArray(competitor.observations) ? competitor.observations : [];
+    if (disabled || observations.length >= COMPETITIVE_ANALYSIS_LIMITS.observationsPerCompetitor) return;
+    const observation = createCompetitiveObservation();
+    pendingObservationFocusRef.current = {
+      targetId: `lia-${competitor.uiKey || `competitor-${competitorIndex + 1}`}-${observation.uiKey}-name`,
+      shouldScroll: true
+    };
+    updateCompetitor(competitorIndex, { observations: [...observations, observation] });
+  };
+  const removeObservation = (competitor, competitorIndex, observationIndex) => {
+    const observations = Array.isArray(competitor.observations) ? competitor.observations : [];
+    const competitorKey = competitor.uiKey || `competitor-${competitorIndex + 1}`;
+    const nextObservation = observations[observationIndex + 1] || observations[observationIndex - 1];
+    const nextObservationKey = nextObservation?.uiKey
+      || (nextObservation ? `observation-${observations.indexOf(nextObservation) + 1}` : null);
+    pendingObservationFocusRef.current = {
+      targetId: nextObservationKey
+        ? `lia-${competitorKey}-${nextObservationKey}-name`
+        : `lia-${competitorKey}-add-observation`,
+      shouldScroll: false
+    };
+    updateCompetitor(competitorIndex, { observations: observations.filter((_, itemIndex) => itemIndex !== observationIndex) });
+  };
 
   return (
     <section className="commercial-ai-competitive-form" aria-labelledby="commercial-ai-competitive-title">
@@ -539,6 +632,7 @@ function CompetitiveEvidenceBuilder({ value, onChange, showValidation = false, d
         {competitors.map((competitor, competitorIndex) => {
           const competitorKey = competitor.uiKey || `competitor-${competitorIndex + 1}`;
           const prefix = `lia-${competitorKey}`;
+          const observationLimitReached = (competitor.observations || []).length >= COMPETITIVE_ANALYSIS_LIMITS.observationsPerCompetitor;
           return (
             <fieldset className="commercial-ai-competitor" key={competitorKey} disabled={disabled}>
               <legend>Competidor {competitorIndex + 1}</legend>
@@ -586,16 +680,25 @@ function CompetitiveEvidenceBuilder({ value, onChange, showValidation = false, d
               <div className="commercial-ai-observations">
                 <div className="commercial-ai-observations__header">
                   <h3>Productos o servicios observados</h3>
-                  <button type="button" id={`${prefix}-add-observation`} className="commercial-ai-secondary-button" disabled={(competitor.observations || []).length >= COMPETITIVE_ANALYSIS_LIMITS.observationsPerCompetitor} onClick={() => updateCompetitor(competitorIndex, { observations: [...competitor.observations, createCompetitiveObservation()] })}>
-                    <Plus size={15} aria-hidden="true" /> Añadir observación
-                  </button>
+                  <span className="commercial-ai-competitive-form__count">{(competitor.observations || []).length}/{COMPETITIVE_ANALYSIS_LIMITS.observationsPerCompetitor} observaciones</span>
                 </div>
                 {(competitor.observations || []).map((item, observationIndex) => {
                   const observationKey = item.uiKey || `observation-${observationIndex + 1}`;
                   const itemPrefix = `${prefix}-${observationKey}`;
+                  const itemPath = `competitors.${competitorIndex}.observations.${observationIndex}`;
+                  const comparisonNotice = getObservationComparisonNotice(item, itemPath, validation.errors);
+                  const currencyValue = String(item.currency || '').trim().toUpperCase();
+                  const hasListedCurrency = COMPETITIVE_CURRENCY_OPTIONS.some((option) => option.value === currencyValue);
                   return (
                     <fieldset className="commercial-ai-observation" key={observationKey} disabled={disabled}>
                       <legend>Observación {observationIndex + 1}</legend>
+                      {comparisonNotice && (
+                        <div className={`commercial-ai-observation-status${comparisonNotice.prepared ? ' commercial-ai-observation-status--prepared' : ''}`} role="status">
+                          <strong>Registrado</strong>
+                          <span>{comparisonNotice.prepared ? 'Datos externos preparados para comparación' : 'Sin datos suficientes para comparar precios.'}</span>
+                          <p>{comparisonNotice.guidance}</p>
+                        </div>
+                      )}
                       <div className="commercial-ai-competitive-grid">
                         <label className="commercial-ai-label" htmlFor={`${itemPrefix}-type`}>Tipo
                           <select id={`${itemPrefix}-type`} value={item.type} onChange={(event) => updateObservation(competitorIndex, observationIndex, { type: event.target.value })}>
@@ -611,7 +714,11 @@ function CompetitiveEvidenceBuilder({ value, onChange, showValidation = false, d
                           {renderFieldIssues(`${itemPrefix}-price`)}
                         </label>
                         <label className="commercial-ai-label" htmlFor={`${itemPrefix}-currency`}>Moneda
-                          <input id={`${itemPrefix}-currency`} maxLength={3} placeholder="MXN" value={item.currency} className={issueFor(`${itemPrefix}-currency`) ? 'lia-form-control--invalid' : undefined} {...fieldProps(`${itemPrefix}-currency`)} onChange={(event) => updateObservation(competitorIndex, observationIndex, { currency: event.target.value.toUpperCase() })} />
+                          <select id={`${itemPrefix}-currency`} value={currencyValue} className={issueFor(`${itemPrefix}-currency`) ? 'lia-form-control--invalid' : undefined} {...fieldProps(`${itemPrefix}-currency`)} onChange={(event) => updateObservation(competitorIndex, observationIndex, { currency: event.target.value })}>
+                            <option value="">Selecciona moneda</option>
+                            {COMPETITIVE_CURRENCY_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                            {currencyValue && !hasListedCurrency && /^[A-Z]{3}$/u.test(currencyValue) && <option value={currencyValue}>{currencyValue} · Moneda guardada</option>}
+                          </select>
                           {renderFieldIssues(`${itemPrefix}-currency`)}
                         </label>
                         <label className="commercial-ai-label" htmlFor={`${itemPrefix}-unit`}>Unidad o presentación
@@ -645,11 +752,22 @@ function CompetitiveEvidenceBuilder({ value, onChange, showValidation = false, d
                           <input id={`${itemPrefix}-note`} maxLength={600} value={item.note} onChange={(event) => updateObservation(competitorIndex, observationIndex, { note: event.target.value })} />
                         </label>
                         {item.type === 'product' && <label className="commercial-ai-checkbox commercial-ai-competitive-grid__wide"><input type="checkbox" checked={item.comparableConfirmed} onChange={(event) => updateObservation(competitorIndex, observationIndex, { comparableConfirmed: event.target.checked })} /> Confirmo que el nombre corresponde al mismo producto del catálogo propio; la presentación también debe coincidir o permitir normalización.</label>}
-                        <button type="button" className="commercial-ai-competitive-remove" onClick={() => updateCompetitor(competitorIndex, { observations: competitor.observations.filter((_, itemIndex) => itemIndex !== observationIndex) })}><Trash2 size={14} aria-hidden="true" /> Eliminar observación</button>
+                        <button type="button" className="commercial-ai-competitive-remove" onClick={() => removeObservation(competitor, competitorIndex, observationIndex)}><Trash2 size={14} aria-hidden="true" /> Eliminar observación</button>
                       </div>
                     </fieldset>
                   );
                 })}
+                <button
+                  type="button"
+                  id={`${prefix}-add-observation`}
+                  className="commercial-ai-secondary-button"
+                  disabled={disabled || (competitor.observations || []).length >= COMPETITIVE_ANALYSIS_LIMITS.observationsPerCompetitor}
+                  aria-describedby={observationLimitReached ? `${prefix}-observation-limit` : undefined}
+                  onClick={() => addObservation(competitor, competitorIndex)}
+                >
+                  <Plus size={15} aria-hidden="true" /> Añadir observación
+                </button>
+                {observationLimitReached && <p className="commercial-ai-observation-limit" id={`${prefix}-observation-limit`} role="status">Alcanzaste el límite de 20 observaciones para este competidor.</p>}
               </div>
               <button type="button" className="commercial-ai-competitive-remove" onClick={() => removeCompetitor(competitorIndex)}><Trash2 size={14} aria-hidden="true" /> Eliminar competidor</button>
             </fieldset>

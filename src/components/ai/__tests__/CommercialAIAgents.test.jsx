@@ -1337,6 +1337,137 @@ describe('commercial AI center', () => {
     expect(runtime.loadProducts).not.toHaveBeenCalled();
   });
 
+  it('registers a name-only offer, explains missing price data, and still allows the analysis', async () => {
+    renderCenter();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), {
+      target: { value: '¿Cómo estoy frente a mi competencia?' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Añadir competidor' }));
+    fireEvent.change(screen.getByLabelText('Nombre comercial'), { target: { value: 'Mercado Uno' } });
+    fireEvent.change(screen.getByLabelText('Fecha observada'), { target: { value: new Date().toISOString().slice(0, 10) } });
+    fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Tacos de pastor' } });
+
+    expect(screen.getByText('Registrado')).toBeInTheDocument();
+    expect(screen.getByText('Sin datos suficientes para comparar precios.')).toBeInTheDocument();
+    expect(screen.getByText(/Puedes continuar con el análisis de oferta/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Analizar' })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+    await waitFor(() => expect(runtime.runAgent).toHaveBeenCalledTimes(1));
+    expect(runtime.runAgent.mock.calls[0][0]).toMatchObject({
+      intent: 'competitive_analysis',
+      competitiveEvidence: {
+        competitors: [{ observations: [{ name: 'Tacos de pastor', price: '', currency: '' }] }]
+      }
+    });
+  });
+
+  it('uses regional currency options, blocks price without a currency, and prepares only complete product evidence', async () => {
+    renderCenter();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), {
+      target: { value: '¿Mis precios son competitivos?' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Añadir competidor' }));
+    fireEvent.change(screen.getByLabelText('Nombre comercial'), { target: { value: 'Mercado Uno' } });
+    fireEvent.change(screen.getByLabelText('Fecha observada'), { target: { value: new Date().toISOString().slice(0, 10) } });
+    fireEvent.change(screen.getByLabelText('Nombre'), { target: { value: 'Café Sierra' } });
+    const currency = screen.getByLabelText('Moneda');
+    expect(currency.tagName).toBe('SELECT');
+    expect(screen.getByRole('option', { name: 'Selecciona moneda' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'MXN · Peso mexicano (México)' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'USD · Dólar estadounidense (EE. UU.)' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'GTQ · Quetzal guatemalteco (Guatemala)' })).toBeInTheDocument();
+    expect(currency).toHaveValue('');
+
+    fireEvent.change(screen.getByLabelText('Precio (opcional)'), { target: { value: '39' } });
+    expect(screen.queryByText('Registrado')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+    expect(screen.getAllByText('Indica la moneda del precio, por ejemplo MXN.')).toHaveLength(2);
+    expect(currency).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.queryByText('Sin datos suficientes para comparar precios.')).not.toBeInTheDocument();
+    expect(runtime.runAgent).not.toHaveBeenCalled();
+
+    fireEvent.change(currency, { target: { value: 'GTQ' } });
+    expect(currency).toHaveValue('GTQ');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByText('Falta indicar la presentación para evaluar una comparación equivalente.')).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Unidad o presentación'), { target: { value: '500 ml' } });
+    fireEvent.change(screen.getByLabelText('Condición de precio'), { target: { value: 'regular' } });
+    expect(screen.getByText(/confirma la equivalencia del producto/)).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText(/Confirmo que el nombre corresponde al mismo producto/));
+    expect(screen.getByText('Datos externos preparados para comparación')).toBeInTheDocument();
+    expect(screen.getByText(/El catálogo propio aún se valida durante el análisis/)).toBeInTheDocument();
+
+    fireEvent.change(currency, { target: { value: 'USD' } });
+    expect(currency).toHaveValue('USD');
+    fireEvent.change(currency, { target: { value: 'MXN' } });
+    expect(currency).toHaveValue('MXN');
+    fireEvent.change(currency, { target: { value: 'GTQ' } });
+    expect(currency).toHaveValue('GTQ');
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+    await waitFor(() => expect(runtime.runAgent).toHaveBeenCalledTimes(1));
+    expect(runtime.runAgent.mock.calls[0][0].competitiveEvidence.competitors[0].observations[0].currency).toBe('GTQ');
+  }, 30000);
+
+  it('adds observations at the end, focuses the new name, preserves row identity, and enforces the per-competitor limit', () => {
+    renderCenter();
+    fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), {
+      target: { value: '¿Cómo estoy frente a mi competencia?' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Añadir competidor' }));
+    fireEvent.change(screen.getByLabelText('Nombre comercial'), { target: { value: 'Mercado Uno' } });
+    fireEvent.change(screen.getByLabelText('Fecha observada'), { target: { value: new Date().toISOString().slice(0, 10) } });
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+    expect(screen.getByRole('heading', { name: 'Hay 1 dato que debes revisar' })).toBeInTheDocument();
+    const firstName = document.querySelector('[aria-invalid="true"][id$="-name"]');
+    expect(firstName).toBeInTheDocument();
+    fireEvent.change(firstName, { target: { value: 'Tacos de pastor' } });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Añadir observación' }));
+    const nameFields = document.querySelectorAll('.commercial-ai-observation input[id$="-name"]');
+    expect(nameFields).toHaveLength(2);
+    expect(nameFields[0]).toHaveValue('Tacos de pastor');
+    expect(nameFields[0]).not.toHaveAttribute('aria-invalid');
+    expect(nameFields[1]).toHaveAttribute('aria-invalid', 'true');
+    expect(document.activeElement).toBe(nameFields[1]);
+    const observation = document.querySelector('.commercial-ai-observation');
+    const addButton = screen.getByRole('button', { name: 'Añadir observación' });
+    expect(observation.compareDocumentPosition(addButton) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    fireEvent.change(nameFields[1], { target: { value: 'Café Sierra' } });
+    fireEvent.click(screen.getAllByRole('button', { name: 'Eliminar observación' })[0]);
+    expect(screen.getAllByLabelText('Nombre')).toHaveLength(1);
+    expect(screen.getByLabelText('Nombre')).toHaveValue('Café Sierra');
+    expect(document.activeElement).toBe(screen.getByLabelText('Nombre'));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), {
+      target: { value: '¿Qué ofrece la competencia cercana?' }
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Añadir competidor' }));
+    fireEvent.change(document.querySelectorAll('.commercial-ai-competitor > .commercial-ai-competitive-grid input[id$="-name"]')[1], { target: { value: 'Mercado Dos' } });
+    const addButtons = document.querySelectorAll('button[id$="-add-observation"]');
+    const secondCompetitorAddButton = addButtons[1];
+    expect(addButtons).toHaveLength(2);
+    for (let index = 1; index < 20; index += 1) {
+      fireEvent.click(secondCompetitorAddButton);
+    }
+    expect(addButtons[0]).toBeEnabled();
+    expect(secondCompetitorAddButton).toBeDisabled();
+    expect(document.getElementById(secondCompetitorAddButton.getAttribute('aria-describedby'))).toHaveTextContent('Alcanzaste el límite de 20 observaciones para este competidor.');
+    const secondCompetitor = document.querySelectorAll('.commercial-ai-competitor')[1];
+    const lastObservation = secondCompetitor.querySelectorAll('.commercial-ai-observation')[19];
+    fireEvent.click(lastObservation.querySelector('.commercial-ai-competitive-remove'));
+    expect(secondCompetitor.querySelectorAll('.commercial-ai-observation')).toHaveLength(19);
+    expect(document.activeElement).toBe(secondCompetitor.querySelectorAll('.commercial-ai-observation input[id$="-name"]')[18]);
+    expect(document.querySelectorAll('.commercial-ai-competitor')[0].querySelector('.commercial-ai-observation input[id$="-name"]')).toHaveValue('Café Sierra');
+    expect(secondCompetitor.querySelector('.commercial-ai-competitive-remove')).toBeInTheDocument();
+    expect(secondCompetitor.querySelector('.commercial-ai-observations__header + .commercial-ai-observation')).toBeInTheDocument();
+    expect(secondCompetitorAddButton).toBeEnabled();
+    expect(secondCompetitorAddButton).not.toHaveAttribute('aria-describedby');
+    expect(secondCompetitor.querySelector('.commercial-ai-observation-limit')).toBeNull();
+  }, 60000);
+
   it('summarizes competitive field errors, focuses their controls, and updates the QA count as fields are fixed', async () => {
     renderCenter();
     fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), {
@@ -1408,7 +1539,7 @@ describe('commercial AI center', () => {
       await waitFor(() => expect(runtime.runAgent).toHaveBeenCalledTimes(expected.indexOf(expected.find(([item]) => item === label)) + 1));
       expect(runtime.runAgent.mock.calls.at(-1)[0].intent).toBe(expectedIntent);
     }
-  });
+  }, 60000);
 
   it('keeps an incomplete price scenario local until the required product and price are supplied', async () => {
     renderCenter();

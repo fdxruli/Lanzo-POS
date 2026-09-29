@@ -171,6 +171,32 @@ describe('deterministic competitive analysis', () => {
     expect(report.priceComparisons[0]).toMatchObject({ comparisonStatus: 'not_comparable', reason, difference: null, differencePercent: null });
   });
 
+  it('keeps a name-only observation available for offer analysis without inventing a price comparison', () => {
+    const report = buildCompetitiveAnalysis({
+      evidence: evidenceFor({
+        name: 'Tacos de pastor',
+        price: '',
+        currency: '',
+        unit: '',
+        priceType: 'unknown',
+        comparableConfirmed: false
+      }),
+      catalog: catalogFor(),
+      ownCurrency: 'MXN',
+      now: NOW
+    });
+
+    expect(report.status).toBe('completed');
+    expect(report.offerComparison.observedFromCompetitor[0]).toMatchObject({ name: 'Tacos de pastor', price: null });
+    expect(report.priceComparisons[0]).toMatchObject({
+      comparisonStatus: 'not_comparable',
+      reason: 'confirmation_required',
+      difference: null,
+      differencePercent: null
+    });
+    expect(report.executiveSummary).toContain('No hay precios con equivalencia suficiente');
+  });
+
   it('does not calculate a percentage over a zero own price', () => {
     const report = buildCompetitiveAnalysis({
       evidence: evidenceFor({ price: 5 }),
