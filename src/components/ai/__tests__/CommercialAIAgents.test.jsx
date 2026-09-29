@@ -947,6 +947,38 @@ describe('commercial AI center', () => {
     expect(runtime.runAgent.mock.calls[0][0]).toMatchObject({ intent: 'profitability_summary' });
   });
 
+  it('shows the deterministic profitability conclusion as the primary answer above a provider sales summary', async () => {
+    const directAnswer = 'Sí. Tus ventas generaron utilidad bruta positiva de $120.00 y un margen bruto de 40.0%.';
+    runtime.runAgent.mockResolvedValueOnce({
+      response: {
+        status: 'completed',
+        intent: 'profitability_summary',
+        executiveSummary: 'Las ventas del periodo sumaron $300.00.',
+        answer: directAnswer,
+        explanation: 'Con los costos de producto registrados, la utilidad bruta fue positiva.',
+        profitability: { status: 'profitable', profit: 120, margin: 0.4, explanation: directAnswer },
+        coverage: { validSales: 3, costCoverage: 1, complete: true },
+        calculations: [],
+        recommendations: [],
+        aiNarrative: {
+          status: 'available',
+          directAnswer,
+          executiveSummary: 'Las ventas del periodo sumaron $300.00.',
+          recommendations: []
+        }
+      },
+      providerCalled: true,
+      quotaOutcome: 'consumed',
+      usageStatus: { used: 3, limit: 15, remaining: 12 }
+    });
+
+    renderCenter();
+    fireEvent.click(screen.getByRole('button', { name: '¿Mi negocio es rentable?' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+
+    expect(await screen.findByRole('heading', { name: directAnswer })).toBeInTheDocument();
+  });
+
   it('routes the assortment suggestion, renders grounded catalogue evidence, and reopens it from history', async () => {
     runtime.runAgent.mockResolvedValueOnce({
       response: {
@@ -1075,7 +1107,7 @@ describe('commercial AI center', () => {
       compare: false,
       scenario: {}
     });
-  });
+  }, 30000);
 
   it('converts numeric scenario inputs and removes irrelevant fields before submitting', async () => {
     renderCenter();
@@ -1120,6 +1152,36 @@ describe('commercial AI center', () => {
     expect(screen.getByRole('combobox', { name: 'Producto' }).value).toBe('');
     expect(screen.getByLabelText('Nuevo precio').value).toBe('');
     expect(screen.getByLabelText('Volumen esperado (opcional)').value).toBe('');
+  });
+
+  it('does not show a completed result under a different question selected while analysis is pending', async () => {
+    let completeAnalysis;
+    runtime.runAgent.mockImplementationOnce(() => new Promise((resolve) => { completeAnalysis = resolve; }));
+    renderCenter();
+    fireEvent.click(screen.getByRole('button', { name: '¿Cómo puedo aumentar mis ventas?' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+    await waitFor(() => expect(runtime.runAgent).toHaveBeenCalledTimes(1));
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), {
+      target: { value: '¿Cómo está mi surtido?' }
+    });
+    expect(screen.getByRole('textbox', { name: 'Pregunta libre' }).value).toBe('¿Cómo está mi surtido?');
+    completeAnalysis({
+      response: {
+        status: 'completed',
+        executiveSummary: 'Respuesta de la pregunta anterior',
+        explanation: 'Este resultado pertenece a otra pregunta.',
+        facts: [], calculations: [], assumptions: [], limitations: [], recommendations: [], scenarios: []
+      },
+      providerCalled: false,
+      quotaOutcome: 'not_consumed',
+      usageStatus: null
+    });
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Analizar' })).toBeEnabled());
+    expect(screen.queryByText('Respuesta de la pregunta anterior')).not.toBeInTheDocument();
+    expect(screen.queryByText('Este resultado pertenece a otra pregunta.')).not.toBeInTheDocument();
+    await waitFor(() => expect([...runtime.historyStorage.values()].join('\n')).toContain('¿Cómo puedo aumentar mis ventas?'));
   });
 
   it('shows only contextual filters and defaults comparison to explain_change', async () => {

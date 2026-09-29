@@ -192,3 +192,72 @@ describe('commercial question router: competitive analysis', () => {
     expect(resolveCommercialIntent('¿Qué pasa si vendo 25% más?')).toMatchObject({ kind: 'supported', intent: 'what_if_analysis' });
   });
 });
+
+describe('phase 6 certification: cross-capability routing matrix', () => {
+  it.each([
+    ['¿Por qué te llamas Lía?', {}, { kind: 'identity', topic: 'name_meaning', requiresProvider: false, requiresData: false }],
+    ['¿Mi negocio es rentable?', {}, { kind: 'supported', intent: 'profitability_summary', requiresProvider: true, requiresData: true }],
+    ['¿Cómo puedo aumentar mis ventas?', {}, { kind: 'supported', intent: 'sales_growth', requiresProvider: true, requiresData: true }],
+    ['¿Cómo aumento mi ticket promedio?', {}, { kind: 'supported', intent: 'ticket_growth', requiresProvider: true, requiresData: true }],
+    ['¿Qué productos debería impulsar?', {}, { kind: 'supported', intent: 'product_opportunity', requiresProvider: true, requiresData: true }],
+    ['¿Qué productos nuevos debería vender?', {}, { kind: 'supported', intent: 'assortment_analysis', requiresProvider: true, requiresData: true }],
+    ['¿Cómo está mi surtido?', {}, { kind: 'supported', intent: 'assortment_analysis', requiresProvider: true, requiresData: true }],
+    ['¿Qué pasa si vendo 25% más?', {}, { kind: 'supported', intent: 'what_if_analysis', requiresProvider: true, requiresData: true }],
+    ['Quiero facturar $100,000', {}, { kind: 'supported', intent: 'goal_simulation', requiresProvider: true, requiresData: true }],
+    ['¿Qué debería priorizar?', {}, { kind: 'supported', intent: 'commercial_strategy', requiresProvider: true, requiresData: true }],
+    ['Analiza mi competencia', { competitiveEvidence }, { kind: 'supported', intent: 'competitive_analysis', requiresProvider: false, requiresData: true }],
+    ['¿Qué combos puedo formar?', {}, { kind: 'supported', intent: 'combo_opportunity', requiresProvider: true, requiresData: true }],
+    ['¿Qué pasa si aumento el precio?', {}, { kind: 'supported', intent: 'price_simulation', requiresProvider: true, requiresData: true }]
+  ])('resolves the certified capability prompt %s', (question, options, expected) => {
+    expect(resolveCommercialIntent(question, options)).toMatchObject(expected);
+  });
+
+  it.each([
+    ['¿Como puedo vender mas?', 'sales_growth'],
+    ['¿Como esta mi surtido???', 'assortment_analysis'],
+    ['¿Qué productos devo impulsar?', 'product_opportunity'],
+    ['¿Qué deveria priorizar?', 'commercial_strategy'],
+    ['Qué pasa si vendo +25% más!!', 'what_if_analysis'],
+    ['¿Qué pasa si vendo -10% menos?', 'what_if_analysis']
+  ])('keeps punctuation and reasonable spelling variation on the intended route: %s', (question, intent) => {
+    expect(resolveCommercialIntent(question).intent).toBe(intent);
+  });
+
+  it.each([
+    ['¿Qué pasa si vendo más?', 'intent', 'what_if_analysis', ['changePercent']],
+    ['Quiero facturar', 'intent', 'goal_simulation', ['targetValue']],
+    ['¿Qué puedo hacer con mi negocio?', 'topic', 'commercial_question', ['objective']],
+    ['¿Qué pasa si vendo más de este producto?', 'intent', 'what_if_analysis', ['changePercent', 'productName']]
+  ])('keeps ambiguous or incomplete context local: %s', (question, field, expectedValue, missingContext) => {
+    const resolved = resolveCommercialIntent(question);
+    expect(resolved).toMatchObject({
+      kind: 'needs_context',
+      requiresProvider: false,
+      requiresData: false,
+      missingContext: expect.arrayContaining(missingContext)
+    });
+    expect(resolved[field]).toBe(expectedValue);
+  });
+
+  it('does not infer a what-if percentage until the user states one and lets a manual value take precedence', () => {
+    expect(inferCommercialScenarioFromQuestion('¿Qué pasa si vendo más?')).toEqual({
+      intent: 'what_if_analysis',
+      scenario: { changeType: 'sales' }
+    });
+    expect(inferCommercialScenarioFromQuestion('¿Qué pasa si vendo 25% más?')).toMatchObject({
+      scenario: { changeType: 'sales', changePercent: 25 }
+    });
+    expect(inferCommercialScenarioFromQuestion('¿Qué pasa si vendo +25% más?')).toMatchObject({
+      scenario: { changeType: 'sales', changePercent: 25 }
+    });
+    expect(inferCommercialScenarioFromQuestion('¿Qué pasa si vendo -10% menos?')).toMatchObject({
+      scenario: { changeType: 'sales', changePercent: -10 }
+    });
+    expect(inferCommercialScenarioFromQuestion('Quiero facturar 100000')).toMatchObject({
+      scenario: { goalType: 'revenue', targetValue: 100000 }
+    });
+    expect(inferCommercialScenarioFromQuestion('Quiero un margen de 30%')).toMatchObject({
+      scenario: { goalType: 'gross_margin', targetValue: 30 }
+    });
+  });
+});
