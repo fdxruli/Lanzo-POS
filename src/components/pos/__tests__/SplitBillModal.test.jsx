@@ -68,6 +68,41 @@ describe('SplitBillModal four-step restaurant split', () => {
 
   afterEach(() => cleanup());
 
+  it('never processes a sale while advancing from Cobro to Revisar or through an implicit form submit', async () => {
+    const { onConfirm } = renderModal({
+      order: [
+        { lineId: 'navigation-a', id: 'product-a', name: 'Producto A', quantity: 1, price: 100 },
+        { lineId: 'navigation-b', id: 'product-b', name: 'Producto B', quantity: 1, price: 50 }
+      ],
+      total: 150,
+      orderId: 'safe-review-navigation'
+    });
+    goToItems();
+    fireEvent.click(within(getPendingLine('Producto A')).getByRole('button', { name: 'Asignar todas las unidades restantes de Producto A a Comensal 1 · Comensal 1' }));
+    fireEvent.click(within(getPendingLine('Producto B')).getByRole('button', { name: 'Asignar todas las unidades restantes de Producto B a Comensal 2 · Comensal 2' }));
+    goToPayment();
+
+    const advance = screen.getByRole('button', { name: 'Revisar división' });
+    expect(advance).toHaveAttribute('type', 'button');
+    fireEvent.click(advance);
+    expect(screen.getByRole('heading', { name: 'Revisa antes de confirmar' })).toBeInTheDocument();
+    expect(onConfirm).not.toHaveBeenCalled();
+
+    // Enter in a payment input must never implicitly submit the financial operation.
+    fireEvent.submit(document.querySelector('.split-bill-form'));
+    expect(onConfirm).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Cobro' })[0]);
+    fireEvent.click(screen.getByRole('button', { name: 'Revisar' }));
+    expect(screen.getByRole('heading', { name: 'Revisa antes de confirmar' })).toBeInTheDocument();
+    expect(onConfirm).not.toHaveBeenCalled();
+
+    const finalConfirm = screen.getByRole('button', { name: 'Confirmar división y cobro' });
+    expect(finalConfirm).toHaveAttribute('type', 'button');
+    fireEvent.click(finalConfirm);
+    await waitFor(() => expect(onConfirm).toHaveBeenCalledOnce());
+  });
+
   it('starts with two guests, supports optional names up to eight, and keeps names separate from financial IDs', async () => {
     const { onConfirm } = renderModal({
       order: [
