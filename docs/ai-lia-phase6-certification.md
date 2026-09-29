@@ -177,6 +177,6 @@ El usuario reportó PASS en A, C, D, F, G, H1–H3, I, J, K, L y cambio de pregu
 | ESLint focal | Aprobado sin errores ni avisos de código; permanece el aviso de antigüedad de `baseline-browser-mapping` |
 | `npm run build` | Aprobado; 3.561 módulos transformados y PWA generado. Reportó avisos de imports mixtos y cuatro patrones opcionales de precache sin archivo, ya listados en la certificación |
 | `npm run postbuild` explícito | Aprobado; 23 assets de inicio verificados |
-| PR127 Global Comparison / Vercel Preview | Pendiente de resultados para el nuevo HEAD publicado de #337; no se reutilizan checks de `537cf104` |
+| PR127 Global Comparison / Vercel Preview | SUCCESS en `b7509692`: 103 fallos compartidos, 0 nuevos/solo-candidato, 0 sin resolver y 2 fallos de base resueltos. El deployment estuvo READY para ese SHA; el check y deployment del HEAD de esta actualización se verificarán y registrarán en el PR #337. |
 
 No se modificó la Edge Function ni el contrato cliente/servidor: no requiere deploy; Edge `lanzo-ai-agent` de referencia permanece en versión 46. Sin migraciones, cambios de esquema, secretos ni reglas de cuota.
