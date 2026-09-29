@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { useAppStore } from '../../../store/useAppStore';
 import {
   createSalesProfitabilityAgentRunner,
   createSalesProfitabilityProductLoader,
@@ -427,11 +428,33 @@ describe('sales profitability agent service', () => {
     expect(firstResult.response.executiveSummary).toBe(secondResult.response.executiveSummary);
   });
 
-  it('does not share an in-flight request key across tenant, actor, or session contexts', async () => {
+  it.each([
+    {
+      dimension: 'tenant',
+      changeActor: (actor) => ({
+        ...actor,
+        tenant: { ...actor.tenant, opaqueId: 'tenant-b', databaseName: 'tenant_db_tenant-b' }
+      })
+    },
+    {
+      dimension: 'actor',
+      changeActor: (actor) => ({ ...actor, actorId: 'admin-b', actorKey: 'admin:admin-b' })
+    },
+    {
+      dimension: 'session',
+      changeActor: (actor) => ({ ...actor, sessionId: 'session-b' })
+    },
+    {
+      dimension: 'device',
+      changeActor: (actor) => ({ ...actor, deviceRef: 'device-b' })
+    },
+    { dimension: 'license', changeActor: (actor) => actor }
+  ])('does not share an in-flight request when only the $dimension context changes', async ({ dimension, changeActor }) => {
     let releaseFirst;
     const firstGate = new Promise((resolve) => { releaseFirst = resolve; });
-    const actorA = scopedActor('tenant-a', 'admin-a');
-    const actorB = scopedActor('tenant-b', 'admin-b');
+    const originalLicenseDetails = useAppStore.getState()?.licenseDetails;
+    const actorA = scopedActor('tenant-a', 'admin-a', 'session-shared');
+    const actorB = changeActor(actorA);
     const repoA = salesRepositoryFor(100, 'sale-a');
     const repoB = salesRepositoryFor(250, 'sale-b');
     const analyzeA = vi.fn(async () => {
@@ -444,18 +467,43 @@ describe('sales profitability agent service', () => {
     const options = {
       question: '¿Mi negocio es rentable?',
       period: { from: '2026-09-01', to: '2026-09-07', days: 7 },
-      requestKey: 'same-request-key-across-tenants'
+      requestKey: `same-request-key-different-${dimension}`
     };
 
-    const resultA = runnerA(options);
-    const resultB = runnerB(options);
-    releaseFirst();
-    const [firstResult, secondResult] = await Promise.all([resultA, resultB]);
+    if (dimension === 'license') {
+      useAppStore.setState({ licenseDetails: { license_key: 'synthetic-license-a' } });
+    }
 
-    expect(firstResult.response.current.netSales).toBe(100);
-    expect(secondResult.response.current.netSales).toBe(250);
-    expect(analyzeA).toHaveBeenCalledTimes(1);
-    expect(analyzeB).toHaveBeenCalledTimes(1);
+    const resultA = runnerA(options);
+    let resultB;
+    try {
+      if (dimension === 'license') {
+        await vi.waitFor(() => expect(analyzeA).toHaveBeenCalledTimes(1));
+        useAppStore.setState({ licenseDetails: { license_key: 'synthetic-license-b' } });
+      }
+
+      resultB = runnerB(options);
+      await vi.waitFor(() => expect(analyzeB).toHaveBeenCalledTimes(1));
+      releaseFirst();
+      const [firstResult, secondResult] = await Promise.allSettled([resultA, resultB]);
+
+      expect(secondResult.status).toBe('fulfilled');
+      expect(secondResult.value.response.current.netSales).toBe(250);
+      expect(analyzeA).toHaveBeenCalledTimes(1);
+      expect(analyzeB).toHaveBeenCalledTimes(1);
+      if (dimension === 'license') {
+        expect(firstResult).toMatchObject({ status: 'rejected', reason: { code: 'AI_AGENT_TENANT_CHANGED' } });
+      } else {
+        expect(firstResult.status).toBe('fulfilled');
+        expect(firstResult.value.response.current.netSales).toBe(100);
+      }
+    } finally {
+      releaseFirst();
+      await Promise.allSettled(resultB ? [resultA, resultB] : [resultA]);
+      if (dimension === 'license') {
+        useAppStore.setState({ licenseDetails: originalLicenseDetails });
+      }
+    }
   });
 
   it('stops before narrative when the authorized actor changes during sales reads', async () => {

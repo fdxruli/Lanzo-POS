@@ -1,6 +1,6 @@
 # Fase 6 — Certificación integral de Lía
 
-Esta matriz registra la cobertura automatizada que protege las capacidades de Lía de las Fases 1–5 y sirve como guía ejecutable de QA manual en Preview. La ejecución de Preview aún debe completarse antes de cerrar la certificación.
+Esta matriz conserva la cobertura automatizada de Lía de las Fases 1–5 y la guía inicial de QA manual en Preview. Los estados provisionales de aquella revisión se sustituyen por la evidencia reportada por el usuario y el cierre de auditoría del 2026-09-29, registrados al final de este documento.
 
 ## Registro de concurrencia y alcance
 
@@ -117,7 +117,9 @@ Use un negocio de pruebas que tenga historial y catálogo preparados. Para estas
 
 Repita la pantalla principal, formulario de escenarios, competencia, resultado, historial y descarga en móvil pequeño (~320 px), tablet (~768 px) y escritorio (~1280 px); revise también zoom 200%. Recorra con teclado desde la pregunta hasta resultados e historial: cada control debe tener etiqueta, foco visible y orden lógico. Envíe formularios incompletos para confirmar que el mensaje se asocia al campo correcto y se anuncia; pruebe campos condicionales y estados de carga. Las tablas pueden desplazarse dentro de su contenedor; la página completa no debe desbordarse horizontalmente.
 
-## Validaciones automatizadas requeridas antes de completar
+## Validaciones automatizadas definidas en el plan inicial
+
+Los resultados ejecutados durante el cierre final se registran en la sección correspondiente al final de este documento.
 
 - Vitest de servicios AI, router, contratos, analítica, estrategia, surtido, competencia, historial, descargas y UI.
 - `deno check` y pruebas Edge.
@@ -127,7 +129,7 @@ Repita la pantalla principal, formulario de escenarios, competencia, resultado, 
 - PR127 Global Comparison sobre el HEAD final y Vercel Preview sobre ese mismo HEAD.
 - Revisar `main` y PR #336 al cierre; repetir validaciones afectadas si cambia la base.
 
-## Corrección focalizada para PR #337 — rentabilidad y oportunidades
+## Corrección focalizada para PR #337 — rentabilidad y oportunidades (corte previo, histórico)
 
 Esta adenda registra únicamente las observaciones B y E informadas en QA manual. Conserva como reportes del usuario los PASS anteriores; no declara terminada la QA manual global.
 
@@ -140,7 +142,7 @@ Esta adenda registra únicamente las observaciones B y E informadas en QA manual
 | `PR337_HEAD_FINAL` | HEAD vigente de la rama `test/ai-lia-phase6-hardening-r1` al cierre del PR |
 | Commit de implementación y pruebas locales | `0679a5e1cfa3bac68972c7ff9d935ba2d09139f1` |
 | `PR336_MERGED_CONFIRMED` | Sí; squash merge en `3736dc6262afc34c6046efe81988eae9801d3919` |
-| Estado de PR #337 | Debe permanecer `OPEN / DRAFT`; sin merge |
+| Estado de PR #337 en ese corte | `OPEN / DRAFT`; sin merge |
 
 ### B — Respuesta de rentabilidad
 
@@ -156,7 +158,9 @@ La auditoría encontró recortes antes de la priorización: la agregación y com
 
 La analítica mantiene identidades de producto separadas por ID internamente y evalúa todos los comparables recibidos. El constructor de contexto puede inspeccionar hasta 10.000 filas internas antes de priorizar; aplica el límite de oportunidades después de evaluar las señales. El planificador ordena por señales combinadas de crecimiento/participación/margen conocido y desempata con participación, variación de ventas, unidades y ventas actuales. Se conserva la deduplicación de etiquetas al presentar productos homónimos, el máximo breve de candidatos narrativos, `evidenceKeys` acotado, y no se envían IDs, filas crudas ni cientos de productos a Edge. Costos desconocidos pueden respaldar crecimiento, pero no margen o rentabilidad.
 
-### Cobertura agregada y QA nueva pendiente
+### Cobertura agregada y QA pendiente en el corte anterior (histórico)
+
+Este bloque refleja lo pendiente antes de recibir la QA focal posterior. El cierre final de abajo actualiza esos estados sin borrar el registro histórico.
 
 Regresiones añadidas para: respuesta directa positiva, utilidad bruta cero/negativa, costo incompleto, ausencia de ventas, narrativa de proveedor sólo-resumen/contradictoria, snapshots en historial y descarga, más de 20 productos comparables, candidato sólido fuera del primer recorte, selección de varios candidatos independientes, nombres duplicados con IDs distintos, costos nulos/no verificados, contexto del proveedor acotado y contrato Edge sin IDs internos. Se volvieron a incluir las pruebas del router, contrato, analítica, contexto, servicio, historial, descargas, UI y regresiones P0/P1 en la validación focal.
 
@@ -179,4 +183,87 @@ El usuario reportó PASS en A, C, D, F, G, H1–H3, I, J, K, L y cambio de pregu
 | `npm run postbuild` explícito | Aprobado; 23 assets de inicio verificados |
 | PR127 Global Comparison / Vercel Preview | En `b7509692`: SUCCESS (103 fallos compartidos, 0 nuevos/solo-candidato, 0 sin resolver; 2 fallos de base resueltos); deployment READY. Los checks y el Preview del HEAD vigente se consultan en la descripción/checks del PR #337. |
 
-No se modificó la Edge Function ni el contrato cliente/servidor: no requiere deploy; Edge `lanzo-ai-agent` de referencia permanece en versión 46. Sin migraciones, cambios de esquema, secretos ni reglas de cuota.
+No se modificó la Edge Function ni el contrato cliente/servidor en la corrección de rentabilidad y oportunidades; la verificación del cierre final confirma que no se requiere deploy. No se aplicaron migraciones ni se cambiaron esquema, secretos o reglas de cuota.
+
+## Cierre final — auditoría del PR #337 (2026-09-29)
+
+Esta sección registra la evidencia recibida y las comprobaciones de la auditoría final. Las observaciones manuales se atribuyen al usuario. El cierre no presenta como PASS la QA que no fue confirmada.
+
+### Estado del repositorio y concurrencia
+
+| Dato | Resultado de la auditoría |
+|---|---|
+| Repositorio / PR | `fdxruli/Lanzo-POS`, [#337](https://github.com/fdxruli/Lanzo-POS/pull/337) |
+| Rama | `test/ai-lia-phase6-hardening-r1` |
+| HEAD al iniciar esta auditoría | `8b9c56f641b6f86e44aeee819d087532ae3a0f28` |
+| `main` al iniciar esta auditoría | `3736dc6262afc34c6046efe81988eae9801d3919` |
+| PR #337 observado al inicio | `OPEN / DRAFT`, mergeable; diff efectivo de 15 archivos de certificación y Lía |
+| PR #338 observado al inicio y durante la revisión | `OPEN / DRAFT`, rama `feat/restaurant-split-flexible-payments-r1`, HEAD `e1688459b79f5ac117921fbd5b33a9ff66965401` |
+| Diff efectivo de #338 frente a `main` | 27 archivos; 0 rutas compartidas con #337 |
+| Checks de #338 observados | `UNSTABLE` por un fallo en `Differential repeated full-suite regression gate`; permanece aislado a #338 y se reporta como su estado propio. |
+| PR #338 / migración de Restaurante | No se modificó ni se integró. La migración `20260929091708_restaurant_payment_split_financial_r1.sql` no aparece aplicada en el historial consultado de Supabase. |
+
+La verificación posterior al cambio de documentación y regresiones se describe en el reporte de cierre asociado al HEAD final del PR; los checks de GitHub y el Preview deben corresponder a ese HEAD para autorizar el squash merge.
+
+### QA manual reportada por el usuario
+
+Los siguientes resultados fueron ejecutados por el usuario en Vercel Preview con un negocio autenticado. Codex no repitió esas consultas ni realizó llamadas reales al proveedor de IA.
+
+| Caso | Estado informado | Evidencia / alcance |
+|---|---|---|
+| A — Identidad | PASS | Respuesta de identidad local. |
+| C — Crecimiento | PASS | Resultado informado por el usuario. |
+| D — Ticket promedio | PASS | Resultado informado por el usuario. |
+| F — Surtido | PASS | Resultado informado por el usuario. |
+| G — Productos nuevos | PASS | Resultado informado por el usuario. |
+| H1 — What-if +25% | PASS | Resultado informado por el usuario. |
+| H2 — What-if negativo | PASS | Resultado informado por el usuario. |
+| H3 — Escenario sin porcentaje | PASS | Resultado informado por el usuario. |
+| I — Meta comercial | PASS | Resultado informado por el usuario. |
+| J — Estrategia comercial | PASS | Resultado informado por el usuario. |
+| K — Competencia sin evidencia | PASS | Resultado informado por el usuario. |
+| L — Comparación equivalente | PASS | Resultado informado por el usuario. |
+| B1 — Rentabilidad directa | PASS | Para 30 días: ventas netas `$2,088.79`, 54 ventas válidas, 3 productos con costos faltantes y cobertura de costos de 61.2%. `profitabilityStatus=undetermined`; `providerCalled=false`; `quotaOutcome=not_consumed`. Lía respondió directamente que no podía determinar la rentabilidad bruta completa. |
+| B2 — Costos incompletos | PASS | El costo total, utilidad total y margen total quedaron no disponibles; los costos faltantes no se trataron como cero y la conclusión se limitó correctamente. |
+| E1 — Productos para impulsar, 30 días | PASS funcional | 8 productos vendidos, 10 comparados y 4 oportunidades priorizadas. Incluyó Producto prueba agua de piña, Agua de Coco, Fanta de Piña y Quesadilla de queso, con señales de participación, variación y margen donde había costo conocido. Una ejecución mostró narrativa parcial válida; se conserva como observación no bloqueante porque el reporte determinístico y sus oportunidades siguieron disponibles y no se informó contradicción. |
+| E2 — Cambio de periodo | PASS | Tras la consulta de 30 días, el usuario cambió a 7 días: `2026-09-23`–`2026-09-29`, periodo anterior `2026-09-16`–`2026-09-22`, ventas `$713.00`, 15 ventas válidas, 4 productos actuales, 5 comparables y 3 oportunidades. Las recomendaciones cambiaron a Hamburguesa de pollo, Quesadilla de queso y revisión de Producto prueba agua de piña por disminución de ventas. |
+| Regresión P1 — Cambio de pregunta durante procesamiento | PASS | El usuario cambió de «¿Cómo puedo aumentar mis ventas?» a «¿Cómo está mi surtido?» mientras se procesaba. La respuesta anterior no apareció bajo la pregunta nueva y el historial conservó la primera pregunta con su respuesta completa. No se solicitó repetir la consulta ni consumir cuota. |
+
+La validación adicional de 90 días se dispensó por decisión de QA y no se considera ejecutada.
+
+### QA sin certificación manual
+
+El usuario no confirmó PASS para M (productos no equivalentes), N (historial y descarga), la revisión visual/accesible completa con zoom y teclado, ni el cambio manual entre tenants. Este documento no los presenta como probados manualmente.
+
+El riesgo residual de aislamiento entre contextos se reduce con la clave de deduplicación ligada a tenant, actor, sesión, dispositivo y licencia; revalidación tras lecturas asíncronas y respuesta del proveedor; y regresiones automatizadas independientes para cada dimensión. M, N y la inspección visual/accesible no corresponden a un cambio de contrato financiero o de esquema en este diff; sus límites quedan visibles para futuras verificaciones de QA y no se afirma certificación manual global.
+
+### Automatización y estado técnico verificados por Codex
+
+| Validación | Resultado observado |
+|---|---|
+| Vitest AI y UI | 17 archivos, 412 pruebas aprobadas en las ejecuciones registradas: los 16 archivos sin cambios de pruebas pasaron en la suite de 17 archivos y el archivo del servicio volvió a ejecutarse tras ampliar la regresión P0 a 50 casos. Sin proveedor real. |
+| Regresión P0 de deduplicación | Casos independientes con cambio únicamente de tenant, actor, sesión, dispositivo o licencia: 5/5 aprobados. |
+| Deno Edge | `deno test`: 69 PASS; `deno check`: PASS. Proveedor y RPC simulados. |
+| ESLint focalizado | PASS sin errores; persiste el aviso de antigüedad de `baseline-browser-mapping`. |
+| React Doctor | 90/100; dos avisos de complejidad en `UsageStatusPanel` y `CommercialAIAgentsPage`. Se conservaron como observaciones de mantenibilidad y no motivaron una refactorización amplia. |
+| Build | `npm run build`: PASS, 3,561 módulos transformados; `postbuild` verificó automáticamente 23 assets. `npm run postbuild` explícito también PASS. |
+| Avisos del build | Imports dinámicos/estáticos mixtos y cuatro patrones opcionales de precache sin archivo; no bloquearon el build y no corresponden a esta fase. |
+| `git diff --check` | PASS, sin errores de whitespace. |
+| Cuota / proveedor | Codex no consumió consultas IA ni modificó cuota. La QA del usuario reportó `29/30`, con una disponible. |
+
+La revisión semántica no encontró vulnerabilidades P0 ni regresiones P1 abiertas. La deduplicación usa la identidad compuesta del contexto; el runner la vuelve a validar después de lecturas y del proveedor; la interfaz invalida resultados al cambiar la pregunta o los parámetros y guarda el historial bajo la pregunta enviada originalmente. Rentabilidad conserva los estados `profitable`, `not_profitable`, `undetermined` e `insufficient_data`, mantiene costos desconocidos sin convertirlos en cero y prioriza oportunidades tras evaluar comparables. La evidencia narrativa enviada a Edge queda limitada después de esa selección.
+
+### GitHub, Vercel y Supabase
+
+| Servicio | Verificación |
+|---|---|
+| PR127 Global Comparison sobre el HEAD inicial auditado | Run `36557699301` terminó SUCCESS; artefacto: 103 fallos compartidos, 0 fallos exclusivos del candidato, 0 nuevos y 0 sin resolver. Es evidencia del SHA `8b9c56f`; no sustituye checks del HEAD final del PR. |
+| Vercel Preview inicial | Deployment `EDrvYRKQUZ66jf8VFa6hwCgcbVjH` READY para el SHA `8b9c56f641b6f86e44aeee819d087532ae3a0f28`. El Preview del HEAD final se vuelve a verificar al cerrar el PR. |
+| Supabase | Proyecto `odlrhijtfyavryeqivaa` `ACTIVE_HEALTHY`; `lanzo-ai-agent` `ACTIVE`, versión 46, SHA desplegado `3fffad1164d4764ed80e14867d10edd2e878387e3711d7823f675164eec931bc`. |
+| Edge / migraciones | El diff de #337 no modifica Edge, RPC, esquema, migraciones, secretos ni cuotas; no requiere deployment de Edge. No se aplicó ninguna migración, incluida la de #338. |
+
+La producción de Vercel se verifica después del squash merge; su estado se informa sólo cuando el deployment del nuevo `main` esté disponible.
+
+### Decisión de certificación
+
+No quedan hallazgos P0/P1 abiertos. Las observaciones no certificadas permanecen explícitas y no se etiquetan como PASS manual. El cierre de Fase 6 y del roadmap de Lía queda condicionado a checks verdes del HEAD final, Preview READY de ese mismo SHA, merge squash de #337 y verificación post-merge de `main`, Actions y Production. No iniciar Fase 7.
