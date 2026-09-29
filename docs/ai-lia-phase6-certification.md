@@ -126,3 +126,56 @@ Repita la pantalla principal, formulario de escenarios, competencia, resultado, 
 - `git diff --check`.
 - PR127 Global Comparison sobre el HEAD final y Vercel Preview sobre ese mismo HEAD.
 - Revisar `main` y PR #336 al cierre; repetir validaciones afectadas si cambia la base.
+
+## Corrección focalizada para PR #337 — rentabilidad y oportunidades
+
+Esta adenda registra únicamente las observaciones B y E informadas en QA manual. Conserva como reportes del usuario los PASS anteriores; no declara terminada la QA manual global.
+
+| Dato | Verificación de esta corrección |
+|---|---|
+| `MAIN_SHA_START` | `5838dd4eba82c0f4d38417323849da293dbd7968` |
+| `MAIN_SHA_END` | `3736dc6262afc34c6046efe81988eae9801d3919` |
+| `MAIN_SYNC_PERFORMED` | Sí; merge de `origin/main` en la rama existente del PR, commit `cde359683` |
+| `PR337_HEAD_INITIAL` | `537cf10487a158bc3ee09ade6fc081f2e77eb20c` |
+| `PR337_HEAD_FINAL` | HEAD vigente de la rama `test/ai-lia-phase6-hardening-r1` al cierre del PR |
+| `PR336_MERGED_CONFIRMED` | Sí; squash merge en `3736dc6262afc34c6046efe81988eae9801d3919` |
+| Estado de PR #337 | Debe permanecer `OPEN / DRAFT`; sin merge |
+
+### B — Respuesta de rentabilidad
+
+La analítica local ya clasificaba rentabilidad como `profitable`, `not_profitable`, `undetermined` o `insufficient_data`. El resultado visible podía mostrar primero el resumen del periodo porque la capa que combinaba la respuesta del proveedor con el resultado determinístico permitía que una narrativa válida de ventas sustituyera la respuesta directa; en ausencia de ventas también había una frase genérica que no mencionaba la evaluación de rentabilidad.
+
+El servicio ahora usa la explicación determinística como respuesta directa y resumen principal para `profitability_summary`, incluso cuando el proveedor omite o contradice la conclusión. Distingue utilidad bruta positiva, nula/negativa, costos incompletos y ausencia de ventas válidas. La respuesta aclara que el cálculo con costos de producto no acredita por sí solo la rentabilidad neta después de gastos operativos. Se conserva una sola llamada opcional al proveedor y los snapshots de historial/descarga retienen el mismo texto determinístico.
+
+La fuente financiera existente trata un costo numérico cero como no verificado porque no expone evidencia suficiente para distinguir un costo real de un dato centinela. Se conserva ese comportamiento preventivo y la regresión correspondiente; representar un costo cero como verificado requiere ampliar el contrato de procedencia financiera, fuera del alcance de esta corrección.
+
+### E — Selección de oportunidades por producto
+
+La auditoría encontró recortes antes de la priorización: la agregación y comparación limitaban productos a 20 usando ventas/variación absoluta, y la construcción del contexto reducía `evidenceKeys` a 24 antes de ordenar candidatos. Por eso un producto elegible posterior podía perder su evidencia aunque tuviera señales más fuertes. La repetición de nombres no demostraba que sólo existiera un pequeño surtido vendido; el catálogo (incluidos sus 115 elementos reportados por el usuario), productos vendidos, comparables, elegibles y seleccionados son universos distintos.
+
+La analítica mantiene identidades de producto separadas por ID internamente y evalúa todos los comparables recibidos. El constructor de contexto puede inspeccionar hasta 10.000 filas internas antes de priorizar; aplica el límite de oportunidades después de evaluar las señales. El planificador ordena por señales combinadas de crecimiento/participación/margen conocido y desempata con participación, variación de ventas, unidades y ventas actuales. Se conserva la deduplicación de etiquetas al presentar productos homónimos, el máximo breve de candidatos narrativos, `evidenceKeys` acotado, y no se envían IDs, filas crudas ni cientos de productos a Edge. Costos desconocidos pueden respaldar crecimiento, pero no margen o rentabilidad.
+
+### Cobertura agregada y QA nueva pendiente
+
+Regresiones añadidas para: respuesta directa positiva, utilidad bruta cero/negativa, costo incompleto, ausencia de ventas, narrativa de proveedor sólo-resumen/contradictoria, snapshots en historial y descarga, más de 20 productos comparables, candidato sólido fuera del primer recorte, selección de varios candidatos independientes, nombres duplicados con IDs distintos, costos nulos/no verificados, contexto del proveedor acotado y contrato Edge sin IDs internos. Se volvieron a incluir las pruebas del router, contrato, analítica, contexto, servicio, historial, descargas, UI y regresiones P0/P1 en la validación focal.
+
+Pruebas manuales únicamente pendientes para esta corrección:
+
+1. **B1:** “¿Mi negocio es rentable?” — confirmar que la conclusión aparece antes del resumen.
+2. **B2:** repetir con costos faltantes — confirmar que indica que no puede determinar la rentabilidad completa.
+3. **E1:** “¿Qué productos debería impulsar?” — confirmar productos reales, explicación y ausencia de candidatos inventados.
+4. **E2:** comparar 7, 30 y 90 días cuando exista historial — confirmar que cada lista corresponde al periodo seleccionado.
+5. **Regresión de concurrencia UI:** cambiar de pregunta durante el análisis y confirmar que no aparezca la respuesta tardía bajo la pregunta nueva.
+
+El usuario reportó PASS en A, C, D, F, G, H1–H3, I, J, K, L y cambio de pregunta; E quedó PASS parcial y B requiere revalidación. Estos resultados no son ejecuciones nuevas de Codex. La QA global, el acceso funcional al Preview con negocio de prueba, la accesibilidad y el zoom continúan pendientes.
+
+| Validación local de esta corrección | Resultado |
+|---|---|
+| Vitest AI: servicios, router, contratos, analytics, contexto, servicio, historial, descarga y UI | 17 archivos, 408 pruebas aprobadas; sin proveedor real |
+| Deno Edge | `deno test`: 69 aprobadas; `deno check`: aprobado |
+| ESLint focal | Aprobado sin errores ni avisos de código; permanece el aviso de antigüedad de `baseline-browser-mapping` |
+| `npm run build` | Aprobado; 3.561 módulos transformados y PWA generado. Reportó avisos de imports mixtos y cuatro patrones opcionales de precache sin archivo, ya listados en la certificación |
+| `npm run postbuild` explícito | Aprobado; 23 assets de inicio verificados |
+| PR127 Global Comparison / Vercel Preview | Pendiente de resultados para el nuevo HEAD publicado de #337; no se reutilizan checks de `537cf104` |
+
+No se modificó la Edge Function ni el contrato cliente/servidor: no requiere deploy; Edge `lanzo-ai-agent` de referencia permanece en versión 46. Sin migraciones, cambios de esquema, secretos ni reglas de cuota.

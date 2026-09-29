@@ -508,10 +508,10 @@ describe('commercial AI context boundary', () => {
     expect(context.sales.minimumUsefulRecommendations).toBe(2);
     expect(context.sales.opportunityCandidates[0]).toMatchObject({
       type: 'product',
-      focus: { type: 'product', key: 'Producto 7' },
+      focus: { type: 'product', key: 'Producto 9' },
       recommendationType: 'growth_experiment',
       strength: 'strong',
-      evidenceKeys: expect.arrayContaining(['product:Producto 7'])
+      evidenceKeys: expect.arrayContaining(['product:Producto 9'])
     });
     expect(context.sales.opportunityCandidates.some((candidate) => candidate.type === 'ticket')).toBe(true);
     expect(context.sales.calculations).toEqual([]);
@@ -631,6 +631,65 @@ describe('commercial AI context boundary', () => {
     expect(opportunities[0]).toMatchObject({ currentMargin: 0.4, currentProfit: 120, costKnown: true });
     expect(opportunities[1]).not.toHaveProperty('currentMargin');
     expect(opportunities[1]).not.toHaveProperty('currentProfit');
+  });
+
+  it('ranks all eligible product rows before reducing the context to a short candidate list', () => {
+    const productOpportunities = Array.from({ length: 30 }, (_, index) => ({
+      name: `Producto ${index + 1}`,
+      currentSales: index === 29 ? 300 : 50,
+      previousSales: index === 29 ? 250 : 40,
+      salesDelta: index === 29 ? 50 : 10,
+      currentShare: index === 29 ? 0.15 : 0.03,
+      costKnown: false,
+      direction: 'growing',
+      signals: index === 29 ? ['growing', 'high_sales_share', 'cost_unknown'] : ['growing', 'cost_unknown'],
+      opportunityReason: index === 29 ? 'Creció y representa una participación relevante.' : 'Creció frente al periodo anterior.'
+    }));
+    const context = buildSalesProfitabilityContext({
+      intent: 'product_opportunity',
+      period: { from: '2026-09-01', to: '2026-09-07' },
+      source: 'cloud',
+      report: {
+        overview: { netSales: 1750, salesCount: 20 },
+        growthSignals: { productOpportunities, comparisonAvailable: true },
+        coverage: { validSales: 20, comparisonItemsAvailable: true, itemsComplete: true, paginationComplete: true, sourceComplete: true }
+      }
+    });
+
+    expect(context.sales.opportunityCandidates).toHaveLength(4);
+    expect(context.sales.opportunityCandidates[0]).toMatchObject({
+      entity: 'Producto 30',
+      metrics: { currentSales: 300, currentShare: 0.15, salesDelta: 50, costKnown: false }
+    });
+    expect(context.sales.growthSignals.productOpportunities.some((product) => product.name === 'Producto 30')).toBe(true);
+    expect(JSON.stringify(context)).not.toContain('productId');
+  });
+
+  it('continues selecting three independently supported products when all three lead the evidence', () => {
+    const rows = ['Producto A', 'Producto B', 'Producto C'].map((name, index) => ({
+      name,
+      currentSales: 300 - index * 25,
+      previousSales: 200 - index * 25,
+      salesDelta: 100,
+      currentShare: 0.25 - index * 0.03,
+      costKnown: false,
+      direction: 'growing',
+      signals: ['growing', 'high_sales_share', 'cost_unknown'],
+      opportunityReason: `${name} creció y conserva participación relevante.`
+    }));
+    const context = buildSalesProfitabilityContext({
+      intent: 'product_opportunity',
+      period: { from: '2026-09-01', to: '2026-09-07' },
+      source: 'cloud',
+      report: {
+        overview: { netSales: 1000, salesCount: 20 },
+        growthSignals: { productOpportunities: rows, comparisonAvailable: true },
+        coverage: { validSales: 20, comparisonItemsAvailable: true, itemsComplete: true, paginationComplete: true, sourceComplete: true }
+      }
+    });
+
+    expect(context.sales.growthSignals.productOpportunities.map((product) => product.name))
+      .toEqual(['Producto A', 'Producto B', 'Producto C']);
   });
 
   it('sends allowlisted goal and what-if snapshots without raw rows or internal identifiers', () => {

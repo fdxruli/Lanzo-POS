@@ -298,7 +298,10 @@ const buildProductEvidence = (lines) => {
   const products = new Map();
 
   lines.forEach((line) => {
-    const product = products.get(line.productName) || {
+    const identityKey = line.productId ? `id:${line.productId}` : `name:${line.productName}`;
+    const product = products.get(identityKey) || {
+      identityKey,
+      productId: line.productId,
       name: line.productName,
       quantity: 0,
       netSales: 0,
@@ -320,7 +323,7 @@ const buildProductEvidence = (lines) => {
     } else {
       product.missingCostLines += 1;
     }
-    products.set(line.productName, product);
+    products.set(identityKey, product);
   });
 
   return Array.from(products.values())
@@ -338,6 +341,8 @@ const buildProductEvidence = (lines) => {
               ? 'inventory_movement'
               : 'missing';
       return {
+        identityKey: product.identityKey,
+        productId: product.productId,
         name: product.name,
         quantity: product.quantity,
         netSales: product.netSales,
@@ -350,7 +355,8 @@ const buildProductEvidence = (lines) => {
         costKnown: product.missingCostLines === 0
       };
     })
-    .sort((a, b) => b.netSales - a.netSales || a.name.localeCompare(b.name, 'es'));
+    .sort((a, b) => b.netSales - a.netSales || a.name.localeCompare(b.name, 'es')
+      || String(a.identityKey).localeCompare(String(b.identityKey)));
 };
 
 const mergeProfitLinesIntoHistory = ({ historyRows, profitRows }) => {

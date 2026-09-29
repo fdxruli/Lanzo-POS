@@ -221,6 +221,8 @@ describe('sales profitability agent service', () => {
     expect(result.usageStatus.remaining).toBe(14);
     expect(result.response.coverage.complete).toBe(true);
     expect(result.response.current.costStatus).toBe('estimated');
+    expect(JSON.stringify(result.response)).not.toContain('private-product-id');
+    expect(JSON.stringify(result.response)).not.toContain('internal-sale-id');
     expect(result.response.queryRange.current).toMatchObject({
       fromInclusiveUtc: '2026-09-01T06:00:00.000Z',
       toExclusiveUtc: '2026-09-08T06:00:00.000Z'
@@ -530,6 +532,29 @@ describe('sales profitability agent service', () => {
     expect(result.quotaOutcome).toBe('not_consumed');
   });
 
+  it('answers that profitability cannot be evaluated when the period has no valid sales', async () => {
+    const analyze = vi.fn();
+    const runner = createSalesProfitabilityAgentRunner({
+      repository: repository(
+        { source: { mode: 'cloud_final' }, rows: [], has_more: false },
+        { source: { mode: 'cloud_final' }, rows: [], has_more: false }
+      ),
+      analyze,
+      assertActor: vi.fn()
+    });
+    const result = await runner({
+      question: '¿Mi negocio es rentable?',
+      intent: 'profitability_summary',
+      period: { from: '2026-09-01', to: '2026-09-07', days: 7 },
+      compare: false
+    });
+
+    expect(result.response.executiveSummary).toBe('No hay ventas válidas suficientes en el periodo seleccionado para evaluar la rentabilidad.');
+    expect(result.providerCalled).toBe(false);
+    expect(result.quotaOutcome).toBe('not_consumed');
+    expect(analyze).not.toHaveBeenCalled();
+  });
+
   it('never turns four sales without item detail into $120 profit or 100% margin', async () => {
     const fourSales = {
       source: { mode: 'cloud_final', stale: false },
@@ -583,6 +608,9 @@ describe('sales profitability agent service', () => {
     expect(result.response.confidence).toBe('low');
     expect(result.response.executiveSummary).not.toContain('100%');
     expect(result.response.executiveSummary).not.toContain('$120.00 con margen');
+    expect(result.response.profitability.explanation).toMatch(/no puedo determinar/i);
+    expect(result.response.profitability.explanation).toMatch(/cobertura de costos registrada es 0%/i);
+    expect(result.response.explanation).toMatch(/ventas registradas por \$120.00/i);
     expect(analyze).not.toHaveBeenCalled();
     expect(result.providerCalled).toBe(false);
   });
@@ -617,6 +645,9 @@ describe('sales profitability agent service', () => {
     expect(result.response.current.margin).toBeNull();
     expect(result.response.coverage.complete).toBe(false);
     expect(result.response.current.knownCostOfSale).toBe(0);
+    expect(result.response.executiveSummary).toMatch(/no puedo determinar/i);
+    expect(result.response.executiveSummary).toMatch(/faltan costos/i);
+    expect(result.response.executiveSummary).toMatch(/cobertura de costos registrada es 0%/i);
     expect(analyze).not.toHaveBeenCalled();
   });
 
@@ -753,11 +784,35 @@ describe('sales profitability agent service', () => {
     expect(result.response.calculations.some((row) => row.label === 'Utilidad inventada')).toBe(false);
     expect(result.response.coverage.validSales).toBe(1);
     expect(result.response.source).toBe('cloud');
-    expect(result.response.aiNarrative.executiveSummary).toContain('999999');
-    expect(result.response.aiNarrative.executiveSummary).toContain('Inventado');
-    expect(result.response.aiNarrative.executiveSummary).toContain('sin descuentos');
-    expect(result.response.aiNarrative.explanation).toMatch(/margen\s+100%/i);
+    expect(result.response.aiNarrative.directAnswer).toBe(result.response.profitability.explanation);
+    expect(result.response.aiNarrative.executiveSummary).toBe(result.response.profitability.explanation);
+    expect(result.response.aiNarrative.explanation).toBe(result.response.explanation);
+    expect(result.response.aiNarrative.directAnswer).toMatch(/^Sí\./);
+    expect(JSON.stringify(result.response.aiNarrative)).not.toContain('999999');
+    expect(JSON.stringify(result.response.aiNarrative)).not.toContain('margen 100%');
     expect(result.response.recommendations).toEqual(expect.any(Array));
+  });
+
+  it('uses the deterministic profitability answer when the provider returns only a sales summary', async () => {
+    const runner = createSalesProfitabilityAgentRunner({
+      repository: repository(),
+      analyze: vi.fn(async () => ({ rawResultContent: providerResponse })),
+      assertActor: vi.fn()
+    });
+
+    const result = await runner({
+      question: '¿Mi negocio es rentable?',
+      intent: 'profitability_summary',
+      period: { from: '2026-09-01', to: '2026-09-07', days: 7 },
+      compare: false
+    });
+
+    expect(result.providerCalled).toBe(true);
+    expect(result.response.aiNarrative.directAnswer).toBe(result.response.profitability.explanation);
+    expect(result.response.aiNarrative.directAnswer).toMatch(/^Sí\./);
+    expect(result.response.aiNarrative.directAnswer).toContain('$60.00');
+    expect(result.response.aiNarrative.directAnswer).not.toBe('Narrativa suplementaria del proveedor.');
+    expect(result.response.executiveSummary).toContain('utilidad bruta positiva');
   });
 
   it('preserves Phase 2 action, measurement, evidence and provider confidence', async () => {

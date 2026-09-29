@@ -37,6 +37,7 @@ import {
 
 const DEFAULT_BUSINESS_TIMEZONE = 'America/Mexico_City';
 const ASSORTMENT_INTENT = 'assortment_analysis';
+const MAX_RESPONSE_PRODUCT_ROWS = 20;
 const STRATEGY_INTENT = 'commercial_strategy';
 const ASSORTMENT_MAX_PRODUCTS = 5000;
 const ASSORTMENT_MAX_CATEGORIES = 500;
@@ -337,6 +338,9 @@ const mergeProviderResponse = (deterministic, providerResponse, intent = null) =
   const status = hasNarrativeContent && requestedStatus !== 'unavailable' ? 'available' : 'unavailable';
   const diagnosticCode = normalizeCommercialAINarrativeDiagnosticCode(narrative.diagnosticCode)
     || (status === 'unavailable' ? 'AI_NARRATIVE_MISSING_CONTENT' : null);
+  const authoritativeProfitabilityAnswer = intent === 'profitability_summary'
+    ? (deterministic.profitability?.explanation || deterministic.executiveSummary || deterministic.answer || '')
+    : null;
 
   return {
     ...deterministic,
@@ -350,9 +354,11 @@ const mergeProviderResponse = (deterministic, providerResponse, intent = null) =
     aiNarrative: {
       status,
       ...(diagnosticCode ? { diagnosticCode } : {}),
-      directAnswer: status === 'available' ? directAnswer : null,
-      executiveSummary: status === 'available' ? executiveSummary : null,
-      explanation: status === 'available' ? explanation : null,
+      directAnswer: status === 'available' ? (authoritativeProfitabilityAnswer || directAnswer) : null,
+      executiveSummary: status === 'available' ? (authoritativeProfitabilityAnswer || executiveSummary) : null,
+      explanation: status === 'available'
+        ? (authoritativeProfitabilityAnswer ? (deterministic.explanation || null) : explanation)
+        : null,
       recommendations: status === 'available' ? providerRecommendations : [],
       ...(status === 'available' && ['high', 'medium', 'low'].includes(String(narrative.confidence || response.confidence))
         ? { confidence: narrative.confidence || response.confidence }
@@ -371,12 +377,15 @@ const costCoverageFor = (aggregate, metadata) => {
 };
 
 const enrichProducts = (products = [], metadata = {}) => {
+  const identityKey = (product = {}) => product.productId
+    ? `id:${product.productId}`
+    : `name:${product.name}`;
   const evidence = new Map(
     (Array.isArray(metadata.products) ? metadata.products : [])
-      .map((product) => [product.name, product])
+      .map((product) => [identityKey(product), product])
   );
   return (Array.isArray(products) ? products : []).map((product) => {
-    const detail = evidence.get(product.name);
+    const detail = evidence.get(identityKey(product));
     return {
       ...product,
       costStatus: detail?.costStatus || (product.costKnown ? 'estimated' : 'incomplete'),
@@ -640,6 +649,35 @@ const incompleteRecommendations = (response) => {
   return [];
 };
 
+const PROFITABILITY_MONEY_FORMATTER = new Intl.NumberFormat('es-MX', {
+  style: 'currency',
+  currency: 'MXN',
+  maximumFractionDigits: 2
+});
+const PROFITABILITY_PERCENT_FORMATTER = new Intl.NumberFormat('es-MX', {
+  style: 'percent',
+  maximumFractionDigits: 1
+});
+
+const profitabilityDirectAnswer = ({ status, validSales, missingCostProducts, costCoverage, profit, margin }) => {
+  if (Number(validSales) === 0 || status === 'insufficient_data') {
+    return 'No hay ventas válidas suficientes en el periodo seleccionado para evaluar la rentabilidad.';
+  }
+  if (status === 'undetermined') {
+    const missingCosts = Number(missingCostProducts) > 0
+      ? ` Faltan costos de ${missingCostProducts} producto(s) vendido(s).`
+      : ' La cobertura de ventas o costos no está completa.';
+    const coverage = Number.isFinite(Number(costCoverage))
+      ? ` La cobertura de costos registrada es ${PROFITABILITY_PERCENT_FORMATTER.format(Number(costCoverage))}.`
+      : '';
+    return `No puedo determinar la rentabilidad bruta completa de este periodo porque la evidencia de costos es incompleta.${missingCosts}${coverage}`;
+  }
+  if (status === 'profitable') {
+    return `Sí. Tus ventas generaron utilidad bruta positiva de ${PROFITABILITY_MONEY_FORMATTER.format(Number(profit))} y un margen bruto de ${PROFITABILITY_PERCENT_FORMATTER.format(Number(margin))}. Este cálculo usa los costos de producto registrados y no necesariamente incluye todos los gastos operativos; no determina la rentabilidad neta del negocio.`;
+  }
+  return `No se registró utilidad bruta positiva durante este periodo. El resultado fue ${PROFITABILITY_MONEY_FORMATTER.format(Number(profit))} y el margen bruto ${PROFITABILITY_PERCENT_FORMATTER.format(Number(margin))}, con los costos de producto registrados. El cálculo no necesariamente incluye todos los gastos operativos.`;
+};
+
 const buildSafeNarrative = (response) => {
   const sales = Number(response.coverage?.validSales) || 0;
   const netSales = Number(response.current?.netSales) || 0;
@@ -651,15 +689,17 @@ const buildSafeNarrative = (response) => {
 
   if (sales === 0) {
     return {
-      executiveSummary: 'No hay ventas válidas en el periodo seleccionado.',
+      executiveSummary: response.intent === 'profitability_summary'
+        ? (response.profitability?.explanation || profitabilityDirectAnswer(response.profitability || {}))
+        : 'No hay ventas válidas en el periodo seleccionado.',
       explanation: 'No se llamó al proveedor de IA porque no existe evidencia comercial suficiente para esta consulta.'
     };
   }
 
   if (response.intent === 'profitability_summary' && response.coverage?.complete !== true) {
     return {
-      executiveSummary: `Se registraron ${sales} venta(s) por ${money.format(netSales)}, pero la utilidad y el margen no están disponibles con cobertura suficiente.`,
-      explanation: 'Lanzo-POS conserva las ventas confirmadas y separa el costo conocido parcial; no interpreta detalle ausente ni costos faltantes como cero.'
+      executiveSummary: response.profitability?.explanation || profitabilityDirectAnswer(response.profitability || {}),
+      explanation: `Sí puedo mostrarte las ventas registradas por ${money.format(netSales)} y la cobertura de costos disponible. Lanzo-POS conserva los costos conocidos y no interpreta el detalle ausente como cero.`
     };
   }
 
@@ -739,6 +779,67 @@ const buildSafeNarrative = (response) => {
   };
 };
 
+const stripProductIdentity = (row = {}) => {
+  const safeRow = { ...row };
+  delete safeRow.identityKey;
+  delete safeRow.productId;
+  return safeRow;
+};
+
+const sanitizeAggregateForResponse = (aggregate) => (aggregate ? {
+  ...aggregate,
+  products: (Array.isArray(aggregate.products) ? aggregate.products : [])
+    .slice(0, MAX_RESPONSE_PRODUCT_ROWS)
+    .map(stripProductIdentity),
+  meta: aggregate.meta ? {
+    excludedCount: aggregate.meta.excludedCount,
+    ecommerceDuplicates: aggregate.meta.ecommerceDuplicates,
+    rawCount: aggregate.meta.rawCount,
+    sourcePolicy: aggregate.meta.sourcePolicy
+  } : undefined
+} : null);
+
+const sanitizeComparisonForResponse = (comparison) => (comparison ? {
+  ...comparison,
+  productChanges: (Array.isArray(comparison.productChanges) ? comparison.productChanges : [])
+    .slice(0, MAX_RESPONSE_PRODUCT_ROWS)
+    .map(stripProductIdentity),
+  productMixChanges: (Array.isArray(comparison.productMixChanges) ? comparison.productMixChanges : [])
+    .map(stripProductIdentity)
+} : null);
+
+const sanitizeSalesProfitabilityResponse = (response = {}) => {
+  const growthSignals = response.growthSignals ? {
+    ...response.growthSignals,
+    productsGrowing: (response.growthSignals.productsGrowing || []).map(stripProductIdentity),
+    productsDeclining: (response.growthSignals.productsDeclining || []).map(stripProductIdentity),
+    productOpportunities: (response.growthSignals.productOpportunities || []).map(stripProductIdentity)
+  } : response.growthSignals;
+  const context = response.context ? {
+    ...response.context,
+    comparison: sanitizeComparisonForResponse(response.context.comparison),
+    growthSignals: response.context.growthSignals ? {
+      ...response.context.growthSignals,
+      productsGrowing: (response.context.growthSignals.productsGrowing || []).map(stripProductIdentity),
+      productsDeclining: (response.context.growthSignals.productsDeclining || []).map(stripProductIdentity),
+      productOpportunities: (response.context.growthSignals.productOpportunities || []).map(stripProductIdentity)
+    } : response.context.growthSignals
+  } : response.context;
+
+  return {
+    ...response,
+    current: sanitizeAggregateForResponse(response.current),
+    previous: sanitizeAggregateForResponse(response.previous),
+    comparison: sanitizeComparisonForResponse(response.comparison),
+    productRisks: (Array.isArray(response.productRisks) ? response.productRisks : [])
+      .slice(0, MAX_RESPONSE_PRODUCT_ROWS)
+      .map(stripProductIdentity),
+    growthSignals,
+    productOpportunities: growthSignals?.productOpportunities || [],
+    context
+  };
+};
+
 const hardenDeterministicResult = ({
   deterministic,
   currentDataset,
@@ -774,20 +875,22 @@ const hardenDeterministicResult = ({
     };
   }
 
-  const profitability = {
+  const profitabilityStatus = current.salesCount === 0
+    ? 'insufficient_data'
+    : (currentComplete ? deterministic.profitability.status : 'undetermined');
+  const profitabilityData = {
     ...deterministic.profitability,
-    status: current.salesCount === 0
-      ? 'insufficient_data'
-      : (currentComplete ? deterministic.profitability.status : 'undetermined'),
+    status: profitabilityStatus,
     costOfSale: currentComplete ? deterministic.profitability.costOfSale : null,
     profit: currentComplete ? deterministic.profitability.profit : null,
     margin: currentComplete ? deterministic.profitability.margin : null,
     costCoverage: current.costCoverage,
-    explanation: current.salesCount === 0
-      ? 'No hay ventas válidas suficientes en el periodo para evaluar la rentabilidad.'
-      : currentComplete
-        ? deterministic.profitability.explanation
-        : 'La rentabilidad es indeterminada porque el detalle de artículos, los costos o la cobertura de la fuente están incompletos.'
+    validSales: current.salesCount,
+    missingCostProducts: current.missingCostProducts.length
+  };
+  const profitability = {
+    ...profitabilityData,
+    explanation: profitabilityDirectAnswer(profitabilityData)
   };
 
   const limitations = unique([
@@ -1339,7 +1442,7 @@ export const createSalesProfitabilityAgentRunner = ({
 
     if (!intentHasUsefulEvidence(deterministic)) {
       return {
-        response: deterministic,
+        response: sanitizeSalesProfitabilityResponse(deterministic),
         usageStatus: null,
         providerCalled: false,
         quotaOutcome: 'not_consumed',
@@ -1385,11 +1488,11 @@ export const createSalesProfitabilityAgentRunner = ({
           ? providerResult.quotaOutcome
           : 'consumed'
       };
-      const response = mergeProviderResponse(
+      const response = sanitizeSalesProfitabilityResponse(mergeProviderResponse(
         deterministic,
         providerResult.rawResultContent || providerResult.content || '',
         request.intent
-      );
+      ));
 
       return {
         response,
@@ -1421,7 +1524,7 @@ export const createSalesProfitabilityAgentRunner = ({
         cause: error?.originalError?.message || error?.message || null
       });
       return {
-        response: {
+        response: sanitizeSalesProfitabilityResponse({
           ...deterministic,
           limitations: unique([
             ...(deterministic.limitations || []),
@@ -1434,7 +1537,7 @@ export const createSalesProfitabilityAgentRunner = ({
             explanation: 'La narrativa opcional de IA no está disponible. Las cifras, cálculos, cobertura y recomendaciones visibles provienen del análisis determinístico.',
             recommendations: []
           }
-        },
+        }),
         usageStatus: null,
         providerCalled: execution.providerCalled,
         quotaOutcome: execution.quotaOutcome,

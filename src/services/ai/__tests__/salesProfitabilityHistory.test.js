@@ -105,6 +105,45 @@ describe('sales profitability local history', () => {
     expect(entry.report.ai.status).toBe('not_generated');
   });
 
+  it('keeps the deterministic profitability answer consistent through history and report download', () => {
+    const storage = memoryStorage();
+    const directAnswer = 'Sí. Tus ventas generaron utilidad bruta positiva de $120.00 y un margen bruto de 40.0%.';
+    const entry = buildSalesProfitabilityHistoryEntry({
+      result: result({
+        response: {
+          ...response,
+          intent: 'profitability_summary',
+          executiveSummary: directAnswer,
+          answer: directAnswer,
+          profitability: { status: 'profitable', profit: 120, margin: 0.4 },
+          aiNarrative: {
+            status: 'available',
+            directAnswer,
+            executiveSummary: directAnswer,
+            explanation: 'La evaluación usa costos de producto y no afirma rentabilidad neta.',
+            recommendations: []
+          }
+        }
+      }),
+      requestContext: {
+        ...requestContext,
+        question: '¿Mi negocio es rentable?',
+        resolvedIntent: 'profitability_summary'
+      },
+      queriedAt,
+      storage
+    });
+
+    saveSalesProfitabilityHistoryEntry({ scopeKey: 'scope-profitability', entry, storage });
+    const reopened = loadSalesProfitabilityHistory({ scopeKey: 'scope-profitability', storage }).entries[0];
+    const downloaded = buildSalesProfitabilityHistoryDownloadPayload(reopened);
+
+    expect(reopened.report.result.executiveSummary).toBe(directAnswer);
+    expect(reopened.report.ai.directAnswer).toBe(directAnswer);
+    expect(downloaded.report.result.executiveSummary).toBe(directAnswer);
+    expect(downloaded.report.ai.directAnswer).toBe(directAnswer);
+  });
+
   it('persists goal, what-if and strategy results as snapshots that reopen without querying live data', () => {
     const storage = memoryStorage();
     const entry = buildSalesProfitabilityHistoryEntry({
