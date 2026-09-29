@@ -7,17 +7,18 @@ Esta matriz registra la cobertura automatizada que protege las capacidades de L�
 | Dato | Verificación inicial |
 |---|---|
 | Repositorio | `fdxruli/Lanzo-POS` |
-| `MAIN_SHA_START` / `MAIN_SHA_END` | `5838dd4eba82c0f4d38417323849da293dbd7968` / pendiente de confirmación final |
-| `MAIN_ADVANCED` | No, al cierre de validación local |
+| `MAIN_SHA_START` / `MAIN_SHA_END` | `5838dd4eba82c0f4d38417323849da293dbd7968` / `5838dd4eba82c0f4d38417323849da293dbd7968` |
+| `MAIN_ADVANCED` | No |
 | PR #335 | Merged en `5838dd4eba82c0f4d38417323849da293dbd7968` |
-| `PR336_STATUS_START` / `PR336_STATUS_END` | Open, Draft / pendiente de confirmación final |
+| `PR336_STATUS_START` / `PR336_STATUS_END` | Open, Draft / Open, Draft |
 | `PR336_HEAD_START` | `e585ce5b80010fd4d4c34f291138bf4a9e65a3c3` |
-| `PR336_HEAD_END` | `acafe83f2be53c03c2d98f6fe520c894e1dd3576` |
+| `PR336_HEAD_END` | `328390285b3a8a70aa0398cd1ba55b7c498b958e` |
 | `PR336_BASE_START` / `PR336_BASE_END` | `bd9a6dce9faa023bdfd0e42bb6a63366af83a8a6` / `bd9a6dce9faa023bdfd0e42bb6a63366af83a8a6` |
 | `PR336_MERGED_DURING_WORK` | No |
 | Merge base del HEAD de #336 con `origin/main` al cierre | `5838dd4eba82c0f4d38417323849da293dbd7968` |
 | Cambios efectivos del HEAD de #336 contra `origin/main` | 7 archivos de restaurante |
 | `PR336_OVERLAP_START` / `PR336_OVERLAP_END` | Ninguno / Ninguno contra los archivos modificados por Fase 6 |
+| PR de Fase 6 | [#337 — Draft](https://github.com/fdxruli/Lanzo-POS/pull/337) |
 | Rama de Fase 6 | `test/ai-lia-phase6-hardening-r1`, creada desde `origin/main` |
 
 La vista de archivos de la API de GitHub para #336 continúa enumerando cambios de Lía porque su `baseRefOid` está atrasado. Se actualizó el ref local desde `refs/pull/336/head` y se comprobó `origin/main...origin/pr-336-current`: el diff efectivo contiene sólo los siete archivos de restaurante descritos en el brief. El HEAD de #336 avanzó durante la auditoría, pero no modificó esos archivos de Fase 6.
@@ -66,6 +67,8 @@ No se encontraron motivos para modificar el contrato de ventas, la Edge Function
 Los dos avisos de React Doctor corresponden a funciones ya existentes en `main`: `UsageStatusPanel` está intacta frente a la base y la declaración de `CommercialAIAgentsPage` ya está presente en la misma ubicación. No aparecieron avisos nuevos fuera de esos dos bloques. La advertencia no justifica una refactorización amplia para este hardening; las escrituras de refs añadidas ocurren en eventos/efectos, no durante render.
 
 El build también informa cuatro patrones opcionales de precache sin archivo generado y módulos cargados dinámica y estáticamente; no afectan la compilación y son ajenos a estos cambios. Se conserva el aviso de datos `baseline-browser-mapping` desactualizados.
+
+El Preview de Vercel para el primer HEAD del PR (`7f666b98aff6a87ae0669b6acfb5f0c98003fd9a`) quedó `READY` y su check pasó. La ruta `/agentes-ia`, abierta mediante el acceso protegido de Preview, mostró la pantalla de licencia porque no se usó un negocio de pruebas autenticado. En esa pantalla el documento midió 320/320, 768/768 y 1280/1280 píxeles (viewport/documento) y no reportó errores de consola. Esto valida el acceso y overflow del gate; las interacciones funcionales, accesibilidad y zoom de Lía permanecen en la QA manual de abajo.
 
 ## Seguridad y datos
 
