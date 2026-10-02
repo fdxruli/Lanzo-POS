@@ -5,12 +5,12 @@
   /* --- PALETA PRINCIPAL --- */
   --primary-color: #334155;
   --primary-hover: #1F2937;
-  --secondary-color: #0EA5A4;
-  --brand-accent: #0EA5A4;
-  --brand-accent-hover: #0F766E;
-  --brand-accent-text: #0F766E;
-  --brand-accent-soft: rgba(14, 165, 164, 0.12);
-  --brand-accent-border: rgba(14, 165, 164, 0.32);
+  --secondary-color: #2563EB;
+  --brand-accent: #2563EB;
+  --brand-accent-hover: #1D4ED8;
+  --brand-accent-text: #1D4ED8;
+  --brand-accent-soft: rgba(37, 99, 235, 0.10);
+  --brand-accent-border: rgba(37, 99, 235, 0.35);
   --text-on-primary: #FFFFFF;
 
   /* --- ESTADOS --- */
@@ -109,12 +109,12 @@
   color-scheme: dark;
   --primary-color: #CBD5E1;
   --primary-hover: #E2E8F0;
-  --secondary-color: #35B6A6;
-  --brand-accent: #35B6A6;
-  --brand-accent-hover: #46C7B5;
-  --brand-accent-text: #35B6A6;
-  --brand-accent-soft: rgba(53, 182, 166, 0.14);
-  --brand-accent-border: rgba(53, 182, 166, 0.42);
+  --secondary-color: #7DAAFF;
+  --brand-accent: #7DAAFF;
+  --brand-accent-hover: #93B9FF;
+  --brand-accent-text: #7DAAFF;
+  --brand-accent-soft: rgba(125, 170, 255, 0.15);
+  --brand-accent-border: rgba(125, 170, 255, 0.45);
   --text-on-primary: #101820;
   --success-color: #75D5A6;
   --warning-color: #F2C477;
