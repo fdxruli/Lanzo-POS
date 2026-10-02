@@ -1327,3 +1327,149 @@
     transition: none;
   }
 }
+
+.split-strategy-selector {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: var(--ui-space-sm);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.split-strategy-selector legend {
+  margin-bottom: 8px;
+  color: var(--ui-text-strong);
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.split-strategy-selector label {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: start;
+  gap: 9px;
+  min-height: 72px;
+  padding: 11px;
+  background: var(--ui-bg-surface);
+  border: 1px solid var(--ui-border-color);
+  border-radius: var(--ui-radius-md);
+  cursor: pointer;
+}
+
+.split-strategy-selector label.is-selected {
+  background: color-mix(in srgb, var(--ui-color-primary) 7%, var(--ui-bg-surface));
+  border-color: var(--ui-color-primary);
+}
+
+.split-strategy-selector input {
+  width: 18px;
+  height: 18px;
+  margin: 2px 0 0;
+}
+
+.split-strategy-selector span {
+  display: grid;
+  gap: 4px;
+}
+
+.split-strategy-selector strong {
+  color: var(--ui-text-strong);
+  font-size: 0.84rem;
+}
+
+.split-strategy-selector small {
+  color: var(--ui-text-muted);
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+
+.split-money-distribution-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: var(--ui-space-sm);
+  padding: var(--ui-space-sm);
+}
+
+.split-money-share-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ui-space-sm);
+  min-width: 0;
+  padding: 13px;
+  color: var(--ui-text);
+  background: var(--ui-bg-surface);
+  border: 1px solid var(--ui-border-color);
+  border-radius: var(--ui-radius-md);
+}
+
+.split-money-share-card strong {
+  color: var(--ui-text-strong);
+  font-size: 1.05rem;
+}
+
+.split-money-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 105px;
+  color: var(--ui-text-muted);
+}
+
+.split-money-input-wrap input {
+  width: 100%;
+  min-width: 70px;
+  min-height: 42px;
+  padding: 8px;
+  color: var(--ui-text-strong);
+  background: var(--ui-bg-surface);
+  border: 1px solid var(--ui-border-color);
+  border-radius: var(--ui-radius-sm);
+  text-align: right;
+}
+
+.split-money-distribution-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--ui-space-sm);
+  padding: var(--ui-space-sm);
+  border-top: 1px solid var(--ui-border-color);
+}
+
+.split-money-distribution-summary > div {
+  display: grid;
+  gap: 4px;
+  padding: 10px;
+  background: var(--ui-bg-muted);
+  border-radius: var(--ui-radius-sm);
+}
+
+.split-money-distribution-summary span {
+  color: var(--ui-text-muted);
+  font-size: 0.74rem;
+}
+
+.split-money-distribution-summary strong {
+  color: var(--ui-text-strong);
+  font-size: 1rem;
+}
+
+.split-money-distribution-summary .is-pending strong {
+  color: var(--ui-color-danger);
+}
+
+.split-money-distribution-summary .is-ready strong {
+  color: var(--ui-color-success);
+}
+
+@media (max-width: 720px) {
+  .split-money-distribution-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .split-strategy-selector {
+    grid-template-columns: 1fr;
+  }
+}

@@ -151,6 +151,70 @@ describe('salesRepository.executeSaleTransaction', () => {
     });
   });
 
+  it('requiere una caja abierta para una venta legacy en efectivo con payments vacío', async () => {
+    state.maps[state.STORES.CAJAS].clear();
+    state.maps[state.STORES.MENU].set('cash-legacy-product', {
+      id: 'cash-legacy-product',
+      name: 'Producto en efectivo',
+      trackStock: true,
+      stock: 5,
+      committedStock: 0
+    });
+
+    await expect(
+      salesRepository.executeSaleTransaction(
+        {
+          id: 'sale-cash-empty-payments',
+          paymentMethod: 'cash',
+          total: 100,
+          payments: [],
+          items: [
+            { id: 'cash-legacy-product', quantity: 1, stockDeducted: 1, batchesUsed: [] }
+          ]
+        },
+        []
+      )
+    ).rejects.toMatchObject({
+      name: 'DatabaseError',
+      code: 'VALIDATION_ERROR',
+      message: 'La venta tiene componente de efectivo y requiere una caja abierta.'
+    });
+
+    expect(state.maps[state.STORES.SALES].has('sale-cash-empty-payments')).toBe(false);
+    expect(state.maps[state.STORES.MENU].get('cash-legacy-product')).toMatchObject({ stock: 5 });
+  });
+
+  it('does not require or bind a cash session for an explicit zero cash payment', async () => {
+    state.maps[state.STORES.CAJAS].clear();
+
+    const result = await salesRepository.executeSaleTransaction({
+      id: 'sale-explicit-zero-cash',
+      paymentMethod: 'cash',
+      total: 100,
+      payments: [{ method: 'cash', amount: 0 }],
+      items: []
+    }, []);
+
+    expect(result.success).toBe(true);
+    expect(state.maps[state.STORES.SALES].get('sale-explicit-zero-cash')).not.toHaveProperty('cash_session_id');
+  });
+
+  it('still requires a cash session for an explicitly applied positive cash payment', async () => {
+    state.maps[state.STORES.CAJAS].clear();
+
+    await expect(salesRepository.executeSaleTransaction({
+      id: 'sale-explicit-cash',
+      paymentMethod: 'cash',
+      total: 100,
+      payments: [{ method: 'cash', amount: 25 }],
+      items: []
+    }, [])).rejects.toMatchObject({
+      name: 'DatabaseError',
+      code: 'VALIDATION_ERROR',
+      message: 'La venta tiene componente de efectivo y requiere una caja abierta.'
+    });
+  });
+
   it('rechaza fiado con abono inicial si no hay caja abierta', async () => {
     state.maps[state.STORES.CAJAS].clear();
     state.maps[state.STORES.MENU].set('credit-product', {
@@ -167,6 +231,7 @@ describe('salesRepository.executeSaleTransaction', () => {
           id: 'sale-credit-cash-down-payment',
           paymentMethod: 'fiado',
           total: 500,
+          payments: [],
           abono: '100',
           saldoPendiente: '400',
           customerId: 'customer-1',

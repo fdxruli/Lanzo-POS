@@ -14,6 +14,47 @@ const vectors = [
 ];
 
 describe('financial V1 canonical request and hash compatibility', () => {
+  it('preserves the existing by-items canonical shape and pins monetary payer identities', () => {
+    const child = {
+      sale: { id: 'sale-1', total: '100.00', paymentMethod: 'mixed' },
+      items: [{ id: 'item-1', productId: 'product-1', quantity: 1, price: 100 }],
+      payments: [{ method: 'cash', amount: '50.00' }]
+    };
+    const byItems = canonicalFinancialRequestV1('sale.split', {
+      parent_order_id: 'order-1',
+      parent_order_version: '2026-01-01T00:00:00Z',
+      split_group_id: 'split-1',
+      cash_session_id: 'cash-1',
+      children: [{ ...child, label: 'T1' }, { ...child, label: 'T2' }]
+    });
+    expect(byItems).not.toHaveProperty('split_intent');
+    expect(byItems).not.toHaveProperty('split_payers');
+
+    const monetary = canonicalFinancialRequestV1('sale.split', {
+      parent_order_id: 'order-1',
+      split_group_id: 'split-2',
+      cash_session_id: 'cash-1',
+      split_intent: 'custom_payment',
+      split_payers: [
+        { label: 'T1', amount: '50.00', method: 'card' },
+        { label: 'T2', amount: '50.00', method: 'transfer' }
+      ],
+      children: [{
+        ...child,
+        label: 'Cuenta',
+        payments: [{ method: 'card', amount: '50.00', metadata: { splitPayerId: 'T1' } }]
+      }]
+    });
+    expect(monetary).toMatchObject({
+      split_intent: 'custom_payment',
+      split_payers: [
+        { payer_id: 'T1', amount: '50', payment_method: 'card' },
+        { payer_id: 'T2', amount: '50', payment_method: 'transfer' }
+      ]
+    });
+    expect(monetary.children[0].payments[0].split_payer_id).toBe('T1');
+  });
+
   it.each(vectors)('recomputes frozen R6 vector %s in browser production code', async (_name, operationType, canonicalRequest, actorKey, cashSessionId, cashStationId, expected) => {
     await expect(hashCanonicalFinancialRequestV1({ operationType, canonicalRequest, actorKey, cashSessionId, cashStationId }))
       .resolves.toBe(`sha256:${expected}`);

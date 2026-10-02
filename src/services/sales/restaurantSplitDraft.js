@@ -6,16 +6,23 @@ import {
   setTenantStorageItem
 } from '../tenant/tenantScopedStorage';
 import { normalizeStock } from '../db/utils';
+import { normalizeRestaurantSplitPaymentMethod } from './paymentMethodContract';
+import { RESTAURANT_SPLIT_INTENTS } from './splitOrderContract';
 
-export const RESTAURANT_SPLIT_DRAFT_VERSION = 1;
+export const RESTAURANT_SPLIT_DRAFT_VERSION = 2;
 export const RESTAURANT_SPLIT_DRAFT_STEPS = Object.freeze(['people', 'items', 'payment', 'review']);
+const RESTAURANT_SPLIT_SNAPSHOT_VERSION = 1;
 const MAX_GUESTS = 8;
 const MIN_GUESTS = 2;
 const MAX_GUEST_NAME_LENGTH = 40;
 
-const splitDraftKey = (orderId) => (
-  `restaurant_split_draft:v1:${encodeURIComponent(String(orderId || ''))}`
+const splitDraftKey = (orderId, version = RESTAURANT_SPLIT_DRAFT_VERSION) => (
+  `restaurant_split_draft:v${version}:${encodeURIComponent(String(orderId || ''))}`
 );
+
+const normalizeSplitIntent = (value) => Object.values(RESTAURANT_SPLIT_INTENTS).includes(value)
+  ? value
+  : null;
 
 const stableSerialize = (value) => {
   if (Array.isArray(value)) return `[${value.map(stableSerialize).join(',')}]`;
@@ -49,7 +56,7 @@ const itemSnapshot = (item = {}, index = 0) => ({
 
 /** A deterministic commercial snapshot; kitchen-only status fields are intentionally excluded. */
 export const buildRestaurantSplitOrderSnapshot = ({ order = [], total = 0, saleDiscount = null } = {}) => stableSerialize({
-  version: RESTAURANT_SPLIT_DRAFT_VERSION,
+  version: RESTAURANT_SPLIT_SNAPSHOT_VERSION,
   total: finiteNumber(total),
   saleDiscount,
   lines: (Array.isArray(order) ? order : []).map(itemSnapshot)
@@ -92,42 +99,87 @@ const normalizeGuests = (guests) => {
   return normalized;
 };
 
-export const readRestaurantSplitDraft = ({ orderId, order = [], orderSnapshot } = {}) => {
-  if (!orderId || !getTenantStorageState().ready) return { status: 'unavailable' };
-  const key = splitDraftKey(orderId);
+const normalizeDraftCustomAmounts = (amounts, guestCount) => {
+  if (!Array.isArray(amounts) || amounts.length !== guestCount) return null;
+  if (!amounts.every((amount) => Number.isSafeInteger(amount) && amount >= 0)) return null;
+  return [...amounts];
+};
+
+const normalizeDraftPaymentMethods = (paymentMethods, guestCount) => {
+  const source = Array.isArray(paymentMethods) && paymentMethods.length === guestCount
+    ? paymentMethods
+    : [];
+  return Array.from({ length: guestCount }, (_, index) => {
+    const payment = source[index] || {};
+    const method = normalizeRestaurantSplitPaymentMethod(payment.paymentMethod);
+    const initialMethod = normalizeRestaurantSplitPaymentMethod(payment.initialPaymentMethod);
+    return {
+      paymentMethod: ['cash', 'card', 'transfer', 'credit'].includes(method) ? method : 'cash',
+      initialPaymentMethod: ['cash', 'card', 'transfer'].includes(initialMethod) ? initialMethod : 'cash'
+    };
+  });
+};
+
+const readStoredDraft = (key) => {
   const raw = getTenantStorageItem(key);
   if (!raw) return { status: 'missing' };
-
-  let draft;
   try {
-    draft = JSON.parse(raw);
+    return { status: 'found', draft: JSON.parse(raw) };
   } catch {
     removeTenantStorageItem(key);
     return { status: 'invalid' };
   }
+};
+
+export const readRestaurantSplitDraft = ({ orderId, order = [], orderSnapshot } = {}) => {
+  if (!orderId || !getTenantStorageState().ready) return { status: 'unavailable' };
+  const currentKey = splitDraftKey(orderId);
+  const legacyKey = splitDraftKey(orderId, 1);
+  const currentStored = readStoredDraft(currentKey);
+  const legacyStored = currentStored.status === 'missing' ? readStoredDraft(legacyKey) : { status: 'missing' };
+  const stored = currentStored.status !== 'missing' ? currentStored : legacyStored;
+  if (stored.status === 'missing') return { status: 'missing' };
+  if (stored.status === 'invalid') return { status: 'invalid' };
+  const draft = stored.draft;
+  const storageKey = stored === legacyStored ? legacyKey : currentKey;
+  const version = Number(draft?.version);
+  const splitIntent = version === 1
+    ? RESTAURANT_SPLIT_INTENTS.BY_ITEMS
+    : normalizeSplitIntent(draft?.splitIntent);
 
   if (
-    draft?.version !== RESTAURANT_SPLIT_DRAFT_VERSION
+    ![1, RESTAURANT_SPLIT_DRAFT_VERSION].includes(version)
     || String(draft?.orderId || '') !== String(orderId)
     || draft?.orderSnapshot !== orderSnapshot
   ) {
-    removeTenantStorageItem(key);
+    removeTenantStorageItem(storageKey);
     return { status: draft?.orderSnapshot && draft.orderSnapshot !== orderSnapshot ? 'stale' : 'invalid' };
   }
 
   const guests = normalizeGuests(draft.guests);
+  const customAmountsCents = version === 1 || splitIntent !== RESTAURANT_SPLIT_INTENTS.CUSTOM_PAYMENT
+    ? []
+    : normalizeDraftCustomAmounts(draft.customAmountsCents, guests?.length || 0);
+  const payerPaymentMethods = guests
+    ? normalizeDraftPaymentMethods(version === 1 ? null : draft.payerPaymentMethods, guests.length)
+    : [];
   if (
     !guests
+    || !splitIntent
     || !RESTAURANT_SPLIT_DRAFT_STEPS.includes(draft.step)
     || !validateDraftAllocations(draft.allocations, order, guests.length)
+    || customAmountsCents === null
   ) {
-    removeTenantStorageItem(key);
+    removeTenantStorageItem(storageKey);
     return { status: 'invalid' };
   }
 
   return {
     status: 'restored',
     guests,
+    splitIntent,
+    customAmountsCents,
+    payerPaymentMethods,
     allocations: draft.allocations.map((allocation) => ({
       poolQuantity: normalizeStock(Number(allocation.poolQuantity)),
       ticketQuantities: allocation.ticketQuantities.map((quantity) => normalizeStock(Number(quantity)))
@@ -136,13 +188,32 @@ export const readRestaurantSplitDraft = ({ orderId, order = [], orderSnapshot } 
   };
 };
 
-export const saveRestaurantSplitDraft = ({ orderId, order = [], orderSnapshot, guests, allocations, step } = {}) => {
+export const saveRestaurantSplitDraft = ({
+  orderId,
+  order = [],
+  orderSnapshot,
+  guests,
+  allocations,
+  step,
+  splitIntent = RESTAURANT_SPLIT_INTENTS.BY_ITEMS,
+  customAmountsCents = [],
+  payerPaymentMethods = []
+} = {}) => {
   if (!orderId || !getTenantStorageState().ready) return false;
   const normalizedGuests = normalizeGuests(guests);
+  const normalizedIntent = normalizeSplitIntent(splitIntent);
+  const normalizedCustomAmounts = normalizedIntent === RESTAURANT_SPLIT_INTENTS.CUSTOM_PAYMENT
+    ? normalizeDraftCustomAmounts(customAmountsCents, normalizedGuests?.length || 0)
+    : [];
+  const normalizedPaymentMethods = normalizedGuests
+    ? normalizeDraftPaymentMethods(payerPaymentMethods, normalizedGuests.length)
+    : [];
   if (
     !normalizedGuests
+    || !normalizedIntent
     || !RESTAURANT_SPLIT_DRAFT_STEPS.includes(step)
     || !validateDraftAllocations(allocations, order, normalizedGuests.length)
+    || normalizedCustomAmounts === null
   ) return false;
 
   const key = splitDraftKey(orderId);
@@ -151,6 +222,9 @@ export const saveRestaurantSplitDraft = ({ orderId, order = [], orderSnapshot, g
     orderId: String(orderId),
     orderSnapshot,
     guests: normalizedGuests,
+    splitIntent: normalizedIntent,
+    customAmountsCents: normalizedCustomAmounts,
+    payerPaymentMethods: normalizedPaymentMethods,
     allocations: allocations.map((allocation) => ({
       poolQuantity: normalizeStock(Number(allocation.poolQuantity)),
       ticketQuantities: allocation.ticketQuantities.map((quantity) => normalizeStock(Number(quantity)))
@@ -159,14 +233,17 @@ export const saveRestaurantSplitDraft = ({ orderId, order = [], orderSnapshot, g
   });
 
   setTenantStorageItem(key, serialized);
-  return getTenantStorageItem(key) === serialized;
+  const stored = getTenantStorageItem(key) === serialized;
+  if (stored) removeTenantStorageItem(splitDraftKey(orderId, 1));
+  return stored;
 };
 
 export const clearRestaurantSplitDraft = (orderId) => {
   if (!orderId || !getTenantStorageState().ready) return false;
   const key = splitDraftKey(orderId);
   removeTenantStorageItem(key);
-  return getTenantStorageItem(key) === null;
+  removeTenantStorageItem(splitDraftKey(orderId, 1));
+  return getTenantStorageItem(key) === null && getTenantStorageItem(splitDraftKey(orderId, 1)) === null;
 };
 
 export const getRestaurantSplitDraftStorageKey = splitDraftKey;

@@ -76,10 +76,6 @@ export function useTableManagement({
         return getEcommercePosBlockedResult();
     }, []);
 
-    const clearSession = useCallback(() => {
-        useActiveOrders.getState().cancelCurrentOrder();
-    }, []);
-
     const syncOpenRestaurantOrderToCloud = useCallback(async (orderId) => {
         if (!isCloudRestaurantOrdersEnabled || !licenseKey) {
             return { skipped: true };
@@ -727,26 +723,7 @@ export function useTableManagement({
 
         const requiresCashSessionCompatibility = splitRequiresCashSessionCompatibility(splitPayload?.tickets);
 
-        // The current cloud sale.split contract still requires an active cash
-        // session for credit-only tickets. Keep that prerequisite temporarily;
-        // fiado remains credit and creates no cash movement from this check.
-        if (requiresCashSessionCompatibility && (!cajaActual || cajaActual.estado !== 'abierta')) {
-            if (typeof asegurarCajaAbierta !== 'function') {
-                showMessageModal('No se pudo abrir la caja automáticamente.', null, { type: 'error' });
-                return;
-            }
-
-            try {
-                await asegurarCajaAbierta();
-            } catch (error) {
-                Logger.error('No se pudo abrir caja para Split Bill:', error);
-                showMessageModal(error?.message || 'No se pudo abrir la caja automáticamente.', null, { type: 'error' });
-                return;
-            }
-        }
-
         let cloudSpecialFlows = false;
-        let resolvedCashSessionId = cajaActual?.id || null;
         if (isCloudRestaurantOrdersEnabled && licenseKey) {
             try {
                 cloudSpecialFlows = await salesCloudCashierService.canUseCloudSplitTableSale({
@@ -768,11 +745,29 @@ export function useTableManagement({
             }
         }
 
+        let resolvedCashSessionId = cajaActual?.id || null;
         if (cloudSpecialFlows) {
             try {
-                const currentCashState = await cashRepository.getCurrentCashSession({ force: true });
-                const currentCashSession = currentCashState?.cashSession || null;
-                if (currentCashState?.success === false || !currentCashSession || currentCashSession.estado !== 'abierta' || currentCashState.readOnly || currentCashState.stateKnown === false) {
+                const appCashStateNeedsEnsure = !cajaActual || cajaActual.estado !== 'abierta';
+                let ensuredCashSession = false;
+                if (appCashStateNeedsEnsure && typeof asegurarCajaAbierta === 'function') {
+                    await asegurarCajaAbierta();
+                    ensuredCashSession = true;
+                }
+
+                let currentCashState = await cashRepository.getCurrentCashSession({ force: true });
+                let currentCashSession = currentCashState?.cashSession || null;
+                const sessionIsUsable = () => currentCashState?.success !== false
+                    && currentCashSession?.estado === 'abierta'
+                    && !currentCashState?.readOnly
+                    && currentCashState?.stateKnown !== false;
+
+                if (!sessionIsUsable() && !ensuredCashSession && typeof asegurarCajaAbierta === 'function') {
+                    await asegurarCajaAbierta();
+                    currentCashState = await cashRepository.getCurrentCashSession({ force: true });
+                    currentCashSession = currentCashState?.cashSession || null;
+                }
+                if (!sessionIsUsable()) {
                     throw new Error('CASH_SESSION_NOT_OPEN');
                 }
                 resolvedCashSessionId = currentCashSession.id;
@@ -783,6 +778,19 @@ export function useTableManagement({
                     : 'No se pudo verificar la caja abierta antes de cobrar. No se aplicaron cobros.';
                 showMessageModal(message, null, { type: 'error' });
                 return { success: false, errorType: 'CASH_SESSION_NOT_OPEN', message };
+            }
+        } else if (requiresCashSessionCompatibility && (!cajaActual || cajaActual.estado !== 'abierta')) {
+            if (typeof asegurarCajaAbierta !== 'function') {
+                showMessageModal('No se pudo abrir la caja automáticamente.', null, { type: 'error' });
+                return;
+            }
+
+            try {
+                await asegurarCajaAbierta();
+            } catch (error) {
+                Logger.error('No se pudo abrir caja para Split Bill:', error);
+                showMessageModal(error?.message || 'No se pudo abrir la caja automáticamente.', null, { type: 'error' });
+                return;
             }
         }
 
@@ -823,21 +831,28 @@ export function useTableManagement({
                     }
                 }
 
-                clearSession();
-                closeModal('split');
+                try {
+                    // Settlement already consumed the local reservation or reconciled
+                    // it against Cloud. Runtime cleanup must never cancel that parent.
+                    await useActiveOrders.getState().removeOrder(activeOrderId);
+                    closeModal('split');
 
-                if (isCloudRestaurantOrdersEnabled && cloudCloseResult?.success === false) {
-                    showMessageModal(
-                        '⚠️ La cuenta se cobró, pero no se pudo cerrar cocina cloud. Se reintentará cuando haya conexión.',
-                        null,
-                        { type: 'warning' }
-                    );
-                } else {
-                    showMessageModal('✅ Split bill aplicado y cobro registrado correctamente.');
+                    if (isCloudRestaurantOrdersEnabled && cloudCloseResult?.success === false) {
+                        showMessageModal(
+                            '⚠️ La cuenta se cobró, pero no se pudo cerrar cocina cloud. Se reintentará cuando haya conexión.',
+                            null,
+                            { type: 'warning' }
+                        );
+                    } else {
+                        showMessageModal('✅ Split bill aplicado y cobro registrado correctamente.');
+                    }
+
+                    await refreshData();
+                    await fetchActiveTablesCount();
+                } catch (postCheckoutError) {
+                    if (!result.cloudCommitted) throw postCheckoutError;
+                    Logger.warn('[REST.SPLIT.1] Cobro cloud confirmado; actualización de UI pendiente:', postCheckoutError);
                 }
-
-                await refreshData();
-                await fetchActiveTablesCount();
                 return result;
             }
 
@@ -861,7 +876,6 @@ export function useTableManagement({
         companyName,
         verifySessionIntegrity,
         reconcileKitchenCancelledItemsBeforeSplit,
-        clearSession,
         closeModal,
         refreshData,
         fetchActiveTablesCount,

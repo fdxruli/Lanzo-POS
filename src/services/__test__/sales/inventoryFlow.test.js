@@ -110,7 +110,7 @@ describe('inventoryFlow committed stock', () => {
     );
 
     expect(reservedItem.inventoryReservation.committedBatches).toEqual([
-      { batchId: 'b-1', ingredientId: 'milk', quantity: 4, cost: 10 }
+      { batchId: 'b-1', ingredientId: 'milk', quantity: 4, cost: 10, expiryDate: null, batchSku: null }
     ]);
     expect(db.__batches.get('b-1').committedStock).toBe(5);
     expect(db.__menu.get('milk').committedStock).toBe(5);

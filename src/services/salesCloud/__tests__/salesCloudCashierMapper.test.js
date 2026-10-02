@@ -5,6 +5,27 @@ import {
 } from '../salesCloudCashierMapper';
 import { localSaleToCloudShadowPayload, cloudSaleToLocalSyncPatch } from '../salesCloudMapper';
 
+describe('explicit payment source priority in Cloud mappers', () => {
+  const sale = { id: 'explicit-sale', total: '100', paymentMethod: 'cash' };
+  it('uses paymentBreakdown when payments is truly empty, including snake-case method aliases', () => {
+    const explicit = { payments: [], paymentBreakdown: [{ payment_method: 'cash', total: '25' }, { paymentMethod: 'card', amount: '75' }] };
+    const cashier = mapLocalCheckoutToCloudSale({ sale, total: '100', paymentData: explicit });
+    const shadow = localSaleToCloudShadowPayload({ ...sale, ...explicit });
+    for (const result of [cashier, shadow]) expect(result.payments).toMatchObject([
+      { method: 'cash', amount: 25 }, { method: 'card', amount: 75 }
+    ]);
+  });
+
+  it.each([{ method: 'cash', amount: 0 }, { method: 'unknown', amount: 100 }, null])(
+    'does not synthesize the sale total or initial abono for an authoritative invalid/zero source %o', (payment) => {
+      const explicit = { payments: [payment], paymentBreakdown: [{ method: 'cash', amount: 100 }] };
+      expect(mapLocalCheckoutToCloudSale({ sale, total: '100', paymentData: explicit }).payments).toEqual([]);
+      expect(localSaleToCloudShadowPayload({ ...sale, ...explicit }).payments).toEqual([]);
+      expect(mapLocalCreditCheckoutToCloudSale({ sale, total: '100', paymentData: { ...explicit, amountPaid: '25' } }).payments).toEqual([]);
+    }
+  );
+});
+
 describe('salesCloudMapper operational folio', () => {
   it('maps the server-assigned POS folio without replacing the financial folio', () => {
     const patch = cloudSaleToLocalSyncPatch({
@@ -48,6 +69,44 @@ describe('sales cloud cost snapshot nullability', () => {
 
     expect(cashier.items[0].unit_cost).toBe(expected);
     expect(shadow.items[0].unit_cost).toBe(expected);
+  });
+});
+
+describe('restaurant split tender mapping', () => {
+  it('preserves stable payer IDs across cashier and credit tender mapping', () => {
+    const cashSale = mapLocalCheckoutToCloudSale({
+      sale: { id: 'sale-monetary-split', timestamp: '2026-09-29T12:00:00.000Z', total: 100 },
+      paymentData: {
+        paymentMethod: 'mixed',
+        amountPaid: 100,
+        payments: [
+          { method: 'cash', amount: 30, received_amount: 35, change_amount: 5, metadata: { splitPayerId: 'T1', source: 'restaurant_split' } },
+          { method: 'card', amount: 70, received_amount: 70, change_amount: 0, metadata: { splitPayerId: 'T2', source: 'restaurant_split' } }
+        ]
+      },
+      total: 100
+    });
+    const creditSale = mapLocalCreditCheckoutToCloudSale({
+      sale: { id: 'sale-monetary-credit-split', timestamp: '2026-09-29T12:00:00.000Z', total: 100 },
+      paymentData: {
+        paymentMethod: 'fiado',
+        amountPaid: 20,
+        saldoPendiente: 80,
+        customerId: 'customer-1',
+        payments: [
+          { method: 'cash', amount: 20, received_amount: 25, change_amount: 5, metadata: { splitPayerId: 'T3', source: 'restaurant_split' } }
+        ]
+      },
+      total: 100
+    });
+
+    expect(cashSale.payments.map((payment) => [payment.method, payment.metadata.splitPayerId])).toEqual([
+      ['cash', 'T1'],
+      ['card', 'T2']
+    ]);
+    expect(creditSale.payments).toMatchObject([
+      { method: 'cash', amount: 20, received_amount: 25, change_amount: 5, metadata: { splitPayerId: 'T3' } }
+    ]);
   });
 });
 

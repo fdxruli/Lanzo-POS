@@ -1,6 +1,7 @@
 import Big from 'big.js';
 import { Money } from '../../utils/moneyMath';
 import { orderTotals } from './orderTotals';
+import { normalizeRestaurantSplitPaymentMethod } from './paymentMethodContract';
 
 export const RESTAURANT_SPLIT_INTENTS = Object.freeze({
   BY_ITEMS: 'by_items',
@@ -26,9 +27,8 @@ const normalizeIntentCandidate = (value) => {
 
 /**
  * Resolve the explicit contract while keeping legacy mode payloads readable.
- * `manual` safely maps to item allocation. Legacy `equal` is identified as a
- * payment split and remains non-executable until a single-sale payment flow is
- * available for restaurant orders.
+ * `manual` safely maps to item allocation. Monetary strategies are executable
+ * through the one-sale/multiple-payments contract.
  */
 export const normalizeRestaurantSplitIntent = ({ splitIntent, mode } = {}) => {
   const hasExplicitIntent = String(splitIntent ?? '').trim() !== '';
@@ -51,19 +51,10 @@ export const normalizeRestaurantSplitIntent = ({ splitIntent, mode } = {}) => {
     return { intent: null, status: 'invalid', code: 'SPLIT_INTENT_REQUIRED' };
   }
 
-  if (intent === RESTAURANT_SPLIT_INTENTS.BY_ITEMS) {
-    return {
-      intent,
-      status: 'ready',
-      code: null,
-      source: hasExplicitIntent ? 'splitIntent' : 'legacy_mode'
-    };
-  }
-
   return {
     intent,
-    status: 'deferred',
-    code: 'SPLIT_INTENT_NOT_SUPPORTED',
+    status: 'ready',
+    code: null,
     source: hasExplicitIntent ? 'splitIntent' : 'legacy_mode'
   };
 };
@@ -461,9 +452,17 @@ export const calculateByItemsTicketFinancials = ({
 
 export const splitRequiresCashSessionCompatibility = (tickets = []) => (
   (Array.isArray(tickets) ? tickets : []).some((ticket) => {
-    const method = String(ticket?.paymentData?.paymentMethod || ticket?.paymentData?.method || '')
-      .trim()
-      .toLowerCase();
-    return ['efectivo', 'cash', 'fiado', 'credit', 'crédito', 'credito'].includes(method);
+    const paymentData = ticket?.paymentData || {};
+    const method = normalizeRestaurantSplitPaymentMethod(paymentData.paymentMethod || paymentData.method);
+    const initialMethod = normalizeRestaurantSplitPaymentMethod(paymentData.initialPaymentMethod);
+    const hasCashPayment = [paymentData.payments, paymentData.paymentBreakdown, paymentData.paymentDetails?.payments]
+      .some((payments) => Array.isArray(payments) && payments.some((payment) => (
+        normalizeRestaurantSplitPaymentMethod(payment?.method || payment?.paymentMethod) === 'cash'
+          && Number(payment?.amount ?? payment?.total) > 0
+      )));
+    return hasCashPayment
+      || method === 'cash'
+      || method === 'credit'
+      || (method === 'mixed' && initialMethod === 'cash');
   })
 );

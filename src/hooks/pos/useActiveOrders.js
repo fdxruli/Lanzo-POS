@@ -7,6 +7,7 @@ import { db, STORES } from '../../services/db/dexie';
 import { SALE_STATUS } from '../../services/sales/financialStats';
 import { Money } from '../../utils/moneyMath';
 import { releaseCommittedStock } from '../../services/sales/inventoryFlow';
+import { reconcileActiveTableReservations } from '../../services/sales/tableReservationReconciliation';
 import { normalizeCartItems } from '../../utils/cartLineIdentity';
 import { releaseEcommerceOrderPosDraft } from '../../services/ecommerce/ecommerceOrderService';
 import {
@@ -48,7 +49,27 @@ const calculateOrderTotalExact = (order = []) => {
 };
 
 const EMPTY_ORDER_ITEMS = Object.freeze([]);
-const isActorAuthorityError = (error) => String(error?.code || '').startsWith('ACTOR_');
+
+const cancelPersistedOrder = async (orderId, actorHandle, noteLine) => db.transaction(
+  'rw', [db.table(STORES.SALES), db.table(STORES.MENU), db.table(STORES.PRODUCT_BATCHES)], async () => {
+    const existing = await db.table(STORES.SALES).get(orderId);
+    // Settled or already-cancelled orders must never release a second time.
+    if (!existing || existing.status !== SALE_STATUS.OPEN || existing.splitReservationReconciledAt) return;
+    const refundActorHandle = actorHandle || captureRefundsActorHandle();
+    const assertActorCurrent = () => refundActorHandle.assertCurrent('refunds');
+    assertActorCurrent();
+    await reconcileActiveTableReservations({ db, STORES });
+    await releaseCommittedStock(getSellableItems(existing.items), { db, STORES, assertActorCurrent });
+    assertActorCurrent();
+    await db.table(STORES.SALES).update(orderId, {
+      status: SALE_STATUS.CANCELLED,
+      fulfillmentStatus: 'cancelled',
+      notes: existing.notes && String(existing.notes).trim() ? `${existing.notes}\n${noteLine}` : noteLine,
+      updatedAt: new Date().toISOString()
+    });
+    assertActorCurrent();
+  }
+);
 
 export const selectCurrentOrder = (state) => (
   state.currentOrderId ? state.activeOrders.get(state.currentOrderId) || null : null
@@ -558,53 +579,8 @@ export const useActiveOrders = create(
 
       set({ isLoading: true });
       try {
-        const isSaved = order?.isSaved;
-        let existsInDB = false;
-        let existing = null;
-
-        if (isSaved) {
-          try {
-            existing = await db.table(STORES.SALES).get(orderId);
-            existsInDB = !!existing;
-          } catch (e) {
-            console.error("Error al verificar orden en BD:", e);
-          }
-        }
-
-        if (existsInDB && existing) {
-          const refundActorHandle = actorHandle || captureRefundsActorHandle();
-          const assertRefundActorCurrent = () => refundActorHandle.assertCurrent('refunds');
-          assertRefundActorCurrent();
-          try {
-            const itemsToRelease = getSellableItems(existing.items);
-            if (itemsToRelease.length > 0) {
-              if (typeof releaseCommittedStock === 'function') {
-                await releaseCommittedStock(itemsToRelease, { db, STORES, assertActorCurrent: assertRefundActorCurrent });
-              }
-            }
-          } catch (stockErr) {
-            if (isActorAuthorityError(stockErr)) throw stockErr;
-            console.error("Error liberando stock en cancelCurrentOrder:", stockErr);
-          }
-
-          try {
-            assertRefundActorCurrent();
-            const noteLine = "Sistema: Orden cancelada desde POS";
-            const mergedNotes = existing.notes && String(existing.notes).trim()
-              ? `${existing.notes}\n${noteLine}`
-              : noteLine;
-
-            await db.table(STORES.SALES).update(orderId, {
-              status: SALE_STATUS.CANCELLED || 'cancelled',
-              fulfillmentStatus: 'cancelled',
-              notes: mergedNotes,
-              updatedAt: new Date().toISOString()
-            });
-            assertRefundActorCurrent();
-          } catch (dbErr) {
-            if (isActorAuthorityError(dbErr)) throw dbErr;
-            console.error("Error actualizando DB en cancelCurrentOrder:", dbErr);
-          }
+        if (order?.isSaved) {
+          await cancelPersistedOrder(orderId, actorHandle, 'Sistema: Orden cancelada desde POS');
         }
 
         // 1. Eliminar de la sesión activa y UI
@@ -631,9 +607,10 @@ export const useActiveOrders = create(
         } catch (uiErr) {
           console.error("Error actualizando UI en cancelCurrentOrder:", uiErr);
         }
+        return { success: true };
       } catch (error) {
         console.error("Error al cancelar la orden:", error);
-        if (isActorAuthorityError(error)) throw error;
+        throw error;
       } finally {
         set({ isLoading: false });
       }
@@ -656,53 +633,8 @@ export const useActiveOrders = create(
 
       set({ isLoading: true });
       try {
-        const isSaved = order.isSaved;
-        let existsInDB = false;
-        let existing = null;
-
-        if (isSaved) {
-          try {
-            existing = await db.table(STORES.SALES).get(orderId);
-            existsInDB = !!existing;
-          } catch (e) {
-            console.error("Error al verificar orden en BD:", e);
-          }
-        }
-
-        if (existsInDB && existing) {
-          const refundActorHandle = actorHandle || captureRefundsActorHandle();
-          const assertRefundActorCurrent = () => refundActorHandle.assertCurrent('refunds');
-          assertRefundActorCurrent();
-          try {
-            const itemsToRelease = getSellableItems(existing.items);
-            if (itemsToRelease.length > 0) {
-              if (typeof releaseCommittedStock === 'function') {
-                await releaseCommittedStock(itemsToRelease, { db, STORES, assertActorCurrent: assertRefundActorCurrent });
-              }
-            }
-          } catch (stockErr) {
-            if (isActorAuthorityError(stockErr)) throw stockErr;
-            console.error("Error liberando stock en cancelOrder:", stockErr);
-          }
-
-          try {
-            assertRefundActorCurrent();
-            const noteLine = "Sistema: Orden cancelada desde POS";
-            const mergedNotes = existing.notes && String(existing.notes).trim()
-              ? `${existing.notes}\n${noteLine}`
-              : noteLine;
-
-            await db.table(STORES.SALES).update(orderId, {
-              status: SALE_STATUS.CANCELLED || 'cancelled',
-              fulfillmentStatus: 'cancelled',
-              notes: mergedNotes,
-              updatedAt: new Date().toISOString()
-            });
-            assertRefundActorCurrent();
-          } catch (dbErr) {
-            if (isActorAuthorityError(dbErr)) throw dbErr;
-            console.error("Error actualizando DB en cancelOrder:", dbErr);
-          }
+        if (order?.isSaved) {
+          await cancelPersistedOrder(orderId, actorHandle, 'Sistema: Orden cancelada desde POS');
         }
 
         // 1. Actualizar UI inmediatamente
@@ -761,33 +693,7 @@ export const useActiveOrders = create(
           return { success: false, message: 'Solo se pueden anular ventas abiertas.' };
         }
 
-        const refundActorHandle = actorHandle || captureRefundsActorHandle();
-        const assertRefundActorCurrent = () => refundActorHandle.assertCurrent('refunds');
-        assertRefundActorCurrent();
-
-        const itemsToRelease = getSellableItems(existing.items);
-        if (itemsToRelease.length > 0) {
-          try {
-            await releaseCommittedStock(itemsToRelease, { db, STORES, assertActorCurrent: assertRefundActorCurrent });
-        } catch (stockErr) {
-            if (isActorAuthorityError(stockErr)) throw stockErr;
-            console.error('Error liberando stock en cancelOpenSaleByIdFromPos:', stockErr);
-          }
-        }
-
-        const noteLine = 'Sistema: Venta anulada desde modal de mesas (POS).';
-        const mergedNotes = existing.notes && String(existing.notes).trim()
-          ? `${existing.notes}\n${noteLine}`
-          : noteLine;
-
-        assertRefundActorCurrent();
-        await db.table(STORES.SALES).update(orderId, {
-          status: SALE_STATUS.CANCELLED,
-          fulfillmentStatus: 'cancelled',
-          notes: mergedNotes,
-          updatedAt: new Date().toISOString()
-        });
-        assertRefundActorCurrent();
+        await cancelPersistedOrder(orderId, actorHandle, 'Sistema: Venta anulada desde modal de mesas (POS).');
 
         const state = get();
         const nextOrders = new Map(state.activeOrders);

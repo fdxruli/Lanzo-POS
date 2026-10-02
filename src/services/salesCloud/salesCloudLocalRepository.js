@@ -1,6 +1,8 @@
 import { db, STORES } from '../db/dexie';
 import { getCommittedStock, normalizeStock } from '../db/utils';
 import { cloudSaleToLocalSyncPatch } from './salesCloudMapper';
+import { getTableReservationProductQuantities } from '../sales/inventoryFlow';
+import { cloudSalePaymentSnapshot, normalizeCloudSalePaymentRows } from './salesCloudPaymentSnapshot';
 
 const CLOUD_SALE_CACHE_PREFIX = 'cloud_sale:';
 const nowIso = () => new Date().toISOString();
@@ -74,40 +76,27 @@ const reconcileLocalTableReservations = async ({ items = [], settledAt }) => {
         const productId = batch.productId || usage?.ingredientId;
         if (productId) batchProductIds.add(productId);
       }
-      continue;
     }
 
-    const quantity = normalizeStock(reservation.committedQuantity || 0);
-    if (quantity <= 0) continue;
-
-    // Current reservations identify the order product. Newer reservation
-    // writers may provide targetProductId/productId for recipe components.
-    const productId = reservation.productId
-      || reservation.targetProductId
-      || item.parentId
-      || item.id;
-    if (!productId) {
-      warnings.push('product:unknown:not_found');
-      continue;
+    const orderProduct = await db.table(STORES.MENU).get(item.parentId || item.id);
+    for (const usage of getTableReservationProductQuantities(item, orderProduct)) {
+      const quantity = normalizeStock(usage.quantity);
+      const productId = usage.productId;
+      const product = updatedProducts.get(productId) || await db.table(STORES.MENU).get(productId);
+      if (!product) {
+        warnings.push('product:' + productId + ':not_found');
+        continue;
+      }
+      const committedStock = getCommittedStock(product);
+      if (committedStock < quantity) {
+        warnings.push('product:' + productId + ':underflow:' + committedStock + ':' + quantity);
+      }
+      updatedProducts.set(productId, {
+        ...product,
+        committedStock: normalizeStock(Math.max(0, committedStock - quantity)),
+        updatedAt: settledAt
+      });
     }
-
-    const product = updatedProducts.get(productId)
-      || await db.table(STORES.MENU).get(productId);
-    if (!product) {
-      warnings.push('product:' + productId + ':not_found');
-      continue;
-    }
-
-    const committedStock = getCommittedStock(product);
-    if (committedStock < quantity) {
-      warnings.push('product:' + productId + ':underflow:' + committedStock + ':' + quantity);
-    }
-    const updatedProduct = {
-      ...product,
-      committedStock: normalizeStock(Math.max(0, committedStock - quantity)),
-      updatedAt: settledAt
-    };
-    updatedProducts.set(productId, updatedProduct);
   }
 
   if (updatedBatches.size > 0) {
@@ -175,13 +164,15 @@ const cloudCancellationToLocalPatch = (cloudSale = {}, response = {}) => ({
 
 const upsertCloudSaleCache = async ({ sale, items = [], payments = [] }) => {
   if (!sale?.id) return null;
+  const key = `${CLOUD_SALE_CACHE_PREFIX}${sale.id}`;
+  const existing = await db.table(STORES.SYNC_CACHE).get(key);
 
   const row = {
-    key: `${CLOUD_SALE_CACHE_PREFIX}${sale.id}`,
+    key,
     value: {
       sale,
       items,
-      payments,
+      payments: payments.length > 0 ? payments : normalizeCloudSalePaymentRows(existing?.value?.payments || []),
       cachedAt: nowIso(),
       phase: isCancelledCloudSale(sale)
         ? 'fase6e_cloud_sale_cancellations'
@@ -203,6 +194,7 @@ const buildLocalCloudCommittedSale = ({ localSale = {}, cloudSale = {}, items = 
   soldAt: cloudSale.sold_at || cloudSale.soldAt || localSale.soldAt || null,
   items: Array.isArray(localSale.items) && localSale.items.length > 0 ? localSale.items : items,
   total: String(cloudSale.total ?? localSale.total ?? 0),
+  payments: cloudSalePaymentSnapshot({ response, cloudSale, localSale }),
   paymentMethod: cloudSale.payment_method || localSale.paymentMethod,
   paymentStatus: cloudSale.payment_status || localSale.paymentStatus || null,
   abono: String(cloudSale.amount_paid ?? localSale.abono ?? cloudSale.total ?? 0),
@@ -227,6 +219,7 @@ const buildLocalCloudCommittedSale = ({ localSale = {}, cloudSale = {}, items = 
   sourceMode: cloudSale.source_mode || 'cloud_committed',
   effectsStatus: cloudSale.effects_status || 'payment_recorded',
   cashSessionId: cloudSale.cash_session_id || response.cash_session?.id || null,
+  cash_session_id: cloudSale.cash_session_id || response.cash_session?.id || localSale.cash_session_id || null,
   cashMovementId: cloudSale.cash_movement_id || response.cash_movement?.id || null,
   cashEffectStatus: cloudSale.cash_effect_status || null,
   inventoryEffectStatus: cloudSale.inventory_effect_status || 'not_applied',
@@ -306,12 +299,7 @@ export const salesCloudLocalRepository = {
     if (!saleId || !cloudSale.id) return null;
 
     const items = Array.isArray(response.items) ? response.items : [];
-    const localSnapshot = buildLocalCloudCommittedSale({
-      localSale,
-      cloudSale,
-      items,
-      response
-    });
+    let localSnapshot;
 
     const now = nowIso();
     const deterministicLogId = `txn_cloud_sale_${saleId}`;
@@ -320,6 +308,10 @@ export const salesCloudLocalRepository = {
       'rw',
       [db.table(STORES.SALES), db.table(STORES.TRANSACTION_LOG)],
       async () => {
+        const existing = await db.table(STORES.SALES).get(saleId);
+        localSnapshot = buildLocalCloudCommittedSale({
+          localSale: { ...existing, ...localSale }, cloudSale, items, response
+        });
         await db.table(STORES.SALES).put(localSnapshot);
 
         const existingLog = await db.table(STORES.TRANSACTION_LOG)
@@ -364,6 +356,10 @@ export const salesCloudLocalRepository = {
       async () => {
         const existing = await db.table(STORES.SALES).get(parentOrderId);
         if (!existing) throw new Error('SPLIT_PARENT_LOCAL_NOT_FOUND');
+
+        if (existing.splitSettlementSource === 'cloud_committed' && existing.splitReservationReconciledAt) {
+          return existing;
+        }
 
         const settledAt = nowIso();
         const reconciliation = existing.splitReservationReconciledAt
@@ -436,7 +432,10 @@ export const salesCloudLocalRepository = {
 
     for (const sale of sales) {
       const saleItems = items.filter((item) => item.sale_id === sale.id || item.saleId === sale.id);
-      const salePayments = payments.filter((payment) => payment.sale_id === sale.id || payment.saleId === sale.id);
+      const salePayments = normalizeCloudSalePaymentRows(payments.filter((payment) => (
+        payment?.sale_id === sale.id || payment?.saleId === sale.id
+        || (!(payment?.sale_id || payment?.saleId) && sales.length === 1 && response.sale?.id === sale.id)
+      )), { saleId: sale.id });
       if (await upsertCloudSaleCache({ sale, items: saleItems, payments: salePayments })) cached += 1;
 
       const localSaleId = getLocalSaleId(sale);
@@ -447,15 +446,23 @@ export const salesCloudLocalRepository = {
 
       const saleIsCancelled = isCancelledCloudSale(sale);
 
-      // Si ya era cloud_committed y el payload NO trae cancelación,
-      // no lo reescribimos para evitar parpadeos o sobreescrituras innecesarias.
+      // Preserve committed commercial/inventory fields, but refresh the payment
+      // projection so a normal Cloud pull repairs older snapshots too.
       if (localSale.sourceMode === 'cloud_committed' && isCloudCommitted(sale) && !saleIsCancelled) {
+        if (salePayments.length > 0) {
+          await db.table(STORES.SALES).update(localSaleId, {
+            payments: salePayments,
+            cash_session_id: sale.cash_session_id || localSale.cash_session_id || localSale.cashSessionId || null
+          });
+          patchedLocal += 1;
+        }
         continue;
       }
 
       const patch = saleIsCancelled
         ? cloudCancellationToLocalPatch(sale, response)
         : cloudSaleToLocalSyncPatch(sale, response);
+      if (salePayments.length > 0) patch.payments = salePayments;
 
       await db.table(STORES.SALES).update(localSaleId, patch);
       patchedLocal += 1;

@@ -161,7 +161,18 @@ const salePayment = (operationType, payment = {}) => compact({
   amount: decimal(firstNonblank(payment, ['amount', 'total'])),
   received_amount: decimal(firstNonblank(payment, ['received_amount', 'receivedAmount'])),
   change_amount: decimal(firstNonblank(payment, ['change_amount', 'changeAmount'])),
-  reference: text(firstNonblank(payment, ['reference', 'ref']))
+  reference: text(firstNonblank(payment, ['reference', 'ref'])),
+  split_payer_id: text(firstNonblank(payment, ['split_payer_id', 'splitPayerId'])
+    || firstNonblank(payment.metadata, ['splitPayerId', 'split_payer_id']))
+});
+
+const canonicalSplitPayer = (payer = {}) => compact({
+  payer_id: text(firstNonblank(payer, ['payer_id', 'payerId', 'label', 'id'])),
+  amount: decimal(firstNonblank(payer, ['amount', 'contribution_amount', 'contributionAmount'])),
+  payment_method: paymentMethod('sale.credit', text(firstNonblank(payer, ['payment_method', 'paymentMethod', 'method']))),
+  initial_payment_method: paymentMethod('sale.credit', text(firstNonblank(payer, ['initial_payment_method', 'initialPaymentMethod']))),
+  initial_amount_paid: decimal(firstNonblank(payer, ['initial_amount_paid', 'initialAmountPaid'])),
+  customer_id: text(firstNonblank(payer, ['customer_id', 'customerId']))
 });
 
 const splitChildOperationType = (child = {}) => {
@@ -369,16 +380,30 @@ export const canonicalFinancialRequestV1 = (operationType, request = {}) => {
       if (!request.sale || !Array.isArray(request.items) || !Array.isArray(request.payments)) throw new Error('FINANCIAL_SALE_CONTRACT_INVALID');
       return { sale: sale(operationType, request.sale), items: request.items.map(saleItem), payments: request.payments.map((item) => salePayment(operationType, item)), cash_session_id: text(firstNonblank(request, ['cash_session_id', 'cashSessionId'])), customer_id: text(firstNonblank(request, ['customer_id', 'customerId'])) };
     case 'sale.split': {
-      if (!Array.isArray(request.children) || request.children.length < 2 || request.children.length > 8) {
+      const splitIntent = text(firstNonblank(request, ['split_intent', 'splitIntent'])) || 'by_items';
+      const monetarySplit = ['equal_payment', 'custom_payment'].includes(splitIntent);
+      const splitPayers = request.split_payers || request.splitPayers || [];
+      if (!['by_items', 'equal_payment', 'custom_payment'].includes(splitIntent)
+        || !Array.isArray(request.children)
+        || request.children.length > 8
+        || (monetarySplit ? request.children.length !== 1 : request.children.length < 2)
+        || (monetarySplit && (!Array.isArray(splitPayers) || splitPayers.length < 2 || splitPayers.length > 8))) {
         throw new Error('FINANCIAL_SPLIT_CONTRACT_INVALID');
       }
-      return {
+      const canonicalSplit = {
         parent_order_id: text(firstNonblank(request, ['parent_order_id', 'parentOrderId'])),
         parent_order_version: text(firstNonblank(request, ['parent_order_version', 'parentOrderVersion'])),
         split_group_id: text(firstNonblank(request, ['split_group_id', 'splitGroupId'])),
         cash_session_id: text(firstNonblank(request, ['cash_session_id', 'cashSessionId'])),
         children: request.children.map(canonicalSplitChild)
       };
+      // Preserve the original by-items idempotency document. The intent and
+      // stable payer IDs are only new financial identity for monetary splits.
+      if (monetarySplit) {
+        canonicalSplit.split_intent = splitIntent;
+        canonicalSplit.split_payers = splitPayers.map(canonicalSplitPayer);
+      }
+      return canonicalSplit;
     }
     case 'sale.layaway_complete': {
       if (!request.sale || !Array.isArray(request.items) || !Array.isArray(request.payments)) {
