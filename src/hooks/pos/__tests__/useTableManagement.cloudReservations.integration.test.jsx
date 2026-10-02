@@ -12,7 +12,8 @@ const runtime = vi.hoisted(() => ({
 
 vi.mock('../../../services/db/dexie', () => ({
   STORES: { SALES: 'sales', MENU: 'menu', PRODUCT_BATCHES: 'product_batches',
-    CUSTOMERS: 'customers', SYNC_CACHE: 'sync_cache', TRANSACTION_LOG: 'transaction_log' },
+    CUSTOMERS: 'customers', SYNC_CACHE: 'sync_cache', TRANSACTION_LOG: 'transaction_log',
+    INVENTORY_EVENTS: 'inventory_events', SEQUENCES: 'sequences', COMPANY: 'company' },
   db: {
     table: (name) => runtime.database.table(name),
     transaction: (...args) => runtime.database.transaction(...args),
@@ -85,7 +86,7 @@ vi.mock('../../../services/salesCloud/salesCloudRepository', () => ({
   salesCloudRepository: { createCloudSplitTableSale: (...args) => runtime.transport(...args) }
 }));
 vi.mock('../../../services/salesCloud/salesCloudShadowService', () => ({
-  salesCloudShadowService: { syncSaleShadowAfterLocalCommit: vi.fn() }
+  salesCloudShadowService: { syncSaleShadowAfterLocalCommit: vi.fn(async () => ({ skipped: true })) }
 }));
 vi.mock('../../../services/sales/postSaleEffects', () => ({
   runPostSaleEffects: vi.fn(), runPostSaleEffectsForCloudCommittedSale: (...args) => runtime.postEffects(...args)
@@ -108,6 +109,9 @@ import { useActiveOrders } from '../useActiveOrders';
 import { db, STORES } from '../../../services/db/dexie';
 import * as inventoryFlow from '../../../services/sales/inventoryFlow';
 import { salesCloudLocalRepository } from '../../../services/salesCloud/salesCloudLocalRepository';
+import { salesRepository } from '../../../services/db/sales';
+import { splitOpenTableOrderCore } from '../../../services/sales/splitOrderService';
+import Logger from '../../../services/Logger';
 
 const makeItem = (id = 'burger', price = 300) => ({
   id, lineId: `line-${id}`, name: id === 'burger' ? 'Hamburguesa QA' : id,
@@ -153,7 +157,8 @@ beforeEach(async () => {
     verifySessionIntegrity: async () => true, licenseDetails: { valid: true, license_key: 'fixture-license' } };
   const database = new Dexie(`split-reservations-${crypto.randomUUID()}`);
   database.version(1).stores({ sales: 'id,status', menu: 'id', product_batches: 'id,productId',
-    customers: 'id', sync_cache: 'key', transaction_log: 'id' });
+    customers: 'id', sync_cache: 'key', transaction_log: 'id',
+    inventory_events: 'id,[saleId+productId]', sequences: 'id', company: 'id' });
   await database.open();
   runtime.database = database;
   await database.table('menu').bulkPut(['burger', 'pizza', 'drink'].map((id) => ({
@@ -176,6 +181,61 @@ beforeEach(async () => {
     const responsePayload = { success: true, children };
     const result = await project({ requestPayload: split, responsePayload, actorHandle });
     return { ...responsePayload, projection: { outcome: 'projection_applied', result } };
+  });
+});
+
+describe('Free/local inventory regressions', () => {
+  const localDeps = () => ({
+    loadData: (store, id) => db.table(store).get(id),
+    loadMultipleData: (store) => db.table(store).toArray(),
+    executeSplitOpenTableOrderTransactionSafe: (args) => salesRepository.executeSplitOpenTableOrderTransaction(args),
+    STORES, Logger, roundCurrency: (value) => Math.round(Number(value) * 100) / 100
+  });
+
+  it('real table cancellation still releases one reservation without a sale', async () => {
+    runtime.appState.licenseDetails = { valid: true, plan: 'free' };
+    await seedTable('A');
+    const release = vi.spyOn(inventoryFlow, 'releaseCommittedStock');
+    await useActiveOrders.getState().cancelCurrentOrder();
+    expect(release).toHaveBeenCalledTimes(1);
+    expect(await db.table('menu').get('burger')).toMatchObject({ stock: 10, committedStock: 0 });
+    expect(await db.table('sales').where('status').equals('closed').count()).toBe(0);
+    expect(runtime.transport).not.toHaveBeenCalled();
+  });
+
+  it('local Split Bill converts the reservation into stock consumption in the existing local transaction', async () => {
+    runtime.appState.licenseDetails = { valid: true, plan: 'free' };
+    const parent = await seedTable('A', [{ ...makeItem('burger', 150), quantity: 2 }]);
+    const response = await splitOpenTableOrderCore({
+      parentOrderId: parent.id, orderSnapshot: parent.items, splitIntent: 'by_items', cloudSpecialFlows: false,
+      tickets: ['T1', 'T2'].map((label) => ({ label,
+        lines: [{ lineIndex: 0, quantity: 1 }], paymentData: { paymentMethod: 'tarjeta', amountPaid: '150' }
+      }))
+    }, localDeps());
+    expect(response.success, response.message).toBe(true);
+    expect(response.childSales).toHaveLength(2);
+    expect(await db.table('menu').get('burger')).toMatchObject({ stock: 8, committedStock: 0 });
+    expect(await db.table('sales').get('A')).toMatchObject({ status: 'cancelled', cancelReason: 'split_settled' });
+    expect(runtime.transport).not.toHaveBeenCalled();
+  });
+
+  it('normal local checkout and close remove the tab without another inventory effect', async () => {
+    runtime.appState.licenseDetails = { valid: true, plan: 'free' };
+    const parent = await seedTable('A');
+    const { processedItems, batchesToDeduct } = inventoryFlow.buildProcessedItemsAndDeductions({
+      itemsToProcess: parent.items, allProducts: await db.table('menu').toArray(),
+      batchesMap: new Map(), roundCurrency: (value) => Math.round(Number(value) * 100) / 100
+    });
+    const release = vi.spyOn(inventoryFlow, 'releaseCommittedStock');
+    expect(await salesRepository.executeSaleTransaction({ ...parent, items: processedItems,
+      status: 'closed', paymentMethod: 'tarjeta', abono: '300', saldoPendiente: '0' }, batchesToDeduct))
+      .toMatchObject({ success: true });
+    await useActiveOrders.getState().closeOrder('A', { paymentMethod: 'tarjeta' });
+    expect(await db.table('menu').get('burger')).toMatchObject({ stock: 9, committedStock: 0 });
+    expect(useActiveOrders.getState().activeOrders.has('A')).toBe(false);
+    expect(await db.table('sales').get('A')).toMatchObject({ status: 'closed' });
+    expect(release).not.toHaveBeenCalled();
+    expect(runtime.transport).not.toHaveBeenCalled();
   });
 });
 afterEach(async () => { cleanup(); vi.restoreAllMocks(); vi.unstubAllEnvs(); await runtime.database.delete(); });
