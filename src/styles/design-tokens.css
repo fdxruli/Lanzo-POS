@@ -55,9 +55,9 @@
   /* Interactive roles: preserve legacy primary/info aliases while giving
      actions, selected controls, and destructive actions their own colors. */
   --ui-action-primary-bg: var(--brand-accent);
-  --ui-action-primary-hover-bg: #118F8C;
-  --ui-action-primary-active-bg: #0F908D;
-  --ui-action-primary-text: #101820;
+  --ui-action-primary-hover-bg: #1D4ED8;
+  --ui-action-primary-active-bg: #1E40AF;
+  --ui-action-primary-text: #FFFFFF;
   --ui-action-primary-border: var(--brand-accent);
   --ui-action-success-bg: #166534;
   --ui-action-success-hover-bg: #14532D;
@@ -67,7 +67,7 @@
   --ui-action-danger-text: #FFFFFF;
   --ui-action-disabled-bg: color-mix(in srgb, var(--ui-bg-muted) 82%, var(--ui-bg-surface));
   --ui-action-disabled-text: var(--ui-text-muted);
-  --ui-focus-color: #0F766E;
+  --ui-focus-color: #1D4ED8;
 
   /* UI spacing */
   --ui-space-2xs: 0.25rem;
@@ -114,26 +114,27 @@
   --ui-bg-success-soft: color-mix(in srgb, #75D5A6 13%, var(--ui-bg-surface));
   --ui-bg-warning-soft: color-mix(in srgb, #F2C477 13%, var(--ui-bg-surface));
   --ui-bg-danger-soft: color-mix(in srgb, #F28B91 13%, var(--ui-bg-surface));
-  --ui-bg-info-soft: color-mix(in srgb, #7DB5F5 13%, var(--ui-bg-surface));
+  --ui-bg-info-soft: color-mix(in srgb, #7DAAFF 13%, var(--ui-bg-surface));
   --ui-border-control: #64748B;
   --ui-border-selected: var(--brand-accent);
-  --ui-color-info: #7DB5F5;
-  --ui-text-brand: #35B6A6;
+  --ui-color-info: #7DAAFF;
+  --ui-text-brand: #7DAAFF;
   --ui-text-success: #75D5A6;
   --ui-text-warning: #F2C477;
   --ui-text-danger: #F28B91;
-  --ui-text-info: #7DB5F5;
+  --ui-text-info: #7DAAFF;
   --ui-text-warning-on-dark: #F2C477;
   --ui-text-danger-on-dark: #F28B91;
   --ui-text-on-danger: #101820;
-  --ui-action-primary-hover-bg: #46C7B5;
-  --ui-action-primary-active-bg: #2FA797;
+  --ui-action-primary-text: #101820;
+  --ui-action-primary-hover-bg: #93B9FF;
+  --ui-action-primary-active-bg: #6B97E8;
   --ui-action-success-bg: #1F6A4A;
   --ui-action-success-hover-bg: #19573C;
   --ui-action-danger-bg: #B43A45;
   --ui-action-danger-hover-bg: #98313B;
   --ui-action-disabled-bg: #252E39;
   --ui-action-disabled-text: #A5AFBC;
-  --ui-focus-color: #35B6A6;
+  --ui-focus-color: #7DAAFF;
   --ui-shadow-md: 0 14px 28px -18px rgba(0, 0, 0, 0.85);
 }
