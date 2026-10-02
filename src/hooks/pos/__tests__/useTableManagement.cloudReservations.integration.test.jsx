@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import 'fake-indexeddb/auto';
 import Dexie from 'dexie';
-import { act, cleanup, renderHook } from '@testing-library/react';
+import { act, cleanup, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const runtime = vi.hoisted(() => ({
@@ -11,7 +11,7 @@ const runtime = vi.hoisted(() => ({
 }));
 
 vi.mock('../../../services/db/dexie', () => ({
-  STORES: { SALES: 'sales', MENU: 'menu', PRODUCT_BATCHES: 'product_batches',
+  STORES: { SALES: 'sales', MENU: 'menu', CATEGORIES: 'categories', PRODUCT_BATCHES: 'product_batches',
     CUSTOMERS: 'customers', SYNC_CACHE: 'sync_cache', TRANSACTION_LOG: 'transaction_log',
     INVENTORY_EVENTS: 'inventory_events', SEQUENCES: 'sequences', COMPANY: 'company' },
   db: {
@@ -20,6 +20,12 @@ vi.mock('../../../services/db/dexie', () => ({
     isOpen: () => runtime.database.isOpen(), open: () => runtime.database.open()
   }
 }));
+vi.mock('../../../services/db', async () => await import('../../../services/db/dexie'));
+vi.mock('../../../services/database', () => ({
+  createProductWithInitialInventorySafe: vi.fn(), loadData: vi.fn(), loadDataPaginated: vi.fn(),
+  saveBatchAndSyncProductSafe: vi.fn(), saveImageToDB: vi.fn(), softDeleteWithCascadeSafe: vi.fn(), updateProductSafe: vi.fn()
+}));
+vi.mock('../../../services/db/general', () => ({ categoriesRepository: {} }));
 vi.mock('../../../store/useAppStore', () => ({
   useAppStore: Object.assign((selector) => selector(runtime.appState), {
     getState: () => runtime.appState, subscribe: () => () => {}
@@ -113,6 +119,8 @@ import { db, STORES } from '../../../services/db/dexie';
 import * as inventoryFlow from '../../../services/sales/inventoryFlow';
 import { salesCloudLocalRepository } from '../../../services/salesCloud/salesCloudLocalRepository';
 import { salesRepository } from '../../../services/db/sales';
+import { productLocalRepository } from '../../../services/products/productLocalRepository';
+import { useActiveTablesCount } from '../useActiveTablesCount';
 
 const makeItem = (id = 'burger', price = 300) => ({
   id, lineId: `line-${id}`, name: id === 'burger' ? 'Hamburguesa QA' : id,
@@ -158,7 +166,7 @@ beforeEach(async () => {
   runtime.appState = { enableMultipleOrders: true, companyProfile: { name: 'Lanzo' },
     verifySessionIntegrity: async () => true, licenseDetails: { valid: true, license_key: 'fixture-license' } };
   const database = new Dexie(`split-reservations-${crypto.randomUUID()}`);
-  database.version(1).stores({ sales: 'id,status', menu: 'id', product_batches: 'id,productId',
+  database.version(1).stores({ sales: 'id,status', menu: 'id', categories: 'id', product_batches: 'id,productId',
     customers: 'id', sync_cache: 'key', transaction_log: 'id',
     inventory_events: 'id,[saleId+productId]', sequences: 'id', company: 'id' });
   await database.open();
@@ -183,6 +191,201 @@ beforeEach(async () => {
     const responsePayload = { success: true, children };
     const result = await project({ requestPayload: split, responsePayload, actorHandle });
     return { ...responsePayload, projection: { outcome: 'projection_applied', result } };
+  });
+});
+
+describe('Mini-phase 3A.1 catalog desync and cancellation', () => {
+  it('repairs a persisted table with committedStock=0 before real cancellation', async () => {
+    await seedTable('A');
+    await db.table('menu').update('burger', { committedStock: 0 });
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await useActiveOrders.getState().cancelCurrentOrder();
+    expect(errors).not.toHaveBeenCalled();
+    expect(await db.table('menu').get('burger')).toMatchObject({ stock: 10, committedStock: 0 });
+    expect(await db.table('sales').get('A')).toMatchObject({ status: 'cancelled' });
+  });
+
+  it.each(['applyCloudProduct', 'applyCloudCatalog'])('%s preserves one reservation and cancellation releases exactly once', async (method) => {
+    await seedTable('A');
+    const cloud = { id: 'burger', name: 'Hamburguesa QA', stock: 10, committed_stock: 0, track_stock: true };
+    await productLocalRepository[method](method === 'applyCloudCatalog' ? { products: [cloud] } : cloud);
+    expect(await db.table('menu').get('burger')).toMatchObject({ stock: 10, committedStock: 1 });
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await useActiveOrders.getState().cancelCurrentOrder();
+    expect(errors).not.toHaveBeenCalled();
+    expect(await db.table('menu').get('burger')).toMatchObject({ stock: 10, committedStock: 0 });
+  });
+
+  it('pull with two tables keeps B unchanged when A cancels, then releases B', async () => {
+    await seedTable('A');
+    const other = await seedTable('B');
+    await productLocalRepository.applyCloudCatalog({ products: [{ id: 'burger', stock: 10, committed_stock: 0 }] });
+    expect(await db.table('menu').get('burger')).toMatchObject({ committedStock: 2 });
+    await useActiveOrders.getState().cancelOrder('A');
+    expect(await db.table('menu').get('burger')).toMatchObject({ committedStock: 1 });
+    expect(await db.table('sales').get('B')).toEqual(other);
+    await useActiveOrders.getState().cancelCurrentOrder();
+    expect(await db.table('menu').get('burger')).toMatchObject({ committedStock: 0 });
+  });
+
+  it.each([1, 2])('badge with %s table(s) updates immediately after cancellation', async (count) => {
+    await seedTable('A');
+    if (count === 2) await seedTable('B');
+    const hook = renderHook(() => useActiveTablesCount(true));
+    await waitFor(() => expect(hook.result.current.activeTablesCount).toBe(count));
+    await act(async () => { await useActiveOrders.getState().cancelOrder('A'); });
+    await waitFor(() => expect(hook.result.current.activeTablesCount).toBe(count - 1));
+  });
+
+  it('a failed cancellation rolls back stock, retains the table and keeps badge=1', async () => {
+    const parent = await seedTable('A');
+    const hook = renderHook(() => useActiveTablesCount(true));
+    await waitFor(() => expect(hook.result.current.activeTablesCount).toBe(1));
+    vi.spyOn(runtime.database.table('sales'), 'update').mockRejectedValueOnce(new Error('DB_CANCEL_FAILED'));
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await expect(useActiveOrders.getState().cancelCurrentOrder()).rejects.toThrow('DB_CANCEL_FAILED');
+    expect(await db.table('sales').get('A')).toEqual(parent);
+    expect(await db.table('menu').get('burger')).toMatchObject({ committedStock: 1 });
+    expect(useActiveOrders.getState().activeOrders.has('A')).toBe(true);
+    expect(hook.result.current.activeTablesCount).toBe(1);
+    expect(errors).toHaveBeenCalled();
+  });
+
+  it.each(['applyCloudBatch', 'applyCloudCatalog'])('%s preserves batches and their parent for two tables', async (method) => {
+    await db.table('menu').update('burger', { batchManagement: { enabled: true } });
+    await db.table('product_batches').put({ id: 'batch-burger', productId: 'burger', stock: 10, committedStock: 0, cost: 30 });
+    await seedTable('A');
+    const other = await seedTable('B');
+    const batch = { id: 'batch-burger', product_id: 'burger', stock: 10, committed_stock: 0 };
+    await productLocalRepository[method](method === 'applyCloudCatalog'
+      ? { products: [{ id: 'burger', stock: 10, committed_stock: 0 }], batches: [batch] } : batch);
+    expect(await db.table('product_batches').get('batch-burger')).toMatchObject({ committedStock: 2 });
+    expect(await db.table('menu').get('burger')).toMatchObject({ committedStock: 2 });
+    await useActiveOrders.getState().cancelOrder('A');
+    expect(await db.table('product_batches').get('batch-burger')).toMatchObject({ committedStock: 1 });
+    expect(await db.table('menu').get('burger')).toMatchObject({ committedStock: 1 });
+    expect(await db.table('sales').get('B')).toEqual(other);
+    await useActiveOrders.getState().cancelCurrentOrder();
+    expect(await db.table('product_batches').get('batch-burger')).toMatchObject({ committedStock: 0 });
+    expect(await db.table('menu').get('burger')).toMatchObject({ committedStock: 0 });
+  });
+
+  it.each([false, true])('recipe ingredients survive pull and cancellation (mixed batches=%s)', async (mixed) => {
+    await db.table('menu').bulkPut([
+      { id: 'bread', stock: 10, committedStock: 0, trackStock: true, batchManagement: { enabled: mixed } },
+      { id: 'meat', stock: 10, committedStock: 0, trackStock: true }
+    ]);
+    if (mixed) await db.table('product_batches').put({ id: 'batch-bread', productId: 'bread', stock: 10, committedStock: 0 });
+    await db.table('menu').update('burger', { trackStock: false, recipe: [
+      { ingredientId: 'bread', quantity: 1 }, { ingredientId: 'meat', quantity: 1 }
+    ] });
+    const other = await seedTable('B');
+    await seedTable('A');
+    await productLocalRepository.applyCloudCatalog({
+      products: ['burger', 'bread', 'meat'].map((id) => ({ id, stock: 10, committed_stock: 0 })),
+      batches: mixed ? [{ id: 'batch-bread', product_id: 'bread', stock: 10, committed_stock: 0 }] : []
+    });
+    for (const id of ['bread', 'meat']) expect(await db.table('menu').get(id)).toMatchObject({ committedStock: 2 });
+    await useActiveOrders.getState().cancelOrder('A');
+    for (const id of ['bread', 'meat']) expect(await db.table('menu').get(id)).toMatchObject({ committedStock: 1 });
+    expect(await db.table('sales').get('B')).toEqual(other);
+    await useActiveOrders.getState().cancelCurrentOrder();
+    for (const id of ['bread', 'meat']) expect(await db.table('menu').get(id)).toMatchObject({ committedStock: 0 });
+  });
+
+  it('pull after Cloud settlement does not restore A and still preserves B', async () => {
+    await seedTable('A');
+    await seedTable('B');
+    useActiveOrders.setState({ currentOrderId: 'A' });
+    expect((await confirm()).response.success).toBe(true);
+    await productLocalRepository.applyCloudCatalog({ products: [{ id: 'burger', stock: 9, committed_stock: 0 }] });
+    expect(await db.table('menu').get('burger')).toMatchObject({ stock: 9, committedStock: 1 });
+    await useActiveOrders.getState().cancelCurrentOrder();
+    await productLocalRepository.applyCloudProduct({ id: 'burger', stock: 9, committed_stock: 0 });
+    expect(await db.table('menu').get('burger')).toMatchObject({ stock: 9, committedStock: 0 });
+  });
+
+  it('rebuilds both known holds during pull when the old local value is already zero', async () => {
+    await seedTable('A');
+    await seedTable('B');
+    await db.table('menu').update('burger', { committedStock: 0 });
+    await productLocalRepository.applyCloudProduct({ id: 'burger', stock: 10, committed_stock: 0 });
+    expect(await db.table('menu').get('burger')).toMatchObject({ committedStock: 2 });
+    await useActiveOrders.getState().cancelOrder('A');
+    expect(await db.table('menu').get('burger')).toMatchObject({ committedStock: 1 });
+  });
+
+  it('a catalog pull concurrent with cancellation cannot restore the cancelled hold', async () => {
+    await seedTable('A');
+    await seedTable('B');
+    await Promise.all([
+      useActiveOrders.getState().cancelOrder('A'),
+      productLocalRepository.applyCloudProduct({ id: 'burger', stock: 10, committed_stock: 0 })
+    ]);
+    expect(await db.table('menu').get('burger')).toMatchObject({ committedStock: 1 });
+    expect(await db.table('sales').get('A')).toMatchObject({ status: 'cancelled' });
+  });
+
+  it('missing reserved batch aborts cancellation and preserves the open order', async () => {
+    await db.table('menu').update('burger', { batchManagement: { enabled: true } });
+    await db.table('product_batches').put({ id: 'batch-burger', productId: 'burger', stock: 10, committedStock: 0 });
+    const parent = await seedTable('A');
+    await db.table('product_batches').delete('batch-burger');
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await expect(useActiveOrders.getState().cancelOrder('A')).rejects.toThrow('CRITICAL_BATCH_NOT_FOUND');
+    expect(await db.table('sales').get('A')).toEqual(parent);
+    expect(useActiveOrders.getState().activeOrders.has('A')).toBe(true);
+  });
+
+  it('a genuine duplicate batch release still throws CRITICAL_COMMITTED_UNDERFLOW', async () => {
+    await db.table('menu').update('burger', { batchManagement: { enabled: true } });
+    await db.table('product_batches').put({ id: 'batch-burger', productId: 'burger', stock: 10, committedStock: 0 });
+    const parent = await seedTable('A');
+    await useActiveOrders.getState().cancelCurrentOrder();
+    await expect(inventoryFlow.releaseCommittedStock(parent.items, { db, STORES })).rejects.toThrow('CRITICAL_COMMITTED_UNDERFLOW');
+  });
+
+  it.each([false, true])('legacy recipes without committedProducts retain their ingredient holds (mixed=%s)', async (mixed) => {
+    runtime.cloudMode = false;
+    await db.table('menu').bulkPut([
+      { id: 'bread', stock: 10, committedStock: 0, trackStock: true, batchManagement: { enabled: mixed } },
+      { id: 'meat', stock: 10, committedStock: 0, trackStock: true }
+    ]);
+    if (mixed) await db.table('product_batches').put({ id: 'batch-bread', productId: 'bread', stock: 10, committedStock: 0 });
+    await db.table('menu').update('burger', { trackStock: false, recipe: [
+      { ingredientId: 'bread', quantity: 1 }, { ingredientId: 'meat', quantity: 1 }
+    ] });
+    const sale = await seedTable('A');
+    delete sale.items[0].inventoryReservation.committedProducts;
+    await db.table('sales').put(sale);
+    await db.table('menu').update('meat', { committedStock: 0 });
+    await useActiveOrders.getState().cancelCurrentOrder();
+    for (const id of ['bread', 'meat']) expect(await db.table('menu').get(id)).toMatchObject({ committedStock: 0 });
+    expect(runtime.transport).not.toHaveBeenCalled();
+  });
+
+  it('recipe snapshots survive a recipe edit in the Cloud catalog before cancellation', async () => {
+    await db.table('menu').put({ id: 'bread', stock: 10, committedStock: 0, trackStock: true });
+    await db.table('menu').update('burger', { trackStock: false, recipe: [{ ingredientId: 'bread', quantity: 1 }] });
+    await seedTable('A');
+    await productLocalRepository.applyCloudProduct({ id: 'burger', stock: 10, recipe: [], track_stock: false });
+    await useActiveOrders.getState().cancelCurrentOrder();
+    expect(await db.table('menu').get('bread')).toMatchObject({ committedStock: 0 });
+  });
+
+  it('Cloud settlement reconciles recipe components once and pull does not resurrect them', async () => {
+    await db.table('menu').put({ id: 'bread', stock: 10, committedStock: 0, trackStock: true });
+    await db.table('menu').update('burger', { trackStock: false, recipe: [{ ingredientId: 'bread', quantity: 1 }] });
+    await seedTable('B');
+    await seedTable('A');
+    expect((await confirm()).response.success).toBe(true);
+    expect(await db.table('menu').get('bread')).toMatchObject({ committedStock: 1 });
+    await productLocalRepository.applyCloudProduct({ id: 'bread', stock: 9, committed_stock: 0 });
+    expect(await db.table('menu').get('bread')).toMatchObject({ committedStock: 1 });
+    await salesCloudLocalRepository.markLocalSplitParentSettled({ parentOrderId: 'A' });
+    expect(await db.table('menu').get('bread')).toMatchObject({ committedStock: 1 });
+    await useActiveOrders.getState().cancelCurrentOrder();
+    expect(await db.table('menu').get('bread')).toMatchObject({ committedStock: 0 });
   });
 });
 

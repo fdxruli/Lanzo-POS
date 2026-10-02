@@ -1,6 +1,7 @@
 import { db, STORES } from '../db/dexie';
 import { getCommittedStock, normalizeStock } from '../db/utils';
 import { cloudSaleToLocalSyncPatch } from './salesCloudMapper';
+import { getTableReservationProductQuantities } from '../sales/inventoryFlow';
 
 const CLOUD_SALE_CACHE_PREFIX = 'cloud_sale:';
 const nowIso = () => new Date().toISOString();
@@ -74,40 +75,27 @@ const reconcileLocalTableReservations = async ({ items = [], settledAt }) => {
         const productId = batch.productId || usage?.ingredientId;
         if (productId) batchProductIds.add(productId);
       }
-      continue;
     }
 
-    const quantity = normalizeStock(reservation.committedQuantity || 0);
-    if (quantity <= 0) continue;
-
-    // Current reservations identify the order product. Newer reservation
-    // writers may provide targetProductId/productId for recipe components.
-    const productId = reservation.productId
-      || reservation.targetProductId
-      || item.parentId
-      || item.id;
-    if (!productId) {
-      warnings.push('product:unknown:not_found');
-      continue;
+    const orderProduct = await db.table(STORES.MENU).get(item.parentId || item.id);
+    for (const usage of getTableReservationProductQuantities(item, orderProduct)) {
+      const quantity = normalizeStock(usage.quantity);
+      const productId = usage.productId;
+      const product = updatedProducts.get(productId) || await db.table(STORES.MENU).get(productId);
+      if (!product) {
+        warnings.push('product:' + productId + ':not_found');
+        continue;
+      }
+      const committedStock = getCommittedStock(product);
+      if (committedStock < quantity) {
+        warnings.push('product:' + productId + ':underflow:' + committedStock + ':' + quantity);
+      }
+      updatedProducts.set(productId, {
+        ...product,
+        committedStock: normalizeStock(Math.max(0, committedStock - quantity)),
+        updatedAt: settledAt
+      });
     }
-
-    const product = updatedProducts.get(productId)
-      || await db.table(STORES.MENU).get(productId);
-    if (!product) {
-      warnings.push('product:' + productId + ':not_found');
-      continue;
-    }
-
-    const committedStock = getCommittedStock(product);
-    if (committedStock < quantity) {
-      warnings.push('product:' + productId + ':underflow:' + committedStock + ':' + quantity);
-    }
-    const updatedProduct = {
-      ...product,
-      committedStock: normalizeStock(Math.max(0, committedStock - quantity)),
-      updatedAt: settledAt
-    };
-    updatedProducts.set(productId, updatedProduct);
   }
 
   if (updatedBatches.size > 0) {

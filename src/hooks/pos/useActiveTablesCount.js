@@ -1,8 +1,20 @@
 // src/hooks/pos/useActiveTablesCount.js
 import { useState, useEffect, useCallback } from 'react';
+import { liveQuery } from 'dexie';
 import { db, STORES } from '../../services/db';
 import { SALE_STATUS } from '../../services/sales/financialStats';
 import Logger from '../../services/Logger';
+
+const readActiveTableCounts = async () => {
+    const openSales = await db.table(STORES.SALES).where('status').equals(SALE_STATUS.OPEN).toArray();
+    let active = 0;
+    let kitchenRejected = 0;
+    for (const sale of openSales) {
+        if (sale.fulfillmentStatus === 'cancelled') kitchenRejected += 1;
+        else active += 1;
+    }
+    return { active, kitchenRejected };
+};
 
 /**
  * Hook para manejar el conteo de mesas / ventas abiertas en restaurante.
@@ -21,20 +33,7 @@ export function useActiveTablesCount(enabled) {
     const fetchActiveTablesCount = useCallback(async () => {
         if (!enabled) return;
         try {
-            const openSales = await db.table(STORES.SALES)
-                .where('status')
-                .equals(SALE_STATUS.OPEN)
-                .toArray();
-
-            let active = 0;
-            let kitchenRejected = 0;
-            for (const sale of openSales) {
-                if (sale.fulfillmentStatus === 'cancelled') {
-                    kitchenRejected += 1;
-                } else {
-                    active += 1;
-                }
-            }
+            const { active, kitchenRejected } = await readActiveTableCounts();
             setActiveTablesCount(active);
             setKitchenRejectedOpenCount(kitchenRejected);
         } catch (error) {
@@ -43,12 +42,19 @@ export function useActiveTablesCount(enabled) {
     }, [enabled]);
 
     useEffect(() => {
-        const initializeCount = async () => {
-            await fetchActiveTablesCount();
-        };
-
-        initializeCount();
-    }, [fetchActiveTablesCount]);
+        // Dexie reruns this query only when its SALES dependencies change.
+        // The badge observes committed writes, including cancellations from
+        // tabs or OrderSummary, with no optimistic decrement or polling.
+        if (!enabled) return;
+        const subscription = liveQuery(readActiveTableCounts).subscribe({
+            next: ({ active, kitchenRejected }) => {
+                setActiveTablesCount(active);
+                setKitchenRejectedOpenCount(kitchenRejected);
+            },
+            error: (error) => Logger.error('Error observando mesas activas:', error)
+        });
+        return () => subscription.unsubscribe();
+    }, [enabled]);
 
     return {
         activeTablesCount,

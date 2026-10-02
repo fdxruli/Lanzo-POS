@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { cloudProductToLocal, normalizeProductComplexFields, productToCloudPayload } from '../../products/productMapper';
+import { cloudBatchToLocal, cloudProductToLocal, normalizeProductComplexFields, productToCloudPayload } from '../../products/productMapper';
+
+describe('Cloud physical stock and device commitments', () => {
+  it.each([cloudProductToLocal, cloudBatchToLocal])('preserves device holds while applying physical stock with %s', (mapper) => {
+    expect(mapper({ id: 'p', stock: 8, committed_stock: 0 }, { id: 'p', stock: 10, committedStock: 2 }))
+      .toMatchObject({ stock: 8, committedStock: 2 });
+    expect(mapper({ id: 'p', stock: 8, committed_stock: 3 }, { id: 'p', committedStock: 2 }))
+      .toMatchObject({ committedStock: 3 });
+    expect(mapper({ id: 'p', stock: 8, committed_stock: 0 }, { id: 'p', committedStock: 0 }))
+      .toMatchObject({ committedStock: 0 });
+  });
+});
 
 describe('cloudProductToLocal modifiers', () => {
   it('round-trips the default supplier through metadata without replacing other metadata', () => {
