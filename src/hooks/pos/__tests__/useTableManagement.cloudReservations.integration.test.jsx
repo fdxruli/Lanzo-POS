@@ -5,7 +5,7 @@ import { act, cleanup, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const runtime = vi.hoisted(() => ({
-  database: null, appState: null, cloudStock: new Map(), failBeforeCommit: false,
+  database: null, appState: null, cloudStock: new Map(), failBeforeCommit: false, cloudMode: true,
   transport: vi.fn(), postEffects: vi.fn(), storage: new Map(),
   actorHandle: { assertCurrent: vi.fn() }
 }));
@@ -64,9 +64,10 @@ vi.mock('../../../services/cash/cashRepository', () => ({
 }));
 vi.mock('../../../services/sync/syncConstants', async (importOriginal) => ({
   ...await importOriginal(),
-  getLicenseKeyFromDetails: () => 'fixture-license', isRestaurantOrdersCloudEnabled: () => true,
-  isCloudSalesCashierEnabled: () => true, isCloudSalesCreditEnabled: () => true,
-  isCloudSalesInventoryEnabled: () => true
+  getLicenseKeyFromDetails: () => runtime.cloudMode ? 'fixture-license' : null,
+  isRestaurantOrdersCloudEnabled: () => runtime.cloudMode,
+  isCloudSalesCashierEnabled: () => runtime.cloudMode, isCloudSalesCreditEnabled: () => runtime.cloudMode,
+  isCloudSalesInventoryEnabled: () => runtime.cloudMode
 }));
 vi.mock('../../restaurant/useRestaurantOrderCloudStatus', () => ({
   getRestaurantOrderCloudStatusSnapshot: async () => ({ skipped: true })
@@ -96,9 +97,11 @@ vi.mock('../../../services/salesService', () => ({
     const { splitOpenTableOrderCore } = await import('../../../services/sales/splitOrderService');
     const { STORES } = await import('../../../services/db/dexie');
     const Logger = (await import('../../../services/Logger')).default;
+    const { salesRepository } = await import('../../../services/db/sales');
     return splitOpenTableOrderCore(params, {
       loadData: (store, id) => runtime.database.table(store).get(id),
       loadMultipleData: (store) => runtime.database.table(store).toArray(), STORES, Logger,
+      executeSplitOpenTableOrderTransactionSafe: (args) => salesRepository.executeSplitOpenTableOrderTransaction(args),
       roundCurrency: (value) => Math.round(Number(value) * 100) / 100
     });
   }
@@ -110,8 +113,6 @@ import { db, STORES } from '../../../services/db/dexie';
 import * as inventoryFlow from '../../../services/sales/inventoryFlow';
 import { salesCloudLocalRepository } from '../../../services/salesCloud/salesCloudLocalRepository';
 import { salesRepository } from '../../../services/db/sales';
-import { splitOpenTableOrderCore } from '../../../services/sales/splitOrderService';
-import Logger from '../../../services/Logger';
 
 const makeItem = (id = 'burger', price = 300) => ({
   id, lineId: `line-${id}`, name: id === 'burger' ? 'Hamburguesa QA' : id,
@@ -152,6 +153,7 @@ beforeEach(async () => {
   runtime.storage.clear();
   runtime.cloudStock = new Map([['burger', 10], ['pizza', 10], ['drink', 10]]);
   runtime.failBeforeCommit = false;
+  runtime.cloudMode = true;
   runtime.postEffects.mockResolvedValue(undefined);
   runtime.appState = { enableMultipleOrders: true, companyProfile: { name: 'Lanzo' },
     verifySessionIntegrity: async () => true, licenseDetails: { valid: true, license_key: 'fixture-license' } };
@@ -185,15 +187,9 @@ beforeEach(async () => {
 });
 
 describe('Free/local inventory regressions', () => {
-  const localDeps = () => ({
-    loadData: (store, id) => db.table(store).get(id),
-    loadMultipleData: (store) => db.table(store).toArray(),
-    executeSplitOpenTableOrderTransactionSafe: (args) => salesRepository.executeSplitOpenTableOrderTransaction(args),
-    STORES, Logger, roundCurrency: (value) => Math.round(Number(value) * 100) / 100
-  });
-
   it('real table cancellation still releases one reservation without a sale', async () => {
     runtime.appState.licenseDetails = { valid: true, plan: 'free' };
+    runtime.cloudMode = false;
     await seedTable('A');
     const release = vi.spyOn(inventoryFlow, 'releaseCommittedStock');
     await useActiveOrders.getState().cancelCurrentOrder();
@@ -203,24 +199,32 @@ describe('Free/local inventory regressions', () => {
     expect(runtime.transport).not.toHaveBeenCalled();
   });
 
-  it('local Split Bill converts the reservation into stock consumption in the existing local transaction', async () => {
+  it('local Split Bill settles through the hook and cleans runtime without releasing the other table', async () => {
     runtime.appState.licenseDetails = { valid: true, plan: 'free' };
+    runtime.cloudMode = false;
+    const other = await seedTable('B');
     const parent = await seedTable('A', [{ ...makeItem('burger', 150), quantity: 2 }]);
-    const response = await splitOpenTableOrderCore({
-      parentOrderId: parent.id, orderSnapshot: parent.items, splitIntent: 'by_items', cloudSpecialFlows: false,
+    const release = vi.spyOn(inventoryFlow, 'releaseCommittedStock');
+    const { response } = await confirm({
+      splitIntent: 'by_items',
       tickets: ['T1', 'T2'].map((label) => ({ label,
         lines: [{ lineIndex: 0, quantity: 1 }], paymentData: { paymentMethod: 'tarjeta', amountPaid: '150' }
       }))
-    }, localDeps());
+    });
     expect(response.success, response.message).toBe(true);
     expect(response.childSales).toHaveLength(2);
-    expect(await db.table('menu').get('burger')).toMatchObject({ stock: 8, committedStock: 0 });
+    expect(await db.table('menu').get('burger')).toMatchObject({ stock: 8, committedStock: 1 });
     expect(await db.table('sales').get('A')).toMatchObject({ status: 'cancelled', cancelReason: 'split_settled' });
+    expect(await db.table('sales').get('B')).toEqual(other);
+    expect(useActiveOrders.getState().activeOrders.has(parent.id)).toBe(false);
+    expect(useActiveOrders.getState().currentOrderId).toBe('B');
+    expect(release).not.toHaveBeenCalled();
     expect(runtime.transport).not.toHaveBeenCalled();
   });
 
   it('normal local checkout and close remove the tab without another inventory effect', async () => {
     runtime.appState.licenseDetails = { valid: true, plan: 'free' };
+    runtime.cloudMode = false;
     const parent = await seedTable('A');
     const { processedItems, batchesToDeduct } = inventoryFlow.buildProcessedItemsAndDeductions({
       itemsToProcess: parent.items, allProducts: await db.table('menu').toArray(),

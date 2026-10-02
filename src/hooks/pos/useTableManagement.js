@@ -832,13 +832,9 @@ export function useTableManagement({
                 }
 
                 try {
-                    // Cloud already reconciled the parent's reservation. Removing its
-                    // runtime tab must preserve that settlement, never cancel it.
-                    if (result.cloudCommitted) {
-                        await useActiveOrders.getState().removeOrder(activeOrderId);
-                    } else {
-                        await useActiveOrders.getState().cancelCurrentOrder();
-                    }
+                    // Settlement already consumed the local reservation or reconciled
+                    // it against Cloud. Runtime cleanup must never cancel that parent.
+                    await useActiveOrders.getState().removeOrder(activeOrderId);
                     closeModal('split');
 
                     if (isCloudRestaurantOrdersEnabled && cloudCloseResult?.success === false) {
