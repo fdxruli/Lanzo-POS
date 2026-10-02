@@ -72,8 +72,8 @@
    HEADER
    ========================================= */
 .layaway-header {
-    background-color: var(--secondary-color);
-    color: #ffffff;
+    background-color: var(--ui-action-primary-bg);
+    color: var(--ui-action-primary-text);
     /* Texto blanco siempre sobre el color primario/secundario */
     padding: var(--spacing-md);
     display: flex;
@@ -159,7 +159,7 @@
 }
 
 .input-search-custom:focus {
-    border-color: var(--secondary-color);
+    border-color: var(--ui-focus-color, var(--secondary-color));
     outline: none;
     background-color: var(--card-background-color);
 }
@@ -175,9 +175,9 @@
 }
 
 .btn-new-customer:hover {
-    background-color: var(--secondary-color);
-    color: white;
-    border-color: var(--secondary-color);
+    background-color: var(--ui-action-primary-bg);
+    color: var(--ui-action-primary-text);
+    border-color: var(--ui-action-primary-bg);
 }
 
 /* Dropdown de Resultados */
@@ -294,7 +294,7 @@
 }
 
 .input-financial:focus {
-    border-color: var(--secondary-color);
+    border-color: var(--ui-focus-color, var(--secondary-color));
     background-color: var(--card-background-color);
     box-shadow: 0 0 0 2px rgba(123, 97, 255, 0.1);
     outline: none;
@@ -404,8 +404,8 @@
 .btn-confirm-layaway {
     padding: 12px 25px;
     border: none;
-    background-color: var(--secondary-color);
-    color: white;
+    background-color: var(--ui-action-primary-bg);
+    color: var(--ui-action-primary-text);
     border-radius: var(--border-radius-sm);
     font-weight: 700;
     box-shadow: 0 4px 10px rgba(123, 97, 255, 0.3);

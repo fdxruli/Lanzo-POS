@@ -55,9 +55,9 @@
 }
 
 .kds-tab.active {
-  color: var(--text-on-primary, var(--ui-text-on-primary));
-  background: var(--primary-color);
-  border-color: var(--primary-color);
+  color: var(--ui-text-brand);
+  background: var(--ui-bg-selected);
+  border-color: var(--ui-border-selected);
   box-shadow: none;
 }
 
@@ -123,9 +123,9 @@
 }
 
 .kds-station-tab.active {
-  color: var(--text-on-primary, var(--ui-text-on-primary));
-  border-color: var(--primary-color);
-  background: var(--primary-color);
+  color: var(--ui-text-brand);
+  border-color: var(--ui-border-selected);
+  background: var(--ui-bg-selected);
 }
 
 .kds-alert {
@@ -182,9 +182,9 @@
 }
 
 .kds-history-filter button.active {
-  color: var(--text-on-primary, var(--ui-text-on-primary));
-  border-color: var(--primary-color);
-  background: var(--primary-color);
+  color: var(--ui-text-brand);
+  border-color: var(--ui-border-selected);
+  background: var(--ui-bg-selected);
 }
 
 .ticket-header {

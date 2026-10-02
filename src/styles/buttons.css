@@ -53,15 +53,22 @@ button:active {
 
 .ui-button:focus-visible,
 .btn:focus-visible {
-  outline: none;
+  outline: 2px solid var(--ui-focus-color);
+  outline-offset: 2px;
   box-shadow: var(--ui-shadow-focus-primary);
+}
+
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--ui-focus-color);
+  outline-offset: 2px;
 }
 
 .ui-button:disabled,
 .ui-button[aria-disabled="true"],
 .btn:disabled,
 .btn[aria-disabled="true"] {
-  opacity: 0.55;
+  opacity: 1;
   cursor: not-allowed;
   transform: none;
   box-shadow: none;
@@ -72,31 +79,48 @@ button:active {
 .btn-primary,
 .btn-save,
 .btn-confirm {
-  background-color: var(--ui-color-primary);
-  color: var(--ui-text-on-primary);
-  border-color: var(--ui-color-primary);
+  background-color: var(--ui-action-primary-bg);
+  color: var(--ui-action-primary-text);
+  border-color: var(--ui-action-primary-border);
 }
 
 .ui-button--primary:hover:not(:disabled),
 .btn-primary:hover:not(:disabled),
 .btn-save:hover:not(:disabled),
 .btn-confirm:hover:not(:disabled) {
-  background-color: var(--ui-color-primary-hover);
-  border-color: var(--ui-color-primary-hover);
-  box-shadow: 0 10px 22px -14px var(--ui-color-primary);
+  background-color: var(--ui-action-primary-hover-bg);
+  border-color: var(--ui-action-primary-hover-bg);
+  color: var(--ui-action-primary-text);
+  box-shadow: 0 10px 22px -14px var(--ui-action-primary-bg);
+}
+
+.ui-button--primary:active:not(:disabled),
+.btn-primary:active:not(:disabled),
+.btn-save:active:not(:disabled),
+.btn-confirm:active:not(:disabled) {
+  background-color: var(--ui-action-primary-active-bg);
+  border-color: var(--ui-action-primary-active-bg);
+  color: var(--ui-action-primary-text);
 }
 
 .ui-button--secondary,
 .btn-secondary {
-  background-color: var(--ui-color-secondary);
-  color: var(--ui-text-on-primary);
-  border-color: var(--ui-color-secondary);
+  background-color: var(--ui-bg-muted);
+  color: var(--ui-text-strong);
+  border-color: var(--ui-border-color);
 }
 
 .ui-button--secondary:hover:not(:disabled),
 .btn-secondary:hover:not(:disabled) {
-  filter: brightness(1.06);
-  box-shadow: 0 10px 22px -14px var(--ui-color-secondary);
+  background-color: var(--ui-bg-hover);
+  border-color: var(--ui-text-muted);
+}
+
+.ui-button--secondary:active:not(:disabled),
+.btn-secondary:active:not(:disabled) {
+  background-color: var(--ui-bg-elevated);
+  border-color: var(--ui-border-color);
+  color: var(--ui-text-strong);
 }
 
 .ui-button--neutral,
@@ -109,6 +133,7 @@ button:active {
 .ui-button--neutral:hover:not(:disabled),
 .btn-neutral:hover:not(:disabled) {
   border-color: var(--ui-text-muted);
+  background-color: var(--ui-bg-hover);
 }
 
 .ui-button--ghost,
@@ -136,9 +161,17 @@ button:active {
 .ui-button--danger:hover:not(:disabled),
 .btn-delete:hover:not(:disabled),
 .btn-danger:hover:not(:disabled) {
-  background-color: var(--ui-color-danger);
-  color: var(--ui-text-on-danger);
-  border-color: var(--ui-color-danger);
+  background-color: var(--ui-action-danger-bg);
+  color: var(--ui-action-danger-text);
+  border-color: var(--ui-action-danger-bg);
+}
+
+.ui-button--danger:active:not(:disabled),
+.btn-delete:active:not(:disabled),
+.btn-danger:active:not(:disabled) {
+  background-color: var(--ui-action-danger-hover-bg);
+  border-color: var(--ui-action-danger-hover-bg);
+  color: var(--ui-action-danger-text);
 }
 
 .ui-button--danger:focus-visible,
@@ -148,9 +181,15 @@ button:active {
 }
 
 .ui-button--success {
-  background-color: var(--ui-color-success);
-  color: var(--ui-text-on-primary);
-  border-color: var(--ui-color-success);
+  background-color: var(--ui-action-success-bg);
+  color: var(--ui-action-success-text);
+  border-color: var(--ui-action-success-bg);
+}
+
+.ui-button--success:hover:not(:disabled) {
+  background-color: var(--ui-action-success-hover-bg);
+  border-color: var(--ui-action-success-hover-bg);
+  color: var(--ui-action-success-text);
 }
 
 .ui-button--success:focus-visible {
@@ -161,6 +200,20 @@ button:active {
   background-color: var(--ui-bg-warning-soft);
   color: var(--ui-text-warning);
   border-color: var(--ui-border-warning);
+}
+
+.ui-button:disabled,
+.ui-button[aria-disabled="true"],
+.btn:disabled,
+.btn[aria-disabled="true"] {
+  background-color: var(--ui-action-disabled-bg);
+  color: var(--ui-action-disabled-text);
+  border-color: var(--ui-border-color);
+}
+
+.ui-button[aria-busy="true"],
+.btn[aria-busy="true"] {
+  cursor: progress;
 }
 
 .ui-button--sm,
@@ -199,10 +252,6 @@ button:active {
   min-width: 34px;
   height: 34px;
   min-height: 34px;
-}
-
-[data-theme="dark"] .ui-button--warning {
-  color: var(--ui-text-warning-on-dark);
 }
 
 @media (max-width: 640px) {

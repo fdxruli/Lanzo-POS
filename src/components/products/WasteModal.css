@@ -89,9 +89,9 @@
 }
 
 .waste-reason-card.selected {
-  border-color: var(--error-color, #e74c3c);
-  background: var(--error-color, #e74c3c);
-  color: white;
+  border-color: var(--ui-action-danger-bg);
+  background: var(--ui-action-danger-bg);
+  color: var(--ui-action-danger-text);
 }
 
 .waste-reason-card.selected svg {
@@ -129,8 +129,8 @@
 }
 
 .waste-actions .btn-delete {
-  background: var(--error-color, #e74c3c);
-  color: white;
+  background: var(--ui-action-danger-bg);
+  color: var(--ui-action-danger-text);
   border: none;
   order: 1; /* Primario arriba */
 }

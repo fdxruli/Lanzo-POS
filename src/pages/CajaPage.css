@@ -99,7 +99,7 @@
 .caja-grid button:focus-visible,
 .caja-grid input:focus-visible,
 .caja-grid select:focus-visible {
-  outline: 3px solid color-mix(in srgb, var(--primary-color) 30%, transparent);
+  outline: 2px solid var(--ui-focus-color);
   outline-offset: 2px;
 }
 
@@ -613,8 +613,9 @@
 }
 
 .caja-grid .btn-entry:hover:not(:disabled) {
-  color: #fff;
-  background: var(--success-color);
+  color: var(--ui-action-success-text);
+  background: var(--ui-action-success-bg);
+  border-color: var(--ui-action-success-bg);
 }
 
 .caja-grid .btn-exit {
@@ -624,8 +625,9 @@
 }
 
 .caja-grid .btn-exit:hover:not(:disabled) {
-  color: #fff;
-  background: var(--error-color);
+  color: var(--ui-action-danger-text);
+  background: var(--ui-action-danger-bg);
+  border-color: var(--ui-action-danger-bg);
 }
 
 .caja-grid .btn-adjust {

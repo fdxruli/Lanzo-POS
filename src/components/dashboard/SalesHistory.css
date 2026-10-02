@@ -230,8 +230,8 @@
 }
 
 .delete-order-btn:hover {
-  background-color: var(--error-color);
-  color: white;
+  background-color: var(--ui-action-danger-bg);
+  color: var(--ui-action-danger-text);
 }
 
 .delete-order-btn:disabled {
@@ -283,8 +283,8 @@
 }
 
 .split-badge {
-  background-color: var(--primary-color);
-  color: #ffffff;
+  background-color: var(--ui-action-primary-bg);
+  color: var(--ui-action-primary-text);
   /* Color de contraste para fondos primarios */
   font-size: 0.7rem;
   padding: 2px 6px;
@@ -321,8 +321,8 @@
 }
 
 .toggle-split-btn:hover {
-  background-color: var(--primary-color);
-  color: #ffffff;
+  background-color: var(--ui-action-primary-bg);
+  color: var(--ui-action-primary-text);
 }
 
 /* Acordeón Hijos */

@@ -5,16 +5,16 @@
   /* --- PALETA PRINCIPAL --- */
   --primary-color: #334155;
   --primary-hover: #1F2937;
-  --secondary-color: #0EA5A4;
-  --brand-accent: #0EA5A4;
-  --brand-accent-hover: #0F766E;
-  --brand-accent-text: #0F766E;
-  --brand-accent-soft: rgba(14, 165, 164, 0.12);
-  --brand-accent-border: rgba(14, 165, 164, 0.32);
+  --secondary-color: #2563EB;
+  --brand-accent: #2563EB;
+  --brand-accent-hover: #1D4ED8;
+  --brand-accent-text: #1D4ED8;
+  --brand-accent-soft: rgba(37, 99, 235, 0.10);
+  --brand-accent-border: rgba(37, 99, 235, 0.35);
   --text-on-primary: #FFFFFF;
 
   /* --- ESTADOS --- */
-  --success-color: #218A5A;
+  --success-color: #1D7A50;
   --warning-color: #D97706;
   --error-color: #D14343;
 
@@ -33,7 +33,7 @@
   /* --- TEXTOS --- */
   --text-dark: #171A1F;
   --text-color: #3F4652;
-  --text-light: #68707D;
+  --text-light: #636B78;
 
   /* --- SCROLLBAR --- */
   --scrollbar-track: rgba(23, 26, 31, 0.06);
@@ -106,27 +106,28 @@
    MODO OSCURO (Dark Mode)
 ====================================================== */
 [data-theme="dark"] {
+  color-scheme: dark;
   --primary-color: #CBD5E1;
   --primary-hover: #E2E8F0;
-  --secondary-color: #2DD4BF;
-  --brand-accent: #2DD4BF;
-  --brand-accent-hover: #5EEAD4;
-  --brand-accent-text: #5EEAD4;
-  --brand-accent-soft: rgba(45, 212, 191, 0.14);
-  --brand-accent-border: rgba(45, 212, 191, 0.38);
-  --text-on-primary: #0E1116;
-  --success-color: #32D583;
-  --warning-color: #FDBA74;
-  --error-color: #F97066;
+  --secondary-color: #7DAAFF;
+  --brand-accent: #7DAAFF;
+  --brand-accent-hover: #93B9FF;
+  --brand-accent-text: #7DAAFF;
+  --brand-accent-soft: rgba(125, 170, 255, 0.15);
+  --brand-accent-border: rgba(125, 170, 255, 0.45);
+  --text-on-primary: #101820;
+  --success-color: #75D5A6;
+  --warning-color: #F2C477;
+  --error-color: #F28B91;
 
-  --background-color: #0E1116;
-  --card-background-color: #171B22;
-  --light-background: #202630;
-  --border-color: #2E3541;
+  --background-color: #12171D;
+  --card-background-color: #1B222B;
+  --light-background: #252E39;
+  --border-color: #364252;
 
-  --text-dark: #F4F6F8;
-  --text-color: #D5DAE1;
-  --text-light: #9BA3AF;
+  --text-dark: #E7EBEF;
+  --text-color: #CDD5DF;
+  --text-light: #A5AFBC;
 
   --scrollbar-track: rgba(155, 163, 175, 0.1);
   --scrollbar-thumb: #3A4350;
@@ -357,8 +358,16 @@ input:focus,
 textarea:focus,
 select:focus {
   outline: none;
-  border-color: var(--secondary-color);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--secondary-color) 22%, transparent);
+  border-color: var(--ui-focus-color, var(--secondary-color));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ui-focus-color, var(--secondary-color)) 22%, transparent);
+}
+
+input:not([type="radio"]):focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--ui-focus-color, var(--secondary-color));
+  outline-offset: 2px;
+  box-shadow: none;
 }
 
 input:disabled {

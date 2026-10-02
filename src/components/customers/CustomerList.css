@@ -45,9 +45,9 @@
 }
 
 .customer-config-button:hover {
-  color: #fff;
-  background: var(--primary-color);
-  border-color: var(--primary-color);
+  color: var(--ui-action-primary-text);
+  background: var(--ui-action-primary-bg);
+  border-color: var(--ui-action-primary-bg);
 }
 
 .customer-list-columns {

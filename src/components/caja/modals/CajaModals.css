@@ -219,8 +219,8 @@
 .caja-modal__field > textarea:focus,
 .caja-modal__money-input:focus-within {
   background: var(--card-background-color);
-  border-color: color-mix(in srgb, var(--primary-color) 55%, transparent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color) 13%, transparent);
+  border-color: var(--ui-focus-color);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ui-focus-color) 22%, transparent);
   outline: 0;
 }
 
@@ -391,33 +391,50 @@
 }
 
 .caja-modal__button--primary {
-  color: #fff;
-  background: var(--primary-color);
+  color: var(--ui-action-primary-text);
+  background: var(--ui-action-primary-bg);
+  border-color: var(--ui-action-primary-bg);
 }
 
 .caja-modal__button--primary:hover:not(:disabled) {
-  background: var(--primary-hover);
-  box-shadow: 0 8px 18px color-mix(in srgb, var(--primary-color) 24%, transparent);
+  color: var(--ui-action-primary-text);
+  background: var(--ui-action-primary-hover-bg);
+  border-color: var(--ui-action-primary-hover-bg);
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--ui-action-primary-bg) 24%, transparent);
+}
+
+.caja-modal__button--primary:active:not(:disabled) {
+  background: var(--ui-action-primary-active-bg);
+  border-color: var(--ui-action-primary-active-bg);
 }
 
 .caja-modal__button--positive {
-  color: #fff;
-  background: #07946f;
+  color: var(--ui-action-success-text);
+  background: var(--ui-action-success-bg);
+  border-color: var(--ui-action-success-bg);
 }
 
 .caja-modal__button--positive:hover:not(:disabled) {
-  background: #087f61;
-  box-shadow: 0 8px 18px rgba(0, 196, 140, 0.2);
+  background: var(--ui-action-success-hover-bg);
+  border-color: var(--ui-action-success-hover-bg);
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--ui-action-success-bg) 24%, transparent);
 }
 
 .caja-modal__button--danger {
-  color: #fff;
-  background: var(--error-color);
+  color: var(--ui-action-danger-text);
+  background: var(--ui-action-danger-bg);
+  border-color: var(--ui-action-danger-bg);
 }
 
 .caja-modal__button--danger:hover:not(:disabled) {
-  background: #d72749;
-  box-shadow: 0 8px 18px rgba(255, 59, 92, 0.2);
+  background: var(--ui-action-danger-hover-bg);
+  border-color: var(--ui-action-danger-hover-bg);
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--ui-action-danger-bg) 24%, transparent);
+}
+
+.caja-modal__button:focus-visible {
+  outline: 2px solid var(--ui-focus-color);
+  outline-offset: 2px;
 }
 
 .caja-modal__button:disabled,

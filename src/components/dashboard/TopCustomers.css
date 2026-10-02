@@ -146,8 +146,8 @@
 }
 
 .top-customer-contact-item:hover {
-  background: var(--primary-color);
-  color: white;
+  background: var(--ui-action-primary-bg);
+  color: var(--ui-action-primary-text);
 }
 
 .top-customers-empty {

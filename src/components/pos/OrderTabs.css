@@ -52,13 +52,13 @@
 }
 
 .order-tab:hover:not(.active) {
-  background: var(--hover-background-color, #f0f0f0);
+  background: var(--ui-bg-hover, var(--hover-background-color, #f0f0f0));
 }
 
 .order-tab.active {
-  background: var(--card-background-color, #fff);
-  border-color: var(--primary-color, #2e7d32);
-  border-bottom: 1px solid var(--card-background-color, #fff);
+  background: var(--ui-bg-selected, var(--card-background-color, #fff));
+  border-color: var(--ui-border-selected, var(--brand-accent));
+  border-bottom: 1px solid var(--ui-bg-selected, var(--card-background-color, #fff));
   margin-bottom: -1px;
   z-index: 2;
   box-shadow: 0 -2px 10px rgba(0,0,0,0.05);
@@ -99,12 +99,12 @@
 }
 
 .order-tab.active .order-tab-name {
-  color: var(--primary-color, #2e7d32);
+  color: var(--ui-text-brand, var(--brand-accent-text));
 }
 
 .order-tab-badge {
-  background: var(--primary-color, #2e7d32);
-  color: #fff;
+  background: var(--ui-action-primary-bg);
+  color: var(--ui-action-primary-text);
   font-size: 0.65rem;
   font-weight: bold;
   padding: 2px 6px;
@@ -128,8 +128,8 @@
 
 .order-tab-add {
   background: transparent;
-  border: 1px dashed var(--primary-color, #2e7d32);
-  color: var(--primary-color, #2e7d32);
+  border: 1px dashed var(--ui-border-control);
+  color: var(--ui-text-brand, var(--brand-accent-text));
   border-radius: 8px 8px 0 0;
   padding: 8px 12px;
   font-size: 0.85rem;
@@ -148,7 +148,9 @@
 }
 
 .order-tab-add:hover {
-  background: rgba(46, 125, 50, 0.05);
+  background: var(--ui-bg-brand-soft);
+  border-color: var(--ui-border-selected);
+  color: var(--ui-text-brand);
 }
 
 @keyframes fadeIn {
@@ -188,14 +190,20 @@
 
 .order-tab-form input:focus {
   outline: none;
-  border-color: var(--primary-color, #2e7d32);
-  box-shadow: 0 0 0 2px rgba(46, 125, 50, 0.2);
+  border-color: var(--ui-focus-color);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ui-focus-color) 22%, transparent);
+}
+
+.order-tab-form input:focus-visible {
+  outline: 2px solid var(--ui-focus-color);
+  outline-offset: 2px;
+  box-shadow: none;
 }
 
 .btn-confirm-add {
-  background: var(--primary-color, #2e7d32);
+  background: var(--ui-action-primary-bg);
   border: none;
-  color: white;
+  color: var(--ui-action-primary-text);
   border-radius: 6px;
   width: 36px;
   height: 36px;
@@ -207,8 +215,16 @@
 }
 
 .btn-confirm-add:hover {
-  background: var(--primary-color-dark, #1b5e20);
+  background: var(--ui-action-primary-hover-bg);
+  color: var(--ui-action-primary-text);
   transform: translateY(-1px);
+}
+
+.btn-confirm-add:focus-visible,
+.order-tab-add:focus-visible,
+.order-tab:focus-visible {
+  outline: 2px solid var(--ui-focus-color);
+  outline-offset: 2px;
 }
 
 .btn-confirm-add:active {
@@ -216,7 +232,10 @@
 }
 
 .btn-confirm-add:disabled {
-  opacity: 0.6;
+  background: var(--ui-action-disabled-bg);
+  color: var(--ui-action-disabled-text);
+  border-color: var(--ui-border-color);
+  opacity: 1;
   cursor: not-allowed;
 }
 

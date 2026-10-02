@@ -48,8 +48,8 @@
   padding: 0 5px;
   border: 2px solid var(--ui-bg-surface);
   border-radius: 999px;
-  background: var(--ui-color-danger);
-  color: #fff;
+  background: var(--ui-action-danger-bg);
+  color: var(--ui-action-danger-text);
   font-size: 0.68rem;
   font-weight: 800;
   line-height: 1;

@@ -16,8 +16,8 @@
   place-items: center;
   flex: 0 0 auto;
   border-radius: 999px;
-  background: var(--error-color, #dc2626);
-  color: #fff;
+  background: var(--ui-action-danger-bg);
+  color: var(--ui-action-danger-text);
   font-size: 0.72rem;
   font-weight: 800;
   line-height: 1;

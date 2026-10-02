@@ -510,8 +510,8 @@
 }
 
 .unknown-badge {
-  background-color: var(--error-color, #dc3545);
-  color: white;
+  background-color: var(--ui-action-danger-bg);
+  color: var(--ui-action-danger-text);
   padding: 4px 8px;
   border-radius: 4px;
   font-size: 0.8rem;
@@ -533,8 +533,8 @@
 
 #scanner-modal .btn-clear-errors:hover,
 #scanner-modal .btn-clear-errors:active {
-  background: var(--error-color, #dc3545);
-  color: white;
+  background: var(--ui-action-danger-bg);
+  color: var(--ui-action-danger-text);
 }
 
 /* ============================================
@@ -964,8 +964,8 @@
   border-radius: 50px;
   font-size: 0.95rem;
   font-weight: 500;
-  color: white;
-  background-color: var(--success-color, #28a745);
+  color: var(--ui-action-success-text);
+  background-color: var(--ui-action-success-bg);
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
   z-index: 20;
   opacity: 0;

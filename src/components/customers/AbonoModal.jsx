@@ -419,7 +419,7 @@ export default function AbonoModal({
             )}
 
             <footer className="ui-modal__actions abono-actions">
-              <button type="submit" className="ui-button ui-button--success btn btn-save" disabled={isBlocked || isSubmitting || !!error || !monto}>
+              <button type="submit" className="ui-button ui-button--primary btn btn-save" disabled={isBlocked || isSubmitting || !!error || !monto}>
                 <CheckCircle size={18} />
                 {isSubmitting ? 'Registrando abono...' : 'Confirmar Abono'}
               </button>

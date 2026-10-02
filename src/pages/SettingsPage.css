@@ -39,12 +39,13 @@
 }
 
 .settings-page-wrapper .tab-btn.active {
-  background-color: var(--primary-color); /* O el color que uses para activo */
-  color: var(--ui-text-on-primary); /* O el color de contraste */
+  background-color: var(--ui-bg-selected);
+  color: var(--ui-text-brand);
+  border: 1px solid var(--ui-border-selected);
   /* Si no tienes variables globales definidas aquí, se usará el fallback del navegador o 
      puedes usar var(--text-dark) si prefieres un estilo tipo 'pill' gris */
-  background-color: var(--primary-color);
-  color: var(--ui-text-on-primary);
+  background-color: var(--ui-bg-selected);
+  color: var(--ui-text-brand);
 }
 
 /* ===== ESTILOS BASE PARA MÓVIL (Existentes) ===== */
@@ -965,9 +966,9 @@
 
 /* Estilo cuando está seleccionado */
 input[type="radio"]:checked + .theme-radio-text {
-  background-color: var(--primary-color);
-  color: var(--ui-text-on-primary);
-  border-color: var(--primary-color);
+  background-color: var(--ui-action-primary-bg);
+  color: var(--ui-action-primary-text);
+  border-color: var(--ui-action-primary-bg);
   box-shadow: 0 4px 6px rgba(var(--primary-rgb), 0.2);
 }
 
@@ -1042,9 +1043,9 @@ input[type="radio"]:checked + .theme-radio-text {
 }
 
 .rubro-box.selected {
-  background-color: var(--primary-color);
-  color: var(--ui-text-on-primary);
-  border-color: var(--primary-color);
+  background-color: var(--ui-bg-selected);
+  color: var(--ui-text-brand);
+  border-color: var(--ui-border-selected);
   box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
@@ -1122,8 +1123,9 @@ input[type="radio"]:checked + .theme-radio-text {
 }
 
 .maintenance-button--archive {
-  color: var(--ui-text-on-primary);
-  background: var(--secondary-color);
+  color: var(--ui-action-primary-text);
+  background: var(--ui-action-primary-bg);
+  border-color: var(--ui-action-primary-bg);
 }
 
 .maintenance-button--data {
@@ -1281,10 +1283,10 @@ input[type="radio"]:checked + .theme-radio-text {
 }
 
 .settings-page-wrapper .tab-btn.active {
-  color: var(--text-on-primary);
-  background: var(--primary-color);
-  border-color: var(--primary-color);
-  box-shadow: 0 8px 18px -14px var(--primary-color);
+  color: var(--ui-text-brand);
+  background: var(--ui-bg-selected);
+  border-color: var(--ui-border-selected);
+  box-shadow: 0 8px 18px -14px var(--brand-accent);
 }
 
 .settings-content {
@@ -1352,8 +1354,8 @@ input[type="radio"]:checked + .theme-radio-text {
 
 .form-input:focus,
 .form-textarea:focus {
-  border-color: var(--secondary-color);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--secondary-color) 22%, transparent);
+  border-color: var(--ui-focus-color, var(--secondary-color));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ui-focus-color, var(--secondary-color)) 22%, transparent);
 }
 
 .image-upload-wrapper {
@@ -1454,9 +1456,9 @@ input[type="radio"]:checked + .theme-radio-text {
 }
 
 .theme-radio-label input[type="radio"]:checked + .theme-radio-text {
-  color: var(--text-on-primary);
-  background: var(--primary-color);
-  border-color: var(--primary-color);
+  color: var(--ui-text-brand);
+  background: var(--ui-bg-selected);
+  border-color: var(--ui-border-selected);
   box-shadow: none;
 }
 
@@ -1757,8 +1759,8 @@ input[type="radio"]:checked + .theme-radio-text {
   justify-content: flex-start;
   min-height: 76px;
   padding: 12px;
-  border: 1px solid var(--border-color);
-  background: var(--light-background);
+  border: 1px solid var(--ui-border-control);
+  background: var(--ui-bg-muted);
 }
 
 .settings-preference-panel .theme-radio-text > span {
@@ -1774,10 +1776,18 @@ input[type="radio"]:checked + .theme-radio-text {
 }
 
 .settings-preference-panel .theme-radio-text small {
-  color: inherit;
-  opacity: 0.75;
+  color: var(--ui-text-muted);
   font-size: 0.78rem;
   line-height: 1.35;
+}
+
+.settings-preference-panel .theme-radio-label input[type="radio"]:checked + .theme-radio-text small {
+  color: var(--ui-text-brand);
+}
+
+.theme-radio-label input[type="radio"]:focus-visible + .theme-radio-text {
+  outline: 2px solid var(--ui-focus-color);
+  outline-offset: 2px;
 }
 
 .settings-legal-button {
@@ -2234,8 +2244,8 @@ input[type="radio"]:checked + .theme-radio-text {
 }
 
 .rubro-premium-card.is-selected {
-  border-color: var(--primary-color);
-  background: color-mix(in srgb, var(--primary-color) 8%, var(--card-background-color));
+  border-color: var(--ui-border-selected);
+  background: var(--ui-bg-selected);
 }
 
 .rubro-premium-card.is-disabled {

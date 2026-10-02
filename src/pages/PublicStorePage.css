@@ -87,6 +87,39 @@ body.public-store-body {
   color: var(--store-on-primary, #fff);
 }
 
+.ecommerce-site-surface .ui-button--primary:hover:not(:disabled) {
+  background-color: var(--store-primary-hover, var(--store-primary, #0284c7));
+  border-color: var(--store-primary-hover, var(--store-primary, #0284c7));
+  color: var(--store-on-primary, #fff);
+}
+
+.ecommerce-site-surface .ui-button--primary:active:not(:disabled) {
+  background-color: var(--store-primary-active, var(--store-primary-hover, #0369a1));
+  border-color: var(--store-primary-active, var(--store-primary-hover, #0369a1));
+  color: var(--store-on-primary, #fff);
+}
+
+/* Admin theme tokens must not bleed into merchant-branded storefront fields. */
+.ecommerce-site-surface input:not([type="checkbox"]):not([type="radio"]),
+.ecommerce-site-surface textarea,
+.ecommerce-site-surface select {
+  border-color: var(--store-border, #e2e8f0);
+  background-color: var(--store-surface, #fff);
+  color: var(--store-text-strong, #0f172a);
+}
+
+.ecommerce-site-surface select option {
+  background-color: var(--store-surface, #fff);
+  color: var(--store-text-strong, #0f172a);
+}
+
+.ecommerce-site-surface input:not([type="checkbox"]):not([type="radio"]):focus,
+.ecommerce-site-surface textarea:focus,
+.ecommerce-site-surface select:focus {
+  border-color: var(--store-focus-ring, #7dd3fc);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--store-focus-ring, #7dd3fc) 22%, transparent);
+}
+
 .ecommerce-site-surface .public-product-card,
 .public-store-shell .public-cart-drawer,
 .public-store-shell .public-checkout-dialog {
