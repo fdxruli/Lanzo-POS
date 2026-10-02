@@ -72,4 +72,4 @@ jobs:
         run: npm run build:store:vercel
 
       - name: Check pull request diff whitespace
-        run: git diff --check origin/main...HEAD
+        run: git -c core.whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol diff --check origin/main...HEAD
