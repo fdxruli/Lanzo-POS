@@ -61,6 +61,8 @@ describe('PaymentModal', () => {
     );
 
     const confirmButton = await screen.findByRole('button', { name: 'Confirmar Pago' });
+    expect(confirmButton).toHaveClass('ui-button--primary');
+    expect(confirmButton).not.toHaveClass('ui-button--success');
     await waitFor(() => expect(confirmButton).toBeEnabled());
     fireEvent.click(confirmButton);
 
