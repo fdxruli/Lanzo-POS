@@ -5,6 +5,27 @@ import {
 } from '../salesCloudCashierMapper';
 import { localSaleToCloudShadowPayload, cloudSaleToLocalSyncPatch } from '../salesCloudMapper';
 
+describe('explicit payment source priority in Cloud mappers', () => {
+  const sale = { id: 'explicit-sale', total: '100', paymentMethod: 'cash' };
+  it('uses paymentBreakdown when payments is truly empty, including snake-case method aliases', () => {
+    const explicit = { payments: [], paymentBreakdown: [{ payment_method: 'cash', total: '25' }, { paymentMethod: 'card', amount: '75' }] };
+    const cashier = mapLocalCheckoutToCloudSale({ sale, total: '100', paymentData: explicit });
+    const shadow = localSaleToCloudShadowPayload({ ...sale, ...explicit });
+    for (const result of [cashier, shadow]) expect(result.payments).toMatchObject([
+      { method: 'cash', amount: 25 }, { method: 'card', amount: 75 }
+    ]);
+  });
+
+  it.each([{ method: 'cash', amount: 0 }, { method: 'unknown', amount: 100 }, null])(
+    'does not synthesize the sale total or initial abono for an authoritative invalid/zero source %o', (payment) => {
+      const explicit = { payments: [payment], paymentBreakdown: [{ method: 'cash', amount: 100 }] };
+      expect(mapLocalCheckoutToCloudSale({ sale, total: '100', paymentData: explicit }).payments).toEqual([]);
+      expect(localSaleToCloudShadowPayload({ ...sale, ...explicit }).payments).toEqual([]);
+      expect(mapLocalCreditCheckoutToCloudSale({ sale, total: '100', paymentData: { ...explicit, amountPaid: '25' } }).payments).toEqual([]);
+    }
+  );
+});
+
 describe('salesCloudMapper operational folio', () => {
   it('maps the server-assigned POS folio without replacing the financial folio', () => {
     const patch = cloudSaleToLocalSyncPatch({

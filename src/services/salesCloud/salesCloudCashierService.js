@@ -147,11 +147,15 @@ export const applySplitSalesFinancialResponseProjection = async ({ requestPayloa
       : (Array.isArray(response.items)
         ? response.items.filter((item) => item.sale_id === cloudSale.id || item.saleId === cloudSale.id)
         : []);
-    const childPayments = Array.isArray(responseChild.payments)
+    const scopedPayments = Array.isArray(responseChild.payments)
       ? responseChild.payments
       : (Array.isArray(response.payments)
         ? response.payments.filter((payment) => payment.sale_id === cloudSale.id || payment.saleId === cloudSale.id)
         : []);
+    const childPayments = scopedPayments
+      .filter((payment) => !(payment?.sale_id || payment?.saleId)
+        || (payment.sale_id || payment.saleId) === cloudSale.id)
+      .map((payment) => ({ ...payment, sale_id: cloudSale.id }));
     const localItems = Array.isArray(requestChild.local_items)
       ? requestChild.local_items
       : (Array.isArray(requestChild.items) ? requestChild.items : []);

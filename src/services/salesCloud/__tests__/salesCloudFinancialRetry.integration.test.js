@@ -28,6 +28,8 @@ vi.mock('../../db/dexie', () => ({
     SALES: 'sales',
     MENU: 'menu',
     PRODUCT_BATCHES: 'product_batches',
+    TRANSACTION_LOG: 'transaction_log',
+    SYNC_CACHE: 'sync_cache',
     FINANCIAL_INTENTS: 'financial_intents'
   },
   db: {
@@ -188,21 +190,26 @@ vi.mock('../../auth/actorRuntimeController', () => ({
     subscribe: () => () => {}
   }
 }));
-vi.mock('../salesCloudLocalRepository', async (importOriginal) => ({
-  salesCloudLocalRepository: {
-    ...(await importOriginal()).salesCloudLocalRepository,
-    saveCloudCommittedSaleSnapshot: vi.fn(async ({ localSale }) => {
-      runtime.snapshotCalls += 1;
-      if (runtime.projectionFailure) throw Object.assign(new Error('LOCAL_PROJECTION_FAILED'), { code: 'LOCAL_PROJECTION_FAILED' });
-      return { ...localSale, status: 'closed' };
-    }),
-    applyCloudSalesPayload: vi.fn(async () => {
-      runtime.payloadCalls += 1;
-      if (runtime.projectionFailure) throw Object.assign(new Error('LOCAL_PROJECTION_FAILED'), { code: 'LOCAL_PROJECTION_FAILED' });
-      return { success: true };
-    })
-  }
-}));
+vi.mock('../salesCloudLocalRepository', async (importOriginal) => {
+  const actual = (await importOriginal()).salesCloudLocalRepository;
+  return {
+    salesCloudLocalRepository: {
+      ...actual,
+      saveCloudCommittedSaleSnapshot: vi.fn(async ({ localSale, response }) => {
+        runtime.snapshotCalls += 1;
+        if (runtime.projectionFailure) throw Object.assign(new Error('LOCAL_PROJECTION_FAILED'), { code: 'LOCAL_PROJECTION_FAILED' });
+        if (localSale.splitGroupId) return actual.saveCloudCommittedSaleSnapshot({ localSale, response });
+        return { ...localSale, status: 'closed' };
+      }),
+      applyCloudSalesPayload: vi.fn(async (response) => {
+        runtime.payloadCalls += 1;
+        if (runtime.projectionFailure) throw Object.assign(new Error('LOCAL_PROJECTION_FAILED'), { code: 'LOCAL_PROJECTION_FAILED' });
+        if (response.children) return actual.applyCloudSalesPayload(response);
+        return { success: true };
+      })
+    }
+  };
+});
 
 import { useActiveOrders } from '../../../hooks/pos/useActiveOrders';
 import { getFinancialIntent } from '../../financial/financialIntentLedger';
@@ -244,6 +251,8 @@ beforeEach(async () => {
     sales: 'id, timestamp, status',
     menu: 'id',
     product_batches: 'id,productId',
+    transaction_log: 'id',
+    sync_cache: 'key',
     financial_intents: 'id, &idempotencyKey'
   });
   await database.open();
@@ -290,8 +299,9 @@ describe('active-order cloud retry transport', () => {
       parentOrderId: 'parent-A', parentExpectedVersion: '2026-09-29T10:00:00.000Z',
       splitGroupId: 'split-projection-repair', splitIntent: 'equal_payment', total: '300',
       childDefinitions: [{ label: 'Cuenta', sale: { id: 'child-A', status: 'closed', total: '300' },
-        processedItems: items, paymentData: { paymentMethod: 'cash', amountPaid: '300',
-          payers: [{ label: 'T1', amount: '150', method: 'cash' }, { label: 'T2', amount: '150', method: 'cash' }] } }]
+        processedItems: items, paymentData: { paymentMethod: 'mixed', amountPaid: '300',
+          payments: [{ method: 'cash', amount: '150' }, { method: 'card', amount: '150' }],
+          payers: [{ label: 'T1', amount: '150', method: 'cash' }, { label: 'T2', amount: '150', method: 'card' }] } }]
     };
     await expect(salesCloudCashierService.processCloudSplitTableSale(request))
       .rejects.toMatchObject({ code: 'LOCAL_PROJECTION_FAILED' });
@@ -314,9 +324,16 @@ describe('active-order cloud retry transport', () => {
     });
     expect(await runtime.database.table('sales').get('parent-B')).toMatchObject({ status: 'open', items });
     expect(await getFinancialIntent(intent.id)).toMatchObject({ status: 'COMPLETED', projectionStatus: 'APPLIED' });
+    const sale = await runtime.database.table('sales').get('child-A');
+    expect(sale.payments).toMatchObject([{ method: 'cash', amount: '150' }, { method: 'card', amount: '150' }]);
+    const { calculateSessionTotals, normalizeSaleMovements } = await import('../../cajaProjection');
+    expect(calculateSessionTotals([sale])).toEqual({ ventasContado: '150', abonosFiado: '0' });
+    expect(normalizeSaleMovements([sale]).map((movement) => movement.monto)).toEqual(['150', '150']);
     await recoverFinancialIntent({ intentId: intent.id, actorHandle: runtime.actorHandle });
     expect(runtime.executeCalls).toBe(1);
     expect(await runtime.database.table('menu').get('burger')).toMatchObject({ committedStock: 1 });
+    expect((await runtime.database.table('sales').get('child-A')).payments).toEqual(sale.payments);
+    expect(await runtime.database.table('transaction_log').count()).toBe(1);
   });
   it('projects a normal first financial success once under its execution lease', async () => {
     runtime.failNextExecute = false;

@@ -1,4 +1,4 @@
-import { normalizeRestaurantSplitPaymentMethod } from '../sales/paymentMethodContract';
+import { getExplicitSalePaymentRows, normalizeRestaurantSplitPaymentMethod } from '../sales/paymentMethodContract';
 
 const isMissingNumber = (value) => value === undefined || value === null || (typeof value === 'string' && value.trim() === '');
 
@@ -247,7 +247,7 @@ const buildSyntheticPayment = (sale = {}) => {
 };
 
 const mapPayment = (payment = {}, sale = {}, index = 0) => {
-  const method = normalizeCloudCashierPaymentMethod(payment.method || payment.paymentMethod || sale.paymentMethod);
+  const method = normalizeCloudCashierPaymentMethod(payment.method || payment.paymentMethod || payment.payment_method || sale.paymentMethod);
   const amount = toNumber(firstValue(payment.amount, payment.total), 0);
   const receivedAmount = toNullableNumber(firstValue(payment.receivedAmount, payment.received_amount));
   const explicitChangeAmount = toNullableNumber(firstValue(payment.changeAmount, payment.change_amount));
@@ -273,15 +273,15 @@ const mapPayment = (payment = {}, sale = {}, index = 0) => {
 };
 
 const extractPayments = (sale = {}) => {
-  const explicitPayments = sale.payments || sale.paymentBreakdown || sale.paymentDetails?.payments;
-  if (Array.isArray(explicitPayments) && explicitPayments.length > 0) return explicitPayments.map((payment, index) => mapPayment(payment, sale, index));
+  const explicitPayments = getExplicitSalePaymentRows(sale);
+  if (explicitPayments !== null) return explicitPayments.map((payment, index) => mapPayment(payment, sale, index));
   return [buildSyntheticPayment(sale)].filter((payment) => toNumber(payment.amount, 0) >= 0);
 };
 
 const extractInitialCreditPayments = ({ sale = {}, paymentData = {}, amountPaid = 0 } = {}) => {
   if (amountPaid <= 0) return [];
-  const explicitPayments = paymentData.payments || paymentData.paymentBreakdown || paymentData.paymentDetails?.payments;
-  if (Array.isArray(explicitPayments) && explicitPayments.length > 0) {
+  const explicitPayments = getExplicitSalePaymentRows(paymentData);
+  if (explicitPayments !== null) {
     return explicitPayments.map((payment, index) => mapPayment(payment, sale, index)).filter((payment) => ['cash', 'card', 'transfer'].includes(payment.method) && toNumber(payment.amount, 0) > 0);
   }
   const method = normalizeCloudCashierPaymentMethod(paymentData.initialPaymentMethod || paymentData.abonoPaymentMethod || paymentData.creditPaymentMethod || paymentData.partialPaymentMethod || 'cash');

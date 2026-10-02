@@ -237,14 +237,22 @@ const saleEffectKey = (sale, movement) => {
   const identity = normalizeIdentity(getSaleIdentityReferences(sale)[0]);
   const effect = saleEffectType(movement);
   const amount = Money.toExactString(Money.init(movement.monto ?? movement.amount ?? 0));
-  return identity && effect ? `${identity}::${effect}::${amount}` : null;
+  const tender = String(movement.tipo || movement.type || '').toLowerCase() === 'venta_tarjeta' ? 'noncash' : 'cash';
+  return identity && effect ? `${identity}::${effect}::${tender}::${amount}` : null;
 };
 
 export const enrichOfficialCashMovements = (cashMovements = [], sales = []) => {
   const saleIndex = buildSaleIdentityIndex(sales);
+  const cashMovementSales = new Map();
+  for (const sale of records(sales)) {
+    const movementIds = [sale.cashMovementId, sale.cash_movement_id,
+      ...(getExplicitSalePaymentRows(sale) || []).filter(isRestaurantSplitCashPayment)
+        .map((payment) => payment.cash_movement_id || payment.cashMovementId)];
+    for (const id of movementIds.filter(Boolean)) cashMovementSales.set(normalizeIdentity(id), sale);
+  }
 
   return records(cashMovements).map((movement) => {
-    const sale = resolveMovementSale(movement, saleIndex);
+    const sale = resolveMovementSale(movement, saleIndex) || cashMovementSales.get(normalizeIdentity(movement.id));
     if (!sale) return movement;
 
     const traceability = normalizeSaleTraceability(sale);
@@ -320,9 +328,17 @@ export const normalizeSaleMovements = (sales = []) => {
           ...traceability,
           fecha: sale.timestamp
         });
-      } else if (!isCredit && nonCashApplied.gt(0)) {
+      }
+      if (nonCashApplied.gt(0)) {
+        const nonCashDetails = ['card', 'transfer'].map((paymentMethod) => {
+          const applied = explicitPayments.reduce((sum, payment) => (
+            normalizeRestaurantSplitPaymentMethod(payment.method || payment.paymentMethod || payment.payment_method) === paymentMethod
+              ? Money.add(sum, payment.amount ?? payment.total ?? 0) : sum
+          ), Money.init(0));
+          return applied.gt(0) ? `${paymentMethod === 'card' ? 'Tarjeta' : 'Transferencia'} $${applied.toFixed(2)}` : null;
+        }).filter(Boolean).join(' · ');
         movements.push({
-          id: sale.id || `venta-${sale.timestamp}`,
+          id: cashApplied.gt(0) ? `${sale.id || sale.timestamp}:noncash` : (sale.id || `venta-${sale.timestamp}`),
           sale,
           saleId: sale.id || null,
           sale_id: sale.id || null,
@@ -331,7 +347,7 @@ export const normalizeSaleMovements = (sales = []) => {
           tipo: 'venta_tarjeta',
           monto: Money.toExactString(nonCashApplied),
           concepto: saleLabel,
-          secondaryReference: `${secondaryReference} · ${sale.paymentMethod || 'Otro'}`,
+          secondaryReference: [secondaryReference, nonCashDetails].filter(Boolean).join(' · '),
           ...traceability,
           fecha: sale.timestamp
         });

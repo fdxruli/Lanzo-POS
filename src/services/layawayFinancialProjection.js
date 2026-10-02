@@ -502,6 +502,7 @@ export const buildCashReconciliation = ({ cashSession = {}, sales = [], layaways
     cashSessionId: sessionId
   });
   const sessionMovements = safeCashMovements.filter((movement) => inScopeMovement(movement, sessionId, period));
+  const customerCollectionById = new Map(sessionMovements.filter(isCustomerCollection).map((movement) => [movement.id, movement]));
   const sessionSales = safeSales.filter((sale) => (
     dateInRange(sale.timestamp, period)
     && (!sale.cash_session_id || sale.cash_session_id === sessionId)
@@ -519,7 +520,22 @@ export const buildCashReconciliation = ({ cashSession = {}, sales = [], layaways
 
   for (const sale of sessionSales) {
     if (isFinanciallyClosedSale(sale) && sale.isLayawayConversion !== true && isCashSale(sale)) {
-      directCashSales = directCashSales.plus(appliedCashAmount(sale));
+      let saleCash = appliedCashAmount(sale);
+      const linkedCash = new Map();
+      for (const payment of getExplicitSalePaymentRows(sale) || []) {
+        if (!isRestaurantSplitCashPayment(payment)) continue;
+        const movementId = payment.cash_movement_id || payment.cashMovementId || sale.cashMovementId || sale.cash_movement_id;
+        if (!movementId) continue;
+        linkedCash.set(movementId, (linkedCash.get(movementId) || amount(0)).plus(payment.amount ?? payment.total ?? 0));
+      }
+      // Initial Fiado cash can be represented by both an explicit sale payment
+      // and an official customer collection. The latter is counted below. Only
+      // exclude a linked, matching applied amount; later collections stay separate.
+      for (const [movementId, applied] of linkedCash) {
+        const movement = customerCollectionById.get(movementId);
+        if (movement && applied.eq(amount(movementAmount(movement)))) saleCash = saleCash.minus(applied);
+      }
+      directCashSales = directCashSales.plus(saleCash);
     }
   }
   for (const movement of sessionMovements) {
