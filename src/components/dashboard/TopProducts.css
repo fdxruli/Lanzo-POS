@@ -57,9 +57,9 @@
 }
 
 .top-products-tab.active {
-  background: var(--primary-color);
-  border-color: var(--primary-color);
-  color: #fff;
+  background: var(--ui-bg-selected);
+  border-color: var(--ui-border-selected);
+  color: var(--ui-text-brand);
 }
 
 .top-products-list {

@@ -494,9 +494,9 @@
 .product-modifiers-modal-content .btn-primary-action {
     gap: 8px;
     padding: 10px 14px;
-    color: var(--ui-text-on-primary);
-    background-color: var(--ui-color-primary);
-    border: 1px solid var(--ui-color-primary);
+    color: var(--ui-action-primary-text);
+    background-color: var(--ui-action-primary-bg);
+    border: 1px solid var(--ui-action-primary-bg);
     box-shadow: 0 4px 10px color-mix(in srgb, var(--ui-color-primary) 24%, transparent);
 }
 

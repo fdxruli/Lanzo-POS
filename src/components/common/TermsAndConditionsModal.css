@@ -263,9 +263,9 @@
 
 .terms-modal-content .btn-primary {
   flex: 1.35;
-  color: var(--ui-text-on-primary);
-  background: var(--primary-color);
-  border: 1px solid var(--primary-color);
+  color: var(--ui-action-primary-text);
+  background: var(--ui-action-primary-bg);
+  border: 1px solid var(--ui-action-primary-bg);
 }
 
 .terms-modal-content .btn-primary:hover:not(:disabled),

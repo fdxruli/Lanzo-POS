@@ -76,8 +76,8 @@
 .btn-add-ing {
   height: 42px;
   width: 42px;
-  background-color: var(--primary-color);
-  color: var(--ui-text-on-primary, white);
+  background-color: var(--ui-action-primary-bg);
+  color: var(--ui-action-primary-text);
   font-size: 1.5rem;
   display: flex;
   align-items: center;

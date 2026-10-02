@@ -110,9 +110,9 @@
 
 .customer-form-container .btn-save {
   flex: 1;
-  color: #fff;
-  background: var(--primary-color);
-  border: 1px solid var(--primary-color);
+  color: var(--ui-action-primary-text);
+  background: var(--ui-action-primary-bg);
+  border: 1px solid var(--ui-action-primary-bg);
 }
 
 .customer-form-container .btn-save:hover:not(:disabled) {

@@ -11,9 +11,9 @@
 }
 
 .audit-modal .btn-process {
-  background-color: var(--ui-color-primary);
-  color: var(--ui-text-on-primary);
-  border-color: var(--ui-color-primary);
+  background-color: var(--ui-action-primary-bg);
+  color: var(--ui-action-primary-text);
+  border-color: var(--ui-action-primary-bg);
 }
 
 .audit-modal .btn-process:hover:not(:disabled) {

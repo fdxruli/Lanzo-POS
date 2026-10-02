@@ -120,8 +120,8 @@
 }
 
 .btn-toggle-status.btn-activate {
-  background-color: var(--success-color);
-  color: white;
+  background-color: var(--ui-action-success-bg);
+  color: var(--ui-action-success-text);
 }
 
 .btn-toggle-status.btn-activate:hover {

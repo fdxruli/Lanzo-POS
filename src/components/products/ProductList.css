@@ -606,8 +606,8 @@
 }
 
 .product-list-container .btn-load-more {
-  background: var(--primary-color, #3b82f6);
-  color: white;
+  background: var(--ui-action-primary-bg);
+  color: var(--ui-action-primary-text);
   border: none;
   padding: 10px 20px;
   border-radius: 8px;

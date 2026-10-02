@@ -790,8 +790,8 @@
 }
 
 .btn-quick-checkout {
-  color: var(--ui-text-on-primary, #fff);
-  background: var(--ui-color-primary, var(--primary-color));
+  color: var(--ui-action-primary-text);
+  background: var(--ui-action-primary-bg);
 }
 
 .btn-quick-checkout:hover {
