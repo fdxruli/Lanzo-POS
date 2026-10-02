@@ -365,6 +365,10 @@ export const salesCloudLocalRepository = {
         const existing = await db.table(STORES.SALES).get(parentOrderId);
         if (!existing) throw new Error('SPLIT_PARENT_LOCAL_NOT_FOUND');
 
+        if (existing.splitSettlementSource === 'cloud_committed' && existing.splitReservationReconciledAt) {
+          return existing;
+        }
+
         const settledAt = nowIso();
         const reconciliation = existing.splitReservationReconciledAt
           ? {

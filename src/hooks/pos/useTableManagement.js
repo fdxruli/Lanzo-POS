@@ -76,10 +76,6 @@ export function useTableManagement({
         return getEcommercePosBlockedResult();
     }, []);
 
-    const clearSession = useCallback(() => {
-        useActiveOrders.getState().cancelCurrentOrder();
-    }, []);
-
     const syncOpenRestaurantOrderToCloud = useCallback(async (orderId) => {
         if (!isCloudRestaurantOrdersEnabled || !licenseKey) {
             return { skipped: true };
@@ -835,21 +831,32 @@ export function useTableManagement({
                     }
                 }
 
-                clearSession();
-                closeModal('split');
+                try {
+                    // Cloud already reconciled the parent's reservation. Removing its
+                    // runtime tab must preserve that settlement, never cancel it.
+                    if (result.cloudCommitted) {
+                        await useActiveOrders.getState().removeOrder(activeOrderId);
+                    } else {
+                        await useActiveOrders.getState().cancelCurrentOrder();
+                    }
+                    closeModal('split');
 
-                if (isCloudRestaurantOrdersEnabled && cloudCloseResult?.success === false) {
-                    showMessageModal(
-                        '⚠️ La cuenta se cobró, pero no se pudo cerrar cocina cloud. Se reintentará cuando haya conexión.',
-                        null,
-                        { type: 'warning' }
-                    );
-                } else {
-                    showMessageModal('✅ Split bill aplicado y cobro registrado correctamente.');
+                    if (isCloudRestaurantOrdersEnabled && cloudCloseResult?.success === false) {
+                        showMessageModal(
+                            '⚠️ La cuenta se cobró, pero no se pudo cerrar cocina cloud. Se reintentará cuando haya conexión.',
+                            null,
+                            { type: 'warning' }
+                        );
+                    } else {
+                        showMessageModal('✅ Split bill aplicado y cobro registrado correctamente.');
+                    }
+
+                    await refreshData();
+                    await fetchActiveTablesCount();
+                } catch (postCheckoutError) {
+                    if (!result.cloudCommitted) throw postCheckoutError;
+                    Logger.warn('[REST.SPLIT.1] Cobro cloud confirmado; actualización de UI pendiente:', postCheckoutError);
                 }
-
-                await refreshData();
-                await fetchActiveTablesCount();
                 return result;
             }
 
@@ -873,7 +880,6 @@ export function useTableManagement({
         companyName,
         verifySessionIntegrity,
         reconcileKitchenCancelledItemsBeforeSplit,
-        clearSession,
         closeModal,
         refreshData,
         fetchActiveTablesCount,

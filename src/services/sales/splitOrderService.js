@@ -964,21 +964,25 @@ export const splitOpenTableOrderCore = async ({
 
             await Promise.all(childDefinitions.map(async (child, index) => {
                 const projectedSale = cloudResult.childSales?.[index] || child.sale;
-                await runPostSaleEffectsForCloudCommittedSale({
-                    sale: projectedSale,
-                    processedItems: child.processedItems,
-                    paymentData: child.paymentData,
-                    total: child.sale.total,
-                    companyName,
-                    features,
-                    loadData,
-                    saveData: async () => true,
-                    STORES,
-                    useStatsStore,
-                    roundCurrency,
-                    sendReceiptWhatsApp,
-                    Logger
-                });
+                try {
+                    await runPostSaleEffectsForCloudCommittedSale({
+                        sale: projectedSale,
+                        processedItems: child.processedItems,
+                        paymentData: child.paymentData,
+                        total: child.sale.total,
+                        companyName,
+                        features,
+                        loadData,
+                        saveData: async () => true,
+                        STORES,
+                        useStatsStore,
+                        roundCurrency,
+                        sendReceiptWhatsApp,
+                        Logger
+                    });
+                } catch (postError) {
+                    Logger.warn('Post-Sale Effects Failed in Cloud Split Bill (Non-Blocking):', postError);
+                }
             }));
 
             const paymentSummary = buildSplitPaymentSummary({

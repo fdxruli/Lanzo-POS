@@ -572,6 +572,9 @@ export const useActiveOrders = create(
         }
 
         if (existsInDB && existing) {
+          if (existing.splitSettlementSource === 'cloud_committed' && existing.splitReservationReconciledAt) {
+            return await get().removeOrder(orderId);
+          }
           const refundActorHandle = actorHandle || captureRefundsActorHandle();
           const assertRefundActorCurrent = () => refundActorHandle.assertCurrent('refunds');
           assertRefundActorCurrent();
@@ -670,6 +673,9 @@ export const useActiveOrders = create(
         }
 
         if (existsInDB && existing) {
+          if (existing.splitSettlementSource === 'cloud_committed' && existing.splitReservationReconciledAt) {
+            return await get().removeOrder(orderId);
+          }
           const refundActorHandle = actorHandle || captureRefundsActorHandle();
           const assertRefundActorCurrent = () => refundActorHandle.assertCurrent('refunds');
           assertRefundActorCurrent();
