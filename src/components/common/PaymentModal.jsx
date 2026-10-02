@@ -220,7 +220,7 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
                 </div>
 
                 <div className="payment-actions">
-                  <button id="confirm-payment-btn" className="ui-button ui-button--primary payment-confirm-button" type="submit" disabled={!canConfirm || isSubmitting}>{isSubmitting ? 'Procesando...' : 'Confirmar Pago'}</button>
+                  <button id="confirm-payment-btn" className="ui-button ui-button--success payment-confirm-button" type="submit" disabled={!canConfirm || isSubmitting}>{isSubmitting ? 'Procesando...' : 'Confirmar Pago'}</button>
                   <button id="cancel-payment-btn" className="ui-button ui-button--ghost payment-cancel-button" type="button" onClick={onClose} disabled={isSubmitting}>Cancelar</button>
                 </div>
               </div>
