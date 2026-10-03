@@ -134,15 +134,18 @@ describe('standalone public Vercel deployment architecture', () => {
     expect(await readProjectFile('vercel.json')).toBe(adminConfigBefore);
   });
 
+  it('rewrites only the public acquisition root to the dedicated home shell', () => {
+    expect(rewriteFor(config, '/')?.destination).toBe('/home.html');
+  });
+
   it.each([
-    '/',
     '/tienda',
     '/tienda/demo-seguro',
     '/tienda/demo-seguro/pedido/token-seguro',
     '/tienda/demo-seguro?pagina=2#catalogo',
     '/conoce-lanzo',
     '/conoce-lanzo?tienda=demo-seguro#inicio'
-  ])('rewrites the canonical public route %s to index.html', (pathname) => {
+  ])('keeps the shared public route %s on index.html', (pathname) => {
     expect(rewriteFor(config, pathname)?.destination).toBe('/index.html');
   });
 

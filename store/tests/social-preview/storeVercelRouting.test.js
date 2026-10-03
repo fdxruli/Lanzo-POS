@@ -4,7 +4,11 @@ import { describe, expect, it } from 'vitest';
 const projectRoot = new URL('../../../', import.meta.url);
 const configPath = new URL('store/vercel.json', projectRoot);
 const routerPath = new URL('src/router/publicStoreRoutes.jsx', projectRoot);
+const homePath = new URL('store/home.html', projectRoot);
+const indexPath = new URL('store/index.html', projectRoot);
 const rawConfig = readFileSync(configPath, 'utf8');
+const homeHtml = readFileSync(homePath, 'utf8');
+const indexHtml = readFileSync(indexPath, 'utf8');
 const config = JSON.parse(rawConfig);
 
 const STATIC_CACHE = 'public, max-age=0, must-revalidate';
@@ -63,6 +67,15 @@ describe('store/vercel.json', () => {
     );
   });
 
+  it('aísla la metadata comercial de la raíz del shell público compartido', () => {
+    expect(homeHtml).toContain('<title>Lanzo Tienda Online | Vende por internet con Lanzo</title>');
+    expect(homeHtml).toContain('<link rel="canonical" href="https://lanzo-store.vercel.app/" />');
+    expect(homeHtml).toContain('<meta property="og:url" content="https://lanzo-store.vercel.app/" />');
+    expect(indexHtml).toContain('<title>Tienda en línea | Lanzo</title>');
+    expect(indexHtml).not.toContain('rel="canonical"');
+    expect(indexHtml).toContain('LANZO_SOCIAL_HEAD_START');
+  });
+
   it('mantiene la precedencia tracking, tienda exacta y fallback anidado', () => {
     const sources = config.rewrites.map(({ source }) => source);
     const tracking = sources.indexOf('/tienda/:slug/pedido/:trackingToken');
@@ -74,7 +87,7 @@ describe('store/vercel.json', () => {
   });
 
   it.each([
-    ['/', '/index.html'],
+    ['/', '/home.html'],
     ['/tienda', '/index.html'],
     ['/tienda/farmacia-gary', '/api/store-page'],
     ['/tienda/farmacia-gary/pedido/token-ficticio', '/index.html'],
@@ -86,6 +99,7 @@ describe('store/vercel.json', () => {
 
   it('aísla funciones, assets, tracking y rutas con segmentos adicionales', () => {
     expect(matchingRewrite('/api/store-page')).toBeUndefined();
+    expect(matchingRewrite('/home.html')).toBeUndefined();
     expect(matchingRewrite('/api/og/store')).toBeUndefined();
     expect(matchingRewrite('/assets/index-prueba.js')).toBeUndefined();
     expect(matchingRewrite('/tienda/farmacia-gary/pedido/token-ficticio')?.destination)

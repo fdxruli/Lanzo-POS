@@ -81,7 +81,7 @@ describe('ECOM.PUBLIC.GIT.1 architecture', () => {
     expect(cacheHeaders.has('/tienda/:path*')).toBe(false);
     expect(cacheHeaders.has('/tienda/:slug')).toBe(false);
     expect(config.rewrites).toEqual([
-      { source: '/', destination: '/index.html' },
+      { source: '/', destination: '/home.html' },
       { source: '/tienda', destination: '/index.html' },
       { source: '/tienda/:slug/pedido/:trackingToken', destination: '/index.html' },
       { source: '/tienda/:slug', destination: '/api/store-page' },
