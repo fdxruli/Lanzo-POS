@@ -72,7 +72,7 @@
   "rewrites": [
     {
       "source": "/",
-      "destination": "/index.html"
+      "destination": "/home.html"
     },
     {
       "source": "/tienda",
