@@ -4,7 +4,11 @@ import { describe, expect, it } from 'vitest';
 const projectRoot = new URL('../../../', import.meta.url);
 const configPath = new URL('store/vercel.json', projectRoot);
 const routerPath = new URL('src/router/publicStoreRoutes.jsx', projectRoot);
+const homePath = new URL('store/home.html', projectRoot);
+const indexPath = new URL('store/index.html', projectRoot);
 const rawConfig = readFileSync(configPath, 'utf8');
+const homeHtml = readFileSync(homePath, 'utf8');
+const indexHtml = readFileSync(indexPath, 'utf8');
 const config = JSON.parse(rawConfig);
 
 const STATIC_CACHE = 'public, max-age=0, must-revalidate';
@@ -61,6 +65,15 @@ describe('store/vercel.json', () => {
     expect(rawConfig.replace(config.$schema, '')).not.toMatch(
       /https?:\/\/|(?:^|[/"'])[A-Za-z0-9.-]+\.(?:app|com|net|org)(?:[/"']|$)/iu,
     );
+  });
+
+  it('aísla la metadata comercial de la raíz del shell público compartido', () => {
+    expect(homeHtml).toContain('<title>Lanzo Tienda Online | Vende por internet con Lanzo</title>');
+    expect(homeHtml).toContain('<link rel="canonical" href="https://lanzo-store.vercel.app/" />');
+    expect(homeHtml).toContain('<meta property="og:url" content="https://lanzo-store.vercel.app/" />');
+    expect(indexHtml).toContain('<title>Tienda en línea | Lanzo</title>');
+    expect(indexHtml).not.toContain('rel="canonical"');
+    expect(indexHtml).toContain('LANZO_SOCIAL_HEAD_START');
   });
 
   it('mantiene la precedencia tracking, tienda exacta y fallback anidado', () => {
