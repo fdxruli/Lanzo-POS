@@ -70,10 +70,16 @@ describe('public store routing', () => {
     expect(screen.getByRole('heading', {
       name: 'Una tienda en línea lista para compartir, conectada a tu negocio.'
     })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Crear mi tienda con Lanzo' }))
-      .toHaveAttribute('href', 'https://lanzo-pos.vercel.app/?welcome=1');
+    const acquisitionLinks = screen.getAllByRole('link', { name: 'Crear mi tienda con Lanzo' });
+    expect(acquisitionLinks.length).toBeGreaterThan(1);
+    acquisitionLinks.forEach((link) => {
+      expect(link).toHaveAttribute('href', 'https://lanzo-pos.vercel.app/?welcome=1');
+    });
     expect(screen.getByRole('link', { name: 'Ver cómo funciona' }))
       .toHaveAttribute('href', '#como-funciona');
+    expect(document.title).toBe('Lanzo Tienda Online | Vende por internet con Lanzo');
+    expect(document.querySelector('link[rel="canonical"]'))
+      .toHaveAttribute('href', 'https://lanzo-store.vercel.app/');
     expect(screen.queryByText('WelcomeModal')).not.toBeInTheDocument();
     expect(screen.queryByText('StaffLoginModal')).not.toBeInTheDocument();
     expect(screen.queryByText('Navbar')).not.toBeInTheDocument();
