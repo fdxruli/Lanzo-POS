@@ -37,13 +37,14 @@ afterEach(() => {
 });
 
 describe('public store routing', () => {
-  it('recognizes only the supported public store paths', () => {
+  it('recognizes only the supported paths delegated from the administrative app', () => {
     expect(isPublicStorePath('/tienda')).toBe(true);
     expect(isPublicStorePath('/tienda/')).toBe(true);
     expect(isPublicStorePath('/tienda/mi-negocio')).toBe(true);
     expect(isPublicStorePath('/tienda/mi-negocio/')).toBe(true);
     expect(isPublicStorePath('/conoce-lanzo')).toBe(true);
     expect(isPublicStorePath('/conoce-lanzo/')).toBe(true);
+    // The standalone lanzo-store bundle owns /. The admin origin must keep / for the POS.
     expect(isPublicStorePath('/')).toBe(false);
     expect(isPublicStorePath('/configuracion')).toBe(false);
     expect(isPublicStorePath('/tienda/uno/dos')).toBe(false);
@@ -62,6 +63,22 @@ describe('public store routing', () => {
     expect(content).not.toContain('user-scalable');
   });
 
+  it('opens the store product landing at / without mounting the POS shell', () => {
+    const router = createMemoryRouter(publicStoreRoutes, { initialEntries: ['/'] });
+    render(<RouterProvider router={router} />);
+
+    expect(screen.getByRole('heading', {
+      name: 'Una tienda en línea lista para compartir, conectada a tu negocio.'
+    })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Crear mi tienda con Lanzo' }))
+      .toHaveAttribute('href', 'https://lanzo-pos.vercel.app/?welcome=1');
+    expect(screen.getByRole('link', { name: 'Ver cómo funciona' }))
+      .toHaveAttribute('href', '#como-funciona');
+    expect(screen.queryByText('WelcomeModal')).not.toBeInTheDocument();
+    expect(screen.queryByText('StaffLoginModal')).not.toBeInTheDocument();
+    expect(screen.queryByText('Navbar')).not.toBeInTheDocument();
+  });
+
   it('mounts the public page for /tienda/:slug without POS shell UI', async () => {
     const router = createMemoryRouter(publicStoreRoutes, { initialEntries: ['/tienda/mi-negocio'] });
     render(<RouterProvider router={router} />);
@@ -76,6 +93,16 @@ describe('public store routing', () => {
     const router = createMemoryRouter(publicStoreRoutes, { initialEntries: ['/tienda'] });
     render(<RouterProvider router={router} />);
     expect(screen.getByRole('heading', { name: 'Enlace de tienda no válido' })).toBeInTheDocument();
+  });
+
+  it('does not use the store home as fallback for arbitrary paths', () => {
+    const router = createMemoryRouter(publicStoreRoutes, { initialEntries: ['/esto-no-existe'] });
+    render(<RouterProvider router={router} />);
+
+    expect(screen.getByRole('heading', { name: 'Enlace de tienda no válido' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', {
+      name: 'Una tienda en línea lista para compartir, conectada a tu negocio.'
+    })).not.toBeInTheDocument();
   });
 
   it('opens the Lanzo landing without mounting the POS shell', () => {
