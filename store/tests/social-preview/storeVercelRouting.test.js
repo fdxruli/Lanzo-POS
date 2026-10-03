@@ -74,7 +74,7 @@ describe('store/vercel.json', () => {
   });
 
   it.each([
-    ['/', '/index.html'],
+    ['/', '/home.html'],
     ['/tienda', '/index.html'],
     ['/tienda/farmacia-gary', '/api/store-page'],
     ['/tienda/farmacia-gary/pedido/token-ficticio', '/index.html'],
@@ -86,6 +86,7 @@ describe('store/vercel.json', () => {
 
   it('aísla funciones, assets, tracking y rutas con segmentos adicionales', () => {
     expect(matchingRewrite('/api/store-page')).toBeUndefined();
+    expect(matchingRewrite('/home.html')).toBeUndefined();
     expect(matchingRewrite('/api/og/store')).toBeUndefined();
     expect(matchingRewrite('/assets/index-prueba.js')).toBeUndefined();
     expect(matchingRewrite('/tienda/farmacia-gary/pedido/token-ficticio')?.destination)
