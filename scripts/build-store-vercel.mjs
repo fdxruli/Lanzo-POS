@@ -38,7 +38,7 @@ const forbiddenContentPatterns = Object.freeze({
   fictitiousPublicEnvironment: /invalid-for-local-build|supabase\.invalid|sb_publishable_invalid_for_local_build|store\.invalid/i
 });
 
-const allowedRootFiles = new Set(['index.html', 'robots.txt']);
+const allowedRootFiles = new Set(['home.html', 'index.html', 'robots.txt']);
 const allowedAssetExtensions = new Set([
   '.avif', '.css', '.gif', '.ico', '.jpeg', '.jpg', '.js', '.png', '.svg', '.webp'
 ]);
