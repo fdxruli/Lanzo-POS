@@ -29,7 +29,7 @@ const FREE_FEATURES = [
 ];
 
 const PRO_FEATURES = [
-  'Publicación de productos sin límite según el contrato vigente',
+  'Publicación de productos sin límite',
   'Lanzo Nube y operación conectada',
   'Múltiples dispositivos según tu licencia',
   'Capacidades avanzadas de ecommerce y operación',
@@ -316,7 +316,7 @@ function PublicStoreHomePage() {
         <div className="public-store-home-section__heading">
           <p className="public-store-home-eyebrow">Empieza y crece a tu ritmo</p>
           <h2 id="plans-title">Tienda Online en FREE y más capacidad con PRO</h2>
-          <p>Sin precios inventados: elige el plan por las capacidades que necesitas para operar.</p>
+          <p>Empieza con FREE y activa PRO cuando necesites más capacidad y una operación conectada.</p>
         </div>
         <div className="public-store-home-plans">
           <PlanCard
