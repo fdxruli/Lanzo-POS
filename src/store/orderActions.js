@@ -22,6 +22,7 @@ import { isCommercialVariantProduct } from '../services/products/commercialVaria
 import { isLocalTenantAccessError } from '../services/tenant/localTenantGuard';
 import { isTenantRuntimeError } from '../services/db/tenantRuntimeRouter';
 import { resolveImmutableOrderCreatedAt } from '../services/sales/stableSaleTimestamp';
+import { actorRuntimeController } from '../services/auth/actorRuntimeController';
 
 const OPEN_FULFILLMENT_STATUS = 'open';
 const TABLE_ORDER_TYPE = 'table';
@@ -711,7 +712,10 @@ export const createOrderActions = (set, get) => ({
         get().updateOrder(orderId, { tableData });
       },
 
-      saveOrderAsOpen: async (orderId = get().currentOrderId, orderSnapshot = null) => {
+      saveOrderAsOpen: async (orderId = get().currentOrderId, orderSnapshot = null, saveOptions = {}) => {
+        const actorHandle = actorRuntimeController.getState?.()?.status === 'granted'
+          ? actorRuntimeController.capture() : null;
+        const assertActorCurrent = () => actorHandle?.assertCurrent();
         const state = get();
         const activeOrderId = orderId;
         const currentOrder = orderSnapshot || (orderId ? state.activeOrders.get(orderId) || null : null);
@@ -734,6 +738,17 @@ export const createOrderActions = (set, get) => ({
               const salesTable = db.table(STORES.SALES);
               let existingSale = null;
 
+              // A successful table save may outlive the actor that was closing
+              // its tab. Never reserve that stale draft a second time.
+              if (!isSavedOrder && activeOrderId) {
+                const durableSale = await salesTable.get(activeOrderId);
+                if (durableSale?.tableTabCleanup?.status === 'pending') {
+                  const pendingError = new Error('La mesa ya quedó guardada. Vuelve a cargarla antes de editarla.');
+                  pendingError.code = 'TABLE_RUNTIME_CLEANUP_PENDING';
+                  throw pendingError;
+                }
+              }
+
               if (isSavedOrder && activeOrderId) {
                 existingSale = await salesTable.get(activeOrderId);
                 if (!existingSale) throw new Error('La orden activa ya no existe.');
@@ -744,11 +759,16 @@ export const createOrderActions = (set, get) => ({
 
                 const previousReservedItems = getSellableItems(existingSale.items);
                 if (previousReservedItems.length > 0) {
-                  await releaseCommittedStock(previousReservedItems, { db, STORES });
+                  assertActorCurrent();
+                  await releaseCommittedStock(previousReservedItems, { db, STORES, assertActorCurrent });
                 }
               }
 
+              assertActorCurrent();
               const committedCurrentItems = await commitStock(currentItems, { db, STORES });
+              // This is still inside the parent transaction. Losing authority
+              // during reservation aborts both stock and the table atomically.
+              assertActorCurrent();
 
               const currentSaleId = activeOrderId || generateID('sal');
               const finalTableData = toSessionTableData(tableData ?? existingSale?.tableData ?? null);
@@ -770,12 +790,15 @@ export const createOrderActions = (set, get) => ({
                 total: calculateOrderTotalExact(committedCurrentItems),
                 status: SALE_STATUS.OPEN,
                 orderType: TABLE_ORDER_TYPE,
-                fulfillmentStatus: existingSale?.fulfillmentStatus || OPEN_FULFILLMENT_STATUS,
+                fulfillmentStatus: saveOptions.tableTabCleanup
+                  ? 'pending' : existingSale?.fulfillmentStatus || OPEN_FULFILLMENT_STATUS,
+                ...(saveOptions.tableTabCleanup ? { tableTabCleanup: { ...saveOptions.tableTabCleanup } } : {}),
                 tableData: finalTableData,
                 checkoutDraft: false
               };
 
               await salesTable.put(openSaleRecord);
+              assertActorCurrent();
               return currentSaleId;
             }
           );
@@ -783,7 +806,8 @@ export const createOrderActions = (set, get) => ({
           // Una vez guardado, useActiveOrders se encargará de pausar o cerrar.
           return { success: true, id: saleId };
         } catch (error) {
-          return { success: false, message: error?.message || 'No se pudo guardar la orden abierta.' };
+          if (String(error?.code || '').startsWith('ACTOR_')) throw error;
+          return { success: false, ...(error?.code ? { code: error.code } : {}), message: error?.message || 'No se pudo guardar la orden abierta.' };
         }
       },
 

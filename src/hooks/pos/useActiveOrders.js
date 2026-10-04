@@ -23,6 +23,7 @@ import {
 } from '../../services/tenant/localTenantPolicy';
 import { tenantScopedZustandStorage, registerTenantStorageHydrator, suspendTenantStorageWrites } from '../../services/tenant/tenantScopedStorage';
 import { captureRefundsActorHandle } from '../../services/auth/refundsActorAuthorization';
+import { actorRuntimeController } from '../../services/auth/actorRuntimeController';
 import {
   normalizeStableSaleTimestamp,
   resolveImmutableOrderCreatedAt
@@ -328,6 +329,8 @@ export const useActiveOrders = create(
     },
 
     loadOpenOrder: async (orderId) => {
+      const actorHandle = actorRuntimeController.getState?.()?.status === 'granted'
+        ? actorRuntimeController.capture() : null;
       try {
         const sale = await db.table(STORES.SALES).get(orderId);
         if (!sale || sale.status !== SALE_STATUS.OPEN) {
@@ -351,6 +354,7 @@ export const useActiveOrders = create(
 
         const nextOrders = new Map(get().activeOrders);
         nextOrders.set(orderId, order);
+        actorHandle?.assertCurrent();
         set({
           activeOrders: nextOrders,
           currentOrderId: orderId,
@@ -359,6 +363,7 @@ export const useActiveOrders = create(
 
         return { success: true };
       } catch (error) {
+        if (String(error?.code || '').startsWith('ACTOR_')) throw error;
         return { success: false, message: error?.message || 'No se pudo cargar la orden.' };
       }
     },
@@ -907,6 +912,8 @@ export const useActiveOrders = create(
      * 🔧 FIX 2: Recupera PRIMERO órdenes del localStorage para evitar pérdidas en recarga rápida
      */
     loadOrdersFromDB: async () => {
+      const actorHandle = actorRuntimeController.getState?.()?.status === 'granted'
+        ? actorRuntimeController.capture() : null;
       try {
         const state = get();
 
@@ -919,6 +926,10 @@ export const useActiveOrders = create(
           .where('status')
           .equals(SALE_STATUS.OPEN)
           .toArray();
+        actorHandle?.assertCurrent();
+        const pendingTableIds = new Set(allOpenSales
+          .filter((sale) => sale.tableTabCleanup?.status === 'pending')
+          .map((sale) => sale.id));
 
         // 🔧 FIX: Filtrar para solo cargar órdenes en edición (no enviadas a cocina)
         // Las órdenes con fulfillmentStatus='pending' ya están en cocina y se manejan desde OrderPage
@@ -949,6 +960,7 @@ export const useActiveOrders = create(
 
         // Luego PRESERVAR órdenes que estaban en localStorage pero no en BD
         persistedOrdersMap.forEach((draftOrder, orderId) => {
+          if (pendingTableIds.has(orderId) && draftOrder?.isSaved !== true) return;
           const existing = ordersMap.get(orderId);
 
           if (existing) {
@@ -1027,6 +1039,7 @@ export const useActiveOrders = create(
           get().switchOrder(nextCurrentOrderId);
         }
       } catch (error) {
+        if (String(error?.code || '').startsWith('ACTOR_')) throw error;
         console.error('Error cargando órdenes abiertas de BD:', error);
         // Fallback: crear orden nueva si falla
         const state = get();
@@ -1062,15 +1075,19 @@ export const useActiveOrders = create(
       const state = get();
       const order = state.activeOrders.get(orderId);
       if (!order) return { success: false, reason: 'La orden no existe en sesión.' };
+      const actorHandle = actorRuntimeController.getState?.()?.status === 'granted'
+        ? actorRuntimeController.capture() : null;
 
+      let lockAcquired = false;
+      let transactionCommitted = false;
       try {
-        let lockAcquired = false;
 
         // Transacción atómica: read-then-write sin ventana de carrera.
         // Si dos tablets ejecutan esto al mismo tiempo, solo una verá
         // `isLockedForCheckout === false` y podrá escribir el lock.
         await db.transaction('rw', db.table(STORES.SALES), async () => {
           const existing = await db.table(STORES.SALES).get(orderId);
+          actorHandle?.assertCurrent();
 
           // La orden puede no estar en DB todavía (borrador en memoria)
           if (existing && existing.isLockedForCheckout === true) {
@@ -1105,8 +1122,12 @@ export const useActiveOrders = create(
             });
           }
 
+          actorHandle?.assertCurrent();
+
           lockAcquired = true;
         });
+        transactionCommitted = true;
+        actorHandle?.assertCurrent();
 
         if (!lockAcquired) {
           console.warn(
@@ -1132,6 +1153,12 @@ export const useActiveOrders = create(
 
         return { success: true };
       } catch (error) {
+        if (String(error?.code || '').startsWith('ACTOR_')) {
+          if (lockAcquired && transactionCommitted) {
+            error.details = { ...error.details, checkoutLockAcquired: true, orderId };
+          }
+          throw error;
+        }
         console.error('[lockOrderForCheckout] Error al adquirir el lock:', error);
         return { success: false, reason: error?.message || 'Error interno al bloquear la orden.' };
       }
@@ -1261,6 +1288,37 @@ export const resetAndHydrateActiveOrdersForTenant = async () => {
   suspendTenantStorageWrites();
   setActiveOrdersStateUnsafe({ activeOrders: new Map(), currentOrderId: null, isLoading: false, pendingInventoryResolutions: new Map(), isCurrentOrderLocked: false });
   await useActiveOrders.persist.rehydrate();
+  // Initial tenant hydration happens before its DB policy is granted. Actor
+  // handoff rehydrates again after tenant authorization and before actor GRANTED.
+  if (!canAccessTenantOwnedRuntimeCache()) return;
+  // Handoff hydration runs with writes suspended before GRANTED. These are
+  // reads and internal reconstruction only, never a replay of the table save.
+  const allOpenSales = await db.table(STORES.SALES).where('status').equals(SALE_STATUS.OPEN).toArray();
+  const pendingTableIds = new Set(allOpenSales
+    .filter((sale) => sale.tableTabCleanup?.status === 'pending')
+    .map((sale) => sale.id));
+  const hydrated = useActiveOrders.getState();
+  const activeOrders = new Map(hydrated.activeOrders);
+  let normalized = false;
+  for (const orderId of pendingTableIds) {
+    if (activeOrders.has(orderId) && activeOrders.get(orderId)?.isSaved !== true) {
+      activeOrders.delete(orderId);
+      normalized = true;
+    }
+  }
+  if (!normalized) return;
+  let currentOrderId = activeOrders.has(hydrated.currentOrderId)
+    ? hydrated.currentOrderId : activeOrders.keys().next().value || null;
+  if (!currentOrderId) {
+    currentOrderId = generateID('sal');
+    const now = new Date().toISOString();
+    activeOrders.set(currentOrderId, {
+      id: currentOrderId, items: [], customer: null, tableData: null,
+      createdAt: now, updatedAt: now, revision: 0, deviceId: getOrderDeviceId(),
+      total: 0, isSaved: false, folio: null
+    });
+  }
+  setActiveOrdersStateUnsafe({ activeOrders, currentOrderId, isCurrentOrderLocked: false });
 };
 registerTenantStorageHydrator(resetAndHydrateActiveOrdersForTenant);
 

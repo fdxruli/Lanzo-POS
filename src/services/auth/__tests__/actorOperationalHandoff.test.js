@@ -49,6 +49,12 @@ vi.mock('../../db/dexie.js', () => ({
 vi.mock('../../db/utils.js', () => ({ getAvailableStock: (batch) => Number(batch?.stock || 0) }));
 vi.mock('../../sales/inventoryFlow.js', () => ({ getSortedBatchesForProduct: (batches) => batches }));
 vi.mock('../../products/commercialVariants.js', () => ({ isCommercialVariantProduct: () => false }));
+vi.mock('../../db/tenantRuntimeRouter', () => ({
+  getTenantRuntimeReadiness: () => ({ ready: true, runtime: {
+    opaqueId: 't_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    databaseName: 'LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', generation: 10
+  } })
+}));
 
 import {
   ACTOR_HANDOFF_CHECKOUT_OWNED,
@@ -59,10 +65,12 @@ import {
   getPendingActorOperations,
   installActorOperationalHandoffGuards,
   rebindActorOperationalOwnership,
+  registerActorOperationalActiveOrders,
   refreshPersistedActorCheckoutOwnership,
   runCheckoutActorOperation,
   runTrackedActorOperationWithHandle
 } from '../actorOperationalHandoff';
+import { actorRuntimeController } from '../actorRuntimeController';
 
 const TENANT = Object.freeze({
   opaqueId: 't_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
@@ -96,10 +104,50 @@ const createHandle = ({
 
 describe('actor operational handoff barrier', () => {
   beforeEach(async () => {
+    actorRuntimeController.lock('test_reset');
     fixtures.state.sales = [];
     configureActorOperationalPersistence({ db: fixtures.db, salesStore: 'sales' });
     await installActorOperationalHandoffGuards();
     await refreshPersistedActorCheckoutOwnership({ tenant: TENANT });
+  });
+
+  it('guards ActiveOrders table saving before any durable write while the actor is locked', async () => {
+    const save = vi.fn(async () => ({ id: 'saved-table' }));
+    fixtures.useActiveOrders.setState({ saveOrderAsOpen: save });
+    registerActorOperationalActiveOrders({
+      useActiveOrders: fixtures.useActiveOrders,
+      db: fixtures.db,
+      STORES: { SALES: 'sales', PRODUCT_BATCHES: 'product_batches' }
+    });
+    await expect(fixtures.useActiveOrders.getState().saveOrderAsOpen('table-qa'))
+      .rejects.toMatchObject({ code: 'ACTOR_CONTEXT_LOCKED' });
+    expect(save).not.toHaveBeenCalled();
+    expect(fixtures.state.sales).toEqual([]);
+  });
+
+  it('does not multiply wrappers or pending tracking when ActiveOrders is registered again', async () => {
+    actorRuntimeController.beginAuthentication({ actorType: 'admin' });
+    actorRuntimeController.beginHandoffCheck();
+    actorRuntimeController.grant({
+      actorType: 'admin', actorId: 'admin-a', sessionId: 'session-a',
+      tenantOpaqueId: TENANT.opaqueId, deviceRef: 'device-a'
+    });
+    let resolveSave;
+    const pendingSave = new Promise((resolve) => { resolveSave = resolve; });
+    const original = vi.fn(() => pendingSave);
+    fixtures.useActiveOrders.setState({ saveOrderAsOpen: original });
+    const registration = { useActiveOrders: fixtures.useActiveOrders, db: fixtures.db,
+      STORES: { SALES: 'sales', PRODUCT_BATCHES: 'product_batches' } };
+    registerActorOperationalActiveOrders(registration);
+    const guarded = fixtures.useActiveOrders.getState().saveOrderAsOpen;
+    registerActorOperationalActiveOrders(registration);
+    expect(fixtures.useActiveOrders.getState().saveOrderAsOpen).toBe(guarded);
+    const saving = guarded('table-qa');
+    expect(getPendingActorOperations()).toHaveLength(1);
+    expect(original).toHaveBeenCalledTimes(1);
+    resolveSave({ success: true });
+    await expect(saving).resolves.toEqual({ success: true });
+    expect(getPendingActorOperations()).toHaveLength(0);
   });
 
   it('blocks a new actor while an actor-sensitive async operation is pending', async () => {

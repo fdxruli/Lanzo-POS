@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -8,11 +8,17 @@ const mocks = vi.hoisted(() => ({
   appState: null,
   navigate: vi.fn(),
   showConfirmModal: vi.fn(),
-  showMessageModal: vi.fn()
+  showMessageModal: vi.fn(),
+  reportAuthority: vi.fn()
 }));
 
 vi.mock('react-router-dom', () => ({
   useNavigate: () => mocks.navigate
+}));
+
+vi.mock('../../../services/auth/actorAuthorityRecovery', () => ({
+  getActorAuthorityRecoverySnapshot: () => ({ requiresReauthentication: true }),
+  reportActorAuthorityError: (...args) => mocks.reportAuthority(...args)
 }));
 
 vi.mock('../../../hooks/useFeatureConfig', () => ({
@@ -177,6 +183,19 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('OrderSummary ecommerce discount slots', () => {
+  it('routes locked cancellation to authority recovery and preserves the cart', async () => {
+    setOrder(undefined);
+    const error = Object.assign(new Error('ACTOR_CONTEXT_LOCKED'), { code: 'ACTOR_CONTEXT_LOCKED' });
+    mocks.activeState.cancelCurrentOrder.mockRejectedValue(error);
+    mocks.reportAuthority.mockReturnValue(true);
+    render(<OrderSummary {...props} />);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Cancelar' })); });
+    expect(mocks.activeState.cancelCurrentOrder).toHaveBeenCalled();
+    expect(mocks.reportAuthority).toHaveBeenCalledWith(error, expect.objectContaining({ operation: 'cancel_order' }));
+    expect(mocks.activeState.activeOrders.get('active-order').items).toHaveLength(1);
+    expect(mocks.showMessageModal).not.toHaveBeenCalledWith('ACTOR_CONTEXT_LOCKED', null, expect.anything());
+  });
+
   it('does not expose restaurant discount triggers or panels for ecommerce', () => {
     render(<OrderSummary {...props} />);
 

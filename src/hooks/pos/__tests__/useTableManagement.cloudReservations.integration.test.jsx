@@ -47,8 +47,12 @@ vi.mock('../../../services/supabase', () => ({ getStableDeviceId: async () => 'd
 vi.mock('../../../services/auth/refundsActorAuthorization', () => ({
   captureRefundsActorHandle: () => runtime.actorHandle
 }));
-vi.mock('../../../services/auth/actorRuntimeController', () => ({
-  actorRuntimeController: { capture: () => runtime.actorHandle, subscribe: () => () => {} }
+vi.mock('../../../services/auth/actorRuntimeController', async (importOriginal) => ({
+  ...await importOriginal(),
+  actorRuntimeController: { capture: () => runtime.actorHandle, subscribe: () => () => {}, getState: () => ({ status: 'granted' }) }
+}));
+vi.mock('../../../services/auth/actorAuthorityRecovery', () => ({
+  reportActorAuthorityError: vi.fn(() => false), getActorAuthorityRecoverySnapshot: () => null
 }));
 vi.mock('../../../services/utils', () => ({
   generateID: () => `sal-${crypto.randomUUID()}`, safeLocalStorageSet: vi.fn(),

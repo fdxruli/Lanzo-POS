@@ -41,6 +41,7 @@ import { getProductUnitShortLabel, resolveProductSaleUnit } from '../../utils/pr
 import { formatSelectedModifiersForDisplay } from '../../utils/restaurantModifierDisplay';
 import { canPerformRefunds } from '../../services/auth/salesPermissionPolicy';
 import { captureRefundsActorHandle } from '../../services/auth/refundsActorAuthorization';
+import { handlePosActorAuthorityError } from '../../hooks/pos/posActorAuthorityUi';
 import { useActorRuntimeSnapshot } from '../../services/auth/useActorRuntimeSnapshot';
 import OrderDiscountPanel from './OrderDiscountPanel';
 import EcommercePosDraftBanner from './EcommercePosDraftBanner';
@@ -329,7 +330,8 @@ export default function OrderSummary({
       if (!canManageRefunds) return;
       try {
         actorHandle = captureRefundsActorHandle();
-      } catch {
+      } catch (error) {
+        if (handlePosActorAuthorityError(error, 'cancel_order')) return;
         showMessageModal('No tienes permiso vigente para anular esta venta.', null, { type: 'error' });
         return;
       }
@@ -350,6 +352,7 @@ export default function OrderSummary({
       await useActiveOrders.getState().cancelCurrentOrder({ actorHandle });
       if (isMobileModal) onClose?.();
     } catch (error) {
+      if (handlePosActorAuthorityError(error, 'cancel_order')) return;
       console.error('Error cancelando orden:', error);
       showMessageModal(
         error?.message || 'No se pudo cancelar la orden. Intenta cerrar el cobro activo y vuelve a intentar.',

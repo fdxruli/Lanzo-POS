@@ -21,6 +21,28 @@ vi.mock('../../tenant/localTenantGuard', () => ({
   runWithLocalTenantSyncLease: vi.fn(async (_source, _options, operation) => operation())
 }));
 
+// The fixture uses raw keys; production storage requires a READY tenant
+// namespace. Keep this unit boundary explicit instead of depending on global
+// tenant state created by another test.
+vi.mock('../../tenant/tenantScopedStorage', () => ({
+  getTenantStorageItem: (key) => window.localStorage.getItem(key),
+  setTenantStorageItem: (key, value) => window.localStorage.setItem(key, value)
+}));
+
+// This unit fixture represents an already granted actor; authority transitions
+// are covered separately with a controllable runtime and captured handles.
+vi.mock('../../auth/actorRuntimeController', () => ({
+  ACTOR_RUNTIME_STATUS: { GRANTED: 'granted' },
+  actorRuntimeController: {
+    getState: () => ({ status: 'granted' }),
+    capture: () => ({ assertCurrent: () => undefined })
+  }
+}));
+vi.mock('../../auth/actorAuthorityRecovery', () => ({
+  getActorAuthorityRecoverySnapshot: () => null,
+  reportActorAuthorityError: vi.fn(() => false)
+}));
+
 import {
   buildRestaurantSplitCheckoutCloseIdempotencyKey,
   buildSplitCheckoutClosePayload,
