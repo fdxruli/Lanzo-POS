@@ -28,8 +28,7 @@ export default function QuickAddCustomerModal({ show, onClose, onCustomerSaved, 
   const [isLoading, setIsLoading] = useState(false);
   const dialogRef = useRef(null);
   const pendingCustomerRef = useRef(null);
-  const isLoadingRef = useRef(isLoading);
-  isLoadingRef.current = isLoading;
+  const isLoadingRef = useRef(false);
   const minimumCredit = Money.init(minimumCreditLimit);
   const creditDraft = parseMoneyInputDraft(creditLimitDraft);
   const creditLimit = creditDraft.cents === null ? null : Money.fromCents(creditDraft.cents);
@@ -41,14 +40,14 @@ export default function QuickAddCustomerModal({ show, onClose, onCustomerSaved, 
           : '';
 
   const handleClose = useCallback(() => {
-    if (isLoading) return;
+    if (isLoadingRef.current) return;
     setName('');
     setPhone('');
     setCreditLimitDraft('');
     pendingCustomerRef.current = null;
     setError('');
     onClose();
-  }, [isLoading, onClose]);
+  }, [onClose]);
 
   const dismissModal = useDismissibleHistoryLayer({
     isOpen: show,
@@ -91,8 +90,9 @@ export default function QuickAddCustomerModal({ show, onClose, onCustomerSaved, 
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (isLoading || (creditMode && !hasValidCredit)) return;
+    if (isLoadingRef.current || (creditMode && !hasValidCredit)) return;
     setError('');
+    isLoadingRef.current = true;
     setIsLoading(true);
 
     try {
@@ -127,10 +127,12 @@ export default function QuickAddCustomerModal({ show, onClose, onCustomerSaved, 
       }
 
       onCustomerSaved(result.data || newCustomer);
+      isLoadingRef.current = false;
       dismissModal();
     } catch {
       setError('Error al guardar el cliente.');
     } finally {
+      isLoadingRef.current = false;
       setIsLoading(false);
     }
   };
