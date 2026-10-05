@@ -10,6 +10,8 @@ const { loadData, tenantStorage } = vi.hoisted(() => ({
 
 vi.mock('../../../services/database', () => ({
   loadData: (...args) => loadData(...args),
+  saveDataSafe: vi.fn(),
+  DB_ERROR_CODES: { DUPLICATE_CUSTOMER_PHONE: 'DUPLICATE_CUSTOMER_PHONE' },
   STORES: { CUSTOMERS: 'customers' }
 }));
 
@@ -397,8 +399,8 @@ describe('SplitBillModal four-step restaurant split', () => {
     view.setShow(true);
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Se restauró el borrador local'));
     expect(screen.getByRole('heading', { name: 'Ingresa los montos de cada persona' })).toBeInTheDocument();
-    expect(document.getElementById('splitCustomAmount-T1')).toHaveValue(30);
-    expect(document.getElementById('splitCustomAmount-T2')).toHaveValue(70);
+    expect(document.getElementById('splitCustomAmount-T1')).toHaveValue('30.00');
+    expect(document.getElementById('splitCustomAmount-T2')).toHaveValue('70.00');
     expect(screen.getByText('Total distribuido').parentElement).toHaveTextContent('$100.00');
   });
 
@@ -556,7 +558,7 @@ describe('SplitBillModal four-step restaurant split', () => {
     expect(restoredMethods[0]).toHaveValue('tarjeta');
     expect(restoredMethods[1]).toHaveValue('fiado');
     expect(screen.getByLabelText('Método del abono inicial')).toHaveValue('transferencia');
-    expect(screen.getByLabelText('Abono inicial aplicado')).toHaveValue(0);
+    expect(screen.getByLabelText('Abono inicial aplicado')).toHaveValue('0');
     expect(screen.getByLabelText('Cliente financiero registrado')).toHaveValue('');
   });
 

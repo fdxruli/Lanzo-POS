@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, ChevronLeft, ChevronRight, Minus, Plus, RotateCcw, X } from 'lucide-react';
 import { loadData, STORES } from '../../services/database';
 import { Money } from '../../utils/moneyMath';
+import QuickAddCustomerModal from '../common/QuickAddCustomerModal';
+import { isMoneyInputDraft, normalizeMoneyInputDraft, parseMoneyInputDraft } from '../../utils/moneyInputDraft';
 import { getCartLineId } from '../../utils/cartLineIdentity';
 import { formatSelectedModifiersForDisplay } from '../../utils/restaurantModifierDisplay';
 import { normalizeStock, STOCK_DECIMALS } from '../../services/db/utils';
@@ -127,7 +129,7 @@ const calculateTicketMath = ({ order = [], allocations = [], guests = [], total 
   };
 };
 
-const formatMoneyFromCents = (cents) => Money.toNumber(Money.fromCents(cents || 0)).toFixed(2);
+const formatMoneyFromCents = (cents) => Money.fromCents(cents || 0).toFixed(2);
 const formatQuantity = (value) => {
   const quantity = toQuantity(value);
   if (Number.isInteger(quantity)) return String(quantity);
@@ -176,11 +178,11 @@ const toMoneySafe = (value, fallback = '0') => {
   }
 };
 
-const parsePaymentInputCents = (value) => {
-  if (typeof value !== 'string' && typeof value !== 'number') return null;
-  const candidate = String(value).trim().replace(',', '.');
-  if (!/^\d+(?:\.\d{1,2})?$/.test(candidate)) return null;
-  try { return Money.toCents(candidate); } catch { return null; }
+const paymentDraftMoney = (value, { preview = false, ...options } = {}) => {
+  const { cents } = parseMoneyInputDraft(value, options);
+  if (cents === null && !preview) throw new Error('El monto debe tener máximo dos decimales.');
+  // Zero is only a display fallback; unresolved drafts cannot enter the payload.
+  return Money.fromCents(cents ?? 0);
 };
 
 export default function SplitBillModal({
@@ -198,6 +200,7 @@ export default function SplitBillModal({
   const [allocations, setAllocations] = useState([]);
   const [splitIntent, setSplitIntent] = useState(RESTAURANT_SPLIT_INTENTS.BY_ITEMS);
   const [customAmountsCents, setCustomAmountsCents] = useState([]);
+  const [customAmountDrafts, setCustomAmountDrafts] = useState({});
   const [customers, setCustomers] = useState([]);
   const [payments, setPayments] = useState({});
   const [assignmentAmounts, setAssignmentAmounts] = useState({});
@@ -209,6 +212,10 @@ export default function SplitBillModal({
   const [pendingGuestRemoval, setPendingGuestRemoval] = useState(null);
   const [pendingStrategyChange, setPendingStrategyChange] = useState(null);
   const [assignmentNotice, setAssignmentNotice] = useState('');
+  const [quickAddTarget, setQuickAddTarget] = useState(null);
+  const createdCustomersRef = useRef(new Map());
+  const quickAddOpenerRef = useRef(null);
+  const sessionSequenceRef = useRef(0);
   const initializedSessionRef = useRef(null);
   const submissionInFlightRef = useRef(false);
   const latestInputsRef = useRef({ order, total, saleDiscount });
@@ -234,6 +241,7 @@ export default function SplitBillModal({
       initializedSessionRef.current = null;
       setIsSessionReady(false);
       setPendingGuestRemoval(null);
+      setQuickAddTarget(null);
       return;
     }
     if (initializedSessionRef.current === sessionIdentity) return;
@@ -262,12 +270,19 @@ export default function SplitBillModal({
     });
 
     initializedSessionRef.current = sessionIdentity;
+    sessionSequenceRef.current += 1;
+    createdCustomersRef.current.clear();
+    setQuickAddTarget(null);
     setGuests(nextGuests);
     setAllocations(nextAllocations);
     setSplitIntent(nextSplitIntent);
-    setCustomAmountsCents(restored.status === 'restored'
+    const nextCustomAmounts = restored.status === 'restored'
       ? restored.customAmountsCents
-      : Array(nextGuests.length).fill(0));
+      : Array(nextGuests.length).fill(0);
+    setCustomAmountsCents(nextCustomAmounts);
+    setCustomAmountDrafts(Object.fromEntries(nextGuests.map((guest, index) => (
+      [guest.id, formatMoneyFromCents(nextCustomAmounts[index])]
+    ))));
     setPayments(initialPaymentsState(nextGuests, initialMath.totalsCents, restored.payerPaymentMethods || []));
     setAssignmentAmounts({});
     setCurrentStep(restored.status === 'restored' ? restored.step : 'people');
@@ -292,14 +307,23 @@ export default function SplitBillModal({
     const fetchCustomers = async () => {
       try {
         const customerData = await loadData(STORES.CUSTOMERS);
-        if (active) setCustomers(customerData || []);
+        if (active) setCustomers(Array.from(new Map([
+          ...(customerData || []).map((customer) => [customer.id, customer]),
+          ...createdCustomersRef.current
+        ]).values()));
       } catch {
-        if (active) setCustomers([]);
+        if (active) setCustomers(Array.from(createdCustomersRef.current.values()));
       }
     };
     void fetchCustomers();
     return () => { active = false; };
   }, [show]);
+
+  useEffect(() => {
+    if (quickAddTarget || !quickAddOpenerRef.current) return;
+    if (show) quickAddOpenerRef.current.focus();
+    quickAddOpenerRef.current = null;
+  }, [quickAddTarget, show]);
 
   // Persist safe method selections only. Credit customers, amounts, references
   // and receipt choices always start fresh from the current financial contract.
@@ -328,6 +352,7 @@ export default function SplitBillModal({
     if (!show) return undefined;
     const handleKeyDown = (event) => {
       if (event.key !== 'Escape') return;
+      if (quickAddTarget) return;
       if (pendingStrategyChange) {
         event.preventDefault();
         setPendingStrategyChange(null);
@@ -342,7 +367,7 @@ export default function SplitBillModal({
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [show, onClose, pendingGuestRemoval, pendingStrategyChange]);
+  }, [show, onClose, pendingGuestRemoval, pendingStrategyChange, quickAddTarget]);
 
   const ticketMath = useMemo(
     () => calculateTicketMath({ order: safeOrder, allocations, guests, total, saleDiscount }),
@@ -364,8 +389,10 @@ export default function SplitBillModal({
     if (splitIntent === RESTAURANT_SPLIT_INTENTS.EQUAL_PAYMENT) {
       return equalPayment.valid ? equalPayment.amountsCents : Array(guests.length).fill(0);
     }
-    return guests.map((guest, index) => customAmountsCents[index] || 0);
-  }, [splitIntent, ticketMath.totalsCents, equalPayment, guests, customAmountsCents]);
+    return guests.map((guest, index) => (
+      parseMoneyInputDraft(customAmountDrafts[guest.id] ?? formatMoneyFromCents(customAmountsCents[index])).cents ?? 0
+    ));
+  }, [splitIntent, ticketMath.totalsCents, equalPayment, guests, customAmountsCents, customAmountDrafts]);
   const distributedCents = payerAmountsCents.reduce((sum, amount) => sum + amount, 0);
   const pendingPaymentCents = parentTotalCents - distributedCents;
   const distributionError = useMemo(() => {
@@ -374,13 +401,16 @@ export default function SplitBillModal({
     if (splitIntent === RESTAURANT_SPLIT_INTENTS.EQUAL_PAYMENT) {
       return equalPayment.valid ? null : 'El total no se puede dividir en importes positivos para esta cantidad de personas.';
     }
+    if (guests.some((guest) => parseMoneyInputDraft(customAmountDrafts[guest.id] ?? '').cents === null)) {
+      return 'Cada persona debe tener un importe válido con máximo dos decimales.';
+    }
     const validation = validateCustomPaymentCents(parentTotalCents, payerAmountsCents);
     if (validation.valid) return null;
     if (validation.code === 'SPLIT_CUSTOM_EXCEEDS_TOTAL') return 'La suma de los importes supera el total de la cuenta.';
     if (validation.code === 'SPLIT_CUSTOM_INCOMPLETE') return `Faltan $${formatMoneyFromCents(validation.pendingCents)} por distribuir.`;
     if (validation.code === 'SPLIT_CUSTOM_AMOUNT_REQUIRED') return 'Cada persona debe tener un importe mayor que cero.';
     return 'Revisa los montos personalizados antes de continuar.';
-  }, [splitIntent, parentTotalCents, equalPayment, payerAmountsCents]);
+  }, [splitIntent, parentTotalCents, equalPayment, payerAmountsCents, guests, customAmountDrafts]);
   const wizardSteps = useMemo(() => WIZARD_STEPS.map((step) => (
     step.id === 'items' && splitIntent !== RESTAURANT_SPLIT_INTENTS.BY_ITEMS
       ? { ...step, title: splitIntent === RESTAURANT_SPLIT_INTENTS.EQUAL_PAYMENT ? 'Distribución' : 'Montos' }
@@ -454,11 +484,10 @@ export default function SplitBillModal({
       const ticketTotal = Money.fromCents(payerAmountsCents[guestIdx] || 0);
       const payment = payments[guest.id];
       if (!payment) return `Falta configurar el cobro de ${displayName}.`;
-      const paid = toMoneySafe(payment.amountPaid, '0');
-      const paidCents = parsePaymentInputCents(payment.amountPaid ?? '0');
-      if (paid.lt(0) || paidCents === null) return `El monto de ${displayName} debe tener máximo dos decimales.`;
-
       const method = normalizeRestaurantSplitPaymentMethod(payment.paymentMethod);
+      const { cents: paidCents } = parseMoneyInputDraft(payment.amountPaid ?? '', { allowEmpty: method === 'credit' });
+      if (paidCents === null) return `El monto de ${displayName} debe tener máximo dos decimales.`;
+      const paid = Money.fromCents(paidCents);
       if (method === 'cash') {
         if (paidCents < (payerAmountsCents[guestIdx] || 0)) return `El pago en efectivo de ${displayName} debe cubrir su total.`;
         continue;
@@ -479,7 +508,7 @@ export default function SplitBillModal({
         const initialMethod = normalizeRestaurantSplitPaymentMethod(payment.initialPaymentMethod || 'cash');
         if (!['cash', 'card', 'transfer'].includes(initialMethod)) return `El método del abono inicial de ${displayName} no es válido.`;
         if (initialMethod === 'cash' && paidCents > 0) {
-          const receivedCents = parsePaymentInputCents(payment.receivedAmount ?? payment.amountPaid ?? '0');
+          const { cents: receivedCents } = parseMoneyInputDraft(payment.receivedAmount ?? payment.amountPaid ?? '');
           if (receivedCents === null || receivedCents < paidCents) {
             return `El efectivo recibido para el abono de ${displayName} no cubre el abono aplicado.`;
           }
@@ -511,6 +540,7 @@ export default function SplitBillModal({
 
   const resizeGuests = useCallback((newCount) => {
     const count = Math.max(MIN_GUESTS, Math.min(MAX_GUESTS, Number(newCount) || MIN_GUESTS));
+    const nextGuests = Array.from({ length: count }, (_, index) => guests[index] || makeGuest(index));
     setGuests((currentGuests) => {
       if (count > currentGuests.length) {
         return [
@@ -537,8 +567,14 @@ export default function SplitBillModal({
     setCustomAmountsCents((current) => count > current.length
       ? [...current, ...Array(count - current.length).fill(0)]
       : current.slice(0, count));
+    setCustomAmountDrafts((current) => Object.fromEntries(
+      Array.from({ length: count }, (_, index) => {
+        const guestId = nextGuests[index].id;
+        return [guestId, current[guestId] ?? '0.00'];
+      })
+    ));
     setPendingGuestRemoval(null);
-  }, []);
+  }, [guests]);
 
   const handleGuestCountChange = (requestedCount) => {
     const count = Math.max(MIN_GUESTS, Math.min(MAX_GUESTS, Number(requestedCount) || MIN_GUESTS));
@@ -557,7 +593,7 @@ export default function SplitBillModal({
       return summary;
     }, { quantity: 0, lines: 0 });
     const removedPaymentCents = splitIntent === RESTAURANT_SPLIT_INTENTS.CUSTOM_PAYMENT
-      ? customAmountsCents.slice(count).reduce((sum, amount) => sum + (amount || 0), 0)
+      ? payerAmountsCents.slice(count).reduce((sum, amount) => sum + (amount || 0), 0)
       : 0;
 
     if (affected.quantity > 0 || removedPaymentCents > 0) {
@@ -579,23 +615,28 @@ export default function SplitBillModal({
     if (nextIntent === splitIntent || isSubmitting) return;
     const hasProductAssignments = assignmentProgress.assignedQuantity > 0;
     const hasCustomDistribution = splitIntent === RESTAURANT_SPLIT_INTENTS.CUSTOM_PAYMENT
-      && customAmountsCents.some((amount) => amount > 0);
+      && payerAmountsCents.some((amount) => amount > 0);
     if (hasProductAssignments || hasCustomDistribution) {
       setPendingStrategyChange({ nextIntent, hasProductAssignments, hasCustomDistribution });
       return;
     }
     setSplitIntent(nextIntent);
+    setCustomAmountDrafts(Object.fromEntries(guests.map((guest) => [guest.id, '0.00'])));
+    setCustomAmountsCents(Array(guests.length).fill(0));
     setPendingStrategyChange(null);
   };
 
   const confirmStrategyChange = () => {
     if (!pendingStrategyChange?.nextIntent) return;
     setSplitIntent(pendingStrategyChange.nextIntent);
+    setCustomAmountDrafts(Object.fromEntries(guests.map((guest) => [guest.id, '0.00'])));
+    setCustomAmountsCents(Array(guests.length).fill(0));
     setPendingStrategyChange(null);
     setAssignmentNotice('');
   };
 
   const updatePayment = (guestId, field, value) => {
+    if ((field === 'amountPaid' || field === 'receivedAmount') && !isMoneyInputDraft(value)) return;
     setPayments((previous) => {
       const current = previous[guestId] || {};
       const next = { ...current, [field]: value };
@@ -603,23 +644,35 @@ export default function SplitBillModal({
       const initialMethod = normalizeRestaurantSplitPaymentMethod(current.initialPaymentMethod || 'cash');
       if (field === 'amountPaid' && method === 'cash') next.receivedAmount = value;
       if (field === 'amountPaid' && method === 'credit' && initialMethod === 'cash'
-        && (current.receivedAmount === undefined || current.receivedAmount === current.amountPaid)) {
+        && (parseMoneyInputDraft(value, { allowEmpty: true }).cents === 0
+          || current.receivedAmount === undefined || current.receivedAmount === current.amountPaid)) {
         next.receivedAmount = value;
       }
       return { ...previous, [guestId]: next };
     });
   };
 
-  const updateCustomAmount = (guestIndex, value) => {
-    const candidate = String(value ?? '').trim().replace(',', '.');
-    if (candidate && !/^\d+(?:\.\d{0,2})?$/.test(candidate)) return;
-    let cents = 0;
-    if (candidate) {
-      try { cents = Money.toCents(candidate); } catch { return; }
-    }
+  const updateCustomAmount = (guestId, value) => {
+    if (!isMoneyInputDraft(value)) return;
+    setCustomAmountDrafts((previous) => ({ ...previous, [guestId]: value }));
+    const { cents } = parseMoneyInputDraft(value);
+    // An unresolved draft has no allocated cents and still blocks continuation.
+    // This also prevents reopening from reviving a share the user just cleared.
     setCustomAmountsCents((previous) => guests.map((guest, index) => (
-      index === guestIndex ? cents : (previous[index] || 0)
+      guest.id === guestId ? (cents ?? 0) : (previous[index] || 0)
     )));
+  };
+
+  const commitCustomAmount = (guestId, value) => {
+    const normalized = normalizeMoneyInputDraft(value);
+    if (normalized !== null) updateCustomAmount(guestId, normalized);
+  };
+
+  const commitPaymentAmount = (guestId, field, value) => {
+    const allowEmpty = field === 'amountPaid'
+      && normalizeRestaurantSplitPaymentMethod(payments[guestId]?.paymentMethod) === 'credit';
+    const normalized = normalizeMoneyInputDraft(value, { allowEmpty });
+    if (normalized !== null) updatePayment(guestId, field, normalized);
   };
 
   const getAssignmentAmount = (item, lineIndex, pending) => {
@@ -777,12 +830,12 @@ export default function SplitBillModal({
           const dueCents = payerAmountsCents[guestIdx] || 0;
           const due = Money.fromCents(dueCents);
           const method = normalizeRestaurantSplitPaymentMethod(payment.paymentMethod);
-          const paidInput = toMoneySafe(payment.amountPaid || 0, '0');
+          const paidInput = paymentDraftMoney(payment.amountPaid ?? '', { allowEmpty: method === 'credit' });
           const amountPaid = method === 'card' || method === 'transfer' ? due : paidInput;
           const receivedAmount = method === 'cash'
             ? paidInput
-            : (method === 'credit' && normalizeRestaurantSplitPaymentMethod(payment.initialPaymentMethod) === 'cash'
-              ? toMoneySafe(payment.receivedAmount ?? payment.amountPaid ?? 0, '0')
+            : (method === 'credit' && amountPaid.gt(0) && normalizeRestaurantSplitPaymentMethod(payment.initialPaymentMethod) === 'cash'
+              ? paymentDraftMoney(payment.receivedAmount ?? payment.amountPaid ?? '')
               : amountPaid);
 
           return {
@@ -815,6 +868,26 @@ export default function SplitBillModal({
     }
   };
 
+  const handleQuickCustomerSaved = (customer) => {
+    const target = quickAddTarget;
+    if (!target || initializedSessionRef.current !== target.sessionIdentity || sessionSequenceRef.current !== target.sessionSequence) return;
+    createdCustomersRef.current.set(customer.id, customer);
+    setCustomers((previous) => Array.from(new Map([
+      ...previous.map((entry) => [entry.id, entry]),
+      [customer.id, customer]
+    ]).values()));
+    setPayments((previous) => {
+      const payment = previous[target.guestId];
+      if (!payment || normalizeRestaurantSplitPaymentMethod(payment.paymentMethod) !== 'credit') return previous;
+      return { ...previous, [target.guestId]: { ...payment, customerId: customer.id } };
+    });
+    setQuickAddTarget(null);
+  };
+
+  const quickAddGuestIndex = guests.findIndex((guest) => guest.id === quickAddTarget?.guestId);
+  const quickAddPaidCents = parseMoneyInputDraft(payments[quickAddTarget?.guestId]?.amountPaid ?? '', { allowEmpty: true }).cents;
+  const minimumCreditLimitCents = Math.max(0, (payerAmountsCents[quickAddGuestIndex] || 0) - (quickAddPaidCents ?? 0));
+
   if (!show) return null;
 
   const currentStepIndex = Math.max(0, wizardSteps.findIndex((step) => step.id === currentStep));
@@ -822,7 +895,8 @@ export default function SplitBillModal({
   const activeError = assignmentNotice || (currentStep === 'items' ? (assignmentError || distributionError) : currentStep === 'payment' || currentStep === 'review' ? paymentValidationError : '');
 
   return (
-    <div className="modal split-bill-overlay" style={{ display: 'flex', zIndex: 'var(--z-modal-top)' }} onClick={onClose}>
+    <>
+    <div className="modal split-bill-overlay" inert={Boolean(quickAddTarget)} style={{ display: 'flex', zIndex: 'var(--z-modal-top)' }} onClick={onClose}>
       <div
         className="modal-content split-bill-modal"
         onClick={(event) => event.stopPropagation()}
@@ -1039,11 +1113,11 @@ export default function SplitBillModal({
                           <span aria-hidden="true">$</span>
                           <input
                             id={`splitCustomAmount-${guest.id}`}
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={formatMoneyFromCents(payerAmountsCents[guestIdx] || 0)}
-                            onChange={(event) => updateCustomAmount(guestIdx, event.target.value)}
+                            type="text"
+                            inputMode="decimal"
+                            value={customAmountDrafts[guest.id] ?? formatMoneyFromCents(customAmountsCents[guestIdx])}
+                            onChange={(event) => updateCustomAmount(guest.id, event.target.value)}
+                            onBlur={(event) => commitCustomAmount(guest.id, event.target.value)}
                             disabled={isSubmitting}
                             aria-label={`Monto de ${guestContextName(guest, guestIdx)}`}
                             aria-invalid={Boolean(distributionError)}
@@ -1339,8 +1413,8 @@ export default function SplitBillModal({
                     const due = Money.fromCents(dueCents);
                     const method = normalizeRestaurantSplitPaymentMethod(payment.paymentMethod);
                     const initialMethod = normalizeRestaurantSplitPaymentMethod(payment.initialPaymentMethod || 'cash');
-                    const paid = toMoneySafe(payment.amountPaid, '0');
-                    const received = toMoneySafe(payment.receivedAmount ?? payment.amountPaid ?? '0', '0');
+                    const paid = paymentDraftMoney(payment.amountPaid ?? '', { preview: true, allowEmpty: method === 'credit' });
+                    const received = paymentDraftMoney(payment.receivedAmount ?? payment.amountPaid ?? '', { preview: true });
                     const cashChangeRaw = method === 'cash'
                       ? Money.subtract(received, due)
                       : (method === 'credit' && initialMethod === 'cash' ? Money.subtract(received, paid) : Money.init(0));
@@ -1395,13 +1469,13 @@ export default function SplitBillModal({
                               <label htmlFor={`splitPaid-${guest.id}`}>Monto recibido</label>
                               <input
                                 id={`splitPaid-${guest.id}`}
-                                type="number"
-                                min={formatMoneyFromCents(dueCents)}
-                                step="0.01"
+                                type="text"
+                                inputMode="decimal"
                                 value={payment.amountPaid ?? formatMoneyFromCents(dueCents)}
                                 aria-invalid={Boolean(activeError && currentStep === 'payment')}
                                 aria-describedby={activeError && currentStep === 'payment' ? 'split-validation-error' : undefined}
                                 onChange={(event) => updatePayment(guest.id, 'amountPaid', event.target.value)}
+                                onBlur={(event) => commitPaymentAmount(guest.id, 'amountPaid', event.target.value)}
                                 disabled={isSubmitting}
                               />
                               <p className="split-review-payment-detail">Aplicado a caja: ${formatMoneyFromCents(dueCents)} · Cambio: ${Money.toNumber(cashChange).toFixed(2)}</p>
@@ -1413,14 +1487,13 @@ export default function SplitBillModal({
                               <label htmlFor={`splitPaid-${guest.id}`}>Abono inicial aplicado</label>
                               <input
                                 id={`splitPaid-${guest.id}`}
-                                type="number"
-                                min="0"
-                                max={formatMoneyFromCents(dueCents)}
-                                step="0.01"
+                                type="text"
+                                inputMode="decimal"
                                 value={payment.amountPaid ?? '0'}
                                 aria-invalid={Boolean(activeError && currentStep === 'payment')}
                                 aria-describedby={activeError && currentStep === 'payment' ? 'split-validation-error' : undefined}
                                 onChange={(event) => updatePayment(guest.id, 'amountPaid', event.target.value)}
+                                onBlur={(event) => commitPaymentAmount(guest.id, 'amountPaid', event.target.value)}
                                 disabled={isSubmitting}
                               />
                               <label htmlFor={`splitInitialMethod-${guest.id}`}>Método del abono inicial</label>
@@ -1434,16 +1507,18 @@ export default function SplitBillModal({
                                 <option value="tarjeta">Tarjeta</option>
                                 <option value="transferencia">Transferencia</option>
                               </select>
-                              {initialMethod === 'cash' && Number(payment.amountPaid) > 0 && (
+                              {initialMethod === 'cash' && paid.gt(0) && (
                                 <>
                                   <label htmlFor={`splitCreditReceived-${guest.id}`}>Efectivo recibido para el abono</label>
                                   <input
                                     id={`splitCreditReceived-${guest.id}`}
-                                    type="number"
-                                    min={payment.amountPaid || 0}
-                                    step="0.01"
+                                    type="text"
+                                    inputMode="decimal"
                                     value={payment.receivedAmount ?? payment.amountPaid ?? '0'}
                                     onChange={(event) => updatePayment(guest.id, 'receivedAmount', event.target.value)}
+                                    onBlur={(event) => commitPaymentAmount(guest.id, 'receivedAmount', event.target.value)}
+                                    aria-invalid={Boolean(activeError && currentStep === 'payment')}
+                                    aria-describedby={activeError && currentStep === 'payment' ? 'split-validation-error' : undefined}
                                     disabled={isSubmitting}
                                   />
                                   <p className="split-review-payment-detail">Cambio del abono: ${Money.toNumber(cashChange).toFixed(2)}</p>
@@ -1482,6 +1557,15 @@ export default function SplitBillModal({
                                   <option key={customer.id} value={customer.id}>{customer.name}{customer.phone ? ` (${customer.phone})` : ''}</option>
                                 ))}
                               </select>
+                              <button
+                                type="button"
+                                className="split-link-button split-quick-add-customer"
+                                onClick={(event) => {
+                                  quickAddOpenerRef.current = event.currentTarget;
+                                  setQuickAddTarget({ guestId: guest.id, sessionIdentity, sessionSequence: sessionSequenceRef.current });
+                                }}
+                                disabled={isSubmitting}
+                              >+ Nuevo cliente</button>
                             </>
                           )}
 
@@ -1522,8 +1606,8 @@ export default function SplitBillModal({
                     const due = Money.fromCents(dueCents);
                     const method = normalizeRestaurantSplitPaymentMethod(payment.paymentMethod);
                     const initialMethod = normalizeRestaurantSplitPaymentMethod(payment.initialPaymentMethod || 'cash');
-                    const amountPaid = toMoneySafe(payment.amountPaid, '0');
-                    const received = toMoneySafe(payment.receivedAmount ?? payment.amountPaid ?? '0', '0');
+                    const amountPaid = paymentDraftMoney(payment.amountPaid ?? '', { preview: true, allowEmpty: method === 'credit' });
+                    const received = paymentDraftMoney(payment.receivedAmount ?? payment.amountPaid ?? '', { preview: true });
                     const changeRaw = method === 'cash'
                       ? Money.subtract(received, due)
                       : (method === 'credit' && initialMethod === 'cash' ? Money.subtract(received, amountPaid) : Money.init(0));
@@ -1615,5 +1699,15 @@ export default function SplitBillModal({
         </form>
       </div>
     </div>
+    {quickAddTarget && (
+      <QuickAddCustomerModal
+        show
+        creditMode
+        minimumCreditLimit={Money.toExactString(Money.fromCents(minimumCreditLimitCents))}
+        onClose={() => setQuickAddTarget(null)}
+        onCustomerSaved={handleQuickCustomerSaved}
+      />
+    )}
+    </>
   );
 }
