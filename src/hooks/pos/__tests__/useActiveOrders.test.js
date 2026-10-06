@@ -164,7 +164,7 @@ describe('useActiveOrders unified store', () => {
     await expect(state.cancelCurrentOrder()).rejects.toThrow('otro dispositivo');
     await expect(state.cancelOrder(sale.id)).rejects.toThrow('otro dispositivo');
     await expect(state.cancelOpenSaleByIdFromPos(sale.id)).resolves.toMatchObject({ success: false });
-    await expect(state.closeOrder(sale.id, {})).rejects.toThrow('otro dispositivo');
+    await expect(state.closeOrder(sale.id, {})).rejects.toMatchObject({ code: 'CLOUD_TABLE_NORMAL_CHECKOUT_BLOCKED' });
     expect(dbState.sales.get(sale.id)).toEqual(sale);
     expect(useActiveOrders.getState().activeOrders.get(sale.id)?.items).toEqual(sale.items);
     expect(commitStock).not.toHaveBeenCalled();

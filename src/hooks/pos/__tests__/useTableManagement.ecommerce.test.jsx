@@ -8,6 +8,13 @@ const mocks = vi.hoisted(() => ({
   splitOpenTableOrder: vi.fn(),
   showMessageModal: vi.fn(),
   reportAuthority: vi.fn(),
+  actorCapture: vi.fn(),
+  actorHandle: {
+    actorKey: 'admin:owner-a', actorType: 'admin', actorId: 'owner-a',
+    sessionId: 'table-management-session', generation: 1, deviceRef: 'device-a',
+    tenant: { opaqueId: 'tenant-a', databaseName: 'table-management-unit', generation: 1 },
+    assertCurrent: vi.fn()
+  },
   showConfirmModal: vi.fn(),
   showInputPromptModal: vi.fn(),
   cloudStatus: vi.fn(),
@@ -31,6 +38,14 @@ vi.mock('../../../store/useAppStore', () => ({
 vi.mock('../../../services/auth/actorAuthorityRecovery', () => ({
   reportActorAuthorityError: (...args) => mocks.reportAuthority(...args),
   getActorAuthorityRecoverySnapshot: () => ({ requiresReauthentication: true })
+}));
+vi.mock('../../../services/auth/actorRuntimeController', async (importOriginal) => ({
+  ...await importOriginal(),
+  actorRuntimeController: {
+    capture: (...args) => mocks.actorCapture(...args),
+    getState: () => ({ status: 'granted', ...mocks.actorHandle }),
+    subscribe: () => () => {}
+  }
 }));
 
 vi.mock('../../../services/salesService', () => ({
@@ -208,6 +223,8 @@ const setActiveOrder = (origin) => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.actorCapture.mockReturnValue(mocks.actorHandle);
+  mocks.actorHandle.assertCurrent.mockReturnValue(mocks.actorHandle);
   mocks.appState = {
     verifySessionIntegrity: vi.fn().mockResolvedValue(true),
     companyProfile: { name: 'Lanzo' },
