@@ -21,7 +21,10 @@ vi.mock('../../supabase', () => ({ getStableDeviceId: vi.fn() }));
 vi.mock('../../../store/useAppStore', () => ({ useAppStore: { getState: () => ({}) } }));
 vi.mock('../../products/productSyncHandler', () => ({ pullCatalogChanges: vi.fn() }));
 vi.mock('../salesCloudRepository', () => ({ salesCloudRepository: {} }));
-vi.mock('../../auth/actorRuntimeController', () => ({ actorRuntimeController: {} }));
+vi.mock('../../auth/actorRuntimeController', () => ({ actorRuntimeController: {
+  getState: () => ({ status: 'locked', reason: 'test' }),
+  subscribe: () => () => {}
+} }));
 vi.mock('../../cash/cashRepository', () => ({ cashRepository: {} }));
 vi.mock('../../db/layaways', () => ({ layawayRepository: {} }));
 
