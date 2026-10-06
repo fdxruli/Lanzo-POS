@@ -15,7 +15,6 @@ import { registerFinancialProjectionHandler } from '../financial/financialProjec
 import { actorRuntimeController } from '../auth/actorRuntimeController';
 import { cashRepository } from '../cash/cashRepository';
 import { layawayRepository } from '../db/layaways';
-import { preflightCloudRestaurantOrderSettlement } from '../restaurant/restaurantSplitCloudPreflight';
 import {
   isCloudCashierCompatiblePayment,
   isCreditLikePaymentMethod,
@@ -1098,6 +1097,7 @@ export const salesCloudCashierService = {
 
         if (!parentOrderId) throw Object.assign(new Error('RESTAURANT_PARENT_ORDER_REQUIRED'), { code: 'RESTAURANT_PARENT_ORDER_REQUIRED' });
         if (!parentOrderVersion) {
+          const { preflightCloudRestaurantOrderSettlement } = await import('../restaurant/restaurantSplitCloudPreflight');
           const preflight = await preflightCloudRestaurantOrderSettlement({
             licenseKey: context.licenseKey,
             parentOrderId,
