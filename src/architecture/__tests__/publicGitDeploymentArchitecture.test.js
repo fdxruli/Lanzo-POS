@@ -58,53 +58,55 @@ describe('ECOM.PUBLIC.GIT.1 architecture', () => {
     expect(packageJson.scripts['build:store:vercel']).toBe('node scripts/build-store-vercel.mjs');
   });
 
-  it('preserves noindex, immutable assets, public rewrites, and no trailing slash', () => {
-    expect(config.trailingSlash).toBe(false);
-    expect(config.headers[0]).toEqual({
-      source: '/(.*)',
-      headers: [{ key: 'X-Robots-Tag', value: 'noindex, nofollow, noarchive' }]
+  it('preserves ordered public routes, noindex and cache policy', () => {
+    expect(config).not.toHaveProperty('rewrites');
+    expect(config).not.toHaveProperty('headers');
+    expect(config).not.toHaveProperty('trailingSlash');
+    expect(config.routes[0]).toMatchObject({
+      src: '^/(.*)/$',
+      status: 308,
+      headers: {
+        Location: '/$1',
+        'X-Robots-Tag': 'noindex, nofollow, noarchive',
+      },
     });
-    const cacheHeaders = new Map(config.headers.slice(1).map(({ source, headers }) => [
-      source,
-      headers.find(({ key }) => key === 'Cache-Control')?.value
-    ]));
-    for (const source of [
-      '/',
-      '/index.html',
-      '/tienda',
-      '/tienda/:slug/pedido/:trackingToken',
-      '/conoce-lanzo'
-    ]) {
-      expect(cacheHeaders.get(source)).toBe('public, max-age=0, must-revalidate');
-    }
-    expect(cacheHeaders.get('/assets/:path*')).toBe('public, max-age=31536000, immutable');
-    expect(cacheHeaders.has('/tienda/:path*')).toBe(false);
-    expect(cacheHeaders.has('/tienda/:slug')).toBe(false);
-    expect(config.rewrites).toEqual([
-      { source: '/', destination: '/home.html' },
-      { source: '/tienda', destination: '/index.html' },
-      { source: '/tienda/:slug/pedido/:trackingToken', destination: '/index.html' },
-      { source: '/tienda/:slug', destination: '/api/store-page' },
-      { source: '/conoce-lanzo', destination: '/index.html' },
-      { source: '/tienda/:path*', destination: '/index.html' }
-    ]);
-    expect(config.rewrites[3].destination).not.toContain('?slug=:slug');
-    expect(config.rewrites.findIndex(({ source }) => source.includes('trackingToken')))
-      .toBeLessThan(config.rewrites.findIndex(({ source }) => source === '/tienda/:slug'));
-    expect(config.rewrites.findIndex(({ source }) => source === '/tienda/:slug'))
-      .toBeLessThan(config.rewrites.findIndex(({ source }) => source === '/tienda/:path*'));
+    expect(config.routes[1]).toEqual({
+      src: '^/(.*)$',
+      headers: { 'X-Robots-Tag': 'noindex, nofollow, noarchive' },
+      continue: true,
+    });
+
+    const filesystem = config.routes.findIndex((route) => route.handle === 'filesystem');
+    const root = config.routes.findIndex((route) => route.src === '^/$' && route.dest === '/home.html');
+    const tracking = config.routes.findIndex(
+      (route) => route.src === '^/tienda/([^/]+)/pedido/([^/]+)$',
+    );
+    const dynamicStore = config.routes.findIndex((route) => route.src === '^/tienda/([^/]+)$');
+    const fallback = config.routes.findIndex(
+      (route) => route.dest === '/index.html' && route.src.includes('(?!(?:api|assets)'),
+    );
+
+    expect(root).toBeLessThan(filesystem);
+    expect(tracking).toBeGreaterThan(filesystem);
+    expect(dynamicStore).toBeGreaterThan(tracking);
+    expect(fallback).toBeGreaterThan(dynamicStore);
+    expect(config.routes[dynamicStore].dest).toBe('/api/store-page?slug=$1');
+    expect(config.routes[tracking].dest).toBe('/index.html');
   });
 
-  it('does not copy the administrative COOP, PWA, or broad SPA fallback', () => {
+  it('keeps the SPA fallback constrained behind filesystem and public special routes', () => {
     const serialized = JSON.stringify(config);
     expect(serialized).not.toMatch(/Cross-Origin-Opener-Policy|same-origin-allow-popups/i);
-    expect(serialized).not.toMatch(/manifest|serviceWorker|workbox|registerSW/i);
-    expect(config.rewrites).not.toContainEqual({ source: '/(.*)', destination: '/index.html' });
-    expect(config.rewrites.some(({ source }) => (
-      ['/api/store-page', '/api/og/store', '/assets/:path*'].includes(source)
-    ))).toBe(false);
-    expect(config.rewrites.some(({ destination }) => /lanzo-pos/iu.test(destination))).toBe(false);
-    expect(config.redirects || []).toEqual([]);
+    expect(serialized).not.toMatch(/serviceWorker|manifest\.webmanifest/i);
+    const filesystem = config.routes.findIndex((route) => route.handle === 'filesystem');
+    const fallback = config.routes.findIndex(
+      (route) => route.dest === '/index.html' && route.src.includes('(?!(?:api|assets)'),
+    );
+    expect(fallback).toBeGreaterThan(filesystem);
+    expect(config.routes[fallback].src).toContain('(?:api|assets)');
+    expect(config.routes[fallback].src).toContain('package');
+    expect(config.routes.some(({ dest }) => /lanzo-pos/iu.test(dest || ''))).toBe(false);
+    expect(config).not.toHaveProperty('redirects');
   });
 
   it('keeps the administrative project build and PWA configuration independent', async () => {

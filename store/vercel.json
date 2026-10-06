@@ -4,96 +4,61 @@
   "installCommand": "cd .. && npm ci",
   "buildCommand": "cd .. && npm run build:store:vercel",
   "outputDirectory": "dist",
-  "headers": [
+  "routes": [
     {
-      "source": "/(.*)",
-      "headers": [
-        {
-          "key": "X-Robots-Tag",
-          "value": "noindex, nofollow, noarchive"
-        }
-      ]
+      "src": "^/(.*)/$",
+      "status": 308,
+      "headers": {
+        "Location": "/$1",
+        "X-Robots-Tag": "noindex, nofollow, noarchive"
+      }
     },
     {
-      "source": "/",
-      "headers": [
-        {
-          "key": "Cache-Control",
-          "value": "public, max-age=0, must-revalidate"
-        }
-      ]
+      "src": "^/(.*)$",
+      "headers": {
+        "X-Robots-Tag": "noindex, nofollow, noarchive"
+      },
+      "continue": true
     },
     {
-      "source": "/index.html",
-      "headers": [
-        {
-          "key": "Cache-Control",
-          "value": "public, max-age=0, must-revalidate"
-        }
-      ]
+      "src": "^/assets/(.*)$",
+      "headers": {
+        "Cache-Control": "public, max-age=31536000, immutable"
+      },
+      "continue": true
     },
     {
-      "source": "/tienda",
-      "headers": [
-        {
-          "key": "Cache-Control",
-          "value": "public, max-age=0, must-revalidate"
-        }
-      ]
+      "src": "^/(?:|home\\.html|index\\.html|tienda|conoce-lanzo|tienda/[^/]+/pedido/[^/]+)$",
+      "headers": {
+        "Cache-Control": "public, max-age=0, must-revalidate"
+      },
+      "continue": true
     },
     {
-      "source": "/tienda/:slug/pedido/:trackingToken",
-      "headers": [
-        {
-          "key": "Cache-Control",
-          "value": "public, max-age=0, must-revalidate"
-        }
-      ]
+      "src": "^/$",
+      "dest": "/home.html"
     },
     {
-      "source": "/conoce-lanzo",
-      "headers": [
-        {
-          "key": "Cache-Control",
-          "value": "public, max-age=0, must-revalidate"
-        }
-      ]
+      "handle": "filesystem"
     },
     {
-      "source": "/assets/:path*",
-      "headers": [
-        {
-          "key": "Cache-Control",
-          "value": "public, max-age=31536000, immutable"
-        }
-      ]
+      "src": "^/tienda/([^/]+)/pedido/([^/]+)$",
+      "dest": "/index.html"
+    },
+    {
+      "src": "^/tienda/([^/]+)$",
+      "dest": "/api/store-page?slug=$1"
+    },
+    {
+      "src": "^/(?:tienda|conoce-lanzo)$",
+      "dest": "/index.html"
+    },
+    {
+      "src": "^/(?!(?:api|assets)(?:/|$)|(?:home|index)\\.html$|robots[^/]*\\.txt$|(?:sw\\.js|manifest\\.webmanifest|registerSW\\.js|workbox-[^/]+\\.js)$|(?:\\.env(?:\\..*)?|package(?:-lock)?\\.json|vite\\.store\\.config\\.js|vercel\\.json|src(?:/|$)|_src(?:/|$)))(.*)$",
+      "dest": "/index.html"
+    },
+    {
+      "handle": "error"
     }
-  ],
-  "rewrites": [
-    {
-      "source": "/",
-      "destination": "/home.html"
-    },
-    {
-      "source": "/tienda",
-      "destination": "/index.html"
-    },
-    {
-      "source": "/tienda/:slug/pedido/:trackingToken",
-      "destination": "/index.html"
-    },
-    {
-      "source": "/tienda/:slug",
-      "destination": "/api/store-page"
-    },
-    {
-      "source": "/conoce-lanzo",
-      "destination": "/index.html"
-    },
-    {
-      "source": "/tienda/:path*",
-      "destination": "/index.html"
-    }
-  ],
-  "trailingSlash": false
+  ]
 }
