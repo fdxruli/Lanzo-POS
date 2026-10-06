@@ -107,6 +107,7 @@ const namedAdministrativeChunks = Object.fromEntries(
 );
 
 const contractChecks = Object.freeze({
+  createFreeLicense: /create_free_license/,
   createFreeTrialLicense: /create_free_trial_license/,
   deviceSecurityToken: /device_security_token/,
   staffSessionToken: /staff_session_token/,

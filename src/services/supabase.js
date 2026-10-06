@@ -1284,7 +1284,7 @@ export const deactivateCurrentDevice = async (licenseKey) => {
     }
 };
 
-export const createFreeTrial = async function (options = {}) {
+export const createFreeLicense = async function (options = {}) {
     try {
         // Free-license creation also needs the minimum local IndexedDB
         // capability required by the tenant runtime before any device-owned
@@ -1301,7 +1301,7 @@ export const createFreeTrial = async function (options = {}) {
         };
 
         const { data, error } = await supabaseClient.rpc(
-            'create_free_trial_license', {
+            'create_free_license', {
             device_fingerprint_param: deviceFingerprint,
             device_name_param: friendlyName,
             device_info_param: deviceInfo
@@ -1320,15 +1320,15 @@ export const createFreeTrial = async function (options = {}) {
 
             await runAuthenticatedLocalPersistence({
                 tenantSource: licenseData,
-                reason: 'free_trial_credentials',
+                reason: 'free_license_credentials',
                 beforeLocalPersistence: options.beforeLocalPersistence,
                 operation: async () => {
                     safeLocalStorageSet('fp', deviceFingerprint);
                     if (securityToken) {
                         await setSecureCredentials(securityToken);
-                        Logger.log('🔐 Token inicial de trial guardado correctamente.');
+                        Logger.log('🔐 Token inicial de licencia gratuita guardado correctamente.');
                     } else {
-                        Logger.warn('⚠️ Trial creado, pero el servidor no devolvió token de seguridad.');
+                        Logger.warn('⚠️ Licencia gratuita creada, pero el servidor no devolvió token de seguridad.');
                     }
                 }
             });
@@ -1344,12 +1344,15 @@ export const createFreeTrial = async function (options = {}) {
             || isBrowserStorageUnavailableError(error)) throw error;
         const isRateLimit = typeof error?.message === 'string' && error.message.includes('Demasiados intentos');
         if (!isRateLimit) {
-            Logger.error('❌ Error creando trial:', error);
+            Logger.error('❌ Error creando licencia gratuita:', error);
             await registerFailedAttempt();
         }
         return { success: false, error: error.message };
     }
 };
+
+// Compatibility alias for callers/tests that still use the historical name.
+export const createFreeTrial = createFreeLicense;
 
 export const deactivateDeviceById = async function (deviceId) {
     try {

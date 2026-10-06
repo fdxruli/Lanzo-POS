@@ -459,6 +459,7 @@ function administrativeMarkersForTarget(targetName) {
     posSync: /\bposSync\b/u,
     deviceSecurityToken: /\bdevice_security_token\b/u,
     staffSessionToken: /\bstaff_session_token\b/u,
+    createFreeLicense: /\bcreate_free_license\b/u,
     createFreeTrialLicense: /\bcreate_free_trial_license\b/u,
     releaseDeviceAnon: /\breleaseDeviceAnon|release_device_anon/u,
     googleDrive: /\bgoogleDrive\b/u,
