@@ -135,8 +135,15 @@ export function evaluateCompiledRoute(routes, pathname, staticPaths = new Set())
   for (let index = 0; index < routes.length; index += 1) {
     const route = routes[index];
     if (route.handle === 'filesystem') {
-      if (staticPaths.has(outputStaticPathname(pathname))) {
-        return { kind: 'filesystem', pathname, index, headers };
+      const outputPath = outputStaticPathname(pathname);
+      const implicitRootIndex = pathname === '/' && staticPaths.has('index.html');
+      if (staticPaths.has(outputPath) || implicitRootIndex) {
+        return {
+          kind: 'filesystem',
+          pathname: implicitRootIndex ? '/index.html' : pathname,
+          index,
+          headers,
+        };
       }
       continue;
     }
@@ -161,6 +168,8 @@ export function inspectCompiledStoreRoutes(outputConfig, { staticPaths = [] } = 
   const errorIndex = routes.findIndex((route) => route.handle === 'error');
   const realAsset = [...staticPathSet].find((item) => /^assets\/.*-[A-Za-z0-9_-]{6,}\.js$/u.test(item)) || null;
   const assetPathname = realAsset ? `/${realAsset}` : null;
+  const rootEvaluation = evaluateCompiledRoute(routes, '/', staticPathSet);
+  const unknownEvaluation = evaluateCompiledRoute(routes, '/esto-no-existe', staticPathSet);
   const dynamicEvaluation = evaluateCompiledRoute(routes, '/tienda/mi-tienda', staticPathSet);
   const trackingEvaluation = evaluateCompiledRoute(routes, '/tienda/mi-tienda/pedido/token-ficticio', staticPathSet);
   const nestedEvaluation = evaluateCompiledRoute(routes, '/tienda/mi-tienda/ruta-anidada', staticPathSet);
@@ -215,6 +224,16 @@ export function inspectCompiledStoreRoutes(outputConfig, { staticPaths = [] } = 
     routesPresent: routes.length > 1,
     filesystemPresent: filesystemIndex >= 0,
     errorAfterFilesystem: errorIndex > filesystemIndex,
+    homeDocumentExists: staticPathSet.has('home.html'),
+    rootCommercialDocument: rootEvaluation.kind === 'rewrite'
+      && rootEvaluation.pathname === '/home.html',
+    rootBeforeFilesystem: rootEvaluation.kind === 'rewrite'
+      && rootEvaluation.index >= 0
+      && rootEvaluation.index < filesystemIndex,
+    unknownPublicFallback: unknownEvaluation.kind === 'rewrite'
+      && unknownEvaluation.pathname === '/index.html',
+    unknownAfterFilesystem: unknownEvaluation.kind === 'rewrite'
+      && unknownEvaluation.index > filesystemIndex,
     dynamicStoreRoute: dynamicEvaluation.kind === 'rewrite',
     dynamicAfterFilesystem: dynamicEvaluation.index > filesystemIndex,
     dynamicDestination: cases.every((item) => item.destination === '/api/store-page'),
@@ -251,6 +270,8 @@ export function inspectCompiledStoreRoutes(outputConfig, { staticPaths = [] } = 
       ? { src: routes[dynamicEvaluation.index].src, dest: routes[dynamicEvaluation.index].dest }
       : null,
     compiled: {
+      root: { request: '/', result: rootEvaluation },
+      unknown: { request: '/esto-no-existe', result: unknownEvaluation },
       asset: assetPathname ? { request: assetPathname, result: assetEvaluation } : null,
       store: { request: '/tienda/mi-tienda', result: dynamicEvaluation },
       tracking: { request: '/tienda/mi-tienda/pedido/token-ficticio', result: trackingEvaluation },

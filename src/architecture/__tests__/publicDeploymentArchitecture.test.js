@@ -5,6 +5,7 @@ import { readFile, readdir, rm, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { evaluateCompiledRoute } from '../../../scripts/audit-vercel-build-output.mjs';
 import { classifyReservedSourceResponse } from '../../../scripts/audit-remote-store-deployment.mjs';
 
 const projectRoot = fileURLToPath(new URL('../../../', import.meta.url));
@@ -39,32 +40,43 @@ async function fileManifest(directory) {
   })));
 }
 
-function matchesSource(source, pathname) {
-  if (source === '/(.*)') return pathname.startsWith('/');
-  if (source.endsWith('/:path*')) {
-    const base = source.slice(0, -7);
-    return pathname === base || pathname.startsWith(`${base}/`);
-  }
-  return source === pathname;
-}
+const SOURCE_STATIC_PATHS = new Set([
+  'home.html',
+  'index.html',
+  'robots.txt',
+  'assets/index-ABC123.js',
+  'assets/index-ABC123.css',
+  'assets/logIcon-ABC123.svg',
+]);
 
-function canonicalUrlFor(config, rawPath) {
-  const url = new URL(rawPath, 'https://lanzo-store.vercel.app');
-  if (config.trailingSlash === false && url.pathname !== '/' && url.pathname.endsWith('/')) {
-    url.pathname = url.pathname.replace(/\/+$/, '');
-  }
-  return `${url.pathname}${url.search}`;
+function evaluateSourceRoute(config, rawPath) {
+  const pathname = new URL(rawPath, 'https://lanzo-store.vercel.app').pathname;
+  return evaluateCompiledRoute(config.routes, pathname, SOURCE_STATIC_PATHS);
 }
 
 function rewriteFor(config, rawPath) {
-  const pathname = new URL(rawPath, 'https://lanzo-store.vercel.app').pathname;
-  return config.rewrites.find((rewrite) => matchesSource(rewrite.source, pathname)) || null;
+  const result = evaluateSourceRoute(config, rawPath);
+  return result.kind === 'rewrite' ? { destination: result.pathname, index: result.index } : null;
 }
 
-function headersFor(config, pathname) {
-  return config.headers
-    .filter((rule) => matchesSource(rule.source, pathname))
-    .flatMap((rule) => rule.headers);
+function redirectFor(config, rawPath) {
+  const url = new URL(rawPath, 'https://lanzo-store.vercel.app');
+  const result = evaluateSourceRoute(config, url.pathname);
+  if (result.kind !== 'redirect') return null;
+  const route = config.routes[result.index];
+  const match = new RegExp(route.src).exec(url.pathname);
+  let location = route.headers?.Location || '';
+  for (let index = 1; match && index < match.length; index += 1) {
+    location = location.replaceAll(`$${index}`, match[index] || '');
+  }
+  return { status: result.status, location: `${location}${url.search}` };
+}
+
+function headerValuesFor(config, rawPath, key) {
+  return evaluateSourceRoute(config, rawPath).headers
+    .flatMap(({ headers }) => Object.entries(headers))
+    .filter(([name]) => name.toLowerCase() === key.toLowerCase())
+    .map(([, value]) => value);
 }
 
 describe('standalone public Vercel deployment architecture', () => {
@@ -105,27 +117,46 @@ describe('standalone public Vercel deployment architecture', () => {
 
   it('keeps a dedicated static public config without server, PWA, Git, domain, or paid resources', () => {
     expect(config.$schema).toBe('https://openapi.vercel.sh/vercel.json');
-    expect(config.trailingSlash).toBe(false);
+    expect(config).not.toHaveProperty('trailingSlash');
+    expect(config).not.toHaveProperty('rewrites');
+    expect(config).not.toHaveProperty('headers');
+    expect(config).not.toHaveProperty('redirects');
     expect(config).not.toHaveProperty('builds');
     expect(config.installCommand).toBe('cd .. && npm ci');
     expect(config.buildCommand).toBe('cd .. && npm run build:store:vercel');
     expect(config.outputDirectory).toBe('dist');
     expect(config).not.toHaveProperty('functions');
     expect(config).not.toHaveProperty('crons');
-    expect(config).not.toHaveProperty('redirects');
     expect(config).not.toHaveProperty('domains');
     expect(config).not.toHaveProperty('github');
-    expect(JSON.stringify(config)).not.toMatch(/serviceWorker|workbox|manifest\.webmanifest|service_role/i);
+    expect(Array.isArray(config.routes)).toBe(true);
+    expect(JSON.stringify(config)).not.toMatch(/serviceWorker|service_role/i);
   });
 
-  it('uses the no-trailing-slash canonical policy without hardcoded storefront slugs', () => {
+  it('uses an explicit no-trailing-slash route without hardcoded storefront slugs', () => {
     const serialized = JSON.stringify(config);
-    expect(config.trailingSlash).toBe(false);
+    const canonical = config.routes.find((route) => (
+      route.status === 308
+      && route.headers?.Location === '/$1'
+      && route.src === '^/(.*)/$'
+    ));
+    expect(canonical).toBeTruthy();
+    expect(canonical.headers['X-Robots-Tag']).toBe('noindex, nofollow, noarchive');
     expect(serialized).not.toMatch(/demo-seguro|slug-inexistente-seguro|token-invalido-seguro/);
-    expect(config.rewrites.filter((rule) => rule.source.startsWith('/tienda'))).toEqual([
-      { source: '/tienda', destination: '/index.html' },
-      { source: '/tienda/:path*', destination: '/index.html' }
-    ]);
+
+    const filesystem = config.routes.findIndex((route) => route.handle === 'filesystem');
+    const root = config.routes.findIndex((route) => route.src === '^/$' && route.dest === '/home.html');
+    const tracking = config.routes.findIndex(
+      (route) => route.src === '^/tienda/([^/]+)/pedido/([^/]+)$',
+    );
+    const dynamicStore = config.routes.findIndex((route) => route.src === '^/tienda/([^/]+)$');
+    const fallback = config.routes.findIndex(
+      (route) => route.dest === '/index.html' && route.src.includes('(?!(?:api|assets)'),
+    );
+    expect(root).toBeLessThan(filesystem);
+    expect(tracking).toBeGreaterThan(filesystem);
+    expect(dynamicStore).toBeGreaterThan(tracking);
+    expect(fallback).toBeGreaterThan(dynamicStore);
   });
 
   it('does not reuse or modify the administrative vercel.json', async () => {
@@ -134,16 +165,26 @@ describe('standalone public Vercel deployment architecture', () => {
     expect(await readProjectFile('vercel.json')).toBe(adminConfigBefore);
   });
 
+  it('resolves the acquisition root to home.html before implicit index.html', () => {
+    expect(rewriteFor(config, '/')?.destination).toBe('/home.html');
+    const result = evaluateSourceRoute(config, '/');
+    const filesystem = config.routes.findIndex((route) => route.handle === 'filesystem');
+    expect(result.kind).toBe('rewrite');
+    expect(result.index).toBeLessThan(filesystem);
+  });
+
   it.each([
-    '/',
     '/tienda',
-    '/tienda/demo-seguro',
     '/tienda/demo-seguro/pedido/token-seguro',
-    '/tienda/demo-seguro?pagina=2#catalogo',
+    '/tienda/demo-seguro/ruta-anidada',
     '/conoce-lanzo',
-    '/conoce-lanzo?tienda=demo-seguro#inicio'
-  ])('rewrites the canonical public route %s to index.html', (pathname) => {
+    '/esto-no-existe',
+  ])('keeps the shared or fallback public route %s on index.html', (pathname) => {
     expect(rewriteFor(config, pathname)?.destination).toBe('/index.html');
+  });
+
+  it('keeps the one-segment storefront route on the HTML function', () => {
+    expect(rewriteFor(config, '/tienda/demo-seguro')?.destination).toBe('/api/store-page');
   });
 
   it.each([
@@ -151,12 +192,11 @@ describe('standalone public Vercel deployment architecture', () => {
     ['/tienda/demo-seguro/', '/tienda/demo-seguro'],
     ['/tienda/demo-seguro/pedido/token-seguro/', '/tienda/demo-seguro/pedido/token-seguro'],
     ['/conoce-lanzo/', '/conoce-lanzo'],
-    ['/tienda/demo-seguro/?arch=deploy-1-1', '/tienda/demo-seguro?arch=deploy-1-1']
-  ])('canonicalizes %s once to %s before the SPA rewrite', (source, expected) => {
-    const canonical = canonicalUrlFor(config, source);
-    expect(canonical).toBe(expected);
-    expect(canonicalUrlFor(config, canonical)).toBe(expected);
-    expect(rewriteFor(config, canonical)?.destination).toBe('/index.html');
+    ['/tienda/demo-seguro/?arch=deploy-1-1', '/tienda/demo-seguro?arch=deploy-1-1'],
+  ])('canonicalizes %s once to %s before public routing', (source, expected) => {
+    const redirect = redirectFor(config, source);
+    expect(redirect).toEqual({ status: 308, location: expected });
+    expect(redirectFor(config, expected)).toBeNull();
   });
 
   it.each([
@@ -173,15 +213,23 @@ describe('standalone public Vercel deployment architecture', () => {
     '/vercel.json',
     '/_src',
     '/robots-no-existente.txt',
-    '/ruta-arbitraria'
-  ])('does not rewrite the forbidden, reserved, or out-of-contract route %s', (pathname) => {
+    '/api/ruta-inexistente',
+    '/assets/ruta-inexistente.js',
+  ])('does not rewrite the forbidden, reserved, API, or asset route %s', (pathname) => {
     expect(rewriteFor(config, pathname)).toBeNull();
   });
 
-  it('leaves real assets outside the SPA rewrites', () => {
-    expect(rewriteFor(config, '/assets/index-ABC123.js')).toBeNull();
-    expect(rewriteFor(config, '/assets/index-ABC123.css')).toBeNull();
-    expect(rewriteFor(config, '/assets/logIcon-ABC123.svg')).toBeNull();
+  it('leaves real assets on filesystem before the SPA fallback', () => {
+    for (const pathname of [
+      '/assets/index-ABC123.js',
+      '/assets/index-ABC123.css',
+      '/assets/logIcon-ABC123.svg',
+    ]) {
+      expect(evaluateSourceRoute(config, pathname)).toMatchObject({
+        kind: 'filesystem',
+        pathname,
+      });
+    }
   });
 
   it('classifies a 404 /_src response as an acceptable reserved platform route', () => {
@@ -247,18 +295,37 @@ describe('standalone public Vercel deployment architecture', () => {
   });
 
   it('applies noindex globally, revalidation to canonical HTML, and immutable caching only to hashed assets', () => {
-    const globalHeaders = headersFor(config, '/package.json');
-    expect(globalHeaders).toContainEqual({ key: 'X-Robots-Tag', value: 'noindex, nofollow, noarchive' });
-
-    for (const pathname of ['/', '/index.html', '/tienda', '/tienda/demo', '/conoce-lanzo']) {
-      const cache = headersFor(config, pathname).find((header) => header.key === 'Cache-Control');
-      expect(cache?.value).toContain('must-revalidate');
-      expect(cache?.value).not.toContain('immutable');
+    for (const pathname of [
+      '/',
+      '/index.html',
+      '/home.html',
+      '/tienda',
+      '/conoce-lanzo',
+      '/tienda/demo/pedido/token',
+      '/tienda/demo',
+      '/esto-no-existe',
+      '/package.json',
+    ]) {
+      expect(headerValuesFor(config, pathname, 'X-Robots-Tag'))
+        .toContain('noindex, nofollow, noarchive');
     }
-    expect(headersFor(config, '/assets/index-ABC123.js')).toContainEqual({
-      key: 'Cache-Control',
-      value: 'public, max-age=31536000, immutable'
-    });
+
+    for (const pathname of [
+      '/',
+      '/index.html',
+      '/home.html',
+      '/tienda',
+      '/conoce-lanzo',
+      '/tienda/demo/pedido/token',
+    ]) {
+      expect(headerValuesFor(config, pathname, 'Cache-Control'))
+        .toContain('public, max-age=0, must-revalidate');
+    }
+
+    expect(headerValuesFor(config, '/tienda/demo', 'Cache-Control')).toEqual([]);
+    expect(headerValuesFor(config, '/assets/index-ABC123.js', 'Cache-Control')).toContain(
+      'public, max-age=31536000, immutable',
+    );
   });
 
   it('prepares only dist-store plus robots.txt and the public config', async () => {
