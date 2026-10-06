@@ -33,7 +33,9 @@ begin
     'contract_version', 1
   ));
   v_modern := private.canonical_financial_request_v1('sale.cashier', v_request);
-  if v_modern #>> '{restaurant_settlement,parent_order_version}' <> '2026-01-02T09:04:05.123456Z'
+  -- PostgreSQL stores timestamptz at microsecond precision and rounds excess
+  -- fractional digits, so .123456789 becomes .123457 before canonicalization.
+  if v_modern #>> '{restaurant_settlement,parent_order_version}' <> '2026-01-02T09:04:05.123457Z'
      or v_modern #>> '{restaurant_settlement,parent_order_id}' <> 'order-contract-test'
      or v_modern #>> '{restaurant_settlement,contract_version}' <> '1' then
     raise exception 'RESTAURANT_SETTLEMENT_CANONICAL_INVALID';
