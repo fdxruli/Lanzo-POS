@@ -5,6 +5,11 @@ import { execSync } from 'node:child_process';
 import packageJson from './package.json';
 import { serializeAdminManifest } from './src/pwa/adminManifest';
 
+const ADMIN_LOCAL_OFFLINE_GLOB_PATTERNS = Object.freeze([
+  'assets/{PosPage,CajaPage,OrderPage,ProductsPage,CustomersPage,DashboardPage,SettingsPage,AboutPage}-*.{js,css}',
+  'assets/{useDismissibleHistoryLayer,usePhysicalBarcodeScanner,Encoder,InputPromptModal,customerUtils,useCaja,useInventoryMovement,inventoryMovement,restaurantModifierDisplay,CajaModals,useConfirmDiscard,googleDriveService,AbonoModal,usePreparationStations,productRepository,planDisplay,reportsRepository,vendor_charts}-*.{js,css}',
+]);
+
 const ADMIN_SHELL_GLOB_PATTERNS = Object.freeze([
   'index.html',
   'manifest.webmanifest',
@@ -36,6 +41,7 @@ const ADMIN_SHELL_GLOB_PATTERNS = Object.freeze([
   'assets/devConsoleCapture-*.js',
   'assets/DevConsole-*.{js,css}',
   'assets/mobileZoomGuard-*.js',
+  ...ADMIN_LOCAL_OFFLINE_GLOB_PATTERNS,
 ]);
 
 const adminManifestPlugin = () => ({
