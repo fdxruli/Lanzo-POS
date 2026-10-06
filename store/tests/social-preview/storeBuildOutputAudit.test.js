@@ -827,11 +827,19 @@ exports.STORE_HTML_TEMPLATE=${JSON.stringify(INDEX_HTML)};`,
     ['raíz comercial detrás del filesystem', async () => {
       const configPath = path.join(fixture.outputRoot, 'config.json');
       const config = JSON.parse(await readFile(configPath, 'utf8'));
-      const rootIndex = config.routes.findIndex((route) => route.src === '^/
+      const rootIndex = config.routes.findIndex((route) => route.src === '^/$');
+      const [rootRoute] = config.routes.splice(rootIndex, 1);
+      const filesystemIndex = config.routes.findIndex((route) => route.handle === 'filesystem');
+      config.routes.splice(filesystemIndex + 1, 0, rootRoute);
+      await writeJson(configPath, config);
+    }, 'rootBeforeFilesystem'],
+    ['tracking incorrecto', async () => {
       const configPath = path.join(fixture.outputRoot, 'config.json');
       const config = JSON.parse(await readFile(configPath, 'utf8'));
       const trackingRoute = config.routes.find(
-        (route) => route.src === '^/tienda/([^/]+)/pedido/([^/]+)
+        (route) => route.src === '^/tienda/([^/]+)/pedido/([^/]+)$',
+      );
+      trackingRoute.dest = '/api/store-page?slug=$1&tracking=$2';
       await writeJson(configPath, config);
     }, 'trackingStatic'],
     ['HTML immutable', async () => {
