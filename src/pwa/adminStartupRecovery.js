@@ -1,3 +1,5 @@
+import { probeAdminOriginConnectivity } from './adminConnectivity';
+
 const RECOVERY_ATTEMPT_KEY = 'lanzo:admin-startup-recovery:v1';
 const RECOVERY_QUERY_PARAM = '__lanzo_recovery';
 const DEFAULT_UPDATE_TIMEOUT_MS = 5_000;
@@ -242,6 +244,7 @@ export async function recoverAdminStartup({
   windowTarget = globalThis.window,
   cacheStorage = globalThis.caches,
   timeoutMs = DEFAULT_UPDATE_TIMEOUT_MS,
+  probeConnectivity = probeAdminOriginConnectivity,
 } = {}) {
   if (!windowTarget?.location?.replace) return { status: 'unavailable' };
   if (!force && !isRecoverableAdminStartupError(error)) return { status: 'not-recoverable' };
@@ -269,7 +272,7 @@ export async function recoverAdminStartup({
     try {
       await registration.update?.();
     } catch {
-      // The hard reset below remains available when the update check fails.
+      // A failed update check may simply mean the network disappeared.
     }
 
     const waitingWorker = registration.waiting || await waitingPromise;
@@ -289,6 +292,27 @@ export async function recoverAdminStartup({
         };
       }
     }
+  }
+
+  if (!force) {
+    return {
+      status: 'preserved',
+      strategy: 'preserve-installed-shell',
+      reason: 'automatic-destructive-reset-blocked',
+    };
+  }
+
+  const connectivity = await probeConnectivity({
+    navigatorTarget,
+    windowTarget,
+  });
+
+  if (connectivity?.status !== 'online') {
+    return {
+      status: 'offline',
+      strategy: 'preserve-installed-shell',
+      reason: connectivity?.reason || 'origin-unreachable',
+    };
   }
 
   const origin = new URL(windowTarget.location.href).origin;
