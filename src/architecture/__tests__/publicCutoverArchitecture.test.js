@@ -83,167 +83,22 @@ describe('ECOM.PUBLIC.CUTOVER.1 architecture', () => {
     expect(Array.isArray(config.routes)).toBe(true);
 
     const canonical = config.routes.find((route) => (
-      route.src === '^/(.*)/
-
-  it('keeps public paths in the administrative Service Worker denylist', async () => {
-    const source = await readProjectFile('src/pwa/publicNavigationPolicy.js');
-    expect(source).toMatch(/\^\\\/tienda/);
-    expect(source).toMatch(/\^\\\/conoce-lanzo/);
-  });
-
-  it('keeps the standalone public build free of PWA configuration', async () => {
-    const source = await readProjectFile('vite.store.config.js');
-    expect(source).not.toMatch(/VitePWA|workbox|manifest\.webmanifest|serviceWorker/);
-    expect(source).toMatch(/publicDir:\s*false/);
-  });
-
-  it('keeps administrative order navigation relative', async () => {
-    const [navbar, orderSummary] = await Promise.all([
-      readProjectFile('src/components/layout/Navbar.jsx'),
-      readProjectFile('src/components/pos/OrderSummary.jsx')
-    ]);
-    expect(navbar).toContain("to: '/pedidos-online'");
-    expect(orderSummary).toContain('navigate(`/pedidos-online?order=');
-  });
-
-  it('does not add a public PWA entry point or administrative import to main-store', async () => {
-    const source = await readProjectFile('src/main-store.jsx');
-    expect(source).not.toMatch(/App\.jsx|VitePWA|virtual:pwa-register|serviceWorker/);
-    expect(source).toContain("from './router/publicStoreRoutes'");
-  });
-});
-
+      route.src === '^/(.*)/$'
       && route.status === 308
       && route.headers?.Location === '/$1'
     ));
     expect(canonical?.headers?.['X-Robots-Tag']).toBe('noindex, nofollow, noarchive');
 
     const filesystem = config.routes.findIndex((route) => route.handle === 'filesystem');
-    const root = config.routes.findIndex((route) => route.src === '^/
-
-  it('keeps public paths in the administrative Service Worker denylist', async () => {
-    const source = await readProjectFile('src/pwa/publicNavigationPolicy.js');
-    expect(source).toMatch(/\^\\\/tienda/);
-    expect(source).toMatch(/\^\\\/conoce-lanzo/);
-  });
-
-  it('keeps the standalone public build free of PWA configuration', async () => {
-    const source = await readProjectFile('vite.store.config.js');
-    expect(source).not.toMatch(/VitePWA|workbox|manifest\.webmanifest|serviceWorker/);
-    expect(source).toMatch(/publicDir:\s*false/);
-  });
-
-  it('keeps administrative order navigation relative', async () => {
-    const [navbar, orderSummary] = await Promise.all([
-      readProjectFile('src/components/layout/Navbar.jsx'),
-      readProjectFile('src/components/pos/OrderSummary.jsx')
-    ]);
-    expect(navbar).toContain("to: '/pedidos-online'");
-    expect(orderSummary).toContain('navigate(`/pedidos-online?order=');
-  });
-
-  it('does not add a public PWA entry point or administrative import to main-store', async () => {
-    const source = await readProjectFile('src/main-store.jsx');
-    expect(source).not.toMatch(/App\.jsx|VitePWA|virtual:pwa-register|serviceWorker/);
-    expect(source).toContain("from './router/publicStoreRoutes'");
-  });
-});
- && route.dest === '/home.html');
+    const root = config.routes.findIndex((route) => route.src === '^/$' && route.dest === '/home.html');
     const tracking = config.routes.findIndex(
-      (route) => route.src === '^/tienda/([^/]+)/pedido/([^/]+)
-
-  it('keeps public paths in the administrative Service Worker denylist', async () => {
-    const source = await readProjectFile('src/pwa/publicNavigationPolicy.js');
-    expect(source).toMatch(/\^\\\/tienda/);
-    expect(source).toMatch(/\^\\\/conoce-lanzo/);
-  });
-
-  it('keeps the standalone public build free of PWA configuration', async () => {
-    const source = await readProjectFile('vite.store.config.js');
-    expect(source).not.toMatch(/VitePWA|workbox|manifest\.webmanifest|serviceWorker/);
-    expect(source).toMatch(/publicDir:\s*false/);
-  });
-
-  it('keeps administrative order navigation relative', async () => {
-    const [navbar, orderSummary] = await Promise.all([
-      readProjectFile('src/components/layout/Navbar.jsx'),
-      readProjectFile('src/components/pos/OrderSummary.jsx')
-    ]);
-    expect(navbar).toContain("to: '/pedidos-online'");
-    expect(orderSummary).toContain('navigate(`/pedidos-online?order=');
-  });
-
-  it('does not add a public PWA entry point or administrative import to main-store', async () => {
-    const source = await readProjectFile('src/main-store.jsx');
-    expect(source).not.toMatch(/App\.jsx|VitePWA|virtual:pwa-register|serviceWorker/);
-    expect(source).toContain("from './router/publicStoreRoutes'");
-  });
-});
- && route.dest === '/index.html'
+      (route) => route.src === '^/tienda/([^/]+)/pedido/([^/]+)$' && route.dest === '/index.html'
     );
     const dynamicStore = config.routes.findIndex(
-      (route) => route.src === '^/tienda/([^/]+)
-
-  it('keeps public paths in the administrative Service Worker denylist', async () => {
-    const source = await readProjectFile('src/pwa/publicNavigationPolicy.js');
-    expect(source).toMatch(/\^\\\/tienda/);
-    expect(source).toMatch(/\^\\\/conoce-lanzo/);
-  });
-
-  it('keeps the standalone public build free of PWA configuration', async () => {
-    const source = await readProjectFile('vite.store.config.js');
-    expect(source).not.toMatch(/VitePWA|workbox|manifest\.webmanifest|serviceWorker/);
-    expect(source).toMatch(/publicDir:\s*false/);
-  });
-
-  it('keeps administrative order navigation relative', async () => {
-    const [navbar, orderSummary] = await Promise.all([
-      readProjectFile('src/components/layout/Navbar.jsx'),
-      readProjectFile('src/components/pos/OrderSummary.jsx')
-    ]);
-    expect(navbar).toContain("to: '/pedidos-online'");
-    expect(orderSummary).toContain('navigate(`/pedidos-online?order=');
-  });
-
-  it('does not add a public PWA entry point or administrative import to main-store', async () => {
-    const source = await readProjectFile('src/main-store.jsx');
-    expect(source).not.toMatch(/App\.jsx|VitePWA|virtual:pwa-register|serviceWorker/);
-    expect(source).toContain("from './router/publicStoreRoutes'");
-  });
-});
- && route.dest === '/api/store-page?slug=$1'
+      (route) => route.src === '^/tienda/([^/]+)$' && route.dest === '/api/store-page?slug=$1'
     );
     const knownPublicRoutes = config.routes.findIndex(
-      (route) => route.src === '^/(?:tienda|conoce-lanzo)
-
-  it('keeps public paths in the administrative Service Worker denylist', async () => {
-    const source = await readProjectFile('src/pwa/publicNavigationPolicy.js');
-    expect(source).toMatch(/\^\\\/tienda/);
-    expect(source).toMatch(/\^\\\/conoce-lanzo/);
-  });
-
-  it('keeps the standalone public build free of PWA configuration', async () => {
-    const source = await readProjectFile('vite.store.config.js');
-    expect(source).not.toMatch(/VitePWA|workbox|manifest\.webmanifest|serviceWorker/);
-    expect(source).toMatch(/publicDir:\s*false/);
-  });
-
-  it('keeps administrative order navigation relative', async () => {
-    const [navbar, orderSummary] = await Promise.all([
-      readProjectFile('src/components/layout/Navbar.jsx'),
-      readProjectFile('src/components/pos/OrderSummary.jsx')
-    ]);
-    expect(navbar).toContain("to: '/pedidos-online'");
-    expect(orderSummary).toContain('navigate(`/pedidos-online?order=');
-  });
-
-  it('does not add a public PWA entry point or administrative import to main-store', async () => {
-    const source = await readProjectFile('src/main-store.jsx');
-    expect(source).not.toMatch(/App\.jsx|VitePWA|virtual:pwa-register|serviceWorker/);
-    expect(source).toContain("from './router/publicStoreRoutes'");
-  });
-});
- && route.dest === '/index.html'
+      (route) => route.src === '^/(?:tienda|conoce-lanzo)$' && route.dest === '/index.html'
     );
     const fallback = config.routes.findIndex(
       (route) => route.dest === '/index.html' && route.src.includes('(?!(?:api|assets)')
