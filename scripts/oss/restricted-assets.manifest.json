@@ -115,7 +115,7 @@
       { "textExpected": "Tienda creada con Lanzo", "replacement": "Store created with POS", "mode": "literal" },
       { "textExpected": "Conoce Lanzo", "replacement": "Learn more about POS", "mode": "literal" },
       { "textExpected": "Hola equipo de Lanzo", "replacement": "Hello support team", "mode": "literal" },
-      { "textExpected": "LANZO-XXXX-XXXX-XXXX", "replacement": "POS-XXXX-XXXX-XXXX", "mode": "literal" },
+      { "textExpected": "LANZO-XXXX-XXXX-XXXX-XXXX", "replacement": "POS-XXXX-XXXX-XXXX-XXXX", "mode": "literal" },
       { "textExpected": "Lanzo Básico Legacy", "replacement": "Legacy plan", "mode": "word" },
       { "textExpected": "Lanzo POS System", "replacement": "Unbranded POS System", "mode": "word" },
       { "textExpected": "Lanzo POS", "replacement": "Unbranded POS", "mode": "word" },
