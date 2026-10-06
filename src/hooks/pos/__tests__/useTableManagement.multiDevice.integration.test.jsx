@@ -283,7 +283,7 @@ describe('Mini-phase 3D multi-device table recovery', () => {
     expectNoFinancialEffects(tableDeps());
   });
 
-  it('rejects normal and quick checkout and cancellation of the cloud-owned account without financial or inventory effects', async () => {
+  it('allows remote checkout entry while keeping cloud-owned cancellation read-only', async () => {
     const deps = tableDeps();
     const hook = renderHook(() => useTableManagement(deps));
     await act(async () => { await hook.result.current.handleLoadOpenOrder(LOCAL_ORDER_ID); });
@@ -292,65 +292,69 @@ describe('Mini-phase 3D multi-device table recovery', () => {
     const inventoryBefore = await db.table(STORES.MENU).toArray();
     const batchesBefore = await db.table(STORES.PRODUCT_BATCHES).toArray();
     const normalDeps = checkoutDeps();
+    useActiveOrders.setState({ activeOrders: new Map(), currentOrderId: null, isCurrentOrderLocked: false });
     const checkout = renderHook(() => usePosCheckout(normalDeps));
     await act(async () => {
-      await expect(checkout.result.current.handleInitiateCheckout()).resolves.toMatchObject({
-        success: false, code: 'CLOUD_TABLE_NORMAL_CHECKOUT_BLOCKED'
-      });
-      await expect(hook.result.current.handleQuickTableAction(activeBefore, 'checkout')).resolves.toMatchObject({
-        success: false, code: 'CLOUD_TABLE_NORMAL_CHECKOUT_BLOCKED'
-      });
-      await expect(hook.result.current.handleOpenSplitBill()).resolves.toMatchObject({
-        success: false, code: 'HOLD_REMOTE_TABLE_VERSIONED_UPDATE_REQUIRED'
-      });
-      await expect(hook.result.current.handleQuickTableAction(activeBefore, 'split')).resolves.toMatchObject({
-        success: false, code: 'HOLD_REMOTE_TABLE_VERSIONED_UPDATE_REQUIRED'
-      });
+      await hook.result.current.handleQuickTableAction(activeBefore, 'checkout');
+      await expect(hook.result.current.handleOpenSplitBill()).resolves.toBeUndefined();
+      await hook.result.current.handleQuickTableAction(activeBefore, 'split');
+      await expect(checkout.result.current.handleInitiateCheckout()).resolves.toMatchObject({ success: true });
       await expect(hook.result.current.handleAnnulKitchenRejectedOrder(activeBefore)).resolves.toMatchObject({
         success: false, code: 'CLOUD_TABLE_READ_ONLY'
       });
       await expect(useActiveOrders.getState().cancelCurrentOrder()).rejects.toMatchObject({ code: 'CLOUD_TABLE_READ_ONLY' });
     });
-    expect(normalDeps.modal.openModal).not.toHaveBeenCalled();
+    expect(normalDeps.modal.openModal).toHaveBeenCalledWith('payment');
     expect(normalDeps.pos.asegurarCajaAbierta).not.toHaveBeenCalled();
-    expect(deps.handleInitiateCheckout).not.toHaveBeenCalled();
-    expect(deps.openModal).not.toHaveBeenCalled();
-    expect(fixture.cloudStatus).not.toHaveBeenCalled();
+    expect(deps.handleInitiateCheckout).toHaveBeenCalled();
+    expect(deps.openModal).toHaveBeenCalledWith('split');
+    expect(fixture.cloudStatus).toHaveBeenCalled();
     expect(fixture.appState.verifySessionIntegrity).not.toHaveBeenCalled();
     expect(fixture.showConfirm).not.toHaveBeenCalled();
-    expect(useActiveOrders.getState().isCurrentOrderLocked).toBe(false);
-    expect(selectCurrentOrder(useActiveOrders.getState())).toEqual(activeBefore);
-    expect(await db.table(STORES.SALES).get(LOCAL_ORDER_ID)).toEqual(saleBefore);
+    expect(useActiveOrders.getState().isCurrentOrderLocked).toBe(true);
+    expect(selectCurrentOrder(useActiveOrders.getState())).toMatchObject({
+      id: activeBefore.id, items: activeBefore.items, restaurantCloudHydrated: true,
+      reservationAuthority: 'cloud', isLockedForCheckout: true
+    });
+    expect(await db.table(STORES.SALES).get(LOCAL_ORDER_ID)).toMatchObject({
+      ...saleBefore, status: saleBefore.status, total: saleBefore.total, items: saleBefore.items,
+      isLockedForCheckout: true
+    });
     expect(await db.table(STORES.MENU).toArray()).toEqual(inventoryBefore);
     expect(await db.table(STORES.PRODUCT_BATCHES).toArray()).toEqual(batchesBefore);
     expectNoFinancialEffects(deps);
   });
 
-  it.each([VERSION_A, VERSION_B])('holds remote split at cloud revision %s without sale, transport or cash effects', async (remoteVersion) => {
+  it('routes remote split through Cloud and preserves the parent on a server conflict', async () => {
     const deps = tableDeps();
     const hook = renderHook(() => useTableManagement(deps));
     await act(async () => { await hook.result.current.handleLoadOpenOrder(LOCAL_ORDER_ID); });
     const saleBefore = await db.table(STORES.SALES).get(LOCAL_ORDER_ID);
     const activeBefore = structuredClone(selectCurrentOrder(useActiveOrders.getState()));
     const inventoryBefore = await db.table(STORES.MENU).toArray();
-    fixture.cloudOrder = fixtureCloud(sourceSale(), {
-      updatedAt: remoteVersion,
-      serverVersion: remoteVersion === VERSION_A ? 'opaque:version:a' : 'opaque:version:b'
-    });
+    const batchesBefore = await db.table(STORES.PRODUCT_BATCHES).toArray();
+    fixture.splitSale.mockResolvedValue({ success: false, code: 'RESTAURANT_ORDER_VERSION_CONFLICT' });
     let result;
     await act(async () => {
       result = await hook.result.current.handleConfirmSplitBill({
-        splitIntent: 'remote-version-review', tickets: [{ items: activeBefore.items,
-          paymentMethod: 'cash', total: 515 }]
+        splitIntent: 'by_items', tickets: [
+          { label: 'A', items: [activeBefore.items[0]], paymentData: { paymentMethod: 'cash' } },
+          { label: 'B', items: [activeBefore.items[1]], paymentData: { paymentMethod: 'cash' } }
+        ]
       });
     });
-    expect(result).toMatchObject({ success: false, code: 'HOLD_REMOTE_TABLE_VERSIONED_UPDATE_REQUIRED' });
-    expect(fixture.cloudStatus).not.toHaveBeenCalled();
-    expect(fixture.appState.verifySessionIntegrity).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ success: false, code: 'RESTAURANT_ORDER_VERSION_CONFLICT' });
+    expect(fixture.cloudSplitCapability).toHaveBeenCalled();
+    expect(fixture.splitSale).toHaveBeenCalledWith(expect.objectContaining({ cloudSpecialFlows: true }));
+    expect(fixture.cloudStatus).toHaveBeenCalled();
+    expect(fixture.appState.verifySessionIntegrity).toHaveBeenCalled();
     expect(selectCurrentOrder(useActiveOrders.getState())).toEqual(activeBefore);
     expect(await db.table(STORES.SALES).get(LOCAL_ORDER_ID)).toEqual(saleBefore);
     expect(await db.table(STORES.MENU).toArray()).toEqual(inventoryBefore);
+    expect(await db.table(STORES.PRODUCT_BATCHES).toArray()).toEqual(batchesBefore);
     expect(await db.table(STORES.SALES).count()).toBe(1);
-    expectNoFinancialEffects(deps);
+    expect(fixture.financialTransport).not.toHaveBeenCalled();
+    expect(fixture.currentCash).toHaveBeenCalled();
+    expect(deps.asegurarCajaAbierta).not.toHaveBeenCalled();
   });
 });

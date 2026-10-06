@@ -218,7 +218,7 @@ const compareCommercialSnapshot = (sale, order) => {
   return true;
 };
 
-export const preflightCloudRestaurantOrderSplit = async ({
+export const preflightCloudRestaurantOrderSettlement = async ({
   licenseKey,
   parentOrderId,
   parentSale,
@@ -309,4 +309,6 @@ export const preflightCloudRestaurantOrderSplit = async ({
   };
 };
 
-export default preflightCloudRestaurantOrderSplit;
+export const preflightCloudRestaurantOrderSplit = preflightCloudRestaurantOrderSettlement;
+
+export default preflightCloudRestaurantOrderSettlement;

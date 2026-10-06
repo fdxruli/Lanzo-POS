@@ -1,7 +1,18 @@
 // Hydrated tables are snapshots owned by Cloud; this device owns no holds.
 // Remote settlement requires a shared atomic normal/split parent contract.
 export const isRestaurantCloudTableShadow = (order) => (
-  order?.restaurantCloudHydrated === true || order?.reservationAuthority === 'cloud'
+    order?.restaurantCloudHydrated === true || order?.reservationAuthority === 'cloud'
+);
+
+// Any durable Cloud parent identity must settle through the server financial
+// contract, even when this device is the one that originally opened the table.
+export const isRestaurantCloudTableSettlementRequired = (order) => Boolean(
+    isRestaurantCloudTableShadow(order)
+    || order?.cloudRestaurantOrderUpdatedAt
+    || order?.restaurantCloudExpectedVersion
+    || order?.cloudRestaurantOrderServerVersion
+    || order?.restaurantOrderId
+    || order?.cloudRestaurantOrderId
 );
 
 // Explicit terminal evidence remains authoritative through later outages.
@@ -25,13 +36,6 @@ export const restaurantCloudTableBlockedResult = (action = 'edit') => ({
     : action === 'cancel'
       ? 'Esta mesa fue creada en otro dispositivo. Actualízala o cancélala desde el dispositivo de origen.'
       : 'Esta mesa fue creada en otro dispositivo. Puedes revisarla; edítala desde el dispositivo de origen.'
-});
-
-export const restaurantCloudTableSplitBlockedResult = () => ({
-  success: false,
-  code: 'HOLD_REMOTE_TABLE_VERSIONED_UPDATE_REQUIRED',
-  errorType: 'HOLD_REMOTE_TABLE_VERSIONED_UPDATE_REQUIRED',
-  message: 'El cobro de esta mesa está disponible en el dispositivo de origen. Aquí puedes revisar la comanda.'
 });
 
 export const assertRestaurantCloudTableEditable = (order, action = 'edit') => {

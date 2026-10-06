@@ -9,9 +9,8 @@ import { salesCloudCashierService } from '../salesCloud/salesCloudCashierService
 import { restaurantOrdersRepository } from '../restaurant/restaurantOrdersRepository';
 import { preflightCloudRestaurantOrderSplit } from '../restaurant/restaurantSplitCloudPreflight';
 import {
-    isRestaurantCloudTableShadow,
+    isRestaurantCloudTableSettlementRequired,
     isRestaurantCloudTableTerminal,
-    restaurantCloudTableSplitBlockedResult,
     restaurantCloudTableTerminalBlockedResult
 } from '../restaurant/restaurantCloudTableGuards';
 import { getLicenseKeyFromDetails } from '../sync/syncConstants';
@@ -693,7 +692,14 @@ export const splitOpenTableOrderCore = async ({
 
         const parentSale = await loadData(STORES.SALES, parentOrderId);
         if (isRestaurantCloudTableTerminal(parentSale)) return restaurantCloudTableTerminalBlockedResult(parentSale);
-        if (isRestaurantCloudTableShadow(parentSale)) return restaurantCloudTableSplitBlockedResult();
+        if (isRestaurantCloudTableSettlementRequired(parentSale) && !cloudSpecialFlows) {
+            return {
+                success: false,
+                errorType: 'RESTAURANT_CLOUD_SETTLEMENT_REQUIRED',
+                code: 'RESTAURANT_CLOUD_SETTLEMENT_REQUIRED',
+                message: 'La comanda cloud requiere una caja conectada para validar y liquidar la mesa. No se cobró localmente.'
+            };
+        }
         ensureValidSplitRequest({ parentSale, splitIntent, tickets });
 
         const parentItems = (Array.isArray(parentSale.items) ? parentSale.items : [])

@@ -29,7 +29,7 @@ import { actorRuntimeController } from '../../services/auth/actorRuntimeControll
 import { handlePosActorAuthorityError, runPosActorUiOperation } from './posActorAuthorityUi';
 import { hydrateRestaurantCloudOrderToLocalOpenSale } from '../../services/restaurant/restaurantTableHydration';
 import { getRestaurantCloudTableState } from '../../services/restaurant/restaurantActiveTables';
-import { isRestaurantCloudTableShadow, isRestaurantCloudTableTerminal, restaurantCloudTableBlockedResult, restaurantCloudTableSplitBlockedResult, restaurantCloudTableTerminalBlockedResult } from '../../services/restaurant/restaurantCloudTableGuards';
+import { isRestaurantCloudTableShadow, isRestaurantCloudTableTerminal, restaurantCloudTableBlockedResult, restaurantCloudTableTerminalBlockedResult } from '../../services/restaurant/restaurantCloudTableGuards';
 import { RESTAURANT_CLOUD_STATUS_EVENT } from '../../services/restaurant/restaurantCloudStatusSummary';
 
 const EMPTY_ORDER = [];
@@ -89,14 +89,14 @@ export function useTableManagement({
         const liveOrder = selectCurrentOrder(useActiveOrders.getState());
         let result = isRestaurantCloudTableTerminal(liveOrder)
             ? restaurantCloudTableTerminalBlockedResult(liveOrder)
-            : isRestaurantCloudTableShadow(liveOrder) ? restaurantCloudTableSplitBlockedResult() : null;
+            : null;
         if (!result && liveOrder?.id) {
             const splitActor = actorRuntimeController.capture();
             const durableOrder = await db.table(STORES.SALES).get(liveOrder.id);
             splitActor.assertCurrent();
             result = isRestaurantCloudTableTerminal(durableOrder)
                 ? restaurantCloudTableTerminalBlockedResult(durableOrder)
-                : isRestaurantCloudTableShadow(durableOrder) ? restaurantCloudTableSplitBlockedResult() : null;
+                : null;
         }
         if (result) showMessageModal(result.message, null, { type: 'warning' });
         return result;
@@ -676,16 +676,6 @@ export function useTableManagement({
     }, [features?.hasTables, order, executeLoadOpenOrder]);
 
     const handleQuickTableAction = useCallback(async (targetOrder, actionType) => {
-        if (actionType === 'split' && isRestaurantCloudTableShadow(targetOrder)) {
-            const result = restaurantCloudTableSplitBlockedResult();
-            showMessageModal(result.message, null, { type: 'warning' });
-            return result;
-        }
-        if (actionType === 'checkout' && isRestaurantCloudTableShadow(targetOrder)) {
-            const result = restaurantCloudTableBlockedResult('checkout');
-            showMessageModal(result.message, null, { type: 'warning' });
-            return result;
-        }
         const blocked = blockEcommerceRestaurantEffect();
         if (blocked) return blocked;
 

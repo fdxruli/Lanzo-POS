@@ -75,6 +75,41 @@ describe('financial V1 canonical request and hash compatibility', () => {
     expect(first.requestHash).toBe(second.requestHash);
   });
 
+  it('binds modern restaurant settlement identity and exact version into normal-sale hashes', async () => {
+    const request = {
+      sale: { id: 'order-1', total: '10.00' },
+      items: [],
+      payments: [],
+      cash_session_id: 'session-a',
+      customer_id: null
+    };
+    const legacy = canonicalFinancialRequestV1('sale.cashier', request);
+    const modern = canonicalFinancialRequestV1('sale.cashier', {
+      ...request,
+      restaurant_settlement: {
+        parent_order_id: 'order-1',
+        parent_order_version: '2026-01-02T03:04:05.123456Z',
+        contract_version: 1
+      }
+    });
+
+    expect(legacy).not.toHaveProperty('restaurant_settlement');
+    expect(modern.restaurant_settlement).toEqual({
+      parent_order_id: 'order-1',
+      parent_order_version: '2026-01-02T03:04:05.123456Z',
+      contract_version: 1
+    });
+    const legacyHash = await financialRequestHashV1({
+      operationType: 'sale.cashier', request, actorKey: 'admin:a', cashSessionId: 'session-a', cashStationId: 'station-a'
+    });
+    const modernHash = await financialRequestHashV1({
+      operationType: 'sale.cashier',
+      request: { ...request, restaurant_settlement: modern.restaurant_settlement },
+      actorKey: 'admin:a', cashSessionId: 'session-a', cashStationId: 'station-a'
+    });
+    expect(modernHash.requestHash).not.toBe(legacyHash.requestHash);
+  });
+
   it('keeps list order and binds the verified actor and cash station into H', async () => {
     const common = { operationType: 'cash.open', request: { opening_amount: '100', opening_origin: 'manual' }, cashStationId: 'station-a' };
     const actorA = await financialRequestHashV1({ ...common, actorKey: 'admin:a' });

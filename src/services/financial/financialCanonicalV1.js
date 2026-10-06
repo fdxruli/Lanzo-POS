@@ -222,6 +222,27 @@ const sale = (operationType, record = {}) => compact({
   created_at: timestamp(firstNonblank(record, ['created_at', 'createdAt', 'timestamp']))
 });
 
+const canonicalRestaurantSettlement = (request = {}) => {
+  const source = firstPresent(request, ['restaurant_settlement', 'restaurantSettlement']);
+  if (source === NO_VALUE) return null;
+  if (!source || typeof source !== 'object' || Array.isArray(source)) {
+    throw new Error('RESTAURANT_ORDER_CONTEXT_INVALID');
+  }
+
+  const parentOrderId = text(firstNonblank(source, ['parent_order_id', 'parentOrderId']));
+  const parentOrderVersion = firstNonblank(source, ['parent_order_version', 'parentOrderVersion']);
+  const contractVersion = text(firstNonblank(source, ['contract_version', 'contractVersion']));
+  if (!parentOrderId || !parentOrderVersion || contractVersion !== '1') {
+    throw new Error('RESTAURANT_ORDER_CONTEXT_INVALID');
+  }
+
+  return {
+    parent_order_id: parentOrderId,
+    parent_order_version: timestamp(parentOrderVersion),
+    contract_version: 1
+  };
+};
+
 const layawayItem = (item = {}) => compact({
   id: text(firstNonblank(item, ['id'])),
   product_id: text(firstNonblank(item, ['product_id', 'productId', 'parentId'])),
@@ -376,9 +397,18 @@ export const canonicalFinancialRequestV1 = (operationType, request = {}) => {
       cash_session_id: request.cash_session_id ?? null, closing_mode: request.closing_mode ?? null, counted_amount: decimal(request.counted_amount),
       next_shift_fund: decimal(request.next_shift_fund), reason_code: request.reason_code ?? null, comments: request.comments ?? null, expected_version: integer(request.expected_version)
     };
-    case 'sale.cashier': case 'sale.cashier_inventory': case 'sale.credit':
+    case 'sale.cashier': case 'sale.cashier_inventory': case 'sale.credit': {
       if (!request.sale || !Array.isArray(request.items) || !Array.isArray(request.payments)) throw new Error('FINANCIAL_SALE_CONTRACT_INVALID');
-      return { sale: sale(operationType, request.sale), items: request.items.map(saleItem), payments: request.payments.map((item) => salePayment(operationType, item)), cash_session_id: text(firstNonblank(request, ['cash_session_id', 'cashSessionId'])), customer_id: text(firstNonblank(request, ['customer_id', 'customerId'])) };
+      const restaurantSettlement = canonicalRestaurantSettlement(request);
+      return {
+        sale: sale(operationType, request.sale),
+        items: request.items.map(saleItem),
+        payments: request.payments.map((item) => salePayment(operationType, item)),
+        cash_session_id: text(firstNonblank(request, ['cash_session_id', 'cashSessionId'])),
+        customer_id: text(firstNonblank(request, ['customer_id', 'customerId'])),
+        ...(restaurantSettlement ? { restaurant_settlement: restaurantSettlement } : {})
+      };
+    }
     case 'sale.split': {
       const splitIntent = text(firstNonblank(request, ['split_intent', 'splitIntent'])) || 'by_items';
       const monetarySplit = ['equal_payment', 'custom_payment'].includes(splitIntent);

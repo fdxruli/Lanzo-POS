@@ -15,6 +15,7 @@ import { registerFinancialProjectionHandler } from '../financial/financialProjec
 import { actorRuntimeController } from '../auth/actorRuntimeController';
 import { cashRepository } from '../cash/cashRepository';
 import { layawayRepository } from '../db/layaways';
+import { preflightCloudRestaurantOrderSettlement } from '../restaurant/restaurantSplitCloudPreflight';
 import {
   isCloudCashierCompatiblePayment,
   isCreditLikePaymentMethod,
@@ -981,6 +982,8 @@ export const salesCloudCashierService = {
         idempotencyKey,
         inventoryEnabled,
         creditSale: hasCredit,
+        restaurantSettlement: response?.restaurant_settlement || null,
+        atomicRestaurantSettlement: response?.restaurant_settlement?.success === true,
         pendingSyncRequired: false
       };
     } catch (error) {
@@ -1039,7 +1042,7 @@ export const salesCloudCashierService = {
     }
   },
 
-  async processCloudCashierSale({ sale, processedItems = [], paymentData = {}, total, licenseDetails = null } = {}) {
+  async processCloudCashierSale({ sale, processedItems = [], paymentData = {}, total, licenseDetails = null, restaurantOrder = null } = {}) {
     const context = await getRuntimeContext();
     const details = licenseDetails || context.licenseDetails;
     const creditSale = isCreditLikePaymentMethod(paymentData.paymentMethod || sale?.paymentMethod || sale?.payment_method);
@@ -1068,6 +1071,54 @@ export const salesCloudCashierService = {
     });
 
     try {
+      let restaurantSettlement = null;
+      const cloudRestaurantAuthority = Boolean(
+        restaurantOrder?.restaurantCloudHydrated === true
+        || restaurantOrder?.reservationAuthority === 'cloud'
+        || restaurantOrder?.cloudRestaurantOrderUpdatedAt
+        || restaurantOrder?.restaurantCloudExpectedVersion
+        || restaurantOrder?.cloudRestaurantOrderServerVersion
+        || restaurantOrder?.restaurantOrderId
+        || restaurantOrder?.cloudRestaurantOrderId
+      );
+      if (cloudRestaurantAuthority) {
+        const parentOrderId = String(
+          restaurantOrder?.localOrderId
+          || restaurantOrder?.local_order_id
+          || restaurantOrder?.id
+          || sale?.id
+          || ''
+        ).trim();
+        let parentOrderVersion = String(
+          restaurantOrder?.restaurantCloudExpectedVersion
+          || restaurantOrder?.cloudRestaurantOrderUpdatedAt
+          || restaurantOrder?.cloudUpdatedAt
+          || ''
+        ).trim();
+
+        if (!parentOrderId) throw Object.assign(new Error('RESTAURANT_PARENT_ORDER_REQUIRED'), { code: 'RESTAURANT_PARENT_ORDER_REQUIRED' });
+        if (!parentOrderVersion) {
+          const preflight = await preflightCloudRestaurantOrderSettlement({
+            licenseKey: context.licenseKey,
+            parentOrderId,
+            parentSale: restaurantOrder
+          });
+          if (preflight?.success !== true) {
+            throw Object.assign(new Error(preflight?.message || preflight?.code || 'RESTAURANT_ORDER_PREFLIGHT_FAILED'), {
+              code: preflight?.code || 'RESTAURANT_ORDER_PREFLIGHT_FAILED',
+              response: preflight
+            });
+          }
+          parentOrderVersion = String(preflight.parentExpectedVersion || '').trim();
+        }
+        if (!parentOrderVersion) throw Object.assign(new Error('RESTAURANT_ORDER_PREFLIGHT_REQUIRED'), { code: 'RESTAURANT_ORDER_PREFLIGHT_REQUIRED' });
+        restaurantSettlement = {
+          parent_order_id: parentOrderId,
+          parent_order_version: parentOrderVersion,
+          contract_version: 1
+        };
+      }
+
       const createSale = creditSale
         ? salesCloudRepository.createCloudCreditSale
         : (inventoryEnabled ? salesCloudRepository.createCloudCashierInventorySale : salesCloudRepository.createCloudCashierSale);
@@ -1077,6 +1128,7 @@ export const salesCloudCashierService = {
         ...payload,
         cashSessionId: paymentData.cashSessionId || paymentData.cash_session_id || null,
         customerId: payload.customerId || paymentData.customerId || sale?.customerId || null,
+        restaurantSettlement,
         idempotencyKey,
         actorHandle,
         project: applySalesFinancialResponseProjection
@@ -1101,7 +1153,17 @@ export const salesCloudCashierService = {
         });
       }
 
-      return { success: true, response, localSale, payload, idempotencyKey, inventoryEnabled, creditSale };
+      return {
+        success: true,
+        response,
+        localSale,
+        payload,
+        idempotencyKey,
+        inventoryEnabled,
+        creditSale,
+        restaurantSettlement: response?.restaurant_settlement || null,
+        atomicRestaurantSettlement: response?.restaurant_settlement?.success === true
+      };
     } catch (error) {
       Logger.error('[SalesCloud/Cashier] Venta cloud no confirmada:', error);
       throw friendlyCloudCashierError(error);

@@ -15,6 +15,8 @@ const mocks = vi.hoisted(() => ({
   closeCloud: vi.fn(),
   retryCloudCloses: vi.fn(),
   processSale: vi.fn(),
+  cloudCashierEnabled: false,
+  cloudCreditEnabled: false,
   sales: new Map()
 }));
 
@@ -84,8 +86,8 @@ vi.mock('../../../services/sync/syncConstants', async (importOriginal) => {
 
   return {
     ...actual,
-    isCloudSalesCashierEnabled: () => false,
-    isCloudSalesCreditEnabled: () => false,
+    isCloudSalesCashierEnabled: () => mocks.cloudCashierEnabled,
+    isCloudSalesCreditEnabled: () => mocks.cloudCreditEnabled,
     isRestaurantOrdersCloudEnabled: () => true
   };
 });
@@ -290,6 +292,8 @@ beforeEach(() => {
   mocks.closeCloud.mockResolvedValue({ success: true, skipped: true });
   mocks.retryCloudCloses.mockResolvedValue({ success: true, skipped: true });
   mocks.processSale.mockResolvedValue({ success: true, saleId: 'sale-1' });
+  mocks.cloudCashierEnabled = false;
+  mocks.cloudCreditEnabled = false;
 });
 
 describe('usePosCheckout ecommerce and stale lock ownership', () => {
@@ -304,7 +308,7 @@ describe('usePosCheckout ecommerce and stale lock ownership', () => {
 
       const response = await initiateCheckout(hook.result);
 
-      expect(response).toMatchObject({ success: false, code: 'CLOUD_TABLE_NORMAL_CHECKOUT_BLOCKED' });
+      expect(response).toMatchObject({ success: false, code: 'RESTAURANT_CLOUD_SETTLEMENT_REQUIRED' });
       expect(mocks.activeState.activeOrders.get(staleOrder.id)).toEqual(staleOrder);
       expect(mocks.sales.get(staleOrder.id)).toEqual(durableOrder);
       expect(mocks.activeState.lockOrderForCheckout).not.toHaveBeenCalled();
@@ -325,7 +329,6 @@ describe('usePosCheckout ecommerce and stale lock ownership', () => {
       await expect(initiateCheckout(hook.result)).resolves.toMatchObject({ success: true });
       const durableOrder = { ...mocks.sales.get('order-a'), ...marker };
       mocks.sales.set('order-a', durableOrder);
-      const activeOrder = { ...mocks.activeState.activeOrders.get('order-a') };
       deps.pos.verifySessionIntegrity.mockClear();
       deps.pos.asegurarCajaAbierta.mockClear();
       mocks.cloudStatus.mockClear();
@@ -335,15 +338,19 @@ describe('usePosCheckout ecommerce and stale lock ownership', () => {
         response = await hook.result.current.handleProcessOrder({ paymentMethod: 'cash', amountPaid: 20 });
       });
 
-      expect(response).toMatchObject({ success: false, code: 'CLOUD_TABLE_NORMAL_CHECKOUT_BLOCKED' });
-      expect(mocks.activeState.activeOrders.get('order-a')).toEqual(activeOrder);
-      expect(mocks.sales.get('order-a')).toEqual(durableOrder);
+      expect(response).toMatchObject({ success: false, code: 'RESTAURANT_CLOUD_SETTLEMENT_REQUIRED' });
+      expect(mocks.activeState.activeOrders.get('order-a')?.isLockedForCheckout).toBe(false);
+      expect(mocks.sales.get('order-a')).toMatchObject({
+        id: durableOrder.id,
+        ...marker,
+        status: durableOrder.status,
+        isLockedForCheckout: false
+      });
       expect(mocks.processSale).not.toHaveBeenCalled();
       expect(deps.pos.verifySessionIntegrity).not.toHaveBeenCalled();
       expect(deps.pos.asegurarCajaAbierta).not.toHaveBeenCalled();
       expect(mocks.cloudStatus).not.toHaveBeenCalled();
-      expect(mocks.activeState.unlockOrder).not.toHaveBeenCalled();
-      expect(deps.modal.closeModal).not.toHaveBeenCalled();
+      expect(mocks.activeState.unlockOrder).toHaveBeenCalledWith('order-a');
     }
   );
 
@@ -360,18 +367,33 @@ describe('usePosCheckout ecommerce and stale lock ownership', () => {
     expect(deps.modal.openModal).not.toHaveBeenCalled();
   });
 
-  it('blocks normal checkout of a remote table before kitchen review, locks or payment UI', async () => {
+  it('blocks remote checkout before kitchen review when no Cloud settlement feature is enabled', async () => {
     setOrders([makeOrder({ restaurantCloudHydrated: true, reservationAuthority: 'cloud' })]);
     const deps = makeDeps({ hasTables: true });
     const hook = renderHook(() => usePosCheckout(deps.args));
     const result = await initiateCheckout(hook.result);
-    expect(result).toMatchObject({ success: false, code: 'CLOUD_TABLE_NORMAL_CHECKOUT_BLOCKED' });
-    expect(mocks.showMessageModal).toHaveBeenCalledWith(expect.stringContaining('dispositivo de origen'), null, { type: 'warning' });
+    expect(result).toMatchObject({ success: false, code: 'RESTAURANT_CLOUD_SETTLEMENT_REQUIRED' });
+    expect(mocks.showMessageModal).toHaveBeenCalledWith(expect.stringContaining('caja conectada'), null, { type: 'warning' });
     expect(mocks.activeState.lockOrderForCheckout).not.toHaveBeenCalled();
     expect(mocks.cloudStatus).not.toHaveBeenCalled();
     expect(mocks.fefo).not.toHaveBeenCalled();
     expect(mocks.processSale).not.toHaveBeenCalled();
     expect(deps.modal.openModal).not.toHaveBeenCalled();
+  });
+
+  it('allows a remote table to enter checkout when Cloud cashier settlement is enabled', async () => {
+    mocks.cloudCashierEnabled = true;
+    setOrders([makeOrder({ restaurantCloudHydrated: true, reservationAuthority: 'cloud' })]);
+    const deps = makeDeps({ hasTables: true });
+    const hook = renderHook(() => usePosCheckout(deps.args));
+
+    const result = await initiateCheckout(hook.result);
+
+    expect(result).toMatchObject({ success: true });
+    expect(mocks.activeState.lockOrderForCheckout).toHaveBeenCalledWith('order-a');
+    expect(deps.modal.openModal).toHaveBeenCalledWith('payment');
+    expect(mocks.processSale).not.toHaveBeenCalled();
+    expect(deps.pos.asegurarCajaAbierta).not.toHaveBeenCalled();
   });
 
   it('uses the detailed integrity reason without forcing a reload', async () => {

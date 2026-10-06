@@ -131,14 +131,29 @@ describe('splitOpenTableOrderCore', () => {
     salesCloudShadowService.syncSaleShadowAfterLocalCommit.mockResolvedValue({ skipped: true });
   });
 
-  it.each([true, false])('blocks hydrated remote split before financial effects with Cloud=%s', async (cloudSpecialFlows) => {
-    const parent = { ...buildParentSale(), restaurantCloudHydrated: true, reservationAuthority: 'cloud' };
+  it.each([true, false])('settles hydrated remote split through Cloud only with Cloud=%s', async (cloudSpecialFlows) => {
+    const parent = {
+      ...buildParentSale(),
+      restaurantCloudHydrated: true,
+      reservationAuthority: 'cloud',
+      restaurantCloudExpectedVersion: '2026-09-28T16:05:05.123456Z',
+      cloudUpdatedAt: '2026-09-28T16:05:05.123456Z'
+    };
     const deps = makeDeps(parent);
     const result = await splitOpenTableOrderCore(makeParams(parent, { cloudSpecialFlows }), deps);
-    expect(result).toMatchObject({ success: false, code: 'HOLD_REMOTE_TABLE_VERSIONED_UPDATE_REQUIRED' });
     expectNoCommitOrShadow(deps);
-    expect(salesCloudCashierService.processCloudSplitTableSale).not.toHaveBeenCalled();
-    expect(deps.restaurantOrdersRepository.getRestaurantOrderByLocalOrder).not.toHaveBeenCalled();
+    if (cloudSpecialFlows) {
+      expect(result).toMatchObject({ success: true, cloudCommitted: true, sourceMode: 'cloud_committed' });
+      expect(salesCloudCashierService.processCloudSplitTableSale).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+        parentOrderId: parent.id,
+        parentExpectedVersion: expect.any(String)
+      }));
+      expect(deps.restaurantOrdersRepository.getRestaurantOrderByLocalOrder).toHaveBeenCalledTimes(1);
+    } else {
+      expect(result).toMatchObject({ success: false, code: 'RESTAURANT_CLOUD_SETTLEMENT_REQUIRED' });
+      expect(salesCloudCashierService.processCloudSplitTableSale).not.toHaveBeenCalled();
+      expect(deps.restaurantOrdersRepository.getRestaurantOrderByLocalOrder).not.toHaveBeenCalled();
+    }
   });
 
   it.each([true, false])('blocks local-origin terminal evidence before split with Cloud=%s', async (cloudSpecialFlows) => {

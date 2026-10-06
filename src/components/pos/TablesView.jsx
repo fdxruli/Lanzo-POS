@@ -31,7 +31,7 @@ import { formatSelectedModifiersForDisplay } from '../../utils/restaurantModifie
 import { canPerformRefunds } from '../../services/auth/salesPermissionPolicy';
 import { useActorRuntimeSnapshot } from '../../services/auth/useActorRuntimeSnapshot';
 import { useRestaurantActiveTables } from '../../hooks/restaurant/useRestaurantActiveTables';
-import { isRestaurantCloudTableShadow, restaurantCloudTableBlockedResult, restaurantCloudTableSplitBlockedResult } from '../../services/restaurant/restaurantCloudTableGuards';
+import { isRestaurantCloudTableShadow, restaurantCloudTableBlockedResult } from '../../services/restaurant/restaurantCloudTableGuards';
 import './TablesView.css';
 
 const getTableLabel = (order) => {
@@ -473,8 +473,6 @@ const TableCard = ({
             <button
               type="button"
               className="btn-quick-split"
-              disabled={remoteSnapshot}
-              title={remoteSnapshot ? restaurantCloudTableSplitBlockedResult().message : undefined}
               onClick={(e) => {
                 e.stopPropagation();
                 onSplitOrder?.(order);
@@ -486,8 +484,6 @@ const TableCard = ({
             <button
               type="button"
               className="btn-quick-checkout"
-              disabled={remoteSnapshot}
-              title={remoteSnapshot ? restaurantCloudTableBlockedResult('checkout').message : undefined}
               onClick={(e) => {
                 e.stopPropagation();
                 onCheckoutOrder?.(order);
@@ -693,10 +689,6 @@ export default function TablesView({
 
   const handleCheckoutAndClose = useCallback(
     async (order) => {
-      if (isRestaurantCloudTableShadow(order)) {
-        showMessageModal(restaurantCloudTableBlockedResult('checkout').message, null, { type: 'warning' });
-        return;
-      }
       const result = await onCheckoutOrder?.(order);
       if (result?.success !== false) onClose?.();
     },

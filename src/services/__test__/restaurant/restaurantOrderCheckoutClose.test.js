@@ -44,9 +44,10 @@ vi.mock('../../auth/actorAuthorityRecovery', () => ({
 }));
 
 import {
-  buildRestaurantSplitCheckoutCloseIdempotencyKey,
-  buildSplitCheckoutClosePayload,
-  closeRestaurantCloudOrderAfterSuccessfulSplitPayment,
+    buildRestaurantSplitCheckoutCloseIdempotencyKey,
+    buildSplitCheckoutClosePayload,
+    closeRestaurantCloudOrderAfterSuccessfulPayment,
+    closeRestaurantCloudOrderAfterSuccessfulSplitPayment,
   retryPendingRestaurantCloudOrderCloses
 } from '../../restaurant/restaurantOrderCheckoutClose';
 import { restaurantOrdersRepository } from '../../restaurant/restaurantOrdersRepository';
@@ -133,6 +134,26 @@ describe('restaurantOrderCheckoutClose split bill support', () => {
       saldoPendiente: '150',
       customerId: 'cust-1'
     });
+  });
+
+  it('skips the legacy second close call when the financial receipt confirms atomic settlement', async () => {
+    const response = await closeRestaurantCloudOrderAfterSuccessfulPayment({
+      localOrderId: 'sale-open-1',
+      saleResult: {
+        atomicRestaurantSettlement: true,
+        restaurantSettlement: {
+          success: true,
+          parent_order_id: 'sale-open-1',
+          payment_status: 'paid'
+        }
+      },
+      licenseDetails,
+      saleTotal: 500,
+      features
+    });
+
+    expect(response).toMatchObject({ success: true, skipped: true, atomic: true });
+    expect(restaurantOrdersRepository.closeRestaurantOrderAfterCheckout).not.toHaveBeenCalled();
   });
 
   it('sends split checkout close payload to repository when online', async () => {

@@ -82,10 +82,10 @@ describe('processSaleCore', () => {
         expect(deps.__updateStatsForNewSale).not.toHaveBeenCalled();
     });
 
-    it.each([{ restaurantCloudHydrated: true }, { reservationAuthority: 'cloud' }])('blocks normal checkout of a remote table before financial work (%j)', async (marker) => {
+    it.each([{ restaurantCloudHydrated: true }, { reservationAuthority: 'cloud' }])('fails closed when cloud settlement is unavailable for a remote table (%j)', async (marker) => {
         const deps = makeDeps({ loadData: vi.fn(async () => ({ id: 'remote-table', status: 'open', ...marker })) });
         const result = await processSaleCore(makeParams({ activeOrderId: 'remote-table' }), deps);
-        expect(result).toMatchObject({ success: false, code: 'CLOUD_TABLE_NORMAL_CHECKOUT_BLOCKED' });
+        expect(result).toMatchObject({ success: false, code: 'RESTAURANT_CLOUD_SETTLEMENT_REQUIRED' });
         expect(deps.executeSaleTransactionSafe).not.toHaveBeenCalled();
         expect(deps.calculatePricingDetails).not.toHaveBeenCalled();
         expect(deps.saveData).not.toHaveBeenCalled();

@@ -309,6 +309,10 @@ const closeWithPayload = async ({ payload, licenseKey }) => {
 };
 
 export const closeRestaurantCloudOrderAfterSuccessfulPayment = async ({ localOrderId, saleResult = {}, paymentData = {}, licenseDetails = null, saleTotal = null, features = null } = {}) => {
+  if (saleResult?.atomicRestaurantSettlement === true || saleResult?.restaurantSettlement?.success === true) {
+    return { success: true, skipped: true, atomic: true, reason: 'restaurant_settlement_already_closed' };
+  }
+
   const { licenseKey, enabled, reason } = isEnabled({ licenseDetails, localOrderId, features });
 
   if (!enabled) {

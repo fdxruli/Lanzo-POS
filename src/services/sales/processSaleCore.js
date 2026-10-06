@@ -16,7 +16,6 @@ import { calculateDiscountedTotals } from './discounts';
 import {
     isRestaurantCloudTableShadow,
     isRestaurantCloudTableTerminal,
-    restaurantCloudTableBlockedResult,
     restaurantCloudTableTerminalBlockedResult
 } from '../restaurant/restaurantCloudTableGuards';
 import { normalizeStableSaleTimestamp } from './stableSaleTimestamp';
@@ -254,9 +253,6 @@ export const processSaleCore = async ({
             if (isRestaurantCloudTableTerminal(persistedOrder)) {
                 return withFinancialFailure(restaurantCloudTableTerminalBlockedResult(persistedOrder));
             }
-            if (isRestaurantCloudTableShadow(persistedOrder)) {
-                return withFinancialFailure(restaurantCloudTableBlockedResult('checkout'));
-            }
         }
         const itemsToProcess = order.filter(item => item.quantity && item.quantity > 0);
         if (itemsToProcess.length === 0) throw new Error('El pedido está vacío.');
@@ -293,6 +289,23 @@ export const processSaleCore = async ({
             Logger.warn('Cloud cashier decision failed; usando flujo local + shadow:', decisionError);
             return { useCloud: false, reason: 'decision_error' };
         });
+
+        const cloudRestaurantSettlementRequired = Boolean(
+            isRestaurantCloudTableShadow(persistedOrder)
+            || persistedOrder?.cloudRestaurantOrderUpdatedAt
+            || persistedOrder?.restaurantCloudExpectedVersion
+            || persistedOrder?.cloudRestaurantOrderServerVersion
+            || persistedOrder?.restaurantOrderId
+            || persistedOrder?.cloudRestaurantOrderId
+        );
+        if (cloudRestaurantSettlementRequired && !cloudCashierDecision?.useCloud) {
+            return withFinancialFailure({
+                success: false,
+                errorType: 'CLOUD_CASHIER_FAILED',
+                code: 'RESTAURANT_CLOUD_SETTLEMENT_REQUIRED',
+                message: 'La comanda cloud requiere una caja conectada para validar y liquidar la mesa. No se cobró localmente.'
+            });
+        }
 
         const isCloudInventorySale = (
             cloudCashierDecision?.useCloud === true &&
@@ -483,7 +496,8 @@ export const processSaleCore = async ({
                     sale,
                     processedItems,
                     paymentData: { ...safePaymentData, saleDiscount: saleDiscountAudit },
-                    total: Money.toExactString(totalNum)
+                    total: Money.toExactString(totalNum),
+                    restaurantOrder: persistedOrder || null
                 });
             } catch (cloudCashierError) {
                 Logger.warn('Cloud cashier failed before local commit:', cloudCashierError);
@@ -540,7 +554,9 @@ export const processSaleCore = async ({
                 timestamp: cloudSale.timestamp,
                 folio: cloudSale.folio,
                 sourceMode: 'cloud_committed',
-                cloudCommitted: true
+                cloudCommitted: true,
+                restaurantSettlement: cloudResult.restaurantSettlement || cloudResult.response?.restaurant_settlement || null,
+                atomicRestaurantSettlement: cloudResult.atomicRestaurantSettlement === true
             };
 
             return {
@@ -555,6 +571,8 @@ export const processSaleCore = async ({
                 inventoryEffectStatus: cloudSale.inventoryEffectStatus || cloudResult.response?.sale?.inventory_effect_status || 'not_applied',
                 creditEffectStatus: cloudSale.creditEffectStatus || cloudResult.response?.sale?.credit_effect_status || 'not_applied',
                 cloudCommitted: true,
+                restaurantSettlement: cloudResult.restaurantSettlement || cloudResult.response?.restaurant_settlement || null,
+                atomicRestaurantSettlement: cloudResult.atomicRestaurantSettlement === true,
                 postEffectsFailed,
                 postEffectsError: postEffectsFailed ? postEffectsError : null,
                 pendingSyncRequired: false,

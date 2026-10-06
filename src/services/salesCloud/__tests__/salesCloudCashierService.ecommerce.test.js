@@ -99,6 +99,7 @@ vi.mock('../../sync/syncConstants', () => ({
 vi.mock('../../products/productSyncHandler', () => ({ pullCatalogChanges: mocks.pullCatalogChanges }));
 vi.mock('../../auth/actorRuntimeController', () => ({
   actorRuntimeController: {
+    getState: () => ({ status: 'granted' }),
     capture: () => mocks.actorHandle,
     subscribe: () => () => {}
   }
@@ -410,5 +411,46 @@ describe('salesCloudCashierService ecommerce idempotency', () => {
     expect(mocks.saveCloudCommittedSaleSnapshot).toHaveBeenCalledTimes(1);
     expect(mocks.applyCloudSalesPayload).toHaveBeenCalledTimes(1);
     expect(mocks.markProjectionApplied).not.toHaveBeenCalled();
+  });
+
+  it('binds the origin or remote restaurant version to a normal cloud checkout', async () => {
+    const version = '2026-09-28T16:05:05.123456Z';
+    const response = {
+      ...makeResponse(),
+      restaurant_settlement: {
+        success: true,
+        parent_order_id: 'sale-1',
+        payment_status: 'paid',
+        paid_sale_id: 'cloud-sale-1',
+        paid_sale_folio: 'F-1',
+        total: 10
+      }
+    };
+    mocks.createCloudCashierInventorySale.mockImplementation((options) => projectResponse(options, response));
+
+    const result = await salesCloudCashierService.processCloudCashierSale({
+      sale: makeSale(),
+      processedItems: makeSale().items,
+      paymentData: { paymentMethod: 'cash', amountPaid: 10, cashSessionId: 'session-1' },
+      total: '10.00',
+      restaurantOrder: {
+        id: 'sale-1',
+        orderType: 'table',
+        restaurantCloudHydrated: true,
+        restaurantCloudExpectedVersion: version
+      }
+    });
+
+    expect(mocks.createCloudCashierInventorySale).toHaveBeenCalledWith(expect.objectContaining({
+      restaurantSettlement: {
+        parent_order_id: 'sale-1',
+        parent_order_version: version,
+        contract_version: 1
+      }
+    }));
+    expect(result).toMatchObject({
+      atomicRestaurantSettlement: true,
+      restaurantSettlement: response.restaurant_settlement
+    });
   });
 });

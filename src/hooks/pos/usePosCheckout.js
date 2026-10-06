@@ -16,9 +16,8 @@ import { validateFefoSelectionBeforeCheckout } from '../../services/sales/fefoSa
 import { getRestaurantOrderCloudStatusSnapshot } from '../restaurant/useRestaurantOrderCloudStatus';
 import { reconcileCartWithCancelledRestaurantItems } from '../../services/restaurant/restaurantOrderReconciliation';
 import {
-    isRestaurantCloudTableShadow,
     isRestaurantCloudTableTerminal,
-    restaurantCloudTableBlockedResult,
+    isRestaurantCloudTableSettlementRequired,
     restaurantCloudTableTerminalBlockedResult
 } from '../../services/restaurant/restaurantCloudTableGuards';
 import {
@@ -74,6 +73,22 @@ const shouldRequireOpenCashSessionForCloudSale = (licenseDetails) => Boolean(
         isCloudSalesCreditEnabled(licenseDetails)
     )
 );
+
+const canUseAnyCloudRestaurantSettlement = (licenseDetails) => Boolean(
+    licenseDetails?.valid &&
+    isRestaurantOrdersCloudEnabled(licenseDetails) &&
+    (
+        isCloudSalesCashierEnabled(licenseDetails) ||
+        isCloudSalesCreditEnabled(licenseDetails)
+    )
+);
+
+const buildCloudRestaurantSettlementRequiredResult = () => ({
+    success: false,
+    errorType: 'RESTAURANT_CLOUD_SETTLEMENT_REQUIRED',
+    code: 'RESTAURANT_CLOUD_SETTLEMENT_REQUIRED',
+    message: 'La comanda cloud requiere una caja conectada para validar y liquidar la mesa. No se cobró localmente.'
+});
 
 const hasOpenCashSession = (session) => (
     session?.estado === 'abierta' || session?.status === 'open'
@@ -791,8 +806,13 @@ export function usePosCheckout({
             showMessageModal(blocked.message, null, { type: 'warning' });
             return blocked;
         }
-        if (isRestaurantCloudTableShadow(activeOrder) || isRestaurantCloudTableShadow(durableOrder)) {
-            const blocked = restaurantCloudTableBlockedResult('checkout');
+        const initialLicenseDetails = useAppStore.getState().licenseDetails;
+        if (
+            [activeOrder, durableOrder].some(isRestaurantCloudTableSettlementRequired)
+            && initialLicenseDetails?.valid
+            && !canUseAnyCloudRestaurantSettlement(initialLicenseDetails)
+        ) {
+            const blocked = buildCloudRestaurantSettlementRequiredResult();
             showMessageModal(blocked.message, null, { type: 'warning' });
             return blocked;
         }
@@ -1113,10 +1133,19 @@ export function usePosCheckout({
             showMessageModal(blocked.message, null, { type: 'warning' });
             return blocked;
         }
-
-        if (isRestaurantCloudTableShadow(useActiveOrders.getState().activeOrders.get(snapshot?.orderId))
-            || isRestaurantCloudTableShadow(durableOrder)) {
-            const blocked = restaurantCloudTableBlockedResult('checkout');
+        const durableRestaurantSettlementRequired = [snapshot?.order, durableOrder]
+            .some(isRestaurantCloudTableSettlementRequired);
+        const licenseDetails = useAppStore.getState().licenseDetails;
+        if (
+            durableRestaurantSettlementRequired
+            && (!canUseAnyCloudRestaurantSettlement(licenseDetails)
+                || (typeof navigator !== 'undefined' && navigator.onLine === false))
+        ) {
+            await invalidateCheckoutSnapshot(snapshot, {
+                releaseLock: true,
+                reason: 'restaurant_cloud_settlement_unavailable'
+            });
+            const blocked = buildCloudRestaurantSettlementRequiredResult();
             showMessageModal(blocked.message, null, { type: 'warning' });
             return blocked;
         }
@@ -1164,8 +1193,22 @@ export function usePosCheckout({
         const hasInitialCreditPayment = paymentMethod === 'credit' && Money.init(paymentData.amountPaid || 0).gt(0);
         const hasCashComponent = paymentMethod === 'cash' || (hasInitialCreditPayment && initialPaymentMethod === 'cash');
 
-        const licenseDetails = useAppStore.getState().licenseDetails;
         const cloudSalesTurnRequired = shouldRequireOpenCashSessionForCloudSale(licenseDetails);
+        if (
+            durableRestaurantSettlementRequired
+            && (!isRestaurantOrdersCloudEnabled(licenseDetails)
+                || (paymentMethod === 'credit'
+                ? !isCloudSalesCreditEnabled(licenseDetails)
+                : !isCloudSalesCashierEnabled(licenseDetails)))
+        ) {
+            await invalidateCheckoutSnapshot(snapshot, {
+                releaseLock: true,
+                reason: 'restaurant_cloud_payment_feature_unavailable'
+            });
+            const blocked = buildCloudRestaurantSettlementRequiredResult();
+            showMessageModal(blocked.message, null, { type: 'warning' });
+            return blocked;
+        }
         const requiresOpenCashSession = cloudSalesTurnRequired
             ? CLOUD_TURN_REQUIRED_PAYMENT_METHODS.has(paymentMethod)
             : hasCashComponent;
