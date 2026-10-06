@@ -73,6 +73,11 @@ function createCacheStorage(cacheNames = []) {
   };
 }
 
+const onlineProbe = vi.fn().mockResolvedValue({
+  status: 'online',
+  reason: 'origin-reachable',
+});
+
 const chunkError = new TypeError(
   'Failed to fetch dynamically imported module: https://lanzo-pos.vercel.app/assets/databaseRuntime-old.js'
 );
@@ -107,12 +112,14 @@ describe('administrative startup version recovery', () => {
 
     const windowTarget = createWindowTarget();
     const cacheStorage = createCacheStorage(['workbox-precache-v2-fixture']);
+    const probeConnectivity = vi.fn();
     const result = await recoverAdminStartup({
       error: chunkError,
       navigatorTarget: { serviceWorker },
       windowTarget,
       cacheStorage,
       timeoutMs: 50,
+      probeConnectivity,
     });
 
     expect(result).toMatchObject({
@@ -123,11 +130,48 @@ describe('administrative startup version recovery', () => {
     expect(waitingWorker.postMessage).toHaveBeenCalledWith({ type: 'SKIP_WAITING' });
     expect(registration.unregister).not.toHaveBeenCalled();
     expect(cacheStorage.keys).not.toHaveBeenCalled();
+    expect(probeConnectivity).not.toHaveBeenCalled();
     expect(windowTarget.location.replace).toHaveBeenCalledOnce();
     expect(windowTarget.location.replace.mock.calls[0][0]).toContain('__lanzo_recovery=');
   });
 
-  it('falls back to unregistering only the root Lanzo worker and clearing only Lanzo caches', async () => {
+  it('preserves the installed shell when an automatic recovery sees a sudden network failure', async () => {
+    const serviceWorker = new FakeEventTarget();
+    const registration = new FakeEventTarget();
+    registration.scope = 'https://lanzo-pos.vercel.app/';
+    registration.waiting = null;
+    registration.installing = null;
+    registration.update = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
+    registration.unregister = vi.fn().mockResolvedValue(true);
+    serviceWorker.getRegistration = vi.fn().mockResolvedValue(registration);
+    serviceWorker.getRegistrations = vi.fn().mockResolvedValue([registration]);
+
+    const windowTarget = createWindowTarget();
+    const cacheStorage = createCacheStorage(['workbox-precache-v2-fixture']);
+    const probeConnectivity = vi.fn();
+
+    const result = await recoverAdminStartup({
+      error: chunkError,
+      navigatorTarget: { onLine: true, serviceWorker },
+      windowTarget,
+      cacheStorage,
+      timeoutMs: 0,
+      probeConnectivity,
+    });
+
+    expect(result).toEqual({
+      status: 'preserved',
+      strategy: 'preserve-installed-shell',
+      reason: 'automatic-destructive-reset-blocked',
+    });
+    expect(registration.unregister).not.toHaveBeenCalled();
+    expect(serviceWorker.getRegistrations).not.toHaveBeenCalled();
+    expect(cacheStorage.keys).not.toHaveBeenCalled();
+    expect(probeConnectivity).not.toHaveBeenCalled();
+    expect(windowTarget.location.replace).not.toHaveBeenCalled();
+  });
+
+  it('allows an explicit online retry to reset only the Lanzo worker and Lanzo caches', async () => {
     const serviceWorker = new FakeEventTarget();
     const registration = new FakeEventTarget();
     registration.scope = 'https://lanzo-pos.vercel.app/';
@@ -153,12 +197,18 @@ describe('administrative startup version recovery', () => {
       'lanzo-admin-media-v2',
       'customer-images',
     ]);
+    const probeConnectivity = vi.fn().mockResolvedValue({
+      status: 'online',
+      reason: 'origin-reachable',
+    });
     const result = await recoverAdminStartup({
       error: chunkError,
-      navigatorTarget: { serviceWorker },
+      force: true,
+      navigatorTarget: { onLine: true, serviceWorker },
       windowTarget,
       cacheStorage,
       timeoutMs: 0,
+      probeConnectivity,
     });
 
     expect(result).toMatchObject({
@@ -166,6 +216,7 @@ describe('administrative startup version recovery', () => {
       strategy: 'reset-lanzo-shell',
       unregisteredWorkers: 1,
     });
+    expect(probeConnectivity).toHaveBeenCalledOnce();
     expect(registration.unregister).toHaveBeenCalledOnce();
     expect(unrelatedRegistration.unregister).not.toHaveBeenCalled();
     expect(cacheStorage.delete.mock.calls.map(([cacheName]) => cacheName)).toEqual([
@@ -176,7 +227,38 @@ describe('administrative startup version recovery', () => {
     expect(windowTarget.location.replace).toHaveBeenCalledOnce();
   });
 
-  it('allows only one automatic recovery attempt per build', async () => {
+  it('blocks an explicit destructive reset when the real origin probe is offline', async () => {
+    const serviceWorker = {
+      getRegistration: vi.fn().mockResolvedValue(null),
+      getRegistrations: vi.fn().mockResolvedValue([]),
+    };
+    const windowTarget = createWindowTarget();
+    const cacheStorage = createCacheStorage(['lanzo-admin-static-v1']);
+    const probeConnectivity = vi.fn().mockResolvedValue({
+      status: 'offline',
+      reason: 'probe-failed',
+    });
+
+    const result = await recoverAdminStartup({
+      error: chunkError,
+      force: true,
+      navigatorTarget: { onLine: true, serviceWorker },
+      windowTarget,
+      cacheStorage,
+      probeConnectivity,
+    });
+
+    expect(result).toEqual({
+      status: 'offline',
+      strategy: 'preserve-installed-shell',
+      reason: 'probe-failed',
+    });
+    expect(serviceWorker.getRegistrations).not.toHaveBeenCalled();
+    expect(cacheStorage.keys).not.toHaveBeenCalled();
+    expect(windowTarget.location.replace).not.toHaveBeenCalled();
+  });
+
+  it('allows only one automatic recovery attempt per build without destructive reset', async () => {
     const serviceWorker = {
       getRegistration: vi.fn().mockResolvedValue(null),
       getRegistrations: vi.fn().mockResolvedValue([]),
@@ -197,12 +279,17 @@ describe('administrative startup version recovery', () => {
       cacheStorage,
     });
 
-    expect(first.status).toBe('reloading');
+    expect(first).toEqual({
+      status: 'preserved',
+      strategy: 'preserve-installed-shell',
+      reason: 'automatic-destructive-reset-blocked',
+    });
     expect(second).toEqual({ status: 'already-attempted' });
-    expect(windowTarget.location.replace).toHaveBeenCalledOnce();
+    expect(cacheStorage.keys).not.toHaveBeenCalled();
+    expect(windowTarget.location.replace).not.toHaveBeenCalled();
   });
 
-  it('still performs recovery when reading sessionStorage throws', async () => {
+  it('still performs an explicit online recovery when reading sessionStorage throws', async () => {
     const serviceWorker = {
       getRegistration: vi.fn().mockResolvedValue(null),
       getRegistrations: vi.fn().mockResolvedValue([]),
@@ -212,9 +299,11 @@ describe('administrative startup version recovery', () => {
 
     const result = await recoverAdminStartup({
       error: chunkError,
+      force: true,
       navigatorTarget: { serviceWorker },
       windowTarget,
       cacheStorage,
+      probeConnectivity: onlineProbe,
     });
 
     expect(result.status).toBe('reloading');
@@ -232,9 +321,11 @@ describe('administrative startup version recovery', () => {
 
     const first = await recoverAdminStartup({
       error: chunkError,
+      force: true,
       navigatorTarget: { serviceWorker },
       windowTarget,
       cacheStorage,
+      probeConnectivity: onlineProbe,
     });
     windowTarget.location.href = first.url;
 
