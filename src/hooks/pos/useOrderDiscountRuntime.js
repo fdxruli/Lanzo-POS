@@ -5,9 +5,16 @@ import { hasSameFinancialTotals, makeSaleDiscount, orderTotalsForSave, withLineD
 import { useActiveOrders } from './useActiveOrders';
 import { actorRuntimeController } from '../../services/auth/actorRuntimeController';
 import { registerActorOperationalActiveOrders } from '../../services/auth/actorOperationalHandoff';
+import {
+  assertRestaurantCloudTableEditable,
+  isRestaurantCloudTableShadow,
+  isRestaurantCloudTableTerminal
+} from '../../services/restaurant/restaurantCloudTableGuards';
 
 let patched = false;
-const normalizeOrder = (order = {}) => withOrderTotals({ ...order, saleDiscount: order.saleDiscount || order.metadata?.discount || null });
+const normalizeOrder = (order = {}) => (isRestaurantCloudTableShadow(order) || isRestaurantCloudTableTerminal(order))
+  ? order
+  : withOrderTotals({ ...order, saleDiscount: order.saleDiscount || order.metadata?.discount || null });
 const saleDiscountOf = (sale = {}) => sale.saleDiscount || sale.metadata?.discount || null;
 
 const assertDiscountPermission = () => {
@@ -43,7 +50,7 @@ const normalizeLoadedSale = (sale = {}, current = {}) => normalizeOrder({
 const setOrderTotalsInState = (orderId, actorHandle = null) => {
   const state = useActiveOrders.getState();
   const order = orderId ? state.activeOrders.get(orderId) : null;
-  if (!order || order.isLockedForCheckout) return;
+  if (!order || order.isLockedForCheckout || isRestaurantCloudTableShadow(order) || isRestaurantCloudTableTerminal(order)) return;
 
   const normalized = normalizeOrder(order);
   if (hasSameFinancialTotals(order, normalized)) return;
@@ -61,6 +68,7 @@ const writeOrder = (orderId, builder) => {
   const order = orderId ? state.activeOrders.get(orderId) : null;
   if (!order || order.isLockedForCheckout) return;
 
+  assertRestaurantCloudTableEditable(order);
   const normalized = normalizeOrder(builder(order));
   if (hasSameFinancialTotals(order, normalized)) return;
   actorHandle.assertCurrent();
@@ -76,6 +84,7 @@ const refreshLoadedOrderFromDb = async (orderId, actorHandle) => {
   const sale = await db.table(STORES.SALES).get(orderId);
   actorHandle.assertCurrent();
   if (!sale) { setOrderTotalsInState(orderId, actorHandle); return; }
+  if (isRestaurantCloudTableShadow(sale) || isRestaurantCloudTableTerminal(sale)) return;
 
   const state = useActiveOrders.getState();
   const current = state.activeOrders.get(orderId);
@@ -90,7 +99,7 @@ const refreshLoadedOrderFromDb = async (orderId, actorHandle) => {
 };
 
 const persistOrderFinancials = async (orderId, order, actorHandle) => {
-  if (!orderId || !order) return;
+  if (!orderId || !order || isRestaurantCloudTableShadow(order) || isRestaurantCloudTableTerminal(order)) return;
   actorHandle.assertCurrent();
   await db.table(STORES.SALES).update(orderId, orderTotalsForSave(normalizeOrder(order)));
   actorHandle.assertCurrent();
@@ -116,6 +125,7 @@ const patchActiveOrders = () => {
       const currentState = useActiveOrders.getState();
       const order = currentState.currentOrderId ? currentState.activeOrders.get(currentState.currentOrderId) : null;
       if (!order) return typeof originalGetTotalPrice === 'function' ? originalGetTotalPrice() : 0;
+      if (isRestaurantCloudTableShadow(order)) return Number(order.total);
       return orderTotalsForSave(order).total || 0;
     },
     updateOrderItems: (orderId, updater) => { originalUpdateOrderItems(orderId, updater); setOrderTotalsInState(orderId); },

@@ -8,6 +8,12 @@ import { salesCloudShadowService } from '../salesCloud/salesCloudShadowService';
 import { salesCloudCashierService } from '../salesCloud/salesCloudCashierService';
 import { restaurantOrdersRepository } from '../restaurant/restaurantOrdersRepository';
 import { preflightCloudRestaurantOrderSplit } from '../restaurant/restaurantSplitCloudPreflight';
+import {
+    isRestaurantCloudTableShadow,
+    isRestaurantCloudTableTerminal,
+    restaurantCloudTableSplitBlockedResult,
+    restaurantCloudTableTerminalBlockedResult
+} from '../restaurant/restaurantCloudTableGuards';
 import { getLicenseKeyFromDetails } from '../sync/syncConstants';
 import {
     calculateByItemsTicketFinancials,
@@ -686,6 +692,8 @@ export const splitOpenTableOrderCore = async ({
         }
 
         const parentSale = await loadData(STORES.SALES, parentOrderId);
+        if (isRestaurantCloudTableTerminal(parentSale)) return restaurantCloudTableTerminalBlockedResult(parentSale);
+        if (isRestaurantCloudTableShadow(parentSale)) return restaurantCloudTableSplitBlockedResult();
         ensureValidSplitRequest({ parentSale, splitIntent, tickets });
 
         const parentItems = (Array.isArray(parentSale.items) ? parentSale.items : [])

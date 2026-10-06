@@ -27,6 +27,10 @@ import { salesCloudCashierService } from '../../services/salesCloud/salesCloudCa
 import { cashRepository } from '../../services/cash/cashRepository';
 import { actorRuntimeController } from '../../services/auth/actorRuntimeController';
 import { handlePosActorAuthorityError, runPosActorUiOperation } from './posActorAuthorityUi';
+import { hydrateRestaurantCloudOrderToLocalOpenSale } from '../../services/restaurant/restaurantTableHydration';
+import { getRestaurantCloudTableState } from '../../services/restaurant/restaurantActiveTables';
+import { isRestaurantCloudTableShadow, isRestaurantCloudTableTerminal, restaurantCloudTableBlockedResult, restaurantCloudTableSplitBlockedResult, restaurantCloudTableTerminalBlockedResult } from '../../services/restaurant/restaurantCloudTableGuards';
+import { RESTAURANT_CLOUD_STATUS_EVENT } from '../../services/restaurant/restaurantCloudStatusSummary';
 
 const EMPTY_ORDER = [];
 const durableTableCleanupPending = (id, recoveryRequired = false) => ({
@@ -81,6 +85,23 @@ export function useTableManagement({
         return getEcommercePosBlockedResult();
     }, []);
 
+    const blockRemoteSplit = useCallback(async () => {
+        const liveOrder = selectCurrentOrder(useActiveOrders.getState());
+        let result = isRestaurantCloudTableTerminal(liveOrder)
+            ? restaurantCloudTableTerminalBlockedResult(liveOrder)
+            : isRestaurantCloudTableShadow(liveOrder) ? restaurantCloudTableSplitBlockedResult() : null;
+        if (!result && liveOrder?.id) {
+            const splitActor = actorRuntimeController.capture();
+            const durableOrder = await db.table(STORES.SALES).get(liveOrder.id);
+            splitActor.assertCurrent();
+            result = isRestaurantCloudTableTerminal(durableOrder)
+                ? restaurantCloudTableTerminalBlockedResult(durableOrder)
+                : isRestaurantCloudTableShadow(durableOrder) ? restaurantCloudTableSplitBlockedResult() : null;
+        }
+        if (result) showMessageModal(result.message, null, { type: 'warning' });
+        return result;
+    }, []);
+
     const syncOpenRestaurantOrderToCloud = useCallback(async (orderId, saveActor) => {
         if (!isCloudRestaurantOrdersEnabled || !licenseKey) {
             return { skipped: true };
@@ -107,6 +128,7 @@ export function useTableManagement({
                 sale
             });
             saveActor.assertCurrent();
+            window.dispatchEvent(new CustomEvent(RESTAURANT_CLOUD_STATUS_EVENT));
 
             if (response?.success === false) {
                 return {
@@ -336,7 +358,37 @@ export function useTableManagement({
 
     const executeLoadOpenOrder = useCallback(async (orderId, silent = false) => {
         try {
+            const loadActor = actorRuntimeController.capture();
+            const localSale = await db.table(STORES.SALES).get(orderId);
+            loadActor.assertCurrent();
+            if (localSale?.restaurantCloudTerminalState === 'terminal') {
+                const message = localSale.restaurantCloudTerminalPaymentStatus === 'paid'
+                    ? 'La mesa ya fue cobrada.' : 'La mesa ya no está activa. Actualiza las mesas.';
+                showMessageModal(message, null, { type: 'warning' });
+                return { success: false, code: 'CLOUD_TABLE_TERMINAL', message };
+            }
+            if (isCloudRestaurantOrdersEnabled && (!localSale || isRestaurantCloudTableShadow(localSale))) {
+                const hydrated = await hydrateRestaurantCloudOrderToLocalOpenSale({
+                    licenseKey, localOrderId: orderId, actorHandle: loadActor
+                });
+                loadActor.assertCurrent();
+                if (!hydrated.success) {
+                    showMessageModal(hydrated.message, null, { type: 'warning' });
+                    return hydrated;
+                }
+            } else if (isCloudRestaurantOrdersEnabled && navigator.onLine !== false) {
+                const current = await getRestaurantOrderCloudStatusSnapshot({ licenseDetails,
+                    localOrderId: orderId, force: true });
+                loadActor.assertCurrent();
+                if (current?.success !== false && current?.order && getRestaurantCloudTableState(current.order) === 'terminal') {
+                    const message = current.order.paymentStatus === 'paid'
+                        ? 'La mesa ya fue cobrada.' : 'La mesa ya no está activa. Actualiza las mesas.';
+                    showMessageModal(message, null, { type: 'warning' });
+                    return { success: false, code: 'CLOUD_TABLE_TERMINAL', message };
+                }
+            }
             const result = await loadOpenOrder(orderId);
+            loadActor.assertCurrent();
             if (result.success) {
                 if (!silent) {
                     closeModal('tables');
@@ -356,7 +408,7 @@ export function useTableManagement({
             if (!silent) showMessageModal('No se pudo cargar la mesa. Vuelve a intentarlo.', null, { type: 'error' });
             return { success: false, code: 'TABLE_LOAD_FAILED' };
         }
-    }, [loadOpenOrder, closeModal, fetchActiveTablesCount]);
+    }, [loadOpenOrder, closeModal, fetchActiveTablesCount, isCloudRestaurantOrdersEnabled, licenseDetails, licenseKey]);
 
     const reconcileKitchenCancelledItemsBeforeSplit = useCallback(async () => {
         const blocked = blockEcommerceRestaurantEffect();
@@ -378,6 +430,19 @@ export function useTableManagement({
         });
         const authorityResult = response?.success === false && handlePosActorAuthorityError(response, 'split_checkout');
         if (authorityResult) return { ...authorityResult, canContinue: false, orderItems: targetItems, removedCount: 0 };
+
+        if (isRestaurantCloudTableShadow(targetOrder)) {
+            if (response?.success === false || response?.found === false || !response?.order
+                || getRestaurantCloudTableState(response.order) !== 'active'
+                || response.order.updatedAt !== targetOrder.cloudUpdatedAt
+                || response.summary?.hasCancelledItems) {
+                const message = 'La mesa cambió en otro dispositivo. Actualízala antes de cobrar.';
+                showMessageModal(message, null, { type: 'warning' });
+                return { success: false, canContinue: false, code: 'RESTAURANT_ORDER_VERSION_CONFLICT',
+                    message, orderItems: targetItems, removedCount: 0 };
+            }
+            return { canContinue: true, orderItems: targetItems, removedCount: 0 };
+        }
 
         if (response?.skipped || response?.found === false || !response?.order) {
             return { canContinue: true, orderItems: targetItems, removedCount: 0 };
@@ -611,6 +676,16 @@ export function useTableManagement({
     }, [features?.hasTables, order, executeLoadOpenOrder]);
 
     const handleQuickTableAction = useCallback(async (targetOrder, actionType) => {
+        if (actionType === 'split' && isRestaurantCloudTableShadow(targetOrder)) {
+            const result = restaurantCloudTableSplitBlockedResult();
+            showMessageModal(result.message, null, { type: 'warning' });
+            return result;
+        }
+        if (actionType === 'checkout' && isRestaurantCloudTableShadow(targetOrder)) {
+            const result = restaurantCloudTableBlockedResult('checkout');
+            showMessageModal(result.message, null, { type: 'warning' });
+            return result;
+        }
         const blocked = blockEcommerceRestaurantEffect();
         if (blocked) return blocked;
 
@@ -654,6 +729,8 @@ export function useTableManagement({
                 console.error('[useTableManagement] handleInitiateCheckout no está disponible.');
                 openModal('payment');
             } else if (actionType === 'split') {
+                const remoteBlocked = await blockRemoteSplit();
+                if (remoteBlocked) return remoteBlocked;
                 const kitchenReview = await reconcileKitchenCancelledItemsBeforeSplit();
                 if (!kitchenReview.canContinue) return kitchenReview;
 
@@ -671,6 +748,7 @@ export function useTableManagement({
         }
     }, [
         blockEcommerceRestaurantEffect,
+        blockRemoteSplit,
         order,
         executeLoadOpenOrder,
         closeModal,
@@ -681,6 +759,11 @@ export function useTableManagement({
     ]);
 
     const handleAnnulKitchenRejectedOrder = useCallback(async (targetOrder) => {
+        if (isRestaurantCloudTableShadow(targetOrder)) {
+            const result = restaurantCloudTableBlockedResult('cancel');
+            showMessageModal(result.message, null, { type: 'warning' });
+            return result;
+        }
         if (!features?.hasTables) return { success: false, message: 'Mesas no disponibles.' };
         if (!targetOrder?.id) return { success: false, message: 'Orden inválida.' };
 
@@ -766,6 +849,9 @@ export function useTableManagement({
             return;
         }
 
+        const remoteBlocked = await blockRemoteSplit();
+        if (remoteBlocked) return remoteBlocked;
+
         const kitchenReview = await reconcileKitchenCancelledItemsBeforeSplit();
         if (!kitchenReview.canContinue) return kitchenReview;
 
@@ -775,11 +861,14 @@ export function useTableManagement({
         }
 
         openModal('split');
-    }, [blockEcommerceRestaurantEffect, features?.hasTables, activeOrderId, reconcileKitchenCancelledItemsBeforeSplit, openModal]);
+    }, [blockEcommerceRestaurantEffect, blockRemoteSplit, features?.hasTables, activeOrderId, reconcileKitchenCancelledItemsBeforeSplit, openModal]);
 
     const handleConfirmSplitBill = useCallback(async (splitPayload) => {
         const blocked = blockEcommerceRestaurantEffect();
         if (blocked) return blocked;
+
+        const remoteBlocked = await blockRemoteSplit();
+        if (remoteBlocked) return remoteBlocked;
 
         const isSessionValid = await verifySessionIntegrity(SPLIT_BILL_INTEGRITY_OPTIONS);
         if (!isSessionValid) {
@@ -948,6 +1037,7 @@ export function useTableManagement({
 
                     await refreshData();
                     await fetchActiveTablesCount();
+                    window.dispatchEvent(new CustomEvent(RESTAURANT_CLOUD_STATUS_EVENT));
                 } catch (postCheckoutError) {
                     if (!result.cloudCommitted) throw postCheckoutError;
                     Logger.warn('[REST.SPLIT.1] Cobro cloud confirmado; actualización de UI pendiente:', postCheckoutError);
@@ -973,6 +1063,7 @@ export function useTableManagement({
     }, [
         blockEcommerceRestaurantEffect,
         activeOrderId,
+        blockRemoteSplit,
         features,
         companyName,
         verifySessionIntegrity,

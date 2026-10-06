@@ -16,6 +16,12 @@ import { validateFefoSelectionBeforeCheckout } from '../../services/sales/fefoSa
 import { getRestaurantOrderCloudStatusSnapshot } from '../restaurant/useRestaurantOrderCloudStatus';
 import { reconcileCartWithCancelledRestaurantItems } from '../../services/restaurant/restaurantOrderReconciliation';
 import {
+    isRestaurantCloudTableShadow,
+    isRestaurantCloudTableTerminal,
+    restaurantCloudTableBlockedResult,
+    restaurantCloudTableTerminalBlockedResult
+} from '../../services/restaurant/restaurantCloudTableGuards';
+import {
     closeRestaurantCloudOrderAfterSuccessfulPayment,
     retryPendingRestaurantCloudOrderCloses
 } from '../../services/restaurant/restaurantOrderCheckoutClose';
@@ -778,6 +784,18 @@ export function usePosCheckout({
 
         const activeOrderId = initialTarget.orderId;
         let activeOrder = initialTarget.activeOrder;
+        const durableOrder = await db.table(STORES.SALES).get(activeOrderId);
+        const terminalOrder = [activeOrder, durableOrder].find(isRestaurantCloudTableTerminal);
+        if (terminalOrder) {
+            const blocked = restaurantCloudTableTerminalBlockedResult(terminalOrder);
+            showMessageModal(blocked.message, null, { type: 'warning' });
+            return blocked;
+        }
+        if (isRestaurantCloudTableShadow(activeOrder) || isRestaurantCloudTableShadow(durableOrder)) {
+            const blocked = restaurantCloudTableBlockedResult('checkout');
+            showMessageModal(blocked.message, null, { type: 'warning' });
+            return blocked;
+        }
         const checkoutOrigin = expectedOrigin || activeOrder?.origin || null;
 
         const previousCheckoutError = await prepareForNewCheckout({
@@ -1088,6 +1106,20 @@ export function usePosCheckout({
         const snapshot = checkoutSnapshotRef.current;
         const initialSnapshotError = await validateLiveCheckoutSnapshot(snapshot);
         if (initialSnapshotError) return initialSnapshotError;
+
+        const durableOrder = await db.table(STORES.SALES).get(snapshot?.orderId);
+        if (isRestaurantCloudTableTerminal(durableOrder)) {
+            const blocked = restaurantCloudTableTerminalBlockedResult(durableOrder);
+            showMessageModal(blocked.message, null, { type: 'warning' });
+            return blocked;
+        }
+
+        if (isRestaurantCloudTableShadow(useActiveOrders.getState().activeOrders.get(snapshot?.orderId))
+            || isRestaurantCloudTableShadow(durableOrder)) {
+            const blocked = restaurantCloudTableBlockedResult('checkout');
+            showMessageModal(blocked.message, null, { type: 'warning' });
+            return blocked;
+        }
 
         const isSessionValid = await verifySessionIntegrity(CHECKOUT_INTEGRITY_OPTIONS);
         if (!isSessionValid) {

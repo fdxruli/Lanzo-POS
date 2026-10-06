@@ -131,6 +131,25 @@ describe('splitOpenTableOrderCore', () => {
     salesCloudShadowService.syncSaleShadowAfterLocalCommit.mockResolvedValue({ skipped: true });
   });
 
+  it.each([true, false])('blocks hydrated remote split before financial effects with Cloud=%s', async (cloudSpecialFlows) => {
+    const parent = { ...buildParentSale(), restaurantCloudHydrated: true, reservationAuthority: 'cloud' };
+    const deps = makeDeps(parent);
+    const result = await splitOpenTableOrderCore(makeParams(parent, { cloudSpecialFlows }), deps);
+    expect(result).toMatchObject({ success: false, code: 'HOLD_REMOTE_TABLE_VERSIONED_UPDATE_REQUIRED' });
+    expectNoCommitOrShadow(deps);
+    expect(salesCloudCashierService.processCloudSplitTableSale).not.toHaveBeenCalled();
+    expect(deps.restaurantOrdersRepository.getRestaurantOrderByLocalOrder).not.toHaveBeenCalled();
+  });
+
+  it.each([true, false])('blocks local-origin terminal evidence before split with Cloud=%s', async (cloudSpecialFlows) => {
+    const parent = { ...buildParentSale(), restaurantCloudTerminalState: 'terminal', restaurantCloudTerminalPaymentStatus: 'paid' };
+    const deps = makeDeps(parent);
+    const result = await splitOpenTableOrderCore(makeParams(parent, { cloudSpecialFlows }), deps);
+    expect(result).toMatchObject({ success: false, code: 'RESTAURANT_ORDER_ALREADY_PAID' });
+    expectNoCommitOrShadow(deps);
+    expect(salesCloudCashierService.processCloudSplitTableSale).not.toHaveBeenCalled();
+  });
+
   it('splits table order into closed child sales and returns cloud-safe split payload', async () => {
     const parentSale = buildParentSale();
     const deps = makeDeps(parentSale);

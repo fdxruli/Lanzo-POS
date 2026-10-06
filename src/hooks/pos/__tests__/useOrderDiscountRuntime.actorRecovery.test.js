@@ -54,6 +54,31 @@ beforeEach(async () => {
 });
 
 describe('discount runtime authority boundaries', () => {
+  it('preserves remote commercial totals through load, total display and tab detach', async () => {
+    const remote = { ...order(), restaurantCloudHydrated: true, reservationAuthority: 'cloud', updatedAt: '2026-10-05T12:00:00.123456Z' };
+    mocks.state.activeOrders.set(remote.id, remote);
+    mocks.get.mockResolvedValue(remote);
+    const { syncOrderTotalsNow } = await import('../useOrderDiscountRuntime');
+    syncOrderTotalsNow(remote.id);
+    expect(mocks.state.getTotalPrice()).toBe(999);
+    await mocks.state.loadOpenOrder(remote.id);
+    await mocks.state.pauseOrder(remote.id);
+    expect(mocks.state.activeOrders.get(remote.id)).toEqual(remote);
+    expect(mocks.update).not.toHaveBeenCalled();
+    expect(mocks.setState).not.toHaveBeenCalled();
+  });
+
+  it('blocks every direct discount mutation on a remote table', () => {
+    const remote = { ...order(), restaurantCloudHydrated: true, reservationAuthority: 'cloud' };
+    mocks.state.activeOrders.set(remote.id, remote);
+    expect(() => mocks.state.applyLineDiscount('burger', { type: 'fixed', value: '1' })).toThrow('otro dispositivo');
+    expect(() => mocks.state.removeLineDiscount('burger')).toThrow('otro dispositivo');
+    expect(() => mocks.state.applySaleDiscount({ type: 'fixed', value: '1' })).toThrow('otro dispositivo');
+    expect(() => mocks.state.removeSaleDiscount()).toThrow('otro dispositivo');
+    expect(mocks.state.activeOrders.get(remote.id)).toEqual(remote);
+    expect(mocks.setState).not.toHaveBeenCalled();
+  });
+
   it('registers the completed wrappers so handoff tracks their post-save work', () => {
     expect(mocks.registerGuards).toHaveBeenCalledTimes(1);
     expect(mocks.registerGuards).toHaveBeenCalledWith(expect.objectContaining({

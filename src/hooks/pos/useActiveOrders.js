@@ -7,6 +7,11 @@ import { db, STORES } from '../../services/db/dexie';
 import { SALE_STATUS } from '../../services/sales/financialStats';
 import { Money } from '../../utils/moneyMath';
 import { releaseCommittedStock } from '../../services/sales/inventoryFlow';
+import {
+  assertRestaurantCloudTableEditable,
+  isRestaurantCloudTableShadow,
+  isRestaurantCloudTableTerminal
+} from '../../services/restaurant/restaurantCloudTableGuards';
 import { reconcileActiveTableReservations } from '../../services/sales/tableReservationReconciliation';
 import { normalizeCartItems } from '../../utils/cartLineIdentity';
 import { releaseEcommerceOrderPosDraft } from '../../services/ecommerce/ecommerceOrderService';
@@ -56,6 +61,7 @@ const cancelPersistedOrder = async (orderId, actorHandle, noteLine) => db.transa
     const existing = await db.table(STORES.SALES).get(orderId);
     // Settled or already-cancelled orders must never release a second time.
     if (!existing || existing.status !== SALE_STATUS.OPEN || existing.splitReservationReconciledAt) return;
+    assertRestaurantCloudTableEditable(existing, 'cancel');
     const refundActorHandle = actorHandle || captureRefundsActorHandle();
     const assertActorCurrent = () => refundActorHandle.assertCurrent('refunds');
     assertActorCurrent();
@@ -338,12 +344,15 @@ export const useActiveOrders = create(
         }
 
         const order = {
+          ...((isRestaurantCloudTableShadow(sale) || isRestaurantCloudTableTerminal(sale)) ? sale : {}),
           id: sale.id,
           items: normalizeCartItems(sale.items),
           customer: sale.customerId ? { id: sale.customerId } : null,
           tableData: normalizeTableData(sale.tableData),
           createdAt: resolveImmutableOrderCreatedAt({ durableOrder: sale }),
-          total: sale.total || calculateOrderTotalExact(sale.items),
+          total: isRestaurantCloudTableShadow(sale)
+            ? sale.total
+            : sale.total || calculateOrderTotalExact(sale.items),
           isSaved: true,
           folio: sale.folio || null,
           fulfillmentStatus: sale.fulfillmentStatus || 'open',
@@ -436,6 +445,7 @@ export const useActiveOrders = create(
         if (!orderId || !state.activeOrders.has(orderId)) return state;
 
         const order = state.activeOrders.get(orderId);
+        assertRestaurantCloudTableEditable(order);
         const resolvedUpdates = typeof updates === 'function' ? updates(order) : updates;
         if (!resolvedUpdates) return state;
 
@@ -547,6 +557,7 @@ export const useActiveOrders = create(
 
         const order = state.activeOrders.get(orderId);
 
+        assertRestaurantCloudTableEditable(order);
         if (order.isLockedForCheckout) {
           console.warn('[useActiveOrders] Intento de mutación rechazado: Orden en proceso de pago.');
           return state;
@@ -578,6 +589,7 @@ export const useActiveOrders = create(
       if (!orderId) return;
 
       const order = state.activeOrders.get(orderId);
+      assertRestaurantCloudTableEditable(order, 'cancel');
       if (order?.isLockedForCheckout) {
         throw new Error("No se puede cancelar una orden en proceso de pago.");
       }
@@ -632,6 +644,7 @@ export const useActiveOrders = create(
       const order = state.activeOrders.get(orderId);
       if (!order) throw new Error("La orden no existe en sesion.");
 
+      assertRestaurantCloudTableEditable(order, 'cancel');
       if (order.isLockedForCheckout) {
         throw new Error("No se puede cancelar una orden en proceso de pago.");
       }
@@ -698,6 +711,7 @@ export const useActiveOrders = create(
           return { success: false, message: 'Solo se pueden anular ventas abiertas.' };
         }
 
+        assertRestaurantCloudTableEditable(existing, 'cancel');
         await cancelPersistedOrder(orderId, actorHandle, 'Sistema: Venta anulada desde modal de mesas (POS).');
 
         const state = get();
@@ -774,6 +788,9 @@ export const useActiveOrders = create(
             }
           }
         }
+
+        // Closing a remote snapshot's tab only detaches this device's view.
+        if (isRestaurantCloudTableShadow(order) || isRestaurantCloudTableTerminal(order)) return { success: true, detached: true };
 
         // --- 2. OPERACIONES DB (Background) ---
         if (sellable.length === 0) {
@@ -857,6 +874,8 @@ export const useActiveOrders = create(
         if (!order) throw new Error("La orden no existe en sesión.");
 
         const existingSale = await db.table(STORES.SALES).get(orderId);
+        assertRestaurantCloudTableEditable(order, 'checkout');
+        assertRestaurantCloudTableEditable(existingSale, 'checkout');
 
         const closedRecord = {
           id: order.id,
@@ -935,6 +954,7 @@ export const useActiveOrders = create(
         // Las órdenes con fulfillmentStatus='pending' ya están en cocina y se manejan desde OrderPage
         const openSales = allOpenSales.filter(sale =>
           !sale.fulfillmentStatus || sale.fulfillmentStatus === 'open'
+          || (isRestaurantCloudTableShadow(sale) && persistedOrdersMap.has(sale.id))
         );
 
         // 3️⃣ Crear mapa consolidado: localStorage + BD
@@ -943,6 +963,7 @@ export const useActiveOrders = create(
         // Primero agregar órdenes guardadas en BD
         openSales.forEach(sale => {
           ordersMap.set(sale.id, {
+            ...((isRestaurantCloudTableShadow(sale) || isRestaurantCloudTableTerminal(sale)) ? sale : {}),
             id: sale.id,
             items: normalizeCartItems(sale.items),
             customer: sale.customerId ? { id: sale.customerId } : null,
@@ -964,6 +985,8 @@ export const useActiveOrders = create(
           const existing = ordersMap.get(orderId);
 
           if (existing) {
+            // A remote snapshot's Cloud version wins over a local session draft.
+            if (isRestaurantCloudTableShadow(existing) || isRestaurantCloudTableTerminal(existing)) return;
             const newest = selectNewestOrder(draftOrder, existing);
             const selectedOrder = newest.order || existing;
             ordersMap.set(orderId, {

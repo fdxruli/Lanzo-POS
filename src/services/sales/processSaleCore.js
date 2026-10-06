@@ -13,6 +13,12 @@ import { dispatchTickerInventoryAlert } from '../tickerAlertEvents';
 import { salesCloudShadowService } from '../salesCloud/salesCloudShadowService';
 import { salesCloudCashierService } from '../salesCloud/salesCloudCashierService';
 import { calculateDiscountedTotals } from './discounts';
+import {
+    isRestaurantCloudTableShadow,
+    isRestaurantCloudTableTerminal,
+    restaurantCloudTableBlockedResult,
+    restaurantCloudTableTerminalBlockedResult
+} from '../restaurant/restaurantCloudTableGuards';
 import { normalizeStableSaleTimestamp } from './stableSaleTimestamp';
 import {
   createFinancialNotificationResult,
@@ -71,13 +77,15 @@ const resolveStableSaleTimestamp = async ({
     loadData,
     STORES,
     fallback,
-    Logger
+    Logger,
+    persistedSale = undefined
 }) => {
     if (activeOrderId && STORES?.SALES && typeof loadData === 'function') {
         try {
-            const persistedSale = await loadData(STORES.SALES, activeOrderId);
-            const stablePersistedTimestamp = normalizeStableSaleTimestamp(persistedSale?.timestamp)
-                || normalizeStableSaleTimestamp(persistedSale?.createdAt);
+            const durableSale = persistedSale === undefined
+                ? await loadData(STORES.SALES, activeOrderId) : persistedSale;
+            const stablePersistedTimestamp = normalizeStableSaleTimestamp(durableSale?.timestamp)
+                || normalizeStableSaleTimestamp(durableSale?.createdAt);
             if (stablePersistedTimestamp) return stablePersistedTimestamp;
         } catch (error) {
             Logger?.warn('No se pudo leer la marca temporal durable de la orden.', error);
@@ -240,6 +248,16 @@ export const processSaleCore = async ({
     Logger.time('Service:ProcessSale');
 
     try {
+        let persistedOrder;
+        if (activeOrderId) {
+            persistedOrder = await loadData(STORES.SALES, activeOrderId);
+            if (isRestaurantCloudTableTerminal(persistedOrder)) {
+                return withFinancialFailure(restaurantCloudTableTerminalBlockedResult(persistedOrder));
+            }
+            if (isRestaurantCloudTableShadow(persistedOrder)) {
+                return withFinancialFailure(restaurantCloudTableBlockedResult('checkout'));
+            }
+        }
         const itemsToProcess = order.filter(item => item.quantity && item.quantity > 0);
         if (itemsToProcess.length === 0) throw new Error('El pedido está vacío.');
 
@@ -386,7 +404,8 @@ export const processSaleCore = async ({
             loadData,
             STORES,
             fallback: new Date().toISOString(),
-            Logger
+            Logger,
+            persistedSale: persistedOrder
         });
         const discountTotal = Money.toExactString(financialTotals.discountTotal);
         const subtotal = Money.toExactString(financialTotals.subtotal);

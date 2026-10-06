@@ -23,6 +23,11 @@ import { isLocalTenantAccessError } from '../services/tenant/localTenantGuard';
 import { isTenantRuntimeError } from '../services/db/tenantRuntimeRouter';
 import { resolveImmutableOrderCreatedAt } from '../services/sales/stableSaleTimestamp';
 import { actorRuntimeController } from '../services/auth/actorRuntimeController';
+import {
+  assertRestaurantCloudTableEditable,
+  isRestaurantCloudTableShadow,
+  restaurantCloudTableBlockedResult
+} from '../services/restaurant/restaurantCloudTableGuards';
 
 const OPEN_FULFILLMENT_STATUS = 'open';
 const TABLE_ORDER_TYPE = 'table';
@@ -279,6 +284,7 @@ const getCurrentOrder = (state) => (
 
 export const createOrderActions = (set, get) => ({
       addSmartItem: async (product, orderId = get().currentOrderId) => {
+        assertRestaurantCloudTableEditable(get().activeOrders.get(orderId));
         const requiresBatchResolution = (
           product?.batchManagement?.enabled &&
           !product.batchId &&
@@ -719,6 +725,9 @@ export const createOrderActions = (set, get) => ({
         const state = get();
         const activeOrderId = orderId;
         const currentOrder = orderSnapshot || (orderId ? state.activeOrders.get(orderId) || null : null);
+        if (isRestaurantCloudTableShadow(currentOrder) || isRestaurantCloudTableShadow(state.activeOrders.get(orderId))) {
+          return restaurantCloudTableBlockedResult();
+        }
         const order = currentOrder?.items || [];
         const tableData = currentOrder?.tableData || null;
         const isSavedOrder = currentOrder?.isSaved || false;
@@ -737,6 +746,9 @@ export const createOrderActions = (set, get) => ({
             async () => {
               const salesTable = db.table(STORES.SALES);
               let existingSale = null;
+              if (activeOrderId) {
+                assertRestaurantCloudTableEditable(await salesTable.get(activeOrderId));
+              }
 
               // A successful table save may outlive the actor that was closing
               // its tab. Never reserve that stale draft a second time.
@@ -812,7 +824,9 @@ export const createOrderActions = (set, get) => ({
       },
 
       getTotalPrice: () => {
-        const order = getCurrentOrder(get())?.items || [];
+        const currentOrder = getCurrentOrder(get());
+        if (isRestaurantCloudTableShadow(currentOrder)) return Number(currentOrder.total);
+        const order = currentOrder?.items || [];
         const exactTotal = order.reduce((sum, item) => {
           if (item.quantity && item.quantity > 0) {
             const lineTotal = Money.multiply(item.price, item.quantity);
@@ -839,6 +853,7 @@ export const createOrderActions = (set, get) => ({
           // `requires_review` no es un estado financiero terminal. Versiones anteriores
           // ocultaban estas órdenes de Mesas sin liberar su inventario comprometido.
           for (const sale of legacyReviewSales) {
+            if (isRestaurantCloudTableShadow(sale)) continue;
             await salesTable.update(sale.id, {
               status: SALE_STATUS.OPEN,
               requiresReview: true,
@@ -863,6 +878,7 @@ export const createOrderActions = (set, get) => ({
 
           let unlockedCount = 0;
           for (const sale of recoverableOpenSales) {
+            if (isRestaurantCloudTableShadow(sale)) continue;
             if (sale.isLockedForCheckout && sale.lockedAt) {
               const lockedDate = new Date(sale.lockedAt);
               const minutesLocked = (now - lockedDate) / (1000 * 60);
@@ -881,6 +897,7 @@ export const createOrderActions = (set, get) => ({
           }
 
           const orphanedSales = recoverableOpenSales.filter((sale) => {
+            if (isRestaurantCloudTableShadow(sale)) return false;
             if (sale.id === currentActiveId) return false;
             const saleDate = new Date(sale.updatedAt || sale.timestamp);
             const hoursDiff = (now - saleDate) / (1000 * 60 * 60);

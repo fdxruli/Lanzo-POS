@@ -31,6 +31,7 @@ import { salesCloudLocalRepository } from '../salesCloudLocalRepository';
 import { loadCashSessionProjection } from '../../cajaProjection';
 import { getExplicitSalePaymentRows } from '../../sales/paymentMethodContract';
 import { Money } from '../../../utils/moneyMath';
+import { reconcileActiveTableReservations } from '../../sales/tableReservationReconciliation';
 
 const cashSession = {
   id: 'session-3b', monto_inicial: '50',
@@ -72,7 +73,7 @@ const qa10Payments = [
 beforeEach(async () => {
   runtime.database = new Dexie(`sales-cloud-3b-${crypto.randomUUID()}`);
   runtime.database.version(1).stores({
-    sales: 'id, timestamp, cash_session_id', menu: 'id', product_batches: 'id, productId',
+    sales: 'id, status, timestamp, cash_session_id', menu: 'id', product_batches: 'id, productId',
     transaction_log: 'id', sync_cache: 'key', movimientos_caja: 'id, cash_session_id',
     deleted_sales: 'id, deletedAt', waste_logs: 'id, timestamp', layaways: 'id', customer_ledger: 'id'
   });
@@ -85,6 +86,19 @@ afterEach(async () => {
 });
 
 describe('Cloud split payments persisted through Dexie into Caja', () => {
+  it('ignores foreign reservation snapshots during hold repair and successful split cleanup', async () => {
+    const inventory = { id: 'pizza', stock: 12, committedStock: 2, trackStock: true };
+    const item = { id: 'pizza', quantity: 9, inventoryReservation: { source: 'table', committedQuantity: 9, committedBatches: [{ batchId: 'foreign-batch', quantity: 9 }] } };
+    await runtime.database.table(STORES.MENU).put(inventory);
+    await runtime.database.table(STORES.SALES).put({ id: 'parent-3b', status: 'open', items: [item], restaurantCloudHydrated: true, reservationAuthority: 'cloud' });
+    await runtime.database.transaction('rw', [runtime.database.table(STORES.SALES), runtime.database.table(STORES.MENU), runtime.database.table(STORES.PRODUCT_BATCHES)], () => reconcileActiveTableReservations({ db: runtime.database, STORES }));
+    expect(await runtime.database.table(STORES.MENU).get('pizza')).toEqual(inventory);
+    await salesCloudLocalRepository.markLocalSplitParentSettled({ parentOrderId: 'parent-3b', splitGroupId: 'remote-split' });
+    await salesCloudLocalRepository.markLocalSplitParentSettled({ parentOrderId: 'parent-3b', splitGroupId: 'remote-split' });
+    expect(await runtime.database.table(STORES.MENU).get('pizza')).toEqual(inventory);
+    expect(await runtime.database.table(STORES.SALES).get('parent-3b')).toMatchObject({ status: 'cancelled', splitReservationReconcileStatus: 'not_owned', restaurantCloudHydrated: true });
+  });
+
   it('QA-10 persists three payments and reconstructs only 33.34 cash plus 66.66 noncash after reload', async () => {
     await applySplitSalesFinancialResponseProjection(makeFixture({ payments: qa10Payments }));
     const sale = await runtime.database.table(STORES.SALES).get('local-sale-3b');

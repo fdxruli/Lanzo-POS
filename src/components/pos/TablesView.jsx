@@ -30,6 +30,8 @@ import { showConfirmModal, showMessageModal } from '../../services/utils';
 import { formatSelectedModifiersForDisplay } from '../../utils/restaurantModifierDisplay';
 import { canPerformRefunds } from '../../services/auth/salesPermissionPolicy';
 import { useActorRuntimeSnapshot } from '../../services/auth/useActorRuntimeSnapshot';
+import { useRestaurantActiveTables } from '../../hooks/restaurant/useRestaurantActiveTables';
+import { isRestaurantCloudTableShadow, restaurantCloudTableBlockedResult, restaurantCloudTableSplitBlockedResult } from '../../services/restaurant/restaurantCloudTableGuards';
 import './TablesView.css';
 
 const getTableLabel = (order) => {
@@ -106,6 +108,7 @@ const getCloudItemName = (item = {}) => item.productName || item.product_name ||
 const getCloudItemStation = (item = {}) => item.stationName || item.station_name || item.stationCode || item.station_code || 'Cocina';
 
 const getItemLineTotal = (item = {}) => {
+  if (item.lineTotal !== null && item.lineTotal !== undefined) return item.lineTotal;
   const quantity = getItemQuantity(item);
   const unitPrice = Number(item.price ?? item.unitPrice ?? item.unit_price ?? 0);
   return unitPrice * quantity;
@@ -207,10 +210,16 @@ const TableCard = ({
     () => (Array.isArray(rawItems) ? rawItems : []),
     [rawItems]
   );
-  const cloudStatus = useRestaurantOrderCloudStatus({
+  const localCloudStatus = useRestaurantOrderCloudStatus({
     localOrderId: orderId,
-    enabled: Boolean(orderId)
+    enabled: Boolean(orderId) && !order.cloudOrder
   });
+  const cloudStatus = order.cloudOrder ? {
+    ...localCloudStatus,
+    ...buildRestaurantCloudStatusSummary(order.cloudOrder),
+    cloudOrder: order.cloudOrder, isCloudStatusEnabled: true, isLoading: false, error: null
+  } : localCloudStatus;
+  const remoteSnapshot = isRestaurantCloudTableShadow(order);
   const rawCloudItems = cloudStatus.items;
   const cloudItems = useMemo(
     () => (Array.isArray(rawCloudItems) ? rawCloudItems : []),
@@ -381,6 +390,11 @@ const TableCard = ({
           </div>
         </div>
 
+        {remoteSnapshot && (
+          <div className="table-card-review-banner" role="status">
+            <span>Creada en otro dispositivo. Puedes revisar la comanda. Edita, cobra o cancela desde el dispositivo de origen.</span>
+          </div>
+        )}
         {isKitchenCancelled && (
           <div className="table-card-kitchen-banner" role="status">
             <Ban size={16} aria-hidden="true" />
@@ -410,7 +424,7 @@ const TableCard = ({
                 <button
                   type="button"
                   className="table-cloud-adjust-btn"
-                  disabled={adjustSubmitting}
+                  disabled={adjustSubmitting || remoteSnapshot}
                   onClick={(e) => {
                     e.stopPropagation();
                     onAdjustKitchenCancelled?.(order);
@@ -428,7 +442,7 @@ const TableCard = ({
       <div
         className={`table-card-actions${isKitchenCancelled ? ' table-card-actions--with-annul' : ''}`}
       >
-        {isKitchenCancelled && canManageRefunds && onAnnulKitchenRejected && (
+        {isKitchenCancelled && !remoteSnapshot && canManageRefunds && onAnnulKitchenRejected && (
           <button
             type="button"
             className="btn-annull-kitchen"
@@ -451,7 +465,7 @@ const TableCard = ({
           }}
         >
           <Pencil size={16} aria-hidden="true" />
-          {cancelledFromKitchen ? 'Abrir en POS' : 'Editar / Añadir'}
+          {remoteSnapshot ? 'Revisar en POS' : cancelledFromKitchen ? 'Abrir en POS' : 'Editar / Añadir'}
         </button>
 
         {!isKitchenCancelled && (
@@ -459,6 +473,8 @@ const TableCard = ({
             <button
               type="button"
               className="btn-quick-split"
+              disabled={remoteSnapshot}
+              title={remoteSnapshot ? restaurantCloudTableSplitBlockedResult().message : undefined}
               onClick={(e) => {
                 e.stopPropagation();
                 onSplitOrder?.(order);
@@ -470,6 +486,8 @@ const TableCard = ({
             <button
               type="button"
               className="btn-quick-checkout"
+              disabled={remoteSnapshot}
+              title={remoteSnapshot ? restaurantCloudTableBlockedResult('checkout').message : undefined}
               onClick={(e) => {
                 e.stopPropagation();
                 onCheckoutOrder?.(order);
@@ -497,9 +515,8 @@ export default function TablesView({
   const licenseDetails = useAppStore((state) => state.licenseDetails);
   const actorRuntime = useActorRuntimeSnapshot();
   const canManageRefunds = canPerformRefunds(actorRuntime);
-  const [openSalesRows, setOpenSalesRows] = useState([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
+  const { tables: openSalesRows, isLoading, error: errorMessage, warning, refresh: loadOpenSalesRows, cloudEnabled } =
+    useRestaurantActiveTables({ enabled: show });
   const [searchTerm, setSearchTerm] = useState('');
   const [annullingOrderId, setAnnullingOrderId] = useState(null);
   const [adjustingOrderId, setAdjustingOrderId] = useState(null);
@@ -528,64 +545,18 @@ export default function TablesView({
     filteredInService.length > 0 || filteredCancelledKitchen.length > 0;
   const hasStoredRows = openSalesRows.length > 0;
 
-  const loadOpenSalesRows = useCallback(
-    async (withLoadingOverlay) => {
-      if (withLoadingOverlay) {
-        setIsLoading(true);
-        setErrorMessage('');
-      }
-      try {
-        const rows = await db
-          .table(STORES.SALES)
-          .where('status')
-          .equals(SALE_STATUS.OPEN)
-          .toArray();
-
-        rows.sort((left, right) => {
-          const leftDate = new Date(left?.updatedAt || left?.timestamp || 0).getTime();
-          const rightDate = new Date(right?.updatedAt || right?.timestamp || 0).getTime();
-          return rightDate - leftDate;
-        });
-
-        setOpenSalesRows(rows);
-        try {
-          onAfterTablesLoad?.();
-        } catch {
-          /* opcional */
-        }
-      } catch (error) {
-        if (withLoadingOverlay) {
-          setOpenSalesRows([]);
-          setErrorMessage(error?.message || 'Error al cargar las mesas activas.');
-        }
-      } finally {
-        if (withLoadingOverlay) setIsLoading(false);
-      }
-    },
-    [onAfterTablesLoad]
-  );
-
   useEffect(() => {
     if (!show) {
       setSearchTerm('');
-      return undefined;
+      return;
     }
-
-    let isActive = true;
-
-    (async () => {
-      await loadOpenSalesRows(true);
-      if (!isActive) return;
-    })();
-
-    return () => {
-      isActive = false;
-    };
-  }, [show, loadOpenSalesRows]);
+    if (!isLoading) onAfterTablesLoad?.();
+  }, [show, isLoading, onAfterTablesLoad]);
 
   const handleAnnulKitchenRejected = useCallback(
     async (order) => {
       if (!onAnnulKitchenRejectedOrder) return;
+      if (isRestaurantCloudTableShadow(order)) return;
       setAnnullingOrderId(order.id);
       try {
         const result = await onAnnulKitchenRejectedOrder(order);
@@ -602,6 +573,10 @@ export default function TablesView({
   const handleAdjustKitchenCancelled = useCallback(
     async (order) => {
       if (!order?.id) return;
+      if (isRestaurantCloudTableShadow(order)) {
+        showMessageModal(restaurantCloudTableBlockedResult().message, null, { type: 'warning' });
+        return;
+      }
 
       setAdjustingOrderId(order.id);
       try {
@@ -709,25 +684,29 @@ export default function TablesView({
   );
 
   const handleSelectAndClose = useCallback(
-    (orderId) => {
-      onSelectOrder?.(orderId);
-      onClose?.();
+    async (orderId) => {
+      const result = await onSelectOrder?.(orderId);
+      if (result?.success !== false) onClose?.();
     },
     [onSelectOrder, onClose]
   );
 
   const handleCheckoutAndClose = useCallback(
-    (order) => {
-      onCheckoutOrder?.(order);
-      onClose?.();
+    async (order) => {
+      if (isRestaurantCloudTableShadow(order)) {
+        showMessageModal(restaurantCloudTableBlockedResult('checkout').message, null, { type: 'warning' });
+        return;
+      }
+      const result = await onCheckoutOrder?.(order);
+      if (result?.success !== false) onClose?.();
     },
     [onCheckoutOrder, onClose]
   );
 
   const handleSplitAndClose = useCallback(
-    (order) => {
-      onSplitOrder?.(order);
-      onClose?.();
+    async (order) => {
+      const result = await onSplitOrder?.(order);
+      if (result?.success !== false) onClose?.();
     },
     [onSplitOrder, onClose]
   );
@@ -779,6 +758,9 @@ export default function TablesView({
                 />
               </div>
             </div>
+            {cloudEnabled && <button type="button" className="table-cloud-adjust-btn"
+              disabled={isLoading} aria-busy={isLoading}
+              onClick={() => loadOpenSalesRows({ force: true })}>Actualizar mesas</button>}
             <button
               type="button"
               className="btn-cancel tables-modal-close"
@@ -790,7 +772,8 @@ export default function TablesView({
           </header>
 
           <div className="tables-modal-body">
-            {isLoading && <div className="tables-loading">Cargando mesas…</div>}
+            {isLoading && <div className="tables-loading" role="status">Actualizando mesas…</div>}
+            {warning && <div className="table-cloud-status-warning" role="status">{warning}</div>}
             {!isLoading && errorMessage && (
               <div className="tables-error" role="alert">
                 {errorMessage}
@@ -803,7 +786,7 @@ export default function TablesView({
               <div className="tables-empty">No se encontraron mesas con esa búsqueda.</div>
             )}
 
-            {!isLoading && !errorMessage && filteredCancelledKitchen.length > 0 && (
+            {filteredCancelledKitchen.length > 0 && (
               <div className="tables-kitchen-cancelled-block">
                 <h3 className="tables-subsection-title">
                   Rechazadas en cocina ({filteredCancelledKitchen.length})
@@ -833,7 +816,7 @@ export default function TablesView({
               </div>
             )}
 
-            {!isLoading && !errorMessage && filteredInService.length > 0 && (
+            {filteredInService.length > 0 && (
               <div className="tables-in-service-block">
                 <h3 className="tables-subsection-title">
                   En servicio ({filteredInService.length})

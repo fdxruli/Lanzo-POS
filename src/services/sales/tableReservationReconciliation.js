@@ -1,5 +1,6 @@
 import { getCommittedStock, normalizeStock } from '../inventoryStock';
 import { getTableReservationProductQuantities } from './inventoryFlow';
+import { isRestaurantCloudTableShadow, isRestaurantCloudTableTerminal } from '../restaurant/restaurantCloudTableGuards';
 
 /**
  * Call inside an rw transaction covering SALES, MENU and PRODUCT_BATCHES.
@@ -21,7 +22,7 @@ export const reconcileActiveTableReservations = async ({ db, STORES }) => {
   };
 
   for (const order of orders) {
-    if (order.splitReservationReconciledAt) continue;
+    if (order.splitReservationReconciledAt || isRestaurantCloudTableShadow(order) || isRestaurantCloudTableTerminal(order)) continue;
     for (const item of order.items || []) {
       const reservation = item.inventoryReservation;
       if (reservation?.source !== 'table' || !(reservation.committedQuantity > 0)) continue;

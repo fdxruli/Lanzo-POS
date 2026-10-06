@@ -2,6 +2,7 @@ import { db, STORES } from '../db/dexie';
 import { getCommittedStock, normalizeStock } from '../db/utils';
 import { cloudSaleToLocalSyncPatch } from './salesCloudMapper';
 import { getTableReservationProductQuantities } from '../sales/inventoryFlow';
+import { isRestaurantCloudTableShadow } from '../restaurant/restaurantCloudTableGuards';
 import { cloudSalePaymentSnapshot, normalizeCloudSalePaymentRows } from './salesCloudPaymentSnapshot';
 
 const CLOUD_SALE_CACHE_PREFIX = 'cloud_sale:';
@@ -362,7 +363,9 @@ export const salesCloudLocalRepository = {
         }
 
         const settledAt = nowIso();
-        const reconciliation = existing.splitReservationReconciledAt
+        const reconciliation = isRestaurantCloudTableShadow(existing)
+          ? { status: 'not_owned', warnings: [] }
+          : existing.splitReservationReconciledAt
           ? {
             status: existing.splitReservationReconcileStatus || 'completed',
             warnings: Array.isArray(existing.splitReservationReconcileWarnings)

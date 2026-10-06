@@ -309,6 +309,18 @@ describe('Mini-phase 3A.1 catalog desync and cancellation', () => {
     expect(await db.table('menu').get('burger')).toMatchObject({ stock: 9, committedStock: 0 });
   });
 
+  it('does not rebuild origin-device holds after explicit Cloud payment evidence', async () => {
+    await seedTable('A');
+    await db.table(STORES.SALES).update('A', { restaurantCloudTerminalState: 'terminal',
+      restaurantCloudTerminalPaymentStatus: 'paid' });
+    await db.table(STORES.MENU).update('burger', { committedStock: 0 });
+    await productLocalRepository.applyCloudProduct({ id: 'burger', stock: 9, committed_stock: 0 });
+    expect(await db.table(STORES.SALES).get('A')).toMatchObject({ status: 'open', restaurantCloudTerminalState: 'terminal' });
+    expect(await db.table(STORES.MENU).get('burger')).toMatchObject({ stock: 9, committedStock: 0 });
+    await expect(useActiveOrders.getState().cancelOpenSaleByIdFromPos('A')).resolves.toMatchObject({ success: false, code: 'RESTAURANT_ORDER_ALREADY_PAID' });
+    expect(await db.table(STORES.MENU).get('burger')).toMatchObject({ stock: 9, committedStock: 0 });
+  });
+
   it('rebuilds both known holds during pull when the old local value is already zero', async () => {
     await seedTable('A');
     await seedTable('B');
