@@ -49,4 +49,254 @@ export const createLicenseBackgroundValidationActions = ({
       const licenseDetails = initialState.licenseDetails || localLicenseBeforeValidation || {
         license_key: licenseKey
       };
-      痘玘
+      const mode = initialState.licenseSyncMode || getLicenseSyncMode(licenseDetails);
+
+      if (shouldSkipRemoteValidationForPlan({ licenseDetails, mode, reason })) {
+        Logger.log(`[Background] Validaci贸n remota omitida por TTL exitoso de plan (${reason}).`);
+
+        if (!get().companyProfile) {
+          await get()._loadProfile(licenseKey, {
+            refreshProfile: false,
+            profileLoadMode: 'background',
+            reason: `background_cached_${reason}`
+          });
+        }
+
+        return;
+      }
+
+      if (shouldSkipRemoteValidationAfterFailure({ licenseDetails, reason })) {
+        Logger.log(`[Background] Validaci贸n remota omitida por cooldown corto de error (${reason}).`);
+
+        if (!get().companyProfile) {
+          await get()._loadProfile(licenseKey, {
+            refreshProfile: false,
+            profileLoadMode: 'background',
+            reason: `background_error_cooldown_${reason}`
+          });
+        }
+
+        return;
+      }
+
+      Logger.log(`[Background] Iniciando validaci贸n silenciosa (${reason})...`);
+
+      markLastLicenseValidationAttempt(licenseKey);
+
+      const BACKGROUND_TIMEOUT = 8000;
+      const validationPromise = revalidateLicense(licenseKey);
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('BACKGROUND_TIMEOUT')), BACKGROUND_TIMEOUT)
+      );
+
+      const serverValidation = await Promise.race([
+        validationPromise,
+        timeoutPromise
+      ]);
+      if (get().appStatus !== 'ready') return;
+
+      if (!serverValidation?.valid && serverValidation?.valid !== false) {
+        Logger.warn('[Background] Respuesta inv谩lida del servidor; no se marca success.');
+        return;
+      }
+
+      markLastLicenseValidationSuccess(licenseKey);
+
+      const localLicense = localLicenseBeforeValidation || await getLicenseFromStorage();
+      const sourceLicense = localLicense || get().licenseDetails || {
+        license_key: licenseKey
+      };
+
+      if (isLicensePlanBlockFailure(serverValidation)) {
+        await get()._requireLicenseChange(sourceLicense, serverValidation);
+        return;
+      }
+
+      if (!localLicense) {
+        Logger.warn('[Background] No hay licencia local para comparar.');
+        return;
+      }
+
+      if (get().appStatus !== 'ready') {
+        Logger.log('[Background] La sesi贸n cambi贸 tras validar; no se fuerza salida.');
+        return;
+      }
+
+      const criticalChanges = {
+        validityChanged: serverValidation.valid !== localLicense.valid,
+        statusChanged: serverValidation.status !== localLicense.status,
+        expiryChanged:
+          Boolean(serverValidation.expires_at) &&
+          serverValidation.expires_at !== localLicense.expires_at,
+        graceChanged:
+          Boolean(serverValidation.grace_period_ends) &&
+          serverValidation.grace_period_ends !== localLicense.grace_period_ends,
+        featuresChanged:
+          JSON.stringify(serverValidation.features || {}) !==
+          JSON.stringify(localLicense.features || {}),
+        realtimeTopicChanged:
+          serverValidation.realtime_topic !== localLicense.realtime_topic,
+        maxDevicesChanged:
+          serverValidation.max_devices !== localLicense.max_devices,
+        planCodeChanged:
+          serverValidation.plan_code !== localLicense.plan_code,
+        planNameChanged:
+          serverValidation.plan_name !== localLicense.plan_name,
+        productNameChanged:
+          serverValidation.product_name !== localLicense.product_name,
+        deviceRoleChanged:
+          serverValidation.device_role !== localLicense.device_role,
+        staffUserChanged:
+          JSON.stringify(serverValidation.staff_user || null) !==
+          JSON.stringify(localLicense.staff_user || null),
+        wasRevoked:
+          !serverValidation.valid &&
+          isFatalValidationFailure(serverValidation),
+        needsRenewal:
+          !serverValidation.valid &&
+          ['expired_subscription', 'LICENSE_EXPIRED'].includes(serverValidation.reason)
+      };
+
+      if (criticalChanges.wasRevoked) {
+        if (
+          isStaffDeviceAuthorizationFailure(serverValidation) &&
+          await hasStaffValidationContext(get(), localLicense)
+        ) {
+          await get()._requireStaffLogin(localLicense, serverValidation);
+          return;
+        }
+
+        await clearLocalLicenseSession();
+
+        set({
+          appStatus: 'unauthenticated',
+          licenseDetails: null,
+          licenseStatus: normalizeValidationCode(serverValidation) || 'invalid',
+          companyProfile: null,
+          profileImportCandidate: null,
+          pendingTermsUpdate: null
+        });
+
+        Logger.error(
+          '[Background] Licencia remota no disponible:',
+          normalizeValidationCode(serverValidation)
+        );
+
+        showMessageModal(
+          'LICENCIA NO DISPONIBLE\n\nLa licencia local ya no existe o fue desactivada en el servidor. Ingresa una licencia valida para continuar.',
+          null,
+          {
+            type: 'error',
+            confirmButtonText: 'Entendido',
+            showCancel: false,
+            isDismissible: false
+          }
+        );
+
+        return;
+      }
+
+      if (criticalChanges.needsRenewal) {
+        Logger.warn('[Background] Fin de gracia detectado; esperando confirmaci贸n del handoff a Lanzo Local');
+
+        const expiredDetails = {
+          ...localLicense,
+          ...serverValidation,
+          valid: false,
+          status: 'expired'
+        };
+
+        await saveLicenseToStorage(expiredDetails);
+
+        set({
+          appStatus: 'locked_renewal',
+          licenseStatus: 'expired',
+          licenseDetails: expiredDetails,
+          gracePeriodEnds: null
+        });
+
+        showMessageModal(
+          'Tu per铆odo de gracia termin贸.\n\nEstamos confirmando la actualizaci贸n a Lanzo Local. Si el servidor no responde, podr谩s reintentar sin borrar tus datos locales.',
+          null,
+          { type: 'warning' }
+        );
+
+        return;
+      }
+
+      if (
+        criticalChanges.validityChanged ||
+        criticalChanges.statusChanged ||
+        criticalChanges.expiryChanged ||
+        criticalChanges.graceChanged ||
+        criticalChanges.featuresChanged ||
+        criticalChanges.realtimeTopicChanged ||
+        criticalChanges.maxDevicesChanged ||
+        criticalChanges.planCodeChanged ||
+        criticalChanges.planNameChanged ||
+        criticalChanges.productNameChanged ||
+        criticalChanges.deviceRoleChanged ||
+        criticalChanges.staffUserChanged
+      ) {
+        Logger.log('[Background] Cambios detectados en licencia, actualizando...');
+        await get()._processServerValidation(serverValidation, localLicense, {
+          refreshProfile,
+          reason: `background_${reason}`
+        });
+      } else {
+        Logger.log('[Background] Licencia validada sin cambios. No se refresca perfil.');
+
+        if (refreshProfile || !get().companyProfile) {
+          await get()._loadProfile(localLicense.license_key, {
+            refreshProfile,
+            profileLoadMode: 'background',
+            reason: `background_${reason}`
+          });
+        }
+      }
+
+      sessionStorage.setItem('Lanzo_app_loaded', Date.now().toString());
+      get().clearServerStatus?.();
+    } catch (error) {
+      const isOnlineNow = await checkInternetConnection();
+
+      if (isOnlineNow) {
+        if (error.message === 'BACKGROUND_TIMEOUT') {
+          Logger.warn('[Salud] Detectada latencia alta en Supabase');
+
+          get().reportServerStatus?.(
+            'degraded',
+            'Supabase est谩 respondiendo m谩s lento de lo normal. Los cambios de configuraci贸n pueden tardar unos segundos en reflejarse.',
+            'background_timeout'
+          );
+        } else if (
+          error.message?.includes('fetch') ||
+          error.message?.includes('network') ||
+          error.code === 'PGRST301' ||
+          error.code?.startsWith('5')
+        ) {
+          Logger.warn('[Salud] Detectada ca铆da o interrupci贸n de Supabase');
+
+          get().reportServerStatus?.(
+            'down',
+            'No se pudo contactar Supabase en este momento. Lanzo POS seguir谩 reintentando autom谩ticamente.',
+            'background_network_error'
+          );
+        }
+      } else {
+        get().clearServerStatus?.();
+      }
+
+      if (error.message === 'BACKGROUND_TIMEOUT') {
+        Logger.warn('[Background] Timeout de validaci贸n (8s) - Servidor lento o sin conexi贸n');
+      } else if (
+        error.message?.includes('fetch') ||
+        error.message?.includes('network')
+      ) {
+        Logger.warn('[Background] Error de red durante validaci贸n');
+      } else {
+        Logger.warn('[Background] Validaci贸n fall贸:', error.message);
+      }
+    }
+  }
+});
