@@ -88,6 +88,10 @@ export default defineConfig(() => ({
       manifest: false,
       injectManifest: {
         globPatterns: ADMIN_SHELL_GLOB_PATTERNS,
+        // Las rutas Local esenciales se cargan de forma eager dentro del cierre
+        // administrativo. App puede superar el límite Workbox de 2 MiB sin
+        // exceder el presupuesto total offline revisado (6.32 MB).
+        maximumFileSizeToCacheInBytes: 3 * 1024 * 1024,
       },
     }),
   ],
