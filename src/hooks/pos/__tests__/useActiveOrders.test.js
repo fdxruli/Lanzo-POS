@@ -138,6 +138,46 @@ describe('useActiveOrders unified store', () => {
     cloudRestaurantOrderServerVersion: 7, updatedAt: '2026-10-05T10:00:00.123456Z'
   });
 
+  it.each([false, true])('removes the sole remote review and creates an empty cart (multiple orders: %s)', async (multiple) => {
+    const { useAppStore } = await import('../../../store/useAppStore');
+    useAppStore.setState({ enableMultipleOrders: multiple });
+    const sale = remoteSale();
+    dbState.sales.set(sale.id, sale);
+    dbState.products.set('pizza', { id: 'pizza', stock: 10, committedStock: 4 });
+    dbState.batches = [{ id: 'batch-1', stock: 8, committedStock: 3 }];
+    await useActiveOrders.getState().loadOpenOrder(sale.id);
+    const before = JSON.stringify({ sales: [...dbState.sales], products: [...dbState.products], batches: dbState.batches });
+    const tableCalls = (await import('../../../services/db/dexie')).db.table.mock.calls.length;
+    await useActiveOrders.getState().removeOrder(sale.id);
+    const state = useActiveOrders.getState();
+    expect(state.activeOrders.has(sale.id)).toBe(false);
+    expect(state.currentOrderId).toBe('sal-generated');
+    expect(state.activeOrders.get(state.currentOrderId).items).toEqual([]);
+    expect(JSON.stringify({ sales: [...dbState.sales], products: [...dbState.products], batches: dbState.batches })).toBe(before);
+    expect((await import('../../../services/db/dexie')).db.table.mock.calls).toHaveLength(tableCalls);
+    expect(releaseCommittedStock).not.toHaveBeenCalled();
+    await useActiveOrders.getState().removeOrder(sale.id);
+    expect(useActiveOrders.getState().activeOrders.size).toBe(1);
+  });
+
+  it('preserves another local cart and reloads a single remote copy with Cloud authority', async () => {
+    const { useAppStore } = await import('../../../store/useAppStore');
+    useAppStore.setState({ enableMultipleOrders: true });
+    const local = makeOrder('local-order', [{ id: 'coffee', price: 20, quantity: 1 }]);
+    const sale = remoteSale();
+    dbState.sales.set(sale.id, sale);
+    useActiveOrders.setState({ activeOrders: new Map([[local.id, local], [sale.id, sale]]), currentOrderId: sale.id });
+    await useActiveOrders.getState().removeOrder(sale.id);
+    expect(useActiveOrders.getState().currentOrderId).toBe(local.id);
+    expect(useActiveOrders.getState().activeOrders.get(local.id)).toEqual(local);
+    await useActiveOrders.getState().loadOpenOrder(sale.id);
+    await useActiveOrders.getState().loadOpenOrder(sale.id);
+    expect(useActiveOrders.getState().activeOrders.size).toBe(2);
+    expect(useActiveOrders.getState().activeOrders.get(sale.id).reservationAuthority).toBe('cloud');
+    expect(dbState.sales.get(sale.id)).toEqual(sale);
+    expect(releaseCommittedStock).not.toHaveBeenCalled();
+  });
+
   it('loads the remote identity and complete commercial snapshot without reserving inventory', async () => {
     const sale = remoteSale();
     dbState.sales.set(sale.id, sale);

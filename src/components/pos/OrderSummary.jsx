@@ -16,7 +16,7 @@ import {
   X,
   XCircle,
 } from 'lucide-react';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
@@ -43,6 +43,8 @@ import { canPerformRefunds } from '../../services/auth/salesPermissionPolicy';
 import { captureRefundsActorHandle } from '../../services/auth/refundsActorAuthorization';
 import { handlePosActorAuthorityError } from '../../hooks/pos/posActorAuthorityUi';
 import { useActorRuntimeSnapshot } from '../../services/auth/useActorRuntimeSnapshot';
+import { actorRuntimeController } from '../../services/auth/actorRuntimeController';
+import { isRestaurantCloudTableShadow } from '../../services/restaurant/restaurantCloudTableGuards';
 import OrderDiscountPanel from './OrderDiscountPanel';
 import EcommercePosDraftBanner from './EcommercePosDraftBanner';
 import './OrderSummary.css';
@@ -159,6 +161,9 @@ export default function OrderSummary({
   const total = getTotalPrice();
   const tablesBadgeTotal = activeTablesCount + kitchenRejectedOpenCount;
   const isEcommerceDraft = currentOrder?.origin === 'ecommerce';
+  const isRemoteTableReview = isRestaurantCloudTableShadow(currentOrder);
+  const closingRemoteReview = useRef(false);
+  const [isClosingRemoteReview, setIsClosingRemoteReview] = useState(false);
   const ecommerceLocalSubtotal = useMemo(() => order.reduce(
     (sum, item) => sum + ((Number(item.price) || 0) * (Number(item.quantity) || 0)),
     0
@@ -359,6 +364,46 @@ export default function OrderSummary({
         null,
         { type: 'warning' }
       );
+    }
+  };
+
+  const handleCloseRemoteReview = async () => {
+    if (closingRemoteReview.current) return;
+    const state = useActiveOrders.getState();
+    const orderId = currentOrderId;
+    const shadow = state.activeOrders.get(orderId);
+    if (state.currentOrderId !== orderId || !isRestaurantCloudTableShadow(shadow)) return;
+
+    closingRemoteReview.current = true;
+    setIsClosingRemoteReview(true);
+    try {
+      // Session/scope continuity only: closing a local view requires no refunds permission.
+      const actor = actorRuntimeController.capture();
+      if (shadow.restaurantCloudTenantId !== actor.tenant.opaqueId
+        || shadow.tenantOpaqueId !== actor.tenant.opaqueId) return;
+      const confirmed = await showConfirmModal(
+        'La mesa se quitará de este dispositivo, pero seguirá abierta y disponible en Mesas.',
+        {
+          title: 'Cerrar revisión',
+          confirmButtonText: 'Cerrar revisión',
+          cancelButtonText: 'Seguir revisando'
+        }
+      );
+      if (!confirmed) return;
+      actor.assertCurrent();
+      const latest = useActiveOrders.getState();
+      // A replaced/reloaded shadow is a different review, even if its ID was reused.
+      if (latest.activeOrders.get(orderId) !== shadow || !isRestaurantCloudTableShadow(shadow)) return;
+      const wasCurrent = latest.currentOrderId === orderId;
+      await latest.removeOrder(orderId);
+      actor.assertCurrent();
+      if (wasCurrent && isMobileModal) onClose?.();
+    } catch (error) {
+      if (handlePosActorAuthorityError(error, 'close_remote_review')) return;
+      showMessageModal('No se pudo cerrar la revisión. Intenta nuevamente.', null, { type: 'warning' });
+    } finally {
+      closingRemoteReview.current = false;
+      setIsClosingRemoteReview(false);
     }
   };
 
@@ -669,9 +714,9 @@ export default function OrderSummary({
         </div>
       )}
 
-      {order.length > 0 && (
+      {(order.length > 0 || isRemoteTableReview) && (
           <footer className="order-checkout">
-            {!isEcommerceDraft && (
+            {!isEcommerceDraft && order.length > 0 && (
               <div className="order-discount-trigger-row">
                 <OrderDiscountPanel
                   compact
@@ -689,6 +734,7 @@ export default function OrderSummary({
             </div>
 
             <div className={`order-actions${showRestaurantActions ? ' order-actions--restaurant' : ''}`}>
+              {order.length > 0 && (
               <button
                 type="button"
                 className="order-action-btn order-action-btn--primary"
@@ -697,8 +743,9 @@ export default function OrderSummary({
                 <CreditCard size={21} aria-hidden="true" />
                 <span>Cobrar</span>
               </button>
+              )}
 
-              {showRestaurantActions && (
+              {showRestaurantActions && order.length > 0 && (
                 <button
                   type="button"
                   className={`order-action-btn order-action-btn--save${isEditMode ? ' order-action-btn--update' : ''}`}
@@ -710,7 +757,7 @@ export default function OrderSummary({
                 </button>
               )}
 
-              {showRestaurantActions && canSplitOrder && isEditMode && (
+              {showRestaurantActions && canSplitOrder && isEditMode && order.length > 0 && (
                 <button
                   type="button"
                   className="order-action-btn order-action-btn--split"
@@ -722,7 +769,7 @@ export default function OrderSummary({
                 </button>
               )}
 
-              {features.hasLayaway && (
+              {features.hasLayaway && order.length > 0 && (
                 <button
                   type="button"
                   className="order-action-btn order-action-btn--layaway"
@@ -734,7 +781,19 @@ export default function OrderSummary({
                 </button>
               )}
 
-              {(!isEditMode || isEcommerceDraft || canManageRefunds) && (
+              {isRemoteTableReview && (
+                <button
+                  type="button"
+                  className="order-action-btn"
+                  onClick={handleCloseRemoteReview}
+                  disabled={isClosingRemoteReview}
+                >
+                  <X size={19} aria-hidden="true" />
+                  Cerrar revisión
+                </button>
+              )}
+
+              {!isRemoteTableReview && (!isEditMode || isEcommerceDraft || canManageRefunds) && (
                 <button
                   type="button"
                   className="order-action-btn order-action-btn--danger"
