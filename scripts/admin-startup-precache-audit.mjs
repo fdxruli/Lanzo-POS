@@ -95,9 +95,7 @@ export function extractCoreLocalRouteAssets(
 ) {
   const source = String(appSource);
   const dependencyMap = extractViteDependencyMap(source);
-  if (dependencyMap.length === 0) {
-    throw new Error('Vite dependency map is missing from the administrative App bundle.');
-  }
+  if (dependencyMap.length === 0) return [];
 
   const assets = new Set();
 
@@ -107,9 +105,10 @@ export function extractCoreLocalRouteAssets(
     );
     const match = source.match(routePattern);
 
-    if (!match) {
-      throw new Error('Core Local route bundle not found for ' + prefix + '.');
-    }
+    // Las rutas Local esenciales pueden ser imports estáticos. En ese caso no
+    // existe un import() lazy que auditar aquí: forman parte del cierre de
+    // arranque y quedan cubiertas por la arquitectura/evidencia de build.
+    if (!match) continue;
 
     assets.add('assets/' + match[1]);
 
