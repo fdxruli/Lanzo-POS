@@ -20,6 +20,14 @@ import SettingsRoute from './components/common/SettingsRoute';
 import SalesReportsRoute from './components/common/SalesReportsRoute';
 import CommercialAIAgentsRoute from './components/ai/CommercialAIAgentsRoute';
 import EcommerceOrdersRoute from './components/ecommerce/orders/EcommerceOrdersRoute';
+import PosPage from './pages/PosPage';
+import CajaPage from './pages/CajaPage';
+import OrdersPage from './pages/OrderPage';
+import ProductsPage from './pages/ProductsPage';
+import CustomersPage from './pages/CustomersPage';
+import DashboardPage from './pages/DashboardPage';
+import SettingsPage from './pages/SettingsPage';
+import AboutPage from './pages/AboutPage';
 import ServerStatusBanner from './components/common/ServerStatusBanner';
 import UpdatePrompt from './components/common/UpdatePrompt';
 import InstallPrompt from './components/common/InstallPrompt';
@@ -116,17 +124,12 @@ const lazyRetry = (importFn, componentName = 'Component') => (
   })
 );
 
-const PosPage = lazyRetry(() => import('./pages/PosPage'), 'PosPage');
-const CajaPage = lazyRetry(() => import('./pages/CajaPage'), 'CajaPage');
-const OrdersPage = lazyRetry(() => import('./pages/OrderPage'), 'OrdersPage');
+// Las rutas operativas Local se importan de forma estática para que, una vez
+// que Lanzo POS terminó de arrancar con Internet, navegar entre ellas no
+// dependa de resolver un chunk lazy durante una caída de red.
 const EcommerceOrdersPage = lazyRetry(() => import('./pages/EcommerceOrdersPage'), 'EcommerceOrdersPage');
-const ProductsPage = lazyRetry(() => import('./pages/ProductsPage'), 'ProductsPage');
-const CustomersPage = lazyRetry(() => import('./pages/CustomersPage'), 'CustomersPage');
-const DashboardPage = lazyRetry(() => import('./pages/DashboardPage'), 'DashboardPage');
 const CommercialAIAgentsPage = lazyRetry(() => import('./components/ai/CommercialAIAgentsPage'), 'CommercialAIAgentsPage');
-const SettingsPage = lazyRetry(() => import('./pages/SettingsPage'), 'SettingsPage');
 const EcommercePortalPage = lazyRetry(() => import('./pages/EcommercePortalPage'), 'EcommercePortalPage');
-const AboutPage = lazyRetry(() => import('./pages/AboutPage'), 'AboutPage');
 
 const PageLoader = () => (
   <div style={{
