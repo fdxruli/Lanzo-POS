@@ -181,8 +181,10 @@ describe('ECOM.PUBLIC.PWA.1 architecture', () => {
     expect(inventory.urls).toHaveLength(inventory.uniqueUrls.length);
   });
 
-  itWithAdminBuild('precache includes all essential Local routes while excluding cloud-only lazy surfaces', async () => {
+  itWithAdminBuild('precache covers any emitted Local startup chunks while cloud-only lazy surfaces stay excluded', async () => {
     const inventory = await precacheInventory();
+    const emittedAssets = (await walk('dist/assets'))
+      .map((file) => file.replace(/^dist\//, ''));
     const joined = inventory.uniqueUrls.join('\n');
 
     expect(inventory.uniqueUrls).toContain('index.html');
@@ -197,17 +199,26 @@ describe('ECOM.PUBLIC.PWA.1 architecture', () => {
     expect(joined).toMatch(/assets\/DevConsole-.*\.js/);
     expect(joined).toMatch(/assets\/DevConsole-.*\.css/);
 
-    expect(joined).toMatch(/assets\/PosPage-.*\.js/);
-    expect(joined).toMatch(/assets\/CajaPage-.*\.js/);
-    expect(joined).toMatch(/assets\/OrderPage-.*\.js/);
-    expect(joined).toMatch(/assets\/ProductsPage-.*\.js/);
-    expect(joined).toMatch(/assets\/CustomersPage-.*\.js/);
-    expect(joined).toMatch(/assets\/DashboardPage-.*\.js/);
-    expect(joined).toMatch(/assets\/SettingsPage-.*\.js/);
-    expect(joined).toMatch(/assets\/AboutPage-.*\.js/);
-    expect(joined).toMatch(/assets\/vendor_charts-.*\.js/);
-    expect(joined).toMatch(/assets\/reportsRepository-.*\.js/);
-    expect(joined).toMatch(/assets\/googleDriveService-.*\.js/);
+    const localStartupPrefixes = [
+      'PosPage-',
+      'CajaPage-',
+      'OrderPage-',
+      'ProductsPage-',
+      'CustomersPage-',
+      'DashboardPage-',
+      'SettingsPage-',
+      'AboutPage-',
+      'vendor_charts-',
+      'reportsRepository-',
+      'googleDriveService-',
+      'useActorRuntimeSnapshot-',
+      'useFeatureConfig-',
+    ];
+
+    for (const prefix of localStartupPrefixes) {
+      const emitted = emittedAssets.filter((asset) => asset.startsWith(`assets/${prefix}`));
+      emitted.forEach((asset) => expect(inventory.uniqueUrls).toContain(asset));
+    }
 
     expect(joined).not.toMatch(/EcommerceOrdersPage|CommercialAIAgentsPage|EcommercePortalPage/);
     expect(joined).not.toMatch(/\.worker-|AssistantBot|ScannerModal/);
