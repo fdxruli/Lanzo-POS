@@ -64,7 +64,7 @@ const completeValidLicenseSession = async (set, get, licenseData, profileOptions
         localTenantIsolation: null
     });
 
-    if (get().ownerEnrollmentContext === 'new_license_setup') {
+    if (['new_license_setup', 'existing_license'].includes(get().ownerEnrollmentContext)) {
         profileOptions = {
             ...(profileOptions || {}),
             allowSetupTransition: true

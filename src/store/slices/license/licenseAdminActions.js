@@ -98,12 +98,12 @@ const completeAdminSession = async (set, get, licenseKey, result, reason) => {
       actor: result.admin_user || licenseData.admin_user
     });
     const profileOptions = { forceRemote: true, reason };
-    if (get().ownerEnrollmentContext === 'new_license_setup') {
+    if (['new_license_setup', 'existing_license'].includes(get().ownerEnrollmentContext)) {
       profileOptions.allowSetupTransition = true;
     }
     await get()._loadProfile(licenseKey, profileOptions);
-    // A ready profile completes the enrollment route. Keep the context only
-    // for the same new license when profile hydration routes into Setup.
+    // A ready profile completes the enrollment route. Keep an explicit owner
+    // enrollment context when profile hydration routes into Setup.
     set({
       pendingAdminSessionResult: null,
       ...(get().appStatus === 'ready' ? { ownerEnrollmentContext: null } : {})
