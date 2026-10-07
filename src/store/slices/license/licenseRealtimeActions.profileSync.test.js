@@ -88,6 +88,7 @@ describe('business profile realtime refresh', () => {
     expect(state._loadProfile).toHaveBeenCalledWith('LANZO-PRO', {
       forceRemote: true,
       refreshProfile: true,
+      profileLoadMode: 'background',
       reason: 'realtime_business_profile_updated'
     });
     expect(state.runLicenseSyncCheck).not.toHaveBeenCalled();

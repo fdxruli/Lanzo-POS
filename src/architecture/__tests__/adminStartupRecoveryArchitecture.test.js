@@ -25,7 +25,9 @@ describe('administrative startup version recovery architecture', () => {
     expect(main).toContain('isRecoverableAdminStartupError(error)');
     expect(main).toContain("renderStartupRecoveryScreen({ mode: 'recovering' })");
     expect(main).toContain('recoverAdminStartup({ error })');
-    expect(main).toContain('recoverAdminStartup({ error, force: true })');
+    expect(main).toContain('const recovery = await recoverAdminStartup({ error, force: true });');
+    expect(main).toContain("if (recovery?.status === 'reloading') return;");
+    expect(main).toContain("renderStartupRecoveryScreen({ mode: 'updateError', onRetry: retryRecovery });");
     expect(main).not.toContain('completeAdminStartupRecovery()');
 
     expect(bootstrap).toContain('isRecoverableAdminStartupError(error)');

@@ -57,6 +57,7 @@ export const createLicenseBackgroundValidationActions = ({
         if (!get().companyProfile) {
           await get()._loadProfile(licenseKey, {
             refreshProfile: false,
+            profileLoadMode: 'background',
             reason: `background_cached_${reason}`
           });
         }
@@ -70,6 +71,7 @@ export const createLicenseBackgroundValidationActions = ({
         if (!get().companyProfile) {
           await get()._loadProfile(licenseKey, {
             refreshProfile: false,
+            profileLoadMode: 'background',
             reason: `background_error_cooldown_${reason}`
           });
         }
@@ -247,6 +249,7 @@ export const createLicenseBackgroundValidationActions = ({
         if (refreshProfile || !get().companyProfile) {
           await get()._loadProfile(localLicense.license_key, {
             refreshProfile,
+            profileLoadMode: 'background',
             reason: `background_${reason}`
           });
         }

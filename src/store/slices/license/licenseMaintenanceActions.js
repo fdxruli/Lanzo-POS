@@ -10,6 +10,7 @@ import {
     renewLicenseService
 } from '../../../services/licenseService';
 import { assertLocalTenantSyncAccess } from '../../../services/tenant/localTenantGuard';
+import { getTenantRuntimeReadiness } from '../../../services/db/tenantRuntimeRouter';
 
 const LAST_ACTIVE_STORAGE_KEY = 'lanzo_last_active';
 const LAST_OFFLINE_STORAGE_KEY = 'lanzo_last_offline';
@@ -61,6 +62,11 @@ export const createLicenseMaintenanceActions = ({
             state.appStatus !== 'ready' ||
             state._isInitializing
         ) {
+            return;
+        }
+
+        if (!getTenantRuntimeReadiness().ready) {
+            Logger.warn('[HealthCheck] Se omite ' + reason + ': TenantRuntime no está listo.');
             return;
         }
 

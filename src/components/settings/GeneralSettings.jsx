@@ -39,7 +39,16 @@ const initialProfileState = {
   lockedFields: defaultLockedFields
 };
 
-const MQL = window.matchMedia('(prefers-color-scheme: dark)');
+const MQL = (
+  typeof window !== 'undefined'
+  && typeof window.matchMedia === 'function'
+)
+  ? window.matchMedia('(prefers-color-scheme: dark)')
+  : {
+      matches: false,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    };
 
 const applyTheme = (theme) => {
   if (theme === 'dark') {

@@ -13,7 +13,8 @@ const mocks = vi.hoisted(() => ({
   loadData: vi.fn(),
   saveBusinessProfile: vi.fn(),
   saveData: vi.fn(async () => undefined),
-  saveLicenseToStorage: vi.fn(async () => undefined)
+  saveLicenseToStorage: vi.fn(async () => undefined),
+  getTenantRuntimeReadiness: vi.fn(() => ({ ready: true, runtime: { opaqueId: 'profile-test', generation: 1 } }))
 }));
 
 vi.mock('../../services/database', () => ({
@@ -40,6 +41,11 @@ vi.mock('../../services/storage/imageUploadService', () => ({
 vi.mock('../../services/tenant/localTenantGuard', () => ({
   assertLocalTenantSyncAccess: mocks.assertLocalTenantSyncAccess,
   isLocalTenantAccessError: (error) => String(error?.code || '').startsWith('LOCAL_TENANT_')
+}));
+
+vi.mock('../../services/db/tenantRuntimeRouter', () => ({
+  getTenantRuntimeReadiness: mocks.getTenantRuntimeReadiness,
+  isTenantRuntimeError: (error) => String(error?.code || '').startsWith('TENANT_RUNTIME_')
 }));
 
 vi.mock('../../services/auth/actorRuntimeController', () => ({
@@ -69,6 +75,7 @@ describe('profile refresh during authenticated staff transition', () => {
     vi.stubGlobal('localStorage', createStorage());
     vi.stubGlobal('File', class File {});
     mocks.assertLocalTenantSyncAccess.mockResolvedValue({ status: 'pass' });
+    mocks.getTenantRuntimeReadiness.mockReturnValue({ ready: true, runtime: { opaqueId: 'profile-test', generation: 1 } });
     mocks.actorHandle.actorType = 'admin';
     mocks.actorHandle.sessionId = 'admin-session';
     mocks.actorHandle.assertCurrent.mockReset();
@@ -301,4 +308,84 @@ describe('profile refresh during authenticated staff transition', () => {
     expect(state.companyProfile).toBeNull();
     expect(state.appStatus).toBe('setup_required');
   });
+  it('keeps the current profile while a background retry waits for TenantRuntime', async () => {
+    const originalProfile = { license_key: 'LANZO-PRO', name: 'Negocio vigente', business_type: ['abarrotes'] };
+    const state = { appStatus: 'ready', currentDeviceRole: 'admin', companyProfile: originalProfile };
+    const set = vi.fn((partial) => Object.assign(state, partial));
+    const get = () => state;
+    Object.assign(state, createProfileSlice(set, get));
+    state.companyProfile = originalProfile;
+    mocks.getTenantRuntimeReadiness.mockReturnValue({ ready: false, runtime: null });
+
+    await expect(state._loadProfile('LANZO-PRO', {
+      forceRemote: true,
+      profileLoadMode: 'background',
+      reason: 'runtime_recovery'
+    })).resolves.toBe(originalProfile);
+
+    expect(mocks.assertLocalTenantSyncAccess).not.toHaveBeenCalled();
+    expect(mocks.loadData).not.toHaveBeenCalled();
+    expect(mocks.getBusinessProfile).not.toHaveBeenCalled();
+    expect(set).not.toHaveBeenCalled();
+    expect(state.appStatus).toBe('ready');
+    expect(state.companyProfile).toBe(originalProfile);
+  });
+
+  it('does not downgrade to Setup after an online profile request fails', async () => {
+    const state = { appStatus: 'ready', currentDeviceRole: 'admin', companyProfile: null };
+    const set = vi.fn((partial) => Object.assign(state, partial));
+    const get = () => state;
+    Object.assign(state, createProfileSlice(set, get));
+    mocks.loadData.mockResolvedValue(null);
+    mocks.getBusinessProfile.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+
+    await expect(state._loadProfile('LANZO-PRO', {
+      allowSetupTransition: true,
+      reason: 'new_license_setup'
+    })).resolves.toBeNull();
+
+    expect(state.appStatus).toBe('ready');
+    expect(set).not.toHaveBeenCalled();
+  });
+
+  it('allows the new owner onboarding path into Setup only after remote absence is confirmed', async () => {
+    const state = {
+      appStatus: 'loading',
+      currentDeviceRole: 'admin',
+      ownerEnrollmentContext: 'new_license_setup',
+      companyProfile: null
+    };
+    const set = vi.fn((partial) => Object.assign(state, partial));
+    const get = () => state;
+    Object.assign(state, createProfileSlice(set, get));
+    mocks.loadData.mockResolvedValue(null);
+    mocks.getBusinessProfile.mockResolvedValueOnce({ success: false, code: 'PROFILE_NOT_FOUND' });
+
+    await expect(state._loadProfile('LANZO-PRO', {
+      allowSetupTransition: true,
+      reason: 'new_license_setup'
+    })).resolves.toBeNull();
+
+    expect(state.appStatus).toBe('setup_required');
+  });
+
+  it('propagates a TenantRuntime failure without publishing an empty profile', async () => {
+    const runtimeError = Object.assign(new Error('tenant database is opening'), {
+      code: 'TENANT_RUNTIME_NOT_READY'
+    });
+    const state = { appStatus: 'ready', currentDeviceRole: 'admin', companyProfile: null };
+    const set = vi.fn((partial) => Object.assign(state, partial));
+    const get = () => state;
+    Object.assign(state, createProfileSlice(set, get));
+    mocks.loadData.mockRejectedValueOnce(runtimeError);
+
+    await expect(state._loadProfile('LANZO-PRO', {
+      allowSetupTransition: true,
+      reason: 'new_license_setup'
+    })).rejects.toBe(runtimeError);
+
+    expect(state.appStatus).toBe('ready');
+    expect(set).not.toHaveBeenCalled();
+  });
+
 });

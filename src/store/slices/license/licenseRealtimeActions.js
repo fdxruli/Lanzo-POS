@@ -94,6 +94,7 @@ export const createLicenseRealtimeActions = ({
               await get()._loadProfile(licenseKey, {
                 forceRemote: true,
                 refreshProfile: true,
+                profileLoadMode: 'background',
                 reason: 'realtime_business_profile_updated'
               });
               return;

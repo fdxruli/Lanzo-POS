@@ -103,6 +103,7 @@ export const createLicenseProcessingActions = ({
 
                 await get()._loadProfile(localLicense.license_key, {
                     refreshProfile: false,
+                    profileLoadMode: 'background',
                     reason: `renewal_${reason}`
                 });
 
@@ -213,7 +214,11 @@ export const createLicenseProcessingActions = ({
                         await get().discoverAdminAccess(finalLicenseData.license_key);
                         return;
                     }
-                    await get()._loadProfile(restored.license_key, { refreshProfile, reason: 'hot_pro_upgrade_admin_session' });
+                    await get()._loadProfile(restored.license_key, {
+                        refreshProfile,
+                        profileLoadMode: 'background',
+                        reason: 'hot_pro_upgrade_admin_session'
+                    });
                     return;
                 }
                 lockActorRuntime('hot_pro_upgrade_admin_session_invalid');
@@ -237,6 +242,7 @@ export const createLicenseProcessingActions = ({
         if (shouldLoadProfileForLicense(get(), finalLicenseData.license_key, refreshProfile)) {
             await get()._loadProfile(finalLicenseData.license_key, {
                 refreshProfile,
+                profileLoadMode: 'background',
                 reason
             });
         }
@@ -329,6 +335,7 @@ export const createLicenseProcessingActions = ({
         if (shouldLoadProfileForLicense(get(), updatedLocalLicense.license_key, refreshProfile)) {
             await get()._loadProfile(updatedLocalLicense.license_key, {
                 refreshProfile,
+                profileLoadMode: 'background',
                 reason
             });
         }

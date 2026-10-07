@@ -356,6 +356,7 @@ export const createLicenseIntegrityActions = ({
             })) {
                 await get()._loadProfile(updatedDetails.license_key, {
                     refreshProfile,
+                    profileLoadMode: 'background',
                     reason: `integrity_${reason}`
                 });
             }

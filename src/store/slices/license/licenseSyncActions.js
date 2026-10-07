@@ -17,6 +17,7 @@ import {
   assertLocalTenantSyncAccess,
   isLocalTenantAccessError
 } from '../../../services/tenant/localTenantGuard';
+import { getTenantRuntimeReadiness } from '../../../services/db/tenantRuntimeRouter';
 
 let licenseSyncTimer = null;
 let licenseSyncOnlineListener = null;
@@ -74,6 +75,7 @@ const refreshBusinessProfileForSync = async (get, licenseKey, mode, reason) => {
     await loadProfile(licenseKey, {
       forceRemote,
       refreshProfile: forceRemote,
+      profileLoadMode: 'background',
       reason: `license_sync_${reason}`
     });
   } catch (error) {
@@ -111,6 +113,11 @@ export const createLicenseSyncActions = ({
       return false;
     }
 
+    if (!getTenantRuntimeReadiness().ready) {
+      Logger.warn('[LicenseSync] Omitiendo revalidación (' + reason + '): TenantRuntime no está listo.');
+      return false;
+    }
+
     if (!navigator.onLine) {
       Logger.warn(`[LicenseSync] Omitiendo revalidación (${reason}): sin conexión.`);
       return false;
@@ -120,6 +127,10 @@ export const createLicenseSyncActions = ({
       await assertLocalTenantSyncAccess(state.licenseDetails, {
         reason: `license_sync_check_${reason}`
       });
+      if (!getTenantRuntimeReadiness().ready) {
+        Logger.warn('[LicenseSync] Omitiendo revalidación (' + reason + '): TenantRuntime dejó de estar listo.');
+        return false;
+      }
     } catch (error) {
       if (isLocalTenantAccessError(error)) {
         await get().stopLicenseSync();

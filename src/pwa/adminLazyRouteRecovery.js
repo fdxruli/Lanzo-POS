@@ -2,6 +2,7 @@ import {
   isRecoverableAdminStartupError,
   recoverAdminStartup,
 } from './adminStartupRecovery';
+import { probeAdminOriginConnectivity } from './adminConnectivity';
 import { requestAdminServiceWorkerUpdateCheck } from './adminServiceWorkerUpdateMonitor';
 
 let activeLazyRouteRecoveryPromise = null;
@@ -19,17 +20,28 @@ export function recoverAdminLazyRoute({
   force = false,
   navigatorTarget = globalThis.navigator,
   recoverStartup = recoverAdminStartup,
+  probeConnectivity = probeAdminOriginConnectivity,
 } = {}) {
   if (!force && !isRecoverableAdminStartupError(error)) {
     return Promise.resolve({ status: 'not-recoverable' });
   }
   if (navigatorTarget?.onLine === false) {
-    return Promise.resolve({ status: 'offline' });
+    return Promise.resolve({ status: 'offline', reason: 'navigator-offline' });
   }
   if (activeLazyRouteRecoveryPromise) return activeLazyRouteRecoveryPromise;
 
   const recoveryPromise = Promise.resolve()
-    .then(() => recoverStartup({ error, force }));
+    .then(async () => {
+      const connectivity = await probeConnectivity({ navigatorTarget });
+      if (connectivity?.status !== 'online') {
+        return {
+          status: 'offline',
+          reason: connectivity?.reason || 'origin-unreachable',
+        };
+      }
+
+      return recoverStartup({ error, force });
+    });
 
   activeLazyRouteRecoveryPromise = recoveryPromise;
   recoveryPromise.then(

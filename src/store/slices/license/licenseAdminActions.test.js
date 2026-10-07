@@ -101,6 +101,35 @@ describe('license admin actions', () => {
     expect(state.pendingAdminSessionResult).toBeNull();
   });
 
+  it('allows existing-license owner enrollment to enter Setup when the profile is absent', async () => {
+    const state = setup();
+    state.ownerEnrollmentContext = 'existing_license';
+    state._loadProfile = vi.fn(async (_licenseKey, options) => {
+      expect(options).toMatchObject({
+        forceRemote: true,
+        reason: 'admin_login',
+        allowSetupTransition: true
+      });
+      state.appStatus = 'setup_required';
+    });
+    mocks.adminLoginOnDevice.mockResolvedValue({
+      success: true,
+      admin_user: { id: 'admin-1', username: 'owner', display_name: 'Owner' },
+      details: { license_key: 'LANZO-ADMIN-TEST', device_role: 'admin' }
+    });
+
+    await expect(state.handleAdminLogin({
+      username: 'owner',
+      password: 'fixture-password'
+    })).resolves.toMatchObject({ success: true, remoteAuthenticated: true });
+
+    expect(state._loadProfile).toHaveBeenCalledWith(
+      'LANZO-ADMIN-TEST',
+      { forceRemote: true, reason: 'admin_login', allowSetupTransition: true }
+    );
+    expect(state.ownerEnrollmentContext).toBe('existing_license');
+  });
+
   it('keeps incorrect credentials in the admin login flow', async () => {
     const state = setup();
     mocks.adminLoginOnDevice.mockResolvedValue({
