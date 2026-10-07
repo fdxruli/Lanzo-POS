@@ -59,6 +59,7 @@ describe('ECOM.PUBLIC.PWA.1 architecture', () => {
     expect(config).toMatch(/manifest:\s*false/);
     expect(config).toContain("fileName: 'manifest.webmanifest'");
     expect(config).toMatch(/strategies:\s*'injectManifest'/);
+    expect(config).toContain('maximumFileSizeToCacheInBytes: 3 * 1024 * 1024');
   });
 
   it('fails the production build when the generated startup closure is not completely precached', async () => {
