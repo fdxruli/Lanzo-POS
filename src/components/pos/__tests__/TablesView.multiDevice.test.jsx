@@ -47,6 +47,7 @@ vi.mock('../../../services/utils', () => ({ showMessageModal: vi.fn(), showConfi
 
 import TablesView from '../TablesView';
 import { useActiveTablesCount } from '../../../hooks/pos/useActiveTablesCount';
+import { useRestaurantActiveTables } from '../../../hooks/restaurant/useRestaurantActiveTables';
 
 const remote = (id = 'order-A') => ({ id: `cloud-${id}`, localOrderId: id, tableLabel: 'Mesa QA-19',
   status: 'pending', fulfillmentStatus: 'pending', paymentStatus: 'unpaid', total: 120, subtotal: 120,
@@ -64,6 +65,68 @@ beforeEach(async () => {
 afterEach(async () => { cleanup(); vi.restoreAllMocks(); fixture.database.close(); await fixture.database.delete(); });
 
 describe('QA-19 multi-device table discovery', () => {
+  it('keeps the shared table count stable while the modal opens and closes with another consumer mounted', async () => {
+    const cloudOrders = [
+      ...Array.from({ length: 30 }, (_, index) => remote(`active-${index}`)),
+      ...Array.from({ length: 6 }, (_, index) => ({
+        ...remote(`cancelled-${index}`), fulfillmentStatus: 'cancelled'
+      }))
+    ];
+    fixture.list.mockResolvedValue({ success: true, orders: cloudOrders });
+    const { result } = renderHook(() => useActiveTablesCount(true));
+    const modal = render(<TablesView show onClose={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(result.current.activeTablesCount).toBe(30);
+      expect(result.current.kitchenRejectedOpenCount).toBe(6);
+    });
+    await waitFor(() => expect(fixture.list).toHaveBeenCalledTimes(2));
+    expect(fixture.list.mock.calls.map(([args]) => args.force)).toEqual([false, false]);
+
+    modal.rerender(<TablesView show={false} onClose={vi.fn()} />);
+    expect(result.current.activeTablesCount + result.current.kitchenRejectedOpenCount).toBe(36);
+    modal.rerender(<TablesView show onClose={vi.fn()} />);
+    await waitFor(() => expect(fixture.list).toHaveBeenCalledTimes(3));
+    expect(result.current.activeTablesCount + result.current.kitchenRejectedOpenCount).toBe(36);
+
+    fixture.list.mockClear().mockResolvedValue({ success: true, orders: [...cloudOrders, remote('new-table')] });
+    fireEvent.click(screen.getByRole('button', { name: 'Actualizar mesas' }));
+    await waitFor(() => expect(result.current.activeTablesCount + result.current.kitchenRejectedOpenCount).toBe(37));
+    expect(fixture.list.mock.calls.some(([args]) => args.force === true)).toBe(true);
+    expect(fixture.list.mock.calls.some(([args]) => args.force === false)).toBe(true);
+  });
+
+  it('treats stale reads as neutral and preserves the last good count on real errors', async () => {
+    const initialOrders = [
+      ...Array.from({ length: 30 }, (_, index) => remote(`stable-active-${index}`)),
+      ...Array.from({ length: 6 }, (_, index) => ({
+        ...remote(`stable-cancelled-${index}`), fulfillmentStatus: 'cancelled'
+      }))
+    ];
+    fixture.list.mockResolvedValue({ success: true, orders: initialOrders });
+    const { result } = renderHook(() => useRestaurantActiveTables());
+    await waitFor(() => expect(result.current.active + result.current.kitchenRejected).toBe(36));
+
+    const stale = Object.assign(new Error('discarded generation'), { code: 'CLOUD_REQUEST_RESPONSE_STALE' });
+    fixture.list.mockReset().mockRejectedValue(stale);
+    window.dispatchEvent(new CustomEvent('lanzo:restaurant-orders-cloud-updated'));
+    await waitFor(() => expect(fixture.list).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(result.current.tables).toHaveLength(36));
+    expect(result.current.warning).toBe('');
+
+    fixture.list.mockReset().mockRejectedValue(new Error('network unavailable'));
+    window.dispatchEvent(new CustomEvent('lanzo:restaurant-orders-cloud-updated'));
+    await waitFor(() => expect(fixture.list).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(result.current.warning).toBe('No se pudieron actualizar las mesas de otros dispositivos.'));
+    expect(result.current.tables).toHaveLength(36);
+
+    const nextOrders = [...initialOrders, remote('new-after-refresh')];
+    fixture.list.mockReset().mockResolvedValue({ success: true, orders: nextOrders });
+    await act(async () => { await result.current.refresh({ force: true }); });
+    await waitFor(() => expect(result.current.tables).toHaveLength(37));
+    expect(fixture.list).toHaveBeenCalledWith(expect.objectContaining({ force: true }));
+  });
+
   it('Device B with empty Dexie discovers Device A table from Cloud', async () => {
     expect(await fixture.database.table('sales').count()).toBe(0);
     render(<TablesView show onClose={vi.fn()} />);

@@ -228,6 +228,20 @@ describe('OrderSummary ecommerce discount slots', () => {
     expect(screen.queryByText(/c\/u/i)).not.toBeInTheDocument();
   });
 
+  it('renders a hydrated remote table shadow with the numeric POS price contract', () => {
+    setOrder(undefined);
+    const order = mocks.activeState.activeOrders.get('active-order');
+    order.restaurantCloudHydrated = true;
+    order.items = [{ id: 'pizza-qa', lineId: 'pizza-qa-line', name: 'Pizza QA', quantity: 1, price: 300 }];
+    order.total = 300;
+
+    render(<OrderSummary {...props} />);
+
+    expect(screen.getByText('Pizza QA')).toBeInTheDocument();
+    expect(screen.getByText('1 pza × $300.00/pza')).toBeInTheDocument();
+    expect(screen.getAllByText('$300.00').length).toBeGreaterThan(0);
+  });
+
   it('keeps a decimal bulk quantity when editing a measurement sale', () => {
     setOrderItems([{
       id: 'ft-product',

@@ -9,6 +9,7 @@ import { getLicenseKeyFromDetails, isRestaurantOrdersCloudEnabled } from '../../
 import { restaurantOrdersRepository } from '../../services/restaurant/restaurantOrdersRepository';
 import { buildRestaurantActiveTables, countRestaurantActiveTables, fetchRestaurantTableDiscoveryOrders, getRestaurantCloudTableState, rememberRestaurantTableTerminalStates } from '../../services/restaurant/restaurantActiveTables';
 import { RESTAURANT_CLOUD_STATUS_EVENT } from '../../services/restaurant/restaurantCloudStatusSummary';
+import { isCloudRequestResponseStale } from '../../services/cloud/cloudRequestErrors';
 
 const readLocalTables = () => db.table(STORES.SALES).where('status').equals(SALE_STATUS.OPEN).toArray();
 const online = () => typeof navigator === 'undefined' || navigator.onLine !== false;
@@ -35,7 +36,7 @@ export function useRestaurantActiveTables({ enabled = true } = {}) {
   const [data, setData] = useState({ scope: null, localSales: [], cloudOrders: [], isLoading: false, warning: '', error: '' });
   const requests = useRef({ sequence: 0 });
 
-  const refresh = useCallback(async ({ force = true } = {}) => {
+  const refresh = useCallback(async ({ force = false } = {}) => {
     if (!enabled) return { success: true, skipped: true };
     const request = ++requests.current.sequence;
     let handle;
@@ -56,6 +57,10 @@ export function useRestaurantActiveTables({ enabled = true } = {}) {
         licenseKey, actorHandle: handle, force });
       handle.assertCurrent();
       if (request !== requests.current.sequence) return { success: false, code: 'CLOUD_REQUEST_RESPONSE_STALE' };
+      if (isCloudRequestResponseStale(response)) {
+        setData((previous) => previous.scope === scope ? { ...previous, isLoading: false } : previous);
+        return response;
+      }
       if (response?.success !== false) {
         setData((previous) => ({ ...previous, cloudOrders: response.orders }));
         await rememberRestaurantTableTerminalStates({ database: db, stores: STORES, localSales, licenseKey, tenantId,
@@ -67,7 +72,7 @@ export function useRestaurantActiveTables({ enabled = true } = {}) {
         if (request !== requests.current.sequence) return { success: false, code: 'CLOUD_REQUEST_RESPONSE_STALE' };
       }
       setData((previous) => ({ ...previous, cloudOrders: response?.success === false
-        ? previous.cloudOrders.filter((row) => getRestaurantCloudTableState(row) === 'terminal') : response.orders,
+        ? previous.cloudOrders : response.orders,
         isLoading: false, warning: response?.success === false ? cloudNotice : '' }));
       return response;
     } catch (error) {
@@ -75,9 +80,13 @@ export function useRestaurantActiveTables({ enabled = true } = {}) {
       // An expired handle may never publish Cloud data, including errors, to a
       // newly authenticated actor. The scoped projection clears it on render.
       try { handle?.assertCurrent(); } catch { return { success: false, code: 'CLOUD_REQUEST_RESPONSE_STALE' }; }
+      if (isCloudRequestResponseStale(error)) {
+        setData((previous) => previous.scope === scope ? { ...previous, isLoading: false } : previous);
+        return { success: false, code: error?.code || 'CLOUD_REQUEST_RESPONSE_STALE' };
+      }
       setData((previous) => ({ ...previous, scope, isLoading: false,
         localSales: previous.scope === scope ? previous.localSales : [],
-        cloudOrders: previous.scope === scope ? previous.cloudOrders.filter((row) => getRestaurantCloudTableState(row) === 'terminal') : [],
+        cloudOrders: previous.scope === scope ? previous.cloudOrders : [],
         warning: cloudEnabled ? cloudNotice : '', error: cloudEnabled ? '' : error?.message || 'Error al cargar las mesas activas.' }));
       return { success: false, code: error?.code, message: error?.message };
     }
@@ -86,12 +95,12 @@ export function useRestaurantActiveTables({ enabled = true } = {}) {
   useEffect(() => {
     if (!enabled) return undefined;
     const requestState = requests.current;
-    refresh({ force: true });
+    refresh({ force: false });
     const subscription = liveQuery(readLocalTables).subscribe({
       next: (localSales) => setData((previous) => previous.scope === scope ? { ...previous, localSales } : previous),
       error: () => {}
     });
-    const update = () => { refresh({ force: true }); };
+    const update = () => { refresh({ force: false }); };
     const visible = () => { if (document.visibilityState === 'visible') update(); };
     window.addEventListener(RESTAURANT_CLOUD_STATUS_EVENT, update);
     window.addEventListener('focus', update);

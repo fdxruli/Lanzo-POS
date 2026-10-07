@@ -27,6 +27,19 @@ const incomplete = (localOrderId) => failure(
   localOrderId
 );
 
+// Snapshot money stays an exact decimal string for comparisons and preflight.
+const restoreMoneyForSnapshotComparison = (field) => {
+  if (!Number.isSafeInteger(field.value)) throw new Error('INCOMPLETE_SNAPSHOT');
+  return Money.toExactString(Money.fromCents(field.value));
+};
+
+// The POS cart contract consumes item.price as a number (for example, OrderSummary
+// calls toFixed on it). Convert only that operational field at the UI boundary.
+const restoreMoneyForLocalPosField = (field) => {
+  if (!Number.isSafeInteger(field.value)) throw new Error('INCOMPLETE_SNAPSHOT');
+  return Money.toNumber(Money.fromCents(field.value));
+};
+
 // Commercial snapshots record absence separately from null and zero. Rebuild
 // only their original fields; adding price aliases changes split authority.
 const restoreScalar = (field, kind = 'raw') => {
@@ -35,8 +48,7 @@ const restoreScalar = (field, kind = 'raw') => {
   if (field.state === 'null') return { present: true, value: null };
   if (field.state !== 'value') throw new Error('INCOMPLETE_SNAPSHOT');
   if (kind === 'money') {
-    if (!Number.isSafeInteger(field.value)) throw new Error('INCOMPLETE_SNAPSHOT');
-    return { present: true, value: Money.toExactString(Money.fromCents(field.value)) };
+    return { present: true, value: restoreMoneyForSnapshotComparison(field) };
   }
   return { present: true, value: field.value };
 };
@@ -174,6 +186,7 @@ const saleFromCloudSnapshot = (order, localOrderId, licenseKey, actorHandle) => 
       metadata: item.metadata
     };
     restoreFields(line, commercial.amounts, LINE_FIELDS, 'money');
+    line.price = restoreMoneyForLocalPosField(commercial.amounts.price);
     restoreFields(line, commercial.quantities, ['quantity']);
     restoreFields(line, commercial.variants, VARIANT_FIELDS);
     assignDiscount(line, 'discount', commercial.discounts?.discount);

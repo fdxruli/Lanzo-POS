@@ -70,6 +70,20 @@ describe('SplitBillModal four-step restaurant split', () => {
 
   afterEach(() => cleanup());
 
+  it('opens for an actively hydrated remote table shadow without a price type crash', () => {
+    renderModal({
+      order: [{ lineId: 'pizza-qa-line', id: 'pizza-qa', name: 'Pizza QA', quantity: 1,
+        price: 300, unitPrice: '300', lineTotal: '300' }],
+      total: 300,
+      orderId: 'hydrated-remote-shadow'
+    });
+
+    goToItems();
+
+    expect(screen.getByText('Pizza QA')).toBeInTheDocument();
+    expect(screen.getByText('$300.00')).toBeInTheDocument();
+  });
+
   it('never processes a sale while advancing from Cobro to Revisar or through an implicit form submit', async () => {
     const { onConfirm } = renderModal({
       order: [

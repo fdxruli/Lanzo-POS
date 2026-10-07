@@ -200,8 +200,8 @@ describe('cloud discovery pagination under captured actor authority', () => {
     expect(result).toMatchObject({ success: true });
     expect(result.orders).toHaveLength(301);
     expect(repository.getRestaurantOrders.mock.calls.map(([args]) => args)).toEqual([
-      { licenseKey: 'license-a', includeCompleted: true, limit: 300, offset: 0, force: true },
-      { licenseKey: 'license-a', includeCompleted: true, limit: 300, offset: 300, force: true }
+      { licenseKey: 'license-a', includeCompleted: true, limit: 300, offset: 0, force: false },
+      { licenseKey: 'license-a', includeCompleted: true, limit: 300, offset: 300, force: false }
     ]);
     expect(project({ localSales: [local('origin')], cloudOrders: result.orders })
       .some((row) => row.id === 'origin')).toBe(false);
@@ -212,6 +212,13 @@ describe('cloud discovery pagination under captured actor authority', () => {
     await fetchRestaurantTableDiscoveryOrders({ repository, licenseKey: 'license-a',
       actorHandle: { assertCurrent: vi.fn() }, force: false });
     expect(repository.getRestaurantOrders).toHaveBeenCalledWith(expect.objectContaining({ force: false }));
+  });
+
+  it('preserves explicit caller force=true for a manual refresh', async () => {
+    const repository = { getRestaurantOrders: vi.fn(async () => ({ success: true, orders: [] })) };
+    await fetchRestaurantTableDiscoveryOrders({ repository, licenseKey: 'license-a',
+      actorHandle: { assertCurrent: vi.fn() }, force: true });
+    expect(repository.getRestaurantOrders).toHaveBeenCalledWith(expect.objectContaining({ force: true }));
   });
 
   it('returns a later page failure without publishing a partial business-wide list', async () => {

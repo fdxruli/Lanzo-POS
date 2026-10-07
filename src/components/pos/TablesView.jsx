@@ -557,7 +557,7 @@ export default function TablesView({
       try {
         const result = await onAnnulKitchenRejectedOrder(order);
         if (result?.success) {
-          await loadOpenSalesRows(false);
+          await loadOpenSalesRows({ force: false });
         }
       } finally {
         setAnnullingOrderId(null);
@@ -613,7 +613,7 @@ export default function TablesView({
         const sale = await db.table(STORES.SALES).get(order.id);
         if (!sale || sale.status !== SALE_STATUS.OPEN) {
           showMessageModal('La mesa ya no está abierta. Recarga Mesas antes de ajustar.', null, { type: 'warning' });
-          await loadOpenSalesRows(false);
+          await loadOpenSalesRows({ force: false });
           return;
         }
 
@@ -630,7 +630,7 @@ export default function TablesView({
 
         if (!adjustment.changed) {
           showMessageModal('Los items cancelados por cocina ya no están en la cuenta.', null, { type: 'success' });
-          await loadOpenSalesRows(false);
+          await loadOpenSalesRows({ force: false });
           dispatchRestaurantCloudStatusRefresh();
           return;
         }
@@ -662,7 +662,7 @@ export default function TablesView({
           activeOrdersState.updateOrderItems(order.id, persistedItems);
         }
 
-        await loadOpenSalesRows(false);
+        await loadOpenSalesRows({ force: false });
         dispatchRestaurantCloudStatusRefresh();
         showMessageModal(
           `Cuenta actualizada. Se retiraron ${adjustment.removedCount} item(s) cancelados por cocina.`,
@@ -702,6 +702,14 @@ export default function TablesView({
     },
     [onSplitOrder, onClose]
   );
+
+  const handleManualTablesRefresh = useCallback(async () => {
+    const response = await loadOpenSalesRows({ force: true });
+    if (response?.success !== false && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent(RESTAURANT_CLOUD_STATUS_EVENT));
+    }
+    return response;
+  }, [loadOpenSalesRows]);
 
   if (!show) return null;
 
@@ -752,7 +760,7 @@ export default function TablesView({
             </div>
             {cloudEnabled && <button type="button" className="table-cloud-adjust-btn"
               disabled={isLoading} aria-busy={isLoading}
-              onClick={() => loadOpenSalesRows({ force: true })}>Actualizar mesas</button>}
+              onClick={() => { void handleManualTablesRefresh(); }}>Actualizar mesas</button>}
             <button
               type="button"
               className="btn-cancel tables-modal-close"

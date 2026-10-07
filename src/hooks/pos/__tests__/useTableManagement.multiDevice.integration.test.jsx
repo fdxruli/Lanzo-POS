@@ -115,7 +115,6 @@ import { ensureOrderDiscountRuntime } from '../useOrderDiscountRuntime';
 
 const LOCAL_ORDER_ID = 'sale-created-on-device-a';
 const VERSION_A = '2026-09-28T16:05:05.123456789Z';
-const VERSION_B = '2026-09-28T16:05:05.123456790Z';
 
 const sourceSale = (overrides = {}) => ({
   id: LOCAL_ORDER_ID, status: 'open', orderType: 'table', tableData: 'Mesa A',
@@ -249,11 +248,11 @@ describe('Mini-phase 3D multi-device table recovery', () => {
     });
     expect(active.items).toEqual(shadow.items);
     expect(active.items).toMatchObject([
-      { id: 'burger', productId: 'burger', lineId: 'burger-line', price: '150', unitPrice: '150',
+      { id: 'burger', productId: 'burger', lineId: 'burger-line', price: 150, unitPrice: '150',
         quantity: '2', lineTotal: '270', discountAmount: '30', discountReason: 'Cortesía',
         discount: { type: 'amount', scope: 'line', amount: '30', value: '30', reason: 'Cortesía' },
         selectedModifiers: fixture.cloudOrder.items[0].selectedModifiers, batchId: 'burger-batch', isVariant: true },
-      { id: 'coffee', productId: 'coffee', lineId: 'coffee-line', price: '300', unitPrice: '300',
+      { id: 'coffee', productId: 'coffee', lineId: 'coffee-line', price: 300, unitPrice: '300',
         quantity: '1', lineTotal: '280', discountAmount: '20', selectedModifiers: [] }
     ]);
     expect(fixture.cloudLookup).toHaveBeenCalledExactlyOnceWith({

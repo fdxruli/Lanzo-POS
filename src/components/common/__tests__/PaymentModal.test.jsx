@@ -50,6 +50,21 @@ afterEach(() => {
 });
 
 describe('PaymentModal', () => {
+  it('opens from a hydrated remote table total without starting a sale', async () => {
+    const hydratedShadow = {
+      restaurantCloudHydrated: true,
+      total: 300,
+      items: [{ id: 'pizza-qa', quantity: 1, price: 300 }]
+    };
+    const onConfirm = vi.fn();
+    mocks.loadData.mockResolvedValue([]);
+
+    render(<PaymentModal show onClose={vi.fn()} onConfirm={onConfirm} total={hydratedShadow.total} />);
+
+    expect(await screen.findByRole('button', { name: 'Confirmar Pago' })).toBeInTheDocument();
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
   it('leaves processing state when checkout resolves with a failure result', async () => {
     let resolveCheckout;
     const checkoutPromise = new Promise((resolve) => {

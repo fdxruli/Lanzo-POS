@@ -3,6 +3,7 @@ import Dexie from 'dexie';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildRestaurantOrderPayloadFromOpenSale } from '../restaurantOrderMapper';
 import { preflightCloudRestaurantOrderSplit } from '../restaurantSplitCloudPreflight';
+import { Money } from '../../../utils/moneyMath';
 
 const actorController = vi.hoisted(() => ({ capture: vi.fn() }));
 vi.mock('../../auth/actorRuntimeController', () => ({ actorRuntimeController: actorController }));
@@ -111,7 +112,7 @@ describe('hydrateRestaurantCloudOrderToLocalOpenSale', () => {
         updatedAt: VERSION, cloudUpdatedAt: VERSION, serverVersion: 'opaque:version:001',
         restaurantCloudLicenseKey: 'license-1', restaurantCloudTenantId: 'tenant-1',
         actorKey: 'staff:staff-1', tenantOpaqueId: 'tenant-1',
-        items: [{ price: '30', quantity: '2', lineTotal: '60', batchId: 'batch-1', isVariant: true }]
+        items: [{ price: 30, quantity: '2', lineTotal: '60', batchId: 'batch-1', isVariant: true }]
       }
     });
     expect(repository.getRestaurantOrderByLocalOrder).toHaveBeenCalledExactlyOnceWith({
@@ -125,6 +126,35 @@ describe('hydrateRestaurantCloudOrderToLocalOpenSale', () => {
     await expect(preflightCloudRestaurantOrderSplit({
       licenseKey: 'license-1', parentOrderId: result.sale.id, parentSale: result.sale, repository
     })).resolves.toMatchObject({ success: true, parentExpectedVersion: VERSION });
+  });
+
+  it.each([
+    [30000, 300],
+    [15099, 150.99],
+    [1, 0.01],
+    [3333, 33.33]
+  ])('restores snapshot price cents %i as the numeric POS price %s without changing snapshot authority', async (priceCents, expectedPrice) => {
+    const price = Money.toExactString(Money.fromCents(priceCents));
+    const sale = buildSale({
+      subtotal: price,
+      discountTotal: '0',
+      total: price,
+      items: [{ ...buildSale().items[0], quantity: 1, price, unitPrice: price, lineTotal: price }]
+    });
+    const order = buildCloudOrder(sale);
+    const originalOrderSnapshot = structuredClone(order.metadata.restaurantSplitCommercialSnapshot);
+    repository.getRestaurantOrderByLocalOrder.mockResolvedValue({ success: true, found: true, order });
+
+    const result = await hydrate();
+
+    expect(result.success).toBe(true);
+    expect(result.sale.items[0].price).toBe(expectedPrice);
+    expect(typeof result.sale.items[0].price).toBe('number');
+    expect(Money.toCents(result.sale.items[0].price)).toBe(priceCents);
+    expect(result.sale.items[0].unitPrice).toBe(price);
+    expect(result.sale.items[0].lineTotal).toBe(price);
+    expect(result.sale.metadata.restaurantSplitCommercialSnapshot).toEqual(originalOrderSnapshot);
+    expect(result.sale.items[0].metadata.restaurantSplitCommercialSnapshot.amounts.price.value).toBe(priceCents);
   });
 
   it('repeated loading keeps one original localOrderId and refreshes the cloud shadow', async () => {
@@ -202,7 +232,7 @@ describe('hydrateRestaurantCloudOrderToLocalOpenSale', () => {
       success: true, found: true, order: buildCloudOrder(sale)
     });
     await expect(hydrate()).resolves.toMatchObject({ success: true, sale: {
-      total: 0, items: [{ price: '0', lineTotal: '0' }]
+      total: 0, items: [{ price: 0, lineTotal: '0' }]
     } });
   });
 

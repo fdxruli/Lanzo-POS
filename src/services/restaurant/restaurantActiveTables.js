@@ -97,7 +97,7 @@ export const countRestaurantActiveTables = (tables = []) => ({
   kitchenRejected: tables.filter((table) => table.fulfillmentStatus === 'cancelled').length
 });
 
-export const fetchRestaurantTableDiscoveryOrders = async ({ repository, licenseKey, actorHandle, force = true }) => {
+export const fetchRestaurantTableDiscoveryOrders = async ({ repository, licenseKey, actorHandle, force = false }) => {
   const orders = [];
   const pageSize = 300;
   for (let offset = 0; ; offset += pageSize) {
