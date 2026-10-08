@@ -1,18 +1,19 @@
 import { useState } from 'react';
 import {
-  BarChart2,
+  ArrowRight,
   Bug,
+  Check,
   CheckCircle2,
   Cloud,
+  Coffee,
   Lightbulb,
   Mail,
-  Map,
-  ShieldCheck,
+  MessageCircle,
   Sparkles,
   Store,
+  Users,
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
-import { useInventoryCatalogStore } from '../store/useInventoryCatalogStore';
 import ContactModal from '../components/common/ContactModal';
 import Logo from '../components/common/Logo';
 import { APP_BUILD_DATE_LABEL, APP_VERSION, APP_VERSION_LABEL } from '../config/appVersion';
@@ -25,7 +26,10 @@ import {
   buildSupportMailtoUrl
 } from '../services/support/supportContact';
 import './AboutPage.css';
-import './AboutPagePlanModes.css';
+
+const TELEGRAM_MESSAGE = 'Hola, quiero conocer Lanzo Nube. Me interesa la promoción de 3 meses por $300 MXN.';
+const TELEGRAM_URL = 'https://t.me/LanzoPOS_Oficial?text=' + encodeURIComponent(TELEGRAM_MESSAGE);
+const FACEBOOK_URL = 'https://www.facebook.com/100087646261018';
 
 const EMPTY_CONTACT_MODAL = {
   show: false,
@@ -35,121 +39,34 @@ const EMPTY_CONTACT_MODAL = {
   description: ''
 };
 
-const HERO_CAPABILITIES = [
+const WORKFLOWS = [
   {
-    label: 'Un dispositivo',
-    value: 'Lanzo Local',
+    id: 'solo',
+    title: 'Vendo desde un equipo',
+    description: 'Uso Lanzo en una computadora o tablet, principalmente yo.',
     icon: Store
   },
   {
-    label: 'Sincronización y equipo',
-    value: 'Lanzo Nube',
-    icon: Cloud
-  },
-  {
-    label: 'Local o nube según plan',
-    value: 'Reportes por plan',
-    icon: BarChart2
+    id: 'team',
+    title: 'Trabajo con un equipo',
+    description: 'Varias personas venden y necesito ver todo sincronizado.',
+    icon: Users
   }
 ];
 
-const LOCAL_PLAN_FEATURES = [
-  'Punto de venta local',
-  'Caja y cortes locales',
-  'Productos e inventario local',
-  'Reportes en el dispositivo',
-  'Respaldo manual/local',
-  '1 dispositivo'
+const LOCAL_FEATURES = [
+  'Punto de venta en un solo equipo',
+  'Funciona incluso sin internet',
+  'Tienda en línea básica hasta 10 productos'
 ];
 
-const LOCAL_PLAN_LIMITS = [
-  'Sin sincronización cloud',
-  'Sin empleados/staff',
-  'Sin multi-dispositivo',
-  'Sin IA operativa'
-];
-
-const CLOUD_PLAN_FEATURES = [
+const CLOUD_FEATURES = [
   'Hasta 5 dispositivos',
-  'Sincronización en la nube',
-  'Staff, roles y permisos',
-  'Productos, ventas, caja, clientes y reportes cloud',
-  'Restaurante/preparación cloud',
-  'IA operativa con límite de uso',
-  'Auditoría y trazabilidad avanzada'
+  'Todo sincronizado en la nube',
+  'Roles para tu equipo',
+  'Catálogo en línea sin límite de productos',
+  'Agentes de IA con límite de uso'
 ];
-
-const CLOUD_PLAN_LIMITS = [
-  'Disponible solo con Lanzo Nube activo',
-  'Requiere conexión para sincronización cloud',
-  'La IA opera con límite configurado por licencia'
-];
-
-const PLAN_MODES = [
-  {
-    id: 'free',
-    title: 'Lanzo Local',
-    subtitle: 'Para vender y controlar tu negocio desde un solo dispositivo.',
-    badge: 'Incluido en Lanzo Local',
-    icon: Store,
-    features: LOCAL_PLAN_FEATURES,
-    limits: LOCAL_PLAN_LIMITS
-  },
-  {
-    id: 'pro',
-    title: 'Lanzo Nube',
-    subtitle: 'Para operar con equipo, nube y más control.',
-    badge: 'Disponible en Lanzo Nube',
-    icon: Cloud,
-    features: CLOUD_PLAN_FEATURES,
-    limits: CLOUD_PLAN_LIMITS
-  }
-];
-
-const ROADMAP_STAGES = [
-  { label: 'Lanzo Local incluido', isComplete: true },
-  { label: 'Disponible según tu plan', isActive: true },
-  { label: 'Lanzo Nube para crecer', isComplete: true },
-  { label: 'Próximas mejoras', isComplete: false }
-];
-
-const ROADMAP_GROUPS = [
-  {
-    id: 'foundation',
-    title: 'Lanzo Local incluido',
-    summary: 'Lanzo Local',
-    icon: CheckCircle2,
-    items: [
-      'Punto de venta, caja, productos e inventario locales en un dispositivo',
-      'Reportes locales para revisar el movimiento desde el equipo donde vendes',
-      'Respaldo manual/local sin prometer sincronización cloud'
-    ]
-  },
-  {
-    id: 'in-progress',
-    title: 'Disponible según tu plan',
-    summary: 'Lanzo Nube',
-    icon: ShieldCheck,
-    items: [
-      'Multi-dispositivo, staff, roles y permisos pertenecen a Lanzo Nube',
-      'Caja, productos, ventas, clientes y reportes cloud se activan con Lanzo Nube',
-      'Restaurante/preparación cloud e IA operativa están disponibles según tu licencia'
-    ]
-  },
-  {
-    id: 'next',
-    title: 'Próximas mejoras',
-    summary: 'Evolución futura',
-    icon: Sparkles,
-    items: [
-      'Perfiles de cliente 360 con historial, preferencias y lealtad omnicanal',
-      'Más asistentes inteligentes para demanda, inventario, recompra y alertas preventivas'
-    ]
-  }
-];
-
-const ROADMAP_COMPLETE_COUNT = ROADMAP_STAGES.filter(stage => stage.isComplete).length;
-const ROADMAP_PROGRESS = `${(Math.max(0, ROADMAP_COMPLETE_COUNT - 1) / Math.max(1, ROADMAP_STAGES.length - 1)) * 100}%`;
 
 const getDeviceLimitFromLicense = (licenseDetails = {}, isCloudPlan = false) => {
   const features = getPlanFeaturesFromLicenseDetails(licenseDetails);
@@ -160,42 +77,50 @@ const getDeviceLimitFromLicense = (licenseDetails = {}, isCloudPlan = false) => 
     (isCloudPlan ? 5 : 1)
   );
 
-  return Number.isFinite(deviceLimit) && deviceLimit > 0 ? deviceLimit : (isCloudPlan ? 5 : 1);
+  return Number.isFinite(deviceLimit) && deviceLimit > 0
+    ? deviceLimit
+    : (isCloudPlan ? 5 : 1);
 };
 
 const buildContactDescription = (type, formData) => {
+  const device = formData.device || navigator.userAgent;
+
   if (type === 'bug') {
-    return `ACCION QUE REALIZABA:
-${formData.action || '[No especificado]'}
-
-QUE PASO:
-${formData.error || '[No especificado]'}
-
-INFORMACION DEL DISPOSITIVO:
-${formData.device || navigator.userAgent}
-
-Build: ${APP_BUILD_DATE_LABEL}`;
+    return [
+      'ACCION QUE REALIZABA:',
+      formData.action || '[No especificado]',
+      '',
+      'QUE PASO:',
+      formData.error || '[No especificado]',
+      '',
+      'INFORMACION DEL DISPOSITIVO:',
+      device,
+      '',
+      'Build: ' + APP_BUILD_DATE_LABEL
+    ].join('\n');
   }
 
-  return `MI IDEA:
-${formData.idea || '[No especificado]'}
-
-BENEFICIO:
-${formData.benefit || '[No especificado]'}
-
-INFORMACION ADICIONAL:
-Dispositivo: ${navigator.userAgent}
-Build: ${APP_BUILD_DATE_LABEL}`;
+  return [
+    'MI IDEA:',
+    formData.idea || '[No especificado]',
+    '',
+    'BENEFICIO:',
+    formData.benefit || '[No especificado]',
+    '',
+    'INFORMACION ADICIONAL:',
+    'Dispositivo: ' + navigator.userAgent,
+    'Build: ' + APP_BUILD_DATE_LABEL
+  ].join('\n');
 };
 
 export default function AboutPage() {
-  const productCount = useInventoryCatalogStore(state => state.menu?.length || 0);
   const licenseDetails = useAppStore(state => state.licenseDetails);
   const companyProfile = useAppStore(state => state.companyProfile);
+  const [selectedWorkflow, setSelectedWorkflow] = useState('');
   const [contactModal, setContactModal] = useState(EMPTY_CONTACT_MODAL);
 
   const isCloudPlan = isCloudPosSyncEnabled(licenseDetails);
-  const currentPlanMode = isCloudPlan ? 'pro' : 'free';
+  const currentPlanName = isCloudPlan ? 'Lanzo Nube' : 'Lanzo Local';
   const currentDeviceLimit = getDeviceLimitFromLicense(licenseDetails, isCloudPlan);
 
   const closeContactModal = () => setContactModal(EMPTY_CONTACT_MODAL);
@@ -261,7 +186,7 @@ export default function AboutPage() {
 
   const handleSubmitContact = (formData) => {
     const issueType = contactModal.type === 'bug'
-      ? `Reporte de error [${APP_VERSION}]`
+      ? 'Reporte de error [' + APP_VERSION + ']'
       : 'Sugerencia de funcion';
     const payload = buildSupportEmailPayload({
       licenseDetails,
@@ -274,238 +199,211 @@ export default function AboutPage() {
     window.location.href = buildSupportMailtoUrl(payload);
   };
 
+  const recommendation = selectedWorkflow === 'team'
+    ? {
+        eyebrow: 'RECOMENDADO PARA TU EQUIPO',
+        title: 'Lanzo Nube',
+        description: 'Conecta hasta cinco dispositivos, sincroniza la operación y asigna accesos por rol.'
+      }
+    : selectedWorkflow === 'solo'
+      ? {
+          eyebrow: 'RECOMENDADO PARA TI',
+          title: 'Lanzo Local',
+          description: 'Si trabajas en un solo equipo, puedes vender y controlar tu inventario incluso sin internet.'
+        }
+      : {
+          eyebrow: 'ELIGE A TU RITMO',
+          title: 'Una opción para cada etapa',
+          description: 'Cuéntanos cómo trabajas hoy y te mostraremos el plan que mejor acompaña tu operación.'
+        };
+
   return (
-    <main className="about-grid">
-      <section className="about-hero" aria-labelledby="about-title">
-        <div className="about-hero-logo">
-          <Logo className="about-logo" showBusinessName={false} />
+    <main className="about-redesign" aria-labelledby="about-title">
+      <header className="about-redesign__header">
+        <div>
+          <p className="about-redesign__eyebrow">LANZO POS</p>
+          <h1 id="about-title">Acerca de</h1>
+          <p className="about-redesign__intro">
+            Conoce tu plan actual y descubre todo lo que puedes hacer con Lanzo.
+          </p>
         </div>
-        <p className="about-eyebrow">Versión {APP_VERSION}</p>
-        <h1 id="about-title">Lanzo POS: Lanzo Local para empezar, Lanzo Nube para crecer</h1>
-        <p className="about-hero-copy">
-          Lanzo puede operar en modo local con Lanzo Local o conectarse a Lanzo Nube cuando necesitas varios dispositivos, empleados, sincronización, reportes avanzados e IA. Así cada negocio sabe exactamente qué tiene incluido y qué puede activar al crecer.
-        </p>
-        <div className="about-hero-metrics" aria-label="Resumen de la aplicación">
-          <div className="about-metric">
-            <span className="about-metric-value">{productCount.toLocaleString()}</span>
-            <span className="about-metric-label">Productos gestionados en este dispositivo</span>
-          </div>
-          {HERO_CAPABILITIES.map(({ label, value, icon: Icon }) => (
-            <div className="about-hero-chip" key={label}>
-              <Icon size={17} aria-hidden="true" />
-              <span>
-                <strong>{value}</strong>
-                <small>{label}</small>
-              </span>
-            </div>
-          ))}
+        <div className="about-redesign__brand">
+          <Logo className="about-redesign__logo" showBusinessName={false} />
+          <span>Versión {APP_VERSION}</span>
         </div>
+      </header>
+
+      <section className="about-redesign__current" aria-label="Tu plan actual">
+        <div className="about-redesign__current-icon" aria-hidden="true">
+          <CheckCircle2 size={21} />
+        </div>
+        <div className="about-redesign__current-copy">
+          <p>Tu plan actual · <strong>{currentPlanName}</strong></p>
+          <span>
+            {isCloudPlan
+              ? 'Tu licencia incluye sincronización y hasta ' + currentDeviceLimit + ' dispositivos.'
+              : 'Tu punto de venta funciona en este equipo y puedes seguir vendiendo, incluso sin internet.'}
+          </span>
+        </div>
+        <span className="about-redesign__current-badge">
+          <Check size={14} aria-hidden="true" />
+          Activo
+        </span>
       </section>
 
-      <div className="about-content">
-        <div className="about-column">
-          <section className="about-card" aria-labelledby="about-plan-modes-title">
-            <header className="about-section-heading">
-              <p className="about-eyebrow">Dos formas de usar Lanzo</p>
-              <h2 id="about-plan-modes-title" className="about-section-title">
-                Qué incluye Lanzo Local y qué pertenece a Lanzo Nube
-              </h2>
-            </header>
-
-            <div className="about-plan-grid" aria-label="Comparación de modos Lanzo">
-              {PLAN_MODES.map(({ id, title, subtitle, badge, icon: Icon, features, limits }) => {
-                const isCurrent = currentPlanMode === id;
-                const planClassName = [
-                  'about-plan-card',
-                  `about-plan-card--${id}`,
-                  isCurrent ? 'about-plan-current' : ''
-                ].filter(Boolean).join(' ');
-
-                return (
-                  <article className={planClassName} key={id}>
-                    <header className="about-plan-card-header">
-                      <div className="about-plan-icon" aria-hidden="true">
-                        <Icon size={24} strokeWidth={2.2} />
-                      </div>
-                      <div>
-                        <span className="about-plan-badge">
-                          {isCurrent ? (
-                            <>
-                              <CheckCircle2 size={13} aria-hidden="true" />
-                              Tu plan actual
-                            </>
-                          ) : badge}
-                        </span>
-                        <h3>{title}</h3>
-                        <p>{subtitle}</p>
-                      </div>
-                    </header>
-
-                    <div className="about-plan-section">
-                      <h4>Incluye</h4>
-                      <ul className="about-plan-feature-list">
-                        {features.map(feature => (
-                          <li key={feature}>
-                            <CheckCircle2 size={15} aria-hidden="true" />
-                            <span>{feature}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-
-                    <div className="about-plan-section">
-                      <h4>{id === 'free' ? 'Límites / no incluido' : 'Condiciones'}</h4>
-                      <ul className="about-plan-limit-list">
-                        {limits.map(limit => (
-                          <li key={limit}>
-                            <span aria-hidden="true">—</span>
-                            <span>{limit}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-
-                    {isCurrent && (
-                      <p className="about-plan-current-note">
-                        <CheckCircle2 size={15} aria-hidden="true" />
-                        Esta licencia opera en modo {title} con límite de {currentDeviceLimit} dispositivo{currentDeviceLimit === 1 ? '' : 's'}.
-                      </p>
-                    )}
-                  </article>
-                );
-              })}
-            </div>
-          </section>
-
-          <section className="about-card" aria-labelledby="about-roadmap-title">
-            <header className="about-section-header about-roadmap-header">
-              <div className="about-section-icon" aria-hidden="true">
-                <Map size={20} />
-              </div>
-              <div>
-                <p className="about-eyebrow">Lanzo sigue creciendo</p>
-                <h2 id="about-roadmap-title" className="about-section-title">Ruta de evolución</h2>
-              </div>
-            </header>
-
-            <div className="about-roadmap-progress" aria-label="Evolución de Lanzo POS">
-              <div className="about-roadmap-progress-copy">
-                <strong>Lanzo Local incluido</strong>
-                <span>Lanzo Nube disponible según tu plan</span>
-              </div>
-              <div
-                className="about-progress-track"
-                style={{
-                  '--roadmap-stage-count': ROADMAP_STAGES.length,
-                  '--roadmap-progress-fill': ROADMAP_PROGRESS
-                }}
-              >
-                <span className="about-progress-fill" aria-hidden="true" />
-                {ROADMAP_STAGES.map(stage => (
-                  <span
-                    className={`about-progress-dot ${stage.isComplete ? 'is-complete' : ''} ${stage.isActive ? 'is-active' : ''}`}
-                    key={stage.label}
-                    title={stage.label}
-                  >
-                    {stage.isComplete && <CheckCircle2 size={16} aria-hidden="true" />}
-                    <span className="about-stage-label">{stage.label}</span>
-                  </span>
-                ))}
-              </div>
-            </div>
-
-            <div className="about-roadmap-groups">
-              {ROADMAP_GROUPS.map(({ id, title, summary, icon: Icon, items }) => (
-                <section className={`about-roadmap-group about-roadmap-group--${id}`} key={id}>
-                  <header className="about-roadmap-group-header">
-                    <div className="about-roadmap-group-icon" aria-hidden="true">
-                      <Icon size={20} />
-                    </div>
-                    <div>
-                      <h3>{title}</h3>
-                      <p>{summary}</p>
-                    </div>
-                  </header>
-                  <ul className="about-roadmap-grid">
-                    {items.map(item => (
-                      <li key={item}>
-                        <Icon size={16} aria-hidden="true" />
-                        <span>{item}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              ))}
-            </div>
-          </section>
+      <section className="about-redesign__chooser" aria-labelledby="about-workflow-title">
+        <div className="about-redesign__section-heading">
+          <div>
+            <h2 id="about-workflow-title">¿Cómo trabajas hoy?</h2>
+            <p>Esto nos ayuda a mostrarte la mejor opción para tu negocio.</p>
+          </div>
         </div>
 
-        <aside className="about-column" aria-label="Información y contacto">
-          <section className="about-card about-sponsor" aria-labelledby="sponsor-title">
-            <div className="about-sponsor-bg" aria-hidden="true" />
-            <div className="about-sponsor-content">
-              <p className="about-eyebrow">Desarrollado por</p>
-              <h2 id="sponsor-title" className="about-sponsor-title">ENTRE ALAS</h2>
-              <p className="about-sponsor-slogan">&quot;Espera lo mejor&quot;</p>
-              
-              <div className="about-sponsor-story">
-                <p className="about-sponsor-lead">De Dark Kitchen a aliado tecnológico</p>
-                <p className="about-sponsor-description">
-                  Nacimos el 15 de octubre del 2022 como negocio de alimentos. Al entender los retos del día a día, creamos las herramientas que necesitábamos y ahora las compartimos contigo.
-                </p>
-              </div>
+        <div className="about-redesign__workflow-list">
+          {WORKFLOWS.map(({ id, title, description, icon: Icon }) => {
+            const isSelected = selectedWorkflow === id;
+            const isCurrent = (id === 'team' && isCloudPlan) || (id === 'solo' && !isCloudPlan);
 
-              <a
-                href="https://www.facebook.com/100087646261018"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="about-sponsor-link"
+            return (
+              <button
+                className={[
+                  'about-redesign__workflow',
+                  isSelected ? 'is-selected' : '',
+                  isCurrent ? 'is-current' : ''
+                ].filter(Boolean).join(' ')}
+                type="button"
+                key={id}
+                aria-pressed={isSelected}
+                onClick={() => setSelectedWorkflow(id)}
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/></svg>
-                Visítanos en Facebook
-              </a>
-            </div>
-          </section>
+                <span className="about-redesign__radio" aria-hidden="true">
+                  {isSelected && <span />}
+                </span>
+                <span className="about-redesign__workflow-icon" aria-hidden="true">
+                  <Icon size={23} />
+                </span>
+                <span className="about-redesign__workflow-copy">
+                  <strong>{title}</strong>
+                  <span>{description}</span>
+                </span>
+                {isCurrent && <span className="about-redesign__workflow-tag">Tu plan actual</span>}
+              </button>
+            );
+          })}
+        </div>
 
-          <section className="about-card" aria-labelledby="about-contact-title">
-            <header className="about-section-header">
-              <div className="about-section-icon" aria-hidden="true">
-                <Mail size={20} />
-              </div>
-              <h2 id="about-contact-title" className="about-section-title">Ayúdanos a mejorar</h2>
-            </header>
-            <p className="about-contact-description">
-              Tu opinión es valiosa. ¿Encontraste un error o tienes una idea? Queremos escucharte.
+        <section className="about-redesign__recommendation" aria-live="polite" aria-label="Plan recomendado">
+          <div className="about-redesign__recommendation-copy">
+            <p className="about-redesign__recommendation-eyebrow">
+              <Sparkles size={15} aria-hidden="true" />
+              {recommendation.eyebrow}
             </p>
+            <h3>{recommendation.title}</h3>
+            <p>{recommendation.description}</p>
+          </div>
 
-            <div className="about-contact-actions">
-              <button
-                type="button"
-                onClick={() => handleOpenContactModal('bug')}
-                className="about-action about-action--bug"
-              >
-                <Bug size={18} aria-hidden="true" />
-                Reportar error
+          <div className="about-redesign__offer">
+            <span className="about-redesign__offer-tag">OFERTA DE LANZAMIENTO</span>
+            <strong>3 meses por $300</strong>
+            <span className="about-redesign__offer-after">Después $129 MXN al mes.</span>
+            <div className="about-redesign__offer-details">
+              <span><MessageCircle size={15} aria-hidden="true" /> Por Telegram y transferencia</span>
+              <span><CheckCircle2 size={15} aria-hidden="true" /> Activación asistida</span>
+            </div>
+          </div>
+
+          <div className="about-redesign__recommendation-action">
+            <a className="about-redesign__primary-button" href={TELEGRAM_URL} target="_blank" rel="noopener noreferrer">
+              {selectedWorkflow === 'team' ? 'Solicitar Lanzo Nube' : 'Consultar por Telegram'}
+              <ArrowRight size={18} aria-hidden="true" />
+            </a>
+            <span>
+              {selectedWorkflow === 'solo'
+                ? 'Puedes activar Nube cuando tu operación lo necesite.'
+                : 'Te ayudamos a activar tu plan.'}
+            </span>
+          </div>
+        </section>
+      </section>
+
+      <section className="about-redesign__comparison" aria-label="Comparación de planes">
+        <article className="about-redesign__plan-summary">
+          <div className="about-redesign__plan-icon about-redesign__plan-icon--local" aria-hidden="true">
+            <Store size={22} />
+          </div>
+          <div className="about-redesign__plan-content">
+            <div className="about-redesign__plan-heading">
+              <h2>Lo que tienes con Lanzo Local</h2>
+              {!isCloudPlan && <span className="about-redesign__plan-current">Tu plan</span>}
+            </div>
+            <ul>
+              {LOCAL_FEATURES.map(feature => (
+                <li key={feature}><Check size={16} aria-hidden="true" /><span>{feature}</span></li>
+              ))}
+            </ul>
+          </div>
+        </article>
+
+        <article className="about-redesign__plan-summary about-redesign__plan-summary--cloud">
+          <div className="about-redesign__plan-icon about-redesign__plan-icon--cloud" aria-hidden="true">
+            <Users size={22} />
+          </div>
+          <div className="about-redesign__plan-content">
+            <div className="about-redesign__plan-heading">
+              <h2>Lo que añade Lanzo Nube</h2>
+              {isCloudPlan && <span className="about-redesign__plan-current">Tu plan</span>}
+            </div>
+            <ul>
+              {CLOUD_FEATURES.map(feature => (
+                <li key={feature}><Check size={16} aria-hidden="true" /><span>{feature}</span></li>
+              ))}
+            </ul>
+          </div>
+        </article>
+      </section>
+
+      <section className="about-redesign__lower" aria-label="Historia y ayuda">
+        <article className="about-redesign__story">
+          <div className="about-redesign__lower-icon" aria-hidden="true"><Coffee size={20} /></div>
+          <div>
+            <p className="about-redesign__lower-eyebrow">UNA HISTORIA DE ENTRE ALAS</p>
+            <h2>Herramientas creadas desde la operación real.</h2>
+            <p>
+              Entre Alas nació como un negocio de alimentos. Al vivir los retos del día a día, creamos herramientas para resolverlos y hoy las compartimos con otros negocios.
+            </p>
+            <a href={FACEBOOK_URL} target="_blank" rel="noopener noreferrer">
+              Conoce Entre Alas <ArrowRight size={16} aria-hidden="true" />
+            </a>
+          </div>
+        </article>
+
+        <article className="about-redesign__help">
+          <div className="about-redesign__lower-icon about-redesign__lower-icon--help" aria-hidden="true">
+            <Mail size={20} />
+          </div>
+          <div>
+            <p className="about-redesign__lower-eyebrow">ESTAMOS PARA AYUDAR</p>
+            <h2>¿Encontraste un problema o tienes una idea?</h2>
+            <p>Escríbenos o cuéntanos desde aquí. Tu experiencia ayuda a mejorar Lanzo.</p>
+            <div className="about-redesign__help-actions">
+              <a href={TELEGRAM_URL} target="_blank" rel="noopener noreferrer">
+                <MessageCircle size={16} aria-hidden="true" /> Contactar por Telegram
+              </a>
+              <button type="button" onClick={() => handleOpenContactModal('bug')}>
+                <Bug size={16} aria-hidden="true" /> Reportar problema
               </button>
-              <button
-                type="button"
-                onClick={() => handleOpenContactModal('feature')}
-                className="about-action about-action--idea"
-              >
-                <Lightbulb size={18} aria-hidden="true" />
-                Sugerir mejora
+              <button type="button" onClick={() => handleOpenContactModal('feature')}>
+                <Lightbulb size={16} aria-hidden="true" /> Sugerir mejora
               </button>
             </div>
+          </div>
+        </article>
+      </section>
 
-            <div className="about-contact-footer">
-              <span className="about-badge about-badge--success">
-                <CheckCircle2 size={13} aria-hidden="true" />
-                Respuesta en menos de 24 h
-              </span>
-            </div>
-          </section>
-        </aside>
-      </div>
+      <footer className="about-redesign__footer">
+        <span>Lanzo POS · {APP_VERSION_LABEL}</span>
+        <span>Build {APP_BUILD_DATE_LABEL}</span>
+      </footer>
 
       {contactModal.show && (
         <ContactModal
