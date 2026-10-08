@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   ArrowRight,
@@ -33,11 +33,14 @@ import {
   buildSupportEmailPayload,
   buildSupportMailtoUrl
 } from '../services/support/supportContact';
+import { createTelegramContact, TELEGRAM_CONTACT_INTENT } from '../services/support/telegramContact';
+import {
+  ABOUT_LICENSE_STATE,
+  resolveAboutContactActions,
+  resolveAboutLicenseState
+} from './aboutTelegramActions';
 import './AboutPage.css';
 
-const TELEGRAM_MESSAGE = 'Hola, quiero conocer Lanzo Nube. Me interesa la promoción de 3 meses por $300 MXN.';
-const TELEGRAM_URL = 'https://t.me/LanzoPOS_Oficial?text=' + encodeURIComponent(TELEGRAM_MESSAGE);
-const TELEGRAM_SUPPORT_URL = 'https://t.me/LanzoPOS_Oficial?text=' + encodeURIComponent('Hola, necesito ayuda con Lanzo POS.');
 const FACEBOOK_URL = 'https://www.facebook.com/100087646261018';
 
 const EMPTY_CONTACT_MODAL = {
@@ -124,6 +127,7 @@ const buildContactDescription = (type, formData) => {
 
 export default function AboutPage() {
   const licenseDetails = useAppStore(state => state.licenseDetails);
+  const licenseStatus = useAppStore(state => state.licenseStatus);
   const companyProfile = useAppStore(state => state.companyProfile);
   const canAccess = useAppStore(state => state.canAccess);
   const currentDeviceRole = useAppStore(state => state.currentDeviceRole);
@@ -141,9 +145,33 @@ export default function AboutPage() {
   });
   const [selectedWorkflow, setSelectedWorkflow] = useState('');
   const [contactModal, setContactModal] = useState(EMPTY_CONTACT_MODAL);
+  const [telegramPreview, setTelegramPreview] = useState(null);
+  const telegramDialogRef = useRef(null);
+  const telegramCloseButtonRef = useRef(null);
 
   const isCloudPlan = isCloudPosSyncEnabled(licenseDetails);
   const currentPlanName = isCloudPlan ? 'Lanzo Nube' : 'Lanzo Local';
+  const aboutLicenseState = resolveAboutLicenseState({
+    licenseDetails,
+    licenseStatus,
+    isCloudPlan
+  });
+  const isAuthorizedCommercialAdmin = (
+    settingsAccess.isAuthorizedActor === true
+    && settingsAccess.isAdmin === true
+    && settingsAccess.actorType === 'admin'
+    && actorRuntime.status === 'granted'
+    && actorRuntime.actorType === 'admin'
+  );
+  const contactActions = resolveAboutContactActions({
+    licenseState: aboutLicenseState,
+    selectedWorkflow,
+    isAuthorizedCommercialAdmin
+  });
+  const canShowCloudTools = [
+    ABOUT_LICENSE_STATE.CLOUD_ACTIVE,
+    ABOUT_LICENSE_STATE.CLOUD_GRACE
+  ].includes(aboutLicenseState);
   const currentDeviceLimit = getDeviceLimitFromLicense(licenseDetails, isCloudPlan);
   const proTools = [
     {
@@ -179,6 +207,74 @@ export default function AboutPage() {
       available: settingsAccess.canEnterSettings
     }
   ].filter(tool => tool.available);
+
+  const licensePresentation = {
+    [ABOUT_LICENSE_STATE.LOCAL_ACTIVE]: {
+      eyebrow: 'LANZO POS',
+      summary: 'Tu punto de venta funciona en este equipo y puedes seguir vendiendo, incluso sin internet.',
+      statusLabel: 'Activo'
+    },
+    [ABOUT_LICENSE_STATE.CLOUD_ACTIVE]: {
+      eyebrow: 'LANZO NUBE ACTIVO',
+      summary: `Tu licencia incluye sincronización y hasta ${currentDeviceLimit} dispositivos.`,
+      statusLabel: 'Activo'
+    },
+    [ABOUT_LICENSE_STATE.CLOUD_GRACE]: {
+      eyebrow: 'ESTADO DE LANZO NUBE',
+      summary: 'Tu plan aparece en periodo de gracia. Contacta al equipo para confirmar su continuidad.',
+      statusLabel: 'Periodo de gracia'
+    },
+    [ABOUT_LICENSE_STATE.CLOUD_EXPIRED]: {
+      eyebrow: 'ESTADO DE LANZO NUBE',
+      summary: 'La licencia aparece vencida. El administrador puede consultar si existe una opción de reactivación.',
+      statusLabel: 'Vencido'
+    },
+    [ABOUT_LICENSE_STATE.UNKNOWN]: {
+      eyebrow: 'ESTADO DEL PLAN',
+      summary: 'No podemos confirmar el estado de tu plan con la información disponible. Contacta a soporte para revisarlo.',
+      statusLabel: 'Por confirmar'
+    }
+  }[aboutLicenseState];
+
+  useEffect(() => {
+    if (!telegramPreview) return undefined;
+
+    const dialog = telegramDialogRef.current;
+    const previousFocus = document.activeElement;
+    telegramCloseButtonRef.current?.focus();
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setTelegramPreview(null);
+        return;
+      }
+
+      if (event.key !== 'Tab' || !dialog) return;
+      const focusable = Array.from(dialog.querySelectorAll(
+        'button:not([disabled]), a[href], textarea:not([disabled])'
+      ));
+      if (focusable.length === 0) return;
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      if (previousFocus && typeof previousFocus.focus === 'function' && previousFocus.isConnected) {
+        previousFocus.focus();
+      }
+    };
+  }, [telegramPreview]);
 
   const closeContactModal = () => setContactModal(EMPTY_CONTACT_MODAL);
 
@@ -256,6 +352,47 @@ export default function AboutPage() {
     window.location.href = buildSupportMailtoUrl(payload);
   };
 
+  const handleOpenTelegramPreview = (action) => {
+    if (action?.kind !== 'telegram') return;
+
+    const contact = createTelegramContact(action.intent, {
+      isAuthorizedCommercialAdmin,
+      licenseState: aboutLicenseState,
+      planName: currentPlanName,
+      workMode: selectedWorkflow,
+      businessName: companyProfile?.name
+        || companyProfile?.business_name
+        || companyProfile?.commercial_name
+    });
+
+    setTelegramPreview({ ...contact, label: action.label });
+  };
+
+  const renderContactAction = (action, className) => {
+    if (!action) return null;
+
+    if (action.kind === 'anchor') {
+      return (
+        <a className={className} href={action.href} key={action.label}>
+          {action.label}
+          <ArrowRight size={17} aria-hidden="true" />
+        </a>
+      );
+    }
+
+    return (
+      <button
+        className={className}
+        type="button"
+        key={action.label}
+        onClick={() => handleOpenTelegramPreview(action)}
+      >
+        {action.label}
+        <ArrowRight size={17} aria-hidden="true" />
+      </button>
+    );
+  };
+
   const recommendation = selectedWorkflow === 'team'
     ? {
         eyebrow: 'RECOMENDADO PARA TU EQUIPO',
@@ -278,12 +415,14 @@ export default function AboutPage() {
     <main className="about-redesign" aria-labelledby="about-title">
       <header className="about-redesign__header">
         <div>
-          <p className="about-redesign__eyebrow">{isCloudPlan ? 'LANZO NUBE ACTIVO' : 'LANZO POS'}</p>
+          <p className="about-redesign__eyebrow">{licensePresentation.eyebrow}</p>
           <h1 id="about-title">Acerca de</h1>
           <p className="about-redesign__intro">
-            {isCloudPlan
-              ? 'Tu plan Nube está activo. Accede a las herramientas disponibles para tu negocio.'
-              : 'Conoce tu plan actual y descubre todo lo que puedes hacer con Lanzo.'}
+            {aboutLicenseState === ABOUT_LICENSE_STATE.CLOUD_ACTIVE
+              ? 'Accede a las herramientas disponibles para tu negocio.'
+              : aboutLicenseState === ABOUT_LICENSE_STATE.LOCAL_ACTIVE
+                ? 'Conoce tu plan actual y descubre todo lo que puedes hacer con Lanzo.'
+                : licensePresentation.summary}
           </p>
         </div>
         <div className="about-redesign__brand">
@@ -298,54 +437,18 @@ export default function AboutPage() {
         </div>
         <div className="about-redesign__current-copy">
           <p>Tu plan actual · <strong>{currentPlanName}</strong></p>
-          <span>
-            {isCloudPlan
-              ? 'Tu licencia incluye sincronización y hasta ' + currentDeviceLimit + ' dispositivos.'
-              : 'Tu punto de venta funciona en este equipo y puedes seguir vendiendo, incluso sin internet.'}
-          </span>
+          <span>{licensePresentation.summary}</span>
         </div>
-        <span className="about-redesign__current-badge">
-          <Check size={14} aria-hidden="true" />
-          Activo
+        <span className={`about-redesign__current-badge about-redesign__current-badge--${aboutLicenseState}`}>
+          {[
+            ABOUT_LICENSE_STATE.LOCAL_ACTIVE,
+            ABOUT_LICENSE_STATE.CLOUD_ACTIVE
+          ].includes(aboutLicenseState) && <Check size={14} aria-hidden="true" />}
+          {licensePresentation.statusLabel}
         </span>
       </section>
 
-      {isCloudPlan ? (
-        <section className="about-redesign__pro-tools" aria-labelledby="about-pro-tools-title">
-          <header className="about-redesign__pro-heading">
-            <div>
-              <p className="about-redesign__eyebrow">TU PLAN EN ACCIÓN</p>
-              <h2 id="about-pro-tools-title">Atajos de Lanzo Nube</h2>
-              <p>Abre las herramientas disponibles para tu rol sin volver a comparar planes.</p>
-            </div>
-            <span className="about-redesign__pro-badge">
-              <CheckCircle2 size={15} aria-hidden="true" />
-              Nube activa
-            </span>
-          </header>
-
-          {proTools.length > 0 ? (
-            <nav className="about-redesign__pro-grid" aria-label="Herramientas de Lanzo Nube">
-              {proTools.map(({ id, to, title, description, icon: Icon }) => (
-                <Link className="about-redesign__pro-link" to={to} key={id}>
-                  <span className="about-redesign__pro-icon" aria-hidden="true">
-                    <Icon size={21} />
-                  </span>
-                  <span className="about-redesign__pro-copy">
-                    <strong>{title}</strong>
-                    <span>{description}</span>
-                  </span>
-                  <ArrowRight size={17} aria-hidden="true" />
-                </Link>
-              ))}
-            </nav>
-          ) : (
-            <p className="about-redesign__pro-empty">
-              Los accesos dependen de los permisos de tu usuario. Si esperabas ver una herramienta, pide al administrador del negocio que revise tus permisos.
-            </p>
-          )}
-        </section>
-      ) : (
+      {aboutLicenseState === ABOUT_LICENSE_STATE.LOCAL_ACTIVE ? (
         <>
       <section className="about-redesign__chooser" aria-labelledby="about-workflow-title">
         <div className="about-redesign__section-heading">
@@ -409,21 +512,24 @@ export default function AboutPage() {
           </div>
 
           <div className="about-redesign__recommendation-action">
-            <a className="about-redesign__primary-button" href={TELEGRAM_URL} target="_blank" rel="noopener noreferrer">
-              {selectedWorkflow === 'team' ? 'Solicitar Lanzo Nube' : 'Consultar por Telegram'}
-              <ArrowRight size={18} aria-hidden="true" />
-            </a>
+            {renderContactAction(contactActions.primary, 'about-redesign__primary-button')}
+            {contactActions.secondary && renderContactAction(
+              contactActions.secondary,
+              'about-redesign__secondary-button'
+            )}
             <span>
               {selectedWorkflow === 'solo'
-                ? 'Puedes activar Nube cuando tu operación lo necesite.'
-                : 'Te ayudamos a activar tu plan.'}
+                ? 'Puedes continuar con Lanzo Local. Esta consulta no cambia tu plan.'
+                : selectedWorkflow === 'team'
+                  ? 'La solicitud es asistida; el botón no activa ni cobra el plan.'
+                  : 'El equipo te orientará sobre planes y condiciones vigentes.'}
             </span>
           </div>
         </section>
       </section>
 
       <section className="about-redesign__comparison" aria-label="Comparación de planes">
-        <article className="about-redesign__plan-summary">
+        <article className="about-redesign__plan-summary" id="about-local-plan">
           <div className="about-redesign__plan-icon about-redesign__plan-icon--local" aria-hidden="true">
             <Store size={22} />
           </div>
@@ -459,6 +565,80 @@ export default function AboutPage() {
       </section>
 
         </>
+      ) : isCloudPlan ? (
+        <>
+          {canShowCloudTools && (
+            <section className="about-redesign__pro-tools" aria-labelledby="about-pro-tools-title">
+              <header className="about-redesign__pro-heading">
+                <div>
+                  <p className="about-redesign__eyebrow">TU PLAN EN ACCIÓN</p>
+                  <h2 id="about-pro-tools-title">Atajos de Lanzo Nube</h2>
+                  <p>Abre las herramientas disponibles para tu rol sin volver a comparar planes.</p>
+                </div>
+                <span className="about-redesign__pro-badge">
+                  {aboutLicenseState === ABOUT_LICENSE_STATE.CLOUD_ACTIVE
+                    ? <><CheckCircle2 size={15} aria-hidden="true" /> Nube activa</>
+                    : 'Periodo de gracia'}
+                </span>
+              </header>
+
+              {proTools.length > 0 ? (
+                <nav className="about-redesign__pro-grid" aria-label="Herramientas de Lanzo Nube">
+                  {proTools.map(({ id, to, title, description, icon: Icon }) => (
+                    <Link className="about-redesign__pro-link" to={to} key={id}>
+                      <span className="about-redesign__pro-icon" aria-hidden="true">
+                        <Icon size={21} />
+                      </span>
+                      <span className="about-redesign__pro-copy">
+                        <strong>{title}</strong>
+                        <span>{description}</span>
+                      </span>
+                      <ArrowRight size={17} aria-hidden="true" />
+                    </Link>
+                  ))}
+                </nav>
+              ) : (
+                <p className="about-redesign__pro-empty">
+                  Los accesos dependen de los permisos de tu usuario. Si esperabas ver una herramienta, pide al administrador del negocio que revise tus permisos.
+                </p>
+              )}
+            </section>
+          )}
+
+          <section className="about-redesign__contact-actions" aria-label="Contacto según el estado del plan">
+            <div>
+              <p className="about-redesign__eyebrow">CONTACTO Y AYUDA</p>
+              <h2>{aboutLicenseState === ABOUT_LICENSE_STATE.CLOUD_ACTIVE
+                ? '¿Necesitas ayuda con Lanzo Nube?'
+                : aboutLicenseState === ABOUT_LICENSE_STATE.CLOUD_GRACE
+                  ? '¿Quieres confirmar la continuidad de tu plan?'
+                  : aboutLicenseState === ABOUT_LICENSE_STATE.CLOUD_EXPIRED
+                    ? 'Consulta las opciones para tu servicio'
+                    : 'Revisemos el estado de tu plan'}</h2>
+              <p>
+                {isAuthorizedCommercialAdmin
+                  ? 'El contacto es asistido. Revisa el borrador y confirma en Telegram si deseas continuar.'
+                  : 'Puedes contactar al equipo de soporte. Las opciones comerciales están disponibles para el administrador autorizado.'}
+              </p>
+            </div>
+            <div className="about-redesign__contact-action-buttons">
+              {renderContactAction(contactActions.primary, 'about-redesign__primary-button')}
+              {contactActions.secondary && renderContactAction(
+                contactActions.secondary,
+                'about-redesign__secondary-button'
+              )}
+            </div>
+          </section>
+        </>
+      ) : (
+        <section className="about-redesign__status-help" aria-labelledby="about-status-help-title">
+          <div>
+            <p className="about-redesign__eyebrow">AYUDA CON TU PLAN</p>
+            <h2 id="about-status-help-title">Confirma el estado de tu servicio</h2>
+            <p>{licensePresentation.summary}</p>
+          </div>
+          {renderContactAction(contactActions.primary, 'about-redesign__primary-button')}
+        </section>
       )}
 
       <section className="about-redesign__lower" aria-label="Historia y ayuda">
@@ -485,9 +665,16 @@ export default function AboutPage() {
             <h2>¿Encontraste un problema o tienes una idea?</h2>
             <p>Escríbenos o cuéntanos desde aquí. Tu experiencia ayuda a mejorar Lanzo.</p>
             <div className="about-redesign__help-actions">
-              <a href={TELEGRAM_SUPPORT_URL} target="_blank" rel="noopener noreferrer">
+              <button
+                type="button"
+                onClick={() => handleOpenTelegramPreview({
+                  kind: 'telegram',
+                  intent: TELEGRAM_CONTACT_INTENT.GENERAL_SUPPORT,
+                  label: 'Contactar por Telegram'
+                })}
+              >
                 <MessageCircle size={16} aria-hidden="true" /> Contactar por Telegram
-              </a>
+              </button>
               <button type="button" onClick={() => handleOpenContactModal('bug')}>
                 <Bug size={16} aria-hidden="true" /> Reportar problema
               </button>
@@ -503,6 +690,66 @@ export default function AboutPage() {
         <span>Lanzo POS · {APP_VERSION_LABEL}</span>
         <span>Build {APP_BUILD_DATE_LABEL}</span>
       </footer>
+
+      {telegramPreview && (
+        <div className="about-telegram-dialog-backdrop">
+          <section
+            className="about-telegram-dialog"
+            ref={telegramDialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="about-telegram-dialog-title"
+            aria-describedby="about-telegram-dialog-description"
+            tabIndex={-1}
+          >
+            <button
+              className="about-telegram-dialog__close"
+              type="button"
+              ref={telegramCloseButtonRef}
+              onClick={() => setTelegramPreview(null)}
+              aria-label="Cerrar vista previa"
+            >
+              ×
+            </button>
+            <p className="about-redesign__eyebrow">VISTA PREVIA DE TELEGRAM</p>
+            <h2 id="about-telegram-dialog-title">Revisa el mensaje antes de continuar</h2>
+            <p id="about-telegram-dialog-description">
+              Se abrirá el chat de @{telegramPreview.username} con el texto preparado, si Telegram admite esta función. Revísalo y envíalo desde Telegram; abrir el chat no confirma su recepción.
+            </p>
+            <label className="about-telegram-dialog__message-label" htmlFor="about-telegram-message">
+              Mensaje para {telegramPreview.label.toLowerCase()}
+            </label>
+            <textarea
+              id="about-telegram-message"
+              className="about-telegram-dialog__message"
+              value={telegramPreview.message}
+              readOnly
+              rows={8}
+              spellCheck="false"
+            />
+            <div className="about-telegram-dialog__actions">
+              <button
+                className="about-redesign__secondary-button"
+                type="button"
+                onClick={() => setTelegramPreview(null)}
+              >
+                Volver
+              </button>
+              <a
+                className="about-redesign__primary-button"
+                href={telegramPreview.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Abrir chat de Lanzo POS en Telegram en una nueva pestaña"
+                onClick={() => setTelegramPreview(null)}
+              >
+                Abrir Telegram
+                <ArrowRight size={17} aria-hidden="true" />
+              </a>
+            </div>
+          </section>
+        </div>
+      )}
 
       {contactModal.show && (
         <ContactModal
