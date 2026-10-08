@@ -1389,7 +1389,7 @@ export const removeRealtimeChannel = async (channel) => {
 
 /**
  * Descarga el contenido HTML de los términos activos desde Supabase.
- * @param {string} type - Tipo de documento ('terms_of_use' o 'privacy_policy')
+ * @param {string} type - Uno de los tipos definidos en legal_doc_type
  */
 export const fetchLegalTerms = async (type = 'terms_of_use') => {
     try {
