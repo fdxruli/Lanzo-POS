@@ -60,9 +60,18 @@ describe('TermsAndConditionsModal policy navigation', () => {
     expect(await screen.findByText(/todavía no tiene una versión activa publicada/)).toBeTruthy();
     expect(screen.queryByRole('button', { name: 'Reintentar' })).toBeNull();
 
-    fireEvent.click(screen.getByRole('button', { name: /Lía e inteligencia artificial/ }));
-    expect(await screen.findByText(/Este documento está en preparación/)).toBeTruthy();
-    expect(fetchLegalTerms).not.toHaveBeenCalledWith('ai_policy');
+    const productionDocuments = [
+      [/Lía e inteligencia artificial/, 'ai_policy'],
+      [/Pagos y suscripciones/, 'payment_policy'],
+      [/Cancelaciones y reembolsos/, 'refund_policy'],
+      [/Aviso legal/, 'legal_notice']
+    ];
+
+    for (const [label, type] of productionDocuments) {
+      fireEvent.click(screen.getByRole('button', { name: label }));
+      await waitFor(() => expect(fetchLegalTerms).toHaveBeenCalledWith(type));
+      expect(await screen.findByText(/todavía no tiene una versión activa publicada/)).toBeTruthy();
+    }
   });
 
 
