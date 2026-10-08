@@ -59,6 +59,7 @@ begin
   assert (select count(*)=4 from public.pos_restaurant_order_items where restaurant_order_id='contract-parent' and status='cancelled');
   assert (select server_version=1 from public.pos_restaurant_order_items where id='contract-item-delivered');
   assert (select server_version=1 from public.pos_restaurant_order_items where id='contract-item-cancelled');
+  assert (select updated_by_staff_user_id='00000000-0000-0000-0000-0000000000aa'::uuid from public.pos_restaurant_orders where id='contract-parent');
   begin
     update public.pos_restaurant_orders set status='pending',fulfillment_status='pending',updated_at=now()
       where id='contract-parent';

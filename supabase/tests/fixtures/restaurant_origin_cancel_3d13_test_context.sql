@@ -12,6 +12,7 @@ begin
     'device_id',case when $2='A' then '00000000-0000-0000-0000-00000000000a'
       else '00000000-0000-0000-0000-00000000000b' end,
     'actor_type',case when $4 is null then 'admin' else 'staff' end,
+    'staff_user_id',case when $4='refunds' then '00000000-0000-0000-0000-0000000000aa' else null end,
     'actor_permissions',jsonb_build_object('refunds',$4='refunds'));
 end;
 $fixture$;
