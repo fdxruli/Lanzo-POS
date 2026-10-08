@@ -8,7 +8,7 @@ import { isRestaurantCloudTableShadow, isRestaurantCloudTableTerminal } from '..
  * device. Repair only a deficit backed by a persisted, still-open order.
  * Existing holds also cover the interval between commitStock and saving it.
  */
-export const reconcileActiveTableReservations = async ({ db, STORES }) => {
+export const reconcileActiveTableReservations = async ({ db, STORES, confirmedCancelOrderId = null }) => {
   const orders = await db.table(STORES.SALES).where('status').equals('open').toArray();
   const products = await db.table(STORES.MENU).toArray();
   const batches = await db.table(STORES.PRODUCT_BATCHES).toArray();
@@ -22,7 +22,12 @@ export const reconcileActiveTableReservations = async ({ db, STORES }) => {
   };
 
   for (const order of orders) {
-    if (order.splitReservationReconciledAt || isRestaurantCloudTableShadow(order) || isRestaurantCloudTableTerminal(order)) continue;
+    // Only the certified cancellation transaction may rebuild the pending
+    // order's hold before releasing it. Catalog pulls still exclude terminals.
+    const pendingCancellation = order.id === confirmedCancelOrderId
+      && order.restaurantCancellationCleanupPending?.receipt?.status === 'cancelled';
+    if (order.splitReservationReconciledAt || isRestaurantCloudTableShadow(order)
+      || (isRestaurantCloudTableTerminal(order) && !pendingCancellation)) continue;
     for (const item of order.items || []) {
       const reservation = item.inventoryReservation;
       if (reservation?.source !== 'table' || !(reservation.committedQuantity > 0)) continue;

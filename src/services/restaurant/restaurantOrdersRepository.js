@@ -81,6 +81,18 @@ const normalizeLimit = (limit = 100) => Math.min(Math.max(Number(limit) || 100, 
 const getProductsById = async () => { try { const products = await loadData(STORES.MENU); return new Map((Array.isArray(products) ? products : []).filter((product) => product?.id).map((product) => [product.id, product])); } catch (error) { Logger.warn('[RestaurantOrders] No se pudo cargar catalogo local para resolver estaciones:', error); return new Map(); } };
 
 export const restaurantOrdersRepository = {
+  async cancelRestaurantOrderFromPos({ licenseKey, localOrderId, expectedVersion, reason, idempotencyKey, actorHandle: refundsActor }) {
+    refundsActor.assertCurrent('refunds');
+    assertOnlineForMutation();
+    const { args, actorHandle } = await buildBaseRpcArgs(licenseKey);
+    refundsActor.assertCurrent('refunds');
+    const response = await callRpc('pos_cancel_restaurant_order_from_pos_v1', { ...args,
+      p_local_order_id: localOrderId, p_expected_parent_version: expectedVersion,
+      p_reason: reason, p_idempotency_key: idempotencyKey }, actorHandle);
+    refundsActor.assertCurrent('refunds');
+    if (response?.success === true) invalidateCloudCacheAfterRestaurantOrderMutation(licenseKey);
+    return response;
+  },
   async upsertRestaurantOrder({ licenseKey, order, items = [], idempotencyKey = null }) {
     if (!licenseKey) throw new Error('LICENSE_KEY_REQUIRED');
     assertOnlineForMutation();

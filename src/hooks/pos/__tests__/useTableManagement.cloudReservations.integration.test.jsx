@@ -91,7 +91,9 @@ vi.mock('../../../services/restaurant/restaurantOrdersRepository', () => ({
       ...payload.order, id: `restaurant-${localOrderId}`, status: 'delivered', fulfillmentStatus: 'delivered', paymentStatus: 'unpaid',
       updatedAt: sale.updatedAt, items: payload.items.map((item) => ({ ...item, status: 'delivered' }))
     } };
-  } }
+  }, cancelRestaurantOrderFromPos: async ({ localOrderId }) => ({ success: true,
+    localOrderId, status: 'cancelled', serverVersion: 2,
+    updatedAt: '2026-09-29T10:02:00.000Z', cancelledAt: '2026-09-29T10:02:00.000Z' }) }
 }));
 vi.mock('../../../services/salesCloud/salesCloudRepository', () => ({
   salesCloudRepository: { createCloudSplitTableSale: (...args) => runtime.transport(...args) }
@@ -135,7 +137,8 @@ const seedTable = async (id, items = [makeItem()]) => {
   const sale = { id, items: reservedItems, status: 'open', fulfillmentStatus: 'open',
     orderType: 'table', tableData: `Mesa ${id}`, currency: 'MXN',
     total: items.reduce((total, item) => total + item.price * item.quantity, 0),
-    timestamp: '2026-09-29T10:00:00.000Z', updatedAt: '2026-09-29T10:01:00.000Z' };
+    timestamp: '2026-09-29T10:00:00.000Z', updatedAt: '2026-09-29T10:01:00.000Z',
+    cloudRestaurantOrderUpdatedAt: runtime.cloudMode ? '2026-09-29T10:01:00.000Z' : null };
   await db.table(STORES.SALES).put(sale);
   const activeOrders = new Map(useActiveOrders.getState().activeOrders);
   activeOrders.set(id, { ...sale, isSaved: true });
@@ -342,14 +345,18 @@ describe('Mini-phase 3A.1 catalog desync and cancellation', () => {
     expect(await db.table('sales').get('A')).toMatchObject({ status: 'cancelled' });
   });
 
-  it('missing reserved batch aborts cancellation and preserves the open order', async () => {
+  it('missing reserved batch retains confirmed Cloud cancellation for local recovery', async () => {
     await db.table('menu').update('burger', { batchManagement: { enabled: true } });
     await db.table('product_batches').put({ id: 'batch-burger', productId: 'burger', stock: 10, committedStock: 0 });
     const parent = await seedTable('A');
     await db.table('product_batches').delete('batch-burger');
     vi.spyOn(console, 'error').mockImplementation(() => {});
-    await expect(useActiveOrders.getState().cancelOrder('A')).rejects.toThrow('CRITICAL_BATCH_NOT_FOUND');
-    expect(await db.table('sales').get('A')).toEqual(parent);
+    await expect(useActiveOrders.getState().cancelOrder('A')).rejects.toMatchObject({
+      code: 'RESTAURANT_CANCEL_CLEANUP_PENDING', cause: { message: expect.stringContaining('CRITICAL_BATCH_NOT_FOUND') }
+    });
+    expect(await db.table('sales').get('A')).toMatchObject({ ...parent,
+      restaurantCloudTerminalState: 'terminal', restaurantCancellationCleanupPending: { receipt: { status: 'cancelled' } }
+    });
     expect(useActiveOrders.getState().activeOrders.has('A')).toBe(true);
   });
 

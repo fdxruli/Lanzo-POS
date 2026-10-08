@@ -4,6 +4,11 @@ export const isRestaurantCloudTableShadow = (order) => (
     order?.restaurantCloudHydrated === true || order?.reservationAuthority === 'cloud'
 );
 
+export const isOriginRestaurantTable = (order) => Boolean(
+  order && order.origin !== 'ecommerce' && !isRestaurantCloudTableShadow(order)
+  && order.isSaved === true && (order.orderType === 'table' || order.tableData)
+);
+
 // Any durable Cloud parent identity must settle through the server financial
 // contract, even when this device is the one that originally opened the table.
 export const isRestaurantCloudTableSettlementRequired = (order) => Boolean(

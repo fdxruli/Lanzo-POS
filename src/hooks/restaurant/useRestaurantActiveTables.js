@@ -10,6 +10,7 @@ import { restaurantOrdersRepository } from '../../services/restaurant/restaurant
 import { buildRestaurantActiveTables, countRestaurantActiveTables, fetchRestaurantTableDiscoveryOrders, getRestaurantCloudTableState, rememberRestaurantTableTerminalStates } from '../../services/restaurant/restaurantActiveTables';
 import { RESTAURANT_CLOUD_STATUS_EVENT } from '../../services/restaurant/restaurantCloudStatusSummary';
 import { isCloudRequestResponseStale } from '../../services/cloud/cloudRequestErrors';
+import { useActiveOrders } from '../pos/useActiveOrders';
 
 const readLocalTables = () => db.table(STORES.SALES).where('status').equals(SALE_STATUS.OPEN).toArray();
 const online = () => typeof navigator === 'undefined' || navigator.onLine !== false;
@@ -62,6 +63,8 @@ export function useRestaurantActiveTables({ enabled = true } = {}) {
         return response;
       }
       if (response?.success !== false) {
+        await useActiveOrders.getState().recoverRestaurantCancellationCleanup(response.orders);
+        handle.assertCurrent();
         setData((previous) => ({ ...previous, cloudOrders: response.orders }));
         await rememberRestaurantTableTerminalStates({ database: db, stores: STORES, localSales, licenseKey, tenantId,
           cloudOrders: response.orders, actorHandle: { assertCurrent: () => {

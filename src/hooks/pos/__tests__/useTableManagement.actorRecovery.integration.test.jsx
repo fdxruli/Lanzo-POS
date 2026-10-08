@@ -72,7 +72,8 @@ vi.mock('../../restaurant/useRestaurantOrderCloudStatus', () => ({
   getRestaurantOrderCloudStatusSnapshot: async () => ({ skipped: true })
 }));
 vi.mock('../../../services/restaurant/restaurantOrdersRepository', () => ({
-  restaurantOrdersRepository: { upsertRestaurantOrderFromLocalSale: (...args) => fixture.cloudUpsert(...args) }
+  restaurantOrdersRepository: { upsertRestaurantOrderFromLocalSale: (...args) => fixture.cloudUpsert(...args),
+    getRestaurantOrderByLocalOrder: vi.fn(async () => ({ success: true, found: false })) }
 }));
 vi.mock('../../../services/restaurant/restaurantOrderCheckoutClose', () => ({
   closeRestaurantCloudOrderAfterSuccessfulPayment: vi.fn(),

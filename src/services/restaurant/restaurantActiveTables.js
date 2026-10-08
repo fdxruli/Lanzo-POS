@@ -2,6 +2,7 @@ import { buildRestaurantCloudStatusSummary } from './restaurantCloudStatusSummar
 
 export const getRestaurantCloudTableState = (order) => {
   if (!order?.localOrderId) return 'invalid';
+  if (order.status === 'cancelled' && order.metadata?.cancelledFromPos === true) return 'terminal';
   const summary = buildRestaurantCloudStatusSummary(order);
   const states = [order.status, order.fulfillmentStatus].map((value) => String(value || '').toLowerCase());
   if (summary.isPaid || states.some((value) => ['paid', 'closed', 'archived', 'delivered', 'completed'].includes(value))

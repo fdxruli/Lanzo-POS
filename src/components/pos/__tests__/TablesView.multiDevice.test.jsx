@@ -12,7 +12,7 @@ vi.mock('../../../services/db', () => ({
 vi.mock('../../../store/useAppStore', () => ({
   useAppStore: Object.assign((selector) => selector(fixture.app), { getState: () => fixture.app })
 }));
-vi.mock('../../../hooks/pos/useActiveOrders', () => ({ useActiveOrders: { getState: () => ({}) } }));
+vi.mock('../../../hooks/pos/useActiveOrders', () => ({ useActiveOrders: { getState: () => ({ recoverRestaurantCancellationCleanup: vi.fn(async () => {}) }) } }));
 vi.mock('../../../services/auth/useActorRuntimeSnapshot', () => ({
   useActorRuntimeSnapshot: () => ({ status: 'granted', actorKey: 'admin:qa', generation: fixture.generation,
     tenant: { opaqueId: 'tenant-qa', databaseName: 'qa', generation: 1 } })

@@ -29,6 +29,7 @@ import {
 import { tenantScopedZustandStorage, registerTenantStorageHydrator, suspendTenantStorageWrites } from '../../services/tenant/tenantScopedStorage';
 import { captureRefundsActorHandle } from '../../services/auth/refundsActorAuthorization';
 import { actorRuntimeController } from '../../services/auth/actorRuntimeController';
+import { cancelOriginRestaurantTable } from '../../services/restaurant/restaurantOriginCancellation';
 import {
   normalizeStableSaleTimestamp,
   resolveImmutableOrderCreatedAt
@@ -56,27 +57,32 @@ const calculateOrderTotalExact = (order = []) => {
 
 const EMPTY_ORDER_ITEMS = Object.freeze([]);
 
-const cancelPersistedOrder = async (orderId, actorHandle, noteLine) => db.transaction(
+const cleanupPersistedOrder = async (orderId, actorHandle, noteLine, cloudConfirmed = false) => db.transaction(
   'rw', [db.table(STORES.SALES), db.table(STORES.MENU), db.table(STORES.PRODUCT_BATCHES)], async () => {
     const existing = await db.table(STORES.SALES).get(orderId);
     // Settled or already-cancelled orders must never release a second time.
     if (!existing || existing.status !== SALE_STATUS.OPEN || existing.splitReservationReconciledAt) return;
-    assertRestaurantCloudTableEditable(existing, 'cancel');
+    if (!cloudConfirmed || isRestaurantCloudTableShadow(existing)) assertRestaurantCloudTableEditable(existing, 'cancel');
     const refundActorHandle = actorHandle || captureRefundsActorHandle();
     const assertActorCurrent = () => refundActorHandle.assertCurrent('refunds');
     assertActorCurrent();
-    await reconcileActiveTableReservations({ db, STORES });
+    await reconcileActiveTableReservations({ db, STORES, confirmedCancelOrderId: cloudConfirmed ? orderId : null });
     await releaseCommittedStock(getSellableItems(existing.items), { db, STORES, assertActorCurrent });
     assertActorCurrent();
     await db.table(STORES.SALES).update(orderId, {
       status: SALE_STATUS.CANCELLED,
       fulfillmentStatus: 'cancelled',
       notes: existing.notes && String(existing.notes).trim() ? `${existing.notes}\n${noteLine}` : noteLine,
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
+      restaurantCancellationCleanupPending: null
     });
     assertActorCurrent();
   }
 );
+const cancelPersistedOrder = (orderId, actorHandle, noteLine, onCloudConfirmed) => cancelOriginRestaurantTable({
+  orderId, actorHandle, onCloudConfirmed,
+  cancelLocal: (cloudConfirmed) => cleanupPersistedOrder(orderId, actorHandle, noteLine, cloudConfirmed)
+});
 
 export const selectCurrentOrder = (state) => (
   state.currentOrderId ? state.activeOrders.get(state.currentOrderId) || null : null
@@ -103,6 +109,14 @@ export const useActiveOrders = create(
       if (!canAccessTenantOwnedRuntimeCache()) return;
       unsafeSet(...args);
     };
+    const rememberCancellationReceipt = (orderId, receipt) => set((state) => {
+      const order = state.activeOrders.get(orderId);
+      if (!order || isRestaurantCloudTableShadow(order)) return state;
+      const activeOrders = new Map(state.activeOrders);
+      activeOrders.set(orderId, { ...order, restaurantCloudTerminalState: 'terminal',
+        restaurantCloudTerminalPaymentStatus: 'cancelled', restaurantCancellationCleanupPending: { receipt } });
+      return { activeOrders };
+    });
 
     return ({
     activeOrders: new Map(),
@@ -338,6 +352,7 @@ export const useActiveOrders = create(
       const actorHandle = actorRuntimeController.getState?.()?.status === 'granted'
         ? actorRuntimeController.capture() : null;
       try {
+        await get().recoverRestaurantCancellationCleanup();
         const sale = await db.table(STORES.SALES).get(orderId);
         if (!sale || sale.status !== SALE_STATUS.OPEN) {
           return { success: false, message: 'La orden abierta ya no existe.' };
@@ -358,7 +373,14 @@ export const useActiveOrders = create(
           fulfillmentStatus: sale.fulfillmentStatus || 'open',
           revision: normalizeOrderRevision(sale.revision),
           updatedAt: sale.updatedAt || sale.timestamp || new Date().toISOString(),
-          deviceId: sale.deviceId || null
+          deviceId: sale.deviceId || null,
+          restaurantOrderId: sale.restaurantOrderId,
+          cloudRestaurantOrderId: sale.cloudRestaurantOrderId,
+          cloudRestaurantOrderUpdatedAt: sale.cloudRestaurantOrderUpdatedAt,
+          restaurantCloudExpectedVersion: sale.restaurantCloudExpectedVersion,
+          restaurantCancellationCleanupPending: sale.restaurantCancellationCleanupPending,
+          restaurantCloudTerminalState: sale.restaurantCloudTerminalState,
+          orderType: sale.orderType
         };
 
         const nextOrders = new Map(get().activeOrders);
@@ -418,6 +440,58 @@ export const useActiveOrders = create(
         throw error;
       } finally {
         set({ isLoading: false });
+      }
+    },
+
+    discardTableEditSession: async (orderId, expectedOrder) => {
+      const actor = actorRuntimeController.capture();
+      const state = get();
+      const order = state.activeOrders.get(orderId);
+      if (!order || (expectedOrder && order !== expectedOrder)) return { success: false };
+      if (order.origin === 'ecommerce' || isRestaurantCloudTableShadow(order)
+        || (!order.tableData && order.orderType !== 'table') || order.isLockedForCheckout) {
+        throw new Error('No se puede salir de esta edición de mesa.');
+      }
+      const baseline = await db.table(STORES.SALES).get(orderId);
+      actor.assertCurrent();
+      if (!baseline || baseline.status !== SALE_STATUS.OPEN || get().activeOrders.get(orderId) !== order) {
+        throw new Error('La mesa cambió. Actualiza las mesas antes de continuar.');
+      }
+      // Editing changes session/cache only. Reservations and the last saved
+      // commercial snapshot remain in SALES until the next explicit save.
+      return get().removeOrder(orderId);
+    },
+
+    recoverRestaurantCancellationCleanup: async (cloudOrders = []) => {
+      for (const remote of cloudOrders) {
+        if (remote?.status !== 'cancelled' || remote.metadata?.cancelledFromPos !== true) continue;
+        const row = await db.table(STORES.SALES).get(remote.localOrderId);
+        if (!row || row.status !== SALE_STATUS.OPEN || isRestaurantCloudTableShadow(row)) continue;
+        try {
+          const actor = actorRuntimeController.capture();
+          actor.assertCurrent();
+          if (!remote.cancelledAt || !remote.updatedAt || !Number.isSafeInteger(Number(remote.serverVersion))
+            || Number(remote.serverVersion) <= 0 || remote.paymentStatus === 'paid' || remote.paidAt || remote.paidSaleId) continue;
+          const receipt = { success: true, localOrderId: row.id, status: 'cancelled',
+            cancelledAt: remote.cancelledAt, updatedAt: remote.updatedAt, serverVersion: remote.serverVersion };
+          await db.table(STORES.SALES).update(row.id, { restaurantCancellationCleanupPending: { receipt },
+            restaurantCloudTerminalState: 'terminal', restaurantCloudTerminalPaymentStatus: 'cancelled' });
+          actor.assertCurrent();
+          rememberCancellationReceipt(row.id, receipt);
+        } catch { /* No terminal projection without current read authority. */ }
+      }
+      const rows = await db.table(STORES.SALES).where('status').equals(SALE_STATUS.OPEN).toArray();
+      for (const row of rows) {
+        if (!row.restaurantCancellationCleanupPending) continue;
+        try {
+          actorRuntimeController.capture().assertCurrent();
+          rememberCancellationReceipt(row.id, row.restaurantCancellationCleanupPending.receipt);
+          const actor = captureRefundsActorHandle();
+          await cancelPersistedOrder(row.id, actor, 'Sistema: Cancelación POS reconciliada desde Cloud');
+          if (get().activeOrders.has(row.id)) await get().removeOrder(row.id);
+        } catch (error) {
+          console.warn('[RestaurantCancel] Cleanup local sigue pendiente.', error?.code);
+        }
       }
     },
 
@@ -597,7 +671,9 @@ export const useActiveOrders = create(
       set({ isLoading: true });
       try {
         if (order?.isSaved) {
-          await cancelPersistedOrder(orderId, actorHandle, 'Sistema: Orden cancelada desde POS');
+          await cancelPersistedOrder(orderId, actorHandle, 'Sistema: Orden cancelada desde POS', (receipt) => {
+            rememberCancellationReceipt(orderId, receipt);
+          });
         }
 
         // 1. Eliminar de la sesión activa y UI
@@ -652,7 +728,9 @@ export const useActiveOrders = create(
       set({ isLoading: true });
       try {
         if (order?.isSaved) {
-          await cancelPersistedOrder(orderId, actorHandle, 'Sistema: Orden cancelada desde POS');
+          await cancelPersistedOrder(orderId, actorHandle, 'Sistema: Orden cancelada desde POS', (receipt) => {
+            rememberCancellationReceipt(orderId, receipt);
+          });
         }
 
         // 1. Actualizar UI inmediatamente
@@ -712,7 +790,7 @@ export const useActiveOrders = create(
         }
 
         assertRestaurantCloudTableEditable(existing, 'cancel');
-        await cancelPersistedOrder(orderId, actorHandle, 'Sistema: Venta anulada desde modal de mesas (POS).');
+        await cleanupPersistedOrder(orderId, actorHandle, 'Sistema: Venta anulada desde modal de mesas (POS).');
 
         const state = get();
         const nextOrders = new Map(state.activeOrders);
@@ -759,6 +837,11 @@ export const useActiveOrders = create(
         const order = state.activeOrders.get(orderId);
 
         if (!order) throw new Error("La orden no existe en sesión.");
+
+        if (order.isSaved && (order.tableData || order.orderType === 'table')
+          && !isRestaurantCloudTableShadow(order) && getSellableItems(order.items).length === 0) {
+          return await get().discardTableEditSession(orderId, order);
+        }
 
         const sellable = getSellableItems(order.items);
 
@@ -934,6 +1017,7 @@ export const useActiveOrders = create(
       const actorHandle = actorRuntimeController.getState?.()?.status === 'granted'
         ? actorRuntimeController.capture() : null;
       try {
+        await get().recoverRestaurantCancellationCleanup();
         const state = get();
 
         // 1️⃣ PASO CRÍTICO: Recuperar órdenes del localStorage que NO fueron guardadas en BD

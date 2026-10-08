@@ -43,6 +43,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   mocks.actor = { status: 'granted', actorType: 'staff', actorId: 'staff-1', sessionId: 'session-1', permissions: [] };
   mocks.capture.mockReturnValue({ tenant: { opaqueId: 'tenant-1' }, assertCurrent: vi.fn() });
+  mocks.refunds.mockReturnValue({ assertCurrent: vi.fn() });
   mocks.confirm.mockResolvedValue(true);
   const shadow = {
     id: 'QA-REMOTE-1', localOrderId: 'QA-REMOTE-1', isSaved: true,
@@ -53,7 +54,8 @@ beforeEach(() => {
   mocks.state = {
     currentOrderId: shadow.id, activeOrders: new Map([[shadow.id, shadow]]),
     getTotalPrice: () => 50, updateItemQuantity: vi.fn(), removeItem: vi.fn(), setTableData: vi.fn(),
-    removeOrder: vi.fn().mockResolvedValue({ success: true }), cancelCurrentOrder: vi.fn(), releaseEcommerceDraft: vi.fn()
+    removeOrder: vi.fn().mockResolvedValue({ success: true }), cancelCurrentOrder: vi.fn(), releaseEcommerceDraft: vi.fn(),
+    cancelOrder: vi.fn().mockResolvedValue({ success: true }), discardTableEditSession: vi.fn().mockResolvedValue({ success: true })
   };
 });
 afterEach(cleanup);
@@ -146,16 +148,55 @@ describe('remote table review closure', () => {
     expect(mocks.confirm).not.toHaveBeenCalled();
     expect(mocks.state.removeOrder).not.toHaveBeenCalled();
   });
-  it('preserves origin table exit semantics and refund permission', async () => {
+  it('separates origin exit from destructive cancellation', async () => {
     const shadow = mocks.state.activeOrders.get('QA-REMOTE-1');
     delete shadow.restaurantCloudHydrated;
     delete shadow.reservationAuthority;
+    shadow.tableData = 'Mesa A';
     mocks.actor.permissions = ['refunds'];
     render(<OrderSummary {...props} />);
     expect(screen.queryByRole('button', { name: 'Cerrar revisión' })).not.toBeInTheDocument();
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Salir sin guardar' })));
-    expect(mocks.state.cancelCurrentOrder).toHaveBeenCalledOnce();
+    expect(mocks.state.discardTableEditSession).toHaveBeenCalledExactlyOnceWith(shadow.id, shadow);
+    expect(mocks.state.cancelCurrentOrder).not.toHaveBeenCalled();
+    expect(mocks.state.cancelOrder).not.toHaveBeenCalled();
     expect(mocks.state.removeOrder).not.toHaveBeenCalled();
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Cancelar mesa' })));
+    expect(mocks.confirm).toHaveBeenLastCalledWith(
+      'Esta acción cancelará la mesa y liberará sus reservas pendientes. No se registrará una venta. ¿Deseas continuar?',
+      { title: 'Cancelar mesa', type: 'warning', confirmButtonText: 'Sí, cancelar mesa', cancelButtonText: 'Volver' }
+    );
+    expect(mocks.state.cancelOrder).toHaveBeenCalledOnce();
+  });
+  it('allows leaving an empty origin without refunds and hides destructive cancellation', async () => {
+    const origin = mocks.state.activeOrders.get('QA-REMOTE-1');
+    delete origin.restaurantCloudHydrated;
+    delete origin.reservationAuthority;
+    origin.orderType = 'table';
+    origin.items = [];
+    render(<OrderSummary {...props} />);
+    expect(screen.queryByRole('button', { name: 'Cancelar mesa' })).not.toBeInTheDocument();
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Salir sin guardar' })));
+    expect(mocks.refunds).not.toHaveBeenCalled();
+    expect(mocks.state.discardTableEditSession).toHaveBeenCalledOnce();
+  });
+  it.each(['declined', 'actor', 'replacement', 'tab'])('rejects origin cancellation after %s confirmation change', async (kind) => {
+    const origin = mocks.state.activeOrders.get('QA-REMOTE-1');
+    delete origin.restaurantCloudHydrated;
+    delete origin.reservationAuthority;
+    origin.tableData = 'Mesa A';
+    mocks.actor.permissions = ['refunds'];
+    const actor = { assertCurrent: vi.fn() };
+    mocks.refunds.mockReturnValue(actor);
+    let resolve;
+    mocks.confirm.mockImplementation(() => new Promise((done) => { resolve = done; }));
+    render(<OrderSummary {...props} />);
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Cancelar mesa' })));
+    if (kind === 'actor') actor.assertCurrent.mockImplementation(() => { throw new Error('stale'); });
+    if (kind === 'replacement') mocks.state.activeOrders.set(origin.id, { ...origin });
+    if (kind === 'tab') mocks.state.currentOrderId = 'other';
+    await act(async () => resolve(kind !== 'declined'));
+    expect(mocks.state.cancelOrder).not.toHaveBeenCalled();
   });
   it('keeps checkout and split callbacks available', () => {
     render(<OrderSummary {...props} />);

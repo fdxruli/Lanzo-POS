@@ -44,7 +44,7 @@ import { captureRefundsActorHandle } from '../../services/auth/refundsActorAutho
 import { handlePosActorAuthorityError } from '../../hooks/pos/posActorAuthorityUi';
 import { useActorRuntimeSnapshot } from '../../services/auth/useActorRuntimeSnapshot';
 import { actorRuntimeController } from '../../services/auth/actorRuntimeController';
-import { isRestaurantCloudTableShadow } from '../../services/restaurant/restaurantCloudTableGuards';
+import { isOriginRestaurantTable, isRestaurantCloudTableShadow } from '../../services/restaurant/restaurantCloudTableGuards';
 import OrderDiscountPanel from './OrderDiscountPanel';
 import EcommercePosDraftBanner from './EcommercePosDraftBanner';
 import './OrderSummary.css';
@@ -162,6 +162,9 @@ export default function OrderSummary({
   const tablesBadgeTotal = activeTablesCount + kitchenRejectedOpenCount;
   const isEcommerceDraft = currentOrder?.origin === 'ecommerce';
   const isRemoteTableReview = isRestaurantCloudTableShadow(currentOrder);
+  const isOriginTable = isOriginRestaurantTable(currentOrder);
+  const tableActionPending = useRef(false);
+  const [isTableActionPending, setIsTableActionPending] = useState(false);
   const closingRemoteReview = useRef(false);
   const [isClosingRemoteReview, setIsClosingRemoteReview] = useState(false);
   const ecommerceLocalSubtotal = useMemo(() => order.reduce(
@@ -308,6 +311,7 @@ export default function OrderSummary({
   };
 
   const handleCancelOrder = async () => {
+    if (isOriginTable || isRemoteTableReview) return;
     if (isEcommerceDraft) {
       const confirmed = await showConfirmModal(
         'El pedido seguirá aceptado en la bandeja y podrá prepararse nuevamente. No se registrará ninguna venta.',
@@ -366,6 +370,40 @@ export default function OrderSummary({
       );
     }
   };
+
+  const handleOriginTableAction = async (destructive) => {
+    if (tableActionPending.current || !isOriginTable || (destructive && !canManageRefunds)) return;
+    const id = currentOrderId;
+    const snapshot = currentOrder;
+    tableActionPending.current = true;
+    setIsTableActionPending(true);
+    try {
+      const actor = destructive ? captureRefundsActorHandle() : actorRuntimeController.capture();
+      const confirmed = await showConfirmModal(destructive
+        ? 'Esta acción cancelará la mesa y liberará sus reservas pendientes. No se registrará una venta. ¿Deseas continuar?'
+        : 'Se descartarán los cambios que no hayas guardado. La mesa seguirá abierta con su última versión guardada.', {
+        title: destructive ? 'Cancelar mesa' : 'Salir sin guardar',
+        ...(destructive ? { type: 'warning' } : {}),
+        confirmButtonText: destructive ? 'Sí, cancelar mesa' : 'Salir sin guardar',
+        cancelButtonText: destructive ? 'Volver' : 'Seguir editando'
+      });
+      if (!confirmed) return;
+      actor.assertCurrent(destructive ? 'refunds' : undefined);
+      const state = useActiveOrders.getState();
+      if (state.activeOrders.get(id) !== snapshot || state.currentOrderId !== id) return;
+      if (destructive) await state.cancelOrder(id, { actorHandle: actor });
+      else await state.discardTableEditSession(id, snapshot);
+      if (isMobileModal) onClose?.();
+    } catch (error) {
+      if (handlePosActorAuthorityError(error, destructive ? 'cancel_order' : 'exit_table')) return;
+      showMessageModal(error?.message || 'No se pudo completar la acción. Actualiza las mesas e intenta nuevamente.', null, { type: 'warning' });
+    } finally {
+      tableActionPending.current = false;
+      setIsTableActionPending(false);
+    }
+  };
+  const handleExitTableWithoutSaving = () => handleOriginTableAction(false);
+  const handleCancelTable = () => handleOriginTableAction(true);
 
   const handleCloseRemoteReview = async () => {
     if (closingRemoteReview.current) return;
@@ -714,7 +752,7 @@ export default function OrderSummary({
         </div>
       )}
 
-      {(order.length > 0 || isRemoteTableReview) && (
+      {(order.length > 0 || isRemoteTableReview || isOriginTable) && (
           <footer className="order-checkout">
             {!isEcommerceDraft && order.length > 0 && (
               <div className="order-discount-trigger-row">
@@ -793,14 +831,28 @@ export default function OrderSummary({
                 </button>
               )}
 
-              {!isRemoteTableReview && (!isEditMode || isEcommerceDraft || canManageRefunds) && (
+              {isOriginTable && (
+                <button type="button" className="order-action-btn" onClick={handleExitTableWithoutSaving}
+                  disabled={isTableActionPending}>
+                  <X size={19} aria-hidden="true" />
+                  Salir sin guardar
+                </button>
+              )}
+              {isOriginTable && canManageRefunds && (
+                <button type="button" className="order-action-btn order-action-btn--danger" onClick={handleCancelTable}
+                  disabled={isTableActionPending}>
+                  <Trash2 size={19} aria-hidden="true" />
+                  Cancelar mesa
+                </button>
+              )}
+              {!isOriginTable && !isRemoteTableReview && (!isEditMode || isEcommerceDraft || canManageRefunds) && (
                 <button
                   type="button"
                   className="order-action-btn order-action-btn--danger"
                   onClick={handleCancelOrder}
                 >
                   <X size={19} aria-hidden="true" />
-                  {isEcommerceDraft ? 'Liberar borrador' : ((isEditMode && showRestaurantActions) ? 'Salir sin guardar' : 'Cancelar')}
+                  {isEcommerceDraft ? 'Liberar borrador' : 'Cancelar'}
                 </button>
               )}
             </div>
