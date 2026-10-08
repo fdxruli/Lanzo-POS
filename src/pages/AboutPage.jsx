@@ -29,6 +29,7 @@ import './AboutPage.css';
 
 const TELEGRAM_MESSAGE = 'Hola, quiero conocer Lanzo Nube. Me interesa la promoción de 3 meses por $300 MXN.';
 const TELEGRAM_URL = 'https://t.me/LanzoPOS_Oficial?text=' + encodeURIComponent(TELEGRAM_MESSAGE);
+const TELEGRAM_SUPPORT_URL = 'https://t.me/LanzoPOS_Oficial?text=' + encodeURIComponent('Hola, necesito ayuda con Lanzo POS.');
 const FACEBOOK_URL = 'https://www.facebook.com/100087646261018';
 
 const EMPTY_CONTACT_MODAL = {
@@ -386,7 +387,7 @@ export default function AboutPage() {
             <h2>¿Encontraste un problema o tienes una idea?</h2>
             <p>Escríbenos o cuéntanos desde aquí. Tu experiencia ayuda a mejorar Lanzo.</p>
             <div className="about-redesign__help-actions">
-              <a href={TELEGRAM_URL} target="_blank" rel="noopener noreferrer">
+              <a href={TELEGRAM_SUPPORT_URL} target="_blank" rel="noopener noreferrer">
                 <MessageCircle size={16} aria-hidden="true" /> Contactar por Telegram
               </a>
               <button type="button" onClick={() => handleOpenContactModal('bug')}>
