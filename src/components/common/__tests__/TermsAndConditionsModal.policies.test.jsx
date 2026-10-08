@@ -51,7 +51,8 @@ describe('TermsAndConditionsModal policy navigation', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Aviso de privacidad/ }));
     await waitFor(() => expect(fetchLegalTerms).toHaveBeenCalledWith('privacy_policy'));
-    expect(await screen.findByText(/No hay una versión activa para mostrar/)).toBeTruthy();
+    expect(await screen.findByText(/todavía no tiene una versión activa publicada/)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Reintentar' })).toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: /Lía e inteligencia artificial/ }));
     expect(await screen.findByText(/Este documento está en preparación/)).toBeTruthy();

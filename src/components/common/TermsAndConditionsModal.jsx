@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertCircle, CheckCircle, Loader2, Shield } from 'lucide-react';
+import { AlertCircle, CheckCircle, FileText, Loader2, Shield } from 'lucide-react';
 import { acceptLegalTerms, fetchLegalTerms } from '../../services/supabase';
 import Logger from '../../services/Logger';
 import { showMessageModal } from '../../services/utils';
@@ -337,11 +337,17 @@ export default function TermsAndConditionsModal({
                 </p>
               )}
             </div>
+          ) : activeLoadState === 'missing' ? (
+            <div className="terms-empty-state">
+              <FileText size={36} aria-hidden="true" />
+              <h4>{activeDocument.label}</h4>
+              <p>Este documento todavía no tiene una versión activa publicada.</p>
+            </div>
           ) : (
             <div className="terms-empty-state">
               <AlertCircle size={36} aria-hidden="true" />
               <h4>{activeDocument.label}</h4>
-              <p>No hay una versión activa para mostrar o no se pudo cargar. Revisa tu conexión e inténtalo de nuevo.</p>
+              <p>No se pudo cargar este documento. Revisa tu conexión e inténtalo de nuevo.</p>
               <button
                 type="button"
                 className="ui-button ui-button--secondary terms-retry-button"
