@@ -17,22 +17,24 @@ declare receipt jsonb; retry jsonb; failure text; expected text; version text :=
 begin
   -- Every rejected attempt runs in a subtransaction and has no parent/item,
   -- ledger, event, sale, payment, cash or customer-ledger effects.
-  foreach expected in array array['auth','refunds','remote','required','stale','invalid','paid','archived','terminal'] loop
+  foreach expected in array array['no_credentials','auth','invalid_staff','refunds','remote','required','stale','invalid','paid','archived','terminal'] loop
     begin
       if expected='paid' then update public.pos_restaurant_orders set payment_status='paid' where id='contract-parent'; end if;
       if expected='archived' then update public.pos_restaurant_orders set archived_at=now() where id='contract-parent'; end if;
       if expected='terminal' then update public.pos_restaurant_orders set status='cancelled',fulfillment_status='cancelled',cancelled_at=now() where id='contract-parent'; end if;
-      perform public.pos_cancel_restaurant_order_from_pos_v1('fixture-license',
-        case when expected='remote' then 'B' else 'A' end,
+      perform public.pos_cancel_restaurant_order_from_pos_v1(
+        case when expected='no_credentials' then null else 'fixture-license' end,
+        case when expected='no_credentials' then null when expected='remote' then 'B' else 'A' end,
         case when expected='auth' then 'invalid' else 'valid' end,
-        case when expected='refunds' then 'no-refunds' else null end,'contract-order',
+        case when expected='invalid_staff' then 'invalid-staff' when expected='refunds' then 'no-refunds' else null end,'contract-order',
         case when expected='required' then null when expected='stale' then '2026-09-01T00:00:00Z'
           when expected='invalid' then 'invalid' else version end,'QA reason','reject-'||expected);
       raise exception 'UNEXPECTED_SUCCESS:%',expected;
     exception when others then
       failure:=sqlerrm;
       if failure like 'UNEXPECTED_SUCCESS:%' then raise; end if;
-      if expected='auth' and failure<>'DEVICE_AUTH_INVALID' then raise; end if;
+      if expected in ('no_credentials','auth') and failure<>'DEVICE_AUTH_INVALID' then raise; end if;
+      if expected='invalid_staff' and failure<>'STAFF_SESSION_INVALID' then raise; end if;
       if expected='refunds' and failure<>'POS_PERMISSION_DENIED:refunds' then raise; end if;
       if expected='remote' and failure<>'RESTAURANT_ORDER_REMOTE_CANCEL_BLOCKED' then raise; end if;
       if expected='required' and failure<>'RESTAURANT_ORDER_VERSION_REQUIRED' then raise; end if;
