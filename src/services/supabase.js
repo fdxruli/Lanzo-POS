@@ -1407,6 +1407,15 @@ export const fetchLegalTerms = async (type = 'terms_of_use') => {
     }
 };
 
+/** Avoids an error-level console message while a database rollout is missing the legal RPC. */
+const logLegalRpcError = (context, error) => {
+    if (error?.code === 'PGRST202') {
+        Logger.warn(context, { code: error.code, message: error.message });
+        return;
+    }
+    Logger.error(context, error);
+};
+
 /** Consulta versiones legales pendientes e historial de aceptación de la licencia activa. */
 export const fetchLegalPolicyState = async (licenseKey) => {
     try {
@@ -1423,8 +1432,8 @@ export const fetchLegalPolicyState = async (licenseKey) => {
         if (error) throw error;
         return data || { success: false, code: 'LEGAL_POLICY_STATE_EMPTY' };
     } catch (error) {
-        Logger.error('Error consultando el estado de documentos legales:', error);
-        return { success: false, code: error?.message || 'LEGAL_POLICY_STATE_FAILED' };
+        logLegalRpcError('Error consultando el estado de documentos legales:', error);
+        return { success: false, code: error?.code || error?.message || 'LEGAL_POLICY_STATE_FAILED' };
     }
 };
 
@@ -1445,8 +1454,8 @@ export const fetchAcceptedLegalDocument = async (licenseKey, termId) => {
         if (error) throw error;
         return data || { success: false, code: 'LEGAL_DOCUMENT_EMPTY' };
     } catch (error) {
-        Logger.error('Error descargando un documento legal aceptado:', error);
-        return { success: false, code: error?.message || 'LEGAL_DOCUMENT_DOWNLOAD_FAILED' };
+        logLegalRpcError('Error descargando un documento legal aceptado:', error);
+        return { success: false, code: error?.code || error?.message || 'LEGAL_DOCUMENT_DOWNLOAD_FAILED' };
     }
 };
 

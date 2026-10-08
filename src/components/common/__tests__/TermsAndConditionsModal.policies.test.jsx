@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const legalPreviewState = vi.hoisted(() => ({ enabled: false }));
@@ -72,7 +72,7 @@ describe('TermsAndConditionsModal policy navigation', () => {
     );
 
     expect(await screen.findByText('Términos de uso vigentes')).toBeTruthy();
-    expect(screen.getByRole('navigation', { name: 'Políticas y avisos' })).toBeTruthy();
+    expect(screen.getByRole('navigation', { name: 'Políticas, avisos e historial de aceptaciones' })).toBeTruthy();
 
     fireEvent.click(screen.getByRole('button', { name: /Aviso de privacidad/ }));
     await waitFor(() => expect(fetchLegalTerms).toHaveBeenCalledWith('privacy_policy'));
@@ -209,9 +209,16 @@ describe('TermsAndConditionsModal policy navigation', () => {
       />
     );
 
-    expect(await screen.findByText('Versión 1.0')).toBeTruthy();
-    const historyRegion = screen.getByRole('region', { name: 'Historial de documentos aceptados' });
+    const navigation = screen.getByRole('navigation', { name: 'Políticas, avisos e historial de aceptaciones' });
+    const navigationButtons = within(navigation).getAllByRole('button');
+    const historyTab = navigationButtons[navigationButtons.length - 1];
+    expect(historyTab.getAttribute('aria-label')).toBe('Historial de documentos aceptados');
+    expect(screen.queryByRole('region', { name: 'Historial de documentos aceptados' })).toBeNull();
+
+    fireEvent.click(historyTab);
+    const historyRegion = await screen.findByRole('region', { name: 'Historial de documentos aceptados' });
     expect(historyRegion.textContent).toContain('Aviso de privacidad');
+    expect(historyRegion.textContent).toContain('Versión 1.0');
     fireEvent.click(screen.getByRole('button', { name: /Descargar Aviso de privacidad versión 1.0/ }));
 
     await waitFor(() => expect(anchorClick).toHaveBeenCalledTimes(1));

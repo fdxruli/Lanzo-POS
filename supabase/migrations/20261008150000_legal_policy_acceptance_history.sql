@@ -206,3 +206,7 @@ comment on function public.get_legal_policy_state(text, text) is
   'Returns pending active legal versions and acceptance history for a verified active license device.';
 comment on function public.get_accepted_legal_document(text, text, uuid) is
   'Returns immutable legal content only when the supplied active license has accepted that exact version.';
+
+
+-- Ensure PostgREST sees the new RPC signatures immediately after the migration commits.
+notify pgrst, 'reload schema';

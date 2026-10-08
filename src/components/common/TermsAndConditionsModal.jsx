@@ -165,6 +165,7 @@ export const LEGAL_DOCUMENT_TYPES = Object.freeze([
 ]);
 
 const TERMS_ONLY = Object.freeze([LEGAL_DOCUMENT_TYPES[0]]);
+const ACCEPTED_HISTORY_TAB = '__accepted_history__';
 
 function getDocumentStatusLabel(document, status, legalPreviewMode) {
   const canLoad = legalPreviewMode ? Boolean(document?.previewType) : Boolean(document?.fetchType);
@@ -309,6 +310,13 @@ export default function TermsAndConditionsModal({
     : [];
   const acceptanceHistoryStatus = currentLegalPolicyState?.status
     || (currentLegalPolicyState?.success ? 'ready' : 'loading');
+  const historyTabStatus = acceptanceHistoryStatus === 'loading'
+    ? 'Cargando...'
+    : acceptanceHistoryStatus === 'error' || acceptanceHistoryStatus === 'unavailable'
+      ? 'No disponible'
+      : acceptanceHistory.length === 0
+        ? 'Sin documentos'
+        : `${acceptanceHistory.length} documento${acceptanceHistory.length === 1 ? '' : 's'}`;
   const pendingUpdateDocuments = Array.isArray(updateDocuments) && updateDocuments.length > 0
     ? updateDocuments
     : (Array.isArray(currentLegalPolicyState?.pending_documents)
@@ -326,10 +334,12 @@ export default function TermsAndConditionsModal({
     ? (loadStateByType[activeDocument.type] || 'idle')
     : 'pending';
   const hasDocumentIndex = showDocumentIndex && documentCatalog.length > 1;
+  const hasAcceptanceHistoryTab = hasDocumentIndex && !legalPreviewMode;
+  const isHistoryTabActive = hasAcceptanceHistoryTab && activeDocumentType === ACCEPTED_HISTORY_TAB;
 
   const handleSelectDocument = (type) => {
     setActiveDocumentType(type);
-    void loadDocument(type);
+    if (type !== ACCEPTED_HISTORY_TAB) void loadDocument(type);
   };
 
   const handleAccept = async () => {
@@ -455,16 +465,20 @@ export default function TermsAndConditionsModal({
             <div>
               <span className="terms-kicker">Legal</span>
               <h3 id="terms-modal-title">
-                {isUpdateNotification ? 'Actualización de documentos legales' : activeDocument.label}
+                {isHistoryTabActive
+                  ? 'Historial de documentos aceptados'
+                  : isUpdateNotification
+                    ? 'Actualización de documentos legales'
+                    : activeDocument.label}
               </h3>
             </div>
           </div>
 
-          {activeData && <span className="terms-version-badge">Versión {activeData.version}</span>}
+          {!isHistoryTabActive && activeData && <span className="terms-version-badge">Versión {activeData.version}</span>}
         </div>
 
         {hasDocumentIndex && (
-          <nav className="terms-document-nav" aria-label="Políticas y avisos">
+          <nav className="terms-document-nav" aria-label="Políticas, avisos e historial de aceptaciones">
             {documentCatalog.map((document) => {
               const status = getDocumentStatusLabel(document, loadStateByType[document.type], legalPreviewMode);
               return (
@@ -472,7 +486,7 @@ export default function TermsAndConditionsModal({
                   key={document.type}
                   type="button"
                   className="terms-document-option"
-                  aria-current={document.type === activeDocument.type ? 'page' : undefined}
+                  aria-current={!isHistoryTabActive && document.type === activeDocument.type ? 'page' : undefined}
                   aria-label={status ? document.label + ', ' + status : document.label}
                   onClick={() => handleSelectDocument(document.type)}
                 >
@@ -481,6 +495,19 @@ export default function TermsAndConditionsModal({
                 </button>
               );
             })}
+
+            {hasAcceptanceHistoryTab && (
+              <button
+                type="button"
+                className="terms-document-option terms-document-option--history"
+                aria-current={isHistoryTabActive ? 'page' : undefined}
+                aria-label="Historial de documentos aceptados"
+                onClick={() => handleSelectDocument(ACCEPTED_HISTORY_TAB)}
+              >
+                <span className="terms-document-option__label">Historial de aceptaciones</span>
+                <span className="terms-document-option__status">{historyTabStatus}</span>
+              </button>
+            )}
           </nav>
         )}
 
@@ -518,50 +545,7 @@ export default function TermsAndConditionsModal({
             </div>
           )}
 
-          {activeLoadState === 'idle' || activeLoadState === 'loading' ? (
-            <div className="terms-loading-state" role="status">
-              <Loader2 size={42} className="animate-spin text-primary" />
-              <p>Cargando {activeDocument.label.toLowerCase()}...</p>
-            </div>
-          ) : activeLoadState === 'pending' ? (
-            <div className="terms-empty-state">
-              <FileText size={36} aria-hidden="true" />
-              <h4>{activeDocument.label}</h4>
-              <p>Este documento está en preparación y todavía no se ha publicado en Lanzo POS.</p>
-            </div>
-          ) : activeData ? (
-            <div className="terms-document-wrapper">
-              <div className="terms-dynamic-content" dangerouslySetInnerHTML={{ __html: sanitizeHTML(activeData.content_html) }} />
-
-              {!legalPreviewMode && !readOnly && activeDocument.type === 'terms_of_use' && (
-                <p className="terms-legal-footer">
-                  <CheckCircle size={14} className="terms-legal-footer__icon" />
-                  Al aceptar, aceptas los Términos de uso de esta versión.
-                </p>
-              )}
-            </div>
-          ) : activeLoadState === 'missing' ? (
-            <div className="terms-empty-state">
-              <FileText size={36} aria-hidden="true" />
-              <h4>{activeDocument.label}</h4>
-              <p>Este documento todavía no tiene una versión activa publicada.</p>
-            </div>
-          ) : (
-            <div className="terms-empty-state">
-              <AlertCircle size={36} aria-hidden="true" />
-              <h4>{activeDocument.label}</h4>
-              <p>No se pudo cargar este documento. Revisa tu conexión e inténtalo de nuevo.</p>
-              <button
-                type="button"
-                className="ui-button ui-button--secondary terms-retry-button"
-                onClick={() => void loadDocument(activeDocument.type, { force: true })}
-              >
-                Reintentar
-              </button>
-            </div>
-          )}
-
-          {hasDocumentIndex && !legalPreviewMode && (
+          {isHistoryTabActive ? (
             <section className="terms-accepted-history" aria-labelledby="terms-accepted-history-title">
               <div className="terms-accepted-history__heading">
                 <h4 id="terms-accepted-history-title">Historial de documentos aceptados</h4>
@@ -608,6 +592,47 @@ export default function TermsAndConditionsModal({
                 </ul>
               )}
             </section>
+          ) : activeLoadState === 'idle' || activeLoadState === 'loading' ? (
+            <div className="terms-loading-state" role="status">
+              <Loader2 size={42} className="animate-spin text-primary" />
+              <p>Cargando {activeDocument.label.toLowerCase()}...</p>
+            </div>
+          ) : activeLoadState === 'pending' ? (
+            <div className="terms-empty-state">
+              <FileText size={36} aria-hidden="true" />
+              <h4>{activeDocument.label}</h4>
+              <p>Este documento está en preparación y todavía no se ha publicado en Lanzo POS.</p>
+            </div>
+          ) : activeData ? (
+            <div className="terms-document-wrapper">
+              <div className="terms-dynamic-content" dangerouslySetInnerHTML={{ __html: sanitizeHTML(activeData.content_html) }} />
+
+              {!legalPreviewMode && !readOnly && activeDocument.type === 'terms_of_use' && (
+                <p className="terms-legal-footer">
+                  <CheckCircle size={14} className="terms-legal-footer__icon" />
+                  Al aceptar, aceptas los Términos de uso de esta versión.
+                </p>
+              )}
+            </div>
+          ) : activeLoadState === 'missing' ? (
+            <div className="terms-empty-state">
+              <FileText size={36} aria-hidden="true" />
+              <h4>{activeDocument.label}</h4>
+              <p>Este documento todavía no tiene una versión activa publicada.</p>
+            </div>
+          ) : (
+            <div className="terms-empty-state">
+              <AlertCircle size={36} aria-hidden="true" />
+              <h4>{activeDocument.label}</h4>
+              <p>No se pudo cargar este documento. Revisa tu conexión e inténtalo de nuevo.</p>
+              <button
+                type="button"
+                className="ui-button ui-button--secondary terms-retry-button"
+                onClick={() => void loadDocument(activeDocument.type, { force: true })}
+              >
+                Reintentar
+              </button>
+            </div>
           )}
         </div>
 
@@ -625,7 +650,7 @@ export default function TermsAndConditionsModal({
             >
               {accepting ? 'Registrando aceptación...' : 'Aceptar documentos actualizados y continuar'}
             </button>
-          ) : activeDocument.type !== 'terms_of_use' ? (
+          ) : isHistoryTabActive || activeDocument.type !== 'terms_of_use' ? (
             <>
               <button type="button" className="ui-button ui-button--ghost btn btn-secondary" onClick={onClose} disabled={accepting}>
                 Cancelar
