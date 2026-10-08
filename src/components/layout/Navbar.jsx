@@ -199,8 +199,9 @@ function Navbar() {
     ...(commercialAIAgentAccess.canSeeEntry ? [{
       to: '/agentes-ia',
       label: 'Agentes IA',
-      description: 'Ventas, rentabilidad y ecommerce',
-      icon: <Sparkles size={21} />
+      description: 'Ventas, rentabilidad y estrategia comercial',
+      icon: <Sparkles size={21} />,
+      proBadge: !commercialAIAgentAccess.canEnter
     }] : []),
     ...(features.hasKDS ? [{
       to: '/pedidos',
@@ -469,7 +470,14 @@ function Navbar() {
               >
                 <span className="drawer-link-icon">{link.icon}</span>
                 <span className="drawer-link-copy">
-                  <span className="drawer-link-label">{link.label}</span>
+                  <span className="drawer-link-title">
+                    <span className="drawer-link-label">{link.label}</span>
+                    {link.proBadge && (
+                      <span className="nav-pro-badge">
+                        PRO<span className="sr-only">, disponible con Lanzo Nube</span>
+                      </span>
+                    )}
+                  </span>
                   <span className="drawer-link-description">{link.description}</span>
                 </span>
                 {link.badge && (
@@ -661,7 +669,13 @@ function Navbar() {
             aria-disabled={isBackupLoading}
             tabIndex={isBackupLoading ? -1 : 0}
           >
-            <Sparkles size={20} /> Agentes IA
+            <Sparkles size={20} />
+            <span className="nav-link-label">Agentes IA</span>
+            {!commercialAIAgentAccess.canEnter && commercialAIAgentAccess.canSeeEntry && (
+              <span className="nav-pro-badge">
+                PRO<span className="sr-only">, disponible con Lanzo Nube</span>
+              </span>
+            )}
           </NavLink>
 
           {(canAccessOnlineOrders || canManageEcommercePortal) && (

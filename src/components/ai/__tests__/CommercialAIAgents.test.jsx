@@ -2,7 +2,7 @@
 
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 import CommercialAIAgentsPage from '../CommercialAIAgentsPage';
 import CommercialAIAgentsRoute from '../CommercialAIAgentsRoute';
 
@@ -70,6 +70,11 @@ const renderCenter = () => render(
   </MemoryRouter>
 );
 
+function CurrentPath() {
+  const location = useLocation();
+  return <output data-testid="current-path">{location.pathname}</output>;
+}
+
 describe('commercial AI center', () => {
   beforeEach(() => {
     runtime.licenseDetails = entitledLicense;
@@ -132,6 +137,7 @@ describe('commercial AI center', () => {
     renderCenter();
 
     expect(screen.getByRole('heading', { name: 'Agentes IA comerciales' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Agentes IA de Lanzo' })).not.toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Ventas y rentabilidad' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Ecommerce' })).toBeInTheDocument();
     expect(screen.getByText('Disponible')).toBeInTheDocument();
@@ -738,14 +744,24 @@ describe('commercial AI center', () => {
     expect(runtime.runAgent).toHaveBeenCalledTimes(1);
   });
 
-  it('shows availability for Free/Local without rendering the center or invoking analysis', () => {
+  it('shows the Lanzo Nube showcase to an authorized Free/Local Admin', () => {
     runtime.licenseDetails = { valid: true, plan_code: 'free', features: { ai_agents: false } };
-    renderCenter();
+    const { container } = renderCenter();
 
-    expect(screen.getByText('Los agentes IA comerciales requieren un plan compatible.')).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Ventas y rentabilidad' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button')).not.toBeInTheDocument();
-    expect(runtime.getUsage).not.toHaveBeenCalled();
+    expect(screen.getByRole('heading', { name: 'Agentes IA de Lanzo' })).toBeInTheDocument();
+    expect(screen.getByText('Agentes IA · Lanzo Nube')).toBeInTheDocument();
+    expect(screen.getByText(/Convierte los datos de tu negocio en decisiones/)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Ventas y rentabilidad' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Surtido y productos' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Estrategia y simulaciones' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Contexto competitivo' })).toBeInTheDocument();
+    expect(screen.getByText(/Lanzo no busca competidores en Internet/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Conocer Lanzo Nube/ })).toHaveAttribute('href', '/acerca-de');
+    expect(container.querySelectorAll('.pro-feature-showcase__feature')).toHaveLength(4);
+    expect(screen.queryByRole('heading', { name: 'Agentes IA comerciales' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: 'Pregunta libre' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Analizar' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/tenant-a|session-a|device-a|ACTOR_CONTEXT_REQUIRED|AI_AGENTS_NOT_AVAILABLE/i)).not.toBeInTheDocument();
   });
 
   it('blocks direct access when actor, tenant or device context is not authorized', () => {
@@ -755,6 +771,88 @@ describe('commercial AI center', () => {
     expect(screen.getByRole('heading', { name: 'No tienes permiso para acceder a esta sección' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Agentes IA comerciales' })).not.toBeInTheDocument();
   });
+  it('does not load usage, catalog, or agent execution paths when Free opens the showcase', () => {
+    runtime.licenseDetails = { valid: true, plan_code: 'free', features: { ai_agents: false } };
+    renderCenter();
+
+    expect(runtime.getUsage).not.toHaveBeenCalled();
+    expect(runtime.loadProducts).not.toHaveBeenCalled();
+    expect(runtime.runAgent).not.toHaveBeenCalled();
+  });
+
+  it('navigates the Lanzo Nube CTA to About without changing the current license', () => {
+    const freeLicense = { valid: true, plan_code: 'free', features: { ai_agents: false } };
+    runtime.licenseDetails = freeLicense;
+    render(
+      <MemoryRouter initialEntries={['/agentes-ia']}>
+        <CommercialAIAgentsRoute><CommercialAIAgentsPage /></CommercialAIAgentsRoute>
+        <CurrentPath />
+      </MemoryRouter>
+    );
+
+    fireEvent.click(screen.getByRole('link', { name: /Conocer Lanzo Nube/ }));
+
+    expect(screen.getByTestId('current-path')).toHaveTextContent('/acerca-de');
+    expect(runtime.licenseDetails).toBe(freeLicense);
+    expect(runtime.getUsage).not.toHaveBeenCalled();
+    expect(runtime.runAgent).not.toHaveBeenCalled();
+  });
+
+  it('keeps page structure for narrow screens and light or dark theme styling', () => {
+    runtime.licenseDetails = { valid: true, plan_code: 'free', features: { ai_agents: false } };
+    const { container } = renderCenter();
+
+    expect(container.querySelector('.pro-feature-showcase--page')).toBeInTheDocument();
+    expect(container.querySelector('.pro-feature-showcase__grid')).toBeInTheDocument();
+    expect(container.querySelector('.pro-feature-showcase__offer')).toBeInTheDocument();
+    expect(container.querySelector('.pro-feature-showcase__cta')).toBeInTheDocument();
+  });
+
+  it('does not use the showcase to bypass a Staff permission denial', () => {
+    runtime.licenseDetails = { valid: true, plan_code: 'free', features: { ai_agents: false } };
+    runtime.actorSnapshot = { ...boundAdmin, actorType: 'staff', permissions: ['pos'] };
+    renderCenter();
+
+    expect(screen.getByRole('heading', { name: 'No tienes permiso para acceder a esta sección' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Agentes IA de Lanzo' })).not.toBeInTheDocument();
+    expect(runtime.getUsage).not.toHaveBeenCalled();
+    expect(runtime.runAgent).not.toHaveBeenCalled();
+  });
+
+  it('preserves secure denial for an incomplete ActorRuntime context', () => {
+    runtime.licenseDetails = { valid: true, plan_code: 'free', features: { ai_agents: false } };
+    runtime.actorSnapshot = { ...boundAdmin, actorKey: '', tenant: null, deviceRef: null };
+    renderCenter();
+
+    expect(screen.getByRole('heading', { name: 'No tienes permiso para acceder a esta sección' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Agentes IA de Lanzo' })).not.toBeInTheDocument();
+    expect(runtime.getUsage).not.toHaveBeenCalled();
+  });
+
+  it('does not expose internal actor context in the Free showcase', () => {
+    runtime.licenseDetails = { valid: true, plan_code: 'free', features: { ai_agents: false } };
+    renderCenter();
+
+    expect(screen.queryByText(/UUID|fingerprint|tenant-a|session-a|device-a|AI_AGENTS_NOT_AVAILABLE/i)).not.toBeInTheDocument();
+  });
+
+  it('keeps the real center directly available to a bound PRO/Nube Admin', () => {
+    renderCenter();
+
+    expect(screen.getByRole('heading', { name: 'Agentes IA comerciales' })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Pregunta libre' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Agentes IA de Lanzo' })).not.toBeInTheDocument();
+  });
+
+  it('keeps the existing entitled Staff permission path in the real center', () => {
+    runtime.actorSnapshot = { ...boundAdmin, actorType: 'staff', permissions: ['ai_agents'] };
+    renderCenter();
+
+    expect(screen.getByRole('heading', { name: 'Agentes IA comerciales' })).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Pregunta libre' })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Agentes IA de Lanzo' })).not.toBeInTheDocument();
+  });
+
   it('reinfers a free question after a previous scenario suggestion', async () => {
     renderCenter();
     fireEvent.click(screen.getByRole('button', { name: '¿Qué promoción puedo simular?' }));
