@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render as rtlRender, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useAppStore } from '../../../store/useAppStore';
 import EcommercePortalGeneralSettings, {
@@ -16,6 +17,13 @@ const baseForm = Object.freeze({
 });
 
 const handlers = new Map();
+const render = (ui, options) => {
+  const view = rtlRender(<MemoryRouter>{ui}</MemoryRouter>, options);
+  return {
+    ...view,
+    rerender: (nextUi) => view.rerender(<MemoryRouter>{nextUi}</MemoryRouter>)
+  };
+};
 const onFieldChange = (field) => {
   if (!handlers.has(field)) handlers.set(field, vi.fn());
   return handlers.get(field);
@@ -158,5 +166,12 @@ describe('EcommercePortalGeneralSettings authoritative plan parity', () => {
     const slug = screen.getByLabelText('Slug de la tienda');
     expect(slug).toHaveValue('mi-tienda-personalizada');
     expect(slug).toBeDisabled();
+    expect(screen.getByRole('link', { name: 'Conocer Lanzo Nube' })).toHaveAttribute('href', '/acerca-de');
+  });
+
+  it('does not show slug discovery to an authorized PRO plan', () => {
+    renderSettings({ plan: PRO_PLAN, features: PRO_FEATURES });
+    expect(screen.queryByRole('link', { name: 'Conocer Lanzo Nube' })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Slug de la tienda')).toBeEnabled();
   });
 });

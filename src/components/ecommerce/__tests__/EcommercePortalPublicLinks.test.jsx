@@ -1,10 +1,16 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render as rtlRender, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import '@testing-library/jest-dom/vitest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAppStore } from '../../../store/useAppStore';
 import EcommercePortalSettings from '../EcommercePortalSettings';
 import { getEcommercePortal, listPublishedProducts } from '../../../services/ecommerce/ecommerceAdminService';
+
+const render = (ui, options) => {
+  const view = rtlRender(<MemoryRouter>{ui}</MemoryRouter>, options);
+  return { ...view, rerender: (nextUi) => view.rerender(<MemoryRouter>{nextUi}</MemoryRouter>) };
+};
 
 vi.mock('../../../services/ecommerce/ecommerceAdminService', () => ({
   getEcommerceAdminAuthorizationContext: vi.fn(),

@@ -1,4 +1,5 @@
 import { Link2, PackageCheck, Truck } from 'lucide-react';
+import ProFeatureShowcase from '../plans/ProFeatureShowcase';
 import './EcommercePortalGeneralSettings.css';
 
 const featureValue = (features, camelKey, snakeKey) => (
@@ -31,6 +32,7 @@ export default function EcommercePortalGeneralSettings({
   } = resolveEcommerceGeneralSettingsCapabilities(features);
   const deliveryModeLabel = deliveryPickupSettings === 'advanced' ? 'Avanzada' : 'Básica';
   const authoritativePlanCode = String(plan?.code || '').trim() || 'unknown';
+  const isProPlan = plan?.isPro === true || authoritativePlanCode === 'pro_monthly';
 
   return (
     <fieldset
@@ -72,6 +74,25 @@ export default function EcommercePortalGeneralSettings({
               : 'Tu enlace actual se conserva. Personalizarlo requiere Lanzo Nube.'}
           </small>
         </label>
+
+        {!customSlugAllowed && !isProPlan && (
+          <ProFeatureShowcase
+            variant="card"
+            className="ecom-general-settings__slug-showcase"
+            eyebrow="Enlace personalizado"
+            title="Haz más reconocible el enlace de tu tienda"
+            description="Con Lanzo Nube puedes personalizar la dirección para que sea más fácil de identificar. Tu enlace asignado y la tienda pública actual se conservan."
+            features={[
+              {
+                title: 'Una dirección ligada a tu marca',
+                description: 'El slug personalizado solo se edita cuando la licencia autoriza esa capacidad.',
+                icon: <Link2 size={19} aria-hidden="true" />
+              }
+            ]}
+            offerTitle="Conoce Lanzo Nube"
+            offerDescription="Consulta las capacidades disponibles para personalizar tu tienda."
+          />
+        )}
 
         <label className="form-group">
           <span className="form-label">Frase corta / headline</span>

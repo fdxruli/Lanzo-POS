@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { act, cleanup, render, screen } from '@testing-library/react';
+import { act, cleanup, render as rtlRender, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import '@testing-library/jest-dom/vitest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAppStore } from '../../../store/useAppStore';
@@ -9,6 +10,11 @@ import {
   getEcommercePortal,
   listPublishedProducts
 } from '../../../services/ecommerce/ecommerceAdminService';
+
+const render = (ui, options) => {
+  const view = rtlRender(<MemoryRouter>{ui}</MemoryRouter>, options);
+  return { ...view, rerender: (nextUi) => view.rerender(<MemoryRouter>{nextUi}</MemoryRouter>) };
+};
 
 const { encode } = vi.hoisted(() => ({
   encode: vi.fn(() => ({

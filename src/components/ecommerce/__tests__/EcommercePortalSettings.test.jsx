@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render as rtlRender, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAppStore } from '../../../store/useAppStore';
+import { ecommerceCatalogSyncService } from '../../../services/ecommerce/ecommerceCatalogSyncService';
 import EcommercePortalSettings from '../EcommercePortalSettings';
 import {
   getEcommercePortal,
@@ -73,6 +75,14 @@ vi.mock('../EcommerceSiteBuilderFoundation', () => ({
     </section>
   )
 }));
+
+const render = (ui, options) => {
+  const view = rtlRender(<MemoryRouter>{ui}</MemoryRouter>, options);
+  return {
+    ...view,
+    rerender: (nextUi) => view.rerender(<MemoryRouter>{nextUi}</MemoryRouter>)
+  };
+};
 
 const successfulPortalResponse = {
   success: true,
@@ -217,7 +227,10 @@ describe('EcommercePortalSettings image intent payloads', () => {
     customSlug: true,
     deliveryPickupSettings: 'advanced',
     cloudCatalogSource: true,
-    maxPublishedProducts: -1
+    maxPublishedProducts: -1,
+    brandingCustomization: 'advanced',
+    layoutCustomization: 'advanced',
+    stockVisibility: true
   };
   const existingPortal = {
     id: 'portal-fixture',
@@ -317,6 +330,8 @@ describe('EcommercePortalSettings image intent payloads', () => {
     expect(screen.getByTestId('builder-portal')).toHaveTextContent('portal-fixture');
     expect(screen.getByTestId('builder-license')).toHaveTextContent('license-fixture');
     expect(screen.getByTestId('builder-plan')).toHaveTextContent('true');
+    expect(screen.queryByText('Personaliza tu tienda y crea una experiencia única')).toBeNull();
+    expect(screen.queryByRole('link', { name: 'Conocer Lanzo Nube' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Guardar identidad visual' })).toBeNull();
     expect(screen.queryByText('Identidad visual')).toBeNull();
   });
@@ -465,16 +480,81 @@ describe('EcommercePortalSettings image intent payloads', () => {
     expect(payload).not.toHaveProperty('coverImageUrl');
   });
 
-  it('keeps the Free presentation editor alongside the read-only builder preview', async () => {
+  it('shows informational design discovery for Free without mounting the Pro builder', async () => {
+    const syncStatus = vi.spyOn(ecommerceCatalogSyncService, 'getStatus');
     renderExistingFreePortal();
     await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
 
     fireEvent.click(screen.getByRole('tab', { name: 'Diseño' }));
 
+    expect(screen.getByText('Personaliza tu tienda y crea una experiencia única')).toBeInTheDocument();
+    expect(screen.getByText(/El historial de versiones se muestra cuando está disponible\./)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Conocer Lanzo Nube' })).toHaveAttribute('href', '/acerca-de');
+    expect(screen.queryByTestId('site-builder')).toBeNull();
+    expect(syncStatus).not.toHaveBeenCalled();
     expect(screen.getByText('Identidad visual de tu tienda')).toBeInTheDocument();
     expect(screen.getByText('Identidad visual')).toBeInTheDocument();
-    expect(screen.getByTestId('builder-plan')).toHaveTextContent('false');
     expect(screen.getByRole('button', { name: 'Guardar diseño' })).toBeInTheDocument();
+    syncStatus.mockRestore();
+  });
+
+  it('does not treat catalog sync entitlement as permission to load the site builder', async () => {
+    const partialFreeFeatures = {
+      customSlug: false,
+      deliveryPickupSettings: 'basic',
+      maxPublishedProducts: 2,
+      cloudCatalogSource: true,
+      brandingCustomization: 'basic',
+      layoutCustomization: 'template_only'
+    };
+    getEcommercePortal.mockResolvedValue({
+      success: true,
+      portal: existingPortal,
+      plan: { code: 'free_trial', name: 'Plan Free' },
+      features: partialFreeFeatures
+    });
+    listPublishedProducts.mockResolvedValue({ success: true, products: [] });
+
+    render(<EcommercePortalSettings />);
+    await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('tab', { name: 'Diseño' }));
+
+    expect(screen.getByText('Personaliza tu tienda y crea una experiencia única')).toBeInTheDocument();
+    expect(screen.queryByTestId('site-builder')).toBeNull();
+  });
+
+  it('uses the license product limit and keeps existing product actions available at the limit', async () => {
+    const freeFeatures = {
+      customSlug: false,
+      deliveryPickupSettings: 'basic',
+      maxPublishedProducts: 2,
+      cloudCatalogSource: false,
+      brandingCustomization: 'basic',
+      layoutCustomization: 'template_only'
+    };
+    getEcommercePortal.mockResolvedValue({
+      success: true,
+      portal: existingPortal,
+      plan: { code: 'free_trial', name: 'Plan Free' },
+      features: freeFeatures
+    });
+    listPublishedProducts.mockResolvedValue({
+      success: true,
+      products: [
+        { id: 'published-1', localProductRef: 'local-1', publicName: 'Producto uno', price: 10, isPublished: true, isAvailable: true },
+        { id: 'published-2', localProductRef: 'local-2', publicName: 'Producto dos', price: 20, isPublished: true, isAvailable: true }
+      ]
+    });
+
+    render(<EcommercePortalSettings requestedSection="catalog" />);
+    await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
+
+    expect(screen.getByText('2 / 2 productos publicados')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Publicar producto' })).toBeDisabled();
+    expect(screen.getByText('Llegaste al límite de productos publicados de tu plan.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Editar Producto uno' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Despublicar Producto uno' })).toBeEnabled();
+    expect(screen.getByRole('link', { name: 'Conocer Lanzo Nube' })).toHaveAttribute('href', '/acerca-de');
   });
 
   it('saves an HTTPS replacement logo for an existing Free portal without a cover', async () => {

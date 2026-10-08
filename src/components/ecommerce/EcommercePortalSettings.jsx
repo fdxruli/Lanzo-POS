@@ -43,6 +43,7 @@ import EcommerceOperatingHoursSettings from './EcommerceOperatingHoursSettings';
 import EcommerceOrderPauseControl from './EcommerceOrderPauseControl';
 import EcommercePortalCustomizationPanel from './EcommercePortalCustomizationPanel';
 import EcommerceSiteBuilderFoundation from './EcommerceSiteBuilderFoundation';
+import ProFeatureShowcase from '../plans/ProFeatureShowcase';
 import './EcommercePortalSettings.css';
 
 const SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{1,62})[a-z0-9]$/;
@@ -80,6 +81,29 @@ const PORTAL_SECTIONS = Object.freeze([
   { id: 'catalog', label: 'Catálogo', Icon: PackagePlus },
   { id: 'operation', label: 'Operación', Icon: Clock3 },
   { id: 'design', label: 'Diseño', Icon: Palette }
+]);
+
+const DESIGN_DISCOVERY_FEATURES = Object.freeze([
+  {
+    title: 'Plantillas visuales',
+    description: 'Explora estilos para presentar tu tienda con una identidad más propia.',
+    icon: <Palette size={19} aria-hidden="true" />
+  },
+  {
+    title: 'Colores, tipografías e imágenes',
+    description: 'Combina colores de marca, estilos de texto y una imagen de portada.',
+    icon: <Store size={19} aria-hidden="true" />
+  },
+  {
+    title: 'Organización de secciones',
+    description: 'Ajusta el orden y la presentación de las secciones desde el constructor visual.',
+    icon: <PackagePlus size={19} aria-hidden="true" />
+  },
+  {
+    title: 'Publicación e historial',
+    description: 'Guarda y publica cambios. El historial de versiones se muestra cuando está disponible.',
+    icon: <Clock3 size={19} aria-hidden="true" />
+  }
 ]);
 
 const portalCustomization = (portal) => ({
@@ -276,7 +300,9 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
     customSlug: false,
     deliveryPickupSettings: 'basic',
     maxPublishedProducts: 10,
-    cloudCatalogSource: false
+    cloudCatalogSource: false,
+    brandingCustomization: 'basic',
+    layoutCustomization: 'template_only'
   });
   const [form, setForm] = useState(() => portalForm(null, companyProfile));
   const [products, setProducts] = useState([]);
@@ -324,18 +350,41 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
     currentDeviceRole,
     licenseDetails
   });
-  const isPro = features.cloudCatalogSource === true
-    || features.customSlug === true
-    || features.maxPublishedProducts < 0
-    || features.brandingCustomization === 'advanced'
-    || features.layoutCustomization === 'advanced';
+  const isProPlan = plan?.isPro === true || plan?.code === 'pro_monthly';
+  const canUseSiteBuilder = features.layoutCustomization === 'advanced';
+  const canUseAdvancedBranding = features.brandingCustomization === 'advanced';
+  const canSyncCatalog = features.cloudCatalogSource === true;
+  const canEditCustomSlug = features.customSlug === true;
   const licenseKey = getLicenseKeyFromDetails(licenseDetails);
   const publishedCount = products.filter((product) => product.isPublished).length;
-  const maxProducts = features.maxPublishedProducts < 0
+  const rawProductLimit = Number(features.maxPublishedProducts);
+  const hasUnlimitedPublishedProducts = rawProductLimit < 0;
+  const maxProducts = hasUnlimitedPublishedProducts
     ? Number.MAX_SAFE_INTEGER
-    : (features.maxPublishedProducts || 10);
-  const limitReached = !isPro && publishedCount >= maxProducts;
-  const showBasicPortalEditor = !isPro;
+    : Number.isFinite(rawProductLimit)
+      ? Math.max(0, Math.floor(rawProductLimit))
+      : 10;
+  const limitReached = !hasUnlimitedPublishedProducts && publishedCount >= maxProducts;
+  const showBasicPortalEditor = !canUseSiteBuilder && (!isProPlan || canUseAdvancedBranding);
+  const showDesignDiscovery = !isProPlan && !canUseSiteBuilder && !canUseAdvancedBranding;
+  const catalogDiscoveryFeatures = [
+    ...(!hasUnlimitedPublishedProducts ? [{
+      title: 'Capacidad definida por tu plan',
+      description: `Tu licencia autoriza hasta ${maxProducts} productos publicados. El mismo límite se valida al publicar.`,
+      icon: <PackagePlus size={19} aria-hidden="true" />
+    }] : []),
+    ...(!canSyncCatalog ? [{
+      title: 'Administración manual y automática',
+      description: 'Tu catálogo actual se administra manualmente. Lanzo Nube agrega sincronización automática para los campos compatibles del producto.',
+      icon: <RefreshCw size={19} aria-hidden="true" />
+    }] : []),
+    ...(!canSyncCatalog ? [{
+      title: 'Estado y revisión',
+      description: 'La sincronización puede quedar pendiente, requerir revisión o reportar un error; confirma el estado antes de asumir que un cambio se aplicó.',
+      icon: <AlertTriangle size={19} aria-hidden="true" />
+    }] : [])
+  ];
+  const showCatalogDiscovery = !isProPlan && catalogDiscoveryFeatures.length > 0;
   const publicationRequirements = {
     whatsapp: form.whatsappPhone.replace(/\D/g, '').length >= 8,
     street: form.addressStreet.trim().length > 0,
@@ -409,7 +458,9 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
       customSlug: false,
       deliveryPickupSettings: 'basic',
       maxPublishedProducts: 10,
-      cloudCatalogSource: false
+      cloudCatalogSource: false,
+      brandingCustomization: 'basic',
+      layoutCustomization: 'template_only'
     });
     setForm(portalForm(nextPortal, companyProfile));
     setOperations(result);
@@ -449,7 +500,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
     if (portal && candidate.name.trim() !== portal.name.trim()) {
       return 'El nombre del negocio queda protegido después de crear la tienda.';
     }
-    if (isPro && candidate.slug.trim() && !SLUG_PATTERN.test(candidate.slug.trim())) {
+    if (canEditCustomSlug && candidate.slug.trim() && !SLUG_PATTERN.test(candidate.slug.trim())) {
       return 'El slug debe tener entre 3 y 64 caracteres, usar minusculas, numeros o guiones y no iniciar ni terminar con guion.';
     }
     const phone = candidate.whatsappPhone.replace(/\D/g, '');
@@ -532,8 +583,8 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
     };
     const logo = customization.logo || { value: customization.logoUrl, intent: IMAGE_INTENT_PRESERVE };
     const cover = customization.cover || { value: customization.coverImageUrl, intent: IMAGE_INTENT_PRESERVE };
-    const canPersistLogoThroughPortal = !portal || !isPro;
-    const canPersistCoverThroughPortal = !portal && isPro;
+    const canPersistLogoThroughPortal = !portal || !canUseAdvancedBranding;
+    const canPersistCoverThroughPortal = !portal && canUseAdvancedBranding;
 
     if (canPersistLogoThroughPortal && logo.intent === IMAGE_INTENT_SET) {
       const logoUrl = publicUrl(logo.value);
@@ -571,7 +622,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
     setPlan(result.plan || plan);
     setFeatures(result.features || features);
     if (syncFormOnSuccess) setForm(portalForm(nextPortal, companyProfile));
-    if (!portal || !isPro) setCustomization(portalCustomization(nextPortal));
+    if (!portal || !canUseAdvancedBranding) setCustomization(portalCustomization(nextPortal));
     reconcileStockProducts?.({ portal: nextPortal, publishedProducts: products });
     await evaluateStock({
       nextPortal,
@@ -797,7 +848,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
   };
 
   const requestCatalogSync = (productIds = [], reason = 'portal-product-change') => {
-    if (!isPro) return;
+    if (!canSyncCatalog) return;
     window.dispatchEvent(new CustomEvent(ECOMMERCE_CATALOG_SYNC_REQUEST_EVENT, {
       detail: {
         productIds,
@@ -821,9 +872,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
 
   const toggleProduct = async (product) => {
     if (!product.isPublished && limitReached) {
-      return toast.error(
-        'Plan Free permite publicar hasta 10 productos. Actualiza a Lanzo Nube para productos ilimitados.'
-      );
+      return toast.error('Llegaste al límite de productos publicados de tu plan.');
     }
     setBusyProductId(product.id);
     const result = await setProductPublished(product.id, !product.isPublished);
@@ -924,7 +973,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
           role="tabpanel"
           aria-labelledby="ecom-portal-tab-design"
         >
-          {isPro ? (
+          {canUseSiteBuilder ? (
             <div className="ecom-design-workspace">
               <div className="ecom-admin-workspace-header">
                 <div>
@@ -934,10 +983,25 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
                 </div>
               </div>
               <section className="ecom-design-structure" aria-label="Editor de la tienda">
-                <EcommerceSiteBuilderFoundation isPro portal={portal} licenseKey={licenseKey} />
+                <EcommerceSiteBuilderFoundation isPro={canUseSiteBuilder} portal={portal} licenseKey={licenseKey} />
               </section>
             </div>
-          ) : <EcommerceSiteBuilderFoundation isPro={false} portal={portal} />}
+          ) : showDesignDiscovery ? (
+            <ProFeatureShowcase
+              variant="card"
+              className="ecom-admin-pro-showcase"
+              title="Personaliza tu tienda y crea una experiencia única"
+              description="Dale a tu tienda una identidad propia con herramientas avanzadas para organizar su diseño, personalizar su apariencia y presentar mejor tus productos."
+              features={DESIGN_DISCOVERY_FEATURES}
+              offerTitle="Explora el diseño avanzado de Lanzo Nube"
+              offerDescription="Conoce las herramientas disponibles para personalizar y publicar la experiencia de tu tienda."
+            />
+          ) : (
+            <div className="ecom-admin-design-unavailable" role="status">
+              <strong>El constructor visual no está habilitado para esta licencia.</strong>
+              <span>Tu tienda publicada y sus datos se conservan.</span>
+            </div>
+          )}
         </section>
       ) : null}
 
@@ -964,7 +1028,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
             <Save size={22} />
           </div>
           <EcommercePortalCustomizationPanel
-            isPro={isPro}
+            isPro={canUseAdvancedBranding}
             portal={portal}
             initialLogoUrl={portal ? null : publicUrl(companyProfile?.logo)}
             licenseKey={licenseKey}
@@ -997,7 +1061,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
             <span className="ecom-admin-eyebrow">Catálogo</span>
             <h3>Productos publicados</h3>
             <p>
-              {isPro
+              {hasUnlimitedPublishedProducts
                 ? `${publishedCount} productos publicados`
                 : `${publishedCount} / ${maxProducts} productos publicados`}
               {stockLoading ? ' · Verificando stock...' : ''}
@@ -1065,7 +1129,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
                     <div>
                       <strong>{product.publicName}</strong>
                       <PublicationBadge product={product} />
-                      {isPro && (
+                      {canSyncCatalog && (
                         <EcommerceCatalogSyncBadge status={product.syncStatus} />
                       )}
                     </div>
@@ -1131,16 +1195,34 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
         <div className="ecom-admin-catalog-support">
           <StockReviewBanner snapshot={stockSnapshot} />
           <BusinessCapabilityReviewBanner products={products} />
-          <EcommerceCatalogSyncPanel
-            isPro={isPro}
-            products={products}
-            catalogRevision={portal?.catalogRevision}
-            onRefresh={loadProducts}
-          />
-          {!isPro && (
-            <div className={`ecom-admin-limit ${limitReached ? 'is-blocked' : ''}`}>
-              <Lock size={17} /> Plan Free permite publicar hasta 10 productos. La sincronizacion automatica requiere Lanzo Nube.
-            </div>
+          {canSyncCatalog && (
+            <EcommerceCatalogSyncPanel
+              isPro={canSyncCatalog}
+              products={products}
+              catalogRevision={portal?.catalogRevision}
+              onRefresh={loadProducts}
+            />
+          )}
+          {showCatalogDiscovery && (
+            <ProFeatureShowcase
+              variant="card"
+              className="ecom-admin-pro-showcase"
+              title="Haz crecer tu catálogo con Lanzo Nube"
+              description="Amplía los productos disponibles en tu tienda y aprovecha herramientas de sincronización para mantener conectado tu catálogo con las operaciones compatibles del negocio."
+              features={catalogDiscoveryFeatures}
+              offerTitle="Conoce las capacidades de Lanzo Nube"
+              offerDescription="Tu catálogo actual sigue disponible. Los productos existentes se pueden editar o despublicar según los permisos de tu plan."
+            >
+              {limitReached && (
+                <div className="ecom-admin-limit is-blocked ecom-admin-catalog-limit-reached" role="status">
+                  <Lock size={17} aria-hidden="true" />
+                  <div>
+                    <strong>Llegaste al límite de productos publicados de tu plan.</strong>
+                    <p>Puedes continuar administrando tus productos actuales. Si necesitas ampliar tu catálogo, conoce las capacidades de Lanzo Nube.</p>
+                  </div>
+                </div>
+              )}
+            </ProFeatureShowcase>
           )}
         </div>
       </section>}
@@ -1151,7 +1233,8 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
         localProducts={localProducts}
         categoriesById={categoriesById}
         linkedRefs={linkedRefs}
-        isPro={isPro}
+        canSyncCatalog={canSyncCatalog}
+        canUseStockVisibility={features.stockVisibility === true}
         limitReached={limitReached}
         localCatalogLoading={searchingCatalog || loadingMoreCatalog}
         localCatalogHasMore={localCatalogHasMore}
