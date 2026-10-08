@@ -101,28 +101,28 @@ export const LEGAL_DOCUMENT_TYPES = Object.freeze([
     type: 'ai_policy',
     label: 'Lía e inteligencia artificial',
     description: 'Qué se comparte cuando solicitas un análisis.',
-    fetchType: null,
+    fetchType: 'ai_policy',
     previewType: 'ai_policy'
   },
   {
     type: 'payment_policy',
     label: 'Pagos y suscripciones',
     description: 'Precio, periodos y forma de pago.',
-    fetchType: null,
+    fetchType: 'payment_policy',
     previewType: 'payment_policy'
   },
   {
     type: 'refund_policy',
     label: 'Cancelaciones y reembolsos',
     description: 'Cómo pedir una revisión de pago.',
-    fetchType: null,
+    fetchType: 'refund_policy',
     previewType: 'refund_policy'
   },
   {
     type: 'legal_notice',
     label: 'Aviso legal',
     description: 'Identidad del proveedor y alcance del servicio.',
-    fetchType: null,
+    fetchType: 'legal_notice',
     previewType: 'legal_notice'
   }
 ]);
