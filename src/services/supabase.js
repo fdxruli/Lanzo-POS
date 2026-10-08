@@ -30,7 +30,7 @@ const SUPABASE_MAIN_AUTH_OPTIONS = Object.freeze({
     detectSessionInUrl: false
 });
 
-// Creamos el cliente solo si las variables existen. Si no, exportamos null y dejamos 
+// Creamos el cliente solo si las variables existen. Si no, exportamos null y dejamos
 // que App.jsx lance el error para que sea capturado por el ErrorBoundary visual.
 export const supabaseClient = (supabaseUrl && supabaseKey)
     ? createClient(supabaseUrl, supabaseKey, {
@@ -989,7 +989,7 @@ export const revalidateLicense = async function (licenseKeyProp) {
                 // Si el servidor invalida, destruimos el caché offline local
                 await loadData(STORES.SYNC_CACHE, 'last_valid_license_state').then(async (record) => {
                     if (record) {
-                        // Implementa un borrado si tienes la función deleteData, 
+                        // Implementa un borrado si tienes la función deleteData,
                         // o sobrescribe con un objeto inválido
                         await saveData(STORES.SYNC_CACHE, { key: 'last_valid_license_state', value: null });
                     }
