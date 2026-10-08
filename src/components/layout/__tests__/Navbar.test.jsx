@@ -88,6 +88,17 @@ const createAppState = (overrides = {}) => ({
   ...overrides
 });
 
+const boundAdminActor = {
+  status: 'granted',
+  actorType: 'admin',
+  actorId: 'admin-1',
+  actorKey: 'admin:admin-1',
+  sessionId: 'admin-session-1',
+  deviceRef: 'device-1',
+  permissions: ['*'],
+  tenant: { opaqueId: 'tenant-1', databaseName: 'LanzoDB_t_tenant-1', generation: 1 }
+};
+
 function renderNavbar(entry = '/') {
   return render(
     <MemoryRouter initialEntries={[entry]}>
@@ -376,5 +387,64 @@ describe('Navbar ecommerce orders access', () => {
     renderNavbar();
 
     expect(getOnlineOrderLinks()).toHaveLength(0);
+  });
+});
+
+describe('Navbar AI capability discovery', () => {
+  it('shows the PRO discovery badge in the desktop sidebar and mobile drawer for Free', () => {
+    state.app = createAppState({
+      licenseDetails: { valid: true, plan_code: 'free', features: { ai_agents: false, cloud_pos_sync: false } }
+    });
+    state.actorRuntime = boundAdminActor;
+    renderNavbar('/agentes-ia');
+
+    const desktopLink = document.querySelector('.desktop-sidebar a[href="/agentes-ia"]');
+    expect(desktopLink).not.toHaveAttribute('hidden');
+    expect(desktopLink).toHaveClass('active');
+    expect(desktopLink).toHaveTextContent('Agentes IA');
+    expect(desktopLink.querySelector('.nav-pro-badge')).toHaveTextContent('PRO');
+    expect(desktopLink).toHaveTextContent('disponible con Lanzo Nube');
+
+    const { drawer } = openMobileDrawer();
+    const drawerLink = drawer.querySelector('a[href="/agentes-ia"]');
+    expect(drawerLink).not.toBeNull();
+    expect(drawerLink).toHaveClass('active');
+    expect(drawerLink).toHaveTextContent('PRO');
+    expect(drawerLink.querySelector('.nav-pro-badge')).toBeInTheDocument();
+    expect(drawerLink).toHaveTextContent('Ventas, rentabilidad y estrategia comercial');
+  });
+
+  it('keeps an entitled Nube entry direct and without a discovery badge', () => {
+    state.app = createAppState({
+      licenseDetails: { valid: true, plan_code: 'nube', features: { ai_agents: true, cloud_pos_sync: true } }
+    });
+    state.actorRuntime = boundAdminActor;
+    renderNavbar('/agentes-ia');
+
+    const desktopLink = document.querySelector('.desktop-sidebar a[href="/agentes-ia"]');
+    expect(desktopLink).not.toHaveAttribute('hidden');
+    expect(desktopLink).toHaveClass('active');
+    expect(desktopLink.querySelector('.nav-pro-badge')).toBeNull();
+
+    const { drawer } = openMobileDrawer();
+    expect(drawer.querySelector('a[href="/agentes-ia"] .nav-pro-badge')).toBeNull();
+  });
+
+  it('does not expose the AI entry or badge to an actor without permission', () => {
+    state.app = createAppState({
+      currentDeviceRole: 'staff',
+      currentAdminUser: null,
+      currentStaffUser: { id: 'staff-a', permissions: { ai_agents: false } },
+      licenseDetails: { valid: true, plan_code: 'free', features: { ai_agents: false, cloud_pos_sync: false } }
+    });
+    state.actorRuntime = { ...boundAdminActor, actorType: 'staff', permissions: ['pos'] };
+    renderNavbar('/agentes-ia');
+
+    const desktopLink = document.querySelector('.desktop-sidebar a[href="/agentes-ia"]');
+    expect(desktopLink).toHaveAttribute('hidden');
+    expect(desktopLink.querySelector('.nav-pro-badge')).toBeNull();
+
+    const { drawer } = openMobileDrawer();
+    expect(drawer.querySelector('a[href="/agentes-ia"]')).toBeNull();
   });
 });

@@ -387,9 +387,32 @@
   line-height: 1.25;
 }
 
+.drawer-link-title {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
 .drawer-link-label {
   font-size: 0.93rem;
   font-weight: 700;
+}
+
+.nav-pro-badge {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  padding: 0.16rem 0.42rem;
+  border: 1px solid var(--brand-accent-border);
+  border-radius: 999px;
+  color: var(--brand-accent-text);
+  background: var(--brand-accent-soft);
+  font-size: 0.62rem;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
 }
 
 .drawer-link-description {
@@ -707,6 +730,14 @@
     border-radius: 10px;
     transition: all 0.2s;
     text-decoration: none;
+  }
+
+  .nav-link-label {
+    min-width: 0;
+  }
+
+  .nav-link .nav-pro-badge {
+    margin-left: auto;
   }
 
   .nav-link:hover {
