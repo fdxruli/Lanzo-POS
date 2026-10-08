@@ -426,3 +426,21 @@
 .terms-modal-content--with-index {
   grid-template-rows: auto auto minmax(0, 1fr) auto;
 }
+
+
+.terms-draft-preview-banner {
+  display: grid;
+  gap: 3px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--ui-border-info, var(--secondary-color));
+  border-radius: 8px;
+  color: var(--ui-text, var(--text-color));
+  background: var(--ui-bg-info-soft, color-mix(in srgb, var(--secondary-color) 10%, transparent));
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+
+.terms-draft-preview-banner strong {
+  color: var(--ui-text-info, var(--secondary-color));
+}

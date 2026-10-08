@@ -2,8 +2,12 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const legalPreviewState = vi.hoisted(() => ({ enabled: false }));
+
 vi.mock('../../../services/supabase', () => ({
   fetchLegalTerms: vi.fn(),
+  fetchLegalPolicyPreview: vi.fn(),
+  isLegalPolicyPreviewEnabled: () => legalPreviewState.enabled,
   acceptLegalTerms: vi.fn()
 }));
 vi.mock('../../../services/Logger', () => ({
@@ -13,7 +17,7 @@ vi.mock('../../../services/utils', () => ({
   showMessageModal: vi.fn()
 }));
 
-import { fetchLegalTerms } from '../../../services/supabase';
+import { fetchLegalPolicyPreview, fetchLegalTerms } from '../../../services/supabase';
 import TermsAndConditionsModal, { LEGAL_DOCUMENT_TYPES } from '../TermsAndConditionsModal';
 
 const termsDocument = {
@@ -26,6 +30,8 @@ const termsDocument = {
 describe('TermsAndConditionsModal policy navigation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    legalPreviewState.enabled = false;
+    fetchLegalPolicyPreview.mockResolvedValue(null);
     fetchLegalTerms.mockImplementation(async (type) => (
       type === 'terms_of_use' ? termsDocument : null
     ));
@@ -57,6 +63,36 @@ describe('TermsAndConditionsModal policy navigation', () => {
     fireEvent.click(screen.getByRole('button', { name: /Lía e inteligencia artificial/ }));
     expect(await screen.findByText(/Este documento está en preparación/)).toBeTruthy();
     expect(fetchLegalTerms).not.toHaveBeenCalledWith('ai_policy');
+  });
+
+
+  it('loads review-only drafts from the isolated preview table', async () => {
+    legalPreviewState.enabled = true;
+    fetchLegalPolicyPreview.mockImplementation(async (type) => ({
+      id: `draft-${type}`,
+      document_type: type,
+      version: 'borrador-0.3',
+      content_html: `<h2>${type} para revisión</h2>`
+    }));
+
+    render(
+      <TermsAndConditionsModal
+        isOpen
+        onClose={vi.fn()}
+        readOnly
+        showDocumentIndex
+        documentTypes={LEGAL_DOCUMENT_TYPES}
+      />
+    );
+
+    expect(await screen.findByText('terms_of_use para revisión')).toBeTruthy();
+    expect(screen.getByText(/documentos en revisión; no están vigentes/i)).toBeTruthy();
+    expect(fetchLegalTerms).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: /Lía e inteligencia artificial/ }));
+    expect(await screen.findByText('ai_policy para revisión')).toBeTruthy();
+    expect(fetchLegalPolicyPreview).toHaveBeenCalledWith('ai_policy');
+    expect(screen.getByRole('button', { name: /Lía e inteligencia artificial, Disponible/ })).toBeTruthy();
   });
 
   it('keeps the existing single-terms behavior when the document index is omitted', async () => {

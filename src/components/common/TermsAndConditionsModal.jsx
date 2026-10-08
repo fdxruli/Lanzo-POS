@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, CheckCircle, FileText, Loader2, Shield } from 'lucide-react';
-import { acceptLegalTerms, fetchLegalTerms } from '../../services/supabase';
+import { acceptLegalTerms, fetchLegalPolicyPreview, fetchLegalTerms, isLegalPolicyPreviewEnabled } from '../../services/supabase';
 import Logger from '../../services/Logger';
 import { showMessageModal } from '../../services/utils';
 import './TermsAndConditionsModal.css';
@@ -87,44 +87,51 @@ export const LEGAL_DOCUMENT_TYPES = Object.freeze([
     type: 'terms_of_use',
     label: 'Términos de uso',
     description: 'Condiciones para usar Lanzo POS.',
-    fetchType: 'terms_of_use'
+    fetchType: 'terms_of_use',
+    previewType: 'terms_of_use'
   },
   {
     type: 'privacy_policy',
     label: 'Aviso de privacidad',
     description: 'Datos tratados por Lanzo y finalidades.',
-    fetchType: 'privacy_policy'
+    fetchType: 'privacy_policy',
+    previewType: 'privacy_policy'
   },
   {
     type: 'ai_policy',
     label: 'Lía e inteligencia artificial',
     description: 'Qué se comparte cuando solicitas un análisis.',
-    fetchType: null
+    fetchType: null,
+    previewType: 'ai_policy'
   },
   {
     type: 'payment_policy',
     label: 'Pagos y suscripciones',
     description: 'Precio, periodos y forma de pago.',
-    fetchType: null
+    fetchType: null,
+    previewType: 'payment_policy'
   },
   {
     type: 'refund_policy',
     label: 'Cancelaciones y reembolsos',
     description: 'Cómo pedir una revisión de pago.',
-    fetchType: null
+    fetchType: null,
+    previewType: 'refund_policy'
   },
   {
     type: 'legal_notice',
     label: 'Aviso legal',
     description: 'Identidad del proveedor y alcance del servicio.',
-    fetchType: null
+    fetchType: null,
+    previewType: 'legal_notice'
   }
 ]);
 
 const TERMS_ONLY = Object.freeze([LEGAL_DOCUMENT_TYPES[0]]);
 
-function getDocumentStatusLabel(document, status) {
-  if (!document?.fetchType) return 'En preparación';
+function getDocumentStatusLabel(document, status, legalPreviewMode) {
+  const canLoad = legalPreviewMode ? Boolean(document?.previewType) : Boolean(document?.fetchType);
+  if (!canLoad) return 'En preparación';
   if (status === 'loaded') return 'Disponible';
   if (status === 'missing') return 'Sin versión activa';
   if (status === 'error') return 'No disponible';
@@ -151,6 +158,7 @@ export default function TermsAndConditionsModal({
       .filter(Boolean);
   }, [documentTypes]);
 
+  const legalPreviewMode = isLegalPolicyPreviewEnabled();
   const [activeDocumentType, setActiveDocumentType] = useState(initialDocumentType);
   const [documentDataByType, setDocumentDataByType] = useState({});
   const [loadStateByType, setLoadStateByType] = useState({});
@@ -166,7 +174,12 @@ export default function TermsAndConditionsModal({
 
   const loadDocument = useCallback(async (type, { force = false } = {}) => {
     const document = documentCatalog.find((item) => item.type === type);
-    if (!document?.fetchType) return;
+    const fetchDocument = legalPreviewMode && document?.previewType
+      ? () => fetchLegalPolicyPreview(document.previewType)
+      : document?.fetchType
+        ? () => fetchLegalTerms(document.fetchType)
+        : null;
+    if (!fetchDocument) return;
 
     const existingRequest = inFlightRef.current.get(type);
     if (existingRequest && !force) return existingRequest;
@@ -176,7 +189,7 @@ export default function TermsAndConditionsModal({
 
     updateLoadState(type, 'loading');
     const generation = requestGenerationRef.current;
-    const request = fetchLegalTerms(document.fetchType)
+    const request = fetchDocument()
       .then((data) => {
         if (requestGenerationRef.current !== generation) return;
         setDocumentDataByType((current) => ({ ...current, [type]: data || null }));
@@ -194,7 +207,7 @@ export default function TermsAndConditionsModal({
 
     inFlightRef.current.set(type, request);
     return request;
-  }, [documentCatalog, updateLoadState]);
+  }, [documentCatalog, legalPreviewMode, updateLoadState]);
 
   useEffect(() => {
     requestGenerationRef.current += 1;
@@ -216,7 +229,10 @@ export default function TermsAndConditionsModal({
     || documentCatalog[0]
     || LEGAL_DOCUMENT_TYPES[0];
   const activeData = documentDataByType[activeDocument.type] || null;
-  const activeLoadState = activeDocument.fetchType
+  const activeDocumentCanLoad = legalPreviewMode
+    ? Boolean(activeDocument.previewType)
+    : Boolean(activeDocument.fetchType);
+  const activeLoadState = activeDocumentCanLoad
     ? (loadStateByType[activeDocument.type] || 'idle')
     : 'pending';
   const hasDocumentIndex = showDocumentIndex && documentCatalog.length > 1;
@@ -227,7 +243,7 @@ export default function TermsAndConditionsModal({
   };
 
   const handleAccept = async () => {
-    if (activeDocument.type !== 'terms_of_use') return;
+    if (legalPreviewMode || activeDocument.type !== 'terms_of_use') return;
 
     const storedData = localStorage.getItem('lanzo_license');
     let licenseKey = null;
@@ -290,7 +306,7 @@ export default function TermsAndConditionsModal({
         {hasDocumentIndex && (
           <nav className="terms-document-nav" aria-label="Políticas y avisos">
             {documentCatalog.map((document) => {
-              const status = getDocumentStatusLabel(document, loadStateByType[document.type]);
+              const status = getDocumentStatusLabel(document, loadStateByType[document.type], legalPreviewMode);
               return (
                 <button
                   key={document.type}
@@ -309,7 +325,14 @@ export default function TermsAndConditionsModal({
         )}
 
         <div className="ui-modal__body terms-body" aria-live="polite">
-          {isUpdateNotification && activeDocument.type === 'terms_of_use' && !['idle', 'loading'].includes(activeLoadState) && (
+          {legalPreviewMode && (
+            <div className="terms-draft-preview-banner" role="note">
+              <strong>Vista previa de borradores</strong>
+              <span>Documentos en revisión; no están vigentes ni publicados en producción.</span>
+            </div>
+          )}
+
+          {!legalPreviewMode && isUpdateNotification && activeDocument.type === 'terms_of_use' && !['idle', 'loading'].includes(activeLoadState) && (
             <div className="ui-alert ui-alert--info terms-update-alert">
               Hemos actualizado las condiciones. Al continuar usando el sistema, aceptas la versión vigente.
             </div>
@@ -330,7 +353,7 @@ export default function TermsAndConditionsModal({
             <div className="terms-document-wrapper">
               <div className="terms-dynamic-content" dangerouslySetInnerHTML={{ __html: sanitizeHTML(activeData.content_html) }} />
 
-              {!readOnly && activeDocument.type === 'terms_of_use' && (
+              {!legalPreviewMode && !readOnly && activeDocument.type === 'terms_of_use' && (
                 <p className="terms-legal-footer">
                   <CheckCircle size={14} className="terms-legal-footer__icon" />
                   Al aceptar, aceptas los Términos de uso de esta versión.
@@ -360,7 +383,7 @@ export default function TermsAndConditionsModal({
         </div>
 
         <div className="ui-modal__actions terms-footer">
-          {readOnly ? (
+          {readOnly || legalPreviewMode ? (
             <button type="button" className="ui-button ui-button--secondary ui-button--block btn btn-secondary" onClick={onClose}>
               Cerrar
             </button>

@@ -1407,6 +1407,38 @@ export const fetchLegalTerms = async (type = 'terms_of_use') => {
     }
 };
 
+const LEGAL_POLICY_PREVIEW_TYPES = new Set([
+    'terms_of_use',
+    'privacy_policy',
+    'ai_policy',
+    'payment_policy',
+    'refund_policy',
+    'legal_notice'
+]);
+
+export const isLegalPolicyPreviewEnabled = () => (
+    import.meta.env.VITE_LEGAL_PREVIEW_MODE === 'true'
+);
+
+/** Descarga un borrador legal de la tabla aislada de vista previa. */
+export const fetchLegalPolicyPreview = async (type) => {
+    if (!isLegalPolicyPreviewEnabled() || !LEGAL_POLICY_PREVIEW_TYPES.has(type) || !supabaseClient) {
+        return null;
+    }
+
+    const { data, error } = await supabaseClient
+        .from('legal_policy_previews')
+        .select('id, document_type, version, content_html, published_at')
+        .eq('document_type', type)
+        .eq('is_active', true)
+        .order('published_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+    if (error) throw error;
+    return data || null;
+};
+
 /**
  * Registra que una licencia específica aceptó una versión específica de los términos.
  * @param {string} licenseKey - La licencia que acepta.
