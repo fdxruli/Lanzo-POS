@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, CheckCircle, FileText, Loader2, Shield } from 'lucide-react';
-import { acceptLegalTerms, fetchLegalPolicyPreview, fetchLegalTerms, isLegalPolicyPreviewEnabled } from '../../services/supabase';
+import { acceptLegalTerms, fetchAcceptedLegalDocument, fetchLegalPolicyPreview, fetchLegalPolicyState, fetchLegalTerms, isLegalPolicyPreviewEnabled } from '../../services/supabase';
 import Logger from '../../services/Logger';
 import { showMessageModal } from '../../services/utils';
 import './TermsAndConditionsModal.css';
@@ -21,6 +21,43 @@ const ALLOWED_ATTRS = new Set([
 ]);
 
 const DANGEROUS_URL_PATTERN = /^\s*(javascript|data|vbscript)\s*:/i;
+
+function readStoredLicenseKey() {
+  try {
+    if (typeof localStorage === 'undefined') return null;
+    const stored = localStorage.getItem('lanzo_license');
+    const parsed = stored ? JSON.parse(stored) : null;
+    return parsed?.data?.license_key || parsed?.license_key || null;
+  } catch {
+    return null;
+  }
+}
+
+function escapeHtmlText(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function formatLegalDate(value) {
+  if (!value) return 'Fecha no disponible';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Fecha no disponible';
+  return new Intl.DateTimeFormat('es-MX', { dateStyle: 'medium', timeStyle: 'short' }).format(date);
+}
+
+function makeLegalFilePart(value) {
+  return String(value || 'documento')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '') || 'documento';
+}
 
 function sanitizeHTML(dirtyHTML) {
   if (!dirtyHTML || typeof dirtyHTML !== 'string') return '';
@@ -128,6 +165,7 @@ export const LEGAL_DOCUMENT_TYPES = Object.freeze([
 ]);
 
 const TERMS_ONLY = Object.freeze([LEGAL_DOCUMENT_TYPES[0]]);
+const ACCEPTED_HISTORY_TAB = '__accepted_history__';
 
 function getDocumentStatusLabel(document, status, legalPreviewMode) {
   const canLoad = legalPreviewMode ? Boolean(document?.previewType) : Boolean(document?.fetchType);
@@ -145,10 +183,15 @@ export default function TermsAndConditionsModal({
   isUpdateNotification = false,
   showDocumentIndex = false,
   documentTypes = TERMS_ONLY,
-  initialDocumentType = 'terms_of_use'
+  initialDocumentType = 'terms_of_use',
+  updateDocuments = [],
+  updateCheckStatus = 'idle',
+  legalPolicyState = null
 }) {
   const documentCatalog = useMemo(() => {
-    const source = Array.isArray(documentTypes) ? documentTypes : TERMS_ONLY;
+    const source = isUpdateNotification
+      ? LEGAL_DOCUMENT_TYPES
+      : (Array.isArray(documentTypes) ? documentTypes : TERMS_ONLY);
     return source
       .map((item) => (
         typeof item === 'string'
@@ -156,13 +199,15 @@ export default function TermsAndConditionsModal({
           : item
       ))
       .filter(Boolean);
-  }, [documentTypes]);
+  }, [documentTypes, isUpdateNotification]);
 
   const legalPreviewMode = isLegalPolicyPreviewEnabled();
   const [activeDocumentType, setActiveDocumentType] = useState(initialDocumentType);
   const [documentDataByType, setDocumentDataByType] = useState({});
   const [loadStateByType, setLoadStateByType] = useState({});
   const [accepting, setAccepting] = useState(false);
+  const [downloadingTermId, setDownloadingTermId] = useState(null);
+  const [internalLegalPolicyState, setInternalLegalPolicyState] = useState(null);
   const loadStateRef = useRef({});
   const inFlightRef = useRef(new Map());
   const requestGenerationRef = useRef(0);
@@ -225,6 +270,59 @@ export default function TermsAndConditionsModal({
     void loadDocument(initialDocument.type, { force: true });
   }, [isOpen, initialDocumentType, documentCatalog, loadDocument]);
 
+  useEffect(() => {
+    if (!isOpen || legalPreviewMode || legalPolicyState) return undefined;
+
+    const licenseKey = readStoredLicenseKey();
+    if (!licenseKey) {
+      setInternalLegalPolicyState({ status: 'unavailable', accepted_documents: [] });
+      return undefined;
+    }
+
+    let cancelled = false;
+    setInternalLegalPolicyState({
+      status: 'loading',
+      licenseKey,
+      accepted_documents: []
+    });
+
+    fetchLegalPolicyState(licenseKey)
+      .then((result) => {
+        if (cancelled) return;
+        setInternalLegalPolicyState(result?.success
+          ? { ...result, status: 'ready', licenseKey }
+          : { status: 'error', licenseKey, accepted_documents: [] });
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        Logger.error('Error cargando historial de documentos legales:', error);
+        setInternalLegalPolicyState({ status: 'error', licenseKey, accepted_documents: [] });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, legalPreviewMode, legalPolicyState]);
+
+  const currentLegalPolicyState = legalPolicyState || internalLegalPolicyState;
+  const acceptanceHistory = Array.isArray(currentLegalPolicyState?.accepted_documents)
+    ? currentLegalPolicyState.accepted_documents
+    : [];
+  const acceptanceHistoryStatus = currentLegalPolicyState?.status
+    || (currentLegalPolicyState?.success ? 'ready' : 'loading');
+  const historyTabStatus = acceptanceHistoryStatus === 'loading'
+    ? 'Cargando...'
+    : acceptanceHistoryStatus === 'error' || acceptanceHistoryStatus === 'unavailable'
+      ? 'No disponible'
+      : acceptanceHistory.length === 0
+        ? 'Sin documentos'
+        : `${acceptanceHistory.length} documento${acceptanceHistory.length === 1 ? '' : 's'}`;
+  const pendingUpdateDocuments = Array.isArray(updateDocuments) && updateDocuments.length > 0
+    ? updateDocuments
+    : (Array.isArray(currentLegalPolicyState?.pending_documents)
+      ? currentLegalPolicyState.pending_documents
+      : []);
+
   const activeDocument = documentCatalog.find((item) => item.type === activeDocumentType)
     || documentCatalog[0]
     || LEGAL_DOCUMENT_TYPES[0];
@@ -236,43 +334,115 @@ export default function TermsAndConditionsModal({
     ? (loadStateByType[activeDocument.type] || 'idle')
     : 'pending';
   const hasDocumentIndex = showDocumentIndex && documentCatalog.length > 1;
+  const hasAcceptanceHistoryTab = hasDocumentIndex && !legalPreviewMode;
+  const isHistoryTabActive = hasAcceptanceHistoryTab && activeDocumentType === ACCEPTED_HISTORY_TAB;
 
   const handleSelectDocument = (type) => {
     setActiveDocumentType(type);
-    void loadDocument(type);
+    if (type !== ACCEPTED_HISTORY_TAB) void loadDocument(type);
   };
 
   const handleAccept = async () => {
-    if (legalPreviewMode || activeDocument.type !== 'terms_of_use') return;
+    if (legalPreviewMode) return;
 
-    const storedData = localStorage.getItem('lanzo_license');
-    let licenseKey = null;
-
-    if (storedData) {
-      try {
-        const parsed = JSON.parse(storedData);
-        licenseKey = parsed?.data?.license_key;
-      } catch (err) {
-        Logger.warn('No se pudo leer la licencia almacenada para aceptar términos.', err);
-      }
-    }
-
+    const licenseKey = readStoredLicenseKey();
     const termsData = documentDataByType.terms_of_use;
-    if (!licenseKey || !termsData?.id) {
-      onClose();
+    const documentsToAccept = isUpdateNotification
+      ? (pendingUpdateDocuments.length > 0
+        ? pendingUpdateDocuments
+        : (termsData?.id ? [termsData] : []))
+      : (termsData?.id ? [termsData] : []);
+
+    if (!licenseKey || documentsToAccept.length === 0) {
+      showMessageModal('No se pudieron verificar los documentos y la licencia para registrar la aceptación.', null, { type: 'error' });
       return;
     }
 
     setAccepting(true);
-    const result = await acceptLegalTerms(licenseKey, termsData.id);
-    setAccepting(false);
-
-    if (result.success || result.message === 'ALREADY_ACCEPTED') {
+    try {
+      for (const legalDocument of documentsToAccept) {
+        if (!legalDocument?.id) continue;
+        const result = await acceptLegalTerms(licenseKey, legalDocument.id);
+        if (!result?.success && result?.message !== 'ALREADY_ACCEPTED') {
+          showMessageModal('No se pudo registrar la aceptación de todos los documentos. Revisa tu conexión e inténtalo de nuevo.', null, { type: 'error' });
+          return;
+        }
+      }
       onClose();
-    } else {
-      showMessageModal('Hubo un error registrando tu aceptación.', null, { type: 'error' });
+    } catch (error) {
+      Logger.error('Error registrando aceptación de documentos legales:', error);
+      showMessageModal('No se pudo registrar la aceptación de todos los documentos. Revisa tu conexión e inténtalo de nuevo.', null, { type: 'error' });
+    } finally {
+      setAccepting(false);
     }
   };
+
+  const handleDownloadAcceptedDocument = async (acceptance) => {
+    const licenseKey = readStoredLicenseKey();
+    const termId = acceptance?.term_id || acceptance?.id;
+    if (!licenseKey || !termId) {
+      showMessageModal('No se pudo verificar el documento aceptado para descargarlo.', null, { type: 'error' });
+      return;
+    }
+
+    setDownloadingTermId(termId);
+    try {
+      const response = await fetchAcceptedLegalDocument(licenseKey, termId);
+      const acceptedDocument = response?.success ? response.document : null;
+      if (!acceptedDocument?.content_html) {
+        throw new Error(response?.code || 'LEGAL_DOCUMENT_NOT_AVAILABLE');
+      }
+
+      const type = acceptedDocument.type || acceptance.term_type || acceptance.type;
+      const documentMeta = LEGAL_DOCUMENT_TYPES.find((item) => item.type === type);
+      const label = documentMeta?.label || 'Documento legal de Lanzo POS';
+      const version = acceptedDocument.version || acceptance.term_version || acceptance.version || 'sin-version';
+      const publishedAt = acceptedDocument.published_at || acceptance.term_published_at || acceptance.published_at;
+      const fileHtml = `<!doctype html>
+<html lang="es-MX">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escapeHtmlText(label)} — Lanzo POS — ${escapeHtmlText(version)}</title>
+</head>
+<body>
+<header>
+<h1>${escapeHtmlText(label)}</h1>
+<p>Lanzo POS · Versión ${escapeHtmlText(version)}</p>
+<p>Publicada: ${escapeHtmlText(formatLegalDate(publishedAt))}</p>
+</header>
+<main>${sanitizeHTML(acceptedDocument.content_html)}</main>
+</body>
+</html>`;
+
+      const file = new Blob([fileHtml], { type: 'text/html;charset=utf-8' });
+      const downloadUrl = URL.createObjectURL(file);
+      const anchor = window.document.createElement('a');
+      anchor.href = downloadUrl;
+      anchor.download = `lanzo-${makeLegalFilePart(label)}-v${makeLegalFilePart(version)}.html`;
+      anchor.style.display = 'none';
+      window.document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 0);
+    } catch (error) {
+      Logger.error('Error descargando documento legal aceptado:', error);
+      showMessageModal('No se pudo descargar el documento. Inténtalo de nuevo.', null, { type: 'error' });
+    } finally {
+      setDownloadingTermId(null);
+    }
+  };
+
+  const updateDocumentsToDisplay = pendingUpdateDocuments.length > 0
+    ? pendingUpdateDocuments
+    : (documentDataByType.terms_of_use?.id ? [documentDataByType.terms_of_use] : []);
+  const effectiveUpdateCheckStatus = updateCheckStatus === 'idle'
+    ? (currentLegalPolicyState?.status || 'idle')
+    : updateCheckStatus;
+  const canAcceptUpdate = effectiveUpdateCheckStatus !== 'loading'
+    && activeLoadState === 'loaded'
+    && (pendingUpdateDocuments.length > 0 || Boolean(documentDataByType.terms_of_use?.id));
+
 
   if (!isOpen) return null;
 
@@ -295,16 +465,20 @@ export default function TermsAndConditionsModal({
             <div>
               <span className="terms-kicker">Legal</span>
               <h3 id="terms-modal-title">
-                {isUpdateNotification ? 'Actualización de condiciones' : activeDocument.label}
+                {isHistoryTabActive
+                  ? 'Historial de documentos aceptados'
+                  : isUpdateNotification
+                    ? 'Actualización de documentos legales'
+                    : activeDocument.label}
               </h3>
             </div>
           </div>
 
-          {activeData && <span className="terms-version-badge">Versión {activeData.version}</span>}
+          {!isHistoryTabActive && activeData && <span className="terms-version-badge">Versión {activeData.version}</span>}
         </div>
 
         {hasDocumentIndex && (
-          <nav className="terms-document-nav" aria-label="Políticas y avisos">
+          <nav className="terms-document-nav" aria-label="Políticas, avisos e historial de aceptaciones">
             {documentCatalog.map((document) => {
               const status = getDocumentStatusLabel(document, loadStateByType[document.type], legalPreviewMode);
               return (
@@ -312,7 +486,7 @@ export default function TermsAndConditionsModal({
                   key={document.type}
                   type="button"
                   className="terms-document-option"
-                  aria-current={document.type === activeDocument.type ? 'page' : undefined}
+                  aria-current={!isHistoryTabActive && document.type === activeDocument.type ? 'page' : undefined}
                   aria-label={status ? document.label + ', ' + status : document.label}
                   onClick={() => handleSelectDocument(document.type)}
                 >
@@ -321,6 +495,19 @@ export default function TermsAndConditionsModal({
                 </button>
               );
             })}
+
+            {hasAcceptanceHistoryTab && (
+              <button
+                type="button"
+                className="terms-document-option terms-document-option--history"
+                aria-current={isHistoryTabActive ? 'page' : undefined}
+                aria-label="Historial de documentos aceptados"
+                onClick={() => handleSelectDocument(ACCEPTED_HISTORY_TAB)}
+              >
+                <span className="terms-document-option__label">Historial de aceptaciones</span>
+                <span className="terms-document-option__status">{historyTabStatus}</span>
+              </button>
+            )}
           </nav>
         )}
 
@@ -332,13 +519,80 @@ export default function TermsAndConditionsModal({
             </div>
           )}
 
-          {!legalPreviewMode && isUpdateNotification && activeDocument.type === 'terms_of_use' && !['idle', 'loading'].includes(activeLoadState) && (
-            <div className="ui-alert ui-alert--info terms-update-alert">
-              Hemos actualizado las condiciones. Al continuar usando el sistema, aceptas la versión vigente.
+          {!legalPreviewMode && isUpdateNotification && (
+            <div className="ui-alert ui-alert--info terms-update-alert" role="status">
+              {effectiveUpdateCheckStatus === 'loading' ? (
+                <span>Verificando qué documentos necesitan tu aceptación...</span>
+              ) : (
+                <>
+                  <strong>Se actualizaron o publicaron estos documentos:</strong>
+                  {updateDocumentsToDisplay.length > 0 ? (
+                    <ul className="terms-update-document-list">
+                      {updateDocumentsToDisplay.map((legalDocument) => {
+                        const documentMeta = LEGAL_DOCUMENT_TYPES.find((item) => item.type === (legalDocument.type || legalDocument.term_type));
+                        return (
+                          <li key={legalDocument.id || legalDocument.type}>
+                            {documentMeta?.label || 'Documento legal'}{legalDocument.version ? ` · versión ${legalDocument.version}` : ''}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  ) : (
+                    <span>Revisa los documentos vigentes antes de continuar.</span>
+                  )}
+                </>
+              )}
             </div>
           )}
 
-          {activeLoadState === 'idle' || activeLoadState === 'loading' ? (
+          {isHistoryTabActive ? (
+            <section className="terms-accepted-history" aria-labelledby="terms-accepted-history-title">
+              <div className="terms-accepted-history__heading">
+                <h4 id="terms-accepted-history-title">Historial de documentos aceptados</h4>
+                <p>Conserva la versión y la fecha de cada aceptación registrada para esta licencia.</p>
+              </div>
+
+              {acceptanceHistoryStatus === 'loading' ? (
+                <p className="terms-accepted-history__state" role="status">Cargando historial...</p>
+              ) : acceptanceHistoryStatus === 'error' || acceptanceHistoryStatus === 'unavailable' ? (
+                <p className="terms-accepted-history__state" role="alert">
+                  No se pudo cargar el historial. Revisa tu conexión y vuelve a abrir esta sección.
+                </p>
+              ) : acceptanceHistory.length === 0 ? (
+                <p className="terms-accepted-history__state">Aún no hay documentos aceptados registrados.</p>
+              ) : (
+                <ul className="terms-accepted-history__list">
+                  {acceptanceHistory.map((acceptance) => {
+                    const type = acceptance.term_type || acceptance.type;
+                    const documentMeta = LEGAL_DOCUMENT_TYPES.find((item) => item.type === type);
+                    const documentLabel = documentMeta?.label || 'Documento legal';
+                    const termId = acceptance.term_id || acceptance.id;
+                    const termVersion = acceptance.term_version || acceptance.version || 'Versión no disponible';
+                    return (
+                      <li className="terms-accepted-history__item" key={termId}>
+                        <div className="terms-accepted-history__details">
+                          <strong>{documentLabel}</strong>
+                          <span>Versión {termVersion}</span>
+                          <time dateTime={acceptance.accepted_at || ''}>
+                            Aceptado: {formatLegalDate(acceptance.accepted_at)}
+                          </time>
+                        </div>
+                        <button
+                          type="button"
+                          className="ui-button ui-button--secondary terms-history-download"
+                          aria-label={`Descargar ${documentLabel} versión ${termVersion}`}
+                          onClick={() => void handleDownloadAcceptedDocument(acceptance)}
+                          disabled={!termId || downloadingTermId === termId}
+                        >
+                          {downloadingTermId === termId ? 'Preparando...' : 'Descargar'}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </section>
+          ) : activeLoadState === 'idle' || activeLoadState === 'loading' ? (
             <div className="terms-loading-state" role="status">
               <Loader2 size={42} className="animate-spin text-primary" />
               <p>Cargando {activeDocument.label.toLowerCase()}...</p>
@@ -387,7 +641,16 @@ export default function TermsAndConditionsModal({
             <button type="button" className="ui-button ui-button--secondary ui-button--block btn btn-secondary" onClick={onClose}>
               Cerrar
             </button>
-          ) : activeDocument.type !== 'terms_of_use' ? (
+          ) : isUpdateNotification ? (
+            <button
+              type="button"
+              className="ui-button ui-button--primary ui-button--block btn btn-primary"
+              onClick={handleAccept}
+              disabled={!canAcceptUpdate || accepting}
+            >
+              {accepting ? 'Registrando aceptación...' : 'Aceptar documentos actualizados y continuar'}
+            </button>
+          ) : isHistoryTabActive || activeDocument.type !== 'terms_of_use' ? (
             <>
               <button type="button" className="ui-button ui-button--ghost btn btn-secondary" onClick={onClose} disabled={accepting}>
                 Cancelar
@@ -401,15 +664,6 @@ export default function TermsAndConditionsModal({
                 Volver a términos de uso
               </button>
             </>
-          ) : isUpdateNotification ? (
-            <button
-              type="button"
-              className="ui-button ui-button--primary ui-button--block btn btn-primary"
-              onClick={handleAccept}
-              disabled={activeLoadState !== 'loaded' || !activeData?.id || accepting}
-            >
-              {accepting ? 'Guardando...' : 'Entendido, continuar'}
-            </button>
           ) : (
             <>
               <button type="button" className="ui-button ui-button--ghost btn btn-secondary" onClick={onClose} disabled={accepting}>

@@ -1407,6 +1407,58 @@ export const fetchLegalTerms = async (type = 'terms_of_use') => {
     }
 };
 
+/** Avoids an error-level console message while a database rollout is missing the legal RPC. */
+const logLegalRpcError = (context, error) => {
+    if (error?.code === 'PGRST202') {
+        Logger.warn(context, { code: error.code, message: error.message });
+        return;
+    }
+    Logger.error(context, error);
+};
+
+/** Consulta versiones legales pendientes e historial de aceptación de la licencia activa. */
+export const fetchLegalPolicyState = async (licenseKey) => {
+    try {
+        if (!supabaseClient || !licenseKey) {
+            return { success: false, code: 'LEGAL_POLICY_STATE_UNAVAILABLE' };
+        }
+
+        const deviceFingerprint = await getStableDeviceId();
+        const { data, error } = await supabaseClient.rpc('get_legal_policy_state', {
+            p_license_key: licenseKey,
+            p_device_fingerprint: deviceFingerprint
+        });
+
+        if (error) throw error;
+        return data || { success: false, code: 'LEGAL_POLICY_STATE_EMPTY' };
+    } catch (error) {
+        logLegalRpcError('Error consultando el estado de documentos legales:', error);
+        return { success: false, code: error?.code || error?.message || 'LEGAL_POLICY_STATE_FAILED' };
+    }
+};
+
+/** Recupera el contenido inmutable de una versión que esta licencia ya aceptó. */
+export const fetchAcceptedLegalDocument = async (licenseKey, termId) => {
+    try {
+        if (!supabaseClient || !licenseKey || !termId) {
+            return { success: false, code: 'LEGAL_DOCUMENT_UNAVAILABLE' };
+        }
+
+        const deviceFingerprint = await getStableDeviceId();
+        const { data, error } = await supabaseClient.rpc('get_accepted_legal_document', {
+            p_license_key: licenseKey,
+            p_device_fingerprint: deviceFingerprint,
+            p_term_id: termId
+        });
+
+        if (error) throw error;
+        return data || { success: false, code: 'LEGAL_DOCUMENT_EMPTY' };
+    } catch (error) {
+        logLegalRpcError('Error descargando un documento legal aceptado:', error);
+        return { success: false, code: error?.code || error?.message || 'LEGAL_DOCUMENT_DOWNLOAD_FAILED' };
+    }
+};
+
 const LEGAL_POLICY_PREVIEW_TYPES = new Set([
     'terms_of_use',
     'privacy_policy',
