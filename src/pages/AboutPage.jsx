@@ -1,19 +1,27 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   ArrowRight,
   Bug,
   Check,
   CheckCircle2,
-  Cloud,
   Coffee,
+  Globe2,
   Lightbulb,
   Mail,
   MessageCircle,
+  Settings,
   Sparkles,
   Store,
+  TrendingUp,
   Users,
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
+import { useActorRuntimeSnapshot } from '../services/auth/useActorRuntimeSnapshot';
+import { useSettingsAccess } from '../services/auth/useSettingsAccess';
+import { canReadSalesReports } from '../services/auth/salesPermissionPolicy';
+import { getCommercialAIAgentAccessState } from '../services/auth/aiAgentAuthorization';
+import { evaluateEcommercePortalAccess } from './settingsPageAccess';
 import ContactModal from '../components/common/ContactModal';
 import Logo from '../components/common/Logo';
 import { APP_BUILD_DATE_LABEL, APP_VERSION, APP_VERSION_LABEL } from '../config/appVersion';
@@ -117,12 +125,60 @@ const buildContactDescription = (type, formData) => {
 export default function AboutPage() {
   const licenseDetails = useAppStore(state => state.licenseDetails);
   const companyProfile = useAppStore(state => state.companyProfile);
+  const canAccess = useAppStore(state => state.canAccess);
+  const currentDeviceRole = useAppStore(state => state.currentDeviceRole);
+  const actorRuntime = useActorRuntimeSnapshot();
+  const settingsAccess = useSettingsAccess();
+  const canReadReports = canReadSalesReports(actorRuntime);
+  const commercialAIAgentAccess = getCommercialAIAgentAccessState({
+    licenseDetails,
+    actorSnapshot: actorRuntime
+  });
+  const canManageEcommercePortal = evaluateEcommercePortalAccess({
+    canAccess,
+    currentDeviceRole,
+    licenseDetails
+  });
   const [selectedWorkflow, setSelectedWorkflow] = useState('');
   const [contactModal, setContactModal] = useState(EMPTY_CONTACT_MODAL);
 
   const isCloudPlan = isCloudPosSyncEnabled(licenseDetails);
   const currentPlanName = isCloudPlan ? 'Lanzo Nube' : 'Lanzo Local';
   const currentDeviceLimit = getDeviceLimitFromLicense(licenseDetails, isCloudPlan);
+  const proTools = [
+    {
+      id: 'ai',
+      to: '/agentes-ia',
+      title: 'Agentes IA',
+      description: 'Ventas, rentabilidad y estrategia comercial.',
+      icon: Sparkles,
+      available: commercialAIAgentAccess.canEnter
+    },
+    {
+      id: 'reports',
+      to: '/ventas',
+      title: 'Reportes',
+      description: 'Consulta resultados y comportamiento de ventas.',
+      icon: TrendingUp,
+      available: canReadReports
+    },
+    {
+      id: 'online-store',
+      to: '/portal-online',
+      title: 'Portal online',
+      description: 'Configura tu tienda, catálogo y horarios.',
+      icon: Globe2,
+      available: canManageEcommercePortal
+    },
+    {
+      id: 'settings',
+      to: '/configuracion',
+      title: 'Configuración',
+      description: 'Gestiona preferencias y datos del negocio.',
+      icon: Settings,
+      available: settingsAccess.canEnterSettings
+    }
+  ].filter(tool => tool.available);
 
   const closeContactModal = () => setContactModal(EMPTY_CONTACT_MODAL);
 
@@ -222,10 +278,12 @@ export default function AboutPage() {
     <main className="about-redesign" aria-labelledby="about-title">
       <header className="about-redesign__header">
         <div>
-          <p className="about-redesign__eyebrow">LANZO POS</p>
+          <p className="about-redesign__eyebrow">{isCloudPlan ? 'LANZO NUBE ACTIVO' : 'LANZO POS'}</p>
           <h1 id="about-title">Acerca de</h1>
           <p className="about-redesign__intro">
-            Conoce tu plan actual y descubre todo lo que puedes hacer con Lanzo.
+            {isCloudPlan
+              ? 'Tu plan Nube está activo. Accede a las herramientas disponibles para tu negocio.'
+              : 'Conoce tu plan actual y descubre todo lo que puedes hacer con Lanzo.'}
           </p>
         </div>
         <div className="about-redesign__brand">
@@ -252,6 +310,43 @@ export default function AboutPage() {
         </span>
       </section>
 
+      {isCloudPlan ? (
+        <section className="about-redesign__pro-tools" aria-labelledby="about-pro-tools-title">
+          <header className="about-redesign__pro-heading">
+            <div>
+              <p className="about-redesign__eyebrow">TU PLAN EN ACCIÓN</p>
+              <h2 id="about-pro-tools-title">Atajos de Lanzo Nube</h2>
+              <p>Abre las herramientas disponibles para tu rol sin volver a comparar planes.</p>
+            </div>
+            <span className="about-redesign__pro-badge">
+              <CheckCircle2 size={15} aria-hidden="true" />
+              Nube activa
+            </span>
+          </header>
+
+          {proTools.length > 0 ? (
+            <nav className="about-redesign__pro-grid" aria-label="Herramientas de Lanzo Nube">
+              {proTools.map(({ id, to, title, description, icon: Icon }) => (
+                <Link className="about-redesign__pro-link" to={to} key={id}>
+                  <span className="about-redesign__pro-icon" aria-hidden="true">
+                    <Icon size={21} />
+                  </span>
+                  <span className="about-redesign__pro-copy">
+                    <strong>{title}</strong>
+                    <span>{description}</span>
+                  </span>
+                  <ArrowRight size={17} aria-hidden="true" />
+                </Link>
+              ))}
+            </nav>
+          ) : (
+            <p className="about-redesign__pro-empty">
+              Los accesos dependen de los permisos de tu usuario. Si esperabas ver una herramienta, pide al administrador del negocio que revise tus permisos.
+            </p>
+          )}
+        </section>
+      ) : (
+        <>
       <section className="about-redesign__chooser" aria-labelledby="about-workflow-title">
         <div className="about-redesign__section-heading">
           <div>
@@ -362,6 +457,9 @@ export default function AboutPage() {
           </div>
         </article>
       </section>
+
+        </>
+      )}
 
       <section className="about-redesign__lower" aria-label="Historia y ayuda">
         <article className="about-redesign__story">
