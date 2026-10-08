@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useEffect } from 'react';
 
@@ -12,6 +13,12 @@ const state = vi.hoisted(() => ({
   staffSettingsUnmount: vi.fn()
 }));
 
+const staffService = vi.hoisted(() => ({
+  create: vi.fn(),
+  list: vi.fn(),
+  update: vi.fn()
+}));
+
 vi.mock('../../../services/auth/useSettingsAccess', () => ({
   useSettingsAccess: () => state.access,
   useSettingsActionGuard: () => () => ({ assertCurrent: vi.fn() })
@@ -19,6 +26,12 @@ vi.mock('../../../services/auth/useSettingsAccess', () => ({
 
 vi.mock('../../../store/useAppStore', () => ({
   useAppStore: vi.fn((selector) => selector(state.app))
+}));
+
+vi.mock('../../../services/licenseService', () => ({
+  createStaffUserService: staffService.create,
+  listStaffUsersService: staffService.list,
+  updateStaffUserService: staffService.update
 }));
 
 vi.mock('../StaffUsersSettings', () => {
@@ -46,6 +59,9 @@ describe('LicenseSettings sibling isolation', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    staffService.create.mockReset();
+    staffService.list.mockReset();
+    staffService.update.mockReset();
     state.app = {
       companyProfile: { business_type: ['food_service'] },
       updateCompanyProfile: vi.fn(),
@@ -133,6 +149,191 @@ describe('LicenseSettings sibling isolation', () => {
     render(<LicenseSettings />);
 
     expect(screen.queryByRole('tab', { name: 'Equipo' })).not.toBeInTheDocument();
+  });
+
+  const localLicense = () => ({
+    valid: true,
+    is_entitled: true,
+    status: 'active',
+    license_key: 'LIC-LOCAL',
+    plan_code: 'free_trial',
+    features: {
+      max_rubros: 1,
+      allowed_rubros: ['*'],
+      staff_roles: false,
+      realtime_license_sync: false,
+      cloud_pos_sync: false,
+      notification_center: false,
+      cloud_notifications: false,
+      support_center: false,
+      support_tickets: false,
+      support_ticket_history: false
+    }
+  });
+
+  const localAdminAccess = () => ({
+    isAuthorizedActor: true,
+    isAdmin: true,
+    isStaff: false,
+    actorType: 'admin',
+    actorId: 'admin-a',
+    actorKey: 'admin:admin-a',
+    generation: 1,
+    canAccessSection: (section) => section === 'license',
+    canAccessPermission: () => true
+  });
+
+  const renderInApp = () => render(
+    <MemoryRouter initialEntries={['/configuracion?tab=license']}>
+      <LicenseSettings />
+    </MemoryRouter>
+  );
+
+  it('shows Local Admin the Equipo PRO presentation without mounting or requesting Staff data', () => {
+    state.app.currentStaffUser = null;
+    state.app.licenseDetails = localLicense();
+    state.access = localAdminAccess();
+
+    renderInApp();
+
+    const teamTab = screen.getByRole('tab', { name: 'Equipo PRO' });
+    expect(teamTab).toBeInTheDocument();
+    fireEvent.click(teamTab);
+
+    expect(screen.getByRole('heading', { name: 'Organiza a tu equipo con Lanzo Nube' })).toBeInTheDocument();
+    expect(screen.getByText(/Crea y administra usuarios Staff/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Conocer Lanzo Nube/ })).toHaveAttribute('href', '/acerca-de');
+    expect(state.staffSettingsRender).not.toHaveBeenCalled();
+    expect(state.staffSettingsMount).not.toHaveBeenCalled();
+    expect(staffService.list).not.toHaveBeenCalled();
+    expect(staffService.create).not.toHaveBeenCalled();
+    expect(staffService.update).not.toHaveBeenCalled();
+  });
+
+  it('presents notification and support discovery without opening their Cloud centers', () => {
+    state.app.currentStaffUser = null;
+    state.app.licenseDetails = localLicense();
+    state.access = localAdminAccess();
+
+    renderInApp();
+    fireEvent.click(screen.getByRole('tab', { name: 'Capacidades Nube' }));
+
+    expect(screen.getByRole('heading', { name: 'Centraliza los avisos importantes de tu negocio' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Da seguimiento a tus solicitudes desde Lanzo' })).toBeInTheDocument();
+    expect(screen.getByText(/Los tiempos de atención dependen de la disponibilidad/)).toBeInTheDocument();
+    expect(screen.queryByRole('dialog', { name: /Centro de Notificaciones/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Abrir centro de notificaciones/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Conocer Lanzo Nube/ })).toHaveAttribute('href', '/acerca-de');
+  });
+
+  it('keeps the functional Team tab for an entitled PRO Admin without a redundant showcase', () => {
+    state.app.currentStaffUser = null;
+    state.app.licenseDetails = {
+      ...localLicense(),
+      plan_code: 'pro_monthly',
+      features: {
+        ...localLicense().features,
+        staff_roles: true,
+        realtime_license_sync: true,
+        cloud_pos_sync: true,
+        notification_center: true,
+        cloud_notifications: true,
+        support_center: true,
+        support_tickets: true,
+        support_ticket_history: true
+      }
+    };
+    state.access = localAdminAccess();
+
+    renderInApp();
+
+    expect(screen.getByRole('tab', { name: 'Equipo' })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Equipo PRO' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Capacidades Nube' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('tab', { name: 'Equipo' }));
+    expect(screen.getByText('Administracion de Staff')).toBeInTheDocument();
+    expect(state.staffSettingsMount).toHaveBeenCalledWith('LIC-LOCAL');
+  });
+
+  it('does not show discovery to Staff, invalid or non-active Local licenses', () => {
+    state.app.currentStaffUser = { id: 'staff-a', username: 'staff-a' };
+    state.app.licenseDetails = localLicense();
+    state.access = {
+      ...localAdminAccess(),
+      isAdmin: false,
+      isStaff: true,
+      actorType: 'staff',
+      currentStaffUser: state.app.currentStaffUser
+    };
+    const staffView = renderInApp();
+    expect(screen.queryByRole('tab', { name: 'Equipo PRO' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Capacidades Nube' })).not.toBeInTheDocument();
+    staffView.unmount();
+
+    state.app.currentStaffUser = null;
+    state.access = localAdminAccess();
+    state.app.licenseDetails = { ...localLicense(), valid: false };
+    const invalidView = renderInApp();
+    expect(screen.queryByRole('tab', { name: 'Equipo PRO' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Capacidades Nube' })).not.toBeInTheDocument();
+    invalidView.unmount();
+
+    state.app.licenseDetails = {
+      ...localLicense(),
+      status: 'grace_period',
+      expires_at: '2025-01-01T00:00:00.000Z',
+      grace_period_ends: '2027-01-01T00:00:00.000Z'
+    };
+    renderInApp();
+    expect(screen.queryByRole('tab', { name: 'Equipo PRO' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Capacidades Nube' })).not.toBeInTheDocument();
+    expect(state.staffSettingsRender).not.toHaveBeenCalled();
+  });
+
+  it('switches between discovery and real Team access when entitlement changes', () => {
+    state.app.currentStaffUser = null;
+    state.app.licenseDetails = localLicense();
+    state.access = localAdminAccess();
+
+    const view = renderInApp();
+    fireEvent.click(screen.getByRole('tab', { name: 'Equipo PRO' }));
+    expect(screen.getByRole('heading', { name: 'Organiza a tu equipo con Lanzo Nube' })).toBeInTheDocument();
+    expect(state.staffSettingsMount).not.toHaveBeenCalled();
+
+    state.app.licenseDetails = {
+      ...localLicense(),
+      plan_code: 'pro_monthly',
+      features: {
+        ...localLicense().features,
+        staff_roles: true,
+        realtime_license_sync: true,
+        cloud_pos_sync: true
+      }
+    };
+    view.rerender(
+      <MemoryRouter initialEntries={['/configuracion?tab=license']}>
+        <LicenseSettings />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByRole('tab', { name: 'Equipo' })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Equipo PRO' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Capacidades Nube' })).not.toBeInTheDocument();
+    expect(screen.getByText('Administracion de Staff')).toBeInTheDocument();
+
+    state.app.licenseDetails = localLicense();
+    view.rerender(
+      <MemoryRouter initialEntries={['/configuracion?tab=license']}>
+        <LicenseSettings />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByRole('tab', { name: 'Equipo PRO' })).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Capacidades Nube' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Organiza a tu equipo con Lanzo Nube' })).toBeInTheDocument();
+    expect(screen.queryByText('Administracion de Staff')).not.toBeInTheDocument();
+    expect(staffService.create).not.toHaveBeenCalled();
+    expect(staffService.update).not.toHaveBeenCalled();
   });
 
   it('falls back to Summary immediately when the active Staff section loses authority', () => {

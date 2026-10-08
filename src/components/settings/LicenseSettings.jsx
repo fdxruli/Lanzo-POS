@@ -25,6 +25,11 @@ import {
 } from '../../utils/licenseStatusPresentation';
 import NoPermission from '../common/NoPermission';
 import {
+    CloudCapabilitiesShowcase,
+    TeamProShowcase
+} from './LanzoNubeCapabilitiesShowcase';
+import { getLocalPlanDiscoveryCapabilities } from './localPlanDiscovery';
+import {
     useSettingsAccess,
     useSettingsActionGuard
 } from '../../services/auth/useSettingsAccess';
@@ -474,6 +479,13 @@ export default function LicenseSettings() {
     const { isFreePlan, isFreeLifetime } = getFreeState(licenseDetails);
     const showFreeCompatibilityUpdate = gracePeriodState.inGracePeriod && isFreePlan && !isFreeLifetime;
     const commercialPlanName = getCommercialPlanName(licenseDetails);
+    const localDiscovery = getLocalPlanDiscoveryCapabilities(
+        licenseDetails,
+        settingsAccess,
+        'license'
+    );
+    const canDiscoverLocalTeam = localDiscovery?.team === true;
+    const canDiscoverCloudCapabilities = localDiscovery?.hasCloudCapabilities === true;
 
     const selectedRubros = useMemo(() => normalizeRubros(companyProfile?.business_type), [companyProfile]);
     const selectedRubrosSet = useMemo(() => new Set(selectedRubros), [selectedRubros]);
@@ -508,10 +520,17 @@ export default function LicenseSettings() {
         const sections = [{ key: 'summary', label: 'Resumen' }];
 
         if (canEditBusinessProfile) sections.push({ key: 'rubros', label: 'Rubros' });
-        if (canManageStaff && licenseDetails?.valid) sections.push({ key: 'staff', label: 'Equipo' });
+        if (canManageStaff && licenseDetails?.valid) {
+            sections.push({ key: 'staff', label: 'Equipo' });
+        } else if (canDiscoverLocalTeam) {
+            sections.push({ key: 'staff', label: 'Equipo', badge: 'PRO' });
+        }
+        if (canDiscoverCloudCapabilities) {
+            sections.push({ key: 'cloud-capabilities', label: 'Capacidades Nube' });
+        }
 
         return sections;
-    }, [canEditBusinessProfile, canManageStaff, licenseDetails?.valid]);
+    }, [canDiscoverCloudCapabilities, canDiscoverLocalTeam, canEditBusinessProfile, canManageStaff, licenseDetails?.valid]);
     const [activeSection, setActiveSection] = useState('summary');
     const activeSectionIsValid = internalSections.some(({ key }) => key === activeSection);
     const effectiveActiveSection = activeSectionIsValid
@@ -685,7 +704,7 @@ export default function LicenseSettings() {
             />
 
             <nav className="license-section-tabs" role="tablist" aria-label="Secciones de licencia">
-                {internalSections.map(({ key, label }) => {
+                {internalSections.map(({ key, label, badge }) => {
                     const isActive = effectiveActiveSection === key;
                     return (
                         <button
@@ -696,9 +715,11 @@ export default function LicenseSettings() {
                             role="tab"
                             aria-selected={isActive}
                             aria-controls={`license-panel-${key}`}
+                            aria-label={badge ? `${label} ${badge}` : undefined}
                             onClick={() => setActiveSection(key)}
                         >
                             {label}
+                            {badge && <span className="license-section-tab-badge">{badge}</span>}
                         </button>
                     );
                 })}
@@ -769,6 +790,33 @@ export default function LicenseSettings() {
                             licenseKey={licenseDetails.license_key}
                         />
                     </section>
+                </div>
+            )}
+
+            {canDiscoverLocalTeam && effectiveActiveSection === 'staff' && !shouldRenderStaffPanel && (
+                <div
+                    id="license-panel-staff"
+                    className="license-section-panel"
+                    role="tabpanel"
+                    aria-labelledby="license-tab-staff"
+                    tabIndex="0"
+                >
+                    <TeamProShowcase />
+                </div>
+            )}
+
+            {canDiscoverCloudCapabilities && effectiveActiveSection === 'cloud-capabilities' && (
+                <div
+                    id="license-panel-cloud-capabilities"
+                    className="license-section-panel"
+                    role="tabpanel"
+                    aria-labelledby="license-tab-cloud-capabilities"
+                    tabIndex="0"
+                >
+                    <CloudCapabilitiesShowcase
+                        showNotifications={localDiscovery.notifications}
+                        showSupport={localDiscovery.support}
+                    />
                 </div>
             )}
         </div>

@@ -79,6 +79,62 @@ describe('DevicesSettings actor isolation', () => {
     expect(screen.queryByTestId('staff-device-readonly')).not.toBeInTheDocument();
   });
 
+  it('keeps Local Admin device management and adds only a secondary Nube explanation', () => {
+    state.app.licenseDetails = {
+      valid: true,
+      is_entitled: true,
+      status: 'active',
+      plan_code: 'free_trial',
+      license_key: 'LIC-LOCAL',
+      features: {
+        staff_roles: false,
+        realtime_license_sync: false,
+        cloud_pos_sync: false
+      }
+    };
+    state.access = {
+      isAuthorizedActor: true,
+      actorType: 'admin',
+      isAdmin: true,
+      canAccessSection: (section) => section === 'devices'
+    };
+
+    renderSettings();
+
+    expect(screen.getByText('Administrador de dispositivos')).toBeInTheDocument();
+    expect(state.deviceManagerRender).toHaveBeenCalledWith('LIC-LOCAL');
+    expect(screen.getByRole('heading', { name: 'Trabaja con más dispositivos usando Lanzo Nube' })).toBeInTheDocument();
+    expect(screen.getByText(/según las capacidades contratadas/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Conocer Lanzo Nube/ })).toHaveAttribute('href', '/acerca-de');
+  });
+
+  it('does not show the device promotion to an entitled Nube Admin', () => {
+    state.app.licenseDetails = {
+      valid: true,
+      is_entitled: true,
+      status: 'active',
+      plan_code: 'pro_monthly',
+      license_key: 'LIC-PRO',
+      features: {
+        staff_roles: true,
+        realtime_license_sync: true,
+        cloud_pos_sync: true
+      }
+    };
+    state.access = {
+      isAuthorizedActor: true,
+      actorType: 'admin',
+      isAdmin: true,
+      canAccessSection: (section) => section === 'devices'
+    };
+
+    renderSettings();
+
+    expect(screen.getByText('Administrador de dispositivos')).toBeInTheDocument();
+    expect(state.deviceManagerRender).toHaveBeenCalledWith('LIC-PRO');
+    expect(screen.queryByRole('heading', { name: 'Trabaja con más dispositivos usando Lanzo Nube' })).not.toBeInTheDocument();
+  });
+
   it('fails closed without devices permission', () => {
     renderSettings();
     expect(screen.getByRole('alert')).toHaveTextContent('No tienes permiso');
