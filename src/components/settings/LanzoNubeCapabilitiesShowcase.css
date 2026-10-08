@@ -1,0 +1,88 @@
+.settings-nube-showcase {
+  min-width: 0;
+  border: 1px solid var(--border-color);
+  border-radius: 1rem;
+  background: var(--card-background-color);
+}
+
+.license-section-tab-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.2rem;
+  padding: 0.05rem 0.38rem;
+  border: 1px solid var(--brand-accent-border);
+  border-radius: 999px;
+  color: var(--brand-accent-text);
+  background: var(--brand-accent-soft);
+  font-size: 0.66rem;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
+}
+
+.license-section-tabs .license-section-tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.settings-device-nube-showcase.pro-feature-showcase--card {
+  padding: 1rem;
+}
+
+.settings-device-nube-showcase .pro-feature-showcase__hero {
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.settings-device-nube-showcase .pro-feature-showcase__hero-icon {
+  width: 2.35rem;
+  height: 2.35rem;
+  border-radius: 0.7rem;
+}
+
+.settings-device-nube-showcase .pro-feature-showcase__hero h2 {
+  font-size: 1.1rem;
+}
+
+.settings-device-nube-showcase .pro-feature-showcase__description {
+  margin-top: 0.35rem;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.settings-device-nube-showcase.pro-feature-showcase--card .pro-feature-showcase__offer {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+  padding: 0.85rem;
+}
+
+.settings-device-nube-showcase .pro-feature-showcase__offer h2 {
+  font-size: 1rem;
+}
+
+.settings-device-nube-showcase .pro-feature-showcase__cta {
+  min-height: 2.5rem;
+  padding: 0.55rem 0.75rem;
+  font-size: 0.88rem;
+}
+
+@media (max-width: 560px) {
+  .settings-device-nube-showcase.pro-feature-showcase--card .pro-feature-showcase__offer {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 460px) {
+  .license-section-tabs {
+    flex-wrap: wrap;
+  }
+
+  .license-section-tabs .license-section-tab {
+    flex: 1 1 calc(50% - 4px);
+    white-space: normal;
+  }
+}

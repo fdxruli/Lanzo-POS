@@ -16,6 +16,7 @@ describe('notificationCapabilities', () => {
     expect(getNotificationCapabilities()).toMatchObject({
       ticker_enabled: true,
       ticker_mode: 'local',
+      local_inventory_alerts: true,
       notification_center: false,
       cloud_notifications: false,
       support_channel: 'email',
