@@ -5,6 +5,7 @@ import CustomerForm from '../components/customers/CustomerForm';
 import CustomerList from '../components/customers/CustomerList';
 import CustomerMessageTemplatesSettings from '../components/settings/CustomerMessageTemplatesSettings';
 import CustomerMessageAutomationSettings from '../components/settings/CustomerMessageAutomationSettings';
+import CustomerMessagingProShowcase from '../components/customers/CustomerMessagingProShowcase';
 import PurchaseHistoryModal from '../components/customers/PurchaseHistoryModal';
 import AbonoModal from '../components/customers/AbonoModal';
 import LayawayModal from '../components/customers/LayawayModal';
@@ -46,6 +47,7 @@ import {
 } from '../services/auth/salesPermissionPolicy';
 import { useActorRuntimeSnapshot } from '../services/auth/useActorRuntimeSnapshot';
 import { useSettingsAccess } from '../services/auth/useSettingsAccess';
+import { assertLocalTransactionAllowed, isFreeLicense } from '../store/slices/license/licenseGuards';
 import './CustomersPage.css';
 
 const PAGE_SIZE = 50;
@@ -53,16 +55,34 @@ const PAGE_SIZE = 50;
 const CUSTOMER_TABS = Object.freeze([
   Object.freeze({ key: 'add', label: 'Agregar cliente' }),
   Object.freeze({ key: 'list', label: 'Lista de clientes' }),
-  Object.freeze({ key: 'message-config', label: 'Configuración de mensajes', cloudOnly: true }),
-  Object.freeze({ key: 'reminders', label: 'Recordatorios y sincronización', cloudOnly: true })
+  Object.freeze({ key: 'message-config', label: 'Configuración de mensajes', proFeature: true }),
+  Object.freeze({ key: 'reminders', label: 'Recordatorios y sincronización', proFeature: true })
 ]);
 
-const resolveCustomerTab = (requestedTab, cloudEnabled) => {
-  const requested = requestedTab || 'list';
-  const isKnownTab = CUSTOMER_TABS.some((tab) => tab.key === requested);
-  const isCloudTab = CUSTOMER_TABS.some((tab) => tab.key === requested && tab.cloudOnly);
+const BLOCKED_LICENSE_LIFECYCLE_STATES = new Set([
+  'expired',
+  'administratively_blocked',
+  'cancelled',
+  'revoked',
+  'suspended',
+  'blocked'
+]);
 
-  if (!isKnownTab || (isCloudTab && !cloudEnabled)) return 'list';
+const getCustomerPlanCode = (licenseDetails = {}) => String(
+  licenseDetails?.effective_plan_code
+  || licenseDetails?.plan_code
+  || licenseDetails?.details?.plan_code
+  || licenseDetails?.plan?.code
+  || licenseDetails?.subscription_plan
+  || licenseDetails?.product_code
+  || ''
+).trim().toLowerCase();
+
+const resolveCustomerTab = (requestedTab, customerMessagingTabsAvailable) => {
+  const requested = requestedTab || 'list';
+  const selectedTab = CUSTOMER_TABS.find((tab) => tab.key === requested);
+
+  if (!selectedTab || (selectedTab.proFeature && !customerMessagingTabsAvailable)) return 'list';
   return requested;
 };
 
@@ -137,6 +157,11 @@ export default function CustomersPage() {
   } = useCaja();
   const companyProfile = useAppStore((state) => state.companyProfile);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
+  const appStatus = useAppStore((state) => state.appStatus);
+  const licenseStatus = useAppStore((state) => state.licenseStatus);
+  const currentDeviceRole = useAppStore((state) => state.currentDeviceRole);
+  const currentStaffUser = useAppStore((state) => state.currentStaffUser);
+  const gracePeriodEnds = useAppStore((state) => state.gracePeriodEnds);
   const actorRuntime = useActorRuntimeSnapshot();
   const settingsAccess = useSettingsAccess();
   const canManageRefunds = canPerformRefunds(actorRuntime);
@@ -150,11 +175,36 @@ export default function CustomersPage() {
   );
   const customerMessagingLicenseEligible = customerMessagingLicenseEligibility.ok;
   const reminderActorType = settingsAccess.actorType || actorRuntime?.actorType || null;
+  const customerActorAuthorized = settingsAccess.isAuthorizedActor === true
+    && settingsAccess.canAccessPermission?.('customers') === true;
+  const localLicenseEligibility = useMemo(
+    () => assertLocalTransactionAllowed(licenseDetails, {
+      appStatus,
+      licenseStatus,
+      currentDeviceRole,
+      currentStaffUser,
+      gracePeriodEnds
+    }),
+    [appStatus, currentDeviceRole, currentStaffUser, gracePeriodEnds, licenseDetails, licenseStatus]
+  );
+  const localPlanCode = getCustomerPlanCode(licenseDetails);
+  const isAuthorizedLocalCustomerPlan = Boolean(localPlanCode)
+    && isFreeLicense({ ...licenseDetails, plan_code: localPlanCode })
+    && licenseDetails?.is_entitled !== false
+    && !BLOCKED_LICENSE_LIFECYCLE_STATES.has(String(licenseDetails?.lifecycle_state || '').trim().toLowerCase())
+    && localLicenseEligibility.ok;
+  const canDiscoverCustomerMessaging = !customerMessagingCloudEnabled
+    && isAuthorizedLocalCustomerPlan
+    && customerActorAuthorized;
+  const canRenderCustomerMessagingCloud = customerMessagingCloudEnabled && customerActorAuthorized;
+  const customerMessagingTabsAvailable = canRenderCustomerMessagingCloud || canDiscoverCustomerMessaging;
   const canManageCustomerReminders = customerMessagingCloudEnabled
     && customerMessagingLicenseEligible
+    && customerActorAuthorized
     && settingsAccess.isAdmin;
-  const activeTab = resolveCustomerTab(searchParams.get('tab'), customerMessagingCloudEnabled);
-  const visibleCustomerTabs = CUSTOMER_TABS.filter((tab) => !tab.cloudOnly || customerMessagingCloudEnabled);
+  const activeTab = resolveCustomerTab(searchParams.get('tab'), customerMessagingTabsAvailable);
+  const visibleCustomerTabs = CUSTOMER_TABS.filter((tab) => !tab.proFeature || customerMessagingTabsAvailable);
+  const customerTabButtonsRef = useRef({});
 
   useEffect(() => {
     setIsLayawayModalOpen(false);
@@ -240,9 +290,23 @@ export default function CustomersPage() {
   }, [activeTab, searchParams, setSearchParams]);
 
   const handleTabChange = (tabKey) => {
-    if ((tabKey === 'message-config' || tabKey === 'reminders') && !customerMessagingCloudEnabled) return;
+    if (!visibleCustomerTabs.some((tab) => tab.key === tabKey)) return;
     if (tabKey === 'list') setEditingCustomer(null);
     setSearchParams({ tab: tabKey });
+  };
+
+  const handleCustomerTabKeyDown = (event, tabIndex) => {
+    let nextIndex = null;
+    if (event.key === 'ArrowRight') nextIndex = (tabIndex + 1) % visibleCustomerTabs.length;
+    if (event.key === 'ArrowLeft') nextIndex = (tabIndex - 1 + visibleCustomerTabs.length) % visibleCustomerTabs.length;
+    if (event.key === 'Home') nextIndex = 0;
+    if (event.key === 'End') nextIndex = visibleCustomerTabs.length - 1;
+    if (nextIndex === null) return;
+
+    event.preventDefault();
+    const nextTab = visibleCustomerTabs[nextIndex];
+    handleTabChange(nextTab.key);
+    customerTabButtonsRef.current[nextTab.key]?.focus();
   };
 
   const loadCustomersPage = useCallback(async ({
@@ -991,8 +1055,8 @@ export default function CustomersPage() {
     <>
       <main className="ui-page customers-page" aria-label="Clientes">
         <section className="ui-section customers-tabs-section" aria-label="Secciones de clientes">
-          <div className="tabs-container customers-tabs" role="tablist" aria-label="Navegación de clientes">
-            {visibleCustomerTabs.map(({ key, label }) => (
+          <div className="tabs-container customers-tabs" role="tablist" aria-label="Navegación de clientes" aria-orientation="horizontal">
+            {visibleCustomerTabs.map(({ key, label, proFeature }, index) => (
               <button
                 key={key}
                 type="button"
@@ -1001,16 +1065,31 @@ export default function CustomersPage() {
                 aria-selected={activeTab === key}
                 aria-controls={`customers-panel-${key}`}
                 id={`customers-tab-${key}`}
+                aria-label={proFeature ? `${label}, función disponible con Lanzo Nube PRO` : undefined}
+                tabIndex={activeTab === key ? 0 : -1}
+                ref={(node) => { customerTabButtonsRef.current[key] = node; }}
                 onClick={() => handleTabChange(key)}
+                onKeyDown={(event) => handleCustomerTabKeyDown(event, index)}
               >
-                <span>{label}</span>
+                <span className="customers-tab-label">
+                  <span>{label}</span>
+                  {proFeature && <span className="customers-tab-pro-badge" aria-hidden="true">PRO</span>}
+                </span>
               </button>
             ))}
           </div>
         </section>
 
-        {activeTab === 'list' && (
-          <>
+        <div
+          id="customers-panel-list"
+          className="customers-page__tab-panel"
+          role="tabpanel"
+          aria-labelledby="customers-tab-list"
+          tabIndex={activeTab === 'list' ? 0 : -1}
+          hidden={activeTab !== 'list'}
+        >
+          {activeTab === 'list' && (
+            <>
             <section className="ui-section customers-overview" aria-label="Resumen de crédito">
               <article className="ui-card customers-metric">
                 <span>Fiado total</span>
@@ -1031,11 +1110,7 @@ export default function CustomersPage() {
             </section>
 
             <section
-              id="customers-panel-list"
               className="ui-section customers-page__content"
-              role="tabpanel"
-              aria-labelledby="customers-tab-list"
-              tabIndex={0}
             >
               <CustomerList
                 customers={customers}
@@ -1063,31 +1138,59 @@ export default function CustomersPage() {
                 onRescheduleReminder={handleRescheduleReminder}
               />
             </section>
-          </>
-        )}
+            </>
+          )}
+        </div>
 
-        {activeTab === 'add' && (
-          <section id="customers-panel-add" className="ui-section customers-page__content" role="tabpanel" aria-labelledby="customers-tab-add" tabIndex={0}>
+        <section
+          id="customers-panel-add"
+          className="ui-section customers-page__content customers-page__tab-panel"
+          role="tabpanel"
+          aria-labelledby="customers-tab-add"
+          tabIndex={activeTab === 'add' ? 0 : -1}
+          hidden={activeTab !== 'add'}
+        >
+          {activeTab === 'add' && (
             <CustomerForm
               onSave={handleSaveCustomer}
               onCancel={() => handleTabChange('list')}
               customerToEdit={editingCustomer}
               globalCreditLimit={globalCreditLimit}
             />
-          </section>
-        )}
+          )}
+        </section>
 
-        {activeTab === 'message-config' && customerMessagingCloudEnabled && (
-          <section id="customers-panel-message-config" className="ui-section customers-page__content customers-page__cloud-panel" role="tabpanel" aria-labelledby="customers-tab-message-config" tabIndex={0}>
+        <section
+          id="customers-panel-message-config"
+          className="ui-section customers-page__content customers-page__cloud-panel customers-page__tab-panel"
+          role="tabpanel"
+          aria-labelledby="customers-tab-message-config"
+          tabIndex={activeTab === 'message-config' ? 0 : -1}
+          hidden={activeTab !== 'message-config'}
+        >
+          {activeTab === 'message-config' && canRenderCustomerMessagingCloud && (
             <CustomerMessageTemplatesSettings />
-          </section>
-        )}
+          )}
+          {activeTab === 'message-config' && canDiscoverCustomerMessaging && (
+            <CustomerMessagingProShowcase feature="message-config" />
+          )}
+        </section>
 
-        {activeTab === 'reminders' && customerMessagingCloudEnabled && (
-          <section id="customers-panel-reminders" className="ui-section customers-page__content customers-page__cloud-panel" role="tabpanel" aria-labelledby="customers-tab-reminders" tabIndex={0}>
+        <section
+          id="customers-panel-reminders"
+          className="ui-section customers-page__content customers-page__cloud-panel customers-page__tab-panel"
+          role="tabpanel"
+          aria-labelledby="customers-tab-reminders"
+          tabIndex={activeTab === 'reminders' ? 0 : -1}
+          hidden={activeTab !== 'reminders'}
+        >
+          {activeTab === 'reminders' && canRenderCustomerMessagingCloud && (
             <CustomerMessageAutomationSettings />
-          </section>
-        )}
+          )}
+          {activeTab === 'reminders' && canDiscoverCustomerMessaging && (
+            <CustomerMessagingProShowcase feature="reminders" />
+          )}
+        </section>
       </main>
 
       <PurchaseHistoryModal
