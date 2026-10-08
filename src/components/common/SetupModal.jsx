@@ -5,7 +5,7 @@ import { compressImage } from '../../services/utils';
 import AdminEnrollmentModal from './AdminEnrollmentModal';
 import { actorRuntimeController } from '../../services/auth/actorRuntimeController';
 import LazyImage from './LazyImage';
-import TermsAndConditionsModal from './TermsAndConditionsModal';
+import TermsAndConditionsModal, { LEGAL_DOCUMENT_TYPES } from './TermsAndConditionsModal';
 import {
   ChevronDown,
   CheckCircle,
@@ -561,11 +561,11 @@ export default function SetupModal() {
                       </div>
 
                       <p className="terms-agreement-text">
-                        Al hacer clic en <strong>Crear negocio</strong>, aceptas nuestros{' '}
+                        Al hacer clic en <strong>Crear negocio</strong>, aceptas los Términos de uso y puedes consultar los avisos de Lanzo.
+                        {' '}
                         <button type="button" className="terms-link" onClick={() => setShowTerms(true)}>
-                          Términos y Condiciones
-                        </button>{' '}
-                        y política de manejo de datos.
+                          Ver políticas y avisos
+                        </button>
                       </p>
 
                       {error && <div className="error-message" role="alert">{error}</div>}
@@ -600,6 +600,8 @@ export default function SetupModal() {
         isOpen={showTerms}
         onClose={() => setShowTerms(false)}
         readOnly={true}
+        showDocumentIndex={true}
+        documentTypes={LEGAL_DOCUMENT_TYPES}
       />
     </div>
   );

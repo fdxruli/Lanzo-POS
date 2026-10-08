@@ -337,3 +337,110 @@
     width: 100%;
   }
 }
+
+
+.terms-document-nav {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--ui-border-color, var(--border-color));
+  background: var(--ui-bg-muted, var(--light-background));
+  scrollbar-width: thin;
+}
+
+.terms-document-option {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 4px;
+  min-width: 128px;
+  max-width: 210px;
+  min-height: 48px;
+  padding: 8px 10px;
+  border: 1px solid var(--ui-border-color, var(--border-color));
+  border-radius: 8px;
+  color: var(--ui-text, var(--text-color));
+  background: var(--ui-bg-surface, var(--card-background-color));
+  text-align: left;
+  cursor: pointer;
+}
+
+.terms-document-option:hover,
+.terms-document-option[aria-current="page"] {
+  border-color: var(--ui-border-info, var(--secondary-color));
+  background: var(--ui-bg-info-soft, color-mix(in srgb, var(--secondary-color) 10%, transparent));
+}
+
+.terms-document-option__label {
+  font-size: 0.8rem;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.terms-document-option__status {
+  color: var(--ui-text-muted, var(--text-light));
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.terms-document-option:focus-visible,
+.terms-retry-button:focus-visible {
+  outline: 3px solid var(--ui-color-info, var(--secondary-color));
+  outline-offset: 2px;
+}
+
+.terms-empty-state {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 10px;
+  min-height: 300px;
+  padding: 28px 20px;
+  color: var(--ui-text-muted, var(--text-light));
+  text-align: center;
+}
+
+.terms-empty-state h4,
+.terms-empty-state p {
+  max-width: 540px;
+  margin: 0;
+}
+
+.terms-empty-state h4 {
+  color: var(--ui-text-strong, var(--text-dark));
+  font-size: 1rem;
+}
+
+.terms-empty-state p {
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.terms-retry-button {
+  min-width: 132px;
+}
+
+.terms-modal-content--with-index {
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+}
+
+
+.terms-draft-preview-banner {
+  display: grid;
+  gap: 3px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--ui-border-info, var(--secondary-color));
+  border-radius: 8px;
+  color: var(--ui-text, var(--text-color));
+  background: var(--ui-bg-info-soft, color-mix(in srgb, var(--secondary-color) 10%, transparent));
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+
+.terms-draft-preview-banner strong {
+  color: var(--ui-text-info, var(--secondary-color));
+}

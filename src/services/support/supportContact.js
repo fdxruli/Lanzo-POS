@@ -4,7 +4,7 @@ const PLAN_NAMES_BY_CODE = Object.freeze({
   pro_monthly: 'Lanzo Nube'
 });
 
-const DEFAULT_SUPPORT_EMAIL = 'contacto.entrealas@gmail.com';
+const DEFAULT_SUPPORT_EMAIL = 'lanzocontacto@gmail.com';
 
 const normalizeText = (value, fallback = '') => {
   const text = String(value ?? '').trim();

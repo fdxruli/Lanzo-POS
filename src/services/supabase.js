@@ -30,7 +30,7 @@ const SUPABASE_MAIN_AUTH_OPTIONS = Object.freeze({
     detectSessionInUrl: false
 });
 
-// Creamos el cliente solo si las variables existen. Si no, exportamos null y dejamos 
+// Creamos el cliente solo si las variables existen. Si no, exportamos null y dejamos
 // que App.jsx lance el error para que sea capturado por el ErrorBoundary visual.
 export const supabaseClient = (supabaseUrl && supabaseKey)
     ? createClient(supabaseUrl, supabaseKey, {
@@ -989,7 +989,7 @@ export const revalidateLicense = async function (licenseKeyProp) {
                 // Si el servidor invalida, destruimos el caché offline local
                 await loadData(STORES.SYNC_CACHE, 'last_valid_license_state').then(async (record) => {
                     if (record) {
-                        // Implementa un borrado si tienes la función deleteData, 
+                        // Implementa un borrado si tienes la función deleteData,
                         // o sobrescribe con un objeto inválido
                         await saveData(STORES.SYNC_CACHE, { key: 'last_valid_license_state', value: null });
                     }
@@ -1389,7 +1389,7 @@ export const removeRealtimeChannel = async (channel) => {
 
 /**
  * Descarga el contenido HTML de los términos activos desde Supabase.
- * @param {string} type - Tipo de documento ('terms_of_use' o 'privacy_policy')
+ * @param {string} type - Uno de los tipos definidos en legal_doc_type
  */
 export const fetchLegalTerms = async (type = 'terms_of_use') => {
     try {
@@ -1405,6 +1405,38 @@ export const fetchLegalTerms = async (type = 'terms_of_use') => {
         Logger.error('Error obteniendo términos legales:', error);
         return null;
     }
+};
+
+const LEGAL_POLICY_PREVIEW_TYPES = new Set([
+    'terms_of_use',
+    'privacy_policy',
+    'ai_policy',
+    'payment_policy',
+    'refund_policy',
+    'legal_notice'
+]);
+
+export const isLegalPolicyPreviewEnabled = () => (
+    import.meta.env.VITE_LEGAL_PREVIEW_MODE === 'true'
+);
+
+/** Descarga un borrador legal de la tabla aislada de vista previa. */
+export const fetchLegalPolicyPreview = async (type) => {
+    if (!isLegalPolicyPreviewEnabled() || !LEGAL_POLICY_PREVIEW_TYPES.has(type) || !supabaseClient) {
+        return null;
+    }
+
+    const { data, error } = await supabaseClient
+        .from('legal_policy_previews')
+        .select('id, document_type, version, content_html, published_at')
+        .eq('document_type', type)
+        .eq('is_active', true)
+        .order('published_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+    if (error) throw error;
+    return data || null;
 };
 
 /**

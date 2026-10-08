@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
-import { AlertCircle, CheckCircle, Loader2, Shield } from 'lucide-react';
-import { acceptLegalTerms, fetchLegalTerms } from '../../services/supabase';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AlertCircle, CheckCircle, FileText, Loader2, Shield } from 'lucide-react';
+import { acceptLegalTerms, fetchLegalPolicyPreview, fetchLegalTerms, isLegalPolicyPreviewEnabled } from '../../services/supabase';
 import Logger from '../../services/Logger';
 import { showMessageModal } from '../../services/utils';
 import './TermsAndConditionsModal.css';
@@ -81,37 +81,170 @@ function sanitizeHTML(dirtyHTML) {
   }
 }
 
-export default function TermsAndConditionsModal({ isOpen, onClose, readOnly = false, isUpdateNotification = false }) {
-  const [termsData, setTermsData] = useState(null);
-  const [loading, setLoading] = useState(true);
+
+export const LEGAL_DOCUMENT_TYPES = Object.freeze([
+  {
+    type: 'terms_of_use',
+    label: 'Términos de uso',
+    description: 'Condiciones para usar Lanzo POS.',
+    fetchType: 'terms_of_use',
+    previewType: 'terms_of_use'
+  },
+  {
+    type: 'privacy_policy',
+    label: 'Aviso de privacidad',
+    description: 'Datos tratados por Lanzo y finalidades.',
+    fetchType: 'privacy_policy',
+    previewType: 'privacy_policy'
+  },
+  {
+    type: 'ai_policy',
+    label: 'Lía e inteligencia artificial',
+    description: 'Qué se comparte cuando solicitas un análisis.',
+    fetchType: 'ai_policy',
+    previewType: 'ai_policy'
+  },
+  {
+    type: 'payment_policy',
+    label: 'Pagos y suscripciones',
+    description: 'Precio, periodos y forma de pago.',
+    fetchType: 'payment_policy',
+    previewType: 'payment_policy'
+  },
+  {
+    type: 'refund_policy',
+    label: 'Cancelaciones y reembolsos',
+    description: 'Cómo pedir una revisión de pago.',
+    fetchType: 'refund_policy',
+    previewType: 'refund_policy'
+  },
+  {
+    type: 'legal_notice',
+    label: 'Aviso legal',
+    description: 'Identidad del proveedor y alcance del servicio.',
+    fetchType: 'legal_notice',
+    previewType: 'legal_notice'
+  }
+]);
+
+const TERMS_ONLY = Object.freeze([LEGAL_DOCUMENT_TYPES[0]]);
+
+function getDocumentStatusLabel(document, status, legalPreviewMode) {
+  const canLoad = legalPreviewMode ? Boolean(document?.previewType) : Boolean(document?.fetchType);
+  if (!canLoad) return 'En preparación';
+  if (status === 'loaded') return 'Disponible';
+  if (status === 'missing') return 'Sin versión activa';
+  if (status === 'error') return 'No disponible';
+  return '';
+}
+
+export default function TermsAndConditionsModal({
+  isOpen,
+  onClose,
+  readOnly = false,
+  isUpdateNotification = false,
+  showDocumentIndex = false,
+  documentTypes = TERMS_ONLY,
+  initialDocumentType = 'terms_of_use'
+}) {
+  const documentCatalog = useMemo(() => {
+    const source = Array.isArray(documentTypes) ? documentTypes : TERMS_ONLY;
+    return source
+      .map((item) => (
+        typeof item === 'string'
+          ? LEGAL_DOCUMENT_TYPES.find((document) => document.type === item)
+          : item
+      ))
+      .filter(Boolean);
+  }, [documentTypes]);
+
+  const legalPreviewMode = isLegalPolicyPreviewEnabled();
+  const [activeDocumentType, setActiveDocumentType] = useState(initialDocumentType);
+  const [documentDataByType, setDocumentDataByType] = useState({});
+  const [loadStateByType, setLoadStateByType] = useState({});
   const [accepting, setAccepting] = useState(false);
-  const [error, setError] = useState(null);
+  const loadStateRef = useRef({});
+  const inFlightRef = useRef(new Map());
+  const requestGenerationRef = useRef(0);
+
+  const updateLoadState = useCallback((type, status) => {
+    loadStateRef.current = { ...loadStateRef.current, [type]: status };
+    setLoadStateByType((current) => ({ ...current, [type]: status }));
+  }, []);
+
+  const loadDocument = useCallback(async (type, { force = false } = {}) => {
+    const document = documentCatalog.find((item) => item.type === type);
+    const fetchDocument = legalPreviewMode && document?.previewType
+      ? () => fetchLegalPolicyPreview(document.previewType)
+      : document?.fetchType
+        ? () => fetchLegalTerms(document.fetchType)
+        : null;
+    if (!fetchDocument) return;
+
+    const existingRequest = inFlightRef.current.get(type);
+    if (existingRequest && !force) return existingRequest;
+
+    const currentStatus = loadStateRef.current[type];
+    if (!force && (currentStatus === 'loaded' || currentStatus === 'missing')) return;
+
+    updateLoadState(type, 'loading');
+    const generation = requestGenerationRef.current;
+    const request = fetchDocument()
+      .then((data) => {
+        if (requestGenerationRef.current !== generation) return;
+        setDocumentDataByType((current) => ({ ...current, [type]: data || null }));
+        updateLoadState(type, data ? 'loaded' : 'missing');
+      })
+      .catch((err) => {
+        if (requestGenerationRef.current !== generation) return;
+        Logger.error('Error obteniendo documento legal:', err);
+        setDocumentDataByType((current) => ({ ...current, [type]: null }));
+        updateLoadState(type, 'error');
+      })
+      .finally(() => {
+        if (inFlightRef.current.get(type) === request) inFlightRef.current.delete(type);
+      });
+
+    inFlightRef.current.set(type, request);
+    return request;
+  }, [documentCatalog, legalPreviewMode, updateLoadState]);
 
   useEffect(() => {
+    requestGenerationRef.current += 1;
     if (!isOpen) return;
 
-    const loadTerms = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const data = await fetchLegalTerms('terms_of_use');
-        if (data) {
-          setTermsData(data);
-        } else {
-          setError('No se pudieron cargar los terminos. Verifica tu conexion.');
-        }
-      } catch (err) {
-        Logger.error('Error fetching terms', err);
-        setError('Error de conexion al obtener los terminos legales.');
-      } finally {
-        setLoading(false);
-      }
-    };
+    const initialDocument = documentCatalog.find((item) => item.type === initialDocumentType)
+      || documentCatalog[0];
+    if (!initialDocument) return;
 
-    loadTerms();
-  }, [isOpen]);
+    setActiveDocumentType(initialDocument.type);
+    setDocumentDataByType({});
+    setLoadStateByType({});
+    loadStateRef.current = {};
+    inFlightRef.current = new Map();
+    void loadDocument(initialDocument.type, { force: true });
+  }, [isOpen, initialDocumentType, documentCatalog, loadDocument]);
+
+  const activeDocument = documentCatalog.find((item) => item.type === activeDocumentType)
+    || documentCatalog[0]
+    || LEGAL_DOCUMENT_TYPES[0];
+  const activeData = documentDataByType[activeDocument.type] || null;
+  const activeDocumentCanLoad = legalPreviewMode
+    ? Boolean(activeDocument.previewType)
+    : Boolean(activeDocument.fetchType);
+  const activeLoadState = activeDocumentCanLoad
+    ? (loadStateByType[activeDocument.type] || 'idle')
+    : 'pending';
+  const hasDocumentIndex = showDocumentIndex && documentCatalog.length > 1;
+
+  const handleSelectDocument = (type) => {
+    setActiveDocumentType(type);
+    void loadDocument(type);
+  };
 
   const handleAccept = async () => {
+    if (legalPreviewMode || activeDocument.type !== 'terms_of_use') return;
+
     const storedData = localStorage.getItem('lanzo_license');
     let licenseKey = null;
 
@@ -120,10 +253,11 @@ export default function TermsAndConditionsModal({ isOpen, onClose, readOnly = fa
         const parsed = JSON.parse(storedData);
         licenseKey = parsed?.data?.license_key;
       } catch (err) {
-        Logger.warn('No se pudo leer la licencia almacenada para aceptar terminos.', err);
+        Logger.warn('No se pudo leer la licencia almacenada para aceptar términos.', err);
       }
     }
 
+    const termsData = documentDataByType.terms_of_use;
     if (!licenseKey || !termsData?.id) {
       onClose();
       return;
@@ -136,7 +270,7 @@ export default function TermsAndConditionsModal({ isOpen, onClose, readOnly = fa
     if (result.success || result.message === 'ALREADY_ACCEPTED') {
       onClose();
     } else {
-      showMessageModal('Hubo un error registrando tu aceptacion.', null, { type: 'error' });
+      showMessageModal('Hubo un error registrando tu aceptación.', null, { type: 'error' });
     }
   };
 
@@ -152,7 +286,7 @@ export default function TermsAndConditionsModal({ isOpen, onClose, readOnly = fa
         onClose();
       }}
     >
-      <div className="ui-modal__content ui-modal__content--md terms-modal-content">
+      <div className={`ui-modal__content ui-modal__content--md terms-modal-content${hasDocumentIndex ? ' terms-modal-content--with-index' : ''}`}>
         <div className="ui-modal__header terms-header">
           <div className="terms-title-group">
             <span className="terms-title-icon" aria-hidden="true">
@@ -161,56 +295,118 @@ export default function TermsAndConditionsModal({ isOpen, onClose, readOnly = fa
             <div>
               <span className="terms-kicker">Legal</span>
               <h3 id="terms-modal-title">
-                {isUpdateNotification ? 'Actualizacion de condiciones' : 'Terminos de uso'}
+                {isUpdateNotification ? 'Actualización de condiciones' : activeDocument.label}
               </h3>
             </div>
           </div>
 
-          {termsData && <span className="terms-version-badge">Version {termsData.version}</span>}
+          {activeData && <span className="terms-version-badge">Versión {activeData.version}</span>}
         </div>
 
-        <div className="ui-modal__body terms-body">
-          {isUpdateNotification && !loading && (
-            <div className="ui-alert ui-alert--info terms-update-alert">
-              Hemos actualizado las condiciones. Al continuar usando el sistema, aceptas la version vigente.
+        {hasDocumentIndex && (
+          <nav className="terms-document-nav" aria-label="Políticas y avisos">
+            {documentCatalog.map((document) => {
+              const status = getDocumentStatusLabel(document, loadStateByType[document.type], legalPreviewMode);
+              return (
+                <button
+                  key={document.type}
+                  type="button"
+                  className="terms-document-option"
+                  aria-current={document.type === activeDocument.type ? 'page' : undefined}
+                  aria-label={status ? document.label + ', ' + status : document.label}
+                  onClick={() => handleSelectDocument(document.type)}
+                >
+                  <span className="terms-document-option__label">{document.label}</span>
+                  {status && <span className="terms-document-option__status">{status}</span>}
+                </button>
+              );
+            })}
+          </nav>
+        )}
+
+        <div className="ui-modal__body terms-body" aria-live="polite">
+          {legalPreviewMode && (
+            <div className="terms-draft-preview-banner" role="note">
+              <strong>Vista previa de borradores</strong>
+              <span>Documentos en revisión; no están vigentes ni publicados en producción.</span>
             </div>
           )}
 
-          {loading ? (
-            <div className="terms-loading-state">
-              <Loader2 size={42} className="animate-spin text-primary" />
-              <p>Cargando documento legal...</p>
+          {!legalPreviewMode && isUpdateNotification && activeDocument.type === 'terms_of_use' && !['idle', 'loading'].includes(activeLoadState) && (
+            <div className="ui-alert ui-alert--info terms-update-alert">
+              Hemos actualizado las condiciones. Al continuar usando el sistema, aceptas la versión vigente.
             </div>
-          ) : error ? (
-            <div className="terms-error-state">
-              <AlertCircle size={42} className="text-destructive" />
-              <p>{error}</p>
-            </div>
-          ) : (
-            <div className="terms-document-wrapper">
-              <div className="terms-dynamic-content" dangerouslySetInnerHTML={{ __html: sanitizeHTML(termsData.content_html) }} />
+          )}
 
-              {!readOnly && (
+          {activeLoadState === 'idle' || activeLoadState === 'loading' ? (
+            <div className="terms-loading-state" role="status">
+              <Loader2 size={42} className="animate-spin text-primary" />
+              <p>Cargando {activeDocument.label.toLowerCase()}...</p>
+            </div>
+          ) : activeLoadState === 'pending' ? (
+            <div className="terms-empty-state">
+              <FileText size={36} aria-hidden="true" />
+              <h4>{activeDocument.label}</h4>
+              <p>Este documento está en preparación y todavía no se ha publicado en Lanzo POS.</p>
+            </div>
+          ) : activeData ? (
+            <div className="terms-document-wrapper">
+              <div className="terms-dynamic-content" dangerouslySetInnerHTML={{ __html: sanitizeHTML(activeData.content_html) }} />
+
+              {!legalPreviewMode && !readOnly && activeDocument.type === 'terms_of_use' && (
                 <p className="terms-legal-footer">
                   <CheckCircle size={14} className="terms-legal-footer__icon" />
-                  Al aceptar, te vinculas legalmente a este acuerdo.
+                  Al aceptar, aceptas los Términos de uso de esta versión.
                 </p>
               )}
+            </div>
+          ) : activeLoadState === 'missing' ? (
+            <div className="terms-empty-state">
+              <FileText size={36} aria-hidden="true" />
+              <h4>{activeDocument.label}</h4>
+              <p>Este documento todavía no tiene una versión activa publicada.</p>
+            </div>
+          ) : (
+            <div className="terms-empty-state">
+              <AlertCircle size={36} aria-hidden="true" />
+              <h4>{activeDocument.label}</h4>
+              <p>No se pudo cargar este documento. Revisa tu conexión e inténtalo de nuevo.</p>
+              <button
+                type="button"
+                className="ui-button ui-button--secondary terms-retry-button"
+                onClick={() => void loadDocument(activeDocument.type, { force: true })}
+              >
+                Reintentar
+              </button>
             </div>
           )}
         </div>
 
         <div className="ui-modal__actions terms-footer">
-          {readOnly ? (
+          {readOnly || legalPreviewMode ? (
             <button type="button" className="ui-button ui-button--secondary ui-button--block btn btn-secondary" onClick={onClose}>
               Cerrar
             </button>
+          ) : activeDocument.type !== 'terms_of_use' ? (
+            <>
+              <button type="button" className="ui-button ui-button--ghost btn btn-secondary" onClick={onClose} disabled={accepting}>
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="ui-button ui-button--primary btn btn-primary"
+                onClick={() => handleSelectDocument('terms_of_use')}
+                disabled={accepting}
+              >
+                Volver a términos de uso
+              </button>
+            </>
           ) : isUpdateNotification ? (
             <button
               type="button"
               className="ui-button ui-button--primary ui-button--block btn btn-primary"
               onClick={handleAccept}
-              disabled={loading || Boolean(error) || accepting}
+              disabled={activeLoadState !== 'loaded' || !activeData?.id || accepting}
             >
               {accepting ? 'Guardando...' : 'Entendido, continuar'}
             </button>
@@ -219,8 +415,13 @@ export default function TermsAndConditionsModal({ isOpen, onClose, readOnly = fa
               <button type="button" className="ui-button ui-button--ghost btn btn-secondary" onClick={onClose} disabled={accepting}>
                 Cancelar
               </button>
-              <button type="button" className="ui-button ui-button--primary btn btn-primary btn-accept-terms" onClick={handleAccept} disabled={loading || Boolean(error) || accepting}>
-                {accepting ? 'Procesando...' : 'Aceptar condiciones'}
+              <button
+                type="button"
+                className="ui-button ui-button--primary btn btn-primary btn-accept-terms"
+                onClick={handleAccept}
+                disabled={activeLoadState !== 'loaded' || !activeData?.id || accepting}
+              >
+                {accepting ? 'Procesando...' : 'Aceptar términos de uso'}
               </button>
             </>
           )}
