@@ -70,7 +70,9 @@ async function handlePosStartupFailure(error) {
   const retryRecovery = async () => {
     renderStartupRecoveryScreen({ mode: 'recovering' });
     try {
-      await recoverAdminStartup({ error, force: true });
+      const recovery = await recoverAdminStartup({ error, force: true });
+      if (recovery?.status === 'reloading') return;
+      renderStartupRecoveryScreen({ mode: 'updateError', onRetry: retryRecovery });
     } catch (recoveryError) {
       console.error('No se pudo recuperar la versión instalada de Lanzo POS.', recoveryError);
       renderStartupRecoveryScreen({ mode: 'updateError', onRetry: retryRecovery });

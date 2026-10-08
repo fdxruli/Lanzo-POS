@@ -5,6 +5,8 @@ on:
     branches:
       - main
     paths:
+      - 'src/App.jsx'
+      - 'src/main.jsx'
       - 'src/services/auth/actorScopedStorage.js'
       - 'src/services/auth/actorOperationalHandoff.js'
       - 'src/services/auth/actorSessionRuntimeBridge.js'

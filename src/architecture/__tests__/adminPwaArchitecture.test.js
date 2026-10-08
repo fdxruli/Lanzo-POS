@@ -1,20 +1,20 @@
 // @vitest-environment node
 import { existsSync } from 'node:fs';
-import { mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { readFile, readdir, stat } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { auditAdminStartupPrecache } from '../../../scripts/admin-startup-precache-audit.mjs';
+import {
+  CORE_LOCAL_ROUTE_PREFIXES,
+  auditAdminStartupPrecache,
+} from '../../../scripts/admin-startup-precache-audit.mjs';
 
 const projectRoot = fileURLToPath(new URL('../../../', import.meta.url));
 const readProjectFile = (relativePath) => readFile(path.join(projectRoot, relativePath), 'utf8');
 const adminBuildAvailable = existsSync(path.join(projectRoot, 'dist', 'sw.js'));
-const storeBuildAvailable = existsSync(path.join(projectRoot, 'dist-store', 'index.html'));
-const adminBuildRequired = process.env.LANZO_ADMIN_PWA_BUILD_REQUIRED === '1';
-const storeBuildRequired = process.env.LANZO_STORE_PWA_BUILD_REQUIRED === '1';
 const itWithAdminBuild = adminBuildAvailable ? it : it.skip;
-const itWithStoreBuild = storeBuildAvailable ? it : it.skip;
 
 async function walk(relativeDirectory) {
   const directory = path.join(projectRoot, relativeDirectory);
@@ -28,6 +28,11 @@ async function walk(relativeDirectory) {
   return files;
 }
 
+const storeBuildAvailable = existsSync(path.join(projectRoot, 'dist-store', 'index.html'));
+const adminBuildRequired = process.env.LANZO_ADMIN_PWA_BUILD_REQUIRED === '1';
+const storeBuildRequired = process.env.LANZO_STORE_PWA_BUILD_REQUIRED === '1';
+const itWithStoreBuild = storeBuildAvailable ? it : it.skip;
+
 async function precacheInventory() {
   const source = await readProjectFile('dist/sw.js');
   const urls = Array.from(source.matchAll(/[,{](?:url|"url"):"([^"]+)"/g), (match) => match[1]);
@@ -40,15 +45,15 @@ async function precacheInventory() {
 }
 
 // The original administrative precache baseline contained 6,320,268 bytes
-// across 48 JavaScript assets. The byte budget remains a 50% reduction from
-// that baseline. financialReceiptClassifier is the one reviewed additional
-// startup asset: PosApplicationBootstrap imports the financial recovery
-// coordinator before the ready runtime is usable, and that coordinator
-// requires the classifier for receipt-first recovery. Keep this ceiling
-// explicit so any further startup JavaScript growth needs architecture review.
+// across 48 JavaScript assets. The Local/offline contract now intentionally
+// restores the essential POS/Caja/Pedidos/Productos/Clientes/Ventas/
+// Configuración/Acerca-de route closure while continuing to exclude cloud-only
+// Ecommerce and AI surfaces. Keep the restored offline shell within the old
+// production envelope so offline correctness does not silently become an
+// unbounded precache.
 const LEGACY_ADMIN_PRECACHE_BYTE_BASELINE = 6_320_268;
-const MAX_ADMIN_PRECACHE_BYTES = LEGACY_ADMIN_PRECACHE_BYTE_BASELINE * 0.5;
-const MAX_ADMIN_STARTUP_JAVASCRIPT = 22;
+const MAX_ADMIN_PRECACHE_BYTES = LEGACY_ADMIN_PRECACHE_BYTE_BASELINE;
+const MAX_ADMIN_OFFLINE_JAVASCRIPT = 48;
 
 describe('ECOM.PUBLIC.PWA.1 architecture', () => {
   if (adminBuildRequired) {
@@ -77,6 +82,7 @@ describe('ECOM.PUBLIC.PWA.1 architecture', () => {
     expect(config).toMatch(/manifest:\s*false/);
     expect(config).toContain("fileName: 'manifest.webmanifest'");
     expect(config).toMatch(/strategies:\s*'injectManifest'/);
+    expect(config).toContain('maximumFileSizeToCacheInBytes: 3 * 1024 * 1024');
   });
 
   it('fails the production build when the generated startup closure is not completely precached', async () => {
@@ -91,7 +97,9 @@ describe('ECOM.PUBLIC.PWA.1 architecture', () => {
     expect(packageJson.scripts.build).toBe('vite build');
     expect(packageJson.scripts.postbuild).toBe('node scripts/admin-startup-precache-audit.mjs');
     expect(audit).toContain('findMissingStartupPrecacheAssets');
+    expect(audit).toContain('findMissingCoreLocalRoutePrecacheAssets');
     expect(audit).toContain('Administrative startup assets are missing from the Service Worker precache');
+    expect(audit).toContain('Core Local route assets are missing from the Service Worker precache');
     expect(audit).toContain("const outDir = path.resolve(process.cwd(), 'dist');");
     expect(audit).toMatch(/if \(invokedPath === modulePath\)[\s\S]*auditAdminStartupPrecache/);
   });
@@ -107,12 +115,23 @@ describe('ECOM.PUBLIC.PWA.1 architecture', () => {
         `const startupAsset = '${requiredAsset}';`,
         'utf8'
       );
+      await writeFile(path.join(assetsDirectory, 'App-fixture.js'), '', 'utf8');
       await writeFile(path.join(fixtureRoot, 'sw.js'), `[{url:'${requiredAsset}'}]`, 'utf8');
 
       await expect(auditAdminStartupPrecache({ outDir: fixtureRoot }))
         .rejects.toMatchObject({ code: 'ENOENT' });
     } finally {
       await rm(fixtureRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps every canonical Local route statically linked into the offline App shell', async () => {
+    const app = await readProjectFile('src/App.jsx');
+
+    for (const routePrefix of CORE_LOCAL_ROUTE_PREFIXES) {
+      expect(app).toMatch(new RegExp(
+        `import\\s+\\w+\\s+from\\s+['"]\\.\\/pages\\/${routePrefix}['"]`
+      ));
     }
   });
 
@@ -207,18 +226,20 @@ describe('ECOM.PUBLIC.PWA.1 architecture', () => {
     expect(worker).toMatch(/isPublicNavigationRequest[\s\S]*new NetworkOnly\(\)/);
   });
 
-  itWithAdminBuild('keeps the reviewed administrative startup precache within its byte and JavaScript budgets', async () => {
+  itWithAdminBuild('keeps the reviewed administrative offline precache within the legacy production envelope', async () => {
     const inventory = await precacheInventory();
     const bytes = inventory.files.reduce((total, file) => total + file.bytes, 0);
     const javascriptCount = inventory.files.filter((file) => file.extension === '.js').length;
 
     expect(bytes).toBeLessThanOrEqual(MAX_ADMIN_PRECACHE_BYTES);
-    expect(javascriptCount).toBeLessThanOrEqual(MAX_ADMIN_STARTUP_JAVASCRIPT);
+    expect(javascriptCount).toBeLessThanOrEqual(MAX_ADMIN_OFFLINE_JAVASCRIPT);
     expect(inventory.urls).toHaveLength(inventory.uniqueUrls.length);
   });
 
-  itWithAdminBuild('precache includes the minimum shell and excludes lazy pages, workers, and charts', async () => {
+  itWithAdminBuild('precache covers any emitted Local startup chunks while cloud-only lazy surfaces stay excluded', async () => {
     const inventory = await precacheInventory();
+    const emittedAssets = (await walk('dist/assets'))
+      .map((file) => file.replace(/^dist\//, ''));
     const joined = inventory.uniqueUrls.join('\n');
 
     expect(inventory.uniqueUrls).toContain('index.html');
@@ -232,8 +253,30 @@ describe('ECOM.PUBLIC.PWA.1 architecture', () => {
     expect(joined).toMatch(/assets\/productStoreRecoveryGuard-.*\.js/);
     expect(joined).toMatch(/assets\/DevConsole-.*\.js/);
     expect(joined).toMatch(/assets\/DevConsole-.*\.css/);
-    expect(joined).not.toMatch(/PosPage|CajaPage|OrderPage|EcommerceOrdersPage|ProductsPage|CustomersPage|DashboardPage|SettingsPage|AboutPage/);
-    expect(joined).not.toMatch(/\.worker-|vendor_charts|AssistantBot|ScannerModal/);
+
+    const localStartupPrefixes = [
+      'PosPage-',
+      'CajaPage-',
+      'OrderPage-',
+      'ProductsPage-',
+      'CustomersPage-',
+      'DashboardPage-',
+      'SettingsPage-',
+      'AboutPage-',
+      'vendor_charts-',
+      'reportsRepository-',
+      'googleDriveService-',
+      'useActorRuntimeSnapshot-',
+      'useFeatureConfig-',
+    ];
+
+    for (const prefix of localStartupPrefixes) {
+      const emitted = emittedAssets.filter((asset) => asset.startsWith(`assets/${prefix}`));
+      emitted.forEach((asset) => expect(inventory.uniqueUrls).toContain(asset));
+    }
+
+    expect(joined).not.toMatch(/EcommerceOrdersPage|CommercialAIAgentsPage|EcommercePortalPage/);
+    expect(joined).not.toMatch(/\.worker-|AssistantBot|ScannerModal/);
   });
 
   it('defines bounded versioned runtime caches and status-200-only writes', async () => {

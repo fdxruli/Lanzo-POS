@@ -1,8 +1,11 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import {
+  extractCoreLocalRouteAssets,
   extractPrecachedAssetUrls,
   extractReferencedStartupAssets,
+  extractViteDependencyMap,
+  findMissingCoreLocalRoutePrecacheAssets,
   findMissingStartupPrecacheAssets,
 } from '../../../scripts/admin-startup-precache-audit.mjs';
 
@@ -15,6 +18,18 @@ const bootstrapSource = `
     "assets/logo-current.png"
   ];
   import("./assets/App-current.js");
+`;
+
+const appSource = `
+  const __vite__mapDeps=(i,m=__vite__mapDeps,d=(m.f||(m.f=[
+    "assets/PosPage-current.js",
+    "assets/vendor_react-current.js",
+    "assets/DashboardPage-current.js",
+    "assets/vendor_charts-current.js",
+    "assets/DashboardPage-current.css"
+  ])))=>i.map(i=>d[i]);
+  const PosPage = lazy(() => import("./PosPage-current.js"),__vite__mapDeps([0,1]));
+  const DashboardPage = lazy(() => import("./DashboardPage-current.js"),__vite__mapDeps([2,1,3,4]));
 `;
 
 describe('administrative startup precache audit', () => {
@@ -53,6 +68,48 @@ describe('administrative startup precache audit', () => {
     expect(missing).toEqual([
       'assets/productStoreRecoveryGuard-current.js',
       'assets/useInventoryCatalogStore-current.js',
+    ]);
+  });
+
+  it('extracts the complete Vite dependency map used by lazy route chunks', () => {
+    expect(extractViteDependencyMap(appSource)).toEqual([
+      'assets/PosPage-current.js',
+      'assets/vendor_react-current.js',
+      'assets/DashboardPage-current.js',
+      'assets/vendor_charts-current.js',
+      'assets/DashboardPage-current.css',
+    ]);
+  });
+
+  it('derives the complete transitive closure for core Local routes', () => {
+    expect(extractCoreLocalRouteAssets(
+      appSource,
+      ['PosPage', 'DashboardPage'],
+    )).toEqual([
+      'assets/DashboardPage-current.css',
+      'assets/DashboardPage-current.js',
+      'assets/PosPage-current.js',
+      'assets/vendor_charts-current.js',
+      'assets/vendor_react-current.js',
+    ]);
+  });
+
+  it('fails when a transitive Local route dependency is absent from precache', () => {
+    const missing = findMissingCoreLocalRoutePrecacheAssets({
+      appSource,
+      routePrefixes: ['PosPage', 'DashboardPage'],
+      workerSource: `
+        precacheAndRoute([
+          {"revision":null,"url":"assets/PosPage-current.js"},
+          {"revision":null,"url":"assets/vendor_react-current.js"},
+          {"revision":null,"url":"assets/DashboardPage-current.js"}
+        ]);
+      `,
+    });
+
+    expect(missing).toEqual([
+      'assets/DashboardPage-current.css',
+      'assets/vendor_charts-current.js',
     ]);
   });
 });
