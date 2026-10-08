@@ -38,6 +38,7 @@ import BackupRuntime from './components/common/BackupRuntime';
 import { useSingleInstance } from './hooks/useSingleInstance';
 import TermsAndConditionsModal from './components/common/TermsAndConditionsModal';
 import { isCloudPosSyncEnabled } from './services/sync/syncConstants';
+import { fetchLegalPolicyState, isLegalPolicyPreviewEnabled } from './services/supabase';
 import { clearCurrentAdminRuntimeCaches } from './pwa/adminRuntimeCache';
 import {
   prepareAdminLazyRoute,
@@ -176,6 +177,8 @@ function App() {
   const initializeApp = useAppStore((state) => state.initializeApp);
   const pendingTermsUpdate = useAppStore((state) => state.pendingTermsUpdate);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
+  const [legalPolicyState, setLegalPolicyState] = useState(null);
+  const legalLicenseKey = licenseDetails?.license_key || null;
   const startLicenseSync = useAppStore((state) => state.startLicenseSync);
   const stopLicenseSync = useAppStore((state) => state.stopLicenseSync);
   const startNotificationRealtime = useAppStore((state) => state.startNotificationRealtime);
@@ -186,7 +189,57 @@ function App() {
 
   const clearTermsNotification = () => {
     useAppStore.setState({ pendingTermsUpdate: null });
+    setLegalPolicyState((current) => (
+      current?.licenseKey === legalLicenseKey
+        ? { ...current, pending_documents: [] }
+        : current
+    ));
   };
+
+  useEffect(() => {
+    if (appStatus !== 'ready' || !legalLicenseKey || isLegalPolicyPreviewEnabled()) return undefined;
+
+    let isActive = true;
+    let latestRequest = 0;
+
+    const refreshLegalPolicyState = async () => {
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+
+      const requestId = ++latestRequest;
+      setLegalPolicyState((current) => (
+        current?.licenseKey === legalLicenseKey
+          ? { ...current, status: 'loading' }
+          : { licenseKey: legalLicenseKey, status: 'loading' }
+      ));
+
+      const result = await fetchLegalPolicyState(legalLicenseKey);
+      if (!isActive || requestId !== latestRequest) return;
+
+      if (result?.success) {
+        setLegalPolicyState({
+          ...result,
+          licenseKey: legalLicenseKey,
+          status: 'ready'
+        });
+      } else {
+        setLegalPolicyState({
+          success: false,
+          licenseKey: legalLicenseKey,
+          status: 'error',
+          pending_documents: [],
+          accepted_documents: []
+        });
+      }
+    };
+
+    void refreshLegalPolicyState();
+    window.addEventListener('online', refreshLegalPolicyState);
+
+    return () => {
+      isActive = false;
+      window.removeEventListener('online', refreshLegalPolicyState);
+    };
+  }, [appStatus, legalLicenseKey]);
 
   useEffect(() => {
     let isActive = true;
@@ -399,11 +452,25 @@ function App() {
           <UpdatePrompt />
           <InstallPrompt />
           <Suspense fallback={<Layout><PageLoader /></Layout>}>
-            {pendingTermsUpdate && (
+            {(pendingTermsUpdate || (
+              legalPolicyState?.licenseKey === legalLicenseKey
+              && legalPolicyState.status === 'ready'
+              && legalPolicyState.pending_documents?.length > 0
+            )) && (
               <TermsAndConditionsModal
                 isOpen
                 onClose={clearTermsNotification}
                 isUpdateNotification
+                showDocumentIndex
+                updateDocuments={legalPolicyState?.licenseKey === legalLicenseKey
+                  ? legalPolicyState.pending_documents || []
+                  : []}
+                updateCheckStatus={legalPolicyState?.licenseKey === legalLicenseKey
+                  ? legalPolicyState.status
+                  : 'loading'}
+                legalPolicyState={legalPolicyState?.licenseKey === legalLicenseKey
+                  ? legalPolicyState
+                  : undefined}
               />
             )}
             <NavigationGuard />

@@ -444,3 +444,103 @@
 .terms-draft-preview-banner strong {
   color: var(--ui-text-info, var(--secondary-color));
 }
+
+
+.terms-update-alert {
+  display: grid;
+  gap: 6px;
+}
+
+.terms-update-document-list {
+  display: grid;
+  gap: 3px;
+  margin: 7px 0 0;
+  padding-left: 1.25rem;
+}
+
+.terms-accepted-history {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--ui-border-color, var(--border-color));
+}
+
+.terms-accepted-history__heading {
+  display: grid;
+  gap: 5px;
+}
+
+.terms-accepted-history__heading h4 {
+  margin: 0;
+  color: var(--ui-text-strong, var(--text-dark));
+  font-size: 0.95rem;
+}
+
+.terms-accepted-history__heading p,
+.terms-accepted-history__state {
+  margin: 0;
+  color: var(--ui-text-muted, var(--text-light));
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+.terms-accepted-history__state {
+  margin-top: 12px;
+}
+
+.terms-accepted-history__list {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.terms-accepted-history__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 11px 12px;
+  border: 1px solid var(--ui-border-color, var(--border-color));
+  border-radius: 8px;
+  background: var(--ui-bg-surface, var(--card-background-color));
+}
+
+.terms-accepted-history__details {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.terms-accepted-history__details strong {
+  color: var(--ui-text-strong, var(--text-dark));
+  font-size: 0.84rem;
+}
+
+.terms-accepted-history__details span,
+.terms-accepted-history__details time {
+  color: var(--ui-text-muted, var(--text-light));
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+
+.terms-history-download {
+  flex: 0 0 auto;
+  min-height: 36px;
+}
+
+.terms-history-download:focus-visible {
+  outline: 3px solid var(--ui-color-info, var(--secondary-color));
+  outline-offset: 2px;
+}
+
+@media (max-width: 520px) {
+  .terms-accepted-history__item {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .terms-history-download {
+    width: 100%;
+  }
+}
