@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import Navbar from './Navbar';
@@ -37,6 +37,7 @@ import {
 import { canReadSalesReports } from '../../services/auth/salesPermissionPolicy';
 import { useActorRuntimeSnapshot } from '../../services/auth/useActorRuntimeSnapshot';
 import { getLicenseStatusPresentation } from '../../utils/licenseStatusPresentation';
+import { createOptionalAdminLazy } from '../../pwa/adminOptionalLazy';
 import './Layout.css';
 
 registerActorOperationalActiveOrders({ useActiveOrders, db, STORES });
@@ -50,7 +51,10 @@ registerActorOperationalOrderStore({
   isCommercialVariantProduct
 });
 
-const AssistantBot = lazy(() => import('../common/AssistantBot'));
+const AssistantBot = createOptionalAdminLazy(
+  () => import('../common/AssistantBot'),
+  { surfaceName: 'AssistantBot' }
+);
 
 function Layout() {
   const loadStats = useStatsStore((state) => state.loadStats);

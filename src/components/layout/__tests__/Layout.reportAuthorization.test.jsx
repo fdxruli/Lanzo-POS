@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   loadStats: vi.fn(),
   loadSales: vi.fn(),
   loadProducts: vi.fn(),
+  assistantImporter: null,
   reconcileOrders: vi.fn().mockResolvedValue({ count: 0 }),
   app: {
     showAssistantBot: true,
@@ -16,6 +17,18 @@ const mocks = vi.hoisted(() => ({
     licenseStatus: 'active',
   },
 }));
+
+vi.mock('../../../pwa/adminOptionalLazy', async () => {
+  const { lazy } = await import('react');
+
+  return {
+    createOptionalAdminLazy: (importer) => {
+      const trackedImporter = vi.fn(importer);
+      mocks.assistantImporter = trackedImporter;
+      return lazy(trackedImporter);
+    },
+  };
+});
 
 vi.mock('../../../services/auth/useActorRuntimeSnapshot', () => ({
   useActorRuntimeSnapshot: () => mocks.runtime,
@@ -136,7 +149,7 @@ describe('Layout report authorization', () => {
     expect(mocks.loadProducts).toHaveBeenCalledTimes(1);
   });
 
-  it('does not query or present report surfaces to Staff without reports', async () => {
+  it('OFFLINE-LAZY-08 does not load AssistantBot for Staff without report permission or an eligible global alert', async () => {
     mocks.runtime = staffRuntime(['refunds']);
     renderLayout();
 
@@ -144,6 +157,7 @@ describe('Layout report authorization', () => {
     expect(mocks.loadStats).not.toHaveBeenCalled();
     expect(mocks.loadSales).not.toHaveBeenCalled();
     expect(screen.queryByTestId('assistant')).not.toBeInTheDocument();
+    expect(mocks.assistantImporter).not.toHaveBeenCalled();
   });
 
   it('does not infer reports from refunds and recomputes after an actor switch', async () => {
@@ -192,7 +206,7 @@ describe('Layout report authorization', () => {
     expect(screen.queryByTestId('assistant')).not.toBeInTheDocument();
   });
 
-  it('does not compete with the data-safety notice for an unacknowledged FREE admin', async () => {
+  it('OFFLINE-LAZY-07 does not import AssistantBot when it is disabled and no global alert is eligible', async () => {
     mocks.app = {
       showAssistantBot: false,
       showTicker: false,
@@ -209,6 +223,7 @@ describe('Layout report authorization', () => {
 
     await waitFor(() => expect(mocks.loadProducts).toHaveBeenCalledTimes(1));
     expect(screen.queryByTestId('assistant')).not.toBeInTheDocument();
+    expect(mocks.assistantImporter).not.toHaveBeenCalled();
   });
 
   it('allows an eligible historical alert after the protection notice is acknowledged', async () => {
