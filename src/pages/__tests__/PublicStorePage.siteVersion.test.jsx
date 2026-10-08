@@ -106,16 +106,18 @@ describe('PublicStorePage published site versions', () => {
 
   it('keeps v1 while only the draft changes, then renders v2 without changing catalogRevision', async () => {
     const focusAndWaitForRevalidation = async (expectedCalls) => {
-      fireEvent.focus(window);
-      await waitFor(() => (
-        expect(serviceMocks.getPublicPortalBySlug).toHaveBeenCalledTimes(expectedCalls)
-      ));
-      const portalRequest = serviceMocks.getPublicPortalBySlug.mock.results[expectedCalls - 1]?.value;
-      await act(async () => {
-        await portalRequest;
-        await Promise.resolve();
-        await Promise.resolve();
-      });
+      vi.useFakeTimers();
+      try {
+        await act(async () => {
+          fireEvent.focus(window);
+          await vi.advanceTimersToNextTimerAsync();
+        });
+        expect(serviceMocks.getPublicPortalBySlug).toHaveBeenCalledTimes(expectedCalls);
+        const portalRequest = serviceMocks.getPublicPortalBySlug.mock.results[expectedCalls - 1]?.value;
+        await act(async () => { await portalRequest; });
+      } finally {
+        vi.useRealTimers();
+      }
     };
 
     renderPage();

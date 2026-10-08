@@ -1,11 +1,20 @@
 // @vitest-environment node
-import { readFile, readdir, stat } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { auditAdminStartupPrecache } from '../../../scripts/admin-startup-precache-audit.mjs';
 
 const projectRoot = fileURLToPath(new URL('../../../', import.meta.url));
 const readProjectFile = (relativePath) => readFile(path.join(projectRoot, relativePath), 'utf8');
+const adminBuildAvailable = existsSync(path.join(projectRoot, 'dist', 'sw.js'));
+const storeBuildAvailable = existsSync(path.join(projectRoot, 'dist-store', 'index.html'));
+const adminBuildRequired = process.env.LANZO_ADMIN_PWA_BUILD_REQUIRED === '1';
+const storeBuildRequired = process.env.LANZO_STORE_PWA_BUILD_REQUIRED === '1';
+const itWithAdminBuild = adminBuildAvailable ? it : it.skip;
+const itWithStoreBuild = storeBuildAvailable ? it : it.skip;
 
 async function walk(relativeDirectory) {
   const directory = path.join(projectRoot, relativeDirectory);
@@ -42,6 +51,18 @@ const MAX_ADMIN_PRECACHE_BYTES = LEGACY_ADMIN_PRECACHE_BYTE_BASELINE * 0.5;
 const MAX_ADMIN_STARTUP_JAVASCRIPT = 22;
 
 describe('ECOM.PUBLIC.PWA.1 architecture', () => {
+  if (adminBuildRequired) {
+    it('has generated administrative build artifacts when required by the workflow', () => {
+      expect(adminBuildAvailable).toBe(true);
+    });
+  }
+
+  if (storeBuildRequired) {
+    it('has generated public-store build artifacts when required by the workflow', () => {
+      expect(storeBuildAvailable).toBe(true);
+    });
+  }
+
   it('keeps the shared source HTML free of globally requested PWA identity', async () => {
     const html = await readProjectFile('index.html');
 
@@ -73,6 +94,26 @@ describe('ECOM.PUBLIC.PWA.1 architecture', () => {
     expect(audit).toContain('Administrative startup assets are missing from the Service Worker precache');
     expect(audit).toContain("const outDir = path.resolve(process.cwd(), 'dist');");
     expect(audit).toMatch(/if \(invokedPath === modulePath\)[\s\S]*auditAdminStartupPrecache/);
+  });
+
+  it('fails the startup audit when a required emitted asset is missing', async () => {
+    const fixtureRoot = await mkdtemp(path.join(tmpdir(), 'lanzo-admin-pwa-audit-'));
+    try {
+      const assetsDirectory = path.join(fixtureRoot, 'assets');
+      const requiredAsset = 'assets/required-startup.js';
+      await mkdir(assetsDirectory, { recursive: true });
+      await writeFile(
+        path.join(assetsDirectory, 'PosApplicationBootstrap-fixture.js'),
+        `const startupAsset = '${requiredAsset}';`,
+        'utf8'
+      );
+      await writeFile(path.join(fixtureRoot, 'sw.js'), `[{url:'${requiredAsset}'}]`, 'utf8');
+
+      await expect(auditAdminStartupPrecache({ outDir: fixtureRoot }))
+        .rejects.toMatchObject({ code: 'ENOENT' });
+    } finally {
+      await rm(fixtureRoot, { recursive: true, force: true });
+    }
   });
 
   it('starts install and worker infrastructure only in the administrative branch', async () => {
@@ -114,7 +155,7 @@ describe('ECOM.PUBLIC.PWA.1 architecture', () => {
     expect(bootstrap).toMatch(/recovery\.status !== DATABASE_RECOVERY_STATUS\.READY/);
   });
 
-  it('generates a valid Lanzo POS manifest without injecting it into dist HTML', async () => {
+  itWithAdminBuild('generates a valid Lanzo POS manifest without injecting it into dist HTML', async () => {
     const [html, manifestSource] = await Promise.all([
       readProjectFile('dist/index.html'),
       readProjectFile('dist/manifest.webmanifest'),
@@ -126,7 +167,7 @@ describe('ECOM.PUBLIC.PWA.1 architecture', () => {
     expect(manifest.icons).toHaveLength(3);
   });
 
-  it('keeps the public standalone build completely PWA-free', async () => {
+  itWithStoreBuild('keeps the public standalone build completely PWA-free', async () => {
     const files = await walk('dist-store');
     const joined = files.join('\n');
     const html = await readProjectFile('dist-store/index.html');
@@ -166,7 +207,7 @@ describe('ECOM.PUBLIC.PWA.1 architecture', () => {
     expect(worker).toMatch(/isPublicNavigationRequest[\s\S]*new NetworkOnly\(\)/);
   });
 
-  it('keeps the reviewed administrative startup precache within its byte and JavaScript budgets', async () => {
+  itWithAdminBuild('keeps the reviewed administrative startup precache within its byte and JavaScript budgets', async () => {
     const inventory = await precacheInventory();
     const bytes = inventory.files.reduce((total, file) => total + file.bytes, 0);
     const javascriptCount = inventory.files.filter((file) => file.extension === '.js').length;
@@ -176,7 +217,7 @@ describe('ECOM.PUBLIC.PWA.1 architecture', () => {
     expect(inventory.urls).toHaveLength(inventory.uniqueUrls.length);
   });
 
-  it('precache includes the minimum shell and excludes lazy pages, workers, and charts', async () => {
+  itWithAdminBuild('precache includes the minimum shell and excludes lazy pages, workers, and charts', async () => {
     const inventory = await precacheInventory();
     const joined = inventory.uniqueUrls.join('\n');
 
