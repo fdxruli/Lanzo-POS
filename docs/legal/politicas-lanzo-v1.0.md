@@ -294,7 +294,7 @@ La legislación mexicana actualmente contiene estos requisitos expresos para sus
 
 # Política de cancelaciones y reembolsos
 
-**Versión:** 1.0 · **Última actualización:** 8 de octubre de 2026  
+**Versión:** 1.0 · **Última actualización:** 8 de octubre de 2026
 ## Cancelación del servicio
 
 Puedes solicitar la cancelación o no renovación escribiendo a **lanzocontacto@gmail.com**. Actualmente el pago se realiza mediante transferencia manual, por lo que no existe un cargo automático que debas detener: no realizar una nueva transferencia evita la renovación.
@@ -335,8 +335,8 @@ La ventana de siete días para exportar datos al terminar Pro/Nube no es un plaz
 
 **Lanzo POS** es una marca comercial de software operada por **Ruly Sebastián Montejo**, persona física, con domicilio en **Ejido 20 de Abril, municipio de La Trinitaria, Chiapas, C.P. 30165, México**.
 
-**Sitio:** https://lanzo-pos.vercel.app  
-**Contacto, soporte técnico, privacidad, derechos ARCO y pagos:** lanzocontacto@gmail.com  
+**Sitio:** https://lanzo-pos.vercel.app
+**Contacto, soporte técnico, privacidad, derechos ARCO y pagos:** lanzocontacto@gmail.com
 **Territorio y ley prevista:** México, sin limitar derechos obligatorios reconocidos por la legislación aplicable.
 
 Lanzo POS es una marca comercial independiente de Entre Alas y no es una persona moral distinta del titular indicado. El uso de Lanzo se rige por los Términos de uso, el Aviso de privacidad, la Política de Lía y las demás políticas mostradas en la sección legal de la aplicación.
