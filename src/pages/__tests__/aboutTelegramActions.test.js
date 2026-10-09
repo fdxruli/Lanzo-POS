@@ -43,7 +43,31 @@ const cloudLicense = (status = 'active', overrides = {}) => ({
   effective_lifecycle_validation: confirmedEvidence(status),
   ...overrides
 });
-ions({
+
+describe('aboutTelegramActions', () => {
+  it('recognizes only explicitly active Local and Cloud licences', () => {
+    expect(resolveAboutLicenseState({
+      licenseDetails: activeLicense(), licenseStatus: 'active', isCloudPlan: false
+    })).toBe(ABOUT_LICENSE_STATE.LOCAL_ACTIVE);
+    expect(resolveAboutLicenseState({
+      licenseDetails: activeLicense(), licenseStatus: 'active', isCloudPlan: true
+    })).toBe(ABOUT_LICENSE_STATE.CLOUD_ACTIVE);
+  });
+
+  it('routes Local solo users to information and lets them keep Local', () => {
+    const actions = resolveAboutContactActions({
+      licenseState: ABOUT_LICENSE_STATE.LOCAL_ACTIVE,
+      selectedWorkflow: 'solo',
+      isAuthorizedCommercialAdmin: true
+    });
+
+    expect(actions.primary.intent).toBe(TELEGRAM_CONTACT_INTENT.PRO_INQUIRY);
+    expect(actions.primary.label).toBe('Consultar Lanzo Nube');
+    expect(actions.secondary).toMatchObject({ kind: 'anchor', label: 'Mantener plan Local' });
+  });
+
+  it('routes Local team users to assisted activation and requirements', () => {
+    const actions = resolveAboutContactActions({
       licenseState: ABOUT_LICENSE_STATE.LOCAL_ACTIVE,
       selectedWorkflow: 'team',
       isAuthorizedCommercialAdmin: true
@@ -318,6 +342,23 @@ ions({
       isCloudPlan: true,
       now: new Date('2026-10-16T15:14:09.001Z')
     })).toBe(ABOUT_LICENSE_STATE.CLOUD_EXPIRED);
+  });
+
+  it('LIC-ABOUT-13: rejects effective validation evidence dated in the future', () => {
+    const evidence = {
+      ...confirmedEvidence('grace_period'),
+      validated_at: new Date(TEST_NOW.getTime() + 1).toISOString()
+    };
+    const details = cloudLicense('grace_period', {
+      effective_lifecycle_validation: evidence
+    });
+
+    expect(resolveAboutLicenseState({
+      licenseDetails: details,
+      licenseStatus: 'active',
+      isCloudPlan: true,
+      now: TEST_NOW
+    })).toBe(ABOUT_LICENSE_STATE.UNKNOWN);
   });
 
   it('LIC-ABOUT-14: uses the same effective lifecycle classification as License y Rubros', () => {

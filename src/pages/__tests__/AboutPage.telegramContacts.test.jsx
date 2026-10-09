@@ -188,7 +188,7 @@ describe('AboutPage Telegram actions', () => {
 
     const currentPlan = screen.getByRole('region', { name: 'Tu plan actual' });
     expect(within(currentPlan).getByText('Periodo de gracia')).toBeInTheDocument();
-    expect(within(currentPlan)).toHaveTextContent(
+    expect(currentPlan).toHaveTextContent(
       'Tu plan está en periodo de gracia. Puedes consultar la continuidad del servicio.'
     );
     expect(screen.getByRole('button', { name: /Consultar situación del plan/ })).toBeInTheDocument();
@@ -205,7 +205,10 @@ describe('AboutPage Telegram actions', () => {
     setCloudLicense('pending', true);
     renderPage();
 
-    expect(screen.getByText('Por confirmar')).toBeInTheDocument();
+    const currentPlan = screen.getByRole('region', { name: 'Tu plan actual' });
+    expect(within(currentPlan).getByText('Por confirmar', {
+      selector: '.about-redesign__current-badge'
+    })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Contactar soporte' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Atajos de Lanzo Nube' })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Contactar soporte' }));
