@@ -332,6 +332,32 @@ describe('hydrateRestaurantCloudOrderToLocalOpenSale', () => {
     }
   );
 
+  it('recovers a legacy delivered unpaid terminal marker before hydrating the open cloud table', async () => {
+    await hydrate();
+    const existing = await database.table('sales').get('sale-table-1');
+    await database.table('sales').update('sale-table-1', {
+      restaurantCloudTerminalState: 'terminal',
+      restaurantCloudTerminalPaymentStatus: 'unpaid',
+      cloudRestaurantTerminalUpdatedAt: VERSION,
+      cloudRestaurantTerminalServerVersion: 'opaque:version:001'
+    });
+    repository.getRestaurantOrderByLocalOrder.mockResolvedValue({
+      success: true, found: true,
+      order: buildCloudOrder(buildSale(), { status: 'delivered', fulfillmentStatus: 'delivered' })
+    });
+
+    const result = await hydrate();
+
+    expect(result).toMatchObject({ success: true, hydrated: true, sale: {
+      status: 'open', fulfillmentStatus: 'delivered'
+    } });
+    expect(repository.getRestaurantOrderByLocalOrder).toHaveBeenCalledTimes(2);
+    const persisted = await database.table('sales').get('sale-table-1');
+    expect(persisted.restaurantCloudTerminalState).toBeUndefined();
+    expect(persisted.items).toEqual(result.sale.items);
+    expect(persisted.total).toBe(existing.total);
+    expect(await database.table('batches').get('batch-1')).toEqual({ id: 'batch-1', price: 777, stock: 4, committedStock: 2 });
+  });
   it('never resurrects a locally remembered cloud terminal state from an older active lookup', async () => {
     await hydrate();
     const marker = {

@@ -28,6 +28,7 @@ import { cashRepository } from '../../services/cash/cashRepository';
 import { actorRuntimeController } from '../../services/auth/actorRuntimeController';
 import { handlePosActorAuthorityError, runPosActorUiOperation } from './posActorAuthorityUi';
 import { hydrateRestaurantCloudOrderToLocalOpenSale } from '../../services/restaurant/restaurantTableHydration';
+import { recoverRestaurantFalseTerminalMarker } from '../../services/restaurant/restaurantTerminalStateRecovery';
 import { getRestaurantCloudTableState } from '../../services/restaurant/restaurantActiveTables';
 import { isRestaurantCloudTableShadow, isRestaurantCloudTableTerminal, restaurantCloudTableBlockedResult, restaurantCloudTableTerminalBlockedResult } from '../../services/restaurant/restaurantCloudTableGuards';
 import { RESTAURANT_CLOUD_STATUS_EVENT } from '../../services/restaurant/restaurantCloudStatusSummary';
@@ -359,8 +360,23 @@ export function useTableManagement({
     const executeLoadOpenOrder = useCallback(async (orderId, silent = false) => {
         try {
             const loadActor = actorRuntimeController.capture();
-            const localSale = await db.table(STORES.SALES).get(orderId);
+            let localSale = await db.table(STORES.SALES).get(orderId);
             loadActor.assertCurrent();
+            if (localSale?.restaurantCloudTerminalState === 'terminal'
+                && isCloudRestaurantOrdersEnabled && navigator.onLine !== false) {
+                const recovery = await recoverRestaurantFalseTerminalMarker({
+                    licenseKey, localOrderId: orderId, actorHandle: loadActor
+                });
+                loadActor.assertCurrent();
+                if (!recovery.success) {
+                    const authorityResult = handlePosActorAuthorityError(recovery, 'load_table');
+                    if (authorityResult) return authorityResult;
+                    showMessageModal(recovery.message || 'No se pudo verificar esta mesa. Actualiza las mesas.', null, { type: 'warning' });
+                    return recovery;
+                }
+                localSale = await db.table(STORES.SALES).get(orderId);
+                loadActor.assertCurrent();
+            }
             if (localSale?.restaurantCloudTerminalState === 'terminal') {
                 const message = localSale.restaurantCloudTerminalPaymentStatus === 'paid'
                     ? 'La mesa ya fue cobrada.' : 'La mesa ya no está activa. Actualiza las mesas.';

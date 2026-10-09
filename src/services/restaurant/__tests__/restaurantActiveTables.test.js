@@ -91,6 +91,13 @@ describe('canonical active-table discovery across devices', () => {
       tableData: sale.tableData, total: sale.total, items: sale.items });
   });
 
+  it('keeps a delivered local table available in Free mode without Cloud', () => {
+    const sale = local('local-delivered', { fulfillmentStatus: 'delivered' });
+    const rows = buildRestaurantActiveTables({ localSales: [sale], cloudEnabled: false });
+    expect(rows).toMatchObject([{ id: 'local-delivered', status: 'open', fulfillmentStatus: 'delivered',
+      source: 'LOCAL_ONLY', paymentStatus: 'unpaid' }]);
+  });
+
   it('uses cloud state, label and resolved updatedAt for a shared row without mutating local or cloud input', () => {
     const sale = local('a', { tableData: 'Etiqueta vieja', updatedAt: '2026-10-05T13:00:00Z' });
     const order = cloud('a', { tableLabel: 'Etiqueta compartida', fulfillmentStatus: 'ready',
@@ -129,7 +136,11 @@ describe('canonical active-table discovery across devices', () => {
     ['paid payment alias', { paymentStatus: null, payment_status: 'paid' }],
     ['closed order', { status: 'closed' }],
     ['archived order', { status: 'archived' }],
-    ['delivered order', { fulfillmentStatus: 'delivered' }],
+    ['delivered but paid order', { status: 'delivered', fulfillmentStatus: 'delivered', paymentStatus: 'paid' }],
+    ['paid timestamp', { fulfillmentStatus: 'delivered', paidAt: '2026-10-05T11:00:00Z' }],
+    ['paid sale identity', { fulfillmentStatus: 'delivered', paidSaleId: 'paid-sale-a' }],
+    ['checkout close timestamp', { fulfillmentStatus: 'delivered', checkoutClosedAt: '2026-10-05T11:00:00Z' }],
+    ['deletion timestamp', { fulfillmentStatus: 'delivered', deletedAt: '2026-10-05T11:00:00Z' }],
     ['completed order', { status: 'completed' }],
     ['archive timestamp', { archivedAt: '2026-10-05T11:00:00Z' }],
     ['archive metadata', { metadata: { archived: true } }]
@@ -142,6 +153,24 @@ describe('canonical active-table discovery across devices', () => {
     expect(sale.items).toHaveLength(1);
   });
 
+  it('keeps a delivered unpaid table visible and available for checkout discovery', () => {
+    const order = cloud('delivered', { status: 'delivered', fulfillmentStatus: 'delivered', paymentStatus: 'unpaid' });
+    expect(getRestaurantCloudTableState(order)).toBe('active');
+    const [row] = project({ cloudOrders: [order] });
+    expect(row).toMatchObject({ id: 'delivered', paymentStatus: 'unpaid',
+      fulfillmentStatus: 'delivered', source: 'CLOUD_ONLY' });
+    expect(countRestaurantActiveTables([row])).toEqual({ active: 1, kitchenRejected: 0 });
+  });
+
+  it('keeps POS-origin cancellation terminal while Kitchen rejection remains reviewable', () => {
+    const cancelled = cloud('pos-cancelled', {
+      status: 'cancelled', metadata: { cancelledFromPos: true }
+    });
+    const rejected = cloud('kitchen-rejected', { status: 'cancelled' });
+    expect(getRestaurantCloudTableState(cancelled)).toBe('terminal');
+    expect(getRestaurantCloudTableState(rejected)).toBe('kitchen-cancelled');
+    expect(project({ cloudOrders: [cancelled, rejected] }).map((row) => row.id)).toEqual(['kitchen-rejected']);
+  });
   it('never revives a locally remembered terminal table when cloud later fails or is absent offline', () => {
     const sale = local('paid', { restaurantCloudTerminalState: 'terminal',
       restaurantCloudTerminalPaymentStatus: 'paid' });
@@ -280,6 +309,24 @@ describe('durable terminal discovery evidence preserves original sales and reser
     expect(project({ localSales: [persisted] })).toEqual([]);
   });
 
+  it('does not persist a false terminal marker for a delivered unpaid open sale', async () => {
+    const sale = local('delivered', { paymentStatus: 'unpaid',
+      reservations: [{ batchId: 'batch-a', quantity: 2 }] });
+    await database.table('sales').put(sale);
+    const transactionSpy = vi.spyOn(database, 'transaction');
+    await remember([sale], [cloud('delivered', {
+      status: 'delivered', fulfillmentStatus: 'delivered', paymentStatus: 'unpaid'
+    })]);
+    const persisted = await database.table('sales').get(sale.id);
+    expect(getRestaurantCloudTableState(cloud('delivered', {
+      status: 'delivered', fulfillmentStatus: 'delivered', paymentStatus: 'unpaid'
+    }))).toBe('active');
+    expect(persisted).toEqual(sale);
+    expect(persisted.restaurantCloudTerminalState).toBeUndefined();
+    expect(transactionSpy).not.toHaveBeenCalled();
+    expect(await database.table('menu').get('product-a')).toEqual({ id: 'product-a', stock: 20, committedStock: 4 });
+    expect(await database.table('batches').get('batch-a')).toEqual({ id: 'batch-a', stock: 10, committedStock: 2 });
+  });
   it('does not mark an absent cloud table, an active table or a locally closed sale', async () => {
     const sales = [local('pending'), local('active'), local('closed', { status: 'completed' })];
     await database.table('sales').bulkPut(sales);

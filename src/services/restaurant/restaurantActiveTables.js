@@ -1,13 +1,31 @@
 import { buildRestaurantCloudStatusSummary } from './restaurantCloudStatusSummary';
 
+const normalizeState = (value) => String(value || '').trim().toLowerCase();
+const hasEvidence = (value) => value !== null && value !== undefined
+  && (typeof value !== 'string' || value.trim() !== '');
+
 export const getRestaurantCloudTableState = (order) => {
   if (!order?.localOrderId) return 'invalid';
-  if (order.status === 'cancelled' && order.metadata?.cancelledFromPos === true) return 'terminal';
+  const status = normalizeState(order.status);
+  const fulfillmentStatus = normalizeState(order.fulfillmentStatus ?? order.fulfillment_status);
+  if (status === 'cancelled' && order.metadata?.cancelledFromPos === true) return 'terminal';
+
   const summary = buildRestaurantCloudStatusSummary(order);
-  const states = [order.status, order.fulfillmentStatus].map((value) => String(value || '').toLowerCase());
-  if (summary.isPaid || states.some((value) => ['paid', 'closed', 'archived', 'delivered', 'completed'].includes(value))
-    || order.archivedAt || order.archived_at || order.checkoutClosedAt || order.checkout_closed_at
-    || order.paidAt || order.paid_at || order.metadata?.archived === true) return 'terminal';
+  const states = [status, fulfillmentStatus];
+  const closedState = states.some((value) => [
+    'paid', 'closed', 'archived', 'completed', 'deleted', 'settled'
+  ].includes(value));
+  const financialClosure = summary.isPaid
+    || hasEvidence(summary.paidAt) || hasEvidence(summary.paidSaleId)
+    || hasEvidence(summary.checkoutClosedAt)
+    || hasEvidence(order.paidAt) || hasEvidence(order.paid_at)
+    || hasEvidence(order.paidSaleId) || hasEvidence(order.paid_sale_id)
+    || hasEvidence(order.checkoutClosedAt) || hasEvidence(order.checkout_closed_at);
+  const administrativeClosure = closedState
+    || hasEvidence(order.archivedAt) || hasEvidence(order.archived_at)
+    || hasEvidence(order.deletedAt) || hasEvidence(order.deleted_at)
+    || order.metadata?.archived === true;
+  if (financialClosure || administrativeClosure) return 'terminal';
   if (summary.isCancelled || states.includes('cancelled')) return 'kitchen-cancelled';
   return 'active';
 };
@@ -133,9 +151,9 @@ export const rememberRestaurantTableTerminalStates = async ({
       actorHandle.assertCurrent();
       if (!sale || sale.status !== 'open' || !isRestaurantTableInScope(sale, licenseKey, tenantId)) continue;
       await table.update(sale.id, { restaurantCloudTerminalState: 'terminal',
-        restaurantCloudTerminalPaymentStatus: order.paymentStatus,
-        cloudRestaurantTerminalUpdatedAt: order.updatedAt,
-        cloudRestaurantTerminalServerVersion: order.serverVersion });
+        restaurantCloudTerminalPaymentStatus: order.paymentStatus ?? order.payment_status,
+        cloudRestaurantTerminalUpdatedAt: order.updatedAt ?? order.updated_at,
+        cloudRestaurantTerminalServerVersion: order.serverVersion ?? order.server_version });
       actorHandle.assertCurrent();
     }
   });

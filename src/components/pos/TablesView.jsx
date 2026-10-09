@@ -281,9 +281,14 @@ const TableCard = ({
         <div className="table-card-title">
           <h3>{getTableLabel(order)}</h3>
           {cloudStatus.cloudOrder && (
-            <span className={`table-cloud-status-badge ${getCloudStatusClass(cloudStatus.status)}`}>
-              {cloudStatus.isCancelled ? 'Cancelada' : cloudStatus.statusLabel}
-            </span>
+            <div className="table-card-status-group" aria-label="Estado de cocina y pago">
+              <span className={`table-cloud-status-badge ${getCloudStatusClass(cloudStatus.status)}`}>
+                Cocina: {cloudStatus.isCancelled ? 'Cancelada' : cloudStatus.statusLabel}
+              </span>
+              <span className="table-cloud-payment-badge">
+                Pago: {cloudStatus.paymentStatus === 'paid' ? 'Pagado' : 'Pendiente'}
+              </span>
+            </div>
           )}
         </div>
 

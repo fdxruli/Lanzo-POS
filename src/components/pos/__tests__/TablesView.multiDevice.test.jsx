@@ -4,7 +4,7 @@ import Dexie from 'dexie';
 import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const fixture = vi.hoisted(() => ({ database: null, app: null, list: vi.fn(), generation: 1 }));
+const fixture = vi.hoisted(() => ({ database: null, app: null, list: vi.fn(), lookup: vi.fn(), generation: 1 }));
 vi.mock('../../../services/db', () => ({
   STORES: { SALES: 'sales' },
   db: { table: (name) => fixture.database.table(name), transaction: (...args) => fixture.database.transaction(...args) }
@@ -30,12 +30,14 @@ vi.mock('../../../services/sync/syncConstants', () => ({
   isRestaurantOrdersCloudEnabled: (license) => license?.cloud === true
 }));
 vi.mock('../../../services/restaurant/restaurantOrdersRepository', () => ({ restaurantOrdersRepository: {
-  getRestaurantOrders: (...args) => fixture.list(...args)
+  getRestaurantOrders: (...args) => fixture.list(...args),
+  getRestaurantOrderByLocalOrder: (...args) => fixture.lookup(...args)
 } }));
 vi.mock('../../../hooks/restaurant/useRestaurantOrderCloudStatus', () => ({
   RESTAURANT_CLOUD_STATUS_EVENT: 'lanzo:restaurant-orders-cloud-updated',
   buildRestaurantCloudStatusSummary: (order) => ({ items: order?.items || [], status: order?.fulfillmentStatus || 'pending',
-    statusLabel: 'En cocina', isCancelled: order?.fulfillmentStatus === 'cancelled', hasCancelledItems: false }),
+    paymentStatus: order?.paymentStatus || 'unpaid', statusLabel: order?.fulfillmentStatus === 'delivered' ? 'Entregada' : 'En cocina',
+    isCancelled: order?.fulfillmentStatus === 'cancelled', hasCancelledItems: false }),
   getRestaurantOrderCloudStatusSnapshot: vi.fn(),
   useRestaurantOrderCloudStatus: () => ({ items: [], isCloudStatusEnabled: false, getItemStatusLabel: () => 'Pendiente' })
 }));
@@ -61,6 +63,7 @@ beforeEach(async () => {
   fixture.app = { licenseDetails: { key: 'license-qa', cloud: true, valid: true },
     currentDeviceRole: 'admin', canAccess: () => true };
   fixture.list.mockReset().mockResolvedValue({ success: true, orders: [remote()] });
+  fixture.lookup.mockReset();
 });
 afterEach(async () => { cleanup(); vi.restoreAllMocks(); fixture.database.close(); await fixture.database.delete(); });
 
@@ -87,13 +90,70 @@ describe('QA-19 multi-device table discovery', () => {
     expect(result.current.activeTablesCount + result.current.kitchenRejectedOpenCount).toBe(36);
     modal.rerender(<TablesView show onClose={vi.fn()} />);
     await waitFor(() => expect(fixture.list).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Actualizar mesas' }).disabled).toBe(false));
     expect(result.current.activeTablesCount + result.current.kitchenRejectedOpenCount).toBe(36);
 
     fixture.list.mockClear().mockResolvedValue({ success: true, orders: [...cloudOrders, remote('new-table')] });
     fireEvent.click(screen.getByRole('button', { name: 'Actualizar mesas' }));
+    await waitFor(() => {
+      expect(fixture.list.mock.calls.some(([args]) => args.force === true)).toBe(true);
+      expect(fixture.list.mock.calls.some(([args]) => args.force === false)).toBe(true);
+    });
     await waitFor(() => expect(result.current.activeTablesCount + result.current.kitchenRejectedOpenCount).toBe(37));
-    expect(fixture.list.mock.calls.some(([args]) => args.force === true)).toBe(true);
-    expect(fixture.list.mock.calls.some(([args]) => args.force === false)).toBe(true);
+  });
+
+  it('shows delivered kitchen state separately from pending payment and keeps checkout available', async () => {
+    const delivered = remote('delivered-unpaid');
+    delivered.status = 'delivered';
+    delivered.fulfillmentStatus = 'delivered';
+    delivered.paymentStatus = 'unpaid';
+    fixture.list.mockResolvedValue({ success: true, orders: [delivered] });
+
+    render(<TablesView show onClose={vi.fn()} />);
+
+    expect(await screen.findByText('Cocina: Entregada')).toBeTruthy();
+    expect(screen.getByText('Pago: Pendiente')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /cobrar/i })).toBeTruthy();
+  });
+
+  it('recovers a legacy hidden delivered unpaid table from a forced current parent lookup', async () => {
+    const localSale = {
+      id: 'order-A', localOrderId: 'order-A', status: 'open', paymentStatus: 'unpaid',
+      licenseKey: 'license-qa', tenantOpaqueId: 'tenant-qa',
+      restaurantOrderId: 'cloud-order-A',
+      cloudRestaurantOrderUpdatedAt: '2026-10-05T10:00:00.000Z',
+      cloudRestaurantOrderServerVersion: 2,
+      restaurantCloudTerminalState: 'terminal',
+      restaurantCloudTerminalPaymentStatus: 'unpaid',
+      cloudRestaurantTerminalUpdatedAt: '2026-10-05T10:00:00.000Z',
+      cloudRestaurantTerminalServerVersion: 2,
+      items: [{ id: 'product-a', quantity: 1, price: 120 }],
+      reservations: [{ batchId: 'batch-a', quantity: 1 }],
+      total: 120
+    };
+    await fixture.database.table('sales').put(localSale);
+    fixture.list.mockResolvedValue({ success: true, orders: [remote('order-A')] });
+    fixture.lookup.mockResolvedValue({ success: true, found: true, order: {
+      ...remote('order-A'), saleId: 'order-A', status: 'delivered', fulfillmentStatus: 'delivered',
+      paymentStatus: 'unpaid', licenseKey: 'license-qa', restaurantCloudLicenseKey: 'license-qa',
+      tenantOpaqueId: 'tenant-qa', restaurantCloudTenantId: 'tenant-qa',
+      serverVersion: 3, updatedAt: '2026-10-05T11:00:00.000Z'
+    } });
+
+    const { result } = renderHook(() => useRestaurantActiveTables());
+    await waitFor(() => expect(result.current.tables).toMatchObject([{
+      id: 'order-A', paymentStatus: 'unpaid', fulfillmentStatus: 'delivered'
+    }]));
+
+    expect(fixture.lookup).toHaveBeenCalledExactlyOnceWith({
+      licenseKey: 'license-qa', localOrderId: 'order-A', force: true
+    });
+    const persisted = await fixture.database.table('sales').get('order-A');
+    expect(persisted.restaurantCloudTerminalState).toBeUndefined();
+    expect(persisted.items).toEqual(localSale.items);
+    expect(persisted.total).toBe(localSale.total);
+    expect(persisted.reservations).toEqual(localSale.reservations);
+    expect(result.current.warning).toBe('');
   });
 
   it('treats stale reads as neutral and preserves the last good count on real errors', async () => {
@@ -182,7 +242,7 @@ describe('QA-19 multi-device table discovery', () => {
     await waitFor(async () => expect(await fixture.database.table('sales').get('order-A')).toMatchObject({
       status: 'open', restaurantCloudTerminalState: 'terminal', total: 120
     }));
-    expect(screen.queryByText('Mesa origen')).toBeNull();
+    await waitFor(() => expect(screen.queryByText('Mesa origen')).toBeNull());
     fixture.list.mockResolvedValue({ success: false, orders: [] });
     fireEvent.click(screen.getByText('Actualizar mesas'));
     expect(await screen.findByText('No se pudieron actualizar las mesas de otros dispositivos.')).toBeTruthy();

@@ -10,6 +10,7 @@ import { restaurantOrdersRepository } from '../../services/restaurant/restaurant
 import { buildRestaurantActiveTables, countRestaurantActiveTables, fetchRestaurantTableDiscoveryOrders, getRestaurantCloudTableState, rememberRestaurantTableTerminalStates } from '../../services/restaurant/restaurantActiveTables';
 import { RESTAURANT_CLOUD_STATUS_EVENT } from '../../services/restaurant/restaurantCloudStatusSummary';
 import { isCloudRequestResponseStale } from '../../services/cloud/cloudRequestErrors';
+import { recoverRestaurantFalseTerminalMarker } from '../../services/restaurant/restaurantTerminalStateRecovery';
 import { useActiveOrders } from '../pos/useActiveOrders';
 
 const readLocalTables = () => db.table(STORES.SALES).where('status').equals(SALE_STATUS.OPEN).toArray();
@@ -41,9 +42,10 @@ export function useRestaurantActiveTables({ enabled = true } = {}) {
     if (!enabled) return { success: true, skipped: true };
     const request = ++requests.current.sequence;
     let handle;
+    let recoveryWarning = '';
     try {
       if (cloudEnabled) handle = actorRuntimeController.capture();
-      const localSales = await readLocalTables();
+      let localSales = await readLocalTables();
       handle?.assertCurrent();
       if (request !== requests.current.sequence) return { success: false, code: 'CLOUD_REQUEST_RESPONSE_STALE' };
       setData((previous) => ({ scope, localSales,
@@ -62,21 +64,38 @@ export function useRestaurantActiveTables({ enabled = true } = {}) {
         setData((previous) => previous.scope === scope ? { ...previous, isLoading: false } : previous);
         return response;
       }
+      let projectedCloudOrders = response?.success === false ? [] : response.orders;
       if (response?.success !== false) {
         await useActiveOrders.getState().recoverRestaurantCancellationCleanup(response.orders);
         handle.assertCurrent();
-        setData((previous) => ({ ...previous, cloudOrders: response.orders }));
+        const assertScopedActor = () => {
+          handle.assertCurrent();
+          if (request !== requests.current.sequence) throw Object.assign(new Error('CLOUD_REQUEST_RESPONSE_STALE'), { code: 'CLOUD_REQUEST_RESPONSE_STALE' });
+        };
+        const scopedActorHandle = { tenant: handle.tenant, assertCurrent: assertScopedActor };
+        const recoveredCloudOrders = [];
         await rememberRestaurantTableTerminalStates({ database: db, stores: STORES, localSales, licenseKey, tenantId,
-          cloudOrders: response.orders, actorHandle: { assertCurrent: () => {
-            handle.assertCurrent();
-            if (request !== requests.current.sequence) throw Object.assign(new Error('CLOUD_REQUEST_RESPONSE_STALE'), { code: 'CLOUD_REQUEST_RESPONSE_STALE' });
-          } } });
-        handle.assertCurrent();
+          cloudOrders: response.orders, actorHandle: scopedActorHandle });
+        for (const sale of localSales) {
+          if (sale?.restaurantCloudTerminalState !== 'terminal') continue;
+          const recovery = await recoverRestaurantFalseTerminalMarker({
+            database: db, stores: STORES, licenseKey, localOrderId: sale.id, actorHandle: scopedActorHandle
+          });
+          if (recovery.code === 'ACTOR_CONTEXT_STALE' || recovery.code === 'CLOUD_REQUEST_RESPONSE_STALE') {
+            throw Object.assign(new Error(recovery.code), { code: recovery.code });
+          }
+          if (recovery.success && recovery.order) recoveredCloudOrders.push(recovery.order);
+          if (!recovery.success && recoveryWarning === '') recoveryWarning = recovery.message || cloudNotice;
+        }
+        assertScopedActor();
+        projectedCloudOrders = [...response.orders, ...recoveredCloudOrders];
+        localSales = await readLocalTables();
+        assertScopedActor();
         if (request !== requests.current.sequence) return { success: false, code: 'CLOUD_REQUEST_RESPONSE_STALE' };
       }
-      setData((previous) => ({ ...previous, cloudOrders: response?.success === false
-        ? previous.cloudOrders : response.orders,
-        isLoading: false, warning: response?.success === false ? cloudNotice : '' }));
+      setData((previous) => ({ ...previous, localSales: response?.success === false ? previous.localSales : localSales, cloudOrders: response?.success === false
+        ? previous.cloudOrders : projectedCloudOrders,
+        isLoading: false, warning: response?.success === false ? cloudNotice : recoveryWarning }));
       return response;
     } catch (error) {
       if (request !== requests.current.sequence) return { success: false, code: 'CLOUD_REQUEST_RESPONSE_STALE' };

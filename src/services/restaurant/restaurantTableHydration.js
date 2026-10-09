@@ -3,6 +3,7 @@ import { actorRuntimeController } from '../auth/actorRuntimeController';
 import { Money } from '../../utils/moneyMath';
 import { restaurantOrdersRepository } from './restaurantOrdersRepository';
 import { getRestaurantCloudTableState, isRestaurantTableInScope } from './restaurantActiveTables';
+import { recoverRestaurantFalseTerminalMarker } from './restaurantTerminalStateRecovery';
 import { preflightCloudRestaurantOrderSplit } from './restaurantSplitCloudPreflight';
 import {
   buildRestaurantOrderCommercialSnapshot,
@@ -265,9 +266,19 @@ export const hydrateRestaurantCloudOrderToLocalOpenSale = async ({
     const table = database.table(STORES.SALES);
     // Fetching is read-only. The transaction rechecks the durable record before
     // deciding whether a cloud shadow may be written.
-    const existing = await table.get(id);
+    let existing = await table.get(id);
     handle.assertCurrent();
-    if (isLocallyMarkedTerminal(existing)) return localTerminalFailure(existing, id);
+    if (isLocallyMarkedTerminal(existing)) {
+      const recovery = await recoverRestaurantFalseTerminalMarker({
+        licenseKey, localOrderId: id, expectedCloudOrderId: order.id,
+        actorHandle: handle, repository, database, stores: STORES, authoritativeResponse: response
+      });
+      handle.assertCurrent();
+      if (!recovery.success) return failure(recovery.code, recovery.message, id);
+      existing = await table.get(id);
+      handle.assertCurrent();
+      if (isLocallyMarkedTerminal(existing)) return localTerminalFailure(existing, id);
+    }
     if (existing && (existing.status !== 'open' || isDirty(existing))) return failure(
       'CLOUD_TABLE_LOCAL_CONFLICT', 'La cuenta local cambió o ya está cerrada. Actualiza la mesa antes de continuar.', id
     );

@@ -5,7 +5,7 @@ import { act, cleanup, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const fixture = vi.hoisted(() => ({
-  database: null, appState: null, storage: new Map(), storageSuspended: false, cloudUpsert: vi.fn(),
+  database: null, appState: null, storage: new Map(), storageSuspended: false, cloudUpsert: vi.fn(), cloudLookup: vi.fn(),
   reportAuthority: vi.fn(), processSale: vi.fn(), showMessage: vi.fn()
 }));
 vi.mock('../../../services/db/dexie', () => ({
@@ -73,7 +73,7 @@ vi.mock('../../restaurant/useRestaurantOrderCloudStatus', () => ({
 }));
 vi.mock('../../../services/restaurant/restaurantOrdersRepository', () => ({
   restaurantOrdersRepository: { upsertRestaurantOrderFromLocalSale: (...args) => fixture.cloudUpsert(...args),
-    getRestaurantOrderByLocalOrder: vi.fn(async () => ({ success: true, found: false })) }
+    getRestaurantOrderByLocalOrder: (...args) => fixture.cloudLookup(...args) }
 }));
 vi.mock('../../../services/restaurant/restaurantOrderCheckoutClose', () => ({
   closeRestaurantCloudOrderAfterSuccessfulPayment: vi.fn(),
@@ -144,6 +144,7 @@ beforeEach(async () => {
   }
   fixture.reportAuthority.mockImplementation((error) => ['ACTOR_CONTEXT_LOCKED', 'ACTOR_CONTEXT_STALE',
     'DEVICE_TOKEN_INVALID'].includes(error?.code));
+  fixture.cloudLookup.mockReset().mockResolvedValue({ success: true, found: false });
   fixture.cloudUpsert.mockImplementation(async () => {
     actorRuntimeController.lock('DEVICE_TOKEN_INVALID');
     return { success: false, code: 'DEVICE_TOKEN_INVALID' };
@@ -177,7 +178,8 @@ describe('Mini-phase 3B.0 saved table authority recovery', () => {
       useActiveOrders.setState({ activeOrders: new Map([[order.id, { ...order, tableData: null }]]) });
       showInputPromptModal.mockImplementationOnce(async () => { replaceActorCart(); return 'Mesa A'; });
     }
-    fixture.cloudUpsert.mockImplementation(async () => {
+    fixture.cloudLookup.mockReset().mockResolvedValue({ success: true, found: false });
+  fixture.cloudUpsert.mockImplementation(async () => {
       if (phase === 'cloud response') replaceActorCart();
       return { success: true, order: { updatedAt: '2026-10-03T10:00:00.000Z' } };
     });
@@ -286,6 +288,45 @@ describe('Mini-phase 3B.0 saved table authority recovery', () => {
     expect(await db.table(STORES.SALES).get('table-a')).toMatchObject({ status: 'open', tableTabCleanup: null });
     expect(selectCurrentOrder(useActiveOrders.getState())?.items).toEqual([]);
     expect(useActiveOrders.getState().activeOrders.has('table-a')).toBe(false);
+  });
+
+  it('revalidates a delivered unpaid terminal marker before loading the saved POS table', async () => {
+    fixture.cloudUpsert.mockResolvedValue({ success: true });
+    const deps = tableDeps();
+    const hook = renderHook(() => useTableManagement(deps));
+    await act(async () => { await hook.result.current.handleSaveAsOpen(); });
+    const original = await db.table(STORES.SALES).get('table-a');
+    const terminalAt = '2026-10-08T12:00:00.000Z';
+    await db.table(STORES.SALES).update('table-a', {
+      restaurantCloudTerminalState: 'terminal',
+      restaurantCloudTerminalPaymentStatus: 'unpaid',
+      cloudRestaurantTerminalUpdatedAt: terminalAt,
+      cloudRestaurantTerminalServerVersion: 2
+    });
+    fixture.cloudLookup.mockResolvedValue({
+      success: true, found: true, order: {
+        id: 'cloud-parent-a', localOrderId: 'table-a', saleId: 'table-a',
+        licenseKey: 'license-a', restaurantCloudLicenseKey: 'license-a',
+        tenantOpaqueId: 'tenant-a', restaurantCloudTenantId: 'tenant-a',
+        status: 'delivered', fulfillmentStatus: 'delivered', paymentStatus: 'unpaid',
+        serverVersion: 3, updatedAt: '2026-10-08T13:00:00.000Z'
+      }
+    });
+
+    let loaded;
+    await act(async () => { loaded = await hook.result.current.handleLoadOpenOrder('table-a'); });
+
+    expect(loaded).toMatchObject({ success: true });
+    expect(fixture.cloudLookup).toHaveBeenCalledExactlyOnceWith({
+      licenseKey: 'license-a', localOrderId: 'table-a', force: true
+    });
+    expect(await db.table(STORES.SALES).get('table-a')).toMatchObject({
+      status: 'open', items: original.items, total: original.total
+    });
+    expect((await db.table(STORES.SALES).get('table-a')).restaurantCloudTerminalState).toBeUndefined();
+    expect(selectCurrentOrder(useActiveOrders.getState())).toMatchObject({ id: 'table-a', isSaved: true });
+    expect(await db.table(STORES.MENU).get('burger')).toMatchObject({ stock: 10, committedStock: 1 });
+    expect(deps.closeModal).toHaveBeenCalledWith('tables');
   });
 
   it('keeps locked cancellation side effect free and cancels exactly once after reauthentication', async () => {
