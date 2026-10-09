@@ -2,6 +2,7 @@ import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } fr
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 import { useAppStore } from '../../store/useAppStore';
 import { showMessageModal } from '../../services/utils';
+import { isRestaurantCloudTableShadow } from '../../services/restaurant/restaurantCloudTableGuards';
 import { isCloudSalesInventoryEnabled } from '../../services/sync/syncConstants';
 import {
   isProductReadyForCloudSale,
@@ -392,6 +393,22 @@ export default function ProductMenu({
     };
   }, [loadBatchesForProduct, visibleProducts]);
 
+  const addProductSafely = useCallback(async (product) => {
+    const state = useActiveOrders.getState?.();
+    const current = state?.currentOrderId ? state.activeOrders?.get(state.currentOrderId) : null;
+    if (isRestaurantCloudTableShadow(current)) {
+      showMessageModal('Esta mesa está en modo solo lectura. Cierra revisión antes de agregar productos a otra orden.', null, { type: 'warning' });
+      return false;
+    }
+    try {
+      await addSmartItem(product);
+      return true;
+    } catch (error) {
+      showMessageModal(error?.message || 'No se pudo agregar el producto a la orden.', null, { type: 'warning' });
+      return false;
+    }
+  }, [addSmartItem]);
+
   // --- HANDLER PRINCIPAL DE CLIC EN PRODUCTO (ADAPTABLE POR RUBRO) ---
   // MEMOIZADO: Evita re-renders de ProductCard cuando se escribe en el buscador
   const handleCardClick = useCallback(async (product) => {
@@ -439,8 +456,7 @@ export default function ProductMenu({
             ...product,
             wholesaleTiers: features.hasWholesale ? product.wholesaleTiers : []
           };
-          addSmartItem(cleanProduct);
-          playBeep(1000, 'sine');
+          if (await addProductSafely(cleanProduct)) playBeep(1000, 'sine');
         } else {
           // Con variantes reales → abrir modal con lotes ya cargados (sin spinner)
           setSelectedProductForVariant(product);
@@ -483,7 +499,7 @@ export default function ProductMenu({
 
     // ACCIÓN INTELIGENTE (Smart Add)
     // Busca el lote FEFO vigente automáticamente y agrega.
-    addSmartItem(cleanProduct);
+    if (!await addProductSafely(cleanProduct)) return;
 
     // FEEDBACK SONORO (Éxito)
     playBeep(1000, 'sine');
@@ -497,28 +513,28 @@ export default function ProductMenu({
         { type: 'warning', duration: 3000 }
       );
     }
-  }, [features.hasModifiers, features.hasVariants, features.hasWholesale, addSmartItem, loadBatchesForProduct, guardCloudSyncedProduct, guardStrictExpirySale, readOnly]);
+  }, [features.hasModifiers, features.hasVariants, features.hasWholesale, addProductSafely, loadBatchesForProduct, guardCloudSyncedProduct, guardStrictExpirySale, readOnly]);
 
-  const handleConfirmVariants = useCallback((variantItem) => {
+  const handleConfirmVariants = useCallback(async (variantItem) => {
     if (readOnly) return;
     if (!guardCloudSyncedProduct(selectedProductForVariant || variantItem)) return;
 
     // Como ya viene el lote seleccionado del modal, addSmartItem
     // detectará que ya trae batchId y lo pasará directo. Es seguro.
-    addSmartItem(variantItem);
+    if (!await addProductSafely(variantItem)) return;
     setVariantModalOpen(false);
     setSelectedProductForVariant(null);
     setPreloadedBatches(null);
-  }, [addSmartItem, guardCloudSyncedProduct, selectedProductForVariant, readOnly]);
+  }, [addProductSafely, guardCloudSyncedProduct, selectedProductForVariant, readOnly]);
 
-  const handleConfirmModifiers = useCallback((customizedProduct) => {
+  const handleConfirmModifiers = useCallback(async (customizedProduct) => {
     if (readOnly) return;
     if (!guardCloudSyncedProduct(selectedProductForMod || customizedProduct)) return;
 
-    addSmartItem(customizedProduct);
+    if (!await addProductSafely(customizedProduct)) return;
     setModModalOpen(false);
     setSelectedProductForMod(null);
-  }, [addSmartItem, guardCloudSyncedProduct, selectedProductForMod, readOnly]);
+  }, [addProductSafely, guardCloudSyncedProduct, selectedProductForMod, readOnly]);
 
   // --- HANDLERS DE CIERRE DE MODALES ---
   const handleCloseVariantModal = useCallback(() => {
