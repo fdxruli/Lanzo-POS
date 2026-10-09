@@ -86,7 +86,7 @@ export default function EcommerceBusinessInformationPanel({
       id="ecom-portal-panel-information"
       className="ecom-admin-information-grid"
       role="tabpanel"
-      aria-labelledby={portal ? 'ecom-portal-tab-information' : undefined}
+      aria-labelledby="ecom-portal-tab-information"
     >
       <form className="ui-card ecom-admin-form-card" onSubmit={onSubmit}>
         <div className="ecom-admin-card-heading">
