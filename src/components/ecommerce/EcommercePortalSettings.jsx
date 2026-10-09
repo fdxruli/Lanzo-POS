@@ -385,6 +385,17 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
     }] : [])
   ];
   const showCatalogDiscovery = !isProPlan && catalogDiscoveryFeatures.length > 0;
+  const designDiscoveryContent = showDesignDiscovery ? (
+    <ProFeatureShowcase
+      variant="card"
+      className="ecom-admin-pro-showcase"
+      title="Personaliza tu tienda y crea una experiencia única"
+      description="Dale a tu tienda una identidad propia con herramientas avanzadas para organizar su diseño, personalizar su apariencia y presentar mejor tus productos."
+      features={DESIGN_DISCOVERY_FEATURES}
+      offerTitle="Explora el diseño avanzado de Lanzo Nube"
+      offerDescription="Conoce las herramientas disponibles para personalizar y publicar la experiencia de tu tienda."
+    />
+  ) : null;
   const publicationRequirements = {
     whatsapp: form.whatsappPhone.replace(/\D/g, '').length >= 8,
     street: form.addressStreet.trim().length > 0,
@@ -925,8 +936,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
 
       {portal && <StoreHealth portal={portal} requirements={publicationRequirements} products={products} operations={operations} />}
 
-      {portal && (
-        <nav
+      <nav
           className="ecom-admin-section-nav tabs-container"
           aria-label="Secciones del portal"
           role="tablist"
@@ -946,10 +956,9 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
               <span>{label}</span>
             </button>
           ))}
-        </nav>
-      )}
+      </nav>
 
-      {(!portal || activeSection === 'information') ? (
+      {activeSection === 'information' ? (
         <EcommerceBusinessInformationPanel
           portal={portal}
           form={form}
@@ -966,6 +975,29 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
           requirements={publicationRequirements}
         />
       ) : null}
+
+      {!portal && activeSection !== 'information' && (
+        <section
+          id={`ecom-portal-panel-${activeSection}`}
+          className="ecom-design-workspace"
+          role="tabpanel"
+          aria-labelledby={`ecom-portal-tab-${activeSection}`}
+        >
+          <div className="ecom-admin-design-unavailable" role="status">
+            <strong>Aún no se encontró una tienda configurada para esta licencia.</strong>
+            <span>
+              Si estás comenzando, completa Información para crearla. Si tu tienda ya existía,
+              no crees otra: revisa la licencia y la conexión antes de continuar.
+            </span>
+            <div>
+              <button type="button" className="btn btn-primary" onClick={() => setActiveSection('information')}>
+                Ir a Información
+              </button>
+            </div>
+          </div>
+          {activeSection === 'design' && designDiscoveryContent}
+        </section>
+      )}
 
       {portal && activeSection === 'design' ? (
         <section
@@ -987,15 +1019,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
               </section>
             </div>
           ) : showDesignDiscovery ? (
-            <ProFeatureShowcase
-              variant="card"
-              className="ecom-admin-pro-showcase"
-              title="Personaliza tu tienda y crea una experiencia única"
-              description="Dale a tu tienda una identidad propia con herramientas avanzadas para organizar su diseño, personalizar su apariencia y presentar mejor tus productos."
-              features={DESIGN_DISCOVERY_FEATURES}
-              offerTitle="Explora el diseño avanzado de Lanzo Nube"
-              offerDescription="Conoce las herramientas disponibles para personalizar y publicar la experiencia de tu tienda."
-            />
+            designDiscoveryContent
           ) : (
             <div className="ecom-admin-design-unavailable" role="status">
               <strong>El constructor visual no está habilitado para esta licencia.</strong>

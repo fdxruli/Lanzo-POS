@@ -148,6 +148,39 @@ describe('EcommercePortalSettings internal access guard', () => {
     expect(screen.queryByText('No tienes permiso para administrar el portal online.')).toBeNull();
   });
 
+  it('keeps the four tabs accessible before portal creation without enabling remote operations', async () => {
+    act(() => setStoreState({ role: 'admin', settings: true }));
+
+    render(<EcommercePortalSettings />);
+
+    expect(await screen.findByRole('tablist', { name: 'Secciones del portal' })).toBeInTheDocument();
+    ['Información', 'Catálogo', 'Operación', 'Diseño'].forEach((name) => {
+      expect(screen.getByRole('tab', { name })).toBeInTheDocument();
+    });
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Catálogo' }));
+    expect(screen.getByRole('tabpanel', { name: 'Catálogo' })).toBeInTheDocument();
+    expect(screen.getByText(/Aún no se encontró una tienda configurada/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Publicar producto' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Operación' }));
+    expect(screen.getByRole('tabpanel', { name: 'Operación' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Guardar horarios/ })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Diseño' }));
+    expect(screen.getByRole('tabpanel', { name: 'Diseño' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Personaliza tu tienda y crea una experiencia única' })).toBeInTheDocument();
+    expect(screen.queryByTestId('site-builder')).not.toBeInTheDocument();
+    expect(listPublishedProducts).not.toHaveBeenCalled();
+    expect(savePublishedProduct).not.toHaveBeenCalled();
+    expect(setProductPublished).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ir a Información' }));
+    expect(screen.getByRole('tabpanel', { name: 'Información' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Crear tienda' })).toBeInTheDocument();
+    expect(saveEcommercePortal).not.toHaveBeenCalled();
+  });
+
   it('allows staff with settings and ecommerce permissions', async () => {
     act(() => setStoreState({ role: 'staff', settings: true, ecommerce: true }));
 
