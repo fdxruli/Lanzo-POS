@@ -154,9 +154,9 @@ ions({
     })).toBe(ABOUT_LICENSE_STATE.CLOUD_GRACE);
   });
 
-  it('LIC-ABOUT-03: keeps effective grace when administrative license_status is expired', () => {
+  it('LIC-ABOUT-03: separates administrative active from effective grace', () => {
     const details = cloudLicense('grace_period', {
-      license_status: 'expired'
+      license_status: 'active'
     });
 
     expect(resolveAboutLicenseState({
@@ -295,22 +295,28 @@ ions({
 
   it('LIC-ABOUT-12: respects exact UTC grace boundaries before, during, and after grace', () => {
     const graceEnd = '2026-10-16T15:14:09.000Z';
-    const before = cloudLicense('grace_period', {
+    const during = cloudLicense('grace_period', {
       grace_period_ends: graceEnd,
       effective_lifecycle_validation: confirmedEvidence('grace_period', { grace_period_ends: graceEnd })
     });
 
     expect(resolveAboutLicenseState({
-      licenseDetails: before,
+      licenseDetails: during,
       licenseStatus: 'active',
       isCloudPlan: true,
       now: new Date('2026-10-16T15:14:08.999Z')
     })).toBe(ABOUT_LICENSE_STATE.CLOUD_GRACE);
     expect(resolveAboutLicenseState({
-      licenseDetails: before,
+      licenseDetails: during,
       licenseStatus: 'active',
       isCloudPlan: true,
       now: new Date('2026-10-16T15:14:09.000Z')
+    })).toBe(ABOUT_LICENSE_STATE.CLOUD_EXPIRED);
+    expect(resolveAboutLicenseState({
+      licenseDetails: during,
+      licenseStatus: 'active',
+      isCloudPlan: true,
+      now: new Date('2026-10-16T15:14:09.001Z')
     })).toBe(ABOUT_LICENSE_STATE.CLOUD_EXPIRED);
   });
 

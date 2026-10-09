@@ -181,9 +181,8 @@ export const resolveEffectiveLicenseLifecycle = (
     const blockingStatus = statusSignals.find((status) => BLOCKING_LIFECYCLE_STATES.has(status));
     if (blockingStatus) return blockingStatus;
 
-    // license_status is the administrative database state. It must not replace
-    // the effective lifecycle returned by server validation (for example, an
-    // administratively expired subscription can still have a valid grace period).
+    // license_status is administrative metadata; it must not replace the
+    // effective lifecycle returned by server validation.
     if (adminStatus && BLOCKING_LIFECYCLE_STATES.has(adminStatus)) {
         return adminStatus;
     }
