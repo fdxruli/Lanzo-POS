@@ -717,7 +717,7 @@ export default function AboutPage() {
               Se abrirá el chat de @{telegramPreview.username} con el texto preparado, si Telegram admite esta función. Revísalo y envíalo desde Telegram; abrir el chat no confirma su recepción.
             </p>
             <label className="about-telegram-dialog__message-label" htmlFor="about-telegram-message">
-              Mensaje para {telegramPreview.label.toLowerCase()}
+              Mensaje para {telegramPreview.label.charAt(0).toLowerCase() + telegramPreview.label.slice(1)}
             </label>
             <textarea
               id="about-telegram-message"

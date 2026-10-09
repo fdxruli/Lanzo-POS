@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import AboutPage from '../AboutPage';
@@ -162,7 +162,8 @@ describe('AboutPage Telegram actions', () => {
     setCloudLicense('grace_period', true);
     renderPage();
 
-    expect(screen.getByText('Periodo de gracia')).toBeInTheDocument();
+    const currentPlan = screen.getByRole('region', { name: 'Tu plan actual' });
+    expect(within(currentPlan).getByText('Periodo de gracia')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Consultar situación del plan/ })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Solicitar Lanzo Nube/ })).not.toBeInTheDocument();
   });
