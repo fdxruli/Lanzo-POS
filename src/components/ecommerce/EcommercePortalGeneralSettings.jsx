@@ -1,5 +1,5 @@
 import { Link2, PackageCheck, Truck } from 'lucide-react';
-import ProFeatureShowcase from '../plans/ProFeatureShowcase';
+import EcommerceProHint from './EcommerceProHint';
 import './EcommercePortalGeneralSettings.css';
 
 const featureValue = (features, camelKey, snakeKey) => (
@@ -24,7 +24,9 @@ export default function EcommercePortalGeneralSettings({
   form,
   onFieldChange,
   plan,
-  features
+  features,
+  showNubeBenefits = false,
+  onOpenNubeBenefits
 }) {
   const {
     customSlugAllowed,
@@ -32,7 +34,6 @@ export default function EcommercePortalGeneralSettings({
   } = resolveEcommerceGeneralSettingsCapabilities(features);
   const deliveryModeLabel = deliveryPickupSettings === 'advanced' ? 'Avanzada' : 'Básica';
   const authoritativePlanCode = String(plan?.code || '').trim() || 'unknown';
-  const isProPlan = plan?.isPro === true || authoritativePlanCode === 'pro_monthly';
 
   return (
     <fieldset
@@ -71,26 +72,16 @@ export default function EcommercePortalGeneralSettings({
           <small className="ecom-admin-help">
             {customSlugAllowed
               ? 'Lanzo Nube permite personalizar el enlace. Usa 3–64 caracteres en minúsculas, números o guiones.'
-              : 'Tu enlace actual se conserva. Personalizarlo requiere Lanzo Nube.'}
+              : 'El enlace actual se conserva.'}
           </small>
         </label>
 
-        {!customSlugAllowed && !isProPlan && (
-          <ProFeatureShowcase
-            variant="card"
-            className="ecom-general-settings__slug-showcase"
-            eyebrow="Enlace personalizado"
-            title="Haz más reconocible el enlace de tu tienda"
-            description="Con Lanzo Nube puedes personalizar la dirección para que sea más fácil de identificar. Tu enlace asignado y la tienda pública actual se conservan."
-            features={[
-              {
-                title: 'Una dirección ligada a tu marca',
-                description: 'El slug personalizado solo se edita cuando la licencia autoriza esa capacidad.',
-                icon: <Link2 size={19} aria-hidden="true" />
-              }
-            ]}
-            offerTitle="Conoce Lanzo Nube"
-            offerDescription="Consulta las capacidades disponibles para personalizar tu tienda."
+        {!customSlugAllowed && showNubeBenefits && (
+          <EcommerceProHint
+            variant="inline"
+            className="ecom-general-settings__slug-hint"
+            message="Personalizar este enlace está disponible con Lanzo Nube."
+            onOpenBenefits={onOpenNubeBenefits}
           />
         )}
 

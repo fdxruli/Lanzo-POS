@@ -101,6 +101,7 @@ const setStoreState = ({
   settings = false,
   ecommerce = false,
   initializing = false,
+  licenseStatus = 'active',
   licenseDetails = {
     license_key: 'license-fixture',
     features: DEFAULT_LICENSE_FEATURES
@@ -112,6 +113,7 @@ const setStoreState = ({
     currentStaffUser: role === 'staff'
       ? { id: 'staff-fixture', permissions: { settings, ecommerce } }
       : null,
+    licenseStatus,
     licenseDetails,
     _isInitializing: initializing
   });
@@ -119,6 +121,14 @@ const setStoreState = ({
 
 const expectNoAdminRpcCalls = () => {
   expect(getEcommercePortal).not.toHaveBeenCalled();
+  expect(listPublishedProducts).not.toHaveBeenCalled();
+  expect(saveEcommercePortal).not.toHaveBeenCalled();
+  expect(savePublishedProduct).not.toHaveBeenCalled();
+  expect(setProductPublished).not.toHaveBeenCalled();
+};
+
+const expectNoAdminRpcCallsExceptInitialPortalRead = () => {
+  expect(getEcommercePortal).toHaveBeenCalledTimes(1);
   expect(listPublishedProducts).not.toHaveBeenCalled();
   expect(saveEcommercePortal).not.toHaveBeenCalled();
   expect(savePublishedProduct).not.toHaveBeenCalled();
@@ -148,13 +158,13 @@ describe('EcommercePortalSettings internal access guard', () => {
     expect(screen.queryByText('No tienes permiso para administrar el portal online.')).toBeNull();
   });
 
-  it('keeps the four tabs accessible before portal creation without enabling remote operations', async () => {
+  it('keeps the Local tabs accessible before portal creation without enabling remote operations', async () => {
     act(() => setStoreState({ role: 'admin', settings: true }));
 
     render(<EcommercePortalSettings />);
 
     expect(await screen.findByRole('tablist', { name: 'Secciones del portal' })).toBeInTheDocument();
-    ['Información', 'Catálogo', 'Operación', 'Diseño'].forEach((name) => {
+    ['Información', 'Catálogo', 'Operación', 'Diseño', 'Lanzo Nube'].forEach((name) => {
       expect(screen.getByRole('tab', { name })).toBeInTheDocument();
     });
 
@@ -169,7 +179,8 @@ describe('EcommercePortalSettings internal access guard', () => {
 
     fireEvent.click(screen.getByRole('tab', { name: 'Diseño' }));
     expect(screen.getByRole('tabpanel', { name: 'Diseño' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Personaliza tu tienda y crea una experiencia única' })).toBeInTheDocument();
+    expect(screen.getByText('Diseño de tu tienda')).toBeInTheDocument();
+    expect(screen.queryByText('Personaliza tu tienda y crea una experiencia única')).not.toBeInTheDocument();
     expect(screen.queryByTestId('site-builder')).not.toBeInTheDocument();
     expect(listPublishedProducts).not.toHaveBeenCalled();
     expect(savePublishedProduct).not.toHaveBeenCalled();
@@ -179,6 +190,116 @@ describe('EcommercePortalSettings internal access guard', () => {
     expect(screen.getByRole('tabpanel', { name: 'Información' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Crear tienda' })).toBeInTheDocument();
     expect(saveEcommercePortal).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ver beneficios' }));
+    expect(screen.getByRole('tabpanel', { name: 'Lanzo Nube' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Lleva tu tienda al siguiente nivel' })).toHaveFocus();
+    expect(screen.getByRole('heading', { name: 'Una tienda con identidad propia' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Más espacio para tus productos' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Mantén conectado tu catálogo' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Haz que tus clientes reconozcan tu tienda' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Más contexto para operar' })).toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: 'Conocer Lanzo Nube' })).toHaveLength(1);
+    expect(screen.getByRole('link', { name: 'Conocer Lanzo Nube' })).toHaveAttribute('href', '/acerca-de');
+    expect(screen.getByText('Consultar esta información no modifica tu licencia ni tu plan.')).toBeInTheDocument();
+    expect(getEcommercePortal).toHaveBeenCalledTimes(1);
+    expectNoAdminRpcCallsExceptInitialPortalRead();
+  });
+
+  it('supports arrow-key tab navigation and keeps every tab-panel association present', async () => {
+    act(() => setStoreState({ role: 'admin', settings: true }));
+    render(<EcommercePortalSettings />);
+
+    const informationTab = await screen.findByRole('tab', { name: 'Información' });
+    const tabs = screen.getAllByRole('tab');
+    expect(informationTab).toHaveAttribute('tabIndex', '0');
+    tabs.forEach((tab) => {
+      const panel = document.getElementById(tab.getAttribute('aria-controls'));
+      expect(panel).not.toBeNull();
+      expect(panel).toHaveAttribute('role', 'tabpanel');
+      expect(panel).toHaveAttribute('aria-labelledby', tab.id);
+    });
+
+    fireEvent.keyDown(informationTab, { key: 'ArrowRight' });
+    const catalogTab = screen.getByRole('tab', { name: 'Catálogo' });
+    expect(catalogTab).toHaveAttribute('aria-selected', 'true');
+    expect(catalogTab).toHaveFocus();
+    expect(catalogTab).toHaveAttribute('tabIndex', '0');
+  });
+
+  it('does not show Lanzo Nube when the plan response cannot be confirmed', async () => {
+    getEcommercePortal.mockResolvedValue({
+      success: true,
+      portal: null,
+      features: successfulPortalResponse.features
+    });
+    act(() => setStoreState({ role: 'admin', settings: true }));
+    render(<EcommercePortalSettings />);
+
+    expect(await screen.findByRole('tab', { name: 'Información' })).toBeInTheDocument();
+    expect(screen.getAllByRole('tab')).toHaveLength(4);
+    expect(screen.queryByRole('tab', { name: 'Lanzo Nube' })).not.toBeInTheDocument();
+  });
+
+  it('does not show Lanzo Nube during a license grace period', async () => {
+    act(() => setStoreState({ role: 'admin', settings: true, licenseStatus: 'grace_period' }));
+    render(<EcommercePortalSettings />);
+
+    expect(await screen.findByRole('tab', { name: 'Información' })).toBeInTheDocument();
+    expect(screen.getAllByRole('tab')).toHaveLength(4);
+    expect(screen.queryByRole('tab', { name: 'Lanzo Nube' })).not.toBeInTheDocument();
+  });
+
+  it('does not show Lanzo Nube for an inconclusive license state', async () => {
+    act(() => setStoreState({ role: 'admin', settings: true, licenseStatus: 'validation_inconclusive' }));
+    render(<EcommercePortalSettings />);
+
+    expect(await screen.findByRole('tab', { name: 'Información' })).toBeInTheDocument();
+    expect(screen.getAllByRole('tab')).toHaveLength(4);
+    expect(screen.queryByRole('tab', { name: 'Lanzo Nube' })).not.toBeInTheDocument();
+  });
+
+  it('does not show Lanzo Nube when the local license is invalid', async () => {
+    act(() => setStoreState({
+      role: 'admin',
+      settings: true,
+      licenseDetails: {
+        license_key: 'license-fixture',
+        valid: false,
+        features: DEFAULT_LICENSE_FEATURES
+      }
+    }));
+    render(<EcommercePortalSettings />);
+
+    expect(await screen.findByRole('tab', { name: 'Información' })).toBeInTheDocument();
+    expect(screen.getAllByRole('tab')).toHaveLength(4);
+    expect(screen.queryByRole('tab', { name: 'Lanzo Nube' })).not.toBeInTheDocument();
+  });
+
+  it('hides the Free discovery tab offline and revalidates the plan after reconnecting', async () => {
+    act(() => setStoreState({ role: 'admin', settings: true }));
+    render(<EcommercePortalSettings />);
+
+    expect(await screen.findByRole('tab', { name: 'Lanzo Nube' })).toBeInTheDocument();
+
+    act(() => window.dispatchEvent(new Event('offline')));
+    expect(screen.queryByRole('tab', { name: 'Lanzo Nube' })).not.toBeInTheDocument();
+
+    act(() => window.dispatchEvent(new Event('online')));
+    expect(await screen.findByRole('tab', { name: 'Lanzo Nube' })).toBeInTheDocument();
+    expect(getEcommercePortal).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not show Lanzo Nube after portal authorization fails offline', async () => {
+    getEcommercePortal.mockResolvedValue({
+      success: false,
+      message: 'Necesitas conexion a internet para configurar el portal online.'
+    });
+    act(() => setStoreState({ role: 'admin', settings: true }));
+    render(<EcommercePortalSettings />);
+
+    expect(await screen.findByRole('alert')).toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Lanzo Nube' })).not.toBeInTheDocument();
   });
 
   it('allows staff with settings and ecommerce permissions', async () => {
@@ -356,6 +477,8 @@ describe('EcommercePortalSettings image intent payloads', () => {
   it('mounts the unified Pro builder with the current portal and license', async () => {
     renderExistingProPortal();
     await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
+    expect(screen.getAllByRole('tab')).toHaveLength(4);
+    expect(screen.queryByRole('tab', { name: 'Lanzo Nube' })).not.toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Información' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.queryByTestId('site-builder')).toBeNull();
     fireEvent.click(screen.getByRole('tab', { name: 'Diseño' }));
@@ -513,21 +636,23 @@ describe('EcommercePortalSettings image intent payloads', () => {
     expect(payload).not.toHaveProperty('coverImageUrl');
   });
 
-  it('shows informational design discovery for Free without mounting the Pro builder', async () => {
+  it('shows a compact design hint for Free without mounting the Pro builder', async () => {
     const syncStatus = vi.spyOn(ecommerceCatalogSyncService, 'getStatus');
     renderExistingFreePortal();
     await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
 
     fireEvent.click(screen.getByRole('tab', { name: 'Diseño' }));
 
-    expect(screen.getByText('Personaliza tu tienda y crea una experiencia única')).toBeInTheDocument();
-    expect(screen.getByText(/El historial de versiones se muestra cuando está disponible\./)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Conocer Lanzo Nube' })).toHaveAttribute('href', '/acerca-de');
+    expect(screen.getByText('Diseño de tu tienda')).toBeInTheDocument();
+    expect(screen.getByText('Tu tienda utiliza las opciones de presentación disponibles en tu plan.')).toBeInTheDocument();
+    expect(screen.getByText('El constructor visual avanzado está disponible con Lanzo Nube.')).toBeInTheDocument();
+    expect(screen.queryByText('Personaliza tu tienda y crea una experiencia única')).not.toBeInTheDocument();
     expect(screen.queryByTestId('site-builder')).toBeNull();
     expect(syncStatus).not.toHaveBeenCalled();
-    expect(screen.getByText('Identidad visual de tu tienda')).toBeInTheDocument();
-    expect(screen.getByText('Identidad visual')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Guardar diseño' })).toBeInTheDocument();
+    expect(screen.queryByText('Personalización Portal PRO')).not.toBeInTheDocument();
+    expect(screen.queryByText('Identidad visual')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Guardar diseño' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Ver beneficios' })).toBeInTheDocument();
     syncStatus.mockRestore();
   });
 
@@ -552,7 +677,7 @@ describe('EcommercePortalSettings image intent payloads', () => {
     await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
     fireEvent.click(screen.getByRole('tab', { name: 'Diseño' }));
 
-    expect(screen.getByText('Personaliza tu tienda y crea una experiencia única')).toBeInTheDocument();
+    expect(screen.getByText('El constructor visual avanzado está disponible con Lanzo Nube.')).toBeInTheDocument();
     expect(screen.queryByTestId('site-builder')).toBeNull();
   });
 
@@ -582,59 +707,28 @@ describe('EcommercePortalSettings image intent payloads', () => {
     render(<EcommercePortalSettings requestedSection="catalog" />);
     await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
 
+    expect(screen.getByRole('tabpanel', { name: 'Catálogo' })).toHaveAttribute('id', 'ecom-portal-panel-catalog');
     expect(screen.getByText('2 / 2 productos publicados')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Publicar producto' })).toBeDisabled();
     expect(screen.getByText('Llegaste al límite de productos publicados de tu plan.')).toBeInTheDocument();
+    expect(screen.getByText('Puedes continuar editando o despublicando productos existentes.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Editar Producto uno' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Despublicar Producto uno' })).toBeEnabled();
-    expect(screen.getByRole('link', { name: 'Conocer Lanzo Nube' })).toHaveAttribute('href', '/acerca-de');
+    expect(screen.queryByText('Haz crecer tu catálogo con Lanzo Nube')).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Ver beneficios' })).toHaveLength(2);
   });
 
-  it('saves an HTTPS replacement logo for an existing Free portal without a cover', async () => {
+  it('keeps Free design informational and does not save branding without an entitlement', async () => {
     renderExistingFreePortal();
     await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
     fireEvent.click(screen.getByRole('tab', { name: 'Diseño' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Set test images' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Guardar diseño' }));
 
-    await waitFor(() => expect(saveEcommercePortal).toHaveBeenCalledTimes(1));
-    const payload = saveEcommercePortal.mock.calls[0][0];
-    expect(payload).toMatchObject({ logoUrl: 'https://cdn.example/logo-new.png' });
-    expect(payload).not.toHaveProperty('coverImageUrl');
-  });
-
-  it('clears the logo for an existing Free portal without a cover', async () => {
-    renderExistingFreePortal();
-    await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
-    fireEvent.click(screen.getByRole('tab', { name: 'Diseño' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Clear test logo' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Guardar diseño' }));
-
-    await waitFor(() => expect(saveEcommercePortal).toHaveBeenCalledTimes(1));
-    const payload = saveEcommercePortal.mock.calls[0][0];
-    expect(payload).toMatchObject({ logoUrl: null });
-    expect(payload).not.toHaveProperty('coverImageUrl');
-  });
-
-  it('preserves Free portal branding when no logo change is requested', async () => {
-    renderExistingFreePortal();
-    await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
-    fireEvent.click(screen.getByRole('tab', { name: 'Diseño' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Guardar diseño' }));
-
-    await waitFor(() => expect(saveEcommercePortal).toHaveBeenCalledTimes(1));
-    const payload = saveEcommercePortal.mock.calls[0][0];
-    expect(payload).not.toHaveProperty('logoUrl');
-    expect(payload).not.toHaveProperty('coverImageUrl');
-  });
-
-  it('blocks a blob URL from the Free presentation editor before calling the RPC', async () => {
-    renderExistingFreePortal();
-    await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
-    fireEvent.click(screen.getByRole('tab', { name: 'Diseño' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Set invalid test image' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Guardar diseño' }));
-
+    expect(screen.getByText('Diseño de tu tienda')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Ver beneficios' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Guardar diseño' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Set test images' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Ver beneficios' }));
+    expect(screen.getByRole('tabpanel', { name: 'Lanzo Nube' })).toBeInTheDocument();
     expect(saveEcommercePortal).not.toHaveBeenCalled();
   });
 
@@ -707,7 +801,9 @@ describe('EcommercePortalSettings image intent payloads', () => {
       .forEach((label) => expect(screen.getAllByLabelText(label)).toHaveLength(1));
 
     fireEvent.click(screen.getByRole('tab', { name: 'Diseño' }));
-    expect(screen.getByText('Identidad visual de tu tienda')).toBeInTheDocument();
+    expect(screen.getByText('Diseño de tu tienda')).toBeInTheDocument();
+    expect(screen.getByText('El constructor visual avanzado está disponible con Lanzo Nube.')).toBeInTheDocument();
+    expect(screen.queryByText('Identidad visual de tu tienda')).not.toBeInTheDocument();
     expect(screen.queryByText('Enlace / slug *')).toBeNull();
     expect(screen.queryByText('Frase corta / headline')).toBeNull();
     expect(screen.queryByText('Descripcion')).toBeNull();

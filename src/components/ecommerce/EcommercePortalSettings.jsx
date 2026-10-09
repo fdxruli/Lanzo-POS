@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   CheckCircle2,
   Clock3,
+  Cloud,
   ExternalLink,
   Eye,
   EyeOff,
@@ -43,7 +44,8 @@ import EcommerceOperatingHoursSettings from './EcommerceOperatingHoursSettings';
 import EcommerceOrderPauseControl from './EcommerceOrderPauseControl';
 import EcommercePortalCustomizationPanel from './EcommercePortalCustomizationPanel';
 import EcommerceSiteBuilderFoundation from './EcommerceSiteBuilderFoundation';
-import ProFeatureShowcase from '../plans/ProFeatureShowcase';
+import EcommerceProBenefitsPanel from './EcommerceProBenefitsPanel';
+import EcommerceProHint from './EcommerceProHint';
 import './EcommercePortalSettings.css';
 
 const SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{1,62})[a-z0-9]$/;
@@ -80,31 +82,42 @@ const PORTAL_SECTIONS = Object.freeze([
   { id: 'information', label: 'Información', Icon: Store },
   { id: 'catalog', label: 'Catálogo', Icon: PackagePlus },
   { id: 'operation', label: 'Operación', Icon: Clock3 },
-  { id: 'design', label: 'Diseño', Icon: Palette }
+  { id: 'design', label: 'Diseño', Icon: Palette },
+  { id: 'nube', label: 'Lanzo Nube', Icon: Cloud }
 ]);
 
-const DESIGN_DISCOVERY_FEATURES = Object.freeze([
-  {
-    title: 'Plantillas visuales',
-    description: 'Explora estilos para presentar tu tienda con una identidad más propia.',
-    icon: <Palette size={19} aria-hidden="true" />
-  },
-  {
-    title: 'Colores, tipografías e imágenes',
-    description: 'Combina colores de marca, estilos de texto y una imagen de portada.',
-    icon: <Store size={19} aria-hidden="true" />
-  },
-  {
-    title: 'Organización de secciones',
-    description: 'Ajusta el orden y la presentación de las secciones desde el constructor visual.',
-    icon: <PackagePlus size={19} aria-hidden="true" />
-  },
-  {
-    title: 'Publicación e historial',
-    description: 'Guarda y publica cambios. El historial de versiones se muestra cuando está disponible.',
-    icon: <Clock3 size={19} aria-hidden="true" />
-  }
-]);
+const DEFAULT_PORTAL_FEATURES = Object.freeze({
+  customSlug: false,
+  deliveryPickupSettings: 'basic',
+  maxPublishedProducts: 10,
+  cloudCatalogSource: false,
+  brandingCustomization: 'basic',
+  layoutCustomization: 'template_only',
+  stockVisibility: false,
+  realtimeOrders: false
+});
+const hasMissingNubeBenefits = (features = {}) => {
+  const rawProductLimit = features.maxPublishedProducts;
+  const productLimit = Number(rawProductLimit);
+  const hasFiniteProductLimit = rawProductLimit !== null
+    && rawProductLimit !== undefined
+    && rawProductLimit !== ''
+    && Number.isFinite(productLimit)
+    && productLimit >= 0;
+
+  return features.layoutCustomization === 'template_only'
+    || features.brandingCustomization === 'basic'
+    || features.deliveryPickupSettings === 'basic'
+    || features.customSlug === false
+    || features.cloudCatalogSource === false
+    || features.stockVisibility === false
+    || features.realtimeOrders === false
+    || hasFiniteProductLimit;
+};
+
+const isPlainObject = (value) => (
+  value !== null && typeof value === 'object' && !Array.isArray(value)
+);
 
 const portalCustomization = (portal) => ({
   templateCode: portal?.templateCode || 'classic',
@@ -275,6 +288,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
   const currentDeviceRole = useAppStore((state) => state.currentDeviceRole);
   const currentStaffUser = useAppStore((state) => state.currentStaffUser);
   const isLicenseInitializing = useAppStore((state) => state._isInitializing);
+  const licenseStatus = useAppStore((state) => state.licenseStatus);
   const stockSnapshot = useAppStore(
     (state) => state.ecommercePublishedStockAlertSnapshot
   );
@@ -295,15 +309,12 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
   const [error, setError] = useState('');
   const [savingPortal, setSavingPortal] = useState(false);
   const [portal, setPortal] = useState(null);
-  const [plan, setPlan] = useState({ code: 'free_trial', name: 'Plan Free' });
-  const [features, setFeatures] = useState({
-    customSlug: false,
-    deliveryPickupSettings: 'basic',
-    maxPublishedProducts: 10,
-    cloudCatalogSource: false,
-    brandingCustomization: 'basic',
-    layoutCustomization: 'template_only'
-  });
+  const [plan, setPlan] = useState(null);
+  const [features, setFeatures] = useState(DEFAULT_PORTAL_FEATURES);
+  const [confirmedPlanContext, setConfirmedPlanContext] = useState(null);
+  const [isOnline, setIsOnline] = useState(() => (
+    typeof navigator === 'undefined' || navigator.onLine !== false
+  ));
   const [form, setForm] = useState(() => portalForm(null, companyProfile));
   const [products, setProducts] = useState([]);
   const [busyProductId, setBusyProductId] = useState(null);
@@ -320,6 +331,8 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
   const [customizationBusy, setCustomizationBusy] = useState(false);
   const [activeSection, setActiveSection] = useState('information');
   const [productSearch, setProductSearch] = useState('');
+  const nubeBenefitsHeadingRef = useRef(null);
+  const focusNubeBenefitsAfterNavigationRef = useRef(false);
   const catalogRequestSeqRef = useRef(0);
   const latestRequestByKindRef = useRef({
     opening: 0,
@@ -331,12 +344,6 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
   const localCatalogSearchTermRef = useRef('');
   const categoriesByIdRef = useRef(new Map());
   const reservedLink = portal?.slug ? buildPublicStoreUrl(portal.slug) : '';
-
-  useEffect(() => {
-    if (PORTAL_SECTIONS.some(({ id }) => id === requestedSection)) {
-      setActiveSection(requestedSection);
-    }
-  }, [requestedSection]);
 
   const authorizationPending = isLicenseInitializing
     || currentDeviceRole === null
@@ -350,7 +357,6 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
     currentDeviceRole,
     licenseDetails
   });
-  const isProPlan = plan?.isPro === true || plan?.code === 'pro_monthly';
   const canUseSiteBuilder = features.layoutCustomization === 'advanced';
   const canUseAdvancedBranding = features.brandingCustomization === 'advanced';
   const canSyncCatalog = features.cloudCatalogSource === true;
@@ -365,37 +371,72 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
       ? Math.max(0, Math.floor(rawProductLimit))
       : 10;
   const limitReached = !hasUnlimitedPublishedProducts && publishedCount >= maxProducts;
-  const showBasicPortalEditor = !canUseSiteBuilder && (!isProPlan || canUseAdvancedBranding);
-  const showDesignDiscovery = !isProPlan && !canUseSiteBuilder && !canUseAdvancedBranding;
-  const catalogDiscoveryFeatures = [
-    ...(!hasUnlimitedPublishedProducts ? [{
-      title: 'Capacidad definida por tu plan',
-      description: `Tu licencia autoriza hasta ${maxProducts} productos publicados. El mismo límite se valida al publicar.`,
-      icon: <PackagePlus size={19} aria-hidden="true" />
-    }] : []),
-    ...(!canSyncCatalog ? [{
-      title: 'Administración manual y automática',
-      description: 'Tu catálogo actual se administra manualmente. Lanzo Nube agrega sincronización automática para los campos compatibles del producto.',
-      icon: <RefreshCw size={19} aria-hidden="true" />
-    }] : []),
-    ...(!canSyncCatalog ? [{
-      title: 'Estado y revisión',
-      description: 'La sincronización puede quedar pendiente, requerir revisión o reportar un error; confirma el estado antes de asumir que un cambio se aplicó.',
-      icon: <AlertTriangle size={19} aria-hidden="true" />
-    }] : [])
-  ];
-  const showCatalogDiscovery = !isProPlan && catalogDiscoveryFeatures.length > 0;
-  const designDiscoveryContent = showDesignDiscovery ? (
-    <ProFeatureShowcase
-      variant="card"
-      className="ecom-admin-pro-showcase"
-      title="Personaliza tu tienda y crea una experiencia única"
-      description="Dale a tu tienda una identidad propia con herramientas avanzadas para organizar su diseño, personalizar su apariencia y presentar mejor tus productos."
-      features={DESIGN_DISCOVERY_FEATURES}
-      offerTitle="Explora el diseño avanzado de Lanzo Nube"
-      offerDescription="Conoce las herramientas disponibles para personalizar y publicar la experiencia de tu tienda."
-    />
-  ) : null;
+  const licenseLifecycle = String(
+    licenseStatus
+    || licenseDetails?.lifecycle_state
+    || licenseDetails?.status
+    || ''
+  ).trim().toLowerCase();
+  const confirmedFreeLocal = String(confirmedPlanContext?.plan?.code || '').toLowerCase() === 'free_trial'
+    && confirmedPlanContext?.plan?.isPro !== true;
+  const hasConfirmedEntitlementGap = isPlainObject(confirmedPlanContext?.features)
+    && hasMissingNubeBenefits(confirmedPlanContext.features);
+  const showNubeBenefits = !authorizationPending
+    && canManageEcommercePortal
+    && isOnline
+    && !loading
+    && !error
+    && licenseDetails?.valid !== false
+    && licenseLifecycle === 'active'
+    && confirmedFreeLocal
+    && hasConfirmedEntitlementGap;
+  const visibleSections = showNubeBenefits
+    ? PORTAL_SECTIONS
+    : PORTAL_SECTIONS.filter(({ id }) => id !== 'nube');
+  const showAdvancedBrandingEditor = !canUseSiteBuilder && canUseAdvancedBranding;
+
+  useEffect(() => {
+    if (!requestedSection) return;
+    if (requestedSection === 'nube') {
+      setActiveSection(showNubeBenefits ? 'nube' : 'information');
+    } else if (PORTAL_SECTIONS.some(({ id }) => id === requestedSection)) {
+      setActiveSection(requestedSection);
+    }
+  }, [requestedSection, showNubeBenefits]);
+
+  useEffect(() => {
+    if (activeSection === 'nube' && !showNubeBenefits) {
+      setActiveSection('information');
+    }
+  }, [activeSection, showNubeBenefits]);
+
+  useEffect(() => {
+    if (activeSection !== 'nube' || !focusNubeBenefitsAfterNavigationRef.current) return;
+    focusNubeBenefitsAfterNavigationRef.current = false;
+    nubeBenefitsHeadingRef.current?.focus();
+  }, [activeSection]);
+
+  const openNubeBenefits = useCallback(() => {
+    if (!showNubeBenefits) return;
+    focusNubeBenefitsAfterNavigationRef.current = true;
+    setActiveSection('nube');
+  }, [showNubeBenefits]);
+
+  const handleTabKeyDown = (event, currentId) => {
+    const currentIndex = visibleSections.findIndex(({ id }) => id === currentId);
+    let nextIndex = currentIndex;
+
+    if (event.key === 'ArrowRight') nextIndex = (currentIndex + 1) % visibleSections.length;
+    else if (event.key === 'ArrowLeft') nextIndex = (currentIndex - 1 + visibleSections.length) % visibleSections.length;
+    else if (event.key === 'Home') nextIndex = 0;
+    else if (event.key === 'End') nextIndex = visibleSections.length - 1;
+    else return;
+
+    event.preventDefault();
+    const nextId = visibleSections[nextIndex]?.id;
+    setActiveSection(nextId);
+    document.getElementById(`ecom-portal-tab-${nextId}`)?.focus();
+  };
   const publicationRequirements = {
     whatsapp: form.whatsappPhone.replace(/\D/g, '').length >= 8,
     street: form.addressStreet.trim().length > 0,
@@ -454,6 +495,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
+    setConfirmedPlanContext(null);
     const result = await getEcommercePortal();
     if (!result.success) {
       setError(result.message);
@@ -464,15 +506,11 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
     const nextPortal = result.portal || null;
     setPortal(nextPortal);
     setCustomization(portalCustomization(nextPortal));
-    setPlan(result.plan || { code: 'free_trial', name: 'Plan Free' });
-    setFeatures(result.features || {
-      customSlug: false,
-      deliveryPickupSettings: 'basic',
-      maxPublishedProducts: 10,
-      cloudCatalogSource: false,
-      brandingCustomization: 'basic',
-      layoutCustomization: 'template_only'
-    });
+    setPlan(result.plan || null);
+    setFeatures(result.features || DEFAULT_PORTAL_FEATURES);
+    if (typeof result.plan?.code === 'string' && isPlainObject(result.features)) {
+      setConfirmedPlanContext({ plan: result.plan, features: result.features });
+    }
     setForm(portalForm(nextPortal, companyProfile));
     setOperations(result);
 
@@ -493,6 +531,26 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
   useEffect(() => {
     if (authorizationPending || !canManageEcommercePortal) return;
     void load();
+  }, [authorizationPending, canManageEcommercePortal, load]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const handleOffline = () => {
+      setIsOnline(false);
+      setConfirmedPlanContext(null);
+    };
+    const handleOnline = () => {
+      setIsOnline(true);
+      if (!authorizationPending && canManageEcommercePortal) void load();
+    };
+
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('online', handleOnline);
+    return () => {
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('online', handleOnline);
+    };
   }, [authorizationPending, canManageEcommercePortal, load]);
 
   const handleCustomizationChange = useCallback((nextCustomization) => {
@@ -937,26 +995,40 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
       {portal && <StoreHealth portal={portal} requirements={publicationRequirements} products={products} operations={operations} />}
 
       <nav
-          className="ecom-admin-section-nav tabs-container"
-          aria-label="Secciones del portal"
-          role="tablist"
-        >
-          {PORTAL_SECTIONS.map(({ id, label, Icon }) => (
+        className="ecom-admin-section-nav tabs-container"
+        aria-label="Secciones del portal"
+        role="tablist"
+      >
+          {visibleSections.map(({ id, label, Icon }) => (
             <button
               key={id}
               id={`ecom-portal-tab-${id}`}
               type="button"
               role="tab"
               aria-selected={activeSection === id}
+              aria-label={id === 'nube' ? 'Lanzo Nube' : undefined}
               aria-controls={`ecom-portal-panel-${id}`}
+              tabIndex={activeSection === id ? 0 : -1}
               className={activeSection === id ? 'tab-btn active' : 'tab-btn'}
               onClick={() => setActiveSection(id)}
+              onKeyDown={(event) => handleTabKeyDown(event, id)}
             >
               <Icon size={19} aria-hidden="true" />
               <span>{label}</span>
+              {id === 'nube' && <span className="ecom-admin-tab-pro" aria-hidden="true">PRO</span>}
             </button>
           ))}
       </nav>
+
+      {visibleSections.filter(({ id }) => id !== activeSection).map(({ id }) => (
+        <div
+          key={`ecom-panel-placeholder-${id}`}
+          id={`ecom-portal-panel-${id}`}
+          role="tabpanel"
+          aria-labelledby={`ecom-portal-tab-${id}`}
+          hidden
+        />
+      ))}
 
       {activeSection === 'information' ? (
         <EcommerceBusinessInformationPanel
@@ -973,10 +1045,12 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
           whatsappShareUrl={whatsappShareUrl}
           onChangeStatus={changeStatus}
           requirements={publicationRequirements}
+          showNubeBenefits={showNubeBenefits}
+          onOpenNubeBenefits={openNubeBenefits}
         />
       ) : null}
 
-      {!portal && activeSection !== 'information' && (
+      {!portal && activeSection !== 'information' && activeSection !== 'nube' && (
         <section
           id={`ecom-portal-panel-${activeSection}`}
           className="ecom-design-workspace"
@@ -995,7 +1069,32 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
               </button>
             </div>
           </div>
-          {activeSection === 'design' && designDiscoveryContent}
+          {activeSection === 'design' && (
+            <div className="ecom-admin-design-unavailable" role="status">
+              <strong>Diseño de tu tienda</strong>
+              <span>Las opciones de diseño estarán disponibles al crear o confirmar la tienda.</span>
+              {!canUseSiteBuilder && showNubeBenefits && (
+                <EcommerceProHint
+                  message="El constructor visual avanzado está disponible con Lanzo Nube."
+                  onOpenBenefits={openNubeBenefits}
+                />
+              )}
+            </div>
+          )}
+        </section>
+      )}
+
+      {activeSection === 'nube' && showNubeBenefits && (
+        <section
+          id="ecom-portal-panel-nube"
+          className="ecom-nube-workspace"
+          role="tabpanel"
+          aria-labelledby="ecom-portal-tab-nube"
+        >
+          <EcommerceProBenefitsPanel
+            features={confirmedPlanContext?.features || features}
+            headingRef={nubeBenefitsHeadingRef}
+          />
         </section>
       )}
 
@@ -1018,12 +1117,16 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
                 <EcommerceSiteBuilderFoundation isPro={canUseSiteBuilder} portal={portal} licenseKey={licenseKey} />
               </section>
             </div>
-          ) : showDesignDiscovery ? (
-            designDiscoveryContent
           ) : (
             <div className="ecom-admin-design-unavailable" role="status">
-              <strong>El constructor visual no está habilitado para esta licencia.</strong>
-              <span>Tu tienda publicada y sus datos se conservan.</span>
+              <strong>Diseño de tu tienda</strong>
+              <span>Tu tienda utiliza las opciones de presentación disponibles en tu plan.</span>
+              {!canUseSiteBuilder && showNubeBenefits && (
+                <EcommerceProHint
+                  message="El constructor visual avanzado está disponible con Lanzo Nube."
+                  onOpenBenefits={openNubeBenefits}
+                />
+              )}
             </div>
           )}
         </section>
@@ -1041,7 +1144,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
         </section>
       ) : null}
 
-      {portal && showBasicPortalEditor && activeSection === 'design' && (
+      {portal && showAdvancedBrandingEditor && activeSection === 'design' && (
         <form className="ui-card ecom-admin-form-card" onSubmit={submitPortal}>
           <div className="ecom-admin-card-heading">
             <div>
@@ -1072,14 +1175,18 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
         </form>
       )}
 
-      {portal && activeSection === 'catalog' && <section
-        id="ecommerce-published-products"
-        className="ui-card ecom-admin-products-card"
-        tabIndex={-1}
-        aria-label="Productos publicados en portal"
-        role="tabpanel"
-        aria-labelledby="ecom-portal-tab-catalog"
-      >
+      {portal && activeSection === 'catalog' && (
+        <div
+          id="ecom-portal-panel-catalog"
+          role="tabpanel"
+          aria-labelledby="ecom-portal-tab-catalog"
+        >
+          <section
+            id="ecommerce-published-products"
+            className="ui-card ecom-admin-products-card"
+            tabIndex={-1}
+            aria-label="Productos publicados en portal"
+          >
         <div className="ecom-admin-card-heading">
           <div>
             <span className="ecom-admin-eyebrow">Catálogo</span>
@@ -1218,7 +1325,29 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
 
         <div className="ecom-admin-catalog-support">
           <StockReviewBanner snapshot={stockSnapshot} />
+          {limitReached && (
+            <div className="ecom-admin-limit is-blocked ecom-admin-catalog-limit-reached" role="status">
+              <Lock size={17} aria-hidden="true" />
+              <div>
+                <strong>Llegaste al límite de productos publicados de tu plan.</strong>
+                <p>Puedes continuar editando o despublicando productos existentes.</p>
+                {showNubeBenefits && (
+                  <EcommerceProHint
+                    message="Conoce cómo ampliar tu catálogo con Lanzo Nube."
+                    onOpenBenefits={openNubeBenefits}
+                  />
+                )}
+              </div>
+            </div>
+          )}
           <BusinessCapabilityReviewBanner products={products} />
+          {!canSyncCatalog && showNubeBenefits && (
+            <EcommerceProHint
+              variant="notice"
+              message="La sincronización automática está disponible con Lanzo Nube."
+              onOpenBenefits={openNubeBenefits}
+            />
+          )}
           {canSyncCatalog && (
             <EcommerceCatalogSyncPanel
               isPro={canSyncCatalog}
@@ -1227,29 +1356,10 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
               onRefresh={loadProducts}
             />
           )}
-          {showCatalogDiscovery && (
-            <ProFeatureShowcase
-              variant="card"
-              className="ecom-admin-pro-showcase"
-              title="Haz crecer tu catálogo con Lanzo Nube"
-              description="Amplía los productos disponibles en tu tienda y aprovecha herramientas de sincronización para mantener conectado tu catálogo con las operaciones compatibles del negocio."
-              features={catalogDiscoveryFeatures}
-              offerTitle="Conoce las capacidades de Lanzo Nube"
-              offerDescription="Tu catálogo actual sigue disponible. Los productos existentes se pueden editar o despublicar según los permisos de tu plan."
-            >
-              {limitReached && (
-                <div className="ecom-admin-limit is-blocked ecom-admin-catalog-limit-reached" role="status">
-                  <Lock size={17} aria-hidden="true" />
-                  <div>
-                    <strong>Llegaste al límite de productos publicados de tu plan.</strong>
-                    <p>Puedes continuar administrando tus productos actuales. Si necesitas ampliar tu catálogo, conoce las capacidades de Lanzo Nube.</p>
-                  </div>
-                </div>
-              )}
-            </ProFeatureShowcase>
-          )}
         </div>
-      </section>}
+          </section>
+        </div>
+      )}
 
       <EcommerceProductPublishModal
         open={modalOpen}

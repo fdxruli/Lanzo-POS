@@ -77,7 +77,9 @@ export default function EcommerceBusinessInformationPanel({
   onShareLink,
   whatsappShareUrl,
   onChangeStatus,
-  requirements
+  requirements,
+  showNubeBenefits = false,
+  onOpenNubeBenefits
 }) {
   const canPublish = Object.values(requirements).every(Boolean);
 
@@ -230,6 +232,8 @@ export default function EcommerceBusinessInformationPanel({
           onFieldChange={onFieldChange}
           plan={plan}
           features={features}
+          showNubeBenefits={showNubeBenefits}
+          onOpenNubeBenefits={onOpenNubeBenefits}
         />
 
         <div className="ecom-admin-form-actions">

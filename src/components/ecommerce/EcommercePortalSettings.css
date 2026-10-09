@@ -1,15 +1,17 @@
 .ecom-admin-page { display: grid; gap: 16px; min-width: 0; }
 .ecom-design-workspace, .ecom-design-structure { display: grid; gap: 16px; min-width: 0; }
 .ecom-design-structure > .ecom-admin-card-heading { margin: 8px 2px -2px; }
-.ecom-admin-pro-showcase {
-  min-width: 0;
-  max-width: 100%;
-  margin: 0;
-  border: 1px solid var(--border-color);
-  border-radius: 16px;
-  background: var(--card-background-color);
-  box-shadow: var(--box-shadow);
+.ecom-admin-tab-pro {
+  padding: .12rem .38rem;
+  border: 1px solid color-mix(in srgb, var(--primary-color) 26%, var(--border-color));
+  border-radius: 999px;
+  color: var(--primary-color);
+  font-size: .64rem;
+  font-weight: 800;
+  letter-spacing: .04em;
+  line-height: 1.2;
 }
+.ecom-nube-workspace { display: grid; gap: 16px; min-width: 0; }
 .ecom-admin-design-unavailable {
   display: grid;
   gap: 5px;

@@ -23,16 +23,7 @@
   color: var(--text-secondary, #64748b);
 }
 
-.ecom-general-settings__slug-showcase {
-  grid-column: 1 / -1;
-  min-width: 0;
-  max-width: 100%;
-  margin: 0;
-  border: 1px solid var(--border-color, #e5e7eb);
-  border-radius: 16px;
-  background: var(--card-background-color, #fff);
-  box-shadow: var(--box-shadow, none);
-}
+.ecom-general-settings__slug-hint { grid-column: 1 / -1; }
 
 .ecom-general-settings__delivery-heading {
   display: flex;

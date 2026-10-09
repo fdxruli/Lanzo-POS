@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, render as rtlRender, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render as rtlRender, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { useAppStore } from '../../../store/useAppStore';
@@ -28,6 +28,7 @@ const onFieldChange = (field) => {
   if (!handlers.has(field)) handlers.set(field, vi.fn());
   return handlers.get(field);
 };
+const onOpenNubeBenefits = vi.fn();
 
 const FREE_PLAN = Object.freeze({ code: 'free_trial', name: 'Plan Free' });
 const PRO_PLAN = Object.freeze({ code: 'pro_monthly', name: 'Lanzo Nube' });
@@ -40,12 +41,18 @@ const PRO_FEATURES = Object.freeze({
   deliveryPickupSettings: 'advanced'
 });
 
-const renderSettings = ({ plan = FREE_PLAN, features = FREE_FEATURES } = {}) => render(
+const renderSettings = ({
+  plan = FREE_PLAN,
+  features = FREE_FEATURES,
+  showNubeBenefits = plan?.code === 'free_trial'
+} = {}) => render(
   <EcommercePortalGeneralSettings
     form={baseForm}
     onFieldChange={onFieldChange}
     plan={plan}
     features={features}
+    showNubeBenefits={showNubeBenefits}
+    onOpenNubeBenefits={onOpenNubeBenefits}
   />
 );
 
@@ -62,6 +69,7 @@ describe('EcommercePortalGeneralSettings authoritative plan parity', () => {
   afterEach(() => {
     cleanup();
     handlers.clear();
+    onOpenNubeBenefits.mockClear();
     act(() => useAppStore.setState({ licenseDetails: null }));
   });
 
@@ -166,12 +174,20 @@ describe('EcommercePortalGeneralSettings authoritative plan parity', () => {
     const slug = screen.getByLabelText('Slug de la tienda');
     expect(slug).toHaveValue('mi-tienda-personalizada');
     expect(slug).toBeDisabled();
-    expect(screen.getByRole('link', { name: 'Conocer Lanzo Nube' })).toHaveAttribute('href', '/acerca-de');
+    expect(screen.getByText('Personalizar este enlace está disponible con Lanzo Nube.')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Ver beneficios' }));
+    expect(onOpenNubeBenefits).toHaveBeenCalledTimes(1);
   });
 
   it('does not show slug discovery to an authorized PRO plan', () => {
     renderSettings({ plan: PRO_PLAN, features: PRO_FEATURES });
-    expect(screen.queryByRole('link', { name: 'Conocer Lanzo Nube' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Personalizar este enlace está disponible con Lanzo Nube.')).not.toBeInTheDocument();
     expect(screen.getByLabelText('Slug de la tienda')).toBeEnabled();
+  });
+
+  it('keeps a denied slug compact when discovery is not authorized', () => {
+    renderSettings({ showNubeBenefits: false });
+    expect(screen.getByLabelText('Slug de la tienda')).toBeDisabled();
+    expect(screen.queryByRole('button', { name: 'Ver beneficios' })).not.toBeInTheDocument();
   });
 });
