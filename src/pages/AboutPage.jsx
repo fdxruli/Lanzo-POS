@@ -151,12 +151,14 @@ export default function AboutPage() {
   const telegramTriggerRef = useRef(null);
 
   const isCloudPlan = isCloudPosSyncEnabled(licenseDetails);
-  const currentPlanName = isCloudPlan ? 'Lanzo Nube' : 'Lanzo Local';
   const aboutLicenseState = resolveAboutLicenseState({
     licenseDetails,
     licenseStatus,
     isCloudPlan
   });
+  const currentPlanName = aboutLicenseState === ABOUT_LICENSE_STATE.UNKNOWN
+    ? 'Por confirmar'
+    : isCloudPlan ? 'Lanzo Nube' : 'Lanzo Local';
   const isAuthorizedCommercialAdmin = (
     settingsAccess.isAuthorizedActor === true
     && settingsAccess.isAdmin === true
@@ -222,7 +224,7 @@ export default function AboutPage() {
     },
     [ABOUT_LICENSE_STATE.CLOUD_GRACE]: {
       eyebrow: 'ESTADO DE LANZO NUBE',
-      summary: 'Tu plan aparece en periodo de gracia. Contacta al equipo para confirmar su continuidad.',
+      summary: 'Tu plan está en periodo de gracia. Puedes consultar la continuidad del servicio.',
       statusLabel: 'Periodo de gracia'
     },
     [ABOUT_LICENSE_STATE.CLOUD_EXPIRED]: {

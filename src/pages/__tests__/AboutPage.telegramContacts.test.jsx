@@ -34,12 +34,36 @@ const renderPage = () => render(
 );
 
 const setCloudLicense = (status = 'active', valid = true) => {
+  const gracePeriodEnds = status === 'grace_period'
+    ? '2099-10-16T15:14:09.000Z'
+    : null;
+  const expiresAt = status === 'active'
+    ? '2099-10-30T15:14:09.000Z'
+    : null;
+  const validatedAt = new Date(Date.now() - 1000).toISOString();
+
   state.store.licenseDetails = {
     valid,
     status,
+    lifecycle_state: status,
+    license_status: 'active',
+    is_entitled: valid,
+    is_in_grace: status === 'grace_period',
     plan_code: 'pro_monthly',
     max_devices: 5,
-    features: { cloud_pos_sync: true }
+    expires_at: expiresAt,
+    grace_period_ends: gracePeriodEnds,
+    features: { cloud_pos_sync: true },
+    effective_lifecycle_validation: {
+      source: 'server_validation',
+      status,
+      valid,
+      is_entitled: valid,
+      is_in_grace: status === 'grace_period',
+      expires_at: expiresAt,
+      grace_period_ends: gracePeriodEnds,
+      validated_at: validatedAt
+    }
   };
   state.store.licenseStatus = status;
 };
@@ -164,8 +188,17 @@ describe('AboutPage Telegram actions', () => {
 
     const currentPlan = screen.getByRole('region', { name: 'Tu plan actual' });
     expect(within(currentPlan).getByText('Periodo de gracia')).toBeInTheDocument();
+    expect(within(currentPlan)).toHaveTextContent(
+      'Tu plan está en periodo de gracia. Puedes consultar la continuidad del servicio.'
+    );
     expect(screen.getByRole('button', { name: /Consultar situación del plan/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Contactar soporte' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Solicitar Lanzo Nube/ })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Consultar situación del plan/ }));
+    const preview = screen.getByRole('dialog');
+    expect(preview).toHaveTextContent(/dar continuidad al servicio/i);
+    expect(preview).not.toHaveTextContent(/contratar Lanzo Nube/i);
   });
 
   it('uses conservative support when the license status is unknown and closes with Escape', () => {

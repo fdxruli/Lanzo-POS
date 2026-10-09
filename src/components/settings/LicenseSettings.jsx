@@ -119,9 +119,14 @@ function LicenseHero({
     selectedCount,
     maxRubrosAllowed,
     planName,
-    licenseDetails
+    licenseDetails,
+    licenseStatus
 }) {
-    const statusPresentation = getLicenseStatusPresentation(licenseDetails);
+    const statusPresentation = getLicenseStatusPresentation(
+        licenseDetails,
+        new Date(),
+        { licenseStatus }
+    );
 
     return (
         <header className="license-settings-hero">
@@ -456,6 +461,7 @@ export default function LicenseSettings() {
     const companyProfile = useAppStore((state) => state.companyProfile);
     const updateCompanyProfile = useAppStore((state) => state.updateCompanyProfile);
     const licenseDetails = useAppStore((state) => state.licenseDetails);
+    const licenseStatus = useAppStore((state) => state.licenseStatus);
     const currentStaffUser = useAppStore((state) => state.currentStaffUser);
     const logoutStaff = useAppStore((state) => state.logoutStaff);
     const logoutAdmin = useAppStore((state) => state.logoutAdmin);
@@ -701,6 +707,7 @@ export default function LicenseSettings() {
                 maxRubrosAllowed={maxRubrosAllowed}
                 planName={commercialPlanName}
                 licenseDetails={licenseDetails}
+                licenseStatus={licenseStatus}
             />
 
             <nav className="license-section-tabs" role="tablist" aria-label="Secciones de licencia">

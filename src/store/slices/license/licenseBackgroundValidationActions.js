@@ -26,6 +26,7 @@ import {
   shouldSkipRemoteValidationForPlan,
   shouldSkipRemoteValidationAfterFailure
 } from './licenseValidationTimestamps';
+import { createEffectiveLicenseValidationEvidence } from '../../../utils/licenseStatusPresentation';
 
 export const createLicenseBackgroundValidationActions = ({
   set,
@@ -122,9 +123,21 @@ export const createLicenseBackgroundValidationActions = ({
         return;
       }
 
+      const storeLicenseStatus = get().licenseStatus;
+      const serverLifecycleStatus = serverValidation.status || serverValidation.reason || 'active';
+      const storedLifecycleEvidence = localLicense?.effective_lifecycle_validation;
+      const currentLifecycleEvidence = get().licenseDetails?.effective_lifecycle_validation;
+      const effectiveEvidenceMissing = serverValidation.is_fallback !== true && (
+        storedLifecycleEvidence?.source !== 'server_validation' ||
+        currentLifecycleEvidence?.source !== 'server_validation'
+      );
+
       const criticalChanges = {
         validityChanged: serverValidation.valid !== localLicense.valid,
         statusChanged: serverValidation.status !== localLicense.status,
+        storeStatusChanged: serverValidation.is_fallback !== true &&
+          storeLicenseStatus !== serverLifecycleStatus,
+        effectiveEvidenceMissing,
         expiryChanged:
           Boolean(serverValidation.expires_at) &&
           serverValidation.expires_at !== localLicense.expires_at,
@@ -199,11 +212,16 @@ export const createLicenseBackgroundValidationActions = ({
       if (criticalChanges.needsRenewal) {
         Logger.warn('[Background] Fin de gracia detectado; esperando confirmación del handoff a Lanzo Local');
 
+        const expiredEvidence = createEffectiveLicenseValidationEvidence(
+          { ...serverValidation, valid: false },
+          { effectiveStatus: 'expired' }
+        );
         const expiredDetails = {
           ...localLicense,
           ...serverValidation,
           valid: false,
-          status: 'expired'
+          status: 'expired',
+          ...(expiredEvidence ? { effective_lifecycle_validation: expiredEvidence } : {})
         };
 
         await saveLicenseToStorage(expiredDetails);
@@ -227,6 +245,8 @@ export const createLicenseBackgroundValidationActions = ({
       if (
         criticalChanges.validityChanged ||
         criticalChanges.statusChanged ||
+        criticalChanges.storeStatusChanged ||
+        criticalChanges.effectiveEvidenceMissing ||
         criticalChanges.expiryChanged ||
         criticalChanges.graceChanged ||
         criticalChanges.featuresChanged ||

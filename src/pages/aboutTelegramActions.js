@@ -1,4 +1,5 @@
 import { TELEGRAM_CONTACT_INTENT } from '../services/support/telegramContact.js';
+import { getLicenseStatusPresentation } from '../utils/licenseStatusPresentation.js';
 
 export const ABOUT_LICENSE_STATE = Object.freeze({
   UNKNOWN: 'unknown',
@@ -8,50 +9,35 @@ export const ABOUT_LICENSE_STATE = Object.freeze({
   CLOUD_EXPIRED: 'cloud_expired'
 });
 
-const RECOGNIZED_LIFECYCLE_STATES = new Set(['active', 'grace_period', 'expired']);
-
-const normalizeLifecycleState = (value) => (
-  typeof value === 'string' ? value.trim().toLowerCase() : ''
-);
-
 export const resolveAboutLicenseState = ({
   licenseDetails,
   licenseStatus,
-  isCloudPlan
+  isCloudPlan,
+  now = new Date()
 } = {}) => {
-  if (!licenseDetails || typeof licenseDetails !== 'object' || typeof licenseDetails.valid !== 'boolean') {
+  if (!licenseDetails || typeof licenseDetails !== 'object') {
     return ABOUT_LICENSE_STATE.UNKNOWN;
   }
 
-  const lifecycleStates = [
-    normalizeLifecycleState(licenseStatus),
-    normalizeLifecycleState(licenseDetails.lifecycle_state),
-    normalizeLifecycleState(licenseDetails.status)
-  ].filter(Boolean);
+  const lifecycleStatus = getLicenseStatusPresentation(
+    licenseDetails,
+    now,
+    { licenseStatus }
+  ).status;
 
-  if (
-    lifecycleStates.length === 0
-    || lifecycleStates.some((state) => !RECOGNIZED_LIFECYCLE_STATES.has(state))
-    || new Set(lifecycleStates).size !== 1
-  ) {
-    return ABOUT_LICENSE_STATE.UNKNOWN;
-  }
-
-  const [lifecycleState] = lifecycleStates;
-
-  if (lifecycleState === 'grace_period') {
-    return isCloudPlan === true && licenseDetails.valid === true
+  if (lifecycleStatus === 'grace_period') {
+    return isCloudPlan === true
       ? ABOUT_LICENSE_STATE.CLOUD_GRACE
       : ABOUT_LICENSE_STATE.UNKNOWN;
   }
 
-  if (lifecycleState === 'expired') {
-    return isCloudPlan === true && licenseDetails.valid === false
+  if (lifecycleStatus === 'expired') {
+    return isCloudPlan === true
       ? ABOUT_LICENSE_STATE.CLOUD_EXPIRED
       : ABOUT_LICENSE_STATE.UNKNOWN;
   }
 
-  if (licenseDetails.valid !== true) return ABOUT_LICENSE_STATE.UNKNOWN;
+  if (lifecycleStatus !== 'active') return ABOUT_LICENSE_STATE.UNKNOWN;
 
   return isCloudPlan === true
     ? ABOUT_LICENSE_STATE.CLOUD_ACTIVE

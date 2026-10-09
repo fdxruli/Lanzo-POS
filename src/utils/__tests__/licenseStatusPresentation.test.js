@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
     getLicenseExpirationPresentation,
+    createEffectiveLicenseValidationEvidence,
     getLicenseStatusPresentation
 } from '../licenseStatusPresentation';
 
@@ -34,6 +35,17 @@ describe('license status presentation', () => {
         const license = {
             plan_code: 'pro_monthly',
             status: 'grace_period',
+            valid: true,
+            is_entitled: true,
+            is_in_grace: true,
+            effective_lifecycle_validation: createEffectiveLicenseValidationEvidence({
+                status: 'grace_period',
+                valid: true,
+                is_entitled: true,
+                is_in_grace: true,
+                expires_at: '2026-09-17T02:56:31.721Z',
+                grace_period_ends: '2026-09-24T02:56:31.721Z'
+            }, { now: new Date('2026-09-24T02:12:00.000Z') }),
             expires_at: '2026-09-17T02:56:31.721Z',
             grace_period_ends: '2026-09-24T02:56:31.721Z'
         };
@@ -51,7 +63,13 @@ describe('license status presentation', () => {
     });
 
     it('translates lifecycle and administrative statuses to Spanish', () => {
-        expect(getLicenseStatusPresentation({ status: 'grace_period' }).label).toBe('Período de gracia');
+        expect(getLicenseStatusPresentation({
+            status: 'grace_period',
+            valid: true,
+            is_entitled: true,
+            is_in_grace: true,
+            grace_period_ends: '2099-01-01T00:00:00.000Z'
+        }).label).toBe('Período de gracia');
         expect(getLicenseStatusPresentation({ status: 'administratively_blocked' }).label)
             .toBe('Bloqueada por administración');
         expect(getLicenseStatusPresentation({ status: 'revoked' }).label).toBe('Revocada');
@@ -59,6 +77,6 @@ describe('license status presentation', () => {
 
     it('humanizes unknown status codes without exposing underscores', () => {
         expect(getLicenseStatusPresentation({ status: 'custom_review_state' }).label)
-            .toBe('Custom review state');
+            .toBe('Por confirmar');
     });
 });

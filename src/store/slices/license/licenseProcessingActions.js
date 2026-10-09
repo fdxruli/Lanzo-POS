@@ -33,6 +33,7 @@ import {
     lockActorRuntime
 } from '../../../services/auth/actorSessionRuntimeBridge';
 import { assertLocalTenantSyncAccess } from '../../../services/tenant/localTenantGuard';
+import { createEffectiveLicenseValidationEvidence } from '../../../utils/licenseStatusPresentation';
 
 const shouldLoadProfileForLicense = (state = {}, licenseKey, refreshProfile = false) => (
     refreshProfile ||
@@ -107,14 +108,22 @@ export const createLicenseProcessingActions = ({
                     reason: `renewal_${reason}`
                 });
 
+                const expiredEvidence = createEffectiveLicenseValidationEvidence(
+                    { ...serverValidation, valid: false },
+                    { effectiveStatus: 'expired', now }
+                );
+                const expiredDetails = {
+                    ...localLicense,
+                    ...serverValidation,
+                    valid: false,
+                    status: 'expired',
+                    ...(expiredEvidence ? { effective_lifecycle_validation: expiredEvidence } : {})
+                };
+
                 set({
                     appStatus: 'locked_renewal',
                     licenseStatus: 'expired',
-                    licenseDetails: {
-                        ...localLicense,
-                        valid: false,
-                        status: 'expired'
-                    }
+                    licenseDetails: expiredDetails
                 });
 
                 return;
@@ -149,12 +158,26 @@ export const createLicenseProcessingActions = ({
             set({ pendingTermsUpdate: null });
         }
 
+        const effectiveLifecycleEvidence = serverValidation.is_fallback === true
+            ? (
+                localLicense?.effective_lifecycle_validation ||
+                serverValidation?.effective_lifecycle_validation ||
+                null
+            )
+            : createEffectiveLicenseValidationEvidence(
+                { ...serverValidation, valid: true },
+                { effectiveStatus: finalStatus, now }
+            );
+
         const finalLicenseData = {
             ...localLicense,
             ...serverValidation,
             valid: true,
             status: finalStatus,
             grace_period_ends: derivedGracePeriodEnd,
+            ...(effectiveLifecycleEvidence
+                ? { effective_lifecycle_validation: effectiveLifecycleEvidence }
+                : {}),
             localExpiry: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
         };
 
