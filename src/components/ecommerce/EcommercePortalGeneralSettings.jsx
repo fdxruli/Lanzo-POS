@@ -1,4 +1,5 @@
 import { Link2, PackageCheck, Truck } from 'lucide-react';
+import EcommerceProHint from './EcommerceProHint';
 import './EcommercePortalGeneralSettings.css';
 
 const featureValue = (features, camelKey, snakeKey) => (
@@ -23,7 +24,9 @@ export default function EcommercePortalGeneralSettings({
   form,
   onFieldChange,
   plan,
-  features
+  features,
+  showNubeBenefits = false,
+  onOpenNubeBenefits
 }) {
   const {
     customSlugAllowed,
@@ -69,9 +72,18 @@ export default function EcommercePortalGeneralSettings({
           <small className="ecom-admin-help">
             {customSlugAllowed
               ? 'Lanzo Nube permite personalizar el enlace. Usa 3–64 caracteres en minúsculas, números o guiones.'
-              : 'Tu enlace actual se conserva. Personalizarlo requiere Lanzo Nube.'}
+              : 'El enlace actual se conserva.'}
           </small>
         </label>
+
+        {!customSlugAllowed && showNubeBenefits && (
+          <EcommerceProHint
+            variant="inline"
+            className="ecom-general-settings__slug-hint"
+            message="Personalizar este enlace está disponible con Lanzo Nube."
+            onOpenBenefits={onOpenNubeBenefits}
+          />
+        )}
 
         <label className="form-group">
           <span className="form-label">Frase corta / headline</span>

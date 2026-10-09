@@ -53,8 +53,8 @@ afterEach(() => {
 
 describe('EcommerceProductPublishModal configuration sync handoff', () => {
   it.each([false, true])(
-    'hands the selected local product to the domain service for Free/Pro=%s',
-    async (isPro) => {
+    'hands the selected local product to the domain service for catalog sync=%s',
+    async (canSyncCatalog) => {
       const onSave = vi.fn().mockResolvedValue(true);
       render(
         <EcommerceProductPublishModal
@@ -63,7 +63,8 @@ describe('EcommerceProductPublishModal configuration sync handoff', () => {
           localProducts={[localProduct]}
           categoriesById={new Map([['food', 'Comida']])}
           linkedRefs={new Set()}
-          isPro={isPro}
+          canSyncCatalog={canSyncCatalog}
+          canUseStockVisibility={false}
           limitReached={false}
           onClose={vi.fn()}
           onSave={onSave}
@@ -74,7 +75,7 @@ describe('EcommerceProductPublishModal configuration sync handoff', () => {
         target: { value: localProduct.id }
       });
       const saveButton = screen.getByRole('button', { name: 'Guardar producto' });
-      if (isPro) await waitFor(() => expect(saveButton.disabled).toBe(false));
+      if (canSyncCatalog) await waitFor(() => expect(saveButton.disabled).toBe(false));
       fireEvent.click(saveButton);
 
       await waitFor(() => expect(onSave).toHaveBeenCalledTimes(1));
@@ -104,7 +105,8 @@ describe('EcommerceProductPublishModal configuration sync handoff', () => {
         localProducts={[]}
         categoriesById={new Map()}
         linkedRefs={new Set()}
-        isPro={false}
+        canSyncCatalog={false}
+        canUseStockVisibility={false}
         limitReached={false}
         onClose={vi.fn()}
         onSave={onSave}
