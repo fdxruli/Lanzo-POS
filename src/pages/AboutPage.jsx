@@ -148,6 +148,7 @@ export default function AboutPage() {
   const [telegramPreview, setTelegramPreview] = useState(null);
   const telegramDialogRef = useRef(null);
   const telegramCloseButtonRef = useRef(null);
+  const telegramTriggerRef = useRef(null);
 
   const isCloudPlan = isCloudPosSyncEnabled(licenseDetails);
   const currentPlanName = isCloudPlan ? 'Lanzo Nube' : 'Lanzo Local';
@@ -270,8 +271,11 @@ export default function AboutPage() {
     document.addEventListener('keydown', handleKeyDown);
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
-      if (previousFocus && typeof previousFocus.focus === 'function' && previousFocus.isConnected) {
-        previousFocus.focus();
+      const trigger = telegramTriggerRef.current;
+      const focusTarget = trigger?.isConnected ? trigger : previousFocus;
+      telegramTriggerRef.current = null;
+      if (focusTarget && typeof focusTarget.focus === 'function' && focusTarget.isConnected) {
+        focusTarget.focus();
       }
     };
   }, [telegramPreview]);
@@ -352,8 +356,10 @@ export default function AboutPage() {
     window.location.href = buildSupportMailtoUrl(payload);
   };
 
-  const handleOpenTelegramPreview = (action) => {
+  const handleOpenTelegramPreview = (action, triggerElement) => {
     if (action?.kind !== 'telegram') return;
+
+    telegramTriggerRef.current = triggerElement || document.activeElement;
 
     const contact = createTelegramContact(action.intent, {
       isAuthorizedCommercialAdmin,
@@ -385,7 +391,7 @@ export default function AboutPage() {
         className={className}
         type="button"
         key={action.label}
-        onClick={() => handleOpenTelegramPreview(action)}
+        onClick={(event) => handleOpenTelegramPreview(action, event.currentTarget)}
       >
         {action.label}
         <ArrowRight size={17} aria-hidden="true" />
@@ -667,11 +673,11 @@ export default function AboutPage() {
             <div className="about-redesign__help-actions">
               <button
                 type="button"
-                onClick={() => handleOpenTelegramPreview({
+                onClick={(event) => handleOpenTelegramPreview({
                   kind: 'telegram',
                   intent: TELEGRAM_CONTACT_INTENT.GENERAL_SUPPORT,
                   label: 'Contactar por Telegram'
-                })}
+                }, event.currentTarget)}
               >
                 <MessageCircle size={16} aria-hidden="true" /> Contactar por Telegram
               </button>
