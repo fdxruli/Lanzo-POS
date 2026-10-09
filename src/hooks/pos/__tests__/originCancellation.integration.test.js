@@ -36,6 +36,8 @@ vi.mock('../../../services/utils', () => ({ generateID: () => `cart-${crypto.ran
 import { useActiveOrders } from '../useActiveOrders';
 import { db, STORES } from '../../../services/db/dexie';
 import { commitStock } from '../../../services/sales/inventoryFlow';
+import { buildRestaurantOrderPayloadFromOpenSale } from '../../../services/restaurant/restaurantOrderMapper';
+import { cancelOriginRestaurantTable } from '../../../services/restaurant/restaurantOriginCancellation';
 
 const version = '2026-10-07T10:00:00.000Z';
 const receipt = { success: true, localOrderId: 'A', status: 'cancelled', serverVersion: 2,
@@ -45,6 +47,14 @@ const seed = async (id = 'A') => {
   const sale = { id, items, total: 50, status: 'open', orderType: 'table', tableData: `Mesa ${id}`,
     cloudRestaurantOrderUpdatedAt: runtime.cloud ? version : null, updatedAt: version, timestamp: version };
   await db.table('sales').put(sale);
+  if (id === 'A') {
+    const payload = buildRestaurantOrderPayloadFromOpenSale({ sale });
+    runtime.lookup.mockResolvedValue({ success: true, found: true, order: {
+      ...payload.order, id: 'cloud-A', updatedAt: '2026-10-07T10:00:30.123456Z',
+      status: 'delivered', fulfillmentStatus: 'delivered', paymentStatus: 'unpaid',
+      items: payload.items.map((item) => ({ ...item, status: 'delivered' }))
+    } });
+  }
   await useActiveOrders.getState().loadOpenOrder(id);
   return sale;
 };
@@ -66,6 +76,42 @@ beforeEach(async () => {
 afterEach(async () => { vi.unstubAllGlobals(); await runtime.database.delete(); });
 
 describe('3D.1.3 origin cancellation and discard', () => {
+  it.each(['product', 'quantity', 'discount', 'paid', 'remote', 'checkout-lock'])('blocks %s before origin cancellation or inventory cleanup', async (kind) => {
+    const baseline = await seed();
+    const cloud = await runtime.lookup();
+    if (kind === 'product') cloud.order.items[0].productId = 'other-product';
+    if (kind === 'quantity') cloud.order.items[0].quantity = 2;
+    if (kind === 'discount') cloud.order.metadata.restaurantSplitCommercialSnapshot.saleDiscounts.saleDiscount = { state: 'null' };
+    if (kind === 'paid') cloud.order.paidSaleId = 'paid-elsewhere';
+    if (kind === 'remote') await db.table('sales').update('A', { restaurantCloudHydrated: true, reservationAuthority: 'cloud' });
+    if (kind === 'checkout-lock') await db.table('sales').update('A', { isLockedForCheckout: true });
+    const durable = await db.table('sales').get('A');
+    await expect(cancelOriginRestaurantTable({ orderId: 'A', cancelLocal: vi.fn() })).rejects.toThrow();
+    expect(runtime.cancel).not.toHaveBeenCalled();
+    expect(await db.table('sales').get('A')).toEqual(durable);
+    expect((await db.table('menu').get('pizza')).committedStock).toBe(1);
+    expect(baseline.status).toBe('open');
+  });
+  it('joins concurrent origin cancellation requests and cleans up only once', async () => {
+    await seed();
+    const cancelLocal = vi.fn();
+    const a = cancelOriginRestaurantTable({ orderId: 'A', cancelLocal });
+    const b = cancelOriginRestaurantTable({ orderId: 'A', cancelLocal });
+    await Promise.all([a, b]);
+    expect(runtime.cancel).toHaveBeenCalledOnce();
+    expect(cancelLocal).toHaveBeenCalledOnce();
+  });
+  it('aborts if actor changes during the forced Cloud read', async () => {
+    const baseline = await seed();
+    const response = await runtime.lookup();
+    runtime.lookup.mockImplementation(async () => {
+      runtime.actor.assertCurrent.mockImplementation(() => { throw new Error('ACTOR_CONTEXT_STALE'); });
+      return response;
+    });
+    await expect(cancelOriginRestaurantTable({ orderId: 'A', cancelLocal: vi.fn() })).rejects.toThrow('ACTOR_CONTEXT_STALE');
+    expect(runtime.cancel).not.toHaveBeenCalled();
+    expect(await db.table('sales').get('A')).toEqual(baseline);
+  });
   it.each(['add', 'quantity', 'remove'])('discards %s edit without touching durable snapshot or reservations', async (kind) => {
     const baseline = await seed();
     const store = useActiveOrders.getState();
@@ -111,6 +157,7 @@ describe('3D.1.3 origin cancellation and discard', () => {
     await useActiveOrders.getState().recoverRestaurantCancellationCleanup();
     expect((await db.table('menu').get('pizza')).committedStock).toBe(1);
     expect(runtime.cancel).toHaveBeenCalledOnce();
+    expect(runtime.cancel).toHaveBeenCalledWith(expect.objectContaining({ expectedVersion: '2026-10-07T10:00:30.123456Z' }));
   });
   it.each(['failure', 'stale', 'offline', 'ambiguous'])('preserves local OPEN and reserves on %s', async (kind) => {
     const baseline = await seed();
@@ -125,7 +172,8 @@ describe('3D.1.3 origin cancellation and discard', () => {
   it('resolves a lost response using an authoritative POS cancellation snapshot without replay', async () => {
     await seed();
     runtime.cancel.mockRejectedValue(new Error('timeout'));
-    runtime.lookup.mockResolvedValueOnce({ success: true, found: true, order: { updatedAt: version } })
+    const parent = await runtime.lookup();
+    runtime.lookup.mockResolvedValueOnce(parent)
       .mockResolvedValueOnce({ success: true, found: true, order: { ...receipt, metadata: { cancelledFromPos: true }, paymentStatus: 'unpaid' } });
     await useActiveOrders.getState().cancelCurrentOrder();
     expect((await db.table('sales').get('A')).status).toBe('cancelled');

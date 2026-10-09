@@ -4,6 +4,8 @@ import { captureRefundsActorHandle } from '../auth/refundsActorAuthorization';
 import { runTrackedActorOperationWithHandle } from '../auth/actorOperationalHandoff';
 import { getLicenseKeyFromDetails, isRestaurantOrdersCloudEnabled } from '../sync/syncConstants';
 import { restaurantOrdersRepository } from './restaurantOrdersRepository';
+import { preflightCloudRestaurantOrderSettlement } from './restaurantSplitCloudPreflight';
+import { stableRestaurantSplitCommercialStringify } from './restaurantSplitCommercialSnapshot';
 import { isRestaurantCloudTableSettlementRequired, isRestaurantCloudTableShadow } from './restaurantCloudTableGuards';
 import { generateIdempotencyKey } from '../sync/idempotency';
 import { RESTAURANT_CLOUD_STATUS_EVENT } from './restaurantCloudStatusSummary';
@@ -39,6 +41,7 @@ export const cancelOriginRestaurantTable = ({ orderId, actorHandle = null, cance
       const sale = await table.get(orderId);
       actor.assertCurrent('refunds');
       if (!sale || sale.status !== 'open') return;
+      if (sale.isLockedForCheckout === true) throw failure('RESTAURANT_ORDER_CHECKOUT_LOCKED', 'La mesa tiene un cobro en curso. Cierra ese intento antes de cancelar.');
       if (isRestaurantCloudTableShadow(sale)) throw failure('CLOUD_TABLE_READ_ONLY', 'Cancela esta mesa desde el dispositivo de origen.');
       let receipt = sale.restaurantCancellationCleanupPending?.receipt;
       const details = useAppStore.getState().licenseDetails;
@@ -60,10 +63,21 @@ export const cancelOriginRestaurantTable = ({ orderId, actorHandle = null, cance
           if (parent?.paymentStatus === 'paid' || parent?.paidAt || parent?.paidSaleId) {
             throw failure('RESTAURANT_ORDER_ALREADY_PAID', 'La mesa ya fue cobrada. Actualiza las mesas antes de continuar.');
           }
-          const expectedVersion = sale.restaurantCloudExpectedVersion || sale.cloudRestaurantOrderUpdatedAt;
-          if (!expectedVersion || expectedVersion !== parent?.updatedAt) {
-            throw failure('RESTAURANT_ORDER_VERSION_CONFLICT', 'La mesa cambió. Actualízala y vuelve a abrirla antes de cancelar.');
+          const preflight = await preflightCloudRestaurantOrderSettlement({
+            licenseKey, parentOrderId: orderId, parentSale: sale, actorHandle: actor, permission: 'refunds',
+            // This response was forced above, under this same refunds actor.
+            repository: { getRestaurantOrderByLocalOrder: async () => remote }
+          });
+          actor.assertCurrent('refunds');
+          if (preflight.success !== true) throw failure(preflight.code, preflight.code === 'RESTAURANT_ORDER_COMMERCIAL_CONFLICT'
+            ? 'Los productos o importes de la mesa cambiaron. Revisa la cuenta actualizada antes de cancelar.'
+            : preflight.message);
+          const current = await table.get(orderId);
+          actor.assertCurrent('refunds');
+          if (!current || stableRestaurantSplitCommercialStringify(current) !== stableRestaurantSplitCommercialStringify(sale)) {
+            throw failure('RESTAURANT_ORDER_VERSION_CONFLICT', 'La mesa cambió desde que la abriste. Revisa su estado actualizado antes de confirmar la cancelación.');
           }
+          const expectedVersion = preflight.parentExpectedVersion;
           const idempotencyKey = generateIdempotencyKey({ entityType: 'restaurant_order', operation: 'cancel', entityId: orderId, prefix: 'restaurant-pos' });
           try {
             receipt = await restaurantOrdersRepository.cancelRestaurantOrderFromPos({ licenseKey, localOrderId: orderId,
@@ -76,9 +90,18 @@ export const cancelOriginRestaurantTable = ({ orderId, actorHandle = null, cance
             const response = await restaurantOrdersRepository.getRestaurantOrderByLocalOrder({ licenseKey, localOrderId: orderId, force: true });
             actor.assertCurrent('refunds');
             receipt = cancellationEvidence(response, orderId);
-            if (!receipt) throw failure(error?.message?.includes('RESTAURANT_ORDER_VERSION_CONFLICT')
-              ? 'RESTAURANT_ORDER_VERSION_CONFLICT' : 'RESTAURANT_CANCEL_UNCONFIRMED',
-            'No se pudo confirmar la cancelación. Actualiza la mesa antes de intentarlo nuevamente.');
+            if (!receipt) {
+              const rejectedCode = ['RESTAURANT_ORDER_VERSION_CONFLICT', 'RESTAURANT_ORDER_REMOTE_CANCEL_BLOCKED', 'RESTAURANT_ORDER_ALREADY_PAID']
+                .find((code) => error?.code === code || error?.message?.includes(code));
+              throw failure(rejectedCode || 'RESTAURANT_CANCEL_UNCONFIRMED',
+                rejectedCode === 'RESTAURANT_ORDER_VERSION_CONFLICT'
+                  ? 'La mesa cambió desde que la abriste. Revisa su estado actualizado antes de confirmar la cancelación.'
+                  : rejectedCode === 'RESTAURANT_ORDER_REMOTE_CANCEL_BLOCKED'
+                    ? 'Cancela esta mesa desde el dispositivo de origen.'
+                    : rejectedCode === 'RESTAURANT_ORDER_ALREADY_PAID'
+                      ? 'La mesa ya fue cobrada. Actualiza las mesas antes de continuar.'
+                      : 'No se pudo confirmar la cancelación. Actualiza la mesa antes de intentarlo nuevamente.');
+            }
           }
           actor.assertCurrent('refunds');
           if (!confirmed(receipt, orderId)) throw unknown();

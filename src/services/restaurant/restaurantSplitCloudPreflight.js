@@ -1,6 +1,7 @@
 import { Money } from '../../utils/moneyMath';
 import { buildRestaurantOrderPayloadFromOpenSale } from './restaurantOrderMapper';
 import { restaurantOrdersRepository } from './restaurantOrdersRepository';
+import { isRestaurantTableInScope } from './restaurantActiveTables';
 import {
   hasInvalidRestaurantSplitCommercialSnapshot,
   stableRestaurantSplitCommercialStringify
@@ -23,7 +24,10 @@ const normalizeStatus = (value) => text(value).toLowerCase();
 const toMoneyCents = (value) => {
   if (!hasValue(value)) return null;
   try {
-    return Money.toCents(value);
+    const cents = Money.init(value).times(100);
+    if (!cents.eq(cents.round(0))) return null;
+    const result = Number(cents.toString());
+    return Number.isSafeInteger(result) ? result : null;
   } catch {
     return null;
   }
@@ -140,8 +144,17 @@ const validTimestampToken = (value) => (
   typeof value === 'string'
   && value.length > 0
   && value === value.trim()
+  && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?(?:[zZ]|[+-]\d{2}:\d{2})$/.test(value)
   && !Number.isNaN(Date.parse(value))
 );
+
+// Date.parse drops fractional precision beyond milliseconds. Keep it when
+// rejecting older Cloud snapshots; the original token still goes to SQL.
+const timestampRank = (value) => {
+  const fraction = value.match(/\.(\d+)(?:[zZ]|[+-]\d{2}:\d{2})$/)?.[1] || '';
+  return BigInt(Math.floor(Date.parse(value) / 1000)) * 1000000000n
+    + BigInt(fraction.padEnd(9, '0').slice(0, 9));
+};
 
 const compareLine = (expected, actual) => {
   const expectedModifiers = expected.selectedModifiers;
@@ -222,8 +235,12 @@ export const preflightCloudRestaurantOrderSettlement = async ({
   licenseKey,
   parentOrderId,
   parentSale,
+  settlementTotal,
+  actorHandle = null,
+  permission,
   repository = restaurantOrdersRepository
 } = {}) => {
+  actorHandle?.assertCurrent(permission);
   if (!licenseKey || !parentOrderId || !parentSale?.id || text(parentSale.id) !== text(parentOrderId)) {
     return invalid(
       'RESTAURANT_ORDER_PREFLIGHT_FAILED',
@@ -253,6 +270,15 @@ export const preflightCloudRestaurantOrderSettlement = async ({
   }
 
   const order = response.order;
+  actorHandle?.assertCurrent(permission);
+  const cloudId = parentSale.cloudRestaurantOrderId || parentSale.restaurantOrderId;
+  if ((cloudId && text(cloudId) !== text(order.id))
+    || !isRestaurantTableInScope(parentSale, licenseKey, actorHandle?.tenant?.opaqueId)
+    || !isRestaurantTableInScope(order, licenseKey, actorHandle?.tenant?.opaqueId)
+    || parentSale.status !== 'open'
+    || parentSale.restaurantCloudTerminalState === 'terminal') {
+    return invalid('RESTAURANT_ORDER_PREFLIGHT_FAILED', 'No se pudo verificar la identidad o autoridad de la mesa. Actualiza la cuenta.');
+  }
   const orderStatus = normalizeStatus(order.status);
   if (orderStatus === 'cancelled' || isPresent(order.cancelledAt) || isPresent(order.cancelled_at)) {
     return invalid('RESTAURANT_ORDER_ALREADY_CANCELLED', 'La mesa cloud está cancelada. Actualiza la mesa antes de cobrar.');
@@ -266,13 +292,16 @@ export const preflightCloudRestaurantOrderSettlement = async ({
   }
 
   const paymentStatus = normalizeStatus(order.paymentStatus ?? order.payment_status);
-  if (paymentStatus === 'paid') {
+  if (paymentStatus === 'paid' || isPresent(order.paidAt) || isPresent(order.paid_at)
+    || isPresent(order.paidSaleId) || isPresent(order.paid_sale_id)) {
     return invalid('RESTAURANT_ORDER_ALREADY_PAID', 'La comanda cloud ya fue pagada. Actualiza las mesas antes de continuar.');
   }
   if (paymentStatus !== 'unpaid' || isPresent(order.paidAt) || isPresent(order.paid_at)) {
     return invalid('RESTAURANT_ORDER_PREFLIGHT_FAILED', 'El estado de pago cloud no permite confirmar este split. Actualiza la mesa.');
   }
-  if (isPresent(order.archivedAt) || isPresent(order.archived_at) || isPresent(order.checkoutClosedAt) || isPresent(order.checkout_closed_at)) {
+  if (isPresent(order.archivedAt) || isPresent(order.archived_at) || isPresent(order.checkoutClosedAt) || isPresent(order.checkout_closed_at)
+    || isPresent(order.deletedAt) || isPresent(order.deleted_at) || order.metadata?.archived === true
+    || order.metadata?.cancelledFromPos === true) {
     return invalid('RESTAURANT_ORDER_PREFLIGHT_FAILED', 'La comanda cloud ya está cerrada o archivada. Actualiza las mesas.');
   }
 
@@ -289,7 +318,9 @@ export const preflightCloudRestaurantOrderSettlement = async ({
     }
   }
 
-  if (!compareCommercialSnapshot(parentSale, order)) {
+  if (!compareCommercialSnapshot(parentSale, order)
+    || (settlementTotal !== undefined && (toMoneyCents(settlementTotal) === null
+      || toMoneyCents(settlementTotal) !== toMoneyCents(order.total)))) {
     return invalid(
       'RESTAURANT_ORDER_COMMERCIAL_CONFLICT',
       'Los productos, cantidades, precios, descuentos o importes de la mesa cambiaron o no pudieron verificarse. Actualiza la mesa y vuelve a dividirla.'
@@ -300,9 +331,17 @@ export const preflightCloudRestaurantOrderSettlement = async ({
   if (!validTimestampToken(updatedAt)) {
     return invalid('RESTAURANT_ORDER_PREFLIGHT_FAILED', 'La comanda cloud no devolvió una versión válida. No se realizó el cobro.');
   }
+  const knownVersions = [parentSale.restaurantCloudExpectedVersion, parentSale.cloudRestaurantOrderUpdatedAt, parentSale.cloudUpdatedAt];
+  if (knownVersions.some((version) => validTimestampToken(version) && timestampRank(version) > timestampRank(updatedAt))
+    || (hasValue(parentSale.cloudRestaurantOrderServerVersion)
+      && hasValue(order.serverVersion ?? order.server_version)
+      && Number(order.serverVersion ?? order.server_version) < Number(parentSale.cloudRestaurantOrderServerVersion))) {
+    return invalid('RESTAURANT_ORDER_PREFLIGHT_FAILED', 'No se pudo confirmar una versión vigente de la mesa. Actualiza la cuenta.');
+  }
 
   return {
     success: true,
+    commercialEquivalent: true,
     parentExpectedVersion: updatedAt,
     cloudOrderId: order.id,
     source: 'restaurant_order_cloud_preflight'

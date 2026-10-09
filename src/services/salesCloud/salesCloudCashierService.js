@@ -309,7 +309,8 @@ const friendlyCloudCashierError = (error) => {
     RESTAURANT_ORDER_ALREADY_CANCELLED: 'La comanda de esta mesa ya fue cerrada o cancelada. Actualiza las mesas.',
     RESTAURANT_ORDER_PREFLIGHT_REQUIRED: 'No se pudo verificar la versión cloud actual de la mesa. Actualiza la mesa antes de cobrar.',
     RESTAURANT_SPLIT_TOTAL_MISMATCH: 'El total de los tickets no coincide con el total vigente de la comanda. Actualiza la mesa y vuelve a dividir.',
-    RESTAURANT_ORDER_VERSION_CONFLICT: 'La mesa cambió en otro dispositivo. Actualiza la mesa y vuelve a dividirla para proteger el cobro.',
+    RESTAURANT_ORDER_VERSION_CONFLICT: 'La mesa recibió cambios desde que la abriste. Actualízala y vuelve a intentar el cobro.',
+    RESTAURANT_ORDER_COMMERCIAL_CONFLICT: 'Los productos o importes de la mesa cambiaron. Revisa la cuenta actualizada antes de cobrar.',
     SPLIT_ROUNDING_INVALID: 'El reparto cloud solo admite diferencias de centavos. Usa reparto manual o ajusta los productos antes de cobrar.',
     SPLIT_ROUNDING_MISMATCH: 'Los centavos distribuidos en la cuenta dividida no coinciden con el total. Vuelve a abrir Separar pago.',
     CASH_SESSION_STATION_MISMATCH: 'La caja abierta pertenece a otra estación. Selecciona la caja de este dispositivo.',
@@ -1043,7 +1044,9 @@ export const salesCloudCashierService = {
   },
 
   async processCloudCashierSale({ sale, processedItems = [], paymentData = {}, total, licenseDetails = null, restaurantOrder = null } = {}) {
+    const actorHandle = actorRuntimeController.capture();
     const context = await getRuntimeContext();
+    actorHandle.assertCurrent();
     const details = licenseDetails || context.licenseDetails;
     const creditSale = isCreditLikePaymentMethod(paymentData.paymentMethod || sale?.paymentMethod || sale?.payment_method);
     const inventoryEnabled = isCloudSalesInventoryEnabled(details);
@@ -1057,8 +1060,6 @@ export const salesCloudCashierService = {
     } else if (!context.experimentalEnabled || !context.licenseKey || !isCloudSalesCashierEnabled(details)) {
       throw friendlyCloudCashierError(new Error('CLOUD_SALES_CASHIER_DISABLED'));
     }
-
-    const actorHandle = actorRuntimeController.capture();
 
     const payload = creditSale
       ? mapLocalCreditCheckoutToCloudSale({ sale, processedItems, paymentData, total, inventoryEnabled })
@@ -1089,28 +1090,23 @@ export const salesCloudCashierService = {
           || sale?.id
           || ''
         ).trim();
-        let parentOrderVersion = String(
-          restaurantOrder?.restaurantCloudExpectedVersion
-          || restaurantOrder?.cloudRestaurantOrderUpdatedAt
-          || restaurantOrder?.cloudUpdatedAt
-          || ''
-        ).trim();
-
         if (!parentOrderId) throw Object.assign(new Error('RESTAURANT_PARENT_ORDER_REQUIRED'), { code: 'RESTAURANT_PARENT_ORDER_REQUIRED' });
-        if (!parentOrderVersion) {
-          const preflight = await preflightCloudRestaurantOrderSettlement({
-            licenseKey: context.licenseKey,
-            parentOrderId,
-            parentSale: restaurantOrder
+        actorHandle.assertCurrent();
+        const preflight = await preflightCloudRestaurantOrderSettlement({
+          licenseKey: context.licenseKey,
+          parentOrderId,
+          parentSale: restaurantOrder,
+          settlementTotal: total,
+          actorHandle
+        });
+        actorHandle.assertCurrent();
+        if (preflight?.success !== true) {
+          throw Object.assign(new Error(preflight?.message || preflight?.code || 'RESTAURANT_ORDER_PREFLIGHT_FAILED'), {
+            code: preflight?.code || 'RESTAURANT_ORDER_PREFLIGHT_FAILED',
+            response: preflight
           });
-          if (preflight?.success !== true) {
-            throw Object.assign(new Error(preflight?.message || preflight?.code || 'RESTAURANT_ORDER_PREFLIGHT_FAILED'), {
-              code: preflight?.code || 'RESTAURANT_ORDER_PREFLIGHT_FAILED',
-              response: preflight
-            });
-          }
-          parentOrderVersion = String(preflight.parentExpectedVersion || '').trim();
         }
+        const parentOrderVersion = String(preflight.parentExpectedVersion || '').trim();
         if (!parentOrderVersion) throw Object.assign(new Error('RESTAURANT_ORDER_PREFLIGHT_REQUIRED'), { code: 'RESTAURANT_ORDER_PREFLIGHT_REQUIRED' });
         restaurantSettlement = {
           parent_order_id: parentOrderId,
@@ -1123,6 +1119,7 @@ export const salesCloudCashierService = {
         ? salesCloudRepository.createCloudCreditSale
         : (inventoryEnabled ? salesCloudRepository.createCloudCashierInventorySale : salesCloudRepository.createCloudCashierSale);
 
+      actorHandle.assertCurrent();
       const response = await createSale.call(salesCloudRepository, {
         licenseKey: context.licenseKey,
         ...payload,

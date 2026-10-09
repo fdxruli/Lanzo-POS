@@ -255,6 +255,13 @@ export const processSaleCore = async ({
             }
         }
         const itemsToProcess = order.filter(item => item.quantity && item.quantity > 0);
+        // Preserve the exact checkout lines before pricing/stock enrichment.
+        const restaurantCheckoutOrder = persistedOrder ? {
+            ...persistedOrder,
+            items: structuredClone(itemsToProcess),
+            total,
+            ...(paymentData.saleDiscount ? { saleDiscount: structuredClone(paymentData.saleDiscount) } : {})
+        } : null;
         if (itemsToProcess.length === 0) throw new Error('El pedido está vacío.');
 
         const ecommerceCheckout = getEcommerceCheckout(paymentData);
@@ -497,7 +504,7 @@ export const processSaleCore = async ({
                     processedItems,
                     paymentData: { ...safePaymentData, saleDiscount: saleDiscountAudit },
                     total: Money.toExactString(totalNum),
-                    restaurantOrder: persistedOrder || null
+                    restaurantOrder: restaurantCheckoutOrder
                 });
             } catch (cloudCashierError) {
                 Logger.warn('Cloud cashier failed before local commit:', cloudCashierError);
