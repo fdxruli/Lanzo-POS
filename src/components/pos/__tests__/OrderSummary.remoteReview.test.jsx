@@ -61,6 +61,18 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('remote table review closure', () => {
+  it('allows checkout without exposing actions that mutate a read-only cloud review', () => {
+    render(<OrderSummary {...props} />);
+    expect(screen.getByText(/Vista sincronizada de solo lectura/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cobrar' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Cerrar revisión' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'Actualizar Mesa' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Dividir Cuenta' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Agregar una unidad de/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Quitar una unidad de/ })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Mesa o identificador')).toBeDisabled();
+  });
+
   it('closes locally without refunds, cancellation, financial, inventory or database writes', async () => {
     render(<OrderSummary {...props} />);
     expect(screen.queryByRole('button', { name: 'Salir sin guardar' })).not.toBeInTheDocument();

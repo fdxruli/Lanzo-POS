@@ -16,6 +16,7 @@ import { useCallback, useRef, useState, useEffect } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { showMessageModal } from '../../services/utils';
 import { clearRestaurantSplitDraft } from '../../services/sales/restaurantSplitDraft';
+import { isRestaurantCloudTableShadow } from '../../services/restaurant/restaurantCloudTableGuards';
 import './RestaurantCloudStatus.css';
 import './EcommercePosConversionPanel.css';
 
@@ -81,9 +82,11 @@ const PosPageContent = ({ data, ui, actions, features }) => {
     ));
     const [isInitializing, setIsInitializing] = useState(true);
     const isEcommerceDraft = currentOrder?.origin === 'ecommerce';
+    const isRemoteTableReview = isRestaurantCloudTableShadow(currentOrder);
     const physicalScannerEnabled = Boolean(
         !isInitializing
         && currentOrder
+        && !isRemoteTableReview
         && !isCurrentOrderLocked
         && !currentOrder.isLockedForCheckout
         && !ui.activeModal
@@ -171,6 +174,7 @@ const PosPageContent = ({ data, ui, actions, features }) => {
                 <div className="pos-grid">
                     <ProductMenu
                         products={data.menuVisual}
+                        readOnly={isRemoteTableReview}
                         categories={data.categories}
                         selectedCategoryId={data.activeCategoryId}
                         onSelectCategory={ui.handleSelectCategory}

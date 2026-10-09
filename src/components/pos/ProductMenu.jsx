@@ -124,7 +124,8 @@ export default function ProductMenu({
   onLoadNextPage,
   activeViewKey,
   savedScrollPosition,
-  onScrollPositionChange
+  onScrollPositionChange,
+  readOnly = false
 }) {
   const addSmartItem = useActiveOrders((state) => state.addSmartItem);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
@@ -394,6 +395,7 @@ export default function ProductMenu({
   // --- HANDLER PRINCIPAL DE CLIC EN PRODUCTO (ADAPTABLE POR RUBRO) ---
   // MEMOIZADO: Evita re-renders de ProductCard cuando se escribe en el buscador
   const handleCardClick = useCallback(async (product) => {
+    if (readOnly) return;
     if (!guardCloudSyncedProduct(product)) return;
     if (!await guardStrictExpirySale(product)) return;
 
@@ -495,9 +497,10 @@ export default function ProductMenu({
         { type: 'warning', duration: 3000 }
       );
     }
-  }, [features.hasModifiers, features.hasVariants, features.hasWholesale, addSmartItem, loadBatchesForProduct, guardCloudSyncedProduct, guardStrictExpirySale]);
+  }, [features.hasModifiers, features.hasVariants, features.hasWholesale, addSmartItem, loadBatchesForProduct, guardCloudSyncedProduct, guardStrictExpirySale, readOnly]);
 
   const handleConfirmVariants = useCallback((variantItem) => {
+    if (readOnly) return;
     if (!guardCloudSyncedProduct(selectedProductForVariant || variantItem)) return;
 
     // Como ya viene el lote seleccionado del modal, addSmartItem
@@ -506,15 +509,16 @@ export default function ProductMenu({
     setVariantModalOpen(false);
     setSelectedProductForVariant(null);
     setPreloadedBatches(null);
-  }, [addSmartItem, guardCloudSyncedProduct, selectedProductForVariant]);
+  }, [addSmartItem, guardCloudSyncedProduct, selectedProductForVariant, readOnly]);
 
   const handleConfirmModifiers = useCallback((customizedProduct) => {
+    if (readOnly) return;
     if (!guardCloudSyncedProduct(selectedProductForMod || customizedProduct)) return;
 
     addSmartItem(customizedProduct);
     setModModalOpen(false);
     setSelectedProductForMod(null);
-  }, [addSmartItem, guardCloudSyncedProduct, selectedProductForMod]);
+  }, [addSmartItem, guardCloudSyncedProduct, selectedProductForMod, readOnly]);
 
   // --- HANDLERS DE CIERRE DE MODALES ---
   const handleCloseVariantModal = useCallback(() => {
@@ -616,8 +620,9 @@ export default function ProductMenu({
             type="button"
             id="scan-barcode-btn"
             className="btn-scan"
-            title="Abrir lector de código de barras"
+            title={readOnly ? 'No se pueden agregar productos a una vista de solo lectura.' : 'Abrir lector de código de barras'}
             aria-label="Abrir lector de código de barras"
+            disabled={readOnly}
             onClick={handleScannerClick}
           >
             <ScanLine size={21} aria-hidden="true" />
@@ -625,6 +630,11 @@ export default function ProductMenu({
           </button>
         </div>
 
+        {readOnly && (
+          <p className="pos-menu-read-only-notice" role="status">
+            Esta mesa está en modo solo lectura. Cierra la revisión para agregar productos a otra orden.
+          </p>
+        )}
         <div id="category-filters" className="category-filters" aria-label="Categorías de productos">
           <button
             type="button"
@@ -712,6 +722,7 @@ export default function ProductMenu({
                     isLoadingVariant={loadingVariantId === item.id}
                     hasAvailableVariants={variantStatusByProductId[item.id] === true}
                     strictExpiryBlocked={strictExpiryStatus?.blocked === true}
+                    selectionDisabled={readOnly}
                   />
                 </div>
               );

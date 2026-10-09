@@ -190,6 +190,7 @@ export default function OrderSummary({
   }, [currentOrder, ecommerceLocalSubtotal, isEcommerceDraft, order]);
 
   const handleQuantityChange = (lineId, change) => {
+    if (isRemoteTableReview) return;
     const item = order.find((orderItem, index) => getCartLineId(orderItem, index) === lineId);
     if (!item) return;
 
@@ -201,6 +202,7 @@ export default function OrderSummary({
   };
 
   const handleRemoveKitchenCancelledItems = async () => {
+    if (isRemoteTableReview) return;
     if (!currentOrderId || !isEditMode) {
       showMessageModal('Primero carga una mesa guardada para ajustar cancelaciones de cocina.', null, { type: 'warning' });
       return;
@@ -297,6 +299,7 @@ export default function OrderSummary({
   };
 
   const handleBulkInputChange = (lineId, value) => {
+    if (isRemoteTableReview) return;
     const newQuantity = parseFloat(value);
     if (newQuantity === 0) {
       removeItem(lineId);
@@ -453,7 +456,7 @@ export default function OrderSummary({
         <div className="summary-header-copy">
           <h2 className="summary-title">
             {showRestaurantActions
-              ? (isEditMode ? `Editando: ${tableData || 'Mesa'}` : (isMobileModal ? 'Tu Pedido' : 'Resumen del Pedido'))
+              ? (isRemoteTableReview ? `Revisando: ${tableData || 'Mesa'}` : isEditMode ? `Editando: ${tableData || 'Mesa'}` : (isMobileModal ? 'Tu Pedido' : 'Resumen del Pedido'))
               : (tableData ? `Orden: ${tableData}` : (isMobileModal ? 'Tu Pedido' : 'Resumen del Pedido'))}
           </h2>
 
@@ -464,7 +467,7 @@ export default function OrderSummary({
           )}
 
           {isEditMode && showRestaurantActions && (
-            <span className="summary-edit-badge">Pedido guardado</span>
+            <span className="summary-edit-badge">{isRemoteTableReview ? 'Vista Cloud · Solo lectura' : 'Pedido guardado'}</span>
           )}
         </div>
 
@@ -509,6 +512,8 @@ export default function OrderSummary({
               className="table-identifier-input"
               placeholder="Ej. Mesa 4, Barra o Juan"
               value={tableData || ''}
+              disabled={isRemoteTableReview}
+              title={isRemoteTableReview ? 'Solo se puede cambiar el nombre desde la sesión de origen.' : undefined}
               onChange={(event) => setTableData(event.target.value)}
             />
           </div>
@@ -527,7 +532,9 @@ export default function OrderSummary({
         <div className="order-edit-notice" role="status">
           <AlertTriangle size={18} aria-hidden="true" />
           <span>
-            Estás modificando un pedido guardado. Actualiza la mesa para conservar los cambios.
+            {isRemoteTableReview
+              ? 'Vista sincronizada de solo lectura. Puedes revisar y cobrar. Para editar productos o cancelar, utiliza la sesión de origen.'
+              : 'Estás modificando un pedido guardado. Actualiza la mesa para conservar los cambios.'}
           </span>
         </div>
       )}
@@ -639,7 +646,8 @@ export default function OrderSummary({
                           type="button"
                           className="btn-fix-stock"
                           onClick={() => updateItemQuantity(lineId, item.stock)}
-                          title="Ajustar cantidad al máximo disponible"
+                          disabled={isRemoteTableReview}
+                          title={isRemoteTableReview ? 'Mesa en modo solo lectura' : 'Ajustar cantidad al máximo disponible'}
                         >
                           Ajustar a {item.stock}
                         </button>
@@ -652,7 +660,7 @@ export default function OrderSummary({
                           <AlertTriangle size={15} aria-hidden="true" />
                           <span>Cancelado por cocina. Quitar de la cuenta antes de cobrar.</span>
                         </div>
-                        {!isAccountAdjustedForKitchenCancelledItems && (
+                        {!isRemoteTableReview && !isAccountAdjustedForKitchenCancelledItems && (
                           <button
                             type="button"
                             className="order-item-kitchen-adjust-btn"
@@ -666,7 +674,7 @@ export default function OrderSummary({
                     )}
                   </div>
 
-                  {isUnitSale ? (
+                  {!isRemoteTableReview && (isUnitSale ? (
                     <div className="order-item-controls" aria-label={`Cantidad de ${item.name}`}>
                       <button
                         type="button"
@@ -712,7 +720,7 @@ export default function OrderSummary({
                         {quantityInputProps.unit.toUpperCase()}
                       </span>
                     </div>
-                  )}
+                  ))}
                 </div>
               );
             })}
@@ -721,7 +729,7 @@ export default function OrderSummary({
 
       </div>
 
-      {!isEcommerceDraft && order.length > 0 && isDiscountModalOpen && (
+      {!isEcommerceDraft && !isRemoteTableReview && order.length > 0 && isDiscountModalOpen && (
         <div
           className="order-discount-modal"
           role="dialog"
@@ -754,7 +762,7 @@ export default function OrderSummary({
 
       {(order.length > 0 || isRemoteTableReview || isOriginTable) && (
           <footer className="order-checkout">
-            {!isEcommerceDraft && order.length > 0 && (
+            {!isEcommerceDraft && !isRemoteTableReview && order.length > 0 && (
               <div className="order-discount-trigger-row">
                 <OrderDiscountPanel
                   compact
@@ -783,7 +791,7 @@ export default function OrderSummary({
               </button>
               )}
 
-              {showRestaurantActions && order.length > 0 && (
+              {showRestaurantActions && !isRemoteTableReview && order.length > 0 && (
                 <button
                   type="button"
                   className={`order-action-btn order-action-btn--save${isEditMode ? ' order-action-btn--update' : ''}`}
@@ -795,7 +803,7 @@ export default function OrderSummary({
                 </button>
               )}
 
-              {showRestaurantActions && canSplitOrder && isEditMode && order.length > 0 && (
+              {showRestaurantActions && !isRemoteTableReview && canSplitOrder && isEditMode && order.length > 0 && (
                 <button
                   type="button"
                   className="order-action-btn order-action-btn--split"
@@ -807,7 +815,7 @@ export default function OrderSummary({
                 </button>
               )}
 
-              {features.hasLayaway && order.length > 0 && (
+              {!isRemoteTableReview && features.hasLayaway && order.length > 0 && (
                 <button
                   type="button"
                   className="order-action-btn order-action-btn--layaway"

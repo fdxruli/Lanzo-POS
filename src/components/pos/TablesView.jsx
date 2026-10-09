@@ -397,7 +397,7 @@ const TableCard = ({
 
         {remoteSnapshot && (
           <div className="table-card-review-banner" role="status">
-            <span>Creada en otro dispositivo. Puedes revisar la comanda. Edita, cobra o cancela desde el dispositivo de origen.</span>
+            <span>Vista sincronizada desde la nube. Puedes revisar y cobrar esta mesa aquí. Para cambiar productos, actualizarla o cancelarla, utiliza la sesión de origen.</span>
           </div>
         )}
         {isKitchenCancelled && (
@@ -478,6 +478,8 @@ const TableCard = ({
             <button
               type="button"
               className="btn-quick-split"
+              disabled={remoteSnapshot}
+              title={remoteSnapshot ? 'La división no está disponible en esta vista sincronizada.' : 'Separar cuenta'}
               onClick={(e) => {
                 e.stopPropagation();
                 onSplitOrder?.(order);
