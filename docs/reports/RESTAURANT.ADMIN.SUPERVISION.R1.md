@@ -1,5 +1,9 @@
 # Restaurant administrative supervision r1
 
+Subsequent hotfix: [P0 R1](RESTAURANT.ADMIN.SUPERVISION.HOTFIX.P0.R1.md) replaces
+the legacy Kitchen cancellation and aggregation behavior in the unapplied SQL.
+Production cutover compatibility remains HOLD; this is not deployment approval.
+
 Draft stacked on #338. Initial parent: `fb17e9a43929d54087ab937cb760a8cd6e087c36`;
 observed main: `2457c1716eb4b001b720743d15fd3f6761226ad0`.
 No merge, production migration, or deployment promotion is part of this change.

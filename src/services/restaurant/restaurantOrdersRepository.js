@@ -17,6 +17,14 @@ const LOOKUP_ERROR_ORDER = Object.freeze({ __statusError: true, items: [] });
 const parseRpcPayload = (data) => (typeof data === 'string' ? JSON.parse(data) : data || {});
 const assertSupabase = () => { if (!supabaseClient) throw new Error('SUPABASE_NOT_CONFIGURED'); };
 const assertOnlineForMutation = () => { if (!isOnline()) throw new Error('No se pudo enviar a cocina cloud porque el dispositivo está sin conexión.'); };
+export const friendlyRestaurantMutationError = (error) => {
+  const code = `${error?.code || ''} ${error?.message || ''} ${error?.details || ''}`;
+  if (/RESTAURANT_ORDER_VERSION_CONFLICT/.test(code)) return 'La mesa recibió cambios. Actualízala antes de guardar.';
+  if (/RESTAURANT_ORDER_VERSION_REQUIRED|RESTAURANT_CLIENT_UPGRADE_REQUIRED|PGRST202/.test(code)) return 'Actualiza la aplicación y vuelve a cargar la mesa antes de guardar. Tus datos locales se conservan.';
+  if (/RESTAURANT_PARENT_CANCEL_CONTRACT_REQUIRED/.test(code)) return 'Cancela la mesa desde Mesas con los permisos y el motivo correspondientes.';
+  if (/RESTAURANT_TABLE_OWNER_REQUIRED|POS_PERMISSION_DENIED/.test(code)) return 'Tu usuario no tiene permiso para modificar esta mesa.';
+  return null;
+};
 const normalizeLookupResponse = (response = {}) => (response?.success === false && !response?.order ? { ...response, order: LOOKUP_ERROR_ORDER } : response);
 
 const friendlyRestaurantOrderLookupError = (error) => {
@@ -72,6 +80,8 @@ const callRpc = async (name, args, actorHandle) => {
     assertCapturedRpcActor(actorHandle);
     // Report before a lookup caller or cache boundary can translate P0001.
     // Recovery never retries the RPC or replaces its original rejection.
+    const friendly = friendlyRestaurantMutationError(error);
+    if (friendly) throw Object.assign(new Error(friendly), { code: error?.code, cause: error });
     reportActorAuthorityError(error, { operation: name });
     throw error;
   }
@@ -103,12 +113,15 @@ export const restaurantOrdersRepository = {
     if (response?.success === true) invalidateCloudCacheAfterRestaurantOrderMutation(licenseKey);
     return response;
   },
-  async upsertRestaurantOrder({ licenseKey, order, items = [], idempotencyKey = null }) {
+  async upsertRestaurantOrder({ licenseKey, order, items = [], idempotencyKey = null, actorHandle: caller = null }) {
+    caller?.assertCurrent('pos');
     if (!licenseKey) throw new Error('LICENSE_KEY_REQUIRED');
     assertOnlineForMutation();
     const resolvedIdempotencyKey = idempotencyKey || generateIdempotencyKey({ entityType: SYNC_ENTITY_TYPES.RESTAURANT_ORDER, operation: SYNC_OPERATIONS.UPSERT, entityId: order?.localOrderId || order?.saleId || order?.id || 'new', prefix: 'restaurant' });
     const { args: baseArgs, actorHandle } = await buildBaseRpcArgs(licenseKey);
+    caller?.assertCurrent('pos');
     const response = await callRpc('pos_upsert_restaurant_order', { ...baseArgs, p_order: order || {}, p_items: Array.isArray(items) ? items : [], p_idempotency_key: resolvedIdempotencyKey }, actorHandle);
+    caller?.assertCurrent('pos');
     if (response?.success !== false) invalidateCloudCacheAfterRestaurantOrderMutation(licenseKey);
     return response;
   },
@@ -176,11 +189,12 @@ export const restaurantOrdersRepository = {
   },
   async upsertRestaurantOrderFromLocalSale({ licenseKey, sale, idempotencyKey = null }) {
     if (!sale?.id) throw new Error('RESTAURANT_ORDER_SALE_REQUIRED');
+    const caller = actorRuntimeController.capture();
+    caller.assertCurrent('pos');
     const [stationsResult, productsById] = await Promise.all([preparationStationsRepository.getPreparationStations({ licenseKey, includeInactive: false, force: false, useCloud: Boolean(licenseKey) }), getProductsById()]);
+    caller.assertCurrent('pos');
     const payload = buildRestaurantOrderPayloadFromOpenSale({ sale, stations: stationsResult?.stations || [], productsById });
-    payload.order.expectedParentVersion = sale.cloudRestaurantOrderUpdatedAt || sale.restaurantCloudExpectedVersion || null;
-    payload.order.interventionReason = sale.restaurantInterventionReason || null;
-    return this.upsertRestaurantOrder({ licenseKey, order: payload.order, items: payload.items, idempotencyKey });
+    return this.upsertRestaurantOrder({ licenseKey, order: payload.order, items: payload.items, idempotencyKey, actorHandle: caller });
   }
 };
 

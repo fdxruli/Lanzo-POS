@@ -1,5 +1,10 @@
 # PR #352: auditoría crítica SQL y decisión de despliegue
 
+Nota posterior: este documento conserva la reproducción histórica. El hotfix y
+sus límites actuales se documentan en
+[HOTFIX P0 R1](RESTAURANT.ADMIN.SUPERVISION.HOTFIX.P0.R1.md). La compatibilidad
+de cutover y el despliegue continúan HOLD; el bypass se endurece en el SQL propuesto.
+
 Fecha: 2026-10-10, America/Mexico_City. Proyecto auditado: Lanzo,
 `odlrhijtfyavryeqivaa`. **DEPLOYMENT_DECISION = HOLD.** No se aplicó SQL en
 producción, no se publicaron frontends, no se modificaron negocios ni se hicieron merges.

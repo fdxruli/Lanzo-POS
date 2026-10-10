@@ -1,3 +1,22 @@
+# Hotfix P0 R1 object additions
+
+The original inventory below is historical; line numbers refer to the pre-hotfix
+migration. The unapplied migration now creates three tables, fourteen functions
+and one additional trigger. Applied historical migrations remain untouched.
+
+| Object | Type / production existence | Current → proposed signature | Dependencies | Current → proposed permissions | Behavior / risk |
+| --- | --- | --- | --- | --- | --- |
+| private.restaurant_parent_cancel_permits | TABLE / absent | absent → xid8 transaction, uuid license, text order composite PK | cancellation RPC, guard | absent → postgres only, RLS, no PUBLIC/anon/authenticated access | transaction-local cancellation authority / HIGH |
+| private.guard_restaurant_parent_cancel_v1 | FUNCTION / absent | absent → () RETURNS trigger, SECURITY DEFINER, search_path='' | permits, parent table | absent → PUBLIC/anon/authenticated EXECUTE revoked | deny alternate cancellation, unpaid archival and terminal reopening; preserve cancellation evidence / HIGH |
+| restaurant_parent_cancel_authority_v1 | TRIGGER / absent | absent → BEFORE INSERT OR UPDATE FOR EACH ROW | guard, public.pos_restaurant_orders | table trigger; browser roles have no table UPDATE grant | all actual terminal column paths, including aliases reaching those columns / HIGH |
+| public.pos_update_restaurant_order_status_unlimited | FUNCTION / present | same seven text parameters/defaults, RETURNS jsonb, SECURITY DEFINER, search_path='' | existing auth/permission/event/idempotency helpers, parent/items | postgres/service_role EXECUTE → unchanged existing ACL | operational Kitchen API retained; all parent cancellations rejected / HIGH |
+| private.recalculate_restaurant_order_status | FUNCTION / present | same (uuid,text), RETURNS pos_restaurant_orders, SECURITY DEFINER, search_path='' | parent/items | postgres only → unchanged | all rejected products preserve open parent; item changes always advance parent version / HIGH |
+
+The POS cancel RPC additionally depends on the new private permit table. Its
+signature/defaults, authenticated context and ACL remain unchanged. The old
+seven-definition rollback omits these additions and is not a recovery procedure
+for the hotfix. See [hotfix report](RESTAURANT.ADMIN.SUPERVISION.HOTFIX.P0.R1.md).
+
 ### private.assert_restaurant_table_actor_v1
 
 ```json

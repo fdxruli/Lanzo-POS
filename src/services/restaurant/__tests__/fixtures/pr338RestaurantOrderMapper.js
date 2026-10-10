@@ -1,7 +1,8 @@
+// Read-only frontend snapshot fb17e9a43929d54087ab937cb760a8cd6e087c36; only the relative import path is adjusted.
 import {
   buildRestaurantOrderCommercialSnapshot,
   buildRestaurantOrderLineCommercialSnapshot
-} from './restaurantSplitCommercialSnapshot';
+} from '../../restaurantSplitCommercialSnapshot';
 
 const DEFAULT_STATION = Object.freeze({
   code: 'kitchen',
@@ -90,10 +91,6 @@ export const buildRestaurantOrderPayloadFromOpenSale = ({
   const order = {
     localOrderId: sale.id,
     saleId: sale.id,
-    // Preserve the exact Cloud timestamp (including sub-millisecond precision).
-    // Device updatedAt and Date.now() are never parent-version substitutes.
-    expectedParentVersion: sale.cloudRestaurantOrderUpdatedAt || sale.restaurantCloudExpectedVersion || null,
-    interventionReason: sale.restaurantInterventionReason || null,
     tableLabel: normalizeText(sale.tableData, null),
     customerId: normalizeText(sale.customerId || sale.customer?.id, null),
     customerName: normalizeText(sale.customerName || sale.customer?.name, null),

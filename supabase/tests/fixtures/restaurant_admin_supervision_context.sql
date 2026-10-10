@@ -11,7 +11,7 @@ returns jsonb language plpgsql as $fixture$
 declare v_actor uuid; v_session uuid; v_type text; v_license uuid;
 begin
   if $1 not in ('fixture-license','fixture-other') or $2 not in ('A','B') or $3 is distinct from 'valid' then raise exception 'DEVICE_AUTH_INVALID'; end if;
-  if $4 is null or $4 not in ('admin','staff-a','staff-b','no-refunds','no-pos') then raise exception 'ACTOR_SESSION_INVALID'; end if;
+  if $4 is null or $4 not in ('admin','staff-a','staff-b','kitchen','no-refunds','no-pos') then raise exception 'ACTOR_SESSION_INVALID'; end if;
   v_license := case when $1='fixture-license' then '00000000-0000-0000-0000-000000000001'::uuid else '00000000-0000-0000-0000-000000000002'::uuid end;
   v_type := case when $4='admin' then 'admin' else 'staff' end;
   v_actor := case when $4='admin' then '00000000-0000-0000-0000-0000000000ad'::uuid when $4='staff-b' then '00000000-0000-0000-0000-0000000000bb'::uuid else '00000000-0000-0000-0000-0000000000aa'::uuid end;
@@ -20,13 +20,16 @@ begin
     'actor_type',v_type,'actor_id',v_actor,'actor_key',v_type||':'||v_actor,'actor_session_id',v_session,
     'admin_user_id',case when v_type='admin' then v_actor else null end,'admin_session_id',case when v_type='admin' then v_session else null end,
     'staff_user_id',case when v_type='staff' then v_actor else null end,
-    'actor_permissions',jsonb_build_object('pos',$4<>'no-pos','refunds',$4<>'no-refunds'));
+    'actor_permissions',jsonb_build_object('pos',$4 not in ('no-pos','kitchen'),'refunds',$4 not in ('no-refunds','kitchen'),'orders',$4='kitchen'));
 end;
 $fixture$;
 create function private.pos_restaurant_order_item_to_jsonb(public.pos_restaurant_order_items)
 returns jsonb language sql as $$ select to_jsonb($1) $$;
 create function private.assert_restaurant_order_write_permission(jsonb)
-returns void language plpgsql as $$ begin perform private.assert_pos_permission($1,'pos'); end $$;
+returns void language plpgsql as $$ begin
+  if coalesce(($1->'actor_permissions'->>'orders')::boolean,false) then return; end if;
+  perform private.assert_pos_permission($1,'pos');
+end $$;
 create function private.ensure_default_preparation_station(uuid,uuid,uuid) returns void language sql as $$ select $$;
 create function private.normalize_restaurant_order_status(text) returns text language sql as $$ select $1 $$;
 create function private.safe_jsonb_numeric(jsonb,text,numeric) returns numeric language sql as $$ select coalesce(($1->>$2)::numeric,$3) $$;

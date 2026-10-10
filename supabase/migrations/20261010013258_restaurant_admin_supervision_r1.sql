@@ -417,7 +417,7 @@ begin
        or v_restaurant_order.fulfillment_status not in ('pending', 'preparing', 'ready', 'delivered') then
       raise exception 'RESTAURANT_ORDER_NOT_ACTIVE' using errcode = 'P0001';
     end if;
-    if v_restaurant_version is null then raise exception 'RESTAURANT_ORDER_VERSION_REQUIRED' using errcode='P0001'; end if;
+    if v_restaurant_version is null then raise exception 'RESTAURANT_ORDER_VERSION_REQUIRED' using errcode='P0001', detail='RESTAURANT_CLIENT_UPGRADE_REQUIRED: refresh the client; retain local drafts'; end if;
     if v_restaurant_version is not null then
       begin
         v_restaurant_version_at := v_restaurant_version::timestamptz;
@@ -1160,6 +1160,8 @@ begin
     raise exception 'IDEMPOTENCY_CONFLICT' using errcode = 'P0001';
   end if;
 
+  insert into private.restaurant_parent_cancel_permits(transaction_id,license_id,order_id)
+    values(pg_current_xact_id(),v_license_id,v_order.id);
   update public.pos_restaurant_orders set status = 'cancelled', fulfillment_status = 'cancelled',
     cancelled_at = now(), updated_at = now(), server_version = server_version + 1,
     updated_by_device_id = v_device_id, updated_by_staff_user_id = v_staff_id,
@@ -1167,6 +1169,8 @@ begin
     metadata = coalesce(metadata, '{}'::jsonb) || jsonb_build_object(
       'cancelledFromPos', true, 'cancelReason', btrim(p_reason), 'cancelContractVersion', 1)
     where license_id = v_license_id and id = v_order.id returning * into v_order;
+  delete from private.restaurant_parent_cancel_permits
+    where transaction_id=pg_current_xact_id() and license_id=v_license_id and order_id=v_order.id;
   update public.pos_restaurant_order_items set status = 'cancelled', cancelled_at = now(),
     updated_at = now(), server_version = server_version + 1,
     updated_by_device_id = v_device_id, updated_by_staff_user_id = v_staff_id
@@ -2472,3 +2476,291 @@ begin
 end;
 $function$
 ;
+
+
+-- HOTFIX_RESTAURANT_ADMIN_SUPERVISION_P0_R1. This migration is not deployed.
+-- No browser-provided metadata or GUC creates a cancellation permit.
+create table private.restaurant_parent_cancel_permits (
+  transaction_id xid8 not null,
+  license_id uuid not null,
+  order_id text not null,
+  primary key(transaction_id,license_id,order_id)
+);
+alter table private.restaurant_parent_cancel_permits enable row level security;
+revoke all on private.restaurant_parent_cancel_permits from public,anon,authenticated;
+
+create or replace function private.guard_restaurant_parent_cancel_v1()
+returns trigger language plpgsql security definer set search_path='' as $guard$
+declare v_terminal boolean;
+begin
+  v_terminal := lower(coalesce(new.status,''))='cancelled'
+    or lower(coalesce(new.fulfillment_status,''))='cancelled'
+    or new.cancelled_at is not null or new.metadata->>'cancelledFromPos'='true';
+  if TG_OP='UPDATE' and (old.status='cancelled' or old.fulfillment_status='cancelled'
+    or old.cancelled_at is not null or old.metadata->>'cancelledFromPos'='true') then
+    if new.status is distinct from old.status or new.fulfillment_status is distinct from old.fulfillment_status
+      or new.cancelled_at is distinct from old.cancelled_at or new.payment_status is distinct from old.payment_status
+      or new.metadata->'cancelledFromPos' is distinct from old.metadata->'cancelledFromPos'
+      or new.metadata->'cancelReason' is distinct from old.metadata->'cancelReason'
+      or new.metadata->'cancelContractVersion' is distinct from old.metadata->'cancelContractVersion' then
+      raise exception 'RESTAURANT_ORDER_ALREADY_CANCELLED' using errcode='P0001';
+    end if;
+    return new;
+  end if;
+  -- Kitchen delivery is operational, not financial closure. Archiving an
+  -- unpaid delivered parent would otherwise hide the live POS table.
+  if (new.archived_at is not null or new.deleted_at is not null or new.metadata->>'archived'='true')
+    and new.paid_at is null and new.paid_sale_id is null
+    and coalesce(new.payment_status,'unpaid') <> 'paid' then
+    raise exception 'RESTAURANT_PARENT_CANCEL_CONTRACT_REQUIRED' using errcode='P0001';
+  end if;
+  if v_terminal then
+    if TG_OP='UPDATE' and (old.paid_at is not null or old.paid_sale_id is not null
+      or coalesce(old.payment_status,'unpaid') <> 'unpaid') then
+      raise exception 'RESTAURANT_ORDER_ALREADY_PAID' using errcode='P0001';
+    end if;
+    if not exists(select 1 from private.restaurant_parent_cancel_permits
+      where transaction_id=pg_current_xact_id() and license_id=new.license_id and order_id=new.id) then
+      raise exception 'RESTAURANT_PARENT_CANCEL_CONTRACT_REQUIRED' using errcode='P0001';
+    end if;
+  end if;
+  return new;
+end;
+$guard$;
+revoke all on function private.guard_restaurant_parent_cancel_v1() from public,anon,authenticated;
+create trigger restaurant_parent_cancel_authority_v1 before insert or update on public.pos_restaurant_orders
+for each row execute function private.guard_restaurant_parent_cancel_v1();
+
+CREATE OR REPLACE FUNCTION public.pos_update_restaurant_order_status_unlimited(p_license_key text, p_device_fingerprint text, p_security_token text DEFAULT NULL::text, p_staff_session_token text DEFAULT NULL::text, p_restaurant_order_id text DEFAULT NULL::text, p_status text DEFAULT NULL::text, p_idempotency_key text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+declare
+  v_context jsonb;
+  v_license_id uuid;
+  v_device_id uuid;
+  v_staff_user_id uuid;
+  v_status text;
+  v_existing public.pos_restaurant_orders;
+  v_saved public.pos_restaurant_orders;
+  v_event public.pos_sync_events;
+  v_response jsonb;
+  v_idem public.pos_idempotency_keys;
+  v_inserted_idem boolean;
+begin
+  v_context := private.validate_pos_sync_context(p_license_key, p_device_fingerprint, p_security_token, p_staff_session_token);
+  perform private.assert_cloud_sales_sync_base_enabled(v_context);
+  perform private.assert_restaurant_order_write_permission(v_context);
+
+  v_license_id := (v_context->>'license_id')::uuid;
+  v_device_id := (v_context->>'device_id')::uuid;
+  v_staff_user_id := nullif(v_context->>'staff_user_id', '')::uuid;
+
+  perform private.assert_restaurant_orders_food_service(v_license_id);
+
+  if nullif(btrim(coalesce(p_restaurant_order_id, '')), '') is null then
+    return jsonb_build_object('success', false, 'code', 'RESTAURANT_ORDER_ID_REQUIRED', 'message', 'No se encontro la comanda.');
+  end if;
+
+  if private.is_restaurant_order_status(p_status) is not true then
+    return jsonb_build_object('success', false, 'code', 'RESTAURANT_ORDER_STATUS_INVALID', 'message', 'Estado de comanda no valido.');
+  end if;
+
+  v_status := private.normalize_restaurant_order_status(p_status);
+  if v_status = 'cancelled' then
+    raise exception 'RESTAURANT_PARENT_CANCEL_CONTRACT_REQUIRED' using errcode='P0001';
+  end if;
+
+  select * into v_existing
+  from public.pos_restaurant_orders
+  where license_id = v_license_id
+    and id = p_restaurant_order_id
+    and deleted_at is null
+  limit 1
+  for update;
+
+  if v_existing.id is null then
+    return jsonb_build_object('success', false, 'code', 'RESTAURANT_ORDER_NOT_FOUND', 'message', 'No se encontro la comanda.');
+  end if;
+
+  if v_existing.cancelled_at is not null or v_existing.status='cancelled'
+    or v_existing.fulfillment_status='cancelled' then
+    raise exception 'RESTAURANT_ORDER_ALREADY_CANCELLED' using errcode='P0001';
+  end if;
+  if v_existing.status in ('delivered', 'cancelled') and v_existing.status <> v_status then
+    return jsonb_build_object('success', false, 'code', 'RESTAURANT_ORDER_TERMINAL_STATUS', 'message', 'La comanda ya esta cerrada.');
+  end if;
+
+  v_inserted_idem := private.insert_pos_idempotency_processing(v_license_id, p_idempotency_key, 'restaurant_order.status_update', 'restaurant_order', p_restaurant_order_id, v_status);
+  if not v_inserted_idem then
+    select * into v_idem
+    from public.pos_idempotency_keys
+    where license_id = v_license_id
+      and idempotency_key = p_idempotency_key
+    limit 1;
+
+    if v_idem.status = 'completed' and v_idem.response_payload is not null then
+      return v_idem.response_payload;
+    end if;
+
+    return jsonb_build_object('success', false, 'code', 'IDEMPOTENCY_PROCESSING', 'message', 'El cambio de estado ya se esta procesando.', 'idempotency_key', p_idempotency_key);
+  end if;
+
+  update public.pos_restaurant_orders
+  set status = v_status,
+      fulfillment_status = v_status,
+      updated_by_device_id = v_device_id,
+      updated_by_staff_user_id = v_staff_user_id,
+      updated_at = now(),
+      sent_to_kitchen_at = case when v_status in ('pending', 'preparing', 'ready', 'delivered') then coalesce(sent_to_kitchen_at, now()) else sent_to_kitchen_at end,
+      ready_at = case when v_status in ('ready', 'delivered') then coalesce(ready_at, now()) else ready_at end,
+      delivered_at = case when v_status = 'delivered' then coalesce(delivered_at, now()) else delivered_at end,
+      cancelled_at = case when v_status = 'cancelled' then coalesce(cancelled_at, now()) else cancelled_at end,
+      server_version = server_version + 1,
+      last_idempotency_key = p_idempotency_key,
+      metadata = coalesce(metadata, '{}'::jsonb) || jsonb_build_object('phase', 'REST.8.6', 'statusUpdatedBy', 'pos_update_restaurant_order_status')
+  where license_id = v_license_id
+    and id = p_restaurant_order_id
+  returning * into v_saved;
+
+  if v_status = 'delivered' then
+    update public.pos_restaurant_order_items
+    set status = 'delivered',
+        delivered_at = coalesce(delivered_at, now()),
+        updated_by_device_id = v_device_id,
+        updated_by_staff_user_id = v_staff_user_id,
+        updated_at = now(),
+        server_version = server_version + 1
+    where license_id = v_license_id
+      and restaurant_order_id = p_restaurant_order_id
+      and deleted_at is null
+      and status <> 'cancelled';
+  elsif v_status = 'cancelled' then
+    update public.pos_restaurant_order_items
+    set status = 'cancelled',
+        cancelled_at = coalesce(cancelled_at, now()),
+        updated_by_device_id = v_device_id,
+        updated_by_staff_user_id = v_staff_user_id,
+        updated_at = now(),
+        server_version = server_version + 1
+    where license_id = v_license_id
+      and restaurant_order_id = p_restaurant_order_id
+      and deleted_at is null
+      and status <> 'cancelled';
+  end if;
+
+  v_event := private.record_pos_sync_event(
+    v_license_id,
+    'restaurant_order',
+    v_saved.id,
+    'status_update',
+    v_device_id,
+    v_staff_user_id,
+    p_idempotency_key,
+    jsonb_build_object('source', 'pos_update_restaurant_order_status', 'status', v_status),
+    v_saved.server_version
+  );
+
+  v_response := jsonb_build_object(
+    'success', true,
+    'order', private.pos_restaurant_order_to_jsonb(v_saved, null),
+    'event', to_jsonb(v_event),
+    'serverVersion', v_saved.server_version,
+    'changeSeq', v_event.change_seq,
+    'idempotency_key', p_idempotency_key
+  );
+
+  perform private.complete_pos_idempotency(v_license_id, p_idempotency_key, v_response);
+  return v_response;
+end;
+$function$
+;
+
+create or replace function private.recalculate_restaurant_order_status(
+  p_license_id uuid,
+  p_restaurant_order_id text
+)
+returns public.pos_restaurant_orders
+language plpgsql
+security definer
+set search_path to ''
+as $$
+declare
+  v_order public.pos_restaurant_orders;
+  v_saved public.pos_restaurant_orders;
+  v_total integer := 0;
+  v_active integer := 0;
+  v_preparing integer := 0;
+  v_done integer := 0;
+  v_next_status text;
+  v_is_paid boolean := false;
+begin
+  select * into v_order
+  from public.pos_restaurant_orders
+  where license_id = p_license_id
+    and id = p_restaurant_order_id
+    and deleted_at is null
+  limit 1
+  for update;
+
+  if v_order.id is null then
+    return v_order;
+  end if;
+
+  if v_order.status in ('delivered', 'cancelled') then
+    return v_order;
+  end if;
+
+  v_is_paid := lower(coalesce(v_order.payment_status, 'unpaid')) = 'paid';
+
+  select
+    count(*)::integer,
+    count(*) filter (where status <> 'cancelled')::integer,
+    count(*) filter (where status = 'preparing')::integer,
+    count(*) filter (where status in ('ready', 'delivered'))::integer
+  into v_total, v_active, v_preparing, v_done
+  from public.pos_restaurant_order_items
+  where license_id = p_license_id
+    and restaurant_order_id = p_restaurant_order_id
+    and deleted_at is null;
+
+  if coalesce(v_total, 0) = 0 then
+    return v_order;
+  end if;
+
+  if coalesce(v_active, 0) = 0 then
+    -- An entirely rejected Kitchen ticket remains an open POS parent.
+    -- Item evidence is preserved for the origin's existing reconciliation.
+    v_next_status := v_order.status;
+  elsif v_done = v_active then
+    v_next_status := case when v_is_paid then 'delivered' else 'ready' end;
+  elsif v_preparing > 0 or v_done > 0 then
+    v_next_status := 'preparing';
+  else
+    v_next_status := 'pending';
+  end if;
+
+  -- Each item mutation must advance the parent version, even when its aggregate
+  -- status stays unchanged. Otherwise a POS write could overwrite a Kitchen edit.
+
+  update public.pos_restaurant_orders
+  set status = v_next_status,
+      fulfillment_status = v_next_status,
+      updated_at = now(),
+      sent_to_kitchen_at = case when v_next_status in ('pending', 'preparing', 'ready', 'delivered') then coalesce(sent_to_kitchen_at, now()) else sent_to_kitchen_at end,
+      ready_at = case when v_next_status in ('ready', 'delivered') then coalesce(ready_at, now()) else ready_at end,
+      delivered_at = case when v_next_status = 'delivered' then coalesce(delivered_at, now()) else delivered_at end,
+      checkout_closed_at = case when v_next_status = 'delivered' and v_is_paid then coalesce(checkout_closed_at, now()) else checkout_closed_at end,
+      cancelled_at = case when v_next_status = 'cancelled' then coalesce(cancelled_at, now()) else cancelled_at end,
+      server_version = server_version + 1,
+      metadata = coalesce(metadata, '{}'::jsonb) || jsonb_build_object('phase', 'REST.7', 'statusRecalculatedBy', 'private.recalculate_restaurant_order_status')
+  where license_id = p_license_id
+    and id = p_restaurant_order_id
+    and deleted_at is null
+  returning * into v_saved;
+
+  return coalesce(v_saved, v_order);
+end;
+$$;
