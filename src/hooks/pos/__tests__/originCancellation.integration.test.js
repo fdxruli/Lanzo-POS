@@ -3,7 +3,8 @@ import Dexie from 'dexie';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const runtime = vi.hoisted(() => ({ database: null, cloud: true, storage: new Map(),
-  lookup: vi.fn(), cancel: vi.fn(), actor: { tenant: { opaqueId: 'tenant-a' }, assertCurrent: vi.fn() } }));
+  lookup: vi.fn(), cancel: vi.fn(), actor: { actorType: 'admin', actorId: 'admin-a', actorKey: 'admin:admin-a',
+    sessionId: 'session-a', generation: 1, tenant: { opaqueId: 'tenant-a' }, assertCurrent: vi.fn() } }));
 vi.mock('../../../services/db/dexie', () => ({
   STORES: { SALES: 'sales', MENU: 'menu', PRODUCT_BATCHES: 'product_batches' },
   db: { table: (name) => runtime.database.table(name), transaction: (...args) => runtime.database.transaction(...args) }
@@ -17,6 +18,9 @@ vi.mock('../../../services/sync/syncConstants', () => ({
 vi.mock('../../../services/sync/idempotency', () => ({ generateIdempotencyKey: () => 'cancel-key' }));
 vi.mock('../../../services/restaurant/restaurantOrdersRepository', () => ({ restaurantOrdersRepository: {
   getRestaurantOrderByLocalOrder: (...args) => runtime.lookup(...args),
+  getTableCapabilities: async () => { return {
+    success: true, contractVersion: 1, localOrderId: 'A', cloudOrderId: 'cloud-A', parentVersion: '2026-10-07T10:00:30.123456Z',
+    capabilities: { canViewTable: true, canCancelTable: true } }; },
   cancelRestaurantOrderFromPos: (...args) => runtime.cancel(...args)
 } }));
 vi.mock('../../../services/auth/refundsActorAuthorization', () => ({ captureRefundsActorHandle: () => runtime.actor }));
@@ -60,6 +64,8 @@ const seed = async (id = 'A') => {
 };
 beforeEach(async () => {
   vi.clearAllMocks();
+  runtime.lookup.mockReset();
+  runtime.cancel.mockReset();
   runtime.actor.assertCurrent.mockReset();
   vi.stubGlobal('navigator', { onLine: true });
   runtime.cloud = true;

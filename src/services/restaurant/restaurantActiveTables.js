@@ -89,6 +89,8 @@ export const buildRestaurantActiveTables = ({
       subtotal: cloudOrder.subtotal,
       currency: cloudOrder.currency,
       status: 'open',
+      createdByStaffUserId: cloudOrder.createdByStaffUserId ?? cloudOrder.created_by_staff_user_id ?? null,
+      createdByDeviceId: cloudOrder.createdByDeviceId ?? cloudOrder.created_by_device_id ?? null,
       fulfillmentStatus: cloudState === 'kitchen-cancelled' ? 'cancelled' : cloudOrder.fulfillmentStatus || cloudOrder.status,
       updatedAt: cloudOrder.updatedAt,
       timestamp: cloudOrder.createdAt,

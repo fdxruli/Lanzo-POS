@@ -33,14 +33,15 @@ import { useActorRuntimeSnapshot } from '../../services/auth/useActorRuntimeSnap
 import { useRestaurantActiveTables } from '../../hooks/restaurant/useRestaurantActiveTables';
 import { isRestaurantCloudTableShadow, restaurantCloudTableBlockedResult } from '../../services/restaurant/restaurantCloudTableGuards';
 import './TablesView.css';
+import { useRestaurantTableCapabilities } from '../../hooks/restaurant/useRestaurantTableCapabilities';
+import RestaurantAdminInterventionModal from './RestaurantAdminInterventionModal';
+import { getLicenseKeyFromDetails } from '../../services/sync/syncConstants';
 
 const getTableLabel = (order) => {
   const tableName = typeof order?.tableData === 'string' ? order.tableData.trim() : '';
   if (tableName) return tableName;
 
-  const orderId = String(order?.id || '');
-  const shortId = orderId.slice(-6) || 'N/A';
-  return `Orden #${shortId}`;
+  return 'Mesa sin nombre';
 };
 
 const formatOrderDate = (value) => {
@@ -202,7 +203,9 @@ const TableCard = ({
   annulSubmitting = false,
   onAdjustKitchenCancelled,
   adjustSubmitting = false,
+  onAdminister,
 }) => {
+  const capabilities = useRestaurantTableCapabilities(order);
   const [isExpanded, setIsExpanded] = useState(false);
   const orderId = order?.id;
   const rawItems = order?.items;
@@ -397,7 +400,9 @@ const TableCard = ({
 
         {remoteSnapshot && (
           <div className="table-card-review-banner" role="status">
-            <span>Vista sincronizada desde la nube. Puedes revisar y cobrar esta mesa aquí. Para cambiar productos, actualizarla o cancelarla, utiliza la sesión de origen.</span>
+            <span>{capabilities.canCheckoutTable
+              ? 'Mesa sincronizada. Puedes cobrar o dividir según tus permisos. Los cambios de productos requieren el dispositivo de origen.'
+              : 'Puedes revisar la comanda. Las operaciones requieren al responsable de la mesa o una sesión administrativa verificada.'}</span>
           </div>
         )}
         {isKitchenCancelled && (
@@ -429,7 +434,7 @@ const TableCard = ({
                 <button
                   type="button"
                   className="table-cloud-adjust-btn"
-                  disabled={adjustSubmitting || remoteSnapshot}
+                  disabled={adjustSubmitting || !capabilities.canEditTable}
                   onClick={(e) => {
                     e.stopPropagation();
                     onAdjustKitchenCancelled?.(order);
@@ -447,7 +452,7 @@ const TableCard = ({
       <div
         className={`table-card-actions${isKitchenCancelled ? ' table-card-actions--with-annul' : ''}`}
       >
-        {isKitchenCancelled && !remoteSnapshot && canManageRefunds && onAnnulKitchenRejected && (
+        {isKitchenCancelled && !remoteSnapshot && capabilities.canCancelTable && canManageRefunds && onAnnulKitchenRejected && (
           <button
             type="button"
             className="btn-annull-kitchen"
@@ -464,13 +469,14 @@ const TableCard = ({
         <button
           type="button"
           className="btn-quick-edit"
+          disabled={!capabilities.canViewTable}
           onClick={(e) => {
             e.stopPropagation();
             onSelectOrder?.(order.id);
           }}
         >
           <Pencil size={16} aria-hidden="true" />
-          {remoteSnapshot ? 'Revisar en POS' : cancelledFromKitchen ? 'Abrir en POS' : 'Editar / Añadir'}
+          {capabilities.canEditTable ? (cancelledFromKitchen ? 'Abrir en POS' : 'Editar / Añadir') : 'Revisar comanda'}
         </button>
 
         {!isKitchenCancelled && (
@@ -478,8 +484,8 @@ const TableCard = ({
             <button
               type="button"
               className="btn-quick-split"
-              disabled={remoteSnapshot}
-              title={remoteSnapshot ? 'La división no está disponible en esta vista sincronizada.' : 'Separar cuenta'}
+              disabled={!capabilities.canSplitTable}
+              title={!capabilities.canSplitTable ? 'La división requiere permiso del responsable o administrador verificado.' : 'Separar cuenta'}
               onClick={(e) => {
                 e.stopPropagation();
                 onSplitOrder?.(order);
@@ -491,6 +497,8 @@ const TableCard = ({
             <button
               type="button"
               className="btn-quick-checkout"
+              disabled={!capabilities.canCheckoutTable}
+              title={!capabilities.canCheckoutTable ? 'El cobro requiere permiso del responsable o administrador verificado.' : 'Cobrar mesa'}
               onClick={(e) => {
                 e.stopPropagation();
                 onCheckoutOrder?.(order);
@@ -502,6 +510,7 @@ const TableCard = ({
           </>
         )}
       </div>
+      {capabilities.canAdministerTable && <button type="button" className="btn-quick-edit" onClick={() => onAdminister(order)}>Administrar mesa</button>}
     </div>
   );
 };
@@ -523,6 +532,11 @@ export default function TablesView({
   const [searchTerm, setSearchTerm] = useState('');
   const [annullingOrderId, setAnnullingOrderId] = useState(null);
   const [adjustingOrderId, setAdjustingOrderId] = useState(null);
+  const [adminOrder, setAdminOrder] = useState(null);
+  const closeAdmin = useCallback(() => setAdminOrder(null), []);
+  const adminCancelled = useCallback(async () => {
+    await loadOpenSalesRows({ force: true });
+  }, [loadOpenSalesRows]);
 
   const { ordersInService, ordersCancelledInKitchen } = useMemo(() => {
     const inService = [];
@@ -808,6 +822,7 @@ export default function TablesView({
                     <TableCard
                       key={order.id}
                       order={order}
+                      onAdminister={setAdminOrder}
                       cancelledFromKitchen
                       canManageRefunds={canManageRefunds}
                       onSelectOrder={handleSelectAndClose}
@@ -833,6 +848,7 @@ export default function TablesView({
                     <TableCard
                       key={order.id}
                       order={order}
+                      onAdminister={setAdminOrder}
                       canManageRefunds={canManageRefunds}
                       onSelectOrder={handleSelectAndClose}
                       onCheckoutOrder={handleCheckoutAndClose}
@@ -849,6 +865,8 @@ export default function TablesView({
           </div>
         </div>
       </div>
+      {adminOrder && <RestaurantAdminInterventionModal order={adminOrder} licenseKey={getLicenseKeyFromDetails(licenseDetails)}
+        onClose={closeAdmin} onCheckout={handleCheckoutAndClose} onSplit={handleSplitAndClose} onCancelled={adminCancelled} />}
     </div>
   );
 }

@@ -15,11 +15,17 @@ const mocks = vi.hoisted(() => ({
   pullCatalogChanges: vi.fn(),
   recoveryTrace: [],
   cloudCashierEnabled: true,
-  actorHandle: { assertCurrent: vi.fn() },
+  actorHandle: { actorType: 'admin', actorId: 'admin-a', sessionId: 'session-a',
+    actorKey: 'admin:admin-a', generation: 1, tenant: { opaqueId: 'tenant-a' }, assertCurrent: vi.fn() },
   lookupRestaurant: vi.fn()
 }));
 vi.mock('../../restaurant/restaurantOrdersRepository', () => ({ restaurantOrdersRepository: {
-  getRestaurantOrderByLocalOrder: (...args) => mocks.lookupRestaurant(...args)
+  getRestaurantOrderByLocalOrder: (...args) => mocks.lookupRestaurant(...args),
+  getTableCapabilities: async ({ localOrderId }) => {
+    const response = await mocks.lookupRestaurant.getMockImplementation()();
+    return { success: true, contractVersion: 1, localOrderId, cloudOrderId: response.order.id,
+      parentVersion: response.order.updatedAt, capabilities: { canViewTable: true, canCheckoutTable: true, canSplitTable: true } };
+  }
 } }));
 import { buildRestaurantOrderPayloadFromOpenSale } from '../../restaurant/restaurantOrderMapper';
 

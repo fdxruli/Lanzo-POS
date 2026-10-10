@@ -5,7 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   state: null, actor: null, capture: vi.fn(), confirm: vi.fn(), message: vi.fn(),
-  refunds: vi.fn(), table: vi.fn(), releaseStock: vi.fn(), cloudWrite: vi.fn()
+  refunds: vi.fn(), table: vi.fn(), releaseStock: vi.fn(), cloudWrite: vi.fn(), prompt: vi.fn()
+}));
+vi.mock('../../../components/common/InputPromptModal', () => ({ showInputPromptModal: mocks.prompt }));
+vi.mock('../../../hooks/restaurant/useRestaurantTableCapabilities', () => ({
+  useRestaurantTableCapabilities: (order) => ({ canViewTable: true, canCheckoutTable: true, canSplitTable: true,
+    canCancelTable: true, canEditTable: !order?.restaurantCloudHydrated && order?.reservationAuthority !== 'cloud' })
 }));
 vi.mock('react-router-dom', () => ({ useNavigate: () => vi.fn() }));
 vi.mock('../../../hooks/useFeatureConfig', () => ({ useFeatureConfig: () => ({ hasLayaway: false }) }));
@@ -45,6 +50,7 @@ beforeEach(() => {
   mocks.capture.mockReturnValue({ tenant: { opaqueId: 'tenant-1' }, assertCurrent: vi.fn() });
   mocks.refunds.mockReturnValue({ assertCurrent: vi.fn() });
   mocks.confirm.mockResolvedValue(true);
+  mocks.prompt.mockResolvedValue('Motivo de prueba');
   const shadow = {
     id: 'QA-REMOTE-1', localOrderId: 'QA-REMOTE-1', isSaved: true,
     restaurantCloudHydrated: true, reservationAuthority: 'cloud',
@@ -62,7 +68,7 @@ afterEach(cleanup);
 
 describe('remote table review closure', () => {
   it('allows checkout without exposing actions that mutate a read-only cloud review', () => {
-    render(<OrderSummary {...props} />);
+    render(<OrderSummary {...props} canSplitOrder={false} />);
     expect(screen.getByText(/Vista sincronizada de solo lectura/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Cobrar' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Cerrar revisión' })).toBeEnabled();

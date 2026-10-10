@@ -45,6 +45,8 @@ import { handlePosActorAuthorityError } from '../../hooks/pos/posActorAuthorityU
 import { useActorRuntimeSnapshot } from '../../services/auth/useActorRuntimeSnapshot';
 import { actorRuntimeController } from '../../services/auth/actorRuntimeController';
 import { isOriginRestaurantTable, isRestaurantCloudTableShadow } from '../../services/restaurant/restaurantCloudTableGuards';
+import { useRestaurantTableCapabilities } from '../../hooks/restaurant/useRestaurantTableCapabilities';
+import { showInputPromptModal } from '../common/InputPromptModal';
 import OrderDiscountPanel from './OrderDiscountPanel';
 import EcommercePosDraftBanner from './EcommercePosDraftBanner';
 import './OrderSummary.css';
@@ -161,7 +163,10 @@ export default function OrderSummary({
   const total = getTotalPrice();
   const tablesBadgeTotal = activeTablesCount + kitchenRejectedOpenCount;
   const isEcommerceDraft = currentOrder?.origin === 'ecommerce';
-  const isRemoteTableReview = isRestaurantCloudTableShadow(currentOrder);
+  const tableCapabilities = useRestaurantTableCapabilities(currentOrder);
+  const isRemoteTableReview = isRestaurantCloudTableShadow(currentOrder)
+    || (isEditMode && Boolean(tableData) && !tableCapabilities.canEditTable);
+  const isTableReview = isRemoteTableReview;
   const isOriginTable = isOriginRestaurantTable(currentOrder);
   const tableActionPending = useRef(false);
   const [isTableActionPending, setIsTableActionPending] = useState(false);
@@ -392,9 +397,15 @@ export default function OrderSummary({
       });
       if (!confirmed) return;
       actor.assertCurrent(destructive ? 'refunds' : undefined);
+      let reason;
+      if (destructive) {
+        reason = await showInputPromptModal({ title: 'Cancelar mesa', message: 'Escribe el motivo de cancelación.', required: true });
+        actor.assertCurrent('refunds');
+        if (!reason) return;
+      }
       const state = useActiveOrders.getState();
       if (state.activeOrders.get(id) !== snapshot || state.currentOrderId !== id) return;
-      if (destructive) await state.cancelOrder(id, { actorHandle: actor });
+      if (destructive) await state.cancelOrder(id, { actorHandle: actor, reason });
       else await state.discardTableEditSession(id, snapshot);
       if (isMobileModal) onClose?.();
     } catch (error) {
@@ -413,7 +424,12 @@ export default function OrderSummary({
     const state = useActiveOrders.getState();
     const orderId = currentOrderId;
     const shadow = state.activeOrders.get(orderId);
-    if (state.currentOrderId !== orderId || !isRestaurantCloudTableShadow(shadow)) return;
+    if (state.currentOrderId !== orderId || !shadow) return;
+    if (!isRestaurantCloudTableShadow(shadow)) {
+      try { await state.discardTableEditSession(orderId, shadow); }
+      catch (error) { showMessageModal(error.message, null, { type: 'warning' }); }
+      return;
+    }
 
     closingRemoteReview.current = true;
     setIsClosingRemoteReview(true);
@@ -780,7 +796,7 @@ export default function OrderSummary({
             </div>
 
             <div className={`order-actions${showRestaurantActions ? ' order-actions--restaurant' : ''}`}>
-              {order.length > 0 && (
+              {order.length > 0 && (!isEditMode || !tableData || tableCapabilities.canCheckoutTable) && (
               <button
                 type="button"
                 className="order-action-btn order-action-btn--primary"
@@ -791,7 +807,7 @@ export default function OrderSummary({
               </button>
               )}
 
-              {showRestaurantActions && !isRemoteTableReview && order.length > 0 && (
+              {showRestaurantActions && !isTableReview && order.length > 0 && (
                 <button
                   type="button"
                   className={`order-action-btn order-action-btn--save${isEditMode ? ' order-action-btn--update' : ''}`}
@@ -803,7 +819,7 @@ export default function OrderSummary({
                 </button>
               )}
 
-              {showRestaurantActions && !isRemoteTableReview && canSplitOrder && isEditMode && order.length > 0 && (
+              {showRestaurantActions && tableCapabilities.canSplitTable && canSplitOrder && isEditMode && order.length > 0 && (
                 <button
                   type="button"
                   className="order-action-btn order-action-btn--split"
@@ -815,7 +831,7 @@ export default function OrderSummary({
                 </button>
               )}
 
-              {!isRemoteTableReview && features.hasLayaway && order.length > 0 && (
+              {!isTableReview && features.hasLayaway && order.length > 0 && (
                 <button
                   type="button"
                   className="order-action-btn order-action-btn--layaway"
@@ -846,7 +862,7 @@ export default function OrderSummary({
                   Salir sin guardar
                 </button>
               )}
-              {isOriginTable && canManageRefunds && (
+              {isOriginTable && tableCapabilities.canCancelTable && canManageRefunds && (
                 <button type="button" className="order-action-btn order-action-btn--danger" onClick={handleCancelTable}
                   disabled={isTableActionPending}>
                   <Trash2 size={19} aria-hidden="true" />

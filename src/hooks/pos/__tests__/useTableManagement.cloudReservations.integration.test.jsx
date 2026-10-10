@@ -7,7 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const runtime = vi.hoisted(() => ({
   database: null, appState: null, cloudStock: new Map(), failBeforeCommit: false, cloudMode: true,
   transport: vi.fn(), postEffects: vi.fn(), storage: new Map(),
-  actorHandle: { assertCurrent: vi.fn() }
+  actorHandle: { actorType: 'admin', actorId: 'admin-a', actorKey: 'admin:admin-a', sessionId: 'session-a',
+    generation: 1, deviceRef: 'device-a', tenant: { opaqueId: 'tenant-a' }, assertCurrent: vi.fn() }
 }));
 
 vi.mock('../../../services/db/dexie', () => ({
@@ -83,7 +84,11 @@ vi.mock('../../restaurant/useRestaurantOrderCloudStatus', () => ({
   getRestaurantOrderCloudStatusSnapshot: async () => ({ skipped: true })
 }));
 vi.mock('../../../services/restaurant/restaurantOrdersRepository', () => ({
-  restaurantOrdersRepository: { getRestaurantOrderByLocalOrder: async ({ localOrderId }) => {
+  restaurantOrdersRepository: { getTableCapabilities: async ({ localOrderId }) => {
+    const sale = await runtime.database.table('sales').get(localOrderId);
+    return { success: true, contractVersion: 1, localOrderId, cloudOrderId: `restaurant-${localOrderId}`,
+      parentVersion: sale.updatedAt, capabilities: { canViewTable: true, canCheckoutTable: true, canSplitTable: true, canCancelTable: true } };
+  }, getRestaurantOrderByLocalOrder: async ({ localOrderId }) => {
     const sale = await runtime.database.table('sales').get(localOrderId);
     const { buildRestaurantOrderPayloadFromOpenSale } = await import('../../../services/restaurant/restaurantOrderMapper');
     const payload = buildRestaurantOrderPayloadFromOpenSale({ sale });

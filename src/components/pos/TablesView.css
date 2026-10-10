@@ -1041,3 +1041,17 @@
   background: rgba(127, 29, 29, 0.36);
   border-color: rgba(248, 113, 113, 0.35);
 }
+.restaurant-admin-dialog {
+  width: min(92vw, 36rem);
+  max-height: 85vh;
+  overflow-y: auto;
+  margin: auto;
+  padding: 1.5rem;
+  border: 1px solid var(--border-color, #ddd);
+  border-radius: 1rem;
+  color: var(--text-primary, #222);
+  background: var(--bg-primary, #fff);
+}
+.restaurant-admin-dialog::backdrop { background: rgb(0 0 0 / 55%); }
+.restaurant-admin-dialog button { margin: 0.5rem 0.5rem 0.5rem 0; padding: 0.65rem 1rem; }
+.restaurant-admin-dialog textarea { display: block; width: 100%; min-height: 5rem; margin-block: 0.5rem; }

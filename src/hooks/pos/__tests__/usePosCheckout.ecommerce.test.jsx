@@ -3,7 +3,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  appState: null,
+  appState: null, tableCapabilities: vi.fn(), authorityStale: false,
   activeState: null,
   showConfirmModal: vi.fn(),
   showMessageModal: vi.fn(),
@@ -26,6 +26,17 @@ vi.mock('../../../store/useAppStore', () => ({
     { getState: () => mocks.appState }
   )
 }));
+
+vi.mock('../../../services/restaurant/restaurantOrdersRepository', () => ({ restaurantOrdersRepository: {
+  getTableCapabilities: (...args) => mocks.tableCapabilities(...args)
+} }));
+vi.mock('../../../services/auth/actorRuntimeController', () => ({ actorRuntimeController: {
+  capture: () => ({ actorType: 'admin', actorId: 'admin-a', actorKey: 'admin:admin-a', sessionId: 'session-a',
+    generation: 1, tenant: { opaqueId: 'tenant-a' }, assertCurrent: () => {
+      if (mocks.authorityStale) throw Object.assign(new Error('ACTOR_CONTEXT_STALE'), { code: 'ACTOR_CONTEXT_STALE' });
+    } }),
+  getState: () => ({ status: 'granted' }), subscribe: () => () => {}
+} }));
 
 vi.mock('../../../services/products/productCatalogEvents', () => ({
   broadcastDBChange: mocks.broadcastDBChange
@@ -221,6 +232,9 @@ const initiateCheckout = async (hookResult, options) => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.authorityStale = false;
+  mocks.tableCapabilities.mockReset().mockImplementation(async ({ localOrderId }) => ({ success: true, contractVersion: 1, localOrderId,
+    cloudOrderId: 'cloud-parent', parentVersion: '2026-10-01T00:00:00Z', capabilities: { canCheckoutTable: true } }));
   mocks.sales.clear();
   mocks.appState = {
     licenseDetails: { valid: true },
@@ -394,6 +408,41 @@ describe('usePosCheckout ecommerce and stale lock ownership', () => {
     expect(deps.modal.openModal).toHaveBeenCalledWith('payment');
     expect(mocks.processSale).not.toHaveBeenCalled();
     expect(deps.pos.asegurarCajaAbierta).not.toHaveBeenCalled();
+  });
+
+  it('A06 blocks foreign Staff authority before locks, payment UI or sale effects', async () => {
+    mocks.cloudCashierEnabled = true;
+    mocks.tableCapabilities.mockResolvedValue({ success: true, contractVersion: 1, localOrderId: 'order-a',
+      cloudOrderId: 'cloud-parent', parentVersion: '2026-10-01T00:00:00Z', capabilities: { canCheckoutTable: false } });
+    setOrders([makeOrder({ restaurantCloudHydrated: true, reservationAuthority: 'cloud' })]);
+    const deps = makeDeps({ hasTables: true });
+    const hook = renderHook(() => usePosCheckout(deps.args));
+    expect(await initiateCheckout(hook.result)).toMatchObject({ success: false, code: 'RESTAURANT_TABLE_OWNER_REQUIRED' });
+    expect(mocks.activeState.lockOrderForCheckout).not.toHaveBeenCalled();
+    expect(deps.modal.openModal).not.toHaveBeenCalledWith('payment');
+    expect(mocks.processSale).not.toHaveBeenCalled();
+  });
+
+  it('A18/A20 discards a capability response after an actor or tenant handoff', async () => {
+    mocks.cloudCashierEnabled = true;
+    const deferred = createDeferred();
+    mocks.tableCapabilities.mockImplementation(() => deferred.promise);
+    setOrders([makeOrder({ restaurantCloudHydrated: true, reservationAuthority: 'cloud' })]);
+    const deps = makeDeps({ hasTables: true });
+    const hook = renderHook(() => usePosCheckout(deps.args));
+    let pending;
+    await act(async () => { pending = hook.result.current.handleInitiateCheckout(); });
+    await waitFor(() => expect(mocks.tableCapabilities).toHaveBeenCalledOnce());
+    mocks.authorityStale = true;
+    let result;
+    await act(async () => {
+      deferred.resolve({ success: true, contractVersion: 1, localOrderId: 'order-a', cloudOrderId: 'cloud-parent',
+        parentVersion: '2026-10-01T00:00:00Z', capabilities: { canCheckoutTable: true } });
+      result = await pending;
+    });
+    expect(result).toMatchObject({ success: false, code: 'ACTOR_CONTEXT_STALE' });
+    expect(mocks.activeState.lockOrderForCheckout).not.toHaveBeenCalled();
+    expect(deps.modal.openModal).not.toHaveBeenCalledWith('payment');
   });
 
   it('uses the detailed integrity reason without forcing a reload', async () => {
