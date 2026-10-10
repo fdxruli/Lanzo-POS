@@ -276,7 +276,10 @@ begin
       v_restaurant_order_id := nullif(btrim(v_execution->>'parent_order_id'), '');
       v_restaurant_version := nullif(btrim(v_canonical->>'parent_order_version'), '');
     else
-      v_restaurant_order_id := nullif(btrim(v_execution->'sale'->>'id'), '');
+      v_restaurant_order_id := coalesce(
+        nullif(btrim(v_canonical->'sale'->>'local_sale_id'), ''),
+        nullif(btrim(v_canonical->'sale'->>'id'), '')
+      );
       v_restaurant_context_supplied := p_request ? 'restaurant_settlement';
       if v_restaurant_context_supplied then
         if v_restaurant_order_id is distinct from nullif(btrim(v_canonical #>> '{restaurant_settlement,parent_order_id}'), '') then
@@ -1434,7 +1437,15 @@ begin
       deleted_at = null,
       server_version = public.pos_restaurant_order_items.server_version + 1,
       metadata = coalesce(public.pos_restaurant_order_items.metadata, '{}'::jsonb) || excluded.metadata
+    where public.pos_restaurant_order_items.license_id = excluded.license_id
+      and public.pos_restaurant_order_items.restaurant_order_id = excluded.restaurant_order_id
     returning * into v_saved_item;
+
+    -- Recheck under the conflicting row lock: the earlier snapshot cannot see
+    -- an item inserted concurrently by another parent or tenant.
+    if not found then
+      raise exception 'RESTAURANT_TABLE_SCOPE_DENIED' using errcode = 'P0001';
+    end if;
 
     perform private.record_pos_sync_event(
       v_license_id,
@@ -1818,7 +1829,6 @@ begin
     perform private.assert_pos_permission(v_context, 'customers');
   end if;
   v_license_id := (v_context->>'license_id')::uuid;
-  perform private.assert_restaurant_settlement_permit_v1(v_context,coalesce(p_sale->>'id',p_sale->>'local_sale_id'));
   v_device_id := (v_context->>'device_id')::uuid;
 
   v_sale_id := coalesce(
@@ -1828,6 +1838,18 @@ begin
   v_local_sale_id := coalesce(
     private.pos_sale_jsonb_text(v_sale, array['local_sale_id','localSaleId']), v_sale_id
   );
+
+  -- Apply exactly the aliases consumed by the effect engine. Neither a
+  -- cloudSaleId alias nor a split child marker may bypass the parent permit.
+  perform private.assert_restaurant_settlement_permit_v1(v_context, v_local_sale_id);
+  if v_sale_id is distinct from v_local_sale_id then
+    perform private.assert_restaurant_settlement_permit_v1(v_context, v_sale_id);
+  end if;
+  if nullif(btrim(coalesce(v_sale->'metadata'->>'splitParentId',
+      v_sale->'metadata'->>'split_parent_id', '')), '') is not null then
+    perform private.assert_restaurant_settlement_permit_v1(v_context,
+      btrim(coalesce(v_sale->'metadata'->>'splitParentId', v_sale->'metadata'->>'split_parent_id')));
+  end if;
 
   v_is_split_child := lower(coalesce(v_sale->'metadata'->>'source', '')) = 'split_bill_child'
     and nullif(btrim(coalesce(v_sale->'metadata'->>'splitGroupId', v_sale->'metadata'->>'split_group_id', '')), '') is not null

@@ -131,3 +131,10 @@ Check dialogs, keyboard/focus behavior and narrow screens on the final Preview.
 
 Do not enable remote product editing until that contract and integrated QA pass.
 Required CI gates remain unchanged; no assertions or timeouts were relaxed.
+# Auditoría SQL posterior (2026-10-10)
+
+La certificación de despliegue sigue **HOLD**. La auditoría posterior reprodujo
+incompatibilidad con el frontend publicado y una cancelación del parent por la
+ruta legacy de Cocina fuera del contrato de propiedad/auditoría. Véase
+[auditoría crítica SQL](RESTAURANT.ADMIN.SUPERVISION.SQL.AUDIT.R1.md).
+No se aplicó SQL de producción. Los PASS focales no certifican QA integrada.

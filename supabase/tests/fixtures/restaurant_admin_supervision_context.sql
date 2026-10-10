@@ -30,4 +30,10 @@ returns void language plpgsql as $$ begin perform private.assert_pos_permission(
 create function private.ensure_default_preparation_station(uuid,uuid,uuid) returns void language sql as $$ select $$;
 create function private.normalize_restaurant_order_status(text) returns text language sql as $$ select $1 $$;
 create function private.safe_jsonb_numeric(jsonb,text,numeric) returns numeric language sql as $$ select coalesce(($1->>$2)::numeric,$3) $$;
+create function private.pos_sale_jsonb_text(jsonb,text[],text default null) returns text language sql as $$
+  select coalesce((select nullif(btrim($1->>k),'') from unnest($2) with ordinality as keys(k,position)
+    where nullif(btrim($1->>k),'') is not null order by position limit 1),$3)
+$$;
+create schema extensions;
+create function extensions.gen_random_uuid() returns uuid language sql as $$ select pg_catalog.gen_random_uuid() $$;
 create function private.resolve_restaurant_order_station(uuid,text,text,uuid,uuid) returns jsonb language sql as $$ select jsonb_build_object('code',$2,'name',$3) $$;

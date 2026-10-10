@@ -71,6 +71,15 @@ rejected(call('cashier','owner').replace('fixture-license','fixture-other'),'RES
 rejected(call('cashier','owner').replace(version,'2026-09-01T00:00:00Z'),'RESTAURANT_ORDER_VERSION_CONFLICT');
 rejected("select private.r2b_authorize_sale_financial_request_v1('sale.cashier','fixture-license','A','valid','staff-b','{\"id\":\"owner\"}','[]','[]','cash-a',null,'direct')",'RESTAURANT_TABLE_OWNER_REQUIRED');
 rejected("select private.r2b_authorize_sale_financial_request_v1('sale.cashier','fixture-license','B','valid','admin','{\"id\":\"owner\"}','[]','[]','cash-a',null,'direct-admin')",'RESTAURANT_SETTLEMENT_CONTRACT_REQUIRED');
+for (const alias of ['cloud_sale_id','cloudSaleId','local_sale_id','localSaleId']) {
+  const sale = JSON.stringify({ [alias]: 'owner' });
+  rejected(`select private.r2b_authorize_sale_financial_request_v1('sale.cashier','fixture-license','A','valid','staff-b','${sale}','[]','[]','cash-a',null,'direct-${alias}')`, 'RESTAURANT_TABLE_OWNER_REQUIRED');
+  rejected(`select private.r2b_authorize_sale_financial_request_v1('sale.cashier','fixture-license','B','valid','admin','${sale}','[]','[]','cash-a',null,'direct-admin-${alias}')`, 'RESTAURANT_SETTLEMENT_CONTRACT_REQUIRED');
+}
+rejected(`select private.r2b_authorize_sale_financial_request_v1('sale.cashier','fixture-license','A','valid','staff-b',
+  '{"id":"unrelated-child","metadata":{"source":"split_bill_child","splitGroupId":"forged","splitParentId":"owner"}}',
+  '[]','[]','cash-a',null,'forged-child')`, 'RESTAURANT_TABLE_OWNER_REQUIRED');
+rejected("set role anon; select private.assert_restaurant_settlement_permit_v1('{}','owner')",'permission denied');
 assert.equal(sql('select count(*) from public.pos_sales'),'0');
 const edit = (actor,device='A',expected=version,extra={},id='owner') => `select public.pos_upsert_restaurant_order_unlimited('fixture-license','${device}','valid','${actor}',
   '${JSON.stringify({localOrderId:id,saleId:id,expectedParentVersion:expected,total:50,subtotal:50,...extra})}',
@@ -87,14 +96,19 @@ for(const [operation,actor,device] of [['cashier','staff-a','A'],['cashier','adm
   if(operation==='cancel') sql(call(operation,id,actor,device));
   else rejected(call(operation,id,actor,device,'second'),'RESTAURANT_ORDER_NOT_ACTIVE|RESTAURANT_ORDER_ALREADY_PAID');
 }
-const run = (query,name) => new Promise(resolve=>{
-  const child=spawn(process.env.PSQL_BIN,[...args,'-c',query],{env:{...process.env,PGAPPNAME:name},windowsHide:true});
+const openSession = (name) => {
+  const child=spawn(process.env.PSQL_BIN,args,{env:{...process.env,PGAPPNAME:name},windowsHide:true});
+  const done = new Promise(resolve=>{
   let output=''; child.stdout.on('data',chunk=>{output+=chunk}); child.stderr.on('data',chunk=>{output+=chunk});
   child.on('exit',code=>resolve({code,output}));
-});
+  });
+  return { child, done };
+};
+const run = (query,name) => { const session = openSession(name); session.child.stdin.end(query + '\n'); return session.done; };
 for(const [index,[first,second]] of [['cashier','cashier'],['cashier','cancel'],['cancel','cashier'],['split','cashier'],['cancel','split'],['cancel','cancel'],['cancel','edit']].entries()) {
   const id=`race-admin-${index}`; seed(id); const name=`admin-supervision-race-${index}`;
-  const winner=run(`begin; select private.lock_restaurant_order_settlement_v1('${license}','${id}'); select pg_sleep(1); ${call(first,id,'admin','B','first')}; commit;`,name);
+  const winner=openSession(name);
+  winner.child.stdin.write(`begin; select private.lock_restaurant_order_settlement_v1('${license}','${id}');\n`);
   let acquired=false;
   for(let attempt=0;attempt<80;attempt++) {
     acquired=sql(`select exists(select 1 from pg_locks l join pg_stat_activity a on a.pid=l.pid where a.application_name='${name}' and l.locktype='advisory' and l.granted)`) === 't';
@@ -102,7 +116,15 @@ for(const [index,[first,second]] of [['cashier','cashier'],['cashier','cancel'],
   }
   assert.ok(acquired);
   const loser=run(`begin; ${call(second,id,'staff-a','A','second')}; commit;`,`${name}-loser`);
-  const [win,lose]=await Promise.all([winner,loser]); assert.equal(win.code,0,win.output); assert.notEqual(lose.code,0,lose.output);
+  let contending=false;
+  for(let attempt=0;attempt<80;attempt++) {
+    contending=sql(`select exists(select 1 from pg_stat_activity where application_name='${name}-loser' and wait_event_type='Lock')`) === 't';
+    if(contending) break; await new Promise(resolve=>setTimeout(resolve,25));
+  }
+  // Release the winner only after the second session is actually blocked.
+  // No fixed sleep or relaxed timeout: process scheduling cannot hide the race.
+  winner.child.stdin.end(`${call(first,id,'admin','B','first')}; commit;\n`);
+  const [win,lose]=await Promise.all([winner.done,loser]); assert.ok(contending); assert.equal(win.code,0,win.output); assert.notEqual(lose.code,0,lose.output);
   assert.equal(Number(sql(`select count(*) from public.pos_sales where local_order_id='${id}'`)),first==='cancel'?0:1);
   assert.equal(sql(`select count(*) from private.restaurant_table_interventions where order_id='${id}'`),'1');
   results.push({first,second,result:'SERIALIZED_ONE_EFFECT'});
