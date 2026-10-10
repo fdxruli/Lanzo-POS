@@ -511,34 +511,62 @@ describe('PublicStorePage', () => {
   });
 
   it('deduplicates a persisted pageshow followed immediately by focus', async () => {
-    serviceMocks.getPublicPortalBySlug.mockResolvedValue({
-      ...portalResult,
-      catalogRevision: 7
-    });
-    const pendingCatalog = deferred();
-    serviceMocks.getPublicCatalog
-      .mockResolvedValueOnce({ ...catalogResult, catalogRevision: 7 })
-      .mockReturnValueOnce(pendingCatalog.promise);
-    renderPage();
-    await screen.findByRole('heading', { name: 'Alitas BBQ' });
+    let windowListenerSpy;
+    let usingFakeTimers = false;
+    try {
+      windowListenerSpy = vi.spyOn(window, 'addEventListener');
+      serviceMocks.getPublicPortalBySlug.mockResolvedValue({
+        ...portalResult,
+        catalogRevision: 7
+      });
+      const pendingCatalog = deferred();
+      serviceMocks.getPublicCatalog
+        .mockResolvedValueOnce({ ...catalogResult, catalogRevision: 7 })
+        .mockReturnValueOnce(pendingCatalog.promise);
+      renderPage();
+      await screen.findByRole('heading', { name: 'Alitas BBQ' });
 
-    const restore = new Event('pageshow');
-    Object.defineProperty(restore, 'persisted', { value: true });
-    fireEvent(window, restore);
-    fireEvent.focus(window);
+      await waitFor(() => {
+        expect(windowListenerSpy).toHaveBeenCalledWith('focus', expect.any(Function));
+        expect(windowListenerSpy).toHaveBeenCalledWith('pageshow', expect.any(Function));
+      });
 
-    await waitFor(() => {
+      vi.useFakeTimers();
+      usingFakeTimers = true;
+      const restore = new Event('pageshow');
+      Object.defineProperty(restore, 'persisted', { value: true });
+      fireEvent(window, restore);
+      fireEvent.focus(window);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
       expect(serviceMocks.getPublicPortalBySlug).toHaveBeenCalledTimes(2);
       expect(serviceMocks.getPublicCatalog).toHaveBeenCalledTimes(2);
-    });
-    await new Promise((resolve) => window.setTimeout(resolve, 100));
 
-    expect(serviceMocks.getPublicPortalBySlug).toHaveBeenCalledTimes(2);
-    expect(serviceMocks.getPublicCatalog).toHaveBeenCalledTimes(2);
-    await act(async () => {
-      pendingCatalog.resolve({ ...catalogResult, catalogRevision: 7 });
-      await pendingCatalog.promise;
-    });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(100);
+      });
+      expect(serviceMocks.getPublicPortalBySlug).toHaveBeenCalledTimes(2);
+      expect(serviceMocks.getPublicCatalog).toHaveBeenCalledTimes(2);
+      await act(async () => {
+        pendingCatalog.resolve({ ...catalogResult, catalogRevision: 7 });
+        await pendingCatalog.promise;
+      });
+    } finally {
+      try {
+        if (usingFakeTimers) {
+          try {
+            vi.clearAllTimers();
+          } finally {
+            vi.useRealTimers();
+          }
+        }
+      } finally {
+        windowListenerSpy?.mockRestore();
+        cleanup();
+      }
+    }
   });
 
   it('shows not found without exposing hidden portal states', async () => {
