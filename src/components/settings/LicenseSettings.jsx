@@ -262,8 +262,8 @@ function LicenseDetail({ label, value, children }) {
     );
 }
 
-function LicenseCriticalAlerts({ licenseDetails, showFreeCompatibilityUpdate, isUpdatingFree, freeUpdateError, onFreeCompatibilityUpdate }) {
-    const expirationInfo = getLicenseExpirationPresentation(licenseDetails);
+function LicenseCriticalAlerts({ licenseDetails, licenseStatus, showFreeCompatibilityUpdate, isUpdatingFree, freeUpdateError, onFreeCompatibilityUpdate }) {
+    const expirationInfo = getLicenseExpirationPresentation(licenseDetails, new Date(), { licenseStatus });
     const hasExpirationAlert = expirationInfo.tone === 'warning' || expirationInfo.tone === 'danger';
 
     if (!hasExpirationAlert && !showFreeCompatibilityUpdate && !freeUpdateError) return null;
@@ -298,8 +298,8 @@ function LicenseCriticalAlerts({ licenseDetails, showFreeCompatibilityUpdate, is
     );
 }
 
-function LicenseSummaryPanel({ licenseDetails, selectedCount, maxRubrosAllowed, activeRubroLabels }) {
-    const expirationInfo = getLicenseExpirationPresentation(licenseDetails);
+function LicenseSummaryPanel({ licenseDetails, licenseStatus, selectedCount, maxRubrosAllowed, activeRubroLabels }) {
+    const expirationInfo = getLicenseExpirationPresentation(licenseDetails, new Date(), { licenseStatus });
 
     return (
         <section className="license-panel license-summary-panel">
@@ -327,6 +327,7 @@ function LicenseSummaryPanel({ licenseDetails, selectedCount, maxRubrosAllowed, 
 
 function LicenseInfoPanel({
     licenseDetails,
+    licenseStatus,
     licenseContext,
     onLogout
 }) {
@@ -337,8 +338,8 @@ function LicenseInfoPanel({
         currentStaffUser,
         staffRolesEnabled
     } = licenseContext;
-    const expirationInfo = getLicenseExpirationPresentation(licenseDetails);
-    const statusPresentation = getLicenseStatusPresentation(licenseDetails);
+    const expirationInfo = getLicenseExpirationPresentation(licenseDetails, new Date(), { licenseStatus });
+    const statusPresentation = getLicenseStatusPresentation(licenseDetails, new Date(), { licenseStatus });
     const [copiedLicense, setCopiedLicense] = useState(false);
     const commercialPlanName = getCommercialPlanName(licenseDetails);
     const commercialPlanShortName = getCommercialPlanShortName(licenseDetails);
@@ -734,6 +735,7 @@ export default function LicenseSettings() {
 
             <LicenseCriticalAlerts
                 licenseDetails={licenseDetails}
+                licenseStatus={licenseStatus}
                 showFreeCompatibilityUpdate={showFreeCompatibilityUpdate}
                 isUpdatingFree={isUpdatingFree}
                 freeUpdateError={freeUpdateError}
@@ -750,12 +752,14 @@ export default function LicenseSettings() {
                 >
                     <LicenseSummaryPanel
                         licenseDetails={licenseDetails}
+                        licenseStatus={licenseStatus}
                         selectedCount={selectedRubros.length}
                         maxRubrosAllowed={maxRubrosAllowed}
                         activeRubroLabels={activeRubroLabels}
                     />
                     <LicenseInfoPanel
                         licenseDetails={licenseDetails}
+                        licenseStatus={licenseStatus}
                         licenseContext={licenseContext}
                         onLogout={isStaffDevice ? handleStaffLogout : handleLogout}
                     />

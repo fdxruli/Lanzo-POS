@@ -444,4 +444,48 @@ describe('LicenseSettings sibling isolation', () => {
     expect(state.staffSettingsMount).toHaveBeenCalledWith('LIC-2');
     expect(state.staffSettingsMount).toHaveBeenCalledTimes(2);
   });
+
+  it('keeps the detail badge aligned with an inconclusive store lifecycle', () => {
+    state.app.currentStaffUser = null;
+    state.access = localAdminAccess();
+    state.app.licenseDetails = {
+      ...localLicense(),
+      plan_code: 'pro_monthly',
+      is_lifetime: false,
+      is_entitled: true,
+      expires_at: '2099-01-01T00:00:00.000Z',
+      status: 'active'
+    };
+    state.app.licenseStatus = 'validation_inconclusive';
+
+    renderInApp();
+
+    const detailSummary = screen.getByText('Informacion de licencia').closest('summary');
+    expect(detailSummary).toHaveTextContent('Validación pendiente');
+    expect(detailSummary).not.toHaveTextContent('Activa');
+    expect(screen.getAllByText('Validación pendiente').length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('presents confirmed grace consistently across the header, summary, alerts and details', () => {
+    state.app.currentStaffUser = null;
+    state.access = localAdminAccess();
+    state.app.licenseDetails = {
+      ...localLicense(),
+      plan_code: 'pro_monthly',
+      is_lifetime: false,
+      is_entitled: true,
+      is_in_grace: true,
+      expires_at: '2026-10-01T00:00:00.000Z',
+      grace_period_ends: '2099-01-01T00:00:00.000Z',
+      status: 'grace_period'
+    };
+    state.app.licenseStatus = 'grace_period';
+
+    renderInApp();
+
+    const detailSummary = screen.getByText('Informacion de licencia').closest('summary');
+    expect(detailSummary).toHaveTextContent('Período de gracia');
+    expect(screen.getAllByText('Período de gracia').length).toBeGreaterThanOrEqual(3);
+  });
+
 });

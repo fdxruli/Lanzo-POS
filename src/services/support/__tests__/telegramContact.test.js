@@ -124,4 +124,34 @@ describe('telegramContact', () => {
     expect(() => buildTelegramContactMessage(TELEGRAM_CONTACT_INTENT.PRO_ACTIVATION, context)).not.toThrow();
     expect(context).toEqual(AUTHORIZED_LOCAL_CONTEXT);
   });
+
+  it.each([
+    ['uppercase UUID', '550E8400-E29B-41D4-A716-446655440000'],
+    ['lowercase UUID', '550e8400-e29b-41d4-a716-446655440000'],
+    ['mixed-case UUID', '550E8400-e29b-41D4-a716-446655440000'],
+    ['uppercase hexadecimal identifier', 'ABCDEF1234567890ABCDEF1234567890'],
+    ['lowercase hexadecimal identifier', 'abcdef1234567890abcdef1234567890'],
+    ['Lanzo license', 'LANZO-750F-AC06-6720-FDCA'],
+    ['JWT-shaped credential', 'abcdefghijk.abcdefghijk.abcdefghijk']
+  ])('excludes a %s from authorized Telegram business context', (_case, businessName) => {
+    expect(sanitizeTelegramBusinessName(businessName)).toBe('');
+    const message = buildTelegramContactMessage(TELEGRAM_CONTACT_INTENT.PRO_ACTIVATION, {
+      ...AUTHORIZED_LOCAL_CONTEXT,
+      businessName
+    });
+    expect(message).not.toContain(businessName);
+    expect(message).not.toContain('Mi negocio se llama');
+  });
+
+  it('preserves an ordinary uppercase business name and the fixed Telegram destination', () => {
+    expect(sanitizeTelegramBusinessName('CAFETERIA LAS ALAS')).toBe('CAFETERIA LAS ALAS');
+    const message = buildTelegramContactMessage(TELEGRAM_CONTACT_INTENT.PRO_ACTIVATION, {
+      ...AUTHORIZED_LOCAL_CONTEXT,
+      businessName: 'CAFETERIA LAS ALAS'
+    });
+    expect(message).toContain('CAFETERIA LAS ALAS');
+    const url = new URL(buildTelegramContactUrl(TELEGRAM_CONTACT_INTENT.PRO_ACTIVATION, AUTHORIZED_LOCAL_CONTEXT));
+    expect(url.origin + url.pathname).toBe(TELEGRAM_CONTACT_BASE_URL);
+  });
+
 });
