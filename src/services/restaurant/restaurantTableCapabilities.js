@@ -29,7 +29,7 @@ export const getRestaurantTableCapabilities = ({ order, actor = actorRuntimeCont
   const allowed = active && (!enforceStaffOwnership || owner || admin);
   return { canViewTable: view, canEditTable: view && allowed, canSendToKitchen: view && allowed,
     canCheckoutTable: view && allowed, canSplitTable: view && allowed,
-    canCancelTable: allowed && permission(actor, 'refunds'), canAdministerTable: view && active && admin };
+    canCancelTable: allowed && permission(actor, 'refunds'), canAdministerTable: false };
 };
 
 export const bindRestaurantTableCapabilities = (response, actor, orderId) => ({

@@ -19,7 +19,7 @@ export async function cancelAdministrativeRestaurantTable({ licenseKey, order, r
     localOrderId: order.id, expectedVersion: authority.parentVersion, reason: reason.trim(), idempotencyKey, actorHandle: actor });
   actor.assertCurrent('refunds');
   if (response?.success !== true || response.localOrderId !== order.id || response.status !== 'cancelled'
-    || !response.updatedAt || !response.cancelledAt || !(Number(response.serverVersion) > 0)) {
+    || !response.updatedAt || !response.cancelledAt || !Number.isSafeInteger(Number(response.serverVersion)) || !(Number(response.serverVersion) > 0)) {
     throw new Error('No se pudo confirmar la cancelación. Actualiza la mesa antes de volver a intentarlo.');
   }
   // Durable receipt only. Never release reservations here, even on this device.
