@@ -15,6 +15,10 @@ describe('restaurant canonical authority projection', () => {
     expect(caps({}, { actorId: 'staff-b' })).toMatchObject({ canViewTable: true,
       canEditTable: false, canCheckoutTable: false, canSplitTable: false, canCancelTable: false });
   });
+  it('A25 preserves Free/local legacy edit permissions without a Cloud owner contract', () => {
+    const free = getRestaurantTableCapabilities({ order: { ...order, createdByStaffUserId: null }, actor, enforceStaffOwnership: false });
+    expect(free).toMatchObject({ canEditTable: true, canCheckoutTable: true, canSplitTable: true, canCancelTable: true });
+  });
   it('A26 never infers a legacy owner from device or missing staff identity', () => {
     expect(caps({ createdByStaffUserId: null, deviceId: 'device-a' }).canEditTable).toBe(false);
     expect(caps({ createdByStaffUserId: null }, { actorType: 'admin' }).canEditTable).toBe(true);

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import { actorRuntimeController } from '../../services/auth/actorRuntimeController';
 import { verifyRestaurantTableAuthority } from '../../services/restaurant/restaurantTableAuthority';
 import { cancelAdministrativeRestaurantTable } from '../../services/restaurant/restaurantAdministrativeCancellation';
@@ -10,6 +10,7 @@ export default function RestaurantAdminInterventionModal({ order, licenseKey, on
   const [reason, setReason] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const closeForActorChange = useEffectEvent(() => onClose());
   useEffect(() => {
     dialog.current?.showModal();
     let disposed = false;
@@ -20,10 +21,10 @@ export default function RestaurantAdminInterventionModal({ order, licenseKey, on
       .then((binding) => { if (!disposed) setCapabilities(binding.capabilities); })
       .catch((failure) => { if (!disposed) setError(failure.message); });
     const unsubscribe = actorRuntimeController.subscribe(() => {
-      try { actor.assertCurrent(); } catch { onClose(); }
+      try { actor.assertCurrent(); } catch { closeForActorChange(); }
     });
     return () => { disposed = true; unsubscribe(); };
-  }, [order, licenseKey, onClose]);
+  }, [order, licenseKey]);
   const act = async (operation) => {
     setBusy(true);
     setError('');

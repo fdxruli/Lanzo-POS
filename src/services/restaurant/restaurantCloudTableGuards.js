@@ -54,7 +54,9 @@ export const assertRestaurantCloudTableEditable = (order, action = 'edit') => {
     const result = restaurantCloudTableBlockedResult(action);
     throw Object.assign(new Error(result.message), result);
   }
-  if (order?.origin !== 'ecommerce' && (order?.isSaved || order?.status === 'open')
+  if (order?.origin !== 'ecommerce'
+    && (isRestaurantCloudTableSettlementRequired(order) || order?.restaurantAuthorityMode === 'cloud')
+    && (order?.isSaved || order?.status === 'open')
     && (order?.orderType === 'table' || order?.tableData)) {
     const actor = actorRuntimeController.capture();
     actor.assertCurrent(action === 'cancel' ? 'refunds' : 'pos');
@@ -66,7 +68,8 @@ export const assertRestaurantCloudTableEditable = (order, action = 'edit') => {
     if (order.tenantOpaqueId && order.tenantOpaqueId !== actor.tenant.opaqueId) {
       throw Object.assign(new Error('No se pudo confirmar el negocio de esta mesa.'), { code: 'RESTAURANT_TABLE_SCOPE_DENIED' });
     }
-    if (action === 'edit' && order.createdByDeviceId && order.createdByDeviceId !== actor.deviceRef) {
+    const originDeviceRef = order.createdByDeviceRef || order.deviceId;
+    if (action === 'edit' && originDeviceRef && actor.deviceRef && originDeviceRef !== actor.deviceRef) {
       throw Object.assign(new Error('Los cambios de productos requieren las reservas del dispositivo de origen.'),
         { code: 'ADMIN_REMOTE_EDIT_BLOCKED_PENDING_INVENTORY_CONTRACT' });
     }

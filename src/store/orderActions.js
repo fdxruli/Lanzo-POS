@@ -22,6 +22,7 @@ import { isCommercialVariantProduct } from '../services/products/commercialVaria
 import { isLocalTenantAccessError } from '../services/tenant/localTenantGuard';
 import { isTenantRuntimeError } from '../services/db/tenantRuntimeRouter';
 import { resolveImmutableOrderCreatedAt } from '../services/sales/stableSaleTimestamp';
+import { isRestaurantOrdersCloudEnabled } from '../services/sync/syncConstants';
 import { actorRuntimeController } from '../services/auth/actorRuntimeController';
 import {
   assertRestaurantCloudTableEditable,
@@ -792,8 +793,10 @@ export const createOrderActions = (set, get) => ({
 
               const openSaleRecord = {
                 ...(existingSale || {}),
+                restaurantAuthorityMode: existingSale?.restaurantAuthorityMode || (isRestaurantOrdersCloudEnabled(get().licenseDetails) ? 'cloud' : 'local'),
                 createdByStaffUserId: existingSale ? existingSale.createdByStaffUserId : (actorHandle?.actorType === 'staff' ? actorHandle.actorId : null),
-                createdByDeviceId: existingSale ? existingSale.createdByDeviceId : actorHandle?.deviceRef,
+                createdByDeviceId: existingSale?.createdByDeviceId || null,
+                createdByDeviceRef: existingSale ? existingSale.createdByDeviceRef : actorHandle?.deviceRef,
                 tenantOpaqueId: existingSale?.tenantOpaqueId || actorHandle?.tenant?.opaqueId,
                 restaurantInterventionReason: currentOrder?.restaurantInterventionReason || null,
                 cloudRestaurantOrderUpdatedAt: currentOrder?.cloudRestaurantOrderUpdatedAt || existingSale?.cloudRestaurantOrderUpdatedAt,

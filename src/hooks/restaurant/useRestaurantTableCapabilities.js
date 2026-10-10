@@ -5,7 +5,7 @@ import { useActorRuntimeSnapshot } from '../../services/auth/useActorRuntimeSnap
 import { restaurantOrdersRepository } from '../../services/restaurant/restaurantOrdersRepository';
 import { bindRestaurantTableCapabilities, getRestaurantTableCapabilities } from '../../services/restaurant/restaurantTableCapabilities';
 import { isRestaurantCloudTableSettlementRequired } from '../../services/restaurant/restaurantCloudTableGuards';
-import { getLicenseKeyFromDetails } from '../../services/sync/syncConstants';
+import { getLicenseKeyFromDetails, isRestaurantOrdersCloudEnabled } from '../../services/sync/syncConstants';
 
 export function useRestaurantTableCapabilities(order) {
   const actor = useActorRuntimeSnapshot();
@@ -29,5 +29,5 @@ export function useRestaurantTableCapabilities(order) {
       }).catch(() => { if (!disposed) setBinding(null); });
     return () => { disposed = true; };
   }, [cloud, id, version, licenseKey, actor.status, actor.generation]);
-  return getRestaurantTableCapabilities({ order, actor, verified: binding?.observedVersion === version ? binding : null });
+  return getRestaurantTableCapabilities({ order, actor, enforceStaffOwnership: cloud || order?.restaurantAuthorityMode === 'cloud' || isRestaurantOrdersCloudEnabled(details), verified: binding?.observedVersion === version ? binding : null });
 }

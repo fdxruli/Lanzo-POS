@@ -29,6 +29,7 @@ import {
 import { tenantScopedZustandStorage, registerTenantStorageHydrator, suspendTenantStorageWrites } from '../../services/tenant/tenantScopedStorage';
 import { captureRefundsActorHandle } from '../../services/auth/refundsActorAuthorization';
 import { actorRuntimeController } from '../../services/auth/actorRuntimeController';
+import { isRestaurantOrdersCloudEnabled } from '../../services/sync/syncConstants';
 import { cancelOriginRestaurantTable } from '../../services/restaurant/restaurantOriginCancellation';
 import {
   normalizeStableSaleTimestamp,
@@ -374,8 +375,10 @@ export const useActiveOrders = create(
           revision: normalizeOrderRevision(sale.revision),
           updatedAt: sale.updatedAt || sale.timestamp || new Date().toISOString(),
           deviceId: sale.deviceId || null,
+          restaurantAuthorityMode: sale.restaurantAuthorityMode || (isRestaurantOrdersCloudEnabled(useAppStore.getState().licenseDetails) ? 'cloud' : 'local'),
           createdByStaffUserId: sale.createdByStaffUserId,
           createdByDeviceId: sale.createdByDeviceId,
+          createdByDeviceRef: sale.createdByDeviceRef,
           tenantOpaqueId: sale.tenantOpaqueId,
           restaurantOrderId: sale.restaurantOrderId,
           cloudRestaurantOrderId: sale.cloudRestaurantOrderId,

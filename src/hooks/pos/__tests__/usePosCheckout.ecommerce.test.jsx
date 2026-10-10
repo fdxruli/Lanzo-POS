@@ -27,6 +27,16 @@ vi.mock('../../../store/useAppStore', () => ({
   )
 }));
 
+vi.mock('../../../services/restaurant/restaurantOrdersRepository', () => ({ restaurantOrdersRepository: {
+  getTableCapabilities: async ({ localOrderId }) => ({ success: true, contractVersion: 1, localOrderId,
+    cloudOrderId: 'cloud-parent', parentVersion: '2026-10-01T00:00:00Z', capabilities: { canCheckoutTable: true } })
+} }));
+vi.mock('../../../services/auth/actorRuntimeController', () => ({ actorRuntimeController: {
+  capture: () => ({ actorType: 'admin', actorId: 'admin-a', actorKey: 'admin:admin-a', sessionId: 'session-a',
+    generation: 1, tenant: { opaqueId: 'tenant-a' }, assertCurrent: vi.fn() }),
+  getState: () => ({ status: 'granted' }), subscribe: () => () => {}
+} }));
+
 vi.mock('../../../services/products/productCatalogEvents', () => ({
   broadcastDBChange: mocks.broadcastDBChange
 }));

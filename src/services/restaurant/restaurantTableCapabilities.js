@@ -9,7 +9,7 @@ const permission = (actor, name) => actor.permissions?.includes('*') || actor.pe
 
 // Local projection only. Cloud grants are returned by an authenticated RPC and
 // bound to this actor/session/tenant/version by the caller. SQL rechecks writes.
-export const getRestaurantTableCapabilities = ({ order, actor = actorRuntimeController.getState(), verified = null } = {}) => {
+export const getRestaurantTableCapabilities = ({ order, actor = actorRuntimeController.getState(), verified = null, enforceStaffOwnership = true } = {}) => {
   const denied = deniedTableCapabilities();
   if (!order || actor?.status !== 'granted' || !actor.actorId || !actor.sessionId || !actor.tenant?.opaqueId) return denied;
   if ((order.tenantOpaqueId && order.tenantOpaqueId !== actor.tenant.opaqueId)
@@ -26,7 +26,7 @@ export const getRestaurantTableCapabilities = ({ order, actor = actorRuntimeCont
     && !['paid', 'closed', 'cancelled'].includes(order.status);
   const owner = actor.actorType === 'staff' && order.createdByStaffUserId === actor.actorId;
   const admin = actor.actorType === 'admin';
-  const allowed = active && (owner || admin);
+  const allowed = active && (!enforceStaffOwnership || owner || admin);
   return { canViewTable: view, canEditTable: view && allowed, canSendToKitchen: view && allowed,
     canCheckoutTable: view && allowed, canSplitTable: view && allowed,
     canCancelTable: allowed && permission(actor, 'refunds'), canAdministerTable: view && active && admin };

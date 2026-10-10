@@ -809,15 +809,7 @@ export function usePosCheckout({
             return blocked;
         }
         const initialLicenseDetails = useAppStore.getState().licenseDetails;
-        if ([activeOrder, durableOrder].some(isRestaurantCloudTableSettlementRequired)) {
-            try {
-                await verifyRestaurantTableAuthority({ licenseKey: getLicenseKeyFromDetails(initialLicenseDetails),
-                    order: durableOrder || activeOrder, operation: 'checkout' });
-            } catch (error) {
-                showMessageModal(error.message, null, { type: 'warning' });
-                return { success: false, code: error.code, message: error.message };
-            }
-        }
+
         if (
             [activeOrder, durableOrder].some(isRestaurantCloudTableSettlementRequired)
             && initialLicenseDetails?.valid
@@ -826,6 +818,15 @@ export function usePosCheckout({
             const blocked = buildCloudRestaurantSettlementRequiredResult();
             showMessageModal(blocked.message, null, { type: 'warning' });
             return blocked;
+        }
+        if ([activeOrder, durableOrder].some(isRestaurantCloudTableSettlementRequired)) {
+            try {
+                await verifyRestaurantTableAuthority({ licenseKey: getLicenseKeyFromDetails(initialLicenseDetails),
+                    order: durableOrder || activeOrder, operation: 'checkout' });
+            } catch (error) {
+                showMessageModal(error.message, null, { type: 'warning' });
+                return { success: false, code: error.code, message: error.message };
+            }
         }
         const checkoutOrigin = expectedOrigin || activeOrder?.origin || null;
 

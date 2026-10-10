@@ -155,6 +155,8 @@ export function useTableManagement({
                     await db.table(STORES.SALES).update(orderId, {
                         updatedAt: remoteUpdatedAt,
                         cloudRestaurantOrderUpdatedAt: remoteUpdatedAt,
+                        ...(remoteOrder?.createdByDeviceId ? { createdByDeviceId: remoteOrder.createdByDeviceId } : {}),
+                        ...(remoteOrder && Object.hasOwn(remoteOrder, 'createdByStaffUserId') ? { createdByStaffUserId: remoteOrder.createdByStaffUserId } : {}),
                         cloudRestaurantOrderServerVersion: remoteOrder?.serverVersion ?? remoteOrder?.server_version ?? null
                     });
                     saveActor.assertCurrent();
