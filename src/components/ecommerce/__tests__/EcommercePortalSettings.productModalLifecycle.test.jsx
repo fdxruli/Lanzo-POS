@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render as rtlRender, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import EcommercePortalSettings from '../EcommercePortalSettings';
 import { useAppStore } from '../../../store/useAppStore';
@@ -8,6 +9,11 @@ import {
   listPublishedProducts
 } from '../../../services/ecommerce/ecommerceAdminService';
 import { productRepository } from '../../../services/products/productRepository';
+
+const render = (ui, options) => {
+  const view = rtlRender(<MemoryRouter>{ui}</MemoryRouter>, options);
+  return { ...view, rerender: (nextUi) => view.rerender(<MemoryRouter>{nextUi}</MemoryRouter>) };
+};
 
 vi.mock('../../../services/ecommerce/ecommerceAdminService', async (importOriginal) => {
   const actual = await importOriginal();

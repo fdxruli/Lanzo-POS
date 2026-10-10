@@ -23,6 +23,8 @@
   color: var(--text-secondary, #64748b);
 }
 
+.ecom-general-settings__slug-hint { grid-column: 1 / -1; }
+
 .ecom-general-settings__delivery-heading {
   display: flex;
   align-items: center;
