@@ -425,12 +425,12 @@ export default function Ticker() {
     const now = new Date();
     const licenseForPresentation = {
       ...licenseDetails,
-      status: licenseStatus || licenseDetails?.status,
       grace_period_ends: licenseDetails?.grace_period_ends || gracePeriodEnds || null
     };
     const effectiveLicenseStatus = getLicenseStatusPresentation(
       licenseForPresentation,
-      now
+      now,
+      { licenseStatus }
     ).status;
     const effectiveGracePeriodEnds =
       licenseForPresentation.grace_period_ends ||
