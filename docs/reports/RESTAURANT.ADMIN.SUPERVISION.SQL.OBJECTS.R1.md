@@ -73,7 +73,7 @@
     "private.assert_restaurant_table_actor_v1"
   ],
   "CURRENT_PERMISSIONS": null,
-  "PROPOSED_PERMISSIONS": "postgres owner; anon/authenticated EXECUTE; PUBLIC revoked",
+  "PROPOSED_PERMISSIONS": "postgres owner; anon/authenticated EXECUTE; service_role EXECUTE inherited from postgres default ACL in public; PUBLIC revoked",
   "BEHAVIOR_CHANGE": "New custom-session authenticated read RPC, remote edit blocked.",
   "RISK_LEVEL": "MEDIUM",
   "CURRENT_SECURITY_DEFINER": null,
