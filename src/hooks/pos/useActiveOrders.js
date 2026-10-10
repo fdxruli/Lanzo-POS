@@ -79,8 +79,8 @@ const cleanupPersistedOrder = async (orderId, actorHandle, noteLine, cloudConfir
     assertActorCurrent();
   }
 );
-const cancelPersistedOrder = (orderId, actorHandle, noteLine, onCloudConfirmed) => cancelOriginRestaurantTable({
-  orderId, actorHandle, onCloudConfirmed,
+const cancelPersistedOrder = (orderId, actorHandle, noteLine, onCloudConfirmed, reason) => cancelOriginRestaurantTable({
+  orderId, actorHandle, onCloudConfirmed, reason,
   cancelLocal: (cloudConfirmed) => cleanupPersistedOrder(orderId, actorHandle, noteLine, cloudConfirmed)
 });
 
@@ -374,6 +374,9 @@ export const useActiveOrders = create(
           revision: normalizeOrderRevision(sale.revision),
           updatedAt: sale.updatedAt || sale.timestamp || new Date().toISOString(),
           deviceId: sale.deviceId || null,
+          createdByStaffUserId: sale.createdByStaffUserId,
+          createdByDeviceId: sale.createdByDeviceId,
+          tenantOpaqueId: sale.tenantOpaqueId,
           restaurantOrderId: sale.restaurantOrderId,
           cloudRestaurantOrderId: sale.cloudRestaurantOrderId,
           cloudRestaurantOrderUpdatedAt: sale.cloudRestaurantOrderUpdatedAt,
@@ -484,8 +487,19 @@ export const useActiveOrders = create(
       for (const row of rows) {
         if (!row.restaurantCancellationCleanupPending) continue;
         try {
-          actorRuntimeController.capture().assertCurrent();
+          const cleanupActor = actorRuntimeController.capture();
+          cleanupActor.assertCurrent();
           rememberCancellationReceipt(row.id, row.restaurantCancellationCleanupPending.receipt);
+          if (isRestaurantCloudTableShadow(row)) {
+            const receipt = row.restaurantCancellationCleanupPending.receipt;
+            if (receipt?.success !== true || receipt.localOrderId !== row.id || receipt.status !== 'cancelled'
+              || !receipt.cancelledAt || !receipt.updatedAt) continue;
+            await db.table(STORES.SALES).update(row.id, { status: SALE_STATUS.CANCELLED,
+              fulfillmentStatus: 'cancelled', restaurantCancellationCleanupPending: null });
+            cleanupActor.assertCurrent();
+            if (get().activeOrders.has(row.id)) await get().removeOrder(row.id);
+            continue;
+          }
           const actor = captureRefundsActorHandle();
           await cancelPersistedOrder(row.id, actor, 'Sistema: Cancelación POS reconciliada desde Cloud');
           if (get().activeOrders.has(row.id)) await get().removeOrder(row.id);
@@ -714,7 +728,7 @@ export const useActiveOrders = create(
      * A diferencia de pauseOrder, persiste el cierre como cancelled para que no
      * vuelva a aparecer al recargar la pagina.
      */
-    cancelOrder: async (orderId, { actorHandle = null } = {}) => {
+    cancelOrder: async (orderId, { actorHandle = null, reason } = {}) => {
       if (!orderId) throw new Error("Se requiere el ID de la orden.");
       const state = get();
       const order = state.activeOrders.get(orderId);
@@ -730,7 +744,7 @@ export const useActiveOrders = create(
         if (order?.isSaved) {
           await cancelPersistedOrder(orderId, actorHandle, 'Sistema: Orden cancelada desde POS', (receipt) => {
             rememberCancellationReceipt(orderId, receipt);
-          });
+          }, reason);
         }
 
         // 1. Actualizar UI inmediatamente

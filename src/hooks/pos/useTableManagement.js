@@ -32,6 +32,8 @@ import { recoverRestaurantFalseTerminalMarker } from '../../services/restaurant/
 import { getRestaurantCloudTableState } from '../../services/restaurant/restaurantActiveTables';
 import { isRestaurantCloudTableShadow, isRestaurantCloudTableTerminal, restaurantCloudTableBlockedResult, restaurantCloudTableTerminalBlockedResult } from '../../services/restaurant/restaurantCloudTableGuards';
 import { RESTAURANT_CLOUD_STATUS_EVENT } from '../../services/restaurant/restaurantCloudStatusSummary';
+import { verifyRestaurantTableAuthority } from '../../services/restaurant/restaurantTableAuthority';
+import { preflightCloudRestaurantOrderSettlement } from '../../services/restaurant/restaurantSplitCloudPreflight';
 
 const EMPTY_ORDER = [];
 const durableTableCleanupPending = (id, recoveryRequired = false) => ({
@@ -95,13 +97,19 @@ export function useTableManagement({
             const splitActor = actorRuntimeController.capture();
             const durableOrder = await db.table(STORES.SALES).get(liveOrder.id);
             splitActor.assertCurrent();
-            result = isRestaurantCloudTableTerminal(durableOrder)
+            if (isCloudRestaurantOrdersEnabled && durableOrder?.orderType === 'table') {
+                try { await verifyRestaurantTableAuthority({ licenseKey, order: durableOrder, operation: 'split', actorHandle: splitActor }); }
+                catch (error) {
+                    result = { success: false, code: error.code, message: error.message };
+                }
+            }
+            result = result || (isRestaurantCloudTableTerminal(durableOrder)
                 ? restaurantCloudTableTerminalBlockedResult(durableOrder)
-                : null;
+                : null);
         }
         if (result) showMessageModal(result.message, null, { type: 'warning' });
         return result;
-    }, []);
+    }, [isCloudRestaurantOrdersEnabled, licenseKey]);
 
     const syncOpenRestaurantOrderToCloud = useCallback(async (orderId, saveActor) => {
         if (!isCloudRestaurantOrdersEnabled || !licenseKey) {
@@ -184,8 +192,27 @@ export function useTableManagement({
             }
 
             let currentOrderState = selectCurrentOrder(useActiveOrders.getState());
+            const verifiedEditFields = {};
             const currentTableData = currentOrderState?.tableData;
             const isUpdating = Boolean(currentOrderState?.isSaved);
+            if (isUpdating && isCloudRestaurantOrdersEnabled) {
+                const baseline = durableBeforeSave;
+                const verified = await preflightCloudRestaurantOrderSettlement({ licenseKey,
+                    parentOrderId: currentOrderState.id, parentSale: baseline, actorHandle: saveActor, operation: 'edit' });
+                saveActor.assertCurrent('pos');
+                if (!verified.success) {
+                    showMessageModal(verified.message, null, { type: 'warning' });
+                    return verified;
+                }
+                verifiedEditFields.cloudRestaurantOrderUpdatedAt = verified.parentExpectedVersion;
+                if (saveActor.actorType === 'admin' && baseline.createdByStaffUserId) {
+                    const reason = await showInputPromptModal({ title: 'Administrar mesa',
+                        message: 'Vas a intervenir una mesa iniciada por otro usuario. Se verificará su estado actual antes de aplicar cambios. Escribe el motivo.', required: true });
+                    saveActor.assertCurrent('pos');
+                    if (!reason) return { success: false, cancelled: true };
+                    verifiedEditFields.restaurantInterventionReason = reason;
+                }
+            }
 
             if (!currentTableData || currentTableData.trim() === '') {
                 const promptedName = await showInputPromptModal({
@@ -202,7 +229,7 @@ export function useTableManagement({
                 useActiveOrders.getState().updateCurrentOrder({ tableData: promptedName });
             }
 
-            currentOrderState = selectCurrentOrder(useActiveOrders.getState());
+            currentOrderState = { ...selectCurrentOrder(useActiveOrders.getState()), ...verifiedEditFields };
             if (isEcommercePosEffectBlocked(currentOrderState)) {
                 return blockEcommerceRestaurantEffect();
             }
@@ -271,6 +298,7 @@ export function useTableManagement({
                 }
             }
 
+            currentOrderState = { ...selectCurrentOrder(useActiveOrders.getState()), ...verifiedEditFields };
             durableOrderId = currentOrderState?.id || durableOrderId;
             saveActor.assertCurrent();
             const result = await saveOrderAsOpen(durableOrderId, currentOrderState, {
@@ -354,7 +382,8 @@ export function useTableManagement({
         isCloudRestaurantOrdersEnabled,
         syncOpenRestaurantOrderToCloud,
         fetchActiveTablesCount,
-        licenseDetails
+        licenseDetails,
+        licenseKey
     ]);
 
     const executeLoadOpenOrder = useCallback(async (orderId, silent = false) => {
@@ -750,7 +779,8 @@ export function useTableManagement({
         } catch (error) {
             const handled = handlePosActorAuthorityError(error, 'load_table');
             if (handled) return handled;
-            console.error('Error al cargar la mesa para acción rápida:', error);
+            showMessageModal(error?.message || 'No se pudo cargar la mesa para esta operación.', null, { type: 'warning' });
+            return { success: false, code: error?.code || 'TABLE_ACTION_FAILED', message: error?.message };
         }
     }, [
         blockEcommerceRestaurantEffect,

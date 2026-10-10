@@ -81,6 +81,16 @@ const normalizeLimit = (limit = 100) => Math.min(Math.max(Number(limit) || 100, 
 const getProductsById = async () => { try { const products = await loadData(STORES.MENU); return new Map((Array.isArray(products) ? products : []).filter((product) => product?.id).map((product) => [product.id, product])); } catch (error) { Logger.warn('[RestaurantOrders] No se pudo cargar catalogo local para resolver estaciones:', error); return new Map(); } };
 
 export const restaurantOrdersRepository = {
+  async getTableCapabilities({ licenseKey, localOrderId, actorHandle: caller }) {
+    caller?.assertCurrent();
+    const { args, actorHandle } = await buildBaseRpcArgs(licenseKey);
+    caller?.assertCurrent();
+    const response = await callRpc('pos_restaurant_table_capabilities_v1', {
+      ...args, p_local_order_id: localOrderId
+    }, actorHandle);
+    caller?.assertCurrent();
+    return response;
+  },
   async cancelRestaurantOrderFromPos({ licenseKey, localOrderId, expectedVersion, reason, idempotencyKey, actorHandle: refundsActor }) {
     refundsActor.assertCurrent('refunds');
     assertOnlineForMutation();
@@ -168,6 +178,8 @@ export const restaurantOrdersRepository = {
     if (!sale?.id) throw new Error('RESTAURANT_ORDER_SALE_REQUIRED');
     const [stationsResult, productsById] = await Promise.all([preparationStationsRepository.getPreparationStations({ licenseKey, includeInactive: false, force: false, useCloud: Boolean(licenseKey) }), getProductsById()]);
     const payload = buildRestaurantOrderPayloadFromOpenSale({ sale, stations: stationsResult?.stations || [], productsById });
+    payload.order.expectedParentVersion = sale.cloudRestaurantOrderUpdatedAt || sale.restaurantCloudExpectedVersion || null;
+    payload.order.interventionReason = sale.restaurantInterventionReason || null;
     return this.upsertRestaurantOrder({ licenseKey, order: payload.order, items: payload.items, idempotencyKey });
   }
 };

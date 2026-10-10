@@ -85,7 +85,11 @@ describe('hydrateRestaurantCloudOrderToLocalOpenSale', () => {
       })
     };
     actorController.capture.mockReturnValue(handle);
-    repository = { getRestaurantOrderByLocalOrder: vi.fn(async () => ({
+    repository = { getTableCapabilities: vi.fn(async () => {
+      const response = await repository.getRestaurantOrderByLocalOrder.getMockImplementation()();
+      return { success: true, contractVersion: 1, localOrderId: 'sale-table-1', cloudOrderId: 'restaurant-order-1',
+        parentVersion: response.order?.updatedAt, capabilities: { canViewTable: true, canCheckoutTable: true, canSplitTable: true } };
+    }), getRestaurantOrderByLocalOrder: vi.fn(async () => ({
       success: true, found: true, order: buildCloudOrder()
     })) };
   });

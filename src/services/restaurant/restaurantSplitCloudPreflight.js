@@ -1,6 +1,7 @@
 import { Money } from '../../utils/moneyMath';
 import { buildRestaurantOrderPayloadFromOpenSale } from './restaurantOrderMapper';
 import { restaurantOrdersRepository } from './restaurantOrdersRepository';
+import { verifyRestaurantTableAuthority } from './restaurantTableAuthority';
 import { isRestaurantTableInScope } from './restaurantActiveTables';
 import {
   hasInvalidRestaurantSplitCommercialSnapshot,
@@ -238,6 +239,7 @@ export const preflightCloudRestaurantOrderSettlement = async ({
   settlementTotal,
   actorHandle = null,
   permission,
+  operation = 'checkout',
   repository = restaurantOrdersRepository
 } = {}) => {
   actorHandle?.assertCurrent(permission);
@@ -339,6 +341,16 @@ export const preflightCloudRestaurantOrderSettlement = async ({
     return invalid('RESTAURANT_ORDER_PREFLIGHT_FAILED', 'No se pudo confirmar una versión vigente de la mesa. Actualiza la cuenta.');
   }
 
+  let authority;
+  try {
+    authority = await verifyRestaurantTableAuthority({ licenseKey, order: parentSale, operation,
+      ...(actorHandle ? { actorHandle } : {}), repository });
+  } catch (error) {
+    return invalid(error.code || 'RESTAURANT_TABLE_AUTHORITY_UNCONFIRMED', error.message);
+  }
+  if (authority.parentVersion !== updatedAt || text(authority.cloudOrderId) !== text(order.id)) {
+    return invalid('RESTAURANT_ORDER_VERSION_CONFLICT', 'La mesa cambió durante la verificación. Actualízala antes de continuar.');
+  }
   return {
     success: true,
     commercialEquivalent: true,

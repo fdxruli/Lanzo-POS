@@ -1,3 +1,5 @@
+import { actorRuntimeController } from '../auth/actorRuntimeController';
+
 // Hydrated tables are snapshots owned by Cloud; this device owns no holds.
 // Remote settlement requires a shared atomic normal/split parent contract.
 export const isRestaurantCloudTableShadow = (order) => (
@@ -51,5 +53,22 @@ export const assertRestaurantCloudTableEditable = (order, action = 'edit') => {
   if (isRestaurantCloudTableShadow(order)) {
     const result = restaurantCloudTableBlockedResult(action);
     throw Object.assign(new Error(result.message), result);
+  }
+  if (order?.origin !== 'ecommerce' && (order?.isSaved || order?.status === 'open')
+    && (order?.orderType === 'table' || order?.tableData)) {
+    const actor = actorRuntimeController.capture();
+    actor.assertCurrent(action === 'cancel' ? 'refunds' : 'pos');
+    if (actor.actorType !== 'admin' && (actor.actorType !== 'staff'
+      || !order.createdByStaffUserId || order.createdByStaffUserId !== actor.actorId)) {
+      throw Object.assign(new Error('Esta mesa pertenece a otro usuario. Puedes revisar su comanda.'),
+        { code: 'RESTAURANT_TABLE_OWNER_REQUIRED' });
+    }
+    if (order.tenantOpaqueId && order.tenantOpaqueId !== actor.tenant.opaqueId) {
+      throw Object.assign(new Error('No se pudo confirmar el negocio de esta mesa.'), { code: 'RESTAURANT_TABLE_SCOPE_DENIED' });
+    }
+    if (action === 'edit' && order.createdByDeviceId && order.createdByDeviceId !== actor.deviceRef) {
+      throw Object.assign(new Error('Los cambios de productos requieren las reservas del dispositivo de origen.'),
+        { code: 'ADMIN_REMOTE_EDIT_BLOCKED_PENDING_INVENTORY_CONTRACT' });
+    }
   }
 };

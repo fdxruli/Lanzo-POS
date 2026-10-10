@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+vi.mock('../../auth/actorRuntimeController', () => ({ actorRuntimeController: {
+  subscribe: () => () => {}, getState: () => ({ status: 'granted' }),
+  capture: () => ({ actorType: 'admin', actorId: 'admin-a', sessionId: 'session-a',
+    actorKey: 'admin:admin-a', generation: 1, tenant: { opaqueId: 'tenant-a' }, assertCurrent: vi.fn() })
+} }));
+
 vi.mock('../../sales/postSaleEffects', () => ({
   runPostSaleEffects: vi.fn(async () => undefined),
   runPostSaleEffectsForCloudCommittedSale: vi.fn(async () => undefined)
@@ -55,7 +61,8 @@ const buildParentSale = () => ({
   ]
 });
 
-const makeDeps = (parentSale = buildParentSale(), overrides = {}) => ({
+const makeDeps = (parentSale = buildParentSale(), overrides = {}) => {
+ const deps = {
   loadData: vi.fn(async (store, key) => {
     if (store === 'sales' && key === parentSale.id) return structuredClone(parentSale);
     return null;
@@ -94,7 +101,14 @@ const makeDeps = (parentSale = buildParentSale(), overrides = {}) => ({
     })
   },
   ...overrides
-});
+ };
+ deps.restaurantOrdersRepository.getTableCapabilities = vi.fn(async ({ localOrderId }) => {
+   const response = await deps.restaurantOrdersRepository.getRestaurantOrderByLocalOrder.getMockImplementation()();
+   return { success: true, contractVersion: 1, localOrderId, cloudOrderId: response.order.id,
+     parentVersion: response.order.updatedAt, capabilities: { canViewTable: true, canCheckoutTable: true, canSplitTable: true } };
+ });
+ return deps;
+};
 
 const makeParams = (parentSale = buildParentSale(), overrides = {}) => ({
   parentOrderId: parentSale.id,

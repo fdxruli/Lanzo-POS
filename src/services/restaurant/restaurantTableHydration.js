@@ -138,6 +138,8 @@ const saleFromCloudSnapshot = (order, localOrderId, licenseKey, actorHandle) => 
     actorKey: actorHandle.actorKey,
     deviceId: actorHandle.deviceRef ?? null,
     staffUserId: actorHandle.actorType === 'staff' ? actorHandle.actorId : null,
+    createdByStaffUserId: order.createdByStaffUserId ?? order.created_by_staff_user_id ?? null,
+    createdByDeviceId: order.createdByDeviceId ?? order.created_by_device_id ?? null,
     metadata: {
       ...order.metadata,
       restaurantCloudHydration: {
@@ -293,7 +295,9 @@ export const hydrateRestaurantCloudOrderToLocalOpenSale = async ({
     }
     const preflight = await preflightCloudRestaurantOrderSplit({
       licenseKey, parentOrderId: id, parentSale: sale,
-      repository: { getRestaurantOrderByLocalOrder: async () => response }
+      actorHandle: handle, operation: 'view',
+      repository: { getRestaurantOrderByLocalOrder: async () => response,
+        getTableCapabilities: (args) => repository.getTableCapabilities(args) }
     });
     handle.assertCurrent();
     if (!preflight.success) return incomplete(id);

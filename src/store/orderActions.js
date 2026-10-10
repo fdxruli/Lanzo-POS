@@ -792,6 +792,11 @@ export const createOrderActions = (set, get) => ({
 
               const openSaleRecord = {
                 ...(existingSale || {}),
+                createdByStaffUserId: existingSale ? existingSale.createdByStaffUserId : (actorHandle?.actorType === 'staff' ? actorHandle.actorId : null),
+                createdByDeviceId: existingSale ? existingSale.createdByDeviceId : actorHandle?.deviceRef,
+                tenantOpaqueId: existingSale?.tenantOpaqueId || actorHandle?.tenant?.opaqueId,
+                restaurantInterventionReason: currentOrder?.restaurantInterventionReason || null,
+                cloudRestaurantOrderUpdatedAt: currentOrder?.cloudRestaurantOrderUpdatedAt || existingSale?.cloudRestaurantOrderUpdatedAt,
                 id: currentSaleId,
                 timestamp: resolveImmutableOrderCreatedAt({
                   durableOrder: existingSale,
