@@ -15,6 +15,7 @@ import { registerFinancialProjectionHandler } from '../financial/financialProjec
 import { actorRuntimeController } from '../auth/actorRuntimeController';
 import { cashRepository } from '../cash/cashRepository';
 import { layawayRepository } from '../db/layaways';
+import { preflightCloudRestaurantOrderSettlement } from '../restaurant/restaurantSplitCloudPreflight';
 import {
   isCloudCashierCompatiblePayment,
   isCreditLikePaymentMethod,
@@ -120,8 +121,12 @@ export const applySplitSalesFinancialResponseProjection = async ({ requestPayloa
   const response = responsePayload || intent?.responsePayload || {};
   const requestChildren = Array.isArray(request.children) ? request.children : [];
   const responseChildren = Array.isArray(response.children) ? response.children : [];
+  const splitIntent = request.split_intent || request.splitIntent || 'by_items';
+  const monetarySplit = ['equal_payment', 'custom_payment'].includes(splitIntent);
 
-  if (requestChildren.length < 2 || responseChildren.length !== requestChildren.length) {
+  if ((monetarySplit ? requestChildren.length !== 1 : requestChildren.length < 2)
+    || requestChildren.length > 8
+    || responseChildren.length !== requestChildren.length) {
     throw Object.assign(new Error('FINANCIAL_SPLIT_RESPONSE_INVALID'), { code: 'FINANCIAL_SPLIT_RESPONSE_INVALID' });
   }
 
@@ -143,11 +148,15 @@ export const applySplitSalesFinancialResponseProjection = async ({ requestPayloa
       : (Array.isArray(response.items)
         ? response.items.filter((item) => item.sale_id === cloudSale.id || item.saleId === cloudSale.id)
         : []);
-    const childPayments = Array.isArray(responseChild.payments)
+    const scopedPayments = Array.isArray(responseChild.payments)
       ? responseChild.payments
       : (Array.isArray(response.payments)
         ? response.payments.filter((payment) => payment.sale_id === cloudSale.id || payment.saleId === cloudSale.id)
         : []);
+    const childPayments = scopedPayments
+      .filter((payment) => !(payment?.sale_id || payment?.saleId)
+        || (payment.sale_id || payment.saleId) === cloudSale.id)
+      .map((payment) => ({ ...payment, sale_id: cloudSale.id }));
     const localItems = Array.isArray(requestChild.local_items)
       ? requestChild.local_items
       : (Array.isArray(requestChild.items) ? requestChild.items : []);
@@ -292,6 +301,7 @@ const friendlyCloudCashierError = (error) => {
     FINANCIAL_SPLIT_CONTRACT_INVALID: 'Los datos de la cuenta dividida no son válidos. Vuelve a abrir Separar pago y revisa los tickets.',
     FINANCIAL_SPLIT_CHILD_COUNT_INVALID: 'La cuenta dividida debe contener entre 2 y 8 tickets válidos.',
     FINANCIAL_SPLIT_CHILD_INVALID: 'Uno de los tickets de la cuenta dividida no es válido.',
+    FINANCIAL_SPLIT_CREDIT_CUSTOMER_MISMATCH: 'El cliente seleccionado para Fiado debe coincidir en todo el cobro dividido. Revisa el cliente y vuelve a confirmar.',
     FINANCIAL_SPLIT_LABEL_DUPLICATE: 'Los tickets de la cuenta dividida deben tener nombres únicos.',
     FINANCIAL_SPLIT_SALE_ID_DUPLICATE: 'La cuenta dividida generó identificadores repetidos. Vuelve a abrir Separar pago.',
     RESTAURANT_ORDER_NOT_FOUND: 'No se encontró la comanda cloud de la mesa. Actualiza las mesas antes de cobrar.',
@@ -299,7 +309,8 @@ const friendlyCloudCashierError = (error) => {
     RESTAURANT_ORDER_ALREADY_CANCELLED: 'La comanda de esta mesa ya fue cerrada o cancelada. Actualiza las mesas.',
     RESTAURANT_ORDER_PREFLIGHT_REQUIRED: 'No se pudo verificar la versión cloud actual de la mesa. Actualiza la mesa antes de cobrar.',
     RESTAURANT_SPLIT_TOTAL_MISMATCH: 'El total de los tickets no coincide con el total vigente de la comanda. Actualiza la mesa y vuelve a dividir.',
-    RESTAURANT_ORDER_VERSION_CONFLICT: 'La mesa cambió en otro dispositivo. Actualiza la mesa y vuelve a dividirla para proteger el cobro.',
+    RESTAURANT_ORDER_VERSION_CONFLICT: 'La mesa recibió cambios desde que la abriste. Actualízala y vuelve a intentar el cobro.',
+    RESTAURANT_ORDER_COMMERCIAL_CONFLICT: 'Los productos o importes de la mesa cambiaron. Revisa la cuenta actualizada antes de cobrar.',
     SPLIT_ROUNDING_INVALID: 'El reparto cloud solo admite diferencias de centavos. Usa reparto manual o ajusta los productos antes de cobrar.',
     SPLIT_ROUNDING_MISMATCH: 'Los centavos distribuidos en la cuenta dividida no coinciden con el total. Vuelve a abrir Separar pago.',
     CASH_SESSION_STATION_MISMATCH: 'La caja abierta pertenece a otra estación. Selecciona la caja de este dispositivo.',
@@ -833,6 +844,7 @@ export const salesCloudCashierService = {
     parentOrderId,
     parentExpectedVersion = null,
     splitGroupId,
+    splitIntent = 'by_items',
     childDefinitions = [],
     total,
     licenseDetails = null,
@@ -851,7 +863,10 @@ export const salesCloudCashierService = {
     if (hasCredit && !isCloudSalesCreditEnabled(details)) {
       throw friendlyCloudCashierError(new Error('CLOUD_SALES_CREDIT_DISABLED'));
     }
-    if (!parentOrderId || !splitGroupId || !Array.isArray(childDefinitions) || childDefinitions.length < 2) {
+    const monetarySplit = ['equal_payment', 'custom_payment'].includes(splitIntent);
+    if (!parentOrderId || !splitGroupId || !Array.isArray(childDefinitions)
+      || childDefinitions.length > 8
+      || (monetarySplit ? childDefinitions.length !== 1 : childDefinitions.length < 2)) {
       throw friendlyCloudCashierError(new Error('FINANCIAL_SPLIT_CONTRACT_INVALID'));
     }
     if (typeof parentExpectedVersion !== 'string' || !parentExpectedVersion.trim()) {
@@ -919,6 +934,8 @@ export const salesCloudCashierService = {
         parent_order_id: parentOrderId,
         parent_order_version: parentExpectedVersion,
         split_group_id: splitGroupId,
+        split_intent: splitIntent,
+        split_payers: monetarySplit ? (childDefinitions[0]?.paymentData?.payers || []) : [],
         cash_session_id: resolvedCashSessionId,
         children
       };
@@ -966,6 +983,8 @@ export const salesCloudCashierService = {
         idempotencyKey,
         inventoryEnabled,
         creditSale: hasCredit,
+        restaurantSettlement: response?.restaurant_settlement || null,
+        atomicRestaurantSettlement: response?.restaurant_settlement?.success === true,
         pendingSyncRequired: false
       };
     } catch (error) {
@@ -1024,8 +1043,10 @@ export const salesCloudCashierService = {
     }
   },
 
-  async processCloudCashierSale({ sale, processedItems = [], paymentData = {}, total, licenseDetails = null } = {}) {
+  async processCloudCashierSale({ sale, processedItems = [], paymentData = {}, total, licenseDetails = null, restaurantOrder = null } = {}) {
+    const actorHandle = actorRuntimeController.capture();
     const context = await getRuntimeContext();
+    actorHandle.assertCurrent();
     const details = licenseDetails || context.licenseDetails;
     const creditSale = isCreditLikePaymentMethod(paymentData.paymentMethod || sale?.paymentMethod || sale?.payment_method);
     const inventoryEnabled = isCloudSalesInventoryEnabled(details);
@@ -1040,8 +1061,6 @@ export const salesCloudCashierService = {
       throw friendlyCloudCashierError(new Error('CLOUD_SALES_CASHIER_DISABLED'));
     }
 
-    const actorHandle = actorRuntimeController.capture();
-
     const payload = creditSale
       ? mapLocalCreditCheckoutToCloudSale({ sale, processedItems, paymentData, total, inventoryEnabled })
       : mapLocalCheckoutToCloudSale({ sale, processedItems, paymentData, total, inventoryEnabled });
@@ -1053,15 +1072,60 @@ export const salesCloudCashierService = {
     });
 
     try {
+      let restaurantSettlement = null;
+      const cloudRestaurantAuthority = Boolean(
+        restaurantOrder?.restaurantCloudHydrated === true
+        || restaurantOrder?.reservationAuthority === 'cloud'
+        || restaurantOrder?.cloudRestaurantOrderUpdatedAt
+        || restaurantOrder?.restaurantCloudExpectedVersion
+        || restaurantOrder?.cloudRestaurantOrderServerVersion
+        || restaurantOrder?.restaurantOrderId
+        || restaurantOrder?.cloudRestaurantOrderId
+      );
+      if (cloudRestaurantAuthority) {
+        const parentOrderId = String(
+          restaurantOrder?.localOrderId
+          || restaurantOrder?.local_order_id
+          || restaurantOrder?.id
+          || sale?.id
+          || ''
+        ).trim();
+        if (!parentOrderId) throw Object.assign(new Error('RESTAURANT_PARENT_ORDER_REQUIRED'), { code: 'RESTAURANT_PARENT_ORDER_REQUIRED' });
+        actorHandle.assertCurrent();
+        const preflight = await preflightCloudRestaurantOrderSettlement({
+          licenseKey: context.licenseKey,
+          parentOrderId,
+          parentSale: restaurantOrder,
+          settlementTotal: total,
+          actorHandle
+        });
+        actorHandle.assertCurrent();
+        if (preflight?.success !== true) {
+          throw Object.assign(new Error(preflight?.message || preflight?.code || 'RESTAURANT_ORDER_PREFLIGHT_FAILED'), {
+            code: preflight?.code || 'RESTAURANT_ORDER_PREFLIGHT_FAILED',
+            response: preflight
+          });
+        }
+        const parentOrderVersion = String(preflight.parentExpectedVersion || '').trim();
+        if (!parentOrderVersion) throw Object.assign(new Error('RESTAURANT_ORDER_PREFLIGHT_REQUIRED'), { code: 'RESTAURANT_ORDER_PREFLIGHT_REQUIRED' });
+        restaurantSettlement = {
+          parent_order_id: parentOrderId,
+          parent_order_version: parentOrderVersion,
+          contract_version: 1
+        };
+      }
+
       const createSale = creditSale
         ? salesCloudRepository.createCloudCreditSale
         : (inventoryEnabled ? salesCloudRepository.createCloudCashierInventorySale : salesCloudRepository.createCloudCashierSale);
 
+      actorHandle.assertCurrent();
       const response = await createSale.call(salesCloudRepository, {
         licenseKey: context.licenseKey,
         ...payload,
         cashSessionId: paymentData.cashSessionId || paymentData.cash_session_id || null,
         customerId: payload.customerId || paymentData.customerId || sale?.customerId || null,
+        restaurantSettlement,
         idempotencyKey,
         actorHandle,
         project: applySalesFinancialResponseProjection
@@ -1086,7 +1150,17 @@ export const salesCloudCashierService = {
         });
       }
 
-      return { success: true, response, localSale, payload, idempotencyKey, inventoryEnabled, creditSale };
+      return {
+        success: true,
+        response,
+        localSale,
+        payload,
+        idempotencyKey,
+        inventoryEnabled,
+        creditSale,
+        restaurantSettlement: response?.restaurant_settlement || null,
+        atomicRestaurantSettlement: response?.restaurant_settlement?.success === true
+      };
     } catch (error) {
       Logger.error('[SalesCloud/Cashier] Venta cloud no confirmada:', error);
       throw friendlyCloudCashierError(error);

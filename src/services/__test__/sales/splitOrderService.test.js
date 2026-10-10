@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../sales/postSaleEffects', () => ({
-  runPostSaleEffects: vi.fn(async () => undefined)
+  runPostSaleEffects: vi.fn(async () => undefined),
+  runPostSaleEffectsForCloudCommittedSale: vi.fn(async () => undefined)
 }));
 
 vi.mock('../../salesCloud/salesCloudShadowService', () => ({
@@ -20,7 +21,7 @@ import { splitOpenTableOrderCore } from '../../sales/splitOrderService';
 import { mapLocalCheckoutToCloudSale } from '../../salesCloud/salesCloudCashierMapper';
 import { salesCloudCashierService } from '../../salesCloud/salesCloudCashierService';
 import { buildRestaurantOrderPayloadFromOpenSale } from '../../restaurant/restaurantOrderMapper';
-import { runPostSaleEffects } from '../../sales/postSaleEffects';
+import { runPostSaleEffects, runPostSaleEffectsForCloudCommittedSale } from '../../sales/postSaleEffects';
 import { salesCloudShadowService } from '../../salesCloud/salesCloudShadowService';
 
 const buildParentSale = () => ({
@@ -126,7 +127,42 @@ describe('splitOpenTableOrderCore', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     runPostSaleEffects.mockImplementation(async () => undefined);
+    runPostSaleEffectsForCloudCommittedSale.mockImplementation(async () => undefined);
     salesCloudShadowService.syncSaleShadowAfterLocalCommit.mockResolvedValue({ skipped: true });
+  });
+
+  it.each([true, false])('settles hydrated remote split through Cloud only with Cloud=%s', async (cloudSpecialFlows) => {
+    const parent = {
+      ...buildParentSale(),
+      restaurantCloudHydrated: true,
+      reservationAuthority: 'cloud',
+      restaurantCloudExpectedVersion: '2026-09-28T16:05:05.123456Z',
+      cloudUpdatedAt: '2026-09-28T16:05:05.123456Z'
+    };
+    const deps = makeDeps(parent);
+    const result = await splitOpenTableOrderCore(makeParams(parent, { cloudSpecialFlows }), deps);
+    expectNoCommitOrShadow(deps);
+    if (cloudSpecialFlows) {
+      expect(result).toMatchObject({ success: true, cloudCommitted: true, sourceMode: 'cloud_committed' });
+      expect(salesCloudCashierService.processCloudSplitTableSale).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({
+        parentOrderId: parent.id,
+        parentExpectedVersion: expect.any(String)
+      }));
+      expect(deps.restaurantOrdersRepository.getRestaurantOrderByLocalOrder).toHaveBeenCalledTimes(1);
+    } else {
+      expect(result).toMatchObject({ success: false, code: 'RESTAURANT_CLOUD_SETTLEMENT_REQUIRED' });
+      expect(salesCloudCashierService.processCloudSplitTableSale).not.toHaveBeenCalled();
+      expect(deps.restaurantOrdersRepository.getRestaurantOrderByLocalOrder).not.toHaveBeenCalled();
+    }
+  });
+
+  it.each([true, false])('blocks local-origin terminal evidence before split with Cloud=%s', async (cloudSpecialFlows) => {
+    const parent = { ...buildParentSale(), restaurantCloudTerminalState: 'terminal', restaurantCloudTerminalPaymentStatus: 'paid' };
+    const deps = makeDeps(parent);
+    const result = await splitOpenTableOrderCore(makeParams(parent, { cloudSpecialFlows }), deps);
+    expect(result).toMatchObject({ success: false, code: 'RESTAURANT_ORDER_ALREADY_PAID' });
+    expectNoCommitOrShadow(deps);
+    expect(salesCloudCashierService.processCloudSplitTableSale).not.toHaveBeenCalled();
   });
 
   it('splits table order into closed child sales and returns cloud-safe split payload', async () => {
@@ -1145,26 +1181,100 @@ describe('splitOpenTableOrderCore', () => {
     }
   });
 
-  it('rejects legacy equal as deferred equal_payment before either local or cloud execution', async () => {
+  it('accepts card and transfer per item ticket without recording cash tender', async () => {
+    const parentSale = buildParentSale();
+    const deps = makeDeps(parentSale);
+    const result = await splitOpenTableOrderCore(
+      makeParams(parentSale, {
+        tickets: [
+          { label: 'T1', paymentData: { paymentMethod: 'tarjeta', amountPaid: '250' }, lines: [{ lineIndex: 0, quantity: 1 }] },
+          { label: 'T2', paymentData: { paymentMethod: 'transferencia', amountPaid: '250' }, lines: [{ lineIndex: 0, quantity: 1 }] }
+        ]
+      }),
+      deps
+    );
+
+    expect(result.success, result.message).toBe(true);
+    const payload = deps.executeSplitOpenTableOrderTransactionSafe.mock.calls[0][0];
+    expect(payload.childPayloads.map(({ sale }) => sale.paymentMethod)).toEqual(['tarjeta', 'transferencia']);
+    expect(payload.childPayloads.map(({ sale }) => sale.payments[0].method)).toEqual(['card', 'transfer']);
+    expect(payload.childPayloads.map(({ sale }) => sale.payments[0].amount)).toEqual(['250', '250']);
+    expect(payload.childPayloads.every(({ sale }) => sale.payments[0].change_amount === '0')).toBe(true);
+  });
+
+  it('maps legacy equal to one sale and keeps every original item together', async () => {
     const parentSale = buildParentSale();
 
     for (const cloudSpecialFlows of [false, true]) {
       const deps = makeDeps(parentSale);
       const result = await splitOpenTableOrderCore(
-        makeParams(parentSale, { splitIntent: undefined, mode: 'equal', cloudSpecialFlows }),
+        makeParams(parentSale, {
+          splitIntent: undefined,
+          mode: 'equal',
+          cloudSpecialFlows,
+          cashSessionId: cloudSpecialFlows ? 'cash-session-1' : null,
+          tickets: [
+            { label: 'T1', amountCents: 25000, paymentData: { paymentMethod: 'efectivo', amountPaid: '250' }, lines: [] },
+            { label: 'T2', amountCents: 25000, paymentData: { paymentMethod: 'tarjeta', amountPaid: '250' }, lines: [] }
+          ]
+        }),
         deps
       );
 
-      expect(result).toMatchObject({
-        success: false,
-        splitIntent: 'equal_payment',
-        errorType: 'SPLIT_INTENT_NOT_SUPPORTED',
-        code: 'SPLIT_INTENT_NOT_SUPPORTED'
-      });
-      expect(deps.loadData).not.toHaveBeenCalled();
-      expectNoCommitOrShadow(deps);
-      expect(salesCloudCashierService.processCloudSplitTableSale).not.toHaveBeenCalled();
+      expect(result.success, result.message).toBe(true);
+      expect(result.splitIntent).toBe('equal_payment');
+
+      if (cloudSpecialFlows) {
+        const cloudCall = salesCloudCashierService.processCloudSplitTableSale.mock.calls.at(-1)[0];
+        expect(cloudCall.splitIntent).toBe('equal_payment');
+        expect(cloudCall.childDefinitions).toHaveLength(1);
+        expect(cloudCall.childDefinitions[0].processedItems).toHaveLength(1);
+        expect(cloudCall.childDefinitions[0].paymentData.payments).toHaveLength(2);
+        expect(cloudCall.childDefinitions[0].sale.items[0]).toMatchObject({ id: 'prod-1', quantity: 2, price: 250 });
+        expect(deps.executeSplitOpenTableOrderTransactionSafe).not.toHaveBeenCalled();
+      } else {
+        const transaction = deps.executeSplitOpenTableOrderTransactionSafe.mock.calls[0][0];
+        expect(result.childSales).toHaveLength(1);
+        expect(result.childSales[0].items).toHaveLength(1);
+        expect(result.childSales[0].items[0]).toMatchObject({ id: 'prod-1', quantity: 2, price: 250 });
+        expect(transaction.splitIntent).toBe('equal_payment');
+        expect(transaction.childPayloads).toHaveLength(1);
+        expect(transaction.childPayloads[0].sale.items).toHaveLength(1);
+        expect(salesCloudCashierService.processCloudSplitTableSale).not.toHaveBeenCalled();
+      }
     }
+  });
+
+  it('keeps custom monetary shares and a cash Fiado abono in one sale', async () => {
+    const parentSale = buildParentSale();
+    const deps = makeDeps(parentSale);
+    const result = await splitOpenTableOrderCore(
+      makeParams(parentSale, {
+        splitIntent: 'custom_payment',
+        tickets: [
+          { label: 'T1', amountCents: 20000, paymentData: { paymentMethod: 'tarjeta', amountPaid: '200' }, lines: [] },
+          { label: 'T2', amountCents: 30000, paymentData: { paymentMethod: 'fiado', amountPaid: '100', receivedAmount: '125', initialPaymentMethod: 'efectivo', customerId: 'cust-1' }, lines: [] }
+        ]
+      }),
+      deps
+    );
+
+    expect(result.success, result.message).toBe(true);
+    const transaction = deps.executeSplitOpenTableOrderTransactionSafe.mock.calls[0][0];
+    expect(transaction.splitIntent).toBe('custom_payment');
+    expect(transaction.childPayloads).toHaveLength(1);
+    expect(transaction.childPayloads[0].sale).toMatchObject({
+      paymentMethod: 'fiado',
+      abono: '300',
+      saldoPendiente: '200'
+    });
+    expect(transaction.childPayloads[0].sale.items).toEqual([
+      expect.objectContaining({ id: 'prod-1', quantity: 2, price: 250 })
+    ]);
+    expect(transaction.childPayloads[0].sale.payments).toEqual([
+      expect.objectContaining({ method: 'card', amount: '200', metadata: { splitPayerId: 'T1', source: 'restaurant_split' } }),
+      expect.objectContaining({ method: 'cash', amount: '100', received_amount: '125', change_amount: '25', metadata: { splitPayerId: 'T2', source: 'restaurant_split' } })
+    ]);
   });
 
   it('does not block successful split when post-sale effects fail for a child', async () => {

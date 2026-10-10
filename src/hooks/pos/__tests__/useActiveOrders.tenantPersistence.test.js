@@ -11,7 +11,6 @@ import {
   clearActiveTenantStorageNamespace,
   markTenantStorageReady,
   resumeTenantStorageWrites,
-  setActiveTenantStorageNamespace
 } from '../../../services/tenant/tenantScopedStorage';
 import {
   activateActorScopedStorage,
@@ -24,7 +23,6 @@ import { closeTenantRuntime, db, getActiveTenantRuntime, markTenantRuntimeReady,
 import { DATABASE_RECOVERY_STATUS, getDatabaseRecoveryState } from '../../../services/db/databaseRecoveryState';
 import { resolveActiveTenantIdentity } from '../../../services/tenant/localTenantGuard';
 
-const opaque = 't_dddddddddddddddddddddddddddddddd';
 const actorKey = 'admin:persistence-test';
 const logicalKey = 'lanzo-active-orders-storage';
 const fixture = JSON.stringify({
@@ -80,14 +78,13 @@ afterEach(() => {
 
 describe('active orders tenant persistence', () => {
   it('hydrates a preseeded payload and never overwrites it during lock/logout reset', async () => {
-    const tenant = Object.freeze({
-      opaqueId: opaque,
-      databaseName: `LanzoDB_t_${opaque}`,
-      generation: 1
-    });
-    setActiveTenantStorageNamespace(opaque);
+    const identity = await resolveActiveTenantIdentity({ license_key: `PERSIST-SEED-${crypto.randomUUID()}` });
     localTenantAccessController.enable('test');
-    localTenantAccessController.grant({ aliases: ['license-key-sha256:test'], authority: 'license_key_sha256' });
+    await openTenantRuntime(identity);
+    await writeTrustedBindingToActiveRuntime(identity);
+    await markTenantRuntimeReady();
+    const tenant = getActiveTenantRuntime();
+    localTenantAccessController.grant(identity, 'ready');
     markTenantStorageReady();
     resumeTenantStorageWrites();
     await prepareActorStorage(tenant, 1);
@@ -104,7 +101,7 @@ describe('active orders tenant persistence', () => {
     expect(useActiveOrders.getState().activeOrders.size).toBe(0);
     expect(localStorage.getItem(key)).toBe(fixture);
 
-    localTenantAccessController.grant({ aliases: ['license-key-sha256:test'], authority: 'license_key_sha256' });
+    localTenantAccessController.grant(identity, 'reopen');
     markTenantStorageReady();
     await prepareActorStorage(tenant, 3);
     await resetAndHydrateActiveOrdersForTenant();

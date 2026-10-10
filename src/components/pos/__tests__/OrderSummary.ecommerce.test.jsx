@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -8,11 +8,17 @@ const mocks = vi.hoisted(() => ({
   appState: null,
   navigate: vi.fn(),
   showConfirmModal: vi.fn(),
-  showMessageModal: vi.fn()
+  showMessageModal: vi.fn(),
+  reportAuthority: vi.fn()
 }));
 
 vi.mock('react-router-dom', () => ({
   useNavigate: () => mocks.navigate
+}));
+
+vi.mock('../../../services/auth/actorAuthorityRecovery', () => ({
+  getActorAuthorityRecoverySnapshot: () => ({ requiresReauthentication: true }),
+  reportActorAuthorityError: (...args) => mocks.reportAuthority(...args)
 }));
 
 vi.mock('../../../hooks/useFeatureConfig', () => ({
@@ -177,6 +183,19 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe('OrderSummary ecommerce discount slots', () => {
+  it('routes locked cancellation to authority recovery and preserves the cart', async () => {
+    setOrder(undefined);
+    const error = Object.assign(new Error('ACTOR_CONTEXT_LOCKED'), { code: 'ACTOR_CONTEXT_LOCKED' });
+    mocks.activeState.cancelCurrentOrder.mockRejectedValue(error);
+    mocks.reportAuthority.mockReturnValue(true);
+    render(<OrderSummary {...props} />);
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Cancelar' })); });
+    expect(mocks.activeState.cancelCurrentOrder).toHaveBeenCalled();
+    expect(mocks.reportAuthority).toHaveBeenCalledWith(error, expect.objectContaining({ operation: 'cancel_order' }));
+    expect(mocks.activeState.activeOrders.get('active-order').items).toHaveLength(1);
+    expect(mocks.showMessageModal).not.toHaveBeenCalledWith('ACTOR_CONTEXT_LOCKED', null, expect.anything());
+  });
+
   it('does not expose restaurant discount triggers or panels for ecommerce', () => {
     render(<OrderSummary {...props} />);
 
@@ -207,6 +226,20 @@ describe('OrderSummary ecommerce discount slots', () => {
     expect(screen.getByText('3 pza × $15.00/pza')).toBeInTheDocument();
     expect(screen.getByText('Fraccionado · Venta por pza')).toBeInTheDocument();
     expect(screen.queryByText(/c\/u/i)).not.toBeInTheDocument();
+  });
+
+  it('renders a hydrated remote table shadow with the numeric POS price contract', () => {
+    setOrder(undefined);
+    const order = mocks.activeState.activeOrders.get('active-order');
+    order.restaurantCloudHydrated = true;
+    order.items = [{ id: 'pizza-qa', lineId: 'pizza-qa-line', name: 'Pizza QA', quantity: 1, price: 300 }];
+    order.total = 300;
+
+    render(<OrderSummary {...props} />);
+
+    expect(screen.getByText('Pizza QA')).toBeInTheDocument();
+    expect(screen.getByText('1 pza × $300.00/pza')).toBeInTheDocument();
+    expect(screen.getAllByText('$300.00').length).toBeGreaterThan(0);
   });
 
   it('keeps a decimal bulk quantity when editing a measurement sale', () => {

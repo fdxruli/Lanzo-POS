@@ -8,6 +8,11 @@ import { salesCloudShadowService } from '../salesCloud/salesCloudShadowService';
 import { salesCloudCashierService } from '../salesCloud/salesCloudCashierService';
 import { restaurantOrdersRepository } from '../restaurant/restaurantOrdersRepository';
 import { preflightCloudRestaurantOrderSplit } from '../restaurant/restaurantSplitCloudPreflight';
+import {
+    isRestaurantCloudTableSettlementRequired,
+    isRestaurantCloudTableTerminal,
+    restaurantCloudTableTerminalBlockedResult
+} from '../restaurant/restaurantCloudTableGuards';
 import { getLicenseKeyFromDetails } from '../sync/syncConstants';
 import {
     calculateByItemsTicketFinancials,
@@ -15,6 +20,11 @@ import {
     RESTAURANT_SPLIT_INTENTS,
     roundSplitAmountToCents
 } from './splitOrderContract';
+import {
+    normalizeRestaurantSplitPaymentMethod,
+    toLegacyRestaurantSplitPaymentMethod
+} from './paymentMethodContract';
+import { buildRestaurantSplitPaymentPlan } from './restaurantSplitPayments';
 
 const TABLE_ORDER_TYPE = 'table';
 const OPEN_STATUS = SALE_STATUS.OPEN;
@@ -368,31 +378,59 @@ const normalizeTicketPayment = async ({
     customerMap,
     customerDebtAccumulator
 }) => {
-    const paymentMethod = String(paymentData?.paymentMethod || '').trim().toLowerCase();
-    if (paymentMethod !== 'efectivo' && paymentMethod !== 'fiado') {
+    const normalizedMethod = normalizeRestaurantSplitPaymentMethod(paymentData?.paymentMethod);
+    if (!['cash', 'card', 'transfer', 'credit'].includes(normalizedMethod)) {
         throw new Error(`Método de pago inválido para ticket ${label}.`);
     }
 
     const ticketTotal = Money.fromCents(ticketTotalCents);
-    const rawPaid = toMoneySafe(paymentData?.amountPaid, '0');
+    const parseCents = (value) => {
+        if (typeof value !== 'string' && typeof value !== 'number') return null;
+        const candidate = String(value).trim().replace(',', '.');
+        if (!/^\d+(?:\.\d{1,2})?$/.test(candidate)) return null;
+        try { return Money.toCents(candidate); } catch { return null; }
+    };
+    const defaultPaid = normalizedMethod === 'credit' ? '0' : Money.toExactString(ticketTotal);
+    const rawPaidCents = parseCents(paymentData?.amountPaid ?? defaultPaid);
+    if (rawPaidCents === null) throw new Error(`El monto de ${label} debe tener máximo dos decimales.`);
+    const rawPaid = Money.fromCents(rawPaidCents);
 
     if (rawPaid.lt(0)) {
         throw new Error(`El monto pagado no puede ser negativo en ticket ${label}.`);
     }
 
-    if (paymentMethod === 'efectivo') {
+    if (normalizedMethod === 'cash' || normalizedMethod === 'card' || normalizedMethod === 'transfer') {
         if (rawPaid.lt(ticketTotal)) {
-            throw new Error(`El ticket ${label} en efectivo requiere monto completo.`);
+            throw new Error(`El pago de ${label} debe cubrir su total.`);
         }
-
-        const appliedPaid = rawPaid.gt(ticketTotal) ? ticketTotal : rawPaid;
+        if (normalizedMethod !== 'cash' && !rawPaid.eq(ticketTotal)) {
+            throw new Error(`El pago de ${label} debe coincidir con el total exacto.`);
+        }
+        const receivedCents = normalizedMethod === 'cash'
+            ? parseCents(paymentData?.receivedAmount ?? paymentData?.amountPaid ?? defaultPaid)
+            : ticketTotalCents;
+        if (receivedCents === null || receivedCents < ticketTotalCents) {
+            throw new Error(`El monto recibido de ${label} no cubre su total.`);
+        }
+        const changeCents = normalizedMethod === 'cash' ? receivedCents - ticketTotalCents : 0;
+        const method = normalizedMethod;
 
         return {
-            paymentMethod,
+            paymentMethod: toLegacyRestaurantSplitPaymentMethod(method),
             customerId: paymentData?.customerId || null,
-            amountPaid: Money.toExactString(appliedPaid),
+            amountPaid: Money.toExactString(ticketTotal),
             saldoPendiente: '0',
-            sendReceipt: Boolean(paymentData?.sendReceipt)
+            sendReceipt: Boolean(paymentData?.sendReceipt),
+            receivedAmount: Money.toExactString(Money.fromCents(receivedCents)),
+            changeAmount: Money.toExactString(Money.fromCents(changeCents)),
+            paymentReference: typeof paymentData?.paymentReference === 'string' ? paymentData.paymentReference.trim().slice(0, 100) || null : null,
+            payments: [{
+                method,
+                amount: Money.toExactString(ticketTotal),
+                received_amount: Money.toExactString(Money.fromCents(receivedCents)),
+                change_amount: Money.toExactString(Money.fromCents(changeCents)),
+                reference: typeof paymentData?.paymentReference === 'string' ? paymentData.paymentReference.trim().slice(0, 100) || null : null
+            }]
         };
     }
 
@@ -422,12 +460,41 @@ const normalizeTicketPayment = async ({
 
     customerDebtAccumulator.set(customerId, Money.add(pendingAccum, saldoPendiente));
 
+    const initialPaymentMethod = normalizeRestaurantSplitPaymentMethod(paymentData?.initialPaymentMethod || 'cash');
+    if (!['cash', 'card', 'transfer'].includes(initialPaymentMethod)) {
+        throw new Error(`El método del abono inicial de ${label} no es válido.`);
+    }
+    const initialPaymentReceivedCents = rawPaid.eq(0)
+        ? 0
+        : (initialPaymentMethod === 'cash'
+            ? parseCents(paymentData?.receivedAmount ?? paymentData?.amountPaid ?? '0')
+            : rawPaidCents);
+    if (initialPaymentReceivedCents === null || initialPaymentReceivedCents < rawPaidCents
+        || (initialPaymentMethod !== 'cash' && initialPaymentReceivedCents !== rawPaidCents)) {
+        throw new Error(`El abono inicial de ${label} no coincide con su método.`);
+    }
+    const initialChangeCents = initialPaymentMethod === 'cash'
+        ? initialPaymentReceivedCents - rawPaidCents
+        : 0;
+    const reference = typeof paymentData?.paymentReference === 'string' ? paymentData.paymentReference.trim().slice(0, 100) || null : null;
+
     return {
-        paymentMethod,
+        paymentMethod: 'fiado',
         customerId,
         amountPaid: Money.toExactString(rawPaid),
         saldoPendiente: Money.toExactString(saldoPendiente),
-        sendReceipt: Boolean(paymentData?.sendReceipt)
+        sendReceipt: Boolean(paymentData?.sendReceipt),
+        initialPaymentMethod,
+        receivedAmount: Money.toExactString(Money.fromCents(initialPaymentReceivedCents)),
+        changeAmount: Money.toExactString(Money.fromCents(initialChangeCents)),
+        paymentReference: reference,
+        payments: rawPaid.gt(0) ? [{
+            method: initialPaymentMethod,
+            amount: Money.toExactString(rawPaid),
+            received_amount: Money.toExactString(Money.fromCents(initialPaymentReceivedCents)),
+            change_amount: Money.toExactString(Money.fromCents(initialChangeCents)),
+            reference
+        }] : []
     };
 };
 
@@ -444,11 +511,7 @@ const ensureValidSplitRequest = ({ parentSale, splitIntent, tickets }) => {
         throw new Error('Solo se pueden dividir órdenes de mesa.');
     }
 
-    if (splitIntent !== RESTAURANT_SPLIT_INTENTS.BY_ITEMS) {
-        throw new Error('La división debe asignar productos a cada ticket.');
-    }
-
-    if (!Array.isArray(tickets) || tickets.length < 2) {
+    if (!Array.isArray(tickets) || tickets.length < 2 || tickets.length > 8) {
         throw new Error('Se requieren al menos dos tickets para dividir.');
     }
 
@@ -462,6 +525,11 @@ const ensureValidSplitRequest = ({ parentSale, splitIntent, tickets }) => {
     // Validate each ticket has a label
     if (labels.some((l) => !l)) {
         throw new Error('Todos los tickets deben tener una etiqueta válida.');
+    }
+
+    if (splitIntent !== RESTAURANT_SPLIT_INTENTS.BY_ITEMS
+        && ![RESTAURANT_SPLIT_INTENTS.EQUAL_PAYMENT, RESTAURANT_SPLIT_INTENTS.CUSTOM_PAYMENT].includes(splitIntent)) {
+        throw new Error('La estrategia de división no es válida.');
     }
 };
 
@@ -509,6 +577,11 @@ const buildChildSaleRecord = ({
     paymentMethod: normalizedPayment.paymentMethod,
     abono: normalizedPayment.amountPaid,
     saldoPendiente: normalizedPayment.saldoPendiente,
+    payments: Array.isArray(normalizedPayment.payments) ? normalizedPayment.payments : [],
+    receivedAmount: normalizedPayment.receivedAmount || normalizedPayment.amountPaid,
+    changeAmount: normalizedPayment.changeAmount || '0',
+    paymentReference: normalizedPayment.paymentReference || null,
+    initialPaymentMethod: normalizedPayment.initialPaymentMethod || null,
     status: SALE_STATUS.CLOSED,
     orderType: parentSale.orderType || TABLE_ORDER_TYPE,
     tableData: parentSale.tableData || null,
@@ -537,7 +610,7 @@ const buildChildSaleRecord = ({
     }
 });
 
-const buildSplitPaymentSummary = ({ splitGroupId, parentOrderId, splitIntent, childDefinitions = [], totalChildrenCents, sourceMode = 'shadow/local_applied' }) => {
+const buildSplitPaymentSummary = ({ splitGroupId, parentOrderId, splitIntent, childDefinitions = [], payers = [], paymentCount = 0, totalChildrenCents, sourceMode = 'shadow/local_applied' }) => {
     const tickets = childDefinitions.map((child) => ({
         label: child.label,
         saleId: child.sale.id,
@@ -559,6 +632,9 @@ const buildSplitPaymentSummary = ({ splitGroupId, parentOrderId, splitIntent, ch
         splitIntent,
         childSaleIds: childDefinitions.map((child) => child.sale.id),
         tickets,
+        payers,
+        payerCount: payers.length || childDefinitions.length,
+        paymentCount,
         methods: Array.from(methodSet),
         amountPaidTotal: Money.toExactString(amountPaidTotal),
         balanceDueTotal: Money.toExactString(balanceDueTotal),
@@ -615,6 +691,15 @@ export const splitOpenTableOrderCore = async ({
         }
 
         const parentSale = await loadData(STORES.SALES, parentOrderId);
+        if (isRestaurantCloudTableTerminal(parentSale)) return restaurantCloudTableTerminalBlockedResult(parentSale);
+        if (isRestaurantCloudTableSettlementRequired(parentSale) && !cloudSpecialFlows) {
+            return {
+                success: false,
+                errorType: 'RESTAURANT_CLOUD_SETTLEMENT_REQUIRED',
+                code: 'RESTAURANT_CLOUD_SETTLEMENT_REQUIRED',
+                message: 'La comanda cloud requiere una caja conectada para validar y liquidar la mesa. No se cobró localmente.'
+            };
+        }
         ensureValidSplitRequest({ parentSale, splitIntent, tickets });
 
         const parentItems = (Array.isArray(parentSale.items) ? parentSale.items : [])
@@ -634,10 +719,40 @@ export const splitOpenTableOrderCore = async ({
             };
         }
 
-        // Extract ticket labels in order
-        const ticketLabels = tickets.map((t) => toLabel(t.label));
+        // Monetary splits keep every original item on one commercial sale.
+        // The payer rows below only distribute the amount; they never create
+        // fractional products or additional inventory deductions.
+        const parentTotalCents = Money.toCents(parentSale.total || 0);
+        let paymentPlan = null;
+        let executionTickets = tickets;
+        if (splitIntent !== RESTAURANT_SPLIT_INTENTS.BY_ITEMS) {
+            paymentPlan = buildRestaurantSplitPaymentPlan({ splitIntent, totalCents: parentTotalCents, tickets });
+            if (!paymentPlan.valid) {
+                const messages = {
+                    SPLIT_EQUAL_DISTRIBUTION_INVALID: 'La distribución igualitaria cambió. Revisa los importes y vuelve a confirmar.',
+                    SPLIT_CUSTOM_INCOMPLETE: 'Distribuye el total completo antes de cobrar.',
+                    SPLIT_CUSTOM_EXCEEDS_TOTAL: 'La suma de los importes supera el total de la cuenta.',
+                    SPLIT_MULTIPLE_CREDIT_PAGERS_UNSUPPORTED: 'Solo una persona puede dejar saldo a Fiado en una misma división monetaria.',
+                    SPLIT_CREDIT_CUSTOMER_REQUIRED: 'Selecciona un cliente financiero para la persona que dejará saldo a Fiado.'
+                };
+                return {
+                    success: false,
+                    errorType: paymentPlan.code,
+                    code: paymentPlan.code,
+                    splitIntent,
+                    message: messages[paymentPlan.code] || 'Los importes y métodos de pago no forman una distribución válida.'
+                };
+            }
+            executionTickets = [{
+                label: 'Cuenta',
+                lines: parentItems.map((item, lineIndex) => ({ lineIndex, quantity: normalizeQuantity(item.quantity) })),
+                paymentData: paymentPlan
+            }];
+        }
 
-        const allocationMap = buildAllocationMap(tickets, parentItems.length);
+        const ticketLabels = executionTickets.map((t) => toLabel(t.label));
+
+        const allocationMap = buildAllocationMap(executionTickets, parentItems.length);
         const { childItems, childSourceLineIndices } = buildChildItemsFromAllocation({
             parentItems,
             allocationMap,
@@ -675,7 +790,15 @@ export const splitOpenTableOrderCore = async ({
                 message: 'La diferencia entre los productos, descuentos y total de la cuenta supera el redondeo permitido. No se alteraron precios ni descuentos; revisa la cuenta antes de cobrar.'
             };
         }
-        const parentTotalCents = splitFinancials.parentTotalCents;
+        if (splitFinancials.parentTotalCents !== parentTotalCents) {
+            return {
+                success: false,
+                errorType: 'SPLIT_TOTAL_SNAPSHOT_MISMATCH',
+                code: 'SPLIT_TOTAL_SNAPSHOT_MISMATCH',
+                splitIntent,
+                message: 'El total de la cuenta cambió. Revisa la cuenta antes de volver a cobrar.'
+            };
+        }
         const ticketFinancialsByLabel = new Map(
             splitFinancials.tickets.map((financials) => [toLabel(financials.label), financials])
         );
@@ -705,12 +828,17 @@ export const splitOpenTableOrderCore = async ({
 
         // Precargar todos los clientes que usarán método de pago 'fiado' en paralelo
         const customerIdsToLoad = new Set();
-        ticketLabels.forEach((label) => {
-            const ticketDefinition = getTicketDefinitionByLabel(tickets, label);
-            const method = String(ticketDefinition?.paymentData?.paymentMethod || '').toLowerCase();
-            const cid = ticketDefinition?.paymentData?.customerId;
-            if (method === 'fiado' && cid) customerIdsToLoad.add(cid);
-        });
+        if (paymentPlan) {
+            paymentPlan.payers.filter((payer) => payer.method === 'credit' && payer.customerId)
+                .forEach((payer) => customerIdsToLoad.add(payer.customerId));
+        } else {
+            ticketLabels.forEach((label) => {
+                const ticketDefinition = getTicketDefinitionByLabel(executionTickets, label);
+                const method = normalizeRestaurantSplitPaymentMethod(ticketDefinition?.paymentData?.paymentMethod);
+                const cid = ticketDefinition?.paymentData?.customerId;
+                if (method === 'credit' && cid) customerIdsToLoad.add(cid);
+            });
+        }
 
         const customerMap = new Map();
         if (customerIdsToLoad.size > 0) {
@@ -721,7 +849,7 @@ export const splitOpenTableOrderCore = async ({
         // Process each ticket dynamically
         for (let i = 0; i < ticketLabels.length; i++) {
             const label = ticketLabels[i];
-            const ticketDefinition = getTicketDefinitionByLabel(tickets, label);
+            const ticketDefinition = getTicketDefinitionByLabel(executionTickets, label);
             const ticketItems = childItems.get(label);
             const ticketFinancials = ticketFinancialsByLabel.get(label);
             const ticketAdjustmentCents = ticketFinancials.roundingAdjustmentCents;
@@ -747,13 +875,45 @@ export const splitOpenTableOrderCore = async ({
                 itemToAdjust.splitRoundingAdjustment = centsToMoneyString(ticketAdjustmentCents);
             }
 
-            const normalizedPayment = await normalizeTicketPayment({
-                label,
-                paymentData: ticketDefinition?.paymentData || {},
-                ticketTotalCents,
-                customerMap,
-                customerDebtAccumulator
-            });
+            let normalizedPayment;
+            if (paymentPlan) {
+                const creditPayer = paymentPlan.payers.find((payer) => payer.method === 'credit');
+                if (creditPayer) {
+                    const customer = customerMap.get(creditPayer.customerId);
+                    if (!customer) throw new Error('El cliente financiero seleccionado ya no está disponible.');
+                    const creditLimit = toMoneySafe(customer.creditLimit, '0');
+                    const currentDebt = toMoneySafe(customer.debt, '0');
+                    const projectedDebt = Money.add(currentDebt, paymentPlan.balanceDue);
+                    if (creditLimit.eq(0) || projectedDebt.gt(creditLimit)) {
+                        throw new Error(`El fiado de ${creditPayer.label} supera el límite de crédito de ${customer.name}.`);
+                    }
+                }
+                normalizedPayment = {
+                    paymentMethod: paymentPlan.paymentMethod,
+                    customerId: paymentPlan.customerId,
+                    amountPaid: paymentPlan.amountPaid,
+                    saldoPendiente: paymentPlan.balanceDue,
+                    payments: paymentPlan.payments,
+                    receivedAmount: Money.toExactString(paymentPlan.payments.reduce(
+                        (sum, payment) => Money.add(sum, payment.received_amount || payment.amount),
+                        Money.init(0)
+                    )),
+                    changeAmount: paymentPlan.changeAmount,
+                    initialPaymentMethod: creditPayer?.initialPaymentMethod || null,
+                    paymentReference: null,
+                    sendReceipt: Boolean(ticketDefinition?.paymentData?.sendReceipt),
+                    payers: paymentPlan.payers,
+                    payerCount: paymentPlan.payerCount
+                };
+            } else {
+                normalizedPayment = await normalizeTicketPayment({
+                    label,
+                    paymentData: ticketDefinition?.paymentData || {},
+                    ticketTotalCents,
+                    customerMap,
+                    customerDebtAccumulator
+                });
+            }
 
             const { processedItems, batchesToDeduct } = buildProcessedItemsAndDeductions({
                 itemsToProcess: ticketItems,
@@ -807,6 +967,7 @@ export const splitOpenTableOrderCore = async ({
                 parentOrderId,
                 parentExpectedVersion: cloudPreflight.parentExpectedVersion,
                 splitGroupId,
+                splitIntent,
                 childDefinitions,
                 total: centsToMoneyString(totalChildrenCents),
                 licenseDetails,
@@ -817,21 +978,25 @@ export const splitOpenTableOrderCore = async ({
 
             await Promise.all(childDefinitions.map(async (child, index) => {
                 const projectedSale = cloudResult.childSales?.[index] || child.sale;
-                await runPostSaleEffectsForCloudCommittedSale({
-                    sale: projectedSale,
-                    processedItems: child.processedItems,
-                    paymentData: child.paymentData,
-                    total: child.sale.total,
-                    companyName,
-                    features,
-                    loadData,
-                    saveData: async () => true,
-                    STORES,
-                    useStatsStore,
-                    roundCurrency,
-                    sendReceiptWhatsApp,
-                    Logger
-                });
+                try {
+                    await runPostSaleEffectsForCloudCommittedSale({
+                        sale: projectedSale,
+                        processedItems: child.processedItems,
+                        paymentData: child.paymentData,
+                        total: child.sale.total,
+                        companyName,
+                        features,
+                        loadData,
+                        saveData: async () => true,
+                        STORES,
+                        useStatsStore,
+                        roundCurrency,
+                        sendReceiptWhatsApp,
+                        Logger
+                    });
+                } catch (postError) {
+                    Logger.warn('Post-Sale Effects Failed in Cloud Split Bill (Non-Blocking):', postError);
+                }
             }));
 
             const paymentSummary = buildSplitPaymentSummary({
@@ -839,6 +1004,8 @@ export const splitOpenTableOrderCore = async ({
                 parentOrderId,
                 splitIntent,
                 childDefinitions,
+                payers: paymentPlan?.payers || [],
+                paymentCount: childDefinitions.reduce((sum, child) => sum + (child.paymentData.payments?.length || 0), 0),
                 totalChildrenCents,
                 sourceMode: 'cloud_committed'
             });
@@ -856,6 +1023,7 @@ export const splitOpenTableOrderCore = async ({
             parentOrderId,
             parentExpectedVersion: buildParentSnapshotVersion(parentSale),
             splitGroupId,
+            splitIntent,
             childPayloads: childDefinitions.map((child) => ({
                 sale: child.sale,
                 deductions: child.deductions
@@ -914,6 +1082,8 @@ export const splitOpenTableOrderCore = async ({
             parentOrderId,
             splitIntent,
             childDefinitions,
+            payers: paymentPlan?.payers || [],
+            paymentCount: childDefinitions.reduce((sum, child) => sum + (child.paymentData.payments?.length || 0), 0),
             totalChildrenCents
         });
 

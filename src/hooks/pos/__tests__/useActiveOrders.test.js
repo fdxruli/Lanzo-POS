@@ -100,6 +100,7 @@ import {
   useActiveOrders
 } from '../useActiveOrders';
 import { showMessageModal } from '../../../services/utils';
+import { commitStock, releaseCommittedStock } from '../../../services/sales/inventoryFlow';
 
 const makeOrder = (id, items = []) => ({
   id,
@@ -126,6 +127,111 @@ describe('useActiveOrders unified store', () => {
       isCurrentOrderLocked: false,
       pendingInventoryResolutions: new Map()
     });
+  });
+
+  const remoteSale = () => ({
+    ...makeOrder('remote-table', [{ id: 'pizza', productId: 'pizza', lineId: 'original-line', price: '80', unitPrice: '80', lineTotal: '70', quantity: 1, selectedModifiers: [] }]),
+    status: 'open', isSaved: true, tableData: 'Mesa remota',
+    total: '70', subtotal: '80', discountTotal: '10', currency: 'MXN',
+    saleDiscount: { type: 'fixed', value: '10' },
+    restaurantCloudHydrated: true, reservationAuthority: 'cloud',
+    cloudRestaurantOrderServerVersion: 7, updatedAt: '2026-10-05T10:00:00.123456Z'
+  });
+
+  it.each([false, true])('removes the sole remote review and creates an empty cart (multiple orders: %s)', async (multiple) => {
+    const { useAppStore } = await import('../../../store/useAppStore');
+    useAppStore.setState({ enableMultipleOrders: multiple });
+    const sale = remoteSale();
+    dbState.sales.set(sale.id, sale);
+    dbState.products.set('pizza', { id: 'pizza', stock: 10, committedStock: 4 });
+    dbState.batches = [{ id: 'batch-1', stock: 8, committedStock: 3 }];
+    await useActiveOrders.getState().loadOpenOrder(sale.id);
+    const before = JSON.stringify({ sales: [...dbState.sales], products: [...dbState.products], batches: dbState.batches });
+    const tableCalls = (await import('../../../services/db/dexie')).db.table.mock.calls.length;
+    await useActiveOrders.getState().removeOrder(sale.id);
+    const state = useActiveOrders.getState();
+    expect(state.activeOrders.has(sale.id)).toBe(false);
+    expect(state.currentOrderId).toBe('sal-generated');
+    expect(state.activeOrders.get(state.currentOrderId).items).toEqual([]);
+    expect(JSON.stringify({ sales: [...dbState.sales], products: [...dbState.products], batches: dbState.batches })).toBe(before);
+    expect((await import('../../../services/db/dexie')).db.table.mock.calls).toHaveLength(tableCalls);
+    expect(releaseCommittedStock).not.toHaveBeenCalled();
+    await useActiveOrders.getState().removeOrder(sale.id);
+    expect(useActiveOrders.getState().activeOrders.size).toBe(1);
+  });
+
+  it('preserves another local cart and reloads a single remote copy with Cloud authority', async () => {
+    const { useAppStore } = await import('../../../store/useAppStore');
+    useAppStore.setState({ enableMultipleOrders: true });
+    const local = makeOrder('local-order', [{ id: 'coffee', price: 20, quantity: 1 }]);
+    const sale = remoteSale();
+    dbState.sales.set(sale.id, sale);
+    useActiveOrders.setState({ activeOrders: new Map([[local.id, local], [sale.id, sale]]), currentOrderId: sale.id });
+    await useActiveOrders.getState().removeOrder(sale.id);
+    expect(useActiveOrders.getState().currentOrderId).toBe(local.id);
+    expect(useActiveOrders.getState().activeOrders.get(local.id)).toEqual(local);
+    await useActiveOrders.getState().loadOpenOrder(sale.id);
+    await useActiveOrders.getState().loadOpenOrder(sale.id);
+    expect(useActiveOrders.getState().activeOrders.size).toBe(2);
+    expect(useActiveOrders.getState().activeOrders.get(sale.id).reservationAuthority).toBe('cloud');
+    expect(dbState.sales.get(sale.id)).toEqual(sale);
+    expect(releaseCommittedStock).not.toHaveBeenCalled();
+  });
+
+  it('loads the remote identity and complete commercial snapshot without reserving inventory', async () => {
+    const sale = remoteSale();
+    dbState.sales.set(sale.id, sale);
+    await expect(useActiveOrders.getState().loadOpenOrder(sale.id)).resolves.toEqual({ success: true });
+    const state = useActiveOrders.getState();
+    expect(state.currentOrderId).toBe(sale.id);
+    expect(state.activeOrders.size).toBe(1);
+    expect(state.getTotalPrice()).toBe(70);
+    expect(state.activeOrders.get(sale.id)).toMatchObject({ ...sale, items: sale.items });
+    expect(commitStock).not.toHaveBeenCalled();
+    expect(releaseCommittedStock).not.toHaveBeenCalled();
+  });
+
+  it('blocks remote editing, saving, normal closing and every cancel entrypoint', async () => {
+    const sale = remoteSale();
+    dbState.sales.set(sale.id, sale);
+    await useActiveOrders.getState().loadOpenOrder(sale.id);
+    const state = useActiveOrders.getState();
+    expect(() => state.setTableData('Changed')).toThrow('otro dispositivo');
+    expect(() => state.updateItemQuantity('original-line', 2)).toThrow('otro dispositivo');
+    expect(() => state.clearOrder()).toThrow('otro dispositivo');
+    await expect(state.addSmartItem({ id: 'pizza', batchManagement: { enabled: true } })).rejects.toThrow('otro dispositivo');
+    await expect(state.saveOrderAsOpen()).resolves.toMatchObject({ success: false, code: 'CLOUD_TABLE_READ_ONLY' });
+    await expect(state.cancelCurrentOrder()).rejects.toThrow('otro dispositivo');
+    await expect(state.cancelOrder(sale.id)).rejects.toThrow('otro dispositivo');
+    await expect(state.cancelOpenSaleByIdFromPos(sale.id)).resolves.toMatchObject({ success: false });
+    await expect(state.closeOrder(sale.id, {})).rejects.toMatchObject({ code: 'CLOUD_TABLE_NORMAL_CHECKOUT_BLOCKED' });
+    expect(dbState.sales.get(sale.id)).toEqual(sale);
+    expect(useActiveOrders.getState().activeOrders.get(sale.id)?.items).toEqual(sale.items);
+    expect(commitStock).not.toHaveBeenCalled();
+    expect(releaseCommittedStock).not.toHaveBeenCalled();
+  });
+
+  it('detaches a remote tab without saving, cancelling or releasing its snapshot', async () => {
+    const sale = remoteSale();
+    dbState.sales.set(sale.id, sale);
+    await useActiveOrders.getState().loadOpenOrder(sale.id);
+    await expect(useActiveOrders.getState().pauseOrder(sale.id)).resolves.toMatchObject({ success: true, detached: true });
+    expect(useActiveOrders.getState().activeOrders.has(sale.id)).toBe(false);
+    expect(dbState.sales.get(sale.id)).toEqual(sale);
+    expect(commitStock).not.toHaveBeenCalled();
+    expect(releaseCommittedStock).not.toHaveBeenCalled();
+  });
+
+  it('keeps the remote Cloud version and read-only marker when session orders reload', async () => {
+    const sale = { ...remoteSale(), fulfillmentStatus: 'pending' };
+    dbState.sales.set(sale.id, sale);
+    useActiveOrders.setState({
+      currentOrderId: sale.id,
+      activeOrders: new Map([[sale.id, { ...sale, total: '1', updatedAt: '2099-01-01T00:00:00Z', revision: 99 }]])
+    });
+    await useActiveOrders.getState().loadOrdersFromDB();
+    expect(useActiveOrders.getState().activeOrders.get(sale.id)).toMatchObject(sale);
+    expect(() => useActiveOrders.getState().clearOrder()).toThrow('otro dispositivo');
   });
 
   it('upserts an ecommerce draft atomically without PII and reuses the deterministic tab', () => {

@@ -12,6 +12,7 @@ import { generateID } from '../utils';
 import { normalizeCustomerDebtCents } from './customerDebtIndex';
 import { Money } from '../../utils/moneyMath';
 import { SALE_STATUS } from '../sales/financialStats';
+import { getExplicitSalePaymentRows, isRestaurantSplitCashPayment } from '../sales/paymentMethodContract';
 import Logger from '../Logger';
 
 const LOCAL_STATION_KEY_PREFIX = 'local:device:';
@@ -33,6 +34,13 @@ const isCommittedSaleItem = (item) => item?.inventoryReservation?.source === 'ta
 const hasBatchDeductions = (item) => Array.isArray(item?.batchesUsed) && item.batchesUsed.length > 0;
 const saleHasCashComponent = (sale = {}) => {
     const paymentMethod = String(sale.paymentMethod || '').trim().toLowerCase();
+    const explicitPayments = getExplicitSalePaymentRows(sale);
+    if (explicitPayments !== null) {
+        return explicitPayments.some((payment) => (
+            isRestaurantSplitCashPayment(payment)
+            && Money.init(payment?.amount ?? payment?.total ?? 0).gt(0)
+        ));
+    }
 
     return (
         ['efectivo', 'cash'].includes(paymentMethod) ||
@@ -702,6 +710,7 @@ export const salesRepository = {
         parentOrderId,
         parentExpectedVersion = null,
         splitGroupId,
+        splitIntent = 'by_items',
         childPayloads = []
     }) {
         try {
@@ -709,7 +718,10 @@ export const salesRepository = {
                 throw new Error('SPLIT_ORDER_INVALID: parentOrderId es obligatorio.');
             }
 
-            if (!Array.isArray(childPayloads) || childPayloads.length < 2) {
+            const monetarySplit = ['equal_payment', 'custom_payment'].includes(splitIntent);
+            if (!Array.isArray(childPayloads)
+                || childPayloads.length > 8
+                || (monetarySplit ? childPayloads.length !== 1 : childPayloads.length < 2)) {
                 throw new Error('SPLIT_ORDER_INVALID: Se requieren al menos dos tickets hijos.');
             }
 
@@ -774,6 +786,7 @@ export const salesRepository = {
                     fulfillmentStatus: 'cancelled',
                     cancelReason: 'split_settled',
                     splitGroupId,
+                    splitIntent,
                     splitChildIds: childSaleIds,
                     splitSettledAt: nowIso,
                     updatedAt: nowIso

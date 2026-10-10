@@ -72,6 +72,27 @@ const makeDeps = (overrides = {}) => {
 };
 
 describe('processSaleCore', () => {
+    it('keeps explicit remote-paid evidence authoritative for a stale local-origin table', async () => {
+        const deps = makeDeps({ loadData: vi.fn(async () => ({ id: 'origin-table', status: 'open', restaurantCloudTerminalState: 'terminal', restaurantCloudTerminalPaymentStatus: 'paid' })) });
+        const result = await processSaleCore(makeParams({ activeOrderId: 'origin-table' }), deps);
+        expect(result).toMatchObject({ success: false, code: 'RESTAURANT_ORDER_ALREADY_PAID', message: expect.stringContaining('ya fue cobrada') });
+        expect(deps.executeSaleTransactionSafe).not.toHaveBeenCalled();
+        expect(deps.calculatePricingDetails).not.toHaveBeenCalled();
+        expect(deps.saveData).not.toHaveBeenCalled();
+        expect(deps.__updateStatsForNewSale).not.toHaveBeenCalled();
+    });
+
+    it.each([{ restaurantCloudHydrated: true }, { reservationAuthority: 'cloud' }])('fails closed when cloud settlement is unavailable for a remote table (%j)', async (marker) => {
+        const deps = makeDeps({ loadData: vi.fn(async () => ({ id: 'remote-table', status: 'open', ...marker })) });
+        const result = await processSaleCore(makeParams({ activeOrderId: 'remote-table' }), deps);
+        expect(result).toMatchObject({ success: false, code: 'RESTAURANT_CLOUD_SETTLEMENT_REQUIRED' });
+        expect(deps.executeSaleTransactionSafe).not.toHaveBeenCalled();
+        expect(deps.calculatePricingDetails).not.toHaveBeenCalled();
+        expect(deps.saveData).not.toHaveBeenCalled();
+        expect(deps.queryBatchesByProductIdAndActive).not.toHaveBeenCalled();
+        expect(deps.__updateStatsForNewSale).not.toHaveBeenCalled();
+    });
+
     it('retorna éxito y ejecuta transacción + recibo', async () => {
         const deps = makeDeps();
         const result = await processSaleCore(makeParams(), deps);

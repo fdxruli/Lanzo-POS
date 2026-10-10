@@ -15,8 +15,13 @@ const mocks = vi.hoisted(() => ({
   pullCatalogChanges: vi.fn(),
   recoveryTrace: [],
   cloudCashierEnabled: true,
-  actorHandle: { assertCurrent: vi.fn() }
+  actorHandle: { assertCurrent: vi.fn() },
+  lookupRestaurant: vi.fn()
 }));
+vi.mock('../../restaurant/restaurantOrdersRepository', () => ({ restaurantOrdersRepository: {
+  getRestaurantOrderByLocalOrder: (...args) => mocks.lookupRestaurant(...args)
+} }));
+import { buildRestaurantOrderPayloadFromOpenSale } from '../../restaurant/restaurantOrderMapper';
 
 vi.mock('../../supabase', () => ({
   getStableDeviceId: vi.fn(async () => 'device-a')
@@ -99,6 +104,7 @@ vi.mock('../../sync/syncConstants', () => ({
 vi.mock('../../products/productSyncHandler', () => ({ pullCatalogChanges: mocks.pullCatalogChanges }));
 vi.mock('../../auth/actorRuntimeController', () => ({
   actorRuntimeController: {
+    getState: () => ({ status: 'granted' }),
     capture: () => mocks.actorHandle,
     subscribe: () => () => {}
   }
@@ -139,6 +145,7 @@ import {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.actorHandle.assertCurrent.mockReset();
   vi.stubEnv('VITE_ENABLE_CLOUD_CASHIER_SALES', 'true');
   mocks.recoveryTrace.splice(0);
   mocks.cloudCashierEnabled = true;
@@ -200,6 +207,46 @@ const projectResponse = async (options, response, operationType = 'sale.cashier_
 };
 
 describe('salesCloudCashierService ecommerce idempotency', () => {
+  const restaurantAttempt = () => {
+    const parent = { ...makeSale(), status: 'open', orderType: 'table', restaurantCloudExpectedVersion: '2026-09-27T10:00:00Z' };
+    const payload = buildRestaurantOrderPayloadFromOpenSale({ sale: parent });
+    const order = { ...payload.order, id: 'cloud-parent', status: 'delivered', fulfillmentStatus: 'delivered',
+      paymentStatus: 'unpaid', updatedAt: '2026-09-28T16:05:05.123456Z',
+      items: payload.items.map((item) => ({ ...item, status: 'delivered' })) };
+    mocks.lookupRestaurant.mockResolvedValue({ success: true, found: true, order });
+    return { order, options: { sale: makeSale(), processedItems: makeSale().items,
+      paymentData: { paymentMethod: 'cash', amountPaid: 10, cashSessionId: 'newly-opened-session' },
+      total: '10.00', restaurantOrder: parent } };
+  };
+  it.each(['product', 'quantity', 'discount', 'paid', 'cancelled', 'offline'])('blocks %s with a stale local token before any financial attempt', async (kind) => {
+    const { order, options } = restaurantAttempt();
+    if (kind === 'product') order.items[0].productId = 'another-product';
+    if (kind === 'quantity') order.items[0].quantity = 2;
+    if (kind === 'discount') order.metadata.restaurantSplitCommercialSnapshot.saleDiscounts.saleDiscount = { state: 'null' };
+    if (kind === 'paid') order.paymentStatus = 'paid';
+    if (kind === 'cancelled') order.status = 'cancelled';
+    if (kind === 'offline') mocks.lookupRestaurant.mockResolvedValue({ success: false, code: 'OFFLINE' });
+    await expect(salesCloudCashierService.processCloudCashierSale(options)).rejects.toThrow();
+    expect(mocks.createCloudCashierInventorySale).not.toHaveBeenCalled();
+    expect(mocks.saveCloudCommittedSaleSnapshot).not.toHaveBeenCalled();
+  });
+  it('does not replay a financial RPC when kitchen changes after the preflight', async () => {
+    const { options } = restaurantAttempt();
+    mocks.createCloudCashierInventorySale.mockResolvedValue({ success: false, code: 'RESTAURANT_ORDER_VERSION_CONFLICT' });
+    await expect(salesCloudCashierService.processCloudCashierSale(options)).rejects.toThrow('La mesa recibió cambios');
+    expect(mocks.lookupRestaurant).toHaveBeenCalledWith({ licenseKey: 'LIC-1', localOrderId: 'sale-1', force: true });
+    expect(mocks.createCloudCashierInventorySale).toHaveBeenCalledOnce();
+    expect(mocks.saveCloudCommittedSaleSnapshot).not.toHaveBeenCalled();
+  });
+  it('aborts when the actor changes during Cloud revalidation after cash opening', async () => {
+    const { options } = restaurantAttempt();
+    mocks.lookupRestaurant.mockImplementation(async () => {
+      mocks.actorHandle.assertCurrent.mockImplementation(() => { throw new Error('ACTOR_CONTEXT_STALE'); });
+      return { success: false };
+    });
+    await expect(salesCloudCashierService.processCloudCashierSale(options)).rejects.toThrow();
+    expect(mocks.createCloudCashierInventorySale).not.toHaveBeenCalled();
+  });
   it('requires a preflight version and forwards the exact timestamp to the split RPC', async () => {
     const childDefinitions = ['T1', 'T2'].map((label, index) => ({
       label,
@@ -247,7 +294,7 @@ describe('salesCloudCashierService ecommerce idempotency', () => {
       splitGroupId: 'split-1',
       childDefinitions,
       total: '60'
-    })).rejects.toThrow('La mesa cambió en otro dispositivo. Actualiza la mesa y vuelve a dividirla para proteger el cobro.');
+    })).rejects.toThrow('La mesa recibió cambios desde que la abriste. Actualízala y vuelve a intentar el cobro.');
 
     expect(mocks.createCloudSplitTableSale).toHaveBeenCalledOnce();
   });
@@ -410,5 +457,48 @@ describe('salesCloudCashierService ecommerce idempotency', () => {
     expect(mocks.saveCloudCommittedSaleSnapshot).toHaveBeenCalledTimes(1);
     expect(mocks.applyCloudSalesPayload).toHaveBeenCalledTimes(1);
     expect(mocks.markProjectionApplied).not.toHaveBeenCalled();
+  });
+
+  it('binds the origin or remote restaurant version to a normal cloud checkout', async () => {
+    const version = '2026-09-28T16:05:05.123456Z';
+    const parent = { ...makeSale(), status: 'open', orderType: 'table', restaurantCloudHydrated: true,
+      restaurantCloudExpectedVersion: '2026-09-27T10:00:00Z', cloudRestaurantOrderUpdatedAt: '2026-09-27T10:00:00Z' };
+    const mapped = buildRestaurantOrderPayloadFromOpenSale({ sale: parent });
+    mocks.lookupRestaurant.mockResolvedValue({ success: true, found: true, order: {
+      ...mapped.order, id: 'cloud-parent', updatedAt: version, status: 'delivered', fulfillmentStatus: 'delivered',
+      paymentStatus: 'unpaid', items: mapped.items.map((item) => ({ ...item, status: 'delivered' }))
+    } });
+    const response = {
+      ...makeResponse(),
+      restaurant_settlement: {
+        success: true,
+        parent_order_id: 'sale-1',
+        payment_status: 'paid',
+        paid_sale_id: 'cloud-sale-1',
+        paid_sale_folio: 'F-1',
+        total: 10
+      }
+    };
+    mocks.createCloudCashierInventorySale.mockImplementation((options) => projectResponse(options, response));
+
+    const result = await salesCloudCashierService.processCloudCashierSale({
+      sale: makeSale(),
+      processedItems: makeSale().items,
+      paymentData: { paymentMethod: 'cash', amountPaid: 10, cashSessionId: 'session-1' },
+      total: '10.00',
+      restaurantOrder: parent
+    });
+
+    expect(mocks.createCloudCashierInventorySale).toHaveBeenCalledWith(expect.objectContaining({
+      restaurantSettlement: {
+        parent_order_id: 'sale-1',
+        parent_order_version: version,
+        contract_version: 1
+      }
+    }));
+    expect(result).toMatchObject({
+      atomicRestaurantSettlement: true,
+      restaurantSettlement: response.restaurant_settlement
+    });
   });
 });

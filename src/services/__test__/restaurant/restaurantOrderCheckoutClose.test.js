@@ -21,10 +21,33 @@ vi.mock('../../tenant/localTenantGuard', () => ({
   runWithLocalTenantSyncLease: vi.fn(async (_source, _options, operation) => operation())
 }));
 
+// The fixture uses raw keys; production storage requires a READY tenant
+// namespace. Keep this unit boundary explicit instead of depending on global
+// tenant state created by another test.
+vi.mock('../../tenant/tenantScopedStorage', () => ({
+  getTenantStorageItem: (key) => window.localStorage.getItem(key),
+  setTenantStorageItem: (key, value) => window.localStorage.setItem(key, value)
+}));
+
+// This unit fixture represents an already granted actor; authority transitions
+// are covered separately with a controllable runtime and captured handles.
+vi.mock('../../auth/actorRuntimeController', () => ({
+  ACTOR_RUNTIME_STATUS: { GRANTED: 'granted' },
+  actorRuntimeController: {
+    getState: () => ({ status: 'granted' }),
+    capture: () => ({ assertCurrent: () => undefined })
+  }
+}));
+vi.mock('../../auth/actorAuthorityRecovery', () => ({
+  getActorAuthorityRecoverySnapshot: () => null,
+  reportActorAuthorityError: vi.fn(() => false)
+}));
+
 import {
-  buildRestaurantSplitCheckoutCloseIdempotencyKey,
-  buildSplitCheckoutClosePayload,
-  closeRestaurantCloudOrderAfterSuccessfulSplitPayment,
+    buildRestaurantSplitCheckoutCloseIdempotencyKey,
+    buildSplitCheckoutClosePayload,
+    closeRestaurantCloudOrderAfterSuccessfulPayment,
+    closeRestaurantCloudOrderAfterSuccessfulSplitPayment,
   retryPendingRestaurantCloudOrderCloses
 } from '../../restaurant/restaurantOrderCheckoutClose';
 import { restaurantOrdersRepository } from '../../restaurant/restaurantOrdersRepository';
@@ -111,6 +134,26 @@ describe('restaurantOrderCheckoutClose split bill support', () => {
       saldoPendiente: '150',
       customerId: 'cust-1'
     });
+  });
+
+  it('skips the legacy second close call when the financial receipt confirms atomic settlement', async () => {
+    const response = await closeRestaurantCloudOrderAfterSuccessfulPayment({
+      localOrderId: 'sale-open-1',
+      saleResult: {
+        atomicRestaurantSettlement: true,
+        restaurantSettlement: {
+          success: true,
+          parent_order_id: 'sale-open-1',
+          payment_status: 'paid'
+        }
+      },
+      licenseDetails,
+      saleTotal: 500,
+      features
+    });
+
+    expect(response).toMatchObject({ success: true, skipped: true, atomic: true });
+    expect(restaurantOrdersRepository.closeRestaurantOrderAfterCheckout).not.toHaveBeenCalled();
   });
 
   it('sends split checkout close payload to repository when online', async () => {

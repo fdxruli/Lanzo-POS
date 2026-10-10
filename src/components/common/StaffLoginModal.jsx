@@ -3,7 +3,29 @@ import { AlertTriangle, ArrowLeft, LockKeyhole, LogIn, WifiOff } from 'lucide-re
 import { useAppStore } from '../../store/useAppStore';
 import LicenseContextSummary from './LicenseContextSummary';
 import PasswordField from './PasswordField';
+import { classifyActorAuthorityError } from '../../services/auth/actorAuthorityErrors';
 import './StaffLoginModal.css';
+
+const SAFE_LOGIN_MESSAGES = Object.freeze({
+  INVALID_STAFF_CREDENTIALS: 'Usuario o contraseña incorrectos.',
+  INVALID_CREDENTIALS: 'Usuario o contraseña incorrectos.',
+  ONLINE_REQUIRED: 'Necesitas internet para iniciar sesión staff.',
+  STAFF_LOGIN_RATE_LIMITED: 'Se realizaron demasiados intentos. Espera un momento y vuelve a intentar.',
+  RATE_LIMITED: 'Se realizaron demasiados intentos. Espera un momento y vuelve a intentar.',
+  STAFF_NOT_ACTIVE: 'Tu acceso staff no está activo. Pide al administrador revisarlo.',
+  STAFF_DISABLED: 'Tu acceso staff no está activo. Pide al administrador revisarlo.',
+  DEVICE_MODE_STAFF_NOT_ALLOWED: 'Este dispositivo no está habilitado para el acceso staff.'
+});
+
+const describeStaffLoginError = (error) => {
+  const authority = classifyActorAuthorityError(error);
+  if (authority) return authority.message;
+  if (SAFE_LOGIN_MESSAGES[error?.code]) return SAFE_LOGIN_MESSAGES[error.code];
+  if (!navigator.onLine || /network|fetch/i.test(error?.message || '')) {
+    return 'No se pudo conectar con el servidor. Revisa tu conexión e inténtalo nuevamente.';
+  }
+  return 'No se pudo iniciar sesión staff. Tus datos permanecen intactos. Vuelve a intentarlo.';
+};
 
 export default function StaffLoginModal() {
   const [username, setUsername] = useState('');
@@ -52,13 +74,17 @@ export default function StaffLoginModal() {
     setIsLoading(true);
     setErrorMessage('');
 
-    const result = await handleStaffLogin({
-      username: username.trim(),
-      password
-    });
-
-    if (!result?.success) {
-      setErrorMessage(result?.code === 'STAFF_ALREADY_IN_USE' ? '' : result?.message || 'No se pudo iniciar sesión staff.');
+    try {
+      const result = await handleStaffLogin({
+        username: username.trim(),
+        password
+      });
+      if (!result?.success) {
+        setErrorMessage(result?.code === 'STAFF_ALREADY_IN_USE' ? '' : describeStaffLoginError(result));
+      }
+    } catch (error) {
+      setErrorMessage(describeStaffLoginError(error));
+    } finally {
       setIsLoading(false);
     }
   };

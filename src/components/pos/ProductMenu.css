@@ -802,3 +802,19 @@
 @keyframes card-spin {
   to { transform: rotate(360deg); }
 }
+
+/* Vista Cloud: solo lectura sin bloquear búsqueda o navegación. */
+.pos-menu-read-only-notice {
+  margin: 10px 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--surface-hover, rgba(125, 125, 125, 0.12));
+  color: var(--text-color, inherit);
+  font-size: 0.875rem;
+}
+.product-card.product-card--read-only,
+.product-card.product-card--read-only:hover {
+  cursor: not-allowed;
+  opacity: 0.7;
+  transform: none;
+}

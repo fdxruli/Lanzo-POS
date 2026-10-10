@@ -28,18 +28,22 @@ vi.mock('../../db/dexie', () => ({
     SALES: 'sales',
     MENU: 'menu',
     PRODUCT_BATCHES: 'product_batches',
+    TRANSACTION_LOG: 'transaction_log',
+    SYNC_CACHE: 'sync_cache',
     FINANCIAL_INTENTS: 'financial_intents'
   },
   db: {
     table: (name) => runtime.database.table(name),
-    transaction: (...args) => runtime.database.transaction(...args)
+    transaction: (...args) => runtime.database.transaction(...args),
+    isOpen: () => runtime.database.isOpen(),
+    open: () => runtime.database.open()
   }
 }));
 
 vi.mock('../../supabase', () => ({
   getStableDeviceId: vi.fn(async () => 'device-a'),
   supabaseClient: {
-    rpc: vi.fn(async (name) => {
+    rpc: vi.fn(async (name, args) => {
       if (name === 'pos_get_cash_station_state') {
         return {
           data: {
@@ -64,6 +68,12 @@ vi.mock('../../supabase', () => ({
               isDeterministicServerResponse: true
             })
           };
+        }
+        if (args.p_operation_type === 'sale.split') {
+          return { data: { success: true, children: args.p_request.children.map((child, index) => ({
+            sale: { ...child.sale, id: `cloud-split-${index}`, status: 'closed', effects_status: 'payment_recorded' },
+            items: [], payments: child.payments
+          })) }, error: null };
         }
         return {
           data: {
@@ -167,6 +177,11 @@ vi.mock('../../sync/syncConstants', () => ({
 }));
 
 vi.mock('../../products/productSyncHandler', () => ({ pullCatalogChanges: vi.fn() }));
+vi.mock('../../cash/cashRepository', () => ({
+  cashRepository: { getCurrentCashSession: async () => ({
+    success: true, cashSession: { id: 'session-a', estado: 'abierta' }
+  }) }
+}));
 vi.mock('../../ecommerce/ecommerceOrderService', () => ({ releaseEcommerceOrderPosDraft: vi.fn() }));
 vi.mock('../../auth/actorRuntimeController', () => ({
   actorRuntimeController: {
@@ -175,20 +190,26 @@ vi.mock('../../auth/actorRuntimeController', () => ({
     subscribe: () => () => {}
   }
 }));
-vi.mock('../salesCloudLocalRepository', () => ({
-  salesCloudLocalRepository: {
-    saveCloudCommittedSaleSnapshot: vi.fn(async ({ localSale }) => {
-      runtime.snapshotCalls += 1;
-      if (runtime.projectionFailure) throw Object.assign(new Error('LOCAL_PROJECTION_FAILED'), { code: 'LOCAL_PROJECTION_FAILED' });
-      return { ...localSale, status: 'closed' };
-    }),
-    applyCloudSalesPayload: vi.fn(async () => {
-      runtime.payloadCalls += 1;
-      if (runtime.projectionFailure) throw Object.assign(new Error('LOCAL_PROJECTION_FAILED'), { code: 'LOCAL_PROJECTION_FAILED' });
-      return { success: true };
-    })
-  }
-}));
+vi.mock('../salesCloudLocalRepository', async (importOriginal) => {
+  const actual = (await importOriginal()).salesCloudLocalRepository;
+  return {
+    salesCloudLocalRepository: {
+      ...actual,
+      saveCloudCommittedSaleSnapshot: vi.fn(async ({ localSale, response }) => {
+        runtime.snapshotCalls += 1;
+        if (runtime.projectionFailure) throw Object.assign(new Error('LOCAL_PROJECTION_FAILED'), { code: 'LOCAL_PROJECTION_FAILED' });
+        if (localSale.splitGroupId) return actual.saveCloudCommittedSaleSnapshot({ localSale, response });
+        return { ...localSale, status: 'closed' };
+      }),
+      applyCloudSalesPayload: vi.fn(async (response) => {
+        runtime.payloadCalls += 1;
+        if (runtime.projectionFailure) throw Object.assign(new Error('LOCAL_PROJECTION_FAILED'), { code: 'LOCAL_PROJECTION_FAILED' });
+        if (response.children) return actual.applyCloudSalesPayload(response);
+        return { success: true };
+      })
+    }
+  };
+});
 
 import { useActiveOrders } from '../../../hooks/pos/useActiveOrders';
 import { getFinancialIntent } from '../../financial/financialIntentLedger';
@@ -228,6 +249,10 @@ beforeEach(async () => {
   const database = new Dexie(name);
   database.version(1).stores({
     sales: 'id, timestamp, status',
+    menu: 'id',
+    product_batches: 'id,productId',
+    transaction_log: 'id',
+    sync_cache: 'key',
     financial_intents: 'id, &idempotencyKey'
   });
   await database.open();
@@ -262,6 +287,54 @@ afterEach(async () => {
 });
 
 describe('active-order cloud retry transport', () => {
+  it('repairs a committed split projection from durable evidence without charging again or releasing another table', async () => {
+    runtime.failNextExecute = false;
+    runtime.projectionFailure = true;
+    const items = [{ id: 'burger', name: 'Hamburguesa QA', quantity: 1, price: 300,
+      inventoryReservation: { source: 'table', committedQuantity: 1, committedBatches: [] } }];
+    await runtime.database.table('menu').put({ id: 'burger', stock: 10, committedStock: 2 });
+    await runtime.database.table('sales').put({ id: 'parent-A', status: 'open', items });
+    await runtime.database.table('sales').put({ id: 'parent-B', status: 'open', items });
+    const request = {
+      parentOrderId: 'parent-A', parentExpectedVersion: '2026-09-29T10:00:00.000Z',
+      splitGroupId: 'split-projection-repair', splitIntent: 'equal_payment', total: '300',
+      childDefinitions: [{ label: 'Cuenta', sale: { id: 'child-A', status: 'closed', total: '300' },
+        processedItems: items, paymentData: { paymentMethod: 'mixed', amountPaid: '300',
+          payments: [{ method: 'cash', amount: '150' }, { method: 'card', amount: '150' }],
+          payers: [{ label: 'T1', amount: '150', method: 'cash' }, { label: 'T2', amount: '150', method: 'card' }] } }]
+    };
+    await expect(salesCloudCashierService.processCloudSplitTableSale(request))
+      .rejects.toMatchObject({ code: 'LOCAL_PROJECTION_FAILED' });
+    const intent = (await runtime.database.table('financial_intents').toArray())[0];
+    expect(intent).toMatchObject({ status: 'COMPLETED', projectionStatus: 'FAILED', operationType: 'sale.split' });
+    expect(intent.responsePayload.children).toHaveLength(1);
+    expect(intent.requestPayload.parent_order_id).toBe('parent-A');
+    expect(runtime.executeCalls).toBe(1);
+    expect(await runtime.database.table('menu').get('burger')).toMatchObject({ stock: 10, committedStock: 2 });
+    expect(await runtime.database.table('sales').get('parent-A')).toMatchObject({ status: 'open' });
+
+    runtime.projectionFailure = false;
+    const { recoverFinancialIntent } = await import('../../financial/financialIntentRecovery');
+    await expect(recoverFinancialIntent({ intentId: intent.id, actorHandle: runtime.actorHandle }))
+      .resolves.toMatchObject({ outcome: 'projection_applied' });
+    expect(runtime.executeCalls).toBe(1);
+    expect(await runtime.database.table('menu').get('burger')).toMatchObject({ stock: 10, committedStock: 1 });
+    expect(await runtime.database.table('sales').get('parent-A')).toMatchObject({
+      fulfillmentStatus: 'completed', splitSettlementSource: 'cloud_committed'
+    });
+    expect(await runtime.database.table('sales').get('parent-B')).toMatchObject({ status: 'open', items });
+    expect(await getFinancialIntent(intent.id)).toMatchObject({ status: 'COMPLETED', projectionStatus: 'APPLIED' });
+    const sale = await runtime.database.table('sales').get('child-A');
+    expect(sale.payments).toMatchObject([{ method: 'cash', amount: '150' }, { method: 'card', amount: '150' }]);
+    const { calculateSessionTotals, normalizeSaleMovements } = await import('../../cajaProjection');
+    expect(calculateSessionTotals([sale])).toEqual({ ventasContado: '150', abonosFiado: '0' });
+    expect(normalizeSaleMovements([sale]).map((movement) => movement.monto)).toEqual(['150', '150']);
+    await recoverFinancialIntent({ intentId: intent.id, actorHandle: runtime.actorHandle });
+    expect(runtime.executeCalls).toBe(1);
+    expect(await runtime.database.table('menu').get('burger')).toMatchObject({ committedStock: 1 });
+    expect((await runtime.database.table('sales').get('child-A')).payments).toEqual(sale.payments);
+    expect(await runtime.database.table('transaction_log').count()).toBe(1);
+  });
   it('projects a normal first financial success once under its execution lease', async () => {
     runtime.failNextExecute = false;
     await useActiveOrders.getState().loadOrdersFromDB();

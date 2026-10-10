@@ -5,6 +5,8 @@ on:
     branches:
       - main
     paths:
+      - 'src/App.jsx'
+      - 'src/main.jsx'
       - 'src/services/auth/**'
       - 'src/services/tenant/**'
       - 'src/services/db/**'
@@ -231,6 +233,9 @@ jobs:
       - name: BASE raw full-suite repetitions
         shell: bash
         working-directory: subject
+        env:
+          LANZO_ADMIN_PWA_BUILD_REQUIRED: '1'
+          LANZO_STORE_PWA_BUILD_REQUIRED: '1'
         run: |
           set -o pipefail
           for i in 1 2; do
@@ -316,6 +321,9 @@ jobs:
       - name: CANDIDATE raw full-suite repetitions
         shell: bash
         working-directory: subject
+        env:
+          LANZO_ADMIN_PWA_BUILD_REQUIRED: '1'
+          LANZO_STORE_PWA_BUILD_REQUIRED: '1'
         run: |
           set -o pipefail
           for i in 1 2; do

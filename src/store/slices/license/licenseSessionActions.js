@@ -21,6 +21,8 @@ import {
   lockLocalTenantAccess
 } from '../../../services/tenant/localTenantGuard';
 import { closeTenantRuntime } from '../../../services/db/tenantRuntimeRouter';
+import { lockActorRuntime } from '../../../services/auth/actorSessionRuntimeBridge';
+import { clearActorAuthorityRecovery } from '../../../services/auth/actorAuthorityRecovery';
 
 const clearLocalLicenseSession = async () => {
   clearLicenseFromStorage();
@@ -172,6 +174,8 @@ export const createLicenseSessionActions = ({
   },
 
   logout: async () => {
+    clearActorAuthorityRecovery();
+    lockActorRuntime('license_actor_logged_out');
     // Remove tenant-owned UI synchronously. The compatible A session remains
     // authorized only long enough to revoke its own actor credentials.
     get()._invalidateProfileLoads?.();

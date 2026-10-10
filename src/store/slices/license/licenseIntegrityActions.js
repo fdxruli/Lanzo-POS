@@ -25,6 +25,12 @@ import {
     markLastLicenseValidationSuccess
 } from './licenseValidationTimestamps';
 import { isLocalTenantAccessError } from '../../../services/tenant/localTenantGuard';
+import { classifyActorAuthorityError } from '../../../services/auth/actorAuthorityErrors';
+import { actorRuntimeController, ACTOR_RUNTIME_STATUS } from '../../../services/auth/actorRuntimeController';
+import {
+    getActorAuthorityRecoverySnapshot,
+    reportActorAuthorityError
+} from '../../../services/auth/actorAuthorityRecovery';
 
 const normalizeOptions = (options = {}) => {
     if (typeof options === 'string') {
@@ -86,6 +92,15 @@ export const createLicenseIntegrityActions = ({
 
         const state = get();
         const { licenseDetails, logout } = state;
+        const requestActorState = actorRuntimeController.getState();
+        const requestAppStatus = state.appStatus;
+        const requestLicenseKey = licenseDetails?.license_key;
+        const validationContextChanged = () => (
+            get().appStatus !== requestAppStatus ||
+            get().licenseDetails?.license_key !== requestLicenseKey ||
+            (requestActorState.status === ACTOR_RUNTIME_STATUS.GRANTED &&
+                requestActorState.generation !== actorRuntimeController.getState().generation)
+        );
 
         const failIntegrity = (failure = {}, source = 'integrity') => {
             const normalized = buildIntegrityFailure({
@@ -98,7 +113,25 @@ export const createLicenseIntegrityActions = ({
             return false;
         };
 
+        const failChangedSession = () => failIntegrity({
+            code: 'SESSION_CHANGED',
+            message: 'La sesión cambió durante la validación. Intenta cobrar nuevamente.'
+        }, 'runtime');
+
+        const denyHardAuthority = async (error, classification) => {
+            reportActorAuthorityError(error, { operation: reason });
+            try { await logout(); } catch {
+                Logger.warn('[Integrity] No se pudo completar la salida; la autoridad permanece bloqueada.');
+            }
+            return failIntegrity({ code: classification.code, message: classification.message }, 'security');
+        };
+
         set({ lastIntegrityFailure: null });
+
+        const pendingRecovery = getActorAuthorityRecoverySnapshot();
+        if (pendingRecovery) {
+            return failIntegrity({ code: 'ACTOR_REAUTHENTICATION_REQUIRED', message: pendingRecovery.message }, 'authority');
+        }
 
         if (!licenseDetails?.license_key) {
             return failIntegrity({
@@ -171,15 +204,22 @@ export const createLicenseIntegrityActions = ({
 
             const serverCheck = await revalidateLicense(licenseDetails.license_key);
 
-            if (
-                get().appStatus !== state.appStatus ||
-                get().licenseDetails?.license_key !== licenseDetails.license_key
-            ) {
+            if (validationContextChanged()) {
                 Logger.log('[Integrity] La sesión cambió durante la validación; se descarta la respuesta.');
-                return failIntegrity({
-                    code: 'SESSION_CHANGED',
-                    message: 'La sesión cambió durante la validación. Intenta cobrar nuevamente.'
-                }, 'runtime');
+                return failChangedSession();
+            }
+
+            const authorityFailure = classifyActorAuthorityError(serverCheck);
+            if (authorityFailure?.kind === 'device_blocked' || authorityFailure?.kind === 'cloning_detected') {
+                return denyHardAuthority(serverCheck, authorityFailure);
+            }
+            if (authorityFailure?.requiresReauthentication) {
+                if (get()._requireActorAuthorityRecovery) {
+                    await get()._requireActorAuthorityRecovery(serverCheck, { operation: reason });
+                } else {
+                    reportActorAuthorityError(serverCheck, { operation: reason });
+                }
+                return failIntegrity({ code: 'ACTOR_REAUTHENTICATION_REQUIRED', message: authorityFailure.message }, 'authority');
             }
 
             if (!serverCheck?.valid && serverCheck?.valid !== false) {
@@ -369,7 +409,20 @@ export const createLicenseIntegrityActions = ({
 
             set({ lastIntegrityFailure: null });
         } catch (error) {
+            if (validationContextChanged()) return failChangedSession();
             markLastLicenseValidationAttempt(licenseDetails.license_key);
+            const authorityFailure = classifyActorAuthorityError(error);
+            if (authorityFailure?.kind === 'device_blocked' || authorityFailure?.kind === 'cloning_detected') {
+                return denyHardAuthority(error, authorityFailure);
+            }
+            if (authorityFailure?.requiresReauthentication) {
+                if (get()._requireActorAuthorityRecovery) {
+                    await get()._requireActorAuthorityRecovery(error, { operation: reason });
+                } else {
+                    reportActorAuthorityError(error, { operation: reason });
+                }
+                return failIntegrity({ code: 'ACTOR_REAUTHENTICATION_REQUIRED', message: authorityFailure.message }, 'authority');
+            }
             if (isLocalTenantAccessError(error)) {
                 return failIntegrity({
                     code: 'TENANT_MISMATCH',
