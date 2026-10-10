@@ -43,6 +43,7 @@ const seed = (id, staff = owner) => sql(`insert into public.pos_restaurant_order
 values('${id}','${license}','${id}','${id}','00000000-0000-0000-0000-00000000000a',${staff ? `'${staff}'` : 'null'},'${version}','unpaid',50)`);
 const caps = (id, actor='staff-a',device='A') => JSON.parse(sql(`select public.pos_restaurant_table_capabilities_v1('fixture-license','${device}','valid','${actor}','${id}')`));
 const call = (operation,id,actor='admin',device='B',suffix='attempt') => {
+  if(operation==='edit') return edit(actor,device,version,{},id);
   if(operation==='cancel') return `select public.pos_cancel_restaurant_order_from_pos_v1('fixture-license','${device}','valid','${actor}','${id}','${version}','QA reason','${id}-${suffix}')`;
   const payload = operation==='split' ? { cash_session_id:'cash-a',parent_order_id:id,parent_order_version:version }
     : {cash_session_id:'cash-a',sale:{id,total:50},items:[],payments:[],restaurant_settlement:{parent_order_id:id,parent_order_version:version}};
@@ -71,8 +72,8 @@ rejected(call('cashier','owner').replace(version,'2026-09-01T00:00:00Z'),'RESTAU
 rejected("select private.r2b_authorize_sale_financial_request_v1('sale.cashier','fixture-license','A','valid','staff-b','{\"id\":\"owner\"}','[]','[]','cash-a',null,'direct')",'RESTAURANT_TABLE_OWNER_REQUIRED');
 rejected("select private.r2b_authorize_sale_financial_request_v1('sale.cashier','fixture-license','B','valid','admin','{\"id\":\"owner\"}','[]','[]','cash-a',null,'direct-admin')",'RESTAURANT_SETTLEMENT_CONTRACT_REQUIRED');
 assert.equal(sql('select count(*) from public.pos_sales'),'0');
-const edit = (actor,device='A',expected=version,extra={}) => `select public.pos_upsert_restaurant_order_unlimited('fixture-license','${device}','valid','${actor}',
-  '${JSON.stringify({localOrderId:'owner',saleId:'owner',expectedParentVersion:expected,total:50,subtotal:50,...extra})}',
+const edit = (actor,device='A',expected=version,extra={},id='owner') => `select public.pos_upsert_restaurant_order_unlimited('fixture-license','${device}','valid','${actor}',
+  '${JSON.stringify({localOrderId:id,saleId:id,expectedParentVersion:expected,total:50,subtotal:50,...extra})}',
   '[{"localLineId":"line-owner","productId":"pizza","productName":"Pizza","quantity":1,"unitPrice":50,"lineTotal":50}]','edit-${actor}-${device}-${expected}')`;
 rejected(edit('staff-b','A',version,{createdByStaffUserId:owner}),'RESTAURANT_TABLE_OWNER_REQUIRED');
 rejected(edit('admin','B',version,{createdByDeviceId:'00000000-0000-0000-0000-00000000000b'}),'ADMIN_REMOTE_EDIT_BLOCKED');
@@ -91,7 +92,7 @@ const run = (query,name) => new Promise(resolve=>{
   let output=''; child.stdout.on('data',chunk=>{output+=chunk}); child.stderr.on('data',chunk=>{output+=chunk});
   child.on('exit',code=>resolve({code,output}));
 });
-for(const [index,[first,second]] of [['cashier','cashier'],['cashier','cancel'],['cancel','cashier'],['split','cashier'],['cancel','split'],['cancel','cancel']].entries()) {
+for(const [index,[first,second]] of [['cashier','cashier'],['cashier','cancel'],['cancel','cashier'],['split','cashier'],['cancel','split'],['cancel','cancel'],['cancel','edit']].entries()) {
   const id=`race-admin-${index}`; seed(id); const name=`admin-supervision-race-${index}`;
   const winner=run(`begin; select private.lock_restaurant_order_settlement_v1('${license}','${id}'); select pg_sleep(1); ${call(first,id,'admin','B','first')}; commit;`,name);
   let acquired=false;
@@ -108,4 +109,4 @@ for(const [index,[first,second]] of [['cashier','cashier'],['cashier','cancel'],
 }
 assert.equal(sql('select count(*) from private.restaurant_settlement_permits'),'0');
 writeFileSync('.tmp-sql-admin-supervision-results.json',JSON.stringify({authority:'PASS',concurrency:results,financialLeaves:'CONTROLLED_TEST_DOUBLES'},null,2));
-console.log('SQL authority and six real multi-session concurrency cases PASS');
+console.log('SQL authority and seven real multi-session concurrency cases PASS');
