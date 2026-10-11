@@ -1,5 +1,9 @@
 # HOTFIX_RESTAURANT_ADMIN_SUPERVISION_P0_R1
 
+Fase posterior: [transición frontend/SQL](RESTAURANT.FRONTEND.SQL.TRANSITION.R1.md).
+Este informe conserva la evidencia anterior; los estados de compatibilidad y CI
+se actualizan en el cierre por SHA de la transición. Producción sigue HOLD.
+
 2026-10-10, America/Mexico_City. PR #352 remains Draft, stacked on #338.
 Initial HEAD `54aa94f352dcb9ae3cbbcf44fd20b5c1fae344f9`; #338
 `fb17e9a43929d54087ab937cb760a8cd6e087c36`. Main was revalidated as

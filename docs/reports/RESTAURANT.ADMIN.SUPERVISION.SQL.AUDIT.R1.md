@@ -1,5 +1,8 @@
 # PR #352: auditoría crítica SQL y decisión de despliegue
 
+La fase posterior añade el [puente y contrato de transición](RESTAURANT.FRONTEND.SQL.TRANSITION.R1.md).
+La reproducción histórica se conserva; no constituye aprobación de despliegue.
+
 Nota posterior: este documento conserva la reproducción histórica. El hotfix y
 sus límites actuales se documentan en
 [HOTFIX P0 R1](RESTAURANT.ADMIN.SUPERVISION.HOTFIX.P0.R1.md). La compatibilidad

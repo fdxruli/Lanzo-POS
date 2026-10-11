@@ -1,5 +1,9 @@
 # Hotfix P0 R1 object additions
 
+Inventario de la ampliación posterior, gates y permisos de transición:
+[Frontend/SQL transition](RESTAURANT.FRONTEND.SQL.TRANSITION.R1.md).
+Los objetos y líneas de este documento son la evidencia histórica del hotfix.
+
 The original inventory below is historical; line numbers refer to the pre-hotfix
 migration. The unapplied migration now creates three tables, fourteen functions
 and one additional trigger. Applied historical migrations remain untouched.

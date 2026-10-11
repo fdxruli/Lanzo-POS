@@ -1,5 +1,8 @@
 # Restaurant administrative supervision r1
 
+Subsequent transition implementation and rollout gates:
+[Frontend/SQL transition](RESTAURANT.FRONTEND.SQL.TRANSITION.R1.md).
+
 Subsequent hotfix: [P0 R1](RESTAURANT.ADMIN.SUPERVISION.HOTFIX.P0.R1.md) replaces
 the legacy Kitchen cancellation and aggregation behavior in the unapplied SQL.
 Production cutover compatibility remains HOLD; this is not deployment approval.
