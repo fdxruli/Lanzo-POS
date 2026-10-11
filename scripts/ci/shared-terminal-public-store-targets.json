@@ -38,5 +38,10 @@
     "slug": "ecommerce-stale-load-more-loading",
     "file": "src/components/ecommerce/__tests__/EcommercePortalSettings.productModalLifecycle.test.jsx",
     "testName": "releases stale load-more loading after a newer search wins the catalog race"
+  },
+  {
+    "slug": "ecommerce-pending-close-reopen",
+    "file": "src/components/ecommerce/__tests__/EcommercePortalSettings.productModalLifecycle.test.jsx",
+    "testName": "invalidates a pending request when the modal closes and starts the next opening cleanly"
   }
 ]

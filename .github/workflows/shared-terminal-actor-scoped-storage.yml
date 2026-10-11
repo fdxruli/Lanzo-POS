@@ -466,11 +466,17 @@ jobs:
 
       - name: Compare repeated BASE vs CANDIDATE failure envelope
         run: |
+          node scripts/ci/compare-focused-target-evidence.mjs \
+            differential/base/focused-target-summary.json \
+            differential/candidate/focused-target-summary.json \
+            differential/focused-target-differential.md \
+            differential/focused-target-differential.json
           node scripts/compare-shared-terminal-full-suite.mjs \
             differential/base \
             differential/candidate \
             differential/full-suite-differential.md \
             differential/full-suite-differential.json
+          cat differential/focused-target-differential.md >> "$GITHUB_STEP_SUMMARY"
           cat differential/full-suite-differential.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload differential evidence
@@ -481,5 +487,7 @@ jobs:
           path: |
             differential/full-suite-differential.md
             differential/full-suite-differential.json
+            differential/focused-target-differential.md
+            differential/focused-target-differential.json
           if-no-files-found: error
           overwrite: true

@@ -22,5 +22,6 @@ for (const name of ['runtime', 'scoped-storage']) {
       assert.match(gate.env.SHARED_TERMINAL_3_COMPARISON_BASE_SHA, /needs\.resolve-pr-base\.outputs\.sha/);
     }
     assert.ok(gate.steps.some(step => String(step.run).includes('compare-shared-terminal-full-suite.mjs')));
+    assert.ok(gate.steps.some(step => String(step.run).includes('compare-focused-target-evidence.mjs')));
   });
 }
