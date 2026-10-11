@@ -25,3 +25,14 @@ for (const name of ['runtime', 'scoped-storage']) {
     assert.ok(gate.steps.some(step => String(step.run).includes('compare-focused-target-evidence.mjs')));
   });
 }
+
+test('manual PR127 accepts an immutable BASE instead of assuming main', () => {
+  const workflow = yaml.load(readFileSync('.github/workflows/pr127-global-comparison.yml', 'utf8'));
+  assert.equal(workflow.on.workflow_dispatch.inputs.base_ref.required, true);
+  const job = workflow.jobs['compare-global-suite'];
+  assert.match(job.steps[1].with.ref, /PR127_BASE_REF/);
+  assert.equal(job.steps[1].with.path, 'base');
+  assert.ok(job.steps.some(step => /Validate immutable comparison refs/.test(step.name || '')));
+  assert.match(job.steps.find(step => /Extract error-aware/.test(step.name || '')).run, /global-base\.json/);
+  assert.match(job.steps.find(step => /Normalize and compare/.test(step.name || '')).run, /focused\/base/);
+});
