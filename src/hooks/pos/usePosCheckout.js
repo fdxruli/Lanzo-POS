@@ -15,6 +15,7 @@ import {
 import { validateFefoSelectionBeforeCheckout } from '../../services/sales/fefoSaleValidation';
 import { getRestaurantOrderCloudStatusSnapshot } from '../restaurant/useRestaurantOrderCloudStatus';
 import { verifyRestaurantTableAuthority } from '../../services/restaurant/restaurantTableAuthority';
+import { isRestaurantContractFailure } from '../../services/restaurant/restaurantCloudContract';
 import { getLicenseKeyFromDetails } from '../../services/sync/syncConstants';
 import { reconcileCartWithCancelledRestaurantItems } from '../../services/restaurant/restaurantOrderReconciliation';
 import {
@@ -1148,6 +1149,18 @@ export function usePosCheckout({
         const durableRestaurantSettlementRequired = [snapshot?.order, durableOrder]
             .some(isRestaurantCloudTableSettlementRequired);
         const licenseDetails = useAppStore.getState().licenseDetails;
+        if (durableRestaurantSettlementRequired) {
+            try {
+                await verifyRestaurantTableAuthority({ licenseKey: getLicenseKeyFromDetails(licenseDetails),
+                    order: durableOrder || snapshot.order, operation: 'checkout' });
+            } catch (error) {
+                const authorityResult = handlePosActorAuthorityError(error, 'checkout');
+                if (authorityResult) return authorityResult;
+                showMessageModal(error.message, null, { type: 'warning' });
+                return { success: false, code: error.code, message: error.message,
+                    checkoutPreserved: true, localPreserved: true };
+            }
+        }
         if (
             durableRestaurantSettlementRequired
             && (!canUseAnyCloudRestaurantSettlement(licenseDetails)
@@ -1269,6 +1282,7 @@ export function usePosCheckout({
 
         let isSuccess = false;
         let isStockWarning = false;
+        let isContractBlocked = false;
 
         try {
             const { processSale } = await import('../../services/salesService');
@@ -1301,6 +1315,12 @@ export function usePosCheckout({
             });
 
             if (!result.success) {
+                if (isRestaurantContractFailure(result)) {
+                    isContractBlocked = true;
+                    if (currentSnapshotIsOwned(snapshot)) modal.openModal('payment');
+                    showMessageModal(result.message, null, { type: 'warning' });
+                    return { ...result, checkoutPreserved: true, localPreserved: true };
+                }
                 const authorityResult = handlePosActorAuthorityError(result, 'checkout');
                 if (authorityResult) return authorityResult;
             }
@@ -1463,13 +1483,20 @@ export function usePosCheckout({
 
             return result;
         } catch (error) {
+            if (isRestaurantContractFailure(error)) {
+                isContractBlocked = true;
+                if (currentSnapshotIsOwned(snapshot)) modal.openModal('payment');
+                showMessageModal(error.message, null, { type: 'warning' });
+                return { success: false, code: error.code, message: error.message,
+                    checkoutPreserved: true, localPreserved: true };
+            }
             const authorityResult = handlePosActorAuthorityError(error, 'checkout');
             if (authorityResult) return authorityResult;
             console.error('[usePosCheckout] Error crítico en UI:', error);
             showMessageModal(`Error inesperado: ${error.message}`);
             return { success: false, message: error.message };
         } finally {
-            if (!isSuccess && !isStockWarning) {
+            if (!isSuccess && !isStockWarning && !isContractBlocked) {
                 const releaseResult = await releaseCheckoutSnapshotLock(snapshot, {
                     reason: 'process_failed',
                     expectedOrderId: snapshot.orderId,

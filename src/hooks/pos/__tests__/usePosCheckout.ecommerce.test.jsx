@@ -780,6 +780,49 @@ describe('usePosCheckout ecommerce and stale lock ownership', () => {
     expect(mocks.activeState.unlockOrder).not.toHaveBeenCalled();
   });
 
+  it('TR-21 preserves the checkout through QuickCaja then blocks a changed Restaurant contract', async () => {
+    mocks.cloudCashierEnabled = true;
+    const order = makeOrder({ id: 'order-contract', restaurantCloudHydrated: true, reservationAuthority: 'cloud' });
+    setOrders([order]);
+    const deps = makeDeps();
+    const { result } = renderHook(() => usePosCheckout(deps.args));
+    await initiateCheckout(result);
+    await act(async () => { await result.current.handleQuickCajaSubmit({ openingAmount: 100 }); });
+    expect(mocks.activeState.currentOrderId).toBe('order-contract');
+    const durableBefore = structuredClone(mocks.sales.get('order-contract'));
+    mocks.tableCapabilities.mockRejectedValueOnce(Object.assign(new Error('Hay una actualización disponible para continuar gestionando esta mesa. Tus datos locales se conservarán.'), {
+      code: 'RESTAURANT_CONTRACT_MAINTENANCE', restaurantContractError: true
+    }));
+    let response;
+    await act(async () => { response = await result.current.handleProcessOrder({ paymentMethod: 'efectivo' }); });
+    expect(response).toMatchObject({ success: false, code: 'RESTAURANT_CONTRACT_MAINTENANCE' });
+    expect(mocks.processSale).not.toHaveBeenCalled();
+    expect(mocks.activeState.removeOrder).not.toHaveBeenCalled();
+    expect(mocks.sales.get('order-contract')).toMatchObject({ id: durableBefore.id, status: durableBefore.status });
+    expect(mocks.activeState.currentOrderId).toBe('order-contract');
+    expect(deps.modal.openModal).toHaveBeenCalledWith('payment');
+  });
+
+  it.each(['throw', 'result'])('TR-37 keeps the checkout ownership when a contract failure arrives from financial execution (%s)', async (mode) => {
+    const order = makeOrder({ id: 'order-contract-finance' });
+    setOrders([order]);
+    const deps = makeDeps();
+    const { result } = renderHook(() => usePosCheckout(deps.args));
+    await initiateCheckout(result);
+    const code = 'RESTAURANT_CONTRACT_MAINTENANCE';
+    const message = 'La gestión de mesas está en una actualización programada. Tus datos locales se conservarán.';
+    if (mode === 'throw') mocks.processSale.mockRejectedValueOnce(Object.assign(new Error(message), { code }));
+    else mocks.processSale.mockResolvedValueOnce({ success: false, code, message });
+    let response;
+    await act(async () => { response = await result.current.handleProcessOrder({ paymentMethod: 'efectivo' }); });
+    expect(response).toMatchObject({ success: false, code, checkoutPreserved: true, localPreserved: true });
+    expect(mocks.activeState.currentOrderId).toBe(order.id);
+    expect(mocks.activeState.unlockOrder).not.toHaveBeenCalled();
+    expect(mocks.activeState.removeOrder).not.toHaveBeenCalled();
+    expect(mocks.processSale).toHaveBeenCalledOnce();
+    expect(deps.modal.openModal).toHaveBeenLastCalledWith('payment');
+  });
+
   it('releases only A when selection changes to B after A acquired the lock', async () => {
     const fefo = createDeferred();
     const orderA = makeOrder({

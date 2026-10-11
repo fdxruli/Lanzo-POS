@@ -49,7 +49,7 @@ sql(`update public.pos_restaurant_orders set payment_status='paid',paid_at=now()
 denied(`select public.pos_cancel_restaurant_order_from_pos_v1('fixture-license','B','valid','admin','hotfix-paid','${version}','Admin reason','hotfix-paid-cancel')`, 'RESTAURANT_ORDER_ALREADY_PAID');
 seed('hotfix-admin-edit');
 const adminEdit = reason => `select public.pos_upsert_restaurant_order_unlimited('fixture-license','A','valid','admin',
-'${JSON.stringify({ localOrderId: 'hotfix-admin-edit', saleId: 'hotfix-admin-edit', expectedParentVersion: version, total: 50, ...(reason ? { interventionReason: reason } : {}) })}',
+'${JSON.stringify({ clientContractVersion: 2, localOrderId: 'hotfix-admin-edit', saleId: 'hotfix-admin-edit', expectedParentVersion: version, total: 50, ...(reason ? { interventionReason: reason } : {}) })}',
 '[{"localLineId":"line","productName":"Pizza","quantity":1,"unitPrice":50,"lineTotal":50}]','hotfix-admin-edit-${reason ? 'reason' : 'missing'}')`;
 denied(adminEdit(null), 'RESTAURANT_INTERVENTION_REASON_REQUIRED');
 assert.equal(JSON.parse(sql(adminEdit('Admin intervention'))).success, true);
@@ -62,7 +62,7 @@ assert.equal(itemResult.success, true);
 assert.equal(sql(`select status from public.pos_restaurant_order_items where id='hotfix-item'`), 'cancelled');
 assert.equal(sql(`select status='pending' and cancelled_at is null and payment_status='unpaid' and updated_at <> '${version}'::timestamptz from public.pos_restaurant_orders where id='hotfix-items'`), 't');
 denied(`select public.pos_upsert_restaurant_order_unlimited('fixture-license','A','valid','staff-a',
-'{"localOrderId":"hotfix-items","saleId":"hotfix-items","expectedParentVersion":"${version}","total":50}',
+'{"clientContractVersion":2,"localOrderId":"hotfix-items","saleId":"hotfix-items","expectedParentVersion":"${version}","total":50}',
 '[{"localLineId":"line","productName":"Pizza","quantity":1,"unitPrice":50,"lineTotal":50}]','hotfix-stale-after-kitchen')`, 'RESTAURANT_ORDER_VERSION_CONFLICT');
 seed('hotfix-cancel');
 const cancel = `select public.pos_cancel_restaurant_order_from_pos_v1('fixture-license','A','valid','staff-a','hotfix-cancel','${version}','Origin reason','hotfix-origin-cancel')`;
@@ -102,7 +102,7 @@ values('${item}','${victimLicense}','victim-${i}','Victim value');\n`);
   await waitFor(`select exists(select 1 from pg_stat_activity where application_name='${name}' and state='idle in transaction')`);
   const loser = openSession(`${name}-loser`);
   loser.child.stdin.end(`select public.pos_upsert_restaurant_order_unlimited('fixture-license','A','valid','staff-a',
-'{"localOrderId":"${id}","saleId":"${id}","expectedParentVersion":"${version}","total":50}',
+'{"clientContractVersion":2,"localOrderId":"${id}","saleId":"${id}","expectedParentVersion":"${version}","total":50}',
 '[{"id":"${item}","localLineId":"line","productName":"Attacker value","quantity":1,"unitPrice":50,"lineTotal":50}]','${name}');\n`);
   await waitFor(`select exists(select 1 from pg_stat_activity where application_name='${name}-loser' and wait_event_type='Lock')`);
   winner.child.stdin.end('commit;\n');
@@ -118,7 +118,7 @@ winner.child.stdin.write(`begin; select private.lock_restaurant_order_settlement
 await waitFor(`select exists(select 1 from pg_locks l join pg_stat_activity a on a.pid=l.pid where a.application_name='hotfix-kitchen-race' and l.locktype='advisory' and l.granted)`);
 const loser = openSession('hotfix-kitchen-race-loser');
 loser.child.stdin.end(`select public.pos_upsert_restaurant_order_unlimited('fixture-license','A','valid','staff-a',
-'{"localOrderId":"hotfix-kitchen-race","saleId":"hotfix-kitchen-race","expectedParentVersion":"${version}","total":50}',
+'{"clientContractVersion":2,"localOrderId":"hotfix-kitchen-race","saleId":"hotfix-kitchen-race","expectedParentVersion":"${version}","total":50}',
 '[{"localLineId":"line","productName":"Pizza","quantity":1,"unitPrice":50,"lineTotal":50}]','hotfix-kitchen-race-edit');\n`);
 await waitFor(`select exists(select 1 from pg_stat_activity where application_name='hotfix-kitchen-race-loser' and wait_event_type='Lock')`);
 winner.child.stdin.end(`select public.pos_update_restaurant_order_item_status('fixture-license','B','valid','kitchen','hotfix-kitchen-race','hotfix-race-item','preparing','hotfix-race-kitchen'); commit;\n`);

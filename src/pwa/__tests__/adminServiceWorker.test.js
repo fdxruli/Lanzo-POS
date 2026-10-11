@@ -6,6 +6,7 @@ import {
   resetAdminServiceWorkerForTests,
   startAdminServiceWorker,
   subscribeAdminServiceWorker,
+  setAdminServiceWorkerReloadGuard,
 } from '../adminServiceWorker';
 
 class FakeEventTarget {
@@ -30,6 +31,7 @@ class FakeEventTarget {
 }
 
 function createHarness({ controlled = false } = {}) {
+  setAdminServiceWorkerReloadGuard(() => true); // Existing cases represent an idle, bootstrapped POS.
   const serviceWorker = new FakeEventTarget();
   serviceWorker.controller = controlled ? { scriptURL: '/sw-old.js' } : null;
   const registration = new FakeEventTarget();
@@ -57,6 +59,46 @@ function createHarness({ controlled = false } = {}) {
 
 describe('administrative Service Worker coordinator', () => {
   afterEach(() => resetAdminServiceWorkerForTests());
+
+  it('TR-21/TR-39 defers another-tab activation during checkout and reloads only after safe recovery', async () => {
+    const harness = createHarness({ controlled: true });
+    await startAdminServiceWorker(harness);
+    setAdminServiceWorkerReloadGuard(() => false);
+    harness.serviceWorker.controller = { scriptURL: '/sw-transition.js' };
+    harness.registration.active = harness.serviceWorker.controller;
+    harness.serviceWorker.dispatch('controllerchange');
+    expect(harness.windowTarget.location.reload).not.toHaveBeenCalled();
+    expect(getAdminServiceWorkerState()).toMatchObject({ active: true, reloadDeferred: true });
+    await expect(activateAdminServiceWorkerUpdate()).rejects.toMatchObject({ code: 'ADMIN_UPDATE_FINANCIAL_OPERATION_ACTIVE' });
+    setAdminServiceWorkerReloadGuard(() => true);
+    await expect(activateAdminServiceWorkerUpdate()).resolves.toBe(true);
+    expect(harness.windowTarget.location.reload).toHaveBeenCalledOnce();
+  });
+
+  it('TR-29 cannot reload before bootstrap supplies a guard or when the guard throws', async () => {
+    const harness = createHarness({ controlled: true });
+    await startAdminServiceWorker(harness);
+    setAdminServiceWorkerReloadGuard(null);
+    harness.serviceWorker.controller = { scriptURL: '/sw-new.js' };
+    harness.serviceWorker.dispatch('controllerchange');
+    expect(harness.windowTarget.location.reload).not.toHaveBeenCalled();
+    setAdminServiceWorkerReloadGuard(() => { throw new Error('bootstrap unavailable'); });
+    harness.serviceWorker.dispatch('controllerchange');
+    expect(harness.windowTarget.location.reload).not.toHaveBeenCalled();
+  });
+
+  it('defers reload if a checkout begins after the user requested activation', async () => {
+    const harness = createHarness({ controlled: true });
+    harness.registration.waiting = { postMessage: vi.fn() };
+    await startAdminServiceWorker(harness);
+    const activation = activateAdminServiceWorkerUpdate();
+    setAdminServiceWorkerReloadGuard(() => false);
+    harness.serviceWorker.controller = { scriptURL: '/sw-new.js' };
+    harness.serviceWorker.dispatch('controllerchange');
+    await expect(activation).resolves.toBe(false);
+    expect(harness.windowTarget.location.reload).not.toHaveBeenCalled();
+    expect(getAdminServiceWorkerState().reloadDeferred).toBe(true);
+  });
 
   it('registers /sw.js once with scope / and updateViaCache disabled', async () => {
     const harness = createHarness();

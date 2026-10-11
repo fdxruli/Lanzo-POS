@@ -34,6 +34,7 @@ import { isRestaurantCloudTableShadow, isRestaurantCloudTableTerminal, restauran
 import { RESTAURANT_CLOUD_STATUS_EVENT } from '../../services/restaurant/restaurantCloudStatusSummary';
 import { verifyRestaurantTableAuthority } from '../../services/restaurant/restaurantTableAuthority';
 import { preflightCloudRestaurantOrderSettlement } from '../../services/restaurant/restaurantSplitCloudPreflight';
+import { isRestaurantContractFailure } from '../../services/restaurant/restaurantCloudContract';
 
 const EMPTY_ORDER = [];
 const durableTableCleanupPending = (id, recoveryRequired = false) => ({
@@ -172,6 +173,7 @@ export function useTableManagement({
             return {
                 success: false,
                 error,
+                code: error?.code,
                 message: error?.message || 'No se pudo enviar a cocina cloud.'
             };
         }
@@ -314,6 +316,14 @@ export function useTableManagement({
                 if (isCloudRestaurantOrdersEnabled) {
                     saveActor.assertCurrent();
                     cloudSyncResult = await syncOpenRestaurantOrderToCloud(orderId, saveActor);
+                }
+
+                if (isRestaurantContractFailure(cloudSyncResult?.error)) {
+                    // The durable local table and active draft remain available.
+                    // An upgrade is not confirmation of Cloud delivery or cleanup.
+                    showMessageModal(cloudSyncResult.message, null, { type: 'warning' });
+                    return { success: false, id: orderId, durableSaveSucceeded: true,
+                        localPreserved: true, code: cloudSyncResult.code, message: cloudSyncResult.message };
                 }
 
                 const cloudAuthority = handlePosActorAuthorityError(

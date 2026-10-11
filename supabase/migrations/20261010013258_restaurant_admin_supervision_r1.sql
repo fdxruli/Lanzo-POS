@@ -1,3 +1,9 @@
+-- Requires the preceding discovery bridge. Install in one transaction only
+-- after an authorized maintenance/drain and backup/QA gates. Admin activation
+-- remains separately disabled per license; this migration never enables it.
+select pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('restaurant_contract_cutover_v1',0));
+update private.restaurant_cloud_contract_state set contract_version=2,generation=generation+1 where singleton;
+
 -- Restaurant authority r1. HOLD_SQL_DEPLOYMENT_APPROVAL.
 -- Audited against deployed pg_get_functiondef on 2026-10-09. No production writes.
 create table if not exists private.restaurant_table_interventions (
@@ -24,6 +30,7 @@ create or replace function private.assert_restaurant_table_actor_v1(
 ) returns void language plpgsql set search_path = '' as $function$
 declare v_actor text := p_context->>'actor_type';
 begin
+  if p_operation <> 'view' then perform private.enter_restaurant_transition_write_v1(); end if;
   if p_order.id is null or p_order.license_id is distinct from (p_context->>'license_id')::uuid then
     raise exception 'RESTAURANT_TABLE_SCOPE_DENIED' using errcode = 'P0001';
   end if;
@@ -39,6 +46,10 @@ begin
     if nullif(p_context->>'admin_user_id','') is distinct from p_context->>'actor_id'
        or nullif(p_context->>'admin_session_id','') is distinct from p_context->>'actor_session_id' then
       raise exception 'ACTOR_SESSION_INVALID' using errcode = 'P0001';
+    end if;
+    if p_operation <> 'view' and p_order.created_by_staff_user_id is not null
+       and not private.restaurant_admin_supervision_enabled_v1(p_order.license_id) then
+      raise exception 'RESTAURANT_ADMIN_SUPERVISION_NOT_ACTIVE' using errcode='P0001';
     end if;
   elsif v_actor = 'staff' then
     if p_operation <> 'view' and (p_order.created_by_staff_user_id is null
@@ -96,15 +107,17 @@ begin
     where license_id=(v_context->>'license_id')::uuid and local_order_id=p_local_order_id
     order by updated_at desc, id limit 1;
   perform private.assert_restaurant_table_actor_v1(v_context,v_order,'view');
-  v_admin := v_context->>'actor_type' = 'admin';
-  v_owner := v_context->>'actor_type' = 'staff' and v_order.created_by_staff_user_id=(v_context->>'actor_id')::uuid;
+  v_admin := v_context->>'actor_type' = 'admin' and private.restaurant_admin_supervision_enabled_v1(v_order.license_id);
+  v_owner := (v_context->>'actor_type' = 'staff' and v_order.created_by_staff_user_id=(v_context->>'actor_id')::uuid)
+    or (v_context->>'actor_type' = 'admin' and v_order.created_by_staff_user_id is null);
   v_active := v_order.deleted_at is null and v_order.archived_at is null and v_order.checkout_closed_at is null
     and v_order.paid_at is null and v_order.paid_sale_id is null and v_order.cancelled_at is null
     and coalesce(v_order.payment_status,'unpaid')='unpaid'
     and v_order.status in ('pending','preparing','ready','delivered')
     and v_order.fulfillment_status in ('pending','preparing','ready','delivered');
-  v_pos := v_admin or coalesce((v_context->'actor_permissions'->>'pos')::boolean,false);
-  v_refunds := v_admin or coalesce((v_context->'actor_permissions'->>'refunds')::boolean,false);
+  v_active := v_active and not (select writes_paused from private.restaurant_cloud_contract_state where singleton);
+  v_pos := v_context->>'actor_type'='admin' or coalesce((v_context->'actor_permissions'->>'pos')::boolean,false);
+  v_refunds := v_context->>'actor_type'='admin' or coalesce((v_context->'actor_permissions'->>'refunds')::boolean,false);
   v_edit := v_active and (v_admin or coalesce(v_owner,false))
     and v_order.created_by_device_id=(v_context->>'device_id')::uuid;
   return jsonb_build_object('success',true,'contractVersion',1,'cloudOrderId',v_order.id,
@@ -242,6 +255,7 @@ declare
   v_restaurant_close_response jsonb;
   v_restaurant_payment_summary jsonb;
 begin
+  perform private.enter_restaurant_financial_transition_write_v1(p_license_key,p_device_fingerprint,p_security_token,p_staff_session_token,p_request);
   v_context := private.validate_pos_sync_context(
     p_license_key, p_device_fingerprint, p_security_token, p_staff_session_token
   );
@@ -648,6 +662,7 @@ declare
   v_primary_sale_id text;
   v_primary_sale_folio text;
 begin
+  perform private.enter_restaurant_transition_write_v1();
   if jsonb_typeof(coalesce(p_split, '{}'::jsonb)) <> 'object' then
     raise exception 'FINANCIAL_SPLIT_CONTRACT_INVALID' using errcode = 'P0001';
   end if;
@@ -1098,6 +1113,7 @@ declare
   v_idem public.pos_idempotency_keys;
   v_response jsonb;
 begin
+  perform private.enter_restaurant_transition_write_v1();
   v_context := private.validate_pos_sync_context(p_license_key, p_device_fingerprint, p_security_token, p_staff_session_token);
   perform private.assert_cloud_sales_sync_base_enabled(v_context);
   perform private.assert_pos_permission(v_context, 'refunds');
@@ -1226,6 +1242,8 @@ declare
   v_request_hash text;
   v_expected_version timestamptz;
 begin
+  perform private.enter_restaurant_transition_write_v1();
+  if p_order->>'clientContractVersion' is distinct from '2' then raise exception 'RESTAURANT_CLIENT_UPGRADE_REQUIRED' using errcode='P0001'; end if;
   v_context := private.validate_pos_sync_context(p_license_key, p_device_fingerprint, p_security_token, p_staff_session_token);
   perform private.assert_cloud_sales_sync_base_enabled(v_context);
   perform private.assert_restaurant_order_write_permission(v_context);
@@ -1551,6 +1569,7 @@ declare
   v_paid_sale_folio text;
   v_is_split_bill boolean;
 begin
+  perform private.enter_restaurant_transition_write_v1();
   v_context := private.validate_pos_sync_context(p_license_key, p_device_fingerprint, p_security_token, p_staff_session_token);
   perform private.assert_cloud_sales_sync_base_enabled(v_context);
   perform private.assert_restaurant_order_write_permission(v_context);
@@ -1812,6 +1831,7 @@ declare
   v_split_item_adjustment numeric := 0;
   v_split_adjustment_item_count integer := 0;
 begin
+  perform private.enter_restaurant_financial_transition_write_v1(p_license_key,p_device_fingerprint,p_security_token,p_staff_session_token,jsonb_build_object('sale',p_sale));
   if p_operation_type not in ('sale.cashier', 'sale.cashier_inventory', 'sale.credit') then
     raise exception 'SALE_OPERATION_UNSUPPORTED' using errcode = 'P0001';
   end if;
@@ -2550,6 +2570,7 @@ declare
   v_idem public.pos_idempotency_keys;
   v_inserted_idem boolean;
 begin
+  perform private.enter_restaurant_transition_write_v1();
   v_context := private.validate_pos_sync_context(p_license_key, p_device_fingerprint, p_security_token, p_staff_session_token);
   perform private.assert_cloud_sales_sync_base_enabled(v_context);
   perform private.assert_restaurant_order_write_permission(v_context);
@@ -2697,6 +2718,7 @@ declare
   v_next_status text;
   v_is_paid boolean := false;
 begin
+  perform private.enter_restaurant_transition_write_v1();
   select * into v_order
   from public.pos_restaurant_orders
   where license_id = p_license_id

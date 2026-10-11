@@ -16,6 +16,7 @@ import { actorRuntimeController } from '../auth/actorRuntimeController';
 import { cashRepository } from '../cash/cashRepository';
 import { layawayRepository } from '../db/layaways';
 import { preflightCloudRestaurantOrderSettlement } from '../restaurant/restaurantSplitCloudPreflight';
+import { restaurantContractError, RESTAURANT_UPGRADE_MESSAGE } from '../restaurant/restaurantCloudContract';
 import {
   isCloudCashierCompatiblePayment,
   isCreditLikePaymentMethod,
@@ -276,6 +277,9 @@ const friendlyCloudCashierError = (error) => {
   const code = /^\d{5}$/.test(rawCode) ? rawCode : semanticCode || rawCode || raw;
 
   const messages = {
+    RESTAURANT_CONTRACT_MAINTENANCE: restaurantContractError('RESTAURANT_CONTRACT_MAINTENANCE').message,
+    RESTAURANT_CLIENT_UPGRADE_REQUIRED: RESTAURANT_UPGRADE_MESSAGE,
+    RESTAURANT_ADMIN_SUPERVISION_NOT_ACTIVE: RESTAURANT_UPGRADE_MESSAGE,
     CLOUD_CASH_SESSION_REQUIRED: 'Para recibir abono inicial en efectivo necesitas abrir caja primero.',
     CASH_SESSION_NOT_FOUND: 'No se encontró la caja seleccionada. Abre tu caja e intenta de nuevo.',
     CASH_SESSION_FORBIDDEN: 'Esta caja pertenece a otro usuario o dispositivo.',

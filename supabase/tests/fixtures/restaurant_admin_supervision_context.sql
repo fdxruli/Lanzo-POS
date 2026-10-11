@@ -20,6 +20,7 @@ begin
     'actor_type',v_type,'actor_id',v_actor,'actor_key',v_type||':'||v_actor,'actor_session_id',v_session,
     'admin_user_id',case when v_type='admin' then v_actor else null end,'admin_session_id',case when v_type='admin' then v_session else null end,
     'staff_user_id',case when v_type='staff' then v_actor else null end,
+    'staff_session_id',case when v_type='staff' then v_session else null end,
     'actor_permissions',jsonb_build_object('pos',$4 not in ('no-pos','kitchen'),'refunds',$4 not in ('no-refunds','kitchen'),'orders',$4='kitchen'));
 end;
 $fixture$;

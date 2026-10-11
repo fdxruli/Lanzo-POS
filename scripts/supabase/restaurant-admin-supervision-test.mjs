@@ -16,7 +16,11 @@ const sql = (query) => {
 assert.equal(sql("select count(*) from information_schema.tables where table_schema in ('public','private')"),'0');
 for (const file of ['supabase/tests/fixtures/restaurant_origin_cancel_3d13_setup.sql',
   'supabase/tests/fixtures/restaurant_admin_supervision_context.sql',
-  'supabase/migrations/20261010013258_restaurant_admin_supervision_r1.sql']) sql(readFileSync(file,'utf8'));
+  'supabase/migrations/20261010013257_restaurant_cloud_transition_bridge_v1.sql',
+  'supabase/migrations/20261010013258_restaurant_admin_supervision_r1.sql']) sql('BEGIN;'+readFileSync(file,'utf8')+'COMMIT;');
+// Prior ten-race coverage exercises the enabled final Admin phase. Transition
+// tests separately prove the default-disabled and maintenance states.
+sql("select private.set_restaurant_transition_policy_v1(false,'00000000-0000-0000-0000-000000000001',true)");
 
 // The dispatcher, cancellation, ownership/capability and upsert functions above
 // are the actual migration. Financial leaves below are controlled fixture effects.
@@ -82,7 +86,7 @@ rejected(`select private.r2b_authorize_sale_financial_request_v1('sale.cashier',
 rejected("set role anon; select private.assert_restaurant_settlement_permit_v1('{}','owner')",'permission denied');
 assert.equal(sql('select count(*) from public.pos_sales'),'0');
 const edit = (actor,device='A',expected=version,extra={},id='owner') => `select public.pos_upsert_restaurant_order_unlimited('fixture-license','${device}','valid','${actor}',
-  '${JSON.stringify({localOrderId:id,saleId:id,expectedParentVersion:expected,total:50,subtotal:50,...extra})}',
+  '${JSON.stringify({clientContractVersion:2,localOrderId:id,saleId:id,expectedParentVersion:expected,total:50,subtotal:50,...extra})}',
   '[{"localLineId":"line-owner","productId":"pizza","productName":"Pizza","quantity":1,"unitPrice":50,"lineTotal":50}]','edit-${actor}-${device}-${expected}')`;
 rejected(edit('staff-b','A',version,{createdByStaffUserId:owner}),'RESTAURANT_TABLE_OWNER_REQUIRED');
 rejected(edit('admin','B',version,{createdByDeviceId:'00000000-0000-0000-0000-00000000000b'}),'ADMIN_REMOTE_EDIT_BLOCKED');
