@@ -225,7 +225,8 @@ const ProductCard = memo(function ProductCard({
   onCardClick,
   isLoadingVariant,
   hasAvailableVariants,
-  strictExpiryBlocked = false
+  strictExpiryBlocked = false,
+  selectionDisabled = false
 }) {
   // ── Lógica de negocio visual ──────────────────────────────────────────────
   const isRecipeBased = Array.isArray(product?.recipe) && product.recipe.length > 0;
@@ -296,23 +297,24 @@ const ProductCard = memo(function ProductCard({
 
   // ── Handlers ─────────────────────────────────────────────────────────────
   const handleClick = useCallback(() => {
-    if (!isOutOfStock && !strictExpiryBlocked) onCardClick?.(product);
-  }, [isOutOfStock, strictExpiryBlocked, onCardClick, product]);
+    if (!isOutOfStock && !strictExpiryBlocked && !selectionDisabled) onCardClick?.(product);
+  }, [isOutOfStock, strictExpiryBlocked, selectionDisabled, onCardClick, product]);
 
   const handleKeyDown = useCallback((e) => {
-    if ((e.key === 'Enter' || e.key === ' ') && !isOutOfStock && !strictExpiryBlocked) {
+    if ((e.key === 'Enter' || e.key === ' ') && !isOutOfStock && !strictExpiryBlocked && !selectionDisabled) {
       e.preventDefault();
       onCardClick?.(product);
     }
-  }, [isOutOfStock, strictExpiryBlocked, onCardClick, product]);
+  }, [isOutOfStock, strictExpiryBlocked, selectionDisabled, onCardClick, product]);
 
   // ── Clases dinámicas ───────────────────────────────────────────────────────────────────
   const cardClasses = useMemo(() => [
     'product-card',
     isOutOfStock ? 'product-card--out-of-stock' : '',
     strictExpiryBlocked ? 'product-card--strict-expiry-blocked' : '',
+    selectionDisabled ? 'product-card--read-only' : '',
     isLoadingVariant ? 'product-card--loading-variant' : '',
-  ].filter(Boolean).join(' '), [isOutOfStock, strictExpiryBlocked, isLoadingVariant]);
+  ].filter(Boolean).join(' '), [isOutOfStock, strictExpiryBlocked, selectionDisabled, isLoadingVariant]);
 
   const footerClasses = useMemo(() => [
     'product-card__footer',
@@ -325,8 +327,9 @@ const ProductCard = memo(function ProductCard({
       className={cardClasses}
       onClick={handleClick}
       role="button"
-      tabIndex={isOutOfStock || strictExpiryBlocked ? -1 : 0}
-      aria-disabled={isOutOfStock || strictExpiryBlocked}
+      tabIndex={isOutOfStock || strictExpiryBlocked || selectionDisabled ? -1 : 0}
+      aria-disabled={isOutOfStock || strictExpiryBlocked || selectionDisabled}
+      title={selectionDisabled ? 'Mesa de solo lectura: no se pueden agregar productos.' : undefined}
       aria-label={`${product?.name || ''} precio ${product?.price || 0}`}
       onKeyDown={handleKeyDown}
     >

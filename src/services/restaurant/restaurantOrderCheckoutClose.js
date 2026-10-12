@@ -7,6 +7,12 @@ import {
   runWithLocalTenantSyncLease
 } from '../tenant/localTenantGuard';
 import { getTenantStorageItem, setTenantStorageItem } from '../tenant/tenantScopedStorage';
+import { classifyActorAuthorityError } from '../auth/actorAuthorityErrors';
+import { actorRuntimeController, ACTOR_RUNTIME_STATUS } from '../auth/actorRuntimeController';
+import {
+  getActorAuthorityRecoverySnapshot,
+  reportActorAuthorityError
+} from '../auth/actorAuthorityRecovery';
 
 const STORAGE_KEY = 'lanzo:restaurant-order-close-pending:v1';
 const MAX_RETRY_COUNT = 5;
@@ -66,6 +72,62 @@ const clearPending = (localOrderIdOrKey, licenseKey) => {
       safe(row.localOrderId) !== key
     )
   )));
+};
+
+const authorityCloseFailure = (error, { pendingSaved = false } = {}) => {
+  const classification = classifyActorAuthorityError(error, actorRuntimeController.getState());
+  if (!classification) return null;
+  reportActorAuthorityError(error, { operation: 'restaurant_checkout_close' });
+  return {
+    success: false,
+    retryable: false,
+    pendingSaved,
+    manualRetryRequired: true,
+    reauthenticationRequired: classification.requiresReauthentication,
+    code: 'RESTAURANT_CLOUD_CLOSE_AUTHORITY_REQUIRED',
+    message: `La venta quedó registrada. ${classification.message}`
+  };
+};
+
+const activeRecoveryCloseFailure = () => {
+  const recovery = getActorAuthorityRecoverySnapshot();
+  const runtime = actorRuntimeController.getState();
+  if (!recovery && runtime.status === ACTOR_RUNTIME_STATUS.GRANTED) return null;
+  const classification = classifyActorAuthorityError({ code: 'ACTOR_CONTEXT_LOCKED' }, runtime);
+  return {
+    success: false,
+    retryable: false,
+    pendingSaved: false,
+    manualRetryRequired: true,
+    reauthenticationRequired: Boolean(recovery || classification?.requiresReauthentication),
+    code: 'RESTAURANT_CLOUD_CLOSE_AUTHORITY_REQUIRED',
+    message: `La venta quedó registrada. ${classification.message}`
+  };
+};
+
+const capturedCloseFailure = (actorHandle) => {
+  try {
+    actorHandle.assertCurrent();
+    return null;
+  } catch {
+    // A previous request cannot demand another login or touch recovery rows
+    // belonging to a newly granted actor. An existing lock keeps its reason.
+    return activeRecoveryCloseFailure() || authorityCloseFailure({ code: 'CLOUD_REQUEST_RESPONSE_STALE' });
+  }
+};
+
+const markPendingForManualRetry = (row) => {
+  const key = getPendingRowKey(row);
+  writePending(readPending().map((pending) => (
+    pending.licenseKey === row.licenseKey && getPendingRowKey(pending) === key
+      ? { ...pending, manualRetryRequired: true } : pending
+  )));
+  // Storage can fail silently for quota/privacy or a suspended namespace. Do
+  // not emit a financial follow-up unless its no-replay marker is durable.
+  return readPending().some((pending) => (
+    pending.licenseKey === row.licenseKey && getPendingRowKey(pending) === key &&
+    pending.manualRetryRequired === true
+  ));
 };
 
 export const buildRestaurantCheckoutCloseIdempotencyKey = ({ localOrderId, paidSaleId, paidSaleFolio } = {}) => `restaurant:checkout-close:${safe(localOrderId)}:${safe(paidSaleId || paidSaleFolio || 'sale')}`;
@@ -175,35 +237,65 @@ export const buildSplitCheckoutClosePayload = ({ localOrderId, splitResult = {},
   };
 };
 
-const closeWithPayload = async ({ payload, licenseKey }) => runWithLocalTenantSyncLease(
+const closeWithPayload = async ({ payload, licenseKey }) => {
+  const recoveryFailure = activeRecoveryCloseFailure();
+  if (recoveryFailure) return recoveryFailure;
+  return runWithLocalTenantSyncLease(
   { license_key: licenseKey },
   { reason: 'restaurant_checkout_close' },
   async () => {
     const scopedPayload = { ...payload, licenseKey };
+    const recoveryFailure = activeRecoveryCloseFailure();
+    if (recoveryFailure) return recoveryFailure;
+    let actorHandle;
+    try {
+      actorHandle = actorRuntimeController.capture();
+    } catch (error) {
+      return authorityCloseFailure(error) || activeRecoveryCloseFailure();
+    }
     if (!isOnline()) {
       savePending(scopedPayload, new Error('OFFLINE'));
       return { success: false, retryable: true, pendingSaved: true, code: 'RESTAURANT_CLOUD_CLOSE_OFFLINE' };
     }
 
+    const existingPending = readPending().find((row) => (
+      row.licenseKey === licenseKey && getPendingRowKey(row) === getPendingRowKey(scopedPayload)
+    ));
+    if (existingPending && !markPendingForManualRetry(existingPending)) {
+      return { success: false, retryable: false, pendingSaved: true, code: 'RESTAURANT_CLOSE_RECOVERY_STORAGE_UNAVAILABLE' };
+    }
+
     try {
       const response = await restaurantOrdersRepository.closeRestaurantOrderAfterCheckout({ licenseKey, ...payload });
+      const actorFailure = capturedCloseFailure(actorHandle);
+      if (actorFailure) return { ...actorFailure, pendingSaved: Boolean(existingPending) };
+      if (response?.success === false) {
+        const authorityFailure = authorityCloseFailure(response, { pendingSaved: Boolean(existingPending) });
+        if (authorityFailure) return authorityFailure;
+      }
       await assertLocalTenantSyncAccess(
         { license_key: licenseKey },
         { reason: 'restaurant_checkout_close_commit' }
       );
+      const commitFailure = capturedCloseFailure(actorHandle);
+      if (commitFailure) return { ...commitFailure, pendingSaved: Boolean(existingPending) };
       if (response?.success === false) {
-        savePending(scopedPayload, response);
+        savePending({ ...scopedPayload, manualRetryRequired: existingPending?.manualRetryRequired === true }, response);
         return { ...response, retryable: true, pendingSaved: true };
       }
       clearPending(payload.idempotencyKey || payload.localOrderId, licenseKey);
       return response;
     } catch (error) {
+      const authorityFailure = capturedCloseFailure(actorHandle) || authorityCloseFailure(error, { pendingSaved: Boolean(existingPending) }) || activeRecoveryCloseFailure();
+      if (authorityFailure) return { ...authorityFailure, pendingSaved: Boolean(existingPending) };
       if (isLocalTenantAccessError(error)) throw error;
       await assertLocalTenantSyncAccess(
         { license_key: licenseKey },
         { reason: 'restaurant_checkout_close_retry_save' }
       );
-      savePending(scopedPayload, error);
+      const retrySaveFailure = capturedCloseFailure(actorHandle);
+      if (retrySaveFailure) return { ...retrySaveFailure, pendingSaved: Boolean(existingPending) };
+      savePending({ ...scopedPayload, manualRetryRequired: existingPending?.manualRetryRequired === true }, error);
       return {
         success: false,
         retryable: true,
@@ -213,9 +305,14 @@ const closeWithPayload = async ({ payload, licenseKey }) => runWithLocalTenantSy
       };
     }
   }
-);
+  );
+};
 
 export const closeRestaurantCloudOrderAfterSuccessfulPayment = async ({ localOrderId, saleResult = {}, paymentData = {}, licenseDetails = null, saleTotal = null, features = null } = {}) => {
+  if (saleResult?.atomicRestaurantSettlement === true || saleResult?.restaurantSettlement?.success === true) {
+    return { success: true, skipped: true, atomic: true, reason: 'restaurant_settlement_already_closed' };
+  }
+
   const { licenseKey, enabled, reason } = isEnabled({ licenseDetails, localOrderId, features });
 
   if (!enabled) {
@@ -240,21 +337,38 @@ export const closeRestaurantCloudOrderAfterSuccessfulSplitPayment = async ({ loc
 export const retryPendingRestaurantCloudOrderCloses = async ({ licenseDetails = null, features = null, maxRetries = 3 } = {}) => {
   const { licenseKey, enabled, reason } = isEnabled({ licenseDetails, localOrderId: 'retry', features });
   if (!enabled || !isOnline()) return { success: true, skipped: true, reason };
+  const recoveryFailure = activeRecoveryCloseFailure();
+  if (recoveryFailure) {
+    return { ...recoveryFailure, skipped: true, reason: 'actor_authority_recovery_required' };
+  }
 
   return runWithLocalTenantSyncLease(
     { license_key: licenseKey },
     { reason: 'restaurant_checkout_retry' },
     async () => {
+      let actorHandle;
+      try {
+        actorHandle = actorRuntimeController.capture();
+      } catch (error) {
+        return authorityCloseFailure(error) || activeRecoveryCloseFailure();
+      }
       // Legacy unscoped rows remain untouched until an explicit recovery can
       // identify their owner. They are never reinterpreted under this tenant.
       const rows = readPending()
-        .filter((row) => row.licenseKey === licenseKey)
+        .filter((row) => row.licenseKey === licenseKey && row.manualRetryRequired !== true)
         .slice(0, Math.max(1, Number(maxRetries) || 3));
       let closed = 0;
       let failed = 0;
 
       for (const row of rows) {
         if (!row.localOrderId || Number(row.retryCount || 0) >= MAX_RETRY_COUNT) continue;
+        const recoveryFailure = capturedCloseFailure(actorHandle) || activeRecoveryCloseFailure();
+        if (recoveryFailure) return { ...recoveryFailure, closed, failed, total: rows.length };
+        // Persist before dispatch. An auth rejection may suspend storage before
+        // the catch runs, and a later login must never replay that operation.
+        if (!markPendingForManualRetry(row)) {
+          return { success: false, closed, failed, total: rows.length, code: 'RESTAURANT_CLOSE_RECOVERY_STORAGE_UNAVAILABLE' };
+        }
         try {
           const response = await restaurantOrdersRepository.closeRestaurantOrderAfterCheckout({
             licenseKey,
@@ -265,21 +379,33 @@ export const retryPendingRestaurantCloudOrderCloses = async ({ licenseDetails = 
             paymentSummary: row.paymentSummary || {},
             idempotencyKey: row.idempotencyKey
           });
+          const actorFailure = capturedCloseFailure(actorHandle);
+          if (actorFailure) return { ...actorFailure, pendingSaved: true, closed, failed: failed + 1, total: rows.length };
+          if (response?.success === false) {
+            const authorityFailure = authorityCloseFailure(response, { pendingSaved: true });
+            if (authorityFailure) return { ...authorityFailure, closed, failed: failed + 1, total: rows.length };
+          }
           await assertLocalTenantSyncAccess(
             { license_key: licenseKey },
             { reason: 'restaurant_checkout_retry_commit' }
           );
+          const commitFailure = capturedCloseFailure(actorHandle);
+          if (commitFailure) return { ...commitFailure, pendingSaved: true, closed, failed: failed + 1, total: rows.length };
           if (response?.success === false) throw new Error(response.message || response.code || 'RESTAURANT_CLOUD_CLOSE_RETRY_FAILED');
           clearPending(row.idempotencyKey || row.localOrderId, licenseKey);
           closed += 1;
         } catch (error) {
+          const authorityFailure = capturedCloseFailure(actorHandle) || authorityCloseFailure(error, { pendingSaved: true }) || activeRecoveryCloseFailure();
+          if (authorityFailure) return { ...authorityFailure, pendingSaved: true, closed, failed: failed + 1, total: rows.length };
           if (isLocalTenantAccessError(error)) throw error;
           await assertLocalTenantSyncAccess(
             { license_key: licenseKey },
             { reason: 'restaurant_checkout_retry_save' }
           );
+          const retrySaveFailure = capturedCloseFailure(actorHandle);
+          if (retrySaveFailure) return { ...retrySaveFailure, pendingSaved: true, closed, failed: failed + 1, total: rows.length };
           failed += 1;
-          savePending({ ...row, retryCount: Number(row.retryCount || 0) + 1 }, error);
+          savePending({ ...row, manualRetryRequired: false, retryCount: Number(row.retryCount || 0) + 1 }, error);
         }
       }
 

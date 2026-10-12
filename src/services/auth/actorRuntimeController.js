@@ -93,6 +93,7 @@ export const createActorRuntimeController = ({
   getTenantAuthority = defaultTenantAuthority
 } = {}) => {
   const listeners = new Set();
+  const diagnostics = [];
   let state = {
     status: ACTOR_RUNTIME_STATUS.LOCKED,
     actorType: null,
@@ -151,6 +152,10 @@ export const createActorRuntimeController = ({
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
+    },
+
+    getDiagnostics() {
+      return diagnostics.map((entry) => ({ ...entry }));
     },
 
     beginAuthentication({ actorType, deviceRef = null } = {}) {
@@ -221,7 +226,14 @@ export const createActorRuntimeController = ({
       });
     },
 
-    lock(reason = 'actor_locked') {
+    lock(reason = 'actor_locked', { operation = null } = {}) {
+      diagnostics.push(Object.freeze({
+        previousStatus: state.status,
+        newStatus: ACTOR_RUNTIME_STATUS.LOCKED,
+        reason,
+        operation
+      }));
+      if (diagnostics.length > 100) diagnostics.shift();
       return publish({
         status: ACTOR_RUNTIME_STATUS.LOCKED,
         actorType: null,

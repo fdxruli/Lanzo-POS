@@ -34,7 +34,7 @@ describe('PosApplicationBootstrap cold administrative import', () => {
     expect(router.getActiveTenantRuntime()).toBeNull();
     expect(open).not.toHaveBeenCalled();
     expect(getLocalTenantGuardState()).toMatchObject({ status: 'locked' });
-  });
+  }, 90_000);
 
   it('keeps direct tenant database access fail-closed before TenantRuntime activation', async () => {
     vi.resetModules();

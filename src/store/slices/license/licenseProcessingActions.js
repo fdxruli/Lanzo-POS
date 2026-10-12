@@ -33,6 +33,8 @@ import {
     lockActorRuntime
 } from '../../../services/auth/actorSessionRuntimeBridge';
 import { assertLocalTenantSyncAccess } from '../../../services/tenant/localTenantGuard';
+import { classifyActorAuthorityError } from '../../../services/auth/actorAuthorityErrors';
+import { getActorAuthorityRecoverySnapshot, reportActorAuthorityError } from '../../../services/auth/actorAuthorityRecovery';
 
 const shouldLoadProfileForLicense = (state = {}, licenseKey, refreshProfile = false) => (
     refreshProfile ||
@@ -48,6 +50,15 @@ export const createLicenseProcessingActions = ({
 }) => ({
     _processServerValidation: async (serverValidation, localLicense, options = {}) => {
         const { refreshProfile = false, reason = 'server_validation' } = options || {};
+        if (getActorAuthorityRecoverySnapshot()) return;
+        if (classifyActorAuthorityError(serverValidation)?.requiresReauthentication) {
+            if (get()._requireActorAuthorityRecovery) {
+                await get()._requireActorAuthorityRecovery(serverValidation, { operation: reason });
+            } else {
+                reportActorAuthorityError(serverValidation, { operation: reason });
+            }
+            return;
+        }
         await assertLocalTenantSyncAccess(
             { ...localLicense, ...serverValidation, license_key: serverValidation?.license_key || localLicense?.license_key },
             { reason }
