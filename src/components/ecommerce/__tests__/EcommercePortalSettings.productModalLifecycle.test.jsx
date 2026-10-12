@@ -6,7 +6,10 @@ import EcommercePortalSettings from '../EcommercePortalSettings';
 import { useAppStore } from '../../../store/useAppStore';
 import {
   getEcommercePortal,
-  listPublishedProducts
+  listPublishedProducts,
+  savePublishedProduct,
+  saveEcommercePortal,
+  setProductPublished
 } from '../../../services/ecommerce/ecommerceAdminService';
 import { productRepository } from '../../../services/products/productRepository';
 
@@ -119,8 +122,16 @@ const proPortalResponse = {
   }
 };
 
-const delay = (ms) => new Promise((resolve) => window.setTimeout(resolve, ms));
 const getProductSelect = () => screen.getAllByRole('combobox')[0];
+
+const waitForCatalogRequest = async (searchTerm, cursor, expectedCalls) => {
+  await waitFor(() => {
+    expect(productRepository.listProductsPage).toHaveBeenCalledTimes(expectedCalls);
+    expect(productRepository.listProductsPage).toHaveBeenLastCalledWith(
+      expect.objectContaining({ searchTerm, cursor })
+    );
+  }, { timeout: 1000 });
+};
 
 const deferred = () => {
   let resolve;
@@ -149,18 +160,30 @@ const setAuthorizedStore = () => {
 };
 
 const renderCatalog = async () => {
-  render(<EcommercePortalSettings requestedSection="catalog" />);
+  await act(async () => {
+    render(<EcommercePortalSettings requestedSection="catalog" />);
+  });
   await waitFor(() => expect(getEcommercePortal).toHaveBeenCalledTimes(1));
   await screen.findByRole('button', { name: 'Publicar producto' });
 };
 
 const openPublishModal = async () => {
-  fireEvent.click(screen.getByRole('button', { name: 'Publicar producto' }));
+  const previousRequests = productRepository.listProductsPage.mock.calls.length;
+  // Dialog presence alone precedes its passive initialization effect, which resets
+  // the search field. Finish this opening before a test can issue its first search.
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Publicar producto' }));
+    expect(productRepository.listProductsPage).toHaveBeenCalledTimes(previousRequests + 1);
+    await productRepository.listProductsPage.mock.results[previousRequests].value;
+  });
   await screen.findByRole('dialog', { name: 'Publicar producto' });
 };
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Reset the fixture-owned queues too: a failed test can leave a once-response unused.
+  [getEcommercePortal, listPublishedProducts, savePublishedProduct, saveEcommercePortal,
+    setProductPublished, ...Object.values(productRepository)].forEach((mock) => mock.mockReset());
   setAuthorizedStore();
   getEcommercePortal.mockResolvedValue(freePortalResponse);
   listPublishedProducts.mockResolvedValue({ success: true, products: [] });
@@ -192,10 +215,18 @@ describe('EcommercePortalSettings + EcommerceProductPublishModal catalog lifecyc
   ])('preloads once and preserves selection after search for %s without background button flicker', async (_planName, portalResponse) => {
     getEcommercePortal.mockResolvedValue(portalResponse);
     await renderCatalog();
-    await openPublishModal();
-
-    expect(productRepository.listProductsPage).toHaveBeenCalledTimes(1);
-    await act(async () => delay(300));
+    // Install the clock before opening can schedule a modal debounce.
+    vi.useFakeTimers();
+    try {
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Publicar producto' }));
+      });
+      expect(screen.getByRole('dialog', { name: 'Publicar producto' })).toBeInTheDocument();
+      expect(productRepository.listProductsPage).toHaveBeenCalledTimes(1);
+      await act(async () => vi.advanceTimersByTimeAsync(300));
+    } finally {
+      vi.useRealTimers();
+    }
     expect(productRepository.listProductsPage).toHaveBeenCalledTimes(1);
 
     fireEvent.change(getProductSelect(), {
@@ -209,7 +240,7 @@ describe('EcommercePortalSettings + EcommerceProductPublishModal catalog lifecyc
     fireEvent.change(screen.getByPlaceholderText('Buscar por nombre, código o SKU'), {
       target: { value: 'dos' }
     });
-    await act(async () => delay(275));
+    await waitForCatalogRequest('dos', null, 2);
 
     expect(productRepository.listProductsPage).toHaveBeenCalledTimes(2);
     expect(screen.getByText('Cargando productos…')).toBeInTheDocument();
@@ -246,9 +277,9 @@ describe('EcommercePortalSettings + EcommerceProductPublishModal catalog lifecyc
 
     const searchInput = screen.getByPlaceholderText('Buscar por nombre, código o SKU');
     fireEvent.change(searchInput, { target: { value: 'pro' } });
-    await act(async () => delay(275));
+    await waitForCatalogRequest('pro', null, 2);
     fireEvent.change(searchInput, { target: { value: 'producto' } });
-    await act(async () => delay(275));
+    await waitForCatalogRequest('producto', null, 3);
 
     expect(productRepository.listProductsPage).toHaveBeenCalledTimes(3);
 
@@ -295,7 +326,7 @@ describe('EcommercePortalSettings + EcommerceProductPublishModal catalog lifecyc
     fireEvent.change(screen.getByPlaceholderText('Buscar por nombre, código o SKU'), {
       target: { value: 'producto' }
     });
-    await act(async () => delay(275));
+    await waitForCatalogRequest('producto', null, 3);
     expect(productRepository.listProductsPage).toHaveBeenCalledTimes(3);
 
     await act(async () => {
@@ -326,13 +357,18 @@ describe('EcommercePortalSettings + EcommerceProductPublishModal catalog lifecyc
   it('invalidates a pending request when the modal closes and starts the next opening cleanly', async () => {
     await renderCatalog();
     await openPublishModal();
+    fireEvent.change(getProductSelect(), { target: { value: productOne.id } });
+    expect(getProductSelect().value).toBe(productOne.id);
+    expect(screen.getByDisplayValue(productOne.name)).toBeInTheDocument();
 
     const pendingSearch = deferred();
     productRepository.listProductsPage.mockImplementationOnce(() => pendingSearch.promise);
     fireEvent.change(screen.getByPlaceholderText('Buscar por nombre, código o SKU'), {
       target: { value: 'pendiente' }
     });
-    await act(async () => delay(275));
+    await waitForCatalogRequest('pendiente', null, 2);
+    expect(productRepository.listProductsPage).toHaveBeenCalledTimes(2);
+    expect(screen.getByText('Cargando productos…')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Cerrar' }));
     expect(screen.queryByRole('dialog', { name: 'Publicar producto' })).toBeNull();
 
@@ -345,6 +381,9 @@ describe('EcommercePortalSettings + EcommerceProductPublishModal catalog lifecyc
     expect(getProductSelect().value).toBe('');
     await waitFor(() => expect(productRepository.listProductsPage).toHaveBeenCalledTimes(3));
     await screen.findByRole('option', { name: /Producto Dos/ });
+    expect(screen.queryByRole('option', { name: /Producto Uno/ })).toBeNull();
+    expect(screen.queryByDisplayValue(productOne.name)).toBeNull();
+    expect(screen.queryByText('Cargando productos…')).toBeNull();
 
     await act(async () => {
       pendingSearch.resolve({ data: [staleProduct], nextCursor: null });
@@ -353,6 +392,10 @@ describe('EcommercePortalSettings + EcommerceProductPublishModal catalog lifecyc
 
     expect(screen.getByRole('option', { name: /Producto Dos/ })).toBeInTheDocument();
     expect(screen.queryByRole('option', { name: /Producto Stale/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Seleccionar Producto Stale/ })).toBeNull();
+    expect(getProductSelect().value).toBe('');
+    expect(screen.queryByText('Cargando productos…')).toBeNull();
+    expect(savePublishedProduct).not.toHaveBeenCalled();
   });
 
   it('uses the cursor that belongs to the latest successful search term when loading more results', async () => {
@@ -365,7 +408,7 @@ describe('EcommercePortalSettings + EcommerceProductPublishModal catalog lifecyc
       nextCursor: 'cursor-coca'
     });
     fireEvent.change(searchInput, { target: { value: 'coca' } });
-    await act(async () => delay(275));
+    await waitForCatalogRequest('coca', null, 2);
     await screen.findByRole('button', { name: 'Seleccionar Coca Uno' });
 
     productRepository.listProductsPage.mockResolvedValueOnce({
@@ -373,7 +416,7 @@ describe('EcommercePortalSettings + EcommerceProductPublishModal catalog lifecyc
       nextCursor: 'cursor-pepsi'
     });
     fireEvent.change(searchInput, { target: { value: 'pepsi' } });
-    await act(async () => delay(275));
+    await waitForCatalogRequest('pepsi', null, 3);
     await screen.findByRole('button', { name: 'Seleccionar Pepsi Uno' });
 
     productRepository.listProductsPage.mockResolvedValueOnce({
@@ -401,7 +444,7 @@ describe('EcommercePortalSettings + EcommerceProductPublishModal catalog lifecyc
 
     productRepository.listProductsPage.mockResolvedValueOnce({ data: [cocaOne], nextCursor: 'cursor-coca-2' });
     fireEvent.change(searchInput, { target: { value: 'coca' } });
-    await act(async () => delay(275));
+    await waitForCatalogRequest('coca', null, 2);
     await screen.findByRole('button', { name: 'Seleccionar Coca Uno' });
 
     productRepository.listProductsPage.mockResolvedValueOnce({ data: [cocaOne, cocaTwo], nextCursor: null });
@@ -423,12 +466,12 @@ describe('EcommercePortalSettings + EcommerceProductPublishModal catalog lifecyc
 
     productRepository.listProductsPage.mockResolvedValueOnce({ data: [productTwo], nextCursor: null });
     fireEvent.change(searchInput, { target: { value: 'dos' } });
-    await act(async () => delay(275));
+    await waitForCatalogRequest('dos', null, 2);
     await screen.findByRole('button', { name: 'Seleccionar Producto Dos' });
 
     productRepository.listProductsPage.mockResolvedValueOnce({ data: [productOne], nextCursor: 'cursor-2' });
     fireEvent.change(searchInput, { target: { value: '' } });
-    await act(async () => delay(275));
+    await waitForCatalogRequest('', null, 3);
 
     expect(productRepository.listProductsPage).toHaveBeenLastCalledWith(expect.objectContaining({
       searchTerm: '',

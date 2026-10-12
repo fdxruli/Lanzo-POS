@@ -347,6 +347,49 @@ describe('PublicStorePage', () => {
     expect(screen.getByRole('heading', { name: 'Producto B' })).toBeInTheDocument();
   });
 
+  it('keeps a newer catalog revision when an older page resolves late for the same slug', async () => {
+    const oldPage = deferred();
+    serviceMocks.getPublicPortalBySlug
+      .mockResolvedValueOnce({ ...portalResult, catalogRevision: 7 })
+      .mockResolvedValueOnce({ ...portalResult, catalogRevision: 8 });
+    serviceMocks.getPublicCatalog
+      .mockResolvedValueOnce({
+        ...catalogResult,
+        catalogRevision: 7,
+        pagination: { limit: 100, offset: 0, hasMore: true },
+      })
+      .mockReturnValueOnce(oldPage.promise)
+      .mockResolvedValueOnce({
+        ...catalogResult,
+        catalogRevision: 8,
+        items: [makeProduct('new-revision', { name: 'Producto revisión nueva' })],
+      });
+    const listenerSpy = vi.spyOn(window, 'addEventListener');
+    try {
+      renderPage();
+      await screen.findByRole('heading', { name: 'Alitas BBQ' });
+      await waitFor(() => expect(listenerSpy).toHaveBeenCalledWith('focus', expect.any(Function)));
+      fireEvent.click(screen.getByRole('button', { name: 'Cargar más' }));
+      await waitFor(() => expect(serviceMocks.getPublicCatalog).toHaveBeenCalledTimes(2));
+      fireEvent.focus(window);
+      await screen.findByRole('heading', { name: 'Producto revisión nueva' });
+      expect(document.querySelector('.public-store-shell')).toHaveAttribute('data-catalog-revision', '8');
+      await act(async () => {
+        oldPage.resolve({
+          items: [makeProduct('old-revision', { name: 'Producto revisión anterior' })],
+          catalogRevision: 7,
+          pagination: { limit: 100, offset: 100, hasMore: false },
+        });
+        await oldPage.promise;
+      });
+      expect(screen.queryByRole('heading', { name: 'Producto revisión anterior' })).not.toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Producto revisión nueva' })).toBeInTheDocument();
+      expect(document.querySelector('.public-store-shell')).toHaveAttribute('data-catalog-revision', '8');
+    } finally {
+      listenerSpy.mockRestore();
+    }
+  });
+
   it('keeps the newer ready store when an older portal request fails late', async () => {
     const oldPortal = deferred();
     serviceMocks.getPublicPortalBySlug.mockImplementation((slug) => (
@@ -449,7 +492,7 @@ describe('PublicStorePage', () => {
       expect(await screen.findByRole('heading', { name: 'Alitas BBQ' })).toBeInTheDocument();
       await waitFor(() => {
         expect(listenerSpy).toHaveBeenCalledWith('pageshow', expect.any(Function));
-      });
+      }, { timeout: 1000 });
     } finally {
       listenerSpy.mockRestore();
     }
@@ -460,9 +503,19 @@ describe('PublicStorePage', () => {
 
     expect(screen.getByRole('heading', { name: 'Alitas BBQ' })).toBeInTheDocument();
     expect(await screen.findByText(/Actualizando catálogo/)).toBeInTheDocument();
-    pendingCatalog.resolve({
-      ...catalogResult,
-      items: [makeProduct('fresh', { name: 'Producto recuperado' })]
+    await waitFor(() => expect(serviceMocks.getPublicCatalog).toHaveBeenCalledTimes(2));
+    await act(async () => {
+      await serviceMocks.getPublicPortalBySlug.mock.results[1].value;
+      await Promise.resolve();
+    });
+    expect(screen.getByRole('heading', { name: 'Alitas BBQ' })).toBeInTheDocument();
+    expect(screen.getByText(/Actualizando catálogo/)).toBeInTheDocument();
+    await act(async () => {
+      pendingCatalog.resolve({
+        ...catalogResult,
+        items: [makeProduct('fresh', { name: 'Producto recuperado' })]
+      });
+      await pendingCatalog.promise;
     });
 
     expect(await screen.findByRole('heading', { name: 'Producto recuperado' })).toBeInTheDocument();
@@ -470,6 +523,10 @@ describe('PublicStorePage', () => {
       'mi-negocio',
       expect.objectContaining({ offset: 0, cacheStrategy: 'network-first', catalogRevision: 7 })
     );
+    expect(serviceMocks.getPublicPortalBySlug).toHaveBeenCalledTimes(2);
+    expect(serviceMocks.getPublicCatalog).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole('heading', { name: 'Alitas BBQ' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Actualizando catálogo/)).not.toBeInTheDocument();
   });
 
   it('keeps the existing catalog visible when a recovery refresh fails', async () => {
@@ -638,7 +695,7 @@ describe('PublicStorePage', () => {
       expect(screen.getByRole('heading', { name: 'Mi negocio' })).toBeInTheDocument();
       await waitFor(() => {
         expect(listenerSpy).toHaveBeenCalledWith(refreshMode, expect.any(Function));
-      });
+      }, { timeout: 1000 });
     } finally {
       listenerSpy.mockRestore();
     }
@@ -656,7 +713,7 @@ describe('PublicStorePage', () => {
     await waitFor(() => {
       expect(serviceMocks.getPublicPortalBySlug).toHaveBeenCalledTimes(2);
     }, { timeout: 3000 });
-    expect(await screen.findByRole('heading', { name: title })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: title }, { timeout: 1000 })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Mi negocio' })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Alitas BBQ' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Agregar Alitas BBQ' })).not.toBeInTheDocument();
