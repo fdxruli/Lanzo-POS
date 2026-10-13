@@ -350,3 +350,126 @@ DEPLOYMENT_READINESS = HOLD
 MERGE_READINESS = HOLD
 NEXT_ACTIONS = complete final CI runs; provision authorized staging; verify Preview isolation; execute backup/restore and QA matrix; simulate cutover; conduct a separate deployment audit
 ```
+
+## Cierre append-only — Hotfix Actor Runtime / BFCache
+
+> Esta sección conserva el historial anterior y prevalece únicamente para las referencias, resultados y estados que declara de forma explícita. La certificación siguiente es de CI sobre código; no autoriza merge, despliegue, migraciones ni pruebas sobre datos reales.
+
+### Referencias verificadas
+
+| Referencia | Valor verificado |
+|---|---|
+| PR #352 | [OPEN / Draft](https://github.com/fdxruli/Lanzo-POS/pull/352), `feat/restaurant-admin-supervision-r1` |
+| BASE inmutable / PR #338 | `fb17e9a43929d54087ab937cb760a8cd6e087c36` |
+| HEAD de código certificado | `69858b1d202d98db75910637b0d3aefc67ea9961` |
+| `main` observado | `5be67950eea27c1b25db3e8765339222f8217e35` |
+| PR #354 | [MERGED](https://github.com/fdxruli/Lanzo-POS/pull/354); source `e12dcd41d7044fd6237eddcb5e63bae161752eff`; merge commit `5be67950eea27c1b25db3e8765339222f8217e35` |
+
+PR #352 continúa basada en PR #338; PR #338 sigue sin merge. Se consultaron esos estados y referencias de forma remota, sin fusionar, rebasear ni alterar ninguna rama base.
+
+### Corrección focal y causa demostrada
+
+| Commit | Archivo y alcance | Corrección |
+|---|---|---|
+| `c0881af85c4fa7f9e697538683db317c1ce04954` | Sólo `src/pages/__tests__/PublicStorePage.test.jsx` (`+21/-5`) | Espera el registro observable del listener de recuperación antes de emitir el evento BFCache/autoridad. |
+| `16a781e22261d9960363b4985023c8b3ecc3d5fa` | Sólo `src/components/ecommerce/__tests__/EcommercePortalSettings.productModalLifecycle.test.jsx` (`+26/-10`) | Espera la solicitud y respuesta de catálogo observables, en vez de una espera temporal, para el ciclo del modal. |
+| `69858b1d202d98db75910637b0d3aefc67ea9961` | Sólo `src/pages/__tests__/PublicStorePage.test.jsx` (`+10/-2`) | Espera que `pageshow` esté registrado antes de emitir `pageshow.persisted` seguido de `focus`. |
+
+La causa final fue una carrera de *readiness* de la prueba: React podía registrar su efecto pasivo después de que la prueba emitiera un evento. El artefacto del run Actor Runtime `38351698996` aisló un único timeout de 15 s, sólo en una repetición, de `deduplicates a persisted pageshow followed immediately by focus`; no fue una regresión de producto ni de contrato. El cambio de `69858b1d…` conserva todas las aserciones de número de solicitudes, deduplicación, recuperación y limpieza; no incrementa timeouts, no omite casos y no cambia código productivo, SQL, dependencias, autenticación ni datos.
+
+`PR354_REUSE_DECISION = FOCAL_TEST_ONLY_ADAPTATION`: se reutilizó exclusivamente el patrón comprobable de sincronizar hitos observables de la PR #354. No se hizo merge, rebase ni cherry-pick integral de #354 en #352.
+
+### Controles negativos ejercitados
+
+Las mutaciones se hicieron en worktrees temporales aislados y se restauraron antes de este cierre:
+
+- Quitar el listener `pageshow` o ignorar `persisted` hizo fallar el contrato BFCache esperado.
+- Cortocircuitar la recuperación autoritativa produjo una llamada donde se esperaban dos.
+- Omitir `applyAuthoritativePortalStatus` dejó fallar la transición de contenido cacheado a `NOT_FOUND`.
+- Desactivar la guarda de respuesta obsoleta permitió que `Producto Stale` sustituyera a `Producto Dos`.
+- Desactivar la invalidación close/reopen permitió que una respuesta anterior llegara al modal reabierto.
+- Omitir sólo `removeEventListener('pageshow', handlePageShow)` produjo tres llamadas donde se esperaban dos, demostrando que el listener desmontado sí afecta el contrato.
+
+`NEGATIVE_CONTROLS = PASS_RESTORED_IN_ISOLATED_WORKTREES`.
+
+### Cronología de CI conservada
+
+| Candidato | PR127 | Actor Runtime | Actor Scoped Storage | Lectura |
+|---|---|---|---|---|
+| `278bbb14…` | [PASS 38262989565](https://github.com/fdxruli/Lanzo-POS/actions/runs/38262989565) | [FAIL 38262993604](https://github.com/fdxruli/Lanzo-POS/actions/runs/38262993604) | [PASS 38262997586](https://github.com/fdxruli/Lanzo-POS/actions/runs/38262997586) | Bloqueo BFCache: BASE `50/0`; candidato `47/3`. |
+| `c0881af…` | [PASS 38341621327](https://github.com/fdxruli/Lanzo-POS/actions/runs/38341621327) | [PASS 38341627205](https://github.com/fdxruli/Lanzo-POS/actions/runs/38341627205) | [FAIL 38341635313](https://github.com/fdxruli/Lanzo-POS/actions/runs/38341635313) | El bloqueo restante fue `ecommerce-latest-search-cursor`: BASE `50/0`; candidato `48/2`. |
+| `16a781e…` | [PASS 38351694714](https://github.com/fdxruli/Lanzo-POS/actions/runs/38351694714) | [FAIL 38351698996](https://github.com/fdxruli/Lanzo-POS/actions/runs/38351698996) | [PASS 38351703091](https://github.com/fdxruli/Lanzo-POS/actions/runs/38351703091) | Runtime quedó fail-closed por una prueba nueva de deduplicación que hizo timeout una vez; el resto de los nueve targets estaba limpio. |
+| `69858b1…` | [PASS 38355083089](https://github.com/fdxruli/Lanzo-POS/actions/runs/38355083089) | [PASS 38355086818](https://github.com/fdxruli/Lanzo-POS/actions/runs/38355086818) | [PASS 38355091640](https://github.com/fdxruli/Lanzo-POS/actions/runs/38355091640) | Cierre de CI de código contra la misma base inmutable. |
+
+Los resultados `PASS` diferenciales no reinterpretan suites raw con fallos compartidos como una suite absoluta verde. La política se mantuvo fail-closed: el fallo nuevo de `16a781e…` bloqueó Runtime hasta que la sincronización quedó corregida y repetida.
+
+### Gates finales de código — `69858b1…` contra `fb17e9…`
+
+| Gate | Run / artefacto | Resultado legible |
+|---|---|---|
+| PR127 Global Comparison | [38355083089](https://github.com/fdxruli/Lanzo-POS/actions/runs/38355083089), [artefacto 11792991524](https://github.com/fdxruli/Lanzo-POS/actions/runs/38355083089/artifacts/11792991524) | `OK`; 94 fallos compartidos, 0 candidate-only raw, 0 nuevos, 0 no resueltos, 0 flaky de base y 1 resuelto. |
+| Shared Terminal Actor Runtime | [38355086818](https://github.com/fdxruli/Lanzo-POS/actions/runs/38355086818), [diferencial 11794075859](https://github.com/fdxruli/Lanzo-POS/actions/runs/38355086818/artifacts/11794075859) | `PASS`; 0 regresiones nuevas en suite completa y 0 regresiones candidate-only/rate en los targets focales. |
+| Shared Terminal Actor Scoped Storage | [38355091640](https://github.com/fdxruli/Lanzo-POS/actions/runs/38355091640), [diferencial 11793607628](https://github.com/fdxruli/Lanzo-POS/actions/runs/38355091640/artifacts/11793607628) | `PASS`; 0 regresiones nuevas en suite completa y 0 regresiones candidate-only/rate en los targets focales. |
+
+Actor Runtime focal, BASE → CANDIDATE (`passes/failures/notExecuted/unreadable`):
+
+| Target | BASE | CANDIDATE |
+|---|---:|---:|
+| `bfcache-authoritative-not-found` | `48/2/0/0` | `50/0/0/0` |
+| `bfcache` | `48/2/0/0` | `50/0/0/0` |
+| `site-version` | `50/0/0/0` | `50/0/0/0` |
+| `ecommerce-latest-search-cursor` | `48/2/0/0` | `50/0/0/0` |
+| `ecommerce-same-search-next-page` | `49/1/0/0` | `50/0/0/0` |
+| `ecommerce-clear-search-restore-catalog` | `49/1/0/0` | `50/0/0/0` |
+| `ecommerce-stale-search-response` | `50/0/0/0` | `50/0/0/0` |
+| `ecommerce-stale-load-more-loading` | `50/0/0/0` | `50/0/0/0` |
+| `ecommerce-pending-close-reopen` | `50/0/0/0` | `50/0/0/0` |
+
+Actor Scoped Storage focal, BASE → CANDIDATE: `bfcache-authoritative-not-found 49/1/0/0 → 50/0/0/0`; `bfcache 48/2/0/0 → 50/0/0/0`; `site-version 50/0/0/0 → 50/0/0/0`; `ecommerce-latest-search-cursor 50/0/0/0 → 50/0/0/0`; `ecommerce-same-search-next-page 50/0/0/0 → 50/0/0/0`; `ecommerce-clear-search-restore-catalog 50/0/0/0 → 50/0/0/0`; `ecommerce-stale-search-response 46/4/0/0 → 50/0/0/0`; `ecommerce-stale-load-more-loading 50/0/0/0 → 50/0/0/0`; `ecommerce-pending-close-reopen 49/1/0/0 → 50/0/0/0`.
+
+Para ambos gates focales: `candidateOnlySemanticRegressionCount=0`, `candidateOnlySemanticObservationCount=0`, `singleRunCandidateOnlySemanticObservationCount=0` y `candidateFailureRateRegressionCount=0`.
+
+Las repeticiones de suite completa fueron también legibles: Runtime BASE `5498/72/51/5621` dos veces y CANDIDATE `5562/71/51/5684` dos veces (`newRegressionCount=0`, 90 fallos preexistentes estables, una mejora incidental). Scoped BASE `5498/72/51/5621` y `5497/73/51/5621`; CANDIDATE `5562/71/51/5684` dos veces (`newRegressionCount=0`, 90 fallos preexistentes estables, dos mejoras incidentales). Los builds y lint de los jobs focales completaron correctamente.
+
+En local, el caso exacto de deduplicación pasó `1/1` (29 omitidos) y el lint del archivo cambiante terminó sin errores; el único aviso fue `baseline-browser-mapping` desactualizado. `react-doctor` no produjo salida y se detuvo de forma segura, por lo que `REACT_DOCTOR = UNVERIFIED_RUNNER_STALLED`, no un PASS.
+
+### Staging, recovery, SQL y alcance seguro
+
+La consulta administrativa de sólo lectura al staging histórico `jdnbmvaphvjunwhnxowo` (`Lanzo-staging-historical-r1`, `us-west-2`) mostró `INACTIVE`; sus metadatos informaron `pitr_enabled=false`, `backups_count=0`, `walg_enabled=true`. Esto no acredita backup recuperable, PITR, retención, restore ni permisos de otro ambiente.
+
+No se reactivó ni creó infraestructura; no hubo restore, SQL aplicado, acceso/escritura a producción, datos reales ni despliegue frontend. El delta del hotfix no contiene SQL, por lo que se preserva la evidencia histórica de las 17 carreras SQL sin presentarla como una repetición nueva.
+
+El archivo reservado local `NUL` se verificó como artefacto auxiliar de CI/diferencial y se eliminó mediante su ruta extendida exacta, comprobando después su ausencia. No se ejecutó `git clean`, no se incluyó en commits y no se eliminó otro archivo.
+
+```text
+IMPLEMENTATION_STATUS = CI_CODE_CERTIFIED__INTEGRATED_QA_BLOCKED
+CERTIFIED_CODE_HEAD = 69858b1d202d98db75910637b0d3aefc67ea9961
+BASE_COMPARISON_SHA = fb17e9a43929d54087ab937cb760a8cd6e087c36
+DOCUMENTATION_PUBLICATION_COMMIT = INTENTIONALLY_NOT_SELF_REFERENTIAL
+ROOT_CAUSE = TEST_READINESS_SYNCHRONIZATION_RACE
+PR354_REUSE_DECISION = FOCAL_TEST_ONLY_ADAPTATION
+NEGATIVE_CONTROLS = PASS_RESTORED_IN_ISOLATED_WORKTREES
+PR127_RESULT = PASS_38355083089
+ACTOR_RUNTIME_RESULT = PASS_38355086818
+ACTOR_SCOPED_STORAGE_RESULT = PASS_38355091640
+BF_CACHE_CI_CERTIFIED = YES
+P0_A_STATUS = HOLD_PENDING_INTEGRATED_QA
+P0_B_STATUS = RESOLVED_IN_CANDIDATE_CI_ONLY
+STAGING_STATUS = INACTIVE_HISTORICAL__UNAVAILABLE_FOR_QA
+PREVIEW_ISOLATION = UNVERIFIED
+BACKUP_READINESS = UNVERIFIED
+RESTORE_TEST = NOT_RUN
+ROLLBACK_READINESS = HOLD
+SQL_RACES_REEXECUTED = NO
+SQL_RACES_RESULT = HISTORICAL_17_PASS_PRESERVED
+MIGRATIONS_APPLIED = NONE
+PRODUCTION_SQL_WRITES = NONE
+PRODUCTION_DATA_WRITES = NONE
+PRODUCTION_FRONTEND_DEPLOYED = NO
+PR338_MERGED = NO
+PR352_MERGED = NO
+PR354_MERGED = YES
+DEPLOYMENT_READINESS = HOLD
+MERGE_READINESS = HOLD
+NEXT_ACTIONS = publish this append-only evidence; rerun the three gates on that documentation HEAD; separately authorize isolated staging, backup/restore evidence, synthetic-device QA and cutover simulation before any merge or deployment
+```
