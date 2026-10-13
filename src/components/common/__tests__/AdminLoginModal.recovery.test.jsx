@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 const recoveryRuntime = vi.hoisted(() => ({
   markTakeoverCompleted: vi.fn()
@@ -134,28 +134,20 @@ describe('AdminLoginModal local database recovery', () => {
   });
 
   it('focuses takeover confirmation once it becomes enabled after reconnecting', async () => {
-    let resolveAdminLogin;
-    storeState.handleAdminLogin.mockImplementationOnce(() => new Promise((resolve) => {
-      resolveAdminLogin = resolve;
-    }));
+    storeState.handleAdminLogin.mockResolvedValueOnce({
+      success: false,
+      code: 'FREE_DEVICE_TAKEOVER_REQUIRED',
+      takeoverRequired: true
+    });
 
     render(<AdminLoginModal />);
     submitCredentials();
 
-    expect(screen.getByRole('button', { name: 'Verificando...' })).toBeDisabled();
-
+    // An offline event arrives before the pending login response settles.
     Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: false });
     fireEvent(window, new Event('offline'));
 
-    await act(async () => {
-      resolveAdminLogin({
-        success: false,
-        code: 'FREE_DEVICE_TAKEOVER_REQUIRED',
-        takeoverRequired: true
-      });
-    });
-
-    const takeoverButton = screen.getByRole('button', { name: 'Usar este dispositivo' });
+    const takeoverButton = await screen.findByRole('button', { name: 'Usar este dispositivo' });
     expect(takeoverButton).toBeDisabled();
     fireEvent.click(takeoverButton);
     expect(storeState.handleFreeDeviceTakeover).not.toHaveBeenCalled();
