@@ -147,7 +147,7 @@ describe('AdminLoginModal local database recovery', () => {
     Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: false });
     fireEvent(window, new Event('offline'));
 
-    const takeoverButton = await screen.findByRole('button', { name: 'Usar este dispositivo' });
+    const takeoverButton = await screen.findByRole('button', { name: 'Usar este dispositivo' }, { timeout: 1000 });
     expect(takeoverButton).toBeDisabled();
     fireEvent.click(takeoverButton);
     expect(storeState.handleFreeDeviceTakeover).not.toHaveBeenCalled();
@@ -155,8 +155,8 @@ describe('AdminLoginModal local database recovery', () => {
     Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: true });
     fireEvent(window, new Event('online'));
 
-    await waitFor(() => expect(takeoverButton).toBeEnabled());
-    await waitFor(() => expect(takeoverButton).toHaveFocus());
+    await waitFor(() => expect(takeoverButton).toBeEnabled(), { timeout: 1000 });
+    expect(takeoverButton).toHaveFocus();
     expect(storeState.handleFreeDeviceTakeover).not.toHaveBeenCalled();
     expect(recoveryRuntime.markTakeoverCompleted).not.toHaveBeenCalled();
   });
