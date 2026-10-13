@@ -1,0 +1,2539 @@
+{
+  "manifest": "lanzo.restaurant.staging.migration-plan.r1",
+  "executionStatus": "design_only_never_applied",
+  "target": "new explicitly approved isolated Supabase project only",
+  "ordering": "ascending 14-digit migration version",
+  "expectedMigrationCount": 315,
+  "sources": {
+    "main": "5be67950eea27c1b25db3e8765339222f8217e35",
+    "pr338": "fb17e9a43929d54087ab937cb760a8cd6e087c36",
+    "pr352": "e12c371252d5c80f192b10ef36792a6881ee69d1"
+  },
+  "sourceCounts": {
+    "main": 310,
+    "pr338": 3,
+    "pr352": 2
+  },
+  "entries": [
+    {
+      "sequence": 1,
+      "migrationVersion": "20260614224210",
+      "filename": "20260614224210_harden_public_tables_and_pos_rpcs.sql",
+      "path": "supabase/migrations/20260614224210_harden_public_tables_and_pos_rpcs.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 2,
+      "migrationVersion": "20260614224233",
+      "filename": "20260614224233_revoke_public_function_execute_and_regrant_pos_rpcs.sql",
+      "path": "supabase/migrations/20260614224233_revoke_public_function_execute_and_regrant_pos_rpcs.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 3,
+      "migrationVersion": "20260614232311",
+      "filename": "20260614232311_fix_function_search_path_security.sql",
+      "path": "supabase/migrations/20260614232311_fix_function_search_path_security.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 4,
+      "migrationVersion": "20260614233240",
+      "filename": "20260614233240_add_indexes_for_foreign_keys_and_pos_queries.sql",
+      "path": "supabase/migrations/20260614233240_add_indexes_for_foreign_keys_and_pos_queries.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 5,
+      "migrationVersion": "20260615223751",
+      "filename": "20260615223751_harden_license_storage_and_trials.sql",
+      "path": "supabase/migrations/20260615223751_harden_license_storage_and_trials.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 6,
+      "migrationVersion": "20260616020429",
+      "filename": "20260616020429_create_fresh_manual_test_license.sql",
+      "path": "supabase/migrations/20260616020429_create_fresh_manual_test_license.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 7,
+      "migrationVersion": "20260616201029",
+      "filename": "20260616201029_private_license_broadcast_realtime.sql",
+      "path": "supabase/migrations/20260616201029_private_license_broadcast_realtime.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 8,
+      "migrationVersion": "20260616225151",
+      "filename": "20260616225151_harden_license_token_rotation_after_broadcast.sql",
+      "path": "supabase/migrations/20260616225151_harden_license_token_rotation_after_broadcast.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 9,
+      "migrationVersion": "20260617045610",
+      "filename": "20260617045610_add_plan_metadata_to_verify_license_payload.sql",
+      "path": "supabase/migrations/20260617045610_add_plan_metadata_to_verify_license_payload.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 10,
+      "migrationVersion": "20260617051538",
+      "filename": "20260617051538_broadcast_license_plan_and_limit_changes.sql",
+      "path": "supabase/migrations/20260617051538_broadcast_license_plan_and_limit_changes.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 11,
+      "migrationVersion": "20260617052545",
+      "filename": "20260617052545_broadcast_critical_license_events_after_downgrade.sql",
+      "path": "supabase/migrations/20260617052545_broadcast_critical_license_events_after_downgrade.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 12,
+      "migrationVersion": "20260617060812",
+      "filename": "20260617060812_phase1_device_roles_and_staff_users.sql",
+      "path": "supabase/migrations/20260617060812_phase1_device_roles_and_staff_users.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 13,
+      "migrationVersion": "20260617061025",
+      "filename": "20260617061025_fix_staff_login_for_update_lock.sql",
+      "path": "supabase/migrations/20260617061025_fix_staff_login_for_update_lock.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 14,
+      "migrationVersion": "20260617061142",
+      "filename": "20260617061142_index_staff_sessions_license_id.sql",
+      "path": "supabase/migrations/20260617061142_index_staff_sessions_license_id.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 15,
+      "migrationVersion": "20260617141103",
+      "filename": "20260617141103_extend_get_license_devices_with_roles_staff.sql",
+      "path": "supabase/migrations/20260617141103_extend_get_license_devices_with_roles_staff.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 16,
+      "migrationVersion": "20260617163342",
+      "filename": "20260617163342_enforce_single_device_per_staff_and_broadcast_disable.sql",
+      "path": "supabase/migrations/20260617163342_enforce_single_device_per_staff_and_broadcast_disable.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 17,
+      "migrationVersion": "20260617180253",
+      "filename": "20260617180253_prevent_staff_reactivation_by_license_and_revoke_release_sessions.sql",
+      "path": "supabase/migrations/20260617180253_prevent_staff_reactivation_by_license_and_revoke_release_sessions.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 18,
+      "migrationVersion": "20260618060145",
+      "filename": "20260618060145_harden_release_device_admin_only.sql",
+      "path": "supabase/migrations/20260618060145_harden_release_device_admin_only.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 19,
+      "migrationVersion": "20260618060247",
+      "filename": "20260618060247_tighten_release_device_execute_grants.sql",
+      "path": "supabase/migrations/20260618060247_tighten_release_device_execute_grants.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 20,
+      "migrationVersion": "20260618070608",
+      "filename": "20260618070608_license_plan_downgrade_automation.sql",
+      "path": "supabase/migrations/20260618070608_license_plan_downgrade_automation.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 21,
+      "migrationVersion": "20260618070649",
+      "filename": "20260618070649_license_verification_downgrade_block_context.sql",
+      "path": "supabase/migrations/20260618070649_license_verification_downgrade_block_context.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 22,
+      "migrationVersion": "20260618070730",
+      "filename": "20260618070730_fix_admin_change_license_plan_locking.sql",
+      "path": "supabase/migrations/20260618070730_fix_admin_change_license_plan_locking.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 23,
+      "migrationVersion": "20260619204242",
+      "filename": "20260619204242_create_ai_agent_usage_table.sql",
+      "path": "supabase/migrations/20260619204242_create_ai_agent_usage_table.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 24,
+      "migrationVersion": "20260619204304",
+      "filename": "20260619204304_create_ai_agent_usage_rpcs.sql",
+      "path": "supabase/migrations/20260619204304_create_ai_agent_usage_rpcs.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 25,
+      "migrationVersion": "20260620062018",
+      "filename": "20260620062018_add_ai_agent_usage_lookup_rpc.sql",
+      "path": "supabase/migrations/20260620062018_add_ai_agent_usage_lookup_rpc.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 26,
+      "migrationVersion": "20260620080954",
+      "filename": "20260620080954_fix_ai_agent_begin_for_update_nullable_join.sql",
+      "path": "supabase/migrations/20260620080954_fix_ai_agent_begin_for_update_nullable_join.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 27,
+      "migrationVersion": "20260620081024",
+      "filename": "20260620081024_fix_ai_agent_usage_rpc_staff_session_and_features.sql",
+      "path": "supabase/migrations/20260620081024_fix_ai_agent_usage_rpc_staff_session_and_features.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 28,
+      "migrationVersion": "20260623052752",
+      "filename": "20260623052752_notify_staff_user_permission_changes.sql",
+      "path": "supabase/migrations/20260623052752_notify_staff_user_permission_changes.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 29,
+      "migrationVersion": "20260623192708",
+      "filename": "20260623192708_fase0_motor_sync_pro_base.sql",
+      "path": "supabase/migrations/20260623192708_fase0_motor_sync_pro_base.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 30,
+      "migrationVersion": "20260623204031",
+      "filename": "20260623204031_fase1_clientes_directorio_cloud.sql",
+      "path": "supabase/migrations/20260623204031_fase1_clientes_directorio_cloud.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 31,
+      "migrationVersion": "20260623204046",
+      "filename": "20260623204046_fase1_fix_idempotency_insert_rowcount.sql",
+      "path": "supabase/migrations/20260623204046_fase1_fix_idempotency_insert_rowcount.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 32,
+      "migrationVersion": "20260624002218",
+      "filename": "20260624002218_fase1_mobile_staff_timeout_fix.sql",
+      "path": "supabase/migrations/20260624002218_fase1_mobile_staff_timeout_fix.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 33,
+      "migrationVersion": "20260624013300",
+      "filename": "20260624013300_fase2_productos_catalogo_cloud.sql",
+      "path": "supabase/migrations/20260624013300_fase2_productos_catalogo_cloud.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 34,
+      "migrationVersion": "20260624042605",
+      "filename": "20260624042605_fase2_1_pos_catalog_rls_hardening.sql",
+      "path": "supabase/migrations/20260624042605_fase2_1_pos_catalog_rls_hardening.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 35,
+      "migrationVersion": "20260624045720",
+      "filename": "20260624045720_fase3_caja_cloud_pro.sql",
+      "path": "supabase/migrations/20260624045720_fase3_caja_cloud_pro.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 36,
+      "migrationVersion": "20260624050105",
+      "filename": "20260624050105_fase3_cash_adjust_noop_guard.sql",
+      "path": "supabase/migrations/20260624050105_fase3_cash_adjust_noop_guard.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 37,
+      "migrationVersion": "20260624063444",
+      "filename": "20260624063444_optimize_ai_agent_usage_staff_session_lookup.sql",
+      "path": "supabase/migrations/20260624063444_optimize_ai_agent_usage_staff_session_lookup.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 38,
+      "migrationVersion": "20260625031439",
+      "filename": "20260625031439_fase5_reportes_cloud_pro.sql",
+      "path": "supabase/migrations/20260625031439_fase5_reportes_cloud_pro.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 39,
+      "migrationVersion": "20260625112333",
+      "filename": "20260625112333_fase6a_ventas_cloud_base.sql",
+      "path": "supabase/migrations/20260625112333_fase6a_ventas_cloud_base.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 40,
+      "migrationVersion": "20260625191304",
+      "filename": "20260625191304_fase6b_cloud_cashier_sales_folio.sql",
+      "path": "supabase/migrations/20260625191304_fase6b_cloud_cashier_sales_folio.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 41,
+      "migrationVersion": "20260626043014",
+      "filename": "20260626043014_fase6c_cloud_sales_inventory_batches.sql",
+      "path": "supabase/migrations/20260626043014_fase6c_cloud_sales_inventory_batches.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 42,
+      "migrationVersion": "20260626043656",
+      "filename": "20260626043656_fase6c_reports_inventory_overview.sql",
+      "path": "supabase/migrations/20260626043656_fase6c_reports_inventory_overview.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 43,
+      "migrationVersion": "20260626053252",
+      "filename": "20260626053252_fase6d_credit_schema_flags_helpers.sql",
+      "path": "supabase/migrations/20260626053252_fase6d_credit_schema_flags_helpers.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 44,
+      "migrationVersion": "20260626053437",
+      "filename": "20260626053437_fase6d_create_cloud_sale_credit_rpc.sql",
+      "path": "supabase/migrations/20260626053437_fase6d_create_cloud_sale_credit_rpc.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 45,
+      "migrationVersion": "20260626053620",
+      "filename": "20260626053620_fase6d_reports_credit_metrics_rpc.sql",
+      "path": "supabase/migrations/20260626053620_fase6d_reports_credit_metrics_rpc.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 46,
+      "migrationVersion": "20260626071714",
+      "filename": "20260626071714_fase6e_sale_cancellations_schema.sql",
+      "path": "supabase/migrations/20260626071714_fase6e_sale_cancellations_schema.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 47,
+      "migrationVersion": "20260626071914",
+      "filename": "20260626071914_fase6e_pos_cancel_cloud_sale_rpc.sql",
+      "path": "supabase/migrations/20260626071914_fase6e_pos_cancel_cloud_sale_rpc.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 48,
+      "migrationVersion": "20260626072048",
+      "filename": "20260626072048_fase6e_reports_overview_cancellations.sql",
+      "path": "supabase/migrations/20260626072048_fase6e_reports_overview_cancellations.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 49,
+      "migrationVersion": "20260626214614",
+      "filename": "20260626214614_fase6e_harden_sale_cancellations_access.sql",
+      "path": "supabase/migrations/20260626214614_fase6e_harden_sale_cancellations_access.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 50,
+      "migrationVersion": "20260627014034",
+      "filename": "20260627014034_fase6e1_hardening_cancelaciones_cloud.sql",
+      "path": "supabase/migrations/20260627014034_fase6e1_hardening_cancelaciones_cloud.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 51,
+      "migrationVersion": "20260627020117",
+      "filename": "20260627020117_fase6f_feature_flag_sales_final_reports.sql",
+      "path": "supabase/migrations/20260627020117_fase6f_feature_flag_sales_final_reports.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 52,
+      "migrationVersion": "20260627020358",
+      "filename": "20260627020358_fase6f_sales_final_source_metadata.sql",
+      "path": "supabase/migrations/20260627020358_fase6f_sales_final_source_metadata.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 53,
+      "migrationVersion": "20260627020544",
+      "filename": "20260627020544_fase6f_smoke_private.sql",
+      "path": "supabase/migrations/20260627020544_fase6f_smoke_private.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 54,
+      "migrationVersion": "20260627020557",
+      "filename": "20260627020557_fase6f_public_view_smoke.sql",
+      "path": "supabase/migrations/20260627020557_fase6f_public_view_smoke.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 55,
+      "migrationVersion": "20260627052041",
+      "filename": "20260627052041_enforce_open_cash_session_for_cloud_sales.sql",
+      "path": "supabase/migrations/20260627052041_enforce_open_cash_session_for_cloud_sales.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 56,
+      "migrationVersion": "20260627213510",
+      "filename": "20260627213510_add_missing_pos_fk_indexes.sql",
+      "path": "supabase/migrations/20260627213510_add_missing_pos_fk_indexes.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 57,
+      "migrationVersion": "20260627214235",
+      "filename": "20260627214235_add_remaining_fk_indexes.sql",
+      "path": "supabase/migrations/20260627214235_add_remaining_fk_indexes.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 58,
+      "migrationVersion": "20260628211547",
+      "filename": "20260628211547_fase_6h_7_3_pos_rpc_rate_limits.sql",
+      "path": "supabase/migrations/20260628211547_fase_6h_7_3_pos_rpc_rate_limits.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 59,
+      "migrationVersion": "20260628214208",
+      "filename": "20260628214208_fase_6h_7_3_1_rate_limit_auth_preflight.sql",
+      "path": "supabase/migrations/20260628214208_fase_6h_7_3_1_rate_limit_auth_preflight.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 60,
+      "migrationVersion": "20260629164304",
+      "filename": "20260629164304_fase_6h_7_4_peak_pro_performance.sql",
+      "path": "supabase/migrations/20260629164304_fase_6h_7_4_peak_pro_performance.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 61,
+      "migrationVersion": "20260629211428",
+      "filename": "20260629211428_fase_cad_1_expiry_block_and_audit.sql",
+      "path": "supabase/migrations/20260629211428_fase_cad_1_expiry_block_and_audit.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 62,
+      "migrationVersion": "20260629214103",
+      "filename": "20260629214103_fase_cad_1_1_harden_expiry_rpc_permissions_minimal.sql",
+      "path": "supabase/migrations/20260629214103_fase_cad_1_1_harden_expiry_rpc_permissions_minimal.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 63,
+      "migrationVersion": "20260630012236",
+      "filename": "20260630012236_fase_cad_3_expiration_waste_history.sql",
+      "path": "supabase/migrations/20260630012236_fase_cad_3_expiration_waste_history.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 64,
+      "migrationVersion": "20260630014408",
+      "filename": "20260630014408_fase_cad_3_1_expiration_waste_history_unit.sql",
+      "path": "supabase/migrations/20260630014408_fase_cad_3_1_expiration_waste_history_unit.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 65,
+      "migrationVersion": "20260630020638",
+      "filename": "20260630020638_fase_cad_4_expiration_fefo_recommendations.sql",
+      "path": "supabase/migrations/20260630020638_fase_cad_4_expiration_fefo_recommendations.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 66,
+      "migrationVersion": "20260630045029",
+      "filename": "20260630045029_fase_cad_5_1_strict_expiry_sale_guard.sql",
+      "path": "supabase/migrations/20260630045029_fase_cad_5_1_strict_expiry_sale_guard.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 67,
+      "migrationVersion": "20260630061414",
+      "filename": "20260630061414_test_small_noop_cad6.sql",
+      "path": "supabase/migrations/20260630061414_test_small_noop_cad6.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 68,
+      "migrationVersion": "20260630061427",
+      "filename": "20260630061427_fase_cad_6_helper_normalize_minimal.sql",
+      "path": "supabase/migrations/20260630061427_fase_cad_6_helper_normalize_minimal.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 69,
+      "migrationVersion": "20260630061453",
+      "filename": "20260630061453_fase_cad_6_helpers_remaining.sql",
+      "path": "supabase/migrations/20260630061453_fase_cad_6_helpers_remaining.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 70,
+      "migrationVersion": "20260630061616",
+      "filename": "20260630061616_cad6_test_jsonb_fn.sql",
+      "path": "supabase/migrations/20260630061616_cad6_test_jsonb_fn.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 71,
+      "migrationVersion": "20260630061623",
+      "filename": "20260630061623_cad6_test_replace_report_stub.sql",
+      "path": "supabase/migrations/20260630061623_cad6_test_replace_report_stub.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 72,
+      "migrationVersion": "20260630061813",
+      "filename": "20260630061813_fase_cad_6_new_report_function_stub.sql",
+      "path": "supabase/migrations/20260630061813_fase_cad_6_new_report_function_stub.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 73,
+      "migrationVersion": "20260630062113",
+      "filename": "20260630062113_cad6_test_private_comment.sql",
+      "path": "supabase/migrations/20260630062113_cad6_test_private_comment.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 74,
+      "migrationVersion": "20260630062245",
+      "filename": "20260630062245_cad6_test_fn_read_products.sql",
+      "path": "supabase/migrations/20260630062245_cad6_test_fn_read_products.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 75,
+      "migrationVersion": "20260630062345",
+      "filename": "20260630062345_fase_cad_6_cleanup_connector_test_functions.sql",
+      "path": "supabase/migrations/20260630062345_fase_cad_6_cleanup_connector_test_functions.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 76,
+      "migrationVersion": "20260630064942",
+      "filename": "20260630064942_fase_cad_6_1_expiring_report_extended.sql",
+      "path": "supabase/migrations/20260630064942_fase_cad_6_1_expiring_report_extended.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 77,
+      "migrationVersion": "20260630065152",
+      "filename": "20260630065152_fase_cad_6_1_report_shelf_life_warning_patch.sql",
+      "path": "supabase/migrations/20260630065152_fase_cad_6_1_report_shelf_life_warning_patch.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 78,
+      "migrationVersion": "20260630065235",
+      "filename": "20260630065235_fase_cad_6_1_sale_inventory_preflight.sql",
+      "path": "supabase/migrations/20260630065235_fase_cad_6_1_sale_inventory_preflight.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 79,
+      "migrationVersion": "20260630065254",
+      "filename": "20260630065254_fase_cad_6_1_upsert_product_initial_batch_guard.sql",
+      "path": "supabase/migrations/20260630065254_fase_cad_6_1_upsert_product_initial_batch_guard.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 80,
+      "migrationVersion": "20260630065317",
+      "filename": "20260630065317_fase_cad_6_1_create_batch_from_parent_stock_rpc.sql",
+      "path": "supabase/migrations/20260630065317_fase_cad_6_1_create_batch_from_parent_stock_rpc.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 81,
+      "migrationVersion": "20260630065338",
+      "filename": "20260630065338_fase_cad_6_1_adjust_stock_without_batch_zero_rpc.sql",
+      "path": "supabase/migrations/20260630065338_fase_cad_6_1_adjust_stock_without_batch_zero_rpc.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 82,
+      "migrationVersion": "20260630073352",
+      "filename": "20260630073352_fase_cad_6_1_product_context_business_profile.sql",
+      "path": "supabase/migrations/20260630073352_fase_cad_6_1_product_context_business_profile.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 83,
+      "migrationVersion": "20260630193600",
+      "filename": "20260630193600_fase_cad_6_2_shelf_life_initial_batch_regularization.sql",
+      "path": "supabase/migrations/20260630193600_fase_cad_6_2_shelf_life_initial_batch_regularization.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 84,
+      "migrationVersion": "20260630193654",
+      "filename": "20260630193654_fase_cad_6_2_shelf_life_batch_guard_trigger.sql",
+      "path": "supabase/migrations/20260630193654_fase_cad_6_2_shelf_life_batch_guard_trigger.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 85,
+      "migrationVersion": "20260701205851",
+      "filename": "20260701205851_fase_rest_2_restaurant_orders_cloud.sql",
+      "path": "supabase/migrations/20260701205851_fase_rest_2_restaurant_orders_cloud.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 86,
+      "migrationVersion": "20260702014017",
+      "filename": "20260702014017_fase_rest_2_1_restaurant_orders_reconciliation.sql",
+      "path": "supabase/migrations/20260702014017_fase_rest_2_1_restaurant_orders_reconciliation.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 87,
+      "migrationVersion": "20260702023137",
+      "filename": "20260702023137_fase_rest_2_1_1_restaurant_orders_rpc_reconciliation.sql",
+      "path": "supabase/migrations/20260702023137_fase_rest_2_1_1_restaurant_orders_rpc_reconciliation.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 88,
+      "migrationVersion": "20260702035043",
+      "filename": "20260702035043_fase_rest_4_restaurant_order_item_status.sql",
+      "path": "supabase/migrations/20260702035043_fase_rest_4_restaurant_order_item_status.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 89,
+      "migrationVersion": "20260702040616",
+      "filename": "20260702040616_fase_rest_4_1_cancel_restaurant_order_items.sql",
+      "path": "supabase/migrations/20260702040616_fase_rest_4_1_cancel_restaurant_order_items.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 90,
+      "migrationVersion": "20260702043113",
+      "filename": "20260702043113_fase_rest_5_table_cloud_kitchen_status.sql",
+      "path": "supabase/migrations/20260702043113_fase_rest_5_table_cloud_kitchen_status.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 91,
+      "migrationVersion": "20260702231833",
+      "filename": "20260702231833_fase_rest_7_close_restaurant_order_after_checkout.sql",
+      "path": "supabase/migrations/20260702231833_fase_rest_7_close_restaurant_order_after_checkout.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 92,
+      "migrationVersion": "20260703004846",
+      "filename": "20260703004846_fase_rest_8_restaurant_orders_history_archive.sql",
+      "path": "supabase/migrations/20260703004846_fase_rest_8_restaurant_orders_history_archive.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 93,
+      "migrationVersion": "20260703021252",
+      "filename": "20260703021252_fase_rest_8_1_revoke_public_execute_restaurant_history_archive.sql",
+      "path": "supabase/migrations/20260703021252_fase_rest_8_1_revoke_public_execute_restaurant_history_archive.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 94,
+      "migrationVersion": "20260703024801",
+      "filename": "20260703024801_fase_rest_8_6_preserve_cancelled_items_on_delivered.sql",
+      "path": "supabase/migrations/20260703024801_fase_rest_8_6_preserve_cancelled_items_on_delivered.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 95,
+      "migrationVersion": "20260703145223",
+      "filename": "20260703145223_rest_inv_5_cloud_inventory_recipes_extras.sql",
+      "path": "supabase/migrations/20260703145223_rest_inv_5_cloud_inventory_recipes_extras.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 96,
+      "migrationVersion": "20260703145549",
+      "filename": "20260703145549_rest_inv_5_safety_probe.sql",
+      "path": "supabase/migrations/20260703145549_rest_inv_5_safety_probe.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 97,
+      "migrationVersion": "20260703145634",
+      "filename": "20260703145634_rest_inv_5_keep_direct_inventory_resolver.sql",
+      "path": "supabase/migrations/20260703145634_rest_inv_5_keep_direct_inventory_resolver.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 98,
+      "migrationVersion": "20260703145713",
+      "filename": "20260703145713_rest_inv_5_expand_inventory_items_min.sql",
+      "path": "supabase/migrations/20260703145713_rest_inv_5_expand_inventory_items_min.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 99,
+      "migrationVersion": "20260703145834",
+      "filename": "20260703145834_rest_inv_5_restore_resolver_wrapper_min.sql",
+      "path": "supabase/migrations/20260703145834_rest_inv_5_restore_resolver_wrapper_min.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 100,
+      "migrationVersion": "20260703145916",
+      "filename": "20260703145916_rest_inv_5_resolver_wrapper_enriched.sql",
+      "path": "supabase/migrations/20260703145916_rest_inv_5_resolver_wrapper_enriched.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 101,
+      "migrationVersion": "20260703151331",
+      "filename": "20260703151331_rest_inv_5_1_modifier_tracks_inventory_consistency.sql",
+      "path": "supabase/migrations/20260703151331_rest_inv_5_1_modifier_tracks_inventory_consistency.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 102,
+      "migrationVersion": "20260705033303",
+      "filename": "20260705033303_license_free_1_rename_visible_plan.sql",
+      "path": "supabase/migrations/20260705033303_license_free_1_rename_visible_plan.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 103,
+      "migrationVersion": "20260705035837",
+      "filename": "20260705035837_license_free_2_new_free_lifetime.sql",
+      "path": "supabase/migrations/20260705035837_license_free_2_new_free_lifetime.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 104,
+      "migrationVersion": "20260705040103",
+      "filename": "20260705040103_license_free_2_1_restore_free_fields.sql",
+      "path": "supabase/migrations/20260705040103_license_free_2_1_restore_free_fields.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 105,
+      "migrationVersion": "20260705041554",
+      "filename": "20260705041554_license_free_3_migrate_existing_free_lifetime.sql",
+      "path": "supabase/migrations/20260705041554_license_free_3_migrate_existing_free_lifetime.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 106,
+      "migrationVersion": "20260705043355",
+      "filename": "20260705043355_license_free_4_admin_downgrade_free_lifetime.sql",
+      "path": "supabase/migrations/20260705043355_license_free_4_admin_downgrade_free_lifetime.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 107,
+      "migrationVersion": "20260705051103",
+      "filename": "20260705051103_license_free_5_1_replace_renew_license_free_base64.sql",
+      "path": "supabase/migrations/20260705051103_license_free_5_1_replace_renew_license_free_base64.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 108,
+      "migrationVersion": "20260706053350",
+      "filename": "20260706053350_sec_1_close_legacy_security_surface.sql",
+      "path": "supabase/migrations/20260706053350_sec_1_close_legacy_security_surface.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 109,
+      "migrationVersion": "20260706053527",
+      "filename": "20260706053527_sec_2_rpc_rate_limits.sql",
+      "path": "supabase/migrations/20260706053527_sec_2_rpc_rate_limits.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 110,
+      "migrationVersion": "20260706053602",
+      "filename": "20260706053602_sec_2_1_fix_license_contract_and_rpc_coverage.sql",
+      "path": "supabase/migrations/20260706053602_sec_2_1_fix_license_contract_and_rpc_coverage.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 111,
+      "migrationVersion": "20260706072656",
+      "filename": "20260706072656_sec_3_storage_upload_hardening.sql",
+      "path": "supabase/migrations/20260706072656_sec_3_storage_upload_hardening.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 112,
+      "migrationVersion": "20260706082151",
+      "filename": "20260706082151_sec_4_function_definer_search_path_ownership_grants.sql",
+      "path": "supabase/migrations/20260706082151_sec_4_function_definer_search_path_ownership_grants.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 113,
+      "migrationVersion": "20260706082349",
+      "filename": "20260706082349_sec_4_1_refine_security_surface_audit.sql",
+      "path": "supabase/migrations/20260706082349_sec_4_1_refine_security_surface_audit.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 114,
+      "migrationVersion": "20260707164239",
+      "filename": "20260707164239_20260709000002_legal_db_1_hardening.sql",
+      "path": "supabase/migrations/20260707164239_20260709000002_legal_db_1_hardening.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 115,
+      "migrationVersion": "20260707164601",
+      "filename": "20260707164601_20260709000003_legal_db_1_drop_duplicate_acceptance_index.sql",
+      "path": "supabase/migrations/20260707164601_20260709000003_legal_db_1_drop_duplicate_acceptance_index.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 116,
+      "migrationVersion": "20260709232838",
+      "filename": "20260709232838_staff_notif_1_notification_staff_permissions.sql",
+      "path": "supabase/migrations/20260709232838_staff_notif_1_notification_staff_permissions.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 117,
+      "migrationVersion": "20260710023642",
+      "filename": "20260710023642_ecom_db_1_portal_foundation.sql",
+      "path": "supabase/migrations/20260710023642_ecom_db_1_portal_foundation.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 118,
+      "migrationVersion": "20260710023743",
+      "filename": "20260710023743_ecom_rpc_1_public_contracts.sql",
+      "path": "supabase/migrations/20260710023743_ecom_rpc_1_public_contracts.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 119,
+      "migrationVersion": "20260710032739",
+      "filename": "20260710032739_ecom_rpc_1_2_rate_limit_adapter.sql",
+      "path": "supabase/migrations/20260710032739_ecom_rpc_1_2_rate_limit_adapter.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 120,
+      "migrationVersion": "20260710035722",
+      "filename": "20260710035722_ecom_fe_admin_1_portal_admin_rpcs.sql",
+      "path": "supabase/migrations/20260710035722_ecom_fe_admin_1_portal_admin_rpcs.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 121,
+      "migrationVersion": "20260710055224",
+      "filename": "20260710055224_ecom_fe_admin_1_1_staff_permission.sql",
+      "path": "supabase/migrations/20260710055224_ecom_fe_admin_1_1_staff_permission.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 122,
+      "migrationVersion": "20260710060654",
+      "filename": "20260710060654_ecom_fe_admin_1_1_rate_limit_actor_partition.sql",
+      "path": "supabase/migrations/20260710060654_ecom_fe_admin_1_1_rate_limit_actor_partition.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 123,
+      "migrationVersion": "20260710062356",
+      "filename": "20260710062356_ecom_fe_admin_1_1_device_rate_limit.sql",
+      "path": "supabase/migrations/20260710062356_ecom_fe_admin_1_1_device_rate_limit.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 124,
+      "migrationVersion": "20260710072519",
+      "filename": "20260710072519_ecom_rpc_1_3_checkout_integrity.sql",
+      "path": "supabase/migrations/20260710072519_ecom_rpc_1_3_checkout_integrity.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 125,
+      "migrationVersion": "20260710074524",
+      "filename": "20260710074524_ecom_rpc_1_3_1_quantity_null_guard.sql",
+      "path": "supabase/migrations/20260710074524_ecom_rpc_1_3_1_quantity_null_guard.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 126,
+      "migrationVersion": "20260710125119",
+      "filename": "20260710125119_ecom_rpc_1_3_2_null_cart_exact_stock.sql",
+      "path": "supabase/migrations/20260710125119_ecom_rpc_1_3_2_null_cart_exact_stock.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 127,
+      "migrationVersion": "20260710174725",
+      "filename": "20260710174725_ecom_rpc_2_order_management.sql",
+      "path": "supabase/migrations/20260710174725_ecom_rpc_2_order_management.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 128,
+      "migrationVersion": "20260710175017",
+      "filename": "20260710175017_ecom_notif_1_order_notifications.sql",
+      "path": "supabase/migrations/20260710175017_ecom_notif_1_order_notifications.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 129,
+      "migrationVersion": "20260710222247",
+      "filename": "20260710222247_ecom_orders_1_3_runtime_grants.sql",
+      "path": "supabase/migrations/20260710222247_ecom_orders_1_3_runtime_grants.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 130,
+      "migrationVersion": "20260711024125",
+      "filename": "20260711024125_ecom_pos_1_prepare_order_draft.sql",
+      "path": "supabase/migrations/20260711024125_ecom_pos_1_prepare_order_draft.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 131,
+      "migrationVersion": "20260711122554",
+      "filename": "20260711122554_ecom_pos_1_1_product_mapping_and_guards.sql",
+      "path": "supabase/migrations/20260711122554_ecom_pos_1_1_product_mapping_and_guards.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 132,
+      "migrationVersion": "20260712032309",
+      "filename": "20260712032309_ecom_pos_3_conversion_schema.sql",
+      "path": "supabase/migrations/20260712032309_ecom_pos_3_conversion_schema.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 133,
+      "migrationVersion": "20260712032334",
+      "filename": "20260712032334_ecom_pos_3_conversion_state_rpc.sql",
+      "path": "supabase/migrations/20260712032334_ecom_pos_3_conversion_state_rpc.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 134,
+      "migrationVersion": "20260712032400",
+      "filename": "20260712032400_ecom_pos_3_begin_conversion_rpc.sql",
+      "path": "supabase/migrations/20260712032400_ecom_pos_3_begin_conversion_rpc.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 135,
+      "migrationVersion": "20260712032421",
+      "filename": "20260712032421_ecom_pos_3_cancel_conversion_rpc.sql",
+      "path": "supabase/migrations/20260712032421_ecom_pos_3_cancel_conversion_rpc.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 136,
+      "migrationVersion": "20260712032444",
+      "filename": "20260712032444_ecom_pos_3_complete_conversion_rpc.sql",
+      "path": "supabase/migrations/20260712032444_ecom_pos_3_complete_conversion_rpc.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 137,
+      "migrationVersion": "20260712032510",
+      "filename": "20260712032510_ecom_pos_3_admin_release_fail_closed.sql",
+      "path": "supabase/migrations/20260712032510_ecom_pos_3_admin_release_fail_closed.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 138,
+      "migrationVersion": "20260712032526",
+      "filename": "20260712032526_ecom_pos_3_conversion_grants.sql",
+      "path": "supabase/migrations/20260712032526_ecom_pos_3_conversion_grants.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 139,
+      "migrationVersion": "20260712192900",
+      "filename": "20260712192900_ecom_fe_catalog_3_legacy_availability_snapshot.sql",
+      "path": "supabase/migrations/20260712192900_ecom_fe_catalog_3_legacy_availability_snapshot.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 140,
+      "migrationVersion": "20260712193000",
+      "filename": "20260712193000_ecom_fe_catalog_3_sync_and_public_cache.sql",
+      "path": "supabase/migrations/20260712193000_ecom_fe_catalog_3_sync_and_public_cache.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 141,
+      "migrationVersion": "20260712193100",
+      "filename": "20260712193100_ecom_fe_catalog_3_backfill_and_trigger_fix.sql",
+      "path": "supabase/migrations/20260712193100_ecom_fe_catalog_3_backfill_and_trigger_fix.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 142,
+      "migrationVersion": "20260712210000",
+      "filename": "20260712210000_ecom_fe_catalog_3_1_source_revision_schema.sql",
+      "path": "supabase/migrations/20260712210000_ecom_fe_catalog_3_1_source_revision_schema.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 143,
+      "migrationVersion": "20260712210100",
+      "filename": "20260712210100_ecom_fe_catalog_3_1_sync_rpc.sql",
+      "path": "supabase/migrations/20260712210100_ecom_fe_catalog_3_1_sync_rpc.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 144,
+      "migrationVersion": "20260712210200",
+      "filename": "20260712210200_ecom_fe_catalog_3_1_residual_blockers.sql",
+      "path": "supabase/migrations/20260712210200_ecom_fe_catalog_3_1_residual_blockers.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 145,
+      "migrationVersion": "20260712210300",
+      "filename": "20260712210300_ecom_fe_catalog_3_2_source_missing.sql",
+      "path": "supabase/migrations/20260712210300_ecom_fe_catalog_3_2_source_missing.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 146,
+      "migrationVersion": "20260712235439",
+      "filename": "20260712235439_ecom_orders_2_tracking_schema.sql",
+      "path": "supabase/migrations/20260712235439_ecom_orders_2_tracking_schema.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 147,
+      "migrationVersion": "20260712235807",
+      "filename": "20260712235807_ecom_orders_2_tracking_rpc.sql",
+      "path": "supabase/migrations/20260712235807_ecom_orders_2_tracking_rpc.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 148,
+      "migrationVersion": "20260713000133",
+      "filename": "20260713000133_ecom_orders_2_fulfillment_state_machine.sql",
+      "path": "supabase/migrations/20260713000133_ecom_orders_2_fulfillment_state_machine.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 149,
+      "migrationVersion": "20260713000326",
+      "filename": "20260713000326_ecom_orders_2_grants_realtime_hardening.sql",
+      "path": "supabase/migrations/20260713000326_ecom_orders_2_grants_realtime_hardening.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 150,
+      "migrationVersion": "20260713002329",
+      "filename": "20260713002329_ecom_orders_2_conversion_independence_hardening.sql",
+      "path": "supabase/migrations/20260713002329_ecom_orders_2_conversion_independence_hardening.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 151,
+      "migrationVersion": "20260713003008",
+      "filename": "20260713003008_ecom_orders_2_converted_fulfillment_visibility.sql",
+      "path": "supabase/migrations/20260713003008_ecom_orders_2_converted_fulfillment_visibility.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 152,
+      "migrationVersion": "20260713011641",
+      "filename": "20260713011641_ecom_orders_2_1_terminal_fulfillment_policy.sql",
+      "path": "supabase/migrations/20260713011641_ecom_orders_2_1_terminal_fulfillment_policy.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 153,
+      "migrationVersion": "20260713011837",
+      "filename": "20260713011837_ecom_orders_2_1_terminal_operational_visibility.sql",
+      "path": "supabase/migrations/20260713011837_ecom_orders_2_1_terminal_operational_visibility.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 154,
+      "migrationVersion": "20260713012025",
+      "filename": "20260713012025_ecom_orders_2_1_pos_terminal_guards.sql",
+      "path": "supabase/migrations/20260713012025_ecom_orders_2_1_pos_terminal_guards.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 155,
+      "migrationVersion": "20260713012117",
+      "filename": "20260713012117_ecom_orders_2_1_tracking_resolver_rate_limit.sql",
+      "path": "supabase/migrations/20260713012117_ecom_orders_2_1_tracking_resolver_rate_limit.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 156,
+      "migrationVersion": "20260713023529",
+      "filename": "20260713023529_ecom_orders_2_2_tracking_client_rate_limit.sql",
+      "path": "supabase/migrations/20260713023529_ecom_orders_2_2_tracking_client_rate_limit.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 157,
+      "migrationVersion": "20260713024130",
+      "filename": "20260713024130_ecom_orders_2_2_pos_single_authorization.sql",
+      "path": "supabase/migrations/20260713024130_ecom_orders_2_2_pos_single_authorization.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 158,
+      "migrationVersion": "20260713042152",
+      "filename": "20260713042152_ecom_catalog_preserve_unverified_and_recover_farmaciagary.sql",
+      "path": "supabase/migrations/20260713042152_ecom_catalog_preserve_unverified_and_recover_farmaciagary.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 159,
+      "migrationVersion": "20260713061218",
+      "filename": "20260713061218_ecom_orders_2_3_pos_preparation_fulfillment_sync.sql",
+      "path": "supabase/migrations/20260713061218_ecom_orders_2_3_pos_preparation_fulfillment_sync.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 160,
+      "migrationVersion": "20260715061240",
+      "filename": "20260715061240_ecom_operations_1_business_hours.sql",
+      "path": "supabase/migrations/20260715061240_ecom_operations_1_business_hours.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 161,
+      "migrationVersion": "20260715164925",
+      "filename": "20260715164925_hotfix_ecom_operations_1_idempotency.sql",
+      "path": "supabase/migrations/20260715164925_hotfix_ecom_operations_1_idempotency.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 162,
+      "migrationVersion": "20260715190958",
+      "filename": "20260715190958_ecom_products_model_1.sql",
+      "path": "supabase/migrations/20260715190958_ecom_products_model_1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 163,
+      "migrationVersion": "20260715191822",
+      "filename": "20260715191822_ecom_products_model_1_child_guard_fix.sql",
+      "path": "supabase/migrations/20260715191822_ecom_products_model_1_child_guard_fix.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 164,
+      "migrationVersion": "20260715192025",
+      "filename": "20260715192025_ecom_products_model_1_option_soft_delete_fix.sql",
+      "path": "supabase/migrations/20260715192025_ecom_products_model_1_option_soft_delete_fix.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 165,
+      "migrationVersion": "20260715192456",
+      "filename": "20260715192456_ecom_products_model_1_fk_indexes.sql",
+      "path": "supabase/migrations/20260715192456_ecom_products_model_1_fk_indexes.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 166,
+      "migrationVersion": "20260715221029",
+      "filename": "20260715221029_ecom_products_model_1_1_integration_availability.sql",
+      "path": "supabase/migrations/20260715221029_ecom_products_model_1_1_integration_availability.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 167,
+      "migrationVersion": "20260715222335",
+      "filename": "20260715222335_ecom_products_model_1_1_revision_idempotency.sql",
+      "path": "supabase/migrations/20260715222335_ecom_products_model_1_1_revision_idempotency.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 168,
+      "migrationVersion": "20260715222524",
+      "filename": "20260715222524_ecom_products_model_1_1_revision_guard_fix.sql",
+      "path": "supabase/migrations/20260715222524_ecom_products_model_1_1_revision_guard_fix.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 169,
+      "migrationVersion": "20260715222639",
+      "filename": "20260715222639_ecom_products_model_1_1_revision_metadata_fix.sql",
+      "path": "supabase/migrations/20260715222639_ecom_products_model_1_1_revision_metadata_fix.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 170,
+      "migrationVersion": "20260715223230",
+      "filename": "20260715223230_ecom_products_model_1_1_configuration_revision_isolation.sql",
+      "path": "supabase/migrations/20260715223230_ecom_products_model_1_1_configuration_revision_isolation.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 171,
+      "migrationVersion": "20260716012251",
+      "filename": "20260716012251_ecom_products_public_1.sql",
+      "path": "supabase/migrations/20260716012251_ecom_products_public_1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 172,
+      "migrationVersion": "20260716012935",
+      "filename": "20260716012935_ecom_products_public_1_parent_gate_fix.sql",
+      "path": "supabase/migrations/20260716012935_ecom_products_public_1_parent_gate_fix.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 173,
+      "migrationVersion": "20260716045221",
+      "filename": "20260716045221_ecom_products_public_1_availability_revision_fix.sql",
+      "path": "supabase/migrations/20260716045221_ecom_products_public_1_availability_revision_fix.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 174,
+      "migrationVersion": "20260716045242",
+      "filename": "20260716045242_ecom_products_public_1_checkout_revision_fix.sql",
+      "path": "supabase/migrations/20260716045242_ecom_products_public_1_checkout_revision_fix.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 175,
+      "migrationVersion": "20260716045301",
+      "filename": "20260716045301_ecom_products_public_1_rate_limit_isolation.sql",
+      "path": "supabase/migrations/20260716045301_ecom_products_public_1_rate_limit_isolation.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 176,
+      "migrationVersion": "20260716055921",
+      "filename": "20260716055921_ecom_products_public_1_atomic_snapshot_fix.sql",
+      "path": "supabase/migrations/20260716055921_ecom_products_public_1_atomic_snapshot_fix.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 177,
+      "migrationVersion": "20260716055941",
+      "filename": "20260716055941_ecom_products_public_1_rate_limit_fallback_fix.sql",
+      "path": "supabase/migrations/20260716055941_ecom_products_public_1_rate_limit_fallback_fix.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 178,
+      "migrationVersion": "20260716062053",
+      "filename": "20260716062053_ecom_products_public_1_writer_lock_order_fix.sql",
+      "path": "supabase/migrations/20260716062053_ecom_products_public_1_writer_lock_order_fix.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 179,
+      "migrationVersion": "20260716083734",
+      "filename": "20260716083734_ecom_products_recover_source_missing.sql",
+      "path": "supabase/migrations/20260716083734_ecom_products_recover_source_missing.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 180,
+      "migrationVersion": "20260716155538",
+      "filename": "20260716155538_ecom_catalog_bootstrap_consistency.sql",
+      "path": "supabase/migrations/20260716155538_ecom_catalog_bootstrap_consistency.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 181,
+      "migrationVersion": "20260716155623",
+      "filename": "20260716155623_ecom_catalog_bootstrap_repair.sql",
+      "path": "supabase/migrations/20260716155623_ecom_catalog_bootstrap_repair.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 182,
+      "migrationVersion": "20260716155739",
+      "filename": "20260716155739_ecom_catalog_bootstrap_review_cleanup.sql",
+      "path": "supabase/migrations/20260716155739_ecom_catalog_bootstrap_review_cleanup.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 183,
+      "migrationVersion": "20260717010320",
+      "filename": "20260717010320_ecom_recipe_projection_nonblocking_reconciliation.sql",
+      "path": "supabase/migrations/20260717010320_ecom_recipe_projection_nonblocking_reconciliation.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 184,
+      "migrationVersion": "20260717011407",
+      "filename": "20260717011407_ecom_catalog_revision_conflict_recovery.sql",
+      "path": "supabase/migrations/20260717011407_ecom_catalog_revision_conflict_recovery.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 185,
+      "migrationVersion": "20260717012402",
+      "filename": "20260717012402_ecom_reset_legacy_source_revision_drift.sql",
+      "path": "supabase/migrations/20260717012402_ecom_reset_legacy_source_revision_drift.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 186,
+      "migrationVersion": "20260717055736",
+      "filename": "20260717055736_ecom_modifier_configuration_reseal.sql",
+      "path": "supabase/migrations/20260717055736_ecom_modifier_configuration_reseal.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 187,
+      "migrationVersion": "20260717160018",
+      "filename": "20260717160018_ecom_products_apparel_variant_snapshot.sql",
+      "path": "supabase/migrations/20260717160018_ecom_products_apparel_variant_snapshot.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 188,
+      "migrationVersion": "20260717171605",
+      "filename": "20260717171605_ecom_apparel_variant_parent_consistency.sql",
+      "path": "supabase/migrations/20260717171605_ecom_apparel_variant_parent_consistency.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 189,
+      "migrationVersion": "20260718173439",
+      "filename": "20260718173439_ecom_configuration_content_revision_coordination.sql",
+      "path": "supabase/migrations/20260718173439_ecom_configuration_content_revision_coordination.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 190,
+      "migrationVersion": "20260719070213",
+      "filename": "20260719070213_ecom_portal_pro_customization_hardening.sql",
+      "path": "supabase/migrations/20260719070213_ecom_portal_pro_customization_hardening.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 191,
+      "migrationVersion": "20260719150457",
+      "filename": "20260719150457_ecom_portal_customization_image_intent_and_slug_source_fix.sql",
+      "path": "supabase/migrations/20260719150457_ecom_portal_customization_image_intent_and_slug_source_fix.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 192,
+      "migrationVersion": "20260719173158",
+      "filename": "20260719173158_ecom_portal_builder_foundation.sql",
+      "path": "supabase/migrations/20260719173158_ecom_portal_builder_foundation.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 193,
+      "migrationVersion": "20260719173300",
+      "filename": "20260719173300_ecom_portal_builder_document_validation_fix.sql",
+      "path": "supabase/migrations/20260719173300_ecom_portal_builder_document_validation_fix.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 194,
+      "migrationVersion": "20260719173452",
+      "filename": "20260719173452_ecom_portal_builder_document_validation_operator_fix.sql",
+      "path": "supabase/migrations/20260719173452_ecom_portal_builder_document_validation_operator_fix.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 195,
+      "migrationVersion": "20260719174618",
+      "filename": "20260719174618_ecom_portal_builder_versions_immutable.sql",
+      "path": "supabase/migrations/20260719174618_ecom_portal_builder_versions_immutable.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 196,
+      "migrationVersion": "20260721113522",
+      "filename": "20260721113522_ecom_portal_builder_foundation_hardening.sql",
+      "path": "supabase/migrations/20260721113522_ecom_portal_builder_foundation_hardening.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 197,
+      "migrationVersion": "20260722222305",
+      "filename": "20260722222305_license_admin_auth_1_foundation.sql",
+      "path": "supabase/migrations/20260722222305_license_admin_auth_1_foundation.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 198,
+      "migrationVersion": "20260723173112",
+      "filename": "20260723173112_license_admin_auth_1_foundation_multidevice_fix.sql",
+      "path": "supabase/migrations/20260723173112_license_admin_auth_1_foundation_multidevice_fix.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 199,
+      "migrationVersion": "20260723180000",
+      "filename": "20260723180000_license_admin_auth_1_cutover.sql",
+      "path": "supabase/migrations/20260723180000_license_admin_auth_1_cutover.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 200,
+      "migrationVersion": "20260725081822",
+      "filename": "20260725081822_ecom_business_capabilities_wholesale_1.sql",
+      "path": "supabase/migrations/20260725081822_ecom_business_capabilities_wholesale_1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 201,
+      "migrationVersion": "20260725082414",
+      "filename": "20260725082414_ecom_business_capabilities_wholesale_1_legacy_writer_guard.sql",
+      "path": "supabase/migrations/20260725082414_ecom_business_capabilities_wholesale_1_legacy_writer_guard.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 202,
+      "migrationVersion": "20260725131157",
+      "filename": "20260725131157_ecom_business_capabilities_wholesale_1_blockers_fix.sql",
+      "path": "supabase/migrations/20260725131157_ecom_business_capabilities_wholesale_1_blockers_fix.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 203,
+      "migrationVersion": "20260725140305",
+      "filename": "20260725140305_ecom_business_capabilities_wholesale_1_signed_adjustments_fix.sql",
+      "path": "supabase/migrations/20260725140305_ecom_business_capabilities_wholesale_1_signed_adjustments_fix.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 204,
+      "migrationVersion": "20260725140405",
+      "filename": "20260725140405_ecom_business_capabilities_wholesale_1_tier_activation_fix.sql",
+      "path": "supabase/migrations/20260725140405_ecom_business_capabilities_wholesale_1_tier_activation_fix.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 205,
+      "migrationVersion": "20260725162006",
+      "filename": "20260725162006_ecom_simple_override_reconciliation_fix.sql",
+      "path": "supabase/migrations/20260725162006_ecom_simple_override_reconciliation_fix.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 206,
+      "migrationVersion": "20260725164039",
+      "filename": "20260725164039_ecom_simple_override_auto_sync_reconciliation.sql",
+      "path": "supabase/migrations/20260725164039_ecom_simple_override_auto_sync_reconciliation.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 207,
+      "migrationVersion": "20260725164238",
+      "filename": "20260725164238_ecom_simple_override_auto_sync_reconciliation_v2.sql",
+      "path": "supabase/migrations/20260725164238_ecom_simple_override_auto_sync_reconciliation_v2.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 208,
+      "migrationVersion": "20260726133923",
+      "filename": "20260726133923_ecommerce_portal_business_contact_requirements.sql",
+      "path": "supabase/migrations/20260726133923_ecommerce_portal_business_contact_requirements.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 209,
+      "migrationVersion": "20260726173547",
+      "filename": "20260726173547_ecommerce_public_store_business_type_label.sql",
+      "path": "supabase/migrations/20260726173547_ecommerce_public_store_business_type_label.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 210,
+      "migrationVersion": "20260726191819",
+      "filename": "20260726191819_ecommerce_portal_business_contact_compat_1.sql",
+      "path": "supabase/migrations/20260726191819_ecommerce_portal_business_contact_compat_1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 211,
+      "migrationVersion": "20260726200000",
+      "filename": "20260726200000_ecom_order_tracking_storefront_branding.sql",
+      "path": "supabase/migrations/20260726200000_ecom_order_tracking_storefront_branding.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 212,
+      "migrationVersion": "20260727220529",
+      "filename": "20260727220529_ecommerce_pos_sale_traceability.sql",
+      "path": "supabase/migrations/20260727220529_ecommerce_pos_sale_traceability.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 213,
+      "migrationVersion": "20260802053039",
+      "filename": "20260802053039_ecom_portal_unified_site_document_v2.sql",
+      "path": "supabase/migrations/20260802053039_ecom_portal_unified_site_document_v2.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 214,
+      "migrationVersion": "20260802074419",
+      "filename": "20260802074419_ecommerce_site_version_deletion.sql",
+      "path": "supabase/migrations/20260802074419_ecommerce_site_version_deletion.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 215,
+      "migrationVersion": "20260806061500",
+      "filename": "20260806061500_business_profile_rubro_realtime_sync.sql",
+      "path": "supabase/migrations/20260806061500_business_profile_rubro_realtime_sync.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 216,
+      "migrationVersion": "20260810092512",
+      "filename": "20260810092512_ecom_catalog_revision_forward_baseline.sql",
+      "path": "supabase/migrations/20260810092512_ecom_catalog_revision_forward_baseline.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 217,
+      "migrationVersion": "20260810161224",
+      "filename": "20260810161224_apparel_conflict_fix_initial_batches_create_only.sql",
+      "path": "supabase/migrations/20260810161224_apparel_conflict_fix_initial_batches_create_only.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 218,
+      "migrationVersion": "20260811004650",
+      "filename": "20260811004650_product_inventory_entry_engine.sql",
+      "path": "supabase/migrations/20260811004650_product_inventory_entry_engine.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 219,
+      "migrationVersion": "20260814092914",
+      "filename": "20260814092914_cash_pro_admin_close.sql",
+      "path": "supabase/migrations/20260814092914_cash_pro_admin_close.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 220,
+      "migrationVersion": "20260814133721",
+      "filename": "20260814133721_cash_admin_close_recalc_guard.sql",
+      "path": "supabase/migrations/20260814133721_cash_admin_close_recalc_guard.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 221,
+      "migrationVersion": "20260814142827",
+      "filename": "20260814142827_cash_pro_admin_stable_identity.sql",
+      "path": "supabase/migrations/20260814142827_cash_pro_admin_stable_identity.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 222,
+      "migrationVersion": "20260814150000",
+      "filename": "20260814150000_cash_pro_reconciliation_lifecycle_integrity.sql",
+      "path": "supabase/migrations/20260814150000_cash_pro_reconciliation_lifecycle_integrity.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 223,
+      "migrationVersion": "20260816201807",
+      "filename": "20260816201807_notification_tenant_permissions_actor_reads.sql",
+      "path": "supabase/migrations/20260816201807_notification_tenant_permissions_actor_reads.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 224,
+      "migrationVersion": "20260816201822",
+      "filename": "20260816201822_notification_staff_permission_contract.sql",
+      "path": "supabase/migrations/20260816201822_notification_staff_permission_contract.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 225,
+      "migrationVersion": "20260818164207",
+      "filename": "20260818164207_shared_terminal_device_actor_auth.sql",
+      "path": "supabase/migrations/20260818164207_shared_terminal_device_actor_auth.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 226,
+      "migrationVersion": "20260818165736",
+      "filename": "20260818165736_shared_terminal_legacy_admin_fail_closed.sql",
+      "path": "supabase/migrations/20260818165736_shared_terminal_legacy_admin_fail_closed.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 227,
+      "migrationVersion": "20260818170333",
+      "filename": "20260818170333_shared_terminal_secondary_actor_context.sql",
+      "path": "supabase/migrations/20260818170333_shared_terminal_secondary_actor_context.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 228,
+      "migrationVersion": "20260818234329",
+      "filename": "20260818234329_shared_terminal_staff_occupancy_fix.sql",
+      "path": "supabase/migrations/20260818234329_shared_terminal_staff_occupancy_fix.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 229,
+      "migrationVersion": "20260819084636",
+      "filename": "20260819084636_shared_terminal_4_cash_station_financial_handoff.sql",
+      "path": "supabase/migrations/20260819084636_shared_terminal_4_cash_station_financial_handoff.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 230,
+      "migrationVersion": "20260819084719",
+      "filename": "20260819084719_20260819090000_shared_terminal_cash_station_financial_handoff.sql",
+      "path": "supabase/migrations/20260819084719_20260819090000_shared_terminal_cash_station_financial_handoff.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 231,
+      "migrationVersion": "20260819085828",
+      "filename": "20260819085828_20260819090100_shared_terminal_cash_movement_performed_by.sql",
+      "path": "supabase/migrations/20260819085828_20260819090100_shared_terminal_cash_movement_performed_by.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 232,
+      "migrationVersion": "20260820165842",
+      "filename": "20260820165842_shared_terminal_financial_receipt_contract.sql",
+      "path": "supabase/migrations/20260820165842_shared_terminal_financial_receipt_contract.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 233,
+      "migrationVersion": "20260823084100",
+      "filename": "20260823084100_notification_center_seen_state.sql",
+      "path": "supabase/migrations/20260823084100_notification_center_seen_state.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 234,
+      "migrationVersion": "20260823084200",
+      "filename": "20260823084200_notification_center_seen_rpc.sql",
+      "path": "supabase/migrations/20260823084200_notification_center_seen_rpc.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 235,
+      "migrationVersion": "20260823084300",
+      "filename": "20260823084300_notification_operational_incidents.sql",
+      "path": "supabase/migrations/20260823084300_notification_operational_incidents.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 236,
+      "migrationVersion": "20260823084350",
+      "filename": "20260823084350_notification_operational_incident_fk_hardening.sql",
+      "path": "supabase/migrations/20260823084350_notification_operational_incident_fk_hardening.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 237,
+      "migrationVersion": "20260823084400",
+      "filename": "20260823084400_notification_operational_generators.sql",
+      "path": "supabase/migrations/20260823084400_notification_operational_generators.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 238,
+      "migrationVersion": "20260824085526",
+      "filename": "20260824085526_fix_shared_terminal_admin_cash_close_actor_key.sql",
+      "path": "supabase/migrations/20260824085526_fix_shared_terminal_admin_cash_close_actor_key.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 239,
+      "migrationVersion": "20260824101231",
+      "filename": "20260824101231_allow_terminal_admin_cash_close_refresh_results.sql",
+      "path": "supabase/migrations/20260824101231_allow_terminal_admin_cash_close_refresh_results.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 240,
+      "migrationVersion": "20260824165820",
+      "filename": "20260824165820_admin_staff_profile_actor_authorization_r1.sql",
+      "path": "supabase/migrations/20260824165820_admin_staff_profile_actor_authorization_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 241,
+      "migrationVersion": "20260824165839",
+      "filename": "20260824165839_sales_refunds_actor_authorization_r1.sql",
+      "path": "supabase/migrations/20260824165839_sales_refunds_actor_authorization_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 242,
+      "migrationVersion": "20260824230045",
+      "filename": "20260824230045_admin_staff_rbac_r2b_sale_price_discount_server_authority.sql",
+      "path": "supabase/migrations/20260824230045_admin_staff_rbac_r2b_sale_price_discount_server_authority.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 243,
+      "migrationVersion": "20260825214805",
+      "filename": "20260825214805_20260825090000_admin_staff_rbac_r2c_ai_agent_authority.sql",
+      "path": "supabase/migrations/20260825214805_20260825090000_admin_staff_rbac_r2c_ai_agent_authority.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 244,
+      "migrationVersion": "20260825233834",
+      "filename": "20260825233834_20260825232859_admin_staff_rbac_r2c_strict_ai_agent_boolean_authority.sql",
+      "path": "supabase/migrations/20260825233834_20260825232859_admin_staff_rbac_r2c_strict_ai_agent_boolean_authority.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 245,
+      "migrationVersion": "20260826010000",
+      "filename": "20260826010000_admin_staff_rbac_r2d_product_inventory_authority.sql",
+      "path": "supabase/migrations/20260826010000_admin_staff_rbac_r2d_product_inventory_authority.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 246,
+      "migrationVersion": "20260828192621",
+      "filename": "20260828192621_ecom_delivery_structured_address_v1.sql",
+      "path": "supabase/migrations/20260828192621_ecom_delivery_structured_address_v1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 247,
+      "migrationVersion": "20260829024753",
+      "filename": "20260829024753_ecom_order_lifecycle_stabilization_v1.sql",
+      "path": "supabase/migrations/20260829024753_ecom_order_lifecycle_stabilization_v1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 248,
+      "migrationVersion": "20260829140000",
+      "filename": "20260829140000_cash_multi_admin_stations.sql",
+      "path": "supabase/migrations/20260829140000_cash_multi_admin_stations.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 249,
+      "migrationVersion": "20260829145747",
+      "filename": "20260829145747_cash_multi_admin_station_server_guard_r1.sql",
+      "path": "supabase/migrations/20260829145747_cash_multi_admin_station_server_guard_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 250,
+      "migrationVersion": "20260829164612",
+      "filename": "20260829164612_cash_financial_timestamp_station_alignment_r2.sql",
+      "path": "supabase/migrations/20260829164612_cash_financial_timestamp_station_alignment_r2.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 251,
+      "migrationVersion": "20260829214848",
+      "filename": "20260829214848_sale_batch_allocation_null_compat_r1.sql",
+      "path": "supabase/migrations/20260829214848_sale_batch_allocation_null_compat_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 252,
+      "migrationVersion": "20260831213345",
+      "filename": "20260831213345_cash_current_session_read_projection_r1.sql",
+      "path": "supabase/migrations/20260831213345_cash_current_session_read_projection_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 253,
+      "migrationVersion": "20260831235548",
+      "filename": "20260831235548_sales_operational_folio_financial_timeout_r1.sql",
+      "path": "supabase/migrations/20260831235548_sales_operational_folio_financial_timeout_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 254,
+      "migrationVersion": "20260901044425",
+      "filename": "20260901044425_cloud_special_checkout_r1.sql",
+      "path": "supabase/migrations/20260901044425_cloud_special_checkout_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 255,
+      "migrationVersion": "20260902010950",
+      "filename": "20260902010950_cloud_layaways_server_contract_r1.sql",
+      "path": "supabase/migrations/20260902010950_cloud_layaways_server_contract_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 256,
+      "migrationVersion": "20260903161627",
+      "filename": "20260903161627_cloud_layaways_fk_indexes_r1.sql",
+      "path": "supabase/migrations/20260903161627_cloud_layaways_fk_indexes_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 257,
+      "migrationVersion": "20260903172023",
+      "filename": "20260903172023_cloud_layaways_read_rpc_serialization_hardening_r1.sql",
+      "path": "supabase/migrations/20260903172023_cloud_layaways_read_rpc_serialization_hardening_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 258,
+      "migrationVersion": "20260903180000",
+      "filename": "20260903180000_cloud_layaways_financial_response_serialization_hardening_r2.sql",
+      "path": "supabase/migrations/20260903180000_cloud_layaways_financial_response_serialization_hardening_r2.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 259,
+      "migrationVersion": "20260904161407",
+      "filename": "20260904161407_cloud_layaways_financial_timestamp_normalization_r1.sql",
+      "path": "supabase/migrations/20260904161407_cloud_layaways_financial_timestamp_normalization_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 260,
+      "migrationVersion": "20260905020312",
+      "filename": "20260905020312_cloud_layaways_financial_request_canonicalization_r1.sql",
+      "path": "supabase/migrations/20260905020312_cloud_layaways_financial_request_canonicalization_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 261,
+      "migrationVersion": "20260905053610",
+      "filename": "20260905053610_cloud_layaways_numeric_decimal_validation_r1.sql",
+      "path": "supabase/migrations/20260905053610_cloud_layaways_numeric_decimal_validation_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 262,
+      "migrationVersion": "20260906000029",
+      "filename": "20260906000029_cloud_layaways_read_rpc_transaction_mode_r1.sql",
+      "path": "supabase/migrations/20260906000029_cloud_layaways_read_rpc_transaction_mode_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 263,
+      "migrationVersion": "20260906000110",
+      "filename": "20260906000110_cloud_layaways_completed_history_sale_folio_r1.sql",
+      "path": "supabase/migrations/20260906000110_cloud_layaways_completed_history_sale_folio_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 264,
+      "migrationVersion": "20260908075954",
+      "filename": "20260908075954_cash_station_labels_read_r1.sql",
+      "path": "supabase/migrations/20260908075954_cash_station_labels_read_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 265,
+      "migrationVersion": "20260909232752",
+      "filename": "20260909232752_ecommerce_phase1_publication_eligibility.sql",
+      "path": "supabase/migrations/20260909232752_ecommerce_phase1_publication_eligibility.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 266,
+      "migrationVersion": "20260910030440",
+      "filename": "20260910030440_ecommerce_phase3_stock_reservations.sql",
+      "path": "supabase/migrations/20260910030440_ecommerce_phase3_stock_reservations.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 267,
+      "migrationVersion": "20260910053018",
+      "filename": "20260910053018_ecommerce_phase3_reservation_expiry_scheduler_r1.sql",
+      "path": "supabase/migrations/20260910053018_ecommerce_phase3_reservation_expiry_scheduler_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 268,
+      "migrationVersion": "20260910075733",
+      "filename": "20260910075733_ecommerce_phase3_fulfillment_reservation_hold_r1.sql",
+      "path": "supabase/migrations/20260910075733_ecommerce_phase3_fulfillment_reservation_hold_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 269,
+      "migrationVersion": "20260910082620",
+      "filename": "20260910082620_ecommerce_phase3_reservation_admin_summary_r1.sql",
+      "path": "supabase/migrations/20260910082620_ecommerce_phase3_reservation_admin_summary_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 270,
+      "migrationVersion": "20260910212349",
+      "filename": "20260910212349_ecommerce_phase3_admin_inbox_anon_rpc_grants_r1.sql",
+      "path": "supabase/migrations/20260910212349_ecommerce_phase3_admin_inbox_anon_rpc_grants_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 271,
+      "migrationVersion": "20260910225909",
+      "filename": "20260910225909_ecommerce_phase3_catalog_stock_projection_sync_r1.sql",
+      "path": "supabase/migrations/20260910225909_ecommerce_phase3_catalog_stock_projection_sync_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 272,
+      "migrationVersion": "20260911041914",
+      "filename": "20260911041914_ecommerce_phase4_tenant_hardening_r1.sql",
+      "path": "supabase/migrations/20260911041914_ecommerce_phase4_tenant_hardening_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 273,
+      "migrationVersion": "20260912071043",
+      "filename": "20260912071043_ecommerce_admin_delivery_pickup_settings_contract_r1.sql",
+      "path": "supabase/migrations/20260912071043_ecommerce_admin_delivery_pickup_settings_contract_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 274,
+      "migrationVersion": "20260914092514",
+      "filename": "20260914092514_license_effective_features_creation_contract_r1.sql",
+      "path": "supabase/migrations/20260914092514_license_effective_features_creation_contract_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 275,
+      "migrationVersion": "20260914215627",
+      "filename": "20260914215627_ecommerce_published_product_rpc_recursion_r1.sql",
+      "path": "supabase/migrations/20260914215627_ecommerce_published_product_rpc_recursion_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 276,
+      "migrationVersion": "20260915000239",
+      "filename": "20260915000239_ecommerce_published_product_legacy_compat_r1.sql",
+      "path": "supabase/migrations/20260915000239_ecommerce_published_product_legacy_compat_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 277,
+      "migrationVersion": "20260916072854",
+      "filename": "20260916072854_license_expiry_entitlement_contract_r1.sql",
+      "path": "supabase/migrations/20260916072854_license_expiry_entitlement_contract_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 278,
+      "migrationVersion": "20260916073309",
+      "filename": "20260916073309_license_expiry_entitlement_boundaries_r1_1.sql",
+      "path": "supabase/migrations/20260916073309_license_expiry_entitlement_boundaries_r1_1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 279,
+      "migrationVersion": "20260916083608",
+      "filename": "20260916083608_license_expired_material_downgrade_r1.sql",
+      "path": "supabase/migrations/20260916083608_license_expired_material_downgrade_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 280,
+      "migrationVersion": "20260916204753",
+      "filename": "20260916204753_license_expiry_scheduler_r1.sql",
+      "path": "supabase/migrations/20260916204753_license_expiry_scheduler_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 281,
+      "migrationVersion": "20260917021509",
+      "filename": "20260917021509_license_upgrade_restoration_hardening_r1.sql",
+      "path": "supabase/migrations/20260917021509_license_upgrade_restoration_hardening_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 282,
+      "migrationVersion": "20260917025038",
+      "filename": "20260917025038_license_paid_renewal_idempotency_r1.sql",
+      "path": "supabase/migrations/20260917025038_license_paid_renewal_idempotency_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 283,
+      "migrationVersion": "20260918060949",
+      "filename": "20260918060949_license_grace_runtime_realtime_r1.sql",
+      "path": "supabase/migrations/20260918060949_license_grace_runtime_realtime_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 284,
+      "migrationVersion": "20260918061350",
+      "filename": "20260918061350_license_expiry_verified_handoff_r1.sql",
+      "path": "supabase/migrations/20260918061350_license_expiry_verified_handoff_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 285,
+      "migrationVersion": "20260918070000",
+      "filename": "20260918070000_customer_message_templates_phase3.sql",
+      "path": "supabase/migrations/20260918070000_customer_message_templates_phase3.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 286,
+      "migrationVersion": "20260918080000",
+      "filename": "20260918080000_customer_message_templates_phase3_hardening.sql",
+      "path": "supabase/migrations/20260918080000_customer_message_templates_phase3_hardening.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 287,
+      "migrationVersion": "20260918090000",
+      "filename": "20260918090000_customer_message_templates_phase3_sql_regex_fix.sql",
+      "path": "supabase/migrations/20260918090000_customer_message_templates_phase3_sql_regex_fix.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 288,
+      "migrationVersion": "20260919044030",
+      "filename": "20260919044030_customer_messaging_phase5_automation.sql",
+      "path": "supabase/migrations/20260919044030_customer_messaging_phase5_automation.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 289,
+      "migrationVersion": "20260919045237",
+      "filename": "20260919045237_customer_messaging_phase5_scheduler_hardening.sql",
+      "path": "supabase/migrations/20260919045237_customer_messaging_phase5_scheduler_hardening.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 290,
+      "migrationVersion": "20260919195822",
+      "filename": "20260919195822_customer_messaging_phase5_license_entitlement_scheduler_r1.sql",
+      "path": "supabase/migrations/20260919195822_customer_messaging_phase5_license_entitlement_scheduler_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 291,
+      "migrationVersion": "20260923162227",
+      "filename": "20260923162227_inventory_operational_alerts_phase4_cloud_generation_r1.sql",
+      "path": "supabase/migrations/20260923162227_inventory_operational_alerts_phase4_cloud_generation_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 292,
+      "migrationVersion": "20260923163414",
+      "filename": "20260923163414_inventory_operational_alerts_phase4_archived_batch_parity_r1.sql",
+      "path": "supabase/migrations/20260923163414_inventory_operational_alerts_phase4_archived_batch_parity_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 293,
+      "migrationVersion": "20260923163709",
+      "filename": "20260923163709_inventory_operational_alerts_phase4_actor_safe_action_contract_r1.sql",
+      "path": "supabase/migrations/20260923163709_inventory_operational_alerts_phase4_actor_safe_action_contract_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 294,
+      "migrationVersion": "20260923202837",
+      "filename": "20260923202837_inventory_operational_alerts_phase5_category_permissions_hardening_r1.sql",
+      "path": "supabase/migrations/20260923202837_inventory_operational_alerts_phase5_category_permissions_hardening_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 295,
+      "migrationVersion": "20260924051208",
+      "filename": "20260924051208_license_free_owner_device_takeover_r1.sql",
+      "path": "supabase/migrations/20260924051208_license_free_owner_device_takeover_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 296,
+      "migrationVersion": "20260924052752",
+      "filename": "20260924052752_license_free_owner_device_takeover_evidence_cycle_hardening_r1.sql",
+      "path": "supabase/migrations/20260924052752_license_free_owner_device_takeover_evidence_cycle_hardening_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 297,
+      "migrationVersion": "20260924143303",
+      "filename": "20260924143303_license_downgrade_session_consistency_r1.sql",
+      "path": "supabase/migrations/20260924143303_license_downgrade_session_consistency_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 298,
+      "migrationVersion": "20260924150417",
+      "filename": "20260924150417_license_post_downgrade_cash_reconciliation_r1.sql",
+      "path": "supabase/migrations/20260924150417_license_post_downgrade_cash_reconciliation_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 299,
+      "migrationVersion": "20260924152624",
+      "filename": "20260924152624_license_post_downgrade_cash_entitlement_evidence_hardening_r1.sql",
+      "path": "supabase/migrations/20260924152624_license_post_downgrade_cash_entitlement_evidence_hardening_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 300,
+      "migrationVersion": "20260924162309",
+      "filename": "20260924162309_license_post_downgrade_cash_reconciliation_feature_evidence_hardening_r1.sql",
+      "path": "supabase/migrations/20260924162309_license_post_downgrade_cash_reconciliation_feature_evidence_hardening_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 301,
+      "migrationVersion": "20260924162919",
+      "filename": "20260924162919_license_post_downgrade_cash_canonical_open_evidence_r1.sql",
+      "path": "supabase/migrations/20260924162919_license_post_downgrade_cash_canonical_open_evidence_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 302,
+      "migrationVersion": "20260924211248",
+      "filename": "20260924211248_license_free_owner_takeover_current_cycle_hardening_r1.sql",
+      "path": "supabase/migrations/20260924211248_license_free_owner_takeover_current_cycle_hardening_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 303,
+      "migrationVersion": "20260926014446",
+      "filename": "20260926014446_ecommerce_public_portal_status_contract_r1.sql",
+      "path": "supabase/migrations/20260926014446_ecommerce_public_portal_status_contract_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 304,
+      "migrationVersion": "20260926142912",
+      "filename": "20260926142912_ecommerce_paused_whatsapp_contact_r1.sql",
+      "path": "supabase/migrations/20260926142912_ecommerce_paused_whatsapp_contact_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 305,
+      "migrationVersion": "20260928033123",
+      "filename": "20260928033123_cloud_split_customer_id_jsonb_contract_r1.sql",
+      "path": "supabase/migrations/20260928033123_cloud_split_customer_id_jsonb_contract_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 306,
+      "migrationVersion": "20260929091708",
+      "filename": "20260929091708_restaurant_payment_split_financial_r1.sql",
+      "path": "supabase/migrations/20260929091708_restaurant_payment_split_financial_r1.sql",
+      "source": "pr338",
+      "sourceCommit": "fb17e9a43929d54087ab937cb760a8cd6e087c36"
+    },
+    {
+      "sequence": 307,
+      "migrationVersion": "20261006181758",
+      "filename": "20261006181758_restaurant_atomic_settlement_3d1.sql",
+      "path": "supabase/migrations/20261006181758_restaurant_atomic_settlement_3d1.sql",
+      "source": "pr338",
+      "sourceCommit": "fb17e9a43929d54087ab937cb760a8cd6e087c36"
+    },
+    {
+      "sequence": 308,
+      "migrationVersion": "20261006193851",
+      "filename": "20261006193851_license_neutral_identity_r1.sql",
+      "path": "supabase/migrations/20261006193851_license_neutral_identity_r1.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 309,
+      "migrationVersion": "20261008013643",
+      "filename": "20261008013643_restaurant_origin_cancel_contract_3d13.sql",
+      "path": "supabase/migrations/20261008013643_restaurant_origin_cancel_contract_3d13.sql",
+      "source": "pr338",
+      "sourceCommit": "fb17e9a43929d54087ab937cb760a8cd6e087c36"
+    },
+    {
+      "sequence": 310,
+      "migrationVersion": "20261008142141",
+      "filename": "20261008142141_20261008190000_add_legal_policy_document_types.sql",
+      "path": "supabase/migrations/20261008142141_20261008190000_add_legal_policy_document_types.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 311,
+      "migrationVersion": "20261008142147",
+      "filename": "20261008142147_20261008200000_publish_lanzo_legal_documents.sql",
+      "path": "supabase/migrations/20261008142147_20261008200000_publish_lanzo_legal_documents.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 312,
+      "migrationVersion": "20261008161409",
+      "filename": "20261008161409_20261008150000_legal_policy_acceptance_history.sql",
+      "path": "supabase/migrations/20261008161409_20261008150000_legal_policy_acceptance_history.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 313,
+      "migrationVersion": "20261008180000",
+      "filename": "20261008180000_create_legal_policy_previews.sql",
+      "path": "supabase/migrations/20261008180000_create_legal_policy_previews.sql",
+      "source": "main",
+      "sourceCommit": "5be67950eea27c1b25db3e8765339222f8217e35"
+    },
+    {
+      "sequence": 314,
+      "migrationVersion": "20261010013257",
+      "filename": "20261010013257_restaurant_cloud_transition_bridge_v1.sql",
+      "path": "supabase/migrations/20261010013257_restaurant_cloud_transition_bridge_v1.sql",
+      "source": "pr352",
+      "sourceCommit": "e12c371252d5c80f192b10ef36792a6881ee69d1"
+    },
+    {
+      "sequence": 315,
+      "migrationVersion": "20261010013258",
+      "filename": "20261010013258_restaurant_admin_supervision_r1.sql",
+      "path": "supabase/migrations/20261010013258_restaurant_admin_supervision_r1.sql",
+      "source": "pr352",
+      "sourceCommit": "e12c371252d5c80f192b10ef36792a6881ee69d1"
+    }
+  ]
+}
