@@ -126,7 +126,7 @@ export const shouldSkipRemoteValidationForPlan = ({ licenseDetails, licenseStatu
       licenseStatus,
       now: new Date(now)
     });
-    if (effectiveState === 'unknown' || effectiveState === 'expired') {
+    if (effectiveState !== 'active' && effectiveState !== 'grace_period') {
       return false;
     }
   }
