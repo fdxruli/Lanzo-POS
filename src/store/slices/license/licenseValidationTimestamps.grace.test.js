@@ -108,6 +108,32 @@ describe('license grace boundary and remote validation TTL', () => {
     })).toBe(true);
   });
 
+  it('revalidates when the Zustand lifecycle is inconclusive despite otherwise active details', () => {
+    markLastLicenseValidationSuccess(LICENSE_A);
+
+    expect(shouldSkipRemoteValidationForPlan({
+      licenseDetails: paidLicense({ expires_at: '2026-10-30T15:14:09.885Z' }),
+      licenseStatus: 'validation_inconclusive',
+      reason: 'background',
+      now: FIXED_NOW.getTime()
+    })).toBe(false);
+  });
+
+  it('keeps confirmed grace when the store still contains the old active status', () => {
+    markLastLicenseValidationSuccess(LICENSE_A);
+
+    expect(shouldSkipRemoteValidationForPlan({
+      licenseDetails: paidLicense({
+        status: 'grace_period',
+        is_in_grace: true,
+        grace_period_ends: '2026-10-16T15:14:09.885Z'
+      }),
+      licenseStatus: 'active',
+      reason: 'background',
+      now: FIXED_NOW.getTime()
+    })).toBe(true);
+  });
+
   it('never suppresses explicitly critical remote validations', () => {
     markLastLicenseValidationSuccess(LICENSE_A);
     expect(shouldSkipRemoteValidationForPlan({

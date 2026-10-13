@@ -103,7 +103,7 @@ export const markLastLicenseValidationAttempt = (licenseKey = null) => {
   }
 };
 
-export const shouldSkipRemoteValidationForPlan = ({ licenseDetails, mode = getMode(licenseDetails), reason = 'manual', now = Date.now() } = {}) => {
+export const shouldSkipRemoteValidationForPlan = ({ licenseDetails, licenseStatus, mode = getMode(licenseDetails), reason = 'manual', now = Date.now() } = {}) => {
   if (!licenseDetails?.license_key) return false;
   if (isCriticalReason(reason)) return false;
 
@@ -123,6 +123,7 @@ export const shouldSkipRemoteValidationForPlan = ({ licenseDetails, mode = getMo
   const planCode = planCodeOf(licenseDetails);
   if (planCode.includes('pro') || planCode.includes('basic')) {
     const effectiveState = resolveEffectiveLicenseLifecycle(licenseDetails, {
+      licenseStatus,
       now: new Date(now)
     });
     if (effectiveState === 'unknown' || effectiveState === 'expired') {

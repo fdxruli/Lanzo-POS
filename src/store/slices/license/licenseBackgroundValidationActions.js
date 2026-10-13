@@ -52,7 +52,7 @@ export const createLicenseBackgroundValidationActions = ({
       };
       const mode = initialState.licenseSyncMode || getLicenseSyncMode(licenseDetails);
 
-      if (shouldSkipRemoteValidationForPlan({ licenseDetails, mode, reason })) {
+      if (shouldSkipRemoteValidationForPlan({ licenseDetails, licenseStatus: initialState.licenseStatus, mode, reason })) {
         Logger.log(`[Background] Validación remota omitida por TTL exitoso de plan (${reason}).`);
 
         if (!get().companyProfile) {
