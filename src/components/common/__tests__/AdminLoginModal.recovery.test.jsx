@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 const recoveryRuntime = vi.hoisted(() => ({
   markTakeoverCompleted: vi.fn()
@@ -131,6 +131,42 @@ describe('AdminLoginModal local database recovery', () => {
     expect(screen.getByRole('button', { name: 'Cancelar' })).toBeEnabled();
     expect(screen.queryByText(/límite de dispositivos alcanzado/i)).not.toBeInTheDocument();
     expect(storeState.handleFreeDeviceTakeover).not.toHaveBeenCalled();
+  });
+
+  it('focuses takeover confirmation once it becomes enabled after reconnecting', async () => {
+    let resolveAdminLogin;
+    storeState.handleAdminLogin.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveAdminLogin = resolve;
+    }));
+
+    render(<AdminLoginModal />);
+    submitCredentials();
+
+    expect(screen.getByRole('button', { name: 'Verificando...' })).toBeDisabled();
+
+    Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: false });
+    fireEvent(window, new Event('offline'));
+
+    await act(async () => {
+      resolveAdminLogin({
+        success: false,
+        code: 'FREE_DEVICE_TAKEOVER_REQUIRED',
+        takeoverRequired: true
+      });
+    });
+
+    const takeoverButton = screen.getByRole('button', { name: 'Usar este dispositivo' });
+    expect(takeoverButton).toBeDisabled();
+    fireEvent.click(takeoverButton);
+    expect(storeState.handleFreeDeviceTakeover).not.toHaveBeenCalled();
+
+    Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: true });
+    fireEvent(window, new Event('online'));
+
+    await waitFor(() => expect(takeoverButton).toBeEnabled());
+    await waitFor(() => expect(takeoverButton).toHaveFocus());
+    expect(storeState.handleFreeDeviceTakeover).not.toHaveBeenCalled();
+    expect(recoveryRuntime.markTakeoverCompleted).not.toHaveBeenCalled();
   });
 
   it('confirms takeover only after the owner presses Usar este dispositivo', async () => {
