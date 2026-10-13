@@ -5,7 +5,9 @@ import {
   activateAdminServiceWorkerUpdate,
   getAdminServiceWorkerState,
   subscribeAdminServiceWorker,
+  setAdminServiceWorkerReloadGuard,
 } from '../../pwa/adminServiceWorker';
+import { getActorCheckoutOwnerships, getPendingActorOperations } from '../../services/auth/actorOperationalHandoff';
 import './UpdatePrompt.css';
 
 const DISMISSED_KEY = 'lanzo_update_dismissed';
@@ -35,16 +37,19 @@ const UpdatePrompt = () => {
   const runUpdate = useAppStore((state) => state.runUpdate);
 
   useEffect(() => {
+    setAdminServiceWorkerReloadGuard(() => getActorCheckoutOwnerships().length === 0
+      && getPendingActorOperations().length === 0);
     setTriggerUpdate(activateAdminServiceWorkerUpdate);
 
     return () => {
       setTriggerUpdate(null);
+      setAdminServiceWorkerReloadGuard(null);
     };
   }, [setTriggerUpdate]);
 
   useEffect(() => {
     const applyWorkerState = (workerState) => {
-      if (workerState.waiting) {
+      if (workerState.waiting || workerState.reloadDeferred) {
         setUpdateAvailable(true);
       } else if (workerState.registered && workerState.active && !workerState.installing) {
         setUpdateAvailable(false);

@@ -443,8 +443,16 @@ describe('PublicStorePage', () => {
     serviceMocks.getPublicCatalog
       .mockResolvedValueOnce(catalogResult)
       .mockReturnValueOnce(pendingCatalog.promise);
-    renderPage();
-    expect(await screen.findByRole('heading', { name: 'Alitas BBQ' })).toBeInTheDocument();
+    const listenerSpy = vi.spyOn(window, 'addEventListener');
+    try {
+      renderPage();
+      expect(await screen.findByRole('heading', { name: 'Alitas BBQ' })).toBeInTheDocument();
+      await waitFor(() => {
+        expect(listenerSpy).toHaveBeenCalledWith('pageshow', expect.any(Function));
+      });
+    } finally {
+      listenerSpy.mockRestore();
+    }
 
     const pageShow = new Event('pageshow');
     Object.defineProperty(pageShow, 'persisted', { value: true });
@@ -519,8 +527,16 @@ describe('PublicStorePage', () => {
     serviceMocks.getPublicCatalog
       .mockResolvedValueOnce({ ...catalogResult, catalogRevision: 7 })
       .mockReturnValueOnce(pendingCatalog.promise);
-    renderPage();
-    await screen.findByRole('heading', { name: 'Alitas BBQ' });
+    const listenerSpy = vi.spyOn(window, 'addEventListener');
+    try {
+      renderPage();
+      await screen.findByRole('heading', { name: 'Alitas BBQ' });
+      await waitFor(() => {
+        expect(listenerSpy).toHaveBeenCalledWith('pageshow', expect.any(Function));
+      });
+    } finally {
+      listenerSpy.mockRestore();
+    }
 
     const restore = new Event('pageshow');
     Object.defineProperty(restore, 'persisted', { value: true });
@@ -595,9 +611,17 @@ describe('PublicStorePage', () => {
       catalogRevision: 7,
     });
 
-    renderPage();
-    expect(await screen.findByRole('heading', { name: 'Alitas BBQ' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Mi negocio' })).toBeInTheDocument();
+    const listenerSpy = vi.spyOn(window, 'addEventListener');
+    try {
+      renderPage();
+      expect(await screen.findByRole('heading', { name: 'Alitas BBQ' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Mi negocio' })).toBeInTheDocument();
+      await waitFor(() => {
+        expect(listenerSpy).toHaveBeenCalledWith(refreshMode, expect.any(Function));
+      });
+    } finally {
+      listenerSpy.mockRestore();
+    }
 
     act(() => {
       if (refreshMode === 'focus') {

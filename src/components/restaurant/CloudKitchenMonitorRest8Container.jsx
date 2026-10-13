@@ -95,17 +95,26 @@ export default function CloudKitchenMonitorRest8Container({ kitchenCloud }) {
   };
 
   const handleCancelOrder = async (order) => {
-    if (!(await showConfirmModal('¿Cancelar esta comanda en cocina?', {
-      title: 'Cancelar comanda',
-      confirmButtonText: 'Sí, cancelar',
+    const activeItems = getItems(order).filter((item) => getItemStatus(item) !== 'cancelled');
+    if (!activeItems.length || activeItems.some((item) => !getItemId(item)
+      || !['pending', 'preparing'].includes(getItemStatus(item)))) {
+      showMessageModal('Solo se pueden rechazar productos pendientes o en preparación. Revisa los productos o solicita la cancelación de la mesa desde Mesas.', null, { type: 'warning' });
+      return;
+    }
+    if (!(await showConfirmModal('¿Rechazar los productos de esta comanda? La mesa seguirá abierta y el cajero deberá revisar la cuenta.', {
+      title: 'Rechazar productos',
+      confirmButtonText: 'Sí, rechazar productos',
       cancelButtonText: 'Volver'
     }))) return;
-    const result = await kitchenCloud.changeOrderStatus({ restaurantOrderId: order.id, status: 'cancelled' });
-    if (result?.success === false) {
-      showMessageModal(result.message || kitchenCloud.error || 'No pudimos cancelar la comanda.', null, { type: 'error' });
-    } else {
-      showMessageModal('Comanda cancelada en cocina', null, { type: 'success' });
+    for (const item of activeItems) {
+      const result = await kitchenCloud.changeOrderItemStatus({ restaurantOrderId: order.id,
+        restaurantOrderItemId: getItemId(item), status: 'cancelled' });
+      if (result?.success !== true) {
+        showMessageModal(result?.message || 'No se pudieron rechazar todos los productos. Actualiza cocina y revisa la cuenta.', null, { type: 'warning' });
+        return;
+      }
     }
+    showMessageModal('Productos rechazados en cocina. La mesa sigue abierta; revisa la cuenta desde Mesas.', null, { type: 'success' });
   };
 
   const handleArchiveOrder = async (order) => {

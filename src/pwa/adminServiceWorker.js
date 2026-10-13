@@ -19,6 +19,7 @@ let activatedUpdateObserved = false;
 let reloadRequested = false;
 let navigatorRef = null;
 let windowRef = null;
+let reloadGuard = null;
 
 let state = {
   registered: false,
@@ -26,7 +27,18 @@ let state = {
   waiting: false,
   active: false,
   error: false,
+  reloadDeferred: false,
 };
+
+// The POS installs a synchronous guard after bootstrap. Keep this startup
+// module independent of business stores; absence/exception is fail-closed.
+export function setAdminServiceWorkerReloadGuard(guard) {
+  reloadGuard = typeof guard === 'function' ? guard : null;
+}
+
+function canReloadNow() {
+  try { return reloadGuard?.() === true; } catch { return false; }
+}
 
 const publish = (patch) => {
   state = { ...state, ...patch };
@@ -41,12 +53,12 @@ export function subscribeAdminServiceWorker(listener) {
 }
 
 function clearActivationTimer() {
-  if (activationTimeout == null || !windowRef) return;
+  if (activationTimeout === null || activationTimeout === undefined || !windowRef) return;
   windowRef.clearTimeout(activationTimeout);
   activationTimeout = null;
 }
 
-function resolveCurrentActivation() {
+function resolveCurrentActivation(reloaded) {
   const resolve = resolveActivation;
   clearActivationTimer();
   activationPromise = null;
@@ -54,7 +66,7 @@ function resolveCurrentActivation() {
   controllerAtActivationStart = null;
   resolveActivation = null;
   rejectActivation = null;
-  resolve?.(true);
+  resolve?.(reloaded);
 }
 
 function rejectCurrentActivation(error) {
@@ -70,9 +82,16 @@ function rejectCurrentActivation(error) {
 }
 
 function reloadOnce() {
-  if (reloadRequested || !windowRef?.location?.reload) return;
+  if (reloadRequested) return true;
+  if (!windowRef?.location?.reload) return false;
+  if (!canReloadNow()) {
+    publish({ reloadDeferred: true });
+    return false;
+  }
   reloadRequested = true;
+  publish({ reloadDeferred: false });
   windowRef.location.reload();
+  return true;
 }
 
 function workerHasActivated(worker) {
@@ -123,8 +142,7 @@ function handleControllerChange() {
   if (!isUpdate) return;
 
   activatedUpdateObserved = true;
-  resolveCurrentActivation();
-  reloadOnce();
+  resolveCurrentActivation(reloadOnce());
 }
 
 export function startAdminServiceWorker({
@@ -176,6 +194,9 @@ export function startAdminServiceWorker({
 
 export function activateAdminServiceWorkerUpdate() {
   if (activationPromise) return activationPromise;
+  if (!canReloadNow()) return Promise.reject(Object.assign(new Error(
+    'Termina o recupera el cobro en curso antes de actualizar. Tus datos locales se conservarán.'
+  ), { code: 'ADMIN_UPDATE_FINANCIAL_OPERATION_ACTIVE' }));
 
   const registeredWaitingWorker = registration?.waiting || null;
   if (registeredWaitingWorker) waitingWorker = registeredWaitingWorker;
@@ -194,8 +215,7 @@ export function activateAdminServiceWorkerUpdate() {
     if (activationAlreadyCompleted) {
       waitingWorker = null;
       publish({ waiting: false, active: true, error: false });
-      reloadOnce();
-      return Promise.resolve(true);
+      return Promise.resolve(reloadOnce());
     }
     return Promise.reject(new Error('No hay un Service Worker en espera.'));
   }
@@ -218,8 +238,7 @@ export function activateAdminServiceWorkerUpdate() {
         activatedUpdateObserved = true;
         waitingWorker = null;
         publish({ waiting: false, active: true, error: false });
-        resolveCurrentActivation();
-        reloadOnce();
+        resolveCurrentActivation(reloadOnce());
         return;
       }
 
@@ -261,5 +280,6 @@ export function resetAdminServiceWorkerForTests() {
   reloadRequested = false;
   navigatorRef = null;
   windowRef = null;
-  state = { registered: false, installing: false, waiting: false, active: false, error: false };
+  reloadGuard = null;
+  state = { registered: false, installing: false, waiting: false, active: false, error: false, reloadDeferred: false };
 }

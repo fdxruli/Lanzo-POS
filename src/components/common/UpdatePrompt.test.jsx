@@ -7,6 +7,7 @@ import UpdatePrompt from './UpdatePrompt';
 const worker = vi.hoisted(() => ({
   activate: vi.fn().mockResolvedValue(true),
   listener: null,
+  setGuard: vi.fn(),
   state: {
     registered: false,
     installing: false,
@@ -18,6 +19,7 @@ const worker = vi.hoisted(() => ({
 
 vi.mock('../../pwa/adminServiceWorker', () => ({
   activateAdminServiceWorkerUpdate: worker.activate,
+  setAdminServiceWorkerReloadGuard: worker.setGuard,
   getAdminServiceWorkerState: () => worker.state,
   subscribeAdminServiceWorker: (listener) => {
     worker.listener = listener;
@@ -57,6 +59,14 @@ describe('UpdatePrompt controlled activation', () => {
     }));
 
     expect(screen.getByText('Nueva version disponible')).toBeInTheDocument();
+  });
+
+  it('TR-39 keeps the update action visible when the worker activated but financial reload was deferred', () => {
+    render(<UpdatePrompt />);
+    act(() => worker.listener({ registered: true, installing: false, waiting: false, active: true, error: false, reloadDeferred: true }));
+    expect(screen.getByRole('button', { name: /actualizar ahora/i })).toBeInTheDocument();
+    expect(useAppStore.getState().updateAvailable).toBe(true);
+    expect(worker.setGuard).toHaveBeenCalledWith(expect.any(Function));
   });
 
   it('activates only after the user presses the update action', async () => {

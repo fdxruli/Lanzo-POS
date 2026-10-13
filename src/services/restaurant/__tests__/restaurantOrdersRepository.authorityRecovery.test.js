@@ -30,11 +30,16 @@ vi.mock('../preparationStationsRepository', () => ({ preparationStationsReposito
 vi.mock('../restaurantOrderMapper', () => ({ buildRestaurantOrderPayloadFromOpenSale: vi.fn() }));
 
 import { restaurantOrdersRepository } from '../restaurantOrdersRepository';
+const contractResponse = { data: { success: true, contractVersion: 1, minimumSupportedClientVersion: 1,
+  strictParentVersionRequired: false, versionedWritesAvailable: true, versionedParentVersionRequired: true,
+  adminSupervisionAvailable: false, legacyWritesAllowed: true, kitchenTerminalGuardEnabled: true,
+  writesPaused: false, serverCapabilityGeneration: '1:0' }, error: null };
 
 describe('restaurant RPC authority recovery', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mocks.rpc.mockResolvedValue({ data: { success: true }, error: null });
+    mocks.rpc.mockImplementation(async (name) => name === 'pos_restaurant_cloud_contract_v1'
+      ? contractResponse : { data: { success: true }, error: null });
     mocks.runtime = { status: 'granted', generation: 1 };
     mocks.context.mockResolvedValue({ licenseKey: 'lic-1', deviceFingerprint: 'fixture-device', securityToken: 'fixture-token', staffSessionToken: 'fixture-actor' });
     vi.stubGlobal('navigator', { onLine: true });
@@ -65,18 +70,22 @@ describe('restaurant RPC authority recovery', () => {
 
   it('reports a rejected write promise without reissuing it', async () => {
     const error = Object.assign(new Error('DEVICE_TOKEN_INVALID'), { code: 'P0001' });
-    mocks.rpc.mockRejectedValue(error);
+    mocks.rpc.mockImplementation(async (name) => {
+      if (name === 'pos_restaurant_cloud_contract_v1') return contractResponse;
+      throw error;
+    });
     await expect(restaurantOrdersRepository.upsertRestaurantOrder({ licenseKey: 'lic-1', order: { id: 'table-1' } })).rejects.toBe(error);
-    expect(mocks.report).toHaveBeenCalledWith(error, { operation: 'pos_upsert_restaurant_order' });
-    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+    expect(mocks.report).toHaveBeenCalledWith(error, { operation: 'pos_upsert_restaurant_order_versioned_v1' });
+    expect(mocks.rpc).toHaveBeenCalledTimes(2);
   });
 
   it.each(['DEVICE_TOKEN_INVALID', 'DEVICE_TOKEN_REQUIRED', 'DEVICE_NOT_ALLOWED'])('reports an unsuccessful %s RPC payload without replacing or retrying it', async (code) => {
     const result = { success: false, code, message: code };
-    mocks.rpc.mockResolvedValue({ data: result, error: null });
+    mocks.rpc.mockImplementation(async (name) => name === 'pos_restaurant_cloud_contract_v1'
+      ? contractResponse : { data: result, error: null });
     await expect(restaurantOrdersRepository.upsertRestaurantOrder({ licenseKey: 'lic-1', order: { id: 'table-1' } })).resolves.toBe(result);
-    expect(mocks.report).toHaveBeenCalledWith(result, { operation: 'pos_upsert_restaurant_order' });
-    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+    expect(mocks.report).toHaveBeenCalledWith(result, { operation: 'pos_upsert_restaurant_order_versioned_v1' });
+    expect(mocks.rpc).toHaveBeenCalledTimes(2);
   });
 
   it.each(['NETWORK_ERROR', 'RATE_LIMITED', 'INSUFFICIENT_STOCK'])('preserves %s without activating recovery', async (message) => {
@@ -135,5 +144,38 @@ describe('restaurant RPC authority recovery', () => {
     await expect(pending).rejects.toMatchObject({ code: 'CLOUD_REQUEST_RESPONSE_STALE' });
     expect(mocks.rpc).not.toHaveBeenCalled();
     expect(mocks.report).not.toHaveBeenCalled();
+  });
+
+  it('TR-06/07/08: missing discovery is an old SQL contract, never actor recovery', async () => {
+    mocks.rpc.mockResolvedValue({ data: null, error: { code: 'PGRST202', message: 'Function not found' } });
+    expect(await restaurantOrdersRepository.getCloudContract({ licenseKey: 'lic-1' })).toMatchObject({ supported: false, endpointAvailable: false });
+    await expect(restaurantOrdersRepository.upsertRestaurantOrder({ licenseKey: 'lic-1', order: { localOrderId: 'table' } }))
+      .rejects.toMatchObject({ code: 'RESTAURANT_CLIENT_UPGRADE_REQUIRED' });
+    expect(mocks.rpc.mock.calls.every(([name]) => name === 'pos_restaurant_cloud_contract_v1')).toBe(true);
+    expect(mocks.report).not.toHaveBeenCalled();
+    expect(mocks.recovered).not.toHaveBeenCalled();
+  });
+
+  it('TR-02/03/37: discovery then one versioned write preserves exact token and caller idempotency', async () => {
+    const order = { localOrderId: 'table', expectedParentVersion: '2026-10-10T09:15:00.123456Z' };
+    await restaurantOrdersRepository.upsertRestaurantOrder({ licenseKey: 'lic-1', order, idempotencyKey: 'same-financial-context' });
+    expect(mocks.rpc.mock.calls.map(([name]) => name)).toEqual(['pos_restaurant_cloud_contract_v1', 'pos_upsert_restaurant_order_versioned_v1']);
+    expect(mocks.rpc.mock.calls[1][1]).toMatchObject({ p_order: { ...order, clientContractVersion: 2 }, p_idempotency_key: 'same-financial-context' });
+    expect(order).not.toHaveProperty('clientContractVersion');
+  });
+
+  it('TR-11/39/40: each mutation rediscovers policy and never falls back after a cutover', async () => {
+    await restaurantOrdersRepository.upsertRestaurantOrder({ licenseKey: 'lic-1', order: { localOrderId: 'table' }, idempotencyKey: 'stable' });
+    mocks.rpc.mockResolvedValue({ ...contractResponse, data: { ...contractResponse.data, writesPaused: true, serverCapabilityGeneration: '2:0' } });
+    await expect(restaurantOrdersRepository.upsertRestaurantOrder({ licenseKey: 'lic-1', order: { localOrderId: 'table' }, idempotencyKey: 'stable' }))
+      .rejects.toMatchObject({ code: 'RESTAURANT_CONTRACT_MAINTENANCE' });
+    expect(mocks.rpc.mock.calls.map(([name]) => name)).toEqual(['pos_restaurant_cloud_contract_v1', 'pos_upsert_restaurant_order_versioned_v1', 'pos_restaurant_cloud_contract_v1']);
+    expect(mocks.recovered).not.toHaveBeenCalled();
+  });
+
+  it('TR-20/29: an obsolete Kitchen parent-cancel request is rejected without any RPC', async () => {
+    await expect(restaurantOrdersRepository.updateRestaurantOrderStatus({ licenseKey: 'lic-1', restaurantOrderId: 'cloud', status: 'cancelled' }))
+      .rejects.toMatchObject({ code: 'RESTAURANT_PARENT_CANCEL_CONTRACT_REQUIRED' });
+    expect(mocks.rpc).not.toHaveBeenCalled();
   });
 });

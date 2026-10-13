@@ -116,7 +116,11 @@ export const createPWASlice = (set, get) => {
       set({ isUpdating: true });
 
       try {
-        await triggerUpdateRef(true);
+        const reloaded = await triggerUpdateRef(true);
+        if (reloaded === false) {
+          set({ updateAvailable: true, showUpdateModal: true, isUpdating: false });
+          return;
+        }
         set({ updateAvailable: false, showUpdateModal: false, isUpdating: false });
       } catch (error) {
         console.error('Error aplicando actualizacion del Service Worker:', error);

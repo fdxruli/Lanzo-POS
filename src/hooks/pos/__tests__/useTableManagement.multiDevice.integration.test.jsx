@@ -85,7 +85,10 @@ vi.mock('../../restaurant/useRestaurantOrderCloudStatus', () => ({
   getRestaurantOrderCloudStatusSnapshot: (...args) => fixture.cloudStatus(...args)
 }));
 vi.mock('../../../services/restaurant/restaurantOrdersRepository', () => ({
-  restaurantOrdersRepository: { getRestaurantOrderByLocalOrder: (...args) => fixture.cloudLookup(...args) }
+  restaurantOrdersRepository: { getTableCapabilities: async ({ localOrderId }) => ({
+    success: true, contractVersion: 1, localOrderId, cloudOrderId: fixture.cloudOrder.id,
+    parentVersion: fixture.cloudOrder.updatedAt, capabilities: { canViewTable: true, canCheckoutTable: true, canSplitTable: true }
+  }), getRestaurantOrderByLocalOrder: (...args) => fixture.cloudLookup(...args) }
 }));
 vi.mock('../../../services/restaurant/restaurantOrderCheckoutClose', () => ({
   closeRestaurantCloudOrderAfterSuccessfulPayment: vi.fn(),

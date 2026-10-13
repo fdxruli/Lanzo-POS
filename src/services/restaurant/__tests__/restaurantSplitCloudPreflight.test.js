@@ -4,6 +4,8 @@ import { buildRestaurantOrderLineCommercialSnapshot } from '../restaurantSplitCo
 import { preflightCloudRestaurantOrderSplit } from '../restaurantSplitCloudPreflight';
 
 const VERSION = '2026-09-28T16:05:05.123456Z';
+const actorHandle = { actorType: 'admin', actorId: 'admin-a', actorKey: 'admin:admin-a', sessionId: 'session-a',
+  generation: 1, tenant: { opaqueId: 'tenant-a' }, assertCurrent: vi.fn() };
 
 const buildSale = (overrides = {}) => ({
   id: 'sale-open-1',
@@ -48,7 +50,9 @@ const buildCloudOrder = (sale = buildSale(), updates = {}) => {
 };
 
 const runPreflight = (sale = buildSale(), order = buildCloudOrder(sale), response) => {
-  const repository = { getRestaurantOrderByLocalOrder: vi.fn(async () => (
+  const repository = { getTableCapabilities: vi.fn(async () => ({ success: true, contractVersion: 1,
+    localOrderId: sale.id, cloudOrderId: order.id, parentVersion: order.updatedAt,
+    capabilities: { canCheckoutTable: true, canSplitTable: true } })), getRestaurantOrderByLocalOrder: vi.fn(async () => (
     response === undefined ? { success: true, found: true, order } : response
   )) };
   return {
@@ -57,12 +61,27 @@ const runPreflight = (sale = buildSale(), order = buildCloudOrder(sale), respons
       licenseKey: 'license-1',
       parentOrderId: sale.id,
       parentSale: sale,
+      actorHandle,
       repository
     })
   };
 };
 
 describe('preflightCloudRestaurantOrderSplit', () => {
+  it('A06/A07 rejects backend ownership denial despite a valid commercial snapshot', async () => {
+    const setup = runPreflight();
+    setup.repository.getTableCapabilities.mockResolvedValue({ success: true, contractVersion: 1,
+      localOrderId: 'sale-open-1', cloudOrderId: 'restaurant-order-1', parentVersion: VERSION,
+      capabilities: { canViewTable: true, canCheckoutTable: false } });
+    await expect(setup.promise).resolves.toMatchObject({ success: false, code: 'RESTAURANT_TABLE_OWNER_REQUIRED' });
+  });
+  it('A19 rejects a version changed between parent read and authority verification', async () => {
+    const setup = runPreflight();
+    setup.repository.getTableCapabilities.mockResolvedValue({ success: true, contractVersion: 1,
+      localOrderId: 'sale-open-1', cloudOrderId: 'restaurant-order-1', parentVersion: '2026-09-29T00:00:00Z',
+      capabilities: { canCheckoutTable: true } });
+    await expect(setup.promise).resolves.toMatchObject({ success: false, code: 'RESTAURANT_ORDER_VERSION_CONFLICT' });
+  });
   it.each(['restaurantCloudExpectedVersion', 'cloudRestaurantOrderUpdatedAt'])('refreshes stale %s after kitchen delivery without mutating the local account', async (field) => {
     const sale = buildSale({ [field]: '2026-09-27T10:00:00.000001Z' });
     const original = structuredClone(sale);

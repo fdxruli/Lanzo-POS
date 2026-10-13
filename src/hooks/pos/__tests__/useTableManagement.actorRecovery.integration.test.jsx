@@ -156,6 +156,22 @@ afterEach(async () => {
 });
 
 describe('Mini-phase 3B.0 saved table authority recovery', () => {
+  it.each(['RESTAURANT_CLIENT_UPGRADE_REQUIRED', 'RESTAURANT_CONTRACT_MAINTENANCE', 'RESTAURANT_ORDER_VERSION_CONFLICT'])('TR-09 preserves Dexie, cart and reservations after %s without locking the actor', async (code) => {
+    const message = 'Hay una actualización disponible para continuar gestionando esta mesa. Tus datos locales se conservarán.';
+    fixture.cloudUpsert.mockImplementation(async () => { throw Object.assign(new Error(message), { code }); });
+    const hook = renderHook(() => useTableManagement(tableDeps()));
+    let saved;
+    await act(async () => { saved = await hook.result.current.handleSaveAsOpen(); });
+    expect(saved).toMatchObject({ success: false, code, durableSaveSucceeded: true, localPreserved: true });
+    expect(await db.table(STORES.SALES).count()).toBe(1);
+    expect(await db.table(STORES.SALES).get('table-a')).toMatchObject({ status: 'open', total: 300, tableTabCleanup: { status: 'pending' } });
+    expect(selectCurrentOrder(useActiveOrders.getState())).toMatchObject({ id: 'table-a', total: 300 });
+    expect(await db.table(STORES.MENU).get('burger')).toMatchObject({ stock: 10, committedStock: 1 });
+    expect(actorRuntimeController.getState()).toMatchObject({ status: 'granted', actorId: 'owner-a' });
+    expect(fixture.processSale).not.toHaveBeenCalled();
+    expect(fixture.reportAuthority).not.toHaveBeenCalled();
+    expect(fixture.showMessage).toHaveBeenCalledWith(message, null, { type: 'warning' });
+  });
   it.each(['initial read', 'table prompt', 'cloud read', 'cloud response'])('rejects a late save %s before mutating the newly authenticated actor cart', async (phase) => {
     const fresh = { id: 'new-actor-cart', tableData: 'Mesa B', isSaved: false,
       items: [{ id: 'burger', lineId: 'fresh-burger', quantity: 2, price: 300 }], total: 600 };

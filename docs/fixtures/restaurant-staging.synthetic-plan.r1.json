@@ -1,0 +1,156 @@
+{
+  "manifest": "lanzo.restaurant.staging.synthetic-plan.r1",
+  "executionStatus": "design_only_never_applied",
+  "idPolicy": "Generate database UUIDs and auth IDs only inside an explicitly approved staging project.",
+  "credentialPolicy": "No passwords, tokens, license keys, service-role keys, or production identifiers are included.",
+  "externalServices": {
+    "email": "sink_only",
+    "whatsapp": "disabled_or_mock",
+    "telegram": "disabled_or_mock",
+    "payments": "mock_only",
+    "webhooks": "disabled_or_local_sink",
+    "scheduledJobs": "disabled_until_reviewed",
+    "edgeFunctions": "staging_project_secrets_only"
+  },
+  "businesses": [
+    {
+      "logicalId": "QA-R1-BUSINESS-A",
+      "name": "Restaurante Aurora QA",
+      "license": {
+        "logicalId": "QA-R1-LICENSE-A",
+        "mode": "cloud_compatible",
+        "adminSupervisionDefault": false,
+        "adminSupervisionEnabledOnlyForExplicitAdminScenarios": true
+      },
+      "actors": [
+        {
+          "logicalId": "QA-R1-ADMIN-A",
+          "role": "admin",
+          "email": "qa-admin-a@lanzo.invalid"
+        },
+        {
+          "logicalId": "QA-R1-STAFF-A",
+          "role": "staff",
+          "email": "qa-staff-a@lanzo.invalid"
+        },
+        {
+          "logicalId": "QA-R1-STAFF-B",
+          "role": "staff",
+          "email": "qa-staff-b@lanzo.invalid"
+        }
+      ],
+      "devices": [
+        {
+          "logicalId": "QA-R1-DEVICE-A1",
+          "actor": "QA-R1-STAFF-A"
+        },
+        {
+          "logicalId": "QA-R1-DEVICE-A2",
+          "actor": "QA-R1-STAFF-B"
+        }
+      ],
+      "cashSessions": [
+        "QA-R1-CASH-A1",
+        "QA-R1-CASH-A2"
+      ],
+      "tables": [
+        "QA-R1-TABLE-A1",
+        "QA-R1-TABLE-A2",
+        "QA-R1-TABLE-A3"
+      ],
+      "products": [
+        {
+          "logicalId": "QA-R1-WATER-500",
+          "kind": "simple",
+          "unitPrice": "25.00"
+        },
+        {
+          "logicalId": "QA-R1-SHARED-CHEESE",
+          "kind": "batch_tracked",
+          "unit": "kg",
+          "syntheticLot": "QA-R1-LOT-CHEESE-01",
+          "initialQuantity": "8.000",
+          "sharedBy": ["QA-R1-TACO-RECIPE"]
+        },
+        {
+          "logicalId": "QA-R1-SHARED-TORTILLA",
+          "kind": "ingredient",
+          "unit": "unit",
+          "initialQuantity": "120.000",
+          "sharedBy": ["QA-R1-TACO-RECIPE"]
+        },
+        {
+          "logicalId": "QA-R1-CAKE-FRACTION",
+          "kind": "fractional",
+          "fractionUnit": "eighth",
+          "unitPrice": "32.50"
+        },
+        {
+          "logicalId": "QA-R1-TACO-RECIPE",
+          "kind": "recipe",
+          "unitPrice": "48.00",
+          "ingredients": [
+            {
+              "logicalId": "QA-R1-SHARED-TORTILLA",
+              "quantity": "2.000"
+            },
+            {
+              "logicalId": "QA-R1-SHARED-CHEESE",
+              "quantity": "0.080"
+            }
+          ]
+        }
+      ],
+      "creditCustomer": {
+        "logicalId": "QA-R1-CUSTOMER-CREDIT",
+        "name": "Cliente de prueba QA",
+        "email": "qa-customer-a@lanzo.invalid"
+      }
+    },
+    {
+      "logicalId": "QA-R1-BUSINESS-B",
+      "name": "Tenant Espejo QA",
+      "license": {
+        "logicalId": "QA-R1-LICENSE-B",
+        "mode": "cloud_compatible",
+        "adminSupervisionDefault": false
+      },
+      "actors": [
+        {
+          "logicalId": "QA-R1-STAFF-C",
+          "role": "staff",
+          "email": "qa-staff-c@lanzo.invalid"
+        }
+      ],
+      "devices": [
+        {
+          "logicalId": "QA-R1-DEVICE-B1",
+          "actor": "QA-R1-STAFF-C"
+        }
+      ],
+      "cashSessions": [
+        "QA-R1-CASH-B1"
+      ],
+      "tables": [
+        "QA-R1-TABLE-B1"
+      ],
+      "purpose": "Cross-tenant read and mutation denial; no shared license, auth user, device, or token with Business A."
+    }
+  ],
+  "scenarios": [
+    "staff_own_table_edit_and_settlement",
+    "staff_other_table_read_only",
+    "admin_supervision_explicit_license_activation",
+    "normal_settlement_and_receipt_recovery",
+    "split_by_items_and_split_by_amount",
+    "mixed_payment_and_cash_session",
+    "credit_and_payment_abono",
+    "batch_fraction_recipe_and_shared_inventory",
+    "reservation_release_once",
+    "concurrent_settlement_cancel_and_edit",
+    "reconnect_stale_session_and_old_frontend",
+    "cross_tenant_read_write_denial",
+    "kitchen_status_and_parent_ownership",
+    "remote_product_edit_denied"
+  ]
+}
