@@ -527,8 +527,16 @@ describe('PublicStorePage', () => {
     serviceMocks.getPublicCatalog
       .mockResolvedValueOnce({ ...catalogResult, catalogRevision: 7 })
       .mockReturnValueOnce(pendingCatalog.promise);
-    renderPage();
-    await screen.findByRole('heading', { name: 'Alitas BBQ' });
+    const listenerSpy = vi.spyOn(window, 'addEventListener');
+    try {
+      renderPage();
+      await screen.findByRole('heading', { name: 'Alitas BBQ' });
+      await waitFor(() => {
+        expect(listenerSpy).toHaveBeenCalledWith('pageshow', expect.any(Function));
+      });
+    } finally {
+      listenerSpy.mockRestore();
+    }
 
     const restore = new Event('pageshow');
     Object.defineProperty(restore, 'persisted', { value: true });
