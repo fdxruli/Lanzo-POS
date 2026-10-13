@@ -558,6 +558,26 @@ jobs:
           const guard = 'if (isAnalyzing || analysisInFlightRef.current) return;';
           if (source.split(guard).length !== 2) throw new Error('NEG-02 guard not found exactly once');
           fs.writeFileSync(file, source.replace(guard, 'if (false) return;'));
+
+          const testFile = 'src/components/ai/__tests__/CommercialAIAgents.test.jsx';
+          const testSource = fs.readFileSync(testFile, 'utf8');
+          const testTitle = 'blocks same-turn duplicate submits so one UI action creates one analysis and one history entry';
+          const titleIndex = testSource.indexOf(testTitle);
+          if (titleIndex < 0 || testSource.indexOf(testTitle, titleIndex + testTitle.length) >= 0) {
+            throw new Error('NEG-02 duplicate-submit test not found exactly once');
+          }
+          const testStart = testSource.lastIndexOf('it(', titleIndex);
+          const testEnd = testSource.indexOf('\n  });', titleIndex);
+          if (testStart < 0 || testEnd < 0) throw new Error('NEG-02 test boundaries not found');
+          const testBody = testSource.slice(testStart, testEnd);
+          const assertion = 'await waitFor(() => expect(runtime.runAgent).toHaveBeenCalledTimes(1));';
+          if (testBody.split(assertion).length !== 2) {
+            throw new Error('NEG-02 runAgent assertion not found exactly once in target test');
+          }
+          const boundedAssertion = 'await waitFor(() => expect(runtime.runAgent).toHaveBeenCalledTimes(1), { timeout: 1000 });';
+          fs.writeFileSync(testFile, testSource.slice(0, testStart)
+            + testBody.replace(assertion, boundedAssertion)
+            + testSource.slice(testEnd));
           NODE
 
           set +e
@@ -581,6 +601,7 @@ jobs:
           fi
           printf 'NEG-02 PASS: disabling the in-flight guard caused the same-turn test to detect two runAgent calls.\n' >> "$summary"
           cp "$page_backup" "$page"
+          cp "$test_backup" "$test_file"
 
           node --input-type=module <<'NODE'
           import fs from 'node:fs';
