@@ -527,6 +527,104 @@ jobs:
           done
           test "$(wc -l < "$summary" | tr -d ' ')" = 50
 
+      - name: NEG-02/03 duplicate analysis and history mutation controls
+        shell: bash
+        working-directory: subject
+        run: |
+          set -euo pipefail
+          page="src/components/ai/CommercialAIAgentsPage.jsx"
+          test_file="src/components/ai/__tests__/CommercialAIAgents.test.jsx"
+          page_backup="$(mktemp)"
+          test_backup="$(mktemp)"
+          summary="../negative-control-ai-summary.txt"
+          log_double_analysis="../negative-control-ai-double-analysis.log"
+          log_double_history="../negative-control-ai-double-history.log"
+          test_name='blocks same-turn duplicate submits so one UI action creates one analysis and one history entry'
+          cp "$page" "$page_backup"
+          cp "$test_file" "$test_backup"
+          restore_mutations() {
+            cp "$page_backup" "$page"
+            cp "$test_backup" "$test_file"
+            rm -f "$page_backup" "$test_backup"
+          }
+          trap restore_mutations EXIT
+          : > "$summary"
+
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+
+          const file = 'src/components/ai/CommercialAIAgentsPage.jsx';
+          const source = fs.readFileSync(file, 'utf8');
+          const guard = 'if (isAnalyzing || analysisInFlightRef.current) return;';
+          if (source.split(guard).length !== 2) throw new Error('NEG-02 guard not found exactly once');
+          fs.writeFileSync(file, source.replace(guard, 'if (false) return;'));
+          NODE
+
+          set +e
+          npx vitest run "$test_file" --testNamePattern="$test_name" --maxWorkers=1 --reporter=verbose >"$log_double_analysis" 2>&1
+          analysis_code=$?
+          set -e
+          if [[ "$analysis_code" -eq 0 ]]; then
+            echo "NEG-02 FAIL: duplicate runAgent calls were not detected."
+            cat "$log_double_analysis"
+            exit 1
+          fi
+          if ! grep -F "$test_name" "$log_double_analysis" >/dev/null; then
+            echo "NEG-02 FAIL: target test title missing from the mutation result."
+            cat "$log_double_analysis"
+            exit 1
+          fi
+          if ! grep -Eiq 'to be called 1 times, but got 2 times|to be called 1 time, but got 2 times' "$log_double_analysis"; then
+            echo "NEG-02 FAIL: test failed for a reason other than detecting two runAgent calls."
+            cat "$log_double_analysis"
+            exit 1
+          fi
+          printf 'NEG-02 PASS: disabling the in-flight guard caused the same-turn test to detect two runAgent calls.\n' >> "$summary"
+          cp "$page_backup" "$page"
+
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+
+          const file = 'src/components/ai/__tests__/CommercialAIAgents.test.jsx';
+          const source = fs.readFileSync(file, 'utf8');
+          const original = 'setTenantStorageItem: (key, value) => runtime.historyStorage.set(key, value),';
+          const duplicateWrite = `setTenantStorageItem: (key, value) => {
+            const envelope = JSON.parse(value);
+            if (Array.isArray(envelope.entries) && envelope.entries.length === 1) {
+              envelope.entries.push({ ...envelope.entries[0], id: '9999999999999-999999' });
+            }
+            runtime.historyStorage.set(key, JSON.stringify(envelope));
+          },`;
+          if (source.split(original).length !== 2) throw new Error('NEG-03 storage fixture not found exactly once');
+          fs.writeFileSync(file, source.replace(original, duplicateWrite));
+          NODE
+
+          set +e
+          npx vitest run "$test_file" --testNamePattern="$test_name" --maxWorkers=1 --reporter=verbose >"$log_double_history" 2>&1
+          history_code=$?
+          set -e
+          if [[ "$history_code" -eq 0 ]]; then
+            echo "NEG-03 FAIL: duplicate persisted history was not detected."
+            cat "$log_double_history"
+            exit 1
+          fi
+          if ! grep -F "$test_name" "$log_double_history" >/dev/null; then
+            echo "NEG-03 FAIL: target test title missing from the mutation result."
+            cat "$log_double_history"
+            exit 1
+          fi
+          if ! grep -Eiq 'to have a length of 1 but got 2|length of 1 but got 2' "$log_double_history"; then
+            echo "NEG-03 FAIL: test failed for a reason other than detecting two persisted history entries."
+            cat "$log_double_history"
+            exit 1
+          fi
+          printf 'NEG-03 PASS: a fixture write that persisted two history entries failed the same-turn history assertion.\n' >> "$summary"
+
+          restore_mutations
+          trap - EXIT
+          git diff --exit-code -- "$page" "$test_file"
+          cat "$summary"
+
       - name: Record CANDIDATE raw results
         if: always()
         run: |
@@ -552,6 +650,9 @@ jobs:
             commercial-ai-candidate-repetitions.txt
             commercial-ai-candidate-*.json
             commercial-ai-candidate-*.log
+            negative-control-ai-summary.txt
+            negative-control-ai-double-analysis.log
+            negative-control-ai-double-history.log
           if-no-files-found: error
           overwrite: true
 

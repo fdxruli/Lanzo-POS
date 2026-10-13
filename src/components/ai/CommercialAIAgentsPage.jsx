@@ -1706,6 +1706,11 @@ export default function CommercialAIAgentsPage() {
   const historyScopeRef = useRef({ contextToken: null, scopeKey: null });
   useLayoutEffect(() => {
     historyContextTokenRef.current = historyContextToken;
+    return () => {
+      if (historyContextTokenRef.current === historyContextToken) {
+        historyContextTokenRef.current = null;
+      }
+    };
   }, [historyContextToken]);
 
   const refreshUsage = useCallback(async () => {

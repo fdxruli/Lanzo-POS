@@ -599,7 +599,7 @@ describe('commercial AI center', () => {
       await Promise.resolve();
     });
 
-    expect(runtime.historyStorage.get('commercial-ai-sales-profitability-history-v1')).toBeNull();
+    expect(runtime.historyStorage.has('commercial-ai-sales-profitability-history-v1')).toBe(false);
     expect(screen.queryByText('Respuesta del negocio anterior')).not.toBeInTheDocument();
   });
 
@@ -626,7 +626,7 @@ describe('commercial AI center', () => {
       await Promise.resolve();
     });
 
-    expect(runtime.historyStorage.get('commercial-ai-sales-profitability-history-v1')).toBeNull();
+    expect(runtime.historyStorage.has('commercial-ai-sales-profitability-history-v1')).toBe(false);
     expect(screen.queryByText('Respuesta de la sesión anterior')).not.toBeInTheDocument();
   });
 
