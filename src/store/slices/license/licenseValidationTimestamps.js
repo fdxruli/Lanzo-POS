@@ -1,3 +1,5 @@
+import { resolveEffectiveLicenseLifecycle } from '../../../utils/licenseStatusPresentation';
+
 import {
   ENABLE_LICENSE_REALTIME,
   FREE_LICENSE_SYNC_INTERVAL_MS,
@@ -101,9 +103,34 @@ export const markLastLicenseValidationAttempt = (licenseKey = null) => {
   }
 };
 
-export const shouldSkipRemoteValidationForPlan = ({ licenseDetails, mode = getMode(licenseDetails), reason = 'manual', now = Date.now() } = {}) => {
+export const shouldSkipRemoteValidationForPlan = ({ licenseDetails, licenseStatus, mode = getMode(licenseDetails), reason = 'manual', now = Date.now() } = {}) => {
   if (!licenseDetails?.license_key) return false;
   if (isCriticalReason(reason)) return false;
+
+  // A validation timestamp is not transferable between businesses/devices.
+  const successfulKeys = [
+    localStorage.getItem(LAST_LICENSE_VALIDATION_SUCCESS_LICENSE_KEY),
+    sessionStorage.getItem(LAST_LICENSE_VALIDATION_SUCCESS_LICENSE_KEY)
+  ].filter(Boolean);
+  if (successfulKeys.length === 0 ||
+      successfulKeys.some((key) => key !== licenseDetails.license_key)) {
+    return false;
+  }
+
+  // The commercial expiry can pass while a PRO entitlement remains valid
+  // within grace. Never use the normal plan TTL to defer reconciling a
+  // stale/unknown lifecycle with the authoritative device validation.
+  const planCode = planCodeOf(licenseDetails);
+  if (planCode.includes('pro') || planCode.includes('basic')) {
+    const effectiveState = resolveEffectiveLicenseLifecycle(licenseDetails, {
+      licenseStatus,
+      now: new Date(now)
+    });
+    if (effectiveState !== 'active' && effectiveState !== 'grace_period') {
+      return false;
+    }
+  }
+
   const lastSuccessMs = readLastLicenseValidationSuccessMs();
   return lastSuccessMs > 0 && now - lastSuccessMs < getIntervalMs(licenseDetails, mode);
 };

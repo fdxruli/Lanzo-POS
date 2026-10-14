@@ -819,3 +819,178 @@
     padding: 0.7rem;
   }
 }
+
+.about-redesign__secondary-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: 2.9rem;
+  padding: 0.65rem 0.85rem;
+  color: var(--about-accent);
+  background: var(--about-surface);
+  border: 1px solid color-mix(in srgb, var(--about-accent) 34%, var(--about-border));
+  border-radius: 0.65rem;
+  font-size: 0.84rem;
+  font-weight: 780;
+  line-height: 1.3;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.about-redesign__secondary-button:hover {
+  background: var(--about-accent-soft);
+  text-decoration: none;
+}
+
+.about-redesign__contact-actions,
+.about-redesign__status-help {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(13rem, 0.42fr);
+  align-items: center;
+  gap: 1rem;
+  padding: 1.1rem 1.2rem;
+  background: var(--about-surface);
+  border: 1px solid var(--about-border);
+  border-radius: 0.85rem;
+}
+
+.about-redesign__contact-actions h2,
+.about-redesign__status-help h2 {
+  margin-bottom: 0.3rem;
+  font-size: 1.05rem;
+  letter-spacing: -0.02em;
+}
+
+.about-redesign__contact-actions p:not(.about-redesign__eyebrow),
+.about-redesign__status-help p:not(.about-redesign__eyebrow) {
+  margin-bottom: 0;
+  color: var(--about-muted);
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+.about-redesign__contact-action-buttons {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.about-redesign__contact-action-buttons .about-redesign__primary-button,
+.about-redesign__contact-action-buttons .about-redesign__secondary-button,
+.about-redesign__status-help .about-redesign__primary-button {
+  width: 100%;
+}
+
+.about-redesign__current-badge--cloud_grace {
+  color: #855c00;
+  background: color-mix(in srgb, #e9b949 18%, var(--about-surface));
+}
+
+.about-redesign__current-badge--cloud_expired,
+.about-redesign__current-badge--unknown {
+  color: #9a3412;
+  background: color-mix(in srgb, #f97316 12%, var(--about-surface));
+}
+
+.about-telegram-dialog-backdrop {
+  position: fixed;
+  z-index: 2000;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(15, 23, 42, 0.62);
+}
+
+.about-telegram-dialog {
+  position: relative;
+  display: grid;
+  gap: 0.7rem;
+  width: min(100%, 36rem);
+  max-height: min(90vh, 48rem);
+  padding: 1.35rem;
+  overflow: auto;
+  color: var(--about-ink);
+  background: var(--about-surface);
+  border: 1px solid var(--about-border);
+  border-radius: 1rem;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.28);
+}
+
+.about-telegram-dialog h2 {
+  max-width: 29rem;
+  margin: 0;
+  padding-right: 2.2rem;
+  font-size: clamp(1.2rem, 3vw, 1.5rem);
+  line-height: 1.25;
+}
+
+.about-telegram-dialog p:not(.about-redesign__eyebrow) {
+  margin: 0;
+  color: var(--about-muted);
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+
+.about-telegram-dialog__close {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  display: grid;
+  width: 2.4rem;
+  height: 2.4rem;
+  place-items: center;
+  color: var(--about-muted);
+  background: transparent;
+  border: 1px solid var(--about-border);
+  border-radius: 50%;
+  font-size: 1.4rem;
+  cursor: pointer;
+}
+
+.about-telegram-dialog__message-label {
+  margin-top: 0.2rem;
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
+.about-telegram-dialog__message {
+  width: 100%;
+  min-height: 10rem;
+  padding: 0.8rem;
+  resize: vertical;
+  color: var(--about-ink);
+  background: var(--about-surface);
+  border: 1px solid var(--about-border);
+  border-radius: 0.65rem;
+  font: inherit;
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+
+.about-telegram-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.65rem;
+  margin-top: 0.15rem;
+}
+
+@media (max-width: 680px) {
+  .about-redesign__contact-actions,
+  .about-redesign__status-help {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 0.9rem;
+  }
+
+  .about-telegram-dialog {
+    width: 100%;
+    max-height: 94vh;
+    padding: 1rem;
+  }
+
+  .about-telegram-dialog__actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}

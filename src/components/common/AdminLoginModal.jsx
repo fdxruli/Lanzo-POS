@@ -57,6 +57,7 @@ export default function AdminLoginModal() {
   const [takeoverRequired, setTakeoverRequired] = useState(false);
   const usernameRef = useRef(null);
   const takeoverButtonRef = useRef(null);
+  const takeoverFocusHandledRef = useRef(false);
   const handleAdminLogin = useAppStore((state) => state.handleAdminLogin);
   const handleFreeDeviceTakeover = useAppStore((state) => state.handleFreeDeviceTakeover);
   const logout = useAppStore((state) => state.logout);
@@ -79,10 +80,23 @@ export default function AdminLoginModal() {
   }, []);
 
   useEffect(() => {
-    if (takeoverRequired) {
-      takeoverButtonRef.current?.focus();
+    if (!takeoverRequired) {
+      takeoverFocusHandledRef.current = false;
+      return;
     }
-  }, [takeoverRequired]);
+
+    // Wait until the confirmation can receive focus. Focus only once per
+    // takeover prompt so reconnection never overrides user-selected focus.
+    if (takeoverFocusHandledRef.current || loading || !online) return;
+    const button = takeoverButtonRef.current;
+    if (!button || button.disabled) return;
+
+    const activeElement = document.activeElement;
+    if (activeElement === document.body || !activeElement?.isConnected) {
+      button.focus();
+    }
+    takeoverFocusHandledRef.current = true;
+  }, [takeoverRequired, loading, online]);
 
   const submit = async (event) => {
     event.preventDefault();

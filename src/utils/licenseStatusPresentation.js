@@ -51,6 +51,7 @@ const STATUS_LABELS = {
     past_due: 'Pago pendiente',
     payment_pending: 'Pago pendiente',
     license_expired: 'Vencida',
+    unknown: 'Por confirmar',
     plan_expired: 'Vencida',
     license_not_active: 'Licencia no activa'
 };
@@ -82,24 +83,241 @@ const formatUnknownStatus = (status) => {
     return words.charAt(0).toLocaleUpperCase('es-MX') + words.slice(1);
 };
 
-export const getLicenseStatusPresentation = (licenseDetails = {}, now = new Date()) => {
-    const sourceStatus = normalizeCode(
-        licenseDetails?.lifecycle_state ||
-        licenseDetails?.status ||
-        licenseDetails?.reason
-    );
-    const graceEndDate = parseDate(licenseDetails?.grace_period_ends);
-    const { isPaidPlan, isFreeLifetime } = getPlanContext(licenseDetails);
+const BLOCKING_LIFECYCLE_STATES = new Set([
+    'administratively_blocked',
+    'blocked',
+    'revoked',
+    'suspended',
+    'disabled',
+    'inactive',
+    'invalid',
+    'license_not_active',
+    'license_plan_blocked',
+    'device_banned',
+    'device_not_allowed'
+]);
 
-    let status = sourceStatus;
-    if (isFreeLifetime && (status === 'grace_period' || status === 'expired')) {
-        // The plan fields come from the materialized Free license. Ignore stale
-        // paid-lifecycle metadata left by an older local session.
-        status = 'active';
-    } else if (status === 'grace_period' && graceEndDate && graceEndDate <= now) {
-        // Do not tell the customer they are still in grace after its end date.
-        status = 'expired';
+const EFFECTIVE_LIFECYCLE_STATES = new Set(['active', 'grace_period', 'expired']);
+const UNCERTAIN_LIFECYCLE_STATES = new Set([
+    'pending',
+    'pending_activation',
+    'locked_renewal',
+    'validation_inconclusive',
+    'past_due',
+    'payment_pending'
+]);
+
+const normalizeLifecycleState = (value) => {
+    const status = normalizeCode(value);
+    if (['license_expired', 'plan_expired', 'expired_subscription'].includes(status)) return 'expired';
+    return status;
+};
+
+const resolveGraceBoundary = (gracePeriodEnds, now) => {
+    const graceEndDate = parseDate(gracePeriodEnds);
+    if (!graceEndDate) return 'unknown';
+    return graceEndDate <= now ? 'expired' : 'grace_period';
+};
+
+export const createEffectiveLicenseValidationEvidence = (
+    validationData = {},
+    { effectiveStatus, now = new Date() } = {}
+) => {
+    if (
+        !validationData ||
+        typeof validationData !== 'object' ||
+        validationData.is_fallback === true
+    ) {
+        return null;
     }
+
+    const status = normalizeLifecycleState(
+        effectiveStatus ||
+        validationData.lifecycle_state ||
+        validationData.status ||
+        validationData.reason
+    );
+    const validatedAt = now instanceof Date ? now : new Date(now);
+
+    if (!status || Number.isNaN(validatedAt.getTime())) return null;
+
+    return Object.freeze({
+        source: 'server_validation',
+        status,
+        valid: typeof validationData.valid === 'boolean' ? validationData.valid : null,
+        is_entitled: typeof validationData.is_entitled === 'boolean'
+            ? validationData.is_entitled
+            : null,
+        is_in_grace: typeof validationData.is_in_grace === 'boolean'
+            ? validationData.is_in_grace
+            : status === 'grace_period' ? true : null,
+        expires_at: typeof validationData.expires_at === 'string'
+            ? validationData.expires_at
+            : null,
+        grace_period_ends: typeof validationData.grace_period_ends === 'string'
+            ? validationData.grace_period_ends
+            : null,
+        validated_at: validatedAt.toISOString()
+    });
+};
+
+export const resolveEffectiveLicenseLifecycle = (
+    licenseDetails = {},
+    { licenseStatus, now = new Date() } = {}
+) => {
+    const currentTime = now instanceof Date ? now : new Date(now);
+    if (Number.isNaN(currentTime.getTime())) return 'unknown';
+
+    const details = licenseDetails && typeof licenseDetails === 'object' ? licenseDetails : {};
+    const evidence = details.effective_lifecycle_validation;
+    const adminStatus = normalizeLifecycleState(details.license_status);
+    const evidenceStatus = normalizeLifecycleState(evidence?.status);
+    const detailLifecycleState = normalizeLifecycleState(details.lifecycle_state);
+    const detailStatus = normalizeLifecycleState(details.status);
+    const storeStatus = normalizeLifecycleState(licenseStatus);
+
+    const statusSignals = [evidenceStatus, detailLifecycleState, detailStatus, storeStatus]
+        .filter(Boolean);
+    const blockingStatus = statusSignals.find((status) => BLOCKING_LIFECYCLE_STATES.has(status));
+    if (blockingStatus) return blockingStatus;
+
+    // license_status is administrative metadata; it must not replace the
+    // effective lifecycle returned by server validation.
+    if (adminStatus && BLOCKING_LIFECYCLE_STATES.has(adminStatus)) {
+        return adminStatus;
+    }
+
+    if (
+        statusSignals.some((status) => UNCERTAIN_LIFECYCLE_STATES.has(status))
+    ) {
+        return statusSignals.find((status) => UNCERTAIN_LIFECYCLE_STATES.has(status));
+    }
+
+    const { isFreeLifetime } = getPlanContext(details);
+    if (
+        isFreeLifetime &&
+        [evidenceStatus, detailLifecycleState, detailStatus].some(
+            (status) => status === 'grace_period' || status === 'expired'
+        )
+    ) {
+        return 'active';
+    }
+
+    if (evidence !== undefined && evidence !== null) {
+        const validatedAt = parseDate(evidence.validated_at);
+        if (
+            evidence.source !== 'server_validation' ||
+            !validatedAt ||
+            validatedAt > currentTime ||
+            !evidenceStatus
+        ) {
+            return 'unknown';
+        }
+
+        if (evidenceStatus === 'active') {
+            if (
+                evidence.valid !== true ||
+                evidence.is_entitled === false ||
+                evidence.is_in_grace === true
+            ) {
+                return 'unknown';
+            }
+
+            const expiryDate = parseDate(evidence.expires_at);
+            if (evidence.expires_at && !expiryDate) return 'unknown';
+            if (expiryDate && expiryDate <= currentTime) return 'unknown';
+            return 'active';
+        }
+
+        if (evidenceStatus === 'grace_period') {
+            if (
+                evidence.valid !== true ||
+                evidence.is_entitled === false ||
+                evidence.is_in_grace === false
+            ) {
+                return 'unknown';
+            }
+
+            return resolveGraceBoundary(evidence.grace_period_ends, currentTime);
+        }
+
+        if (evidenceStatus === 'expired') {
+            return evidence.valid === false &&
+                evidence.is_entitled !== true &&
+                evidence.is_in_grace !== true
+                ? 'expired'
+                : 'unknown';
+        }
+
+        return STATUS_LABELS[evidenceStatus] ? evidenceStatus : 'unknown';
+    }
+
+    if (
+        details.valid === true &&
+        details.is_entitled === true &&
+        details.is_in_grace === true
+    ) {
+        return resolveGraceBoundary(details.grace_period_ends, currentTime);
+    }
+
+    const signals = [detailLifecycleState, detailStatus, storeStatus].filter(Boolean);
+    if (signals.length === 0) return 'unknown';
+
+    const unknownSignal = signals.find((status) => (
+        !EFFECTIVE_LIFECYCLE_STATES.has(status) &&
+        !STATUS_LABELS[status]
+    ));
+    if (unknownSignal) return 'unknown';
+
+    const effectiveSignals = signals.filter((status) => EFFECTIVE_LIFECYCLE_STATES.has(status));
+    const distinctStates = new Set(effectiveSignals);
+    if (distinctStates.size > 1) return 'unknown';
+
+    const status = effectiveSignals[0] || signals[0];
+    if (status === 'grace_period') {
+        if (
+            details.valid !== true ||
+            details.is_entitled !== true ||
+            details.is_in_grace !== true
+        ) {
+            return 'unknown';
+        }
+
+        return resolveGraceBoundary(details.grace_period_ends, currentTime);
+    }
+
+    if (status === 'active') {
+        if (
+            details.valid !== true ||
+            details.is_entitled === false ||
+            details.is_in_grace === true
+        ) {
+            return 'unknown';
+        }
+
+        const expiryDate = parseDate(details.expires_at);
+        if (expiryDate && expiryDate <= currentTime) return 'unknown';
+        return 'active';
+    }
+
+    if (status === 'expired') {
+        return details.valid === false &&
+            details.is_entitled !== true &&
+            details.is_in_grace !== true
+            ? 'expired'
+            : 'unknown';
+    }
+
+    return status || 'unknown';
+};
+
+export const getLicenseStatusPresentation = (
+    licenseDetails = {},
+    now = new Date(),
+    { licenseStatus } = {}
+) => {
+    const status = resolveEffectiveLicenseLifecycle(licenseDetails, { licenseStatus, now });
+    const { isPaidPlan } = getPlanContext(licenseDetails);
 
     const label = status === 'expired' && isPaidPlan
         ? 'Cambio a Lanzo Local pendiente'
@@ -116,9 +334,9 @@ export const getLicenseStatusPresentation = (licenseDetails = {}, now = new Date
     return { status: status || 'unknown', label, tone };
 };
 
-export const getLicenseExpirationPresentation = (licenseDetails = {}, now = new Date()) => {
+export const getLicenseExpirationPresentation = (licenseDetails = {}, now = new Date(), options = {}) => {
     const { isPaidPlan, isFreeLifetime } = getPlanContext(licenseDetails);
-    const statusPresentation = getLicenseStatusPresentation(licenseDetails, now);
+    const statusPresentation = getLicenseStatusPresentation(licenseDetails, now, options);
     const expiryDate = parseDate(licenseDetails?.expires_at);
 
     if (isFreeLifetime) {

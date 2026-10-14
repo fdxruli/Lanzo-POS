@@ -77,9 +77,8 @@ function Layout() {
 
   const effectiveLicenseStatus = getLicenseStatusPresentation({
     ...licenseDetails,
-    status: licenseStatus || licenseDetails?.status,
     grace_period_ends: licenseDetails?.grace_period_ends || gracePeriodEnds || null
-  }).status;
+  }, new Date(), { licenseStatus }).status;
   const isLicenseCritical = (
     effectiveLicenseStatus === 'grace_period' ||
     effectiveLicenseStatus === 'expired' ||

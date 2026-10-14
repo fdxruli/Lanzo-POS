@@ -133,6 +133,87 @@ describe('AdminLoginModal local database recovery', () => {
     expect(storeState.handleFreeDeviceTakeover).not.toHaveBeenCalled();
   });
 
+  it('focuses takeover confirmation once it becomes enabled after reconnecting', async () => {
+    storeState.handleAdminLogin.mockResolvedValueOnce({
+      success: false,
+      code: 'FREE_DEVICE_TAKEOVER_REQUIRED',
+      takeoverRequired: true
+    });
+
+    render(<AdminLoginModal />);
+    submitCredentials();
+
+    // An offline event arrives before the pending login response settles.
+    Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: false });
+    fireEvent(window, new Event('offline'));
+
+    const takeoverButton = await screen.findByRole('button', { name: 'Usar este dispositivo' }, { timeout: 1000 });
+    expect(takeoverButton).toBeDisabled();
+    fireEvent.click(takeoverButton);
+    expect(storeState.handleFreeDeviceTakeover).not.toHaveBeenCalled();
+
+    Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: true });
+    fireEvent(window, new Event('online'));
+
+    await waitFor(() => expect(takeoverButton).toBeEnabled(), { timeout: 1000 });
+    expect(takeoverButton).toHaveFocus();
+    expect(storeState.handleFreeDeviceTakeover).not.toHaveBeenCalled();
+    expect(recoveryRuntime.markTakeoverCompleted).not.toHaveBeenCalled();
+  });
+
+  it('preserves user focus on Cancel when connectivity returns', async () => {
+    storeState.handleAdminLogin.mockResolvedValueOnce({
+      success: false,
+      code: 'FREE_DEVICE_TAKEOVER_REQUIRED',
+      takeoverRequired: true
+    });
+
+    render(<AdminLoginModal />);
+    submitCredentials();
+
+    Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: false });
+    fireEvent(window, new Event('offline'));
+
+    const takeoverButton = await screen.findByRole('button', { name: 'Usar este dispositivo' }, { timeout: 1000 });
+    expect(takeoverButton).toBeDisabled();
+
+    const cancelButton = screen.getByRole('button', { name: 'Cancelar' });
+    cancelButton.focus();
+    expect(cancelButton).toHaveFocus();
+
+    Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: true });
+    fireEvent(window, new Event('online'));
+
+    await waitFor(() => expect(takeoverButton).toBeEnabled(), { timeout: 1000 });
+    expect(cancelButton).toHaveFocus();
+    expect(storeState.handleFreeDeviceTakeover).not.toHaveBeenCalled();
+  });
+
+  it('does not restore takeover focus after cancellation and reconnect', async () => {
+    storeState.handleAdminLogin.mockResolvedValueOnce({
+      success: false,
+      code: 'FREE_DEVICE_TAKEOVER_REQUIRED',
+      takeoverRequired: true
+    });
+
+    render(<AdminLoginModal />);
+    submitCredentials();
+
+    Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: false });
+    fireEvent(window, new Event('offline'));
+
+    const cancelButton = await screen.findByRole('button', { name: 'Cancelar' }, { timeout: 1000 });
+    fireEvent.click(cancelButton);
+    expect(screen.queryByRole('button', { name: 'Usar este dispositivo' })).not.toBeInTheDocument();
+
+    Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: true });
+    fireEvent(window, new Event('online'));
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Entrar' })).toBeDisabled(), { timeout: 1000 });
+    await waitFor(() => expect(screen.getByLabelText('Usuario')).toHaveFocus(), { timeout: 1000 });
+    expect(storeState.handleFreeDeviceTakeover).not.toHaveBeenCalled();
+  });
+
   it('confirms takeover only after the owner presses Usar este dispositivo', async () => {
     storeState.handleAdminLogin.mockResolvedValueOnce({
       success: false,

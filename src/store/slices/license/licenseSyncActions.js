@@ -155,6 +155,7 @@ export const createLicenseSyncActions = ({
 
     if (shouldSkipRemoteValidationForPlan({
       licenseDetails: state.licenseDetails,
+      licenseStatus: state.licenseStatus,
       mode: syncMode,
       reason
     })) {

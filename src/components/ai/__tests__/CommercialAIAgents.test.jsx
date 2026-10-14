@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import CommercialAIAgentsPage from '../CommercialAIAgentsPage';
 import CommercialAIAgentsRoute from '../CommercialAIAgentsRoute';
@@ -69,6 +69,33 @@ const renderCenter = () => render(
     </CommercialAIAgentsRoute>
   </MemoryRouter>
 );
+
+const rerenderCenter = (view) => view.rerender(
+  <MemoryRouter initialEntries={['/agentes-ia']}>
+    <CommercialAIAgentsRoute>
+      <CommercialAIAgentsPage />
+    </CommercialAIAgentsRoute>
+  </MemoryRouter>
+);
+
+const completedAgentResult = (executiveSummary) => ({
+  response: {
+    status: 'completed',
+    executiveSummary,
+    explanation: 'La respuesta corresponde al contexto anterior.',
+    confidence: 'medium',
+    source: 'cloud',
+    coverage: { validSales: 1 },
+    calculations: [],
+    assumptions: [],
+    limitations: [],
+    recommendations: [],
+    scenarios: []
+  },
+  providerCalled: false,
+  quotaOutcome: 'not_consumed',
+  usageStatus: null
+});
 
 function CurrentPath() {
   const location = useLocation();
@@ -548,6 +575,59 @@ describe('commercial AI center', () => {
     });
     expect(JSON.parse(raw).entries).toHaveLength(1);
     expect(runtime.runAgent).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not persist a pending analysis after the tenant changes before the response returns', async () => {
+    let resolveRun;
+    runtime.runAgent.mockImplementationOnce(() => new Promise((resolve) => { resolveRun = resolve; }));
+    const view = renderCenter();
+    expect(await screen.findByText('Todavía no hay consultas completadas en este contexto.')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), { target: { value: '¿Mi negocio es rentable?' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+    await waitFor(() => expect(runtime.runAgent).toHaveBeenCalledTimes(1));
+
+    runtime.actorSnapshot = {
+      ...boundAdmin,
+      tenant: { opaqueId: 'tenant-b', databaseName: 'LanzoDB_t_tenant-b', generation: 2 }
+    };
+    rerenderCenter(view);
+    expect(await screen.findByText('Todavía no hay consultas completadas en este contexto.')).toBeInTheDocument();
+
+    await act(async () => {
+      resolveRun(completedAgentResult('Respuesta del negocio anterior'));
+      await Promise.resolve();
+    });
+
+    expect(runtime.historyStorage.has('commercial-ai-sales-profitability-history-v1')).toBe(false);
+    expect(screen.queryByText('Respuesta del negocio anterior')).not.toBeInTheDocument();
+  });
+
+  it('does not persist a pending analysis after the actor session is invalidated and re-established', async () => {
+    let resolveRun;
+    runtime.runAgent.mockImplementationOnce(() => new Promise((resolve) => { resolveRun = resolve; }));
+    const view = renderCenter();
+    expect(await screen.findByText('Todavía no hay consultas completadas en este contexto.')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), { target: { value: '¿Mi negocio es rentable?' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+    await waitFor(() => expect(runtime.runAgent).toHaveBeenCalledTimes(1));
+
+    runtime.actorSnapshot = null;
+    rerenderCenter(view);
+    expect(screen.getByRole('heading', { name: 'No tienes permiso para acceder a esta sección' })).toBeInTheDocument();
+
+    runtime.actorSnapshot = { ...boundAdmin, sessionId: 'session-b' };
+    rerenderCenter(view);
+    expect(await screen.findByText('Todavía no hay consultas completadas en este contexto.')).toBeInTheDocument();
+
+    await act(async () => {
+      resolveRun(completedAgentResult('Respuesta de la sesión anterior'));
+      await Promise.resolve();
+    });
+
+    expect(runtime.historyStorage.has('commercial-ai-sales-profitability-history-v1')).toBe(false);
+    expect(screen.queryByText('Respuesta de la sesión anterior')).not.toBeInTheDocument();
   });
 
   it('shows Phase 2 AI recommendations as why, action, measurement and confidence', async () => {

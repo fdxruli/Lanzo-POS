@@ -25,6 +25,7 @@ import {
     markLastLicenseValidationSuccess
 } from './licenseValidationTimestamps';
 import { isLocalTenantAccessError } from '../../../services/tenant/localTenantGuard';
+import { createEffectiveLicenseValidationEvidence } from '../../../utils/licenseStatusPresentation';
 
 const normalizeOptions = (options = {}) => {
     if (typeof options === 'string') {
@@ -232,11 +233,16 @@ export const createLicenseIntegrityActions = ({
                 if (RENEWAL_REASONS.includes(serverCheck.reason)) {
                     Logger.log('[Integrity] Licencia expirada. Activando pantalla de renovación.');
 
+                    const expiredEvidence = createEffectiveLicenseValidationEvidence(
+                        { ...serverCheck, valid: false },
+                        { effectiveStatus: 'expired', now }
+                    );
                     const expiredDetails = {
                         ...licenseDetails,
                         ...serverCheck,
                         valid: false,
-                        status: 'expired'
+                        status: 'expired',
+                        ...(expiredEvidence ? { effective_lifecycle_validation: expiredEvidence } : {})
                     };
 
                     set({
@@ -305,15 +311,38 @@ export const createLicenseIntegrityActions = ({
                 newStatus = 'grace_period';
             }
 
+            const effectiveLifecycleEvidence = serverCheck.is_fallback === true
+                ? (
+                    licenseDetails?.effective_lifecycle_validation ||
+                    serverCheck?.effective_lifecycle_validation ||
+                    null
+                )
+                : createEffectiveLicenseValidationEvidence(
+                    { ...serverCheck, valid: isTechnicallyValid },
+                    { effectiveStatus: newStatus, now }
+                );
+
             const updatedDetails = {
                 ...licenseDetails,
                 ...serverCheck,
                 grace_period_ends: derivedGracePeriodEnd,
                 status: newStatus,
-                valid: isTechnicallyValid
+                valid: isTechnicallyValid,
+                ...(effectiveLifecycleEvidence
+                    ? { effective_lifecycle_validation: effectiveLifecycleEvidence }
+                    : {})
             };
 
+            const previousEvidence = licenseDetails.effective_lifecycle_validation;
+            const evidenceChanged = Boolean(effectiveLifecycleEvidence) && (
+                previousEvidence?.source !== effectiveLifecycleEvidence.source ||
+                previousEvidence?.status !== effectiveLifecycleEvidence.status ||
+                previousEvidence?.valid !== effectiveLifecycleEvidence.valid
+            );
+
             const hasChanges =
+                state.licenseStatus !== newStatus ||
+                evidenceChanged ||
                 JSON.stringify(licenseDetails.valid) !== JSON.stringify(updatedDetails.valid) ||
                 licenseDetails.status !== updatedDetails.status ||
                 licenseDetails.expires_at !== updatedDetails.expires_at ||
