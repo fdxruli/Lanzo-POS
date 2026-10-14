@@ -6,11 +6,13 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createMemoryRouter, Outlet, RouterProvider } from 'react-router-dom';
 import { ADMIN_NOT_FOUND_ROUTE } from '../adminNotFoundRoute';
 import { ADMIN_VALID_ROUTE_PATHS, isAdminNotFoundPath } from '../adminRoutePaths';
-import notFoundStyles from '../../pages/NotFoundPage.css?inline';
+import { readFileSync } from 'node:fs';
 import {
   encodeNotFoundBarcodeValue,
   getNotFoundBarcodeValue,
 } from '../../utils/notFoundBarcode';
+
+const notFoundStyles = readFileSync(new URL('../../pages/NotFoundPage.css', import.meta.url), 'utf8');
 
 const createAdminRouter = (initialEntries) => createMemoryRouter([
   {

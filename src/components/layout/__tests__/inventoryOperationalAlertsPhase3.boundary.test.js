@@ -10,9 +10,9 @@ describe('inventory operational alerts phase 3 boundaries', () => {
 
     expect(layout.match(/<LocalInventoryOperationalAlertsRuntime\s*\/>/g) || [])
       .toHaveLength(1);
-    expect(layout).toContain('{shouldShowTicker && <Ticker />}');
+    expect(layout).toContain('{shouldShowTicker && <Ticker isSuppressed={isNotFoundPage} />}');
     expect(layout.indexOf('<LocalInventoryOperationalAlertsRuntime />'))
-      .toBeLessThan(layout.indexOf('{shouldShowTicker && <Ticker />}'));
+      .toBeLessThan(layout.indexOf('{shouldShowTicker && <Ticker isSuppressed={isNotFoundPage} />}'));
   });
 
   it('keeps Ticker, Bell and Drawer free from independent Dexie scans or polling intervals', () => {
