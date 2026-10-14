@@ -29,12 +29,36 @@ permissions:
   contents: read
 
 env:
-  SHARED_TERMINAL_2_BASE_SHA: cd67e0d0b299cbef1f299e5a3414a3cefe5d3a39
-  SHARED_TERMINAL_2_PR_BASE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.sha }}
-  SHARED_TERMINAL_2_CANDIDATE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+  SHARED_TERMINAL_2_HISTORICAL_BASE_SHA: cd67e0d0b299cbef1f299e5a3414a3cefe5d3a39
+  SHARED_TERMINAL_2_PR_BASE_SHA: ${{ github.event.pull_request.base.sha || github.sha }}
+  SHARED_TERMINAL_2_CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
 jobs:
+  resolve-pr-base:
+    name: Resolve exact PR base commit
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+    steps:
+      - name: Checkout exact PR base or default branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha || github.event.repository.default_branch }}
+          fetch-depth: 1
+      - name: Capture immutable base SHA
+        id: resolve
+        shell: bash
+        run: |
+          base_sha="$(git rev-parse HEAD)"
+          echo "PR_BASE_SHA=${base_sha}"
+          echo "sha=${base_sha}" >> "$GITHUB_OUTPUT"
+
   focused-validation:
+    needs:
+      - resolve-pr-base
+    env:
+      SHARED_TERMINAL_2_PR_BASE_SHA: ${{ needs.resolve-pr-base.outputs.sha }}
+      SHARED_TERMINAL_2_COMPARISON_BASE_SHA: ${{ needs.resolve-pr-base.outputs.sha }}
     name: Device mode / ActorRuntime / tenant / auth / lint / builds
     runs-on: ubuntu-latest
     timeout-minutes: 35
@@ -50,13 +74,17 @@ jobs:
         run: |
           echo "PR_BASE_SHA=${SHARED_TERMINAL_2_PR_BASE_SHA}"
           echo "CANDIDATE_SHA=${SHARED_TERMINAL_2_CANDIDATE_SHA}"
-          echo "CONTRACT_BASE_SHA=${SHARED_TERMINAL_2_BASE_SHA}"
+          echo "COMPARISON_BASE_SHA=${SHARED_TERMINAL_2_COMPARISON_BASE_SHA}"
+          echo "HISTORICAL_BASE_SHA=${SHARED_TERMINAL_2_HISTORICAL_BASE_SHA}"
           test -n "${SHARED_TERMINAL_2_PR_BASE_SHA}"
           test -n "${SHARED_TERMINAL_2_CANDIDATE_SHA}"
-          test -n "${SHARED_TERMINAL_2_BASE_SHA}"
+          test -n "${SHARED_TERMINAL_2_COMPARISON_BASE_SHA}"
+          test -n "${SHARED_TERMINAL_2_HISTORICAL_BASE_SHA}"
+          test "$(git rev-parse HEAD)" = "${SHARED_TERMINAL_2_CANDIDATE_SHA}"
+          test "${SHARED_TERMINAL_2_COMPARISON_BASE_SHA}" = "${SHARED_TERMINAL_2_PR_BASE_SHA}"
           git cat-file -e "${SHARED_TERMINAL_2_PR_BASE_SHA}^{commit}"
           git cat-file -e "${SHARED_TERMINAL_2_CANDIDATE_SHA}^{commit}"
-          git cat-file -e "${SHARED_TERMINAL_2_BASE_SHA}^{commit}"
+          git cat-file -e "${SHARED_TERMINAL_2_HISTORICAL_BASE_SHA}^{commit}"
 
       - name: PR-local blocking whitespace hygiene
         shell: bash
@@ -67,7 +95,7 @@ jobs:
         shell: bash
         run: |
           set +e
-          git diff --check "${SHARED_TERMINAL_2_BASE_SHA}...${SHARED_TERMINAL_2_CANDIDATE_SHA}"
+          git diff --check "${SHARED_TERMINAL_2_HISTORICAL_BASE_SHA}...${SHARED_TERMINAL_2_CANDIDATE_SHA}"
           historical_status=$?
           set -e
 
@@ -137,13 +165,27 @@ jobs:
 
   full-suite-baseline:
     name: Full suite BASE repeated (observational)
+    needs:
+      - resolve-pr-base
+    env:
+      SHARED_TERMINAL_2_PR_BASE_SHA: ${{ needs.resolve-pr-base.outputs.sha }}
+      SHARED_TERMINAL_2_COMPARISON_BASE_SHA: ${{ needs.resolve-pr-base.outputs.sha }}
     runs-on: ubuntu-latest
     timeout-minutes: 55
     steps:
       - name: Checkout exact BASE SHA
         uses: actions/checkout@v4
         with:
-          ref: ${{ env.SHARED_TERMINAL_2_BASE_SHA }}
+          ref: ${{ env.SHARED_TERMINAL_2_COMPARISON_BASE_SHA }}
+          fetch-depth: 0
+
+      - name: Validate BASE checkout
+        shell: bash
+        run: |
+          echo "PR_BASE_SHA=${SHARED_TERMINAL_2_PR_BASE_SHA}"
+          echo "COMPARISON_BASE_SHA=${SHARED_TERMINAL_2_COMPARISON_BASE_SHA}"
+          test "$(git rev-parse HEAD)" = "${SHARED_TERMINAL_2_COMPARISON_BASE_SHA}"
+          test "${SHARED_TERMINAL_2_COMPARISON_BASE_SHA}" = "${SHARED_TERMINAL_2_PR_BASE_SHA}"
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -200,7 +242,14 @@ jobs:
       - name: Checkout exact candidate HEAD
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ env.SHARED_TERMINAL_2_CANDIDATE_SHA }}
+          fetch-depth: 0
+
+      - name: Validate CANDIDATE checkout
+        shell: bash
+        run: |
+          echo "CANDIDATE_SHA=${SHARED_TERMINAL_2_CANDIDATE_SHA}"
+          test "$(git rev-parse HEAD)" = "${SHARED_TERMINAL_2_CANDIDATE_SHA}"
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -253,15 +302,29 @@ jobs:
     name: Differential repeated full-suite regression gate
     if: always()
     needs:
+      - resolve-pr-base
       - full-suite-baseline
       - full-suite-candidate
+    env:
+      SHARED_TERMINAL_2_PR_BASE_SHA: ${{ needs.resolve-pr-base.outputs.sha }}
+      SHARED_TERMINAL_2_COMPARISON_BASE_SHA: ${{ needs.resolve-pr-base.outputs.sha }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - name: Checkout exact candidate HEAD
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          ref: ${{ env.SHARED_TERMINAL_2_CANDIDATE_SHA }}
+          fetch-depth: 0
+
+      - name: Validate differential refs
+        shell: bash
+        run: |
+          echo "PR_BASE_SHA=${SHARED_TERMINAL_2_PR_BASE_SHA}"
+          echo "COMPARISON_BASE_SHA=${SHARED_TERMINAL_2_COMPARISON_BASE_SHA}"
+          echo "CANDIDATE_SHA=${SHARED_TERMINAL_2_CANDIDATE_SHA}"
+          test "$(git rev-parse HEAD)" = "${SHARED_TERMINAL_2_CANDIDATE_SHA}"
+          test "${SHARED_TERMINAL_2_COMPARISON_BASE_SHA}" = "${SHARED_TERMINAL_2_PR_BASE_SHA}"
 
       - name: Download BASE evidence
         uses: actions/download-artifact@v4
