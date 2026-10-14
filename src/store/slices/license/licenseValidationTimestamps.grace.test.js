@@ -142,4 +142,13 @@ describe('license grace boundary and remote validation TTL', () => {
       now: FIXED_NOW.getTime()
     })).toBe(false);
   });
+
+  it('forces an Admin session-restore validation even within the normal PRO TTL', () => {
+    markLastLicenseValidationSuccess(LICENSE_A);
+    expect(shouldSkipRemoteValidationForPlan({
+      licenseDetails: paidLicense({ expires_at: '2026-10-30T15:14:09.885Z' }),
+      reason: 'admin_session_restore',
+      now: FIXED_NOW.getTime()
+    })).toBe(false);
+  });
 });

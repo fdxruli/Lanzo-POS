@@ -119,6 +119,62 @@ const resolveGraceBoundary = (gracePeriodEnds, now) => {
     return graceEndDate <= now ? 'expired' : 'grace_period';
 };
 
+const EFFECTIVE_EVIDENCE_FIELDS = Object.freeze([
+    'source',
+    'status',
+    'valid',
+    'is_entitled',
+    'is_in_grace',
+    'license_status',
+    'license_id',
+    'expires_at',
+    'grace_period_ends'
+]);
+
+const normalizeEvidenceField = (field, value) => {
+    if (field === 'expires_at' || field === 'grace_period_ends') {
+        const date = parseDate(value);
+        return date ? date.toISOString() : value === null || value === undefined || value === ''
+            ? null
+            : `invalid:${String(value)}`;
+    }
+    if (field === 'status' || field === 'license_status') {
+        return normalizeLifecycleState(value) || null;
+    }
+    if (field === 'license_id') {
+        return typeof value === 'string' ? value.trim().toLowerCase() || null : null;
+    }
+    return value === undefined ? null : value;
+};
+
+/**
+ * Returns true only when a newer, non-fallback server validation carries a
+ * material change to lifecycle evidence. validated_at orders evidence but a
+ * timestamp-only refresh does not cause another IndexedDB/Zustand write.
+ */
+export const shouldReplaceEffectiveLicenseValidationEvidence = (currentEvidence, nextEvidence) => {
+    if (!nextEvidence || nextEvidence.source !== 'server_validation') return false;
+
+    const nextValidatedAt = parseDate(nextEvidence.validated_at);
+    if (!nextValidatedAt) return false;
+
+    const currentValidatedAt = parseDate(currentEvidence?.validated_at);
+    if (
+        currentEvidence?.source === 'server_validation' &&
+        currentValidatedAt &&
+        currentValidatedAt > nextValidatedAt
+    ) {
+        return false;
+    }
+
+    if (currentEvidence?.source !== 'server_validation' || !currentValidatedAt) return true;
+
+    return EFFECTIVE_EVIDENCE_FIELDS.some((field) => (
+        normalizeEvidenceField(field, currentEvidence?.[field]) !==
+        normalizeEvidenceField(field, nextEvidence?.[field])
+    ));
+};
+
 export const createEffectiveLicenseValidationEvidence = (
     validationData = {},
     { effectiveStatus, now = new Date() } = {}
@@ -151,6 +207,12 @@ export const createEffectiveLicenseValidationEvidence = (
         is_in_grace: typeof validationData.is_in_grace === 'boolean'
             ? validationData.is_in_grace
             : status === 'grace_period' ? true : null,
+        license_status: typeof validationData.license_status === 'string'
+            ? normalizeLifecycleState(validationData.license_status)
+            : null,
+        license_id: typeof validationData.license_id === 'string'
+            ? validationData.license_id.trim().toLowerCase()
+            : null,
         expires_at: typeof validationData.expires_at === 'string'
             ? validationData.expires_at
             : null,

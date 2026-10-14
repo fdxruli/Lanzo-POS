@@ -102,6 +102,7 @@ export const PROFILE_LAST_LICENSE_KEY = 'Lanzo_last_profile_license_key';
 export const LOCAL_FATAL_APP_STATUSES = [
   'expired',
   'revoked',
+  'administratively_blocked',
   'cancelled',
   'blocked',
   'device_revoked',
