@@ -437,7 +437,6 @@ export default function Ticker() {
       (effectiveLicenseStatus === 'grace_period'
         ? deriveGracePeriodEnd(licenseDetails?.expires_at)
         : null);
-    const graceDate = effectiveGracePeriodEnds ? new Date(effectiveGracePeriodEnds) : null;
     const isGracePeriod = effectiveLicenseStatus === 'grace_period';
 
     if (isGracePeriod) {
