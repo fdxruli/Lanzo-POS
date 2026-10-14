@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import userEvent from '@testing-library/user-event';
@@ -6,13 +8,12 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createMemoryRouter, Outlet, RouterProvider } from 'react-router-dom';
 import { ADMIN_NOT_FOUND_ROUTE } from '../adminNotFoundRoute';
 import { ADMIN_VALID_ROUTE_PATHS, isAdminNotFoundPath } from '../adminRoutePaths';
-import { readFileSync } from 'node:fs';
 import {
   encodeNotFoundBarcodeValue,
   getNotFoundBarcodeValue,
 } from '../../utils/notFoundBarcode';
 
-const notFoundStyles = readFileSync(new URL('../../pages/NotFoundPage.css', import.meta.url), 'utf8');
+const notFoundStyles = readFileSync(resolve(process.cwd(), 'src/pages/NotFoundPage.css'), 'utf8');
 
 const createAdminRouter = (initialEntries) => createMemoryRouter([
   {
