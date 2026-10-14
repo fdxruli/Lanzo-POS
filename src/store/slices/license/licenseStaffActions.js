@@ -213,6 +213,9 @@ export const createLicenseStaffActions = ({
         actor: licenseDataToSave.staff_user
       });
       await get()._loadProfile(licenseKey);
+      if (get().appStatus === 'ready') {
+        get()._validateInBackground?.(licenseKey, { reason: 'staff_login' });
+      }
     } catch (error) {
       lockActorRuntime('staff_actor_binding_failed');
       set({

@@ -8,7 +8,9 @@ on:
       - 'src/services/auth/actorScopedStorage.js'
       - 'src/services/auth/actorOperationalHandoff.js'
       - 'src/services/auth/actorSessionRuntimeBridge.js'
+      - 'src/services/supabase.js'
       - 'src/services/tenant/tenantScopedStorage.js'
+      - 'src/store/slices/license/**'
       - 'src/services/sync/syncOutboxService.js'
       - 'src/services/salesCloud/salesCloudShadowService.js'
       - 'src/services/salesService.js'
@@ -50,7 +52,7 @@ jobs:
       - name: Checkout current base branch
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.base.ref || github.event.repository.default_branch }}
+          ref: ${{ github.event.pull_request.base.sha || github.event.repository.default_branch }}
           fetch-depth: 1
       - name: Capture immutable base SHA
         id: resolve
@@ -64,8 +66,8 @@ jobs:
     needs:
       - resolve-pr-base
     env:
-      SHARED_TERMINAL_3_PR_BASE_SHA: ${{ github.event_name == 'pull_request' && needs.resolve-pr-base.outputs.sha || github.sha }}
-      SHARED_TERMINAL_3_COMPARISON_BASE_SHA: ${{ github.event_name == 'pull_request' && needs.resolve-pr-base.outputs.sha || '06f42bcbbc4282c6f8f5d4e0b9065437d16f19ab' }}
+      SHARED_TERMINAL_3_PR_BASE_SHA: ${{ needs.resolve-pr-base.outputs.sha }}
+      SHARED_TERMINAL_3_COMPARISON_BASE_SHA: ${{ needs.resolve-pr-base.outputs.sha }}
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
@@ -86,9 +88,7 @@ jobs:
           test -n "${SHARED_TERMINAL_3_CANDIDATE_SHA}"
           test -n "${SHARED_TERMINAL_3_COMPARISON_BASE_SHA}"
           test -n "${SHARED_TERMINAL_3_HISTORICAL_BASE_SHA}"
-          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
-            test "${SHARED_TERMINAL_3_COMPARISON_BASE_SHA}" = "${SHARED_TERMINAL_3_PR_BASE_SHA}"
-          fi
+          test "${SHARED_TERMINAL_3_COMPARISON_BASE_SHA}" = "${SHARED_TERMINAL_3_PR_BASE_SHA}"
           git cat-file -e "${SHARED_TERMINAL_3_PR_BASE_SHA}^{commit}"
           git cat-file -e "${SHARED_TERMINAL_3_CANDIDATE_SHA}^{commit}"
           git cat-file -e "${SHARED_TERMINAL_3_COMPARISON_BASE_SHA}^{commit}"
@@ -239,9 +239,7 @@ jobs:
           echo "PR_BASE_SHA=${SHARED_TERMINAL_3_PR_BASE_SHA}"
           echo "COMPARISON_BASE_SHA=${SHARED_TERMINAL_3_COMPARISON_BASE_SHA}"
           test "$(git -C subject rev-parse HEAD)" = "${SHARED_TERMINAL_3_COMPARISON_BASE_SHA}"
-          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
-            test "${SHARED_TERMINAL_3_COMPARISON_BASE_SHA}" = "${SHARED_TERMINAL_3_PR_BASE_SHA}"
-          fi
+          test "${SHARED_TERMINAL_3_COMPARISON_BASE_SHA}" = "${SHARED_TERMINAL_3_PR_BASE_SHA}"
 
       - name: Checkout exact candidate evidence tools
         uses: actions/checkout@v4
@@ -681,8 +679,12 @@ jobs:
     name: Differential repeated full-suite regression gate
     if: always()
     needs:
+      - resolve-pr-base
       - full-suite-baseline
       - full-suite-candidate
+    env:
+      SHARED_TERMINAL_3_PR_BASE_SHA: ${{ needs.resolve-pr-base.outputs.sha }}
+      SHARED_TERMINAL_3_COMPARISON_BASE_SHA: ${{ needs.resolve-pr-base.outputs.sha }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -702,9 +704,7 @@ jobs:
           echo "CANDIDATE_ARTIFACT=${SHARED_TERMINAL_3_CANDIDATE_ARTIFACT}"
           echo "DIFFERENTIAL_ARTIFACT=${SHARED_TERMINAL_3_DIFFERENTIAL_ARTIFACT}"
           test "$(git rev-parse HEAD)" = "${SHARED_TERMINAL_3_CANDIDATE_SHA}"
-          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
-            test "${SHARED_TERMINAL_3_COMPARISON_BASE_SHA}" = "${SHARED_TERMINAL_3_PR_BASE_SHA}"
-          fi
+          test "${SHARED_TERMINAL_3_COMPARISON_BASE_SHA}" = "${SHARED_TERMINAL_3_PR_BASE_SHA}"
 
       - name: Download BASE evidence
         uses: actions/download-artifact@v4

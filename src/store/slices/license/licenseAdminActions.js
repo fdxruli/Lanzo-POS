@@ -102,6 +102,11 @@ const completeAdminSession = async (set, get, licenseKey, result, reason) => {
       profileOptions.allowSetupTransition = true;
     }
     await get()._loadProfile(licenseKey, profileOptions);
+    if (get().appStatus === 'ready') {
+      get()._validateInBackground?.(licenseKey, {
+        reason: reason === 'admin_login_resume' ? 'admin_login_resume' : 'admin_login'
+      });
+    }
     // A ready profile completes the enrollment route. Keep an explicit owner
     // enrollment context when profile hydration routes into Setup.
     set({

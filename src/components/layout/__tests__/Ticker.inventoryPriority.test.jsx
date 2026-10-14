@@ -103,6 +103,7 @@ const renderTicker = () => render(
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
 });
 
 describe('Ticker inventory priority navigation', () => {
@@ -316,24 +317,70 @@ describe('Ticker Pro cloud inventory summary', () => {
 
 
 describe('Ticker license lifecycle copy', () => {
+  const makeProLicense = ({
+    status,
+    expiresAt,
+    gracePeriodEnds,
+    administrativeStatus = 'active',
+    isInGrace
+  }) => ({
+    ...localLicense,
+    status,
+    license_status: administrativeStatus,
+    plan_code: 'pro_monthly',
+    plan_name: 'Lanzo Nube',
+    valid: true,
+    is_entitled: true,
+    is_in_grace: isInGrace,
+    expires_at: expiresAt,
+    grace_period_ends: gracePeriodEnds,
+    effective_lifecycle_validation: {
+      source: 'server_validation',
+      status,
+      valid: true,
+      is_entitled: true,
+      is_in_grace: isInGrace,
+      validated_at: '2026-09-20T17:00:00.000Z',
+      expires_at: expiresAt,
+      grace_period_ends: gracePeriodEnds
+    }
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-09-20T18:00:00.000Z'));
     mocks.actorRuntime = adminRuntime;
     mocks.ticker = { catalogSize: 0, alerts: [] };
   });
 
-  it('keeps valid grace operational and explains the later Lanzo Local transition without a fake hard block', () => {
+  it('shows active PRO without grace or downgrade copy', () => {
+    mocks.app = createAppState({
+      licenseStatus: 'active',
+      licenseDetails: makeProLicense({
+        status: 'active',
+        expiresAt: '2026-09-30T18:00:00.000Z',
+        gracePeriodEnds: '2026-10-07T18:00:00.000Z',
+        isInGrace: false
+      })
+    });
+
+    renderTicker();
+
+    expect(screen.queryByText(/Tu plan Lanzo Nube terminó/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Lanzo Local/i)).not.toBeInTheDocument();
+  });
+
+  it('keeps confirmed grace operational and explains the later Lanzo Local transition', () => {
     mocks.app = createAppState({
       licenseStatus: 'grace_period',
       gracePeriodEnds: '2026-09-25T18:00:00.000Z',
-      licenseDetails: {
-        ...localLicense,
+      licenseDetails: makeProLicense({
         status: 'grace_period',
-        plan_code: 'pro_monthly',
-        plan_name: 'Lanzo Nube',
-        expires_at: '2026-09-18T18:00:00.000Z',
-        grace_period_ends: '2026-09-25T18:00:00.000Z'
-      }
+        expiresAt: '2026-09-18T18:00:00.000Z',
+        gracePeriodEnds: '2026-09-25T18:00:00.000Z',
+        isInGrace: true
+      })
     });
 
     renderTicker();
@@ -341,5 +388,43 @@ describe('Ticker license lifecycle copy', () => {
     expect(screen.getAllByText(/Tu plan Lanzo Nube terminó/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/Lanzo Local/i).length).toBeGreaterThan(0);
     expect(screen.queryByText(/el sistema se bloqueará/i)).not.toBeInTheDocument();
+  });
+
+  it('does not present ended grace as operational or promise a later transition', () => {
+    vi.setSystemTime(new Date('2026-10-01T18:00:00.000Z'));
+    mocks.app = createAppState({
+      licenseStatus: 'grace_period',
+      gracePeriodEnds: '2026-09-25T18:00:00.000Z',
+      licenseDetails: makeProLicense({
+        status: 'grace_period',
+        expiresAt: '2026-09-18T18:00:00.000Z',
+        gracePeriodEnds: '2026-09-25T18:00:00.000Z',
+        isInGrace: true
+      })
+    });
+
+    renderTicker();
+
+    expect(screen.queryByText(/Tu plan Lanzo Nube terminó/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Tu período de gracia continúa/i)).not.toBeInTheDocument();
+  });
+
+  it('does not show operational grace copy for an administratively blocked PRO license', () => {
+    mocks.app = createAppState({
+      licenseStatus: 'grace_period',
+      gracePeriodEnds: '2026-09-25T18:00:00.000Z',
+      licenseDetails: makeProLicense({
+        status: 'grace_period',
+        expiresAt: '2026-09-18T18:00:00.000Z',
+        gracePeriodEnds: '2026-09-25T18:00:00.000Z',
+        administrativeStatus: 'administratively_blocked',
+        isInGrace: true
+      })
+    });
+
+    renderTicker();
+
+    expect(screen.queryByText(/Tu plan Lanzo Nube terminó/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Tu período de gracia continúa/i)).not.toBeInTheDocument();
   });
 });

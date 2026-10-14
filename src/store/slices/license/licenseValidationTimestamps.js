@@ -9,7 +9,7 @@ import {
   LICENSE_VALIDATION_ERROR_COOLDOWN_MS
 } from './licenseConstants';
 
-const CRITICAL_REASON_PATTERN = /realtime_event|realtime_reconnected|realtime_recover|license_changed|plan_changed|device_changed|device_revoked|staff_changed|staff_invalidated|permission_changed|force|activation|staff_login|renewal/;
+const CRITICAL_REASON_PATTERN = /realtime_event|realtime_reconnected|realtime_recover|license_changed|plan_changed|device_changed|device_revoked|staff_changed|staff_invalidated|permission_changed|force|activation|staff_login|staff_session_restore|admin_login|admin_session_restore|admin_legacy_restore|renewal/;
 
 export const LAST_LICENSE_VALIDATION_SUCCESS_KEY = 'Lanzo_last_license_validation_success';
 export const LAST_LICENSE_VALIDATION_SUCCESS_LICENSE_KEY = 'Lanzo_last_license_validation_success_key';

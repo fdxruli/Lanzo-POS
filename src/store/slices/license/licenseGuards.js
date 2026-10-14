@@ -37,6 +37,11 @@ const CRITICAL_LICENSE_VALIDATION_REASONS = new Set([
   'force',
   'activation',
   'staff_login',
+  'staff_session_restore',
+  'admin_login',
+  'admin_login_resume',
+  'admin_session_restore',
+  'admin_legacy_restore',
   'renewal'
 ]);
 
@@ -165,6 +170,12 @@ export const hasLicensePlanBlockReason = (validation = {}) => {
 
 export const isLicensePlanBlockFailure = (validation = {}) => (
   hasLicensePlanBlockReason(validation) && validation.valid !== true
+);
+
+export const isAdministrativelyBlockedLicense = (validation = {}) => (
+  normalizeStatusCode(
+    validation.lifecycle_state || validation.status || validation.reason
+  ) === 'administratively_blocked'
 );
 
 export const requiresAdminIdentity = (license = {}) => {

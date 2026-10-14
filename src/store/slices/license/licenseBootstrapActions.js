@@ -232,7 +232,9 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
                     }
 
                     await get()._loadProfile(restoredLicense.license_key);
-                    get()._validateInBackground(restoredLicense.license_key);
+                    get()._validateInBackground(restoredLicense.license_key, {
+                        reason: 'staff_session_restore'
+                    });
                     coordinatorState = 'ready';
                     return { status: get().appStatus };
                 }
@@ -343,7 +345,9 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
                     }
 
                     await get()._loadProfile(restoredLicense.license_key);
-                    get()._validateInBackground(restoredLicense.license_key);
+                    get()._validateInBackground(restoredLicense.license_key, {
+                        reason: 'admin_session_restore'
+                    });
                     coordinatorState = 'ready';
                     return { status: get().appStatus };
                 }
@@ -354,7 +358,9 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
                 logFreeAdminAuthorityMode(localLicense, 'legacy_local_owner');
                 await get()._processOfflineMode(localLicense);
                 if (navigator.onLine) {
-                    get()._validateInBackground(localLicense.license_key);
+                    get()._validateInBackground(localLicense.license_key, {
+                        reason: 'admin_legacy_restore'
+                    });
                 } else {
                     Logger.log('[AppStore] Sin red al iniciar, se mantiene cache local.');
                 }

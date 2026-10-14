@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
     getLicenseExpirationPresentation,
     createEffectiveLicenseValidationEvidence,
-    getLicenseStatusPresentation
+    getLicenseStatusPresentation,
+    shouldReplaceEffectiveLicenseValidationEvidence
 } from '../licenseStatusPresentation';
 
 const CURRENT_TIME = new Date('2026-09-25T02:12:00.000Z');
@@ -78,5 +79,22 @@ describe('license status presentation', () => {
     it('humanizes unknown status codes without exposing underscores', () => {
         expect(getLicenseStatusPresentation({ status: 'custom_review_state' }).label)
             .toBe('Por confirmar');
+    });
+
+    it('does not replace semantically identical validation evidence for a timestamp-only refresh', () => {
+        const current = createEffectiveLicenseValidationEvidence({
+            lifecycle_state: 'grace_period',
+            valid: true,
+            is_entitled: true,
+            is_in_grace: true,
+            expires_at: '2026-09-17T02:56:31.721Z',
+            grace_period_ends: '2026-09-24T02:56:31.721Z'
+        }, { now: new Date('2026-09-24T02:12:00.000Z') });
+        const refreshed = {
+            ...current,
+            validated_at: '2026-09-25T03:12:00.000Z'
+        };
+
+        expect(shouldReplaceEffectiveLicenseValidationEvidence(current, refreshed)).toBe(false);
     });
 });

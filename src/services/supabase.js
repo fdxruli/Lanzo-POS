@@ -16,6 +16,8 @@ import {
     runWithLocalTenantSyncLease
 } from './tenant/localTenantGuard';
 import {
+    actorRuntimeController,
+    runWithActorHandle,
     ActorRuntimeError,
     ACTOR_RUNTIME_ERROR_CODES
 } from './auth/actorRuntimeController';
@@ -75,6 +77,7 @@ async function setSecureCredentials(newToken) {
         });
     } catch (e) {
         if (isLocalTenantAccessError(e)) throw e;
+        if (e?.code === 'LICENSE_VALIDATION_CONTEXT_STALE') throw e;
         Logger.warn("No se pudo guardar el token de seguridad:", e);
     }
 }
@@ -382,7 +385,7 @@ async function _generateStableDeviceId() {
     }
 }
 
-async function getUntamperedTime() {
+async function getUntamperedTime({ persist = (write) => write() } = {}) {
     const now = Date.now();
     let lastSeen = null;
     try {
@@ -409,7 +412,7 @@ async function getUntamperedTime() {
 
     // Actualizamos el reloj al tiempo más reciente
     try {
-        await saveData(STORES.SYNC_CACHE, { key: 'security_monotonic_clock', value: now });
+        await persist(() => saveData(STORES.SYNC_CACHE, { key: 'security_monotonic_clock', value: now }));
     } catch (error) {
         if (isLocalTenantAccessError(error)) throw error;
         // Best effort: the online validation result remains authoritative.
@@ -867,7 +870,79 @@ export const staffLogoutSession = async function (licenseKey) {
 
 const currentRevalidationPromises = new Map();
 
-export const revalidateLicense = async function (licenseKeyProp) {
+export const revalidateLicense = async function (licenseKeyProp, options = {}) {
+    const staleValidationContextError = () => {
+        const error = new Error('LICENSE_VALIDATION_CONTEXT_STALE');
+        error.code = 'LICENSE_VALIDATION_CONTEXT_STALE';
+        return error;
+    };
+    const initialActor = actorRuntimeController.getState();
+    let actorHandle = null;
+    if (initialActor?.status === 'granted') {
+        try {
+            actorHandle = actorRuntimeController.capture();
+        } catch {
+            throw staleValidationContextError();
+        }
+    }
+    const actorBinding = JSON.stringify({
+        status: initialActor?.status || null,
+        actorType: initialActor?.actorType || null,
+        actorId: initialActor?.actorId || null,
+        actorKey: initialActor?.actorKey || null,
+        sessionId: initialActor?.sessionId || null,
+        generation: Number.isFinite(initialActor?.generation) ? initialActor.generation : null,
+        tenant: initialActor?.tenant || null,
+        deviceRef: initialActor?.deviceRef || null
+    });
+    const assertActorContext = () => {
+        const currentActor = actorRuntimeController.getState();
+        const currentBinding = JSON.stringify({
+            status: currentActor?.status || null,
+            actorType: currentActor?.actorType || null,
+            actorId: currentActor?.actorId || null,
+            actorKey: currentActor?.actorKey || null,
+            sessionId: currentActor?.sessionId || null,
+            generation: Number.isFinite(currentActor?.generation) ? currentActor.generation : null,
+            tenant: currentActor?.tenant || null,
+            deviceRef: currentActor?.deviceRef || null
+        });
+        if (currentBinding !== actorBinding) throw staleValidationContextError();
+        try {
+            actorHandle?.assertCurrent();
+        } catch {
+            throw staleValidationContextError();
+        }
+    };
+    const assertValidationContext = () => {
+        if (typeof options?.beforePersist === 'function') options.beforePersist();
+        assertActorContext();
+    };
+    const persistValidationState = async (operation) => {
+        assertValidationContext();
+        const guardedOperation = () => {
+            assertValidationContext();
+            return operation();
+        };
+
+        if (typeof options?.persist === 'function') {
+            return options.persist(guardedOperation);
+        }
+        if (actorHandle) {
+            try {
+                return await runWithActorHandle(
+                    actorHandle,
+                    ({ guardedWrite }) => guardedWrite(guardedOperation)
+                );
+            } catch (error) {
+                if (error?.code === ACTOR_RUNTIME_ERROR_CODES.CONTEXT_STALE) {
+                    throw staleValidationContextError();
+                }
+                throw error;
+            }
+        }
+        return guardedOperation();
+    };
     let storedLicense = null;
     try {
         const serializedLicense = localStorage.getItem('lanzo_license');
@@ -898,6 +973,7 @@ export const revalidateLicense = async function (licenseKeyProp) {
             { license_key: licenseKey },
             { reason: 'license_revalidation' },
             async () => {
+        assertValidationContext();
         const timeoutMs = 8000;
         let timeoutId;
 
@@ -951,35 +1027,37 @@ export const revalidateLicense = async function (licenseKeyProp) {
                     reason: 'license_revalidation_response_identity'
                 });
             }
+            assertValidationContext();
 
             // 🟢 NUEVO 3: Si el servidor nos da un nuevo token, lo guardamos inmediatamente (Rotación)
             if (data && data.valid) {
                 // Rotación del token
                 if (data.new_security_token) {
-                    await setSecureCredentials(data.new_security_token);
+                    await persistValidationState(() => setSecureCredentials(data.new_security_token));
                 }
 
                 const currentRealTime = Date.now();
 
                 // Guardar el estado validado en IndexedDB de forma exclusiva
-                await saveData(STORES.SYNC_CACHE, {
+                await persistValidationState(() => saveData(STORES.SYNC_CACHE, {
                     key: 'last_valid_license_state',
                     value: {
                         payload: data,
                         timestamp: currentRealTime
                     }
-                });
+                }));
 
                 // CORRECCIÓN CRÍTICA: "Sanar" el reloj monotónico.
                 // Si validamos online con éxito, asumimos que el reloj actual es la nueva verdad.
                 // Esto rescata al dispositivo de la trampa del "salto al futuro".
                 try {
-                    await saveData(STORES.SYNC_CACHE, {
+                    await persistValidationState(() => saveData(STORES.SYNC_CACHE, {
                         key: 'security_monotonic_clock',
                         value: currentRealTime
-                    });
+                    }));
                 } catch (e) {
                     if (isLocalTenantAccessError(e)) throw e;
+                    if (e?.code === 'LICENSE_VALIDATION_CONTEXT_STALE') throw e;
                     Logger.warn("Fallo al sanar el reloj monotónico", e);
                 }
             }
@@ -991,15 +1069,20 @@ export const revalidateLicense = async function (licenseKeyProp) {
                     if (record) {
                         // Implementa un borrado si tienes la función deleteData,
                         // o sobrescribe con un objeto inválido
-                        await saveData(STORES.SYNC_CACHE, { key: 'last_valid_license_state', value: null });
+                        await persistValidationState(() => saveData(STORES.SYNC_CACHE, {
+                            key: 'last_valid_license_state',
+                            value: null
+                        }));
                     }
                 });
             }
 
+            assertValidationContext();
             return data;
 
         } catch (error) {
             if (isLocalTenantAccessError(error)) throw error;
+            if (error?.code === 'LICENSE_VALIDATION_CONTEXT_STALE') throw error;
             // ... (Todo el bloque catch se queda IGUAL para mantener el modo offline) ...
             clearTimeout(timeoutId);
             Logger.warn('⚠️ Error validando licencia:', error.message);
@@ -1027,6 +1110,7 @@ export const revalidateLicense = async function (licenseKeyProp) {
                 }
 
                 if (!securityToken || !storedState || !storedState.payload) {
+                    assertValidationContext();
                     return {
                         valid: false,
                         reason: 'no_secure_context',
@@ -1037,12 +1121,14 @@ export const revalidateLicense = async function (licenseKeyProp) {
                 // 3. Evaluar el tiempo transcurrido con el reloj antimanipulación
                 let now;
                 try {
-                    now = await getUntamperedTime();
+                    now = await getUntamperedTime({ persist: persistValidationState });
                 } catch (error) {
                     if (isLocalTenantAccessError(error)) throw error;
+                    if (error?.code === 'LICENSE_VALIDATION_CONTEXT_STALE') throw error;
                     if (error.message === "TIME_TAMPERING_DETECTED") {
                         // Bloqueo fulminante: Si detectamos trampa, destruimos la sesión offline
                         //await saveData(STORES.SYNC_CACHE, { key: 'last_valid_license_state', value: null });
+                        assertValidationContext();
                         return {
                             valid: false,
                             reason: 'time_tampering_detected',
@@ -1057,6 +1143,7 @@ export const revalidateLicense = async function (licenseKeyProp) {
 
                 // También validamos si de alguna forma storedState.timestamp está en el futuro (otra trampa)
                 if (!storedState.timestamp || isNaN(timeOffline) || timeOffline < 0 || timeOffline > MAX_OFFLINE_MS) {
+                    assertValidationContext();
                     return {
                         valid: false,
                         reason: 'offline_grace_expired',
@@ -1065,6 +1152,7 @@ export const revalidateLicense = async function (licenseKeyProp) {
                 }
 
                 // Conceder acceso offline temporal
+                assertValidationContext();
                 return {
                     ...storedState.payload,
                     valid: true,
@@ -1075,6 +1163,7 @@ export const revalidateLicense = async function (licenseKeyProp) {
                 };
             }
 
+            assertValidationContext();
             return {
                 valid: false,
                 reason: 'server_rejected',

@@ -16,6 +16,7 @@ import {
     isStaffLoginRequiredFailure,
     isStaffDeviceAuthorizationFailure,
     isLicensePlanBlockFailure,
+    isAdministrativelyBlockedLicense,
     deriveGracePeriodEnd,
     deriveLocalGracePeriodEnd,
     requiresAdminIdentity
@@ -34,6 +35,11 @@ import {
 } from '../../../services/auth/actorSessionRuntimeBridge';
 import { assertLocalTenantSyncAccess } from '../../../services/tenant/localTenantGuard';
 import { createEffectiveLicenseValidationEvidence } from '../../../utils/licenseStatusPresentation';
+import {
+    assertLicenseValidationContextCurrent,
+    captureLicenseValidationContext,
+    persistWithinLicenseValidationContext
+} from './licenseValidationContext';
 
 const shouldLoadProfileForLicense = (state = {}, licenseKey, refreshProfile = false) => (
     refreshProfile ||
@@ -48,18 +54,58 @@ export const createLicenseProcessingActions = ({
     hasStaffValidationContext
 }) => ({
     _processServerValidation: async (serverValidation, localLicense, options = {}) => {
-        const { refreshProfile = false, reason = 'server_validation' } = options || {};
+        const {
+            refreshProfile = false,
+            reason = 'server_validation',
+            isContextCurrent = null,
+            persistWithinContext = null
+        } = options || {};
+        const contextIsCurrent = () => (
+            typeof isContextCurrent !== 'function' || isContextCurrent()
+        );
+        const persist = (operation) => (
+            typeof persistWithinContext === 'function'
+                ? persistWithinContext(operation)
+                : operation()
+        );
+        if (!contextIsCurrent()) return;
         await assertLocalTenantSyncAccess(
             { ...localLicense, ...serverValidation, license_key: serverValidation?.license_key || localLicense?.license_key },
             { reason }
         );
+        if (!contextIsCurrent()) return;
         const now = new Date();
         const derivedGracePeriodEnd = deriveGracePeriodEnd(serverValidation, localLicense);
         const graceEnd = derivedGracePeriodEnd ? new Date(derivedGracePeriodEnd) : null;
 
         if (isLicensePlanBlockFailure(serverValidation)) {
+            if (!contextIsCurrent()) return;
             lockActorRuntime('license_plan_blocked');
             await get()._requireLicenseChange(localLicense, serverValidation);
+            return;
+        }
+
+        if (isAdministrativelyBlockedLicense(serverValidation)) {
+            const blockedEvidence = createEffectiveLicenseValidationEvidence(
+                { ...serverValidation, valid: false },
+                { effectiveStatus: 'administratively_blocked', now }
+            );
+            const blockedLicense = {
+                ...localLicense,
+                ...serverValidation,
+                valid: false,
+                status: 'administratively_blocked',
+                ...(blockedEvidence ? { effective_lifecycle_validation: blockedEvidence } : {})
+            };
+
+            if (!contextIsCurrent()) return;
+            await persist(() => saveLicenseToStorage(blockedLicense));
+            if (!contextIsCurrent()) return;
+            set({
+                licenseDetails: blockedLicense,
+                licenseStatus: 'administratively_blocked',
+                gracePeriodEnds: null
+            });
             return;
         }
 
@@ -77,15 +123,18 @@ export const createLicenseProcessingActions = ({
                     await hasStaffValidationContext(get(), localLicense)
                 )
             ) {
+                if (!contextIsCurrent()) return;
                 await get()._requireStaffLogin(localLicense, serverValidation);
                 return;
             }
 
             if (isFatalValidationFailure(serverValidation)) {
+                if (!contextIsCurrent()) return;
                 Logger.warn('[AppStore] Licencia revocada fatalmente:', serverValidation.reason);
                 lockActorRuntime('license_validation_fatal');
+                const invalidationContext = captureLicenseValidationContext(get(), localLicense.license_key);
                 await clearLocalLicenseSession();
-
+                assertLicenseValidationContextCurrent(invalidationContext, get());
                 set({
                     appStatus: 'unauthenticated',
                     licenseDetails: null,
@@ -99,14 +148,17 @@ export const createLicenseProcessingActions = ({
             }
 
             if (RENEWAL_REASONS.includes(serverValidation.reason)) {
+                if (!contextIsCurrent()) return;
                 Logger.warn('[AppStore] Licencia expirada. Bloqueando pantalla...');
                 lockActorRuntime('license_renewal_required');
+                const renewalContext = captureLicenseValidationContext(get(), localLicense.license_key);
 
                 await get()._loadProfile(localLicense.license_key, {
                     refreshProfile: false,
                     profileLoadMode: 'background',
                     reason: `renewal_${reason}`
                 });
+                assertLicenseValidationContextCurrent(renewalContext, get());
 
                 const expiredEvidence = createEffectiveLicenseValidationEvidence(
                     { ...serverValidation, valid: false },
@@ -140,9 +192,14 @@ export const createLicenseProcessingActions = ({
             return;
         }
 
-        let finalStatus = serverValidation.status || serverValidation.reason || 'active';
+        let finalStatus = serverValidation.lifecycle_state ||
+            serverValidation.status || serverValidation.reason || 'active';
 
-        if (serverValidation.status === 'grace_period' || isWithinGracePeriod) {
+        if (
+            serverValidation.lifecycle_state === 'grace_period' ||
+            serverValidation.status === 'grace_period' ||
+            isWithinGracePeriod
+        ) {
             finalStatus = 'grace_period';
             Logger.log('[AppStore] Licencia en PERÍODO DE GRACIA');
         }
@@ -181,7 +238,9 @@ export const createLicenseProcessingActions = ({
             localExpiry: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
         };
 
-        await saveLicenseToStorage(finalLicenseData);
+        if (!contextIsCurrent()) return;
+        await persist(() => saveLicenseToStorage(finalLicenseData));
+        if (!contextIsCurrent()) return;
 
         const becameAdminIdentityRequired =
             localLicense.device_role === 'admin' &&
@@ -194,12 +253,19 @@ export const createLicenseProcessingActions = ({
 
         if (becameFree) {
             lockActorRuntime('admin_identity_no_longer_required');
+            const freeTransitionContext = captureLicenseValidationContext(
+                get(),
+                finalLicenseData.license_key
+            );
             await clearAdminSessionCache();
+            assertLicenseValidationContextCurrent(freeTransitionContext, get());
         }
 
         if (becameAdminIdentityRequired) {
             await get().stopLicenseSync();
+            if (!contextIsCurrent()) return;
             await clearStaffSessionCache();
+            if (!contextIsCurrent()) return;
             set({
                 licenseDetails: { ...finalLicenseData, device_role: 'admin' },
                 currentDeviceRole: 'admin',
@@ -209,8 +275,25 @@ export const createLicenseProcessingActions = ({
             });
 
             if (await hasAdminSessionToken()) {
+                if (!contextIsCurrent()) return;
                 beginActorRuntimeAuthentication('admin');
-                const adminSession = await verifyAdminSession(finalLicenseData.license_key);
+                const adminUpgradeContext = captureLicenseValidationContext(
+                    get(),
+                    finalLicenseData.license_key
+                );
+                const assertAdminUpgradeContext = () => assertLicenseValidationContextCurrent(
+                    adminUpgradeContext,
+                    get()
+                );
+                const persistAdminUpgradeContext = (operation) => persistWithinLicenseValidationContext(
+                    adminUpgradeContext,
+                    get,
+                    operation
+                );
+                const adminSession = await verifyAdminSession(finalLicenseData.license_key, {
+                    beforeLocalPersistence: assertAdminUpgradeContext
+                });
+                assertAdminUpgradeContext();
                 if (adminSession?.valid) {
                     const restored = {
                         ...finalLicenseData,
@@ -219,7 +302,8 @@ export const createLicenseProcessingActions = ({
                         staff_user: null,
                         admin_user: adminSession.admin_user || null
                     };
-                    await saveLicenseToStorage(restored);
+                    await persistAdminUpgradeContext(() => saveLicenseToStorage(restored));
+                    assertAdminUpgradeContext();
                     set({
                         licenseDetails: restored,
                         currentAdminUser: restored.admin_user,
