@@ -29,6 +29,7 @@ import CustomersPage from './pages/CustomersPage';
 import DashboardPage from './pages/DashboardPage';
 import SettingsPage from './pages/SettingsPage';
 import AboutPage from './pages/AboutPage';
+import { ADMIN_NOT_FOUND_ROUTE } from './router/adminNotFoundRoute';
 import ServerStatusBanner from './components/common/ServerStatusBanner';
 import UpdatePrompt from './components/common/UpdatePrompt';
 import InstallPrompt from './components/common/InstallPrompt';
@@ -497,6 +498,7 @@ function App() {
                   <Route path="portal-online" element={<PermissionRoute permission="settings"><Suspense fallback={<PageLoader />}><EcommercePortalPage /></Suspense></PermissionRoute>} />
                   <Route path="configuracion" element={<SettingsRoute><Suspense fallback={<PageLoader />}><SettingsPage /></Suspense></SettingsRoute>} />
                   <Route path="acerca-de" element={<Suspense fallback={<PageLoader />}><AboutPage /></Suspense>} />
+                  <Route {...ADMIN_NOT_FOUND_ROUTE} />
                 </Route>
               </Routes>
             </ErrorBoundary>

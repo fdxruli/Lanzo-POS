@@ -1,0 +1,151 @@
+.not-found-page {
+  display: grid;
+  width: 100%;
+  min-height: min(70vh, 48rem);
+  place-items: center;
+  padding: clamp(1rem, 3vw, 2.5rem);
+  color: var(--text-color);
+}
+
+.not-found-page__card {
+  width: min(100%, 56rem);
+  padding: clamp(1.5rem, 4vw, 3.5rem);
+  border: 1px solid var(--border-color);
+  border-radius: 1.25rem;
+  background: var(--card-background-color);
+  box-shadow: var(--box-shadow-lg);
+  text-align: center;
+}
+
+.not-found-page__eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-bottom: clamp(1.25rem, 3vw, 2rem);
+  color: var(--text-light);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.not-found-page__code {
+  display: inline-grid;
+  min-width: 2.8rem;
+  min-height: 1.8rem;
+  place-items: center;
+  border: 1px solid var(--brand-accent-border);
+  border-radius: 999px;
+  background: var(--brand-accent-soft);
+  color: var(--brand-accent-text);
+  letter-spacing: 0.04em;
+}
+
+.not-found-barcode {
+  width: min(100%, 43rem);
+  margin: 0 auto;
+  padding: 0.85rem 1rem 0.65rem;
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  border-radius: 1rem;
+  background: var(--light-background);
+}
+
+.not-found-barcode__graphic {
+  display: block;
+  width: 100%;
+  height: clamp(4.25rem, 11vw, 6.25rem);
+  color: var(--primary-color);
+}
+
+[data-theme="dark"] .not-found-barcode__graphic {
+  color: var(--secondary-color);
+}
+
+.not-found-barcode__graphic rect {
+  fill: currentColor;
+}
+
+.not-found-barcode__caption {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: baseline;
+  gap: 0.35rem 0.65rem;
+  padding-top: 0.35rem;
+  color: var(--text-light);
+  font-size: 0.65rem;
+  letter-spacing: 0.1em;
+}
+
+.not-found-barcode__caption code {
+  color: var(--text-color);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  overflow-wrap: anywhere;
+}
+
+.not-found-page h1 {
+  margin: clamp(1.5rem, 3vw, 2.25rem) 0 0.7rem;
+  font-size: clamp(1.65rem, 4vw, 2.7rem);
+  line-height: 1.15;
+}
+
+.not-found-page__description {
+  width: min(100%, 42rem);
+  margin: 0 auto;
+  color: var(--text-light);
+  font-size: clamp(0.95rem, 1.4vw, 1.05rem);
+}
+
+.not-found-page__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.75rem;
+  margin-top: clamp(1.5rem, 3vw, 2.25rem);
+}
+
+.not-found-page__action {
+  min-width: 11rem;
+  min-height: 2.9rem;
+}
+
+@media (max-width: 520px) {
+  .not-found-page {
+    min-height: 64vh;
+    padding: 0.65rem;
+  }
+
+  .not-found-page__card {
+    padding: 1.35rem 1rem;
+    border-radius: 1rem;
+  }
+
+  .not-found-page__eyebrow {
+    margin-bottom: 1.1rem;
+    font-size: 0.68rem;
+  }
+
+  .not-found-barcode {
+    padding: 0.65rem 0.55rem 0.5rem;
+  }
+
+  .not-found-barcode__caption {
+    gap: 0.25rem 0.45rem;
+    font-size: 0.58rem;
+  }
+
+  .not-found-barcode__caption code {
+    font-size: 0.68rem;
+  }
+
+  .not-found-page__actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .not-found-page__action {
+    width: 100%;
+  }
+}
