@@ -206,7 +206,7 @@ describe('integrated owner onboarding', () => {
     expect(screen.getByText('Abarrotes / Tienda')).toBeInTheDocument();
     expect(screen.getByText('Propietario creado')).toBeInTheDocument();
     expect(screen.getByText(/Al hacer clic en/)).toHaveTextContent('Crear negocio');
-    expect(screen.getByRole('button', { name: 'Términos y Condiciones' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Ver políticas y avisos' })).toBeInTheDocument();
 
     const changeLicense = screen.getByRole('button', { name: 'Cambiar licencia' });
     expect(changeLicense.closest('.accordion-item')).toBeNull();
