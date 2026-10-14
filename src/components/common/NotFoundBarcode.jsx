@@ -51,7 +51,7 @@ function NotFoundBarcode() {
             key={bar.x}
             x={bar.x}
             y={bar.y}
-            width="0.84"
+            width="0.9"
             height={bar.height}
             rx="0.14"
           />

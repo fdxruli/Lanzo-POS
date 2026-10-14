@@ -36,6 +36,21 @@ describe('PosApplicationBootstrap cold administrative import', () => {
     expect(getLocalTenantGuardState()).toMatchObject({ status: 'locked' });
   });
 
+  it('keeps the debug-console route classifier aligned with the admin router paths', async () => {
+    vi.resetModules();
+    const [{ ADMIN_VALID_ROUTE_PATHS, isAdminNotFoundPath }, { isAdminNotFoundPathForDebugConsole }] = await Promise.all([
+      import('../../../router/adminRoutePaths'),
+      import('../PosApplicationBootstrap')
+    ]);
+
+    ADMIN_VALID_ROUTE_PATHS.forEach((path) => {
+      expect(isAdminNotFoundPath(path)).toBe(false);
+      expect(isAdminNotFoundPathForDebugConsole(path)).toBe(false);
+    });
+    expect(isAdminNotFoundPath('/ruta-que-no-existe')).toBe(true);
+    expect(isAdminNotFoundPathForDebugConsole('/ruta-que-no-existe')).toBe(true);
+  });
+
   it('keeps direct tenant database access fail-closed before TenantRuntime activation', async () => {
     vi.resetModules();
     const { initializeLocalTenantGuard } = await import('../../../services/tenant/localTenantGuard');

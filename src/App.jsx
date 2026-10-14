@@ -1,5 +1,5 @@
 import { useEffect, lazy, Suspense, useState } from 'react';
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, useLocation } from 'react-router-dom';
 import { AlertTriangle, XCircle } from 'lucide-react';
 import { useAppStore } from './store/useAppStore';
 import ErrorBoundary from './components/common/ErrorBoundary';
@@ -30,6 +30,7 @@ import DashboardPage from './pages/DashboardPage';
 import SettingsPage from './pages/SettingsPage';
 import AboutPage from './pages/AboutPage';
 import { ADMIN_NOT_FOUND_ROUTE } from './router/adminNotFoundRoute';
+import { ADMIN_ROUTE_PATHS, isAdminNotFoundPath } from './router/adminRoutePaths';
 import ServerStatusBanner from './components/common/ServerStatusBanner';
 import UpdatePrompt from './components/common/UpdatePrompt';
 import InstallPrompt from './components/common/InstallPrompt';
@@ -169,6 +170,9 @@ const AppBootRecovery = () => (
 );
 
 function App() {
+  const { pathname } = useLocation();
+  const isNotFoundRoute = isAdminNotFoundPath(pathname);
+
   if (!import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY) {
     throw new Error('Faltan las variables de entorno de Supabase (VITE_SUPABASE_URL o VITE_SUPABASE_PUBLISHABLE_KEY). Revisa la configuración de Vercel.');
   }
@@ -446,12 +450,12 @@ function App() {
     case 'ready':
       return (
         <>
-          <PersistenceWarningBanner />
+          <PersistenceWarningBanner suppressSecondaryBanner={isNotFoundRoute} />
           {shouldMountLocalBackupRuntime && <BackupRuntime />}
-          {shouldMountLocalBackupRuntime && <BackupReminder />}
-          <ServerStatusBanner />
-          <UpdatePrompt />
-          <InstallPrompt />
+          {shouldMountLocalBackupRuntime && <BackupReminder suppressSecondaryBanner={isNotFoundRoute} />}
+          <ServerStatusBanner isSuppressed={isNotFoundRoute} />
+          <UpdatePrompt isSuppressed={isNotFoundRoute} />
+          <InstallPrompt isSuppressed={isNotFoundRoute} />
           <Suspense fallback={<Layout><PageLoader /></Layout>}>
             {(pendingTermsUpdate || (
               legalPolicyState?.licenseKey === legalLicenseKey
@@ -479,7 +483,7 @@ function App() {
             <ErrorBoundary>
               <Routes>
                 <Route
-                  path="/renovacion-urgente"
+                  path={ADMIN_ROUTE_PATHS.urgentRenewal}
                   element={(
                     <div style={{ width: '100vw', height: '100vh', background: '#000' }}>
                       <RenewalModal />
@@ -488,16 +492,16 @@ function App() {
                 />
                 <Route path="/" element={<Layout />}>
                   <Route index element={<PermissionRoute permission="pos"><Suspense fallback={<PageLoader />}><PosPage /></Suspense></PermissionRoute>} />
-                  <Route path="caja" element={<PermissionRoute permission="cash_register"><Suspense fallback={<PageLoader />}><CajaPage /></Suspense></PermissionRoute>} />
-                  <Route path="pedidos" element={<PermissionRoute permission="orders"><Suspense fallback={<PageLoader />}><OrdersPage /></Suspense></PermissionRoute>} />
-                  <Route path="pedidos-online" element={<EcommerceOrdersRoute><Suspense fallback={<PageLoader />}><EcommerceOrdersPage /></Suspense></EcommerceOrdersRoute>} />
-                  <Route path="productos" element={<PermissionRoute permission={['products', 'inventory']}><Suspense fallback={<PageLoader />}><ProductsPage /></Suspense></PermissionRoute>} />
-                  <Route path="clientes" element={<PermissionRoute permission="customers"><Suspense fallback={<PageLoader />}><CustomersPage /></Suspense></PermissionRoute>} />
-                  <Route path="ventas" element={<SalesReportsRoute><Suspense fallback={<PageLoader />}><DashboardPage /></Suspense></SalesReportsRoute>} />
-                  <Route path="agentes-ia" element={<CommercialAIAgentsRoute><Suspense fallback={<PageLoader />}><CommercialAIAgentsPage /></Suspense></CommercialAIAgentsRoute>} />
-                  <Route path="portal-online" element={<PermissionRoute permission="settings"><Suspense fallback={<PageLoader />}><EcommercePortalPage /></Suspense></PermissionRoute>} />
-                  <Route path="configuracion" element={<SettingsRoute><Suspense fallback={<PageLoader />}><SettingsPage /></Suspense></SettingsRoute>} />
-                  <Route path="acerca-de" element={<Suspense fallback={<PageLoader />}><AboutPage /></Suspense>} />
+                  <Route path={ADMIN_ROUTE_PATHS.cashRegister} element={<PermissionRoute permission="cash_register"><Suspense fallback={<PageLoader />}><CajaPage /></Suspense></PermissionRoute>} />
+                  <Route path={ADMIN_ROUTE_PATHS.orders} element={<PermissionRoute permission="orders"><Suspense fallback={<PageLoader />}><OrdersPage /></Suspense></PermissionRoute>} />
+                  <Route path={ADMIN_ROUTE_PATHS.onlineOrders} element={<EcommerceOrdersRoute><Suspense fallback={<PageLoader />}><EcommerceOrdersPage /></Suspense></EcommerceOrdersRoute>} />
+                  <Route path={ADMIN_ROUTE_PATHS.products} element={<PermissionRoute permission={['products', 'inventory']}><Suspense fallback={<PageLoader />}><ProductsPage /></Suspense></PermissionRoute>} />
+                  <Route path={ADMIN_ROUTE_PATHS.customers} element={<PermissionRoute permission="customers"><Suspense fallback={<PageLoader />}><CustomersPage /></Suspense></PermissionRoute>} />
+                  <Route path={ADMIN_ROUTE_PATHS.sales} element={<SalesReportsRoute><Suspense fallback={<PageLoader />}><DashboardPage /></Suspense></SalesReportsRoute>} />
+                  <Route path={ADMIN_ROUTE_PATHS.aiAgents} element={<CommercialAIAgentsRoute><Suspense fallback={<PageLoader />}><CommercialAIAgentsPage /></Suspense></CommercialAIAgentsRoute>} />
+                  <Route path={ADMIN_ROUTE_PATHS.onlinePortal} element={<PermissionRoute permission="settings"><Suspense fallback={<PageLoader />}><EcommercePortalPage /></Suspense></PermissionRoute>} />
+                  <Route path={ADMIN_ROUTE_PATHS.settings} element={<SettingsRoute><Suspense fallback={<PageLoader />}><SettingsPage /></Suspense></SettingsRoute>} />
+                  <Route path={ADMIN_ROUTE_PATHS.about} element={<Suspense fallback={<PageLoader />}><AboutPage /></Suspense>} />
                   <Route {...ADMIN_NOT_FOUND_ROUTE} />
                 </Route>
               </Routes>

@@ -46,7 +46,7 @@ const ROUTE_PERMISSIONS = Object.freeze({
   '/clientes': 'customers'
 });
 
-function Navbar() {
+function Navbar({ isSuppressed = false } = {}) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const menuButtonRef = useRef(null);
   const drawerRef = useRef(null);
@@ -317,6 +317,8 @@ function Navbar() {
     showBackupNotice();
     closeMenu();
   };
+
+  if (isSuppressed) return null;
 
   return (
     <>

@@ -95,9 +95,9 @@ const expiryAlert = {
   urgency: 0
 };
 
-const renderTicker = () => render(
+const renderTicker = (isSuppressed = false) => render(
   <MemoryRouter>
-    <Ticker />
+    <Ticker isSuppressed={isSuppressed} />
   </MemoryRouter>
 );
 
@@ -107,6 +107,12 @@ afterEach(() => {
 });
 
 describe('Ticker inventory priority navigation', () => {
+  it('hides the visual ticker on a 404 and restores it on a valid route', () => {
+    const view = renderTicker(true);
+    expect(screen.queryByRole('marquee')).not.toBeInTheDocument();
+    view.rerender(<MemoryRouter><Ticker /></MemoryRouter>);
+    expect(screen.getByRole('marquee')).toBeInTheDocument();
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.app = createAppState();

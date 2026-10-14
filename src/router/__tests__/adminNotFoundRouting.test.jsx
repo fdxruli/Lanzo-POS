@@ -5,6 +5,8 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createMemoryRouter, Outlet, RouterProvider } from 'react-router-dom';
 import { ADMIN_NOT_FOUND_ROUTE } from '../adminNotFoundRoute';
+import { ADMIN_VALID_ROUTE_PATHS, isAdminNotFoundPath } from '../adminRoutePaths';
+import notFoundStyles from '../../pages/NotFoundPage.css?inline';
 import {
   encodeNotFoundBarcodeValue,
   getNotFoundBarcodeValue,
@@ -31,10 +33,31 @@ afterEach(() => {
 });
 
 describe('ruta 404 del POS', () => {
-  it('muestra el 404 amable dentro del shell administrativo para una ruta inválida', () => {
-    render(<RouterProvider router={createAdminRouter(['/ruta-que-no-existe'])} />);
+  it('reconoce rutas administrativas válidas y limita el wildcard a rutas desconocidas', () => {
+    ADMIN_VALID_ROUTE_PATHS.forEach((path) => {
+      expect(isAdminNotFoundPath(path)).toBe(false);
+      expect(isAdminNotFoundPath(path === '/' ? '/' : `${path}/`)).toBe(false);
+    });
+
+    expect(isAdminNotFoundPath('/ruta-que-no-existe')).toBe(true);
+    expect(isAdminNotFoundPath('/productos/segmento-desconocido')).toBe(true);
+    expect(isAdminNotFoundPath('/RENOVACION-URGENTE')).toBe(false);
+  });
+
+  it('define viewport seguro y composición para móvil, tablet y escritorio', () => {
+    expect(notFoundStyles).toContain('100dvh');
+    expect(notFoundStyles).toContain('env(safe-area-inset-top');
+    expect(notFoundStyles).toContain('@media (min-width: 640px) and (max-width: 1023px)');
+    expect(notFoundStyles).toContain('@media (min-width: 1024px)');
+    expect(notFoundStyles).toContain('grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.05fr)');
+  });
+  it('muestra el 404 amable dentro del Layout para una ruta inválida', () => {
+    const { container } = render(<RouterProvider router={createAdminRouter(['/ruta-que-no-existe'])} />);
 
     expect(screen.getByTestId('admin-shell')).toBeInTheDocument();
+    expect(container.querySelector('.not-found-page__card')).not.toBeInTheDocument();
+    expect(container.querySelector('.not-found-barcode')).toBeInTheDocument();
+    expect(container.querySelector('.not-found-barcode').closest('.not-found-page__card')).toBeNull();
     expect(screen.getByRole('heading', { name: 'Parece que esta página no existe' })).toBeInTheDocument();
     expect(screen.getByText(
       'La dirección que intentaste abrir no está disponible. Puede que el enlace esté incompleto o que la página haya cambiado.'

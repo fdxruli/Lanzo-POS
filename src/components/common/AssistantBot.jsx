@@ -247,7 +247,7 @@ const getContextualShortcuts = ({ pageKey, botData }) => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 
-const AssistantBot = ({ reportsAllowed = true, globalAlertEligible = false }) => {
+const AssistantBot = ({ reportsAllowed = true, globalAlertEligible = false, isSuppressed = false }) => {
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -509,7 +509,7 @@ const AssistantBot = ({ reportsAllowed = true, globalAlertEligible = false }) =>
   // The assistant can query sales directly from the tenant database. Keep a
   // pending system-wide alert available, but expose no assistant/report UI to
   // an actor who lacks the current reports permission.
-  if (!reportsAllowed && !showGlobalAlert) return null;
+  if (isSuppressed || (!reportsAllowed && !showGlobalAlert)) return null;
 
   // ─── RENDER ─────────────────────────────────────────────────────────────────
   return (

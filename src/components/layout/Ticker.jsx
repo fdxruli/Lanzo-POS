@@ -370,7 +370,7 @@ function buildSummaryMessages({
   return messages.slice(0, 3);
 }
 
-export default function Ticker() {
+export default function Ticker({ isSuppressed = false } = {}) {
   const navigate = useNavigate();
   const licenseStatus = useAppStore(state => state.licenseStatus);
   const gracePeriodEnds = useAppStore(state => state.gracePeriodEnds);
@@ -531,6 +531,8 @@ export default function Ticker() {
     isPriority ? 'priority-warning' : '',
     shouldPauseAnimation ? 'ticker-animation-paused' : ''
   ].filter(Boolean).join(' ');
+
+  if (isSuppressed) return null;
 
   return (
     <div

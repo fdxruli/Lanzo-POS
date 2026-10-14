@@ -45,6 +45,22 @@ describe('UpdatePrompt controlled activation', () => {
 
   afterEach(() => cleanup());
 
+  it('retains the waiting-worker state while the prompt is suppressed on a 404', () => {
+    const view = render(<UpdatePrompt isSuppressed />);
+    act(() => worker.listener({
+      registered: true,
+      installing: false,
+      waiting: true,
+      active: true,
+      error: false,
+    }));
+
+    expect(screen.queryByText('Nueva version disponible')).not.toBeInTheDocument();
+    view.rerender(<UpdatePrompt />);
+    expect(screen.getByText('Nueva version disponible')).toBeInTheDocument();
+    expect(useAppStore.getState().updateAvailable).toBe(true);
+  });
+
   it('shows the administrative prompt when the coordinator reports a waiting worker', () => {
     render(<UpdatePrompt />);
 

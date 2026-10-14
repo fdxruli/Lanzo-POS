@@ -5,7 +5,7 @@ import usePostDowngradeCashPending, {
   consumeFreeDeviceTakeoverCompleted
 } from '../../hooks/usePostDowngradeCashPending';
 
-export default function PostDowngradeRecoveryBanner() {
+export default function PostDowngradeRecoveryBanner({ isSuppressed = false } = {}) {
   const navigate = useNavigate();
   const {
     eligible,
@@ -25,7 +25,7 @@ export default function PostDowngradeRecoveryBanner() {
     setTakeoverCompleted(consumeFreeDeviceTakeoverCompleted(scopeKey));
   }, [scopeKey]);
 
-  if (!eligible || dismissed) return null;
+  if (isSuppressed || !eligible || dismissed) return null;
 
   const hasKnownPending = Number.isInteger(pendingCount) && pendingCount > 0;
   const hasKnownZero = pendingCount === 0;
