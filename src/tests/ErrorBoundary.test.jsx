@@ -233,4 +233,303 @@ describe('ErrorBoundary', () => {
 
     renderWithError(new Error('render failure'));
 
-    expect(screen.queryByRole('button', { namgßm¢G§²ÚîÆ­yÖWGW&åfÇVR‡²WFFTf–Æ&ÆS¢fÇ6RÂ—5WFF–æs¢fÇ6RÂ'VåWFFRÒ“°¢&VæFW%v—F„W'&÷"†æWrW'&÷"‚w&VæFW"f–ÇW&Rr’“° ¢W‡V7B‡67&VVâçVW'”'•&öÆR‚v'WGFöârÂ²æÖS¢ô7GVÆ—¦"Æ–66œ;6âö’Ò’’ææ÷BçFô&T–åF†TFö7VÖVçB‚“°¢W‡V7B‡'VåWFFR’ææ÷BçFô†fT&VVä6ÆÆVB‚“°¢Ò“° ¢—B‚vFVGWÆ–6FW2âW‡Æ–6—BtWFFRæBFöW2æ÷BfÆÂ&6²Fò66†RFVÆWF–öârÂ7–æ2‚’Óâ°¢ÆWB&W6öÇfUWFFS°¢6öç7B'VåWFFRÒf’æfâ‚‚’ÓâæWr&öÖ—6R‚‡&W6öÇfR’Óâ²&W6öÇfUWFFRÒ&W6öÇfS²Ò’“°¢6öç7B66†TFVÆWFRÒf’æfâ‚“°¢vÆö&ÅF†—2æ66†W2Ò²¶W—3¢f’æfâ‚’ÂFVÆWFS¢66†TFVÆWFRÓ°¢W6T7F÷&RævWE7FFRæÖö6µ&WGW&åfÇVR‡²WFFTf–Æ&ÆS¢G'VRÂ—5WFF–æs¢fÇ6RÂ'VåWFFRÒ“°¢&VæFW%v—F„W'&÷"†æWrW'&÷"‚w&VæFW"f–ÇW&Rr’“° ¢6öç7BWFFT'WGFöâÒ67&VVâævWD'•&öÆR‚v'WGFöârÂ²æÖS¢ô7GVÆ—¦"Æ–66œ;6âö’Ò“°¢f—&TWfVçBæ6Æ–6²‡WFFT'WGFöâ“°¢f—&TWfVçBæ6Æ–6²‡WFFT'WGFöâ“°¢v—B7B†7–æ2‚’Óâ&öÖ—6Rç&W6öÇfR‚’“° ¢W‡V7B‡'VåWFFR’çFô†fT&VVä6ÆÆVDöæ6R‚“°¢&W6öÇfUWFFR‚“°¢v—B7B†7–æ2‚’Óâ&öÖ—6Rç&W6öÇfR‚’“°¢W‡V7B†66†TFVÆWFR’ææ÷BçFô†fT&VVä6ÆÆVB‚“°¢Ò“° ¢—B‚w&÷WFW2Fòõ2v—F†÷WB6ÆV&–ær6W76–öâ÷"FVæçB7F÷&vRrÂ‚’Óâ°¢6öç7Bæf–vFUFõ÷2Òf’æfâ‚“°¢v–æF÷rç6W76–öå7F÷&vRç6WD—FVÒ‚vÆç¦ó¦WF†÷&—¦VB×6W76–öârÂv¶VWr“°¢v–æF÷ræÆö6Å7F÷&vRç6WD—FVÒ‚vÆç¦ó¦7F—fRÖ÷&FW'2×7F÷&vRrÂv¶VWr“°¢&VæFW%v—F„W'&÷"†æWrW'&÷"‚w6V7F–öâf–ÇW&Rr’Â²æf–vFUFõ÷2ÒÂr÷fVçF2r“° ¢f—&TWfVçBæ6Æ–6²‡67&VVâævWD'•&öÆR‚v'WGFöârÂ²æÖS¢õföÇfW"Â–æ–6–òö’Ò’“° ¢W‡V7B†æf–vFUFõ÷2’çFô†fT&VVä6ÆÆVEv—F‚‚ròr“°¢W‡V7B‡v–æF÷rç6W76–öå7F÷&vRævWD—FVÒ‚vÆç¦ó¦WF†÷&—¦VB×6W76–öâr’’çFô&R‚v¶VWr“°¢W‡V7B‡v–æF÷ræÆö6Å7F÷&vRævWD—FVÒ‚vÆç¦ó¦7F—fRÖ÷&FW'2×7F÷&vRr’’çFô&R‚v¶VWr“°¢Ò“° ¢—B‚vFöW2æ÷B&VæFW"&rW'&÷"FWF–Ç2v†VâöffÆ–æRrÂ‚’Óâ°¢ö&¦V7BæFVf–æU&÷W'G’†æf–vF÷"ÂvöäÆ–æRrÂ²6öæf–wW&&ÆS¢G'VRÂfÇVS¢fÇ6RÒ“°¢6öç7BW'&÷"ÒæWrW'&÷"‚tf–ÆVBFòfWF6‚&—fFR7W7FöÖW"FWF–Ç2r“°¢&VæFW%v—F„W'&÷"†W'&÷"“° ¢W‡V7B‡67&VVâævWD'•FW‡B‚õ6–â6öæW†œ;6âò’’çFô&T–åF†TFö7VÖVçB‚“°¢W‡V7B†Fö7VÖVçBæ&öG’çFW‡D6öçFVçB’ææ÷BçFô6öçF–â‚w&—fFR7W7FöÖW"FWF–Ç2r“°¢Ò“° ¢—B‚v¶VW2FV6†æ–6Â7VÖÖ&–W2&÷VæFVBFòÆÆ÷vÆ—7FVB&W÷'Bf–VÆG2rÂ‚’Óâ°¢6öç7BW'&÷"ÒæWrW'&÷"‚v7W7FöÖW#ÔæÆ÷W¢F÷FÃÓ“ƒsbãSÆ–6Vç6Uö¶W“ÔÄå¢Õ$•dDRÓ#2Fö¶VãÖ§wB×6V7&WBr“°¢W'&÷"æ6öFRÒtD%ôõTåõD”ÔTõUBs°¢W'&÷"æ6W6RÒæWrW'&÷"‚w†öæSÓSSS#3CScrVÖ–ÃÖæW†×ÆRæ6öÒr“°¢W'&÷"ç7F6²ÒtW'&÷#¢‡GG3¢òöÆç¦òçFW7B÷fVçF2÷&—fFSö66W75÷Fö¶Vã×7F6²×6V7&WBs°¢6öç7B²&÷VæF'•&VbÒÒ&VæFW%v—F„W'&÷"†W'&÷"Â·ÒÂr÷fVçF2÷&—fFRÖ7W7FöÖW"Ö–Br“°¢6öç7B&W÷'BÒ&÷VæF'•&Vbæ7W'&VçBåö'V–ÆE&W÷'DÖW76vR‚“° ¢W‡V7B‡&W÷'B’çFô6öçF–â‚u$Uõ%DRL8”4ä”4òDR”ä4”DTä4”ÒÄå¤òõ2r“°¢W‡V7B‡&W÷'B’çFô6öçF–â‚t<;6F–vòFR–æ6–FVæ6–¢D%ôõTåõD”ÔTõUBr“°¢W‡V7B‡&W÷'B’çFô6öçF–â‚t6Æ6–f–66œ;6ã¢ÆÖ6VæÖ–VçFòÆö6Âr“°¢W‡V7B‡&W÷'B’çFô6öçF–â‚tw&fVFC¢6V7F–öåöf–ÇW&Rr“°¢W‡V7B‡&W÷'B’çFô6öçF–â‚uF—òL:–6æ–6ó¢W'&÷"r“°¢W‡V7B‡&W÷'B’çFô6öçF–â‚u6V66œ;6ã¢÷fVçF2r“°¢W‡V7B‡&W÷'B’çFô6öçF–â‚t6öæV7F—f–FC¢öæÆ–æRr“°¢W‡V7B‡&W÷'B’çFô6öçF–â‚tfV6†’†÷&¢r“°¢W‡V7B‡&W÷'B’ææ÷BçFô6öçF–â‚tæÆ÷W¢r“°¢W‡V7B‡&W÷'B’ææ÷BçFô6öçF–â‚w&—fFRÖ7W7FöÖW"Ö–Br“°¢W‡V7B‡&W÷'B’ææ÷BçFô6öçF–â‚s“ƒsbãSr“°¢W‡V7B‡&W÷'B’ææ÷BçFô6öçF–â‚tÄå¢Õ$•dDRÓ#2r“°¢W‡V7B‡&W÷'B’ææ÷BçFô6öçF–â‚v§wB×6V7&WBr“°¢W‡V7B‡&W÷'B’ææ÷BçFô6öçF–â‚sSSS#3CScrr“°¢W‡V7B‡&W÷'B’ææ÷BçFô6öçF–â‚væW†×ÆRæ6öÒr“°¢W‡V7B‡&W÷'B’ææ÷BçFô6öçF–â‚w7F6²×6V7&WBr“°¢Ò“° ¢—B‚vFöW2æ÷B6W&–Æ—¦RVæ¶æ÷vâ6öFW2ÂU$Â&ÖWFW'2Â6W6W2Â÷"7F6²g&ÖW2rÂ‚’Óâ°¢6öç7BW'&÷"ÒæWrW'&÷"‚uVæW‡V7FVB7W7FöÖW#×&—fFRÖæÖRr“°¢W'&÷"æ6öFRÒw6V7&WB×Fö¶Vâ×fÇVRÓ#3CSbs°¢W'&÷"æ6W6RÒæWrW'&÷"‚vÆ–6Vç6Uö¶W“ÖgVÆÂÖÆ–6Vç6R×fÇVRr“°¢W'&÷"ç7F6²ÒtW'&÷"B‡GG3¢òöÆç¦òçFW7Bö6¦ö¶W“Ö7W7FöÖW"×6V7&WBs°¢6öç7B²&÷VæF'•&VbÒÒ&VæFW%v—F„W'&÷"†W'&÷"Â·ÒÂr÷'WFÖ6öâÖ–FVçF–f–6F÷"Ó#2r“°¢6öç7B&W÷'BÒ&÷VæF'•&Vbæ7W'&VçBåö'V–ÆE&W÷'DÖW76vR‚“° ¢W‡V7B‡&W÷'B’çFô6öçF–â‚t<;6F–vòFR–æ6–FVæ6–¢”ä4”DTåEõ$T5Eõ$TäDU"r“°¢W‡V7B‡&W÷'B’çFô6öçF–â‚t6Æ6–f–66œ;6ã¢&VæFW"FR–çFW&f¢r“°¢W‡V7B‡&W÷'B’çFô6öçF–â‚tw&fVFC¢6V7F–öåöf–ÇW&Rr“°¢W‡V7B‡&W÷'B’çFô6öçF–â‚u6V66œ;6ã¢÷G&6V66œ;6âr“°¢W‡V7B‡&W÷'B’ææ÷BçFô6öçF–â‚w6V7&WB×Fö¶Vâ×fÇVRr“°¢W‡V7B‡&W÷'B’ææ÷BçFô6öçF–â‚vgVÆÂÖÆ–6Vç6R×fÇVRr“°¢W‡V7B‡&W÷'B’ææ÷BçFô6öçF–â‚v7W7FöÖW"×6V7&WBr“°¢W‡V7B‡&W÷'B’ææ÷BçFô6öçF–â‚w&—fFRÖæÖRr“°¢W‡V7B‡&W÷'B’ææ÷BçFô6öçF–â‚w'WFÖ6öâÖ–FVçF–f–6F÷"r“°¢W‡V7B‡&W÷'B’ææ÷BçFô6öçF–â‚v‡GG3¢òòr“°¢Ò“° ¢—B‚vÆöw2F–ÖW7F×æB66Æ"–æ6–FVçBf–VÆG2v—F†÷WBGF6†–ærW'&÷"ö&¦V7G2rÂ‚’Óâ°¢6öç7BW'&÷"Òö&¦V7Bæ76–vâ†æWrG—TW'&÷"‚w&—fFRFWF–Âr’Â²6öFS¢tD%ô$Äô4´TBrÒ“°¢&VæFW%v—F„W'&÷"†W'&÷"“° ¢6öç7BÆövvVBÒÆövvW"æW'&÷"æÖö6²æ6ÆÇ5³Õ³Ó°¢W‡V7B„ÆövvW"æW'&÷"’çFô†fT&VVä6ÆÆVDöæ6R‚“°¢W‡V7B†ÆövvVBæ6öFR’çFô&R‚tD%ô$Äô4´TBr“°¢W‡V7B†ÆövvVBæ6FVv÷'’’çFô&R‚v–æFW†VFF"r“°¢W‡V7B†ÆövvVBç6WfW&—G’’çFô&R‚w6V7F–öåöf–ÇW&Rr“°¢W‡V7B†ÆövvVBæW'&÷%G—R’çFô&R‚uG—TW'&÷"r“°¢W‡V7B†ÆövvVBæ6ö×öæVçE7F6´f–Æ&ÆR’çFô&R‡G'VR“°¢W‡V7B„çVÖ&W"æ—4æâ†æWrFFR†ÆövvVBçF–ÖW7F×’ævWEF–ÖR‚’’’çFô&R†fÇ6R“°¢W‡V7B„ö&¦V7BçfÇVW2†ÆövvVB’æ¦ö–â‚rr’’ææ÷BçFô6öçF–â‚w&—fFRFWF–Âr“°¢W‡V7B„ö&¦V7Bæ¶W—2†ÆövvVB’’çFôWVÂ…°¢wF–ÖW7F×rÂv6öFRrÂv6FVv÷'’rÂw6WfW&—G’rÂvW'&÷%G—RrÂv6ö×öæVçE7F6´f–Æ&ÆRp¢Ò“°¢Ò“° ¢—B‚wW6W26fRfÆÆ&6²ÖWFFFv†VââW'&÷"†2æòW6VgVÂÖW76vR÷"7W7FöÒæÖRrÂ‚’Óâ°¢6öç7BW'&÷"ÒæWrW'&÷"‚“°¢W'&÷"ææÖRÒt7W7FöÖW%Fö¶VäW'&÷"s°¢6öç7B²&÷VæF'•&VbÒÒ&VæFW%v—F„W'&÷"†W'&÷"“°¢6öç7B&W÷'BÒ&÷VæF'•&Vbæ7W'&VçBåö'V–ÆE&W÷'DÖW76vR‚“° ¢W‡V7B‡67&VVâævWD'•&öÆR‚v†VF–ærrÂ²æÖS¢tæòVF–Ö÷2Ö÷7G&"W7F6V66œ;6ârÒ’’çFô&T–åF†TFö7VÖVçB‚“°¢6öç7BFWF–Ç2ÒFö7VÖVçBçVW'•6VÆV7F÷"‚ræ–æ6–FVçB×&V6÷fW'•õöFWF–Ç2Ö6öçFVçBr“°¢W‡V7B†FWF–Ç2’çFô†fTGG&–'WFR‚v†–FFVâr“°¢W‡V7B†Fö7VÖVçBæ&öG’çFW‡D6öçFVçB’ææ÷BçFô6öçF–â‚t7W7FöÖW%Fö¶VäW'&÷"r“°¢W‡V7B‡&W÷'B’çFô6öçF–â‚uF—òL:–6æ–6ó¢W'&÷"r“°¢W‡V7B‡&W÷'B’çFô6öçF–â‚t6Æ6–f–66œ;6ã¢&VæFW"FR–çFW&f¢r“°¢W‡V7B‡&W÷'BæÆVæwF‚’çFô&TÆW75F†âƒóS“°¢Ò“° ¢—B‚v¶VW2fW'’Æöær7F6²G&6W2÷WBöbF†RW6W"–çFW&f6RæB6÷–VB&W÷'BrÂ7–æ2‚’Óâ°¢6öç7BW'&÷"ÒæWrW'&÷"‚vFVW&V7W'6–öâ7W7FöÖW"&—fFRÖFFr“°¢W'&÷"ç7F6²ÒW'&÷#¢G¶W'&÷"æÖW76vWÕÆâG²rB–çFW&æÂ÷&—fFR÷F…Æârç&WVBƒ#S—Ö°¢6öç7Bw&—FUFW‡BÒf’æfâ‚’æÖö6µ&W6öÇfVEfÇVR‡VæFVf–æVB“°¢ö&¦V7BæFVf–æU&÷W'G’†æf–vF÷"Âv6Æ—&ö&BrÂ²6öæf–wW&&ÆS¢G'VRÂfÇVS¢²w&—FUFW‡BÒÒ“°¢&VæFW%v—F„W'&÷"†W'&÷"“° ¢f—&TWfVçBæ6Æ–6²‡67&VVâævWD'•&öÆR‚v'WGFöârÂ²æÖS¢ô6÷–"F–vì;77F–6òö’Ò’“°¢v—B7B†7–æ2‚’Óâ&öÖ—6Rç&W6öÇfR‚’“° ¢6öç7B&W÷'BÒw&—FUFW‡BæÖö6²æ6ÆÇ5³Õ³Ó°¢W‡V7B†Fö7VÖVçBæ&öG’çFW‡D6öçFVçB’ææ÷BçFô6öçF–â‚vB–çFW&æÂ÷&—fFR÷F‚r“°¢W‡V7B†Fö7VÖVçBæ&öG’çFW‡D6öçFVçB’ææ÷BçFô6öçF–â‚vFVW&V7W'6–öâ7W7FöÖW"×&—fFRÖFFr“°¢W‡V7B‡&W÷'B’ææ÷BçFô6öçF–â‚v–çFW&æÂ÷&—fFR÷F‚r“°¢W‡V7B‡&W÷'B’ææ÷BçFô6öçF–â‚vFVW&V7W'6–öâ7W7FöÖW"r“°¢W‡V7B‡&W÷'BæÆVæwF‚’çFô&TÆW75F†âƒóS“°¢Ò“° ¢—B‚v6÷–W2F†R6fR&W÷'BæB6†÷w2FV×÷&'’6÷–VB7FFRrÂ7–æ2‚’Óâ°¢6öç7Bw&—FUFW‡BÒf’æfâ‚’æÖö6µ&W6öÇfVEfÇVR‡VæFVf–æVB“°¢ö&¦V7BæFVf–æU&÷W'G’†æf–vF÷"Âv6Æ—&ö&BrÂ²6öæf–wW&&ÆS¢G'VRÂfÇVS¢²w&—FUFW‡BÒÒ“°¢6öç7B²&÷VæF'•&VbÒÒ&VæFW%v—F„W'&÷"„ö&¦V7Bæ76–vâ†æWrW'&÷"‚w&—fFRr’Â²6öFS¢u5”ä5õU4…ôd”ÄTBrÒ’“° ¢f—&TWfVçBæ6Æ–6²‡67&VVâævWD'•&öÆR‚v'WGFöârÂ²æÖS¢ô6÷–"F–vì;77F–6òö’Ò’“°¢v—B7B†7–æ2‚’Óâ&öÖ—6Rç&W6öÇfR‚’“° ¢W‡V7B‡w&—FUFW‡B’çFô†fT&VVä6ÆÆVDöæ6R‚“°¢W‡V7B‡w&—FUFW‡BæÖö6²æ6ÆÇ5³Õ³Ò’çFô6öçF–â‚t<;6F–vòFR–æ6–FVæ6–¢5”ä5õU4…ôd”ÄTBr“°¢W‡V7B‡w&—FUFW‡BæÖö6²æ6ÆÇ5³Õ³Ò’çFô6öçF–â‚t6Æ6–f–66œ;6ã¢6–æ7&öæ—¦6œ;6âr“°¢W‡V7B‡w&—FUFW‡BæÖö6²æ6ÆÇ5³Õ³Ò’ææ÷BçFô6öçF–â‚w&—fFRr“°¢W‡V7B‡67&VVâævWD'•&öÆR‚v'WGFöârÂ²æÖS¢ôF–vì;77F–6ò6÷–Fòö’Ò’’çFô&T–åF†TFö7VÖVçB‚“°¢W‡V7B†&÷VæF'•&Vbæ7W'&VçBç7FFRæ6÷–VB’çFô&R‡G'VR“°¢Ò“° ¢—B‚w&W7F÷&W2F†R6÷’'WGFöâÆ&VÂgFW"—G2F–ÖV÷WBrÂ7–æ2‚’Óâ°¢f’çW6Tf¶UF–ÖW'2‚“°¢G'’°¢ö&¦V7BæFVf–æU&÷W'G’†æf–vF÷"Âv6Æ—&ö&BrÂ°¢6öæf–wW&&ÆS¢G'VRÀ¢fÇVS¢²w&—FUFW‡C¢f’æfâ‚’æÖö6µ&W6öÇfVEfÇVR‡VæFVf–æVB’Ð¢Ò“°¢&VæFW%v—F„W'&÷"†æWrW'&÷"‚v6÷’F–ÖW"r’“°¢f—&TWfVçBæ6Æ–6²‡67&VVâævWD'•&öÆR‚v'WGFöârÂ²æÖS¢ô6÷–"F–vì;77F–6òö’Ò’“°¢v—B7B†7–æ2‚’Óâ&öÖ—6Rç&W6öÇfR‚’“° ¢W‡V7B‡67&VVâævWD'•&öÆR‚v'WGFöârÂ²æÖS¢ôF–vì;77F–6ò6÷–Fòö’Ò’’çFô&T–åF†TFö7VÖVçB‚“°¢7B‚‚’Óâf’æGfæ6UF–ÖW'4'•F–ÖRƒ5ó’“°¢W‡V7B‡67&VVâævWD'•&öÆR‚v'WGFöârÂ²æÖS¢ô6÷–"F–vì;77F–6òö’Ò’’çFô&T–åF†TFö7VÖVçB‚“°¢W‡V7B†Fö7VÖVçBæ&öG’çFW‡D6öçFVçB’ææ÷BçFô6öçF–â‚w7F6²r“°¢Òf–æÆÇ’°¢f’çW6U&VÅF–ÖW'2‚“°¢Ð¢Ò“° ¢—B‚v¶VW2F†RæVÂW6&ÆRv†Vâ6Æ—&ö&B66W72—2FVæ–VBrÂ7–æ2‚’Óâ°¢ö&¦V7BæFVf–æU&÷W'G’†æf–vF÷"Âv6Æ—&ö&BrÂ°¢6öæf–wW&&ÆS¢G'VRÀ¢fÇVS¢²w&—FUFW‡C¢f’æfâ‚’æÖö6µ&V¦V7FVEfÇVR†æWrW'&÷"‚wW&Ö—76–öâFVæ–VBr’’Ð¢Ò“°¢&VæFW%v—F„W'&÷"†æWrW'&÷"‚v6Æ—&ö&B—77VRr’“° ¢v—B7B†7–æ2‚’Óâ°¢f—&TWfVçBæ6Æ–6²‡67&VVâævWD'•&öÆR‚v'WGFöârÂ²æÖS¢ô6÷–"F–vì;77F–6òö’Ò’“°¢Ò“° ¢W‡V7B‡67&VVâævWD'•FW‡B‚ôæò6RVFò6÷–"VÂF–vì;77F–6òò’’çFô&T–åF†TFö7VÖVçB‚“°¢W‡V7B‡67&VVâævWD'•&öÆR‚v'WGFöârÂ²æÖS¢ô6÷–"F–vì;77F–6òö’Ò’’çFô&T–åF†TFö7VÖVçB‚“°¢W‡V7B†Fö7VÖVçBæ&öG’çFW‡D6öçFVçB’ææ÷BçFô6öçF–â‚wW&Ö—76–öâFVæ–VBr“°¢Ò“° ¢—B‚vöffW'2&÷WFR&6²Fòõ2öæÇ’v’g&öÒF†Rõ2&ö÷BrÂ‚’Óâ°¢&VæFW%v—F„W'&÷"†æWrW'&÷"‚w6V7F–öâf–ÇW&Rr’Â·ÒÂr÷&W÷'FW2÷6V7&WCö66W75÷Fö¶Vã×VW'’×6V7&WBr“°¢W‡V7B‡67&VVâævWD'•&öÆR‚v'WGFöârÂ²æÖS¢õföÇfW"Â–æ–6–òö’Ò’’çFô&T–åF†TFö7VÖVçB‚“°¢W‡V7B†Fö7VÖVçBæ&öG’çFW‡D6öçFVçB’ææ÷BçFô6öçF–â‚wVW'’×6V7&WBr“°¢Ò“° ¢—B‚vFöW2æ÷BöffW"&÷WFR6†ævRv†VâF†Rõ2&ö÷B—G6VÆbf–Ç2rÂ‚’Óâ°¢&VæFW%v—F„W'&÷"†æWrW'&÷"‚w÷2f–ÇW&Rr’Â·ÒÂròr“°¢W‡V7B‡67&VVâçVW'”'•&öÆR‚v'WGFöârÂ²æÖS¢õföÇfW"Â–æ–6–òö’Ò’’ææ÷BçFô&T–åF†TFö7VÖVçB‚“°¢W‡V7B‡67&VVâçVW'”'•&öÆR‚v'WGFöârÂ²æÖS¢õ&V6&v'Å&V–æ–6–"ö’Ò’’ææ÷BçFô&T–åF†TFö7VÖVçB‚“°¢W‡V7B‡67&VVâævWD'•&öÆR‚v'WGFöârÂ²æÖS¢õ&V–çFVçF"6V66œ;6âö’Ò’’çFô&T–åF†TFö7VÖVçB‚“°¢Ò“° ¢—B‚vFöW2æ÷B6Æ–ÒF†B&V6÷&G2÷"VæF–ærf–ææ6–Â÷WF6öÖW2&R6öæf—&ÖVB6fRrÂ‚’Óâ°¢&VæFW%v—F„W'&÷"„ö&¦V7Bæ76–vâ†æWrW'&÷"‚w–ÖVçB&W7VÇBÖ&–wV÷W2r’Â²6öFS¢td”ää4”Åõ$U5TÅEõTä´äõtârÒ’“°¢6öç7Bf—6–&ÆRÒFö7VÖVçBæ&öG’çFW‡D6öçFVçC° ¢W‡V7B‡f—6–&ÆR’çFô6öçF–â‚t6öç7VÇFVÂ&V6–&òòÆVFvW"6ì;6æ–6ò6öâ6÷÷'FRr“°¢W‡V7B‡f—6–&ÆR’ææ÷BçFôÖF6‚‚÷GW2FF÷2FRfVçF2’6¦W7L:â6VwW&÷2ö’“°¢W‡V7B‡f—6–&ÆR’ææ÷BçFôÖF6‚‚öVÂ6ö'&ò6R6ö×ÆWL;26÷'&V7FÖVçFRö’“°¢W‡V7B‡67&VVâævWD'•&öÆR‚vÆW'FF–ÆörrÂ²æÖS¢tæV6W6—FÖ÷2fW&–f–6"W7F÷W&6œ;6ârÒ’’çFô&T–åF†TFö7VÖVçB‚“°¢W‡V7B‡f—6–&ÆR’ææ÷BçFô6öçF–â‚w–ÖVçB&W7VÇBÖ&–wV÷W2r“°¢Ò“° ¢—B‚vFöW2æ÷B6†÷râWFFR7F–öâv†–ÆRöffÆ–æR÷"v†VâæòWFFRgVæ7F–öâW†—7G2rÂ‚’Óâ°¢ö&¦V7BæFVf–æU&÷W'G’†æf–vF÷"ÂvöäÆ–æRrÂ²6öæf–wW&&ÆS¢G'VRÂfÇVS¢fÇ6RÒ“°¢6öç7B'VåWFFRÒf’æfâ‚“°¢W6T7F÷&RævWE7FFRæÖö6µ&WGW&åfÇVR‡²WFFTf–Æ&ÆS¢G'VRÂ—5WFF–æs¢fÇ6RÂ'VåWFFRÒ“°¢&VæFW%v—F„W'&÷"†æWrW'&÷"‚vöffÆ–æR6V7F–öâf–ÇW&Rr’“° ¢W‡V7B‡67&VVâævWD'•FW‡B‚õ6–â6öæW†œ;6âò’’çFô&T–åF†TFö7VÖVçB‚“°¢W‡V7B‡67&VVâçVW'”'•&öÆR‚v'WGFöârÂ²æÖS¢ô7GVÆ—¦"Æ–66œ;6âö’Ò’’ææ÷BçFô&T–åF†TFö7VÖVçB‚“°¢W‡V7B‡'VåWFFR’ææ÷BçFô†fT&VVä6ÆÆVB‚“°¢W‡V7B‡67&VVâçVW'”'•&öÆR‚v'WGFöârÂ²æÖS¢õ&V6&v'Å&V–æ–6–"ö’Ò’’ææ÷BçFô&T–åF†TFö7VÖVçB‚“°¢W‡V7B‡v–æF÷rç6W76–öå7F÷&vRæÆVæwF‚’çFô&Rƒ“°¢Ò“° ¢—B‚w&W÷'G2f–ÆVBtWFFRöæ6RæB&WfVçG2GWÆ–6FRWFFRGFV×G2rÂ7–æ2‚’Óâ°¢6öç7B'VåWFFRÒf’æfâ‚’æÖö6µ&V¦V7FVEfÇVR†æWrW'&÷"‚wv÷&¶W"7F—fF–öâf–ÆVBr’“°¢W6T7F÷&RævWE7FFRæÖö6µ&WGW&åfÇVR‡²WFFTf–Æ&ÆS¢G'VRÂ—5WFF–æs¢fÇ6RÂ'VåWFFRÒ“°¢&VæFW%v—F„W'&÷"†æWrW'&÷"‚w&VæFW"f–ÇW&Rr’Â²7&VFU&V6÷fW'”6öçFW‡DwV&C¢‚’Óâ‚’ÓâG'VRÒ“° ¢6öç7BWFFT'WGFöâÒ67&VVâævWD'•&öÆR‚v'WGFöârÂ²æÖS¢ô7GVÆ—¦"Æ–66œ;6âö’Ò“°¢f—&TWfVçBæ6Æ–6²‡WFFT'WGFöâ“°¢v—B7B†7–æ2‚’Óâ&öÖ—6Rç&W6öÇfR‚’“° ¢W‡V7B‡'VåWFFR’çFô†fT&VVä6ÆÆVDöæ6R‚“°¢W‡V7B‡67&VVâævWD'•FW‡B‚ôæò6RVFò6öæf—&Ö"Æ7GVÆ—¦6œ;6âò’’çFô&T–åF†TFö7VÖVçB‚“°¢W‡V7B‡67&VVâævWD'•&öÆR‚v'WGFöârÂ²æÖS¢ô7GVÆ—¦"Æ–66œ;6âö’Ò’’çFô&TF—6&ÆVB‚“°¢f—&TWfVçBæ6Æ–6²‡67&VVâævWD'•&öÆR‚v'WGFöârÂ²æÖS¢ô7GVÆ—¦"Æ–66œ;6âö’Ò’“°¢W‡V7B‡'VåWFFR’çFô†fT&VVä6ÆÆVDöæ6R‚“°¢W‡V7B†Fö7VÖVçBæ&öG’çFW‡D6öçFVçB’ææ÷BçFô6öçF–â‚wv÷&¶W"7F—fF–öâf–ÆVBr“°¢W‡V7B‡v–æF÷ræÆö6Å7F÷&vRæÆVæwF‚’çFô&Rƒ“°¢Ò“° ¢—B‚w&W÷'G2âWFFR7F–öâF†B&W6öÇfW2v—F†÷WBÇ––ærF†RæWrv÷&¶W"rÂ7–æ2‚’Óâ°¢6öç7B'VåWFFRÒf’æfâ‚’æÖö6µ&W6öÇfVEfÇVR‡VæFVf–æVB“°¢W6T7F÷&RævWE7FFRæÖö6µ&WGW&åfÇVR‡²WFFTf–Æ&ÆS¢G'VRÂ—5WFF–æs¢fÇ6RÂ'VåWFFRÒ“°¢&VæFW%v—F„W'&÷"†æWrW'&÷"‚w&VæFW"f–ÇW&Rr’Â²7&VFU&V6÷fW'”6öçFW‡DwV&C¢‚’Óâ‚’ÓâG'VRÒ“° ¢f—&TWfVçBæ6Æ–6²‡67&VVâævWD'•&öÆR‚v'WGFöârÂ²æÖS¢ô7GVÆ—¦"Æ–66œ;6âö’Ò’“°¢v—Bv—Df÷"‚‚’Óâ°¢W‡V7B‡67&VVâævWD'•FW‡B‚ôæò6RVFò6öæf—&Ö"Æ7GVÆ—¦6œ;6âò’’çFô&T–åF†TFö7VÖVçB‚“°¢Ò“° ¢W‡V7B‡'VåWFFR’çFô†fT&VVä6ÆÆVDöæ6R‚“°¢W‡V7B‡67&VVâævWD'•&öÆR‚v'WGFöârÂ²æÖS¢ô7GVÆ—¦"Æ–66œ;6âö’Ò’’çFô&TF—6&ÆVB‚“°¢W‡V7B†Fö7VÖVçBæ&öG’çFW‡D6öçFVçB’ææ÷BçFô6öçF–â‚utõUDDUôäõEôÄ”TBr“°¢Ò“° ¢—B‚vF—6&ÆW2WFFW2Ç&VG’'Vææ–ær–âF†R7F÷&RrÂ‚’Óâ°¢6öç7B'VåWFFRÒf’æfâ‚“°¢W6T7F÷&RævWE7FFRæÖö6µ&WGW&åfÇVR‡²WFFTf–Æ&ÆS¢G'VRÂ—5WFF–æs¢G'VRÂ'VåWFFRÒ“°¢&VæFW%v—F„W'&÷"†æWrW'&÷"‚w&VæFW"f–ÇW&Rr’Â²7&VFU&V6÷fW'”6öçFW‡DwV&C¢‚’Óâ‚’ÓâG'VRÒ“° ¢W‡V7B‡67&VVâævWD'•&öÆR‚v'WGFöârÂ²æÖS¢ô7GVÆ—¦æFòÆ–66œ;6âö’Ò’’çFô&TF—6&ÆVB‚“°¢W‡V7B‡'VåWFFR’ææ÷BçFô†fT&VVä6ÆÆVB‚“°¢W‡V7B‡67&VVâævWD'•FW‡B‚ôÆ7GVÆ—¦6œ;6â–W7L:Vâ7W'6òò’’çFô&T–åF†TFö7VÖVçB‚“°¢Ò“° ¢—B‚wW6W2&÷VæFVB'&÷w6W"7VÖÖ'’æB6öææV7F–öâÆ&VÂ–â—G2fö÷FW"æB&W÷'BrÂ‚’Óâ°¢ö&¦V7BæFVf–æU&÷W'G’†æf–vF÷"ÂwW6W$vVçBrÂ°¢6öæf–wW&&ÆS¢G'VRÀ¢fÇVS¢tÖ÷¦–ÆÆóRã…v–æF÷w2åBã’6‡&öÖRó#bããã6f&’óS3rã3bp¢Ò“°¢6öç7B²&÷VæF'•&VbÒÒ&VæFW%v—F„W'&÷"†æWrW'&÷"‚v'&÷w6W"F–væ÷7F–2r’“°¢6öç7B&W÷'BÒ&÷VæF'•&Vbæ7W'&VçBåö'V–ÆE&W÷'DÖW76vR‚“° ¢f—&TWfVçBæ6Æ–6²‡67&VVâævWD'•&öÆR‚v'WGFöârÂ²æÖS¢ôFWFÆÆW2FVÂ&ö&ÆVÖö’Ò’“°¢W‡V7B‡67&VVâævWD'•FW‡B‚sBããr’’çFô&T–åF†TFö7VÖVçB‚“°¢W‡V7B‡&W÷'B’çFô6öçF–â‚tæfVvF÷#¢6‡&öÖR#br“°¢W‡V7B‡&W÷'B’çFô6öçF–â‚t6öæV7F—f–FC¢öæÆ–æRr“°¢W‡V7B‡&W÷'B’ææ÷BçFô6öçF–â‚uv–æF÷w2åBr“°¢W‡V7B‡&W÷'B’ææ÷BçFô6öçF–â‚u6f&’óS3rr“°¢Ò“°§Ò“° 
+    expect(screen.queryByRole('button', { name: /Recargar|Reiniciar/i })).not.toBeInTheDocument();
+    expect(cacheDelete).not.toHaveBeenCalled();
+    expect(workerUpdate).not.toHaveBeenCalled();
+  });
+
+  it('does not force a PWA update when there is no confirmed update', () => {
+    const runUpdate = vi.fn();
+    useAppStore.getState.mockReturnValue({ updateAvailable: false, isUpdating: false, runUpdate });
+    renderWithError(new Error('render failure'));
+
+    expect(screen.queryByRole('button', { name: /Actualizar aplicaciÃ³n/i })).not.toBeInTheDocument();
+    expect(runUpdate).not.toHaveBeenCalled();
+  });
+
+  it('deduplicates an explicit PWA update and does not fall back to cache deletion', async () => {
+    let resolveUpdate;
+    const runUpdate = vi.fn(() => new Promise((resolve) => { resolveUpdate = resolve; }));
+    const cacheDelete = vi.fn();
+    globalThis.caches = { keys: vi.fn(), delete: cacheDelete };
+    useAppStore.getState.mockReturnValue({ updateAvailable: true, isUpdating: false, runUpdate });
+    renderWithError(new Error('render failure'));
+
+    const updateButton = screen.getByRole('button', { name: /Actualizar aplicaciÃ³n/i });
+    fireEvent.click(updateButton);
+    fireEvent.click(updateButton);
+    await act(async () => Promise.resolve());
+
+    expect(runUpdate).toHaveBeenCalledOnce();
+    resolveUpdate();
+    await act(async () => Promise.resolve());
+    expect(cacheDelete).not.toHaveBeenCalled();
+  });
+
+  it('routes to POS without clearing session or tenant storage', () => {
+    const navigateToPos = vi.fn();
+    window.sessionStorage.setItem('lanzo:authorized-session', 'keep');
+    window.localStorage.setItem('lanzo:active-orders-storage', 'keep');
+    renderWithError(new Error('section failure'), { navigateToPos }, '/ventas');
+
+    fireEvent.click(screen.getByRole('button', { name: /Volver al inicio/i }));
+
+    expect(navigateToPos).toHaveBeenCalledWith('/');
+    expect(window.sessionStorage.getItem('lanzo:authorized-session')).toBe('keep');
+    expect(window.localStorage.getItem('lanzo:active-orders-storage')).toBe('keep');
+  });
+
+  it('does not render raw error details when offline', () => {
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+    const error = new Error('Failed to fetch private customer details');
+    renderWithError(error);
+
+    expect(screen.getByText(/Sin conexiÃ³n/)).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('private customer details');
+  });
+
+  it('keeps technical summaries bounded to allowlisted report fields', () => {
+    const error = new Error('customer=Ana Lopez total=9876.50 license_key=LNZ-PRIVATE-123 token=jwt-secret');
+    error.code = 'DB_OPEN_TIMEOUT';
+    error.cause = new Error('phone=5551234567 email=ana@example.com');
+    error.stack = 'Error: https://lanzo.test/ventas/private?access_token=stack-secret';
+    const { boundaryRef } = renderWithError(error, {}, '/ventas/private-customer-id');
+    const report = boundaryRef.current._buildReportMessage();
+
+    expect(report).toContain('REPORTE TÃ‰CNICO DE INCIDENCIA - LANZO POS');
+    expect(report).toContain('CÃ³digo de incidencia: DB_OPEN_TIMEOUT');
+    expect(report).toContain('ClasificaciÃ³n: Almacenamiento local');
+    expect(report).toContain('Gravedad: section_failure');
+    expect(report).toContain('Tipo tÃ©cnico: Error');
+    expect(report).toContain('SecciÃ³n: /ventas');
+    expect(report).toContain('Conectividad: Online');
+    expect(report).toContain('Fecha y hora:');
+    expect(report).not.toContain('Ana Lopez');
+    expect(report).not.toContain('private-customer-id');
+    expect(report).not.toContain('9876.50');
+    expect(report).not.toContain('LNZ-PRIVATE-123');
+    expect(report).not.toContain('jwt-secret');
+    expect(report).not.toContain('5551234567');
+    expect(report).not.toContain('ana@example.com');
+    expect(report).not.toContain('stack-secret');
+  });
+
+  it('does not serialize unknown codes, URL parameters, causes, or stack frames', () => {
+    const error = new Error('Unexpected customer=private-name');
+    error.code = 'secret-token-value-123456';
+    error.cause = new Error('license_key=full-license-value');
+    error.stack = 'Error at https://lanzo.test/caja?key=customer-secret';
+    const { boundaryRef } = renderWithError(error, {}, '/ruta-con-identificador-123');
+    const report = boundaryRef.current._buildReportMessage();
+
+    expect(report).toContain('CÃ³digo de incidencia: INCIDENT_REACT_RENDER');
+    expect(report).toContain('ClasificaciÃ³n: Render de interfaz');
+    expect(report).toContain('Gravedad: section_failure');
+    expect(report).toContain('SecciÃ³n: otra secciÃ³n');
+    expect(report).not.toContain('secret-token-value');
+    expect(report).not.toContain('full-license-value');
+    expect(report).not.toContain('customer-secret');
+    expect(report).not.toContain('private-name');
+    expect(report).not.toContain('ruta-con-identificador');
+    expect(report).not.toContain('https://');
+  });
+
+  it('logs a timestamp and scalar incident fields without attaching Error objects', () => {
+    const error = Object.assign(new TypeError('private detail'), { code: 'DB_BLOCKED' });
+    renderWithError(error);
+
+    const logged = Logger.error.mock.calls[0][1];
+    expect(Logger.error).toHaveBeenCalledOnce();
+    expect(logged.code).toBe('DB_BLOCKED');
+    expect(logged.category).toBe('indexeddb');
+    expect(logged.severity).toBe('section_failure');
+    expect(logged.errorType).toBe('TypeError');
+    expect(logged.componentStackAvailable).toBe(true);
+    expect(Number.isNaN(new Date(logged.timestamp).getTime())).toBe(false);
+    expect(Object.values(logged).join(' ')).not.toContain('private detail');
+    expect(Object.keys(logged)).toEqual([
+      'timestamp', 'code', 'category', 'severity', 'errorType', 'componentStackAvailable'
+    ]);
+  });
+
+  it('uses safe fallback metadata when an error has no useful message or a custom name', () => {
+    const error = new Error();
+    error.name = 'CustomerTokenError';
+    const { boundaryRef } = renderWithError(error);
+    const report = boundaryRef.current._buildReportMessage();
+
+    expect(screen.getByRole('heading', { name: 'No pudimos mostrar esta secciÃ³n' })).toBeInTheDocument();
+    const details = document.querySelector('.incident-recovery__details-content');
+    expect(details).toHaveAttribute('hidden');
+    expect(document.body.textContent).not.toContain('CustomerTokenError');
+    expect(report).toContain('Tipo tÃ©cnico: Error');
+    expect(report).toContain('ClasificaciÃ³n: Render de interfaz');
+    expect(report.length).toBeLessThan(1_500);
+  });
+
+  it('keeps very long stack traces out of the user interface and copied report', async () => {
+    const error = new Error('deep recursion customer private-data');
+    error.stack = `Error: ${error.message}\n${' at internal/private/path\n'.repeat(250)}`;
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    renderWithError(error);
+
+    fireEvent.click(screen.getByRole('button', { name: /Copiar diagnÃ³stico/i }));
+    await act(async () => Promise.resolve());
+
+    const report = writeText.mock.calls[0][0];
+    expect(document.body.textContent).not.toContain('at internal/private/path');
+    expect(document.body.textContent).not.toContain('deep recursion customer-private-data');
+    expect(report).not.toContain('internal/private/path');
+    expect(report).not.toContain('deep recursion customer');
+    expect(report.length).toBeLessThan(1_500);
+  });
+
+  it('copies the safe report and shows a temporary copied state', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    const { boundaryRef } = renderWithError(Object.assign(new Error('private'), { code: 'SYNC_PUSH_FAILED' }));
+
+    fireEvent.click(screen.getByRole('button', { name: /Copiar diagnÃ³stico/i }));
+    await act(async () => Promise.resolve());
+
+    expect(writeText).toHaveBeenCalledOnce();
+    expect(writeText.mock.calls[0][0]).toContain('CÃ³digo de incidencia: SYNC_PUSH_FAILED');
+    expect(writeText.mock.calls[0][0]).toContain('ClasificaciÃ³n: SincronizaciÃ³n');
+    expect(writeText.mock.calls[0][0]).not.toContain('private');
+    expect(screen.getByRole('button', { name: /DiagnÃ³stico copiado/i })).toBeInTheDocument();
+    expect(boundaryRef.current.state.copied).toBe(true);
+  });
+
+  it('restores the copy button label after its timeout', async () => {
+    vi.useFakeTimers();
+    try {
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: { writeText: vi.fn().mockResolvedValue(undefined) }
+      });
+      renderWithError(new Error('copy timer'));
+      fireEvent.click(screen.getByRole('button', { name: /Copiar diagnÃ³stico/i }));
+      await act(async () => Promise.resolve());
+
+      expect(screen.getByRole('button', { name: /DiagnÃ³stico copiado/i })).toBeInTheDocument();
+      act(() => vi.advanceTimersByTime(3_100));
+      expect(screen.getByRole('button', { name: /Copiar diagnÃ³stico/i })).toBeInTheDocument();
+      expect(document.body.textContent).not.toContain('stack');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('keeps the panel usable when clipboard access is denied', async () => {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: vi.fn().mockRejectedValue(new Error('permission denied')) }
+    });
+    renderWithError(new Error('clipboard issue'));
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Copiar diagnÃ³stico/i }));
+    });
+
+    expect(screen.getByText(/No se pudo copiar el diagnÃ³stico/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Copiar diagnÃ³stico/i })).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('permission denied');
+  });
+
+  it('offers a route back to POS only away from the POS root', () => {
+    renderWithError(new Error('section failure'), {}, '/reportes/secret?access_token=query-secret');
+    expect(screen.getByRole('button', { name: /Volver al inicio/i })).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('query-secret');
+  });
+
+  it('does not offer a route change when the POS root itself fails', () => {
+    renderWithError(new Error('pos failure'), {}, '/');
+    expect(screen.queryByRole('button', { name: /Volver al inicio/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Recargar|Reiniciar/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Reintentar secciÃ³n/i })).toBeInTheDocument();
+  });
+
+  it('does not claim that records or pending financial outcomes are confirmed safe', () => {
+    renderWithError(Object.assign(new Error('payment result ambiguous'), { code: 'FINANCIAL_RESULT_UNKNOWN' }));
+    const visible = document.body.textContent;
+
+    expect(visible).toContain('Consulta el recibo o ledger canÃ³nico con soporte');
+    expect(visible).not.toMatch(/tus datos de ventas y caja estÃ¡n seguros/i);
+    expect(visible).not.toMatch(/el cobro se completÃ³ correctamente/i);
+    expect(screen.getByRole('alertdialog', { name: 'Necesitamos verificar esta operaciÃ³n' })).toBeInTheDocument();
+    expect(visible).not.toContain('payment result ambiguous');
+  });
+
+  it('does not show an update action while offline or when no update function exists', () => {
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+    const runUpdate = vi.fn();
+    useAppStore.getState.mockReturnValue({ updateAvailable: true, isUpdating: false, runUpdate });
+    renderWithError(new Error('offline section failure'));
+
+    expect(screen.getByText(/Sin conexiÃ³n/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Actualizar aplicaciÃ³n/i })).not.toBeInTheDocument();
+    expect(runUpdate).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: /Recargar|Reiniciar/i })).not.toBeInTheDocument();
+    expect(window.sessionStorage.length).toBe(0);
+  });
+
+  it('reports a failed PWA update once and prevents duplicate update attempts', async () => {
+    const runUpdate = vi.fn().mockRejectedValue(new Error('worker activation failed'));
+    useAppStore.getState.mockReturnValue({ updateAvailable: true, isUpdating: false, runUpdate });
+    renderWithError(new Error('render failure'), { createRecoveryContextGuard: () => () => true });
+
+    const updateButton = screen.getByRole('button', { name: /Actualizar aplicaciÃ³n/i });
+    fireEvent.click(updateButton);
+    await act(async () => Promise.resolve());
+
+    expect(runUpdate).toHaveBeenCalledOnce();
+    expect(screen.getByText(/No se pudo confirmar la actualizaciÃ³n/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Actualizar aplicaciÃ³n/i })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: /Actualizar aplicaciÃ³n/i }));
+    expect(runUpdate).toHaveBeenCalledOnce();
+    expect(document.body.textContent).not.toContain('worker activation failed');
+    expect(window.localStorage.length).toBe(0);
+  });
+
+  it('reports an update action that resolves without applying the new worker', async () => {
+    const runUpdate = vi.fn().mockResolvedValue(undefined);
+    useAppStore.getState.mockReturnValue({ updateAvailable: true, isUpdating: false, runUpdate });
+    renderWithError(new Error('render failure'), { createRecoveryContextGuard: () => () => true });
+
+    fireEvent.click(screen.getByRole('button', { name: /Actualizar aplicaciÃ³n/i }));
+    await waitFor(() => {
+      expect(screen.getByText(/No se pudo confirmar la actualizaciÃ³n/)).toBeInTheDocument();
+    });
+
+    expect(runUpdate).toHaveBeenCalledOnce();
+    expect(screen.getByRole('button', { name: /Actualizar aplicaciÃ³n/i })).toBeDisabled();
+    expect(document.body.textContent).not.toContain('PWA_UPDATE_NOT_APPLIED');
+  });
+
+  it('disables updates already running in the app store', () => {
+    const runUpdate = vi.fn();
+    useAppStore.getState.mockReturnValue({ updateAvailable: true, isUpdating: true, runUpdate });
+    renderWithError(new Error('render failure'), { createRecoveryContextGuard: () => () => true });
+
+    expect(screen.getByRole('button', { name: /Actualizando aplicaciÃ³n/i })).toBeDisabled();
+    expect(runUpdate).not.toHaveBeenCalled();
+    expect(screen.getByText(/La actualizaciÃ³n ya estÃ¡ en curso/)).toBeInTheDocument();
+  });
+
+  it('uses a bounded browser summary and connection label in its footer and report', () => {
+    Object.defineProperty(navigator, 'userAgent', {
+      configurable: true,
+      value: 'Mozilla/5.0 (Windows NT 10.0) Chrome/126.0.0.0 Safari/537.36'
+    });
+    const { boundaryRef } = renderWithError(new Error('browser diagnostic'));
+    const report = boundaryRef.current._buildReportMessage();
+
+    fireEvent.click(screen.getByRole('button', { name: /Detalles del problema/i }));
+    expect(screen.getByText('4.0.0')).toBeInTheDocument();
+    expect(report).toContain('Navegador: Chrome 126');
+    expect(report).toContain('Conectividad: Online');
+    expect(report).not.toContain('Windows NT');
+    expect(report).not.toContain('Safari/537');
+  });
+});
