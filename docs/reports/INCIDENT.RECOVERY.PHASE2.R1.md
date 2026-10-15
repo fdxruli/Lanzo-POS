@@ -2,11 +2,11 @@
 
 ## Estado de entrega
 
-- **Estado:** implementación completa, lista para QA manual tras publicar Preview.
+- **Estado:** implementación publicada, Preview verificado; pendiente aprobación de QA manual.
 - **PR:** [#357](https://github.com/fdxruli/Lanzo-POS/pull/357), conserva `OPEN / Draft`.
 - **Rama:** `feat/incident-recovery-center-r1`.
 - **HEAD inicial:** `e8f61b90fb40465d9849dbea2ec54d235378352f`.
-- **HEAD final:** se completará al publicar el commit de Fase 2.
+- **HEAD final de implementación:** `df171af357e1eedfd8d616c34fc99ee4e8e2474f`.
 - **Cambios de producción:** ninguno. No hubo despliegue a Production, migraciones ni escrituras remotas.
 - **Merge:** no realizado. Esperar aprobación de QA manual.
 
@@ -43,6 +43,15 @@
 
 ## Archivos modificados
 
+- `docs/reports/INCIDENT.RECOVERY.PHASE2.R1.md`
+- `docs/reports/phase2-visuals/lanzo-f2-level1-dark.jpg`
+- `docs/reports/phase2-visuals/lanzo-f2-level1-light.jpg`
+- `docs/reports/phase2-visuals/lanzo-f2-level2-dark.jpg`
+- `docs/reports/phase2-visuals/lanzo-f2-level2-details-open-light.jpg`
+- `docs/reports/phase2-visuals/lanzo-f2-level2-light.jpg`
+- `docs/reports/phase2-visuals/lanzo-f2-level2-recovering.jpg`
+- `docs/reports/phase2-visuals/lanzo-f2-level2-recovery-failed.jpg`
+- `docs/reports/phase2-visuals/lanzo-f2-level3-blocked-desktop.jpg`
 - `src/App.jsx`
 - `src/architecture/__tests__/adminLazyRouteRecoveryArchitecture.test.js`
 - `src/architecture/__tests__/adminStartupRecoveryArchitecture.test.js`
@@ -103,7 +112,7 @@ Los workflows ejecutados sobre el HEAD inicial `e8f61b9` confirmaron la Fase 1:
 - [Shared Terminal Actor Runtime Validation — run 38678204622](https://github.com/fdxruli/Lanzo-POS/actions/runs/38678204622): **SUCCESS**. BASE/CANDIDATE y su diferencial se ejecutaron y concluyeron. “Manual whitespace hygiene classification” se omitió porque sólo aplica a `workflow_dispatch`; la higiene bloqueante del evento PR pasó. “Publish idempotent closeout report” se omitió porque el job sólo publica para la rama `feat/shared-terminal-actor-runtime`, no para esta rama. No se cuentan como pruebas ejecutadas.
 - [HOTFIX Dexie Recovery Validation — run 38678204723](https://github.com/fdxruli/Lanzo-POS/actions/runs/38678204723): **SUCCESS**.
 - [Ecommerce Public Phase 4 Validation — run 38678204549](https://github.com/fdxruli/Lanzo-POS/actions/runs/38678204549): **SUCCESS**.
-- Los resultados del nuevo HEAD de Fase 2 se añadirán después del push; hasta entonces no están ejecutados.
+- Sobre `df171af357e1eedfd8d616c34fc99ee4e8e2474f`, consulta el desglose de workflows y pasos en la sección de QA.
 
 ## Coordinación con PR #338 y #352
 
@@ -113,9 +122,31 @@ Los workflows ejecutados sobre el HEAD inicial `e8f61b9` confirmaron la Fase 1:
 
 ## Preview y QA manual
 
-- **Preview:** pendiente de push; se completará con la URL SHA-matched del deployment Preview del PR #357.
-- **Evidencia visual:** pendiente de comprobar en el deployment publicado. El navegador de desarrollo local disponible no pudo acceder al servidor `localhost`; no se inventan capturas ni se declara QA visual completa.
-- El Preview tendrá `/__qa/incident-recovery` con niveles 1/2/3, claro/oscuro, detalles plegables y estados de recuperación sintéticos.
+- **Preview:** [https://lanzo-2ost7em15-fdxrulis-projects.vercel.app](https://lanzo-2ost7em15-fdxrulis-projects.vercel.app), deployment `GAPQYL8bzufVNtCmw2urank8F5G3`, estado `READY` para el HEAD de implementación. Galería QA: [/__qa/incident-recovery](https://lanzo-2ost7em15-fdxrulis-projects.vercel.app/__qa/incident-recovery).
+- **Evidencia visual comprobada en Preview:** las capturas siguientes se tomaron en Chrome sobre el deployment. El viewport disponible fue escritorio (~1365 px); no se pudo fijar ancho móvil desde esta herramienta. Las capturas demuestran los estados renderizados en Preview, no reemplazan la revisión manual ni prueban dimensiones móviles.
+
+| Evidencia | Captura |
+| --- | --- |
+| Nivel 1 · claro | ![Nivel 1 claro](phase2-visuals/lanzo-f2-level1-light.jpg) |
+| Nivel 1 · oscuro | ![Nivel 1 oscuro](phase2-visuals/lanzo-f2-level1-dark.jpg) |
+| Nivel 2 · claro, detalles cerrados | ![Nivel 2 claro](phase2-visuals/lanzo-f2-level2-light.jpg) |
+| Nivel 2 · oscuro | ![Nivel 2 oscuro](phase2-visuals/lanzo-f2-level2-dark.jpg) |
+| Nivel 2 · detalles abiertos | ![Detalles del problema abiertos](phase2-visuals/lanzo-f2-level2-details-open-light.jpg) |
+| Nivel 2 · recuperación en curso | ![Recuperación en curso](phase2-visuals/lanzo-f2-level2-recovering.jpg) |
+| Nivel 2 · recuperación fallida | ![Recuperación fallida](phase2-visuals/lanzo-f2-level2-recovery-failed.jpg) |
+| Nivel 3 · cobro bloqueado | ![Cobro ambiguo bloqueado](phase2-visuals/lanzo-f2-level3-blocked-desktop.jpg) |
+
+- Nivel 3 en móvil y anchos 320/360/390/430 px: pendiente de QA manual en emulación o dispositivo real.
+- La galería muestra datos sintéticos de recuperación, nunca inicia operaciones reales, no envía informes ni confirma cobros.
+
+### Workflows Fase 2 (estado observado: 2026-10-15 05:24 UTC)
+
+- [PR127 Global Comparison — run 38685951558](https://github.com/fdxruli/Lanzo-POS/actions/runs/38685951558): **IN_PROGRESS**. Las suites globales PR y main terminaron `SUCCESS`; extracción de fallos candidate-only también pasó. La evidencia focal candidate-only seguía ejecutándose; la evidencia base, normalización y carga de comparación estaban pendientes.
+- [Shared Terminal Actor Runtime Validation — run 38685951649](https://github.com/fdxruli/Lanzo-POS/actions/runs/38685951649): **IN_PROGRESS**. La resolución del base y el job focal de Actor Runtime/tenant/auth/ESLint/builds terminaron `SUCCESS`. Las repeticiones observacionales de suite completa para candidate y base seguían ejecutándose. El paso “Manual whitespace hygiene classification” quedó `SKIPPED` porque sólo aplica a `workflow_dispatch`; el chequeo bloqueante de whitespace para PR pasó. El paso omitido no se cuenta como prueba.
+- [Shared Terminal Actor Scoped Storage Validation — run 38685951465](https://github.com/fdxruli/Lanzo-POS/actions/runs/38685951465): **IN_PROGRESS**. Resolución del base y job focal de actor/storage/handoff/tenant/sync/POS/ESLint/builds terminaron `SUCCESS`. Las repeticiones observacionales de candidate y base seguían ejecutándose.
+- [Ecommerce Public Phase 4 Validation — run 38685951614](https://github.com/fdxruli/Lanzo-POS/actions/runs/38685951614): **SUCCESS**.
+- [HOTFIX Dexie Recovery Validation — run 38685952243](https://github.com/fdxruli/Lanzo-POS/actions/runs/38685952243): **SUCCESS**.
+- [Vercel Preview — deployment GAPQYL8bzufVNtCmw2urank8F5G3](https://vercel.com/fdxrulis-projects/lanzo-pos/GAPQYL8bzufVNtCmw2urank8F5G3): **READY**, SHA verificado `df171af357e1eedfd8d616c34fc99ee4e8e2474f`.
 
 Checklist para propietario:
 
