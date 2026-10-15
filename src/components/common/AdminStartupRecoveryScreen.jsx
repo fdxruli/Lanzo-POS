@@ -1,17 +1,15 @@
-import React from 'react';
-
 const SCREEN_COPY = Object.freeze({
   recovering: {
-    title: 'Lanzo POS se actualizó',
-    message: 'Estamos preparando la versión más reciente. Esto puede tardar unos segundos.',
+    title: 'Revisando los archivos de Lanzo POS',
+    message: 'Estamos comprobando los recursos instalados. Esto puede tardar unos segundos.',
   },
   updateError: {
     title: 'No se pudo completar la actualización',
-    message: 'Actualiza los archivos de Lanzo POS para volver a entrar de forma segura.',
+    message: 'No se pudo actualizar la aplicación. Comprueba la conexión y vuelve a intentarlo.',
   },
   startupError: {
     title: 'No se pudo iniciar Lanzo POS',
-    message: 'No se modificaron tus datos. Intenta cargar nuevamente la aplicación.',
+    message: 'Esta pantalla no ejecutó una limpieza de datos. No podemos confirmar el resultado de operaciones pendientes.',
   },
 });
 

@@ -178,7 +178,7 @@ export default function RenewalModal() {
         <div className="renewal-actions">
           <p className="promo-text">
             {transitionPending
-              ? 'Tus datos locales no se borrarán. Si el cambio no puede confirmarse ahora, puedes volver a intentarlo.'
+              ? 'La revisión de licencia no confirma el estado de las ventas o sincronizaciones locales. Compruébalas antes de repetir una acción pendiente.'
               : licenseContext.canRunFreeCompatFlow
                 ? 'Tu licencia Lanzo Local se actualizará a permanente.'
                 : 'Puedes cambiar de licencia si este acceso ya no corresponde al negocio.'}

@@ -1,81 +1,27 @@
-/**
- * ErrorBoundary.test.jsx
- * ─────────────────────────────────────────────────────────────────────────────
- * Suite de pruebas exhaustiva para el componente ErrorBoundary mejorado.
- *
- * Categorías cubiertas:
- *  1. Renderizado normal (sin error)
- *  2. Captura de errores — pantalla de error
- *  3. Contenido del reporte WhatsApp (_buildReportMessage)
- *  4. Botón Copiar al portapapeles
- *  5. Recuperación — Recargar, Reset, Ir al POS
- *  6. Lógica de ruta (POS vs. sección secundaria)
- *  7. Estado de red (online / offline)
- *  8. Tipos de error especiales (TypeError, RangeError, error encadenado)
- *  9. Datos del store — casos extremos (sin perfil, sin licencia)
- * 10. Utilidades puras (parseUserAgent, cleanStack, formatTimestamp)
- * ─────────────────────────────────────────────────────────────────────────────
- */
-
+// @vitest-environment jsdom
 import React from 'react';
-import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach, afterEach, beforeAll, afterAll } from 'vitest';
-import '@testing-library/jest-dom';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import '@testing-library/jest-dom/vitest';
 
-// ── Mocks PRIMERO — antes de cualquier import del componente ──────────────────
-
-// Mock de Supabase (bloquea conexión de red en tests)
-vi.mock('@supabase/supabase-js', () => ({
-  createClient: vi.fn(() => ({
-    from: vi.fn(() => ({ select: vi.fn(), insert: vi.fn(), update: vi.fn() })),
-    auth: { getSession: vi.fn(), onAuthStateChange: vi.fn(() => ({ data: { subscription: { unsubscribe: vi.fn() } } })) },
-    channel: vi.fn(() => ({ on: vi.fn(), subscribe: vi.fn() })),
-  })),
-}));
-
-// Mock de Dexie (IndexedDB)
-vi.mock('dexie', () => {
-  const Dexie = vi.fn(function() {
-    this.version = vi.fn(() => ({ stores: vi.fn() }));
-    this.open = vi.fn().mockResolvedValue(this);
-  });
-  return { default: Dexie };
-});
-vi.mock('dexie-export-import', () => ({}));
-vi.mock('dexie-react-hooks', () => ({ useLiveQuery: vi.fn(() => []) }));
-
-// Mock del store de Zustand (acceso imperativo sin hooks)
 vi.mock('../store/useAppStore', () => ({
   useAppStore: {
     getState: vi.fn(() => ({
-      companyProfile: {
-        name: 'Verdulería El Tomate',
-        rubro: 'verduleria',
-      },
-      licenseDetails: {
-        license_key: 'LNZ-TEST-1234567890',
-      },
-    })),
-  },
+      updateAvailable: false,
+      isUpdating: false,
+      runUpdate: vi.fn()
+    }))
+  }
 }));
 
-// Mock del Logger
 vi.mock('../services/Logger', () => ({
-  default: {
-    log:   vi.fn(),
-    warn:  vi.fn(),
-    error: vi.fn(),
-    info:  vi.fn(),
-    debug: vi.fn(),
-  },
+  default: { log: vi.fn(), warn: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn() }
 }));
 
-// Mock de lucide-react (evita transformaciones pesadas de SVG)
 vi.mock('lucide-react', () => {
-  const Icon = ({ 'data-testid': testId, size, ...props }) =>
-    React.createElement('svg', { 'data-testid': testId, ...props });
+  const Icon = ({ size: _size, ...props }) => React.createElement('svg', props);
   return {
-    MessageCircle: Icon,
+    Mail: Icon,
     RefreshCw: Icon,
     AlertTriangle: Icon,
     ShieldCheck: Icon,
@@ -84,718 +30,504 @@ vi.mock('lucide-react', () => {
     Copy: Icon,
     CheckCheck: Icon,
     Wifi: Icon,
-    WifiOff: Icon,
+    WifiOff: Icon
   };
 });
-
-// ── Importaciones bajo test (DESPUÉS de los mocks) ────────────────────────────
 
 import ErrorBoundary from '../components/common/ErrorBoundary';
 import Logger from '../services/Logger';
 import { useAppStore } from '../store/useAppStore';
 
-// ── Componentes auxiliares para tests ─────────────────────────────────────────
-
-/** Lanza siempre una excepción al renderizarse */
-function BombComponent({ error }) {
+function Bomb({ error }) {
   throw error;
 }
 
-/** Lanza condicionalmente — permite probar la recuperación */
-function ConditionalBomb({ shouldThrow, error }) {
+function ConditionalBomb({ error, shouldThrow }) {
   if (shouldThrow) throw error;
-  return <div data-testid="safe-child">Contenido seguro</div>;
+  return <p data-testid="safe-child">Sección recuperada</p>;
 }
 
-/** Helper: renderiza el boundary con un hijo que revienta.
- *  Usamos history.pushState para controlar el pathname en jsdom 28
- *  (la única forma confiable sin redefinir window.location).
- */
-function renderWithError(error, options = {}) {
-  const { pathname = '/', locationSearch = '' } = options;
-  window.history.pushState({}, '', `${pathname}${locationSearch}`);
-
-  return render(
-    <ErrorBoundary>
-      <BombComponent error={error} />
+const renderWithError = (error, props = {}, path = '/') => {
+  window.history.replaceState({}, '', `${path}?access_token=query-secret`);
+  const boundaryRef = React.createRef();
+  const result = render(
+    <ErrorBoundary {...props} ref={boundaryRef}>
+      <Bomb error={error} />
     </ErrorBoundary>
   );
-}
+  return { ...result, boundaryRef };
+};
 
-// ── Setup global ──────────────────────────────────────────────────────────────
+let originalCacheDescriptor;
+let originalServiceWorkerDescriptor;
+let originalOnlineDescriptor;
+let originalClipboardDescriptor;
+let originalUserAgentDescriptor;
 
-beforeAll(() => {
-  // Silenciar el ruido esperado de React ErrorBoundary en consola
-  vi.spyOn(console, 'error').mockImplementation((...args) => {
-    const msg = String(args[0] ?? '');
-    if (
-      msg.includes('The above error occurred') ||
-      msg.includes('React will try to recreate') ||
-      msg.includes('BombComponent') ||
-      msg.includes('ConditionalBomb')
-    ) return;
-    // Mostrar otros errores reales
-    console.warn('[console.error suprimido en test]', ...args);
+beforeEach(() => {
+  originalCacheDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'caches');
+  originalServiceWorkerDescriptor = Object.getOwnPropertyDescriptor(navigator, 'serviceWorker');
+  originalOnlineDescriptor = Object.getOwnPropertyDescriptor(navigator, 'onLine');
+  originalClipboardDescriptor = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+  originalUserAgentDescriptor = Object.getOwnPropertyDescriptor(navigator, 'userAgent');
+  Logger.error.mockClear();
+  useAppStore.getState.mockReturnValue({
+    updateAvailable: false,
+    isUpdating: false,
+    runUpdate: vi.fn()
   });
+  window.sessionStorage.clear();
+  window.localStorage.clear();
 });
 
-afterAll(() => {
+afterEach(() => {
+  cleanup();
+  const restoreDescriptor = (object, key, descriptor) => {
+    if (descriptor) Object.defineProperty(object, key, descriptor);
+    else delete object[key];
+  };
+  restoreDescriptor(globalThis, 'caches', originalCacheDescriptor);
+  restoreDescriptor(navigator, 'serviceWorker', originalServiceWorkerDescriptor);
+  restoreDescriptor(navigator, 'onLine', originalOnlineDescriptor);
+  restoreDescriptor(navigator, 'clipboard', originalClipboardDescriptor);
+  restoreDescriptor(navigator, 'userAgent', originalUserAgentDescriptor);
   vi.restoreAllMocks();
 });
 
-beforeEach(() => {
-  window.open.mockClear?.();
-  window.location.reload.mockClear?.();
-  window.location.replace.mockClear?.();
-  navigator.clipboard.writeText.mockClear?.();
-  Logger.error.mockClear?.();
-  useAppStore.getState.mockReturnValue({
-    companyProfile: { name: 'Verdulería El Tomate', rubro: 'verduleria' },
-    licenseDetails: { license_key: 'LNZ-TEST-1234567890' },
+describe('ErrorBoundary', () => {
+  it('renders its child when there is no error', () => {
+    render(<ErrorBoundary><p>POS disponible</p></ErrorBoundary>);
+    expect(screen.getByText('POS disponible')).toBeInTheDocument();
   });
-});
 
-// ─────────────────────────────────────────────────────────────────────────────
-// BLOQUE 1 — Renderizado normal
-// ─────────────────────────────────────────────────────────────────────────────
+  it('catches React render errors and shows a safe incident classification', () => {
+    renderWithError(Object.assign(new TypeError('Cannot read properties of null'), { code: 'DB_OPEN_TIMEOUT' }));
 
-describe('1. Renderizado normal (sin errores)', () => {
-  it('muestra los hijos cuando no hay error', () => {
-    render(
+    expect(screen.getAllByText('DB_OPEN_TIMEOUT')).toHaveLength(2);
+    expect(screen.getByText(/Almacenamiento local/)).toBeInTheDocument();
+    expect(screen.getByText(/Gravedad: section_failure/)).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('Cannot read properties of null');
+  });
+
+  it('does not render sensitive error, cause, URL, business, license, or device details', () => {
+    localStorage.setItem('lanzo_device_id', 'device-identifier-123456');
+    const error = new Error('license_key=LNZ-FULL-SECRET customer=Ana Lopez total=9876.50');
+    error.cause = new Error('token=jwt-secret');
+    error.stack = 'Error: https://lanzo.test/caja?access_token=stack-secret';
+
+    renderWithError(error, {}, '/clientes/Ana-Lopez');
+    const renderedText = document.body.textContent;
+
+    expect(renderedText).not.toContain('LNZ-FULL-SECRET');
+    expect(renderedText).not.toContain('device-identifier-123456');
+    expect(renderedText).not.toContain('Ana Lopez');
+    expect(renderedText).not.toContain('Ana-Lopez');
+    expect(renderedText).not.toContain('9876.50');
+    expect(renderedText).not.toContain('jwt-secret');
+    expect(renderedText).not.toContain('access_token');
+    expect(renderedText).not.toContain('stack-secret');
+  });
+
+  it('logs only an allowlisted incident summary', () => {
+    const error = new Error('token=jwt-secret');
+    error.stack = 'at /private/route?key=secret';
+    renderWithError(error);
+
+    expect(Logger.error).toHaveBeenCalledWith('Error de interfaz capturado.', expect.objectContaining({
+      code: 'INCIDENT_REACT_RENDER',
+      category: 'react_render',
+      severity: 'section_failure',
+      errorType: 'Error'
+    }));
+    const logged = JSON.stringify(Logger.error.mock.calls);
+    expect(logged).not.toContain('jwt-secret');
+    expect(logged).not.toContain('/private/route');
+  });
+
+  it('copies a safe diagnostic without including the raw message or query parameters', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText }
+    });
+    renderWithError(Object.assign(new Error('license_key=LNZ-FULL-SECRET'), { code: 'DB_OPEN_TIMEOUT' }));
+
+    fireEvent.click(screen.getByRole('button', { name: /Copiar reporte completo/i }));
+    await act(async () => Promise.resolve());
+
+    expect(writeText).toHaveBeenCalledOnce();
+    const report = writeText.mock.calls[0][0];
+    expect(report).toContain('DB_OPEN_TIMEOUT');
+    expect(report).toContain('Almacenamiento local');
+    expect(report).not.toContain('LNZ-FULL-SECRET');
+    expect(report).not.toContain('access_token');
+  });
+
+  it('preserves browser storage when a local render retry fails and stops repeated retries', () => {
+    window.sessionStorage.setItem('lanzo:authorized-session', 'keep-session');
+    window.localStorage.setItem('lanzo:active-orders-storage', 'keep-orders');
+    const error = new Error('same render failure');
+    const { rerender } = render(
       <ErrorBoundary>
-        <div data-testid="child">Hola Mundo</div>
+        <ConditionalBomb error={error} shouldThrow />
       </ErrorBoundary>
     );
-    expect(screen.getByTestId('child')).toBeInTheDocument();
-    expect(screen.getByTestId('child')).toHaveTextContent('Hola Mundo');
-  });
 
-  it('NO muestra la pantalla de error cuando no hay fallo', () => {
-    render(<ErrorBoundary><div>Todo bien</div></ErrorBoundary>);
-    expect(screen.queryByText(/Se ha detenido la aplicación/i)).not.toBeInTheDocument();
-  });
-
-  it('puede renderizar múltiples hijos sin problema', () => {
-    render(
+    fireEvent.click(screen.getByRole('button', { name: /Intentar recuperar/i }));
+    rerender(
       <ErrorBoundary>
-        <span data-testid="a">A</span>
-        <span data-testid="b">B</span>
+        <ConditionalBomb error={error} shouldThrow />
       </ErrorBoundary>
     );
-    expect(screen.getByTestId('a')).toBeInTheDocument();
-    expect(screen.getByTestId('b')).toBeInTheDocument();
-  });
-});
 
-// ─────────────────────────────────────────────────────────────────────────────
-// BLOQUE 2 — Captura de errores
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe('2. Captura de errores — pantalla de error', () => {
-  it('muestra el título principal de error', () => {
-    renderWithError(new Error('fallo genérico'));
-    expect(screen.getByText(/Se ha detenido la aplicación/i)).toBeInTheDocument();
+    expect(window.sessionStorage.getItem('lanzo:authorized-session')).toBe('keep-session');
+    expect(window.localStorage.getItem('lanzo:active-orders-storage')).toBe('keep-orders');
+    expect(screen.getByRole('button', { name: /Intentar recuperar/i })).toBeDisabled();
   });
 
-  it('muestra el mensaje de tranquilidad al usuario', () => {
-    renderWithError(new Error('x'));
-    expect(screen.getByText(/no es un error tuyo/i)).toBeInTheDocument();
-  });
-
-  it('muestra el badge con el tipo de error correcto (TypeError)', () => {
-    renderWithError(new TypeError('Cannot read properties of null'));
-    expect(screen.getByText('TypeError')).toBeInTheDocument();
-  });
-
-  it('muestra el badge con el tipo de error correcto (RangeError)', () => {
-    renderWithError(new RangeError('Maximum call stack'));
-    expect(screen.getByText('RangeError')).toBeInTheDocument();
-  });
-
-  it('muestra el mensaje legible del error en la caja técnica', () => {
-    renderWithError(new TypeError('Cannot read properties of null reading map'));
-    // El texto aparece tanto en la caja roja como en el stack trace preview,
-    // por eso usamos body.textContent en vez de getByText (que falla con múltiples elementos)
-    expect(document.body.textContent).toContain('Cannot read properties of null reading map');
-  });
-
-  it('muestra el badge de datos seguros', () => {
-    renderWithError(new Error('x'));
-    expect(screen.getByText(/Tus datos de ventas y caja están seguros/i)).toBeInTheDocument();
-  });
-
-  it('muestra la etiqueta DETALLE TÉCNICO', () => {
-    renderWithError(new Error('x'));
-    expect(screen.getByText(/DETALLE TÉCNICO/i)).toBeInTheDocument();
-  });
-
-  it('registra el error en Logger con campos estructurados', () => {
-    const err = new TypeError('null.map');
-    err.stack = 'TypeError: null.map\n    at ProductList.jsx:42';
-    renderWithError(err);
-    expect(Logger.error).toHaveBeenCalledWith(
-      '🔥 Error crítico capturado:',
-      expect.objectContaining({
-        message: 'null.map',
-        name: 'TypeError',
-        stack: expect.stringContaining('ProductList.jsx'),
-      })
+  it('allows a successful section retry without clearing saved state', () => {
+    window.sessionStorage.setItem('lanzo:flow-state', 'preserve');
+    const error = new Error('temporary section failure');
+    const { rerender } = render(
+      <ErrorBoundary>
+        <ConditionalBomb error={error} shouldThrow />
+      </ErrorBoundary>
     );
+
+    rerender(
+      <ErrorBoundary>
+        <ConditionalBomb error={error} shouldThrow={false} />
+      </ErrorBoundary>
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Intentar recuperar/i }));
+
+    expect(screen.getByTestId('safe-child')).toHaveTextContent('Sección recuperada');
+    expect(window.sessionStorage.getItem('lanzo:flow-state')).toBe('preserve');
   });
 
-  it('el objeto de log incluye timestamp ISO válido', () => {
-    renderWithError(new Error('ts test'));
-    const loggedObj = Logger.error.mock.calls[0][1];
-    expect(loggedObj).toHaveProperty('timestamp');
-    expect(new Date(loggedObj.timestamp).getTime()).not.toBeNaN();
+  it('blocks render recovery when the actor or tenant context became stale', () => {
+    const createRecoveryContextGuard = vi.fn(() => () => false);
+    renderWithError(new Error('stale section failure'), { createRecoveryContextGuard });
+
+    fireEvent.click(screen.getByRole('button', { name: /Intentar recuperar/i }));
+
+    expect(createRecoveryContextGuard).toHaveBeenCalledOnce();
+    expect(screen.getByRole('button', { name: /Intentar recuperar/i })).toBeEnabled();
+    expect(screen.getByRole('status')).toHaveTextContent(/La sesión o el tenant cambió/i);
+    expect(document.body.textContent).toContain('No se pudo mostrar esta sección');
   });
 
-  it('muestra la versión de la app en el footer', () => {
-    renderWithError(new Error('x'));
-    expect(screen.getByText(/Lanzo POS System v/i)).toBeInTheDocument();
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// BLOQUE 3 — Contenido del reporte WhatsApp
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe('3. Contenido del reporte de soporte (WhatsApp)', () => {
-  function captureReportMessage(error, options = {}) {
-    renderWithError(error, options);
-    fireEvent.click(screen.getByText(/Reportar Problema por WhatsApp/i));
-    const call = window.open.mock.calls[0];
-    expect(call).toBeTruthy();
-    return decodeURIComponent(call[0]).split('?text=')[1] ?? '';
-  }
-
-  beforeEach(() => {
-    localStorage.setItem('lanzo_device_id', 'DEVICE-XYZ-001');
-  });
-  afterEach(() => {
-    localStorage.removeItem('lanzo_device_id');
-  });
-
-  it('incluye el nombre del negocio', () => {
-    expect(captureReportMessage(new Error('x'))).toContain('Verdulería El Tomate');
-  });
-
-  it('incluye el rubro del negocio', () => {
-    expect(captureReportMessage(new Error('x'))).toContain('verduleria');
-  });
-
-  it('incluye los primeros 12 caracteres de la licencia (parcial)', () => {
-    // 'LNZ-TEST-1234567890'.slice(0, 12) = 'LNZ-TEST-123' (exactamente 12 chars)
-    expect(captureReportMessage(new Error('x'))).toContain('LNZ-TEST-123');
-  });
-
-  it('incluye el device_id del equipo', () => {
-    expect(captureReportMessage(new Error('x'))).toContain('DEVICE-XYZ-001');
-  });
-
-  it('incluye el tipo de error (TypeError)', () => {
-    // El template usa negrita de WhatsApp: *TIPO DE ERROR:* TypeError
-    expect(captureReportMessage(new TypeError('boom'))).toContain('*TIPO DE ERROR:* TypeError');
-  });
-
-  it('incluye el mensaje exacto del error', () => {
-    expect(captureReportMessage(new Error('algo muy específico falló aquí'))).toContain('algo muy específico falló aquí');
-  });
-
-  it('incluye el stack trace de JavaScript', () => {
-    const err = new TypeError('null.map');
-    err.stack = 'TypeError: null.map\n    at ProductList.jsx:42:10\n    at render';
-    expect(captureReportMessage(err)).toContain('ProductList.jsx');
-  });
-
-  it('incluye la ruta actual (pathname)', () => {
-    expect(captureReportMessage(new Error('x'), { pathname: '/configuracion/backup' }))
-      .toContain('/configuracion/backup');
-  });
-
-  it('incluye el estado de red "En línea" cuando está conectado', () => {
-    Object.defineProperty(navigator, 'onLine', { value: true, configurable: true });
-    expect(captureReportMessage(new Error('x'))).toContain('En línea');
-  });
-
-  it('incluye error.cause cuando está presente', () => {
-    const cause = new Error('Supabase connection refused');
-    const err = new Error('Fallo al guardar venta', { cause });
-    expect(captureReportMessage(err)).toContain('Supabase connection refused');
-  });
-
-  it('incluye la versión de la app', () => {
-    expect(captureReportMessage(new Error('x'))).toContain('v4.0.0');
-  });
-
-  it('NO incluye el hash de la URL (sin tokens sensibles)', () => {
-    // El reporte usa solo pathname+search — nunca el hash
-    const msg = captureReportMessage(new Error('x'), { pathname: '/pos', locationSearch: '?ref=abc' });
-    expect(msg).not.toContain('supersecret123');
-  });
-
-  it('el link apunta al número de soporte correcto (wa.me)', () => {
-    renderWithError(new Error('x'));
-    fireEvent.click(screen.getByText(/Reportar Problema por WhatsApp/i));
-    expect(window.open.mock.calls[0][0]).toMatch(/wa\.me\/5200000000/);
-  });
-
-  it('abre WhatsApp en pestaña nueva (_blank)', () => {
-    renderWithError(new Error('x'));
-    fireEvent.click(screen.getByText(/Reportar Problema por WhatsApp/i));
-    expect(window.open.mock.calls[0][1]).toBe('_blank');
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// BLOQUE 4 — Copiar reporte al portapapeles
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe('4. Botón Copiar reporte', () => {
-  beforeEach(() => navigator.clipboard.writeText.mockClear());
-
-  it('existe el botón de copiar', () => {
-    renderWithError(new Error('x'));
-    expect(screen.getByText(/Copiar reporte completo/i)).toBeInTheDocument();
-  });
-
-  it('llama a navigator.clipboard.writeText al hacer click', async () => {
-    renderWithError(new TypeError('null.map'));
-    fireEvent.click(screen.getByText(/Copiar reporte completo/i));
-    await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledTimes(1));
-  });
-
-  it('el texto copiado contiene el nombre del negocio', async () => {
-    renderWithError(new Error('x'));
-    fireEvent.click(screen.getByText(/Copiar reporte completo/i));
-    await waitFor(() => {
-      expect(navigator.clipboard.writeText.mock.calls[0][0]).toContain('Verdulería El Tomate');
+  it('reloads only through the explicit action and does not clear cache or update workers', () => {
+    const reloadPage = vi.fn();
+    const cacheDelete = vi.fn();
+    const workerUpdate = vi.fn();
+    globalThis.caches = { keys: vi.fn(), delete: cacheDelete };
+    Object.defineProperty(navigator, 'serviceWorker', {
+      configurable: true,
+      value: { getRegistrations: vi.fn(async () => [{ update: workerUpdate }]) }
     });
+
+    renderWithError(new Error('render failure'), { reloadPage });
+    fireEvent.click(screen.getByRole('button', { name: /Recargar página/i }));
+
+    expect(reloadPage).toHaveBeenCalledOnce();
+    expect(cacheDelete).not.toHaveBeenCalled();
+    expect(workerUpdate).not.toHaveBeenCalled();
   });
 
-  it('el texto copiado contiene el stack trace', async () => {
-    const err = new TypeError('null.map');
-    err.stack = 'TypeError: null.map\n    at CartList.jsx:99';
-    renderWithError(err);
-    fireEvent.click(screen.getByText(/Copiar reporte completo/i));
-    await waitFor(() => {
-      expect(navigator.clipboard.writeText.mock.calls[0][0]).toContain('CartList.jsx');
-    });
+  it('does not force a PWA update when there is no confirmed update', () => {
+    const runUpdate = vi.fn();
+    useAppStore.getState.mockReturnValue({ updateAvailable: false, isUpdating: false, runUpdate });
+    renderWithError(new Error('render failure'));
+
+    expect(screen.queryByRole('button', { name: /Actualizar aplicación/i })).not.toBeInTheDocument();
+    expect(runUpdate).not.toHaveBeenCalled();
   });
 
-  it('cambia el texto del botón a "¡Copiado!" tras hacer click', async () => {
-    renderWithError(new Error('x'));
-    fireEvent.click(screen.getByText(/Copiar reporte completo/i));
-    await waitFor(() => expect(screen.getByText(/¡Copiado!/i)).toBeInTheDocument());
+  it('deduplicates an explicit PWA update and does not fall back to cache deletion', async () => {
+    let resolveUpdate;
+    const runUpdate = vi.fn(() => new Promise((resolve) => { resolveUpdate = resolve; }));
+    const cacheDelete = vi.fn();
+    globalThis.caches = { keys: vi.fn(), delete: cacheDelete };
+    useAppStore.getState.mockReturnValue({ updateAvailable: true, isUpdating: false, runUpdate });
+    renderWithError(new Error('render failure'));
+
+    const updateButton = screen.getByRole('button', { name: /Actualizar aplicación/i });
+    fireEvent.click(updateButton);
+    fireEvent.click(updateButton);
+    await act(async () => Promise.resolve());
+
+    expect(runUpdate).toHaveBeenCalledOnce();
+    resolveUpdate();
+    await act(async () => Promise.resolve());
+    expect(cacheDelete).not.toHaveBeenCalled();
   });
 
-  it('el botón vuelve al estado original tras 3 segundos', async () => {
-    // waitFor usa setTimeout internamente y es incompatible con useFakeTimers.
-    // Usamos act + comprobación síncrona después de avanzar el tiempo.
+  it('routes to POS without clearing session or tenant storage', () => {
+    const navigateToPos = vi.fn();
+    window.sessionStorage.setItem('lanzo:authorized-session', 'keep');
+    window.localStorage.setItem('lanzo:active-orders-storage', 'keep');
+    renderWithError(new Error('section failure'), { navigateToPos }, '/ventas');
+
+    fireEvent.click(screen.getByRole('button', { name: /Ir al Punto de Venta ahora/i }));
+
+    expect(navigateToPos).toHaveBeenCalledWith('/');
+    expect(window.sessionStorage.getItem('lanzo:authorized-session')).toBe('keep');
+    expect(window.localStorage.getItem('lanzo:active-orders-storage')).toBe('keep');
+  });
+
+  it('does not render raw error details when offline', () => {
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+    const error = new Error('Failed to fetch private customer details');
+    renderWithError(error);
+
+    expect(screen.getByText(/Sin conexión/)).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('private customer details');
+  });
+
+  it('keeps technical summaries bounded to allowlisted report fields', () => {
+    const error = new Error('customer=Ana Lopez total=9876.50 license_key=LNZ-PRIVATE-123 token=jwt-secret');
+    error.code = 'DB_OPEN_TIMEOUT';
+    error.cause = new Error('phone=5551234567 email=ana@example.com');
+    error.stack = 'Error: https://lanzo.test/ventas/private?access_token=stack-secret';
+    const { boundaryRef } = renderWithError(error, {}, '/ventas/private-customer-id');
+    const report = boundaryRef.current._buildReportMessage();
+
+    expect(report).toContain('REPORTE TÉCNICO DE INCIDENCIA - LANZO POS');
+    expect(report).toContain('Código de incidencia: DB_OPEN_TIMEOUT');
+    expect(report).toContain('Clasificación: Almacenamiento local');
+    expect(report).toContain('Gravedad: section_failure');
+    expect(report).toContain('Tipo técnico: Error');
+    expect(report).toContain('Sección: /ventas');
+    expect(report).toContain('Conectividad: Online');
+    expect(report).toContain('Fecha y hora:');
+    expect(report).not.toContain('Ana Lopez');
+    expect(report).not.toContain('private-customer-id');
+    expect(report).not.toContain('9876.50');
+    expect(report).not.toContain('LNZ-PRIVATE-123');
+    expect(report).not.toContain('jwt-secret');
+    expect(report).not.toContain('5551234567');
+    expect(report).not.toContain('ana@example.com');
+    expect(report).not.toContain('stack-secret');
+  });
+
+  it('does not serialize unknown codes, URL parameters, causes, or stack frames', () => {
+    const error = new Error('Unexpected customer=private-name');
+    error.code = 'secret-token-value-123456';
+    error.cause = new Error('license_key=full-license-value');
+    error.stack = 'Error at https://lanzo.test/caja?key=customer-secret';
+    const { boundaryRef } = renderWithError(error, {}, '/ruta-con-identificador-123');
+    const report = boundaryRef.current._buildReportMessage();
+
+    expect(report).toContain('Código de incidencia: INCIDENT_REACT_RENDER');
+    expect(report).toContain('Clasificación: Render de interfaz');
+    expect(report).toContain('Gravedad: section_failure');
+    expect(report).toContain('Sección: otra sección');
+    expect(report).not.toContain('secret-token-value');
+    expect(report).not.toContain('full-license-value');
+    expect(report).not.toContain('customer-secret');
+    expect(report).not.toContain('private-name');
+    expect(report).not.toContain('ruta-con-identificador');
+    expect(report).not.toContain('https://');
+  });
+
+  it('logs a timestamp and scalar incident fields without attaching Error objects', () => {
+    const error = Object.assign(new TypeError('private detail'), { code: 'DB_BLOCKED' });
+    renderWithError(error);
+
+    const logged = Logger.error.mock.calls[0][1];
+    expect(Logger.error).toHaveBeenCalledOnce();
+    expect(logged.code).toBe('DB_BLOCKED');
+    expect(logged.category).toBe('indexeddb');
+    expect(logged.severity).toBe('section_failure');
+    expect(logged.errorType).toBe('TypeError');
+    expect(logged.componentStackAvailable).toBe(true);
+    expect(Number.isNaN(new Date(logged.timestamp).getTime())).toBe(false);
+    expect(Object.values(logged).join(' ')).not.toContain('private detail');
+    expect(Object.keys(logged)).toEqual([
+      'timestamp', 'code', 'category', 'severity', 'errorType', 'componentStackAvailable'
+    ]);
+  });
+
+  it('uses safe fallback metadata when an error has no useful message or a custom name', () => {
+    const error = new Error();
+    error.name = 'CustomerTokenError';
+    const { boundaryRef } = renderWithError(error);
+    const report = boundaryRef.current._buildReportMessage();
+
+    expect(screen.getByText(/No se pudo mostrar esta sección/)).toBeInTheDocument();
+    expect(screen.getAllByText('INCIDENT_REACT_RENDER')).toHaveLength(2);
+    expect(document.body.textContent).not.toContain('CustomerTokenError');
+    expect(report).toContain('Tipo técnico: Error');
+    expect(report).toContain('Clasificación: Render de interfaz');
+    expect(report.length).toBeLessThan(1_500);
+  });
+
+  it('keeps very long stack traces out of the user interface and copied report', async () => {
+    const error = new Error('deep recursion customer private-data');
+    error.stack = `Error: ${error.message}\n${' at internal/private/path\n'.repeat(250)}`;
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    renderWithError(error);
+
+    fireEvent.click(screen.getByRole('button', { name: /Copiar reporte completo/i }));
+    await act(async () => Promise.resolve());
+
+    const report = writeText.mock.calls[0][0];
+    expect(screen.getByText(/El detalle interno se excluyó/)).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('deep recursion customer-private-data');
+    expect(report).not.toContain('internal/private/path');
+    expect(report).not.toContain('deep recursion customer');
+    expect(report.length).toBeLessThan(1_500);
+  });
+
+  it('copies the safe report and shows a temporary copied state', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+    const { boundaryRef } = renderWithError(Object.assign(new Error('private'), { code: 'SYNC_PUSH_FAILED' }));
+
+    fireEvent.click(screen.getByRole('button', { name: /Copiar reporte completo/i }));
+    await act(async () => Promise.resolve());
+
+    expect(writeText).toHaveBeenCalledOnce();
+    expect(writeText.mock.calls[0][0]).toContain('Código de incidencia: SYNC_PUSH_FAILED');
+    expect(writeText.mock.calls[0][0]).toContain('Clasificación: Sincronización');
+    expect(writeText.mock.calls[0][0]).not.toContain('private');
+    expect(screen.getByText(/¡Copiado!/)).toBeInTheDocument();
+    expect(boundaryRef.current.state.copied).toBe(true);
+  });
+
+  it('restores the copy button label after its timeout', async () => {
     vi.useFakeTimers();
     try {
-      renderWithError(new Error('x'));
-
-      await act(async () => {
-        fireEvent.click(screen.getByText(/Copiar reporte completo/i));
-        // Dar tiempo al microtask de la Promise del clipboard
-        await Promise.resolve();
-        await Promise.resolve();
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: { writeText: vi.fn().mockResolvedValue(undefined) }
       });
+      renderWithError(new Error('copy timer'));
+      fireEvent.click(screen.getByRole('button', { name: /Copiar reporte completo/i }));
+      await act(async () => Promise.resolve());
 
-      expect(screen.getByText(/¡Copiado!/i)).toBeInTheDocument();
-
-      // Avanzar el temporizador de reset (3100ms)
-      act(() => vi.advanceTimersByTime(3100));
-
-      expect(screen.queryByText(/¡Copiado!/i)).not.toBeInTheDocument();
-      expect(screen.getByText(/Copiar reporte completo/i)).toBeInTheDocument();
+      expect(screen.getByText(/¡Copiado!/)).toBeInTheDocument();
+      act(() => vi.advanceTimersByTime(3_100));
+      expect(screen.queryByText(/¡Copiado!/)).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Copiar reporte completo/i })).toBeInTheDocument();
+      expect(document.body.textContent).not.toContain('stack');
     } finally {
       vi.useRealTimers();
     }
   });
 
-  it('no lanza error al fallar clipboard (la UI no se rompe)', async () => {
-    // jsdom no soporta document.execCommand; verificamos que si el clipboard
-    // falla el componente no lanza una excepción no controlada.
-    navigator.clipboard.writeText.mockRejectedValueOnce(new Error('Permission denied'));
-    renderWithError(new Error('x'));
-    // El click no debe lanzar al test runner aunque internamente el fallback falle
-    await expect(
-      act(async () => { fireEvent.click(screen.getByText(/Copiar reporte completo/i)); })
-    ).resolves.not.toThrow();
-  });
-});
+  it('keeps the panel usable when clipboard access is denied', async () => {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: vi.fn().mockRejectedValue(new Error('permission denied')) }
+    });
+    renderWithError(new Error('clipboard issue'));
 
-// ─────────────────────────────────────────────────────────────────────────────
-// BLOQUE 5 — Acciones de recuperación
-// ─────────────────────────────────────────────────────────────────────────────
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /Copiar reporte completo/i }));
+    });
 
-describe('5. Acciones de recuperación', () => {
-  it('el botón Recargar Página existe y es clickeable sin lanzar errores', () => {
-    // jsdom 28 hace window.location.reload non-mockable; verificamos que
-    // el botón existe y que el click no lanza una excepción.
-    renderWithError(new Error('x'));
-    const btn = screen.getByText(/Recargar Página/i);
-    expect(btn).toBeInTheDocument();
-    // No debe lanzar al hacer click (el reload real no ocurre en jsdom)
-    expect(() => fireEvent.click(btn)).not.toThrow();
+    expect(screen.getByRole('alert')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Copiar reporte completo/i })).toBeInTheDocument();
+    expect(screen.queryByText(/¡Copiado!/)).not.toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('permission denied');
   });
 
-  it('Intentar recuperar elimina lanzo-cart-storage', () => {
-    localStorage.setItem('lanzo-cart-storage', '{"items":[]}');
-    renderWithError(new Error('x'));
-    fireEvent.click(screen.getByText(/Intentar recuperar/i));
-    expect(localStorage.getItem('lanzo-cart-storage')).toBeNull();
-  });
-
-  it('Intentar recuperar limpia sessionStorage', () => {
-    sessionStorage.setItem('flag', 'true');
-    renderWithError(new Error('x'));
-    fireEvent.click(screen.getByText(/Intentar recuperar/i));
-    expect(sessionStorage.getItem('flag')).toBeNull();
-  });
-
-  it('Intentar recuperar NO elimina lanzo_license', () => {
-    localStorage.setItem('lanzo_license', 'LICENCIA_REAL');
-    renderWithError(new Error('x'));
-    fireEvent.click(screen.getByText(/Intentar recuperar/i));
-    expect(localStorage.getItem('lanzo_license')).toBe('LICENCIA_REAL');
-    localStorage.removeItem('lanzo_license');
-  });
-
-  it('Intentar recuperar NO elimina lanzo_device_id', () => {
-    localStorage.setItem('lanzo_device_id', 'DEVICE-001');
-    renderWithError(new Error('x'));
-    fireEvent.click(screen.getByText(/Intentar recuperar/i));
-    expect(localStorage.getItem('lanzo_device_id')).toBe('DEVICE-001');
-    localStorage.removeItem('lanzo_device_id');
-  });
-
-  it('Intentar recuperar restaura el boundary para poder volver a renderizar', () => {
-    // Necesitamos que el hijo deje de lanzar ANTES de que el boundary se resetee.
-    // Si reseteamos primero, la boundary re-renderiza con shouldThrow=true → lanza de nuevo.
-    // Solución: un wrapper con estado externo controla shouldThrow.
-    let setShouldThrow;
-    function ControlledWrapper() {
-      const [shouldThrow, _set] = React.useState(true);
-      setShouldThrow = _set;
-      return (
-        <ErrorBoundary>
-          <ConditionalBomb shouldThrow={shouldThrow} error={new Error('recoverable')} />
-        </ErrorBoundary>
-      );
-    }
-
-    render(<ControlledWrapper />);
-    expect(screen.getByText(/Se ha detenido la aplicación/i)).toBeInTheDocument();
-
-    // 1. Primero: el hijo deja de lanzar (la boundary sigue en error, no re-renderiza aún)
-    act(() => { setShouldThrow(false); });
-
-    // 2. Luego: resetear la boundary → renderiza hijos → shouldThrow=false → no lanza
-    fireEvent.click(screen.getByText(/Intentar recuperar/i));
-
-    expect(screen.getByTestId('safe-child')).toBeInTheDocument();
-  });
-
-  it('Ir al POS elimina lanzo-cart-storage ANTES de redirigir', () => {
-    // jsdom 28 hace window.location.replace non-mockable.
-    // Verificamos el efecto secundario más importante: que el carrito corrupto
-    // sea purgado antes de cualquier redirección.
-    localStorage.setItem('lanzo-cart-storage', '{"corrupted":true}');
-    renderWithError(new Error('x'), { pathname: '/reportes' });
-    expect(() => fireEvent.click(screen.getByText(/Ir al Punto de Venta ahora/i))).not.toThrow();
-    expect(localStorage.getItem('lanzo-cart-storage')).toBeNull();
-  });
-
-  it('Ir al POS también elimina sessionStorage antes de redirigir', () => {
-    sessionStorage.setItem('temp_flag', '1');
-    renderWithError(new Error('x'), { pathname: '/reportes' });
-    fireEvent.click(screen.getByText(/Ir al Punto de Venta ahora/i));
-    expect(sessionStorage.getItem('temp_flag')).toBeNull();
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// BLOQUE 6 — Lógica de ruta
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe('6. Lógica de ruta (cuándo mostrar el botón Ir al POS)', () => {
-  it('NO muestra el botón "Ir al POS" en la ruta "/"', () => {
-    renderWithError(new Error('x'), { pathname: '/' });
-    expect(screen.queryByText(/Ir al Punto de Venta ahora/i)).not.toBeInTheDocument();
-  });
-
-  it('NO muestra el botón "Ir al POS" en ruta ""', () => {
-    renderWithError(new Error('x'), { pathname: '' });
-    expect(screen.queryByText(/Ir al Punto de Venta ahora/i)).not.toBeInTheDocument();
-  });
-
-  it('SÍ muestra el botón en /reportes', () => {
-    renderWithError(new Error('x'), { pathname: '/reportes' });
-    expect(screen.getByText(/Ir al Punto de Venta ahora/i)).toBeInTheDocument();
-  });
-
-  it('SÍ muestra el botón en /configuracion', () => {
-    renderWithError(new Error('x'), { pathname: '/configuracion' });
-    expect(screen.getByText(/Ir al Punto de Venta ahora/i)).toBeInTheDocument();
-  });
-
-  it('SÍ muestra el botón en /inventario', () => {
-    renderWithError(new Error('x'), { pathname: '/inventario' });
-    expect(screen.getByText(/Ir al Punto de Venta ahora/i)).toBeInTheDocument();
-  });
-
-  it('el card incluye advertencia de evitar la sección', () => {
-    renderWithError(new Error('x'), { pathname: '/reportes' });
+  it('offers a route back to POS only away from the POS root', () => {
+    renderWithError(new Error('section failure'), {}, '/reportes/secret?access_token=query-secret');
+    expect(screen.getByRole('button', { name: /Ir al Punto de Venta ahora/i })).toBeInTheDocument();
     expect(screen.getByText(/Evita regresar a esta sección/i)).toBeInTheDocument();
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// BLOQUE 7 — Estado de red
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe('7. Estado de red (online / offline)', () => {
-  it('muestra "Conexión activa" cuando navigator.onLine es true', () => {
-    Object.defineProperty(navigator, 'onLine', { value: true, configurable: true });
-    renderWithError(new Error('x'));
-    expect(screen.getByText(/Conexión activa/i)).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('query-secret');
   });
 
-  it('muestra "Sin conexión" cuando navigator.onLine es false', () => {
-    Object.defineProperty(navigator, 'onLine', { value: false, configurable: true });
-    renderWithError(new Error('x'));
-    expect(screen.getByText(/Sin conexión/i)).toBeInTheDocument();
+  it('does not offer a route change when the POS root itself fails', () => {
+    renderWithError(new Error('pos failure'), {}, '/');
+    expect(screen.queryByRole('button', { name: /Ir al Punto de Venta ahora/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Recargar página/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Intentar recuperar/i })).toBeInTheDocument();
   });
 
-  it('incluye "esto puede ser la causa" cuando está offline', () => {
-    Object.defineProperty(navigator, 'onLine', { value: false, configurable: true });
-    renderWithError(new Error('x'));
-    expect(screen.getByText(/esto puede ser la causa/i)).toBeInTheDocument();
+  it('does not claim that records or pending financial outcomes are confirmed safe', () => {
+    renderWithError(Object.assign(new Error('payment result ambiguous'), { code: 'FINANCIAL_RESULT_UNKNOWN' }));
+    const visible = document.body.textContent;
+
+    expect(visible).toContain('Revisa el resultado de cualquier cobro pendiente');
+    expect(visible).not.toMatch(/tus datos de ventas y caja están seguros/i);
+    expect(visible).not.toMatch(/el cobro se completó correctamente/i);
+    expect(visible).toContain('critical_blocker');
+    expect(visible).not.toContain('payment result ambiguous');
   });
 
-  it('el reporte incluye "SIN CONEXIÓN" cuando está offline', () => {
-    Object.defineProperty(navigator, 'onLine', { value: false, configurable: true });
-    renderWithError(new Error('x'));
-    fireEvent.click(screen.getByText(/Reportar Problema por WhatsApp/i));
-    const url = decodeURIComponent(window.open.mock.calls[0][0]);
-    expect(url).toContain('SIN CONEXIÓN');
-  });
-});
+  it('does not show an update action while offline or when no update function exists', () => {
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+    const runUpdate = vi.fn();
+    useAppStore.getState.mockReturnValue({ updateAvailable: true, isUpdating: false, runUpdate });
+    renderWithError(new Error('offline section failure'));
 
-// ─────────────────────────────────────────────────────────────────────────────
-// BLOQUE 8 — Tipos de error especiales
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe('8. Tipos de error especiales', () => {
-  it('maneja TypeError correctamente', () => {
-    renderWithError(new TypeError('Cannot read property map of undefined'));
-    expect(screen.getByText('TypeError')).toBeInTheDocument();
+    expect(screen.getByText(/Sin conexión/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Actualizar aplicación/i })).not.toBeInTheDocument();
+    expect(runUpdate).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: /Recargar página/i })).toBeInTheDocument();
+    expect(window.sessionStorage.length).toBe(0);
   });
 
-  it('maneja RangeError correctamente', () => {
-    renderWithError(new RangeError('Maximum call stack size exceeded'));
-    expect(screen.getByText('RangeError')).toBeInTheDocument();
-    // El mensaje aparece en la caja roja Y en el stack preview → usamos body.textContent
-    expect(document.body.textContent).toContain('Maximum call stack size exceeded');
+  it('reports a failed PWA update once and prevents duplicate update attempts', async () => {
+    const runUpdate = vi.fn().mockRejectedValue(new Error('worker activation failed'));
+    useAppStore.getState.mockReturnValue({ updateAvailable: true, isUpdating: false, runUpdate });
+    renderWithError(new Error('render failure'));
+
+    const updateButton = screen.getByRole('button', { name: /Actualizar aplicación/i });
+    fireEvent.click(updateButton);
+    await act(async () => Promise.resolve());
+
+    expect(runUpdate).toHaveBeenCalledOnce();
+    expect(screen.getByRole('status')).toHaveTextContent(/No se pudo confirmar la actualización/);
+    expect(screen.getByRole('button', { name: /Actualizar aplicación/i })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: /Actualizar aplicación/i }));
+    expect(runUpdate).toHaveBeenCalledOnce();
+    expect(document.body.textContent).not.toContain('worker activation failed');
+    expect(window.localStorage.length).toBe(0);
   });
 
-  it('maneja SyntaxError correctamente', () => {
-    renderWithError(new SyntaxError('Unexpected token <'));
-    expect(screen.getByText('SyntaxError')).toBeInTheDocument();
-  });
+  it('reports an update action that resolves without applying the new worker', async () => {
+    const runUpdate = vi.fn().mockResolvedValue(undefined);
+    useAppStore.getState.mockReturnValue({ updateAvailable: true, isUpdating: false, runUpdate });
+    renderWithError(new Error('render failure'));
 
-  it('muestra error.cause en la caja técnica', () => {
-    const cause = new Error('network timeout from Supabase');
-    const err = new Error('Fallo al sincronizar inventario', { cause });
-    renderWithError(err);
-    expect(screen.getByText(/network timeout from Supabase/i)).toBeInTheDocument();
-  });
-
-  it('el reporte de error encadenado incluye la causa', () => {
-    const cause = new Error('ECONNREFUSED: Connection refused');
-    const err = new Error('Backup failed', { cause });
-    renderWithError(err);
-    fireEvent.click(screen.getByText(/Reportar Problema por WhatsApp/i));
-    const url = decodeURIComponent(window.open.mock.calls[0][0]);
-    expect(url).toContain('ECONNREFUSED');
-  });
-
-  it('maneja error sin message (error mínimo)', () => {
-    renderWithError(new Error());
-    expect(screen.getByText(/Se ha detenido la aplicación/i)).toBeInTheDocument();
-  });
-
-  it('maneja stack trace muy largo sin romper la UI', () => {
-    const err = new Error('deep recursion');
-    err.stack = 'Error: deep recursion\n' + '    at fn (app.jsx:1)\n'.repeat(200);
-    renderWithError(err);
-    expect(screen.getByText(/DETALLE TÉCNICO/i)).toBeInTheDocument();
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// BLOQUE 9 — Datos del store — casos extremos
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe('9. Datos del store — casos extremos', () => {
-  it('fallback "Negocio No Configurado" si no hay companyProfile', () => {
-    useAppStore.getState.mockReturnValueOnce({ companyProfile: null, licenseDetails: null });
-    renderWithError(new Error('x'));
-    fireEvent.click(screen.getByText(/Reportar Problema por WhatsApp/i));
-    const url = decodeURIComponent(window.open.mock.calls[0][0]);
-    expect(url).toContain('Negocio No Configurado');
-  });
-
-  it('fallback "Sin Licencia Activa" si no hay licenseDetails', () => {
-    useAppStore.getState.mockReturnValueOnce({
-      companyProfile: { name: 'Tienda Test', rubro: 'general' },
-      licenseDetails: null,
-    });
-    renderWithError(new Error('x'));
-    fireEvent.click(screen.getByText(/Reportar Problema por WhatsApp/i));
-    const url = decodeURIComponent(window.open.mock.calls[0][0]);
-    // El componente trunca la licencia a 12 chars: 'Sin Licencia Activa'.slice(0,12) = 'Sin Licencia'
-    expect(url).toContain('Sin Licencia');
-  });
-
-  it('incluye lanzo_device_id de localStorage en el reporte', () => {
-    localStorage.setItem('lanzo_device_id', 'DEV-LAPTOP-CAJA1');
-    renderWithError(new Error('x'));
-    fireEvent.click(screen.getByText(/Reportar Problema por WhatsApp/i));
-    const url = decodeURIComponent(window.open.mock.calls[0][0]);
-    expect(url).toContain('DEV-LAPTOP-CAJA1');
-    localStorage.removeItem('lanzo_device_id');
-  });
-
-  it('muestra "No disponible" si no hay device_id en localStorage', () => {
-    localStorage.removeItem('lanzo_device_id');
-    renderWithError(new Error('x'));
-    fireEvent.click(screen.getByText(/Reportar Problema por WhatsApp/i));
-    const url = decodeURIComponent(window.open.mock.calls[0][0]);
-    expect(url).toContain('No disponible');
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// BLOQUE 10 — Utilidades puras (lógica aislada, sin React)
-// ─────────────────────────────────────────────────────────────────────────────
-
-// Copiamos la lógica de las utilidades puras para testearlas en aislamiento total
-function parseUserAgent(ua = '') {
-  let browser = 'Navegador desconocido';
-  if (/Edg\/(\d+)/.test(ua))         browser = `Edge ${RegExp.$1}`;
-  else if (/Chrome\/(\d+)/.test(ua)) browser = `Chrome ${RegExp.$1}`;
-  else if (/Firefox\/(\d+)/.test(ua))browser = `Firefox ${RegExp.$1}`;
-  else if (/Safari\/(\d+)/.test(ua) && /Version\/(\d+)/.test(ua)) browser = `Safari ${RegExp.$1}`;
-  else if (/OPR\/(\d+)/.test(ua))    browser = `Opera ${RegExp.$1}`;
-
-  let os = 'SO desconocido';
-  if (/Windows NT 10/.test(ua))       os = 'Windows 10/11';
-  else if (/Windows NT 6.3/.test(ua)) os = 'Windows 8.1';
-  else if (/Windows NT 6.1/.test(ua)) os = 'Windows 7';
-  else if (/Mac OS X ([\d_]+)/.test(ua)) os = `macOS ${RegExp.$1.replace(/_/g, '.')}`;
-  else if (/Android ([\d.]+)/.test(ua))  os = `Android ${RegExp.$1}`;
-  else if (/iPhone OS ([\d_]+)/.test(ua)) os = `iOS ${RegExp.$1.replace(/_/g, '.')}`;
-  else if (/Linux/.test(ua))          os = 'Linux';
-
-  return `${browser} / ${os}`;
-}
-
-function cleanStack(stack = '', maxLines = 12) {
-  if (!stack) return 'No disponible';
-  return stack.split('\n').slice(0, maxLines).join('\n');
-}
-
-function formatTimestamp(isoString) {
-  try {
-    const d = new Date(isoString);
-    return d.toLocaleString('es-MX', {
-      day: '2-digit', month: 'short', year: 'numeric',
-      hour: '2-digit', minute: '2-digit', second: '2-digit',
-      timeZoneName: 'short',
-    });
-  } catch {
-    return isoString;
-  }
-}
-
-describe('10. Utilidades puras', () => {
-  describe('parseUserAgent()', () => {
-    it('identifica Chrome en Windows 10', () => {
-      const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/125.0.0.0 Safari/537.36';
-      const r = parseUserAgent(ua);
-      expect(r).toContain('Chrome 125');
-      expect(r).toContain('Windows 10/11');
+    fireEvent.click(screen.getByRole('button', { name: /Actualizar aplicación/i }));
+    await waitFor(() => {
+      expect(screen.getByRole('status')).toHaveTextContent(/No se pudo confirmar la actualización/);
     });
 
-    it('identifica Firefox', () => {
-      const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/109.0';
-      expect(parseUserAgent(ua)).toContain('Firefox 109');
-    });
-
-    it('identifica Edge', () => {
-      const ua = 'Mozilla/5.0 (Windows NT 10.0) AppleWebKit/537.36 Chrome/124 Safari/537.36 Edg/124.0';
-      expect(parseUserAgent(ua)).toContain('Edge 124');
-    });
-
-    it('identifica Safari en iOS', () => {
-      const ua = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17 Mobile/15E148 Safari/604.1';
-      const r = parseUserAgent(ua);
-      expect(r).toContain('Safari');
-      expect(r).toContain('iOS');
-    });
-
-    it('identifica Android', () => {
-      const ua = 'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 Chrome/112 Mobile Safari/537.36';
-      expect(parseUserAgent(ua)).toContain('Android 13');
-    });
-
-    it('devuelve "Navegador desconocido" para UA vacío', () => {
-      expect(parseUserAgent('')).toContain('Navegador desconocido');
-    });
+    expect(runUpdate).toHaveBeenCalledOnce();
+    expect(screen.getByRole('button', { name: /Actualizar aplicación/i })).toBeDisabled();
+    expect(document.body.textContent).not.toContain('PWA_UPDATE_NOT_APPLIED');
   });
 
-  describe('cleanStack()', () => {
-    it('devuelve máximo N líneas', () => {
-      const bigStack = Array.from({ length: 50 }, (_, i) => `    at fn${i} (file.js:${i})`).join('\n');
-      expect(cleanStack(bigStack, 12).split('\n').length).toBeLessThanOrEqual(12);
-    });
+  it('disables updates already running in the app store', () => {
+    const runUpdate = vi.fn();
+    useAppStore.getState.mockReturnValue({ updateAvailable: true, isUpdating: true, runUpdate });
+    renderWithError(new Error('render failure'));
 
-    it('respeta el parámetro maxLines personalizado', () => {
-      const stack = 'Error\n    at a\n    at b\n    at c\n    at d\n    at e';
-      expect(cleanStack(stack, 3).split('\n').length).toBe(3);
-    });
-
-    it('devuelve "No disponible" para undefined', () => {
-      expect(cleanStack(undefined)).toBe('No disponible');
-    });
-
-    it('devuelve "No disponible" para string vacío', () => {
-      expect(cleanStack('')).toBe('No disponible');
-    });
-
-    it('preserva el contenido exacto de las líneas', () => {
-      const stack = 'TypeError: null.map\n    at ProductList.jsx:42:10';
-      expect(cleanStack(stack, 12)).toContain('ProductList.jsx:42:10');
-    });
+    expect(screen.getByRole('button', { name: /Actualizando aplicación/i })).toBeDisabled();
+    expect(runUpdate).not.toHaveBeenCalled();
+    expect(screen.getByText(/Hay una actualización disponible/)).toBeInTheDocument();
   });
 
-  describe('formatTimestamp()', () => {
-    it('devuelve una cadena no vacía para un ISO válido', () => {
-      const r = formatTimestamp('2026-06-13T18:32:05.000Z');
-      expect(r).toBeTruthy();
-      expect(typeof r).toBe('string');
+  it('uses a bounded browser summary and connection label in its footer and report', () => {
+    Object.defineProperty(navigator, 'userAgent', {
+      configurable: true,
+      value: 'Mozilla/5.0 (Windows NT 10.0) Chrome/126.0.0.0 Safari/537.36'
     });
+    const { boundaryRef } = renderWithError(new Error('browser diagnostic'));
+    const report = boundaryRef.current._buildReportMessage();
 
-    it('no lanza excepción para input inválido', () => {
-      expect(() => formatTimestamp('not-a-date')).not.toThrow();
-    });
-
-    it('el resultado contiene el año 2026', () => {
-      expect(formatTimestamp('2026-06-13T18:32:05.000Z')).toContain('2026');
-    });
+    expect(screen.getByText(/Lanzo POS System v/)).toBeInTheDocument();
+    expect(report).toContain('Navegador: Chrome 126');
+    expect(report).toContain('Conectividad: Online');
+    expect(report).not.toContain('Windows NT');
+    expect(report).not.toContain('Safari/537');
   });
 });

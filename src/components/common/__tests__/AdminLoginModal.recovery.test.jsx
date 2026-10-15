@@ -65,7 +65,7 @@ describe('AdminLoginModal local database recovery', () => {
     render(<AdminLoginModal />);
     submitCredentials();
 
-    expect(await screen.findByText(/esquema local antiguo/i)).toBeInTheDocument();
+    expect(await screen.findByText(/esquema local requiere actualización/i)).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole('button', { name: 'Entrar' })).toBeEnabled());
     expect(recoveryRuntime.markTakeoverCompleted).not.toHaveBeenCalled();
   });
@@ -81,7 +81,7 @@ describe('AdminLoginModal local database recovery', () => {
     render(<AdminLoginModal />);
     submitCredentials();
 
-    expect(await screen.findByText(/esquema local antiguo/i)).toBeInTheDocument();
+    expect(await screen.findByText(/esquema local requiere actualización/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Entrar' })).toBeEnabled();
   });
 
@@ -124,8 +124,8 @@ describe('AdminLoginModal local database recovery', () => {
 
     expect(await screen.findByRole('heading', { name: 'Tu plan cambió a Lanzo Local' })).toBeInTheDocument();
     expect(screen.getByText(/otro dispositivo registrado como activo/i)).toBeInTheDocument();
-    expect(screen.getByText(/sesiones activas en los demás dispositivos se cerrarán/i)).toBeInTheDocument();
-    expect(screen.getByText(/tus datos permanecerán intactos/i)).toBeInTheDocument();
+    expect(screen.getByText(/se cerrarán las sesiones activas en los demás dispositivos/i)).toBeInTheDocument();
+    expect(screen.getByText(/revisa las ventas antes de continuar operando/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Usar este dispositivo' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Usar este dispositivo' })).toHaveFocus();
     expect(screen.getByRole('button', { name: 'Cancelar' })).toBeEnabled();
@@ -299,7 +299,7 @@ describe('AdminLoginModal local database recovery', () => {
 
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent(
-      'No se pudo completar la acción. Tus datos permanecen intactos. Revisa tu conexión e inténtalo nuevamente.'
+      'No se pudo confirmar el resultado de la acción. Revisa las operaciones locales pendientes antes de volver a intentarla.'
     );
     expect(screen.queryByText(/POST_DOWNGRADE_CASH_OWNER_REQUIRED|SQL line 42|P0001/)).not.toBeInTheDocument();
   });

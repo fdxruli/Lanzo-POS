@@ -23,6 +23,8 @@ import {
   buildSupportMailtoUrl,
   copyTextToClipboard
 } from '../../services/support/supportContact';
+import { getSafeIncidentCode, INCIDENT_CATEGORY } from '../../services/diagnostics/incidentDiagnostics';
+import { createRecoveryContextGuard } from '../../services/diagnostics/recoveryContext';
 
 let initialPreparationPromise = null;
 let readyRuntimePromise = null;
@@ -107,7 +109,9 @@ export const loadPosReadyRuntime = async () => {
     { installMobileZoomGuard },
     { installDevConsoleCapture },
     { default: DevConsole },
-    { storageManager }
+    { storageManager },
+    { setAdminServiceWorkerReloadGuard },
+    { getActorCheckoutOwnerships, getPendingActorOperations }
   ] = await Promise.all([
     import('../../App.jsx'),
     import('@react-oauth/google'),
@@ -118,7 +122,9 @@ export const loadPosReadyRuntime = async () => {
     import('../../services/mobileZoomGuard'),
     import('../../services/devConsoleCapture'),
     import('../debug/DevConsole'),
-    import('../../services/storageManager')
+    import('../../services/storageManager'),
+    import('../../pwa/adminServiceWorker'),
+    import('../../services/auth/actorOperationalHandoff')
   ]);
 
   function Thrower({ error }) {
@@ -172,6 +178,10 @@ export const loadPosReadyRuntime = async () => {
   return {
     ReadyApplication: PosReadyApplication,
     activate: () => {
+      setAdminServiceWorkerReloadGuard(() => (
+        getActorCheckoutOwnerships().length === 0
+        && getPendingActorOperations().length === 0
+      ));
       installDevConsoleCapture();
       installMobileZoomGuard();
       installProductStoreRecoveryGuard();
@@ -224,12 +234,18 @@ export const activatePosReadyRuntime = (loadReadyRuntime = loadPosReadyRuntime) 
   });
 };
 
-export const getAdminBootErrorCode = (error) => (
-  error?.code
-  || (/\bTENANT_RUNTIME_NOT_READY\b/.test(error?.message || '')
-    ? 'TENANT_RUNTIME_NOT_READY'
-    : 'ADMIN_RUNTIME_INITIALIZATION_FAILED')
-);
+export const getAdminBootErrorCode = (error) => {
+  let candidate = 'ADMIN_RUNTIME_INITIALIZATION_FAILED';
+  try {
+    candidate = error?.code
+      || (/\bTENANT_RUNTIME_NOT_READY\b/.test(error?.message || '')
+        ? 'TENANT_RUNTIME_NOT_READY'
+        : candidate);
+  } catch {
+    // A malformed error object must not break the startup recovery screen.
+  }
+  return getSafeIncidentCode({ code: candidate }, INCIDENT_CATEGORY.UNKNOWN);
+};
 
 export const classifyAdminBootError = (error) => (
   isRecoverableAdminStartupError(error) ? 'asset_load_failure' : 'application_runtime'
@@ -244,7 +260,8 @@ const ReadyRuntimeLoading = ({
   onCopySupport,
   copied,
   supportActionError,
-  isOnline
+  isOnline,
+  assetRecoveryEnabled = true
 }) => {
   const assetFailure = error && classifyAdminBootError(error) === 'asset_load_failure';
   const code = error ? getAdminBootErrorCode(error) : null;
@@ -265,20 +282,28 @@ const ReadyRuntimeLoading = ({
           : error
             ? assetFailure
               ? 'La base local está lista, pero los archivos administrativos no pudieron cargarse. Actualiza para recuperar el sistema.'
-              : 'La base local está protegida, pero Lanzo no pudo completar el inicio de la aplicación. Tus datos locales no se han eliminado.'
+              : 'Lanzo no pudo completar el inicio. Esta pantalla no limpió el almacenamiento local, pero no puede confirmar operaciones pendientes.'
             : 'La base local está lista. Estamos cargando el entorno administrativo.'}
       </p>
       {code && !assetFailure && <p><strong>Código:</strong> {code}</p>}
       {error && !isRecovering && (
         assetFailure ? (
-          <button type="button" className="ui-button ui-button--primary" onClick={onAssetRecovery}>
-            Actualizar Lanzo POS
-          </button>
+          <>
+            {supportActionError && <p className="ui-alert ui-alert--warning" role="status">{supportActionError}</p>}
+            <button
+              type="button"
+              className="ui-button ui-button--primary"
+              onClick={onAssetRecovery}
+              disabled={!assetRecoveryEnabled || isRecovering}
+            >
+              Actualizar Lanzo POS
+            </button>
+          </>
         ) : (
           <>
             {!isOnline && (
               <p className="ui-alert ui-alert--warning" role="status">
-                Estás sin conexión. Tus datos locales siguen preservados; puedes copiar el diagnóstico y enviarlo después.
+                Estás sin conexión. Esta pantalla no limpió el almacenamiento local. Puedes copiar el diagnóstico y enviarlo después.
               </p>
             )}
             {supportActionError && <p className="ui-alert ui-alert--danger" role="alert">{supportActionError}</p>}
@@ -310,6 +335,7 @@ export default function PosApplicationBootstrap({
   loadReadyRuntime = loadPosReadyRuntime,
   recoverStartup = recoverAdminStartup,
   completeStartupRecovery = completeAdminStartupRecovery,
+  createContextGuard = createRecoveryContextGuard,
   reloadPage = () => window.location.reload(),
   openSupportMailto = (url) => { window.location.href = url; }
 }) {
@@ -321,6 +347,7 @@ export default function PosApplicationBootstrap({
   const [copiedSupportReport, setCopiedSupportReport] = useState(false);
   const [isOnline, setIsOnline] = useState(() => globalThis.navigator?.onLine !== false);
   const copyTimeoutRef = useRef(null);
+  const runtimeRecoveryContextGuardRef = useRef(null);
 
   useEffect(() => {
     const updateOnlineState = () => setIsOnline(globalThis.navigator?.onLine !== false);
@@ -370,6 +397,8 @@ export default function PosApplicationBootstrap({
     if (recovery.status !== DATABASE_RECOVERY_STATUS.READY || ReadyApplication) return undefined;
 
     let active = true;
+    const isContextCurrent = createContextGuard();
+    runtimeRecoveryContextGuardRef.current = isContextCurrent;
     activatePosReadyRuntime(loadReadyRuntime)
       .then((runtime) => {
         if (!active) return;
@@ -386,10 +415,15 @@ export default function PosApplicationBootstrap({
         setCopiedSupportReport(false);
 
         if (!isRecoverableAdminStartupError(error)) return;
+        if (!isContextCurrent()) {
+          setIsRecoveringRuntime(false);
+          setSupportActionError('La sesión o el tenant cambió durante el inicio. Reabre Lanzo desde el contexto vigente; no repetiremos la recuperación anterior.');
+          return;
+        }
 
         setIsRecoveringRuntime(true);
         try {
-          const result = await recoverStartup({ error });
+          const result = await recoverStartup({ error, isContextCurrent });
           if (!active) return;
           if (result?.status !== 'reloading') setIsRecoveringRuntime(false);
         } catch (recoveryError) {
@@ -405,6 +439,7 @@ export default function PosApplicationBootstrap({
   }, [
     ReadyApplication,
     completeStartupRecovery,
+    createContextGuard,
     loadReadyRuntime,
     recoverStartup,
     recovery.status
@@ -412,12 +447,18 @@ export default function PosApplicationBootstrap({
 
   const retryAssetReadyRuntimeRecovery = async () => {
     if (!readyRuntimeError || isRecoveringRuntime) return;
+    const isContextCurrent = runtimeRecoveryContextGuardRef.current;
+    if (!isContextCurrent?.()) {
+      setSupportActionError('La sesión o el tenant cambió durante el inicio. Reabre Lanzo desde el contexto vigente; no repetiremos la recuperación anterior.');
+      return;
+    }
 
     setIsRecoveringRuntime(true);
     try {
       const result = await recoverStartup({
         error: readyRuntimeError,
-        force: true
+        force: true,
+        isContextCurrent
       });
       if (result?.status !== 'reloading') setIsRecoveringRuntime(false);
     } catch (recoveryError) {
@@ -464,6 +505,7 @@ export default function PosApplicationBootstrap({
             copied={copiedSupportReport}
             supportActionError={supportActionError}
             isOnline={isOnline}
+          assetRecoveryEnabled={runtimeRecoveryContextGuardRef.current?.() !== false}
           />
         )}
     </DatabaseRecoveryGate>

@@ -41,26 +41,17 @@ import { useSingleInstance } from './hooks/useSingleInstance';
 import TermsAndConditionsModal from './components/common/TermsAndConditionsModal';
 import { isCloudPosSyncEnabled } from './services/sync/syncConstants';
 import { fetchLegalPolicyState, isLegalPolicyPreviewEnabled } from './services/supabase';
-import { clearCurrentAdminRuntimeCaches } from './pwa/adminRuntimeCache';
 import {
   prepareAdminLazyRoute,
   recoverAdminLazyRoute,
 } from './pwa/adminLazyRouteRecovery';
+import { createRecoveryContextGuard } from './services/diagnostics/recoveryContext';
 
 const APP_BOOT_TIMEOUT_MS = 15_000;
 
-const resetAppShellCache = async () => {
-  try {
-    if ('caches' in window) {
-      await clearCurrentAdminRuntimeCaches(window.caches);
-    }
-  } catch (cacheError) {
-    Logger.warn('No se pudo limpiar la caché runtime administrativa:', cacheError);
-  }
-};
-
 const lazyRetry = (importFn, componentName = 'Component') => (
   lazy(async () => {
+    const isContextCurrent = createRecoveryContextGuard();
     try {
       await prepareAdminLazyRoute();
       return await importFn();
@@ -69,7 +60,9 @@ const lazyRetry = (importFn, componentName = 'Component') => (
 
       let recoveryResult = null;
       try {
-        recoveryResult = await recoverAdminLazyRoute({ error });
+        recoveryResult = isContextCurrent()
+          ? await recoverAdminLazyRoute({ error, isContextCurrent })
+          : { status: 'stale-context', reason: 'actor-or-tenant-context-changed' };
       } catch (recoveryError) {
         Logger.error(`Falló la recuperación automática de ${componentName}:`, recoveryError);
       }
@@ -78,6 +71,7 @@ const lazyRetry = (importFn, componentName = 'Component') => (
         return new Promise(() => {});
       }
 
+      const staleContext = recoveryResult?.status === 'stale-context' || !isContextCurrent();
       const offline = recoveryResult?.status === 'offline' || navigator.onLine === false;
       Logger.error(`No se pudo recuperar automáticamente ${componentName}. Mostrando UI de actualización.`, {
         status: recoveryResult?.status || 'error'
@@ -98,15 +92,19 @@ const lazyRetry = (importFn, componentName = 'Component') => (
             <h3>Error de carga del módulo</h3>
             <p>No se pudo cargar la sección <strong>{componentName}</strong>.</p>
             <p style={{ fontSize: '0.9rem', color: 'var(--text-light)', marginTop: '0.5rem' }}>
-              {offline
+              {staleContext
+                ? 'La sesión o el tenant cambió durante la carga. Reabre esta sección desde el contexto vigente; no repetiremos la recuperación anterior.'
+                : offline
                 ? 'No hay conexión a internet. Reconéctate y vuelve a intentarlo.'
                 : 'Lanzo POS detectó archivos de una versión anterior. Actualiza para cargar la versión publicada sin borrar tus datos locales.'}
             </p>
             <button
               className="btn btn-primary"
               style={{ marginTop: '1rem' }}
+              disabled={staleContext}
               onClick={() => {
-                recoverAdminLazyRoute({ error, force: true })
+                if (staleContext) return;
+                recoverAdminLazyRoute({ error, force: true, isContextCurrent })
                   .then((result) => {
                     if (result?.status !== 'reloading') {
                       Logger.error(`No se pudo forzar la recuperación de ${componentName}.`, {
@@ -156,12 +154,12 @@ const AppBootRecovery = () => (
       <AlertTriangle size={42} aria-hidden="true" />
       <h1>Lanzo POS está tardando en iniciar</h1>
       <p>
-        La aplicación no pudo completar su inicialización. Tus datos locales no se han eliminado.
+        La aplicación no pudo completar su inicialización. Recargar conserva el almacenamiento local, pero no confirma el resultado de una operación pendiente.
       </p>
       <button
         type="button"
         className="btn btn-primary"
-        onClick={() => resetAppShellCache().finally(() => window.location.reload())}
+        onClick={() => window.location.reload()}
       >
         Recargar aplicación
       </button>

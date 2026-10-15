@@ -44,7 +44,7 @@ const UpdatePrompt = ({ isSuppressed = false } = {}) => {
 
   useEffect(() => {
     const applyWorkerState = (workerState) => {
-      if (workerState.waiting) {
+      if (workerState.waiting || workerState.reloadDeferred) {
         setUpdateAvailable(true);
       } else if (workerState.registered && workerState.active && !workerState.installing) {
         setUpdateAvailable(false);

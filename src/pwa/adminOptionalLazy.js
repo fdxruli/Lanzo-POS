@@ -20,8 +20,8 @@ const warnUnavailableOffline = (surfaceName) => {
 
 /**
  * Lazy-loads an optional admin surface without letting a stale or unavailable
- * asset take down the Local shell when the browser has no connection.
- * Programming errors and online load errors still reach the app ErrorBoundary.
+ * asset take down the Local shell. Optional resource failures degrade to an
+ * empty surface; required routes continue through their normal error boundary.
  */
 export function createOptionalAdminLazy(importer, { surfaceName = 'Optional admin surface' } = {}) {
   return lazy(async () => {
@@ -47,7 +47,7 @@ export function createOptionalAdminLazy(importer, { surfaceName = 'Optional admi
         recoveryResult = await recoverAdminLazyRoute({ error });
       } catch {
         Logger.warn(`[${surfaceName}] Falló la recuperación de un recurso opcional.`);
-        throw error;
+        return EMPTY_OPTIONAL_MODULE;
       }
 
       if (recoveryResult?.status === 'reloading') {
@@ -60,7 +60,7 @@ export function createOptionalAdminLazy(importer, { surfaceName = 'Optional admi
       }
 
       Logger.warn(`[${surfaceName}] No se pudo recuperar el recurso opcional.`);
-      throw error;
+      return EMPTY_OPTIONAL_MODULE;
     }
   });
 }

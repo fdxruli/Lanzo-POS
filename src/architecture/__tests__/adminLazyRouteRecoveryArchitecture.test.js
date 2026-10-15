@@ -16,7 +16,9 @@ describe('administrative lazy route recovery architecture', () => {
 
     expect(app).toContain("from './pwa/adminLazyRouteRecovery'");
     expect(lazySource).toContain('await prepareAdminLazyRoute()');
-    expect(lazySource).toContain('await recoverAdminLazyRoute({ error })');
+    expect(lazySource).toContain('await recoverAdminLazyRoute({ error, isContextCurrent })');
+    expect(lazySource).toContain('createRecoveryContextGuard()');
+    expect(lazySource).toContain("status: 'stale-context'");
     expect(lazySource).toContain('force: true');
     expect(lazySource).not.toMatch(/MAX_RETRIES|GLOBAL_COOLDOWN_MS|lazy_retry_last_time/);
     expect(lazySource).not.toContain('window.location.reload()');
@@ -58,14 +60,16 @@ describe('administrative lazy route recovery architecture', () => {
 
     expect(recovery).toContain('activeLazyRouteRecoveryPromise');
     expect(recovery).toContain('isRecoverableAdminStartupError(error)');
-    expect(recovery).toContain('recoverStartup({ error, force })');
+    expect(recovery).toContain('recoverStartup({ error, force, isContextCurrent })');
+    expect(recovery).toContain('createRecoveryContextGuard');
     expect(recovery).not.toMatch(/caches\.delete|unregister\(|location\.reload|location\.replace/);
   });
 
-  it('checks for updates before route imports and while the installed app resumes', async () => {
-    const [main, monitor] = await Promise.all([
+  it('keeps update checks in the global monitor instead of route imports', async () => {
+    const [main, monitor, recovery] = await Promise.all([
       readProjectFile('src/main.jsx'),
       readProjectFile('src/pwa/adminServiceWorkerUpdateMonitor.js'),
+      readProjectFile('src/pwa/adminLazyRouteRecovery.js'),
     ]);
 
     expect(main).toContain('startAdminServiceWorkerUpdateMonitor');
@@ -76,5 +80,7 @@ describe('administrative lazy route recovery architecture', () => {
     expect(monitor).toContain("addEventListener?.('focus'");
     expect(monitor).toContain("addEventListener?.('online'");
     expect(monitor).toContain("addEventListener?.('pageshow'");
+    expect(recovery).toContain("status: 'not-required'");
+    expect(recovery).not.toContain('requestAdminServiceWorkerUpdateCheck');
   });
 });

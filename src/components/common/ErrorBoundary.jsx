@@ -3,47 +3,15 @@ import { Mail, RefreshCw, AlertTriangle, ShieldCheck, Store, ArrowRightCircle, C
 import { useAppStore } from '../../store/useAppStore';
 import Logger from '../../services/Logger';
 import { buildSupportMailtoUrl, copyTextToClipboard } from '../../services/support/supportContact';
+import {
+  buildSafeIncidentReport,
+  classifyIncident,
+  getSafeBrowserLabel
+} from '../../services/diagnostics/incidentDiagnostics';
+import { createRecoveryContextGuard } from '../../services/diagnostics/recoveryContext';
 import './ErrorBoundary.css';
 
 // ─── Utilidades de diagnóstico ────────────────────────────────────────────────
-
-/**
- * Parsea el navigator.userAgent a una cadena legible para soporte.
- * Ejemplo: "Chrome 125 / Windows 10" en vez del UA completo.
- */
-function parseUserAgent(ua = navigator.userAgent) {
-  // Navegador
-  let browser = 'Navegador desconocido';
-  if (/Edg\/(\d+)/.test(ua))        browser = `Edge ${RegExp.$1}`;
-  else if (/Chrome\/(\d+)/.test(ua)) browser = `Chrome ${RegExp.$1}`;
-  else if (/Firefox\/(\d+)/.test(ua))browser = `Firefox ${RegExp.$1}`;
-  else if (/Safari\/(\d+)/.test(ua) && /Version\/(\d+)/.test(ua)) browser = `Safari ${RegExp.$1}`;
-  else if (/OPR\/(\d+)/.test(ua))   browser = `Opera ${RegExp.$1}`;
-
-  // Sistema Operativo
-  let os = 'SO desconocido';
-  if (/Windows NT 10/.test(ua))      os = 'Windows 10/11';
-  else if (/Windows NT 6.3/.test(ua))os = 'Windows 8.1';
-  else if (/Windows NT 6.1/.test(ua))os = 'Windows 7';
-  else if (/Mac OS X ([\d_]+)/.test(ua)) os = `macOS ${RegExp.$1.replace(/_/g, '.')}`;
-  else if (/Android ([\d.]+)/.test(ua))  os = `Android ${RegExp.$1}`;
-  else if (/iPhone OS ([\d_]+)/.test(ua)) os = `iOS ${RegExp.$1.replace(/_/g, '.')}`;
-  else if (/Linux/.test(ua))         os = 'Linux';
-
-  return `${browser} / ${os}`;
-}
-
-/**
- * Extrae las primeras N líneas del stack trace y las filtra para
- * eliminar rutas internas del bundler que no aportan valor a soporte.
- */
-function cleanStack(stack = '', maxLines = 12) {
-  if (!stack) return 'No disponible';
-  return stack
-    .split('\n')
-    .slice(0, maxLines)
-    .join('\n');
-}
 
 /**
  * Formatea una fecha ISO a formato legible en español.
@@ -62,14 +30,6 @@ function formatTimestamp(isoString) {
   }
 }
 
-const isRecoverableAppShellCache = (cacheName = '') => (
-  cacheName.includes('workbox') ||
-  cacheName.includes('precache') ||
-  cacheName.includes('runtime') ||
-  cacheName.includes('vite') ||
-  cacheName.includes('lanzo')
-);
-
 // ─── Componente Principal ─────────────────────────────────────────────────────
 
 export class ErrorBoundary extends React.Component {
@@ -78,12 +38,16 @@ export class ErrorBoundary extends React.Component {
     this.state = {
       hasError: false,
       error: null,
-      errorInfo: null,
       crashTimestamp: null,   // ISO string del momento exacto del crash
       copied: false,          // Estado del botón "Copiar reporte"
       isRecoveryUpdating: false,
+      recoveryActionMessage: '',
     };
     this._copyTimeout = null;
+    this._recoveryPromise = null;
+    this._renderRecoveryAttempts = 0;
+    this._pwaUpdateAttempted = false;
+    this._isRecoveryContextCurrent = null;
   }
 
   static getDerivedStateFromError(error) {
@@ -95,15 +59,21 @@ export class ErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, errorInfo) {
-    Logger.error('🔥 Error crítico capturado:', {
+    const createContextGuard = this.props.createRecoveryContextGuard || createRecoveryContextGuard;
+    this._isRecoveryContextCurrent = createContextGuard();
+    const incident = classifyIncident(error, { source: 'react' });
+    Logger.error('Error de interfaz capturado.', {
       timestamp: new Date().toISOString(),
-      message: error?.message,
-      name: error?.name,
-      stack: error?.stack,
-      cause: error?.cause,
-      componentStack: errorInfo?.componentStack,
+      code: incident.code,
+      category: incident.category,
+      severity: incident.severity,
+      errorType: incident.errorType,
+      componentStackAvailable: Boolean(errorInfo?.componentStack),
     });
-    this.setState({ errorInfo });
+  }
+
+  componentDidUpdate() {
+    if (!this.state.hasError) this._renderRecoveryAttempts = 0;
   }
 
   componentWillUnmount() {
@@ -112,144 +82,88 @@ export class ErrorBoundary extends React.Component {
 
   // ── Acciones de Recuperación ─────────────────────────────────────────────
 
-  clearAppShellAndReload = async () => {
-    try {
-      if ('caches' in window) {
-        const cacheNames = await window.caches.keys();
-        await Promise.all(
-          cacheNames.reduce((deletePromises, cacheName) => {
-            if (isRecoverableAppShellCache(cacheName)) {
-              deletePromises.push(window.caches.delete(cacheName));
-            }
-            return deletePromises;
-          }, [])
-        );
-      }
-
-      if ('serviceWorker' in navigator) {
-        const registrations = await navigator.serviceWorker.getRegistrations();
-        await Promise.all(
-          registrations.map(async (registration) => {
-            try {
-              registration.waiting?.postMessage({ type: 'SKIP_WAITING' });
-              await registration.update().catch(() => {});
-            } catch {
-              // No bloquear la recuperación por un SW específico.
-            }
-          })
-        );
-      }
-    } catch (error) {
-      Logger.warn('No se pudo limpiar caché PWA desde ErrorBoundary:', error);
-    } finally {
-      window.location.reload();
-    }
-  }
-
   handleForceUpdateApp = async () => {
-    if (this.state.isRecoveryUpdating) return;
-    this.setState({ isRecoveryUpdating: true });
-
-    try {
-      const appState = useAppStore.getState();
-
-      if (typeof appState.runUpdate === 'function' && appState.updateAvailable) {
-        await appState.runUpdate();
-        return;
-      }
-
-      await this.clearAppShellAndReload();
-    } catch (error) {
-      Logger.warn('No se pudo aplicar actualización desde ErrorBoundary:', error);
-      await this.clearAppShellAndReload();
+    if (!this._isRecoveryContextCurrent?.()) {
+      this.setState({ recoveryActionMessage: 'La sesión o el tenant cambió desde el error. Vuelve a abrir esta sección desde el contexto actual.' });
+      return null;
     }
+    if (this._recoveryPromise || this.state.isRecoveryUpdating || this._pwaUpdateAttempted) {
+      return this._recoveryPromise;
+    }
+
+    const appState = useAppStore.getState();
+    if (!appState.updateAvailable || typeof appState.runUpdate !== 'function') {
+      this.setState({ recoveryActionMessage: 'No hay una actualización confirmada disponible. Puedes reintentar esta sección o enviar el diagnóstico.' });
+      return null;
+    }
+    if (navigator.onLine === false) {
+      this.setState({ recoveryActionMessage: 'Estás sin conexión. Conservamos la versión instalada y no iniciaremos una actualización.' });
+      return null;
+    }
+
+    this._pwaUpdateAttempted = true;
+    this.setState({ isRecoveryUpdating: true, recoveryActionMessage: '' });
+    const operation = Promise.resolve()
+      .then(() => appState.runUpdate())
+      .then(() => {
+        const latestState = useAppStore.getState();
+        if (latestState.updateAvailable && !latestState.isUpdating) {
+          throw new Error('PWA_UPDATE_NOT_APPLIED');
+        }
+      })
+      .catch((error) => {
+        const incident = classifyIncident(error, { category: 'pwa' });
+        Logger.warn('No se pudo aplicar la actualización PWA.', {
+          code: incident.code,
+          category: incident.category,
+          severity: incident.severity,
+        });
+        this.setState({ recoveryActionMessage: 'No se pudo confirmar la actualización. Este flujo no ejecutó un vaciado general; verifica cualquier operación pendiente antes de reintentar.' });
+      })
+      .finally(() => {
+        this._recoveryPromise = null;
+        this.setState({ isRecoveryUpdating: false });
+      });
+    this._recoveryPromise = operation;
+    return operation;
   }
 
   handleReload = () => {
-    this.clearAppShellAndReload();
+    if (this._recoveryPromise) return;
+    const reloadPage = this.props.reloadPage || (() => window.location.reload());
+    reloadPage();
   }
 
   handleReset = () => {
-    // Legacy cart storage can belong to an offline business. It is preserved
-    // for future assisted recovery and is never the active tenant cart.
-    sessionStorage.clear();
-    this.setState({ hasError: false, error: null, errorInfo: null, crashTimestamp: null, copied: false, isRecoveryUpdating: false });
+    if (!this._isRecoveryContextCurrent?.()) {
+      this.setState({ recoveryActionMessage: 'La sesión o el tenant cambió desde el error. Vuelve a abrir esta sección desde el contexto actual.' });
+      return;
+    }
+    if (this._renderRecoveryAttempts >= 1) {
+      this.setState({ recoveryActionMessage: 'El reintento no resolvió el problema. No seguiremos reiniciando la sección para evitar un ciclo.' });
+      return;
+    }
+    this._renderRecoveryAttempts += 1;
+    this.setState({ hasError: false, error: null, crashTimestamp: null, copied: false, isRecoveryUpdating: false, recoveryActionMessage: '' });
   }
 
   handleGoToPos = () => {
-    Logger.log('🧹 Iniciando recuperación quirúrgica. Purgando estado volátil...');
-    try {
-      // Do not delete unscoped legacy tenant data during error recovery.
-      sessionStorage.clear();
-      // No tocamos 'lanzo_license', 'lanzo_device_id' ni 'lanzo_show_bot'
-    } catch (e) {
-      Logger.warn('Error durante la limpieza de estado local:', e);
-    } finally {
-      window.location.replace('/');
-    }
+    const navigateToPos = this.props.navigateToPos || ((path) => window.location.replace(path));
+    navigateToPos('/');
   }
 
   // ── Construcción del Reporte ──────────────────────────────────────────────
 
   _buildReportMessage() {
-    const { error, errorInfo, crashTimestamp } = this.state;
-
-    // Estado global del sistema (sin hooks, acceso imperativo)
-    const appState = useAppStore.getState();
-    const companyName  = appState.companyProfile?.name || 'Negocio No Configurado';
-    const licenseKey   = appState.licenseDetails?.license_key || 'Sin Licencia Activa';
-    const rubro        = appState.companyProfile?.rubro || appState.businessType || 'No especificado';
-    const deviceId     = localStorage.getItem('lanzo_device_id') || 'No disponible';
-
-    // Entorno
-    const browserInfo  = parseUserAgent();
-    const isOnline     = navigator.onLine ? 'En línea ✅' : 'SIN CONEXIÓN ❌';
-    const routePath    = window.location.pathname + window.location.search;  // sin tokens de hash
-    const appVersion   = import.meta.env.VITE_APP_VERSION || '?';
-
-    // Error principal
-    const errorName    = error?.name    || 'Error';
-    const errorMsg     = error?.message || 'Sin mensaje';
-    const errorStack   = cleanStack(error?.stack, 12);
-    const errorCause   = error?.cause
-      ? `\n🔗 *Causa raíz:* ${String(error.cause)}`
-      : '';
-
-    // Stack de React (componente que falló)
-    const compStack    = errorInfo?.componentStack
-      ? errorInfo.componentStack.substring(0, 1500)
-      : 'No disponible';
-
-    const timestamp    = crashTimestamp
-      ? formatTimestamp(crashTimestamp)
-      : formatTimestamp(new Date().toISOString());
-
-    return `🚨 *REPORTE DE INCIDENCIA TÉCNICA - LANZO POS*
-
-🏢 *Negocio:* ${companyName}
-🏷️ *Rubro:* ${rubro}
-🔑 *Licencia:* ${licenseKey.slice(0, 12)}...
-🖥️ *Dispositivo ID:* ${deviceId}
-🌐 *Versión app:* v${appVersion}
-
-⏰ *Fecha y hora del crash:* ${timestamp}
-📡 *Estado de red:* ${isOnline}
-📍 *Ruta:* ${routePath}
-💻 *Entorno:* ${browserInfo}
-
-━━━━━━━━━━━━━━━━━━━━━━━
-⚠️ *TIPO DE ERROR:* ${errorName}
-📝 *Mensaje:* ${errorMsg}${errorCause}
-
-📚 *Stack Trace (JavaScript):*
-\`\`\`
-${errorStack}
-\`\`\`
-
-🧩 *Stack de Componentes React:*
-${compStack}
-━━━━━━━━━━━━━━━━━━━━━━━
-_Mensaje generado automáticamente por el sistema de seguridad de Lanzo POS_`;
+    const { error, crashTimestamp } = this.state;
+    return buildSafeIncidentReport(error, { source: 'react' }, {
+      pathname: window.location.pathname,
+      online: navigator.onLine !== false,
+      appVersion: import.meta.env.VITE_APP_VERSION,
+      buildCommit: import.meta.env.VITE_BUILD_COMMIT,
+      userAgent: navigator.userAgent,
+      now: crashTimestamp ? new Date(crashTimestamp) : new Date(),
+    });
   }
 
   handleReport = () => {
@@ -273,16 +187,15 @@ _Mensaje generado automáticamente por el sistema de seguridad de Lanzo POS_`;
   render() {
     if (!this.state.hasError) return this.props.children;
 
-    const { error, crashTimestamp, copied, isRecoveryUpdating } = this.state;
+    const { error, crashTimestamp, copied, isRecoveryUpdating, recoveryActionMessage } = this.state;
     const currentPath = window.location.pathname;
     const isPosPage   = currentPath === '/' || currentPath === '';
-    const isOnline    = navigator.onLine;
+    const isOnline    = navigator.onLine !== false;
     const appState = useAppStore.getState();
     const updateAvailable = Boolean(appState.updateAvailable);
     const isUpdating = Boolean(appState.isUpdating || isRecoveryUpdating);
 
-    // Mostramos las primeras 6 líneas del stack en la UI
-    const stackPreview = cleanStack(error?.stack, 6);
+    const incident = classifyIncident(error, { source: 'react' });
 
     return (
       <div className="error-boundary" role="alert" style={{
@@ -321,7 +234,7 @@ _Mensaje generado automáticamente por el sistema de seguridad de Lanzo POS_`;
           </div>
 
           <h2 className="error-boundary__title" style={{ color: '#1e293b', fontSize: '1.75rem', fontWeight: '700', marginBottom: '8px', lineHeight: '1.2' }}>
-            Se ha detenido la aplicación
+            No se pudo mostrar esta sección
           </h2>
 
           {/* Tipo de error + timestamp */}
@@ -338,7 +251,7 @@ _Mensaje generado automáticamente por el sistema de seguridad de Lanzo POS_`;
               fontFamily: 'monospace',
               marginBottom: '6px',
             }}>
-              {error?.name || 'Error'}
+              {incident.code}
             </span>
             {crashTimestamp && (
               <p style={{ margin: 0, color: '#94a3b8', fontSize: '0.8rem' }}>
@@ -348,8 +261,7 @@ _Mensaje generado automáticamente por el sistema de seguridad de Lanzo POS_`;
           </div>
 
           <p className="error-boundary__summary" style={{ color: '#475569', fontSize: '1.05rem', lineHeight: '1.6', marginBottom: '16px' }}>
-            No te preocupes, <strong>no es un error tuyo</strong>. <br />
-            Ha ocurrido un problema técnico en esta sección.
+            Ocurrió un problema en esta sección. Puedes probar un solo reintento o enviar un diagnóstico seguro a soporte.
           </p>
 
           {/* Badge de estado de red */}
@@ -369,8 +281,7 @@ _Mensaje generado automáticamente por el sistema de seguridad de Lanzo POS_`;
             }
           </div>
 
-          {/* Recuperación PWA */}
-          <div className="error-boundary__update-recovery" style={{
+          {updateAvailable && typeof appState.runUpdate === 'function' && isOnline && <div className="error-boundary__update-recovery" style={{
             backgroundColor: '#ecfdf5',
             border: '1px solid #86efac',
             borderRadius: '12px',
@@ -379,16 +290,13 @@ _Mensaje generado automáticamente por el sistema de seguridad de Lanzo POS_`;
             textAlign: 'left',
           }}>
             <p style={{ margin: '0 0 12px 0', color: '#166534', fontSize: '0.94rem', lineHeight: '1.45' }}>
-              <strong>Ya puede existir una corrección disponible.</strong>{' '}
-              {updateAvailable
-                ? 'Hay una actualización disponible que puede corregir este problema.'
-                : 'Intentaremos limpiar la versión guardada y cargar la más reciente.'}
-              {' '}Actualiza la aplicación antes de reportar.
+              <strong>Hay una actualización disponible.</strong>{' '}
+              Confirma que no haya un cobro en curso. La actualización no confirma el resultado de una operación pendiente.
             </p>
             <button type="button"
               className="error-boundary__button error-boundary__button--update"
               onClick={this.handleForceUpdateApp}
-              disabled={isUpdating}
+              disabled={isUpdating || this._pwaUpdateAttempted}
               style={{
                 width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px',
                 padding: '14px 24px', borderRadius: '10px',
@@ -402,7 +310,7 @@ _Mensaje generado automáticamente por el sistema de seguridad de Lanzo POS_`;
               <RefreshCw size={20} />
               {isUpdating ? 'Actualizando aplicación...' : 'Actualizar aplicación'}
             </button>
-          </div>
+          </div>}
 
           {/* Sugerencia de ir al POS */}
           {!isPosPage && (
@@ -441,7 +349,7 @@ _Mensaje generado automáticamente por el sistema de seguridad de Lanzo POS_`;
             </div>
           )}
 
-          {/* Badge datos seguros */}
+          {/* Aviso operativo prudente */}
           <div className="error-boundary__safe-data" style={{
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
             backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0',
@@ -449,36 +357,29 @@ _Mensaje generado automáticamente por el sistema de seguridad de Lanzo POS_`;
             color: '#166534', fontSize: '0.9rem',
           }}>
             <ShieldCheck size={18} />
-            <span>Tus datos de ventas y caja están seguros.</span>
+            <span>Este panel no borró registros. Revisa el resultado de cualquier cobro pendiente antes de repetirlo.</span>
           </div>
 
-          {/* ── Caja de detalle técnico ── */}
+          {/* ── Resumen técnico seguro ── */}
           <div className="error-boundary__diagnostics" style={{ textAlign: 'left', marginBottom: '28px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
               <span style={{ fontSize: '0.8rem', fontWeight: '700', color: '#64748b', letterSpacing: '0.05em' }}>
-                DETALLE TÉCNICO (Para soporte):
+                RESUMEN PARA SOPORTE:
               </span>
               <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
-                {window.location.pathname}
+                {incident.categoryLabel}
               </span>
             </div>
 
-            {/* Mensaje del error */}
             <div className="error-boundary__error-message" style={{
               backgroundColor: '#fef2f2', border: '1px solid #fecaca',
               borderRadius: '6px', padding: '10px 12px', marginBottom: '8px',
               fontSize: '0.85rem', color: '#991b1b', fontWeight: '500',
             }}>
-              <span style={{ fontFamily: 'monospace', fontWeight: '700' }}>{error?.name}: </span>
-              {error?.message || 'Sin mensaje'}
-              {error?.cause && (
-                <div style={{ marginTop: '4px', color: '#b91c1c', fontSize: '0.8rem' }}>
-                  ↳ Causa: {String(error.cause)}
-                </div>
-              )}
+              <span style={{ fontFamily: 'monospace', fontWeight: '700' }}>{incident.code}</span>
+              <div style={{ marginTop: '4px' }}>Tipo: {incident.errorType} · Gravedad: {incident.severity}</div>
             </div>
 
-            {/* Stack trace (legible, primeras 6 líneas) */}
             <div className="error-boundary__stack" style={{
               backgroundColor: '#1e293b', color: '#94a3b8',
               padding: '14px 16px', borderRadius: '8px',
@@ -488,10 +389,13 @@ _Mensaje generado automáticamente por el sistema de seguridad de Lanzo POS_`;
               border: '1px solid #334155',
               whiteSpace: 'pre',
             }}>
-              <span style={{ color: '#f1f5f9' }}>{stackPreview}</span>
-              {'\n'}<span style={{ color: '#475569', fontSize: '0.72rem' }}>... (ver reporte completo para soporte)</span>
+              <span style={{ color: '#f1f5f9' }}>El detalle interno se excluyó del reporte para proteger la información del negocio.</span>
             </div>
           </div>
+
+          {recoveryActionMessage && (
+            <p className="ui-alert ui-alert--warning" role="status" aria-live="polite">{recoveryActionMessage}</p>
+          )}
 
           {/* ── Botones de acción ── */}
           <div className="error-boundary__actions" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -548,12 +452,13 @@ _Mensaje generado automáticamente por el sistema de seguridad de Lanzo POS_`;
                 }}
               >
                 <RefreshCw size={17} />
-                Recargar versión limpia
+                Recargar página
               </button>
 
               <button type="button"
                 className="error-boundary__button error-boundary__button--recover"
                 onClick={this.handleReset}
+                disabled={this._renderRecoveryAttempts >= 1}
                 style={{
                   flex: 1, padding: '11px', borderRadius: '10px',
                   backgroundColor: 'transparent', color: '#64748b',
@@ -569,7 +474,7 @@ _Mensaje generado automáticamente por el sistema de seguridad de Lanzo POS_`;
         </div>
 
         <p className="error-boundary__footer" style={{ marginTop: '20px', color: '#94a3b8', fontSize: '0.82rem' }}>
-          Lanzo POS System v{import.meta.env.VITE_APP_VERSION} &nbsp;·&nbsp; {parseUserAgent()}
+          Lanzo POS System v{import.meta.env.VITE_APP_VERSION} &nbsp;·&nbsp; {getSafeBrowserLabel(navigator.userAgent)}
         </p>
 
       </div>

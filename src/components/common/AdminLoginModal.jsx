@@ -34,7 +34,7 @@ const describeLoginError = (error, result = null) => {
     || code === 'DB_CLOSED_AFTER_STRUCTURAL_ERROR'
     || classification.requiresMigration
   ) {
-    return 'Detectamos un esquema local antiguo. Lanzo conservará tus datos y preparará una migración segura.';
+    return 'El esquema local requiere actualización. Se detuvo el inicio; verifica ventas e inventario después de la recuperación antes de continuar operando.';
   }
   if (code === 'DB_OPEN_TIMEOUT' || error?.name === 'DatabaseOpenTimeoutError') {
     return 'La base local tardó demasiado en responder. Cierra otras pestañas de Lanzo y vuelve a intentarlo.';
@@ -45,7 +45,7 @@ const describeLoginError = (error, result = null) => {
   if (!navigator.onLine || /network|fetch|Failed to fetch/i.test(error?.message || result?.message || '')) {
     return 'No se pudo conectar con el servidor. Revisa tu conexión e inténtalo nuevamente.';
   }
-  return 'No se pudo completar la acción. Tus datos permanecen intactos. Revisa tu conexión e inténtalo nuevamente.';
+  return 'No se pudo confirmar el resultado de la acción. Revisa las operaciones locales pendientes antes de volver a intentarla.';
 };
 
 export default function AdminLoginModal() {
@@ -224,8 +224,9 @@ export default function AdminLoginModal() {
               Actualmente hay otro dispositivo registrado como activo.
             </div>
             <p className="auth-login-helper">
-              Puedes utilizar este dispositivo. Al continuar, las sesiones activas en los demás
-              dispositivos se cerrarán. Tus datos permanecerán intactos.
+              Puedes utilizar este dispositivo. Al continuar, se cerrarán las sesiones activas
+              en los demás dispositivos. Confirma que no haya operaciones locales pendientes y
+              revisa las ventas antes de continuar operando en este equipo.
             </p>
             {error && <div className="ui-alert ui-alert--danger" role="alert">{error}</div>}
             <button

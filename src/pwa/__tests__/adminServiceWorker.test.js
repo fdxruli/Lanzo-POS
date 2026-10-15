@@ -4,6 +4,7 @@ import {
   activateAdminServiceWorkerUpdate,
   getAdminServiceWorkerState,
   resetAdminServiceWorkerForTests,
+  setAdminServiceWorkerReloadGuard,
   startAdminServiceWorker,
   subscribeAdminServiceWorker,
 } from '../adminServiceWorker';
@@ -95,6 +96,7 @@ describe('administrative Service Worker coordinator', () => {
 
   it('sends SKIP_WAITING once and reloads at most once after controllerchange', async () => {
     const harness = createHarness({ controlled: true });
+    setAdminServiceWorkerReloadGuard(() => true);
     const waiting = { postMessage: vi.fn() };
     harness.registration.waiting = waiting;
     await startAdminServiceWorker(harness);
@@ -116,7 +118,7 @@ describe('administrative Service Worker coordinator', () => {
     expect(getAdminServiceWorkerState().waiting).toBe(false);
   });
 
-  it('accepts an automatic update controllerchange before the user presses the banner', async () => {
+  it('defers a controllerchange from another tab until this tab is safe to reload', async () => {
     const harness = createHarness({ controlled: true });
     const waiting = { state: 'installed', postMessage: vi.fn() };
     harness.registration.waiting = waiting;
@@ -127,19 +129,27 @@ describe('administrative Service Worker coordinator', () => {
     harness.registration.waiting = null;
     harness.registration.active = nextController;
     harness.serviceWorker.controller = nextController;
+    setAdminServiceWorkerReloadGuard(() => false);
     harness.serviceWorker.dispatch('controllerchange');
 
     expect(getAdminServiceWorkerState()).toMatchObject({
       waiting: false,
       active: true,
       error: false,
+      reloadDeferred: true,
     });
-    expect(harness.windowTarget.location.reload).toHaveBeenCalledOnce();
+    expect(harness.windowTarget.location.reload).not.toHaveBeenCalled();
     expect(waiting.postMessage).not.toHaveBeenCalled();
+
+    setAdminServiceWorkerReloadGuard(() => true);
+    await expect(activateAdminServiceWorkerUpdate()).resolves.toBe(true);
+    expect(harness.windowTarget.location.reload).toHaveBeenCalledOnce();
+    expect(getAdminServiceWorkerState().reloadDeferred).toBe(false);
   });
 
   it('recovers a stale banner whose referenced worker already activated', async () => {
     const harness = createHarness({ controlled: true });
+    setAdminServiceWorkerReloadGuard(() => true);
     const waiting = { state: 'installed', postMessage: vi.fn() };
     harness.registration.waiting = waiting;
     await startAdminServiceWorker(harness);
@@ -167,9 +177,24 @@ describe('administrative Service Worker coordinator', () => {
 
   it('rejects activation when no worker is waiting', async () => {
     const harness = createHarness();
+    setAdminServiceWorkerReloadGuard(() => true);
     await startAdminServiceWorker(harness);
 
     await expect(activateAdminServiceWorkerUpdate()).rejects.toThrow('No hay un Service Worker en espera.');
+  });
+
+  it('does not activate an update while an actor operation or checkout is active', async () => {
+    const harness = createHarness({ controlled: true });
+    const waiting = { postMessage: vi.fn() };
+    harness.registration.waiting = waiting;
+    setAdminServiceWorkerReloadGuard(() => false);
+    await startAdminServiceWorker(harness);
+
+    await expect(activateAdminServiceWorkerUpdate()).rejects.toMatchObject({
+      code: 'ADMIN_UPDATE_OPERATION_ACTIVE',
+    });
+    expect(waiting.postMessage).not.toHaveBeenCalled();
+    expect(harness.windowTarget.location.reload).not.toHaveBeenCalled();
   });
 
   it('records a sanitized registration failure state', async () => {

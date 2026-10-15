@@ -180,14 +180,15 @@ describe('optional admin lazy surfaces', () => {
     expect(mocks.recover).not.toHaveBeenCalled();
   });
 
-  it('OFFLINE-LAZY-05 runs online version recovery and leaves a failed asset error observable', async () => {
+  it('OFFLINE-LAZY-05 keeps an optional asset failure out of the app-wide boundary', async () => {
     const error = new TypeError('Failed to fetch dynamically imported module: /assets/AssistantBot-old.js');
     mocks.recover.mockResolvedValue({ status: 'preserved' });
-    vi.spyOn(console, 'error').mockImplementation(() => {});
 
     renderLayout({ importer: vi.fn().mockRejectedValue(error), online: true });
 
-    expect(await screen.findByTestId('global-error')).toHaveTextContent(error.message);
+    expect(await screen.findByTestId('main-route')).toBeInTheDocument();
+    await waitFor(() => expect(mocks.warn).toHaveBeenCalledOnce());
+    expect(screen.queryByTestId('global-error')).not.toBeInTheDocument();
     expect(mocks.recover).toHaveBeenCalledWith({ error });
     expect(screen.queryByTestId('assistant')).not.toBeInTheDocument();
   });
