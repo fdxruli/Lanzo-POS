@@ -28,6 +28,41 @@ let initialPreparationPromise = null;
 let readyRuntimePromise = null;
 let readyRuntimeActivated = false;
 
+const ADMIN_DEBUG_CONSOLE_VALID_PATHS = Object.freeze([
+  '/',
+  '/renovacion-urgente',
+  '/caja',
+  '/pedidos',
+  '/pedidos-online',
+  '/productos',
+  '/clientes',
+  '/ventas',
+  '/agentes-ia',
+  '/portal-online',
+  '/configuracion',
+  '/acerca-de',
+]);
+
+const normalizeAdminDebugPath = (pathname) => {
+  const rawPath = typeof pathname === 'string' ? pathname : '/';
+  let decodedPath = rawPath.split(/[?#]/, 1)[0] || '/';
+
+  try {
+    decodedPath = decodeURIComponent(decodedPath);
+  } catch {
+    // Treat malformed encoded paths as unmatched.
+  }
+
+  return decodedPath.replace(/\/+$/, '').toLowerCase() || '/';
+};
+
+// Keep this list in sync with ADMIN_VALID_ROUTE_PATHS in adminRoutePaths.js.
+export const isAdminNotFoundPathForDebugConsole = (pathname) => (
+  !ADMIN_DEBUG_CONSOLE_VALID_PATHS.includes(normalizeAdminDebugPath(pathname))
+);
+
+
+
 const useDatabaseRecoveryState = () => useSyncExternalStore(
   subscribeDatabaseRecoveryState,
   getDatabaseRecoveryState,
@@ -65,7 +100,7 @@ export const loadPosReadyRuntime = async () => {
   const [
     { default: App },
     { GoogleOAuthProvider },
-    { createBrowserRouter, RouterProvider, useRouteError },
+    { createBrowserRouter, RouterProvider, useRouteError, useLocation },
     { default: ErrorBoundary },
     { startPosSyncAutoBootstrap },
     { installProductStoreRecoveryGuard },
@@ -99,10 +134,25 @@ export const loadPosReadyRuntime = async () => {
     );
   }
 
+  function PosReadyRoute() {
+    const { pathname } = useLocation();
+
+    return (
+      <>
+        <App />
+        {DevConsole ? (
+          <ErrorBoundary>
+            <DevConsole isSuppressed={isAdminNotFoundPathForDebugConsole(pathname)} />
+          </ErrorBoundary>
+        ) : null}
+      </>
+    );
+  }
+
   const router = createBrowserRouter([
     {
       path: '*',
-      element: <App />,
+      element: <PosReadyRoute />,
       errorElement: <RouteErrorFallback />
     }
   ]);
@@ -115,7 +165,6 @@ export const loadPosReadyRuntime = async () => {
             <RouterProvider router={router} />
           </ErrorBoundary>
         </GoogleOAuthProvider>
-        {DevConsole ? <DevConsole /> : null}
       </>
     );
   }

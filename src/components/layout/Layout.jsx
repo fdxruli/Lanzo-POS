@@ -1,5 +1,6 @@
 import { Suspense, useEffect, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
+import { isAdminNotFoundPath } from '../../router/adminRoutePaths';
 import { Toaster } from 'react-hot-toast';
 import Navbar from './Navbar';
 import Ticker from './Ticker';
@@ -73,6 +74,7 @@ function Layout() {
   const { pathname } = useLocation();
   const [noticeRevision, setNoticeRevision] = useState(0);
   const isPosPage = pathname === '/';
+  const isNotFoundPage = isAdminNotFoundPath(pathname);
   const isAboutPage = pathname === '/acerca-de';
 
   const effectiveLicenseStatus = getLicenseStatusPresentation({
@@ -146,7 +148,7 @@ function Layout() {
   }, [canReadReports, loadSales, loadStats]);
 
   return (
-    <div className="app-layout">
+    <div className={`app-layout ${isNotFoundPage ? 'app-layout--not-found' : ''}`.trim()}>
       <Toaster
         position="top-center"
         containerStyle={{
@@ -172,15 +174,15 @@ function Layout() {
       />
 
       <LocalInventoryOperationalAlertsRuntime />
-      <Navbar />
+      <Navbar isSuppressed={isNotFoundPage} />
       <EcommerceOrdersRuntime />
       <EcommercePublishedStockAlertRuntime />
       <EcommerceCatalogSyncRuntime />
 
-      <div className={`content-wrapper ${isPosPage ? 'content-wrapper--pos' : ''}`.trim()}>
-        {shouldShowTicker && <Ticker />}
-        <PostDowngradeRecoveryBanner />
-        <div className={`page-container ${isPosPage ? 'page-container-pos' : ''} ${pathname.startsWith('/clientes') ? 'page-container-customers' : ''}`.trim()}>
+      <div className={`content-wrapper ${isPosPage ? 'content-wrapper--pos' : ''} ${isNotFoundPage ? 'content-wrapper--not-found' : ''}`.trim()}>
+        {shouldShowTicker && <Ticker isSuppressed={isNotFoundPage} />}
+        <PostDowngradeRecoveryBanner isSuppressed={isNotFoundPage} />
+        <div className={`page-container ${isPosPage ? 'page-container-pos' : ''} ${pathname.startsWith('/clientes') ? 'page-container-customers' : ''} ${isNotFoundPage ? 'page-container--not-found' : ''}`.trim()}>
           <Outlet />
         </div>
       </div>
@@ -194,6 +196,7 @@ function Layout() {
             key={actorRuntime.generation}
             reportsAllowed={canReadReports}
             globalAlertEligible={globalAlertEligible}
+            isSuppressed={isNotFoundPage}
           />
         </Suspense>
       )}

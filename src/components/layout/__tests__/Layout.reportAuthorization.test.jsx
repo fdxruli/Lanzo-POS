@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -11,6 +12,8 @@ const mocks = vi.hoisted(() => ({
   loadProducts: vi.fn(),
   assistantImporter: null,
   reconcileOrders: vi.fn().mockResolvedValue({ count: 0 }),
+  runtimeMounts: { orders: 0, stock: 0, catalog: 0, localAlerts: 0, navbar: 0, ticker: 0, assistant: 0 },
+  runtimeUnmounts: { orders: 0, stock: 0, catalog: 0, localAlerts: 0, navbar: 0, ticker: 0, assistant: 0 },
   app: {
     showAssistantBot: true,
     showTicker: false,
@@ -72,24 +75,126 @@ vi.mock('../../../config/botContext', () => ({
   ),
 }));
 
-vi.mock('../Navbar', () => ({ default: () => <nav>Navbar</nav> }));
-vi.mock('../Ticker', () => ({ default: () => <div>Ticker</div> }));
+vi.mock('../Navbar', async () => {
+  const { useEffect } = await import('react');
+  return {
+    default: ({ isSuppressed }) => {
+      useEffect(() => {
+        mocks.runtimeMounts.navbar += 1;
+        return () => { mocks.runtimeUnmounts.navbar += 1; };
+      }, []);
+      if (isSuppressed) return null;
+      return (
+        <>
+          <div className="mobile-top-bar">Mobile top</div>
+          <nav className="mobile-bottom-nav">Mobile bottom</nav>
+          <aside className="desktop-sidebar">Desktop sidebar</aside>
+        </>
+      );
+    }
+  };
+});
+vi.mock('../Ticker', async () => {
+  const { useEffect } = await import('react');
+  return {
+    default: ({ isSuppressed }) => {
+      useEffect(() => {
+        mocks.runtimeMounts.ticker += 1;
+        return () => { mocks.runtimeUnmounts.ticker += 1; };
+      }, []);
+      return isSuppressed ? null : <div data-testid="ticker">Ticker</div>;
+    }
+  };
+});
 vi.mock('../../common/MessageModal', () => ({ default: () => null }));
-vi.mock('../../common/DataSafetyModal', () => ({ default: () => null }));
-vi.mock('../../ecommerce/orders/EcommerceOrdersRuntime', () => ({ default: () => null }));
-vi.mock('../../ecommerce/EcommercePublishedStockAlertRuntime', () => ({ default: () => null }));
-vi.mock('../../ecommerce/EcommerceCatalogSyncRuntime', () => ({ default: () => null }));
-vi.mock('../../common/AssistantBot', () => ({
-  default: ({ reportsAllowed, globalAlertEligible }) => (
-    <div
-      data-testid="assistant"
-      data-reports-allowed={String(reportsAllowed)}
-      data-global-alert={String(globalAlertEligible)}
-    />
-  ),
+vi.mock('../../common/PostDowngradeRecoveryBanner', () => ({
+  default: ({ isSuppressed }) => (isSuppressed ? null : <div data-testid="recovery-banner" />)
 }));
+vi.mock('../../common/DataSafetyModal', () => ({ default: () => null }));
+vi.mock('../../inventory/LocalInventoryOperationalAlertsRuntime', async () => {
+  const { useEffect } = await import('react');
+  return { default: () => {
+    useEffect(() => {
+      mocks.runtimeMounts.localAlerts += 1;
+      return () => { mocks.runtimeUnmounts.localAlerts += 1; };
+    }, []);
+    return <div data-testid="local-alerts-runtime" />;
+  } };
+});
+vi.mock('../../ecommerce/orders/EcommerceOrdersRuntime', async () => {
+  const { useEffect } = await import('react');
+  return { default: () => {
+    useEffect(() => {
+      mocks.runtimeMounts.orders += 1;
+      return () => { mocks.runtimeUnmounts.orders += 1; };
+    }, []);
+    return <div data-testid="orders-runtime" />;
+  } };
+});
+vi.mock('../../ecommerce/EcommercePublishedStockAlertRuntime', async () => {
+  const { useEffect } = await import('react');
+  return { default: () => {
+    useEffect(() => {
+      mocks.runtimeMounts.stock += 1;
+      return () => { mocks.runtimeUnmounts.stock += 1; };
+    }, []);
+    return <div data-testid="published-stock-runtime" />;
+  } };
+});
+vi.mock('../../ecommerce/EcommerceCatalogSyncRuntime', async () => {
+  const { useEffect } = await import('react');
+  return { default: () => {
+    useEffect(() => {
+      mocks.runtimeMounts.catalog += 1;
+      return () => { mocks.runtimeUnmounts.catalog += 1; };
+    }, []);
+    return <div data-testid="catalog-runtime" />;
+  } };
+});
+vi.mock('../../common/AssistantBot', async () => {
+  const { useEffect } = await import('react');
+  return {
+    default: ({ reportsAllowed, globalAlertEligible, isSuppressed }) => {
+      useEffect(() => {
+        mocks.runtimeMounts.assistant += 1;
+        return () => { mocks.runtimeUnmounts.assistant += 1; };
+      }, []);
+      if (isSuppressed) return null;
+      return (
+        <div
+          data-testid="assistant"
+          data-reports-allowed={String(reportsAllowed)}
+          data-global-alert={String(globalAlertEligible)}
+        />
+      );
+    }
+  };
+});
 
 import Layout from '../Layout';
+import NotFoundPageForLayoutTest from '../../../pages/NotFoundPage';
+
+const LayoutNavigationControls = () => {
+  const navigate = useNavigate();
+  return (
+    <>
+      <main data-testid="valid-route-content">POS</main>
+      <button type="button" onClick={() => navigate('/ruta-que-no-existe')}>Abrir 404</button>
+    </>
+  );
+};
+
+const renderLayoutIsolation = () => render(
+  <MemoryRouter initialEntries={['/']}>
+    <Routes>
+      <Route element={<Layout />}>
+        <Route index element={<LayoutNavigationControls />} />
+        <Route path="productos" element={<LayoutNavigationControls />} />
+        <Route path="*" element={<NotFoundPageForLayoutTest />} />
+      </Route>
+    </Routes>
+  </MemoryRouter>
+);
 
 const adminRuntime = (generation = 1) => ({
   status: 'granted',
@@ -121,6 +226,10 @@ const renderLayout = () => render(
 
 beforeEach(() => {
   vi.clearAllMocks();
+  Object.keys(mocks.runtimeMounts).forEach((key) => {
+    mocks.runtimeMounts[key] = 0;
+    mocks.runtimeUnmounts[key] = 0;
+  });
   localStorage.clear();
   window.scrollTo = vi.fn();
   HTMLElement.prototype.scrollTo = vi.fn();
@@ -138,6 +247,47 @@ afterEach(() => {
 });
 
 describe('Layout report authorization', () => {
+  it('hides route chrome on 404 without unmounting operational runtimes, then restores it', async () => {
+    const user = userEvent.setup();
+    mocks.app.showTicker = true;
+    renderLayoutIsolation();
+
+    expect(document.querySelector('.mobile-top-bar')).toBeInTheDocument();
+    expect(document.querySelector('.mobile-bottom-nav')).toBeInTheDocument();
+    expect(document.querySelector('.desktop-sidebar')).toBeInTheDocument();
+    expect(screen.getByTestId('ticker')).toBeInTheDocument();
+    expect(await screen.findByTestId('assistant')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Abrir 404' }));
+
+    expect(screen.getByRole('heading', { name: 'Parece que esta página no existe' })).toBeInTheDocument();
+    expect(document.querySelector('.mobile-top-bar')).not.toBeInTheDocument();
+    expect(document.querySelector('.mobile-bottom-nav')).not.toBeInTheDocument();
+    expect(document.querySelector('.desktop-sidebar')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('ticker')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('assistant')).not.toBeInTheDocument();
+    expect(screen.getByTestId('orders-runtime')).toBeInTheDocument();
+    expect(screen.getByTestId('published-stock-runtime')).toBeInTheDocument();
+    expect(screen.getByTestId('catalog-runtime')).toBeInTheDocument();
+    expect(screen.getByTestId('local-alerts-runtime')).toBeInTheDocument();
+    expect(mocks.runtimeMounts.orders).toBe(1);
+    expect(mocks.runtimeUnmounts.orders).toBe(0);
+    expect(mocks.runtimeMounts.assistant).toBe(1);
+    expect(mocks.runtimeUnmounts.assistant).toBe(0);
+    expect(mocks.loadProducts).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole('button', { name: 'Volver al inicio' }));
+
+    expect(screen.getByTestId('valid-route-content')).toBeInTheDocument();
+    expect(document.querySelector('.desktop-sidebar')).toBeInTheDocument();
+    expect(screen.getByTestId('ticker')).toBeInTheDocument();
+    expect(screen.getByTestId('assistant')).toBeInTheDocument();
+    expect(mocks.runtimeMounts.orders).toBe(1);
+    expect(mocks.runtimeUnmounts.orders).toBe(0);
+    expect(mocks.runtimeMounts.assistant).toBe(1);
+    expect(mocks.runtimeUnmounts.assistant).toBe(0);
+    expect(mocks.loadProducts).toHaveBeenCalledTimes(1);
+  });
   it('loads report stores and mounts the assistant for a current Admin', async () => {
     renderLayout();
 

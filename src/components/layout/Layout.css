@@ -232,3 +232,51 @@
         white-space: normal;
     }
 }
+
+
+/* The 404 keeps Layout and its operational runtimes mounted while taking the
+   available viewport for its standalone content. */
+.app-layout--not-found {
+    min-height: 100dvh;
+    height: auto;
+    background-color: var(--background-color);
+}
+
+.content-wrapper--not-found {
+    min-height: 100dvh;
+    height: auto;
+    overflow: visible;
+}
+
+.page-container--not-found {
+    display: flex;
+    flex: 1 0 auto;
+    width: 100%;
+    min-width: 0;
+    min-height: 100dvh;
+    max-width: none;
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    overflow: visible;
+    animation: none;
+}
+
+@media (min-width: 1024px) {
+    .app-layout--not-found {
+        height: 100dvh;
+        min-height: 100dvh;
+    }
+
+    .content-wrapper--not-found {
+        height: 100dvh;
+        min-height: 100dvh;
+        overflow-x: hidden;
+        overflow-y: auto;
+    }
+
+    .page-container--not-found {
+        min-height: 100dvh;
+        padding: 0;
+    }
+}

@@ -99,10 +99,10 @@ const boundAdminActor = {
   tenant: { opaqueId: 'tenant-1', databaseName: 'LanzoDB_t_tenant-1', generation: 1 }
 };
 
-function renderNavbar(entry = '/') {
+function renderNavbar(entry = '/', isSuppressed = false) {
   return render(
     <MemoryRouter initialEntries={[entry]}>
-      <Navbar />
+      <Navbar isSuppressed={isSuppressed} />
     </MemoryRouter>
   );
 }
@@ -138,6 +138,13 @@ beforeEach(() => {
 });
 
 describe('Navbar Settings shell access', () => {
+  it('suppresses mobile and desktop navigation only when the route requests it', () => {
+    renderNavbar('/', true);
+
+    expect(document.querySelector('.mobile-top-bar')).toBeNull();
+    expect(document.querySelector('.mobile-bottom-nav')).toBeNull();
+    expect(document.querySelector('.desktop-sidebar')).toBeNull();
+  });
   it('uses the canonical Settings policy instead of products permission', () => {
     state.app = createAppState({
       currentDeviceRole: 'staff',

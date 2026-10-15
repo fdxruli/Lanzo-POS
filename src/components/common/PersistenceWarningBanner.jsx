@@ -88,7 +88,7 @@ const CriticalStorageLockScreen = () => {
   );
 };
 
-export const PersistenceWarningBanner = () => {
+export const PersistenceWarningBanner = ({ suppressSecondaryBanner = false } = {}) => {
   const { isVolatile, isCritical, persistenceState, isRequestingPersistence } = usePersistentStorage();
   const [browser] = useState(() => detectBrowser());
   const [deferredPrompt, setDeferredPrompt] = useState(null);
@@ -139,7 +139,7 @@ export const PersistenceWarningBanner = () => {
 
   // Si no hay riesgo volátil, o si el usuario lo ocultó, no renderizamos el banner grande.
   // (El ícono flotante se maneja en el Navbar)
-  if (!isVolatile || isVolatileDismissed) return null;
+  if (!isVolatile || isVolatileDismissed || suppressSecondaryBanner) return null;
 
   const instruction = INSTRUCTIONS[browser];
   const isDenied = persistenceState === 'denied' || persistenceState === 'unsupported';
