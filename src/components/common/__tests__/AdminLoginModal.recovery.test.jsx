@@ -126,8 +126,9 @@ describe('AdminLoginModal local database recovery', () => {
     expect(screen.getByText(/otro dispositivo registrado como activo/i)).toBeInTheDocument();
     expect(screen.getByText(/se cerrarán las sesiones activas en los demás dispositivos/i)).toBeInTheDocument();
     expect(screen.getByText(/revisa las ventas antes de continuar operando/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Usar este dispositivo' })).toBeEnabled();
-    expect(screen.getByRole('button', { name: 'Usar este dispositivo' })).toHaveFocus();
+    const takeoverButton = screen.getByRole('button', { name: 'Usar este dispositivo' });
+    expect(takeoverButton).toBeEnabled();
+    await waitFor(() => expect(takeoverButton).toHaveFocus());
     expect(screen.getByRole('button', { name: 'Cancelar' })).toBeEnabled();
     expect(screen.queryByText(/límite de dispositivos alcanzado/i)).not.toBeInTheDocument();
     expect(storeState.handleFreeDeviceTakeover).not.toHaveBeenCalled();
