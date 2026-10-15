@@ -185,6 +185,10 @@ const safeRouteLabel = (pathname) => {
   return 'otra sección';
 };
 
+// Export the same route allowlist used by the existing support diagnostic so
+// structured reports cannot invent a second, less restrictive route filter.
+export const getSafeIncidentRoute = safeRouteLabel;
+
 export const getSafeBrowserLabel = (userAgent) => {
   const ua = boundedText(userAgent, 400);
   const known = [
@@ -208,10 +212,14 @@ const safeBuildVersion = (value) => {
     : 'No disponible';
 };
 
+export const getSafeIncidentAppVersion = safeBuildVersion;
+
 const safeBuildCommit = (value) => {
   const commit = boundedText(value, 40);
   return /^[a-f0-9]{7,40}$/i.test(commit) ? commit : 'No disponible';
 };
+
+export const getSafeIncidentBuildCommit = safeBuildCommit;
 
 const toIsoTimestamp = (value) => {
   const date = value instanceof Date ? value : new Date(value || Date.now());

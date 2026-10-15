@@ -47,6 +47,27 @@ describe('incidentEventCenter', () => {
     );
   });
 
+  it('captures an unhandled backend failure once with safe details', () => {
+    const error = Object.assign(new Error('license_key=private token=secret'), { code: 'PGRST202' });
+    const notice = captureAsyncIncidentNotice(error, {
+      source: 'unhandledrejection',
+      pathname: '/pedidos/customer-45?token=query-secret',
+      online: true,
+      now: 700
+    });
+
+    expect(notice).toMatchObject({
+      metadata: { category: 'supabase_rpc', code: 'PGRST202' },
+      incident: { category: 'supabase_rpc', source: 'unhandled_rejection' }
+    });
+    expect(JSON.stringify(notice)).not.toMatch(/private|secret|customer-45|query-secret/);
+    expect(captureAsyncIncidentNotice(error, {
+      source: 'window.error',
+      pathname: '/pedidos',
+      now: 701
+    })).toBeNull();
+  });
+
   it('deduplicates the same event briefly and notifies subscribers once', () => {
     const snapshots = [];
     const unsubscribe = subscribeAsyncIncidentNotices((next) => snapshots.push(next));
