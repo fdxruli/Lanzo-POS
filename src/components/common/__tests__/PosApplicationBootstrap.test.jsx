@@ -284,7 +284,8 @@ describe('PosApplicationBootstrap initial recovery shell', () => {
     expect(await screen.findByRole('heading', {
       name: /esta versión de lanzo no puede abrir tu base local/i
     })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /enviar reporte a soporte/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /abrir correo de soporte/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Detalles del problema'));
     expect(screen.getByRole('button', { name: /copiar diagnóstico/i })).toBeInTheDocument();
     expect(screen.queryByText(/^No se pudo iniciar Lanzo POS$/i)).not.toBeInTheDocument();
     expect(screen.queryByTestId('admin-app')).not.toBeInTheDocument();
@@ -322,20 +323,22 @@ describe('PosApplicationBootstrap initial recovery shell', () => {
       loadReadyRuntime,
       recoverStartup,
       reloadPage,
-      openSupportMailto
+      openSupportMailto,
+      createContextGuard: () => () => true
     });
 
-    expect(await screen.findByRole('heading', { name: /no se pudo iniciar lanzo pos/i })).toBeInTheDocument();
-    expect(screen.getByText('TENANT_RUNTIME_NOT_READY')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /no pudimos iniciar lanzo pos/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /reintentar inicio/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /enviar reporte a soporte/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Detalles del problema y opciones de soporte'));
+    expect(screen.getByText('TENANT_RUNTIME_NOT_READY')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /abrir correo de soporte/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /copiar diagnóstico/i })).toBeInTheDocument();
     expect(recoverStartup).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: /reintentar inicio/i }));
     expect(reloadPage).toHaveBeenCalledOnce();
 
-    fireEvent.click(screen.getByRole('button', { name: /enviar reporte a soporte/i }));
+    fireEvent.click(screen.getByRole('button', { name: /abrir correo de soporte/i }));
     expect(openSupportMailto).toHaveBeenCalledWith(expect.stringContaining('TENANT_RUNTIME_NOT_READY'));
 
     fireEvent.click(screen.getByRole('button', { name: /copiar diagnóstico/i }));
@@ -357,7 +360,7 @@ describe('PosApplicationBootstrap initial recovery shell', () => {
       createContextGuard: () => () => true
     });
 
-    expect(await screen.findByRole('button', { name: /actualizar lanzo pos/i })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /actualizar archivos de lanzo pos/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /reintentar inicio/i })).not.toBeInTheDocument();
     expect(recoverStartup).toHaveBeenCalledWith(expect.objectContaining({
       error,
@@ -381,7 +384,7 @@ describe('PosApplicationBootstrap initial recovery shell', () => {
     });
 
     expect(await screen.findByText(/sesión o el tenant cambió durante el inicio/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /actualizar lanzo pos/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /actualizar archivos de lanzo pos/i })).toBeDisabled();
     expect(recoverStartup).not.toHaveBeenCalled();
   });
 

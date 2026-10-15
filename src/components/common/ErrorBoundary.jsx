@@ -1,36 +1,85 @@
 import React from 'react';
-import { Mail, RefreshCw, AlertTriangle, ShieldCheck, Store, ArrowRightCircle, Copy, CheckCheck, Wifi, WifiOff } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Mail, RefreshCw, ArrowRightCircle } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import Logger from '../../services/Logger';
 import { buildSupportMailtoUrl, copyTextToClipboard } from '../../services/support/supportContact';
 import {
   buildSafeIncidentReport,
   classifyIncident,
-  getSafeBrowserLabel
+  getSafeIncidentMetadata
 } from '../../services/diagnostics/incidentDiagnostics';
 import { createRecoveryContextGuard } from '../../services/diagnostics/recoveryContext';
+import {
+  getActorCheckoutOwnerships,
+  getPendingActorOperations
+} from '../../services/auth/actorOperationalHandoff';
+import IncidentRecoveryPanel from './IncidentRecoveryPanel';
 import './ErrorBoundary.css';
 
-// ─── Utilidades de diagnóstico ────────────────────────────────────────────────
+const getRouteLabel = (pathname) => {
+  const path = typeof pathname === 'string' ? pathname.split(/[?#]/, 1)[0] : '/';
+  return path || '/';
+};
 
-/**
- * Formatea una fecha ISO a formato legible en español.
- * Ejemplo: "13 jun 2026 – 18:32:05 (UTC-6)"
- */
-function formatTimestamp(isoString) {
+const formatTimestamp = (isoString) => {
   try {
-    const d = new Date(isoString);
-    return d.toLocaleString('es-MX', {
-      day: '2-digit', month: 'short', year: 'numeric',
-      hour: '2-digit', minute: '2-digit', second: '2-digit',
-      timeZoneName: 'short'
+    return new Date(isoString).toLocaleString('es-MX', {
+      dateStyle: 'medium',
+      timeStyle: 'short'
     });
   } catch {
-    return isoString;
+    return 'No disponible';
   }
-}
+};
 
-// ─── Componente Principal ─────────────────────────────────────────────────────
+const areActorOperationsIdle = () => {
+  try {
+    return getActorCheckoutOwnerships().length === 0
+      && getPendingActorOperations().length === 0;
+  } catch {
+    return false;
+  }
+};
+
+const getCriticalCopy = (incident) => {
+  if (incident.category === 'financial_operation') {
+    return {
+      title: 'Necesitamos verificar esta operación',
+      description: 'No pudimos confirmar el resultado. Para evitar duplicaciones, algunas acciones permanecerán temporalmente bloqueadas.',
+      operationDetails: {
+        title: 'Resultado de cobro no confirmado',
+        description: 'No vuelvas a registrar ni a repetir esta operación hasta comprobar su resultado.',
+        blockedActions: ['Repetir el cobro', 'Cancelar la operación sin revisar su estado'],
+        verification: 'Consulta el recibo o ledger canónico con soporte antes de continuar.'
+      }
+    };
+  }
+
+  if (incident.category === 'indexeddb') {
+    return {
+      title: 'Necesitamos revisar el almacenamiento local',
+      description: 'Lanzo no puede confirmar que esta sección pueda continuar de forma segura. Mantendremos el acceso bloqueado mientras se verifica el estado.',
+      operationDetails: {
+        title: 'Almacenamiento local',
+        description: 'No cierres ni borres los datos del navegador para intentar resolver este problema.',
+        blockedActions: ['Continuar operaciones que requieren esta base local'],
+        verification: 'Solicita una revisión con el diagnóstico seguro de esta pantalla.'
+      }
+    };
+  }
+
+  return {
+    title: 'Necesitamos revisar esta sección',
+    description: 'No podemos confirmar que sea seguro continuar desde aquí. Algunas acciones permanecerán bloqueadas mientras se revisa el estado.',
+    operationDetails: {
+      title: 'Verificación necesaria',
+      description: 'La sección afectada seguirá bloqueada hasta revisar el diagnóstico.',
+      blockedActions: ['Reintentar una acción cuyo resultado no se haya confirmado'],
+      verification: 'Contacta a soporte antes de reanudar esta operación.'
+    }
+  };
+};
 
 export class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -38,30 +87,81 @@ export class ErrorBoundary extends React.Component {
     this.state = {
       hasError: false,
       error: null,
-      crashTimestamp: null,   // ISO string del momento exacto del crash
-      copied: false,          // Estado del botón "Copiar reporte"
+      crashTimestamp: null,
+      copied: false,
+      copyError: '',
       isRecoveryUpdating: false,
       recoveryActionMessage: '',
+      recoveryStatus: 'detected',
+      updateAvailable: Boolean(useAppStore.getState()?.updateAvailable),
+      isUpdateRunning: Boolean(useAppStore.getState()?.isUpdating),
+      resetKey: props.resetKey
     };
     this._copyTimeout = null;
+    this._focusTimeout = null;
     this._recoveryPromise = null;
     this._renderRecoveryAttempts = 0;
     this._pwaUpdateAttempted = false;
     this._isRecoveryContextCurrent = null;
+    this._unsubscribeAppStore = null;
+    this._headingRef = React.createRef();
+    this._criticalRoot = null;
+    this._criticalRootWasInert = false;
+    this._criticalRootAriaHidden = null;
   }
 
   static getDerivedStateFromError(error) {
     return {
       hasError: true,
       error,
-      crashTimestamp: new Date().toISOString(),  // ← Capturamos el momento exacto
+      crashTimestamp: new Date().toISOString(),
+      recoveryStatus: 'detected'
     };
+  }
+
+  static getDerivedStateFromProps(props, state) {
+    if (props.resetKey !== state.resetKey) {
+      return {
+        hasError: false,
+        error: null,
+        crashTimestamp: null,
+        copied: false,
+        copyError: '',
+        isRecoveryUpdating: false,
+        recoveryActionMessage: '',
+        recoveryStatus: 'detected',
+        resetKey: props.resetKey
+      };
+    }
+    return null;
+  }
+
+  componentDidMount() {
+    if (typeof useAppStore.subscribe === 'function') {
+      this._unsubscribeAppStore = useAppStore.subscribe((nextState) => {
+        const updateAvailable = Boolean(nextState?.updateAvailable);
+        const isUpdateRunning = Boolean(nextState?.isUpdating);
+        if (
+          updateAvailable !== this.state.updateAvailable
+          || isUpdateRunning !== this.state.isUpdateRunning
+        ) {
+          this.setState({ updateAvailable, isUpdateRunning });
+        }
+      });
+    }
   }
 
   componentDidCatch(error, errorInfo) {
     const createContextGuard = this.props.createRecoveryContextGuard || createRecoveryContextGuard;
     this._isRecoveryContextCurrent = createContextGuard();
-    const incident = classifyIncident(error, { source: 'react' });
+    const incident = classifyIncident(error, {
+      source: 'react',
+      ...(this.props.incidentContext || {})
+    });
+    if (incident.severity === 'critical_blocker') {
+      this._setCriticalBlocker(true);
+      this._headingRef.current?.focus({ preventScroll: true });
+    }
     Logger.error('Error de interfaz capturado.', {
       timestamp: new Date().toISOString(),
       code: incident.code,
@@ -70,93 +170,120 @@ export class ErrorBoundary extends React.Component {
       errorType: incident.errorType,
       componentStackAvailable: Boolean(errorInfo?.componentStack),
     });
+
+    this.setState({
+      recoveryStatus: this._renderRecoveryAttempts > 0 ? 'failed' : (
+        incident.severity === 'critical_blocker' ? 'blocked' : 'action_required'
+      )
+    });
+    if (this._renderRecoveryAttempts > 0) {
+      this._focusTimeout = globalThis.setTimeout(() => {
+        this._focusTimeout = null;
+        if (this.state.hasError) this._headingRef.current?.focus({ preventScroll: true });
+      }, 0);
+    }
   }
 
-  componentDidUpdate() {
-    if (!this.state.hasError) this._renderRecoveryAttempts = 0;
+  componentDidUpdate(prevProps, prevState) {
+    if (prevProps.resetKey !== this.props.resetKey) {
+      this._renderRecoveryAttempts = 0;
+      this._pwaUpdateAttempted = false;
+      this._isRecoveryContextCurrent = null;
+    }
+
+    if (
+      prevState.hasError
+      && !this.state.hasError
+      && this.state.recoveryStatus === 'recovering'
+    ) {
+      this._renderRecoveryAttempts = 0;
+      this.setState({
+        recoveryStatus: 'verified',
+        recoveryActionMessage: 'La sección volvió a mostrarse correctamente.'
+      });
+      this._focusTimeout = globalThis.setTimeout(() => {
+        this._focusTimeout = null;
+        this._focusRestoredContent();
+      }, 0);
+    }
+
+    if (!prevState.hasError && this.state.hasError && this._renderRecoveryAttempts > 0) {
+      this.setState({
+        recoveryStatus: 'failed',
+        recoveryActionMessage: 'El reintento no resolvió el problema. No seguiremos reiniciando esta sección.'
+      });
+      this._headingRef.current?.focus({ preventScroll: true });
+    }
+
+    if (!prevState.hasError && this.state.hasError && this._incident().severity === 'critical_blocker') {
+      this._setCriticalBlocker(true);
+      this._headingRef.current?.focus({ preventScroll: true });
+    } else if (prevState.hasError && !this.state.hasError) {
+      this._setCriticalBlocker(false);
+    }
   }
 
   componentWillUnmount() {
     if (this._copyTimeout) clearTimeout(this._copyTimeout);
+    if (this._focusTimeout) clearTimeout(this._focusTimeout);
+    this._unsubscribeAppStore?.();
+    this._setCriticalBlocker(false);
   }
 
-  // ── Acciones de Recuperación ─────────────────────────────────────────────
-
-  handleForceUpdateApp = async () => {
-    if (!this._isRecoveryContextCurrent?.()) {
-      this.setState({ recoveryActionMessage: 'La sesión o el tenant cambió desde el error. Vuelve a abrir esta sección desde el contexto actual.' });
-      return null;
-    }
-    if (this._recoveryPromise || this.state.isRecoveryUpdating || this._pwaUpdateAttempted) {
-      return this._recoveryPromise;
-    }
-
-    const appState = useAppStore.getState();
-    if (!appState.updateAvailable || typeof appState.runUpdate !== 'function') {
-      this.setState({ recoveryActionMessage: 'No hay una actualización confirmada disponible. Puedes reintentar esta sección o enviar el diagnóstico.' });
-      return null;
-    }
-    if (navigator.onLine === false) {
-      this.setState({ recoveryActionMessage: 'Estás sin conexión. Conservamos la versión instalada y no iniciaremos una actualización.' });
-      return null;
-    }
-
-    this._pwaUpdateAttempted = true;
-    this.setState({ isRecoveryUpdating: true, recoveryActionMessage: '' });
-    const operation = Promise.resolve()
-      .then(() => appState.runUpdate())
-      .then(() => {
-        const latestState = useAppStore.getState();
-        if (latestState.updateAvailable && !latestState.isUpdating) {
-          throw new Error('PWA_UPDATE_NOT_APPLIED');
-        }
-      })
-      .catch((error) => {
-        const incident = classifyIncident(error, { category: 'pwa' });
-        Logger.warn('No se pudo aplicar la actualización PWA.', {
-          code: incident.code,
-          category: incident.category,
-          severity: incident.severity,
-        });
-        this.setState({ recoveryActionMessage: 'No se pudo confirmar la actualización. Este flujo no ejecutó un vaciado general; verifica cualquier operación pendiente antes de reintentar.' });
-      })
-      .finally(() => {
-        this._recoveryPromise = null;
-        this.setState({ isRecoveryUpdating: false });
-      });
-    this._recoveryPromise = operation;
-    return operation;
-  }
-
-  handleReload = () => {
-    if (this._recoveryPromise) return;
-    const reloadPage = this.props.reloadPage || (() => window.location.reload());
-    reloadPage();
-  }
-
-  handleReset = () => {
-    if (!this._isRecoveryContextCurrent?.()) {
-      this.setState({ recoveryActionMessage: 'La sesión o el tenant cambió desde el error. Vuelve a abrir esta sección desde el contexto actual.' });
+  _setCriticalBlocker(isActive) {
+    if (isActive) {
+      const root = document.getElementById('root');
+      if (!root || this._criticalRoot) return;
+      this._criticalRoot = root;
+      this._criticalRootWasInert = Boolean(root.inert);
+      this._criticalRootAriaHidden = root.getAttribute('aria-hidden');
+      root.inert = true;
+      root.setAttribute('aria-hidden', 'true');
       return;
     }
-    if (this._renderRecoveryAttempts >= 1) {
-      this.setState({ recoveryActionMessage: 'El reintento no resolvió el problema. No seguiremos reiniciando la sección para evitar un ciclo.' });
-      return;
+
+    if (!this._criticalRoot) return;
+    this._criticalRoot.inert = this._criticalRootWasInert;
+    if (this._criticalRootAriaHidden === null) {
+      this._criticalRoot.removeAttribute('aria-hidden');
+    } else {
+      this._criticalRoot.setAttribute('aria-hidden', this._criticalRootAriaHidden);
     }
-    this._renderRecoveryAttempts += 1;
-    this.setState({ hasError: false, error: null, crashTimestamp: null, copied: false, isRecoveryUpdating: false, recoveryActionMessage: '' });
+    this._criticalRoot = null;
   }
 
-  handleGoToPos = () => {
-    const navigateToPos = this.props.navigateToPos || ((path) => window.location.replace(path));
-    navigateToPos('/');
+  _incident() {
+    return classifyIncident(this.state.error, {
+      source: 'react',
+      ...(this.props.incidentContext || {})
+    });
   }
 
-  // ── Construcción del Reporte ──────────────────────────────────────────────
+  _hasCurrentRecoveryContext() {
+    try {
+      return typeof this._isRecoveryContextCurrent === 'function'
+        && this._isRecoveryContextCurrent() === true;
+    } catch {
+      return false;
+    }
+  }
+
+  _focusRestoredContent() {
+    const root = document.getElementById('root');
+    if (!root || this.state.hasError) return;
+    const target = root.querySelector(
+      '[data-recovery-focus-target], main h1, main h2, [role="main"] h1, [role="main"] h2'
+    ) || root;
+    if (!target.hasAttribute('tabindex')) target.setAttribute('tabindex', '-1');
+    target.focus?.({ preventScroll: true });
+  }
 
   _buildReportMessage() {
     const { error, crashTimestamp } = this.state;
-    return buildSafeIncidentReport(error, { source: 'react' }, {
+    return buildSafeIncidentReport(error, {
+      source: 'react',
+      ...(this.props.incidentContext || {})
+    }, {
       pathname: window.location.pathname,
       online: navigator.onLine !== false,
       appVersion: import.meta.env.VITE_APP_VERSION,
@@ -166,319 +293,302 @@ export class ErrorBoundary extends React.Component {
     });
   }
 
-  handleReport = () => {
-    const message = this._buildReportMessage();
-    const mailtoUrl = buildSupportMailtoUrl({
-      subject: 'Reporte de incidencia tecnica - Lanzo POS',
-      body: message
+  _buildMetadata(incident) {
+    const metadata = getSafeIncidentMetadata({
+      ...incident,
+      recoveryStatus: this.state.recoveryStatus
+    }, {
+      pathname: window.location.pathname,
+      online: navigator.onLine !== false,
+      appVersion: import.meta.env.VITE_APP_VERSION,
+      now: this.state.crashTimestamp || new Date()
     });
-    window.location.href = mailtoUrl;
+
+    return {
+      ...metadata,
+      formattedTimestamp: formatTimestamp(metadata.timestamp)
+    };
+  }
+
+  handleReport = () => {
+    const mailtoUrl = buildSupportMailtoUrl({
+      subject: 'Reporte de incidencia técnica - Lanzo POS',
+      body: this._buildReportMessage()
+    });
+    const openSupportMailto = this.props.openSupportMailto
+      || ((url) => { window.location.href = url; });
+    openSupportMailto(mailtoUrl);
   }
 
   handleCopy = async () => {
+    this.setState({ copyError: '' });
     const copiedSuccessfully = await copyTextToClipboard(this._buildReportMessage());
-    if (copiedSuccessfully !== true) return;
+    if (copiedSuccessfully !== true) {
+      this.setState({
+        copyError: 'No se pudo copiar el diagnóstico. Intenta desde un navegador compatible.'
+      });
+      return;
+    }
     this.setState({ copied: true });
     this._copyTimeout = setTimeout(() => this.setState({ copied: false }), 3000);
   }
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  handleForceUpdateApp = async () => {
+    if (!this._hasCurrentRecoveryContext()) {
+      this.setState({
+        recoveryStatus: 'blocked',
+        recoveryActionMessage: 'La sesión o el contexto de negocio cambió. Vuelve a abrir esta sección desde el contexto actual.'
+      });
+      return null;
+    }
+    if (!areActorOperationsIdle()) {
+      this.setState({
+        recoveryStatus: 'blocked',
+        recoveryActionMessage: 'Hay una operación en curso. La actualización no se iniciará hasta que termine.'
+      });
+      return null;
+    }
+    if (this._recoveryPromise || this.state.isRecoveryUpdating || this._pwaUpdateAttempted) {
+      return this._recoveryPromise;
+    }
+
+    const appState = useAppStore.getState();
+    if (!appState.updateAvailable || typeof appState.runUpdate !== 'function') {
+      this.setState({
+        recoveryStatus: 'action_required',
+        recoveryActionMessage: 'No hay una actualización confirmada disponible.'
+      });
+      return null;
+    }
+    if (navigator.onLine === false) {
+      this.setState({
+        recoveryStatus: 'blocked',
+        recoveryActionMessage: 'Estás sin conexión. Conservamos la versión instalada y no iniciaremos una actualización.'
+      });
+      return null;
+    }
+
+    this._pwaUpdateAttempted = true;
+    this.setState({
+      isRecoveryUpdating: true,
+      recoveryStatus: 'recovering',
+      recoveryActionMessage: 'Comprobando la actualización disponible…'
+    });
+    const operation = Promise.resolve()
+      .then(() => appState.runUpdate())
+      .then(() => {
+        const latestState = useAppStore.getState();
+        if (latestState.updateAvailable || latestState.isUpdating) {
+          throw new Error('PWA_UPDATE_NOT_APPLIED');
+        }
+        this.setState({
+          recoveryStatus: 'verified',
+          recoveryActionMessage: 'La actualización fue confirmada. Lanzo reanudará el acceso cuando sea seguro.'
+        });
+      })
+      .catch((error) => {
+        const incident = classifyIncident(error, { category: 'pwa' });
+        Logger.warn('No se pudo aplicar la actualización PWA.', {
+          code: incident.code,
+          category: incident.category,
+          severity: incident.severity,
+        });
+        this.setState({
+          recoveryStatus: 'failed',
+          recoveryActionMessage: 'No se pudo confirmar la actualización. Verifica cualquier operación pendiente antes de intentarlo de nuevo.'
+        });
+      })
+      .finally(() => {
+        this._recoveryPromise = null;
+        this.setState({ isRecoveryUpdating: false });
+      });
+    this._recoveryPromise = operation;
+    return operation;
+  }
+
+  handleReset = () => {
+    if (!this._hasCurrentRecoveryContext()) {
+      this.setState({
+        recoveryStatus: 'blocked',
+        recoveryActionMessage: 'La sesión o el contexto de negocio cambió desde el error. Vuelve a abrir esta sección desde el contexto actual.'
+      });
+      return;
+    }
+    if (this._renderRecoveryAttempts >= 1) {
+      this.setState({
+        recoveryStatus: 'failed',
+        recoveryActionMessage: 'El reintento no resolvió el problema. No seguiremos reiniciando esta sección.'
+      });
+      return;
+    }
+    this._renderRecoveryAttempts += 1;
+    this.setState({
+      hasError: false,
+      error: null,
+      crashTimestamp: null,
+      copied: false,
+      isRecoveryUpdating: false,
+      recoveryActionMessage: 'Recuperando esta sección…',
+      recoveryStatus: 'recovering'
+    });
+  }
+
+  handleGoToPos = () => {
+    if (!this._hasCurrentRecoveryContext()) {
+      this.setState({
+        recoveryStatus: 'blocked',
+        recoveryActionMessage: 'La sesión o el contexto de negocio cambió desde el error. Vuelve a abrir esta sección desde el contexto actual.'
+      });
+      return;
+    }
+    if (!areActorOperationsIdle()) {
+      this.setState({
+        recoveryStatus: 'blocked',
+        recoveryActionMessage: 'Hay una operación en curso. Termínala antes de cambiar de sección.'
+      });
+      return;
+    }
+    const navigateToPos = this.props.navigateToPos || ((path) => window.location.replace(path));
+    navigateToPos('/');
+  }
 
   render() {
-    if (!this.state.hasError) return this.props.children;
-
-    const { error, crashTimestamp, copied, isRecoveryUpdating, recoveryActionMessage } = this.state;
-    const currentPath = window.location.pathname;
-    const isPosPage   = currentPath === '/' || currentPath === '';
-    const isOnline    = navigator.onLine !== false;
-    const appState = useAppStore.getState();
-    const updateAvailable = Boolean(appState.updateAvailable);
-    const isUpdating = Boolean(appState.isUpdating || isRecoveryUpdating);
-
-    const incident = classifyIncident(error, { source: 'react' });
-
-    return (
-      <div className="error-boundary" role="alert" style={{
-        minHeight: '100vh',
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'center',
-        alignItems: 'center',
-        backgroundColor: '#f8fafc',
-        fontFamily: 'system-ui, -apple-system, sans-serif',
-        padding: '20px',
-      }}>
-
-        {/* ── Tarjeta principal ── */}
-        <div className="error-boundary__console" style={{
-          backgroundColor: 'white',
-          borderRadius: '16px',
-          boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)',
-          padding: '40px',
-          maxWidth: '640px',
-          width: '100%',
-          textAlign: 'center',
-          border: '1px solid #e2e8f0',
-        }}>
-
-          {/* Icono de alerta */}
-          <div className="error-boundary__alert-icon" style={{
-            backgroundColor: '#fee2e2',
-            color: '#dc2626',
-            width: '80px', height: '80px',
-            borderRadius: '50%',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            margin: '0 auto 24px auto',
-          }}>
-            <AlertTriangle size={40} strokeWidth={1.5} />
-          </div>
-
-          <h2 className="error-boundary__title" style={{ color: '#1e293b', fontSize: '1.75rem', fontWeight: '700', marginBottom: '8px', lineHeight: '1.2' }}>
-            No se pudo mostrar esta sección
-          </h2>
-
-          {/* Tipo de error + timestamp */}
-          <div className="error-boundary__incident-meta" style={{ marginBottom: '16px' }}>
-            <span style={{
-              display: 'inline-block',
-              backgroundColor: '#fef2f2',
-              color: '#dc2626',
-              border: '1px solid #fecaca',
-              borderRadius: '6px',
-              padding: '2px 10px',
-              fontSize: '0.8rem',
-              fontWeight: '700',
-              fontFamily: 'monospace',
-              marginBottom: '6px',
-            }}>
-              {incident.code}
+    if (!this.state.hasError) {
+      if (this.state.recoveryStatus === 'recovering') {
+        return (
+          <>
+            <span className="incident-recovery__sr-only" role="status" aria-live="polite">
+              Recuperación en curso
             </span>
-            {crashTimestamp && (
-              <p style={{ margin: 0, color: '#94a3b8', fontSize: '0.8rem' }}>
-                🕐 {formatTimestamp(crashTimestamp)}
-              </p>
-            )}
-          </div>
+            {this.props.children}
+          </>
+        );
+      }
+      if (this.state.recoveryStatus === 'verified') {
+        return (
+          <>
+            <span className="incident-recovery__sr-only" role="status" aria-live="polite">
+              {this.state.recoveryActionMessage}
+            </span>
+            {this.props.children}
+          </>
+        );
+      }
+      return this.props.children;
+    }
 
-          <p className="error-boundary__summary" style={{ color: '#475569', fontSize: '1.05rem', lineHeight: '1.6', marginBottom: '16px' }}>
-            Ocurrió un problema en esta sección. Puedes probar un solo reintento o enviar un diagnóstico seguro a soporte.
-          </p>
+    const incident = this._incident();
+    const metadata = this._buildMetadata(incident);
+    const isCritical = incident.severity === 'critical_blocker';
+    const isRecoverable = incident.severity === 'recoverable';
+    const currentPath = getRouteLabel(window.location.pathname);
+    const isOnline = navigator.onLine !== false;
+    const contextCurrent = this._hasCurrentRecoveryContext();
+    const updateAvailable = this.state.updateAvailable;
+    const canShowUpdateAction = !isCritical
+      && contextCurrent
+      && updateAvailable
+      && isOnline
+      && areActorOperationsIdle()
+      && typeof useAppStore.getState()?.runUpdate === 'function';
+    const canGoHome = !isCritical
+      && contextCurrent
+      && currentPath !== '/'
+      && incident.category !== 'financial_operation'
+      && areActorOperationsIdle();
+    const criticalCopy = isCritical ? getCriticalCopy(incident) : null;
+    const retryDisabled = !contextCurrent || this._renderRecoveryAttempts >= 1;
 
-          {/* Badge de estado de red */}
-          <div className={`error-boundary__network ${isOnline ? 'is-online' : 'is-offline'}`} style={{
-            display: 'inline-flex', alignItems: 'center', gap: '6px',
-            backgroundColor: isOnline ? '#f0fdf4' : '#fff7ed',
-            border: `1px solid ${isOnline ? '#bbf7d0' : '#fed7aa'}`,
-            borderRadius: '999px',
-            padding: '4px 12px',
-            fontSize: '0.82rem',
-            color: isOnline ? '#166534' : '#9a3412',
-            marginBottom: '20px',
-          }}>
-            {isOnline
-              ? <><Wifi size={14} /> Conexión activa</>
-              : <><WifiOff size={14} /> Sin conexión — esto puede ser la causa</>
-            }
-          </div>
+    let title = isRecoverable
+      ? 'No pudimos cargar esta información'
+      : 'No pudimos mostrar esta sección';
+    let description = isRecoverable
+      ? 'Puedes intentarlo nuevamente. El resto de Lanzo POS sigue disponible.'
+      : 'Ocurrió un problema inesperado. Puedes recuperar esta sección sin reiniciar todo Lanzo POS.';
+    if (isCritical) {
+      title = criticalCopy.title;
+      description = criticalCopy.description;
+    }
 
-          {updateAvailable && typeof appState.runUpdate === 'function' && isOnline && <div className="error-boundary__update-recovery" style={{
-            backgroundColor: '#ecfdf5',
-            border: '1px solid #86efac',
-            borderRadius: '12px',
-            padding: '16px',
-            marginBottom: '18px',
-            textAlign: 'left',
-          }}>
-            <p style={{ margin: '0 0 12px 0', color: '#166534', fontSize: '0.94rem', lineHeight: '1.45' }}>
-              <strong>Hay una actualización disponible.</strong>{' '}
-              Confirma que no haya un cobro en curso. La actualización no confirma el resultado de una operación pendiente.
-            </p>
-            <button type="button"
-              className="error-boundary__button error-boundary__button--update"
-              onClick={this.handleForceUpdateApp}
-              disabled={isUpdating || this._pwaUpdateAttempted}
-              style={{
-                width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px',
-                padding: '14px 24px', borderRadius: '10px',
-                backgroundColor: '#16a34a', color: 'white',
-                border: 'none', cursor: isUpdating ? 'wait' : 'pointer',
-                fontWeight: '800', fontSize: '1rem',
-                boxShadow: '0 4px 10px -2px rgba(22,163,74,0.35)',
-                opacity: isUpdating ? 0.78 : 1,
-              }}
-            >
-              <RefreshCw size={20} />
-              {isUpdating ? 'Actualizando aplicación...' : 'Actualizar aplicación'}
-            </button>
-          </div>}
+    const primaryAction = isCritical
+      ? {
+        label: 'Abrir correo de soporte',
+        onClick: this.handleReport,
+        icon: <Mail size={18} aria-hidden="true" />
+      }
+      : canShowUpdateAction
+        ? {
+          label: this.state.isRecoveryUpdating || this.state.isUpdateRunning
+            ? 'Actualizando aplicación…'
+            : 'Actualizar aplicación',
+          onClick: this.handleForceUpdateApp,
+          icon: <RefreshCw size={18} aria-hidden="true" />,
+          disabled: this.state.isRecoveryUpdating || this.state.isUpdateRunning || this._pwaUpdateAttempted,
+          busy: this.state.isRecoveryUpdating || this.state.isUpdateRunning,
+          disabledReason: this.state.isUpdateRunning
+            ? 'La actualización ya está en curso.'
+            : this._pwaUpdateAttempted
+              ? 'Este intento de actualización ya se utilizó.'
+              : ''
+        }
+        : {
+          label: retryDisabled
+            ? this._renderRecoveryAttempts >= 1 ? 'Reintento utilizado' : 'Reabrir sección desde el contexto actual'
+            : isRecoverable ? 'Reintentar' : 'Reintentar sección',
+          onClick: this.handleReset,
+          icon: <RefreshCw size={18} aria-hidden="true" />,
+          disabled: retryDisabled,
+          disabledReason: retryDisabled
+            ? this._renderRecoveryAttempts >= 1
+              ? 'El reintento disponible ya se utilizó.'
+              : 'El contexto de sesión o negocio cambió; vuelve a abrir la sección.'
+            : ''
+        };
 
-          {/* Sugerencia de ir al POS */}
-          {!isPosPage && (
-            <div className="error-boundary__continuity" style={{
-              backgroundColor: '#eff6ff', border: '1px solid #bfdbfe',
-              borderRadius: '12px', padding: '16px', marginBottom: '20px', textAlign: 'left',
-            }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: '12px' }}>
-                <Store className="text-blue-600" size={24} style={{ minWidth: '24px' }} />
-                <div>
-                  <h4 style={{ margin: '0 0 4px 0', color: '#1e40af', fontSize: '1rem' }}>
-                    ¿Necesitas seguir vendiendo?
-                  </h4>
-                  <p style={{ margin: 0, color: '#3b82f6', fontSize: '0.9rem', lineHeight: '1.4' }}>
-                    Puedes ir al Punto de Venta para continuar tu trabajo.{' '}
-                    <strong style={{ display: 'block', marginTop: '4px' }}>
-                      ⚠️ Evita regresar a esta sección hasta que Soporte lo resuelva.
-                    </strong>
-                  </p>
-                </div>
-              </div>
-              <button type="button"
-                className="error-boundary__button error-boundary__button--pos"
-                onClick={this.handleGoToPos}
-                style={{
-                  width: '100%', display: 'flex', alignItems: 'center',
-                  justifyContent: 'center', gap: '8px',
-                  padding: '12px', backgroundColor: '#2563eb', color: 'white',
-                  border: 'none', borderRadius: '8px', cursor: 'pointer',
-                  fontWeight: '600', fontSize: '0.95rem', transition: 'background-color 0.2s',
-                }}
-              >
-                <ArrowRightCircle size={18} />
-                Ir al Punto de Venta ahora
-              </button>
-            </div>
-          )}
+    const secondaryActions = [];
+    if (!isCritical && canGoHome) {
+      secondaryActions.push({
+        label: 'Volver al inicio',
+        onClick: this.handleGoToPos,
+        icon: <ArrowRightCircle size={17} aria-hidden="true" />
+      });
+    }
+    if (!isCritical) {
+      secondaryActions.push({
+        label: 'Abrir correo de soporte',
+        onClick: this.handleReport,
+        icon: <Mail size={17} aria-hidden="true" />
+      });
+    }
 
-          {/* Aviso operativo prudente */}
-          <div className="error-boundary__safe-data" style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-            backgroundColor: '#f0fdf4', border: '1px solid #bbf7d0',
-            padding: '10px 12px', borderRadius: '8px', marginBottom: '24px',
-            color: '#166534', fontSize: '0.9rem',
-          }}>
-            <ShieldCheck size={18} />
-            <span>Este panel no borró registros. Revisa el resultado de cualquier cobro pendiente antes de repetirlo.</span>
-          </div>
+    let operationDetails = criticalCopy?.operationDetails || null;
+    if (!operationDetails && incident.category === 'financial_operation') {
+      operationDetails = {
+        title: 'Antes de repetir una operación',
+        description: 'Este problema no confirma por sí solo que haya datos perdidos. Si hay un cobro pendiente, revisa su resultado antes de intentarlo nuevamente.'
+      };
+    }
 
-          {/* ── Resumen técnico seguro ── */}
-          <div className="error-boundary__diagnostics" style={{ textAlign: 'left', marginBottom: '28px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-              <span style={{ fontSize: '0.8rem', fontWeight: '700', color: '#64748b', letterSpacing: '0.05em' }}>
-                RESUMEN PARA SOPORTE:
-              </span>
-              <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
-                {incident.categoryLabel}
-              </span>
-            </div>
-
-            <div className="error-boundary__error-message" style={{
-              backgroundColor: '#fef2f2', border: '1px solid #fecaca',
-              borderRadius: '6px', padding: '10px 12px', marginBottom: '8px',
-              fontSize: '0.85rem', color: '#991b1b', fontWeight: '500',
-            }}>
-              <span style={{ fontFamily: 'monospace', fontWeight: '700' }}>{incident.code}</span>
-              <div style={{ marginTop: '4px' }}>Tipo: {incident.errorType} · Gravedad: {incident.severity}</div>
-            </div>
-
-            <div className="error-boundary__stack" style={{
-              backgroundColor: '#1e293b', color: '#94a3b8',
-              padding: '14px 16px', borderRadius: '8px',
-              fontSize: '0.78rem', fontFamily: 'monospace',
-              overflowX: 'auto', overflowY: 'auto',
-              maxHeight: '140px', lineHeight: '1.6',
-              border: '1px solid #334155',
-              whiteSpace: 'pre',
-            }}>
-              <span style={{ color: '#f1f5f9' }}>El detalle interno se excluyó del reporte para proteger la información del negocio.</span>
-            </div>
-          </div>
-
-          {recoveryActionMessage && (
-            <p className="ui-alert ui-alert--warning" role="status" aria-live="polite">{recoveryActionMessage}</p>
-          )}
-
-          {/* ── Botones de acción ── */}
-          <div className="error-boundary__actions" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-
-            {/* Reportar por correo */}
-            <button type="button"
-              className="error-boundary__button error-boundary__button--email"
-              onClick={this.handleReport}
-              style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px',
-                padding: '14px 24px', borderRadius: '10px',
-                backgroundColor: '#25D366', color: 'white',
-                border: 'none', cursor: 'pointer',
-                fontWeight: '700', fontSize: '1rem',
-                transition: 'background-color 0.2s',
-                boxShadow: '0 4px 6px -1px rgba(37,211,102,0.25)',
-              }}
-            >
-              <Mail size={20} />
-              Reportar problema por correo
-            </button>
-
-            {/* Copiar reporte al portapapeles */}
-            <button type="button"
-              className={`error-boundary__button error-boundary__button--copy ${copied ? 'is-copied' : ''}`}
-              onClick={this.handleCopy}
-              style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                padding: '11px 24px', borderRadius: '10px',
-                backgroundColor: copied ? '#f0fdf4' : 'white',
-                color: copied ? '#166534' : '#475569',
-                border: `1px solid ${copied ? '#bbf7d0' : '#cbd5e1'}`,
-                cursor: 'pointer', fontWeight: '600', fontSize: '0.9rem',
-                transition: 'all 0.2s',
-              }}
-            >
-              {copied
-                ? <><CheckCheck size={17} /> ¡Copiado! Pégalo en cualquier chat</>
-                : <><Copy size={17} /> Copiar reporte completo</>
-              }
-            </button>
-
-            {/* Recarga y reset */}
-            <div className="error-boundary__secondary-actions" style={{ display: 'flex', gap: '10px' }}>
-              <button type="button"
-                className="error-boundary__button error-boundary__button--reload"
-                onClick={this.handleReload}
-                style={{
-                  flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                  padding: '11px', borderRadius: '10px',
-                  backgroundColor: 'white', color: '#dc2626',
-                  border: '1px solid #dc2626', cursor: 'pointer',
-                  fontWeight: '600', fontSize: '0.9rem',
-                }}
-              >
-                <RefreshCw size={17} />
-                Recargar página
-              </button>
-
-              <button type="button"
-                className="error-boundary__button error-boundary__button--recover"
-                onClick={this.handleReset}
-                disabled={this._renderRecoveryAttempts >= 1}
-                style={{
-                  flex: 1, padding: '11px', borderRadius: '10px',
-                  backgroundColor: 'transparent', color: '#64748b',
-                  border: '1px solid #cbd5e1', cursor: 'pointer',
-                  fontWeight: '500', fontSize: '0.9rem',
-                }}
-              >
-                Intentar recuperar
-              </button>
-            </div>
-          </div>
-
-        </div>
-
-        <p className="error-boundary__footer" style={{ marginTop: '20px', color: '#94a3b8', fontSize: '0.82rem' }}>
-          Lanzo POS System v{import.meta.env.VITE_APP_VERSION} &nbsp;·&nbsp; {getSafeBrowserLabel(navigator.userAgent)}
-        </p>
-
-      </div>
+    const panel = (
+      <IncidentRecoveryPanel
+        severity={incident.severity}
+        title={title}
+        description={description}
+        metadata={metadata}
+        primaryAction={primaryAction}
+        secondaryActions={secondaryActions}
+        operationDetails={operationDetails}
+        copied={this.state.copied}
+        onCopy={this.handleCopy}
+        copyError={this.state.copyError}
+        recoveryNotice={this.state.recoveryActionMessage || (!isOnline ? 'Estás trabajando sin conexión.' : '')}
+        contactNote="Se abrirá tu aplicación de correo. Revisa el mensaje y envíalo cuando estés listo."
+        titleRef={this._headingRef}
+      />
     );
+    return isCritical && typeof document !== 'undefined' && document.body
+      ? createPortal(panel, document.body)
+      : panel;
   }
 }
 

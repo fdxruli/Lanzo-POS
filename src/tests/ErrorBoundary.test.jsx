@@ -25,6 +25,8 @@ vi.mock('lucide-react', () => {
     RefreshCw: Icon,
     AlertTriangle: Icon,
     ShieldCheck: Icon,
+    ShieldAlert: Icon,
+    Info: Icon,
     Store: Icon,
     ArrowRightCircle: Icon,
     Copy: Icon,
@@ -103,9 +105,12 @@ describe('ErrorBoundary', () => {
   it('catches React render errors and shows a safe incident classification', () => {
     renderWithError(Object.assign(new TypeError('Cannot read properties of null'), { code: 'DB_OPEN_TIMEOUT' }));
 
-    expect(screen.getAllByText('DB_OPEN_TIMEOUT')).toHaveLength(2);
+    const details = document.querySelector('.incident-recovery__details-content');
+    expect(details).toHaveAttribute('hidden');
+    fireEvent.click(screen.getByRole('button', { name: /Detalles del problema/i }));
+    expect(screen.getByText('DB_OPEN_TIMEOUT')).toBeInTheDocument();
     expect(screen.getByText(/Almacenamiento local/)).toBeInTheDocument();
-    expect(screen.getByText(/Gravedad: section_failure/)).toBeInTheDocument();
+    expect(document.querySelector('.incident-recovery--section')).toBeInTheDocument();
     expect(document.body.textContent).not.toContain('Cannot read properties of null');
   });
 
@@ -152,7 +157,7 @@ describe('ErrorBoundary', () => {
     });
     renderWithError(Object.assign(new Error('license_key=LNZ-FULL-SECRET'), { code: 'DB_OPEN_TIMEOUT' }));
 
-    fireEvent.click(screen.getByRole('button', { name: /Copiar reporte completo/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Copiar diagnóstico/i }));
     await act(async () => Promise.resolve());
 
     expect(writeText).toHaveBeenCalledOnce();
@@ -173,7 +178,7 @@ describe('ErrorBoundary', () => {
       </ErrorBoundary>
     );
 
-    fireEvent.click(screen.getByRole('button', { name: /Intentar recuperar/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Reintentar sección/i }));
     rerender(
       <ErrorBoundary>
         <ConditionalBomb error={error} shouldThrow />
@@ -182,7 +187,7 @@ describe('ErrorBoundary', () => {
 
     expect(window.sessionStorage.getItem('lanzo:authorized-session')).toBe('keep-session');
     expect(window.localStorage.getItem('lanzo:active-orders-storage')).toBe('keep-orders');
-    expect(screen.getByRole('button', { name: /Intentar recuperar/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /Reintento utilizado/i })).toBeDisabled();
   });
 
   it('allows a successful section retry without clearing saved state', () => {
@@ -199,7 +204,7 @@ describe('ErrorBoundary', () => {
         <ConditionalBomb error={error} shouldThrow={false} />
       </ErrorBoundary>
     );
-    fireEvent.click(screen.getByRole('button', { name: /Intentar recuperar/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Reintentar sección/i }));
 
     expect(screen.getByTestId('safe-child')).toHaveTextContent('Sección recuperada');
     expect(window.sessionStorage.getItem('lanzo:flow-state')).toBe('preserve');
@@ -209,16 +214,13 @@ describe('ErrorBoundary', () => {
     const createRecoveryContextGuard = vi.fn(() => () => false);
     renderWithError(new Error('stale section failure'), { createRecoveryContextGuard });
 
-    fireEvent.click(screen.getByRole('button', { name: /Intentar recuperar/i }));
-
     expect(createRecoveryContextGuard).toHaveBeenCalledOnce();
-    expect(screen.getByRole('button', { name: /Intentar recuperar/i })).toBeEnabled();
-    expect(screen.getByRole('status')).toHaveTextContent(/La sesión o el tenant cambió/i);
-    expect(document.body.textContent).toContain('No se pudo mostrar esta sección');
+    expect(screen.getByRole('button', { name: /Reabrir sección desde el contexto actual/i })).toBeDisabled();
+    expect(screen.getByText(/contexto de sesión o negocio cambió/i)).toBeInTheDocument();
+    expect(document.body.textContent).toContain('No pudimos mostrar esta sección');
   });
 
-  it('reloads only through the explicit action and does not clear cache or update workers', () => {
-    const reloadPage = vi.fn();
+  it('does not expose a generic reload action or clear cache after a section error', () => {
     const cacheDelete = vi.fn();
     const workerUpdate = vi.fn();
     globalThis.caches = { keys: vi.fn(), delete: cacheDelete };
@@ -227,10 +229,9 @@ describe('ErrorBoundary', () => {
       value: { getRegistrations: vi.fn(async () => [{ update: workerUpdate }]) }
     });
 
-    renderWithError(new Error('render failure'), { reloadPage });
-    fireEvent.click(screen.getByRole('button', { name: /Recargar página/i }));
+    renderWithError(new Error('render failure'));
 
-    expect(reloadPage).toHaveBeenCalledOnce();
+    expect(screen.queryByRole('button', { name: /Recargar|Reiniciar/i })).not.toBeInTheDocument();
     expect(cacheDelete).not.toHaveBeenCalled();
     expect(workerUpdate).not.toHaveBeenCalled();
   });
@@ -269,7 +270,7 @@ describe('ErrorBoundary', () => {
     window.localStorage.setItem('lanzo:active-orders-storage', 'keep');
     renderWithError(new Error('section failure'), { navigateToPos }, '/ventas');
 
-    fireEvent.click(screen.getByRole('button', { name: /Ir al Punto de Venta ahora/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Volver al inicio/i }));
 
     expect(navigateToPos).toHaveBeenCalledWith('/');
     expect(window.sessionStorage.getItem('lanzo:authorized-session')).toBe('keep');
@@ -355,8 +356,9 @@ describe('ErrorBoundary', () => {
     const { boundaryRef } = renderWithError(error);
     const report = boundaryRef.current._buildReportMessage();
 
-    expect(screen.getByText(/No se pudo mostrar esta sección/)).toBeInTheDocument();
-    expect(screen.getAllByText('INCIDENT_REACT_RENDER')).toHaveLength(2);
+    expect(screen.getByRole('heading', { name: 'No pudimos mostrar esta sección' })).toBeInTheDocument();
+    const details = document.querySelector('.incident-recovery__details-content');
+    expect(details).toHaveAttribute('hidden');
     expect(document.body.textContent).not.toContain('CustomerTokenError');
     expect(report).toContain('Tipo técnico: Error');
     expect(report).toContain('Clasificación: Render de interfaz');
@@ -370,11 +372,11 @@ describe('ErrorBoundary', () => {
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
     renderWithError(error);
 
-    fireEvent.click(screen.getByRole('button', { name: /Copiar reporte completo/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Copiar diagnóstico/i }));
     await act(async () => Promise.resolve());
 
     const report = writeText.mock.calls[0][0];
-    expect(screen.getByText(/El detalle interno se excluyó/)).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('at internal/private/path');
     expect(document.body.textContent).not.toContain('deep recursion customer-private-data');
     expect(report).not.toContain('internal/private/path');
     expect(report).not.toContain('deep recursion customer');
@@ -386,14 +388,14 @@ describe('ErrorBoundary', () => {
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
     const { boundaryRef } = renderWithError(Object.assign(new Error('private'), { code: 'SYNC_PUSH_FAILED' }));
 
-    fireEvent.click(screen.getByRole('button', { name: /Copiar reporte completo/i }));
+    fireEvent.click(screen.getByRole('button', { name: /Copiar diagnóstico/i }));
     await act(async () => Promise.resolve());
 
     expect(writeText).toHaveBeenCalledOnce();
     expect(writeText.mock.calls[0][0]).toContain('Código de incidencia: SYNC_PUSH_FAILED');
     expect(writeText.mock.calls[0][0]).toContain('Clasificación: Sincronización');
     expect(writeText.mock.calls[0][0]).not.toContain('private');
-    expect(screen.getByText(/¡Copiado!/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Diagnóstico copiado/i })).toBeInTheDocument();
     expect(boundaryRef.current.state.copied).toBe(true);
   });
 
@@ -405,13 +407,12 @@ describe('ErrorBoundary', () => {
         value: { writeText: vi.fn().mockResolvedValue(undefined) }
       });
       renderWithError(new Error('copy timer'));
-      fireEvent.click(screen.getByRole('button', { name: /Copiar reporte completo/i }));
+      fireEvent.click(screen.getByRole('button', { name: /Copiar diagnóstico/i }));
       await act(async () => Promise.resolve());
 
-      expect(screen.getByText(/¡Copiado!/)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Diagnóstico copiado/i })).toBeInTheDocument();
       act(() => vi.advanceTimersByTime(3_100));
-      expect(screen.queryByText(/¡Copiado!/)).not.toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /Copiar reporte completo/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Copiar diagnóstico/i })).toBeInTheDocument();
       expect(document.body.textContent).not.toContain('stack');
     } finally {
       vi.useRealTimers();
@@ -426,37 +427,35 @@ describe('ErrorBoundary', () => {
     renderWithError(new Error('clipboard issue'));
 
     await act(async () => {
-      fireEvent.click(screen.getByRole('button', { name: /Copiar reporte completo/i }));
+      fireEvent.click(screen.getByRole('button', { name: /Copiar diagnóstico/i }));
     });
 
-    expect(screen.getByRole('alert')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Copiar reporte completo/i })).toBeInTheDocument();
-    expect(screen.queryByText(/¡Copiado!/)).not.toBeInTheDocument();
+    expect(screen.getByText(/No se pudo copiar el diagnóstico/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Copiar diagnóstico/i })).toBeInTheDocument();
     expect(document.body.textContent).not.toContain('permission denied');
   });
 
   it('offers a route back to POS only away from the POS root', () => {
     renderWithError(new Error('section failure'), {}, '/reportes/secret?access_token=query-secret');
-    expect(screen.getByRole('button', { name: /Ir al Punto de Venta ahora/i })).toBeInTheDocument();
-    expect(screen.getByText(/Evita regresar a esta sección/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Volver al inicio/i })).toBeInTheDocument();
     expect(document.body.textContent).not.toContain('query-secret');
   });
 
   it('does not offer a route change when the POS root itself fails', () => {
     renderWithError(new Error('pos failure'), {}, '/');
-    expect(screen.queryByRole('button', { name: /Ir al Punto de Venta ahora/i })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Recargar página/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Intentar recuperar/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Volver al inicio/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Recargar|Reiniciar/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Reintentar sección/i })).toBeInTheDocument();
   });
 
   it('does not claim that records or pending financial outcomes are confirmed safe', () => {
     renderWithError(Object.assign(new Error('payment result ambiguous'), { code: 'FINANCIAL_RESULT_UNKNOWN' }));
     const visible = document.body.textContent;
 
-    expect(visible).toContain('Revisa el resultado de cualquier cobro pendiente');
+    expect(visible).toContain('Consulta el recibo o ledger canónico con soporte');
     expect(visible).not.toMatch(/tus datos de ventas y caja están seguros/i);
     expect(visible).not.toMatch(/el cobro se completó correctamente/i);
-    expect(visible).toContain('critical_blocker');
+    expect(screen.getByRole('alertdialog', { name: 'Necesitamos verificar esta operación' })).toBeInTheDocument();
     expect(visible).not.toContain('payment result ambiguous');
   });
 
@@ -469,21 +468,21 @@ describe('ErrorBoundary', () => {
     expect(screen.getByText(/Sin conexión/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Actualizar aplicación/i })).not.toBeInTheDocument();
     expect(runUpdate).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: /Recargar página/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Recargar|Reiniciar/i })).not.toBeInTheDocument();
     expect(window.sessionStorage.length).toBe(0);
   });
 
   it('reports a failed PWA update once and prevents duplicate update attempts', async () => {
     const runUpdate = vi.fn().mockRejectedValue(new Error('worker activation failed'));
     useAppStore.getState.mockReturnValue({ updateAvailable: true, isUpdating: false, runUpdate });
-    renderWithError(new Error('render failure'));
+    renderWithError(new Error('render failure'), { createRecoveryContextGuard: () => () => true });
 
     const updateButton = screen.getByRole('button', { name: /Actualizar aplicación/i });
     fireEvent.click(updateButton);
     await act(async () => Promise.resolve());
 
     expect(runUpdate).toHaveBeenCalledOnce();
-    expect(screen.getByRole('status')).toHaveTextContent(/No se pudo confirmar la actualización/);
+    expect(screen.getByText(/No se pudo confirmar la actualización/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Actualizar aplicación/i })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: /Actualizar aplicación/i }));
     expect(runUpdate).toHaveBeenCalledOnce();
@@ -494,11 +493,11 @@ describe('ErrorBoundary', () => {
   it('reports an update action that resolves without applying the new worker', async () => {
     const runUpdate = vi.fn().mockResolvedValue(undefined);
     useAppStore.getState.mockReturnValue({ updateAvailable: true, isUpdating: false, runUpdate });
-    renderWithError(new Error('render failure'));
+    renderWithError(new Error('render failure'), { createRecoveryContextGuard: () => () => true });
 
     fireEvent.click(screen.getByRole('button', { name: /Actualizar aplicación/i }));
     await waitFor(() => {
-      expect(screen.getByRole('status')).toHaveTextContent(/No se pudo confirmar la actualización/);
+      expect(screen.getByText(/No se pudo confirmar la actualización/)).toBeInTheDocument();
     });
 
     expect(runUpdate).toHaveBeenCalledOnce();
@@ -509,11 +508,11 @@ describe('ErrorBoundary', () => {
   it('disables updates already running in the app store', () => {
     const runUpdate = vi.fn();
     useAppStore.getState.mockReturnValue({ updateAvailable: true, isUpdating: true, runUpdate });
-    renderWithError(new Error('render failure'));
+    renderWithError(new Error('render failure'), { createRecoveryContextGuard: () => () => true });
 
     expect(screen.getByRole('button', { name: /Actualizando aplicación/i })).toBeDisabled();
     expect(runUpdate).not.toHaveBeenCalled();
-    expect(screen.getByText(/Hay una actualización disponible/)).toBeInTheDocument();
+    expect(screen.getByText(/La actualización ya está en curso/)).toBeInTheDocument();
   });
 
   it('uses a bounded browser summary and connection label in its footer and report', () => {
@@ -524,7 +523,8 @@ describe('ErrorBoundary', () => {
     const { boundaryRef } = renderWithError(new Error('browser diagnostic'));
     const report = boundaryRef.current._buildReportMessage();
 
-    expect(screen.getByText(/Lanzo POS System v/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Detalles del problema/i }));
+    expect(screen.getByText('4.0.0')).toBeInTheDocument();
     expect(report).toContain('Navegador: Chrome 126');
     expect(report).toContain('Conectividad: Online');
     expect(report).not.toContain('Windows NT');

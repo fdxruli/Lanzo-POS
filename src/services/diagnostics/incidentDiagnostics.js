@@ -262,9 +262,42 @@ export const summarizeDiagnosticEvent = (level, args = [], source = 'console') =
     .slice(0, 240);
 };
 
-export const getSafeIncidentMetadata = (incident = {}) => ({
-  code: getSafeIncidentCode({ code: incident.code }, normalizeCategory(incident.category) || CATEGORIES.UNKNOWN),
-  category: normalizeCategory(incident.category) || CATEGORIES.UNKNOWN,
-  severity: normalizeSeverity(incident.severity) || SEVERITIES.SECTION_FAILURE,
-  errorType: SAFE_ERROR_NAMES.has(incident.errorType) ? incident.errorType : 'Error'
-});
+const SAFE_RECOVERY_STATUSES = new Set([
+  'detected',
+  'preserved',
+  'action_required',
+  'recovering',
+  'verified',
+  'failed',
+  'blocked'
+]);
+
+/**
+ * Builds display metadata from the same allowlist used by support reports.
+ * The caller may provide a recovery status, but arbitrary strings and raw
+ * location/error values are never copied through.
+ */
+export const getSafeIncidentMetadata = (incident = {}, environment = {}) => {
+  const category = normalizeCategory(incident.category) || CATEGORIES.UNKNOWN;
+  const online = typeof environment.online === 'boolean'
+    ? environment.online
+    : safeRead(globalThis.navigator, 'onLine') !== false;
+  const recoveryStatus = SAFE_RECOVERY_STATUSES.has(incident.recoveryStatus)
+    ? incident.recoveryStatus
+    : 'action_required';
+
+  return Object.freeze({
+    code: getSafeIncidentCode({ code: incident.code }, category),
+    category,
+    categoryLabel: CATEGORY_COPY[category],
+    severity: normalizeSeverity(incident.severity) || SEVERITIES.SECTION_FAILURE,
+    errorType: SAFE_ERROR_NAMES.has(incident.errorType) ? incident.errorType : 'Error',
+    section: environment.section === 'unknown'
+      ? 'No determinada'
+      : safeRouteLabel(environment.pathname ?? safeRead(globalThis.location, 'pathname')),
+    timestamp: toIsoTimestamp(environment.now),
+    appVersion: safeBuildVersion(environment.appVersion ?? import.meta.env?.VITE_APP_VERSION),
+    online,
+    recoveryStatus
+  });
+};

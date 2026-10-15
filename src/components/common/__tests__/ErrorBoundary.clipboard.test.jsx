@@ -48,5 +48,8 @@ describe('ErrorBoundary clipboard feedback', () => {
     await boundary.handleCopy();
 
     expect(boundary.setState).not.toHaveBeenCalledWith({ copied: true });
+    expect(boundary.setState).toHaveBeenCalledWith({
+      copyError: 'No se pudo copiar el diagnóstico. Intenta desde un navegador compatible.'
+    });
   });
 });

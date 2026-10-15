@@ -10,6 +10,7 @@ const readProjectFile = (relativePath) => readFile(path.join(projectRoot, relati
 describe('administrative lazy route recovery architecture', () => {
   it('routes every lazy page failure through the strong version recovery without a global cooldown', async () => {
     const app = await readProjectFile('src/App.jsx');
+    const fallback = await readProjectFile('src/components/common/AdminLazyRouteRecoveryFallback.jsx');
     const lazyStart = app.indexOf('const lazyRetry');
     const lazyEnd = app.indexOf('const EcommerceOrdersPage', lazyStart);
     const lazySource = app.slice(lazyStart, lazyEnd);
@@ -19,7 +20,7 @@ describe('administrative lazy route recovery architecture', () => {
     expect(lazySource).toContain('await recoverAdminLazyRoute({ error, isContextCurrent })');
     expect(lazySource).toContain('createRecoveryContextGuard()');
     expect(lazySource).toContain("status: 'stale-context'");
-    expect(lazySource).toContain('force: true');
+    expect(fallback).toContain('force: true');
     expect(lazySource).not.toMatch(/MAX_RETRIES|GLOBAL_COOLDOWN_MS|lazy_retry_last_time/);
     expect(lazySource).not.toContain('window.location.reload()');
   });

@@ -1,5 +1,6 @@
 /* eslint-disable no-console */
 import { summarizeDiagnosticEvent } from './diagnostics/incidentDiagnostics';
+import { captureAsyncIncidentNotice } from './diagnostics/incidentEventCenter';
 
 const MAX_ENTRIES = 300;
 const MAX_TEXT_LENGTH = 5000;
@@ -77,10 +78,23 @@ export const installDevConsoleCapture = () => {
       event.filename ? `${event.filename}:${event.lineno}:${event.colno}` : '',
       event.error,
     ], 'window.error');
+    captureAsyncIncidentNotice(event.error || {
+      name: 'Error',
+      message: event.message || ''
+    }, {
+      source: 'window.error',
+      pathname: window.location?.pathname,
+      online: window.navigator?.onLine !== false
+    });
   });
 
   window.addEventListener('unhandledrejection', (event) => {
     addEntry('error', ['Promesa rechazada sin manejar', event.reason], 'unhandledrejection');
+    captureAsyncIncidentNotice(event.reason, {
+      source: 'unhandledrejection',
+      pathname: window.location?.pathname,
+      online: window.navigator?.onLine !== false
+    });
   });
 
   window.__LANZO_DEV_CONSOLE__ = {

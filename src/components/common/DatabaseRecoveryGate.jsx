@@ -100,7 +100,7 @@ const describeRecovery = (state, hasActiveNativeRequest) => {
     return {
       title: 'La apertura de la base local tardó demasiado',
       body: hasActiveNativeRequest
-        ? 'El navegador todavía mantiene una solicitud activa. Espera a que termine o recarga Lanzo para volver a intentarlo de forma segura.'
+        ? 'El navegador todavía mantiene una solicitud activa. Espera a que termine antes de intentar otra recuperación.'
         : 'La solicitud anterior ya terminó. Puedes reintentar la recuperación de forma segura o recargar Lanzo.',
       icon: 'warning'
     };
@@ -199,8 +199,10 @@ export default function DatabaseRecoveryGate({
   )
     && recovery.isRetryable !== false
     && recovery.errorCode !== 'DB_BLOCKED';
-  const canReload = recovery.errorCode === 'DB_OPEN_TIMEOUT'
-    || recovery.errorCode === 'TENANT_DIRECTORY_CORRUPT';
+  const canReload = !hasActiveNativeRequest && (
+    recovery.errorCode === 'DB_OPEN_TIMEOUT'
+    || recovery.errorCode === 'TENANT_DIRECTORY_CORRUPT'
+  );
 
   const sendSupportReport = () => {
     if (!supportReport) return;
@@ -250,27 +252,31 @@ export default function DatabaseRecoveryGate({
     return operation;
   };
 
+  const isChecking = recovery.status === DATABASE_RECOVERY_STATUS.IDLE
+    || recovery.status === DATABASE_RECOVERY_STATUS.CHECKING
+    || recovery.status === DATABASE_RECOVERY_STATUS.MIGRATING;
+  const statusLabel = isChecking
+    ? 'Comprobando almacenamiento local'
+    : retrying
+      ? 'Recuperación en curso'
+      : recovery.status === DATABASE_RECOVERY_STATUS.READY
+        ? 'Verificación completada'
+        : 'Requiere revisión';
+
   return (
-    <main className="app-boot-recovery" role="alert" aria-live="assertive">
+    <main
+      className="app-boot-recovery"
+      role={isChecking ? 'status' : 'alert'}
+      aria-live={isChecking ? 'polite' : 'assertive'}
+    >
       <section className="app-boot-recovery__card">
         {copy.icon === 'warning'
-          ? <AlertTriangle size={44} aria-hidden="true" />
-          : <Database size={44} aria-hidden="true" />}
+          ? <AlertTriangle size={40} aria-hidden="true" />
+          : <Database size={40} aria-hidden="true" />}
         <h1>{copy.title}</h1>
         <p>{copy.body}</p>
         {copy.advice && <p>{copy.advice}</p>}
         <MigrationDetails migration={recovery.migration} />
-        {recovery.errorCode && recovery.status === DATABASE_RECOVERY_STATUS.FAILED && (
-          <p><strong>Código:</strong> {getSafeIncidentCode({ code: recovery.errorCode }, INCIDENT_CATEGORY.INDEXEDDB)}</p>
-        )}
-        {recovery.status === DATABASE_RECOVERY_STATUS.FAILED
-          && Number.isFinite(recovery.detectedNativeVersion) && (
-            <p><strong>Versión local detectada:</strong> {recovery.detectedNativeVersion}</p>
-          )}
-        {recovery.status === DATABASE_RECOVERY_STATUS.FAILED
-          && Number.isFinite(recovery.expectedNativeVersion) && (
-            <p><strong>Versión compatible con esta instalación:</strong> {recovery.expectedNativeVersion}</p>
-          )}
         {retryError && (
           <div className="ui-alert ui-alert--danger" role="alert">
             <AlertTriangle size={18} aria-hidden="true" />
@@ -278,62 +284,98 @@ export default function DatabaseRecoveryGate({
           </div>
         )}
         {supportActionError && (
-          <div className="ui-alert ui-alert--danger" role="alert">
-            <AlertTriangle size={18} aria-hidden="true" />
+          <p className="ui-alert ui-alert--warning" role="status">
             {supportActionError}
-          </div>
+          </p>
         )}
-        {canRetry && (
-          <button
-            type="button"
-            className="ui-button ui-button--primary"
-            onClick={retry}
-            disabled={operationActive}
-          >
-            <RefreshCw size={18} aria-hidden="true" />
-            {retrying ? 'Reintentando...' : 'Reintentar recuperación'}
-          </button>
+        {recovery.status === DATABASE_RECOVERY_STATUS.FAILED && !isOnline && (
+          <p className="ui-alert ui-alert--warning" role="status">
+            Estás sin conexión. El resultado completo de la base no puede verificarse ahora. Puedes copiar el diagnóstico y enviarlo después.
+          </p>
         )}
-        {canReload && (
-          <button
-            type="button"
-            className="ui-button ui-button--secondary"
-            onClick={reloadPage}
-          >
-            <RotateCw size={18} aria-hidden="true" />
-            Recargar Lanzo
-          </button>
+        <div className="app-boot-recovery__actions">
+          {canRetry && (
+            <button
+              type="button"
+              className="ui-button ui-button--primary"
+              onClick={retry}
+              disabled={operationActive}
+              aria-describedby={operationActive ? 'database-recovery-disabled-reason' : undefined}
+            >
+              <RefreshCw size={18} aria-hidden="true" />
+              {retrying ? 'Reintentando recuperación…' : 'Reintentar recuperación'}
+            </button>
+          )}
+          {canReload && (
+            <button
+              type="button"
+              className="ui-button ui-button--secondary"
+              onClick={reloadPage}
+            >
+              <RotateCw size={18} aria-hidden="true" />
+              Reiniciar Lanzo
+            </button>
+          )}
+          {recovery.status === DATABASE_RECOVERY_STATUS.FAILED && !canRetry && (
+            <button
+              type="button"
+              className="ui-button ui-button--primary"
+              onClick={sendSupportReport}
+            >
+              <Mail size={18} aria-hidden="true" />
+              Abrir correo de soporte
+            </button>
+          )}
+        </div>
+        {operationActive && canRetry && (
+          <p className="app-boot-recovery__note" id="database-recovery-disabled-reason" role="status">
+            La recuperación espera a que termine la solicitud activa del navegador.
+          </p>
         )}
         {recovery.status === DATABASE_RECOVERY_STATUS.FAILED && (
-          <>
-            {!isOnline && (
-              <p className="ui-alert ui-alert--warning" role="status">
-                Estás sin conexión. Esta pantalla no puede verificar el estado completo de la base. Puedes copiar el diagnóstico ahora y enviarlo a soporte cuando recuperes conexión.
-              </p>
-            )}
-            <div className="app-boot-recovery__actions">
-              <button
-                type="button"
-                className="ui-button ui-button--primary"
-                onClick={sendSupportReport}
-              >
-                <Mail size={18} aria-hidden="true" />
-                Enviar reporte a soporte
-              </button>
+          <details className="app-boot-recovery__support">
+            <summary>Detalles del problema</summary>
+            <div className="app-boot-recovery__details">
+              {recovery.errorCode && (
+                <p><strong>Código técnico:</strong> {getSafeIncidentCode({ code: recovery.errorCode }, INCIDENT_CATEGORY.INDEXEDDB)}</p>
+              )}
+              {Number.isFinite(recovery.detectedNativeVersion) && (
+                <p><strong>Versión local detectada:</strong> {recovery.detectedNativeVersion}</p>
+              )}
+              {Number.isFinite(recovery.expectedNativeVersion) && (
+                <p><strong>Versión compatible:</strong> {recovery.expectedNativeVersion}</p>
+              )}
+              <p><strong>Conexión:</strong> {isOnline ? 'En línea' : 'Sin conexión'}</p>
+              <p><strong>Estado de recuperación:</strong> {statusLabel}</p>
+            </div>
+            {canRetry && (
               <button
                 type="button"
                 className="ui-button ui-button--secondary"
-                onClick={() => { void copySupportReport(); }}
+                onClick={sendSupportReport}
               >
-                {copied ? <Check size={18} aria-hidden="true" /> : <Copy size={18} aria-hidden="true" />}
-                {copied ? 'Diagnóstico copiado' : 'Copiar diagnóstico'}
+                <Mail size={18} aria-hidden="true" />
+                Abrir correo de soporte
               </button>
-            </div>
-          </>
+            )}
+            <button
+              type="button"
+              className="ui-button ui-button--secondary"
+              onClick={() => { void copySupportReport(); }}
+            >
+              {copied ? <Check size={18} aria-hidden="true" /> : <Copy size={18} aria-hidden="true" />}
+              {copied ? 'Diagnóstico copiado' : 'Copiar diagnóstico'}
+            </button>
+            <p className="app-boot-recovery__note">
+              El botón de correo abre tu aplicación de correo; revisa y envía el mensaje cuando estés listo.
+            </p>
+          </details>
         )}
-        <p className="app-boot-recovery__note">
-          Esta recuperación no elimina la base local ni vacía sus registros. Revisa aparte el resultado de operaciones pendientes.
-        </p>
+        {recovery.status === DATABASE_RECOVERY_STATUS.FAILED && (
+          <p className="app-boot-recovery__note">
+            Este flujo no elimina la base local. Aun así, Lanzo no puede confirmar el estado completo si la verificación falla.
+          </p>
+        )}
       </section>
     </main>
   );

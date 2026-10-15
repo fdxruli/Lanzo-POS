@@ -32,6 +32,8 @@ const ADMIN_SHELL_GLOB_PATTERNS = Object.freeze([
   'assets/useInventoryCatalogStore-*.js',
   'assets/Logger-*.js',
   'assets/ErrorBoundary-*.{js,css}',
+  'assets/IncidentRecoveryPanel-*.{js,css}',
+  'assets/IncidentRecoveryQaGallery-*.{js,css}',
   'assets/storageManager-*.js',
   'assets/salesCloudShadowService-*.js',
   'assets/index.esm-*.js',
@@ -41,6 +43,7 @@ const ADMIN_SHELL_GLOB_PATTERNS = Object.freeze([
   'assets/productStoreRecoveryGuard-*.js',
   'assets/devServiceWorkerCleanup-*.js',
   'assets/devConsoleCapture-*.js',
+  'assets/incidentEventCenter-*.js',
   'assets/DevConsole-*.{js,css}',
   'assets/mobileZoomGuard-*.js',
   ...ADMIN_LOCAL_OFFLINE_GLOB_PATTERNS,
@@ -119,6 +122,7 @@ export default defineConfig(() => ({
     'import.meta.env.VITE_APP_VERSION': JSON.stringify(packageJson.version),
     'import.meta.env.VITE_BUILD_DATE': JSON.stringify(buildDate),
     'import.meta.env.VITE_BUILD_COMMIT': JSON.stringify(buildCommit),
+    'import.meta.env.VITE_INCIDENT_QA_PREVIEW': JSON.stringify(process.env.VERCEL_ENV === 'preview'),
   },
 
   build: {

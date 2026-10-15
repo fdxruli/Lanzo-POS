@@ -40,7 +40,8 @@ describe('administrative startup version recovery architecture', () => {
     expect(bootstrap).toContain('force: true');
     expect(bootstrap).toContain('completeStartupRecovery();');
     expect(bootstrap).toContain('reloadPage = () => window.location.reload()');
-    expect(bootstrap).toContain('const retryAdministrativeStart = () => reloadPage();');
+    expect(bootstrap).toContain('const retryAdministrativeStart = () => {');
+    expect(bootstrap).toContain('if (!canRetryAdministrativeStart())');
 
     expect(recovery).toContain("const RECOVERY_ATTEMPT_KEY = 'lanzo:admin-startup-recovery:v1'");
     expect(recovery).toContain('function getSessionStorage(windowTarget)');

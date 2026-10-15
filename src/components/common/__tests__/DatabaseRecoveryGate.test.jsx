@@ -59,6 +59,10 @@ const renderGate = (props = {}) => render(
   </DatabaseRecoveryGate>
 );
 
+const openRecoveryDetails = () => {
+  fireEvent.click(screen.getByText('Detalles del problema'));
+};
+
 const publishNativeOperations = (operations) => {
   nativeOperationMocks.snapshot = Object.freeze(
     operations.map((operation) => Object.freeze({ ...operation }))
@@ -147,7 +151,7 @@ describe('DatabaseRecoveryGate', () => {
     expect(screen.getByText(/esta comprobación no ejecutó una limpieza de datos/i)).toBeInTheDocument();
     expect(screen.queryByText(/crear nueva base|restablecer tenant|continuar de todos modos/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/LanzoDB1/i)).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /recargar lanzo/i }));
+    fireEvent.click(screen.getByRole('button', { name: /reiniciar lanzo/i }));
     expect(reloadPage).toHaveBeenCalledTimes(1);
   });
 
@@ -184,7 +188,7 @@ describe('DatabaseRecoveryGate', () => {
 
     expect(screen.getByText(/todavía mantiene una solicitud activa/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /reintentar recuperación/i })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /recargar lanzo/i })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: /reiniciar lanzo/i })).not.toBeInTheDocument();
 
     act(() => publishNativeOperations([]));
 
@@ -219,17 +223,17 @@ describe('DatabaseRecoveryGate', () => {
     expect(screen.getByText(/todavía mantiene una solicitud activa/i)).toBeInTheDocument();
     expect(screen.queryByText(/cierra las demás pestañas de lanzo/i)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /reintentar recuperación/i })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /recargar lanzo/i })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: /reiniciar lanzo/i })).not.toBeInTheDocument();
 
     act(() => publishNativeOperations([]));
 
     expect(screen.getByRole('button', { name: /reintentar recuperación/i })).toBeEnabled();
-    expect(screen.getByRole('button', { name: /recargar lanzo/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /reiniciar lanzo/i })).toBeEnabled();
     expect(reloadPage).not.toHaveBeenCalled();
     expect(runtimeMocks.retryLocalDatabaseRecovery).not.toHaveBeenCalled();
   });
 
-  it('keeps a safe reload action visible when the native request never settles', () => {
+  it('keeps retry blocked without showing a reload action while a native request never settles', () => {
     recoveryMocks.state = {
       ...recoveryMocks.state,
       status: 'recovery_required',
@@ -244,10 +248,8 @@ describe('DatabaseRecoveryGate', () => {
     renderGate({ reloadPage });
 
     expect(screen.getByRole('button', { name: /reintentar recuperación/i })).toBeDisabled();
-    const reloadButton = screen.getByRole('button', { name: /recargar lanzo/i });
-    expect(reloadButton).toBeEnabled();
-    fireEvent.click(reloadButton);
-    expect(reloadPage).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('button', { name: /reiniciar lanzo/i })).not.toBeInTheDocument();
+    expect(reloadPage).not.toHaveBeenCalled();
     expect(runtimeMocks.retryLocalDatabaseRecovery).not.toHaveBeenCalled();
   });
 
@@ -306,10 +308,11 @@ describe('DatabaseRecoveryGate', () => {
     expect(screen.getByRole('heading', { name: /esta versión de lanzo no puede abrir tu base local/i })).toBeInTheDocument();
     expect(screen.getByText(/la comprobación no pudo abrir la base local/i)).toBeInTheDocument();
     expect(screen.getByText(/no borres los datos de la aplicación/i)).toBeInTheDocument();
+    openRecoveryDetails();
     expect(screen.getByText('DB_UNSUPPORTED_NATIVE_VERSION')).toBeInTheDocument();
     expect(screen.getByText('320')).toBeInTheDocument();
     expect(screen.getByText('310')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /enviar reporte a soporte/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /abrir correo de soporte/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /copiar diagnóstico/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /reintentar recuperación/i })).not.toBeInTheDocument();
   });
@@ -327,7 +330,8 @@ describe('DatabaseRecoveryGate', () => {
     const openSupportMailto = vi.fn();
 
     renderGate({ openSupportMailto });
-    fireEvent.click(screen.getByRole('button', { name: /enviar reporte a soporte/i }));
+    openRecoveryDetails();
+    fireEvent.click(screen.getByRole('button', { name: /abrir correo de soporte/i }));
     fireEvent.click(screen.getByRole('button', { name: /copiar diagnóstico/i }));
 
     expect(openSupportMailto).toHaveBeenCalledTimes(1);
@@ -357,8 +361,9 @@ describe('DatabaseRecoveryGate', () => {
     const openSupportMailto = vi.fn();
 
     renderGate({ openSupportMailto });
+    openRecoveryDetails();
     expect(screen.getByText('DB_BROWSER_STORAGE_UNAVAILABLE')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /enviar reporte a soporte/i }));
+    fireEvent.click(screen.getByRole('button', { name: /abrir correo de soporte/i }));
     fireEvent.click(screen.getByRole('button', { name: /reintentar recuperación/i }));
 
     expect(await screen.findByText(/no podemos confirmar el estado final/i)).toBeInTheDocument();
@@ -383,6 +388,7 @@ describe('DatabaseRecoveryGate', () => {
 
     renderGate();
 
+    openRecoveryDetails();
     expect(screen.getByText('INCIDENT_INDEXEDDB')).toBeInTheDocument();
     expect(document.body.textContent).not.toContain('DB_SECRET_token-value');
   });
@@ -399,6 +405,7 @@ describe('DatabaseRecoveryGate', () => {
     renderGate();
 
     expect(screen.getByText(/estás sin conexión/i)).toBeInTheDocument();
+    openRecoveryDetails();
     expect(screen.getByRole('button', { name: /copiar diagnóstico/i })).toBeEnabled();
     expect(recoveryMocks.state.errorCode).toBe('DB_UNSUPPORTED_NATIVE_VERSION');
   });

@@ -128,7 +128,7 @@ describe('PosApplicationBootstrap ready runtime recovery', () => {
     expect(completeStartupRecovery).not.toHaveBeenCalled();
 
     const retryButton = await screen.findByRole('button', {
-      name: /actualizar lanzo pos/i
+      name: /actualizar archivos de lanzo pos/i
     });
     fireEvent.click(retryButton);
 
@@ -137,7 +137,7 @@ describe('PosApplicationBootstrap ready runtime recovery', () => {
     expect(forcedRecovery).toMatchObject({ error: chunkError, force: true });
     expect(forcedRecovery.isContextCurrent()).toBe(true);
     expect(screen.getByRole('heading', {
-      name: /actualizando lanzo pos/i
+      name: /comprobando la recuperación de lanzo pos/i
     })).toBeInTheDocument();
   });
 });

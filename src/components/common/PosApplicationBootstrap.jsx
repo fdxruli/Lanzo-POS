@@ -19,6 +19,10 @@ import {
 } from '../../services/tenant/localTenantGuard';
 import { getTenantRuntimeReadiness } from '../../services/db/tenantRuntimeRouter';
 import {
+  getActorCheckoutOwnerships,
+  getPendingActorOperations
+} from '../../services/auth/actorOperationalHandoff';
+import {
   buildAdminBootSupportReport,
   buildSupportMailtoUrl,
   copyTextToClipboard
@@ -261,31 +265,45 @@ const ReadyRuntimeLoading = ({
   copied,
   supportActionError,
   isOnline,
-  assetRecoveryEnabled = true
+  assetRecoveryEnabled = true,
+  canRetryStart = true
 }) => {
   const assetFailure = error && classifyAdminBootError(error) === 'asset_load_failure';
   const code = error ? getAdminBootErrorCode(error) : null;
+  const recoveryState = isRecovering
+    ? 'Recuperación en curso'
+    : error
+      ? 'Requiere una acción'
+      : 'Preparando inicio';
 
   return (
-  <main className="app-boot-recovery" role={error ? 'alert' : 'status'} aria-live="polite">
+  <main
+    className="app-boot-recovery"
+    role={error ? 'alert' : 'status'}
+    aria-live={error ? 'assertive' : 'polite'}
+  >
     <section className="app-boot-recovery__card">
       <h1>
         {isRecovering
-          ? 'Actualizando Lanzo POS...'
+          ? 'Comprobando la recuperación de Lanzo POS…'
           : error
-            ? assetFailure ? 'No se pudo cargar Lanzo POS' : 'No se pudo iniciar Lanzo POS'
+            ? assetFailure ? 'No pudimos cargar esta versión de Lanzo POS' : 'No pudimos iniciar Lanzo POS'
             : 'Preparando Lanzo POS...'}
       </h1>
       <p>
         {isRecovering
-          ? 'Estamos reemplazando los archivos anteriores por la versión más reciente.'
+          ? 'Estamos verificando los archivos instalados. Mantén esta pestaña abierta.'
           : error
             ? assetFailure
-              ? 'La base local está lista, pero los archivos administrativos no pudieron cargarse. Actualiza para recuperar el sistema.'
-              : 'Lanzo no pudo completar el inicio. Esta pantalla no limpió el almacenamiento local, pero no puede confirmar operaciones pendientes.'
+              ? 'La preparación local terminó, pero los archivos de esta sección no pudieron cargarse. La actualización sólo se iniciará si la sesión, la conexión y el estado operativo lo permiten.'
+              : 'Lanzo no pudo completar su inicio. Esta pantalla no ejecutó una limpieza de datos y no puede confirmar el estado de operaciones pendientes.'
             : 'La base local está lista. Estamos cargando el entorno administrativo.'}
       </p>
-      {code && !assetFailure && <p><strong>Código:</strong> {code}</p>}
+      {!isOnline && error && (
+        <p className="ui-alert ui-alert--warning" role="status">
+          Estás sin conexión. Se conservará la versión instalada; no se iniciará una actualización.
+        </p>
+      )}
       {error && !isRecovering && (
         assetFailure ? (
           <>
@@ -294,35 +312,74 @@ const ReadyRuntimeLoading = ({
               type="button"
               className="ui-button ui-button--primary"
               onClick={onAssetRecovery}
-              disabled={!assetRecoveryEnabled || isRecovering}
+              disabled={!assetRecoveryEnabled || isRecovering || !isOnline}
+              aria-describedby={!assetRecoveryEnabled || !isOnline ? 'admin-asset-recovery-disabled' : undefined}
             >
-              Actualizar Lanzo POS
+              Actualizar archivos de Lanzo POS
             </button>
+            {(!assetRecoveryEnabled || !isOnline) && (
+              <p
+                className="app-boot-recovery__note"
+                id="admin-asset-recovery-disabled"
+                role="status"
+              >
+                {!isOnline
+                  ? 'Estás sin conexión. La versión instalada se conserva hasta que la red esté disponible.'
+                  : 'La recuperación está pausada porque la sesión o una operación activa requiere verificación.'}
+              </p>
+            )}
           </>
         ) : (
           <>
-            {!isOnline && (
-              <p className="ui-alert ui-alert--warning" role="status">
-                Estás sin conexión. Esta pantalla no limpió el almacenamiento local. Puedes copiar el diagnóstico y enviarlo después.
-              </p>
-            )}
             {supportActionError && <p className="ui-alert ui-alert--danger" role="alert">{supportActionError}</p>}
-            <div className="app-boot-recovery__actions">
-              <button type="button" className="ui-button ui-button--primary" onClick={onRetryStart}>
+            <button
+              type="button"
+              className="ui-button ui-button--primary"
+              onClick={onRetryStart}
+              disabled={!canRetryStart}
+              aria-describedby={!canRetryStart ? 'admin-start-retry-disabled' : undefined}
+            >
                 <RotateCw size={18} aria-hidden="true" />
                 Reintentar inicio
-              </button>
-              <button type="button" className="ui-button ui-button--secondary" onClick={onSendSupport}>
-                <Mail size={18} aria-hidden="true" />
-                Enviar reporte a soporte
-              </button>
-              <button type="button" className="ui-button ui-button--secondary" onClick={onCopySupport}>
-                {copied ? <Check size={18} aria-hidden="true" /> : <Copy size={18} aria-hidden="true" />}
-                {copied ? 'Diagnóstico copiado' : 'Copiar diagnóstico'}
-              </button>
-            </div>
+            </button>
+            {!canRetryStart && (
+              <p className="app-boot-recovery__note" id="admin-start-retry-disabled" role="status">
+                No podemos confirmar que sea seguro reiniciar ahora. Verifica cualquier operación pendiente y solicita soporte si continúa bloqueado.
+              </p>
+            )}
           </>
         )
+      )}
+      {error && !isRecovering && (
+        <details className="app-boot-recovery__support">
+          <summary>Detalles del problema y opciones de soporte</summary>
+          <div className="app-boot-recovery__details">
+            {code && <p><strong>Código técnico:</strong> {code}</p>}
+            <p><strong>Tipo:</strong> {assetFailure ? 'Carga de archivos' : 'Inicio de la aplicación'}</p>
+            <p><strong>Fecha y hora:</strong> {new Date().toLocaleString('es-MX')}</p>
+            <p><strong>Versión:</strong> {import.meta.env.VITE_APP_VERSION || 'No disponible'}</p>
+            <p><strong>Conexión:</strong> {isOnline ? 'En línea' : 'Sin conexión'}</p>
+            <p><strong>Estado:</strong> {recoveryState}</p>
+          </div>
+          <div className="app-boot-recovery__actions">
+            <button type="button" className="ui-button ui-button--secondary" onClick={onSendSupport}>
+              <Mail size={18} aria-hidden="true" />
+              Abrir correo de soporte
+            </button>
+            <button type="button" className="ui-button ui-button--secondary" onClick={onCopySupport}>
+              {copied ? <Check size={18} aria-hidden="true" /> : <Copy size={18} aria-hidden="true" />}
+              {copied ? 'Diagnóstico copiado' : 'Copiar diagnóstico'}
+            </button>
+          </div>
+          <p className="app-boot-recovery__note">
+            Se abrirá tu aplicación de correo. Revisa y envía el mensaje cuando estés listo.
+          </p>
+        </details>
+      )}
+      {error && (
+        <p className="app-boot-recovery__note">
+          Si una operación quedó pendiente, verifica su resultado antes de intentarlo de nuevo.
+        </p>
       )}
     </section>
   </main>
@@ -467,7 +524,24 @@ export default function PosApplicationBootstrap({
     }
   };
 
-  const retryAdministrativeStart = () => reloadPage();
+  const canRetryAdministrativeStart = () => {
+    try {
+      return runtimeRecoveryContextGuardRef.current?.() === true
+        && getActorCheckoutOwnerships().length === 0
+        && getPendingActorOperations().length === 0;
+    } catch {
+      return false;
+    }
+  };
+
+  const retryAdministrativeStart = () => {
+    if (!canRetryAdministrativeStart()) {
+      setSupportActionError('No podemos confirmar que sea seguro reiniciar ahora. Verifica cualquier operación pendiente y solicita soporte si continúa bloqueado.');
+      return;
+    }
+    setSupportActionError('');
+    reloadPage();
+  };
 
   const sendSupportReport = () => {
     if (!supportReport) return;
@@ -506,6 +580,7 @@ export default function PosApplicationBootstrap({
             supportActionError={supportActionError}
             isOnline={isOnline}
           assetRecoveryEnabled={runtimeRecoveryContextGuardRef.current?.() !== false}
+            canRetryStart={canRetryAdministrativeStart()}
           />
         )}
     </DatabaseRecoveryGate>

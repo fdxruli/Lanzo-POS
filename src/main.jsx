@@ -97,7 +97,18 @@ async function handlePosStartupFailure(error) {
   renderStartupRecoveryScreen({ mode: 'updateError', onRetry: retryRecovery });
 }
 
-if (isPublicStorePath(window.location.pathname)) {
+if (
+  (import.meta.env.DEV || import.meta.env.VITE_INCIDENT_QA_PREVIEW === true)
+  && window.location.pathname === '/__qa/incident-recovery'
+) {
+  import('./components/common/IncidentRecoveryQaGallery').then(({ default: IncidentRecoveryQaGallery }) => {
+    ReactDOM.createRoot(rootElement).render(
+      <React.StrictMode>
+        <IncidentRecoveryQaGallery />
+      </React.StrictMode>
+    );
+  });
+} else if (isPublicStorePath(window.location.pathname)) {
   preparePublicStoreDocument();
   updateExistingAdminWorkerOnPublicRoute();
   renderPublicStore();
