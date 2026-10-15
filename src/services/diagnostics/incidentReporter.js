@@ -287,10 +287,15 @@ export const incidentReporter = createIncidentReporter({ capture: incidentCaptur
 export const submitIncidentReport = (incident, options = {}) => incidentReporter.submit(incident, options);
 export const resetIncidentReporterForTests = resetIncidentCaptureForTests;
 
-export const formatIncidentChannelSummary = ({ incident, reportReference } = {}) => {
-  if (typeof reportReference !== 'string' || !REPORT_REFERENCE_PATTERN.test(reportReference)) return '';
+export const formatIncidentChannelSummary = ({ incident, reportReference, receiptConfirmed = false } = {}) => {
+  const confirmedReference = receiptConfirmed === true
+    && typeof reportReference === 'string'
+    && REPORT_REFERENCE_PATTERN.test(reportReference)
+    ? reportReference
+    : '';
   const code = getSafeIncidentCode({ code: incident?.safe_code }, incident?.category);
   const category = VALID_CATEGORIES.has(incident?.category) ? incident.category : INCIDENT_CATEGORY.UNKNOWN;
   const route = getSafeIncidentRoute(incident?.safe_route);
-  return `Lanzo POS · ${reportReference} · ${code} · ${category} · ${route}`.slice(0, 240);
+  const receipt = confirmedReference || 'diagnóstico local no registrado';
+  return `Lanzo POS · ${receipt} · ${code} · ${category} · ${route}`.slice(0, 240);
 };

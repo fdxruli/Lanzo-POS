@@ -1,7 +1,7 @@
 # Plan de certificación controlada de fallos — Centro de recuperación
 
 - **Estado:** PREPARADO, NO EJECUTADO
-- **Fase:** LANZO-POS Fase 3
+- **Fase:** LANZO-POS Fases 3–4
 - **Prerrequisito:** autorización y plan de certificación separados
 - **Uso de producción:** prohibido
 
@@ -53,10 +53,27 @@ Si no se cumplen estos prerrequisitos, cada escenario permanece **BLOQUEADO**. N
 | E4 — Reporte entre tenants | Dos tenants QA; intentar cambiar licencia/actor en tránsito mediante proxy local mientras se conserva el payload de A. | Servidor deriva license_id desde `validate_pos_sync_context`; no se puede crear en nombre de B; sin lectura directa de reportes. | Parar ante acceso cross-tenant o si la migración está aplicada fuera de QA. Eliminar ambos fixtures y preservar evidencia redactada. | Muy alto. Solo base aislada, revisión independiente y rollback probado. |
 | E5 — Credenciales revocadas | Tenant QA; enviar con token de dispositivo o sesión revocado después de abrir el formulario. | Envío rechazado, estado UI fallido/autorización; ninguna escritura; copia local permanece disponible. | Parar si acepta el token revocado o deja expuesto el valor. Rotar/eliminar credenciales de QA y revisar logs. | Medio. Token temporal sin reutilización en otros entornos. |
 
+## Fase 4 — preparación para certificación final
+
+Los siguientes escenarios amplían la matriz; no se ejecutaron durante el desarrollo de Fase 4. Permanecen `DEFERRED / NOT RUN` hasta que exista un entorno aislado operativo, datos ficticios, respaldo verificable y autorización para la certificación controlada.
+
+| ID | Escenario y aislamiento requerido | Resultado esperado | Estado |
+|---|---|---|---|
+| F4-01 | Provocar una excepción real de React en un build QA local; usar actor y tenant ficticios. Consentir manualmente el reporte hacia la RPC aislada. | ErrorBoundary conserva el POS; el reporter normaliza; un folio aparece solo si la RPC de QA confirma el registro. | DEFERRED |
+| F4-02 | Hacer que la RPC aislada devuelva `PGRST202` o un error de servicio controlado. | Normalización segura; estado no disponible/fallido; sin folio ni mensaje de recepción. | DEFERRED |
+| F4-03 | Cortar la red en el perfil QA antes de enviar. | No se llama a Supabase; copia local y resumen externo disponibles; no se muestra folio. | DEFERRED |
+| F4-04 | Restituir la red después de F4-03 sin interacción del usuario. Luego consentir un nuevo envío explícito. | La reconexión no inicia envío automático. Solo la nueva acción voluntaria puede invocar la RPC. | DEFERRED |
+| F4-05 | Usar una RPC real de QA que confirme el registro de un incidente ficticio. | El resumen externo reutiliza `formatIncidentChannelSummary` y contiene ese folio únicamente para ese incidente y contexto vigente. El folio sintético nunca se describe como recibido en Supabase productivo. | DEFERRED |
+| F4-06 | Impedir la apertura del enlace de compartir en un perfil QA (sin Telegram instalado, navegación bloqueada o error del navegador). | El formulario y la recuperación siguen disponibles; la UI no afirma que Telegram recibió contenido; el correo existente permanece accesible. | DEFERRED |
+| F4-07 | Simular un resultado financiero ambiguo en un adaptador QA, sin proveedor de pagos. | El bloqueo financiero se conserva; compartir/copiar/abrir comunicación no reintenta cobros, ventas, devoluciones ni movimientos. | DEFERRED |
+| F4-08 | Revocar/cambiar actor o tenant ficticio después de preparar el mensaje y antes de copiar/abrir/enviar. | Se invalida el contexto anterior; no se comparte el folio viejo ni se envía bajo el actor nuevo. | DEFERRED |
+| F4-09 | Validar Lanzo Local/Free y Lanzo Nube/PRO con licencias y base aislada. | Reporte técnico permitido cuando el contexto se autorice; soporte comercial/tickets PRO conserva los permisos actuales. | DEFERRED |
+| F4-10 | Consultar PostgreSQL aislado tras reenvío idempotente y después de la ventana de retención. | Un mismo `incident_id` no duplica el reporte; límites por licencia funcionan; retención/expiración y limpieza se verifican en la base real de QA. | DEFERRED |
+
 ## Evidencia de certificación
 
 Por escenario registrar versión/commit del build QA, ID del escenario, hora UTC, entorno aislado, resultado esperado/observado, número de llamadas y folio ficticio cuando exista. Adjuntar capturas redactadas y resultados automáticos; nunca adjuntar dumps de IndexedDB, payloads comerciales, tokens o datos personales.
 
 Cada escenario recibe `PASS`, `FAIL` o `BLOCKED` únicamente después de ejecutarse en su entorno aislado. La aprobación de tests unitarios, mocks o contratos estáticos no certifica los casos reales de este plan.
 
-**Estado en Fase 3:** todos los escenarios anteriores están `DEFERRED / NOT RUN`. No se ejecutó una inyección controlada de fallos.
+**Estado al cerrar desarrollo de Fase 4:** todos los escenarios de Fases 3–4 están `DEFERRED / NOT RUN`. No se ejecutó una inyección controlada de fallos.

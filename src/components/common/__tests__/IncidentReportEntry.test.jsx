@@ -33,6 +33,6 @@ describe('IncidentReportEntry', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Reportar problema' }));
 
     expect(await screen.findByRole('heading', { name: 'Enviar diagnóstico técnico' })).toBeTruthy();
-    expect(screen.getByText(/El envío necesita internet y tu confirmación/)).toBeTruthy();
+    expect(screen.getByText(/El reporte requiere internet y tu confirmación/)).toBeTruthy();
   });
 });

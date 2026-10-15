@@ -33,7 +33,11 @@ import {
   buildSupportEmailPayload,
   buildSupportMailtoUrl
 } from '../services/support/supportContact';
-import { createTelegramContact, TELEGRAM_CONTACT_INTENT } from '../services/support/telegramContact';
+import {
+  createTelegramContact,
+  TELEGRAM_CONTACT_BASE_URL,
+  TELEGRAM_CONTACT_INTENT
+} from '../services/support/telegramContact';
 import {
   ABOUT_LICENSE_STATE,
   resolveAboutContactActions,
@@ -678,10 +682,10 @@ export default function AboutPage() {
                 onClick={(event) => handleOpenTelegramPreview({
                   kind: 'telegram',
                   intent: TELEGRAM_CONTACT_INTENT.GENERAL_SUPPORT,
-                  label: 'Contactar por Telegram'
+                  label: 'Preparar mensaje para Telegram'
                 }, event.currentTarget)}
               >
-                <MessageCircle size={16} aria-hidden="true" /> Contactar por Telegram
+                <MessageCircle size={16} aria-hidden="true" /> Preparar mensaje para Telegram
               </button>
               <button type="button" onClick={() => handleOpenContactModal('bug')}>
                 <Bug size={16} aria-hidden="true" /> Reportar problema
@@ -722,10 +726,14 @@ export default function AboutPage() {
             <p className="about-redesign__eyebrow">VISTA PREVIA DE TELEGRAM</p>
             <h2 id="about-telegram-dialog-title">Revisa el mensaje antes de continuar</h2>
             <p id="about-telegram-dialog-description">
-              Se abrirá el chat de @{telegramPreview.username} con el texto preparado, si Telegram admite esta función. Revísalo y envíalo desde Telegram; abrir el chat no confirma su recepción.
+              Se abrirán las opciones oficiales para compartir el texto. Telegram te pedirá elegir un destinatario y podrás revisar o editar el mensaje antes de enviarlo. Abrir Telegram no confirma su recepción.
+            </p>
+            <p>
+              @{telegramPreview.username} es el canal público de Lanzo. No pudimos verificar que tenga mensajes directos habilitados, así que este enlace no se presenta como un chat de soporte.
+              {' '}<a href={TELEGRAM_CONTACT_BASE_URL} target="_blank" rel="noopener noreferrer">Abrir canal oficial como referencia</a>.
             </p>
             <label className="about-telegram-dialog__message-label" htmlFor="about-telegram-message">
-              Mensaje para {telegramPreview.label.charAt(0).toLowerCase() + telegramPreview.label.slice(1)}
+              Mensaje para revisar antes de compartir
             </label>
             <textarea
               id="about-telegram-message"
@@ -748,10 +756,10 @@ export default function AboutPage() {
                 href={telegramPreview.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                aria-label="Abrir chat de Lanzo POS en Telegram en una nueva pestaña"
+                aria-label="Abrir opciones para compartir el mensaje en Telegram en una nueva pestaña"
                 onClick={() => setTelegramPreview(null)}
               >
-                Abrir Telegram
+                Abrir opciones de Telegram
                 <ArrowRight size={17} aria-hidden="true" />
               </a>
             </div>

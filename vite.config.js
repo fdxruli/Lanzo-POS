@@ -34,6 +34,7 @@ const ADMIN_SHELL_GLOB_PATTERNS = Object.freeze([
   'assets/ErrorBoundary-*.{js,css}',
   'assets/IncidentRecoveryPanel-*.{js,css}',
   'assets/IncidentReportForm-*.{js,css}',
+  'assets/telegramContact-*.js',
   'assets/IncidentRecoveryQaGallery-*.{js,css}',
   'assets/storageManager-*.js',
   'assets/salesCloudShadowService-*.js',
