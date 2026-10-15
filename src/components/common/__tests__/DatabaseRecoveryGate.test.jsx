@@ -155,6 +155,19 @@ describe('DatabaseRecoveryGate', () => {
     expect(reloadPage).toHaveBeenCalledTimes(1);
   });
 
+  it('offers the shared technical reporter for a failed database check', async () => {
+    recoveryMocks.state = {
+      ...recoveryMocks.state,
+      status: 'failed',
+      errorCode: 'DB_OPEN_TIMEOUT'
+    };
+
+    renderGate();
+
+    expect(await screen.findByRole('button', { name: 'Reportar problema' })).toBeInTheDocument();
+    expect(screen.getByText(/Este flujo no elimina la base local/i)).toBeInTheDocument();
+  });
+
   it('collapses multiple retry clicks into one recovery call', () => {
     recoveryMocks.state = {
       ...recoveryMocks.state,

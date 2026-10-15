@@ -9,6 +9,7 @@ import {
   classifyIncident,
   getSafeIncidentMetadata
 } from '../../services/diagnostics/incidentDiagnostics';
+import { captureIncident } from '../../services/diagnostics/incidentCapture';
 import { createRecoveryContextGuard } from '../../services/diagnostics/recoveryContext';
 import {
   getActorCheckoutOwnerships,
@@ -103,6 +104,7 @@ export class ErrorBoundary extends React.Component {
     this._renderRecoveryAttempts = 0;
     this._pwaUpdateAttempted = false;
     this._isRecoveryContextCurrent = null;
+    this._incidentRecord = null;
     this._unsubscribeAppStore = null;
     this._headingRef = React.createRef();
     this._criticalRoot = null;
@@ -157,6 +159,11 @@ export class ErrorBoundary extends React.Component {
     const incident = classifyIncident(error, {
       source: 'react',
       ...(this.props.incidentContext || {})
+    });
+    this._incidentRecord = captureIncident(error, {
+      source: 'react',
+      ...(this.props.incidentContext || {}),
+      recoveryStatus: this._renderRecoveryAttempts > 0 ? 'failed' : 'action_required'
     });
     if (incident.severity === 'critical_blocker') {
       this._setCriticalBlocker(true);
@@ -581,6 +588,8 @@ export class ErrorBoundary extends React.Component {
         copied={this.state.copied}
         onCopy={this.handleCopy}
         copyError={this.state.copyError}
+        incidentRecord={this._incidentRecord}
+        isContextCurrent={() => this._hasCurrentRecoveryContext()}
         recoveryNotice={this.state.recoveryActionMessage || (!isOnline ? 'Estás trabajando sin conexión.' : '')}
         contactNote="Se abrirá tu aplicación de correo. Revisa el mensaje y envíalo cuando estés listo."
         titleRef={this._headingRef}

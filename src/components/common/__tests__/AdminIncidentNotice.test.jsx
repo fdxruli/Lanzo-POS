@@ -6,7 +6,7 @@ import '@testing-library/jest-dom/vitest';
 
 vi.mock('lucide-react', () => {
   const Icon = (props) => React.createElement('svg', props);
-  return { AlertTriangle: Icon, X: Icon };
+  return { AlertTriangle: Icon, X: Icon, Send: Icon, Check: Icon, Copy: Icon };
 });
 
 import AdminIncidentNotice from '../AdminIncidentNotice';

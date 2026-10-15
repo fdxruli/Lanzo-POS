@@ -5,6 +5,7 @@ import {
   getAsyncIncidentNotices,
   subscribeAsyncIncidentNotices
 } from '../../services/diagnostics/incidentEventCenter';
+import IncidentReportEntry from './IncidentReportEntry';
 import './AdminIncidentNotice.css';
 
 const useIncidentNotices = () => useSyncExternalStore(
@@ -33,6 +34,22 @@ const getNoticeCopy = (notice) => {
     synchronization: {
       title: 'La sincronización tuvo un problema',
       message: 'No pudimos confirmar la sincronización en este momento. Revisa su estado al recuperar conexión.'
+    },
+    connectivity: {
+      title: 'La conexión tuvo una interrupción',
+      message: 'Algunas funciones remotas pueden tardar en responder. La operación local disponible se conserva.'
+    },
+    supabase_rpc: {
+      title: 'Un servicio remoto no respondió',
+      message: 'No se confirmó la respuesta del servicio. Revisa el estado antes de volver a intentar una operación.'
+    },
+    navigation_resource: {
+      title: 'Una sección no pudo cargar un recurso',
+      message: 'Puedes conservar el resto de Lanzo y volver a abrir esa sección.'
+    },
+    pwa: {
+      title: 'La aplicación instalada necesita revisión',
+      message: 'La versión instalada sigue disponible. Revisa la actualización antes de volver a intentar.'
     }
   };
 
@@ -81,6 +98,10 @@ export default function AdminIncidentNotice() {
             <div><dt>Sección</dt><dd>{notice.metadata.section}</dd></div>
             <div><dt>Fecha y hora</dt><dd>{new Date(notice.metadata.timestamp).toLocaleString('es-MX')}</dd></div>
           </dl>
+          <IncidentReportEntry
+            incident={notice.incident}
+            isContextCurrent={notice.isContextCurrent}
+          />
         </div>
       </div>
       <button

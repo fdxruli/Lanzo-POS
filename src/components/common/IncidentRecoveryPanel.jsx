@@ -10,6 +10,7 @@ import {
   WifiOff
 } from 'lucide-react';
 import './ErrorBoundary.css';
+import IncidentReportEntry from './IncidentReportEntry';
 
 const RECOVERY_STATUS_LABELS = Object.freeze({
   detected: 'Problema identificado',
@@ -39,6 +40,8 @@ export default function IncidentRecoveryPanel({
   copied = false,
   onCopy = null,
   copyError = '',
+  incidentRecord = null,
+  isContextCurrent = null,
   contactNote = '',
   onDismiss = null,
   titleRef = null
@@ -146,6 +149,8 @@ export default function IncidentRecoveryPanel({
             </button>
           )}
         </div>
+
+        <IncidentReportEntry incident={incidentRecord} isContextCurrent={isContextCurrent} />
 
         {contactNote && (
           <p className="incident-recovery__contact-note">

@@ -1,0 +1,126 @@
+.incident-report {
+  margin-block: 0.75rem;
+  color: var(--text-color);
+}
+
+.incident-report__form {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  background: var(--card-background-color);
+}
+
+.incident-report__heading h3 {
+  margin: 0 0 0.25rem;
+  color: var(--text-dark);
+  font-size: 1rem;
+}
+
+.incident-report__heading p,
+.incident-report__shared p,
+.incident-report__shared ul,
+.incident-report__hint {
+  margin: 0;
+  color: var(--text-light);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.incident-report__code {
+  margin: 0;
+}
+
+.incident-report__code div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.5rem;
+  align-items: baseline;
+}
+
+.incident-report__code dt,
+.incident-report__description-label {
+  color: var(--text-dark);
+  font-weight: 650;
+}
+
+.incident-report__code dd {
+  margin: 0;
+  color: var(--brand-accent-text);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  overflow-wrap: anywhere;
+}
+
+.incident-report__shared ul {
+  padding-inline-start: 1.25rem;
+  margin-block: 0.25rem 0.5rem;
+}
+
+.incident-report__shared .incident-report__excluded {
+  color: var(--text-color);
+}
+
+.incident-report__form textarea {
+  width: 100%;
+  min-height: 5rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm, 0.5rem);
+  background: var(--input-background-color, var(--card-background-color));
+  color: var(--text-color);
+  font: inherit;
+  resize: vertical;
+}
+
+.incident-report__form textarea:focus-visible,
+.incident-report__consent input:focus-visible,
+.incident-report__open:focus-visible {
+  outline: 3px solid var(--ui-focus-color, var(--brand-accent));
+  outline-offset: 2px;
+}
+
+.incident-report__consent {
+  display: grid;
+  grid-template-columns: 1.25rem minmax(0, 1fr);
+  gap: 0.6rem;
+  align-items: start;
+  line-height: 1.45;
+}
+
+.incident-report__consent input {
+  width: 1.1rem;
+  height: 1.1rem;
+  margin: 0.1rem 0 0;
+  accent-color: var(--brand-accent);
+}
+
+.incident-report__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.incident-report__status,
+.incident-report__copy-status {
+  margin: 0;
+  color: var(--text-color);
+  line-height: 1.45;
+}
+
+.incident-report__status {
+  padding: 0.6rem 0.7rem;
+  border-radius: var(--border-radius-sm, 0.5rem);
+  background: var(--ui-bg-info-soft, var(--light-background));
+}
+
+.incident-report__copy-status {
+  color: var(--ui-text-success, var(--text-color));
+}
+
+@media (max-width: 520px) {
+  .incident-report__actions > .ui-button {
+    flex: 1 1 100%;
+    min-height: 44px;
+  }
+}

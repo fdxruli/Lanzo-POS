@@ -13,6 +13,7 @@ import {
 } from '../../services/auth/actorOperationalHandoff';
 import { recoverAdminLazyRoute } from '../../pwa/adminLazyRouteRecovery';
 import { isRecoverableAdminStartupError } from '../../pwa/adminStartupRecovery';
+import { captureIncident } from '../../services/diagnostics/incidentCapture';
 import IncidentRecoveryPanel from './IncidentRecoveryPanel';
 import './ErrorBoundary.css';
 
@@ -50,6 +51,12 @@ export default function AdminLazyRouteRecoveryFallback({
   const [recoveryStatus, setRecoveryStatus] = useState(
     initiallyStale ? 'blocked' : initialRecoveryStatus
   );
+  const [incidentRecord] = useState(() => captureIncident(error, {
+    source: 'navigation_resource',
+    category: 'navigation_resource',
+    severity: 'section_failure',
+    recoveryStatus: initiallyStale ? 'blocked' : initialRecoveryStatus
+  }));
   const [recoveryNotice, setRecoveryNotice] = useState(
     initiallyStale
       ? describeRecoveryResult('stale-context')
@@ -192,6 +199,8 @@ export default function AdminLazyRouteRecoveryFallback({
         ? 'Ocurrió un problema al abrir esta sección. Puedes recuperar sus archivos sin reiniciar todo Lanzo POS.'
         : 'Ocurrió un problema al abrir ' + metadata.section + '. Puedes recuperar sus archivos sin reiniciar todo Lanzo POS.'}
       metadata={metadata}
+      incidentRecord={incidentRecord}
+      isContextCurrent={isContextCurrent}
       primaryAction={primaryAction}
       secondaryActions={secondaryActions}
       onCopy={handleCopy}
