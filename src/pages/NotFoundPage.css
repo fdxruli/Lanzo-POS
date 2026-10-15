@@ -77,23 +77,12 @@
 }
 
 .not-found-barcode__caption {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.35rem 0.75rem;
   min-width: 0;
   padding-top: 0.65rem;
-  color: var(--text-light);
-  font-size: 0.65rem;
-  letter-spacing: 0.1em;
-}
-
-.not-found-barcode__caption code {
   color: var(--text-color);
   font-size: 0.75rem;
   font-weight: 700;
-  letter-spacing: 0.06em;
-  overflow-wrap: anywhere;
+  letter-spacing: 0.14em;
 }
 
 .not-found-page__content {

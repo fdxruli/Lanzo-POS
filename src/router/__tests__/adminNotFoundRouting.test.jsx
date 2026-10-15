@@ -66,6 +66,9 @@ describe('ruta 404 del POS', () => {
       'La dirección que intentaste abrir no está disponible. Puede que el enlace esté incompleto o que la página haya cambiado.'
     )).toBeInTheDocument();
     expect(screen.getByText('RUTA NO ENCONTRADA')).toBeInTheDocument();
+    expect(screen.getByText('LANZO POS')).toBeInTheDocument();
+    expect(screen.queryByText('CÓDIGO DE RUTA')).not.toBeInTheDocument();
+    expect(screen.queryByText('LANZO-POS-404-CLARO')).not.toBeInTheDocument();
     expect(screen.queryByText(/NOT FOUND/i)).not.toBeInTheDocument();
   });
 
@@ -126,7 +129,8 @@ describe('ruta 404 del POS', () => {
 
     await waitFor(() => {
       expect(barcode).toHaveAttribute('data-barcode-value', 'LANZO-POS-404-OSCURO');
-      expect(screen.getByText('LANZO-POS-404-OSCURO')).toBeInTheDocument();
+      expect(screen.getByText('LANZO POS')).toBeInTheDocument();
+      expect(screen.queryByText('LANZO-POS-404-OSCURO')).not.toBeInTheDocument();
     });
   });
 });

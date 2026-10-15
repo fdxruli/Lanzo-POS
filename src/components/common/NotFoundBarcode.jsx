@@ -58,8 +58,7 @@ function NotFoundBarcode() {
         ))}
       </svg>
       <figcaption className="not-found-barcode__caption">
-        <span>CÓDIGO DE RUTA</span>
-        <code>{value}</code>
+        <span>LANZO POS</span>
       </figcaption>
     </figure>
   );
