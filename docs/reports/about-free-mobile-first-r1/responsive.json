@@ -1,0 +1,79 @@
+[
+  {
+    "columns": "286px",
+    "mainWidth": 310,
+    "overflows": [],
+    "scrollWidth": 320,
+    "width": 320
+  },
+  {
+    "columns": "326px",
+    "mainWidth": 350,
+    "overflows": [],
+    "scrollWidth": 360,
+    "width": 360
+  },
+  {
+    "columns": "341px",
+    "mainWidth": 365,
+    "overflows": [],
+    "scrollWidth": 375,
+    "width": 375
+  },
+  {
+    "columns": "356px",
+    "mainWidth": 380,
+    "overflows": [],
+    "scrollWidth": 390,
+    "width": 390
+  },
+  {
+    "columns": "380px",
+    "mainWidth": 404,
+    "overflows": [],
+    "scrollWidth": 414,
+    "width": 414
+  },
+  {
+    "columns": "273.797px 273.812px",
+    "mainWidth": 590,
+    "overflows": [],
+    "scrollWidth": 600,
+    "width": 600
+  },
+  {
+    "columns": "341.797px 341.812px",
+    "mainWidth": 726,
+    "overflows": [],
+    "scrollWidth": 768,
+    "width": 768
+  },
+  {
+    "columns": "325.797px 325.812px",
+    "mainWidth": 694,
+    "overflows": [],
+    "scrollWidth": 1024,
+    "width": 1024
+  },
+  {
+    "columns": "299.062px 299.078px 299.062px",
+    "mainWidth": 950,
+    "overflows": [],
+    "scrollWidth": 1280,
+    "width": 1280
+  },
+  {
+    "columns": "352.406px 352.406px 352.406px",
+    "mainWidth": 1110,
+    "overflows": [],
+    "scrollWidth": 1440,
+    "width": 1440
+  },
+  {
+    "columns": "402.406px 402.406px 402.406px",
+    "mainWidth": 1260,
+    "overflows": [],
+    "scrollWidth": 1920,
+    "width": 1920
+  }
+]
