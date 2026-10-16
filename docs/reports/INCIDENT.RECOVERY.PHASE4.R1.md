@@ -1,10 +1,10 @@
 # LANZO-POS — Fase 4: comunicación de incidencias
 
-- **Estado de desarrollo:** implementado; revalidación remota pendiente tras sincronizar la comprobación asíncrona de foco detectada en CI.
+- **Estado de desarrollo:** implementación completa; CI remoto y preview del HEAD de código aprobados. QA manual de dispositivos y certificación de fallos reales permanecen pendientes.
 - **PR:** [#357 — feat: unified incident recovery and reporting](https://github.com/fdxruli/Lanzo-POS/pull/357)
 - **Rama:** `feat/incident-recovery-center-r1`
 - **HEAD inicial verificado:** `eb826a9c952dad6cb84e338cb83775fa6af7989c`
-- **HEAD de implementación revisado por CI:** `329281a46b111283f3f4493d7e64346eb01297a6`. El siguiente commit contiene la espera determinista de foco y esta actualización de estado.
+- **HEAD de código validado:** `307c9d307eb05726fb629ac72835a7880f5312a5`. Este informe se actualiza en un commit documental posterior; no modifica el código probado.
 - **Producción:** sin cambios. No se aplicó migración Supabase. PR sin merge.
 
 ## Resumen
@@ -91,15 +91,18 @@ Resultados locales:
 - `npm run build:store`: **PASS**.
 - `git diff --check`: **PASS** tras el ajuste de sincronización de foco y la actualización del informe.
 
-Resultados remotos del HEAD `329281a46b111283f3f4493d7e64346eb01297a6`:
+Resultados remotos del HEAD de código `307c9d307eb05726fb629ac72835a7880f5312a5`:
 
-- PR127: **SUCCESS**; comparación reportó 99 fallos compartidos de base, 0 candidate-only, 0 nuevos y 1 resuelto.
-- Actor Runtime: **SUCCESS**; dos suites completas comparadas, sin regresiones candidate-only. Los fallos persistentes del baseline fueron los mismos en base y candidato; los 121 tests añadidos elevan el total de candidato.
-- Actor Scoped Storage: jobs focales, builds, suite completa del candidato, 50 repeticiones de cada uno de siete objetivos y 50 envíos duplicados: **SUCCESS**. El gate diferencial reportó una aserción de foco candidate-only que falló en la primera de dos pasadas y pasó en la segunda. Se actualizó la prueba para esperar el mismo foco accesible aplicado por el efecto React; la prueba focal pasó 10/10 corridas locales. El workflow completo debe repetirse sobre el nuevo HEAD y quedar terminal.
-- Store Git Runtime, Ecommerce Public y Dexie Recovery: **SUCCESS**.
-- Preview del commit de implementación revisado: [Vercel preview](https://lanzo-i5tm690ti-fdxrulis-projects.vercel.app), HTTP 200. El nuevo HEAD de prueba requerirá revisar su preview cuando termine el despliegue.
+- PR127 Global Comparison: **SUCCESS**; 99 fallos compartidos de base, 0 candidate-only, 0 nuevos, 1 resuelto, 0 observaciones flaky y 0 identidades pendientes. [Run 38825734754](https://github.com/fdxruli/Lanzo-POS/actions/runs/38825734754).
+- Actor Runtime: **SUCCESS**. BASE y CANDIDATE completaron dos suites idénticas por lado: BASE 5,114 PASS / 75 FAIL / 52 SKIP; CANDIDATE 5,235 PASS / 75 FAIL / 52 SKIP. El diferencial encontró 0 regresiones nuevas y 93 fallos persistentes de baseline; 1 observación existió solo en BASE. El objetivo PublicStore repetido pasó 50/50 en cada lado. [Run 38825734760](https://github.com/fdxruli/Lanzo-POS/actions/runs/38825734760).
+- Actor Scoped Storage: **SUCCESS**. BASE y CANDIDATE completaron dos suites completas por lado, con los mismos totales y 0 regresiones nuevas; 93 fallos persistentes de baseline. Los siete objetivos PublicStore/Ecommerce pasaron 50/50 en BASE y CANDIDATE; el test de envío duplicado pasó 50/50 en ambos lados. [Run 38825734757](https://github.com/fdxruli/Lanzo-POS/actions/runs/38825734757).
+- Dexie Recovery: **SUCCESS**, incluidos tests `admin-login-modal`, builds y quality. [Run 38825734765](https://github.com/fdxruli/Lanzo-POS/actions/runs/38825734765).
+- Ecommerce Public: **SUCCESS**. [Run 38825734774](https://github.com/fdxruli/Lanzo-POS/actions/runs/38825734774).
+- Store Git Runtime: **SUCCESS**. [Run 38825734766](https://github.com/fdxruli/Lanzo-POS/actions/runs/38825734766).
+- La observación one-off de `AdminLoginModal.recovery.test.jsx` detectada en el run previo desapareció tras esperar el efecto React sin quitar la aserción de foco. La expectativa se mantiene; pasó 10/10 ejecuciones locales, y las nuevas suites remotas completaron correctamente.
+- Preview Vercel para el HEAD validado: [https://lanzo-lovhjsguu-fdxrulis-projects.vercel.app](https://lanzo-lovhjsguu-fdxrulis-projects.vercel.app), READY y HTTP 200.
 
-El único cambio posterior a este CI hace determinista la espera de esa misma expectativa de accesibilidad y actualiza este informe; no altera el comportamiento comercial. Un workflow reejecutándose todavía no cuenta como aprobado.
+El cambio posterior al run fallido solo hizo determinista la espera de la expectativa de accesibilidad y actualizó este informe. No modifica permisos ni comportamiento comercial. Todos los workflows enumerados terminaron; ninguno se cuenta mientras está en ejecución.
 
 ## Checklist QA manual de Telegram
 
@@ -122,7 +125,7 @@ Estado: **PREPARADO / NO EJECUTADO**. No se usaron folios simulados para afirmar
 
 ## CI, preview y estado del PR
 
-El PR `#357` permanece abierto y Draft, sin merge. El preview y cinco de los seis workflows de validación terminaron SUCCESS en el HEAD `329281a`. El gate diferencial de Actor Scoped Storage queda pendiente de repetición después de hacer estable la espera de foco; no se omite ni se acepta el fallo one-off.
+El PR permanece abierto y Draft, sin merge. En el HEAD de código 307c9d3, los seis workflows solicitados terminaron SUCCESS y el preview responde HTTP 200. La última actualización de este informe es solo documental y conserva ese SHA como la fuente de implementación validada.
 
 ## Certificación final y riesgos pendientes
 
@@ -138,32 +141,33 @@ La certificación controlada de fallos reales está `DEFERRED`. El plan actualiz
 - Free/PRO validado con base aislada.
 - Idempotencia y retención verificadas contra PostgreSQL real aislado.
 
-Estos escenarios requieren entorno aislado desechable, datos y credenciales ficticias, snapshot restaurable, acceso de red restringido y autorización de certificación separada. La migración `20261015134821_technical_incident_reporting_r1.sql` no se aplicó. El RPC remoto no se considera operativo. Las interacciones reales de Telegram, sus DMs, el preview y CI son límites pendientes hasta completar las comprobaciones.
+Estos escenarios requieren entorno aislado desechable, datos y credenciales ficticias, snapshot restaurable, acceso de red restringido y autorización de certificación separada. La migración `20261015134821_technical_incident_reporting_r1.sql` no se aplicó. El RPC remoto no se considera operativo. Las interacciones reales de Telegram y su configuración de mensajes directos siguen sin certificarse; el QA manual y la certificación de fallos reales están pendientes. El preview y CI del código están aprobados.
 
 ```text
-PHASE_4_STATUS: IMPLEMENTED; REMOTE REVALIDATION PENDING
+PHASE_4_STATUS: IMPLEMENTED; SIX WORKFLOWS AND PREVIEW PASS; MANUAL QA PENDING
 PR_NUMBER: 357
 PR_URL: https://github.com/fdxruli/Lanzo-POS/pull/357
 HEAD_INITIAL: eb826a9c952dad6cb84e338cb83775fa6af7989c
-HEAD_FINAL: PENDING REMOTE REVALIDATION
+HEAD_FINAL: 307c9d307eb05726fb629ac72835a7880f5312a5 (VALIDATED CODE HEAD; REPORT UPDATE IS DOCS-ONLY)
 TELEGRAM_CONTACT_VERIFICATION: SHARE API VERIFIED; CHANNEL DM UNVERIFIED
 TELEGRAM_INTEGRATION: MANUAL SHARE CHOOSER + EXISTING SUPPORT EMAIL
 CONFIRMED_FOLIO_HANDLING: ONLY SUCCESSFUL RECEIPT FOR CURRENT INCIDENT AND CONTEXT
 PRIVACY_REVIEW: EXPLICIT ALLOWLIST; NO FREE TEXT OR BUSINESS/FINANCIAL SECRETS
 FREE_PRO_BEHAVIOR: TECHNICAL REPORT BOTH PLANS; COMMERCIAL PRO UNCHANGED
 OFFLINE_BEHAVIOR: LOCAL DIAGNOSTIC AND COPY; NO QUEUE OR AUTOMATIC RETRY
-AUTOMATED_TESTS: 340/340 PRIOR REGRESSION; FASE4 63/63; FOCUS 10/10; COMBINED 92/92
-PR127_RESULT: SUCCESS (99 BASELINE / 0 CANDIDATE-ONLY / 0 NEW / 1 RESOLVED)
-ACTOR_RUNTIME_RESULT: SUCCESS (NO CANDIDATE-ONLY; SHARED BASELINE FAILURES)
-ACTOR_SCOPED_STORAGE_RESULT: BLOCKED; 1 ONE-OFF FOCUS ASSERTION, REVALIDATION PENDING
+AUTOMATED_TESTS: FASE4 63/63; BROAD 340/340; FOCUS 10/10; COMBINED 92/92; SQL STATIC 4/4
+PR127_RESULT: SUCCESS (99 SHARED BASELINE / 0 CANDIDATE-ONLY / 0 NEW / 1 RESOLVED)
+ACTOR_RUNTIME_RESULT: SUCCESS (2X FULL SUITE; 75 SHARED FAILS; 0 NEW; 50/50 FOCUSED)
+ACTOR_SCOPED_STORAGE_RESULT: SUCCESS (2X FULL SUITE; 75 SHARED FAILS; 0 NEW; 7X50 + DUPLICATE 50/50)
 DEXIE_RESULT: SUCCESS
 ECOMMERCE_RESULT: SUCCESS
-PREVIEW_URL: https://lanzo-i5tm690ti-fdxrulis-projects.vercel.app (HTTP 200; source commit 329281a)
+STORE_GIT_RUNTIME_RESULT: SUCCESS
+PREVIEW_URL: https://lanzo-lovhjsguu-fdxrulis-projects.vercel.app (READY; HTTP 200; source commit 307c9d3)
 MANUAL_QA_STATUS: PREPARED / NOT RUN; CHANNEL DM BLOCKED / UNVERIFIED
 CONTROLLED_FAILURE_QA_STATUS: DEFERRED
 SUPABASE_MIGRATIONS_APPLIED: NONE
 PRODUCTION_CHANGES: NONE
-CRITICAL_BLOCKERS: ACTOR SCOPED STORAGE REMOTE REVALIDATION; ISOLATED REAL-FAILURE CERTIFICATION; TELEGRAM CHANNEL DM CONFIGURATION
+CRITICAL_BLOCKERS: MANUAL DEVICE QA; ISOLATED REAL-FAILURE CERTIFICATION; TELEGRAM CHANNEL DM CONFIGURATION
 READY_FOR_FINAL_CERTIFICATION: NO
 READY_FOR_PRODUCTION: NO
 MERGE_STATUS: NOT_MERGED
