@@ -138,7 +138,18 @@ describe('QA-REPORT / QA-COMMUNICATION', () => {
     expect(draft.href).toContain('example.invalid');
     fireEvent.click(draft);
     expect(screen.getByText(/Borrador inspeccionado localmente/)).toBeVisible();
+    expect(screen.getByRole('link', { name: 'Abrir borrador de prueba en correo' }).href).toContain('example.invalid');
     expect(screen.getByText(/Transporte QA en memoria: 1 llamadas/)).toBeVisible();
+  });
+  it('does not reuse a simulated success after changing the adapter outcome for the same deduplicated incident', async () => {
+    mount(); selectScenario('QA-08'); provoke(); await openForm(); consent();
+    fireEvent.click(screen.getByRole('button', { name: 'Enviar reporte' }));
+    expect(await screen.findByText(/Confirmación ficticia validada internamente/)).toBeVisible();
+    selectScenario('QA-13'); provoke(); await openForm(); consent();
+    fireEvent.click(screen.getByRole('button', { name: 'Enviar reporte' }));
+    expect(await screen.findByText(/No se confirmó recepción. Código seguro:/)).toBeVisible();
+    expect(screen.queryByText(/Confirmación ficticia validada internamente/)).not.toBeInTheDocument();
+    expect(screen.getByText(/Transporte QA en memoria: 2 llamadas/)).toBeVisible();
   });
   it('isolates a reporter exception and allows safe copying after it fails', async () => {
     mount(); selectScenario('QA-13'); useMemory(); provoke(); await openForm(); consent();

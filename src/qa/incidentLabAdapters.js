@@ -84,7 +84,7 @@ export function createIncidentLabAdapters({ copyText = copyTextToClipboard, onEv
       return 'Adaptador QA aislado. El consentimiento permite únicamente una prueba local.';
     },
     submit: (incident, options) => {
-      const key = `${context.actorGeneration}:${context.tenantGeneration}:${incident.incident_id}`;
+      const key = `${context.actorGeneration}:${context.tenantGeneration}:${outcome}:${incident.incident_id}`;
       if (submissions.has(key)) return submissions.get(key);
       const operation = (async () => {
         const result = await reporter.submit(incident, options);

@@ -38,6 +38,7 @@ export default function IncidentRecoveryQaGallery() {
   const [normalization, setNormalization] = useState(null);
   const [results, setResults] = useState({});
   const [exportStatus, setExportStatus] = useState('');
+  const [emailStatus, setEmailStatus] = useState('');
   const [host] = useState(() => { const element = document.createElement('div'); element.className = 'incident-qa incident-qa__portal'; return element; });
   const scenarioSelect = useRef(null);
   const boundary = useRef(null);
@@ -58,7 +59,7 @@ export default function IncidentRecoveryQaGallery() {
     return () => { if (previous) document.documentElement.setAttribute('data-theme', previous); else document.documentElement.removeAttribute('data-theme'); };
   }, [theme]);
   const reset = () => {
-    setFired(false); setFault(null); setIncident(null); setIncidentGuard(null); setNormalization(null); setGeneration((n) => n + 1);
+    setFired(false); setFault(null); setIncident(null); setIncidentGuard(null); setNormalization(null); setEmailStatus(''); setGeneration((n) => n + 1);
     requestAnimationFrame(() => scenarioSelect.current?.focus());
   };
   useEffect(() => {
@@ -181,6 +182,8 @@ export default function IncidentRecoveryQaGallery() {
           {!fired && <p>Formulario disponible después de crear una incidencia.</p>}
 
           <details><summary>Inspeccionar borrador de correo</summary><pre>{metrics.emailDraft ? decodeURIComponent(metrics.emailDraft) : 'Prepara el mensaje y pulsa «Inspeccionar borrador local».'}</pre></details>
+          {metrics.emailDraft && incidentGuard?.() && <><p>Opcional: el borrador externo usa un destinatario de prueba no entregable. No lo envíes.</p><a className="ui-button ui-button--secondary" href={metrics.emailDraft} onClick={() => setEmailStatus('Se solicitó abrir un borrador de prueba. Si no aparece, puede que no haya un cliente de correo asociado; la inspección local sigue disponible.')}>Abrir borrador de prueba en correo</a></>}
+          {emailStatus && <p role="status">{emailStatus}</p>}
         </section>
         <section aria-labelledby="qa-results"><h2 id="qa-results">Resultados</h2><p>Registrar un resultado es una decisión manual; abrir un escenario nunca lo aprueba.</p>
           <label>Resultado de {qaId}<select value={currentResult.result} onChange={(e) => updateResult({ result: e.target.value })}>{['NOT RUN', 'PASS', 'FAIL', 'BLOCKED'].map((v) => <option key={v}>{v}</option>)}</select></label>
