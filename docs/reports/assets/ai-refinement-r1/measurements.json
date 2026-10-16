@@ -1,0 +1,168 @@
+{
+  "top": [
+    {
+      "navTop": 779,
+      "overflow": false,
+      "scrollBottom": 779,
+      "selectorHeight": 95.484375,
+      "theme": "dark",
+      "width": 320
+    },
+    {
+      "navTop": 779,
+      "overflow": false,
+      "scrollBottom": 779,
+      "selectorHeight": 84.78125,
+      "theme": "dark",
+      "width": 360
+    },
+    {
+      "navTop": 779,
+      "overflow": false,
+      "scrollBottom": 779,
+      "selectorHeight": 84.78125,
+      "theme": "dark",
+      "width": 375
+    },
+    {
+      "navTop": 779,
+      "overflow": false,
+      "scrollBottom": 779,
+      "selectorHeight": 84.78125,
+      "theme": "light",
+      "width": 390
+    },
+    {
+      "navTop": 779,
+      "overflow": false,
+      "scrollBottom": 779,
+      "selectorHeight": 84.78125,
+      "theme": "light",
+      "width": 430
+    },
+    {
+      "navTop": 779,
+      "overflow": false,
+      "scrollBottom": 779,
+      "selectorHeight": 84.78125,
+      "theme": "light",
+      "width": 640
+    },
+    {
+      "navbarDisplay": "flex",
+      "overflow": false,
+      "scrollBottom": 835,
+      "selectorHeight": 84.78125,
+      "theme": "dark",
+      "width": 768
+    },
+    {
+      "navbarDisplay": "none",
+      "overflow": false,
+      "scrollBottom": 900,
+      "selectorHeight": 84.78125,
+      "theme": "dark",
+      "width": 1024
+    },
+    {
+      "navbarDisplay": "none",
+      "overflow": false,
+      "scrollBottom": 900,
+      "selectorHeight": 84.78125,
+      "theme": "dark",
+      "width": 1280
+    }
+  ],
+  "end": [
+    {
+      "navTop": 745,
+      "navbarVisible": true,
+      "noteBottom": 697,
+      "overflow": false,
+      "remainingScroll": 0,
+      "scrollViewportBottom": 745,
+      "selectorHeight": 95.484375,
+      "width": 320
+    },
+    {
+      "navTop": 745,
+      "navbarVisible": true,
+      "noteBottom": 697.015625,
+      "overflow": false,
+      "remainingScroll": 0,
+      "scrollViewportBottom": 745,
+      "selectorHeight": 95.484375,
+      "width": 360
+    },
+    {
+      "navTop": 745,
+      "navbarVisible": true,
+      "noteBottom": 697.3125,
+      "overflow": false,
+      "remainingScroll": 0,
+      "scrollViewportBottom": 745,
+      "selectorHeight": 84.78125,
+      "width": 375
+    },
+    {
+      "navTop": 745,
+      "navbarVisible": true,
+      "noteBottom": 697.328125,
+      "overflow": false,
+      "remainingScroll": 0,
+      "scrollViewportBottom": 745,
+      "selectorHeight": 84.78125,
+      "width": 390
+    },
+    {
+      "navTop": 745,
+      "navbarVisible": true,
+      "noteBottom": 696.9375,
+      "overflow": false,
+      "remainingScroll": 0,
+      "scrollViewportBottom": 745,
+      "selectorHeight": 84.78125,
+      "width": 430
+    },
+    {
+      "navTop": 745,
+      "navbarVisible": true,
+      "noteBottom": 697.15625,
+      "overflow": false,
+      "remainingScroll": 0,
+      "scrollViewportBottom": 745,
+      "selectorHeight": 84.78125,
+      "width": 640
+    },
+    {
+      "navTop": 745,
+      "navbarVisible": true,
+      "noteBottom": 696.625,
+      "overflow": false,
+      "remainingScroll": 0,
+      "scrollViewportBottom": 745,
+      "selectorHeight": 84.78125,
+      "width": 768
+    },
+    {
+      "navTop": 0,
+      "navbarVisible": false,
+      "noteBottom": 820,
+      "overflow": false,
+      "remainingScroll": 0,
+      "scrollViewportBottom": 844,
+      "selectorHeight": 84.78125,
+      "width": 1024
+    },
+    {
+      "navTop": 0,
+      "navbarVisible": false,
+      "noteBottom": 820.15625,
+      "overflow": false,
+      "remainingScroll": 0,
+      "scrollViewportBottom": 844,
+      "selectorHeight": 84.78125,
+      "width": 1280
+    }
+  ]
+}

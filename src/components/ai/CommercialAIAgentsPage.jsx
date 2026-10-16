@@ -15,6 +15,7 @@ import {
   Trash2
 } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import CommercialAIHistoryModal from './CommercialAIHistoryModal';
 import {
   loadSalesProfitabilityProducts,
   resolveBusinessTimezone,
@@ -57,6 +58,7 @@ import {
 } from '../../services/ai/salesProfitabilityHistory';
 import { useAppStore } from '../../store/useAppStore';
 import './CommercialAIAgentsPage.css';
+import './CommercialAIWorkspace.css';
 
 const SUGGESTED_QUESTIONS = [
   { label: '¿Mi negocio es rentable?', intent: 'profitability_summary' },
@@ -121,12 +123,13 @@ function UsageStatusPanel({ usageStatus, isLoading, error, onRetry }) {
   }
 
   return (
-    <section className={`commercial-ai-usage ${usageStatus?.isLimitReached ? 'commercial-ai-usage--limit' : ''}`} aria-label="Uso de IA">
+    <section className={`commercial-ai-usage ${usageStatus?.isLimitReached ? 'commercial-ai-usage--limit' : remaining !== null && limit > 0 && remaining / limit <= 0.2 ? 'commercial-ai-usage--near-limit' : ''}`} aria-label="Uso de IA" aria-live="polite" aria-busy={isLoading}>
       <div>
         <span className="commercial-ai-usage__label">Uso de IA</span>
         <strong>{isLoading && !usageStatus ? 'Consultando uso de IA…' : summary}</strong>
         {periodEnd && <small>Periodo actual hasta {periodEnd}</small>}
         {usageStatus?.isLimitReached && <small>Límite alcanzado para el periodo actual.</small>}
+        {!usageStatus?.isLimitReached && remaining !== null && limit > 0 && remaining / limit <= 0.2 && <small>Te acercas al límite del periodo.</small>}
         {isLoading && usageStatus && <small>Actualizando contador…</small>}
         {error && <small className="commercial-ai-usage__error">{error}</small>}
       </div>
@@ -1535,116 +1538,152 @@ function HistoryPanel({
   onDelete,
   onClear,
   onDownload,
-  isDownloading
+  isDownloading,
+  onClose
 }) {
-  const [confirmClear, setConfirmClear] = useState(false);
+  const [confirmation, setConfirmation] = useState(null);
+  const cancelRef = useRef(null);
+  const backRef = useRef(null);
+  const listTitleRef = useRef(null);
+  const lastSelectedRef = useRef(selectedEntryId);
+  const actionTriggerRef = useRef(null);
   const selectedEntry = entries.find((entry) => entry.id === selectedEntryId) || null;
 
+  useLayoutEffect(() => {
+    if (confirmation) cancelRef.current?.focus({ preventScroll: true });
+    else if (actionTriggerRef.current) {
+      const trigger = actionTriggerRef.current;
+      if (trigger.isConnected) trigger.focus({ preventScroll: true });
+      else {
+        listTitleRef.current?.focus({ preventScroll: true });
+        const scroller = listTitleRef.current?.closest('.commercial-ai-history-modal__body');
+        if (scroller) scroller.scrollTop = 0;
+      }
+      actionTriggerRef.current = null;
+    }
+  }, [confirmation]);
+
+  useLayoutEffect(() => {
+    if (selectedEntryId === lastSelectedRef.current) return;
+    const target = selectedEntry ? backRef.current : listTitleRef.current;
+    target?.focus({ preventScroll: true });
+    const scroller = target?.closest('.commercial-ai-history-modal__body');
+    if (scroller) scroller.scrollTop = 0;
+    lastSelectedRef.current = selectedEntryId;
+  }, [selectedEntryId, selectedEntry]);
+
   return (
-    <section className="commercial-ai-history" aria-labelledby="commercial-ai-history-title">
-      <div className="commercial-ai-history__header">
-        <div>
-          <p className="commercial-ai-eyebrow"><History size={15} aria-hidden="true" /> Consultas guardadas</p>
-          <h2 id="commercial-ai-history-title">Historial de consultas</h2>
-        </div>
-        <button
-          type="button"
-          className="commercial-ai-history__clear"
-          onClick={() => setConfirmClear(true)}
-          disabled={isLoading || entries.length === 0}
-        >
-          <Trash2 size={16} aria-hidden="true" /> Limpiar historial
-        </button>
-      </div>
-      <p className="commercial-ai-history__privacy">Se conserva sólo en este dispositivo y navegador. Al cambiar de negocio, licencia o sesión se separa del historial anterior.</p>
-      {issue && <p className="commercial-ai-history__notice" role="status">{HISTORY_ISSUE_MESSAGES[issue] || HISTORY_ISSUE_MESSAGES.storage_unavailable}</p>}
+    <CommercialAIHistoryModal count={issue ? null : entries.length} isLoading={isLoading} onClose={onClose}
+      isConfirming={Boolean(confirmation)} onCancelConfirmation={() => setConfirmation(null)}>
+      <section className="commercial-ai-history" aria-label="Consultas guardadas">
+        <p id="commercial-ai-history-privacy" className="commercial-ai-history__privacy">Se conserva sólo en este dispositivo y navegador. Al cambiar de negocio, licencia o sesión se separa del historial anterior.</p>
+        {!selectedEntry && <div className="commercial-ai-history__header">
+          <h3 ref={listTitleRef} tabIndex={-1}>Consultas guardadas</h3>
+          <button
+            type="button"
+            className="commercial-ai-history__clear"
+            onClick={(event) => { actionTriggerRef.current = event.currentTarget; setConfirmation({ type: 'clear' }); }}
+            disabled={isLoading || entries.length === 0 || Boolean(confirmation)}
+          >
+            <Trash2 size={16} aria-hidden="true" /> Limpiar historial
+          </button>
+        </div>}
+        {issue && <p className="commercial-ai-history__notice" role="status">{HISTORY_ISSUE_MESSAGES[issue] || HISTORY_ISSUE_MESSAGES.storage_unavailable}</p>}
 
-      {confirmClear && entries.length > 0 && (
-        <div className="commercial-ai-history__confirm" role="group" aria-label="Confirmar limpieza del historial">
-          <p>¿Eliminar todas las consultas guardadas en este contexto?</p>
-          <button type="button" onClick={() => setConfirmClear(false)}>Conservar historial</button>
-          <button type="button" onClick={() => { onClear(); setConfirmClear(false); }}>Sí, limpiar historial</button>
-        </div>
-      )}
-
-      {isLoading ? (
-        <p className="commercial-ai-history__empty" role="status">Cargando historial local…</p>
-      ) : entries.length === 0 ? (
-        <p className="commercial-ai-history__empty">Todavía no hay consultas completadas en este contexto.</p>
-      ) : (
-        <ul className="commercial-ai-history__list">
-          {entries.map((entry) => {
-            const filters = historyFilterDetails(entry);
-            const mode = salesProfitabilityHistoryLabels.executionMode[entry.execution.mode];
-            const usage = salesProfitabilityHistoryLabels.usageStatus[entry.quota.status];
-            const snapshot = entry.report?.usage;
-            const snapshotLabel = snapshot?.available === true
-              ? (snapshot.isUnlimited
-                ? `Snapshot del contador: ${snapshot.used ?? '—'} usados · sin límite`
-                : `Snapshot del contador: ${snapshot.used ?? '—'} usados · límite ${snapshot.limit ?? '—'} · disponibles ${snapshot.remaining ?? '—'}`)
-              : 'Snapshot del contador: no disponible';
-            const detailId = `commercial-ai-history-detail-${entry.id}`;
-
-            return (
-              <li key={entry.id}>
-                <article className="commercial-ai-history__item">
-                  <div className="commercial-ai-history__item-main">
-                    <p className="commercial-ai-history__date">{formatHistoryTimestamp(entry)}</p>
-                    <h3>{entry.report?.request?.question || 'Pregunta no disponible'}</h3>
-                    <p className="commercial-ai-history__filters">{filters.length ? filters.join(' · ') : 'Filtros no disponibles'}</p>
-                    <div className="commercial-ai-history__labels">
-                      <span>Modo: <strong>{mode}</strong></span>
-                      <span>Usó cuota: <strong>{usage}</strong></span>
-                    </div>
-                    <small>{salesProfitabilityHistoryLabels.usageExplanation[entry.quota.reason]}</small>
-                    <small>{snapshotLabel}</small>
-                  </div>
-                  <div className="commercial-ai-history__actions">
-                    <button
-                      type="button"
-                      aria-expanded={selectedEntryId === entry.id}
-                      aria-controls={detailId}
-                      onClick={() => onSelect(selectedEntryId === entry.id ? null : entry.id)}
-                    >
-                      {selectedEntryId === entry.id ? 'Cerrar respuesta' : 'Ver respuesta'}
-                    </button>
-                    <button
-                      type="button"
-                      className="commercial-ai-history__delete"
-                      aria-label="Eliminar consulta del historial"
-                      onClick={() => onDelete(entry.id)}
-                    >
-                      <Trash2 size={15} aria-hidden="true" /> Eliminar
-                    </button>
-                  </div>
-                </article>
-              </li>
-            );
-          })}
-        </ul>
-      )}
-
-      {selectedEntry && (
-        <section
-          className="commercial-ai-history__detail"
-          id={`commercial-ai-history-detail-${selectedEntry.id}`}
-          aria-labelledby="commercial-ai-history-answer-title"
-        >
-          <div className="commercial-ai-history__detail-header">
-            <div>
-              <p className="commercial-ai-eyebrow">Respuesta guardada · {formatHistoryTimestamp(selectedEntry)}</p>
-              <h3 id="commercial-ai-history-answer-title">{selectedEntry.report?.request?.question || 'Pregunta no disponible'}</h3>
-            </div>
-            <button type="button" onClick={() => onSelect(null)}>Cerrar</button>
+        {confirmation && (
+          <div className="commercial-ai-history__confirm" role="group" aria-label={confirmation.type === 'clear' ? 'Confirmar limpieza del historial' : 'Confirmar eliminación de consulta'}>
+            <p>{confirmation.type === 'clear' ? '¿Eliminar todas las consultas guardadas en este contexto?' : '¿Eliminar esta consulta guardada? Esta acción no se puede deshacer.'}</p>
+            <button ref={cancelRef} type="button" onClick={() => setConfirmation(null)}>{confirmation.type === 'clear' ? 'Conservar historial' : 'Conservar consulta'}</button>
+            <button type="button" onClick={() => {
+              if (confirmation.type === 'clear') onClear();
+              else onDelete(confirmation.id);
+              setConfirmation(null);
+            }}>{confirmation.type === 'clear' ? 'Sí, limpiar historial' : 'Sí, eliminar consulta'}</button>
           </div>
-          <AnalysisResult
-            result={historyEntryToAnalysisResult(selectedEntry)}
-            onDownload={() => onDownload(selectedEntry)}
-            isDownloading={isDownloading}
-          />
-        </section>
-      )}
-    </section>
+        )}
+
+        <div inert={confirmation ? true : undefined}>
+        {!selectedEntry && (isLoading ? (
+          <p className="commercial-ai-history__empty" role="status">Cargando historial local…</p>
+        ) : entries.length === 0 ? (
+          <p className="commercial-ai-history__empty">Todavía no hay consultas completadas en este contexto.</p>
+        ) : (
+          <ul className="commercial-ai-history__list">
+            {entries.map((entry) => {
+              const filters = historyFilterDetails(entry);
+              const mode = salesProfitabilityHistoryLabels.executionMode[entry.execution.mode];
+              const usage = salesProfitabilityHistoryLabels.usageStatus[entry.quota.status];
+              const snapshot = entry.report?.usage;
+              const snapshotLabel = snapshot?.available === true
+                ? (snapshot.isUnlimited
+                  ? `Snapshot del contador: ${snapshot.used ?? '—'} usados · sin límite`
+                  : `Snapshot del contador: ${snapshot.used ?? '—'} usados · límite ${snapshot.limit ?? '—'} · disponibles ${snapshot.remaining ?? '—'}`)
+                : 'Snapshot del contador: no disponible';
+              return (
+                <li key={entry.id}>
+                  <article className="commercial-ai-history__item">
+                    <div className="commercial-ai-history__item-main">
+                      <p className="commercial-ai-history__date">{formatHistoryTimestamp(entry)}</p>
+                      <h3>{entry.report?.request?.question || 'Pregunta no disponible'}</h3>
+                      <p className="commercial-ai-history__filters">{filters[0] || 'Filtros no disponibles'}</p>
+                      <div className="commercial-ai-history__labels">
+                        <span>Modo: <strong>{mode}</strong></span>
+                        <span>Usó cuota: <strong>{usage}</strong></span>
+                      </div>
+                      <details className="commercial-ai-history__metadata">
+                        <summary>Detalles de la consulta</summary>
+                        {filters.slice(1).map((filter) => <p key={filter}>{filter}</p>)}
+                        <small>{salesProfitabilityHistoryLabels.usageExplanation[entry.quota.reason]}</small>
+                        <small>{snapshotLabel}</small>
+                      </details>
+                    </div>
+                    <div className="commercial-ai-history__actions">
+                      <button
+                        type="button"
+                        onClick={() => onSelect(entry.id)}
+                      >
+                        Ver respuesta
+                      </button>
+                      <button type="button" disabled={isDownloading} onClick={() => onDownload(entry)}><Download size={15} aria-hidden="true" /> Descargar consulta</button>
+                      <button
+                        type="button"
+                        className="commercial-ai-history__delete"
+                        aria-label="Eliminar consulta del historial"
+                        onClick={(event) => { actionTriggerRef.current = event.currentTarget; setConfirmation({ type: 'delete', id: entry.id }); }}
+                      >
+                        <Trash2 size={15} aria-hidden="true" /> Eliminar
+                      </button>
+                    </div>
+                  </article>
+                </li>
+              );
+            })}
+          </ul>
+        ))}
+
+        {selectedEntry && (
+          <section
+            className="commercial-ai-history__detail"
+            id={`commercial-ai-history-detail-${selectedEntry.id}`}
+            aria-labelledby="commercial-ai-history-answer-title"
+          >
+            <div className="commercial-ai-history__detail-header">
+              <div>
+                <p className="commercial-ai-eyebrow">Respuesta guardada · {formatHistoryTimestamp(selectedEntry)}</p>
+                <h3 id="commercial-ai-history-answer-title">{selectedEntry.report?.request?.question || 'Pregunta no disponible'}</h3>
+              </div>
+              <button ref={backRef} type="button" onClick={() => onSelect(null)}>Volver al historial</button>
+            </div>
+            <AnalysisResult
+              result={historyEntryToAnalysisResult(selectedEntry)}
+              onDownload={() => onDownload(selectedEntry)}
+              isDownloading={isDownloading}
+            />
+          </section>
+        )}
+        </div>
+      </section>
+    </CommercialAIHistoryModal>
   );
 }
 
@@ -1699,11 +1738,24 @@ export default function CommercialAIAgentsPage() {
     issue: null
   });
   const [selectedHistoryEntryId, setSelectedHistoryEntryId] = useState(null);
+  const [historyModalContext, setHistoryModalContext] = useState(null);
+  const [showAllSuggestions, setShowAllSuggestions] = useState(false);
+  const questionRef = useRef(null);
   const [isDownloadingHistory, setIsDownloadingHistory] = useState(false);
   const analysisInFlightRef = useRef(false);
   const analysisInputsRevisionRef = useRef(0);
   const historyContextTokenRef = useRef(historyContextToken);
   const historyScopeRef = useRef({ contextToken: null, scopeKey: null });
+  const closeHistory = useCallback(() => {
+    setHistoryModalContext(null);
+    setSelectedHistoryEntryId(null);
+  }, []);
+  useLayoutEffect(() => {
+    const textarea = questionRef.current;
+    if (!textarea) return;
+    textarea.style.height = 'auto';
+    if (textarea.scrollHeight) textarea.style.height = `${Math.min(textarea.scrollHeight, 224)}px`;
+  }, [question]);
   useLayoutEffect(() => {
     historyContextTokenRef.current = historyContextToken;
     return () => {
@@ -1757,6 +1809,7 @@ export default function CommercialAIAgentsPage() {
       issue: null
     });
     setSelectedHistoryEntryId(null);
+    setHistoryModalContext(null);
     setResult(null);
     setDownloadContext(null);
     setDownloadError(null);
@@ -2291,32 +2344,51 @@ export default function CommercialAIAgentsPage() {
   };
 
   const showsProductScenario = intent === 'price_simulation' || intent === 'promotion_opportunity';
+  const selectedSuggestionIndex = SUGGESTED_QUESTIONS.findIndex((suggestion) => suggestion.intent === intent);
+  const visibleSuggestions = SUGGESTED_QUESTIONS.filter((suggestion, index) => (
+    showAllSuggestions || index < (selectedSuggestionIndex > 3 ? 3 : 4) || suggestion.intent === intent
+  ));
 
   return (
-    <main className="commercial-ai-page" aria-labelledby="commercial-ai-title">
+    <main className="commercial-ai-page commercial-ai-pro-workspace" aria-labelledby="commercial-ai-title">
       <header className="commercial-ai-hero">
         <div className="commercial-ai-hero__icon" aria-hidden="true"><Sparkles size={24} /></div>
-        <div><p className="commercial-ai-eyebrow">Centro de agentes IA</p><h1 id="commercial-ai-title">Agentes IA comerciales</h1><p className="commercial-ai-intro">Lanzo-POS calcula los datos; la IA los explica en lenguaje de negocio.</p></div>
+        <div className="commercial-ai-hero__identity"><p className="commercial-ai-eyebrow">Centro de agentes IA · Lía</p><h1 id="commercial-ai-title">Agentes IA comerciales</h1></div>
+        <button type="button" className="commercial-ai-history-trigger" aria-label="Historial" aria-describedby="commercial-ai-history-count"
+          onClick={() => { setSelectedHistoryEntryId(null); setHistoryModalContext(historyContextToken); }}>
+          <History size={18} aria-hidden="true" /> Historial
+          {!activeHistoryState.isLoading && !activeHistoryState.issue && <span aria-hidden="true">{activeHistoryState.entries.length}</span>}
+        </button>
+        <span id="commercial-ai-history-count" className="commercial-ai-visually-hidden">{activeHistoryState.isLoading ? 'Cargando consultas guardadas' : activeHistoryState.issue ? 'Revisa el estado del historial local' : `${activeHistoryState.entries.length} consultas guardadas en este contexto`}</span>
       </header>
 
-      <section className="commercial-ai-card-grid" aria-label="Agentes IA comerciales disponibles">
-        <article className="commercial-ai-card commercial-ai-card--violet commercial-ai-card--active">
-          <div className="commercial-ai-card__topline"><span className="commercial-ai-card__icon" aria-hidden="true"><BarChart3 size={22} /></span><span className="commercial-ai-status">Disponible</span></div>
-          <h2>Ventas y rentabilidad</h2>
-          <p>Revisa rentabilidad, cambios de margen, productos de riesgo y escenarios comerciales.</p>
-          <div className="commercial-ai-card__availability"><ShieldCheck size={16} aria-hidden="true" /><span>Solo lectura: no modifica precios, productos ni datos financieros.</span></div>
-        </article>
-        <article className="commercial-ai-card commercial-ai-card--blue commercial-ai-card--disabled" aria-disabled="true">
-          <div className="commercial-ai-card__topline"><span className="commercial-ai-card__icon" aria-hidden="true"><Globe2 size={22} /></span><span className="commercial-ai-status commercial-ai-status--muted">Próximamente</span></div>
-          <h2>Ecommerce</h2><p>Analiza pedidos, catálogo y oportunidades de tu tienda en línea.</p>
-          <div className="commercial-ai-card__availability"><ShieldCheck size={16} aria-hidden="true" /><span>Este agente aún no está disponible.</span></div>
-        </article>
+      <section className="commercial-ai-agent-selector" aria-labelledby="commercial-ai-agents-label">
+        <h2 id="commercial-ai-agents-label">Agentes</h2>
+        <div className="commercial-ai-agent-selector__options">
+          <button type="button" className="commercial-ai-agent-option" aria-pressed="true" aria-controls="sales-agent-workspace"
+            onClick={() => questionRef.current?.focus()}>
+            <BarChart3 size={18} aria-hidden="true" />
+            <span><span className="commercial-ai-agent-option__name">Ventas y rentabilidad</span>{' '}<span className="commercial-ai-agent-option__status">Activo · Disponible</span></span>
+          </button>
+          <button type="button" className="commercial-ai-agent-option" disabled aria-describedby="commercial-ai-ecommerce-description">
+            <Globe2 size={18} aria-hidden="true" />
+            <span><span className="commercial-ai-agent-option__name">Ecommerce</span>{' '}<span className="commercial-ai-agent-option__status">Próximamente</span></span>
+          </button>
+        </div>
+        <p id="commercial-ai-ecommerce-description" className="commercial-ai-visually-hidden">Analiza pedidos, catálogo y oportunidades de tu tienda en línea. Este agente aún no está disponible.</p>
       </section>
 
-      <section className="commercial-ai-workspace" aria-labelledby="sales-agent-title">
+      <section id="sales-agent-workspace" className="commercial-ai-workspace" aria-labelledby="sales-agent-title">
         <div className="commercial-ai-workspace__heading">
-          <div><p className="commercial-ai-eyebrow">Agente activo</p><h2 id="sales-agent-title">Pregúntale a {LIA_IDENTITY.name} sobre tu negocio</h2><p className="commercial-ai-intro">{LIA_IDENTITY.capabilities}</p></div>
-          <span className="commercial-ai-readonly"><ShieldCheck size={15} /> Solo lectura y simulación</span>
+          <div>
+            <h2 id="sales-agent-title">Pregúntale a {LIA_IDENTITY.name} sobre tu negocio</h2>
+          </div>
+          <details className="commercial-ai-capabilities"><summary>Capacidades y solo lectura</summary>
+            <p>{LIA_IDENTITY.capabilities}</p>
+            <p>Revisa rentabilidad, cambios de margen, productos de riesgo y escenarios comerciales.</p>
+            <p>Lanzo-POS calcula los datos; la IA los explica en lenguaje de negocio.</p>
+            <p>Solo lectura: no modifica precios, productos ni datos financieros.</p>
+          </details>
         </div>
 
         <UsageStatusPanel
@@ -2326,20 +2398,22 @@ export default function CommercialAIAgentsPage() {
           onRetry={refreshUsage}
         />
 
-        <form onSubmit={handleAnalyze}>
+        <form className="commercial-ai-query-form" onSubmit={handleAnalyze}>
           <label className="commercial-ai-label" htmlFor="sales-agent-question">Pregunta libre</label>
-          <textarea id="sales-agent-question" value={question} onChange={handleQuestionChange} placeholder="Ej. ¿Mi negocio es rentable?" rows={3} maxLength={1200}
+          <textarea ref={questionRef} id="sales-agent-question" value={question} onChange={handleQuestionChange} placeholder="Ej. ¿Mi negocio es rentable?" rows={2} maxLength={1200}
             className={questionIssue ? 'lia-form-control--invalid' : undefined}
             {...getValidationFieldProps(questionIssue)} />
           <LiaFieldIssue issue={questionIssue} />
           <LiaFormErrorSummary issues={questionIssue ? [questionIssue] : []} />
-          <div className="commercial-ai-suggestions" aria-label="Preguntas sugeridas">
-            {SUGGESTED_QUESTIONS.map((suggestion) => (
-              <button type="button" className={`commercial-ai-suggestion ${intent === suggestion.intent ? 'is-selected' : ''}`} key={suggestion.intent} onClick={() => selectIntent(suggestion.label)}>
+          <div id="commercial-ai-suggestions" className="commercial-ai-suggestions" role="group" aria-label="Preguntas sugeridas">
+            {visibleSuggestions.map((suggestion) => (
+              <button type="button" aria-pressed={Boolean(question.trim()) && intent === suggestion.intent} className={`commercial-ai-suggestion ${question.trim() && intent === suggestion.intent ? 'is-selected' : ''}`} key={suggestion.intent} onClick={() => selectIntent(suggestion.label)}>
                 {suggestion.label}
               </button>
             ))}
           </div>
+          <button type="button" className="commercial-ai-suggestions-toggle" aria-expanded={showAllSuggestions} aria-controls="commercial-ai-suggestions"
+            onClick={() => setShowAllSuggestions((current) => !current)}>{showAllSuggestions ? 'Ver menos preguntas' : 'Ver todas las preguntas'}<ChevronDown size={15} aria-hidden="true" /></button>
 
           {(questionResolution.topic === 'competition' || intent === 'competitive_analysis') && (
             <CompetitiveEvidenceBuilder
@@ -2596,10 +2670,12 @@ export default function CommercialAIAgentsPage() {
         {isAnalyzing && <div className="commercial-ai-loading" role="status"><span className="commercial-ai-spinner" /> Calculando resultados y preparando una explicación clara…</div>}
         {analysisError && <div className="commercial-ai-error" role="alert"><AlertTriangle size={18} /> {analysisError}</div>}
         {downloadError && <div className="commercial-ai-error" role="alert"><AlertTriangle size={18} /> {downloadError}</div>}
-        <AnalysisResult result={result} onDownload={handleDownload} isDownloading={isDownloading} />
+        <div className="commercial-ai-output-space"><AnalysisResult result={result} onDownload={handleDownload} isDownloading={isDownloading} /></div>
+        {activeHistoryState.issue && <p className="commercial-ai-history__notice" role="status">{HISTORY_ISSUE_MESSAGES[activeHistoryState.issue] || HISTORY_ISSUE_MESSAGES.storage_unavailable}</p>}
       </section>
 
-      <HistoryPanel
+      {historyContextToken && historyModalContext === historyContextToken && <HistoryPanel
+        key={historyContextToken}
         entries={activeHistoryState.entries}
         isLoading={activeHistoryState.isLoading}
         issue={activeHistoryState.issue}
@@ -2609,7 +2685,8 @@ export default function CommercialAIAgentsPage() {
         onClear={handleClearHistory}
         onDownload={handleDownloadHistoryEntry}
         isDownloading={isDownloadingHistory}
-      />
+        onClose={closeHistory}
+      />}
 
       <aside className="commercial-ai-notice" role="note"><ShieldCheck size={18} aria-hidden="true" /><p>Lanzo-POS calcula ventas, costos, utilidad y escenarios. La IA explica esos resultados y no ejecuta cambios.</p></aside>
     </main>

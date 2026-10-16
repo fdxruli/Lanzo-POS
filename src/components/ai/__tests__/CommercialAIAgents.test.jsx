@@ -1,7 +1,9 @@
 // @vitest-environment jsdom
 
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { StrictMode } from 'react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import CommercialAIAgentsPage from '../CommercialAIAgentsPage';
 import CommercialAIAgentsRoute from '../CommercialAIAgentsRoute';
@@ -69,6 +71,24 @@ const renderCenter = () => render(
     </CommercialAIAgentsRoute>
   </MemoryRouter>
 );
+
+const chooseSuggestedQuestion = (name) => {
+  if (!screen.queryByRole('button', { name })) fireEvent.click(screen.getByRole('button', { name: 'Ver todas las preguntas' }));
+  fireEvent.click(screen.getByRole('button', { name }));
+};
+
+const openHistory = async () => {
+  fireEvent.click(screen.getByRole('button', { name: 'Historial' }));
+  const dialog = screen.getByRole('dialog', { name: 'Historial de consultas' });
+  await waitFor(() => expect(within(dialog).queryAllByText('Cargando historial local…')).toHaveLength(0));
+  return dialog;
+};
+
+const expectEmptyHistory = async () => {
+  await openHistory();
+  expect(screen.getByText('Todavía no hay consultas completadas en este contexto.')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Cerrar historial' }));
+};
 
 const rerenderCenter = (view) => view.rerender(
   <MemoryRouter initialEntries={['/agentes-ia']}>
@@ -160,16 +180,208 @@ describe('commercial AI center', () => {
     vi.unstubAllGlobals();
   });
 
+  it('places the compact agent selector before the PRO workspace and keeps four suggestions', async () => {
+    const { container } = renderCenter();
+    const suggestions = screen.getByRole('group', { name: 'Preguntas sugeridas' });
+    expect(within(suggestions).getAllByRole('button')).toHaveLength(4);
+    expect(screen.getByRole('button', { name: 'Ver todas las preguntas' })).toHaveAttribute('aria-expanded', 'false');
+    expect(container.querySelector('.commercial-ai-card-grid')).toBeNull();
+    const selector = screen.getByRole('region', { name: 'Agentes' });
+    expect(selector.compareDocumentPosition(screen.getByRole('region', { name: 'Pregúntale a Lía sobre tu negocio' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(selector).getByRole('button', { name: 'Ventas y rentabilidad Activo · Disponible', pressed: true })).toHaveAttribute('aria-controls', 'sales-agent-workspace');
+    expect(within(selector).getByRole('button', { name: 'Ecommerce Próximamente' })).toBeDisabled();
+    expect(container.querySelector('.commercial-ai-other-agents')).toBeNull();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(container.querySelector('.commercial-ai-history')).toBeNull();
+    expect(screen.getByRole('textbox', { name: 'Pregunta libre' })).toHaveAttribute('maxlength', '1200');
+    await waitFor(() => expect(runtime.getUsage).toHaveBeenCalledTimes(1));
+    expect(runtime.runAgent).not.toHaveBeenCalled();
+  });
+
+  it('focuses the active agent question without resetting inputs, calling IA or refreshing quota', async () => {
+    renderCenter();
+    await screen.findByText('Usados: 2 · Límite: 15 · Disponibles: 13');
+    chooseSuggestedQuestion('¿Qué promoción puedo simular?');
+    fireEvent.change(screen.getByRole('combobox', { name: /Periodo/ }), { target: { value: '90' } });
+    fireEvent.change(screen.getByLabelText(/Descuento/), { target: { value: '12' } });
+    const user = userEvent.setup();
+    const activeAgent = screen.getByRole('button', { name: 'Ventas y rentabilidad Activo · Disponible' });
+    activeAgent.focus();
+    await user.keyboard('{Enter}');
+    expect(screen.getByRole('textbox', { name: 'Pregunta libre' })).toHaveFocus();
+    expect(screen.getByRole('textbox', { name: 'Pregunta libre' })).toHaveValue('¿Qué promoción puedo simular?');
+    expect(screen.getByRole('combobox', { name: /Periodo/ })).toHaveValue('90');
+    expect(screen.getByLabelText(/Descuento/)).toHaveValue(12);
+    fireEvent.click(screen.getByRole('button', { name: 'Ecommerce Próximamente' }));
+    expect(activeAgent).toHaveAttribute('aria-pressed', 'true');
+    expect(runtime.runAgent).not.toHaveBeenCalled();
+    expect(runtime.getUsage).toHaveBeenCalledTimes(1);
+  });
+
+  it('expands all ten questions and keeps a later selection visible without losing parameters or using quota', async () => {
+    renderCenter();
+    await screen.findByText('Usados: 2 · Límite: 15 · Disponibles: 13');
+    fireEvent.click(screen.getByRole('button', { name: 'Ver todas las preguntas' }));
+    expect(within(screen.getByRole('group', { name: 'Preguntas sugeridas' })).getAllByRole('button')).toHaveLength(10);
+    chooseSuggestedQuestion('¿Qué promoción puedo simular?');
+    fireEvent.change(screen.getByRole('combobox', { name: /Periodo/ }), { target: { value: '90' } });
+    const discount = screen.getByLabelText(/Descuento/);
+    fireEvent.change(discount, { target: { value: '12' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Ver menos preguntas' }));
+    expect(screen.getByRole('button', { name: '¿Qué promoción puedo simular?' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(screen.getByRole('group', { name: 'Preguntas sugeridas' })).getAllByRole('button')).toHaveLength(4);
+    expect(discount).toHaveValue(12);
+    expect(screen.getByRole('combobox', { name: /Periodo/ })).toHaveValue('90');
+    fireEvent.click(screen.getByRole('button', { name: 'Ver todas las preguntas' }));
+    expect(discount).toHaveValue(12);
+    expect(runtime.runAgent).not.toHaveBeenCalled();
+    expect(runtime.getUsage).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['7', '30', '90', '365'])('preserves period %s and the main question across history and suggestions', async (days) => {
+    renderCenter();
+    await screen.findByText('Usados: 2 · Límite: 15 · Disponibles: 13');
+    fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), { target: { value: '¿Mi negocio es rentable?' } });
+    fireEvent.change(screen.getByRole('combobox', { name: /Periodo/ }), { target: { value: days } });
+    await openHistory();
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar historial' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Ver todas las preguntas' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Ver menos preguntas' }));
+    expect(screen.getByRole('combobox', { name: /Periodo/ })).toHaveValue(days);
+    expect(screen.getByRole('textbox', { name: 'Pregunta libre' })).toHaveValue('¿Mi negocio es rentable?');
+    expect(runtime.runAgent).not.toHaveBeenCalled();
+    expect(runtime.getUsage).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders an identical deterministic report tree in history and preserves the current report after closing', async () => {
+    runtime.runAgent.mockResolvedValueOnce({
+      ...completedAgentResult('Reporte de invariancia'),
+      response: {
+        ...completedAgentResult('Reporte de invariancia').response,
+        intent: 'profitability_summary',
+        calculations: [{ label: 'Ventas', value: 300, formula: 'suma' }],
+        assumptions: ['Supuesto conservado'], limitations: ['Limitación conservada']
+      }
+    });
+    const { container } = renderCenter();
+    chooseSuggestedQuestion('¿Mi negocio es rentable?');
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+    await screen.findByRole('heading', { name: 'Reporte de invariancia' });
+    await waitFor(() => expect(runtime.historyStorage.size).toBe(1));
+    const original = container.querySelector('.commercial-ai-output-space .commercial-ai-result').innerHTML;
+    const usageCalls = runtime.getUsage.mock.calls.length;
+    const dialog = await openHistory();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Ver respuesta' }));
+    expect(dialog.querySelector('.commercial-ai-result').innerHTML).toBe(original);
+    expect(within(dialog).queryByRole('button', { name: 'Ver respuesta' })).not.toBeInTheDocument();
+    const scroller = dialog.querySelector('.commercial-ai-history-modal__body');
+    scroller.scrollTop = 400;
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Volver al historial' }));
+    expect(scroller.scrollTop).toBe(0);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cerrar historial' }));
+    expect(container.querySelector('.commercial-ai-output-space .commercial-ai-result').innerHTML).toBe(original);
+    expect(runtime.runAgent).toHaveBeenCalledTimes(1);
+    expect(runtime.getUsage).toHaveBeenCalledTimes(usageCalls);
+  });
+
+  it('keeps the history count current and requires cancellation or confirmation before deleting', async () => {
+    renderCenter();
+    chooseSuggestedQuestion('¿Mi negocio es rentable?');
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+    await screen.findByRole('heading', { name: 'Resumen de prueba' });
+    const dialog = await openHistory();
+    expect(within(dialog).getByText('1 consulta guardada')).toBeInTheDocument();
+    const usageCalls = runtime.getUsage.mock.calls.length;
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Descargar consulta' }));
+    expect(runtime.createObjectURL).toHaveBeenCalledTimes(1);
+    expect(runtime.runAgent).toHaveBeenCalledTimes(1);
+    expect(runtime.getUsage).toHaveBeenCalledTimes(usageCalls);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Eliminar consulta del historial' }));
+    expect(within(dialog).getByRole('button', { name: 'Conservar consulta' })).toHaveFocus();
+    expect(within(dialog).getByRole('button', { name: 'Cerrar historial' })).toBeDisabled();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(dialog).toBeInTheDocument();
+    expect(within(dialog).queryByRole('button', { name: 'Sí, eliminar consulta' })).not.toBeInTheDocument();
+    expect(within(dialog).getAllByRole('button', { name: 'Ver respuesta' })).toHaveLength(1);
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Eliminar consulta del historial' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Sí, eliminar consulta' }));
+    expect(dialog).toBeInTheDocument();
+    expect(within(dialog).getByText('0 consultas guardadas')).toBeInTheDocument();
+    expect(within(dialog).getByText('Todavía no hay consultas completadas en este contexto.')).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cerrar historial' }));
+    expect(screen.getByRole('button', { name: 'Historial' })).toHaveAccessibleDescription('0 consultas guardadas en este contexto');
+  });
+
+  it.each(['session', 'tenant', 'actor', 'license'])('invalidates an open historical detail immediately on %s change', async (context) => {
+    const view = renderCenter();
+    chooseSuggestedQuestion('¿Mi negocio es rentable?');
+    fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+    await screen.findByRole('heading', { name: 'Resumen de prueba' });
+    const dialog = await openHistory();
+    fireEvent.click(await within(dialog).findByRole('button', { name: 'Ver respuesta' }));
+    if (context === 'license') runtime.licenseDetails = { ...entitledLicense, license_key: 'license-b' };
+    else if (context === 'tenant') runtime.actorSnapshot = { ...boundAdmin, tenant: { ...boundAdmin.tenant, opaqueId: 'tenant-b' } };
+    else if (context === 'actor') runtime.actorSnapshot = { ...boundAdmin, actorKey: 'admin:admin-b', actorId: 'admin-b' };
+    else runtime.actorSnapshot = { ...boundAdmin, sessionId: 'session-b' };
+    rerenderCenter(view);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByText('Resumen de prueba')).not.toBeInTheDocument();
+    await expectEmptyHistory();
+    expect(screen.queryByText('Resumen de prueba')).not.toBeInTheDocument();
+    expect(runtime.runAgent).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps offline history interactions local and preserves the quota limit warning', async () => {
+    runtime.getUsage.mockResolvedValue({ used: 15, limit: 15, remaining: 0, isLimitReached: true });
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    renderCenter();
+    await screen.findByText('Límite alcanzado para el periodo actual.');
+    await expectEmptyHistory();
+    fireEvent.click(screen.getByRole('button', { name: 'Ver todas las preguntas' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Ver menos preguntas' }));
+    expect(screen.getByText('Usados: 15 · Límite: 15 · Disponibles: 0')).toBeInTheDocument();
+    expect(runtime.runAgent).not.toHaveBeenCalled();
+    expect(runtime.getUsage).toHaveBeenCalledTimes(1);
+  });
+
+  it('announces near-limit usage using actual numbers', async () => {
+    runtime.getUsage.mockResolvedValue({ used: 13, limit: 15, remaining: 2, isLimitReached: false });
+    renderCenter();
+    expect(await screen.findByText('Te acercas al límite del periodo.')).toBeInTheDocument();
+    expect(screen.getByText('Usados: 13 · Límite: 15 · Disponibles: 2')).toBeInTheDocument();
+  });
+
+  it('restores the history opener focus and document scroll in StrictMode with keyboard-only interaction', async () => {
+    const user = userEvent.setup();
+    const previousOverflow = document.body.style.overflow;
+    render(<StrictMode><MemoryRouter><CommercialAIAgentsRoute><CommercialAIAgentsPage /></CommercialAIAgentsRoute></MemoryRouter></StrictMode>);
+    const opener = screen.getByRole('button', { name: 'Historial' });
+    opener.focus();
+    await user.keyboard('{Enter}');
+    const dialog = screen.getByRole('dialog', { name: 'Historial de consultas' });
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    const close = within(dialog).getByRole('button', { name: 'Cerrar historial' });
+    expect(close).toHaveFocus();
+    expect(document.body.style.overflow).toBe('hidden');
+    await user.tab({ shift: true });
+    expect(dialog).toContainElement(document.activeElement);
+    await user.tab();
+    expect(dialog).toContainElement(document.activeElement);
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(opener).toHaveFocus();
+    expect(document.body.style.overflow).toBe(previousOverflow);
+  });
+
   it('shows the functional sales agent and keeps ecommerce blocked', () => {
     renderCenter();
 
     expect(screen.getByRole('heading', { name: 'Agentes IA comerciales' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Agentes IA de Lanzo' })).not.toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Ventas y rentabilidad' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Ecommerce' })).toBeInTheDocument();
-    expect(screen.getByText('Disponible')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Ventas y rentabilidad Activo · Disponible', pressed: true })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Ecommerce Próximamente' })).toBeDisabled();
     expect(screen.getByText('Próximamente')).toBeInTheDocument();
-    expect(screen.getByText('Este agente aún no está disponible.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Ecommerce Próximamente' })).toHaveAccessibleDescription('Analiza pedidos, catálogo y oportunidades de tu tienda en línea. Este agente aún no está disponible.');
     expect(screen.getByRole('heading', { name: 'Pregúntale a Lía sobre tu negocio' })).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: 'Pregunta libre' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Analizar' })).toBeEnabled();
@@ -255,7 +467,7 @@ describe('commercial AI center', () => {
 
     renderCenter();
     await screen.findByText('Usados: 2 · Límite: 15 · Disponibles: 13');
-    fireEvent.click(screen.getByRole('button', { name: '¿Mi negocio es rentable?' }));
+    chooseSuggestedQuestion('¿Mi negocio es rentable?');
     fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
 
     await waitFor(() => expect(runtime.getUsage).toHaveBeenCalledTimes(2));
@@ -280,7 +492,7 @@ describe('commercial AI center', () => {
 
     renderCenter();
     await screen.findByText('Usados: 2 · Límite: 15 · Disponibles: 13');
-    fireEvent.click(screen.getByRole('button', { name: '¿Qué combos puedo formar?' }));
+    chooseSuggestedQuestion('¿Qué combos puedo formar?');
     fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
 
     await waitFor(() => expect(screen.getByText('No pudimos procesar esta consulta. Revisa las opciones seleccionadas e inténtalo nuevamente.')).toBeInTheDocument());
@@ -336,6 +548,7 @@ describe('commercial AI center', () => {
     fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), { target: { value: question } });
     fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
 
+    await openHistory();
     expect(await screen.findByRole('heading', { name: question })).toBeInTheDocument();
     expect(screen.getByText('Análisis automático')).toBeInTheDocument();
     expect(screen.getByText('No', { exact: true })).toBeInTheDocument();
@@ -375,6 +588,7 @@ describe('commercial AI center', () => {
     fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), { target: { value: '¿Mi negocio es rentable?' } });
     fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
 
+    await openHistory();
     expect(await screen.findByText('Caché')).toBeInTheDocument();
     expect(screen.getByText('No', { exact: true })).toBeInTheDocument();
     expect(runtime.getUsage).toHaveBeenCalledTimes(1);
@@ -416,6 +630,7 @@ describe('commercial AI center', () => {
     expect(screen.getByText(/La respuesta de Lía no está disponible/)).toBeInTheDocument();
     expect(screen.getByText(/El proveedor devolvió un formato narrativo no válido/)).toBeInTheDocument();
     expect(screen.getByText(/El uso de IA quedó registrado/)).toBeInTheDocument();
+    await openHistory();
     expect(await screen.findByText('IA no disponible')).toBeInTheDocument();
     expect(screen.getByText('IA no disponible').closest('article')).toHaveTextContent('Usó cuota: Sí');
     expect(runtime.runAgent).toHaveBeenCalledTimes(1);
@@ -581,7 +796,7 @@ describe('commercial AI center', () => {
     let resolveRun;
     runtime.runAgent.mockImplementationOnce(() => new Promise((resolve) => { resolveRun = resolve; }));
     const view = renderCenter();
-    expect(await screen.findByText('Todavía no hay consultas completadas en este contexto.')).toBeInTheDocument();
+    await expectEmptyHistory();
 
     fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), { target: { value: '¿Mi negocio es rentable?' } });
     fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
@@ -592,7 +807,7 @@ describe('commercial AI center', () => {
       tenant: { opaqueId: 'tenant-b', databaseName: 'LanzoDB_t_tenant-b', generation: 2 }
     };
     rerenderCenter(view);
-    expect(await screen.findByText('Todavía no hay consultas completadas en este contexto.')).toBeInTheDocument();
+    await expectEmptyHistory();
 
     await act(async () => {
       resolveRun(completedAgentResult('Respuesta del negocio anterior'));
@@ -607,7 +822,7 @@ describe('commercial AI center', () => {
     let resolveRun;
     runtime.runAgent.mockImplementationOnce(() => new Promise((resolve) => { resolveRun = resolve; }));
     const view = renderCenter();
-    expect(await screen.findByText('Todavía no hay consultas completadas en este contexto.')).toBeInTheDocument();
+    await expectEmptyHistory();
 
     fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), { target: { value: '¿Mi negocio es rentable?' } });
     fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
@@ -619,7 +834,7 @@ describe('commercial AI center', () => {
 
     runtime.actorSnapshot = { ...boundAdmin, sessionId: 'session-b' };
     rerenderCenter(view);
-    expect(await screen.findByText('Todavía no hay consultas completadas en este contexto.')).toBeInTheDocument();
+    await expectEmptyHistory();
 
     await act(async () => {
       resolveRun(completedAgentResult('Respuesta de la sesión anterior'));
@@ -705,16 +920,19 @@ describe('commercial AI center', () => {
 
     expect(await screen.findByText('No pudimos procesar esta consulta. Revisa las opciones seleccionadas e inténtalo nuevamente.')).toBeInTheDocument();
     expect(screen.queryByText('No mostrar como exitoso')).not.toBeInTheDocument();
-    expect(screen.getByText('Todavía no hay consultas completadas en este contexto.')).toBeInTheDocument();
+    await expectEmptyHistory();
   });
 
   it('opens, downloads, deletes, and clears snapshots without rerunning analysis or refreshing quota', async () => {
     renderCenter();
     fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), { target: { value: '¿Por qué cambió mi margen?' } });
     fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+    await openHistory();
     await waitFor(() => expect(screen.getByRole('heading', { name: '¿Por qué cambió mi margen?' })).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar historial' }));
     fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), { target: { value: '¿Mi negocio es rentable?' } });
     fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+    await openHistory();
     await waitFor(() => expect(screen.getAllByRole('button', { name: 'Ver respuesta' })).toHaveLength(2));
     await waitFor(() => expect(runtime.getUsage).toHaveBeenCalledTimes(3));
 
@@ -724,7 +942,9 @@ describe('commercial AI center', () => {
     const historyDownload = screen.getAllByRole('button', { name: 'Descargar reporte completo' }).at(-1);
     fireEvent.click(historyDownload);
     await waitFor(() => expect(runtime.createObjectURL).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole('button', { name: 'Volver al historial' }));
     fireEvent.click(screen.getAllByRole('button', { name: 'Eliminar consulta del historial' })[0]);
+    fireEvent.click(screen.getByRole('button', { name: 'Sí, eliminar consulta' }));
     expect(screen.getAllByRole('button', { name: 'Ver respuesta' })).toHaveLength(1);
     fireEvent.click(screen.getByRole('button', { name: 'Limpiar historial' }));
     fireEvent.click(screen.getByRole('button', { name: 'Sí, limpiar historial' }));
@@ -738,6 +958,7 @@ describe('commercial AI center', () => {
     const view = renderCenter();
     fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), { target: { value: '¿Mi negocio es rentable?' } });
     fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
+    await openHistory();
     expect(await screen.findByRole('heading', { name: '¿Mi negocio es rentable?' })).toBeInTheDocument();
 
     runtime.actorSnapshot = {
@@ -753,7 +974,7 @@ describe('commercial AI center', () => {
       </MemoryRouter>
     );
 
-    expect(await screen.findByText('Todavía no hay consultas completadas en este contexto.')).toBeInTheDocument();
+    await expectEmptyHistory();
     expect(screen.queryByRole('heading', { name: '¿Mi negocio es rentable?' })).not.toBeInTheDocument();
   });
 
@@ -838,6 +1059,7 @@ describe('commercial AI center', () => {
     expect(screen.getByText(/Lanzo no busca competidores en Internet/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Conocer Lanzo Nube/ })).toHaveAttribute('href', '/acerca-de');
     expect(container.querySelectorAll('.pro-feature-showcase__feature')).toHaveLength(4);
+    expect(screen.queryByRole('region', { name: 'Agentes' })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Agentes IA comerciales' })).not.toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: 'Pregunta libre' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Analizar' })).not.toBeInTheDocument();
@@ -935,7 +1157,7 @@ describe('commercial AI center', () => {
 
   it('reinfers a free question after a previous scenario suggestion', async () => {
     renderCenter();
-    fireEvent.click(screen.getByRole('button', { name: '¿Qué promoción puedo simular?' }));
+    chooseSuggestedQuestion('¿Qué promoción puedo simular?');
     fireEvent.change(screen.getByRole('textbox', { name: 'Pregunta libre' }), { target: { value: '¿Mi negocio es rentable?' } });
     fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
 
@@ -975,6 +1197,7 @@ describe('commercial AI center', () => {
     expect(runtime.runAgent.mock.calls[0][0]).toMatchObject({
       intent: 'goal_simulation', scenario: { goalType: 'revenue', targetValue: 120000 }
     });
+    await openHistory();
     expect(await screen.findByRole('heading', { name: '¿Cuánto necesito vender para facturar $100,000?' })).toBeInTheDocument();
     expect(screen.getByText('Tickets adicionales')).toBeInTheDocument();
     expect(screen.getByText('Ticket requerido')).toBeInTheDocument();
@@ -1051,6 +1274,7 @@ describe('commercial AI center', () => {
     expect(runtime.runAgent.mock.calls[0][0]).toMatchObject({
       intent: 'what_if_analysis', scenario: { changeType: 'product', changePercent: 20, productName: 'Producto A' }
     });
+    await openHistory();
     expect(await screen.findAllByRole('heading', { name: '¿Qué pasa si vendo más de este producto?' })).toHaveLength(1);
     expect(screen.getByText('Costo actual')).toBeInTheDocument();
     expect(screen.getByText('Costo simulado')).toBeInTheDocument();
@@ -1077,7 +1301,7 @@ describe('commercial AI center', () => {
     expect(screen.queryByLabelText('Intención')).not.toBeInTheDocument();
     expect(runtime.runAgent).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole('button', { name: '¿Qué pasa si aumento el precio?' }));
+    chooseSuggestedQuestion('¿Qué pasa si aumento el precio?');
     expect(runtime.loadProducts).not.toHaveBeenCalled();
     fireEvent.change(screen.getByLabelText('Nuevo precio'), { target: { value: '80' } });
     await waitFor(() => expect(runtime.loadProducts).toHaveBeenCalledTimes(1));
@@ -1101,7 +1325,7 @@ describe('commercial AI center', () => {
     }));
 
     renderCenter();
-    fireEvent.click(screen.getByRole('button', { name: '¿Qué pasa si aumento el precio?' }));
+    chooseSuggestedQuestion('¿Qué pasa si aumento el precio?');
     fireEvent.change(screen.getByLabelText('Nuevo precio'), { target: { value: '80' } });
     await waitFor(() => expect(runtime.loadProducts).toHaveBeenCalledTimes(1));
     expect(runtime.loadProducts.mock.calls[0][0].period).toMatchObject({ days: 30, timezone: 'America/New_York' });
@@ -1118,7 +1342,7 @@ describe('commercial AI center', () => {
 
   it('routes the profitability suggestion to its own internal intent', async () => {
     renderCenter();
-    fireEvent.click(screen.getByRole('button', { name: '¿Mi negocio es rentable?' }));
+    chooseSuggestedQuestion('¿Mi negocio es rentable?');
     fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
 
     await waitFor(() => expect(runtime.runAgent).toHaveBeenCalledTimes(1));
@@ -1151,7 +1375,7 @@ describe('commercial AI center', () => {
     });
 
     renderCenter();
-    fireEvent.click(screen.getByRole('button', { name: '¿Mi negocio es rentable?' }));
+    chooseSuggestedQuestion('¿Mi negocio es rentable?');
     fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
 
     expect(await screen.findByRole('heading', { name: directAnswer })).toBeInTheDocument();
@@ -1191,7 +1415,7 @@ describe('commercial AI center', () => {
     });
 
     renderCenter();
-    fireEvent.click(screen.getByRole('button', { name: '¿Dónde tengo oportunidades en mi surtido?' }));
+    chooseSuggestedQuestion('¿Dónde tengo oportunidades en mi surtido?');
     fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
 
     expect(await screen.findByRole('heading', { name: 'El catálogo tiene una concentración visible en Bebidas.' })).toBeInTheDocument();
@@ -1202,6 +1426,7 @@ describe('commercial AI center', () => {
     expect(screen.getByText('Ventas concentradas en el producto principal')).toBeInTheDocument();
 
     expect(runtime.runAgent).toHaveBeenCalledTimes(1);
+    await openHistory();
     const historyResponseButtons = await screen.findAllByRole('button', { name: 'Ver respuesta' });
     fireEvent.click(historyResponseButtons[0]);
     expect(screen.getAllByText('Producto sin movimiento')).toHaveLength(2);
@@ -1209,7 +1434,7 @@ describe('commercial AI center', () => {
 
   it('sends an empty scenario for combos after a price simulation', async () => {
     renderCenter();
-    fireEvent.click(screen.getByRole('button', { name: '¿Qué pasa si aumento el precio?' }));
+    chooseSuggestedQuestion('¿Qué pasa si aumento el precio?');
     fireEvent.change(screen.getByLabelText('Nuevo precio'), { target: { value: '120' } });
     await waitFor(() => expect(runtime.loadProducts).toHaveBeenCalledTimes(1));
     const productPicker = screen.getByRole('combobox', { name: 'Producto' });
@@ -1218,7 +1443,7 @@ describe('commercial AI center', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
     await waitFor(() => expect(runtime.runAgent).toHaveBeenCalledTimes(1));
 
-    fireEvent.click(screen.getByRole('button', { name: '¿Qué combos puedo formar?' }));
+    chooseSuggestedQuestion('¿Qué combos puedo formar?');
     await waitFor(() => expect(screen.queryByRole('combobox', { name: 'Producto' })).not.toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
     await waitFor(() => expect(runtime.runAgent).toHaveBeenCalledTimes(2));
@@ -1232,14 +1457,14 @@ describe('commercial AI center', () => {
 
   it('sends an empty scenario for combos after a promotion simulation', async () => {
     renderCenter();
-    fireEvent.click(screen.getByRole('button', { name: '¿Qué promoción puedo simular?' }));
+    chooseSuggestedQuestion('¿Qué promoción puedo simular?');
     await waitFor(() => expect(runtime.loadProducts).toHaveBeenCalledTimes(1));
     fireEvent.change(screen.getByRole('combobox', { name: 'Producto' }), { target: { value: 'Producto B' } });
     fireEvent.change(screen.getByLabelText('Descuento porcentual'), { target: { value: '20' } });
     fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
     await waitFor(() => expect(runtime.runAgent).toHaveBeenCalledTimes(1));
 
-    fireEvent.click(screen.getByRole('button', { name: '¿Qué combos puedo formar?' }));
+    chooseSuggestedQuestion('¿Qué combos puedo formar?');
     fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
     await waitFor(() => expect(runtime.runAgent).toHaveBeenCalledTimes(2));
     expect(runtime.runAgent.mock.calls[1][0].scenario).toEqual({});
@@ -1257,26 +1482,26 @@ describe('commercial AI center', () => {
       await waitFor(() => expect(runtime.runAgent).toHaveBeenCalledTimes(count));
     };
 
-    fireEvent.click(screen.getByRole('button', { name: '¿Qué pasa si aumento el precio?' }));
+    chooseSuggestedQuestion('¿Qué pasa si aumento el precio?');
     fireEvent.change(screen.getByLabelText('Nuevo precio'), { target: { value: '120' } });
     await productPicker('Producto A');
     await submit(1);
 
-    fireEvent.click(screen.getByRole('button', { name: '¿Qué promoción puedo simular?' }));
+    chooseSuggestedQuestion('¿Qué promoción puedo simular?');
     await productPicker('Producto B');
     fireEvent.change(screen.getByLabelText('Descuento porcentual'), { target: { value: '20' } });
     await submit(2);
 
-    fireEvent.click(screen.getByRole('button', { name: '¿Por qué cambió mi margen?' }));
+    chooseSuggestedQuestion('¿Por qué cambió mi margen?');
     expect(screen.getByRole('checkbox', { name: /comparar/i })).toBeChecked();
     await submit(3);
 
-    fireEvent.click(screen.getByRole('button', { name: '¿Qué pasa si aumento el precio?' }));
+    chooseSuggestedQuestion('¿Qué pasa si aumento el precio?');
     fireEvent.change(screen.getByLabelText('Nuevo precio'), { target: { value: '95' } });
     await productPicker('Producto A');
     await submit(4);
 
-    fireEvent.click(screen.getByRole('button', { name: '¿Qué combos puedo formar?' }));
+    chooseSuggestedQuestion('¿Qué combos puedo formar?');
     expect(screen.queryByRole('combobox', { name: 'Producto' })).not.toBeInTheDocument();
     expect(screen.queryByRole('checkbox', { name: /comparar/i })).not.toBeInTheDocument();
     await submit(5);
@@ -1289,7 +1514,7 @@ describe('commercial AI center', () => {
 
   it('converts numeric scenario inputs and removes irrelevant fields before submitting', async () => {
     renderCenter();
-    fireEvent.click(screen.getByRole('button', { name: '¿Qué pasa si aumento el precio?' }));
+    chooseSuggestedQuestion('¿Qué pasa si aumento el precio?');
     fireEvent.change(screen.getByLabelText('Nuevo precio'), { target: { value: '120' } });
     await waitFor(() => expect(runtime.loadProducts).toHaveBeenCalledTimes(1));
     const product = screen.getByRole('combobox', { name: 'Producto' });
@@ -1304,7 +1529,7 @@ describe('commercial AI center', () => {
       historicalVolume: 0
     });
 
-    fireEvent.click(screen.getByRole('button', { name: '¿Qué combos puedo formar?' }));
+    chooseSuggestedQuestion('¿Qué combos puedo formar?');
     fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
     await waitFor(() => expect(runtime.runAgent).toHaveBeenCalledTimes(2));
     expect(runtime.runAgent.mock.calls[1][0].scenario).toEqual({});
@@ -1312,7 +1537,7 @@ describe('commercial AI center', () => {
 
   it('clears scenario fields when the question changes even if the intent stays the same', async () => {
     renderCenter();
-    fireEvent.click(screen.getByRole('button', { name: '¿Qué pasa si aumento el precio?' }));
+    chooseSuggestedQuestion('¿Qué pasa si aumento el precio?');
     fireEvent.change(screen.getByLabelText('Nuevo precio'), { target: { value: '120' } });
     await waitFor(() => expect(runtime.loadProducts).toHaveBeenCalledTimes(1));
     const product = screen.getByRole('combobox', { name: 'Producto' });
@@ -1336,7 +1561,7 @@ describe('commercial AI center', () => {
     let completeAnalysis;
     runtime.runAgent.mockImplementationOnce(() => new Promise((resolve) => { completeAnalysis = resolve; }));
     renderCenter();
-    fireEvent.click(screen.getByRole('button', { name: '¿Cómo puedo aumentar mis ventas?' }));
+    chooseSuggestedQuestion('¿Cómo puedo aumentar mis ventas?');
     fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
     await waitFor(() => expect(runtime.runAgent).toHaveBeenCalledTimes(1));
 
@@ -1364,15 +1589,15 @@ describe('commercial AI center', () => {
 
   it('shows only contextual filters and defaults comparison to explain_change', async () => {
     renderCenter();
-    fireEvent.click(screen.getByRole('button', { name: '¿Qué combos puedo formar?' }));
+    chooseSuggestedQuestion('¿Qué combos puedo formar?');
     expect(screen.queryByRole('combobox', { name: 'Producto' })).not.toBeInTheDocument();
     expect(screen.queryByRole('checkbox', { name: /comparar/i })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: '¿Por qué cambió mi margen?' }));
+    chooseSuggestedQuestion('¿Por qué cambió mi margen?');
     const comparison = screen.getByRole('checkbox', { name: /comparar/i });
     expect(comparison).toBeChecked();
     fireEvent.click(comparison);
-    fireEvent.click(screen.getByRole('button', { name: '¿Qué combos puedo formar?' }));
+    chooseSuggestedQuestion('¿Qué combos puedo formar?');
     expect(screen.queryByRole('checkbox', { name: /comparar/i })).not.toBeInTheDocument();
   });
 
@@ -1410,7 +1635,7 @@ describe('commercial AI center', () => {
       providerCalled: false
     });
     renderCenter();
-    fireEvent.click(screen.getByRole('button', { name: '¿Qué combos puedo formar?' }));
+    chooseSuggestedQuestion('¿Qué combos puedo formar?');
     fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
 
     await waitFor(() => expect(screen.getByRole('row', { name: /Producto A \+ Producto B/ })).toBeInTheDocument());
@@ -1765,7 +1990,7 @@ describe('commercial AI center', () => {
       ['¿Qué promoción puedo simular?', 'promotion_opportunity']
     ];
     for (const [label, expectedIntent] of expected) {
-      fireEvent.click(screen.getByRole('button', { name: label }));
+      chooseSuggestedQuestion(label);
       if (expectedIntent === 'price_simulation') {
         fireEvent.change(screen.getByLabelText('Nuevo precio'), { target: { value: '80' } });
         await waitFor(() => expect(screen.getByRole('option', { name: 'Producto A' })).toBeInTheDocument());
@@ -1783,7 +2008,7 @@ describe('commercial AI center', () => {
 
   it('keeps an incomplete price scenario local until the required product and price are supplied', async () => {
     renderCenter();
-    fireEvent.click(screen.getByRole('button', { name: '¿Qué pasa si aumento el precio?' }));
+    chooseSuggestedQuestion('¿Qué pasa si aumento el precio?');
     fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
 
     expect(screen.getByRole('heading', { name: 'Hay 2 datos que debes revisar' })).toBeInTheDocument();
@@ -1801,7 +2026,7 @@ describe('commercial AI center', () => {
     let resolveProducts;
     runtime.loadProducts.mockImplementationOnce(() => new Promise((resolve) => { resolveProducts = resolve; }));
     renderCenter();
-    fireEvent.click(screen.getByRole('button', { name: '¿Qué pasa si aumento el precio?' }));
+    chooseSuggestedQuestion('¿Qué pasa si aumento el precio?');
     fireEvent.change(screen.getByLabelText('Nuevo precio'), { target: { value: '80' } });
 
     await waitFor(() => expect(runtime.loadProducts).toHaveBeenCalledTimes(1));
@@ -1825,7 +2050,7 @@ describe('commercial AI center', () => {
       .mockRejectedValueOnce(new Error('catalog failed'))
       .mockResolvedValueOnce({ products: [{ name: 'Producto A', units: 1, netSales: 20, averagePrice: 20 }] });
     renderCenter();
-    fireEvent.click(screen.getByRole('button', { name: '¿Qué pasa si aumento el precio?' }));
+    chooseSuggestedQuestion('¿Qué pasa si aumento el precio?');
     fireEvent.change(screen.getByLabelText('Nuevo precio'), { target: { value: '80' } });
 
     expect(await screen.findByText('No se pudieron preparar los productos de este periodo.')).toBeInTheDocument();
@@ -1843,7 +2068,7 @@ describe('commercial AI center', () => {
         : [{ name: 'Producto A', units: 1, netSales: 30, averagePrice: 30 }]
     }));
     renderCenter();
-    fireEvent.click(screen.getByRole('button', { name: '¿Qué pasa si aumento el precio?' }));
+    chooseSuggestedQuestion('¿Qué pasa si aumento el precio?');
     fireEvent.change(screen.getByLabelText('Nuevo precio'), { target: { value: '80' } });
     await waitFor(() => expect(runtime.loadProducts).toHaveBeenCalledTimes(1));
     const picker = screen.getByRole('combobox', { name: 'Producto' });
@@ -1898,7 +2123,7 @@ describe('commercial AI center', () => {
       originalError: { requestId: 'request-1', cause: 'stale scenario' }
     }));
     renderCenter();
-    fireEvent.click(screen.getByRole('button', { name: '¿Mi negocio es rentable?' }));
+    chooseSuggestedQuestion('¿Mi negocio es rentable?');
     fireEvent.click(screen.getByRole('button', { name: 'Analizar' }));
     await waitFor(() => expect(screen.getByText('No pudimos procesar esta consulta. Revisa las opciones seleccionadas e inténtalo nuevamente.')).toBeInTheDocument());
     expect(screen.queryByText(/Actualiza el Preview|request-1|stale scenario/i)).not.toBeInTheDocument();
