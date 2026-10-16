@@ -4,7 +4,7 @@
 - **PR:** [#357 — feat: unified incident recovery and reporting](https://github.com/fdxruli/Lanzo-POS/pull/357)
 - **Rama:** `feat/incident-recovery-center-r1`
 - **HEAD inicial verificado:** `eb826a9c952dad6cb84e338cb83775fa6af7989c`
-- **HEAD de código validado:** `307c9d307eb05726fb629ac72835a7880f5312a5`. Este informe se actualiza en un commit documental posterior; no modifica el código probado.
+- **HEAD de código validado:** `9bdd6c95110899a54e1aa4e00dc8c2ad3271e8b9`. Este informe se actualiza en un commit documental posterior; no modifica el código probado.
 - **Producción:** sin cambios. No se aplicó migración Supabase. PR sin merge.
 
 ## Resumen
@@ -48,7 +48,7 @@ Archivos modificados:
 - `src/services/support/telegramContact.js`: API de compartir documentada y estado de DM no verificado.
 - `src/pages/AboutPage.jsx`: textos del acceso existente actualizados para describir selector y canal de referencia.
 - `vite.config.js`: se añade el chunk de `telegramContact` al precache del shell administrativo; builds verificados.
-- Tests de `IncidentReportForm`, `incidentCommunication`, `telegramContact`, `AboutPage` y `IncidentReportEntry`.
+- Tests de `IncidentReportForm`, `incidentCommunication`, `telegramContact`, `AboutPage`, `IncidentReportEntry` y `PublicStoreCheckout` (espera explícita del ciclo asíncrono BFCache; sin ampliar timeouts ni retirar aserciones).
 - `docs/reports/INCIDENT.RECOVERY.CONTROLLED.FAILURE.QA.PLAN.md`: escenarios F4-01…F4-10 añadidos y diferidos.
 
 ## Folios y privacidad
@@ -90,19 +90,21 @@ Resultados locales:
 - `npm run build` administrativo y auditor de precache: **PASS**; 24 recursos de arranque auditados y 0 rutas Local eagerly loaded.
 - `npm run build:store`: **PASS**.
 - `git diff --check`: **PASS** tras el ajuste de sincronización de foco y la actualización del informe.
+- Estabilización de la prueba de recuperación BFCache en `PublicStoreCheckout.test.jsx`: escenario focal **20/20 PASS** tras esperar `act` asíncrono y la carga de catálogo; archivo completo **19/19 PASS**; ESLint del archivo **PASS**.
 
-Resultados remotos del HEAD de código `307c9d307eb05726fb629ac72835a7880f5312a5`:
+Resultados remotos del HEAD de código `9bdd6c95110899a54e1aa4e00dc8c2ad3271e8b9`:
 
-- PR127 Global Comparison: **SUCCESS**; 99 fallos compartidos de base, 0 candidate-only, 0 nuevos, 1 resuelto, 0 observaciones flaky y 0 identidades pendientes. [Run 38825734754](https://github.com/fdxruli/Lanzo-POS/actions/runs/38825734754).
-- Actor Runtime: **SUCCESS**. BASE y CANDIDATE completaron dos suites idénticas por lado: BASE 5,114 PASS / 75 FAIL / 52 SKIP; CANDIDATE 5,235 PASS / 75 FAIL / 52 SKIP. El diferencial encontró 0 regresiones nuevas y 93 fallos persistentes de baseline; 1 observación existió solo en BASE. El objetivo PublicStore repetido pasó 50/50 en cada lado. [Run 38825734760](https://github.com/fdxruli/Lanzo-POS/actions/runs/38825734760).
-- Actor Scoped Storage: **SUCCESS**. BASE y CANDIDATE completaron dos suites completas por lado, con los mismos totales y 0 regresiones nuevas; 93 fallos persistentes de baseline. Los siete objetivos PublicStore/Ecommerce pasaron 50/50 en BASE y CANDIDATE; el test de envío duplicado pasó 50/50 en ambos lados. [Run 38825734757](https://github.com/fdxruli/Lanzo-POS/actions/runs/38825734757).
-- Dexie Recovery: **SUCCESS**, incluidos tests `admin-login-modal`, builds y quality. [Run 38825734765](https://github.com/fdxruli/Lanzo-POS/actions/runs/38825734765).
-- Ecommerce Public: **SUCCESS**. [Run 38825734774](https://github.com/fdxruli/Lanzo-POS/actions/runs/38825734774).
-- Store Git Runtime: **SUCCESS**. [Run 38825734766](https://github.com/fdxruli/Lanzo-POS/actions/runs/38825734766).
+- PR127 Global Comparison: **SUCCESS**; 99 fallos compartidos de base, 0 candidate-only, 0 nuevos, 1 resuelto, 0 observaciones flaky y 0 identidades pendientes. [Run 38831651170](https://github.com/fdxruli/Lanzo-POS/actions/runs/38831651170).
+- Actor Runtime: **SUCCESS**. BASE y CANDIDATE completaron dos suites idénticas por lado: BASE 5,114 PASS / 75 FAIL / 52 SKIP; CANDIDATE 5,235 PASS / 75 FAIL / 52 SKIP. El diferencial encontró 0 regresiones nuevas y 93 fallos persistentes de baseline; 1 observación existió solo en BASE. Los objetivos focales de Actor Runtime/PublicStore pasaron 50/50 por lado. [Run 38831651190](https://github.com/fdxruli/Lanzo-POS/actions/runs/38831651190).
+- Actor Scoped Storage: **SUCCESS**. BASE y CANDIDATE completaron dos suites completas por lado, con los mismos totales y 0 regresiones nuevas; 93 fallos persistentes de baseline. Los siete objetivos PublicStore/Ecommerce pasaron 50/50 en BASE y CANDIDATE; el test de envío duplicado pasó 50/50 en ambos lados. [Run 38831651152](https://github.com/fdxruli/Lanzo-POS/actions/runs/38831651152).
+- Dexie Recovery: **SUCCESS**, incluidos tests `admin-login-modal`, builds y quality. [Run 38831651233](https://github.com/fdxruli/Lanzo-POS/actions/runs/38831651233).
+- Ecommerce Public: **SUCCESS**. [Run 38831651144](https://github.com/fdxruli/Lanzo-POS/actions/runs/38831651144).
+- Store Git Runtime: **SUCCESS**. [Run 38831651149](https://github.com/fdxruli/Lanzo-POS/actions/runs/38831651149).
+- En la validación documental previa de `05d7ef3`, Actor Scoped Storage observó un timeout aislado de 15 s en un test de checkout BFCache sin cambios de Fase 4; la reproducción local fue 1/12 en CANDIDATE y 0/12 en BASE. Se reforzó ese test sin subir el timeout ni quitar verificaciones: ahora espera el `act` asíncrono y la recarga de catálogo. La versión corregida pasó 20/20 local y las nuevas suites diferenciales completas reportan 0 regresiones nuevas.
 - La observación one-off de `AdminLoginModal.recovery.test.jsx` detectada en el run previo desapareció tras esperar el efecto React sin quitar la aserción de foco. La expectativa se mantiene; pasó 10/10 ejecuciones locales, y las nuevas suites remotas completaron correctamente.
-- Preview Vercel para el HEAD validado: [https://lanzo-lovhjsguu-fdxrulis-projects.vercel.app](https://lanzo-lovhjsguu-fdxrulis-projects.vercel.app), READY y HTTP 200.
+- Preview Vercel para el HEAD validado: [https://lanzo-i6kzf2uxk-fdxrulis-projects.vercel.app](https://lanzo-i6kzf2uxk-fdxrulis-projects.vercel.app), READY y HTTP 200.
 
-El cambio posterior al run fallido solo hizo determinista la espera de la expectativa de accesibilidad y actualizó este informe. No modifica permisos ni comportamiento comercial. Todos los workflows enumerados terminaron; ninguno se cuenta mientras está en ejecución.
+El ajuste en `PublicStoreCheckout.test.jsx` es solo de sincronización del test: espera el efecto BFCache y la consulta de catálogo que ya ejecutaba el código. No cambia lógica productiva, permisos ni comportamiento comercial. Todos los workflows enumerados terminaron; ninguno se cuenta mientras está en ejecución.
 
 ## Checklist QA manual de Telegram
 
@@ -125,7 +127,7 @@ Estado: **PREPARADO / NO EJECUTADO**. No se usaron folios simulados para afirmar
 
 ## CI, preview y estado del PR
 
-El PR permanece abierto y Draft, sin merge. En el HEAD de código 307c9d3, los seis workflows solicitados terminaron SUCCESS y el preview responde HTTP 200. La última actualización de este informe es solo documental y conserva ese SHA como la fuente de implementación validada.
+El PR permanece abierto y Draft, sin merge. En el HEAD de código 9bdd6c9, los seis workflows solicitados terminaron SUCCESS y el preview responde HTTP 200. La actualización de este informe es solo documental y conserva ese SHA como la fuente de implementación validada.
 
 ## Certificación final y riesgos pendientes
 
@@ -148,21 +150,21 @@ PHASE_4_STATUS: IMPLEMENTED; SIX WORKFLOWS AND PREVIEW PASS; MANUAL QA PENDING
 PR_NUMBER: 357
 PR_URL: https://github.com/fdxruli/Lanzo-POS/pull/357
 HEAD_INITIAL: eb826a9c952dad6cb84e338cb83775fa6af7989c
-HEAD_FINAL: 307c9d307eb05726fb629ac72835a7880f5312a5 (VALIDATED CODE HEAD; REPORT UPDATE IS DOCS-ONLY)
+HEAD_FINAL: 9bdd6c95110899a54e1aa4e00dc8c2ad3271e8b9 (VALIDATED CODE HEAD; REPORT UPDATE IS DOCS-ONLY)
 TELEGRAM_CONTACT_VERIFICATION: SHARE API VERIFIED; CHANNEL DM UNVERIFIED
 TELEGRAM_INTEGRATION: MANUAL SHARE CHOOSER + EXISTING SUPPORT EMAIL
 CONFIRMED_FOLIO_HANDLING: ONLY SUCCESSFUL RECEIPT FOR CURRENT INCIDENT AND CONTEXT
 PRIVACY_REVIEW: EXPLICIT ALLOWLIST; NO FREE TEXT OR BUSINESS/FINANCIAL SECRETS
 FREE_PRO_BEHAVIOR: TECHNICAL REPORT BOTH PLANS; COMMERCIAL PRO UNCHANGED
 OFFLINE_BEHAVIOR: LOCAL DIAGNOSTIC AND COPY; NO QUEUE OR AUTOMATIC RETRY
-AUTOMATED_TESTS: FASE4 63/63; BROAD 340/340; FOCUS 10/10; COMBINED 92/92; SQL STATIC 4/4
+AUTOMATED_TESTS: FASE4 63/63; BROAD 340/340; BFCache TARGET 20/20; PublicStoreCheckout 19/19; FOCUS 10/10; COMBINED 92/92; SQL STATIC 4/4
 PR127_RESULT: SUCCESS (99 SHARED BASELINE / 0 CANDIDATE-ONLY / 0 NEW / 1 RESOLVED)
 ACTOR_RUNTIME_RESULT: SUCCESS (2X FULL SUITE; 75 SHARED FAILS; 0 NEW; 50/50 FOCUSED)
 ACTOR_SCOPED_STORAGE_RESULT: SUCCESS (2X FULL SUITE; 75 SHARED FAILS; 0 NEW; 7X50 + DUPLICATE 50/50)
 DEXIE_RESULT: SUCCESS
 ECOMMERCE_RESULT: SUCCESS
 STORE_GIT_RUNTIME_RESULT: SUCCESS
-PREVIEW_URL: https://lanzo-lovhjsguu-fdxrulis-projects.vercel.app (READY; HTTP 200; source commit 307c9d3)
+PREVIEW_URL: https://lanzo-i6kzf2uxk-fdxrulis-projects.vercel.app (READY; HTTP 200; source commit 9bdd6c9)
 MANUAL_QA_STATUS: PREPARED / NOT RUN; CHANNEL DM BLOCKED / UNVERIFIED
 CONTROLLED_FAILURE_QA_STATUS: DEFERRED
 SUPABASE_MIGRATIONS_APPLIED: NONE
