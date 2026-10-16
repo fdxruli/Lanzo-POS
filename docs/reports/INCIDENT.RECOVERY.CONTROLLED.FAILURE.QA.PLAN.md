@@ -77,3 +77,15 @@ Por escenario registrar versión/commit del build QA, ID del escenario, hora UTC
 Cada escenario recibe `PASS`, `FAIL` o `BLOCKED` únicamente después de ejecutarse en su entorno aislado. La aprobación de tests unitarios, mocks o contratos estáticos no certifica los casos reales de este plan.
 
 **Estado al cerrar desarrollo de Fase 4:** todos los escenarios de Fases 3–4 están `DEFERRED / NOT RUN`. No se ejecutó una inyección controlada de fallos.
+
+## Mini-fase 4.1 — separación de evidencia de laboratorio
+
+El laboratorio `/__qa/incident-recovery` está implementado como entrada independiente en desarrollo y Preview. Informe, arquitectura, resultados y pasos: [INCIDENT.RECOVERY.PHASE4.1.QA.LAB.R1.md](INCIDENT.RECOVERY.PHASE4.1.QA.LAB.R1.md).
+
+- **LAB_QA:** errores React auténticos exclusivamente en fixtures ficticios; RPC, almacenamiento, conexión y recibos mediante adaptadores cerrados en memoria. Formulario y lógica de recuperación reales. Resultados automatizados registrados en el informe; QA visual/dispositivo se registra por separado.
+- **ISOLATED_INTEGRATION_QA:** todos los casos de este plan que requieren base real aislada, sesiones, transporte backend, retención, IndexedDB desechable, PWA y transacciones continúan DEFERRED / NOT RUN. El éxito de mocks no cambia su estado.
+- **PRODUCTION_QA:** NO AUTORIZADA. Ninguna migración aplicada ni cambio en negocios reales.
+
+Para LAB_QA no se requiere Supabase activo. La confirmación ficticia se valida internamente y se suprime antes de llegar al estado productivo `sent`; no se presenta ni comparte un folio de muestra como registro real. Telegram requiere acción manual con mensaje explícito de prueba; el correo se inspecciona localmente hacia un destinatario `.invalid`. Los resultados permanecen en memoria y su exportación requiere acción manual.
+
+No se sustituyen los prerrequisitos de infraestructura de este plan. Antes de certificar recepción real se debe aplicar y verificar la migración únicamente en un entorno aislado aprobado, validar autorización y asociación de contexto server-side y comprobar persistencia, idempotencia, límites y retención. No se reutilizan credenciales productivas.

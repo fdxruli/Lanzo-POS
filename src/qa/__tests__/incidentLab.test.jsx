@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { StrictMode } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import LabLoadBoundary from '../LabLoadBoundary';
@@ -36,6 +37,14 @@ const consent = () => fireEvent.click(screen.getByRole('checkbox', { name: /Conf
 const useMemory = () => fireEvent.change(screen.getByLabelText('Portapapeles'), { target: { value: 'memory' } });
 
 describe('QA-ERROR / QA-UX real components', () => {
+  it('preserves critical isolation under development StrictMode lifecycle replay', () => {
+    render(<StrictMode><IncidentRecoveryQaGallery/></StrictMode>, { container: document.getElementById('root') });
+    selectScenario('QA-03'); provoke();
+    expect(screen.getByRole('alertdialog', { name: 'Necesitamos verificar esta operación' })).toBeVisible();
+    expect(document.getElementById('root').inert).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: 'Salir de la prueba' }));
+    expect(document.getElementById('root').inert).toBe(false);
+  });
   it('keeps a visible QA load failure instead of silently navigating away', () => {
     function FailedDependency() { throw new Error('Dynamic QA dependency unavailable'); }
     render(<LabLoadBoundary><FailedDependency/></LabLoadBoundary>);
