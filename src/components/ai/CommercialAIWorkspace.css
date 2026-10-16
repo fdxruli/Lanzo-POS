@@ -1,0 +1,200 @@
+/* PRO workspace chrome only. AnalysisResult and its internal styles are protected. */
+.commercial-ai-pro-workspace,
+.commercial-ai-history-backdrop {
+  --ai-workspace-accent: #6d28d9;
+  --ai-workspace-accent-text: #5b21b6;
+  --ai-workspace-soft: color-mix(in srgb, #7c3aed 7%, var(--card-background-color, #fff));
+  --ai-workspace-border: color-mix(in srgb, #7c3aed 28%, var(--border-color, #d9dee7));
+}
+
+[data-theme="dark"] .commercial-ai-pro-workspace,
+[data-theme="dark"] .commercial-ai-history-backdrop {
+  --ai-workspace-accent-text: #d4bfff;
+}
+
+.commercial-ai-pro-workspace {
+  width: min(1280px, 100%);
+  min-width: 0;
+  padding: 0.5rem 0.75rem 1rem;
+}
+
+.commercial-ai-pro-workspace .commercial-ai-hero {
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  margin-bottom: 0.85rem;
+}
+
+.commercial-ai-pro-workspace .commercial-ai-hero__icon {
+  width: 2.35rem;
+  height: 2.35rem;
+  border-radius: 0.75rem;
+  color: var(--ai-workspace-accent-text);
+  background: var(--ai-workspace-soft);
+}
+
+.commercial-ai-hero__identity { flex: 1 1 11rem; min-width: 0; }
+.commercial-ai-pro-workspace .commercial-ai-hero h1 { font-size: clamp(1.2rem, 2.7vw, 1.9rem); color: var(--text-dark); line-height: 1.2; }
+.commercial-ai-pro-workspace .commercial-ai-hero .commercial-ai-eyebrow { font-size: 0.67rem; letter-spacing: 0.06em; }
+
+.commercial-ai-history-trigger,
+.commercial-ai-suggestions-toggle,
+.commercial-ai-history-modal__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: 44px;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--ai-workspace-border);
+  border-radius: 0.75rem;
+  color: var(--ai-workspace-accent-text);
+  background: var(--card-background-color, #fff);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.commercial-ai-history-trigger { margin-left: auto; }
+.commercial-ai-history-trigger > span { min-width: 1.4rem; padding: 0 0.25rem; border-radius: 1rem; background: var(--ai-workspace-soft); }
+.commercial-ai-visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+
+.commercial-ai-pro-workspace > .commercial-ai-workspace {
+  display: grid;
+  gap: 0.75rem;
+  min-width: 0;
+  margin: 0;
+  padding: clamp(0.8rem, 2.2vw, 1.5rem);
+  border-color: var(--border-color);
+  background: var(--card-background-color, #fff);
+  box-shadow: var(--box-shadow);
+}
+
+.commercial-ai-pro-workspace .commercial-ai-workspace__heading { display: grid; gap: 0.4rem; min-width: 0; }
+.commercial-ai-pro-workspace .commercial-ai-workspace__heading h2 { color: var(--text-dark); font-size: clamp(1.1rem, 2.2vw, 1.45rem); }
+.commercial-ai-agent-identity { display: flex; align-items: center; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.45rem; color: var(--ai-workspace-accent-text); }
+.commercial-ai-agent-identity h3 { margin: 0; font-size: 0.78rem; font-weight: 700; }
+.commercial-ai-agent-identity .commercial-ai-status { padding: 0.15rem 0.45rem; color: var(--ai-workspace-accent-text); background: var(--ai-workspace-soft); font-size: 0.7rem; }
+.commercial-ai-capabilities { color: var(--text-light); font-size: 0.78rem; }
+.commercial-ai-capabilities summary { width: fit-content; min-height: 44px; align-content: center; cursor: pointer; font-weight: 600; }
+.commercial-ai-capabilities p { margin: 0.35rem 0; line-height: 1.45; }
+
+.commercial-ai-pro-workspace .commercial-ai-usage {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.65rem 0.8rem;
+  border-color: var(--ai-workspace-border);
+  background: var(--ai-workspace-soft);
+}
+.commercial-ai-pro-workspace .commercial-ai-usage > div { flex-direction: row; align-items: baseline; flex-wrap: wrap; gap: 0.1rem 0.6rem; }
+.commercial-ai-pro-workspace .commercial-ai-usage__label { color: var(--ai-workspace-accent-text); font-size: 0.68rem; }
+.commercial-ai-pro-workspace .commercial-ai-usage strong { color: var(--text-dark); font-size: 0.8rem; line-height: 1.45; }
+.commercial-ai-pro-workspace .commercial-ai-usage small { color: var(--text-light); font-size: 0.74rem; }
+.commercial-ai-pro-workspace .commercial-ai-usage--limit,
+.commercial-ai-pro-workspace .commercial-ai-usage--near-limit { border-color: var(--warning-color); }
+.commercial-ai-pro-workspace .commercial-ai-usage__error { color: var(--error-color) !important; }
+.commercial-ai-pro-workspace .commercial-ai-usage__retry { min-height: 44px; background: var(--card-background-color); color: var(--ai-workspace-accent-text); border-color: var(--ai-workspace-border); }
+
+.commercial-ai-query-form { min-width: 0; }
+.commercial-ai-workspace .commercial-ai-query-form > .commercial-ai-label { margin-top: 0; }
+.commercial-ai-query-form .commercial-ai-label { color: var(--text-color); }
+.commercial-ai-query-form :is(textarea, input, select) { min-width: 0; color: var(--text-dark); background: var(--card-background-color); border-color: var(--border-color); font-size: 1rem; scroll-margin-block: 1rem; }
+.commercial-ai-query-form :is(input:not([type="checkbox"]), select) { min-height: 44px; }
+.commercial-ai-query-form textarea { min-height: 4.4rem; max-height: 20rem; padding: 0.65rem 0.75rem; }
+.commercial-ai-query-form textarea::placeholder { color: var(--text-light); opacity: 1; }
+.commercial-ai-query-form .commercial-ai-label span { color: var(--text-light); }
+.commercial-ai-query-form .commercial-ai-suggestions { gap: 0.4rem; margin-top: 0.6rem; }
+.commercial-ai-query-form .commercial-ai-suggestion { min-height: 44px; max-width: 100%; padding: 0.45rem 0.65rem; border-color: var(--ai-workspace-border); background: var(--ai-workspace-soft); color: var(--ai-workspace-accent-text); text-align: left; line-height: 1.35; overflow-wrap: anywhere; }
+.commercial-ai-query-form .commercial-ai-suggestion:is(:hover, .is-selected) { color: #fff; background: var(--ai-workspace-accent); }
+.commercial-ai-suggestions-toggle { margin-top: 0.2rem; padding-inline: 0.1rem; border-color: transparent; background: transparent; font-size: 0.78rem; }
+.commercial-ai-suggestions-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
+.commercial-ai-query-form .commercial-ai-filters { margin-top: 0.6rem; }
+.commercial-ai-query-form .commercial-ai-submit-row { gap: 0.65rem; margin-top: 0.8rem; }
+.commercial-ai-query-form .commercial-ai-submit-row p,
+.commercial-ai-query-form :is(.commercial-ai-checkbox, .commercial-ai-comparison-note, .commercial-ai-inline-note, .commercial-ai-product-count) { color: var(--text-light); }
+.commercial-ai-query-form .commercial-ai-analyze { min-height: 46px; background: var(--ai-workspace-accent); }
+.commercial-ai-query-form .commercial-ai-analyze:disabled { cursor: not-allowed; }
+.commercial-ai-query-form :is(.commercial-ai-scenario-panel, .commercial-ai-competitive-form) { background: var(--ai-workspace-soft); border-color: var(--ai-workspace-border); }
+.commercial-ai-query-form :is(.commercial-ai-competitor, .commercial-ai-observation) { background: var(--card-background-color); border-color: var(--border-color); }
+.commercial-ai-query-form :is(.commercial-ai-competitor > legend, .commercial-ai-observation > legend, .commercial-ai-competitive-form__header h2, .commercial-ai-competitive-form__count) { color: var(--ai-workspace-accent-text); }
+.commercial-ai-query-form :is(.commercial-ai-secondary-button, .commercial-ai-competitive-remove) { min-height: 44px; color: var(--ai-workspace-accent-text); background: var(--card-background-color); border-color: var(--ai-workspace-border); }
+.commercial-ai-query-form :is(.commercial-ai-competitive-review, .commercial-ai-observation-status) { color: var(--text-color); background: var(--light-background); border-color: var(--border-color); }
+.commercial-ai-query-form :is(.commercial-ai-competitive-review small, .commercial-ai-observation-status > p, .commercial-ai-observation-status > strong, .commercial-ai-observation-limit) { color: var(--text-light); }
+.commercial-ai-output-space { min-width: 0; color: var(--text-dark); }
+
+.commercial-ai-other-agents { margin-top: 1rem; color: var(--text-light); }
+.commercial-ai-other-agents > h2 { margin: 0 0 0.4rem; font-size: 0.8rem; font-weight: 700; }
+.commercial-ai-other-agents > article { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 0.65rem; padding: 0.8rem; border: 1px solid var(--border-color); border-radius: 0.85rem; background: var(--card-background-color); }
+.commercial-ai-other-agents > article > div { flex: 1 1 10rem; min-width: 0; }
+.commercial-ai-other-agents h3 { margin: 0; color: var(--text-color); font-size: 0.9rem; }
+.commercial-ai-other-agents p { margin: 0.15rem 0; font-size: 0.8rem; line-height: 1.45; }
+.commercial-ai-other-agents small { font-size: 0.73rem; }
+.commercial-ai-other-agents .commercial-ai-status--muted { color: var(--text-light); background: var(--light-background); }
+.commercial-ai-pro-workspace > .commercial-ai-notice { margin-top: 0.75rem; padding: 0.75rem; color: var(--text-light); background: var(--light-background); border-color: var(--border-color); font-size: 0.78rem; }
+.commercial-ai-pro-workspace > .commercial-ai-notice svg { color: var(--ai-workspace-accent-text); }
+
+/* Portal sits above the mobile navbar; its content owns all scrolling. */
+.commercial-ai-history-backdrop { position: fixed; inset: 0; z-index: var(--z-modal-high, 1100); display: grid; place-items: center; padding: 0; background: rgb(10 12 24 / 65%); overscroll-behavior: none; }
+.commercial-ai-history-modal { display: flex; flex-direction: column; min-width: 0; width: 100%; height: 100vh; height: 100dvh; max-height: 100dvh; overflow: hidden; color: var(--text-color); background: var(--card-background-color, #fff); box-shadow: var(--box-shadow-lg); }
+.commercial-ai-history-modal__header { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 0.5rem; padding: max(0.8rem, env(safe-area-inset-top, 0px)) max(0.8rem, env(safe-area-inset-right, 0px)) 0.65rem max(0.8rem, env(safe-area-inset-left, 0px)); border-bottom: 1px solid var(--border-color); }
+.commercial-ai-history-modal__header h2 { margin: 0; font-size: clamp(1.05rem, 2vw, 1.4rem); line-height: 1.3; color: var(--text-dark); }
+.commercial-ai-history-modal__header p { margin: 0.15rem 0 0; color: var(--text-light); font-size: 0.78rem; }
+.commercial-ai-history-modal__close { flex: 0 0 44px; width: 44px; padding: 0; }
+.commercial-ai-history-modal__close:disabled { opacity: 0.45; cursor: not-allowed; }
+.commercial-ai-history-modal__body { flex: 1 1 auto; min-height: 0; min-width: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; padding: 0.8rem max(0.8rem, env(safe-area-inset-right, 0px)) max(1rem, env(safe-area-inset-bottom, 0px)) max(0.8rem, env(safe-area-inset-left, 0px)); }
+.commercial-ai-history-modal .commercial-ai-history { min-width: 0; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.commercial-ai-history-modal .commercial-ai-history__header { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin: 0.8rem 0 0; }
+.commercial-ai-history-modal .commercial-ai-history__header h3 { margin: 0; font-size: 0.85rem; color: var(--text-color); }
+.commercial-ai-history-modal :is(.commercial-ai-history__privacy, .commercial-ai-history__empty) { margin-top: 0; color: var(--text-light); font-size: 0.78rem; }
+.commercial-ai-history-modal .commercial-ai-history__empty { padding-block: 2rem; text-align: center; }
+.commercial-ai-history-modal .commercial-ai-history__list { gap: 0.65rem; }
+.commercial-ai-history-modal .commercial-ai-history__item { padding: 0.8rem; gap: 0.65rem; border-color: var(--border-color); background: var(--light-background); }
+.commercial-ai-history-modal .commercial-ai-history__item h3 { color: var(--text-dark); }
+.commercial-ai-history-modal :is(.commercial-ai-history__date, .commercial-ai-history__filters, .commercial-ai-history__labels, .commercial-ai-history__item-main small) { color: var(--text-light); }
+.commercial-ai-history-modal .commercial-ai-history__labels strong { color: var(--ai-workspace-accent-text); }
+.commercial-ai-history__metadata { color: var(--text-light); font-size: 0.78rem; }
+.commercial-ai-history__metadata summary { min-height: 44px; align-content: center; cursor: pointer; font-weight: 700; }
+.commercial-ai-history__metadata :is(p, small) { display: block; margin: 0.25rem 0; overflow-wrap: anywhere; }
+.commercial-ai-history-modal .commercial-ai-history__actions { flex-wrap: wrap; }
+.commercial-ai-history-modal :is(.commercial-ai-history__clear, .commercial-ai-history__actions button, .commercial-ai-history__detail-header button, .commercial-ai-history__confirm button) { min-height: 44px; background: var(--card-background-color); border-color: var(--border-color); color: var(--text-color); }
+.commercial-ai-history-modal .commercial-ai-history__actions button { flex: 1 1 7rem; }
+.commercial-ai-history-modal .commercial-ai-history__delete { color: var(--text-light) !important; border-color: var(--border-color) !important; }
+.commercial-ai-history-modal .commercial-ai-history__clear { color: var(--error-color); }
+.commercial-ai-history-modal .commercial-ai-history__confirm { background: var(--light-background); border-color: var(--warning-color); }
+.commercial-ai-history-modal .commercial-ai-history__confirm p { color: var(--text-dark); }
+.commercial-ai-history-modal .commercial-ai-history__confirm button:last-child { color: var(--error-color); border-color: var(--error-color); }
+.commercial-ai-history-modal .commercial-ai-history__detail { margin-top: 0.75rem; padding: 0; border: 0; background: transparent; }
+.commercial-ai-history-modal .commercial-ai-history__detail-header { align-items: flex-start; }
+.commercial-ai-history-modal .commercial-ai-history__detail-header h3 { color: var(--text-dark); font-size: 1rem; }
+.commercial-ai-history-modal .commercial-ai-history__notice,
+.commercial-ai-pro-workspace > .commercial-ai-workspace > .commercial-ai-history__notice { color: var(--text-dark); border-color: var(--warning-color); background: var(--light-background); }
+
+:is(.commercial-ai-history-trigger, .commercial-ai-suggestions-toggle, .commercial-ai-capabilities summary, .commercial-ai-history-modal__close, .commercial-ai-history__metadata summary):focus-visible,
+.commercial-ai-history-modal :is(.commercial-ai-history__actions button, .commercial-ai-history__clear, .commercial-ai-history__detail-header button, .commercial-ai-history__confirm button):focus-visible,
+.commercial-ai-query-form :is(button, input, textarea, select, summary):focus-visible { outline: 3px solid var(--ai-workspace-accent-text); outline-offset: 3px; }
+
+@media (min-width: 640px) {
+  .commercial-ai-pro-workspace { padding: 0.5rem; }
+  .commercial-ai-history-backdrop { padding: max(1rem, env(safe-area-inset-top, 0px)) max(1rem, env(safe-area-inset-right, 0px)) max(1rem, env(safe-area-inset-bottom, 0px)) max(1rem, env(safe-area-inset-left, 0px)); }
+  .commercial-ai-history-modal { width: min(1240px, 100%); height: min(900px, 100%); max-height: 100%; border: 1px solid var(--border-color); border-radius: 1rem; }
+  .commercial-ai-history-modal__body { padding: 1.25rem; }
+  .commercial-ai-query-form .commercial-ai-scenario-form .commercial-ai-label { flex-basis: 14rem; }
+}
+
+@media (min-width: 900px) {
+  .commercial-ai-pro-workspace { padding: 0; }
+  .commercial-ai-pro-workspace > .commercial-ai-workspace { grid-template-columns: minmax(0, 1.35fr) minmax(17rem, 1fr); gap: 1rem 1.5rem; }
+  .commercial-ai-pro-workspace > .commercial-ai-workspace > :is(.commercial-ai-query-form, .commercial-ai-output-space, .commercial-ai-loading, .commercial-ai-error, .commercial-ai-history__notice) { grid-column: 1 / -1; }
+  .commercial-ai-pro-workspace .commercial-ai-usage { align-self: start; }
+  .commercial-ai-history-modal .commercial-ai-history__item { flex-direction: row; }
+  .commercial-ai-history-modal .commercial-ai-history__actions { flex-direction: row; flex-basis: 21rem; }
+  .commercial-ai-history-modal .commercial-ai-history__actions button { flex-basis: 8rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .commercial-ai-pro-workspace .commercial-ai-spinner { animation: none; }
+  .commercial-ai-history-modal__body { scroll-behavior: auto; }
+}
