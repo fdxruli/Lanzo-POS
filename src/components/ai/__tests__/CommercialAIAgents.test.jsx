@@ -180,19 +180,42 @@ describe('commercial AI center', () => {
     vi.unstubAllGlobals();
   });
 
-  it('prioritizes the PRO form with four suggestions and keeps Ecommerce secondary', async () => {
+  it('places the compact agent selector before the PRO workspace and keeps four suggestions', async () => {
     const { container } = renderCenter();
     const suggestions = screen.getByRole('group', { name: 'Preguntas sugeridas' });
     expect(within(suggestions).getAllByRole('button')).toHaveLength(4);
     expect(screen.getByRole('button', { name: 'Ver todas las preguntas' })).toHaveAttribute('aria-expanded', 'false');
     expect(container.querySelector('.commercial-ai-card-grid')).toBeNull();
-    expect(container.querySelector('form').compareDocumentPosition(container.querySelector('.commercial-ai-other-agents')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(screen.getByRole('heading', { name: 'Ecommerce' }).closest('article')).toHaveAttribute('aria-disabled', 'true');
+    const selector = screen.getByRole('region', { name: 'Agentes' });
+    expect(selector.compareDocumentPosition(screen.getByRole('region', { name: 'Pregúntale a Lía sobre tu negocio' })) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(selector).getByRole('button', { name: 'Ventas y rentabilidad Activo · Disponible', pressed: true })).toHaveAttribute('aria-controls', 'sales-agent-workspace');
+    expect(within(selector).getByRole('button', { name: 'Ecommerce Próximamente' })).toBeDisabled();
+    expect(container.querySelector('.commercial-ai-other-agents')).toBeNull();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(container.querySelector('.commercial-ai-history')).toBeNull();
     expect(screen.getByRole('textbox', { name: 'Pregunta libre' })).toHaveAttribute('maxlength', '1200');
     await waitFor(() => expect(runtime.getUsage).toHaveBeenCalledTimes(1));
     expect(runtime.runAgent).not.toHaveBeenCalled();
+  });
+
+  it('focuses the active agent question without resetting inputs, calling IA or refreshing quota', async () => {
+    renderCenter();
+    await screen.findByText('Usados: 2 · Límite: 15 · Disponibles: 13');
+    chooseSuggestedQuestion('¿Qué promoción puedo simular?');
+    fireEvent.change(screen.getByRole('combobox', { name: /Periodo/ }), { target: { value: '90' } });
+    fireEvent.change(screen.getByLabelText(/Descuento/), { target: { value: '12' } });
+    const user = userEvent.setup();
+    const activeAgent = screen.getByRole('button', { name: 'Ventas y rentabilidad Activo · Disponible' });
+    activeAgent.focus();
+    await user.keyboard('{Enter}');
+    expect(screen.getByRole('textbox', { name: 'Pregunta libre' })).toHaveFocus();
+    expect(screen.getByRole('textbox', { name: 'Pregunta libre' })).toHaveValue('¿Qué promoción puedo simular?');
+    expect(screen.getByRole('combobox', { name: /Periodo/ })).toHaveValue('90');
+    expect(screen.getByLabelText(/Descuento/)).toHaveValue(12);
+    fireEvent.click(screen.getByRole('button', { name: 'Ecommerce Próximamente' }));
+    expect(activeAgent).toHaveAttribute('aria-pressed', 'true');
+    expect(runtime.runAgent).not.toHaveBeenCalled();
+    expect(runtime.getUsage).toHaveBeenCalledTimes(1);
   });
 
   it('expands all ten questions and keeps a later selection visible without losing parameters or using quota', async () => {
@@ -355,11 +378,10 @@ describe('commercial AI center', () => {
 
     expect(screen.getByRole('heading', { name: 'Agentes IA comerciales' })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Agentes IA de Lanzo' })).not.toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Ventas y rentabilidad' })).toBeInTheDocument();
-    expect(screen.getByRole('heading', { name: 'Ecommerce' })).toBeInTheDocument();
-    expect(screen.getByText('Disponible')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Ventas y rentabilidad Activo · Disponible', pressed: true })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Ecommerce Próximamente' })).toBeDisabled();
     expect(screen.getByText('Próximamente')).toBeInTheDocument();
-    expect(screen.getByText('Este agente aún no está disponible.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Ecommerce Próximamente' })).toHaveAccessibleDescription('Analiza pedidos, catálogo y oportunidades de tu tienda en línea. Este agente aún no está disponible.');
     expect(screen.getByRole('heading', { name: 'Pregúntale a Lía sobre tu negocio' })).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: 'Pregunta libre' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Analizar' })).toBeEnabled();
@@ -1037,6 +1059,7 @@ describe('commercial AI center', () => {
     expect(screen.getByText(/Lanzo no busca competidores en Internet/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Conocer Lanzo Nube/ })).toHaveAttribute('href', '/acerca-de');
     expect(container.querySelectorAll('.pro-feature-showcase__feature')).toHaveLength(4);
+    expect(screen.queryByRole('region', { name: 'Agentes' })).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Agentes IA comerciales' })).not.toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: 'Pregunta libre' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Analizar' })).not.toBeInTheDocument();

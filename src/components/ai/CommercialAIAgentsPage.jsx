@@ -2362,10 +2362,25 @@ export default function CommercialAIAgentsPage() {
         <span id="commercial-ai-history-count" className="commercial-ai-visually-hidden">{activeHistoryState.isLoading ? 'Cargando consultas guardadas' : activeHistoryState.issue ? 'Revisa el estado del historial local' : `${activeHistoryState.entries.length} consultas guardadas en este contexto`}</span>
       </header>
 
-      <section className="commercial-ai-workspace" aria-labelledby="sales-agent-title">
+      <section className="commercial-ai-agent-selector" aria-labelledby="commercial-ai-agents-label">
+        <h2 id="commercial-ai-agents-label">Agentes</h2>
+        <div className="commercial-ai-agent-selector__options">
+          <button type="button" className="commercial-ai-agent-option" aria-pressed="true" aria-controls="sales-agent-workspace"
+            onClick={() => questionRef.current?.focus()}>
+            <BarChart3 size={18} aria-hidden="true" />
+            <span><span className="commercial-ai-agent-option__name">Ventas y rentabilidad</span>{' '}<span className="commercial-ai-agent-option__status">Activo · Disponible</span></span>
+          </button>
+          <button type="button" className="commercial-ai-agent-option" disabled aria-describedby="commercial-ai-ecommerce-description">
+            <Globe2 size={18} aria-hidden="true" />
+            <span><span className="commercial-ai-agent-option__name">Ecommerce</span>{' '}<span className="commercial-ai-agent-option__status">Próximamente</span></span>
+          </button>
+        </div>
+        <p id="commercial-ai-ecommerce-description" className="commercial-ai-visually-hidden">Analiza pedidos, catálogo y oportunidades de tu tienda en línea. Este agente aún no está disponible.</p>
+      </section>
+
+      <section id="sales-agent-workspace" className="commercial-ai-workspace" aria-labelledby="sales-agent-title">
         <div className="commercial-ai-workspace__heading">
           <div>
-            <div className="commercial-ai-agent-identity"><BarChart3 size={16} aria-hidden="true" /><h3>Ventas y rentabilidad</h3><span className="commercial-ai-status">Disponible</span></div>
             <h2 id="sales-agent-title">Pregúntale a {LIA_IDENTITY.name} sobre tu negocio</h2>
           </div>
           <details className="commercial-ai-capabilities"><summary>Capacidades y solo lectura</summary>
@@ -2672,11 +2687,6 @@ export default function CommercialAIAgentsPage() {
         isDownloading={isDownloadingHistory}
         onClose={closeHistory}
       />}
-
-      <aside className="commercial-ai-other-agents" aria-labelledby="commercial-ai-other-title">
-        <h2 id="commercial-ai-other-title">Otros agentes</h2>
-        <article aria-disabled="true"><Globe2 size={20} aria-hidden="true" /><div><h3>Ecommerce</h3><p>Analiza pedidos, catálogo y oportunidades de tu tienda en línea.</p><small>Este agente aún no está disponible.</small></div><span className="commercial-ai-status commercial-ai-status--muted">Próximamente</span></article>
-      </aside>
 
       <aside className="commercial-ai-notice" role="note"><ShieldCheck size={18} aria-hidden="true" /><p>Lanzo-POS calcula ventas, costos, utilidad y escenarios. La IA explica esos resultados y no ejecuta cambios.</p></aside>
     </main>
