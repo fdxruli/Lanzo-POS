@@ -12,8 +12,8 @@ Fecha: 16 de octubre de 2026 (America/Mexico_City).
 - HEAD de implementación: `2df6eeb864ff5c964d3e156a3ac19b970de2bf07`.
 - HEAD final de entrega: consultar `headRefOid` del PR; los commits posteriores al HEAD de implementación contienen documentación/evidencia.
 - [Preview de la rama](https://lanzo-pos-git-codex-about-free-mobile-98ddb7-fdxrulis-projects.vercel.app/acerca-de).
-- Vercel informó `Deployment has completed` para el HEAD de implementación. El navegador llegó a la autenticación de Vercel, no a una sesión POS autenticada.
-- [Comparación global PR127](https://github.com/fdxruli/Lanzo-POS/actions/runs/38962742341): consultar el resultado final en Actions. No se presume PASS por haber pasado las suites focales.
+- Vercel informó `Deployment has completed`. Se verificó HTTP 200 con `vercel curl` y, tras obtener acceso temporal, el navegador renderizó la bienvenida real del POS. No se creó ni utilizó una licencia de producción para QA.
+- [Comparación global PR127 del código](https://github.com/fdxruli/Lanzo-POS/actions/runs/38962742341): **PASS diferencial**, 100 fallos compartidos con BASE, cero exclusivos del candidato y cero identidades sin resolver. La suite global bruta no está totalmente verde; el gate confirma ausencia de fallos nuevos. Ver [resumen descargado](about-free-mobile-first-r1/ci-comparison.md).
 
 No se ejecutaron migraciones, escrituras en Supabase ni operaciones POS de producción.
 Los archivos locales de recuperación preexistentes no se incluyeron en el PR.
@@ -102,9 +102,9 @@ red al abrir Acerca de: la pantalla usa la licencia efectiva almacenada.
 | React Doctor | Sin problemas encontrados en 2 archivos React | API de score inaccesible; no se atribuye puntuación |
 | Contratos estáticos de creación/entitlement/downgrade | 16 PASS, 1 fallo preexistente | Ver atribución abajo |
 | `git diff --check origin/main...HEAD` | PASS | Sin cambios en migraciones, autoridad, storage, finanzas o workflows |
-| PR127 global BASE/candidato | Consultar Actions | No equivale a las suites focales ni se declara PASS pendiente |
+| PR127 global BASE/candidato del código `2df6eeb86` | PASS diferencial | 100 fallos compartidos, 0 nuevos, 0 exclusivos y 0 identidades sin resolver; los commits siguientes solo documentan evidencia |
 | Actor Runtime / Actor Scoped Storage workflows completos | No activados por paths | No se tocaron sus rutas protegidas; se ejecutaron suites focales relevantes |
-| Preview desplegado | READY en Vercel/GitHub | Acceso visual remoto protegido por SSO; no certificado dentro de una sesión POS |
+| Preview desplegado | READY; HTTP 200 y bienvenida POS renderizada | Acceso temporal Vercel obtenido; Acerca de con licencia de QA real sigue pendiente |
 
 Comando de la suite de 269 pruebas (Vitest también selecciona archivos cuyo path
 coincide con los filtros):
@@ -156,6 +156,7 @@ Otras evidencias:
 - [Modalidad individual](about-free-mobile-first-r1/solo-390.jpg) y [equipo](about-free-mobile-first-r1/team-390.jpg).
 - [Vista previa Telegram](about-free-mobile-first-r1/telegram-390.jpg); no se envió ningún mensaje.
 - [Final junto al navbar](about-free-mobile-first-r1/bottom-390.jpg): footer termina en y=730.9 y navbar empieza en y=779, viewport de 390×844. Ayuda y versión accesibles.
+- [Bienvenida real del Preview](about-free-mobile-first-r1/preview-welcome.jpg), después de superar la protección Vercel. No se creó una licencia ni se escribieron datos.
 
 Se verificaron encabezados/estados, foco, selección con teclado y Escape con
 restauración del foco. La pantalla no requiere consultas remotas nuevas para
@@ -164,13 +165,16 @@ tras cerrar/reabrir el navegador sin red.
 
 ## E. Riesgos y pendientes
 
-- El Preview está protegido por autenticación Vercel. IAB y Edge llegaron a login;
-  el conector de acceso temporal falló por transporte. La revisión visual remota
-  autenticada sigue pendiente; no se desactivaron protecciones.
+- El Preview exige una licencia POS para abrir Acerca de. El acceso temporal
+  Vercel se obtuvo después de fallos de transporte y se comprobó la bienvenida
+  real. Para probar Free dentro del Preview hace falta una licencia de QA
+  autorizada; no se creó una contra producción. No se desactivaron protecciones.
 - Zoom de navegador al 200%, lector de pantalla, teléfono físico con safe areas
   y reapertura offline de una PWA real requieren QA manual. No se declara una
   certificación integral WCAG 2.2 AA con estas comprobaciones parciales.
-- El comparador PR127 debe revisarse al terminar y distinguir BASE de candidato.
+- PR127 pasó para el código; cualquier rerun de los commits de documentación debe
+  revisarse también. Los 100 fallos compartidos no equivalen a una suite global
+  completamente aprobada, aunque no son regresiones introducidas aquí.
 - El fallo estático preexistente de downgrade sigue abierto, sin cambios aquí.
 - Hay cruce potencial con #357 en ayuda/incidentes; revisar al integrar ramas.
 - La vigencia de la promoción 3 meses/$300 no está confirmada. Consultar condiciones
@@ -207,7 +211,8 @@ tras cerrar/reabrir el navegador sin red.
 ## G. Recomendación
 
 **HOLD_FIX_REQUIRED para cierre técnico integral.** El Draft y las evidencias están
-disponibles para revisión del propietario. Queda por certificar el Preview
-autenticado, el zoom/safe areas/offline reales y el resultado global de Actions.
+disponibles para revisión del propietario. Queda por certificar Acerca de Free
+dentro del Preview con licencia de QA, y el zoom/safe areas/offline reales.
+El comparador global del código pasó sin fallos nuevos.
 Esta recomendación no identifica un defecto funcional nuevo: conserva el gate
 de verificación solicitado. No se declara `READY_FOR_MERGE`.
