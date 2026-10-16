@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import { execSync } from 'node:child_process';
 import packageJson from './package.json';
+import { incidentLabBuildPlugin, incidentLabInputs } from './scripts/incident-lab-build.mjs';
 import { serializeAdminManifest } from './src/pwa/adminManifest';
 
 const ADMIN_LOCAL_OFFLINE_GLOB_PATTERNS = Object.freeze([
@@ -35,7 +36,7 @@ const ADMIN_SHELL_GLOB_PATTERNS = Object.freeze([
   'assets/IncidentRecoveryPanel-*.{js,css}',
   'assets/IncidentReportForm-*.{js,css}',
   'assets/telegramContact-*.js',
-  'assets/IncidentRecoveryQaGallery-*.{js,css}',
+  'assets/IncidentErrorBoundary-*.{js,css}',
   'assets/storageManager-*.js',
   'assets/salesCloudShadowService-*.js',
   'assets/index.esm-*.js',
@@ -82,6 +83,7 @@ const buildCommit = getGitCommit();
 export default defineConfig(() => ({
   plugins: [
     react(),
+    incidentLabBuildPlugin(process.env),
     adminManifestPlugin(),
     VitePWA({
       strategies: 'injectManifest',
@@ -137,6 +139,7 @@ export default defineConfig(() => ({
     chunkSizeWarningLimit: 1000,
 
     rollupOptions: {
+      input: incidentLabInputs(process.env),
       output: {
         manualChunks: {
           'vendor_react': ['react', 'react-dom', 'react-router-dom'],

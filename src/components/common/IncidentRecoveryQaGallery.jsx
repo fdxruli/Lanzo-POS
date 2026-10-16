@@ -1,221 +1,197 @@
-import { useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { LayoutDashboard, Moon, RefreshCw, Sun } from 'lucide-react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import IncidentErrorBoundary from './IncidentErrorBoundary';
 import IncidentRecoveryPanel from './IncidentRecoveryPanel';
+import { createIncidentLabAdapters, createLabFault, QA_LABEL, QA_SCENARIOS } from '../../qa/incidentLabAdapters';
+import { classifyIncident, getSafeIncidentMetadata } from '../../services/diagnostics/incidentDiagnostics';
+import { normalizeBackendError } from '../../services/diagnostics/incidentCapture';
 import './IncidentRecoveryQaGallery.css';
 
-const RECOVERY_STATES = Object.freeze([
-  ['detected', 'Problema identificado'],
-  ['recovering', 'Recuperación en curso'],
-  ['failed', 'Reintento fallido'],
-  ['blocked', 'Acción bloqueada']
-]);
-
-const STATUS_COPY = Object.freeze({
-  detected: 'Puedes intentar recuperar esta vista. Las demás funciones disponibles siguen en pantalla.',
-  recovering: 'Estamos intentando recuperar esta vista. El resultado se mostrará cuando pueda verificarse.',
-  failed: 'El intento no resolvió el problema. Solicita ayuda antes de volver a intentarlo.',
-  blocked: 'La acción permanece bloqueada hasta verificar que sea seguro continuar.'
-});
+function RenderFixture({ fault, fail, shouldFail }) {
+  if (fail || shouldFail?.()) throw fault;
+  return <div className="incident-qa__fixture"><h3 tabIndex={-1} data-recovery-focus-target>Ventas ficticias disponibles</h3><p>Fixture aislado. Sin catálogo, ventas, pagos ni almacenamiento comercial.</p></div>;
+}
+const OUTCOMES = [ ['unavailable', 'Backend no disponible · PGRST202'], ['temporary', 'Error temporal'],
+  ['authorization', 'Error de autorización'], ['unexpected', 'Error inesperado'], ['timeout', 'Timeout de servicio'],
+  ['server', 'Error de servidor'], ['receipt', 'Confirmación ficticia'], ['invalid', 'Folio inválido'], ['throw', 'Excepción del reporter'] ];
 
 export default function IncidentRecoveryQaGallery() {
-  const [level, setLevel] = useState('2');
+  const [events, setEvents] = useState([]);
+  const [lab] = useState(() => createIncidentLabAdapters({ onEvent: (event) => setEvents((current) => [...current.slice(-29), event]) }));
+  const [scenario, setScenario] = useState('QA-01');
   const [theme, setTheme] = useState('light');
-  const [recoveryState, setRecoveryState] = useState('detected');
-  const retryTimer = useRef(null);
-  const headingRef = useRef(null);
-  const isCritical = level === '3';
+  const [online, setOnline] = useState('online');
+  const [outcome, setOutcome] = useState('unavailable');
+  const [copyMode, setCopyMode] = useState('browser');
+  const [variant, setVariant] = useState('PGRST202');
+  const [storage, setStorage] = useState('DB_UNAVAILABLE');
+  const [retryMode, setRetryMode] = useState('persistent');
+  const [visualLevel, setVisualLevel] = useState('recoverable');
+  const [visualState, setVisualState] = useState('detected');
+  const [actionsEnabled, setActionsEnabled] = useState(true);
+  const [tenant, setTenant] = useState('QA-A');
+  const [actor, setActor] = useState('QA-OWNER');
+  const [generation, setGeneration] = useState(0);
+  const [fault, setFault] = useState(null);
+  const [fired, setFired] = useState(false);
+  const [incident, setIncident] = useState(null);
+  const [incidentGuard, setIncidentGuard] = useState(null);
+  const [normalization, setNormalization] = useState(null);
+  const [results, setResults] = useState({});
+  const [exportStatus, setExportStatus] = useState('');
+  const [host] = useState(() => { const element = document.createElement('div'); element.className = 'incident-qa incident-qa__portal'; return element; });
+  const scenarioSelect = useRef(null);
+  const boundary = useRef(null);
+  const [qaId, name, kind] = QA_SCENARIOS.find(([id]) => id === scenario);
+  const isRender = ['react', 'section', 'dedupe', 'financial'].includes(kind);
+  const critical = fired && kind === 'financial';
+  const currentResult = results[qaId] || { result: 'NOT RUN', notes: '', code: '', recovery: '', actions: [] };
+  const effectiveOutcome = online === 'timeout' ? 'timeout' : online === 'server' ? 'server' : outcome;
+  lab.configure({ online: online !== 'offline', outcome: effectiveOutcome, copyMode });
 
+  useLayoutEffect(() => {
+    document.body.appendChild(host);
+    return () => host.remove();
+  }, [host]);
   useEffect(() => {
-    const previousTheme = document.documentElement.getAttribute('data-theme');
-    if (theme === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
-    else document.documentElement.removeAttribute('data-theme');
-    return () => {
-      if (retryTimer.current) window.clearTimeout(retryTimer.current);
-      if (previousTheme) document.documentElement.setAttribute('data-theme', previousTheme);
-      else document.documentElement.removeAttribute('data-theme');
-    };
+    const previous = document.documentElement.getAttribute('data-theme');
+    document.documentElement.setAttribute('data-theme', theme);
+    return () => { if (previous) document.documentElement.setAttribute('data-theme', previous); else document.documentElement.removeAttribute('data-theme'); };
   }, [theme]);
-
+  const reset = () => {
+    setFired(false); setFault(null); setIncident(null); setIncidentGuard(null); setNormalization(null); setGeneration((n) => n + 1);
+    requestAnimationFrame(() => scenarioSelect.current?.focus());
+  };
   useEffect(() => {
-    if (!isCritical) return undefined;
-    const root = document.getElementById('root');
-    if (!root) return undefined;
-    const previousInert = Boolean(root.inert);
-    const previousAriaHidden = root.getAttribute('aria-hidden');
-    root.inert = true;
-    root.setAttribute('aria-hidden', 'true');
-    const focusFrame = window.requestAnimationFrame(() => {
-      headingRef.current?.focus({ preventScroll: true });
-    });
-    return () => {
-      window.cancelAnimationFrame(focusFrame);
-      root.inert = previousInert;
-      if (previousAriaHidden === null) root.removeAttribute('aria-hidden');
-      else root.setAttribute('aria-hidden', previousAriaHidden);
+    if (!critical) return undefined;
+    const keydown = (event) => {
+      if (event.key === 'Escape') { event.preventDefault(); reset(); return; }
+      if (event.key !== 'Tab') return;
+      const controls = [...host.querySelectorAll('button:not(:disabled), a[href], textarea, input:not(:disabled), select')]
+        .filter((el) => !el.closest('[hidden]'));
+      const first = controls[0]; const last = controls.at(-1);
+      if (event.shiftKey && (document.activeElement === first || !controls.includes(document.activeElement))) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && (document.activeElement === last || !controls.includes(document.activeElement))) { event.preventDefault(); first?.focus(); }
     };
-  }, [isCritical]);
+    document.addEventListener('keydown', keydown);
+    return () => document.removeEventListener('keydown', keydown);
+  }, [critical, host]);
 
-  const numericLevel = Number(level);
-  const severity = numericLevel === 1
-    ? 'recoverable'
-    : numericLevel === 3
-      ? 'critical_blocker'
-      : 'section_failure';
-  const timestamp = new Date().toISOString();
-  const metadata = {
-    code: numericLevel === 3 ? 'FINANCIAL_RESULT_UNKNOWN' : 'UI_RECOVERY_PREVIEW',
-    categoryLabel: numericLevel === 3 ? 'Operación financiera' : 'Interfaz',
-    section: numericLevel === 1 ? 'Gráfica de ventas' : numericLevel === 2 ? 'Ventas' : 'Cobro',
-    timestamp,
-    formattedTimestamp: new Date(timestamp).toLocaleString('es-MX', { dateStyle: 'medium', timeStyle: 'short' }),
-    appVersion: 'Vista local de QA',
-    online: true,
-    recoveryStatus: recoveryState
-  };
-
-  const handleRetry = () => {
-    if (retryTimer.current) window.clearTimeout(retryTimer.current);
-    setRecoveryState('recovering');
-    retryTimer.current = window.setTimeout(() => {
-      setRecoveryState('failed');
-      retryTimer.current = null;
-    }, 1100);
-  };
-
-  const primaryAction = recoveryState === 'recovering'
-    ? {
-      label: 'Recuperando…',
-      busy: true,
-      disabled: true
+  const start = () => {
+    const nextFault = createLabFault(kind, kind === 'storage' ? storage : kind === 'rpc' ? variant : '');
+    const context = { source: isRender ? 'react' : kind === 'storage' ? 'indexeddb' : 'backend_service',
+      pathname: kind === 'section' ? '/configuracion' : '/ventas', online: online !== 'offline',
+      ...(kind === 'react' || kind === 'dedupe' ? { severity: 'recoverable' } : {}) };
+    const guard = lab.guard();
+    setIncidentGuard(() => guard);
+    lab.armFixture();
+    setFault({ error: nextFault, context });
+    if (!isRender) {
+      setNormalization(kind === 'rpc' || kind === 'network' ? normalizeBackendError(nextFault, context) : null);
+      setIncident(lab.reporter.capture(nextFault, context));
+    } else {
+      setIncident(null);
     }
-    : recoveryState === 'failed'
-      ? {
-        label: 'Reintento agotado',
-        disabled: true,
-        disabledReason: 'Este intento ya se utilizó. Solicita ayuda antes de continuar.'
-      }
-      : recoveryState === 'blocked'
-        ? {
-          label: numericLevel === 3 ? 'Reintentar operación' : 'Reintentar sección',
-          disabled: true,
-          disabledReason: 'La acción está bloqueada mientras no se verifique el estado.'
-        }
-        : {
-          label: numericLevel === 1 ? 'Reintentar' : numericLevel === 3 ? 'Reintentar operación' : 'Reintentar sección',
-          onClick: handleRetry,
-          icon: <RefreshCw size={17} aria-hidden="true" />,
-          disabled: numericLevel === 3,
-          disabledReason: numericLevel === 3 ? 'El resultado del cobro requiere verificación.' : undefined
-        };
+    setFired(true);
+    setEvents((current) => [...current.slice(-29), isRender ? 'Acción QA: excepción de render' : 'Fallo de infraestructura simulado']);
+    setGeneration((n) => n + 1);
+  };
+  const changeScenario = (value) => {
+    reset(); setScenario(value);
+    if (value === 'QA-08') setOutcome('receipt');
+    else if (value === 'QA-13') setOutcome('throw');
+    else setOutcome('unavailable');
+  };
+  const changeContext = (nextTenant, nextActor) => {
+    lab.changeContext(nextTenant, nextActor); setTenant(nextTenant); setActor(nextActor);
+  };
+  const captureFromBoundary = (error, context) => {
+    const captured = lab.boundaryRuntime.captureIncident(error, context);
+    setIncident(captured);
+    return captured;
+  };
+  const runtime = { ...lab.boundaryRuntime, captureIncident: captureFromBoundary };
+  const metadata = fault ? getSafeIncidentMetadata(classifyIncident(fault.error, fault.context), {
+    pathname: fault.context.pathname, online: online !== 'offline'
+  }) : null;
+  const metrics = lab.metrics();
+  const updateResult = (patch) => setResults((current) => ({ ...current, [qaId]: { ...currentResult, ...patch,
+    code: incident?.safe_code || '', recovery: boundary.current?.state.recoveryStatus || (fired ? visualState : 'not_started'), actions: [...events] } }));
+  const exportResults = async () => {
+    const text = ['LANZO-POS — QA INCIDENT RECOVERY', 'PR: 357', `HEAD: ${import.meta.env.VITE_BUILD_COMMIT}`,
+      `ENVIRONMENT: ${import.meta.env.DEV ? 'DEVELOPMENT' : 'PREVIEW'}`, 'DATA: SYNTHETIC', 'SCOPE: LAB_QA', QA_LABEL,
+      ...QA_SCENARIOS.map(([id, title]) => {
+        const r = results[id];
+        return `${id}: ${r?.result || 'NOT RUN'} · ${title}\nCódigo: ${r?.code || '-'} · Recuperación: ${r?.recovery || '-'}\nAcciones: ${r?.actions?.join('; ') || '-'}\nObservaciones QA (revisar antes de compartir): ${r?.notes || '-'}`;
+      })].join('\n');
+    setExportStatus(await lab.copy(text) ? 'Resumen QA copiado.' : 'No se pudo copiar el resumen. Cambia a portapapeles local para inspeccionarlo.');
+  };
+  const recovery = fired && fault && (isRender ? (
+    <IncidentErrorBoundary key={generation} ref={boundary} runtime={runtime}
+      criticalPortalTarget={host} recoveryControls={critical ? (<div className="incident-qa__escape"><strong>{QA_LABEL} · Bloqueo ficticio</strong><button className="ui-button ui-button--secondary" onClick={reset}>Salir de la prueba</button><button disabled>Reintentar operación</button><p>Escape también cierra esta prueba. No verifica ni reintenta una operación.</p></div>) : null} incidentContext={fault.context}
+      createRecoveryContextGuard={() => incidentGuard} reportServices={lab.services} copyText={(text) => incidentGuard?.() ? lab.copy(text) : Promise.resolve(false)}
+      openSupportMailto={() => setEvents((current) => [...current.slice(-29), 'Correo interceptado localmente; sin aplicación externa'])}
+      navigateToPos={reset}>
+      <RenderFixture fault={fault.error} shouldFail={() => {
+        return fired && lab.fixtureShouldThrow(retryMode === 'recover' && boundary.current?._renderRecoveryAttempts === 1);
+      }} />
+    </IncidentErrorBoundary>
+  ) : (
+    <IncidentRecoveryPanel severity={kind === 'visual' ? visualLevel : incident?.severity || 'section_failure'}
+      title={kind === 'storage' ? 'Necesitamos revisar el almacenamiento local' : 'Incidencia controlada de prueba'}
+      description={kind === 'storage' ? 'Adaptador ficticio. No borres datos del navegador; ninguna base comercial fue abierta.' : 'Fallo de infraestructura simulado. No se contactó al servicio real.'}
+      metadata={{ ...metadata, recoveryStatus: visualState }} recoveryNotice={QA_LABEL}
+      primaryAction={{ label: 'Reintentar simulación', disabled: !actionsEnabled || visualState === 'blocked', onClick: start }}
+      incidentRecord={incident} reportServices={lab.services} isContextCurrent={incidentGuard} />
+  ));
 
-  const panel = (
-    <IncidentRecoveryPanel
-      severity={severity}
-      title={numericLevel === 1
-        ? 'No pudimos cargar esta información'
-        : numericLevel === 2
-          ? 'No pudimos mostrar esta sección'
-          : 'Necesitamos verificar esta operación'}
-      description={numericLevel === 1
-        ? 'Puedes intentarlo nuevamente. El resto de Lanzo POS sigue disponible.'
-        : numericLevel === 2
-          ? 'Ocurrió un problema inesperado. Puedes intentar recuperar esta sección sin reiniciar todo Lanzo POS.'
-          : 'No pudimos confirmar el resultado. Para evitar duplicaciones, algunas acciones permanecerán temporalmente bloqueadas.'}
-      metadata={metadata}
-      recoveryNotice={isCritical
-        ? `Escenario sintético de QA: no representa un cobro real. ${STATUS_COPY[recoveryState]}`
-        : STATUS_COPY[recoveryState]}
-      operationDetails={numericLevel === 3 ? {
-        title: 'Resultado de cobro no confirmado',
-        description: 'No vuelvas a registrar ni a repetir esta operación hasta comprobar su resultado.',
-        blockedActions: ['Repetir el cobro', 'Confirmar la operación por segunda vez'],
-        verification: 'Consulta el recibo o ledger canónico con soporte antes de continuar.'
-      } : null}
-      primaryAction={primaryAction}
-      titleRef={headingRef}
-    />
-  );
+  return <div className="incident-qa">
+    <header className="incident-qa__header"><div><p className="incident-qa__eyebrow">Lanzo POS · PR #357 · {import.meta.env.VITE_BUILD_COMMIT}</p><h1>Centro de Recuperación — Laboratorio QA</h1><p>Pruebas controladas del sistema de recuperación. No se utilizan ventas ni datos reales.</p></div>
+      <button className="ui-button ui-button--secondary" onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>Tema {theme === 'light' ? 'oscuro' : 'claro'}</button>
+    </header>
+    <div className="incident-qa__banner"><strong>ENTORNO DE PRUEBAS — DATOS FICTICIOS</strong><span>{QA_LABEL}. Recepción real del backend no disponible.</span></div>
+    <main className="incident-qa__grid">
+      <section className="incident-qa__controls" aria-labelledby="qa-scenarios"><h2 id="qa-scenarios">Escenarios</h2>
+        <label>Tipo de incidencia<select ref={scenarioSelect} value={scenario} onChange={(e) => changeScenario(e.target.value)}>{QA_SCENARIOS.map(([id, title]) => <option value={id} key={id}>{id} · {title}</option>)}</select></label>
+        <label>Conectividad simulada<select value={online} onChange={(e) => { setOnline(e.target.value); reset(); }}><option value="online">En línea</option><option value="offline">Sin conexión</option><option value="timeout">Timeout de servicio</option><option value="server">Error de servidor</option></select></label>
+        <label>Resultado del adaptador<select value={outcome} onChange={(e) => { setOutcome(e.target.value); reset(); }}>{OUTCOMES.map(([id, title]) => <option value={id} key={id}>{title}</option>)}</select></label>
+        {kind === 'rpc' && <label>Error RPC<select value={variant} onChange={(e) => { setVariant(e.target.value); reset(); }}>{['PGRST202', 'SUPABASE_TEMPORARY', 'AUTH_DENIED', 'SUPABASE_UNEXPECTED', 'SUPABASE_UNAVAILABLE'].map((v) => <option key={v}>{v}</option>)}</select></label>}
+        {kind === 'storage' && <label>Error de almacenamiento<select value={storage} onChange={(e) => { setStorage(e.target.value); reset(); }}>{['DB_UNAVAILABLE', 'DB_OPEN_REJECTED', 'DB_SCHEMA_INCOMPATIBLE', 'IDB_ACCESS_ERROR'].map((v) => <option key={v}>{v}</option>)}</select></label>}
+        <label>Recuperación del fixture<select value={retryMode} onChange={(e) => setRetryMode(e.target.value)}><option value="persistent">Persiste el fallo (agotar reintento)</option><option value="recover">Retirar fallo y recuperar</option></select></label>
+        {kind === 'visual' && <><label>Gravedad visual<select value={visualLevel} onChange={(e) => setVisualLevel(e.target.value)}><option value="recoverable">Componente</option><option value="section_failure">Sección</option></select></label><label>Estado visual<select value={visualState} onChange={(e) => setVisualState(e.target.value)}>{['detected', 'recovering', 'failed', 'blocked'].map((v) => <option key={v}>{v}</option>)}</select></label><label><input type="checkbox" checked={actionsEnabled} onChange={(e) => setActionsEnabled(e.target.checked)}/> Acciones visuales disponibles</label></>}
+        <label>Portapapeles<select value={copyMode} onChange={(e) => setCopyMode(e.target.value)}><option value="browser">Copia manual al navegador</option><option value="memory">Adaptador local en memoria</option><option value="failure">Fallo simulado</option></select></label>
+        <button className="ui-button ui-button--primary" onClick={start}>{isRender ? 'Provocar error de componente' : 'Generar incidencia controlada'}</button>
+        <button className="ui-button ui-button--secondary" onClick={reset}>Restablecer prueba</button>
+      </section>
+      <div className="incident-qa__work">
+        <section aria-labelledby="qa-system"><h2 id="qa-system">Estado del sistema</h2><div className="incident-qa__context">
+          <label>Tenant ficticio<select value={tenant} onChange={(e) => changeContext(e.target.value, actor)}><option>QA-A</option><option>QA-B</option></select></label>
+          <label>Actor ficticio<select value={actor} onChange={(e) => changeContext(tenant, e.target.value)}><option>QA-OWNER</option><option>QA-STAFF</option></select></label>
+        </div><p>{qaId} · {name} · {isRender ? 'Excepción auténtica de React en fixture' : kind === 'visual' ? 'Demostración visual' : 'Falla simulada de infraestructura'}</p>
+          <p role="status">Conexión simulada: {online} · Transporte QA en memoria: {metrics.transportCalls} llamadas · Recepciones ficticias internas: {metrics.simulatedReceipts}</p>
+          {incidentGuard && !incidentGuard() && <p role="alert">El actor o tenant cambió. El incidente anterior está bloqueado; genera uno nuevo.</p>}
+        </section>
+        <section aria-labelledby="qa-recovery"><h2 id="qa-recovery">Vista de recuperación</h2><p>Shell de prueba · Configuración y navegación ficticias permanecen disponibles.</p>
+          {recovery || <RenderFixture fail={false}/>}
+        </section>
+        <section aria-labelledby="qa-diagnostic"><h2 id="qa-diagnostic">Diagnóstico</h2><p>{incident ? `${incident.safe_code} · ${incident.category} · ${incident.severity}` : 'Provoca el fallo para capturar un diagnóstico seguro.'}</p>
+          {normalization && <p>Normalizador real: {normalization.failureKind} · {normalization.reportable ? 'Reportable' : 'Rechazo esperado; sin aviso global'}</p>}
+          <details><summary>Inspeccionar última copia local</summary><pre>{metrics.lastCopied || 'Aún no hay copia.'}</pre></details>
+        </section>
+        <section aria-labelledby="qa-report"><h2 id="qa-report">Reporte y comunicación</h2><p>Abre «Reportar problema» en la vista afectada. El consentimiento prueba el transporte local. Telegram abre su selector solo por acción manual; el correo se inspecciona localmente hacia example.invalid.</p>
+          {!fired && <p>Formulario disponible después de crear una incidencia.</p>}
 
-  return (
-    <div className="incident-qa">
-      <header className="incident-qa__toolbar">
-        <div className="incident-qa__brand">
-          <span className="incident-qa__brand-mark" aria-hidden="true"><LayoutDashboard size={20} /></span>
-          <div><strong>Lanzo POS</strong><span>Vista sintética de QA · solo desarrollo</span></div>
-        </div>
-        <div className="incident-qa__controls" aria-label="Controles de escenario">
-          <label>
-            Nivel
-            <select value={level} onChange={(event) => setLevel(event.target.value)}>
-              <option value="1">1 · Recuperable</option>
-              <option value="2">2 · Sección</option>
-              <option value="3">3 · Bloqueo crítico</option>
-            </select>
-          </label>
-          <label>
-            Estado
-            <select value={recoveryState} onChange={(event) => setRecoveryState(event.target.value)}>
-              {RECOVERY_STATES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-            </select>
-          </label>
-          <button
-            type="button"
-            className="ui-button ui-button--secondary incident-qa__theme"
-            onClick={() => setTheme((current) => current === 'light' ? 'dark' : 'light')}
-            aria-label={theme === 'light' ? 'Activar tema oscuro' : 'Activar tema claro'}
-          >
-            {theme === 'light' ? <Moon size={17} aria-hidden="true" /> : <Sun size={17} aria-hidden="true" />}
-            {theme === 'light' ? 'Oscuro' : 'Claro'}
-          </button>
-        </div>
-      </header>
+          <details><summary>Inspeccionar borrador de correo</summary><pre>{metrics.emailDraft ? decodeURIComponent(metrics.emailDraft) : 'Prepara el mensaje y pulsa «Inspeccionar borrador local».'}</pre></details>
+        </section>
+        <section aria-labelledby="qa-results"><h2 id="qa-results">Resultados</h2><p>Registrar un resultado es una decisión manual; abrir un escenario nunca lo aprueba.</p>
+          <label>Resultado de {qaId}<select value={currentResult.result} onChange={(e) => updateResult({ result: e.target.value })}>{['NOT RUN', 'PASS', 'FAIL', 'BLOCKED'].map((v) => <option key={v}>{v}</option>)}</select></label>
+          <label>Observaciones opcionales (solo datos QA)<textarea value={currentResult.notes} maxLength={500} onChange={(e) => updateResult({ notes: e.target.value })}/></label>
+          <button className="ui-button ui-button--secondary" onClick={exportResults}>Copiar resumen QA</button><p role="status">{exportStatus}</p>
+          <ul className="incident-qa__results">{QA_SCENARIOS.map(([id, title]) => <li key={id}><strong>{id}</strong> {title}: {results[id]?.result || 'NOT RUN'}</li>)}</ul>
+          <details><summary>Acciones observadas (máximo 30)</summary><ol>{events.map((event, i) => <li key={i}>{event}</li>)}</ol></details>
+        </section>
+        <footer><strong>LAB_QA</strong> · ISOLATED_INTEGRATION_QA pendiente. PRODUCTION_QA no autorizada. Sin migraciones ni cambios productivos.</footer>
+      </div>
+    </main>
 
-      <p className="incident-qa__disclaimer" role="status">
-        Errores y datos de muestra: no ejecuta operaciones, no envía reportes y no confirma recuperaciones.
-      </p>
-
-      {numericLevel === 3 ? (
-        <main className="incident-qa__critical-stage">
-          <div className="incident-qa__critical-context">
-            <p className="incident-qa__eyebrow">Operación afectada · cobro pendiente de verificación</p>
-            <h1>Centro de recuperación</h1>
-            <p>El acceso a la operación permanece bloqueado hasta confirmar su resultado.</p>
-          </div>
-          {createPortal(panel, document.body)}
-        </main>
-      ) : (
-        <div className="incident-qa__shell">
-          <aside className="incident-qa__sidebar" aria-label="Navegación de muestra">
-            <div className="incident-qa__sidebar-title"><LayoutDashboard size={18} aria-hidden="true" /> Lanzo</div>
-            <span>POS</span><span>Ventas</span><span>Productos</span><span>Configuración</span>
-          </aside>
-          <main className="incident-qa__workspace">
-            <div className="incident-qa__page-heading">
-              <div><p className="incident-qa__eyebrow">Administración</p><h1>{numericLevel === 1 ? 'Resumen de ventas' : 'Ventas'}</h1></div>
-              <span>Vista de muestra</span>
-            </div>
-            {numericLevel === 1 ? (
-              <div className="incident-qa__dashboard-grid">
-                <section className="incident-qa__sample-card">
-                  <p className="incident-qa__eyebrow">Últimos 7 días</p>
-                  <h2>Actividad reciente</h2>
-                  <div className="incident-qa__chart-placeholder" aria-label="Gráfica de ventas de muestra" />
-                </section>
-                <section className="incident-qa__widget">
-                  <h2>Ventas por día</h2>
-                  {panel}
-                </section>
-              </div>
-            ) : (
-              <section className="incident-qa__section-content">
-                <p className="incident-qa__breadcrumb">Inicio <span aria-hidden="true">/</span> Ventas</p>
-                {panel}
-              </section>
-            )}
-          </main>
-        </div>
-      )}
-    </div>
-  );
+  </div>;
 }

@@ -52,17 +52,20 @@ const getStatusMessage = (status, code, reference) => {
 
 export default function IncidentReportForm({
   incident,
+  services = null,
   isContextCurrent: isContextCurrentProp = null,
   openOnMount = false,
   onClose = null
 }) {
+  const onlineState = services?.getOnlineState || getOnlineState;
+  const copyText = services?.copyText || copyTextToClipboard;
   const id = useId().replace(/:/g, '');
   const descriptionId = `incident-report-description-${id}`;
   const communicationMessageId = `incident-communication-message-${id}`;
   const communicationHelpId = `incident-communication-help-${id}`;
   const [open, setOpen] = useState(openOnMount);
   const [reportStatus, setReportStatus] = useState(() => (openOnMount
-    ? (getOnlineState() ? INCIDENT_REPORT_STATUS.READY : INCIDENT_REPORT_STATUS.OFFLINE)
+    ? (onlineState() ? INCIDENT_REPORT_STATUS.READY : INCIDENT_REPORT_STATUS.OFFLINE)
     : INCIDENT_REPORT_STATUS.NOT_STARTED));
   const [description, setDescription] = useState('');
   const [consent, setConsent] = useState(false);
@@ -109,7 +112,7 @@ export default function IncidentReportForm({
   const telegramShareUrl = currentPreparedCommunication
     ? buildTelegramShareUrl(currentPreparedCommunication.message)
     : '';
-  const supportEmail = getSupportEmail();
+  const supportEmail = services?.supportEmail || getSupportEmail();
   const emailUrl = currentPreparedCommunication
     ? buildSupportMailtoUrl({
       to: supportEmail,
@@ -119,7 +122,7 @@ export default function IncidentReportForm({
     : '';
 
   useEffect(() => {
-    setReportStatus(getOnlineState() ? INCIDENT_REPORT_STATUS.READY : INCIDENT_REPORT_STATUS.OFFLINE);
+    setReportStatus(onlineState() ? INCIDENT_REPORT_STATUS.READY : INCIDENT_REPORT_STATUS.OFFLINE);
     setDescription('');
     setConsent(false);
     setReportCode('');
@@ -128,7 +131,7 @@ export default function IncidentReportForm({
     setPreparedCommunication(null);
     setCommunicationStatus('');
     setCommunicationFeedback('');
-  }, [currentIncidentId]);
+  }, [currentIncidentId, onlineState]);
 
   const handleOpen = useCallback(async () => {
     if (typeof isContextCurrentProp === 'function') {
@@ -148,9 +151,9 @@ export default function IncidentReportForm({
     setPreparedCommunication(null);
     setCommunicationStatus('');
     setCommunicationFeedback('');
-    setReportStatus(getOnlineState() ? INCIDENT_REPORT_STATUS.READY : INCIDENT_REPORT_STATUS.OFFLINE);
+    setReportStatus(onlineState() ? INCIDENT_REPORT_STATUS.READY : INCIDENT_REPORT_STATUS.OFFLINE);
     setOpen(true);
-  }, [isContextCurrentProp]);
+  }, [isContextCurrentProp, onlineState]);
 
   useEffect(() => {
     if (openOnMount) void handleOpen();
@@ -161,9 +164,13 @@ export default function IncidentReportForm({
   const handleCopyDiagnostic = async () => {
     setDiagnosticCopyStatus('');
     try {
+      if (!isContextCurrent(getContextGuard())) {
+        setDiagnosticCopyStatus('El contexto cambió. Abre de nuevo la incidencia para copiar el diagnóstico.');
+        return;
+      }
       // The optional free-text description is deliberately omitted.
       const diagnostic = formatIncidentDiagnostic(incident);
-      const copied = await copyTextToClipboard(diagnostic);
+      const copied = await copyText(diagnostic);
       setDiagnosticCopyStatus(copied === true
         ? 'Diagnóstico local copiado. Revísalo antes de compartirlo.'
         : 'No se pudo copiar automáticamente. Puedes volver a intentarlo o usar el correo de soporte.');
@@ -196,9 +203,15 @@ export default function IncidentReportForm({
     setReceipt(null);
 
     try {
-      const { useAppStore } = await import('../../store/useAppStore');
-      const currentLicenseDetails = useAppStore.getState()?.licenseDetails || {};
-      const result = await submitIncidentReport(incident, {
+      let currentLicenseDetails = {};
+      if (!services) {
+        const { useAppStore } = await import('../../store/useAppStore');
+        currentLicenseDetails = useAppStore.getState()?.licenseDetails || {};
+      }
+      const submit = services ? services.submit : submitIncidentReport;
+      // An injected service without a transport fails closed; no production fallback.
+      if (typeof submit !== 'function') throw new Error('REPORT_TRANSPORT_UNAVAILABLE');
+      const result = await submit(incident, {
         consent,
         userDescription: description,
         licenseDetails: currentLicenseDetails,
@@ -263,7 +276,7 @@ export default function IncidentReportForm({
     }
 
     const useReceipt = currentReceipt && currentReceipt.incidentId === currentIncidentId;
-    const message = buildIncidentCommunicationMessage({
+    const message = (services?.buildCommunication || buildIncidentCommunicationMessage)({
       incident,
       reportStatus: useReceipt ? INCIDENT_REPORT_STATUS.SENT : visibleReportStatus,
       reportReference: useReceipt?.reportReference,
@@ -292,7 +305,7 @@ export default function IncidentReportForm({
 
     let copied = false;
     try {
-      copied = await copyTextToClipboard(currentPreparedCommunication.message) === true;
+      copied = await copyText(currentPreparedCommunication.message) === true;
     } catch {
       copied = false;
     }
@@ -338,6 +351,12 @@ export default function IncidentReportForm({
       return;
     }
 
+    if (services?.inspectEmail) {
+      event.preventDefault();
+      services.inspectEmail(emailUrl);
+      setCommunicationFeedback('Borrador inspeccionado localmente. No se abrió ni envió correo.');
+      return;
+    }
     setCommunicationStatus('email_open_requested');
     setCommunicationFeedback('Se abrió o intentó abrir un borrador de correo. Revisa el contenido y envíalo manualmente; esto no registra el reporte.');
   };
@@ -430,7 +449,7 @@ export default function IncidentReportForm({
           </div>
 
           <p className="incident-report__status" role="status" aria-live="polite" aria-atomic="true">
-            {getStatusMessage(visibleReportStatus, visibleReportCode, currentReceipt?.reportReference || '')}
+            {(services?.describeStatus || getStatusMessage)(visibleReportStatus, visibleReportCode, currentReceipt?.reportReference || '')}
           </p>
           {diagnosticCopyStatus && <p className="incident-report__copy-status" role="status" aria-live="polite">{diagnosticCopyStatus}</p>}
 
@@ -463,7 +482,7 @@ export default function IncidentReportForm({
                     href={emailUrl}
                     onClick={handleEmailClick}
                   >
-                    <Mail size={16} aria-hidden="true" /> Abrir correo de soporte
+                    <Mail size={16} aria-hidden="true" /> {services?.inspectEmail ? 'Inspeccionar borrador local' : 'Abrir correo de soporte'}
                   </a>
                 </>
               )}

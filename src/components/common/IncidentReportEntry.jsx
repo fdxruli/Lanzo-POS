@@ -3,7 +3,7 @@ import { Send } from 'lucide-react';
 
 const IncidentReportForm = lazy(() => import('./IncidentReportForm'));
 
-export default function IncidentReportEntry({ incident, isContextCurrent = null }) {
+export default function IncidentReportEntry({ incident, isContextCurrent = null, services = null }) {
   const [open, setOpen] = useState(false);
 
   if (!incident) return null;
@@ -12,6 +12,7 @@ export default function IncidentReportEntry({ incident, isContextCurrent = null 
     return (
       <Suspense fallback={<p role="status">Preparando el formulario de reporte…</p>}>
         <IncidentReportForm
+          services={services}
           incident={incident}
           isContextCurrent={isContextCurrent}
           openOnMount

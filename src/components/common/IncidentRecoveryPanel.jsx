@@ -41,6 +41,8 @@ export default function IncidentRecoveryPanel({
   onCopy = null,
   copyError = '',
   incidentRecord = null,
+  reportServices = null,
+  recoveryControls = null,
   isContextCurrent = null,
   contactNote = '',
   onDismiss = null,
@@ -70,6 +72,8 @@ export default function IncidentRecoveryPanel({
             <p className="incident-recovery__description">{description}</p>
           </div>
         </div>
+
+        {recoveryControls}
 
         {operationDetails && (
           <section className="incident-recovery__operation" aria-label="Operación afectada">
@@ -150,7 +154,7 @@ export default function IncidentRecoveryPanel({
           )}
         </div>
 
-        <IncidentReportEntry incident={incidentRecord} isContextCurrent={isContextCurrent} />
+        <IncidentReportEntry services={reportServices} incident={incidentRecord} isContextCurrent={isContextCurrent} />
 
         {contactNote && (
           <p className="incident-recovery__contact-note">
