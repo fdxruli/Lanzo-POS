@@ -101,21 +101,23 @@ describe('AboutPage Telegram actions', () => {
 
   afterEach(() => cleanup());
 
-  it('previews the current Local team request and opens only the official Telegram chat', () => {
+  it('previews the current Local team request and opens Telegram share options with an explicit recipient choice', () => {
     renderPage();
     fireEvent.click(screen.getByRole('button', { name: /Trabajo con un equipo/ }));
     fireEvent.click(screen.getByRole('button', { name: /Solicitar Lanzo Nube/ }));
 
     const dialog = screen.getByRole('dialog');
-    const message = screen.getByLabelText(/Mensaje para solicitar Lanzo Nube/);
-    const telegramLink = screen.getByRole('link', { name: /Abrir chat de Lanzo POS/ });
+    const message = screen.getByLabelText(/Mensaje para revisar antes de compartir/);
+    const telegramLink = screen.getByRole('link', { name: /Abrir opciones para compartir el mensaje en Telegram/ });
     const telegramUrl = new URL(telegramLink.href);
 
     expect(dialog).toHaveAttribute('aria-modal', 'true');
     expect(message.value).toContain('contratar Lanzo Nube');
     expect(message.value).toContain('Trabajo con un equipo.');
     expect(message.value).toContain('Café QA');
-    expect(`${telegramUrl.origin}${telegramUrl.pathname}`).toBe('https://t.me/LanzoPOS_Oficial');
+    expect(screen.getByText(/no pudimos verificar que tenga mensajes directos habilitados/i)).toBeInTheDocument();
+    expect(`${telegramUrl.origin}${telegramUrl.pathname}`).toBe('https://t.me/share/url');
+    expect(telegramUrl.searchParams.get('url')).toBe('https://t.me/LanzoPOS_Oficial');
     expect(telegramUrl.searchParams.get('text')).toBe(message.value);
     expect(telegramLink).toHaveAttribute('target', '_blank');
     expect(telegramLink).toHaveAttribute('rel', 'noopener noreferrer');
@@ -126,7 +128,7 @@ describe('AboutPage Telegram actions', () => {
     renderPage();
     fireEvent.click(screen.getByRole('button', { name: /Trabajo con un equipo/ }));
     fireEvent.click(screen.getByRole('button', { name: /Consultar requisitos/ }));
-    expect(screen.getByLabelText(/Mensaje para consultar requisitos/).value)
+    expect(screen.getByLabelText(/Mensaje para revisar antes de compartir/).value)
       .toContain('Trabajo con un equipo.');
 
     fireEvent.click(screen.getByRole('button', { name: 'Volver' }));
@@ -134,7 +136,7 @@ describe('AboutPage Telegram actions', () => {
     const soloAction = screen.getByRole('button', { name: /Consultar Lanzo Nube/ });
     fireEvent.click(soloAction);
 
-    const message = screen.getByLabelText(/Mensaje para consultar Lanzo Nube/);
+    const message = screen.getByLabelText(/Mensaje para revisar antes de compartir/);
     expect(message.value).toContain('Vendo desde un equipo.');
     expect(message.value).not.toContain('Trabajo con un equipo.');
     fireEvent.click(screen.getByRole('button', { name: 'Volver' }));
@@ -223,7 +225,7 @@ describe('AboutPage Telegram actions', () => {
     fireEvent.click(screen.getByRole('button', { name: /Vendo desde un equipo/ }));
     fireEvent.click(screen.getByRole('button', { name: /Consultar Lanzo Nube/ }));
 
-    expect(screen.getByRole('dialog')).toHaveTextContent('abrir el chat no confirma su recepción');
+    expect(screen.getByRole('dialog')).toHaveTextContent('Abrir Telegram no confirma su recepción');
     expect(state.store.licenseDetails).toEqual(initialLicense);
     expect(screen.queryByText(/mensaje enviado/i)).not.toBeInTheDocument();
   });

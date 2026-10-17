@@ -10,14 +10,17 @@ const readProjectFile = (relativePath) => readFile(path.join(projectRoot, relati
 describe('administrative lazy route recovery architecture', () => {
   it('routes every lazy page failure through the strong version recovery without a global cooldown', async () => {
     const app = await readProjectFile('src/App.jsx');
+    const fallback = await readProjectFile('src/components/common/AdminLazyRouteRecoveryFallback.jsx');
     const lazyStart = app.indexOf('const lazyRetry');
     const lazyEnd = app.indexOf('const EcommerceOrdersPage', lazyStart);
     const lazySource = app.slice(lazyStart, lazyEnd);
 
     expect(app).toContain("from './pwa/adminLazyRouteRecovery'");
     expect(lazySource).toContain('await prepareAdminLazyRoute()');
-    expect(lazySource).toContain('await recoverAdminLazyRoute({ error })');
-    expect(lazySource).toContain('force: true');
+    expect(lazySource).toContain('await recoverAdminLazyRoute({ error, isContextCurrent })');
+    expect(lazySource).toContain('createRecoveryContextGuard()');
+    expect(lazySource).toContain("status: 'stale-context'");
+    expect(fallback).toContain('force: true');
     expect(lazySource).not.toMatch(/MAX_RETRIES|GLOBAL_COOLDOWN_MS|lazy_retry_last_time/);
     expect(lazySource).not.toContain('window.location.reload()');
   });
@@ -58,14 +61,16 @@ describe('administrative lazy route recovery architecture', () => {
 
     expect(recovery).toContain('activeLazyRouteRecoveryPromise');
     expect(recovery).toContain('isRecoverableAdminStartupError(error)');
-    expect(recovery).toContain('recoverStartup({ error, force })');
+    expect(recovery).toContain('recoverStartup({ error, force, isContextCurrent })');
+    expect(recovery).toContain('createRecoveryContextGuard');
     expect(recovery).not.toMatch(/caches\.delete|unregister\(|location\.reload|location\.replace/);
   });
 
-  it('checks for updates before route imports and while the installed app resumes', async () => {
-    const [main, monitor] = await Promise.all([
+  it('keeps update checks in the global monitor instead of route imports', async () => {
+    const [main, monitor, recovery] = await Promise.all([
       readProjectFile('src/main.jsx'),
       readProjectFile('src/pwa/adminServiceWorkerUpdateMonitor.js'),
+      readProjectFile('src/pwa/adminLazyRouteRecovery.js'),
     ]);
 
     expect(main).toContain('startAdminServiceWorkerUpdateMonitor');
@@ -76,5 +81,7 @@ describe('administrative lazy route recovery architecture', () => {
     expect(monitor).toContain("addEventListener?.('focus'");
     expect(monitor).toContain("addEventListener?.('online'");
     expect(monitor).toContain("addEventListener?.('pageshow'");
+    expect(recovery).toContain("status: 'not-required'");
+    expect(recovery).not.toContain('requestAdminServiceWorkerUpdateCheck');
   });
 });

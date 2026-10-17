@@ -59,6 +59,10 @@ const renderGate = (props = {}) => render(
   </DatabaseRecoveryGate>
 );
 
+const openRecoveryDetails = () => {
+  fireEvent.click(screen.getByText('Detalles del problema'));
+};
+
 const publishNativeOperations = (operations) => {
   nativeOperationMocks.snapshot = Object.freeze(
     operations.map((operation) => Object.freeze({ ...operation }))
@@ -87,7 +91,7 @@ describe('DatabaseRecoveryGate', () => {
   it.each([
     ['idle', /comprobando la base local/i],
     ['checking', /comprobando la base local/i],
-    ['migrating', /actualizando la base local/i],
+    ['migrating', /preparando una actualización de la base local/i],
     ['failed', /recuperación automática no pudo completarse/i]
   ])('does not mount children while status is %s', (status, expectedCopy) => {
     recoveryMocks.state = { ...recoveryMocks.state, status };
@@ -98,22 +102,25 @@ describe('DatabaseRecoveryGate', () => {
     expect(screen.getByText(expectedCopy)).toBeInTheDocument();
   });
 
-  it('shows migration phase and counts while migrating', () => {
+  it('shows only an allowlisted migration phase without row counts or store payloads', () => {
     recoveryMocks.state = {
       ...recoveryMocks.state,
       status: 'migrating',
-      affectedStores: ['sales', 'deleted_sales'],
+      affectedStores: ['sales', 'customer Ana Lopez'],
       migration: {
         phase: 'backup_complete',
-        sourceCounts: { sales: 2, deleted_sales: 1 },
-        targetCounts: {}
+        sourceCounts: { sales: 2, license_key: 'full-license-secret', customer: 'Ana Lopez' },
+        targetCounts: { total: 9876.5, token: 'jwt-secret' }
       }
     };
 
     renderGate();
 
     expect(screen.getByText(/backup_complete/i)).toBeInTheDocument();
-    expect(screen.getByText(/"sales":2/i)).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('Ana Lopez');
+    expect(document.body.textContent).not.toContain('full-license-secret');
+    expect(document.body.textContent).not.toContain('9876.5');
+    expect(document.body.textContent).not.toContain('jwt-secret');
   });
 
   it('keeps DB_BLOCKED instructions without offering a parallel retry', () => {
@@ -141,11 +148,24 @@ describe('DatabaseRecoveryGate', () => {
     renderGate({ reloadPage });
 
     expect(screen.getByText(/almacenamiento local de este tenant no puede abrirse/i)).toBeInTheDocument();
-    expect(screen.getByText(/no se eliminó ningún dato local/i)).toBeInTheDocument();
+    expect(screen.getByText(/esta comprobación no ejecutó una limpieza de datos/i)).toBeInTheDocument();
     expect(screen.queryByText(/crear nueva base|restablecer tenant|continuar de todos modos/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/LanzoDB1/i)).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /recargar lanzo/i }));
+    fireEvent.click(screen.getByRole('button', { name: /reiniciar lanzo/i }));
     expect(reloadPage).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers the shared technical reporter for a failed database check', async () => {
+    recoveryMocks.state = {
+      ...recoveryMocks.state,
+      status: 'failed',
+      errorCode: 'DB_OPEN_TIMEOUT'
+    };
+
+    renderGate();
+
+    expect(await screen.findByRole('button', { name: 'Reportar problema' })).toBeInTheDocument();
+    expect(screen.getByText(/Este flujo no elimina la base local/i)).toBeInTheDocument();
   });
 
   it('collapses multiple retry clicks into one recovery call', () => {
@@ -181,7 +201,7 @@ describe('DatabaseRecoveryGate', () => {
 
     expect(screen.getByText(/todavía mantiene una solicitud activa/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /reintentar recuperación/i })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /recargar lanzo/i })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: /reiniciar lanzo/i })).not.toBeInTheDocument();
 
     act(() => publishNativeOperations([]));
 
@@ -216,17 +236,17 @@ describe('DatabaseRecoveryGate', () => {
     expect(screen.getByText(/todavía mantiene una solicitud activa/i)).toBeInTheDocument();
     expect(screen.queryByText(/cierra las demás pestañas de lanzo/i)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /reintentar recuperación/i })).toBeDisabled();
-    expect(screen.getByRole('button', { name: /recargar lanzo/i })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: /reiniciar lanzo/i })).not.toBeInTheDocument();
 
     act(() => publishNativeOperations([]));
 
     expect(screen.getByRole('button', { name: /reintentar recuperación/i })).toBeEnabled();
-    expect(screen.getByRole('button', { name: /recargar lanzo/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /reiniciar lanzo/i })).toBeEnabled();
     expect(reloadPage).not.toHaveBeenCalled();
     expect(runtimeMocks.retryLocalDatabaseRecovery).not.toHaveBeenCalled();
   });
 
-  it('keeps a safe reload action visible when the native request never settles', () => {
+  it('keeps retry blocked without showing a reload action while a native request never settles', () => {
     recoveryMocks.state = {
       ...recoveryMocks.state,
       status: 'recovery_required',
@@ -241,10 +261,8 @@ describe('DatabaseRecoveryGate', () => {
     renderGate({ reloadPage });
 
     expect(screen.getByRole('button', { name: /reintentar recuperación/i })).toBeDisabled();
-    const reloadButton = screen.getByRole('button', { name: /recargar lanzo/i });
-    expect(reloadButton).toBeEnabled();
-    fireEvent.click(reloadButton);
-    expect(reloadPage).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('button', { name: /reiniciar lanzo/i })).not.toBeInTheDocument();
+    expect(reloadPage).not.toHaveBeenCalled();
     expect(runtimeMocks.retryLocalDatabaseRecovery).not.toHaveBeenCalled();
   });
 
@@ -301,12 +319,13 @@ describe('DatabaseRecoveryGate', () => {
     renderGate();
 
     expect(screen.getByRole('heading', { name: /esta versión de lanzo no puede abrir tu base local/i })).toBeInTheDocument();
-    expect(screen.getByText(/tus datos permanecen guardados/i)).toBeInTheDocument();
+    expect(screen.getByText(/la comprobación no pudo abrir la base local/i)).toBeInTheDocument();
     expect(screen.getByText(/no borres los datos de la aplicación/i)).toBeInTheDocument();
+    openRecoveryDetails();
     expect(screen.getByText('DB_UNSUPPORTED_NATIVE_VERSION')).toBeInTheDocument();
     expect(screen.getByText('320')).toBeInTheDocument();
     expect(screen.getByText('310')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /enviar reporte a soporte/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /abrir correo de soporte/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /copiar diagnóstico/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /reintentar recuperación/i })).not.toBeInTheDocument();
   });
@@ -324,7 +343,8 @@ describe('DatabaseRecoveryGate', () => {
     const openSupportMailto = vi.fn();
 
     renderGate({ openSupportMailto });
-    fireEvent.click(screen.getByRole('button', { name: /enviar reporte a soporte/i }));
+    openRecoveryDetails();
+    fireEvent.click(screen.getByRole('button', { name: /abrir correo de soporte/i }));
     fireEvent.click(screen.getByRole('button', { name: /copiar diagnóstico/i }));
 
     expect(openSupportMailto).toHaveBeenCalledTimes(1);
@@ -333,6 +353,57 @@ describe('DatabaseRecoveryGate', () => {
     expect(clipboard.mock.calls[0][0]).toContain('DB_NOT_INSPECTABLE');
     expect(clipboard.mock.calls[0][0]).not.toContain('secret-tenant');
     expect(await screen.findByRole('button', { name: /diagnóstico copiado/i })).toBeInTheDocument();
+  });
+
+  it('does not expose raw recovery errors or unknown error codes in the screen or support link', async () => {
+    recoveryMocks.state = {
+      ...recoveryMocks.state,
+      status: 'failed',
+      errorCode: 'DB_BROWSER_STORAGE_UNAVAILABLE',
+      message: 'license_key=full-license-secret customer=Ana Lopez',
+      affectedStores: ['sales:9876.50', 'customer:Ana Lopez'],
+      migration: {
+        phase: 'token=phase-secret',
+        sourceCounts: { sale: { amount: 9876.5 } },
+        targetCounts: { customer: 'Ana Lopez' }
+      }
+    };
+    runtimeMocks.retryLocalDatabaseRecovery.mockRejectedValue(
+      new Error('license_key=full-license-secret token=jwt-secret customer=Ana Lopez total=9876.50')
+    );
+    const openSupportMailto = vi.fn();
+
+    renderGate({ openSupportMailto });
+    openRecoveryDetails();
+    expect(screen.getByText('DB_BROWSER_STORAGE_UNAVAILABLE')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /abrir correo de soporte/i }));
+    fireEvent.click(screen.getByRole('button', { name: /reintentar recuperación/i }));
+
+    expect(await screen.findByText(/no podemos confirmar el estado final/i)).toBeInTheDocument();
+    const renderedText = document.body.textContent;
+    const mailto = openSupportMailto.mock.calls[0][0];
+    expect(renderedText).not.toContain('full-license-secret');
+    expect(renderedText).not.toContain('jwt-secret');
+    expect(renderedText).not.toContain('Ana Lopez');
+    expect(renderedText).not.toContain('9876.50');
+    expect(mailto).not.toContain('full-license-secret');
+    expect(mailto).not.toContain('jwt-secret');
+    expect(mailto).not.toContain('Ana%20Lopez');
+    expect(mailto).not.toContain('9876.50');
+  });
+
+  it('replaces unknown recovery codes with a safe incident label', () => {
+    recoveryMocks.state = {
+      ...recoveryMocks.state,
+      status: 'failed',
+      errorCode: 'DB_SECRET_token-value'
+    };
+
+    renderGate();
+
+    openRecoveryDetails();
+    expect(screen.getByText('INCIDENT_INDEXEDDB')).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('DB_SECRET_token-value');
   });
 
   it('keeps copy available offline without changing the recovery code', () => {
@@ -347,6 +418,7 @@ describe('DatabaseRecoveryGate', () => {
     renderGate();
 
     expect(screen.getByText(/estás sin conexión/i)).toBeInTheDocument();
+    openRecoveryDetails();
     expect(screen.getByRole('button', { name: /copiar diagnóstico/i })).toBeEnabled();
     expect(recoveryMocks.state.errorCode).toBe('DB_UNSUPPORTED_NATIVE_VERSION');
   });

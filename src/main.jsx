@@ -14,6 +14,7 @@ import {
   recoverAdminStartup,
 } from './pwa/adminStartupRecovery';
 import { updateExistingAdminWorkerOnPublicRoute } from './pwa/publicRouteWorkerUpdate';
+import { createRecoveryContextGuard } from './services/diagnostics/recoveryContext';
 import './index.css';
 import './styles/design-tokens.css';
 import './styles/buttons.css';
@@ -65,12 +66,13 @@ async function renderPosApplication() {
 
 async function handlePosStartupFailure(error) {
   console.error('No se pudo iniciar Lanzo POS.', error);
+  const isContextCurrent = createRecoveryContextGuard();
   const recoverableVersionError = isRecoverableAdminStartupError(error);
 
   const retryRecovery = async () => {
     renderStartupRecoveryScreen({ mode: 'recovering' });
     try {
-      const recovery = await recoverAdminStartup({ error, force: true });
+      const recovery = await recoverAdminStartup({ error, force: true, isContextCurrent });
       if (recovery?.status === 'reloading') return;
       renderStartupRecoveryScreen({ mode: 'updateError', onRetry: retryRecovery });
     } catch (recoveryError) {
@@ -86,7 +88,7 @@ async function handlePosStartupFailure(error) {
 
   renderStartupRecoveryScreen({ mode: 'recovering' });
   try {
-    const recovery = await recoverAdminStartup({ error });
+    const recovery = await recoverAdminStartup({ error, isContextCurrent });
     if (recovery.status === 'reloading') return;
   } catch (recoveryError) {
     console.error('Falló la recuperación automática de Lanzo POS.', recoveryError);

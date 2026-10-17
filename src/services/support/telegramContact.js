@@ -1,5 +1,9 @@
 export const TELEGRAM_USERNAME = 'LanzoPOS_Oficial';
 export const TELEGRAM_CONTACT_BASE_URL = `https://t.me/${TELEGRAM_USERNAME}`;
+export const TELEGRAM_SHARE_BASE_URL = 'https://t.me/share/url';
+// Telegram direct messages are configurable per channel. The public page for
+// this channel could not be inspected, so callers must not treat it as a chat.
+export const TELEGRAM_CHANNEL_DIRECT_MESSAGES_STATUS = 'unverified';
 export const MAX_TELEGRAM_MESSAGE_CODEPOINTS = 1200;
 
 export const TELEGRAM_CONTACT_INTENT = Object.freeze({
@@ -28,6 +32,8 @@ const KNOWN_LICENSE_CONTEXT_STATES = new Set([
   'cloud_expired'
 ]);
 const ALLOWED_PLAN_NAMES = new Set(['Lanzo Local', 'Lanzo Nube']);
+// Control characters must be stripped before any user-provided text is shared.
+// eslint-disable-next-line no-control-regex
 const CONTROL_CHARACTERS = /[\u0000-\u001F\u007F-\u009F]/g;
 const RESTRICTED_BUSINESS_NAME_PATTERNS = [
   /\bLANZO-(?:[A-Z0-9]{4}-){2,}[A-Z0-9]{4}\b/i,
@@ -154,12 +160,17 @@ export const buildTelegramContactMessage = (intent, context = {}) => {
   return limitMessageLength(message);
 };
 
-export const buildTelegramContactUrl = (intent, context = {}) => {
-  const url = new URL(TELEGRAM_CONTACT_BASE_URL);
-  url.searchParams.set('text', buildTelegramContactMessage(intent, context));
+export const buildTelegramShareUrl = (message) => {
+  const url = new URL(TELEGRAM_SHARE_BASE_URL);
+  url.searchParams.set('url', TELEGRAM_CONTACT_BASE_URL);
+  url.searchParams.set('text', limitMessageLength(message));
 
   return url.toString();
 };
+
+export const buildTelegramContactUrl = (intent, context = {}) => (
+  buildTelegramShareUrl(buildTelegramContactMessage(intent, context))
+);
 
 export const createTelegramContact = (intent, context = {}) => {
   const normalizedIntent = normalizeIntent(intent);
@@ -169,16 +180,21 @@ export const createTelegramContact = (intent, context = {}) => {
     intent: normalizedIntent,
     username: TELEGRAM_USERNAME,
     message,
-    url: `${TELEGRAM_CONTACT_BASE_URL}?text=${encodeURIComponent(message)}`
+    // The official share flow asks the user to choose a recipient. The
+    // channel URL is shared as a reference; it is not treated as a DM target.
+    url: buildTelegramShareUrl(message)
   });
 };
 
 export default Object.freeze({
   TELEGRAM_USERNAME,
   TELEGRAM_CONTACT_BASE_URL,
+  TELEGRAM_SHARE_BASE_URL,
+  TELEGRAM_CHANNEL_DIRECT_MESSAGES_STATUS,
   TELEGRAM_CONTACT_INTENT,
   buildTelegramContactMessage,
   buildTelegramContactUrl,
+  buildTelegramShareUrl,
   createTelegramContact,
   sanitizeTelegramBusinessName
 });

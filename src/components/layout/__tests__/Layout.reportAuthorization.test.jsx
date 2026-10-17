@@ -50,7 +50,14 @@ vi.mock('../../../store/useInventoryCatalogStore', () => ({
 }));
 
 vi.mock('../../../store/useAppStore', () => ({
-  useAppStore: (selector) => selector(mocks.app),
+  useAppStore: Object.assign(
+    (selector) => selector(mocks.app),
+    {
+      // Match the bound Zustand store API consumed by ErrorBoundary and Layout.
+      getState: () => mocks.app,
+      subscribe: vi.fn(() => () => {}),
+    }
+  ),
 }));
 
 vi.mock('../../../store/useOrderStore', () => ({ useOrderStore: vi.fn() }));

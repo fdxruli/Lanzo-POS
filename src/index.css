@@ -253,46 +253,107 @@ body {
 .app-boot-recovery {
   display: flex;
   min-height: 100vh;
+  min-height: 100dvh;
   align-items: center;
   justify-content: center;
-  padding: 1.5rem;
+  padding:
+    max(1.25rem, env(safe-area-inset-top, 0px))
+    max(1rem, env(safe-area-inset-right, 0px))
+    max(1.25rem, env(safe-area-inset-bottom, 0px))
+    max(1rem, env(safe-area-inset-left, 0px));
+  overflow-y: auto;
   background: var(--background-color);
   color: var(--text-color);
 }
 
 .app-boot-recovery__card {
-  width: min(100%, 30rem);
-  padding: 2rem;
-  border: 1px solid var(--border-color);
-  border-radius: var(--border-radius);
-  background: var(--card-background-color);
-  box-shadow: var(--box-shadow-lg);
-  text-align: center;
+  width: min(100%, 64rem);
+  margin: auto;
+  padding: clamp(1rem, 3vw, 2.75rem);
+  border: 0;
+  border-inline-start: 3px solid var(--brand-accent);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  text-align: left;
 }
 
 .app-boot-recovery__card > svg {
-  color: var(--warning-color);
-  margin-bottom: 1rem;
+  color: var(--brand-accent-text);
+  margin-bottom: 0.75rem;
 }
 
 .app-boot-recovery__card h1 {
-  font-size: 1.35rem;
+  max-width: 22ch;
+  margin: 0 0 0.75rem;
+  color: var(--text-dark);
+  font-size: clamp(1.65rem, 4vw, 2.6rem);
+  line-height: 1.15;
 }
 
 .app-boot-recovery__card p {
-  margin-bottom: 1.5rem;
-  color: var(--text-light);
+  max-width: 70ch;
+  margin: 0.65rem 0;
+  color: var(--text-color);
+  line-height: 1.55;
 }
 
 .app-boot-recovery__actions {
-  display: grid;
-  gap: 0.75rem;
-  margin-bottom: 1.25rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin: 1rem 0;
 }
 
 .app-boot-recovery__actions .ui-button {
-  width: 100%;
   justify-content: center;
+  min-height: 2.75rem;
+  white-space: normal;
+}
+
+.app-boot-recovery__support {
+  width: min(100%, 44rem);
+  margin-top: 1rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.app-boot-recovery__support summary {
+  display: flex;
+  min-height: 2.75rem;
+  align-items: center;
+  color: var(--brand-accent-text);
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.app-boot-recovery__details {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0.5rem 0 0.85rem;
+  color: var(--text-light);
+  font-size: 0.86rem;
+}
+
+.app-boot-recovery__details p {
+  margin: 0.2rem 0;
+}
+
+.app-boot-recovery__note {
+  max-width: 70ch;
+  color: var(--text-light);
+  font-size: 0.88rem;
+}
+
+@media (max-width: 520px) {
+  .app-boot-recovery__actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .app-boot-recovery__actions .ui-button {
+    width: 100%;
+  }
 }
 
 img,

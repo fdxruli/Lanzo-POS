@@ -56,7 +56,7 @@ export default function PostDowngradeRecoveryBanner({ isSuppressed = false } = {
         <strong>{title}</strong>
 
         {takeoverCompleted && (
-          <p>Lanzo Local está listo en este dispositivo. Tus datos del negocio permanecen intactos.</p>
+          <p>Lanzo Local está listo en este dispositivo. Revisa las ventas, caja y sincronizaciones pendientes antes de continuar.</p>
         )}
 
         {hasKnownPending && (

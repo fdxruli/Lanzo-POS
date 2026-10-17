@@ -7,6 +7,7 @@ import Ticker from './Ticker';
 import MessageModal from '../common/MessageModal';
 import DataSafetyModal from '../common/DataSafetyModal';
 import PostDowngradeRecoveryBanner from '../common/PostDowngradeRecoveryBanner';
+import AdminRouteRecoveryRegion from '../common/AdminRouteRecoveryRegion';
 import EcommerceOrdersRuntime from '../ecommerce/orders/EcommerceOrdersRuntime';
 import EcommercePublishedStockAlertRuntime from '../ecommerce/EcommercePublishedStockAlertRuntime';
 import EcommerceCatalogSyncRuntime from '../ecommerce/EcommerceCatalogSyncRuntime';
@@ -183,7 +184,13 @@ function Layout() {
         {shouldShowTicker && <Ticker isSuppressed={isNotFoundPage} />}
         <PostDowngradeRecoveryBanner isSuppressed={isNotFoundPage} />
         <div className={`page-container ${isPosPage ? 'page-container-pos' : ''} ${pathname.startsWith('/clientes') ? 'page-container-customers' : ''} ${isNotFoundPage ? 'page-container--not-found' : ''}`.trim()}>
-          <Outlet />
+          {isNotFoundPage ? (
+            <Outlet />
+          ) : (
+            <AdminRouteRecoveryRegion>
+              <Outlet />
+            </AdminRouteRecoveryRegion>
+          )}
         </div>
       </div>
 

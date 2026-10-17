@@ -22,7 +22,7 @@ const getReasonCopy = (reason, recoveryAvailable) => {
       title: 'Tu plan cambió a Lanzo Local',
       body:
         'Este equipo quedó fuera del único dispositivo activo de Lanzo Local. ' +
-        'Tus datos del negocio no se borraron. El propietario puede elegir usar este dispositivo.'
+        'El propietario puede elegir usar este dispositivo. Este aviso no verifica ventas, caja ni sincronizaciones locales.'
     };
   }
 
@@ -151,8 +151,8 @@ export default function LicenseChangeRequiredModal() {
           <ShieldAlert size={18} aria-hidden="true" />
           <span>
             {recoveryAvailable
-              ? 'Para recuperar este equipo se pedirán las credenciales del propietario. No se cerrará ninguna caja.'
-              : 'No se eliminaron tus datos locales del negocio. Solo se cerró la licencia activa en este equipo para evitar accesos no permitidos.'}
+              ? 'Para recuperar este equipo se pedirán las credenciales del propietario. Revisa operaciones y sincronizaciones pendientes antes de continuar.'
+              : 'La sesión de licencia de este equipo fue bloqueada; este aviso no comprueba el estado de los datos locales. Verifica operaciones pendientes antes de continuar.'}
           </span>
         </div>
 

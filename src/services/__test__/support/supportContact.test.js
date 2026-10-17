@@ -29,7 +29,9 @@ describe('supportContact', () => {
     expect(payload.subject).toContain('Respaldo local');
     expect(payload.body).toContain('Plan comercial: Lanzo Local');
     expect(payload.body).toContain('Codigo interno del plan: free_trial');
-    expect(payload.body).toContain('Licencia: LZ-123');
+    expect(payload.body).toContain('Licencia (terminación): ••••-123');
+    expect(payload.body).not.toContain('Licencia: LZ-123');
+    expect(payload.licenseKey).toBe('••••-123');
     expect(payload.body).toContain('Nombre del negocio: Abarrotes Centro');
     expect(payload.body).toContain('Version de app: 4.0.0');
     expect(payload.body).toContain('Tipo de problema: Respaldo local');
@@ -65,7 +67,7 @@ describe('supportContact', () => {
       affectedStores: ['sales']
     }, {
       appVersion: '4.0.0',
-      userAgent: 'Lanzo Test Browser',
+      userAgent: 'Mozilla/5.0 Chrome/126.1',
       platform: 'TestOS',
       language: 'es-MX',
       online: false,
@@ -75,8 +77,8 @@ describe('supportContact', () => {
 
     expect(report).toContain('DB_UNSUPPORTED_NATIVE_VERSION');
     expect(report).toContain('Versión de Lanzo: 4.0.0');
-    expect(report).toContain('Navegador/entorno: Lanzo Test Browser');
-    expect(report).toContain('Estado de red: Offline');
+    expect(report).toContain('Navegador: Chrome 126');
+    expect(report).toContain('Conectividad: Offline');
     expect(report).toContain('Fecha y hora: 2026-08-13T06:00:00.000Z');
     expect(report).toContain(`Versión local detectada: ${CURRENT_NATIVE_DATABASE_VERSION + 10}`);
     expect(report).toContain(`Versión compatible con esta instalación: ${CURRENT_NATIVE_DATABASE_VERSION}`);
@@ -99,7 +101,7 @@ describe('supportContact', () => {
       appVersion: '4.0.0',
       buildCommit: 'abcdef1',
       buildDate: '2026-08-19T00:00:00.000Z',
-      userAgent: 'Lanzo Test Browser',
+      userAgent: 'Mozilla/5.0 Chrome/126.1',
       platform: 'TestOS',
       language: 'es-MX',
       online: false,
@@ -110,11 +112,14 @@ describe('supportContact', () => {
     expect(report).toContain('TENANT_RUNTIME_NOT_READY');
     expect(report).toContain('Etapa de inicio: ready_runtime_loading');
     expect(report).toContain('Tenant runtime listo: No');
-    expect(report).toContain('Commit de build: abcdef1');
+    expect(report).toContain('Commit: abcdef1');
     expect(report).toContain('Fecha de build: 2026-08-19T00:00:00.000Z');
-    expect(report).toContain('Estado de red: Offline');
+    expect(report).toContain('Conectividad: Offline');
     expect(report).not.toContain('LZ-SECRET-12345');
     expect(report).not.toContain('t_12345678901234567890');
     expect(report).not.toContain('abcdefghijkl');
+    expect(report).not.toContain('token:');
+    expect(report).not.toContain('license_key');
+    expect(report).not.toContain('Mensaje saneado');
   });
 });
