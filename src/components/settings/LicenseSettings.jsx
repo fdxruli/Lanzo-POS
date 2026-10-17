@@ -638,11 +638,11 @@ export default function LicenseSettings() {
             return;
         }
         const confirmMessage =
-            'Cerrar sesion revocara la sesion administrativa de este equipo.\n\n' +
-            'La licencia seguira vinculada a este dispositivo. Si quieres liberar el cupo remoto, usa el boton Liberar en la lista de dispositivos.\n\n' +
-            'Deseas cerrar la sesion administrativa?';
+            'Cerrar sesión Admin termina tu acceso administrativo en este equipo, pero no libera su cupo: el dispositivo seguirá vinculado a la licencia.\n\n' +
+            'Si quieres usar otro equipo y necesitas liberar un cupo, pulsa Cancelar y ve a Configuración > Dispositivos > Liberar.\n\n' +
+            'Si solo quieres salir de tu cuenta en este equipo, confirma el cierre de sesión.';
 
-        if (await showConfirmModal(confirmMessage, { title: 'Cerrar sesion admin', confirmButtonText: 'Si, cerrar sesion' })) {
+        if (await showConfirmModal(confirmMessage, { title: 'Cerrar sesión Admin', confirmButtonText: 'Sí, cerrar sesión' })) {
             try {
                 actorHandle.assertCurrent('license');
                 logoutAdmin();
@@ -659,7 +659,12 @@ export default function LicenseSettings() {
         } catch {
             return;
         }
-        if (await showConfirmModal('Deseas cerrar solo la sesion staff en este dispositivo?', { title: 'Cerrar sesion staff', confirmButtonText: 'Si, cerrar sesion' })) {
+        const confirmMessage =
+            'Cerrar sesión Staff termina el acceso de este usuario en este equipo. No libera el dispositivo ni desocupa un cupo de la licencia.\n\n' +
+            'Si necesitas liberar el equipo para usar la licencia en otro, pulsa Cancelar y pide al administrador que vaya a Configuración > Dispositivos > Liberar.\n\n' +
+            '¿Quieres cerrar la sesión Staff?';
+
+        if (await showConfirmModal(confirmMessage, { title: 'Cerrar sesión Staff', confirmButtonText: 'Sí, cerrar sesión' })) {
             try {
                 actorHandle.assertCurrent('license');
                 logoutStaff();
