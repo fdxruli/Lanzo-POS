@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from 'react';
-import { AlertTriangle, Bell, PackageX, TriangleAlert, X } from 'lucide-react';
+import { AlertTriangle, Bell, CloudOff, PackageX, TriangleAlert, WalletCards, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useActorRuntimeSnapshot } from '../../services/auth/useActorRuntimeSnapshot';
 import { canReadSalesReports } from '../../services/auth/salesPermissionPolicy';
@@ -10,6 +10,7 @@ import {
   markCurrentLocalInventoryOperationalAlertsSeen,
   refreshLocalInventoryOperationalAlertsSnapshot
 } from '../../services/localInventoryOperationalAlerts';
+import { markPostDowngradeCashAttentionRead } from '../../services/cash/postDowngradeCashAttention';
 
 const STOCK_TYPES = new Set([
   INVENTORY_OPERATIONAL_TYPES.OUT_OF_STOCK,
@@ -73,7 +74,11 @@ const getAlertCountLabel = (count) => `${count} ${count === 1 ? 'alerta' : 'aler
 export default function LocalInventoryOperationalAlertsDrawer({
   isOpen,
   onClose,
-  snapshot
+  snapshot,
+  postDowngradeCashPending,
+  cashAttentionKey,
+  cashAttentionRecord,
+  onCashAttentionRecordChange
 }) {
   const navigate = useNavigate();
   const actorRuntime = useActorRuntimeSnapshot();
@@ -83,11 +88,35 @@ export default function LocalInventoryOperationalAlertsDrawer({
 
   const alerts = useMemo(
     () => Array.isArray(snapshot?.alerts) ? snapshot.alerts : [],
-    [snapshot?.alerts]
+    [snapshot]
   );
   const visibleAlerts = alerts.slice(0, 12);
   const restockCount = (snapshot?.outOfStockCount ?? 0) + (snapshot?.lowStockCount ?? 0);
   const expirationCount = (snapshot?.expiredCount ?? 0) + (snapshot?.expiringCount ?? 0);
+  const pendingCashCount = postDowngradeCashPending?.pendingCount;
+  const hasPendingCash = Boolean(
+    postDowngradeCashPending?.eligible
+    && Number.isInteger(pendingCashCount)
+    && pendingCashCount > 0
+  );
+  const showCashVerification = Boolean(
+    postDowngradeCashPending?.eligible
+    && postDowngradeCashPending?.isPostDowngrade
+    && pendingCashCount === null
+    && ['unknown', 'error'].includes(postDowngradeCashPending?.status)
+  );
+  const cashStatus = postDowngradeCashPending?.status;
+  const cashOffline = Boolean(
+    !postDowngradeCashPending?.online || cashStatus === 'offline_known'
+  );
+
+  useEffect(() => {
+    if (!isOpen || !hasPendingCash || !cashAttentionKey) return;
+    const record = markPostDowngradeCashAttentionRead(cashAttentionKey, {
+      source: 'local-alerts-drawer'
+    });
+    onCashAttentionRecordChange?.(record);
+  }, [cashAttentionKey, hasPendingCash, isOpen, onCashAttentionRecordChange]);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -171,7 +200,7 @@ export default function LocalInventoryOperationalAlertsDrawer({
         type="button"
         className="notification-center-backdrop"
         onClick={onClose}
-        aria-label="Cerrar alertas operativas de inventario"
+        aria-label="Cerrar alertas locales"
       />
 
       <aside
@@ -187,18 +216,130 @@ export default function LocalInventoryOperationalAlertsDrawer({
           </span>
           <div>
             <p className="local-inventory-alerts-eyebrow">Alertas locales</p>
-            <h2 id="local-inventory-alerts-title">Inventario requiere atención</h2>
+            <h2 id="local-inventory-alerts-title">Alertas locales</h2>
           </div>
           <button
             ref={closeButtonRef}
             type="button"
             className="notification-center-close"
             onClick={onClose}
-            aria-label="Cerrar alertas operativas de inventario"
+            aria-label="Cerrar alertas locales"
           >
             <X size={20} aria-hidden="true" />
           </button>
         </header>
+
+        {hasPendingCash && (
+          <section
+            className="local-inventory-cash-attention"
+            aria-labelledby="local-inventory-cash-attention-title"
+            aria-busy={cashStatus === 'loading'}
+          >
+            <div className="local-inventory-cash-attention__heading">
+              <span className="local-inventory-cash-attention__icon" aria-hidden="true">
+                <WalletCards size={19} />
+              </span>
+              <div>
+                <p className="local-inventory-cash-attention__eyebrow">Caja y conciliación</p>
+                <h3 id="local-inventory-cash-attention-title">
+                  {pendingCashCount} caja{pendingCashCount === 1 ? '' : 's'} pendiente{pendingCashCount === 1 ? '' : 's'} de revisión
+                </h3>
+              </div>
+            </div>
+
+            <p>Quedaron cajas abiertas de tu plan anterior. Puedes revisarlas desde Caja.</p>
+
+            {(cashAttentionRecord?.postponedAt || cashAttentionRecord?.readAt) && (
+              <p className="local-inventory-cash-attention__state" role="status">
+                {cashAttentionRecord?.postponedAt ? 'Pospuesta' : 'Leída'} · la conciliación sigue pendiente.
+              </p>
+            )}
+
+            {cashOffline && (
+              <p className="local-inventory-cash-attention__hint" role="status">
+                Sin conexión. Esta es la última cantidad confirmada; conéctate para actualizarla o conciliar.
+              </p>
+            )}
+
+            {cashStatus === 'error' && (
+              <p className="local-inventory-cash-attention__hint" role="status">
+                No se pudo actualizar el dato. Conservamos la última cantidad confirmada.
+              </p>
+            )}
+
+            {cashStatus === 'loading' && (
+              <p className="local-inventory-cash-attention__hint" role="status">
+                Actualizando la cantidad confirmada…
+              </p>
+            )}
+
+            <div className="local-inventory-cash-attention__actions">
+              <button
+                type="button"
+                className="ui-button ui-button--secondary"
+                onClick={() => {
+                  onClose();
+                  navigate('/caja');
+                }}
+              >
+                Ir a Caja
+              </button>
+              {cashStatus === 'error' && postDowngradeCashPending?.online && (
+                <button
+                  type="button"
+                  className="ui-button ui-button--ghost"
+                  onClick={() => void postDowngradeCashPending.refresh?.()}
+                >
+                  Actualizar
+                </button>
+              )}
+            </div>
+          </section>
+        )}
+
+        {showCashVerification && (
+          <section
+            className="local-inventory-cash-attention"
+            aria-labelledby="local-inventory-cash-verification-title"
+          >
+            <div className="local-inventory-cash-attention__heading">
+              <span className="local-inventory-cash-attention__icon" aria-hidden="true">
+                {cashOffline ? <CloudOff size={19} /> : <WalletCards size={19} />}
+              </span>
+              <div>
+                <p className="local-inventory-cash-attention__eyebrow">Caja y conciliación</p>
+                <h3 id="local-inventory-cash-verification-title">Verificación pendiente</h3>
+              </div>
+            </div>
+            <p>No se ha confirmado cuántas cajas siguen pendientes. No mostramos una cantidad hasta actualizar la consulta.</p>
+            {cashOffline && (
+              <p className="local-inventory-cash-attention__hint" role="status">
+                Sin conexión. Conéctate para verificar el historial antes de conciliar.
+              </p>
+            )}
+            <div className="local-inventory-cash-attention__actions">
+              <button
+                type="button"
+                className="ui-button ui-button--secondary"
+                onClick={() => {
+                  onClose();
+                  navigate('/caja');
+                }}
+              >
+                Ir a Caja
+              </button>
+              {postDowngradeCashPending?.online && (
+                <button
+                  type="button"
+                  className="ui-button ui-button--ghost"
+                  onClick={() => void postDowngradeCashPending.refresh?.()}
+                >
+                  Actualizar
+                </button>
+              )}
+            </div>
+          </section>
+        )}
 
         {loading && (
           <div className="notification-list-state" role="status">
