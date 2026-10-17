@@ -166,7 +166,10 @@ export class IncidentErrorBoundary extends React.Component {
     this.setState({
       recoveryStatus: this._renderRecoveryAttempts > 0 ? 'failed' : (
         incident.severity === 'critical_blocker' ? 'blocked' : 'action_required'
-      )
+      ),
+      recoveryActionMessage: this._renderRecoveryAttempts > 0
+        ? 'El reintento no resolvió el problema. No seguiremos reiniciando esta sección.'
+        : ''
     });
     if (incident.severity !== 'critical_blocker') {
       this._focusTimeout = globalThis.setTimeout(() => {

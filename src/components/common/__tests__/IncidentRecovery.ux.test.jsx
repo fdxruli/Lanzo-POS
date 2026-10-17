@@ -24,6 +24,7 @@ describe('Recovery presentation in real application contexts', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     mountFailure(new ErrorType('customer=private-value'), { recoverySurface: 'welcome' });
     const heading = screen.getByRole('heading', { level: 1, name: 'No pudimos mostrar la pantalla de acceso' });
+    expect(screen.getByRole('heading', { level: 2, name: '¿Necesitas ayuda?' })).toBeInTheDocument();
     expect(heading.closest('.incident-recovery')).toHaveClass('incident-recovery--standalone', 'incident-recovery--section');
     expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
@@ -82,6 +83,8 @@ describe('Recovery presentation in real application contexts', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Reintentar sección' }));
     const exhausted = await screen.findByRole('button', { name: 'Reintento utilizado' });
     expect(exhausted).toBeDisabled();
+    expect(await screen.findByText('El reintento no resolvió el problema. No seguiremos reiniciando esta sección.')).toBeVisible();
+    expect(screen.queryByText('Recuperando esta sección…')).not.toBeInTheDocument();
     expect(exhausted).toHaveAccessibleDescription('El reintento disponible ya se utilizó.');
     expect(screen.getByRole('region', { name: '¿Necesitas ayuda?' })).toBeInTheDocument();
   });

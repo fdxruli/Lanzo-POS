@@ -56,6 +56,8 @@ export default function IncidentRecoveryPanel({
   const Icon = isCritical ? ShieldAlert : Info;
   const standalone = !isCritical && presentation === 'standalone';
   const Heading = standalone ? 'h1' : 'h2';
+  const Subheading = standalone ? 'h2' : 'h3';
+  const DetailHeading = standalone ? 'h3' : 'h4';
   const hasHelp = incidentRecord || onCopy || supportActions.length > 0;
 
   return (
@@ -84,11 +86,11 @@ export default function IncidentRecoveryPanel({
 
         {operationDetails && (
           <section className="incident-recovery__operation" aria-label="Operación afectada">
-            <h3>{operationDetails.title || 'Qué necesita revisión'}</h3>
+            <Subheading>{operationDetails.title || 'Qué necesita revisión'}</Subheading>
             <p>{operationDetails.description}</p>
             {operationDetails.blockedActions?.length > 0 && (
               <div>
-                <h4>Acciones temporalmente bloqueadas</h4>
+                <DetailHeading>Acciones temporalmente bloqueadas</DetailHeading>
                 <ul>
                   {operationDetails.blockedActions.map((action) => <li key={action}>{action}</li>)}
                 </ul>
@@ -146,7 +148,7 @@ export default function IncidentRecoveryPanel({
 
         {hasHelp && (
           <section className="incident-recovery__help" aria-labelledby={'incident-help-' + detailsId}>
-            <h3 id={'incident-help-' + detailsId}>¿Necesitas ayuda?</h3>
+            <Subheading id={'incident-help-' + detailsId}>¿Necesitas ayuda?</Subheading>
             <p className="incident-recovery__help-copy">{isCritical
               ? 'Comparte el diagnóstico con soporte para revisar el estado de la operación.'
               : 'Si el problema continúa, comparte el diagnóstico con soporte.'}</p>

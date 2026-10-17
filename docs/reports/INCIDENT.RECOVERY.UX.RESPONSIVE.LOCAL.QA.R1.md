@@ -2,7 +2,7 @@
 
 Fecha: 2026-10-17. PR: https://github.com/fdxruli/Lanzo-POS/pull/357. Rama remota: feat/incident-recovery-center-r1.
 HEAD inicial verificado en GitHub y remoto: 008dc17913b8d18e0c6c02841b0ae334ee8df888.
-Implementación en worktree limpio C:/dev/Lanzo-POS-recovery-ux-42; copia del propietario C:/dev/Lanzo-POS-QA-357 preservada.
+Implementación en worktree limpio C:/dev/Lanzo-POS-recovery-ux-42; copia del propietario C:/dev/Lanzo-POS-QA-357 preservada. Las huellas SHA-256 anteriores y posteriores de WelcomeModal.jsx, DashboardPage.jsx y src/copy.txt son idénticas. La copia original de trabajo Lanzo-POS-Git también conserva su rama y archivos ajenos a esta mini-fase.
 
 ## 1. Evidencia del propietario
 
@@ -28,7 +28,7 @@ Standalone es un elemento normal con viewport y scroll propios, sin portal ni ov
 
 ## 5. Acciones
 
-Reintentar conserva el presupuesto, guardas y handlers existentes. Volver al inicio conserva la navegación segura; no aparece si las guardas no la permiten. Correo pasa a supportActions, separado de secondaryActions de recuperación. La nota describe un borrador manual, nunca un envío confirmado. Copiar requiere clic y conserva diagnóstico sanitizado; hay feedback accesible de éxito/error. Reportar mantiene lazy loading, servicios, consentimiento y contrato de envío.
+Reintentar conserva el presupuesto, guardas y handlers existentes. La inspección en navegador detectó que, tras volver a fallar el render, persistía el aviso «Recuperando esta sección…». Se sustituye por un aviso de reintento fallido al capturar la nueva excepción, sin cambiar el límite ni habilitar otra recuperación. Volver al inicio conserva la navegación segura; no aparece si las guardas no la permiten. Correo pasa a supportActions, separado de secondaryActions de recuperación. La nota describe un borrador manual, nunca un envío confirmado. Copiar requiere clic y conserva diagnóstico sanitizado; hay feedback accesible de éxito/error. Reportar mantiene lazy loading, servicios, consentimiento y contrato de envío.
 
 ## 6. CSS modificado
 
@@ -46,19 +46,58 @@ Sin cambios a classifyIncident, transporte, actor runtime, almacenamiento, PWA, 
 
 ## 9. Accesibilidad
 
-Standalone usa h1; sección/crítico conservan h2, con h3 para ayuda. Se elimina el role=status del contenedor interactivo no crítico, evitando anuncios de todo el formulario y live regions anidadas. Estado y copia tienen anuncios puntuales. Foco visible, orden DOM natural, aria-expanded y aria-controls preservados. El fallo inicial no crítico mueve foco al título; el foco tras recuperación mantiene la implementación existente. El formulario recibe foco al abrir y lo restaura al entrypoint al cerrar. Los bloqueos explican su razón por aria-describedby. Lector de pantalla real y evaluación WCAG completa no se declaran certificados por pruebas DOM.
+Standalone usa h1 y h2 para ayuda/operación; sección/crítico conservan h2 y h3 para sus subsecciones. Los encabezados de bloqueos siguen el nivel siguiente. Se elimina el role=status del contenedor interactivo no crítico, evitando anuncios de todo el formulario y live regions anidadas. Estado y copia tienen anuncios puntuales. Foco visible, orden DOM natural, aria-expanded y aria-controls preservados. El fallo inicial no crítico mueve foco al título; el foco tras recuperación mantiene la implementación existente. El formulario recibe foco al abrir y lo restaura al entrypoint al cerrar. Los bloqueos explican su razón por aria-describedby. Contraste calculado desde los tokens existentes: texto secundario/fondo claro 5.06:1, oscuro 8.11:1; texto secundario/tarjeta 5.38:1 y 7.22:1; acción primaria 5.17:1 y 7.73:1. Estos pares superan 4.5:1. No se certifica cumplimiento WCAG completo mediante estos cálculos. Lector de pantalla real y evaluación completa siguen pendientes.
 
 ## 10. Validación automatizada
 
-Ejecución local inicial BLOQUEADA: Vitest llegó a RUN, pero su worker no respondió dentro de 60s (transform/setup/import/tests: 0ms; ningún test ejecutado). Se intentó un pool de threads como alternativa; resultado pendiente. No se atribuye el bloqueo del worker a un fallo de assertions del producto. ESLint y builds locales pendientes. git diff --check: PASS. Los resultados definitivos se añaden al cierre. Nueva suite IncidentRecovery.ux.test.jsx cubre errores reales sintéticos, contextos conocidos/desconocidos, separación semántica, nota asociada, copia, foco, reintento agotado y clasificador financiero real. No se debilitan pruebas existentes.
+Commit funcional validado: e109f0723d4227564fbc23ad53a363126a5bddc6. CI del laboratorio: **140/140 PASS en 13 archivos**, incluida la suite nueva **8/8 PASS**. Se preservan las pruebas de captura/clasificación, límites de reintento, contexto obsoleto, foco, bloqueo crítico, consentimiento, copia, offline, aislamiento y arquitectura del laboratorio.
+
+ESLint focal de los componentes modificados: 0 errores, 0 advertencias. La importación sin uso de la suite nueva se eliminó y su ejecución focal final de ESLint también dio 0 errores y 0 advertencias. git diff --check: PASS.
+
+Límite local documentado: el pool inicial de Vitest no arrancó su worker dentro de 60s (0 tests ejecutados). La alternativa threads ejecutó 7/7 pruebas antes de añadir la octava prueba de foco, posteriormente validada en CI. La regresión local ampliada se interrumpió por la lentitud del host y se sustituyó como evidencia por CI; no se presenta como PASS local. El build local llegó a transformar y se interrumpió para reducir procesos concurrentes. Los builds administrativo/productivo/Preview/público y empaquetado público sí aprobaron en CI. No se cambiaron scripts o assertions para ocultar fallos.
+
+El workflow del laboratorio incluye expresamente la nueva suite, sin retirar ninguna prueba previa. La regresión local posterior al ajuste del aviso dio 46/46 PASS en 3 archivos con threads; se vuelve a ejecutar tras ajustar niveles de encabezados.
+
+React Doctor: 83/100, 17 hallazgos en 96 archivos respecto a origin/main (1 error y 16 advertencias). El error señalado —asignación de currentIncidentIdRef durante render en IncidentReportForm— ya existe en el HEAD inicial 008dc1791; no fue introducido aquí. Las advertencias incluyen complejidad/tamaño, resets ligados al incidente, claves de fixtures y un supuesto teardown ausente: componentWillUnmount sí limpia temporizadores, suscripciones y restaura el root crítico. No se añadieron supresiones ni dependencias. El escáner no se presenta como limpio.
 
 ## 11. CI
 
-PENDIENTE del HEAD de publicación. Los SUCCESS históricos de 008dc1791 no se atribuyen al nuevo código. Esperar los gates de PR127, Actor Runtime, Actor Scoped Storage, Dexie Recovery, Ecommerce Public, Store Git Runtime y laboratorio. Inspeccionar artefactos diferenciales si hay fallos candidate-only; no aprobarlos como baseline sin comparación.
+Primer commit funcional **e109f0723d4227564fbc23ad53a363126a5bddc6**: los siete workflows terminaron SUCCESS. Los resultados siguientes corresponden únicamente a ese SHA. El commit de cierre añade evidencia estática, niveles de encabezados y el aviso de reintento fallido; su validación final se registra en el PR tras terminar sus propios workflows.
+
+| Gate | Resultado y evidencia |
+| --- | --- |
+| [PR127 Global Comparison](https://github.com/fdxruli/Lanzo-POS/actions/runs/39011705531) | SUCCESS. Artefacto 12093531342 inspeccionado: candidato 99 fallos, base 100, compartidos 99; candidate-only 0, nuevos 0, sin resolver 0, mejora 1. |
+| [Incident Recovery QA Lab](https://github.com/fdxruli/Lanzo-POS/actions/runs/39011705546) | SUCCESS. 140/140 pruebas, 13 archivos; ESLint focal; build administrativo y auditoría precache (44 ejecutables, 0 artefactos QA); Preview y exclusión (9 chunks estáticos, 0 módulos comerciales). |
+| [Actor Runtime](https://github.com/fdxruli/Lanzo-POS/actions/runs/39011705544) | SUCCESS. Artefacto diferencial 12094035790: 0 regresiones nuevas, 93 observaciones de fallos preexistentes estables, 0 flaky, mejora 1; 2 ejecuciones completas y 350 focales por lado. Diferencial focal: 0 candidate-only semánticos y 0 regresiones de tasa. |
+| [Actor Scoped Storage](https://github.com/fdxruli/Lanzo-POS/actions/runs/39011705549) | SUCCESS. Artefacto 12094215506: 0 regresiones nuevas, 93 observaciones preexistentes estables, 0 flaky, mejora 1; 2 ejecuciones completas y 350 focales por lado. |
+| [Dexie Recovery](https://github.com/fdxruli/Lanzo-POS/actions/runs/39011705533) | SUCCESS. |
+| [Ecommerce Public](https://github.com/fdxruli/Lanzo-POS/actions/runs/39011705536) | SUCCESS. |
+| [Store Git Runtime](https://github.com/fdxruli/Lanzo-POS/actions/runs/39011705542) | SUCCESS. |
+
+Los dos diferenciales Actor registran 75 tests fallidos en la ejecución completa del candidato y de su base correspondiente. SUCCESS significa que su comparación no detectó regresiones nuevas; **no** significa una suite global sin fallos. Los fallos candidate-only se comprobaron en los artefactos, sin reclasificarlos manualmente.
 
 ## 12. Evidencia visual
 
-La captura original del propietario no está disponible. El navegador integrado y las dependencias de la copia limpia presentaron problemas de carga durante la preparación. Los resultados complementarios, si se obtienen, se registrarán abajo con su alcance. OWNER_VISUAL_QA permanece PENDING en todos los casos. No se cambia producción para capturar.
+Se capturó el componente real con dependencias del laboratorio cerradas en memoria, en localhost; se inspeccionaron las imágenes guardadas. El navegador integrado permitió las capturas desktop; la extensión de Edge permitió inspeccionar los viewports móviles tras el bloqueo del cambio de tamaño integrado. El fixture temporal y su servidor no forman parte del PR. La captura original del propietario no está disponible: «antes» reproduce el código del HEAD inicial, no su sesión.
+
+La matriz DOM de Welcome y Ventas cubre **320, 360, 375, 390, 430, 600, 768, 820, 1024, 1280 y 1440px**: 0px de overflow horizontal y targets de al menos 44px en ambos contextos. [Mediciones Welcome](assets/incident-recovery-ux-42/welcome-responsive-matrix.json) y [mediciones Ventas](assets/incident-recovery-ux-42/sales-responsive-matrix.json). Ventas utiliza un scaffold de navegación con Layout.css real; no equivale a ejecutar la sesión comercial completa.
+
+| Paso inspeccionado | Evidencia y conclusión |
+| --- | --- |
+| Antes, desktop claro | [00 — reproducción inicial](assets/incident-recovery-ux-42/00-baseline-desktop-light.jpg). Acciones mezcladas en la composición previa. |
+| Welcome desktop | [01 claro](assets/incident-recovery-ux-42/01-welcome-desktop-light.jpg), [02 oscuro](assets/incident-recovery-ux-42/02-welcome-desktop-dark.jpg). Problema y recuperación a la izquierda; asistencia agrupada a la derecha. |
+| Welcome móvil | [03 claro](assets/incident-recovery-ux-42/03-welcome-mobile-light.jpg), [04 oscuro](assets/incident-recovery-ux-42/04-welcome-mobile-dark.jpg), 390×844. Una columna y scroll natural. |
+| Detalles al final | [05 Welcome](assets/incident-recovery-ux-42/05-mobile-details.jpg). ScrollTop 553 = máximo; último elemento a 807.875px dentro de 844px. |
+| Formulario | [06 apertura](assets/incident-recovery-ux-42/06-mobile-report-form.jpg). Foco en encabezado al abrir, textarea de 281px sin desborde y retorno al botón al cerrar. Sin envío ni consentimiento. |
+| Ventas 320px | [07 panel](assets/incident-recovery-ux-42/07-sales-mobile-320.jpg), [08 final de detalles](assets/incident-recovery-ux-42/08-sales-mobile-details-bottom.jpg). Último elemento a 519.2px, antes de navegación a 589.4px. |
+| Ventas desktop oscuro | [09 diagnóstico expandido](assets/incident-recovery-ux-42/09-sales-desktop-dark.jpg), 1440×900. Metadatos y acciones legibles. |
+| Reintento agotado | [10 aviso corregido](assets/incident-recovery-ux-42/10-retry-exhausted.jpg), 360×844. Botón deshabilitado, motivo y aviso de fallo, asistencia disponible. |
+| Crítico financiero reconocido | [11 desktop](assets/incident-recovery-ux-42/11-financial-critical-desktop.jpg), [13 móvil](assets/incident-recovery-ux-42/13-financial-critical-mobile.jpg). FINANCIAL_RESULT_UNKNOWN sintético con clasificador real. Root inert y aria-hidden, sin Reintentar ni Volver al inicio. Móvil: scrollHeight 1034, clientHeight 740, overflow horizontal 0. |
+| Horizontal y poca altura | [12 Welcome 844×390](assets/incident-recovery-ux-42/12-welcome-landscape-short.jpg). Panel visible de 347px con scrollHeight 760; todos los controles alcanzables al desplazar. |
+
+Teclado comprobado: Tab desde título a Reintentar y luego Volver al inicio; Shift+Tab vuelve a Reintentar; Enter/Espacio accionan detalles. La prueba de atajo de zoom no cambió la escala efectiva: **200%/400% siguen pendientes**, junto con teclado móvil físico y lector de pantalla real. No se presentan capturas emuladas como dispositivos físicos.
+
+**OWNER_VISUAL_QA: PENDING.** La evidencia complementaria no sustituye QA-01/02/03/04 en la copia local del propietario.
 
 ## 13. Incorporar cambios sin perder los errores locales
 
@@ -75,6 +114,7 @@ git -C C:/dev/Lanzo-POS-Git worktree add --detach C:/dev/Lanzo-POS-QA-357-UX ori
 
 # Si --check falla, detenerse y revisar el parche; no forzar ni sobrescribir archivos.
 git -C C:/dev/Lanzo-POS-QA-357-UX apply --check C:/dev/Lanzo-POS-QA-357-faults.patch
+if ($LASTEXITCODE -ne 0) { throw "El parche necesita revisión; no se aplicó ni se inició la copia nueva." }
 git -C C:/dev/Lanzo-POS-QA-357-UX apply C:/dev/Lanzo-POS-QA-357-faults.patch
 Set-Location C:/dev/Lanzo-POS-QA-357-UX
 npm ci
