@@ -138,7 +138,7 @@ export const loadPosReadyRuntime = async () => {
   function RouteErrorFallback() {
     const error = useRouteError();
     return (
-      <ErrorBoundary>
+      <ErrorBoundary recoverySurface="application">
         <Thrower error={error} />
       </ErrorBoundary>
     );
@@ -171,7 +171,7 @@ export const loadPosReadyRuntime = async () => {
     return (
       <>
         <GoogleOAuthProvider clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID || ''}>
-          <ErrorBoundary>
+          <ErrorBoundary recoverySurface="application">
             <RouterProvider router={router} />
           </ErrorBoundary>
         </GoogleOAuthProvider>

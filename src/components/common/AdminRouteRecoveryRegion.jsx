@@ -9,7 +9,8 @@ export default function AdminRouteRecoveryRegion({ children }) {
   return (
     <>
       <AdminIncidentNotice />
-      <ErrorBoundary resetKey={pathname} navigateToPos={navigate}>
+      <ErrorBoundary resetKey={pathname} navigateToPos={navigate}
+        recoverySurface={pathname === '/ventas' ? 'sales' : 'section'}>
         {children}
       </ErrorBoundary>
     </>

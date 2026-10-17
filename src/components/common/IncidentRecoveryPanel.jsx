@@ -30,6 +30,7 @@ const getSeverityClass = (severity) => {
 
 export default function IncidentRecoveryPanel({
   severity = 'section_failure',
+  presentation = 'section',
   title,
   description,
   metadata,
@@ -37,6 +38,7 @@ export default function IncidentRecoveryPanel({
   operationDetails = null,
   primaryAction = null,
   secondaryActions = [],
+  supportActions = [],
   copied = false,
   onCopy = null,
   copyError = '',
@@ -52,23 +54,28 @@ export default function IncidentRecoveryPanel({
   const detailsId = useId().replace(/:/g, '');
   const isCritical = severity === 'critical_blocker';
   const Icon = isCritical ? ShieldAlert : Info;
+  const standalone = !isCritical && presentation === 'standalone';
+  const Heading = standalone ? 'h1' : 'h2';
+  const hasHelp = incidentRecord || onCopy || supportActions.length > 0;
 
   return (
     <section
-      className={'incident-recovery incident-recovery--' + getSeverityClass(severity)}
-      role={isCritical ? 'alertdialog' : 'status'}
+      className={'incident-recovery incident-recovery--' + getSeverityClass(severity) + (standalone ? ' incident-recovery--standalone' : '')}
+      role={isCritical ? 'alertdialog' : 'region'}
       aria-modal={isCritical ? 'true' : undefined}
       aria-labelledby={'incident-title-' + detailsId}
       tabIndex={isCritical ? -1 : undefined}
     >
       <div className="incident-recovery__layout">
+        {standalone && <div className="incident-recovery__brand"><img src="/logIcon.svg" alt="" width="28" height="28" /><span>Lanzo POS</span></div>}
+        <div className="incident-recovery__main">
         <div className="incident-recovery__header">
           <span className="incident-recovery__icon" aria-hidden="true">
             <Icon size={24} strokeWidth={1.8} />
           </span>
           <div className="incident-recovery__copy">
             <p className="incident-recovery__eyebrow">Centro de recuperación</p>
-            <h2 id={'incident-title-' + detailsId} ref={titleRef} tabIndex="-1">{title}</h2>
+            <Heading id={'incident-title-' + detailsId} ref={titleRef} tabIndex="-1">{title}</Heading>
             <p className="incident-recovery__description">{description}</p>
           </div>
         </div>
@@ -94,18 +101,12 @@ export default function IncidentRecoveryPanel({
         )}
 
         {recoveryNotice && (
-          <p className="incident-recovery__notice" role="status" aria-live="polite">
+          <p className="incident-recovery__notice" role="status">
             {recoveryNotice}
           </p>
         )}
 
-        {copyError && (
-          <p className="incident-recovery__notice incident-recovery__notice--warning" role="status">
-            {copyError}
-          </p>
-        )}
-
-        <div className="incident-recovery__actions">
+        <div className="incident-recovery__actions" role="group" aria-label={isCritical ? 'Solicitar verificación' : 'Recuperar acceso'}>
           {primaryAction && (
             <button
               type="button"
@@ -121,12 +122,6 @@ export default function IncidentRecoveryPanel({
             </button>
           )}
 
-          {primaryAction?.disabledReason && (
-            <span className="incident-recovery__disabled-reason" id={'incident-disabled-' + detailsId}>
-              {primaryAction.disabledReason}
-            </span>
-          )}
-
           {secondaryActions.map((action) => (
             <button
               type="button"
@@ -140,27 +135,44 @@ export default function IncidentRecoveryPanel({
             </button>
           ))}
 
-          {onCopy && (
-            <button
-              type="button"
-              className="ui-button ui-button--ghost incident-recovery__secondary"
-              onClick={onCopy}
-            >
-              {copied
-                ? <CheckCheck size={17} aria-hidden="true" />
-                : <Copy size={17} aria-hidden="true" />}
-              {copied ? 'Diagnóstico copiado' : 'Copiar diagnóstico'}
-            </button>
-          )}
+        </div>
+        {primaryAction?.disabledReason && (
+          <p className="incident-recovery__disabled-reason" id={'incident-disabled-' + detailsId}>
+            {primaryAction.disabledReason}
+          </p>
+        )}
+        {isCritical && contactNote && <p className="incident-recovery__contact-note">{contactNote}</p>}
         </div>
 
-        <IncidentReportEntry services={reportServices} incident={incidentRecord} isContextCurrent={isContextCurrent} />
-
-        {contactNote && (
-          <p className="incident-recovery__contact-note">
-            <Mail size={15} aria-hidden="true" />
-            {contactNote}
-          </p>
+        {hasHelp && (
+          <section className="incident-recovery__help" aria-labelledby={'incident-help-' + detailsId}>
+            <h3 id={'incident-help-' + detailsId}>¿Necesitas ayuda?</h3>
+            <p className="incident-recovery__help-copy">{isCritical
+              ? 'Comparte el diagnóstico con soporte para revisar el estado de la operación.'
+              : 'Si el problema continúa, comparte el diagnóstico con soporte.'}</p>
+            <div className="incident-recovery__support-actions">
+              {incidentRecord && <div className="incident-recovery__report">
+                <IncidentReportEntry services={reportServices} incident={incidentRecord} isContextCurrent={isContextCurrent} />
+              </div>}
+              {onCopy && (
+                <button type="button" className="ui-button ui-button--ghost incident-recovery__secondary" onClick={onCopy}>
+                  {copied ? <CheckCheck size={17} aria-hidden="true" /> : <Copy size={17} aria-hidden="true" />}
+                  {copied ? 'Diagnóstico copiado' : 'Copiar diagnóstico'}
+                </button>
+              )}
+              {supportActions.map((action, index) => (
+                <div className="incident-recovery__contact" key={action.label}>
+                  <button type="button" className="ui-button ui-button--ghost incident-recovery__secondary"
+                    onClick={action.onClick} disabled={action.disabled}
+                    aria-describedby={contactNote ? 'incident-contact-' + detailsId + '-' + index : undefined}>
+                    {action.icon || <Mail size={17} aria-hidden="true" />}{action.label}
+                  </button>
+                  {contactNote && <p id={'incident-contact-' + detailsId + '-' + index} className="incident-recovery__contact-note">{contactNote}</p>}
+                </div>
+              ))}
+            </div>
+            <p className="incident-recovery__feedback" role="status">{copyError || (copied ? 'Diagnóstico copiado. Revísalo antes de compartirlo.' : '')}</p>
+          </section>
         )}
 
         {metadata && (

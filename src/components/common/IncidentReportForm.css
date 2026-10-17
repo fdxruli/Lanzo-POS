@@ -1,16 +1,29 @@
 .incident-report {
+  min-width: 0;
   margin-block: 0.75rem;
   color: var(--text-color);
 }
 
 .incident-report__form {
   display: grid;
+  min-width: 0;
   gap: 0.75rem;
-  padding: 1rem;
+  padding: clamp(0.75rem, 2vw, 1rem);
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius);
   background: var(--card-background-color);
 }
+
+.incident-report__form > * { min-width: 0; }
+
+.incident-report :is(.ui-button, .incident-report__external-link) {
+  min-width: 0;
+  min-height: 44px;
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+
+.incident-report__consent { min-height: 44px; }
 
 .incident-report__heading h3 {
   margin: 0 0 0.25rem;

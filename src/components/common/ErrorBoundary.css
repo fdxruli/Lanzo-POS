@@ -1,11 +1,10 @@
 .incident-recovery,
 .incident-recovery *,
 .incident-recovery *::before,
-.incident-recovery *::after {
-  box-sizing: border-box;
-}
+.incident-recovery *::after { box-sizing: border-box; }
 
 .incident-recovery {
+  container: incident-recovery / inline-size;
   width: 100%;
   min-width: 0;
   color: var(--text-color);
@@ -13,9 +12,19 @@
 }
 
 .incident-recovery__layout {
+  display: grid;
+  gap: clamp(1.25rem, 3vw, 2rem);
   width: 100%;
+  max-width: 68rem;
   min-width: 0;
   margin-inline: auto;
+}
+
+.incident-recovery__main {
+  display: grid;
+  align-content: start;
+  gap: 1.25rem;
+  min-width: 0;
 }
 
 .incident-recovery--recoverable {
@@ -27,29 +36,47 @@
   background: var(--card-background-color);
 }
 
-.incident-recovery--recoverable .incident-recovery__layout {
-  display: grid;
-  gap: 0.8rem;
-}
-
 .incident-recovery--section {
-  min-height: 16rem;
-  padding: clamp(1.25rem, 4vw, 3rem);
+  padding: clamp(1rem, 3vw, 2rem);
 }
 
-.incident-recovery--section .incident-recovery__layout {
-  display: grid;
-  max-width: 72rem;
-  gap: clamp(1.25rem, 3vw, 2rem);
+/* A caller explicitly selects the full-screen access/application surface.
+   This scrolls inside the app's overflow-hidden document without an overlay. */
+.incident-recovery--standalone {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  height: 100dvh;
+  min-height: 0;
+  padding:
+    max(clamp(1.25rem, 5vw, 4rem), env(safe-area-inset-top, 0px))
+    max(clamp(1rem, 5vw, 4rem), env(safe-area-inset-right, 0px))
+    max(clamp(1.25rem, 5vw, 4rem), env(safe-area-inset-bottom, 0px))
+    max(clamp(1rem, 5vw, 4rem), env(safe-area-inset-left, 0px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--background-color);
 }
+
+.incident-recovery--standalone .incident-recovery__layout { margin-block: auto; }
+
+.incident-recovery__brand {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  color: var(--text-dark);
+  font-size: 1rem;
+  font-weight: 750;
+}
+
+.incident-recovery__brand img { flex: 0 0 auto; }
 
 .incident-recovery--critical {
   position: fixed;
   z-index: var(--z-critical-blocker);
   inset: 0;
-  display: grid;
-  min-height: 100vh;
-  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
   padding:
     max(1.25rem, env(safe-area-inset-top, 0px))
     max(1rem, env(safe-area-inset-right, 0px))
@@ -58,20 +85,14 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   background: var(--background-color);
-  color: var(--text-color);
   -webkit-overflow-scrolling: touch;
 }
 
-.incident-recovery--critical .incident-recovery__layout {
-  display: grid;
-  align-content: center;
-  gap: clamp(1.25rem, 3vw, 2rem);
-  width: min(100%, 76rem);
-  min-height: min(100%, 40rem);
-}
+.incident-recovery--critical .incident-recovery__layout { margin-block: auto; }
 
 .incident-recovery__header {
   display: flex;
+  flex-direction: column;
   align-items: flex-start;
   gap: 1rem;
   min-width: 0;
@@ -79,13 +100,13 @@
 
 .incident-recovery__icon {
   display: inline-flex;
-  flex: 0 0 2.75rem;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
   width: 2.75rem;
   height: 2.75rem;
   border: 1px solid var(--brand-accent-border);
-  border-radius: 0.9rem;
+  border-radius: var(--ui-radius-sm);
   background: var(--brand-accent-soft);
   color: var(--brand-accent-text);
 }
@@ -93,231 +114,196 @@
 .incident-recovery--critical .incident-recovery__icon {
   border-color: var(--ui-border-warning, var(--border-color));
   background: var(--ui-bg-warning-soft, var(--light-background));
-  color: var(--warning-color);
+  color: var(--ui-text-warning, var(--warning-color));
 }
 
-.incident-recovery__copy {
-  min-width: 0;
-}
+.incident-recovery__copy { min-width: 0; }
 
 .incident-recovery__eyebrow {
-  margin: 0 0 0.35rem;
+  margin: 0 0 0.5rem;
   color: var(--text-light);
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.09em;
-  line-height: 1.25;
-  text-transform: uppercase;
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.4;
 }
 
-.incident-recovery__copy h2 {
+.incident-recovery__copy :is(h1, h2) {
+  max-width: 26ch;
   margin: 0;
   color: var(--text-dark);
-  font-size: clamp(1.2rem, 2.6vw, 1.75rem);
+  font-size: clamp(1.4rem, 3vw, 2rem);
   line-height: 1.2;
   letter-spacing: -0.025em;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
 }
 
+.incident-recovery--standalone .incident-recovery__copy h1,
 .incident-recovery--critical .incident-recovery__copy h2 {
-  max-width: 21ch;
-  font-size: clamp(1.75rem, 4.8vw, 3.25rem);
+  font-size: clamp(1.6rem, 3.6vw, 2.65rem);
 }
 
 .incident-recovery__description {
-  max-width: 68ch;
-  margin: 0.55rem 0 0;
+  max-width: 58ch;
+  margin: 0.8rem 0 0;
   color: var(--text-color);
   font-size: 0.98rem;
-  line-height: 1.6;
-  overflow-wrap: anywhere;
+  line-height: 1.65;
+  overflow-wrap: break-word;
 }
 
-.incident-recovery--recoverable .incident-recovery__description {
-  margin-top: 0.25rem;
-  color: var(--text-light);
-  font-size: 0.92rem;
-}
+.incident-recovery--recoverable .incident-recovery__description { font-size: 0.92rem; }
 
 .incident-recovery__operation {
   display: grid;
-  gap: 0.45rem;
-  max-width: 52rem;
-  padding: 1rem 1.1rem;
-  border-inline-start: 3px solid var(--warning-color);
-  background: var(--light-background);
+  gap: 0.6rem;
+  padding: 1rem;
+  border-inline-start: 3px solid var(--ui-text-warning, var(--warning-color));
+  background: var(--ui-bg-warning-soft, var(--light-background));
 }
 
-.incident-recovery__operation h3,
-.incident-recovery__operation h4 {
+.incident-recovery__operation :is(h3, h4) {
   margin: 0;
   color: var(--text-dark);
   font-size: 0.98rem;
 }
 
-.incident-recovery__operation p,
-.incident-recovery__operation ul {
+.incident-recovery__operation :is(p, ul) {
   margin: 0;
-  color: var(--text-color);
   font-size: 0.92rem;
-  line-height: 1.55;
-  overflow-wrap: anywhere;
+  line-height: 1.6;
+  overflow-wrap: break-word;
 }
 
-.incident-recovery__operation ul {
-  padding-inline-start: 1.25rem;
-}
+.incident-recovery__operation ul { padding-inline-start: 1.25rem; }
+.incident-recovery__operation strong { color: var(--text-dark); }
 
-.incident-recovery__operation strong {
-  color: var(--text-dark);
-}
-
-.incident-recovery__notice {
-  max-width: 68ch;
+.incident-recovery__notice,
+.incident-recovery__disabled-reason {
+  max-width: 60ch;
   margin: 0;
-  color: var(--text-color);
   font-size: 0.9rem;
-  line-height: 1.5;
+  line-height: 1.55;
 }
 
-.incident-recovery__notice--warning {
-  color: var(--ui-text-warning, var(--text-color));
-}
+.incident-recovery__disabled-reason { color: var(--text-light); }
 
 .incident-recovery__actions {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.5rem 0.75rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.75rem;
   min-width: 0;
 }
 
-.incident-recovery__primary {
-  min-width: min(100%, 13.5rem);
-  min-height: 2.75rem;
+.incident-recovery :is(.ui-button, .incident-recovery__details-toggle, .incident-recovery__dismiss) {
+  min-width: 0;
+  min-height: 44px;
   white-space: normal;
+  overflow-wrap: break-word;
 }
 
-.incident-recovery__secondary {
-  min-height: 2.75rem;
-  white-space: normal;
+.incident-recovery .ui-button svg { flex: 0 0 auto; }
+.incident-recovery__actions .ui-button { width: 100%; }
+
+.incident-recovery__help {
+  min-width: 0;
+  align-self: start;
+  padding: clamp(1rem, 2vw, 1.5rem);
+  border: 1px solid var(--border-color);
+  border-radius: var(--ui-radius-lg);
+  background: var(--card-background-color);
 }
 
-.incident-recovery__disabled-reason {
-  flex-basis: 100%;
-  color: var(--text-light);
-  font-size: 0.82rem;
-  line-height: 1.45;
-}
-
-.incident-recovery__contact-note {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.4rem;
-  max-width: 70ch;
+.incident-recovery__help > h3 {
   margin: 0;
+  color: var(--text-dark);
+  font-size: 1rem;
+}
+
+.incident-recovery__help-copy {
+  margin: 0.4rem 0 1rem;
+  color: var(--text-light);
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.incident-recovery__support-actions {
+  display: grid;
+  gap: 0.5rem;
+  min-width: 0;
+  justify-items: start;
+}
+
+.incident-recovery__support-actions > *,
+.incident-recovery__contact { min-width: 0; max-width: 100%; }
+
+.incident-recovery__support-actions .ui-button {
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.incident-recovery__report { width: 100%; }
+.incident-recovery__report:empty { display: none; }
+.incident-recovery__report .incident-report { margin-block: 0; }
+
+.incident-recovery__contact-note,
+.incident-recovery__feedback {
+  margin: 0.35rem 0 0;
+  max-width: 55ch;
   color: var(--text-light);
   font-size: 0.8rem;
-  line-height: 1.45;
+  line-height: 1.5;
 }
 
-.incident-recovery__contact-note svg {
-  flex: 0 0 auto;
-  margin-top: 0.1rem;
-}
+.incident-recovery__feedback:empty { margin: 0; }
 
 .incident-recovery__details {
-  width: 100%;
-  max-width: 54rem;
+  min-width: 0;
   border-top: 1px solid var(--border-color);
-}
-
-.incident-recovery--recoverable .incident-recovery__details {
-  margin-top: 0.2rem;
 }
 
 .incident-recovery__details-toggle {
   display: flex;
   width: 100%;
-  min-height: 2.75rem;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
-  padding: 0.55rem 0;
+  padding: 0.75rem 0;
   border: 0;
   background: transparent;
-  color: var(--brand-accent-text);
+  color: var(--text-light);
   font: inherit;
   font-size: 0.88rem;
-  font-weight: 700;
+  font-weight: 650;
   text-align: left;
 }
 
-.incident-recovery__details-toggle:hover {
-  color: var(--brand-accent-hover);
-}
-
-.incident-recovery__details-toggle:focus-visible,
-.incident-recovery__dismiss:focus-visible {
-  outline: 2px solid var(--brand-accent);
-  outline-offset: 3px;
-}
-
-.incident-recovery__details-content[hidden] {
-  display: none;
-}
+.incident-recovery__details-toggle:hover { color: var(--brand-accent-text); }
+.incident-recovery :focus-visible { outline: 2px solid var(--ui-focus-color, var(--brand-accent)); outline-offset: 3px; }
+.incident-recovery__details-content[hidden] { display: none; }
 
 .incident-recovery__details-content dl {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.75rem 1.5rem;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem 1.5rem;
   margin: 0;
-  padding: 0 0 0.5rem;
+  padding: 0.5rem 0 1rem;
 }
 
-.incident-recovery__details-content dl > div {
-  display: grid;
-  min-width: 0;
-  gap: 0.2rem;
-}
-
-.incident-recovery__details-content dt {
-  color: var(--text-light);
-  font-size: 0.75rem;
-  font-weight: 700;
-}
-
+.incident-recovery__details-content dl > div { display: grid; min-width: 0; gap: 0.2rem; }
+.incident-recovery__details-content dt { color: var(--text-light); font-size: 0.75rem; font-weight: 650; }
 .incident-recovery__details-content dd {
   display: flex;
   align-items: center;
   gap: 0.35rem;
   min-width: 0;
   margin: 0;
-  color: var(--text-color);
   font-size: 0.84rem;
   overflow-wrap: anywhere;
+  user-select: text;
 }
-
-.incident-recovery__details-content dd:first-letter {
-  text-transform: uppercase;
-}
-
-.incident-recovery__dismiss {
-  justify-self: start;
-  min-height: 2.75rem;
-  padding: 0.45rem 0;
-  border: 0;
-  background: transparent;
-  color: var(--text-light);
-  font: inherit;
-  font-size: 0.83rem;
-  font-weight: 700;
-}
-
-.incident-recovery__spin {
-  animation: incident-recovery-spin 1s linear infinite;
-}
-
+.incident-recovery__details-content dd svg { flex: 0 0 auto; }
+.incident-recovery__dismiss { justify-self: start; padding: 0.5rem; background: transparent; color: var(--text-light); font: inherit; }
+.incident-recovery__spin { animation: incident-recovery-spin 1s linear infinite; }
 .incident-recovery__sr-only {
   position: absolute;
   width: 1px;
@@ -330,86 +316,37 @@
   border: 0;
 }
 
-.content-wrapper--pos:has(.incident-recovery--section) {
-  overflow-x: hidden;
-  overflow-y: auto;
-}
-
+/* Restore the scroll owner only while a route has a recovery panel.
+   Preserve the shell's mobile navigation clearance, including POS routes. */
+.content-wrapper:has(.incident-recovery--section) { overflow-y: auto; }
 .page-container-pos:has(.incident-recovery--section) {
-  min-height: 100%;
+  flex: 1 0 auto;
   overflow: visible;
-  padding: 1rem;
+  padding-bottom: var(--mobile-navigation-clearance);
 }
 
-@keyframes incident-recovery-spin {
-  to { transform: rotate(360deg); }
+@container incident-recovery (min-width: 34rem) {
+  .incident-recovery__actions { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 34rem; }
+  .incident-recovery__details-content dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .incident-recovery__header { flex-direction: row; }
 }
 
-@media (min-width: 900px) {
-  .incident-recovery--critical .incident-recovery__layout {
-    grid-template-columns: minmax(0, 1.15fr) minmax(17rem, 0.85fr);
-    align-items: center;
-    column-gap: clamp(2rem, 6vw, 6rem);
-  }
-
-  .incident-recovery--critical .incident-recovery__header,
-  .incident-recovery--critical .incident-recovery__actions,
-  .incident-recovery--critical .incident-recovery__contact-note,
-  .incident-recovery--critical .incident-recovery__details {
-    grid-column: 1;
-  }
-
-  .incident-recovery--critical .incident-recovery__operation {
-    grid-column: 2;
-    grid-row: 1 / span 3;
-    align-self: center;
-  }
+@container incident-recovery (min-width: 56rem) {
+  .incident-recovery__layout { grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); align-items: start; column-gap: 3rem; }
+  .incident-recovery__brand,
+  .incident-recovery__details,
+  .incident-recovery__dismiss { grid-column: 1 / -1; }
+  .incident-recovery__actions { grid-template-columns: minmax(0, 1fr); justify-items: start; }
+  .incident-recovery__actions .ui-button { width: auto; }
+  .incident-recovery__main { gap: 1.5rem; }
 }
 
-@media (max-width: 600px) {
-  .incident-recovery--section {
-    padding-inline: 0.25rem;
-  }
-
-  .incident-recovery--recoverable {
-    padding: 0.9rem;
-  }
-
-  .incident-recovery__header {
-    gap: 0.75rem;
-  }
-
-  .incident-recovery__icon {
-    flex-basis: 2.5rem;
-    width: 2.5rem;
-    height: 2.5rem;
-  }
-
-  .incident-recovery__actions {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    justify-items: stretch;
-  }
-
-  .incident-recovery__primary,
-  .incident-recovery__secondary {
-    width: 100%;
-    min-height: 2.75rem;
-    justify-content: center;
-  }
-
-  .incident-recovery__details-content dl {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .incident-recovery--critical .incident-recovery__layout {
-    align-content: start;
-    padding-block: 0.5rem;
-  }
+@media (min-width: 1024px) {
+  .page-container-pos:has(.incident-recovery--section) { padding-bottom: 1.5rem; }
 }
 
+@keyframes incident-recovery-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) {
-  .incident-recovery__spin {
-    animation: none;
-  }
+  .incident-recovery__spin { animation: none; }
+  .page-container:has(.incident-recovery) { animation: none; }
 }

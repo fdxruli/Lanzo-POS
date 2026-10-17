@@ -168,7 +168,7 @@ export class IncidentErrorBoundary extends React.Component {
         incident.severity === 'critical_blocker' ? 'blocked' : 'action_required'
       )
     });
-    if (this._renderRecoveryAttempts > 0) {
+    if (incident.severity !== 'critical_blocker') {
       this._focusTimeout = globalThis.setTimeout(() => {
         this._focusTimeout = null;
         if (this.state.hasError) this._headingRef.current?.focus({ preventScroll: true });
@@ -497,6 +497,17 @@ export class IncidentErrorBoundary extends React.Component {
     let description = isRecoverable
       ? 'Puedes intentarlo nuevamente. El resto de Lanzo POS sigue disponible.'
       : 'Ocurrió un problema inesperado. Puedes recuperar esta sección sin reiniciar todo Lanzo POS.';
+    // Presentation uses caller-owned, known surfaces; never exception text or a raw URL.
+    const standalone = ['welcome', 'application'].includes(this.props.recoverySurface);
+    if (incident.category === 'react_render' && !isCritical) {
+      if (this.props.recoverySurface === 'welcome') {
+        title = 'No pudimos mostrar la pantalla de acceso';
+        description = 'Ocurrió un problema al mostrar la pantalla de acceso. Puedes intentar recuperarla sin reiniciar Lanzo POS.';
+      } else if (this.props.recoverySurface === 'sales') {
+        title = 'No pudimos mostrar Ventas';
+        description = 'Ocurrió un problema al cargar esta sección. Puedes intentar recuperarla sin reiniciar Lanzo POS.';
+      }
+    }
     if (isCritical) {
       title = criticalCopy.title;
       description = criticalCopy.description;
@@ -545,8 +556,9 @@ export class IncidentErrorBoundary extends React.Component {
         icon: <ArrowRightCircle size={17} aria-hidden="true" />
       });
     }
+    const supportActions = [];
     if (!isCritical) {
-      secondaryActions.push({
+      supportActions.push({
         label: 'Abrir correo de soporte',
         onClick: this.handleReport,
         icon: <Mail size={17} aria-hidden="true" />
@@ -564,11 +576,13 @@ export class IncidentErrorBoundary extends React.Component {
     const panel = (
       <IncidentRecoveryPanel
         severity={incident.severity}
+        presentation={standalone ? 'standalone' : 'section'}
         title={title}
         description={description}
         metadata={metadata}
         primaryAction={primaryAction}
         secondaryActions={secondaryActions}
+        supportActions={supportActions}
         operationDetails={operationDetails}
         copied={this.state.copied}
         onCopy={this.handleCopy}

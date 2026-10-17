@@ -26,7 +26,7 @@ jobs:
           cache: npm
       - run: npm ci --no-audit --no-fund
       - name: Interaction and isolation tripwires
-        run: npx vitest run src/qa src/tests/ErrorBoundary.test.jsx src/components/common/__tests__/IncidentReportForm.test.jsx src/components/common/__tests__/IncidentReportEntry.test.jsx src/components/common/__tests__/ErrorBoundary.phase2.test.jsx src/services/diagnostics/__tests__ --maxWorkers=4
+        run: npx vitest run src/qa src/tests/ErrorBoundary.test.jsx src/components/common/__tests__/IncidentReportForm.test.jsx src/components/common/__tests__/IncidentReportEntry.test.jsx src/components/common/__tests__/ErrorBoundary.phase2.test.jsx src/components/common/__tests__/IncidentRecovery.ux.test.jsx src/services/diagnostics/__tests__ --maxWorkers=4
       - name: Focal ESLint
         run: npx eslint src/qa src/components/common/IncidentErrorBoundary.jsx src/components/common/IncidentRecoveryQaGallery.jsx src/components/common/IncidentReportForm.jsx src/components/common/IncidentReportEntry.jsx src/components/common/IncidentRecoveryPanel.jsx src/services/diagnostics/contextSnapshotGuard.js src/services/diagnostics/recoveryContext.js
       - name: Production executable exclusion

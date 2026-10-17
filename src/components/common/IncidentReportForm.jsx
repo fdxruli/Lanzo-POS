@@ -75,6 +75,7 @@ export default function IncidentReportForm({
   const [preparedCommunication, setPreparedCommunication] = useState(null);
   const [communicationStatus, setCommunicationStatus] = useState('');
   const [communicationFeedback, setCommunicationFeedback] = useState('');
+  const headingRef = useRef(null);
   const openingContextGuard = useRef(null);
   const messageField = useRef(null);
   const submitInFlight = useRef(false);
@@ -158,6 +159,10 @@ export default function IncidentReportForm({
   useEffect(() => {
     if (openOnMount) void handleOpen();
   }, [handleOpen, openOnMount]);
+
+  useEffect(() => {
+    if (open) headingRef.current?.focus();
+  }, [open]);
 
   if (!incident) return null;
 
@@ -375,7 +380,7 @@ export default function IncidentReportForm({
       ) : (
         <form className="incident-report__form" onSubmit={handleSubmit}>
           <div className="incident-report__heading">
-            <h3>Enviar diagnóstico técnico</h3>
+            <h3 ref={headingRef} tabIndex={-1}>Enviar diagnóstico técnico</h3>
             <p>El reporte requiere internet y tu confirmación. El folio solo aparece cuando el servidor confirma la recepción.</p>
           </div>
 

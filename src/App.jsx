@@ -405,7 +405,7 @@ function App() {
 
     case 'unauthenticated':
       return (
-        <ErrorBoundary>
+        <ErrorBoundary recoverySurface="welcome">
           <WelcomeModal />
         </ErrorBoundary>
       );
