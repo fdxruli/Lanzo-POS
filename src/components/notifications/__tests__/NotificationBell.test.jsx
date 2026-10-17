@@ -10,8 +10,15 @@ const store = vi.hoisted(() => ({
 
 const local = vi.hoisted(() => ({
   snapshot: null,
+  cashPending: null,
   markSeen: vi.fn(),
   refresh: vi.fn(async () => ({ status: 'ready' }))
+}));
+
+const cashAttention = vi.hoisted(() => ({
+  buildKey: vi.fn(async ({ scopeKey, downgradedAt }) => `attention:${scopeKey}:${downgradedAt}`),
+  read: vi.fn(() => ({ version: 1, readAt: null, postponedAt: null })),
+  markRead: vi.fn(() => ({ version: 1, readAt: 'read', postponedAt: null }))
 }));
 
 vi.mock('../../../store/useAppStore', () => ({
@@ -20,6 +27,17 @@ vi.mock('../../../store/useAppStore', () => ({
 
 vi.mock('../../../hooks/useInventoryOperationalAlertsSnapshot', () => ({
   useInventoryOperationalAlertsSnapshot: () => local.snapshot
+}));
+
+vi.mock('../../../hooks/usePostDowngradeCashPending', () => ({
+  default: () => local.cashPending
+}));
+
+vi.mock('../../../services/cash/postDowngradeCashAttention', () => ({
+  buildPostDowngradeCashAttentionKey: (...args) => cashAttention.buildKey(...args),
+  markPostDowngradeCashAttentionRead: (...args) => cashAttention.markRead(...args),
+  POST_DOWNGRADE_CASH_ATTENTION_EVENT: 'lanzo:post-downgrade-cash-attention',
+  readPostDowngradeCashAttention: (...args) => cashAttention.read(...args)
 }));
 
 vi.mock('../../../services/localInventoryOperationalAlerts', () => ({
@@ -142,6 +160,16 @@ beforeEach(() => {
   vi.clearAllMocks();
   store.state = createState();
   local.snapshot = emptyLocalSnapshot();
+  local.cashPending = {
+    eligible: false,
+    online: true,
+    status: 'idle',
+    pendingCount: null,
+    isPostDowngrade: false,
+    downgradedAt: null,
+    scopeKey: null,
+    refresh: vi.fn()
+  };
 });
 
 describe('NotificationBell', () => {
@@ -188,10 +216,46 @@ describe('NotificationBell', () => {
     fireEvent.click(bell);
 
     expect(screen.getByRole('dialog', {
-      name: 'Inventario requiere atención'
+      name: 'Alertas locales'
     })).toBeInTheDocument();
     expect(screen.getByText('6')).toBeInTheDocument();
     await waitFor(() => expect(local.markSeen).toHaveBeenCalledTimes(1));
+  });
+
+  it('adds one grouped cash incident to the local badge without counting each box', async () => {
+    local.snapshot = {
+      ...emptyLocalSnapshot(),
+      activeCount: 30,
+      outOfStockCount: 30,
+      unseenCount: 30
+    };
+    local.cashPending = {
+      eligible: true,
+      online: true,
+      status: 'success',
+      pendingCount: 7,
+      isPostDowngrade: true,
+      downgradedAt: '2026-09-24T05:53:00.000Z',
+      scopeKey: 'LANZO-A:owner-a',
+      refresh: vi.fn()
+    };
+
+    renderBell();
+
+    const bell = await screen.findByRole('button', {
+      name: /Abrir alertas locales, 31 incidencias activas; una agrupa 7 cajas/i
+    });
+    expect(screen.getByText('31')).toHaveAttribute(
+      'aria-label',
+      '31 incidencias activas: 30 de inventario y 1 de Caja y conciliación'
+    );
+
+    fireEvent.click(bell);
+
+    expect(screen.getByRole('dialog', { name: 'Alertas locales' })).toBeInTheDocument();
+    expect(screen.getByText('7 cajas pendientes de revisión')).toBeInTheDocument();
+    expect(screen.getByText('30 alertas activas')).toBeInTheDocument();
+    expect(screen.getByText('31')).toBeInTheDocument();
   });
 
   it('keeps the Free/local bell and full active badge when the ticker is hidden', () => {
@@ -255,6 +319,16 @@ describe('NotificationBell', () => {
   });
 
   it('Free opens zero cloud notification/support paths', () => {
+    local.cashPending = {
+      eligible: true,
+      online: true,
+      status: 'success',
+      pendingCount: 7,
+      isPostDowngrade: true,
+      downgradedAt: '2026-09-24T05:53:00.000Z',
+      scopeKey: 'LANZO-A:owner-a',
+      refresh: vi.fn()
+    };
     local.snapshot = {
       ...emptyLocalSnapshot(),
       activeCount: 1,
@@ -273,7 +347,7 @@ describe('NotificationBell', () => {
 
     renderBell();
     fireEvent.click(screen.getByRole('button', {
-      name: /Abrir alertas operativas de inventario/i
+      name: /Abrir alertas locales/i
     }));
 
     expect(store.state.loadNotifications).not.toHaveBeenCalled();
@@ -356,7 +430,7 @@ describe('NotificationBell', () => {
       .toBeInTheDocument();
     expect(screen.getByText('No tienes notificaciones por ahora.')).toBeInTheDocument();
     expect(screen.queryByText('Soporte Lanzo Nube')).not.toBeInTheDocument();
-    expect(screen.queryByRole('dialog', { name: 'Inventario requiere atención' }))
+    expect(screen.queryByRole('dialog', { name: 'Alertas locales' }))
       .not.toBeInTheDocument();
 
     fireEvent.keyDown(document, { key: 'Escape' });

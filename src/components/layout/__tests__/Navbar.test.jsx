@@ -7,7 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const state = vi.hoisted(() => ({
   app: null,
   settingsAccess: { canEnterSettings: true },
-  actorRuntime: null
+  actorRuntime: null,
+  postDowngradeCash: null
 }));
 
 vi.mock('../../../store/useAppStore', () => ({
@@ -20,6 +21,10 @@ vi.mock('../../../services/auth/useSettingsAccess', () => ({
 
 vi.mock('../../../services/auth/useActorRuntimeSnapshot', () => ({
   useActorRuntimeSnapshot: () => state.actorRuntime
+}));
+
+vi.mock('../../../hooks/usePostDowngradeCashPending', () => ({
+  default: () => state.postDowngradeCash
 }));
 
 vi.mock('../../../hooks/useFeatureConfig', () => ({
@@ -128,6 +133,11 @@ beforeEach(() => {
   vi.clearAllMocks();
   state.app = createAppState();
   state.settingsAccess = { canEnterSettings: true };
+  state.postDowngradeCash = {
+    eligible: false,
+    pendingCount: null,
+    status: 'idle'
+  };
   state.actorRuntime = {
     status: 'granted',
     actorType: 'admin',
@@ -215,6 +225,78 @@ describe('Navbar sales report access', () => {
 });
 
 describe('Navbar mobile menu', () => {
+  it('shows the confirmed historical cash count only for the eligible owner', () => {
+    state.postDowngradeCash = {
+      eligible: true,
+      pendingCount: 7,
+      status: 'success'
+    };
+
+    renderNavbar();
+
+    const cajaLinks = screen.getAllByRole('link', {
+      name: 'Caja, 7 cajas anteriores pendientes de conciliación'
+    });
+    expect(cajaLinks).toHaveLength(2);
+    expect(cajaLinks[0]).toHaveTextContent('Caja');
+    expect(cajaLinks[0]).toHaveTextContent('7');
+    expect(cajaLinks[1]).toHaveTextContent('7');
+  });
+
+  it('does not expose a pending cash count to an ineligible actor', () => {
+    state.postDowngradeCash = {
+      eligible: false,
+      pendingCount: 7,
+      status: 'hidden'
+    };
+
+    renderNavbar();
+
+    expect(screen.getAllByRole('link', { name: 'Caja' })).toHaveLength(2);
+    expect(document.querySelectorAll('.cash-nav-count')).toHaveLength(0);
+  });
+
+  it('hides the indicator only after the authoritative count reaches zero', () => {
+    state.postDowngradeCash = {
+      eligible: true,
+      pendingCount: 0,
+      status: 'success'
+    };
+
+    renderNavbar();
+
+    expect(screen.getAllByRole('link', { name: 'Caja' })).toHaveLength(2);
+    expect(document.querySelectorAll('.cash-nav-count')).toHaveLength(0);
+  });
+
+  it('keeps the last confirmed count visible through offline and query-error states', () => {
+    state.postDowngradeCash = {
+      eligible: true,
+      pendingCount: 7,
+      status: 'offline_known'
+    };
+
+    const view = renderNavbar();
+    expect(screen.getAllByRole('link', {
+      name: 'Caja, 7 cajas anteriores pendientes de conciliación'
+    })).toHaveLength(2);
+
+    state.postDowngradeCash = {
+      eligible: true,
+      pendingCount: 7,
+      status: 'error'
+    };
+    view.rerender(
+      <MemoryRouter initialEntries={['/']}>
+        <Navbar />
+      </MemoryRouter>
+    );
+
+    expect(screen.getAllByRole('link', {
+      name: 'Caja, 7 cajas anteriores pendientes de conciliación'
+    })).toHaveLength(2);
+  });
+
   it('keeps the local inventory bell visible in the mobile top bar without opening Menu', () => {
     renderNavbar();
 
