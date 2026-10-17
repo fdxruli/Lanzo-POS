@@ -13,6 +13,7 @@ import { useSettingsAccess } from '../../services/auth/useSettingsAccess';
 import { canReadSalesReports } from '../../services/auth/salesPermissionPolicy';
 import { useActorRuntimeSnapshot } from '../../services/auth/useActorRuntimeSnapshot';
 import { getCommercialAIAgentAccessState } from '../../services/auth/aiAgentAuthorization';
+import usePostDowngradeCashPending from '../../hooks/usePostDowngradeCashPending';
 import Logo from '../common/Logo';
 import NotificationBell from '../notifications/NotificationBell';
 import {
@@ -78,6 +79,7 @@ function Navbar({ isSuppressed = false } = {}) {
   const ecommerceNewCount = useAppStore((state) => state.ecommerceOrderCounts?.new || 0);
   const settingsAccess = useSettingsAccess();
   const actorRuntime = useActorRuntimeSnapshot();
+  const postDowngradeCash = usePostDowngradeCashPending();
   const canReadReports = canReadSalesReports(actorRuntime);
   const commercialAIAgentAccess = getCommercialAIAgentAccessState({
     licenseDetails,
@@ -100,6 +102,14 @@ function Navbar({ isSuppressed = false } = {}) {
   const ecommerceBadge = normalizedEcommerceNewCount > 99
     ? '99+'
     : String(normalizedEcommerceNewCount);
+  const cashPendingCount = (
+    postDowngradeCash.eligible
+    && Number.isInteger(postDowngradeCash.pendingCount)
+    && postDowngradeCash.pendingCount > 0
+  ) ? postDowngradeCash.pendingCount : 0;
+  const cashNavigationLabel = cashPendingCount > 0
+    ? `Caja, ${cashPendingCount} cajas anteriores pendientes de conciliación`
+    : 'Caja';
 
   const toggleMenu = () => setIsMobileMenuOpen((prev) => !prev);
   const closeMenu = () => setIsMobileMenuOpen(false);
@@ -337,14 +347,21 @@ function Navbar({ isSuppressed = false } = {}) {
       <nav className="mobile-bottom-nav">
         <NavLink
           to="/caja"
-          className={getBottomClass}
+          className={(route) => `${getBottomClass(route)} ${cashPendingCount > 0 ? 'bottom-nav-item--cash-attention' : ''}`.trim()}
           onClick={handleProtectedNavClick}
           hidden={!isRouteAllowed('/caja')}
+          aria-label={cashNavigationLabel}
+          title={cashPendingCount > 0 ? cashNavigationLabel : undefined}
           aria-disabled={isBackupLoading}
           tabIndex={isBackupLoading ? -1 : 0}
         >
           <Inbox size={22} />
-          <span>Caja</span>
+          <span className="cash-nav-label">
+            Caja
+            {cashPendingCount > 0 && (
+              <span className="cash-nav-count" aria-hidden="true">· {cashPendingCount}</span>
+            )}
+          </span>
         </NavLink>
 
         <NavLink
@@ -609,13 +626,19 @@ function Navbar({ isSuppressed = false } = {}) {
 
           <NavLink
             to="/caja"
-            className={getDesktopClass}
+            className={({ isActive }) => `${getDesktopClass({ isActive })} ${cashPendingCount > 0 ? 'nav-link--cash-attention' : ''}`.trim()}
             onClick={handleProtectedNavClick}
             hidden={!isRouteAllowed('/caja')}
+            aria-label={cashNavigationLabel}
+            title={cashPendingCount > 0 ? cashNavigationLabel : undefined}
             aria-disabled={isBackupLoading}
             tabIndex={isBackupLoading ? -1 : 0}
           >
-            <Inbox size={20} /> Caja
+            <Inbox size={20} />
+            <span>Caja</span>
+            {cashPendingCount > 0 && (
+              <span className="cash-nav-count cash-nav-count--desktop" aria-hidden="true">· {cashPendingCount}</span>
+            )}
           </NavLink>
 
           {features.hasKDS && isRouteAllowed('/pedidos') && (
