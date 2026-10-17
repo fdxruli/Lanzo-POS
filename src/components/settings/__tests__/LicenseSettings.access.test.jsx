@@ -53,6 +53,7 @@ vi.mock('../../../services/utils', () => ({
 }));
 
 import LicenseSettings from '../LicenseSettings';
+import { showConfirmModal } from '../../../services/utils';
 
 describe('LicenseSettings sibling isolation', () => {
   afterEach(cleanup);
@@ -188,6 +189,51 @@ describe('LicenseSettings sibling isolation', () => {
       <LicenseSettings />
     </MemoryRouter>
   );
+
+  it.each(['Free', 'PRO'])('explains logout versus device release for %s Admin', async (plan) => {
+    const license = localLicense();
+    if (plan === 'PRO') {
+      license.plan_code = 'pro_monthly';
+      license.max_devices = 3;
+      license.features.staff_roles = true;
+      license.features.realtime_license_sync = true;
+    }
+    state.app.licenseDetails = license;
+    state.app.currentStaffUser = null;
+    state.access = localAdminAccess();
+    vi.mocked(showConfirmModal).mockResolvedValue(false);
+
+    renderInApp();
+    fireEvent.click(screen.getByText('Informacion de licencia'));
+    const logoutButton = screen.getByRole('button', { name: 'Cerrar sesion admin' });
+    fireEvent.click(logoutButton);
+
+    await vi.waitFor(() => expect(showConfirmModal).toHaveBeenCalledTimes(1));
+    const [message, options] = vi.mocked(showConfirmModal).mock.calls[0];
+    expect(message).toContain('no libera su cupo');
+    expect(message).toContain('Configuración > Dispositivos > Liberar');
+    expect(message).toContain('pulsa Cancelar');
+    expect(options.confirmButtonText).toBe('Sí, cerrar sesión');
+    expect(state.app.logoutAdmin).not.toHaveBeenCalled();
+
+    vi.mocked(showConfirmModal).mockResolvedValue(true);
+    fireEvent.click(logoutButton);
+    await vi.waitFor(() => expect(state.app.logoutAdmin).toHaveBeenCalledTimes(1));
+  });
+
+  it('explains to Staff that only an Admin can release a device', async () => {
+    vi.mocked(showConfirmModal).mockResolvedValue(false);
+    render(<LicenseSettings />);
+    fireEvent.click(screen.getByText('Informacion de licencia'));
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar sesion staff' }));
+
+    await vi.waitFor(() => expect(showConfirmModal).toHaveBeenCalledTimes(1));
+    const [message] = vi.mocked(showConfirmModal).mock.calls[0];
+    expect(message).toContain('No libera el dispositivo');
+    expect(message).toContain('pide al administrador');
+    expect(message).toContain('Configuración > Dispositivos > Liberar');
+    expect(state.app.logoutStaff).not.toHaveBeenCalled();
+  });
 
   it('shows Local Admin the Equipo PRO presentation without mounting or requesting Staff data', () => {
     state.app.currentStaffUser = null;
