@@ -141,10 +141,25 @@ const resolveCanonicalDeviceRef = async () => {
 export const grantAuthenticatedActorRuntime = async ({
   actorType,
   actor,
-  permissions = null
+  permissions = null,
+  authentication = actorRuntimeController.getState()
 } = {}) => {
   const actorId = resolveStableActorId(actorType, actor);
   if (!actorId) throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.IDENTITY_INVALID, { actorType });
+  if (authentication.status !== ACTOR_RUNTIME_STATUS.AUTHENTICATING || authentication.actorType !== actorType) {
+    throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.HANDOFF_REQUIRED);
+  }
+  const tenantAtStart = requireTenantRuntime();
+  const assertAuthenticationCurrent = (status = ACTOR_RUNTIME_STATUS.AUTHENTICATING) => {
+    const current = actorRuntimeController.getState();
+    const tenant = requireTenantRuntime();
+    if (current.generation !== authentication.generation || current.actorType !== actorType
+      || current.status !== status || tenant.opaqueId !== tenantAtStart.opaqueId
+      || tenant.databaseName !== tenantAtStart.databaseName || tenant.generation !== tenantAtStart.generation) {
+      throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.CONTEXT_STALE);
+    }
+  };
+  assertAuthenticationCurrent();
   const binding = await readActorSessionBinding(actorType);
   const stateBeforeHandoff = actorRuntimeController.getState();
   if (stateBeforeHandoff.status !== ACTOR_RUNTIME_STATUS.AUTHENTICATING) {
@@ -153,10 +168,12 @@ export const grantAuthenticatedActorRuntime = async ({
 
   const tenant = requireTenantRuntime();
   const deviceRef = await resolveCanonicalDeviceRef();
+  assertAuthenticationCurrent();
   const actorKey = createActorKey(actorType, actorId);
   const nextActorGeneration = stateBeforeHandoff.generation + 1;
 
   actorRuntimeController.beginHandoffCheck();
+  let ownedGrant = null;
   try {
     // Durable checkout inspection must be available before any POS store is
     // mounted. Bind it directly to the already-authorized tenant runtime proxy;
@@ -166,10 +183,12 @@ export const grantAuthenticatedActorRuntime = async ({
       salesStore: 'sales'
     });
     await installActorOperationalHandoffGuards();
+    assertAuthenticationCurrent(ACTOR_RUNTIME_STATUS.HANDOFF_CHECK);
     // Checkout ownership is also recorded on the tenant-shared SALES row so a
     // browser restart cannot erase the safety barrier. Legacy locked rows with
     // no actor proof remain unresolved and block handoff fail-closed.
     await refreshPersistedActorCheckoutOwnership({ tenant });
+    assertAuthenticationCurrent(ACTOR_RUNTIME_STATUS.HANDOFF_CHECK);
     assertActorOperationalHandoffClear({ tenant, actorKey });
 
     // Preparation is read-only with respect to actor payloads. Legacy tenant-
@@ -178,13 +197,22 @@ export const grantAuthenticatedActorRuntime = async ({
     await prepareActorScopedStorage({
       tenant,
       actorKey,
-      actorGeneration: nextActorGeneration
+      actorGeneration: nextActorGeneration,
+      assertCurrent: () => assertAuthenticationCurrent(ACTOR_RUNTIME_STATUS.HANDOFF_CHECK)
     });
+    assertAuthenticationCurrent(ACTOR_RUNTIME_STATUS.HANDOFF_CHECK);
 
     // ActiveOrders is the registered tenant storage consumer today. Rehydrate
     // while actor writes remain suspended so the previous actor's in-memory
     // session is replaced before GRANTED.
     await hydrateTenantStorageConsumers();
+    assertAuthenticationCurrent(ACTOR_RUNTIME_STATUS.HANDOFF_CHECK);
+    const currentBinding = await readActorSessionBinding(actorType);
+    const currentDeviceRef = await resolveCanonicalDeviceRef();
+    assertAuthenticationCurrent(ACTOR_RUNTIME_STATUS.HANDOFF_CHECK);
+    if (currentBinding.sessionId !== binding.sessionId || currentDeviceRef !== deviceRef) {
+      throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.CONTEXT_STALE);
+    }
 
     const granted = actorRuntimeController.grant({
       actorType,
@@ -194,6 +222,7 @@ export const grantAuthenticatedActorRuntime = async ({
       tenantOpaqueId: tenant.opaqueId,
       deviceRef
     });
+    ownedGrant = actorRuntimeController.capture();
 
     // A checkout can survive a same-actor reauthentication, but its immutable
     // ownership must bind to the new actor generation before writes resume.
@@ -209,6 +238,10 @@ export const grantAuthenticatedActorRuntime = async ({
     resumeTenantStorageWrites();
     return granted;
   } catch (error) {
+    // An obsolete handoff must never invalidate a newer actor's storage epoch.
+    if (actorRuntimeController.getState().generation !== authentication.generation) {
+      try { if (!ownedGrant) throw error; ownedGrant.assertCurrent(); } catch { throw error; }
+    }
     suspendActorScopedStorageWrites();
     invalidateActorScopedStorage('actor_handoff_failed');
     if (actorRuntimeController.getState().status !== ACTOR_RUNTIME_STATUS.LOCKED) {
@@ -216,6 +249,31 @@ export const grantAuthenticatedActorRuntime = async ({
     }
     throw error;
   }
+};
+
+/** Read-only proof for resuming preparation of an already granted session. */
+export const assertAuthenticatedActorSessionCurrent = async ({ handle, actorType, actor }) => {
+  handle.assertCurrent();
+  if (handle.actorType !== actorType || handle.actorId !== resolveStableActorId(actorType, actor)) {
+    throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.IDENTITY_INVALID);
+  }
+  const binding = await readActorSessionBinding(actorType);
+  const deviceRef = await resolveCanonicalDeviceRef();
+  if (actorType === 'admin') {
+    const cache = await readSyncCacheValue('last_valid_admin_session');
+    const now = Date.now();
+    const expiresAt = cache?.expiresAt ? Date.parse(cache.expiresAt) : null;
+    if (!Number.isFinite(cache?.validatedAt) || cache.validatedAt <= 0 || cache.validatedAt > now
+      || now - cache.validatedAt > 24 * 60 * 60 * 1000
+      || (expiresAt !== null && (!Number.isFinite(expiresAt) || expiresAt <= now))) {
+      throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.SESSION_REQUIRED);
+    }
+  }
+  handle.assertCurrent();
+  if (binding.sessionId !== handle.sessionId || deviceRef !== handle.deviceRef) {
+    throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.CONTEXT_STALE);
+  }
+  return handle;
 };
 
 /**
@@ -229,11 +287,13 @@ export const restoreActorRuntimeFromCurrentSessionCache = async ({
   actor,
   permissions = null
 } = {}) => {
+  const authentication = actorRuntimeController.getState();
   try {
     await readCurrentActorSessionCache();
-    return await grantAuthenticatedActorRuntime({ actorType, actor, permissions });
+    return await grantAuthenticatedActorRuntime({ actorType, actor, permissions, authentication });
   } catch (error) {
-    if (actorRuntimeController.getState().status !== ACTOR_RUNTIME_STATUS.LOCKED) {
+    if (actorRuntimeController.getState().generation === authentication.generation
+      && actorRuntimeController.getState().status !== ACTOR_RUNTIME_STATUS.LOCKED) {
       lockActorRuntime(
         error?.code === ACTOR_SESSION_AMBIGUOUS
           ? 'ambiguous_actor_session_evidence'

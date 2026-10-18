@@ -1642,8 +1642,11 @@ const buildAdminSessionResult = async (data, licenseKey, { beforeLocalPersistenc
         reason: 'admin_session_credentials',
         beforeLocalPersistence,
         operation: async () => {
+            await beforeLocalPersistence?.(tenantSource);
             if (deviceToken) await setSecureCredentials(deviceToken);
+            await beforeLocalPersistence?.(tenantSource);
             await clearStaffSessionCache();
+            await beforeLocalPersistence?.(tenantSource);
             if (data.admin_session_token) {
                 await setAdminSessionCredentials(
                     data.admin_session_token,
@@ -1652,12 +1655,14 @@ const buildAdminSessionResult = async (data, licenseKey, { beforeLocalPersistenc
                 );
             } else {
                 const existingToken = await getAdminSessionToken();
+                await beforeLocalPersistence?.(tenantSource);
                 if (existingToken) {
                     await setAdminSessionCredentials(existingToken, data.admin_session_id, data.expires_at);
                 }
             }
 
             const fingerprint = await getStableDeviceId();
+            await beforeLocalPersistence?.(tenantSource);
             safeLocalStorageSet('fp', fingerprint);
         }
     });
@@ -1786,6 +1791,7 @@ export const verifyAdminSession = async (licenseKey, { beforeLocalPersistence = 
         });
         if (error) throw error;
         if (!data?.success || data?.valid === false) {
+            await beforeLocalPersistence?.({ license_key: licenseKey });
             await runWithLocalTenantSyncLease(
                 { license_key: licenseKey },
                 { reason: 'invalid_admin_session_cleanup' },

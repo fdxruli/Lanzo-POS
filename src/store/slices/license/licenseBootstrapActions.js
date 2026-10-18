@@ -95,6 +95,9 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
             Logger.debug('[AppStore] initializeApp reutiliza la promesa en ejecución.');
             return initializePromise;
         }
+        if (get()._isAdminAuthenticationInFlight?.()) {
+            return Promise.resolve({ status: get().appStatus, code: 'ADMIN_AUTH_IN_PROGRESS' });
+        }
 
         const force = options?.force === true;
         coordinatorState = 'running';
@@ -266,6 +269,9 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
                                 await restoreActorAuthority('admin', offlineAdmin);
                                 set({ currentAdminUser: offlineAdmin });
                                 await get()._processOfflineMode(actorBoundAdminLicense);
+                                if (!['ready', 'setup_required', 'unauthenticated'].includes(get().appStatus)) {
+                                    await get()._completeRestoredAdminPreparation?.(actorBoundAdminLicense.license_key);
+                                }
                             } catch (actorError) {
                                 if (canClearFailedActorSession(actorError)) {
                                     await clearAdminSessionCache();
@@ -344,10 +350,14 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
                         return { status: 'admin_login_required' };
                     }
 
-                    await get()._loadProfile(restoredLicense.license_key);
-                    get()._validateInBackground(restoredLicense.license_key, {
-                        reason: 'admin_session_restore'
-                    });
+                    if (get()._completeRestoredAdminPreparation) {
+                        await get()._completeRestoredAdminPreparation(restoredLicense.license_key);
+                    } else {
+                        await get()._loadProfile(restoredLicense.license_key);
+                        get()._validateInBackground(restoredLicense.license_key, {
+                            reason: 'admin_session_restore'
+                        });
+                    }
                     coordinatorState = 'ready';
                     return { status: get().appStatus };
                 }

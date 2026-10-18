@@ -1,0 +1,36 @@
+{
+  "baseHead": "bca323cddebac97678f6b388d7abbdf7d3cfc730",
+  "reproductionBefore": {
+    "tests": 6,
+    "failed": 4,
+    "secondClickCode": "ACTOR_HANDOFF_REQUIRED"
+  },
+  "focalLatest": {
+    "files": 36,
+    "tests": 288,
+    "passed": 288,
+    "failed": 0
+  },
+  "affectedRecheck": {
+    "tests": 51,
+    "failed": 0
+  },
+  "eslint": "PASS",
+  "whitespace": "PASS",
+  "reactDoctor": {
+    "score": 90,
+    "errors": 0,
+    "warnings": 1
+  },
+  "localBuild": "PASS",
+  "fullSuite": "IN_PROGRESS",
+  "physicalQA": "PENDING",
+  "supabaseMutations": 0,
+  "migrations": 0,
+  "merge": "NOT_PERFORMED",
+  "productionDeployment": "NOT_PERFORMED",
+  "serverResponseGuard": {
+    "tests": 2,
+    "failed": 0
+  }
+}

@@ -27,7 +27,8 @@ vi.mock('../../../services/supabase', () => ({
 vi.mock('../../../services/auth/actorSessionRuntimeBridge', () => ({
   beginActorRuntimeAuthentication: mocks.beginActorRuntimeAuthentication,
   grantAuthenticatedActorRuntime: mocks.grantAuthenticatedActorRuntime,
-  lockActorRuntime: mocks.lockActorRuntime
+  lockActorRuntime: mocks.lockActorRuntime,
+  assertAuthenticatedActorSessionCurrent: vi.fn(async () => true)
 }));
 vi.mock('../../../services/licenseStorage', () => ({ saveLicenseToStorage: mocks.saveLicenseToStorage }));
 vi.mock('../../../services/db/databaseRuntime', () => ({
@@ -41,6 +42,14 @@ vi.mock('../../../services/tenant/localTenantGuard', () => ({
   lockLocalTenantAccess: vi.fn()
 }));
 
+vi.mock('../../../services/auth/actorRuntimeController', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, actorRuntimeController: {
+    getState: () => ({ status: 'locked', generation: 0 }),
+    capture: () => ({ actorType: 'admin', actorId: mocks.restoreActorRuntimeFromCurrentSessionCache?.mock.lastCall?.[0]?.actor?.id || mocks.grantAuthenticatedActorRuntime.mock.lastCall?.[0]?.actor?.id, assertCurrent: vi.fn() })
+  } };
+});
+
 import { createLicenseAdminActions } from './licenseAdminActions';
 
 const setup = () => {
@@ -49,8 +58,8 @@ const setup = () => {
     adminLoginLicenseKey: 'LANZO-ADMIN-TEST',
     licenseDetails: { license_key: 'LANZO-ADMIN-TEST', product_name: 'Pro' },
     stopLicenseSync: vi.fn(),
-    _processOfflineMode: vi.fn(async () => { state.appStatus = 'ready'; }),
-    _loadProfile: vi.fn(async () => { state.appStatus = 'ready'; })
+    _processOfflineMode: vi.fn(async (_key, options = {}) => { state.appStatus = 'ready'; options.onPrepared?.('ready'); }),
+    _loadProfile: vi.fn(async (_key, options = {}) => { state.appStatus = 'ready'; options.onPrepared?.('ready'); })
   };
   const set = vi.fn((partial) => Object.assign(state, partial));
   const get = () => state;
@@ -96,7 +105,7 @@ describe('license admin actions', () => {
     expect(state.appStatus).toBe('ready');
     expect(state._loadProfile).toHaveBeenCalledWith(
       'LANZO-ADMIN-TEST',
-      { forceRemote: true, reason: 'admin_login' }
+      { forceRemote: true, reason: 'admin_login', assertCurrent: expect.any(Function), onPrepared: expect.any(Function) }
     );
     expect(state.pendingAdminSessionResult).toBeNull();
   });
@@ -111,6 +120,7 @@ describe('license admin actions', () => {
         allowSetupTransition: true
       });
       state.appStatus = 'setup_required';
+      options.onPrepared?.('setup_required');
     });
     mocks.adminLoginOnDevice.mockResolvedValue({
       success: true,
@@ -125,7 +135,7 @@ describe('license admin actions', () => {
 
     expect(state._loadProfile).toHaveBeenCalledWith(
       'LANZO-ADMIN-TEST',
-      { forceRemote: true, reason: 'admin_login', allowSetupTransition: true }
+      { forceRemote: true, reason: 'admin_login', allowSetupTransition: true, assertCurrent: expect.any(Function), onPrepared: expect.any(Function) }
     );
     expect(state.ownerEnrollmentContext).toBe('existing_license');
   });
@@ -226,7 +236,7 @@ describe('license admin actions', () => {
     expect(state.appStatus).toBe('ready');
     expect(state._loadProfile).toHaveBeenCalledWith(
       'LANZO-ADMIN-TEST',
-      { forceRemote: true, reason: 'admin_free_device_takeover' }
+      { forceRemote: true, reason: 'admin_free_device_takeover', assertCurrent: expect.any(Function), onPrepared: expect.any(Function) }
     );
   });
 

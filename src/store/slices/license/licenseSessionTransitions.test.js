@@ -44,7 +44,8 @@ vi.mock('../../../services/auth/actorSessionRuntimeBridge', () => ({
   beginActorRuntimeAuthentication: mocks.beginActorRuntimeAuthentication,
   grantAuthenticatedActorRuntime: mocks.grantAuthenticatedActorRuntime,
   restoreActorRuntimeFromCurrentSessionCache: mocks.restoreActorRuntimeFromCurrentSessionCache,
-  lockActorRuntime: mocks.lockActorRuntime
+  lockActorRuntime: mocks.lockActorRuntime,
+  assertAuthenticatedActorSessionCurrent: vi.fn(async () => true)
 }));
 vi.mock('../../../services/licenseStorage', () => ({
   saveLicenseToStorage: mocks.saveLicenseToStorage,
@@ -65,6 +66,14 @@ vi.mock('../../../services/tenant/localTenantGuard', () => ({
   lockLocalTenantAccess: vi.fn(),
   runWithLocalTenantSyncLease: vi.fn(async (_source, _options, operation) => operation())
 }));
+
+vi.mock('../../../services/auth/actorRuntimeController', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, actorRuntimeController: {
+    getState: () => ({ status: 'locked', generation: 0 }),
+    capture: () => ({ actorType: 'admin', actorId: mocks.restoreActorRuntimeFromCurrentSessionCache?.mock.lastCall?.[0]?.actor?.id || mocks.grantAuthenticatedActorRuntime.mock.lastCall?.[0]?.actor?.id, assertCurrent: vi.fn() })
+  } };
+});
 
 import { createLicenseAdminActions } from './licenseAdminActions';
 import { createLicenseBootstrapActions } from './licenseBootstrapActions';
@@ -112,8 +121,8 @@ const createStore = (initial = {}) => {
     stopLicenseSync: vi.fn(),
     refreshLicenseSyncMode: vi.fn(),
     _validateInBackground: vi.fn(),
-    _loadProfile: vi.fn(async () => { state.appStatus = 'ready'; }),
-    _processOfflineMode: vi.fn(async () => { state.appStatus = 'ready'; }),
+    _loadProfile: vi.fn(async (_key, options = {}) => { state.appStatus = 'ready'; options.onPrepared?.('ready'); }),
+    _processOfflineMode: vi.fn(async (_key, options = {}) => { state.appStatus = 'ready'; options.onPrepared?.('ready'); }),
     _requireLicenseChange: vi.fn(),
     clearLocalLicenseSession: vi.fn(),
     ...initial
@@ -134,7 +143,7 @@ const createStore = (initial = {}) => {
   // Preserve the intended test seam after createLicenseProcessingActions adds
   // its production implementation. Bootstrap tests only need to observe which
   // authority branch was selected, not exercise offline profile hydration.
-  state._processOfflineMode = vi.fn(async () => { state.appStatus = 'ready'; });
+  state._processOfflineMode = vi.fn(async (_key, options = {}) => { state.appStatus = 'ready'; options.onPrepared?.('ready'); });
   return state;
 };
 

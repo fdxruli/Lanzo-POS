@@ -6,11 +6,14 @@ import {
   adminTakeoverFreeDevice,
   clearAdminSessionCache,
   clearStaffSessionCache,
-  enrollAdminOwnerOnDevice
+  enrollAdminOwnerOnDevice,
+  hasValidOfflineAdminSession,
+  verifyAdminSession
 } from '../../../services/supabase';
 import {
   beginActorRuntimeAuthentication,
   grantAuthenticatedActorRuntime,
+  assertAuthenticatedActorSessionCurrent,
   lockActorRuntime
 } from '../../../services/auth/actorSessionRuntimeBridge';
 import { saveLicenseToStorage } from '../../../services/licenseStorage';
@@ -24,6 +27,8 @@ import {
   setDatabaseRecoveryState
 } from '../../../services/db/databaseRecoveryState';
 import Logger from '../../../services/Logger';
+import { actorRuntimeController, ActorRuntimeError, ACTOR_RUNTIME_ERROR_CODES } from '../../../services/auth/actorRuntimeController';
+import { getTenantRuntimeReadiness } from '../../../services/db/tenantRuntimeRouter';
 import {
   assertLocalTenantAccess,
   initializeLocalTenantGuard,
@@ -42,7 +47,38 @@ import {
   validatePendingAdminSession
 } from './pendingAdminSession';
 
-const completeAdminSession = async (set, get, licenseKey, result, reason) => {
+const RECOVERY_MESSAGE = 'Tu sesión se verificó correctamente, pero no pudimos terminar de preparar Lanzo. Puedes reintentar la carga sin volver a registrar tu dispositivo.';
+const AUTH_REQUIRED_MESSAGE = 'No pudimos recuperar tu sesión de forma segura. Inicia sesión nuevamente para continuar.';
+
+const traceAuth = (phase, code = null) => Logger.debug('[AdminAuth]', { phase, code });
+const createAttempt = (get, licenseKey) => {
+  const tenant = getTenantRuntimeReadiness().runtime;
+  let actor = actorRuntimeController.getState();
+  let handle = null;
+  return {
+    get handle() { return handle; },
+    refreshActor() { actor = actorRuntimeController.getState(); },
+    bindActor() { handle = actorRuntimeController.capture(); actor = actorRuntimeController.getState(); },
+    assertCurrent() {
+      const state = get();
+      const currentTenant = getTenantRuntimeReadiness().runtime;
+      const currentActor = actorRuntimeController.getState();
+      if ((state.adminLoginLicenseKey || state.licenseDetails?.license_key) !== licenseKey
+        || (state.licenseDetails?.license_key && state.licenseDetails.license_key !== licenseKey)
+        || state.currentDeviceRole === 'staff'
+        || currentTenant?.opaqueId !== tenant?.opaqueId
+        || currentTenant?.databaseName !== tenant?.databaseName
+        || currentTenant?.generation !== tenant?.generation
+        || currentActor.generation !== actor.generation || currentActor.status !== actor.status
+        || currentActor.actorType !== actor.actorType) {
+        throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.CONTEXT_STALE);
+      }
+      handle?.assertCurrent();
+    }
+  };
+};
+
+const completeAdminSession = async (set, get, licenseKey, result, reason, attempt, pending = null) => {
   const confirmedFreeTakeover = reason === 'admin_free_device_takeover'
     && String(result.details?.plan_code || '').trim().toLowerCase() === 'free_trial'
     && Number(result.details?.max_devices) === 1
@@ -64,44 +100,73 @@ const completeAdminSession = async (set, get, licenseKey, result, reason) => {
     admin_user: result.admin_user || null
   };
 
-  await assertLocalTenantAccess(licenseData, { reason });
-  await saveLicenseToStorage(licenseData);
-  set({
-    licenseDetails: licenseData,
-    ...(confirmedFreeTakeover ? { licenseStatus: 'active', gracePeriodEnds: null } : {}),
-    _isLoggingOut: false,
-    currentDeviceRole: 'admin',
-    currentAdminUser: result.admin_user || null,
-    currentStaffUser: null,
-    adminLoginLicenseKey: licenseKey,
-    adminLoginMessage: null,
-    adminLoginError: null,
-    adminEnrollmentRequired: false,
-    localTenantIsolation: null,
-    pendingAdminSessionResult: createPendingAdminSession({ licenseKey, result })
-  });
-
+  attempt.assertCurrent();
+  const session = pending || createPendingAdminSession({ licenseKey, result });
   try {
+    if (licenseData.license_key !== licenseKey) {
+      throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.TENANT_MISMATCH);
+    }
+    await assertLocalTenantAccess(licenseData, { reason });
+    attempt.assertCurrent();
+    set({
+      licenseDetails: licenseData,
+      ...(confirmedFreeTakeover ? { licenseStatus: 'active', gracePeriodEnds: null } : {}),
+      _isLoggingOut: false,
+      currentDeviceRole: 'admin',
+      currentAdminUser: result.admin_user || null,
+      currentStaffUser: null,
+      adminLoginLicenseKey: licenseKey,
+      adminLoginMessage: null,
+      adminLoginError: null,
+      adminEnrollmentRequired: false,
+      localTenantIsolation: null,
+      pendingAdminSessionResult: session
+    });
+
+    await saveLicenseToStorage(licenseData);
+    attempt.assertCurrent();
     try {
-      await clearStaffSessionCache();
+      if (!session.actorHandle) await clearStaffSessionCache();
     } catch (cacheError) {
       if (!isStructuralDatabaseError(cacheError)) throw cacheError;
       Logger.warn('[AdminAuth] Limpieza staff diferida por recuperación local.');
     }
 
     await ensureLocalDatabaseReady();
-    // Actor authority must exist before profile hydration can publish the
-    // operational UI as ready. A later bootstrap failure invalidates it in the
-    // catch below, so no partially bootstrapped Admin actor remains granted.
-    await grantAuthenticatedActorRuntime({
-      actorType: 'admin',
-      actor: result.admin_user || licenseData.admin_user
+    attempt.assertCurrent();
+    if (!session.actorHandle) {
+      await grantAuthenticatedActorRuntime({
+        actorType: 'admin',
+        actor: result.admin_user || licenseData.admin_user
+      });
+      attempt.bindActor();
+      session.actorHandle = attempt.handle;
+      traceAuth('ACTOR_GRANTED');
+    }
+    await assertAuthenticatedActorSessionCurrent({
+      handle: session.actorHandle, actorType: 'admin', actor: result.admin_user || licenseData.admin_user
     });
-    const profileOptions = { forceRemote: true, reason };
+    attempt.assertCurrent();
+    let preparedStatus = null;
+    const profileOptions = {
+      forceRemote: true, reason, assertCurrent: () => attempt.assertCurrent(),
+      onPrepared: (status) => { preparedStatus = status; }
+    };
     if (['new_license_setup', 'existing_license'].includes(get().ownerEnrollmentContext)) {
       profileOptions.allowSetupTransition = true;
     }
+    traceAuth('PROFILE_LOAD_PENDING');
     await get()._loadProfile(licenseKey, profileOptions);
+    attempt.assertCurrent();
+    const outcome = preparedStatus === 'ready' && get().appStatus === 'ready' ? 'READY'
+      : preparedStatus === 'setup_required' && get().appStatus === 'setup_required'
+        && profileOptions.allowSetupTransition ? 'SETUP_REQUIRED' : null;
+    if (!outcome) {
+      const error = new Error(RECOVERY_MESSAGE);
+      error.code = 'ADMIN_PROFILE_LOAD_PENDING';
+      throw error;
+    }
+    traceAuth('PROFILE_LOAD_COMPLETED');
     if (get().appStatus === 'ready') {
       get()._validateInBackground?.(licenseKey, {
         reason: reason === 'admin_login_resume' ? 'admin_login_resume' : 'admin_login'
@@ -113,10 +178,28 @@ const completeAdminSession = async (set, get, licenseKey, result, reason) => {
       pendingAdminSessionResult: null,
       ...(get().appStatus === 'ready' ? { ownerEnrollmentContext: null } : {})
     });
-    return { success: true, remoteAuthenticated: true };
+    return { success: true, remoteAuthenticated: true, outcome };
   } catch (error) {
-    lockActorRuntime('admin_actor_binding_or_bootstrap_failed');
+    try { attempt.assertCurrent(); } catch {
+      traceAuth('AUTH_CONTEXT_REJECTED', error?.code);
+      return { success: false, code: 'ACTOR_CONTEXT_STALE', outcome: 'AUTHENTICATION_REQUIRED', message: AUTH_REQUIRED_MESSAGE };
+    }
     const classification = classifyDatabaseError(error);
+    const securityFailure = String(error?.code || '').startsWith('ACTOR_')
+      || isLocalTenantAccessError(error) || String(error?.code || '').startsWith('TENANT_');
+    // Preserve authority only for preparation failures owned by this exact
+    // granted session. Identity/handoff/storage barriers continue to fail closed.
+    if (!session.actorHandle || securityFailure || classification.structural) {
+      lockActorRuntime('admin_actor_binding_or_bootstrap_failed');
+      session.actorHandle = null;
+    }
+    if (securityFailure) {
+      clearPendingAdminSession(set, 'admin_authority_rejected');
+      if (isLocalTenantAccessError(error)) enterLocalTenantIsolationFailure(set, error);
+      else set({ appStatus: 'admin_login_required', currentAdminUser: null });
+      traceAuth('AUTH_CONTEXT_REJECTED', error?.code);
+      return { success: false, code: error.code, outcome: 'AUTHENTICATION_REQUIRED', message: AUTH_REQUIRED_MESSAGE };
+    }
 
     if (classification.structural) {
       const currentDiagnostic = error?.diagnostic || getDatabaseRecoveryState();
@@ -147,32 +230,150 @@ const completeAdminSession = async (set, get, licenseKey, result, reason) => {
       };
     }
 
-    Logger.error('[AdminAuth] Sesión remota válida; falló el bootstrap local:', error);
+    traceAuth('PROFILE_LOAD_RECOVERABLE_FAILURE', error?.code || 'ADMIN_LOCAL_BOOTSTRAP_FAILED');
     set({
       appStatus: 'admin_login_required',
       adminLoginError: {
         code: error?.code || 'ADMIN_LOCAL_BOOTSTRAP_FAILED',
-        message: error?.code?.startsWith?.('ACTOR_')
-          ? 'La sesión se validó, pero no pudo vincularse a la autoridad operativa. Vuelve a iniciar sesión.'
-          : 'La sesión ya fue validada, pero no se pudo completar la carga local. Reintenta sin volver a registrar el dispositivo.'
+        message: RECOVERY_MESSAGE
       }
     });
     return {
       success: false,
       remoteAuthenticated: true,
+      recoveryRequired: true,
+      outcome: 'RECOVERY_REQUIRED',
       code: error?.code || 'ADMIN_LOCAL_BOOTSTRAP_FAILED',
-      message: error?.code?.startsWith?.('ACTOR_')
-        ? 'La sesión no obtuvo autoridad operativa.'
-        : 'La sesión ya fue validada. Reintenta para completar la carga local.'
+      message: RECOVERY_MESSAGE
     };
   }
 };
 
-export const createLicenseAdminActions = ({ set, get }) => ({
+export const createLicenseAdminActions = ({ set, get }) => {
+  let authenticationInFlight = false;
+  const serialize = (operation, duringBootstrap = false) => async (...args) => {
+    if (authenticationInFlight || (!duringBootstrap && get()._isInitializing)) {
+      return { success: false, code: 'ADMIN_AUTH_IN_PROGRESS' };
+    }
+    authenticationInFlight = true;
+    try { return await operation(...args); } finally { authenticationInFlight = false; }
+  };
+  const actions = {
   pendingAdminSessionResult: null,
+  _isAdminAuthenticationInFlight: () => authenticationInFlight,
+
+  _completeRestoredAdminPreparation: async (licenseKey) => {
+    const state = get();
+    const attempt = createAttempt(get, licenseKey);
+    attempt.assertCurrent();
+    attempt.bindActor();
+    if (attempt.handle.actorType !== 'admin'
+      || attempt.handle.actorId !== String(state.currentAdminUser?.id || '')) {
+      throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.IDENTITY_INVALID);
+    }
+    const result = { success: true, admin_user: state.currentAdminUser, details: state.licenseDetails };
+    const pending = { ...createPendingAdminSession({ licenseKey, result }), actorHandle: attempt.handle };
+    return completeAdminSession(set, get, licenseKey, result, 'admin_session_restore', attempt, pending);
+  },
+
+  resumeAdminSessionPreparation: async () => {
+    const licenseKey = get().adminLoginLicenseKey || get().licenseDetails?.license_key;
+    const pending = get().pendingAdminSessionResult;
+    let attempt;
+    try {
+      if (!validatePendingAdminSession({ pending, licenseKey, currentAdminUser: get().currentAdminUser }).valid) {
+        throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.SESSION_REQUIRED);
+      }
+      if (pending.actorHandle) {
+        pending.actorHandle.assertCurrent();
+      } else if (actorRuntimeController.getState().status !== 'locked') {
+        throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.HANDOFF_REQUIRED);
+      }
+      attempt = createAttempt(get, licenseKey);
+      attempt.assertCurrent();
+      if (pending.actorHandle) {
+        await assertAuthenticatedActorSessionCurrent({
+          handle: pending.actorHandle, actorType: 'admin', actor: get().currentAdminUser
+        });
+        attempt.assertCurrent();
+        attempt.bindActor();
+      }
+      traceAuth('AUTH_RECOVERY_STARTED');
+      // Revalidate an existing session; never register a second device/session.
+      // A denied response is authoritative. Offline continuity is only allowed
+      // for the already granted actor under the existing offline cache contract.
+      let verified = null;
+      if (navigator.onLine) {
+        verified = await verifyAdminSession(licenseKey, {
+          beforeLocalPersistence: async (source) => {
+            attempt.assertCurrent();
+            if (source.success === true && String(source.admin_user?.id || '') !== String(pending.adminUserId || '')) {
+              throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.IDENTITY_INVALID);
+            }
+            if (source.success === true && pending.actorHandle
+              && String(source.admin_session_id || '') !== pending.actorHandle.sessionId) {
+              throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.CONTEXT_STALE);
+            }
+            if (pending.actorHandle) {
+              await assertAuthenticatedActorSessionCurrent({ handle: pending.actorHandle, actorType: 'admin', actor: get().currentAdminUser });
+            }
+            await assertLocalTenantAccess(source, { reason: 'admin_login_resume' });
+            attempt.assertCurrent();
+          }
+        });
+        attempt.assertCurrent();
+      }
+      if (verified?.valid === true && verified?.success === true) {
+        if (String(verified.admin_user?.id || '') !== String(pending.adminUserId || '')) {
+          throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.IDENTITY_INVALID);
+        }
+      } else {
+        const connectionFailure = verified
+          ? verified.code === 'ADMIN_SESSION_ERROR' && /network|fetch|timeout|timed out|connection/i.test(verified.message || '')
+          : !navigator.onLine;
+        if (!connectionFailure || !pending.actorHandle || !await hasValidOfflineAdminSession()) {
+          throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.SESSION_REQUIRED);
+        }
+        await get()._processOfflineMode(get().licenseDetails, { reason: 'admin_login_resume' });
+      }
+      attempt.assertCurrent();
+      if (pending.actorHandle) {
+        await assertAuthenticatedActorSessionCurrent({ handle: pending.actorHandle, actorType: 'admin', actor: get().currentAdminUser });
+        attempt.assertCurrent();
+      } else {
+        beginActorRuntimeAuthentication('admin');
+        attempt.refreshActor();
+      }
+      const result = await completeAdminSession(set, get, licenseKey, pending.result, 'admin_login_resume', attempt, pending);
+      traceAuth(result.success ? 'AUTH_RECOVERY_COMPLETED' : 'AUTH_RECOVERY_FAILED', result.code);
+      return result;
+    } catch (error) {
+      // Stale work may report failure, but cannot lock or republish a newer UI.
+      let ownsContext = false;
+      try { attempt?.assertCurrent(); ownsContext = Boolean(attempt); } catch { /* superseded */ }
+      if (!ownsContext && pending?.actorHandle && get().pendingAdminSessionResult === pending) {
+        try {
+          pending.actorHandle.assertCurrent();
+          ownsContext = pending.licenseKey === licenseKey && get().currentDeviceRole === 'admin';
+        } catch { /* The original authority has already been superseded. */ }
+      }
+      if (ownsContext) {
+        lockActorRuntime('admin_recovery_rejected');
+        clearPendingAdminSession(set, 'admin_recovery_rejected');
+        set({ appStatus: 'admin_login_required', currentAdminUser: null, adminLoginError: { code: error?.code, message: AUTH_REQUIRED_MESSAGE } });
+      } else if (get().pendingAdminSessionResult === pending) {
+        clearPendingAdminSession(set, 'obsolete_admin_recovery');
+      }
+      traceAuth('AUTH_RECOVERY_FAILED', error?.code);
+      return { success: false, code: error?.code || 'ADMIN_RECOVERY_REJECTED', outcome: 'AUTHENTICATION_REQUIRED', message: AUTH_REQUIRED_MESSAGE };
+    }
+  },
 
   chooseLicenseAccess: (accessType) => {
     const licenseKey = get().adminLoginLicenseKey || get().licenseDetails?.license_key;
+    if (actorRuntimeController.getState().status === 'granted') {
+      return { success: false, code: 'ACTOR_HANDOFF_REQUIRED', message: AUTH_REQUIRED_MESSAGE };
+    }
     if (accessType === 'staff') {
       clearPendingAdminSession(set, 'choose_staff_access');
       set({
@@ -204,6 +405,8 @@ export const createLicenseAdminActions = ({ set, get }) => ({
       state.pendingAdminSessionResult?.result?.success
       || state.currentAdminUser
     );
+    lockActorRuntime('return_to_license_access_choice');
+    get()._invalidateProfileLoads?.();
 
     // An explicit actor logout already cleared the actor credential before the
     // tenant guard was locked. In that state the login modal is intentionally
@@ -234,7 +437,6 @@ export const createLicenseAdminActions = ({ set, get }) => ({
       }
     }
 
-    lockActorRuntime('return_to_license_access_choice');
     clearPendingAdminSession(set, 'return_to_access_choice');
     set({
       appStatus: 'license_access_required',
@@ -357,31 +559,40 @@ export const createLicenseAdminActions = ({ set, get }) => ({
 
   handleAdminLogin: async ({ username, password }) => {
     const licenseKey = get().adminLoginLicenseKey || get().licenseDetails?.license_key;
-
+    let attempt;
     try {
+      const pending = get().pendingAdminSessionResult;
+      if (pending) {
+        const pendingValidation = validatePendingAdminSession({ pending, licenseKey, currentAdminUser: get().currentAdminUser });
+        if (!pendingValidation.valid && actorRuntimeController.getState().status === 'locked') {
+          clearPendingAdminSession(set, pendingValidation.reason);
+        } else {
+        const expectedUsername = pending.result?.admin_user?.username;
+        if (!expectedUsername || expectedUsername !== username.trim()) {
+          return { success: false, code: 'ACTOR_HANDOFF_REQUIRED', message: AUTH_REQUIRED_MESSAGE };
+        }
+        return await actions.resumeAdminSessionPreparation();
+        }
+      }
       initializeLocalTenantGuard('admin_login');
       await assertLocalTenantAccess({ license_key: licenseKey }, { reason: 'admin_login' });
+      attempt = createAttempt(get, licenseKey);
+      attempt.assertCurrent();
       beginActorRuntimeAuthentication('admin');
-      const pending = get().pendingAdminSessionResult;
-      const pendingValidation = validatePendingAdminSession({
-        pending,
-        licenseKey,
-        currentAdminUser: get().currentAdminUser
-      });
-      if (pendingValidation.valid) {
-        return completeAdminSession(set, get, licenseKey, pending.result, 'admin_login_resume');
-      }
-      if (pending) clearPendingAdminSession(set, pendingValidation.reason || 'pending_session_invalid');
-
+      attempt.refreshActor();
+      traceAuth('ACTOR_AUTHENTICATING');
+      traceAuth('AUTH_REMOTE_STARTED');
       const result = await adminLoginOnDevice({
         licenseKey,
         username,
         password,
-        beforeLocalPersistence: (tenantSource) => assertLocalTenantAccess(
-          tenantSource,
-          { reason: 'admin_login_before_local_persistence' }
-        )
+        beforeLocalPersistence: async (tenantSource) => {
+          attempt.assertCurrent();
+          await assertLocalTenantAccess(tenantSource, { reason: 'admin_login_before_local_persistence' });
+          attempt.assertCurrent();
+        }
       });
+      attempt.assertCurrent();
       if (!result.success) {
         if (result.code === 'FREE_DEVICE_TAKEOVER_REQUIRED' || result.takeoverRequired === true) {
           lockActorRuntime('admin_free_device_takeover_required');
@@ -390,14 +601,30 @@ export const createLicenseAdminActions = ({ set, get }) => ({
           return { ...result, takeoverRequired: true };
         }
 
-        lockActorRuntime('admin_credentials_rejected');
-        clearPendingAdminSession(set, 'admin_credentials_rejected');
+        const storageFailure = classifyDatabaseError(result);
+        if (storageFailure.structural) {
+          throw Object.assign(new Error(result.message || 'No se pudo preparar el almacenamiento local.'), { code: storageFailure.code });
+        }
+        const connectionFailure = result.code === 'ONLINE_REQUIRED'
+          || /network|fetch|timeout|timed out|connection/i.test(result.message || '');
+        const failureReason = connectionFailure ? 'admin_connection_failed' : 'admin_credentials_rejected';
+        traceAuth(connectionFailure ? 'AUTH_REMOTE_UNAVAILABLE' : 'AUTH_REMOTE_REJECTED', result.code);
+        lockActorRuntime(failureReason);
+        clearPendingAdminSession(set, failureReason);
         set({ adminLoginError: { code: result.code, message: result.message } });
         return result;
       }
-      return completeAdminSession(set, get, licenseKey, result, 'admin_login');
+      traceAuth('AUTH_REMOTE_VALIDATED');
+      return await completeAdminSession(set, get, licenseKey, result, 'admin_login', attempt);
     } catch (error) {
-      lockActorRuntime('admin_login_failed');
+      if (attempt) {
+        try { attempt.assertCurrent(); } catch {
+          traceAuth('AUTH_CONTEXT_REJECTED', 'ACTOR_CONTEXT_STALE');
+          return { success: false, code: 'ACTOR_CONTEXT_STALE', message: AUTH_REQUIRED_MESSAGE };
+        }
+      }
+      // A login attempt never owns an actor granted before it began.
+      if (actorRuntimeController.getState().status !== 'granted') lockActorRuntime('admin_login_failed');
       if (isLocalTenantAccessError(error)) {
         enterLocalTenantIsolationFailure(set, error);
         return {
@@ -426,35 +653,41 @@ export const createLicenseAdminActions = ({ set, get }) => ({
           message: recoveryError.message
         };
       }
-      Logger.error('[AdminAuth] Error durante login:', error);
+      traceAuth('AUTH_CONTEXT_REJECTED', error?.code || 'ADMIN_LOGIN_FAILED');
       return {
         success: false,
         code: error?.code || 'ADMIN_LOGIN_FAILED',
-        message: error?.message || 'No se pudo iniciar sesión.'
+        message: String(error?.code || '').startsWith('ACTOR_') ? AUTH_REQUIRED_MESSAGE
+          : 'No pudimos verificar tu acceso por un problema de conexión. Comprueba internet e inténtalo nuevamente.'
       };
     }
   },
 
   handleFreeDeviceTakeover: async ({ username, password }) => {
     const licenseKey = get().adminLoginLicenseKey || get().licenseDetails?.license_key;
-
+    let attempt;
     try {
       initializeLocalTenantGuard('admin_free_device_takeover');
       await assertLocalTenantAccess(
         { license_key: licenseKey },
         { reason: 'admin_free_device_takeover' }
       );
+      attempt = createAttempt(get, licenseKey);
+      attempt.assertCurrent();
       beginActorRuntimeAuthentication('admin');
+      attempt.refreshActor();
 
       const result = await adminTakeoverFreeDevice({
         licenseKey,
         username,
         password,
-        beforeLocalPersistence: (tenantSource) => assertLocalTenantAccess(
-          tenantSource,
-          { reason: 'admin_free_device_takeover_before_local_persistence' }
-        )
+        beforeLocalPersistence: async (tenantSource) => {
+          attempt.assertCurrent();
+          await assertLocalTenantAccess(tenantSource, { reason: 'admin_free_device_takeover_before_local_persistence' });
+          attempt.assertCurrent();
+        }
       });
+      attempt.assertCurrent();
 
       if (!result.success) {
         lockActorRuntime('admin_free_device_takeover_rejected');
@@ -463,14 +696,23 @@ export const createLicenseAdminActions = ({ set, get }) => ({
         return result;
       }
 
-      return completeAdminSession(
+      return await completeAdminSession(
         set,
         get,
         licenseKey,
         result,
-        'admin_free_device_takeover'
+        'admin_free_device_takeover',
+        attempt
       );
     } catch (error) {
+      if (attempt) {
+        try { attempt.assertCurrent(); } catch {
+          return { success: false, code: 'ACTOR_CONTEXT_STALE', message: AUTH_REQUIRED_MESSAGE };
+        }
+      }
+      if (actorRuntimeController.getState().status === 'granted') {
+        return { success: false, code: error?.code || 'ACTOR_HANDOFF_REQUIRED', message: AUTH_REQUIRED_MESSAGE };
+      }
       lockActorRuntime('admin_free_device_takeover_failed');
       if (isLocalTenantAccessError(error)) {
         enterLocalTenantIsolationFailure(set, error);
@@ -512,28 +754,42 @@ export const createLicenseAdminActions = ({ set, get }) => ({
 
   handleAdminEnrollment: async ({ username, password, displayName }) => {
     const licenseKey = get().adminLoginLicenseKey || get().licenseDetails?.license_key;
+    let attempt;
     try {
       initializeLocalTenantGuard('admin_enrollment');
       await assertLocalTenantAccess({ license_key: licenseKey }, { reason: 'admin_enrollment' });
+      attempt = createAttempt(get, licenseKey);
+      attempt.assertCurrent();
       beginActorRuntimeAuthentication('admin');
+      attempt.refreshActor();
       const result = await enrollAdminOwnerOnDevice({
         licenseKey,
         username,
         password,
         displayName,
-        beforeLocalPersistence: (tenantSource) => assertLocalTenantAccess(
-          tenantSource,
-          { reason: 'admin_enrollment_before_local_persistence' }
-        )
+        beforeLocalPersistence: async (tenantSource) => {
+          attempt.assertCurrent();
+          await assertLocalTenantAccess(tenantSource, { reason: 'admin_enrollment_before_local_persistence' });
+          attempt.assertCurrent();
+        }
       });
+      attempt.assertCurrent();
       if (!result.success) {
         lockActorRuntime('admin_enrollment_rejected');
         clearPendingAdminSession(set, 'admin_credentials_rejected');
         set({ adminLoginError: { code: result.code, message: result.message } });
         return result;
       }
-      return completeAdminSession(set, get, licenseKey, result, 'admin_enrollment');
+      return await completeAdminSession(set, get, licenseKey, result, 'admin_enrollment', attempt);
     } catch (error) {
+      if (attempt) {
+        try { attempt.assertCurrent(); } catch {
+          return { success: false, code: 'ACTOR_CONTEXT_STALE', message: AUTH_REQUIRED_MESSAGE };
+        }
+      }
+      if (actorRuntimeController.getState().status === 'granted') {
+        return { success: false, code: error?.code || 'ACTOR_HANDOFF_REQUIRED', message: AUTH_REQUIRED_MESSAGE };
+      }
       lockActorRuntime('admin_enrollment_failed');
       if (isLocalTenantAccessError(error)) {
         enterLocalTenantIsolationFailure(set, error);
@@ -590,4 +846,13 @@ export const createLicenseAdminActions = ({ set, get }) => ({
       pendingAdminSessionResult: null
     });
   }
-});
+  };
+  return {
+    ...actions,
+    handleAdminLogin: serialize(actions.handleAdminLogin),
+    handleFreeDeviceTakeover: serialize(actions.handleFreeDeviceTakeover),
+    handleAdminEnrollment: serialize(actions.handleAdminEnrollment),
+    resumeAdminSessionPreparation: serialize(actions.resumeAdminSessionPreparation),
+    _completeRestoredAdminPreparation: serialize(actions._completeRestoredAdminPreparation, true)
+  };
+};
