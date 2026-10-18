@@ -11,6 +11,7 @@ import {
   refreshLocalInventoryOperationalAlertsSnapshot
 } from '../../services/localInventoryOperationalAlerts';
 import { markPostDowngradeCashAttentionRead } from '../../services/cash/postDowngradeCashAttention';
+import LocalBackupAttentionSection from './LocalBackupAttentionSection';
 
 const STOCK_TYPES = new Set([
   INVENTORY_OPERATIONAL_TYPES.OUT_OF_STOCK,
@@ -78,7 +79,9 @@ export default function LocalInventoryOperationalAlertsDrawer({
   postDowngradeCashPending,
   cashAttentionKey,
   cashAttentionRecord,
-  onCashAttentionRecordChange
+  onCashAttentionRecordChange,
+  backupAttention,
+  inventoryEnabled = true
 }) {
   const navigate = useNavigate();
   const actorRuntime = useActorRuntimeSnapshot();
@@ -166,7 +169,7 @@ export default function LocalInventoryOperationalAlertsDrawer({
   }, [isOpen, onClose]);
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || !inventoryEnabled) return;
 
     if (snapshot?.status === 'idle') {
       void refreshLocalInventoryOperationalAlertsSnapshot();
@@ -176,7 +179,7 @@ export default function LocalInventoryOperationalAlertsDrawer({
     if (snapshot?.status === 'ready') {
       markCurrentLocalInventoryOperationalAlertsSeen();
     }
-  }, [isOpen, snapshot?.status, snapshot?.updatedAt]);
+  }, [inventoryEnabled, isOpen, snapshot?.status, snapshot?.updatedAt]);
 
   if (!isOpen) return null;
 
@@ -228,6 +231,8 @@ export default function LocalInventoryOperationalAlertsDrawer({
             <X size={20} aria-hidden="true" />
           </button>
         </header>
+
+        <LocalBackupAttentionSection attention={backupAttention} onClose={onClose} />
 
         {hasPendingCash && (
           <section
@@ -341,13 +346,13 @@ export default function LocalInventoryOperationalAlertsDrawer({
           </section>
         )}
 
-        {loading && (
+        {inventoryEnabled && loading && (
           <div className="notification-list-state" role="status">
             <p>Revisando inventario…</p>
           </div>
         )}
 
-        {error && (
+        {inventoryEnabled && error && (
           <div className="notification-list-state notification-list-state--error" role="alert">
             <p>No pudimos revisar las alertas locales de inventario.</p>
             <button
@@ -359,13 +364,13 @@ export default function LocalInventoryOperationalAlertsDrawer({
           </div>
         )}
 
-        {!loading && !error && snapshot?.activeCount === 0 && (
+        {inventoryEnabled && !loading && !error && snapshot?.activeCount === 0 && (
           <div className="notification-list-state">
             <p>Tu inventario no tiene alertas operativas activas.</p>
           </div>
         )}
 
-        {!loading && !error && snapshot?.activeCount > 0 && (
+        {inventoryEnabled && !loading && !error && snapshot?.activeCount > 0 && (
           <>
             <section className="local-inventory-alerts-summary" aria-label="Resumen de alertas activas">
               <strong>{snapshot.activeCount} alertas activas</strong>

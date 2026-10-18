@@ -1225,7 +1225,30 @@
 
 .local-inventory-alerts-drawer {
   gap: 0;
+  overflow-y: auto;
 }
+
+.local-inventory-alerts-drawer > * { flex-shrink: 0; }
+.local-inventory-alerts-drawer > .local-inventory-alerts-list { flex: 0 0 auto; overflow: visible; }
+.local-inventory-alerts-drawer .local-inventory-alerts-header { position: sticky; top: 0; background: var(--ui-bg-surface); z-index: 1; }
+.local-backup-attention {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid var(--ui-border-color);
+  border-radius: 12px;
+  background: var(--ui-bg-muted, var(--ui-bg-surface));
+  color: var(--ui-text-primary);
+  overflow-wrap: anywhere;
+}
+.local-backup-attention.is-critical { border-color: var(--error-color); }
+.local-backup-attention__heading { display: flex; align-items: flex-start; gap: 10px; }
+.local-backup-attention__heading > svg { flex-shrink: 0; margin-top: 3px; }
+.local-backup-attention__heading h3 { margin: 3px 0 0; font-size: 0.95rem; line-height: 1.4; }
+.local-backup-attention .local-backup-attention__eyebrow { margin: 0; font-size: 0.75rem; font-weight: 700; }
+.local-backup-attention > p { margin: 10px 0; font-size: 0.85rem; line-height: 1.5; }
+.local-backup-attention__state { color: var(--ui-text-secondary); }
+.local-backup-attention__actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.local-backup-attention__actions > button { min-height: 44px; max-width: 100%; white-space: normal; }
 
 /* Leave the same section breathing room for loading, errors and an empty
    inventory as for the active-inventory summary following cash attention. */
