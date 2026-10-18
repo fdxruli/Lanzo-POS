@@ -61,6 +61,8 @@ ESLint of all modified JavaScript/JSX and new tests: **PASS**. `git diff --check
 
 Full local CANDIDATE/BASE comparison: in progress sequentially with one worker on the two-core Windows host. The candidate run began before the last response/plan contract guards were finalized; it is observational and cannot certify the final immutable HEAD. The first overlapping BASE attempt was stopped after confirming memory pressure (about 600 MB free); it is incomplete evidence, not a BASE_FAILURE or PASS. The repository's `npm run test:ci` command was invoked; Vitest rejects a duplicate `--maxWorkers` override, so the equivalent complete suite runs directly as `node node_modules/vitest/vitest.mjs run --maxWorkers=1`. No timeout, assertion or CI threshold was relaxed. Canonical four-worker test:ci and PR127 comparison remain required in GitHub Actions.
 
+A repeated full-suite gate exposed a scheduler-sensitive immediate focus assertion in the new preparation test. The test now awaits the actual React focus effect while preserving the exact toHaveFocus assertion and its default timeout; the new target passed **20/20 isolated repetitions**. The same post-effect synchronization is used for two existing takeover assertions after PR127 focused evidence reproduced their matching failure on both main and candidate. No production authorization or test threshold was relaxed.
+
 See the attached PR's checks and final review report for final full-suite/CI outcomes. This committed report is not a claim of completed physical QA.
 
 AUTH-R1 coverage is grouped below; several IDs share one deterministic integration case and existing suites complement the adapter-controlled integration.

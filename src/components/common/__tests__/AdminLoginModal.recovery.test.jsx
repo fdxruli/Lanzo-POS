@@ -127,7 +127,7 @@ describe('AdminLoginModal local database recovery', () => {
     expect(screen.getByText(/sesiones activas en los demás dispositivos se cerrarán/i)).toBeInTheDocument();
     expect(screen.getByText(/tus datos permanecerán intactos/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Usar este dispositivo' })).toBeEnabled();
-    expect(screen.getByRole('button', { name: 'Usar este dispositivo' })).toHaveFocus();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Usar este dispositivo' })).toHaveFocus());
     expect(screen.getByRole('button', { name: 'Cancelar' })).toBeEnabled();
     expect(screen.queryByText(/límite de dispositivos alcanzado/i)).not.toBeInTheDocument();
     expect(storeState.handleFreeDeviceTakeover).not.toHaveBeenCalled();
@@ -156,7 +156,7 @@ describe('AdminLoginModal local database recovery', () => {
     fireEvent(window, new Event('online'));
 
     await waitFor(() => expect(takeoverButton).toBeEnabled(), { timeout: 1000 });
-    expect(takeoverButton).toHaveFocus();
+    await waitFor(() => expect(takeoverButton).toHaveFocus());
     expect(storeState.handleFreeDeviceTakeover).not.toHaveBeenCalled();
     expect(recoveryRuntime.markTakeoverCompleted).not.toHaveBeenCalled();
   });

@@ -38,7 +38,7 @@ describe('Admin preparation recovery UI', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Entrar' }));
     const retry = await screen.findByRole('button', { name: 'Reintentar carga' });
     expect(retry).toBeEnabled();
-    expect(retry).toHaveFocus();
+    await waitFor(() => expect(retry).toHaveFocus());
     expect(screen.getByRole('alert')).toHaveTextContent(/tu sesión se verificó correctamente/i);
     expect(screen.queryByLabelText('Contraseña')).not.toBeInTheDocument();
     expect(screen.getByRole('status')).toHaveAttribute('aria-live', 'polite');

@@ -42,5 +42,11 @@
     "testedHead": "bc9c810c3f2b01e9d4dbd18ae81bf3e135ce5099",
     "state": "READY",
     "httpStatus": 200
+  },
+  "preparationFocusRepetitions": {
+    "runs": 20,
+    "passed": 20,
+    "failed": 0,
+    "assertion": "unchanged toHaveFocus; await passive effect with default timeout"
   }
 }
