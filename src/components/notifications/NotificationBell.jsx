@@ -6,6 +6,7 @@ import { useAppStore } from '../../store/useAppStore';
 import { useEcommercePublishedStockAlerts } from '../../hooks/useEcommercePublishedStockAlerts';
 import { useInventoryOperationalAlertsSnapshot } from '../../hooks/useInventoryOperationalAlertsSnapshot';
 import usePostDowngradeCashPending from '../../hooks/usePostDowngradeCashPending';
+import { useLocalBackupAttention } from '../../hooks/useLocalBackupAttention';
 import {
   buildPostDowngradeCashAttentionKey,
   POST_DOWNGRADE_CASH_ATTENTION_EVENT,
@@ -33,6 +34,7 @@ export default function NotificationBell({
 }) {
   const navigate = useNavigate();
   const [isLocalOpen, setIsLocalOpen] = useState(false);
+  const closeLocal = useCallback(() => setIsLocalOpen(false), []);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
   const currentDeviceRole = useAppStore((state) => state.currentDeviceRole);
   const currentStaffUser = useAppStore((state) => state.currentStaffUser);
@@ -52,10 +54,13 @@ export default function NotificationBell({
     isCloudNotificationsEnabled(licenseDetails) &&
     canStaffAccessNotifications(licenseDetails, staffSession)
   );
-  const localEnabled = (
+  const localInventoryEnabled = (
     shouldUseLocalInventoryOperationalBell(licenseDetails) &&
     canStaffAccessLocalInventoryOperationalAlerts(licenseDetails, staffSession)
   );
+  const backupAttention = useLocalBackupAttention();
+  const localEnabled = localInventoryEnabled || backupAttention.enabled;
+  const hasBackupAttention = Boolean(backupAttention.ready && backupAttention.condition?.active);
   const hasConfirmedCashAttention = Boolean(
     postDowngradeCashPending.eligible
     && Number.isInteger(postDowngradeCashPending.pendingCount)
@@ -131,10 +136,12 @@ export default function NotificationBell({
   if (localOnly && !localEnabled) return null;
 
   if (localEnabled) {
-    const safeActiveCount = Math.max(Number(localSnapshot?.activeCount || 0), 0);
-    const localIncidentCount = safeActiveCount + (hasConfirmedCashAttention ? 1 : 0);
+    const safeActiveCount = localInventoryEnabled ? Math.max(Number(localSnapshot?.activeCount || 0), 0) : 0;
+    const localIncidentCount = safeActiveCount + (hasConfirmedCashAttention ? 1 : 0) + (hasBackupAttention ? 1 : 0);
     const badge = localIncidentCount > 99 ? '99+' : localIncidentCount;
-    const localOpenLabel = hasConfirmedCashAttention
+    const localOpenLabel = backupAttention.enabled || !localInventoryEnabled
+      ? `Abrir alertas locales, ${localIncidentCount} ${localIncidentCount === 1 ? 'incidencia activa' : 'incidencias activas'}${hasBackupAttention ? '; respaldos necesitan atención' : ''}`
+      : hasConfirmedCashAttention
       ? `Abrir alertas locales, ${localIncidentCount} ${localIncidentCount === 1 ? 'incidencia activa' : 'incidencias activas'}; una agrupa ${cashPendingCount} cajas para conciliación`
       : `Abrir alertas operativas de inventario, ${safeActiveCount} activas`;
     const localButtonClassName = [
@@ -145,12 +152,14 @@ export default function NotificationBell({
     const drawer = (
       <LocalInventoryOperationalAlertsDrawer
         isOpen={isLocalOpen}
-        onClose={() => setIsLocalOpen(false)}
+        onClose={closeLocal}
         snapshot={localSnapshot}
         postDowngradeCashPending={postDowngradeCashPending}
         cashAttentionKey={cashAttentionKey}
         cashAttentionRecord={cashAttentionRecord}
         onCashAttentionRecordChange={handleCashAttentionRead}
+        backupAttention={backupAttention}
+        inventoryEnabled={localInventoryEnabled}
       />
     );
 
@@ -181,7 +190,9 @@ export default function NotificationBell({
           {localIncidentCount > 0 && (
             <span
               className="notification-bell__badge"
-              aria-label={hasConfirmedCashAttention
+              aria-label={hasBackupAttention
+                ? `${localIncidentCount} ${localIncidentCount === 1 ? 'incidencia activa' : 'incidencias activas'}: ${safeActiveCount} de inventario, ${hasConfirmedCashAttention ? 1 : 0} de Caja y conciliación y 1 de respaldos`
+                : hasConfirmedCashAttention
               ? `${localIncidentCount} ${localIncidentCount === 1 ? 'incidencia' : 'incidencias'} activas: ${safeActiveCount} de inventario y 1 de Caja y conciliación`
                 : `${safeActiveCount} alertas operativas activas`}
             >

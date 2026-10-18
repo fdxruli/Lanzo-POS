@@ -513,10 +513,6 @@
   background-color: rgba(255, 255, 255, 0.16);
 }
 
-.drawer-system-action--backup {
-  background-color: #b45309;
-}
-
 .drawer-system-action--update {
   background-color: var(--ui-action-danger-bg);
   border-color: var(--ui-action-danger-bg);

@@ -205,6 +205,13 @@ export function shouldUseLocalInventoryOperationalBell(licenseDetails = {}) {
   );
 }
 
+export function shouldUseLocalBackupAlerts(licenseDetails = {}) {
+  const capabilities = getNotificationCapabilities(licenseDetails);
+  return capabilities.local_backup_alerts
+    && !capabilities.notification_center
+    && !capabilities.cloud_notifications;
+}
+
 export function isNotificationCenterEnabled(licenseDetails = {}) {
   return getNotificationCapabilities(licenseDetails).notification_center;
 }

@@ -2,12 +2,10 @@ import { Fragment, useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAppStore } from '../../store/useAppStore';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
-import { useBackupManager } from '../../hooks/useBackupManager';
 import usePersistentStorage from '../../hooks/usePersistentStorage';
 import { useBackupRiskStore } from '../../services/BackupRiskEvaluator';
 import { canAccessEcommerceOrders } from '../../services/ecommerce/ecommerceOrderCapabilities';
 import { isCloudPosSyncEnabled } from '../../services/sync/syncConstants';
-import { getBackupRuntimeNotice } from '../../utils/backupRuntimeNotice';
 import { evaluateEcommercePortalAccess } from '../../pages/settingsPageAccess';
 import { useSettingsAccess } from '../../services/auth/useSettingsAccess';
 import { canReadSalesReports } from '../../services/auth/salesPermissionPolicy';
@@ -31,7 +29,6 @@ import {
   RefreshCw,
   ShieldAlert,
   AlertCircle,
-  FolderKey,
   ShoppingBag,
   Globe2,
   Sparkles
@@ -53,7 +50,6 @@ function Navbar({ isSuppressed = false } = {}) {
   const drawerRef = useRef(null);
   const closeButtonRef = useRef(null);
   const features = useFeatureConfig();
-  const { status: backupStatus } = useBackupManager();
 
   const { isVolatile } = usePersistentStorage();
   const isVolatileDismissed = useAppStore((state) => state.isVolatileDismissed);
@@ -69,9 +65,6 @@ function Navbar({ isSuppressed = false } = {}) {
   const isBackupLoading = useAppStore((state) => state.isBackupLoading);
   const runUpdate = useAppStore((state) => state.runUpdate);
   const requestInstall = useAppStore((state) => state.requestInstall);
-  const needsDriveReauth = useAppStore((state) => state.needsDriveReauth);
-  const dismissedBackupNotice = useAppStore((state) => state.dismissedBackupNotice);
-  const showBackupNotice = useAppStore((state) => state.showBackupNotice);
   const canAccess = useAppStore((state) => state.canAccess);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
   const currentDeviceRole = useAppStore((state) => state.currentDeviceRole);
@@ -253,14 +246,7 @@ function Navbar({ isSuppressed = false } = {}) {
   const isCloudLicense = isCloudPosSyncEnabled(licenseDetails);
   const showLocalBackupIndicators = !isCloudLicense;
   const effectiveBackupRiskLevel = showLocalBackupIndicators ? backupRiskLevel : 0;
-  const backupNotice = showLocalBackupIndicators
-    ? getBackupRuntimeNotice(backupStatus, needsDriveReauth)
-    : null;
-  const hasDismissedBackupNotice = (
-    showLocalBackupIndicators &&
-    backupNotice?.key === dismissedBackupNotice
-  );
-  const hasMenuAction = updateAvailable || isInstallable || hasDismissedBackupNotice;
+  const hasMenuAction = updateAvailable || isInstallable;
   const installButtonLabel = isIOS ? 'Instalar App (iOS)' : 'Instalar App';
 
   const getDesktopClass = ({ isActive }) => (
@@ -297,11 +283,6 @@ function Navbar({ isSuppressed = false } = {}) {
     backgroundColor: 'var(--secondary-color)'
   };
 
-  const backupButtonStyle = {
-    ...pwaActionBaseStyle,
-    backgroundColor: '#b45309'
-  };
-
   const menuBadgeStyle = {
     position: 'absolute',
     top: '8px',
@@ -320,11 +301,6 @@ function Navbar({ isSuppressed = false } = {}) {
 
   const handleInstallClick = async () => {
     await requestInstall();
-    closeMenu();
-  };
-
-  const handleBackupNoticeClick = () => {
-    showBackupNotice();
     closeMenu();
   };
 
@@ -543,21 +519,6 @@ function Navbar({ isSuppressed = false } = {}) {
                 <span id="drawer-system-title">Acciones del sistema</span>
                 <span>Pendientes</span>
               </div>
-
-              {hasDismissedBackupNotice && (
-                <button
-                  type="button"
-                  onClick={handleBackupNoticeClick}
-                  disabled={isBackupLoading}
-                  className="drawer-system-action drawer-system-action--backup"
-                  aria-label={backupNotice.navbarLabel}
-                >
-                  <span className="drawer-system-action-icon">
-                    <FolderKey size={18} />
-                  </span>
-                  {backupNotice.navbarLabel}
-                </button>
-              )}
 
               {updateAvailable && (
                 <button
@@ -816,19 +777,6 @@ function Navbar({ isSuppressed = false } = {}) {
                 marginTop: '6px'
               }}
             >
-              {hasDismissedBackupNotice && (
-                <button
-                  type="button"
-                  onClick={showBackupNotice}
-                  disabled={isBackupLoading}
-                  style={backupButtonStyle}
-                  aria-label={`${backupNotice.navbarLabel} en barra lateral`}
-                >
-                  <FolderKey size={16} />
-                  {backupNotice.navbarLabel}
-                </button>
-              )}
-
               {updateAvailable && (
                 <button
                   type="button"
