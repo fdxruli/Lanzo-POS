@@ -80,8 +80,9 @@ export function useLocalBackupAttention({ status: providedStatus } = {}) {
     if (scope && status?.initialized && !status.busy) setStable({ scope, generation, status });
   }, [scope, generation, status]);
   const stableStatus = stable?.scope === scope && stable?.generation === generation ? stable.status : null;
+  const projectedStatus = status?.busy ? stableStatus : status;
   const condition = enabled
-    ? getLocalBackupAttention(status?.busy ? stableStatus : status, needsDriveReauth)
+    ? getLocalBackupAttention(projectedStatus, needsDriveReauth)
     : null;
 
   const update = useCallback((action, conditionKey) => {
@@ -96,6 +97,16 @@ export function useLocalBackupAttention({ status: providedStatus } = {}) {
       ? { ...value, record } : value);
     return true;
   }, [currentContext]);
+
+  const lastSuccessAt = Date.parse(projectedStatus?.settings?.lastBackupAt);
+  const errorReadAt = Date.parse(currentContext?.record?.errorReadAt);
+  const recoveredSinceRead = Number.isFinite(lastSuccessAt) && Number.isFinite(errorReadAt)
+    && lastSuccessAt > errorReadAt;
+  const errorReadRecovered = Boolean(currentContext?.record?.readStates.includes('error')
+    && ((condition?.key === 'ready' && condition.backupConfirmed) || recoveredSinceRead));
+  useEffect(() => {
+    if (errorReadRecovered) update('resolved', 'error');
+  }, [errorReadRecovered, update]);
 
   return {
     enabled, ready: Boolean(enabled && currentContext), key,

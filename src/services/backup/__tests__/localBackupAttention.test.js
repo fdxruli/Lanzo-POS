@@ -22,7 +22,7 @@ describe('durable local backup attention', () => {
     expect(readLocalBackupAttention(key)).toMatchObject({ presentedAt: expect.any(String), readStates: ['unlock'], postponedAt: expect.any(String) });
     const stored = JSON.stringify(Object.entries(localStorage));
     for (const identity of Object.values(scope)) expect(stored).not.toContain(identity);
-    expect(Object.keys(JSON.parse(localStorage.getItem(key)))).toEqual(['version', 'presentedAt', 'readStates', 'postponedAt']);
+    expect(Object.keys(JSON.parse(localStorage.getItem(key)))).toEqual(['version', 'presentedAt', 'readStates', 'errorReadAt', 'postponedAt']);
   });
   it('isolates tenant, actor and device while keeping the same actor stable', async () => {
     const keys = await Promise.all([
@@ -57,9 +57,23 @@ describe('durable local backup attention', () => {
     localStorage.setItem(key, '{broken');
     expect(readLocalBackupAttention(key).presentedAt).toBeNull();
     localStorage.setItem(key, JSON.stringify({ version: 1, presentedAt: 'bad date', readStates: ['unlock', 'private error', 'unlock'], pin: 'secret' }));
-    expect(readLocalBackupAttention(key)).toEqual({ version: 1, presentedAt: null, readStates: ['unlock'], postponedAt: null });
+    expect(readLocalBackupAttention(key)).toEqual({ version: 1, presentedAt: null, readStates: ['unlock'], errorReadAt: null, postponedAt: null });
     localStorage.setItem(key, JSON.stringify({ version: 99, presentedAt: new Date().toISOString() }));
     expect(readLocalBackupAttention(key).presentedAt).toBeNull();
+  });
+  it('preserves acknowledgment while resetting only recovered error reading', async () => {
+    const key = await buildLocalBackupAttentionKey(scope);
+    updateLocalBackupAttention(key, 'read', 'error');
+    updateLocalBackupAttention(key, 'read', 'unlock');
+    const firstAcknowledgment = readLocalBackupAttention(key).presentedAt;
+    expect(firstAcknowledgment).not.toBeNull();
+    updateLocalBackupAttention(key, 'resolved', 'unlock');
+    expect(readLocalBackupAttention(key).readStates).toEqual(['error', 'unlock']);
+    updateLocalBackupAttention(key, 'resolved', 'error');
+    expect(readLocalBackupAttention(key)).toMatchObject({ presentedAt: firstAcknowledgment, readStates: ['unlock'] });
+    expect(readLocalBackupAttention(key).errorReadAt).toBeNull();
+    resetLocalBackupAttentionMemory();
+    expect(readLocalBackupAttention(key)).toMatchObject({ presentedAt: firstAcknowledgment, readStates: ['unlock'] });
   });
   it('falls back to memory when writes or storage access are blocked', async () => {
     const key = await buildLocalBackupAttentionKey(scope);

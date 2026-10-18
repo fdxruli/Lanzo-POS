@@ -6,7 +6,7 @@ const volatileKeys = new Map();
 const memoryOnly = new Set();
 let nextVolatileKey = 0;
 
-const empty = () => ({ version: 1, presentedAt: null, readStates: [], postponedAt: null });
+const empty = () => ({ version: 1, presentedAt: null, readStates: [], errorReadAt: null, postponedAt: null });
 const timestamp = (value) => (
   typeof value === 'string' && Number.isFinite(Date.parse(value)) ? value : null
 );
@@ -15,6 +15,7 @@ const normalize = (value) => value?.version === 1 ? {
   presentedAt: timestamp(value.presentedAt),
   readStates: [...new Set(Array.isArray(value.readStates) ? value.readStates : [])]
     .filter((key) => CONDITIONS.has(key)),
+  errorReadAt: timestamp(value.errorReadAt),
   postponedAt: timestamp(value.postponedAt)
 } : empty();
 const isPersistentKey = (key) => new RegExp(`^${PREFIX}:[a-f0-9]{64}$`).test(key);
@@ -60,13 +61,21 @@ export function readLocalBackupAttention(key) {
 }
 
 export function updateLocalBackupAttention(key, action, condition, now = new Date()) {
-  if (!isKey(key) || !['presented', 'read', 'postpone'].includes(action)) return empty();
+  if (!isKey(key) || !['presented', 'read', 'postpone', 'resolved'].includes(action)) return empty();
   const record = readLocalBackupAttention(key);
+  // Only a confirmed recovery clears error reading. Normal session locks keep
+  // their reading history across successful copies and browser sessions.
+  if (action === 'resolved' && condition !== 'error') return record;
   const at = now.toISOString();
   const next = normalize({
     ...record,
-    presentedAt: action === 'presented' || action === 'postpone' ? record.presentedAt || at : record.presentedAt,
-    readStates: action === 'read' && CONDITIONS.has(condition) ? [...record.readStates, condition] : record.readStates,
+    // Reading in the bell is also a first presentation/acknowledgment, even if
+    // the initial banner has never been mounted in this context.
+    presentedAt: ['presented', 'postpone', 'read'].includes(action) ? record.presentedAt || at : record.presentedAt,
+    readStates: action === 'resolved' ? record.readStates.filter((key) => key !== 'error')
+      : action === 'read' && CONDITIONS.has(condition) ? [...record.readStates, condition] : record.readStates,
+    errorReadAt: action === 'read' && condition === 'error' ? at
+      : action === 'resolved' ? null : record.errorReadAt,
     postponedAt: action === 'postpone' ? at : record.postponedAt
   });
   if (JSON.stringify(next) === JSON.stringify(record)) return record;

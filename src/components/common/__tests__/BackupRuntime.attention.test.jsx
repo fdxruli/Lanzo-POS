@@ -40,7 +40,7 @@ import { useLocalBackupAttention } from '../../../hooks/useLocalBackupAttention'
 const baseStatus = (patch = {}) => ({ initialized: true, busy: false, configured: false, unlocked: false, supported: true, permission: 'granted', settings: { cronBlocked: false }, ...patch });
 function Probe() {
   const attention = useLocalBackupAttention();
-  return <output data-testid="attention">{attention.ready ? attention.condition?.key : 'unknown'}</output>;
+  return <output data-testid="attention" data-read={attention.record?.readStates?.includes(attention.condition?.key) ? 'read' : 'unread'}>{attention.ready ? attention.condition?.key : 'unknown'}</output>;
 }
 function Location() { return <output data-testid="route">{useLocation().pathname}{useLocation().search}</output>; }
 const mount = () => render(<MemoryRouter><BackupRuntime /><Probe /><Location /></MemoryRouter>);
@@ -96,6 +96,27 @@ describe('BackupRuntime durable attention and headless operation', () => {
     emit(baseStatus({ configured: true, unlocked: true }));
     await act(async () => { await vi.advanceTimersByTimeAsync(4 * 60 * 60 * 1000); });
     expect(mocks.backup).toHaveBeenCalledWith({ reason: 'idle_4h', manual: false });
+    expect(screen.queryByRole('button', { name: 'Más tarde' })).not.toBeInTheDocument();
+  });
+  it('makes a genuinely new error unread after confirmed recovery without reviving the banner', async () => {
+    mocks.status = baseStatus({ configured: true, unlocked: true, settings: { lastResult: 'error', cronBlocked: true } });
+    mount();
+    fireEvent.click(await screen.findByRole('button', { name: 'Revisar respaldos' }));
+    expect(screen.getByTestId('attention')).toHaveAttribute('data-read', 'read');
+    emit(baseStatus({ configured: true, unlocked: true, settings: { lastResult: 'success', lastBackupAt: '2026-10-17T12:00:00Z' } }));
+    await waitFor(() => expect(screen.getByTestId('attention')).toHaveTextContent('ready'));
+    emit(baseStatus({ configured: true, unlocked: true, settings: { lastResult: 'error', cronBlocked: true, lastBackupAt: '2026-10-17T12:00:00Z' } }));
+    expect(screen.getByTestId('attention')).toHaveTextContent('error');
+    expect(screen.getByTestId('attention')).toHaveAttribute('data-read', 'unread');
+    expect(screen.queryByRole('button', { name: 'Más tarde' })).not.toBeInTheDocument();
+  });
+  it('recognizes a recovery followed by a new failure while the actor was away', async () => {
+    const key = await buildLocalBackupAttentionKey({ databaseName: mocks.runtime.tenant.databaseName, actorKey: mocks.runtime.actorKey, deviceRef: mocks.runtime.deviceRef });
+    updateLocalBackupAttention(key, 'read', 'error', new Date('2026-10-17T10:00:00Z'));
+    mocks.status = baseStatus({ configured: true, unlocked: true, settings: { lastResult: 'error', cronBlocked: true, lastBackupAt: '2026-10-17T12:00:00Z' } });
+    mount();
+    await waitFor(() => expect(screen.getByTestId('attention')).toHaveTextContent('error'));
+    await waitFor(() => expect(screen.getByTestId('attention')).toHaveAttribute('data-read', 'unread'));
     expect(screen.queryByRole('button', { name: 'Más tarde' })).not.toBeInTheDocument();
   });
   it('separates a second actor and does not reuse the first actor preference', async () => {

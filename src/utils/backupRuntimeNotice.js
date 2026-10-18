@@ -24,7 +24,7 @@ export function getLocalBackupAttention(status, needsDriveReauth = false) {
   const confirmed = settings.lastResult === 'success' && typeof settings.lastBackupAt === 'string'
     && Number.isFinite(Date.parse(settings.lastBackupAt));
   return {
-    key: 'ready', active: false, severity: 'info', route: LOCAL_BACKUP_ROUTE, action: 'Ir a respaldos',
+    key: 'ready', active: false, backupConfirmed: confirmed, severity: 'info', route: LOCAL_BACKUP_ROUTE, action: 'Ir a respaldos',
     title: confirmed ? (status.supported ? 'Protección local activa' : 'Última copia local realizada') : 'Listo para respaldar',
     detail: !status.supported ? 'En este navegador, genera las copias manualmente.'
       : confirmed ? 'No hay incidencias de respaldo pendientes.' : 'Aún no se ha confirmado una copia local.'
