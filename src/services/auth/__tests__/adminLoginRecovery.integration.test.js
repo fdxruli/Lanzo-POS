@@ -452,4 +452,37 @@ describe('AUTH-R1 real Admin coordinator / ActorRuntime / bridge / profile integ
     expect(io.profile).not.toHaveBeenCalled();
   });
 
+  it('AUTH-07/11/35 reconciles a granted Admin with a desynchronized login view and no pending marker', async () => {
+    const state = harness();
+    await state.handleAdminLogin(credentials);
+    const generation = actorRuntimeController.getState().generation;
+    state.appStatus = 'admin_login_required';
+    state.pendingAdminSessionResult = null;
+    io.profile.mockResolvedValueOnce({ success: false });
+    expect(await state.handleAdminLogin(credentials)).toMatchObject({ success: true });
+    expect(io.login).toHaveBeenCalledTimes(1);
+    expect(io.verify).toHaveBeenCalledTimes(1);
+    expect(actorRuntimeController.getState().generation).toBe(generation);
+    expect(state.appStatus).toBe('ready');
+  });
+
+  it.each(['username', 'license', 'staff', 'session'])('does not recover an unmarked granted session with changed %s', async (changed) => {
+    const state = harness();
+    await state.handleAdminLogin(credentials);
+    state.appStatus = 'admin_login_required';
+    state.pendingAdminSessionResult = null;
+    if (changed === 'license') state.adminLoginLicenseKey = 'LIC-B';
+    if (changed === 'session') io.cache.set('admin_session_id', 'session-b');
+    if (changed === 'staff') {
+      lockActorRuntime('explicit_test_handoff');
+      actorRuntimeController.beginAuthentication({ actorType: 'staff' });
+      actorRuntimeController.grant({ actorType: 'staff', actorId: 'staff-b', sessionId: 'staff-session' });
+      state.currentDeviceRole = 'staff';
+    }
+    expect(await state.handleAdminLogin({ ...credentials, username: changed === 'username' ? 'other-owner' : 'owner' })).toMatchObject({ success: false });
+    expect(state.appStatus).not.toBe('ready');
+    expect(io.login).toHaveBeenCalledTimes(1);
+    if (changed === 'staff') expect(actorRuntimeController.getState()).toMatchObject({ status: 'granted', actorType: 'staff', actorId: 'staff-b' });
+  });
+
 });

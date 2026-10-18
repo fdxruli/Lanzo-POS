@@ -7,8 +7,8 @@
   },
   "focalLatest": {
     "files": 38,
-    "tests": 305,
-    "passed": 305,
+    "tests": 310,
+    "passed": 310,
     "failed": 0
   },
   "affectedRecheck": {
@@ -48,5 +48,14 @@
     "passed": 20,
     "failed": 0,
     "assertion": "unchanged toHaveFocus; await passive effect with default timeout"
+  },
+  "reconciliationFinal": {
+    "tests": 65,
+    "failed": 0
+  },
+  "legacyFocusRepetitions": {
+    "runs": 20,
+    "caseExecutions": 260,
+    "failed": 0
   }
 }

@@ -584,6 +584,22 @@ export const createLicenseAdminActions = ({ set, get }) => {
         return await actions.resumeAdminSessionPreparation();
         }
       }
+      if (actorRuntimeController.getState().status === 'granted' && get().appStatus === 'admin_login_required') {
+        // A stale view may have lost the preparation marker. The immutable
+        // grant is the proof anchor; visual identity alone never authorizes it.
+        const handle = actorRuntimeController.capture();
+        const state = get();
+        const admin = state.currentAdminUser;
+        if (handle.actorType !== 'admin' || state.currentDeviceRole !== 'admin'
+          || handle.actorId !== String(admin?.id || '')
+          || state.licenseDetails?.license_key !== licenseKey
+          || !admin?.username || admin.username !== username.trim()) {
+          return { success: false, code: 'ACTOR_HANDOFF_REQUIRED', message: AUTH_REQUIRED_MESSAGE };
+        }
+        const result = { success: true, admin_user: admin, session: { id: handle.sessionId }, details: state.licenseDetails };
+        set({ pendingAdminSessionResult: { ...createPendingAdminSession({ licenseKey, result }), actorHandle: handle } });
+        return await actions.resumeAdminSessionPreparation();
+      }
       initializeLocalTenantGuard('admin_login');
       await assertLocalTenantAccess({ license_key: licenseKey }, { reason: 'admin_login' });
       attempt = createAttempt(get, licenseKey);
