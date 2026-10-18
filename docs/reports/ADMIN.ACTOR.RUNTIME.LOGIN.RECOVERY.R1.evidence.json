@@ -6,9 +6,9 @@
     "secondClickCode": "ACTOR_HANDOFF_REQUIRED"
   },
   "focalLatest": {
-    "files": 36,
-    "tests": 288,
-    "passed": 288,
+    "files": 38,
+    "tests": 305,
+    "passed": 305,
     "failed": 0
   },
   "affectedRecheck": {
@@ -23,7 +23,7 @@
     "warnings": 1
   },
   "localBuild": "PASS",
-  "fullSuite": "IN_PROGRESS",
+  "fullSuite": "FINAL_HEAD_CI_REQUIRED_LOCAL_OBSERVATIONAL",
   "physicalQA": "PENDING",
   "supabaseMutations": 0,
   "migrations": 0,
@@ -32,5 +32,15 @@
   "serverResponseGuard": {
     "tests": 2,
     "failed": 0
+  },
+  "finalContractsRecheck": {
+    "tests": 73,
+    "failed": 0
+  },
+  "preview": {
+    "url": "https://lanzo-6kyfdxk7i-fdxrulis-projects.vercel.app",
+    "testedHead": "bc9c810c3f2b01e9d4dbd18ae81bf3e135ce5099",
+    "state": "READY",
+    "httpStatus": 200
   }
 }

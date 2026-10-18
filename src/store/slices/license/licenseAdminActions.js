@@ -286,6 +286,8 @@ export const createLicenseAdminActions = ({ set, get }) => {
       }
       if (pending.actorHandle) {
         pending.actorHandle.assertCurrent();
+      } else if (!pending.sessionIdentity) {
+        throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.SESSION_REQUIRED);
       } else if (actorRuntimeController.getState().status !== 'locked') {
         throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.HANDOFF_REQUIRED);
       }
@@ -310,8 +312,8 @@ export const createLicenseAdminActions = ({ set, get }) => {
             if (source.success === true && String(source.admin_user?.id || '') !== String(pending.adminUserId || '')) {
               throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.IDENTITY_INVALID);
             }
-            if (source.success === true && pending.actorHandle
-              && String(source.admin_session_id || '') !== pending.actorHandle.sessionId) {
+            const expectedSessionId = pending.actorHandle?.sessionId || pending.sessionIdentity;
+            if (source.success === true && String(source.admin_session_id || '') !== expectedSessionId) {
               throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.CONTEXT_STALE);
             }
             if (pending.actorHandle) {
@@ -344,7 +346,15 @@ export const createLicenseAdminActions = ({ set, get }) => {
         beginActorRuntimeAuthentication('admin');
         attempt.refreshActor();
       }
-      const result = await completeAdminSession(set, get, licenseKey, pending.result, 'admin_login_resume', attempt, pending);
+      const recoveredResult = verified?.success === true && verified?.valid === true
+        ? { ...pending.result, ...verified, details: { ...pending.result.details, ...verified.details } }
+        : pending.result;
+      const recoveredPending = {
+        ...createPendingAdminSession({ licenseKey, result: recoveredResult }),
+        authenticatedAt: pending.authenticatedAt,
+        actorHandle: pending.actorHandle
+      };
+      const result = await completeAdminSession(set, get, licenseKey, recoveredResult, 'admin_login_resume', attempt, recoveredPending);
       traceAuth(result.success ? 'AUTH_RECOVERY_COMPLETED' : 'AUTH_RECOVERY_FAILED', result.code);
       return result;
     } catch (error) {
@@ -593,12 +603,12 @@ export const createLicenseAdminActions = ({ set, get }) => {
         }
       });
       attempt.assertCurrent();
-      if (!result.success) {
+      if (!result.success || result.valid === false) {
         if (result.code === 'FREE_DEVICE_TAKEOVER_REQUIRED' || result.takeoverRequired === true) {
           lockActorRuntime('admin_free_device_takeover_required');
           clearPendingAdminSession(set, 'admin_free_device_takeover_required');
           set({ adminLoginError: null });
-          return { ...result, takeoverRequired: true };
+          return { ...result, success: false, takeoverRequired: true };
         }
 
         const storageFailure = classifyDatabaseError(result);
@@ -612,7 +622,7 @@ export const createLicenseAdminActions = ({ set, get }) => {
         lockActorRuntime(failureReason);
         clearPendingAdminSession(set, failureReason);
         set({ adminLoginError: { code: result.code, message: result.message } });
-        return result;
+        return { ...result, success: false };
       }
       traceAuth('AUTH_REMOTE_VALIDATED');
       return await completeAdminSession(set, get, licenseKey, result, 'admin_login', attempt);
@@ -689,11 +699,11 @@ export const createLicenseAdminActions = ({ set, get }) => {
       });
       attempt.assertCurrent();
 
-      if (!result.success) {
+      if (!result.success || result.valid === false) {
         lockActorRuntime('admin_free_device_takeover_rejected');
         clearPendingAdminSession(set, 'admin_free_device_takeover_rejected');
         set({ adminLoginError: { code: result.code, message: result.message } });
-        return result;
+        return { ...result, success: false };
       }
 
       return await completeAdminSession(
@@ -774,11 +784,11 @@ export const createLicenseAdminActions = ({ set, get }) => {
         }
       });
       attempt.assertCurrent();
-      if (!result.success) {
+      if (!result.success || result.valid === false) {
         lockActorRuntime('admin_enrollment_rejected');
         clearPendingAdminSession(set, 'admin_credentials_rejected');
         set({ adminLoginError: { code: result.code, message: result.message } });
-        return result;
+        return { ...result, success: false };
       }
       return await completeAdminSession(set, get, licenseKey, result, 'admin_enrollment', attempt);
     } catch (error) {

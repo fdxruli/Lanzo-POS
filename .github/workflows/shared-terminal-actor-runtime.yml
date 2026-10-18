@@ -142,7 +142,7 @@ jobs:
         run: npx vitest run src/services/auth/__tests__/actorRuntimeController.test.js src/services/auth/__tests__/actorSessionRuntimeBridge.test.js --maxWorkers=4
 
       - name: Admin authentication preparation recovery R1
-        run: npx vitest run src/services/auth/__tests__/adminLoginRecovery.integration.test.js src/components/common/__tests__/AdminLoginModal.preparation.test.jsx src/store/slices/createProfileSlice.profileSync.test.js src/components/common/__tests__/AdminLoginModal.recovery.test.jsx --maxWorkers=4
+        run: npx vitest run src/services/auth/__tests__/adminLoginRecovery.integration.test.js src/services/__tests__/supabase.indexedDbBootstrap.test.js src/components/common/__tests__/AdminLoginModal.preparation.test.jsx src/store/slices/createProfileSlice.profileSync.test.js src/components/common/__tests__/AdminLoginModal.recovery.test.jsx --maxWorkers=4
 
       - name: Tenant isolation and recovery regression
         run: npx vitest run src/services/tenant/__tests__ src/services/db/__tests__ --maxWorkers=4

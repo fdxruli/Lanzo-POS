@@ -83,6 +83,7 @@ const credentials = { username: 'owner', password: 'fixture-only' };
 const profile = { license_key: 'LIC-A', business_name: 'Business A', business_type: ['abarrotes'] };
 const remote = () => ({
   success: true, admin_user: { id: 'admin-a', username: 'owner' },
+  session: { id: 'session-a' }, device_id: 'device-a',
   details: { license_key: 'LIC-A', plan_code: 'free_trial', device_role: 'admin' }
 });
 const deferred = () => {
@@ -411,6 +412,44 @@ describe('AUTH-R1 real Admin coordinator / ActorRuntime / bridge / profile integ
     expect(await state.resumeAdminSessionPreparation()).toMatchObject({ success: false });
     expect(persist).not.toHaveBeenCalled();
     expect(actorRuntimeController.getState().status).toBe('locked');
+  });
+
+  it.each([['pro_monthly', 'free_trial'], ['free_trial', 'pro_monthly']])('AUTH-27/28 keeps verified %s -> %s plan details during recovery', async (from, to) => {
+    const state = harness();
+    const login = io.login.getMockImplementation();
+    io.login.mockImplementationOnce(async (args) => { const result = await login(args); return { ...result, details: { ...result.details, plan_code: from, features: { cloud_sync: from !== 'free_trial' } } }; });
+    io.profile.mockResolvedValueOnce({ success: false });
+    await state.handleAdminLogin(credentials);
+    const generation = actorRuntimeController.getState().generation;
+    io.verify.mockResolvedValueOnce({ ...remote(), valid: true, details: { ...remote().details, plan_code: to, features: { cloud_sync: to !== 'free_trial' } } });
+    expect(await state.resumeAdminSessionPreparation()).toMatchObject({ success: true });
+    expect(state.licenseDetails).toMatchObject({ plan_code: to, features: { cloud_sync: to !== 'free_trial' } });
+    expect(actorRuntimeController.getState()).toMatchObject({ generation, actorId: 'admin-a', sessionId: 'session-a' });
+    expect(io.login).toHaveBeenCalledTimes(1);
+  });
+
+  it('requires the original canonical session id for a locked pre-grant retry', async () => {
+    const state = harness();
+    const error = Object.assign(new Error('old schema'), { name: 'UpgradeError' });
+    io.ready.mockRejectedValueOnce(error);
+    await state.handleAdminLogin(credentials);
+    const persist = vi.fn();
+    io.verify.mockImplementationOnce(async (_key, options) => {
+      await options.beforeLocalPersistence({ success: true, admin_user: { id: 'admin-a' }, admin_session_id: 'different-session' });
+      persist();
+      return { ...remote(), valid: true };
+    });
+    expect(await state.resumeAdminSessionPreparation()).toMatchObject({ success: false });
+    expect(persist).not.toHaveBeenCalled();
+    expect(actorRuntimeController.getState().status).toBe('locked');
+  });
+
+  it('AUTH-03/18 treats explicit valid:false as denial even with success:true', async () => {
+    const state = harness();
+    io.login.mockResolvedValueOnce({ success: true, valid: false, code: 'ADMIN_SESSION_INVALID' });
+    expect(await state.handleAdminLogin(credentials)).toMatchObject({ success: false, code: 'ADMIN_SESSION_INVALID' });
+    expect(actorRuntimeController.getState().status).toBe('locked');
+    expect(io.profile).not.toHaveBeenCalled();
   });
 
 });

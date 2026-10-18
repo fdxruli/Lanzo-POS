@@ -1617,7 +1617,7 @@ export const acceptLegalTerms = async (licenseKey, termId) => {
 };
 
 const buildAdminSessionResult = async (data, licenseKey, { beforeLocalPersistence = null } = {}) => {
-    if (!data?.success) {
+    if (!data?.success || data.valid === false) {
         const takeoverRequired = data?.code === 'FREE_DEVICE_TAKEOVER_REQUIRED';
         return {
             success: false,
@@ -1671,6 +1671,8 @@ const buildAdminSessionResult = async (data, licenseKey, { beforeLocalPersistenc
         success: true,
         valid: data.valid !== false,
         admin_user: data.admin_user || null,
+        ...(data.admin_session_id ? { session: { id: data.admin_session_id } } : {}),
+        ...(data.device_id ? { device_id: data.device_id } : {}),
         details: {
             ...(data.details || {}),
             license_key: data.details?.license_key || licenseKey,
