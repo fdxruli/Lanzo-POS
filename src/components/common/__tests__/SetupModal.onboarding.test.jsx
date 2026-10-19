@@ -35,6 +35,10 @@ vi.mock('../../../services/database', () => ({
 }));
 vi.mock('../../../services/licenseStorage', () => ({ saveLicenseToStorage: vi.fn() }));
 vi.mock('../../../services/db/databaseRuntime', () => ({ ensureLocalDatabaseReady: vi.fn() }));
+vi.mock('../../../services/db/tenantRuntimeRouter', () => ({
+  getTenantRuntimeReadiness: () => ({ ready: true, runtime: { opaqueId: 'onboarding-fixture', databaseName: 'onboarding-fixture', generation: 1 } }),
+  isTenantRuntimeError: (error) => String(error?.code || '').startsWith('TENANT_RUNTIME_')
+}));
 vi.mock('../../../services/tenant/localTenantGuard', () => ({
   assertLocalTenantAccess: vi.fn(), assertLocalTenantSyncAccess: vi.fn(),
   initializeLocalTenantGuard: vi.fn(), isLocalTenantAccessError: () => false, lockLocalTenantAccess: vi.fn(),
@@ -42,14 +46,19 @@ vi.mock('../../../services/tenant/localTenantGuard', () => ({
 vi.mock('../../../services/auth/actorSessionRuntimeBridge', () => ({
   beginActorRuntimeAuthentication: () => { mocks.actorGranted = false; },
   grantAuthenticatedActorRuntime: mocks.grant,
+  assertAuthenticatedActorSessionCurrent: vi.fn(async () => true),
   lockActorRuntime: () => { mocks.actorGranted = false; },
 }));
-vi.mock('../../../services/auth/actorRuntimeController', () => ({
-  actorRuntimeController: { capture: () => {
-    if (!mocks.actorGranted) throw new Error('ACTOR_CONTEXT_LOCKED');
-    return { actorType: 'admin', assertCurrent: mocks.assertCurrent };
-  } },
-}));
+vi.mock('../../../services/auth/actorRuntimeController', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, actorRuntimeController: {
+    getState: () => ({ status: mocks.actorGranted ? 'granted' : 'locked', generation: 0 }),
+    capture: () => {
+      if (!mocks.actorGranted) throw new Error('ACTOR_CONTEXT_LOCKED');
+      return { actorType: 'admin', assertCurrent: mocks.assertCurrent };
+    }
+  } };
+});
 vi.mock('../../../services/storage/imageUploadService', () => ({
   IMAGE_UPLOAD_PURPOSES: { BUSINESS_LOGO: 'business-logo' }, uploadImageFile: vi.fn(),
 }));

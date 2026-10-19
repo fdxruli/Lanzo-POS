@@ -12,9 +12,7 @@ import {
   MessageCircle,
   Settings,
   Sparkles,
-  Store,
   TrendingUp,
-  Users,
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { useActorRuntimeSnapshot } from '../services/auth/useActorRuntimeSnapshot';
@@ -43,7 +41,9 @@ import {
   resolveAboutContactActions,
   resolveAboutLicenseState
 } from './aboutTelegramActions';
+import AboutLocalExperience from './AboutLocalExperience';
 import './AboutPage.css';
+import './AboutLocalExperience.css';
 
 const FACEBOOK_URL = 'https://www.facebook.com/100087646261018';
 
@@ -54,35 +54,6 @@ const EMPTY_CONTACT_MODAL = {
   fields: [],
   description: ''
 };
-
-const WORKFLOWS = [
-  {
-    id: 'solo',
-    title: 'Vendo desde un equipo',
-    description: 'Uso Lanzo en una computadora o tablet, principalmente yo.',
-    icon: Store
-  },
-  {
-    id: 'team',
-    title: 'Trabajo con un equipo',
-    description: 'Varias personas venden y necesito ver todo sincronizado.',
-    icon: Users
-  }
-];
-
-const LOCAL_FEATURES = [
-  'Punto de venta en un solo equipo',
-  'Funciona incluso sin internet',
-  'Tienda en línea básica hasta 10 productos'
-];
-
-const CLOUD_FEATURES = [
-  'Hasta 5 dispositivos',
-  'Todo sincronizado en la nube',
-  'Roles para tu equipo',
-  'Catálogo en línea sin límite de productos',
-  'Agentes de IA con límite de uso'
-];
 
 const getDeviceLimitFromLicense = (licenseDetails = {}, isCloudPlan = false) => {
   const features = getPlanFeaturesFromLicenseDetails(licenseDetails);
@@ -405,26 +376,8 @@ export default function AboutPage() {
     );
   };
 
-  const recommendation = selectedWorkflow === 'team'
-    ? {
-        eyebrow: 'RECOMENDADO PARA TU EQUIPO',
-        title: 'Lanzo Nube',
-        description: 'Conecta hasta cinco dispositivos, sincroniza la operación y asigna accesos por rol.'
-      }
-    : selectedWorkflow === 'solo'
-      ? {
-          eyebrow: 'RECOMENDADO PARA TI',
-          title: 'Lanzo Local',
-          description: 'Si trabajas en un solo equipo, puedes vender y controlar tu inventario incluso sin internet.'
-        }
-      : {
-          eyebrow: 'ELIGE A TU RITMO',
-          title: 'Una opción para cada etapa',
-          description: 'Cuéntanos cómo trabajas hoy y te mostraremos el plan que mejor acompaña tu operación.'
-        };
-
   return (
-    <main className="about-redesign" aria-labelledby="about-title">
+    <main className={`about-redesign${aboutLicenseState === ABOUT_LICENSE_STATE.LOCAL_ACTIVE ? ' about-redesign--local' : ''}`} aria-labelledby="about-title">
       <header className="about-redesign__header">
         <div>
           <p className="about-redesign__eyebrow">{licensePresentation.eyebrow}</p>
@@ -443,6 +396,7 @@ export default function AboutPage() {
         </div>
       </header>
 
+      {aboutLicenseState !== ABOUT_LICENSE_STATE.LOCAL_ACTIVE && (
       <section className="about-redesign__current" aria-label="Tu plan actual">
         <div className="about-redesign__current-icon" aria-hidden="true">
           <CheckCircle2 size={21} />
@@ -460,123 +414,18 @@ export default function AboutPage() {
         </span>
       </section>
 
+      )}
+
       {aboutLicenseState === ABOUT_LICENSE_STATE.LOCAL_ACTIVE ? (
-        <>
-      <section className="about-redesign__chooser" aria-labelledby="about-workflow-title">
-        <div className="about-redesign__section-heading">
-          <div>
-            <h2 id="about-workflow-title">¿Cómo trabajas hoy?</h2>
-            <p>Esto nos ayuda a mostrarte la mejor opción para tu negocio.</p>
-          </div>
-        </div>
-
-        <div className="about-redesign__workflow-list">
-          {WORKFLOWS.map(({ id, title, description, icon: Icon }) => {
-            const isSelected = selectedWorkflow === id;
-            const isCurrent = (id === 'team' && isCloudPlan) || (id === 'solo' && !isCloudPlan);
-
-            return (
-              <button
-                className={[
-                  'about-redesign__workflow',
-                  isSelected ? 'is-selected' : '',
-                  isCurrent ? 'is-current' : ''
-                ].filter(Boolean).join(' ')}
-                type="button"
-                key={id}
-                aria-pressed={isSelected}
-                onClick={() => setSelectedWorkflow(id)}
-              >
-                <span className="about-redesign__radio" aria-hidden="true">
-                  {isSelected && <span />}
-                </span>
-                <span className="about-redesign__workflow-icon" aria-hidden="true">
-                  <Icon size={23} />
-                </span>
-                <span className="about-redesign__workflow-copy">
-                  <strong>{title}</strong>
-                  <span>{description}</span>
-                </span>
-                {isCurrent && <span className="about-redesign__workflow-tag">Tu plan actual</span>}
-              </button>
-            );
-          })}
-        </div>
-
-        <section className="about-redesign__recommendation" aria-live="polite" aria-label="Plan recomendado">
-          <div className="about-redesign__recommendation-copy">
-            <p className="about-redesign__recommendation-eyebrow">
-              <Sparkles size={15} aria-hidden="true" />
-              {recommendation.eyebrow}
-            </p>
-            <h3>{recommendation.title}</h3>
-            <p>{recommendation.description}</p>
-          </div>
-
-          <div className="about-redesign__offer">
-            <span className="about-redesign__offer-tag">OFERTA DE LANZAMIENTO</span>
-            <strong>3 meses por $300</strong>
-            <span className="about-redesign__offer-after">Después $129 MXN al mes.</span>
-            <div className="about-redesign__offer-details">
-              <span><MessageCircle size={15} aria-hidden="true" /> Por Telegram y transferencia</span>
-              <span><CheckCircle2 size={15} aria-hidden="true" /> Activación asistida</span>
-            </div>
-          </div>
-
-          <div className="about-redesign__recommendation-action">
-            {renderContactAction(contactActions.primary, 'about-redesign__primary-button')}
-            {contactActions.secondary && renderContactAction(
-              contactActions.secondary,
-              'about-redesign__secondary-button'
-            )}
-            <span>
-              {selectedWorkflow === 'solo'
-                ? 'Puedes continuar con Lanzo Local. Esta consulta no cambia tu plan.'
-                : selectedWorkflow === 'team'
-                  ? 'La solicitud es asistida; el botón no activa ni cobra el plan.'
-                  : 'El equipo te orientará sobre planes y condiciones vigentes.'}
-            </span>
-          </div>
-        </section>
-      </section>
-
-      <section className="about-redesign__comparison" aria-label="Comparación de planes">
-        <article className="about-redesign__plan-summary" id="about-local-plan">
-          <div className="about-redesign__plan-icon about-redesign__plan-icon--local" aria-hidden="true">
-            <Store size={22} />
-          </div>
-          <div className="about-redesign__plan-content">
-            <div className="about-redesign__plan-heading">
-              <h2>Lo que tienes con Lanzo Local</h2>
-              {!isCloudPlan && <span className="about-redesign__plan-current">Tu plan</span>}
-            </div>
-            <ul>
-              {LOCAL_FEATURES.map(feature => (
-                <li key={feature}><Check size={16} aria-hidden="true" /><span>{feature}</span></li>
-              ))}
-            </ul>
-          </div>
-        </article>
-
-        <article className="about-redesign__plan-summary about-redesign__plan-summary--cloud">
-          <div className="about-redesign__plan-icon about-redesign__plan-icon--cloud" aria-hidden="true">
-            <Users size={22} />
-          </div>
-          <div className="about-redesign__plan-content">
-            <div className="about-redesign__plan-heading">
-              <h2>Lo que añade Lanzo Nube</h2>
-              {isCloudPlan && <span className="about-redesign__plan-current">Tu plan</span>}
-            </div>
-            <ul>
-              {CLOUD_FEATURES.map(feature => (
-                <li key={feature}><Check size={16} aria-hidden="true" /><span>{feature}</span></li>
-              ))}
-            </ul>
-          </div>
-        </article>
-      </section>
-
-        </>
+        <AboutLocalExperience
+          licenseDetails={licenseDetails}
+          businessTypes={companyProfile?.business_type}
+          selectedWorkflow={selectedWorkflow}
+          onSelectWorkflow={setSelectedWorkflow}
+          contactActions={contactActions}
+          renderContactAction={renderContactAction}
+          canReadReports={canReadReports}
+        />
       ) : isCloudPlan ? (
         <>
           {canShowCloudTools && (

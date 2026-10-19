@@ -162,4 +162,30 @@ describe('activation storage boundary', () => {
       else delete navigator.storage;
     }
   });
+  it('returns canonical Admin session/device evidence without exposing the session token', async () => {
+    const { runWithLocalTenantSyncLease } = await import('../tenant/localTenantGuard');
+    vi.mocked(runWithLocalTenantSyncLease).mockImplementation(async (_source, _options, operation) => operation());
+    mocks.readDeviceRegistryValue.mockResolvedValue('fixture-device');
+    mocks.rpc.mockResolvedValue({ data: {
+      success: true, admin_user: { id: 'fixture-admin' }, admin_session_id: 'fixture-session',
+      admin_session_token: 'fixture-token', device_id: 'fixture-device-row',
+      admin_session_expires_at: '2030-01-01T00:00:00Z', details: { license_key: 'QA-AUTH-CONTRACT' }
+    }, error: null });
+    const { adminLoginOnDevice } = await import('../supabase');
+    const result = await adminLoginOnDevice({ licenseKey: 'QA-AUTH-CONTRACT', username: 'owner', password: 'fixture-only', beforeLocalPersistence: vi.fn() });
+    expect(result).toMatchObject({ success: true, session: { id: 'fixture-session' }, device_id: 'fixture-device-row' });
+    expect(result).not.toHaveProperty('admin_session_token');
+    expect(mocks.saveData).toHaveBeenCalledWith('sync_cache', { key: 'admin_session_id', value: 'fixture-session' });
+  });
+
+  it('does not persist credentials for an explicit valid:false RPC denial', async () => {
+    mocks.readDeviceRegistryValue.mockResolvedValue('fixture-device');
+    mocks.rpc.mockResolvedValue({ data: { success: true, valid: false, code: 'ADMIN_SESSION_INVALID', admin_session_token: 'rejected-token' }, error: null });
+    const beforeLocalPersistence = vi.fn();
+    const { adminLoginOnDevice } = await import('../supabase');
+    expect(await adminLoginOnDevice({ licenseKey: 'QA-AUTH-CONTRACT', username: 'owner', password: 'fixture-only', beforeLocalPersistence })).toMatchObject({ success: false, code: 'ADMIN_SESSION_INVALID' });
+    expect(beforeLocalPersistence).not.toHaveBeenCalled();
+    expect(mocks.saveData).not.toHaveBeenCalled();
+  });
+
 });

@@ -39,6 +39,13 @@ export const resolveAboutLicenseState = ({
 
   if (lifecycleStatus !== 'active') return ABOUT_LICENSE_STATE.UNKNOWN;
 
+  // Free lifetime presentation can normalize old expiry metadata to active.
+  // About must still have a confirmed entitlement before advertising Local.
+  // This is display-only; the shared lifecycle/authorization remains untouched.
+  if (isCloudPlan !== true && (
+    licenseDetails.valid !== true || licenseDetails.is_entitled === false
+  )) return ABOUT_LICENSE_STATE.UNKNOWN;
+
   return isCloudPlan === true
     ? ABOUT_LICENSE_STATE.CLOUD_ACTIVE
     : ABOUT_LICENSE_STATE.LOCAL_ACTIVE;

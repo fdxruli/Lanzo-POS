@@ -180,15 +180,26 @@ export default function DeviceManager({ licenseKey }) {
     const isLastActiveAdmin = device.is_active
       && deviceModeAllowsActor(device, 'admin')
       && devices.filter((entry) => entry.is_active && deviceModeAllowsActor(entry, 'admin')).length === 1;
-    const confirmMessage = isLastActiveAdmin
-      ? `Este es el ultimo dispositivo con capacidad Admin activa.\n\nPodras recuperar la administracion desde otro dispositivo utilizando las credenciales del propietario.\n\nLa licencia y los datos del negocio no se eliminaran.\n\nDeseas continuar?`
-      : isCurrentDevice
-        ? 'Vas a liberar este dispositivo. Se cerrara la sesion local y esta licencia podra activarse de nuevo despues. Deseas continuar?'
-        : 'Vas a liberar este dispositivo de la licencia. Deseas continuar?';
+    const targetName = isCurrentDevice ? 'este dispositivo' : (device.device_name || 'el dispositivo seleccionado');
+    const releaseImpact = isCurrentDevice
+      ? 'También se cerrará tu sesión en este equipo.'
+      : 'Las sesiones del dispositivo que liberes dejarán de ser válidas.';
+    const otherActionHint = isCurrentDevice
+      ? '¿Solo quieres salir de tu cuenta sin liberar el cupo? Pulsa Cancelar y usa «Cerrar sesión Admin» en Configuración > Licencia y rubros.'
+      : '¿Solo quieres cerrar la sesión en ese equipo sin liberar su cupo? Pulsa Cancelar y usa «Cerrar sesión» desde ese equipo.';
+    const confirmMessage = [
+      `Liberar ${targetName} lo desvinculará de la licencia y dejará disponible su cupo para otro dispositivo. ${releaseImpact}`,
+      isLastActiveAdmin
+        ? 'Este es el último dispositivo con acceso Admin. Para volver a administrar desde otro equipo tendrás que iniciar sesión con las credenciales del propietario.'
+        : null,
+      'La licencia y los datos del negocio no se eliminan. Los datos guardados localmente no se transfieren automáticamente a otro equipo.',
+      otherActionHint,
+      '¿Quieres liberar este dispositivo?'
+    ].filter(Boolean).join('\n\n');
 
     if (!(await showConfirmModal(confirmMessage, {
       title: 'Liberar dispositivo',
-      confirmButtonText: 'Si, liberar',
+      confirmButtonText: 'Sí, liberar',
       cancelButtonText: 'Cancelar'
     }))) return;
 

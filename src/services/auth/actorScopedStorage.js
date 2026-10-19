@@ -217,7 +217,7 @@ export const registerActorScopedLogicalKey = (logicalKey) => {
   return () => actorScopedLogicalKeys.delete(normalized);
 };
 
-export const prepareActorScopedStorage = async ({ tenant, actorKey, actorGeneration } = {}) => {
+export const prepareActorScopedStorage = async ({ tenant, actorKey, actorGeneration, assertCurrent = null } = {}) => {
   const tenantOpaqueId = assertTenantOpaqueId(tenant?.opaqueId);
   const tenantDatabaseName = String(tenant?.databaseName || '').trim();
   if (!tenantDatabaseName.startsWith('LanzoDB_t_')) {
@@ -230,6 +230,7 @@ export const prepareActorScopedStorage = async ({ tenant, actorKey, actorGenerat
   const normalizedActorGeneration = assertGeneration(actorGeneration, 'actor_generation_invalid');
   const actorOpaqueId = await deriveActorStorageOpaqueId(tenantOpaqueId, normalizedActorKey);
 
+  assertCurrent?.();
   writesSuspended = true;
   activeBinding = null;
   pendingBinding = {

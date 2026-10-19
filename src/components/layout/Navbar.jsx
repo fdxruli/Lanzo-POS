@@ -2,17 +2,16 @@ import { Fragment, useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAppStore } from '../../store/useAppStore';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
-import { useBackupManager } from '../../hooks/useBackupManager';
 import usePersistentStorage from '../../hooks/usePersistentStorage';
 import { useBackupRiskStore } from '../../services/BackupRiskEvaluator';
 import { canAccessEcommerceOrders } from '../../services/ecommerce/ecommerceOrderCapabilities';
 import { isCloudPosSyncEnabled } from '../../services/sync/syncConstants';
-import { getBackupRuntimeNotice } from '../../utils/backupRuntimeNotice';
 import { evaluateEcommercePortalAccess } from '../../pages/settingsPageAccess';
 import { useSettingsAccess } from '../../services/auth/useSettingsAccess';
 import { canReadSalesReports } from '../../services/auth/salesPermissionPolicy';
 import { useActorRuntimeSnapshot } from '../../services/auth/useActorRuntimeSnapshot';
 import { getCommercialAIAgentAccessState } from '../../services/auth/aiAgentAuthorization';
+import usePostDowngradeCashPending from '../../hooks/usePostDowngradeCashPending';
 import Logo from '../common/Logo';
 import NotificationBell from '../notifications/NotificationBell';
 import {
@@ -30,7 +29,6 @@ import {
   RefreshCw,
   ShieldAlert,
   AlertCircle,
-  FolderKey,
   ShoppingBag,
   Globe2,
   Sparkles
@@ -52,7 +50,6 @@ function Navbar({ isSuppressed = false } = {}) {
   const drawerRef = useRef(null);
   const closeButtonRef = useRef(null);
   const features = useFeatureConfig();
-  const { status: backupStatus } = useBackupManager();
 
   const { isVolatile } = usePersistentStorage();
   const isVolatileDismissed = useAppStore((state) => state.isVolatileDismissed);
@@ -68,9 +65,6 @@ function Navbar({ isSuppressed = false } = {}) {
   const isBackupLoading = useAppStore((state) => state.isBackupLoading);
   const runUpdate = useAppStore((state) => state.runUpdate);
   const requestInstall = useAppStore((state) => state.requestInstall);
-  const needsDriveReauth = useAppStore((state) => state.needsDriveReauth);
-  const dismissedBackupNotice = useAppStore((state) => state.dismissedBackupNotice);
-  const showBackupNotice = useAppStore((state) => state.showBackupNotice);
   const canAccess = useAppStore((state) => state.canAccess);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
   const currentDeviceRole = useAppStore((state) => state.currentDeviceRole);
@@ -78,6 +72,7 @@ function Navbar({ isSuppressed = false } = {}) {
   const ecommerceNewCount = useAppStore((state) => state.ecommerceOrderCounts?.new || 0);
   const settingsAccess = useSettingsAccess();
   const actorRuntime = useActorRuntimeSnapshot();
+  const postDowngradeCash = usePostDowngradeCashPending();
   const canReadReports = canReadSalesReports(actorRuntime);
   const commercialAIAgentAccess = getCommercialAIAgentAccessState({
     licenseDetails,
@@ -100,6 +95,14 @@ function Navbar({ isSuppressed = false } = {}) {
   const ecommerceBadge = normalizedEcommerceNewCount > 99
     ? '99+'
     : String(normalizedEcommerceNewCount);
+  const cashPendingCount = (
+    postDowngradeCash.eligible
+    && Number.isInteger(postDowngradeCash.pendingCount)
+    && postDowngradeCash.pendingCount > 0
+  ) ? postDowngradeCash.pendingCount : 0;
+  const cashNavigationLabel = cashPendingCount > 0
+    ? `Caja, ${cashPendingCount} cajas anteriores pendientes de conciliación`
+    : 'Caja';
 
   const toggleMenu = () => setIsMobileMenuOpen((prev) => !prev);
   const closeMenu = () => setIsMobileMenuOpen(false);
@@ -243,14 +246,7 @@ function Navbar({ isSuppressed = false } = {}) {
   const isCloudLicense = isCloudPosSyncEnabled(licenseDetails);
   const showLocalBackupIndicators = !isCloudLicense;
   const effectiveBackupRiskLevel = showLocalBackupIndicators ? backupRiskLevel : 0;
-  const backupNotice = showLocalBackupIndicators
-    ? getBackupRuntimeNotice(backupStatus, needsDriveReauth)
-    : null;
-  const hasDismissedBackupNotice = (
-    showLocalBackupIndicators &&
-    backupNotice?.key === dismissedBackupNotice
-  );
-  const hasMenuAction = updateAvailable || isInstallable || hasDismissedBackupNotice;
+  const hasMenuAction = updateAvailable || isInstallable;
   const installButtonLabel = isIOS ? 'Instalar App (iOS)' : 'Instalar App';
 
   const getDesktopClass = ({ isActive }) => (
@@ -287,11 +283,6 @@ function Navbar({ isSuppressed = false } = {}) {
     backgroundColor: 'var(--secondary-color)'
   };
 
-  const backupButtonStyle = {
-    ...pwaActionBaseStyle,
-    backgroundColor: '#b45309'
-  };
-
   const menuBadgeStyle = {
     position: 'absolute',
     top: '8px',
@@ -310,11 +301,6 @@ function Navbar({ isSuppressed = false } = {}) {
 
   const handleInstallClick = async () => {
     await requestInstall();
-    closeMenu();
-  };
-
-  const handleBackupNoticeClick = () => {
-    showBackupNotice();
     closeMenu();
   };
 
@@ -337,14 +323,21 @@ function Navbar({ isSuppressed = false } = {}) {
       <nav className="mobile-bottom-nav">
         <NavLink
           to="/caja"
-          className={getBottomClass}
+          className={(route) => `${getBottomClass(route)} ${cashPendingCount > 0 ? 'bottom-nav-item--cash-attention' : ''}`.trim()}
           onClick={handleProtectedNavClick}
           hidden={!isRouteAllowed('/caja')}
+          aria-label={cashNavigationLabel}
+          title={cashPendingCount > 0 ? cashNavigationLabel : undefined}
           aria-disabled={isBackupLoading}
           tabIndex={isBackupLoading ? -1 : 0}
         >
           <Inbox size={22} />
-          <span>Caja</span>
+          <span className="cash-nav-label">
+            Caja
+            {cashPendingCount > 0 && (
+              <span className="cash-nav-count" aria-hidden="true">· {cashPendingCount}</span>
+            )}
+          </span>
         </NavLink>
 
         <NavLink
@@ -527,21 +520,6 @@ function Navbar({ isSuppressed = false } = {}) {
                 <span>Pendientes</span>
               </div>
 
-              {hasDismissedBackupNotice && (
-                <button
-                  type="button"
-                  onClick={handleBackupNoticeClick}
-                  disabled={isBackupLoading}
-                  className="drawer-system-action drawer-system-action--backup"
-                  aria-label={backupNotice.navbarLabel}
-                >
-                  <span className="drawer-system-action-icon">
-                    <FolderKey size={18} />
-                  </span>
-                  {backupNotice.navbarLabel}
-                </button>
-              )}
-
               {updateAvailable && (
                 <button
                   type="button"
@@ -609,13 +587,19 @@ function Navbar({ isSuppressed = false } = {}) {
 
           <NavLink
             to="/caja"
-            className={getDesktopClass}
+            className={({ isActive }) => `${getDesktopClass({ isActive })} ${cashPendingCount > 0 ? 'nav-link--cash-attention' : ''}`.trim()}
             onClick={handleProtectedNavClick}
             hidden={!isRouteAllowed('/caja')}
+            aria-label={cashNavigationLabel}
+            title={cashPendingCount > 0 ? cashNavigationLabel : undefined}
             aria-disabled={isBackupLoading}
             tabIndex={isBackupLoading ? -1 : 0}
           >
-            <Inbox size={20} /> Caja
+            <Inbox size={20} />
+            <span>Caja</span>
+            {cashPendingCount > 0 && (
+              <span className="cash-nav-count cash-nav-count--desktop" aria-hidden="true">· {cashPendingCount}</span>
+            )}
           </NavLink>
 
           {features.hasKDS && isRouteAllowed('/pedidos') && (
@@ -793,19 +777,6 @@ function Navbar({ isSuppressed = false } = {}) {
                 marginTop: '6px'
               }}
             >
-              {hasDismissedBackupNotice && (
-                <button
-                  type="button"
-                  onClick={showBackupNotice}
-                  disabled={isBackupLoading}
-                  style={backupButtonStyle}
-                  aria-label={`${backupNotice.navbarLabel} en barra lateral`}
-                >
-                  <FolderKey size={16} />
-                  {backupNotice.navbarLabel}
-                </button>
-              )}
-
               {updateAvailable && (
                 <button
                   type="button"

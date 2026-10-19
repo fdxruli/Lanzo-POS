@@ -1,121 +1,268 @@
 import { useEffect, useState } from 'react';
 import { CheckCircle2, CloudOff, RefreshCw, Store, WalletCards } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import usePostDowngradeCashPending, {
   consumeFreeDeviceTakeoverCompleted
 } from '../../hooks/usePostDowngradeCashPending';
+import {
+  buildPostDowngradeCashAttentionKey,
+  clearPostDowngradeCashAttention,
+  markPostDowngradeCashAttentionDisplayed,
+  markPostDowngradeCashAttentionRead,
+  postponePostDowngradeCashAttention,
+  POST_DOWNGRADE_CASH_ATTENTION_EVENT,
+  readPostDowngradeCashAttention
+} from '../../services/cash/postDowngradeCashAttention';
+
+const EMPTY_ATTENTION = {
+  key: null,
+  record: null,
+  ready: false,
+  visible: false,
+  path: null
+};
 
 export default function PostDowngradeRecoveryBanner({ isSuppressed = false } = {}) {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const {
     eligible,
     online,
     status,
     pendingCount,
     isPostDowngrade,
+    downgradedAt,
     error,
     refresh,
     scopeKey
   } = usePostDowngradeCashPending();
   const [takeoverCompleted, setTakeoverCompleted] = useState(false);
-  const [dismissed, setDismissed] = useState(false);
+  const [takeoverDismissed, setTakeoverDismissed] = useState(false);
+  const [attention, setAttention] = useState(EMPTY_ATTENTION);
 
   useEffect(() => {
-    setDismissed(false);
+    setTakeoverDismissed(false);
     setTakeoverCompleted(consumeFreeDeviceTakeoverCompleted(scopeKey));
   }, [scopeKey]);
 
-  if (isSuppressed || !eligible || dismissed) return null;
-
   const hasKnownPending = Number.isInteger(pendingCount) && pendingCount > 0;
   const hasKnownZero = pendingCount === 0;
-  const knownTransition = isPostDowngrade || takeoverCompleted;
 
-  if (!knownTransition && !hasKnownPending) return null;
-  if (hasKnownZero && !takeoverCompleted) return null;
+  useEffect(() => {
+    let current = true;
 
-  const needsConnection = !online || status === 'offline_known';
-  const verificationProblem = ['error', 'unknown'].includes(status);
-  const title = takeoverCompleted
-    ? 'Este dispositivo ya está activo'
-    : 'Tu negocio ahora usa Lanzo Local';
+    if (!eligible || !scopeKey || !hasKnownPending) {
+      setAttention(EMPTY_ATTENTION);
 
-  return (
-    <section
-      className="post-downgrade-banner"
-      role="status"
-      aria-live="polite"
-      aria-busy={status === 'loading'}
-      aria-label="Recuperación después del cambio a Lanzo Local"
-    >
-      <div className="post-downgrade-banner__icon" aria-hidden="true">
-        {needsConnection ? <CloudOff size={22} /> : takeoverCompleted ? <CheckCircle2 size={22} /> : <Store size={22} />}
-      </div>
+      if (eligible && scopeKey && isPostDowngrade && hasKnownZero) {
+        void buildPostDowngradeCashAttentionKey({
+          scopeKey,
+          downgradedAt
+        }).then((key) => {
+          if (current) clearPostDowngradeCashAttention(key);
+        });
+      }
 
-      <div className="post-downgrade-banner__content">
-        <strong>{title}</strong>
+      return () => {
+        current = false;
+      };
+    }
 
-        {takeoverCompleted && (
-          <p>Lanzo Local está listo en este dispositivo. Revisa las ventas, caja y sincronizaciones pendientes antes de continuar.</p>
-        )}
+    setAttention({ ...EMPTY_ATTENTION, path: pathname });
+    void buildPostDowngradeCashAttentionKey({
+      scopeKey,
+      downgradedAt
+    }).then((key) => {
+      if (!current) return;
+      const record = readPostDowngradeCashAttention(key);
+      const alreadyAcknowledged = Boolean(record.readAt || record.postponedAt);
+      const nextRecord = alreadyAcknowledged
+        ? record
+        : markPostDowngradeCashAttentionDisplayed(key);
+      setAttention({
+        key,
+        record: nextRecord,
+        ready: true,
+        visible: !alreadyAcknowledged,
+        path: pathname
+      });
+    });
 
-        {hasKnownPending && (
-          <p>
-            Tienes {pendingCount} caja{pendingCount === 1 ? '' : 's'} del plan anterior pendiente{pendingCount === 1 ? '' : 's'} de revisar.
-          </p>
-        )}
+    return () => {
+      current = false;
+    };
+  }, [
+    downgradedAt,
+    eligible,
+    hasKnownPending,
+    hasKnownZero,
+    isPostDowngrade,
+    pathname,
+    scopeKey
+  ]);
 
-        {needsConnection && hasKnownPending && (
-          <p className="post-downgrade-banner__hint">
-            Conéctate a internet para revisar las cajas pendientes.
-          </p>
-        )}
+  useEffect(() => {
+    if (!attention.key || !attention.visible || !attention.path || attention.path === pathname) return;
+    const record = markPostDowngradeCashAttentionRead(attention.key, {
+      source: 'route-navigation'
+    });
+    setAttention((current) => ({ ...current, record, visible: false }));
+  }, [attention.key, attention.path, attention.visible, pathname]);
 
-        {verificationProblem && isPostDowngrade && (
-          <p className="post-downgrade-banner__hint">
-            {error || 'No pudimos verificar si siguen existiendo cajas pendientes del plan anterior.'}
-          </p>
-        )}
+  useEffect(() => {
+    if (!attention.key || typeof window === 'undefined') return undefined;
 
-        {status === 'loading' && takeoverCompleted && (
-          <p className="post-downgrade-banner__hint">Revisando si quedaron operaciones del plan anterior…</p>
-        )}
-      </div>
+    const handleAttentionChange = (event) => {
+      const change = event?.detail;
+      if (change?.key !== attention.key || change?.source === 'initial-notice') return;
+      if (change?.action === 'displayed' || change?.action === 'resolved') return;
 
-      <div className="post-downgrade-banner__actions">
-        {hasKnownPending && (
+      const record = readPostDowngradeCashAttention(attention.key);
+      setAttention((current) => ({ ...current, record, visible: false }));
+    };
+
+    window.addEventListener(POST_DOWNGRADE_CASH_ATTENTION_EVENT, handleAttentionChange);
+    return () => window.removeEventListener(POST_DOWNGRADE_CASH_ATTENTION_EVENT, handleAttentionChange);
+  }, [attention.key]);
+
+  const showCashNotice = Boolean(
+    !isSuppressed && eligible && hasKnownPending && attention.ready && attention.visible
+  );
+  const showTakeoverNotice = Boolean(
+    !isSuppressed && eligible && takeoverCompleted && !takeoverDismissed && !hasKnownPending
+  );
+  const showVerificationNotice = Boolean(
+    !isSuppressed && eligible && isPostDowngrade && !hasKnownPending && !hasKnownZero
+    && ['error', 'unknown'].includes(status)
+  );
+
+  const handleReviewCash = () => {
+    if (attention.key) {
+      const record = markPostDowngradeCashAttentionRead(attention.key, {
+        source: 'initial-notice-review'
+      });
+      setAttention((current) => ({ ...current, record, visible: false }));
+    }
+    navigate('/caja');
+  };
+
+  const handlePostponeCash = () => {
+    const record = postponePostDowngradeCashAttention(attention.key);
+    setAttention((current) => ({ ...current, record, visible: false }));
+  };
+
+  if (showCashNotice) {
+    const staleOfflineCount = !online || status === 'offline_known';
+
+    return (
+      <section
+        className="post-downgrade-banner post-downgrade-banner--attention"
+        role="status"
+        aria-live="polite"
+        aria-busy={status === 'loading'}
+        aria-label="Cajas pendientes de conciliación del plan anterior"
+      >
+        <div className="post-downgrade-banner__icon" aria-hidden="true">
+          {staleOfflineCount ? <CloudOff size={20} /> : <WalletCards size={20} />}
+        </div>
+
+        <div className="post-downgrade-banner__content">
+          <strong>
+            {pendingCount} caja{pendingCount === 1 ? '' : 's'} anterior{pendingCount === 1 ? '' : 'es'} pendiente{pendingCount === 1 ? '' : 's'}
+          </strong>
+          <p>Puedes revisarlas cuando estés listo. Tu operación en Lanzo Local puede continuar.</p>
+          {staleOfflineCount && (
+            <p className="post-downgrade-banner__hint">
+              Sin conexión: esta es la última cantidad confirmada. Conéctate para actualizarla o conciliar.
+            </p>
+          )}
+          {status === 'error' && (
+            <p className="post-downgrade-banner__hint">
+              No pudimos actualizarla. Conservamos la última cantidad confirmada.
+            </p>
+          )}
+        </div>
+
+        <div className="post-downgrade-banner__actions">
           <button
             type="button"
             className="ui-button ui-button--secondary"
-            onClick={() => navigate('/caja')}
-            disabled={!online}
+            onClick={handleReviewCash}
           >
             <WalletCards size={17} aria-hidden="true" />
-            Revisar cajas pendientes
+            Revisar cajas
           </button>
-        )}
-
-        {verificationProblem && isPostDowngrade && online && (
-          <button
-            type="button"
-            className="ui-button ui-button--secondary"
-            onClick={() => refresh()}
-          >
-            <RefreshCw size={17} aria-hidden="true" />
-            Reintentar
-          </button>
-        )}
-
-        {hasKnownZero && takeoverCompleted && (
           <button
             type="button"
             className="ui-button ui-button--ghost"
-            onClick={() => setDismissed(true)}
+            onClick={handlePostponeCash}
+          >
+            Más tarde
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  if (showTakeoverNotice) {
+    return (
+      <section
+        className="post-downgrade-banner post-downgrade-banner--recovery"
+        role="status"
+        aria-live="polite"
+        aria-label="Recuperación del dispositivo completada"
+      >
+        <div className="post-downgrade-banner__icon" aria-hidden="true">
+          <CheckCircle2 size={20} />
+        </div>
+        <div className="post-downgrade-banner__content">
+          <strong>Este dispositivo ya está activo</strong>
+          <p>Lanzo Local está listo en este dispositivo. Revisa las ventas, caja y sincronizaciones pendientes antes de continuar.</p>
+        </div>
+        <div className="post-downgrade-banner__actions">
+          <button
+            type="button"
+            className="ui-button ui-button--ghost"
+            onClick={() => setTakeoverDismissed(true)}
           >
             Entendido
           </button>
+        </div>
+      </section>
+    );
+  }
+
+  if (showVerificationNotice) {
+    return (
+      <section
+        className="post-downgrade-banner post-downgrade-banner--recovery"
+        role="status"
+        aria-live="polite"
+        aria-busy={status === 'loading'}
+        aria-label="Verificación de cajas del plan anterior"
+      >
+        <div className="post-downgrade-banner__icon" aria-hidden="true">
+          {online ? <Store size={20} /> : <CloudOff size={20} />}
+        </div>
+        <div className="post-downgrade-banner__content">
+          <strong>No pudimos verificar las cajas del plan anterior</strong>
+          <p>{error || 'La verificación quedó pendiente. Tu operación en Lanzo Local puede continuar.'}</p>
+        </div>
+        {online && (
+          <div className="post-downgrade-banner__actions">
+            <button
+              type="button"
+              className="ui-button ui-button--secondary"
+              onClick={() => refresh()}
+            >
+              <RefreshCw size={17} aria-hidden="true" />
+              Reintentar
+            </button>
+          </div>
         )}
-      </div>
-    </section>
-  );
+      </section>
+    );
+  }
+
+  return null;
 }

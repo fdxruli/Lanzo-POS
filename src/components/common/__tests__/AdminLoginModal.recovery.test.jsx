@@ -157,7 +157,7 @@ describe('AdminLoginModal local database recovery', () => {
     fireEvent(window, new Event('online'));
 
     await waitFor(() => expect(takeoverButton).toBeEnabled(), { timeout: 1000 });
-    expect(takeoverButton).toHaveFocus();
+    await waitFor(() => expect(takeoverButton).toHaveFocus());
     expect(storeState.handleFreeDeviceTakeover).not.toHaveBeenCalled();
     expect(recoveryRuntime.markTakeoverCompleted).not.toHaveBeenCalled();
   });

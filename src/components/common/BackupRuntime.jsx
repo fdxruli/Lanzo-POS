@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, CloudOff, FolderKey, LockKeyhole, X } from 'lucide-react';
+import { DatabaseBackup } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { useBackupManager } from '../../hooks/useBackupManager';
 import { useAppStore } from '../../store/useAppStore';
 import { startBackupRiskEvaluator } from '../../services/BackupRiskEvaluator';
-import { getBackupRuntimeNotice } from '../../utils/backupRuntimeNotice';
+import { useLocalBackupAttention } from '../../hooks/useLocalBackupAttention';
 import './BackupRuntime.css';
 
 const IDLE_BACKUP_MS = 4 * 60 * 60 * 1000;
@@ -13,14 +13,9 @@ const IDLE_BACKUP_MS = 4 * 60 * 60 * 1000;
 export default function BackupRuntime() {
   const { status, backupManager } = useBackupManager();
   const navigate = useNavigate();
-  const needsDriveReauth = useAppStore((state) => state.needsDriveReauth);
   const driveTokenExpiresAt = useAppStore((state) => state.driveTokenExpiresAt);
   const markDriveNeedsReauth = useAppStore((state) => state.markDriveNeedsReauth);
-  const dismissedBackupNotice = useAppStore((state) => state.dismissedBackupNotice);
-  const dismissBackupNotice = useAppStore((state) => state.dismissBackupNotice);
-  const showBackupNotice = useAppStore((state) => state.showBackupNotice);
-  const [pin, setPin] = useState('');
-  const [actionError, setActionError] = useState('');
+  const attention = useLocalBackupAttention({ status });
   const idleTimerRef = useRef(null);
   const lastActivityRef = useRef(null);
 
@@ -91,112 +86,35 @@ export default function BackupRuntime() {
     status.unlocked
   ]);
 
-  const handleUnlock = async () => {
-    setActionError('');
-    try {
-      await backupManager.unlock(pin);
-      setPin('');
-    } catch (error) {
-      setActionError(error.message === 'BACKUP_PIN_INVALID' ? 'PIN incorrecto.' : error.message);
-    }
-  };
+  if (!attention.ready || !attention.condition?.active) return null;
+  return <InitialBackupNotice key={attention.key} attention={attention} navigate={navigate} />;
+}
 
-  const handlePermission = async () => {
-    setActionError('');
-    try {
-      await backupManager.requestPermission();
-    } catch (error) {
-      if (error.name !== 'AbortError') setActionError(error.message);
-    }
-  };
-
-  const notice = getBackupRuntimeNotice(status, needsDriveReauth);
-
+function InitialBackupNotice({ attention, navigate }) {
+  const [visible, setVisible] = useState(() => !attention.record?.presentedAt && !attention.record?.readStates?.length);
+  const { update, condition } = attention;
   useEffect(() => {
-    if (!notice && dismissedBackupNotice) showBackupNotice();
-  }, [dismissedBackupNotice, notice, showBackupNotice]);
-
-  if (!notice || dismissedBackupNotice === notice.key) return null;
-
-  const dismissButton = (
-    <button
-      type="button"
-      className="backup-runtime-banner__dismiss"
-      onClick={() => dismissBackupNotice(notice.key)}
-      title="Cerrar"
-      aria-label="Cerrar aviso de respaldos"
-    >
-      <X size={18} />
-    </button>
-  );
-
-  if (needsDriveReauth) {
-    return (
-      <div className="backup-runtime-banner backup-runtime-banner--error" role="alert">
-        <CloudOff size={20} />
-        <div className="backup-runtime-banner__content">
-          <strong>Sesión de Google expirada. Haz clic aquí para reactivar los respaldos en la nube.</strong>
-        </div>
-        <button type="button" onClick={() => navigate('/configuracion?tab=backup')}>
-          Reactivar
-        </button>
-        {dismissButton}
-      </div>
-    );
-  }
-
-  if (!status.configured) {
-    return (
-      <div className="backup-runtime-banner" role="status">
-        <AlertTriangle size={20} />
-        <span>Configura los respaldos cifrados para proteger los datos locales.</span>
-        <button type="button" onClick={() => navigate('/configuracion?tab=maintenance')}>Configurar</button>
-        {dismissButton}
-      </div>
-    );
-  }
-
-  const { needsPermission, needsUnlock } = notice;
-
+    if (visible) update('presented');
+  }, [update, visible]);
+  if (!visible || attention.record?.readStates?.length) return null;
   return (
-    <div className={`backup-runtime-banner ${status.settings.cronBlocked ? 'backup-runtime-banner--error' : ''}`} role="status">
-      {needsUnlock ? <LockKeyhole size={20} /> : <FolderKey size={20} />}
+    <div className="backup-runtime-banner" role="status">
+      <DatabaseBackup size={20} aria-hidden="true" />
       <div className="backup-runtime-banner__content">
-        <strong>
-          {status.settings.cronBlocked
-            ? 'Respaldos automáticos detenidos'
-            : needsUnlock
-              ? 'Desbloquea los respaldos de esta sesión'
-              : needsPermission
-                ? 'Restaura el acceso a la carpeta de respaldos'
-                : 'Hay un respaldo pendiente'}
-        </strong>
-        {actionError && <span className="backup-runtime-banner__error">{actionError}</span>}
+        <strong>Revisa la protección de tus datos</strong>
+        <span>Los respaldos que necesitan atención estarán en la campana.</span>
       </div>
-
-      {needsUnlock && (
-        <input
-          type="password"
-          inputMode="numeric"
-          pattern="[0-9]*"
-          minLength={8}
-          value={pin}
-          onChange={(event) => setPin(event.target.value.replace(/\D/g, ''))}
-          placeholder="PIN de respaldo"
-          aria-label="PIN de respaldo"
-        />
-      )}
-
-      {needsUnlock ? (
-        <button type="button" onClick={handleUnlock} disabled={pin.length < 8}>
-          Desbloquear
-        </button>
-      ) : needsPermission ? (
-        <button type="button" onClick={handlePermission}>Autorizar carpeta</button>
-      ) : (
-        <button type="button" onClick={() => navigate('/configuracion?tab=maintenance')}>Revisar</button>
-      )}
-      {dismissButton}
+      <div className="backup-runtime-banner__actions">
+        <button type="button" onClick={() => {
+          if (!update('read', condition.key)) return;
+          setVisible(false);
+          navigate(condition.route);
+        }}>Revisar respaldos</button>
+        <button type="button" className="backup-runtime-banner__postpone" onClick={() => {
+          update('postpone');
+          setVisible(false);
+        }}>Más tarde</button>
+      </div>
     </div>
   );
 }
