@@ -833,8 +833,12 @@ export const verifyStaffSession = async function (licenseKey, { beforeLocalPersi
         }
 
         let staffSessionToken;
+        let staffSessionId;
         try {
-            staffSessionToken = await readSessionCredential(STAFF_SESSION_TOKEN_KEY);
+            [staffSessionToken, staffSessionId] = await Promise.all([
+                readSessionCredential(STAFF_SESSION_TOKEN_KEY),
+                readSessionCredential(STAFF_SESSION_ID_KEY)
+            ]);
         } catch (storageError) {
             if (isSessionVerificationContextError(storageError)) throw storageError;
             if (isSessionDatabaseRecoveryError(storageError)) throw storageError;
@@ -842,6 +846,19 @@ export const verifyStaffSession = async function (licenseKey, { beforeLocalPersi
         }
         if (!staffSessionToken) {
             return createLocalCredentialsMissingResult('staff', ['staff_session_token']);
+        }
+
+        let adminSessionSnapshot;
+        try {
+            const [adminSessionToken, adminSessionId] = await Promise.all([
+                readSessionCredential(ADMIN_SESSION_TOKEN_KEY),
+                readSessionCredential(ADMIN_SESSION_ID_KEY)
+            ]);
+            adminSessionSnapshot = { adminSessionToken, adminSessionId };
+        } catch (storageError) {
+            if (isSessionVerificationContextError(storageError)) throw storageError;
+            if (isSessionDatabaseRecoveryError(storageError)) throw storageError;
+            return createLocalStorageErrorResult('staff');
         }
 
         const deviceFingerprint = await getStableDeviceId();
@@ -860,15 +877,22 @@ export const verifyStaffSession = async function (licenseKey, { beforeLocalPersi
                 { license_key: licenseKey },
                 { reason: 'verify_staff_session_result' },
                 async () => {
-                    let currentToken;
+                    let currentStaffSession;
                     try {
-                        currentToken = await readSessionCredential(STAFF_SESSION_TOKEN_KEY);
+                        const [currentToken, currentSessionId] = await Promise.all([
+                            readSessionCredential(STAFF_SESSION_TOKEN_KEY),
+                            readSessionCredential(STAFF_SESSION_ID_KEY)
+                        ]);
+                        currentStaffSession = { token: currentToken, sessionId: currentSessionId };
                     } catch (storageError) {
                         if (isSessionVerificationContextError(storageError)) throw storageError;
                         if (isSessionDatabaseRecoveryError(storageError)) throw storageError;
                         return createLocalStorageErrorResult('staff');
                     }
-                    if (currentToken !== staffSessionToken) return sessionVerificationContextStale('Staff');
+                    if (currentStaffSession.token !== staffSessionToken
+                        || currentStaffSession.sessionId !== staffSessionId) {
+                        return sessionVerificationContextStale('Staff');
+                    }
                     await beforeLocalPersistence?.({ license_key: licenseKey, actorType: 'staff' });
                     return null;
                 }
@@ -886,17 +910,41 @@ export const verifyStaffSession = async function (licenseKey, { beforeLocalPersi
                 { license_key: licenseKey },
                 { reason: 'invalid_staff_session_cleanup' },
                 async () => {
-                    let currentToken;
+                    let currentStaffSession;
                     try {
-                        currentToken = await readSessionCredential(STAFF_SESSION_TOKEN_KEY);
+                        const [currentToken, currentSessionId] = await Promise.all([
+                            readSessionCredential(STAFF_SESSION_TOKEN_KEY),
+                            readSessionCredential(STAFF_SESSION_ID_KEY)
+                        ]);
+                        currentStaffSession = { token: currentToken, sessionId: currentSessionId };
                     } catch (storageError) {
                         if (isSessionVerificationContextError(storageError)) throw storageError;
                         if (isSessionDatabaseRecoveryError(storageError)) throw storageError;
                         return createLocalStorageErrorResult('staff');
                     }
-                    if (currentToken !== staffSessionToken) return sessionVerificationContextStale('Staff');
+                    if (currentStaffSession.token !== staffSessionToken
+                        || currentStaffSession.sessionId !== staffSessionId) {
+                        return sessionVerificationContextStale('Staff');
+                    }
+                    let currentAdminSession;
+                    try {
+                        const [adminSessionToken, adminSessionId] = await Promise.all([
+                            readSessionCredential(ADMIN_SESSION_TOKEN_KEY),
+                            readSessionCredential(ADMIN_SESSION_ID_KEY)
+                        ]);
+                        currentAdminSession = { adminSessionToken, adminSessionId };
+                    } catch (storageError) {
+                        if (isSessionVerificationContextError(storageError)) throw storageError;
+                        if (isSessionDatabaseRecoveryError(storageError)) throw storageError;
+                        return createLocalStorageErrorResult('staff');
+                    }
+                    if (currentAdminSession.adminSessionToken !== adminSessionSnapshot.adminSessionToken
+                        || currentAdminSession.adminSessionId !== adminSessionSnapshot.adminSessionId) {
+                        return sessionVerificationContextStale('Staff');
+                    }
                     await beforeLocalPersistence?.({ license_key: licenseKey, actorType: 'staff' });
                     await clearStaffSessionCache();
+                    await clearAdminSessionCache();
                     return null;
                 }
             );
@@ -1866,12 +1914,14 @@ export const verifyAdminSession = async (licenseKey, { beforeLocalPersistence = 
 
         let credentials;
         try {
-            const [deviceSecurityToken, adminSessionToken, adminSessionId] = await Promise.all([
+            const [deviceSecurityToken, adminSessionToken, adminSessionId, staffSessionToken, staffSessionId] = await Promise.all([
                 readSessionCredential('device_security_token'),
                 readSessionCredential(ADMIN_SESSION_TOKEN_KEY),
-                readSessionCredential(ADMIN_SESSION_ID_KEY)
+                readSessionCredential(ADMIN_SESSION_ID_KEY),
+                readSessionCredential(STAFF_SESSION_TOKEN_KEY),
+                readSessionCredential(STAFF_SESSION_ID_KEY)
             ]);
-            credentials = { deviceSecurityToken, adminSessionToken, adminSessionId };
+            credentials = { deviceSecurityToken, adminSessionToken, adminSessionId, staffSessionToken, staffSessionId };
         } catch (storageError) {
             if (isSessionVerificationContextError(storageError)) throw storageError;
             if (isSessionDatabaseRecoveryError(storageError)) throw storageError;
@@ -1886,12 +1936,14 @@ export const verifyAdminSession = async (licenseKey, { beforeLocalPersistence = 
         const assertCurrentAdminSessionSnapshot = async () => {
             let currentCredentials;
             try {
-                const [deviceSecurityToken, adminSessionToken, adminSessionId] = await Promise.all([
+                const [deviceSecurityToken, adminSessionToken, adminSessionId, staffSessionToken, staffSessionId] = await Promise.all([
                     readSessionCredential('device_security_token'),
                     readSessionCredential(ADMIN_SESSION_TOKEN_KEY),
-                    readSessionCredential(ADMIN_SESSION_ID_KEY)
+                    readSessionCredential(ADMIN_SESSION_ID_KEY),
+                    readSessionCredential(STAFF_SESSION_TOKEN_KEY),
+                    readSessionCredential(STAFF_SESSION_ID_KEY)
                 ]);
-                currentCredentials = { deviceSecurityToken, adminSessionToken, adminSessionId };
+                currentCredentials = { deviceSecurityToken, adminSessionToken, adminSessionId, staffSessionToken, staffSessionId };
             } catch (storageError) {
                 if (isSessionVerificationContextError(storageError)) throw storageError;
                 if (isSessionDatabaseRecoveryError(storageError)) throw storageError;
@@ -1899,7 +1951,9 @@ export const verifyAdminSession = async (licenseKey, { beforeLocalPersistence = 
             }
             if (currentCredentials.deviceSecurityToken !== credentials.deviceSecurityToken
                 || currentCredentials.adminSessionToken !== credentials.adminSessionToken
-                || currentCredentials.adminSessionId !== credentials.adminSessionId) {
+                || currentCredentials.adminSessionId !== credentials.adminSessionId
+                || currentCredentials.staffSessionToken !== credentials.staffSessionToken
+                || currentCredentials.staffSessionId !== credentials.staffSessionId) {
                 throw createSessionVerificationContextStaleError();
             }
         };
@@ -1960,6 +2014,7 @@ export const verifyAdminSession = async (licenseKey, { beforeLocalPersistence = 
                     await assertCurrentAdminSessionSnapshot();
                     await beforeLocalPersistence?.({ license_key: licenseKey });
                     await clearAdminSessionCache();
+                    await clearStaffSessionCache();
                     return null;
                 }
             );

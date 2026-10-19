@@ -532,8 +532,8 @@ export const createLicenseAdminActions = ({ set, get }) => {
     lockActorRuntime('admin_login_required');
     await get().stopLicenseSync();
     if (!preserveSessionCredentials) {
-      // The verifier already cleared the exact Admin session it checked under
-      // the tenant lease. Do not clear both role caches after this await: a
+      // The verifier already reconciled both role snapshots under the tenant
+      // lease. Do not clear either cache after this await: a
       // newer login may have established credentials in the meantime.
       if (!sessionCredentialCleared) {
         await clearAdminSessionCache();
