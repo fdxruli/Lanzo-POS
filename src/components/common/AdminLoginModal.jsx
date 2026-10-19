@@ -18,14 +18,21 @@ const SAFE_AUTH_ERROR_MESSAGES = Object.freeze({
   FREE_DEVICE_TAKEOVER_NOT_ALLOWED: 'No se pudo recuperar este dispositivo con el cambio de plan actual. Inicia sesión nuevamente.',
   FREE_DEVICE_TAKEOVER_REQUIRED: 'Confirma el cambio para usar este dispositivo.',
   ADMIN_SESSION_REQUIRED: 'Inicia sesión nuevamente para continuar.',
-  ADMIN_SESSION_INVALID: 'La sesión administrativa ya no es válida. Inicia sesión nuevamente.'
+  ADMIN_SESSION_INVALID: 'La sesión administrativa ya no es válida. Inicia sesión nuevamente.',
+  ADMIN_AUTH_IN_PROGRESS: 'Estamos recuperando tu sesión de forma segura.'
 });
 
 const describeLoginError = (error, result = null) => {
   const code = result?.code || error?.code || null;
   const classification = classifyDatabaseError(error || result);
 
+  if (result?.recoveryRequired) {
+    return 'Tu sesión se verificó correctamente, pero no pudimos terminar de preparar Lanzo. Puedes reintentar la carga sin volver a registrar tu dispositivo.';
+  }
   if (SAFE_AUTH_ERROR_MESSAGES[code]) return SAFE_AUTH_ERROR_MESSAGES[code];
+  if (String(code || '').startsWith('ACTOR_') || code === 'ADMIN_RECOVERY_REJECTED') {
+    return 'No pudimos recuperar tu sesión de forma segura. Inicia sesión nuevamente para continuar.';
+  }
   if (code === 'DB_BLOCKED' || classification.code === 'DB_BLOCKED') {
     return 'La base local está abierta en otra pestaña. Cierra las demás pestañas de Lanzo y vuelve a intentarlo.';
   }
@@ -43,7 +50,7 @@ const describeLoginError = (error, result = null) => {
     return 'No se pudo abrir el almacenamiento local del navegador. Lanzo requiere IndexedDB para operar de forma segura. Cierra otras pestañas de Lanzo y vuelve a intentarlo.';
   }
   if (!navigator.onLine || /network|fetch|Failed to fetch/i.test(error?.message || result?.message || '')) {
-    return 'No se pudo conectar con el servidor. Revisa tu conexión e inténtalo nuevamente.';
+    return 'No pudimos verificar tu acceso por un problema de conexión. Comprueba internet e inténtalo nuevamente.';
   }
   return 'No se pudo completar la acción. Tus datos permanecen intactos. Revisa tu conexión e inténtalo nuevamente.';
 };
@@ -58,8 +65,13 @@ export default function AdminLoginModal() {
   const usernameRef = useRef(null);
   const takeoverButtonRef = useRef(null);
   const takeoverFocusHandledRef = useRef(false);
+  const busyRef = useRef(false);
+  const recoveryButtonRef = useRef(null);
+  const previousRecoveryRef = useRef(false);
   const handleAdminLogin = useAppStore((state) => state.handleAdminLogin);
   const handleFreeDeviceTakeover = useAppStore((state) => state.handleFreeDeviceTakeover);
+  const resumeAdminSessionPreparation = useAppStore((state) => state.resumeAdminSessionPreparation);
+  const recoveryAvailable = useAppStore((state) => Boolean(state.pendingAdminSessionResult?.result?.success));
   const logout = useAppStore((state) => state.logout);
   const returnToLicenseAccessChoice = useAppStore((state) => state.returnToLicenseAccessChoice);
   const message = useAppStore((state) => state.adminLoginMessage);
@@ -67,6 +79,13 @@ export default function AdminLoginModal() {
   const licenseKey = useAppStore((state) => state.adminLoginLicenseKey || state.licenseDetails?.license_key);
   const canSwitchAccess = licenseDetails?.staff_access_available === true
     || licenseDetails?.features?.staff_roles === true;
+
+  useEffect(() => {
+    if (loading) return;
+    if (recoveryAvailable) recoveryButtonRef.current?.focus();
+    else if (previousRecoveryRef.current) usernameRef.current?.focus();
+    previousRecoveryRef.current = recoveryAvailable;
+  }, [recoveryAvailable, loading]);
 
   useEffect(() => {
     const onOnline = () => setOnline(true);
@@ -100,6 +119,8 @@ export default function AdminLoginModal() {
 
   const submit = async (event) => {
     event.preventDefault();
+    if (busyRef.current) return;
+    busyRef.current = true;
     setLoading(true);
     setError('');
 
@@ -111,18 +132,21 @@ export default function AdminLoginModal() {
         return;
       }
       if (!result?.success) {
-        setError(describeLoginError(null, result));
+        if (!result?.recoveryRequired) setError(describeLoginError(null, result));
         return;
       }
 
     } catch (submitError) {
       setError(describeLoginError(submitError));
     } finally {
+      busyRef.current = false;
       setLoading(false);
     }
   };
 
   const confirmTakeover = async () => {
+    if (busyRef.current) return;
+    busyRef.current = true;
     setLoading(true);
     setError('');
 
@@ -132,7 +156,7 @@ export default function AdminLoginModal() {
         password
       });
       if (!result?.success) {
-        setError(describeLoginError(null, result));
+        if (!result?.recoveryRequired) setError(describeLoginError(null, result));
         return;
       }
 
@@ -152,6 +176,23 @@ export default function AdminLoginModal() {
     } catch (takeoverError) {
       setError(describeLoginError(takeoverError));
     } finally {
+      busyRef.current = false;
+      setLoading(false);
+    }
+  };
+
+  const retryPreparation = async () => {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setLoading(true);
+    setError('');
+    try {
+      const result = await resumeAdminSessionPreparation();
+      if (!result?.success && !result?.recoveryRequired) setError(describeLoginError(null, result));
+    } catch (recoveryError) {
+      setError(describeLoginError(recoveryError));
+    } finally {
+      busyRef.current = false;
       setLoading(false);
     }
   };
@@ -208,17 +249,30 @@ export default function AdminLoginModal() {
             : 'Usa tus credenciales de administración para continuar con todos los permisos del negocio.'}
         </p>
 
-        {!online && (
+        {!online && !recoveryAvailable && (
           <div className="ui-alert ui-alert--danger" role="status">
             <WifiOff size={18} aria-hidden="true" />
             Necesitas internet para iniciar sesión.
           </div>
         )}
-        {message && !error && (
+        {message && !error && !recoveryAvailable && (
           <div className="ui-alert ui-alert--info" role="status">{message}</div>
         )}
 
-        {takeoverRequired ? (
+        {recoveryAvailable ? (
+          <div className="admin-auth-form" aria-busy={loading}>
+            <div className="ui-alert ui-alert--info" role="status" aria-live="polite">
+              {loading ? 'Estamos recuperando tu sesión de forma segura.'
+                : 'Tu sesión está verificada. No pudimos terminar de preparar Lanzo. Reintenta la carga para continuar sin iniciar sesión nuevamente.'}
+            </div>
+            {error && <div className="ui-alert ui-alert--danger" role="alert">{error}</div>}
+            <button type="button" ref={recoveryButtonRef}
+              className="ui-button ui-button--primary admin-auth-submit"
+              onClick={retryPreparation} disabled={loading}>
+              {loading ? 'Recuperando sesión...' : 'Reintentar carga'}
+            </button>
+          </div>
+        ) : takeoverRequired ? (
           <div className="admin-auth-form" aria-busy={loading}>
             <div className="ui-alert ui-alert--info" role="status">
               Actualmente hay otro dispositivo registrado como activo.

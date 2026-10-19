@@ -214,4 +214,20 @@ describe('actor session runtime bridge', () => {
       reason: 'ambiguous_actor_session_evidence'
     });
   });
+  it('rejects late session restoration without locking a newer granted actor', async () => {
+    setCache({ admin_session_token: 'admin-token', admin_session_id: 'admin-session' });
+    beginActorRuntimeAuthentication('admin');
+    let release;
+    const wait = new Promise((resolve) => { release = resolve; });
+    mocks.hydrateTenantStorageConsumers.mockReturnValueOnce(wait);
+    const restoring = restoreActorRuntimeFromCurrentSessionCache({ actorType: 'admin', actor: { id: 'admin-1' } });
+    await vi.waitFor(() => expect(mocks.hydrateTenantStorageConsumers).toHaveBeenCalled());
+    actorRuntimeController.lock('explicit_test_handoff');
+    actorRuntimeController.beginAuthentication({ actorType: 'staff' });
+    actorRuntimeController.grant({ actorType: 'staff', actorId: 'staff-2', sessionId: 'staff-session' });
+    release([]);
+    await expect(restoring).rejects.toMatchObject({ code: 'ACTOR_CONTEXT_STALE' });
+    expect(actorRuntimeController.getState()).toMatchObject({ status: 'granted', actorType: 'staff', actorId: 'staff-2' });
+  });
+
 });
