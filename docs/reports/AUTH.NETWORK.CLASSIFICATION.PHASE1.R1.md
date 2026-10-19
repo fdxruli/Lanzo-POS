@@ -115,3 +115,22 @@ La revisión posterior al HEAD `4bb4769511e2d67e5a8e9fb2475dd25e0d6c48ff` encont
 Pruebas focales añadidas: cinco estados de `initializeApp()` sin falsas alertas, reintentos de verificación online/offline con y sin estado recuperable, limpieza cruzada condicionada para Admin y Staff, reemplazo tardío de credenciales del mismo y del otro rol, y limpieza cruzada única en ambos `_require*Login()`. La QA manual de navegador/PWA permanece pendiente; no se amplió la política offline ni se modificó SQL, Actor Runtime, aislamiento tenant o datos financieros.
 
 Verificación del refinamiento: 7 suites focales separadas, 123/123 pruebas PASS; `npm run build` PASS y auditoría de precache con 23 assets de inicio/0 assets Local en el core; React Doctor PASS, 15 archivos escaneados, sin hallazgos; ESLint en los 7 archivos JS/JSX cambiados PASS. `npm run lint` completo falla por hallazgos fuera de estos archivos (163 errores y 179 advertencias en el árbol completo). Avisos conocidos del build: imports mixtos, chunks >1 MB y patrones PWA sin coincidencias.
+
+## Cierre del gate Actor Runtime — PR #365
+
+Run investigado: [Shared Terminal Actor Runtime Validation #39280939375](https://github.com/fdxruli/Lanzo-POS/actions/runs/39280939375), sobre `b3837912f0576d10c0917ba62dae9d4f739e53ae`.
+
+- El diferencial registró un único fallo candidato en la repetición 2: `BackupRuntime.attention.test.jsx > rejects a stale click when the app-store identity changes before ActorRuntime`, `TypeError: Cannot read properties of null (reading 'readStates')`. La repetición 1 del candidato no lo observó.
+- La referencia BASE de ese gate era el baseline histórico Actor Runtime `2f3457313b81f09937acab6fe4bac4399e79035f`, no el merge-base del PR. Ese SHA no contiene el test; sus artefactos no ejecutaron el caso. La base efectiva del PR era `31fadba8bdb4f92725d07572e2696f9af20c47ca` y sí contiene el mismo test original con la misma lectura de `localStorage.key(0)`. El caso fallido, `BackupRuntime`, `useLocalBackupAttention`, `localBackupAttention`, `useSettingsAccess` y `actorRuntimeController` no tenían diferencias entre esa base del PR y el candidato `b383791`.
+- Causa: carrera del fixture. `findByRole()` esperaba el botón visible, pero no la escritura asíncrona del efecto `presented`; el test suponía que siempre existía una primera clave global. Si la escritura aún no había ocurrido, `localStorage.key(0)` era `null`. El rechazo obsoleto no debe crear ni leer la preferencia; `useSettingsActionGuard` revalida Actor Runtime y la identidad actual del app-store antes de permitir `update()` o `navigate()`.
+- Corrección solo de prueba: esperar `presentedAt` en la clave hash exacta de tenant/actor/dispositivo y capturar el registro antes del clic. Tanto el clic con Actor Runtime revocado como el clic con identidad de app-store distinta comprueban que la ruta no cambia y que el registro scoped permanece idéntico y sin `readStates`. No se modificó `BackupRuntime`, el hook ni Actor Runtime.
+
+Evidencia local sobre el runner Windows:
+
+| Comparación | Repeticiones / resultado |
+|---|---|
+| Base real del PR `31fadba…`, test original sin corregir, ejecución aislada | 10/10 PASS |
+| Candidato corregido, test aislado con `--pool=threads --maxWorkers=1` | 10/10 PASS |
+| Candidato corregido, suite completa `BackupRuntime.attention.test.jsx` | 16/16 PASS |
+
+La suite completa de atención en el worktree BASE no terminó: Vitest no respondió al worker en este entorno Windows; se canceló esa ejecución. El test aislado sí terminó en ambos árboles bajo la misma versión/runner. Quedan registrados más arriba los resultados originales CI BASE/CANDIDATE y, tras subir esta corrección, se añadirá aquí el resultado final del nuevo diferencial, PR127, suites focales, ESLint y build.
