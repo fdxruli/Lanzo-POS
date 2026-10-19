@@ -4,11 +4,11 @@
 
 - Rama base: `main`, HEAD inicial `31fadba8bdb4f92725d07572e2696f9af20c47ca`.
 - PR #364 verificado integrado; no se reabrió ni se reutilizó su rama.
-- Rama de trabajo: `fix/offline-auth-error-classification-r1`.
-- PR #365: [Draft abierto](https://github.com/fdxruli/Lanzo-POS/pull/365). El primer SHA `ee6beeb553f13f27f8cf24ac3a401b7f62dc15ee` activó checks; registrar el SHA posterior a la corrección de rate limit como final.
-- Checks focales, FREE Local y Dexie pasaron en el primer SHA; Actor Device validation y PR127 detectaron la misma regresión de mensaje de rate limit en `activateLicense()`. Actor Runtime y actor scoped storage seguían corriendo cuando se corrigió.
-- PR127 Global Comparison en `ee6beeb`: Candidate 5314 passed / 76 failed / 52 skipped; Base 5278 passed / 75 failed / 52 skipped; el comparador identificó 1 regresión nueva en `supabase.deviceRegistry.test.js`. Corregida y cubierta en local; resultado del rerun pendiente.
-- Preview Vercel inicial, `READY`, correspondió a `ee6beeb553f13f27f8cf24ac3a401b7f62dc15ee` y respondió HTTP 200 con acceso autenticado. Confirmar deployment del SHA final tras el próximo push.
+- Rama de trabajo: `fix/offline-auth-error-classification-r1`, HEAD de código verificado `9ce32ede7d5466f42df973b10222df5921b8ea01`.
+- PR #365: [Draft abierto](https://github.com/fdxruli/Lanzo-POS/pull/365), base `main` en `31fadba8bdb4f92725d07572e2696f9af20c47ca`.
+- Los checks focales, FREE Local, Dexie, Shared Terminal Device Actor Auth, PR127, Actor Runtime y almacenamiento scoped pasaron en el SHA de código. Las suites completas repetidas y sus gates diferenciales observacionales también terminaron PASS.
+- PR127 Global Comparison final en `9ce32ede`: Candidate 100 fallos / Base 101 fallos; 100 compartidos, 0 candidate-only, 0 nuevos, 0 flaky y 1 fallo resuelto. La regresión inicial de mensaje de rate limit en `activateLicense()` se retiró y quedó cubierta localmente.
+- Preview Vercel final `READY`, desplegado desde `9ce32ede7d5466f42df973b10222df5921b8ea01`, respondió HTTP 200 mediante acceso autenticado.
 - Sin modificaciones SQL, migraciones, datos, licencias ni dispositivos; sin despliegue ni merge.
 
 ## Causa raíz
@@ -66,7 +66,9 @@ No se modificó ningún archivo bajo `supabase/migrations`, permisos, contratos 
 | Suites focales finales, con el archivo de tenant repetido aislado | 24 archivos únicos, 298/298 pruebas PASS: 289 de las suites anteriores más 9 de `supabase.deviceRegistry.test.js`; los 22 archivos restantes pasaron en la corrida conjunta. |
 | `npx eslint` sobre los 14 archivos de código/test modificados | PASS, cero errores. Solo imprime aviso de metadatos obsoletos de `baseline-browser-mapping`. |
 | `npx -y react-doctor@latest . --scope changed --base origin/main --no-score --no-supply-chain --max-duration 120` | 11 archivos escaneados; 6 advertencias previas/de alcance: complejidad/tamaño del modal Admin, modales custom en lugar de `<dialog>` y awaits secuenciales preexistentes en `supabase.js:1287`. El error de `setIsLoading(false)` detectado inicialmente en Staff fue corregido; no aparece en el escaneo final. |
-| `npm run build` | PASS, exit 0 antes de la corrección pequeña de `activateLicense()`. Vite y Service Worker compilaron; postbuild auditó 23 assets de inicio y 0 assets de rutas Local en el core. Avisos existentes: imports mixtos estático/dinámico, bundle > 1 MB, patrones PWA sin archivos y metadatos `baseline-browser-mapping` obsoletos. Repetir en el HEAD final. |
+| `npm run build` | PASS en el SHA final de código, exit 0. Vite y Service Worker compilaron; postbuild auditó 23 assets de inicio y 0 assets de rutas Local en el core. Avisos existentes: imports mixtos estático/dinámico, bundle > 1 MB, patrones PWA sin archivos y metadatos `baseline-browser-mapping` obsoletos. |
+| `Shared Terminal Actor Runtime Validation` (run `39225859048`) | PASS: suites completas repetidas de base y candidato, y gate diferencial observacional. Los jobs focales de Actor Runtime, tenant, autenticación, lint y builds también pasaron. |
+| `Shared Terminal Actor Scoped Storage Validation` (run `39225858954`) | PASS: suites completas repetidas de base y candidato, control de duplicación de envío y gate diferencial observacional. Los jobs focales de almacenamiento scoped, handoff, tenant, sync, POS, lint y builds también pasaron. |
 | Type checking | No hay script `typecheck` definido en `package.json`; el cliente de autenticación modificado es JS/JSX. |
 
 Las pruebas focales incluyen: verificación Supabase/IndexedDB, bootstrap Admin/Staff, transiciones de sesión, corte Free legacy, recuperación Admin del #364, control de actor, almacenamiento scoped, guardas/aislamiento tenant, modales Admin/Staff, licencia por tenant y operaciones de caja protegidas. No se declara aprobada QA física.
@@ -76,9 +78,9 @@ Las pruebas focales incluyen: verificación Supabase/IndexedDB, bootstrap Admin/
 - HEAD inicial de `main`: `31fadba8bdb4f92725d07572e2696f9af20c47ca` (verificado en `origin/main`).
 - PR #364: `MERGED`, verificado.
 - PRs abiertos revisados: #357 (base `main`), #352 (base #338) y #338 (base `main`). #357 y #338 también tocan `AdminLoginModal.jsx`; #338 toca `StaffLoginModal.jsx` y el submit de login/error de Staff. #352 no toca los archivos modificados por esta fase. Los cambios de UI son combinables, aunque los archivos Admin/Staff requieren integración de hunks al resolver esos PRs. No se trajeron commits ni cambios de otras ramas.
-- Rama: `fix/offline-auth-error-classification-r1`; PR #365 Draft abierto, [https://github.com/fdxruli/Lanzo-POS/pull/365](https://github.com/fdxruli/Lanzo-POS/pull/365). Primer SHA `ee6beeb553f13f27f8cf24ac3a401b7f62dc15ee`; actualizar con SHA final.
-- PR127 inicial clasificó la respuesta genérica de `activateLicense()` como una regresión por ocultar el mensaje de rate limit. Código corregido y pruebas locales focales PASS; el comparador CI necesita repetirse en el SHA final.
-- Preview inicial correspondió al primer SHA y respondió HTTP 200 mediante acceso autenticado. Confirmar Preview final tras el próximo push. No se hizo prueba visual manual.
+- Rama: `fix/offline-auth-error-classification-r1`; PR #365 Draft abierto, [https://github.com/fdxruli/Lanzo-POS/pull/365](https://github.com/fdxruli/Lanzo-POS/pull/365). SHA de código validado: `9ce32ede7d5466f42df973b10222df5921b8ea01`.
+- El primer comparador PR127 detectó un cambio no deseado en el mensaje de rate limit de `activateLicense()`. Se restauró el comportamiento previo, se cubrió con prueba local y el comparador final quedó PASS: 0 fallos nuevos, 1 resuelto.
+- Preview Vercel final del SHA de código respondió HTTP 200 con acceso autenticado. No se hizo prueba visual manual.
 
 ## QA manual pendiente del propietario
 
