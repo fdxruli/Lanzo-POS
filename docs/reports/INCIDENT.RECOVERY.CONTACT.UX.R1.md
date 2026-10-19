@@ -55,7 +55,8 @@ La descripción libre admite hasta 500 caracteres y no se sanitiza. Está vacía
 
 ## Pruebas y compilaciones locales
 
-- Suite focal anterior al ajuste final: **10 archivos / 107 pruebas PASS**.
+- Suite focal de desarrollo antes del ajuste final de interfaz: **10 archivos / 107 pruebas PASS**.
+- En el HEAD candidato tras alinear los mocks del icono de Telegram: **4 archivos / 52 pruebas PASS**, incluidos los dos tests existentes de ErrorBoundary que bloqueó inicialmente CI; ESLint focal: **PASS**.
 - Después de retirar el botón de cierre duplicado: **IncidentRecovery.ux.test.jsx, 8/8 PASS**, incluida la restauración del foco.
 - ESLint focal, sin errores ni advertencias configuradas: **PASS**. Se mostró únicamente el aviso preexistente de `baseline-browser-mapping` desactualizado.
 - Contrato estático de reporter técnico: **4/4 PASS**, solo lectura.
@@ -66,19 +67,19 @@ La descripción libre admite hasta 500 caracteres y no se sanitiza. Está vacía
 
 ## CI del PR
 
-Resultados del commit candidato pendiente de completar después del push. El último HEAD publicado anterior (`fbef877583a20f87b69fff293642623ec7ef73b0`) tenía 7/7 workflows correctos; esos resultados no certifican el nuevo candidato.
-
-Se actualizará esta tabla después de que terminen los siete gates del nuevo HEAD. No se declarará PASS para ejecuciones en curso.
+Resultados finales del código en `eeb83fd15616d0182d5788b0d0f6c87b44df16cb`. Los siete workflows finalizaron con éxito tras repetir Actor Runtime completo en el intento 2 sobre el mismo SHA.
 
 | Gate | Resultado del nuevo HEAD |
 | --- | --- |
-| PR127 Global Comparison | Pendiente |
-| Actor Runtime | Pendiente |
-| Actor Scoped Storage | Pendiente |
-| Dexie Recovery | Pendiente |
-| Ecommerce Public | Pendiente |
-| Store Git Runtime | Pendiente |
-| Incident Recovery QA Lab / PWA | Pendiente |
+| [PR127 Global Comparison](https://github.com/fdxruli/Lanzo-POS/actions/runs/39212727314) | **SUCCESS**. 99 fallos compartidos, 0 candidate-only, 0 nuevos, 0 identidades sin resolver y 1 resuelto. Las suites globales siguen teniendo fallos comunes. |
+| [Actor Runtime](https://github.com/fdxruli/Lanzo-POS/actions/runs/39212727609) | **SUCCESS, intento 2**. BASE: 5,278 pass / 75 fail / 52 skip en ambas ejecuciones. CANDIDATE: 5,447 pass / 75 fail / 52 skip en ambas. Diferencial: 0 regresiones nuevas, 93 fallos preexistentes estables, 0 fluctuantes. |
+| [Actor Scoped Storage](https://github.com/fdxruli/Lanzo-POS/actions/runs/39212727336) | **SUCCESS**. BASE: 5,278 pass / 75 fail / 52 skip en ambas ejecuciones. CANDIDATE: 5,447 pass / 75 fail / 52 skip en ambas. Diferencial: 0 regresiones nuevas, 93 fallos preexistentes estables, 0 fluctuantes; objetivos focales 50/50. |
+| [Dexie Recovery](https://github.com/fdxruli/Lanzo-POS/actions/runs/39212727570) | **SUCCESS**. |
+| [Ecommerce Public](https://github.com/fdxruli/Lanzo-POS/actions/runs/39212727493) | **SUCCESS**. |
+| [Store Git Runtime](https://github.com/fdxruli/Lanzo-POS/actions/runs/39212727659) | **SUCCESS**. |
+| [Incident Recovery QA Lab / PWA](https://github.com/fdxruli/Lanzo-POS/actions/runs/39212727404) | **SUCCESS**. |
+
+El primer intento de Actor Runtime (`39212727609`, intento 1) falló por una única observación candidate-only en `ProductFormV2.test.jsx > uses the latest batch-confirmed parent version on an apparel partial-save retry`; ocurrió en la primera repetición del candidato, no apareció en la segunda y BASE pasó ambas. El test no está modificado por esta mini-fase y pasó localmente (1/1). El intento completo 2 sobre el mismo SHA pasó ambas repeticiones del candidato, generó el diferencial final con 0 regresiones nuevas y cerró el gate con SUCCESS. Se conserva aquí la observación inicial por transparencia.
 
 ## Checklist manual del propietario
 
