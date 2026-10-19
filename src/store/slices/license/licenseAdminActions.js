@@ -30,6 +30,14 @@ import Logger from '../../../services/Logger';
 import { actorRuntimeController, ActorRuntimeError, ACTOR_RUNTIME_ERROR_CODES } from '../../../services/auth/actorRuntimeController';
 import { getTenantRuntimeReadiness } from '../../../services/db/tenantRuntimeRouter';
 import {
+  classifyAdminAccessDiscoveryFailure,
+  isSessionVerificationInconclusive,
+  isAuthoritativeSessionDenial,
+  isSessionVerificationTransportFailure,
+  classifySessionVerificationResponse,
+  SESSION_VERIFICATION_STATUS
+} from '../../../services/auth/sessionVerification';
+import {
   assertLocalTenantAccess,
   initializeLocalTenantGuard,
   isLocalTenantAccessError,
@@ -291,11 +299,12 @@ export const createLicenseAdminActions = ({ set, get }) => {
       } else if (actorRuntimeController.getState().status !== 'locked') {
         throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.HANDOFF_REQUIRED);
       }
+      const pendingAdminActor = () => get().currentAdminUser || pending.result?.admin_user || null;
       attempt = createAttempt(get, licenseKey);
       attempt.assertCurrent();
       if (pending.actorHandle) {
         await assertAuthenticatedActorSessionCurrent({
-          handle: pending.actorHandle, actorType: 'admin', actor: get().currentAdminUser
+          handle: pending.actorHandle, actorType: 'admin', actor: pendingAdminActor()
         });
         attempt.assertCurrent();
         attempt.bindActor();
@@ -317,7 +326,7 @@ export const createLicenseAdminActions = ({ set, get }) => {
               throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.CONTEXT_STALE);
             }
             if (pending.actorHandle) {
-              await assertAuthenticatedActorSessionCurrent({ handle: pending.actorHandle, actorType: 'admin', actor: get().currentAdminUser });
+              await assertAuthenticatedActorSessionCurrent({ handle: pending.actorHandle, actorType: 'admin', actor: pendingAdminActor() });
             }
             await assertLocalTenantAccess(source, { reason: 'admin_login_resume' });
             attempt.assertCurrent();
@@ -325,22 +334,71 @@ export const createLicenseAdminActions = ({ set, get }) => {
         });
         attempt.assertCurrent();
       }
-      if (verified?.valid === true && verified?.success === true) {
+      const classifiedVerification = verified?.verificationStatus
+        ? verified
+        : verified
+          ? classifySessionVerificationResponse('admin', { data: verified })
+          : null;
+      if (classifiedVerification?.valid === true && classifiedVerification?.success === true) {
         if (String(verified.admin_user?.id || '') !== String(pending.adminUserId || '')) {
           throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.IDENTITY_INVALID);
         }
       } else {
-        const connectionFailure = verified
-          ? verified.code === 'ADMIN_SESSION_ERROR' && /network|fetch|timeout|timed out|connection/i.test(verified.message || '')
+        const connectionFailure = classifiedVerification
+          ? isSessionVerificationTransportFailure(classifiedVerification)
           : !navigator.onLine;
-        if (!connectionFailure || !pending.actorHandle || !await hasValidOfflineAdminSession()) {
+        if (isAuthoritativeSessionDenial(classifiedVerification)) {
           throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.SESSION_REQUIRED);
         }
-        await get()._processOfflineMode(get().licenseDetails, { reason: 'admin_login_resume' });
+
+        let offlineSessionRecovered = false;
+        if (connectionFailure && pending.actorHandle) {
+          if (await hasValidOfflineAdminSession()) {
+            await get()._processOfflineMode(get().licenseDetails, { reason: 'admin_login_resume' });
+            offlineSessionRecovered = true;
+          } else if (!navigator.onLine) {
+            // A pending authenticated actor cannot outlive the existing offline
+            // session contract when its canonical evidence is no longer valid.
+            throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.SESSION_REQUIRED);
+          }
+        }
+
+        if (!offlineSessionRecovered
+            && (isSessionVerificationInconclusive(classifiedVerification) || !navigator.onLine)) {
+          if (!navigator.onLine && !connectionFailure) {
+            throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.SESSION_REQUIRED);
+          }
+          const verificationStatus = classifiedVerification?.verificationStatus
+            || SESSION_VERIFICATION_STATUS.TRANSPORT_UNAVAILABLE;
+          const message = verificationStatus === SESSION_VERIFICATION_STATUS.TRANSPORT_UNAVAILABLE
+            ? 'No pudimos verificar tu sesión por un problema de conexión. Tus datos locales se mantienen protegidos. Puedes volver a intentarlo cuando se restablezca la conexión.'
+            : verificationStatus === SESSION_VERIFICATION_STATUS.LOCAL_STORAGE_ERROR
+              ? 'No pudimos leer las credenciales guardadas. Tus datos locales se mantienen protegidos. Reintenta cuando el almacenamiento esté disponible.'
+              : 'No pudimos confirmar la sesión con el servidor. Tu acceso permanece protegido y la sesión pendiente se conserva para reintentar.';
+          set({
+            appStatus: 'admin_login_required',
+            adminLoginMessage: message,
+            adminLoginError: {
+              code: 'SESSION_VERIFICATION_INCONCLUSIVE',
+              verificationStatus,
+              reasonCode: classifiedVerification?.code || null
+            }
+          });
+          traceAuth('AUTH_RECOVERY_VERIFICATION_INCONCLUSIVE', classifiedVerification?.code);
+          return {
+            success: false,
+            recoveryRequired: true,
+            code: 'SESSION_VERIFICATION_INCONCLUSIVE',
+            verificationStatus,
+            message
+          };
+        } else if (!offlineSessionRecovered) {
+          throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.SESSION_REQUIRED);
+        }
       }
       attempt.assertCurrent();
       if (pending.actorHandle) {
-        await assertAuthenticatedActorSessionCurrent({ handle: pending.actorHandle, actorType: 'admin', actor: get().currentAdminUser });
+        await assertAuthenticatedActorSessionCurrent({ handle: pending.actorHandle, actorType: 'admin', actor: pendingAdminActor() });
         attempt.assertCurrent();
       } else {
         beginActorRuntimeAuthentication('admin');
@@ -469,15 +527,20 @@ export const createLicenseAdminActions = ({ set, get }) => {
   _requireAdminLogin: async (licenseSource = null, validation = {}) => {
     const source = licenseSource || get().licenseDetails || {};
     const licenseKey = source.license_key || get().adminLoginLicenseKey;
+    const preserveSessionCredentials = validation.preserveSessionCredentials === true;
     lockActorRuntime('admin_login_required');
     await get().stopLicenseSync();
-    await clearAdminSessionCache();
-    await clearStaffSessionCache();
-    if (source.license_key) await saveLicenseToStorage({ ...source, device_role: 'admin', admin_user: null });
+    if (!preserveSessionCredentials) {
+      await clearAdminSessionCache();
+      await clearStaffSessionCache();
+      if (source.license_key) await saveLicenseToStorage({ ...source, device_role: 'admin', admin_user: null });
+    }
     set({
       appStatus: 'admin_login_required',
       ownerEnrollmentContext: null,
-      licenseDetails: source.license_key ? { ...source, device_role: 'admin', admin_user: null } : get().licenseDetails,
+      licenseDetails: source.license_key
+        ? { ...source, device_role: 'admin', ...(preserveSessionCredentials ? {} : { admin_user: null }) }
+        : get().licenseDetails,
       currentDeviceRole: 'admin',
       currentAdminUser: null,
       adminLoginLicenseKey: licenseKey || null,
@@ -561,6 +624,36 @@ export const createLicenseAdminActions = ({ set, get }) => {
       });
       await get()._processOfflineMode(discoveredLicense, { reason: 'legacy_admin_auth_compatibility' });
       return { success: true, legacyBackendFallback: true };
+    }
+
+    const discoveryFailure = classifyAdminAccessDiscoveryFailure(result);
+    if (!isAuthoritativeSessionDenial(discoveryFailure)) {
+      const verificationStatus = discoveryFailure.verificationStatus;
+      const message = verificationStatus === SESSION_VERIFICATION_STATUS.TRANSPORT_UNAVAILABLE
+        ? 'No pudimos verificar el acceso por un problema de conexión. Tus datos locales se mantienen protegidos. Reintenta cuando regrese la conexión.'
+        : verificationStatus === SESSION_VERIFICATION_STATUS.SERVER_ERROR
+          ? 'El servidor no pudo completar la verificación del acceso. Tus datos locales se mantienen protegidos; reintenta más tarde.'
+          : 'El servidor no confirmó el acceso administrativo. Tus credenciales y datos locales se mantienen protegidos; reintenta la verificación.';
+      lockActorRuntime('admin_access_discovery_inconclusive');
+      set({
+        appStatus: 'admin_login_required',
+        licenseDetails: discoveredLicense,
+        currentDeviceRole: 'admin',
+        currentAdminUser: null,
+        adminLoginLicenseKey: licenseKey,
+        adminLoginMessage: message,
+        adminLoginError: {
+          code: 'SESSION_VERIFICATION_INCONCLUSIVE',
+          verificationStatus,
+          reasonCode: discoveryFailure.code || null
+        }
+      });
+      return {
+        success: false,
+        recoverable: true,
+        code: 'SESSION_VERIFICATION_INCONCLUSIVE',
+        verificationStatus
+      };
     }
 
     await get()._requireAdminLogin(discoveredLicense, result);

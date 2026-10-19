@@ -188,4 +188,146 @@ describe('activation storage boundary', () => {
     expect(mocks.saveData).not.toHaveBeenCalled();
   });
 
+  it('preserves Admin credentials when the verification RPC cannot be reached', async () => {
+    const { runWithLocalTenantSyncLease } = await import('../tenant/localTenantGuard');
+    vi.mocked(runWithLocalTenantSyncLease).mockImplementation(async (_source, _options, operation) => operation());
+    mocks.readDeviceRegistryValue.mockResolvedValue('fixture-device');
+    const values = {
+      device_security_token: 'device-token',
+      admin_session_token: 'admin-token',
+      admin_session_id: 'admin-session-id'
+    };
+    mocks.loadData.mockImplementation(async (_store, key) => (
+      Object.hasOwn(values, key) ? { value: values[key] } : null
+    ));
+    mocks.rpc.mockResolvedValue({ data: null, error: new TypeError('Failed to fetch') });
+
+    const { verifyAdminSession } = await import('../supabase');
+    await expect(verifyAdminSession('QA-AUTH-CONTRACT')).resolves.toMatchObject({
+      success: false,
+      valid: false,
+      verificationStatus: 'transport_unavailable'
+    });
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+    expect(mocks.saveData).not.toHaveBeenCalled();
+    expect(values).toEqual({
+      device_security_token: 'device-token',
+      admin_session_token: 'admin-token',
+      admin_session_id: 'admin-session-id'
+    });
+  });
+
+  it.each([
+    [{ status: 503, code: 'PGRST000' }, 'server_error'],
+    [{ status: 429, code: 'PGRST003' }, 'server_error'],
+    [{ status: 401, code: 'PGRST301' }, 'server_error'],
+    [new DOMException('request aborted', 'AbortError'), 'transport_unavailable']
+  ])('preserves Admin credentials for technical RPC failure %o', async (error, verificationStatus) => {
+    const { runWithLocalTenantSyncLease } = await import('../tenant/localTenantGuard');
+    vi.mocked(runWithLocalTenantSyncLease).mockImplementation(async (_source, _options, operation) => operation());
+    mocks.readDeviceRegistryValue.mockResolvedValue('fixture-device');
+    mocks.loadData.mockImplementation(async (_store, key) => ({
+      value: {
+        device_security_token: 'device-token',
+        admin_session_token: 'admin-token',
+        admin_session_id: 'admin-session-id'
+      }[key] || null
+    }));
+    mocks.rpc.mockResolvedValue({ data: null, error });
+
+    const { verifyAdminSession } = await import('../supabase');
+    await expect(verifyAdminSession('QA-AUTH-CONTRACT')).resolves.toMatchObject({
+      verificationStatus,
+      valid: false
+    });
+    expect(mocks.saveData).not.toHaveBeenCalled();
+  });
+
+  it('clears Admin credentials only for a recognized authoritative session denial', async () => {
+    const { runWithLocalTenantSyncLease } = await import('../tenant/localTenantGuard');
+    vi.mocked(runWithLocalTenantSyncLease).mockImplementation(async (_source, _options, operation) => operation());
+    mocks.readDeviceRegistryValue.mockResolvedValue('fixture-device');
+    const values = {
+      device_security_token: 'device-token',
+      admin_session_token: 'admin-token',
+      admin_session_id: 'admin-session-id'
+    };
+    mocks.loadData.mockImplementation(async (_store, key) => (
+      Object.hasOwn(values, key) ? { value: values[key] } : null
+    ));
+    mocks.rpc.mockResolvedValue({
+      data: { success: false, valid: false, code: 'ADMIN_SESSION_EXPIRED' },
+      error: null
+    });
+
+    const { verifyAdminSession } = await import('../supabase');
+    await expect(verifyAdminSession('QA-AUTH-CONTRACT')).resolves.toMatchObject({
+      verificationStatus: 'authoritative_denial',
+      code: 'ADMIN_SESSION_EXPIRED'
+    });
+    expect(mocks.saveData).toHaveBeenCalledWith('sync_cache', { key: 'admin_session_token', value: null });
+    expect(mocks.saveData).toHaveBeenCalledWith('sync_cache', { key: 'admin_session_id', value: null });
+  });
+
+  it('reports local storage failure separately and does not call the RPC', async () => {
+    mocks.loadData.mockRejectedValue(new Error('fixture storage read failure'));
+    const { verifyAdminSession } = await import('../supabase');
+
+    await expect(verifyAdminSession('QA-AUTH-CONTRACT')).resolves.toMatchObject({
+      verificationStatus: 'local_storage_error',
+      valid: false
+    });
+    expect(mocks.rpc).not.toHaveBeenCalled();
+    expect(mocks.saveData).not.toHaveBeenCalled();
+  });
+
+  it('keeps Staff credentials on a transport failure and continues to require online verification', async () => {
+    const { runWithLocalTenantSyncLease } = await import('../tenant/localTenantGuard');
+    vi.mocked(runWithLocalTenantSyncLease).mockImplementation(async (_source, _options, operation) => operation());
+    mocks.checkInternetConnection.mockResolvedValue(true);
+    mocks.readDeviceRegistryValue.mockResolvedValue('fixture-device');
+    mocks.loadData.mockImplementation(async (_store, key) => (
+      key === 'staff_session_token' ? { value: 'staff-token' } : null
+    ));
+    mocks.rpc.mockResolvedValue({ data: null, error: new TypeError('Failed to fetch') });
+
+    const { verifyStaffSession } = await import('../supabase');
+    await expect(verifyStaffSession('QA-AUTH-CONTRACT')).resolves.toMatchObject({
+      verificationStatus: 'transport_unavailable',
+      valid: false
+    });
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+    expect(mocks.saveData).not.toHaveBeenCalled();
+
+    mocks.rpc.mockClear();
+    mocks.checkInternetConnection.mockResolvedValue(false);
+    await expect(verifyStaffSession('QA-AUTH-CONTRACT')).resolves.toMatchObject({
+      verificationStatus: 'transport_unavailable',
+      valid: false
+    });
+    expect(mocks.rpc).not.toHaveBeenCalled();
+    expect(mocks.saveData).not.toHaveBeenCalled();
+  });
+
+  it('enforces the existing Admin offline window and rejects future or expired evidence', async () => {
+    const { hasValidOfflineAdminSession } = await import('../supabase');
+    const now = Date.parse('2026-10-19T12:00:00.000Z');
+    vi.spyOn(Date, 'now').mockReturnValue(now);
+    const loadCache = (value) => mocks.loadData.mockResolvedValueOnce({ value });
+
+    loadCache({ validatedAt: now - (23 * 60 * 60 * 1000), expiresAt: new Date(now + 60_000).toISOString() });
+    loadCache({ validatedAt: now - (24 * 60 * 60 * 1000), expiresAt: null });
+    loadCache({ validatedAt: now - (24 * 60 * 60 * 1000) - 1, expiresAt: null });
+    loadCache({ validatedAt: now + 1, expiresAt: null });
+    loadCache({ validatedAt: now - 1000, expiresAt: new Date(now).toISOString() });
+    loadCache({ validatedAt: now - 1000, expiresAt: 'not-a-date' });
+
+    await expect(hasValidOfflineAdminSession()).resolves.toBe(true);
+    await expect(hasValidOfflineAdminSession()).resolves.toBe(true);
+    await expect(hasValidOfflineAdminSession()).resolves.toBe(false);
+    await expect(hasValidOfflineAdminSession()).resolves.toBe(false);
+    await expect(hasValidOfflineAdminSession()).resolves.toBe(false);
+    await expect(hasValidOfflineAdminSession()).resolves.toBe(false);
+  });
+
 });

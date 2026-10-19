@@ -25,9 +25,12 @@ import {
 import {
     clearAdminSessionCache,
     clearStaffSessionCache,
-    hasAdminSessionToken,
     verifyAdminSession
 } from '../../../services/supabase';
+import {
+    isAuthoritativeSessionDenial,
+    SESSION_VERIFICATION_STATUS
+} from '../../../services/auth/sessionVerification';
 import {
     beginActorRuntimeAuthentication,
     grantAuthenticatedActorRuntime,
@@ -274,64 +277,90 @@ export const createLicenseProcessingActions = ({
                 appStatus: 'loading'
             });
 
-            if (await hasAdminSessionToken()) {
-                if (!contextIsCurrent()) return;
-                beginActorRuntimeAuthentication('admin');
-                const adminUpgradeContext = captureLicenseValidationContext(
-                    get(),
-                    finalLicenseData.license_key
-                );
-                const assertAdminUpgradeContext = () => assertLicenseValidationContextCurrent(
-                    adminUpgradeContext,
-                    get()
-                );
-                const persistAdminUpgradeContext = (operation) => persistWithinLicenseValidationContext(
-                    adminUpgradeContext,
-                    get,
-                    operation
-                );
-                const adminSession = await verifyAdminSession(finalLicenseData.license_key, {
-                    beforeLocalPersistence: assertAdminUpgradeContext
-                });
+            if (!contextIsCurrent()) return;
+            beginActorRuntimeAuthentication('admin');
+            const adminUpgradeContext = captureLicenseValidationContext(
+                get(),
+                finalLicenseData.license_key
+            );
+            const assertAdminUpgradeContext = () => assertLicenseValidationContextCurrent(
+                adminUpgradeContext,
+                get()
+            );
+            const persistAdminUpgradeContext = (operation) => persistWithinLicenseValidationContext(
+                adminUpgradeContext,
+                get,
+                operation
+            );
+            const adminSession = await verifyAdminSession(finalLicenseData.license_key, {
+                beforeLocalPersistence: assertAdminUpgradeContext
+            });
+            assertAdminUpgradeContext();
+            if (adminSession?.valid) {
+                const restored = {
+                    ...finalLicenseData,
+                    ...adminSession.details,
+                    device_role: 'admin',
+                    staff_user: null,
+                    admin_user: adminSession.admin_user || null
+                };
+                await persistAdminUpgradeContext(() => saveLicenseToStorage(restored));
                 assertAdminUpgradeContext();
-                if (adminSession?.valid) {
-                    const restored = {
-                        ...finalLicenseData,
-                        ...adminSession.details,
-                        device_role: 'admin',
-                        staff_user: null,
-                        admin_user: adminSession.admin_user || null
-                    };
-                    await persistAdminUpgradeContext(() => saveLicenseToStorage(restored));
-                    assertAdminUpgradeContext();
-                    set({
-                        licenseDetails: restored,
-                        currentAdminUser: restored.admin_user,
-                        appStatus: 'ready'
+                set({
+                    licenseDetails: restored,
+                    currentAdminUser: restored.admin_user,
+                    appStatus: 'ready'
+                });
+                try {
+                    await grantAuthenticatedActorRuntime({
+                        actorType: 'admin',
+                        actor: restored.admin_user
                     });
-                    try {
-                        await grantAuthenticatedActorRuntime({
-                            actorType: 'admin',
-                            actor: restored.admin_user
-                        });
-                    } catch (actorError) {
-                        lockActorRuntime('hot_pro_upgrade_actor_binding_failed');
-                        await clearAdminSessionCache();
-                        Logger.warn('[AdminAuth] Sesión hot-upgrade sin autoridad ActorRuntime segura.', actorError);
-                        await get().discoverAdminAccess(finalLicenseData.license_key);
-                        return;
-                    }
-                    await get()._loadProfile(restored.license_key, {
-                        refreshProfile,
-                        profileLoadMode: 'background',
-                        reason: 'hot_pro_upgrade_admin_session'
+                } catch (actorError) {
+                    lockActorRuntime('hot_pro_upgrade_actor_binding_failed');
+                    Logger.warn('[AdminAuth] Sesión hot-upgrade sin autoridad ActorRuntime segura.', actorError?.code || actorError?.name);
+                    set({
+                        appStatus: 'admin_login_required',
+                        currentAdminUser: null,
+                        adminLoginLicenseKey: finalLicenseData.license_key,
+                        adminLoginMessage: 'La sesión se verificó, pero no pudimos restaurar una autoridad operativa segura. Reintenta la recuperación.',
+                        adminLoginError: {
+                            code: 'ACTOR_RUNTIME_RESTORE_FAILED',
+                            verificationStatus: SESSION_VERIFICATION_STATUS.VERIFIED
+                        }
                     });
                     return;
                 }
-                lockActorRuntime('hot_pro_upgrade_admin_session_invalid');
+                await get()._loadProfile(restored.license_key, {
+                    refreshProfile,
+                    profileLoadMode: 'background',
+                    reason: 'hot_pro_upgrade_admin_session'
+                });
+                return;
             }
 
-            await get().discoverAdminAccess(finalLicenseData.license_key);
+            if (isAuthoritativeSessionDenial(adminSession)
+                || (adminSession?.verificationStatus === SESSION_VERIFICATION_STATUS.LOCAL_CREDENTIALS_MISSING
+                    && adminSession.missingCredentials?.includes('admin_session_token'))) {
+                lockActorRuntime('hot_pro_upgrade_admin_session_rejected');
+                await get().discoverAdminAccess(finalLicenseData.license_key);
+                return;
+            }
+
+            lockActorRuntime('hot_pro_upgrade_session_verification_inconclusive');
+            set({
+                appStatus: 'admin_login_required',
+                currentAdminUser: null,
+                adminLoginLicenseKey: finalLicenseData.license_key,
+                adminLoginMessage: adminSession?.verificationStatus === SESSION_VERIFICATION_STATUS.TRANSPORT_UNAVAILABLE
+                    ? 'No pudimos verificar tu sesión por un problema de conexión. Tus datos locales se mantienen protegidos; reintenta cuando regrese la conexión.'
+                    : 'No pudimos confirmar la sesión administrativa. Las credenciales y los datos locales se mantienen protegidos; reintenta la verificación.',
+                adminLoginError: {
+                    code: 'SESSION_VERIFICATION_INCONCLUSIVE',
+                    verificationStatus: adminSession?.verificationStatus || SESSION_VERIFICATION_STATUS.INVALID_RESPONSE,
+                    reasonCode: adminSession?.code || null
+                }
+            });
             return;
         }
 

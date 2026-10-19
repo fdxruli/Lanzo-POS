@@ -71,7 +71,13 @@ export default function AdminLoginModal() {
   const handleAdminLogin = useAppStore((state) => state.handleAdminLogin);
   const handleFreeDeviceTakeover = useAppStore((state) => state.handleFreeDeviceTakeover);
   const resumeAdminSessionPreparation = useAppStore((state) => state.resumeAdminSessionPreparation);
+  const initializeApp = useAppStore((state) => state.initializeApp);
   const recoveryAvailable = useAppStore((state) => Boolean(state.pendingAdminSessionResult?.result?.success));
+  const adminLoginError = useAppStore((state) => state.adminLoginError);
+  const verificationUnavailable = [
+    'SESSION_VERIFICATION_INCONCLUSIVE',
+    'ACTOR_RUNTIME_RESTORE_FAILED'
+  ].includes(adminLoginError?.code);
   const logout = useAppStore((state) => state.logout);
   const returnToLicenseAccessChoice = useAppStore((state) => state.returnToLicenseAccessChoice);
   const message = useAppStore((state) => state.adminLoginMessage);
@@ -187,7 +193,9 @@ export default function AdminLoginModal() {
     setLoading(true);
     setError('');
     try {
-      const result = await resumeAdminSessionPreparation();
+      const result = verificationUnavailable
+        ? await initializeApp()
+        : await resumeAdminSessionPreparation();
       if (!result?.success && !result?.recoveryRequired) setError(describeLoginError(null, result));
     } catch (recoveryError) {
       setError(describeLoginError(recoveryError));
@@ -233,11 +241,15 @@ export default function AdminLoginModal() {
           </span>
           <div>
             <h1 id="admin-login-title">
-              {takeoverRequired ? 'Tu plan cambió a Lanzo Local' : 'Acceso administrador'}
+        {takeoverRequired ? 'Tu plan cambió a Lanzo Local'
+          : verificationUnavailable ? 'Verifica tu sesión'
+            : 'Acceso administrador'}
             </h1>
             <p id="admin-login-description">
               {takeoverRequired
                 ? 'El propietario puede elegir el dispositivo que tiene delante.'
+              : verificationUnavailable
+                ? 'La sesión guardada necesita una nueva verificación segura.'
                 : 'Ingresa con la cuenta del propietario.'}
             </p>
           </div>
@@ -246,16 +258,20 @@ export default function AdminLoginModal() {
         <p className="auth-login-helper">
           {takeoverRequired
             ? 'Lanzo Local permite utilizar un dispositivo.'
-            : 'Usa tus credenciales de administración para continuar con todos los permisos del negocio.'}
+            : verificationUnavailable
+              ? 'El acceso permanece protegido mientras Lanzo intenta confirmar la sesión existente.'
+              : 'Usa tus credenciales de administración para continuar con todos los permisos del negocio.'}
         </p>
 
         {!online && !recoveryAvailable && (
           <div className="ui-alert ui-alert--danger" role="status">
             <WifiOff size={18} aria-hidden="true" />
-            Necesitas internet para iniciar sesión.
+            {verificationUnavailable
+              ? 'Necesitas conexión para verificar la sesión guardada.'
+              : 'Necesitas internet para iniciar sesión.'}
           </div>
         )}
-        {message && !error && !recoveryAvailable && (
+        {message && !verificationUnavailable && !error && !recoveryAvailable && (
           <div className="ui-alert ui-alert--info" role="status">{message}</div>
         )}
 
@@ -263,13 +279,30 @@ export default function AdminLoginModal() {
           <div className="admin-auth-form" aria-busy={loading}>
             <div className="ui-alert ui-alert--info" role="status" aria-live="polite">
               {loading ? 'Estamos recuperando tu sesión de forma segura.'
-                : 'Tu sesión está verificada. No pudimos terminar de preparar Lanzo. Reintenta la carga para continuar sin iniciar sesión nuevamente.'}
+                : verificationUnavailable
+                  ? (message || 'No pudimos verificar tu sesión guardada. Tus datos locales se mantienen protegidos; reintenta cuando regrese la conexión.')
+                  : 'Tu sesión está verificada. No pudimos terminar de preparar Lanzo. Reintenta la carga para continuar sin iniciar sesión nuevamente.'}
             </div>
             {error && <div className="ui-alert ui-alert--danger" role="alert">{error}</div>}
             <button type="button" ref={recoveryButtonRef}
               className="ui-button ui-button--primary admin-auth-submit"
-              onClick={retryPreparation} disabled={loading}>
-              {loading ? 'Recuperando sesión...' : 'Reintentar carga'}
+              onClick={retryPreparation} disabled={loading || (verificationUnavailable && !online)}>
+              {loading
+                ? verificationUnavailable ? 'Verificando sesión...' : 'Recuperando sesión...'
+                : verificationUnavailable ? 'Reintentar verificación' : 'Reintentar carga'}
+            </button>
+          </div>
+        ) : verificationUnavailable ? (
+          <div className="admin-auth-form" aria-busy={loading}>
+            <div className="ui-alert ui-alert--info" role="status" aria-live="polite">
+              {loading ? 'Estamos verificando la sesión guardada.'
+                : message || 'No pudimos verificar tu sesión. Tus datos locales se mantienen protegidos.'}
+            </div>
+            {error && <div className="ui-alert ui-alert--danger" role="alert">{error}</div>}
+            <button type="button" ref={recoveryButtonRef}
+              className="ui-button ui-button--primary admin-auth-submit"
+              onClick={retryPreparation} disabled={loading || !online}>
+              {loading ? 'Verificando sesión...' : 'Reintentar verificación'}
             </button>
           </div>
         ) : takeoverRequired ? (

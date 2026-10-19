@@ -45,12 +45,13 @@ export const createLicenseStaffActions = ({
     const state = get();
     const sourceLicense = licenseSource || state.licenseDetails || {};
     const licenseKey = sourceLicense.license_key || state.staffLoginLicenseKey || null;
+    const preserveSessionCredentials = validation.preserveSessionCredentials === true;
 
     const nextLicenseDetails = sourceLicense.license_key
       ? {
         ...sourceLicense,
         device_role: 'staff',
-        staff_user: null
+        ...(preserveSessionCredentials ? {} : { staff_user: null })
       }
       : state.licenseDetails;
 
@@ -61,10 +62,12 @@ export const createLicenseStaffActions = ({
     // Realtime vivo mientras el usuario está en StaffLoginModal.
     await get().stopLicenseSync();
 
-    await clearStaffSessionCache();
-    await clearAdminSessionCache();
+    if (!preserveSessionCredentials) {
+      await clearStaffSessionCache();
+      await clearAdminSessionCache();
+    }
 
-    if (nextLicenseDetails?.license_key) {
+    if (nextLicenseDetails?.license_key && !preserveSessionCredentials) {
       await saveLicenseToStorage(nextLicenseDetails);
     }
 

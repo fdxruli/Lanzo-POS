@@ -9,19 +9,22 @@ import {
     setDatabaseRecoveryState
 } from '../../../services/db/databaseRecoveryState';
 import {
-    ACTOR_SESSION_AMBIGUOUS,
     beginActorRuntimeAuthentication,
     restoreActorRuntimeFromCurrentSessionCache,
     lockActorRuntime
 } from '../../../services/auth/actorSessionRuntimeBridge';
+import { actorRuntimeController } from '../../../services/auth/actorRuntimeController';
+import {
+    isAuthoritativeSessionDenial,
+    isSessionVerificationInconclusive,
+    isSessionVerificationTransportFailure,
+    SESSION_VERIFICATION_STATUS
+} from '../../../services/auth/sessionVerification';
 
 import {
     revalidateLicense,
-    clearStaffSessionCache,
-    clearAdminSessionCache,
     hasStaffSessionToken,
     verifyStaffSession,
-    hasAdminSessionToken,
     hasValidOfflineAdminSession,
     verifyAdminSession
 } from '../../../services/supabase';
@@ -69,12 +72,51 @@ const enterDatabaseRecovery = (set, error) => {
     });
 };
 
-const restoreActorAuthority = async (actorType, actor) => {
-    beginActorRuntimeAuthentication(actorType);
-    return restoreActorRuntimeFromCurrentSessionCache({ actorType, actor });
+const getVerificationUnavailableMessage = (actorType, result) => {
+    const actor = actorType === 'staff' ? 'Staff' : 'administrativa';
+    switch (result?.verificationStatus) {
+        case SESSION_VERIFICATION_STATUS.TRANSPORT_UNAVAILABLE:
+            return 'No pudimos verificar tu sesión por un problema de conexión. Tus datos locales se mantienen protegidos. Puedes volver a intentarlo cuando se restablezca la conexión.';
+        case SESSION_VERIFICATION_STATUS.SERVER_ERROR:
+            return 'El servidor no pudo completar la verificación. Tus credenciales locales y datos se mantienen protegidos. Inténtalo de nuevo más tarde.';
+        case SESSION_VERIFICATION_STATUS.LOCAL_STORAGE_ERROR:
+            return 'No pudimos leer las credenciales guardadas. Tus datos locales se mantienen protegidos. Reintenta cuando el almacenamiento esté disponible.';
+        default:
+            return `No pudimos confirmar la sesión ${actor}. El acceso sigue protegido y tus credenciales locales se conservaron. Reintenta la verificación.`;
+    }
 };
 
-const canClearFailedActorSession = (error) => error?.code !== ACTOR_SESSION_AMBIGUOUS;
+const setVerificationUnavailable = (set, actorType, license, result) => {
+    const isAdmin = actorType === 'admin';
+    const message = result?.userMessage || getVerificationUnavailableMessage(actorType, result);
+    const uiCode = result?.uiCode || 'SESSION_VERIFICATION_INCONCLUSIVE';
+    set({
+        appStatus: isAdmin ? 'admin_login_required' : 'staff_login_required',
+        licenseDetails: license,
+        currentDeviceRole: actorType,
+        ...(isAdmin
+            ? {
+                currentAdminUser: null,
+                adminLoginLicenseKey: license?.license_key || null,
+                adminLoginMessage: message,
+                adminLoginError: {
+                    code: uiCode,
+                    verificationStatus: result?.verificationStatus || SESSION_VERIFICATION_STATUS.INVALID_RESPONSE,
+                    reasonCode: result?.code || null
+                }
+            }
+            : {
+                currentStaffUser: null,
+                staffLoginLicenseKey: license?.license_key || null,
+                staffLoginMessage: message,
+                staffLoginError: {
+                    code: uiCode,
+                    verificationStatus: result?.verificationStatus || SESSION_VERIFICATION_STATUS.INVALID_RESPONSE,
+                    reasonCode: result?.code || null
+                }
+            })
+    });
+};
 
 const logFreeAdminAuthorityMode = (license, selectedMode) => {
     const planCode = String(license?.plan_code || license?.plan?.code || '').trim().toLowerCase();
@@ -105,13 +147,44 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
         Logger.log('[AppStore] Iniciando aplicación (coordinador idempotente)...');
 
         initializePromise = (async () => {
+            let bootstrapActorGeneration = null;
+            const assertBootstrapActorCurrent = () => {
+                if (actorRuntimeController.getState().generation !== bootstrapActorGeneration) {
+                    const stale = new Error('SESSION_VERIFICATION_CONTEXT_STALE');
+                    stale.code = 'SESSION_VERIFICATION_CONTEXT_STALE';
+                    throw stale;
+                }
+            };
+            const restoreActorAuthority = async (actorType, actor) => {
+                assertBootstrapActorCurrent();
+                beginActorRuntimeAuthentication(actorType);
+                bootstrapActorGeneration = actorRuntimeController.getState().generation;
+                try {
+                    const restored = await restoreActorRuntimeFromCurrentSessionCache({ actorType, actor });
+                    bootstrapActorGeneration = restored.generation;
+                    assertBootstrapActorCurrent();
+                    return restored;
+                } catch (error) {
+                    const currentActor = actorRuntimeController.getState();
+                    const ownedRestoreFailure = currentActor.reason === 'ambiguous_actor_session_evidence'
+                        || currentActor.reason === `${actorType}_session_restore_failed`;
+                    if (currentActor.status === 'locked'
+                        && currentActor.generation === bootstrapActorGeneration + 1
+                        && ownedRestoreFailure) {
+                        bootstrapActorGeneration = currentActor.generation;
+                    }
+                    throw error;
+                }
+            };
             try {
                 // App bootstrap is a new actor authority epoch. Any async work
                 // captured by a previous in-memory actor must be stale before
                 // stored credentials are inspected or a tenant is prepared.
                 lockActorRuntime('application_bootstrap');
+                bootstrapActorGeneration = actorRuntimeController.getState().generation;
                 initializeLocalTenantGuard('application_bootstrap');
                 const localLicense = await getLicenseFromStorage();
+                assertBootstrapActorCurrent();
 
                 if (!localLicense?.license_key) {
                     lockLocalTenantAccess('no_stored_license');
@@ -124,7 +197,9 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
                 // precedes actor-token reads, profile loading, catalog startup
                 // and every sync coordinator.
                 await assertLocalTenantAccess(localLicense, { reason: 'stored_license_bootstrap' });
+                assertBootstrapActorCurrent();
                 await prepareLocalDatabase({ force });
+                assertBootstrapActorCurrent();
 
                 Logger.log('[AppStore] Carga rápida activada - Usando caché local');
 
@@ -159,6 +234,7 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
                 }
 
                 if (localDeviceRole === 'staff') {
+                    assertBootstrapActorCurrent();
                     set({
                         licenseDetails: { ...localLicense, device_role: 'staff' },
                         currentDeviceRole: 'staff',
@@ -168,10 +244,9 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
 
                     if (!navigator.onLine) {
                         Logger.warn('[Staff] Sesion staff requiere verificacion online al iniciar.');
-                        set({
-                            appStatus: 'staff_login_required',
-                            staffLoginMessage: 'Necesitas internet para iniciar sesion staff.',
-                            staffLoginError: null
+                        setVerificationUnavailable(set, 'staff', localLicense, {
+                            verificationStatus: SESSION_VERIFICATION_STATUS.TRANSPORT_UNAVAILABLE,
+                            code: 'ONLINE_REQUIRED'
                         });
                         coordinatorState = 'ready';
                         return { status: 'staff_login_required' };
@@ -180,23 +255,40 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
                     const staffSession = await runWithLocalTenantSyncLease(
                         localLicense,
                         { reason: 'staff_session_restore' },
-                        () => verifyStaffSession(localLicense.license_key)
+                        () => verifyStaffSession(localLicense.license_key, {
+                            beforeLocalPersistence: async () => {
+                                assertBootstrapActorCurrent();
+                                await assertLocalTenantAccess(localLicense, { reason: 'staff_session_restore_response' });
+                                assertBootstrapActorCurrent();
+                            }
+                        })
                     );
+                    assertBootstrapActorCurrent();
                     if (!staffSession?.valid) {
-                        const serverCheck = await revalidateLicense(localLicense.license_key);
-                        if (isLicensePlanBlockFailure(serverCheck)) {
-                            await get()._requireLicenseChange(localLicense, serverCheck);
+                        if (isAuthoritativeSessionDenial(staffSession)) {
+                            const serverCheck = await revalidateLicense(localLicense.license_key);
+                            assertBootstrapActorCurrent();
+                            if (isLicensePlanBlockFailure(serverCheck)) {
+                                await get()._requireLicenseChange(localLicense, serverCheck);
+                                coordinatorState = 'ready';
+                                return { status: get().appStatus };
+                            }
+
+                            await get()._requireStaffLogin(localLicense, staffSession);
                             coordinatorState = 'ready';
                             return { status: get().appStatus };
                         }
 
-                        await clearStaffSessionCache();
-                        set({
-                            appStatus: 'staff_login_required',
-                            currentStaffUser: null,
-                            staffLoginMessage: staffSession?.message || 'Inicia sesion staff para continuar.',
-                            staffLoginError: null
-                        });
+                        if (staffSession?.verificationStatus === SESSION_VERIFICATION_STATUS.LOCAL_CREDENTIALS_MISSING) {
+                            await get()._requireStaffLogin(localLicense, staffSession);
+                        } else if (isSessionVerificationInconclusive(staffSession)) {
+                            setVerificationUnavailable(set, 'staff', localLicense, staffSession);
+                        } else {
+                            await get()._requireStaffLogin(localLicense, {
+                                ...staffSession,
+                                preserveSessionCredentials: true
+                            });
+                        }
                         coordinatorState = 'ready';
                         return { status: 'staff_login_required' };
                     }
@@ -206,7 +298,9 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
                         device_role: 'staff',
                         staff_user: staffSession.staff_user || localLicense.staff_user || null
                     };
+                    assertBootstrapActorCurrent();
                     await saveLicenseToStorage(restoredLicense);
+                    assertBootstrapActorCurrent();
                     set({
                         licenseDetails: restoredLicense,
                         currentDeviceRole: 'staff',
@@ -218,23 +312,21 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
                     try {
                         await restoreActorAuthority('staff', restoredLicense.staff_user);
                     } catch (actorError) {
-                        if (canClearFailedActorSession(actorError)) {
-                            await clearStaffSessionCache();
-                        }
-                        set({
-                            appStatus: 'staff_login_required',
-                            currentStaffUser: null,
-                            staffLoginMessage: 'La sesión staff no pudo recuperar una autoridad operativa segura. Inicia sesión nuevamente.',
-                            staffLoginError: {
-                                code: actorError?.code || 'ACTOR_SESSION_RESTORE_FAILED',
-                                message: actorError?.message || null
-                            }
+                        if (classifyDatabaseError(actorError).structural) throw actorError;
+                        assertBootstrapActorCurrent();
+                        setVerificationUnavailable(set, 'staff', restoredLicense, {
+                            code: actorError?.code || 'ACTOR_SESSION_RESTORE_FAILED',
+                            verificationStatus: SESSION_VERIFICATION_STATUS.VERIFIED,
+                            uiCode: 'ACTOR_RUNTIME_RESTORE_FAILED',
+                            userMessage: 'La sesión Staff se verificó, pero no pudimos restaurar una autoridad operativa segura. El acceso permanece bloqueado; reintenta la recuperación.'
                         });
                         coordinatorState = 'ready';
                         return { status: 'staff_login_required' };
                     }
 
+                    assertBootstrapActorCurrent();
                     await get()._loadProfile(restoredLicense.license_key);
+                    assertBootstrapActorCurrent();
                     get()._validateInBackground(restoredLicense.license_key, {
                         reason: 'staff_session_restore'
                     });
@@ -251,10 +343,13 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
                         ? localLicense
                         : { ...localLicense, admin_identity_required: true };
                     if (actorBoundAdminLicense !== localLicense) {
+                        assertBootstrapActorCurrent();
                         await saveLicenseToStorage(actorBoundAdminLicense);
+                        assertBootstrapActorCurrent();
                     }
                     logFreeAdminAuthorityMode(actorBoundAdminLicense, 'actor_bound');
 
+                    assertBootstrapActorCurrent();
                     set({
                         licenseDetails: { ...actorBoundAdminLicense, device_role: 'admin' },
                         currentDeviceRole: 'admin',
@@ -263,55 +358,117 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
                     });
 
                     if (!navigator.onLine) {
-                        if (await hasValidOfflineAdminSession()) {
+                        const offlineEligible = await hasValidOfflineAdminSession();
+                        assertBootstrapActorCurrent();
+                        if (offlineEligible) {
                             const offlineAdmin = actorBoundAdminLicense.admin_user || null;
                             try {
                                 await restoreActorAuthority('admin', offlineAdmin);
+                                assertBootstrapActorCurrent();
                                 set({ currentAdminUser: offlineAdmin });
                                 await get()._processOfflineMode(actorBoundAdminLicense);
+                                assertBootstrapActorCurrent();
                                 if (!['ready', 'setup_required', 'unauthenticated'].includes(get().appStatus)) {
                                     await get()._completeRestoredAdminPreparation?.(actorBoundAdminLicense.license_key);
+                                    assertBootstrapActorCurrent();
                                 }
                             } catch (actorError) {
-                                if (canClearFailedActorSession(actorError)) {
-                                    await clearAdminSessionCache();
-                                }
-                                set({
-                                    appStatus: 'admin_login_required',
-                                    currentAdminUser: null,
-                                    adminLoginMessage: 'Conéctate a internet para recuperar de forma segura la sesión administrativa.',
-                                    adminLoginError: {
-                                        code: actorError?.code || 'ACTOR_SESSION_RESTORE_FAILED',
-                                        message: actorError?.message || null
-                                    }
+                                if (classifyDatabaseError(actorError).structural) throw actorError;
+                                assertBootstrapActorCurrent();
+                                setVerificationUnavailable(set, 'admin', actorBoundAdminLicense, {
+                                    code: actorError?.code || 'ACTOR_SESSION_RESTORE_FAILED',
+                                    verificationStatus: SESSION_VERIFICATION_STATUS.INVALID_RESPONSE,
+                                    uiCode: 'ACTOR_RUNTIME_RESTORE_FAILED',
+                                    userMessage: 'La evidencia local no permitió restaurar una autoridad administrativa segura. El acceso permanece bloqueado; conéctate y reintenta la verificación.'
                                 });
                             }
                         } else {
-                            set({
-                                appStatus: 'admin_login_required',
-                                adminLoginMessage: 'Conectate a internet para validar la sesion administrativa.'
+                            setVerificationUnavailable(set, 'admin', actorBoundAdminLicense, {
+                                verificationStatus: SESSION_VERIFICATION_STATUS.TRANSPORT_UNAVAILABLE,
+                                code: 'ONLINE_REQUIRED'
                             });
                         }
                         coordinatorState = 'ready';
                         return { status: get().appStatus };
                     }
 
-                    if (!await hasAdminSessionToken()) {
-                        await get().discoverAdminAccess(actorBoundAdminLicense.license_key);
-                        coordinatorState = 'ready';
-                        return { status: get().appStatus };
-                    }
-
                     const adminSession = await verifyAdminSession(actorBoundAdminLicense.license_key, {
-                        beforeLocalPersistence: (tenantSource) => assertLocalTenantAccess(
-                            tenantSource,
-                            { reason: 'admin_session_restore_before_local_persistence' }
-                        )
+                        beforeLocalPersistence: async (tenantSource) => {
+                            assertBootstrapActorCurrent();
+                            await assertLocalTenantAccess(
+                                tenantSource,
+                                { reason: 'admin_session_restore_before_local_persistence' }
+                            );
+                            assertBootstrapActorCurrent();
+                        }
                     });
+                    assertBootstrapActorCurrent();
                     if (!adminSession.valid) {
-                        await get()._requireAdminLogin(actorBoundAdminLicense, adminSession);
+                        if (isAuthoritativeSessionDenial(adminSession)) {
+                            await get()._requireAdminLogin(actorBoundAdminLicense, adminSession);
+                            coordinatorState = 'ready';
+                            return { status: get().appStatus };
+                        }
+
+                        if (isSessionVerificationTransportFailure(adminSession)) {
+                            const offlineEligible = await hasValidOfflineAdminSession();
+                            assertBootstrapActorCurrent();
+                            if (offlineEligible) {
+                                const offlineAdmin = actorBoundAdminLicense.admin_user || null;
+                                try {
+                                    await restoreActorAuthority('admin', offlineAdmin);
+                                    assertBootstrapActorCurrent();
+                                    set({ currentAdminUser: offlineAdmin });
+                                    await get()._processOfflineMode(actorBoundAdminLicense);
+                                    assertBootstrapActorCurrent();
+                                    if (!['ready', 'setup_required', 'unauthenticated'].includes(get().appStatus)) {
+                                        await get()._completeRestoredAdminPreparation?.(actorBoundAdminLicense.license_key);
+                                        assertBootstrapActorCurrent();
+                                    }
+                                    coordinatorState = 'ready';
+                                    return { status: get().appStatus };
+                                } catch (actorError) {
+                                    if (classifyDatabaseError(actorError).structural) throw actorError;
+                                    assertBootstrapActorCurrent();
+                                    setVerificationUnavailable(set, 'admin', actorBoundAdminLicense, {
+                                        code: actorError?.code || 'ACTOR_SESSION_RESTORE_FAILED',
+                                        verificationStatus: SESSION_VERIFICATION_STATUS.INVALID_RESPONSE,
+                                        uiCode: 'ACTOR_RUNTIME_RESTORE_FAILED',
+                                        userMessage: 'La evidencia local no permitió restaurar una autoridad administrativa segura. El acceso permanece bloqueado; reintenta la verificación.'
+                                    });
+                                    coordinatorState = 'ready';
+                                    return { status: get().appStatus };
+                                }
+                            }
+                        }
+
+                        if (adminSession?.verificationStatus === SESSION_VERIFICATION_STATUS.LOCAL_CREDENTIALS_MISSING
+                            && adminSession.missingCredentials?.includes('admin_session_token')) {
+                            assertBootstrapActorCurrent();
+                            await get().discoverAdminAccess(actorBoundAdminLicense.license_key);
+                            coordinatorState = 'ready';
+                            return { status: get().appStatus };
+                        }
+
+                        if (adminSession?.verificationStatus === SESSION_VERIFICATION_STATUS.LOCAL_CREDENTIALS_MISSING) {
+                            await get()._requireAdminLogin(actorBoundAdminLicense, {
+                                ...adminSession,
+                                preserveSessionCredentials: true
+                            });
+                            coordinatorState = 'ready';
+                            return { status: get().appStatus };
+                        }
+
+                        if (isSessionVerificationInconclusive(adminSession)) {
+                            setVerificationUnavailable(set, 'admin', actorBoundAdminLicense, adminSession);
+                        } else {
+                            setVerificationUnavailable(set, 'admin', actorBoundAdminLicense, {
+                                ...adminSession,
+                                verificationStatus: SESSION_VERIFICATION_STATUS.INVALID_RESPONSE
+                            });
+                        }
                         coordinatorState = 'ready';
-                        return { status: get().appStatus };
+                        return { status: 'admin_login_required' };
                     }
 
                     const restoredLicense = {
@@ -322,7 +479,9 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
                         admin_identity_required: true,
                         admin_user: adminSession.admin_user || actorBoundAdminLicense.admin_user || null
                     };
+                    assertBootstrapActorCurrent();
                     await saveLicenseToStorage(restoredLicense);
+                    assertBootstrapActorCurrent();
                     set({
                         licenseDetails: restoredLicense,
                         currentDeviceRole: 'admin',
@@ -334,17 +493,13 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
                     try {
                         await restoreActorAuthority('admin', restoredLicense.admin_user);
                     } catch (actorError) {
-                        if (canClearFailedActorSession(actorError)) {
-                            await clearAdminSessionCache();
-                        }
-                        set({
-                            appStatus: 'admin_login_required',
-                            currentAdminUser: null,
-                            adminLoginMessage: 'La sesión administrativa no pudo recuperar una autoridad operativa segura. Inicia sesión nuevamente.',
-                            adminLoginError: {
-                                code: actorError?.code || 'ACTOR_SESSION_RESTORE_FAILED',
-                                message: actorError?.message || null
-                            }
+                        if (classifyDatabaseError(actorError).structural) throw actorError;
+                        assertBootstrapActorCurrent();
+                        setVerificationUnavailable(set, 'admin', restoredLicense, {
+                            code: actorError?.code || 'ACTOR_SESSION_RESTORE_FAILED',
+                            verificationStatus: SESSION_VERIFICATION_STATUS.VERIFIED,
+                            uiCode: 'ACTOR_RUNTIME_RESTORE_FAILED',
+                            userMessage: 'La sesión se verificó, pero no pudimos restaurar una autoridad operativa segura. El acceso permanece bloqueado; reintenta la recuperación.'
                         });
                         coordinatorState = 'ready';
                         return { status: 'admin_login_required' };
@@ -352,8 +507,10 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
 
                     if (get()._completeRestoredAdminPreparation) {
                         await get()._completeRestoredAdminPreparation(restoredLicense.license_key);
+                        assertBootstrapActorCurrent();
                     } else {
                         await get()._loadProfile(restoredLicense.license_key);
+                        assertBootstrapActorCurrent();
                         get()._validateInBackground(restoredLicense.license_key, {
                             reason: 'admin_session_restore'
                         });
@@ -366,7 +523,9 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
                 // admin-user session proof. Keep ActorRuntime LOCKED rather
                 // than manufacturing authority from a device identity.
                 logFreeAdminAuthorityMode(localLicense, 'legacy_local_owner');
+                assertBootstrapActorCurrent();
                 await get()._processOfflineMode(localLicense);
+                assertBootstrapActorCurrent();
                 if (navigator.onLine) {
                     get()._validateInBackground(localLicense.license_key, {
                         reason: 'admin_legacy_restore'
@@ -377,6 +536,15 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
                 coordinatorState = 'ready';
                 return { status: get().appStatus };
             } catch (criticalError) {
+                if (criticalError?.code === 'SESSION_VERIFICATION_CONTEXT_STALE'
+                    || (bootstrapActorGeneration !== null
+                        && actorRuntimeController.getState().generation !== bootstrapActorGeneration)) {
+                    coordinatorState = 'ready';
+                    return {
+                        status: get().appStatus,
+                        code: 'BOOTSTRAP_CONTEXT_STALE'
+                    };
+                }
                 lockActorRuntime('application_bootstrap_failed');
                 if (isLocalTenantAccessError(criticalError)) {
                     coordinatorState = 'tenant_blocked';

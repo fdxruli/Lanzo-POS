@@ -159,7 +159,7 @@ describe('canonical actor session transitions', () => {
     mocks.clearStaffSessionCache.mockResolvedValue(undefined);
     mocks.saveLicenseToStorage.mockResolvedValue(undefined);
     mocks.grantAuthenticatedActorRuntime.mockResolvedValue({ status: 'granted' });
-    mocks.restoreActorRuntimeFromCurrentSessionCache.mockResolvedValue({ status: 'granted' });
+    mocks.restoreActorRuntimeFromCurrentSessionCache.mockResolvedValue({ status: 'granted', generation: 0 });
   });
 
   it('restores admin after staff → admin → reload once the explicit login cleared the staff cache', async () => {
@@ -182,7 +182,9 @@ describe('canonical actor session transitions', () => {
 
     mocks.getLicenseFromStorage.mockResolvedValue(state.licenseDetails);
     mocks.verifyAdminSession.mockResolvedValue({
+      success: true,
       valid: true,
+      verificationStatus: 'verified',
       admin_user: { id: 'admin-1' },
       details: proLicense('admin')
     });
@@ -226,7 +228,10 @@ describe('canonical actor session transitions', () => {
     mocks.verifyStaffSession.mockResolvedValue({ valid: true, staff_user: { id: 'staff-1' } });
     await state.initializeApp();
     expect(mocks.prepareLocalDatabase).toHaveBeenCalled();
-    expect(mocks.verifyStaffSession).toHaveBeenCalledWith(state.licenseDetails.license_key);
+    expect(mocks.verifyStaffSession).toHaveBeenCalledWith(
+      state.licenseDetails.license_key,
+      expect.objectContaining({ beforeLocalPersistence: expect.any(Function) })
+    );
     expect(mocks.restoreActorRuntimeFromCurrentSessionCache).toHaveBeenCalledWith({
       actorType: 'staff',
       actor: expect.objectContaining({ id: 'staff-1' })
@@ -254,7 +259,9 @@ describe('canonical actor session transitions', () => {
     const free = modernFreeLicense();
     mocks.getLicenseFromStorage.mockResolvedValue(free);
     mocks.verifyAdminSession.mockResolvedValue({
+      success: true,
       valid: true,
+      verificationStatus: 'verified',
       admin_user: { id: 'admin-free-1', username: 'owner' },
       details: { ...free, admin_user: undefined }
     });
@@ -284,7 +291,9 @@ describe('canonical actor session transitions', () => {
     const free = modernFreeLicense();
     mocks.getLicenseFromStorage.mockResolvedValue(free);
     mocks.verifyAdminSession.mockResolvedValue({
+      success: false,
       valid: false,
+      verificationStatus: 'authoritative_denial',
       code: 'ADMIN_SESSION_INVALID',
       message: 'Inicia sesión nuevamente.'
     });
@@ -301,6 +310,12 @@ describe('canonical actor session transitions', () => {
     mocks.hasAdminSessionToken.mockResolvedValue(false);
     mocks.prepareLocalDatabase.mockResolvedValue({ ready: true });
     mocks.getLicenseFromStorage.mockResolvedValue(state.licenseDetails);
+    mocks.verifyAdminSession.mockResolvedValue({
+      success: false,
+      valid: false,
+      verificationStatus: 'local_credentials_missing',
+      missingCredentials: ['admin_session_token']
+    });
     state.discoverAdminAccess = vi.fn(async () => {
       state.appStatus = 'admin_login_required';
     });
@@ -336,6 +351,12 @@ describe('canonical actor session transitions', () => {
       state.appStatus = 'admin_enrollment_required';
     });
     const remotePro = { ...proLicense('admin'), valid: true, plan_code: 'pro', max_devices: 2 };
+    mocks.verifyAdminSession.mockResolvedValue({
+      success: false,
+      valid: false,
+      verificationStatus: 'local_credentials_missing',
+      missingCredentials: ['admin_session_token']
+    });
     await state._processServerValidation(remotePro, state.licenseDetails, { reason: 'test_hot_upgrade' });
     expect(state.stopLicenseSync).toHaveBeenCalled();
     expect(mocks.clearStaffSessionCache).toHaveBeenCalled();
