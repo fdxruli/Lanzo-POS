@@ -263,7 +263,8 @@ describe('activation storage boundary', () => {
     const { verifyAdminSession } = await import('../supabase');
     await expect(verifyAdminSession('QA-AUTH-CONTRACT')).resolves.toMatchObject({
       verificationStatus: 'authoritative_denial',
-      code: 'ADMIN_SESSION_EXPIRED'
+      code: 'ADMIN_SESSION_EXPIRED',
+      sessionCredentialCleared: true
     });
     expect(mocks.saveData).toHaveBeenCalledWith('sync_cache', { key: 'admin_session_token', value: null });
     expect(mocks.saveData).toHaveBeenCalledWith('sync_cache', { key: 'admin_session_id', value: null });
@@ -279,6 +280,38 @@ describe('activation storage boundary', () => {
     });
     expect(mocks.rpc).not.toHaveBeenCalled();
     expect(mocks.saveData).not.toHaveBeenCalled();
+  });
+
+  it('does not clear Admin credentials replaced while an authoritative response was in flight', async () => {
+    const { runWithLocalTenantSyncLease } = await import('../tenant/localTenantGuard');
+    vi.mocked(runWithLocalTenantSyncLease).mockImplementation(async (_source, _options, operation) => operation());
+    mocks.readDeviceRegistryValue.mockResolvedValue('fixture-device');
+    const values = {
+      device_security_token: 'device-token',
+      admin_session_token: 'admin-token-old',
+      admin_session_id: 'admin-session-old'
+    };
+    mocks.loadData.mockImplementation(async (_store, key) => (
+      Object.hasOwn(values, key) ? { value: values[key] } : null
+    ));
+    let resolveRpc;
+    mocks.rpc.mockReturnValueOnce(new Promise((resolve) => { resolveRpc = resolve; }));
+
+    const { verifyAdminSession } = await import('../supabase');
+    const verification = verifyAdminSession('QA-AUTH-CONTRACT');
+    await vi.waitFor(() => expect(mocks.rpc).toHaveBeenCalledTimes(1));
+    values.admin_session_token = 'admin-token-new';
+    values.admin_session_id = 'admin-session-new';
+    resolveRpc({ data: { success: false, valid: false, code: 'ADMIN_SESSION_EXPIRED' }, error: null });
+
+    await expect(verification).rejects.toMatchObject({
+      code: 'SESSION_VERIFICATION_CONTEXT_STALE'
+    });
+    expect(mocks.saveData).not.toHaveBeenCalled();
+    expect(values).toMatchObject({
+      admin_session_token: 'admin-token-new',
+      admin_session_id: 'admin-session-new'
+    });
   });
 
   it('keeps Staff credentials on a transport failure and continues to require online verification', async () => {
@@ -307,6 +340,58 @@ describe('activation storage boundary', () => {
     });
     expect(mocks.rpc).not.toHaveBeenCalled();
     expect(mocks.saveData).not.toHaveBeenCalled();
+  });
+
+  it('clears only the exact Staff session on authoritative denial and marks that cleanup complete', async () => {
+    const { runWithLocalTenantSyncLease } = await import('../tenant/localTenantGuard');
+    vi.mocked(runWithLocalTenantSyncLease).mockImplementation(async (_source, _options, operation) => operation());
+    mocks.checkInternetConnection.mockResolvedValue(true);
+    mocks.readDeviceRegistryValue.mockResolvedValue('fixture-device');
+    const values = { staff_session_token: 'staff-token', staff_session_id: 'staff-session-id' };
+    mocks.loadData.mockImplementation(async (_store, key) => (
+      Object.hasOwn(values, key) ? { value: values[key] } : null
+    ));
+    mocks.rpc.mockResolvedValue({
+      data: { success: false, valid: false, code: 'SESSION_EXPIRED' },
+      error: null
+    });
+
+    const { verifyStaffSession } = await import('../supabase');
+    await expect(verifyStaffSession('QA-AUTH-CONTRACT')).resolves.toMatchObject({
+      verificationStatus: 'authoritative_denial',
+      code: 'SESSION_EXPIRED',
+      sessionCredentialCleared: true
+    });
+    expect(mocks.saveData).toHaveBeenCalledWith('sync_cache', { key: 'staff_session_token', value: null });
+    expect(mocks.saveData).toHaveBeenCalledWith('sync_cache', { key: 'staff_session_id', value: null });
+    expect(mocks.saveData).not.toHaveBeenCalledWith('sync_cache', expect.objectContaining({ key: 'admin_session_token' }));
+  });
+
+  it('does not clear Staff credentials replaced while an authoritative response was in flight', async () => {
+    const { runWithLocalTenantSyncLease } = await import('../tenant/localTenantGuard');
+    vi.mocked(runWithLocalTenantSyncLease).mockImplementation(async (_source, _options, operation) => operation());
+    mocks.checkInternetConnection.mockResolvedValue(true);
+    mocks.readDeviceRegistryValue.mockResolvedValue('fixture-device');
+    const values = { staff_session_token: 'staff-token-old', staff_session_id: 'staff-session-old' };
+    mocks.loadData.mockImplementation(async (_store, key) => (
+      Object.hasOwn(values, key) ? { value: values[key] } : null
+    ));
+    let resolveRpc;
+    mocks.rpc.mockReturnValueOnce(new Promise((resolve) => { resolveRpc = resolve; }));
+
+    const { verifyStaffSession } = await import('../supabase');
+    const verification = verifyStaffSession('QA-AUTH-CONTRACT');
+    await vi.waitFor(() => expect(mocks.rpc).toHaveBeenCalledTimes(1));
+    values.staff_session_token = 'staff-token-new';
+    values.staff_session_id = 'staff-session-new';
+    resolveRpc({ data: { success: false, valid: false, code: 'SESSION_EXPIRED' }, error: null });
+
+    await expect(verification).resolves.toMatchObject({
+      verificationStatus: 'invalid_response',
+      code: 'SESSION_VERIFICATION_CONTEXT_STALE'
+    });
+    expect(mocks.saveData).not.toHaveBeenCalled();
+    expect(values).toEqual({ staff_session_token: 'staff-token-new', staff_session_id: 'staff-session-new' });
   });
 
   it('enforces the existing Admin offline window and rejects future or expired evidence', async () => {

@@ -193,10 +193,22 @@ export default function AdminLoginModal() {
     setLoading(true);
     setError('');
     try {
-      const result = verificationUnavailable
-        ? await initializeApp()
-        : await resumeAdminSessionPreparation();
-      if (!result?.success && !result?.recoveryRequired) setError(describeLoginError(null, result));
+      if (verificationUnavailable) {
+        const result = await initializeApp();
+        // initializeApp reports handled bootstrap outcomes by status. Only a
+        // failed bootstrap needs an inline error; statuses such as ready,
+        // login-required, and recovery-required are reflected by store state.
+        if (result?.status === 'failed') {
+          setError(describeLoginError(
+            { code: result.code, message: result.error || result.message },
+            { ...result, message: result.error || result.message }
+          ));
+        }
+      } else {
+        // Keep the PR #364 preparation retry contract unchanged.
+        const result = await resumeAdminSessionPreparation();
+        if (!result?.success && !result?.recoveryRequired) setError(describeLoginError(null, result));
+      }
     } catch (recoveryError) {
       setError(describeLoginError(recoveryError));
     } finally {
@@ -264,10 +276,10 @@ export default function AdminLoginModal() {
         </p>
 
         {!online && !recoveryAvailable && (
-          <div className="ui-alert ui-alert--danger" role="status">
+          <div className={`ui-alert ${verificationUnavailable ? 'ui-alert--info' : 'ui-alert--danger'}`} role="status">
             <WifiOff size={18} aria-hidden="true" />
             {verificationUnavailable
-              ? 'Necesitas conexión para verificar la sesión guardada.'
+              ? 'Sin conexión, Lanzo solo restaurará la sesión si la evidencia local vigente lo permite.'
               : 'Necesitas internet para iniciar sesión.'}
           </div>
         )}
@@ -286,7 +298,7 @@ export default function AdminLoginModal() {
             {error && <div className="ui-alert ui-alert--danger" role="alert">{error}</div>}
             <button type="button" ref={recoveryButtonRef}
               className="ui-button ui-button--primary admin-auth-submit"
-              onClick={retryPreparation} disabled={loading || (verificationUnavailable && !online)}>
+              onClick={retryPreparation} disabled={loading}>
               {loading
                 ? verificationUnavailable ? 'Verificando sesión...' : 'Recuperando sesión...'
                 : verificationUnavailable ? 'Reintentar verificación' : 'Reintentar carga'}
@@ -301,7 +313,7 @@ export default function AdminLoginModal() {
             {error && <div className="ui-alert ui-alert--danger" role="alert">{error}</div>}
             <button type="button" ref={recoveryButtonRef}
               className="ui-button ui-button--primary admin-auth-submit"
-              onClick={retryPreparation} disabled={loading || !online}>
+              onClick={retryPreparation} disabled={loading}>
               {loading ? 'Verificando sesión...' : 'Reintentar verificación'}
             </button>
           </div>

@@ -102,3 +102,16 @@ No borrar caché ni IndexedDB, reinstalar PWA ni liberar dispositivos como prime
 ## Pendiente de fases posteriores
 
 Fase 2 puede normalizar el modelo general de sesión y su recuperación; las fases posteriores pueden abordar telemetría y UX de incidentes, compatibilidad de dispositivos y QA de continuidad física. Nada de eso amplía la autorización offline en este cambio.
+
+## Refinamiento focal pre-QA — PR #365
+
+La revisión posterior al HEAD `4bb4769511e2d67e5a8e9fb2475dd25e0d6c48ff` encontró y corrigió estos dos bordes:
+
+- `AdminLoginModal.retryPreparation()` usa `initializeApp()` solo en la rama de verificación y ahora interpreta su `{ status }`; los estados gestionados por el bootstrap no generan una alerta por carecer de `success`. La rama `resumeAdminSessionPreparation()` conserva intacto el contrato `success`/`recoveryRequired` del PR #364.
+- «Reintentar verificación» queda habilitado sin conexión. El intento vuelve a ejecutar el bootstrap y no concede acceso por sí solo: la restauración offline Admin sigue dependiendo de `hasValidOfflineAdminSession()` y de la restauración canónica de Actor Runtime. La prueba existente mantiene elegible exactamente el límite de 24 horas e invalida evidencia más antigua, futura, vencida o malformada.
+- `verifyAdminSession()` y `verifyStaffSession()` limpian bajo el lease únicamente la credencial del mismo rol que fue comparada con la respuesta autoritativa. Ambas devuelven `sessionCredentialCleared` al completar esa limpieza. `_requireAdminLogin()` y `_requireStaffLogin()` conservan su limpieza de ambos roles en transiciones ordinarias, que mantiene la exclusividad de sesión por dispositivo; cuando reciben el marcador del verificador no repiten la limpieza cruzada después de esperar a `stopLicenseSync()`. Así una autenticación nueva que escriba credenciales durante esa espera no queda borrada por la denegación anterior.
+- Si el token verificado cambia antes de limpiar, el verificador descarta la respuesta como contexto obsoleto y no escribe limpieza. Admin compara token de dispositivo, token Admin e id de sesión; Staff compara su token de sesión. Los logins exitosos también siguen limpiando las credenciales del rol anterior al cambiar explícitamente de rol.
+
+Pruebas focales añadidas: cinco estados de `initializeApp()` sin falsas alertas, reintentos de verificación online/offline con y sin estado recuperable, limpieza autoritativa exacta para Staff, reemplazo tardío de credenciales Admin y Staff, y ausencia de limpieza cruzada repetida en ambos `_require*Login()`. La QA manual de navegador/PWA permanece pendiente; no se amplió la política offline ni se modificó SQL, Actor Runtime, aislamiento tenant o datos financieros.
+
+Verificación de este refinamiento: 7 suites focales separadas, 121/121 pruebas PASS; `npm run build` PASS y auditoría de precache con 23 assets de inicio/0 assets Local en el core; React Doctor PASS, 15 archivos escaneados, sin hallazgos; ESLint en los 7 archivos JS/JSX cambiados PASS. `npm run lint` completo falla por hallazgos fuera de estos archivos (163 errores y 179 advertencias en el árbol completo). Avisos conocidos del build: imports mixtos, chunks >1 MB y patrones PWA sin coincidencias.

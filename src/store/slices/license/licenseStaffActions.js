@@ -46,6 +46,7 @@ export const createLicenseStaffActions = ({
     const sourceLicense = licenseSource || state.licenseDetails || {};
     const licenseKey = sourceLicense.license_key || state.staffLoginLicenseKey || null;
     const preserveSessionCredentials = validation.preserveSessionCredentials === true;
+    const sessionCredentialCleared = validation.sessionCredentialCleared === true;
 
     const nextLicenseDetails = sourceLicense.license_key
       ? {
@@ -63,8 +64,13 @@ export const createLicenseStaffActions = ({
     await get().stopLicenseSync();
 
     if (!preserveSessionCredentials) {
-      await clearStaffSessionCache();
-      await clearAdminSessionCache();
+      // The verifier already cleared the exact Staff session it checked under
+      // the tenant lease. Do not clear both role caches after this await: a
+      // newer login may have established credentials in the meantime.
+      if (!sessionCredentialCleared) {
+        await clearStaffSessionCache();
+        await clearAdminSessionCache();
+      }
     }
 
     if (nextLicenseDetails?.license_key && !preserveSessionCredentials) {

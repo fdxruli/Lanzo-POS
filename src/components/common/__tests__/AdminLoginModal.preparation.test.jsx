@@ -4,6 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 
 const state = vi.hoisted(() => ({
   handleAdminLogin: vi.fn(), resumeAdminSessionPreparation: vi.fn(),
+  initializeApp: vi.fn(), adminLoginError: null,
   handleFreeDeviceTakeover: vi.fn(), logout: vi.fn(), returnToLicenseAccessChoice: vi.fn(),
   pendingAdminSessionResult: null,
   adminLoginMessage: null,
@@ -23,13 +24,85 @@ const fill = () => {
 };
 beforeEach(() => {
   vi.clearAllMocks();
+  state.initializeApp.mockReset();
   state.pendingAdminSessionResult = null;
   state.adminLoginMessage = null;
+  state.adminLoginError = null;
   Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
 });
 afterEach(cleanup);
 
 describe('Admin preparation recovery UI', () => {
+  it.each([
+    ['restauración exitosa', { status: 'ready' }, null],
+    ['fallo de transporte persistente', { status: 'admin_login_required' }, {
+      code: 'SESSION_VERIFICATION_INCONCLUSIVE', message: 'No se pudo verificar la sesión.'
+    }],
+    ['denegación autoritativa', { status: 'admin_login_required' }, null],
+    ['estado de recuperación', { status: 'local_database_recovery_required' }, {
+      code: 'SESSION_VERIFICATION_INCONCLUSIVE', message: 'La verificación quedó pendiente.'
+    }],
+    ['error de Actor Runtime', { status: 'admin_login_required' }, {
+      code: 'ACTOR_RUNTIME_RESTORE_FAILED', message: 'No se pudo restaurar la autoridad segura.'
+    }]
+  ])('uses the bootstrap status contract for %s without a false error alert', async (_case, result, nextError) => {
+    state.adminLoginError = {
+      code: 'SESSION_VERIFICATION_INCONCLUSIVE', message: 'No se pudo verificar la sesión.'
+    };
+    state.initializeApp.mockImplementation(async () => {
+      state.adminLoginError = nextError;
+      state.adminLoginMessage = nextError?.message || null;
+      state.pendingAdminSessionResult = null;
+      return result;
+    });
+    render(<AdminLoginModal />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar verificación' }));
+
+    await waitFor(() => expect(state.initializeApp).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+    expect(state.resumeAdminSessionPreparation).not.toHaveBeenCalled();
+  });
+
+  it('allows offline verification retry and leaves the 24-hour proof decision to bootstrap', async () => {
+    state.adminLoginError = {
+      code: 'SESSION_VERIFICATION_INCONCLUSIVE', message: 'No se pudo verificar la sesión.'
+    };
+    state.initializeApp.mockResolvedValue({ status: 'admin_login_required' });
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+    render(<AdminLoginModal />);
+
+    const retry = screen.getByRole('button', { name: 'Reintentar verificación' });
+    expect(retry).toBeEnabled();
+    expect(screen.getAllByRole('status').some((status) => (
+      /solo restaurará la sesión si la evidencia local vigente lo permite/i.test(status.textContent)
+    ))).toBe(true);
+    fireEvent.click(retry);
+
+    await waitFor(() => expect(state.initializeApp).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
+  it('shows safe copy when initializeApp reports an actual failed bootstrap', async () => {
+    state.adminLoginError = { code: 'SESSION_VERIFICATION_INCONCLUSIVE' };
+    state.initializeApp.mockResolvedValue({ status: 'failed', error: 'Failed to fetch' });
+    render(<AdminLoginModal />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar verificación' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/problema de conexión/i);
+    expect(screen.queryByText(/failed to fetch/i)).not.toBeInTheDocument();
+  });
+
+  it('allows offline verification retry while recovery guidance is available', () => {
+    state.adminLoginError = { code: 'SESSION_VERIFICATION_INCONCLUSIVE' };
+    state.pendingAdminSessionResult = { result: { success: true } };
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+    render(<AdminLoginModal />);
+
+    expect(screen.getByRole('button', { name: 'Reintentar verificación' })).toBeEnabled();
+  });
+
   it('offers an accessible focused preparation retry without asking for credentials again', async () => {
     state.adminLoginMessage = 'Tu sesión está verificada. Reintenta la carga para continuar.';
     state.handleAdminLogin.mockImplementation(async () => {

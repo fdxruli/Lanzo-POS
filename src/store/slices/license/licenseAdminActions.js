@@ -528,11 +528,17 @@ export const createLicenseAdminActions = ({ set, get }) => {
     const source = licenseSource || get().licenseDetails || {};
     const licenseKey = source.license_key || get().adminLoginLicenseKey;
     const preserveSessionCredentials = validation.preserveSessionCredentials === true;
+    const sessionCredentialCleared = validation.sessionCredentialCleared === true;
     lockActorRuntime('admin_login_required');
     await get().stopLicenseSync();
     if (!preserveSessionCredentials) {
-      await clearAdminSessionCache();
-      await clearStaffSessionCache();
+      // The verifier already cleared the exact Admin session it checked under
+      // the tenant lease. Do not clear both role caches after this await: a
+      // newer login may have established credentials in the meantime.
+      if (!sessionCredentialCleared) {
+        await clearAdminSessionCache();
+        await clearStaffSessionCache();
+      }
       if (source.license_key) await saveLicenseToStorage({ ...source, device_role: 'admin', admin_user: null });
     }
     set({

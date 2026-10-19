@@ -114,6 +114,12 @@ const legacyFreeLicense = (overrides = {}) => ({
   ...overrides
 });
 
+const deferred = () => {
+  let resolve;
+  const promise = new Promise((done) => { resolve = done; });
+  return { promise, resolve };
+};
+
 const createStore = (initial = {}) => {
   const state = {
     appStatus: 'loading',
@@ -324,6 +330,60 @@ describe('canonical actor session transitions', () => {
 
     expect(state.discoverAdminAccess).toHaveBeenCalledWith(free.license_key);
     expect(state._processOfflineMode).not.toHaveBeenCalled();
+  });
+
+  it('does not repeat cross-role cache cleanup after a verifier already cleared the denied session', async () => {
+    const adminState = createStore({ licenseDetails: proLicense('admin') });
+    const adminStop = deferred();
+    adminState.stopLicenseSync.mockReturnValueOnce(adminStop.promise);
+    const adminTransition = adminState._requireAdminLogin(proLicense('admin'), {
+      verificationStatus: 'authoritative_denial',
+      sessionCredentialCleared: true,
+      code: 'ADMIN_SESSION_EXPIRED'
+    });
+    await vi.waitFor(() => expect(adminState.stopLicenseSync).toHaveBeenCalledTimes(1));
+    adminStop.resolve();
+    await adminTransition;
+
+    expect(mocks.clearAdminSessionCache).not.toHaveBeenCalled();
+    expect(mocks.clearStaffSessionCache).not.toHaveBeenCalled();
+    expect(mocks.saveLicenseToStorage).toHaveBeenCalledWith(expect.objectContaining({ device_role: 'admin' }));
+
+    vi.clearAllMocks();
+    const staffState = createStore({
+      licenseDetails: proLicense('staff'),
+      staffLoginLicenseKey: proLicense('staff').license_key
+    });
+    const staffStop = deferred();
+    staffState.stopLicenseSync.mockReturnValueOnce(staffStop.promise);
+    const staffTransition = staffState._requireStaffLogin(proLicense('staff'), {
+      verificationStatus: 'authoritative_denial',
+      sessionCredentialCleared: true,
+      code: 'SESSION_EXPIRED'
+    });
+    await vi.waitFor(() => expect(staffState.stopLicenseSync).toHaveBeenCalledTimes(1));
+    staffStop.resolve();
+    await staffTransition;
+
+    expect(mocks.clearStaffSessionCache).not.toHaveBeenCalled();
+    expect(mocks.clearAdminSessionCache).not.toHaveBeenCalled();
+    expect(mocks.saveLicenseToStorage).toHaveBeenCalledWith(expect.objectContaining({ device_role: 'staff' }));
+  });
+
+  it('clears both role caches for ordinary Admin and Staff require-login transitions', async () => {
+    const adminState = createStore({ licenseDetails: proLicense('admin') });
+    await adminState._requireAdminLogin(proLicense('admin'), { code: 'ADMIN_LOGIN_REQUIRED' });
+    expect(mocks.clearAdminSessionCache).toHaveBeenCalledTimes(1);
+    expect(mocks.clearStaffSessionCache).toHaveBeenCalledTimes(1);
+
+    vi.clearAllMocks();
+    const staffState = createStore({
+      licenseDetails: proLicense('staff'),
+      staffLoginLicenseKey: proLicense('staff').license_key
+    });
+    await staffState._requireStaffLogin(proLicense('staff'), { code: 'STAFF_LOGIN_REQUIRED' });
+    expect(mocks.clearStaffSessionCache).toHaveBeenCalledTimes(1);
+    expect(mocks.clearAdminSessionCache).toHaveBeenCalledTimes(1);
   });
 
   it('preserves FREE legacy local-owner bootstrap without creating or verifying an Admin actor', async () => {

@@ -903,7 +903,9 @@ export const verifyStaffSession = async function (licenseKey, { beforeLocalPersi
             if (sessionContextResult) return sessionContextResult;
         }
 
-        return classified;
+        return classified.credentialDisposition === 'clear'
+            ? { ...classified, sessionCredentialCleared: true }
+            : classified;
     } catch (error) {
         if (isSessionVerificationContextError(error)) throw error;
         if (isSessionDatabaseRecoveryError(error)) throw error;
@@ -1964,7 +1966,9 @@ export const verifyAdminSession = async (licenseKey, { beforeLocalPersistence = 
             if (cleanupResult) return cleanupResult;
         }
 
-        return classified;
+        return classified.credentialDisposition === 'clear'
+            ? { ...classified, sessionCredentialCleared: true }
+            : classified;
     } catch (error) {
         if (isSessionVerificationContextError(error)) throw error;
         if (isSessionDatabaseRecoveryError(error)) throw error;
