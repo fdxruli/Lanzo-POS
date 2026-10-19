@@ -6,6 +6,7 @@ const state = vi.hoisted(() => ({
   handleAdminLogin: vi.fn(), resumeAdminSessionPreparation: vi.fn(),
   handleFreeDeviceTakeover: vi.fn(), logout: vi.fn(), returnToLicenseAccessChoice: vi.fn(),
   pendingAdminSessionResult: null,
+  adminLoginMessage: null,
   adminLoginLicenseKey: 'QA-LICENSE', licenseDetails: { plan_code: 'free_trial', license_key: 'QA-LICENSE' }
 }));
 vi.mock('../../../store/useAppStore', () => {
@@ -23,12 +24,14 @@ const fill = () => {
 beforeEach(() => {
   vi.clearAllMocks();
   state.pendingAdminSessionResult = null;
+  state.adminLoginMessage = null;
   Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
 });
 afterEach(cleanup);
 
 describe('Admin preparation recovery UI', () => {
   it('offers an accessible focused preparation retry without asking for credentials again', async () => {
+    state.adminLoginMessage = 'Tu sesión está verificada. Reintenta la carga para continuar.';
     state.handleAdminLogin.mockImplementation(async () => {
       state.pendingAdminSessionResult = { result: { success: true } };
       return { success: false, remoteAuthenticated: true, recoveryRequired: true };
@@ -39,9 +42,56 @@ describe('Admin preparation recovery UI', () => {
     const retry = await screen.findByRole('button', { name: 'Reintentar carga' });
     expect(retry).toBeEnabled();
     await waitFor(() => expect(retry).toHaveFocus());
-    expect(screen.getByRole('alert')).toHaveTextContent(/tu sesión se verificó correctamente/i);
+    expect(screen.getByRole('status')).toHaveTextContent(/tu sesión está verificada.*no pudimos terminar de preparar lanzo/i);
+    expect(screen.getAllByRole('status')).toHaveLength(1);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('Contraseña')).not.toBeInTheDocument();
     expect(screen.getByRole('status')).toHaveAttribute('aria-live', 'polite');
+  });
+
+  it('keeps one recovery notice when a preparation retry fails for the same recoverable reason', async () => {
+    state.pendingAdminSessionResult = { result: { success: true } };
+    state.resumeAdminSessionPreparation.mockResolvedValue({
+      success: false, recoveryRequired: true, code: 'ADMIN_PROFILE_LOAD_PENDING'
+    });
+    render(<AdminLoginModal />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar carga' }));
+
+    expect(await screen.findByRole('button', { name: 'Reintentar carga' })).toBeEnabled();
+    expect(screen.getAllByRole('status')).toHaveLength(1);
+    expect(screen.getByRole('status')).toHaveTextContent(/continuar sin iniciar sesión nuevamente/i);
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(state.resumeAdminSessionPreparation).toHaveBeenCalledTimes(1);
+  });
+
+  it('clears recovery notices after preparation succeeds without submitting credentials again', async () => {
+    state.pendingAdminSessionResult = { result: { success: true } };
+    state.resumeAdminSessionPreparation.mockImplementation(async () => {
+      state.pendingAdminSessionResult = null;
+      return { success: true };
+    });
+    render(<AdminLoginModal />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar carga' }));
+
+    expect(await screen.findByLabelText('Usuario')).toBeInTheDocument();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(state.resumeAdminSessionPreparation).toHaveBeenCalledTimes(1);
+    expect(state.handleAdminLogin).not.toHaveBeenCalled();
+  });
+
+  it('keeps a distinct local database error visible alongside recovery guidance', async () => {
+    state.pendingAdminSessionResult = { result: { success: true } };
+    state.resumeAdminSessionPreparation.mockResolvedValue({ success: false, code: 'DB_BLOCKED' });
+    render(<AdminLoginModal />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar carga' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/base local está abierta en otra pestaña/i);
+    expect(screen.getAllByRole('status')).toHaveLength(1);
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
   });
 
   it('prevents duplicate submissions while the same remote request is pending', async () => {

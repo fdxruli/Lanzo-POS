@@ -132,7 +132,7 @@ export default function AdminLoginModal() {
         return;
       }
       if (!result?.success) {
-        setError(describeLoginError(null, result));
+        if (!result?.recoveryRequired) setError(describeLoginError(null, result));
         return;
       }
 
@@ -156,7 +156,7 @@ export default function AdminLoginModal() {
         password
       });
       if (!result?.success) {
-        setError(describeLoginError(null, result));
+        if (!result?.recoveryRequired) setError(describeLoginError(null, result));
         return;
       }
 
@@ -188,7 +188,7 @@ export default function AdminLoginModal() {
     setError('');
     try {
       const result = await resumeAdminSessionPreparation();
-      if (!result?.success) setError(describeLoginError(null, result));
+      if (!result?.success && !result?.recoveryRequired) setError(describeLoginError(null, result));
     } catch (recoveryError) {
       setError(describeLoginError(recoveryError));
     } finally {
@@ -255,7 +255,7 @@ export default function AdminLoginModal() {
             Necesitas internet para iniciar sesión.
           </div>
         )}
-        {message && !error && (
+        {message && !error && !recoveryAvailable && (
           <div className="ui-alert ui-alert--info" role="status">{message}</div>
         )}
 
@@ -263,7 +263,7 @@ export default function AdminLoginModal() {
           <div className="admin-auth-form" aria-busy={loading}>
             <div className="ui-alert ui-alert--info" role="status" aria-live="polite">
               {loading ? 'Estamos recuperando tu sesión de forma segura.'
-                : 'Tu sesión se verificó correctamente. Reintenta la carga para terminar de preparar Lanzo.'}
+                : 'Tu sesión está verificada. No pudimos terminar de preparar Lanzo. Reintenta la carga para continuar sin iniciar sesión nuevamente.'}
             </div>
             {error && <div className="ui-alert ui-alert--danger" role="alert">{error}</div>}
             <button type="button" ref={recoveryButtonRef}
