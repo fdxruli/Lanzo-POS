@@ -31,9 +31,8 @@ const selectScenario = (id) => fireEvent.change(screen.getByLabelText('Tipo de i
 const provoke = () => fireEvent.click(screen.getByRole('button', { name: /Provocar error de componente|Generar incidencia controlada/ }));
 const openForm = async () => {
   fireEvent.click(screen.getByRole('button', { name: 'Reportar problema' }));
-  return screen.findByRole('heading', { name: 'Enviar diagnóstico técnico' });
+  return screen.findByRole('heading', { name: 'Reportar un problema' });
 };
-const consent = () => fireEvent.click(screen.getByRole('checkbox', { name: /Confirmo que quiero compartir/ }));
 const useMemory = () => fireEvent.change(screen.getByLabelText('Portapapeles'), { target: { value: 'memory' } });
 
 describe('QA-ERROR / QA-UX real components', () => {
@@ -113,80 +112,67 @@ describe('QA-ERROR / QA-UX real components', () => {
   });
 });
 
-describe('QA-REPORT / QA-COMMUNICATION', () => {
-  it('uses the real form with consent, unavailable backend and local diagnostic copy', async () => {
+describe('QA-CONTACT / QA-COMMUNICATION', () => {
+  it('opens only the manual contact flow and copies a readable QA-labelled message', async () => {
     mount(); useMemory(); provoke(); await openForm();
-    expect(screen.getByRole('button', { name: 'Enviar reporte' })).toBeDisabled();
-    consent(); fireEvent.click(screen.getByRole('button', { name: 'Enviar reporte' }));
-    expect(await screen.findByText('Backend no disponible (simulado). No se registró el reporte.')).toBeVisible();
-    const form = screen.getByRole('region', { name: 'Reporte técnico de incidencia' });
-    fireEvent.click(within(form).getByRole('button', { name: 'Copiar diagnóstico' }));
-    expect(await screen.findByText(/Diagnóstico local copiado/)).toBeVisible();
-    expect(screen.queryByText(/Lanzo recibió el reporte/)).not.toBeInTheDocument();
-  });
-  it('tests offline without changing navigator or sending a transport request', async () => {
-    mount(); fireEvent.change(screen.getByLabelText('Conectividad simulada'), { target: { value: 'offline' } });
-    provoke(); await openForm(); consent(); fireEvent.click(screen.getByRole('button', { name: 'Enviar reporte' }));
-    expect(await screen.findByText(/Sin conexión simulada/)).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Enviar reporte' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: /Confirmo que quiero compartir/ })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('radio')).toHaveLength(2);
+    fireEvent.click(screen.getByRole('button', { name: 'Preparar mensaje' }));
+    const message = screen.getByLabelText('Mensaje preparado para revisar');
+    expect(message.value).toContain(QA_LABEL);
+    expect(message.value).toContain('Código del problema:');
+    expect(message.value).not.toMatch(/\{|\}|IR-[A-F0-9]{16}|Enviar reporte|RPC no disponible/);
+    fireEvent.click(screen.getByRole('button', { name: 'Copiar mensaje' }));
+    expect(await screen.findByText(/Mensaje copiado.*Todavía no se ha enviado/)).toBeVisible();
     expect(screen.getByText(/Transporte QA en memoria: 0 llamadas/)).toBeVisible();
   });
-  it('suppresses the mock receipt and keeps communication marked as a test without a folio', async () => {
-    mount(); selectScenario('QA-08'); useMemory(); provoke(); await openForm(); consent();
-    const send = screen.getByRole('button', { name: 'Enviar reporte' });
-    fireEvent.click(send); fireEvent.click(send);
-    expect(await screen.findByText(/Confirmación ficticia validada internamente/)).toBeVisible();
-    expect(document.body.textContent).not.toMatch(/IR-[A-F0-9]{16}/);
+
+  it('allows local preparation and copying offline without contacting a transport', async () => {
+    mount(); useMemory(); fireEvent.change(screen.getByLabelText('Conectividad simulada'), { target: { value: 'offline' } });
+    provoke(); await openForm();
+    expect(screen.getByRole('note')).toHaveTextContent(/Sin conexión.*preparar y copiar/i);
     fireEvent.click(screen.getByRole('button', { name: 'Preparar mensaje' }));
-    const message = screen.getByLabelText('Mensaje preparado para revisar y copiar');
-    expect(message.value).toContain(QA_LABEL);
-    expect(message.value).not.toMatch(/IR-[A-F0-9]{16}/);
+    fireEvent.click(screen.getByRole('button', { name: 'Copiar mensaje' }));
+    expect(await screen.findByText(/Mensaje copiado/)).toBeVisible();
+    expect(screen.getByText(/Transporte QA en memoria: 0 llamadas/)).toBeVisible();
+  });
+
+  it('keeps Telegram recipient selection and email draft inspection under test control', async () => {
+    mount(); selectScenario('QA-08'); useMemory(); provoke(); await openForm();
+    fireEvent.click(screen.getByRole('button', { name: 'Preparar mensaje' }));
+    const message = screen.getByLabelText('Mensaje preparado para revisar');
+    expect(message.value).toContain('PRUEBA QA');
     const telegram = screen.getByRole('link', { name: 'Abrir opciones de Telegram' });
     expect(new URL(telegram.href).pathname).toBe('/share/url');
     expect(new URL(telegram.href).searchParams.get('text')).toContain('PRUEBA QA');
+    fireEvent.click(screen.getByRole('radio', { name: /Correo electrónico/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Preparar mensaje' }));
     const draft = screen.getByRole('link', { name: 'Inspeccionar borrador local' });
     expect(draft.href).toContain('example.invalid');
     fireEvent.click(draft);
     expect(screen.getByText(/Borrador inspeccionado localmente/)).toBeVisible();
     expect(screen.getByRole('link', { name: 'Abrir borrador de prueba en correo' }).href).toContain('example.invalid');
-    expect(screen.getByText(/Transporte QA en memoria: 1 llamadas/)).toBeVisible();
+    expect(screen.getByText(/Transporte QA en memoria: 0 llamadas/)).toBeVisible();
   });
-  it('does not reuse a simulated success after changing the adapter outcome for the same deduplicated incident', async () => {
-    mount(); selectScenario('QA-08'); provoke(); await openForm(); consent();
-    fireEvent.click(screen.getByRole('button', { name: 'Enviar reporte' }));
-    expect(await screen.findByText(/Confirmación ficticia validada internamente/)).toBeVisible();
-    selectScenario('QA-13'); provoke(); await openForm(); consent();
-    fireEvent.click(screen.getByRole('button', { name: 'Enviar reporte' }));
-    expect(await screen.findByText(/No se confirmó recepción. Código seguro:/)).toBeVisible();
-    expect(screen.queryByText(/Confirmación ficticia validada internamente/)).not.toBeInTheDocument();
-    expect(screen.getByText(/Transporte QA en memoria: 2 llamadas/)).toBeVisible();
-  });
-  it('isolates a reporter exception and allows safe copying after it fails', async () => {
-    mount(); selectScenario('QA-13'); useMemory(); provoke(); await openForm(); consent();
-    fireEvent.click(screen.getByRole('button', { name: 'Enviar reporte' }));
-    expect(await screen.findByText(/No se confirmó recepción. Código seguro:/)).toBeVisible();
+
+  it.each(['Tenant ficticio', 'Actor ficticio'])('invalidates prepared contact after changing %s', async (label) => {
+    mount(); useMemory(); provoke(); await openForm();
     fireEvent.click(screen.getByRole('button', { name: 'Preparar mensaje' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Copiar mensaje' }));
-    expect(await screen.findByText(/Mensaje copiado. Revisa el destinatario/)).toBeVisible();
-    expect(screen.getByLabelText('Tipo de incidencia')).toBeEnabled();
-  });
-  it.each(['Tenant ficticio', 'Actor ficticio'])('invalidates prepared communication, diagnostic copy and send after changing %s', async (label) => {
-    mount(); useMemory(); provoke(); await openForm(); consent();
-    fireEvent.click(screen.getByRole('button', { name: 'Preparar mensaje' }));
+    expect(screen.getByRole('link', { name: 'Abrir opciones de Telegram' })).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText(label), { target: { value: label === 'Tenant ficticio' ? 'QA-B' : 'QA-STAFF' } });
     expect(screen.queryByRole('link', { name: 'Abrir opciones de Telegram' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Enviar reporte' })).toBeDisabled();
-    const form = screen.getByRole('region', { name: 'Reporte técnico de incidencia' });
-    fireEvent.click(within(form).getByRole('button', { name: 'Copiar diagnóstico' }));
-    expect(await screen.findByText(/Abre de nuevo la incidencia para copiar/)).toBeVisible();
-    provoke(); await openForm();
-    expect(screen.getByRole('checkbox', { name: /Confirmo que quiero compartir/ })).not.toBeChecked();
+    expect(within(screen.getByRole('region', { name: 'Reportar un problema' })).getByRole('status')).toHaveTextContent(/negocio o la sesión cambió/i);
+    expect(screen.queryByRole('button', { name: 'Enviar reporte' })).not.toBeInTheDocument();
+    expect(screen.getByText(/Transporte QA en memoria: 0 llamadas/)).toBeVisible();
   });
-  it('discards an in-flight response after changing actor', async () => {
-    mount(); selectScenario('QA-08'); provoke(); await openForm(); consent();
-    fireEvent.click(screen.getByRole('button', { name: 'Enviar reporte' }));
-    fireEvent.change(screen.getByLabelText('Actor ficticio'), { target: { value: 'QA-STAFF' } });
-    expect(await screen.findByText(/El contexto cambió. Abre una incidencia nueva/)).toBeVisible();
-    expect(screen.queryByText(/Confirmación ficticia validada internamente/)).not.toBeInTheDocument();
+
+  it('does not expose simulated receipts, report statuses or folios in the current support flow', async () => {
+    mount(); selectScenario('QA-08'); provoke(); await openForm();
+    const contact = screen.getByRole('region', { name: 'Reportar un problema' });
+    expect(within(contact).queryByText(/Confirmación ficticia|Backend no disponible|No se confirmó recepción/)).not.toBeInTheDocument();
+    expect(contact.textContent).not.toMatch(/IR-[A-F0-9]{16}/);
+    expect(within(contact).queryByRole('button', { name: 'Enviar reporte' })).not.toBeInTheDocument();
   });
   it.each(['DB_UNAVAILABLE', 'DB_OPEN_REJECTED', 'DB_SCHEMA_INCOMPATIBLE', 'IDB_ACCESS_ERROR'])('simulates %s without opening storage', (code) => {
     const open = vi.fn(); vi.stubGlobal('indexedDB', { open });

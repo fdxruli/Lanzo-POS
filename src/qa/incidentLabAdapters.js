@@ -1,6 +1,9 @@
 import { createIncidentReporter, INCIDENT_REPORT_STATUS } from '../services/diagnostics/incidentReporter';
 import { createContextSnapshotGuard } from '../services/diagnostics/contextSnapshotGuard';
-import { buildIncidentCommunicationMessage } from '../services/diagnostics/incidentCommunication';
+import {
+  buildIncidentCommunicationMessage,
+  buildIncidentSupportMessage
+} from '../services/diagnostics/incidentCommunication';
 import { copyTextToClipboard } from '../services/support/supportContact';
 
 export const QA_LABEL = 'SIMULACIÓN — NO ENVIADO A SUPABASE';
@@ -70,6 +73,7 @@ export function createIncidentLabAdapters({ copyText = copyTextToClipboard, onEv
     getOnlineState: () => online,
     copyText: copy,
     supportEmail: 'qa-no-enviar@example.invalid',
+    buildSupportMessage: (options) => `${QA_LABEL}\nPRUEBA QA. No se envió ningún mensaje.\n${buildIncidentSupportMessage(options)}`,
     buildCommunication: (options) => `${QA_LABEL}\nPRUEBA QA. No es una incidencia registrada.\n${buildIncidentCommunicationMessage({
       ...options, reportReference: undefined, reportStatus: INCIDENT_REPORT_STATUS.UNAVAILABLE, contextIsCurrent: false
     })}`,

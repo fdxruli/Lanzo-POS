@@ -4,8 +4,11 @@ import {
   INCIDENT_REPORT_STATUS
 } from '../incidentReporter';
 import {
+  buildIncidentSupportMessage,
   buildIncidentCommunicationMessage,
-  MAX_INCIDENT_COMMUNICATION_CODEPOINTS
+  MAX_INCIDENT_COMMUNICATION_CODEPOINTS,
+  MAX_INCIDENT_SUPPORT_DESCRIPTION_CODEPOINTS,
+  MAX_INCIDENT_SUPPORT_MESSAGE_CODEPOINTS
 } from '../incidentCommunication';
 
 const incident = Object.freeze({
@@ -136,5 +139,61 @@ describe('incidentCommunication', () => {
     expect(staleContext).not.toContain('IR-0011223344556677');
     expect(otherIncident).toContain('diagnóstico local no registrado');
     expect(staleContext).toContain('diagnóstico local no registrado');
+  });
+
+  it('CONTACT-06/07/23: builds readable, allowlisted content for Telegram and email', () => {
+    const message = buildIncidentSupportMessage({
+      incident: {
+        ...incident,
+        safe_code: 'INCIDENT_REACT_RENDER',
+        category: 'react_render',
+        safe_route: '/ventas?token=route-secret',
+        app_version: '4.0.0',
+        network_status: 'offline',
+        incident_id: '00000000-0000-4000-8000-000000000001',
+        correlation_id: '00000000-0000-4000-8000-000000000002',
+        customer_name: 'Cliente privado',
+        total: 99123.45,
+        stack: 'stack-secret',
+        security_token: 'token-secret',
+        license_key: 'license-secret'
+      },
+      description: 'Texto libre excluido por omisión'
+    });
+
+    expect(message).toContain('Hola, soporte de Lanzo POS.');
+    expect(message).toContain('Código del problema: INCIDENT_REACT_RENDER');
+    expect(message).toContain('Sección: /ventas');
+    expect(message).toContain('Categoría: Render de interfaz');
+    expect(message).toContain('Versión de Lanzo: 4.0.0');
+    expect(message).toContain('Conexión: Sin conexión');
+    expect(message).not.toMatch(/\{|\}|"schema_version"|00000000-0000|Cliente privado|99123\.45|stack-secret|token-secret|license-secret|route-secret|Texto libre/);
+    expect(Array.from(message).length).toBeLessThanOrEqual(MAX_INCIDENT_SUPPORT_MESSAGE_CODEPOINTS);
+  });
+
+  it('CONTACT-08/09: includes user text only after explicit opt-in and preserves it as entered', () => {
+    const description = '  Estaba abriendo Ventas.\nEl texto conserva su formato.  ';
+    const defaultMessage = buildIncidentSupportMessage({
+      incident,
+      description,
+      includeDescription: false
+    });
+    const includedMessage = buildIncidentSupportMessage({
+      incident,
+      description,
+      includeDescription: true
+    });
+
+    expect(defaultMessage).not.toContain(description);
+    expect(includedMessage).toContain(`Descripción:\n${description}`);
+    expect(Array.from(includedMessage).length).toBeLessThanOrEqual(MAX_INCIDENT_SUPPORT_MESSAGE_CODEPOINTS);
+  });
+
+  it('CONTACT-09: caps explicitly included text at 500 Unicode code points', () => {
+    const description = '😀'.repeat(MAX_INCIDENT_SUPPORT_DESCRIPTION_CODEPOINTS + 15);
+    const message = buildIncidentSupportMessage({ incident, description, includeDescription: true });
+    const included = message.split('Descripción:\n')[1].split('\n\nAgradecería')[0];
+
+    expect(Array.from(included).length).toBe(MAX_INCIDENT_SUPPORT_DESCRIPTION_CODEPOINTS);
   });
 });

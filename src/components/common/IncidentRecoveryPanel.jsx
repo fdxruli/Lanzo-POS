@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { Suspense, lazy, useEffect, useId, useRef, useState } from 'react';
 import {
   CheckCheck,
   Copy,
@@ -11,6 +11,8 @@ import {
 } from 'lucide-react';
 import './ErrorBoundary.css';
 import IncidentReportEntry from './IncidentReportEntry';
+
+const IncidentSupportContactForm = lazy(() => import('./IncidentSupportContactForm'));
 
 const RECOVERY_STATUS_LABELS = Object.freeze({
   detected: 'Problema identificado',
@@ -51,7 +53,13 @@ export default function IncidentRecoveryPanel({
   titleRef = null
 }) {
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
   const detailsId = useId().replace(/:/g, '');
+  const reportRegionId = 'incident-report-region-' + detailsId;
+  const reportHeadingId = 'incident-report-heading-' + detailsId;
+  const reportTriggerRef = useRef(null);
+  const reportReturnFocusRef = useRef(null);
+  const wasReportOpen = useRef(false);
   const isCritical = severity === 'critical_blocker';
   const Icon = isCritical ? ShieldAlert : Info;
   const standalone = !isCritical && presentation === 'standalone';
@@ -59,6 +67,23 @@ export default function IncidentRecoveryPanel({
   const Subheading = standalone ? 'h2' : 'h3';
   const DetailHeading = standalone ? 'h3' : 'h4';
   const hasHelp = incidentRecord || onCopy || supportActions.length > 0;
+
+  useEffect(() => {
+    if (wasReportOpen.current && !reportOpen) {
+      (reportReturnFocusRef.current || reportTriggerRef.current)?.focus();
+      reportReturnFocusRef.current = null;
+    }
+    wasReportOpen.current = reportOpen;
+  }, [reportOpen]);
+
+  const toggleReport = (trigger) => {
+    if (reportOpen) {
+      setReportOpen(false);
+      return;
+    }
+    reportReturnFocusRef.current = trigger || reportTriggerRef.current;
+    setReportOpen(true);
+  };
 
   return (
     <section
@@ -113,14 +138,17 @@ export default function IncidentRecoveryPanel({
             <button
               type="button"
               className="ui-button ui-button--primary incident-recovery__primary"
-              onClick={primaryAction.onClick}
+              onClick={(event) => {
+                if (isCritical && incidentRecord) toggleReport(event.currentTarget);
+                else primaryAction.onClick?.(event);
+              }}
               disabled={primaryAction.disabled}
               aria-describedby={primaryAction.disabledReason ? 'incident-disabled-' + detailsId : undefined}
             >
               {primaryAction.busy
                 ? <RefreshCw className="incident-recovery__spin" size={18} aria-hidden="true" />
                 : primaryAction.icon || null}
-              {primaryAction.label}
+              {isCritical && incidentRecord && reportOpen ? 'Cerrar reporte' : primaryAction.label}
             </button>
           )}
 
@@ -153,8 +181,14 @@ export default function IncidentRecoveryPanel({
               ? 'Comparte el diagnóstico con soporte para revisar el estado de la operación.'
               : 'Si el problema continúa, comparte el diagnóstico con soporte.'}</p>
             <div className="incident-recovery__support-actions">
-              {incidentRecord && <div className="incident-recovery__report">
-                <IncidentReportEntry services={reportServices} incident={incidentRecord} isContextCurrent={isContextCurrent} />
+              {incidentRecord && !isCritical && <div className="incident-recovery__report">
+                <IncidentReportEntry
+                  incident={incidentRecord}
+                  open={reportOpen}
+                  controlsId={reportRegionId}
+                  buttonRef={reportTriggerRef}
+                  onToggle={(event) => toggleReport(event.currentTarget)}
+                />
               </div>}
               {onCopy && (
                 <button type="button" className="ui-button ui-button--ghost incident-recovery__secondary" onClick={onCopy}>
@@ -228,6 +262,24 @@ export default function IncidentRecoveryPanel({
           </button>
         )}
       </div>
+      {incidentRecord && (
+        <div
+          id={reportRegionId}
+          className="incident-recovery__contact-form"
+          hidden={!reportOpen}
+        >
+          {reportOpen && (
+            <Suspense fallback={<p role="status">Preparando el formulario de contacto…</p>}>
+              <IncidentSupportContactForm
+                headingId={reportHeadingId}
+                incident={incidentRecord}
+                isContextCurrent={isContextCurrent}
+                services={reportServices}
+              />
+            </Suspense>
+          )}
+        </div>
+      )}
     </section>
   );
 }

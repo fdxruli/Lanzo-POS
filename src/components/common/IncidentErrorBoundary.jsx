@@ -1,8 +1,8 @@
 import React from 'react';
 import { createPortal } from 'react-dom';
-import { Mail, RefreshCw, ArrowRightCircle } from 'lucide-react';
+import { MessageCircle, RefreshCw, ArrowRightCircle } from 'lucide-react';
 import Logger from '../../services/Logger';
-import { buildSupportMailtoUrl, copyTextToClipboard } from '../../services/support/supportContact';
+import { copyTextToClipboard } from '../../services/support/supportContact';
 import {
   buildSafeIncidentReport,
   classifyIncident,
@@ -305,16 +305,6 @@ export class IncidentErrorBoundary extends React.Component {
     };
   }
 
-  handleReport = () => {
-    const mailtoUrl = buildSupportMailtoUrl({
-      subject: 'Reporte de incidencia técnica - Lanzo POS',
-      body: this._buildReportMessage()
-    });
-    const openSupportMailto = this.props.openSupportMailto
-      || ((url) => { window.location.href = url; });
-    openSupportMailto(mailtoUrl);
-  }
-
   handleCopy = async () => {
     this.setState({ copyError: '' });
     const copiedSuccessfully = await (this.props.copyText || copyTextToClipboard)(this._buildReportMessage());
@@ -518,9 +508,8 @@ export class IncidentErrorBoundary extends React.Component {
 
     const primaryAction = isCritical
       ? {
-        label: 'Abrir correo de soporte',
-        onClick: this.handleReport,
-        icon: <Mail size={18} aria-hidden="true" />
+        label: 'Reportar problema',
+        icon: <MessageCircle size={18} aria-hidden="true" />
       }
       : canShowUpdateAction
         ? {
@@ -560,13 +549,6 @@ export class IncidentErrorBoundary extends React.Component {
       });
     }
     const supportActions = [];
-    if (!isCritical) {
-      supportActions.push({
-        label: 'Abrir correo de soporte',
-        onClick: this.handleReport,
-        icon: <Mail size={17} aria-hidden="true" />
-      });
-    }
 
     let operationDetails = criticalCopy?.operationDetails || null;
     if (!operationDetails && incident.category === 'financial_operation') {
@@ -595,7 +577,7 @@ export class IncidentErrorBoundary extends React.Component {
         incidentRecord={this._incidentRecord}
         isContextCurrent={() => this._hasCurrentRecoveryContext()}
         recoveryNotice={this.state.recoveryActionMessage || (!isOnline ? 'Estás trabajando sin conexión.' : '')}
-        contactNote="Se abrirá tu aplicación de correo. Revisa el mensaje y envíalo cuando estés listo."
+        contactNote="Elige Telegram o correo en el formulario. Revisa el mensaje antes de compartirlo."
         titleRef={this._headingRef}
       />
     );

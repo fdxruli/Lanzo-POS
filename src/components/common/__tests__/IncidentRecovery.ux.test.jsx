@@ -32,7 +32,7 @@ describe('Recovery presentation in real application contexts', () => {
     await waitFor(() => expect(heading).toHaveFocus());
   });
 
-  it('separates recovery from assistance and keeps email instructions next to email', async () => {
+  it('separates recovery from help and places email guidance in the manual contact form', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     mountFailure(new ReferenceError('render failed'), { recoverySurface: 'sales' });
     expect(screen.getByRole('heading', { name: 'No pudimos mostrar Ventas' })).toBeInTheDocument();
@@ -41,8 +41,11 @@ describe('Recovery presentation in real application contexts', () => {
     expect(within(recovery).getByRole('button', { name: 'Reintentar sección' })).toBeEnabled();
     expect(within(recovery).queryByRole('button', { name: 'Copiar diagnóstico' })).not.toBeInTheDocument();
     expect(within(help).getByRole('button', { name: 'Reportar problema' })).toBeEnabled();
-    const email = within(help).getByRole('button', { name: 'Abrir correo de soporte' });
-    expect(email).toHaveAccessibleDescription(/Se abrirá tu aplicación de correo/);
+    expect(within(help).queryByRole('link', { name: 'Abrir correo de soporte' })).not.toBeInTheDocument();
+    fireEvent.click(within(help).getByRole('button', { name: 'Reportar problema' }));
+    const contact = await screen.findByRole('region', { name: 'Reportar un problema' });
+    expect(within(contact).getByRole('radio', { name: /Correo electrónico/ })).toBeInTheDocument();
+    expect(within(contact).getByText(/Prepara un borrador y envíalo desde tu aplicación de correo/)).toBeInTheDocument();
     fireEvent.click(within(help).getByRole('button', { name: 'Copiar diagnóstico' }));
     await screen.findByRole('button', { name: 'Diagnóstico copiado' });
     expect(within(help).getByRole('status')).toHaveTextContent('Diagnóstico copiado. Revísalo antes de compartirlo.');
@@ -52,10 +55,22 @@ describe('Recovery presentation in real application contexts', () => {
   it('moves focus into the report and returns it to the help entrypoint', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     mountFailure(new TypeError('synthetic'), { recoverySurface: 'welcome' });
-    fireEvent.click(screen.getByRole('button', { name: 'Reportar problema' }));
-    const heading = await screen.findByRole('heading', { name: 'Enviar diagnóstico técnico' });
+    const trigger = screen.getByRole('button', { name: 'Reportar problema' });
+    const reportRegionId = trigger.getAttribute('aria-controls');
+    fireEvent.click(trigger);
+    const heading = await screen.findByRole('heading', { name: 'Reportar un problema' });
     await waitFor(() => expect(heading).toHaveFocus());
-    fireEvent.click(screen.getByRole('button', { name: 'Cerrar', exact: true }));
+    const recovery = heading.closest('.incident-recovery');
+    const reportRegion = document.getElementById(reportRegionId);
+    expect(reportRegion.parentElement).toBe(recovery);
+    expect(reportRegion.previousElementSibling).toHaveClass('incident-recovery__layout');
+    expect(reportRegion).not.toContainElement(screen.getByRole('region', { name: '¿Necesitas ayuda?' }));
+    expect(reportRegion.querySelector('.incident-report__form')).toBeNull();
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.queryByRole('button', { name: 'Enviar reporte' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Folio:|No se confirmó la recepción|RPC no disponible/i)).not.toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Cerrar reporte' })).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar reporte' }));
     await waitFor(() => expect(screen.getByRole('button', { name: 'Reportar problema' })).toHaveFocus());
   });
 
