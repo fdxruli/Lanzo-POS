@@ -111,10 +111,15 @@ describe('BackupRuntime durable attention and headless operation', () => {
   it('makes a genuinely new error unread after confirmed recovery without reviving the banner', async () => {
     mocks.status = baseStatus({ configured: true, unlocked: true, settings: { lastResult: 'error', cronBlocked: true } });
     mount();
-    fireEvent.click(await screen.findByRole('button', { name: 'Revisar respaldos' }));
-    expect(screen.getByTestId('attention')).toHaveAttribute('data-read', 'read');
+    const review = await screen.findByRole('button', { name: 'Revisar respaldos' });
+    const { key } = await waitForPresentedAttentionRecord();
+    expect(JSON.parse(localStorage.getItem(key)).readStates).toEqual([]);
+    fireEvent.click(review);
+    await waitFor(() => expect(screen.getByTestId('route')).toHaveTextContent('/configuracion?tab=backup'));
+    await waitFor(() => expect(JSON.parse(localStorage.getItem(key)).readStates).toContain('error'));
     emit(baseStatus({ configured: true, unlocked: true, settings: { lastResult: 'success', lastBackupAt: '2026-10-17T12:00:00Z' } }));
     await waitFor(() => expect(screen.getByTestId('attention')).toHaveTextContent('ready'));
+    await waitFor(() => expect(JSON.parse(localStorage.getItem(key)).readStates).not.toContain('error'));
     emit(baseStatus({ configured: true, unlocked: true, settings: { lastResult: 'error', cronBlocked: true, lastBackupAt: '2026-10-17T12:00:00Z' } }));
     expect(screen.getByTestId('attention')).toHaveTextContent('error');
     expect(screen.getByTestId('attention')).toHaveAttribute('data-read', 'unread');
