@@ -18,6 +18,7 @@ vi.mock('lucide-react', () => {
     CheckCheck: Icon,
     Copy: Icon,
     Mail: Icon,
+    MessageCircle: Icon,
     Send: Icon,
     RefreshCw: Icon,
     Wifi: Icon,

@@ -22,6 +22,7 @@ vi.mock('lucide-react', () => {
   const Icon = ({ size: _size, ...props }) => React.createElement('svg', props);
   return {
     Mail: Icon,
+    MessageCircle: Icon,
     RefreshCw: Icon,
     AlertTriangle: Icon,
     ShieldCheck: Icon,
