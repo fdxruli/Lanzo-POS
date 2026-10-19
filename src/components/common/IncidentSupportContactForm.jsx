@@ -10,7 +10,7 @@ import {
   copyTextToClipboard,
   getSupportEmail
 } from '../../services/support/supportContact';
-import { buildTelegramShareUrl, TELEGRAM_USERNAME } from '../../services/support/telegramContact';
+import { buildTelegramSupportTarget, TELEGRAM_USERNAME } from '../../services/support/telegramContact';
 import './IncidentReportForm.css';
 
 const getOnlineState = () => {
@@ -61,6 +61,7 @@ export default function IncidentSupportContactForm({
   const [online, setOnline] = useState(() => onlineState() !== false);
   const copyText = services?.copyText || copyTextToClipboard;
   const supportEmail = services?.supportEmail || getSupportEmail();
+  const telegramTarget = buildTelegramSupportTarget();
   const safeDetails = getSafeIncidentSupportDetails(incident);
 
   useEffect(() => {
@@ -132,7 +133,7 @@ export default function IncidentSupportContactForm({
   );
   const currentPreparedMessage = preparedIsCurrent ? preparedMessage : null;
   const telegramUrl = currentPreparedMessage
-    ? buildTelegramShareUrl(currentPreparedMessage.message)
+    ? telegramTarget.url
     : '';
   const emailUrl = currentPreparedMessage
     ? buildSupportMailtoUrl({
@@ -218,7 +219,7 @@ export default function IncidentSupportContactForm({
     }
 
     setFeedback(channel === 'telegram'
-      ? 'Se abrirán las opciones de Telegram. Elige el destinatario y envía el mensaje desde esa aplicación; abrirla no confirma el envío.'
+      ? 'Se abrirá el canal público de Lanzo como referencia. Copiar el mensaje o abrir el canal no lo entrega; usa correo electrónico para contactar a soporte.'
       : 'Se abrirá un borrador de correo. Revísalo y envíalo desde tu aplicación; abrirlo no confirma el envío.');
   };
 
@@ -236,7 +237,7 @@ export default function IncidentSupportContactForm({
           <h2 id={headingId || generatedHeadingId} ref={headingRef} tabIndex={-1}>
             Reportar un problema
           </h2>
-          <p>Puedes compartir un resumen del problema con nuestro equipo mediante Telegram o correo electrónico.</p>
+          <p>Puedes preparar un resumen para revisar, copiarlo o abrir el canal público de Lanzo como referencia. El correo electrónico sigue disponible para contactar a soporte.</p>
         </div>
       </header>
 
@@ -296,7 +297,7 @@ export default function IncidentSupportContactForm({
               />
               <span>
                 <strong>Telegram</strong>
-                <span>Prepara un mensaje y compártelo manualmente desde Telegram.</span>
+                <span>Copia el mensaje; el canal público es una referencia, no un chat de soporte verificado.</span>
               </span>
             </label>
             <label className="incident-support-contact__channel">
@@ -316,7 +317,7 @@ export default function IncidentSupportContactForm({
 
           {channel === 'telegram' && (
             <p className="incident-support-contact__channel-note">
-              Telegram te pedirá elegir un destinatario. @{TELEGRAM_USERNAME} es el canal público de Lanzo; no se ha confirmado que reciba mensajes directos.
+              @{TELEGRAM_USERNAME} es un canal público de referencia. No se ha verificado un chat privado de soporte ni que este canal reciba mensajes directos. Copiar o abrir el canal no entrega el diagnóstico; para enviarlo a soporte, elige correo electrónico.
             </p>
           )}
 
@@ -342,7 +343,7 @@ export default function IncidentSupportContactForm({
         <section className="incident-support-contact__preview" aria-labelledby={`${previewId}-heading`}>
           <div>
             <h3 id={`${previewId}-heading`}>Vista previa del mensaje</h3>
-            <p id={previewHelpId}>Revisa todo el contenido y el destinatario antes de compartirlo.</p>
+          <p id={previewHelpId}>Revisa todo el contenido antes de copiarlo. Copiar o abrir una aplicación no confirma que el mensaje se haya recibido.</p>
           </div>
           <label className="incident-support-contact__preview-label" htmlFor={previewId}>
             Mensaje preparado para revisar
@@ -372,7 +373,7 @@ export default function IncidentSupportContactForm({
                 onClick={handleExternalAction}
               >
                 <MessageCircle size={17} aria-hidden="true" />
-                Abrir opciones de Telegram
+                Abrir canal oficial
               </a>
             ) : (
               <a
@@ -385,6 +386,11 @@ export default function IncidentSupportContactForm({
               </a>
             )}
           </div>
+          {channel === 'telegram' && (
+            <p className="incident-support-contact__channel-note">
+              Si Telegram no se abre, copia el mensaje o cambia a correo electrónico. El canal se abrirá como referencia pública, no como confirmación de contacto.
+            </p>
+          )}
         </section>
       )}
 

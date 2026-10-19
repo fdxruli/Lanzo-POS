@@ -30,7 +30,10 @@ describe('incidentCommunication', () => {
 
     expect(message).toContain('IR-0011223344556677');
     expect(message).toContain('DB_BLOCKED');
-    expect(message).toContain('indexeddb');
+    expect(message).toContain('Categoría: Almacenamiento local');
+    expect(message).toContain('Área funcional: Caja');
+    expect(message).toContain('Pantalla afectada: Operación de caja');
+    expect(message).toContain('Componente supervisado: No determinado');
     expect(message).toContain('/caja');
     expect(message).not.toContain('route-secret');
     expect(message).toContain('Solicito seguimiento de esta incidencia.');
@@ -163,12 +166,61 @@ describe('incidentCommunication', () => {
 
     expect(message).toContain('Hola, soporte de Lanzo POS.');
     expect(message).toContain('Código del problema: INCIDENT_REACT_RENDER');
-    expect(message).toContain('Sección: /ventas');
+    expect(message).toContain('Área funcional: Ventas');
+    expect(message).toContain('Pantalla afectada: Panel de Ventas');
+    expect(message).toContain('Ruta de navegación: /ventas');
     expect(message).toContain('Categoría: Render de interfaz');
     expect(message).toContain('Versión de Lanzo: 4.0.0');
     expect(message).toContain('Conexión: Sin conexión');
     expect(message).not.toMatch(/\{|\}|"schema_version"|00000000-0000|Cliente privado|99123\.45|stack-secret|token-secret|license-secret|route-secret|Texto libre/);
     expect(Array.from(message).length).toBeLessThanOrEqual(MAX_INCIDENT_SUPPORT_MESSAGE_CODEPOINTS);
+  });
+
+  it('DIAG-12/13: shares the same allowlisted Welcome context in Telegram and email preparation', () => {
+    const message = buildIncidentSupportMessage({
+      incident: {
+        ...incident,
+        safe_code: 'INCIDENT_REACT_RENDER',
+        category: 'react_render',
+        safe_route: 'inicio',
+        navigation_path: '/',
+        recovery_surface: 'welcome',
+        app_version: '4.0.0',
+        stack: 'src/pages/private/customer.jsx',
+        customer_name: 'Cliente privado',
+        total: 99123.45
+      }
+    });
+
+    expect(message).toContain('Área funcional: Acceso a Lanzo POS');
+    expect(message).toContain('Pantalla afectada: Bienvenida y activación de licencia');
+    expect(message).toContain('Ruta de navegación: /');
+    expect(message).toContain('Componente supervisado: WelcomeModal');
+    expect(message).not.toMatch(/private\/customer|Cliente privado|99123\.45/);
+  });
+
+  it('DIAG-12/13: keeps Welcome context in the brief legacy Telegram/email summary', () => {
+    const message = buildIncidentCommunicationMessage({
+      incident: {
+        ...incident,
+        safe_code: 'INCIDENT_REACT_RENDER',
+        category: 'react_render',
+        safe_route: 'inicio',
+        navigation_path: '/',
+        recovery_surface: 'welcome',
+        component_stack: 'src/pages/private/customer.jsx',
+        customer_name: 'Cliente privado',
+        total: 99123.45
+      }
+    });
+
+    expect(message).toContain('Área funcional: Acceso a Lanzo POS');
+    expect(message).toContain('Pantalla afectada: Bienvenida y activación de licencia');
+    expect(message).toContain('Ruta de navegación: /');
+    expect(message).toContain('Componente supervisado: WelcomeModal');
+    expect(message).not.toContain('Archivo asociado conocido');
+    expect(message).not.toMatch(/private\/customer|Cliente privado|99123\.45/);
+    expect(Array.from(message).length).toBeLessThanOrEqual(MAX_INCIDENT_COMMUNICATION_CODEPOINTS);
   });
 
   it('CONTACT-08/09: includes user text only after explicit opt-in and preserves it as entered', () => {

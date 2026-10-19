@@ -4,6 +4,7 @@ import {
   getSafeIncidentAppVersion,
   getSafeIncidentBuildCommit,
   getSafeIncidentRoute,
+  getSafeIncidentLocation,
   INCIDENT_CATEGORY,
   INCIDENT_SEVERITY
 } from './incidentDiagnostics';
@@ -235,6 +236,10 @@ const safeIncidentRecord = (error, context = {}, environment = getDefaultEnviron
   });
   const source = normalizeSource(context.source || (backend ? 'backend_service' : 'module_exception'));
   const safeRoute = getSafeIncidentRoute(context.pathname ?? environment.pathname);
+  const safeLocation = getSafeIncidentLocation(
+    context.recoverySurface,
+    context.pathname ?? environment.pathname
+  );
   const module = safeRoute === 'inicio'
     ? 'inicio'
     : safeRoute.startsWith('/') ? (safeRoute.slice(1) || 'inicio') : 'otra-seccion';
@@ -262,6 +267,10 @@ const safeIncidentRecord = (error, context = {}, environment = getDefaultEnviron
     safe_code: classified.code,
     module,
     safe_route: safeRoute,
+    recovery_surface: safeLocation.recoveryBoundary === 'No determinado'
+      ? ''
+      : safeLocation.recoveryBoundary,
+    navigation_path: safeLocation.navigationPath,
     app_version: getSafeIncidentAppVersion(environment.appVersion),
     build_commit: getSafeIncidentBuildCommit(environment.buildCommit),
     browser_family: getSafeBrowserLabel(environment.userAgent),
@@ -290,7 +299,15 @@ export const createIncidentCapture = ({
         const dedupeKey = [candidate.category, candidate.severity, candidate.safe_code, candidate.module].join('|');
         const existing = recent.get(dedupeKey);
         if (existing && timestamp >= existing.timestamp && timestamp - existing.timestamp < deduplicationWindowMs) {
-          return Object.freeze({ ...existing.incident, deduplicated: true });
+          // Keep the existing incident identity/fingerprint, but refresh the
+          // safe location labels so a same-route failure in another known
+          // recovery boundary is not reported with stale context.
+          return Object.freeze({
+            ...existing.incident,
+            recovery_surface: candidate.recovery_surface,
+            navigation_path: candidate.navigation_path,
+            deduplicated: true
+          });
         }
         const incident = Object.freeze({ ...candidate, incident_id: idFactory(), correlation_id: idFactory() });
         recent.set(dedupeKey, { timestamp, incident });

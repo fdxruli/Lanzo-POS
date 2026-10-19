@@ -22,6 +22,7 @@ import {
   getSafeIncidentBuildCommit,
   getSafeIncidentRoute,
   getSafeIncidentCode,
+  getSafeIncidentLocation,
   INCIDENT_CATEGORY,
   INCIDENT_SEVERITY
 } from './incidentDiagnostics';
@@ -112,8 +113,17 @@ export const createIncidentReportPayload = (incident, userDescription = '') => {
 
 export const formatIncidentDiagnostic = (incident, userDescription = '') => {
   const payload = createIncidentReportPayload(incident, userDescription);
+  const legacyPath = ['inicio', '/inicio'].includes(incident?.safe_route) ? '/' : incident?.safe_route;
+  const location = getSafeIncidentLocation(
+    incident?.recovery_surface,
+    incident?.navigation_path ?? legacyPath
+  );
   return [
     'DIAGNÓSTICO TÉCNICO DE LANZO POS',
+    `Área funcional: ${location.functionalArea}`,
+    `Pantalla afectada: ${location.affectedScreen}`,
+    `Ruta de navegación: ${location.navigationPath}`,
+    `Componente supervisado: ${location.supervisedComponent}`,
     JSON.stringify(payload, null, 2),
     '',
     'La descripción es texto libre y no se limpia automáticamente.'

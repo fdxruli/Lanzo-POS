@@ -302,7 +302,9 @@ describe('ErrorBoundary', () => {
     expect(report).toContain('Clasificación: Almacenamiento local');
     expect(report).toContain('Gravedad: section_failure');
     expect(report).toContain('Tipo técnico: Error');
-    expect(report).toContain('Sección: /ventas');
+    expect(report).toContain('Área funcional: Aplicación general');
+    expect(report).toContain('Pantalla afectada: No determinada');
+    expect(report).toContain('Ruta de navegación: No determinada');
     expect(report).toContain('Conectividad: Online');
     expect(report).toContain('Fecha y hora:');
     expect(report).not.toContain('Ana Lopez');
@@ -326,7 +328,9 @@ describe('ErrorBoundary', () => {
     expect(report).toContain('Código de incidencia: INCIDENT_REACT_RENDER');
     expect(report).toContain('Clasificación: Render de interfaz');
     expect(report).toContain('Gravedad: section_failure');
-    expect(report).toContain('Sección: otra sección');
+    expect(report).toContain('Área funcional: Aplicación general');
+    expect(report).toContain('Pantalla afectada: No determinada');
+    expect(report).toContain('Ruta de navegación: No determinada');
     expect(report).not.toContain('secret-token-value');
     expect(report).not.toContain('full-license-value');
     expect(report).not.toContain('customer-secret');

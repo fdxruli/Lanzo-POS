@@ -52,6 +52,41 @@ describe('Recovery presentation in real application contexts', () => {
     expect(screen.getByRole('button', { name: 'Detalles del problema' })).toHaveAttribute('aria-expanded', 'false');
   });
 
+  it('shows trusted Welcome context and keeps advanced technical details collapsed and locally explicit', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const copyText = vi.fn().mockResolvedValue(true);
+    mountFailure(Object.assign(new TypeError('customer=private-value'), {
+      stack: 'at /Users/private-user/src/secret.jsx'
+    }), { recoverySurface: 'welcome', copyText });
+
+    const detailsButton = screen.getByRole('button', { name: 'Detalles del problema' });
+    expect(detailsButton).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(detailsButton);
+    expect(screen.getByText('Área funcional').parentElement).toHaveTextContent('Acceso a Lanzo POS');
+    expect(screen.getByText('Pantalla afectada').parentElement).toHaveTextContent('Bienvenida y activación de licencia');
+    expect(screen.getByText('Ruta de navegación').parentElement).toHaveTextContent('/');
+    expect(screen.getAllByText('Componente supervisado')[0].parentElement).toHaveTextContent('WelcomeModal');
+    fireEvent.click(screen.getByRole('button', { name: 'Copiar diagnóstico' }));
+    await screen.findByRole('button', { name: 'Diagnóstico copiado' });
+    expect(copyText.mock.calls[0][0]).toContain('Área funcional: Acceso a Lanzo POS');
+    expect(copyText.mock.calls[0][0]).toContain('Pantalla afectada: Bienvenida y activación de licencia');
+    expect(copyText.mock.calls[0][0]).toContain('Componente supervisado: WelcomeModal');
+    expect(copyText.mock.calls[0][0]).not.toContain('private-value');
+
+    const advanced = screen.getByText('Información técnica adicional');
+    expect(advanced.closest('details')).not.toHaveAttribute('open');
+    fireEvent.click(advanced);
+    expect(screen.getByText('Archivo asociado conocido').parentElement)
+      .toHaveTextContent('src/components/common/WelcomeModal.jsx');
+    expect(screen.getByText('Origen exacto de la excepción').parentElement).toHaveTextContent('No determinado');
+    expect(document.body.textContent).not.toMatch(/private-value|private-user|secret\.jsx/);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copiar información técnica adicional' }));
+    await screen.findByRole('button', { name: 'Información avanzada copiada' });
+    expect(copyText).toHaveBeenCalledWith(expect.stringContaining('Archivo asociado conocido: src/components/common/WelcomeModal.jsx'));
+    expect(copyText.mock.calls[1][0]).not.toContain('private-user');
+  });
+
   it('moves focus into the report and returns it to the help entrypoint', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     mountFailure(new TypeError('synthetic'), { recoverySurface: 'welcome' });

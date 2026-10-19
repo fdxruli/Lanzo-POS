@@ -68,6 +68,129 @@ const SAFE_ROUTE_SEGMENTS = new Set([
   'productos', 'renovacion-urgente', 'ventas'
 ]);
 
+const SAFE_NAVIGATION_ROUTES = new Set([
+  '/', '/acerca-de', '/agentes-ia', '/caja', '/clientes', '/configuracion',
+  '/pedidos', '/pedidos-online', '/productos', '/portal-online',
+  '/renovacion-urgente', '/ventas'
+]);
+
+const SAFE_ROUTE_SURFACES = Object.freeze({
+  '/acerca-de': 'about',
+  '/agentes-ia': 'ai_agents',
+  '/caja': 'cash',
+  '/clientes': 'customers',
+  '/configuracion': 'settings',
+  '/pedidos': 'orders',
+  '/pedidos-online': 'online_orders',
+  '/productos': 'products',
+  '/portal-online': 'online_portal',
+  '/renovacion-urgente': 'renewal',
+  '/ventas': 'sales'
+});
+
+const INCIDENT_LOCATION_CATALOG = Object.freeze({
+  welcome: Object.freeze({
+    area: 'Acceso a Lanzo POS',
+    screen: 'Bienvenida y activación de licencia',
+    component: 'WelcomeModal',
+    file: 'src/components/common/WelcomeModal.jsx'
+  }),
+  pos: Object.freeze({
+    area: 'Punto de Venta',
+    screen: 'Operación del POS',
+    component: 'No determinado',
+    file: 'No determinado'
+  }),
+  sales: Object.freeze({
+    area: 'Ventas',
+    screen: 'Panel de Ventas',
+    component: 'No determinado',
+    file: 'No determinado'
+  }),
+  cash: Object.freeze({
+    area: 'Caja',
+    screen: 'Operación de caja',
+    component: 'No determinado',
+    file: 'No determinado'
+  }),
+  settings: Object.freeze({
+    area: 'Configuración',
+    screen: 'Configuración general',
+    component: 'No determinado',
+    file: 'No determinado'
+  }),
+  customers: Object.freeze({
+    area: 'Clientes',
+    screen: 'Gestión de clientes',
+    component: 'No determinado',
+    file: 'No determinado'
+  }),
+  orders: Object.freeze({
+    area: 'Ventas',
+    screen: 'Pedidos',
+    component: 'No determinado',
+    file: 'No determinado'
+  }),
+  online_orders: Object.freeze({
+    area: 'Comercio en línea',
+    screen: 'Pedidos en línea',
+    component: 'No determinado',
+    file: 'No determinado'
+  }),
+  products: Object.freeze({
+    area: 'Inventario',
+    screen: 'Productos',
+    component: 'No determinado',
+    file: 'No determinado'
+  }),
+  ai_agents: Object.freeze({
+    area: 'Agentes de IA',
+    screen: 'Agentes de IA',
+    component: 'No determinado',
+    file: 'No determinado'
+  }),
+  online_portal: Object.freeze({
+    area: 'Comercio en línea',
+    screen: 'Portal en línea',
+    component: 'No determinado',
+    file: 'No determinado'
+  }),
+  about: Object.freeze({
+    area: 'Aplicación general',
+    screen: 'Acerca de Lanzo',
+    component: 'No determinado',
+    file: 'No determinado'
+  }),
+  renewal: Object.freeze({
+    area: 'Acceso a Lanzo POS',
+    screen: 'Renovación de licencia',
+    component: 'No determinado',
+    file: 'No determinado'
+  }),
+  application: Object.freeze({
+    area: 'Aplicación general',
+    screen: 'No determinada',
+    component: 'No determinado',
+    file: 'No determinado'
+  })
+});
+
+const SAFE_RECOVERY_SURFACES = new Set([
+  ...Object.keys(INCIDENT_LOCATION_CATALOG),
+  'section'
+]);
+
+const normalizeSafeNavigationRoute = (pathname) => {
+  const rawPath = typeof pathname === 'string' ? pathname : '/';
+  const pathOnly = rawPath.trim().slice(0, 300).split(/[?#]/, 1)[0] || '/';
+  const normalized = pathOnly.replace(/\\+/g, '/').replace(/\/+$/, '').toLowerCase() || '/';
+  return SAFE_NAVIGATION_ROUTES.has(normalized) ? normalized : 'No determinada';
+};
+
+const normalizeRecoverySurface = (surface) => (
+  typeof surface === 'string' && SAFE_RECOVERY_SURFACES.has(surface) ? surface : ''
+);
+
 const safeRead = (object, key) => {
   try {
     return object?.[key];
@@ -189,6 +312,66 @@ const safeRouteLabel = (pathname) => {
 // structured reports cannot invent a second, less restrictive route filter.
 export const getSafeIncidentRoute = safeRouteLabel;
 
+export const getSafeIncidentNavigationPath = normalizeSafeNavigationRoute;
+
+/**
+ * Derive diagnostic labels only from known recovery boundaries and exact
+ * registered routes. A root path by itself remains ambiguous.
+ */
+export const getSafeIncidentLocation = (recoverySurface, pathname) => {
+  const navigationPath = normalizeSafeNavigationRoute(pathname);
+  const surface = normalizeRecoverySurface(recoverySurface);
+  const routeSurface = navigationPath === '/' || navigationPath === 'No determinada'
+    ? ''
+    : SAFE_ROUTE_SURFACES[navigationPath] || '';
+
+  let resolvedSurface = '';
+  if (surface === 'welcome' && navigationPath === '/') resolvedSurface = 'welcome';
+  else if (surface === 'pos' && navigationPath === '/') resolvedSurface = 'pos';
+  else if (surface === 'application') resolvedSurface = 'application';
+  else if (surface && surface !== 'section') {
+    const expectedRoute = surface === 'pos' || surface === 'welcome' ? '/' : Object.keys(SAFE_ROUTE_SURFACES)
+      .find((route) => SAFE_ROUTE_SURFACES[route] === surface);
+    if (expectedRoute === navigationPath) resolvedSurface = surface;
+  } else if (routeSurface) {
+    resolvedSurface = routeSurface;
+  }
+
+  const location = INCIDENT_LOCATION_CATALOG[resolvedSurface] || INCIDENT_LOCATION_CATALOG.application;
+  const knownBoundary = surface && (
+    surface === 'application'
+    || surface === 'section'
+    || surface === resolvedSurface
+  ) ? surface : '';
+
+  return Object.freeze({
+    functionalArea: location.area,
+    affectedScreen: location.screen,
+    navigationPath,
+    supervisedComponent: location.component,
+    recoveryBoundary: knownBoundary || 'No determinado',
+    associatedFile: location.file,
+    exceptionOrigin: 'No determinado'
+  });
+};
+
+export const getIncidentRecoverySurfaceForPath = (pathname) => {
+  const safePath = normalizeSafeNavigationRoute(pathname);
+  if (safePath === '/') return 'pos';
+  return SAFE_ROUTE_SURFACES[safePath] || 'section';
+};
+
+export const buildSafeIncidentAdvancedDetails = (recoverySurface, pathname) => {
+  const location = getSafeIncidentLocation(recoverySurface, pathname);
+  return [
+    'INFORMACIÓN TÉCNICA ADICIONAL',
+    'Límite de recuperación: ' + location.recoveryBoundary,
+    'Componente supervisado: ' + location.supervisedComponent,
+    'Archivo asociado conocido: ' + location.associatedFile,
+    'Origen exacto de la excepción: ' + location.exceptionOrigin
+  ].join('\n');
+};
+
 export const getSafeBrowserLabel = (userAgent) => {
   const ua = boundedText(userAgent, 400);
   const known = [
@@ -235,6 +418,7 @@ export const buildSafeIncidentReport = (error, context = {}, environment = {}) =
   const incident = classifyIncident(error, context);
   const browser = environment.userAgent ?? safeRead(globalThis.navigator, 'userAgent');
   const location = environment.pathname ?? safeRead(globalThis.location, 'pathname');
+  const safeLocation = getSafeIncidentLocation(context.recoverySurface, location);
   const online = typeof environment.online === 'boolean'
     ? environment.online
     : safeRead(globalThis.navigator, 'onLine') !== false;
@@ -249,7 +433,10 @@ export const buildSafeIncidentReport = (error, context = {}, environment = {}) =
     `Clasificación: ${incident.categoryLabel}`,
     `Gravedad: ${incident.severity}`,
     `Tipo técnico: ${incident.errorType}`,
-    `Sección: ${safeRouteLabel(location)}`,
+    'Área funcional: ' + safeLocation.functionalArea,
+    'Pantalla afectada: ' + safeLocation.affectedScreen,
+    'Ruta de navegación: ' + safeLocation.navigationPath,
+    'Componente supervisado: ' + safeLocation.supervisedComponent,
     `Versión de Lanzo: ${version}`,
     `Commit: ${buildCommit}`,
     `Navegador: ${getSafeBrowserLabel(browser)}`,
@@ -293,6 +480,10 @@ export const getSafeIncidentMetadata = (incident = {}, environment = {}) => {
   const recoveryStatus = SAFE_RECOVERY_STATUSES.has(incident.recoveryStatus)
     ? incident.recoveryStatus
     : 'action_required';
+  const safeLocation = getSafeIncidentLocation(
+    incident.recoverySurface ?? environment.recoverySurface,
+    incident.navigationPath ?? environment.pathname ?? safeRead(globalThis.location, 'pathname')
+  );
 
   return Object.freeze({
     code: getSafeIncidentCode({ code: incident.code }, category),
@@ -303,6 +494,13 @@ export const getSafeIncidentMetadata = (incident = {}, environment = {}) => {
     section: environment.section === 'unknown'
       ? 'No determinada'
       : safeRouteLabel(environment.pathname ?? safeRead(globalThis.location, 'pathname')),
+    functionalArea: safeLocation.functionalArea,
+    affectedScreen: safeLocation.affectedScreen,
+    navigationPath: safeLocation.navigationPath,
+    supervisedComponent: safeLocation.supervisedComponent,
+    recoveryBoundary: safeLocation.recoveryBoundary,
+    associatedFile: safeLocation.associatedFile,
+    exceptionOrigin: safeLocation.exceptionOrigin,
     timestamp: toIsoTimestamp(environment.now),
     appVersion: safeBuildVersion(environment.appVersion ?? import.meta.env?.VITE_APP_VERSION),
     online,

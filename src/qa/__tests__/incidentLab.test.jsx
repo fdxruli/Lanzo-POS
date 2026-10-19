@@ -52,12 +52,15 @@ describe('QA-ERROR / QA-UX real components', () => {
   });
   it('throws a real render exception, captures and classifies it, preserves shell, sanitizes and deduplicates', async () => {
     mount(); provoke();
-    expect(screen.getByRole('heading', { name: 'No pudimos cargar esta información' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'No pudimos mostrar Ventas' })).toBeVisible();
     expect(screen.getByLabelText('Tipo de incidencia')).toBeEnabled();
     expect(screen.getByText(/INCIDENT_REACT_RENDER · react_render · recoverable/)).toBeVisible();
     expect(document.body.textContent).not.toContain('detalle privado omitido');
     fireEvent.click(screen.getByRole('button', { name: 'Detalles del problema' }));
     expect(screen.getByRole('button', { name: 'Ocultar detalles del problema' })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByText('Área funcional').parentElement).toHaveTextContent('Ventas');
+    expect(screen.getByText('Pantalla afectada').parentElement).toHaveTextContent('Panel de Ventas');
+    expect(screen.getByText('Ruta de navegación').parentElement).toHaveTextContent('/ventas');
     provoke();
     fireEvent.click(screen.getByText('Acciones observadas (máximo 30)'));
     expect(screen.getByText('Captura deduplicada')).toBeVisible();
@@ -122,6 +125,9 @@ describe('QA-CONTACT / QA-COMMUNICATION', () => {
     const message = screen.getByLabelText('Mensaje preparado para revisar');
     expect(message.value).toContain(QA_LABEL);
     expect(message.value).toContain('Código del problema:');
+    expect(message.value).toContain('Área funcional: Ventas');
+    expect(message.value).toContain('Pantalla afectada: Panel de Ventas');
+    expect(message.value).toContain('Ruta de navegación: /ventas');
     expect(message.value).not.toMatch(/\{|\}|IR-[A-F0-9]{16}|Enviar reporte|RPC no disponible/);
     fireEvent.click(screen.getByRole('button', { name: 'Copiar mensaje' }));
     expect(await screen.findByText(/Mensaje copiado.*Todavía no se ha enviado/)).toBeVisible();
@@ -138,14 +144,17 @@ describe('QA-CONTACT / QA-COMMUNICATION', () => {
     expect(screen.getByText(/Transporte QA en memoria: 0 llamadas/)).toBeVisible();
   });
 
-  it('keeps Telegram recipient selection and email draft inspection under test control', async () => {
+  it('uses the verified channel reference fallback and keeps email draft inspection under test control', async () => {
     mount(); selectScenario('QA-08'); useMemory(); provoke(); await openForm();
     fireEvent.click(screen.getByRole('button', { name: 'Preparar mensaje' }));
     const message = screen.getByLabelText('Mensaje preparado para revisar');
     expect(message.value).toContain('PRUEBA QA');
-    const telegram = screen.getByRole('link', { name: 'Abrir opciones de Telegram' });
-    expect(new URL(telegram.href).pathname).toBe('/share/url');
-    expect(new URL(telegram.href).searchParams.get('text')).toContain('PRUEBA QA');
+    const telegram = screen.getByRole('link', { name: 'Abrir canal oficial' });
+    const telegramUrl = new URL(telegram.href);
+    expect(telegramUrl.href).toBe('https://t.me/LanzoPOS_Oficial');
+    expect(telegramUrl.pathname).not.toBe('/share/url');
+    expect(telegramUrl.search).toBe('');
+    expect(screen.getByText(/no se ha verificado un chat privado de soporte/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('radio', { name: /Correo electrónico/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Preparar mensaje' }));
     const draft = screen.getByRole('link', { name: 'Inspeccionar borrador local' });
@@ -159,9 +168,9 @@ describe('QA-CONTACT / QA-COMMUNICATION', () => {
   it.each(['Tenant ficticio', 'Actor ficticio'])('invalidates prepared contact after changing %s', async (label) => {
     mount(); useMemory(); provoke(); await openForm();
     fireEvent.click(screen.getByRole('button', { name: 'Preparar mensaje' }));
-    expect(screen.getByRole('link', { name: 'Abrir opciones de Telegram' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Abrir canal oficial' })).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText(label), { target: { value: label === 'Tenant ficticio' ? 'QA-B' : 'QA-STAFF' } });
-    expect(screen.queryByRole('link', { name: 'Abrir opciones de Telegram' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Abrir canal oficial' })).not.toBeInTheDocument();
     expect(within(screen.getByRole('region', { name: 'Reportar un problema' })).getByRole('status')).toHaveTextContent(/negocio o la sesión cambió/i);
     expect(screen.queryByRole('button', { name: 'Enviar reporte' })).not.toBeInTheDocument();
     expect(screen.getByText(/Transporte QA en memoria: 0 llamadas/)).toBeVisible();

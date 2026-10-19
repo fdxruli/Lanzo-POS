@@ -302,6 +302,18 @@
   user-select: text;
 }
 .incident-recovery__details-content dd svg { flex: 0 0 auto; }
+.incident-recovery__advanced { border-top: 1px solid var(--border-color); }
+.incident-recovery__advanced summary {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  cursor: pointer;
+  color: var(--text-light);
+  font-size: 0.86rem;
+  font-weight: 650;
+}
+.incident-recovery__advanced summary:hover { color: var(--brand-accent-text); }
+.incident-recovery__advanced .ui-button { margin-bottom: 0.5rem; }
 .incident-recovery__dismiss { justify-self: start; padding: 0.5rem; background: transparent; color: var(--text-light); font: inherit; }
 .incident-recovery__spin { animation: incident-recovery-spin 1s linear infinite; }
 .incident-recovery__sr-only {

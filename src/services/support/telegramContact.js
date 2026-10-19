@@ -4,7 +4,22 @@ export const TELEGRAM_SHARE_BASE_URL = 'https://t.me/share/url';
 // Telegram direct messages are configurable per channel. The public page for
 // this channel could not be inspected, so callers must not treat it as a chat.
 export const TELEGRAM_CHANNEL_DIRECT_MESSAGES_STATUS = 'unverified';
+export const DIRECT_TELEGRAM_SUPPORT_UNVERIFIED = 'DIRECT_TELEGRAM_SUPPORT_UNVERIFIED';
+export const TELEGRAM_SUPPORT_CONFIGURATION = Object.freeze({
+  destination: 'public_channel_reference',
+  username: TELEGRAM_USERNAME,
+  directMessagesStatus: TELEGRAM_CHANNEL_DIRECT_MESSAGES_STATUS,
+  statusCode: DIRECT_TELEGRAM_SUPPORT_UNVERIFIED
+});
 export const MAX_TELEGRAM_MESSAGE_CODEPOINTS = 1200;
+
+export const buildTelegramSupportTarget = () => Object.freeze({
+  kind: 'channel_reference',
+  status: TELEGRAM_SUPPORT_CONFIGURATION.statusCode,
+  username: TELEGRAM_SUPPORT_CONFIGURATION.username,
+  url: TELEGRAM_CONTACT_BASE_URL,
+  preparedMessageIncluded: false
+});
 
 export const TELEGRAM_CONTACT_INTENT = Object.freeze({
   PRO_INQUIRY: 'pro_inquiry',
@@ -191,7 +206,10 @@ export default Object.freeze({
   TELEGRAM_CONTACT_BASE_URL,
   TELEGRAM_SHARE_BASE_URL,
   TELEGRAM_CHANNEL_DIRECT_MESSAGES_STATUS,
+  DIRECT_TELEGRAM_SUPPORT_UNVERIFIED,
+  TELEGRAM_SUPPORT_CONFIGURATION,
   TELEGRAM_CONTACT_INTENT,
+  buildTelegramSupportTarget,
   buildTelegramContactMessage,
   buildTelegramContactUrl,
   buildTelegramShareUrl,

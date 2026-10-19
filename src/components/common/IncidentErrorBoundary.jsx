@@ -4,6 +4,7 @@ import { MessageCircle, RefreshCw, ArrowRightCircle } from 'lucide-react';
 import Logger from '../../services/Logger';
 import { copyTextToClipboard } from '../../services/support/supportContact';
 import {
+  buildSafeIncidentAdvancedDetails,
   buildSafeIncidentReport,
   classifyIncident,
   getSafeIncidentMetadata
@@ -76,6 +77,8 @@ export class IncidentErrorBoundary extends React.Component {
       crashTimestamp: null,
       copied: false,
       copyError: '',
+      advancedCopied: false,
+      advancedCopyError: '',
       isRecoveryUpdating: false,
       recoveryActionMessage: '',
       recoveryStatus: 'detected',
@@ -102,6 +105,8 @@ export class IncidentErrorBoundary extends React.Component {
       hasError: true,
       error,
       crashTimestamp: new Date().toISOString(),
+      advancedCopied: false,
+      advancedCopyError: '',
       recoveryStatus: 'detected'
     };
   }
@@ -114,6 +119,8 @@ export class IncidentErrorBoundary extends React.Component {
         crashTimestamp: null,
         copied: false,
         copyError: '',
+        advancedCopied: false,
+        advancedCopyError: '',
         isRecoveryUpdating: false,
         recoveryActionMessage: '',
         recoveryStatus: 'detected',
@@ -148,6 +155,7 @@ export class IncidentErrorBoundary extends React.Component {
     this._incidentRecord = this.runtime.captureIncident(error, {
       source: 'react',
       ...(this.props.incidentContext || {}),
+      recoverySurface: this.props.recoverySurface,
       recoveryStatus: this._renderRecoveryAttempts > 0 ? 'failed' : 'action_required'
     });
     if (incident.severity === 'critical_blocker') {
@@ -277,9 +285,10 @@ export class IncidentErrorBoundary extends React.Component {
     const { error, crashTimestamp } = this.state;
     return buildSafeIncidentReport(error, {
       source: 'react',
-      ...(this.props.incidentContext || {})
+      ...(this.props.incidentContext || {}),
+      recoverySurface: this.props.recoverySurface
     }, {
-      pathname: window.location.pathname,
+      pathname: this.props.incidentContext?.pathname ?? window.location.pathname,
       online: (this.runtime.getOnlineState?.() ?? navigator.onLine) !== false,
       appVersion: import.meta.env.VITE_APP_VERSION,
       buildCommit: import.meta.env.VITE_BUILD_COMMIT,
@@ -291,9 +300,10 @@ export class IncidentErrorBoundary extends React.Component {
   _buildMetadata(incident) {
     const metadata = getSafeIncidentMetadata({
       ...incident,
+      recoverySurface: this.props.recoverySurface,
       recoveryStatus: this.state.recoveryStatus
     }, {
-      pathname: window.location.pathname,
+      pathname: this.props.incidentContext?.pathname ?? window.location.pathname,
       online: (this.runtime.getOnlineState?.() ?? navigator.onLine) !== false,
       appVersion: import.meta.env.VITE_APP_VERSION,
       now: this.state.crashTimestamp || new Date()
@@ -316,6 +326,36 @@ export class IncidentErrorBoundary extends React.Component {
     }
     this.setState({ copied: true });
     this._copyTimeout = setTimeout(() => this.setState({ copied: false }), 3000);
+  }
+
+  handleCopyAdvanced = async () => {
+    this.setState({ advancedCopyError: '', advancedCopied: false });
+    if (!this._hasCurrentRecoveryContext()) {
+      this.setState({ advancedCopyError: 'El contexto del negocio o la sesión cambió. No se copió la información anterior.' });
+      return;
+    }
+    let copiedSuccessfully = false;
+    try {
+      copiedSuccessfully = await (this.props.copyText || copyTextToClipboard)(
+        buildSafeIncidentAdvancedDetails(
+          this.props.recoverySurface,
+          this.props.incidentContext?.pathname ?? window.location.pathname
+        )
+      ) === true;
+    } catch {
+      copiedSuccessfully = false;
+    }
+    if (!this._hasCurrentRecoveryContext()) {
+      this.setState({ advancedCopyError: 'El contexto del negocio o la sesión cambió. No se copió la información anterior.' });
+      return;
+    }
+    if (copiedSuccessfully !== true) {
+      this.setState({
+        advancedCopyError: 'No se pudo copiar la información técnica adicional.'
+      });
+      return;
+    }
+    this.setState({ advancedCopied: true });
   }
 
   handleForceUpdateApp = async () => {
@@ -572,6 +612,9 @@ export class IncidentErrorBoundary extends React.Component {
         copied={this.state.copied}
         onCopy={this.handleCopy}
         copyError={this.state.copyError}
+        advancedCopied={this.state.advancedCopied}
+        advancedCopyError={this.state.advancedCopyError}
+        onCopyAdvanced={this.handleCopyAdvanced}
         reportServices={this.props.reportServices}
         recoveryControls={this.props.recoveryControls}
         incidentRecord={this._incidentRecord}

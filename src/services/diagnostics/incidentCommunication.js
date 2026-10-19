@@ -1,4 +1,4 @@
-import { INCIDENT_REPORT_STATUS, formatIncidentChannelSummary } from './incidentReporter';
+import { INCIDENT_REPORT_STATUS } from './incidentReporter';
 import { getSafeIncidentMetadata } from './incidentDiagnostics';
 
 const REPORT_REFERENCE_PATTERN = /^IR-[A-F0-9]{16}$/;
@@ -7,13 +7,16 @@ export const MAX_INCIDENT_SUPPORT_MESSAGE_CODEPOINTS = 1200;
 export const MAX_INCIDENT_SUPPORT_DESCRIPTION_CODEPOINTS = 500;
 
 export const getSafeIncidentSupportDetails = (incident = {}) => {
-  const hasSafeRoute = typeof incident?.safe_route === 'string';
+  const legacyPath = typeof incident?.navigation_path === 'string'
+    ? incident.navigation_path
+    : ['inicio', '/inicio'].includes(incident?.safe_route) ? '/' : incident?.safe_route || 'No determinada';
   const metadata = getSafeIncidentMetadata({
     code: incident?.safe_code,
     category: incident?.category,
-    severity: incident?.severity
+    severity: incident?.severity,
+    recoverySurface: incident?.recovery_surface
   }, {
-    ...(hasSafeRoute ? { pathname: incident.safe_route } : { section: 'unknown' }),
+    pathname: legacyPath,
     appVersion: incident?.app_version
   });
   const connection = incident?.network_status === 'online'
@@ -22,7 +25,10 @@ export const getSafeIncidentSupportDetails = (incident = {}) => {
 
   return Object.freeze({
     code: metadata.code,
-    section: metadata.section !== 'No determinada' ? metadata.section : '',
+    functionalArea: metadata.functionalArea,
+    affectedScreen: metadata.affectedScreen,
+    navigationPath: metadata.navigationPath,
+    supervisedComponent: metadata.supervisedComponent,
     category: metadata.categoryLabel,
     appVersion: metadata.appVersion !== 'No disponible' ? metadata.appVersion : '',
     connection
@@ -38,7 +44,10 @@ export const buildIncidentSupportMessage = ({ incident, description = '', includ
   const safeDetails = getSafeIncidentSupportDetails(incident);
   const details = [
     `Código del problema: ${safeDetails.code}`,
-    ...(safeDetails.section ? [`Sección: ${safeDetails.section}`] : []),
+    `Área funcional: ${safeDetails.functionalArea}`,
+    `Pantalla afectada: ${safeDetails.affectedScreen}`,
+    `Ruta de navegación: ${safeDetails.navigationPath}`,
+    `Componente supervisado: ${safeDetails.supervisedComponent}`,
     `Categoría: ${safeDetails.category}`,
     ...(safeDetails.appVersion ? [`Versión de Lanzo: ${safeDetails.appVersion}`] : []),
     ...(safeDetails.connection ? [`Conexión: ${safeDetails.connection}`] : [])
@@ -94,11 +103,19 @@ export const buildIncidentCommunicationMessage = (input = {}) => {
     reportIncidentId,
     contextIsCurrent
   });
-  const summary = formatIncidentChannelSummary({
-    incident,
-    reportReference: receiptConfirmed ? reportReference : undefined,
-    receiptConfirmed
-  });
+  const safeDetails = getSafeIncidentSupportDetails(incident);
+  const receipt = receiptConfirmed
+    ? `Folio confirmado: ${reportReference}`
+    : 'diagnóstico local no registrado';
+  const summary = [
+    receipt,
+    `Código: ${safeDetails.code}`,
+    `Área funcional: ${safeDetails.functionalArea}`,
+    `Pantalla afectada: ${safeDetails.affectedScreen}`,
+    `Ruta de navegación: ${safeDetails.navigationPath}`,
+    `Componente supervisado: ${safeDetails.supervisedComponent}`,
+    `Categoría: ${safeDetails.category}`
+  ].join(' · ');
   const request = receiptConfirmed
     ? 'Solicito seguimiento de esta incidencia.'
     : 'Solicito orientación. Este diagnóstico local no es un reporte registrado.';

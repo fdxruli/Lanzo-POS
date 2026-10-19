@@ -44,6 +44,9 @@ export default function IncidentRecoveryPanel({
   copied = false,
   onCopy = null,
   copyError = '',
+  advancedCopied = false,
+  advancedCopyError = '',
+  onCopyAdvanced = null,
   incidentRecord = null,
   reportServices = null,
   recoveryControls = null,
@@ -231,7 +234,10 @@ export default function IncidentRecoveryPanel({
               <dl>
                 <div><dt>Código técnico</dt><dd>{metadata.code}</dd></div>
                 <div><dt>Categoría</dt><dd>{metadata.categoryLabel}</dd></div>
-                <div><dt>Sección</dt><dd>{metadata.section}</dd></div>
+                <div><dt>Área funcional</dt><dd>{metadata.functionalArea}</dd></div>
+                <div><dt>Pantalla afectada</dt><dd>{metadata.affectedScreen}</dd></div>
+                <div><dt>Ruta de navegación</dt><dd>{metadata.navigationPath}</dd></div>
+                <div><dt>Componente supervisado</dt><dd>{metadata.supervisedComponent}</dd></div>
                 <div><dt>Fecha y hora</dt><dd>{metadata.formattedTimestamp || metadata.timestamp}</dd></div>
                 <div><dt>Versión</dt><dd>{metadata.appVersion}</dd></div>
                 <div>
@@ -247,6 +253,27 @@ export default function IncidentRecoveryPanel({
                   <dd>{RECOVERY_STATUS_LABELS[metadata.recoveryStatus] || 'Requiere una acción'}</dd>
                 </div>
               </dl>
+              <details className="incident-recovery__advanced">
+                <summary>Información técnica adicional</summary>
+                <dl>
+                  <div><dt>Límite de recuperación</dt><dd>{metadata.recoveryBoundary}</dd></div>
+                  <div><dt>Componente supervisado</dt><dd>{metadata.supervisedComponent}</dd></div>
+                  <div><dt>Archivo asociado conocido</dt><dd>{metadata.associatedFile}</dd></div>
+                  <div><dt>Origen exacto de la excepción</dt><dd>{metadata.exceptionOrigin}</dd></div>
+                </dl>
+                {onCopyAdvanced && (
+                  <button type="button" className="ui-button ui-button--ghost"
+                    onClick={onCopyAdvanced}>
+                    {advancedCopied ? <CheckCheck size={17} aria-hidden="true" /> : <Copy size={17} aria-hidden="true" />}
+                    {advancedCopied ? 'Información avanzada copiada' : 'Copiar información técnica adicional'}
+                  </button>
+                )}
+                <p className="incident-recovery__feedback" role="status" aria-live="polite">
+                  {advancedCopyError || (advancedCopied
+                    ? 'La información técnica adicional se copió localmente; todavía no se compartió.'
+                    : '')}
+                </p>
+              </details>
             </div>
           </div>
         )}

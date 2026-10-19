@@ -80,7 +80,8 @@ export default function IncidentRecoveryQaGallery() {
   const start = () => {
     const nextFault = createLabFault(kind, kind === 'storage' ? storage : kind === 'rpc' ? variant : '');
     const context = { source: isRender ? 'react' : kind === 'storage' ? 'indexeddb' : 'backend_service',
-      pathname: kind === 'section' ? '/configuracion' : '/ventas', online: online !== 'offline',
+      pathname: kind === 'section' ? '/configuracion' : '/ventas',
+      recoverySurface: kind === 'section' ? 'settings' : 'sales', online: online !== 'offline',
       ...(kind === 'react' || kind === 'dedupe' ? { severity: 'recoverable' } : {}) };
     const guard = lab.guard();
     setIncidentGuard(() => guard);
@@ -112,7 +113,7 @@ export default function IncidentRecoveryQaGallery() {
   };
   const runtime = { ...lab.boundaryRuntime, captureIncident: captureFromBoundary };
   const metadata = fault ? getSafeIncidentMetadata(classifyIncident(fault.error, fault.context), {
-    pathname: fault.context.pathname, online: online !== 'offline'
+    pathname: fault.context.pathname, recoverySurface: fault.context.recoverySurface, online: online !== 'offline'
   }) : null;
   const metrics = lab.metrics();
   const updateResult = (patch) => setResults((current) => ({ ...current, [qaId]: { ...currentResult, ...patch,
@@ -129,6 +130,7 @@ export default function IncidentRecoveryQaGallery() {
   const recovery = fired && fault && (isRender ? (
     <IncidentErrorBoundary key={generation} ref={boundary} runtime={runtime}
       criticalPortalTarget={host} recoveryControls={critical ? (<div className="incident-qa__escape"><strong>{QA_LABEL} · Bloqueo ficticio</strong><button className="ui-button ui-button--secondary" onClick={reset}>Salir de la prueba</button><button disabled>Reintentar operación</button><p>Escape también cierra esta prueba. No verifica ni reintenta una operación.</p></div>) : null} incidentContext={fault.context}
+      recoverySurface={fault.context.recoverySurface}
       createRecoveryContextGuard={() => incidentGuard} reportServices={lab.services} copyText={(text) => incidentGuard?.() ? lab.copy(text) : Promise.resolve(false)}
       openSupportMailto={() => setEvents((current) => [...current.slice(-29), 'Correo interceptado localmente; sin aplicación externa'])}
       navigateToPos={reset}>
@@ -178,7 +180,7 @@ export default function IncidentRecoveryQaGallery() {
           {normalization && <p>Normalizador real: {normalization.failureKind} · {normalization.reportable ? 'Reportable' : 'Rechazo esperado; sin aviso global'}</p>}
           <details><summary>Inspeccionar última copia local</summary><pre>{metrics.lastCopied || 'Aún no hay copia.'}</pre></details>
         </section>
-        <section aria-labelledby="qa-report"><h2 id="qa-report">Reporte y comunicación</h2><p>Abre «Reportar problema» en la vista afectada. El consentimiento prueba el transporte local. Telegram abre su selector solo por acción manual; el correo se inspecciona localmente hacia example.invalid.</p>
+        <section aria-labelledby="qa-report"><h2 id="qa-report">Reporte y comunicación</h2><p>Abre «Reportar problema» en la vista afectada. El consentimiento prueba el transporte local. Telegram abre el canal público como referencia; el mensaje no se adjunta ni se envía. Para contactar a soporte, copia el texto y envíalo manualmente por un medio verificado, o inspecciona el correo local hacia example.invalid.</p>
           {!fired && <p>Formulario disponible después de crear una incidencia.</p>}
 
           <details><summary>Inspeccionar borrador de correo</summary><pre>{metrics.emailDraft ? decodeURIComponent(metrics.emailDraft) : 'Prepara el mensaje y pulsa «Inspeccionar borrador local».'}</pre></details>

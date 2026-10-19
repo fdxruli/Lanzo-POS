@@ -75,7 +75,9 @@ describe('IncidentSupportContactForm', () => {
     const preview = await openAndPrepare();
     expect(preview.value).toContain('Hola, soporte de Lanzo POS.');
     expect(preview.value).toContain('Código del problema: INCIDENT_REACT_RENDER');
-    expect(preview.value).toContain('Sección: /ventas');
+    expect(preview.value).toContain('Área funcional: Ventas');
+    expect(preview.value).toContain('Pantalla afectada: Panel de Ventas');
+    expect(preview.value).toContain('Ruta de navegación: /ventas');
     expect(preview.value).toContain('Categoría: Render de interfaz');
     expect(preview.value).toContain('Versión de Lanzo: 4.0.0');
     expect(preview.value).toContain('Conexión: En línea');
@@ -99,15 +101,21 @@ describe('IncidentSupportContactForm', () => {
     expect(secondPreview.value).toContain(`Descripción:\n${description}`);
   });
 
-  it('CONTACT-11/12/24: opens user-controlled Telegram options or an email draft without claiming delivery', async () => {
+  it('TG-01/04/07/08/09/11/12/13/16/17: uses an honest channel reference until direct support is verified', async () => {
     render(<IncidentSupportContactForm incident={incident} isContextCurrent={() => true} />);
     await openAndPrepare();
-    const telegram = screen.getByRole('link', { name: 'Abrir opciones de Telegram' });
+    const telegram = screen.getByRole('link', { name: 'Abrir canal oficial' });
     const telegramUrl = new URL(telegram.href);
-    expect(telegramUrl.pathname).toBe('/share/url');
-    expect(telegramUrl.searchParams.get('text')).toContain('INCIDENT_REACT_RENDER');
+    expect(telegramUrl.href).toBe('https://t.me/LanzoPOS_Oficial');
+    expect(telegramUrl.pathname).not.toBe('/share/url');
+    expect(telegramUrl.search).toBe('');
+    expect(telegramUrl.searchParams.has('direct')).toBe(false);
+    expect(screen.getByText(/no se ha verificado un chat privado de soporte/i)).toBeInTheDocument();
+    expect(screen.getByText(/para enviarlo a soporte, elige correo electrónico/i)).toBeInTheDocument();
+    expect(screen.queryByText(/guardar el contacto/i)).not.toBeInTheDocument();
     fireEvent.click(telegram);
-    expect(await screen.findByRole('status')).toHaveTextContent(/elige el destinatario.*abrirla no confirma el envío/i);
+    expect(await screen.findByRole('status')).toHaveTextContent(/copiar el mensaje o abrir el canal no lo entrega/i);
+    expect(screen.getByText(/si Telegram no se abre, copia el mensaje o cambia a correo/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('radio', { name: /Correo electrónico/ }));
     fireEvent.click(screen.getByRole('button', { name: 'Preparar mensaje' }));

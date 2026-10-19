@@ -53,6 +53,54 @@ describe('incidentReporter', () => {
     expect(payload.correlation_id).toMatch(/^[0-9a-f-]{36}$/i);
   });
 
+  it('DIAG-17/18: keeps deduplication and remote schema fixed while refreshing local safe context', () => {
+    const reporter = createTestReporter();
+    const error = Object.assign(new TypeError('synthetic'), { code: 'INCIDENT_REACT_RENDER' });
+    const welcome = reporter.capture(error, { source: 'react', pathname: '/', recoverySurface: 'welcome' });
+    const fingerprint = welcome.fingerprint;
+    const pos = reporter.capture(error, { source: 'react', pathname: '/', recoverySurface: 'pos' });
+    const payload = reporter.prepare(pos);
+
+    expect(pos).toMatchObject({
+      incident_id: welcome.incident_id,
+      fingerprint,
+      recovery_surface: 'pos',
+      navigation_path: '/',
+      deduplicated: true
+    });
+    expect(payload).not.toHaveProperty('recovery_surface');
+    expect(payload).not.toHaveProperty('navigation_path');
+    expect(payload).toMatchObject({ schema_version: 1, safe_route: '/inicio', module: 'inicio' });
+  });
+
+  it('DIAG-14/18: includes safe location labels in technical copy but not in the remote payload schema', () => {
+    const reporter = createTestReporter();
+    const incident = reporter.capture(new Error('synthetic private error'), {
+      source: 'react', pathname: '/', recoverySurface: 'welcome'
+    });
+    const copy = reporter.format(incident);
+    const payload = reporter.prepare(incident);
+
+    expect(copy).toContain('Área funcional: Acceso a Lanzo POS');
+    expect(copy).toContain('Pantalla afectada: Bienvenida y activación de licencia');
+    expect(copy).toContain('Ruta de navegación: /');
+    expect(copy).toContain('Componente supervisado: WelcomeModal');
+    expect(payload).not.toHaveProperty('recovery_surface');
+    expect(payload).not.toHaveProperty('navigation_path');
+    expect(copy).not.toContain('synthetic private error');
+
+    const legacyCopy = reporter.format({
+      ...incident,
+      recovery_surface: undefined,
+      navigation_path: undefined,
+      safe_route: 'inicio'
+    });
+    expect(legacyCopy).toContain('Área funcional: Aplicación general');
+    expect(legacyCopy).toContain('Pantalla afectada: No determinada');
+    expect(legacyCopy).toContain('Ruta de navegación: /');
+    expect(legacyCopy).not.toContain('Bienvenida y activación de licencia');
+  });
+
   it('normalizes lazy navigation and resource failures as recoverable', () => {
     const reporter = createTestReporter();
     const incident = reporter.capture(Object.assign(new Error('Failed to load chunk'), {

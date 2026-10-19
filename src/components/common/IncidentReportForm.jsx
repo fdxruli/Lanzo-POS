@@ -12,9 +12,8 @@ import {
   getSupportEmail
 } from '../../services/support/supportContact';
 import {
-  buildTelegramShareUrl,
+  buildTelegramSupportTarget,
   TELEGRAM_CHANNEL_DIRECT_MESSAGES_STATUS,
-  TELEGRAM_CONTACT_BASE_URL,
   TELEGRAM_USERNAME
 } from '../../services/support/telegramContact';
 import './IncidentReportForm.css';
@@ -110,8 +109,9 @@ export default function IncidentReportForm({
   const visibleReportCode = reportStatus === INCIDENT_REPORT_STATUS.SENT && !currentReceipt
     ? 'INCIDENT_REPORT_CONTEXT_CHANGED'
     : reportCode;
-  const telegramShareUrl = currentPreparedCommunication
-    ? buildTelegramShareUrl(currentPreparedCommunication.message)
+  const telegramSupportTarget = buildTelegramSupportTarget();
+  const telegramUrl = currentPreparedCommunication
+    ? telegramSupportTarget.url
     : '';
   const supportEmail = services?.supportEmail || getSupportEmail();
   const emailUrl = currentPreparedCommunication
@@ -324,7 +324,7 @@ export default function IncidentReportForm({
 
     if (copied) {
       setCommunicationStatus('copied');
-      setCommunicationFeedback('Mensaje copiado. Revisa el destinatario y envíalo manualmente desde Telegram o correo.');
+      setCommunicationFeedback('Mensaje copiado. Revísalo y compártelo manualmente; todavía no se ha enviado.');
       return;
     }
 
@@ -343,8 +343,8 @@ export default function IncidentReportForm({
       return;
     }
 
-    setCommunicationStatus('telegram_open_requested');
-    setCommunicationFeedback('Se solicitó abrir el menú de Telegram. Confirma que se abrió, revisa el destinatario y envía manualmente; esto no registra el reporte.');
+    setCommunicationStatus('telegram_channel_open_requested');
+    setCommunicationFeedback('Se abrirá el canal público de Lanzo como referencia. Copiar o abrirlo no entrega el diagnóstico; usa correo electrónico para contactar a soporte.');
   };
 
   const handleEmailClick = (event) => {
@@ -461,7 +461,7 @@ export default function IncidentReportForm({
           <section className="incident-report__communication" aria-label="Preparar comunicación con soporte">
             <div className="incident-report__heading">
               <h3>Continuar comunicación</h3>
-              <p>Prepara un resumen seguro, cópialo y elige tú el destinatario. Abrir Telegram o el correo no confirma un envío a Lanzo.</p>
+      <p>Prepara un resumen seguro y revísalo antes de copiarlo o abrir una aplicación. Copiarlo o abrir un destino no confirma que Lanzo lo haya recibido.</p>
             </div>
 
             <div className="incident-report__communication-actions">
@@ -475,12 +475,12 @@ export default function IncidentReportForm({
                   </button>
                   <a
                     className="ui-button ui-button--ghost incident-report__external-link"
-                    href={telegramShareUrl}
+                    href={telegramUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={handleTelegramClick}
                   >
-                    <MessageCircle size={16} aria-hidden="true" /> Abrir opciones de Telegram
+                    <MessageCircle size={16} aria-hidden="true" /> Abrir canal oficial
                   </a>
                   <a
                     className="ui-button ui-button--ghost incident-report__external-link"
@@ -517,8 +517,8 @@ export default function IncidentReportForm({
             )}
 
             <p className="incident-report__channel-note">
-              El canal @{TELEGRAM_USERNAME} es una referencia pública. Sus mensajes directos están {TELEGRAM_CHANNEL_DIRECT_MESSAGES_STATUS === 'unverified' ? 'no verificados' : 'verificados'}; compartir abre el selector de Telegram para que elijas otro destinatario.
-              {' '}<a href={TELEGRAM_CONTACT_BASE_URL} target="_blank" rel="noopener noreferrer">Abrir canal oficial como referencia</a>.
+              @{TELEGRAM_USERNAME} es un canal público de referencia. Sus mensajes directos están {TELEGRAM_CHANNEL_DIRECT_MESSAGES_STATUS === 'unverified' ? 'no verificados' : 'verificados'}; no se ha verificado un chat privado de soporte. Copiar o abrir el canal no entrega el diagnóstico; para enviar el resumen a soporte, utiliza correo electrónico.
+              {' '}El canal es una referencia pública, no un chat de recepción verificado.
             </p>
             <p className="incident-report__hint">Si Telegram no está disponible, puedes usar el correo de soporte: {supportEmail}. Revisa y envía el borrador manualmente.</p>
             {communicationFeedback && (

@@ -48,9 +48,14 @@ vi.mock('../../../services/support/supportContact', () => ({
 
 vi.mock('../../../services/support/telegramContact', () => ({
   TELEGRAM_CHANNEL_DIRECT_MESSAGES_STATUS: 'unverified',
-  TELEGRAM_CONTACT_BASE_URL: 'https://t.me/LanzoPOS_Oficial',
   TELEGRAM_USERNAME: 'LanzoPOS_Oficial',
-  buildTelegramShareUrl: (message) => `https://t.me/share/url?url=https%3A%2F%2Ft.me%2FLanzoPOS_Oficial&text=${encodeURIComponent(message)}`
+  buildTelegramSupportTarget: () => ({
+    kind: 'channel_reference',
+    status: 'DIRECT_TELEGRAM_SUPPORT_UNVERIFIED',
+    username: 'LanzoPOS_Oficial',
+    url: 'https://t.me/LanzoPOS_Oficial',
+    preparedMessageIncluded: false
+  })
 }));
 
 vi.mock('../../../services/support/supportTicketService', () => ({
@@ -131,7 +136,7 @@ describe('IncidentReportForm', () => {
 
     expect(screen.queryByText(/Mensaje copiado\./)).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Copiar mensaje' }));
-    expect(await screen.findByText(/Mensaje copiado\. Revisa el destinatario/)).toBeInTheDocument();
+    expect(await screen.findByText(/Mensaje copiado\. Revísalo y compártelo manualmente/)).toBeInTheDocument();
   });
 
   it('TG-08: keeps a selectable text alternative when clipboard access fails', async () => {
@@ -148,7 +153,7 @@ describe('IncidentReportForm', () => {
     expect(messageField.selectionEnd).toBe(messageField.value.length);
   });
 
-  it('TG-09 and TG-13: opening or repeating Telegram communication never changes report delivery or sends a report', async () => {
+  it('TG-09/11/13/16/17: channel reference opening never confirms delivery or sends a report', async () => {
     const previousOnline = navigator.onLine;
     Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
     try {
@@ -158,11 +163,13 @@ describe('IncidentReportForm', () => {
       fireEvent.click(prepareButton);
       fireEvent.click(prepareButton);
 
-      const telegramLink = screen.getByRole('link', { name: /Abrir opciones de Telegram/ });
-      expect(new URL(telegramLink.href).pathname).toBe('/share/url');
+      const telegramLink = screen.getByRole('link', { name: 'Abrir canal oficial' });
+      expect(telegramLink.href).toBe('https://t.me/LanzoPOS_Oficial');
+      expect(new URL(telegramLink.href).pathname).not.toBe('/share/url');
       fireEvent.click(telegramLink);
       expect(await screen.findByText(/Sin conexión\. No se envió el reporte/)).toBeInTheDocument();
-      expect(screen.getByText(/Se solicitó abrir el menú de Telegram.*esto no registra el reporte/)).toBeInTheDocument();
+      expect(screen.getByText(/Se abrirá el canal público de Lanzo.*usa correo electrónico para contactar a soporte/)).toBeInTheDocument();
+      expect(screen.getByText(/mensajes directos están no verificados/i)).toBeInTheDocument();
       expect(submitIncidentReport).not.toHaveBeenCalled();
     } finally {
       Object.defineProperty(navigator, 'onLine', { configurable: true, value: previousOnline });
@@ -175,7 +182,7 @@ describe('IncidentReportForm', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Preparar mensaje' }));
 
     expect(screen.getByText(/mensajes directos están no verificados/i)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Abrir canal oficial como referencia' }))
+    expect(screen.getByRole('link', { name: 'Abrir canal oficial' }))
       .toHaveAttribute('href', 'https://t.me/LanzoPOS_Oficial');
     expect(screen.getByRole('link', { name: 'Abrir correo de soporte' }).getAttribute('href'))
       .toMatch(/^mailto:lanzocontacto@gmail\.com\?/);

@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildSafeIncidentAdvancedDetails,
   buildSafeIncidentReport,
   classifyIncident,
+  getIncidentRecoverySurfaceForPath,
+  getSafeIncidentLocation,
   INCIDENT_CATEGORY,
   INCIDENT_SEVERITY,
   summarizeDiagnosticEvent
@@ -66,7 +69,7 @@ describe('incident diagnostics', () => {
       now: 'invalid timestamp'
     });
 
-    expect(report).toContain('Sección: /ventas');
+    expect(report).toContain('Ruta de navegación: No determinada');
     expect(report).toContain('Versión de Lanzo: No disponible');
     expect(report).toContain('Commit: No disponible');
     expect(report).toContain('Navegador: Chrome 126');
@@ -95,7 +98,7 @@ describe('incident diagnostics', () => {
     expect(report).toContain('Código de incidencia: DB_OPEN_TIMEOUT');
     expect(report).toContain('Clasificación: Almacenamiento local');
     expect(report).toContain('Gravedad: section_failure');
-    expect(report).toContain('Sección: /clientes');
+    expect(report).toContain('Ruta de navegación: No determinada');
     expect(report).toContain('Navegador: Chrome 126');
     expect(report).toContain('Conectividad: Offline');
     expect(report).not.toContain('LNZ-FULL-SECRET');
@@ -107,6 +110,84 @@ describe('incident diagnostics', () => {
     expect(report).not.toContain('9876.50');
     expect(report).not.toContain('access_token');
     expect(report).not.toContain('/private/path');
+  });
+
+  it('DIAG-01/02/03/04/05: resolves only known boundaries and exact registered routes', () => {
+    expect(getSafeIncidentLocation('welcome', '/?invite=private').functionalArea)
+      .toBe('Acceso a Lanzo POS');
+    expect(getSafeIncidentLocation('welcome', '/').affectedScreen)
+      .toBe('Bienvenida y activación de licencia');
+    expect(getSafeIncidentLocation('welcome', '/').navigationPath).toBe('/');
+    expect(getSafeIncidentLocation('welcome', '/').supervisedComponent).toBe('WelcomeModal');
+
+    expect(getSafeIncidentLocation('pos', '/')).toMatchObject({
+      functionalArea: 'Punto de Venta',
+      affectedScreen: 'Operación del POS',
+      navigationPath: '/',
+      supervisedComponent: 'No determinado'
+    });
+    expect(getSafeIncidentLocation('sales', '/ventas').affectedScreen).toBe('Panel de Ventas');
+    expect(getSafeIncidentLocation('sales', '/ventas').supervisedComponent).toBe('No determinado');
+    expect(getSafeIncidentLocation('application', '/').functionalArea).toBe('Aplicación general');
+    expect(getSafeIncidentLocation('settings', '/configuracion').functionalArea).toBe('Configuración');
+    expect(getIncidentRecoverySurfaceForPath('/')).toBe('pos');
+    expect(getIncidentRecoverySurfaceForPath('/ventas')).toBe('sales');
+    expect(getIncidentRecoverySurfaceForPath('/configuracion')).toBe('settings');
+  });
+
+  it('DIAG-06/07/08/10/11: rejects arbitrary paths and never guesses an exact exception origin', () => {
+    const unsafePath = '/clientes/private-name?jwt=secret#account';
+    const location = getSafeIncidentLocation('section', unsafePath);
+    const report = buildSafeIncidentReport(new Error('private exception'), {
+      source: 'react',
+      recoverySurface: 'section'
+    }, { pathname: unsafePath });
+    const advanced = buildSafeIncidentAdvancedDetails('welcome', '/');
+
+    expect(location.navigationPath).toBe('No determinada');
+    expect(location.supervisedComponent).toBe('No determinado');
+    expect(report).not.toContain('private-name');
+    expect(report).not.toContain('jwt=secret');
+    expect(report).not.toContain('account');
+    expect(advanced).toContain('Componente supervisado: WelcomeModal');
+    expect(advanced).toContain('Archivo asociado conocido: src/components/common/WelcomeModal.jsx');
+    expect(advanced).toContain('Origen exacto de la excepción: No determinado');
+    expect(advanced).not.toContain('C:\\');
+  });
+
+  it('DIAG-12/13/14: uses consistent safe context in the technical copy for Telegram and email', () => {
+    const report = buildSafeIncidentReport(new ReferenceError('stack has /private/user/profile'), {
+      source: 'react',
+      recoverySurface: 'welcome'
+    }, {
+      pathname: '/?token=private',
+      appVersion: '4.0.0',
+      buildCommit: '59196cca',
+      userAgent: 'Chrome/152',
+      now: new Date('2026-10-19T20:09:52.861Z')
+    });
+
+    expect(report).toContain('Área funcional: Acceso a Lanzo POS');
+    expect(report).toContain('Pantalla afectada: Bienvenida y activación de licencia');
+    expect(report).toContain('Ruta de navegación: /');
+    expect(report).toContain('Componente supervisado: WelcomeModal');
+    expect(report).not.toContain('token=private');
+    expect(report).not.toContain('/private/user/profile');
+  });
+
+  it('DIAG-15/16: preserves critical finance classification and keeps legacy root events generic', () => {
+    const financial = classifyIncident(Object.assign(new Error('unknown'), {
+      code: 'FINANCIAL_RESULT_UNKNOWN'
+    }));
+    const legacyRoot = getSafeIncidentLocation('', 'inicio');
+
+    expect(financial.severity).toBe(INCIDENT_SEVERITY.CRITICAL_BLOCKER);
+    expect(legacyRoot).toMatchObject({
+      functionalArea: 'Aplicación general',
+      affectedScreen: 'No determinada',
+      navigationPath: 'No determinada',
+      supervisedComponent: 'No determinado'
+    });
   });
 
   it('stores only a technical summary in the in-app console', () => {

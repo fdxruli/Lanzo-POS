@@ -4,7 +4,9 @@ import {
   TELEGRAM_CONTACT_BASE_URL,
   TELEGRAM_SHARE_BASE_URL,
   TELEGRAM_CHANNEL_DIRECT_MESSAGES_STATUS,
+  TELEGRAM_SUPPORT_CONFIGURATION,
   TELEGRAM_CONTACT_INTENT,
+  buildTelegramSupportTarget,
   buildTelegramContactMessage,
   buildTelegramContactUrl,
   createTelegramContact,
@@ -20,6 +22,29 @@ const AUTHORIZED_LOCAL_CONTEXT = Object.freeze({
 });
 
 describe('telegramContact', () => {
+  it('TG-17: exposes only the verified public channel reference while direct support is unverified', () => {
+    const target = buildTelegramSupportTarget();
+    const url = new URL(target.url);
+
+    expect(TELEGRAM_SUPPORT_CONFIGURATION).toMatchObject({
+      destination: 'public_channel_reference',
+      username: 'LanzoPOS_Oficial',
+      directMessagesStatus: 'unverified',
+      statusCode: 'DIRECT_TELEGRAM_SUPPORT_UNVERIFIED'
+    });
+    expect(target).toMatchObject({
+      kind: 'channel_reference',
+      status: 'DIRECT_TELEGRAM_SUPPORT_UNVERIFIED',
+      username: 'LanzoPOS_Oficial',
+      preparedMessageIncluded: false
+    });
+    expect(`${url.origin}${url.pathname}`).toBe('https://t.me/LanzoPOS_Oficial');
+    expect(url.search).toBe('');
+    expect(target.url).not.toContain('/share/url');
+    expect(target.url).not.toContain('?direct');
+    expect(target.url).not.toContain('?text=');
+  });
+
   it('uses Telegram’s documented share chooser and does not target the channel as a direct chat', () => {
     const contact = createTelegramContact(TELEGRAM_CONTACT_INTENT.PRO_INQUIRY);
     const url = new URL(contact.url);
