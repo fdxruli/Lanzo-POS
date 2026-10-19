@@ -495,8 +495,6 @@ export const activateLicense = async function (licenseKey, options = {}) {
         if (!isOnline) {
             return {
                 valid: false,
-                verificationStatus: SESSION_VERIFICATION_STATUS.TRANSPORT_UNAVAILABLE,
-                code: 'LICENSE_ACTIVATION_OFFLINE',
                 message: "No tienes conexion a internet. La activacion requiere estar en linea."
             };
         }
@@ -609,13 +607,7 @@ export const activateLicense = async function (licenseKey, options = {}) {
             await registerFailedAttempt();
         }
 
-        const verificationFailure = classifySessionVerificationResponse('admin', { error });
-        return {
-            valid: false,
-            verificationStatus: verificationFailure.verificationStatus,
-            code: verificationFailure.code,
-            message: verificationFailure.message
-        };
+        return { valid: false, message: error.message };
     }
 };
 
