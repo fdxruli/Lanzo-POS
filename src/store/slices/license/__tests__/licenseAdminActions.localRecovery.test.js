@@ -4,7 +4,7 @@ const supabaseMocks = vi.hoisted(() => ({
   activateLicense: vi.fn(),
   adminLoginOnDevice: vi.fn(),
   verifyAdminSession: vi.fn(),
-  hasValidOfflineAdminSession: vi.fn(),
+  getAdminOfflineAuthorization: vi.fn(),
   adminLogoutSession: vi.fn(),
   clearAdminSessionCache: vi.fn(),
   clearStaffSessionCache: vi.fn(),
@@ -16,7 +16,8 @@ const actorMocks = vi.hoisted(() => ({
   beginActorRuntimeAuthentication: vi.fn(),
   grantAuthenticatedActorRuntime: vi.fn(),
   lockActorRuntime: vi.fn(),
-  assertAuthenticatedActorSessionCurrent: vi.fn(async () => true)
+  assertAuthenticatedActorSessionCurrent: vi.fn(async () => true),
+  refreshAuthenticatedAdminSessionAuthorization: vi.fn(async () => true)
 }));
 
 vi.mock('../../../../services/supabase', () => supabaseMocks);
@@ -72,7 +73,7 @@ beforeEach(() => {
   vi.stubGlobal('navigator', { onLine: true });
   vi.clearAllMocks();
   supabaseMocks.verifyAdminSession.mockResolvedValue({ ...createRemoteResult(), valid: true });
-  supabaseMocks.hasValidOfflineAdminSession.mockResolvedValue(true);
+  supabaseMocks.getAdminOfflineAuthorization.mockResolvedValue({ eligible: true, reason: 'authorized' });
   clearDatabaseRecoveryState();
   supabaseMocks.clearStaffSessionCache.mockResolvedValue(undefined);
   storageMocks.saveLicenseToStorage.mockResolvedValue(undefined);

@@ -12,7 +12,8 @@ const mocks = vi.hoisted(() => ({
   saveData: vi.fn(),
   checkInternetConnection: vi.fn(),
   readDeviceRegistryValue: vi.fn(),
-  writeDeviceRegistryValue: vi.fn()
+  writeDeviceRegistryValue: vi.fn(),
+  getLicenseFromStorage: vi.fn()
 }));
 
 vi.mock('@fingerprintjs/fingerprintjs', () => ({
@@ -38,6 +39,16 @@ vi.mock('../device/deviceRegistry', () => ({
   writeDeviceRegistryValue: mocks.writeDeviceRegistryValue
 }));
 
+vi.mock('../db/tenantRuntimeRouter', () => ({
+  db: { table: () => ({ get: async () => null }) },
+  getTenantRuntimeReadiness: () => ({ ready: true, runtime: { opaqueId: 'tenant-fixture', databaseName: 'LanzoDB_fixture', generation: 1 } }),
+  getActiveTenantRuntime: () => ({ opaqueId: 'tenant-fixture', databaseName: 'LanzoDB_fixture', generation: 1 })
+}));
+
+vi.mock('../licenseStorage', () => ({
+  getLicenseFromStorage: mocks.getLicenseFromStorage
+}));
+
 vi.mock('../utils', () => ({
   safeLocalStorageSet: (key, value) => localStorage.setItem(key, value),
   checkInternetConnection: mocks.checkInternetConnection
@@ -51,6 +62,7 @@ vi.mock('../tenant/localTenantGuard', () => ({
   assertLocalTenantAccess: vi.fn(),
   assertLocalTenantSyncAccess: vi.fn(),
   isLocalTenantAccessError: () => false,
+  getLocalTenantBinding: vi.fn(async () => ({ tenantAliases: ['license-id:fixture-license'] })),
   runWithLocalTenantSyncLease: vi.fn()
 }));
 
@@ -165,10 +177,15 @@ describe('activation storage boundary', () => {
   it('returns canonical Admin session/device evidence without exposing the session token', async () => {
     const { runWithLocalTenantSyncLease } = await import('../tenant/localTenantGuard');
     vi.mocked(runWithLocalTenantSyncLease).mockImplementation(async (_source, _options, operation) => operation());
+    vi.stubGlobal('crypto', {
+      subtle: { digest: vi.fn(async () => new Uint8Array(32).buffer) }
+    });
     mocks.readDeviceRegistryValue.mockResolvedValue('fixture-device');
     mocks.rpc.mockResolvedValue({ data: {
       success: true, admin_user: { id: 'fixture-admin' }, admin_session_id: 'fixture-session',
+      admin_user_id: 'fixture-admin', license_id: 'fixture-license',
       admin_session_token: 'fixture-token', device_id: 'fixture-device-row',
+      device_security_token: 'fixture-device-token',
       admin_session_expires_at: '2030-01-01T00:00:00Z', details: { license_key: 'QA-AUTH-CONTRACT' }
     }, error: null });
     const { adminLoginOnDevice } = await import('../supabase');
@@ -176,6 +193,19 @@ describe('activation storage boundary', () => {
     expect(result).toMatchObject({ success: true, session: { id: 'fixture-session' }, device_id: 'fixture-device-row' });
     expect(result).not.toHaveProperty('admin_session_token');
     expect(mocks.saveData).toHaveBeenCalledWith('sync_cache', { key: 'admin_session_id', value: 'fixture-session' });
+    const savedProof = mocks.saveData.mock.calls
+      .map(([, record]) => record)
+      .find((record) => record?.key === 'last_valid_admin_session')?.value;
+    expect(savedProof).toMatchObject({
+      version: 2,
+      sessionId: 'fixture-session',
+      adminUserId: 'fixture-admin',
+      licenseId: 'fixture-license',
+      deviceId: 'fixture-device-row',
+      deviceRef: 'fixture-device',
+      tenantOpaqueId: 'tenant-fixture'
+    });
+    expect(savedProof).not.toHaveProperty('sessionTokenDigest', 'fixture-token');
   });
 
   it('does not persist credentials for an explicit valid:false RPC denial', async () => {
@@ -474,24 +504,16 @@ describe('activation storage boundary', () => {
     });
   });
 
-  it('enforces the existing Admin offline window and rejects future or expired evidence', async () => {
+  it('does not treat the legacy timestamp-only cache as Admin offline authority', async () => {
     const { hasValidOfflineAdminSession } = await import('../supabase');
     const now = Date.parse('2026-10-19T12:00:00.000Z');
     vi.spyOn(Date, 'now').mockReturnValue(now);
-    const loadCache = (value) => mocks.loadData.mockResolvedValueOnce({ value });
+    mocks.loadData.mockImplementation(async (_store, key) => (
+      key === 'last_valid_admin_session'
+        ? { value: { validatedAt: now - 60_000, expiresAt: new Date(now + 30 * 24 * 60 * 60 * 1000).toISOString() } }
+        : null
+    ));
 
-    loadCache({ validatedAt: now - (23 * 60 * 60 * 1000), expiresAt: new Date(now + 60_000).toISOString() });
-    loadCache({ validatedAt: now - (24 * 60 * 60 * 1000), expiresAt: null });
-    loadCache({ validatedAt: now - (24 * 60 * 60 * 1000) - 1, expiresAt: null });
-    loadCache({ validatedAt: now + 1, expiresAt: null });
-    loadCache({ validatedAt: now - 1000, expiresAt: new Date(now).toISOString() });
-    loadCache({ validatedAt: now - 1000, expiresAt: 'not-a-date' });
-
-    await expect(hasValidOfflineAdminSession()).resolves.toBe(true);
-    await expect(hasValidOfflineAdminSession()).resolves.toBe(true);
-    await expect(hasValidOfflineAdminSession()).resolves.toBe(false);
-    await expect(hasValidOfflineAdminSession()).resolves.toBe(false);
-    await expect(hasValidOfflineAdminSession()).resolves.toBe(false);
     await expect(hasValidOfflineAdminSession()).resolves.toBe(false);
   });
 

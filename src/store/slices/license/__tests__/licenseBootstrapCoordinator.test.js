@@ -12,7 +12,7 @@ const supabaseMocks = vi.hoisted(() => ({
   hasStaffSessionToken: vi.fn(),
   verifyStaffSession: vi.fn(),
   hasAdminSessionToken: vi.fn(),
-  hasValidOfflineAdminSession: vi.fn(),
+  getAdminOfflineAuthorization: vi.fn(),
   verifyAdminSession: vi.fn()
 }));
 const actorMocks = vi.hoisted(() => ({
@@ -74,7 +74,7 @@ describe('initializeApp coordinator', () => {
     supabaseMocks.clearStaffSessionCache.mockResolvedValue(undefined);
     supabaseMocks.hasStaffSessionToken.mockResolvedValue(false);
     supabaseMocks.hasAdminSessionToken.mockResolvedValue(false);
-    supabaseMocks.hasValidOfflineAdminSession.mockResolvedValue(false);
+    supabaseMocks.getAdminOfflineAuthorization.mockResolvedValue({ eligible: false, reason: 'evidence_missing' });
     actorMocks.restoreActorRuntimeFromCurrentSessionCache.mockImplementation(async () => ({
       generation: actorRuntimeController.getState().generation
     }));
@@ -216,6 +216,66 @@ describe('initializeApp coordinator', () => {
     expect(supabaseMocks.clearAdminSessionCache).not.toHaveBeenCalled();
   });
 
+  it('restores eligible Admin locally after a transient server error with navigator.onLine true', async () => {
+    const localLicense = {
+      license_key: 'BOOT-ADMIN-5XX',
+      device_role: 'admin',
+      admin_identity_required: true,
+      plan_code: 'free_trial',
+      admin_user: { id: 'admin-cached' }
+    };
+    storageMocks.getLicenseFromStorage.mockResolvedValue(localLicense);
+    supabaseMocks.verifyAdminSession.mockResolvedValue({
+      success: false,
+      valid: false,
+      verificationStatus: 'server_error',
+      code: 'SESSION_SERVER_HTTP_503'
+    });
+    supabaseMocks.getAdminOfflineAuthorization.mockResolvedValue({
+      eligible: true,
+      reason: 'authorized',
+      effectiveExpiresAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
+      effectiveNow: Date.now()
+    });
+    const state = createState();
+
+    await expect(state.initializeApp()).resolves.toMatchObject({ status: 'ready' });
+    expect(navigator.onLine).toBe(true);
+    expect(actorMocks.restoreActorRuntimeFromCurrentSessionCache).toHaveBeenCalledWith({
+      actorType: 'admin',
+      actor: { id: 'admin-cached' }
+    });
+    expect(state._processOfflineMode).toHaveBeenCalledWith(localLicense);
+  });
+
+  it('does not enter Admin continuity on an ambiguous gateway authorization error', async () => {
+    const localLicense = {
+      license_key: 'BOOT-ADMIN-401',
+      device_role: 'admin',
+      admin_identity_required: true,
+      plan_code: 'free_trial',
+      admin_user: { id: 'admin-cached' }
+    };
+    storageMocks.getLicenseFromStorage.mockResolvedValue(localLicense);
+    supabaseMocks.verifyAdminSession.mockResolvedValue({
+      success: false,
+      valid: false,
+      verificationStatus: 'server_error',
+      code: 'SESSION_GATEWAY_HTTP_401'
+    });
+    supabaseMocks.getAdminOfflineAuthorization.mockResolvedValue({
+      eligible: true,
+      reason: 'authorized',
+      effectiveExpiresAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString(),
+      effectiveNow: Date.now()
+    });
+    const state = createState();
+
+    await expect(state.initializeApp()).resolves.toMatchObject({ status: 'admin_login_required' });
+    expect(actorMocks.restoreActorRuntimeFromCurrentSessionCache).not.toHaveBeenCalled();
+    expect(state._processOfflineMode).not.toHaveBeenCalled();
+  });
+
   it('keeps Staff online-only while preserving credentials on transport failure', async () => {
     storageMocks.getLicenseFromStorage.mockResolvedValue({
       license_key: 'BOOT-STAFF-RETRY',
@@ -284,7 +344,7 @@ describe('initializeApp coordinator', () => {
       max_devices: 2,
       admin_user: { id: 'admin-offline' }
     });
-    supabaseMocks.hasValidOfflineAdminSession.mockResolvedValue(true);
+    supabaseMocks.getAdminOfflineAuthorization.mockResolvedValue({ eligible: true, reason: 'authorized' });
     actorMocks.restoreActorRuntimeFromCurrentSessionCache.mockRejectedValueOnce(Object.assign(
       new Error('ACTOR_SESSION_REQUIRED'),
       { code: 'ACTOR_SESSION_REQUIRED' }

@@ -7,13 +7,18 @@ import {
   clearAdminSessionCache,
   clearStaffSessionCache,
   enrollAdminOwnerOnDevice,
-  hasValidOfflineAdminSession,
+  getAdminOfflineAuthorization,
   verifyAdminSession
 } from '../../../services/supabase';
+import {
+  getAdminOfflineAuthorizationUserMessage,
+  isSafeAdminOfflineVerificationFailure
+} from '../../../services/auth/adminOfflineAuthorization';
 import {
   beginActorRuntimeAuthentication,
   grantAuthenticatedActorRuntime,
   assertAuthenticatedActorSessionCurrent,
+  refreshAuthenticatedAdminSessionAuthorization,
   lockActorRuntime
 } from '../../../services/auth/actorSessionRuntimeBridge';
 import { saveLicenseToStorage } from '../../../services/licenseStorage';
@@ -33,7 +38,6 @@ import {
   classifyAdminAccessDiscoveryFailure,
   isSessionVerificationInconclusive,
   isAuthoritativeSessionDenial,
-  isSessionVerificationTransportFailure,
   classifySessionVerificationResponse,
   SESSION_VERIFICATION_STATUS
 } from '../../../services/auth/sessionVerification';
@@ -150,6 +154,11 @@ const completeAdminSession = async (set, get, licenseKey, result, reason, attemp
       attempt.bindActor();
       session.actorHandle = attempt.handle;
       traceAuth('ACTOR_GRANTED');
+    } else if (result.verificationStatus === SESSION_VERIFICATION_STATUS.VERIFIED) {
+      await refreshAuthenticatedAdminSessionAuthorization({
+        handle: session.actorHandle,
+        actor: result.admin_user || licenseData.admin_user
+      });
     }
     await assertAuthenticatedActorSessionCurrent({
       handle: session.actorHandle, actorType: 'admin', actor: result.admin_user || licenseData.admin_user
@@ -345,7 +354,7 @@ export const createLicenseAdminActions = ({ set, get }) => {
         }
       } else {
         const connectionFailure = classifiedVerification
-          ? isSessionVerificationTransportFailure(classifiedVerification)
+          ? isSafeAdminOfflineVerificationFailure(classifiedVerification)
           : !navigator.onLine;
         if (isAuthoritativeSessionDenial(classifiedVerification)) {
           throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.SESSION_REQUIRED);
@@ -353,13 +362,36 @@ export const createLicenseAdminActions = ({ set, get }) => {
 
         let offlineSessionRecovered = false;
         if (connectionFailure && pending.actorHandle) {
-          if (await hasValidOfflineAdminSession()) {
+          const offlineAuthorization = await getAdminOfflineAuthorization({
+            license: get().licenseDetails,
+            adminUser: pendingAdminActor(),
+            verificationResult: classifiedVerification
+          });
+          if (offlineAuthorization.eligible) {
             await get()._processOfflineMode(get().licenseDetails, { reason: 'admin_login_resume' });
             offlineSessionRecovered = true;
           } else if (!navigator.onLine) {
             // A pending authenticated actor cannot outlive the existing offline
             // session contract when its canonical evidence is no longer valid.
             throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.SESSION_REQUIRED);
+          } else {
+            const message = getAdminOfflineAuthorizationUserMessage(offlineAuthorization);
+            set({
+              appStatus: 'admin_login_required',
+              adminLoginMessage: message,
+              adminLoginError: {
+                code: 'SESSION_VERIFICATION_INCONCLUSIVE',
+                verificationStatus: classifiedVerification?.verificationStatus || SESSION_VERIFICATION_STATUS.SERVER_ERROR,
+                reasonCode: offlineAuthorization.reason
+              }
+            });
+            return {
+              success: false,
+              recoveryRequired: true,
+              code: 'SESSION_VERIFICATION_INCONCLUSIVE',
+              verificationStatus: classifiedVerification?.verificationStatus || SESSION_VERIFICATION_STATUS.SERVER_ERROR,
+              message
+            };
           }
         }
 

@@ -13,8 +13,12 @@ import {
     assertLocalTenantAccess,
     assertLocalTenantSyncAccess,
     isLocalTenantAccessError,
+    getLocalTenantBinding,
     runWithLocalTenantSyncLease
 } from './tenant/localTenantGuard';
+import { getActiveTenantRuntime } from './db/tenantRuntimeRouter';
+import { getLicenseFromStorage } from './licenseStorage';
+import { deriveLocalGracePeriodEnd } from '../store/slices/license/licenseGuards';
 import {
     actorRuntimeController,
     runWithActorHandle,
@@ -30,6 +34,11 @@ import {
     isSessionVerificationContextError,
     SESSION_VERIFICATION_STATUS
 } from './auth/sessionVerification';
+import {
+    ADMIN_OFFLINE_POLICY_VERSION,
+    ADMIN_OFFLINE_AUTHORIZATION_REASON,
+    evaluateAdminOfflineAuthorization
+} from './auth/adminOfflineAuthorization';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
@@ -95,6 +104,67 @@ const ADMIN_SESSION_TOKEN_KEY = 'admin_session_token';
 const ADMIN_SESSION_ID_KEY = 'admin_session_id';
 const ADMIN_SESSION_CACHE_KEY = 'last_valid_admin_session';
 
+const digestOfflineBinding = async (value) => {
+    if (typeof value !== 'string' || !value || !globalThis.crypto?.subtle?.digest) return null;
+    const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+    return Array.from(new Uint8Array(digest))
+        .map((byte) => byte.toString(16).padStart(2, '0'))
+        .join('');
+};
+
+const normalizeOfflineId = (value) => (
+    (typeof value === 'string' && value.trim())
+    || (typeof value === 'number' && Number.isFinite(value) ? String(value) : null)
+);
+
+const createPersistedAdminOfflineEvidence = async ({
+    data,
+    sessionToken,
+    sessionId,
+    deviceToken
+}) => {
+    const [sessionTokenDigest, deviceTokenDigest, deviceRef, tenantBinding] = await Promise.all([
+        digestOfflineBinding(sessionToken),
+        digestOfflineBinding(deviceToken),
+        getStableDeviceId(),
+        getLocalTenantBinding()
+    ]);
+    const tenant = getActiveTenantRuntime();
+    const licenseId = normalizeOfflineId(data?.license_id || data?.licenseId || data?.details?.license_id);
+    const nestedAdminUserId = normalizeOfflineId(data?.admin_user?.id);
+    const directAdminUserId = normalizeOfflineId(data?.admin_user_id);
+    const adminUserId = nestedAdminUserId || directAdminUserId;
+    const directDeviceId = normalizeOfflineId(data?.device_id);
+    const detailDeviceId = normalizeOfflineId(data?.details?.device_id);
+    const deviceId = directDeviceId || detailDeviceId;
+    // verify_admin_session returns the server session expiry as root expires_at;
+    // login/enrollment RPCs use admin_session_expires_at. Never read details.expires_at,
+    // which is the commercial license expiry.
+    const serverExpiresAt = data?.admin_session_expires_at || data?.session_expires_at || data?.expires_at;
+
+    if (!sessionTokenDigest || !deviceTokenDigest || !sessionId || !serverExpiresAt
+        || !licenseId || !adminUserId || !deviceId || !deviceRef || !tenant?.opaqueId
+        || (nestedAdminUserId && directAdminUserId && nestedAdminUserId !== directAdminUserId)
+        || (directDeviceId && detailDeviceId && directDeviceId !== detailDeviceId)
+        || !tenantBinding?.tenantAliases?.includes(`license-id:${licenseId}`)) {
+        return null;
+    }
+
+    return {
+        version: ADMIN_OFFLINE_POLICY_VERSION,
+        validatedAt: Date.now(),
+        expiresAt: serverExpiresAt,
+        sessionId: String(sessionId),
+        sessionTokenDigest,
+        adminUserId,
+        licenseId,
+        deviceId,
+        deviceRef,
+        deviceTokenDigest,
+        tenantOpaqueId: tenant.opaqueId
+    };
+};
+
 export async function getStaffSessionToken() {
     try {
         const record = await loadData(STORES.SYNC_CACHE, STAFF_SESSION_TOKEN_KEY);
@@ -142,37 +212,118 @@ export async function getAdminSessionToken() {
     }
 }
 
-export async function setAdminSessionCredentials(sessionToken, sessionId = null, expiresAt = null) {
-    await Promise.all([
+const persistAdminSessionCredentials = async (sessionToken, sessionId, expiresAt, offlineEvidence = null) => {
+    const proof = sessionToken && offlineEvidence?.version === ADMIN_OFFLINE_POLICY_VERSION
+        ? { ...offlineEvidence, expiresAt: expiresAt || null, sessionId: sessionId || null }
+        : null;
+    const previousClockRecord = proof
+        ? await loadData(STORES.SYNC_CACHE, 'security_monotonic_clock')
+        : null;
+    const writes = [
         saveData(STORES.SYNC_CACHE, { key: ADMIN_SESSION_TOKEN_KEY, value: sessionToken || null }),
         saveData(STORES.SYNC_CACHE, { key: ADMIN_SESSION_ID_KEY, value: sessionId || null }),
-        saveData(STORES.SYNC_CACHE, {
-            key: ADMIN_SESSION_CACHE_KEY,
-            value: sessionToken ? { validatedAt: Date.now(), expiresAt: expiresAt || null } : null
-        })
-    ]);
+        saveData(STORES.SYNC_CACHE, { key: ADMIN_SESSION_CACHE_KEY, value: proof })
+    ];
+    if (proof && Number.isFinite(proof.validatedAt)) {
+        const previousClock = previousClockRecord?.value;
+        writes.push(saveData(STORES.SYNC_CACHE, {
+            key: 'security_monotonic_clock',
+            value: Number.isFinite(previousClock) ? Math.max(previousClock, proof.validatedAt) : proof.validatedAt
+        }));
+    }
+    await Promise.all(writes);
+};
+
+export async function setAdminSessionCredentials(sessionToken, sessionId = null, expiresAt = null) {
+    await persistAdminSessionCredentials(sessionToken, sessionId, expiresAt);
 }
 
 export async function hasAdminSessionToken() {
     return Boolean(await getAdminSessionToken());
 }
 
-export async function hasValidOfflineAdminSession() {
+export async function getAdminOfflineAuthorization({
+    license = null,
+    adminUser = null,
+    actorRuntime = null,
+    actorRuntimeRestoreError = null,
+    verificationResult = null,
+    now = Date.now()
+} = {}) {
     try {
-        const record = await loadData(STORES.SYNC_CACHE, ADMIN_SESSION_CACHE_KEY);
-        const cache = record?.value;
-        const now = Date.now();
-        const validatedAt = cache?.validatedAt;
-        if (!Number.isFinite(validatedAt) || validatedAt <= 0 || validatedAt > now) return false;
-        if (cache.expiresAt) {
-            const expiresAt = Date.parse(cache.expiresAt);
-            if (!Number.isFinite(expiresAt) || expiresAt <= now) return false;
+        const [proofRecord, adminToken, adminSessionId, staffToken, staffSessionId, deviceToken, clockRecord] = await Promise.all([
+            loadData(STORES.SYNC_CACHE, ADMIN_SESSION_CACHE_KEY),
+            readSessionCredential(ADMIN_SESSION_TOKEN_KEY),
+            readSessionCredential(ADMIN_SESSION_ID_KEY),
+            readSessionCredential(STAFF_SESSION_TOKEN_KEY),
+            readSessionCredential(STAFF_SESSION_ID_KEY),
+            readSessionCredential('device_security_token'),
+            loadData(STORES.SYNC_CACHE, 'security_monotonic_clock')
+        ]);
+        const [deviceRef, tenantBinding, storedLicense] = await Promise.all([
+            getStableDeviceId(),
+            getLocalTenantBinding(),
+            getLicenseFromStorage()
+        ]);
+        const tenant = getActiveTenantRuntime();
+        const sessionTokenDigest = await digestOfflineBinding(adminToken);
+        const deviceTokenDigest = await digestOfflineBinding(deviceToken);
+        const currentLicense = license
+            ? { ...(storedLicense || {}), ...license }
+            : storedLicense;
+        const normalizedLicense = currentLicense && typeof currentLicense === 'object'
+            ? {
+                ...currentLicense,
+                grace_period_ends: currentLicense.grace_period_ends
+                    || currentLicense.gracePeriodEnds
+                    || deriveLocalGracePeriodEnd(currentLicense)
+            }
+            : currentLicense;
+        const result = evaluateAdminOfflineAuthorization({
+            now,
+            lastSeen: clockRecord?.value ?? null,
+            evidence: proofRecord?.value || null,
+            credentials: {
+                adminToken,
+                adminSessionId,
+                adminTokenDigest: sessionTokenDigest,
+                staffToken,
+                staffSessionId
+            },
+            license: normalizedLicense,
+            adminUser: adminUser || normalizedLicense?.admin_user || normalizedLicense?.details?.admin_user,
+            deviceRef,
+            deviceTokenDigest,
+            tenantOpaqueId: tenant?.opaqueId || null,
+            tenantBinding,
+            actorRuntime,
+            actorRuntimeRestoreError,
+            verificationResult
+        });
+
+        if (Number.isFinite(result.nextMonotonicTime)) {
+            await saveData(STORES.SYNC_CACHE, {
+                key: 'security_monotonic_clock',
+                value: result.nextMonotonicTime
+            });
         }
-        return now - validatedAt <= 24 * 60 * 60 * 1000;
+        return result;
     } catch (error) {
-        if (isLocalTenantAccessError(error)) throw error;
-        return false;
+        const reason = isLocalTenantAccessError(error)
+            ? ADMIN_OFFLINE_AUTHORIZATION_REASON.DEVICE_OR_TENANT_INCOMPATIBLE
+            : ADMIN_OFFLINE_AUTHORIZATION_REASON.LOCAL_STORAGE_UNAVAILABLE;
+        return {
+            eligible: false,
+            reason,
+            effectiveExpiresAt: null,
+            remainingMs: 0
+        };
     }
+}
+
+export async function hasValidOfflineAdminSession(options = {}) {
+    const result = await getAdminOfflineAuthorization(options);
+    return result.eligible === true;
 }
 
 export async function clearAdminSessionCache() {
@@ -1776,18 +1927,24 @@ const buildAdminSessionResult = async (data, licenseKey, {
             await beforeLocalPersistence?.(tenantSource);
             await clearStaffSessionCache();
             await beforeLocalPersistence?.(tenantSource);
-            if (data.admin_session_token) {
-                await setAdminSessionCredentials(
-                    data.admin_session_token,
-                    data.admin_session_id,
-                    data.admin_session_expires_at
-                );
-            } else {
-                const existingToken = await getAdminSessionToken();
-                await beforeLocalPersistence?.(tenantSource);
-                if (existingToken) {
-                    await setAdminSessionCredentials(existingToken, data.admin_session_id, data.expires_at);
-                }
+            const sessionToken = data.admin_session_token || await getAdminSessionToken();
+            const sessionId = data.admin_session_id || null;
+            const sessionExpiresAt = data.admin_session_expires_at
+                || data.session_expires_at
+                || data.expires_at
+                || null;
+            const currentDeviceToken = deviceToken || await getSecureCredentials();
+            const offlineEvidence = sessionToken
+                ? await createPersistedAdminOfflineEvidence({
+                    data,
+                    sessionToken,
+                    sessionId,
+                    deviceToken: currentDeviceToken
+                })
+                : null;
+            await beforeLocalPersistence?.(tenantSource);
+            if (sessionToken) {
+                await persistAdminSessionCredentials(sessionToken, sessionId, sessionExpiresAt, offlineEvidence);
             }
 
             const fingerprint = await getStableDeviceId();

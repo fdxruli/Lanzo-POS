@@ -17,7 +17,6 @@ import { actorRuntimeController } from '../../../services/auth/actorRuntimeContr
 import {
     isAuthoritativeSessionDenial,
     isSessionVerificationInconclusive,
-    isSessionVerificationTransportFailure,
     SESSION_VERIFICATION_STATUS
 } from '../../../services/auth/sessionVerification';
 
@@ -25,9 +24,13 @@ import {
     revalidateLicense,
     hasStaffSessionToken,
     verifyStaffSession,
-    hasValidOfflineAdminSession,
+    getAdminOfflineAuthorization,
     verifyAdminSession
 } from '../../../services/supabase';
+import {
+    getAdminOfflineAuthorizationUserMessage,
+    isSafeAdminOfflineVerificationFailure
+} from '../../../services/auth/adminOfflineAuthorization';
 
 import {
     saveLicenseToStorage,
@@ -358,9 +361,12 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
                     });
 
                     if (!navigator.onLine) {
-                        const offlineEligible = await hasValidOfflineAdminSession();
+                        const offlineAuthorization = await getAdminOfflineAuthorization({
+                            license: actorBoundAdminLicense,
+                            adminUser: actorBoundAdminLicense.admin_user || null
+                        });
                         assertBootstrapActorCurrent();
-                        if (offlineEligible) {
+                        if (offlineAuthorization.eligible) {
                             const offlineAdmin = actorBoundAdminLicense.admin_user || null;
                             try {
                                 await restoreActorAuthority('admin', offlineAdmin);
@@ -385,7 +391,9 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
                         } else {
                             setVerificationUnavailable(set, 'admin', actorBoundAdminLicense, {
                                 verificationStatus: SESSION_VERIFICATION_STATUS.TRANSPORT_UNAVAILABLE,
-                                code: 'ONLINE_REQUIRED'
+                                code: offlineAuthorization.reason,
+                                uiCode: 'SESSION_VERIFICATION_INCONCLUSIVE',
+                                userMessage: getAdminOfflineAuthorizationUserMessage(offlineAuthorization)
                             });
                         }
                         coordinatorState = 'ready';
@@ -410,10 +418,14 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
                             return { status: get().appStatus };
                         }
 
-                        if (isSessionVerificationTransportFailure(adminSession)) {
-                            const offlineEligible = await hasValidOfflineAdminSession();
+                        if (isSafeAdminOfflineVerificationFailure(adminSession)) {
+                            const offlineAuthorization = await getAdminOfflineAuthorization({
+                                license: actorBoundAdminLicense,
+                                adminUser: actorBoundAdminLicense.admin_user || null,
+                                verificationResult: adminSession
+                            });
                             assertBootstrapActorCurrent();
-                            if (offlineEligible) {
+                            if (offlineAuthorization.eligible) {
                                 const offlineAdmin = actorBoundAdminLicense.admin_user || null;
                                 try {
                                     await restoreActorAuthority('admin', offlineAdmin);
@@ -440,6 +452,14 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
                                     return { status: get().appStatus };
                                 }
                             }
+                            setVerificationUnavailable(set, 'admin', actorBoundAdminLicense, {
+                                ...adminSession,
+                                code: offlineAuthorization.reason,
+                                uiCode: 'SESSION_VERIFICATION_INCONCLUSIVE',
+                                userMessage: getAdminOfflineAuthorizationUserMessage(offlineAuthorization)
+                            });
+                            coordinatorState = 'ready';
+                            return { status: get().appStatus };
                         }
 
                         if (adminSession?.verificationStatus === SESSION_VERIFICATION_STATUS.LOCAL_CREDENTIALS_MISSING
