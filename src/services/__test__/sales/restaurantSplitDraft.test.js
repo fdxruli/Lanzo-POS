@@ -53,6 +53,60 @@ describe('restaurant split local draft', () => {
     });
   });
 
+  it('reads a version 1 draft as by-items without changing the snapshot version', () => {
+    const draft = makeDraft();
+    const legacyKey = getRestaurantSplitDraftStorageKey(draft.orderId, 1);
+    tenantStorage.values.set(`tenant-a:${legacyKey}`, JSON.stringify({
+      version: 1,
+      orderId: draft.orderId,
+      orderSnapshot: draft.orderSnapshot,
+      guests: draft.guests,
+      allocations: draft.allocations,
+      step: 'items'
+    }));
+
+    expect(readRestaurantSplitDraft(draft)).toMatchObject({
+      status: 'restored',
+      splitIntent: 'by_items',
+      customAmountsCents: [],
+      payerPaymentMethods: [
+        { paymentMethod: 'cash', initialPaymentMethod: 'cash' },
+        { paymentMethod: 'cash', initialPaymentMethod: 'cash' }
+      ],
+      allocations: draft.allocations
+    });
+  });
+
+  it('stores custom cents and normalized tender choices without customer or transaction data', () => {
+    const draft = makeDraft({
+      splitIntent: 'custom_payment',
+      customAmountsCents: [3750, 2250],
+      payerPaymentMethods: [
+        { paymentMethod: 'TARJETA', initialPaymentMethod: 'efectivo' },
+        { paymentMethod: 'fiado', initialPaymentMethod: 'transferencia', customerId: 'secret-customer', amountPaid: '8.20', paymentReference: 'secret-reference' }
+      ]
+    });
+    expect(saveRestaurantSplitDraft(draft)).toBe(true);
+    const restored = readRestaurantSplitDraft(draft);
+    expect(restored).toMatchObject({
+      splitIntent: 'custom_payment',
+      customAmountsCents: [3750, 2250],
+      payerPaymentMethods: [
+        { paymentMethod: 'card', initialPaymentMethod: 'cash' },
+        { paymentMethod: 'credit', initialPaymentMethod: 'transfer' }
+      ]
+    });
+    const currentKey = getRestaurantSplitDraftStorageKey(draft.orderId);
+    const serialized = tenantStorage.values.get(`tenant-a:${currentKey}`);
+    expect(serialized).toContain('"paymentMethod":"card"');
+    expect(serialized).toContain('"initialPaymentMethod":"transfer"');
+    expect(serialized).not.toContain('customerId');
+    expect(serialized).not.toContain('amountPaid');
+    expect(serialized).not.toContain('paymentReference');
+    expect(serialized).not.toContain('secret-customer');
+    expect(serialized).not.toContain('secret-reference');
+  });
+
   it('isolates identical order identifiers across businesses and clears only the active tenant draft', () => {
     const draft = makeDraft();
     expect(saveRestaurantSplitDraft(draft)).toBe(true);

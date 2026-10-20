@@ -35,7 +35,8 @@ vi.mock('../../../../services/auth/actorRuntimeController', async (importOrigina
   const actual = await importOriginal();
   return { ...actual, actorRuntimeController: {
     getState: () => ({ status: 'locked', generation: 0 }),
-    capture: () => ({ actorType: 'admin', actorId: actorMocks.grantAuthenticatedActorRuntime.mock.lastCall?.[0]?.actor?.id, assertCurrent: vi.fn() })
+    capture: () => ({ actorType: 'admin', actorId: actorMocks.grantAuthenticatedActorRuntime.mock.lastCall?.[0]?.actor?.id, assertCurrent: vi.fn() }),
+    subscribe: () => () => {}
   } };
 });
 

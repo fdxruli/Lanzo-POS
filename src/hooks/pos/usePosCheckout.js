@@ -5,7 +5,9 @@ import { broadcastDBChange } from '../../services/products/productCatalogEvents'
 import { showConfirmModal, showMessageModal } from '../../services/utils';
 import { db, STORES } from '../../services/db/dexie';
 import { useActiveOrders } from './useActiveOrders';
+import { handlePosActorAuthorityError, runPosActorUiOperation } from './posActorAuthorityUi';
 import { Money } from '../../utils/moneyMath';
+import { normalizeRestaurantSplitPaymentMethod } from '../../services/sales/paymentMethodContract';
 import {
     prepareCustomerMessageOutbox,
     showCustomerMessageOutboxModal
@@ -13,6 +15,11 @@ import {
 import { validateFefoSelectionBeforeCheckout } from '../../services/sales/fefoSaleValidation';
 import { getRestaurantOrderCloudStatusSnapshot } from '../restaurant/useRestaurantOrderCloudStatus';
 import { reconcileCartWithCancelledRestaurantItems } from '../../services/restaurant/restaurantOrderReconciliation';
+import {
+    isRestaurantCloudTableTerminal,
+    isRestaurantCloudTableSettlementRequired,
+    restaurantCloudTableTerminalBlockedResult
+} from '../../services/restaurant/restaurantCloudTableGuards';
 import {
     closeRestaurantCloudOrderAfterSuccessfulPayment,
     retryPendingRestaurantCloudOrderCloses
@@ -67,6 +74,22 @@ const shouldRequireOpenCashSessionForCloudSale = (licenseDetails) => Boolean(
     )
 );
 
+const canUseAnyCloudRestaurantSettlement = (licenseDetails) => Boolean(
+    licenseDetails?.valid &&
+    isRestaurantOrdersCloudEnabled(licenseDetails) &&
+    (
+        isCloudSalesCashierEnabled(licenseDetails) ||
+        isCloudSalesCreditEnabled(licenseDetails)
+    )
+);
+
+const buildCloudRestaurantSettlementRequiredResult = () => ({
+    success: false,
+    errorType: 'RESTAURANT_CLOUD_SETTLEMENT_REQUIRED',
+    code: 'RESTAURANT_CLOUD_SETTLEMENT_REQUIRED',
+    message: 'La comanda cloud requiere una caja conectada para validar y liquidar la mesa. No se cobró localmente.'
+});
+
 const hasOpenCashSession = (session) => (
     session?.estado === 'abierta' || session?.status === 'open'
 );
@@ -84,14 +107,7 @@ const getPosCheckoutSnapshotStaleResult = () => ({
 
 const normalizePaymentMethod = (method) => {
     const raw = String(method || '').trim().toLowerCase();
-
-    if (['cash', 'efectivo'].includes(raw)) return 'cash';
-    if (['card', 'tarjeta', 'tarjeta_credito', 'tarjeta_debito', 'debit', 'credit_card', 'debit_card'].includes(raw)) return 'card';
-    if (['transfer', 'transferencia', 'spei', 'bank_transfer'].includes(raw)) return 'transfer';
-    if (['mixed', 'mixto'].includes(raw)) return 'mixed';
-    if (['fiado', 'credit', 'credito', 'crédito', 'customer_credit', 'mixed_credit', 'partial_credit'].includes(raw)) return 'credit';
-
-    return raw;
+    return normalizeRestaurantSplitPaymentMethod(raw) || raw;
 };
 
 const deepClone = (value) => {
@@ -783,6 +799,23 @@ export function usePosCheckout({
 
         const activeOrderId = initialTarget.orderId;
         let activeOrder = initialTarget.activeOrder;
+        const durableOrder = await db.table(STORES.SALES).get(activeOrderId);
+        const terminalOrder = [activeOrder, durableOrder].find(isRestaurantCloudTableTerminal);
+        if (terminalOrder) {
+            const blocked = restaurantCloudTableTerminalBlockedResult(terminalOrder);
+            showMessageModal(blocked.message, null, { type: 'warning' });
+            return blocked;
+        }
+        const initialLicenseDetails = useAppStore.getState().licenseDetails;
+        if (
+            [activeOrder, durableOrder].some(isRestaurantCloudTableSettlementRequired)
+            && initialLicenseDetails?.valid
+            && !canUseAnyCloudRestaurantSettlement(initialLicenseDetails)
+        ) {
+            const blocked = buildCloudRestaurantSettlementRequiredResult();
+            showMessageModal(blocked.message, null, { type: 'warning' });
+            return blocked;
+        }
         const checkoutOrigin = expectedOrigin || activeOrder?.origin || null;
 
         const previousCheckoutError = await prepareForNewCheckout({
@@ -1094,6 +1127,29 @@ export function usePosCheckout({
         const initialSnapshotError = await validateLiveCheckoutSnapshot(snapshot);
         if (initialSnapshotError) return initialSnapshotError;
 
+        const durableOrder = await db.table(STORES.SALES).get(snapshot?.orderId);
+        if (isRestaurantCloudTableTerminal(durableOrder)) {
+            const blocked = restaurantCloudTableTerminalBlockedResult(durableOrder);
+            showMessageModal(blocked.message, null, { type: 'warning' });
+            return blocked;
+        }
+        const durableRestaurantSettlementRequired = [snapshot?.order, durableOrder]
+            .some(isRestaurantCloudTableSettlementRequired);
+        const licenseDetails = useAppStore.getState().licenseDetails;
+        if (
+            durableRestaurantSettlementRequired
+            && (!canUseAnyCloudRestaurantSettlement(licenseDetails)
+                || (typeof navigator !== 'undefined' && navigator.onLine === false))
+        ) {
+            await invalidateCheckoutSnapshot(snapshot, {
+                releaseLock: true,
+                reason: 'restaurant_cloud_settlement_unavailable'
+            });
+            const blocked = buildCloudRestaurantSettlementRequiredResult();
+            showMessageModal(blocked.message, null, { type: 'warning' });
+            return blocked;
+        }
+
         const isSessionValid = await verifySessionIntegrity(CHECKOUT_INTEGRITY_OPTIONS);
         if (!isSessionValid) {
             await invalidateCheckoutSnapshot(snapshot, { releaseLock: true, reason: 'session_invalid' });
@@ -1137,8 +1193,22 @@ export function usePosCheckout({
         const hasInitialCreditPayment = paymentMethod === 'credit' && Money.init(paymentData.amountPaid || 0).gt(0);
         const hasCashComponent = paymentMethod === 'cash' || (hasInitialCreditPayment && initialPaymentMethod === 'cash');
 
-        const licenseDetails = useAppStore.getState().licenseDetails;
         const cloudSalesTurnRequired = shouldRequireOpenCashSessionForCloudSale(licenseDetails);
+        if (
+            durableRestaurantSettlementRequired
+            && (!isRestaurantOrdersCloudEnabled(licenseDetails)
+                || (paymentMethod === 'credit'
+                ? !isCloudSalesCreditEnabled(licenseDetails)
+                : !isCloudSalesCashierEnabled(licenseDetails)))
+        ) {
+            await invalidateCheckoutSnapshot(snapshot, {
+                releaseLock: true,
+                reason: 'restaurant_cloud_payment_feature_unavailable'
+            });
+            const blocked = buildCloudRestaurantSettlementRequiredResult();
+            showMessageModal(blocked.message, null, { type: 'warning' });
+            return blocked;
+        }
         const requiresOpenCashSession = cloudSalesTurnRequired
             ? CLOUD_TURN_REQUIRED_PAYMENT_METHODS.has(paymentMethod)
             : hasCashComponent;
@@ -1153,6 +1223,8 @@ export function usePosCheckout({
                 if (!hasOpenCashSession(ensuredCashSession)) throw buildCashNeedsOpeningError();
                 cashSessionForSale = ensuredCashSession;
             } catch (cashError) {
+                const authorityResult = handlePosActorAuthorityError(cashError, 'checkout');
+                if (authorityResult) return authorityResult;
                 if (cashError?.code === 'CAJA_NEEDS_OPENING') {
                     const beforeQuickCajaSnapshotError = await validateLiveCheckoutSnapshot(snapshot);
                     if (beforeQuickCajaSnapshotError) return beforeQuickCajaSnapshotError;
@@ -1216,6 +1288,10 @@ export function usePosCheckout({
                 createdAt: snapshot.createdAt
             });
 
+            if (!result.success) {
+                const authorityResult = handlePosActorAuthorityError(result, 'checkout');
+                if (authorityResult) return authorityResult;
+            }
             if (result.success) {
                 isSuccess = true;
                 snapshot.consumed = true;
@@ -1332,28 +1408,32 @@ export function usePosCheckout({
                 showMessageModal(
                     result.message,
                     async () => {
-                        const snapshotError = await validateLiveCheckoutSnapshot(snapshot);
-                        if (snapshotError) return snapshotError;
+                        try {
+                            const snapshotError = await validateLiveCheckoutSnapshot(snapshot);
+                            if (snapshotError) return snapshotError;
 
-                        if (snapshot.lockOwnedByCheckout !== true || snapshot.lockReleased === true) {
-                            const checkoutAttemptId = createCheckoutAttemptId();
-                            const lockResult = await useActiveOrders.getState().lockOrderForCheckout(snapshot.orderId);
-                            if (!lockResult.success) {
-                                showMessageModal(`⚠️ No se puede forzar el cobro: ${lockResult.reason}`, null, { type: 'warning' });
-                                return lockResult;
+                            if (snapshot.lockOwnedByCheckout !== true || snapshot.lockReleased === true) {
+                                const checkoutAttemptId = createCheckoutAttemptId();
+                                const lockResult = await useActiveOrders.getState().lockOrderForCheckout(snapshot.orderId);
+                                if (!lockResult.success) {
+                                    showMessageModal(`⚠️ No se puede forzar el cobro: ${lockResult.reason}`, null, { type: 'warning' });
+                                    return lockResult;
+                                }
+                                const ownershipResult = await persistCheckoutAttemptOwnership(snapshot.orderId, checkoutAttemptId);
+                                if (!ownershipResult.success) {
+                                    await useActiveOrders.getState().unlockOrder(snapshot.orderId);
+                                    return ownershipResult;
+                                }
+                                snapshot.checkoutAttemptId = checkoutAttemptId;
+                                snapshot.lockOwnedByCheckout = true;
+                                snapshot.lockReleased = false;
+                                snapshot.lockReleaseError = null;
                             }
-                            const ownershipResult = await persistCheckoutAttemptOwnership(snapshot.orderId, checkoutAttemptId);
-                            if (!ownershipResult.success) {
-                                await useActiveOrders.getState().unlockOrder(snapshot.orderId);
-                                return ownershipResult;
-                            }
-                            snapshot.checkoutAttemptId = checkoutAttemptId;
-                            snapshot.lockOwnedByCheckout = true;
-                            snapshot.lockReleased = false;
-                            snapshot.lockReleaseError = null;
+
+                            return handleProcessOrderRef.current?.(paymentData, true);
+                        } catch (error) {
+                            return handlePosActorAuthorityError(error, 'checkout') || { success: false, code: 'CHECKOUT_FAILED' };
                         }
-
-                        return handleProcessOrderRef.current?.(paymentData, true);
                     },
                     {
                         title: 'Advertencia de inventario',
@@ -1371,6 +1451,8 @@ export function usePosCheckout({
 
             return result;
         } catch (error) {
+            const authorityResult = handlePosActorAuthorityError(error, 'checkout');
+            if (authorityResult) return authorityResult;
             console.error('[usePosCheckout] Error crítico en UI:', error);
             showMessageModal(`Error inesperado: ${error.message}`);
             return { success: false, message: error.message };
@@ -1402,9 +1484,10 @@ export function usePosCheckout({
         verifySessionIntegrity
     ]);
 
+    const safeHandleProcessOrder = useCallback((...args) => runPosActorUiOperation('checkout', handleProcessOrder, ...args), [handleProcessOrder]);
     useEffect(() => {
-        handleProcessOrderRef.current = handleProcessOrder;
-    }, [handleProcessOrder]);
+        handleProcessOrderRef.current = safeHandleProcessOrder;
+    }, [safeHandleProcessOrder]);
 
     const handleQuickCajaSubmit = useCallback(async (openingData) => {
         const snapshot = checkoutSnapshotRef.current;
@@ -1420,6 +1503,8 @@ export function usePosCheckout({
                 const ensuredCashSession = await asegurarCajaAbierta?.();
                 if (!hasOpenCashSession(ensuredCashSession)) throw buildCashNeedsOpeningError();
             } catch (cashError) {
+                const authorityResult = handlePosActorAuthorityError(cashError, 'checkout');
+                if (authorityResult) return authorityResult;
                 const releaseResult = await releaseCheckoutSnapshotLock(snapshot, {
                     reason: 'quick_caja_validation_failed',
                     expectedOrderId: snapshot.orderId,
@@ -1456,11 +1541,16 @@ export function usePosCheckout({
         validateLiveCheckoutSnapshot
     ]);
 
+    const safeInitiateCheckout = useCallback((...args) => runPosActorUiOperation('checkout', handleInitiateCheckout, ...args), [handleInitiateCheckout]);
+    const safePaymentModalClose = useCallback((...args) => runPosActorUiOperation('checkout', handlePaymentModalClose, ...args), [handlePaymentModalClose]);
+    const safeQuickCajaClose = useCallback((...args) => runPosActorUiOperation('checkout', handleQuickCajaClose, ...args), [handleQuickCajaClose]);
+    const safeQuickCajaSubmit = useCallback((...args) => runPosActorUiOperation('checkout', handleQuickCajaSubmit, ...args), [handleQuickCajaSubmit]);
+
     return {
-        handleInitiateCheckout,
-        handleProcessOrder,
-        handlePaymentModalClose,
-        handleQuickCajaClose,
-        handleQuickCajaSubmit
+        handleInitiateCheckout: safeInitiateCheckout,
+        handleProcessOrder: safeHandleProcessOrder,
+        handlePaymentModalClose: safePaymentModalClose,
+        handleQuickCajaClose: safeQuickCajaClose,
+        handleQuickCajaSubmit: safeQuickCajaSubmit
     };
 }

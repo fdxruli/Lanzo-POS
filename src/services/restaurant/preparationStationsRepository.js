@@ -14,6 +14,7 @@ import {
 import { buildPosSyncAuthContext } from '../sync/posSyncClient';
 import { generateIdempotencyKey } from '../sync/idempotency';
 import { SYNC_ENTITY_TYPES, SYNC_OPERATIONS } from '../sync/syncConstants';
+import { isCloudRequestResponseStale } from '../cloud/cloudRequestErrors';
 
 export const FALLBACK_PREPARATION_STATIONS = Object.freeze([
   Object.freeze({
@@ -179,8 +180,17 @@ export const preparationStationsRepository = {
         raw: payload
       };
     } catch (error) {
-      Logger.warn('[PreparationStations] Lectura cloud fallo:', error);
       const cached = await readCachedStations(licenseKey);
+      if (isCloudRequestResponseStale(error)) {
+        return {
+          success: true,
+          stations: cached || getFallbackPreparationStations(),
+          source: cached ? 'cache' : 'fallback',
+          fromCache: Boolean(cached),
+          stale: true
+        };
+      }
+      Logger.warn('[PreparationStations] Lectura cloud fallo:', error);
       return {
         success: false,
         stations: cached || getFallbackPreparationStations(),

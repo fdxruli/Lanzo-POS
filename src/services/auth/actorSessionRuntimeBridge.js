@@ -23,6 +23,7 @@ import {
   ACTOR_RUNTIME_STATUS,
   createActorKey
 } from './actorRuntimeController';
+import { completeActorAuthorityRecovery } from './actorAuthorityRecovery';
 
 export const ACTOR_SESSION_AMBIGUOUS = 'ACTOR_SESSION_AMBIGUOUS';
 
@@ -236,6 +237,7 @@ export const grantAuthenticatedActorRuntime = async ({
     // The actor hydrator uses the existing tenant transition suspension helper;
     // restore tenant-shared browser writes only after the handoff succeeded.
     resumeTenantStorageWrites();
+    completeActorAuthorityRecovery();
     return granted;
   } catch (error) {
     // An obsolete handoff must never invalidate a newer actor's storage epoch.
