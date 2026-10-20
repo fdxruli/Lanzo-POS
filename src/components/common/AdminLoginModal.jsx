@@ -31,11 +31,11 @@ const describeLoginError = (error, result = null) => {
     return 'Tu sesión se verificó correctamente, pero no pudimos terminar de preparar Lanzo. Puedes reintentar la carga sin volver a registrar tu dispositivo.';
   }
   if (SAFE_AUTH_ERROR_MESSAGES[code]) return SAFE_AUTH_ERROR_MESSAGES[code];
-  const authority = classifyActorAuthorityError(error || result);
-  if (authority) return authority.message;
   if (String(code || '').startsWith('ACTOR_') || code === 'ADMIN_RECOVERY_REJECTED') {
     return 'No pudimos recuperar tu sesión de forma segura. Inicia sesión nuevamente para continuar.';
   }
+  const authority = classifyActorAuthorityError(error || result);
+  if (authority) return authority.message;
   if (code === 'DB_BLOCKED' || classification.code === 'DB_BLOCKED') {
     return 'La base local está abierta en otra pestaña. Cierra las demás pestañas de Lanzo y vuelve a intentarlo.';
   }
