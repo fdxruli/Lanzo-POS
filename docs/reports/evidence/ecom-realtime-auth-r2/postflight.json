@@ -1,0 +1,152 @@
+{
+  "policies": [
+    {
+      "cmd": "SELECT",
+      "qual": "((extension = 'broadcast'::text) AND realtime.lanzo_can_access_license_realtime_topic(( SELECT realtime.topic() AS topic)))",
+      "roles": [
+        "anon",
+        "authenticated"
+      ],
+      "tablename": "messages",
+      "permissive": "PERMISSIVE",
+      "policyname": "Lanzo private license broadcast receive",
+      "schemaname": "realtime",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "((extension = 'broadcast'::text) AND realtime.lanzo_can_access_pos_realtime_topic(( SELECT realtime.topic() AS topic)))",
+      "roles": [
+        "anon",
+        "authenticated"
+      ],
+      "tablename": "messages",
+      "permissive": "PERMISSIVE",
+      "policyname": "Lanzo private POS broadcast receive",
+      "schemaname": "realtime",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "((extension = 'broadcast'::text) AND realtime.lanzo_can_access_ecommerce_tracking_topic(( SELECT realtime.topic() AS topic)))",
+      "roles": [
+        "anon",
+        "authenticated"
+      ],
+      "tablename": "messages",
+      "permissive": "PERMISSIVE",
+      "policyname": "Lanzo private ecommerce tracking broadcast receive",
+      "schemaname": "realtime",
+      "with_check": null
+    }
+  ],
+  "functions": [
+    {
+      "acl": [
+        "=X/postgres",
+        "postgres=X/postgres",
+        "service_role=X/postgres",
+        "anon=X/postgres",
+        "authenticated=X/postgres"
+      ],
+      "md5": "675ef683a0c2ce92a39deb29ab4b81c3",
+      "signature": "pos_get_cash_station_state(text,text,text,text)"
+    },
+    {
+      "acl": [
+        "=X/postgres",
+        "postgres=X/postgres",
+        "service_role=X/postgres",
+        "anon=X/postgres",
+        "authenticated=X/postgres"
+      ],
+      "md5": "957a49d539846acd7fa92b254fca113a",
+      "signature": "pos_admin_close_cash_session(text,text,text,text,text,text,numeric,numeric,text,text,integer,text)"
+    },
+    {
+      "acl": [
+        "=X/postgres",
+        "postgres=X/postgres",
+        "service_role=X/postgres",
+        "anon=X/postgres",
+        "authenticated=X/postgres"
+      ],
+      "md5": "afb412158b7808449d4f7f4e774e4256",
+      "signature": "pos_admin_adopt_legacy_cash_session(text,text,text,text,text,integer,text)"
+    },
+    {
+      "acl": [
+        "=X/postgres",
+        "postgres=X/postgres",
+        "service_role=X/postgres",
+        "anon=X/postgres",
+        "authenticated=X/postgres"
+      ],
+      "md5": "717d41ff4d188c89b5f00a2f61166ca7",
+      "signature": "admin_list_staff_users(text,text,text,text)"
+    },
+    {
+      "acl": [
+        "=X/postgres",
+        "postgres=X/postgres",
+        "service_role=X/postgres",
+        "anon=X/postgres",
+        "authenticated=X/postgres"
+      ],
+      "md5": "89e845b034030c0c6cf2689cfd4e7b78",
+      "signature": "admin_create_staff_user(text,text,text,text,text,text,jsonb,text,text)"
+    },
+    {
+      "acl": [
+        "=X/postgres",
+        "postgres=X/postgres",
+        "service_role=X/postgres",
+        "anon=X/postgres",
+        "authenticated=X/postgres"
+      ],
+      "md5": "ca00191aa85af9641bb0650d058b2866",
+      "signature": "admin_update_staff_user(text,text,text,uuid,text,jsonb,boolean,text,text,text)"
+    },
+    {
+      "acl": [
+        "postgres=X/postgres"
+      ],
+      "md5": "38259b69a79e0e26465855f0db7ac3a3",
+      "signature": "private.can_access_license_realtime_topic(text)"
+    },
+    {
+      "acl": [
+        "postgres=X/postgres",
+        "service_role=X/postgres"
+      ],
+      "md5": "c439fa37b577a83c04811707f55d29f2",
+      "signature": "private.license_entitlement_state_v1(uuid)"
+    },
+    {
+      "acl": [
+        "postgres=X/postgres"
+      ],
+      "md5": "99a8293898a6200351a5d97027fc5c50",
+      "signature": "private.require_active_admin_session(text,text,text,text)"
+    },
+    {
+      "acl": [
+        "postgres=X/postgres"
+      ],
+      "md5": "0bb250d966993a3cc86639357c3d3f40",
+      "signature": "private.resolve_device_actor_session(uuid,uuid,text,text)"
+    },
+    {
+      "acl": [
+        "postgres=X/postgres"
+      ],
+      "md5": "4443b5f0a92ef37641e0f22310804714",
+      "signature": "private.ecommerce_admin_authorize_v2(text,text,text,text,text)"
+    }
+  ],
+  "role_absent": true,
+  "ledger_count": 312,
+  "ledger_latest": "20261008161409",
+  "schema_absent": true,
+  "qa_fixtures_remaining": 0
+}
