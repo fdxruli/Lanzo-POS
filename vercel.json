@@ -22,6 +22,10 @@
   ],
   "rewrites": [
     {
+      "source": "/__qa/incident-recovery",
+      "destination": "/incident-qa.html"
+    },
+    {
       "source": "/((?!assets/|sw\\.js$|workbox-[^/]+\\.js$|manifest\\.webmanifest$|registerSW\\.js$|pwa-192x192\\.png$|pwa-512x512\\.png$|logIcon\\.svg$).*)",
       "destination": "/index.html"
     }

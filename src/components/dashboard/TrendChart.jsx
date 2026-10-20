@@ -11,7 +11,7 @@ import {
   Tooltip,
   ResponsiveContainer
 } from 'recharts';
-import { TrendingUp, TrendingDown } from 'lucide-react';
+import { AlertTriangle, RefreshCw, TrendingUp, TrendingDown } from 'lucide-react';
 import './TrendChart.css';
 
 // Extraemos formatCurrency fuera para que no se recree en cada render
@@ -44,7 +44,7 @@ const CustomTooltip = ({ active, payload, formatter = defaultValueFormatter }) =
 class ChartErrorBoundary extends React.Component {
   constructor(props) {
     super(props);
-    this.state = { hasError: false, resetKey: props.resetKey };
+    this.state = { hasError: false, resetKey: props.resetKey, retryUsed: false };
   }
 
   static getDerivedStateFromError() {
@@ -53,24 +53,50 @@ class ChartErrorBoundary extends React.Component {
 
   static getDerivedStateFromProps(props, state) {
     if (props.resetKey !== state.resetKey) {
-      return { hasError: false, resetKey: props.resetKey };
+      return { hasError: false, resetKey: props.resetKey, retryUsed: false };
     }
 
     return null;
   }
 
+  handleRetry = () => {
+    if (this.state.retryUsed) return;
+    this.setState({ hasError: false, retryUsed: true });
+  }
+
   render() {
     if (this.state.hasError) {
-      return <ChartFallback height={this.props.height} />;
+      return (
+        <ChartFallback
+          height={this.props.height}
+          onRetry={this.handleRetry}
+          retryUsed={this.state.retryUsed}
+        />
+      );
     }
 
     return this.props.children;
   }
 }
 
-const ChartFallback = ({ height = 180 }) => (
-  <div className="chart-empty-state" style={{ minHeight: height }}>
-    <p>No se pudo mostrar la grafica</p>
+const ChartFallback = ({ height = 180, onRetry = null, retryUsed = false }) => (
+  <div className="chart-empty-state" style={{ minHeight: height }} role="status">
+    <AlertTriangle size={20} aria-hidden="true" />
+    <div>
+      <strong>No pudimos cargar esta información</strong>
+      <p>El resto de Lanzo POS sigue disponible.</p>
+    </div>
+    {onRetry && (
+      <button
+        type="button"
+        className="ui-button ui-button--secondary chart-empty-state__retry"
+        onClick={onRetry}
+        disabled={retryUsed}
+      >
+        <RefreshCw size={16} aria-hidden="true" />
+        {retryUsed ? 'Reintento utilizado' : 'Reintentar'}
+      </button>
+    )}
   </div>
 );
 

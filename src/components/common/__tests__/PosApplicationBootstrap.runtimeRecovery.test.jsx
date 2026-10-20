@@ -42,7 +42,8 @@ const setReadyRecoveryState = () => setDatabaseRecoveryState({
 const renderReadyBootstrap = ({
   loadReadyRuntime,
   recoverStartup = vi.fn(),
-  completeStartupRecovery = vi.fn()
+  completeStartupRecovery = vi.fn(),
+  createContextGuard = () => () => true
 }) => {
   const databaseRuntime = {
     prepareLocalDatabase: vi.fn(async () => {
@@ -59,6 +60,7 @@ const renderReadyBootstrap = ({
         loadReadyRuntime={loadReadyRuntime}
         recoverStartup={recoverStartup}
         completeStartupRecovery={completeStartupRecovery}
+        createContextGuard={createContextGuard}
       />
     ),
     completeStartupRecovery,
@@ -119,20 +121,23 @@ describe('PosApplicationBootstrap ready runtime recovery', () => {
       completeStartupRecovery
     });
 
-    await waitFor(() => expect(recoverStartup).toHaveBeenCalledWith({ error: chunkError }));
+    await waitFor(() => expect(recoverStartup).toHaveBeenCalledTimes(1));
+    const automaticRecovery = recoverStartup.mock.calls[0][0];
+    expect(automaticRecovery).toMatchObject({ error: chunkError });
+    expect(automaticRecovery.isContextCurrent()).toBe(true);
     expect(completeStartupRecovery).not.toHaveBeenCalled();
 
     const retryButton = await screen.findByRole('button', {
-      name: /actualizar lanzo pos/i
+      name: /actualizar archivos de lanzo pos/i
     });
     fireEvent.click(retryButton);
 
-    await waitFor(() => expect(recoverStartup).toHaveBeenLastCalledWith({
-      error: chunkError,
-      force: true
-    }));
+    await waitFor(() => expect(recoverStartup).toHaveBeenCalledTimes(2));
+    const forcedRecovery = recoverStartup.mock.calls[1][0];
+    expect(forcedRecovery).toMatchObject({ error: chunkError, force: true });
+    expect(forcedRecovery.isContextCurrent()).toBe(true);
     expect(screen.getByRole('heading', {
-      name: /actualizando lanzo pos/i
+      name: /comprobando la recuperación de lanzo pos/i
     })).toBeInTheDocument();
   });
 });

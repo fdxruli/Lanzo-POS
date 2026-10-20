@@ -3,7 +3,7 @@ import {
   recoverAdminStartup,
 } from './adminStartupRecovery';
 import { probeAdminOriginConnectivity } from './adminConnectivity';
-import { requestAdminServiceWorkerUpdateCheck } from './adminServiceWorkerUpdateMonitor';
+import { createRecoveryContextGuard } from '../services/diagnostics/recoveryContext';
 
 let activeLazyRouteRecoveryPromise = null;
 
@@ -12,7 +12,9 @@ const clearActiveRecovery = (promise) => {
 };
 
 export function prepareAdminLazyRoute() {
-  return requestAdminServiceWorkerUpdateCheck();
+  // The app-wide update monitor already checks for new workers. A route import
+  // must not trigger a second PWA update check or delay an offline Local flow.
+  return Promise.resolve({ status: 'not-required' });
 }
 
 export function recoverAdminLazyRoute({
@@ -21,6 +23,8 @@ export function recoverAdminLazyRoute({
   navigatorTarget = globalThis.navigator,
   recoverStartup = recoverAdminStartup,
   probeConnectivity = probeAdminOriginConnectivity,
+  createContextGuard = createRecoveryContextGuard,
+  isContextCurrent: suppliedContextGuard = null,
 } = {}) {
   if (!force && !isRecoverableAdminStartupError(error)) {
     return Promise.resolve({ status: 'not-recoverable' });
@@ -30,17 +34,36 @@ export function recoverAdminLazyRoute({
   }
   if (activeLazyRouteRecoveryPromise) return activeLazyRouteRecoveryPromise;
 
+  const isContextCurrent = typeof suppliedContextGuard === 'function'
+    ? suppliedContextGuard
+    : createContextGuard();
+  if (!isContextCurrent()) {
+    return Promise.resolve({
+      status: 'stale-context',
+      reason: 'actor-or-tenant-context-changed',
+    });
+  }
+
   const recoveryPromise = Promise.resolve()
     .then(async () => {
-      const connectivity = await probeConnectivity({ navigatorTarget });
-      if (connectivity?.status !== 'online') {
-        return {
-          status: 'offline',
-          reason: connectivity?.reason || 'origin-unreachable',
-        };
+      if (!isContextCurrent()) {
+        return { status: 'stale-context', reason: 'actor-or-tenant-context-changed' };
       }
 
-      return recoverStartup({ error, force });
+      if (force) {
+        const connectivity = await probeConnectivity({ navigatorTarget });
+        if (!isContextCurrent()) {
+          return { status: 'stale-context', reason: 'actor-or-tenant-context-changed' };
+        }
+        if (connectivity?.status !== 'online') {
+          return {
+            status: 'offline',
+            reason: connectivity?.reason || 'origin-unreachable',
+          };
+        }
+      }
+
+      return recoverStartup({ error, force, isContextCurrent });
     });
 
   activeLazyRouteRecoveryPromise = recoveryPromise;

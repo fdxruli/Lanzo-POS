@@ -1,0 +1,312 @@
+import { Suspense, lazy, useEffect, useId, useRef, useState } from 'react';
+import {
+  CheckCheck,
+  Copy,
+  Info,
+  Mail,
+  RefreshCw,
+  ShieldAlert,
+  Wifi,
+  WifiOff
+} from 'lucide-react';
+import './ErrorBoundary.css';
+import IncidentReportEntry from './IncidentReportEntry';
+
+const IncidentSupportContactForm = lazy(() => import('./IncidentSupportContactForm'));
+
+const RECOVERY_STATUS_LABELS = Object.freeze({
+  detected: 'Problema identificado',
+  preserved: 'Estado conservado',
+  action_required: 'Requiere una acción',
+  recovering: 'Recuperación en curso',
+  verified: 'Sección disponible',
+  failed: 'El reintento no funcionó',
+  blocked: 'Acción bloqueada por seguridad'
+});
+
+const getSeverityClass = (severity) => {
+  if (severity === 'critical_blocker') return 'critical';
+  if (severity === 'recoverable') return 'recoverable';
+  return 'section';
+};
+
+export default function IncidentRecoveryPanel({
+  severity = 'section_failure',
+  presentation = 'section',
+  title,
+  description,
+  metadata,
+  recoveryNotice = '',
+  operationDetails = null,
+  primaryAction = null,
+  secondaryActions = [],
+  supportActions = [],
+  copied = false,
+  onCopy = null,
+  copyError = '',
+  advancedCopied = false,
+  advancedCopyError = '',
+  onCopyAdvanced = null,
+  incidentRecord = null,
+  reportServices = null,
+  recoveryControls = null,
+  isContextCurrent = null,
+  contactNote = '',
+  onDismiss = null,
+  titleRef = null
+}) {
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
+  const detailsId = useId().replace(/:/g, '');
+  const reportRegionId = 'incident-report-region-' + detailsId;
+  const reportHeadingId = 'incident-report-heading-' + detailsId;
+  const reportTriggerRef = useRef(null);
+  const reportReturnFocusRef = useRef(null);
+  const wasReportOpen = useRef(false);
+  const isCritical = severity === 'critical_blocker';
+  const Icon = isCritical ? ShieldAlert : Info;
+  const standalone = !isCritical && presentation === 'standalone';
+  const Heading = standalone ? 'h1' : 'h2';
+  const Subheading = standalone ? 'h2' : 'h3';
+  const DetailHeading = standalone ? 'h3' : 'h4';
+  const hasHelp = incidentRecord || onCopy || supportActions.length > 0;
+
+  useEffect(() => {
+    if (wasReportOpen.current && !reportOpen) {
+      (reportReturnFocusRef.current || reportTriggerRef.current)?.focus();
+      reportReturnFocusRef.current = null;
+    }
+    wasReportOpen.current = reportOpen;
+  }, [reportOpen]);
+
+  const toggleReport = (trigger) => {
+    if (reportOpen) {
+      setReportOpen(false);
+      return;
+    }
+    reportReturnFocusRef.current = trigger || reportTriggerRef.current;
+    setReportOpen(true);
+  };
+
+  return (
+    <section
+      className={'incident-recovery incident-recovery--' + getSeverityClass(severity) + (standalone ? ' incident-recovery--standalone' : '')}
+      role={isCritical ? 'alertdialog' : 'region'}
+      aria-modal={isCritical ? 'true' : undefined}
+      aria-labelledby={'incident-title-' + detailsId}
+      tabIndex={isCritical ? -1 : undefined}
+    >
+      <div className="incident-recovery__layout">
+        {standalone && <div className="incident-recovery__brand"><img src="/logIcon.svg" alt="" width="28" height="28" /><span>Lanzo POS</span></div>}
+        <div className="incident-recovery__main">
+        <div className="incident-recovery__header">
+          <span className="incident-recovery__icon" aria-hidden="true">
+            <Icon size={24} strokeWidth={1.8} />
+          </span>
+          <div className="incident-recovery__copy">
+            <p className="incident-recovery__eyebrow">Centro de recuperación</p>
+            <Heading id={'incident-title-' + detailsId} ref={titleRef} tabIndex="-1">{title}</Heading>
+            <p className="incident-recovery__description">{description}</p>
+          </div>
+        </div>
+
+        {recoveryControls}
+
+        {operationDetails && (
+          <section className="incident-recovery__operation" aria-label="Operación afectada">
+            <Subheading>{operationDetails.title || 'Qué necesita revisión'}</Subheading>
+            <p>{operationDetails.description}</p>
+            {operationDetails.blockedActions?.length > 0 && (
+              <div>
+                <DetailHeading>Acciones temporalmente bloqueadas</DetailHeading>
+                <ul>
+                  {operationDetails.blockedActions.map((action) => <li key={action}>{action}</li>)}
+                </ul>
+              </div>
+            )}
+            {operationDetails.verification && (
+              <p><strong>Verificación necesaria:</strong> {operationDetails.verification}</p>
+            )}
+          </section>
+        )}
+
+        {recoveryNotice && (
+          <p className="incident-recovery__notice" role="status">
+            {recoveryNotice}
+          </p>
+        )}
+
+        <div className="incident-recovery__actions" role="group" aria-label={isCritical ? 'Solicitar verificación' : 'Recuperar acceso'}>
+          {primaryAction && (
+            <button
+              type="button"
+              className="ui-button ui-button--primary incident-recovery__primary"
+              onClick={(event) => {
+                if (isCritical && incidentRecord) toggleReport(event.currentTarget);
+                else primaryAction.onClick?.(event);
+              }}
+              disabled={primaryAction.disabled}
+              aria-describedby={primaryAction.disabledReason ? 'incident-disabled-' + detailsId : undefined}
+            >
+              {primaryAction.busy
+                ? <RefreshCw className="incident-recovery__spin" size={18} aria-hidden="true" />
+                : primaryAction.icon || null}
+              {isCritical && incidentRecord && reportOpen ? 'Cerrar reporte' : primaryAction.label}
+            </button>
+          )}
+
+          {secondaryActions.map((action) => (
+            <button
+              type="button"
+              key={action.label}
+              className="ui-button ui-button--ghost incident-recovery__secondary"
+              onClick={action.onClick}
+              disabled={action.disabled}
+            >
+              {action.icon || null}
+              {action.label}
+            </button>
+          ))}
+
+        </div>
+        {primaryAction?.disabledReason && (
+          <p className="incident-recovery__disabled-reason" id={'incident-disabled-' + detailsId}>
+            {primaryAction.disabledReason}
+          </p>
+        )}
+        {isCritical && contactNote && <p className="incident-recovery__contact-note">{contactNote}</p>}
+        </div>
+
+        {hasHelp && (
+          <section className="incident-recovery__help" aria-labelledby={'incident-help-' + detailsId}>
+            <Subheading id={'incident-help-' + detailsId}>¿Necesitas ayuda?</Subheading>
+            <p className="incident-recovery__help-copy">{isCritical
+              ? 'Comparte el diagnóstico con soporte para revisar el estado de la operación.'
+              : 'Si el problema continúa, comparte el diagnóstico con soporte.'}</p>
+            <div className="incident-recovery__support-actions">
+              {incidentRecord && !isCritical && <div className="incident-recovery__report">
+                <IncidentReportEntry
+                  incident={incidentRecord}
+                  open={reportOpen}
+                  controlsId={reportRegionId}
+                  buttonRef={reportTriggerRef}
+                  onToggle={(event) => toggleReport(event.currentTarget)}
+                />
+              </div>}
+              {onCopy && (
+                <button type="button" className="ui-button ui-button--ghost incident-recovery__secondary" onClick={onCopy}>
+                  {copied ? <CheckCheck size={17} aria-hidden="true" /> : <Copy size={17} aria-hidden="true" />}
+                  {copied ? 'Diagnóstico copiado' : 'Copiar diagnóstico'}
+                </button>
+              )}
+              {supportActions.map((action, index) => (
+                <div className="incident-recovery__contact" key={action.label}>
+                  <button type="button" className="ui-button ui-button--ghost incident-recovery__secondary"
+                    onClick={action.onClick} disabled={action.disabled}
+                    aria-describedby={contactNote ? 'incident-contact-' + detailsId + '-' + index : undefined}>
+                    {action.icon || <Mail size={17} aria-hidden="true" />}{action.label}
+                  </button>
+                  {contactNote && <p id={'incident-contact-' + detailsId + '-' + index} className="incident-recovery__contact-note">{contactNote}</p>}
+                </div>
+              ))}
+            </div>
+            <p className="incident-recovery__feedback" role="status">{copyError || (copied ? 'Diagnóstico copiado. Revísalo antes de compartirlo.' : '')}</p>
+          </section>
+        )}
+
+        {metadata && (
+          <div className="incident-recovery__details">
+            <button
+              type="button"
+              className="incident-recovery__details-toggle"
+              aria-expanded={detailsOpen}
+              aria-controls={'incident-details-' + detailsId}
+              onClick={() => setDetailsOpen((open) => !open)}
+            >
+              <span>{detailsOpen ? 'Ocultar detalles del problema' : 'Detalles del problema'}</span>
+              <span aria-hidden="true">{detailsOpen ? '−' : '+'}</span>
+            </button>
+            <div
+              id={'incident-details-' + detailsId}
+              className="incident-recovery__details-content"
+              hidden={!detailsOpen}
+            >
+              <dl>
+                <div><dt>Código técnico</dt><dd>{metadata.code}</dd></div>
+                <div><dt>Categoría</dt><dd>{metadata.categoryLabel}</dd></div>
+                <div><dt>Área funcional</dt><dd>{metadata.functionalArea}</dd></div>
+                <div><dt>Pantalla afectada</dt><dd>{metadata.affectedScreen}</dd></div>
+                <div><dt>Ruta de navegación</dt><dd>{metadata.navigationPath}</dd></div>
+                <div><dt>Componente supervisado</dt><dd>{metadata.supervisedComponent}</dd></div>
+                <div><dt>Fecha y hora</dt><dd>{metadata.formattedTimestamp || metadata.timestamp}</dd></div>
+                <div><dt>Versión</dt><dd>{metadata.appVersion}</dd></div>
+                <div>
+                  <dt>Conexión</dt>
+                  <dd>
+                    {metadata.online
+                      ? <><Wifi size={14} aria-hidden="true" /> En línea</>
+                      : <><WifiOff size={14} aria-hidden="true" /> Sin conexión</>}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Estado de recuperación</dt>
+                  <dd>{RECOVERY_STATUS_LABELS[metadata.recoveryStatus] || 'Requiere una acción'}</dd>
+                </div>
+              </dl>
+              <details className="incident-recovery__advanced">
+                <summary>Información técnica adicional</summary>
+                <dl>
+                  <div><dt>Límite de recuperación</dt><dd>{metadata.recoveryBoundary}</dd></div>
+                  <div><dt>Componente supervisado</dt><dd>{metadata.supervisedComponent}</dd></div>
+                  <div><dt>Archivo asociado conocido</dt><dd>{metadata.associatedFile}</dd></div>
+                  <div><dt>Origen exacto de la excepción</dt><dd>{metadata.exceptionOrigin}</dd></div>
+                </dl>
+                {onCopyAdvanced && (
+                  <button type="button" className="ui-button ui-button--ghost"
+                    onClick={onCopyAdvanced}>
+                    {advancedCopied ? <CheckCheck size={17} aria-hidden="true" /> : <Copy size={17} aria-hidden="true" />}
+                    {advancedCopied ? 'Información avanzada copiada' : 'Copiar información técnica adicional'}
+                  </button>
+                )}
+                <p className="incident-recovery__feedback" role="status" aria-live="polite">
+                  {advancedCopyError || (advancedCopied
+                    ? 'La información técnica adicional se copió localmente; todavía no se compartió.'
+                    : '')}
+                </p>
+              </details>
+            </div>
+          </div>
+        )}
+
+        {onDismiss && (
+          <button
+            type="button"
+            className="incident-recovery__dismiss"
+            onClick={onDismiss}
+            aria-label="Cerrar aviso de incidencia"
+          >
+            Cerrar
+          </button>
+        )}
+      </div>
+      {incidentRecord && (
+        <div
+          id={reportRegionId}
+          className="incident-recovery__contact-form"
+          hidden={!reportOpen}
+        >
+          {reportOpen && (
+            <Suspense fallback={<p role="status">Preparando el formulario de contacto…</p>}>
+              <IncidentSupportContactForm
+                headingId={reportHeadingId}
+                incident={incidentRecord}
+                isContextCurrent={isContextCurrent}
+                services={reportServices}
+              />
+            </Suspense>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}

@@ -79,7 +79,6 @@ export default function PostDowngradeRecoveryBanner({ isSuppressed = false } = {
       const nextRecord = alreadyAcknowledged
         ? record
         : markPostDowngradeCashAttentionDisplayed(key);
-
       setAttention({
         key,
         record: nextRecord,

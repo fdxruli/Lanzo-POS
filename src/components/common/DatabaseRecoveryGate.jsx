@@ -18,6 +18,7 @@ import {
   buildSupportMailtoUrl,
   copyTextToClipboard
 } from '../../services/support/supportContact';
+import { getSafeIncidentCode, INCIDENT_CATEGORY } from '../../services/diagnostics/incidentDiagnostics';
 
 const useDatabaseRecoveryState = () => useSyncExternalStore(
   subscribeDatabaseRecoveryState,
@@ -39,6 +40,16 @@ const BLOCKING_STATUSES = new Set([
   DATABASE_RECOVERY_STATUS.FAILED
 ]);
 
+const SAFE_MIGRATION_PHASES = new Set([
+  'backup_starting',
+  'backup_complete',
+  'rebuild_starting',
+  'rebuild_complete',
+  'restore_invalid_backup_entry',
+  'restore_collision',
+  'validation_failed'
+]);
+
 const describeRecovery = (state, hasActiveNativeRequest) => {
   if (
     state.status === DATABASE_RECOVERY_STATUS.IDLE
@@ -54,7 +65,7 @@ const describeRecovery = (state, hasActiveNativeRequest) => {
   if (state.errorCode === 'DB_UNSUPPORTED_NATIVE_VERSION') {
     return {
       title: 'Esta versión de Lanzo no puede abrir tu base local',
-      body: 'Tus datos permanecen guardados. Esta base fue utilizada por una versión más reciente de Lanzo y esta instalación no puede abrirla de forma segura.',
+      body: 'La comprobación no pudo abrir la base local. Esta instalación no puede acceder a ella de forma segura.',
       advice: 'No borres los datos de la aplicación. Actualiza Lanzo o envía el diagnóstico a soporte para que podamos revisar tu instalación.',
       icon: 'warning'
     };
@@ -63,7 +74,7 @@ const describeRecovery = (state, hasActiveNativeRequest) => {
   if (state.errorCode === 'TENANT_DIRECTORY_CORRUPT') {
     return {
       title: 'El almacenamiento local de este tenant no puede abrirse de forma segura',
-      body: 'Lanzo detectó una referencia local sin su base física correspondiente. No se eliminó ningún dato local.',
+      body: 'Lanzo detectó que no puede localizar de forma segura la base local de este tenant. Esta comprobación no ejecutó una limpieza de datos.',
       advice: 'No crees ni restablezcas una base local. Puedes reintentar o enviar el diagnóstico a soporte para una revisión segura.',
       icon: 'warning'
     };
@@ -71,8 +82,8 @@ const describeRecovery = (state, hasActiveNativeRequest) => {
 
   if (state.status === DATABASE_RECOVERY_STATUS.MIGRATING) {
     return {
-      title: 'Actualizando la base local de forma segura...',
-      body: 'La migración está preservando tus ventas y movimientos. No cierres esta pestaña durante el proceso.',
+      title: 'Preparando una actualización de la base local...',
+      body: 'Lanzo está comprobando y preparando la base local. No cierres esta pestaña durante el proceso.',
       icon: 'database'
     };
   }
@@ -80,7 +91,7 @@ const describeRecovery = (state, hasActiveNativeRequest) => {
   if (state.errorCode === 'DB_BLOCKED') {
     return {
       title: 'Cierra las demás pestañas de Lanzo',
-      body: 'La base local está siendo usada por otra pestaña o ventana. Tus datos no se eliminarán. La operación continuará cuando se cierre la conexión bloqueante.',
+      body: 'La base local está siendo usada por otra pestaña o ventana. Lanzo esperará a que se cierre la conexión bloqueante antes de continuar; el estado de las operaciones locales debe verificarse al volver a abrir.',
       icon: 'warning'
     };
   }
@@ -89,7 +100,7 @@ const describeRecovery = (state, hasActiveNativeRequest) => {
     return {
       title: 'La apertura de la base local tardó demasiado',
       body: hasActiveNativeRequest
-        ? 'El navegador todavía mantiene una solicitud activa. Espera a que termine o recarga Lanzo para volver a intentarlo de forma segura.'
+        ? 'El navegador todavía mantiene una solicitud activa. Espera a que termine antes de intentar otra recuperación.'
         : 'La solicitud anterior ya terminó. Puedes reintentar la recuperación de forma segura o recargar Lanzo.',
       icon: 'warning'
     };
@@ -111,7 +122,7 @@ const describeRecovery = (state, hasActiveNativeRequest) => {
   ) {
     return {
       title: 'Actualización segura de la base local',
-      body: 'Detectamos un esquema local antiguo. Lanzo preparará una migración segura conservando ventas, productos y movimientos. Los respaldos técnicos se mantendrán en este hotfix.',
+      body: 'Detectamos un esquema local que requiere migración. Mantén esta pestaña abierta durante el proceso y verifica ventas, inventario y movimientos antes de continuar operando.',
       icon: 'database'
     };
   }
@@ -119,35 +130,25 @@ const describeRecovery = (state, hasActiveNativeRequest) => {
   if (state.status === DATABASE_RECOVERY_STATUS.FAILED) {
     return {
       title: 'La recuperación automática no pudo completarse',
-      body: 'La base local se conservó sin borrarse. Mantén esta instalación y solicita una revisión técnica con el código de diagnóstico mostrado.',
+      body: 'La recuperación no pudo confirmar el estado completo de la base local. Mantén esta instalación sin operar y solicita una revisión técnica con el código de diagnóstico mostrado.',
       icon: 'warning'
     };
   }
 
   return {
     title: 'La base local necesita recuperación',
-    body: 'Tus datos no serán eliminados automáticamente. Reintenta después de cerrar otras pestañas de Lanzo.',
+    body: 'El flujo no ejecuta un vaciado general de la base local. Su estado debe verificarse antes de continuar; cierra otras pestañas de Lanzo y reintenta.',
     icon: 'warning'
   };
 };
 
 const MigrationDetails = ({ migration }) => {
-  if (!migration) return null;
-  const stores = [...new Set([
-    ...Object.keys(migration.sourceCounts || {}),
-    ...Object.keys(migration.targetCounts || {})
-  ])];
+  const phase = SAFE_MIGRATION_PHASES.has(migration?.phase) ? migration.phase : null;
+  if (!phase) return null;
 
   return (
     <div className="app-boot-recovery__details" aria-label="Progreso de migración">
-      {migration.phase && <p><strong>Fase:</strong> {migration.phase}</p>}
-      {stores.length > 0 && <p><strong>Stores:</strong> {stores.join(', ')}</p>}
-      {Object.keys(migration.sourceCounts || {}).length > 0 && (
-        <p><strong>Origen:</strong> {JSON.stringify(migration.sourceCounts)}</p>
-      )}
-      {Object.keys(migration.targetCounts || {}).length > 0 && (
-        <p><strong>Destino:</strong> {JSON.stringify(migration.targetCounts)}</p>
-      )}
+      <p><strong>Fase:</strong> {phase}</p>
     </div>
   );
 };
@@ -198,13 +199,16 @@ export default function DatabaseRecoveryGate({
   )
     && recovery.isRetryable !== false
     && recovery.errorCode !== 'DB_BLOCKED';
-  const canReload = recovery.errorCode === 'DB_OPEN_TIMEOUT'
-    || recovery.errorCode === 'TENANT_DIRECTORY_CORRUPT';
+  const canReload = !hasActiveNativeRequest && (
+    recovery.errorCode === 'DB_OPEN_TIMEOUT'
+    || recovery.errorCode === 'TENANT_DIRECTORY_CORRUPT'
+  );
 
   const sendSupportReport = () => {
     if (!supportReport) return;
+    const safeCode = getSafeIncidentCode({ code: recovery.errorCode }, INCIDENT_CATEGORY.INDEXEDDB);
     openSupportMailto(buildSupportMailtoUrl({
-      subject: `[Soporte Lanzo POS] Recuperación local - ${recovery.errorCode || 'sin-código'}`,
+      subject: `[Soporte Lanzo POS] Recuperación local - ${safeCode}`,
       body: supportReport
     }));
   };
@@ -235,11 +239,9 @@ export default function DatabaseRecoveryGate({
         }
         reloadPage();
       })
-      .catch((error) => {
-        setRetryError(
-          error?.message
-          || 'No se pudo completar la recuperación. Cierra otras pestañas y vuelve a intentarlo.'
-        );
+    .catch(() => {
+        const safeCode = getSafeIncidentCode({ code: recovery.errorCode }, INCIDENT_CATEGORY.INDEXEDDB);
+        setRetryError(`No se pudo completar el reintento. No podemos confirmar el estado final de la base local. Solicita revisión con el código ${safeCode}.`);
       })
       .finally(() => {
         retryPromiseRef.current = null;
@@ -250,30 +252,31 @@ export default function DatabaseRecoveryGate({
     return operation;
   };
 
+  const isChecking = recovery.status === DATABASE_RECOVERY_STATUS.IDLE
+    || recovery.status === DATABASE_RECOVERY_STATUS.CHECKING
+    || recovery.status === DATABASE_RECOVERY_STATUS.MIGRATING;
+  const statusLabel = isChecking
+    ? 'Comprobando almacenamiento local'
+    : retrying
+      ? 'Recuperación en curso'
+      : recovery.status === DATABASE_RECOVERY_STATUS.READY
+        ? 'Verificación completada'
+        : 'Requiere revisión';
+
   return (
-    <main className="app-boot-recovery" role="alert" aria-live="assertive">
+    <main
+      className="app-boot-recovery"
+      role={isChecking ? 'status' : 'alert'}
+      aria-live={isChecking ? 'polite' : 'assertive'}
+    >
       <section className="app-boot-recovery__card">
         {copy.icon === 'warning'
-          ? <AlertTriangle size={44} aria-hidden="true" />
-          : <Database size={44} aria-hidden="true" />}
+          ? <AlertTriangle size={40} aria-hidden="true" />
+          : <Database size={40} aria-hidden="true" />}
         <h1>{copy.title}</h1>
         <p>{copy.body}</p>
         {copy.advice && <p>{copy.advice}</p>}
-        {recovery.affectedStores?.length > 0 && (
-          <p><strong>Stores afectados:</strong> {recovery.affectedStores.join(', ')}</p>
-        )}
         <MigrationDetails migration={recovery.migration} />
-        {recovery.errorCode && recovery.status === DATABASE_RECOVERY_STATUS.FAILED && (
-          <p><strong>Código:</strong> {recovery.errorCode}</p>
-        )}
-        {recovery.status === DATABASE_RECOVERY_STATUS.FAILED
-          && Number.isFinite(recovery.detectedNativeVersion) && (
-            <p><strong>Versión local detectada:</strong> {recovery.detectedNativeVersion}</p>
-          )}
-        {recovery.status === DATABASE_RECOVERY_STATUS.FAILED
-          && Number.isFinite(recovery.expectedNativeVersion) && (
-            <p><strong>Versión compatible con esta instalación:</strong> {recovery.expectedNativeVersion}</p>
-          )}
         {retryError && (
           <div className="ui-alert ui-alert--danger" role="alert">
             <AlertTriangle size={18} aria-hidden="true" />
@@ -281,62 +284,98 @@ export default function DatabaseRecoveryGate({
           </div>
         )}
         {supportActionError && (
-          <div className="ui-alert ui-alert--danger" role="alert">
-            <AlertTriangle size={18} aria-hidden="true" />
+          <p className="ui-alert ui-alert--warning" role="status">
             {supportActionError}
-          </div>
+          </p>
         )}
-        {canRetry && (
-          <button
-            type="button"
-            className="ui-button ui-button--primary"
-            onClick={retry}
-            disabled={operationActive}
-          >
-            <RefreshCw size={18} aria-hidden="true" />
-            {retrying ? 'Reintentando...' : 'Reintentar recuperación'}
-          </button>
+        {recovery.status === DATABASE_RECOVERY_STATUS.FAILED && !isOnline && (
+          <p className="ui-alert ui-alert--warning" role="status">
+            Estás sin conexión. El resultado completo de la base no puede verificarse ahora. Puedes copiar el diagnóstico y enviarlo después.
+          </p>
         )}
-        {canReload && (
-          <button
-            type="button"
-            className="ui-button ui-button--secondary"
-            onClick={reloadPage}
-          >
-            <RotateCw size={18} aria-hidden="true" />
-            Recargar Lanzo
-          </button>
+        <div className="app-boot-recovery__actions">
+          {canRetry && (
+            <button
+              type="button"
+              className="ui-button ui-button--primary"
+              onClick={retry}
+              disabled={operationActive}
+              aria-describedby={operationActive ? 'database-recovery-disabled-reason' : undefined}
+            >
+              <RefreshCw size={18} aria-hidden="true" />
+              {retrying ? 'Reintentando recuperación…' : 'Reintentar recuperación'}
+            </button>
+          )}
+          {canReload && (
+            <button
+              type="button"
+              className="ui-button ui-button--secondary"
+              onClick={reloadPage}
+            >
+              <RotateCw size={18} aria-hidden="true" />
+              Reiniciar Lanzo
+            </button>
+          )}
+          {recovery.status === DATABASE_RECOVERY_STATUS.FAILED && !canRetry && (
+            <button
+              type="button"
+              className="ui-button ui-button--primary"
+              onClick={sendSupportReport}
+            >
+              <Mail size={18} aria-hidden="true" />
+              Abrir correo de soporte
+            </button>
+          )}
+        </div>
+        {operationActive && canRetry && (
+          <p className="app-boot-recovery__note" id="database-recovery-disabled-reason" role="status">
+            La recuperación espera a que termine la solicitud activa del navegador.
+          </p>
         )}
         {recovery.status === DATABASE_RECOVERY_STATUS.FAILED && (
-          <>
-            {!isOnline && (
-              <p className="ui-alert ui-alert--warning" role="status">
-                Estás sin conexión. Tus datos siguen guardados. Puedes copiar el diagnóstico ahora y enviarlo a soporte cuando recuperes conexión.
-              </p>
-            )}
-            <div className="app-boot-recovery__actions">
-              <button
-                type="button"
-                className="ui-button ui-button--primary"
-                onClick={sendSupportReport}
-              >
-                <Mail size={18} aria-hidden="true" />
-                Enviar reporte a soporte
-              </button>
+          <details className="app-boot-recovery__support">
+            <summary>Detalles del problema</summary>
+            <div className="app-boot-recovery__details">
+              {recovery.errorCode && (
+                <p><strong>Código técnico:</strong> {getSafeIncidentCode({ code: recovery.errorCode }, INCIDENT_CATEGORY.INDEXEDDB)}</p>
+              )}
+              {Number.isFinite(recovery.detectedNativeVersion) && (
+                <p><strong>Versión local detectada:</strong> {recovery.detectedNativeVersion}</p>
+              )}
+              {Number.isFinite(recovery.expectedNativeVersion) && (
+                <p><strong>Versión compatible:</strong> {recovery.expectedNativeVersion}</p>
+              )}
+              <p><strong>Conexión:</strong> {isOnline ? 'En línea' : 'Sin conexión'}</p>
+              <p><strong>Estado de recuperación:</strong> {statusLabel}</p>
+            </div>
+            {canRetry && (
               <button
                 type="button"
                 className="ui-button ui-button--secondary"
-                onClick={() => { void copySupportReport(); }}
+                onClick={sendSupportReport}
               >
-                {copied ? <Check size={18} aria-hidden="true" /> : <Copy size={18} aria-hidden="true" />}
-                {copied ? 'Diagnóstico copiado' : 'Copiar diagnóstico'}
+                <Mail size={18} aria-hidden="true" />
+                Abrir correo de soporte
               </button>
-            </div>
-          </>
+            )}
+            <button
+              type="button"
+              className="ui-button ui-button--secondary"
+              onClick={() => { void copySupportReport(); }}
+            >
+              {copied ? <Check size={18} aria-hidden="true" /> : <Copy size={18} aria-hidden="true" />}
+              {copied ? 'Diagnóstico copiado' : 'Copiar diagnóstico'}
+            </button>
+            <p className="app-boot-recovery__note">
+              El botón de correo abre tu aplicación de correo; revisa y envía el mensaje cuando estés listo.
+            </p>
+          </details>
         )}
-        <p className="app-boot-recovery__note">
-          Lanzo no borrará tus datos durante esta recuperación.
-        </p>
+        {recovery.status === DATABASE_RECOVERY_STATUS.FAILED && (
+          <p className="app-boot-recovery__note">
+            Este flujo no elimina la base local. Aun así, Lanzo no puede confirmar el estado completo si la verificación falla.
+          </p>
+        )}
       </section>
     </main>
   );

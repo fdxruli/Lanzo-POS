@@ -3,6 +3,7 @@ import { Routes, Route, useLocation } from 'react-router-dom';
 import { AlertTriangle, XCircle } from 'lucide-react';
 import { useAppStore } from './store/useAppStore';
 import ErrorBoundary from './components/common/ErrorBoundary';
+import AdminLazyRouteRecoveryFallback from './components/common/AdminLazyRouteRecoveryFallback';
 import NavigationGuard from './components/common/NavigationGuard';
 import Logger from './services/Logger';
 import { startCustomerCreditAutoHealLifecycle } from './services/db/customerCreditRepository';
@@ -41,26 +42,21 @@ import { useSingleInstance } from './hooks/useSingleInstance';
 import TermsAndConditionsModal from './components/common/TermsAndConditionsModal';
 import { isCloudPosSyncEnabled } from './services/sync/syncConstants';
 import { fetchLegalPolicyState, isLegalPolicyPreviewEnabled } from './services/supabase';
-import { clearCurrentAdminRuntimeCaches } from './pwa/adminRuntimeCache';
 import {
   prepareAdminLazyRoute,
   recoverAdminLazyRoute,
 } from './pwa/adminLazyRouteRecovery';
+import { createRecoveryContextGuard } from './services/diagnostics/recoveryContext';
+import {
+  getActorCheckoutOwnerships,
+  getPendingActorOperations
+} from './services/auth/actorOperationalHandoff';
 
 const APP_BOOT_TIMEOUT_MS = 15_000;
 
-const resetAppShellCache = async () => {
-  try {
-    if ('caches' in window) {
-      await clearCurrentAdminRuntimeCaches(window.caches);
-    }
-  } catch (cacheError) {
-    Logger.warn('No se pudo limpiar la caché runtime administrativa:', cacheError);
-  }
-};
-
 const lazyRetry = (importFn, componentName = 'Component') => (
   lazy(async () => {
+    const isContextCurrent = createRecoveryContextGuard();
     try {
       await prepareAdminLazyRoute();
       return await importFn();
@@ -69,7 +65,9 @@ const lazyRetry = (importFn, componentName = 'Component') => (
 
       let recoveryResult = null;
       try {
-        recoveryResult = await recoverAdminLazyRoute({ error });
+        recoveryResult = isContextCurrent()
+          ? await recoverAdminLazyRoute({ error, isContextCurrent })
+          : { status: 'stale-context', reason: 'actor-or-tenant-context-changed' };
       } catch (recoveryError) {
         Logger.error(`Falló la recuperación automática de ${componentName}:`, recoveryError);
       }
@@ -78,6 +76,7 @@ const lazyRetry = (importFn, componentName = 'Component') => (
         return new Promise(() => {});
       }
 
+      const staleContext = recoveryResult?.status === 'stale-context' || !isContextCurrent();
       const offline = recoveryResult?.status === 'offline' || navigator.onLine === false;
       Logger.error(`No se pudo recuperar automáticamente ${componentName}. Mostrando UI de actualización.`, {
         status: recoveryResult?.status || 'error'
@@ -85,43 +84,13 @@ const lazyRetry = (importFn, componentName = 'Component') => (
 
       return {
         default: () => (
-          <div style={{
-            height: '100vh',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '20px',
-            textAlign: 'center'
-          }}>
-            <AlertTriangle size={48} className="text-yellow-500 mb-4" />
-            <h3>Error de carga del módulo</h3>
-            <p>No se pudo cargar la sección <strong>{componentName}</strong>.</p>
-            <p style={{ fontSize: '0.9rem', color: 'var(--text-light)', marginTop: '0.5rem' }}>
-              {offline
-                ? 'No hay conexión a internet. Reconéctate y vuelve a intentarlo.'
-                : 'Lanzo POS detectó archivos de una versión anterior. Actualiza para cargar la versión publicada sin borrar tus datos locales.'}
-            </p>
-            <button
-              className="btn btn-primary"
-              style={{ marginTop: '1rem' }}
-              onClick={() => {
-                recoverAdminLazyRoute({ error, force: true })
-                  .then((result) => {
-                    if (result?.status !== 'reloading') {
-                      Logger.error(`No se pudo forzar la recuperación de ${componentName}.`, {
-                        status: result?.status || 'error'
-                      });
-                    }
-                  })
-                  .catch((recoveryError) => {
-                    Logger.error(`Falló la recuperación manual de ${componentName}:`, recoveryError);
-                  });
-              }}
-            >
-              Actualizar Lanzo POS
-            </button>
-          </div>
+          <AdminLazyRouteRecoveryFallback
+            error={error}
+            isContextCurrent={isContextCurrent}
+            initialRecoveryStatus={staleContext ? 'blocked' : 'action_required'}
+            initiallyOffline={offline}
+            initiallyStale={staleContext}
+          />
         )
       };
     }
@@ -150,24 +119,58 @@ const PageLoader = () => (
   </div>
 );
 
-const AppBootRecovery = () => (
-  <main className="app-boot-recovery" role="alert">
-    <section className="app-boot-recovery__card">
-      <AlertTriangle size={42} aria-hidden="true" />
-      <h1>Lanzo POS está tardando en iniciar</h1>
-      <p>
-        La aplicación no pudo completar su inicialización. Tus datos locales no se han eliminado.
-      </p>
-      <button
-        type="button"
-        className="btn btn-primary"
-        onClick={() => resetAppShellCache().finally(() => window.location.reload())}
-      >
-        Recargar aplicación
-      </button>
-    </section>
-  </main>
-);
+const areBootOperationsIdle = () => {
+  try {
+    return getActorCheckoutOwnerships().length === 0
+      && getPendingActorOperations().length === 0;
+  } catch {
+    return false;
+  }
+};
+
+const AppBootRecovery = () => {
+  const [isContextCurrent] = useState(() => {
+    const contextGuard = createRecoveryContextGuard();
+    return () => {
+      try {
+        return contextGuard() === true;
+      } catch {
+        return false;
+      }
+    };
+  });
+  const canRetry = areBootOperationsIdle() && isContextCurrent();
+  const handleRetry = () => {
+    if (!areBootOperationsIdle() || !isContextCurrent()) return;
+    window.location.reload();
+  };
+
+  return (
+    <main className="app-boot-recovery" role="alert" aria-live="assertive">
+      <section className="app-boot-recovery__card">
+        <AlertTriangle size={40} aria-hidden="true" />
+        <h1>No pudimos iniciar Lanzo POS</h1>
+        <p>
+          La aplicación tardó demasiado en completar su preparación. Si una operación quedó pendiente, verifica su resultado antes de volver a intentarla.
+        </p>
+        <button
+          type="button"
+          className="ui-button ui-button--primary"
+          onClick={handleRetry}
+          disabled={!canRetry}
+          aria-describedby={!canRetry ? 'app-boot-recovery-disabled' : undefined}
+        >
+          Reintentar inicio
+        </button>
+        {!canRetry && (
+          <p className="app-boot-recovery__note" id="app-boot-recovery-disabled" role="status">
+            No podemos confirmar que la sesión y las operaciones estén listas para reiniciar Lanzo.
+          </p>
+        )}
+      </section>
+    </main>
+  );
+};
 
 function App() {
   const { pathname } = useLocation();
@@ -402,7 +405,7 @@ function App() {
 
     case 'unauthenticated':
       return (
-        <ErrorBoundary>
+        <ErrorBoundary recoverySurface="welcome">
           <WelcomeModal />
         </ErrorBoundary>
       );

@@ -77,7 +77,7 @@ const recoveryMessage = (code) => {
     return 'La base local está abierta en otra pestaña. Cierra las demás pestañas de Lanzo; la operación continuará cuando esa conexión se cierre.';
   }
   if (code === DATABASE_RECOVERY_CODES.PRIMARY_KEY_MISMATCH) {
-    return 'Detectamos un esquema local antiguo. Lanzo preparará una migración segura conservando ventas y movimientos.';
+    return 'Detectamos un esquema local que requiere migración. Verifica ventas e inventario después de la recuperación antes de continuar operando.';
   }
   if (code === DATABASE_RECOVERY_CODES.UNSUPPORTED_VERSION) {
     return 'La base local fue creada por una versión más reciente de Lanzo y no puede degradarse automáticamente.';
@@ -85,7 +85,7 @@ const recoveryMessage = (code) => {
   if (code === DATABASE_RECOVERY_CODES.MIGRATION_COLLISION) {
     return 'La migración detectó una colisión de identificadores y se abortó sin sobrescribir registros.';
   }
-  return 'La base local necesita actualizarse antes de continuar. Tus datos no serán eliminados automáticamente.';
+  return 'La base local necesita actualizarse antes de continuar. El estado de los datos debe verificarse después de la recuperación.';
 };
 
 const makeDiagnostic = ({

@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 import { execSync } from 'node:child_process';
 import packageJson from './package.json';
+import { incidentLabBuildPlugin, incidentLabInputs } from './scripts/incident-lab-build.mjs';
 import { serializeAdminManifest } from './src/pwa/adminManifest';
 
 const ADMIN_LOCAL_OFFLINE_GLOB_PATTERNS = Object.freeze([
@@ -19,6 +20,8 @@ const ADMIN_SHELL_GLOB_PATTERNS = Object.freeze([
   'assets/index-*.{js,css}',
   'assets/App-*.{js,css}',
   'assets/databaseRuntime-*.js',
+  'assets/actorOperationalHandoff-*.js',
+  'assets/actorRuntimeController-*.js',
   'assets/financialReceiptClassifier-*.js',
   'assets/PosApplicationBootstrap-*.{js,css}',
   'assets/vendor_react-*.js',
@@ -30,6 +33,16 @@ const ADMIN_SHELL_GLOB_PATTERNS = Object.freeze([
   'assets/useInventoryCatalogStore-*.js',
   'assets/Logger-*.js',
   'assets/ErrorBoundary-*.{js,css}',
+  'assets/IncidentRecoveryPanel-*.{js,css}',
+  'assets/IncidentReportForm-*.{js,css}',
+  'assets/telegramContact-*.js',
+  'assets/IncidentErrorBoundary-*.{js,css}',
+  // Shared shell dependencies emitted by Vite's independent QA HTML entry.
+  // No laboratory entry, fixture or adapter is precached by the POS worker.
+  'assets/supportContact-*.js',
+  'assets/buttons-*.{js,css}',
+  'assets/contextSnapshotGuard-*.js',
+  'assets/recoveryContext-*.js',
   'assets/storageManager-*.js',
   'assets/salesCloudShadowService-*.js',
   'assets/index.esm-*.js',
@@ -39,6 +52,10 @@ const ADMIN_SHELL_GLOB_PATTERNS = Object.freeze([
   'assets/productStoreRecoveryGuard-*.js',
   'assets/devServiceWorkerCleanup-*.js',
   'assets/devConsoleCapture-*.js',
+  'assets/incidentEventCenter-*.js',
+  'assets/incidentCapture-*.js',
+  'assets/IncidentReportEntry-*.js',
+  'assets/localTenantGuard-*.js',
   'assets/DevConsole-*.{js,css}',
   'assets/mobileZoomGuard-*.js',
   ...ADMIN_LOCAL_OFFLINE_GLOB_PATTERNS,
@@ -72,6 +89,7 @@ const buildCommit = getGitCommit();
 export default defineConfig(() => ({
   plugins: [
     react(),
+    incidentLabBuildPlugin(process.env),
     adminManifestPlugin(),
     VitePWA({
       strategies: 'injectManifest',
@@ -117,6 +135,7 @@ export default defineConfig(() => ({
     'import.meta.env.VITE_APP_VERSION': JSON.stringify(packageJson.version),
     'import.meta.env.VITE_BUILD_DATE': JSON.stringify(buildDate),
     'import.meta.env.VITE_BUILD_COMMIT': JSON.stringify(buildCommit),
+    'import.meta.env.VITE_INCIDENT_QA_PREVIEW': JSON.stringify(process.env.VERCEL_ENV === 'preview'),
   },
 
   build: {
@@ -126,6 +145,7 @@ export default defineConfig(() => ({
     chunkSizeWarningLimit: 1000,
 
     rollupOptions: {
+      input: incidentLabInputs(process.env),
       output: {
         manualChunks: {
           'vendor_react': ['react', 'react-dom', 'react-router-dom'],
