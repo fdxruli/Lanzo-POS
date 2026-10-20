@@ -155,7 +155,7 @@ describe('DatabaseRecoveryGate', () => {
     expect(reloadPage).toHaveBeenCalledTimes(1);
   });
 
-  it('offers the shared technical reporter for a failed database check', async () => {
+  it('does not expose a report action before actor and tenant context is ready', () => {
     recoveryMocks.state = {
       ...recoveryMocks.state,
       status: 'failed',
@@ -164,8 +164,12 @@ describe('DatabaseRecoveryGate', () => {
 
     renderGate();
 
-    expect(await screen.findByRole('button', { name: 'Reportar problema' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reportar problema' })).not.toBeInTheDocument();
     expect(screen.getByText(/Este flujo no elimina la base local/i)).toBeInTheDocument();
+    openRecoveryDetails();
+    expect(screen.getByRole('button', { name: /abrir correo de soporte/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /copiar diagnóstico/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /reportar problema/i })).not.toBeInTheDocument();
   });
 
   it('collapses multiple retry clicks into one recovery call', () => {

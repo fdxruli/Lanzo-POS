@@ -77,7 +77,7 @@ Estados UI: `not_started`, `ready`, `sending`, `sent`, `failed`, `offline`, `una
 
 ## Backend preparado, sin despliegue
 
-Migración preparada: `supabase/migrations/20261015134821_technical_incident_reporting_r1.sql`.
+Migración preparada y diferida: `supabase/archive/unresolved-migrations/20261015134821_technical_incident_reporting_r1.sql`.
 
 - Tabla privada `private.technical_incident_reports`, sin privilegios directos de `anon`, `authenticated` ni `service_role`; RLS activo y acceso de tabla reservado al rol dueño.
 - RPC estrecha `public.submit_technical_incident_report(...)`, `SECURITY DEFINER`, `search_path = ''`, permiso de ejecución revocado primero y otorgado explícitamente solo a `anon`/`authenticated`. La RPC valida consentimiento, allowlist exacta, versión, formatos, ruta/módulo, 10 KB y texto libre máximo de 500 caracteres.

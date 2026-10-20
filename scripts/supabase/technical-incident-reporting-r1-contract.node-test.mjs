@@ -1,17 +1,23 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const migrationPath = join(
-  repoRoot,
-  'supabase',
-  'migrations',
+const migrationsDirectory = join(repoRoot, 'supabase', 'migrations');
+const canonicalMigrationPath = join(
+  migrationsDirectory,
   '20261015134821_technical_incident_reporting_r1.sql'
 );
-const sql = readFileSync(migrationPath, 'utf8').replace(/\r\n/gu, '\n');
+const deferredMigrationPath = join(
+  repoRoot,
+  'supabase',
+  'archive',
+  'unresolved-migrations',
+  '20261015134821_technical_incident_reporting_r1.sql'
+);
+const sql = readFileSync(deferredMigrationPath, 'utf8').replace(/\r\n/gu, '\n');
 const submitMarker = 'create or replace function public.submit_technical_incident_report(';
 const purgeMarker = 'create or replace function private.purge_technical_incident_reports()';
 
@@ -25,6 +31,15 @@ const extractBlock = (source, marker) => {
 
 const submitSql = extractBlock(sql, submitMarker);
 const purgeSql = extractBlock(sql, purgeMarker);
+
+test('keeps technical incident reporting SQL out of the canonical migration set', () => {
+  const applicableIncidentMigrations = readdirSync(migrationsDirectory)
+    .filter((filename) => /technical[_-]incident[_-]reporting/iu.test(filename));
+
+  assert.deepEqual(applicableIncidentMigrations, []);
+  assert.equal(existsSync(canonicalMigrationPath), false);
+  assert.equal(existsSync(deferredMigrationPath), true);
+});
 
 test('stores only a private, RLS-protected technical report record', () => {
   assert.match(sql, /create table if not exists private\.technical_incident_reports/u);

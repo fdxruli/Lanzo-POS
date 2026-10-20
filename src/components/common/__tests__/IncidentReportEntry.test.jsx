@@ -12,6 +12,13 @@ const incident = Object.freeze({
 });
 
 describe('IncidentReportEntry', () => {
+  it('does not show a report button unless a functional toggle callback is provided', () => {
+    const { container } = render(<IncidentReportEntry incident={incident} />);
+
+    expect(screen.queryByRole('button', { name: /reportar problema/i })).not.toBeInTheDocument();
+    expect(container).toBeEmptyDOMElement();
+  });
+
   it('is an accessible disclosure trigger and does not mount the technical reporter', () => {
     const onToggle = vi.fn();
     const { rerender } = render(

@@ -1,4 +1,4 @@
-import { useId, useState, useSyncExternalStore } from 'react';
+import { Suspense, lazy, useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
 import { AlertTriangle, X } from 'lucide-react';
 import {
   dismissAsyncIncidentNotice,
@@ -7,6 +7,8 @@ import {
 } from '../../services/diagnostics/incidentEventCenter';
 import IncidentReportEntry from './IncidentReportEntry';
 import './AdminIncidentNotice.css';
+
+const IncidentSupportContactForm = lazy(() => import('./IncidentSupportContactForm'));
 
 const useIncidentNotices = () => useSyncExternalStore(
   subscribeAsyncIncidentNotices,
@@ -59,8 +61,29 @@ const getNoticeCopy = (notice) => {
 export default function AdminIncidentNotice() {
   const notices = useIncidentNotices();
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
   const detailsId = useId().replace(/:/g, '');
+  const reportRegionId = 'admin-incident-report-region-' + detailsId;
+  const reportHeadingId = 'admin-incident-report-heading-' + detailsId;
+  const reportTriggerRef = useRef(null);
+  const reportReturnFocusRef = useRef(null);
+  const wasReportOpen = useRef(false);
   const notice = notices[0];
+
+  useEffect(() => {
+    setDetailsOpen(false);
+    setReportOpen(false);
+    reportReturnFocusRef.current = null;
+  }, [notice?.correlationId]);
+
+  useEffect(() => {
+    if (wasReportOpen.current && !reportOpen) {
+      (reportReturnFocusRef.current || reportTriggerRef.current)?.focus();
+      reportReturnFocusRef.current = null;
+    }
+    wasReportOpen.current = reportOpen;
+  }, [reportOpen]);
+
   if (!notice) return null;
 
   const copy = getNoticeCopy(notice);
@@ -68,6 +91,22 @@ export default function AdminIncidentNotice() {
 
   const isCritical = notice.critical;
   const role = isCritical ? 'alert' : 'status';
+  const toggleDetails = (event) => {
+    const nextOpen = !detailsOpen;
+    setDetailsOpen(nextOpen);
+    if (!nextOpen && reportOpen) {
+      reportReturnFocusRef.current = event.currentTarget;
+      setReportOpen(false);
+    }
+  };
+  const toggleReport = (trigger) => {
+    if (reportOpen) {
+      setReportOpen(false);
+      return;
+    }
+    reportReturnFocusRef.current = trigger || reportTriggerRef.current;
+    setReportOpen(true);
+  };
 
   return (
     <aside
@@ -87,7 +126,7 @@ export default function AdminIncidentNotice() {
           className="admin-incident-notice__details-toggle"
           aria-expanded={detailsOpen}
           aria-controls={'admin-incident-details-' + detailsId}
-          onClick={() => setDetailsOpen((open) => !open)}
+          onClick={toggleDetails}
         >
           {detailsOpen ? 'Ocultar detalles' : 'Detalles del problema'}
         </button>
@@ -98,10 +137,34 @@ export default function AdminIncidentNotice() {
             <div><dt>Sección</dt><dd>{notice.metadata.section}</dd></div>
             <div><dt>Fecha y hora</dt><dd>{new Date(notice.metadata.timestamp).toLocaleString('es-MX')}</dd></div>
           </dl>
-          <IncidentReportEntry
-            incident={notice.incident}
-            isContextCurrent={notice.isContextCurrent}
-          />
+          {!isCritical && notice.incident && (
+            <>
+              <IncidentReportEntry
+                incident={notice.incident}
+                open={reportOpen}
+                controlsId={reportRegionId}
+                buttonRef={reportTriggerRef}
+                onToggle={(event) => toggleReport(event.currentTarget)}
+              />
+              <div
+                id={reportRegionId}
+                className="admin-incident-notice__report-region"
+                aria-live="off"
+                hidden={!reportOpen}
+              >
+                {reportOpen && (
+                  <Suspense fallback={<p role="status">Preparando el formulario de contacto…</p>}>
+                    <IncidentSupportContactForm
+                      key={notice.incident.incident_id}
+                      headingId={reportHeadingId}
+                      incident={notice.incident}
+                      isContextCurrent={notice.isContextCurrent}
+                    />
+                  </Suspense>
+                )}
+              </div>
+            </>
+          )}
         </div>
       </div>
       <button

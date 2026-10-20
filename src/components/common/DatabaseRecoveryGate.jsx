@@ -19,8 +19,6 @@ import {
   copyTextToClipboard
 } from '../../services/support/supportContact';
 import { getSafeIncidentCode, INCIDENT_CATEGORY } from '../../services/diagnostics/incidentDiagnostics';
-import { captureIncident } from '../../services/diagnostics/incidentCapture';
-import IncidentReportEntry from './IncidentReportEntry';
 
 const useDatabaseRecoveryState = () => useSyncExternalStore(
   subscribeDatabaseRecoveryState,
@@ -166,7 +164,6 @@ export default function DatabaseRecoveryGate({
   const [retryError, setRetryError] = useState('');
   const [supportActionError, setSupportActionError] = useState('');
   const [copied, setCopied] = useState(false);
-  const [incidentRecord, setIncidentRecord] = useState(null);
   const [isOnline, setIsOnline] = useState(() => globalThis.navigator?.onLine !== false);
   const retryPromiseRef = useRef(null);
   const copyTimeoutRef = useRef(null);
@@ -181,22 +178,6 @@ export default function DatabaseRecoveryGate({
       if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current);
     };
   }, []);
-
-  useEffect(() => {
-    if (recovery.status !== DATABASE_RECOVERY_STATUS.FAILED) {
-      setIncidentRecord(null);
-      return;
-    }
-    setIncidentRecord(captureIncident(
-      Object.assign(new Error('IndexedDB recovery requires review'), { code: recovery.errorCode }),
-      {
-        source: 'indexeddb',
-        category: 'indexeddb',
-        severity: 'critical_blocker',
-        recoveryStatus: 'failed'
-      }
-    ));
-  }, [recovery.status, recovery.errorCode]);
 
   const supportReport = useMemo(() => (recovery.status === DATABASE_RECOVERY_STATUS.FAILED
     ? buildDatabaseRecoverySupportReport(recovery, { online: isOnline })
@@ -389,9 +370,6 @@ export default function DatabaseRecoveryGate({
               El botón de correo abre tu aplicación de correo; revisa y envía el mensaje cuando estés listo.
             </p>
           </details>
-        )}
-        {recovery.status === DATABASE_RECOVERY_STATUS.FAILED && (
-          <IncidentReportEntry incident={incidentRecord} />
         )}
         {recovery.status === DATABASE_RECOVERY_STATUS.FAILED && (
           <p className="app-boot-recovery__note">

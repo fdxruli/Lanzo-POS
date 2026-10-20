@@ -9,7 +9,7 @@ export default function IncidentReportEntry({
   onToggle = null
 }) {
   const generatedControlsId = useId().replace(/:/g, '');
-  if (!incident) return null;
+  if (!incident || typeof onToggle !== 'function') return null;
 
   return (
     <button
