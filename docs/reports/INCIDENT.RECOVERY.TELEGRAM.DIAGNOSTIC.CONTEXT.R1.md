@@ -3,7 +3,7 @@
 **PR:** [#357 — Centro de Recuperación](https://github.com/fdxruli/Lanzo-POS/pull/357)
 **Rama:** `feat/incident-recovery-center-r1`
 **HEAD inicial auditado:** `59196ccae666d8c03ecb1e4a552adc466a167bd7`
-**HEAD final:** pendiente de publicar
+**HEAD de implementación publicado:** `fa48d62f61d3f06e75387f7fce00c87d647e7fb1`
 **Estado:** OPEN / Draft · no mergeado
 
 ## 1. Diagnóstico del problema de Telegram
@@ -80,6 +80,7 @@ La cobertura agregada/actualizada incluye:
 - ErrorBoundary: copia del diagnóstico con contexto Welcome, panel plegado, archivo estático conocido y copia avanzada local.
 - Laboratorio QA: superficie `sales`/`settings`, mensaje de fallback honesto, sin acciones externas ni transporte comercial.
 - **Ejecución focal local: 13 archivos, 165/165 tests PASS.** Incluye ambos formularios, Telegram, diagnóstico, comunicación, reporter/payload remoto, centro de eventos asíncronos, ErrorBoundary/copia, recuperación UX y laboratorio QA.
+- **Compatibilidad comercial Telegram:** suite de Acerca de y helper en 2 archivos, 27/27 tests PASS; confirma que su vista previa con selector explícito de destinatario permanece independiente del contacto de incidencias.
 - **ESLint focal: PASS, 0 errores.** Emitió solo el aviso informativo de que `baseline-browser-mapping` está desactualizado.
 - **Build administrativo: PASS.** `postbuild` verificó 23 assets de inicio y 0 assets de rutas core Local. Vite mantuvo avisos de importación mixta y de patrones opcionales de precache sin archivos coincidentes.
 - **Build público `build:store:vercel`: PASS.** Auditoría de compliance pasó con 0 violaciones; artefactos públicos preparados localmente, sin publicar/deployar.
@@ -88,9 +89,17 @@ La cobertura agregada/actualizada incluye:
 
 Los saltos a Telegram Android/iOS/Desktop requieren pruebas manuales; construir una URL en test no certifica cliente físico. No se publica ninguna inyección de error.
 
-## 10. Resultados CI del HEAD final
+## 10. Resultados CI del HEAD de implementación `fa48d62f6`
 
-Pendiente completar tras publicar HEAD final: PR127 Global Comparison, Actor Runtime, Actor Scoped Storage, Dexie Recovery, Ecommerce Public, Store Git Runtime, Incident Recovery QA Lab / exclusión PWA y estado de Vercel. Los fallos compartidos de BASE y del candidato se describirán como baseline; un fallo aislado se atribuirá solo con evidencia diferencial reproducible. La compilación pública local aprobó la auditoría de compliance; aún no sustituye los checks del PR.
+- [PR127 Global Comparison 39343358876](https://github.com/fdxruli/Lanzo-POS/actions/runs/39343358876): SUCCESS. El artefacto reporta 99 fallos compartidos, 0 candidate-only, 0 nuevos, 0 identidades semánticas sin resolver y 1 resuelto.
+- [Actor Scoped Storage 39343358926](https://github.com/fdxruli/Lanzo-POS/actions/runs/39343358926): SUCCESS. BASE repitió 5,278 PASS / 75 FAIL / 52 SKIP; candidato 5,457 PASS / 75 FAIL / 52 SKIP. El diferencial reporta 0 regresiones nuevas, 93 fallos candidatos preexistentes estables, 0 candidatos flaky y 1 observación incidental solo en BASE (`src/tests/ErrorBoundary.test.jsx`, `expect is not defined` en ambas repeticiones de BASE; ausente del candidato, causa no determinada).
+- [Actor Runtime 39343358882](https://github.com/fdxruli/Lanzo-POS/actions/runs/39343358882): SUCCESS. BASE y candidato repitieron 5,278/75/52 y 5,457/75/52 respectivamente; el diferencial reporta 0 regresiones nuevas, 93 fallos candidatos preexistentes estables, 0 candidatos flaky y la misma observación incidental solo en BASE descrita arriba.
+- [Dexie Recovery / focal-quality 39343358888](https://github.com/fdxruli/Lanzo-POS/actions/runs/39343358888): SUCCESS; ocho matrices focales y validación de calidad pasan.
+- [Incident Recovery QA Lab 39343358850](https://github.com/fdxruli/Lanzo-POS/actions/runs/39343358850): SUCCESS; `isolated-lab` PASS. La auditoría arquitectura/producción de la suite confirma exclusión de artefactos QA.
+- [Store Git Runtime 39343358801](https://github.com/fdxruli/Lanzo-POS/actions/runs/39343358801) y [Ecommerce Public 39343358969](https://github.com/fdxruli/Lanzo-POS/actions/runs/39343358969): SUCCESS.
+- Vercel PR Preview terminó SUCCESS; es Preview del PR, no producción. El build público local también pasó compliance sin publicar/deployar.
+
+Los diferenciales comparan BASE y candidato por dos repeticiones completas; los fallos compartidos no se atribuyen a este cambio. Un resultado de BASE ausente del candidato se conserva como observación sin inventar causa.
 
 ## 11. Evidencia visual
 
@@ -115,7 +124,7 @@ git rev-parse HEAD
 npm run dev
 ```
 
-Después de instalar, `npm run dev` permite revisar el producto desde localhost. Para fallos controlados, usar solo el laboratorio QA aislado indicado por la aplicación, nunca ventas reales ni cuentas productivas. Checklist:
+Después de instalar, `npm run dev` permite revisar el producto desde localhost. Abrir `http://localhost:5173/__qa/incident-recovery` (o el puerto que Vite indique) para los fallos controlados; el laboratorio usa adaptadores en memoria, nunca ventas reales ni cuentas productivas. Checklist:
 
 1. Provocar el fallo de Welcome en el entorno QA.
 2. Copiar el diagnóstico técnico y comprobar Área de acceso, pantalla de bienvenida y ruta `/`.
