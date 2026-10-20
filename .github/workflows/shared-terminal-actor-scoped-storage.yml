@@ -241,7 +241,7 @@ jobs:
         run: |
           echo "PR_BASE_SHA=${SHARED_TERMINAL_3_PR_BASE_SHA}"
           echo "COMPARISON_BASE_SHA=${SHARED_TERMINAL_3_COMPARISON_BASE_SHA}"
-          test "$(git -C subject rev-parse HEAD)" = "${SHARED_TERMINAL_3_COMPARISON_BASE_SHA}"
+          test "$(git rev-parse HEAD)" = "${SHARED_TERMINAL_3_COMPARISON_BASE_SHA}"
           test "${SHARED_TERMINAL_3_COMPARISON_BASE_SHA}" = "${SHARED_TERMINAL_3_PR_BASE_SHA}"
 
       - name: Checkout exact candidate evidence tools
@@ -411,7 +411,7 @@ jobs:
         working-directory: subject
         run: |
           echo "CANDIDATE_SHA=${SHARED_TERMINAL_3_CANDIDATE_SHA}"
-          test "$(git -C subject rev-parse HEAD)" = "${SHARED_TERMINAL_3_CANDIDATE_SHA}"
+          test "$(git rev-parse HEAD)" = "${SHARED_TERMINAL_3_CANDIDATE_SHA}"
 
       - name: Checkout exact candidate evidence tools
         uses: actions/checkout@v4
