@@ -21,7 +21,8 @@ const trackedProduct = {
 };
 
 const renderModal = ({
-  isPro = true,
+  canSyncCatalog = true,
+  canUseStockVisibility = true,
   editingProduct = null,
   localProducts = [trackedProduct],
   onSave = vi.fn().mockResolvedValue(true)
@@ -34,7 +35,8 @@ const renderModal = ({
       localProducts={localProducts}
       categoriesById={new Map([['category-1', 'General']])}
       linkedRefs={new Set()}
-      isPro={isPro}
+      canSyncCatalog={canSyncCatalog}
+      canUseStockVisibility={canUseStockVisibility}
       limitReached={false}
       onClose={onClose}
       onSave={onSave}
@@ -65,7 +67,7 @@ afterEach(() => {
 
 describe('EcommerceProductPublishModal stock visibility', () => {
   it('forces hidden for FREE and does not expose the selector', async () => {
-    const { onSave } = renderModal({ isPro: false });
+    const { onSave } = renderModal({ canSyncCatalog: false, canUseStockVisibility: false });
     chooseLocalProduct();
 
     expect(screen.queryByLabelText(/Visibilidad del inventario/)).toBeNull();

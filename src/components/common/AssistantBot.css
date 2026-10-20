@@ -92,6 +92,26 @@
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
+[data-theme="dark"] .bot-header {
+  background: linear-gradient(135deg, #1B222B 0%, #252E39 100%);
+  color: var(--text-dark);
+  border-bottom-color: var(--border-color);
+}
+
+[data-theme="dark"] .bot-header .mode-toggle-btn,
+[data-theme="dark"] .bot-header .close-btn {
+  background: var(--ui-bg-elevated);
+  border: 1px solid var(--ui-border-control);
+  color: var(--text-dark);
+}
+
+[data-theme="dark"] .bot-header .mode-toggle-btn:hover,
+[data-theme="dark"] .bot-header .close-btn:hover {
+  background: var(--ui-bg-hover);
+  border-color: var(--ui-border-selected);
+  color: var(--ui-text-brand);
+}
+
 .bot-heading {
   flex: 1;
   min-width: 0;
@@ -525,11 +545,11 @@
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  background: var(--primary-color);
+  background: var(--ui-action-primary-bg);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: white;
+  color: var(--ui-action-primary-text);
   flex-shrink: 0;
 }
 
@@ -547,8 +567,8 @@
 
 /* Burbuja del Usuario */
 .chat-message.user .message-bubble {
-  background: var(--primary-color);
-  color: white;
+  background: var(--ui-action-primary-bg);
+  color: var(--ui-action-primary-text);
   border-bottom-right-radius: 4px;
 }
 
@@ -600,8 +620,8 @@
 }
 
 .option-btn:hover {
-  background: var(--primary-color);
-  color: white;
+  background: var(--ui-action-primary-bg);
+  color: var(--ui-action-primary-text);
 }
 
 /* Indicador de escritura */
@@ -681,8 +701,8 @@
 }
 
 .send-btn {
-  background: var(--primary-color);
-  color: white;
+  background: var(--ui-action-primary-bg);
+  color: var(--ui-action-primary-text);
   border: none;
   width: 40px;
   height: 40px;
@@ -795,8 +815,8 @@
 }
 
 .action-btn {
-  background: var(--primary-color);
-  color: white;
+  background: var(--ui-action-primary-bg);
+  color: var(--ui-action-primary-text);
   border: none;
   padding: 12px 16px;
   border-radius: 8px;

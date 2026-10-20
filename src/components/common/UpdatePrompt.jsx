@@ -26,7 +26,7 @@ const persistDismissedState = () => {
   }
 };
 
-const UpdatePrompt = () => {
+const UpdatePrompt = ({ isSuppressed = false } = {}) => {
   const showUpdateModal = useAppStore((state) => state.showUpdateModal);
   const isUpdating = useAppStore((state) => state.isUpdating);
   const setUpdateAvailable = useAppStore((state) => state.setUpdateAvailable);
@@ -44,7 +44,7 @@ const UpdatePrompt = () => {
 
   useEffect(() => {
     const applyWorkerState = (workerState) => {
-      if (workerState.waiting) {
+      if (workerState.waiting || workerState.reloadDeferred) {
         setUpdateAvailable(true);
       } else if (workerState.registered && workerState.active && !workerState.installing) {
         setUpdateAvailable(false);
@@ -64,7 +64,7 @@ const UpdatePrompt = () => {
     closeUpdateModal();
   };
 
-  if (!showUpdateModal || isDismissed) return null;
+  if (isSuppressed || !showUpdateModal || isDismissed) return null;
 
   return (
     <div className="ui-card ui-card--compact update-prompt">

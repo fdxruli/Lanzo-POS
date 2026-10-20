@@ -1,4 +1,6 @@
 :root {
+  color-scheme: light;
+
   /* UI palette aliases */
   --ui-color-primary: var(--primary-color);
   --ui-color-primary-hover: var(--primary-hover);
@@ -8,40 +10,64 @@
   --ui-color-success: var(--success-color);
   --ui-color-warning: var(--warning-color);
   --ui-color-danger: var(--error-color);
-  --ui-color-info: var(--primary-color);
+  --ui-color-info: #2563EB;
 
   /* UI surfaces */
   --ui-bg-page: var(--background-color);
   --ui-bg-surface: var(--card-background-color);
   --ui-bg-muted: var(--light-background);
+  --ui-bg-elevated: var(--light-background);
+  --ui-bg-hover: var(--light-background);
+  --ui-bg-control: var(--card-background-color);
+  --ui-bg-selected: color-mix(in srgb, var(--brand-accent) 9%, var(--card-background-color));
+  --ui-surface-highlight: color-mix(in srgb, white 42%, transparent);
   --ui-bg-overlay: rgba(15, 23, 42, 0.62);
   --ui-bg-overlay-strong: rgba(15, 23, 42, 0.72);
   --ui-bg-overlay-soft: rgba(15, 23, 42, 0.45);
-  --ui-bg-success-soft: rgba(16, 185, 129, 0.12);
-  --ui-bg-warning-soft: rgba(255, 184, 0, 0.14);
-  --ui-bg-danger-soft: rgba(239, 68, 68, 0.12);
-  --ui-bg-info-soft: rgba(59, 130, 246, 0.12);
+  --ui-bg-success-soft: color-mix(in srgb, var(--ui-color-success) 10%, var(--ui-bg-surface));
+  --ui-bg-warning-soft: color-mix(in srgb, var(--ui-color-warning) 12%, var(--ui-bg-surface));
+  --ui-bg-danger-soft: color-mix(in srgb, var(--ui-color-danger) 10%, var(--ui-bg-surface));
+  --ui-bg-info-soft: color-mix(in srgb, var(--ui-color-info) 10%, var(--ui-bg-surface));
   --ui-bg-brand-soft: var(--brand-accent-soft);
   --ui-border-color: var(--border-color);
   --ui-border-brand: var(--brand-accent-border);
-  --ui-border-success: color-mix(in srgb, var(--ui-color-success) 45%, transparent);
-  --ui-border-warning: color-mix(in srgb, var(--ui-color-warning) 45%, transparent);
-  --ui-border-danger: color-mix(in srgb, var(--ui-color-danger) 45%, transparent);
-  --ui-border-info: color-mix(in srgb, var(--ui-color-info) 45%, transparent);
+  --ui-border-control: #8993A3;
+  --ui-border-selected: var(--brand-accent-text);
+  --ui-border-success: color-mix(in srgb, var(--ui-color-success) 52%, transparent);
+  --ui-border-warning: color-mix(in srgb, var(--ui-color-warning) 52%, transparent);
+  --ui-border-danger: color-mix(in srgb, var(--ui-color-danger) 52%, transparent);
+  --ui-border-info: color-mix(in srgb, var(--ui-color-info) 52%, transparent);
 
   /* UI text */
   --ui-text-strong: var(--text-dark);
   --ui-text: var(--text-color);
   --ui-text-muted: var(--text-light);
   --ui-text-brand: var(--brand-accent-text);
-  --ui-text-success: color-mix(in srgb, var(--ui-color-success) 70%, #064e3b);
-  --ui-text-warning: color-mix(in srgb, var(--ui-color-warning) 68%, #78350f);
-  --ui-text-danger: color-mix(in srgb, var(--ui-color-danger) 78%, #7f1d1d);
-  --ui-text-info: color-mix(in srgb, var(--ui-color-info) 72%, #1e3a8a);
-  --ui-text-warning-on-dark: #ffd166;
-  --ui-text-danger-on-dark: #ff8ca0;
+  --ui-text-success: #1D6C48;
+  --ui-text-warning: #8A4A00;
+  --ui-text-danger: #B4232D;
+  --ui-text-info: #1D4ED8;
+  --ui-text-warning-on-dark: var(--ui-text-warning);
+  --ui-text-danger-on-dark: var(--ui-text-danger);
   --ui-text-on-primary: var(--text-on-primary);
   --ui-text-on-danger: #ffffff;
+
+  /* Interactive roles: preserve legacy primary/info aliases while giving
+     actions, selected controls, and destructive actions their own colors. */
+  --ui-action-primary-bg: var(--brand-accent);
+  --ui-action-primary-hover-bg: #1D4ED8;
+  --ui-action-primary-active-bg: #1E40AF;
+  --ui-action-primary-text: #FFFFFF;
+  --ui-action-primary-border: var(--brand-accent);
+  --ui-action-success-bg: #166534;
+  --ui-action-success-hover-bg: #14532D;
+  --ui-action-success-text: #FFFFFF;
+  --ui-action-danger-bg: #B4232D;
+  --ui-action-danger-hover-bg: #941B24;
+  --ui-action-danger-text: #FFFFFF;
+  --ui-action-disabled-bg: color-mix(in srgb, var(--ui-bg-muted) 82%, var(--ui-bg-surface));
+  --ui-action-disabled-text: var(--ui-text-muted);
+  --ui-focus-color: #1D4ED8;
 
   /* UI spacing */
   --ui-space-2xs: 0.25rem;
@@ -61,8 +87,8 @@
   --ui-shadow-sm: var(--box-shadow);
   --ui-shadow-md: 0 10px 20px -12px rgba(15, 23, 42, 0.28);
   --ui-shadow-lg: var(--box-shadow-lg);
-  --ui-shadow-focus-primary: 0 0 0 3px color-mix(in srgb, var(--ui-color-primary) 28%, transparent);
-  --ui-shadow-focus-brand: 0 0 0 3px color-mix(in srgb, var(--ui-color-brand) 28%, transparent);
+  --ui-shadow-focus-primary: 0 0 0 3px color-mix(in srgb, var(--ui-focus-color) 30%, transparent);
+  --ui-shadow-focus-brand: 0 0 0 3px color-mix(in srgb, var(--ui-focus-color) 30%, transparent);
   --ui-shadow-focus-danger: 0 0 0 3px color-mix(in srgb, var(--ui-color-danger) 24%, transparent);
   --ui-shadow-focus-success: 0 0 0 3px color-mix(in srgb, var(--ui-color-success) 24%, transparent);
 
@@ -80,5 +106,35 @@
   --ui-bg-overlay: rgba(2, 6, 23, 0.72);
   --ui-bg-overlay-strong: rgba(2, 6, 23, 0.82);
   --ui-bg-overlay-soft: rgba(2, 6, 23, 0.56);
+  --ui-bg-elevated: #252E39;
+  --ui-bg-hover: #252E39;
+  --ui-bg-control: #1B222B;
+  --ui-bg-selected: color-mix(in srgb, var(--brand-accent) 15%, var(--ui-bg-surface));
+  --ui-surface-highlight: rgba(255, 255, 255, 0.04);
+  --ui-bg-success-soft: color-mix(in srgb, #75D5A6 13%, var(--ui-bg-surface));
+  --ui-bg-warning-soft: color-mix(in srgb, #F2C477 13%, var(--ui-bg-surface));
+  --ui-bg-danger-soft: color-mix(in srgb, #F28B91 13%, var(--ui-bg-surface));
+  --ui-bg-info-soft: color-mix(in srgb, #7DAAFF 13%, var(--ui-bg-surface));
+  --ui-border-control: #64748B;
+  --ui-border-selected: var(--brand-accent);
+  --ui-color-info: #7DAAFF;
+  --ui-text-brand: #7DAAFF;
+  --ui-text-success: #75D5A6;
+  --ui-text-warning: #F2C477;
+  --ui-text-danger: #F28B91;
+  --ui-text-info: #7DAAFF;
+  --ui-text-warning-on-dark: #F2C477;
+  --ui-text-danger-on-dark: #F28B91;
+  --ui-text-on-danger: #101820;
+  --ui-action-primary-text: #101820;
+  --ui-action-primary-hover-bg: #93B9FF;
+  --ui-action-primary-active-bg: #6B97E8;
+  --ui-action-success-bg: #1F6A4A;
+  --ui-action-success-hover-bg: #19573C;
+  --ui-action-danger-bg: #B43A45;
+  --ui-action-danger-hover-bg: #98313B;
+  --ui-action-disabled-bg: #252E39;
+  --ui-action-disabled-text: #A5AFBC;
+  --ui-focus-color: #7DAAFF;
   --ui-shadow-md: 0 14px 28px -18px rgba(0, 0, 0, 0.85);
 }

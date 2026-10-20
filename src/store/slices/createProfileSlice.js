@@ -21,6 +21,10 @@ import {
   isLocalTenantAccessError
 } from '../../services/tenant/localTenantGuard';
 import { actorRuntimeController } from '../../services/auth/actorRuntimeController';
+import {
+  getTenantRuntimeReadiness,
+  isTenantRuntimeError
+} from '../../services/db/tenantRuntimeRouter';
 
 let _profileLoadGeneration = 0;
 let _profileSessionGeneration = 0;
@@ -107,6 +111,7 @@ const saveProfileCache = async (licenseKey, companyData, { beforeWrite = null } 
     id: LEGACY_COMPANY_KEY
   });
 
+  beforeWrite?.();
   markProfileLoaded(licenseKey);
 
   return scopedProfile;
@@ -195,15 +200,58 @@ export const createProfileSlice = (set, get) => ({
     const {
       forceRemote = false,
       refreshProfile = false,
-      reason = 'manual'
+      reason = 'manual',
+      allowSetupTransition = false,
+      profileLoadMode = 'foreground',
+      assertCurrent = null,
+      onPrepared = null
     } = options || {};
     const sessionGeneration = _profileSessionGeneration;
+    const generation = ++_profileLoadGeneration;
+    const stateAtRequest = get();
+    const tenantAtRequest = getTenantRuntimeReadiness().runtime;
+    const assertLoadContext = () => {
+      assertCurrent?.();
+      const tenant = getTenantRuntimeReadiness().runtime;
+      const currentLicense = get().licenseDetails?.license_key;
+      if (!isProfileLoadCurrent(generation, sessionGeneration)
+        || (currentLicense && currentLicense !== licenseKey)
+        || tenant?.opaqueId !== tenantAtRequest?.opaqueId
+        || tenant?.generation !== tenantAtRequest?.generation
+        || tenant?.databaseName !== tenantAtRequest?.databaseName) {
+        const error = new Error('La carga del perfil pertenece a una sesión anterior.');
+        error.code = 'ACTOR_CONTEXT_STALE';
+        throw error;
+      }
+    };
+    const publishPreparedProfile = (companyData, importCandidate) => {
+      assertLoadContext();
+      applyProfileState(set, get, companyData, importCandidate);
+      onPrepared?.(get().appStatus);
+    };
+
+    if (!licenseKey) return null;
+
+    if (profileLoadMode === 'background' && !getTenantRuntimeReadiness().ready) {
+      Logger.warn('[Profile] Se omite carga de fondo (' + reason + '): TenantRuntime no está listo.');
+      const currentProfile = stateAtRequest.companyProfile;
+      return currentProfile?.license_key === licenseKey ? currentProfile : null;
+}
 
     await assertLocalTenantSyncAccess(
       { license_key: licenseKey },
       { reason: `profile_${reason}` }
     );
     if (sessionGeneration !== _profileSessionGeneration) return null;
+
+    if (!getTenantRuntimeReadiness().ready) {
+      Logger.warn('[Profile] Se omite carga (' + reason + '): TenantRuntime no está listo.');
+      const currentProfile = get().companyProfile;
+      return currentProfile?.license_key === licenseKey ? currentProfile : null;
+}
+
+    assertLoadContext();
+
     get().refreshTenantUiPreferences?.();
     get().refreshDriveSession?.();
 
@@ -212,7 +260,6 @@ export const createProfileSlice = (set, get) => ({
       stateAtLoad.currentDeviceRole === 'staff' &&
       Boolean(stateAtLoad.currentStaffUser) &&
       stateAtLoad.appStatus === 'staff_login_required';
-    const generation = ++_profileLoadGeneration;
     const shouldForceRemote = Boolean(
       forceRemote || refreshProfile || isAuthenticatedStaffTransition
     );
@@ -222,11 +269,7 @@ export const createProfileSlice = (set, get) => ({
     let companyData = null;
     let profileMissingRemotely = false;
     let profileImportCandidate = null;
-
-    if (!licenseKey) {
-      applyProfileState(set, get, null, null);
-      return null;
-    }
+    let profileStorageReadFailed = false;
 
     if (
       !shouldForceRemote &&
@@ -235,6 +278,7 @@ export const createProfileSlice = (set, get) => ({
       hasUsableProfile(currentProfile)
     ) {
       Logger.log(`[Profile] Usando perfil en memoria; TTL vigente (${reason}).`);
+      if (profileLoadMode === 'foreground') publishPreparedProfile(currentProfile, null);
       return currentProfile;
     }
 
@@ -251,12 +295,14 @@ export const createProfileSlice = (set, get) => ({
 
         if (!shouldForceRemote && cacheMeta.isFresh && hasUsableProfile(companyData)) {
           Logger.log(`[Profile] Usando perfil local; TTL vigente (${reason}).`);
-          applyProfileState(set, get, companyData, null);
+          assertLoadContext();
+          publishPreparedProfile(companyData, null);
           return companyData;
         }
       }
     } catch (error) {
-      if (isLocalTenantAccessError(error)) throw error;
+      if (isLocalTenantAccessError(error) || isTenantRuntimeError(error) || error?.code?.startsWith('ACTOR_')) throw error;
+      profileStorageReadFailed = true;
       Logger.warn('[AppStore] Fallo carga perfil local:', error);
     }
 
@@ -286,8 +332,9 @@ export const createProfileSlice = (set, get) => ({
               reason: 'profile_remote_response_identity'
             });
           }
+          assertLoadContext();
           companyData = buildCompanyData(profileResult.data, licenseKey);
-          companyData = await saveProfileCache(licenseKey, companyData);
+          companyData = await saveProfileCache(licenseKey, companyData, { beforeWrite: assertLoadContext });
 
           if (!isProfileLoadCurrent(generation, sessionGeneration)) {
             Logger.log(`[Profile] Carga #${generation} descartada tras guardar local`);
@@ -300,7 +347,7 @@ export const createProfileSlice = (set, get) => ({
           profileMissingRemotely = true;
         }
       } catch (error) {
-        if (isLocalTenantAccessError(error)) throw error;
+        if (isLocalTenantAccessError(error) || isTenantRuntimeError(error) || error?.code?.startsWith('ACTOR_')) throw error;
         Logger.warn('[AppStore] Fallo carga perfil online:', error);
       }
     }
@@ -318,7 +365,8 @@ export const createProfileSlice = (set, get) => ({
           companyData = buildCompanyData(cachedProfile, licenseKey);
         }
       } catch (error) {
-        if (isLocalTenantAccessError(error)) throw error;
+        if (isLocalTenantAccessError(error) || isTenantRuntimeError(error)) throw error;
+        profileStorageReadFailed = true;
         Logger.warn('[AppStore] Fallo carga perfil local:', error);
       }
     }
@@ -336,7 +384,8 @@ export const createProfileSlice = (set, get) => ({
           );
         }
       } catch (error) {
-        if (isLocalTenantAccessError(error)) throw error;
+        if (isLocalTenantAccessError(error) || isTenantRuntimeError(error)) throw error;
+        profileStorageReadFailed = true;
         Logger.warn('[AppStore] Fallo leyendo perfil legado:', error);
       }
     }
@@ -346,7 +395,32 @@ export const createProfileSlice = (set, get) => ({
       return null;
     }
 
-    applyProfileState(set, get, companyData, profileImportCandidate);
+    const currentProfileAtPublish = get().companyProfile;
+    assertLoadContext();
+    if (
+      hasUsableProfile(currentProfileAtPublish) &&
+      currentProfileAtPublish?.license_key === licenseKey &&
+      !hasUsableProfile(companyData)
+    ) {
+      Logger.warn('[Profile] Se conserva el perfil en memoria tras una carga incompleta (' + reason + ').');
+      if (profileLoadMode === 'foreground') publishPreparedProfile(currentProfileAtPublish, null);
+      return currentProfileAtPublish;
+    }
+
+    if (!hasUsableProfile(companyData)) {
+      if (profileStorageReadFailed) {
+        Logger.warn('[Profile] No se decide ausencia del perfil tras un fallo local (' + reason + ').');
+        return null;
+      }
+
+      const mayEnterSetup = allowSetupTransition === true && profileMissingRemotely;
+      if (!mayEnterSetup) {
+        Logger.warn('[Profile] No se confirmó onboarding; se conserva el estado actual (' + reason + ').');
+        return null;
+      }
+    }
+
+    publishPreparedProfile(companyData, profileImportCandidate);
     return companyData;
   },
 

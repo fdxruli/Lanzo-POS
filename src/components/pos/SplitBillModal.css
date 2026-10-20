@@ -161,10 +161,10 @@
 }
 
 .split-wizard-step.is-current {
-  color: var(--ui-text-strong);
-  background: var(--ui-bg-surface);
-  border-color: var(--ui-color-primary);
-  box-shadow: inset 0 -3px var(--ui-color-primary);
+  color: var(--ui-text-brand);
+  background: var(--ui-bg-selected);
+  border-color: var(--ui-border-selected);
+  box-shadow: inset 0 -3px var(--ui-border-selected);
 }
 
 .split-wizard-step.is-complete {
@@ -316,8 +316,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--ui-text-on-primary);
-  background: var(--ui-color-primary);
+  color: var(--ui-action-primary-text);
+  background: var(--ui-action-primary-bg);
   border-radius: 50%;
   font-size: 1rem;
   font-weight: 900;
@@ -681,7 +681,7 @@
 
 .split-action-button {
   justify-content: flex-start;
-  color: var(--ui-color-primary);
+  color: var(--ui-text-brand);
   background: var(--ui-bg-surface);
   border-color: var(--ui-border-color);
 }
@@ -693,15 +693,15 @@
 }
 
 .split-action-button:hover:not(:disabled) {
-  color: var(--ui-text-on-primary);
-  background: var(--ui-color-primary);
-  border-color: var(--ui-color-primary);
+  color: var(--ui-action-primary-text);
+  background: var(--ui-action-primary-bg);
+  border-color: var(--ui-action-primary-bg);
 }
 
 .split-action-button--all:hover:not(:disabled) {
-  color: var(--ui-text-on-primary);
-  background: var(--ui-color-success);
-  border-color: var(--ui-color-success);
+  color: var(--ui-action-success-text);
+  background: var(--ui-action-success-bg);
+  border-color: var(--ui-action-success-bg);
 }
 
 .split-tickets-section {
@@ -855,9 +855,9 @@
 }
 
 .split-icon-button:hover:not(:disabled) {
-  color: var(--ui-text-on-danger);
-  background: var(--ui-color-danger);
-  border-color: var(--ui-color-danger);
+  color: var(--ui-action-danger-text);
+  background: var(--ui-action-danger-bg);
+  border-color: var(--ui-action-danger-bg);
 }
 
 .split-move-select {
@@ -1074,19 +1074,45 @@
 }
 
 .split-danger-button {
-  color: var(--ui-text-on-danger);
-  background: var(--ui-color-danger);
-  border-color: var(--ui-color-danger);
+  color: var(--ui-action-danger-text);
+  background: var(--ui-action-danger-bg);
+  border-color: var(--ui-action-danger-bg);
+}
+
+.split-danger-button:hover:not(:disabled) {
+  color: var(--ui-action-danger-text);
+  background: var(--ui-action-danger-hover-bg);
+  border-color: var(--ui-action-danger-hover-bg);
+}
+
+.split-danger-button:active:not(:disabled) {
+  color: var(--ui-action-danger-text);
+  background: var(--ui-action-danger-hover-bg);
+  border-color: var(--ui-action-danger-hover-bg);
 }
 
 .split-primary-button {
-  color: var(--ui-text-on-primary);
-  background: var(--ui-color-primary);
-  border-color: var(--ui-color-primary);
+  color: var(--ui-action-primary-text);
+  background: var(--ui-action-primary-bg);
+  border-color: var(--ui-action-primary-bg);
 }
 
 .split-primary-button:hover:not(:disabled) {
-  filter: brightness(0.95);
+  color: var(--ui-action-primary-text);
+  background: var(--ui-action-primary-hover-bg);
+  border-color: var(--ui-action-primary-hover-bg);
+}
+
+.split-primary-button:active:not(:disabled) {
+  color: var(--ui-action-primary-text);
+  background: var(--ui-action-primary-active-bg);
+  border-color: var(--ui-action-primary-active-bg);
+}
+
+.split-bill-modal .split-strategy-selector label.is-selected {
+  color: var(--ui-text-brand);
+  background: var(--ui-bg-selected);
+  border-color: var(--ui-border-selected);
 }
 
 .split-action-button:disabled,
@@ -1095,7 +1121,10 @@
 .split-primary-button:disabled,
 .split-link-button:disabled,
 .split-icon-button:disabled {
-  opacity: 0.55;
+  opacity: 1;
+  color: var(--ui-action-disabled-text);
+  background: var(--ui-action-disabled-bg);
+  border-color: var(--ui-border-color);
   cursor: not-allowed;
 }
 

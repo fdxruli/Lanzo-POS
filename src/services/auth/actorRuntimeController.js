@@ -170,6 +170,7 @@ export const createActorRuntimeController = ({
       return publish({
         ...state,
         status: ACTOR_RUNTIME_STATUS.AUTHENTICATING,
+        generation: state.generation + 1,
         actorType,
         actorId: null,
         actorKey: null,

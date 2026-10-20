@@ -1,0 +1,430 @@
+.incident-report {
+  min-width: 0;
+  margin-block: 0.75rem;
+  color: var(--text-color);
+}
+
+.incident-report__form {
+  display: grid;
+  min-width: 0;
+  gap: 0.75rem;
+  padding: clamp(0.75rem, 2vw, 1rem);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  background: var(--card-background-color);
+}
+
+.incident-report__form > * { min-width: 0; }
+
+.incident-report :is(.ui-button, .incident-report__external-link) {
+  min-width: 0;
+  min-height: 44px;
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+
+.incident-report__consent { min-height: 44px; }
+
+.incident-report__heading h3 {
+  margin: 0 0 0.25rem;
+  color: var(--text-dark);
+  font-size: 1rem;
+}
+
+.incident-report__heading p,
+.incident-report__shared p,
+.incident-report__shared ul,
+.incident-report__hint {
+  margin: 0;
+  color: var(--text-light);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.incident-report__code {
+  margin: 0;
+}
+
+.incident-report__code div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.5rem;
+  align-items: baseline;
+}
+
+.incident-report__code dt,
+.incident-report__description-label {
+  color: var(--text-dark);
+  font-weight: 650;
+}
+
+.incident-report__code dd {
+  margin: 0;
+  color: var(--brand-accent-text);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  overflow-wrap: anywhere;
+}
+
+.incident-report__shared ul {
+  padding-inline-start: 1.25rem;
+  margin-block: 0.25rem 0.5rem;
+}
+
+.incident-report__shared .incident-report__excluded {
+  color: var(--text-color);
+}
+
+.incident-report__form textarea {
+  width: 100%;
+  min-height: 5rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm, 0.5rem);
+  background: var(--input-background-color, var(--card-background-color));
+  color: var(--text-color);
+  font: inherit;
+  resize: vertical;
+}
+
+.incident-report__form textarea:focus-visible,
+.incident-report__consent input:focus-visible,
+.incident-report__open:focus-visible {
+  outline: 3px solid var(--ui-focus-color, var(--brand-accent));
+  outline-offset: 2px;
+}
+
+.incident-report__consent {
+  display: grid;
+  grid-template-columns: 1.25rem minmax(0, 1fr);
+  gap: 0.6rem;
+  align-items: start;
+  line-height: 1.45;
+}
+
+.incident-report__consent input {
+  width: 1.1rem;
+  height: 1.1rem;
+  margin: 0.1rem 0 0;
+  accent-color: var(--brand-accent);
+}
+
+.incident-report__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.incident-report__communication {
+  display: grid;
+  gap: 0.75rem;
+  padding-block-start: 1rem;
+  border-block-start: 1px solid var(--border-color);
+}
+
+.incident-report__communication-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.incident-report__external-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  text-decoration: none;
+}
+
+.incident-report__message {
+  min-height: 6rem;
+  overflow-wrap: anywhere;
+}
+
+.incident-report__channel-note,
+.incident-report__communication-status {
+  margin: 0;
+  color: var(--text-color);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.incident-report__channel-note a {
+  color: var(--brand-accent-text);
+  text-underline-offset: 0.15em;
+}
+
+.incident-report__communication-status {
+  padding: 0.6rem 0.7rem;
+  border-radius: var(--border-radius-sm, 0.5rem);
+  background: var(--ui-bg-info-soft, var(--light-background));
+}
+
+.incident-report__communication-status--warning {
+  background: var(--ui-bg-warning-soft, var(--light-background));
+}
+
+.incident-report__status,
+.incident-report__copy-status {
+  margin: 0;
+  color: var(--text-color);
+  line-height: 1.45;
+}
+
+.incident-report__status {
+  padding: 0.6rem 0.7rem;
+  border-radius: var(--border-radius-sm, 0.5rem);
+  background: var(--ui-bg-info-soft, var(--light-background));
+}
+
+.incident-report__copy-status {
+  color: var(--ui-text-success, var(--text-color));
+}
+
+@media (max-width: 520px) {
+  .incident-report__actions > .ui-button,
+  .incident-report__communication-actions > .ui-button {
+    flex: 1 1 100%;
+    min-height: 44px;
+  }
+}
+
+/* The current support contact form is a full-width sibling of the recovery
+   columns. Keep the older technical intake styles above for its reserved,
+   separately tested future flow. */
+.incident-recovery__contact-form {
+  width: 100%;
+  max-width: 68rem;
+  min-width: 0;
+  margin: clamp(1.25rem, 3vw, 2rem) auto 0;
+  padding-block-start: clamp(1rem, 2.5vw, 1.5rem);
+  border-block-start: 1px solid var(--border-color);
+}
+
+.incident-recovery__contact-form[hidden] { display: none; }
+
+.incident-support-contact,
+.incident-support-contact * { min-width: 0; }
+
+.incident-support-contact {
+  display: grid;
+  gap: 1rem;
+  color: var(--text-color);
+}
+
+.incident-support-contact__heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 0.75rem;
+}
+
+.incident-support-contact__heading h2,
+.incident-support-contact__preview h3 {
+  margin: 0;
+  color: var(--text-dark);
+  font-size: clamp(1.15rem, 2vw, 1.4rem);
+  line-height: 1.25;
+}
+
+.incident-support-contact__heading p,
+.incident-support-contact__preview p,
+.incident-support-contact__privacy,
+.incident-support-contact__channel-note,
+.incident-support-contact__offline {
+  margin: 0.35rem 0 0;
+  color: var(--text-light);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.incident-support-contact__code {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.7rem;
+  margin: 0;
+}
+
+.incident-support-contact__code span,
+.incident-support-contact__description > label,
+.incident-support-contact__preview-label {
+  color: var(--text-dark);
+  font-size: 0.9rem;
+  font-weight: 650;
+}
+
+.incident-support-contact__code code {
+  color: var(--brand-accent-text);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  overflow-wrap: anywhere;
+}
+
+.incident-support-contact__fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1.25rem;
+}
+
+.incident-support-contact__description,
+.incident-support-contact__channels {
+  display: grid;
+  align-content: start;
+  gap: 0.6rem;
+}
+
+.incident-support-contact__privacy { margin: 0; }
+
+.incident-support-contact__description textarea,
+.incident-support-contact__preview-field {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-height: 7rem;
+  padding: 0.7rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm, 0.5rem);
+  background: var(--input-background-color, var(--card-background-color));
+  color: var(--text-color);
+  font: inherit;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.incident-support-contact__description textarea:focus-visible,
+.incident-support-contact__preview-field:focus-visible,
+.incident-support-contact__include input:focus-visible,
+.incident-support-contact__channel input:focus-visible {
+  outline: 3px solid var(--ui-focus-color, var(--brand-accent));
+  outline-offset: 2px;
+}
+
+.incident-support-contact__description-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+  color: var(--text-light);
+  font-size: 0.82rem;
+}
+
+.incident-support-contact__include,
+.incident-support-contact__channel {
+  display: grid;
+  grid-template-columns: 1.2rem minmax(0, 1fr);
+  align-items: start;
+  gap: 0.6rem;
+  min-height: 44px;
+  line-height: 1.45;
+}
+
+.incident-support-contact__include { color: var(--text-color); }
+
+.incident-support-contact__include input,
+.incident-support-contact__channel input {
+  width: 1.1rem;
+  height: 1.1rem;
+  margin: 0.15rem 0 0;
+  accent-color: var(--brand-accent);
+}
+
+.incident-support-contact__channels fieldset {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.incident-support-contact__channels legend {
+  margin-block-end: 0.35rem;
+  color: var(--text-dark);
+  font-size: 0.9rem;
+  font-weight: 650;
+}
+
+.incident-support-contact__channel > span {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.incident-support-contact__channel strong { color: var(--text-dark); }
+.incident-support-contact__channel > span > span {
+  color: var(--text-light);
+  font-size: 0.86rem;
+}
+
+.incident-support-contact__channel-note,
+.incident-support-contact__offline { margin: 0; }
+
+.incident-support-contact :is(.ui-button, .incident-support-contact__external-link) {
+  min-width: 0;
+  min-height: 44px;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.incident-support-contact .ui-button svg { flex: 0 0 auto; }
+
+.incident-support-contact__preview {
+  display: grid;
+  gap: 0.65rem;
+  padding-block-start: 1rem;
+  border-block-start: 1px solid var(--border-color);
+}
+
+.incident-support-contact__preview h3 { font-size: 1rem; }
+.incident-support-contact__preview p { margin-block-start: 0.25rem; }
+.incident-support-contact__preview-label { margin-block-start: 0.2rem; }
+.incident-support-contact__preview-field { min-height: 12rem; overflow-wrap: anywhere; }
+
+.incident-support-contact__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.incident-support-contact__external-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  text-decoration: none;
+}
+
+.incident-support-contact__feedback {
+  min-height: 1.4em;
+  margin: 0;
+  color: var(--text-color);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.incident-support-contact__heading :focus-visible,
+.incident-support-contact :focus-visible {
+  outline-color: var(--ui-focus-color, var(--brand-accent));
+}
+
+@container incident-recovery (min-width: 40rem) {
+  .incident-support-contact__heading {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+  }
+}
+
+@container incident-recovery (min-width: 48rem) {
+  .incident-support-contact__fields {
+    grid-template-columns: minmax(0, 1.1fr) minmax(16rem, 0.9fr);
+    gap: clamp(1.25rem, 3vw, 2.5rem);
+  }
+}
+
+@container incident-recovery (max-width: 34rem) {
+  .incident-support-contact__actions { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .incident-support-contact__actions > * { width: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .incident-recovery__contact-form { scroll-behavior: auto; }
+}

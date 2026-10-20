@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => ({
   getBusinessProfile: vi.fn(), saveBusinessProfile: vi.fn(),
   loadData: vi.fn(), saveData: vi.fn(), configureBackup: vi.fn(),
   fetchLegalTerms: vi.fn(), acceptLegalTerms: vi.fn(),
+  fetchAcceptedLegalDocument: vi.fn(), fetchLegalPolicyPreview: vi.fn(),
+  fetchLegalPolicyState: vi.fn(), isLegalPolicyPreviewEnabled: vi.fn(),
   actorGranted: false, events: [],
   grant: vi.fn(), assertCurrent: vi.fn(),
 }));
@@ -23,12 +25,20 @@ vi.mock('../../../services/supabase', () => ({
   clearAdminSessionCache: vi.fn(), clearStaffSessionCache: vi.fn(),
   getBusinessProfile: mocks.getBusinessProfile, saveBusinessProfile: mocks.saveBusinessProfile,
   fetchLegalTerms: mocks.fetchLegalTerms, acceptLegalTerms: mocks.acceptLegalTerms,
+  fetchAcceptedLegalDocument: mocks.fetchAcceptedLegalDocument,
+  fetchLegalPolicyPreview: mocks.fetchLegalPolicyPreview,
+  fetchLegalPolicyState: mocks.fetchLegalPolicyState,
+  isLegalPolicyPreviewEnabled: mocks.isLegalPolicyPreviewEnabled,
 }));
 vi.mock('../../../services/database', () => ({
   loadData: mocks.loadData, saveData: mocks.saveData, STORES: { COMPANY: 'company' },
 }));
 vi.mock('../../../services/licenseStorage', () => ({ saveLicenseToStorage: vi.fn() }));
 vi.mock('../../../services/db/databaseRuntime', () => ({ ensureLocalDatabaseReady: vi.fn() }));
+vi.mock('../../../services/db/tenantRuntimeRouter', () => ({
+  getTenantRuntimeReadiness: () => ({ ready: true, runtime: { opaqueId: 'onboarding-fixture', databaseName: 'onboarding-fixture', generation: 1 } }),
+  isTenantRuntimeError: (error) => String(error?.code || '').startsWith('TENANT_RUNTIME_')
+}));
 vi.mock('../../../services/tenant/localTenantGuard', () => ({
   assertLocalTenantAccess: vi.fn(), assertLocalTenantSyncAccess: vi.fn(),
   initializeLocalTenantGuard: vi.fn(), isLocalTenantAccessError: () => false, lockLocalTenantAccess: vi.fn(),
@@ -36,20 +46,28 @@ vi.mock('../../../services/tenant/localTenantGuard', () => ({
 vi.mock('../../../services/auth/actorSessionRuntimeBridge', () => ({
   beginActorRuntimeAuthentication: () => { mocks.actorGranted = false; },
   grantAuthenticatedActorRuntime: mocks.grant,
+  assertAuthenticatedActorSessionCurrent: vi.fn(async () => true),
   lockActorRuntime: () => { mocks.actorGranted = false; },
 }));
-vi.mock('../../../services/auth/actorRuntimeController', () => ({
-  actorRuntimeController: { capture: () => {
-    if (!mocks.actorGranted) throw new Error('ACTOR_CONTEXT_LOCKED');
-    return { actorType: 'admin', assertCurrent: mocks.assertCurrent };
-  } },
-}));
+vi.mock('../../../services/auth/actorRuntimeController', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, actorRuntimeController: {
+    getState: () => ({ status: mocks.actorGranted ? 'granted' : 'locked', generation: 0 }),
+    capture: () => {
+      if (!mocks.actorGranted) throw new Error('ACTOR_CONTEXT_LOCKED');
+      return { actorType: 'admin', assertCurrent: mocks.assertCurrent };
+    }
+  } };
+});
 vi.mock('../../../services/storage/imageUploadService', () => ({
   IMAGE_UPLOAD_PURPOSES: { BUSINESS_LOGO: 'business-logo' }, uploadImageFile: vi.fn(),
 }));
-vi.mock('../../../services/utils', () => ({ compressImage: vi.fn() }));
+vi.mock('../../../services/utils', () => ({ compressImage: vi.fn(), showMessageModal: vi.fn() }));
 vi.mock('../../../services/backup/backupManager', () => ({ backupManager: { configure: mocks.configureBackup } }));
-vi.mock('../TermsAndConditionsModal', () => ({ default: () => null }));
+vi.mock('../TermsAndConditionsModal', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, default: () => null };
+});
 vi.mock('../LazyImage', () => ({ default: () => null }));
 
 import { useAppStore } from '../../../store/useAppStore';
@@ -197,7 +215,7 @@ describe('integrated owner onboarding', () => {
     expect(screen.getByText('Abarrotes / Tienda')).toBeInTheDocument();
     expect(screen.getByText('Propietario creado')).toBeInTheDocument();
     expect(screen.getByText(/Al hacer clic en/)).toHaveTextContent('Crear negocio');
-    expect(screen.getByRole('button', { name: 'Términos y Condiciones' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Ver políticas y avisos' })).toBeInTheDocument();
 
     const changeLicense = screen.getByRole('button', { name: 'Cambiar licencia' });
     expect(changeLicense.closest('.accordion-item')).toBeNull();

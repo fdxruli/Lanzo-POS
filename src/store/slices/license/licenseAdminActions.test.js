@@ -27,7 +27,8 @@ vi.mock('../../../services/supabase', () => ({
 vi.mock('../../../services/auth/actorSessionRuntimeBridge', () => ({
   beginActorRuntimeAuthentication: mocks.beginActorRuntimeAuthentication,
   grantAuthenticatedActorRuntime: mocks.grantAuthenticatedActorRuntime,
-  lockActorRuntime: mocks.lockActorRuntime
+  lockActorRuntime: mocks.lockActorRuntime,
+  assertAuthenticatedActorSessionCurrent: vi.fn(async () => true)
 }));
 vi.mock('../../../services/licenseStorage', () => ({ saveLicenseToStorage: mocks.saveLicenseToStorage }));
 vi.mock('../../../services/db/databaseRuntime', () => ({
@@ -41,6 +42,15 @@ vi.mock('../../../services/tenant/localTenantGuard', () => ({
   lockLocalTenantAccess: vi.fn()
 }));
 
+vi.mock('../../../services/auth/actorRuntimeController', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, actorRuntimeController: {
+    getState: () => ({ status: 'locked', generation: 0 }),
+    capture: () => ({ actorType: 'admin', actorId: mocks.restoreActorRuntimeFromCurrentSessionCache?.mock.lastCall?.[0]?.actor?.id || mocks.grantAuthenticatedActorRuntime.mock.lastCall?.[0]?.actor?.id, assertCurrent: vi.fn() }),
+    subscribe: () => () => {}
+  } };
+});
+
 import { createLicenseAdminActions } from './licenseAdminActions';
 
 const setup = () => {
@@ -49,8 +59,8 @@ const setup = () => {
     adminLoginLicenseKey: 'LANZO-ADMIN-TEST',
     licenseDetails: { license_key: 'LANZO-ADMIN-TEST', product_name: 'Pro' },
     stopLicenseSync: vi.fn(),
-    _processOfflineMode: vi.fn(async () => { state.appStatus = 'ready'; }),
-    _loadProfile: vi.fn(async () => { state.appStatus = 'ready'; })
+    _processOfflineMode: vi.fn(async (_key, options = {}) => { state.appStatus = 'ready'; options.onPrepared?.('ready'); }),
+    _loadProfile: vi.fn(async (_key, options = {}) => { state.appStatus = 'ready'; options.onPrepared?.('ready'); })
   };
   const set = vi.fn((partial) => Object.assign(state, partial));
   const get = () => state;
@@ -96,9 +106,39 @@ describe('license admin actions', () => {
     expect(state.appStatus).toBe('ready');
     expect(state._loadProfile).toHaveBeenCalledWith(
       'LANZO-ADMIN-TEST',
-      { forceRemote: true, reason: 'admin_login' }
+      { forceRemote: true, reason: 'admin_login', assertCurrent: expect.any(Function), onPrepared: expect.any(Function) }
     );
     expect(state.pendingAdminSessionResult).toBeNull();
+  });
+
+  it('allows existing-license owner enrollment to enter Setup when the profile is absent', async () => {
+    const state = setup();
+    state.ownerEnrollmentContext = 'existing_license';
+    state._loadProfile = vi.fn(async (_licenseKey, options) => {
+      expect(options).toMatchObject({
+        forceRemote: true,
+        reason: 'admin_login',
+        allowSetupTransition: true
+      });
+      state.appStatus = 'setup_required';
+      options.onPrepared?.('setup_required');
+    });
+    mocks.adminLoginOnDevice.mockResolvedValue({
+      success: true,
+      admin_user: { id: 'admin-1', username: 'owner', display_name: 'Owner' },
+      details: { license_key: 'LANZO-ADMIN-TEST', device_role: 'admin' }
+    });
+
+    await expect(state.handleAdminLogin({
+      username: 'owner',
+      password: 'fixture-password'
+    })).resolves.toMatchObject({ success: true, remoteAuthenticated: true });
+
+    expect(state._loadProfile).toHaveBeenCalledWith(
+      'LANZO-ADMIN-TEST',
+      { forceRemote: true, reason: 'admin_login', allowSetupTransition: true, assertCurrent: expect.any(Function), onPrepared: expect.any(Function) }
+    );
+    expect(state.ownerEnrollmentContext).toBe('existing_license');
   });
 
   it('keeps incorrect credentials in the admin login flow', async () => {
@@ -197,7 +237,7 @@ describe('license admin actions', () => {
     expect(state.appStatus).toBe('ready');
     expect(state._loadProfile).toHaveBeenCalledWith(
       'LANZO-ADMIN-TEST',
-      { forceRemote: true, reason: 'admin_free_device_takeover' }
+      { forceRemote: true, reason: 'admin_free_device_takeover', assertCurrent: expect.any(Function), onPrepared: expect.any(Function) }
     );
   });
 

@@ -25,6 +25,11 @@ import {
 } from '../../utils/licenseStatusPresentation';
 import NoPermission from '../common/NoPermission';
 import {
+    CloudCapabilitiesShowcase,
+    TeamProShowcase
+} from './LanzoNubeCapabilitiesShowcase';
+import { getLocalPlanDiscoveryCapabilities } from './localPlanDiscovery';
+import {
     useSettingsAccess,
     useSettingsActionGuard
 } from '../../services/auth/useSettingsAccess';
@@ -114,9 +119,14 @@ function LicenseHero({
     selectedCount,
     maxRubrosAllowed,
     planName,
-    licenseDetails
+    licenseDetails,
+    licenseStatus
 }) {
-    const statusPresentation = getLicenseStatusPresentation(licenseDetails);
+    const statusPresentation = getLicenseStatusPresentation(
+        licenseDetails,
+        new Date(),
+        { licenseStatus }
+    );
 
     return (
         <header className="license-settings-hero">
@@ -252,8 +262,8 @@ function LicenseDetail({ label, value, children }) {
     );
 }
 
-function LicenseCriticalAlerts({ licenseDetails, showFreeCompatibilityUpdate, isUpdatingFree, freeUpdateError, onFreeCompatibilityUpdate }) {
-    const expirationInfo = getLicenseExpirationPresentation(licenseDetails);
+function LicenseCriticalAlerts({ licenseDetails, licenseStatus, showFreeCompatibilityUpdate, isUpdatingFree, freeUpdateError, onFreeCompatibilityUpdate }) {
+    const expirationInfo = getLicenseExpirationPresentation(licenseDetails, new Date(), { licenseStatus });
     const hasExpirationAlert = expirationInfo.tone === 'warning' || expirationInfo.tone === 'danger';
 
     if (!hasExpirationAlert && !showFreeCompatibilityUpdate && !freeUpdateError) return null;
@@ -288,8 +298,8 @@ function LicenseCriticalAlerts({ licenseDetails, showFreeCompatibilityUpdate, is
     );
 }
 
-function LicenseSummaryPanel({ licenseDetails, selectedCount, maxRubrosAllowed, activeRubroLabels }) {
-    const expirationInfo = getLicenseExpirationPresentation(licenseDetails);
+function LicenseSummaryPanel({ licenseDetails, licenseStatus, selectedCount, maxRubrosAllowed, activeRubroLabels }) {
+    const expirationInfo = getLicenseExpirationPresentation(licenseDetails, new Date(), { licenseStatus });
 
     return (
         <section className="license-panel license-summary-panel">
@@ -317,6 +327,7 @@ function LicenseSummaryPanel({ licenseDetails, selectedCount, maxRubrosAllowed, 
 
 function LicenseInfoPanel({
     licenseDetails,
+    licenseStatus,
     licenseContext,
     onLogout
 }) {
@@ -327,8 +338,8 @@ function LicenseInfoPanel({
         currentStaffUser,
         staffRolesEnabled
     } = licenseContext;
-    const expirationInfo = getLicenseExpirationPresentation(licenseDetails);
-    const statusPresentation = getLicenseStatusPresentation(licenseDetails);
+    const expirationInfo = getLicenseExpirationPresentation(licenseDetails, new Date(), { licenseStatus });
+    const statusPresentation = getLicenseStatusPresentation(licenseDetails, new Date(), { licenseStatus });
     const [copiedLicense, setCopiedLicense] = useState(false);
     const commercialPlanName = getCommercialPlanName(licenseDetails);
     const commercialPlanShortName = getCommercialPlanShortName(licenseDetails);
@@ -451,6 +462,7 @@ export default function LicenseSettings() {
     const companyProfile = useAppStore((state) => state.companyProfile);
     const updateCompanyProfile = useAppStore((state) => state.updateCompanyProfile);
     const licenseDetails = useAppStore((state) => state.licenseDetails);
+    const licenseStatus = useAppStore((state) => state.licenseStatus);
     const currentStaffUser = useAppStore((state) => state.currentStaffUser);
     const logoutStaff = useAppStore((state) => state.logoutStaff);
     const logoutAdmin = useAppStore((state) => state.logoutAdmin);
@@ -474,6 +486,13 @@ export default function LicenseSettings() {
     const { isFreePlan, isFreeLifetime } = getFreeState(licenseDetails);
     const showFreeCompatibilityUpdate = gracePeriodState.inGracePeriod && isFreePlan && !isFreeLifetime;
     const commercialPlanName = getCommercialPlanName(licenseDetails);
+    const localDiscovery = getLocalPlanDiscoveryCapabilities(
+        licenseDetails,
+        settingsAccess,
+        'license'
+    );
+    const canDiscoverLocalTeam = localDiscovery?.team === true;
+    const canDiscoverCloudCapabilities = localDiscovery?.hasCloudCapabilities === true;
 
     const selectedRubros = useMemo(() => normalizeRubros(companyProfile?.business_type), [companyProfile]);
     const selectedRubrosSet = useMemo(() => new Set(selectedRubros), [selectedRubros]);
@@ -508,10 +527,17 @@ export default function LicenseSettings() {
         const sections = [{ key: 'summary', label: 'Resumen' }];
 
         if (canEditBusinessProfile) sections.push({ key: 'rubros', label: 'Rubros' });
-        if (canManageStaff && licenseDetails?.valid) sections.push({ key: 'staff', label: 'Equipo' });
+        if (canManageStaff && licenseDetails?.valid) {
+            sections.push({ key: 'staff', label: 'Equipo' });
+        } else if (canDiscoverLocalTeam) {
+            sections.push({ key: 'staff', label: 'Equipo', badge: 'PRO' });
+        }
+        if (canDiscoverCloudCapabilities) {
+            sections.push({ key: 'cloud-capabilities', label: 'Capacidades Nube' });
+        }
 
         return sections;
-    }, [canEditBusinessProfile, canManageStaff, licenseDetails?.valid]);
+    }, [canDiscoverCloudCapabilities, canDiscoverLocalTeam, canEditBusinessProfile, canManageStaff, licenseDetails?.valid]);
     const [activeSection, setActiveSection] = useState('summary');
     const activeSectionIsValid = internalSections.some(({ key }) => key === activeSection);
     const effectiveActiveSection = activeSectionIsValid
@@ -612,11 +638,11 @@ export default function LicenseSettings() {
             return;
         }
         const confirmMessage =
-            'Cerrar sesion revocara la sesion administrativa de este equipo.\n\n' +
-            'La licencia seguira vinculada a este dispositivo. Si quieres liberar el cupo remoto, usa el boton Liberar en la lista de dispositivos.\n\n' +
-            'Deseas cerrar la sesion administrativa?';
+            'Cerrar sesión Admin termina tu acceso administrativo en este equipo, pero no libera su cupo: el dispositivo seguirá vinculado a la licencia.\n\n' +
+            'Si quieres usar otro equipo y necesitas liberar un cupo, pulsa Cancelar y ve a Configuración > Dispositivos > Liberar.\n\n' +
+            'Si solo quieres salir de tu cuenta en este equipo, confirma el cierre de sesión.';
 
-        if (await showConfirmModal(confirmMessage, { title: 'Cerrar sesion admin', confirmButtonText: 'Si, cerrar sesion' })) {
+        if (await showConfirmModal(confirmMessage, { title: 'Cerrar sesión Admin', confirmButtonText: 'Sí, cerrar sesión' })) {
             try {
                 actorHandle.assertCurrent('license');
                 logoutAdmin();
@@ -633,7 +659,12 @@ export default function LicenseSettings() {
         } catch {
             return;
         }
-        if (await showConfirmModal('Deseas cerrar solo la sesion staff en este dispositivo?', { title: 'Cerrar sesion staff', confirmButtonText: 'Si, cerrar sesion' })) {
+        const confirmMessage =
+            'Cerrar sesión Staff termina el acceso de este usuario en este equipo. No libera el dispositivo ni desocupa un cupo de la licencia.\n\n' +
+            'Si necesitas liberar el equipo para usar la licencia en otro, pulsa Cancelar y pide al administrador que vaya a Configuración > Dispositivos > Liberar.\n\n' +
+            '¿Quieres cerrar la sesión Staff?';
+
+        if (await showConfirmModal(confirmMessage, { title: 'Cerrar sesión Staff', confirmButtonText: 'Sí, cerrar sesión' })) {
             try {
                 actorHandle.assertCurrent('license');
                 logoutStaff();
@@ -682,10 +713,11 @@ export default function LicenseSettings() {
                 maxRubrosAllowed={maxRubrosAllowed}
                 planName={commercialPlanName}
                 licenseDetails={licenseDetails}
+                licenseStatus={licenseStatus}
             />
 
             <nav className="license-section-tabs" role="tablist" aria-label="Secciones de licencia">
-                {internalSections.map(({ key, label }) => {
+                {internalSections.map(({ key, label, badge }) => {
                     const isActive = effectiveActiveSection === key;
                     return (
                         <button
@@ -696,9 +728,11 @@ export default function LicenseSettings() {
                             role="tab"
                             aria-selected={isActive}
                             aria-controls={`license-panel-${key}`}
+                            aria-label={badge ? `${label} ${badge}` : undefined}
                             onClick={() => setActiveSection(key)}
                         >
                             {label}
+                            {badge && <span className="license-section-tab-badge">{badge}</span>}
                         </button>
                     );
                 })}
@@ -706,6 +740,7 @@ export default function LicenseSettings() {
 
             <LicenseCriticalAlerts
                 licenseDetails={licenseDetails}
+                licenseStatus={licenseStatus}
                 showFreeCompatibilityUpdate={showFreeCompatibilityUpdate}
                 isUpdatingFree={isUpdatingFree}
                 freeUpdateError={freeUpdateError}
@@ -722,12 +757,14 @@ export default function LicenseSettings() {
                 >
                     <LicenseSummaryPanel
                         licenseDetails={licenseDetails}
+                        licenseStatus={licenseStatus}
                         selectedCount={selectedRubros.length}
                         maxRubrosAllowed={maxRubrosAllowed}
                         activeRubroLabels={activeRubroLabels}
                     />
                     <LicenseInfoPanel
                         licenseDetails={licenseDetails}
+                        licenseStatus={licenseStatus}
                         licenseContext={licenseContext}
                         onLogout={isStaffDevice ? handleStaffLogout : handleLogout}
                     />
@@ -769,6 +806,33 @@ export default function LicenseSettings() {
                             licenseKey={licenseDetails.license_key}
                         />
                     </section>
+                </div>
+            )}
+
+            {canDiscoverLocalTeam && effectiveActiveSection === 'staff' && !shouldRenderStaffPanel && (
+                <div
+                    id="license-panel-staff"
+                    className="license-section-panel"
+                    role="tabpanel"
+                    aria-labelledby="license-tab-staff"
+                    tabIndex="0"
+                >
+                    <TeamProShowcase />
+                </div>
+            )}
+
+            {canDiscoverCloudCapabilities && effectiveActiveSection === 'cloud-capabilities' && (
+                <div
+                    id="license-panel-cloud-capabilities"
+                    className="license-section-panel"
+                    role="tabpanel"
+                    aria-labelledby="license-tab-cloud-capabilities"
+                    tabIndex="0"
+                >
+                    <CloudCapabilitiesShowcase
+                        showNotifications={localDiscovery.notifications}
+                        showSupport={localDiscovery.support}
+                    />
                 </div>
             )}
         </div>

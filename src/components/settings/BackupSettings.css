@@ -232,8 +232,8 @@
 }
 
 .backup-settings-card input:focus {
-  border-color: var(--secondary-color);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--secondary-color) 22%, transparent);
+  border-color: var(--ui-focus-color, var(--secondary-color));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ui-focus-color, var(--secondary-color)) 22%, transparent);
   outline: none;
 }
 

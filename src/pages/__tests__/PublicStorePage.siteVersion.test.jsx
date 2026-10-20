@@ -68,6 +68,7 @@ const renderPage = () => render(
 
 describe('PublicStorePage published site versions', () => {
   beforeEach(() => {
+    window.sessionStorage.clear();
     const v1 = createDefaultEcommerceSiteDocument();
     v1.sections[1].props = { showSearch: false, showCategories: false };
     let publicResult = makePortalResult({
@@ -120,32 +121,40 @@ describe('PublicStorePage published site versions', () => {
       }
     };
 
-    renderPage();
+    const listenerSpy = vi.spyOn(window, 'addEventListener');
+    try {
+      renderPage();
+      // The shell precedes the catalog commit. That commit replaces the focus effect
+      // and clears its coalescing timer; emit focus only after the catalog is ready.
+      await screen.findByRole('heading', { name: 'Producto' });
+      await waitFor(() => expect(listenerSpy).toHaveBeenCalledWith('focus', expect.any(Function)));
+      await waitFor(() => expect(document.querySelector('.public-store-shell[data-site-version="1"]')).toBeTruthy());
+      const shell = document.querySelector('.public-store-shell');
+      expect(shell).toHaveClass('ecommerce-site-surface');
+      expect(shell).toHaveAttribute('data-catalog-revision', '7');
+      expect(screen.queryByRole('searchbox')).toBeNull();
+      expect(screen.queryByRole('combobox')).toBeNull();
 
-    await waitFor(() => expect(document.querySelector('.public-store-shell[data-site-version="1"]')).toBeTruthy());
-    const shell = document.querySelector('.public-store-shell');
-    expect(shell).toHaveClass('ecommerce-site-surface');
-    expect(shell).toHaveAttribute('data-catalog-revision', '7');
-    expect(screen.queryByRole('searchbox')).toBeNull();
-    expect(screen.queryByRole('combobox')).toBeNull();
+      // A mutable draft is not part of the public response; revalidation still returns v1.
+      await focusAndWaitForRevalidation(2);
+      expect(document.querySelector('.public-store-shell')).toHaveAttribute('data-site-version', '1');
+      expect(screen.queryByRole('searchbox')).toBeNull();
 
-    // A mutable draft is not part of the public response; revalidation still returns v1.
-    await focusAndWaitForRevalidation(2);
-    expect(document.querySelector('.public-store-shell')).toHaveAttribute('data-site-version', '1');
-    expect(screen.queryByRole('searchbox')).toBeNull();
+      const v2 = createDefaultEcommerceSiteDocument();
+      serviceMocks.setPublicResult(makePortalResult({
+        versionId: '22222222-2222-4222-8222-222222222222',
+        versionNumber: 2,
+        documentMode: 'default',
+        document: v2
+      }));
 
-    const v2 = createDefaultEcommerceSiteDocument();
-    serviceMocks.setPublicResult(makePortalResult({
-      versionId: '22222222-2222-4222-8222-222222222222',
-      versionNumber: 2,
-      documentMode: 'default',
-      document: v2
-    }));
-
-    await focusAndWaitForRevalidation(3);
-    await waitFor(() => expect(document.querySelector('.public-store-shell')).toHaveAttribute('data-site-version', '2'));
-    expect(document.querySelector('.public-store-shell')).toHaveAttribute('data-catalog-revision', '7');
-    expect(screen.getByRole('searchbox')).toBeInTheDocument();
-    expect(screen.getByRole('combobox')).toBeInTheDocument();
+      await focusAndWaitForRevalidation(3);
+      await waitFor(() => expect(document.querySelector('.public-store-shell')).toHaveAttribute('data-site-version', '2'));
+      expect(document.querySelector('.public-store-shell')).toHaveAttribute('data-catalog-revision', '7');
+      expect(screen.getByRole('searchbox')).toBeInTheDocument();
+      expect(screen.getByRole('combobox')).toBeInTheDocument();
+    } finally {
+      listenerSpy.mockRestore();
+    }
   });
 });

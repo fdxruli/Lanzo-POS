@@ -75,14 +75,59 @@ describe('ECOM.PUBLIC.CUTOVER.1 architecture', () => {
     expect(fallback?.source).toContain('workbox-');
   });
 
-  it('keeps the public deployment rewrites and canonical trailing slash policy', async () => {
+  it('keeps the public deployment ordered routes and canonical trailing slash policy', async () => {
     const config = JSON.parse(await readProjectFile('store/vercel.json'));
-    expect(config.trailingSlash).toBe(false);
-    expect(config.rewrites).toEqual(expect.arrayContaining([
-      { source: '/tienda', destination: '/index.html' },
-      { source: '/tienda/:path*', destination: '/index.html' },
-      { source: '/conoce-lanzo', destination: '/index.html' }
-    ]));
+
+    expect(config).not.toHaveProperty('rewrites');
+    expect(config).not.toHaveProperty('trailingSlash');
+    expect(Array.isArray(config.routes)).toBe(true);
+
+    const canonical = config.routes.find((route) => (
+      route.src === '^/(.*)/$'
+      && route.status === 308
+      && route.headers?.Location === '/$1'
+    ));
+    expect(canonical?.headers?.['X-Robots-Tag']).toBe('noindex, nofollow, noarchive');
+
+    const filesystem = config.routes.findIndex((route) => route.handle === 'filesystem');
+    const root = config.routes.findIndex((route) => route.src === '^/$' && route.dest === '/home.html');
+    const tracking = config.routes.findIndex(
+      (route) => route.src === '^/tienda/([^/]+)/pedido/([^/]+)$' && route.dest === '/index.html'
+    );
+    const dynamicStore = config.routes.findIndex(
+      (route) => route.src === '^/tienda/([^/]+)$' && route.dest === '/api/store-page?slug=$1'
+    );
+    const knownPublicRoutes = config.routes.findIndex(
+      (route) => route.src === '^/(?:tienda|conoce-lanzo)$' && route.dest === '/index.html'
+    );
+    const fallback = config.routes.findIndex(
+      (route) => route.dest === '/index.html' && route.src.includes('(?!(?:api|assets)')
+    );
+
+    expect(root).toBeGreaterThanOrEqual(0);
+    expect(filesystem).toBeGreaterThan(root);
+    expect(tracking).toBeGreaterThan(filesystem);
+    expect(dynamicStore).toBeGreaterThan(tracking);
+    expect(knownPublicRoutes).toBeGreaterThan(dynamicStore);
+    expect(fallback).toBeGreaterThan(knownPublicRoutes);
+
+    const fallbackSource = config.routes[fallback]?.src || '';
+    for (const reserved of [
+      '(?:api|assets)',
+      '(?:home|index)',
+      'robots',
+      'sw\\.js',
+      'manifest\\.webmanifest',
+      'workbox-',
+      '\\.env',
+      'package',
+      'vite\\.store\\.config',
+      'vercel\\.json',
+      'src(?:/|$)',
+      '_src(?:/|$)'
+    ]) {
+      expect(fallbackSource).toContain(reserved);
+    }
   });
 
   it('keeps public paths in the administrative Service Worker denylist', async () => {

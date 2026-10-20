@@ -7,7 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const state = vi.hoisted(() => ({
   app: null,
   settingsAccess: { canEnterSettings: true },
-  actorRuntime: null
+  actorRuntime: null,
+  postDowngradeCash: null
 }));
 
 vi.mock('../../../store/useAppStore', () => ({
@@ -20,6 +21,10 @@ vi.mock('../../../services/auth/useSettingsAccess', () => ({
 
 vi.mock('../../../services/auth/useActorRuntimeSnapshot', () => ({
   useActorRuntimeSnapshot: () => state.actorRuntime
+}));
+
+vi.mock('../../../hooks/usePostDowngradeCashPending', () => ({
+  default: () => state.postDowngradeCash
 }));
 
 vi.mock('../../../hooks/useFeatureConfig', () => ({
@@ -88,10 +93,21 @@ const createAppState = (overrides = {}) => ({
   ...overrides
 });
 
-function renderNavbar(entry = '/') {
+const boundAdminActor = {
+  status: 'granted',
+  actorType: 'admin',
+  actorId: 'admin-1',
+  actorKey: 'admin:admin-1',
+  sessionId: 'admin-session-1',
+  deviceRef: 'device-1',
+  permissions: ['*'],
+  tenant: { opaqueId: 'tenant-1', databaseName: 'LanzoDB_t_tenant-1', generation: 1 }
+};
+
+function renderNavbar(entry = '/', isSuppressed = false) {
   return render(
     <MemoryRouter initialEntries={[entry]}>
-      <Navbar />
+      <Navbar isSuppressed={isSuppressed} />
     </MemoryRouter>
   );
 }
@@ -117,6 +133,11 @@ beforeEach(() => {
   vi.clearAllMocks();
   state.app = createAppState();
   state.settingsAccess = { canEnterSettings: true };
+  state.postDowngradeCash = {
+    eligible: false,
+    pendingCount: null,
+    status: 'idle'
+  };
   state.actorRuntime = {
     status: 'granted',
     actorType: 'admin',
@@ -127,6 +148,13 @@ beforeEach(() => {
 });
 
 describe('Navbar Settings shell access', () => {
+  it('suppresses mobile and desktop navigation only when the route requests it', () => {
+    renderNavbar('/', true);
+
+    expect(document.querySelector('.mobile-top-bar')).toBeNull();
+    expect(document.querySelector('.mobile-bottom-nav')).toBeNull();
+    expect(document.querySelector('.desktop-sidebar')).toBeNull();
+  });
   it('uses the canonical Settings policy instead of products permission', () => {
     state.app = createAppState({
       currentDeviceRole: 'staff',
@@ -197,6 +225,78 @@ describe('Navbar sales report access', () => {
 });
 
 describe('Navbar mobile menu', () => {
+  it('shows the confirmed historical cash count only for the eligible owner', () => {
+    state.postDowngradeCash = {
+      eligible: true,
+      pendingCount: 7,
+      status: 'success'
+    };
+
+    renderNavbar();
+
+    const cajaLinks = screen.getAllByRole('link', {
+      name: 'Caja, 7 cajas anteriores pendientes de conciliación'
+    });
+    expect(cajaLinks).toHaveLength(2);
+    expect(cajaLinks[0]).toHaveTextContent('Caja');
+    expect(cajaLinks[0]).toHaveTextContent('7');
+    expect(cajaLinks[1]).toHaveTextContent('7');
+  });
+
+  it('does not expose a pending cash count to an ineligible actor', () => {
+    state.postDowngradeCash = {
+      eligible: false,
+      pendingCount: 7,
+      status: 'hidden'
+    };
+
+    renderNavbar();
+
+    expect(screen.getAllByRole('link', { name: 'Caja' })).toHaveLength(2);
+    expect(document.querySelectorAll('.cash-nav-count')).toHaveLength(0);
+  });
+
+  it('hides the indicator only after the authoritative count reaches zero', () => {
+    state.postDowngradeCash = {
+      eligible: true,
+      pendingCount: 0,
+      status: 'success'
+    };
+
+    renderNavbar();
+
+    expect(screen.getAllByRole('link', { name: 'Caja' })).toHaveLength(2);
+    expect(document.querySelectorAll('.cash-nav-count')).toHaveLength(0);
+  });
+
+  it('keeps the last confirmed count visible through offline and query-error states', () => {
+    state.postDowngradeCash = {
+      eligible: true,
+      pendingCount: 7,
+      status: 'offline_known'
+    };
+
+    const view = renderNavbar();
+    expect(screen.getAllByRole('link', {
+      name: 'Caja, 7 cajas anteriores pendientes de conciliación'
+    })).toHaveLength(2);
+
+    state.postDowngradeCash = {
+      eligible: true,
+      pendingCount: 7,
+      status: 'error'
+    };
+    view.rerender(
+      <MemoryRouter initialEntries={['/']}>
+        <Navbar />
+      </MemoryRouter>
+    );
+
+    expect(screen.getAllByRole('link', {
+      name: 'Caja, 7 cajas anteriores pendientes de conciliación'
+    })).toHaveLength(2);
+  });
+
   it('keeps the local inventory bell visible in the mobile top bar without opening Menu', () => {
     renderNavbar();
 
@@ -376,5 +476,64 @@ describe('Navbar ecommerce orders access', () => {
     renderNavbar();
 
     expect(getOnlineOrderLinks()).toHaveLength(0);
+  });
+});
+
+describe('Navbar AI capability discovery', () => {
+  it('shows the PRO discovery badge in the desktop sidebar and mobile drawer for Free', () => {
+    state.app = createAppState({
+      licenseDetails: { valid: true, plan_code: 'free', features: { ai_agents: false, cloud_pos_sync: false } }
+    });
+    state.actorRuntime = boundAdminActor;
+    renderNavbar('/agentes-ia');
+
+    const desktopLink = document.querySelector('.desktop-sidebar a[href="/agentes-ia"]');
+    expect(desktopLink).not.toHaveAttribute('hidden');
+    expect(desktopLink).toHaveClass('active');
+    expect(desktopLink).toHaveTextContent('Agentes IA');
+    expect(desktopLink.querySelector('.nav-pro-badge')).toHaveTextContent('PRO');
+    expect(desktopLink).toHaveTextContent('disponible con Lanzo Nube');
+
+    const { drawer } = openMobileDrawer();
+    const drawerLink = drawer.querySelector('a[href="/agentes-ia"]');
+    expect(drawerLink).not.toBeNull();
+    expect(drawerLink).toHaveClass('active');
+    expect(drawerLink).toHaveTextContent('PRO');
+    expect(drawerLink.querySelector('.nav-pro-badge')).toBeInTheDocument();
+    expect(drawerLink).toHaveTextContent('Ventas, rentabilidad y estrategia comercial');
+  });
+
+  it('keeps an entitled Nube entry direct and without a discovery badge', () => {
+    state.app = createAppState({
+      licenseDetails: { valid: true, plan_code: 'nube', features: { ai_agents: true, cloud_pos_sync: true } }
+    });
+    state.actorRuntime = boundAdminActor;
+    renderNavbar('/agentes-ia');
+
+    const desktopLink = document.querySelector('.desktop-sidebar a[href="/agentes-ia"]');
+    expect(desktopLink).not.toHaveAttribute('hidden');
+    expect(desktopLink).toHaveClass('active');
+    expect(desktopLink.querySelector('.nav-pro-badge')).toBeNull();
+
+    const { drawer } = openMobileDrawer();
+    expect(drawer.querySelector('a[href="/agentes-ia"] .nav-pro-badge')).toBeNull();
+  });
+
+  it('does not expose the AI entry or badge to an actor without permission', () => {
+    state.app = createAppState({
+      currentDeviceRole: 'staff',
+      currentAdminUser: null,
+      currentStaffUser: { id: 'staff-a', permissions: { ai_agents: false } },
+      licenseDetails: { valid: true, plan_code: 'free', features: { ai_agents: false, cloud_pos_sync: false } }
+    });
+    state.actorRuntime = { ...boundAdminActor, actorType: 'staff', permissions: ['pos'] };
+    renderNavbar('/agentes-ia');
+
+    const desktopLink = document.querySelector('.desktop-sidebar a[href="/agentes-ia"]');
+    expect(desktopLink).toHaveAttribute('hidden');
+    expect(desktopLink.querySelector('.nav-pro-badge')).toBeNull();
+
+    const { drawer } = openMobileDrawer();
+    expect(drawer.querySelector('a[href="/agentes-ia"]')).toBeNull();
   });
 });

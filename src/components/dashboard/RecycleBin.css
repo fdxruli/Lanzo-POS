@@ -77,8 +77,8 @@
 }
 
 .btn-empty-bin:hover:not(:disabled) {
-  background-color: var(--error-color);
-  color: white;
+  background-color: var(--ui-action-danger-bg);
+  color: var(--ui-action-danger-text);
   box-shadow: 0 4px 12px rgba(255, 59, 92, 0.25);
 }
 

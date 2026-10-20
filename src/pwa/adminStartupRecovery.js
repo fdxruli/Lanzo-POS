@@ -1,4 +1,11 @@
+import { probeAdminOriginConnectivity } from './adminConnectivity';
+import {
+  getActorCheckoutOwnerships,
+  getPendingActorOperations,
+} from '../services/auth/actorOperationalHandoff';
+
 const RECOVERY_ATTEMPT_KEY = 'lanzo:admin-startup-recovery:v1';
+const FORCED_RECOVERY_ATTEMPT_KEY = 'lanzo:admin-startup-recovery-force:v1';
 const RECOVERY_QUERY_PARAM = '__lanzo_recovery';
 const DEFAULT_UPDATE_TIMEOUT_MS = 5_000;
 const BUILD_ID = import.meta.env.VITE_BUILD_COMMIT || import.meta.env.VITE_APP_VERSION || 'unknown';
@@ -14,7 +21,9 @@ const RECOVERABLE_ERROR_PATTERNS = Object.freeze([
   /Unexpected token ['"]?</i,
 ]);
 
-const LANZO_CACHE_NAME_PATTERN = /^(?:workbox-precache|lanzo-admin-(?:static|media)-v\d+$)/;
+const LANZO_ADMIN_CACHE_NAME_PATTERN = /^lanzo-admin-(?:static|media)-v\d+$/;
+const WORKBOX_PRECACHE_PREFIX_PATTERN = /^workbox-precache-v\d+-(.+)$/;
+let activeStartupRecoveryPromise = null;
 
 function getSessionStorage(windowTarget) {
   try {
@@ -23,6 +32,15 @@ function getSessionStorage(windowTarget) {
     return null;
   }
 }
+
+const actorOperationsAreIdle = () => {
+  try {
+    return getActorCheckoutOwnerships().length === 0
+      && getPendingActorOperations().length === 0;
+  } catch {
+    return false;
+  }
+};
 
 function safeStorageRead(storage, key) {
   try {
@@ -86,8 +104,19 @@ export function isRecoverableAdminStartupError(error) {
   return RECOVERABLE_ERROR_PATTERNS.some((pattern) => pattern.test(errorText));
 }
 
-export function isLanzoAdminCacheName(cacheName = '') {
-  return LANZO_CACHE_NAME_PATTERN.test(String(cacheName));
+export function isLanzoAdminCacheName(cacheName = '', origin = null) {
+  const name = String(cacheName);
+  if (LANZO_ADMIN_CACHE_NAME_PATTERN.test(name)) return true;
+
+  if (typeof origin !== 'string' || !origin) return false;
+  const match = name.match(WORKBOX_PRECACHE_PREFIX_PATTERN);
+  if (!match) return false;
+  try {
+    const cacheUrl = new URL(match[1]);
+    return cacheUrl.origin === new URL(origin).origin && cacheUrl.pathname === '/';
+  } catch {
+    return false;
+  }
 }
 
 function waitForWaitingWorker(registration, windowTarget, timeoutMs) {
@@ -167,42 +196,7 @@ function activateWaitingWorker({ serviceWorker, waitingWorker, windowTarget, tim
   });
 }
 
-function isRootLanzoRegistration(registration, origin) {
-  try {
-    const scope = new URL(registration?.scope || '', origin);
-    return scope.origin === origin && scope.pathname === '/';
-  } catch {
-    return false;
-  }
-}
-
-async function unregisterLanzoWorkers({ serviceWorker, registration, origin }) {
-  let registrations = registration ? [registration] : [];
-
-  if (serviceWorker?.getRegistrations) {
-    try {
-      registrations = await serviceWorker.getRegistrations();
-    } catch {
-      // Fall back to the registration already resolved for this startup.
-    }
-  }
-
-  const lanzoRegistrations = registrations.filter((candidate) => (
-    isRootLanzoRegistration(candidate, origin)
-  ));
-
-  await Promise.all(lanzoRegistrations.map(async (candidate) => {
-    try {
-      await candidate.unregister?.();
-    } catch {
-      // A failed unregister must not block the cache cleanup and network reload.
-    }
-  }));
-
-  return lanzoRegistrations.length;
-}
-
-async function clearLanzoAdminCaches(cacheStorage) {
+async function clearLanzoAdminCaches(cacheStorage, origin, isContextCurrent, isOperationSafe) {
   if (!cacheStorage?.keys || !cacheStorage?.delete) return [];
 
   let cacheNames = [];
@@ -212,21 +206,24 @@ async function clearLanzoAdminCaches(cacheStorage) {
     return [];
   }
 
-  const matchingNames = cacheNames.filter(isLanzoAdminCacheName);
-  await Promise.all(matchingNames.map(async (cacheName) => {
+  const matchingNames = cacheNames.filter((cacheName) => isLanzoAdminCacheName(cacheName, origin));
+  const deletedNames = [];
+  for (const cacheName of matchingNames) {
+    if (!isContextCurrent() || !isOperationSafe()) return deletedNames;
     try {
-      await cacheStorage.delete(cacheName);
+      if (await cacheStorage.delete(cacheName)) deletedNames.push(cacheName);
     } catch {
       // Continue clearing the remaining Lanzo caches.
     }
-  }));
-  return matchingNames;
+  }
+  return deletedNames;
 }
 
 function buildRecoveryUrl(windowTarget) {
   const currentUrl = new URL(windowTarget.location.href);
-  currentUrl.searchParams.set(RECOVERY_QUERY_PARAM, `${BUILD_ID}-${Date.now()}`);
-  return currentUrl.toString();
+  const recoveryUrl = new URL(currentUrl.pathname, currentUrl.origin);
+  recoveryUrl.searchParams.set(RECOVERY_QUERY_PARAM, `${BUILD_ID}-${Date.now()}`);
+  return recoveryUrl.toString();
 }
 
 function replaceForRecovery(windowTarget) {
@@ -235,23 +232,76 @@ function replaceForRecovery(windowTarget) {
   return nextUrl;
 }
 
-export async function recoverAdminStartup({
+async function performAdminStartupRecovery({
   error,
   force = false,
   navigatorTarget = globalThis.navigator,
   windowTarget = globalThis.window,
   cacheStorage = globalThis.caches,
   timeoutMs = DEFAULT_UPDATE_TIMEOUT_MS,
+  probeConnectivity = probeAdminOriginConnectivity,
+  isContextCurrent = () => true,
+  isOperationSafe = actorOperationsAreIdle,
 } = {}) {
   if (!windowTarget?.location?.replace) return { status: 'unavailable' };
   if (!force && !isRecoverableAdminStartupError(error)) return { status: 'not-recoverable' };
 
+  const contextIsCurrent = () => {
+    try {
+      return isContextCurrent() !== false;
+    } catch {
+      return false;
+    }
+  };
+  const operationsAreSafe = () => {
+    try {
+      return isOperationSafe() !== false;
+    } catch {
+      return false;
+    }
+  };
+  const staleContext = () => ({
+    status: 'stale-context',
+    strategy: 'preserve-installed-shell',
+    reason: 'actor-or-tenant-context-changed',
+  });
+  const operationActive = () => ({
+    status: 'operation-active',
+    strategy: 'preserve-installed-shell',
+    reason: 'actor-operation-in-progress',
+  });
+  if (!contextIsCurrent()) return staleContext();
+  if (force && !operationsAreSafe()) return operationActive();
+  if (force && navigatorTarget?.onLine === false) {
+    return {
+      status: 'offline',
+      strategy: 'preserve-installed-shell',
+      reason: 'navigator-offline',
+    };
+  }
+
   const storage = getSessionStorage(windowTarget);
   const attemptedInStorage = safeStorageRead(storage, RECOVERY_ATTEMPT_KEY) === BUILD_ID;
-  if (!force && (attemptedInStorage || hasRecoveryQueryForCurrentBuild(windowTarget))) {
+  const forcedAttemptInStorage = safeStorageRead(storage, FORCED_RECOVERY_ATTEMPT_KEY) === BUILD_ID;
+  if (
+    hasRecoveryQueryForCurrentBuild(windowTarget)
+    || (!force && attemptedInStorage)
+    || (force && forcedAttemptInStorage)
+  ) {
     return { status: 'already-attempted' };
   }
-  safeStorageWrite(storage, RECOVERY_ATTEMPT_KEY, BUILD_ID);
+  safeStorageWrite(storage, force ? FORCED_RECOVERY_ATTEMPT_KEY : RECOVERY_ATTEMPT_KEY, BUILD_ID);
+
+  // Automatic chunk recovery may preserve the running shell, but it must not
+  // activate a worker or reload the POS while an operation may be in flight.
+  // The user can start an explicit recovery after reviewing pending work.
+  if (!force) {
+    return {
+      status: 'preserved',
+      strategy: 'preserve-installed-shell',
+      reason: 'automatic-update-disabled',
+    };
+  }
 
   const serviceWorker = navigatorTarget?.serviceWorker;
   let registration = null;
@@ -262,6 +312,8 @@ export async function recoverAdminStartup({
     } catch {
       registration = null;
     }
+    if (!contextIsCurrent()) return staleContext();
+    if (!operationsAreSafe()) return operationActive();
   }
 
   if (registration) {
@@ -269,11 +321,17 @@ export async function recoverAdminStartup({
     try {
       await registration.update?.();
     } catch {
-      // The hard reset below remains available when the update check fails.
+      // A failed update check may simply mean the network disappeared.
     }
+    if (!contextIsCurrent()) return staleContext();
+    if (!operationsAreSafe()) return operationActive();
 
     const waitingWorker = registration.waiting || await waitingPromise;
+    if (!contextIsCurrent()) return staleContext();
+    if (!operationsAreSafe()) return operationActive();
     if (waitingWorker) {
+      if (!contextIsCurrent()) return staleContext();
+      if (!operationsAreSafe()) return operationActive();
       const activated = await activateWaitingWorker({
         serviceWorker,
         waitingWorker,
@@ -282,6 +340,8 @@ export async function recoverAdminStartup({
       });
 
       if (activated) {
+        if (!contextIsCurrent()) return staleContext();
+        if (!operationsAreSafe()) return operationActive();
         return {
           status: 'reloading',
           strategy: 'activate-waiting-worker',
@@ -291,24 +351,55 @@ export async function recoverAdminStartup({
     }
   }
 
+  const connectivity = await probeConnectivity({
+    navigatorTarget,
+    windowTarget,
+  });
+  if (!contextIsCurrent()) return staleContext();
+  if (!operationsAreSafe()) return operationActive();
+
+  if (connectivity?.status !== 'online') {
+    return {
+      status: 'offline',
+      strategy: 'preserve-installed-shell',
+      reason: connectivity?.reason || 'origin-unreachable',
+    };
+  }
+
   const origin = new URL(windowTarget.location.href).origin;
-  const [unregisteredWorkers, clearedCaches] = await Promise.all([
-    unregisterLanzoWorkers({ serviceWorker, registration, origin }),
-    clearLanzoAdminCaches(cacheStorage),
-  ]);
+  const clearedCaches = await clearLanzoAdminCaches(
+    cacheStorage,
+    origin,
+    contextIsCurrent,
+    operationsAreSafe,
+  );
+  if (!contextIsCurrent()) return staleContext();
+  if (!operationsAreSafe()) return operationActive();
 
   return {
     status: 'reloading',
     strategy: 'reset-lanzo-shell',
-    unregisteredWorkers,
     clearedCaches,
     url: replaceForRecovery(windowTarget),
   };
 }
 
+export function recoverAdminStartup(options = {}) {
+  if (activeStartupRecoveryPromise) return activeStartupRecoveryPromise;
+  const operation = Promise.resolve().then(() => performAdminStartupRecovery(options));
+  activeStartupRecoveryPromise = operation;
+  operation.then(
+    () => { if (activeStartupRecoveryPromise === operation) activeStartupRecoveryPromise = null; },
+    () => { if (activeStartupRecoveryPromise === operation) activeStartupRecoveryPromise = null; },
+  );
+  return operation;
+}
+
 export function completeAdminStartupRecovery({ windowTarget = globalThis.window } = {}) {
   if (!windowTarget) return;
-  safeStorageRemove(getSessionStorage(windowTarget), RECOVERY_ATTEMPT_KEY);
+  const storage = getSessionStorage(windowTarget);
+  safeStorageRemove(storage, RECOVERY_ATTEMPT_KEY);
+  safeStorageRemove(storage, FORCED_RECOVERY_ATTEMPT_KEY);
 
   try {
     const currentUrl = new URL(windowTarget.location.href);
@@ -325,5 +416,6 @@ export function completeAdminStartupRecovery({ windowTarget = globalThis.window 
 }
 
 export function resetAdminStartupRecoveryForTests({ windowTarget = globalThis.window } = {}) {
+  activeStartupRecoveryPromise = null;
   safeStorageRemove(getSessionStorage(windowTarget), RECOVERY_ATTEMPT_KEY);
 }

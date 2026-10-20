@@ -1,17 +1,26 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const store = vi.hoisted(() => ({
   state: null
 }));
+const backup = vi.hoisted(() => ({ attention: { enabled: false, ready: false } }));
+vi.mock('../../../hooks/useLocalBackupAttention', () => ({ useLocalBackupAttention: () => backup.attention }));
 
 const local = vi.hoisted(() => ({
   snapshot: null,
+  cashPending: null,
   markSeen: vi.fn(),
   refresh: vi.fn(async () => ({ status: 'ready' }))
+}));
+
+const cashAttention = vi.hoisted(() => ({
+  buildKey: vi.fn(async ({ scopeKey, downgradedAt }) => `attention:${scopeKey}:${downgradedAt}`),
+  read: vi.fn(() => ({ version: 1, readAt: null, postponedAt: null })),
+  markRead: vi.fn(() => ({ version: 1, readAt: 'read', postponedAt: null }))
 }));
 
 vi.mock('../../../store/useAppStore', () => ({
@@ -20,6 +29,17 @@ vi.mock('../../../store/useAppStore', () => ({
 
 vi.mock('../../../hooks/useInventoryOperationalAlertsSnapshot', () => ({
   useInventoryOperationalAlertsSnapshot: () => local.snapshot
+}));
+
+vi.mock('../../../hooks/usePostDowngradeCashPending', () => ({
+  default: () => local.cashPending
+}));
+
+vi.mock('../../../services/cash/postDowngradeCashAttention', () => ({
+  buildPostDowngradeCashAttentionKey: (...args) => cashAttention.buildKey(...args),
+  markPostDowngradeCashAttentionRead: (...args) => cashAttention.markRead(...args),
+  POST_DOWNGRADE_CASH_ATTENTION_EVENT: 'lanzo:post-downgrade-cash-attention',
+  readPostDowngradeCashAttention: (...args) => cashAttention.read(...args)
 }));
 
 vi.mock('../../../services/localInventoryOperationalAlerts', () => ({
@@ -140,8 +160,74 @@ afterEach(() => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  backup.attention = { enabled: false, ready: false };
   store.state = createState();
   local.snapshot = emptyLocalSnapshot();
+  local.cashPending = {
+    eligible: false,
+    online: true,
+    status: 'idle',
+    pendingCount: null,
+    isPostDowngrade: false,
+    downgradedAt: null,
+    scopeKey: null,
+    refresh: vi.fn()
+  };
+});
+
+describe('backup attention in the existing local bell', () => {
+  const activeAttention = () => ({
+    enabled: true, ready: true, key: 'opaque-attention', record: { readStates: [] },
+    condition: { key: 'unlock', active: true, severity: 'warning', title: 'Respaldos cifrados bloqueados', detail: 'Revisa tus respaldos.', action: 'Desbloquear', route: '/configuracion?tab=backup' },
+    update: vi.fn(() => true)
+  });
+  it('counts one backup incident alongside inventory and cash, and reading does not resolve it', async () => {
+    backup.attention = activeAttention();
+    local.snapshot = { ...emptyLocalSnapshot(), activeCount: 2 };
+    local.cashPending = { eligible: true, pendingCount: 4, scopeKey: 'scope', downgradedAt: '2026-10-01', status: 'ready' };
+    renderBell();
+    const bell = screen.getByRole('button', { name: /Abrir alertas locales, 4 incidencias activas/ });
+    fireEvent.click(bell);
+    expect(screen.getByText('Respaldos cifrados bloqueados')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Marcar como leída' }));
+    expect(backup.attention.update).toHaveBeenCalledWith('read', 'unlock');
+    expect(screen.getByText('Respaldos cifrados bloqueados')).toBeInTheDocument();
+    expect(screen.getByLabelText(/4 incidencias activas: 2 de inventario/)).toBeInTheDocument();
+  });
+  it('exposes backups to a permitted actor without exposing inventory or marking it seen', () => {
+    backup.attention = activeAttention();
+    Object.assign(store.state, { currentDeviceRole: 'staff', currentStaffUser: { permissions: { sync: true, inventory: false, products: false } } });
+    local.snapshot = { ...emptyLocalSnapshot(), activeCount: 8 };
+    renderBell();
+    fireEvent.click(screen.getByRole('button', { name: /Abrir alertas locales, 1 incidencia activa/ }));
+    expect(screen.getByText('Respaldos cifrados bloqueados')).toBeInTheDocument();
+    expect(screen.queryByText(/Revisando inventario|Tu inventario|8 alertas activas/)).not.toBeInTheDocument();
+    expect(local.markSeen).not.toHaveBeenCalled();
+  });
+  it('keeps the drawer focus on preference updates and restores it on Escape', async () => {
+    backup.attention = activeAttention();
+    const view = renderBell();
+    const bell = screen.getByRole('button', { name: /Abrir alertas locales/ });
+    bell.focus(); fireEvent.click(bell);
+    const close = within(screen.getByRole('dialog')).getByRole('button', { name: 'Cerrar alertas locales' });
+    await waitFor(() => expect(close).toHaveFocus());
+    backup.attention = { ...backup.attention, record: { readStates: ['unlock'] } };
+    view.rerender(<MemoryRouter><NotificationBell /></MemoryRouter>);
+    expect(close).toHaveFocus();
+    expect(screen.getByText('Leída · la atención sigue pendiente.')).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(bell).toHaveFocus();
+  });
+  it('updates a resolved backup to an informational state without an active badge', () => {
+    backup.attention = activeAttention();
+    backup.attention.condition = { ...backup.attention.condition, key: 'ready', active: false, title: 'Protección local activa', action: 'Ir a respaldos' };
+    renderBell();
+    expect(screen.queryByLabelText(/incidencias activas:/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Abrir alertas locales, 0 incidencias activas/ }));
+    expect(screen.getByText('Protección local activa')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Marcar como leída' })).not.toBeInTheDocument();
+  });
 });
 
 describe('NotificationBell', () => {
@@ -188,10 +274,46 @@ describe('NotificationBell', () => {
     fireEvent.click(bell);
 
     expect(screen.getByRole('dialog', {
-      name: 'Inventario requiere atención'
+      name: 'Alertas locales'
     })).toBeInTheDocument();
     expect(screen.getByText('6')).toBeInTheDocument();
     await waitFor(() => expect(local.markSeen).toHaveBeenCalledTimes(1));
+  });
+
+  it('adds one grouped cash incident to the local badge without counting each box', async () => {
+    local.snapshot = {
+      ...emptyLocalSnapshot(),
+      activeCount: 30,
+      outOfStockCount: 30,
+      unseenCount: 30
+    };
+    local.cashPending = {
+      eligible: true,
+      online: true,
+      status: 'success',
+      pendingCount: 7,
+      isPostDowngrade: true,
+      downgradedAt: '2026-09-24T05:53:00.000Z',
+      scopeKey: 'LANZO-A:owner-a',
+      refresh: vi.fn()
+    };
+
+    renderBell();
+
+    const bell = await screen.findByRole('button', {
+      name: /Abrir alertas locales, 31 incidencias activas; una agrupa 7 cajas/i
+    });
+    expect(screen.getByText('31')).toHaveAttribute(
+      'aria-label',
+      '31 incidencias activas: 30 de inventario y 1 de Caja y conciliación'
+    );
+
+    fireEvent.click(bell);
+
+    expect(screen.getByRole('dialog', { name: 'Alertas locales' })).toBeInTheDocument();
+    expect(screen.getByText('7 cajas pendientes de revisión')).toBeInTheDocument();
+    expect(screen.getByText('30 alertas activas')).toBeInTheDocument();
+    expect(screen.getByText('31')).toBeInTheDocument();
   });
 
   it('keeps the Free/local bell and full active badge when the ticker is hidden', () => {
@@ -255,6 +377,16 @@ describe('NotificationBell', () => {
   });
 
   it('Free opens zero cloud notification/support paths', () => {
+    local.cashPending = {
+      eligible: true,
+      online: true,
+      status: 'success',
+      pendingCount: 7,
+      isPostDowngrade: true,
+      downgradedAt: '2026-09-24T05:53:00.000Z',
+      scopeKey: 'LANZO-A:owner-a',
+      refresh: vi.fn()
+    };
     local.snapshot = {
       ...emptyLocalSnapshot(),
       activeCount: 1,
@@ -273,7 +405,7 @@ describe('NotificationBell', () => {
 
     renderBell();
     fireEvent.click(screen.getByRole('button', {
-      name: /Abrir alertas operativas de inventario/i
+      name: /Abrir alertas locales/i
     }));
 
     expect(store.state.loadNotifications).not.toHaveBeenCalled();
@@ -356,7 +488,7 @@ describe('NotificationBell', () => {
       .toBeInTheDocument();
     expect(screen.getByText('No tienes notificaciones por ahora.')).toBeInTheDocument();
     expect(screen.queryByText('Soporte Lanzo Nube')).not.toBeInTheDocument();
-    expect(screen.queryByRole('dialog', { name: 'Inventario requiere atención' }))
+    expect(screen.queryByRole('dialog', { name: 'Alertas locales' }))
       .not.toBeInTheDocument();
 
     fireEvent.keyDown(document, { key: 'Escape' });

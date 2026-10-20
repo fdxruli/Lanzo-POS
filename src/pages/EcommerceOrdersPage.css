@@ -174,19 +174,20 @@
 }
 
 .ecommerce-orders-mobile-nav button.is-active {
-  border-color: var(--ui-color-primary, var(--primary-color));
-  background: var(--ui-color-primary, var(--primary-color));
-  color: var(--ui-text-on-primary, #fff);
+  border-color: var(--ui-border-selected);
+  background: var(--ui-bg-selected);
+  color: var(--ui-text-brand);
 }
 
 .ecommerce-orders-mobile-nav button.is-active strong {
-  background: color-mix(in srgb, var(--ui-text-on-primary, #fff) 22%, transparent);
+  background: var(--ui-bg-surface);
   color: inherit;
 }
 
 .ecommerce-orders-mobile-nav button:focus-visible {
-  outline: none;
-  box-shadow: var(--ui-shadow-focus-primary);
+  outline: 2px solid var(--ui-focus-color);
+  outline-offset: 2px;
+  box-shadow: none;
 }
 
 .ecommerce-orders-board {

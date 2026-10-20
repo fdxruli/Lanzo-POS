@@ -14,12 +14,37 @@
 
 .chart-empty-state {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  height: 100%;
-  min-height: 150px;
-  color: var(--text-muted);
-  font-style: italic;
+  gap: 0.75rem;
+  padding: 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm);
+  background: var(--card-background-color);
+  color: var(--text-color);
+  text-align: left;
+}
+
+.chart-empty-state > svg {
+  flex: 0 0 auto;
+  color: var(--brand-accent-text);
+}
+
+.chart-empty-state strong {
+  color: var(--text-dark);
+  font-size: 0.9rem;
+}
+
+.chart-empty-state p {
+  margin: 0.2rem 0 0;
+  color: var(--text-light);
+  font-size: 0.82rem;
+}
+
+.chart-empty-state__retry {
+  min-height: 2.75rem;
+  white-space: normal;
 }
 
 /* Custom Tooltip */

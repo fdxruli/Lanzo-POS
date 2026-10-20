@@ -710,8 +710,8 @@
 }
 
 .btn-kds-cancel:hover:not(:disabled) {
-  background: var(--ui-color-danger, var(--error-color));
-  color: #ffffff;
+  background: var(--ui-action-danger-bg);
+  color: var(--ui-action-danger-text);
 }
 
 @media (min-width: 640px) {

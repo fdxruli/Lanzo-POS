@@ -64,6 +64,13 @@ const completeValidLicenseSession = async (set, get, licenseData, profileOptions
         localTenantIsolation: null
     });
 
+    if (['new_license_setup', 'existing_license'].includes(get().ownerEnrollmentContext)) {
+        profileOptions = {
+            ...(profileOptions || {}),
+            allowSetupTransition: true
+        };
+    }
+
     await get()._loadProfile(licenseData.license_key, profileOptions);
 };
 

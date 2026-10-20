@@ -108,9 +108,10 @@
 }
 
 .filter-pill.active {
-  background-color: var(--primary-color);
-  color: var(--ui-text-on-primary);
-  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+  background-color: var(--ui-bg-selected);
+  border: 1px solid var(--ui-border-selected);
+  color: var(--ui-text-brand);
+  box-shadow: none;
 }
 
 .metric-pill {
@@ -127,9 +128,9 @@
 }
 
 .metric-pill.active {
-  background-color: var(--text-dark);
-  border-color: var(--text-dark);
-  color: var(--card-background-color);
+  background-color: var(--ui-bg-selected);
+  border-color: var(--ui-border-selected);
+  color: var(--ui-text-brand);
 }
 
 .recalc-report-button {
@@ -611,14 +612,15 @@
 
 /* MODO OSCURO AJUSTES */
 [data-theme="dark"] .filter-pill.active {
-  background-color: #334155;
-  color: var(--ui-text-on-primary);
+  background-color: var(--ui-bg-selected);
+  border-color: var(--ui-border-selected);
+  color: var(--ui-text-brand);
 }
 
 [data-theme="dark"] .metric-pill.active {
-  background-color: #e5e7eb;
-  border-color: #e5e7eb;
-  color: #111827;
+  background-color: var(--ui-bg-selected);
+  border-color: var(--ui-border-selected);
+  color: var(--ui-text-brand);
 }
 
 [data-theme="dark"] .stat-card-modern {

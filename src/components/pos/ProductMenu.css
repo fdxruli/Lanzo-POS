@@ -1,8 +1,8 @@
 /* Product catalog: mobile-first, operational density. */
 .pos-menu-container {
-  --catalog-primary: var(--primary-color, #3b82f6);
-  --catalog-primary-hover: var(--primary-hover, #4f46e5);
-  --catalog-accent: var(--secondary-color, #06b6d4);
+  --catalog-primary: var(--ui-action-primary-bg, var(--brand-accent));
+  --catalog-primary-hover: var(--ui-action-primary-hover-bg, var(--brand-accent-hover));
+  --catalog-accent: var(--brand-accent-text, var(--secondary-color));
   --catalog-primary-soft: color-mix(in srgb, var(--catalog-primary) 10%, var(--card-background-color));
   --catalog-danger: var(--ui-color-danger);
   display: flex;
@@ -142,7 +142,7 @@
   justify-content: center;
   gap: 8px;
   padding: 0;
-  color: #fff;
+  color: var(--ui-action-primary-text);
   background: var(--catalog-primary);
   border: 1px solid var(--catalog-primary);
   border-radius: 10px;
@@ -188,7 +188,7 @@
 }
 
 .category-filter-btn.active {
-  color: #fff;
+  color: var(--ui-action-primary-text);
   background: var(--catalog-primary);
   border-color: var(--catalog-primary);
   box-shadow: 0 4px 10px color-mix(in srgb, var(--catalog-primary) 22%, transparent);
@@ -201,9 +201,9 @@
 }
 
 .category-filter-btn--danger.active {
-  color: var(--ui-text-on-danger);
-  background: var(--ui-color-danger);
-  border-color: var(--ui-color-danger);
+  color: var(--ui-action-danger-text);
+  background: var(--ui-action-danger-bg);
+  border-color: var(--ui-action-danger-bg);
   box-shadow: 0 4px 10px color-mix(in srgb, var(--ui-color-danger) 18%, transparent);
 }
 
@@ -243,7 +243,7 @@
 .product-card:focus-visible,
 .btn-scan:focus-visible,
 .category-filter-btn:focus-visible {
-  outline: 3px solid color-mix(in srgb, var(--catalog-primary) 35%, transparent);
+  outline: 2px solid var(--ui-focus-color);
   outline-offset: 2px;
 }
 
@@ -523,9 +523,9 @@
   justify-self: center;
   min-height: 40px;
   padding: 8px 16px;
-  color: var(--primary-color);
+  color: var(--ui-text-strong);
   background: var(--card-background-color);
-  border: 1px solid var(--primary-color);
+  border: 1px solid var(--ui-border-control);
   border-radius: 8px;
   cursor: pointer;
   font-weight: 700;
@@ -533,8 +533,19 @@
 
 .pos-load-more-button:hover,
 .pos-load-more-button:focus-visible {
-  color: white;
-  background: var(--primary-color);
+  color: var(--ui-action-primary-text);
+  background: var(--ui-action-primary-bg);
+  border-color: var(--ui-action-primary-bg);
+}
+
+.pos-load-more-button:focus-visible {
+  outline: 2px solid var(--ui-focus-color);
+  outline-offset: 2px;
+}
+
+.pos-load-more-button:active:not(:disabled) {
+  background: var(--ui-action-primary-active-bg);
+  border-color: var(--ui-action-primary-active-bg);
 }
 
 .pos-load-more-button:disabled {
@@ -724,7 +735,9 @@
 
 @media (hover: hover) {
   .btn-scan:hover {
+    color: var(--ui-action-primary-text);
     background: var(--catalog-primary-hover);
+    border-color: var(--catalog-primary-hover);
     box-shadow: 0 6px 14px color-mix(in srgb, var(--catalog-primary) 26%, transparent);
   }
 

@@ -45,8 +45,8 @@
 }
 
 .ingredient-item .btn-remove:hover {
-  background-color: var(--error-color);
-  color: white;
+  background-color: var(--ui-action-danger-bg);
+  color: var(--ui-action-danger-text);
 }
 
 .ingredient-total {
@@ -58,8 +58,8 @@
 }
 
 .btn-assign {
-  background-color: var(--primary-color);
-  color: white;
+  background-color: var(--ui-action-primary-bg);
+  color: var(--ui-action-primary-text);
   flex: 1;
   width: 100%;
 }

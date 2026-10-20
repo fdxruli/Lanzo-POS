@@ -11,6 +11,7 @@ import {
     LOCAL_TENANT_STATUS,
     localTenantAccessController
 } from '../tenant/localTenantPolicy';
+import { getTenantRuntimeReadiness } from './tenantRuntimeRouter';
 
 const isCashPaymentMethod = (paymentMethod) => (
     ['efectivo', 'cash'].includes(String(paymentMethod || '').trim().toLowerCase())
@@ -413,20 +414,61 @@ export const customerCreditRepository = {
     }
 };
 
-const scheduleTenantGrantedAutoHeal = (tenantState) => {
-    if (tenantState.status !== LOCAL_TENANT_STATUS.GRANTED) return;
-    // Usamos setTimeout para empujar la ejecución al final del event loop
-    // asegurando que Dexie.js termine de abrir y React pueda renderizar.
-    setTimeout(() => {
-        if (localTenantAccessController.getState().status !== LOCAL_TENANT_STATUS.GRANTED) return;
-        customerCreditRepository.runGlobalAutoHealBackground().catch(err => {
-            console.error("Error en hook de background auto-heal:", err);
-        });
-    }, 3000);
-};
+let customerCreditAutoHealLifecycleCleanup = null;
+let lastCustomerCreditAutoHealRuntimeKey = null;
 
-// Los datos de crédito son tenant-owned: el auto-heal solo se agenda después
-// de que el guard concede acceso a una licencia compatible. También se evalúa
-// el estado actual para imports lazy posteriores al grant.
-localTenantAccessController.subscribe(scheduleTenantGrantedAutoHeal);
-scheduleTenantGrantedAutoHeal(localTenantAccessController.getState());
+export const startCustomerCreditAutoHealLifecycle = ({ appStatus } = {}) => {
+    if (appStatus !== 'ready') return () => {};
+    if (customerCreditAutoHealLifecycleCleanup) return customerCreditAutoHealLifecycleCleanup;
+
+    let active = true;
+    let timerId = null;
+
+    const schedule = (tenantState) => {
+        if (timerId !== null) {
+            clearTimeout(timerId);
+            timerId = null;
+        }
+        if (!active || tenantState?.status !== LOCAL_TENANT_STATUS.GRANTED) return;
+
+        timerId = setTimeout(() => {
+            timerId = null;
+            if (!active) return;
+            const currentState = localTenantAccessController.getState();
+            if (currentState.status !== LOCAL_TENANT_STATUS.GRANTED) return;
+
+            const readiness = getTenantRuntimeReadiness();
+            if (!readiness.ready) {
+                schedule(currentState);
+                return;
+            }
+
+            const runtimeKey = String(readiness.runtime?.opaqueId || 'tenant') + ':' +
+                String(readiness.runtime?.generation ?? 'default');
+            if (runtimeKey === lastCustomerCreditAutoHealRuntimeKey) return;
+            lastCustomerCreditAutoHealRuntimeKey = runtimeKey;
+            customerCreditRepository.runGlobalAutoHealBackground().catch(error => {
+                console.error('Error en hook de background auto-heal:', error);
+            });
+        }, 3000);
+    };
+
+    const unsubscribe = localTenantAccessController.subscribe(schedule);
+    schedule(localTenantAccessController.getState());
+
+    const cleanup = () => {
+        if (!active) return;
+        active = false;
+        if (timerId !== null) {
+            clearTimeout(timerId);
+            timerId = null;
+        }
+        if (typeof unsubscribe === 'function') unsubscribe();
+        if (customerCreditAutoHealLifecycleCleanup === cleanup) {
+            customerCreditAutoHealLifecycleCleanup = null;
+        }
+    };
+
+    customerCreditAutoHealLifecycleCleanup = cleanup;
+    return cleanup;
+};

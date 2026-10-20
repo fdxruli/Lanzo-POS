@@ -1,0 +1,118 @@
+.admin-startup-recovery,
+.admin-startup-recovery *,
+.admin-startup-recovery *::before,
+.admin-startup-recovery *::after {
+  box-sizing: border-box;
+}
+
+.admin-startup-recovery {
+  display: grid;
+  min-height: 100vh;
+  min-height: 100dvh;
+  align-items: center;
+  padding:
+    max(1.25rem, env(safe-area-inset-top, 0px))
+    max(1rem, env(safe-area-inset-right, 0px))
+    max(1.25rem, env(safe-area-inset-bottom, 0px))
+    max(1rem, env(safe-area-inset-left, 0px));
+  background: var(--background-color);
+  color: var(--text-color);
+}
+
+.admin-startup-recovery__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: clamp(1.5rem, 5vw, 4rem);
+  width: min(100%, 72rem);
+  margin: auto;
+}
+
+.admin-startup-recovery__content {
+  min-width: 0;
+}
+
+.admin-startup-recovery__icon {
+  display: inline-flex;
+  width: 3rem;
+  height: 3rem;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1rem;
+  border: 1px solid var(--brand-accent-border);
+  border-radius: 1rem;
+  background: var(--brand-accent-soft);
+  color: var(--brand-accent-text);
+}
+
+.admin-startup-recovery__eyebrow {
+  margin: 0 0 0.4rem;
+  color: var(--text-light);
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.admin-startup-recovery h1 {
+  max-width: 19ch;
+  margin: 0;
+  color: var(--text-dark);
+  font-size: clamp(1.8rem, 5vw, 3.4rem);
+  line-height: 1.12;
+  letter-spacing: -0.035em;
+}
+
+.admin-startup-recovery__message {
+  max-width: 65ch;
+  margin: 1rem 0 0;
+  color: var(--text-color);
+  font-size: 1rem;
+  line-height: 1.65;
+}
+
+.admin-startup-recovery__action {
+  min-height: 2.75rem;
+  margin-top: 1.5rem;
+  white-space: normal;
+}
+
+.admin-startup-recovery__guidance {
+  max-width: 34rem;
+  padding: 1rem 1.15rem;
+  border-inline-start: 3px solid var(--brand-accent);
+  background: var(--light-background);
+}
+
+.admin-startup-recovery__guidance h2 {
+  margin: 0;
+  color: var(--text-dark);
+  font-size: 0.98rem;
+}
+
+.admin-startup-recovery__guidance p {
+  margin: 0.45rem 0 0;
+  color: var(--text-color);
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.admin-startup-recovery__spin {
+  animation: admin-startup-recovery-spin 1s linear infinite;
+}
+
+@keyframes admin-startup-recovery-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (min-width: 800px) {
+  .admin-startup-recovery__layout {
+    grid-template-columns: minmax(0, 1.35fr) minmax(16rem, 0.65fr);
+    align-items: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-startup-recovery__spin {
+    animation: none;
+  }
+}

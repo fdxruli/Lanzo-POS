@@ -6,7 +6,8 @@ const mocks = vi.hoisted(() => ({
   isCriticalLicenseValidationReason: vi.fn(() => false),
   markLastLicenseValidationAttempt: vi.fn(),
   shouldSkipRemoteValidationAfterFailure: vi.fn(() => false),
-  shouldSkipRemoteValidationForPlan: vi.fn(() => true)
+  shouldSkipRemoteValidationForPlan: vi.fn(() => true),
+  getTenantRuntimeReadiness: vi.fn(() => ({ ready: true, runtime: { opaqueId: 'sync-test', generation: 1 } }))
 }));
 
 vi.mock('./licenseGuards', () => ({
@@ -19,6 +20,10 @@ vi.mock('./licenseValidationTimestamps', () => ({
   markLastLicenseValidationAttempt: mocks.markLastLicenseValidationAttempt,
   shouldSkipRemoteValidationAfterFailure: mocks.shouldSkipRemoteValidationAfterFailure,
   shouldSkipRemoteValidationForPlan: mocks.shouldSkipRemoteValidationForPlan
+}));
+
+vi.mock('../../../services/db/tenantRuntimeRouter', () => ({
+  getTenantRuntimeReadiness: mocks.getTenantRuntimeReadiness
 }));
 
 vi.mock('../../../services/tenant/localTenantGuard', () => ({
@@ -51,6 +56,7 @@ describe('license profile synchronization', () => {
     vi.clearAllMocks();
     vi.unstubAllGlobals();
     vi.stubGlobal('navigator', { onLine: true });
+    mocks.getTenantRuntimeReadiness.mockReturnValue({ ready: true, runtime: { opaqueId: 'sync-test', generation: 1 } });
   });
 
   it('refreshes the business profile before a plan TTL skips license validation', async () => {
@@ -61,6 +67,7 @@ describe('license profile synchronization', () => {
     expect(state._loadProfile).toHaveBeenCalledWith('LANZO-PRO', {
       forceRemote: true,
       refreshProfile: true,
+      profileLoadMode: 'background',
       reason: 'license_sync_start'
     });
     expect(mocks.shouldSkipRemoteValidationForPlan).toHaveBeenCalled();
@@ -75,6 +82,7 @@ describe('license profile synchronization', () => {
     expect(state._loadProfile).toHaveBeenCalledWith('LANZO-PRO', {
       forceRemote: true,
       refreshProfile: true,
+      profileLoadMode: 'background',
       reason: 'license_sync_interval'
     });
   });
@@ -87,7 +95,40 @@ describe('license profile synchronization', () => {
     expect(state._loadProfile).toHaveBeenCalledWith('LANZO-PRO', {
       forceRemote: false,
       refreshProfile: false,
+      profileLoadMode: 'background',
       reason: 'license_sync_realtime_probe_visibility'
     });
   });
+  it('waits for TenantRuntime and resumes PRO Cloud profile sync without changing feature gates', async () => {
+    const state = createState();
+    const features = {
+      cloud_pos_sync: true,
+      cloud_cash_sync: true,
+      realtime_license_sync: true
+    };
+    state.licenseDetails = { ...state.licenseDetails, plan_code: 'PRO', features };
+    mocks.getTenantRuntimeReadiness.mockReturnValue({ ready: false, runtime: null });
+
+    await expect(state.runLicenseSyncCheck('startup')).resolves.toBe(false);
+    expect(state._loadProfile).not.toHaveBeenCalled();
+    expect(state.verifySessionIntegrity).not.toHaveBeenCalled();
+    expect(state.licenseDetails.features).toEqual(features);
+    expect(state.appStatus).toBe('ready');
+
+    mocks.getTenantRuntimeReadiness.mockReturnValue({
+      ready: true,
+      runtime: { opaqueId: 'sync-restored', generation: 2 }
+    });
+    await expect(state.runLicenseSyncCheck('startup')).resolves.toBe(true);
+
+    expect(state._loadProfile).toHaveBeenCalledWith('LANZO-PRO', {
+      forceRemote: false,
+      refreshProfile: false,
+      profileLoadMode: 'background',
+      reason: 'license_sync_startup'
+    });
+    expect(state.licenseDetails.features).toEqual(features);
+    expect(state.appStatus).toBe('ready');
+  });
+
 });

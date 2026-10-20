@@ -256,8 +256,8 @@
 }
 
 .contact-modal__button--primary {
-  color: #fff;
-  background: var(--primary-color);
+  color: var(--ui-action-primary-text);
+  background: var(--ui-action-primary-bg);
 }
 
 .contact-modal__button--primary:hover:not(:disabled) {

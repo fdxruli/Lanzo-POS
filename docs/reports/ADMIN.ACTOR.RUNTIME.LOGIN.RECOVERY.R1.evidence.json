@@ -1,0 +1,61 @@
+{
+  "baseHead": "bca323cddebac97678f6b388d7abbdf7d3cfc730",
+  "reproductionBefore": {
+    "tests": 6,
+    "failed": 4,
+    "secondClickCode": "ACTOR_HANDOFF_REQUIRED"
+  },
+  "focalLatest": {
+    "files": 38,
+    "tests": 310,
+    "passed": 310,
+    "failed": 0
+  },
+  "affectedRecheck": {
+    "tests": 51,
+    "failed": 0
+  },
+  "eslint": "PASS",
+  "whitespace": "PASS",
+  "reactDoctor": {
+    "score": 90,
+    "errors": 0,
+    "warnings": 1
+  },
+  "localBuild": "PASS",
+  "fullSuite": "FINAL_HEAD_CI_REQUIRED_LOCAL_OBSERVATIONAL",
+  "physicalQA": "PENDING",
+  "supabaseMutations": 0,
+  "migrations": 0,
+  "merge": "NOT_PERFORMED",
+  "productionDeployment": "NOT_PERFORMED",
+  "serverResponseGuard": {
+    "tests": 2,
+    "failed": 0
+  },
+  "finalContractsRecheck": {
+    "tests": 73,
+    "failed": 0
+  },
+  "preview": {
+    "url": "https://lanzo-6kyfdxk7i-fdxrulis-projects.vercel.app",
+    "testedHead": "bc9c810c3f2b01e9d4dbd18ae81bf3e135ce5099",
+    "state": "READY",
+    "httpStatus": 200
+  },
+  "preparationFocusRepetitions": {
+    "runs": 20,
+    "passed": 20,
+    "failed": 0,
+    "assertion": "unchanged toHaveFocus; await passive effect with default timeout"
+  },
+  "reconciliationFinal": {
+    "tests": 65,
+    "failed": 0
+  },
+  "legacyFocusRepetitions": {
+    "runs": 20,
+    "caseExecutions": 260,
+    "failed": 0
+  }
+}

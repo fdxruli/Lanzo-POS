@@ -33,3 +33,19 @@ describe('createPWASlice install invitation', () => {
     expect(harness.state().showInstallModal).toBe(true);
   });
 });
+
+describe('createPWASlice update deferral', () => {
+  it('keeps the update available when the service worker defers reload', async () => {
+    const harness = createSliceHarness();
+    harness.actions.setUpdateAvailable(true);
+    harness.actions.setTriggerUpdate(async () => false);
+
+    await harness.actions.runUpdate();
+
+    expect(harness.state()).toMatchObject({
+      updateAvailable: true,
+      showUpdateModal: true,
+      isUpdating: false,
+    });
+  });
+});

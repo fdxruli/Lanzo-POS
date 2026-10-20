@@ -1,0 +1,58 @@
+.ecommerce-pro-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: .4rem;
+  max-width: 100%;
+  margin-top: .45rem;
+  color: var(--text-light, #64748b);
+  font-size: .8rem;
+  line-height: 1.4;
+}
+
+.ecommerce-pro-hint > svg {
+  flex: 0 0 15px;
+  margin-top: .08rem;
+}
+
+.ecommerce-pro-hint > span {
+  min-width: 0;
+}
+
+.ecommerce-pro-hint button {
+  flex: 0 0 auto;
+  padding: 0;
+  border: 0;
+  color: var(--primary-color);
+  background: transparent;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: .15em;
+  cursor: pointer;
+}
+
+.ecommerce-pro-hint button:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.ecommerce-pro-hint--notice {
+  padding: .55rem .7rem;
+  border-left: 2px solid color-mix(in srgb, var(--primary-color) 38%, var(--border-color));
+  background: color-mix(in srgb, var(--light-background) 76%, transparent);
+}
+
+@media (max-width: 520px) {
+  .ecommerce-pro-hint {
+    flex-wrap: wrap;
+  }
+
+  .ecommerce-pro-hint > span {
+    flex: 1 1 calc(100% - 24px);
+  }
+
+  .ecommerce-pro-hint button {
+    margin-left: 1.35rem;
+  }
+}

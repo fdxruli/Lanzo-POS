@@ -19,7 +19,7 @@ import {
   Sun,
   Upload
 } from 'lucide-react';
-import TermsAndConditionsModal from '../common/TermsAndConditionsModal';
+import TermsAndConditionsModal, { LEGAL_DOCUMENT_TYPES } from '../common/TermsAndConditionsModal';
 
 const logoPlaceholder = 'https://placehold.co/100x100/FFFFFF/4A5568?text=L';
 
@@ -331,7 +331,7 @@ function LegalPanel({ onOpen }) {
         </span>
         <div>
           <h3 className="subtitle">Legal y privacidad</h3>
-          <p>Consulta las politicas de uso y manejo de datos.</p>
+          <p>Consulta los documentos legales y avisos disponibles de Lanzo.</p>
         </div>
       </div>
 
@@ -344,8 +344,8 @@ function LegalPanel({ onOpen }) {
           <FileText size={20} />
         </span>
         <span>
-          <strong>Terminos y condiciones de uso</strong>
-          <small>Revisa permisos, privacidad y condiciones operativas.</small>
+          <strong>Políticas y avisos de Lanzo</strong>
+          <small>Uso, privacidad, Lía, pagos y otros documentos.</small>
         </span>
       </button>
     </section>
@@ -471,6 +471,8 @@ export default function GeneralSettings() {
         isOpen={showTerms}
         onClose={() => setShowTerms(false)}
         readOnly={true}
+        showDocumentIndex={true}
+        documentTypes={LEGAL_DOCUMENT_TYPES}
       />
     </div>
   );

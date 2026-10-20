@@ -13,6 +13,7 @@ const worker = vi.hoisted(() => ({
     waiting: false,
     active: false,
     error: false,
+    reloadDeferred: false,
   },
 }));
 
@@ -35,6 +36,7 @@ describe('UpdatePrompt controlled activation', () => {
       waiting: false,
       active: false,
       error: false,
+      reloadDeferred: false,
     };
     useAppStore.setState({
       updateAvailable: false,
@@ -44,6 +46,22 @@ describe('UpdatePrompt controlled activation', () => {
   });
 
   afterEach(() => cleanup());
+
+  it('retains the waiting-worker state while the prompt is suppressed on a 404', () => {
+    const view = render(<UpdatePrompt isSuppressed />);
+    act(() => worker.listener({
+      registered: true,
+      installing: false,
+      waiting: true,
+      active: true,
+      error: false,
+    }));
+
+    expect(screen.queryByText('Nueva version disponible')).not.toBeInTheDocument();
+    view.rerender(<UpdatePrompt />);
+    expect(screen.getByText('Nueva version disponible')).toBeInTheDocument();
+    expect(useAppStore.getState().updateAvailable).toBe(true);
+  });
 
   it('shows the administrative prompt when the coordinator reports a waiting worker', () => {
     render(<UpdatePrompt />);
@@ -57,6 +75,22 @@ describe('UpdatePrompt controlled activation', () => {
     }));
 
     expect(screen.getByText('Nueva version disponible')).toBeInTheDocument();
+  });
+
+  it('keeps the prompt available when a worker activated in another tab but reload was deferred', () => {
+    render(<UpdatePrompt />);
+
+    act(() => worker.listener({
+      registered: true,
+      installing: false,
+      waiting: false,
+      active: true,
+      error: false,
+      reloadDeferred: true,
+    }));
+
+    expect(screen.getByText('Nueva version disponible')).toBeInTheDocument();
+    expect(useAppStore.getState().updateAvailable).toBe(true);
   });
 
   it('activates only after the user presses the update action', async () => {

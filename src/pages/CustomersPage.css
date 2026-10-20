@@ -14,6 +14,37 @@
   margin-bottom: var(--ui-space-lg);
 }
 
+.customers-tab-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.customers-tab-pro-badge {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  min-height: 1.2rem;
+  padding: 0.08rem 0.38rem;
+  border: 1px solid var(--ui-border-brand);
+  border-radius: 999px;
+  color: var(--ui-text-brand);
+  background: var(--ui-bg-info-soft);
+  font-size: 0.62rem;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+}
+
+.customers-page__tab-panel {
+  min-width: 0;
+}
+
+.customers-page [hidden] {
+  display: none !important;
+}
+
 .customers-overview {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

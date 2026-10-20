@@ -137,7 +137,11 @@ describe('license integrity authority recovery admission', () => {
       expect(state.logout).not.toHaveBeenCalled();
       expect(state._processOfflineMode).not.toHaveBeenCalled();
       expect(actorRuntimeController.getState().status).toBe('granted');
-      expect(state.lastIntegrityFailure.code).toBe('SESSION_CHANGED');
+      if (completion === 'response') {
+        expect(state.lastIntegrityFailure).toBeNull();
+      } else {
+        expect(state.lastIntegrityFailure.code).toBe('SESSION_CHANGED');
+      }
     }
   );
 

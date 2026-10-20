@@ -10,7 +10,9 @@ on:
       - 'src/services/auth/actorScopedStorage.js'
       - 'src/services/auth/actorOperationalHandoff.js'
       - 'src/services/auth/actorSessionRuntimeBridge.js'
+      - 'src/services/supabase.js'
       - 'src/services/tenant/tenantScopedStorage.js'
+      - 'src/store/slices/license/**'
       - 'src/services/sync/syncOutboxService.js'
       - 'src/services/salesCloud/salesCloudShadowService.js'
       - 'src/services/salesService.js'
@@ -52,7 +54,7 @@ jobs:
       - name: Checkout current base branch
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.base.ref || github.event.repository.default_branch }}
+          ref: ${{ github.event.pull_request.base.sha || github.event.repository.default_branch }}
           fetch-depth: 1
       - name: Capture immutable base SHA
         id: resolve
@@ -66,8 +68,8 @@ jobs:
     needs:
       - resolve-pr-base
     env:
-      SHARED_TERMINAL_3_PR_BASE_SHA: ${{ github.event_name == 'pull_request' && needs.resolve-pr-base.outputs.sha || github.sha }}
-      SHARED_TERMINAL_3_COMPARISON_BASE_SHA: ${{ github.event_name == 'pull_request' && needs.resolve-pr-base.outputs.sha || '06f42bcbbc4282c6f8f5d4e0b9065437d16f19ab' }}
+      SHARED_TERMINAL_3_PR_BASE_SHA: ${{ needs.resolve-pr-base.outputs.sha }}
+      SHARED_TERMINAL_3_COMPARISON_BASE_SHA: ${{ needs.resolve-pr-base.outputs.sha }}
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
@@ -88,9 +90,7 @@ jobs:
           test -n "${SHARED_TERMINAL_3_CANDIDATE_SHA}"
           test -n "${SHARED_TERMINAL_3_COMPARISON_BASE_SHA}"
           test -n "${SHARED_TERMINAL_3_HISTORICAL_BASE_SHA}"
-          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
-            test "${SHARED_TERMINAL_3_COMPARISON_BASE_SHA}" = "${SHARED_TERMINAL_3_PR_BASE_SHA}"
-          fi
+          test "${SHARED_TERMINAL_3_COMPARISON_BASE_SHA}" = "${SHARED_TERMINAL_3_PR_BASE_SHA}"
           git cat-file -e "${SHARED_TERMINAL_3_PR_BASE_SHA}^{commit}"
           git cat-file -e "${SHARED_TERMINAL_3_CANDIDATE_SHA}^{commit}"
           git cat-file -e "${SHARED_TERMINAL_3_COMPARISON_BASE_SHA}^{commit}"
@@ -241,10 +241,8 @@ jobs:
         run: |
           echo "PR_BASE_SHA=${SHARED_TERMINAL_3_PR_BASE_SHA}"
           echo "COMPARISON_BASE_SHA=${SHARED_TERMINAL_3_COMPARISON_BASE_SHA}"
-          test "$(git rev-parse HEAD)" = "${SHARED_TERMINAL_3_COMPARISON_BASE_SHA}"
-          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
-            test "${SHARED_TERMINAL_3_COMPARISON_BASE_SHA}" = "${SHARED_TERMINAL_3_PR_BASE_SHA}"
-          fi
+          test "$(git -C subject rev-parse HEAD)" = "${SHARED_TERMINAL_3_COMPARISON_BASE_SHA}"
+          test "${SHARED_TERMINAL_3_COMPARISON_BASE_SHA}" = "${SHARED_TERMINAL_3_PR_BASE_SHA}"
 
       - name: Checkout exact candidate evidence tools
         uses: actions/checkout@v4
@@ -296,6 +294,78 @@ jobs:
             echo "BASE repetition ${i} raw exit code: ${code}"
           done
 
+      - name: BASE Vitest discovery isolation negative control
+        shell: bash
+        working-directory: subject
+        run: |
+          npx vitest list --filesOnly > ../vitest-discovered-files-base.txt
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+
+          const testFile = 'src/components/ai/__tests__/CommercialAIAgents.test.jsx';
+          const discovered = fs.readFileSync('../vitest-discovered-files-base.txt', 'utf8')
+            .split(/\r?\n/)
+            .map((value) => value.trim().replaceAll('\\', '/'))
+            .filter(Boolean);
+          const targetMatches = discovered.filter((value) => value.endsWith(testFile));
+          const duplicateExists = fs.existsSync(`../evidence-tools/${testFile}`);
+          if (!duplicateExists) throw new Error('NEG-01 fixture is missing from evidence-tools');
+          if (targetMatches.length !== 1) {
+            throw new Error(`NEG-01 expected one subject discovery, found ${targetMatches.length}`);
+          }
+          if (discovered.some((value) => value.includes('evidence-tools'))) {
+            throw new Error('NEG-01 discovered a test from evidence-tools');
+          }
+          if (new Set(discovered).size !== discovered.length) {
+            throw new Error('Vitest returned duplicate file paths inside subject');
+          }
+          console.log(`NEG-01 PASS: ${discovered.length} subject test files; one CommercialAIAgents file; evidence-tools twin excluded.`);
+          NODE
+
+      - name: BASE CommercialAIAgents duplicate-submit test (50 independent runs)
+        shell: bash
+        working-directory: subject
+        run: |
+          set -euo pipefail
+          test_name='blocks same-turn duplicate submits so one UI action creates one analysis and one history entry'
+          summary="../commercial-ai-base-repetitions.txt"
+          : > "$summary"
+          for iteration in $(seq 1 50); do
+            report="../commercial-ai-base-${iteration}.json"
+            log="../commercial-ai-base-${iteration}.log"
+            if npx vitest run src/components/ai/__tests__/CommercialAIAgents.test.jsx --testNamePattern="$test_name" --maxWorkers=1 --reporter=json --outputFile="$report" >"$log" 2>&1; then
+              if ! node --input-type=module - "$report" <<'NODE'
+          import fs from 'node:fs';
+
+          const expected = 'blocks same-turn duplicate submits so one UI action creates one analysis and one history entry';
+          const report = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          const assertions = (report.testResults || []).flatMap((file) => file.assertionResults || []);
+          const matches = assertions.filter((assertion) => assertion.title === expected);
+          const passed = assertions.filter((assertion) => assertion.status === 'passed').length;
+          if (report.numFailedTests !== 0 || report.numPassedTests !== 1
+            || passed !== 1 || matches.length !== 1 || matches[0].status !== 'passed') {
+            throw new Error(`Focused test did not pass exactly once: ${JSON.stringify({
+              failed: report.numFailedTests,
+              passed: report.numPassedTests,
+              matched: matches.map((assertion) => assertion.status)
+            })}`);
+          }
+          NODE
+              then
+                cat "$log"
+                exit 1
+              fi
+              printf 'PASS %s\n' "$iteration" >> "$summary"
+              rm -f "$report" "$log"
+            else
+              code=$?
+              printf 'FAIL %s\n' "$iteration" >> "$summary"
+              cat "$log"
+              exit "$code"
+            fi
+          done
+          test "$(wc -l < "$summary" | tr -d ' ')" = 50
+
       - name: Record BASE raw results
         if: always()
         run: |
@@ -317,6 +387,10 @@ jobs:
             public-store-*.log
             public-store-*.exit
             focused-target-summary.json
+            vitest-discovered-files-base.txt
+            commercial-ai-base-repetitions.txt
+            commercial-ai-base-*.json
+            commercial-ai-base-*.log
           if-no-files-found: error
           overwrite: true
 
@@ -337,7 +411,7 @@ jobs:
         working-directory: subject
         run: |
           echo "CANDIDATE_SHA=${SHARED_TERMINAL_3_CANDIDATE_SHA}"
-          test "$(git rev-parse HEAD)" = "${SHARED_TERMINAL_3_CANDIDATE_SHA}"
+          test "$(git -C subject rev-parse HEAD)" = "${SHARED_TERMINAL_3_CANDIDATE_SHA}"
 
       - name: Checkout exact candidate evidence tools
         uses: actions/checkout@v4
@@ -389,6 +463,197 @@ jobs:
             echo "CANDIDATE repetition ${i} raw exit code: ${code}"
           done
 
+      - name: CANDIDATE Vitest discovery isolation negative control
+        shell: bash
+        working-directory: subject
+        run: |
+          npx vitest list --filesOnly > ../vitest-discovered-files-candidate.txt
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+
+          const testFile = 'src/components/ai/__tests__/CommercialAIAgents.test.jsx';
+          const discovered = fs.readFileSync('../vitest-discovered-files-candidate.txt', 'utf8')
+            .split(/\r?\n/)
+            .map((value) => value.trim().replaceAll('\\', '/'))
+            .filter(Boolean);
+          const targetMatches = discovered.filter((value) => value.endsWith(testFile));
+          const duplicateExists = fs.existsSync(`../evidence-tools/${testFile}`);
+          if (!duplicateExists) throw new Error('NEG-01 fixture is missing from evidence-tools');
+          if (targetMatches.length !== 1) {
+            throw new Error(`NEG-01 expected one subject discovery, found ${targetMatches.length}`);
+          }
+          if (discovered.some((value) => value.includes('evidence-tools'))) {
+            throw new Error('NEG-01 discovered a test from evidence-tools');
+          }
+          if (new Set(discovered).size !== discovered.length) {
+            throw new Error('Vitest returned duplicate file paths inside subject');
+          }
+          console.log(`NEG-01 PASS: ${discovered.length} subject test files; one CommercialAIAgents file; evidence-tools twin excluded.`);
+          NODE
+
+      - name: CANDIDATE CommercialAIAgents duplicate-submit test (50 independent runs)
+        shell: bash
+        working-directory: subject
+        run: |
+          set -euo pipefail
+          test_name='blocks same-turn duplicate submits so one UI action creates one analysis and one history entry'
+          summary="../commercial-ai-candidate-repetitions.txt"
+          : > "$summary"
+          for iteration in $(seq 1 50); do
+            report="../commercial-ai-candidate-${iteration}.json"
+            log="../commercial-ai-candidate-${iteration}.log"
+            if npx vitest run src/components/ai/__tests__/CommercialAIAgents.test.jsx --testNamePattern="$test_name" --maxWorkers=1 --reporter=json --outputFile="$report" >"$log" 2>&1; then
+              if ! node --input-type=module - "$report" <<'NODE'
+          import fs from 'node:fs';
+
+          const expected = 'blocks same-turn duplicate submits so one UI action creates one analysis and one history entry';
+          const report = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+          const assertions = (report.testResults || []).flatMap((file) => file.assertionResults || []);
+          const matches = assertions.filter((assertion) => assertion.title === expected);
+          const passed = assertions.filter((assertion) => assertion.status === 'passed').length;
+          if (report.numFailedTests !== 0 || report.numPassedTests !== 1
+            || passed !== 1 || matches.length !== 1 || matches[0].status !== 'passed') {
+            throw new Error(`Focused test did not pass exactly once: ${JSON.stringify({
+              failed: report.numFailedTests,
+              passed: report.numPassedTests,
+              matched: matches.map((assertion) => assertion.status)
+            })}`);
+          }
+          NODE
+              then
+                cat "$log"
+                exit 1
+              fi
+              printf 'PASS %s\n' "$iteration" >> "$summary"
+              rm -f "$report" "$log"
+            else
+              code=$?
+              printf 'FAIL %s\n' "$iteration" >> "$summary"
+              cat "$log"
+              exit "$code"
+            fi
+          done
+          test "$(wc -l < "$summary" | tr -d ' ')" = 50
+
+      - name: NEG-02/03 duplicate analysis and history mutation controls
+        shell: bash
+        working-directory: subject
+        run: |
+          set -euo pipefail
+          page="src/components/ai/CommercialAIAgentsPage.jsx"
+          test_file="src/components/ai/__tests__/CommercialAIAgents.test.jsx"
+          page_backup="$(mktemp)"
+          test_backup="$(mktemp)"
+          summary="../negative-control-ai-summary.txt"
+          log_double_analysis="../negative-control-ai-double-analysis.log"
+          log_double_history="../negative-control-ai-double-history.log"
+          test_name='blocks same-turn duplicate submits so one UI action creates one analysis and one history entry'
+          cp "$page" "$page_backup"
+          cp "$test_file" "$test_backup"
+          restore_mutations() {
+            cp "$page_backup" "$page"
+            cp "$test_backup" "$test_file"
+            rm -f "$page_backup" "$test_backup"
+          }
+          trap restore_mutations EXIT
+          : > "$summary"
+
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+
+          const file = 'src/components/ai/CommercialAIAgentsPage.jsx';
+          const source = fs.readFileSync(file, 'utf8');
+          const guard = 'if (isAnalyzing || analysisInFlightRef.current) return;';
+          if (source.split(guard).length !== 2) throw new Error('NEG-02 guard not found exactly once');
+          fs.writeFileSync(file, source.replace(guard, 'if (false) return;'));
+
+          const testFile = 'src/components/ai/__tests__/CommercialAIAgents.test.jsx';
+          const testSource = fs.readFileSync(testFile, 'utf8');
+          const testTitle = 'blocks same-turn duplicate submits so one UI action creates one analysis and one history entry';
+          const titleIndex = testSource.indexOf(testTitle);
+          if (titleIndex < 0 || testSource.indexOf(testTitle, titleIndex + testTitle.length) >= 0) {
+            throw new Error('NEG-02 duplicate-submit test not found exactly once');
+          }
+          const testStart = testSource.lastIndexOf('it(', titleIndex);
+          const testEnd = testSource.indexOf('\n  });', titleIndex);
+          if (testStart < 0 || testEnd < 0) throw new Error('NEG-02 test boundaries not found');
+          const testBody = testSource.slice(testStart, testEnd);
+          const assertion = 'await waitFor(() => expect(runtime.runAgent).toHaveBeenCalledTimes(1));';
+          if (testBody.split(assertion).length !== 2) {
+            throw new Error('NEG-02 runAgent assertion not found exactly once in target test');
+          }
+          const boundedAssertion = 'await waitFor(() => expect(runtime.runAgent).toHaveBeenCalledTimes(1), { timeout: 1000 });';
+          fs.writeFileSync(testFile, testSource.slice(0, testStart)
+            + testBody.replace(assertion, boundedAssertion)
+            + testSource.slice(testEnd));
+          NODE
+
+          set +e
+          npx vitest run "$test_file" --testNamePattern="$test_name" --maxWorkers=1 --reporter=verbose >"$log_double_analysis" 2>&1
+          analysis_code=$?
+          set -e
+          if [[ "$analysis_code" -eq 0 ]]; then
+            echo "NEG-02 FAIL: duplicate runAgent calls were not detected."
+            cat "$log_double_analysis"
+            exit 1
+          fi
+          if ! grep -F "$test_name" "$log_double_analysis" >/dev/null; then
+            echo "NEG-02 FAIL: target test title missing from the mutation result."
+            cat "$log_double_analysis"
+            exit 1
+          fi
+          if ! grep -Eiq 'to be called 1 times, but got 2 times|to be called 1 time, but got 2 times' "$log_double_analysis"; then
+            echo "NEG-02 FAIL: test failed for a reason other than detecting two runAgent calls."
+            cat "$log_double_analysis"
+            exit 1
+          fi
+          printf 'NEG-02 PASS: disabling the in-flight guard caused the same-turn test to detect two runAgent calls.\n' >> "$summary"
+          cp "$page_backup" "$page"
+          cp "$test_backup" "$test_file"
+
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+
+          const file = 'src/components/ai/__tests__/CommercialAIAgents.test.jsx';
+          const source = fs.readFileSync(file, 'utf8');
+          const original = 'setTenantStorageItem: (key, value) => runtime.historyStorage.set(key, value),';
+          const duplicateWrite = `setTenantStorageItem: (key, value) => {
+            const envelope = JSON.parse(value);
+            if (Array.isArray(envelope.entries) && envelope.entries.length === 1) {
+              envelope.entries.push({ ...envelope.entries[0], id: '9999999999999-999999' });
+            }
+            runtime.historyStorage.set(key, JSON.stringify(envelope));
+          },`;
+          if (source.split(original).length !== 2) throw new Error('NEG-03 storage fixture not found exactly once');
+          fs.writeFileSync(file, source.replace(original, duplicateWrite));
+          NODE
+
+          set +e
+          npx vitest run "$test_file" --testNamePattern="$test_name" --maxWorkers=1 --reporter=verbose >"$log_double_history" 2>&1
+          history_code=$?
+          set -e
+          if [[ "$history_code" -eq 0 ]]; then
+            echo "NEG-03 FAIL: duplicate persisted history was not detected."
+            cat "$log_double_history"
+            exit 1
+          fi
+          if ! grep -F "$test_name" "$log_double_history" >/dev/null; then
+            echo "NEG-03 FAIL: target test title missing from the mutation result."
+            cat "$log_double_history"
+            exit 1
+          fi
+          if ! grep -Eiq 'to have a length of 1 but got 2|length of 1 but got 2' "$log_double_history"; then
+            echo "NEG-03 FAIL: test failed for a reason other than detecting two persisted history entries."
+            cat "$log_double_history"
+            exit 1
+          fi
+          printf 'NEG-03 PASS: a fixture write that persisted two history entries failed the same-turn history assertion.\n' >> "$summary"
+
+          restore_mutations
+          trap - EXIT
+          git diff --exit-code -- "$page" "$test_file"
+          cat "$summary"
+
       - name: Record CANDIDATE raw results
         if: always()
         run: |
@@ -410,6 +675,13 @@ jobs:
             public-store-*.log
             public-store-*.exit
             focused-target-summary.json
+            vitest-discovered-files-candidate.txt
+            commercial-ai-candidate-repetitions.txt
+            commercial-ai-candidate-*.json
+            commercial-ai-candidate-*.log
+            negative-control-ai-summary.txt
+            negative-control-ai-double-analysis.log
+            negative-control-ai-double-history.log
           if-no-files-found: error
           overwrite: true
 
@@ -417,8 +689,12 @@ jobs:
     name: Differential repeated full-suite regression gate
     if: always()
     needs:
+      - resolve-pr-base
       - full-suite-baseline
       - full-suite-candidate
+    env:
+      SHARED_TERMINAL_3_PR_BASE_SHA: ${{ needs.resolve-pr-base.outputs.sha }}
+      SHARED_TERMINAL_3_COMPARISON_BASE_SHA: ${{ needs.resolve-pr-base.outputs.sha }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -438,9 +714,7 @@ jobs:
           echo "CANDIDATE_ARTIFACT=${SHARED_TERMINAL_3_CANDIDATE_ARTIFACT}"
           echo "DIFFERENTIAL_ARTIFACT=${SHARED_TERMINAL_3_DIFFERENTIAL_ARTIFACT}"
           test "$(git rev-parse HEAD)" = "${SHARED_TERMINAL_3_CANDIDATE_SHA}"
-          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
-            test "${SHARED_TERMINAL_3_COMPARISON_BASE_SHA}" = "${SHARED_TERMINAL_3_PR_BASE_SHA}"
-          fi
+          test "${SHARED_TERMINAL_3_COMPARISON_BASE_SHA}" = "${SHARED_TERMINAL_3_PR_BASE_SHA}"
 
       - name: Download BASE evidence
         uses: actions/download-artifact@v4

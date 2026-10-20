@@ -26,7 +26,7 @@ import Logger from '../../services/Logger';
 import { showMessageModal } from '../../services/utils';
 import './MessageModal.css';
 
-export default function BackupReminder() {
+export default function BackupReminder({ suppressSecondaryBanner = false } = {}) {
   const isStorageCritical = useAppStore((state) => state.isStorageCritical);
   const isTransactionInProgress = useAppStore((state) => state.isTransactionInProgress);
   
@@ -91,6 +91,8 @@ export default function BackupReminder() {
 
   // Nivel 2: Banner superior no bloqueante
   if (effectiveLevel === 2) {
+    // Risk level 3 remains visible even when an active transaction degrades it to a banner.
+    if (suppressSecondaryBanner && riskLevel < 3) return null;
     return (
       <div style={{
         backgroundColor: '#fffbeb',

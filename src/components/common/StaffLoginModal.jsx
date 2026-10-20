@@ -35,10 +35,15 @@ export default function StaffLoginModal() {
   const [errorMessage, setErrorMessage] = useState('');
 
   const handleStaffLogin = useAppStore((state) => state.handleStaffLogin);
+  const initializeApp = useAppStore((state) => state.initializeApp);
   const logout = useAppStore((state) => state.logout);
   const returnToLicenseAccessChoice = useAppStore((state) => state.returnToLicenseAccessChoice);
   const staffLoginMessage = useAppStore((state) => state.staffLoginMessage);
   const staffLoginError = useAppStore((state) => state.staffLoginError);
+  const verificationUnavailable = [
+    'SESSION_VERIFICATION_INCONCLUSIVE',
+    'ACTOR_RUNTIME_RESTORE_FAILED'
+  ].includes(staffLoginError?.code);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
   const licenseKey = useAppStore((state) => state.staffLoginLicenseKey || state.licenseDetails?.license_key);
   const staffAlreadyInUse = staffLoginError?.code === 'STAFF_ALREADY_IN_USE';
@@ -89,6 +94,19 @@ export default function StaffLoginModal() {
     }
   };
 
+  const retrySessionVerification = async () => {
+    if (isLoading || !isOnline) return;
+    setIsLoading(true);
+    setErrorMessage('');
+    try {
+      await initializeApp();
+    } catch {
+      setErrorMessage('No se pudo reintentar la verificación. Comprueba la conexión y vuelve a intentarlo.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div
       className="staff-login-overlay"
@@ -114,18 +132,26 @@ export default function StaffLoginModal() {
           </span>
           <div>
             <h1 id="staff-login-title">Acceso staff</h1>
-            <p id="staff-login-description">Ingresa con el usuario asignado por el administrador.</p>
+            <p id="staff-login-description">
+              {verificationUnavailable
+                ? 'La sesión guardada necesita una nueva verificación segura.'
+                : 'Ingresa con el usuario asignado por el administrador.'}
+            </p>
           </div>
         </div>
 
         <p className="staff-login-helper">
-          Usa tu cuenta personal para entrar sólo a las funciones permitidas para tu puesto.
+          {verificationUnavailable
+            ? 'El acceso permanece protegido mientras Lanzo intenta confirmar la sesión existente.'
+            : 'Usa tu cuenta personal para entrar sólo a las funciones permitidas para tu puesto.'}
         </p>
 
         {!isOnline && (
           <div className="staff-login-alert ui-alert ui-alert--danger" role="status">
             <WifiOff size={18} aria-hidden="true" />
-            <span>El acceso staff requiere conexión a internet.</span>
+            <span>{verificationUnavailable
+              ? 'Necesitas conexión para verificar la sesión staff guardada.'
+              : 'El acceso staff requiere conexión a internet.'}</span>
           </div>
         )}
 
@@ -145,12 +171,34 @@ export default function StaffLoginModal() {
           </div>
         )}
 
-        {staffLoginMessage && !errorMessage && !staffAlreadyInUse && (
+        {staffLoginMessage && !verificationUnavailable && !errorMessage && !staffAlreadyInUse && (
           <div className="staff-login-note ui-alert ui-alert--info" role="status">
             {staffLoginMessage}
           </div>
         )}
 
+        {verificationUnavailable ? (
+          <div className="staff-login-form" aria-busy={isLoading}>
+            <div className="staff-login-note ui-alert ui-alert--info" role="status" aria-live="polite">
+              {isLoading
+                ? 'Estamos verificando la sesión staff guardada.'
+                : staffLoginMessage || 'No pudimos verificar la sesión staff. Tus datos locales se mantienen protegidos.'}
+            </div>
+            {errorMessage && (
+              <div className="staff-login-error ui-alert ui-alert--danger" role="alert">
+                {errorMessage}
+              </div>
+            )}
+            <button
+              type="button"
+              className="ui-button ui-button--primary staff-login-submit"
+              onClick={retrySessionVerification}
+              disabled={isLoading || !isOnline}
+            >
+              {isLoading ? 'Verificando sesión...' : 'Reintentar verificación'}
+            </button>
+          </div>
+        ) : (
         <form onSubmit={handleSubmit} className="staff-login-form" aria-busy={isLoading}>
           <div className="staff-login-field form-group">
             <label className="form-label" htmlFor="staff-username">Usuario</label>
@@ -189,6 +237,7 @@ export default function StaffLoginModal() {
             {isLoading ? 'Verificando...' : 'Entrar'}
           </button>
         </form>
+        )}
 
         <div className="staff-login-footer">
           <div className="staff-login-footer-actions">

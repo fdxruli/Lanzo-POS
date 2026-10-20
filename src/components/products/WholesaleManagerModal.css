@@ -178,8 +178,8 @@
 /* 3. Ajuste para el botón Guardar */
 .modal-actions .btn-save {
   border: 1px solid transparent;
-  background-color: var(--primary-color);
-  color: var(--ui-text-on-primary);
+  background-color: var(--ui-action-primary-bg);
+  color: var(--ui-action-primary-text);
 }
 
 .modal-actions .btn-save:hover {

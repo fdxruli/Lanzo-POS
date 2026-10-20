@@ -15,7 +15,7 @@ const STATUS_COPY = {
   }
 };
 
-const ServerStatusBanner = () => {
+const ServerStatusBanner = ({ isSuppressed = false } = {}) => {
   const serverHealth = useAppStore((state) => state.serverHealth);
   const serverMessage = useAppStore((state) => state.serverMessage);
   const shouldShowServerStatusBanner = useAppStore((state) =>
@@ -39,7 +39,7 @@ const ServerStatusBanner = () => {
     };
   }, [serverHealth, serverMessage, clearServerStatus]);
 
-  if (!shouldShowServerStatusBanner) return null;
+  if (isSuppressed || !shouldShowServerStatusBanner) return null;
 
   const statusCopy = STATUS_COPY[serverHealth] || STATUS_COPY.down;
 

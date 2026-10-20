@@ -89,7 +89,7 @@ const closeBtnStyle = {
   padding: '4px'
 };
 
-const InstallPrompt = () => {
+const InstallPrompt = ({ isSuppressed = false } = {}) => {
   const appStatus = useAppStore((state) => state.appStatus);
   const isIOS = useAppStore((state) => state.isIOS);
   const isStandalone = useAppStore((state) => state.isStandalone);
@@ -290,7 +290,7 @@ const InstallPrompt = () => {
   // y verificamos si ya se descartó este modal.
   const isDismissed = isInstallPromptDismissed(readInstallEngagement());
 
-  if (!showInstallModal || isDismissed || showUpdateModal || appStatus !== 'ready') return null;
+  if (isSuppressed || !showInstallModal || isDismissed || showUpdateModal || appStatus !== 'ready') return null;
 
   return (
     <div style={overlayStyle} data-testid="install-prompt" aria-labelledby="install-prompt-title">

@@ -57,13 +57,16 @@
 
 .data-safety-modal__actions {
   display: flex;
-  flex-wrap: wrap;
+  flex: 0 0 auto;
+  flex-direction: column;
+  flex-wrap: nowrap;
   gap: var(--ui-space-sm);
 }
 
 .data-safety-modal__action {
+  width: 100%;
   min-height: 48px;
-  flex: 1 1 180px;
+  flex: 0 0 auto;
   font-size: 1.02rem;
 }
 
@@ -78,12 +81,16 @@
   .data-safety-modal__content {
     padding: var(--ui-space-md);
   }
+}
 
+@media (min-width: 521px) {
   .data-safety-modal__actions {
-    flex-direction: column;
+    flex-direction: row;
+    flex-wrap: wrap;
   }
 
   .data-safety-modal__action {
-    width: 100%;
+    width: auto;
+    flex: 1 1 180px;
   }
 }

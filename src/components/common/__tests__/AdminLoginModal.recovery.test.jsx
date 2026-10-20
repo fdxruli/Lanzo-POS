@@ -65,7 +65,7 @@ describe('AdminLoginModal local database recovery', () => {
     render(<AdminLoginModal />);
     submitCredentials();
 
-    expect(await screen.findByText(/esquema local antiguo/i)).toBeInTheDocument();
+    expect(await screen.findByText(/esquema local requiere actualización/i)).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole('button', { name: 'Entrar' })).toBeEnabled());
     expect(recoveryRuntime.markTakeoverCompleted).not.toHaveBeenCalled();
   });
@@ -81,7 +81,7 @@ describe('AdminLoginModal local database recovery', () => {
     render(<AdminLoginModal />);
     submitCredentials();
 
-    expect(await screen.findByText(/esquema local antiguo/i)).toBeInTheDocument();
+    expect(await screen.findByText(/esquema local requiere actualización/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Entrar' })).toBeEnabled();
   });
 
@@ -124,12 +124,94 @@ describe('AdminLoginModal local database recovery', () => {
 
     expect(await screen.findByRole('heading', { name: 'Tu plan cambió a Lanzo Local' })).toBeInTheDocument();
     expect(screen.getByText(/otro dispositivo registrado como activo/i)).toBeInTheDocument();
-    expect(screen.getByText(/sesiones activas en los demás dispositivos se cerrarán/i)).toBeInTheDocument();
-    expect(screen.getByText(/tus datos permanecerán intactos/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Usar este dispositivo' })).toBeEnabled();
-    expect(screen.getByRole('button', { name: 'Usar este dispositivo' })).toHaveFocus();
+    expect(screen.getByText(/se cerrarán las sesiones activas en los demás dispositivos/i)).toBeInTheDocument();
+    expect(screen.getByText(/revisa las ventas antes de continuar operando/i)).toBeInTheDocument();
+    const takeoverButton = screen.getByRole('button', { name: 'Usar este dispositivo' });
+    expect(takeoverButton).toBeEnabled();
+    await waitFor(() => expect(takeoverButton).toHaveFocus());
     expect(screen.getByRole('button', { name: 'Cancelar' })).toBeEnabled();
     expect(screen.queryByText(/límite de dispositivos alcanzado/i)).not.toBeInTheDocument();
+    expect(storeState.handleFreeDeviceTakeover).not.toHaveBeenCalled();
+  });
+
+  it('focuses takeover confirmation once it becomes enabled after reconnecting', async () => {
+    storeState.handleAdminLogin.mockResolvedValueOnce({
+      success: false,
+      code: 'FREE_DEVICE_TAKEOVER_REQUIRED',
+      takeoverRequired: true
+    });
+
+    render(<AdminLoginModal />);
+    submitCredentials();
+
+    // An offline event arrives before the pending login response settles.
+    Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: false });
+    fireEvent(window, new Event('offline'));
+
+    const takeoverButton = await screen.findByRole('button', { name: 'Usar este dispositivo' }, { timeout: 1000 });
+    expect(takeoverButton).toBeDisabled();
+    fireEvent.click(takeoverButton);
+    expect(storeState.handleFreeDeviceTakeover).not.toHaveBeenCalled();
+
+    Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: true });
+    fireEvent(window, new Event('online'));
+
+    await waitFor(() => expect(takeoverButton).toBeEnabled(), { timeout: 1000 });
+    await waitFor(() => expect(takeoverButton).toHaveFocus());
+    expect(storeState.handleFreeDeviceTakeover).not.toHaveBeenCalled();
+    expect(recoveryRuntime.markTakeoverCompleted).not.toHaveBeenCalled();
+  });
+
+  it('preserves user focus on Cancel when connectivity returns', async () => {
+    storeState.handleAdminLogin.mockResolvedValueOnce({
+      success: false,
+      code: 'FREE_DEVICE_TAKEOVER_REQUIRED',
+      takeoverRequired: true
+    });
+
+    render(<AdminLoginModal />);
+    submitCredentials();
+
+    Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: false });
+    fireEvent(window, new Event('offline'));
+
+    const takeoverButton = await screen.findByRole('button', { name: 'Usar este dispositivo' }, { timeout: 1000 });
+    expect(takeoverButton).toBeDisabled();
+
+    const cancelButton = screen.getByRole('button', { name: 'Cancelar' });
+    cancelButton.focus();
+    expect(cancelButton).toHaveFocus();
+
+    Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: true });
+    fireEvent(window, new Event('online'));
+
+    await waitFor(() => expect(takeoverButton).toBeEnabled(), { timeout: 1000 });
+    expect(cancelButton).toHaveFocus();
+    expect(storeState.handleFreeDeviceTakeover).not.toHaveBeenCalled();
+  });
+
+  it('does not restore takeover focus after cancellation and reconnect', async () => {
+    storeState.handleAdminLogin.mockResolvedValueOnce({
+      success: false,
+      code: 'FREE_DEVICE_TAKEOVER_REQUIRED',
+      takeoverRequired: true
+    });
+
+    render(<AdminLoginModal />);
+    submitCredentials();
+
+    Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: false });
+    fireEvent(window, new Event('offline'));
+
+    const cancelButton = await screen.findByRole('button', { name: 'Cancelar' }, { timeout: 1000 });
+    fireEvent.click(cancelButton);
+    expect(screen.queryByRole('button', { name: 'Usar este dispositivo' })).not.toBeInTheDocument();
+
+    Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: true });
+    fireEvent(window, new Event('online'));
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Entrar' })).toBeDisabled(), { timeout: 1000 });
+    await waitFor(() => expect(screen.getByLabelText('Usuario')).toHaveFocus(), { timeout: 1000 });
     expect(storeState.handleFreeDeviceTakeover).not.toHaveBeenCalled();
   });
 
@@ -218,7 +300,7 @@ describe('AdminLoginModal local database recovery', () => {
 
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent(
-      'No se pudo completar la acción. Tus datos permanecen intactos. Revisa tu conexión e inténtalo nuevamente.'
+      'No se pudo confirmar el resultado de la acción. Revisa las operaciones locales pendientes antes de volver a intentarla.'
     );
     expect(screen.queryByText(/POST_DOWNGRADE_CASH_OWNER_REQUIRED|SQL line 42|P0001/)).not.toBeInTheDocument();
   });

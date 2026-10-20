@@ -45,12 +45,14 @@ export const createLicenseStaffActions = ({
     const state = get();
     const sourceLicense = licenseSource || state.licenseDetails || {};
     const licenseKey = sourceLicense.license_key || state.staffLoginLicenseKey || null;
+    const preserveSessionCredentials = validation.preserveSessionCredentials === true;
+    const sessionCredentialCleared = validation.sessionCredentialCleared === true;
 
     const nextLicenseDetails = sourceLicense.license_key
       ? {
         ...sourceLicense,
         device_role: 'staff',
-        staff_user: null
+        ...(preserveSessionCredentials ? {} : { staff_user: null })
       }
       : state.licenseDetails;
 
@@ -61,10 +63,17 @@ export const createLicenseStaffActions = ({
     // Realtime vivo mientras el usuario está en StaffLoginModal.
     await get().stopLicenseSync();
 
-    await clearStaffSessionCache();
-    await clearAdminSessionCache();
+    if (!preserveSessionCredentials) {
+      // The verifier already reconciled both role snapshots under the tenant
+      // lease. Do not clear either cache after this await: a
+      // newer login may have established credentials in the meantime.
+      if (!sessionCredentialCleared) {
+        await clearStaffSessionCache();
+        await clearAdminSessionCache();
+      }
+    }
 
-    if (nextLicenseDetails?.license_key) {
+    if (nextLicenseDetails?.license_key && !preserveSessionCredentials) {
       await saveLicenseToStorage(nextLicenseDetails);
     }
 
@@ -213,6 +222,9 @@ export const createLicenseStaffActions = ({
         actor: licenseDataToSave.staff_user
       });
       await get()._loadProfile(licenseKey);
+      if (get().appStatus === 'ready') {
+        get()._validateInBackground?.(licenseKey, { reason: 'staff_login' });
+      }
     } catch (error) {
       lockActorRuntime('staff_actor_binding_failed');
       set({

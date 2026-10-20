@@ -5,6 +5,7 @@ import Logger from '../../../services/Logger';
 import { classifyActorAuthorityError } from '../../../services/auth/actorAuthorityErrors';
 import { getActorAuthorityRecoverySnapshot, reportActorAuthorityError } from '../../../services/auth/actorAuthorityRecovery';
 import { actorRuntimeController, ACTOR_RUNTIME_STATUS } from '../../../services/auth/actorRuntimeController';
+import { lockActorRuntime } from '../../../services/auth/actorSessionRuntimeBridge';
 
 import {
   revalidateLicense
@@ -29,6 +30,16 @@ import {
   shouldSkipRemoteValidationForPlan,
   shouldSkipRemoteValidationAfterFailure
 } from './licenseValidationTimestamps';
+import {
+  createEffectiveLicenseValidationEvidence,
+  shouldReplaceEffectiveLicenseValidationEvidence
+} from '../../../utils/licenseStatusPresentation';
+import {
+  assertLicenseValidationContextCurrent,
+  captureLicenseValidationContext,
+  isLicenseValidationContextStaleError,
+  persistWithinLicenseValidationContext
+} from './licenseValidationContext';
 
 export const createLicenseBackgroundValidationActions = ({
   set,
@@ -49,9 +60,12 @@ export const createLicenseBackgroundValidationActions = ({
     );
 
     const clearRejectedLicense = async (validation) => {
+      lockActorRuntime('license_validation_fatal');
+      const invalidationContext = captureLicenseValidationContext(get(), licenseKey);
       try { await clearLocalLicenseSession(); } catch {
         Logger.warn('[Background] No se pudo completar la salida; el acceso permanece bloqueado.');
       }
+      assertLicenseValidationContextCurrent(invalidationContext, get());
       set({
         appStatus: 'unauthenticated', licenseDetails: null,
         licenseStatus: normalizeValidationCode(validation) || 'invalid',
@@ -76,20 +90,26 @@ export const createLicenseBackgroundValidationActions = ({
         return;
       }
 
+      const validationContext = captureLicenseValidationContext(initialState, licenseKey);
+      const assertCurrentContext = () => assertLicenseValidationContextCurrent(validationContext, get());
+
       const localLicenseBeforeValidation = await getLicenseFromStorage();
       if (validationContextChanged()) return;
 
+      assertCurrentContext();
+      if (get().appStatus !== 'ready') return;
       const licenseDetails = initialState.licenseDetails || localLicenseBeforeValidation || {
         license_key: licenseKey
       };
       const mode = initialState.licenseSyncMode || getLicenseSyncMode(licenseDetails);
 
-      if (shouldSkipRemoteValidationForPlan({ licenseDetails, mode, reason })) {
+      if (shouldSkipRemoteValidationForPlan({ licenseDetails, licenseStatus: initialState.licenseStatus, mode, reason })) {
         Logger.log(`[Background] Validación remota omitida por TTL exitoso de plan (${reason}).`);
 
         if (!get().companyProfile) {
           await get()._loadProfile(licenseKey, {
             refreshProfile: false,
+            profileLoadMode: 'background',
             reason: `background_cached_${reason}`
           });
         }
@@ -103,6 +123,7 @@ export const createLicenseBackgroundValidationActions = ({
         if (!get().companyProfile) {
           await get()._loadProfile(licenseKey, {
             refreshProfile: false,
+            profileLoadMode: 'background',
             reason: `background_error_cooldown_${reason}`
           });
         }
@@ -110,12 +131,15 @@ export const createLicenseBackgroundValidationActions = ({
         return;
       }
 
+      assertCurrentContext();
       Logger.log(`[Background] Iniciando validación silenciosa (${reason})...`);
 
       markLastLicenseValidationAttempt(licenseKey);
 
       const BACKGROUND_TIMEOUT = 8000;
-      const validationPromise = revalidateLicense(licenseKey);
+      const validationPromise = revalidateLicense(licenseKey, {
+        beforePersist: assertCurrentContext
+      });
       const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => reject(new Error('BACKGROUND_TIMEOUT')), BACKGROUND_TIMEOUT)
       );
@@ -124,6 +148,8 @@ export const createLicenseBackgroundValidationActions = ({
         validationPromise,
         timeoutPromise
       ]);
+      assertCurrentContext();
+      if (get().appStatus !== 'ready') return;
       if (validationContextChanged()) return;
 
       const authorityFailure = classifyActorAuthorityError(serverValidation);
@@ -145,15 +171,39 @@ export const createLicenseBackgroundValidationActions = ({
         return;
       }
 
-      markLastLicenseValidationSuccess(licenseKey);
+      // An offline cache is useful to preserve operations, but it is not a new
+      // server confirmation and must not replace lifecycle evidence or refresh
+      // the remote-validation TTL.
+      if (serverValidation.is_fallback === true) {
+        Logger.log('[Background] Respuesta fallback; se conserva la evidencia confirmada anterior.');
+        return;
+      }
 
       const localLicense = localLicenseBeforeValidation || await getLicenseFromStorage();
       if (validationContextChanged()) return;
+      assertCurrentContext();
+      const activeLicenseKey = get().licenseDetails?.license_key;
+      if (
+        (localLicense?.license_key &&
+          String(localLicense.license_key).trim() !== String(licenseKey || '').trim()) ||
+        String(activeLicenseKey || '').trim() !== String(licenseKey || '').trim() ||
+        (serverValidation.license_key &&
+          String(serverValidation.license_key).trim() !== String(licenseKey).trim()) ||
+        (serverValidation.license_id && localLicense.license_id &&
+          String(serverValidation.license_id).trim().toLowerCase() !== String(localLicense.license_id).trim().toLowerCase())
+      ) {
+        Logger.warn('[Background] Respuesta descartada; la identidad de licencia cambió durante la validación.');
+        return;
+      }
+
+      markLastLicenseValidationSuccess(licenseKey);
+
       const sourceLicense = localLicense || get().licenseDetails || {
         license_key: licenseKey
       };
 
       if (isLicensePlanBlockFailure(serverValidation)) {
+        assertCurrentContext();
         await get()._requireLicenseChange(sourceLicense, serverValidation);
         return;
       }
@@ -168,9 +218,25 @@ export const createLicenseBackgroundValidationActions = ({
         return;
       }
 
+      assertCurrentContext();
+      const storeLicenseStatus = get().licenseStatus;
+      const serverLifecycleStatus = serverValidation.lifecycle_state ||
+        serverValidation.status || serverValidation.reason || 'active';
+      const storedLifecycleEvidence = localLicense?.effective_lifecycle_validation;
+      const currentLifecycleEvidence = get().licenseDetails?.effective_lifecycle_validation;
+      const nextLifecycleEvidence = createEffectiveLicenseValidationEvidence(
+        serverValidation,
+        { effectiveStatus: serverLifecycleStatus }
+      );
+      const effectiveEvidenceChanged =
+        shouldReplaceEffectiveLicenseValidationEvidence(storedLifecycleEvidence, nextLifecycleEvidence) ||
+        shouldReplaceEffectiveLicenseValidationEvidence(currentLifecycleEvidence, nextLifecycleEvidence);
+
       const criticalChanges = {
         validityChanged: serverValidation.valid !== localLicense.valid,
-        statusChanged: serverValidation.status !== localLicense.status,
+        statusChanged: serverLifecycleStatus !== localLicense.status,
+        storeStatusChanged: storeLicenseStatus !== serverLifecycleStatus,
+        effectiveEvidenceChanged,
         expiryChanged:
           Boolean(serverValidation.expires_at) &&
           serverValidation.expires_at !== localLicense.expires_at,
@@ -204,29 +270,73 @@ export const createLicenseBackgroundValidationActions = ({
       };
 
       if (criticalChanges.wasRevoked) {
-        if (
-          isStaffDeviceAuthorizationFailure(serverValidation) &&
-          await hasStaffValidationContext(get(), localLicense)
-        ) {
-          await get()._requireStaffLogin(localLicense, serverValidation);
-          return;
+        if (isStaffDeviceAuthorizationFailure(serverValidation)) {
+          const requiresStaffLogin = await hasStaffValidationContext(get(), localLicense);
+          assertCurrentContext();
+          if (requiresStaffLogin) {
+            await get()._requireStaffLogin(localLicense, serverValidation);
+            return;
+          }
         }
 
-        await clearRejectedLicense(serverValidation);
+        assertCurrentContext();
+        lockActorRuntime('license_validation_fatal');
+        const invalidationContext = captureLicenseValidationContext(get(), licenseKey);
+        await clearLocalLicenseSession();
+        assertLicenseValidationContextCurrent(invalidationContext, get());
+
+        set({
+          appStatus: 'unauthenticated',
+          licenseDetails: null,
+          licenseStatus: normalizeValidationCode(serverValidation) || 'invalid',
+          companyProfile: null,
+          profileImportCandidate: null,
+          pendingTermsUpdate: null
+        });
+
+        Logger.error(
+          '[Background] Licencia remota no disponible:',
+          normalizeValidationCode(serverValidation)
+        );
+
+        showMessageModal(
+          'LICENCIA NO DISPONIBLE\n\nLa licencia local ya no existe o fue desactivada en el servidor. Ingresa una licencia valida para continuar.',
+          null,
+          {
+            type: 'error',
+            confirmButtonText: 'Entendido',
+            showCancel: false,
+            isDismissible: false
+          }
+        );
+
         return;
       }
 
       if (criticalChanges.needsRenewal) {
         Logger.warn('[Background] Fin de gracia detectado; esperando confirmación del handoff a Lanzo Local');
 
+        const expiredEvidence = createEffectiveLicenseValidationEvidence(
+          { ...serverValidation, valid: false },
+          { effectiveStatus: 'expired' }
+        );
         const expiredDetails = {
           ...localLicense,
           ...serverValidation,
           valid: false,
-          status: 'expired'
+          status: 'expired',
+          ...(expiredEvidence ? { effective_lifecycle_validation: expiredEvidence } : {})
         };
 
-        await saveLicenseToStorage(expiredDetails);
+        assertCurrentContext();
+        lockActorRuntime('license_renewal_required');
+        const renewalContext = captureLicenseValidationContext(get(), licenseKey);
+        await persistWithinLicenseValidationContext(
+          renewalContext,
+          get,
+          () => saveLicenseToStorage(expiredDetails)
+        );
+        assertLicenseValidationContextCurrent(renewalContext, get());
 
         set({
           appStatus: 'locked_renewal',
@@ -247,6 +357,8 @@ export const createLicenseBackgroundValidationActions = ({
       if (
         criticalChanges.validityChanged ||
         criticalChanges.statusChanged ||
+        criticalChanges.storeStatusChanged ||
+        criticalChanges.effectiveEvidenceChanged ||
         criticalChanges.expiryChanged ||
         criticalChanges.graceChanged ||
         criticalChanges.featuresChanged ||
@@ -258,10 +370,25 @@ export const createLicenseBackgroundValidationActions = ({
         criticalChanges.deviceRoleChanged ||
         criticalChanges.staffUserChanged
       ) {
+        assertCurrentContext();
         Logger.log('[Background] Cambios detectados en licencia, actualizando...');
         await get()._processServerValidation(serverValidation, localLicense, {
           refreshProfile,
-          reason: `background_${reason}`
+          reason: `background_${reason}`,
+          validationContext,
+          isContextCurrent: () => {
+            try {
+              assertCurrentContext();
+              return true;
+            } catch {
+              return false;
+            }
+          },
+          persistWithinContext: (operation) => persistWithinLicenseValidationContext(
+            validationContext,
+            get,
+            operation
+          )
         });
       } else {
         Logger.log('[Background] Licencia validada sin cambios. No se refresca perfil.');
@@ -269,14 +396,20 @@ export const createLicenseBackgroundValidationActions = ({
         if (refreshProfile || !get().companyProfile) {
           await get()._loadProfile(localLicense.license_key, {
             refreshProfile,
+            profileLoadMode: 'background',
             reason: `background_${reason}`
           });
         }
       }
 
+      assertCurrentContext();
       sessionStorage.setItem('Lanzo_app_loaded', Date.now().toString());
       get().clearServerStatus?.();
     } catch (error) {
+      if (isLicenseValidationContextStaleError(error)) {
+        Logger.log('[Background] Resultado descartado; cambió el tenant o la sesión del actor.');
+        return;
+      }
       if (validationContextChanged()) return;
       const authorityFailure = classifyActorAuthorityError(error);
       if (authorityFailure?.kind === 'device_blocked' || authorityFailure?.kind === 'cloning_detected') {

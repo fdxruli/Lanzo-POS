@@ -1,10 +1,12 @@
 import { useEffect, lazy, Suspense, useState } from 'react';
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, useLocation } from 'react-router-dom';
 import { AlertTriangle, XCircle } from 'lucide-react';
 import { useAppStore } from './store/useAppStore';
 import ErrorBoundary from './components/common/ErrorBoundary';
+import AdminLazyRouteRecoveryFallback from './components/common/AdminLazyRouteRecoveryFallback';
 import NavigationGuard from './components/common/NavigationGuard';
 import Logger from './services/Logger';
+import { startCustomerCreditAutoHealLifecycle } from './services/db/customerCreditRepository';
 import Layout from './components/layout/Layout';
 import WelcomeModal from './components/common/WelcomeModal';
 import StaffLoginModal from './components/common/StaffLoginModal';
@@ -28,6 +30,8 @@ import CustomersPage from './pages/CustomersPage';
 import DashboardPage from './pages/DashboardPage';
 import SettingsPage from './pages/SettingsPage';
 import AboutPage from './pages/AboutPage';
+import { ADMIN_NOT_FOUND_ROUTE } from './router/adminNotFoundRoute';
+import { ADMIN_ROUTE_PATHS, isAdminNotFoundPath } from './router/adminRoutePaths';
 import ServerStatusBanner from './components/common/ServerStatusBanner';
 import UpdatePrompt from './components/common/UpdatePrompt';
 import InstallPrompt from './components/common/InstallPrompt';
@@ -37,26 +41,22 @@ import BackupRuntime from './components/common/BackupRuntime';
 import { useSingleInstance } from './hooks/useSingleInstance';
 import TermsAndConditionsModal from './components/common/TermsAndConditionsModal';
 import { isCloudPosSyncEnabled } from './services/sync/syncConstants';
-import { clearCurrentAdminRuntimeCaches } from './pwa/adminRuntimeCache';
+import { fetchLegalPolicyState, isLegalPolicyPreviewEnabled } from './services/supabase';
 import {
   prepareAdminLazyRoute,
   recoverAdminLazyRoute,
 } from './pwa/adminLazyRouteRecovery';
+import { createRecoveryContextGuard } from './services/diagnostics/recoveryContext';
+import {
+  getActorCheckoutOwnerships,
+  getPendingActorOperations
+} from './services/auth/actorOperationalHandoff';
 
 const APP_BOOT_TIMEOUT_MS = 15_000;
 
-const resetAppShellCache = async () => {
-  try {
-    if ('caches' in window) {
-      await clearCurrentAdminRuntimeCaches(window.caches);
-    }
-  } catch (cacheError) {
-    Logger.warn('No se pudo limpiar la caché runtime administrativa:', cacheError);
-  }
-};
-
 const lazyRetry = (importFn, componentName = 'Component') => (
   lazy(async () => {
+    const isContextCurrent = createRecoveryContextGuard();
     try {
       await prepareAdminLazyRoute();
       return await importFn();
@@ -65,7 +65,9 @@ const lazyRetry = (importFn, componentName = 'Component') => (
 
       let recoveryResult = null;
       try {
-        recoveryResult = await recoverAdminLazyRoute({ error });
+        recoveryResult = isContextCurrent()
+          ? await recoverAdminLazyRoute({ error, isContextCurrent })
+          : { status: 'stale-context', reason: 'actor-or-tenant-context-changed' };
       } catch (recoveryError) {
         Logger.error(`Falló la recuperación automática de ${componentName}:`, recoveryError);
       }
@@ -74,6 +76,7 @@ const lazyRetry = (importFn, componentName = 'Component') => (
         return new Promise(() => {});
       }
 
+      const staleContext = recoveryResult?.status === 'stale-context' || !isContextCurrent();
       const offline = recoveryResult?.status === 'offline' || navigator.onLine === false;
       Logger.error(`No se pudo recuperar automáticamente ${componentName}. Mostrando UI de actualización.`, {
         status: recoveryResult?.status || 'error'
@@ -81,43 +84,13 @@ const lazyRetry = (importFn, componentName = 'Component') => (
 
       return {
         default: () => (
-          <div style={{
-            height: '100vh',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '20px',
-            textAlign: 'center'
-          }}>
-            <AlertTriangle size={48} className="text-yellow-500 mb-4" />
-            <h3>Error de carga del módulo</h3>
-            <p>No se pudo cargar la sección <strong>{componentName}</strong>.</p>
-            <p style={{ fontSize: '0.9rem', color: 'var(--text-light)', marginTop: '0.5rem' }}>
-              {offline
-                ? 'No hay conexión a internet. Reconéctate y vuelve a intentarlo.'
-                : 'Lanzo POS detectó archivos de una versión anterior. Actualiza para cargar la versión publicada sin borrar tus datos locales.'}
-            </p>
-            <button
-              className="btn btn-primary"
-              style={{ marginTop: '1rem' }}
-              onClick={() => {
-                recoverAdminLazyRoute({ error, force: true })
-                  .then((result) => {
-                    if (result?.status !== 'reloading') {
-                      Logger.error(`No se pudo forzar la recuperación de ${componentName}.`, {
-                        status: result?.status || 'error'
-                      });
-                    }
-                  })
-                  .catch((recoveryError) => {
-                    Logger.error(`Falló la recuperación manual de ${componentName}:`, recoveryError);
-                  });
-              }}
-            >
-              Actualizar Lanzo POS
-            </button>
-          </div>
+          <AdminLazyRouteRecoveryFallback
+            error={error}
+            isContextCurrent={isContextCurrent}
+            initialRecoveryStatus={staleContext ? 'blocked' : 'action_required'}
+            initiallyOffline={offline}
+            initiallyStale={staleContext}
+          />
         )
       };
     }
@@ -146,26 +119,63 @@ const PageLoader = () => (
   </div>
 );
 
-const AppBootRecovery = () => (
-  <main className="app-boot-recovery" role="alert">
-    <section className="app-boot-recovery__card">
-      <AlertTriangle size={42} aria-hidden="true" />
-      <h1>Lanzo POS está tardando en iniciar</h1>
-      <p>
-        La aplicación no pudo completar su inicialización. Tus datos locales no se han eliminado.
-      </p>
-      <button
-        type="button"
-        className="btn btn-primary"
-        onClick={() => resetAppShellCache().finally(() => window.location.reload())}
-      >
-        Recargar aplicación
-      </button>
-    </section>
-  </main>
-);
+const areBootOperationsIdle = () => {
+  try {
+    return getActorCheckoutOwnerships().length === 0
+      && getPendingActorOperations().length === 0;
+  } catch {
+    return false;
+  }
+};
+
+const AppBootRecovery = () => {
+  const [isContextCurrent] = useState(() => {
+    const contextGuard = createRecoveryContextGuard();
+    return () => {
+      try {
+        return contextGuard() === true;
+      } catch {
+        return false;
+      }
+    };
+  });
+  const canRetry = areBootOperationsIdle() && isContextCurrent();
+  const handleRetry = () => {
+    if (!areBootOperationsIdle() || !isContextCurrent()) return;
+    window.location.reload();
+  };
+
+  return (
+    <main className="app-boot-recovery" role="alert" aria-live="assertive">
+      <section className="app-boot-recovery__card">
+        <AlertTriangle size={40} aria-hidden="true" />
+        <h1>No pudimos iniciar Lanzo POS</h1>
+        <p>
+          La aplicación tardó demasiado en completar su preparación. Si una operación quedó pendiente, verifica su resultado antes de volver a intentarla.
+        </p>
+        <button
+          type="button"
+          className="ui-button ui-button--primary"
+          onClick={handleRetry}
+          disabled={!canRetry}
+          aria-describedby={!canRetry ? 'app-boot-recovery-disabled' : undefined}
+        >
+          Reintentar inicio
+        </button>
+        {!canRetry && (
+          <p className="app-boot-recovery__note" id="app-boot-recovery-disabled" role="status">
+            No podemos confirmar que la sesión y las operaciones estén listas para reiniciar Lanzo.
+          </p>
+        )}
+      </section>
+    </main>
+  );
+};
 
 function App() {
+  const { pathname } = useLocation();
+  const isNotFoundRoute = isAdminNotFoundPath(pathname);
+
   if (!import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY) {
     throw new Error('Faltan las variables de entorno de Supabase (VITE_SUPABASE_URL o VITE_SUPABASE_PUBLISHABLE_KEY). Revisa la configuración de Vercel.');
   }
@@ -175,6 +185,8 @@ function App() {
   const initializeApp = useAppStore((state) => state.initializeApp);
   const pendingTermsUpdate = useAppStore((state) => state.pendingTermsUpdate);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
+  const [legalPolicyState, setLegalPolicyState] = useState(null);
+  const legalLicenseKey = licenseDetails?.license_key || null;
   const startLicenseSync = useAppStore((state) => state.startLicenseSync);
   const stopLicenseSync = useAppStore((state) => state.stopLicenseSync);
   const startNotificationRealtime = useAppStore((state) => state.startNotificationRealtime);
@@ -185,7 +197,57 @@ function App() {
 
   const clearTermsNotification = () => {
     useAppStore.setState({ pendingTermsUpdate: null });
+    setLegalPolicyState((current) => (
+      current?.licenseKey === legalLicenseKey
+        ? { ...current, pending_documents: [] }
+        : current
+    ));
   };
+
+  useEffect(() => {
+    if (appStatus !== 'ready' || !legalLicenseKey || isLegalPolicyPreviewEnabled()) return undefined;
+
+    let isActive = true;
+    let latestRequest = 0;
+
+    const refreshLegalPolicyState = async () => {
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+
+      const requestId = ++latestRequest;
+      setLegalPolicyState((current) => (
+        current?.licenseKey === legalLicenseKey
+          ? { ...current, status: 'loading' }
+          : { licenseKey: legalLicenseKey, status: 'loading' }
+      ));
+
+      const result = await fetchLegalPolicyState(legalLicenseKey);
+      if (!isActive || requestId !== latestRequest) return;
+
+      if (result?.success) {
+        setLegalPolicyState({
+          ...result,
+          licenseKey: legalLicenseKey,
+          status: 'ready'
+        });
+      } else {
+        setLegalPolicyState({
+          success: false,
+          licenseKey: legalLicenseKey,
+          status: 'error',
+          pending_documents: [],
+          accepted_documents: []
+        });
+      }
+    };
+
+    void refreshLegalPolicyState();
+    window.addEventListener('online', refreshLegalPolicyState);
+
+    return () => {
+      isActive = false;
+      window.removeEventListener('online', refreshLegalPolicyState);
+    };
+  }, [appStatus, legalLicenseKey]);
 
   useEffect(() => {
     let isActive = true;
@@ -206,6 +268,11 @@ function App() {
       window.clearTimeout(timeoutId);
     };
   }, [initializeApp]);
+
+  useEffect(() => {
+    if (appStatus !== 'ready') return undefined;
+    return startCustomerCreditAutoHealLifecycle({ appStatus });
+  }, [appStatus]);
 
   useEffect(() => {
     if (appStatus === 'ready') {
@@ -338,7 +405,7 @@ function App() {
 
     case 'unauthenticated':
       return (
-        <ErrorBoundary>
+        <ErrorBoundary recoverySurface="welcome">
           <WelcomeModal />
         </ErrorBoundary>
       );
@@ -386,18 +453,32 @@ function App() {
     case 'ready':
       return (
         <>
-          <PersistenceWarningBanner />
+          <PersistenceWarningBanner suppressSecondaryBanner={isNotFoundRoute} />
           {shouldMountLocalBackupRuntime && <BackupRuntime />}
-          {shouldMountLocalBackupRuntime && <BackupReminder />}
-          <ServerStatusBanner />
-          <UpdatePrompt />
-          <InstallPrompt />
+          {shouldMountLocalBackupRuntime && <BackupReminder suppressSecondaryBanner={isNotFoundRoute} />}
+          <ServerStatusBanner isSuppressed={isNotFoundRoute} />
+          <UpdatePrompt isSuppressed={isNotFoundRoute} />
+          <InstallPrompt isSuppressed={isNotFoundRoute} />
           <Suspense fallback={<Layout><PageLoader /></Layout>}>
-            {pendingTermsUpdate && (
+            {(pendingTermsUpdate || (
+              legalPolicyState?.licenseKey === legalLicenseKey
+              && legalPolicyState.status === 'ready'
+              && legalPolicyState.pending_documents?.length > 0
+            )) && (
               <TermsAndConditionsModal
                 isOpen
                 onClose={clearTermsNotification}
                 isUpdateNotification
+                showDocumentIndex
+                updateDocuments={legalPolicyState?.licenseKey === legalLicenseKey
+                  ? legalPolicyState.pending_documents || []
+                  : []}
+                updateCheckStatus={legalPolicyState?.licenseKey === legalLicenseKey
+                  ? legalPolicyState.status
+                  : 'loading'}
+                legalPolicyState={legalPolicyState?.licenseKey === legalLicenseKey
+                  ? legalPolicyState
+                  : undefined}
               />
             )}
             <NavigationGuard />
@@ -405,7 +486,7 @@ function App() {
             <ErrorBoundary>
               <Routes>
                 <Route
-                  path="/renovacion-urgente"
+                  path={ADMIN_ROUTE_PATHS.urgentRenewal}
                   element={(
                     <div style={{ width: '100vw', height: '100vh', background: '#000' }}>
                       <RenewalModal />
@@ -414,16 +495,17 @@ function App() {
                 />
                 <Route path="/" element={<Layout />}>
                   <Route index element={<PermissionRoute permission="pos"><Suspense fallback={<PageLoader />}><PosPage /></Suspense></PermissionRoute>} />
-                  <Route path="caja" element={<PermissionRoute permission="cash_register"><Suspense fallback={<PageLoader />}><CajaPage /></Suspense></PermissionRoute>} />
-                  <Route path="pedidos" element={<PermissionRoute permission="orders"><Suspense fallback={<PageLoader />}><OrdersPage /></Suspense></PermissionRoute>} />
-                  <Route path="pedidos-online" element={<EcommerceOrdersRoute><Suspense fallback={<PageLoader />}><EcommerceOrdersPage /></Suspense></EcommerceOrdersRoute>} />
-                  <Route path="productos" element={<PermissionRoute permission={['products', 'inventory']}><Suspense fallback={<PageLoader />}><ProductsPage /></Suspense></PermissionRoute>} />
-                  <Route path="clientes" element={<PermissionRoute permission="customers"><Suspense fallback={<PageLoader />}><CustomersPage /></Suspense></PermissionRoute>} />
-                  <Route path="ventas" element={<SalesReportsRoute><Suspense fallback={<PageLoader />}><DashboardPage /></Suspense></SalesReportsRoute>} />
-                  <Route path="agentes-ia" element={<CommercialAIAgentsRoute><Suspense fallback={<PageLoader />}><CommercialAIAgentsPage /></Suspense></CommercialAIAgentsRoute>} />
-                  <Route path="portal-online" element={<PermissionRoute permission="settings"><Suspense fallback={<PageLoader />}><EcommercePortalPage /></Suspense></PermissionRoute>} />
-                  <Route path="configuracion" element={<SettingsRoute><Suspense fallback={<PageLoader />}><SettingsPage /></Suspense></SettingsRoute>} />
-                  <Route path="acerca-de" element={<Suspense fallback={<PageLoader />}><AboutPage /></Suspense>} />
+                  <Route path={ADMIN_ROUTE_PATHS.cashRegister} element={<PermissionRoute permission="cash_register"><Suspense fallback={<PageLoader />}><CajaPage /></Suspense></PermissionRoute>} />
+                  <Route path={ADMIN_ROUTE_PATHS.orders} element={<PermissionRoute permission="orders"><Suspense fallback={<PageLoader />}><OrdersPage /></Suspense></PermissionRoute>} />
+                  <Route path={ADMIN_ROUTE_PATHS.onlineOrders} element={<EcommerceOrdersRoute><Suspense fallback={<PageLoader />}><EcommerceOrdersPage /></Suspense></EcommerceOrdersRoute>} />
+                  <Route path={ADMIN_ROUTE_PATHS.products} element={<PermissionRoute permission={['products', 'inventory']}><Suspense fallback={<PageLoader />}><ProductsPage /></Suspense></PermissionRoute>} />
+                  <Route path={ADMIN_ROUTE_PATHS.customers} element={<PermissionRoute permission="customers"><Suspense fallback={<PageLoader />}><CustomersPage /></Suspense></PermissionRoute>} />
+                  <Route path={ADMIN_ROUTE_PATHS.sales} element={<SalesReportsRoute><Suspense fallback={<PageLoader />}><DashboardPage /></Suspense></SalesReportsRoute>} />
+                  <Route path={ADMIN_ROUTE_PATHS.aiAgents} element={<CommercialAIAgentsRoute><Suspense fallback={<PageLoader />}><CommercialAIAgentsPage /></Suspense></CommercialAIAgentsRoute>} />
+                  <Route path={ADMIN_ROUTE_PATHS.onlinePortal} element={<PermissionRoute permission="settings"><Suspense fallback={<PageLoader />}><EcommercePortalPage /></Suspense></PermissionRoute>} />
+                  <Route path={ADMIN_ROUTE_PATHS.settings} element={<SettingsRoute><Suspense fallback={<PageLoader />}><SettingsPage /></Suspense></SettingsRoute>} />
+                  <Route path={ADMIN_ROUTE_PATHS.about} element={<Suspense fallback={<PageLoader />}><AboutPage /></Suspense>} />
+                  <Route {...ADMIN_NOT_FOUND_ROUTE} />
                 </Route>
               </Routes>
             </ErrorBoundary>
