@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest';
 import {
   MAX_TELEGRAM_MESSAGE_CODEPOINTS,
   TELEGRAM_CONTACT_BASE_URL,
+  TELEGRAM_SHARE_BASE_URL,
+  TELEGRAM_CHANNEL_DIRECT_MESSAGES_STATUS,
+  TELEGRAM_SUPPORT_CONFIGURATION,
   TELEGRAM_CONTACT_INTENT,
+  buildTelegramSupportTarget,
   buildTelegramContactMessage,
   buildTelegramContactUrl,
   createTelegramContact,
@@ -18,13 +22,39 @@ const AUTHORIZED_LOCAL_CONTEXT = Object.freeze({
 });
 
 describe('telegramContact', () => {
-  it('builds links only to the official HTTPS Telegram account', () => {
+  it('TG-17: exposes only the verified public channel reference while direct support is unverified', () => {
+    const target = buildTelegramSupportTarget();
+    const url = new URL(target.url);
+
+    expect(TELEGRAM_SUPPORT_CONFIGURATION).toMatchObject({
+      destination: 'public_channel_reference',
+      username: 'LanzoPOS_Oficial',
+      directMessagesStatus: 'unverified',
+      statusCode: 'DIRECT_TELEGRAM_SUPPORT_UNVERIFIED'
+    });
+    expect(target).toMatchObject({
+      kind: 'channel_reference',
+      status: 'DIRECT_TELEGRAM_SUPPORT_UNVERIFIED',
+      username: 'LanzoPOS_Oficial',
+      preparedMessageIncluded: false
+    });
+    expect(`${url.origin}${url.pathname}`).toBe('https://t.me/LanzoPOS_Oficial');
+    expect(url.search).toBe('');
+    expect(target.url).not.toContain('/share/url');
+    expect(target.url).not.toContain('?direct');
+    expect(target.url).not.toContain('?text=');
+  });
+
+  it('uses Telegram’s documented share chooser and does not target the channel as a direct chat', () => {
     const contact = createTelegramContact(TELEGRAM_CONTACT_INTENT.PRO_INQUIRY);
     const url = new URL(contact.url);
 
-    expect(`${url.origin}${url.pathname}`).toBe(TELEGRAM_CONTACT_BASE_URL);
-    expect([...url.searchParams.keys()]).toEqual(['text']);
+    expect(`${url.origin}${url.pathname}`).toBe(TELEGRAM_SHARE_BASE_URL);
+    expect(url.searchParams.get('url')).toBe(TELEGRAM_CONTACT_BASE_URL);
+    expect([...url.searchParams.keys()]).toEqual(['url', 'text']);
     expect(url.searchParams.get('text')).toBe(contact.message);
+    expect(contact.url).not.toContain(`${TELEGRAM_CONTACT_BASE_URL}?text=`);
+    expect(TELEGRAM_CHANNEL_DIRECT_MESSAGES_STATUS).toBe('unverified');
   });
 
   it('encodes accents, emoji, line breaks and special characters for Telegram', () => {
@@ -102,7 +132,10 @@ describe('telegramContact', () => {
 
     expect(sanitized.startsWith('Mi Tienda')).toBe(true);
     expect(Array.from(sanitized).length).toBe(48);
-    expect(sanitized).not.toMatch(/[\u0000-\u001F\u007F-\u009F]/);
+    expect(Array.from(sanitized).some((character) => {
+      const codePoint = character.codePointAt(0);
+      return codePoint <= 0x1F || (codePoint >= 0x7F && codePoint <= 0x9F);
+    })).toBe(false);
   });
 
   it('caps generated messages and never accepts an arbitrary URL target', () => {
@@ -114,7 +147,8 @@ describe('telegramContact', () => {
     };
     const url = new URL(buildTelegramContactUrl(TELEGRAM_CONTACT_INTENT.PRICING_INQUIRY, context));
 
-    expect(`${url.origin}${url.pathname}`).toBe(TELEGRAM_CONTACT_BASE_URL);
+    expect(`${url.origin}${url.pathname}`).toBe(TELEGRAM_SHARE_BASE_URL);
+    expect(url.searchParams.get('url')).toBe(TELEGRAM_CONTACT_BASE_URL);
     expect(Array.from(url.searchParams.get('text')).length).toBeLessThanOrEqual(MAX_TELEGRAM_MESSAGE_CODEPOINTS);
     expect(url.searchParams.get('text')).toContain('Z'.repeat(48));
   });
@@ -151,7 +185,8 @@ describe('telegramContact', () => {
     });
     expect(message).toContain('CAFETERIA LAS ALAS');
     const url = new URL(buildTelegramContactUrl(TELEGRAM_CONTACT_INTENT.PRO_ACTIVATION, AUTHORIZED_LOCAL_CONTEXT));
-    expect(url.origin + url.pathname).toBe(TELEGRAM_CONTACT_BASE_URL);
+    expect(url.origin + url.pathname).toBe(TELEGRAM_SHARE_BASE_URL);
+    expect(url.searchParams.get('url')).toBe(TELEGRAM_CONTACT_BASE_URL);
   });
 
 });

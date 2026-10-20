@@ -6,6 +6,7 @@ import {
 } from '../supabase';
 import { SYNC_LIMITS } from './syncConstants';
 import { assertLocalTenantSyncAccess } from '../tenant/localTenantGuard';
+import { captureServiceIncidentNotice } from '../diagnostics/incidentEventCenter';
 
 export const buildPosSyncAuthContext = async ({ licenseKey, deviceRole = null }) => {
   await assertLocalTenantSyncAccess(
@@ -73,6 +74,7 @@ export const posSyncClient = {
     });
 
     if (error) {
+      captureServiceIncidentNotice(error, { source: 'supabase_rpc' });
       throw error;
     }
 

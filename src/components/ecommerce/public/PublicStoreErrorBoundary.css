@@ -1,0 +1,82 @@
+.public-store-error,
+.public-store-error *,
+.public-store-error *::before,
+.public-store-error *::after {
+  box-sizing: border-box;
+}
+
+.public-store-error {
+  display: grid;
+  min-height: 100vh;
+  min-height: 100dvh;
+  align-items: center;
+  justify-items: center;
+  padding:
+    max(1.25rem, env(safe-area-inset-top, 0px))
+    max(1rem, env(safe-area-inset-right, 0px))
+    max(1.25rem, env(safe-area-inset-bottom, 0px))
+    max(1rem, env(safe-area-inset-left, 0px));
+  background:
+    radial-gradient(circle at top right, var(--store-primary-soft, var(--brand-accent-soft)), transparent 34rem),
+    var(--store-page-bg, var(--background-color));
+  color: var(--store-text, var(--text-color));
+  font-family: var(--store-font-body, inherit);
+}
+
+.public-store-error__content {
+  display: grid;
+  justify-items: start;
+  gap: 0.75rem;
+  width: min(100%, 52rem);
+  padding: clamp(1rem, 4vw, 2.5rem);
+  border-inline-start: 3px solid var(--store-primary, var(--brand-accent));
+}
+
+.public-store-error__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 0.9rem;
+  background: var(--store-primary-soft, var(--brand-accent-soft));
+  color: var(--store-text-brand, var(--brand-accent-text));
+}
+
+.public-store-error__eyebrow {
+  margin: 0;
+  color: var(--store-text-muted, var(--text-light));
+  font-size: 0.75rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.public-store-error h1 {
+  max-width: 22ch;
+  margin: 0;
+  color: var(--store-text-strong, var(--text-dark));
+  font-family: var(--store-font-heading, inherit);
+  font-size: clamp(1.65rem, 5vw, 2.8rem);
+  line-height: 1.15;
+}
+
+.public-store-error__content > p:not(.public-store-error__eyebrow) {
+  max-width: 64ch;
+  margin: 0;
+  color: var(--store-text, var(--text-color));
+  font-size: 0.97rem;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.public-store-error__content .public-store-error__status {
+  color: var(--store-text-muted, var(--text-light));
+  font-size: 0.88rem;
+}
+
+.public-store-error__action {
+  min-height: 2.75rem;
+  margin-top: 0.45rem;
+  white-space: normal;
+}

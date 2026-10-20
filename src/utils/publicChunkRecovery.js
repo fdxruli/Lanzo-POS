@@ -1,32 +1,55 @@
 const CHUNK_ERROR_PATTERN = /ChunkLoadError|Loading chunk [\d-]+ failed|Failed to fetch dynamically imported module|Importing a module script failed/i;
-const STORAGE_PREFIX = 'lanzo:public-chunk-recovery:';
+const RECOVERY_KEY = 'lanzo:public-chunk-recovery:v1';
+
+const safeRead = (value, key) => {
+  try {
+    return value?.[key];
+  } catch {
+    return undefined;
+  }
+};
+
+const getSessionStorage = (locationRef) => {
+  try {
+    return locationRef?.storage || globalThis.sessionStorage || null;
+  } catch {
+    return null;
+  }
+};
 
 export const isPublicChunkLoadError = (error) => {
-  const message = [error?.name, error?.message, error?.reason?.message, error?.error?.message]
+  const message = [
+    safeRead(error, 'name'),
+    safeRead(error, 'message'),
+    safeRead(safeRead(error, 'reason'), 'message'),
+    safeRead(safeRead(error, 'error'), 'message')
+  ]
     .filter(Boolean)
     .join(' ');
   return CHUNK_ERROR_PATTERN.test(message);
 };
 
-export const getPublicChunkRecoveryKey = (locationRef = window.location) => (
-  `${STORAGE_PREFIX}${locationRef.pathname}`
-);
+// One tab-wide mark avoids storing a public store slug or route-derived value.
+export const getPublicChunkRecoveryKey = () => RECOVERY_KEY;
 
 export function recoverFromPublicChunkError(error, {
-  locationRef = window.location,
-  storage = window.sessionStorage
+  locationRef = globalThis.window?.location,
+  storage,
+  navigatorRef = globalThis.navigator
 } = {}) {
   if (!isPublicChunkLoadError(error)) return false;
-  const key = getPublicChunkRecoveryKey(locationRef);
-  if (storage.getItem(key) === 'attempted') return false;
-  storage.setItem(key, 'attempted');
+  if (navigatorRef?.onLine === false || typeof locationRef?.reload !== 'function') return false;
+
+  const key = RECOVERY_KEY;
+  const resolvedStorage = storage || getSessionStorage(locationRef);
+  if (!resolvedStorage) return false;
+  try {
+    if (resolvedStorage.getItem(key) === 'attempted') return false;
+    resolvedStorage.setItem(key, 'attempted');
+  } catch {
+    // Without a durable one-shot marker, reloading could create a recovery loop.
+    return false;
+  }
   locationRef.reload();
   return true;
-}
-
-export function markPublicStoreBootSuccessful({
-  locationRef = window.location,
-  storage = window.sessionStorage
-} = {}) {
-  storage.removeItem(getPublicChunkRecoveryKey(locationRef));
 }

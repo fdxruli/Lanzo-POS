@@ -359,10 +359,13 @@ describe('PublicStorePage checkout integration', () => {
     const user = userEvent.setup();
     renderPage();
     await openAndFillCheckout(user);
-    dispatchPersistedPageShow();
+    await act(async () => {
+      dispatchPersistedPageShow();
+    });
     await waitFor(() => {
       expect(screen.queryByRole('dialog', { name: 'Finalizar pedido' })).not.toBeInTheDocument();
     });
+    await waitFor(() => expect(serviceMocks.getPublicCatalog).toHaveBeenCalledTimes(2));
     expect(window.sessionStorage.getItem(getPublicCartStorageKey('mi-negocio'))).not.toBeNull();
 
     await user.click(screen.getByRole('button', {
@@ -377,10 +380,13 @@ describe('PublicStorePage checkout integration', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar pedido' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo confirmar');
 
-    dispatchPersistedPageShow();
+    await act(async () => {
+      dispatchPersistedPageShow();
+    });
     await waitFor(() => {
       expect(screen.queryByRole('dialog', { name: 'Finalizar pedido' })).not.toBeInTheDocument();
     });
+    await waitFor(() => expect(serviceMocks.getPublicCatalog).toHaveBeenCalledTimes(3));
     expect(window.sessionStorage.getItem(getPublicCartStorageKey('mi-negocio'))).not.toBeNull();
   });
 

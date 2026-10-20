@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   getPublicChunkRecoveryKey,
   isPublicChunkLoadError,
-  markPublicStoreBootSuccessful,
   recoverFromPublicChunkError
 } from '../publicChunkRecovery';
 
@@ -34,9 +33,32 @@ describe('public chunk recovery', () => {
     expect(locationRef.reload).not.toHaveBeenCalled();
   });
 
-  it('clears the path-scoped mark after a successful boot', () => {
-    storage.setItem(getPublicChunkRecoveryKey(locationRef), 'attempted');
-    markPublicStoreBootSuccessful({ storage, locationRef });
-    expect(storage.getItem(getPublicChunkRecoveryKey(locationRef))).toBeNull();
+  it('keeps the one-shot marker for the tab session so later chunk failures cannot loop', () => {
+    const error = new Error('Failed to fetch dynamically imported module');
+    expect(recoverFromPublicChunkError(error, { storage, locationRef })).toBe(true);
+    // A successful root boot does not clear the mark before a later lazy chunk can fail.
+    expect(storage.getItem(getPublicChunkRecoveryKey(locationRef))).toBe('attempted');
+    expect(recoverFromPublicChunkError(error, { storage, locationRef })).toBe(false);
+    expect(locationRef.reload).toHaveBeenCalledOnce();
+  });
+
+  it('does not reload offline or when the tab cannot persist its one-shot marker', () => {
+    const error = new Error('Failed to fetch dynamically imported module');
+    expect(recoverFromPublicChunkError(error, {
+      storage,
+      locationRef,
+      navigatorRef: { onLine: false }
+    })).toBe(false);
+
+    const restrictedStorage = {
+      getItem() { throw new Error('storage blocked'); },
+      setItem() { throw new Error('storage blocked'); }
+    };
+    expect(recoverFromPublicChunkError(error, {
+      storage: restrictedStorage,
+      locationRef,
+      navigatorRef: { onLine: true }
+    })).toBe(false);
+    expect(locationRef.reload).not.toHaveBeenCalled();
   });
 });

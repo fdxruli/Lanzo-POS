@@ -1,0 +1,42 @@
+name: Incident Recovery QA Lab Validation
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/qa/**'
+      - 'src/components/common/*Incident*'
+      - 'src/components/common/ErrorBoundary.jsx'
+      - 'src/services/diagnostics/**'
+      - 'incident-qa.html'
+      - 'scripts/*incident-lab*'
+      - 'vite.config.js'
+      - 'vercel.json'
+      - '.github/workflows/incident-lab-validation.yml'
+permissions:
+  contents: read
+jobs:
+  isolated-lab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Interaction and isolation tripwires
+        run: npx vitest run src/qa src/tests/ErrorBoundary.test.jsx src/components/common/__tests__/IncidentReportForm.test.jsx src/components/common/__tests__/IncidentReportEntry.test.jsx src/components/common/__tests__/ErrorBoundary.phase2.test.jsx src/components/common/__tests__/IncidentRecovery.ux.test.jsx src/services/diagnostics/__tests__ --maxWorkers=4
+      - name: Focal ESLint
+        run: npx eslint src/qa src/components/common/IncidentErrorBoundary.jsx src/components/common/IncidentRecoveryQaGallery.jsx src/components/common/IncidentReportForm.jsx src/components/common/IncidentReportEntry.jsx src/components/common/IncidentRecoveryPanel.jsx src/services/diagnostics/contextSnapshotGuard.js src/services/diagnostics/recoveryContext.js
+      - name: Production executable exclusion
+        run: |
+          npm run build
+          node scripts/audit-incident-lab-build.mjs dist production
+      - name: Preview static isolation and complete shell precache
+        env:
+          VERCEL_ENV: preview
+        run: |
+          npm run build
+          node scripts/audit-incident-lab-build.mjs dist preview
+      - run: git diff --check

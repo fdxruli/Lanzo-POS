@@ -1,3 +1,11 @@
+import {
+  buildSafeIncidentReport,
+  classifyIncident,
+  getSafeIncidentCode,
+  getSafeBrowserLabel,
+  INCIDENT_CATEGORY
+} from '../diagnostics/incidentDiagnostics';
+
 const PLAN_NAMES_BY_CODE = Object.freeze({
   free_trial: 'Lanzo Local',
   basic_monthly: 'Lanzo Basico Legacy',
@@ -9,6 +17,20 @@ const DEFAULT_SUPPORT_EMAIL = 'lanzocontacto@gmail.com';
 const normalizeText = (value, fallback = '') => {
   const text = String(value ?? '').trim();
   return text && text !== 'undefined' ? text : fallback;
+};
+
+const getSafeBuildDate = (value) => {
+  const candidate = normalizeText(value).slice(0, 80);
+  if (!candidate) return 'No disponible';
+  const timestamp = new Date(candidate);
+  return Number.isNaN(timestamp.getTime()) ? 'No disponible' : timestamp.toISOString();
+};
+
+const getSafeLanguage = (value) => {
+  const language = normalizeText(value).slice(0, 24);
+  return /^[a-z]{2,3}(?:-[a-z0-9]{2,8}){0,3}$/i.test(language)
+    ? language
+    : 'No disponible';
 };
 
 export const getSupportEmail = () => normalizeText(
@@ -24,35 +46,21 @@ const getSafeDatabaseFamily = (databaseName) => {
   return name ? 'Base local (nombre redactado)' : 'No disponible';
 };
 
-const redactSensitiveText = (value) => String(value || '')
-  .replace(/\b(license(?:\s|_|-)?key|licencia|token|jwt|password|contrase(?:ñ|n)a|pin)\s*[:=]\s*[^\s,;]+/gi, '$1: [redactado]')
-  .replace(/\b(?:license(?:\s|_|-)?key|licencia|token|jwt|password|contrase(?:ñ|n)a|pin)\b\s+[^\s,;]+/gi, '[redactado]')
-  .replace(/\b(?:LanzoDB_t_|t_)[a-zA-Z0-9_-]{8,}\b/g, '[identificador de tenant redactado]')
-  .replace(/\b[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g, '[redactado]');
-
 const getRecoveryEnvironment = (environment = {}) => {
   const browser = environment.navigator || globalThis.navigator;
-  const pageLocation = environment.location || globalThis.location;
   const now = environment.now instanceof Date ? environment.now : new Date();
 
   return {
     appVersion: normalizeText(environment.appVersion ?? import.meta.env?.VITE_APP_VERSION, 'No disponible'),
     buildCommit: normalizeText(environment.buildCommit ?? import.meta.env?.VITE_BUILD_COMMIT, 'No disponible'),
-    buildDate: normalizeText(environment.buildDate ?? import.meta.env?.VITE_BUILD_DATE, 'No disponible'),
-    userAgent: normalizeText(environment.userAgent ?? browser?.userAgent, 'No disponible'),
-    platform: normalizeText(environment.platform ?? browser?.platform, 'No disponible'),
-    language: normalizeText(environment.language ?? browser?.language, 'No disponible'),
+    buildDate: getSafeBuildDate(environment.buildDate ?? import.meta.env?.VITE_BUILD_DATE),
+    userAgent: getSafeBrowserLabel(environment.userAgent ?? browser?.userAgent),
+    language: getSafeLanguage(environment.language ?? browser?.language),
     online: typeof environment.online === 'boolean'
       ? environment.online
       : browser?.onLine !== false,
-    path: normalizeText(environment.path ?? pageLocation?.pathname, 'No disponible'),
     timestamp: now.toISOString()
   };
-};
-
-const normalizeDiagnosticCode = (value, fallback = 'UNKNOWN_ADMIN_BOOT_ERROR') => {
-  const code = normalizeText(value, fallback).replace(/[^A-Za-z0-9_.-]/g, '_');
-  return code.slice(0, 120) || fallback;
 };
 
 /**
@@ -62,35 +70,39 @@ const normalizeDiagnosticCode = (value, fallback = 'UNKNOWN_ADMIN_BOOT_ERROR') =
  */
 export function buildAdminBootSupportReport(boot = {}, environment = {}) {
   const details = getRecoveryEnvironment(environment);
-  const code = normalizeDiagnosticCode(boot.errorCode || boot.code);
-  const message = redactSensitiveText(normalizeText(boot.message, 'No disponible')).slice(0, 500);
-  const classification = redactSensitiveText(
-    normalizeText(boot.classification, 'application_runtime')
-  ).slice(0, 120);
+  const category = boot.classification === 'asset_load_failure'
+    ? INCIDENT_CATEGORY.NAVIGATION_RESOURCE
+    : undefined;
+  const incident = classifyIncident({ code: boot.errorCode || boot.code }, { category });
+  const baseReport = buildSafeIncidentReport(
+    { code: boot.errorCode || boot.code },
+    { category },
+    {
+      appVersion: details.appVersion,
+      buildCommit: details.buildCommit,
+      userAgent: environment.userAgent ?? globalThis.navigator?.userAgent,
+      pathname: environment.path ?? globalThis.location?.pathname,
+      online: details.online,
+      now: new Date(details.timestamp)
+    }
+  );
+  const allowedStages = new Set(['initial_startup', 'ready_runtime_loading', 'route_loading']);
+  const stage = allowedStages.has(boot.stage) ? boot.stage : 'unknown';
+  const safeStatus = ['idle', 'checking', 'ready', 'migrating', 'recovery_required', 'failed']
+    .includes(boot.databaseRecoveryStatus)
+    ? boot.databaseRecoveryStatus
+    : 'unknown';
 
   return [
-    'REPORTE TÉCNICO DE INICIO ADMINISTRATIVO - LANZO POS',
-    '',
-    `Código de diagnóstico: ${code}`,
-    `Etapa de inicio: ${normalizeText(boot.stage, 'ready_runtime_loading')}`,
-    `Clasificación: ${classification}`,
-    `Mensaje saneado: ${message}`,
-    `Estado de recuperación de base: ${normalizeText(boot.databaseRecoveryStatus, 'No disponible')}`,
+    baseReport,
+    `Etapa de inicio: ${stage}`,
+    `Estado de recuperación local: ${safeStatus}`,
     `Tenant runtime listo: ${boot.tenantRuntimeReady === true ? 'Sí' : 'No'}`,
     `Recuperación de assets intentada: ${boot.assetRecoveryAttempted === true ? 'Sí' : 'No'}`,
-    `Resultado de recuperación de assets: ${normalizeText(boot.assetRecoveryResult, 'No intentada')}`,
-    '',
-    `Versión de Lanzo: ${details.appVersion}`,
-    `Commit de build: ${details.buildCommit}`,
-    `Fecha de build: ${details.buildDate}`,
+    `Incidencia: ${getSafeIncidentCode({ code: incident.code }, incident.category)}`,
     `Navegador/entorno: ${details.userAgent}`,
-    `Plataforma: ${details.platform}`,
     `Idioma: ${details.language}`,
-    `Estado de red: ${details.online ? 'Online' : 'Offline'}`,
-    `Ruta: ${details.path}`,
-    `Fecha y hora: ${details.timestamp}`,
-    '',
-    'Reporte generado automáticamente. No incluye credenciales, identificadores de tenant ni datos de negocio.'
+    `Fecha de build: ${details.buildDate}`
   ].join('\n');
 }
 
@@ -101,9 +113,9 @@ export function buildAdminBootSupportReport(boot = {}, environment = {}) {
  */
 export function buildDatabaseRecoverySupportReport(recovery = {}, environment = {}) {
   const details = getRecoveryEnvironment(environment);
-  const affectedStores = Array.isArray(recovery.affectedStores)
-    ? recovery.affectedStores.filter((store) => typeof store === 'string' && store.length > 0)
-    : [];
+  const affectedStoreCount = Array.isArray(recovery.affectedStores)
+    ? Math.min(recovery.affectedStores.filter((store) => typeof store === 'string').length, 100)
+    : 0;
   const optionalVersions = [
     Number.isFinite(recovery.detectedNativeVersion)
       ? `Versión local detectada: ${recovery.detectedNativeVersion}`
@@ -113,27 +125,30 @@ export function buildDatabaseRecoverySupportReport(recovery = {}, environment = 
       : null
   ].filter(Boolean);
 
+  const allowedStates = new Set(['idle', 'checking', 'ready', 'migrating', 'recovery_required', 'failed']);
+  const status = allowedStates.has(recovery.status) ? recovery.status : 'unknown';
+  const incident = classifyIncident({ code: recovery.errorCode }, { category: INCIDENT_CATEGORY.INDEXEDDB });
+  const baseReport = buildSafeIncidentReport(
+    { code: getSafeIncidentCode({ code: recovery.errorCode }, incident.category) },
+    { category: INCIDENT_CATEGORY.INDEXEDDB },
+    {
+      appVersion: details.appVersion,
+      buildCommit: environment.buildCommit,
+      userAgent: environment.userAgent ?? globalThis.navigator?.userAgent,
+      pathname: environment.path ?? globalThis.location?.pathname,
+      online: details.online,
+      now: new Date(details.timestamp)
+    }
+  );
+
   return [
-    'REPORTE TÉCNICO DE RECUPERACIÓN LOCAL - LANZO POS',
-    '',
-    `Código de diagnóstico: ${normalizeText(recovery.errorCode, 'No disponible')}`,
-    `Estado de recuperación: ${normalizeText(recovery.status, 'No disponible')}`,
-    `Clasificación/mensaje: ${redactSensitiveText(normalizeText(recovery.message, 'No disponible'))}`,
+    baseReport,
+    `Estado de recuperación: ${status}`,
     `Base local: ${getSafeDatabaseFamily(recovery.databaseName)}`,
     ...optionalVersions,
     `Requiere migración: ${recovery.requiresMigration === true ? 'Sí' : 'No'}`,
     `Reintentable: ${recovery.isRetryable === false ? 'No' : 'Sí'}`,
-    ...(affectedStores.length > 0 ? [`Stores afectados: ${affectedStores.join(', ')}`] : []),
-    '',
-    `Versión de Lanzo: ${details.appVersion}`,
-    `Navegador/entorno: ${details.userAgent}`,
-    `Plataforma: ${details.platform}`,
-    `Idioma: ${details.language}`,
-    `Estado de red: ${details.online ? 'Online' : 'Offline'}`,
-    `Ruta: ${details.path}`,
-    `Fecha y hora: ${details.timestamp}`,
-    '',
-    'Reporte generado automáticamente. No incluye datos sensibles ni contenido de negocio.'
+    ...(affectedStoreCount > 0 ? [`Cantidad de stores afectados: ${affectedStoreCount}`] : [])
   ].join('\n');
 }
 
@@ -190,6 +205,13 @@ const getLicenseKey = (licenseDetails = {}) => normalizeText(
   'No disponible'
 );
 
+const maskLicenseKey = (licenseKey) => {
+  const normalized = normalizeText(licenseKey);
+  if (!normalized) return 'No disponible';
+  const suffix = normalized.slice(-4);
+  return suffix ? `••••${suffix}` : '••••';
+};
+
 const getCompanyName = (companyProfile = {}) => normalizeText(
   companyProfile?.name ||
   companyProfile?.business_name ||
@@ -199,7 +221,7 @@ const getCompanyName = (companyProfile = {}) => normalizeText(
 
 const getDeviceInfo = () => {
   if (typeof navigator === 'undefined') return 'No disponible';
-  return normalizeText(navigator.userAgent, 'No disponible');
+  return getSafeBrowserLabel(navigator.userAgent);
 };
 
 export function buildSupportEmailPayload({
@@ -223,7 +245,7 @@ export function buildSupportEmailPayload({
     '',
     `Plan comercial: ${commercialPlan}`,
     `Codigo interno del plan: ${planCode}`,
-    `Licencia: ${getLicenseKey(licenseDetails)}`,
+    `Licencia (terminación): ${maskLicenseKey(getLicenseKey(licenseDetails))}`,
     `Nombre del negocio: ${getCompanyName(companyProfile)}`,
     `Version de app: ${normalizeText(appVersion, 'No disponible')}`,
     `Dispositivo/navegador: ${getDeviceInfo()}`,
@@ -240,7 +262,7 @@ export function buildSupportEmailPayload({
     body,
     planCode,
     commercialPlan,
-    licenseKey: getLicenseKey(licenseDetails),
+    licenseKey: maskLicenseKey(getLicenseKey(licenseDetails)),
     companyName: getCompanyName(companyProfile),
     appVersion: normalizeText(appVersion, 'No disponible'),
     issueType: normalizedIssueType,

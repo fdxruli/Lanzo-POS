@@ -3,10 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import { publicStoreRoutes } from './router/publicStoreRoutes';
 import { preparePublicStoreDocument } from './router/preparePublicStoreDocument';
-import {
-  markPublicStoreBootSuccessful,
-  recoverFromPublicChunkError
-} from './utils/publicChunkRecovery';
+import { recoverFromPublicChunkError } from './utils/publicChunkRecovery';
 import './index.css';
 import './styles/design-tokens.css';
 import './styles/buttons.css';
@@ -20,10 +17,8 @@ if (!rootElement) {
 
 preparePublicStoreDocument();
 
-let successfulBootTimer = null;
 const handlePublicRuntimeError = (event) => {
-  const recovered = recoverFromPublicChunkError(event.error || event.reason || event);
-  if (recovered) window.clearTimeout(successfulBootTimer);
+  recoverFromPublicChunkError(event.error || event.reason || event);
 };
 window.addEventListener('error', handlePublicRuntimeError);
 window.addEventListener('unhandledrejection', handlePublicRuntimeError);
@@ -35,5 +30,3 @@ ReactDOM.createRoot(rootElement).render(
     <RouterProvider router={router} />
   </React.StrictMode>
 );
-
-successfulBootTimer = window.setTimeout(() => markPublicStoreBootSuccessful(), 1_000);

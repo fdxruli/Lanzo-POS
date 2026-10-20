@@ -76,7 +76,6 @@ self.addEventListener('install', (event) => {
     cacheStorage: self.caches,
     origin: self.location.origin,
     buildId: WORKER_BUILD_ID,
-    skipWaiting: () => self.skipWaiting(),
   }).catch((error) => {
     console.warn('[PWA] No se pudo preparar el puente de actualización.', error);
   }));

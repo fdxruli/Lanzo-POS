@@ -14,6 +14,7 @@ import {
 } from '../../utils/notFoundBarcode';
 
 const notFoundStyles = readFileSync(resolve(process.cwd(), 'src/pages/NotFoundPage.css'), 'utf8');
+const adminLayoutSource = readFileSync(resolve(process.cwd(), 'src/components/layout/Layout.jsx'), 'utf8');
 
 const createAdminRouter = (initialEntries) => createMemoryRouter([
   {
@@ -70,6 +71,12 @@ describe('ruta 404 del POS', () => {
     expect(screen.queryByText('CÓDIGO DE RUTA')).not.toBeInTheDocument();
     expect(screen.queryByText('LANZO-POS-404-CLARO')).not.toBeInTheDocument();
     expect(screen.queryByText(/NOT FOUND/i)).not.toBeInTheDocument();
+  });
+
+  it('mantiene el 404 fuera de la recuperación de errores de sección', () => {
+    expect(adminLayoutSource).toMatch(
+      /isNotFoundPage\s*\?\s*\([\s\S]*?<Outlet \/>[\s\S]*?:\s*\([\s\S]*?<AdminRouteRecoveryRegion>/
+    );
   });
 
   it.each([

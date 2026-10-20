@@ -1,7 +1,4 @@
-import { PUBLIC_NAVIGATION_DENYLIST } from './publicNavigationPolicy';
-
 export const ADMIN_UPGRADE_BRIDGE_CACHE = 'lanzo-admin-upgrade-bridge-v1';
-export const ADMIN_UPGRADE_BRIDGE_QUERY_PARAM = '__lanzo_sw_bridge';
 
 const PENDING_STATE_PATH = '/__lanzo_admin_upgrade_bridge_pending__';
 const COMPLETED_STATE_PATH = '/__lanzo_admin_upgrade_bridge_completed__';
@@ -14,31 +11,17 @@ function createStateResponse(buildId) {
   });
 }
 
-export function isAdminUpgradeBridgeClient(clientUrl, origin) {
-  try {
-    const url = new URL(clientUrl, origin);
-    if (url.origin !== origin) return false;
-    const navigationTarget = `${url.pathname}${url.search}`;
-    return !PUBLIC_NAVIGATION_DENYLIST.some((pattern) => pattern.test(navigationTarget));
-  } catch {
-    return false;
-  }
-}
-
-export function buildAdminUpgradeBridgeUrl(clientUrl, buildId, origin) {
-  const url = new URL(clientUrl, origin);
-  url.searchParams.set(ADMIN_UPGRADE_BRIDGE_QUERY_PARAM, String(buildId || 'unknown'));
-  return url.toString();
-}
-
+/**
+ * Records that the one-time legacy bridge is available, but leaves the new
+ * worker waiting for the app's explicit update flow to activate it.
+ */
 export async function requestAdminUpgradeBridgeInstall({
   registration,
   cacheStorage,
   origin,
   buildId,
-  skipWaiting,
 } = {}) {
-  if (!registration?.active || !cacheStorage?.open || typeof skipWaiting !== 'function') {
+  if (!registration?.active || !cacheStorage?.open) {
     return { requested: false, reason: 'not-an-update' };
   }
 
@@ -50,18 +33,21 @@ export async function requestAdminUpgradeBridgeInstall({
 
   const pendingUrl = stateUrl(origin, PENDING_STATE_PATH);
   await cache.put(pendingUrl, createStateResponse(buildId));
-  await skipWaiting();
 
   return { requested: true, buildId: String(buildId || 'unknown') };
 }
 
+/**
+ * Claims clients after an explicitly activated bridge update. Each tab handles
+ * its own controllerchange and can defer reload while an operation is active.
+ */
 export async function activateAdminUpgradeBridge({
   clients,
   cacheStorage,
   origin,
   buildId,
 } = {}) {
-  if (!clients?.claim || !clients?.matchAll || !cacheStorage?.open) {
+  if (!clients?.claim || !cacheStorage?.open) {
     return { activated: false, reason: 'unavailable' };
   }
 
@@ -72,23 +58,6 @@ export async function activateAdminUpgradeBridge({
   }
 
   await clients.claim();
-  const windowClients = await clients.matchAll({
-    type: 'window',
-    includeUncontrolled: true,
-  });
-
-  const navigated = [];
-  for (const client of windowClients) {
-    if (!client?.navigate || !isAdminUpgradeBridgeClient(client.url, origin)) continue;
-    const targetUrl = buildAdminUpgradeBridgeUrl(client.url, buildId, origin);
-    try {
-      await client.navigate(targetUrl);
-      navigated.push(targetUrl);
-    } catch {
-      // A closed or detached window must not block activation for other clients.
-    }
-  }
-
   await cache.delete(pendingUrl);
   await cache.put(
     stateUrl(origin, COMPLETED_STATE_PATH),
@@ -98,6 +67,5 @@ export async function activateAdminUpgradeBridge({
   return {
     activated: true,
     buildId: String(buildId || 'unknown'),
-    navigated,
   };
 }

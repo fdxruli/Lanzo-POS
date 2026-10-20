@@ -1,4 +1,7 @@
 /* eslint-disable no-console */
+import { summarizeDiagnosticEvent } from './diagnostics/incidentDiagnostics';
+import { captureAsyncIncidentNotice } from './diagnostics/incidentEventCenter';
+
 const MAX_ENTRIES = 300;
 const MAX_TEXT_LENGTH = 5000;
 const METHODS = ['log', 'info', 'warn', 'error', 'debug', 'trace', 'table'];
@@ -23,43 +26,6 @@ const truncate = (text) => {
   return `${text.slice(0, MAX_TEXT_LENGTH)}\n... recortado`;
 };
 
-const stringifyObject = (value) => {
-  const seen = new WeakSet();
-
-  return JSON.stringify(
-    value,
-    (_key, nestedValue) => {
-      if (typeof nestedValue === 'bigint') return `${nestedValue.toString()}n`;
-      if (typeof nestedValue === 'function') return `[Function ${nestedValue.name || 'anonymous'}]`;
-      if (typeof nestedValue === 'object' && nestedValue !== null) {
-        if (seen.has(nestedValue)) return '[Circular]';
-        seen.add(nestedValue);
-      }
-      return nestedValue;
-    },
-    2
-  );
-};
-
-const formatValue = (value) => {
-  if (value instanceof Error) {
-    return truncate(value.stack || `${value.name}: ${value.message}`);
-  }
-
-  if (value === undefined) return 'undefined';
-  if (value === null) return 'null';
-  if (typeof value === 'string') return value;
-  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
-    return String(value);
-  }
-
-  try {
-    return truncate(stringifyObject(value));
-  } catch {
-    return truncate(String(value));
-  }
-};
-
 const notify = () => {
   const snapshot = getDevConsoleEntries();
   state.listeners.forEach((listener) => listener(snapshot));
@@ -78,7 +44,7 @@ const addEntry = (level, args, source = 'console') => {
       second: '2-digit',
       hour12: false,
     }),
-    text: normalizedArgs.map(formatValue).join(' '),
+    text: truncate(summarizeDiagnosticEvent(level, normalizedArgs, source)),
   };
 
   state.entries = [...state.entries, entry].slice(-MAX_ENTRIES);
@@ -112,10 +78,23 @@ export const installDevConsoleCapture = () => {
       event.filename ? `${event.filename}:${event.lineno}:${event.colno}` : '',
       event.error,
     ], 'window.error');
+    captureAsyncIncidentNotice(event.error || {
+      name: 'Error',
+      message: event.message || ''
+    }, {
+      source: 'window.error',
+      pathname: window.location?.pathname,
+      online: window.navigator?.onLine !== false
+    });
   });
 
   window.addEventListener('unhandledrejection', (event) => {
     addEntry('error', ['Promesa rechazada sin manejar', event.reason], 'unhandledrejection');
+    captureAsyncIncidentNotice(event.reason, {
+      source: 'unhandledrejection',
+      pathname: window.location?.pathname,
+      online: window.navigator?.onLine !== false
+    });
   });
 
   window.__LANZO_DEV_CONSOLE__ = {

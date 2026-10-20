@@ -13,6 +13,7 @@ const worker = vi.hoisted(() => ({
     waiting: false,
     active: false,
     error: false,
+    reloadDeferred: false,
   },
 }));
 
@@ -35,6 +36,7 @@ describe('UpdatePrompt controlled activation', () => {
       waiting: false,
       active: false,
       error: false,
+      reloadDeferred: false,
     };
     useAppStore.setState({
       updateAvailable: false,
@@ -73,6 +75,22 @@ describe('UpdatePrompt controlled activation', () => {
     }));
 
     expect(screen.getByText('Nueva version disponible')).toBeInTheDocument();
+  });
+
+  it('keeps the prompt available when a worker activated in another tab but reload was deferred', () => {
+    render(<UpdatePrompt />);
+
+    act(() => worker.listener({
+      registered: true,
+      installing: false,
+      waiting: false,
+      active: true,
+      error: false,
+      reloadDeferred: true,
+    }));
+
+    expect(screen.getByText('Nueva version disponible')).toBeInTheDocument();
+    expect(useAppStore.getState().updateAvailable).toBe(true);
   });
 
   it('activates only after the user presses the update action', async () => {
