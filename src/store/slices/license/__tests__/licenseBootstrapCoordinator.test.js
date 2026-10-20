@@ -36,6 +36,7 @@ vi.mock('../../../../services/tenant/localTenantGuard', () => ({
 }));
 
 import { createLicenseBootstrapActions, getInitializeAppCoordinatorState } from '../licenseBootstrapActions';
+import { actorRuntimeController } from '../../../../services/auth/actorRuntimeController';
 
 const deferred = () => {
   let resolve;
@@ -66,6 +67,7 @@ const createState = (initial = {}) => {
 describe('initializeApp coordinator', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    actorRuntimeController.lock('test_reset');
     runtimeMocks.prepareLocalDatabase.mockResolvedValue({ ready: true });
     storageMocks.saveLicenseToStorage.mockResolvedValue(undefined);
     supabaseMocks.clearAdminSessionCache.mockResolvedValue(undefined);
@@ -73,7 +75,9 @@ describe('initializeApp coordinator', () => {
     supabaseMocks.hasStaffSessionToken.mockResolvedValue(false);
     supabaseMocks.hasAdminSessionToken.mockResolvedValue(false);
     supabaseMocks.hasValidOfflineAdminSession.mockResolvedValue(false);
-    actorMocks.restoreActorRuntimeFromCurrentSessionCache.mockResolvedValue({ status: 'granted' });
+    actorMocks.restoreActorRuntimeFromCurrentSessionCache.mockImplementation(async () => ({
+      generation: actorRuntimeController.getState().generation
+    }));
     Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
   });
 
@@ -174,6 +178,72 @@ describe('initializeApp coordinator', () => {
     expect(state.currentAdminUser.id).toBe('admin-verified');
   });
 
+  it('preserves Admin credentials on inconclusive verification and retries without login', async () => {
+    const localLicense = {
+      license_key: 'BOOT-ADMIN-RETRY',
+      device_role: 'admin',
+      admin_identity_required: true,
+      plan_code: 'pro',
+      admin_user: { id: 'admin-cached' }
+    };
+    storageMocks.getLicenseFromStorage.mockResolvedValue(localLicense);
+    supabaseMocks.verifyAdminSession.mockResolvedValue({
+      success: false,
+      valid: false,
+      verificationStatus: 'transport_unavailable',
+      code: 'SESSION_TRANSPORT_UNAVAILABLE'
+    });
+    const state = createState({ _requireAdminLogin: vi.fn() });
+
+    await expect(state.initializeApp()).resolves.toMatchObject({ status: 'admin_login_required' });
+    expect(supabaseMocks.clearAdminSessionCache).not.toHaveBeenCalled();
+    expect(supabaseMocks.clearStaffSessionCache).not.toHaveBeenCalled();
+    expect(state._requireAdminLogin).not.toHaveBeenCalled();
+    expect(actorMocks.restoreActorRuntimeFromCurrentSessionCache).not.toHaveBeenCalled();
+    expect(state.adminLoginError).toMatchObject({
+      code: 'SESSION_VERIFICATION_INCONCLUSIVE',
+      verificationStatus: 'transport_unavailable'
+    });
+
+    supabaseMocks.verifyAdminSession.mockResolvedValue({
+      success: true,
+      valid: true,
+      admin_user: { id: 'admin-cached' },
+      details: { license_key: localLicense.license_key, plan_code: 'pro' }
+    });
+    await expect(state.initializeApp()).resolves.toEqual({ status: 'ready' });
+    expect(supabaseMocks.verifyAdminSession).toHaveBeenCalledTimes(2);
+    expect(supabaseMocks.clearAdminSessionCache).not.toHaveBeenCalled();
+  });
+
+  it('keeps Staff online-only while preserving credentials on transport failure', async () => {
+    storageMocks.getLicenseFromStorage.mockResolvedValue({
+      license_key: 'BOOT-STAFF-RETRY',
+      device_role: 'staff',
+      plan_code: 'pro',
+      staff_user: { id: 'staff-cached' }
+    });
+    supabaseMocks.hasStaffSessionToken.mockResolvedValue(true);
+    supabaseMocks.verifyStaffSession.mockResolvedValue({
+      success: false,
+      valid: false,
+      verificationStatus: 'transport_unavailable',
+      code: 'SESSION_TRANSPORT_UNAVAILABLE'
+    });
+    const state = createState({ _requireStaffLogin: vi.fn() });
+
+    await expect(state.initializeApp()).resolves.toEqual({ status: 'staff_login_required' });
+    expect(supabaseMocks.verifyStaffSession).toHaveBeenCalledTimes(1);
+    expect(supabaseMocks.clearStaffSessionCache).not.toHaveBeenCalled();
+    expect(supabaseMocks.clearAdminSessionCache).not.toHaveBeenCalled();
+    expect(state._requireStaffLogin).not.toHaveBeenCalled();
+    expect(actorMocks.restoreActorRuntimeFromCurrentSessionCache).not.toHaveBeenCalled();
+    expect(state.staffLoginError).toMatchObject({
+      code: 'SESSION_VERIFICATION_INCONCLUSIVE',
+      verificationStatus: 'transport_unavailable'
+    });
+  });
+
   it('preserves both credential families and fails closed when bootstrap restoration is ambiguous', async () => {
     storageMocks.getLicenseFromStorage.mockResolvedValue({
       license_key: 'BOOT-ADMIN-AMBIGUOUS',
@@ -199,7 +269,10 @@ describe('initializeApp coordinator', () => {
     expect(supabaseMocks.clearAdminSessionCache).not.toHaveBeenCalled();
     expect(supabaseMocks.clearStaffSessionCache).not.toHaveBeenCalled();
     expect(state.currentAdminUser).toBeNull();
-    expect(state.adminLoginError).toMatchObject({ code: 'ACTOR_SESSION_AMBIGUOUS' });
+    expect(state.adminLoginError).toMatchObject({
+      code: 'ACTOR_RUNTIME_RESTORE_FAILED',
+      reasonCode: 'ACTOR_SESSION_AMBIGUOUS'
+    });
   });
 
   it('fails closed to admin login when offline cache cannot bind stable actor authority', async () => {
@@ -220,7 +293,7 @@ describe('initializeApp coordinator', () => {
 
     await expect(state.initializeApp()).resolves.toEqual({ status: 'admin_login_required' });
 
-    expect(supabaseMocks.clearAdminSessionCache).toHaveBeenCalled();
+    expect(supabaseMocks.clearAdminSessionCache).not.toHaveBeenCalled();
     expect(state.currentAdminUser).toBeNull();
     expect(state._processOfflineMode).not.toHaveBeenCalled();
   });

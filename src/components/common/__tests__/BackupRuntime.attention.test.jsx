@@ -45,6 +45,16 @@ function Probe() {
 function Location() { return <output data-testid="route">{useLocation().pathname}{useLocation().search}</output>; }
 const mount = () => render(<MemoryRouter><BackupRuntime /><Probe /><Location /></MemoryRouter>);
 const emit = (status) => act(() => { mocks.status = status; mocks.listeners.forEach((listener) => listener(status)); });
+async function waitForPresentedAttentionRecord() {
+  const key = await buildLocalBackupAttentionKey({ databaseName: mocks.runtime.tenant.databaseName, actorKey: mocks.runtime.actorKey, deviceRef: mocks.runtime.deviceRef });
+  let stored;
+  await waitFor(() => {
+    stored = localStorage.getItem(key);
+    expect(stored).not.toBeNull();
+    expect(JSON.parse(stored)).toMatchObject({ presentedAt: expect.any(String), readStates: [] });
+  });
+  return { key, stored };
+}
 beforeEach(() => {
   vi.stubGlobal('crypto', webcrypto);
   vi.clearAllMocks(); localStorage.clear(); sessionStorage.clear(); resetLocalBackupAttentionMemory();
@@ -101,10 +111,15 @@ describe('BackupRuntime durable attention and headless operation', () => {
   it('makes a genuinely new error unread after confirmed recovery without reviving the banner', async () => {
     mocks.status = baseStatus({ configured: true, unlocked: true, settings: { lastResult: 'error', cronBlocked: true } });
     mount();
-    fireEvent.click(await screen.findByRole('button', { name: 'Revisar respaldos' }));
-    expect(screen.getByTestId('attention')).toHaveAttribute('data-read', 'read');
+    const review = await screen.findByRole('button', { name: 'Revisar respaldos' });
+    const { key } = await waitForPresentedAttentionRecord();
+    expect(JSON.parse(localStorage.getItem(key)).readStates).toEqual([]);
+    fireEvent.click(review);
+    await waitFor(() => expect(screen.getByTestId('route')).toHaveTextContent('/configuracion?tab=backup'));
+    await waitFor(() => expect(JSON.parse(localStorage.getItem(key)).readStates).toContain('error'));
     emit(baseStatus({ configured: true, unlocked: true, settings: { lastResult: 'success', lastBackupAt: '2026-10-17T12:00:00Z' } }));
     await waitFor(() => expect(screen.getByTestId('attention')).toHaveTextContent('ready'));
+    await waitFor(() => expect(JSON.parse(localStorage.getItem(key)).readStates).not.toContain('error'));
     emit(baseStatus({ configured: true, unlocked: true, settings: { lastResult: 'error', cronBlocked: true, lastBackupAt: '2026-10-17T12:00:00Z' } }));
     expect(screen.getByTestId('attention')).toHaveTextContent('error');
     expect(screen.getByTestId('attention')).toHaveAttribute('data-read', 'unread');
@@ -137,10 +152,12 @@ describe('BackupRuntime durable attention and headless operation', () => {
   it('rejects a click captured before the current actor is revoked', async () => {
     mount();
     const review = await screen.findByRole('button', { name: 'Revisar respaldos' });
+    const { key, stored } = await waitForPresentedAttentionRecord();
     mocks.runtime = { ...mocks.runtime, status: 'locked', generation: 2 };
     fireEvent.click(review);
     expect(screen.getByTestId('route')).not.toHaveTextContent('/configuracion');
-    expect(JSON.parse(localStorage.getItem(localStorage.key(0))).readStates).toEqual([]);
+    expect(localStorage.getItem(key)).toBe(stored);
+    expect(JSON.parse(localStorage.getItem(key)).readStates).toEqual([]);
   });
   it('discards an in-flight preference key when actor authority changes', async () => {
     const pending = [];
@@ -158,10 +175,12 @@ describe('BackupRuntime durable attention and headless operation', () => {
   it('rejects a stale click when the app-store identity changes before ActorRuntime', async () => {
     mount();
     const review = await screen.findByRole('button', { name: 'Revisar respaldos' });
+    const { key, stored } = await waitForPresentedAttentionRecord();
     mocks.store.currentAdminUser = { id: 'another-admin' };
     fireEvent.click(review);
     expect(screen.getByTestId('route')).not.toHaveTextContent('/configuracion');
-    expect(JSON.parse(localStorage.getItem(localStorage.key(0))).readStates).toEqual([]);
+    expect(localStorage.getItem(key)).toBe(stored);
+    expect(JSON.parse(localStorage.getItem(key)).readStates).toEqual([]);
   });
   it('does not initialize the local manager from a cloud bell subscription', async () => {
     mocks.store.licenseDetails.features.cloud_pos_sync = true;

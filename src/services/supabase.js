@@ -22,7 +22,14 @@ import {
     ACTOR_RUNTIME_ERROR_CODES
 } from './auth/actorRuntimeController';
 import { preflightIndexedDbCapability } from './db/indexedDbCapabilityPreflight';
-import { isBrowserStorageUnavailableError } from './db/databaseRecoveryState';
+import { classifyDatabaseError, isBrowserStorageUnavailableError } from './db/databaseRecoveryState';
+import {
+    classifySessionVerificationResponse,
+    createLocalCredentialsMissingResult,
+    createLocalStorageErrorResult,
+    isSessionVerificationContextError,
+    SESSION_VERIFICATION_STATUS
+} from './auth/sessionVerification';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
@@ -154,9 +161,14 @@ export async function hasValidOfflineAdminSession() {
     try {
         const record = await loadData(STORES.SYNC_CACHE, ADMIN_SESSION_CACHE_KEY);
         const cache = record?.value;
-        if (!cache?.validatedAt) return false;
-        if (cache.expiresAt && Date.parse(cache.expiresAt) <= Date.now()) return false;
-        return Date.now() - cache.validatedAt <= 24 * 60 * 60 * 1000;
+        const now = Date.now();
+        const validatedAt = cache?.validatedAt;
+        if (!Number.isFinite(validatedAt) || validatedAt <= 0 || validatedAt > now) return false;
+        if (cache.expiresAt) {
+            const expiresAt = Date.parse(cache.expiresAt);
+            if (!Number.isFinite(expiresAt) || expiresAt <= now) return false;
+        }
+        return now - validatedAt <= 24 * 60 * 60 * 1000;
     } catch (error) {
         if (isLocalTenantAccessError(error)) throw error;
         return false;
@@ -779,26 +791,74 @@ export const staffLoginOnDevice = async function ({
     }
 };
 
-export const verifyStaffSession = async function (licenseKey) {
+const sessionVerificationContextStale = (actorType) => ({
+    success: false,
+    valid: false,
+    verificationStatus: SESSION_VERIFICATION_STATUS.INVALID_RESPONSE,
+    code: 'SESSION_VERIFICATION_CONTEXT_STALE',
+    message: `La sesión ${actorType} cambió mientras se verificaba.`
+});
+
+const createSessionVerificationContextStaleError = () => {
+    const error = new Error('SESSION_VERIFICATION_CONTEXT_STALE');
+    error.code = 'SESSION_VERIFICATION_CONTEXT_STALE';
+    return error;
+};
+
+const createSessionVerificationLocalStorageError = () => {
+    const error = new Error('SESSION_LOCAL_STORAGE_UNAVAILABLE');
+    error.code = 'SESSION_LOCAL_STORAGE_UNAVAILABLE';
+    error.sessionVerificationLocalStorageError = true;
+    return error;
+};
+
+const readSessionCredential = async (key) => {
+    const record = await loadData(STORES.SYNC_CACHE, key);
+    return record?.value || null;
+};
+
+const isSessionDatabaseRecoveryError = (error) => classifyDatabaseError(error).structural;
+
+export const verifyStaffSession = async function (licenseKey, { beforeLocalPersistence = null } = {}) {
     try {
         const isOnline = await checkInternetConnection();
         if (!isOnline) {
-            return {
-                success: false,
-                valid: false,
-                code: 'ONLINE_REQUIRED',
-                message: 'Necesitas internet para restaurar la sesion staff.'
-            };
+            return classifySessionVerificationResponse('staff', {
+                error: { code: 'ERR_NETWORK', message: 'NetworkError when attempting to fetch resource.' }
+            });
         }
 
-        const staffSessionToken = await getStaffSessionToken();
-        if (!staffSessionToken || !licenseKey) {
-            return {
-                success: false,
-                valid: false,
-                code: 'STAFF_SESSION_REQUIRED',
-                message: 'Inicia sesion staff para continuar.'
-            };
+        if (!licenseKey) {
+            return createLocalCredentialsMissingResult('staff', ['license_key']);
+        }
+
+        let staffSessionToken;
+        let staffSessionId;
+        try {
+            [staffSessionToken, staffSessionId] = await Promise.all([
+                readSessionCredential(STAFF_SESSION_TOKEN_KEY),
+                readSessionCredential(STAFF_SESSION_ID_KEY)
+            ]);
+        } catch (storageError) {
+            if (isSessionVerificationContextError(storageError)) throw storageError;
+            if (isSessionDatabaseRecoveryError(storageError)) throw storageError;
+            return createLocalStorageErrorResult('staff');
+        }
+        if (!staffSessionToken) {
+            return createLocalCredentialsMissingResult('staff', ['staff_session_token']);
+        }
+
+        let adminSessionSnapshot;
+        try {
+            const [adminSessionToken, adminSessionId] = await Promise.all([
+                readSessionCredential(ADMIN_SESSION_TOKEN_KEY),
+                readSessionCredential(ADMIN_SESSION_ID_KEY)
+            ]);
+            adminSessionSnapshot = { adminSessionToken, adminSessionId };
+        } catch (storageError) {
+            if (isSessionVerificationContextError(storageError)) throw storageError;
+            if (isSessionDatabaseRecoveryError(storageError)) throw storageError;
+            return createLocalStorageErrorResult('staff');
         }
 
         const deviceFingerprint = await getStableDeviceId();
@@ -808,32 +868,97 @@ export const verifyStaffSession = async function (licenseKey) {
             p_staff_session_token: staffSessionToken
         });
 
-        if (error) throw error;
-
-        if (!data?.success || data?.valid === false) {
-            await clearStaffSessionCache();
+        const classified = classifySessionVerificationResponse('staff', { data, error });
+        if (classified.verificationStatus === SESSION_VERIFICATION_STATUS.VERIFIED) {
+            if (!data.staff_user || !data.staff_user.id) {
+                return classifySessionVerificationResponse('staff', { data: null });
+            }
+            const sessionContextResult = await runWithLocalTenantSyncLease(
+                { license_key: licenseKey },
+                { reason: 'verify_staff_session_result' },
+                async () => {
+                    let currentStaffSession;
+                    try {
+                        const [currentToken, currentSessionId] = await Promise.all([
+                            readSessionCredential(STAFF_SESSION_TOKEN_KEY),
+                            readSessionCredential(STAFF_SESSION_ID_KEY)
+                        ]);
+                        currentStaffSession = { token: currentToken, sessionId: currentSessionId };
+                    } catch (storageError) {
+                        if (isSessionVerificationContextError(storageError)) throw storageError;
+                        if (isSessionDatabaseRecoveryError(storageError)) throw storageError;
+                        return createLocalStorageErrorResult('staff');
+                    }
+                    if (currentStaffSession.token !== staffSessionToken
+                        || currentStaffSession.sessionId !== staffSessionId) {
+                        return sessionVerificationContextStale('Staff');
+                    }
+                    await beforeLocalPersistence?.({ license_key: licenseKey, actorType: 'staff' });
+                    return null;
+                }
+            );
+            if (sessionContextResult) return sessionContextResult;
             return {
-                success: false,
-                valid: false,
-                code: data?.code || data?.reason || 'STAFF_SESSION_INVALID',
-                message: data?.message || 'La sesion staff ya no es valida.'
+                ...classified,
+                staff_user: data.staff_user,
+                details: data.details || null
             };
         }
 
-        return {
-            success: true,
-            valid: true,
-            staff_user: data.staff_user || null,
-            details: data.details || null
-        };
+        if (classified.credentialDisposition === 'clear') {
+            const sessionContextResult = await runWithLocalTenantSyncLease(
+                { license_key: licenseKey },
+                { reason: 'invalid_staff_session_cleanup' },
+                async () => {
+                    let currentStaffSession;
+                    try {
+                        const [currentToken, currentSessionId] = await Promise.all([
+                            readSessionCredential(STAFF_SESSION_TOKEN_KEY),
+                            readSessionCredential(STAFF_SESSION_ID_KEY)
+                        ]);
+                        currentStaffSession = { token: currentToken, sessionId: currentSessionId };
+                    } catch (storageError) {
+                        if (isSessionVerificationContextError(storageError)) throw storageError;
+                        if (isSessionDatabaseRecoveryError(storageError)) throw storageError;
+                        return createLocalStorageErrorResult('staff');
+                    }
+                    if (currentStaffSession.token !== staffSessionToken
+                        || currentStaffSession.sessionId !== staffSessionId) {
+                        return sessionVerificationContextStale('Staff');
+                    }
+                    let currentAdminSession;
+                    try {
+                        const [adminSessionToken, adminSessionId] = await Promise.all([
+                            readSessionCredential(ADMIN_SESSION_TOKEN_KEY),
+                            readSessionCredential(ADMIN_SESSION_ID_KEY)
+                        ]);
+                        currentAdminSession = { adminSessionToken, adminSessionId };
+                    } catch (storageError) {
+                        if (isSessionVerificationContextError(storageError)) throw storageError;
+                        if (isSessionDatabaseRecoveryError(storageError)) throw storageError;
+                        return createLocalStorageErrorResult('staff');
+                    }
+                    if (currentAdminSession.adminSessionToken !== adminSessionSnapshot.adminSessionToken
+                        || currentAdminSession.adminSessionId !== adminSessionSnapshot.adminSessionId) {
+                        return sessionVerificationContextStale('Staff');
+                    }
+                    await beforeLocalPersistence?.({ license_key: licenseKey, actorType: 'staff' });
+                    await clearStaffSessionCache();
+                    await clearAdminSessionCache();
+                    return null;
+                }
+            );
+            if (sessionContextResult) return sessionContextResult;
+        }
+
+        return classified.credentialDisposition === 'clear'
+            ? { ...classified, sessionCredentialCleared: true }
+            : classified;
     } catch (error) {
-        Logger.warn('No se pudo verificar sesion staff:', error?.message || error);
-        return {
-            success: false,
-            valid: false,
-            code: error?.code || 'STAFF_SESSION_ERROR',
-            message: error?.message || 'No se pudo verificar la sesion staff.'
-        };
+        if (isSessionVerificationContextError(error)) throw error;
+        if (isSessionDatabaseRecoveryError(error)) throw error;
+        Logger.warn('No se pudo verificar sesion staff:', error?.code || error?.name || 'SESSION_SERVER_ERROR');
+        return classifySessionVerificationResponse('staff', { error });
     }
 };
 
@@ -1616,7 +1741,10 @@ export const acceptLegalTerms = async (licenseKey, termId) => {
     }
 };
 
-const buildAdminSessionResult = async (data, licenseKey, { beforeLocalPersistence = null } = {}) => {
+const buildAdminSessionResult = async (data, licenseKey, {
+    beforeLocalPersistence = null,
+    beforeSessionPersistence = null
+} = {}) => {
     if (!data?.success || data.valid === false) {
         const takeoverRequired = data?.code === 'FREE_DEVICE_TAKEOVER_REQUIRED';
         return {
@@ -1643,6 +1771,7 @@ const buildAdminSessionResult = async (data, licenseKey, { beforeLocalPersistenc
         beforeLocalPersistence,
         operation: async () => {
             await beforeLocalPersistence?.(tenantSource);
+            await beforeSessionPersistence?.();
             if (deviceToken) await setSecureCredentials(deviceToken);
             await beforeLocalPersistence?.(tenantSource);
             await clearStaffSessionCache();
@@ -1779,32 +1908,130 @@ export const adminTakeoverFreeDevice = async ({
 
 export const verifyAdminSession = async (licenseKey, { beforeLocalPersistence = null } = {}) => {
     try {
-        const [deviceFingerprint, deviceSecurityToken, adminSessionToken] = await Promise.all([
-            getStableDeviceId(), getDeviceSecurityToken(), getAdminSessionToken()
-        ]);
-        if (!deviceSecurityToken || !adminSessionToken) {
-            return { success: false, valid: false, code: 'ADMIN_SESSION_REQUIRED', message: 'Inicia sesion como administrador.' };
+        if (!licenseKey) {
+            return createLocalCredentialsMissingResult('admin', ['license_key']);
         }
+
+        let credentials;
+        try {
+            const [deviceSecurityToken, adminSessionToken, adminSessionId, staffSessionToken, staffSessionId] = await Promise.all([
+                readSessionCredential('device_security_token'),
+                readSessionCredential(ADMIN_SESSION_TOKEN_KEY),
+                readSessionCredential(ADMIN_SESSION_ID_KEY),
+                readSessionCredential(STAFF_SESSION_TOKEN_KEY),
+                readSessionCredential(STAFF_SESSION_ID_KEY)
+            ]);
+            credentials = { deviceSecurityToken, adminSessionToken, adminSessionId, staffSessionToken, staffSessionId };
+        } catch (storageError) {
+            if (isSessionVerificationContextError(storageError)) throw storageError;
+            if (isSessionDatabaseRecoveryError(storageError)) throw storageError;
+            return createLocalStorageErrorResult('admin');
+        }
+
+        const missingCredentials = [];
+        if (!credentials.adminSessionToken) missingCredentials.push('admin_session_token');
+        if (!credentials.deviceSecurityToken) missingCredentials.push('device_security_token');
+        if (missingCredentials.length) return createLocalCredentialsMissingResult('admin', missingCredentials);
+
+        const assertCurrentAdminSessionSnapshot = async () => {
+            let currentCredentials;
+            try {
+                const [deviceSecurityToken, adminSessionToken, adminSessionId, staffSessionToken, staffSessionId] = await Promise.all([
+                    readSessionCredential('device_security_token'),
+                    readSessionCredential(ADMIN_SESSION_TOKEN_KEY),
+                    readSessionCredential(ADMIN_SESSION_ID_KEY),
+                    readSessionCredential(STAFF_SESSION_TOKEN_KEY),
+                    readSessionCredential(STAFF_SESSION_ID_KEY)
+                ]);
+                currentCredentials = { deviceSecurityToken, adminSessionToken, adminSessionId, staffSessionToken, staffSessionId };
+            } catch (storageError) {
+                if (isSessionVerificationContextError(storageError)) throw storageError;
+                if (isSessionDatabaseRecoveryError(storageError)) throw storageError;
+                throw createSessionVerificationLocalStorageError();
+            }
+            if (currentCredentials.deviceSecurityToken !== credentials.deviceSecurityToken
+                || currentCredentials.adminSessionToken !== credentials.adminSessionToken
+                || currentCredentials.adminSessionId !== credentials.adminSessionId
+                || currentCredentials.staffSessionToken !== credentials.staffSessionToken
+                || currentCredentials.staffSessionId !== credentials.staffSessionId) {
+                throw createSessionVerificationContextStaleError();
+            }
+        };
+
+        const deviceFingerprint = await getStableDeviceId();
         const { data, error } = await supabaseClient.rpc('verify_admin_session', {
             p_license_key: licenseKey,
             p_device_fingerprint: deviceFingerprint,
-            p_device_security_token: deviceSecurityToken,
-            p_admin_session_token: adminSessionToken
+            p_device_security_token: credentials.deviceSecurityToken,
+            p_admin_session_token: credentials.adminSessionToken
         });
-        if (error) throw error;
-        if (!data?.success || data?.valid === false) {
-            await beforeLocalPersistence?.({ license_key: licenseKey });
-            await runWithLocalTenantSyncLease(
+
+        const classified = classifySessionVerificationResponse('admin', { data, error });
+        if (classified.verificationStatus === SESSION_VERIFICATION_STATUS.VERIFIED) {
+            if (!data.admin_session_id || !data.admin_user?.id) {
+                return classifySessionVerificationResponse('admin', { data: null });
+            }
+            let currentCredentials;
+            try {
+                const [currentDeviceSecurityToken, currentAdminSessionToken, currentAdminSessionId] = await Promise.all([
+                    readSessionCredential('device_security_token'),
+                    readSessionCredential(ADMIN_SESSION_TOKEN_KEY),
+                    readSessionCredential(ADMIN_SESSION_ID_KEY)
+                ]);
+                currentCredentials = { currentDeviceSecurityToken, currentAdminSessionToken, currentAdminSessionId };
+            } catch (storageError) {
+                if (isSessionVerificationContextError(storageError)) throw storageError;
+                if (isSessionDatabaseRecoveryError(storageError)) throw storageError;
+                return createLocalStorageErrorResult('admin');
+            }
+            if (currentCredentials.currentDeviceSecurityToken !== credentials.deviceSecurityToken
+                || currentCredentials.currentAdminSessionToken !== credentials.adminSessionToken
+                || currentCredentials.currentAdminSessionId !== credentials.adminSessionId) {
+                return sessionVerificationContextStale('Admin');
+            }
+            let verified;
+            try {
+                verified = await buildAdminSessionResult(data, licenseKey, {
+                    beforeLocalPersistence,
+                    beforeSessionPersistence: assertCurrentAdminSessionSnapshot
+                });
+            } catch (persistenceError) {
+                if (isSessionVerificationContextError(persistenceError)) throw persistenceError;
+                if (isSessionDatabaseRecoveryError(persistenceError)) throw persistenceError;
+                if (isBrowserStorageUnavailableError(persistenceError)) {
+                    return createLocalStorageErrorResult('admin');
+                }
+                throw persistenceError;
+            }
+            return { ...verified, verificationStatus: SESSION_VERIFICATION_STATUS.VERIFIED };
+        }
+
+        if (classified.credentialDisposition === 'clear') {
+            const cleanupResult = await runWithLocalTenantSyncLease(
                 { license_key: licenseKey },
                 { reason: 'invalid_admin_session_cleanup' },
-                () => clearAdminSessionCache()
+                async () => {
+                    await assertCurrentAdminSessionSnapshot();
+                    await beforeLocalPersistence?.({ license_key: licenseKey });
+                    await clearAdminSessionCache();
+                    await clearStaffSessionCache();
+                    return null;
+                }
             );
-            return { success: false, valid: false, code: data?.code || 'ADMIN_SESSION_INVALID', message: data?.message || 'La sesion administrativa ya no es valida.' };
+            if (cleanupResult) return cleanupResult;
         }
-        return buildAdminSessionResult(data, licenseKey, { beforeLocalPersistence });
+
+        return classified.credentialDisposition === 'clear'
+            ? { ...classified, sessionCredentialCleared: true }
+            : classified;
     } catch (error) {
-        if (String(error?.code || '').startsWith('LOCAL_TENANT_')) throw error;
-        return { success: false, valid: false, code: error?.code || 'ADMIN_SESSION_ERROR', message: error?.message || 'No se pudo verificar la sesion administrativa.' };
+        if (isSessionVerificationContextError(error)) throw error;
+        if (isSessionDatabaseRecoveryError(error)) throw error;
+        Logger.warn('No se pudo verificar sesion administrativa:', error?.code || error?.name || 'SESSION_SERVER_ERROR');
+        if (error?.sessionVerificationLocalStorageError || isBrowserStorageUnavailableError(error)) {
+            return createLocalStorageErrorResult('admin');
+        }
+        return classifySessionVerificationResponse('admin', { error });
     }
 };
 

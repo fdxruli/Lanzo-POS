@@ -149,7 +149,7 @@ describe('modern Admin cutover across PRO to FREE expiry', () => {
     mocks.clearStaffSessionCache.mockResolvedValue(undefined);
     mocks.saveLicenseToStorage.mockResolvedValue(undefined);
     mocks.grantAuthenticatedActorRuntime.mockResolvedValue({ status: 'granted' });
-    mocks.restoreActorRuntimeFromCurrentSessionCache.mockResolvedValue({ status: 'granted' });
+    mocks.restoreActorRuntimeFromCurrentSessionCache.mockResolvedValue({ status: 'granted', generation: 0 });
   });
 
   it('keeps Admin login required after PRO → FREE when the Admin session is later removed and discovery receives a stale legacy response', async () => {
@@ -171,6 +171,12 @@ describe('modern Admin cutover across PRO to FREE expiry', () => {
     mocks.lockActorRuntime.mockClear();
     mocks.hasAdminSessionToken.mockResolvedValue(false);
     mocks.getLicenseFromStorage.mockResolvedValue(storedFree);
+    mocks.verifyAdminSession.mockResolvedValue({
+      success: false,
+      valid: false,
+      verificationStatus: 'local_credentials_missing',
+      missingCredentials: ['admin_session_token']
+    });
     mocks.activateLicense.mockResolvedValue({
       valid: true,
       details: {
