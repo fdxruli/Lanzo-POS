@@ -123,3 +123,45 @@ La matriz manual y los flujos físicos de cierre/reapertura quedan para QA del p
 - Checks focales de GitHub, Dexie, builds y PR127 Base/Candidate: `SUCCESS`. Los jobs observacionales extendidos de repetición de suite Candidate/Base de los workflows Shared Terminal Actor Runtime/Actor Scoped Storage permanecían `in_progress` al último sondeo; sus jobs focales (auth, tenant, runtime, sync, caja, lint y builds) completaron `SUCCESS`.
 - Producción/Supabase: sin cambios; migraciones: ninguna.
 - Merge: no realizado.
+
+## Mini-Fase 2.1 — recuperación de evidencia Admin
+
+### Auditoría del incidente y causa raíz
+
+El HEAD inicial del PR #366 fue `34881231a0e43f37c8fa546c871b64323b20f4b1`; su base actual es `main` en `a09b224cc1aff671f4a29152f21b9d9d12173f20`. Se inspeccionaron los contratos SQL locales de `admin_login_on_device`, `admin_takeover_free_device`, `admin_enroll_owner_on_device` y `verify_admin_session`; no se llamaron RPC de producción.
+
+La discrepancia que causaba la pérdida de autoridad quedó confirmada: las tres respuestas positivas de inicio/takeover/enrolamiento no devuelven raíz `license_id` ni `device_id`, mientras que `verify_admin_session` obtiene ambos de `private.require_active_admin_session`. El fixture de `supabase.indexedDbBootstrap.test.js` antes incluía esos dos campos en la respuesta de login, condición que no cumple el contrato SQL real. Con el contrato real, `createPersistedAdminOfflineEvidence()` devolvía `null`; el cliente persistía credenciales, pero Actor Runtime denegaba con `evidence_missing`. La acción de recuperación del PR #364 también descartaba el resultado pendiente al primer bloqueo y no podía volver a verificar la misma sesión.
+
+Se reprodujo además, como incompatibilidad separada y no como causa única demostrada del incidente físico, el caso de un tenant histórico vinculado solo por `license-key-sha256:<digest>`. El guard sticky permite el tenant correcto sin añadir alias `license-id`; el generador/evaluador v2 antes exigía ese alias y denegaba evidencia. La compatibilidad nueva exige que el digest guardado en evidencia coincida exactamente con el alias histórico persistido y que el servidor confirme, dentro de la misma sesión, el `license_id` y `device_id`. No se amplía la lista de alias ni se hace rebind.
+
+### Corrección y contrato final
+
+Cuando la respuesta positiva de login/takeover/enrolamiento carece de los identificadores canónicos, el cliente hace una sola llamada adicional a `verify_admin_session`, con el mismo `admin_session_token`, token de seguridad, fingerprint estable y clave del negocio. Solo acepta la respuesta si está verificada, devuelve el mismo `admin_session_id`, la identidad Admin es consistente y están presentes licencia, dispositivo y vencimiento real de sesión. No usa otra llamada de login, inscripción, takeover ni registro de dispositivo para completar evidencia. En revalidación de sesión existente, la verificación ya completada se reutiliza sin volver a llamar al RPC.
+
+La evidencia v2 se escribe solo cuando sus datos canónicos están completos. Guarda digest de sesión/dispositivo, ID de Admin/sesión/licencia/dispositivo, tenant opaco, binding local compatible y expiración real del servidor. Para un binding histórico por hash de clave, el evaluador lo reconoce solo si el digest de evidencia válido coincide con el alias sticky. Fallos de red conservan credenciales cuando corresponde, pero no crean autoridad; una denegación autoritativa limpia la continuidad y bloquea. La acción post-login mantiene el resultado pendiente si falta evidencia y permite reintentar la verificación existente; Actor Runtime sigue cerrado hasta que el evaluador común conceda autoridad.
+
+`validatedAt` se captura al recibirse una respuesta positiva verificada, antes de persistencia/perfil y se persiste junto con la evidencia. No se genera desde apertura, restauración, error, reintento offline ni navegación. La elegibilidad sigue limitada por las mismas 168 horas, expiración de servidor, licencia local/comercial/gracia y bloqueos conocidos; no se cambia licencia, `expiresAt` ni política Staff.
+
+Se agregaron trazas temporizadas de RPC, persistencia local, disponibilidad IndexedDB, restauración/concesión de Actor Runtime y perfil. Registran fases, duración, estado y códigos diagnósticos con prefijos permitidos; omiten tokens, contraseñas, fingerprints, claves de licencia y datos financieros. El watchdog de 15 segundos de `App.jsx` es una alerta de inicialización, separada de `evidence_missing`. No hay una traza de la sesión física de Chrome disponible, así que no atribuimos el retraso reportado a RPC, IndexedDB, actor o perfil sin observación directa.
+
+### Cobertura automatizada AUTH-P2-REC
+
+La prueba de login ahora usa la forma positiva real sin `license_id`/`device_id` y verifica las llamadas en orden (`admin_login_on_device`, `verify_admin_session`), sus argumentos y la evidencia persistida; el reinicio simulado lee la evidencia ya guardada. Otras pruebas cubren alias histórico y nuevo, tenant/Admin/dispositivo incompatibles, fallo de almacenamiento, recuperación de la sesión pendiente, denegación autoritativa, Staff online-only, ventana de 168 h, expiraciones, logout/respuestas tardías, dos pestañas/generación Actor Runtime y handoff financiero. Takeover Free e inscripción inicial verifican la sesión emitida con credenciales de dispositivo existentes. La revalidación no vuelve a invocar login/takeover/enrollment, por lo que no consume otro cupo ni crea sesión/dispositivo.
+
+| Verificación | Resultado |
+|---|---:|
+| AUTH-P2-REC focal: Supabase, política offline, acciones Admin | PASS, 84/84 en 3 archivos |
+| OFFLINE-AUTH-P2, Actor Runtime/Bridge/Scoped Storage, recuperación Admin, bootstrap, tenant, FREE, Dexie, caja y financiero | PASS, 265/265 en 17 archivos |
+| ESLint focal sobre los archivos modificados | PASS, 0 errores; aviso informativo: `baseline-browser-mapping` tiene más de dos meses |
+| React Doctor sobre cambios de interfaz | PASS, 90/100; sin hallazgos en 15 archivos |
+| `npm run build` + `postbuild` | PASS; 3,593 módulos, worker generado y auditoría con 21 assets de inicio verificados |
+
+Workbox emitió advertencias de seis patrones de precache sin coincidencia (incluye rutas Local importadas estáticamente y cinco assets legacy); el audit final confirmó todos los assets de inicio requeridos. Vite también reportó imports mixtos estático/dinámico y el chunk vacío `vendor_supabase`. No son errores de compilación. La matriz se ejecutó con reloj simulado/fixtures; no se modificó el reloj del sistema ni datos locales reales.
+
+### Compatibilidad, entrega y QA físico
+
+Los PR abiertos #338, #352 y #357 se revisaron antes de editar: no hay conflicto material con el cambio de contrato/persistencia. #338 comparte el modal y rutas Admin/Actor; #357 comparte el modal; #352 no solapa los módulos auditados. No se tocaron esos PRs. El comparador PR127 Base/Candidate y los checks de GitHub de este nuevo HEAD quedan pendientes de terminar tras actualizar la misma rama; se registrarán aquí con sus estados/resultados exactos. PR #366 sigue abierto en Draft: https://github.com/fdxruli/Lanzo-POS/pull/366.
+
+Para repetir Farmacia Gary Chrome en QA físico: usar el perfil Chrome y el dispositivo Free ya registrados; no liberar dispositivos ni cambiar datos. Con conexión disponible, iniciar sesión Admin con la misma licencia, esperar la confirmación y, si aparece recuperación pendiente, pulsar «Reintentar verificación». Confirmar que se consulta `verify_admin_session` sobre la misma sesión, se restaura el mismo negocio y no aparece un nuevo registro de dispositivo. Cerrar completamente Lanzo/PWA y abrir de nuevo; después comprobar una apertura offline dentro del límite, sin efectuar venta de prueba ni alterar caja. Revisar la consola por códigos/fases seguros y anotar duración de RPC, IndexedDB, Actor Runtime y perfil. QA físico del propietario sigue pendiente.
+
+No se modificó Supabase producción, licencias, dispositivos, usuarios ni sesiones remotas. No se hizo merge. La revocación remota continúa siendo incognoscible mientras el cliente está desconectado y se aplica al reconectar.

@@ -220,4 +220,42 @@ describe('admin session local recovery', () => {
       result: expect.any(Object)
     });
   });
+
+  it('AUTH-P2-REC-12..15: retries incomplete local evidence against the same session without logging in again', async () => {
+    const remoteResult = {
+      ...createRemoteResult('LIC-1'),
+      offlineEvidencePending: true,
+      offlineEvidenceStatus: 'transport_unavailable'
+    };
+    supabaseMocks.adminLoginOnDevice.mockResolvedValue(remoteResult);
+    supabaseMocks.getAdminOfflineAuthorization.mockResolvedValue({ eligible: false, reason: 'evidence_missing' });
+    actorMocks.grantAuthenticatedActorRuntime.mockRejectedValueOnce({
+      code: 'ACTOR_SESSION_REQUIRED',
+      details: { offlineAuthorizationReason: 'evidence_missing' }
+    });
+    const state = createHarness();
+
+    const first = await state.handleAdminLogin({ username: 'owner', password: 'secret' });
+
+    expect(first).toMatchObject({ success: false, remoteAuthenticated: true, recoveryRequired: true, code: 'ADMIN_OFFLINE_EVIDENCE_PENDING' });
+    expect(state.pendingAdminSessionResult).toMatchObject({
+      sessionIdentity: 'session-LIC-1',
+      adminUserId: 'admin-LIC-1',
+      result: { offlineEvidencePending: true }
+    });
+    expect(supabaseMocks.adminLoginOnDevice).toHaveBeenCalledTimes(1);
+
+    supabaseMocks.verifyAdminSession.mockResolvedValueOnce({
+      ...createRemoteResult('LIC-1'),
+      valid: true,
+      details: { ...createRemoteResult('LIC-1').details, license_id: 'license-LIC-1' }
+    });
+    const recovered = await state.resumeAdminSessionPreparation();
+
+    expect(recovered).toMatchObject({ success: true, remoteAuthenticated: true });
+    expect(supabaseMocks.verifyAdminSession).toHaveBeenCalledTimes(1);
+    expect(supabaseMocks.adminLoginOnDevice).toHaveBeenCalledTimes(1);
+    expect(actorMocks.grantAuthenticatedActorRuntime).toHaveBeenCalledTimes(2);
+    expect(state.pendingAdminSessionResult).toBeNull();
+  });
 });

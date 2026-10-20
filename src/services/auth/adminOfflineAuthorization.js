@@ -65,10 +65,17 @@ export const resolveAdminOfflineTime = ({ now, lastSeen = null } = {}) => {
   return { valid: true, effectiveNow: now, nextMonotonicTime: now };
 };
 
-const tenantBindingMatchesLicense = (binding, licenseId) => {
+const tenantBindingMatchesLicense = (binding, licenseId, tenantLicenseKeyDigest) => {
   if (!binding || !licenseId) return false;
   const alias = `license-id:${licenseId}`;
-  return binding.tenantIdentity === alias || (binding.tenantAliases || []).includes(alias);
+  const aliases = binding.tenantAliases || [];
+  if (binding.tenantIdentity === alias || aliases.includes(alias)) return true;
+
+  // Older local databases were bound using only a SHA-256 license-key alias.
+  // Accept that sticky binding only when a server-confirmed evidence record
+  // links the same key digest to this canonical license ID.
+  if (!/^[a-f0-9]{64}$/.test(String(tenantLicenseKeyDigest || ''))) return false;
+  return aliases.includes(`license-key-sha256:${tenantLicenseKeyDigest}`);
 };
 
 const pickLicenseId = (license = {}) => normalizeId(
@@ -179,7 +186,7 @@ export const evaluateAdminOfflineAuthorization = ({
   const currentLicenseId = pickLicenseId(license);
   if (!evidenceLicenseId || (currentLicenseId && currentLicenseId !== evidenceLicenseId)
     || !tenantOpaqueId || evidence.tenantOpaqueId !== tenantOpaqueId
-    || !tenantBindingMatchesLicense(tenantBinding, evidenceLicenseId)) {
+    || !tenantBindingMatchesLicense(tenantBinding, evidenceLicenseId, evidence.tenantLicenseKeyDigest)) {
     return denied(reason.DEVICE_OR_TENANT_INCOMPATIBLE);
   }
 

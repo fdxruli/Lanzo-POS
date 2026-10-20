@@ -162,12 +162,27 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
                 assertBootstrapActorCurrent();
                 beginActorRuntimeAuthentication(actorType);
                 bootstrapActorGeneration = actorRuntimeController.getState().generation;
+                const startedAt = globalThis.performance?.now?.() ?? Date.now();
+                const slowTimer = setTimeout(() => {
+                    Logger.warn('[AdminAuth]', { phase: 'operation_slow', operation: 'actor_runtime_restore', durationMs: 15_000 });
+                }, 15_000);
                 try {
                     const restored = await restoreActorRuntimeFromCurrentSessionCache({ actorType, actor });
                     bootstrapActorGeneration = restored.generation;
                     assertBootstrapActorCurrent();
+                    Logger.debug('[AdminAuth]', {
+                        phase: 'actor_runtime_restore_completed',
+                        status: 'granted',
+                        durationMs: Math.max(0, Math.round((globalThis.performance?.now?.() ?? Date.now()) - startedAt))
+                    });
                     return restored;
                 } catch (error) {
+                    Logger.debug('[AdminAuth]', {
+                        phase: 'actor_runtime_restore_completed',
+                        status: 'failed',
+                        code: /^[A-Z0-9_:-]{1,80}$/i.test(String(error?.code || '')) ? error.code : null,
+                        durationMs: Math.max(0, Math.round((globalThis.performance?.now?.() ?? Date.now()) - startedAt))
+                    });
                     const currentActor = actorRuntimeController.getState();
                     const ownedRestoreFailure = currentActor.reason === 'ambiguous_actor_session_evidence'
                         || currentActor.reason === `${actorType}_session_restore_failed`;
@@ -177,6 +192,8 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
                         bootstrapActorGeneration = currentActor.generation;
                     }
                     throw error;
+                } finally {
+                    clearTimeout(slowTimer);
                 }
             };
             try {

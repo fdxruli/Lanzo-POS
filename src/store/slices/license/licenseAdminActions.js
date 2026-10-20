@@ -62,7 +62,34 @@ import {
 const RECOVERY_MESSAGE = 'Tu sesión se verificó correctamente, pero no pudimos terminar de preparar Lanzo. Puedes reintentar la carga sin volver a registrar tu dispositivo.';
 const AUTH_REQUIRED_MESSAGE = 'No pudimos recuperar tu sesión de forma segura. Inicia sesión nuevamente para continuar.';
 
-const traceAuth = (phase, code = null) => Logger.debug('[AdminAuth]', { phase, code });
+const monotonicNow = () => globalThis.performance?.now?.() ?? Date.now();
+const safeDiagnosticCode = (code) => (
+  /^(?:ADMIN|AUTH|ACTOR|DATABASE|DEVICE|FREE|HTTP|INDEXEDDB|LICENSE|LOCAL|NETWORK|PGRST|PROFILE|SESSION|STAFF|TENANT)_[A-Z0-9_:-]{1,72}$/i.test(String(code || ''))
+    || /^PGRST\d{3}$/i.test(String(code || ''))
+    ? String(code)
+    : null
+);
+const traceAuth = (phase, code = null, durationMs = null) => Logger.debug('[AdminAuth]', {
+  phase,
+  code: safeDiagnosticCode(code),
+  ...(Number.isFinite(durationMs) ? { durationMs: Math.max(0, Math.round(durationMs)) } : {})
+});
+const runTimedAuthOperation = async (operation, callback) => {
+  const startedAt = monotonicNow();
+  const slowTimer = setTimeout(() => {
+    Logger.warn('[AdminAuth]', {
+      phase: 'operation_slow',
+      operation,
+      durationMs: 15_000
+    });
+  }, 15_000);
+  try {
+    return await callback();
+  } finally {
+    clearTimeout(slowTimer);
+    traceAuth(`${operation}_completed`, null, monotonicNow() - startedAt);
+  }
+};
 const createAttempt = (get, licenseKey) => {
   const tenant = getTenantRuntimeReadiness().runtime;
   let actor = actorRuntimeController.getState();
@@ -135,7 +162,7 @@ const completeAdminSession = async (set, get, licenseKey, result, reason, attemp
       pendingAdminSessionResult: session
     });
 
-    await saveLicenseToStorage(licenseData);
+    await runTimedAuthOperation('local_license_persistence', () => saveLicenseToStorage(licenseData));
     attempt.assertCurrent();
     try {
       if (!session.actorHandle) await clearStaffSessionCache();
@@ -144,13 +171,13 @@ const completeAdminSession = async (set, get, licenseKey, result, reason, attemp
       Logger.warn('[AdminAuth] Limpieza staff diferida por recuperación local.');
     }
 
-    await ensureLocalDatabaseReady();
+    await runTimedAuthOperation('local_database_ready', () => ensureLocalDatabaseReady());
     attempt.assertCurrent();
     if (!session.actorHandle) {
-      await grantAuthenticatedActorRuntime({
-        actorType: 'admin',
-        actor: result.admin_user || licenseData.admin_user
-      });
+      await runTimedAuthOperation('actor_runtime_grant', () => grantAuthenticatedActorRuntime({
+          actorType: 'admin',
+          actor: result.admin_user || licenseData.admin_user
+        }));
       attempt.bindActor();
       session.actorHandle = attempt.handle;
       traceAuth('ACTOR_GRANTED');
@@ -173,7 +200,7 @@ const completeAdminSession = async (set, get, licenseKey, result, reason, attemp
       profileOptions.allowSetupTransition = true;
     }
     traceAuth('PROFILE_LOAD_PENDING');
-    await get()._loadProfile(licenseKey, profileOptions);
+    await runTimedAuthOperation('admin_profile_load', () => get()._loadProfile(licenseKey, profileOptions));
     attempt.assertCurrent();
     const outcome = preparedStatus === 'ready' && get().appStatus === 'ready' ? 'READY'
       : preparedStatus === 'setup_required' && get().appStatus === 'setup_required'
@@ -211,6 +238,29 @@ const completeAdminSession = async (set, get, licenseKey, result, reason, attemp
       session.actorHandle = null;
     }
     if (securityFailure) {
+      const evidenceRecoveryPending = result.offlineEvidencePending === true
+        && error?.code === ACTOR_RUNTIME_ERROR_CODES.SESSION_REQUIRED
+        && error?.details?.offlineAuthorizationReason === 'evidence_missing'
+        && Boolean(session.sessionIdentity && session.adminUserId);
+      if (evidenceRecoveryPending) {
+        const message = getAdminOfflineAuthorizationUserMessage({ reason: 'evidence_missing' });
+        set({
+          appStatus: 'admin_login_required',
+          currentDeviceRole: 'admin',
+          currentAdminUser: result.admin_user || licenseData.admin_user,
+          pendingAdminSessionResult: session,
+          adminLoginMessage: message,
+          adminLoginError: { code: 'ADMIN_OFFLINE_EVIDENCE_PENDING', reasonCode: 'evidence_missing' }
+        });
+        traceAuth('AUTH_RECOVERY_REQUIRED', 'ADMIN_OFFLINE_EVIDENCE_PENDING');
+        return {
+          success: false,
+          remoteAuthenticated: true,
+          recoveryRequired: true,
+          code: 'ADMIN_OFFLINE_EVIDENCE_PENDING',
+          message
+        };
+      }
       clearPendingAdminSession(set, 'admin_authority_rejected');
       if (isLocalTenantAccessError(error)) enterLocalTenantIsolationFailure(set, error);
       else set({ appStatus: 'admin_login_required', currentAdminUser: null });

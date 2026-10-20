@@ -96,6 +96,32 @@ describe('OFFLINE-AUTH-P2: Admin offline continuity', () => {
     expect(result).toMatchObject({ eligible: false, reason: REASON.SERVER_SESSION_EXPIRED });
   });
 
+  it('AUTH-P2-REC-06: accepts a sticky historical key-hash binding only when verified evidence links it to the license ID', () => {
+    const args = fixture({
+      evidence: { ...fixture().evidence, tenantLicenseKeyDigest: 'a'.repeat(64) },
+      tenantBinding: {
+        tenantIdentity: `license-key-sha256:${'a'.repeat(64)}`,
+        tenantAliases: [`license-key-sha256:${'a'.repeat(64)}`]
+      }
+    });
+    expect(evaluateAdminOfflineAuthorization(args)).toMatchObject({ eligible: true, reason: REASON.AUTHORIZED });
+  });
+
+  it.each([
+    ['missing server-linked digest', null, 'a'.repeat(64)],
+    ['digest points at a different historical tenant', 'b'.repeat(64), 'a'.repeat(64)]
+  ])('AUTH-P2-REC-08: blocks %s', (_label, evidenceDigest, bindingDigest) => {
+    const args = fixture({
+      evidence: { ...fixture().evidence, tenantLicenseKeyDigest: evidenceDigest },
+      tenantBinding: {
+        tenantIdentity: `license-key-sha256:${bindingDigest}`,
+        tenantAliases: [`license-key-sha256:${bindingDigest}`]
+      }
+    });
+    expect(evaluateAdminOfflineAuthorization(args))
+      .toMatchObject({ eligible: false, reason: REASON.DEVICE_OR_TENANT_INCOMPATIBLE });
+  });
+
   it('caps authority at local license expiry without extending it', () => {
     const args = fixture();
     const licenseExpiry = verifiedAt + 2 * DAY;
