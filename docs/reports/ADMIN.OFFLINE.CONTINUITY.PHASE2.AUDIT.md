@@ -91,7 +91,7 @@ La marca `validatedAt` es el epoch local leído inmediatamente después de la re
 | Supabase IndexedDB bootstrap | PASS, 20/20 |
 | Actor bridge y Actor Scoped Storage | PASS, 20/20 |
 
-Las pruebas focales de política simulan las fronteras temporales; no cambian el reloj del sistema ni acceden a producción. Una suite agrupada de caja/tenant fue interrumpida por lentitud y luego se dividió en grupos focales; los grupos reportados arriba terminaron con éxito. La comparación unitaria del clasificador PR127 pasó 14/14. El workflow global PR127 ejecuta Base/Candidate completos al abrir el Draft y queda pendiente de GitHub Actions.
+Las pruebas focales de política simulan las fronteras temporales; no cambian el reloj del sistema ni acceden a producción. Una suite agrupada de caja/tenant fue interrumpida por lentitud y luego se dividió en grupos focales; los grupos reportados arriba terminaron con éxito. La comparación unitaria del clasificador PR127 pasó 14/14. El workflow global PR127 (run `39364599153`) terminó `SUCCESS`: tanto Candidate como Base corrieron y el comparador reportó 100 fallos compartidos, 0 fallos raw solo en Candidate, 0 fallos nuevos, 0 identidades no resueltas y 0 fallos flaky preexistentes clasificados. El reporte descargado quedó en el artefacto `pr127-global-comparison-03275a370a057af52dbbc20130f2eedc5d9022bd`.
 
 `npm run build`: PASS; Vite transformó 3,593 módulos y `postbuild` confirmó 21 assets de arranque. El build mantiene advertencias de división dinámica/estática de chunks y patrones de precache sin coincidencia (incluyendo cinco assets legacy y rutas Local estáticamente importadas); el audit de precache finalizó correctamente. ESLint sobre los 14 JavaScript modificados: PASS, 0 errores y 0 warnings tras retirar un import sin uso. ESLint mostró la notificación informativa de que el dataset `baseline-browser-mapping` tiene más de dos meses.
 
@@ -115,8 +115,11 @@ La matriz manual y los flujos físicos de cierre/reapertura quedan para QA del p
 
 - HEAD inicial de `main`: `a09b224cc1aff671f4a29152f21b9d9d12173f20`.
 - Rama: `feat/admin-offline-continuity-extended-r1`.
+- PR #366 Draft: https://github.com/fdxruli/Lanzo-POS/pull/366.
+- HEAD de código del PR: `03275a370a057af52dbbc20130f2eedc5d9022bd` (commit `feat(auth): add bounded admin offline continuity`).
 - PR #365 permanece merged y no se reutiliza.
 - Conflictos materiales detectados: ninguno. Hay solapamientos de archivos que requieren revisión futura con PR #357 y #338; #352 no solapa con la autorización auditada.
+- Vercel Preview `Ready`: https://lanzo-pos-git-feat-admin-offline-conti-519026-fdxrulis-projects.vercel.app. `vercel curl` autenticado devolvió el shell HTML de Lanzo; el acceso visual/interactivo móvil queda para QA propietario.
+- Checks focales de GitHub, Dexie, builds y PR127 Base/Candidate: `SUCCESS`. Los jobs observacionales extendidos de repetición de suite Candidate/Base de los workflows Shared Terminal Actor Runtime/Actor Scoped Storage permanecían `in_progress` al último sondeo; sus jobs focales (auth, tenant, runtime, sync, caja, lint y builds) completaron `SUCCESS`.
 - Producción/Supabase: sin cambios; migraciones: ninguna.
 - Merge: no realizado.
-- PR Draft, HEAD final, checks de GitHub y Preview: pendientes de publicación de la rama. El workflow Base/Candidate PR127 se disparará al abrir el Draft.
