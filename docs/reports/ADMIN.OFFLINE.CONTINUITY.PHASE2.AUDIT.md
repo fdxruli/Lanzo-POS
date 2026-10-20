@@ -152,6 +152,7 @@ La prueba de login ahora usa la forma positiva real sin `license_id`/`device_id`
 |---|---:|
 | AUTH-P2-REC focal: Supabase, política offline, acciones Admin | PASS, 84/84 en 3 archivos |
 | OFFLINE-AUTH-P2, Actor Runtime/Bridge/Scoped Storage, recuperación Admin, bootstrap, tenant, FREE, Dexie, caja y financiero | PASS, 265/265 en 17 archivos |
+| PR127 global-comparison classifier unit tests | PASS, 14/14 |
 | ESLint focal sobre los archivos modificados | PASS, 0 errores; aviso informativo: `baseline-browser-mapping` tiene más de dos meses |
 | React Doctor sobre cambios de interfaz | PASS, 90/100; sin hallazgos en 15 archivos |
 | `npm run build` + `postbuild` | PASS; 3,593 módulos, worker generado y auditoría con 21 assets de inicio verificados |
@@ -160,7 +161,7 @@ Workbox emitió advertencias de seis patrones de precache sin coincidencia (incl
 
 ### Compatibilidad, entrega y QA físico
 
-Los PR abiertos #338, #352 y #357 se revisaron antes de editar: no hay conflicto material con el cambio de contrato/persistencia. #338 comparte el modal y rutas Admin/Actor; #357 comparte el modal; #352 no solapa los módulos auditados. No se tocaron esos PRs. El comparador PR127 Base/Candidate y los checks de GitHub de este nuevo HEAD quedan pendientes de terminar tras actualizar la misma rama; se registrarán aquí con sus estados/resultados exactos. PR #366 sigue abierto en Draft: https://github.com/fdxruli/Lanzo-POS/pull/366.
+Los PR abiertos #338, #352 y #357 se revisaron antes de editar. Durante esta ejecución #357 se integró en `main`, que avanzó de `a09b224cc1aff671f4a29152f21b9d9d12173f20` a `f014a1f34` (`feat: unified incident recovery and manual support`). El merge-tree de los cambios de #366 con esa base terminó sin conflictos; la única ruta que ambos lados editaron fue `src/components/common/AdminLoginModal.jsx`, y los hunks se combinan limpiamente. #338 comparte rutas Admin/Actor y #352 no solapa los módulos auditados; no se modificó ninguno de esos PRs. El comparador PR127 Base/Candidate global y los checks del nuevo HEAD quedan pendientes después de actualizar esta misma rama; se registrarán aquí con sus estados/resultados exactos. PR #366 sigue abierto en Draft: https://github.com/fdxruli/Lanzo-POS/pull/366.
 
 Para repetir Farmacia Gary Chrome en QA físico: usar el perfil Chrome y el dispositivo Free ya registrados; no liberar dispositivos ni cambiar datos. Con conexión disponible, iniciar sesión Admin con la misma licencia, esperar la confirmación y, si aparece recuperación pendiente, pulsar «Reintentar verificación». Confirmar que se consulta `verify_admin_session` sobre la misma sesión, se restaura el mismo negocio y no aparece un nuevo registro de dispositivo. Cerrar completamente Lanzo/PWA y abrir de nuevo; después comprobar una apertura offline dentro del límite, sin efectuar venta de prueba ni alterar caja. Revisar la consola por códigos/fases seguros y anotar duración de RPC, IndexedDB, Actor Runtime y perfil. QA físico del propietario sigue pendiente.
 
