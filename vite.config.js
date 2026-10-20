@@ -39,6 +39,7 @@ const ADMIN_SHELL_GLOB_PATTERNS = Object.freeze([
   'assets/IncidentErrorBoundary-*.{js,css}',
   // Shared shell dependencies emitted by Vite's independent QA HTML entry.
   // No laboratory entry, fixture or adapter is precached by the POS worker.
+  'assets/supportContact-*.js',
   'assets/buttons-*.{js,css}',
   'assets/contextSnapshotGuard-*.js',
   'assets/recoveryContext-*.js',

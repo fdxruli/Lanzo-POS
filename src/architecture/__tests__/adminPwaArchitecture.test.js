@@ -81,6 +81,12 @@ describe('ECOM.PUBLIC.PWA.1 architecture', () => {
     expect(audit).toMatch(/if \(invokedPath === modulePath\)[\s\S]*auditAdminStartupPrecache/);
   });
 
+  it('precaches the shared manual support helper emitted by the preview QA entry', async () => {
+    const config = await readProjectFile('vite.config.js');
+
+    expect(config).toContain("'assets/supportContact-*.js'");
+  });
+
   it('starts install and worker infrastructure only in the administrative branch', async () => {
     const main = await readProjectFile('src/main.jsx');
     const publicStart = main.indexOf('if (isPublicStorePath');
