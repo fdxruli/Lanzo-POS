@@ -65,7 +65,7 @@ Al auditar inicialmente #365 estaba OPEN / Draft en `b88ff1fa117c9249ee4893108ad
 
 La revalidación previa a publicar encontró #365 aún OPEN / Draft, ahora en HEAD `13bb52f8226f83ffe56fc2ad6f2fd903ed8c5a38`. En [Actor Runtime 39339317006](https://github.com/fdxruli/Lanzo-POS/actions/runs/39339317006), [Actor Scoped Storage 39339316777](https://github.com/fdxruli/Lanzo-POS/actions/runs/39339316777) y [Device Actor Auth 39339316907](https://github.com/fdxruli/Lanzo-POS/actions/runs/39339316907), los artefactos diferenciales reportan 0 regresiones nuevas, 0 flakies y 94 fallos candidatos preexistentes estables. BASE repitió 5,278 PASS / 75 FAIL / 52 SKIP; candidato repitió 5,330 PASS / 75 FAIL / 52 SKIP. La observación de `BackupRuntime.attention.test.jsx` no aparece en ninguno de los tres resultados actuales; la causa anterior sigue sin demostrarse y #365 no se modificó.
 
-Los demás checks consultados sobre ese HEAD incluyen [PR127 39339317014](https://github.com/fdxruli/Lanzo-POS/actions/runs/39339317014), Dexie/focal-quality y builds focales, todos PASS. El fallo histórico queda documentado por separado. El único solapamiento de archivos entre #357 y #365 sigue siendo `src/components/common/AdminLoginModal.jsx`, con zonas de parche separadas; este diff no modifica ese archivo. Tampoco modifica StaffLoginModal, Supabase, licencias, coordinadores, respaldos, notificaciones ni autenticación.
+Los demás checks consultados sobre ese HEAD incluyen [PR127 39339317014](https://github.com/fdxruli/Lanzo-POS/actions/runs/39339317014), Dexie/focal-quality y builds focales, todos PASS. En la nueva repetición de PR127 para #357 (véase §10.1) reapareció de forma intermitente la misma aserción de `BackupRuntime.attention.test.jsx`: el candidato falló 3/20 veces y BASE 1/20. Esto prueba que la observación también ocurre en BASE, pero la frecuencia distinta no permite descartarla como regresión ni atribuirle causa. No se modifica este flujo ni #365. El único solapamiento de archivos entre #357 y #365 sigue siendo `src/components/common/AdminLoginModal.jsx`, con zonas de parche separadas; este diff no modifica ese archivo. Tampoco modifica StaffLoginModal, Supabase, licencias, coordinadores, respaldos, notificaciones ni autenticación.
 
 ## 8. Compatibilidad con PR #338 y #352
 
@@ -85,7 +85,7 @@ La cobertura agregada/actualizada incluye:
 - **Build administrativo: PASS.** `postbuild` verificó 23 assets de inicio y 0 assets de rutas core Local. Vite mantuvo avisos de importación mixta y de patrones opcionales de precache sin archivos coincidentes.
 - **Build público `build:store:vercel`: PASS.** Auditoría de compliance pasó con 0 violaciones; artefactos públicos preparados localmente, sin publicar/deployar.
 - **React Doctor (scope changed):** escaneó 98 archivos; reportó 55 hallazgos (28 mantenibilidad, 5 accesibilidad, 20 bugs y 2 rendimiento). No mostró score porque la revisión de lint/mantenibilidad quedó incompleta. El error `no-ref-current-in-render` apunta a `IncidentReportForm.jsx:83`, línea no modificada en este diff; no se amplió esta fase para refactorizar el guard de identidad existente. Los demás hallazgos se registran como señales del análisis, no como regresiones atribuidas a esta fase.
-- `git diff --check`: PASS. La certificación de CI del HEAD publicado se añadirá al completar los workflows del PR.
+- `git diff --check`: PASS. CI del commit funcional `fa48d62` pasó los workflows enumerados en §10. La reejecución documental posterior está detallada en §10.1, incluida una observación intermitente que mantiene fallido PR127.
 
 Los saltos a Telegram Android/iOS/Desktop requieren pruebas manuales; construir una URL en test no certifica cliente físico. No se publica ninguna inyección de error.
 
@@ -100,6 +100,15 @@ Los saltos a Telegram Android/iOS/Desktop requieren pruebas manuales; construir 
 - Vercel PR Preview terminó SUCCESS; es Preview del PR, no producción. El build público local también pasó compliance sin publicar/deployar.
 
 Los diferenciales comparan BASE y candidato por dos repeticiones completas; los fallos compartidos no se atribuyen a este cambio. Un resultado de BASE ausente del candidato se conserva como observación sin inventar causa.
+
+### 10.1 Reejecución del HEAD documental `4853d5df8`
+
+El commit `4853d5df8b72c3af920f06bb236dddc48b5d1df9` solo modifica este informe. GitHub lanzó una nueva serie de gates sobre ese SHA:
+
+- [PR127 Global Comparison 39346400127](https://github.com/fdxruli/Lanzo-POS/actions/runs/39346400127): **FAILURE**. BASE y candidato tuvieron 100 fallos cada uno y 99 compartidos; la comparación clasificó una observación candidata-only en `BackupRuntime.attention.test.jsx`, sobre el estado leído/no leído luego de recuperación. Las pruebas enfocadas de seguimiento repitieron ese caso 20 veces: BASE falló 1 vez y candidato 3 veces. Como también aparece en BASE, es intermitente y no hay cambios de #357 en respaldos; con todo, el diferencial de esta corrida queda **sin resolver**, no se declara PASS ni se atribuye causa.
+- El mismo artefacto marca como resuelto en candidato el fallo BASE-only `src/tests/ErrorBoundary.test.jsx` (`expect is not defined`), observado en las corridas completas previas.
+- En la última consulta, los otros checks focales, Vercel, laboratorio aislado, Ecommerce, contratos y validación estaban PASS; las repeticiones completas observacionales BASE/candidato de Actor Runtime y Actor Scoped Storage seguían `IN_PROGRESS`. Los estados corresponden a la consulta del 20 oct 2026, no a una certificación final de esos cuatro jobs.
+- Esta observación es compatible con la señal histórica del PR #365, pero no se demostró que tenga la misma causa ni que #357 la introduzca. No se cambian tests, aserciones, código de backups ni archivos del PR #365 para intentar resolverla.
 
 ## 11. Evidencia visual
 
