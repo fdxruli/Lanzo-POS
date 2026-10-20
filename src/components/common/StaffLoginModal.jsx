@@ -22,7 +22,7 @@ const describeStaffLoginError = (error) => {
   if (authority) return authority.message;
   if (SAFE_LOGIN_MESSAGES[error?.code]) return SAFE_LOGIN_MESSAGES[error.code];
   if (!navigator.onLine || /network|fetch/i.test(error?.message || '')) {
-    return 'No se pudo conectar con el servidor. Revisa tu conexión e inténtalo nuevamente.';
+    return 'No se pudo iniciar sesión staff. Comprueba la conexión e inténtalo de nuevo.';
   }
   return 'No se pudo iniciar sesión staff. Tus datos permanecen intactos. Vuelve a intentarlo.';
 };
