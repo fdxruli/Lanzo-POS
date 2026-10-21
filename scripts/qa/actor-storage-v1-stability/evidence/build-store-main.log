@@ -1,0 +1,6 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> lanzo-pos-react@4.0.0 build:store
+> vite build --config vite.store.config.js
+
+vite v7.2.2 building client environment for production...

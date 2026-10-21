@@ -1,0 +1,23 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> lanzo-pos-react@4.0.0 build:store
+> vite build --config vite.store.config.js
+
+vite v7.2.2 building client environment for production...
+transforming...
+✓ 1847 modules transformed.
+Generated an empty chunk: "vendor_supabase_public".
+rendering chunks...
+computing gzip size...
+../dist-store/assets/logIcon-Cg6EELVY.svg                           0.34 kB │ gzip:  0.23 kB
+../dist-store/index.html                                            1.11 kB │ gzip:  0.50 kB
+../dist-store/home.html                                             1.95 kB │ gzip:  0.68 kB
+../dist-store/assets/main-store--eNxLOHg.css                      121.35 kB │ gzip: 19.20 kB
+../dist-store/assets/vendor_supabase_public-l0sNRNKZ.js             0.00 kB │ gzip:  0.02 kB
+../dist-store/assets/vendor_public-Cpj98o6Y.js                      0.24 kB │ gzip:  0.18 kB
+../dist-store/assets/PublicProductConfigurationModal-ChPt91-9.js   10.14 kB │ gzip:  3.45 kB
+../dist-store/assets/vendor_icons_public-CR5l7dkw.js               12.66 kB │ gzip:  4.82 kB
+../dist-store/assets/vendor_store_public-DhwKUplI.js              103.50 kB │ gzip: 35.57 kB
+../dist-store/assets/main-store-Bv9ib-Lx.js                       177.06 kB │ gzip: 51.58 kB
+../dist-store/assets/vendor_react_public-CrEvRHNo.js              280.01 kB │ gzip: 89.79 kB
+✓ built in 2.69s

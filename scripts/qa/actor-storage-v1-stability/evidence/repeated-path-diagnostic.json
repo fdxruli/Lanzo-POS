@@ -1,0 +1,2051 @@
+{
+  "base": {
+    "passed": 5612,
+    "failed": 75,
+    "skipped": 52,
+    "total": 5739,
+    "suitesPassed": 1248,
+    "suitesFailed": 65,
+    "suitesTotal": 1313
+  },
+  "candidate": {
+    "passed": 5615,
+    "failed": 75,
+    "skipped": 52,
+    "total": 5742,
+    "suitesPassed": 1250,
+    "suitesFailed": 65,
+    "suitesTotal": 1315
+  },
+  "baseRuns": [
+    {
+      "passed": 5612,
+      "failed": 75,
+      "skipped": 52,
+      "total": 5739,
+      "suitesPassed": 1248,
+      "suitesFailed": 65,
+      "suitesTotal": 1313
+    },
+    {
+      "passed": 5612,
+      "failed": 75,
+      "skipped": 52,
+      "total": 5739,
+      "suitesPassed": 1248,
+      "suitesFailed": 65,
+      "suitesTotal": 1313
+    }
+  ],
+  "candidateRuns": [
+    {
+      "passed": 5615,
+      "failed": 75,
+      "skipped": 52,
+      "total": 5742,
+      "suitesPassed": 1250,
+      "suitesFailed": 65,
+      "suitesTotal": 1315
+    },
+    {
+      "passed": 5615,
+      "failed": 75,
+      "skipped": 52,
+      "total": 5742,
+      "suitesPassed": 1250,
+      "suitesFailed": 65,
+      "suitesTotal": 1315
+    }
+  ],
+  "baseFocusedRuns": [],
+  "candidateFocusedRuns": [],
+  "baseUniqueFailureObservationCount": 93,
+  "candidateUniqueFailureObservationCount": 93,
+  "newRegressionCount": 3,
+  "incidentalFocusedEvidenceCount": 0,
+  "stablePreexistingCandidateFailureCount": 90,
+  "flakyPreexistingCandidateFailureCount": 0,
+  "preexistingCandidateFailureCount": 90,
+  "incidentalImprovementCount": 3,
+  "matrix": [
+    {
+      "id": "src/tests/useStoreSync.test.js > [file-level failure]",
+      "file": "src/tests/useStoreSync.test.js",
+      "test": "[file-level failure]",
+      "error": "Cannot find package '@testing-library/react-hooks' imported from '/tmp/lanzo-validation/pr/src/tests/useStoreSync.test.js'",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL with different normalized error(s): Cannot find package '@testing-library/react-hooks' imported from '/tmp/lanzo-validation/main/src/tests/useStoreSync.test.js'",
+      "candidate": "FAIL in repetition(s) 1,2: Cannot find package '@testing-library/react-hooks' imported from '/tmp/lanzo-validation/pr/src/tests/useStoreSync.test.js'",
+      "classification": "POSSIBLE_PR_REGRESSION"
+    },
+    {
+      "id": "src/utils/storageManager.test.js > [file-level failure]",
+      "file": "src/utils/storageManager.test.js",
+      "test": "[file-level failure]",
+      "error": "No test suite found in file /tmp/lanzo-validation/pr/src/utils/storageManager.test.js",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL with different normalized error(s): No test suite found in file /tmp/lanzo-validation/main/src/utils/storageManager.test.js",
+      "candidate": "FAIL in repetition(s) 1,2: No test suite found in file /tmp/lanzo-validation/pr/src/utils/storageManager.test.js",
+      "classification": "POSSIBLE_PR_REGRESSION"
+    },
+    {
+      "id": "scripts/oss/release-boundary.test.mjs > [file-level failure]",
+      "file": "scripts/oss/release-boundary.test.mjs",
+      "test": "[file-level failure]",
+      "error": "No test suite found in file /tmp/lanzo-validation/pr/scripts/oss/release-boundary.test.mjs",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL with different normalized error(s): No test suite found in file /tmp/lanzo-validation/main/scripts/oss/release-boundary.test.mjs",
+      "candidate": "FAIL in repetition(s) 1,2: No test suite found in file /tmp/lanzo-validation/pr/scripts/oss/release-boundary.test.mjs",
+      "classification": "POSSIBLE_PR_REGRESSION"
+    },
+    {
+      "id": "src/architecture/__tests__/adminDeploymentPackage.test.js > [file-level failure]",
+      "file": "src/architecture/__tests__/adminDeploymentPackage.test.js",
+      "test": "[file-level failure]",
+      "error": "{\"status\":\"failed\",\"error\":\"Target already exists: cp returned EEXIST (/tmp/lanzo-pos-cutover-1-1-<tmp> already exists) /tmp/lanzo-pos-cutover-1-1-<tmp>\"}",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: {\"status\":\"failed\",\"error\":\"Target already exists: cp returned EEXIST (/tmp/lanzo-pos-cutover-1-1-<tmp> already exists) /tmp/lanzo-pos-cutover-1-1-<tmp>\"}",
+      "candidate": "FAIL in repetition(s) 1,2: {\"status\":\"failed\",\"error\":\"Target already exists: cp returned EEXIST (/tmp/lanzo-pos-cutover-1-1-<tmp> already exists) /tmp/lanzo-pos-cutover-1-1-<tmp>\"}",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/architecture/__tests__/publicDeploymentArchitecture.test.js > [file-level failure]",
+      "file": "src/architecture/__tests__/publicDeploymentArchitecture.test.js",
+      "test": "[file-level failure]",
+      "error": "",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: ",
+      "candidate": "FAIL in repetition(s) 1,2: ",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/hooks/__tests__/useNavigationGuard.test.jsx > useNavigationGuard bloquea la navegación aunque el formulario no haya cambiado",
+      "file": "src/hooks/__tests__/useNavigationGuard.test.jsx",
+      "test": "useNavigationGuard bloquea la navegación aunque el formulario no haya cambiado",
+      "error": "TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)')",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)')",
+      "candidate": "FAIL in repetition(s) 1,2: TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)')",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/hooks/__tests__/useNavigationGuard.test.jsx > useNavigationGuard cancela la salida y conserva los datos capturados",
+      "file": "src/hooks/__tests__/useNavigationGuard.test.jsx",
+      "test": "useNavigationGuard cancela la salida y conserva los datos capturados",
+      "error": "TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)')",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)')",
+      "candidate": "FAIL in repetition(s) 1,2: TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)')",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/hooks/__tests__/useNavigationGuard.test.jsx > useNavigationGuard descarta la operación y continúa al destino al confirmar",
+      "file": "src/hooks/__tests__/useNavigationGuard.test.jsx",
+      "test": "useNavigationGuard descarta la operación y continúa al destino al confirmar",
+      "error": "TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)')",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)')",
+      "candidate": "FAIL in repetition(s) 1,2: TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)')",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/hooks/__tests__/useNavigationGuard.test.jsx > useNavigationGuard permite navegar sin advertencia después de guardar",
+      "file": "src/hooks/__tests__/useNavigationGuard.test.jsx",
+      "test": "useNavigationGuard permite navegar sin advertencia después de guardar",
+      "error": "TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)')",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)')",
+      "candidate": "FAIL in repetition(s) 1,2: TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)')",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/hooks/__tests__/useNavigationGuard.test.jsx > useNavigationGuard activa la advertencia nativa del navegador mientras está habilitado",
+      "file": "src/hooks/__tests__/useNavigationGuard.test.jsx",
+      "test": "useNavigationGuard activa la advertencia nativa del navegador mientras está habilitado",
+      "error": "ReferenceError: document is not defined",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: ReferenceError: document is not defined",
+      "candidate": "FAIL in repetition(s) 1,2: ReferenceError: document is not defined",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/hooks/__tests__/useNavigationGuard.test.jsx > useNavigationGuard bloquea cambios de pestaña representados por parámetros de búsqueda",
+      "file": "src/hooks/__tests__/useNavigationGuard.test.jsx",
+      "test": "useNavigationGuard bloquea cambios de pestaña representados por parámetros de búsqueda",
+      "error": "TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)')",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)')",
+      "candidate": "FAIL in repetition(s) 1,2: TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)')",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/hooks/__tests__/useNavigationGuard.test.jsx > useNavigationGuard cierra el modal al confirmar salida hacia otra pestaña de la misma ruta",
+      "file": "src/hooks/__tests__/useNavigationGuard.test.jsx",
+      "test": "useNavigationGuard cierra el modal al confirmar salida hacia otra pestaña de la misma ruta",
+      "error": "TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)')",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)')",
+      "candidate": "FAIL in repetition(s) 1,2: TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)')",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/hooks/__tests__/useNavigationGuard.test.jsx > useNavigationGuard bloquea la navegación hacia atrás del historial",
+      "file": "src/hooks/__tests__/useNavigationGuard.test.jsx",
+      "test": "useNavigationGuard bloquea la navegación hacia atrás del historial",
+      "error": "ReferenceError: document is not defined",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: ReferenceError: document is not defined",
+      "candidate": "FAIL in repetition(s) 1,2: ReferenceError: document is not defined",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/store/__test__/useOrderStore.test.js > useOrderStore - mesas abiertas loadOpenOrder carga solo ventas con status open",
+      "file": "src/store/__test__/useOrderStore.test.js",
+      "test": "useOrderStore - mesas abiertas loadOpenOrder carga solo ventas con status open",
+      "error": "AssertionError: expected { success: false, …(1) } to deeply equal { success: true }",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: AssertionError: expected { success: false, …(1) } to deeply equal { success: true }",
+      "candidate": "FAIL in repetition(s) 1,2: AssertionError: expected { success: false, …(1) } to deeply equal { success: true }",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/store/__test__/useOrderStore.test.js > useOrderStore - mesas abiertas saveOrderAsOpen inserta nueva orden abierta y limpia la sesión",
+      "file": "src/store/__test__/useOrderStore.test.js",
+      "test": "useOrderStore - mesas abiertas saveOrderAsOpen inserta nueva orden abierta y limpia la sesión",
+      "error": "AssertionError: expected { success: false, …(1) } to deeply equal { success: true, …(1) }",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: AssertionError: expected { success: false, …(1) } to deeply equal { success: true, …(1) }",
+      "candidate": "FAIL in repetition(s) 1,2: AssertionError: expected { success: false, …(1) } to deeply equal { success: true, …(1) }",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/store/__test__/useOrderStore.test.js > useOrderStore - mesas abiertas saveOrderAsOpen actualiza orden activa liberando y re-reservando stock",
+      "file": "src/store/__test__/useOrderStore.test.js",
+      "test": "useOrderStore - mesas abiertas saveOrderAsOpen actualiza orden activa liberando y re-reservando stock",
+      "error": "AssertionError: expected { success: false, …(1) } to deeply equal { success: true, id: 'sale-open-2' }",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: AssertionError: expected { success: false, …(1) } to deeply equal { success: true, id: 'sale-open-2' }",
+      "candidate": "FAIL in repetition(s) 1,2: AssertionError: expected { success: false, …(1) } to deeply equal { success: true, id: 'sale-open-2' }",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/store/__test__/useOrderStore.test.js > useOrderStore - mesas abiertas saveOrderAsOpen hace rollback best-effort si falla el upsert",
+      "file": "src/store/__test__/useOrderStore.test.js",
+      "test": "useOrderStore - mesas abiertas saveOrderAsOpen hace rollback best-effort si falla el upsert",
+      "error": "AssertionError: expected 'El pedido está vacío.' to contain 'put failed'",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: AssertionError: expected 'El pedido está vacío.' to contain 'put failed'",
+      "candidate": "FAIL in repetition(s) 1,2: AssertionError: expected 'El pedido está vacío.' to contain 'put failed'",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/store/__test__/useOrderStore.test.js > useOrderStore - mesas abiertas clearSession limpia order, activeOrderId y tableData",
+      "file": "src/store/__test__/useOrderStore.test.js",
+      "test": "useOrderStore - mesas abiertas clearSession limpia order, activeOrderId y tableData",
+      "error": "AssertionError: expected [ { id: 'prod', quantity: 1, …(1) } ] to deeply equal []",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: AssertionError: expected [ { id: 'prod', quantity: 1, …(1) } ] to deeply equal []",
+      "candidate": "FAIL in repetition(s) 1,2: AssertionError: expected [ { id: 'prod', quantity: 1, …(1) } ] to deeply equal []",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/store/__test__/useStoreSync.test.js > Bidirectional Syncing: useOrderStore <-> useActiveOrders 1. debería enlazar correctamente ambos stores",
+      "file": "src/store/__test__/useStoreSync.test.js",
+      "test": "Bidirectional Syncing: useOrderStore <-> useActiveOrders 1. debería enlazar correctamente ambos stores",
+      "error": "TypeError: __vi_import_1__.useOrderStore.getState(...).linkWithActiveOrders is not a function",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: TypeError: __vi_import_1__.useOrderStore.getState(...).linkWithActiveOrders is not a function",
+      "candidate": "FAIL in repetition(s) 1,2: TypeError: __vi_import_1__.useOrderStore.getState(...).linkWithActiveOrders is not a function",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/store/__test__/useStoreSync.test.js > Bidirectional Syncing: useOrderStore <-> useActiveOrders 2. debería volcar datos a useOrderStore cuando se hace switchOrder",
+      "file": "src/store/__test__/useStoreSync.test.js",
+      "test": "Bidirectional Syncing: useOrderStore <-> useActiveOrders 2. debería volcar datos a useOrderStore cuando se hace switchOrder",
+      "error": "TypeError: __vi_import_1__.useOrderStore.getState(...).linkWithActiveOrders is not a function",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: TypeError: __vi_import_1__.useOrderStore.getState(...).linkWithActiveOrders is not a function",
+      "candidate": "FAIL in repetition(s) 1,2: TypeError: __vi_import_1__.useOrderStore.getState(...).linkWithActiveOrders is not a function",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/store/__test__/useStoreSync.test.js > Bidirectional Syncing: useOrderStore <-> useActiveOrders 3. debería actualizar useActiveOrders cuando useOrderStore es modificado",
+      "file": "src/store/__test__/useStoreSync.test.js",
+      "test": "Bidirectional Syncing: useOrderStore <-> useActiveOrders 3. debería actualizar useActiveOrders cuando useOrderStore es modificado",
+      "error": "TypeError: __vi_import_1__.useOrderStore.getState(...).linkWithActiveOrders is not a function",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: TypeError: __vi_import_1__.useOrderStore.getState(...).linkWithActiveOrders is not a function",
+      "candidate": "FAIL in repetition(s) 1,2: TypeError: __vi_import_1__.useOrderStore.getState(...).linkWithActiveOrders is not a function",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/store/__test__/useStoreSync.test.js > Bidirectional Syncing: useOrderStore <-> useActiveOrders 4. el getter currentOrder en useOrderStore debe retornar la orden actual",
+      "file": "src/store/__test__/useStoreSync.test.js",
+      "test": "Bidirectional Syncing: useOrderStore <-> useActiveOrders 4. el getter currentOrder en useOrderStore debe retornar la orden actual",
+      "error": "TypeError: __vi_import_1__.useOrderStore.getState(...).linkWithActiveOrders is not a function",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: TypeError: __vi_import_1__.useOrderStore.getState(...).linkWithActiveOrders is not a function",
+      "candidate": "FAIL in repetition(s) 1,2: TypeError: __vi_import_1__.useOrderStore.getState(...).linkWithActiveOrders is not a function",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/__test__/BackupRiskEvaluator.test.js > BackupRiskEvaluator debe calcular el riesgo L1 cuando pasa el umbral de 50",
+      "file": "src/services/__test__/BackupRiskEvaluator.test.js",
+      "test": "BackupRiskEvaluator debe calcular el riesgo L1 cuando pasa el umbral de 50",
+      "error": "ReferenceError: localStorage is not defined",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined",
+      "candidate": "FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/__test__/BackupRiskEvaluator.test.js > BackupRiskEvaluator debe escalar al riesgo L3 cuando pasa de 300",
+      "file": "src/services/__test__/BackupRiskEvaluator.test.js",
+      "test": "BackupRiskEvaluator debe escalar al riesgo L3 cuando pasa de 300",
+      "error": "ReferenceError: localStorage is not defined",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined",
+      "candidate": "FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/__test__/BackupRiskEvaluator.test.js > BackupRiskEvaluator no debe disparar alerta si el posponer esta activo",
+      "file": "src/services/__test__/BackupRiskEvaluator.test.js",
+      "test": "BackupRiskEvaluator no debe disparar alerta si el posponer esta activo",
+      "error": "ReferenceError: localStorage is not defined",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined",
+      "candidate": "FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/__test__/BackupRiskEvaluator.test.js > BackupRiskEvaluator debe reanudar la alerta L3 si se rebasa el limite de posponer",
+      "file": "src/services/__test__/BackupRiskEvaluator.test.js",
+      "test": "BackupRiskEvaluator debe reanudar la alerta L3 si se rebasa el limite de posponer",
+      "error": "ReferenceError: localStorage is not defined",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined",
+      "candidate": "FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/__test__/BackupRiskEvaluator.test.js > BackupRiskEvaluator debe marcar el respaldo como completado correctamente (Async)",
+      "file": "src/services/__test__/BackupRiskEvaluator.test.js",
+      "test": "BackupRiskEvaluator debe marcar el respaldo como completado correctamente (Async)",
+      "error": "ReferenceError: localStorage is not defined",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined",
+      "candidate": "FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/__test__/BackupRiskEvaluator.test.js > BackupRiskEvaluator no debe lanzar ni registrar error cuando localStorage no existe",
+      "file": "src/services/__test__/BackupRiskEvaluator.test.js",
+      "test": "BackupRiskEvaluator no debe lanzar ni registrar error cuando localStorage no existe",
+      "error": "ReferenceError: localStorage is not defined",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined",
+      "candidate": "FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/__test__/BackupRiskEvaluator.test.js > BackupRiskEvaluator startBackupRiskEvaluator no hace nada cuando localStorage no existe",
+      "file": "src/services/__test__/BackupRiskEvaluator.test.js",
+      "test": "BackupRiskEvaluator startBackupRiskEvaluator no hace nada cuando localStorage no existe",
+      "error": "ReferenceError: localStorage is not defined",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined",
+      "candidate": "FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/__test__/BackupRiskEvaluator.test.js > BackupRiskEvaluator startBackupRiskEvaluator programa un solo ping inicial",
+      "file": "src/services/__test__/BackupRiskEvaluator.test.js",
+      "test": "BackupRiskEvaluator startBackupRiskEvaluator programa un solo ping inicial",
+      "error": "ReferenceError: localStorage is not defined",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined",
+      "candidate": "FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/__test__/cashOpeningPolicy.test.js > cashOpeningPolicy usa apertura manual como politica segura por defecto",
+      "file": "src/services/__test__/cashOpeningPolicy.test.js",
+      "test": "cashOpeningPolicy usa apertura manual como politica segura por defecto",
+      "error": "ReferenceError: localStorage is not defined",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined",
+      "candidate": "FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/__test__/cashOpeningPolicy.test.js > cashOpeningPolicy persiste la autoapertura solo cuando se configura explicitamente",
+      "file": "src/services/__test__/cashOpeningPolicy.test.js",
+      "test": "cashOpeningPolicy persiste la autoapertura solo cuando se configura explicitamente",
+      "error": "ReferenceError: localStorage is not defined",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined",
+      "candidate": "FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/__test__/cashOpeningPolicy.test.js > cashOpeningPolicy exige responsable y coincidencia entre fondo y conteo",
+      "file": "src/services/__test__/cashOpeningPolicy.test.js",
+      "test": "cashOpeningPolicy exige responsable y coincidencia entre fondo y conteo",
+      "error": "ReferenceError: localStorage is not defined",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined",
+      "candidate": "FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/__test__/cashOpeningPolicy.test.js > cashOpeningPolicy registra la diferencia contra el fondo sugerido",
+      "file": "src/services/__test__/cashOpeningPolicy.test.js",
+      "test": "cashOpeningPolicy registra la diferencia contra el fondo sugerido",
+      "error": "ReferenceError: localStorage is not defined",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined",
+      "candidate": "FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/__test__/cashOpeningPolicy.test.js > cashOpeningPolicy identifica de forma explicita una apertura automatica",
+      "file": "src/services/__test__/cashOpeningPolicy.test.js",
+      "test": "cashOpeningPolicy identifica de forma explicita una apertura automatica",
+      "error": "ReferenceError: localStorage is not defined",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined",
+      "candidate": "FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/__test__/cashOpeningPolicyService.test.js > cashOpeningPolicy persiste la autoapertura solo cuando se configura explicitamente",
+      "file": "src/services/__test__/cashOpeningPolicyService.test.js",
+      "test": "cashOpeningPolicy persiste la autoapertura solo cuando se configura explicitamente",
+      "error": "AssertionError: expected 'manual' to be 'automatic' // Object.is equality",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: AssertionError: expected 'manual' to be 'automatic' // Object.is equality",
+      "candidate": "FAIL in repetition(s) 1,2: AssertionError: expected 'manual' to be 'automatic' // Object.is equality",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/orders/orderVersioning.test.js > orderVersioning compares revision before updatedAt or item count",
+      "file": "src/services/orders/orderVersioning.test.js",
+      "test": "orderVersioning compares revision before updatedAt or item count",
+      "error": "ReferenceError: localStorage is not defined",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined",
+      "candidate": "FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/orders/orderVersioning.test.js > orderVersioning uses updatedAt and then deviceId as deterministic tie breakers",
+      "file": "src/services/orders/orderVersioning.test.js",
+      "test": "orderVersioning uses updatedAt and then deviceId as deterministic tie breakers",
+      "error": "ReferenceError: localStorage is not defined",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined",
+      "candidate": "FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/orders/orderVersioning.test.js > orderVersioning reuses the main device id when available",
+      "file": "src/services/orders/orderVersioning.test.js",
+      "test": "orderVersioning reuses the main device id when available",
+      "error": "ReferenceError: localStorage is not defined",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined",
+      "candidate": "FAIL in repetition(s) 1,2: ReferenceError: localStorage is not defined",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/utils/__tests__/dateUtils.test.js > [file-level failure]",
+      "file": "src/utils/__tests__/dateUtils.test.js",
+      "test": "[file-level failure]",
+      "error": "describe is not defined",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: describe is not defined",
+      "candidate": "FAIL in repetition(s) 1,2: describe is not defined",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/utils/__tests__/ecommerceConfiguredProduct.test.js > ecommerceConfiguredProduct validates required, single, multiple, min and max groups",
+      "file": "src/utils/__tests__/ecommerceConfiguredProduct.test.js",
+      "test": "ecommerceConfiguredProduct validates required, single, multiple, min and max groups",
+      "error": "AssertionError: expected false to be true // Object.is equality",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: AssertionError: expected false to be true // Object.is equality",
+      "candidate": "FAIL in repetition(s) 1,2: AssertionError: expected false to be true // Object.is equality",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/utils/__tests__/ecommerceConfiguredProduct.test.js > ecommerceConfiguredProduct builds a configured cart line and clamps quantity to exact variant stock",
+      "file": "src/utils/__tests__/ecommerceConfiguredProduct.test.js",
+      "test": "ecommerceConfiguredProduct builds a configured cart line and clamps quantity to exact variant stock",
+      "error": "AssertionError: expected { success: false, valid: false, …(2) } to match object { success: true, …(4) }\n(4 matching properties omitted from actual)",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: AssertionError: expected { success: false, valid: false, …(2) } to match object { success: true, …(4) }\n(4 matching properties omitted from actual)",
+      "candidate": "FAIL in repetition(s) 1,2: AssertionError: expected { success: false, valid: false, …(2) } to match object { success: true, …(4) }\n(4 matching properties omitted from actual)",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/utils/__tests__/ecommerceConfiguredProduct.test.js > ecommerceConfiguredProduct creates a minimal server payload without client prices or names",
+      "file": "src/utils/__tests__/ecommerceConfiguredProduct.test.js",
+      "test": "ecommerceConfiguredProduct creates a minimal server payload without client prices or names",
+      "error": "AssertionError: expected { productId: '', quantity: 1 } to deeply equal { productId: 'product-1', …(3) }",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: AssertionError: expected { productId: '', quantity: 1 } to deeply equal { productId: 'product-1', …(3) }",
+      "candidate": "FAIL in repetition(s) 1,2: AssertionError: expected { productId: '', quantity: 1 } to deeply equal { productId: 'product-1', …(3) }",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "index.test.ts > [file-level failure]",
+      "file": "index.test.ts",
+      "test": "[file-level failure]",
+      "error": "Deno is not defined",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: Deno is not defined",
+      "candidate": "FAIL in repetition(s) 1,2: Deno is not defined",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/components/pos/__tests__/ProductCard.test.jsx > [file-level failure]",
+      "file": "src/components/pos/__tests__/ProductCard.test.jsx",
+      "test": "[file-level failure]",
+      "error": "expect is not defined",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: expect is not defined",
+      "candidate": "FAIL in repetition(s) 1,2: expect is not defined",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/components/products/__tests__/ProductList.test.jsx > ProductList batch-backed grocery details uses sale units and the nearest active batch expiry on cards",
+      "file": "src/components/products/__tests__/ProductList.test.jsx",
+      "test": "ProductList batch-backed grocery details uses sale units and the nearest active batch expiry on cards",
+      "error": "TestingLibraryElementError: Unable to find an element with the text: /Caduca en \\d+ días/. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.\nIgnored nodes: comments, script, style\n<body>\n  <div>\n    <div\n      class=\"product-list-container\"\n    >\n      <div\n        class=\"list-header\"\n      >\n        <div\n          class=\"title-group\"",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: TestingLibraryElementError: Unable to find an element with the text: /Caduca en \\d+ días/. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.\nIgnored nodes: comments, script, style\n<body>\n  <div>\n    <div\n      class=\"product-list-container\"\n    >\n      <div\n        class=\"list-header\"\n      >\n        <div\n          class=\"title-group\"",
+      "candidate": "FAIL in repetition(s) 1,2: TestingLibraryElementError: Unable to find an element with the text: /Caduca en \\d+ días/. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.\nIgnored nodes: comments, script, style\n<body>\n  <div>\n    <div\n      class=\"product-list-container\"\n    >\n      <div\n        class=\"list-header\"\n      >\n        <div\n          class=\"title-group\"",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/components/settings/__tests__/OperationalSettings.cashOpening.test.jsx > OperationalSettings cash opening control disables automatic cash opening for cloud cash licenses",
+      "file": "src/components/settings/__tests__/OperationalSettings.cashOpening.test.jsx",
+      "test": "OperationalSettings cash opening control disables automatic cash opening for cloud cash licenses",
+      "error": "ReferenceError: document is not defined",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: ReferenceError: document is not defined",
+      "candidate": "FAIL in repetition(s) 1,2: ReferenceError: document is not defined",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/components/settings/__tests__/OperationalSettings.cashOpening.test.jsx > OperationalSettings cash opening control warns FREE/local users when automatic cash opening is enabled",
+      "file": "src/components/settings/__tests__/OperationalSettings.cashOpening.test.jsx",
+      "test": "OperationalSettings cash opening control warns FREE/local users when automatic cash opening is enabled",
+      "error": "ReferenceError: document is not defined",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: ReferenceError: document is not defined",
+      "candidate": "FAIL in repetition(s) 1,2: ReferenceError: document is not defined",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/hooks/pos/__tests__/useEcommercePosCheckoutSingleFlight.test.jsx > useEcommercePosCheckoutSingleFlight absorbs twenty rapid clicks, exposes starting and pins the ecommerce target",
+      "file": "src/hooks/pos/__tests__/useEcommercePosCheckoutSingleFlight.test.jsx",
+      "test": "useEcommercePosCheckoutSingleFlight absorbs twenty rapid clicks, exposes starting and pins the ecommerce target",
+      "error": "ReferenceError: document is not defined",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: ReferenceError: document is not defined",
+      "candidate": "FAIL in repetition(s) 1,2: ReferenceError: document is not defined",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/hooks/pos/__tests__/useEcommercePosCheckoutSingleFlight.test.jsx > useEcommercePosCheckoutSingleFlight keeps A as the expected target when selection changes to B before the deferred run",
+      "file": "src/hooks/pos/__tests__/useEcommercePosCheckoutSingleFlight.test.jsx",
+      "test": "useEcommercePosCheckoutSingleFlight keeps A as the expected target when selection changes to B before the deferred run",
+      "error": "ReferenceError: document is not defined",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: ReferenceError: document is not defined",
+      "candidate": "FAIL in repetition(s) 1,2: ReferenceError: document is not defined",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/hooks/pos/__tests__/useEcommercePosCheckoutSingleFlight.test.jsx > useEcommercePosCheckoutSingleFlight resets only non-current A when target change aborts before lock acquisition",
+      "file": "src/hooks/pos/__tests__/useEcommercePosCheckoutSingleFlight.test.jsx",
+      "test": "useEcommercePosCheckoutSingleFlight resets only non-current A when target change aborts before lock acquisition",
+      "error": "ReferenceError: document is not defined",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: ReferenceError: document is not defined",
+      "candidate": "FAIL in repetition(s) 1,2: ReferenceError: document is not defined",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/hooks/pos/__tests__/useEcommercePosCheckoutSingleFlight.test.jsx > useEcommercePosCheckoutSingleFlight ignores clicks silently while payment is already pending",
+      "file": "src/hooks/pos/__tests__/useEcommercePosCheckoutSingleFlight.test.jsx",
+      "test": "useEcommercePosCheckoutSingleFlight ignores clicks silently while payment is already pending",
+      "error": "ReferenceError: document is not defined",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: ReferenceError: document is not defined",
+      "candidate": "FAIL in repetition(s) 1,2: ReferenceError: document is not defined",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/hooks/pos/__tests__/useEcommercePosCheckoutSingleFlight.test.jsx > useEcommercePosCheckoutSingleFlight preserves the canonical contention path for a lock owned elsewhere",
+      "file": "src/hooks/pos/__tests__/useEcommercePosCheckoutSingleFlight.test.jsx",
+      "test": "useEcommercePosCheckoutSingleFlight preserves the canonical contention path for a lock owned elsewhere",
+      "error": "ReferenceError: document is not defined",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: ReferenceError: document is not defined",
+      "candidate": "FAIL in repetition(s) 1,2: ReferenceError: document is not defined",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/hooks/pos/__tests__/useEcommercePosCheckoutSingleFlight.test.jsx > useEcommercePosCheckoutSingleFlight clears stale starting and validating state and allows a real retry",
+      "file": "src/hooks/pos/__tests__/useEcommercePosCheckoutSingleFlight.test.jsx",
+      "test": "useEcommercePosCheckoutSingleFlight clears stale starting and validating state and allows a real retry",
+      "error": "ReferenceError: document is not defined",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: ReferenceError: document is not defined",
+      "candidate": "FAIL in repetition(s) 1,2: ReferenceError: document is not defined",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/hooks/pos/__tests__/useEcommercePosCheckoutSingleFlight.test.jsx > useEcommercePosCheckoutSingleFlight does not change normal POS checkout behavior or pass ecommerce arguments",
+      "file": "src/hooks/pos/__tests__/useEcommercePosCheckoutSingleFlight.test.jsx",
+      "test": "useEcommercePosCheckoutSingleFlight does not change normal POS checkout behavior or pass ecommerce arguments",
+      "error": "ReferenceError: document is not defined",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: ReferenceError: document is not defined",
+      "candidate": "FAIL in repetition(s) 1,2: ReferenceError: document is not defined",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/hooks/pos/__tests__/usePosModals.mobileTransition.test.jsx > mobile POS history layer transitions hands the cart entry to payment without a second push or an unmarked duplicate",
+      "file": "src/hooks/pos/__tests__/usePosModals.mobileTransition.test.jsx",
+      "test": "mobile POS history layer transitions hands the cart entry to payment without a second push or an unmarked duplicate",
+      "error": "AssertionError: expected \"pushState\" to be called 1 times, but got 2 times",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: AssertionError: expected \"pushState\" to be called 1 times, but got 2 times",
+      "candidate": "FAIL in repetition(s) 1,2: AssertionError: expected \"pushState\" to be called 1 times, but got 2 times",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/hooks/pos/__tests__/usePosModals.mobileTransition.test.jsx > mobile POS history layer transitions closes payment with the first Back and reaches the previous route with the second",
+      "file": "src/hooks/pos/__tests__/usePosModals.mobileTransition.test.jsx",
+      "test": "mobile POS history layer transitions closes payment with the first Back and reaches the previous route with the second",
+      "error": "AssertionError: expected 2 to be 1 // Object.is equality",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: AssertionError: expected 2 to be 1 // Object.is equality",
+      "candidate": "FAIL in repetition(s) 1,2: AssertionError: expected 2 to be 1 // Object.is equality",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/hooks/pos/__tests__/usePosModals.mobileTransition.test.jsx > mobile POS history layer transitions does not accumulate invisible entries across three cart-payment-cancel cycles",
+      "file": "src/hooks/pos/__tests__/usePosModals.mobileTransition.test.jsx",
+      "test": "mobile POS history layer transitions does not accumulate invisible entries across three cart-payment-cancel cycles",
+      "error": "AssertionError: expected 2 to be 1 // Object.is equality",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: AssertionError: expected 2 to be 1 // Object.is equality",
+      "candidate": "FAIL in repetition(s) 1,2: AssertionError: expected 2 to be 1 // Object.is equality",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/hooks/pos/__tests__/usePosModals.mobileTransition.test.jsx > mobile POS history layer transitions reuses the cart entry for prescription and then payment",
+      "file": "src/hooks/pos/__tests__/usePosModals.mobileTransition.test.jsx",
+      "test": "mobile POS history layer transitions reuses the cart entry for prescription and then payment",
+      "error": "AssertionError: expected \"pushState\" to be called 1 times, but got 2 times",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: AssertionError: expected \"pushState\" to be called 1 times, but got 2 times",
+      "candidate": "FAIL in repetition(s) 1,2: AssertionError: expected \"pushState\" to be called 1 times, but got 2 times",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/__test__/restaurant/restaurantOrderCheckoutClose.test.js > restaurantOrderCheckoutClose split bill support saves pending split close when offline",
+      "file": "src/services/__test__/restaurant/restaurantOrderCheckoutClose.test.js",
+      "test": "restaurantOrderCheckoutClose split bill support saves pending split close when offline",
+      "error": "AssertionError: expected [] to have a length of 1 but got +0",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: AssertionError: expected [] to have a length of 1 but got +0",
+      "candidate": "FAIL in repetition(s) 1,2: AssertionError: expected [] to have a length of 1 but got +0",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/__test__/restaurant/restaurantOrderCheckoutClose.test.js > restaurantOrderCheckoutClose split bill support saves pending split close when repository returns failure",
+      "file": "src/services/__test__/restaurant/restaurantOrderCheckoutClose.test.js",
+      "test": "restaurantOrderCheckoutClose split bill support saves pending split close when repository returns failure",
+      "error": "AssertionError: expected [] to have a length of 1 but got +0",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: AssertionError: expected [] to have a length of 1 but got +0",
+      "candidate": "FAIL in repetition(s) 1,2: AssertionError: expected [] to have a length of 1 but got +0",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/__test__/restaurant/restaurantOrderCheckoutClose.test.js > restaurantOrderCheckoutClose split bill support retries pending split close without losing paymentSummary",
+      "file": "src/services/__test__/restaurant/restaurantOrderCheckoutClose.test.js",
+      "test": "restaurantOrderCheckoutClose split bill support retries pending split close without losing paymentSummary",
+      "error": "AssertionError: expected { success: true, closed: +0, …(2) } to match object { success: true, closed: 1, …(2) }",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: AssertionError: expected { success: true, closed: +0, …(2) } to match object { success: true, closed: 1, …(2) }",
+      "candidate": "FAIL in repetition(s) 1,2: AssertionError: expected { success: true, closed: +0, …(2) } to match object { success: true, closed: 1, …(2) }",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/__test__/restaurant/restaurantOrderCheckoutClose.test.js > restaurantOrderCheckoutClose split bill support does not evict legacy rows when adding a new tenant-scoped retry",
+      "file": "src/services/__test__/restaurant/restaurantOrderCheckoutClose.test.js",
+      "test": "restaurantOrderCheckoutClose split bill support does not evict legacy rows when adding a new tenant-scoped retry",
+      "error": "AssertionError: expected [ …(51) ] to have a length of 52 but got 51",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: AssertionError: expected [ …(51) ] to have a length of 52 but got 51",
+      "candidate": "FAIL in repetition(s) 1,2: AssertionError: expected [ …(51) ] to have a length of 52 but got 51",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/__test__/sales/financialStats.test.js > financialStats solo agrega ventas con status closed en daily stats",
+      "file": "src/services/__test__/sales/financialStats.test.js",
+      "test": "financialStats solo agrega ventas con status closed en daily stats",
+      "error": "AssertionError: expected [ { id: '2026-03-12', …(14) } ] to deeply equal [ { id: '2026-03-12', …(7) } ]",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: AssertionError: expected [ { id: '2026-03-12', …(14) } ] to deeply equal [ { id: '2026-03-12', …(7) } ]",
+      "candidate": "FAIL in repetition(s) 1,2: AssertionError: expected [ { id: '2026-03-12', …(14) } ] to deeply equal [ { id: '2026-03-12', …(7) } ]",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/__test__/sales/inventoryFlow.test.js > inventoryFlow committed stock reserva lotes y sincroniza committedStock del padre",
+      "file": "src/services/__test__/sales/inventoryFlow.test.js",
+      "test": "inventoryFlow committed stock reserva lotes y sincroniza committedStock del padre",
+      "error": "AssertionError: expected [ { batchId: 'b-1', …(5) } ] to deeply equal [ { batchId: 'b-1', …(3) } ]",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: AssertionError: expected [ { batchId: 'b-1', …(5) } ] to deeply equal [ { batchId: 'b-1', …(3) } ]",
+      "candidate": "FAIL in repetition(s) 1,2: AssertionError: expected [ { batchId: 'b-1', …(5) } ] to deeply equal [ { batchId: 'b-1', …(3) } ]",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/backup/__tests__/backupConfigDb.test.js > backupConfigDb persisted CryptoKey guarda y recupera una clave AES-GCM no extraible",
+      "file": "src/services/backup/__tests__/backupConfigDb.test.js",
+      "test": "backupConfigDb persisted CryptoKey guarda y recupera una clave AES-GCM no extraible",
+      "error": "MissingAPIError IndexedDB API missing. Please visit https://tinyurl.com/y2uuvskb\nMissingAPIError IndexedDB API missing. Please visit https://tinyurl.com/y2uuvskb",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: MissingAPIError IndexedDB API missing. Please visit https://tinyurl.com/y2uuvskb\nMissingAPIError IndexedDB API missing. Please visit https://tinyurl.com/y2uuvskb",
+      "candidate": "FAIL in repetition(s) 1,2: MissingAPIError IndexedDB API missing. Please visit https://tinyurl.com/y2uuvskb\nMissingAPIError IndexedDB API missing. Please visit https://tinyurl.com/y2uuvskb",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/backup/__tests__/backupRestore.test.js > restoreWhitelistedDatabase revierte los clear si una insercion falla dentro de la transaccion",
+      "file": "src/services/backup/__tests__/backupRestore.test.js",
+      "test": "restoreWhitelistedDatabase revierte los clear si una insercion falla dentro de la transaccion",
+      "error": "AssertionError: expected [] to deeply equal [ { id: 'product-local' } ]",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: AssertionError: expected [] to deeply equal [ { id: 'product-local' } ]",
+      "candidate": "FAIL in repetition(s) 1,2: AssertionError: expected [] to deeply equal [ { id: 'product-local' } ]",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/ecommerce/__tests__/ecommerceCatalogApparelRevision.test.js > [file-level failure]",
+      "file": "src/services/ecommerce/__tests__/ecommerceCatalogApparelRevision.test.js",
+      "test": "[file-level failure]",
+      "error": "(0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: (0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function",
+      "candidate": "FAIL in repetition(s) 1,2: (0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/ecommerce/__tests__/ecommerceCatalogSyncConsistency.test.js > [file-level failure]",
+      "file": "src/services/ecommerce/__tests__/ecommerceCatalogSyncConsistency.test.js",
+      "test": "[file-level failure]",
+      "error": "(0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: (0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function",
+      "candidate": "FAIL in repetition(s) 1,2: (0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/ecommerce/__tests__/ecommerceCatalogSyncFinalPayloadIdempotency.test.js > [file-level failure]",
+      "file": "src/services/ecommerce/__tests__/ecommerceCatalogSyncFinalPayloadIdempotency.test.js",
+      "test": "[file-level failure]",
+      "error": "(0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: (0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function",
+      "candidate": "FAIL in repetition(s) 1,2: (0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/ecommerce/__tests__/ecommerceCatalogSyncRecipeDependencies.test.js > [file-level failure]",
+      "file": "src/services/ecommerce/__tests__/ecommerceCatalogSyncRecipeDependencies.test.js",
+      "test": "[file-level failure]",
+      "error": "(0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: (0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function",
+      "candidate": "FAIL in repetition(s) 1,2: (0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/ecommerce/__tests__/ecommerceCatalogSyncService.retryOutbox.test.js > [file-level failure]",
+      "file": "src/services/ecommerce/__tests__/ecommerceCatalogSyncService.retryOutbox.test.js",
+      "test": "[file-level failure]",
+      "error": "(0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: (0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function",
+      "candidate": "FAIL in repetition(s) 1,2: (0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/ecommerce/__tests__/ecommerceCatalogSyncService.test.js > [file-level failure]",
+      "file": "src/services/ecommerce/__tests__/ecommerceCatalogSyncService.test.js",
+      "test": "[file-level failure]",
+      "error": "(0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: (0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function",
+      "candidate": "FAIL in repetition(s) 1,2: (0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/ecommerce/__tests__/ecommercePosDraftService.test.js > ecommercePosDraftService maps the server-resolved sourceProductId while excluding customer PII from the draft",
+      "file": "src/services/ecommerce/__tests__/ecommercePosDraftService.test.js",
+      "test": "ecommercePosDraftService maps the server-resolved sourceProductId while excluding customer PII from the draft",
+      "error": "AssertionError: expected { id: 'product-1', …(19) } to match object { id: 'product-1', …(7) }\n(13 matching properties omitted from actual)",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: AssertionError: expected { id: 'product-1', …(19) } to match object { id: 'product-1', …(7) }\n(13 matching properties omitted from actual)",
+      "candidate": "FAIL in repetition(s) 1,2: AssertionError: expected { id: 'product-1', …(19) } to match object { id: 'product-1', …(7) }\n(13 matching properties omitted from actual)",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/ecommerce/__tests__/ecommercePosDraftService.test.js > ecommercePosDraftService opens an existing local draft only when remote prepared identity matches completely",
+      "file": "src/services/ecommerce/__tests__/ecommercePosDraftService.test.js",
+      "test": "ecommercePosDraftService opens an existing local draft only when remote prepared identity matches completely",
+      "error": "AssertionError: expected { success: true, created: true, …(2) } to match object { success: true, created: false, …(1) }\n(17 matching properties omitted from actual)",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: AssertionError: expected { success: true, created: true, …(2) } to match object { success: true, created: false, …(1) }\n(17 matching properties omitted from actual)",
+      "candidate": "FAIL in repetition(s) 1,2: AssertionError: expected { success: true, created: true, …(2) } to match object { success: true, created: false, …(1) }\n(17 matching properties omitted from actual)",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/ecommerce/__tests__/ecommercePosInventoryResolution.test.js > stale response protection does not replace a manual selection with an older automatic response",
+      "file": "src/services/ecommerce/__tests__/ecommercePosInventoryResolution.test.js",
+      "test": "stale response protection does not replace a manual selection with an older automatic response",
+      "error": "AssertionError: expected false to be true // Object.is equality",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: AssertionError: expected false to be true // Object.is equality",
+      "candidate": "FAIL in repetition(s) 1,2: AssertionError: expected false to be true // Object.is equality",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/ecommerce/__tests__/ecommercePosInventoryResolution.test.js > stale response protection does not recreate a released draft after a delayed response",
+      "file": "src/services/ecommerce/__tests__/ecommercePosInventoryResolution.test.js",
+      "test": "stale response protection does not recreate a released draft after a delayed response",
+      "error": "AssertionError: expected 'ECOMMERCE_INVENTORY_DRAFT_INVALID' to be 'ECOMMERCE_INVENTORY_STALE_RESPONSE' // Object.is equality",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: AssertionError: expected 'ECOMMERCE_INVENTORY_DRAFT_INVALID' to be 'ECOMMERCE_INVENTORY_STALE_RESPONSE' // Object.is equality",
+      "candidate": "FAIL in repetition(s) 1,2: AssertionError: expected 'ECOMMERCE_INVENTORY_DRAFT_INVALID' to be 'ECOMMERCE_INVENTORY_STALE_RESPONSE' // Object.is equality",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/ecommerce/__tests__/ecommercePublicConfiguredService.test.js > ecommercePublicService configurable products loads and normalizes the safe product configuration RPC",
+      "file": "src/services/ecommerce/__tests__/ecommercePublicConfiguredService.test.js",
+      "test": "ecommercePublicService configurable products loads and normalizes the safe product configuration RPC",
+      "error": "EcommercePublicError: La configuración cambió. Actualiza el catálogo.",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: EcommercePublicError: La configuración cambió. Actualiza el catálogo.",
+      "candidate": "FAIL in repetition(s) 1,2: EcommercePublicError: La configuración cambió. Actualiza el catálogo.",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/ecommerce/__tests__/ecommercePublicConfiguredService.test.js > ecommercePublicService configurable products sends only productId, quantity, variantId and canonical selections",
+      "file": "src/services/ecommerce/__tests__/ecommercePublicConfiguredService.test.js",
+      "test": "ecommercePublicService configurable products sends only productId, quantity, variantId and canonical selections",
+      "error": "AssertionError: expected \"vi.fn()\" to be called with arguments: [ 'ecommerce_create_order', …(1) ]\nReceived:\n  1st vi.fn() call:\n@@ -1,10 +1,20 @@\n  [\n    \"ecommerce_create_order\",\n-   ObjectContaining {\n+   {\n+     \"p_customer\": {\n+       \"address\": \"\",\n+       \"fulfillmentMethod\": \"pickup\",\n+       \"name\": \"Cliente\",",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: AssertionError: expected \"vi.fn()\" to be called with arguments: [ 'ecommerce_create_order', …(1) ]\nReceived:\n  1st vi.fn() call:\n@@ -1,10 +1,20 @@\n  [\n    \"ecommerce_create_order\",\n-   ObjectContaining {\n+   {\n+     \"p_customer\": {\n+       \"address\": \"\",\n+       \"fulfillmentMethod\": \"pickup\",\n+       \"name\": \"Cliente\",",
+      "candidate": "FAIL in repetition(s) 1,2: AssertionError: expected \"vi.fn()\" to be called with arguments: [ 'ecommerce_create_order', …(1) ]\nReceived:\n  1st vi.fn() call:\n@@ -1,10 +1,20 @@\n  [\n    \"ecommerce_create_order\",\n-   ObjectContaining {\n+   {\n+     \"p_customer\": {\n+       \"address\": \"\",\n+       \"fulfillmentMethod\": \"pickup\",\n+       \"name\": \"Cliente\",",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/ecommerce/__tests__/ecommercePublicService.test.js > ecommercePublicService maps ECOMMERCE_CATALOG_REVISION_CHANGED to a controlled checkout message",
+      "file": "src/services/ecommerce/__tests__/ecommercePublicService.test.js",
+      "test": "ecommercePublicService maps ECOMMERCE_CATALOG_REVISION_CHANGED to a controlled checkout message",
+      "error": "AssertionError: expected EcommercePublicError: No pudimos confirma… { …(6) } to match object { …(2) }\n(9 matching properties omitted from actual)",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: AssertionError: expected EcommercePublicError: No pudimos confirma… { …(6) } to match object { …(2) }\n(9 matching properties omitted from actual)",
+      "candidate": "FAIL in repetition(s) 1,2: AssertionError: expected EcommercePublicError: No pudimos confirma… { …(6) } to match object { …(2) }\n(9 matching properties omitted from actual)",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/ecommerce/__tests__/ecommercePublicService.test.js > ecommercePublicService maps ECOMMERCE_PRODUCT_NOT_AVAILABLE to a controlled checkout message",
+      "file": "src/services/ecommerce/__tests__/ecommercePublicService.test.js",
+      "test": "ecommercePublicService maps ECOMMERCE_PRODUCT_NOT_AVAILABLE to a controlled checkout message",
+      "error": "AssertionError: expected EcommercePublicError: Este producto ya no… { …(6) } to match object { …(2) }\n(9 matching properties omitted from actual)",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: AssertionError: expected EcommercePublicError: Este producto ya no… { …(6) } to match object { …(2) }\n(9 matching properties omitted from actual)",
+      "candidate": "FAIL in repetition(s) 1,2: AssertionError: expected EcommercePublicError: Este producto ya no… { …(6) } to match object { …(2) }\n(9 matching properties omitted from actual)",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/ecommerce/__tests__/ecommercePublicService.test.js > ecommercePublicService maps ECOMMERCE_ORDER_CREATE_FAILED to a controlled checkout message",
+      "file": "src/services/ecommerce/__tests__/ecommercePublicService.test.js",
+      "test": "ecommercePublicService maps ECOMMERCE_ORDER_CREATE_FAILED to a controlled checkout message",
+      "error": "AssertionError: expected EcommercePublicError: No pudimos procesar… { …(5) } to match object { …(2) }\n(8 matching properties omitted from actual)",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: AssertionError: expected EcommercePublicError: No pudimos procesar… { …(5) } to match object { …(2) }\n(8 matching properties omitted from actual)",
+      "candidate": "FAIL in repetition(s) 1,2: AssertionError: expected EcommercePublicError: No pudimos procesar… { …(5) } to match object { …(2) }\n(8 matching properties omitted from actual)",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/ecommerce/__tests__/ecommercePublicTrackingContract.test.js > checkout tracking contract keeps the same tracking link on an idempotent response",
+      "file": "src/services/ecommerce/__tests__/ecommercePublicTrackingContract.test.js",
+      "test": "checkout tracking contract keeps the same tracking link on an idempotent response",
+      "error": "AssertionError: expected { success: true, …(3) } to match object { idempotent: true, order: { …(3) } }\n(12 matching properties omitted from actual)",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: AssertionError: expected { success: true, …(3) } to match object { idempotent: true, order: { …(3) } }\n(12 matching properties omitted from actual)",
+      "candidate": "FAIL in repetition(s) 1,2: AssertionError: expected { success: true, …(3) } to match object { idempotent: true, order: { …(3) } }\n(12 matching properties omitted from actual)",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/ecommerce/__tests__/ecommercePublishedStockAlertInvalidation.test.js > [file-level failure]",
+      "file": "src/services/ecommerce/__tests__/ecommercePublishedStockAlertInvalidation.test.js",
+      "test": "[file-level failure]",
+      "error": "(0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: (0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function",
+      "candidate": "FAIL in repetition(s) 1,2: (0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/ecommerce/__tests__/ecommercePublishedStockAlertRecipe.test.js > [file-level failure]",
+      "file": "src/services/ecommerce/__tests__/ecommercePublishedStockAlertRecipe.test.js",
+      "test": "[file-level failure]",
+      "error": "(0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: (0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function",
+      "candidate": "FAIL in repetition(s) 1,2: (0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/ecommerce/__tests__/ecommercePublishedStockAlertService.test.js > [file-level failure]",
+      "file": "src/services/ecommerce/__tests__/ecommercePublishedStockAlertService.test.js",
+      "test": "[file-level failure]",
+      "error": "(0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: (0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function",
+      "candidate": "FAIL in repetition(s) 1,2: (0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/ecommerce/__tests__/ecommercePublishedStockMalformedBatch.test.js > [file-level failure]",
+      "file": "src/services/ecommerce/__tests__/ecommercePublishedStockMalformedBatch.test.js",
+      "test": "[file-level failure]",
+      "error": "(0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: (0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function",
+      "candidate": "FAIL in repetition(s) 1,2: (0 , __vite_ssr_import_1__.createEcommercePublishedStockAlertService) is not a function",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/sales/__tests__/receiptWhatsApp.ecommerce.test.js > receiptWhatsApp money formatting and ecommerce traceability formats exact-string prices and totals while preserving ecommerce references",
+      "file": "src/services/sales/__tests__/receiptWhatsApp.ecommerce.test.js",
+      "test": "receiptWhatsApp money formatting and ecommerce traceability formats exact-string prices and totals while preserving ecommerce references",
+      "error": "AssertionError: expected \"vi.fn()\" to be called 1 times, but got 0 times",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: AssertionError: expected \"vi.fn()\" to be called 1 times, but got 0 times",
+      "candidate": "FAIL in repetition(s) 1,2: AssertionError: expected \"vi.fn()\" to be called 1 times, but got 0 times",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/sales/__tests__/receiptWhatsApp.ecommerce.test.js > receiptWhatsApp money formatting and ecommerce traceability shows subtotal, discount detail, final total, received cash and change",
+      "file": "src/services/sales/__tests__/receiptWhatsApp.ecommerce.test.js",
+      "test": "receiptWhatsApp money formatting and ecommerce traceability shows subtotal, discount detail, final total, received cash and change",
+      "error": "TypeError: undefined is not iterable (cannot read property Symbol(Symbol.iterator))",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: TypeError: undefined is not iterable (cannot read property Symbol(Symbol.iterator))",
+      "candidate": "FAIL in repetition(s) 1,2: TypeError: undefined is not iterable (cannot read property Symbol(Symbol.iterator))",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/sales/__tests__/receiptWhatsApp.ecommerce.test.js > receiptWhatsApp money formatting and ecommerce traceability reads aggregate discount data from metadata when needed",
+      "file": "src/services/sales/__tests__/receiptWhatsApp.ecommerce.test.js",
+      "test": "receiptWhatsApp money formatting and ecommerce traceability reads aggregate discount data from metadata when needed",
+      "error": "TypeError: undefined is not iterable (cannot read property Symbol(Symbol.iterator))",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: TypeError: undefined is not iterable (cannot read property Symbol(Symbol.iterator))",
+      "candidate": "FAIL in repetition(s) 1,2: TypeError: undefined is not iterable (cannot read property Symbol(Symbol.iterator))",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/sales/__tests__/receiptWhatsApp.ecommerce.test.js > receiptWhatsApp money formatting and ecommerce traceability calculates cash change from exact-string monetary values",
+      "file": "src/services/sales/__tests__/receiptWhatsApp.ecommerce.test.js",
+      "test": "receiptWhatsApp money formatting and ecommerce traceability calculates cash change from exact-string monetary values",
+      "error": "TypeError: undefined is not iterable (cannot read property Symbol(Symbol.iterator))",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: TypeError: undefined is not iterable (cannot read property Symbol(Symbol.iterator))",
+      "candidate": "FAIL in repetition(s) 1,2: TypeError: undefined is not iterable (cannot read property Symbol(Symbol.iterator))",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/sales/__tests__/receiptWhatsApp.ecommerce.test.js > receiptWhatsApp money formatting and ecommerce traceability formats credit payment and pending balance from exact strings",
+      "file": "src/services/sales/__tests__/receiptWhatsApp.ecommerce.test.js",
+      "test": "receiptWhatsApp money formatting and ecommerce traceability formats credit payment and pending balance from exact strings",
+      "error": "TypeError: undefined is not iterable (cannot read property Symbol(Symbol.iterator))",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: TypeError: undefined is not iterable (cannot read property Symbol(Symbol.iterator))",
+      "candidate": "FAIL in repetition(s) 1,2: TypeError: undefined is not iterable (cannot read property Symbol(Symbol.iterator))",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    },
+    {
+      "id": "src/services/sales/__tests__/receiptWhatsApp.ecommerce.test.js > receiptWhatsApp money formatting and ecommerce traceability preserves pharmacy receipt details and metadata-only ecommerce references",
+      "file": "src/services/sales/__tests__/receiptWhatsApp.ecommerce.test.js",
+      "test": "receiptWhatsApp money formatting and ecommerce traceability preserves pharmacy receipt details and metadata-only ecommerce references",
+      "error": "TypeError: undefined is not iterable (cannot read property Symbol(Symbol.iterator))",
+      "runs": [
+        1,
+        2
+      ],
+      "baseRuns": [
+        1,
+        2
+      ],
+      "candidateRuns": [
+        1,
+        2
+      ],
+      "base": "FAIL in repetition(s) 1,2: TypeError: undefined is not iterable (cannot read property Symbol(Symbol.iterator))",
+      "candidate": "FAIL in repetition(s) 1,2: TypeError: undefined is not iterable (cannot read property Symbol(Symbol.iterator))",
+      "classification": "PREEXISTING_BASELINE_FAILURE"
+    }
+  ],
+  "incidentalImprovements": [
+    {
+      "id": "scripts/oss/release-boundary.test.mjs > [file-level failure]",
+      "file": "scripts/oss/release-boundary.test.mjs",
+      "test": "[file-level failure]",
+      "error": "No test suite found in file /tmp/lanzo-validation/main/scripts/oss/release-boundary.test.mjs",
+      "runs": [
+        1,
+        2
+      ],
+      "classification": "INCIDENTAL_OR_BASELINE_FLAKE"
+    },
+    {
+      "id": "src/tests/useStoreSync.test.js > [file-level failure]",
+      "file": "src/tests/useStoreSync.test.js",
+      "test": "[file-level failure]",
+      "error": "Cannot find package '@testing-library/react-hooks' imported from '/tmp/lanzo-validation/main/src/tests/useStoreSync.test.js'",
+      "runs": [
+        1,
+        2
+      ],
+      "classification": "INCIDENTAL_OR_BASELINE_FLAKE"
+    },
+    {
+      "id": "src/utils/storageManager.test.js > [file-level failure]",
+      "file": "src/utils/storageManager.test.js",
+      "test": "[file-level failure]",
+      "error": "No test suite found in file /tmp/lanzo-validation/main/src/utils/storageManager.test.js",
+      "runs": [
+        1,
+        2
+      ],
+      "classification": "INCIDENTAL_OR_BASELINE_FLAKE"
+    }
+  ]
+}

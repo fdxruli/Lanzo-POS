@@ -1,0 +1,266 @@
+[
+  {
+    "path": "scripts/qa/actor-storage-v1-stability/README.md",
+    "bytes": 3054,
+    "sha256": "806733756fa324d04821e4782b6c8532cebbfea10c1e9ed44311a8fee5488770",
+    "gitBlob": "b84fd0de5e7986327b48bb6763103eeabeebe125"
+  },
+  {
+    "path": "scripts/qa/actor-storage-v1-stability/browser.mjs",
+    "bytes": 15699,
+    "sha256": "492225831e1fa6f3003df01a7aad03a452117b780a5ee665ba29bc9fc6f17f17",
+    "gitBlob": "151d68f641a9def4046555e0ec46fa5d962a7d1f"
+  },
+  {
+    "path": "scripts/qa/actor-storage-v1-stability/recovered-browser.mjs",
+    "bytes": 5373,
+    "sha256": "3e556bfe6cc927209128ad8c072ef63af86d84e4c2a22873029ec1276e201d1e",
+    "gitBlob": "eae5ac28dae51cdbc9c4b633139fc24bed8cc081"
+  },
+  {
+    "path": "scripts/qa/actor-storage-v1-stability/storage.node-test.mjs",
+    "bytes": 4198,
+    "sha256": "82df106623936610c5e527c5c71ad117d82e589aea73766858df58f5298318d8",
+    "gitBlob": "db12ca06c65da6b7c1ba170ee48b6234dfcec1f8"
+  },
+  {
+    "path": "scripts/qa/actor-storage-v1-stability/evidence/main-exp14.json",
+    "bytes": 5115,
+    "sha256": "5267dd95b11450be041a069c0cb79a49b9fa3a14d5896118b75bc079558d211b",
+    "gitBlob": "c18dfe43dbba29701e5f080dc59416a0d7907b7f"
+  },
+  {
+    "path": "scripts/qa/actor-storage-v1-stability/evidence/main-browser.json",
+    "bytes": 993,
+    "sha256": "bf11a1772a6612559498e51b1665c95a1047f838740868c48d4127147497fd88",
+    "gitBlob": "b99d39ff49bf1e131affb0ce3a9d3dfb316b4adb"
+  },
+  {
+    "path": "scripts/qa/actor-storage-v1-stability/evidence/previous-focal-exp14.json",
+    "bytes": 4786,
+    "sha256": "6242414f984994a1ddd3be6cebfa49cc862efe3472f42b8b6040f7b762ac7d52",
+    "gitBlob": "11a46309ec11213c6c01061380916f4476d8ddca"
+  },
+  {
+    "path": "scripts/qa/actor-storage-v1-stability/evidence/previous-focal-browser.json",
+    "bytes": 994,
+    "sha256": "d2352ba1c40b31d42cbd2a7573452cecea52646eb84c19715ae076877429b9fd",
+    "gitBlob": "675fd0c0bedc72e25f24697d819c1f3c6aad617e"
+  },
+  {
+    "path": "scripts/qa/actor-storage-v1-stability/evidence/candidate-auth.json",
+    "bytes": 95269,
+    "sha256": "d538aaf965c5ff6ab2d63b64a579793ef023fc9c353c829b20fd6b36b5eb5c56",
+    "gitBlob": "f6b54a3a380be832711b2dae8a27152fed02f787"
+  },
+  {
+    "path": "scripts/qa/actor-storage-v1-stability/evidence/financial-regressions.json",
+    "bytes": 70530,
+    "sha256": "fafc4cee5702d37b95c2e6f9f3888be222ef843216bf93d12333da7889b4dcb0",
+    "gitBlob": "a7ecfa2383dd2b21d9edaed8dbcefadf5a59ce74"
+  },
+  {
+    "path": "scripts/qa/actor-storage-v1-stability/evidence/dexie-recovery.json",
+    "bytes": 45663,
+    "sha256": "0bad80be1d77172a75acbc01652f17b568fc77e2322daa750aa314bd3f46f6ac",
+    "gitBlob": "3d607bb25969237cbaf529dec7b0ce4c4d21abaa"
+  },
+  {
+    "path": "scripts/qa/actor-storage-v1-stability/evidence/build-architecture.json",
+    "bytes": 29664,
+    "sha256": "f58ccb3a4cd8c89999a25793283a2c82cee7ca1db3a46b2467f0e51344768761",
+    "gitBlob": "ae572055314e09036a047bc2199d958223a3c992"
+  },
+  {
+    "path": "scripts/qa/actor-storage-v1-stability/evidence/chromium.json",
+    "bytes": 107423,
+    "sha256": "e854450a2191904b83d2870915ec0e9176fd930c9e32923a42cc546d3a581582",
+    "gitBlob": "8a6fc973450aeec2a9939f78b1a7246a1a81896b"
+  },
+  {
+    "path": "scripts/qa/actor-storage-v1-stability/evidence/sequential-and-race.log",
+    "bytes": 596,
+    "sha256": "64168f6e0514f83e5a0bddb1071d3c707b2cb2f20c62b57b9b1a5cbf51477cef",
+    "gitBlob": "2a144d0b203ad619a2fbe4bfba63d3b87bef2a64"
+  },
+  {
+    "path": "scripts/qa/actor-storage-v1-stability/evidence/eslint.log",
+    "bytes": 267,
+    "sha256": "fe12190e5789a80da88bc03c81c103f3e6e517ed02a3bb2a4120f9014a4e2e0b",
+    "gitBlob": "eb5ee8c1868c12686193952e92b52f71c10022f5"
+  },
+  {
+    "path": "scripts/qa/actor-storage-v1-stability/evidence/browser-eslint.log",
+    "bytes": 99,
+    "sha256": "7125f194612fcff2f454c05d848e7cb71facc1967b4d5017e25b34fdee3ba74f",
+    "gitBlob": "83b5f9d4df0d01aa0059b4e2ce67617225986b34"
+  },
+  {
+    "path": "scripts/qa/actor-storage-v1-stability/evidence/global-base-1.json.gz",
+    "bytes": 268702,
+    "sha256": "0ea7a07c32790d66147bbde837a388269d5bff493b4bb30f03ffb686061a6a4e",
+    "gitBlob": "bf915b6c06a25d75adee0af89b4ff87208d7a0b5"
+  },
+  {
+    "path": "scripts/qa/actor-storage-v1-stability/evidence/global-base-2.json.gz",
+    "bytes": 268729,
+    "sha256": "75cd462a8c529ef3afe59dde06e523cf66f947adb388f443ca453f2907fbd351",
+    "gitBlob": "209a5b970b56a8ed9ab52e0b294f2a3e0388a713"
+  },
+  {
+    "path": "scripts/qa/actor-storage-v1-stability/evidence/global-candidate-1.json.gz",
+    "bytes": 268509,
+    "sha256": "056c8223855577d3ad7646c7ab0588054072552a8d226ab7f7f461b474cfd790",
+    "gitBlob": "117cb9178e7c25d94033d7615f2abfaa906b166a"
+  },
+  {
+    "path": "scripts/qa/actor-storage-v1-stability/evidence/global-candidate-2.json.gz",
+    "bytes": 268366,
+    "sha256": "705b6870a0826f183e03097766452ce262291b8d08e6eb65f5f82eb713f02107",
+    "gitBlob": "140456c7d761f5155d34adc2f94123b6b750acfe"
+  },
+  {
+    "path": "scripts/qa/actor-storage-v1-stability/evidence/pr127-final.json",
+    "bytes": 284262,
+    "sha256": "44576499ab6c1a0ece5b3fa33d1633d08db3f8e58f8b3df0eaa810b31c3406f8",
+    "gitBlob": "92cd8d742cd9f5ce40cbeb68bb0f9e2a1d87d09e"
+  },
+  {
+    "path": "scripts/qa/actor-storage-v1-stability/evidence/pr127-final.md",
+    "bytes": 201,
+    "sha256": "42b6ba40147cc5a4c8a95bb9be937e46d6a8d6d5c403c8dcb198b87a14feb304",
+    "gitBlob": "aaeeb2df5785b61bb796853b686b6fd23e827bc7"
+  },
+  {
+    "path": "scripts/qa/actor-storage-v1-stability/evidence/pr127-phase-one.json",
+    "bytes": 284136,
+    "sha256": "535353a81b1c75c1722cfb27cf6a378ca173877b533e26914882dbe33d699a13",
+    "gitBlob": "6a7d773f368554248caf9e11922abb1645356739"
+  },
+  {
+    "path": "scripts/qa/actor-storage-v1-stability/evidence/repeated-differential.json",
+    "bytes": 86558,
+    "sha256": "036447fe3d9149b9aef27322c8d78b048e7835206a1a50569bfda7b0a0dcaeed",
+    "gitBlob": "a054e4524ac7077e71392ce73f0df04b1ed92f48"
+  },
+  {
+    "path": "scripts/qa/actor-storage-v1-stability/evidence/repeated-differential.md",
+    "bytes": 38435,
+    "sha256": "78a09b563068278fc7b83126342eaa0b5ab377973b84101dd61cf9541637edd4",
+    "gitBlob": "dedf1754cd91cc5ee647c6cedb9b68e928bc4b9f"
+  },
+  {
+    "path": "scripts/qa/actor-storage-v1-stability/evidence/repeated-path-diagnostic.json",
+    "bytes": 87646,
+    "sha256": "054853b48ab6572a6e28479a3942025ed6c0849ec03a715d63cab47ca3bb18e6",
+    "gitBlob": "32d0e6cbf71f2948e7feaccaeee83aa492f9bde7"
+  },
+  {
+    "path": "scripts/qa/actor-storage-v1-stability/evidence/consumer-inventory.txt",
+    "bytes": 5171,
+    "sha256": "76bb7046811f04ce920b9caa4774e80c568a84799b46756cde4fea22670f59ca",
+    "gitBlob": "2591f49997f352a2c91809dd5d2a708256b679f8"
+  },
+  {
+    "path": "scripts/qa/actor-storage-v1-stability/evidence/product.diff",
+    "bytes": 5103,
+    "sha256": "4dd97e31f0f24a217803ffdd9eca32ab2ad1e065bcca53128e67fd3aacfcb968",
+    "gitBlob": "d7c5c8f3c88333e9972be6df091a88e1383fdd3b"
+  },
+  {
+    "path": "scripts/qa/actor-storage-v1-stability/evidence/validation-summary.json",
+    "bytes": 2294,
+    "sha256": "bcb007517b8ac93fcd8ee77faa73becc84bd8ce7bbafabf95a79a489e54764df",
+    "gitBlob": "cbb4a1a19d3568a141a953e6dc8a1ac14b6a253f"
+  },
+  {
+    "path": "scripts/qa/actor-storage-v1-stability/evidence/build-final.log",
+    "bytes": 16851,
+    "sha256": "d7897e8ca08a2aad092d5ec6d22006c7b3f27cddad9aaefa439e39248715bd57",
+    "gitBlob": "4ece59c341f4549055eaebbf14e2d1fe21d533e9"
+  },
+  {
+    "path": "scripts/qa/actor-storage-v1-stability/evidence/build-main.log",
+    "bytes": 17211,
+    "sha256": "9fc72be67632e2a7756d0dbe61c7581aa39dca68f6c8b090bc13a8d57ffbecef",
+    "gitBlob": "20e1b7c929b4134924bb6335fc2f9021bf296a1e"
+  },
+  {
+    "path": "scripts/qa/actor-storage-v1-stability/evidence/build-store-final.log",
+    "bytes": 1443,
+    "sha256": "5d6b41a796fbca20686e65bc0b81d2ac106d6980ddd8520d6776c675eb1eddd3",
+    "gitBlob": "f7dea8a8fb1ec2e7bd34ab2236603bd3f4b09013"
+  },
+  {
+    "path": "scripts/qa/actor-storage-v1-stability/evidence/build-store-main.log",
+    "bytes": 238,
+    "sha256": "5763bd2502284fb0c1143004e5f3a1df7d68b71b6296d1fa2ce7fd02f391c35f",
+    "gitBlob": "e2726531356b5355182e7db95cadb21045a9a0ed"
+  },
+  {
+    "path": "scripts/qa/actor-storage-v1-stability/evidence/build-store-vercel-final.log",
+    "bytes": 11323,
+    "sha256": "76ffe434a0388a35858df6517a223abf904423c68ff6453cda3edc21efa9a1df",
+    "gitBlob": "58061c764d4b35a334b16272de802349f3fb1229"
+  },
+  {
+    "path": "scripts/qa/actor-storage-v1-stability/evidence/build-store-vercel-main.log",
+    "bytes": 11331,
+    "sha256": "4621f6d78dff0d5a85fd103bb8caf5a4934d4ba06fcea32f3fc15c73bd1b99e7",
+    "gitBlob": "68e8a967b41c24409387f5ea98b61102bc8e32bd"
+  },
+  {
+    "path": "docs/reports/LANZO.ACTOR.SCOPED.STORAGE.V1.STABILITY.AUDIT.R1.md",
+    "bytes": 29600,
+    "sha256": "a5da5f44c9835c0db429c0baad64cd477f33af2ec9c0f41fca0fd01440814eec",
+    "gitBlob": "9e8b0e6a04a28dc261ac568f1c956e145f61948b"
+  },
+  {
+    "path": "docs/reports/LANZO.ACTOR.SCOPED.STORAGE.V1.STABILITY.EVIDENCE.R1.md",
+    "bytes": 13454,
+    "sha256": "e8c7dc19363a69feb42939ab4f1983e166ded119dffc0e5194cbb35a8ff01265",
+    "gitBlob": "5e36067664d23e0033378b109ce67a4330741342"
+  },
+  {
+    "path": "docs/reports/LANZO.ACTOR.SCOPED.STORAGE.V1.STABILITY.CHECKPOINTS.R1.md",
+    "bytes": 3335,
+    "sha256": "4e9cfdb7de0178fb5db04183ee5db2966d7a68a9b00e3ecfc2b9e9b7b3da64bf",
+    "gitBlob": "2a07acfe30f4b37f8876a820e2437455e707a6e1"
+  },
+  {
+    "path": "src/services/auth/actorScopedStorage.js",
+    "bytes": 15241,
+    "sha256": "1ecbbe8ddb4213cda8870951d360323670a455d2d0007b851e8b68d77d32b6d1",
+    "gitBlob": "c597b8e8df2a86c7e5c6ac655a147b2b96021ed8"
+  },
+  {
+    "path": "src/services/auth/actorSessionRuntimeBridge.js",
+    "bytes": 15610,
+    "sha256": "3706790ee01b0aae4d4d36ed2350701a4e3a4c0f218a925e7cb4c8262d7ec9f6",
+    "gitBlob": "dd9cbe8d57aff393019740697bc61a1d2be0458b"
+  },
+  {
+    "path": "src/services/auth/__tests__/actorLateContext.integration.test.js",
+    "bytes": 5718,
+    "sha256": "f52416e83580709b90da7d6fa9a3b026b2af83edaaa145fdd3f395d3c0769857",
+    "gitBlob": "527bee49adc338867ba44079884e6f5379cad93c"
+  },
+  {
+    "path": "src/services/auth/__tests__/adminLoginRecovery.integration.test.js",
+    "bytes": 26937,
+    "sha256": "b1e9a8f5422eeb986b138da517c2b191e3c55d7c771dffa2c35c02944c4f2161",
+    "gitBlob": "06d0c87a0f4a51c7748887bdb1ab12e5fcff5517"
+  },
+  {
+    "path": "vercel.json",
+    "bytes": 861,
+    "sha256": "9f571dc1137de0542756de50b513323cd602ce02a335fc466b70eb8b84c323cf",
+    "gitBlob": "a576468c4861280414285883428236a864cf5e36"
+  },
+  {
+    "path": "store/vercel.json",
+    "bytes": 1731,
+    "sha256": "0c681e1461d7076dd98b6fb234f0741c821090c8717f97737567611c1b185afc",
+    "gitBlob": "463658902efecd294875c5afd9e6a37df4196500"
+  }
+]

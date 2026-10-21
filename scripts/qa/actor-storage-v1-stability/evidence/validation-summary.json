@@ -1,0 +1,88 @@
+{
+  "main": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+  "validatedCodeCheckpoint": "93a9d6ef4fed76f964761951230afe50c70ebda1",
+  "state": "ARCHITECTURAL_LIMITATION",
+  "groups": {
+    "candidate-auth": {
+      "numTotalTests": 260,
+      "numPassedTests": 260,
+      "numFailedTests": 0,
+      "numPendingTests": 0
+    },
+    "financial-regressions": {
+      "numTotalTests": 188,
+      "numPassedTests": 188,
+      "numFailedTests": 0,
+      "numPendingTests": 0
+    },
+    "dexie-recovery": {
+      "numTotalTests": 127,
+      "numPassedTests": 127,
+      "numFailedTests": 0,
+      "numPendingTests": 0
+    },
+    "build-architecture": {
+      "numTotalTests": 83,
+      "numPassedTests": 33,
+      "numFailedTests": 0,
+      "numPendingTests": 50
+    }
+  },
+  "globals": {
+    "base": [
+      {
+        "numTotalTests": 5739,
+        "numPassedTests": 5612,
+        "numFailedTests": 75,
+        "numPendingTests": 52
+      },
+      {
+        "numTotalTests": 5739,
+        "numPassedTests": 5612,
+        "numFailedTests": 75,
+        "numPendingTests": 52
+      }
+    ],
+    "candidate": [
+      {
+        "numTotalTests": 5742,
+        "numPassedTests": 5615,
+        "numFailedTests": 75,
+        "numPendingTests": 52
+      },
+      {
+        "numTotalTests": 5742,
+        "numPassedTests": 5615,
+        "numFailedTests": 75,
+        "numPendingTests": 52
+      }
+    ]
+  },
+  "remoteWorkflows": "NOT_DISPATCHED",
+  "financialE2E": "NOT_EXECUTED",
+  "chromium": {
+    "version": "143.0.7499.0",
+    "counts": {
+      "FAIL": 11,
+      "PASS": 17,
+      "PASS_LIMITATION_DETECTED": 1
+    }
+  },
+  "pr127Local": {
+    "sharedFailures": 91,
+    "rawCandidateOnlyFailures": 0,
+    "newFailures": 0,
+    "unresolvedFailures": 0
+  },
+  "repeatedLocal": {
+    "baseUniqueFailureObservationCount": 93,
+    "candidateUniqueFailureObservationCount": 93,
+    "newRegressionCount": 0
+  },
+  "sourceBlobs": {
+    "src/services/auth/actorScopedStorage.js": "c597b8e8df2a86c7e5c6ac655a147b2b96021ed8",
+    "src/services/auth/actorSessionRuntimeBridge.js": "dd9cbe8d57aff393019740697bc61a1d2be0458b",
+    "src/services/auth/actorRuntimeController.js": "5a87791742557fd3cadf1398e188a7a26f9d91ac",
+    "src/services/auth/actorOperationalHandoff.js": "af09bc82d4a24c7e4726bc9f8b8a41cd104720c3"
+  }
+}

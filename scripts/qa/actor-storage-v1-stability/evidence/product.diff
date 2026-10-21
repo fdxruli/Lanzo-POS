@@ -1,0 +1,111 @@
+diff --git a/src/services/auth/actorScopedStorage.js b/src/services/auth/actorScopedStorage.js
+index dcc09e7b..c597b8e8 100644
+--- a/src/services/auth/actorScopedStorage.js
++++ b/src/services/auth/actorScopedStorage.js
+@@ -166,29 +166,41 @@ try {
+   channel = null;
+ }
+ 
+-const handleForeignContext = (record) => {
+-  if (
+-    !activeBinding
+-    || !record
+-    || record.tenantOpaqueId !== activeBinding.tenantOpaqueId
+-    || record.contextToken === activeBinding.contextToken
+-  ) return;
++const contextMatchesBinding = (record, binding) => Boolean(
++  record
++  && record.status === 'granted'
++  && record.tenantOpaqueId === binding.tenantOpaqueId
++  && record.contextToken === binding.contextToken
++  && record.actorOpaqueId === binding.actorOpaqueId
++  && record.actorGeneration === binding.actorGeneration
++);
++
++const handleForeignContext = (tenantOpaqueId) => {
++  const binding = activeBinding;
++  if (!binding || tenantOpaqueId !== binding.tenantOpaqueId) return;
++
++  // Messages are hints, including a message carrying our own token. Delivery
++  // order does not establish authority: only the current durable record can
++  // prove this binding. Missing/unreadable/corrupt records fail closed.
++  const current = readContextRecord(binding.tenantOpaqueId);
++  if (activeBinding !== binding || contextMatchesBinding(current, binding)) return;
+ 
+   writesSuspended = true;
+   pendingBinding = null;
+   notify({
+     type: 'foreign_context',
+-    tenantOpaqueId: activeBinding.tenantOpaqueId,
+-    actorKey: activeBinding.actorKey,
+-    actorGeneration: activeBinding.actorGeneration
++    tenantOpaqueId: binding.tenantOpaqueId,
++    actorKey: binding.actorKey,
++    actorGeneration: binding.actorGeneration,
++    contextToken: binding.contextToken
+   });
+ };
+ 
+-channel?.addEventListener?.('message', (event) => handleForeignContext(event?.data || null));
++channel?.addEventListener?.('message', (event) => handleForeignContext(event?.data?.tenantOpaqueId));
+ if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+   window.addEventListener('storage', (event) => {
+-    if (!activeBinding || event.key !== actorContextPhysicalKey(activeBinding.tenantOpaqueId)) return;
+-    handleForeignContext(parseContextRecord(event.newValue));
++    if (!activeBinding || (event.key !== null && event.key !== actorContextPhysicalKey(activeBinding.tenantOpaqueId))) return;
++    handleForeignContext(activeBinding.tenantOpaqueId);
+   });
+ }
+ 
+@@ -291,13 +303,7 @@ const assertActiveContextCurrent = () => {
+     });
+   }
+   const current = readContextRecord(activeBinding.tenantOpaqueId);
+-  if (
+-    !current
+-    || current.status !== 'granted'
+-    || current.contextToken !== activeBinding.contextToken
+-    || current.actorOpaqueId !== activeBinding.actorOpaqueId
+-    || current.actorGeneration !== activeBinding.actorGeneration
+-  ) {
++  if (!contextMatchesBinding(current, activeBinding)) {
+     writesSuspended = true;
+     throw new ActorScopedStorageError(ACTOR_SCOPED_STORAGE_ERROR_CODES.CONTEXT_STALE, {
+       reason: 'actor_storage_context_changed'
+@@ -344,7 +350,12 @@ export const invalidateActorScopedStorage = (reason = 'actor_locked') => {
+   pendingBinding = null;
+   activeBinding = null;
+ 
+-  if (previous) {
++  // An activated context that already observes a different durable owner must
++  // retire locally without publishing a lock over that owner's record. This
++  // mitigates sequential late invalidation only: getItem + setItem is NOT CAS.
++  // Keep the pre-activation cleanup contract unchanged (no owned token yet).
++  if (previous && (!previous.contextToken
++    || contextMatchesBinding(readContextRecord(previous.tenantOpaqueId), previous))) {
+     try {
+       publishContextRecord({
+         version: ACTOR_STORAGE_VERSION,
+diff --git a/src/services/auth/actorSessionRuntimeBridge.js b/src/services/auth/actorSessionRuntimeBridge.js
+index 210fe1c8..dd9cbe8d 100644
+--- a/src/services/auth/actorSessionRuntimeBridge.js
++++ b/src/services/auth/actorSessionRuntimeBridge.js
+@@ -3,6 +3,7 @@ import { getAdminOfflineAuthorization, getStableDeviceId } from '../supabase';
+ import { hydrateTenantStorageConsumers, resumeTenantStorageWrites } from '../tenant/tenantScopedStorage';
+ import {
+   activateActorScopedStorage,
++  getActorScopedStorageState,
+   invalidateActorScopedStorage,
+   prepareActorScopedStorage,
+   resumeActorScopedStorageWrites,
+@@ -354,6 +355,10 @@ subscribeActorScopedStorage((event) => {
+   const state = actorRuntimeController.getState();
+   if (state.status !== ACTOR_RUNTIME_STATUS.GRANTED) return;
+   if (state.tenant?.opaqueId !== event.tenantOpaqueId) return;
++  // getState can expire authority, and observers may replace a binding. A
++  // decision for a former binding must never lock the replacement grant.
++  if (state.actorKey !== event.actorKey || state.generation !== event.actorGeneration) return;
++  if (getActorScopedStorageState().active?.contextToken !== event.contextToken) return;
+   suspendActorScopedStorageWrites();
+   actorRuntimeController.lock('actor_context_changed_in_other_tab');
+ });

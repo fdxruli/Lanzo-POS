@@ -23,10 +23,10 @@ for (const v of versions) {
   const result = await build({ stdin: { contents: `
     import * as storage from './src/services/auth/actorScopedStorage';
     import * as bridge from './src/services/auth/actorSessionRuntimeBridge';
-    import { actorRuntimeController as runtime } from './src/services/auth/actorRuntimeController';
+    import { actorRuntimeController as runtime, runWithActorHandle } from './src/services/auth/actorRuntimeController';
     import * as tenant from './src/services/tenant/tenantScopedStorage';
     import * as handoff from './src/services/auth/actorOperationalHandoff';
-    window.qa = {storage, bridge, runtime, tenant, handoff};
+    window.qa = {storage, bridge, runtime, tenant, handoff, runWithActorHandle};
   `, resolveDir: process.cwd() }, bundle: true, write: false, format: 'esm', platform: 'browser',
   plugins: [{ name: 'isolated-providers', setup(b) {
     b.onResolve({ filter: /tenantRuntimeRouter$|\/supabase$/ }, args => ({ path: args.path, namespace: 'fixture' }));
@@ -208,6 +208,31 @@ try {
       const valid=['duplicate','out-of-order'].includes(mode);
       return {after,status:valid?after.write.allowed?'PASS':'FAIL':!after.write.allowed&&after.state.status==='locked'?'PASS':'FAIL'};
     });
+  await run('V1-16-close-grants', 'after hints settle, exactly one storage handle remains current; no CAS claim', async c => {
+    const a=await boot(c,'candidate'), b=await boot(c,'candidate');
+    const returned=await Promise.all([a.evaluate(() => window.qa.mount('session-a','a')),
+      b.evaluate(() => window.qa.mount('session-b','b'))]);
+    const bindingA=await a.evaluate(() => window.qa.storage.getActorScopedStorageState().active.contextToken);
+    const winner=await b.evaluate(() => JSON.parse(localStorage.getItem(window.contextKey)).contextToken);
+    const loser=winner===bindingA?b:a;
+    await loser.waitForFunction(() => window.qa.runtime.getState().status==='locked');
+    const afterA=await a.evaluate(() => window.qa.probe()),afterB=await b.evaluate(() => window.qa.probe());
+    return {returned,afterA,afterB,status:Number(afterA.write.allowed)+Number(afterB.write.allowed)===1?'PASS':'FAIL',
+      limitation:'eventual storage correspondence; both grant calls may have returned GRANTED before notification. No atomic grant/financial admission proof'};
+  });
+  await run('V1-21-runtime-boundary', 'storage rejection alone cannot certify all runtime callbacks', async c => {
+    const p=await boot(c,'candidate');await p.evaluate(() => window.qa.mount());
+    const observation=await p.evaluate(async () => {
+      const q=window.qa,record=JSON.parse(localStorage.getItem(window.contextKey));
+      localStorage.setItem(window.contextKey,JSON.stringify({...record,contextToken:'foreign-before-hint'}));
+      const before=q.probe();let syntheticEffects=0;
+      await q.runWithActorHandle(q.runtimeHandle,async ({guardedWrite}) => guardedWrite(() => {syntheticEffects++;}));
+      return {before,syntheticEffects};
+    });
+    return {...observation,status:!observation.before.write.allowed && observation.before.runtime.allowed
+      && observation.syntheticEffects===1 ? 'PASS_LIMITATION_DETECTED':'HARNESS_ERROR',
+      limitation:'Runtime callback is not storage fenced; synthetic counter, no sale/server bypass demonstrated'};
+  });
   console.log(JSON.stringify({main,focal,hashes,chromium:browser.version(),scope:'real modules; synthetic auth/DB provider; no financial E2E',results},null,2));
   if(results.some(r=>r.status==='HARNESS_ERROR'))process.exitCode=2;
   // Known FAILs remain FAIL in evidence; never infer safety from exit 0.

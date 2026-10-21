@@ -19,3 +19,7 @@ B evaluation: recovered focal checkpoint rerun yields EXP14 PASS (11/11 with exi
 B remote: b2322dc6284d597d3fd2b4759e45c574db2dd9ef.
 
 C: M-01 plus M-03 activated-binding sequential mitigation. Auth focal final: 260/260 PASS. AUTH-25 mock updated to actual foreign_context identity/generation/token contract; two negative tests ensure obsolete bindings do not lock the current Admin. Initial mock-only failure retained in the final evidence narrative. Node: 5 detecting assertions PASS, including concurrent and pre-activation counterexamples whose SECURITY properties remain FAIL. Chromium final: 27 observations, 16 PASS / 11 FAIL / 0 harness errors; main-A/candidate-B still FAIL, candidate-A/main-B sequential PASS, candidate/candidate sequential PASS, controlled native read/write race still FAIL. No claim of full invalidation correction. Broad regression, build and CI attribution still in progress.
+
+C remote: 93a9d6ef4fed76f964761951230afe50c70ebda1.
+
+D closes this audit as ARCHITECTURAL_LIMITATION. Final Chromium: 29 observations, 17 PASS / 11 FAIL / 1 runtime-boundary detection, zero harness errors. Auth 260 PASS, financial selection 188 PASS, Dexie Recovery 127 PASS; groups overlap. Main repeats: 5612/75/52; candidate: 5615/75/52. Local unchanged comparators: PR127 91 shared/0 new; repeated 93 shared/0 new after checkout-prefix-only normalization, with raw reports preserved. Builds passed both sides; remote workflow gates and physical/E2E QA remain unexecuted. No PR/Preview/integration. SHA of D is delivered after remote verification.

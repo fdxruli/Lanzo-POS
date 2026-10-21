@@ -22,7 +22,7 @@
       "id": "EXP14-main",
       "expectation": "B remains granted, old handles rejected",
       "before": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df\",\"actorGeneration\":5,\"contextToken\":\"693b3dc3-72dc-46ba-93fb-c1dbcb1f5592\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:55.296Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df\",\"actorGeneration\":5,\"contextToken\":\"de7484d1-3e08-408a-a56e-a8c55c5bae7c\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:57:22.132Z\"}",
         "state": {
           "status": "granted",
           "actorType": "admin",
@@ -38,7 +38,7 @@
             "generation": 1
           },
           "deviceRef": "device-a",
-          "authorizationExpiresAt": 1792619376258,
+          "authorizationExpiresAt": 1792619943105,
           "generation": 5,
           "reason": "authenticated_session_granted"
         },
@@ -51,7 +51,7 @@
             "actorKey": "admin:a",
             "actorGeneration": 5,
             "actorOpaqueId": "df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df",
-            "contextToken": "693b3dc3-72dc-46ba-93fb-c1dbcb1f5592",
+            "contextToken": "de7484d1-3e08-408a-a56e-a8c55c5bae7c",
             "legacyUnresolvedKeys": []
           },
           "writesSuspended": false
@@ -72,7 +72,7 @@
         }
       },
       "after": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df\",\"actorGeneration\":5,\"contextToken\":\"693b3dc3-72dc-46ba-93fb-c1dbcb1f5592\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:55.296Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df\",\"actorGeneration\":5,\"contextToken\":\"de7484d1-3e08-408a-a56e-a8c55c5bae7c\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:57:22.132Z\"}",
         "state": {
           "status": "locked",
           "actorType": null,
@@ -95,7 +95,7 @@
             "actorKey": "admin:a",
             "actorGeneration": 5,
             "actorOpaqueId": "df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df",
-            "contextToken": "693b3dc3-72dc-46ba-93fb-c1dbcb1f5592",
+            "contextToken": "de7484d1-3e08-408a-a56e-a8c55c5bae7c",
             "legacyUnresolvedKeys": []
           },
           "writesSuspended": true
@@ -123,7 +123,7 @@
       "id": "EXP14-focal",
       "expectation": "B remains granted, old handles rejected",
       "before": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df\",\"actorGeneration\":5,\"contextToken\":\"98e15d58-de01-4723-9ad6-71642fd3ff9c\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:55.384Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df\",\"actorGeneration\":5,\"contextToken\":\"afbb6900-50c9-4365-8687-8edd1c4b3b81\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:57:22.199Z\"}",
         "state": {
           "status": "granted",
           "actorType": "admin",
@@ -139,7 +139,7 @@
             "generation": 1
           },
           "deviceRef": "device-a",
-          "authorizationExpiresAt": 1792619376361,
+          "authorizationExpiresAt": 1792619943183,
           "generation": 5,
           "reason": "authenticated_session_granted"
         },
@@ -152,7 +152,7 @@
             "actorKey": "admin:a",
             "actorGeneration": 5,
             "actorOpaqueId": "df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df",
-            "contextToken": "98e15d58-de01-4723-9ad6-71642fd3ff9c",
+            "contextToken": "afbb6900-50c9-4365-8687-8edd1c4b3b81",
             "legacyUnresolvedKeys": []
           },
           "writesSuspended": false
@@ -173,7 +173,7 @@
         }
       },
       "after": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df\",\"actorGeneration\":5,\"contextToken\":\"98e15d58-de01-4723-9ad6-71642fd3ff9c\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:55.384Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df\",\"actorGeneration\":5,\"contextToken\":\"afbb6900-50c9-4365-8687-8edd1c4b3b81\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:57:22.199Z\"}",
         "state": {
           "status": "granted",
           "actorType": "admin",
@@ -189,7 +189,7 @@
             "generation": 1
           },
           "deviceRef": "device-a",
-          "authorizationExpiresAt": 1792619376361,
+          "authorizationExpiresAt": 1792619943183,
           "generation": 5,
           "reason": "authenticated_session_granted"
         },
@@ -202,7 +202,7 @@
             "actorKey": "admin:a",
             "actorGeneration": 5,
             "actorOpaqueId": "df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df",
-            "contextToken": "98e15d58-de01-4723-9ad6-71642fd3ff9c",
+            "contextToken": "afbb6900-50c9-4365-8687-8edd1c4b3b81",
             "legacyUnresolvedKeys": []
           },
           "writesSuspended": false
@@ -228,7 +228,7 @@
       "id": "EXP14-candidate",
       "expectation": "B remains granted, old handles rejected",
       "before": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df\",\"actorGeneration\":5,\"contextToken\":\"f0c91feb-c9a9-43d0-82f9-87483730fae9\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:55.487Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df\",\"actorGeneration\":5,\"contextToken\":\"01e19048-13a3-43ed-9926-fc5b7fa11f1e\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:57:22.256Z\"}",
         "state": {
           "status": "granted",
           "actorType": "admin",
@@ -244,7 +244,7 @@
             "generation": 1
           },
           "deviceRef": "device-a",
-          "authorizationExpiresAt": 1792619376442,
+          "authorizationExpiresAt": 1792619943237,
           "generation": 5,
           "reason": "authenticated_session_granted"
         },
@@ -257,7 +257,7 @@
             "actorKey": "admin:a",
             "actorGeneration": 5,
             "actorOpaqueId": "df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df",
-            "contextToken": "f0c91feb-c9a9-43d0-82f9-87483730fae9",
+            "contextToken": "01e19048-13a3-43ed-9926-fc5b7fa11f1e",
             "legacyUnresolvedKeys": []
           },
           "writesSuspended": false
@@ -278,7 +278,7 @@
         }
       },
       "after": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df\",\"actorGeneration\":5,\"contextToken\":\"f0c91feb-c9a9-43d0-82f9-87483730fae9\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:55.487Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df\",\"actorGeneration\":5,\"contextToken\":\"01e19048-13a3-43ed-9926-fc5b7fa11f1e\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:57:22.256Z\"}",
         "state": {
           "status": "granted",
           "actorType": "admin",
@@ -294,7 +294,7 @@
             "generation": 1
           },
           "deviceRef": "device-a",
-          "authorizationExpiresAt": 1792619376442,
+          "authorizationExpiresAt": 1792619943237,
           "generation": 5,
           "reason": "authenticated_session_granted"
         },
@@ -307,7 +307,7 @@
             "actorKey": "admin:a",
             "actorGeneration": 5,
             "actorOpaqueId": "df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df",
-            "contextToken": "f0c91feb-c9a9-43d0-82f9-87483730fae9",
+            "contextToken": "01e19048-13a3-43ed-9926-fc5b7fa11f1e",
             "legacyUnresolvedKeys": []
           },
           "writesSuspended": false
@@ -333,7 +333,7 @@
       "id": "LC13-main-main-freeze-none",
       "expectation": "stale A cannot overwrite B; old A denied",
       "before": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"f95c0eb3-d96a-4b7c-b837-42f26c3289de\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:55.643Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"ee198e54-e6c3-41f6-b31a-7c8f57c5d881\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:57:22.353Z\"}",
         "state": {
           "status": "granted",
           "actorType": "admin",
@@ -349,7 +349,7 @@
             "generation": 1
           },
           "deviceRef": "device-a",
-          "authorizationExpiresAt": 1792619276614,
+          "authorizationExpiresAt": 1792619843334,
           "generation": 2,
           "reason": "authenticated_session_granted"
         },
@@ -362,7 +362,7 @@
             "actorKey": "admin:b",
             "actorGeneration": 2,
             "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
-            "contextToken": "f95c0eb3-d96a-4b7c-b837-42f26c3289de",
+            "contextToken": "ee198e54-e6c3-41f6-b31a-7c8f57c5d881",
             "legacyUnresolvedKeys": []
           },
           "writesSuspended": false
@@ -377,7 +377,7 @@
         "oldStorage": null
       },
       "after": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"aeea2bdb-7528-4232-96cd-64f3d1511776\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:47:55.655Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"8f0e4531-dbde-4c1c-b77f-5bade9d136e1\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:57:22.356Z\"}",
         "state": {
           "status": "locked",
           "actorType": null,
@@ -400,7 +400,7 @@
             "actorKey": "admin:b",
             "actorGeneration": 2,
             "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
-            "contextToken": "f95c0eb3-d96a-4b7c-b837-42f26c3289de",
+            "contextToken": "ee198e54-e6c3-41f6-b31a-7c8f57c5d881",
             "legacyUnresolvedKeys": []
           },
           "writesSuspended": true
@@ -417,7 +417,7 @@
         "oldStorage": null
       },
       "old": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"aeea2bdb-7528-4232-96cd-64f3d1511776\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:47:55.655Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"8f0e4531-dbde-4c1c-b77f-5bade9d136e1\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:57:22.356Z\"}",
         "state": {
           "status": "locked",
           "actorType": null,
@@ -453,7 +453,7 @@
       "id": "LC13-main-main-freeze-A",
       "expectation": "stale A cannot overwrite B; old A denied",
       "before": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"617bf62c-ec22-4157-bd18-405887f99f03\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:55.809Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"140558af-90c5-41d8-9c9f-051c556c69c2\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:57:22.448Z\"}",
         "state": {
           "status": "granted",
           "actorType": "admin",
@@ -469,7 +469,7 @@
             "generation": 1
           },
           "deviceRef": "device-a",
-          "authorizationExpiresAt": 1792619276770,
+          "authorizationExpiresAt": 1792619843428,
           "generation": 2,
           "reason": "authenticated_session_granted"
         },
@@ -482,7 +482,7 @@
             "actorKey": "admin:b",
             "actorGeneration": 2,
             "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
-            "contextToken": "617bf62c-ec22-4157-bd18-405887f99f03",
+            "contextToken": "140558af-90c5-41d8-9c9f-051c556c69c2",
             "legacyUnresolvedKeys": []
           },
           "writesSuspended": false
@@ -497,7 +497,7 @@
         "oldStorage": null
       },
       "after": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"3f2a2c88-46c2-4eb8-84f2-41b63397f999\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:47:55.813Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"39aa538b-17ae-4f35-893f-17f458aae30a\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:57:22.451Z\"}",
         "state": {
           "status": "locked",
           "actorType": null,
@@ -520,7 +520,7 @@
             "actorKey": "admin:b",
             "actorGeneration": 2,
             "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
-            "contextToken": "617bf62c-ec22-4157-bd18-405887f99f03",
+            "contextToken": "140558af-90c5-41d8-9c9f-051c556c69c2",
             "legacyUnresolvedKeys": []
           },
           "writesSuspended": true
@@ -537,7 +537,7 @@
         "oldStorage": null
       },
       "old": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"3f2a2c88-46c2-4eb8-84f2-41b63397f999\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:47:55.813Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"39aa538b-17ae-4f35-893f-17f458aae30a\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:57:22.451Z\"}",
         "state": {
           "status": "locked",
           "actorType": null,
@@ -573,7 +573,7 @@
       "id": "LC13-main-main-freeze-B",
       "expectation": "stale A cannot overwrite B; old A denied",
       "before": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"40c335fa-8fca-414b-bdbe-14fb96201ad3\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:55.971Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"a9765972-cfdb-441f-8d9b-f8a3186ec4f6\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:57:22.550Z\"}",
         "state": {
           "status": "granted",
           "actorType": "admin",
@@ -589,7 +589,7 @@
             "generation": 1
           },
           "deviceRef": "device-a",
-          "authorizationExpiresAt": 1792619276934,
+          "authorizationExpiresAt": 1792619843532,
           "generation": 2,
           "reason": "authenticated_session_granted"
         },
@@ -602,7 +602,7 @@
             "actorKey": "admin:b",
             "actorGeneration": 2,
             "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
-            "contextToken": "40c335fa-8fca-414b-bdbe-14fb96201ad3",
+            "contextToken": "a9765972-cfdb-441f-8d9b-f8a3186ec4f6",
             "legacyUnresolvedKeys": []
           },
           "writesSuspended": false
@@ -617,7 +617,7 @@
         "oldStorage": null
       },
       "after": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"26c0a78f-c929-4999-95e1-d64c50dec62c\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:47:55.983Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"a022f361-e8a8-4f9a-a9b3-64eba8573ae2\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:57:22.555Z\"}",
         "state": {
           "status": "locked",
           "actorType": null,
@@ -640,7 +640,7 @@
             "actorKey": "admin:b",
             "actorGeneration": 2,
             "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
-            "contextToken": "40c335fa-8fca-414b-bdbe-14fb96201ad3",
+            "contextToken": "a9765972-cfdb-441f-8d9b-f8a3186ec4f6",
             "legacyUnresolvedKeys": []
           },
           "writesSuspended": true
@@ -657,7 +657,7 @@
         "oldStorage": null
       },
       "old": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"26c0a78f-c929-4999-95e1-d64c50dec62c\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:47:55.983Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"a022f361-e8a8-4f9a-a9b3-64eba8573ae2\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:57:22.555Z\"}",
         "state": {
           "status": "locked",
           "actorType": null,
@@ -693,7 +693,7 @@
       "id": "LC13-main-candidate-freeze-none",
       "expectation": "stale A cannot overwrite B; old A denied",
       "before": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"d056a3bc-3f15-459b-baac-538b3b63f583\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:56.136Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"6a29288d-e844-407e-85eb-da5ac8abf4eb\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:57:22.650Z\"}",
         "state": {
           "status": "granted",
           "actorType": "admin",
@@ -709,7 +709,7 @@
             "generation": 1
           },
           "deviceRef": "device-a",
-          "authorizationExpiresAt": 1792619277106,
+          "authorizationExpiresAt": 1792619843630,
           "generation": 2,
           "reason": "authenticated_session_granted"
         },
@@ -722,7 +722,7 @@
             "actorKey": "admin:b",
             "actorGeneration": 2,
             "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
-            "contextToken": "d056a3bc-3f15-459b-baac-538b3b63f583",
+            "contextToken": "6a29288d-e844-407e-85eb-da5ac8abf4eb",
             "legacyUnresolvedKeys": []
           },
           "writesSuspended": false
@@ -737,7 +737,7 @@
         "oldStorage": null
       },
       "after": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"fc9d0dab-cd19-49cc-ab0a-c528c3e3c064\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:47:56.141Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"aced5657-858d-4fbb-a43b-091e93f744ed\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:57:22.653Z\"}",
         "state": {
           "status": "locked",
           "actorType": null,
@@ -760,7 +760,7 @@
             "actorKey": "admin:b",
             "actorGeneration": 2,
             "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
-            "contextToken": "d056a3bc-3f15-459b-baac-538b3b63f583",
+            "contextToken": "6a29288d-e844-407e-85eb-da5ac8abf4eb",
             "legacyUnresolvedKeys": []
           },
           "writesSuspended": true
@@ -777,7 +777,7 @@
         "oldStorage": null
       },
       "old": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"fc9d0dab-cd19-49cc-ab0a-c528c3e3c064\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:47:56.141Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"aced5657-858d-4fbb-a43b-091e93f744ed\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:57:22.653Z\"}",
         "state": {
           "status": "locked",
           "actorType": null,
@@ -813,7 +813,7 @@
       "id": "LC13-main-candidate-freeze-A",
       "expectation": "stale A cannot overwrite B; old A denied",
       "before": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"35cc95d1-aa57-44cc-94d6-263ca659f234\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:56.299Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"6f99c366-6b62-4677-8be1-6adf6a0f4b5e\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:57:22.748Z\"}",
         "state": {
           "status": "granted",
           "actorType": "admin",
@@ -829,7 +829,7 @@
             "generation": 1
           },
           "deviceRef": "device-a",
-          "authorizationExpiresAt": 1792619277266,
+          "authorizationExpiresAt": 1792619843731,
           "generation": 2,
           "reason": "authenticated_session_granted"
         },
@@ -842,7 +842,7 @@
             "actorKey": "admin:b",
             "actorGeneration": 2,
             "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
-            "contextToken": "35cc95d1-aa57-44cc-94d6-263ca659f234",
+            "contextToken": "6f99c366-6b62-4677-8be1-6adf6a0f4b5e",
             "legacyUnresolvedKeys": []
           },
           "writesSuspended": false
@@ -857,7 +857,7 @@
         "oldStorage": null
       },
       "after": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"07511b31-00d8-486d-b358-46d4ede3377a\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:47:56.322Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"08a239b3-0c6e-4f9a-9568-c55900d52334\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:57:22.751Z\"}",
         "state": {
           "status": "locked",
           "actorType": null,
@@ -880,7 +880,7 @@
             "actorKey": "admin:b",
             "actorGeneration": 2,
             "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
-            "contextToken": "35cc95d1-aa57-44cc-94d6-263ca659f234",
+            "contextToken": "6f99c366-6b62-4677-8be1-6adf6a0f4b5e",
             "legacyUnresolvedKeys": []
           },
           "writesSuspended": true
@@ -897,7 +897,7 @@
         "oldStorage": null
       },
       "old": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"07511b31-00d8-486d-b358-46d4ede3377a\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:47:56.322Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"08a239b3-0c6e-4f9a-9568-c55900d52334\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:57:22.751Z\"}",
         "state": {
           "status": "locked",
           "actorType": null,
@@ -933,7 +933,7 @@
       "id": "LC13-main-candidate-freeze-B",
       "expectation": "stale A cannot overwrite B; old A denied",
       "before": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"280764fd-884c-41d3-afd5-d766962cb1ec\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:56.471Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"80f6a884-c7ee-4298-b8e3-c48c8d184c8a\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:57:22.850Z\"}",
         "state": {
           "status": "granted",
           "actorType": "admin",
@@ -949,7 +949,7 @@
             "generation": 1
           },
           "deviceRef": "device-a",
-          "authorizationExpiresAt": 1792619277444,
+          "authorizationExpiresAt": 1792619843827,
           "generation": 2,
           "reason": "authenticated_session_granted"
         },
@@ -962,7 +962,7 @@
             "actorKey": "admin:b",
             "actorGeneration": 2,
             "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
-            "contextToken": "280764fd-884c-41d3-afd5-d766962cb1ec",
+            "contextToken": "80f6a884-c7ee-4298-b8e3-c48c8d184c8a",
             "legacyUnresolvedKeys": []
           },
           "writesSuspended": false
@@ -977,7 +977,7 @@
         "oldStorage": null
       },
       "after": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"155cc522-c47f-4c24-84c5-c4fc040d8fd3\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:47:56.483Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"325a1462-90fd-410c-a2e1-c6b890102784\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:57:22.854Z\"}",
         "state": {
           "status": "locked",
           "actorType": null,
@@ -1000,7 +1000,7 @@
             "actorKey": "admin:b",
             "actorGeneration": 2,
             "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
-            "contextToken": "280764fd-884c-41d3-afd5-d766962cb1ec",
+            "contextToken": "80f6a884-c7ee-4298-b8e3-c48c8d184c8a",
             "legacyUnresolvedKeys": []
           },
           "writesSuspended": true
@@ -1017,7 +1017,7 @@
         "oldStorage": null
       },
       "old": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"155cc522-c47f-4c24-84c5-c4fc040d8fd3\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:47:56.483Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"325a1462-90fd-410c-a2e1-c6b890102784\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:57:22.854Z\"}",
         "state": {
           "status": "locked",
           "actorType": null,
@@ -1053,7 +1053,7 @@
       "id": "LC13-candidate-main-freeze-none",
       "expectation": "stale A cannot overwrite B; old A denied",
       "before": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"7fd081dd-f582-4d77-a652-e8ac92b189ed\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:56.627Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"fc2ec71b-625d-48aa-98f8-a3acbe7ee52c\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:57:22.957Z\"}",
         "state": {
           "status": "granted",
           "actorType": "admin",
@@ -1069,7 +1069,7 @@
             "generation": 1
           },
           "deviceRef": "device-a",
-          "authorizationExpiresAt": 1792619277594,
+          "authorizationExpiresAt": 1792619843940,
           "generation": 2,
           "reason": "authenticated_session_granted"
         },
@@ -1082,7 +1082,7 @@
             "actorKey": "admin:b",
             "actorGeneration": 2,
             "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
-            "contextToken": "7fd081dd-f582-4d77-a652-e8ac92b189ed",
+            "contextToken": "fc2ec71b-625d-48aa-98f8-a3acbe7ee52c",
             "legacyUnresolvedKeys": []
           },
           "writesSuspended": false
@@ -1097,7 +1097,7 @@
         "oldStorage": null
       },
       "after": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"7fd081dd-f582-4d77-a652-e8ac92b189ed\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:56.627Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"fc2ec71b-625d-48aa-98f8-a3acbe7ee52c\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:57:22.957Z\"}",
         "state": {
           "status": "granted",
           "actorType": "admin",
@@ -1113,7 +1113,7 @@
             "generation": 1
           },
           "deviceRef": "device-a",
-          "authorizationExpiresAt": 1792619277594,
+          "authorizationExpiresAt": 1792619843940,
           "generation": 2,
           "reason": "authenticated_session_granted"
         },
@@ -1126,7 +1126,7 @@
             "actorKey": "admin:b",
             "actorGeneration": 2,
             "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
-            "contextToken": "7fd081dd-f582-4d77-a652-e8ac92b189ed",
+            "contextToken": "fc2ec71b-625d-48aa-98f8-a3acbe7ee52c",
             "legacyUnresolvedKeys": []
           },
           "writesSuspended": false
@@ -1141,7 +1141,7 @@
         "oldStorage": null
       },
       "old": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"7fd081dd-f582-4d77-a652-e8ac92b189ed\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:56.627Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"fc2ec71b-625d-48aa-98f8-a3acbe7ee52c\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:57:22.957Z\"}",
         "state": {
           "status": "locked",
           "actorType": null,
@@ -1177,7 +1177,7 @@
       "id": "LC13-candidate-main-freeze-A",
       "expectation": "stale A cannot overwrite B; old A denied",
       "before": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"4308356b-bd11-4cc2-98c7-a83f2498fb7d\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:56.847Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"405bd36c-5e09-49cd-bf2b-82b628cd2804\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:57:23.058Z\"}",
         "state": {
           "status": "granted",
           "actorType": "admin",
@@ -1193,7 +1193,7 @@
             "generation": 1
           },
           "deviceRef": "device-a",
-          "authorizationExpiresAt": 1792619277808,
+          "authorizationExpiresAt": 1792619844036,
           "generation": 2,
           "reason": "authenticated_session_granted"
         },
@@ -1206,7 +1206,7 @@
             "actorKey": "admin:b",
             "actorGeneration": 2,
             "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
-            "contextToken": "4308356b-bd11-4cc2-98c7-a83f2498fb7d",
+            "contextToken": "405bd36c-5e09-49cd-bf2b-82b628cd2804",
             "legacyUnresolvedKeys": []
           },
           "writesSuspended": false
@@ -1221,7 +1221,7 @@
         "oldStorage": null
       },
       "after": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"4308356b-bd11-4cc2-98c7-a83f2498fb7d\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:56.847Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"405bd36c-5e09-49cd-bf2b-82b628cd2804\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:57:23.058Z\"}",
         "state": {
           "status": "granted",
           "actorType": "admin",
@@ -1237,7 +1237,7 @@
             "generation": 1
           },
           "deviceRef": "device-a",
-          "authorizationExpiresAt": 1792619277808,
+          "authorizationExpiresAt": 1792619844036,
           "generation": 2,
           "reason": "authenticated_session_granted"
         },
@@ -1250,7 +1250,7 @@
             "actorKey": "admin:b",
             "actorGeneration": 2,
             "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
-            "contextToken": "4308356b-bd11-4cc2-98c7-a83f2498fb7d",
+            "contextToken": "405bd36c-5e09-49cd-bf2b-82b628cd2804",
             "legacyUnresolvedKeys": []
           },
           "writesSuspended": false
@@ -1265,7 +1265,7 @@
         "oldStorage": null
       },
       "old": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"4308356b-bd11-4cc2-98c7-a83f2498fb7d\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:56.847Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"405bd36c-5e09-49cd-bf2b-82b628cd2804\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:57:23.058Z\"}",
         "state": {
           "status": "locked",
           "actorType": null,
@@ -1301,7 +1301,7 @@
       "id": "LC13-candidate-main-freeze-B",
       "expectation": "stale A cannot overwrite B; old A denied",
       "before": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"3f46e1e4-6f29-4564-918b-84ecf7861e00\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:57.026Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"8f3f5baa-ee08-43d6-b88d-a6db38e4a991\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:57:23.151Z\"}",
         "state": {
           "status": "granted",
           "actorType": "admin",
@@ -1317,7 +1317,7 @@
             "generation": 1
           },
           "deviceRef": "device-a",
-          "authorizationExpiresAt": 1792619277997,
+          "authorizationExpiresAt": 1792619844134,
           "generation": 2,
           "reason": "authenticated_session_granted"
         },
@@ -1330,7 +1330,7 @@
             "actorKey": "admin:b",
             "actorGeneration": 2,
             "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
-            "contextToken": "3f46e1e4-6f29-4564-918b-84ecf7861e00",
+            "contextToken": "8f3f5baa-ee08-43d6-b88d-a6db38e4a991",
             "legacyUnresolvedKeys": []
           },
           "writesSuspended": false
@@ -1345,7 +1345,7 @@
         "oldStorage": null
       },
       "after": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"3f46e1e4-6f29-4564-918b-84ecf7861e00\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:57.026Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"8f3f5baa-ee08-43d6-b88d-a6db38e4a991\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:57:23.151Z\"}",
         "state": {
           "status": "granted",
           "actorType": "admin",
@@ -1361,7 +1361,7 @@
             "generation": 1
           },
           "deviceRef": "device-a",
-          "authorizationExpiresAt": 1792619277997,
+          "authorizationExpiresAt": 1792619844134,
           "generation": 2,
           "reason": "authenticated_session_granted"
         },
@@ -1374,7 +1374,7 @@
             "actorKey": "admin:b",
             "actorGeneration": 2,
             "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
-            "contextToken": "3f46e1e4-6f29-4564-918b-84ecf7861e00",
+            "contextToken": "8f3f5baa-ee08-43d6-b88d-a6db38e4a991",
             "legacyUnresolvedKeys": []
           },
           "writesSuspended": false
@@ -1389,7 +1389,7 @@
         "oldStorage": null
       },
       "old": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"3f46e1e4-6f29-4564-918b-84ecf7861e00\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:57.026Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"8f3f5baa-ee08-43d6-b88d-a6db38e4a991\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:57:23.151Z\"}",
         "state": {
           "status": "locked",
           "actorType": null,
@@ -1425,7 +1425,7 @@
       "id": "LC13-candidate-candidate-freeze-none",
       "expectation": "stale A cannot overwrite B; old A denied",
       "before": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"b45c6b74-8a25-4776-993a-eab37bb4d738\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:57.197Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"b819a6a6-5cea-4305-a63b-6c3a2e82740d\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:57:23.242Z\"}",
         "state": {
           "status": "granted",
           "actorType": "admin",
@@ -1441,7 +1441,7 @@
             "generation": 1
           },
           "deviceRef": "device-a",
-          "authorizationExpiresAt": 1792619278171,
+          "authorizationExpiresAt": 1792619844226,
           "generation": 2,
           "reason": "authenticated_session_granted"
         },
@@ -1454,7 +1454,7 @@
             "actorKey": "admin:b",
             "actorGeneration": 2,
             "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
-            "contextToken": "b45c6b74-8a25-4776-993a-eab37bb4d738",
+            "contextToken": "b819a6a6-5cea-4305-a63b-6c3a2e82740d",
             "legacyUnresolvedKeys": []
           },
           "writesSuspended": false
@@ -1469,7 +1469,7 @@
         "oldStorage": null
       },
       "after": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"b45c6b74-8a25-4776-993a-eab37bb4d738\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:57.197Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"b819a6a6-5cea-4305-a63b-6c3a2e82740d\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:57:23.242Z\"}",
         "state": {
           "status": "granted",
           "actorType": "admin",
@@ -1485,7 +1485,7 @@
             "generation": 1
           },
           "deviceRef": "device-a",
-          "authorizationExpiresAt": 1792619278171,
+          "authorizationExpiresAt": 1792619844226,
           "generation": 2,
           "reason": "authenticated_session_granted"
         },
@@ -1498,7 +1498,7 @@
             "actorKey": "admin:b",
             "actorGeneration": 2,
             "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
-            "contextToken": "b45c6b74-8a25-4776-993a-eab37bb4d738",
+            "contextToken": "b819a6a6-5cea-4305-a63b-6c3a2e82740d",
             "legacyUnresolvedKeys": []
           },
           "writesSuspended": false
@@ -1513,7 +1513,7 @@
         "oldStorage": null
       },
       "old": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"b45c6b74-8a25-4776-993a-eab37bb4d738\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:57.197Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"b819a6a6-5cea-4305-a63b-6c3a2e82740d\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:57:23.242Z\"}",
         "state": {
           "status": "locked",
           "actorType": null,
@@ -1549,7 +1549,7 @@
       "id": "LC13-candidate-candidate-freeze-A",
       "expectation": "stale A cannot overwrite B; old A denied",
       "before": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"9e5f22af-fea5-4f0d-b60a-597d51f0856b\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:57.350Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"7cd498ac-6011-41f6-a7a5-1dee097b3dfc\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:57:23.335Z\"}",
         "state": {
           "status": "granted",
           "actorType": "admin",
@@ -1565,7 +1565,7 @@
             "generation": 1
           },
           "deviceRef": "device-a",
-          "authorizationExpiresAt": 1792619278318,
+          "authorizationExpiresAt": 1792619844316,
           "generation": 2,
           "reason": "authenticated_session_granted"
         },
@@ -1578,7 +1578,7 @@
             "actorKey": "admin:b",
             "actorGeneration": 2,
             "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
-            "contextToken": "9e5f22af-fea5-4f0d-b60a-597d51f0856b",
+            "contextToken": "7cd498ac-6011-41f6-a7a5-1dee097b3dfc",
             "legacyUnresolvedKeys": []
           },
           "writesSuspended": false
@@ -1593,7 +1593,7 @@
         "oldStorage": null
       },
       "after": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"9e5f22af-fea5-4f0d-b60a-597d51f0856b\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:57.350Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"7cd498ac-6011-41f6-a7a5-1dee097b3dfc\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:57:23.335Z\"}",
         "state": {
           "status": "granted",
           "actorType": "admin",
@@ -1609,7 +1609,7 @@
             "generation": 1
           },
           "deviceRef": "device-a",
-          "authorizationExpiresAt": 1792619278318,
+          "authorizationExpiresAt": 1792619844316,
           "generation": 2,
           "reason": "authenticated_session_granted"
         },
@@ -1622,7 +1622,7 @@
             "actorKey": "admin:b",
             "actorGeneration": 2,
             "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
-            "contextToken": "9e5f22af-fea5-4f0d-b60a-597d51f0856b",
+            "contextToken": "7cd498ac-6011-41f6-a7a5-1dee097b3dfc",
             "legacyUnresolvedKeys": []
           },
           "writesSuspended": false
@@ -1637,7 +1637,7 @@
         "oldStorage": null
       },
       "old": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"9e5f22af-fea5-4f0d-b60a-597d51f0856b\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:57.350Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"7cd498ac-6011-41f6-a7a5-1dee097b3dfc\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:57:23.335Z\"}",
         "state": {
           "status": "locked",
           "actorType": null,
@@ -1673,7 +1673,7 @@
       "id": "LC13-candidate-candidate-freeze-B",
       "expectation": "stale A cannot overwrite B; old A denied",
       "before": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"4320f4bd-2143-4659-872a-00bf2afd7641\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:57.548Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"aa81cabb-bcb5-43bc-9da0-ef6805f6c1ba\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:57:23.431Z\"}",
         "state": {
           "status": "granted",
           "actorType": "admin",
@@ -1689,7 +1689,7 @@
             "generation": 1
           },
           "deviceRef": "device-a",
-          "authorizationExpiresAt": 1792619278522,
+          "authorizationExpiresAt": 1792619844413,
           "generation": 2,
           "reason": "authenticated_session_granted"
         },
@@ -1702,7 +1702,7 @@
             "actorKey": "admin:b",
             "actorGeneration": 2,
             "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
-            "contextToken": "4320f4bd-2143-4659-872a-00bf2afd7641",
+            "contextToken": "aa81cabb-bcb5-43bc-9da0-ef6805f6c1ba",
             "legacyUnresolvedKeys": []
           },
           "writesSuspended": false
@@ -1717,7 +1717,7 @@
         "oldStorage": null
       },
       "after": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"4320f4bd-2143-4659-872a-00bf2afd7641\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:57.548Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"aa81cabb-bcb5-43bc-9da0-ef6805f6c1ba\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:57:23.431Z\"}",
         "state": {
           "status": "granted",
           "actorType": "admin",
@@ -1733,7 +1733,7 @@
             "generation": 1
           },
           "deviceRef": "device-a",
-          "authorizationExpiresAt": 1792619278522,
+          "authorizationExpiresAt": 1792619844413,
           "generation": 2,
           "reason": "authenticated_session_granted"
         },
@@ -1746,7 +1746,7 @@
             "actorKey": "admin:b",
             "actorGeneration": 2,
             "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
-            "contextToken": "4320f4bd-2143-4659-872a-00bf2afd7641",
+            "contextToken": "aa81cabb-bcb5-43bc-9da0-ef6805f6c1ba",
             "legacyUnresolvedKeys": []
           },
           "writesSuspended": false
@@ -1761,7 +1761,7 @@
         "oldStorage": null
       },
       "old": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"4320f4bd-2143-4659-872a-00bf2afd7641\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:57.548Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"aa81cabb-bcb5-43bc-9da0-ef6805f6c1ba\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:57:23.431Z\"}",
         "state": {
           "status": "locked",
           "actorType": null,
@@ -1797,7 +1797,7 @@
       "id": "LC13-focal-focal-freeze-none",
       "expectation": "stale A cannot overwrite B; old A denied",
       "before": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"8ec9ed90-50a7-4515-b27b-46239ba2d9fc\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:57.721Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"d85e23ac-19ef-47d2-88d2-3bb930764372\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:57:23.532Z\"}",
         "state": {
           "status": "granted",
           "actorType": "admin",
@@ -1813,7 +1813,7 @@
             "generation": 1
           },
           "deviceRef": "device-a",
-          "authorizationExpiresAt": 1792619278698,
+          "authorizationExpiresAt": 1792619844516,
           "generation": 2,
           "reason": "authenticated_session_granted"
         },
@@ -1826,7 +1826,7 @@
             "actorKey": "admin:b",
             "actorGeneration": 2,
             "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
-            "contextToken": "8ec9ed90-50a7-4515-b27b-46239ba2d9fc",
+            "contextToken": "d85e23ac-19ef-47d2-88d2-3bb930764372",
             "legacyUnresolvedKeys": []
           },
           "writesSuspended": false
@@ -1841,7 +1841,7 @@
         "oldStorage": null
       },
       "after": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"bdebe1fa-0dd0-4aea-a48a-2f11c8772238\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:47:57.727Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"21ab1b2b-7558-4b95-b739-372cfa06e1cc\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:57:23.536Z\"}",
         "state": {
           "status": "locked",
           "actorType": null,
@@ -1864,7 +1864,7 @@
             "actorKey": "admin:b",
             "actorGeneration": 2,
             "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
-            "contextToken": "8ec9ed90-50a7-4515-b27b-46239ba2d9fc",
+            "contextToken": "d85e23ac-19ef-47d2-88d2-3bb930764372",
             "legacyUnresolvedKeys": []
           },
           "writesSuspended": true
@@ -1881,7 +1881,7 @@
         "oldStorage": null
       },
       "old": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"bdebe1fa-0dd0-4aea-a48a-2f11c8772238\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:47:57.727Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"21ab1b2b-7558-4b95-b739-372cfa06e1cc\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:57:23.536Z\"}",
         "state": {
           "status": "locked",
           "actorType": null,
@@ -1917,7 +1917,7 @@
       "id": "LC13-focal-focal-freeze-A",
       "expectation": "stale A cannot overwrite B; old A denied",
       "before": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"8cc913df-02c7-4856-8a3d-268624c271fe\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:57.880Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"6418840d-c1f9-4f89-b274-153bd30d6431\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:57:23.643Z\"}",
         "state": {
           "status": "granted",
           "actorType": "admin",
@@ -1933,7 +1933,7 @@
             "generation": 1
           },
           "deviceRef": "device-a",
-          "authorizationExpiresAt": 1792619278842,
+          "authorizationExpiresAt": 1792619844619,
           "generation": 2,
           "reason": "authenticated_session_granted"
         },
@@ -1946,7 +1946,7 @@
             "actorKey": "admin:b",
             "actorGeneration": 2,
             "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
-            "contextToken": "8cc913df-02c7-4856-8a3d-268624c271fe",
+            "contextToken": "6418840d-c1f9-4f89-b274-153bd30d6431",
             "legacyUnresolvedKeys": []
           },
           "writesSuspended": false
@@ -1961,7 +1961,7 @@
         "oldStorage": null
       },
       "after": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"2703f72d-6d6b-4554-a851-808e5bff1aca\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:47:57.888Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"5913a4ab-c9fa-47be-9489-44a6e7e76f32\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:57:23.651Z\"}",
         "state": {
           "status": "locked",
           "actorType": null,
@@ -1984,7 +1984,7 @@
             "actorKey": "admin:b",
             "actorGeneration": 2,
             "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
-            "contextToken": "8cc913df-02c7-4856-8a3d-268624c271fe",
+            "contextToken": "6418840d-c1f9-4f89-b274-153bd30d6431",
             "legacyUnresolvedKeys": []
           },
           "writesSuspended": true
@@ -2001,7 +2001,7 @@
         "oldStorage": null
       },
       "old": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"2703f72d-6d6b-4554-a851-808e5bff1aca\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:47:57.888Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"5913a4ab-c9fa-47be-9489-44a6e7e76f32\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:57:23.651Z\"}",
         "state": {
           "status": "locked",
           "actorType": null,
@@ -2037,7 +2037,7 @@
       "id": "LC13-focal-focal-freeze-B",
       "expectation": "stale A cannot overwrite B; old A denied",
       "before": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"37fdb72e-1456-46ca-b0b1-aa31ede9a2e5\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:58.037Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"cc42c099-ebbc-40c9-abd5-d9be26309170\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:57:23.750Z\"}",
         "state": {
           "status": "granted",
           "actorType": "admin",
@@ -2053,7 +2053,7 @@
             "generation": 1
           },
           "deviceRef": "device-a",
-          "authorizationExpiresAt": 1792619279012,
+          "authorizationExpiresAt": 1792619844731,
           "generation": 2,
           "reason": "authenticated_session_granted"
         },
@@ -2066,7 +2066,7 @@
             "actorKey": "admin:b",
             "actorGeneration": 2,
             "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
-            "contextToken": "37fdb72e-1456-46ca-b0b1-aa31ede9a2e5",
+            "contextToken": "cc42c099-ebbc-40c9-abd5-d9be26309170",
             "legacyUnresolvedKeys": []
           },
           "writesSuspended": false
@@ -2081,7 +2081,7 @@
         "oldStorage": null
       },
       "after": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"3f0f4335-65e8-4142-af92-4bd8caaec46d\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:47:58.045Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"194e53f8-28cb-4f51-b1ad-ab2bb8323ddf\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:57:23.755Z\"}",
         "state": {
           "status": "locked",
           "actorType": null,
@@ -2104,7 +2104,7 @@
             "actorKey": "admin:b",
             "actorGeneration": 2,
             "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
-            "contextToken": "37fdb72e-1456-46ca-b0b1-aa31ede9a2e5",
+            "contextToken": "cc42c099-ebbc-40c9-abd5-d9be26309170",
             "legacyUnresolvedKeys": []
           },
           "writesSuspended": true
@@ -2121,7 +2121,7 @@
         "oldStorage": null
       },
       "old": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"3f0f4335-65e8-4142-af92-4bd8caaec46d\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:47:58.045Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"194e53f8-28cb-4f51-b1ad-ab2bb8323ddf\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:57:23.755Z\"}",
         "state": {
           "status": "locked",
           "actorType": null,
@@ -2156,9 +2156,9 @@
     {
       "id": "CONCURRENT-LC13-candidate",
       "expectation": "B publication between A read and A write must preserve B",
-      "during": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":1,\"contextToken\":\"8991dcd6-cb56-47c1-a260-9482a911f5c8\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:58.210Z\"}",
+      "during": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":1,\"contextToken\":\"b709eaec-a94f-4aa1-b22a-b82c8c772b27\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:57:23.864Z\"}",
       "after": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"cede1387-2b0d-4b61-8b4d-4de8f179c892\",\"status\":\"locked\",\"reason\":\"concurrent-a\",\"updatedAt\":\"2026-10-21T21:47:58.213Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"59df94d0-570c-4eb0-b3ca-60331509a2a9\",\"status\":\"locked\",\"reason\":\"concurrent-a\",\"updatedAt\":\"2026-10-21T21:57:23.866Z\"}",
         "allowed": false
       },
       "runtime": "B NOT_GRANTED: isolated storage interleaving",
@@ -2168,7 +2168,7 @@
       "id": "replacement-C-noBC-false",
       "expectation": "B rejects after legitimate C",
       "bAfter": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"d38f734ddec10ec18a966004f12504b093deed3405b23d77bd132ad48245cd5f\",\"actorGeneration\":2,\"contextToken\":\"216e29a4-e211-4891-a83c-fff43f653511\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:58.354Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"d38f734ddec10ec18a966004f12504b093deed3405b23d77bd132ad48245cd5f\",\"actorGeneration\":2,\"contextToken\":\"5a3313df-8334-400b-a27f-c7f2b8ab17b3\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:57:23.959Z\"}",
         "state": {
           "status": "locked",
           "actorType": null,
@@ -2191,7 +2191,7 @@
             "actorKey": "admin:b",
             "actorGeneration": 2,
             "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
-            "contextToken": "1312fda9-57b3-4c04-b547-9ef8e118ce58",
+            "contextToken": "62bd3c40-39d2-448c-ba4c-a9f0089a6592",
             "legacyUnresolvedKeys": []
           },
           "writesSuspended": true
@@ -2208,7 +2208,7 @@
         "oldStorage": null
       },
       "cAfter": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"d38f734ddec10ec18a966004f12504b093deed3405b23d77bd132ad48245cd5f\",\"actorGeneration\":2,\"contextToken\":\"216e29a4-e211-4891-a83c-fff43f653511\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:58.354Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"d38f734ddec10ec18a966004f12504b093deed3405b23d77bd132ad48245cd5f\",\"actorGeneration\":2,\"contextToken\":\"5a3313df-8334-400b-a27f-c7f2b8ab17b3\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:57:23.959Z\"}",
         "state": {
           "status": "granted",
           "actorType": "admin",
@@ -2224,7 +2224,7 @@
             "generation": 1
           },
           "deviceRef": "device-a",
-          "authorizationExpiresAt": 1792619279329,
+          "authorizationExpiresAt": 1792619844940,
           "generation": 2,
           "reason": "authenticated_session_granted"
         },
@@ -2237,7 +2237,7 @@
             "actorKey": "admin:c",
             "actorGeneration": 2,
             "actorOpaqueId": "d38f734ddec10ec18a966004f12504b093deed3405b23d77bd132ad48245cd5f",
-            "contextToken": "216e29a4-e211-4891-a83c-fff43f653511",
+            "contextToken": "5a3313df-8334-400b-a27f-c7f2b8ab17b3",
             "legacyUnresolvedKeys": []
           },
           "writesSuspended": false
@@ -2257,7 +2257,7 @@
       "id": "replacement-C-noBC-true",
       "expectation": "B rejects after legitimate C",
       "bAfter": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"d38f734ddec10ec18a966004f12504b093deed3405b23d77bd132ad48245cd5f\",\"actorGeneration\":2,\"contextToken\":\"cef3a616-e474-443c-8288-bc4ae56e1bac\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:58.521Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"d38f734ddec10ec18a966004f12504b093deed3405b23d77bd132ad48245cd5f\",\"actorGeneration\":2,\"contextToken\":\"98f1c3ba-66d8-45ac-adfd-8e2c446618cf\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:57:24.075Z\"}",
         "state": {
           "status": "locked",
           "actorType": null,
@@ -2280,7 +2280,7 @@
             "actorKey": "admin:b",
             "actorGeneration": 2,
             "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
-            "contextToken": "247e0639-e307-4ea9-b26e-e2de3c03b3db",
+            "contextToken": "e0690c74-a2bf-464e-9953-01c8df830817",
             "legacyUnresolvedKeys": []
           },
           "writesSuspended": true
@@ -2297,7 +2297,7 @@
         "oldStorage": null
       },
       "cAfter": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"d38f734ddec10ec18a966004f12504b093deed3405b23d77bd132ad48245cd5f\",\"actorGeneration\":2,\"contextToken\":\"cef3a616-e474-443c-8288-bc4ae56e1bac\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:58.521Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"d38f734ddec10ec18a966004f12504b093deed3405b23d77bd132ad48245cd5f\",\"actorGeneration\":2,\"contextToken\":\"98f1c3ba-66d8-45ac-adfd-8e2c446618cf\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:57:24.075Z\"}",
         "state": {
           "status": "granted",
           "actorType": "admin",
@@ -2313,7 +2313,7 @@
             "generation": 1
           },
           "deviceRef": "device-a",
-          "authorizationExpiresAt": 1792619279492,
+          "authorizationExpiresAt": 1792619845057,
           "generation": 2,
           "reason": "authenticated_session_granted"
         },
@@ -2326,7 +2326,7 @@
             "actorKey": "admin:c",
             "actorGeneration": 2,
             "actorOpaqueId": "d38f734ddec10ec18a966004f12504b093deed3405b23d77bd132ad48245cd5f",
-            "contextToken": "cef3a616-e474-443c-8288-bc4ae56e1bac",
+            "contextToken": "98f1c3ba-66d8-45ac-adfd-8e2c446618cf",
             "legacyUnresolvedKeys": []
           },
           "writesSuspended": false
@@ -2346,7 +2346,7 @@
       "id": "BC-out-of-order-candidate",
       "expectation": "old BC hint never overrides B durable",
       "before": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df\",\"actorGeneration\":2,\"contextToken\":\"695b12c1-788a-4071-8a4e-d101f8891dd2\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:58.622Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df\",\"actorGeneration\":2,\"contextToken\":\"4dd2c9a0-13c0-4b88-af05-3e5a5cd9ba8c\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:57:24.148Z\"}",
         "state": {
           "status": "granted",
           "actorType": "admin",
@@ -2362,7 +2362,7 @@
             "generation": 1
           },
           "deviceRef": "device-a",
-          "authorizationExpiresAt": 1792619279602,
+          "authorizationExpiresAt": 1792619845132,
           "generation": 2,
           "reason": "authenticated_session_granted"
         },
@@ -2375,7 +2375,7 @@
             "actorKey": "admin:a",
             "actorGeneration": 2,
             "actorOpaqueId": "df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df",
-            "contextToken": "695b12c1-788a-4071-8a4e-d101f8891dd2",
+            "contextToken": "4dd2c9a0-13c0-4b88-af05-3e5a5cd9ba8c",
             "legacyUnresolvedKeys": []
           },
           "writesSuspended": false
@@ -2390,7 +2390,7 @@
         "oldStorage": null
       },
       "after": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df\",\"actorGeneration\":2,\"contextToken\":\"695b12c1-788a-4071-8a4e-d101f8891dd2\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:58.622Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df\",\"actorGeneration\":2,\"contextToken\":\"4dd2c9a0-13c0-4b88-af05-3e5a5cd9ba8c\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:57:24.148Z\"}",
         "state": {
           "status": "granted",
           "actorType": "admin",
@@ -2406,7 +2406,7 @@
             "generation": 1
           },
           "deviceRef": "device-a",
-          "authorizationExpiresAt": 1792619279602,
+          "authorizationExpiresAt": 1792619845132,
           "generation": 2,
           "reason": "authenticated_session_granted"
         },
@@ -2419,7 +2419,7 @@
             "actorKey": "admin:a",
             "actorGeneration": 2,
             "actorOpaqueId": "df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df",
-            "contextToken": "695b12c1-788a-4071-8a4e-d101f8891dd2",
+            "contextToken": "4dd2c9a0-13c0-4b88-af05-3e5a5cd9ba8c",
             "legacyUnresolvedKeys": []
           },
           "writesSuspended": false
@@ -2462,7 +2462,7 @@
             "actorKey": "admin:a",
             "actorGeneration": 2,
             "actorOpaqueId": "df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df",
-            "contextToken": "ea5d88cb-6528-4efd-9196-098bebd81aaa",
+            "contextToken": "e08d9d0d-37b7-468f-901d-97ad9cdd98f1",
             "legacyUnresolvedKeys": []
           },
           "writesSuspended": true
@@ -2507,7 +2507,7 @@
             "actorKey": "admin:a",
             "actorGeneration": 2,
             "actorOpaqueId": "df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df",
-            "contextToken": "8d7187d0-2e69-4c34-adfe-1b0832c9bb68",
+            "contextToken": "df2d9f95-6860-4f2e-aca2-453056940c78",
             "legacyUnresolvedKeys": []
           },
           "writesSuspended": true
@@ -2529,7 +2529,7 @@
       "id": "durable-inaccessible",
       "expectation": "bad durable denies; duplicated or historical hints preserve valid B",
       "after": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df\",\"actorGeneration\":2,\"contextToken\":\"44cd4406-c069-4710-882e-9800a1c99645\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:58.882Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df\",\"actorGeneration\":2,\"contextToken\":\"0bcafd82-9453-45e4-aad1-02834c3ffc9a\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:57:24.347Z\"}",
         "state": {
           "status": "locked",
           "actorType": null,
@@ -2552,7 +2552,7 @@
             "actorKey": "admin:a",
             "actorGeneration": 2,
             "actorOpaqueId": "df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df",
-            "contextToken": "44cd4406-c069-4710-882e-9800a1c99645",
+            "contextToken": "0bcafd82-9453-45e4-aad1-02834c3ffc9a",
             "legacyUnresolvedKeys": []
           },
           "writesSuspended": true
@@ -2574,7 +2574,7 @@
       "id": "durable-duplicate",
       "expectation": "bad durable denies; duplicated or historical hints preserve valid B",
       "after": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df\",\"actorGeneration\":2,\"contextToken\":\"834d76a7-8018-420c-abe7-2f6e18431607\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:58.975Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df\",\"actorGeneration\":2,\"contextToken\":\"286ebfaf-1af4-4f8b-b164-e1e74e5d89c9\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:57:24.403Z\"}",
         "state": {
           "status": "granted",
           "actorType": "admin",
@@ -2590,7 +2590,7 @@
             "generation": 1
           },
           "deviceRef": "device-a",
-          "authorizationExpiresAt": 1792619279954,
+          "authorizationExpiresAt": 1792619845386,
           "generation": 2,
           "reason": "authenticated_session_granted"
         },
@@ -2603,7 +2603,7 @@
             "actorKey": "admin:a",
             "actorGeneration": 2,
             "actorOpaqueId": "df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df",
-            "contextToken": "834d76a7-8018-420c-abe7-2f6e18431607",
+            "contextToken": "286ebfaf-1af4-4f8b-b164-e1e74e5d89c9",
             "legacyUnresolvedKeys": []
           },
           "writesSuspended": false
@@ -2623,7 +2623,7 @@
       "id": "durable-out-of-order",
       "expectation": "bad durable denies; duplicated or historical hints preserve valid B",
       "after": {
-        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df\",\"actorGeneration\":2,\"contextToken\":\"328d9b53-b9bb-4729-b86a-fa22775e1e15\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:59.057Z\"}",
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df\",\"actorGeneration\":2,\"contextToken\":\"de438867-9ee0-47f0-be70-8bc8bfa0390e\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:57:24.453Z\"}",
         "state": {
           "status": "granted",
           "actorType": "admin",
@@ -2639,7 +2639,7 @@
             "generation": 1
           },
           "deviceRef": "device-a",
-          "authorizationExpiresAt": 1792619280029,
+          "authorizationExpiresAt": 1792619845441,
           "generation": 2,
           "reason": "authenticated_session_granted"
         },
@@ -2652,7 +2652,7 @@
             "actorKey": "admin:a",
             "actorGeneration": 2,
             "actorOpaqueId": "df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df",
-            "contextToken": "328d9b53-b9bb-4729-b86a-fa22775e1e15",
+            "contextToken": "de438867-9ee0-47f0-be70-8bc8bfa0390e",
             "legacyUnresolvedKeys": []
           },
           "writesSuspended": false
@@ -2667,6 +2667,188 @@
         "oldStorage": null
       },
       "status": "PASS"
+    },
+    {
+      "id": "V1-16-close-grants",
+      "expectation": "after hints settle, exactly one storage handle remains current; no CAS claim",
+      "returned": [
+        {
+          "status": "granted",
+          "actorType": "admin",
+          "actorId": "a",
+          "actorKey": "admin:a",
+          "sessionId": "session-a",
+          "permissions": [
+            "*"
+          ],
+          "tenant": {
+            "opaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "databaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "generation": 1
+          },
+          "deviceRef": "device-a",
+          "authorizationExpiresAt": 1792619845486,
+          "generation": 2,
+          "reason": "authenticated_session_granted"
+        },
+        {
+          "status": "granted",
+          "actorType": "admin",
+          "actorId": "b",
+          "actorKey": "admin:b",
+          "sessionId": "session-b",
+          "permissions": [
+            "*"
+          ],
+          "tenant": {
+            "opaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "databaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "generation": 1
+          },
+          "deviceRef": "device-a",
+          "authorizationExpiresAt": 1792619845521,
+          "generation": 2,
+          "reason": "authenticated_session_granted"
+        }
+      ],
+      "afterA": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df\",\"actorGeneration\":2,\"contextToken\":\"e8fefa96-69a7-4c4f-9add-538d7ac118a9\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:57:24.535Z\"}",
+        "state": {
+          "status": "granted",
+          "actorType": "admin",
+          "actorId": "a",
+          "actorKey": "admin:a",
+          "sessionId": "session-a",
+          "permissions": [
+            "*"
+          ],
+          "tenant": {
+            "opaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "databaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "generation": 1
+          },
+          "deviceRef": "device-a",
+          "authorizationExpiresAt": 1792619845486,
+          "generation": 2,
+          "reason": "authenticated_session_granted"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:a",
+            "actorGeneration": 2,
+            "actorOpaqueId": "df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df",
+            "contextToken": "e8fefa96-69a7-4c4f-9add-538d7ac118a9",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": false
+        },
+        "runtime": {
+          "allowed": true
+        },
+        "write": {
+          "allowed": true
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "afterB": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df\",\"actorGeneration\":2,\"contextToken\":\"e8fefa96-69a7-4c4f-9add-538d7ac118a9\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:57:24.535Z\"}",
+        "state": {
+          "status": "locked",
+          "actorType": null,
+          "actorId": null,
+          "actorKey": null,
+          "sessionId": null,
+          "permissions": [],
+          "tenant": null,
+          "deviceRef": null,
+          "authorizationExpiresAt": null,
+          "generation": 3,
+          "reason": "actor_context_changed_in_other_tab"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:b",
+            "actorGeneration": 2,
+            "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
+            "contextToken": "3b06b151-b967-4e0b-a8d2-0bdc267a0529",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": true
+        },
+        "runtime": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "write": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "status": "PASS",
+      "limitation": "eventual storage correspondence; both grant calls may have returned GRANTED before notification. No atomic grant/financial admission proof"
+    },
+    {
+      "id": "V1-21-runtime-boundary",
+      "expectation": "storage rejection alone cannot certify all runtime callbacks",
+      "before": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df\",\"actorGeneration\":2,\"contextToken\":\"foreign-before-hint\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:57:24.615Z\"}",
+        "state": {
+          "status": "granted",
+          "actorType": "admin",
+          "actorId": "a",
+          "actorKey": "admin:a",
+          "sessionId": "session-a",
+          "permissions": [
+            "*"
+          ],
+          "tenant": {
+            "opaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "databaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "generation": 1
+          },
+          "deviceRef": "device-a",
+          "authorizationExpiresAt": 1792619845596,
+          "generation": 2,
+          "reason": "authenticated_session_granted"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:a",
+            "actorGeneration": 2,
+            "actorOpaqueId": "df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df",
+            "contextToken": "de2e57fc-4902-4fd8-8ecb-41899b960016",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": false
+        },
+        "runtime": {
+          "allowed": true
+        },
+        "write": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "syntheticEffects": 1,
+      "status": "PASS_LIMITATION_DETECTED",
+      "limitation": "Runtime callback is not storage fenced; synthetic counter, no sale/server bypass demonstrated"
     }
   ]
 }

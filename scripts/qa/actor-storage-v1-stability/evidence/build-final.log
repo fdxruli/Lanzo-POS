@@ -1,0 +1,241 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> lanzo-pos-react@4.0.0 build
+> vite build
+
+vite v7.2.2 building client environment for production...
+transforming...
+✓ 3609 modules transformed.
+Generated an empty chunk: "vendor_supabase".
+rendering chunks...
+[plugin vite:reporter] 
+(!) /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/sync/posSyncClient.js is dynamically imported by /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/diagnostics/incidentReporter.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/ecommerce/ecommerceAdminService.js but also statically imported by /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/cash/cashCloudRepository.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/cash/postDowngradeCashReconciliation.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/customerCredit/customerCreditCloudRepository.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/customerMessaging/cloudRepository.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/customers/customerCloudRepository.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/ecommerce/ecommerceOrderFulfillmentService.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/ecommerce/ecommerceOrderServiceBase.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/ecommerce/ecommercePosConversionServiceBase.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/financial/financialIntentLedger.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/notifications/cloudNotificationService.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/products/productCloudRepository.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/products/productExpirationWasteCloudRepository.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/reports/reportsCloudRepository.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/restaurant/preparationStationsRepository.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/restaurant/restaurantOrdersHistoryRepository.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/restaurant/restaurantOrdersRepository.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/salesCloud/salesCloudRepository.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/support/supportTicketService.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/sync/posSyncOrchestrator.js, dynamic import will not move module into another chunk.
+
+[plugin vite:reporter] 
+(!) /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/supabase.js is dynamically imported by /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/diagnostics/incidentReporter.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/utils.js but also statically imported by /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/App.jsx, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/components/common/LicenseAccessChooser.jsx, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/components/common/SetupModal.jsx, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/components/common/TermsAndConditionsModal.jsx, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/aiService.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/auth/actorSessionRuntimeBridge.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/cash/cashCloudRepository.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/cash/cashStation.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/cash/postDowngradeCashReconciliation.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/customerCredit/customerCreditCloudRepository.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/customerMessaging/cloudRepository.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/customerMessaging/templateRepository.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/customers/customerCloudRepository.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/deviceModeService.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/ecommerce/ecommerceAdminService.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/ecommerce/ecommerceOrderFulfillmentService.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/ecommerce/ecommerceOrderServiceBase.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/ecommerce/ecommercePosConversionServiceBase.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/ecommerce/ecommerceSiteBuilderService.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/financial/financialIntentLedger.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/licenseRealtime.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/licenseService.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/notifications/cloudNotificationService.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/notifications/notificationRealtimeService.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/posRealtime.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/products/productCloudRepository.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/products/productExpirationWasteCloudRepository.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/reports/reportsCloudRepository.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/restaurant/preparationStationsRepository.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/restaurant/restaurantOrdersHistoryRepository.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/restaurant/restaurantOrdersRepository.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/salesCloud/salesCloudCancellationService.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/salesCloud/salesCloudCashierService.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/salesCloud/salesCloudRepository.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/salesCloud/salesCloudShadowService.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/storage/imageUploadService.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/support/supportTicketService.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/services/sync/posSyncClient.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/store/slices/createProfileSlice.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/store/slices/license/licenseActivationActions.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/store/slices/license/licenseAdminActions.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/store/slices/license/licenseBackgroundValidationActions.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/store/slices/license/licenseBootstrapActions.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/store/slices/license/licenseIntegrityActions.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/store/slices/license/licenseProcessingActions.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/store/slices/license/licenseRealtimeActions.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/store/slices/license/licenseSessionActions.js, /workspace/scratch/cbdd12372e2f/Lanzo-POS/src/store/slices/license/licenseStaffActions.js, dynamic import will not move module into another chunk.
+
+computing gzip size...
+dist/manifest.webmanifest                                  0.47 kB
+dist/index.html                                            2.43 kB │ gzip:   0.98 kB
+dist/assets/stats.worker-DxcCN2D9.js                     112.08 kB
+dist/assets/backup.worker-C-YKOTRO.js                    180.00 kB
+dist/assets/bot.worker-CRF0BQoT.js                       901.42 kB
+dist/assets/DevConsole-DNk0Aj1q.css                        4.26 kB │ gzip:   1.37 kB
+dist/assets/IncidentErrorBoundary-CJweRH_U.css             8.32 kB │ gzip:   1.97 kB
+dist/assets/IncidentSupportContactForm-XP7jM8lP.css        8.54 kB │ gzip:   1.67 kB
+dist/assets/AssistantBot-jHOyLdCH.css                     12.58 kB │ gzip:   2.96 kB
+dist/assets/EcommerceOrdersPage-D3syt7f-.css              27.60 kB │ gzip:   4.94 kB
+dist/assets/CommercialAIAgentsPage-Bj93FzwI.css           42.24 kB │ gzip:   7.12 kB
+dist/assets/EcommercePortalPage-DHhStFBd.css              42.60 kB │ gzip:   7.25 kB
+dist/assets/index-Ujcfz1t4.css                           141.54 kB │ gzip:  21.81 kB
+dist/assets/App-DPx-xMxG.css                             701.29 kB │ gzip: 105.69 kB
+dist/assets/vendor_supabase-l0sNRNKZ.js                    0.00 kB │ gzip:   0.02 kB
+dist/assets/vendor_charts-CRbHLB0H.js                      0.04 kB │ gzip:   0.06 kB
+dist/assets/mobileZoomGuard-CN7AQsSf.js                    0.64 kB │ gzip:   0.32 kB
+dist/assets/vendor_utils-BhzrRB7R.js                       0.66 kB │ gzip:   0.41 kB
+dist/assets/ErrorBoundary-DjPm1aax.js                      0.70 kB │ gzip:   0.44 kB
+dist/assets/useMessageStore-DTHCFP0f.js                    0.77 kB │ gzip:   0.40 kB
+dist/assets/databaseRuntime-k3ZKvhnI.js                    1.11 kB │ gzip:   0.59 kB
+dist/assets/productStoreRecoveryGuard-CiVxJpMe.js          1.11 kB │ gzip:   0.62 kB
+dist/assets/telegramContact-BMLGPHus.js                    1.78 kB │ gzip:   0.78 kB
+dist/assets/devConsoleCapture-BnKf0npg.js                  2.94 kB │ gzip:   1.41 kB
+dist/assets/index.esm-C1lHekhm.js                          5.68 kB │ gzip:   1.99 kB
+dist/assets/incidentCapture-CFlkoJpL.js                    5.70 kB │ gzip:   2.68 kB
+dist/assets/storageManager-DzP-5NxY.js                     5.99 kB │ gzip:   1.93 kB
+dist/assets/DevConsole-BKmNX1bF.js                         6.72 kB │ gzip:   2.63 kB
+dist/assets/PublicProductConfigurationModal-lM1yXnhT.js   10.05 kB │ gzip:   3.42 kB
+dist/assets/IncidentSupportContactForm-CFEZAMbf.js        10.74 kB │ gzip:   3.87 kB
+dist/assets/productRepository-CEHxFiZe.js                 15.89 kB │ gzip:   3.89 kB
+dist/assets/useInventoryCatalogStore-1AUUMKnS.js          24.43 kB │ gzip:   6.83 kB
+dist/assets/IncidentErrorBoundary-BotUTYVS.js             25.54 kB │ gzip:   6.98 kB
+dist/assets/AssistantBot-DRJ0LzXm.js                      26.97 kB │ gzip:   9.71 kB
+dist/assets/posSyncBootstrapAutoCoordinator-xhTwlNxC.js   29.22 kB │ gzip:   9.29 kB
+dist/assets/customerCreditSyncHandler-BxH8s-6_.js         31.17 kB │ gzip:   9.06 kB
+dist/assets/vendor_icons-B0syiRGM.js                      35.18 kB │ gzip:  11.46 kB
+dist/assets/EcommerceOrdersPage-DSykP8IW.js               41.72 kB │ gzip:  12.51 kB
+dist/assets/PosApplicationBootstrap-C9FKio1H.js           80.57 kB │ gzip:  26.88 kB
+dist/assets/EcommercePortalPage-CLgLHLG9.js              105.52 kB │ gzip:  30.29 kB
+dist/assets/vendor_react-CQX8XpTy.js                     204.25 kB │ gzip:  67.14 kB
+dist/assets/CommercialAIAgentsPage-MdFzuScu.js           420.79 kB │ gzip: 112.67 kB
+dist/assets/index-Ds_WQfAM.js                            552.82 kB │ gzip: 172.67 kB
+dist/assets/useAppStore-CZzd3i_3.js                      656.09 kB │ gzip: 187.98 kB
+dist/assets/App-Cjh86q6J.js                              691.75 kB │ gzip: 188.67 kB
+✓ built in 10.13s
+[baseline-browser-mapping] The data in this module is over two months old.  To ensure accurate Baseline data, please update: `npm i baseline-browser-mapping@latest -D`
+
+PWA v1.2.0
+Building src/pwa/sw.js service worker ("es" format)...
+vite v7.2.2 building client environment for production...
+transforming...
+✓ 85 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/sw.mjs  27.80 kB │ gzip: 9.04 kB
+✓ built in 104ms
+
+PWA v1.2.0
+mode      injectManifest
+format:   es
+precache  34 entries (3184.92 KiB)
+files generated
+  dist/sw.js
+warnings
+  One of the glob patterns doesn't match any files. Please remove or fix the following: {
+  "globDirectory": "/workspace/scratch/cbdd12372e2f/Lanzo-POS/dist",
+  "globPattern": "assets/actorOperationalHandoff-*.js",
+  "globIgnores": [
+    "**/node_modules/**/*",
+    "sw.js",
+    "sw.js"
+  ]
+}
+  One of the glob patterns doesn't match any files. Please remove or fix the following: {
+  "globDirectory": "/workspace/scratch/cbdd12372e2f/Lanzo-POS/dist",
+  "globPattern": "assets/actorRuntimeController-*.js",
+  "globIgnores": [
+    "**/node_modules/**/*",
+    "sw.js",
+    "sw.js"
+  ]
+}
+  One of the glob patterns doesn't match any files. Please remove or fix the following: {
+  "globDirectory": "/workspace/scratch/cbdd12372e2f/Lanzo-POS/dist",
+  "globPattern": "assets/financialReceiptClassifier-*.js",
+  "globIgnores": [
+    "**/node_modules/**/*",
+    "sw.js",
+    "sw.js"
+  ]
+}
+  One of the glob patterns doesn't match any files. Please remove or fix the following: {
+  "globDirectory": "/workspace/scratch/cbdd12372e2f/Lanzo-POS/dist",
+  "globPattern": "assets/Logger-*.js",
+  "globIgnores": [
+    "**/node_modules/**/*",
+    "sw.js",
+    "sw.js"
+  ]
+}
+  One of the glob patterns doesn't match any files. Please remove or fix the following: {
+  "globDirectory": "/workspace/scratch/cbdd12372e2f/Lanzo-POS/dist",
+  "globPattern": "assets/IncidentRecoveryPanel-*.{js,css}",
+  "globIgnores": [
+    "**/node_modules/**/*",
+    "sw.js",
+    "sw.js"
+  ]
+}
+  One of the glob patterns doesn't match any files. Please remove or fix the following: {
+  "globDirectory": "/workspace/scratch/cbdd12372e2f/Lanzo-POS/dist",
+  "globPattern": "assets/IncidentReportForm-*.{js,css}",
+  "globIgnores": [
+    "**/node_modules/**/*",
+    "sw.js",
+    "sw.js"
+  ]
+}
+  One of the glob patterns doesn't match any files. Please remove or fix the following: {
+  "globDirectory": "/workspace/scratch/cbdd12372e2f/Lanzo-POS/dist",
+  "globPattern": "assets/supportContact-*.js",
+  "globIgnores": [
+    "**/node_modules/**/*",
+    "sw.js",
+    "sw.js"
+  ]
+}
+  One of the glob patterns doesn't match any files. Please remove or fix the following: {
+  "globDirectory": "/workspace/scratch/cbdd12372e2f/Lanzo-POS/dist",
+  "globPattern": "assets/buttons-*.{js,css}",
+  "globIgnores": [
+    "**/node_modules/**/*",
+    "sw.js",
+    "sw.js"
+  ]
+}
+  One of the glob patterns doesn't match any files. Please remove or fix the following: {
+  "globDirectory": "/workspace/scratch/cbdd12372e2f/Lanzo-POS/dist",
+  "globPattern": "assets/contextSnapshotGuard-*.js",
+  "globIgnores": [
+    "**/node_modules/**/*",
+    "sw.js",
+    "sw.js"
+  ]
+}
+  One of the glob patterns doesn't match any files. Please remove or fix the following: {
+  "globDirectory": "/workspace/scratch/cbdd12372e2f/Lanzo-POS/dist",
+  "globPattern": "assets/recoveryContext-*.js",
+  "globIgnores": [
+    "**/node_modules/**/*",
+    "sw.js",
+    "sw.js"
+  ]
+}
+  One of the glob patterns doesn't match any files. Please remove or fix the following: {
+  "globDirectory": "/workspace/scratch/cbdd12372e2f/Lanzo-POS/dist",
+  "globPattern": "assets/salesCloudShadowService-*.js",
+  "globIgnores": [
+    "**/node_modules/**/*",
+    "sw.js",
+    "sw.js"
+  ]
+}
+  One of the glob patterns doesn't match any files. Please remove or fix the following: {
+  "globDirectory": "/workspace/scratch/cbdd12372e2f/Lanzo-POS/dist",
+  "globPattern": "assets/cashSyncHandler-*.js",
+  "globIgnores": [
+    "**/node_modules/**/*",
+    "sw.js",
+    "sw.js"
+  ]
+}
+  One of the glob patterns doesn't match any files. Please remove or fix the following: {
+  "globDirectory": "/workspace/scratch/cbdd12372e2f/Lanzo-POS/dist",
+  "globPattern": "assets/devServiceWorkerCleanup-*.js",
+  "globIgnores": [
+    "**/node_modules/**/*",
+    "sw.js",
+    "sw.js"
+  ]
+}
+  One of the glob patterns doesn't match any files. Please remove or fix the following: {
+  "globDirectory": "/workspace/scratch/cbdd12372e2f/Lanzo-POS/dist",
+  "globPattern": "assets/incidentEventCenter-*.js",
+  "globIgnores": [
+    "**/node_modules/**/*",
+    "sw.js",
+    "sw.js"
+  ]
+}
+  One of the glob patterns doesn't match any files. Please remove or fix the following: {
+  "globDirectory": "/workspace/scratch/cbdd12372e2f/Lanzo-POS/dist",
+  "globPattern": "assets/IncidentReportEntry-*.js",
+  "globIgnores": [
+    "**/node_modules/**/*",
+    "sw.js",
+    "sw.js"
+  ]
+}
+  One of the glob patterns doesn't match any files. Please remove or fix the following: {
+  "globDirectory": "/workspace/scratch/cbdd12372e2f/Lanzo-POS/dist",
+  "globPattern": "assets/localTenantGuard-*.js",
+  "globIgnores": [
+    "**/node_modules/**/*",
+    "sw.js",
+    "sw.js"
+  ]
+}
+  One of the glob patterns doesn't match any files. Please remove or fix the following: {
+  "globDirectory": "/workspace/scratch/cbdd12372e2f/Lanzo-POS/dist",
+  "globPattern": "assets/{PosPage,CajaPage,OrderPage,ProductsPage,CustomersPage,DashboardPage,SettingsPage,AboutPage}-*.{js,css}",
+  "globIgnores": [
+    "**/node_modules/**/*",
+    "sw.js",
+    "sw.js"
+  ]
+}
+
+
+> lanzo-pos-react@4.0.0 postbuild
+> node scripts/admin-startup-precache-audit.mjs
+
+[lanzo-admin-startup-precache-audit] Verified 24 startup assets and 0 core Local route assets.

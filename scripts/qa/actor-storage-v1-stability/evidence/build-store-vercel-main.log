@@ -1,0 +1,425 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> lanzo-pos-react@4.0.0 build:store:vercel
+> node scripts/build-store-vercel.mjs
+
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> lanzo-pos-react@4.0.0 build:store
+> vite build --config vite.store.config.js
+
+vite v7.2.2 building client environment for production...
+transforming...
+✓ 1847 modules transformed.
+Generated an empty chunk: "vendor_supabase_public".
+rendering chunks...
+computing gzip size...
+../dist-store/assets/logIcon-Cg6EELVY.svg                           0.34 kB │ gzip:  0.23 kB
+../dist-store/index.html                                            1.11 kB │ gzip:  0.50 kB
+../dist-store/home.html                                             1.95 kB │ gzip:  0.68 kB
+../dist-store/assets/main-store--eNxLOHg.css                      121.35 kB │ gzip: 19.20 kB
+../dist-store/assets/vendor_supabase_public-l0sNRNKZ.js             0.00 kB │ gzip:  0.02 kB
+../dist-store/assets/vendor_public-Cpj98o6Y.js                      0.24 kB │ gzip:  0.18 kB
+../dist-store/assets/PublicProductConfigurationModal-ChPt91-9.js   10.14 kB │ gzip:  3.45 kB
+../dist-store/assets/vendor_icons_public-CR5l7dkw.js               12.66 kB │ gzip:  4.82 kB
+../dist-store/assets/vendor_store_public-DhwKUplI.js              103.50 kB │ gzip: 35.57 kB
+../dist-store/assets/main-store-Bv9ib-Lx.js                       177.06 kB │ gzip: 51.58 kB
+../dist-store/assets/vendor_react_public-CrEvRHNo.js              280.01 kB │ gzip: 89.79 kB
+✓ built in 3.91s
+{
+  "generatedAt": "2026-10-21T21:47:55.602Z",
+  "target": {
+    "requested": "dist-store",
+    "directory": "/workspace/scratch/cbdd12372e2f/main-baseline/dist-store",
+    "standalonePublicBuild": true
+  },
+  "dist": {
+    "files": 11,
+    "bytes": 708348,
+    "javascriptFiles": 7,
+    "javascriptBytes": 583601,
+    "cssFiles": 1,
+    "cssBytes": 121354,
+    "largestFiles": [
+      {
+        "path": "assets/vendor_react_public-CrEvRHNo.js",
+        "bytes": 280008,
+        "extension": ".js"
+      },
+      {
+        "path": "assets/main-store-Bv9ib-Lx.js",
+        "bytes": 177063,
+        "extension": ".js"
+      },
+      {
+        "path": "assets/main-store--eNxLOHg.css",
+        "bytes": 121354,
+        "extension": ".css"
+      },
+      {
+        "path": "assets/vendor_store_public-DhwKUplI.js",
+        "bytes": 103496,
+        "extension": ".js"
+      },
+      {
+        "path": "assets/vendor_icons_public-CR5l7dkw.js",
+        "bytes": 12655,
+        "extension": ".js"
+      },
+      {
+        "path": "assets/PublicProductConfigurationModal-ChPt91-9.js",
+        "bytes": 10142,
+        "extension": ".js"
+      },
+      {
+        "path": "home.html",
+        "bytes": 1950,
+        "extension": ".html"
+      },
+      {
+        "path": "index.html",
+        "bytes": 1105,
+        "extension": ".html"
+      },
+      {
+        "path": "assets/logIcon-Cg6EELVY.svg",
+        "bytes": 338,
+        "extension": ".svg"
+      },
+      {
+        "path": "assets/vendor_public-Cpj98o6Y.js",
+        "bytes": 236,
+        "extension": ".js"
+      },
+      {
+        "path": "assets/vendor_supabase_public-l0sNRNKZ.js",
+        "bytes": 1,
+        "extension": ".js"
+      }
+    ]
+  },
+  "htmlEntry": {
+    "moduleEntry": "assets/vendor_public-Cpj98o6Y.js",
+    "moduleEntryBytes": 236,
+    "modulePreloads": [],
+    "stylesheets": [
+      "assets/main-store--eNxLOHg.css"
+    ],
+    "manifestLinks": [],
+    "directServiceWorkerRegistrationContent": []
+  },
+  "pwa": {
+    "manifestFiles": [],
+    "serviceWorkerFiles": [],
+    "workboxFiles": [],
+    "registerSwFiles": [],
+    "virtualPwaRegisterContent": []
+  },
+  "administrativeAudit": {
+    "namedChunks": {
+      "app": [],
+      "pos": [],
+      "caja": [],
+      "dashboard": [],
+      "settings": [],
+      "assistantBot": [],
+      "scannerModal": [],
+      "charts": [],
+      "workers": []
+    },
+    "contentContracts": {
+      "createFreeLicense": [],
+      "createFreeTrialLicense": [],
+      "deviceSecurityToken": [],
+      "staffSessionToken": [],
+      "releaseDeviceAnon": [],
+      "lanzoDb": [],
+      "assistantBot": [],
+      "processSale": [],
+      "cashSync": [],
+      "posSync": [],
+      "googleDrive": []
+    }
+  },
+  "primaryPublicDependencies": {
+    "reactRouter": [
+      "assets/vendor_react_public-CrEvRHNo.js"
+    ],
+    "supabase": [
+      "assets/vendor_supabase_public-l0sNRNKZ.js"
+    ],
+    "dexieAndBig": [
+      "assets/vendor_store_public-DhwKUplI.js"
+    ],
+    "icons": [
+      "assets/vendor_icons_public-CR5l7dkw.js"
+    ]
+  },
+  "assetAudit": {
+    "localReferences": [
+      "assets/vendor_public-Cpj98o6Y.js",
+      "assets/vendor_react_public-CrEvRHNo.js",
+      "assets/vendor_icons_public-CR5l7dkw.js",
+      "assets/vendor_store_public-DhwKUplI.js",
+      "assets/main-store-Bv9ib-Lx.js",
+      "assets/logIcon-Cg6EELVY.svg",
+      "assets/main-store--eNxLOHg.css"
+    ],
+    "missingLocalAssets": []
+  },
+  "precache": {
+    "declaredEntries": 0,
+    "uniqueUrls": 0,
+    "matchedLocalFiles": 0,
+    "matchedLocalBytes": 0,
+    "javascriptFiles": 0,
+    "javascriptBytes": 0,
+    "cssFiles": 0,
+    "cssBytes": 0
+  },
+  "compliance": {
+    "passed": true,
+    "violations": []
+  }
+}
+{
+  "generatedAt": "2026-10-21T21:47:55.789Z",
+  "target": {
+    "requested": "store/dist",
+    "directory": "/workspace/scratch/cbdd12372e2f/main-baseline/store/dist",
+    "standalonePublicBuild": true
+  },
+  "dist": {
+    "files": 12,
+    "bytes": 708374,
+    "javascriptFiles": 7,
+    "javascriptBytes": 583601,
+    "cssFiles": 1,
+    "cssBytes": 121354,
+    "largestFiles": [
+      {
+        "path": "assets/vendor_react_public-CrEvRHNo.js",
+        "bytes": 280008,
+        "extension": ".js"
+      },
+      {
+        "path": "assets/main-store-Bv9ib-Lx.js",
+        "bytes": 177063,
+        "extension": ".js"
+      },
+      {
+        "path": "assets/main-store--eNxLOHg.css",
+        "bytes": 121354,
+        "extension": ".css"
+      },
+      {
+        "path": "assets/vendor_store_public-DhwKUplI.js",
+        "bytes": 103496,
+        "extension": ".js"
+      },
+      {
+        "path": "assets/vendor_icons_public-CR5l7dkw.js",
+        "bytes": 12655,
+        "extension": ".js"
+      },
+      {
+        "path": "assets/PublicProductConfigurationModal-ChPt91-9.js",
+        "bytes": 10142,
+        "extension": ".js"
+      },
+      {
+        "path": "home.html",
+        "bytes": 1950,
+        "extension": ".html"
+      },
+      {
+        "path": "index.html",
+        "bytes": 1105,
+        "extension": ".html"
+      },
+      {
+        "path": "assets/logIcon-Cg6EELVY.svg",
+        "bytes": 338,
+        "extension": ".svg"
+      },
+      {
+        "path": "assets/vendor_public-Cpj98o6Y.js",
+        "bytes": 236,
+        "extension": ".js"
+      },
+      {
+        "path": "robots.txt",
+        "bytes": 26,
+        "extension": ".txt"
+      },
+      {
+        "path": "assets/vendor_supabase_public-l0sNRNKZ.js",
+        "bytes": 1,
+        "extension": ".js"
+      }
+    ]
+  },
+  "htmlEntry": {
+    "moduleEntry": "assets/vendor_public-Cpj98o6Y.js",
+    "moduleEntryBytes": 236,
+    "modulePreloads": [],
+    "stylesheets": [
+      "assets/main-store--eNxLOHg.css"
+    ],
+    "manifestLinks": [],
+    "directServiceWorkerRegistrationContent": []
+  },
+  "pwa": {
+    "manifestFiles": [],
+    "serviceWorkerFiles": [],
+    "workboxFiles": [],
+    "registerSwFiles": [],
+    "virtualPwaRegisterContent": []
+  },
+  "administrativeAudit": {
+    "namedChunks": {
+      "app": [],
+      "pos": [],
+      "caja": [],
+      "dashboard": [],
+      "settings": [],
+      "assistantBot": [],
+      "scannerModal": [],
+      "charts": [],
+      "workers": []
+    },
+    "contentContracts": {
+      "createFreeLicense": [],
+      "createFreeTrialLicense": [],
+      "deviceSecurityToken": [],
+      "staffSessionToken": [],
+      "releaseDeviceAnon": [],
+      "lanzoDb": [],
+      "assistantBot": [],
+      "processSale": [],
+      "cashSync": [],
+      "posSync": [],
+      "googleDrive": []
+    }
+  },
+  "primaryPublicDependencies": {
+    "reactRouter": [
+      "assets/vendor_react_public-CrEvRHNo.js"
+    ],
+    "supabase": [
+      "assets/vendor_supabase_public-l0sNRNKZ.js"
+    ],
+    "dexieAndBig": [
+      "assets/vendor_store_public-DhwKUplI.js"
+    ],
+    "icons": [
+      "assets/vendor_icons_public-CR5l7dkw.js"
+    ]
+  },
+  "assetAudit": {
+    "localReferences": [
+      "assets/vendor_public-Cpj98o6Y.js",
+      "assets/vendor_react_public-CrEvRHNo.js",
+      "assets/vendor_icons_public-CR5l7dkw.js",
+      "assets/vendor_store_public-DhwKUplI.js",
+      "assets/main-store-Bv9ib-Lx.js",
+      "assets/logIcon-Cg6EELVY.svg",
+      "assets/main-store--eNxLOHg.css"
+    ],
+    "missingLocalAssets": []
+  },
+  "precache": {
+    "declaredEntries": 0,
+    "uniqueUrls": 0,
+    "matchedLocalFiles": 0,
+    "matchedLocalBytes": 0,
+    "javascriptFiles": 0,
+    "javascriptBytes": 0,
+    "cssFiles": 0,
+    "cssBytes": 0
+  },
+  "compliance": {
+    "passed": true,
+    "violations": []
+  }
+}
+{
+  "phase": "ECOM.PUBLIC.SOCIAL.PREVIEW.1.6",
+  "status": "staged",
+  "deployed": false,
+  "source": {
+    "directory": "dist-store",
+    "files": 11,
+    "bytes": 708348,
+    "treeSha256": "951072cd3160e7a4bcd8bfb17a2702a6e43db23ca5d3774dfc4dfaa01c7a0a74"
+  },
+  "staging": {
+    "directory": "store/dist",
+    "files": 12,
+    "bytes": 708374,
+    "treeSha256": "8bc70ecff1b1a34dc74ec075f2dd34a24168db06558cf431358c177746696de2",
+    "robotsTxt": true
+  },
+  "copiedFilesByteIdentical": true,
+  "template": {
+    "hashes": {
+      "source": "b0f76256efe55e40eb49c9cb474d6088ee18e0395da5f894bf70e2fcf3ac1d71",
+      "template": "b0f76256efe55e40eb49c9cb474d6088ee18e0395da5f894bf70e2fcf3ac1d71",
+      "staged": "b0f76256efe55e40eb49c9cb474d6088ee18e0395da5f894bf70e2fcf3ac1d71"
+    },
+    "bytes": {
+      "source": 1105,
+      "template": 1105,
+      "staged": 1105
+    },
+    "assets": [
+      "assets/logIcon-Cg6EELVY.svg",
+      "assets/main-store--eNxLOHg.css",
+      "assets/main-store-Bv9ib-Lx.js",
+      "assets/vendor_icons_public-CR5l7dkw.js",
+      "assets/vendor_public-Cpj98o6Y.js",
+      "assets/vendor_react_public-CrEvRHNo.js",
+      "assets/vendor_store_public-DhwKUplI.js"
+    ]
+  },
+  "functions": {
+    "publicFunctions": [
+      "/api/og/store",
+      "/api/store-page"
+    ],
+    "dependencyClosure": {
+      "/api/og/store": {
+        "files": [
+          "api/_portalTheme.js",
+          "api/_publicPortal.js",
+          "api/_safePublicImage.js",
+          "api/_socialMetadata.js",
+          "api/_storeOgCardV2.js",
+          "api/_storeOgCardV2Model.js",
+          "api/_storeOgFallbackCard.js",
+          "api/_storeSlug.js",
+          "api/og/store.js"
+        ],
+        "packages": [
+          "@vercel/og",
+          "react",
+          "sharp"
+        ]
+      },
+      "/api/store-page": {
+        "files": [
+          "api/_portalTheme.js",
+          "api/_publicPortal.js",
+          "api/_publicRequestOrigin.js",
+          "api/_socialHead.js",
+          "api/_socialMetadata.js",
+          "api/_storeHtmlTemplate.js",
+          "api/_storeSlug.js",
+          "api/store-page.js"
+        ],
+        "packages": []
+      }
+    }
+  },
+  "violations": []
+}

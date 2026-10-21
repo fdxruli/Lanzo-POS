@@ -1,0 +1,48 @@
+src/store/slices/license/licenseProcessingActions.js:37:    lockActorRuntime
+src/store/slices/license/licenseProcessingActions.js:86:            lockActorRuntime('license_plan_blocked');
+src/store/slices/license/licenseProcessingActions.js:137:                lockActorRuntime('license_validation_fatal');
+src/store/slices/license/licenseProcessingActions.js:156:                lockActorRuntime('license_renewal_required');
+src/store/slices/license/licenseProcessingActions.js:258:            lockActorRuntime('admin_identity_no_longer_required');
+src/store/slices/license/licenseProcessingActions.js:320:                    lockActorRuntime('hot_pro_upgrade_actor_binding_failed');
+src/store/slices/license/licenseProcessingActions.js:345:                lockActorRuntime('hot_pro_upgrade_admin_session_rejected');
+src/store/slices/license/licenseProcessingActions.js:350:            lockActorRuntime('hot_pro_upgrade_session_verification_inconclusive');
+src/store/slices/license/licenseProcessingActions.js:414:            lockActorRuntime('offline_license_expired');
+src/store/slices/license/licenseProcessingActions.js:446:                lockActorRuntime('offline_license_expired');
+src/store/slices/license/licenseBootstrapActions.js:14:    lockActorRuntime
+src/store/slices/license/licenseBootstrapActions.js:308:                lockActorRuntime('application_bootstrap');
+src/store/slices/license/licenseBootstrapActions.js:698:                lockActorRuntime('application_bootstrap_failed');
+src/store/slices/license/licenseAdminActions.js:22:  lockActorRuntime
+src/store/slices/license/licenseAdminActions.js:237:      lockActorRuntime('admin_actor_binding_or_bootstrap_failed');
+src/store/slices/license/licenseAdminActions.js:511:        lockActorRuntime('admin_recovery_rejected');
+src/store/slices/license/licenseAdminActions.js:558:    lockActorRuntime('return_to_license_access_choice');
+src/store/slices/license/licenseAdminActions.js:614:    lockActorRuntime('admin_login_required');
+src/store/slices/license/licenseAdminActions.js:669:      lockActorRuntime('admin_enrollment_required');
+src/store/slices/license/licenseAdminActions.js:700:      lockActorRuntime('legacy_admin_without_actor_session');
+src/store/slices/license/licenseAdminActions.js:725:      lockActorRuntime('admin_access_discovery_inconclusive');
+src/store/slices/license/licenseAdminActions.js:805:          lockActorRuntime('admin_free_device_takeover_required');
+src/store/slices/license/licenseAdminActions.js:819:        lockActorRuntime(failureReason);
+src/store/slices/license/licenseAdminActions.js:834:      if (actorRuntimeController.getState().status !== 'granted') lockActorRuntime('admin_login_failed');
+src/store/slices/license/licenseAdminActions.js:900:        lockActorRuntime('admin_free_device_takeover_rejected');
+src/store/slices/license/licenseAdminActions.js:923:      lockActorRuntime('admin_free_device_takeover_failed');
+src/store/slices/license/licenseAdminActions.js:985:        lockActorRuntime('admin_enrollment_rejected');
+src/store/slices/license/licenseAdminActions.js:1000:      lockActorRuntime('admin_enrollment_failed');
+src/store/slices/license/licenseAdminActions.js:1023:    lockActorRuntime('admin_actor_logged_out');
+src/store/slices/license/licenseStaffActions.js:14:  lockActorRuntime
+src/store/slices/license/licenseStaffActions.js:59:    lockActorRuntime('staff_login_required');
+src/store/slices/license/licenseStaffActions.js:96:      lockActorRuntime('staff_login_missing_license');
+src/store/slices/license/licenseStaffActions.js:105:      lockActorRuntime('staff_login_tenant_rejected');
+src/store/slices/license/licenseStaffActions.js:130:      lockActorRuntime('staff_login_failed');
+src/store/slices/license/licenseStaffActions.js:145:      lockActorRuntime('staff_credentials_rejected');
+src/store/slices/license/licenseStaffActions.js:190:      lockActorRuntime('staff_login_response_tenant_rejected');
+src/store/slices/license/licenseStaffActions.js:229:      lockActorRuntime('staff_actor_binding_failed');
+src/store/slices/license/licenseStaffActions.js:251:    lockActorRuntime('staff_actor_logged_out');
+src/store/slices/license/licenseBackgroundValidationActions.js:5:import { lockActorRuntime } from '../../../services/auth/actorSessionRuntimeBridge';
+src/store/slices/license/licenseBackgroundValidationActions.js:230:        lockActorRuntime('license_validation_fatal');
+src/store/slices/license/licenseBackgroundValidationActions.js:279:        lockActorRuntime('license_renewal_required');
+src/services/tenant/tenantScopedStorage.js:7:} from '../auth/actorScopedStorage';
+src/services/auth/actorScopedStorage.js:191:    type: 'foreign_context',
+src/services/auth/actorScopedStorage.js:375:export const captureActorScopedStorageHandle = () => {
+src/services/auth/actorSessionRuntimeBridge.js:12:} from './actorScopedStorage';
+src/services/auth/actorSessionRuntimeBridge.js:332:      lockActorRuntime(
+src/services/auth/actorSessionRuntimeBridge.js:342:export const lockActorRuntime = (reason = 'actor_locked') => {
+src/services/auth/actorSessionRuntimeBridge.js:354:  if (event?.type !== 'foreign_context') return;
