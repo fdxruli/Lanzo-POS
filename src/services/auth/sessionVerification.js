@@ -139,7 +139,8 @@ const classifyRpcError = (error, rpcStatus) => {
     return resultFor(
       SESSION_VERIFICATION_STATUS.TRANSPORT_UNAVAILABLE,
       errorCode || 'SESSION_TRANSPORT_UNAVAILABLE',
-      'No se pudo comunicar con el servidor para verificar la sesión.'
+      'No se pudo comunicar con el servidor para verificar la sesión.',
+      { httpStatus: status }
     );
   }
 
@@ -156,7 +157,8 @@ const classifyRpcError = (error, rpcStatus) => {
     code,
     status === 429
       ? 'El servidor limitó temporalmente las verificaciones. Inténtalo más tarde.'
-      : 'El servidor no pudo completar la verificación de la sesión.'
+      : 'El servidor no pudo completar la verificación de la sesión.',
+    { httpStatus: status }
   );
 };
 

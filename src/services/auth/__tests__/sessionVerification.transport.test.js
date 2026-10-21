@@ -31,7 +31,7 @@ describe('P2-04 installed Supabase/PostgREST transport contract', () => {
     expect(response.error.status).toBeUndefined();
     expect(response.error.cause).toBeUndefined();
     expect(classifySessionVerificationResponse('admin', response)).toMatchObject({
-      valid: false, verificationStatus: 'transport_unavailable'
+      valid: false, verificationStatus: 'transport_unavailable', httpStatus: 0
     });
   });
 
@@ -39,6 +39,7 @@ describe('P2-04 installed Supabase/PostgREST transport contract', () => {
     const response = await rejectedFetch();
     const result = classifySessionVerificationResponse('admin', { error: response.error });
     expect(result.verificationStatus).toBe('server_error');
+    expect(result.httpStatus).toBe(null);
     expect(isSafeAdminOfflineVerificationFailure(result)).toBe(false);
   });
 
@@ -50,6 +51,7 @@ describe('P2-04 installed Supabase/PostgREST transport contract', () => {
     expect(response.error.status).toBeUndefined();
     const result = classifySessionVerificationResponse('admin', response);
     expect(result.verificationStatus).toBe('server_error');
+    expect(result.httpStatus).toBe(status);
     expect(result.code).toBe(status === 429 ? 'SESSION_RATE_LIMITED'
       : status >= 500 ? 'SESSION_SERVER_HTTP_' + status : 'SESSION_GATEWAY_HTTP_' + status);
     expect(isSafeAdminOfflineVerificationFailure(result)).toBe(status === 429 || status >= 500);

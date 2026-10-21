@@ -28,6 +28,7 @@ import {
     verifyAdminSession
 } from '../../../services/supabase';
 import {
+    ADMIN_OFFLINE_AUTHORIZATION_REASON,
     getAdminOfflineAuthorizationUserMessage,
     isSafeAdminOfflineVerificationFailure
 } from '../../../services/auth/adminOfflineAuthorization';
@@ -53,6 +54,110 @@ import { enterLocalTenantIsolationFailure } from './localTenantIsolationState';
 
 let initializePromise = null;
 let coordinatorState = 'idle';
+
+const SAFE_BOOTSTRAP_DIAGNOSTIC_CODES = new Set([
+    'ABORT_ERR',
+    'ACTOR_RUNTIME_RESTORE_FAILED',
+    'ACTOR_SESSION_RESTORE_FAILED',
+    'ADMIN_AUTH_RATE_LIMITED',
+    'ADMIN_DEVICE_REQUIRED',
+    'ADMIN_ENROLLMENT_RATE_LIMITED',
+    'ADMIN_LOGIN_RATE_LIMITED',
+    'ADMIN_SESSION_CREDENTIALS_MISSING',
+    'ADMIN_SESSION_EXPIRED',
+    'ADMIN_SESSION_INVALID',
+    'ADMIN_SESSION_REQUIRED',
+    'AUTH_RATE_LIMITED',
+    'ECONNABORTED',
+    'ECONNREFUSED',
+    'ECONNRESET',
+    'EAI_AGAIN',
+    'ENETDOWN',
+    'ENETUNREACH',
+    'ENOTFOUND',
+    'ERR_INTERNET_DISCONNECTED',
+    'ERR_NETWORK',
+    'ETIMEDOUT',
+    'LICENSE_EXPIRED',
+    'LICENSE_NOT_ACTIVE',
+    'RATE_LIMITED',
+    'SESSION_LOCAL_STORAGE_UNAVAILABLE',
+    'SESSION_RATE_LIMITED',
+    'SESSION_SERVER_ERROR',
+    'SESSION_TRANSPORT_UNAVAILABLE',
+    'SESSION_VERIFICATION_INVALID_RESPONSE',
+    'SESSION_VERIFICATION_UNCLASSIFIED',
+    'UND_ERR_CONNECT_TIMEOUT'
+]);
+
+const safeBootstrapDiagnosticCode = (code) => {
+    const normalizedCode = String(code || '').toUpperCase();
+    return SAFE_BOOTSTRAP_DIAGNOSTIC_CODES.has(normalizedCode)
+        || /^SESSION_SERVER_HTTP_5\d\d$/.test(normalizedCode)
+        || /^SESSION_GATEWAY_HTTP_(?:401|403)$/.test(normalizedCode)
+        || /^PGRST\d{3}$/.test(normalizedCode)
+        ? normalizedCode
+        : null;
+};
+
+const safeBootstrapDiagnosticStatus = (status) => (
+    Number.isInteger(status) && (status === 0 || (status >= 100 && status <= 599))
+        ? status
+        : null
+);
+
+const getAdminVerificationErrorCategory = (status) => {
+    if (status === SESSION_VERIFICATION_STATUS.TRANSPORT_UNAVAILABLE) return 'transport';
+    if (status === SESSION_VERIFICATION_STATUS.SERVER_ERROR) return 'server';
+    if (status === SESSION_VERIFICATION_STATUS.AUTHORITATIVE_DENIAL) return 'authoritative_denial';
+    if (status === SESSION_VERIFICATION_STATUS.INVALID_RESPONSE) return 'invalid_response';
+    if ([
+        SESSION_VERIFICATION_STATUS.LOCAL_STORAGE_ERROR,
+        SESSION_VERIFICATION_STATUS.LOCAL_CREDENTIALS_MISSING
+    ].includes(status)) return 'local_state';
+    return 'unknown';
+};
+
+const logAdminVerificationGate = (result, continuityEligible) => {
+    const validStatuses = Object.values(SESSION_VERIFICATION_STATUS);
+    const status = validStatuses.includes(result?.verificationStatus)
+        ? result.verificationStatus
+        : 'unknown';
+    Logger.warn('[AdminAuth]', {
+        phase: 'admin_bootstrap_verification_gate',
+        category: getAdminVerificationErrorCategory(status),
+        status,
+        code: safeBootstrapDiagnosticCode(result?.code) || 'SESSION_VERIFICATION_UNCLASSIFIED',
+        httpStatus: safeBootstrapDiagnosticStatus(result?.httpStatus),
+        continuityEligible: continuityEligible === true
+    });
+};
+
+const logAdminOfflineAuthorization = (authorization) => {
+    const knownReasons = Object.values(ADMIN_OFFLINE_AUTHORIZATION_REASON);
+    Logger.warn('[AdminAuth]', {
+        phase: 'admin_offline_authorization_decision',
+        category: 'offline_authorization',
+        status: authorization?.eligible === true ? 'eligible' : 'denied',
+        code: 'ADMIN_OFFLINE_AUTHORIZATION',
+        httpStatus: null,
+        eligibilityReason: knownReasons.includes(authorization?.reason)
+            ? authorization.reason
+            : 'unknown'
+    });
+};
+
+const logAdminRestorationFailure = (phase, error, eligibilityReason) => {
+    const knownReasons = Object.values(ADMIN_OFFLINE_AUTHORIZATION_REASON);
+    Logger.warn('[AdminAuth]', {
+        phase: `admin_${phase}_failed`,
+        category: phase === 'actor_runtime_restore' ? 'actor_runtime' : 'bootstrap_restoration',
+        status: 'failed',
+        code: safeBootstrapDiagnosticCode(error?.code) || 'ACTOR_SESSION_RESTORE_FAILED',
+        httpStatus: null,
+        eligibilityReason: knownReasons.includes(eligibilityReason) ? eligibilityReason : 'unknown'
+    });
+};
 
 const enterDatabaseRecovery = (set, error) => {
     const classification = classifyDatabaseError(error);
@@ -429,28 +534,35 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
                     });
                     assertBootstrapActorCurrent();
                     if (!adminSession.valid) {
+                        const continuityEligible = isSafeAdminOfflineVerificationFailure(adminSession);
+                        logAdminVerificationGate(adminSession, continuityEligible);
+
                         if (isAuthoritativeSessionDenial(adminSession)) {
                             await get()._requireAdminLogin(actorBoundAdminLicense, adminSession);
                             coordinatorState = 'ready';
                             return { status: get().appStatus };
                         }
 
-                        if (isSafeAdminOfflineVerificationFailure(adminSession)) {
+                        if (continuityEligible) {
                             const offlineAuthorization = await getAdminOfflineAuthorization({
                                 license: actorBoundAdminLicense,
                                 adminUser: actorBoundAdminLicense.admin_user || null,
                                 verificationResult: adminSession
                             });
                             assertBootstrapActorCurrent();
+                            logAdminOfflineAuthorization(offlineAuthorization);
                             if (offlineAuthorization.eligible) {
                                 const offlineAdmin = actorBoundAdminLicense.admin_user || null;
+                                let restorationPhase = 'actor_runtime_restore';
                                 try {
                                     await restoreActorAuthority('admin', offlineAdmin);
                                     assertBootstrapActorCurrent();
                                     set({ currentAdminUser: offlineAdmin });
+                                    restorationPhase = 'offline_mode_processing';
                                     await get()._processOfflineMode(actorBoundAdminLicense);
                                     assertBootstrapActorCurrent();
                                     if (!['ready', 'setup_required', 'unauthenticated'].includes(get().appStatus)) {
+                                        restorationPhase = 'restored_admin_preparation';
                                         await get()._completeRestoredAdminPreparation?.(actorBoundAdminLicense.license_key);
                                         assertBootstrapActorCurrent();
                                     }
@@ -459,6 +571,7 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
                                 } catch (actorError) {
                                     if (classifyDatabaseError(actorError).structural) throw actorError;
                                     assertBootstrapActorCurrent();
+                                    logAdminRestorationFailure(restorationPhase, actorError, offlineAuthorization.reason);
                                     setVerificationUnavailable(set, 'admin', actorBoundAdminLicense, {
                                         code: actorError?.code || 'ACTOR_SESSION_RESTORE_FAILED',
                                         verificationStatus: SESSION_VERIFICATION_STATUS.INVALID_RESPONSE,
