@@ -1,8 +1,8 @@
 # Diagnóstico P2-04 — mini-fase 2.4
 
-Fecha de revisión: 2026-10-20 (America/Mexico_City)  
-PR: #366, Draft  
-Rama auditada: `feat/admin-offline-continuity-extended-r1`  
+Fecha de revisión: 2026-10-20 (America/Mexico_City)
+PR: #366, Draft
+Rama auditada: `feat/admin-offline-continuity-extended-r1`
 HEAD observado antes de esta actualización: `557a1e136597ab4422d940341c57d9b191ed3ab4`
 
 ## Dictamen
