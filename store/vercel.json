@@ -63,7 +63,8 @@
   ],
   "git": {
     "deploymentEnabled": {
-      "fix/actor-scoped-storage-stale-events-r1": false
+      "fix/actor-scoped-storage-stale-events-r1": false,
+      "research/actor-context-invalidation-contract-r1": false
     }
   }
 }
