@@ -33,7 +33,8 @@
   "git": {
     "deploymentEnabled": {
       "fix/actor-scoped-storage-stale-events-r1": false,
-      "research/actor-context-invalidation-contract-r1": false
+      "research/actor-context-invalidation-contract-r1": false,
+      "research/actor-authority-financial-admission-r1": false
     }
   }
 }
