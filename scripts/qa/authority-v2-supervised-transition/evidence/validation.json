@@ -1,0 +1,22 @@
+{
+  "status": "ADMISSION_UNPROVEN",
+  "architecture": "D",
+  "level": "SYNTHETIC_BOUNDARY_ONLY",
+  "browser": {
+    "FAIL": 12,
+    "PENDING": 5,
+    "PASS": 7,
+    "UNPROVEN": 1
+  },
+  "financial": {
+    "PASS": 28,
+    "PENDING": 1
+  },
+  "inherited": {
+    "passed": 42,
+    "failed": 0
+  },
+  "positiveAdmission": false,
+  "managedEnforcement": "MANAGED_ENFORCEMENT_NOT_AVAILABLE",
+  "note": "PASS on counterexample detector means unsafe hypothesis reproduced; it is not safety acceptance. FIN-T3-09 remains pending with browser T3-10."
+}

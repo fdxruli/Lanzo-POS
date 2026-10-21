@@ -1,0 +1,128 @@
+{
+  "antecedents": [
+    {
+      "name": "LANZO.PWA.LIFECYCLE.PHASE3.AUDIT.R1(1).md",
+      "library_file_id": "libfile_3b27d58918b881919f5132c3a7c7cee2",
+      "size_bytes": 64433,
+      "total_lines": 335,
+      "has_more": false,
+      "provenance": "Complete extracted text read; original raw-byte hash not asserted"
+    },
+    {
+      "name": "LANZO.PWA.LIFECYCLE.PHASE3.2.IMPLEMENTATION.R1(1).md",
+      "library_file_id": "libfile_02fd16d6e7e081918269d26a61348c84",
+      "size_bytes": 14899,
+      "total_lines": 157,
+      "has_more": false,
+      "provenance": "Complete extracted text read; original raw-byte hash not asserted"
+    },
+    {
+      "name": "LANZO.PWA.LIFECYCLE.PHASE3.2.B01.RESOLUTION.R1(1).md",
+      "library_file_id": "libfile_29aceaedeca0819183f23d4a5ee80c2a",
+      "size_bytes": 18484,
+      "total_lines": 153,
+      "has_more": false,
+      "provenance": "Complete extracted text read; original raw-byte hash not asserted"
+    },
+    {
+      "name": "LANZO.PWA.LIFECYCLE.PHASE3.2A.F02.R1(1).md",
+      "library_file_id": "libfile_3b5fe2ac03688191b7564162d0225d10",
+      "size_bytes": 23031,
+      "total_lines": 325,
+      "has_more": false,
+      "provenance": "Complete extracted text read; original raw-byte hash not asserted"
+    }
+  ],
+  "gitReports": [
+    {
+      "path": "docs/reports/LANZO.ACTOR.AUTHORITY.V2.COMMIT.MATRIX.R1.md",
+      "blob": "251a5e30da02c0c8bb7fa96bf247ce04614d518a"
+    },
+    {
+      "path": "docs/reports/LANZO.ACTOR.AUTHORITY.V2.EXECUTIVE.R1.md",
+      "blob": "e38f1dc04ad3148caf711d66f3b843629118e4c6"
+    },
+    {
+      "path": "docs/reports/LANZO.ACTOR.AUTHORITY.V2.INTEGRATION.TRANSITION.DESIGN.R1.md",
+      "blob": "683fb05fa4e07b37ee643c13f3df8530dff9d4e8"
+    },
+    {
+      "path": "docs/reports/LANZO.ACTOR.CONTEXT.INVALIDATION.ARCHITECTURE.R1.md",
+      "blob": "b68688b39f1191eb7478af53a4095f6845a6dbe6"
+    },
+    {
+      "path": "docs/reports/LANZO.ACTOR.SCOPED.STORAGE.LATE.CONTEXT.HARDENING.R1.md",
+      "blob": "b3db68562a7c0b442d48962d2a67124d16c0b057"
+    }
+  ],
+  "checkpoints": [
+    {
+      "checkpoint": "R0",
+      "sha": "f4528fbe890456402a4fc9b40a7fb03685936507",
+      "tree": "f8db80c643f0b423699ace931e895f355d5de7e5",
+      "parents": [
+        "c6d5e56afdbdb0e2d59dc479bdd5ada94d418f61"
+      ]
+    },
+    {
+      "checkpoint": "R1",
+      "sha": "299d5212b375e617437a9566ab59de9250d6ba61",
+      "tree": "46a126c43f803a7511d0e81a49cb0a2792760d96",
+      "parents": [
+        "f4528fbe890456402a4fc9b40a7fb03685936507"
+      ]
+    },
+    {
+      "checkpoint": "R2",
+      "sha": "c1679a8ed711abf522d49f89fc495642150b6665",
+      "tree": "65945b91ba6d6569341ed171aca6aec8d65742aa",
+      "parents": [
+        "299d5212b375e617437a9566ab59de9250d6ba61"
+      ]
+    },
+    {
+      "checkpoint": "R3",
+      "sha": "0289757cf4a08acf2ebfe526d9c677b12e566c0f",
+      "tree": "edc725168b0039bc624f0047d26e6fd1bf9c3855",
+      "parents": [
+        "c1679a8ed711abf522d49f89fc495642150b6665"
+      ]
+    }
+  ],
+  "commercialSources": [
+    {
+      "path": "src/services/auth/actorRuntimeController.js",
+      "sha": "5a87791742557fd3cadf1398e188a7a26f9d91ac"
+    },
+    {
+      "path": "src/pwa/adminServiceWorker.js",
+      "sha": "078abdefab8f591a5617afe2b847b81e00e3dd71"
+    },
+    {
+      "path": "src/services/db/databaseSchema.js",
+      "sha": "532aac615c463518c6eaba5698d484855a030ecf"
+    },
+    {
+      "path": "src/services/backup/backupScope.js",
+      "sha": "dd9cdaf89011ac00c7727d0a6d68e867b69bea1a"
+    }
+  ],
+  "policySHA": "4f6cd03febbe28eb4f2479c2f0228aec19351e9f",
+  "codeCheckpointR3": "0289757cf4a08acf2ebfe526d9c677b12e566c0f",
+  "externalSources": [
+    "https://developer.chrome.com/docs/web-platform/page-lifecycle-api",
+    "https://developer.chrome.com/docs/workbox/service-worker-lifecycle",
+    "https://learn.microsoft.com/en-us/deployedge/microsoft-edge-policies/URLBlocklist",
+    "https://learn.microsoft.com/en-us/deployedge/microsoft-edge-policies/RestoreOnStartup",
+    "https://support.google.com/chrome/a/answer/2657289?hl=en",
+    "https://dexie.org/docs/Dexie/Dexie.on.versionchange",
+    "https://vercel.com/docs/project-configuration/git-configuration",
+    "https://supabase.com/changelog"
+  ],
+  "notes": [
+    "No policies actually installed/enforced in Chrome/Edge. URL/distribution controls are synthetic server fixtures, not enterprise-policy certification.",
+    "OS-wide managed enforcement missing. This does not prove managed transitions universally impossible.",
+    "Supabase changelog markdown unsupported by reader; HTML checked. No Supabase connection, SQL or row query in this phase.",
+    "Complete Git clone not obtained. Remote tree/immutable blobs were recovered; no claim of a complete local checkout."
+  ]
+}

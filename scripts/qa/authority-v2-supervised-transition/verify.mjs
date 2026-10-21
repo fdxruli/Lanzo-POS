@@ -1,0 +1,24 @@
+// Validate evidence semantics; exit zero never means positive legacy admission.
+import assert from 'node:assert/strict';
+import {readFileSync,writeFileSync} from 'node:fs';
+import {createHash} from 'node:crypto';
+import {dirname,resolve} from 'node:path';
+import {fileURLToPath} from 'node:url';
+const here=dirname(fileURLToPath(import.meta.url));
+const browser=JSON.parse(readFileSync(resolve(here,'evidence/browser.json')));
+const financial=JSON.parse(readFileSync(resolve(here,'evidence/financial.json')));
+const inherited=JSON.parse(readFileSync(resolve(here,'evidence/inherited-tests.json')));
+const expectedFail=['T3-01','T3-02','T3-04','T3-05','T3-09','T3-12','T3-13','T3-14','T3-15','T3-16','T3-18','T3-20'];
+for(const id of expectedFail)assert.equal(browser.results.find(r=>r.id===id)?.status,'FAIL',id+' counterexample not reproduced');
+for(const id of ['T3-06','T3-17','T3-19','CAP-127.0.0.1','CAP-localhost','CAP-IP','CAP-HTTPS'])assert.equal(browser.results.find(r=>r.id===id)?.status,'PASS',id);
+for(const id of ['T3-01','T3-02'])assert.equal(browser.results.find(r=>r.id===id)?.containment,'PASS',id+' v2 containment');
+assert(!browser.results.some(r=>r.status==='ERROR'));
+assert.equal(browser.results.find(r=>r.id==='DOMAIN-3').code,'MANAGED_ENFORCEMENT_NOT_AVAILABLE');
+assert.equal(browser.results.find(r=>r.id==='T3-13').heldWrite,true);
+assert.equal(browser.results.find(r=>r.id==='T3-13').blocked,true);
+assert(!financial.results.some(r=>r.status==='FAIL'));
+assert.equal(inherited.numPassedTests,42);assert.equal(inherited.numFailedTests,0);
+const fileMap={'/main.mjs':'fixtures/main-actorScopedStorage.mjs','/client.mjs':'client.mjs','/prototype.mjs':'../actor-context-contract/prototype.mjs','/admission.mjs':'../actor-authority-admission/admission-model.mjs'};
+for(const [url,path]of Object.entries(fileMap))assert.equal(createHash('sha256').update(readFileSync(resolve(here,path))).digest('hex'),browser.manifest[url],url+' evidence artifact mismatch');
+const summary={status:'ADMISSION_UNPROVEN',architecture:'D',level:'SYNTHETIC_BOUNDARY_ONLY',browser:browser.results.reduce((a,r)=>(a[r.status]=(a[r.status]||0)+1,a),{}),financial:financial.results.reduce((a,r)=>(a[r.status]=(a[r.status]||0)+1,a),{}),inherited:{passed:inherited.numPassedTests,failed:inherited.numFailedTests},positiveAdmission:false,managedEnforcement:'MANAGED_ENFORCEMENT_NOT_AVAILABLE',note:'PASS on counterexample detector means unsafe hypothesis reproduced; it is not safety acceptance. FIN-T3-09 remains pending with browser T3-10.'};
+writeFileSync(resolve(here,'evidence/validation.json'),JSON.stringify(summary,null,2)+'\n');console.log(JSON.stringify(summary,null,2));

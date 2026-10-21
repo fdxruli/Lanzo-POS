@@ -1,0 +1,1793 @@
+{
+  "date": "2026-10-21T17:58:24.354Z",
+  "node": "v24.19.0",
+  "results": [
+    {
+      "id": "FIN-T3-01",
+      "status": "PASS",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "before": {
+        "authority": [
+          {
+            "protocol": 2,
+            "status": "granted",
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "8d4a9603937cafe680dd595d1e027d94",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "revision": 1
+          }
+        ],
+        "contexts": [
+          {
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "8d4a9603937cafe680dd595d1e027d94",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "granted"
+          }
+        ],
+        "operations": [],
+        "effects": []
+      },
+      "expectation": "B cannot inherit preparation",
+      "after": {
+        "authority": [
+          {
+            "protocol": 2,
+            "status": "granted",
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "8d4a9603937cafe680dd595d1e027d94",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "revision": 1
+          }
+        ],
+        "contexts": [
+          {
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "8d4a9603937cafe680dd595d1e027d94",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "granted"
+          }
+        ],
+        "operations": [
+          {
+            "id": "prepared-sale",
+            "tenant": "synthetic-T",
+            "owner": {
+              "tenant": "synthetic-T",
+              "token": "8d4a9603937cafe680dd595d1e027d94",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "pending"
+          }
+        ],
+        "effects": []
+      }
+    },
+    {
+      "id": "FIN-T3-02",
+      "status": "PASS",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "before": {
+        "authority": [
+          {
+            "protocol": 2,
+            "status": "granted",
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "ec3f62bbba34275f6954581131312dc3",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "revision": 1
+          }
+        ],
+        "contexts": [
+          {
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "ec3f62bbba34275f6954581131312dc3",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "granted"
+          }
+        ],
+        "operations": [],
+        "effects": []
+      },
+      "receipt": {
+        "idempotencyKey": "sale-key",
+        "operationId": "sale",
+        "owner": {
+          "tenant": "synthetic-T",
+          "token": "ec3f62bbba34275f6954581131312dc3",
+          "actor": "admin:A",
+          "session": "session-A",
+          "device": "device-A",
+          "generation": 1
+        },
+        "synthetic": true
+      },
+      "after": {
+        "authority": [
+          {
+            "protocol": 2,
+            "status": "granted",
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "865b3b0bdc16c047f2417a09235d207d",
+              "actor": "admin:B",
+              "session": "session-B",
+              "device": "device-A",
+              "generation": 1
+            },
+            "revision": 2
+          }
+        ],
+        "contexts": [
+          {
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "865b3b0bdc16c047f2417a09235d207d",
+              "actor": "admin:B",
+              "session": "session-B",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "granted"
+          },
+          {
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "ec3f62bbba34275f6954581131312dc3",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "superseded"
+          }
+        ],
+        "operations": [
+          {
+            "id": "sale",
+            "tenant": "synthetic-T",
+            "owner": {
+              "tenant": "synthetic-T",
+              "token": "ec3f62bbba34275f6954581131312dc3",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "committed"
+          }
+        ],
+        "effects": [
+          {
+            "idempotencyKey": "sale-key",
+            "operationId": "sale",
+            "owner": {
+              "tenant": "synthetic-T",
+              "token": "ec3f62bbba34275f6954581131312dc3",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "synthetic": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "FIN-T3-03",
+      "status": "PASS",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "before": {
+        "authority": [
+          {
+            "protocol": 2,
+            "status": "granted",
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "71452204603fe60cb4b395f4569fb27e",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "revision": 1
+          }
+        ],
+        "contexts": [
+          {
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "71452204603fe60cb4b395f4569fb27e",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "granted"
+          }
+        ],
+        "operations": [],
+        "effects": []
+      },
+      "intent": {
+        "origin": {
+          "tenant": "synthetic-T",
+          "actor": "admin:A",
+          "session": "session-A",
+          "device": "device-A"
+        },
+        "key": "K",
+        "hash": "H",
+        "attempts": 1,
+        "state": "DISPATCHING"
+      },
+      "decision": {
+        "action": "PRESERVE",
+        "code": "NO_SAFE_REDISPATCH_PROOF"
+      },
+      "limitation": "Receipt lookup is a model, no RPC",
+      "after": {
+        "authority": [
+          {
+            "protocol": 2,
+            "status": "granted",
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "71452204603fe60cb4b395f4569fb27e",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "revision": 1
+          }
+        ],
+        "contexts": [
+          {
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "71452204603fe60cb4b395f4569fb27e",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "granted"
+          }
+        ],
+        "operations": [
+          {
+            "id": "ambiguous-dispatch",
+            "tenant": "synthetic-T",
+            "owner": {
+              "tenant": "synthetic-T",
+              "token": "71452204603fe60cb4b395f4569fb27e",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "pending"
+          }
+        ],
+        "effects": []
+      }
+    },
+    {
+      "id": "FIN-T3-04",
+      "status": "PASS",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "before": {
+        "authority": [
+          {
+            "protocol": 2,
+            "status": "granted",
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "c79746717882e38a521bbe173ece8e3d",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "revision": 1
+          }
+        ],
+        "contexts": [
+          {
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "c79746717882e38a521bbe173ece8e3d",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "granted"
+          }
+        ],
+        "operations": [],
+        "effects": []
+      },
+      "classification": "MANUAL_RECONCILIATION_REQUIRED",
+      "capabilityImplemented": false,
+      "after": {
+        "authority": [
+          {
+            "protocol": 2,
+            "status": "locked",
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "c79746717882e38a521bbe173ece8e3d",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "revision": 2
+          }
+        ],
+        "contexts": [
+          {
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "c79746717882e38a521bbe173ece8e3d",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "revoked"
+          }
+        ],
+        "operations": [
+          {
+            "id": "absent-actor-payment",
+            "tenant": "synthetic-T",
+            "owner": {
+              "tenant": "synthetic-T",
+              "token": "c79746717882e38a521bbe173ece8e3d",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "pending"
+          }
+        ],
+        "effects": []
+      }
+    },
+    {
+      "id": "FIN-T3-05",
+      "status": "PASS",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "before": {
+        "authority": [
+          {
+            "protocol": 2,
+            "status": "granted",
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "e646a153f060faedb80a68f8264004dd",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "revision": 1
+          }
+        ],
+        "contexts": [
+          {
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "e646a153f060faedb80a68f8264004dd",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "granted"
+          }
+        ],
+        "operations": [],
+        "effects": []
+      },
+      "receipt": {
+        "idempotencyKey": "K",
+        "operationId": "ui-response-lost",
+        "owner": {
+          "tenant": "synthetic-T",
+          "token": "e646a153f060faedb80a68f8264004dd",
+          "actor": "admin:A",
+          "session": "session-A",
+          "device": "device-A",
+          "generation": 1
+        },
+        "synthetic": true
+      },
+      "replay": {
+        "idempotencyKey": "K",
+        "operationId": "ui-response-lost",
+        "owner": {
+          "tenant": "synthetic-T",
+          "token": "e646a153f060faedb80a68f8264004dd",
+          "actor": "admin:A",
+          "session": "session-A",
+          "device": "device-A",
+          "generation": 1
+        },
+        "synthetic": true
+      },
+      "after": {
+        "authority": [
+          {
+            "protocol": 2,
+            "status": "granted",
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "e646a153f060faedb80a68f8264004dd",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "revision": 1
+          }
+        ],
+        "contexts": [
+          {
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "e646a153f060faedb80a68f8264004dd",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "granted"
+          }
+        ],
+        "operations": [
+          {
+            "id": "ui-response-lost",
+            "tenant": "synthetic-T",
+            "owner": {
+              "tenant": "synthetic-T",
+              "token": "e646a153f060faedb80a68f8264004dd",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "committed"
+          }
+        ],
+        "effects": [
+          {
+            "idempotencyKey": "K",
+            "operationId": "ui-response-lost",
+            "owner": {
+              "tenant": "synthetic-T",
+              "token": "e646a153f060faedb80a68f8264004dd",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "synthetic": true
+          }
+        ]
+      }
+    },
+    {
+      "id": "FIN-T3-06",
+      "status": "PASS",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "before": {
+        "authority": [
+          {
+            "protocol": 2,
+            "status": "granted",
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "da49b211cbdc866901ee9da780a4c2d8",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "revision": 1
+          }
+        ],
+        "contexts": [
+          {
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "da49b211cbdc866901ee9da780a4c2d8",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "granted"
+          }
+        ],
+        "operations": [],
+        "effects": []
+      },
+      "intent": {
+        "origin": {
+          "tenant": "synthetic-T",
+          "actor": "admin:A",
+          "session": "session-A",
+          "device": "device-A"
+        },
+        "key": "K",
+        "hash": "H",
+        "attempts": 1,
+        "state": "DISPATCHING"
+      },
+      "receipt": {
+        "status": "COMPLETED",
+        "id": "receipt-A",
+        "key": "K",
+        "hash": "H"
+      },
+      "denied": {
+        "action": "DENY",
+        "code": "RECOVERY_ORIGIN_MISMATCH"
+      },
+      "allowed": {
+        "action": "PROJECT_EXISTING",
+        "origin": {
+          "tenant": "synthetic-T",
+          "actor": "admin:A",
+          "session": "session-A",
+          "device": "device-A"
+        },
+        "receiptId": "receipt-A"
+      },
+      "limitation": "Delayed result is injected, not network RPC; no projection persisted",
+      "after": {
+        "authority": [
+          {
+            "protocol": 2,
+            "status": "granted",
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "988f32468f2040e8889372600f2c87f5",
+              "actor": "admin:B",
+              "session": "session-B",
+              "device": "device-A",
+              "generation": 1
+            },
+            "revision": 2
+          }
+        ],
+        "contexts": [
+          {
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "988f32468f2040e8889372600f2c87f5",
+              "actor": "admin:B",
+              "session": "session-B",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "granted"
+          },
+          {
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "da49b211cbdc866901ee9da780a4c2d8",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "superseded"
+          }
+        ],
+        "operations": [],
+        "effects": []
+      }
+    },
+    {
+      "id": "FIN-T3-07",
+      "status": "PASS",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "before": {
+        "authority": [
+          {
+            "protocol": 2,
+            "status": "granted",
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "146cccf13897e49e1b5547a218503454",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "revision": 1
+          }
+        ],
+        "contexts": [
+          {
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "146cccf13897e49e1b5547a218503454",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "granted"
+          }
+        ],
+        "operations": [],
+        "effects": []
+      },
+      "cash": {
+        "synthetic": true,
+        "type": "open-cash",
+        "status": "OPEN",
+        "originActor": "admin:A"
+      },
+      "limitation": "Metadata preservation only, not Caja repository",
+      "after": {
+        "authority": [
+          {
+            "protocol": 2,
+            "status": "granted",
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "21952458314fc2d5ff470254a2db774a",
+              "actor": "admin:B",
+              "session": "session-B",
+              "device": "device-A",
+              "generation": 1
+            },
+            "revision": 2
+          }
+        ],
+        "contexts": [
+          {
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "146cccf13897e49e1b5547a218503454",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "superseded"
+          },
+          {
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "21952458314fc2d5ff470254a2db774a",
+              "actor": "admin:B",
+              "session": "session-B",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "granted"
+          }
+        ],
+        "operations": [],
+        "effects": [
+          {
+            "synthetic": true,
+            "type": "open-cash",
+            "status": "OPEN",
+            "originActor": "admin:A"
+          }
+        ]
+      }
+    },
+    {
+      "id": "FIN-T3-08",
+      "status": "PASS",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "before": {
+        "authority": [
+          {
+            "protocol": 2,
+            "status": "granted",
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "3ff8e98ea4860de1a236c41373d30434",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "revision": 1
+          }
+        ],
+        "contexts": [
+          {
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "3ff8e98ea4860de1a236c41373d30434",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "granted"
+          }
+        ],
+        "operations": [],
+        "effects": []
+      },
+      "outbox": {
+        "synthetic": true,
+        "type": "outbox",
+        "status": "PENDING",
+        "localReceipt": "complete",
+        "originActor": "admin:A",
+        "key": "original-K"
+      },
+      "limitation": "Confirmed-local evidence encoded as fixture metadata, not product sync",
+      "after": {
+        "authority": [
+          {
+            "protocol": 2,
+            "status": "granted",
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "047612a2704baa2353802e8355ddaf6b",
+              "actor": "admin:B",
+              "session": "session-B",
+              "device": "device-A",
+              "generation": 1
+            },
+            "revision": 2
+          }
+        ],
+        "contexts": [
+          {
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "047612a2704baa2353802e8355ddaf6b",
+              "actor": "admin:B",
+              "session": "session-B",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "granted"
+          },
+          {
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "3ff8e98ea4860de1a236c41373d30434",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "superseded"
+          }
+        ],
+        "operations": [],
+        "effects": [
+          {
+            "synthetic": true,
+            "type": "outbox",
+            "status": "PENDING",
+            "localReceipt": "complete",
+            "originActor": "admin:A",
+            "key": "original-K"
+          }
+        ]
+      }
+    },
+    {
+      "id": "FIN-T3-09",
+      "status": "PENDING",
+      "level": "BROWSER_EVIDENCE_REQUIRED",
+      "reference": "browser.json T3-10; see final evidence report",
+      "limitation": "Not executed by Node runner; browser observation assessed separately"
+    },
+    {
+      "id": "FIN-T3-10",
+      "status": "PASS",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "before": {
+        "authority": [
+          {
+            "protocol": 2,
+            "status": "granted",
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "f5248b3669a246d8933ff0dc0d8553f9",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "revision": 1
+          }
+        ],
+        "contexts": [
+          {
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "f5248b3669a246d8933ff0dc0d8553f9",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "granted"
+          }
+        ],
+        "operations": [],
+        "effects": []
+      },
+      "decision": {
+        "state": "ADMISSION_RESTRICTED",
+        "code": "EXCLUSIVITY_UNPROVEN"
+      },
+      "after": {
+        "authority": [
+          {
+            "protocol": 2,
+            "status": "granted",
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "f5248b3669a246d8933ff0dc0d8553f9",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "revision": 1
+          }
+        ],
+        "contexts": [
+          {
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "f5248b3669a246d8933ff0dc0d8553f9",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "granted"
+          }
+        ],
+        "operations": [],
+        "effects": []
+      }
+    },
+    {
+      "id": "FIXTURE-prepared-sale",
+      "status": "PASS",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "before": {
+        "authority": [
+          {
+            "protocol": 2,
+            "status": "granted",
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "eeb5773786cb86a72d5fc811d2dfb0e0",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "revision": 1
+          }
+        ],
+        "contexts": [
+          {
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "eeb5773786cb86a72d5fc811d2dfb0e0",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "granted"
+          }
+        ],
+        "operations": [],
+        "effects": []
+      },
+      "type": "prepared-sale",
+      "classification": "BLOCKS_HANDOFF",
+      "limitation": "Credit/layaway/cash alone do not prove absence of active suboperations; activity must be inspected separately",
+      "after": {
+        "authority": [
+          {
+            "protocol": 2,
+            "status": "granted",
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "eeb5773786cb86a72d5fc811d2dfb0e0",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "revision": 1
+          }
+        ],
+        "contexts": [
+          {
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "eeb5773786cb86a72d5fc811d2dfb0e0",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "granted"
+          }
+        ],
+        "operations": [
+          {
+            "id": "prepared-sale",
+            "tenant": "synthetic-T",
+            "owner": {
+              "tenant": "synthetic-T",
+              "token": "eeb5773786cb86a72d5fc811d2dfb0e0",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "pending"
+          }
+        ],
+        "effects": []
+      }
+    },
+    {
+      "id": "FIXTURE-confirmed-local-sale",
+      "status": "PASS",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "before": {
+        "authority": [
+          {
+            "protocol": 2,
+            "status": "granted",
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "c0e5009479ae14a6a57acbcc9273246c",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "revision": 1
+          }
+        ],
+        "contexts": [
+          {
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "c0e5009479ae14a6a57acbcc9273246c",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "granted"
+          }
+        ],
+        "operations": [],
+        "effects": []
+      },
+      "type": "confirmed-local-sale",
+      "classification": "PRESERVED_EVIDENCE",
+      "limitation": "Credit/layaway/cash alone do not prove absence of active suboperations; activity must be inspected separately",
+      "after": {
+        "authority": [
+          {
+            "protocol": 2,
+            "status": "granted",
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "511514f21bc9494532d142f5b4d08b74",
+              "actor": "admin:B",
+              "session": "session-B",
+              "device": "device-A",
+              "generation": 1
+            },
+            "revision": 2
+          }
+        ],
+        "contexts": [
+          {
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "511514f21bc9494532d142f5b4d08b74",
+              "actor": "admin:B",
+              "session": "session-B",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "granted"
+          },
+          {
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "c0e5009479ae14a6a57acbcc9273246c",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "superseded"
+          }
+        ],
+        "operations": [],
+        "effects": [
+          {
+            "synthetic": true,
+            "type": "confirmed-local-sale",
+            "originActor": "admin:A"
+          }
+        ]
+      }
+    },
+    {
+      "id": "FIXTURE-payment-in-flight",
+      "status": "PASS",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "before": {
+        "authority": [
+          {
+            "protocol": 2,
+            "status": "granted",
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "85b9a756a87b106ec242f7c70a28ee37",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "revision": 1
+          }
+        ],
+        "contexts": [
+          {
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "85b9a756a87b106ec242f7c70a28ee37",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "granted"
+          }
+        ],
+        "operations": [],
+        "effects": []
+      },
+      "type": "payment-in-flight",
+      "classification": "BLOCKS_HANDOFF",
+      "limitation": "Credit/layaway/cash alone do not prove absence of active suboperations; activity must be inspected separately",
+      "after": {
+        "authority": [
+          {
+            "protocol": 2,
+            "status": "granted",
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "85b9a756a87b106ec242f7c70a28ee37",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "revision": 1
+          }
+        ],
+        "contexts": [
+          {
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "85b9a756a87b106ec242f7c70a28ee37",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "granted"
+          }
+        ],
+        "operations": [
+          {
+            "id": "payment-in-flight",
+            "tenant": "synthetic-T",
+            "owner": {
+              "tenant": "synthetic-T",
+              "token": "85b9a756a87b106ec242f7c70a28ee37",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "pending"
+          }
+        ],
+        "effects": []
+      }
+    },
+    {
+      "id": "FIXTURE-pending-remote-receipt",
+      "status": "PASS",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "before": {
+        "authority": [
+          {
+            "protocol": 2,
+            "status": "granted",
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "9babcdcf5f43b34d5751984f87cfaa68",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "revision": 1
+          }
+        ],
+        "contexts": [
+          {
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "9babcdcf5f43b34d5751984f87cfaa68",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "granted"
+          }
+        ],
+        "operations": [],
+        "effects": []
+      },
+      "type": "pending-remote-receipt",
+      "classification": "BLOCKS_HANDOFF",
+      "limitation": "Credit/layaway/cash alone do not prove absence of active suboperations; activity must be inspected separately",
+      "after": {
+        "authority": [
+          {
+            "protocol": 2,
+            "status": "granted",
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "9babcdcf5f43b34d5751984f87cfaa68",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "revision": 1
+          }
+        ],
+        "contexts": [
+          {
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "9babcdcf5f43b34d5751984f87cfaa68",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "granted"
+          }
+        ],
+        "operations": [
+          {
+            "id": "pending-remote-receipt",
+            "tenant": "synthetic-T",
+            "owner": {
+              "tenant": "synthetic-T",
+              "token": "9babcdcf5f43b34d5751984f87cfaa68",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "pending"
+          }
+        ],
+        "effects": []
+      }
+    },
+    {
+      "id": "FIXTURE-outbox-confirmed-local",
+      "status": "PASS",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "before": {
+        "authority": [
+          {
+            "protocol": 2,
+            "status": "granted",
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "da6abf4d399d27dc5231f901220d914d",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "revision": 1
+          }
+        ],
+        "contexts": [
+          {
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "da6abf4d399d27dc5231f901220d914d",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "granted"
+          }
+        ],
+        "operations": [],
+        "effects": []
+      },
+      "type": "outbox-confirmed-local",
+      "classification": "PRESERVED_EVIDENCE",
+      "limitation": "Credit/layaway/cash alone do not prove absence of active suboperations; activity must be inspected separately",
+      "after": {
+        "authority": [
+          {
+            "protocol": 2,
+            "status": "granted",
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "ebf1de5fa21f94bb30f6c16493e4e277",
+              "actor": "admin:B",
+              "session": "session-B",
+              "device": "device-A",
+              "generation": 1
+            },
+            "revision": 2
+          }
+        ],
+        "contexts": [
+          {
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "da6abf4d399d27dc5231f901220d914d",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "superseded"
+          },
+          {
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "ebf1de5fa21f94bb30f6c16493e4e277",
+              "actor": "admin:B",
+              "session": "session-B",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "granted"
+          }
+        ],
+        "operations": [],
+        "effects": [
+          {
+            "synthetic": true,
+            "type": "outbox-confirmed-local",
+            "originActor": "admin:A"
+          }
+        ]
+      }
+    },
+    {
+      "id": "FIXTURE-open-cash",
+      "status": "PASS",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "before": {
+        "authority": [
+          {
+            "protocol": 2,
+            "status": "granted",
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "be5bc22941b0b4e9db098d214df5514e",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "revision": 1
+          }
+        ],
+        "contexts": [
+          {
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "be5bc22941b0b4e9db098d214df5514e",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "granted"
+          }
+        ],
+        "operations": [],
+        "effects": []
+      },
+      "type": "open-cash",
+      "classification": "PRESERVED_EVIDENCE",
+      "limitation": "Credit/layaway/cash alone do not prove absence of active suboperations; activity must be inspected separately",
+      "after": {
+        "authority": [
+          {
+            "protocol": 2,
+            "status": "granted",
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "a99735492cfe5adc3c97d6ff82570cf6",
+              "actor": "admin:B",
+              "session": "session-B",
+              "device": "device-A",
+              "generation": 1
+            },
+            "revision": 2
+          }
+        ],
+        "contexts": [
+          {
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "a99735492cfe5adc3c97d6ff82570cf6",
+              "actor": "admin:B",
+              "session": "session-B",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "granted"
+          },
+          {
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "be5bc22941b0b4e9db098d214df5514e",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "superseded"
+          }
+        ],
+        "operations": [],
+        "effects": [
+          {
+            "synthetic": true,
+            "type": "open-cash",
+            "originActor": "admin:A"
+          }
+        ]
+      }
+    },
+    {
+      "id": "FIXTURE-credit",
+      "status": "PASS",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "before": {
+        "authority": [
+          {
+            "protocol": 2,
+            "status": "granted",
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "a37c5195980207694cd1e483c60af47e",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "revision": 1
+          }
+        ],
+        "contexts": [
+          {
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "a37c5195980207694cd1e483c60af47e",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "granted"
+          }
+        ],
+        "operations": [],
+        "effects": []
+      },
+      "type": "credit",
+      "classification": "PRESERVED_EVIDENCE",
+      "limitation": "Credit/layaway/cash alone do not prove absence of active suboperations; activity must be inspected separately",
+      "after": {
+        "authority": [
+          {
+            "protocol": 2,
+            "status": "granted",
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "b15f1d3103b0cb8a10d8c13bda343c14",
+              "actor": "admin:B",
+              "session": "session-B",
+              "device": "device-A",
+              "generation": 1
+            },
+            "revision": 2
+          }
+        ],
+        "contexts": [
+          {
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "a37c5195980207694cd1e483c60af47e",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "superseded"
+          },
+          {
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "b15f1d3103b0cb8a10d8c13bda343c14",
+              "actor": "admin:B",
+              "session": "session-B",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "granted"
+          }
+        ],
+        "operations": [],
+        "effects": [
+          {
+            "synthetic": true,
+            "type": "credit",
+            "originActor": "admin:A"
+          }
+        ]
+      }
+    },
+    {
+      "id": "FIXTURE-layaway",
+      "status": "PASS",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "before": {
+        "authority": [
+          {
+            "protocol": 2,
+            "status": "granted",
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "978ef923eb05420a2d3bfeafafdc3103",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "revision": 1
+          }
+        ],
+        "contexts": [
+          {
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "978ef923eb05420a2d3bfeafafdc3103",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "granted"
+          }
+        ],
+        "operations": [],
+        "effects": []
+      },
+      "type": "layaway",
+      "classification": "PRESERVED_EVIDENCE",
+      "limitation": "Credit/layaway/cash alone do not prove absence of active suboperations; activity must be inspected separately",
+      "after": {
+        "authority": [
+          {
+            "protocol": 2,
+            "status": "granted",
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "c4dde7b8574a6edf6769de034a12c595",
+              "actor": "admin:B",
+              "session": "session-B",
+              "device": "device-A",
+              "generation": 1
+            },
+            "revision": 2
+          }
+        ],
+        "contexts": [
+          {
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "978ef923eb05420a2d3bfeafafdc3103",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "superseded"
+          },
+          {
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "c4dde7b8574a6edf6769de034a12c595",
+              "actor": "admin:B",
+              "session": "session-B",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "granted"
+          }
+        ],
+        "operations": [],
+        "effects": [
+          {
+            "synthetic": true,
+            "type": "layaway",
+            "originActor": "admin:A"
+          }
+        ]
+      }
+    },
+    {
+      "id": "FIXTURE-restaurant-checkout",
+      "status": "PASS",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "before": {
+        "authority": [
+          {
+            "protocol": 2,
+            "status": "granted",
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "6fdef317564714753dc1d97e4a10df89",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "revision": 1
+          }
+        ],
+        "contexts": [
+          {
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "6fdef317564714753dc1d97e4a10df89",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "granted"
+          }
+        ],
+        "operations": [],
+        "effects": []
+      },
+      "type": "restaurant-checkout",
+      "classification": "BLOCKS_HANDOFF",
+      "limitation": "Credit/layaway/cash alone do not prove absence of active suboperations; activity must be inspected separately",
+      "after": {
+        "authority": [
+          {
+            "protocol": 2,
+            "status": "granted",
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "6fdef317564714753dc1d97e4a10df89",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "revision": 1
+          }
+        ],
+        "contexts": [
+          {
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "6fdef317564714753dc1d97e4a10df89",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "granted"
+          }
+        ],
+        "operations": [
+          {
+            "id": "restaurant-checkout",
+            "tenant": "synthetic-T",
+            "owner": {
+              "tenant": "synthetic-T",
+              "token": "6fdef317564714753dc1d97e4a10df89",
+              "actor": "admin:A",
+              "session": "session-A",
+              "device": "device-A",
+              "generation": 1
+            },
+            "status": "pending"
+          }
+        ],
+        "effects": []
+      }
+    },
+    {
+      "id": "FORGE-silence",
+      "status": "PASS",
+      "level": "POLICY_MODEL_ONLY",
+      "decision": {
+        "state": "ADMISSION_RESTRICTED",
+        "code": "EXCLUSIVITY_UNPROVEN"
+      },
+      "limitation": "Ignored client claim, no real external verifier implemented"
+    },
+    {
+      "id": "FORGE-timeout",
+      "status": "PASS",
+      "level": "POLICY_MODEL_ONLY",
+      "decision": {
+        "state": "ADMISSION_RESTRICTED",
+        "code": "EXCLUSIVITY_UNPROVEN"
+      },
+      "limitation": "Ignored client claim, no real external verifier implemented"
+    },
+    {
+      "id": "FORGE-broadcast-ack",
+      "status": "PASS",
+      "level": "POLICY_MODEL_ONLY",
+      "decision": {
+        "state": "ADMISSION_RESTRICTED",
+        "code": "EXCLUSIVITY_UNPROVEN"
+      },
+      "limitation": "Ignored client claim, no real external verifier implemented"
+    },
+    {
+      "id": "FORGE-empty-worker-list",
+      "status": "PASS",
+      "level": "POLICY_MODEL_ONLY",
+      "decision": {
+        "state": "ADMISSION_RESTRICTED",
+        "code": "EXCLUSIVITY_UNPROVEN"
+      },
+      "limitation": "Ignored client claim, no real external verifier implemented"
+    },
+    {
+      "id": "FORGE-localStorage-flag",
+      "status": "PASS",
+      "level": "POLICY_MODEL_ONLY",
+      "decision": {
+        "state": "ADMISSION_RESTRICTED",
+        "code": "EXCLUSIVITY_UNPROVEN"
+      },
+      "limitation": "Ignored client claim, no real external verifier implemented"
+    },
+    {
+      "id": "FORGE-new-schema",
+      "status": "PASS",
+      "level": "POLICY_MODEL_ONLY",
+      "decision": {
+        "state": "ADMISSION_RESTRICTED",
+        "code": "EXCLUSIVITY_UNPROVEN"
+      },
+      "limitation": "Ignored client claim, no real external verifier implemented"
+    },
+    {
+      "id": "FORGE-self-reported-build",
+      "status": "PASS",
+      "level": "POLICY_MODEL_ONLY",
+      "decision": {
+        "state": "ADMISSION_RESTRICTED",
+        "code": "EXCLUSIVITY_UNPROVEN"
+      },
+      "limitation": "Ignored client claim, no real external verifier implemented"
+    },
+    {
+      "id": "FORGE-new-browser",
+      "status": "PASS",
+      "level": "POLICY_MODEL_ONLY",
+      "decision": {
+        "state": "ADMISSION_RESTRICTED",
+        "code": "EXCLUSIVITY_UNPROVEN"
+      },
+      "limitation": "Ignored client claim, no real external verifier implemented"
+    },
+    {
+      "id": "FORGE-hash-alone",
+      "status": "PASS",
+      "level": "POLICY_MODEL_ONLY",
+      "decision": {
+        "state": "ADMISSION_RESTRICTED",
+        "code": "EXCLUSIVITY_UNPROVEN"
+      },
+      "limitation": "Ignored client claim, no real external verifier implemented"
+    },
+    {
+      "id": "FORGE-new-domain",
+      "status": "PASS",
+      "level": "POLICY_MODEL_ONLY",
+      "decision": {
+        "state": "ADMISSION_RESTRICTED",
+        "code": "EXCLUSIVITY_UNPROVEN"
+      },
+      "limitation": "Ignored client claim, no real external verifier implemented"
+    }
+  ]
+}
