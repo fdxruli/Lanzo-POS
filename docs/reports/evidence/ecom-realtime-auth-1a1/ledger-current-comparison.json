@@ -1,0 +1,21 @@
+{
+  "remoteCount": 312,
+  "localCount": 310,
+  "remoteOnly": [
+    {
+      "version": "20260929091708",
+      "name": "restaurant_payment_split_financial_r1"
+    },
+    {
+      "version": "20261006224032",
+      "name": "restaurant_atomic_settlement_3d1"
+    },
+    {
+      "version": "20261008030859",
+      "name": "restaurant_origin_cancel_contract_3d13"
+    }
+  ],
+  "localOnly": [
+    "20261008180000_create_legal_policy_previews.sql"
+  ]
+}

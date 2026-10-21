@@ -1,0 +1,49 @@
+{
+  "r2Counts": {
+    "PASS": 88,
+    "FAIL": 1
+  },
+  "r2Failures": [
+    {
+      "id": "B02-strict-no-privileged-rpc-execute",
+      "detail": {
+        "source": "PUBLIC",
+        "effective_security_definer_count": 6
+      },
+      "status": "FAIL"
+    }
+  ],
+  "receiverSDRemaining": 0,
+  "rolesChecked": 33,
+  "changedRoles": [
+    "authenticator",
+    "cli_login_postgres",
+    "dashboard_user",
+    "lanzo_ecom_signal_receiver",
+    "pg_checkpoint",
+    "pg_create_subscription",
+    "pg_database_owner",
+    "pg_execute_server_program",
+    "pg_maintain",
+    "pg_monitor",
+    "pg_read_all_data",
+    "pg_read_all_settings",
+    "pg_read_all_stats",
+    "pg_read_server_files",
+    "pg_signal_backend",
+    "pg_stat_scan_tables",
+    "pg_use_reserved_connections",
+    "pg_write_all_data",
+    "pg_write_server_files",
+    "pgbouncer",
+    "qa_ecom_1a1_f748296e",
+    "supabase_auth_admin",
+    "supabase_etl_admin",
+    "supabase_privileged_role",
+    "supabase_read_only_user",
+    "supabase_realtime_admin",
+    "supabase_replication_admin",
+    "supabase_storage_admin"
+  ],
+  "legitimateConsumersPreserved": true
+}
