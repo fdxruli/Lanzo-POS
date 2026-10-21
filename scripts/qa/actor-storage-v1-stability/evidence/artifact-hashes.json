@@ -162,10 +162,10 @@
     "gitBlob": "2591f49997f352a2c91809dd5d2a708256b679f8"
   },
   {
-    "path": "scripts/qa/actor-storage-v1-stability/evidence/product.diff",
-    "bytes": 5103,
-    "sha256": "4dd97e31f0f24a217803ffdd9eca32ab2ad1e065bcca53128e67fd3aacfcb968",
-    "gitBlob": "d7c5c8f3c88333e9972be6df091a88e1383fdd3b"
+    "path": "scripts/qa/actor-storage-v1-stability/evidence/product.diff.gz",
+    "bytes": 1752,
+    "sha256": "c3fdcb9f5c91564dfd4fa281a4e2576b68e21bf556a31c00f046191d387cbdca",
+    "gitBlob": "0d9f175cfa5ad4b960de31cfbe4c670623db061b"
   },
   {
     "path": "scripts/qa/actor-storage-v1-stability/evidence/validation-summary.json",
@@ -217,15 +217,15 @@
   },
   {
     "path": "docs/reports/LANZO.ACTOR.SCOPED.STORAGE.V1.STABILITY.EVIDENCE.R1.md",
-    "bytes": 13672,
-    "sha256": "5a3a7e111f14aa01c723bd6356b9369ad35f008128b4fa8e1279a2321b2a9582",
-    "gitBlob": "a58f72a17850f4f36583c5d92fb3c88a8687f6a9"
+    "bytes": 13675,
+    "sha256": "317a5a0a98a9ac4644c5aab991b9c318076000e0b6aecf9e77b37b587f433d7b",
+    "gitBlob": "ce64c53243ff8cf49f1f9a804c2f67ff0d00013b"
   },
   {
     "path": "docs/reports/LANZO.ACTOR.SCOPED.STORAGE.V1.STABILITY.CHECKPOINTS.R1.md",
-    "bytes": 3575,
-    "sha256": "fd9b6fc415b3ea1c73f8c5ebcf60b4a38de63037812abbce5c5c325915e76f5c",
-    "gitBlob": "9f791b6e29dc358ec840f6dd3e88d4c9512360ca"
+    "bytes": 3849,
+    "sha256": "8e17b668d3caac6b081a522cf920a5780ccd02c3ac54de040eee1269969da354",
+    "gitBlob": "6a2b7832664ffdc3dc14483df608b0351f8a33d5"
   },
   {
     "path": "src/services/auth/actorScopedStorage.js",

@@ -140,7 +140,7 @@ Todos bajo `scripts/qa/actor-storage-v1-stability/`:
 | evidence/repeated-differential.json/md | Comparación repetida, scripts intactos |
 | evidence/repeated-path-diagnostic.json | Atribución inicial afectada sólo por prefijos distintos |
 | evidence/build-*.log | Build Admin/Store/Store Vercel de ambos lados |
-| evidence/product.diff | Diff exacto de los dos módulos comerciales contra main |
+| evidence/product.diff.gz | Diff exacto de los dos módulos comerciales contra main |
 | evidence/consumer-inventory.txt | Referencias de consumidores auditadas |
 | evidence/validation-summary.json | Contadores separados, código validado y blobs |
 | evidence/artifact-hashes.json | SHA-256 y Git blob de artefactos, excluyendo el propio manifest |
