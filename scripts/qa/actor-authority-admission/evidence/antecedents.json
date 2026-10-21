@@ -1,0 +1,44 @@
+[
+  {
+    "name": "LANZO.PWA.LIFECYCLE.PHASE3.AUDIT.R1.md",
+    "source": "Owner supplied persistent report; suffix (1) in original filename",
+    "extractedTextSha256": "0a84c985aa08c4cdd9034cdd8212ed48da884c18ed7b9725b56650c6fb78a7e7",
+    "extractedBytes": 64433,
+    "completeTextRecovered": true
+  },
+  {
+    "name": "LANZO.PWA.LIFECYCLE.PHASE3.2.IMPLEMENTATION.R1.md",
+    "source": "Owner supplied persistent report; suffix (1) in original filename",
+    "extractedTextSha256": "1eaf95f8c582caeaa3fe15585d1c8f797a161e5d4524bc8adabbfa3482f7e86d",
+    "extractedBytes": 14899,
+    "completeTextRecovered": true
+  },
+  {
+    "name": "LANZO.PWA.LIFECYCLE.PHASE3.2.B01.RESOLUTION.R1.md",
+    "source": "Owner supplied persistent report; suffix (1) in original filename",
+    "extractedTextSha256": "00f5e29cf6198f0abce9a1694491b2e685fc0f70361b1b2d9cef348a00c5910b",
+    "extractedBytes": 18484,
+    "completeTextRecovered": true
+  },
+  {
+    "name": "LANZO.PWA.LIFECYCLE.PHASE3.2A.F02.R1.md",
+    "source": "Owner supplied persistent report; suffix (1) in original filename",
+    "extractedTextSha256": "1863a81c0f527d07740f220cf67f8f9f790ce0b26d2dff5a586835d0df0d8ee0",
+    "extractedBytes": 23031,
+    "completeTextRecovered": true
+  },
+  {
+    "name": "LANZO.ACTOR.SCOPED.STORAGE.LATE.CONTEXT.HARDENING.R1.md",
+    "source": "R3 a6a3b16232f11c27eb547317bd371bd90bc25618",
+    "sha256": "623f4fb52b612f0ce732d152175a67ddd0bffc225a1ef3707b3df8c2c2f1982d",
+    "bytes": 21421,
+    "completeTextRecovered": true
+  },
+  {
+    "name": "LANZO.ACTOR.CONTEXT.INVALIDATION.ARCHITECTURE.R1.md",
+    "source": "R3 a6a3b16232f11c27eb547317bd371bd90bc25618",
+    "sha256": "25117fc74983104c05dfca365fdd358a821e9756ca0d5707b5ffea3239a7fd5c",
+    "bytes": 59220,
+    "completeTextRecovered": true
+  }
+]

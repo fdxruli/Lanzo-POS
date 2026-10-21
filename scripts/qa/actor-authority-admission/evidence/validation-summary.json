@@ -1,0 +1,28 @@
+{
+  "status": "TRANSITION_CONTRACT_UNRESOLVED",
+  "matrixRoutes": 91,
+  "columns": 19,
+  "r3Replay": {
+    "assertionsPass": 71,
+    "counterexampleAssertions": 5
+  },
+  "admission": {
+    "assertionsPass": 18,
+    "counterexampleAssertions": 1,
+    "realAdmissionVerifier": false
+  },
+  "mainFocalTests": 50,
+  "chromium": {
+    "version": "143.0.7499.0",
+    "PASS": 20,
+    "FAIL": 7,
+    "PENDING": 2
+  },
+  "eslint": "PASS",
+  "diffCheck": "PASS",
+  "commercialSourceChangedFromR3": false,
+  "sqlExecuted": false,
+  "productionWrites": false,
+  "buildCiCommercialV2": "NOT_RUN",
+  "physicalQa": "PENDING"
+}

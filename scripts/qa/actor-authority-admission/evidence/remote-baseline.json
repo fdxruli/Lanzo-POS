@@ -1,0 +1,140 @@
+{
+  "main": {
+    "ref": "refs/heads/main",
+    "node_id": "REF_kwDOPj-yZ69yZWZzL2hlYWRzL21haW4",
+    "url": "https://api.github.com/repos/fdxruli/Lanzo-POS/git/refs/heads/main",
+    "object": {
+      "sha": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+      "type": "commit",
+      "url": "https://api.github.com/repos/fdxruli/Lanzo-POS/git/commits/f48aab53634663438a06dc5187fa7e6d17b74fb3"
+    }
+  },
+  "r3": {
+    "ref": "refs/heads/research/actor-context-invalidation-contract-r1",
+    "node_id": "REF_kwDOPj-yZ9oAOnJlZnMvaGVhZHMvcmVzZWFyY2gvYWN0b3ItY29udGV4dC1pbnZhbGlkYXRpb24tY29udHJhY3QtcjE",
+    "url": "https://api.github.com/repos/fdxruli/Lanzo-POS/git/refs/heads/research/actor-context-invalidation-contract-r1",
+    "object": {
+      "sha": "a6a3b16232f11c27eb547317bd371bd90bc25618",
+      "type": "commit",
+      "url": "https://api.github.com/repos/fdxruli/Lanzo-POS/git/commits/a6a3b16232f11c27eb547317bd371bd90bc25618"
+    }
+  },
+  "prs": [
+    {
+      "number": 338,
+      "state": "open",
+      "draft": true,
+      "merged": false,
+      "mergeable": false,
+      "base": "main",
+      "base_sha": "f014a1f340ed78335d3e704eefff49cda8465115",
+      "head": "feat/restaurant-split-flexible-payments-r1",
+      "head_sha": "fef7205f76b173025f503e60d0968f446f741e78",
+      "url": "https://github.com/fdxruli/Lanzo-POS/pull/338",
+      "updated_at": "2026-10-20T15:09:14Z"
+    },
+    {
+      "number": 352,
+      "state": "open",
+      "draft": true,
+      "merged": false,
+      "mergeable": false,
+      "base": "feat/restaurant-split-flexible-payments-r1",
+      "base_sha": "fb17e9a43929d54087ab937cb760a8cd6e087c36",
+      "head": "feat/restaurant-admin-supervision-r1",
+      "head_sha": "d758f69b2119f1bc346eb0ac86ba0a74c0265668",
+      "url": "https://github.com/fdxruli/Lanzo-POS/pull/352",
+      "updated_at": "2026-10-13T15:28:45Z"
+    }
+  ],
+  "deployments": [
+    {
+      "id": "dpl_7E212PvkFiHe2DK8SaiTEn3ANxJ5",
+      "name": "lanzo-pos",
+      "state": "READY",
+      "target": "production",
+      "commit": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+      "branch": "main"
+    },
+    {
+      "id": "dpl_9NncrioVoguJwZS9LWFNYUAATEoX",
+      "name": "lanzo-store",
+      "state": "READY",
+      "target": "production",
+      "commit": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+      "branch": "main"
+    }
+  ],
+  "supabase": {
+    "projects": [
+      {
+        "id": "odlrhijtfyavryeqivaa",
+        "name": "Lanzo",
+        "status": "ACTIVE_HEALTHY"
+      },
+      {
+        "id": "jdnbmvaphvjunwhnxowo",
+        "name": "Lanzo-staging-historical-r1",
+        "status": "INACTIVE"
+      }
+    ],
+    "migrations": [
+      {
+        "version": "20260928033123",
+        "name": "cloud_split_customer_id_jsonb_contract_r1"
+      },
+      {
+        "version": "20260929091708",
+        "name": "restaurant_payment_split_financial_r1"
+      },
+      {
+        "version": "20261006193851",
+        "name": "license_neutral_identity_r1"
+      },
+      {
+        "version": "20261006224032",
+        "name": "restaurant_atomic_settlement_3d1"
+      },
+      {
+        "version": "20261008030859",
+        "name": "restaurant_origin_cancel_contract_3d13"
+      },
+      {
+        "version": "20261008142141",
+        "name": "20261008190000_add_legal_policy_document_types"
+      },
+      {
+        "version": "20261008142147",
+        "name": "20261008200000_publish_lanzo_legal_documents"
+      },
+      {
+        "version": "20261008161409",
+        "name": "20261008150000_legal_policy_acceptance_history"
+      },
+      {
+        "version": "20261021045416",
+        "name": "qa_ecom_native_bridge_1a2_temporary"
+      },
+      {
+        "version": "20261021061233",
+        "name": "qa_ecom_native_bridge_1a2_race_temporary"
+      },
+      {
+        "version": "20261021061734",
+        "name": "qa_ecom_native_bridge_1a2_race_short_window"
+      },
+      {
+        "version": "20261021062854",
+        "name": "qa_ecom_native_bridge_1a2_cleanup"
+      }
+    ],
+    "sqlExecuted": false,
+    "liveFunctionBodiesVerified": false
+  },
+  "research": {
+    "branch": "research/actor-authority-financial-admission-r1",
+    "initialCheckpoint": "3b362d3ffa0919ae1bf61d92a13e7a09d931dc99",
+    "initialTree": "85eae078a84c4112d9c9a634fb0840fd38ce613a",
+    "initialDeploymentCount": 0
+  }
+}
