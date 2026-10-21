@@ -1,0 +1,3 @@
+# R2 — ingreso legacy
+
+First complete browser pass: 13 FAIL security counterexamples, 6 scoped PASS, 5 PENDING, 1 UNPROVEN across T3 and capability observations. The T3-10 FAIL denotes missing waiting observation with unchanged intent, not a product safety failure; it is superseded by R3's corrected registration observation. Exact legacy Git blob verified before running. The locally recovered prototype/admission modules had one added trailing newline; source hashes are in JSON. Corrected back to exact remote bytes before R3. No commercial sale/Actor Runtime loaded. No positive admission. Do not count this pass again in final totals.
