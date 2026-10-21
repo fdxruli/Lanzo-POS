@@ -23,3 +23,5 @@ C: M-01 plus M-03 activated-binding sequential mitigation. Auth focal final: 260
 C remote: 93a9d6ef4fed76f964761951230afe50c70ebda1.
 
 D closes this audit as ARCHITECTURAL_LIMITATION. Final Chromium: 29 observations, 17 PASS / 11 FAIL / 1 runtime-boundary detection, zero harness errors. Auth 260 PASS, financial selection 188 PASS, Dexie Recovery 127 PASS; groups overlap. Main repeats: 5612/75/52; candidate: 5615/75/52. Local unchanged comparators: PR127 91 shared/0 new; repeated 93 shared/0 new after checkout-prefix-only normalization, with raw reports preserved. Builds passed both sides; remote workflow gates and physical/E2E QA remain unexecuted. No PR/Preview/integration. SHA of D is delivered after remote verification.
+
+D initial: 641104d1f8b95a4e681ee286ac06225c92d522c5. Final artifact-only follow-up removes trailing whitespace in two build logs and documents that formatting; no runtime/test/result changes. The final SHA is delivered after verification.

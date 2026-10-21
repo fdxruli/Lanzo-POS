@@ -145,6 +145,8 @@ Todos bajo `scripts/qa/actor-storage-v1-stability/`:
 | evidence/validation-summary.json | Contadores separados, código validado y blobs |
 | evidence/artifact-hashes.json | SHA-256 y Git blob de artefactos, excluyendo el propio manifest |
 
+Los logs textuales Admin de main/candidata normalizan exclusivamente espacios finales de dos avisos Vite para higiene de diff; no cambian mensajes ni resultados. Los JSON originales de tests se conservan sin cambios.
+
 Los gzip pueden abrirse con `gzip -dc <archivo>`. Se conservan bytes originales de los JSON; la normalización es sólo una entrada de comparación derivada. El manifest comprueba reportes, scripts, configuración y evidencia para recuperación; no contiene secretos ni filas reales de negocio.
 
 ## 9. Restricciones finales
