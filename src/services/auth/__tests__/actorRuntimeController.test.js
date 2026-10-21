@@ -32,7 +32,8 @@ describe('ActorRuntimeController', () => {
     return controller.grant({
       actorType: 'admin',
       actorId: 'admin-123',
-      sessionId: 'admin-session-1'
+      sessionId: 'admin-session-1',
+      authorizationExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
     });
   };
 
@@ -65,6 +66,61 @@ describe('ActorRuntimeController', () => {
     expect(state.actorId).toBe('admin-123');
     expect(state.permissions).toEqual(['*']);
     expect(state.tenant).toEqual(TENANT_A);
+  });
+
+  it('requires and enforces a finite Admin authorization deadline', () => {
+    const now = Date.now();
+    const clock = { wall: now, monotonic: 1000 };
+    const clockedController = createActorRuntimeController({
+      getTenantAuthority: () => tenant,
+      nowProvider: () => clock.wall,
+      monotonicNowProvider: () => clock.monotonic
+    });
+    clockedController.beginAuthentication({ actorType: 'admin' });
+    expect(() => clockedController.grant({
+      actorType: 'admin', actorId: 'admin-clock', sessionId: 'session-clock'
+    })).toThrowError(expect.objectContaining({ code: ACTOR_RUNTIME_ERROR_CODES.SESSION_REQUIRED }));
+
+    clockedController.beginAuthentication({ actorType: 'admin' });
+    const expiry = now + 1000;
+    const grant = clockedController.grant({
+      actorType: 'admin', actorId: 'admin-clock', sessionId: 'session-clock',
+      authorizationExpiresAt: new Date(expiry).toISOString(), authorizationNow: now
+    });
+    const handle = clockedController.capture();
+    expect(grant.authorizationExpiresAt).toBe(expiry);
+    clock.wall = expiry;
+    expect(clockedController.getState()).toMatchObject({
+      status: ACTOR_RUNTIME_STATUS.LOCKED,
+      reason: 'admin_offline_authorization_expired'
+    });
+    expect(() => handle.assertCurrent()).toThrowError(
+      expect.objectContaining({ code: ACTOR_RUNTIME_ERROR_CODES.CONTEXT_STALE })
+    );
+  });
+
+  it('does not let a local clock rollback pause an active Admin authorization deadline', () => {
+    const now = Date.now();
+    const clock = { wall: now, monotonic: 10_000 };
+    const clockedController = createActorRuntimeController({
+      getTenantAuthority: () => tenant,
+      nowProvider: () => clock.wall,
+      monotonicNowProvider: () => clock.monotonic
+    });
+    clockedController.beginAuthentication({ actorType: 'admin' });
+    const expiry = now + 1000;
+    clockedController.grant({
+      actorType: 'admin', actorId: 'admin-clock', sessionId: 'session-clock',
+      authorizationExpiresAt: new Date(expiry).toISOString(), authorizationNow: now
+    });
+    clock.wall = now - 60 * 60 * 1000;
+    clock.monotonic += 999;
+    expect(clockedController.getState().status).toBe(ACTOR_RUNTIME_STATUS.GRANTED);
+    clock.monotonic += 1;
+    expect(clockedController.getState()).toMatchObject({
+      status: ACTOR_RUNTIME_STATUS.LOCKED,
+      reason: 'admin_offline_authorization_expired'
+    });
   });
 
   it('locks the actor and increments generation without changing the tenant authority', () => {

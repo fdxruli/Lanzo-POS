@@ -10,6 +10,12 @@ const mocks = vi.hoisted(() => {
     get,
     tenantRuntimeDb,
     getStableDeviceId: vi.fn(async () => 'device-a'),
+    getAdminOfflineAuthorization: vi.fn(async () => ({
+      eligible: true,
+      reason: 'authorized',
+      effectiveExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      effectiveNow: Date.now()
+    })),
     readiness: vi.fn(),
     hydrateTenantStorageConsumers: vi.fn(async () => []),
     resumeTenantStorageWrites: vi.fn(),
@@ -33,7 +39,8 @@ vi.mock('../../db/tenantRuntimeRouter', () => ({
 }));
 
 vi.mock('../../supabase', () => ({
-  getStableDeviceId: mocks.getStableDeviceId
+  getStableDeviceId: mocks.getStableDeviceId,
+  getAdminOfflineAuthorization: mocks.getAdminOfflineAuthorization
 }));
 
 vi.mock('../../tenant/tenantScopedStorage', () => ({
@@ -168,6 +175,24 @@ describe('actor session runtime bridge', () => {
     expect(mocks.refreshPersistedActorCheckoutOwnership.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.assertActorOperationalHandoffClear.mock.invocationCallOrder[0]
     );
+  });
+
+  it('does not grant Admin Actor Runtime when the common offline policy denies', async () => {
+    setCache({ admin_session_token: 'admin-token', admin_session_id: 'admin-session' });
+    mocks.getAdminOfflineAuthorization.mockResolvedValueOnce({
+      eligible: false,
+      reason: 'evidence_expired'
+    });
+    beginActorRuntimeAuthentication('admin');
+
+    await expect(restoreActorRuntimeFromCurrentSessionCache({
+      actorType: 'admin',
+      actor: { id: 'admin-1' }
+    })).rejects.toMatchObject({
+      code: 'ACTOR_SESSION_REQUIRED',
+      details: { offlineAuthorizationReason: 'evidence_expired' }
+    });
+    expect(actorRuntimeController.getState().status).not.toBe(ACTOR_RUNTIME_STATUS.GRANTED);
   });
 
   it('restores Staff when Staff is the only valid session evidence and preserves only Staff permissions', async () => {

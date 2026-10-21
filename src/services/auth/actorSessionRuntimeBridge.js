@@ -1,5 +1,5 @@
 import { db as tenantRuntimeDb, getTenantRuntimeReadiness } from '../db/tenantRuntimeRouter';
-import { getStableDeviceId } from '../supabase';
+import { getAdminOfflineAuthorization, getStableDeviceId } from '../supabase';
 import { hydrateTenantStorageConsumers, resumeTenantStorageWrites } from '../tenant/tenantScopedStorage';
 import {
   activateActorScopedStorage,
@@ -150,6 +150,15 @@ export const grantAuthenticatedActorRuntime = async ({
     throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.HANDOFF_REQUIRED);
   }
   const tenantAtStart = requireTenantRuntime();
+  let adminOfflineAuthorization = null;
+  if (actorType === 'admin') {
+    adminOfflineAuthorization = await getAdminOfflineAuthorization({ adminUser: actor });
+    if (!adminOfflineAuthorization.eligible) {
+      throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.SESSION_REQUIRED, {
+        offlineAuthorizationReason: adminOfflineAuthorization.reason
+      });
+    }
+  }
   const assertAuthenticationCurrent = (status = ACTOR_RUNTIME_STATUS.AUTHENTICATING) => {
     const current = actorRuntimeController.getState();
     const tenant = requireTenantRuntime();
@@ -220,7 +229,9 @@ export const grantAuthenticatedActorRuntime = async ({
       sessionId: binding.sessionId,
       permissions: permissions ?? getExplicitActorPermissions(actorType, actor),
       tenantOpaqueId: tenant.opaqueId,
-      deviceRef
+      deviceRef,
+      authorizationExpiresAt: adminOfflineAuthorization?.effectiveExpiresAt || null,
+      authorizationNow: adminOfflineAuthorization?.effectiveNow ?? null
     });
     ownedGrant = actorRuntimeController.capture();
 
@@ -260,19 +271,42 @@ export const assertAuthenticatedActorSessionCurrent = async ({ handle, actorType
   const binding = await readActorSessionBinding(actorType);
   const deviceRef = await resolveCanonicalDeviceRef();
   if (actorType === 'admin') {
-    const cache = await readSyncCacheValue('last_valid_admin_session');
-    const now = Date.now();
-    const expiresAt = cache?.expiresAt ? Date.parse(cache.expiresAt) : null;
-    if (!Number.isFinite(cache?.validatedAt) || cache.validatedAt <= 0 || cache.validatedAt > now
-      || now - cache.validatedAt > 24 * 60 * 60 * 1000
-      || (expiresAt !== null && (!Number.isFinite(expiresAt) || expiresAt <= now))) {
-      throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.SESSION_REQUIRED);
+    const authorization = await getAdminOfflineAuthorization({
+      adminUser: actor,
+      actorRuntime: actorRuntimeController.getState()
+    });
+    if (!authorization.eligible) {
+      throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.SESSION_REQUIRED, {
+        offlineAuthorizationReason: authorization.reason
+      });
     }
   }
   handle.assertCurrent();
   if (binding.sessionId !== handle.sessionId || deviceRef !== handle.deviceRef) {
     throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.CONTEXT_STALE);
   }
+  return handle;
+};
+
+/** Refresh an existing Admin Actor Runtime deadline after positive server verification. */
+export const refreshAuthenticatedAdminSessionAuthorization = async ({ handle, actor } = {}) => {
+  if (!handle || handle.actorType !== 'admin') {
+    throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.SESSION_REQUIRED);
+  }
+  const authorization = await getAdminOfflineAuthorization({
+    adminUser: actor,
+    actorRuntime: actorRuntimeController.getState()
+  });
+  if (!authorization.eligible) {
+    throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.SESSION_REQUIRED, {
+      offlineAuthorizationReason: authorization.reason
+    });
+  }
+  actorRuntimeController.refreshAdminAuthorization({
+    captured: handle,
+    authorizationExpiresAt: authorization.effectiveExpiresAt,
+    authorizationNow: authorization.effectiveNow
+  });
   return handle;
 };
 
@@ -322,4 +356,11 @@ subscribeActorScopedStorage((event) => {
   if (state.tenant?.opaqueId !== event.tenantOpaqueId) return;
   suspendActorScopedStorageWrites();
   actorRuntimeController.lock('actor_context_changed_in_other_tab');
+});
+
+actorRuntimeController.subscribe((state) => {
+  if (state?.status !== ACTOR_RUNTIME_STATUS.LOCKED
+    || state.reason !== 'admin_offline_authorization_expired') return;
+  suspendActorScopedStorageWrites();
+  invalidateActorScopedStorage('admin_offline_authorization_expired');
 });

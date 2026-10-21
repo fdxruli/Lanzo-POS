@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   clearAdminSessionCache: vi.fn(),
   clearStaffSessionCache: vi.fn(),
   enrollAdminOwnerOnDevice: vi.fn(),
+  getAdminOfflineAuthorization: vi.fn(),
   ensureLocalDatabaseReady: vi.fn(),
   saveLicenseToStorage: vi.fn(),
   beginActorRuntimeAuthentication: vi.fn(),
@@ -22,13 +23,15 @@ vi.mock('../../../services/supabase', () => ({
   adminTakeoverFreeDevice: mocks.adminTakeoverFreeDevice,
   clearAdminSessionCache: mocks.clearAdminSessionCache,
   clearStaffSessionCache: mocks.clearStaffSessionCache,
-  enrollAdminOwnerOnDevice: mocks.enrollAdminOwnerOnDevice
+  enrollAdminOwnerOnDevice: mocks.enrollAdminOwnerOnDevice,
+  getAdminOfflineAuthorization: mocks.getAdminOfflineAuthorization
 }));
 vi.mock('../../../services/auth/actorSessionRuntimeBridge', () => ({
   beginActorRuntimeAuthentication: mocks.beginActorRuntimeAuthentication,
   grantAuthenticatedActorRuntime: mocks.grantAuthenticatedActorRuntime,
   lockActorRuntime: mocks.lockActorRuntime,
-  assertAuthenticatedActorSessionCurrent: vi.fn(async () => true)
+  assertAuthenticatedActorSessionCurrent: vi.fn(async () => true),
+  refreshAuthenticatedAdminSessionAuthorization: vi.fn(async () => true)
 }));
 vi.mock('../../../services/licenseStorage', () => ({ saveLicenseToStorage: mocks.saveLicenseToStorage }));
 vi.mock('../../../services/db/databaseRuntime', () => ({

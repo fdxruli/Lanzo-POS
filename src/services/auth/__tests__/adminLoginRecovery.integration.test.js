@@ -24,6 +24,19 @@ vi.mock('../../supabase', () => ({
   adminLoginOnDevice: io.login,
   verifyAdminSession: io.verify,
   hasValidOfflineAdminSession: io.offline,
+  getAdminOfflineAuthorization: async (...args) => {
+    const locallyAllowed = await io.offline(...args);
+    const proof = io.cache.get('last_valid_admin_session');
+    const serverExpiry = proof?.expiresAt ? Date.parse(proof.expiresAt) : null;
+    const expiryValid = Number.isFinite(serverExpiry) && serverExpiry > Date.now();
+    const eligible = locallyAllowed && expiryValid;
+    return {
+      eligible,
+      reason: eligible ? 'authorized' : 'server_session_expired',
+      effectiveExpiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      effectiveNow: Date.now()
+    };
+  },
   getStableDeviceId: async () => io.device,
   clearStaffSessionCache: async () => {},
   hasAdminSessionToken: async () => Boolean(io.cache.get('admin_session_token')),

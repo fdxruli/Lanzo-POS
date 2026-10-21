@@ -80,6 +80,7 @@ const cloneState = (state) => Object.freeze({
   permissions: Object.freeze([...state.permissions]),
   tenant: cloneTenantBinding(state.tenant),
   deviceRef: state.deviceRef,
+  authorizationExpiresAt: state.authorizationExpiresAt || null,
   generation: state.generation,
   reason: state.reason
 });
@@ -90,7 +91,9 @@ const defaultTenantAuthority = () => {
 };
 
 export const createActorRuntimeController = ({
-  getTenantAuthority = defaultTenantAuthority
+  getTenantAuthority = defaultTenantAuthority,
+  nowProvider = () => Date.now(),
+  monotonicNowProvider = () => globalThis.performance?.now?.() ?? Date.now()
 } = {}) => {
   const listeners = new Set();
   let state = {
@@ -102,9 +105,11 @@ export const createActorRuntimeController = ({
     permissions: [],
     tenant: null,
     deviceRef: null,
+    authorizationExpiresAt: null,
     generation: 0,
     reason: 'initial'
   };
+  let authorizationClockAnchor = null;
 
   const publish = (nextState) => {
     state = nextState;
@@ -117,6 +122,36 @@ export const createActorRuntimeController = ({
       }
     }
     return snapshot;
+  };
+
+  const expireAdminAuthorizationIfNeeded = () => {
+    if (state.status !== ACTOR_RUNTIME_STATUS.GRANTED || state.actorType !== 'admin') return false;
+    const wallNow = nowProvider();
+    const monotonicNow = monotonicNowProvider();
+    let effectiveNow = wallNow;
+    if (authorizationClockAnchor) {
+      const elapsed = Number.isFinite(monotonicNow) && Number.isFinite(authorizationClockAnchor.monotonicNow)
+        ? Math.max(0, monotonicNow - authorizationClockAnchor.monotonicNow)
+        : 0;
+      effectiveNow = Math.max(wallNow, authorizationClockAnchor.effectiveNow + elapsed);
+      authorizationClockAnchor = { effectiveNow, monotonicNow };
+    }
+    if (!Number.isFinite(state.authorizationExpiresAt) || effectiveNow < state.authorizationExpiresAt) return false;
+    authorizationClockAnchor = null;
+    publish({
+      status: ACTOR_RUNTIME_STATUS.LOCKED,
+      actorType: null,
+      actorId: null,
+      actorKey: null,
+      sessionId: null,
+      permissions: [],
+      tenant: null,
+      deviceRef: null,
+      authorizationExpiresAt: null,
+      generation: state.generation + 1,
+      reason: 'admin_offline_authorization_expired'
+    });
+    return true;
   };
 
   const requireTenantAuthority = (expectedOpaqueId = null) => {
@@ -145,6 +180,7 @@ export const createActorRuntimeController = ({
 
   const controller = {
     getState() {
+      expireAdminAuthorizationIfNeeded();
       return cloneState(state);
     },
 
@@ -154,6 +190,7 @@ export const createActorRuntimeController = ({
     },
 
     beginAuthentication({ actorType, deviceRef = null } = {}) {
+      expireAdminAuthorizationIfNeeded();
       if (!ACTOR_TYPES.has(actorType)) {
         throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.IDENTITY_INVALID);
       }
@@ -173,6 +210,7 @@ export const createActorRuntimeController = ({
         permissions: [],
         tenant: null,
         deviceRef: deviceRef || null,
+        authorizationExpiresAt: null,
         reason: 'authentication_started'
       });
     },
@@ -190,7 +228,9 @@ export const createActorRuntimeController = ({
       sessionId,
       permissions = [],
       tenantOpaqueId = null,
-      deviceRef = null
+      deviceRef = null,
+      authorizationExpiresAt = null,
+      authorizationNow = null
     } = {}) {
       if (![ACTOR_RUNTIME_STATUS.AUTHENTICATING, ACTOR_RUNTIME_STATUS.HANDOFF_CHECK].includes(state.status)) {
         throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.HANDOFF_REQUIRED);
@@ -204,6 +244,22 @@ export const createActorRuntimeController = ({
         throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.SESSION_REQUIRED, { actorKey });
       }
       const tenant = requireTenantAuthority(tenantOpaqueId);
+      const parsedAuthorizationExpiresAt = authorizationExpiresAt
+        ? Date.parse(authorizationExpiresAt)
+        : null;
+      const currentAuthorizationTime = Math.max(
+        nowProvider(),
+        Number.isFinite(authorizationNow) ? authorizationNow : 0
+      );
+      if (actorType === 'admin'
+        && (!Number.isFinite(parsedAuthorizationExpiresAt) || parsedAuthorizationExpiresAt <= currentAuthorizationTime)) {
+        throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.SESSION_REQUIRED, {
+          reason: 'admin_offline_authorization_expired'
+        });
+      }
+      authorizationClockAnchor = actorType === 'admin'
+        ? { effectiveNow: currentAuthorizationTime, monotonicNow: monotonicNowProvider() }
+        : null;
       return publish({
         status: ACTOR_RUNTIME_STATUS.GRANTED,
         actorType,
@@ -217,12 +273,42 @@ export const createActorRuntimeController = ({
           generation: tenant.generation
         },
         deviceRef: deviceRef || state.deviceRef || null,
+        authorizationExpiresAt: actorType === 'admin' ? parsedAuthorizationExpiresAt : null,
         generation: state.generation + 1,
         reason: 'authenticated_session_granted'
       });
     },
 
+    refreshAdminAuthorization({ captured, authorizationExpiresAt, authorizationNow = null } = {}) {
+      const current = controller.assertCurrent(captured);
+      if (current.actorType !== 'admin') {
+        throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.IDENTITY_INVALID);
+      }
+      const parsedAuthorizationExpiresAt = authorizationExpiresAt
+        ? Date.parse(authorizationExpiresAt)
+        : null;
+      const currentAuthorizationTime = Math.max(
+        nowProvider(),
+        Number.isFinite(authorizationNow) ? authorizationNow : 0
+      );
+      if (!Number.isFinite(parsedAuthorizationExpiresAt) || parsedAuthorizationExpiresAt <= currentAuthorizationTime) {
+        throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.SESSION_REQUIRED, {
+          reason: 'admin_offline_authorization_expired'
+        });
+      }
+      authorizationClockAnchor = {
+        effectiveNow: currentAuthorizationTime,
+        monotonicNow: monotonicNowProvider()
+      };
+      return publish({
+        ...state,
+        authorizationExpiresAt: parsedAuthorizationExpiresAt,
+        reason: 'admin_session_reverified'
+      });
+    },
+
     lock(reason = 'actor_locked') {
+      authorizationClockAnchor = null;
       return publish({
         status: ACTOR_RUNTIME_STATUS.LOCKED,
         actorType: null,
@@ -232,12 +318,18 @@ export const createActorRuntimeController = ({
         permissions: [],
         tenant: null,
         deviceRef: null,
+        authorizationExpiresAt: null,
         generation: state.generation + 1,
         reason
       });
     },
 
     assertGranted(permission = null) {
+      if (expireAdminAuthorizationIfNeeded()) {
+        throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.SESSION_REQUIRED, {
+          reason: 'admin_offline_authorization_expired'
+        });
+      }
       if (state.status !== ACTOR_RUNTIME_STATUS.GRANTED) {
         throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.CONTEXT_LOCKED);
       }
@@ -279,6 +371,11 @@ export const createActorRuntimeController = ({
     },
 
     assertCurrent(captured, permission = null) {
+      if (expireAdminAuthorizationIfNeeded()) {
+        throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.SESSION_REQUIRED, {
+          reason: 'admin_offline_authorization_expired'
+        });
+      }
       if (
         state.status !== ACTOR_RUNTIME_STATUS.GRANTED
         || captured?.generation !== state.generation

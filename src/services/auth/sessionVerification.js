@@ -95,34 +95,52 @@ export const createLocalStorageErrorResult = (actorType) => {
   );
 };
 
-const responseStatus = (error) => {
+const responseStatus = (error, rpcStatus) => {
   const candidates = [
+    rpcStatus,
     error?.status,
     error?.statusCode,
     error?.context?.status,
     error?.response?.status,
     error?.cause?.status
   ];
-  return candidates.map(Number).find((value) => Number.isInteger(value) && value >= 0) ?? null;
+  // Missing/empty values are not status zero. Prefer an actual HTTP response
+  // over a contradictory nested transport hint.
+  const statuses = candidates
+    .filter((value) => typeof value === 'number' || (typeof value === 'string' && /^\d{1,3}$/.test(value)))
+    .map(Number)
+    .filter((value) => Number.isInteger(value) && (value === 0 || (value >= 100 && value <= 599)));
+  return statuses.find((value) => value > 0) ?? statuses.find((value) => value === 0) ?? null;
 };
 
-const isKnownTransportFailure = (error) => {
+const isKnownTransportFailure = (error, status) => {
   const code = String(error?.code || '').toUpperCase();
   if (TRANSPORT_ERROR_CODES.has(code)) return true;
   if (['AbortError', 'TimeoutError'].includes(error?.name)) return true;
 
   const exactMessage = String(error?.message || '').trim().toLowerCase();
-  return error?.name === 'TypeError' && KNOWN_FETCH_MESSAGES.has(exactMessage);
+  if (error?.name === 'TypeError' && KNOWN_FETCH_MESSAGES.has(exactMessage)) return true;
+
+  // PostgREST 2.87.1 wraps fetch rejections as plain objects and puts status
+  // outside error. Require both the no-response envelope and its exact fetch
+  // signature: status zero alone also occurs for JSON parsing/local failures.
+  return status === 0
+    && error?.code === ''
+    && error?.hint === ''
+    && typeof error?.details === 'string'
+    && exactMessage.startsWith('typeerror: ')
+    && KNOWN_FETCH_MESSAGES.has(exactMessage.slice('typeerror: '.length));
 };
 
-const classifyRpcError = (error) => {
-  const status = responseStatus(error);
+const classifyRpcError = (error, rpcStatus) => {
+  const status = responseStatus(error, rpcStatus);
   const errorCode = String(error?.code || '').toUpperCase();
-  if (status === 0 || isKnownTransportFailure(error)) {
+  if ((status === null || status === 0) && isKnownTransportFailure(error, status)) {
     return resultFor(
       SESSION_VERIFICATION_STATUS.TRANSPORT_UNAVAILABLE,
       errorCode || 'SESSION_TRANSPORT_UNAVAILABLE',
-      'No se pudo comunicar con el servidor para verificar la sesión.'
+      'No se pudo comunicar con el servidor para verificar la sesión.',
+      { httpStatus: status }
     );
   }
 
@@ -139,12 +157,13 @@ const classifyRpcError = (error) => {
     code,
     status === 429
       ? 'El servidor limitó temporalmente las verificaciones. Inténtalo más tarde.'
-      : 'El servidor no pudo completar la verificación de la sesión.'
+      : 'El servidor no pudo completar la verificación de la sesión.',
+    { httpStatus: status }
   );
 };
 
-export const classifySessionVerificationResponse = (actorType, { data, error } = {}) => {
-  if (error) return classifyRpcError(error);
+export const classifySessionVerificationResponse = (actorType, { data, error, status } = {}) => {
+  if (error) return classifyRpcError(error, status);
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
     return resultFor(
       SESSION_VERIFICATION_STATUS.INVALID_RESPONSE,
