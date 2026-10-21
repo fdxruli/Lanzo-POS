@@ -14,3 +14,11 @@ Prototipo v2 aislado: IndexedDB, propietario esperado, registros por contexto, r
 Primer conjunto: 22 Vitest PASS (incluye 3 contraejemplos con propiedad de seguridad FAIL). Se añadió un cuarto contraejemplo sobre writers que omiten el fence; resultados finales se guardarán en R2.
 Chromium 143.0.7499.0: ARCH01..25 ejecutados excepto PWA instalada; matriz completa y evidencia se guardan en R2. FAIL de convivencia legacy y FAIL de usar sólo upgrade de esquema como fence. Dexie instalado 4.4.3 reabre y permite efecto sintético tras upgrade.
 Sin cambios src, dependencias de producto, PR, Preview, merge o Supabase.
+
+## R2 — evidencia reproducible
+R1 remoto 911c8992913a5dfd09960ff89b3f212001ae924d / árbol 97636fd23906b8e5b373e96860622501be1d4f2a.
+69 Vitest PASS: 46 tests existentes recuperados + 19 propiedades del prototipo + 4 contraejemplos detectados (sus propiedades de seguridad son FAIL). Baseline original EXP14 sigue FAIL en worktree A con única adición de test respecto de src main.
+Chromium: 27 observaciones, 19 PASS acotados, 7 FAIL de arquitectura/legacy, 1 PENDING PWA instalada. Incluye CDP freeze/thaw, HTTP IP sintético, TLS local autocertificado y Dexie instalado 4.4.3. No QA física ni venta real.
+Runner registra durable antes/después, handles, runtime de modelo o NOT_LOADED y writes de frontera sintéticos. Sin erros de harness en ejecución final. Primer arranque requirió fallback de enumeración NIC; no se ocultó como resultado de producto.
+ESLint scripts PASS. Fuentes comerciales src y package/lock permanecen idénticos a D.
+Estado de arquitectura: requiere decisión de transición; no garantía universal para writers v1 sin actualizar.

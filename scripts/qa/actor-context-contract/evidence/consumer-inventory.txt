@@ -1,0 +1,197 @@
+src/App.jsx:53:} from './services/auth/actorOperationalHandoff';
+src/pwa/adminStartupRecovery.js:5:} from '../services/auth/actorOperationalHandoff';
+src/test/tenantRuntimeTestHarness.js:1:import { closeTenantRuntime, getActiveTenantDatabase, openTenantRuntime } from '../services/db/tenantRuntimeRouter';
+src/components/common/InputPromptModal.jsx:5:  actorRuntimeController,
+src/components/common/InputPromptModal.jsx:7:} from '../../services/auth/actorRuntimeController';
+src/components/common/InputPromptModal.jsx:123:    const actorAtOpen = actorRuntimeController.getState();
+src/components/common/InputPromptModal.jsx:145:      unsubscribeActor = actorRuntimeController.subscribe((actor) => {
+src/components/common/InputPromptModal.jsx:154:      const currentActor = actorRuntimeController.getState();
+src/store/usePosCatalogStore.js:19:import { getTenantRuntimeReadiness } from '../services/db/tenantRuntimeRouter';
+src/components/common/AdminLazyRouteRecoveryFallback.jsx:13:} from '../../services/auth/actorOperationalHandoff';
+src/components/common/SetupModal.jsx:6:import { actorRuntimeController } from '../../services/auth/actorRuntimeController';
+src/components/common/SetupModal.jsx:188:      const actorHandle = actorRuntimeController.capture('settings');
+src/store/useInventoryCatalogStore.js:16:import { getTenantRuntimeReadiness } from '../services/db/tenantRuntimeRouter';
+src/components/common/PosApplicationBootstrap.jsx:20:import { getTenantRuntimeReadiness } from '../../services/db/tenantRuntimeRouter';
+src/components/common/PosApplicationBootstrap.jsx:24:} from '../../services/auth/actorOperationalHandoff';
+src/components/common/PosApplicationBootstrap.jsx:131:    import('../../services/auth/actorOperationalHandoff')
+src/components/common/ErrorBoundary.jsx:4:import { getActorCheckoutOwnerships, getPendingActorOperations } from '../../services/auth/actorOperationalHandoff';
+src/store/useMessageStore.js:4:  actorRuntimeController,
+src/store/useMessageStore.js:6:} from '../services/auth/actorRuntimeController';
+src/store/useMessageStore.js:22:    const actor = actorRuntimeController.getState();
+src/store/useMessageStore.js:48:actorRuntimeController.subscribe((actor) => {
+src/store/orderActions.js:23:import { isTenantRuntimeError } from '../services/db/tenantRuntimeRouter';
+src/store/slices/createProfileSlice.js:23:import { actorRuntimeController } from '../../services/auth/actorRuntimeController';
+src/store/slices/createProfileSlice.js:27:} from '../../services/db/tenantRuntimeRouter';
+src/store/slices/createProfileSlice.js:430:    const actorHandle = actorRuntimeController.capture('settings');
+src/store/slices/createProfileSlice.js:500:    const actorHandle = actorRuntimeController.capture('settings');
+src/store/slices/license/licenseProcessingActions.js:38:} from '../../../services/auth/actorSessionRuntimeBridge';
+src/store/slices/license/licenseAdminActions.js:23:} from '../../../services/auth/actorSessionRuntimeBridge';
+src/store/slices/license/licenseAdminActions.js:35:import { actorRuntimeController, ActorRuntimeError, ACTOR_RUNTIME_ERROR_CODES } from '../../../services/auth/actorRuntimeController';
+src/store/slices/license/licenseAdminActions.js:36:import { getTenantRuntimeReadiness } from '../../../services/db/tenantRuntimeRouter';
+src/store/slices/license/licenseAdminActions.js:95:  let actor = actorRuntimeController.getState();
+src/store/slices/license/licenseAdminActions.js:99:    refreshActor() { actor = actorRuntimeController.getState(); },
+src/store/slices/license/licenseAdminActions.js:100:    bindActor() { handle = actorRuntimeController.capture(); actor = actorRuntimeController.getState(); },
+src/store/slices/license/licenseAdminActions.js:104:      const currentActor = actorRuntimeController.getState();
+src/store/slices/license/licenseAdminActions.js:358:      } else if (actorRuntimeController.getState().status !== 'locked') {
+src/store/slices/license/licenseAdminActions.js:524:    if (actorRuntimeController.getState().status === 'granted') {
+src/store/slices/license/licenseAdminActions.js:758:        if (!pendingValidation.valid && actorRuntimeController.getState().status === 'locked') {
+src/store/slices/license/licenseAdminActions.js:768:      if (actorRuntimeController.getState().status === 'granted' && get().appStatus === 'admin_login_required') {
+src/store/slices/license/licenseAdminActions.js:771:        const handle = actorRuntimeController.capture();
+src/store/slices/license/licenseAdminActions.js:834:      if (actorRuntimeController.getState().status !== 'granted') lockActorRuntime('admin_login_failed');
+src/store/slices/license/licenseAdminActions.js:920:      if (actorRuntimeController.getState().status === 'granted') {
+src/store/slices/license/licenseAdminActions.js:997:      if (actorRuntimeController.getState().status === 'granted') {
+src/store/slices/license/licenseSessionActions.js:23:import { closeTenantRuntime } from '../../../services/db/tenantRuntimeRouter';
+src/store/slices/license/licenseBackgroundValidationActions.js:5:import { lockActorRuntime } from '../../../services/auth/actorSessionRuntimeBridge';
+src/store/slices/license/licenseStaffActions.js:15:} from '../../../services/auth/actorSessionRuntimeBridge';
+src/store/slices/license/licenseValidationContext.js:2:  actorRuntimeController,
+src/store/slices/license/licenseValidationContext.js:4:} from '../../../services/auth/actorRuntimeController';
+src/store/slices/license/licenseValidationContext.js:59:  const actorSnapshot = actorRuntimeController.getState();
+src/store/slices/license/licenseValidationContext.js:63:      actorHandle = actorRuntimeController.capture();
+src/store/slices/license/licenseValidationContext.js:84:    getActorBinding(actorRuntimeController.getState())
+src/store/slices/license/licenseSyncActions.js:20:import { getTenantRuntimeReadiness } from '../../../services/db/tenantRuntimeRouter';
+src/store/slices/license/licenseMaintenanceActions.js:13:import { getTenantRuntimeReadiness } from '../../../services/db/tenantRuntimeRouter';
+src/store/slices/license/licenseBootstrapActions.js:15:} from '../../../services/auth/actorSessionRuntimeBridge';
+src/store/slices/license/licenseBootstrapActions.js:16:import { actorRuntimeController } from '../../../services/auth/actorRuntimeController';
+src/store/slices/license/licenseBootstrapActions.js:260:                if (actorRuntimeController.getState().generation !== bootstrapActorGeneration) {
+src/store/slices/license/licenseBootstrapActions.js:269:                bootstrapActorGeneration = actorRuntimeController.getState().generation;
+src/store/slices/license/licenseBootstrapActions.js:291:                    const currentActor = actorRuntimeController.getState();
+src/store/slices/license/licenseBootstrapActions.js:309:                bootstrapActorGeneration = actorRuntimeController.getState().generation;
+src/store/slices/license/licenseBootstrapActions.js:691:                        && actorRuntimeController.getState().generation !== bootstrapActorGeneration)) {
+src/components/layout/Layout.jsx:38:} from '../../services/auth/actorOperationalHandoff';
+src/hooks/useExpirationAlert.js:20:import { getTenantStorageItem, setTenantStorageItem } from '../services/tenant/tenantScopedStorage';
+src/hooks/pos/useLayawayFlow.js:7:import { runTrackedActorOperationIfGranted } from '../../services/auth/actorOperationalHandoff';
+src/hooks/useLocalBackupAttention.js:4:import { actorRuntimeController } from '../services/auth/actorRuntimeController';
+src/hooks/useLocalBackupAttention.js:18:  const runtime = actorRuntimeController.getState();
+src/hooks/pos/useActiveOrders.js:23:import { tenantScopedZustandStorage, registerTenantStorageHydrator, suspendTenantStorageWrites } from '../../services/tenant/tenantScopedStorage';
+src/services/supabase.js:19:import { getActiveTenantRuntime } from './db/tenantRuntimeRouter';
+src/services/supabase.js:23:    actorRuntimeController,
+src/services/supabase.js:27:} from './auth/actorRuntimeController';
+src/services/supabase.js:1220:    const initialActor = actorRuntimeController.getState();
+src/services/supabase.js:1224:            actorHandle = actorRuntimeController.capture();
+src/services/supabase.js:1240:        const currentActor = actorRuntimeController.getState();
+src/services/db/customerCreditRepository.js:14:import { getTenantRuntimeReadiness } from './tenantRuntimeRouter';
+src/services/db/dexie.js:11:import { db as runtimeDb, configureTenantRuntimeDatabaseFactory } from './tenantRuntimeRouter';
+src/services/customerMessaging/outbox.js:6:} from '../tenant/tenantScopedStorage';
+src/services/aiAnalysisLocalHistoryService.js:8:} from './db/tenantRuntimeRouter';
+src/services/db/layaways.js:14:} from '../auth/actorRuntimeController';
+src/services/auth/aiAgentAuthorization.js:1:import { actorRuntimeController, ACTOR_RUNTIME_STATUS } from './actorRuntimeController';
+src/services/auth/aiAgentAuthorization.js:91:  actorRuntimeController.assertGranted(AI_AGENT_PERMISSION)
+src/services/db/databaseRuntime.js:1:import { getActiveTenantDatabase, getActiveTenantRuntime } from './tenantRuntimeRouter';
+src/services/auth/actorOperationalHandoff.js:4:  actorRuntimeController,
+src/services/auth/actorOperationalHandoff.js:6:} from './actorRuntimeController';
+src/services/auth/actorOperationalHandoff.js:200:    actorRuntimeController.capture(permission),
+src/services/auth/actorOperationalHandoff.js:212:  const state = actorRuntimeController.getState();
+src/services/auth/actorOperationalHandoff.js:308:      const handle = actorRuntimeController.capture();
+src/services/auth/actorOperationalHandoff.js:347:      const handle = ownership?.handle || actorRuntimeController.capture();
+src/services/auth/actorOperationalHandoff.js:377:      const handle = ownership?.handle || actorRuntimeController.capture();
+src/services/auth/actorOperationalHandoff.js:431:    const handle = actorRuntimeController.capture();
+src/services/auth/refundsActorAuthorization.js:1:import { actorRuntimeController } from './actorRuntimeController';
+src/services/auth/refundsActorAuthorization.js:5:} from './actorOperationalHandoff';
+src/services/auth/refundsActorAuthorization.js:9:  actorRuntimeController.capture(SALES_REFUNDS_PERMISSION)
+src/services/products/productLocalCatalogRecovery.js:5:import { getTenantStorageState } from '../tenant/tenantScopedStorage';
+src/services/auth/actorSessionRuntimeBridge.js:1:import { db as tenantRuntimeDb, getTenantRuntimeReadiness } from '../db/tenantRuntimeRouter';
+src/services/auth/actorSessionRuntimeBridge.js:3:import { hydrateTenantStorageConsumers, resumeTenantStorageWrites } from '../tenant/tenantScopedStorage';
+src/services/auth/actorSessionRuntimeBridge.js:12:} from './actorScopedStorage';
+src/services/auth/actorSessionRuntimeBridge.js:19:} from './actorOperationalHandoff';
+src/services/auth/actorSessionRuntimeBridge.js:21:  actorRuntimeController,
+src/services/auth/actorSessionRuntimeBridge.js:26:} from './actorRuntimeController';
+src/services/auth/actorSessionRuntimeBridge.js:119:  actorRuntimeController.beginAuthentication({ actorType })
+src/services/auth/actorSessionRuntimeBridge.js:146:  authentication = actorRuntimeController.getState()
+src/services/auth/actorSessionRuntimeBridge.js:164:    const current = actorRuntimeController.getState();
+src/services/auth/actorSessionRuntimeBridge.js:174:  const stateBeforeHandoff = actorRuntimeController.getState();
+src/services/auth/actorSessionRuntimeBridge.js:185:  actorRuntimeController.beginHandoffCheck();
+src/services/auth/actorSessionRuntimeBridge.js:227:    const granted = actorRuntimeController.grant({
+src/services/auth/actorSessionRuntimeBridge.js:237:    ownedGrant = actorRuntimeController.capture();
+src/services/auth/actorSessionRuntimeBridge.js:244:      handle: actorRuntimeController.capture()
+src/services/auth/actorSessionRuntimeBridge.js:254:    if (actorRuntimeController.getState().generation !== authentication.generation) {
+src/services/auth/actorSessionRuntimeBridge.js:259:    if (actorRuntimeController.getState().status !== ACTOR_RUNTIME_STATUS.LOCKED) {
+src/services/auth/actorSessionRuntimeBridge.js:260:      actorRuntimeController.lock('actor_handoff_failed');
+src/services/auth/actorSessionRuntimeBridge.js:277:      actorRuntime: actorRuntimeController.getState()
+src/services/auth/actorSessionRuntimeBridge.js:299:    actorRuntime: actorRuntimeController.getState()
+src/services/auth/actorSessionRuntimeBridge.js:306:  actorRuntimeController.refreshAdminAuthorization({
+src/services/auth/actorSessionRuntimeBridge.js:325:  const authentication = actorRuntimeController.getState();
+src/services/auth/actorSessionRuntimeBridge.js:330:    if (actorRuntimeController.getState().generation === authentication.generation
+src/services/auth/actorSessionRuntimeBridge.js:331:      && actorRuntimeController.getState().status !== ACTOR_RUNTIME_STATUS.LOCKED) {
+src/services/auth/actorSessionRuntimeBridge.js:344:  const locked = actorRuntimeController.lock(reason);
+src/services/auth/actorSessionRuntimeBridge.js:355:  const state = actorRuntimeController.getState();
+src/services/auth/actorSessionRuntimeBridge.js:363:  actorRuntimeController.lock('actor_context_changed_in_other_tab');
+src/services/auth/actorSessionRuntimeBridge.js:366:actorRuntimeController.subscribe((state) => {
+src/services/cashOpeningPolicyService.js:3:import { getTenantStorageItem, setTenantStorageItem } from './tenant/tenantScopedStorage';
+src/services/db/tenantRuntimeRouter.js:11:import { setActiveTenantStorageNamespace, clearActiveTenantStorageNamespace, markTenantStorageReady, hydrateTenantStorageConsumers, resumeTenantStorageWrites, suspendTenantStorageWrites } from '../tenant/tenantScopedStorage';
+src/services/auth/productInventoryAuthority.js:4:  actorRuntimeController
+src/services/auth/productInventoryAuthority.js:5:} from './actorRuntimeController';
+src/services/auth/productInventoryAuthority.js:12:import { getTenantRuntimeReadiness } from '../db/tenantRuntimeRouter';
+src/services/auth/productInventoryAuthority.js:309:  const handle = actorRuntimeController.capture();
+src/services/auth/productInventoryAuthority.js:404:  const current = actorRuntimeController.assertGranted();
+src/services/auth/productInventoryAuthority.js:416:    actorRuntimeController.assertGranted(permission);
+src/services/auth/useSettingsAccess.js:6:  actorRuntimeController
+src/services/auth/useSettingsAccess.js:7:} from './actorRuntimeController';
+src/services/auth/useSettingsAccess.js:14:    runtimeSnapshot: actorRuntimeController.getState(),
+src/services/auth/useSettingsAccess.js:57:    const runtimeHandle = actorRuntimeController.capture(permission);
+src/services/auth/actorRuntimeController.js:1:import { getTenantRuntimeReadiness } from '../db/tenantRuntimeRouter';
+src/services/auth/actorRuntimeController.js:438:export const actorRuntimeController = createActorRuntimeController();
+src/services/auth/useActorRuntimeSnapshot.js:2:import { actorRuntimeController } from './actorRuntimeController';
+src/services/auth/useActorRuntimeSnapshot.js:13:  const [snapshot, setSnapshot] = useState(() => actorRuntimeController.getState());
+src/services/auth/useActorRuntimeSnapshot.js:16:    const unsubscribe = actorRuntimeController.subscribe(setSnapshot);
+src/services/auth/useActorRuntimeSnapshot.js:17:    setSnapshot(actorRuntimeController.getState());
+src/services/tenant/tenantScopedStorage.js:7:} from '../auth/actorScopedStorage';
+src/services/salesService.js:20:} from './auth/actorOperationalHandoff';
+src/services/tenant/localTenantGuard.js:3:import { closeTenantRuntime, getActiveTenantDatabase, markTenantRuntimeReady, openTenantRuntime } from '../db/tenantRuntimeRouter';
+src/services/tenant/localTenantGuard.js:7:} from './tenantScopedStorage';
+src/services/salesCloud/salesCloudCashierService.js:15:import { actorRuntimeController } from '../auth/actorRuntimeController';
+src/services/salesCloud/salesCloudCashierService.js:675:    const actorHandle = actorRuntimeController.capture();
+src/services/salesCloud/salesCloudCashierService.js:737:    const actorHandle = actorRuntimeController.capture();
+src/services/salesCloud/salesCloudCashierService.js:792:    const actorHandle = providedActorHandle || actorRuntimeController.capture();
+src/services/salesCloud/salesCloudCashierService.js:861:    const actorHandle = actorRuntimeController.capture();
+src/services/salesCloud/salesCloudCashierService.js:985:    const actorHandle = actorRuntimeController.capture();
+src/services/salesCloud/salesCloudCashierService.js:1043:    const actorHandle = actorRuntimeController.capture();
+src/services/restaurant/restaurantOrderCheckoutClose.js:9:import { getTenantStorageItem, setTenantStorageItem } from '../tenant/tenantScopedStorage';
+src/services/tenant/tenantWorkerContext.js:1:import { getActiveTenantRuntime } from '../db/tenantRuntimeRouter';
+src/services/tenant/tenantWorkerContext.js:9:// Worker database names are produced exclusively by tenantRuntimeRouter.  Do
+src/services/sales/restaurantSplitDraft.js:7:} from '../tenant/tenantScopedStorage';
+src/services/financial/financialProjectionRepair.js:1:import { actorRuntimeController } from '../auth/actorRuntimeController';
+src/services/financial/financialProjectionRepair.js:19:  const handle = actorHandle || actorRuntimeController.capture();
+src/services/financial/financialReceiptReconciliation.js:1:import { actorRuntimeController } from '../auth/actorRuntimeController';
+src/services/financial/financialReceiptReconciliation.js:22:  const handle = actorHandle || actorRuntimeController.capture();
+src/services/financial/financialIntentRecoveryCoordinator.js:1:import { actorRuntimeController, ACTOR_RUNTIME_STATUS } from '../auth/actorRuntimeController';
+src/services/financial/financialIntentRecoveryCoordinator.js:22:  const handle = actorRuntimeController.capture();
+src/services/financial/financialIntentRecoveryCoordinator.js:48:  unsubscribeActor = actorRuntimeController.subscribe((state) => {
+src/services/sync/syncOutboxService.js:5:import { actorRuntimeController } from '../auth/actorRuntimeController';
+src/services/sync/syncOutboxService.js:135:      ? actorRuntimeController.capture()
+src/services/sync/actorPermission.js:1:import { ACTOR_RUNTIME_STATUS, actorRuntimeController } from '../auth/actorRuntimeController';
+src/services/sync/actorPermission.js:12:  hasActorPermission(actorRuntimeController.getState(), permission)
+src/services/financial/financialIntentLedger.js:2:import { actorRuntimeController } from '../auth/actorRuntimeController';
+src/services/financial/financialIntentLedger.js:546:  const handle = actorHandle || actorRuntimeController.capture();
+src/services/financial/financialIntentLedger.js:645:  const handle = actorHandle || actorRuntimeController.capture();
+src/services/financial/financialIntentLedger.js:734:  const handle = actorHandle || actorRuntimeController.capture();
+src/services/financial/financialIntentLedger.js:769:  const handle = actorHandle || actorRuntimeController.capture();
+src/services/financial/financialIntentLedger.js:815:  const handle = actorHandle || actorRuntimeController.capture();
+src/services/financial/financialIntentLedger.js:916:  const handle = actorHandle || actorRuntimeController.capture();
+src/services/financial/financialIntentLedger.js:970:  const handle = actorHandle || actorRuntimeController.capture();
+src/services/financial/financialIntentLedger.js:1143:  const handle = actorHandle || actorRuntimeController.capture();
+src/services/financial/financialIntentLedger.js:1186:  const handle = actorHandle || actorRuntimeController.capture();
+src/services/financial/financialIntentLedger.js:1209:  actorHandle: actorHandle || actorRuntimeController.capture(),
+src/services/financial/financialIntentLedger.js:1215:  actorHandle: actorHandle || actorRuntimeController.capture(),
+src/services/financial/financialIntentLedger.js:1223:  const handle = actorHandle || actorRuntimeController.capture();
+src/services/financial/financialIntentObservability.js:1:import { actorRuntimeController } from '../auth/actorRuntimeController';
+src/services/financial/financialIntentObservability.js:79:  const handle = actorHandle || actorRuntimeController.capture();
+src/services/financial/financialIntentObservability.js:114:  const handle = actorHandle || actorRuntimeController.capture();
+src/services/ai/salesProfitabilityHistory.js:11:} from '../tenant/tenantScopedStorage';
+src/services/cash/cashFinancialGate.js:5:  actorRuntimeController
+src/services/cash/cashFinancialGate.js:6:} from '../auth/actorRuntimeController';
+src/services/cash/cashFinancialGate.js:238:  const runtimeState = actorRuntimeController.getState();
+src/services/cash/cashFinancialGate.js:245:  return actorRuntimeController.capture();
+src/services/cash/cashStation.js:5:} from '../tenant/tenantScopedStorage';
+src/services/aiAgentUsageService.js:3:import { actorRuntimeController } from './auth/actorRuntimeController';
+src/services/aiAgentUsageService.js:38:  const actorType = actorRuntimeController.getState().actorType;
+src/services/aiAgentUsageService.js:109:  actorRuntimeController.assertGranted('ai_agents');
+src/services/tenant/localTenantPolicy.js:4:// Physical runtime names are allocated by tenantRuntimeRouter.  Keep the
+src/services/diagnostics/recoveryContext.js:2:import { actorRuntimeController } from '../auth/actorRuntimeController';
+src/services/diagnostics/recoveryContext.js:3:import { getTenantRuntimeReadiness } from '../db/tenantRuntimeRouter';
+src/services/diagnostics/recoveryContext.js:6:  const actor = actorRuntimeController.getState();
+src/services/aiService.js:10:import { actorRuntimeController } from './auth/actorRuntimeController';
+src/services/aiService.js:62:  const actorType = actorRuntimeController.getState().actorType;
+src/services/aiService.js:237:  actorRuntimeController.assertGranted('ai_agents');
+src/services/aiService.js:285:  actorRuntimeController.assertGranted('ai_agents');
+src/services/aiService.js:367:  actorRuntimeController.assertGranted('ai_agents');
+src/services/localInventoryOperationalAlerts.js:11:} from './tenant/tenantScopedStorage';

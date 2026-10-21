@@ -1,0 +1,53 @@
+{
+  "numTotalTestSuites": 2,
+  "numPassedTestSuites": 0,
+  "numFailedTestSuites": 2,
+  "numPendingTestSuites": 0,
+  "numTotalTests": 1,
+  "numPassedTests": 0,
+  "numFailedTests": 1,
+  "numPendingTests": 0,
+  "numTodoTests": 0,
+  "snapshot": {
+    "added": 0,
+    "failure": false,
+    "filesAdded": 0,
+    "filesRemoved": 0,
+    "filesRemovedList": [],
+    "filesUnmatched": 0,
+    "filesUpdated": 0,
+    "matched": 0,
+    "total": 0,
+    "unchecked": 0,
+    "uncheckedKeysByFile": [],
+    "unmatched": 0,
+    "updated": 0,
+    "didUpdate": false
+  },
+  "startTime": 1792594237984,
+  "success": false,
+  "testResults": [
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": [
+            "late actor-context integration — reconstructed EXP-F02-14 only"
+          ],
+          "fullName": "late actor-context integration — reconstructed EXP-F02-14 only EXP-F02-14 / LC-01 / LC-09 / LC-20: preserves the later legitimate Admin grant after an obsolete storage notification",
+          "status": "failed",
+          "title": "EXP-F02-14 / LC-01 / LC-09 / LC-20: preserves the later legitimate Admin grant after an obsolete storage notification",
+          "duration": 19.568621000000007,
+          "failureMessages": [
+            "AssertionError: expected { status: 'locked', …(10) } to deeply equal { status: 'granted', …(10) }\n    at /workspace/scratch/786fcf99182f/research-baseline/src/services/auth/__tests__/actorLateContext.integration.test.js:104:19\n    at file:///workspace/scratch/786fcf99182f/Lanzo-POS/node_modules/@vitest/runner/dist/index.js:919:20"
+          ],
+          "meta": {}
+        }
+      ],
+      "startTime": 1792594238846,
+      "endTime": 1792594238865.5686,
+      "status": "failed",
+      "message": "",
+      "name": "/workspace/scratch/786fcf99182f/research-baseline/src/services/auth/__tests__/actorLateContext.integration.test.js"
+    }
+  ]
+}

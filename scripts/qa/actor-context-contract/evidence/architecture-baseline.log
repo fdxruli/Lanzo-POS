@@ -1,0 +1,66 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+ RUN  v4.0.14 /workspace/scratch/786fcf99182f/research-baseline
+
+stdout | src/services/auth/__tests__/actorLateContext.integration.test.js > late actor-context integration — reconstructed EXP-F02-14 only > EXP-F02-14 / LC-01 / LC-09 / LC-20: preserves the later legitimate Admin grant after an obsolete storage notification
+EXP-F02-14 {"before":{"status":"granted","actorType":"admin","actorId":"admin-a","actorKey":"admin:admin-a","sessionId":"session-b","permissions":["*"],"tenant":{"opaqueId":"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","databaseName":"LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","generation":1},"deviceRef":"device-a","authorizationExpiresAt":1790812810000,"generation":6,"reason":"authenticated_session_granted"},"after":{"status":"locked","actorType":null,"actorId":null,"actorKey":null,"sessionId":null,"permissions":[],"tenant":null,"deviceRef":null,"authorizationExpiresAt":null,"generation":7,"reason":"actor_context_changed_in_other_tab"},"durableNewRecordPreserved":true,"writesSuspended":true}
+
+ ❯ src/services/auth/__tests__/actorLateContext.integration.test.js (1 test | 1 failed) 21ms
+     × EXP-F02-14 / LC-01 / LC-09 / LC-20: preserves the later legitimate Admin grant after an obsolete storage notification 20ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/services/auth/__tests__/actorLateContext.integration.test.js > late actor-context integration — reconstructed EXP-F02-14 only > EXP-F02-14 / LC-01 / LC-09 / LC-20: preserves the later legitimate Admin grant after an obsolete storage notification
+AssertionError: expected { status: 'locked', …(10) } to deeply equal { status: 'granted', …(10) }
+
+- Expected
++ Received
+
+  {
+-   "actorId": "admin-a",
+-   "actorKey": "admin:admin-a",
+-   "actorType": "admin",
+-   "authorizationExpiresAt": 1790812810000,
+-   "deviceRef": "device-a",
+-   "generation": 6,
+-   "permissions": [
+-     "*",
+-   ],
+-   "reason": "authenticated_session_granted",
+-   "sessionId": "session-b",
+-   "status": "granted",
+-   "tenant": {
+-     "databaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+-     "generation": 1,
+-     "opaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+-   },
++   "actorId": null,
++   "actorKey": null,
++   "actorType": null,
++   "authorizationExpiresAt": null,
++   "deviceRef": null,
++   "generation": 7,
++   "permissions": [],
++   "reason": "actor_context_changed_in_other_tab",
++   "sessionId": null,
++   "status": "locked",
++   "tenant": null,
+  }
+
+ ❯ src/services/auth/__tests__/actorLateContext.integration.test.js:104:19
+    102|     expect(() => oldRuntime.assertCurrent()).toThrow();
+    103|     expect(() => oldStorage.assertCurrent()).toThrow();
+    104|     expect(after).toEqual(granted);
+       |                   ^
+    105|     expect(getActorScopedStorageState().writesSuspended).toBe(false);
+    106|     expect(() => newRuntime.assertCurrent()).not.toThrow();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed (1)
+   Start at  08:50:38
+   Duration  864ms (transform 191ms, setup 75ms, import 195ms, tests 21ms, environment 447ms)
+
+JSON report written to /workspace/scratch/786fcf99182f/architecture-baseline.json

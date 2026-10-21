@@ -87,8 +87,15 @@ const run = async (id, versions, execute, options = {}) => {
   const unique = String(++fixtureId);
   try {
     const pages = await Promise.all(versions.map((v) => boot(context, v, options.origin || local, unique)));
+    const initial = await Promise.all(pages.map((p) => p.evaluate(() => window.probe())));
     const observed = await execute(...pages, context);
-    results.push({ id, versions, ...observed, limitation: observed.limitation || 'Synthetic coordination/effect boundary; not POS financial E2E or physical device QA.' });
+    const finalBeforeWriteProbe = await Promise.all(pages.map((p) => p.evaluate(() => typeof window.probe === 'function' ? window.probe() : { runtime: 'RELOADED_NO_HANDLES' })));
+    const writes = await Promise.all(pages.map((p) => p.evaluate(() => typeof window.writeProbe === 'function' ? window.writeProbe('end-boundary-probe') : 'NOT_PROBED_RELOADED')));
+    const final = await Promise.all(pages.map((p) => p.evaluate(() => typeof window.probe === 'function' ? window.probe() : { runtime: 'RELOADED_NO_HANDLES' })));
+    results.push({ id, versions, initial, ...observed, finalBeforeWriteProbe, writes, final,
+      limitation: observed.limitation || (options.tls
+        ? 'Real local TLS, self-signed certificate accepted by ignoreHTTPSErrors only for fixture; not public-chain/Vercel/physical QA.'
+        : 'Synthetic coordination/effect boundary; not POS financial E2E or physical device QA.') });
   } catch (e) { results.push({ id, versions, status: 'ERROR', error: e.message }); }
   finally { await context.close(); }
 };

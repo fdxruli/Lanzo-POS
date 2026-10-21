@@ -1,0 +1,42 @@
+{
+  "chromium": "143.0.7499.0",
+  "base": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+  "results": [
+    {
+      "case": "stale-event-baseline",
+      "writesSuspended": true,
+      "durablePreserved": true,
+      "status": "FAIL"
+    },
+    {
+      "case": "stale-event-candidate",
+      "writesSuspended": false,
+      "durablePreserved": true,
+      "status": "PASS"
+    },
+    {
+      "case": "LC-13-baseline-A-baseline-B",
+      "deniedOld": true,
+      "durableBPreserved": false,
+      "handleCurrent": false,
+      "durableStatus": "locked",
+      "status": "FAIL"
+    },
+    {
+      "case": "LC-13-candidate-A-candidate-B",
+      "deniedOld": true,
+      "durableBPreserved": false,
+      "handleCurrent": false,
+      "durableStatus": "locked",
+      "status": "FAIL"
+    },
+    {
+      "case": "LC-13-baseline-A-candidate-B",
+      "deniedOld": true,
+      "durableBPreserved": false,
+      "handleCurrent": false,
+      "durableStatus": "locked",
+      "status": "FAIL"
+    }
+  ]
+}
