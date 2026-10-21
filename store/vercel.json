@@ -60,5 +60,10 @@
     {
       "handle": "error"
     }
-  ]
+  ],
+  "git": {
+    "deploymentEnabled": {
+      "fix/actor-scoped-storage-stale-events-r1": false
+    }
+  }
 }
