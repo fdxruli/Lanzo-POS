@@ -1,0 +1,182 @@
+{
+  "date": "2026-10-21",
+  "timezone": "America/Mexico_City",
+  "main": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+  "previousRef": "c6d5e56afdbdb0e2d59dc479bdd5ada94d418f61",
+  "previousTree": "f79b36e7f191a33b440dfb642e0fc1296652e882",
+  "R0": "f4528fbe890456402a4fc9b40a7fb03685936507",
+  "R1": "299d5212b375e617437a9566ab59de9250d6ba61",
+  "R2": "c1679a8ed711abf522d49f89fc495642150b6665",
+  "prs": [
+    {
+      "number": 338,
+      "state": "open",
+      "draft": true,
+      "head": "feat/restaurant-split-flexible-payments-r1",
+      "head_sha": "fef7205f76b173025f503e60d0968f446f741e78",
+      "base": "main",
+      "base_sha": "f014a1f340ed78335d3e704eefff49cda8465115",
+      "mergeable": false
+    },
+    {
+      "number": 352,
+      "state": "open",
+      "draft": true,
+      "head": "feat/restaurant-admin-supervision-r1",
+      "head_sha": "d758f69b2119f1bc346eb0ac86ba0a74c0265668",
+      "base": "feat/restaurant-split-flexible-payments-r1",
+      "base_sha": "fb17e9a43929d54087ab937cb760a8cd6e087c36",
+      "mergeable": false
+    }
+  ],
+  "production": {
+    "deployments": {
+      "pagination": {
+        "count": 2,
+        "next": 1792556560966,
+        "prev": 1792556561001
+      },
+      "deployments": [
+        {
+          "id": "dpl_7E212PvkFiHe2DK8SaiTEn3ANxJ5",
+          "name": "lanzo-pos",
+          "url": "lanzo-9ra2iubyv-fdxrulis-projects.vercel.app",
+          "created": 1792556561001,
+          "state": "READY",
+          "target": "production",
+          "creator": {
+            "uid": "XGlhqlCwuQNLromG5evpSFlh",
+            "username": "fdxruli"
+          },
+          "meta": {
+            "githubCommitRef": "main",
+            "githubCommitSha": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+            "githubCommitMessage": "feat(auth): bounded 7-day Admin offline continuity (#366)\n\n* feat(auth): add bounded admin offline continuity\n\n* docs(auth): record phase 2 verification results\n\n* fix(auth): recover canonical admin offline evidence\n\n* docs(auth): record mini phase 2.1 audit\n\n* docs(auth): report Mini-Fase 2.1 CI...",
+            "githubRepo": "Lanzo-POS",
+            "githubOrg": "fdxruli"
+          },
+          "inspectorUrl": "https://vercel.com/fdxrulis-projects/lanzo-pos/7E212PvkFiHe2DK8SaiTEn3ANxJ5",
+          "isRollbackCandidate": false
+        },
+        {
+          "id": "dpl_9NncrioVoguJwZS9LWFNYUAATEoX",
+          "name": "lanzo-store",
+          "url": "lanzo-store-2upacf123-fdxrulis-projects.vercel.app",
+          "created": 1792556560966,
+          "state": "READY",
+          "target": "production",
+          "creator": {
+            "uid": "XGlhqlCwuQNLromG5evpSFlh",
+            "username": "fdxruli"
+          },
+          "meta": {
+            "githubCommitRef": "main",
+            "githubCommitSha": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+            "githubCommitMessage": "feat(auth): bounded 7-day Admin offline continuity (#366)\n\n* feat(auth): add bounded admin offline continuity\n\n* docs(auth): record phase 2 verification results\n\n* fix(auth): recover canonical admin offline evidence\n\n* docs(auth): record mini phase 2.1 audit\n\n* docs(auth): report Mini-Fase 2.1 CI...",
+            "githubRepo": "Lanzo-POS",
+            "githubOrg": "fdxruli"
+          },
+          "inspectorUrl": "https://vercel.com/fdxrulis-projects/lanzo-store/9NncrioVoguJwZS9LWFNYUAATEoX",
+          "isRollbackCandidate": false
+        }
+      ]
+    }
+  },
+  "sourceFiles": [
+    {
+      "path": "docs/reports/LANZO.ACTOR.AUTHORITY.V2.COMMIT.MATRIX.R1.md",
+      "blob": "251a5e30da02c0c8bb7fa96bf247ce04614d518a"
+    },
+    {
+      "path": "docs/reports/LANZO.ACTOR.AUTHORITY.V2.EXECUTIVE.R1.md",
+      "blob": "e38f1dc04ad3148caf711d66f3b843629118e4c6"
+    },
+    {
+      "path": "docs/reports/LANZO.ACTOR.AUTHORITY.V2.INTEGRATION.TRANSITION.DESIGN.R1.md",
+      "blob": "683fb05fa4e07b37ee643c13f3df8530dff9d4e8"
+    },
+    {
+      "path": "docs/reports/LANZO.ACTOR.CONTEXT.INVALIDATION.ARCHITECTURE.R1.md",
+      "blob": "b68688b39f1191eb7478af53a4095f6845a6dbe6"
+    },
+    {
+      "path": "docs/reports/LANZO.ACTOR.SCOPED.STORAGE.LATE.CONTEXT.HARDENING.R1.md",
+      "blob": "b3db68562a7c0b442d48962d2a67124d16c0b057"
+    },
+    {
+      "path": "package-lock.json",
+      "blob": "a72a29d11693c84f5216eb1ef6d02e36c76ea2b4"
+    },
+    {
+      "path": "scripts/qa/actor-authority-admission/README.md",
+      "blob": "f757d4dae7ce1d9209c68c7819c1e87a60c79f96"
+    },
+    {
+      "path": "scripts/qa/actor-authority-admission/admission-model.mjs",
+      "blob": "d7a373f577723dffe7f55c90d1c912ee530e3952"
+    },
+    {
+      "path": "scripts/qa/actor-authority-admission/admission.test.mjs",
+      "blob": "a6881454bd7487227a4c8cf8030f788e25dca485"
+    },
+    {
+      "path": "scripts/qa/actor-authority-admission/scan-main.mjs",
+      "blob": "80a5c508034a6e86b6206f78091dcd34023d2806"
+    },
+    {
+      "path": "scripts/qa/actor-context-contract/README.md",
+      "blob": "f1f8284226a819c828bd9afd80527f02ebadb98f"
+    },
+    {
+      "path": "scripts/qa/actor-context-contract/browser.mjs",
+      "blob": "9742804322b64e16f2d2dafa3ff40a49b7672554"
+    },
+    {
+      "path": "scripts/qa/actor-context-contract/prototype.mjs",
+      "blob": "b3c2e7b6406d0e970b725f2a0ae3e12593c0b03e"
+    },
+    {
+      "path": "scripts/qa/actor-context-contract/prototype.test.mjs",
+      "blob": "a9342a4fdef766163f72d11606e80994d91284a0"
+    },
+    {
+      "path": "scripts/qa/actor-context-contract/runtime-boundary.test.mjs",
+      "blob": "f5f2ad49e4c96b896b23a8a453d5717685d160e3"
+    },
+    {
+      "path": "scripts/qa/actor-late-context-browser.mjs",
+      "blob": "eae5ac28dae51cdbc9c4b633139fc24bed8cc081"
+    },
+    {
+      "path": "src/services/auth/actorScopedStorage.js",
+      "blob": "61cda026d9a74b07e4a97a0e5013de234b50ffac"
+    },
+    {
+      "path": "store/vercel.json",
+      "blob": "fb538f964b7a2e182f022cb577201b1f048520a5"
+    },
+    {
+      "path": "vercel.json",
+      "blob": "024e33bffa13e3f47bf30e2c344be65727394e97"
+    }
+  ],
+  "commercialDrift": [
+    {
+      "path": "src/services/auth/__tests__/actorLateContext.integration.test.js",
+      "sha": "527bee49adc338867ba44079884e6f5379cad93c"
+    },
+    {
+      "path": "src/services/auth/actorScopedStorage.js",
+      "sha": "61cda026d9a74b07e4a97a0e5013de234b50ffac"
+    },
+    {
+      "path": "src/services/auth/actorSessionRuntimeBridge.js",
+      "sha": "dd9cbe8d57aff393019740697bc61a1d2be0458b"
+    }
+  ],
+  "notes": [
+    "No complete git clone available: direct GitHub timed out; git proxy namespace unavailable. Recovered immutable selected blobs and full remote tree via GitHub API. No preexisting checkout or uncommitted work changed.",
+    "No AGENTS.md in recovered remote recursive tree. New phase uses scripts/docs only plus deployment exclusions.",
+    "Four earlier PWA reports read from known saved files, remaining five from exact remote research checkpoint. Historical results are not current test results."
+  ]
+}

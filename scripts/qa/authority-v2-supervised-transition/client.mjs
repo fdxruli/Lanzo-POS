@@ -31,6 +31,11 @@ window.ready = (async () => {
       catch (error) { return { committed: false, error: error.code || error.name }; }
     }});
   }
+  window.lab.protectedWrite = async () => {
+    const decision = admissionDecision();
+    if (decision.state !== 'ADMISSION_GRANTED') return { committed: false, error: decision.code };
+    return window.lab.write();
+  };
   window.lab.snapshot = async () => ({ kind, id, admission: admissionDecision(), runtime: window.lab.client?.state() || 'NOT_LOADED_storage_only', durable: await prototype.snapshot(db), legacy: localStorage.getItem('lanzo:t:t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:actor-runtime-context:v1') });
   window.addEventListener('pageshow', (event) => { window.lab.pageshowPersisted = event.persisted; });
   return true;

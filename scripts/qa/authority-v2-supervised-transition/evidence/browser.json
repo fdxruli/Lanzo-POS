@@ -1,0 +1,1973 @@
+{
+  "date": "2026-10-21T18:03:56.011Z",
+  "mainSHA": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+  "parentResearchSHA": "c6d5e56afdbdb0e2d59dc479bdd5ada94d418f61",
+  "legacyBlob": "dcc09e7be2fcf2435801302c3199f8592e029edc",
+  "chromium": "143.0.7499.0",
+  "platform": "linux",
+  "node": "v24.19.0",
+  "manifest": {
+    "/main.mjs": "d07c40382ed27cda698a5df3761b0509f822659fbeea0d25e47154a0f8f248af",
+    "/client.mjs": "602c9455017f3dbf68dfa1de6284552637cfd472dd31cf5524eb6d2aadec5cc8",
+    "/prototype.mjs": "c9606591508bcb013b11478fdf12f9af4bd5ca3ed3120b890e3897372579d5d1",
+    "/admission.mjs": "997c9209405d5b55896071eb0331d4865689f5b868145af2d25965a58ad4977b",
+    "/dexie.mjs": "58475a95e77cb746f9248999886b7c87049837df7ec1e1e508cb231625da5acc"
+  },
+  "blockedNetwork": [],
+  "results": [
+    {
+      "id": "T3-01",
+      "domain": "unmanaged",
+      "mainSHA": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+      "legacyBlob": "dcc09e7be2fcf2435801302c3199f8592e029edc",
+      "profile": "isolated-context-1",
+      "origin": "http://127.0.0.1:39863",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "expected": "B restricted without proof; A must be unable to commit for P2",
+      "before": {
+        "kind": "legacy",
+        "id": "case-1",
+        "admission": {
+          "state": "ADMISSION_RESTRICTED",
+          "code": "EXCLUSIVITY_UNPROVEN"
+        },
+        "runtime": "NOT_LOADED_storage_only",
+        "durable": {
+          "authority": [],
+          "contexts": [],
+          "operations": [],
+          "effects": []
+        },
+        "legacy": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"32afec67ddf3f8319aa0e05c7be609375a6100afaf296973726004d18e3949d4\",\"actorGeneration\":1,\"contextToken\":\"5d1fc69a-7faa-4cb4-b3c5-bd73b210c77e\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T18:03:41.381Z\"}"
+      },
+      "after": {
+        "a": {
+          "kind": "legacy",
+          "id": "case-1",
+          "admission": {
+            "state": "ADMISSION_RESTRICTED",
+            "code": "EXCLUSIVITY_UNPROVEN"
+          },
+          "runtime": "NOT_LOADED_storage_only",
+          "durable": {
+            "authority": [
+              {
+                "protocol": 2,
+                "status": "granted",
+                "binding": {
+                  "tenant": "synthetic-T",
+                  "token": "1c98b4f8c1cf27b2c06b98e152c1bf09",
+                  "actor": "admin:B",
+                  "session": "session-B",
+                  "device": "device-A",
+                  "generation": 1
+                },
+                "revision": 1
+              }
+            ],
+            "contexts": [
+              {
+                "binding": {
+                  "tenant": "synthetic-T",
+                  "token": "1c98b4f8c1cf27b2c06b98e152c1bf09",
+                  "actor": "admin:B",
+                  "session": "session-B",
+                  "device": "device-A",
+                  "generation": 1
+                },
+                "status": "granted"
+              }
+            ],
+            "operations": [
+              {
+                "id": "probe-1",
+                "tenant": "synthetic-T",
+                "owner": {
+                  "tenant": "synthetic-T",
+                  "token": "1c98b4f8c1cf27b2c06b98e152c1bf09",
+                  "actor": "admin:B",
+                  "session": "session-B",
+                  "device": "device-A",
+                  "generation": 1
+                },
+                "status": "committed"
+              }
+            ],
+            "effects": [
+              {
+                "idempotencyKey": "probe-1",
+                "operationId": "probe-1",
+                "owner": {
+                  "tenant": "synthetic-T",
+                  "token": "1c98b4f8c1cf27b2c06b98e152c1bf09",
+                  "actor": "admin:B",
+                  "session": "session-B",
+                  "device": "device-A",
+                  "generation": 1
+                },
+                "synthetic": true
+              }
+            ]
+          },
+          "legacy": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"32afec67ddf3f8319aa0e05c7be609375a6100afaf296973726004d18e3949d4\",\"actorGeneration\":1,\"contextToken\":\"5d1fc69a-7faa-4cb4-b3c5-bd73b210c77e\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T18:03:41.381Z\"}"
+        },
+        "b": {
+          "kind": "v2",
+          "id": "case-1",
+          "admission": {
+            "state": "ADMISSION_RESTRICTED",
+            "code": "EXCLUSIVITY_UNPROVEN"
+          },
+          "runtime": {
+            "status": "GRANTED",
+            "generation": 1,
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "1c98b4f8c1cf27b2c06b98e152c1bf09",
+              "actor": "admin:B",
+              "session": "session-B",
+              "device": "device-A",
+              "generation": 1
+            },
+            "identity": {
+              "tenant": "synthetic-T",
+              "actor": "admin:B",
+              "session": "session-B",
+              "device": "device-A"
+            }
+          },
+          "durable": {
+            "authority": [
+              {
+                "protocol": 2,
+                "status": "granted",
+                "binding": {
+                  "tenant": "synthetic-T",
+                  "token": "1c98b4f8c1cf27b2c06b98e152c1bf09",
+                  "actor": "admin:B",
+                  "session": "session-B",
+                  "device": "device-A",
+                  "generation": 1
+                },
+                "revision": 1
+              }
+            ],
+            "contexts": [
+              {
+                "binding": {
+                  "tenant": "synthetic-T",
+                  "token": "1c98b4f8c1cf27b2c06b98e152c1bf09",
+                  "actor": "admin:B",
+                  "session": "session-B",
+                  "device": "device-A",
+                  "generation": 1
+                },
+                "status": "granted"
+              }
+            ],
+            "operations": [
+              {
+                "id": "probe-1",
+                "tenant": "synthetic-T",
+                "owner": {
+                  "tenant": "synthetic-T",
+                  "token": "1c98b4f8c1cf27b2c06b98e152c1bf09",
+                  "actor": "admin:B",
+                  "session": "session-B",
+                  "device": "device-A",
+                  "generation": 1
+                },
+                "status": "committed"
+              }
+            ],
+            "effects": [
+              {
+                "idempotencyKey": "probe-1",
+                "operationId": "probe-1",
+                "owner": {
+                  "tenant": "synthetic-T",
+                  "token": "1c98b4f8c1cf27b2c06b98e152c1bf09",
+                  "actor": "admin:B",
+                  "session": "session-B",
+                  "device": "device-A",
+                  "generation": 1
+                },
+                "synthetic": true
+              }
+            ]
+          },
+          "legacy": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"32afec67ddf3f8319aa0e05c7be609375a6100afaf296973726004d18e3949d4\",\"actorGeneration\":1,\"contextToken\":\"5d1fc69a-7faa-4cb4-b3c5-bd73b210c77e\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T18:03:41.381Z\"}"
+        }
+      },
+      "writes": {
+        "legacy": {
+          "committed": true
+        },
+        "protectedPrototype": {
+          "committed": false,
+          "error": "EXCLUSIVITY_UNPROVEN"
+        },
+        "forcedPrototype": {
+          "committed": true
+        }
+      },
+      "containment": "PASS",
+      "status": "FAIL",
+      "limitation": "Forced prototype grant is a rejected activation hypothesis; real admission policy remains restricted. Writes are storage payload/effect, not POS sales."
+    },
+    {
+      "id": "T3-02",
+      "domain": "unmanaged",
+      "mainSHA": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+      "legacyBlob": "dcc09e7be2fcf2435801302c3199f8592e029edc",
+      "profile": "isolated-context-2",
+      "origin": "http://127.0.0.1:39863",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "expected": "B restricted without proof; A must be unable to commit for P2",
+      "before": {
+        "kind": "legacy",
+        "id": "case-2",
+        "admission": {
+          "state": "ADMISSION_RESTRICTED",
+          "code": "EXCLUSIVITY_UNPROVEN"
+        },
+        "runtime": "NOT_LOADED_storage_only",
+        "durable": {
+          "authority": [],
+          "contexts": [],
+          "operations": [],
+          "effects": []
+        },
+        "legacy": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"32afec67ddf3f8319aa0e05c7be609375a6100afaf296973726004d18e3949d4\",\"actorGeneration\":1,\"contextToken\":\"3aa94d5f-a79b-4577-9504-cd79b874819a\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T18:03:43.086Z\"}"
+      },
+      "after": {
+        "a": {
+          "kind": "legacy",
+          "id": "case-2",
+          "admission": {
+            "state": "ADMISSION_RESTRICTED",
+            "code": "EXCLUSIVITY_UNPROVEN"
+          },
+          "runtime": "NOT_LOADED_storage_only",
+          "durable": {
+            "authority": [
+              {
+                "protocol": 2,
+                "status": "granted",
+                "binding": {
+                  "tenant": "synthetic-T",
+                  "token": "34ea2407192d0ac14d8c61add59f109f",
+                  "actor": "admin:B",
+                  "session": "session-B",
+                  "device": "device-A",
+                  "generation": 1
+                },
+                "revision": 1
+              }
+            ],
+            "contexts": [
+              {
+                "binding": {
+                  "tenant": "synthetic-T",
+                  "token": "34ea2407192d0ac14d8c61add59f109f",
+                  "actor": "admin:B",
+                  "session": "session-B",
+                  "device": "device-A",
+                  "generation": 1
+                },
+                "status": "granted"
+              }
+            ],
+            "operations": [
+              {
+                "id": "probe-1",
+                "tenant": "synthetic-T",
+                "owner": {
+                  "tenant": "synthetic-T",
+                  "token": "34ea2407192d0ac14d8c61add59f109f",
+                  "actor": "admin:B",
+                  "session": "session-B",
+                  "device": "device-A",
+                  "generation": 1
+                },
+                "status": "committed"
+              }
+            ],
+            "effects": [
+              {
+                "idempotencyKey": "probe-1",
+                "operationId": "probe-1",
+                "owner": {
+                  "tenant": "synthetic-T",
+                  "token": "34ea2407192d0ac14d8c61add59f109f",
+                  "actor": "admin:B",
+                  "session": "session-B",
+                  "device": "device-A",
+                  "generation": 1
+                },
+                "synthetic": true
+              }
+            ]
+          },
+          "legacy": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"32afec67ddf3f8319aa0e05c7be609375a6100afaf296973726004d18e3949d4\",\"actorGeneration\":1,\"contextToken\":\"3aa94d5f-a79b-4577-9504-cd79b874819a\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T18:03:43.086Z\"}"
+        },
+        "b": {
+          "kind": "v2",
+          "id": "case-2",
+          "admission": {
+            "state": "ADMISSION_RESTRICTED",
+            "code": "EXCLUSIVITY_UNPROVEN"
+          },
+          "runtime": {
+            "status": "GRANTED",
+            "generation": 1,
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "34ea2407192d0ac14d8c61add59f109f",
+              "actor": "admin:B",
+              "session": "session-B",
+              "device": "device-A",
+              "generation": 1
+            },
+            "identity": {
+              "tenant": "synthetic-T",
+              "actor": "admin:B",
+              "session": "session-B",
+              "device": "device-A"
+            }
+          },
+          "durable": {
+            "authority": [
+              {
+                "protocol": 2,
+                "status": "granted",
+                "binding": {
+                  "tenant": "synthetic-T",
+                  "token": "34ea2407192d0ac14d8c61add59f109f",
+                  "actor": "admin:B",
+                  "session": "session-B",
+                  "device": "device-A",
+                  "generation": 1
+                },
+                "revision": 1
+              }
+            ],
+            "contexts": [
+              {
+                "binding": {
+                  "tenant": "synthetic-T",
+                  "token": "34ea2407192d0ac14d8c61add59f109f",
+                  "actor": "admin:B",
+                  "session": "session-B",
+                  "device": "device-A",
+                  "generation": 1
+                },
+                "status": "granted"
+              }
+            ],
+            "operations": [
+              {
+                "id": "probe-1",
+                "tenant": "synthetic-T",
+                "owner": {
+                  "tenant": "synthetic-T",
+                  "token": "34ea2407192d0ac14d8c61add59f109f",
+                  "actor": "admin:B",
+                  "session": "session-B",
+                  "device": "device-A",
+                  "generation": 1
+                },
+                "status": "committed"
+              }
+            ],
+            "effects": [
+              {
+                "idempotencyKey": "probe-1",
+                "operationId": "probe-1",
+                "owner": {
+                  "tenant": "synthetic-T",
+                  "token": "34ea2407192d0ac14d8c61add59f109f",
+                  "actor": "admin:B",
+                  "session": "session-B",
+                  "device": "device-A",
+                  "generation": 1
+                },
+                "synthetic": true
+              }
+            ]
+          },
+          "legacy": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"32afec67ddf3f8319aa0e05c7be609375a6100afaf296973726004d18e3949d4\",\"actorGeneration\":1,\"contextToken\":\"3aa94d5f-a79b-4577-9504-cd79b874819a\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T18:03:43.086Z\"}"
+        }
+      },
+      "writes": {
+        "legacy": {
+          "committed": true
+        },
+        "protectedPrototype": {
+          "committed": false,
+          "error": "EXCLUSIVITY_UNPROVEN"
+        },
+        "forcedPrototype": {
+          "committed": true
+        }
+      },
+      "containment": "PASS",
+      "status": "FAIL",
+      "limitation": "Forced prototype grant is a rejected activation hypothesis; real admission policy remains restricted. Writes are storage payload/effect, not POS sales."
+    },
+    {
+      "id": "T3-03",
+      "domain": "partial",
+      "status": "PENDING",
+      "limitation": "Real closed-document session restore not provided by this headless context. Reload is not substituted."
+    },
+    {
+      "id": "T3-04",
+      "domain": "partial",
+      "mainSHA": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+      "legacyBlob": "dcc09e7be2fcf2435801302c3199f8592e029edc",
+      "profile": "isolated-context-3",
+      "origin": "http://127.0.0.1:39863",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "expected": "B restricted without proof; A must be unable to commit for P2",
+      "status": "FAIL",
+      "serverDenial": 410,
+      "swResponse": {
+        "status": 200,
+        "controller": "http://127.0.0.1:39863/sw.js",
+        "caches": [
+          "synthetic-v1"
+        ]
+      },
+      "executed": "MAIN_EXACT_MODULE",
+      "write": {
+        "committed": true
+      },
+      "after": {
+        "kind": "legacy",
+        "id": "cache-case",
+        "admission": {
+          "state": "ADMISSION_RESTRICTED",
+          "code": "EXCLUSIVITY_UNPROVEN"
+        },
+        "runtime": "NOT_LOADED_storage_only",
+        "durable": {
+          "authority": [],
+          "contexts": [],
+          "operations": [],
+          "effects": []
+        },
+        "legacy": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"32afec67ddf3f8319aa0e05c7be609375a6100afaf296973726004d18e3949d4\",\"actorGeneration\":1,\"contextToken\":\"854f87ff-4847-41d2-a698-68dec000cf55\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T18:03:45.587Z\"}"
+      },
+      "limitation": "Server distribution denies old artifact, but cached exact module still executes. Synthetic SW, not Lanzo Workbox."
+    },
+    {
+      "id": "T3-05",
+      "domain": "unmanaged",
+      "mainSHA": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+      "legacyBlob": "dcc09e7be2fcf2435801302c3199f8592e029edc",
+      "profile": "isolated-context-4",
+      "origin": "http://127.0.0.1:39863",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "expected": "B restricted without proof; A must be unable to commit for P2",
+      "status": "FAIL",
+      "writes": [
+        {
+          "committed": true
+        },
+        {
+          "committed": true
+        }
+      ],
+      "after": [
+        {
+          "kind": "legacy",
+          "id": "case-4",
+          "admission": {
+            "state": "ADMISSION_RESTRICTED",
+            "code": "EXCLUSIVITY_UNPROVEN"
+          },
+          "runtime": "NOT_LOADED_storage_only",
+          "durable": {
+            "authority": [
+              {
+                "protocol": 2,
+                "status": "granted",
+                "binding": {
+                  "tenant": "synthetic-T",
+                  "token": "8b534569d8c8085258fbbdbb3a452686",
+                  "actor": "admin:B",
+                  "session": "session-B",
+                  "device": "device-A",
+                  "generation": 1
+                },
+                "revision": 1
+              }
+            ],
+            "contexts": [
+              {
+                "binding": {
+                  "tenant": "synthetic-T",
+                  "token": "8b534569d8c8085258fbbdbb3a452686",
+                  "actor": "admin:B",
+                  "session": "session-B",
+                  "device": "device-A",
+                  "generation": 1
+                },
+                "status": "granted"
+              }
+            ],
+            "operations": [
+              {
+                "id": "probe-1",
+                "tenant": "synthetic-T",
+                "owner": {
+                  "tenant": "synthetic-T",
+                  "token": "8b534569d8c8085258fbbdbb3a452686",
+                  "actor": "admin:B",
+                  "session": "session-B",
+                  "device": "device-A",
+                  "generation": 1
+                },
+                "status": "committed"
+              }
+            ],
+            "effects": [
+              {
+                "idempotencyKey": "probe-1",
+                "operationId": "probe-1",
+                "owner": {
+                  "tenant": "synthetic-T",
+                  "token": "8b534569d8c8085258fbbdbb3a452686",
+                  "actor": "admin:B",
+                  "session": "session-B",
+                  "device": "device-A",
+                  "generation": 1
+                },
+                "synthetic": true
+              }
+            ]
+          },
+          "legacy": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"32afec67ddf3f8319aa0e05c7be609375a6100afaf296973726004d18e3949d4\",\"actorGeneration\":1,\"contextToken\":\"136d2745-074a-42b1-918c-859644d52e86\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T18:03:46.291Z\"}"
+        },
+        {
+          "kind": "v2",
+          "id": "case-4",
+          "admission": {
+            "state": "ADMISSION_RESTRICTED",
+            "code": "EXCLUSIVITY_UNPROVEN"
+          },
+          "runtime": {
+            "status": "GRANTED",
+            "generation": 1,
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "8b534569d8c8085258fbbdbb3a452686",
+              "actor": "admin:B",
+              "session": "session-B",
+              "device": "device-A",
+              "generation": 1
+            },
+            "identity": {
+              "tenant": "synthetic-T",
+              "actor": "admin:B",
+              "session": "session-B",
+              "device": "device-A"
+            }
+          },
+          "durable": {
+            "authority": [
+              {
+                "protocol": 2,
+                "status": "granted",
+                "binding": {
+                  "tenant": "synthetic-T",
+                  "token": "8b534569d8c8085258fbbdbb3a452686",
+                  "actor": "admin:B",
+                  "session": "session-B",
+                  "device": "device-A",
+                  "generation": 1
+                },
+                "revision": 1
+              }
+            ],
+            "contexts": [
+              {
+                "binding": {
+                  "tenant": "synthetic-T",
+                  "token": "8b534569d8c8085258fbbdbb3a452686",
+                  "actor": "admin:B",
+                  "session": "session-B",
+                  "device": "device-A",
+                  "generation": 1
+                },
+                "status": "granted"
+              }
+            ],
+            "operations": [
+              {
+                "id": "probe-1",
+                "tenant": "synthetic-T",
+                "owner": {
+                  "tenant": "synthetic-T",
+                  "token": "8b534569d8c8085258fbbdbb3a452686",
+                  "actor": "admin:B",
+                  "session": "session-B",
+                  "device": "device-A",
+                  "generation": 1
+                },
+                "status": "committed"
+              }
+            ],
+            "effects": [
+              {
+                "idempotencyKey": "probe-1",
+                "operationId": "probe-1",
+                "owner": {
+                  "tenant": "synthetic-T",
+                  "token": "8b534569d8c8085258fbbdbb3a452686",
+                  "actor": "admin:B",
+                  "session": "session-B",
+                  "device": "device-A",
+                  "generation": 1
+                },
+                "synthetic": true
+              }
+            ]
+          },
+          "legacy": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"32afec67ddf3f8319aa0e05c7be609375a6100afaf296973726004d18e3949d4\",\"actorGeneration\":1,\"contextToken\":\"136d2745-074a-42b1-918c-859644d52e86\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T18:03:46.291Z\"}"
+        }
+      ]
+    },
+    {
+      "id": "T3-06",
+      "domain": "unmanaged",
+      "mainSHA": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+      "legacyBlob": "dcc09e7be2fcf2435801302c3199f8592e029edc",
+      "profile": "isolated-context-5",
+      "origin": "http://127.0.0.1:39863",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "expected": "B restricted without proof; A must be unable to commit for P2",
+      "status": "PASS",
+      "beforeOther": {
+        "kind": "legacy",
+        "id": "case-5",
+        "admission": {
+          "state": "ADMISSION_RESTRICTED",
+          "code": "EXCLUSIVITY_UNPROVEN"
+        },
+        "runtime": "NOT_LOADED_storage_only",
+        "durable": {
+          "authority": [],
+          "contexts": [],
+          "operations": [],
+          "effects": []
+        },
+        "legacy": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"32afec67ddf3f8319aa0e05c7be609375a6100afaf296973726004d18e3949d4\",\"actorGeneration\":1,\"contextToken\":\"b7072ec2-0a2b-4e47-a55e-df38cdf505e4\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T18:03:46.751Z\"}"
+      },
+      "afterOther": {
+        "kind": "v2",
+        "id": "case-5",
+        "admission": {
+          "state": "ADMISSION_RESTRICTED",
+          "code": "EXCLUSIVITY_UNPROVEN"
+        },
+        "runtime": {
+          "status": "GRANTED",
+          "generation": 1,
+          "binding": {
+            "tenant": "synthetic-T",
+            "token": "230fae9753af0c8632e21418418775df",
+            "actor": "admin:B",
+            "session": "session-B",
+            "device": "device-A",
+            "generation": 1
+          },
+          "identity": {
+            "tenant": "synthetic-T",
+            "actor": "admin:B",
+            "session": "session-B",
+            "device": "device-A"
+          }
+        },
+        "durable": {
+          "authority": [
+            {
+              "protocol": 2,
+              "status": "granted",
+              "binding": {
+                "tenant": "synthetic-T",
+                "token": "230fae9753af0c8632e21418418775df",
+                "actor": "admin:B",
+                "session": "session-B",
+                "device": "device-A",
+                "generation": 1
+              },
+              "revision": 1
+            }
+          ],
+          "contexts": [
+            {
+              "binding": {
+                "tenant": "synthetic-T",
+                "token": "230fae9753af0c8632e21418418775df",
+                "actor": "admin:B",
+                "session": "session-B",
+                "device": "device-A",
+                "generation": 1
+              },
+              "status": "granted"
+            }
+          ],
+          "operations": [
+            {
+              "id": "probe-1",
+              "tenant": "synthetic-T",
+              "owner": {
+                "tenant": "synthetic-T",
+                "token": "230fae9753af0c8632e21418418775df",
+                "actor": "admin:B",
+                "session": "session-B",
+                "device": "device-A",
+                "generation": 1
+              },
+              "status": "committed"
+            }
+          ],
+          "effects": [
+            {
+              "idempotencyKey": "probe-1",
+              "operationId": "probe-1",
+              "owner": {
+                "tenant": "synthetic-T",
+                "token": "230fae9753af0c8632e21418418775df",
+                "actor": "admin:B",
+                "session": "session-B",
+                "device": "device-A",
+                "generation": 1
+              },
+              "synthetic": true
+            }
+          ]
+        },
+        "legacy": null
+      },
+      "limitation": "Two isolated BrowserContexts are separate storage partitions, not two physical desktop profiles. No shared-IDB claim."
+    },
+    {
+      "id": "T3-07",
+      "domain": "partial",
+      "status": "PENDING",
+      "limitation": "Installed PWA unavailable; headless page is not installation."
+    },
+    {
+      "id": "T3-08",
+      "domain": "unmanaged",
+      "mainSHA": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+      "legacyBlob": "dcc09e7be2fcf2435801302c3199f8592e029edc",
+      "profile": "isolated-context-6",
+      "origin": "http://127.0.0.1:39863",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "expected": "B restricted without proof; A must be unable to commit for P2",
+      "status": "PENDING",
+      "persisted": false,
+      "write": {
+        "committed": true
+      },
+      "limitation": "Only pageshow.persisted=true counts as BFCache. A normal history reload does not."
+    },
+    {
+      "id": "T3-09",
+      "domain": "partial",
+      "mainSHA": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+      "legacyBlob": "dcc09e7be2fcf2435801302c3199f8592e029edc",
+      "profile": "isolated-context-7",
+      "origin": "http://127.0.0.1:39863",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "expected": "B restricted without proof; A must be unable to commit for P2",
+      "status": "FAIL",
+      "before": {
+        "kind": "legacy",
+        "id": "case-7",
+        "admission": {
+          "state": "ADMISSION_RESTRICTED",
+          "code": "EXCLUSIVITY_UNPROVEN"
+        },
+        "runtime": "NOT_LOADED_storage_only",
+        "durable": {
+          "authority": [],
+          "contexts": [],
+          "operations": [],
+          "effects": []
+        },
+        "legacy": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"32afec67ddf3f8319aa0e05c7be609375a6100afaf296973726004d18e3949d4\",\"actorGeneration\":1,\"contextToken\":\"971d192f-e035-46f0-92f6-d6e0fa34152e\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T18:03:48.267Z\"}"
+      },
+      "reg": {
+        "active": "activated",
+        "installing": "installing"
+      },
+      "write": {
+        "committed": true
+      },
+      "after": {
+        "kind": "legacy",
+        "id": "case-7",
+        "admission": {
+          "state": "ADMISSION_RESTRICTED",
+          "code": "EXCLUSIVITY_UNPROVEN"
+        },
+        "runtime": "NOT_LOADED_storage_only",
+        "durable": {
+          "authority": [],
+          "contexts": [],
+          "operations": [],
+          "effects": []
+        },
+        "legacy": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"32afec67ddf3f8319aa0e05c7be609375a6100afaf296973726004d18e3949d4\",\"actorGeneration\":1,\"contextToken\":\"971d192f-e035-46f0-92f6-d6e0fa34152e\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T18:03:48.267Z\"}"
+      },
+      "limitation": "New SW source served does not replace already executing legacy JS."
+    },
+    {
+      "id": "T3-10",
+      "domain": "partial",
+      "mainSHA": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+      "legacyBlob": "dcc09e7be2fcf2435801302c3199f8592e029edc",
+      "profile": "isolated-context-8",
+      "origin": "http://127.0.0.1:39863",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "expected": "B restricted without proof; A must be unable to commit for P2",
+      "status": "PENDING",
+      "before": {
+        "kind": "v2",
+        "id": "case-8",
+        "admission": {
+          "state": "ADMISSION_RESTRICTED",
+          "code": "EXCLUSIVITY_UNPROVEN"
+        },
+        "runtime": {
+          "status": "GRANTED",
+          "generation": 1,
+          "binding": {
+            "tenant": "synthetic-T",
+            "token": "efb6fc044ec9154e16838ede0deaa1c7",
+            "actor": "admin:B",
+            "session": "session-B",
+            "device": "device-A",
+            "generation": 1
+          },
+          "identity": {
+            "tenant": "synthetic-T",
+            "actor": "admin:B",
+            "session": "session-B",
+            "device": "device-A"
+          }
+        },
+        "durable": {
+          "authority": [
+            {
+              "protocol": 2,
+              "status": "granted",
+              "binding": {
+                "tenant": "synthetic-T",
+                "token": "efb6fc044ec9154e16838ede0deaa1c7",
+                "actor": "admin:B",
+                "session": "session-B",
+                "device": "device-A",
+                "generation": 1
+              },
+              "revision": 1
+            }
+          ],
+          "contexts": [
+            {
+              "binding": {
+                "tenant": "synthetic-T",
+                "token": "efb6fc044ec9154e16838ede0deaa1c7",
+                "actor": "admin:B",
+                "session": "session-B",
+                "device": "device-A",
+                "generation": 1
+              },
+              "status": "granted"
+            }
+          ],
+          "operations": [
+            {
+              "id": "pending",
+              "tenant": "synthetic-T",
+              "owner": {
+                "tenant": "synthetic-T",
+                "token": "efb6fc044ec9154e16838ede0deaa1c7",
+                "actor": "admin:B",
+                "session": "session-B",
+                "device": "device-A",
+                "generation": 1
+              },
+              "status": "pending"
+            }
+          ],
+          "effects": []
+        },
+        "legacy": null
+      },
+      "after": {
+        "kind": "v2",
+        "id": "case-8",
+        "admission": {
+          "state": "ADMISSION_RESTRICTED",
+          "code": "EXCLUSIVITY_UNPROVEN"
+        },
+        "runtime": {
+          "status": "GRANTED",
+          "generation": 1,
+          "binding": {
+            "tenant": "synthetic-T",
+            "token": "efb6fc044ec9154e16838ede0deaa1c7",
+            "actor": "admin:B",
+            "session": "session-B",
+            "device": "device-A",
+            "generation": 1
+          },
+          "identity": {
+            "tenant": "synthetic-T",
+            "actor": "admin:B",
+            "session": "session-B",
+            "device": "device-A"
+          }
+        },
+        "durable": {
+          "authority": [
+            {
+              "protocol": 2,
+              "status": "granted",
+              "binding": {
+                "tenant": "synthetic-T",
+                "token": "efb6fc044ec9154e16838ede0deaa1c7",
+                "actor": "admin:B",
+                "session": "session-B",
+                "device": "device-A",
+                "generation": 1
+              },
+              "revision": 1
+            }
+          ],
+          "contexts": [
+            {
+              "binding": {
+                "tenant": "synthetic-T",
+                "token": "efb6fc044ec9154e16838ede0deaa1c7",
+                "actor": "admin:B",
+                "session": "session-B",
+                "device": "device-A",
+                "generation": 1
+              },
+              "status": "granted"
+            }
+          ],
+          "operations": [
+            {
+              "id": "pending",
+              "tenant": "synthetic-T",
+              "owner": {
+                "tenant": "synthetic-T",
+                "token": "efb6fc044ec9154e16838ede0deaa1c7",
+                "actor": "admin:B",
+                "session": "session-B",
+                "device": "device-A",
+                "generation": 1
+              },
+              "status": "pending"
+            }
+          ],
+          "effects": []
+        },
+        "legacy": null
+      },
+      "worker": {
+        "active": "activated",
+        "hasHandle": true
+      },
+      "limitation": "No skipWaiting or reload called. Fixture intent, not real payment. Missing waiting observation is not a security failure."
+    },
+    {
+      "id": "T3-11",
+      "domain": "partial",
+      "status": "PENDING",
+      "limitation": "Persistent desktop session restart/restore not executed; context shutdown does not prove restored versions."
+    },
+    {
+      "id": "T3-12",
+      "domain": "unmanaged",
+      "mainSHA": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+      "legacyBlob": "dcc09e7be2fcf2435801302c3199f8592e029edc",
+      "profile": "isolated-context-9",
+      "origin": "http://127.0.0.1:39863",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "expected": "B restricted without proof; A must be unable to commit for P2",
+      "status": "FAIL",
+      "dexieVersion": "4.4.3",
+      "stateAfterUpgrade": false,
+      "oldVersion": 1,
+      "nextVersion": 2,
+      "blocked": false,
+      "heldWrite": false,
+      "rows": [
+        {
+          "id": "after-upgrade",
+          "synthetic": true
+        },
+        {
+          "id": "before",
+          "synthetic": true
+        }
+      ],
+      "limitation": "Real Dexie and captured table on synthetic schema. T3-13 refuses versionchange until a synthetic write commits, then closes voluntarily. Lanzo preflight/complete financial route not loaded."
+    },
+    {
+      "id": "T3-13",
+      "domain": "unmanaged",
+      "mainSHA": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+      "legacyBlob": "dcc09e7be2fcf2435801302c3199f8592e029edc",
+      "profile": "isolated-context-10",
+      "origin": "http://127.0.0.1:39863",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "expected": "B restricted without proof; A must be unable to commit for P2",
+      "status": "FAIL",
+      "dexieVersion": "4.4.3",
+      "stateAfterUpgrade": false,
+      "oldVersion": 1,
+      "nextVersion": 2,
+      "blocked": true,
+      "heldWrite": true,
+      "rows": [
+        {
+          "id": "after-upgrade",
+          "synthetic": true
+        },
+        {
+          "id": "before",
+          "synthetic": true
+        },
+        {
+          "id": "while-upgrade-blocked",
+          "synthetic": true
+        }
+      ],
+      "limitation": "Real Dexie and captured table on synthetic schema. T3-13 refuses versionchange until a synthetic write commits, then closes voluntarily. Lanzo preflight/complete financial route not loaded."
+    },
+    {
+      "id": "T3-14",
+      "domain": "unmanaged",
+      "mainSHA": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+      "legacyBlob": "dcc09e7be2fcf2435801302c3199f8592e029edc",
+      "profile": "isolated-context-11",
+      "origin": "http://127.0.0.1:39863",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "expected": "B restricted without proof; A must be unable to commit for P2",
+      "status": "FAIL",
+      "after": {
+        "kind": "v2",
+        "id": "case-11",
+        "admission": {
+          "state": "ADMISSION_RESTRICTED",
+          "code": "EXCLUSIVITY_UNPROVEN"
+        },
+        "runtime": {
+          "status": "INVALIDATED",
+          "generation": 2,
+          "binding": null,
+          "identity": {
+            "tenant": "synthetic-T",
+            "actor": "admin:B",
+            "session": "session-B",
+            "device": "device-A"
+          }
+        },
+        "durable": {
+          "authority": [
+            {
+              "protocol": 2,
+              "status": "locked",
+              "binding": {
+                "tenant": "synthetic-T",
+                "token": "a633fc0a73c454819a86454cb2961eb7",
+                "actor": "admin:B",
+                "session": "session-B",
+                "device": "device-A",
+                "generation": 1
+              },
+              "revision": 2
+            }
+          ],
+          "contexts": [
+            {
+              "binding": {
+                "tenant": "synthetic-T",
+                "token": "a633fc0a73c454819a86454cb2961eb7",
+                "actor": "admin:B",
+                "session": "session-B",
+                "device": "device-A",
+                "generation": 1
+              },
+              "status": "revoked"
+            }
+          ],
+          "operations": [],
+          "effects": [
+            {
+              "synthetic": true,
+              "bypassedFence": true
+            }
+          ]
+        },
+        "legacy": null
+      },
+      "limitation": "Noncooperating direct IDB writer is synthetic, not exact POS financial code."
+    },
+    {
+      "id": "T3-15",
+      "domain": "unmanaged",
+      "mainSHA": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+      "legacyBlob": "dcc09e7be2fcf2435801302c3199f8592e029edc",
+      "profile": "isolated-context-12",
+      "origin": "http://127.0.0.1:39863",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "expected": "B restricted without proof; A must be unable to commit for P2",
+      "status": "FAIL",
+      "writes": [
+        {
+          "committed": true
+        },
+        {
+          "committed": true
+        }
+      ],
+      "after": [
+        {
+          "kind": "legacy",
+          "id": "case-12",
+          "admission": {
+            "state": "ADMISSION_RESTRICTED",
+            "code": "EXCLUSIVITY_UNPROVEN"
+          },
+          "runtime": "NOT_LOADED_storage_only",
+          "durable": {
+            "authority": [
+              {
+                "protocol": 2,
+                "status": "granted",
+                "binding": {
+                  "tenant": "synthetic-T",
+                  "token": "b3261a201e1962631f97083c522dc823",
+                  "actor": "admin:B",
+                  "session": "session-B",
+                  "device": "device-A",
+                  "generation": 1
+                },
+                "revision": 1
+              }
+            ],
+            "contexts": [
+              {
+                "binding": {
+                  "tenant": "synthetic-T",
+                  "token": "b3261a201e1962631f97083c522dc823",
+                  "actor": "admin:B",
+                  "session": "session-B",
+                  "device": "device-A",
+                  "generation": 1
+                },
+                "status": "granted"
+              }
+            ],
+            "operations": [
+              {
+                "id": "probe-1",
+                "tenant": "synthetic-T",
+                "owner": {
+                  "tenant": "synthetic-T",
+                  "token": "b3261a201e1962631f97083c522dc823",
+                  "actor": "admin:B",
+                  "session": "session-B",
+                  "device": "device-A",
+                  "generation": 1
+                },
+                "status": "committed"
+              }
+            ],
+            "effects": [
+              {
+                "idempotencyKey": "probe-1",
+                "operationId": "probe-1",
+                "owner": {
+                  "tenant": "synthetic-T",
+                  "token": "b3261a201e1962631f97083c522dc823",
+                  "actor": "admin:B",
+                  "session": "session-B",
+                  "device": "device-A",
+                  "generation": 1
+                },
+                "synthetic": true
+              }
+            ]
+          },
+          "legacy": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"32afec67ddf3f8319aa0e05c7be609375a6100afaf296973726004d18e3949d4\",\"actorGeneration\":1,\"contextToken\":\"9120541a-8f34-4d3b-b144-0254b68a9053\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T18:03:50.700Z\"}"
+        },
+        {
+          "kind": "v2",
+          "id": "case-12",
+          "admission": {
+            "state": "ADMISSION_RESTRICTED",
+            "code": "EXCLUSIVITY_UNPROVEN"
+          },
+          "runtime": {
+            "status": "GRANTED",
+            "generation": 1,
+            "binding": {
+              "tenant": "synthetic-T",
+              "token": "b3261a201e1962631f97083c522dc823",
+              "actor": "admin:B",
+              "session": "session-B",
+              "device": "device-A",
+              "generation": 1
+            },
+            "identity": {
+              "tenant": "synthetic-T",
+              "actor": "admin:B",
+              "session": "session-B",
+              "device": "device-A"
+            }
+          },
+          "durable": {
+            "authority": [
+              {
+                "protocol": 2,
+                "status": "granted",
+                "binding": {
+                  "tenant": "synthetic-T",
+                  "token": "b3261a201e1962631f97083c522dc823",
+                  "actor": "admin:B",
+                  "session": "session-B",
+                  "device": "device-A",
+                  "generation": 1
+                },
+                "revision": 1
+              }
+            ],
+            "contexts": [
+              {
+                "binding": {
+                  "tenant": "synthetic-T",
+                  "token": "b3261a201e1962631f97083c522dc823",
+                  "actor": "admin:B",
+                  "session": "session-B",
+                  "device": "device-A",
+                  "generation": 1
+                },
+                "status": "granted"
+              }
+            ],
+            "operations": [
+              {
+                "id": "probe-1",
+                "tenant": "synthetic-T",
+                "owner": {
+                  "tenant": "synthetic-T",
+                  "token": "b3261a201e1962631f97083c522dc823",
+                  "actor": "admin:B",
+                  "session": "session-B",
+                  "device": "device-A",
+                  "generation": 1
+                },
+                "status": "committed"
+              }
+            ],
+            "effects": [
+              {
+                "idempotencyKey": "probe-1",
+                "operationId": "probe-1",
+                "owner": {
+                  "tenant": "synthetic-T",
+                  "token": "b3261a201e1962631f97083c522dc823",
+                  "actor": "admin:B",
+                  "session": "session-B",
+                  "device": "device-A",
+                  "generation": 1
+                },
+                "synthetic": true
+              }
+            ]
+          },
+          "legacy": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"32afec67ddf3f8319aa0e05c7be609375a6100afaf296973726004d18e3949d4\",\"actorGeneration\":1,\"contextToken\":\"9120541a-8f34-4d3b-b144-0254b68a9053\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T18:03:50.700Z\"}"
+        }
+      ],
+      "limitation": "Offline browser network, no Supabase configured; does not certify product Admin policy."
+    },
+    {
+      "id": "T3-16",
+      "domain": "unmanaged",
+      "mainSHA": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+      "legacyBlob": "dcc09e7be2fcf2435801302c3199f8592e029edc",
+      "profile": "isolated-context-13",
+      "origin": "http://127.0.0.1:39863",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "expected": "B restricted without proof; A must be unable to commit for P2",
+      "status": "FAIL",
+      "before": {
+        "kind": "v2",
+        "id": "case-13",
+        "admission": {
+          "state": "ADMISSION_RESTRICTED",
+          "code": "EXCLUSIVITY_UNPROVEN"
+        },
+        "runtime": {
+          "status": "GRANTED",
+          "generation": 1,
+          "binding": {
+            "tenant": "synthetic-T",
+            "token": "f8ba28552be2ec28cc65d71a06eb239e",
+            "actor": "admin:B",
+            "session": "session-B",
+            "device": "device-A",
+            "generation": 1
+          },
+          "identity": {
+            "tenant": "synthetic-T",
+            "actor": "admin:B",
+            "session": "session-B",
+            "device": "device-A"
+          }
+        },
+        "durable": {
+          "authority": [
+            {
+              "protocol": 2,
+              "status": "granted",
+              "binding": {
+                "tenant": "synthetic-T",
+                "token": "f8ba28552be2ec28cc65d71a06eb239e",
+                "actor": "admin:B",
+                "session": "session-B",
+                "device": "device-A",
+                "generation": 1
+              },
+              "revision": 1
+            }
+          ],
+          "contexts": [
+            {
+              "binding": {
+                "tenant": "synthetic-T",
+                "token": "f8ba28552be2ec28cc65d71a06eb239e",
+                "actor": "admin:B",
+                "session": "session-B",
+                "device": "device-A",
+                "generation": 1
+              },
+              "status": "granted"
+            }
+          ],
+          "operations": [],
+          "effects": []
+        },
+        "legacy": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"32afec67ddf3f8319aa0e05c7be609375a6100afaf296973726004d18e3949d4\",\"actorGeneration\":1,\"contextToken\":\"52ed1581-9c25-4efe-8286-ecbc4ed5a7b9\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T18:03:51.648Z\"}"
+      },
+      "write": {
+        "committed": true
+      },
+      "after": {
+        "kind": "v2",
+        "id": "case-13",
+        "admission": {
+          "state": "ADMISSION_RESTRICTED",
+          "code": "EXCLUSIVITY_UNPROVEN"
+        },
+        "runtime": {
+          "status": "GRANTED",
+          "generation": 1,
+          "binding": {
+            "tenant": "synthetic-T",
+            "token": "f8ba28552be2ec28cc65d71a06eb239e",
+            "actor": "admin:B",
+            "session": "session-B",
+            "device": "device-A",
+            "generation": 1
+          },
+          "identity": {
+            "tenant": "synthetic-T",
+            "actor": "admin:B",
+            "session": "session-B",
+            "device": "device-A"
+          }
+        },
+        "durable": {
+          "authority": [
+            {
+              "protocol": 2,
+              "status": "granted",
+              "binding": {
+                "tenant": "synthetic-T",
+                "token": "f8ba28552be2ec28cc65d71a06eb239e",
+                "actor": "admin:B",
+                "session": "session-B",
+                "device": "device-A",
+                "generation": 1
+              },
+              "revision": 1
+            }
+          ],
+          "contexts": [
+            {
+              "binding": {
+                "tenant": "synthetic-T",
+                "token": "f8ba28552be2ec28cc65d71a06eb239e",
+                "actor": "admin:B",
+                "session": "session-B",
+                "device": "device-A",
+                "generation": 1
+              },
+              "status": "granted"
+            }
+          ],
+          "operations": [],
+          "effects": []
+        },
+        "legacy": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"32afec67ddf3f8319aa0e05c7be609375a6100afaf296973726004d18e3949d4\",\"actorGeneration\":1,\"contextToken\":\"52ed1581-9c25-4efe-8286-ecbc4ed5a7b9\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T18:03:51.648Z\"}"
+      },
+      "limitation": "New synthetic legacy storage activation, not authentication or real session issuance."
+    },
+    {
+      "id": "T3-17",
+      "domain": "unmanaged",
+      "mainSHA": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+      "legacyBlob": "dcc09e7be2fcf2435801302c3199f8592e029edc",
+      "profile": "isolated-context-14",
+      "origin": "http://127.0.0.1:39863",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "expected": "B restricted without proof; A must be unable to commit for P2",
+      "status": "PASS",
+      "before": {
+        "kind": "v2",
+        "id": "case-14",
+        "admission": {
+          "state": "ADMISSION_RESTRICTED",
+          "code": "EXCLUSIVITY_UNPROVEN"
+        },
+        "runtime": {
+          "status": "GRANTED",
+          "generation": 1,
+          "binding": {
+            "tenant": "synthetic-T",
+            "token": "bf49e6b643cfc4095f81a4372fe9db66",
+            "actor": "admin:B",
+            "session": "session-B",
+            "device": "device-A",
+            "generation": 1
+          },
+          "identity": {
+            "tenant": "synthetic-T",
+            "actor": "admin:B",
+            "session": "session-B",
+            "device": "device-A"
+          }
+        },
+        "durable": {
+          "authority": [
+            {
+              "protocol": 2,
+              "status": "granted",
+              "binding": {
+                "tenant": "synthetic-T",
+                "token": "bf49e6b643cfc4095f81a4372fe9db66",
+                "actor": "admin:B",
+                "session": "session-B",
+                "device": "device-A",
+                "generation": 1
+              },
+              "revision": 1
+            }
+          ],
+          "contexts": [
+            {
+              "binding": {
+                "tenant": "synthetic-T",
+                "token": "bf49e6b643cfc4095f81a4372fe9db66",
+                "actor": "admin:B",
+                "session": "session-B",
+                "device": "device-A",
+                "generation": 1
+              },
+              "status": "granted"
+            }
+          ],
+          "operations": [],
+          "effects": []
+        },
+        "legacy": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"32afec67ddf3f8319aa0e05c7be609375a6100afaf296973726004d18e3949d4\",\"actorGeneration\":1,\"contextToken\":\"342fc8b3-79b9-4944-ab82-4a24ebadfbb5\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T18:03:51.934Z\"}"
+      },
+      "after": {
+        "kind": "v2",
+        "id": "case-14",
+        "admission": {
+          "state": "ADMISSION_RESTRICTED",
+          "code": "EXCLUSIVITY_UNPROVEN"
+        },
+        "runtime": {
+          "status": "GRANTED",
+          "generation": 1,
+          "binding": {
+            "tenant": "synthetic-T",
+            "token": "bf49e6b643cfc4095f81a4372fe9db66",
+            "actor": "admin:B",
+            "session": "session-B",
+            "device": "device-A",
+            "generation": 1
+          },
+          "identity": {
+            "tenant": "synthetic-T",
+            "actor": "admin:B",
+            "session": "session-B",
+            "device": "device-A"
+          }
+        },
+        "durable": {
+          "authority": [
+            {
+              "protocol": 2,
+              "status": "granted",
+              "binding": {
+                "tenant": "synthetic-T",
+                "token": "bf49e6b643cfc4095f81a4372fe9db66",
+                "actor": "admin:B",
+                "session": "session-B",
+                "device": "device-A",
+                "generation": 1
+              },
+              "revision": 1
+            }
+          ],
+          "contexts": [
+            {
+              "binding": {
+                "tenant": "synthetic-T",
+                "token": "bf49e6b643cfc4095f81a4372fe9db66",
+                "actor": "admin:B",
+                "session": "session-B",
+                "device": "device-A",
+                "generation": 1
+              },
+              "status": "granted"
+            }
+          ],
+          "operations": [
+            {
+              "id": "probe-1",
+              "tenant": "synthetic-T",
+              "owner": {
+                "tenant": "synthetic-T",
+                "token": "bf49e6b643cfc4095f81a4372fe9db66",
+                "actor": "admin:B",
+                "session": "session-B",
+                "device": "device-A",
+                "generation": 1
+              },
+              "status": "committed"
+            }
+          ],
+          "effects": [
+            {
+              "idempotencyKey": "probe-1",
+              "operationId": "probe-1",
+              "owner": {
+                "tenant": "synthetic-T",
+                "token": "bf49e6b643cfc4095f81a4372fe9db66",
+                "actor": "admin:B",
+                "session": "session-B",
+                "device": "device-A",
+                "generation": 1
+              },
+              "synthetic": true
+            }
+          ]
+        },
+        "legacy": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":2,\"contextToken\":\"676ad3de-9fc9-4aaf-a985-5f9848e7757e\",\"status\":\"locked\",\"reason\":\"late-synthetic-logout\",\"updatedAt\":\"2026-10-21T18:03:52.294Z\"}"
+      },
+      "write": {
+        "committed": true
+      },
+      "limitation": "P1 separation only. Does not retire A or close legacy LC13. Prototype Runtime only."
+    },
+    {
+      "id": "T3-18",
+      "domain": "partial",
+      "mainSHA": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+      "legacyBlob": "dcc09e7be2fcf2435801302c3199f8592e029edc",
+      "profile": "isolated-context-15",
+      "origin": "http://127.0.0.1:39863",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "expected": "B restricted without proof; A must be unable to commit for P2",
+      "status": "FAIL",
+      "serverDenial": 410,
+      "write": {
+        "committed": true
+      },
+      "after": {
+        "kind": "v2",
+        "id": "case-15",
+        "admission": {
+          "state": "ADMISSION_RESTRICTED",
+          "code": "EXCLUSIVITY_UNPROVEN"
+        },
+        "runtime": {
+          "status": "GRANTED",
+          "generation": 1,
+          "binding": {
+            "tenant": "synthetic-T",
+            "token": "f3b8a29764a933cb3cf61755eedd71c9",
+            "actor": "admin:B",
+            "session": "session-B",
+            "device": "device-A",
+            "generation": 1
+          },
+          "identity": {
+            "tenant": "synthetic-T",
+            "actor": "admin:B",
+            "session": "session-B",
+            "device": "device-A"
+          }
+        },
+        "durable": {
+          "authority": [
+            {
+              "protocol": 2,
+              "status": "granted",
+              "binding": {
+                "tenant": "synthetic-T",
+                "token": "f3b8a29764a933cb3cf61755eedd71c9",
+                "actor": "admin:B",
+                "session": "session-B",
+                "device": "device-A",
+                "generation": 1
+              },
+              "revision": 1
+            }
+          ],
+          "contexts": [
+            {
+              "binding": {
+                "tenant": "synthetic-T",
+                "token": "f3b8a29764a933cb3cf61755eedd71c9",
+                "actor": "admin:B",
+                "session": "session-B",
+                "device": "device-A",
+                "generation": 1
+              },
+              "status": "granted"
+            }
+          ],
+          "operations": [],
+          "effects": []
+        },
+        "legacy": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"32afec67ddf3f8319aa0e05c7be609375a6100afaf296973726004d18e3949d4\",\"actorGeneration\":1,\"contextToken\":\"e11e4fec-9ea8-4f1d-ae44-fe093efa50f1\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T18:03:52.643Z\"}"
+      },
+      "limitation": "Distribution gate rejects download but memory remains. Not a managed OS distribution certificate."
+    },
+    {
+      "id": "T3-19",
+      "domain": "partial",
+      "mainSHA": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+      "legacyBlob": "dcc09e7be2fcf2435801302c3199f8592e029edc",
+      "profile": "isolated-context-16",
+      "origin": "http://127.0.0.1:39863",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "expected": "B restricted without proof; A must be unable to commit for P2",
+      "status": "PASS",
+      "decision": {
+        "state": "ADMISSION_RESTRICTED",
+        "code": "STORAGE_UNAVAILABLE"
+      },
+      "before": {
+        "kind": "v2",
+        "id": "case-16",
+        "admission": {
+          "state": "ADMISSION_RESTRICTED",
+          "code": "EXCLUSIVITY_UNPROVEN"
+        },
+        "runtime": {
+          "status": "GRANTED",
+          "generation": 1,
+          "binding": {
+            "tenant": "synthetic-T",
+            "token": "53d19ecb9ff4a58ed42a5b3a462b7ab5",
+            "actor": "admin:B",
+            "session": "session-B",
+            "device": "device-A",
+            "generation": 1
+          },
+          "identity": {
+            "tenant": "synthetic-T",
+            "actor": "admin:B",
+            "session": "session-B",
+            "device": "device-A"
+          }
+        },
+        "durable": {
+          "authority": [
+            {
+              "protocol": 2,
+              "status": "granted",
+              "binding": {
+                "tenant": "synthetic-T",
+                "token": "53d19ecb9ff4a58ed42a5b3a462b7ab5",
+                "actor": "admin:B",
+                "session": "session-B",
+                "device": "device-A",
+                "generation": 1
+              },
+              "revision": 1
+            }
+          ],
+          "contexts": [
+            {
+              "binding": {
+                "tenant": "synthetic-T",
+                "token": "53d19ecb9ff4a58ed42a5b3a462b7ab5",
+                "actor": "admin:B",
+                "session": "session-B",
+                "device": "device-A",
+                "generation": 1
+              },
+              "status": "granted"
+            }
+          ],
+          "operations": [],
+          "effects": []
+        },
+        "legacy": null
+      },
+      "after": {
+        "kind": "v2",
+        "id": "case-16",
+        "admission": {
+          "state": "ADMISSION_RESTRICTED",
+          "code": "EXCLUSIVITY_UNPROVEN"
+        },
+        "runtime": {
+          "status": "GRANTED",
+          "generation": 1,
+          "binding": {
+            "tenant": "synthetic-T",
+            "token": "53d19ecb9ff4a58ed42a5b3a462b7ab5",
+            "actor": "admin:B",
+            "session": "session-B",
+            "device": "device-A",
+            "generation": 1
+          },
+          "identity": {
+            "tenant": "synthetic-T",
+            "actor": "admin:B",
+            "session": "session-B",
+            "device": "device-A"
+          }
+        },
+        "durable": {
+          "authority": [
+            {
+              "protocol": 2,
+              "status": "granted",
+              "binding": {
+                "tenant": "synthetic-T",
+                "token": "53d19ecb9ff4a58ed42a5b3a462b7ab5",
+                "actor": "admin:B",
+                "session": "session-B",
+                "device": "device-A",
+                "generation": 1
+              },
+              "revision": 1
+            }
+          ],
+          "contexts": [
+            {
+              "binding": {
+                "tenant": "synthetic-T",
+                "token": "53d19ecb9ff4a58ed42a5b3a462b7ab5",
+                "actor": "admin:B",
+                "session": "session-B",
+                "device": "device-A",
+                "generation": 1
+              },
+              "status": "granted"
+            }
+          ],
+          "operations": [],
+          "effects": []
+        },
+        "legacy": null
+      },
+      "limitation": "Injected unavailable witness/storage policy input; no real management agent exists. Forced prototype context is not a production grant."
+    },
+    {
+      "id": "T3-20",
+      "domain": "partial",
+      "mainSHA": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+      "legacyBlob": "dcc09e7be2fcf2435801302c3199f8592e029edc",
+      "profile": "isolated-context-17",
+      "origin": "http://127.0.0.1:39863",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "expected": "B restricted without proof; A must be unable to commit for P2",
+      "status": "FAIL",
+      "write": {
+        "committed": true
+      },
+      "after": {
+        "kind": "v2",
+        "id": "case-17",
+        "admission": {
+          "state": "ADMISSION_RESTRICTED",
+          "code": "EXCLUSIVITY_UNPROVEN"
+        },
+        "runtime": {
+          "status": "GRANTED",
+          "generation": 1,
+          "binding": {
+            "tenant": "synthetic-T",
+            "token": "8c67b2f0e00e506446eca8bd09278fb9",
+            "actor": "admin:B",
+            "session": "session-B",
+            "device": "device-A",
+            "generation": 1
+          },
+          "identity": {
+            "tenant": "synthetic-T",
+            "actor": "admin:B",
+            "session": "session-B",
+            "device": "device-A"
+          }
+        },
+        "durable": {
+          "authority": [
+            {
+              "protocol": 2,
+              "status": "granted",
+              "binding": {
+                "tenant": "synthetic-T",
+                "token": "8c67b2f0e00e506446eca8bd09278fb9",
+                "actor": "admin:B",
+                "session": "session-B",
+                "device": "device-A",
+                "generation": 1
+              },
+              "revision": 1
+            }
+          ],
+          "contexts": [
+            {
+              "binding": {
+                "tenant": "synthetic-T",
+                "token": "8c67b2f0e00e506446eca8bd09278fb9",
+                "actor": "admin:B",
+                "session": "session-B",
+                "device": "device-A",
+                "generation": 1
+              },
+              "status": "granted"
+            }
+          ],
+          "operations": [],
+          "effects": []
+        },
+        "legacy": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"32afec67ddf3f8319aa0e05c7be609375a6100afaf296973726004d18e3949d4\",\"actorGeneration\":1,\"contextToken\":\"c003f850-b974-47ba-94d8-266bebb2d8e5\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T18:03:54.630Z\"}"
+      },
+      "limitation": "Reentry after voluntary closure; no enforced transition was completed."
+    },
+    {
+      "id": "DOMAIN-3",
+      "domain": "fully-managed",
+      "status": "UNPROVEN",
+      "code": "MANAGED_ENFORCEMENT_NOT_AVAILABLE",
+      "limitation": "Harness controls its child browser, not an OS-wide allowlist, external writer reference monitor or persistent rollback protection. No positive admission asserted."
+    },
+    {
+      "id": "CAP-127.0.0.1",
+      "domain": "capability",
+      "mainSHA": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+      "legacyBlob": "dcc09e7be2fcf2435801302c3199f8592e029edc",
+      "profile": "isolated-context-18",
+      "origin": "http://127.0.0.1:39863",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "expected": "B restricted without proof; A must be unable to commit for P2",
+      "status": "PASS",
+      "capabilities": {
+        "secure": true,
+        "idb": true,
+        "locks": true,
+        "bc": true,
+        "sw": true,
+        "subtle": true,
+        "random": true
+      }
+    },
+    {
+      "id": "CAP-localhost",
+      "domain": "capability",
+      "mainSHA": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+      "legacyBlob": "dcc09e7be2fcf2435801302c3199f8592e029edc",
+      "profile": "isolated-context-19",
+      "origin": "http://127.0.0.1:39863",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "expected": "B restricted without proof; A must be unable to commit for P2",
+      "status": "PASS",
+      "capabilities": {
+        "secure": true,
+        "idb": true,
+        "locks": true,
+        "bc": true,
+        "sw": true,
+        "subtle": true,
+        "random": true
+      }
+    },
+    {
+      "id": "CAP-IP",
+      "domain": "capability",
+      "mainSHA": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+      "legacyBlob": "dcc09e7be2fcf2435801302c3199f8592e029edc",
+      "profile": "isolated-context-20",
+      "origin": "http://127.0.0.1:39863",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "expected": "B restricted without proof; A must be unable to commit for P2",
+      "status": "PASS",
+      "capabilities": {
+        "secure": false,
+        "idb": true,
+        "locks": false,
+        "bc": true,
+        "sw": false,
+        "subtle": false,
+        "random": true
+      },
+      "limitation": "Intercepted private-IP origin; no LAN device or transport contacted."
+    },
+    {
+      "id": "CAP-HTTPS",
+      "domain": "capability",
+      "mainSHA": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+      "legacyBlob": "dcc09e7be2fcf2435801302c3199f8592e029edc",
+      "profile": "isolated-context-21",
+      "origin": "http://127.0.0.1:39863",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "expected": "B restricted without proof; A must be unable to commit for P2",
+      "status": "PASS",
+      "capabilities": {
+        "secure": true,
+        "idb": true,
+        "locks": true,
+        "bc": true,
+        "sw": true,
+        "subtle": true,
+        "random": true
+      },
+      "limitation": "Real local TLS with disposable self-signed certificate, ignoreHTTPSErrors enabled. No public trust-chain or owner-device claim."
+    }
+  ]
+}
