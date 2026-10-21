@@ -1,3 +1,5 @@
+import { createClient } from '@supabase/supabase-js';
+import { classifySessionVerificationResponse } from '../sessionVerification';
 import { describe, expect, it } from 'vitest';
 import {
   ADMIN_OFFLINE_AUTHORIZATION_REASON as REASON,
@@ -67,6 +69,26 @@ const fixture = (overrides = {}) => {
 };
 
 describe('OFFLINE-AUTH-P2: Admin offline continuity', () => {
+  it.each(['valid', 'expired', 'device', 'tenant', 'identity', 'staff', 'actor', 'local'])('applies v2 evidence restrictions to real wrapped transport: %s', async (variant) => {
+    const client = createClient('https://transport-fixture.invalid', 'fixture-key', {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+      global: { fetch: async () => { throw new TypeError('Failed to fetch'); } }
+    });
+    const verificationResult = classifySessionVerificationResponse('admin', await client.rpc('verify_admin_session', {}));
+    expect(isSafeAdminOfflineVerificationFailure(verificationResult)).toBe(true);
+    const args = fixture({ verificationResult });
+    if (variant === 'expired') args.now = verifiedAt + ADMIN_OFFLINE_CONTINUITY_WINDOW_MS;
+    if (variant === 'device') args.deviceRef = 'device-b';
+    if (variant === 'tenant') args.tenantOpaqueId = 'tenant-b';
+    if (variant === 'identity') args.adminUser = { id: 'admin-b' };
+    if (variant === 'staff') args.credentials = { adminToken: null, adminSessionId: null, staffToken: 'staff-token', staffSessionId: 'staff-session' };
+    if (variant === 'actor') args.actorRuntimeRestoreError = new Error('fixture restore failed');
+    if (variant === 'local') args.storageUnavailable = true;
+    const before = structuredClone({ evidence: args.evidence, credentials: args.credentials, license: args.license });
+    expect(evaluateAdminOfflineAuthorization(args).eligible).toBe(variant === 'valid');
+    expect({ evidence: args.evidence, credentials: args.credentials, license: args.license }).toEqual(before);
+  });
+
   it.each([
     ['23 hours', 23 * 60 * 60 * 1000, true],
     ['24 hours', DAY, true],

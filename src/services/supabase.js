@@ -2290,7 +2290,7 @@ export const verifyAdminSession = async (licenseKey, { beforeLocalPersistence = 
         };
 
         const deviceFingerprint = await getStableDeviceId();
-        const { data, error } = await callAdminAuthRpc('verify_admin_session', {
+        const verificationResponse = await callAdminAuthRpc('verify_admin_session', {
             p_license_key: licenseKey,
             p_device_fingerprint: deviceFingerprint,
             p_device_security_token: credentials.deviceSecurityToken,
@@ -2298,7 +2298,8 @@ export const verifyAdminSession = async (licenseKey, { beforeLocalPersistence = 
         });
 
         const verificationAt = Date.now();
-        const classified = classifySessionVerificationResponse('admin', { data, error });
+        const { data } = verificationResponse;
+        const classified = classifySessionVerificationResponse('admin', verificationResponse);
         Logger.debug?.('[AdminAuth]', {
             phase: 'session_verification_classified',
             status: classified.verificationStatus,

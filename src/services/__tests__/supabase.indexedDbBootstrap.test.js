@@ -68,6 +68,33 @@ vi.mock('../tenant/localTenantGuard', () => ({
 }));
 
 describe('activation storage boundary', () => {
+  it.each([0, 500, 502, 503, 429, 401, 403])('preserves installed-client RPC status %s through verifyAdminSession without registration', async (status) => {
+    const { createClient } = await vi.importActual('@supabase/supabase-js');
+    const fetch = vi.fn(async () => {
+      if (status === 0) throw new TypeError('Failed to fetch');
+      return new Response(JSON.stringify({ code: 'PGRST000', message: 'fixture error', details: '', hint: '' }), { status });
+    });
+    const client = createClient('https://transport-fixture.invalid', 'fixture-key', {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }, global: { fetch }
+    });
+    const rpcResponse = await client.rpc('verify_admin_session', {});
+    mocks.rpc.mockResolvedValue(rpcResponse);
+    mocks.readDeviceRegistryValue.mockResolvedValue('fixture-device');
+    const values = { device_security_token: 'device-token', admin_session_token: 'admin-token', admin_session_id: 'session-id' };
+    mocks.loadData.mockImplementation(async (_store, key) => Object.hasOwn(values, key) ? { value: values[key] } : null);
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
+    const { verifyAdminSession } = await import('../supabase');
+    const result = await verifyAdminSession('QA-AUTH-CONTRACT');
+    expect(navigator.onLine).toBe(true);
+    expect(result).toMatchObject({ valid: false, verificationStatus: status === 0 ? 'transport_unavailable' : 'server_error' });
+    expect(result.code).toBe(status === 0 ? 'SESSION_TRANSPORT_UNAVAILABLE' : status === 429 ? 'SESSION_RATE_LIMITED'
+      : status >= 500 ? 'SESSION_SERVER_HTTP_' + status : 'SESSION_GATEWAY_HTTP_' + status);
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+    expect(mocks.rpc).toHaveBeenCalledWith('verify_admin_session', expect.any(Object));
+    expect(mocks.saveData).not.toHaveBeenCalled();
+    expect(mocks.writeDeviceRegistryValue).not.toHaveBeenCalled();
+  });
+
   beforeEach(() => {
     vi.resetModules();
     vi.clearAllMocks();

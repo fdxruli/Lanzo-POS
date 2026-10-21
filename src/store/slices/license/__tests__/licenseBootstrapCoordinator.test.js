@@ -1,3 +1,6 @@
+import { createClient } from '@supabase/supabase-js';
+import { classifySessionVerificationResponse } from '../../../../services/auth/sessionVerification';
+import { evaluateAdminOfflineAuthorization } from '../../../../services/auth/adminOfflineAuthorization';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const runtimeMocks = vi.hoisted(() => ({ prepareLocalDatabase: vi.fn() }));
@@ -65,6 +68,56 @@ const createState = (initial = {}) => {
 };
 
 describe('initializeApp coordinator', () => {
+  it('P2-04/05 restores bounded v2 Admin authority with Wi-Fi active, then verifies the same session on reconnect', async () => {
+    const now = Date.now();
+    const expiresAt = new Date(now + 24 * 60 * 60 * 1000).toISOString();
+    const localLicense = { license_key: 'BOOT-ADMIN', license_id: 'license-a', device_id: 'device-a',
+      device_role: 'admin', admin_identity_required: true, plan_code: 'free_trial', max_devices: 1,
+      admin_user: { id: 'admin-a' }, localExpiry: expiresAt };
+    const evidence = { version: 2, validatedAt: now - 3600000, expiresAt,
+      sessionId: 'session-a', sessionTokenDigest: 'admin-digest', adminUserId: 'admin-a',
+      licenseId: 'license-a', deviceId: 'device-a', deviceRef: 'device-ref-a',
+      deviceTokenDigest: 'device-digest', tenantOpaqueId: 'tenant-a' };
+    const proofBefore = structuredClone(evidence);
+    const fetch = vi.fn().mockRejectedValueOnce(new TypeError('Failed to fetch'))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ success: true, valid: true,
+        admin_user: localLicense.admin_user, details: localLicense }), { status: 200 }));
+    const client = createClient('https://transport-fixture.invalid', 'fixture-key', {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }, global: { fetch }
+    });
+    storageMocks.getLicenseFromStorage.mockResolvedValue(localLicense);
+    supabaseMocks.hasAdminSessionToken.mockResolvedValue(true);
+    supabaseMocks.verifyAdminSession.mockImplementation(async () => {
+      const response = await client.rpc('verify_admin_session', {});
+      return { ...response.data, ...classifySessionVerificationResponse('admin', response) };
+    });
+    supabaseMocks.getAdminOfflineAuthorization.mockImplementation(async ({ license, adminUser, verificationResult }) => (
+      evaluateAdminOfflineAuthorization({ now, evidence, license, adminUser, verificationResult,
+        credentials: { adminToken: 'fixture-token', adminSessionId: 'session-a', adminTokenDigest: 'admin-digest' },
+        deviceRef: 'device-ref-a', deviceTokenDigest: 'device-digest', tenantOpaqueId: 'tenant-a',
+        tenantBinding: { tenantIdentity: 'license-id:license-a' } })
+    ));
+    const state = createState();
+    expect(navigator.onLine).toBe(true);
+    await expect(state.initializeApp({ force: true })).resolves.toEqual({ status: 'ready' });
+    expect(state.currentAdminUser).toEqual({ id: 'admin-a' });
+    expect(state._processOfflineMode).toHaveBeenCalledWith(localLicense);
+    expect(actorMocks.restoreActorRuntimeFromCurrentSessionCache).toHaveBeenCalledWith({ actorType: 'admin', actor: { id: 'admin-a' } });
+    expect(supabaseMocks.getAdminOfflineAuthorization).toHaveBeenCalledWith(expect.objectContaining({
+      verificationResult: expect.objectContaining({ verificationStatus: 'transport_unavailable' })
+    }));
+    expect(evidence).toEqual(proofBefore);
+    expect(storageMocks.saveLicenseToStorage).not.toHaveBeenCalled();
+    await expect(state.initializeApp({ force: true })).resolves.toEqual({ status: 'ready' });
+    expect(state._loadProfile).toHaveBeenCalledTimes(1);
+    expect(state._requireAdminLogin).not.toHaveBeenCalled();
+    expect(supabaseMocks.clearAdminSessionCache).not.toHaveBeenCalled();
+    expect(supabaseMocks.clearStaffSessionCache).not.toHaveBeenCalled();
+    expect(storageMocks.saveLicenseToStorage).toHaveBeenCalledTimes(1);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    for (const [url] of fetch.mock.calls) expect(url).toContain('/rest/v1/rpc/verify_admin_session');
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     actorRuntimeController.lock('test_reset');
