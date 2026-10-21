@@ -1,0 +1,956 @@
+{
+  "mainSHA": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+  "sourceManifest": {
+    "/main.mjs": "d07c40382ed27cda698a5df3761b0509f822659fbeea0d25e47154a0f8f248af",
+    "/client.mjs": "602c9455017f3dbf68dfa1de6284552637cfd472dd31cf5524eb6d2aadec5cc8",
+    "/prototype.mjs": "c9606591508bcb013b11478fdf12f9af4bd5ca3ed3120b890e3897372579d5d1",
+    "/admission.mjs": "997c9209405d5b55896071eb0331d4865689f5b868145af2d25965a58ad4977b",
+    "/dexie.mjs": "58475a95e77cb746f9248999886b7c87049837df7ec1e1e508cb231625da5acc"
+  },
+  "browserTests": [
+    {
+      "id": "T3-01",
+      "objective": "Legacy abierto antes de B",
+      "mainSHA": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+      "researchParentSHA": "c6d5e56afdbdb0e2d59dc479bdd5ada94d418f61",
+      "browserCodeCheckpoint": "0289757cf4a08acf2ebfe526d9c677b12e566c0f",
+      "origin": "http://127.0.0.1:39863",
+      "profile": "isolated-context-1",
+      "browser": "143.0.7499.0",
+      "managementControl": "unmanaged",
+      "initialCondition": "Legacy abierto antes de B",
+      "simulatedOperation": "Legacy abierto antes de B",
+      "before": {
+        "file": "browser.json",
+        "resultId": "T3-01",
+        "field": "before; otherwise inspect result-specific fields",
+        "notExecuted": false
+      },
+      "after": {
+        "file": "browser.json",
+        "resultId": "T3-01",
+        "field": "after/rows/write as applicable"
+      },
+      "expected": "B protegido restringido; si se fuerza B, A debe quedar retirado",
+      "actual": "A y B forzado escriben. protectedWrite B rechaza y conserva durable.",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "status": "FAIL",
+      "limitations": "Forced prototype grant is a rejected activation hypothesis; real admission policy remains restricted. Writes are storage payload/effect, not POS sales.",
+      "trace": {
+        "file": "browser.json",
+        "resultId": "T3-01"
+      },
+      "sourceManifestRef": "#sourceManifest"
+    },
+    {
+      "id": "T3-02",
+      "objective": "Legacy congelado por CDP",
+      "mainSHA": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+      "researchParentSHA": "c6d5e56afdbdb0e2d59dc479bdd5ada94d418f61",
+      "browserCodeCheckpoint": "0289757cf4a08acf2ebfe526d9c677b12e566c0f",
+      "origin": "http://127.0.0.1:39863",
+      "profile": "isolated-context-2",
+      "browser": "143.0.7499.0",
+      "managementControl": "unmanaged",
+      "initialCondition": "Legacy congelado por CDP",
+      "simulatedOperation": "Legacy congelado por CDP",
+      "before": {
+        "file": "browser.json",
+        "resultId": "T3-02",
+        "field": "before; otherwise inspect result-specific fields",
+        "notExecuted": false
+      },
+      "after": {
+        "file": "browser.json",
+        "resultId": "T3-02",
+        "field": "after/rows/write as applicable"
+      },
+      "expected": "A no debe recuperar escritura incompatible tras thaw",
+      "actual": "A vuelve a escribir; contención B sí deniega. No suspensión física.",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "status": "FAIL",
+      "limitations": "Forced prototype grant is a rejected activation hypothesis; real admission policy remains restricted. Writes are storage payload/effect, not POS sales.",
+      "trace": {
+        "file": "browser.json",
+        "resultId": "T3-02"
+      },
+      "sourceManifestRef": "#sourceManifest"
+    },
+    {
+      "id": "T3-03",
+      "objective": "Restauración de documento cerrado",
+      "mainSHA": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+      "researchParentSHA": "c6d5e56afdbdb0e2d59dc479bdd5ada94d418f61",
+      "browserCodeCheckpoint": "0289757cf4a08acf2ebfe526d9c677b12e566c0f",
+      "origin": "NOT_EXECUTED",
+      "profile": "NOT_EXECUTED",
+      "browser": "143.0.7499.0",
+      "managementControl": "partial",
+      "initialCondition": "Restauración de documento cerrado",
+      "simulatedOperation": "Restauración de documento cerrado",
+      "before": {
+        "file": "browser.json",
+        "resultId": "T3-03",
+        "field": "before; otherwise inspect result-specific fields",
+        "notExecuted": true
+      },
+      "after": {
+        "file": "browser.json",
+        "resultId": "T3-03",
+        "field": "after/rows/write as applicable"
+      },
+      "expected": "Restauración real con identificación de artefacto",
+      "actual": "No ejecutada; no se sustituye por reload.",
+      "level": "NOT_EXECUTED",
+      "status": "PENDING",
+      "limitations": "Real closed-document session restore not provided by this headless context. Reload is not substituted.",
+      "trace": {
+        "file": "browser.json",
+        "resultId": "T3-03"
+      },
+      "sourceManifestRef": "#sourceManifest"
+    },
+    {
+      "id": "T3-04",
+      "objective": "Legacy desde CacheStorage/SW",
+      "mainSHA": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+      "researchParentSHA": "c6d5e56afdbdb0e2d59dc479bdd5ada94d418f61",
+      "browserCodeCheckpoint": "0289757cf4a08acf2ebfe526d9c677b12e566c0f",
+      "origin": "http://127.0.0.1:39863",
+      "profile": "isolated-context-3",
+      "browser": "143.0.7499.0",
+      "managementControl": "partial",
+      "initialCondition": "Legacy desde CacheStorage/SW",
+      "simulatedOperation": "Legacy desde CacheStorage/SW",
+      "before": {
+        "file": "browser.json",
+        "resultId": "T3-04",
+        "field": "before; otherwise inspect result-specific fields",
+        "notExecuted": false
+      },
+      "after": {
+        "file": "browser.json",
+        "resultId": "T3-04",
+        "field": "after/rows/write as applicable"
+      },
+      "expected": "Bloqueo de distribución debe impedir reejecución si se pretende usar como frontera",
+      "actual": "Servidor 410, SW 200, legacy exacto ejecutado y write permitido.",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "status": "FAIL",
+      "limitations": "Server distribution denies old artifact, but cached exact module still executes. Synthetic SW, not Lanzo Workbox.",
+      "trace": {
+        "file": "browser.json",
+        "resultId": "T3-04"
+      },
+      "sourceManifestRef": "#sourceManifest"
+    },
+    {
+      "id": "T3-05",
+      "objective": "Apertura concurrente",
+      "mainSHA": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+      "researchParentSHA": "c6d5e56afdbdb0e2d59dc479bdd5ada94d418f61",
+      "browserCodeCheckpoint": "0289757cf4a08acf2ebfe526d9c677b12e566c0f",
+      "origin": "http://127.0.0.1:39863",
+      "profile": "isolated-context-4",
+      "browser": "143.0.7499.0",
+      "managementControl": "unmanaged",
+      "initialCondition": "Apertura concurrente",
+      "simulatedOperation": "Apertura concurrente",
+      "before": {
+        "file": "browser.json",
+        "resultId": "T3-05",
+        "field": "before; otherwise inspect result-specific fields",
+        "notExecuted": false
+      },
+      "after": {
+        "file": "browser.json",
+        "resultId": "T3-05",
+        "field": "after/rows/write as applicable"
+      },
+      "expected": "No dos rutas operables por orden casual",
+      "actual": "Ambas escrituras sintéticas confirman bajo hipótesis de forzar v2.",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "status": "FAIL",
+      "limitations": "Storage-only synthetic effects; not POS financial integration",
+      "trace": {
+        "file": "browser.json",
+        "resultId": "T3-05"
+      },
+      "sourceManifestRef": "#sourceManifest"
+    },
+    {
+      "id": "T3-06",
+      "objective": "Otra partición/perfil",
+      "mainSHA": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+      "researchParentSHA": "c6d5e56afdbdb0e2d59dc479bdd5ada94d418f61",
+      "browserCodeCheckpoint": "0289757cf4a08acf2ebfe526d9c677b12e566c0f",
+      "origin": "http://127.0.0.1:39863",
+      "profile": "isolated-context-5",
+      "browser": "143.0.7499.0",
+      "managementControl": "unmanaged",
+      "initialCondition": "Otra partición/perfil",
+      "simulatedOperation": "Otra partición/perfil",
+      "before": {
+        "file": "browser.json",
+        "resultId": "T3-06",
+        "field": "before; otherwise inspect result-specific fields",
+        "notExecuted": false
+      },
+      "after": {
+        "file": "browser.json",
+        "resultId": "T3-06",
+        "field": "after/rows/write as applicable"
+      },
+      "expected": "Determinar si comparte DB física",
+      "actual": "BrowserContexts separados: efectos B no aparecen en DB A. Perfil físico no probado.",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "status": "PASS",
+      "limitations": "Two isolated BrowserContexts are separate storage partitions, not two physical desktop profiles. No shared-IDB claim.",
+      "trace": {
+        "file": "browser.json",
+        "resultId": "T3-06"
+      },
+      "sourceManifestRef": "#sourceManifest"
+    },
+    {
+      "id": "T3-07",
+      "objective": "PWA instalada",
+      "mainSHA": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+      "researchParentSHA": "c6d5e56afdbdb0e2d59dc479bdd5ada94d418f61",
+      "browserCodeCheckpoint": "0289757cf4a08acf2ebfe526d9c677b12e566c0f",
+      "origin": "NOT_EXECUTED",
+      "profile": "NOT_EXECUTED",
+      "browser": "143.0.7499.0",
+      "managementControl": "partial",
+      "initialCondition": "PWA instalada",
+      "simulatedOperation": "PWA instalada",
+      "before": {
+        "file": "browser.json",
+        "resultId": "T3-07",
+        "field": "before; otherwise inspect result-specific fields",
+        "notExecuted": true
+      },
+      "after": {
+        "file": "browser.json",
+        "resultId": "T3-07",
+        "field": "after/rows/write as applicable"
+      },
+      "expected": "Ensayar instalación real adicional",
+      "actual": "No disponible; una página headless no acredita instalación.",
+      "level": "NOT_EXECUTED",
+      "status": "PENDING",
+      "limitations": "Installed PWA unavailable; headless page is not installation.",
+      "trace": {
+        "file": "browser.json",
+        "resultId": "T3-07"
+      },
+      "sourceManifestRef": "#sourceManifest"
+    },
+    {
+      "id": "T3-08",
+      "objective": "BFCache",
+      "mainSHA": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+      "researchParentSHA": "c6d5e56afdbdb0e2d59dc479bdd5ada94d418f61",
+      "browserCodeCheckpoint": "0289757cf4a08acf2ebfe526d9c677b12e566c0f",
+      "origin": "http://127.0.0.1:39863",
+      "profile": "isolated-context-6",
+      "browser": "143.0.7499.0",
+      "managementControl": "unmanaged",
+      "initialCondition": "BFCache",
+      "simulatedOperation": "BFCache",
+      "before": {
+        "file": "browser.json",
+        "resultId": "T3-08",
+        "field": "before; otherwise inspect result-specific fields",
+        "notExecuted": true
+      },
+      "after": {
+        "file": "browser.json",
+        "resultId": "T3-08",
+        "field": "after/rows/write as applicable"
+      },
+      "expected": "pageshow.persisted=true antes de atribuir efecto a BFCache",
+      "actual": "Navegación y vuelta realizadas; persisted no verdadero. PENDING.",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "status": "PENDING",
+      "limitations": "Only pageshow.persisted=true counts as BFCache. A normal history reload does not.",
+      "trace": {
+        "file": "browser.json",
+        "resultId": "T3-08"
+      },
+      "sourceManifestRef": "#sourceManifest"
+    },
+    {
+      "id": "T3-09",
+      "objective": "Worker anterior y recursos nuevos",
+      "mainSHA": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+      "researchParentSHA": "c6d5e56afdbdb0e2d59dc479bdd5ada94d418f61",
+      "browserCodeCheckpoint": "0289757cf4a08acf2ebfe526d9c677b12e566c0f",
+      "origin": "http://127.0.0.1:39863",
+      "profile": "isolated-context-7",
+      "browser": "143.0.7499.0",
+      "managementControl": "partial",
+      "initialCondition": "Worker anterior y recursos nuevos",
+      "simulatedOperation": "Worker anterior y recursos nuevos",
+      "before": {
+        "file": "browser.json",
+        "resultId": "T3-09",
+        "field": "before; otherwise inspect result-specific fields",
+        "notExecuted": false
+      },
+      "after": {
+        "file": "browser.json",
+        "resultId": "T3-09",
+        "field": "after/rows/write as applicable"
+      },
+      "expected": "Publicar SW nuevo no debe contarse como retiro de JS antiguo",
+      "actual": "Legacy sigue escribiendo tras servir nuevo worker. No se afirma activación nueva acreditada.",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "status": "FAIL",
+      "limitations": "New SW source served does not replace already executing legacy JS.",
+      "trace": {
+        "file": "browser.json",
+        "resultId": "T3-09"
+      },
+      "sourceManifestRef": "#sourceManifest"
+    },
+    {
+      "id": "T3-10",
+      "objective": "Worker waiting con intent",
+      "mainSHA": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+      "researchParentSHA": "c6d5e56afdbdb0e2d59dc479bdd5ada94d418f61",
+      "browserCodeCheckpoint": "0289757cf4a08acf2ebfe526d9c677b12e566c0f",
+      "origin": "http://127.0.0.1:39863",
+      "profile": "isolated-context-8",
+      "browser": "143.0.7499.0",
+      "managementControl": "partial",
+      "initialCondition": "Worker waiting con intent",
+      "simulatedOperation": "Worker waiting con intent",
+      "before": {
+        "file": "browser.json",
+        "resultId": "T3-10",
+        "field": "before; otherwise inspect result-specific fields",
+        "notExecuted": true
+      },
+      "after": {
+        "file": "browser.json",
+        "resultId": "T3-10",
+        "field": "after/rows/write as applicable"
+      },
+      "expected": "Acreditar waiting, conservar pending sin reload",
+      "actual": "No se observó waiting tras registro/update; intent y handle intactos. PENDING.",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "status": "PENDING",
+      "limitations": "No skipWaiting or reload called. Fixture intent, not real payment. Missing waiting observation is not a security failure.",
+      "trace": {
+        "file": "browser.json",
+        "resultId": "T3-10"
+      },
+      "sourceManifestRef": "#sourceManifest"
+    },
+    {
+      "id": "T3-11",
+      "objective": "Reinicio/restauración de sesión",
+      "mainSHA": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+      "researchParentSHA": "c6d5e56afdbdb0e2d59dc479bdd5ada94d418f61",
+      "browserCodeCheckpoint": "0289757cf4a08acf2ebfe526d9c677b12e566c0f",
+      "origin": "NOT_EXECUTED",
+      "profile": "NOT_EXECUTED",
+      "browser": "143.0.7499.0",
+      "managementControl": "partial",
+      "initialCondition": "Reinicio/restauración de sesión",
+      "simulatedOperation": "Reinicio/restauración de sesión",
+      "before": {
+        "file": "browser.json",
+        "resultId": "T3-11",
+        "field": "before; otherwise inspect result-specific fields",
+        "notExecuted": true
+      },
+      "after": {
+        "file": "browser.json",
+        "resultId": "T3-11",
+        "field": "after/rows/write as applicable"
+      },
+      "expected": "Reiniciar y restaurar documentos desde perfil persistente real",
+      "actual": "No ejecutado. Cerrar contexto no se presenta como restart con restore.",
+      "level": "NOT_EXECUTED",
+      "status": "PENDING",
+      "limitations": "Persistent desktop session restart/restore not executed; context shutdown does not prove restored versions.",
+      "trace": {
+        "file": "browser.json",
+        "resultId": "T3-11"
+      },
+      "sourceManifestRef": "#sourceManifest"
+    },
+    {
+      "id": "T3-12",
+      "objective": "Reapertura Dexie 4.4.3",
+      "mainSHA": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+      "researchParentSHA": "c6d5e56afdbdb0e2d59dc479bdd5ada94d418f61",
+      "browserCodeCheckpoint": "0289757cf4a08acf2ebfe526d9c677b12e566c0f",
+      "origin": "http://127.0.0.1:39863",
+      "profile": "isolated-context-9",
+      "browser": "143.0.7499.0",
+      "managementControl": "unmanaged",
+      "initialCondition": "Reapertura Dexie 4.4.3",
+      "simulatedOperation": "Reapertura Dexie 4.4.3",
+      "before": {
+        "file": "browser.json",
+        "resultId": "T3-12",
+        "field": "before; otherwise inspect result-specific fields",
+        "notExecuted": false
+      },
+      "after": {
+        "file": "browser.json",
+        "resultId": "T3-12",
+        "field": "after/rows/write as applicable"
+      },
+      "expected": "Upgrade aislado no debe aceptarse si A puede reabrir",
+      "actual": "V1 reabre DB V2 y confirma after-upgrade mediante tabla capturada.",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "status": "FAIL",
+      "limitations": "Real Dexie and captured table on synthetic schema. T3-13 refuses versionchange until a synthetic write commits, then closes voluntarily. Lanzo preflight/complete financial route not loaded.",
+      "trace": {
+        "file": "browser.json",
+        "resultId": "T3-12"
+      },
+      "sourceManifestRef": "#sourceManifest"
+    },
+    {
+      "id": "T3-13",
+      "objective": "Conexión/tabla antiguas abiertas",
+      "mainSHA": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+      "researchParentSHA": "c6d5e56afdbdb0e2d59dc479bdd5ada94d418f61",
+      "browserCodeCheckpoint": "0289757cf4a08acf2ebfe526d9c677b12e566c0f",
+      "origin": "http://127.0.0.1:39863",
+      "profile": "isolated-context-10",
+      "browser": "143.0.7499.0",
+      "managementControl": "unmanaged",
+      "initialCondition": "Conexión/tabla antiguas abiertas",
+      "simulatedOperation": "Conexión/tabla antiguas abiertas",
+      "before": {
+        "file": "browser.json",
+        "resultId": "T3-13",
+        "field": "before; otherwise inspect result-specific fields",
+        "notExecuted": false
+      },
+      "after": {
+        "file": "browser.json",
+        "resultId": "T3-13",
+        "field": "after/rows/write as applicable"
+      },
+      "expected": "Comprobar upgrade blocked y capacidad real de A",
+      "actual": "A rechaza versionchange; confirma mientras upgrade blocked; cierra voluntariamente y puede reabrir.",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "status": "FAIL",
+      "limitations": "Real Dexie and captured table on synthetic schema. T3-13 refuses versionchange until a synthetic write commits, then closes voluntarily. Lanzo preflight/complete financial route not loaded.",
+      "trace": {
+        "file": "browser.json",
+        "resultId": "T3-13"
+      },
+      "sourceManifestRef": "#sourceManifest"
+    },
+    {
+      "id": "T3-14",
+      "objective": "Writer que ignora coordinador",
+      "mainSHA": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+      "researchParentSHA": "c6d5e56afdbdb0e2d59dc479bdd5ada94d418f61",
+      "browserCodeCheckpoint": "0289757cf4a08acf2ebfe526d9c677b12e566c0f",
+      "origin": "http://127.0.0.1:39863",
+      "profile": "isolated-context-11",
+      "browser": "143.0.7499.0",
+      "managementControl": "unmanaged",
+      "initialCondition": "Writer que ignora coordinador",
+      "simulatedOperation": "Writer que ignora coordinador",
+      "before": {
+        "file": "browser.json",
+        "resultId": "T3-14",
+        "field": "before; otherwise inspect result-specific fields",
+        "notExecuted": false
+      },
+      "after": {
+        "file": "browser.json",
+        "resultId": "T3-14",
+        "field": "after/rows/write as applicable"
+      },
+      "expected": "Ningún write fuera del fence si se pretende mediación completa",
+      "actual": "Writer IDB sintético confirma effects tras revoke. No es ruta financiera POS.",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "status": "FAIL",
+      "limitations": "Noncooperating direct IDB writer is synthetic, not exact POS financial code.",
+      "trace": {
+        "file": "browser.json",
+        "resultId": "T3-14"
+      },
+      "sourceManifestRef": "#sourceManifest"
+    },
+    {
+      "id": "T3-15",
+      "objective": "Legacy offline",
+      "mainSHA": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+      "researchParentSHA": "c6d5e56afdbdb0e2d59dc479bdd5ada94d418f61",
+      "browserCodeCheckpoint": "0289757cf4a08acf2ebfe526d9c677b12e566c0f",
+      "origin": "http://127.0.0.1:39863",
+      "profile": "isolated-context-12",
+      "browser": "143.0.7499.0",
+      "managementControl": "unmanaged",
+      "initialCondition": "Legacy offline",
+      "simulatedOperation": "Legacy offline",
+      "before": {
+        "file": "browser.json",
+        "resultId": "T3-15",
+        "field": "before; otherwise inspect result-specific fields",
+        "notExecuted": false
+      },
+      "after": {
+        "file": "browser.json",
+        "resultId": "T3-15",
+        "field": "after/rows/write as applicable"
+      },
+      "expected": "Servidor no se acepta como fence obligatorio Local",
+      "actual": "Red browser offline; ambas rutas sintéticas escriben. No backend configurado.",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "status": "FAIL",
+      "limitations": "Offline browser network, no Supabase configured; does not certify product Admin policy.",
+      "trace": {
+        "file": "browser.json",
+        "resultId": "T3-15"
+      },
+      "sourceManifestRef": "#sourceManifest"
+    },
+    {
+      "id": "T3-16",
+      "objective": "Legacy con nueva activación sintética",
+      "mainSHA": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+      "researchParentSHA": "c6d5e56afdbdb0e2d59dc479bdd5ada94d418f61",
+      "browserCodeCheckpoint": "0289757cf4a08acf2ebfe526d9c677b12e566c0f",
+      "origin": "http://127.0.0.1:39863",
+      "profile": "isolated-context-13",
+      "browser": "143.0.7499.0",
+      "managementControl": "unmanaged",
+      "initialCondition": "Legacy con nueva activación sintética",
+      "simulatedOperation": "Legacy con nueva activación sintética",
+      "before": {
+        "file": "browser.json",
+        "resultId": "T3-16",
+        "field": "before; otherwise inspect result-specific fields",
+        "notExecuted": false
+      },
+      "after": {
+        "file": "browser.json",
+        "resultId": "T3-16",
+        "field": "after/rows/write as applicable"
+      },
+      "expected": "No asumir retiro si A puede activar storage otra vez",
+      "actual": "A activa de nuevo storage y escribe; B conserva su head. Sin autenticación real.",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "status": "FAIL",
+      "limitations": "New synthetic legacy storage activation, not authentication or real session issuance.",
+      "trace": {
+        "file": "browser.json",
+        "resultId": "T3-16"
+      },
+      "sourceManifestRef": "#sourceManifest"
+    },
+    {
+      "id": "T3-17",
+      "objective": "Invalidación v1 tardía",
+      "mainSHA": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+      "researchParentSHA": "c6d5e56afdbdb0e2d59dc479bdd5ada94d418f61",
+      "browserCodeCheckpoint": "0289757cf4a08acf2ebfe526d9c677b12e566c0f",
+      "origin": "http://127.0.0.1:39863",
+      "profile": "isolated-context-14",
+      "browser": "143.0.7499.0",
+      "managementControl": "unmanaged",
+      "initialCondition": "Invalidación v1 tardía",
+      "simulatedOperation": "Invalidación v1 tardía",
+      "before": {
+        "file": "browser.json",
+        "resultId": "T3-17",
+        "field": "before; otherwise inspect result-specific fields",
+        "notExecuted": false
+      },
+      "after": {
+        "file": "browser.json",
+        "resultId": "T3-17",
+        "field": "after/rows/write as applicable"
+      },
+      "expected": "Proteger head B sin confundirlo con retiro de A",
+      "actual": "B conserva head y confirma efecto; v1 cambia su llave propia a locked. PASS sólo separación P1.",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "status": "PASS",
+      "limitations": "P1 separation only. Does not retire A or close legacy LC13. Prototype Runtime only.",
+      "trace": {
+        "file": "browser.json",
+        "resultId": "T3-17"
+      },
+      "sourceManifestRef": "#sourceManifest"
+    },
+    {
+      "id": "T3-18",
+      "objective": "Descarga de build antiguo",
+      "mainSHA": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+      "researchParentSHA": "c6d5e56afdbdb0e2d59dc479bdd5ada94d418f61",
+      "browserCodeCheckpoint": "0289757cf4a08acf2ebfe526d9c677b12e566c0f",
+      "origin": "http://127.0.0.1:39863",
+      "profile": "isolated-context-15",
+      "browser": "143.0.7499.0",
+      "managementControl": "partial",
+      "initialCondition": "Descarga de build antiguo",
+      "simulatedOperation": "Descarga de build antiguo",
+      "before": {
+        "file": "browser.json",
+        "resultId": "T3-18",
+        "field": "before; otherwise inspect result-specific fields",
+        "notExecuted": false
+      },
+      "after": {
+        "file": "browser.json",
+        "resultId": "T3-18",
+        "field": "after/rows/write as applicable"
+      },
+      "expected": "Probar bloqueo de distribución frente a memoria ya ejecutando",
+      "actual": "Descarga 410, A ya cargado sigue confirmando payload.",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "status": "FAIL",
+      "limitations": "Distribution gate rejects download but memory remains. Not a managed OS distribution certificate.",
+      "trace": {
+        "file": "browser.json",
+        "resultId": "T3-18"
+      },
+      "sourceManifestRef": "#sourceManifest"
+    },
+    {
+      "id": "T3-19",
+      "objective": "Mecanismo gestor indisponible",
+      "mainSHA": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+      "researchParentSHA": "c6d5e56afdbdb0e2d59dc479bdd5ada94d418f61",
+      "browserCodeCheckpoint": "0289757cf4a08acf2ebfe526d9c677b12e566c0f",
+      "origin": "http://127.0.0.1:39863",
+      "profile": "isolated-context-16",
+      "browser": "143.0.7499.0",
+      "managementControl": "partial",
+      "initialCondition": "Mecanismo gestor indisponible",
+      "simulatedOperation": "Mecanismo gestor indisponible",
+      "before": {
+        "file": "browser.json",
+        "resultId": "T3-19",
+        "field": "before; otherwise inspect result-specific fields",
+        "notExecuted": false
+      },
+      "after": {
+        "file": "browser.json",
+        "resultId": "T3-19",
+        "field": "after/rows/write as applicable"
+      },
+      "expected": "Denegar nuevas capacidades y no borrar datos",
+      "actual": "Entrada storage unavailable del modelo restringe, snapshot igual. No agente real apagado.",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "status": "PASS",
+      "limitations": "Injected unavailable witness/storage policy input; no real management agent exists. Forced prototype context is not a production grant.",
+      "trace": {
+        "file": "browser.json",
+        "resultId": "T3-19"
+      },
+      "sourceManifestRef": "#sourceManifest"
+    },
+    {
+      "id": "T3-20",
+      "objective": "Reingreso posterior",
+      "mainSHA": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+      "researchParentSHA": "c6d5e56afdbdb0e2d59dc479bdd5ada94d418f61",
+      "browserCodeCheckpoint": "0289757cf4a08acf2ebfe526d9c677b12e566c0f",
+      "origin": "http://127.0.0.1:39863",
+      "profile": "isolated-context-17",
+      "browser": "143.0.7499.0",
+      "managementControl": "partial",
+      "initialCondition": "Reingreso posterior",
+      "simulatedOperation": "Reingreso posterior",
+      "before": {
+        "file": "browser.json",
+        "resultId": "T3-20",
+        "field": "before; otherwise inspect result-specific fields",
+        "notExecuted": false
+      },
+      "after": {
+        "file": "browser.json",
+        "resultId": "T3-20",
+        "field": "after/rows/write as applicable"
+      },
+      "expected": "Cierre voluntario no prueba exclusión permanente",
+      "actual": "A se cierra; B abre; A vuelve a abrir y escribe. Ninguna transición segura declarada.",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "status": "FAIL",
+      "limitations": "Reentry after voluntary closure; no enforced transition was completed.",
+      "trace": {
+        "file": "browser.json",
+        "resultId": "T3-20"
+      },
+      "sourceManifestRef": "#sourceManifest"
+    }
+  ],
+  "financialTests": [
+    {
+      "id": "FIN-T3-01",
+      "status": "PASS",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "trace": {
+        "file": "financial.json",
+        "resultId": "FIN-T3-01"
+      }
+    },
+    {
+      "id": "FIN-T3-02",
+      "status": "PASS",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "trace": {
+        "file": "financial.json",
+        "resultId": "FIN-T3-02"
+      }
+    },
+    {
+      "id": "FIN-T3-03",
+      "status": "PASS",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "trace": {
+        "file": "financial.json",
+        "resultId": "FIN-T3-03"
+      }
+    },
+    {
+      "id": "FIN-T3-04",
+      "status": "PASS",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "trace": {
+        "file": "financial.json",
+        "resultId": "FIN-T3-04"
+      }
+    },
+    {
+      "id": "FIN-T3-05",
+      "status": "PASS",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "trace": {
+        "file": "financial.json",
+        "resultId": "FIN-T3-05"
+      }
+    },
+    {
+      "id": "FIN-T3-06",
+      "status": "PASS",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "trace": {
+        "file": "financial.json",
+        "resultId": "FIN-T3-06"
+      }
+    },
+    {
+      "id": "FIN-T3-07",
+      "status": "PASS",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "trace": {
+        "file": "financial.json",
+        "resultId": "FIN-T3-07"
+      }
+    },
+    {
+      "id": "FIN-T3-08",
+      "status": "PASS",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "trace": {
+        "file": "financial.json",
+        "resultId": "FIN-T3-08"
+      }
+    },
+    {
+      "id": "FIN-T3-09",
+      "status": "PENDING",
+      "level": "BROWSER_EVIDENCE_REQUIRED",
+      "trace": {
+        "file": "financial.json",
+        "resultId": "FIN-T3-09"
+      }
+    },
+    {
+      "id": "FIN-T3-10",
+      "status": "PASS",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "trace": {
+        "file": "financial.json",
+        "resultId": "FIN-T3-10"
+      }
+    },
+    {
+      "id": "FIXTURE-prepared-sale",
+      "status": "PASS",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "trace": {
+        "file": "financial.json",
+        "resultId": "FIXTURE-prepared-sale"
+      }
+    },
+    {
+      "id": "FIXTURE-confirmed-local-sale",
+      "status": "PASS",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "trace": {
+        "file": "financial.json",
+        "resultId": "FIXTURE-confirmed-local-sale"
+      }
+    },
+    {
+      "id": "FIXTURE-payment-in-flight",
+      "status": "PASS",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "trace": {
+        "file": "financial.json",
+        "resultId": "FIXTURE-payment-in-flight"
+      }
+    },
+    {
+      "id": "FIXTURE-pending-remote-receipt",
+      "status": "PASS",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "trace": {
+        "file": "financial.json",
+        "resultId": "FIXTURE-pending-remote-receipt"
+      }
+    },
+    {
+      "id": "FIXTURE-outbox-confirmed-local",
+      "status": "PASS",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "trace": {
+        "file": "financial.json",
+        "resultId": "FIXTURE-outbox-confirmed-local"
+      }
+    },
+    {
+      "id": "FIXTURE-open-cash",
+      "status": "PASS",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "trace": {
+        "file": "financial.json",
+        "resultId": "FIXTURE-open-cash"
+      }
+    },
+    {
+      "id": "FIXTURE-credit",
+      "status": "PASS",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "trace": {
+        "file": "financial.json",
+        "resultId": "FIXTURE-credit"
+      }
+    },
+    {
+      "id": "FIXTURE-layaway",
+      "status": "PASS",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "trace": {
+        "file": "financial.json",
+        "resultId": "FIXTURE-layaway"
+      }
+    },
+    {
+      "id": "FIXTURE-restaurant-checkout",
+      "status": "PASS",
+      "level": "SYNTHETIC_BOUNDARY_ONLY",
+      "trace": {
+        "file": "financial.json",
+        "resultId": "FIXTURE-restaurant-checkout"
+      }
+    },
+    {
+      "id": "FORGE-silence",
+      "status": "PASS",
+      "level": "POLICY_MODEL_ONLY",
+      "trace": {
+        "file": "financial.json",
+        "resultId": "FORGE-silence"
+      }
+    },
+    {
+      "id": "FORGE-timeout",
+      "status": "PASS",
+      "level": "POLICY_MODEL_ONLY",
+      "trace": {
+        "file": "financial.json",
+        "resultId": "FORGE-timeout"
+      }
+    },
+    {
+      "id": "FORGE-broadcast-ack",
+      "status": "PASS",
+      "level": "POLICY_MODEL_ONLY",
+      "trace": {
+        "file": "financial.json",
+        "resultId": "FORGE-broadcast-ack"
+      }
+    },
+    {
+      "id": "FORGE-empty-worker-list",
+      "status": "PASS",
+      "level": "POLICY_MODEL_ONLY",
+      "trace": {
+        "file": "financial.json",
+        "resultId": "FORGE-empty-worker-list"
+      }
+    },
+    {
+      "id": "FORGE-localStorage-flag",
+      "status": "PASS",
+      "level": "POLICY_MODEL_ONLY",
+      "trace": {
+        "file": "financial.json",
+        "resultId": "FORGE-localStorage-flag"
+      }
+    },
+    {
+      "id": "FORGE-new-schema",
+      "status": "PASS",
+      "level": "POLICY_MODEL_ONLY",
+      "trace": {
+        "file": "financial.json",
+        "resultId": "FORGE-new-schema"
+      }
+    },
+    {
+      "id": "FORGE-self-reported-build",
+      "status": "PASS",
+      "level": "POLICY_MODEL_ONLY",
+      "trace": {
+        "file": "financial.json",
+        "resultId": "FORGE-self-reported-build"
+      }
+    },
+    {
+      "id": "FORGE-new-browser",
+      "status": "PASS",
+      "level": "POLICY_MODEL_ONLY",
+      "trace": {
+        "file": "financial.json",
+        "resultId": "FORGE-new-browser"
+      }
+    },
+    {
+      "id": "FORGE-hash-alone",
+      "status": "PASS",
+      "level": "POLICY_MODEL_ONLY",
+      "trace": {
+        "file": "financial.json",
+        "resultId": "FORGE-hash-alone"
+      }
+    },
+    {
+      "id": "FORGE-new-domain",
+      "status": "PASS",
+      "level": "POLICY_MODEL_ONLY",
+      "trace": {
+        "file": "financial.json",
+        "resultId": "FORGE-new-domain"
+      }
+    }
+  ],
+  "note": "Financial before/after traces use synthetic IDBFactory per case; FIN09 not executed, references browser pending. SHA of R5 is provided externally."
+}

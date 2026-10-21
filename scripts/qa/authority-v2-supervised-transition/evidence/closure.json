@@ -1,0 +1,122 @@
+{
+  "date": "2026-10-21T18:15:33.807Z",
+  "main": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+  "prs": [
+    {
+      "number": 338,
+      "state": "open",
+      "draft": true,
+      "head": "feat/restaurant-split-flexible-payments-r1",
+      "head_sha": "fef7205f76b173025f503e60d0968f446f741e78",
+      "base": "main",
+      "base_sha": "f014a1f340ed78335d3e704eefff49cda8465115",
+      "mergeable": false
+    },
+    {
+      "number": 352,
+      "state": "open",
+      "draft": true,
+      "head": "feat/restaurant-admin-supervision-r1",
+      "head_sha": "d758f69b2119f1bc346eb0ac86ba0a74c0265668",
+      "base": "feat/restaurant-split-flexible-payments-r1",
+      "base_sha": "fb17e9a43929d54087ab937cb760a8cd6e087c36",
+      "mergeable": false
+    }
+  ],
+  "deploymentsOnResearchBranch": {
+    "deployments": {
+      "pagination": {
+        "count": 0
+      },
+      "deployments": []
+    }
+  },
+  "production": {
+    "deployments": {
+      "pagination": {
+        "count": 2,
+        "next": 1792556560966,
+        "prev": 1792556561001
+      },
+      "deployments": [
+        {
+          "id": "dpl_7E212PvkFiHe2DK8SaiTEn3ANxJ5",
+          "name": "lanzo-pos",
+          "url": "lanzo-9ra2iubyv-fdxrulis-projects.vercel.app",
+          "created": 1792556561001,
+          "state": "READY",
+          "target": "production",
+          "creator": {
+            "uid": "XGlhqlCwuQNLromG5evpSFlh",
+            "username": "fdxruli"
+          },
+          "meta": {
+            "githubCommitRef": "main",
+            "githubCommitSha": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+            "githubCommitMessage": "feat(auth): bounded 7-day Admin offline continuity (#366)\n\n* feat(auth): add bounded admin offline continuity\n\n* docs(auth): record phase 2 verification results\n\n* fix(auth): recover canonical admin offline evidence\n\n* docs(auth): record mini phase 2.1 audit\n\n* docs(auth): report Mini-Fase 2.1 CI...",
+            "githubRepo": "Lanzo-POS",
+            "githubOrg": "fdxruli"
+          },
+          "inspectorUrl": "https://vercel.com/fdxrulis-projects/lanzo-pos/7E212PvkFiHe2DK8SaiTEn3ANxJ5",
+          "isRollbackCandidate": false
+        },
+        {
+          "id": "dpl_9NncrioVoguJwZS9LWFNYUAATEoX",
+          "name": "lanzo-store",
+          "url": "lanzo-store-2upacf123-fdxrulis-projects.vercel.app",
+          "created": 1792556560966,
+          "state": "READY",
+          "target": "production",
+          "creator": {
+            "uid": "XGlhqlCwuQNLromG5evpSFlh",
+            "username": "fdxruli"
+          },
+          "meta": {
+            "githubCommitRef": "main",
+            "githubCommitSha": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+            "githubCommitMessage": "feat(auth): bounded 7-day Admin offline continuity (#366)\n\n* feat(auth): add bounded admin offline continuity\n\n* docs(auth): record phase 2 verification results\n\n* fix(auth): recover canonical admin offline evidence\n\n* docs(auth): record mini phase 2.1 audit\n\n* docs(auth): report Mini-Fase 2.1 CI...",
+            "githubRepo": "Lanzo-POS",
+            "githubOrg": "fdxruli"
+          },
+          "inspectorUrl": "https://vercel.com/fdxrulis-projects/lanzo-store/9NncrioVoguJwZS9LWFNYUAATEoX",
+          "isRollbackCandidate": false
+        }
+      ]
+    }
+  },
+  "deploymentConfig": [
+    {
+      "file": "vercel.json",
+      "blob": "9c460d152b129c5d8ec088ee626ca53686ee7922",
+      "git": {
+        "deploymentEnabled": {
+          "fix/actor-scoped-storage-stale-events-r1": false,
+          "research/actor-context-invalidation-contract-r1": false,
+          "research/actor-authority-financial-admission-r1": false,
+          "research/authority-v2-supervised-transition-r1": false
+        }
+      }
+    },
+    {
+      "file": "store/vercel.json",
+      "blob": "aff35e4727a766f889e1a88607d63b65725ebe90",
+      "git": {
+        "deploymentEnabled": {
+          "fix/actor-scoped-storage-stale-events-r1": false,
+          "research/actor-context-invalidation-contract-r1": false,
+          "research/actor-authority-financial-admission-r1": false,
+          "research/authority-v2-supervised-transition-r1": false
+        }
+      }
+    }
+  ],
+  "checkpointR4": "a92ecf9e048db4b5b3d9a2879b1e4ad8889b0290",
+  "status": "ADMISSION_UNPROVEN",
+  "commercialChangesSincePreviousResearch": "NONE",
+  "SQL": "NONE",
+  "migration": "NONE",
+  "PR": "NONE",
+  "preview": "NONE",
+  "merge": "NOT_PERFORMED",
+  "note": "This receipt precedes R5 creation; final R5 SHA is delivered after independent GitHub verification. No self-referential hash claim."
+}
