@@ -12,3 +12,9 @@ Comando: npx vitest run src/services/auth/__tests__/actorLateContext.integration
 Resultado: 1 FAIL sin expected-failure. Antes granted/session-b/generation6; después locked/sessionIdnull/generation7; reason actor_context_changed_in_other_tab; durableNewRecordPreserved=true; writesSuspended=true.
 Preparación remota 34116673cea8bb2ae4ab081d8ed6e386196c2c22 / árbol 9a9af344ef37d7a580f4f3563cdcbe14406203d9.
 No PR/Preview/merge. B/C/D pendientes.
+
+## Checkpoint B — corrección focal, NO CERTIFICADA
+A remoto b9e6bb7ac7df0a1ea13325b8c6590e8a525192e6 / árbol 86624737a1ed49f98d784237a15212562596bf0e.
+Eventos se interpretan como hints por tenant; se relee contexto durable y se compara identidad exacta. Se revalida binding antes de emitir y binding/generación en bridge antes de bloquear. StorageEvent de borrado/corrupción también relee/falla cerrado. Formato v1 intacto.
+Prueba focal: EXP-F02-14 PASS + actorScopedStorage 10/10 PASS (11 únicos). Nueva sesión conserva generation6 y writesSuspended=false; no cambia registro ni vuelve a autorizar.
+Invalidación durable todavía SIN CORREGIR, pruebas entre documentos y compatibilidad pendientes. No es candidata publicable. B no certifica LC13 ni ACT-ST07.

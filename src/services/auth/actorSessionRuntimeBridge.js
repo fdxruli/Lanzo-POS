@@ -3,6 +3,7 @@ import { getAdminOfflineAuthorization, getStableDeviceId } from '../supabase';
 import { hydrateTenantStorageConsumers, resumeTenantStorageWrites } from '../tenant/tenantScopedStorage';
 import {
   activateActorScopedStorage,
+  getActorScopedStorageState,
   invalidateActorScopedStorage,
   prepareActorScopedStorage,
   resumeActorScopedStorageWrites,
@@ -354,6 +355,10 @@ subscribeActorScopedStorage((event) => {
   const state = actorRuntimeController.getState();
   if (state.status !== ACTOR_RUNTIME_STATUS.GRANTED) return;
   if (state.tenant?.opaqueId !== event.tenantOpaqueId) return;
+  // getState can expire authority, and observers may replace a binding. A
+  // decision for a former binding must never lock the replacement grant.
+  if (state.actorKey !== event.actorKey || state.generation !== event.actorGeneration) return;
+  if (getActorScopedStorageState().active?.contextToken !== event.contextToken) return;
   suspendActorScopedStorageWrites();
   actorRuntimeController.lock('actor_context_changed_in_other_tab');
 });
