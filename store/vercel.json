@@ -60,5 +60,10 @@
     {
       "handle": "error"
     }
-  ]
+  ],
+  "git": {
+    "deploymentEnabled": {
+      "audit/actor-scoped-storage-v1-stability-r1": false
+    }
+  }
 }
