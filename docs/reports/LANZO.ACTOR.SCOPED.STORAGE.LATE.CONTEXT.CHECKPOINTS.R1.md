@@ -28,3 +28,11 @@ A había perdido validez durable (assertCurrent rechaza). Después B activa su c
 Se activa HOLD obligatorio. NO se cambia invalidación por lectura + setItem (no es CAS), ni se cambia protocolo, ni se añade Web Locks. No se afirma solución integral.
 ESLint focal y git diff --check PASS. Matriz restante, regresiones ampliadas/build/PR127/CI no ejecutados por detención.
 No PR ni Preview. Checkpoint D será cierre documental HOLD, no candidata final aprobada.
+
+## Checkpoint D — cierre final HOLD (NO candidata aprobada)
+C remoto de931651532ba4b99338e6f682f885cc9a26d1f8 / árbol abe7dbca28c1d82e66f96fd3cf7246a268f9257a.
+Informe final LANZO.ACTOR.SCOPED.STORAGE.LATE.CONTEXT.HARDENING.R1.md incluido.
+EXP14 corregido focalmente; LC13 confirmado y bloqueante. Implementación detenida.
+Main sigue f48aab53634663438a06dc5187fa7e6d17b74fb3. Consulta Vercel de la rama: cero despliegues.
+No PR, Preview, merge ni migraciones. Build/PR127/CI/regresiones ampliadas pendientes por HOLD.
+El SHA y árbol de D se verifican al actualizar GitHub y se entregan al propietario.
