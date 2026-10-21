@@ -75,6 +75,7 @@ vi.mock('../../tenant/tenantScopedStorage', () => ({
 }));
 vi.mock('../actorScopedStorage', () => ({
   prepareActorScopedStorage: async () => ({}), activateActorScopedStorage: vi.fn(),
+  getActorScopedStorageState: () => ({ active: { contextToken: 'fixture-current-context' } }),
   resumeActorScopedStorageWrites: vi.fn(), suspendActorScopedStorageWrites: vi.fn(),
   invalidateActorScopedStorage: vi.fn(),
   subscribeActorScopedStorage: (callback) => { io.foreignContext = callback; }
@@ -271,10 +272,26 @@ describe('AUTH-R1 real Admin coordinator / ActorRuntime / bridge / profile integ
     const state = harness();
     io.profile.mockResolvedValueOnce({ success: false });
     await state.handleAdminLogin(credentials);
-    io.foreignContext({ type: 'foreign_context', tenantOpaqueId: 'tenant-a' });
+    const current = actorRuntimeController.getState();
+    io.foreignContext({ type: 'foreign_context', tenantOpaqueId: 'tenant-a',
+      actorKey: current.actorKey, actorGeneration: current.generation,
+      contextToken: 'fixture-current-context' });
     expect(await state.resumeAdminSessionPreparation()).toMatchObject({ success: false });
     expect(actorRuntimeController.getState().status).toBe('locked');
     expect(state.pendingAdminSessionResult).toBeNull();
+  });
+
+  it.each(['generation', 'contextToken'])('does not lock current Admin for a former binding (%s)', async (mismatch) => {
+    const state = harness();
+    io.profile.mockResolvedValueOnce({ success: false });
+    await state.handleAdminLogin(credentials);
+    const current = actorRuntimeController.getState();
+    io.foreignContext({ type: 'foreign_context', tenantOpaqueId: 'tenant-a',
+      actorKey: current.actorKey,
+      actorGeneration: mismatch === 'generation' ? current.generation - 1 : current.generation,
+      contextToken: mismatch === 'contextToken' ? 'former-context' : 'fixture-current-context' });
+    expect(actorRuntimeController.getState()).toEqual(current);
+    expect(await state.resumeAdminSessionPreparation()).toMatchObject({ success: true });
   });
 
   it('AUTH-24 revalidates an existing remote session after IndexedDB recovery', async () => {

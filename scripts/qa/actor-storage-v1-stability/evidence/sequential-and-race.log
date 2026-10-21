@@ -1,0 +1,13 @@
+✔ LC13 sequential: activated stale A retires locally, preserves B, A cannot write (15.119715ms)
+✔ current owner logout still publishes locked and rejects captured handle (4.832139ms)
+✔ CONCURRENT LIMITATION: B activates between A read and write; B is still overwritten (5.971208ms)
+✔ PENDING LIMITATION: preserve original pre-activation cleanup behavior explicitly (13.133201ms)
+✔ missing, corrupt or inaccessible durable never revives A after invalidation (14.686608ms)
+ℹ tests 5
+ℹ suites 0
+ℹ pass 5
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 167.724663

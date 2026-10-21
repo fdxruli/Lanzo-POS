@@ -350,7 +350,12 @@ export const invalidateActorScopedStorage = (reason = 'actor_locked') => {
   pendingBinding = null;
   activeBinding = null;
 
-  if (previous) {
+  // An activated context that already observes a different durable owner must
+  // retire locally without publishing a lock over that owner's record. This
+  // mitigates sequential late invalidation only: getItem + setItem is NOT CAS.
+  // Keep the pre-activation cleanup contract unchanged (no owned token yet).
+  if (previous && (!previous.contextToken
+    || contextMatchesBinding(readContextRecord(previous.tenantOpaqueId), previous))) {
     try {
       publishContextRecord({
         version: ACTOR_STORAGE_VERSION,

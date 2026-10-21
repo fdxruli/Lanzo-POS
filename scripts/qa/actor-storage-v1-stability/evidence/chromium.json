@@ -1,0 +1,2672 @@
+{
+  "main": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+  "focal": "1cdc1cd029982e0279177ab29be1f8fffacb6ed8",
+  "hashes": {
+    "main": {
+      "actorScopedStorage.js": "d07c40382ed27cda698a5df3761b0509f822659fbeea0d25e47154a0f8f248af",
+      "actorSessionRuntimeBridge.js": "8e49a10b5c82cdf927a51f1f5095a0a9927a1beee56fe11549f7471abd40557e"
+    },
+    "focal": {
+      "actorScopedStorage.js": "cb800257fec6d759377d1a028693b2cf757411025028b44cd58b2249261cf8cd",
+      "actorSessionRuntimeBridge.js": "3706790ee01b0aae4d4d36ed2350701a4e3a4c0f218a925e7cb4c8262d7ec9f6"
+    },
+    "candidate": {
+      "actorScopedStorage.js": "1ecbbe8ddb4213cda8870951d360323670a455d2d0007b851e8b68d77d32b6d1",
+      "actorSessionRuntimeBridge.js": "3706790ee01b0aae4d4d36ed2350701a4e3a4c0f218a925e7cb4c8262d7ec9f6"
+    }
+  },
+  "chromium": "143.0.7499.0",
+  "scope": "real modules; synthetic auth/DB provider; no financial E2E",
+  "results": [
+    {
+      "id": "EXP14-main",
+      "expectation": "B remains granted, old handles rejected",
+      "before": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df\",\"actorGeneration\":5,\"contextToken\":\"693b3dc3-72dc-46ba-93fb-c1dbcb1f5592\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:55.296Z\"}",
+        "state": {
+          "status": "granted",
+          "actorType": "admin",
+          "actorId": "a",
+          "actorKey": "admin:a",
+          "sessionId": "session-b",
+          "permissions": [
+            "*"
+          ],
+          "tenant": {
+            "opaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "databaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "generation": 1
+          },
+          "deviceRef": "device-a",
+          "authorizationExpiresAt": 1792619376258,
+          "generation": 5,
+          "reason": "authenticated_session_granted"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:a",
+            "actorGeneration": 5,
+            "actorOpaqueId": "df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df",
+            "contextToken": "693b3dc3-72dc-46ba-93fb-c1dbcb1f5592",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": false
+        },
+        "runtime": {
+          "allowed": true
+        },
+        "write": {
+          "allowed": true
+        },
+        "oldRuntime": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "oldStorage": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        }
+      },
+      "after": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df\",\"actorGeneration\":5,\"contextToken\":\"693b3dc3-72dc-46ba-93fb-c1dbcb1f5592\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:55.296Z\"}",
+        "state": {
+          "status": "locked",
+          "actorType": null,
+          "actorId": null,
+          "actorKey": null,
+          "sessionId": null,
+          "permissions": [],
+          "tenant": null,
+          "deviceRef": null,
+          "authorizationExpiresAt": null,
+          "generation": 6,
+          "reason": "actor_context_changed_in_other_tab"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:a",
+            "actorGeneration": 5,
+            "actorOpaqueId": "df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df",
+            "contextToken": "693b3dc3-72dc-46ba-93fb-c1dbcb1f5592",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": true
+        },
+        "runtime": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "write": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_LOCKED"
+        },
+        "oldRuntime": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "oldStorage": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        }
+      },
+      "status": "FAIL"
+    },
+    {
+      "id": "EXP14-focal",
+      "expectation": "B remains granted, old handles rejected",
+      "before": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df\",\"actorGeneration\":5,\"contextToken\":\"98e15d58-de01-4723-9ad6-71642fd3ff9c\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:55.384Z\"}",
+        "state": {
+          "status": "granted",
+          "actorType": "admin",
+          "actorId": "a",
+          "actorKey": "admin:a",
+          "sessionId": "session-b",
+          "permissions": [
+            "*"
+          ],
+          "tenant": {
+            "opaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "databaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "generation": 1
+          },
+          "deviceRef": "device-a",
+          "authorizationExpiresAt": 1792619376361,
+          "generation": 5,
+          "reason": "authenticated_session_granted"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:a",
+            "actorGeneration": 5,
+            "actorOpaqueId": "df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df",
+            "contextToken": "98e15d58-de01-4723-9ad6-71642fd3ff9c",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": false
+        },
+        "runtime": {
+          "allowed": true
+        },
+        "write": {
+          "allowed": true
+        },
+        "oldRuntime": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "oldStorage": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        }
+      },
+      "after": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df\",\"actorGeneration\":5,\"contextToken\":\"98e15d58-de01-4723-9ad6-71642fd3ff9c\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:55.384Z\"}",
+        "state": {
+          "status": "granted",
+          "actorType": "admin",
+          "actorId": "a",
+          "actorKey": "admin:a",
+          "sessionId": "session-b",
+          "permissions": [
+            "*"
+          ],
+          "tenant": {
+            "opaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "databaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "generation": 1
+          },
+          "deviceRef": "device-a",
+          "authorizationExpiresAt": 1792619376361,
+          "generation": 5,
+          "reason": "authenticated_session_granted"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:a",
+            "actorGeneration": 5,
+            "actorOpaqueId": "df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df",
+            "contextToken": "98e15d58-de01-4723-9ad6-71642fd3ff9c",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": false
+        },
+        "runtime": {
+          "allowed": true
+        },
+        "write": {
+          "allowed": true
+        },
+        "oldRuntime": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "oldStorage": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        }
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "EXP14-candidate",
+      "expectation": "B remains granted, old handles rejected",
+      "before": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df\",\"actorGeneration\":5,\"contextToken\":\"f0c91feb-c9a9-43d0-82f9-87483730fae9\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:55.487Z\"}",
+        "state": {
+          "status": "granted",
+          "actorType": "admin",
+          "actorId": "a",
+          "actorKey": "admin:a",
+          "sessionId": "session-b",
+          "permissions": [
+            "*"
+          ],
+          "tenant": {
+            "opaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "databaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "generation": 1
+          },
+          "deviceRef": "device-a",
+          "authorizationExpiresAt": 1792619376442,
+          "generation": 5,
+          "reason": "authenticated_session_granted"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:a",
+            "actorGeneration": 5,
+            "actorOpaqueId": "df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df",
+            "contextToken": "f0c91feb-c9a9-43d0-82f9-87483730fae9",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": false
+        },
+        "runtime": {
+          "allowed": true
+        },
+        "write": {
+          "allowed": true
+        },
+        "oldRuntime": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "oldStorage": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        }
+      },
+      "after": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df\",\"actorGeneration\":5,\"contextToken\":\"f0c91feb-c9a9-43d0-82f9-87483730fae9\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:55.487Z\"}",
+        "state": {
+          "status": "granted",
+          "actorType": "admin",
+          "actorId": "a",
+          "actorKey": "admin:a",
+          "sessionId": "session-b",
+          "permissions": [
+            "*"
+          ],
+          "tenant": {
+            "opaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "databaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "generation": 1
+          },
+          "deviceRef": "device-a",
+          "authorizationExpiresAt": 1792619376442,
+          "generation": 5,
+          "reason": "authenticated_session_granted"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:a",
+            "actorGeneration": 5,
+            "actorOpaqueId": "df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df",
+            "contextToken": "f0c91feb-c9a9-43d0-82f9-87483730fae9",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": false
+        },
+        "runtime": {
+          "allowed": true
+        },
+        "write": {
+          "allowed": true
+        },
+        "oldRuntime": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "oldStorage": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        }
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "LC13-main-main-freeze-none",
+      "expectation": "stale A cannot overwrite B; old A denied",
+      "before": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"f95c0eb3-d96a-4b7c-b837-42f26c3289de\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:55.643Z\"}",
+        "state": {
+          "status": "granted",
+          "actorType": "admin",
+          "actorId": "b",
+          "actorKey": "admin:b",
+          "sessionId": "session-b",
+          "permissions": [
+            "*"
+          ],
+          "tenant": {
+            "opaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "databaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "generation": 1
+          },
+          "deviceRef": "device-a",
+          "authorizationExpiresAt": 1792619276614,
+          "generation": 2,
+          "reason": "authenticated_session_granted"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:b",
+            "actorGeneration": 2,
+            "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
+            "contextToken": "f95c0eb3-d96a-4b7c-b837-42f26c3289de",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": false
+        },
+        "runtime": {
+          "allowed": true
+        },
+        "write": {
+          "allowed": true
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "after": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"aeea2bdb-7528-4232-96cd-64f3d1511776\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:47:55.655Z\"}",
+        "state": {
+          "status": "locked",
+          "actorType": null,
+          "actorId": null,
+          "actorKey": null,
+          "sessionId": null,
+          "permissions": [],
+          "tenant": null,
+          "deviceRef": null,
+          "authorizationExpiresAt": null,
+          "generation": 3,
+          "reason": "actor_context_changed_in_other_tab"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:b",
+            "actorGeneration": 2,
+            "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
+            "contextToken": "f95c0eb3-d96a-4b7c-b837-42f26c3289de",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": true
+        },
+        "runtime": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "write": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "old": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"aeea2bdb-7528-4232-96cd-64f3d1511776\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:47:55.655Z\"}",
+        "state": {
+          "status": "locked",
+          "actorType": null,
+          "actorId": null,
+          "actorKey": null,
+          "sessionId": null,
+          "permissions": [],
+          "tenant": null,
+          "deviceRef": null,
+          "authorizationExpiresAt": null,
+          "generation": 3,
+          "reason": "actor_context_changed_in_other_tab"
+        },
+        "storage": {
+          "pending": null,
+          "active": null,
+          "writesSuspended": true
+        },
+        "runtime": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "write": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "status": "FAIL"
+    },
+    {
+      "id": "LC13-main-main-freeze-A",
+      "expectation": "stale A cannot overwrite B; old A denied",
+      "before": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"617bf62c-ec22-4157-bd18-405887f99f03\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:55.809Z\"}",
+        "state": {
+          "status": "granted",
+          "actorType": "admin",
+          "actorId": "b",
+          "actorKey": "admin:b",
+          "sessionId": "session-b",
+          "permissions": [
+            "*"
+          ],
+          "tenant": {
+            "opaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "databaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "generation": 1
+          },
+          "deviceRef": "device-a",
+          "authorizationExpiresAt": 1792619276770,
+          "generation": 2,
+          "reason": "authenticated_session_granted"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:b",
+            "actorGeneration": 2,
+            "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
+            "contextToken": "617bf62c-ec22-4157-bd18-405887f99f03",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": false
+        },
+        "runtime": {
+          "allowed": true
+        },
+        "write": {
+          "allowed": true
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "after": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"3f2a2c88-46c2-4eb8-84f2-41b63397f999\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:47:55.813Z\"}",
+        "state": {
+          "status": "locked",
+          "actorType": null,
+          "actorId": null,
+          "actorKey": null,
+          "sessionId": null,
+          "permissions": [],
+          "tenant": null,
+          "deviceRef": null,
+          "authorizationExpiresAt": null,
+          "generation": 3,
+          "reason": "actor_context_changed_in_other_tab"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:b",
+            "actorGeneration": 2,
+            "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
+            "contextToken": "617bf62c-ec22-4157-bd18-405887f99f03",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": true
+        },
+        "runtime": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "write": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "old": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"3f2a2c88-46c2-4eb8-84f2-41b63397f999\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:47:55.813Z\"}",
+        "state": {
+          "status": "locked",
+          "actorType": null,
+          "actorId": null,
+          "actorKey": null,
+          "sessionId": null,
+          "permissions": [],
+          "tenant": null,
+          "deviceRef": null,
+          "authorizationExpiresAt": null,
+          "generation": 3,
+          "reason": "actor_context_changed_in_other_tab"
+        },
+        "storage": {
+          "pending": null,
+          "active": null,
+          "writesSuspended": true
+        },
+        "runtime": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "write": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "status": "FAIL"
+    },
+    {
+      "id": "LC13-main-main-freeze-B",
+      "expectation": "stale A cannot overwrite B; old A denied",
+      "before": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"40c335fa-8fca-414b-bdbe-14fb96201ad3\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:55.971Z\"}",
+        "state": {
+          "status": "granted",
+          "actorType": "admin",
+          "actorId": "b",
+          "actorKey": "admin:b",
+          "sessionId": "session-b",
+          "permissions": [
+            "*"
+          ],
+          "tenant": {
+            "opaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "databaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "generation": 1
+          },
+          "deviceRef": "device-a",
+          "authorizationExpiresAt": 1792619276934,
+          "generation": 2,
+          "reason": "authenticated_session_granted"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:b",
+            "actorGeneration": 2,
+            "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
+            "contextToken": "40c335fa-8fca-414b-bdbe-14fb96201ad3",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": false
+        },
+        "runtime": {
+          "allowed": true
+        },
+        "write": {
+          "allowed": true
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "after": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"26c0a78f-c929-4999-95e1-d64c50dec62c\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:47:55.983Z\"}",
+        "state": {
+          "status": "locked",
+          "actorType": null,
+          "actorId": null,
+          "actorKey": null,
+          "sessionId": null,
+          "permissions": [],
+          "tenant": null,
+          "deviceRef": null,
+          "authorizationExpiresAt": null,
+          "generation": 3,
+          "reason": "actor_context_changed_in_other_tab"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:b",
+            "actorGeneration": 2,
+            "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
+            "contextToken": "40c335fa-8fca-414b-bdbe-14fb96201ad3",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": true
+        },
+        "runtime": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "write": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "old": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"26c0a78f-c929-4999-95e1-d64c50dec62c\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:47:55.983Z\"}",
+        "state": {
+          "status": "locked",
+          "actorType": null,
+          "actorId": null,
+          "actorKey": null,
+          "sessionId": null,
+          "permissions": [],
+          "tenant": null,
+          "deviceRef": null,
+          "authorizationExpiresAt": null,
+          "generation": 3,
+          "reason": "actor_context_changed_in_other_tab"
+        },
+        "storage": {
+          "pending": null,
+          "active": null,
+          "writesSuspended": true
+        },
+        "runtime": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "write": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "status": "FAIL"
+    },
+    {
+      "id": "LC13-main-candidate-freeze-none",
+      "expectation": "stale A cannot overwrite B; old A denied",
+      "before": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"d056a3bc-3f15-459b-baac-538b3b63f583\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:56.136Z\"}",
+        "state": {
+          "status": "granted",
+          "actorType": "admin",
+          "actorId": "b",
+          "actorKey": "admin:b",
+          "sessionId": "session-b",
+          "permissions": [
+            "*"
+          ],
+          "tenant": {
+            "opaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "databaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "generation": 1
+          },
+          "deviceRef": "device-a",
+          "authorizationExpiresAt": 1792619277106,
+          "generation": 2,
+          "reason": "authenticated_session_granted"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:b",
+            "actorGeneration": 2,
+            "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
+            "contextToken": "d056a3bc-3f15-459b-baac-538b3b63f583",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": false
+        },
+        "runtime": {
+          "allowed": true
+        },
+        "write": {
+          "allowed": true
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "after": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"fc9d0dab-cd19-49cc-ab0a-c528c3e3c064\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:47:56.141Z\"}",
+        "state": {
+          "status": "locked",
+          "actorType": null,
+          "actorId": null,
+          "actorKey": null,
+          "sessionId": null,
+          "permissions": [],
+          "tenant": null,
+          "deviceRef": null,
+          "authorizationExpiresAt": null,
+          "generation": 3,
+          "reason": "actor_context_changed_in_other_tab"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:b",
+            "actorGeneration": 2,
+            "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
+            "contextToken": "d056a3bc-3f15-459b-baac-538b3b63f583",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": true
+        },
+        "runtime": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "write": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "old": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"fc9d0dab-cd19-49cc-ab0a-c528c3e3c064\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:47:56.141Z\"}",
+        "state": {
+          "status": "locked",
+          "actorType": null,
+          "actorId": null,
+          "actorKey": null,
+          "sessionId": null,
+          "permissions": [],
+          "tenant": null,
+          "deviceRef": null,
+          "authorizationExpiresAt": null,
+          "generation": 3,
+          "reason": "actor_context_changed_in_other_tab"
+        },
+        "storage": {
+          "pending": null,
+          "active": null,
+          "writesSuspended": true
+        },
+        "runtime": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "write": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "status": "FAIL"
+    },
+    {
+      "id": "LC13-main-candidate-freeze-A",
+      "expectation": "stale A cannot overwrite B; old A denied",
+      "before": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"35cc95d1-aa57-44cc-94d6-263ca659f234\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:56.299Z\"}",
+        "state": {
+          "status": "granted",
+          "actorType": "admin",
+          "actorId": "b",
+          "actorKey": "admin:b",
+          "sessionId": "session-b",
+          "permissions": [
+            "*"
+          ],
+          "tenant": {
+            "opaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "databaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "generation": 1
+          },
+          "deviceRef": "device-a",
+          "authorizationExpiresAt": 1792619277266,
+          "generation": 2,
+          "reason": "authenticated_session_granted"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:b",
+            "actorGeneration": 2,
+            "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
+            "contextToken": "35cc95d1-aa57-44cc-94d6-263ca659f234",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": false
+        },
+        "runtime": {
+          "allowed": true
+        },
+        "write": {
+          "allowed": true
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "after": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"07511b31-00d8-486d-b358-46d4ede3377a\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:47:56.322Z\"}",
+        "state": {
+          "status": "locked",
+          "actorType": null,
+          "actorId": null,
+          "actorKey": null,
+          "sessionId": null,
+          "permissions": [],
+          "tenant": null,
+          "deviceRef": null,
+          "authorizationExpiresAt": null,
+          "generation": 3,
+          "reason": "actor_context_changed_in_other_tab"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:b",
+            "actorGeneration": 2,
+            "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
+            "contextToken": "35cc95d1-aa57-44cc-94d6-263ca659f234",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": true
+        },
+        "runtime": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "write": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "old": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"07511b31-00d8-486d-b358-46d4ede3377a\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:47:56.322Z\"}",
+        "state": {
+          "status": "locked",
+          "actorType": null,
+          "actorId": null,
+          "actorKey": null,
+          "sessionId": null,
+          "permissions": [],
+          "tenant": null,
+          "deviceRef": null,
+          "authorizationExpiresAt": null,
+          "generation": 3,
+          "reason": "actor_context_changed_in_other_tab"
+        },
+        "storage": {
+          "pending": null,
+          "active": null,
+          "writesSuspended": true
+        },
+        "runtime": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "write": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "status": "FAIL"
+    },
+    {
+      "id": "LC13-main-candidate-freeze-B",
+      "expectation": "stale A cannot overwrite B; old A denied",
+      "before": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"280764fd-884c-41d3-afd5-d766962cb1ec\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:56.471Z\"}",
+        "state": {
+          "status": "granted",
+          "actorType": "admin",
+          "actorId": "b",
+          "actorKey": "admin:b",
+          "sessionId": "session-b",
+          "permissions": [
+            "*"
+          ],
+          "tenant": {
+            "opaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "databaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "generation": 1
+          },
+          "deviceRef": "device-a",
+          "authorizationExpiresAt": 1792619277444,
+          "generation": 2,
+          "reason": "authenticated_session_granted"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:b",
+            "actorGeneration": 2,
+            "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
+            "contextToken": "280764fd-884c-41d3-afd5-d766962cb1ec",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": false
+        },
+        "runtime": {
+          "allowed": true
+        },
+        "write": {
+          "allowed": true
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "after": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"155cc522-c47f-4c24-84c5-c4fc040d8fd3\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:47:56.483Z\"}",
+        "state": {
+          "status": "locked",
+          "actorType": null,
+          "actorId": null,
+          "actorKey": null,
+          "sessionId": null,
+          "permissions": [],
+          "tenant": null,
+          "deviceRef": null,
+          "authorizationExpiresAt": null,
+          "generation": 3,
+          "reason": "actor_context_changed_in_other_tab"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:b",
+            "actorGeneration": 2,
+            "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
+            "contextToken": "280764fd-884c-41d3-afd5-d766962cb1ec",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": true
+        },
+        "runtime": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "write": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "old": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"155cc522-c47f-4c24-84c5-c4fc040d8fd3\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:47:56.483Z\"}",
+        "state": {
+          "status": "locked",
+          "actorType": null,
+          "actorId": null,
+          "actorKey": null,
+          "sessionId": null,
+          "permissions": [],
+          "tenant": null,
+          "deviceRef": null,
+          "authorizationExpiresAt": null,
+          "generation": 3,
+          "reason": "actor_context_changed_in_other_tab"
+        },
+        "storage": {
+          "pending": null,
+          "active": null,
+          "writesSuspended": true
+        },
+        "runtime": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "write": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "status": "FAIL"
+    },
+    {
+      "id": "LC13-candidate-main-freeze-none",
+      "expectation": "stale A cannot overwrite B; old A denied",
+      "before": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"7fd081dd-f582-4d77-a652-e8ac92b189ed\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:56.627Z\"}",
+        "state": {
+          "status": "granted",
+          "actorType": "admin",
+          "actorId": "b",
+          "actorKey": "admin:b",
+          "sessionId": "session-b",
+          "permissions": [
+            "*"
+          ],
+          "tenant": {
+            "opaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "databaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "generation": 1
+          },
+          "deviceRef": "device-a",
+          "authorizationExpiresAt": 1792619277594,
+          "generation": 2,
+          "reason": "authenticated_session_granted"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:b",
+            "actorGeneration": 2,
+            "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
+            "contextToken": "7fd081dd-f582-4d77-a652-e8ac92b189ed",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": false
+        },
+        "runtime": {
+          "allowed": true
+        },
+        "write": {
+          "allowed": true
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "after": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"7fd081dd-f582-4d77-a652-e8ac92b189ed\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:56.627Z\"}",
+        "state": {
+          "status": "granted",
+          "actorType": "admin",
+          "actorId": "b",
+          "actorKey": "admin:b",
+          "sessionId": "session-b",
+          "permissions": [
+            "*"
+          ],
+          "tenant": {
+            "opaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "databaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "generation": 1
+          },
+          "deviceRef": "device-a",
+          "authorizationExpiresAt": 1792619277594,
+          "generation": 2,
+          "reason": "authenticated_session_granted"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:b",
+            "actorGeneration": 2,
+            "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
+            "contextToken": "7fd081dd-f582-4d77-a652-e8ac92b189ed",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": false
+        },
+        "runtime": {
+          "allowed": true
+        },
+        "write": {
+          "allowed": true
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "old": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"7fd081dd-f582-4d77-a652-e8ac92b189ed\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:56.627Z\"}",
+        "state": {
+          "status": "locked",
+          "actorType": null,
+          "actorId": null,
+          "actorKey": null,
+          "sessionId": null,
+          "permissions": [],
+          "tenant": null,
+          "deviceRef": null,
+          "authorizationExpiresAt": null,
+          "generation": 3,
+          "reason": "actor_context_changed_in_other_tab"
+        },
+        "storage": {
+          "pending": null,
+          "active": null,
+          "writesSuspended": true
+        },
+        "runtime": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "write": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "LC13-candidate-main-freeze-A",
+      "expectation": "stale A cannot overwrite B; old A denied",
+      "before": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"4308356b-bd11-4cc2-98c7-a83f2498fb7d\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:56.847Z\"}",
+        "state": {
+          "status": "granted",
+          "actorType": "admin",
+          "actorId": "b",
+          "actorKey": "admin:b",
+          "sessionId": "session-b",
+          "permissions": [
+            "*"
+          ],
+          "tenant": {
+            "opaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "databaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "generation": 1
+          },
+          "deviceRef": "device-a",
+          "authorizationExpiresAt": 1792619277808,
+          "generation": 2,
+          "reason": "authenticated_session_granted"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:b",
+            "actorGeneration": 2,
+            "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
+            "contextToken": "4308356b-bd11-4cc2-98c7-a83f2498fb7d",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": false
+        },
+        "runtime": {
+          "allowed": true
+        },
+        "write": {
+          "allowed": true
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "after": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"4308356b-bd11-4cc2-98c7-a83f2498fb7d\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:56.847Z\"}",
+        "state": {
+          "status": "granted",
+          "actorType": "admin",
+          "actorId": "b",
+          "actorKey": "admin:b",
+          "sessionId": "session-b",
+          "permissions": [
+            "*"
+          ],
+          "tenant": {
+            "opaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "databaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "generation": 1
+          },
+          "deviceRef": "device-a",
+          "authorizationExpiresAt": 1792619277808,
+          "generation": 2,
+          "reason": "authenticated_session_granted"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:b",
+            "actorGeneration": 2,
+            "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
+            "contextToken": "4308356b-bd11-4cc2-98c7-a83f2498fb7d",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": false
+        },
+        "runtime": {
+          "allowed": true
+        },
+        "write": {
+          "allowed": true
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "old": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"4308356b-bd11-4cc2-98c7-a83f2498fb7d\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:56.847Z\"}",
+        "state": {
+          "status": "locked",
+          "actorType": null,
+          "actorId": null,
+          "actorKey": null,
+          "sessionId": null,
+          "permissions": [],
+          "tenant": null,
+          "deviceRef": null,
+          "authorizationExpiresAt": null,
+          "generation": 3,
+          "reason": "actor_context_changed_in_other_tab"
+        },
+        "storage": {
+          "pending": null,
+          "active": null,
+          "writesSuspended": true
+        },
+        "runtime": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "write": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "LC13-candidate-main-freeze-B",
+      "expectation": "stale A cannot overwrite B; old A denied",
+      "before": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"3f46e1e4-6f29-4564-918b-84ecf7861e00\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:57.026Z\"}",
+        "state": {
+          "status": "granted",
+          "actorType": "admin",
+          "actorId": "b",
+          "actorKey": "admin:b",
+          "sessionId": "session-b",
+          "permissions": [
+            "*"
+          ],
+          "tenant": {
+            "opaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "databaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "generation": 1
+          },
+          "deviceRef": "device-a",
+          "authorizationExpiresAt": 1792619277997,
+          "generation": 2,
+          "reason": "authenticated_session_granted"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:b",
+            "actorGeneration": 2,
+            "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
+            "contextToken": "3f46e1e4-6f29-4564-918b-84ecf7861e00",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": false
+        },
+        "runtime": {
+          "allowed": true
+        },
+        "write": {
+          "allowed": true
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "after": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"3f46e1e4-6f29-4564-918b-84ecf7861e00\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:57.026Z\"}",
+        "state": {
+          "status": "granted",
+          "actorType": "admin",
+          "actorId": "b",
+          "actorKey": "admin:b",
+          "sessionId": "session-b",
+          "permissions": [
+            "*"
+          ],
+          "tenant": {
+            "opaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "databaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "generation": 1
+          },
+          "deviceRef": "device-a",
+          "authorizationExpiresAt": 1792619277997,
+          "generation": 2,
+          "reason": "authenticated_session_granted"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:b",
+            "actorGeneration": 2,
+            "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
+            "contextToken": "3f46e1e4-6f29-4564-918b-84ecf7861e00",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": false
+        },
+        "runtime": {
+          "allowed": true
+        },
+        "write": {
+          "allowed": true
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "old": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"3f46e1e4-6f29-4564-918b-84ecf7861e00\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:57.026Z\"}",
+        "state": {
+          "status": "locked",
+          "actorType": null,
+          "actorId": null,
+          "actorKey": null,
+          "sessionId": null,
+          "permissions": [],
+          "tenant": null,
+          "deviceRef": null,
+          "authorizationExpiresAt": null,
+          "generation": 3,
+          "reason": "actor_context_changed_in_other_tab"
+        },
+        "storage": {
+          "pending": null,
+          "active": null,
+          "writesSuspended": true
+        },
+        "runtime": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "write": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "LC13-candidate-candidate-freeze-none",
+      "expectation": "stale A cannot overwrite B; old A denied",
+      "before": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"b45c6b74-8a25-4776-993a-eab37bb4d738\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:57.197Z\"}",
+        "state": {
+          "status": "granted",
+          "actorType": "admin",
+          "actorId": "b",
+          "actorKey": "admin:b",
+          "sessionId": "session-b",
+          "permissions": [
+            "*"
+          ],
+          "tenant": {
+            "opaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "databaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "generation": 1
+          },
+          "deviceRef": "device-a",
+          "authorizationExpiresAt": 1792619278171,
+          "generation": 2,
+          "reason": "authenticated_session_granted"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:b",
+            "actorGeneration": 2,
+            "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
+            "contextToken": "b45c6b74-8a25-4776-993a-eab37bb4d738",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": false
+        },
+        "runtime": {
+          "allowed": true
+        },
+        "write": {
+          "allowed": true
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "after": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"b45c6b74-8a25-4776-993a-eab37bb4d738\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:57.197Z\"}",
+        "state": {
+          "status": "granted",
+          "actorType": "admin",
+          "actorId": "b",
+          "actorKey": "admin:b",
+          "sessionId": "session-b",
+          "permissions": [
+            "*"
+          ],
+          "tenant": {
+            "opaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "databaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "generation": 1
+          },
+          "deviceRef": "device-a",
+          "authorizationExpiresAt": 1792619278171,
+          "generation": 2,
+          "reason": "authenticated_session_granted"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:b",
+            "actorGeneration": 2,
+            "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
+            "contextToken": "b45c6b74-8a25-4776-993a-eab37bb4d738",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": false
+        },
+        "runtime": {
+          "allowed": true
+        },
+        "write": {
+          "allowed": true
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "old": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"b45c6b74-8a25-4776-993a-eab37bb4d738\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:57.197Z\"}",
+        "state": {
+          "status": "locked",
+          "actorType": null,
+          "actorId": null,
+          "actorKey": null,
+          "sessionId": null,
+          "permissions": [],
+          "tenant": null,
+          "deviceRef": null,
+          "authorizationExpiresAt": null,
+          "generation": 3,
+          "reason": "actor_context_changed_in_other_tab"
+        },
+        "storage": {
+          "pending": null,
+          "active": null,
+          "writesSuspended": true
+        },
+        "runtime": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "write": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "LC13-candidate-candidate-freeze-A",
+      "expectation": "stale A cannot overwrite B; old A denied",
+      "before": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"9e5f22af-fea5-4f0d-b60a-597d51f0856b\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:57.350Z\"}",
+        "state": {
+          "status": "granted",
+          "actorType": "admin",
+          "actorId": "b",
+          "actorKey": "admin:b",
+          "sessionId": "session-b",
+          "permissions": [
+            "*"
+          ],
+          "tenant": {
+            "opaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "databaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "generation": 1
+          },
+          "deviceRef": "device-a",
+          "authorizationExpiresAt": 1792619278318,
+          "generation": 2,
+          "reason": "authenticated_session_granted"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:b",
+            "actorGeneration": 2,
+            "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
+            "contextToken": "9e5f22af-fea5-4f0d-b60a-597d51f0856b",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": false
+        },
+        "runtime": {
+          "allowed": true
+        },
+        "write": {
+          "allowed": true
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "after": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"9e5f22af-fea5-4f0d-b60a-597d51f0856b\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:57.350Z\"}",
+        "state": {
+          "status": "granted",
+          "actorType": "admin",
+          "actorId": "b",
+          "actorKey": "admin:b",
+          "sessionId": "session-b",
+          "permissions": [
+            "*"
+          ],
+          "tenant": {
+            "opaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "databaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "generation": 1
+          },
+          "deviceRef": "device-a",
+          "authorizationExpiresAt": 1792619278318,
+          "generation": 2,
+          "reason": "authenticated_session_granted"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:b",
+            "actorGeneration": 2,
+            "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
+            "contextToken": "9e5f22af-fea5-4f0d-b60a-597d51f0856b",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": false
+        },
+        "runtime": {
+          "allowed": true
+        },
+        "write": {
+          "allowed": true
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "old": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"9e5f22af-fea5-4f0d-b60a-597d51f0856b\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:57.350Z\"}",
+        "state": {
+          "status": "locked",
+          "actorType": null,
+          "actorId": null,
+          "actorKey": null,
+          "sessionId": null,
+          "permissions": [],
+          "tenant": null,
+          "deviceRef": null,
+          "authorizationExpiresAt": null,
+          "generation": 3,
+          "reason": "actor_context_changed_in_other_tab"
+        },
+        "storage": {
+          "pending": null,
+          "active": null,
+          "writesSuspended": true
+        },
+        "runtime": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "write": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "LC13-candidate-candidate-freeze-B",
+      "expectation": "stale A cannot overwrite B; old A denied",
+      "before": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"4320f4bd-2143-4659-872a-00bf2afd7641\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:57.548Z\"}",
+        "state": {
+          "status": "granted",
+          "actorType": "admin",
+          "actorId": "b",
+          "actorKey": "admin:b",
+          "sessionId": "session-b",
+          "permissions": [
+            "*"
+          ],
+          "tenant": {
+            "opaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "databaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "generation": 1
+          },
+          "deviceRef": "device-a",
+          "authorizationExpiresAt": 1792619278522,
+          "generation": 2,
+          "reason": "authenticated_session_granted"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:b",
+            "actorGeneration": 2,
+            "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
+            "contextToken": "4320f4bd-2143-4659-872a-00bf2afd7641",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": false
+        },
+        "runtime": {
+          "allowed": true
+        },
+        "write": {
+          "allowed": true
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "after": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"4320f4bd-2143-4659-872a-00bf2afd7641\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:57.548Z\"}",
+        "state": {
+          "status": "granted",
+          "actorType": "admin",
+          "actorId": "b",
+          "actorKey": "admin:b",
+          "sessionId": "session-b",
+          "permissions": [
+            "*"
+          ],
+          "tenant": {
+            "opaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "databaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "generation": 1
+          },
+          "deviceRef": "device-a",
+          "authorizationExpiresAt": 1792619278522,
+          "generation": 2,
+          "reason": "authenticated_session_granted"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:b",
+            "actorGeneration": 2,
+            "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
+            "contextToken": "4320f4bd-2143-4659-872a-00bf2afd7641",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": false
+        },
+        "runtime": {
+          "allowed": true
+        },
+        "write": {
+          "allowed": true
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "old": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"4320f4bd-2143-4659-872a-00bf2afd7641\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:57.548Z\"}",
+        "state": {
+          "status": "locked",
+          "actorType": null,
+          "actorId": null,
+          "actorKey": null,
+          "sessionId": null,
+          "permissions": [],
+          "tenant": null,
+          "deviceRef": null,
+          "authorizationExpiresAt": null,
+          "generation": 3,
+          "reason": "actor_context_changed_in_other_tab"
+        },
+        "storage": {
+          "pending": null,
+          "active": null,
+          "writesSuspended": true
+        },
+        "runtime": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "write": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "LC13-focal-focal-freeze-none",
+      "expectation": "stale A cannot overwrite B; old A denied",
+      "before": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"8ec9ed90-50a7-4515-b27b-46239ba2d9fc\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:57.721Z\"}",
+        "state": {
+          "status": "granted",
+          "actorType": "admin",
+          "actorId": "b",
+          "actorKey": "admin:b",
+          "sessionId": "session-b",
+          "permissions": [
+            "*"
+          ],
+          "tenant": {
+            "opaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "databaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "generation": 1
+          },
+          "deviceRef": "device-a",
+          "authorizationExpiresAt": 1792619278698,
+          "generation": 2,
+          "reason": "authenticated_session_granted"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:b",
+            "actorGeneration": 2,
+            "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
+            "contextToken": "8ec9ed90-50a7-4515-b27b-46239ba2d9fc",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": false
+        },
+        "runtime": {
+          "allowed": true
+        },
+        "write": {
+          "allowed": true
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "after": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"bdebe1fa-0dd0-4aea-a48a-2f11c8772238\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:47:57.727Z\"}",
+        "state": {
+          "status": "locked",
+          "actorType": null,
+          "actorId": null,
+          "actorKey": null,
+          "sessionId": null,
+          "permissions": [],
+          "tenant": null,
+          "deviceRef": null,
+          "authorizationExpiresAt": null,
+          "generation": 3,
+          "reason": "actor_context_changed_in_other_tab"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:b",
+            "actorGeneration": 2,
+            "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
+            "contextToken": "8ec9ed90-50a7-4515-b27b-46239ba2d9fc",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": true
+        },
+        "runtime": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "write": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "old": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"bdebe1fa-0dd0-4aea-a48a-2f11c8772238\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:47:57.727Z\"}",
+        "state": {
+          "status": "locked",
+          "actorType": null,
+          "actorId": null,
+          "actorKey": null,
+          "sessionId": null,
+          "permissions": [],
+          "tenant": null,
+          "deviceRef": null,
+          "authorizationExpiresAt": null,
+          "generation": 3,
+          "reason": "actor_context_changed_in_other_tab"
+        },
+        "storage": {
+          "pending": null,
+          "active": null,
+          "writesSuspended": true
+        },
+        "runtime": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "write": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "status": "FAIL"
+    },
+    {
+      "id": "LC13-focal-focal-freeze-A",
+      "expectation": "stale A cannot overwrite B; old A denied",
+      "before": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"8cc913df-02c7-4856-8a3d-268624c271fe\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:57.880Z\"}",
+        "state": {
+          "status": "granted",
+          "actorType": "admin",
+          "actorId": "b",
+          "actorKey": "admin:b",
+          "sessionId": "session-b",
+          "permissions": [
+            "*"
+          ],
+          "tenant": {
+            "opaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "databaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "generation": 1
+          },
+          "deviceRef": "device-a",
+          "authorizationExpiresAt": 1792619278842,
+          "generation": 2,
+          "reason": "authenticated_session_granted"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:b",
+            "actorGeneration": 2,
+            "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
+            "contextToken": "8cc913df-02c7-4856-8a3d-268624c271fe",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": false
+        },
+        "runtime": {
+          "allowed": true
+        },
+        "write": {
+          "allowed": true
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "after": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"2703f72d-6d6b-4554-a851-808e5bff1aca\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:47:57.888Z\"}",
+        "state": {
+          "status": "locked",
+          "actorType": null,
+          "actorId": null,
+          "actorKey": null,
+          "sessionId": null,
+          "permissions": [],
+          "tenant": null,
+          "deviceRef": null,
+          "authorizationExpiresAt": null,
+          "generation": 3,
+          "reason": "actor_context_changed_in_other_tab"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:b",
+            "actorGeneration": 2,
+            "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
+            "contextToken": "8cc913df-02c7-4856-8a3d-268624c271fe",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": true
+        },
+        "runtime": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "write": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "old": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"2703f72d-6d6b-4554-a851-808e5bff1aca\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:47:57.888Z\"}",
+        "state": {
+          "status": "locked",
+          "actorType": null,
+          "actorId": null,
+          "actorKey": null,
+          "sessionId": null,
+          "permissions": [],
+          "tenant": null,
+          "deviceRef": null,
+          "authorizationExpiresAt": null,
+          "generation": 3,
+          "reason": "actor_context_changed_in_other_tab"
+        },
+        "storage": {
+          "pending": null,
+          "active": null,
+          "writesSuspended": true
+        },
+        "runtime": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "write": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "status": "FAIL"
+    },
+    {
+      "id": "LC13-focal-focal-freeze-B",
+      "expectation": "stale A cannot overwrite B; old A denied",
+      "before": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":2,\"contextToken\":\"37fdb72e-1456-46ca-b0b1-aa31ede9a2e5\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:58.037Z\"}",
+        "state": {
+          "status": "granted",
+          "actorType": "admin",
+          "actorId": "b",
+          "actorKey": "admin:b",
+          "sessionId": "session-b",
+          "permissions": [
+            "*"
+          ],
+          "tenant": {
+            "opaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "databaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "generation": 1
+          },
+          "deviceRef": "device-a",
+          "authorizationExpiresAt": 1792619279012,
+          "generation": 2,
+          "reason": "authenticated_session_granted"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:b",
+            "actorGeneration": 2,
+            "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
+            "contextToken": "37fdb72e-1456-46ca-b0b1-aa31ede9a2e5",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": false
+        },
+        "runtime": {
+          "allowed": true
+        },
+        "write": {
+          "allowed": true
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "after": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"3f0f4335-65e8-4142-af92-4bd8caaec46d\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:47:58.045Z\"}",
+        "state": {
+          "status": "locked",
+          "actorType": null,
+          "actorId": null,
+          "actorKey": null,
+          "sessionId": null,
+          "permissions": [],
+          "tenant": null,
+          "deviceRef": null,
+          "authorizationExpiresAt": null,
+          "generation": 3,
+          "reason": "actor_context_changed_in_other_tab"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:b",
+            "actorGeneration": 2,
+            "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
+            "contextToken": "37fdb72e-1456-46ca-b0b1-aa31ede9a2e5",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": true
+        },
+        "runtime": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "write": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "old": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"3f0f4335-65e8-4142-af92-4bd8caaec46d\",\"status\":\"locked\",\"reason\":\"late-a\",\"updatedAt\":\"2026-10-21T21:47:58.045Z\"}",
+        "state": {
+          "status": "locked",
+          "actorType": null,
+          "actorId": null,
+          "actorKey": null,
+          "sessionId": null,
+          "permissions": [],
+          "tenant": null,
+          "deviceRef": null,
+          "authorizationExpiresAt": null,
+          "generation": 3,
+          "reason": "actor_context_changed_in_other_tab"
+        },
+        "storage": {
+          "pending": null,
+          "active": null,
+          "writesSuspended": true
+        },
+        "runtime": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "write": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "status": "FAIL"
+    },
+    {
+      "id": "CONCURRENT-LC13-candidate",
+      "expectation": "B publication between A read and A write must preserve B",
+      "during": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a\",\"actorGeneration\":1,\"contextToken\":\"8991dcd6-cb56-47c1-a260-9482a911f5c8\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:58.210Z\"}",
+      "after": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":null,\"actorGeneration\":3,\"contextToken\":\"cede1387-2b0d-4b61-8b4d-4de8f179c892\",\"status\":\"locked\",\"reason\":\"concurrent-a\",\"updatedAt\":\"2026-10-21T21:47:58.213Z\"}",
+        "allowed": false
+      },
+      "runtime": "B NOT_GRANTED: isolated storage interleaving",
+      "status": "FAIL"
+    },
+    {
+      "id": "replacement-C-noBC-false",
+      "expectation": "B rejects after legitimate C",
+      "bAfter": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"d38f734ddec10ec18a966004f12504b093deed3405b23d77bd132ad48245cd5f\",\"actorGeneration\":2,\"contextToken\":\"216e29a4-e211-4891-a83c-fff43f653511\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:58.354Z\"}",
+        "state": {
+          "status": "locked",
+          "actorType": null,
+          "actorId": null,
+          "actorKey": null,
+          "sessionId": null,
+          "permissions": [],
+          "tenant": null,
+          "deviceRef": null,
+          "authorizationExpiresAt": null,
+          "generation": 3,
+          "reason": "actor_context_changed_in_other_tab"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:b",
+            "actorGeneration": 2,
+            "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
+            "contextToken": "1312fda9-57b3-4c04-b547-9ef8e118ce58",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": true
+        },
+        "runtime": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "write": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "cAfter": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"d38f734ddec10ec18a966004f12504b093deed3405b23d77bd132ad48245cd5f\",\"actorGeneration\":2,\"contextToken\":\"216e29a4-e211-4891-a83c-fff43f653511\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:58.354Z\"}",
+        "state": {
+          "status": "granted",
+          "actorType": "admin",
+          "actorId": "c",
+          "actorKey": "admin:c",
+          "sessionId": "session-c",
+          "permissions": [
+            "*"
+          ],
+          "tenant": {
+            "opaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "databaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "generation": 1
+          },
+          "deviceRef": "device-a",
+          "authorizationExpiresAt": 1792619279329,
+          "generation": 2,
+          "reason": "authenticated_session_granted"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:c",
+            "actorGeneration": 2,
+            "actorOpaqueId": "d38f734ddec10ec18a966004f12504b093deed3405b23d77bd132ad48245cd5f",
+            "contextToken": "216e29a4-e211-4891-a83c-fff43f653511",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": false
+        },
+        "runtime": {
+          "allowed": true
+        },
+        "write": {
+          "allowed": true
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "replacement-C-noBC-true",
+      "expectation": "B rejects after legitimate C",
+      "bAfter": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"d38f734ddec10ec18a966004f12504b093deed3405b23d77bd132ad48245cd5f\",\"actorGeneration\":2,\"contextToken\":\"cef3a616-e474-443c-8288-bc4ae56e1bac\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:58.521Z\"}",
+        "state": {
+          "status": "locked",
+          "actorType": null,
+          "actorId": null,
+          "actorKey": null,
+          "sessionId": null,
+          "permissions": [],
+          "tenant": null,
+          "deviceRef": null,
+          "authorizationExpiresAt": null,
+          "generation": 3,
+          "reason": "actor_context_changed_in_other_tab"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:b",
+            "actorGeneration": 2,
+            "actorOpaqueId": "7c6230a4d495ac7db591df1b3d5fd8e8c82fbfb12976aa0dd02685beea50c19a",
+            "contextToken": "247e0639-e307-4ea9-b26e-e2de3c03b3db",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": true
+        },
+        "runtime": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "write": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "cAfter": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"d38f734ddec10ec18a966004f12504b093deed3405b23d77bd132ad48245cd5f\",\"actorGeneration\":2,\"contextToken\":\"cef3a616-e474-443c-8288-bc4ae56e1bac\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:58.521Z\"}",
+        "state": {
+          "status": "granted",
+          "actorType": "admin",
+          "actorId": "c",
+          "actorKey": "admin:c",
+          "sessionId": "session-c",
+          "permissions": [
+            "*"
+          ],
+          "tenant": {
+            "opaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "databaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "generation": 1
+          },
+          "deviceRef": "device-a",
+          "authorizationExpiresAt": 1792619279492,
+          "generation": 2,
+          "reason": "authenticated_session_granted"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:c",
+            "actorGeneration": 2,
+            "actorOpaqueId": "d38f734ddec10ec18a966004f12504b093deed3405b23d77bd132ad48245cd5f",
+            "contextToken": "cef3a616-e474-443c-8288-bc4ae56e1bac",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": false
+        },
+        "runtime": {
+          "allowed": true
+        },
+        "write": {
+          "allowed": true
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "BC-out-of-order-candidate",
+      "expectation": "old BC hint never overrides B durable",
+      "before": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df\",\"actorGeneration\":2,\"contextToken\":\"695b12c1-788a-4071-8a4e-d101f8891dd2\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:58.622Z\"}",
+        "state": {
+          "status": "granted",
+          "actorType": "admin",
+          "actorId": "a",
+          "actorKey": "admin:a",
+          "sessionId": "session-a",
+          "permissions": [
+            "*"
+          ],
+          "tenant": {
+            "opaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "databaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "generation": 1
+          },
+          "deviceRef": "device-a",
+          "authorizationExpiresAt": 1792619279602,
+          "generation": 2,
+          "reason": "authenticated_session_granted"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:a",
+            "actorGeneration": 2,
+            "actorOpaqueId": "df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df",
+            "contextToken": "695b12c1-788a-4071-8a4e-d101f8891dd2",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": false
+        },
+        "runtime": {
+          "allowed": true
+        },
+        "write": {
+          "allowed": true
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "after": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df\",\"actorGeneration\":2,\"contextToken\":\"695b12c1-788a-4071-8a4e-d101f8891dd2\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:58.622Z\"}",
+        "state": {
+          "status": "granted",
+          "actorType": "admin",
+          "actorId": "a",
+          "actorKey": "admin:a",
+          "sessionId": "session-a",
+          "permissions": [
+            "*"
+          ],
+          "tenant": {
+            "opaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "databaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "generation": 1
+          },
+          "deviceRef": "device-a",
+          "authorizationExpiresAt": 1792619279602,
+          "generation": 2,
+          "reason": "authenticated_session_granted"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:a",
+            "actorGeneration": 2,
+            "actorOpaqueId": "df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df",
+            "contextToken": "695b12c1-788a-4071-8a4e-d101f8891dd2",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": false
+        },
+        "runtime": {
+          "allowed": true
+        },
+        "write": {
+          "allowed": true
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "durable-missing",
+      "expectation": "bad durable denies; duplicated or historical hints preserve valid B",
+      "after": {
+        "durable": null,
+        "state": {
+          "status": "locked",
+          "actorType": null,
+          "actorId": null,
+          "actorKey": null,
+          "sessionId": null,
+          "permissions": [],
+          "tenant": null,
+          "deviceRef": null,
+          "authorizationExpiresAt": null,
+          "generation": 3,
+          "reason": "actor_context_changed_in_other_tab"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:a",
+            "actorGeneration": 2,
+            "actorOpaqueId": "df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df",
+            "contextToken": "ea5d88cb-6528-4efd-9196-098bebd81aaa",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": true
+        },
+        "runtime": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "write": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "durable-corrupt",
+      "expectation": "bad durable denies; duplicated or historical hints preserve valid B",
+      "after": {
+        "durable": "{broken",
+        "state": {
+          "status": "locked",
+          "actorType": null,
+          "actorId": null,
+          "actorKey": null,
+          "sessionId": null,
+          "permissions": [],
+          "tenant": null,
+          "deviceRef": null,
+          "authorizationExpiresAt": null,
+          "generation": 3,
+          "reason": "actor_context_changed_in_other_tab"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:a",
+            "actorGeneration": 2,
+            "actorOpaqueId": "df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df",
+            "contextToken": "8d7187d0-2e69-4c34-adfe-1b0832c9bb68",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": true
+        },
+        "runtime": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "write": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "durable-inaccessible",
+      "expectation": "bad durable denies; duplicated or historical hints preserve valid B",
+      "after": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df\",\"actorGeneration\":2,\"contextToken\":\"44cd4406-c069-4710-882e-9800a1c99645\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:58.882Z\"}",
+        "state": {
+          "status": "locked",
+          "actorType": null,
+          "actorId": null,
+          "actorKey": null,
+          "sessionId": null,
+          "permissions": [],
+          "tenant": null,
+          "deviceRef": null,
+          "authorizationExpiresAt": null,
+          "generation": 3,
+          "reason": "actor_context_changed_in_other_tab"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:a",
+            "actorGeneration": 2,
+            "actorOpaqueId": "df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df",
+            "contextToken": "44cd4406-c069-4710-882e-9800a1c99645",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": true
+        },
+        "runtime": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_STALE"
+        },
+        "write": {
+          "allowed": false,
+          "code": "ACTOR_CONTEXT_LOCKED"
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "durable-duplicate",
+      "expectation": "bad durable denies; duplicated or historical hints preserve valid B",
+      "after": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df\",\"actorGeneration\":2,\"contextToken\":\"834d76a7-8018-420c-abe7-2f6e18431607\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:58.975Z\"}",
+        "state": {
+          "status": "granted",
+          "actorType": "admin",
+          "actorId": "a",
+          "actorKey": "admin:a",
+          "sessionId": "session-a",
+          "permissions": [
+            "*"
+          ],
+          "tenant": {
+            "opaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "databaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "generation": 1
+          },
+          "deviceRef": "device-a",
+          "authorizationExpiresAt": 1792619279954,
+          "generation": 2,
+          "reason": "authenticated_session_granted"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:a",
+            "actorGeneration": 2,
+            "actorOpaqueId": "df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df",
+            "contextToken": "834d76a7-8018-420c-abe7-2f6e18431607",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": false
+        },
+        "runtime": {
+          "allowed": true
+        },
+        "write": {
+          "allowed": true
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "status": "PASS"
+    },
+    {
+      "id": "durable-out-of-order",
+      "expectation": "bad durable denies; duplicated or historical hints preserve valid B",
+      "after": {
+        "durable": "{\"version\":1,\"tenantOpaqueId\":\"t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"actorOpaqueId\":\"df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df\",\"actorGeneration\":2,\"contextToken\":\"328d9b53-b9bb-4729-b86a-fa22775e1e15\",\"status\":\"granted\",\"updatedAt\":\"2026-10-21T21:47:59.057Z\"}",
+        "state": {
+          "status": "granted",
+          "actorType": "admin",
+          "actorId": "a",
+          "actorKey": "admin:a",
+          "sessionId": "session-a",
+          "permissions": [
+            "*"
+          ],
+          "tenant": {
+            "opaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "databaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "generation": 1
+          },
+          "deviceRef": "device-a",
+          "authorizationExpiresAt": 1792619280029,
+          "generation": 2,
+          "reason": "authenticated_session_granted"
+        },
+        "storage": {
+          "pending": null,
+          "active": {
+            "tenantOpaqueId": "t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantDatabaseName": "LanzoDB_t_t_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "tenantGeneration": 1,
+            "actorKey": "admin:a",
+            "actorGeneration": 2,
+            "actorOpaqueId": "df09afbf243222a743a65cf473107b75809e10176384cb645d612b062ceed3df",
+            "contextToken": "328d9b53-b9bb-4729-b86a-fa22775e1e15",
+            "legacyUnresolvedKeys": []
+          },
+          "writesSuspended": false
+        },
+        "runtime": {
+          "allowed": true
+        },
+        "write": {
+          "allowed": true
+        },
+        "oldRuntime": null,
+        "oldStorage": null
+      },
+      "status": "PASS"
+    }
+  ]
+}
