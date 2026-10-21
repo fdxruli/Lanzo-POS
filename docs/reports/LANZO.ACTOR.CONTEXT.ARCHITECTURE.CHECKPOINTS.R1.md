@@ -22,3 +22,11 @@ Chromium: 27 observaciones, 19 PASS acotados, 7 FAIL de arquitectura/legacy, 1 P
 Runner registra durable antes/después, handles, runtime de modelo o NOT_LOADED y writes de frontera sintéticos. Sin erros de harness en ejecución final. Primer arranque requirió fallback de enumeración NIC; no se ocultó como resultado de producto.
 ESLint scripts PASS. Fuentes comerciales src y package/lock permanecen idénticos a D.
 Estado de arquitectura: requiere decisión de transición; no garantía universal para writers v1 sin actualizar.
+
+## R3 — cierre documental y código final de investigación
+R2 remoto 2bd8f5cbee3bc50fc2a43deff1b28c794fa82072 / árbol 9441b8f8363358e827b1498a51b054eab3608c3f.
+Resultados finales: 71 aserciones Vitest (46 existentes, 20 propiedades positivas de prototipo, 5 detecciones de contraejemplo). Chromium 29 observaciones: 21 PASS acotados, 7 FAIL, 1 PENDING. Sin errores finales de harness. No se suman reejecuciones.
+Informes de arquitectura y evidencia completos; README de reproducción, estados, invariantes, ARCH01..25, carrerasR1..R8, finanzas, transición y roadmap.
+Estado ARCHITECTURE_DECISION_REQUIRED. Arquitectura D recomendada sólo con condiciones; legacy no certificado. No implementación definitiva ni activación.
+El SHA/árbol de R3 se verifican contra GitHub y Git local y se entregan en la constancia de cierre.
+Sin cambios comerciales respecto a D ni PR/Preview/merge/SQL/migraciones/datos de producción.

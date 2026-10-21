@@ -25,7 +25,10 @@ const local = `http://127.0.0.1:${server.address().port}`;
 let ip;
 try { ip = Object.values(networkInterfaces()).flat().find((i) => i.family === 'IPv4' && !i.internal)?.address; } catch { /* lab restricts NIC enumeration */ }
 const modules = process.env.CODEX_PRIMARY_RUNTIME_NODE_MODULES;
-const { chromium } = await import(modules ? pathToFileURL(resolve(modules, 'playwright/index.mjs')).href : 'playwright');
+const playwrightModule = process.env.ACTOR_QA_PLAYWRIGHT_MODULE
+  ? pathToFileURL(resolve(process.env.ACTOR_QA_PLAYWRIGHT_MODULE)).href
+  : modules ? pathToFileURL(resolve(modules, 'playwright/index.mjs')).href : 'playwright';
+const { chromium } = await import(playwrightModule);
 const browser = await chromium.launch({ executablePath: process.env.ACTOR_QA_CHROMIUM_EXECUTABLE,
   headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--no-proxy-server'] });
 const results = []; let fixtureId = 0; let tlsServer;
@@ -92,7 +95,8 @@ const run = async (id, versions, execute, options = {}) => {
     const finalBeforeWriteProbe = await Promise.all(pages.map((p) => p.evaluate(() => typeof window.probe === 'function' ? window.probe() : { runtime: 'RELOADED_NO_HANDLES' })));
     const writes = await Promise.all(pages.map((p) => p.evaluate(() => typeof window.writeProbe === 'function' ? window.writeProbe('end-boundary-probe') : 'NOT_PROBED_RELOADED')));
     const final = await Promise.all(pages.map((p) => p.evaluate(() => typeof window.probe === 'function' ? window.probe() : { runtime: 'RELOADED_NO_HANDLES' })));
-    results.push({ id, versions, initial, ...observed, finalBeforeWriteProbe, writes, final,
+    results.push({ id, versions, expectedSafety: 'Only current authorized owner may write; stale revocation never revokes a successor; ambiguous state denies writes.',
+      initial, ...observed, finalBeforeWriteProbe, writes, final,
       limitation: observed.limitation || (options.tls
         ? 'Real local TLS, self-signed certificate accepted by ignoreHTTPSErrors only for fixture; not public-chain/Vercel/physical QA.'
         : 'Synthetic coordination/effect boundary; not POS financial E2E or physical device QA.') });
@@ -211,6 +215,26 @@ try {
     await a.evaluate(() => window.mount()); await a.evaluate(() => window.invalidate()); const after = await a.evaluate(() => window.probe());
     return { after, write: await a.evaluate(() => window.writeProbe()), status: !after.current ? 'PASS' : 'FAIL' };
   });
+  await run('EXTRA-R8-GRANT-REVOKE', ['prototype', 'prototype', 'prototype'], async (a, b, c) => {
+    const t = await a.evaluate(() => window.mount());
+    const outcomes = await Promise.allSettled([a.evaluate(() => window.invalidate()), b.evaluate((t) => window.mount(t), t), c.evaluate((t) => window.mount(t), t)]);
+    const final = await Promise.all([a, b, c].map((p) => p.evaluate(() => window.probe())));
+    return { outcomes: outcomes.map((r) => ({ status: r.status, error: r.reason?.message })), final,
+      status: !final[0].current && final.filter((r) => r.current).length === 1 ? 'PASS' : 'FAIL' };
+  });
+  await run('EXTRA-NATIVE-ABORT', ['prototype'], async (a) => {
+    const outcome = await a.evaluate(async () => {
+      let grantError; let commitError;
+      try { await window.client.grant(window.client.prepare(), null, { abort: true }); } catch (e) { grantError = e.code; }
+      const afterGrantAbort = await window.proto.snapshot(window.db);
+      await window.mount(); await window.client.beginOperation(window.handle, 'abort-effect');
+      try { await window.client.commit(window.handle, 'abort-effect', 'abort-key', { abort: true }); } catch (e) { commitError = e.code; }
+      return { grantError, commitError, afterGrantAbort, afterEffectAbort: await window.proto.snapshot(window.db) };
+    });
+    return { ...outcome, status: outcome.grantError === 'INJECTED_ABORT' && outcome.commitError === 'INJECTED_ABORT'
+      && outcome.afterGrantAbort.authority.length === 0 && outcome.afterGrantAbort.contexts.length === 0
+      && outcome.afterEffectAbort.effects.length === 0 && outcome.afterEffectAbort.operations[0].status === 'pending' ? 'PASS' : 'FAIL' };
+  });
   await run('EXTRA-IDB-UPGRADE-FENCE', ['prototype'], async (page) => {
     const outcome = await page.evaluate(async () => {
       const { default: Dexie } = await import('/dexie.mjs');
@@ -225,8 +249,10 @@ try {
     return { ...outcome, status: outcome.reopened ? 'FAIL' : 'PASS', limitation: 'Actual installed Dexie fallback tested on synthetic schema. Lanzo cold-start preflight separately rejects unsupported versions; no complete schema cutover proven.' };
   });
   console.log(JSON.stringify({ chromium: browser.version(), base, protocol: 'RESEARCH_ONLY_v2', results }, null, 2));
-  // Expected counterexamples remain FAIL in evidence. Only harness errors are unexpected.
+  // Reproduction is not acceptance: these properties MUST stay visibly FAIL.
+  const counterexamples = new Set(['ARCH-01', 'ARCH-02', 'ARCH-03', 'ARCH-05/R7', 'ARCH-06/R7', 'ARCH-07/R7', 'EXTRA-IDB-UPGRADE-FENCE']);
   if (results.some((r) => r.status === 'ERROR')) process.exitCode = 2;
+  else if (results.some((r) => counterexamples.has(r.id) ? r.status !== 'FAIL' : r.status === 'FAIL')) process.exitCode = 1;
 } finally {
   await browser.close(); await new Promise((r) => server.close(r));
   if (tlsServer) await new Promise((r) => tlsServer.close(r));

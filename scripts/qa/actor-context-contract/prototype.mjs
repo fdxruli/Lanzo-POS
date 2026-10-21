@@ -90,6 +90,7 @@ export const createClient = (db, initial, options = {}) => {
         if (owner && (owner.protocol !== 2 || !valid(owner.binding))) fail('CORRUPT_AUTHORITY');
         if ((owner?.binding.token ?? null) !== expectedToken) fail('CONFLICT');
         if ((await tx.all('operations')).some((op) => op.tenant === t.tenant && op.status === 'pending')) fail('HANDOFF_PENDING');
+        options.beforePublish?.(); // synchronous research scheduling hook, never an awaited RPC
         ticketCurrent(t);
         if (await tx.get('contexts', [t.tenant, t.token])) fail('TOKEN_REUSE');
         if (owner) await tx.put('contexts', [t.tenant, owner.binding.token], { binding: owner.binding, status: 'superseded' });

@@ -1,10 +1,10 @@
 {
-  "numTotalTestSuites": 13,
-  "numPassedTestSuites": 13,
+  "numTotalTestSuites": 14,
+  "numPassedTestSuites": 14,
   "numFailedTestSuites": 0,
   "numPendingTestSuites": 0,
-  "numTotalTests": 69,
-  "numPassedTests": 69,
+  "numTotalTests": 71,
+  "numPassedTests": 71,
   "numFailedTests": 0,
   "numPendingTests": 0,
   "numTodoTests": 0,
@@ -24,7 +24,7 @@
     "updated": 0,
     "didUpdate": false
   },
-  "startTime": 1792594222529,
+  "startTime": 1792594740341,
   "success": true,
   "testResults": [
     {
@@ -36,7 +36,7 @@
           "fullName": "prototype v2 — properties for participating clients only ARCH-04/24, R1: stale invalidation targets A and preserves B after an earlier read",
           "status": "passed",
           "title": "ARCH-04/24, R1: stale invalidation targets A and preserves B after an earlier read",
-          "duration": 11.439022000000023,
+          "duration": 8.94142800000003,
           "failureMessages": [],
           "meta": {}
         },
@@ -47,7 +47,7 @@
           "fullName": "prototype v2 — properties for participating clients only ARCH-09/R8: concurrent auth with the same expected predecessor has exactly one winner",
           "status": "passed",
           "title": "ARCH-09/R8: concurrent auth with the same expected predecessor has exactly one winner",
-          "duration": 2.0647749999999974,
+          "duration": 1.8486740000000168,
           "failureMessages": [],
           "meta": {}
         },
@@ -58,7 +58,7 @@
           "fullName": "prototype v2 — properties for participating clients only ARCH-11/R2: defined transaction order revoke-first",
           "status": "passed",
           "title": "ARCH-11/R2: defined transaction order revoke-first",
-          "duration": 1.5451439999999934,
+          "duration": 1.522689000000014,
           "failureMessages": [],
           "meta": {}
         },
@@ -69,7 +69,7 @@
           "fullName": "prototype v2 — properties for participating clients only ARCH-11/R2: defined transaction order grant-first",
           "status": "passed",
           "title": "ARCH-11/R2: defined transaction order grant-first",
-          "duration": 0.9740859999999998,
+          "duration": 0.8823489999999765,
           "failureMessages": [],
           "meta": {}
         },
@@ -80,7 +80,7 @@
           "fullName": "prototype v2 — properties for participating clients only ARCH-10: duplicate concurrent revocations are idempotent and never create a grant",
           "status": "passed",
           "title": "ARCH-10: duplicate concurrent revocations are idempotent and never create a grant",
-          "duration": 1.5131470000000036,
+          "duration": 1.0987810000000309,
           "failureMessages": [],
           "meta": {}
         },
@@ -91,7 +91,7 @@
           "fullName": "prototype v2 — properties for participating clients only ARCH-23/R3: duplicate and out-of-order hints cannot revoke a valid B or resurrect A",
           "status": "passed",
           "title": "ARCH-23/R3: duplicate and out-of-order hints cannot revoke a valid B or resurrect A",
-          "duration": 1.5235819999999762,
+          "duration": 1.1828250000000367,
           "failureMessages": [],
           "meta": {}
         },
@@ -102,7 +102,7 @@
           "fullName": "prototype v2 — properties for participating clients only ARCH-25: legitimate current revocation denies writes and remains revoked",
           "status": "passed",
           "title": "ARCH-25: legitimate current revocation denies writes and remains revoked",
-          "duration": 1.2337019999999939,
+          "duration": 1.5608660000000327,
           "failureMessages": [],
           "meta": {}
         },
@@ -113,7 +113,7 @@
           "fullName": "prototype v2 — properties for participating clients only ARCH-12: corrupt authority fails closed without an implicit recovery grant",
           "status": "passed",
           "title": "ARCH-12: corrupt authority fails closed without an implicit recovery grant",
-          "duration": 4.587409999999977,
+          "duration": 1.0107699999999795,
           "failureMessages": [],
           "meta": {}
         },
@@ -124,7 +124,7 @@
           "fullName": "prototype v2 — properties for participating clients only ARCH-13/R4: inaccessible storage rejects handles and leaves no synthetic effects",
           "status": "passed",
           "title": "ARCH-13/R4: inaccessible storage rejects handles and leaves no synthetic effects",
-          "duration": 0.9547279999999887,
+          "duration": 0.7817400000000134,
           "failureMessages": [],
           "meta": {}
         },
@@ -135,7 +135,18 @@
           "fullName": "prototype v2 — properties for participating clients only ARCH-14/R5: tenant switch discards old auth and does not touch the previous owner",
           "status": "passed",
           "title": "ARCH-14/R5: tenant switch discards old auth and does not touch the previous owner",
-          "duration": 0.9570300000000316,
+          "duration": 0.7967520000000263,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [
+            "prototype v2 — properties for participating clients only"
+          ],
+          "fullName": "prototype v2 — properties for participating clients only R5: a tenant switch after the transaction reads aborts the publication atomically",
+          "status": "passed",
+          "title": "R5: a tenant switch after the transaction reads aborts the publication atomically",
+          "duration": 0.5492950000000292,
           "failureMessages": [],
           "meta": {}
         },
@@ -146,7 +157,7 @@
           "fullName": "prototype v2 — properties for participating clients only ARCH-14: clients cannot revoke handles issued to another tenant/client",
           "status": "passed",
           "title": "ARCH-14: clients cannot revoke handles issued to another tenant/client",
-          "duration": 1.0654710000000023,
+          "duration": 1.3059279999999944,
           "failureMessages": [],
           "meta": {}
         },
@@ -157,7 +168,7 @@
           "fullName": "prototype v2 — properties for participating clients only ARCH-15: device change denies reuse and requires new explicit auth",
           "status": "passed",
           "title": "ARCH-15: device change denies reuse and requires new explicit auth",
-          "duration": 0.7969730000000368,
+          "duration": 0.6658479999999827,
           "failureMessages": [],
           "meta": {}
         },
@@ -168,7 +179,7 @@
           "fullName": "prototype v2 — properties for participating clients only R6: delayed synthetic RPC proof cannot grant after generation changes",
           "status": "passed",
           "title": "R6: delayed synthetic RPC proof cannot grant after generation changes",
-          "duration": 0.5918489999999679,
+          "duration": 0.5411229999999705,
           "failureMessages": [],
           "meta": {}
         },
@@ -179,7 +190,7 @@
           "fullName": "prototype v2 — properties for participating clients only ARCH-16: an unfinished handoff grants no handle",
           "status": "passed",
           "title": "ARCH-16: an unfinished handoff grants no handle",
-          "duration": 0.4381909999999607,
+          "duration": 0.2655639999999835,
           "failureMessages": [],
           "meta": {}
         },
@@ -190,7 +201,7 @@
           "fullName": "prototype v2 — properties for participating clients only ARCH-17: a pending operation blocks replacement and keeps its original owner after invalidation",
           "status": "passed",
           "title": "ARCH-17: a pending operation blocks replacement and keeps its original owner after invalidation",
-          "duration": 1.3508659999999963,
+          "duration": 3.605735999999979,
           "failureMessages": [],
           "meta": {}
         },
@@ -201,7 +212,7 @@
           "fullName": "prototype v2 — properties for participating clients only ARCH-17: committed synthetic effect stays durable and retries are idempotent",
           "status": "passed",
           "title": "ARCH-17: committed synthetic effect stays durable and retries are idempotent",
-          "duration": 2.3742839999999887,
+          "duration": 2.238872000000015,
           "failureMessages": [],
           "meta": {}
         },
@@ -212,7 +223,7 @@
           "fullName": "prototype v2 — properties for participating clients only abort rolls back authority and its context together",
           "status": "passed",
           "title": "abort rolls back authority and its context together",
-          "duration": 0.9146379999999681,
+          "duration": 1.3024520000000166,
           "failureMessages": [],
           "meta": {}
         },
@@ -223,7 +234,7 @@
           "fullName": "prototype v2 — properties for participating clients only abort rolls back the effect and retains pending operation, without duplicate retry",
           "status": "passed",
           "title": "abort rolls back the effect and retains pending operation, without duplicate retry",
-          "duration": 1.2160359999999741,
+          "duration": 1.9570439999999962,
           "failureMessages": [],
           "meta": {}
         },
@@ -234,7 +245,7 @@
           "fullName": "prototype v2 — properties for participating clients only ARCH-20: notification absence/failure cannot bypass durable checks",
           "status": "passed",
           "title": "ARCH-20: notification absence/failure cannot bypass durable checks",
-          "duration": 0.8811280000000465,
+          "duration": 1.0364179999999692,
           "failureMessages": [],
           "meta": {}
         },
@@ -245,7 +256,7 @@
           "fullName": "counterexamples — assertion PASS means the unsafe property was disproved A/C individual records and directed self-revocation alone do not elect an owner",
           "status": "passed",
           "title": "A/C individual records and directed self-revocation alone do not elect an owner",
-          "duration": 0.2545579999999745,
+          "duration": 0.2988940000000184,
           "failureMessages": [],
           "meta": {}
         },
@@ -256,7 +267,7 @@
           "fullName": "counterexamples — assertion PASS means the unsafe property was disproved E/R1 a read then conditional setItem still clobbers B",
           "status": "passed",
           "title": "E/R1 a read then conditional setItem still clobbers B",
-          "duration": 0.13809499999996433,
+          "duration": 0.19843500000001768,
           "failureMessages": [],
           "meta": {}
         },
@@ -267,7 +278,7 @@
           "fullName": "counterexamples — assertion PASS means the unsafe property was disproved R7 ignoring v1 protects v2 record but leaves a legacy handle current",
           "status": "passed",
           "title": "R7 ignoring v1 protects v2 record but leaves a legacy handle current",
-          "duration": 0.3630890000000022,
+          "duration": 0.6360139999999888,
           "failureMessages": [],
           "meta": {}
         },
@@ -278,16 +289,34 @@
           "fullName": "counterexamples — assertion PASS means the unsafe property was disproved R7 a writer that omits the coordinator from its effect transaction bypasses the fence",
           "status": "passed",
           "title": "R7 a writer that omits the coordinator from its effect transaction bypasses the fence",
-          "duration": 1.0553270000000339,
+          "duration": 1.1913370000000327,
           "failureMessages": [],
           "meta": {}
         }
       ],
-      "startTime": 1792594222849,
-      "endTime": 1792594222888.0554,
+      "startTime": 1792594740687,
+      "endTime": 1792594740722.1914,
       "status": "passed",
       "message": "",
       "name": "/workspace/scratch/786fcf99182f/Lanzo-POS/scripts/qa/actor-context-contract/prototype.test.mjs"
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": [],
+          "fullName": "counterexample: retiring a storage handle alone does not certify the real runtime guarded callback boundary",
+          "status": "passed",
+          "title": "counterexample: retiring a storage handle alone does not certify the real runtime guarded callback boundary",
+          "duration": 4.090475999999967,
+          "failureMessages": [],
+          "meta": {}
+        }
+      ],
+      "startTime": 1792594742786,
+      "endTime": 1792594742790.0906,
+      "status": "passed",
+      "message": "",
+      "name": "/workspace/scratch/786fcf99182f/Lanzo-POS/scripts/qa/actor-context-contract/runtime-boundary.test.mjs"
     },
     {
       "assertionResults": [
@@ -298,13 +327,13 @@
           "fullName": "late actor-context integration — reconstructed EXP-F02-14 only EXP-F02-14 / LC-01 / LC-09 / LC-20: preserves the later legitimate Admin grant after an obsolete storage notification",
           "status": "passed",
           "title": "EXP-F02-14 / LC-01 / LC-09 / LC-20: preserves the later legitimate Admin grant after an obsolete storage notification",
-          "duration": 15.830850999999939,
+          "duration": 11.365481000000045,
           "failureMessages": [],
           "meta": {}
         }
       ],
-      "startTime": 1792594224358,
-      "endTime": 1792594224373.8308,
+      "startTime": 1792594741845,
+      "endTime": 1792594741856.3655,
       "status": "passed",
       "message": "",
       "name": "/workspace/scratch/786fcf99182f/Lanzo-POS/src/services/auth/__tests__/actorLateContext.integration.test.js"
@@ -318,7 +347,7 @@
           "fullName": "actor operational handoff barrier blocks a new actor while an actor-sensitive async operation is pending",
           "status": "passed",
           "title": "blocks a new actor while an actor-sensitive async operation is pending",
-          "duration": 5.109615000000019,
+          "duration": 4.606721999999991,
           "failureMessages": [],
           "meta": {}
         },
@@ -329,7 +358,7 @@
           "fullName": "actor operational handoff barrier never runs a guarded write after the captured actor becomes stale",
           "status": "passed",
           "title": "never runs a guarded write after the captured actor becomes stale",
-          "duration": 2.843942000000027,
+          "duration": 1.8281460000000038,
           "failureMessages": [],
           "meta": {}
         },
@@ -340,7 +369,7 @@
           "fullName": "actor operational handoff barrier restores persisted Admin checkout ownership and blocks Staff handoff after restart",
           "status": "passed",
           "title": "restores persisted Admin checkout ownership and blocks Staff handoff after restart",
-          "duration": 0.47630699999996295,
+          "duration": 0.8427409999999895,
           "failureMessages": [],
           "meta": {}
         },
@@ -351,7 +380,7 @@
           "fullName": "actor operational handoff barrier fails closed for a legacy locked checkout with no actor proof",
           "status": "passed",
           "title": "fails closed for a legacy locked checkout with no actor proof",
-          "duration": 0.33004999999997153,
+          "duration": 0.4590119999999729,
           "failureMessages": [],
           "meta": {}
         },
@@ -362,13 +391,13 @@
           "fullName": "actor operational handoff barrier rebinds a persisted checkout only to the same reauthenticated actor generation",
           "status": "passed",
           "title": "rebinds a persisted checkout only to the same reauthenticated actor generation",
-          "duration": 0.6459389999999985,
+          "duration": 0.9030919999999583,
           "failureMessages": [],
           "meta": {}
         }
       ],
-      "startTime": 1792594223541,
-      "endTime": 1792594223549.646,
+      "startTime": 1792594742224,
+      "endTime": 1792594742232.903,
       "status": "passed",
       "message": "",
       "name": "/workspace/scratch/786fcf99182f/Lanzo-POS/src/services/auth/__tests__/actorOperationalHandoff.test.js"
@@ -382,7 +411,7 @@
           "fullName": "ActorRuntimeController starts LOCKED without actor authority",
           "status": "passed",
           "title": "starts LOCKED without actor authority",
-          "duration": 2.5589990000000284,
+          "duration": 2.8748199999999997,
           "failureMessages": [],
           "meta": {}
         },
@@ -393,7 +422,7 @@
           "fullName": "ActorRuntimeController grants an admin using a stable user-owned actor key",
           "status": "passed",
           "title": "grants an admin using a stable user-owned actor key",
-          "duration": 1.4086110000000076,
+          "duration": 2.1670480000000225,
           "failureMessages": [],
           "meta": {}
         },
@@ -404,7 +433,7 @@
           "fullName": "ActorRuntimeController requires and enforces a finite Admin authorization deadline",
           "status": "passed",
           "title": "requires and enforces a finite Admin authorization deadline",
-          "duration": 0.7826120000000287,
+          "duration": 0.8822899999999549,
           "failureMessages": [],
           "meta": {}
         },
@@ -415,7 +444,7 @@
           "fullName": "ActorRuntimeController does not let a local clock rollback pause an active Admin authorization deadline",
           "status": "passed",
           "title": "does not let a local clock rollback pause an active Admin authorization deadline",
-          "duration": 0.37701000000004115,
+          "duration": 0.3864639999999895,
           "failureMessages": [],
           "meta": {}
         },
@@ -426,7 +455,7 @@
           "fullName": "ActorRuntimeController locks the actor and increments generation without changing the tenant authority",
           "status": "passed",
           "title": "locks the actor and increments generation without changing the tenant authority",
-          "duration": 0.3049719999999638,
+          "duration": 0.4608639999999582,
           "failureMessages": [],
           "meta": {}
         },
@@ -437,7 +466,7 @@
           "fullName": "ActorRuntimeController rejects a handle captured before logout after a new staff actor is granted",
           "status": "passed",
           "title": "rejects a handle captured before logout after a new staff actor is granted",
-          "duration": 0.3826479999999606,
+          "duration": 0.5751539999999977,
           "failureMessages": [],
           "meta": {}
         },
@@ -448,7 +477,7 @@
           "fullName": "ActorRuntimeController never lets an Admin A captured reference operate as Staff B",
           "status": "passed",
           "title": "never lets an Admin A captured reference operate as Staff B",
-          "duration": 0.40397999999999,
+          "duration": 0.5832259999999678,
           "failureMessages": [],
           "meta": {}
         },
@@ -459,7 +488,7 @@
           "fullName": "ActorRuntimeController prevents a stale handle from entering protected work after logout",
           "status": "passed",
           "title": "prevents a stale handle from entering protected work after logout",
-          "duration": 2.19449800000001,
+          "duration": 3.6479479999999853,
           "failureMessages": [],
           "meta": {}
         },
@@ -470,7 +499,7 @@
           "fullName": "ActorRuntimeController revalidates actor generation at the effective write boundary after an await",
           "status": "passed",
           "title": "revalidates actor generation at the effective write boundary after an await",
-          "duration": 0.7020719999999869,
+          "duration": 1.1580999999999904,
           "failureMessages": [],
           "meta": {}
         },
@@ -481,7 +510,7 @@
           "fullName": "ActorRuntimeController does not let a new actor reuse a handle from the previous actor generation",
           "status": "passed",
           "title": "does not let a new actor reuse a handle from the previous actor generation",
-          "duration": 0.5078129999999987,
+          "duration": 0.4113609999999994,
           "failureMessages": [],
           "meta": {}
         },
@@ -492,7 +521,7 @@
           "fullName": "ActorRuntimeController keeps only explicit staff permissions and cannot inherit admin wildcard authority",
           "status": "passed",
           "title": "keeps only explicit staff permissions and cannot inherit admin wildcard authority",
-          "duration": 0.9406970000000001,
+          "duration": 1.2103780000000484,
           "failureMessages": [],
           "meta": {}
         },
@@ -503,7 +532,7 @@
           "fullName": "ActorRuntimeController normalizes persisted boolean permission objects without granting false keys",
           "status": "passed",
           "title": "normalizes persisted boolean permission objects without granting false keys",
-          "duration": 0.39364499999999225,
+          "duration": 0.36838699999998425,
           "failureMessages": [],
           "meta": {}
         },
@@ -514,7 +543,7 @@
           "fullName": "ActorRuntimeController does not change tenant opaque id or database when actors change",
           "status": "passed",
           "title": "does not change tenant opaque id or database when actors change",
-          "duration": 0.26186799999999266,
+          "duration": 0.19224599999995462,
           "failureMessages": [],
           "meta": {}
         },
@@ -525,7 +554,7 @@
           "fullName": "ActorRuntimeController fails closed when the tenant runtime changes from A to B",
           "status": "passed",
           "title": "fails closed when the tenant runtime changes from A to B",
-          "duration": 0.27765199999998913,
+          "duration": 0.3421480000000088,
           "failureMessages": [],
           "meta": {}
         },
@@ -536,7 +565,7 @@
           "fullName": "ActorRuntimeController fails closed when the same tenant database is reopened under a new tenant generation",
           "status": "passed",
           "title": "fails closed when the same tenant database is reopened under a new tenant generation",
-          "duration": 0.17651200000000244,
+          "duration": 0.24666600000000471,
           "failureMessages": [],
           "meta": {}
         },
@@ -547,7 +576,7 @@
           "fullName": "ActorRuntimeController does not grant actor authority while TenantRuntime is unavailable",
           "status": "passed",
           "title": "does not grant actor authority while TenantRuntime is unavailable",
-          "duration": 0.40092600000002676,
+          "duration": 0.47612699999996266,
           "failureMessages": [],
           "meta": {}
         },
@@ -558,7 +587,7 @@
           "fullName": "ActorRuntimeController requires an authenticated session id before GRANTED",
           "status": "passed",
           "title": "requires an authenticated session id before GRANTED",
-          "duration": 0.12807099999997718,
+          "duration": 0.1782339999999749,
           "failureMessages": [],
           "meta": {}
         },
@@ -569,7 +598,7 @@
           "fullName": "ActorRuntimeController requires an explicit lock before replacing a granted actor",
           "status": "passed",
           "title": "requires an explicit lock before replacing a granted actor",
-          "duration": 0.11683399999998301,
+          "duration": 0.21731300000004694,
           "failureMessages": [],
           "meta": {}
         },
@@ -580,7 +609,7 @@
           "fullName": "ActorRuntimeController actor lock cannot delete or reassign tenant-owned business state",
           "status": "passed",
           "title": "actor lock cannot delete or reassign tenant-owned business state",
-          "duration": 0.20995200000004388,
+          "duration": 0.304271999999969,
           "failureMessages": [],
           "meta": {}
         },
@@ -591,13 +620,13 @@
           "fullName": "ActorRuntimeController blocks actor-sensitive writes while locked",
           "status": "passed",
           "title": "blocks actor-sensitive writes while locked",
-          "duration": 0.128291000000047,
+          "duration": 0.18426399999998466,
           "failureMessages": [],
           "meta": {}
         }
       ],
-      "startTime": 1792594222939,
-      "endTime": 1792594222952.1282,
+      "startTime": 1792594741946,
+      "endTime": 1792594741963.3042,
       "status": "passed",
       "message": "",
       "name": "/workspace/scratch/786fcf99182f/Lanzo-POS/src/services/auth/__tests__/actorRuntimeController.test.js"
@@ -611,7 +640,7 @@
           "fullName": "ActorScopedStorage cart ownership keeps Admin A and Staff B carts isolated inside the same tenant namespace",
           "status": "passed",
           "title": "keeps Admin A and Staff B carts isolated inside the same tenant namespace",
-          "duration": 6.6630720000000565,
+          "duration": 6.238326000000029,
           "failureMessages": [],
           "meta": {}
         },
@@ -622,7 +651,7 @@
           "fullName": "ActorScopedStorage cart ownership isolates Staff X from Staff Y and restores X after restart-style remount",
           "status": "passed",
           "title": "isolates Staff X from Staff Y and restores X after restart-style remount",
-          "duration": 1.6491379999999936,
+          "duration": 1.6344119999999975,
           "failureMessages": [],
           "meta": {}
         },
@@ -633,7 +662,7 @@
           "fullName": "ActorScopedStorage cart ownership persists only actor-owned drafts and never serializes a tenant-shared SALES row",
           "status": "passed",
           "title": "persists only actor-owned drafts and never serializes a tenant-shared SALES row",
-          "duration": 1.1591110000000526,
+          "duration": 1.4641249999999673,
           "failureMessages": [],
           "meta": {}
         },
@@ -644,7 +673,7 @@
           "fullName": "ActorScopedStorage cart ownership fails closed instead of persisting malformed actor-sensitive payloads",
           "status": "passed",
           "title": "fails closed instead of persisting malformed actor-sensitive payloads",
-          "duration": 0.8803869999999279,
+          "duration": 0.5021760000000768,
           "failureMessages": [],
           "meta": {}
         },
@@ -655,7 +684,7 @@
           "fullName": "ActorScopedStorage cart ownership never auto-claims a legacy tenant-scoped cart",
           "status": "passed",
           "title": "never auto-claims a legacy tenant-scoped cart",
-          "duration": 1.0485669999999345,
+          "duration": 1.0427589999999327,
           "failureMessages": [],
           "meta": {}
         },
@@ -666,7 +695,7 @@
           "fullName": "ActorScopedStorage cart ownership uses an opaque actor namespace without raw actor ids in physical cart keys",
           "status": "passed",
           "title": "uses an opaque actor namespace without raw actor ids in physical cart keys",
-          "duration": 0.9334460000000036,
+          "duration": 0.9945969999999988,
           "failureMessages": [],
           "meta": {}
         },
@@ -677,7 +706,7 @@
           "fullName": "ActorScopedStorage cart ownership invalidates an old storage handle on logout with ACTOR_CONTEXT_STALE",
           "status": "passed",
           "title": "invalidates an old storage handle on logout with ACTOR_CONTEXT_STALE",
-          "duration": 0.7329879999999775,
+          "duration": 1.929294999999911,
           "failureMessages": [],
           "meta": {}
         },
@@ -688,7 +717,7 @@
           "fullName": "ActorScopedStorage cart ownership invalidates the old tab when another tab publishes a different actor context",
           "status": "passed",
           "title": "invalidates the old tab when another tab publishes a different actor context",
-          "duration": 1.4675090000000637,
+          "duration": 1.4356820000000425,
           "failureMessages": [],
           "meta": {}
         },
@@ -699,7 +728,7 @@
           "fullName": "ActorScopedStorage cart ownership keeps actor namespaces distinct across tenants and restores A after A→B→A",
           "status": "passed",
           "title": "keeps actor namespaces distinct across tenants and restores A after A→B→A",
-          "duration": 1.0657019999999875,
+          "duration": 1.1609339999999975,
           "failureMessages": [],
           "meta": {}
         },
@@ -710,13 +739,13 @@
           "fullName": "ActorScopedStorage cart ownership rejects obsolete preparation before replacing the current actor storage binding",
           "status": "passed",
           "title": "rejects obsolete preparation before replacing the current actor storage binding",
-          "duration": 2.012707999999975,
+          "duration": 1.812212000000045,
           "failureMessages": [],
           "meta": {}
         }
       ],
-      "startTime": 1792594223649,
-      "endTime": 1792594223667.0127,
+      "startTime": 1792594741514,
+      "endTime": 1792594741532.8123,
       "status": "passed",
       "message": "",
       "name": "/workspace/scratch/786fcf99182f/Lanzo-POS/src/services/auth/__tests__/actorScopedStorage.test.js"
@@ -730,7 +759,7 @@
           "fullName": "actor session runtime bridge resolves stable actor ids only from user identity fields",
           "status": "passed",
           "title": "resolves stable actor ids only from user identity fields",
-          "duration": 1.3988069999999766,
+          "duration": 1.6992409999999722,
           "failureMessages": [],
           "meta": {}
         },
@@ -741,7 +770,7 @@
           "fullName": "actor session runtime bridge keeps staff permissions explicit and never grants the admin wildcard",
           "status": "passed",
           "title": "keeps staff permissions explicit and never grants the admin wildcard",
-          "duration": 0.8249849999999697,
+          "duration": 1.041165000000035,
           "failureMessages": [],
           "meta": {}
         },
@@ -752,7 +781,7 @@
           "fullName": "actor session runtime bridge reads only the explicitly requested staff session binding",
           "status": "passed",
           "title": "reads only the explicitly requested staff session binding",
-          "duration": 0.9585929999999507,
+          "duration": 0.8409780000000069,
           "failureMessages": [],
           "meta": {}
         },
@@ -763,7 +792,7 @@
           "fullName": "actor session runtime bridge fails closed on admin plus staff token ambiguity instead of selecting Admin",
           "status": "passed",
           "title": "fails closed on admin plus staff token ambiguity instead of selecting Admin",
-          "duration": 0.949389999999994,
+          "duration": 0.9489679999999794,
           "failureMessages": [],
           "meta": {}
         },
@@ -774,7 +803,7 @@
           "fullName": "actor session runtime bridge requires both the actor-specific token and session id",
           "status": "passed",
           "title": "requires both the actor-specific token and session id",
-          "duration": 0.2726149999999734,
+          "duration": 0.5609529999999836,
           "failureMessages": [],
           "meta": {}
         },
@@ -785,7 +814,7 @@
           "fullName": "actor session runtime bridge restores Admin only after durable checkout inspection and handoff validation",
           "status": "passed",
           "title": "restores Admin only after durable checkout inspection and handoff validation",
-          "duration": 3.2379269999999565,
+          "duration": 6.940218999999956,
           "failureMessages": [],
           "meta": {}
         },
@@ -796,7 +825,7 @@
           "fullName": "actor session runtime bridge does not grant Admin Actor Runtime when the common offline policy denies",
           "status": "passed",
           "title": "does not grant Admin Actor Runtime when the common offline policy denies",
-          "duration": 0.5447189999999864,
+          "duration": 0.758515999999986,
           "failureMessages": [],
           "meta": {}
         },
@@ -807,7 +836,7 @@
           "fullName": "actor session runtime bridge restores Staff when Staff is the only valid session evidence and preserves only Staff permissions",
           "status": "passed",
           "title": "restores Staff when Staff is the only valid session evidence and preserves only Staff permissions",
-          "duration": 0.8524649999999951,
+          "duration": 0.9509709999999814,
           "failureMessages": [],
           "meta": {}
         },
@@ -818,7 +847,7 @@
           "fullName": "actor session runtime bridge locks ActorRuntime when valid Admin and Staff session evidence coexist",
           "status": "passed",
           "title": "locks ActorRuntime when valid Admin and Staff session evidence coexist",
-          "duration": 0.40285800000003746,
+          "duration": 0.5860199999999622,
           "failureMessages": [],
           "meta": {}
         },
@@ -829,13 +858,13 @@
           "fullName": "actor session runtime bridge rejects late session restoration without locking a newer granted actor",
           "status": "passed",
           "title": "rejects late session restoration without locking a newer granted actor",
-          "duration": 50.89199100000002,
+          "duration": 51.78974199999999,
           "failureMessages": [],
           "meta": {}
         }
       ],
-      "startTime": 1792594223209,
-      "endTime": 1792594223269.892,
+      "startTime": 1792594740837,
+      "endTime": 1792594740902.7898,
       "status": "passed",
       "message": "",
       "name": "/workspace/scratch/786fcf99182f/Lanzo-POS/src/services/auth/__tests__/actorSessionRuntimeBridge.test.js"

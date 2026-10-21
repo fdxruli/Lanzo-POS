@@ -71,6 +71,12 @@ describe('prototype v2 — properties for participating clients only', () => {
     expect((await snapshot(db)).authority).toHaveLength(0);
     const h = await mount(a); expect(h.binding.tenant).toBe('synthetic-U');
   });
+  it('R5: a tenant switch after the transaction reads aborts the publication atomically', async () => {
+    let a;
+    a = client(undefined, { beforePublish: () => a.changeIdentity({ tenant: 'synthetic-U' }) });
+    await expect(mount(a)).rejects.toThrow('AUTH_STALE');
+    const state = await snapshot(db); expect(state.authority).toHaveLength(0); expect(state.contexts).toHaveLength(0);
+  });
   it('ARCH-14: clients cannot revoke handles issued to another tenant/client', async () => {
     const a = client(); const ha = await mount(a); const b = client({ tenant: 'synthetic-U' }); const hb = await mount(b);
     await expect(a.invalidate(hb)).rejects.toThrow('HANDLE_NOT_OWNED');
