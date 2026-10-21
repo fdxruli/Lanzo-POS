@@ -30,12 +30,13 @@ La recuperación inicial mediante parche añadió una línea final a algunos arc
 | --- | --- | --- |
 | R0 | `f4528fbe890456402a4fc9b40a7fb03685936507` | Baseline, plan y exclusión de despliegues antes de crear la rama |
 | R1 | `299d5212b375e617437a9566ab59de9250d6ba61` | Harness de versiones y fixtures aislados |
-| R2 | `c1679a8ed711abf522d49f89fc495642150b6665` | Primera evidencia de ingreso legacy, conservada como antecedente de ejecución |
+| R2 | `c1679a8ed711abf522d49f89fc495642150b6665` | Nota de primera ejecución; su JSON se detectó vacío y se restaura íntegro en el cierre R5.1 |
 | R3 | `0289757cf4a08acf2ebfe526d9c677b12e566c0f` | Código final de navegador, caché, lifecycle y almacenamiento; snapshots y fuentes |
 | R4 | `a92ecf9e048db4b5b3d9a2879b1e4ad8889b0290` | Evaluación, recuperación sintética, tests heredados, verificador y procedencia |
-| R5 | Commit que contiene este informe; SHA entregado al propietario | Informe, matriz legible y evidencia de cierre |
+| R5 | `65b3da22862ccf9f8773e966898194684ede3547` | Informe, matriz legible y evidencia de cierre |
+| R5.1 | Commit final de reparación; SHA entregado al propietario | Restaura JSON histórico R2 y verifica hashes de todos los artefactos |
 
-R0–R4 se verificaron por Git Commit API, comprobando SHA, árbol y padre. Las referencias se avanzaron con expected_sha, sin force push. R5 se verifica después de crearse; el archivo no intenta contener el hash del propio commit. Todos son alcanzables desde la rama, sin depender de scratch. `evidence/provenance.json` conserva los árboles.
+R0–R5 se verificaron por Git Commit API, comprobando SHA, árbol y padre. Las referencias se avanzaron con expected_sha, sin force push. La comparación de hashes de R5 detectó un JSON histórico R2 vacío: una lectura asíncrona no había terminado antes de publicarlo. La copia local estaba intacta y se conserva completa en R5.1, sin reescribir la historia ni sumar pruebas nuevas. El commit final se verifica después de crearse; el archivo no intenta contener su propio hash. Todos son alcanzables desde la rama. `evidence/provenance.json` conserva los árboles previos.
 
 ## 4. Nueve antecedentes y separación de código
 

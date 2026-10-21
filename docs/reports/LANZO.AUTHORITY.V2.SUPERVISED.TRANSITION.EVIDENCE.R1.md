@@ -59,6 +59,8 @@ PASS sólo aprueba la propiedad limitada indicada. FAIL conserva el contraejempl
 
 `DOMAIN-3 = UNPROVEN`, `MANAGED_ENFORCEMENT_NOT_AVAILABLE`. No hay política OS/MDM de allowlist, guardián obligatorio de DB ni protección contra restaurar una versión/perfil anterior. No se creó un cliente C comercial ni se inyectó una hipótesis como si fuese verificador. **ADMISSION_GRANTED real: ninguno.**
 
+Integridad de publicación: R5 `65b3da22862ccf9f8773e966898194684ede3547` coincidió con 16 de 17 artefactos locales; detectó que browser-r2.json había quedado vacío en R2. R5.1 restaura sus 65,694 bytes desde la copia local intacta y vuelve a contrastar todos los hashes. No cambia resultados ni reescribe checkpoints previos.
+
 ## Evidencia especial de Service Worker e IndexedDB
 
 ### T3-04
