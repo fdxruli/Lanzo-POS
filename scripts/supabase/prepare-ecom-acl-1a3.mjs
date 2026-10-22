@@ -1,6 +1,7 @@
 // Generates a rollback-only consumer rehearsal; private inputs stay in .tmp.
 import { readFileSync,writeFileSync } from 'node:fs';
-const folder='.tmp/ecom-native-1a3';
+const folder=process.argv.find(a=>a.startsWith('--folder='))?.slice(9)??'.tmp/ecom-native-1a3';
+const completeCash=process.argv.includes('--complete-cash');
 const f=JSON.parse(readFileSync(`${folder}/private-fixtures.json`));
 const q=value=>`'${String(value).replaceAll("'","''")}'`;
 const proposal=readFileSync('supabase/candidates/ecom-signal-auth-r2/public-rpc-acl-proposal.sql','utf8');
@@ -41,6 +42,8 @@ grant select on consumer_context to anon,authenticated,service_role;
 update public.licenses set features=features||'{"cloud_pos_sync":true,"cloud_cash_sync":true}'::jsonb
 where id=${q(f.tenants[1].id)} and license_key=${q(f.tenants[1].key)};
 ${['anon','authenticated','service_role'].map(role=>`
+${completeCash?`insert into public.pos_cash_sessions(id,license_id,device_id,actor_key,responsible_name,device_role,opening_amount,expected_cash_total,server_version)
+ values('qa-acl-cash-${role}-${f.run}',${q(f.tenants[1].id)},${q(f.tenants[1].device2)},'admin_device:qa-acl-${role}-${f.run}','QA ACL synthetic','admin',0,0,1);`:''}
 set local role ${role};
 do $$ declare c jsonb;t jsonb;r jsonb;created uuid;begin
  select value->'capture',value->'tenant' into c,t from consumer_context;
@@ -55,6 +58,12 @@ do $$ declare c jsonb;t jsonb;r jsonb;created uuid;begin
  r:=public.pos_get_cash_station_state(c->>'license_key',c->>'device_fingerprint',c->>'security_token',c->>'actor_session_token');
  insert into acl_results values('${role}-CASH-STATE',r->'success'='true'::jsonb,jsonb_build_object('code',r->>'code','status',r->>'financial_status'));
  exception when others then insert into acl_results values('${role}-CASH-STATE',false,jsonb_build_object('sqlstate',SQLSTATE,'message',SQLERRM));end;
+ ${completeCash?`begin
+ r:=public.pos_admin_adopt_legacy_cash_session(c->>'license_key',c->>'device_fingerprint',c->>'security_token',c->>'actor_session_token','qa-acl-cash-${role}-${f.run}',1,'qa-acl-adopt-${role}-${f.run}');
+ insert into acl_results values('${role}-CASH-ADOPT',r->'success'='true'::jsonb,jsonb_build_object('code',r->>'code'));
+ r:=public.pos_admin_close_cash_session(c->>'license_key',c->>'device_fingerprint',c->>'security_token',c->>'actor_session_token','qa-acl-cash-${role}-${f.run}','admin_audited',0,0,'historical_test','QA rollback-only',2,'qa-acl-close-${role}-${f.run}');
+ insert into acl_results values('${role}-CASH-CLOSE',r->'success'='true'::jsonb,jsonb_build_object('code',r->>'code','status',r->'cash_session'->>'status'));
+ exception when others then insert into acl_results values('${role}-CASH-OPERATIONS',false,jsonb_build_object('sqlstate',SQLSTATE,'message',SQLERRM));end;`:''}
 end $$;
 reset role;`).join('\n')}
 select jsonb_build_object('checks',(select jsonb_agg(to_jsonb(r)) from acl_results r),

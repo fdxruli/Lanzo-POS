@@ -26,7 +26,7 @@ jobs:
           node-version: '24'
       - run: npm ci
       - name: Focal broker and receiver contracts
-        run: node --test scripts/supabase/ecom-native-bridge.node-test.mjs scripts/supabase/ecom-hardening-1a3.node-test.mjs
+        run: node --test scripts/supabase/ecom-native-bridge.node-test.mjs scripts/supabase/ecom-hardening-1a3.node-test.mjs scripts/supabase/ecom-lifecycle-1a4.node-test.mjs scripts/supabase/ecom-leadership-1a4.node-test.mjs
       - run: node --test scripts/supabase/*.node-test.mjs
       - uses: denoland/setup-deno@v2
         if: always()
@@ -34,7 +34,7 @@ jobs:
           deno-version: v2.x
       - run: deno check supabase/functions/lanzo-ecom-bridge-qa/index.ts
         if: always()
-      - run: npx eslint src/services/ecommerce/ecomSignalReceiver.js src/services/ecommerce/ecomSignalActorAdapter.js src/services/ecommerce/useEcomSignalQa.js src/services/ecommerce/__tests__/ecomSignalActorAdapter.test.jsx
+      - run: npx eslint src/services/ecommerce/ecomSignalReceiver.js src/services/ecommerce/ecomSignalActorAdapter.js src/services/ecommerce/ecomSignalLeadership.js src/services/ecommerce/useEcomSignalQa.js src/services/ecommerce/__tests__/ecomSignalActorAdapter.test.jsx
         if: always()
   regressions:
     runs-on: ubuntu-latest

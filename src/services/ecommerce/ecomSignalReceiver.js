@@ -18,6 +18,7 @@ export function createEcomSignalReceiver({ broker, createTransport, now = Date.n
     try { transport?.disconnect(); } catch { /* already closed */ }
     try { Promise.resolve(transport?.removeAllChannels()).catch(() => {}); } catch { /* idempotent */ }
     run.token = null;
+    run.connection = null;
   }
 
   function stop() {
@@ -26,10 +27,11 @@ export function createEcomSignalReceiver({ broker, createTransport, now = Date.n
     active = null;
   }
 
-  function start(context, onProbe = () => {}, onState = () => {}) {
+  function start(context, onProbe = () => {}, onState = () => {}, onReconcileRequired = () => {}) {
     stop();
     const run = { generation, context: structuredClone(context), abort: new AbortController(),
-      timers: new Set(), transport: null, token: null, attempts: 0, disposed: false, deadline: 0 };
+      timers: new Set(), transport: null, token: null, attempts: 0, disposed: false, deadline: 0,
+      connection: null, request: 0 };
     active = run;
     const current = () => active === run && generation === run.generation && !run.disposed;
     const later = (fn, ms) => {
@@ -48,24 +50,27 @@ export function createEcomSignalReceiver({ broker, createTransport, now = Date.n
       run.token = null;
     };
     const terminal = state => { if (current()) { dispose(run); onState(state); } };
-    const recover = () => {
+    const recover = (keepTransport = false) => {
       if (!current()) return;
-      closeTransport();
+      if (!keepTransport) closeTransport();
       if (++run.attempts > 5 || (run.deadline && now() >= run.deadline)) { terminal('stopped'); return; }
       onState('retrying');
       later(connect, Math.min(15000, 500 * 2 ** (run.attempts - 1)) * (0.8 + random() * 0.4));
     };
     async function connect() {
       if (!current()) return;
+      const request = ++run.request;
+      const latest = () => current() && request === run.request;
       let candidate;
       try {
         onState('authorizing');
         const result = await broker(run.context, { signal: run.abort.signal });
-        if (!current()) return;
+        if (!latest()) return;
         if (!result.ok) {
           // Only transport, 429 and HTTP 5xx are recoverable. Unknown responses
           // and authorization failures stop this captured context permanently.
-          if (result.status === 409 || result.status === 429 || result.status >= 500) recover();
+          if (result.status === 410) terminal('expired');
+          else if (result.status === 409 || result.status === 429 || result.status >= 500) recover(!!run.transport);
           else terminal('denied');
           return;
         }
@@ -75,13 +80,36 @@ export function createEcomSignalReceiver({ broker, createTransport, now = Date.n
           terminal('denied'); return;
         }
         run.deadline = expiry;
+        const connectionMetadata = { url: c.url, publicKey: c.publicKey, topic: c.topic,
+          grantExpiresAt: c.grantExpiresAt, jwtExpiresAt: c.jwtExpiresAt };
+        const schedule = (renew = true) => {
+          for (const timer of run.timers) clearTimer(timer);
+          run.timers.clear();
+          if (renew) later(connect, Math.max(1000, expiry - now() - (25000 + random() * 10000)));
+          later(() => { if (now() >= run.deadline) terminal('expired'); }, expiry - now());
+        };
+        // Renew the concession without tearing down a healthy socket. Updating
+        // a JWT uses the supported access_token protocol, never Auth setSession.
+        const previous = run.connection;
+        if (run.transport && previous?.topic === c.topic && previous.url === c.url && previous.publicKey === c.publicKey) {
+          const transport = run.transport;
+          if (run.token !== c.accessToken) await transport.setAuth(c.accessToken);
+          if (!latest() || run.transport !== transport) return;
+          run.token = c.accessToken; run.connection = connectionMetadata; run.attempts = 0;
+          // A session-clamped expiry (or cached reply) cannot advance. Wait for
+          // the existing deadline instead of hammering the broker every second.
+          schedule(expiry > Math.min(previous.grantExpiresAt, previous.jwtExpiresAt));
+          onState('connected', { grantExpiresAt: c.grantExpiresAt });
+          return;
+        }
         candidate = await createTransport(c.url, c.publicKey);
-        if (!current()) { candidate.disconnect(); await candidate.removeAllChannels(); return; }
+        if (!latest()) { candidate.disconnect(); await candidate.removeAllChannels(); return; }
         closeTransport();
         run.transport = candidate;
         run.token = c.accessToken;
+        run.connection = connectionMetadata;
         await candidate.setAuth(run.token);
-        if (!current() || run.transport !== candidate) return;
+        if (!latest() || run.transport !== candidate) return;
         const transport = candidate;
         const channel = transport.channel(c.topic, { config: { private: true, broadcast: { ack: true, self: false } } });
         channel.on('broadcast', { event: 'qa_probe' }, message => {
@@ -93,20 +121,25 @@ export function createEcomSignalReceiver({ broker, createTransport, now = Date.n
           if (status === 'SUBSCRIBED' && !completed) {
             completed = true;
             run.attempts = 0;
-            onState('connected');
-            later(() => { closeTransport(); connect(); }, Math.max(1000, expiry - now() - (25000 + random() * 10000)));
+            schedule();
+            onState('connected', { grantExpiresAt: c.grantExpiresAt });
+            // Signals are hints. A future inbox consumer must fetch through its
+            // current Lanzo RPC after initial join, reconnect or topic rollover.
+            onReconcileRequired({ reason: previous?.topic !== c.topic ? 'topic_changed' : 'reconnected' });
           } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-            // Protocol Unauthorized is authoritative. Unknown CHANNEL_ERROR is
-            // also terminal; transport timeouts/closures have bounded retries.
-            if (status === 'CHANNEL_ERROR' || /unauthorized|invalid.*jwt|expired/i.test(error?.message ?? '')) terminal('denied');
+            // The SDK also emits CHANNEL_ERROR for a broken WebSocket. Only
+            // an explicit authorization rejection latches the captured actor;
+            // an unclassified transport failure rechecks the broker, bounded.
+            const reason = typeof error === 'string' ? error : error?.message ?? error?.reason ?? '';
+            if (/unauthorized|permission.denied|invalid.*jwt|jwt.*expired|token.*expired/i.test(reason)) terminal('denied');
             else recover();
           }
         });
-        later(() => { if (now() >= expiry && run.transport === transport) terminal('expired'); }, expiry - now());
+        later(() => { if (now() >= run.deadline && run.transport === transport) terminal('expired'); }, expiry - now());
       } catch (error) {
-        if (!current()) { if (candidate && candidate !== run.transport) candidate.disconnect(); return; }
+        if (!latest()) { if (candidate && candidate !== run.transport) candidate.disconnect(); return; }
         if (error?.name === 'AbortError') return;
-        recover();
+        recover(!!run.transport);
       }
     }
     void connect();

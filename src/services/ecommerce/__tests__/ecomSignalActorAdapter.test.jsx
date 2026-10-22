@@ -95,4 +95,43 @@ describe('QA signal lifecycle with the current Actor Runtime',()=>{
     act(()=>view.unmount());expect(f.transports[0].disconnect).toHaveBeenCalledOnce();
     expect(f.runtime.getState().status).toBe('granted');
   });
+  it('uses a fresh runtime after a suspended grant expires, keeping Lanzo authority unchanged',async()=>{
+    const events=new EventTarget();let time=Date.now(),visible=true;
+    const f=fixture();f.grant();
+    const stop=attachEcomSignalQa({...f.options,now:()=>time,events,visibilityEvents:events,isVisible:()=>visible});await flush();
+    f.transports[0].status('SUBSCRIBED');
+    visible=false;events.dispatchEvent(new Event('visibilitychange'));
+    time=f.connection.grantExpiresAt+1;visible=true;events.dispatchEvent(new Event('visibilitychange'));await flush();
+    expect(f.authorize).toHaveBeenCalledTimes(2);
+    expect(f.authorize.mock.calls[1][0].runtime_id).not.toBe(f.authorize.mock.calls[0][0].runtime_id);
+    expect(f.runtime.getState().status).toBe('granted');stop();
+  });
+  it('rolls over an expired tombstone once and latches an actual denial',async()=>{
+    const events=new EventTarget();let n=0;
+    const f=fixture({broker:async()=>({ok:false,status:++n===1?410:403})});f.grant();
+    const stop=attachEcomSignalQa({...f.options,events});await flush();
+    expect(f.authorize).toHaveBeenCalledTimes(2);
+    expect(f.authorize.mock.calls[1][0].runtime_id).not.toBe(f.authorize.mock.calls[0][0].runtime_id);
+    events.dispatchEvent(new Event('online'));await flush();expect(f.authorize).toHaveBeenCalledTimes(2);stop();
+  });
+  it('does not accept credentials or callbacks after losing leadership',async()=>{
+    let unlock,signal;const f=fixture();f.grant();
+    const stop=attachEcomSignalQa({...f.options,acquireLeadership:(_key,s)=>{signal=s;return new Promise(r=>{unlock=r;});}});await flush();
+    expect(f.authorize).not.toHaveBeenCalled();stop();expect(signal.aborted).toBe(true);
+    const released=vi.fn();unlock(released);await flush();expect(released).toHaveBeenCalledOnce();expect(f.authorize).not.toHaveBeenCalled();
+  });
+  it('releases leadership on page freeze and waits for resume before authorizing',async()=>{
+    const events=new EventTarget(),f=fixture();f.grant();
+    const stop=attachEcomSignalQa({...f.options,events,visibilityEvents:events});await flush();
+    events.dispatchEvent(new Event('freeze'));expect(f.transports[0].disconnect).toHaveBeenCalledOnce();
+    events.dispatchEvent(new Event('online'));await flush();expect(f.authorize).toHaveBeenCalledOnce();
+    events.dispatchEvent(new Event('resume'));await flush();expect(f.authorize).toHaveBeenCalledTimes(2);stop();
+  });
+  it('requests authoritative reconciliation only for the current actor after a join',async()=>{
+    const onReconcileRequired=vi.fn(),f=fixture();f.grant();
+    const stop=attachEcomSignalQa({...f.options,onReconcileRequired});await flush();
+    const old=f.transports[0];f.grant('staff','new');await flush();
+    old.status('SUBSCRIBED');expect(onReconcileRequired).not.toHaveBeenCalled();
+    f.transports[1].status('SUBSCRIBED');expect(onReconcileRequired).toHaveBeenCalledOnce();stop();
+  });
 });

@@ -1,0 +1,28 @@
+{
+  "stage": "natural-expiry",
+  "ttl": 600,
+  "started_at": "2026-10-22T18:29:18.192Z",
+  "results": [
+    {
+      "id": "NATURAL-PRECONDITION",
+      "status": "PASS",
+      "grant_expires_at": 1792693880038,
+      "jwt_expires_at": 1792697359000
+    },
+    {
+      "id": "NATURAL-GRANT-EXPIRED",
+      "status": "PASS",
+      "old_http": 410,
+      "publish": "EXCLUDED",
+      "old_socket": "joined"
+    },
+    {
+      "id": "NATURAL-RECOVERY",
+      "status": "PASS",
+      "new_join": "SUBSCRIBED",
+      "old_topic": "CHANNEL_ERROR"
+    }
+  ],
+  "status": "PASS",
+  "finished_at": "2026-10-22T18:31:28.787Z"
+}

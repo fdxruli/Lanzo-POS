@@ -1,0 +1,57 @@
+[
+  {
+    "path": "src/services/ecommerce/ecomSignalReceiver.js",
+    "normalization": "LF",
+    "sha256": "d51de30843021b47f64e35f85d5712dc6e5ace2cf568efc78e55f95fff92dd51"
+  },
+  {
+    "path": "src/services/ecommerce/ecomSignalActorAdapter.js",
+    "normalization": "LF",
+    "sha256": "e03bbbc01a37affc3433362a7cad65b9a687de24340396f5abf466c1ed6896ae"
+  },
+  {
+    "path": "src/services/ecommerce/ecomSignalLeadership.js",
+    "normalization": "LF",
+    "sha256": "9ef5141d522be3fd07d58df5de284f4c6df9b390fdb32a9810dfe5d36fd9c95e"
+  },
+  {
+    "path": "src/services/ecommerce/useEcomSignalQa.js",
+    "normalization": "LF",
+    "sha256": "55a40e64932a7312c7711f0d2342c887d38226a6248afa9da7073e2fe7c1bcb1"
+  },
+  {
+    "path": "supabase/functions/lanzo-ecom-bridge-qa/broker.mjs",
+    "normalization": "LF",
+    "sha256": "d115184ab65004042cd754e58a12713f98882deed7a2b7fd64c3421e90df6548"
+  },
+  {
+    "path": "supabase/candidates/ecom-signal-auth-1a4/20261022181404_qa_ecom_bridge_1a4_lifecycle.sql",
+    "normalization": "LF",
+    "sha256": "a0962b20d0ec1dd600ef1a930cb0ef47e8509f9cb75b08127df03c2b9b063a1f"
+  },
+  {
+    "path": "supabase/candidates/ecom-signal-auth-1a4/20261022182254_qa_ecom_bridge_1a4_recovery_progress.sql",
+    "normalization": "LF",
+    "sha256": "067660ddcb5c6d671b0951179c614ae8f83d20616c3960d84ef080160811b920"
+  },
+  {
+    "path": "supabase/candidates/ecom-signal-auth-1a4/20261022183224_qa_ecom_bridge_1a4_live_session_collection.sql",
+    "normalization": "LF",
+    "sha256": "a6d136a82a564ed3b7e171d2fe5a4698e8cf3c2c44d588e3b7ee8c5996af6699"
+  },
+  {
+    "path": "supabase/candidates/ecom-signal-auth-1a4/20261022184116_qa_ecom_bridge_1a4_cleanup.sql",
+    "normalization": "LF",
+    "sha256": "2f5f392cf9100b0c5da6998d174313c18c9e6db5b3962e10371deca7f1fe38d3"
+  },
+  {
+    "path": "supabase/candidates/ecom-signal-auth-1a4/collection-rehearsal.sql",
+    "normalization": "LF",
+    "sha256": "ba1d578ea80ccadb168312e1d129acb32b811c7bb5a07b5f12410db8788ff627"
+  },
+  {
+    "path": "supabase/candidates/ecom-signal-auth-1a4/collection.sql",
+    "normalization": "LF",
+    "sha256": "aed3d07e8a7256327f7a02dd45b667a8e927943b5889e019d75f31842dd3f6d2"
+  }
+]

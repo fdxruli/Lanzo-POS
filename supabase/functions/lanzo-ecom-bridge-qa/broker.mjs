@@ -15,7 +15,7 @@ export function createBroker({ rpc, auth, vault, passwordFor, url, publicKey, no
       || !c.session_id || !Number.isFinite(c.exp) || (checkExpiry && c.exp * 1000 <= now() + 5000) || !session.refresh_token) throw new Error('AUTH_CONTRACT');
     return c;
   }
-  const denied = code => ({ status: code === 'BUSY' ? 409 : ['RATE_LIMITED', 'CAPACITY'].includes(code) ? 429 : 403, body: { code } });
+  const denied = code => ({ status: code === 'EXPIRED' ? 410 : code === 'BUSY' ? 409 : ['RATE_LIMITED', 'CAPACITY'].includes(code) ? 429 : 403, body: { code } });
   const connection = (reservation, session, expiresAt, correlationId) => ({
     status: 200,
     body: { url, publicKey, accessToken: session.access_token,
@@ -89,9 +89,9 @@ export function createBroker({ rpc, auth, vault, passwordFor, url, publicKey, no
   };
 }
 
-/** @param {{url:string, serviceKey:string, publicKey:string, vault?:ReturnType<typeof createVault>, passwordFor?:ReturnType<typeof createPasswordDeriver>, vaultConfig?:Parameters<typeof createVault>[0], passwordConfig?:Parameters<typeof createPasswordDeriver>[0], fetcher?:typeof fetch}} options */
+/** @param {{url:string, serviceKey:string, publicKey:string, vault?:ReturnType<typeof createVault>, passwordFor?:ReturnType<typeof createPasswordDeriver>, vaultConfig?:Parameters<typeof createVault>[0], passwordConfig?:Parameters<typeof createPasswordDeriver>[0], fetcher?:typeof fetch, now?:()=>number}} options */
 export function createBackend({ url, serviceKey, publicKey, vault = undefined, passwordFor = undefined,
-  vaultConfig = undefined, passwordConfig = undefined, fetcher = fetch }) {
+  vaultConfig = undefined, passwordConfig = undefined, fetcher = fetch, now = Date.now }) {
   vault ??= createVault(vaultConfig);
   passwordFor ??= createPasswordDeriver(passwordConfig);
   async function request(path, body, key = serviceKey, method = 'POST') {
@@ -120,28 +120,36 @@ export function createBackend({ url, serviceKey, publicKey, vault = undefined, p
       return true;
     },
   };
-  async function collect() {
-    const retired = await rpc('collect');
-    const eligible = new Set(retired.map(x => x.id));
-    let deleted = 0;
-    for (const identity of retired) {
-      if (identity.auth_user_id && await auth.deleteOwnedUser(identity.auth_user_id, identity.id)) deleted++;
-    }
-    // Hard QA scan bound. Global identity cap is 10; never scan unbounded pages.
-    // Only exact app_metadata AND exact synthetic email are deletion authority.
-    for (let page = 1; page <= 10; page++) {
-      const { users = [] } = await request(`/auth/v1/admin/users?page=${page}&per_page=100`, undefined, serviceKey, 'GET');
-      for (const u of users) {
-        const id = u.app_metadata?.binding_id;
-        if (u.role === ROLE && u.app_metadata?.lanzo_bridge === 'qa_1a2' && eligible.has(id)
-          && !retired.some(i => i.auth_user_id === u.id)
-          && Date.parse(u.created_at) < Date.now() - 180000) {
-          if (await auth.deleteOwnedUser(u.id, id)) deleted++;
+  async function collect({ after = null, batchSize = 25, maxBatches = 4, budgetMs = 45000 } = {}) {
+    if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 100
+      || !Number.isInteger(maxBatches) || maxBatches < 1 || maxBatches > 10
+      || !Number.isInteger(budgetMs) || budgetMs < 1000 || budgetMs > 60000) throw new Error('COLLECTION_BUDGET');
+    const deadline = now() + budgetMs;
+    const result = { retired: 0, deleted: 0, failed: 0, after, complete: false, budgetExhausted: false };
+    const exhausted = () => { if (now() < deadline) return false; result.budgetExhausted = true; return true; };
+    // Keyset pagination of our private inventory, never Auth offset pages that
+    // shift when users are deleted. SQL also discovers tagged createUser orphans.
+    for (let batch = 0; batch < maxBatches; batch++) {
+      if (exhausted()) break;
+      const rows = await rpc('collect_batch', { p_after: result.after, p_limit: batchSize });
+      for (const identity of rows) {
+        if (exhausted()) return result;
+        let success = true;
+        for (const id of identity.auth_user_ids) {
+          // If a budget ends mid-identity, leave it unacked and keep the last
+          // completed cursor. Retrying exact IDs (including 404) is safe.
+          if (exhausted()) return result;
+          try { if (await auth.deleteOwnedUser(id, identity.id)) result.deleted++; }
+          catch { success = false; result.failed++; }
         }
+        // Completion/retry progress is durable. A crash before ack repeats only
+        // inventoried IDs; Auth 404 is an idempotent success.
+        await rpc('collect_ack', { p_id: identity.id, p_success: success });
+        result.retired++; result.after = identity.id;
       }
-      if (users.length < 100) break;
+      if (rows.length < batchSize) { result.complete = true; break; }
     }
-    return { retired: retired.length, deleted };
+    return result;
   }
   async function rotateVault() {
     const rows = await rpc('vault_batch');

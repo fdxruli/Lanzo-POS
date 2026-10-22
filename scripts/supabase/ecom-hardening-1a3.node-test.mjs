@@ -65,7 +65,7 @@ test('collector uses immutable inventory even after technical email changed',asy
   const paths=[];
   const backend=createBackend({url,serviceKey:'server',publicKey:'public',vault:vault(),passwordConfig:{id:'one',secret:key(3)},fetcher:async(path,options)=>{
     paths.push([path,options.method]);
-    const value=path.endsWith('_collect')?[{id:'i',auth_user_id:'u'}]:path.endsWith('/users/u')?{id:'u',email:'mutated@example.invalid',role:'lanzo_ecom_bridge_receiver',app_metadata:{lanzo_bridge:'qa_1a2',binding_id:'i'}}:{users:[]};
+    const value=path.endsWith('_collect_batch')?[{id:'i',auth_user_ids:['u']}]:path.endsWith('/users/u')?{id:'u',email:'mutated@example.invalid',role:'lanzo_ecom_bridge_receiver',app_metadata:{lanzo_bridge:'qa_1a2',binding_id:'i'}}:true;
     return new Response(JSON.stringify(value),{status:200});
   }});
   assert.equal((await backend.collect()).deleted,1);

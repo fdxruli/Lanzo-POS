@@ -1,0 +1,798 @@
+{
+  "kind": "ASSUMPTION_MODEL_NOT_BENCHMARK",
+  "assumptions": {
+    "days": 30,
+    "hours_day": 8,
+    "sessions_device_day": 2,
+    "hours_session": 4,
+    "baseline_tabs": 2,
+    "optimized_tabs": 1,
+    "receiver_jwt_seconds": 3600,
+    "refresh_margin_seconds": 90,
+    "renew_margin_seconds": 30,
+    "orders_day": 50,
+    "retries_baseline": 0,
+    "additional_retries": "add 10% Edge/Auth for stress; network peaks may be synchronized",
+    "unseen_other_module_usage": "UNKNOWN; quotas below are total, never residual",
+    "sql_queries": "two broker RPC per uncached issue, not physical SQL statements; publisher authority per recipient, RLS on join/JWT update",
+    "storage": "2345 historical bytes/live vault excludes indexes, receipts and audit; no reduction in MAU from deleting users"
+  },
+  "quotas_free": {
+    "edge_invocations_month": 500000,
+    "realtime_connections": 200,
+    "realtime_messages_month": 2000000,
+    "technical_and_other_mau_month": 50000,
+    "messages_second": 100,
+    "joins_second": 100
+  },
+  "published_1a3_baseline": {
+    "devices": 2,
+    "tabs": 2,
+    "edge_business_month": 38640,
+    "explanation": "320 renewals/day plus two starts per tab; simplified arithmetic from 1A.3, not native JWT simulation"
+  },
+  "ttl_sessions": [
+    {
+      "ttl": 120,
+      "invocations": 160,
+      "refreshes": 4,
+      "authSignIns": 1,
+      "joins": 1,
+      "reauthorizations": 4,
+      "session_hours": 4
+    },
+    {
+      "ttl": 300,
+      "invocations": 54,
+      "refreshes": 4,
+      "authSignIns": 1,
+      "joins": 1,
+      "reauthorizations": 4,
+      "session_hours": 4
+    },
+    {
+      "ttl": 600,
+      "invocations": 29,
+      "refreshes": 4,
+      "authSignIns": 1,
+      "joins": 1,
+      "reauthorizations": 4,
+      "session_hours": 4
+    },
+    {
+      "ttl": 900,
+      "invocations": 21,
+      "refreshes": 4,
+      "authSignIns": 1,
+      "joins": 1,
+      "reauthorizations": 4,
+      "session_hours": 4
+    }
+  ],
+  "baseline_session": {
+    "invocations": 160,
+    "refreshes": 4,
+    "authSignIns": 1,
+    "joins": 160,
+    "reauthorizations": 4,
+    "session_hours": 4
+  },
+  "candidate_session": {
+    "invocations": 29,
+    "refreshes": 4,
+    "authSignIns": 1,
+    "joins": 1,
+    "reauthorizations": 4,
+    "session_hours": 4
+  },
+  "scenarios": {
+    "FREE": [
+      {
+        "businesses": 10,
+        "baseline": {
+          "edge": 192000,
+          "auth_refreshes": 4800,
+          "auth_signins": 1200,
+          "technical_mau": 600,
+          "peak_websockets": 20,
+          "joins": 192000,
+          "signals_messages": 60000,
+          "broker_authority_rpc": 384000,
+          "live_vault_bytes": 46900,
+          "retained_tombstones_30d": 1200
+        },
+        "optimized_one_owner": {
+          "edge": 17400,
+          "auth_refreshes": 2400,
+          "auth_signins": 600,
+          "technical_mau": 600,
+          "peak_websockets": 10,
+          "joins": 600,
+          "signals_messages": 30000,
+          "broker_authority_rpc": 34800,
+          "live_vault_bytes": 23450,
+          "retained_tombstones_30d": 600
+        },
+        "optimized_no_coordination": {
+          "edge": 34800,
+          "auth_refreshes": 4800,
+          "auth_signins": 1200,
+          "technical_mau": 600,
+          "peak_websockets": 20,
+          "joins": 1200,
+          "signals_messages": 60000,
+          "broker_authority_rpc": 69600,
+          "live_vault_bytes": 46900,
+          "retained_tombstones_30d": 1200
+        }
+      },
+      {
+        "businesses": 25,
+        "baseline": {
+          "edge": 480000,
+          "auth_refreshes": 12000,
+          "auth_signins": 3000,
+          "technical_mau": 1500,
+          "peak_websockets": 50,
+          "joins": 480000,
+          "signals_messages": 150000,
+          "broker_authority_rpc": 960000,
+          "live_vault_bytes": 117250,
+          "retained_tombstones_30d": 3000
+        },
+        "optimized_one_owner": {
+          "edge": 43500,
+          "auth_refreshes": 6000,
+          "auth_signins": 1500,
+          "technical_mau": 1500,
+          "peak_websockets": 25,
+          "joins": 1500,
+          "signals_messages": 75000,
+          "broker_authority_rpc": 87000,
+          "live_vault_bytes": 58625,
+          "retained_tombstones_30d": 1500
+        },
+        "optimized_no_coordination": {
+          "edge": 87000,
+          "auth_refreshes": 12000,
+          "auth_signins": 3000,
+          "technical_mau": 1500,
+          "peak_websockets": 50,
+          "joins": 3000,
+          "signals_messages": 150000,
+          "broker_authority_rpc": 174000,
+          "live_vault_bytes": 117250,
+          "retained_tombstones_30d": 3000
+        }
+      },
+      {
+        "businesses": 50,
+        "baseline": {
+          "edge": 960000,
+          "auth_refreshes": 24000,
+          "auth_signins": 6000,
+          "technical_mau": 3000,
+          "peak_websockets": 100,
+          "joins": 960000,
+          "signals_messages": 300000,
+          "broker_authority_rpc": 1920000,
+          "live_vault_bytes": 234500,
+          "retained_tombstones_30d": 6000
+        },
+        "optimized_one_owner": {
+          "edge": 87000,
+          "auth_refreshes": 12000,
+          "auth_signins": 3000,
+          "technical_mau": 3000,
+          "peak_websockets": 50,
+          "joins": 3000,
+          "signals_messages": 150000,
+          "broker_authority_rpc": 174000,
+          "live_vault_bytes": 117250,
+          "retained_tombstones_30d": 3000
+        },
+        "optimized_no_coordination": {
+          "edge": 174000,
+          "auth_refreshes": 24000,
+          "auth_signins": 6000,
+          "technical_mau": 3000,
+          "peak_websockets": 100,
+          "joins": 6000,
+          "signals_messages": 300000,
+          "broker_authority_rpc": 348000,
+          "live_vault_bytes": 234500,
+          "retained_tombstones_30d": 6000
+        }
+      },
+      {
+        "businesses": 100,
+        "baseline": {
+          "edge": 1920000,
+          "auth_refreshes": 48000,
+          "auth_signins": 12000,
+          "technical_mau": 6000,
+          "peak_websockets": 200,
+          "joins": 1920000,
+          "signals_messages": 600000,
+          "broker_authority_rpc": 3840000,
+          "live_vault_bytes": 469000,
+          "retained_tombstones_30d": 12000
+        },
+        "optimized_one_owner": {
+          "edge": 174000,
+          "auth_refreshes": 24000,
+          "auth_signins": 6000,
+          "technical_mau": 6000,
+          "peak_websockets": 100,
+          "joins": 6000,
+          "signals_messages": 300000,
+          "broker_authority_rpc": 348000,
+          "live_vault_bytes": 234500,
+          "retained_tombstones_30d": 6000
+        },
+        "optimized_no_coordination": {
+          "edge": 348000,
+          "auth_refreshes": 48000,
+          "auth_signins": 12000,
+          "technical_mau": 6000,
+          "peak_websockets": 200,
+          "joins": 12000,
+          "signals_messages": 600000,
+          "broker_authority_rpc": 696000,
+          "live_vault_bytes": 469000,
+          "retained_tombstones_30d": 12000
+        }
+      },
+      {
+        "businesses": 500,
+        "baseline": {
+          "edge": 9600000,
+          "auth_refreshes": 240000,
+          "auth_signins": 60000,
+          "technical_mau": 30000,
+          "peak_websockets": 1000,
+          "joins": 9600000,
+          "signals_messages": 3000000,
+          "broker_authority_rpc": 19200000,
+          "live_vault_bytes": 2345000,
+          "retained_tombstones_30d": 60000
+        },
+        "optimized_one_owner": {
+          "edge": 870000,
+          "auth_refreshes": 120000,
+          "auth_signins": 30000,
+          "technical_mau": 30000,
+          "peak_websockets": 500,
+          "joins": 30000,
+          "signals_messages": 1500000,
+          "broker_authority_rpc": 1740000,
+          "live_vault_bytes": 1172500,
+          "retained_tombstones_30d": 30000
+        },
+        "optimized_no_coordination": {
+          "edge": 1740000,
+          "auth_refreshes": 240000,
+          "auth_signins": 60000,
+          "technical_mau": 30000,
+          "peak_websockets": 1000,
+          "joins": 60000,
+          "signals_messages": 3000000,
+          "broker_authority_rpc": 3480000,
+          "live_vault_bytes": 2345000,
+          "retained_tombstones_30d": 60000
+        }
+      },
+      {
+        "businesses": 1000,
+        "baseline": {
+          "edge": 19200000,
+          "auth_refreshes": 480000,
+          "auth_signins": 120000,
+          "technical_mau": 60000,
+          "peak_websockets": 2000,
+          "joins": 19200000,
+          "signals_messages": 6000000,
+          "broker_authority_rpc": 38400000,
+          "live_vault_bytes": 4690000,
+          "retained_tombstones_30d": 120000
+        },
+        "optimized_one_owner": {
+          "edge": 1740000,
+          "auth_refreshes": 240000,
+          "auth_signins": 60000,
+          "technical_mau": 60000,
+          "peak_websockets": 1000,
+          "joins": 60000,
+          "signals_messages": 3000000,
+          "broker_authority_rpc": 3480000,
+          "live_vault_bytes": 2345000,
+          "retained_tombstones_30d": 60000
+        },
+        "optimized_no_coordination": {
+          "edge": 3480000,
+          "auth_refreshes": 480000,
+          "auth_signins": 120000,
+          "technical_mau": 60000,
+          "peak_websockets": 2000,
+          "joins": 120000,
+          "signals_messages": 6000000,
+          "broker_authority_rpc": 6960000,
+          "live_vault_bytes": 4690000,
+          "retained_tombstones_30d": 120000
+        }
+      }
+    ],
+    "LEGACY": [
+      {
+        "businesses": 10,
+        "baseline": {
+          "edge": 384000,
+          "auth_refreshes": 9600,
+          "auth_signins": 2400,
+          "technical_mau": 1200,
+          "peak_websockets": 40,
+          "joins": 384000,
+          "signals_messages": 120000,
+          "broker_authority_rpc": 768000,
+          "live_vault_bytes": 93800,
+          "retained_tombstones_30d": 2400
+        },
+        "optimized_one_owner": {
+          "edge": 34800,
+          "auth_refreshes": 4800,
+          "auth_signins": 1200,
+          "technical_mau": 1200,
+          "peak_websockets": 20,
+          "joins": 1200,
+          "signals_messages": 60000,
+          "broker_authority_rpc": 69600,
+          "live_vault_bytes": 46900,
+          "retained_tombstones_30d": 1200
+        },
+        "optimized_no_coordination": {
+          "edge": 69600,
+          "auth_refreshes": 9600,
+          "auth_signins": 2400,
+          "technical_mau": 1200,
+          "peak_websockets": 40,
+          "joins": 2400,
+          "signals_messages": 120000,
+          "broker_authority_rpc": 139200,
+          "live_vault_bytes": 93800,
+          "retained_tombstones_30d": 2400
+        }
+      },
+      {
+        "businesses": 25,
+        "baseline": {
+          "edge": 960000,
+          "auth_refreshes": 24000,
+          "auth_signins": 6000,
+          "technical_mau": 3000,
+          "peak_websockets": 100,
+          "joins": 960000,
+          "signals_messages": 300000,
+          "broker_authority_rpc": 1920000,
+          "live_vault_bytes": 234500,
+          "retained_tombstones_30d": 6000
+        },
+        "optimized_one_owner": {
+          "edge": 87000,
+          "auth_refreshes": 12000,
+          "auth_signins": 3000,
+          "technical_mau": 3000,
+          "peak_websockets": 50,
+          "joins": 3000,
+          "signals_messages": 150000,
+          "broker_authority_rpc": 174000,
+          "live_vault_bytes": 117250,
+          "retained_tombstones_30d": 3000
+        },
+        "optimized_no_coordination": {
+          "edge": 174000,
+          "auth_refreshes": 24000,
+          "auth_signins": 6000,
+          "technical_mau": 3000,
+          "peak_websockets": 100,
+          "joins": 6000,
+          "signals_messages": 300000,
+          "broker_authority_rpc": 348000,
+          "live_vault_bytes": 234500,
+          "retained_tombstones_30d": 6000
+        }
+      },
+      {
+        "businesses": 50,
+        "baseline": {
+          "edge": 1920000,
+          "auth_refreshes": 48000,
+          "auth_signins": 12000,
+          "technical_mau": 6000,
+          "peak_websockets": 200,
+          "joins": 1920000,
+          "signals_messages": 600000,
+          "broker_authority_rpc": 3840000,
+          "live_vault_bytes": 469000,
+          "retained_tombstones_30d": 12000
+        },
+        "optimized_one_owner": {
+          "edge": 174000,
+          "auth_refreshes": 24000,
+          "auth_signins": 6000,
+          "technical_mau": 6000,
+          "peak_websockets": 100,
+          "joins": 6000,
+          "signals_messages": 300000,
+          "broker_authority_rpc": 348000,
+          "live_vault_bytes": 234500,
+          "retained_tombstones_30d": 6000
+        },
+        "optimized_no_coordination": {
+          "edge": 348000,
+          "auth_refreshes": 48000,
+          "auth_signins": 12000,
+          "technical_mau": 6000,
+          "peak_websockets": 200,
+          "joins": 12000,
+          "signals_messages": 600000,
+          "broker_authority_rpc": 696000,
+          "live_vault_bytes": 469000,
+          "retained_tombstones_30d": 12000
+        }
+      },
+      {
+        "businesses": 100,
+        "baseline": {
+          "edge": 3840000,
+          "auth_refreshes": 96000,
+          "auth_signins": 24000,
+          "technical_mau": 12000,
+          "peak_websockets": 400,
+          "joins": 3840000,
+          "signals_messages": 1200000,
+          "broker_authority_rpc": 7680000,
+          "live_vault_bytes": 938000,
+          "retained_tombstones_30d": 24000
+        },
+        "optimized_one_owner": {
+          "edge": 348000,
+          "auth_refreshes": 48000,
+          "auth_signins": 12000,
+          "technical_mau": 12000,
+          "peak_websockets": 200,
+          "joins": 12000,
+          "signals_messages": 600000,
+          "broker_authority_rpc": 696000,
+          "live_vault_bytes": 469000,
+          "retained_tombstones_30d": 12000
+        },
+        "optimized_no_coordination": {
+          "edge": 696000,
+          "auth_refreshes": 96000,
+          "auth_signins": 24000,
+          "technical_mau": 12000,
+          "peak_websockets": 400,
+          "joins": 24000,
+          "signals_messages": 1200000,
+          "broker_authority_rpc": 1392000,
+          "live_vault_bytes": 938000,
+          "retained_tombstones_30d": 24000
+        }
+      },
+      {
+        "businesses": 500,
+        "baseline": {
+          "edge": 19200000,
+          "auth_refreshes": 480000,
+          "auth_signins": 120000,
+          "technical_mau": 60000,
+          "peak_websockets": 2000,
+          "joins": 19200000,
+          "signals_messages": 6000000,
+          "broker_authority_rpc": 38400000,
+          "live_vault_bytes": 4690000,
+          "retained_tombstones_30d": 120000
+        },
+        "optimized_one_owner": {
+          "edge": 1740000,
+          "auth_refreshes": 240000,
+          "auth_signins": 60000,
+          "technical_mau": 60000,
+          "peak_websockets": 1000,
+          "joins": 60000,
+          "signals_messages": 3000000,
+          "broker_authority_rpc": 3480000,
+          "live_vault_bytes": 2345000,
+          "retained_tombstones_30d": 60000
+        },
+        "optimized_no_coordination": {
+          "edge": 3480000,
+          "auth_refreshes": 480000,
+          "auth_signins": 120000,
+          "technical_mau": 60000,
+          "peak_websockets": 2000,
+          "joins": 120000,
+          "signals_messages": 6000000,
+          "broker_authority_rpc": 6960000,
+          "live_vault_bytes": 4690000,
+          "retained_tombstones_30d": 120000
+        }
+      },
+      {
+        "businesses": 1000,
+        "baseline": {
+          "edge": 38400000,
+          "auth_refreshes": 960000,
+          "auth_signins": 240000,
+          "technical_mau": 120000,
+          "peak_websockets": 4000,
+          "joins": 38400000,
+          "signals_messages": 12000000,
+          "broker_authority_rpc": 76800000,
+          "live_vault_bytes": 9380000,
+          "retained_tombstones_30d": 240000
+        },
+        "optimized_one_owner": {
+          "edge": 3480000,
+          "auth_refreshes": 480000,
+          "auth_signins": 120000,
+          "technical_mau": 120000,
+          "peak_websockets": 2000,
+          "joins": 120000,
+          "signals_messages": 6000000,
+          "broker_authority_rpc": 6960000,
+          "live_vault_bytes": 4690000,
+          "retained_tombstones_30d": 120000
+        },
+        "optimized_no_coordination": {
+          "edge": 6960000,
+          "auth_refreshes": 960000,
+          "auth_signins": 240000,
+          "technical_mau": 120000,
+          "peak_websockets": 4000,
+          "joins": 240000,
+          "signals_messages": 12000000,
+          "broker_authority_rpc": 13920000,
+          "live_vault_bytes": 9380000,
+          "retained_tombstones_30d": 240000
+        }
+      }
+    ],
+    "PRO": [
+      {
+        "businesses": 10,
+        "baseline": {
+          "edge": 960000,
+          "auth_refreshes": 24000,
+          "auth_signins": 6000,
+          "technical_mau": 3000,
+          "peak_websockets": 100,
+          "joins": 960000,
+          "signals_messages": 300000,
+          "broker_authority_rpc": 1920000,
+          "live_vault_bytes": 234500,
+          "retained_tombstones_30d": 6000
+        },
+        "optimized_one_owner": {
+          "edge": 87000,
+          "auth_refreshes": 12000,
+          "auth_signins": 3000,
+          "technical_mau": 3000,
+          "peak_websockets": 50,
+          "joins": 3000,
+          "signals_messages": 150000,
+          "broker_authority_rpc": 174000,
+          "live_vault_bytes": 117250,
+          "retained_tombstones_30d": 3000
+        },
+        "optimized_no_coordination": {
+          "edge": 174000,
+          "auth_refreshes": 24000,
+          "auth_signins": 6000,
+          "technical_mau": 3000,
+          "peak_websockets": 100,
+          "joins": 6000,
+          "signals_messages": 300000,
+          "broker_authority_rpc": 348000,
+          "live_vault_bytes": 234500,
+          "retained_tombstones_30d": 6000
+        }
+      },
+      {
+        "businesses": 25,
+        "baseline": {
+          "edge": 2400000,
+          "auth_refreshes": 60000,
+          "auth_signins": 15000,
+          "technical_mau": 7500,
+          "peak_websockets": 250,
+          "joins": 2400000,
+          "signals_messages": 750000,
+          "broker_authority_rpc": 4800000,
+          "live_vault_bytes": 586250,
+          "retained_tombstones_30d": 15000
+        },
+        "optimized_one_owner": {
+          "edge": 217500,
+          "auth_refreshes": 30000,
+          "auth_signins": 7500,
+          "technical_mau": 7500,
+          "peak_websockets": 125,
+          "joins": 7500,
+          "signals_messages": 375000,
+          "broker_authority_rpc": 435000,
+          "live_vault_bytes": 293125,
+          "retained_tombstones_30d": 7500
+        },
+        "optimized_no_coordination": {
+          "edge": 435000,
+          "auth_refreshes": 60000,
+          "auth_signins": 15000,
+          "technical_mau": 7500,
+          "peak_websockets": 250,
+          "joins": 15000,
+          "signals_messages": 750000,
+          "broker_authority_rpc": 870000,
+          "live_vault_bytes": 586250,
+          "retained_tombstones_30d": 15000
+        }
+      },
+      {
+        "businesses": 50,
+        "baseline": {
+          "edge": 4800000,
+          "auth_refreshes": 120000,
+          "auth_signins": 30000,
+          "technical_mau": 15000,
+          "peak_websockets": 500,
+          "joins": 4800000,
+          "signals_messages": 1500000,
+          "broker_authority_rpc": 9600000,
+          "live_vault_bytes": 1172500,
+          "retained_tombstones_30d": 30000
+        },
+        "optimized_one_owner": {
+          "edge": 435000,
+          "auth_refreshes": 60000,
+          "auth_signins": 15000,
+          "technical_mau": 15000,
+          "peak_websockets": 250,
+          "joins": 15000,
+          "signals_messages": 750000,
+          "broker_authority_rpc": 870000,
+          "live_vault_bytes": 586250,
+          "retained_tombstones_30d": 15000
+        },
+        "optimized_no_coordination": {
+          "edge": 870000,
+          "auth_refreshes": 120000,
+          "auth_signins": 30000,
+          "technical_mau": 15000,
+          "peak_websockets": 500,
+          "joins": 30000,
+          "signals_messages": 1500000,
+          "broker_authority_rpc": 1740000,
+          "live_vault_bytes": 1172500,
+          "retained_tombstones_30d": 30000
+        }
+      },
+      {
+        "businesses": 100,
+        "baseline": {
+          "edge": 9600000,
+          "auth_refreshes": 240000,
+          "auth_signins": 60000,
+          "technical_mau": 30000,
+          "peak_websockets": 1000,
+          "joins": 9600000,
+          "signals_messages": 3000000,
+          "broker_authority_rpc": 19200000,
+          "live_vault_bytes": 2345000,
+          "retained_tombstones_30d": 60000
+        },
+        "optimized_one_owner": {
+          "edge": 870000,
+          "auth_refreshes": 120000,
+          "auth_signins": 30000,
+          "technical_mau": 30000,
+          "peak_websockets": 500,
+          "joins": 30000,
+          "signals_messages": 1500000,
+          "broker_authority_rpc": 1740000,
+          "live_vault_bytes": 1172500,
+          "retained_tombstones_30d": 30000
+        },
+        "optimized_no_coordination": {
+          "edge": 1740000,
+          "auth_refreshes": 240000,
+          "auth_signins": 60000,
+          "technical_mau": 30000,
+          "peak_websockets": 1000,
+          "joins": 60000,
+          "signals_messages": 3000000,
+          "broker_authority_rpc": 3480000,
+          "live_vault_bytes": 2345000,
+          "retained_tombstones_30d": 60000
+        }
+      },
+      {
+        "businesses": 500,
+        "baseline": {
+          "edge": 48000000,
+          "auth_refreshes": 1200000,
+          "auth_signins": 300000,
+          "technical_mau": 150000,
+          "peak_websockets": 5000,
+          "joins": 48000000,
+          "signals_messages": 15000000,
+          "broker_authority_rpc": 96000000,
+          "live_vault_bytes": 11725000,
+          "retained_tombstones_30d": 300000
+        },
+        "optimized_one_owner": {
+          "edge": 4350000,
+          "auth_refreshes": 600000,
+          "auth_signins": 150000,
+          "technical_mau": 150000,
+          "peak_websockets": 2500,
+          "joins": 150000,
+          "signals_messages": 7500000,
+          "broker_authority_rpc": 8700000,
+          "live_vault_bytes": 5862500,
+          "retained_tombstones_30d": 150000
+        },
+        "optimized_no_coordination": {
+          "edge": 8700000,
+          "auth_refreshes": 1200000,
+          "auth_signins": 300000,
+          "technical_mau": 150000,
+          "peak_websockets": 5000,
+          "joins": 300000,
+          "signals_messages": 15000000,
+          "broker_authority_rpc": 17400000,
+          "live_vault_bytes": 11725000,
+          "retained_tombstones_30d": 300000
+        }
+      },
+      {
+        "businesses": 1000,
+        "baseline": {
+          "edge": 96000000,
+          "auth_refreshes": 2400000,
+          "auth_signins": 600000,
+          "technical_mau": 300000,
+          "peak_websockets": 10000,
+          "joins": 96000000,
+          "signals_messages": 30000000,
+          "broker_authority_rpc": 192000000,
+          "live_vault_bytes": 23450000,
+          "retained_tombstones_30d": 600000
+        },
+        "optimized_one_owner": {
+          "edge": 8700000,
+          "auth_refreshes": 1200000,
+          "auth_signins": 300000,
+          "technical_mau": 300000,
+          "peak_websockets": 5000,
+          "joins": 300000,
+          "signals_messages": 15000000,
+          "broker_authority_rpc": 17400000,
+          "live_vault_bytes": 11725000,
+          "retained_tombstones_30d": 300000
+        },
+        "optimized_no_coordination": {
+          "edge": 17400000,
+          "auth_refreshes": 2400000,
+          "auth_signins": 600000,
+          "technical_mau": 300000,
+          "peak_websockets": 10000,
+          "joins": 600000,
+          "signals_messages": 30000000,
+          "broker_authority_rpc": 34800000,
+          "live_vault_bytes": 23450000,
+          "retained_tombstones_30d": 600000
+        }
+      }
+    ]
+  }
+}
