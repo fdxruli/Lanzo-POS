@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createVault, createPasswordDeriver, serverSecrets } from '../../supabase/functions/lanzo-ecom-bridge-qa/secrets.mjs';
 import { createBroker, createBackend } from '../../supabase/functions/lanzo-ecom-bridge-qa/broker.mjs';
+import { createHandler } from '../../supabase/functions/lanzo-ecom-bridge-qa/handler.mjs';
 const key = n => Buffer.alloc(32,n).toString('base64');
 const vault = keys => createVault(keys ?? {current:'one',keys:{one:key(1)}});
 const url='https://qa.supabase.co';
@@ -77,4 +78,19 @@ test('vault rotation handles CAS conflict, missing key and partial success witho
     updates++;return Response.json(false);
   }});
   assert.deepEqual(await backend.rotateVault(),{rotated:0,conflicted:1,failed:1});assert.equal(updates,1);
+});
+test('HTTP QA controls require their dedicated capability and are disabled without configuration',async()=>{
+  const calls=[];const backend={collect:async()=>{calls.push('collect');return {deleted:0};},issue:async()=>{calls.push('issue');return {status:403,body:{code:'DENIED'}};}};
+  const request=token=>new Request(url,{method:'POST',headers:token?{'x-lanzo-qa-control':token}:{Authorization:'Bearer valid-alternate-service-key'},body:JSON.stringify({action:'collect'})});
+  assert.equal((await createHandler(backend)(request())).status,403);
+  assert.equal((await createHandler(backend,{controlToken:'x'.repeat(43)})(request('wrong'))).status,403);
+  assert.deepEqual(calls,[]);
+  assert.equal((await createHandler(backend,{controlToken:'x'.repeat(43)})(request('x'.repeat(43)))).status,200);
+  assert.deepEqual(calls,['collect']);
+});
+test('HTTP boundary bounds chunked bytes, rejects malformed bodies and never calls backend',async()=>{
+  const backend={issue:()=>assert.fail('backend must not run')};const handler=createHandler(backend);
+  for(const body of ['null','[]','invalid'])assert.equal((await handler(new Request(url,{method:'POST',body}))).status,403);
+  const stream=new ReadableStream({start(controller){controller.enqueue(new Uint8Array(4096));controller.enqueue(new Uint8Array(4097));controller.close();}});
+  assert.equal((await handler(new Request(url,{method:'POST',body:stream,duplex:'half'}))).status,413);
 });

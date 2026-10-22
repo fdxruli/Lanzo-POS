@@ -24,6 +24,11 @@ writer. `LANZO_ECOM_PASSWORD_KEY` is a different random 32-byte base64 HMAC key;
 `LANZO_ECOM_PASSWORD_KEY_ID` versions its purpose string. Missing, malformed,
 short or purpose-reused keys fail closed. There is no service_role fallback.
 The HTTP service key authenticates backend operations only.
+`LANZO_ECOM_QA_CONTROL_TOKEN` is a fifth independent high-entropy QA secret for
+the HTTP administrative header `x-lanzo-qa-control`. It is never sent to the
+receiver. Without it, collect/rotate/publish/revoke HTTP controls are disabled;
+a service-role JWT is not a substitute for this capability. The local server
+collector remains available to an authorized operator.
 
 Vault v2 authenticates version, key ID and grant ID as AAD. To rotate: provision
 a new dedicated AES key alongside the old one, switch the current key ID, run
@@ -81,7 +86,7 @@ safety bound, not a scalable commercial deployment configuration.
    redacted evidence. It must finish/stop and delete its Auth identity before
    removing the expiry instrumentation. It does not extend a Lanzo grant.
 6. Stop clients, collect/delete only this inventory's Auth users, remove the
-   temporary Edge endpoint and its four dedicated secrets. Delete bridge grants
+   temporary Edge endpoint and its five dedicated secrets. Delete bridge grants
    and identities before the generated `fixture-cleanup.sql`. Remove receipt
    rows before grants. Apply this folder's `rollback.sql`, then the 1A.2 rollback
    in one explicit cleanup migration. Preserve every audit ledger entry.

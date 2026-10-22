@@ -12,13 +12,17 @@ const tasks={
 };
 if(!tasks[mode])throw Error('MODE');
 const results=[];
+const git = args => execFileSync('git',args,{encoding:'utf8'}).trim();
+const before={head:git(['rev-parse','HEAD']),status:git(['status','--porcelain'])};
 for(const [name,command,args] of tasks[mode]){
  const log=createWriteStream(`${out}/${name}.log`),started=Date.now();
  const result=await new Promise(resolve=>{
   const child=spawn(command,args,{cwd:process.cwd(),windowsHide:true,stdio:['ignore','pipe','pipe']});
+  const timer=setTimeout(()=>child.kill(),mode==='builds'||mode==='lint'?1800000:600000);
   child.stdout.pipe(log,{end:false});child.stderr.pipe(log,{end:false});
-  child.on('error',e=>resolve({exit:null,error:e.message}));child.on('exit',(exit,signal)=>resolve({exit,signal}));
+  child.on('error',e=>{clearTimeout(timer);resolve({exit:null,error:e.message});});child.on('exit',(exit,signal)=>{clearTimeout(timer);resolve({exit,signal});});
  });log.end();results.push({name,...result,status:result.exit===0?'PASS':'FAIL',elapsed_ms:Date.now()-started});
- writeFileSync(`${out}/validation-${mode}.json`,JSON.stringify({head:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),results},null,2));
+ const after={head:git(['rev-parse','HEAD']),status:git(['status','--porcelain'])};
+ writeFileSync(`${out}/validation-${mode}.json`,JSON.stringify({before,after,sha_certified:!before.status&&!after.status&&before.head===after.head,results},null,2));
  console.log(JSON.stringify(results.at(-1)));
 }

@@ -34,7 +34,12 @@ try{
  const revokeFirst=rpc('race',{p_id:d.grantId,p_probe:p2,p_action:'revoke'});await sleep(350);
  const publishSecond=rpc('publish',{p_id:d.grantId,p_probe:p2});const [b2,s2]=await Promise.all([revokeFirst,publishSecond]);
  check('RACE-REVOKE-BEFORE-PUBLISH',b2.body?.code==='REVOKED'&&s2.body?.code==='EXCLUDED'&&s2.elapsed_ms>2000,{revoke:b2.body,publish:s2.body,publish_elapsed_ms:s2.elapsed_ms});
- const e=await issue({...capture,actor_session_token:f.tenants[0].staffToken,runtime_id:randomUUID()});const live=await join(e);
+ const staffCapture={...capture,actor_session_token:f.tenants[0].staffToken,runtime_id:randomUUID()};
+ // The previous local harness used a different dedicated password key. Drain
+ // that synthetic identity before testing the Edge deployment's new key.
+ const staffRecovery=await post(endpoint,{...staffCapture,action:'recover'});
+ check('EDGE-STAFF-KEY-TRANSITION',staffRecovery.status===200&&staffRecovery.body?.code==='RECOVERED',{http:staffRecovery.status});
+ const e=await issue({...staffCapture,runtime_id:randomUUID()});const live=await join(e);
  check('EXPIRY-PRECONDITION',live.state==='SUBSCRIBED',{grant_id:e.grantId,jwt_exp:e.jwtExpiresAt,grant_exp:e.grantExpiresAt});
  await sleep(Math.max(0,e.grantExpiresAt-Date.now()+1200));
  const stillJwt=Date.now()<e.jwtExpiresAt,newJoin=await join(e);newJoin.client.disconnect();const expired=await rpc('publish',{p_id:e.grantId,p_probe:randomUUID()});
