@@ -1,0 +1,118 @@
+{
+  "html": {
+    "status": 200,
+    "mime": "text/html; charset=utf-8"
+  },
+  "resources": [
+    {
+      "path": "/assets/index-C9koXpld.js",
+      "status": 200,
+      "success": true,
+      "mime": "application/javascript; charset=utf-8",
+      "bytes": 190100,
+      "qaMarkers": false,
+      "supabaseHosts": [
+        "https://odlrhijtfyavryeqivaa.supabase.co"
+      ]
+    },
+    {
+      "path": "/assets/vendor_react-ChMAD9HB.js",
+      "status": 200,
+      "success": true,
+      "mime": "application/javascript; charset=utf-8",
+      "bytes": 204813,
+      "qaMarkers": false,
+      "supabaseHosts": []
+    },
+    {
+      "path": "/assets/buttons-M8IWIJno.js",
+      "status": 200,
+      "success": true,
+      "mime": "application/javascript; charset=utf-8",
+      "bytes": 182929,
+      "qaMarkers": false,
+      "supabaseHosts": []
+    },
+    {
+      "path": "/assets/vendor_icons-CAi0WwbA.js",
+      "status": 200,
+      "success": true,
+      "mime": "application/javascript; charset=utf-8",
+      "bytes": 53003,
+      "qaMarkers": false,
+      "supabaseHosts": []
+    },
+    {
+      "path": "/assets/vendor_supabase-Cuwxbz1U.js",
+      "status": 200,
+      "success": true,
+      "mime": "application/javascript; charset=utf-8",
+      "bytes": 189479,
+      "qaMarkers": false,
+      "supabaseHosts": []
+    },
+    {
+      "path": "/assets/contextSnapshotGuard-BMsBlXy0.js",
+      "status": 200,
+      "success": true,
+      "mime": "application/javascript; charset=utf-8",
+      "bytes": 695,
+      "qaMarkers": false,
+      "supabaseHosts": []
+    },
+    {
+      "path": "/assets/recoveryContext-CLZCbMrN.js",
+      "status": 200,
+      "success": true,
+      "mime": "application/javascript; charset=utf-8",
+      "bytes": 156413,
+      "qaMarkers": false,
+      "supabaseHosts": []
+    },
+    {
+      "path": "/assets/actorOperationalHandoff-C95-U4xW.js",
+      "status": 200,
+      "success": true,
+      "mime": "application/javascript; charset=utf-8",
+      "bytes": 19383,
+      "qaMarkers": false,
+      "supabaseHosts": []
+    },
+    {
+      "path": "/assets/buttons-DDqMnPSN.css",
+      "status": 200,
+      "success": true,
+      "mime": "text/css; charset=utf-8",
+      "bytes": 17724,
+      "qaMarkers": false,
+      "supabaseHosts": []
+    },
+    {
+      "path": "/assets/index-CcDD_Igj.css",
+      "status": 200,
+      "success": true,
+      "mime": "text/css; charset=utf-8",
+      "bytes": 123817,
+      "qaMarkers": false,
+      "supabaseHosts": []
+    },
+    {
+      "path": "/sw.js",
+      "status": 200,
+      "success": true,
+      "mime": "application/javascript; charset=utf-8",
+      "bytes": 30320,
+      "qaMarkers": false,
+      "supabaseHosts": []
+    },
+    {
+      "path": "/manifest.webmanifest",
+      "status": 200,
+      "success": true,
+      "mime": "application/manifest+json; charset=utf-8",
+      "bytes": 467,
+      "qaMarkers": false,
+      "supabaseHosts": []
+    }
+  ]
+}

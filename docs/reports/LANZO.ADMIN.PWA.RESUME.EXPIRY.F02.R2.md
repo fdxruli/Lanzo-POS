@@ -1,13 +1,13 @@
 # LANZO POS — FASE 3.2A.7 — F-02 ONLY
 
 Fecha: 22 de octubre de 2026, America/Mexico_City.
-Estado de este checkpoint: **ADMISSIBLE_FOR_DRAFT; PENDING_REMOTE_GATES**. QA físico PENDING; merge NOT PERFORMED.
+Estado de este checkpoint: **READY_FOR_OWNER_QA**. QA físico PENDING; merge NOT PERFORMED.
 
 ## 1. Resultado y baseline
 
 F-02 reconstruido sobre `main` `9ca65fc07804f40c2add5e59bee0e6edca940b8f`, que integra M-01 mediante PR #367. No se recuperó ni usó el commit local perdido 11888796. Se verificaron GitHub, los PR abiertos y los worktrees. Clon nuevo y worktrees independientes; un checkout anterior tenía cambios ajenos, y los worktrees históricos de M-01 apuntaban a un gitdir desaparecido. No se alteraron. No hay AGENTS.md aplicable en el árbol.
 
-Rama: `fix/admin-pwa-resume-expiry-f02-r2`. Main inicial es el anterior; el SHA final se reconsulta al cierre. Los checkpoints remotos y su correspondencia de árboles están en el informe de evidencia. Git push carecía de credenciales; los objetos/commits se preservan mediante el conector GitHub, sin force push. A está referenciado por `audit/admin-resume-f02-r2-checkpoints`; B/C son predecesores recuperables por SHA y quedan alcanzables desde la publicación final.
+Rama: `fix/admin-pwa-resume-expiry-f02-r2`. Main inicial/final reconsultado: el mismo SHA anterior. Los checkpoints remotos y su correspondencia de árboles están en el informe de evidencia. Git push carecía de credenciales; los objetos/commits se preservan mediante el conector GitHub, sin force push. A está referenciado por `audit/admin-resume-f02-r2-checkpoints`; B/C son predecesores recuperables por SHA y quedan alcanzables desde la publicación final.
 
 Antecedentes consultados: auditoría PWA 3, implementación 3.2, resolución B-01, F02 R1, Late Context Hardening, V1 Stability Audit/Evidence y M01 Only/Evidence. Los informes PWA y hardening se leyeron desde sus copias previas; los de estabilidad desde sus archivos actuales identificados en Library. M-01 y sus pruebas se leyeron en el main actual, junto con el PR #367 mergeado. Los resultados históricos no certifican esta candidata.
 
@@ -105,7 +105,7 @@ FIN-01/02/04…10 conservan contratos/diff y regresiones existentes: no crear ve
 
 Dexie Recovery: 127/127 PASS en archivos únicos del workflow, sin cambios de schema. Arquitectura/precache/packaging: 70/70 PASS tras finalizar builds. Admin+postbuild, Store y Store Vercel: PASS tanto base como candidata; auditoría Admin verifica 24 startup assets, 0 core Local route assets. PWA/worker/upgrade bridge se incluyen en auth-license-pwa y arquitectura, sin modificar SW. ESLint focal y diff-check PASS; avisos externos npm proxy/baseline-browser-mapping y avisos Vite preexistentes conservados. No se cambian dependencias/lockfile, thresholds, exclusiones o comparadores.
 
-Global inicial: base 5637 PASS / 75 FAIL / 52 SKIP / 5764 total; candidata 5675 PASS / 75 FAIL / 52 SKIP / 5802 total. Se repite candidata al añadir tres tests de interleavings; el resultado final y PR127 se anexan en evidencia antes de publicar Draft. El diferencial inicial oficial muestra 91 identidades compartidas, 0 exclusivas/nuevas/sin resolver. Los fallos globales no son verde; identities incluyen file failures. Targets=[]: cero repeticiones focales, no veinte PASS inventados.
+Global inicial: base 5637 PASS / 75 FAIL / 52 SKIP / 5764 total; candidata 5675 PASS / 75 FAIL / 52 SKIP / 5802 total. Se repitió candidata al añadir tres tests de interleavings: final 5678 PASS / 75 FAIL / 52 SKIP / 5805 total; PR127 final OK con 91 compartidas y cero nuevas/exclusivas/sin resolver. Auth/tenant/license/PWA final 614/614; F02/helper 41/41. El diferencial inicial oficial muestra 91 identidades compartidas, 0 exclusivas/nuevas/sin resolver. Los fallos globales no son verde; identities incluyen file failures. Targets=[]: cero repeticiones focales, no veinte PASS inventados.
 
 ## 9. Integración con PR #338 / #352
 
@@ -115,7 +115,7 @@ Merge-tree contra candidata de producto: #338 conflicto en controller; #352 conf
 
 ## 10. Remoto y Preview
 
-PENDING hasta observar el SHA candidato exacto. Los gates aplicables son Actor Runtime, Actor Scoped Storage y PR127; los path filters de Dexie no incluyen App ni licenseMaintenanceActions. Un workflow omitido/no disparado no se declarará SUCCESS. No se modifican workflows ni triggers para obtener verde.
+Verificado sobre el SHA candidato exacto D: los cuatro workflows terminaron SUCCESS. Los gates aplicables son Actor Runtime, Actor Scoped Storage y PR127; Dexie también se dispara por src/App.jsx, src/pwa/** y src/store/**; se observó su run para este HEAD. Un workflow omitido/no disparado no se declarará SUCCESS. No se modifican workflows ni triggers para obtener verde.
 
 Proyecto confirmado: lanzo-pos `prj_tE5uWn6kLBYdS1eDFWVxRm449RUr`, team `team_buvft2mAJErTNR8gDhXcZGfS`, repositorio conectado correcto. Sólo Preview, nunca Production. Se acreditarán rama/SHA/READY, HTML, assets, SW y manifest. Si el bundle apunta al Supabase de producción se harán únicamente lecturas estáticas; no login, device registration, licencias ni operaciones reales. Los fixtures de QA no se añaden al entrypoint ni al precache comercial. La auditoría de assets finales debe verificar esa separación.
 
@@ -147,3 +147,132 @@ F02 IMPLEMENTED; M01 PRESERVED; M03/F01/Authority v2 NOT INCLUDED. AC01…12 y A
 MIGRATIONS=NONE; SUPABASE_CALLS=NONE; SUPABASE_PRODUCTION_WRITES=NONE; USER_IDB_CLEARED=NO; AUTO_CASH_CLOSE=NO; FINANCIAL_LIVE_OPERATIONS=NONE. QA físico PENDING. Merge NOT PERFORMED y NO AUTORIZADO en este encargo.
 
 Riesgos residuales: LC13/legacy, relojes por documento y sueño según OS, notificación/render React tras el evento, inexistencia de evaluación periódica mientras no llega señal ni operación, remoto iniciado fuera del helper, almacenamiento inaccesible y QA física pendiente. No se infiere exclusividad de ausencia de BC ni de una generación nueva. Si CI o Preview no se acreditan, cerrar HOLD_CI/HOLD_PREVIEW, nunca READY_FOR_OWNER_QA por resultados históricos.
+
+## 13. Cierre remoto — observaciones verificadas
+
+PR [#369](https://github.com/fdxruli/Lanzo-POS/pull/369), OPEN/Draft, mergeable al consultar, sin merge. HEAD exacto D `eb9edff47cf16dad17f1bb80c5bca288edab0dbf`, árbol `850daba0d3134ed1c1baf81ccd0238cc08a51926`, idéntico al checkpoint local D `0da89325`. Remotos A/B/C conservan asimismo árboles idénticos a sus homólogos locales. E es cierre documental descendiente de D; no mueve el HEAD del PR ni atribuye a E la CI de D.
+
+- PR127 [39736113437](https://github.com/fdxruli/Lanzo-POS/actions/runs/39736113437): **SUCCESS**. Artefacto 12407945362, digest SHA-256 `f2a763b2bdeb956d00c2eb4dbfed8455b7c40ae9ef80372762347d4604532348` verificado tras descargar. Comparador OK: 99 identidades compartidas, 0 exclusivas/nuevas/sin resolver; targets vacíos. Las 99 remotas y 91 locales proceden de sus entornos respectivos; no se presentan como tests diferentes o cero fallos globales.
+- Dexie Recovery [39736113220](https://github.com/fdxruli/Lanzo-POS/actions/runs/39736113220): **SUCCESS**, incluidas ocho selecciones focales, calidad, builds y arquitectura. Checkout por defecto del merge temporal GitHub `51c3ee36064c3c27584844064215870571dd706c`, con padres main y D; árbol **exactamente idéntico** a D, comprobado mediante Git API. La asociación del workflow es al HEAD D; no es un merge del PR realizado por esta tarea.
+- Runtime [39736113232](https://github.com/fdxruli/Lanzo-POS/actions/runs/39736113232): **SUCCESS** agregado, incluidas dos suites globales por lado y diferencial; siete targets 50/50 por lado. Publicación idempotente de informe **SKIPPED** por filtro de rama, no se presenta como PASS.
+- Scoped Storage [39736113552](https://github.com/fdxruli/Lanzo-POS/actions/runs/39736113552): **SUCCESS** agregado: dos suites globales por lado, 350 repeticiones focales por lado, Lía 50/50 por lado y controles NEG-01/02/03 PASS. Diferencial: 93 observaciones heredadas estables compartidas y cero regresiones nuevas. Su selección POS observacional conserva 11 fallos brutos conocidos (document undefined/historial móvil); el éxito del job no se interpreta como todas sus suites verdes. La atribución queda acreditada por los diferenciales repetidos y PR127; los 11 fallos POS coinciden con sharedFailures remotos.
+
+Preview [lanzo-e9rhyjwha-fdxrulis-projects.vercel.app](https://lanzo-e9rhyjwha-fdxrulis-projects.vercel.app/), deployment `dpl_GBfvM63LcyG1VfSV9rphPkowF1Sf`, proyecto lanzo-pos, target Preview (`target:null` en API), **READY**, rama y SHA D exactos verificados. HTML + diez recursos iniciales + SW + manifest responden HTTP 200 con MIME correcto; no se observan marcadores de fixtures F02 en esos recursos. Auditoría local de producción: 36 archivos JS/HTML/JSON revisados, cero marcadores de fixtures. No se añade una ruta QA al build comercial.
+
+El entry compilado apunta a `https://odlrhijtfyavryeqivaa.supabase.co`, backend de producción. Sólo se hicieron GET estáticos de recursos y lecturas de metadatos: ningún login, registro/liberación de dispositivo, RPC, licencia ni operación financiera. No se ejecutó la aplicación comercial en un perfil real para estas comprobaciones. Los módulos de producto siguen siendo los tres declarados; no se añaden funcionalidades comerciales. CI/Preview de Store no se inventan: se certifican localmente sus dos builds y la Preview administrativa real.
+
+QA-F02-01..12 permanece PENDING; LC13 permanece abierto. Las conclusiones agregadas Runtime/Scoped son SUCCESS y la Preview está acreditada: estado general **READY_FOR_OWNER_QA**.
+
+La reconsulta de PR abiertos también identifica #368, OPEN/Draft/HOLD, rama `codex/ecom-realtime-auth-1a2`, HEAD inicial observado `692237efe717de008cf15ee6231cb7ae32fe1a3f`, actualizado externamente a `3355288f5f59213443283475f3df5a7a7fde14ed` al cierre. Se revisó su inventario actualizado: ecomSignalReceiver, ecomSignalActorAdapter, useEcomSignalQa, tests/workflow de validación, tooling, candidatos SQL, función QA e informes; no solapa los tres archivos de producto F02. No se integró ni modificó esa rama ni se ejecutó su SQL/función. Esto no certifica sus cambios Auth/Realtime ni levanta su HOLD.
+
+Los 11 fallos POS observacionales del job Scoped se atribuyeron por archivo/nombre a sharedFailures del PR127 remoto: **11/11 coinciden**, cero sin atribuir. La evidencia remote-scoped-pos-attribution.json conserva el cruce; no transforma esos fallos brutos en assertions aprobadas.
+
+## 14. Entrega obligatoria — estado del cierre
+
+**LANZO POS — FASE 3.2A.7 — F-02 ONLY**
+
+Estado: READY_FOR_OWNER_QA.
+
+Repositorio: fdxruli/Lanzo-POS.
+
+Main HEAD inicial: 9ca65fc07804f40c2add5e59bee0e6edca940b8f.
+
+Main HEAD final: 9ca65fc07804f40c2add5e59bee0e6edca940b8f.
+
+Rama: fix/admin-pwa-resume-expiry-f02-r2.
+
+PR Draft: #369 OPEN/Draft, sin merge.
+
+HEAD candidata: eb9edff47cf16dad17f1bb80c5bca288edab0dbf.
+
+Checkpoint recuperable: A/B/C/D remotos, D en la rama anterior; E documental identificado en entrega.
+
+**Alcance**
+
+F-02: IMPLEMENTED. M-01: PRESERVED. M-03: NOT INCLUDED. F-01: NOT INCLUDED. Authority v2: NOT INCLUDED.
+
+**Seguridad**
+
+Admin vigente: PASS, grant/deadline/durable/handles intactos.
+
+Admin vencido: PASS, LOCKED local al evento, publicación canónica/React.
+
+Límite 168h: PASS sin ampliar, prevalece deadline más corto.
+
+Staff offline: DENIED por política existente, sin permisos nuevos.
+
+EXP-F02-14: PASS F02+M01, sesión posterior preservada.
+
+Revocación vigente: PASS, sustitución durable actual bloquea anterior.
+
+LC13: OPEN / FAIL PREEXISTING secuencial/concurrente/pending/finally; no fencing global.
+
+Tenant: PASS fronteras probadas; timer obsoleto descartado.
+
+Respuestas tardías: PASS guards existentes y efecto protegido diferido; no garantía nueva sobre callbacks arbitrarios.
+
+Operaciones pendientes: PASS tracked/persistencia de suites; sin transferencia, borrado o reload.
+
+**Validación**
+
+EXP-F02 01..16: PASS en fronteras automatizadas de matriz, con límites físicos/E2E explícitos.
+
+RESUME 01..10: PASS en helper/integraciones declaradas.
+
+Chromium: lifecycle 15 PASS/5 FAIL baseline; compatibilidad 12 PASS/21 FAIL LC13/1 limitación; 0 errores harness.
+
+Auth/tenant: 614/614 PASS grupo auth/tenant/licencia/PWA.
+
+Finanzas: 188/188 PASS, no venta E2E live.
+
+Dexie Recovery: local 127/127 PASS; remoto SUCCESS.
+
+PWA: suites lifecycle/SW/upgrade incluidas; arquitectura/precache/packaging 70/70 PASS.
+
+Build Admin: PASS base/candidata + postbuild.
+
+Build Store: PASS base/candidata.
+
+Build Store Vercel: PASS base/candidata.
+
+PR127 local: OK, 91 compartidas, 0 nuevas/exclusivas/sin resolver.
+
+PR127 remoto: SUCCESS, 99 compartidas, 0 nuevas/exclusivas/sin resolver.
+
+Actor Runtime remoto: SUCCESS; publicación condicional SKIPPED por rama.
+
+Actor Scoped Storage remoto: SUCCESS, diferencial y controles negativos incluidos.
+
+Otros workflows: Dexie SUCCESS; publicación condicional Runtime SKIPPED por filtro de rama, no PASS. No se observaron otros workflows aplicables para D.
+
+Preview URL: https://lanzo-e9rhyjwha-fdxrulis-projects.vercel.app/ — READY, Preview, lanzo-pos.
+
+Preview SHA: eb9edff47cf16dad17f1bb80c5bca288edab0dbf.
+
+**Integración**
+
+PR #338: OPEN/Draft, intacto; drift/conflicto controller.
+
+PR #352: OPEN/Draft, intacto; conflictos auth/App/SW/workflows, integración posterior separada.
+
+También #368 OPEN/Draft/HOLD, intacto y sin solapamiento directo de archivos de producto F02.
+
+Migraciones: NONE. Supabase production writes: NONE. QA físico: PENDING. Merge: NOT PERFORMED.
+
+**Conclusión**
+
+1. ¿La interfaz reconoce vencimiento después de reanudarse? Sí, mediante publicación canónica y suscripción React, sin red.
+2. ¿Se conserva Admin vigente? Sí, sin nueva concesión/evidencia ni extensión por la evaluación local.
+3. ¿M-01 impide el falso bloqueo de sesiones posteriores? Sí en las fronteras EXP14/mensajería probadas; LC13 sigue separado.
+4. ¿Se preservan autorizaciones y offline? Sí, dentro de las políticas y límites existentes.
+5. ¿Nuevas regresiones? Ninguna en diferencial local, PR127 remoto y diferenciales repetidos Runtime/Scoped; se conservan los fallos heredados.
+6. ¿Lista para QA propietario? Sí: READY_FOR_OWNER_QA. QA físico permanece pendiente y no hay autorización de merge.
+
+
+## 15. Verificación final y conservación E
+
+Los cuatro workflows agregados del HEAD D están SUCCESS: PR127 39736113437, Dexie 39736113220, Actor Runtime 39736113232 y Actor Scoped Storage 39736113552. En Runtime y Scoped, los siete targets pasan 50/50 en ambos lados; cada lado ejecutó además dos globales con los mismos 75 tests fallidos y 52 omitidos. Sus diferenciales conservan 93 observaciones heredadas estables, cero nuevas, cero semánticas exclusivas y cero incremento significativo de fallos. Scoped añade Lía 50/50 en ambos lados y NEG-01/02/03 PASS. Los grupos y repeticiones no se suman como tests únicos.
+
+E conserva los ZIP originales de base/candidata/diferencial de Runtime y Scoped, el ZIP PR127, evidencia Dexie y metadatos, junto con hashes SHA-256. Su branch `audit/admin-resume-f02-r2-closure` desciende de D y sólo cambia informes/evidencia; no modifica fuentes, tests o configuración. No se atribuye a E una ejecución nueva de CI. El PR y su Preview permanecen en D. Main final reconsultado sigue en 9ca65fc0; #338/#352 conservan sus HEAD y Draft, y #369 sigue OPEN/Draft/mergeable, sin merge.
+
+El SHA E se entrega con estos informes después de crear el commit; no se inserta un hash circular en su propio contenido. Los checkpoints A/B/C/D quedan alcanzables desde E y desde la rama del PR. El propietario debe realizar QA-F02-01..12 y revisar los límites LC13 antes de autorizar cualquier integración posterior.

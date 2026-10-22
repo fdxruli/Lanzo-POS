@@ -1,6 +1,6 @@
 # LANZO POS — F02 R2 — EVIDENCE
 
-Fecha: 22 de octubre de 2026, America/Mexico_City. Estado local: **ADMISSIBLE_FOR_DRAFT**; CI/Preview pendientes de observación remota. QA físico PENDING; merge NOT PERFORMED.
+Fecha: 22 de octubre de 2026, America/Mexico_City. Estado: **READY_FOR_OWNER_QA**, CI y Preview del HEAD D verificadas. QA físico PENDING; merge NOT PERFORMED.
 
 ## Fuentes y checkpoints
 
@@ -84,4 +84,38 @@ La matriz EXP16 y RESUME07 comprueba un efecto protegido sintético/contador cer
 
 LC13 sequential/concurrent/pending/finally permanece FAIL base/candidata. No exclusividad universal, CAS ni fencing financiero global. No se alteran F01/M03/Authority v2. HTTP LAN conserva el protocolo anterior y no introduce APIs de contexto seguro nuevas; QA física LAN/PWA/Windows/Android pendiente.
 
-El cierre remoto añadirá CI del SHA exacto, artefactos y hashes, Preview READY/target/SHA, lectura estática de HTML/assets/SW/manifest y backend compilado sin credenciales. No se reutilizan resultados de #367. Dexie workflow fuera de sus path filters: no llamarlo SUCCESS si no se dispara. Sin migraciones, llamadas Supabase, escrituras de producción, login live, device registration/release, limpieza de usuario, cierre de caja o merge.
+El cierre remoto incorpora CI del SHA exacto, artefactos y hashes, Preview READY/target/SHA, lectura estática de HTML/assets/SW/manifest y backend compilado sin credenciales. No se reutilizan resultados de #367. Dexie workflow sí aplica por src/App.jsx/src/pwa/**/src/store/**; su conclusión se registra tras finalizar. Sin migraciones, llamadas Supabase, escrituras de producción, login live, device registration/release, limpieza de usuario, cierre de caja o merge.
+
+## Remoto D observado durante cierre
+
+PR #369 HEAD eb9edff47cf16dad17f1bb80c5bca288edab0dbf, tree 850daba0d3134ed1c1baf81ccd0238cc08a51926. Checkpoint C remoto tree 7b6b1120ae0773ccc6330be486f29cbee2e40840; B tree f139f06254f9743f097690455698dfa900a74478; A tree 3e5d0ddc610c6aeb2222fcad79c60f5e6045131a. Los árboles locales correspondientes coinciden; se fetchó la rama D y git diff entre ambos árboles quedó vacío.
+
+PR127 run 39736113437 SUCCESS; ZIP 12407945362 descargado con hash f2a763b2bdeb956d00c2eb4dbfed8455b7c40ae9ef80372762347d4604532348 igual al digest GitHub. global-comparison.json: status OK, sharedFailures=99, candidateFailures=99, baseFailures=99, rawCandidateOnlyFailures/newFailures/unresolvedFailures=0; targets=[]; no repetir como PASS focales que no se ejecutaron.
+
+Dexie run 39736113220 SUCCESS; sus nombres de artefactos contienen merge SHA 51c3ee36064c3c27584844064215870571dd706c. El árbol se verificó idéntico a D y sus padres son main 9ca65fc0 y D eb9edff4. ZIP de la selección database-recovery-gate 12407038860: SHA-256 e5277a216f77ae598bcdcc140efe7588ef333b86375fe6ab98c4d7ae66d6786d verificado contra digest. No se atribuyen tests al SHA del nombre sin comprobar esa equivalencia.
+
+Los logs completos de los jobs focales Runtime/Scoped se guardan gzip. Se normalizó sólo CRLF→LF al materializarlos desde texto y el helper de escritura añade el salto final; no se afirma identidad binaria con un ZIP de logs. Scoped incluye 11 fallos brutos observacionales, no una suite global verde. Se conserva esa salida y se verifica su atribución final con los diferenciales.
+
+preview-static-audit.json: HTML/10 startup resources/SW/manifest HTTP200 y MIME. local-production-qa-boundary.json: 36 archivos, cero marcadores sintéticos. Backend compilado corresponde a producción; cero login/RPC/device mutations. Deployment exacto y estado READY se documentan en informe. No guardar URLs firmadas de descarga ni credenciales en los artefactos.
+
+
+## Cierre remoto final E
+
+Actor Runtime 39736113232 y Scoped Storage 39736113552: SUCCESS agregados. Dos globales por lado: BASE 5637 PASS/75 FAIL/52 SKIP; CANDIDATE 5678 PASS/75 FAIL/52 SKIP. En ambos diferenciales: 93 observaciones heredadas estables compartidas y newRegressionCount=0. Runtime focused-target-differential: cero semánticas exclusivas observadas/de regresión y cero aumento de tasa. Siete targets 50/50 por lado, sin notExecuted/unreadable. Scoped además Lía 50/50 por lado y pasos NEG-01/02/03 SUCCESS; ZIP candidato conserva el resumen explícito PASS de NEG-02/03. La publicación condicional de informe Runtime queda SKIPPED por rama, sin declararla PASS.
+
+ZIP originales verificados contra digest GitHub:
+
+| Archivo | SHA-256 |
+| --- | --- |
+| remote-runtime-base-D.zip | 72155c0cfd85d2b159dc052b50c92bac43160aaaa1527a3d6d5ecf16d240cd33 |
+| remote-runtime-candidate-D.zip | 83599071ab54a65b0895b610b109916957b07573fd2144daa4a7d83bd69f47ba |
+| remote-runtime-differential-D.zip | e217e1b3335e289f983a52613fce9e7fd543e4005988eeccbff1e3e369901021 |
+| remote-scoped-base-D.zip | fb5561b50e0d469a42bd6bda7a5bd54146f2feec5bd3d47fbb12bf6d84881d72 |
+| remote-scoped-candidate-D.zip | ae2a5ee5ec224c14ebd725d41f8fc99266e903298223fb6ee59ba730e00a1939 |
+| remote-scoped-differential-D.zip | 9544644a639afed791176ef197a744b382a8e8dc9157c7213c095e6ae740e3d0 |
+
+remote-ci-final.json conserva run IDs, head SHA y resultados por paso; artifact-hashes.json cubre todos los artefactos. Los ZIP incluyen los JSON/logs brutos originales; los informes no confunden los exits rojos heredados con suites verdes. Los metadatos no contienen URLs firmadas de descarga.
+
+El cierre documental E se publica como descendiente de D en audit/admin-resume-f02-r2-closure; fuente de producto/tests/configuración idéntica a D y sólo docs/evidencia nuevas. D sigue siendo HEAD del PR #369 y SHA de Preview/CI. Main final sigue en 9ca65fc07804f40c2add5e59bee0e6edca940b8f. PR #338/#352 intactos; #368 cambió externamente a 3355288f5f59213443283475f3df5a7a7fde14ed y conserva áreas ecom/QA sin solapamiento directo con los tres archivos F02; su integración no se certifica ni se ejecuta.
+
+QA físico PENDING; LC13 OPEN; migraciones y escrituras Supabase NONE; merge NOT PERFORMED. El SHA del commit E que contiene este informe se entrega después de crearlo, evitando una autorreferencia imposible.

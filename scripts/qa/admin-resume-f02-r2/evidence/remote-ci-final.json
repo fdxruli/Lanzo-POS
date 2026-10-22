@@ -1,0 +1,1102 @@
+{
+  "testedSha": "eb9edff47cf16dad17f1bb80c5bca288edab0dbf",
+  "testedTree": "850daba0d3134ed1c1baf81ccd0238cc08a51926",
+  "main": "9ca65fc07804f40c2add5e59bee0e6edca940b8f",
+  "workflows": [
+    {
+      "id": 39736113232,
+      "name": "Shared Terminal Actor Runtime Validation",
+      "status": "completed",
+      "conclusion": "success",
+      "run_number": 386,
+      "jobs_url": "https://api.github.com/repos/fdxruli/Lanzo-POS/actions/runs/39736113232/jobs",
+      "logs_url": "https://api.github.com/repos/fdxruli/Lanzo-POS/actions/runs/39736113232/logs",
+      "workflow_id": 335943579
+    },
+    {
+      "id": 39736113437,
+      "name": "PR127 Global Comparison",
+      "status": "completed",
+      "conclusion": "success",
+      "run_number": 1143,
+      "jobs_url": "https://api.github.com/repos/fdxruli/Lanzo-POS/actions/runs/39736113437/jobs",
+      "logs_url": "https://api.github.com/repos/fdxruli/Lanzo-POS/actions/runs/39736113437/logs",
+      "workflow_id": 320004704
+    },
+    {
+      "id": 39736113220,
+      "name": "HOTFIX Dexie Recovery Validation",
+      "status": "completed",
+      "conclusion": "success",
+      "run_number": 667,
+      "jobs_url": "https://api.github.com/repos/fdxruli/Lanzo-POS/actions/runs/39736113220/jobs",
+      "logs_url": "https://api.github.com/repos/fdxruli/Lanzo-POS/actions/runs/39736113220/logs",
+      "workflow_id": 319315005
+    },
+    {
+      "id": 39736113552,
+      "name": "Shared Terminal Actor Scoped Storage Validation",
+      "status": "completed",
+      "conclusion": "success",
+      "run_number": 208,
+      "jobs_url": "https://api.github.com/repos/fdxruli/Lanzo-POS/actions/runs/39736113552/jobs",
+      "logs_url": "https://api.github.com/repos/fdxruli/Lanzo-POS/actions/runs/39736113552/logs",
+      "workflow_id": 337425295
+    }
+  ],
+  "jobs": {
+    "runtime": [
+      {
+        "id": 119682054066,
+        "name": "Resolve current PR base commit",
+        "status": "completed",
+        "conclusion": "success",
+        "run_id": 39736113232,
+        "logs_url": null,
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1
+          },
+          {
+            "name": "Checkout current base branch",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2
+          },
+          {
+            "name": "Capture immutable base SHA",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3
+          },
+          {
+            "name": "Post Checkout current base branch",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 6
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 7
+          }
+        ]
+      },
+      {
+        "id": 119682054388,
+        "name": "Full suite CANDIDATE repeated (observational)",
+        "status": "completed",
+        "conclusion": "success",
+        "run_id": 39736113232,
+        "logs_url": null,
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1
+          },
+          {
+            "name": "Checkout exact candidate evidence tools",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2
+          },
+          {
+            "name": "Checkout exact candidate HEAD",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3
+          },
+          {
+            "name": "Setup Node",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4
+          },
+          {
+            "name": "Install dependencies",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5
+          },
+          {
+            "name": "Build CANDIDATE validation artifacts",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 6
+          },
+          {
+            "name": "CANDIDATE PublicStore focused repetitions (fail-closed evidence)",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 7
+          },
+          {
+            "name": "CANDIDATE raw full-suite repetitions",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 8
+          },
+          {
+            "name": "Record CANDIDATE raw results",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 9
+          },
+          {
+            "name": "Upload CANDIDATE full-suite evidence",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 10
+          },
+          {
+            "name": "Post Setup Node",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 18
+          },
+          {
+            "name": "Post Checkout exact candidate HEAD",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 19
+          },
+          {
+            "name": "Post Checkout exact candidate evidence tools",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 20
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 21
+          }
+        ]
+      },
+      {
+        "id": 119682102790,
+        "name": "Focused ActorRuntime / tenant / auth / lint / builds",
+        "status": "completed",
+        "conclusion": "success",
+        "run_id": 39736113232,
+        "logs_url": null,
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1
+          },
+          {
+            "name": "Checkout exact candidate HEAD",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2
+          },
+          {
+            "name": "Validate comparison refs",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3
+          },
+          {
+            "name": "PR-local blocking whitespace hygiene",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4
+          },
+          {
+            "name": "Manual whitespace hygiene classification",
+            "status": "completed",
+            "conclusion": "skipped",
+            "number": 5
+          },
+          {
+            "name": "Historical contract-base whitespace observation",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 6
+          },
+          {
+            "name": "Setup Node",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 7
+          },
+          {
+            "name": "Install dependencies",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 8
+          },
+          {
+            "name": "Focused evidence runner tests",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 9
+          },
+          {
+            "name": "ActorRuntime focused tests",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 10
+          },
+          {
+            "name": "Admin authentication preparation recovery R1",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 11
+          },
+          {
+            "name": "Tenant isolation and recovery regression",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 12
+          },
+          {
+            "name": "Authentication regression",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 13
+          },
+          {
+            "name": "Relevant ESLint",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 14
+          },
+          {
+            "name": "npm run build",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 15
+          },
+          {
+            "name": "npm run build:store",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 16
+          },
+          {
+            "name": "Post Setup Node",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 31
+          },
+          {
+            "name": "Post Checkout exact candidate HEAD",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 32
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 33
+          }
+        ]
+      },
+      {
+        "id": 119682102823,
+        "name": "Full suite BASE repeated (observational)",
+        "status": "completed",
+        "conclusion": "success",
+        "run_id": 39736113232,
+        "logs_url": null,
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1
+          },
+          {
+            "name": "Checkout exact candidate evidence tools",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2
+          },
+          {
+            "name": "Checkout exact BASE SHA",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3
+          },
+          {
+            "name": "Setup Node",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4
+          },
+          {
+            "name": "Install dependencies",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5
+          },
+          {
+            "name": "Build BASE validation artifacts",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 6
+          },
+          {
+            "name": "BASE PublicStore focused repetitions (fail-closed evidence)",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 7
+          },
+          {
+            "name": "BASE raw full-suite repetitions",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 8
+          },
+          {
+            "name": "Record BASE raw results",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 9
+          },
+          {
+            "name": "Upload BASE full-suite evidence",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 10
+          },
+          {
+            "name": "Post Setup Node",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 18
+          },
+          {
+            "name": "Post Checkout exact BASE SHA",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 19
+          },
+          {
+            "name": "Post Checkout exact candidate evidence tools",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 20
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 21
+          }
+        ]
+      },
+      {
+        "id": 119689516009,
+        "name": "Differential repeated full-suite regression gate",
+        "status": "completed",
+        "conclusion": "success",
+        "run_id": 39736113232,
+        "logs_url": null,
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1
+          },
+          {
+            "name": "Checkout exact candidate HEAD",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2
+          },
+          {
+            "name": "Validate evidence artifact IDs",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3
+          },
+          {
+            "name": "Download BASE evidence",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4
+          },
+          {
+            "name": "Download CANDIDATE evidence",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5
+          },
+          {
+            "name": "Compare repeated BASE vs CANDIDATE failure envelope",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 6
+          },
+          {
+            "name": "Upload differential evidence",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 7
+          },
+          {
+            "name": "Post Checkout exact candidate HEAD",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 14
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 15
+          }
+        ]
+      },
+      {
+        "id": 119689609252,
+        "name": "Publish idempotent closeout report",
+        "status": "completed",
+        "conclusion": "skipped",
+        "run_id": 39736113232,
+        "logs_url": null,
+        "steps": null
+      }
+    ],
+    "scoped": [
+      {
+        "id": 119682055961,
+        "name": "Full suite CANDIDATE repeated (observational)",
+        "status": "completed",
+        "conclusion": "success",
+        "run_id": 39736113552,
+        "logs_url": null,
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1
+          },
+          {
+            "name": "Checkout exact candidate HEAD",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2
+          },
+          {
+            "name": "Validate CANDIDATE checkout",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3
+          },
+          {
+            "name": "Checkout exact candidate evidence tools",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4
+          },
+          {
+            "name": "Setup Node",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5
+          },
+          {
+            "name": "Install dependencies",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 6
+          },
+          {
+            "name": "Build CANDIDATE validation artifacts",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 7
+          },
+          {
+            "name": "CANDIDATE PublicStore and Ecommerce focused regression evidence (50 repetitions per target)",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 8
+          },
+          {
+            "name": "CANDIDATE raw full-suite repetitions",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 9
+          },
+          {
+            "name": "CANDIDATE Vitest discovery isolation negative control",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 10
+          },
+          {
+            "name": "CANDIDATE CommercialAIAgents duplicate-submit test (50 independent runs)",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 11
+          },
+          {
+            "name": "NEG-02/03 duplicate analysis and history mutation controls",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 12
+          },
+          {
+            "name": "Record CANDIDATE raw results",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 13
+          },
+          {
+            "name": "Upload CANDIDATE full-suite evidence",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 14
+          },
+          {
+            "name": "Post Setup Node",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 26
+          },
+          {
+            "name": "Post Checkout exact candidate evidence tools",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 27
+          },
+          {
+            "name": "Post Checkout exact candidate HEAD",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 28
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 29
+          }
+        ]
+      },
+      {
+        "id": 119682056185,
+        "name": "Resolve current PR base commit",
+        "status": "completed",
+        "conclusion": "success",
+        "run_id": 39736113552,
+        "logs_url": null,
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1
+          },
+          {
+            "name": "Checkout current base branch",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2
+          },
+          {
+            "name": "Capture immutable base SHA",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3
+          },
+          {
+            "name": "Post Checkout current base branch",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 6
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 7
+          }
+        ]
+      },
+      {
+        "id": 119682100717,
+        "name": "Actor storage / handoff / tenant / sync / POS / lint / builds",
+        "status": "completed",
+        "conclusion": "success",
+        "run_id": 39736113552,
+        "logs_url": null,
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1
+          },
+          {
+            "name": "Checkout exact candidate HEAD",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2
+          },
+          {
+            "name": "Validate comparison refs",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3
+          },
+          {
+            "name": "PR-local blocking whitespace hygiene",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4
+          },
+          {
+            "name": "Historical contract-base whitespace observation",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5
+          },
+          {
+            "name": "Setup Node",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 6
+          },
+          {
+            "name": "Install dependencies",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 7
+          },
+          {
+            "name": "Actor storage, authority and handoff focused tests",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 8
+          },
+          {
+            "name": "Real sale and layaway caller contracts under granted actor fixture",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 9
+          },
+          {
+            "name": "Actor and tenant persistence lifecycle tests",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 10
+          },
+          {
+            "name": "Actor-origin outbox focused tests",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 11
+          },
+          {
+            "name": "POS cart / drafts / checkout / restaurant regression observation",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 12
+          },
+          {
+            "name": "Sync / outbox regression observation",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 13
+          },
+          {
+            "name": "Tenant isolation and recovery regression observation",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 14
+          },
+          {
+            "name": "Authentication and shared-device regression observation",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 15
+          },
+          {
+            "name": "Cash regression observation",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 16
+          },
+          {
+            "name": "Relevant ESLint",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 17
+          },
+          {
+            "name": "npm run build",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 18
+          },
+          {
+            "name": "npm run build:store",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 19
+          },
+          {
+            "name": "npm run build:store:vercel",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 20
+          },
+          {
+            "name": "Post Setup Node",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 39
+          },
+          {
+            "name": "Post Checkout exact candidate HEAD",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 40
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 41
+          }
+        ]
+      },
+      {
+        "id": 119682100791,
+        "name": "Full suite BASE repeated (observational)",
+        "status": "completed",
+        "conclusion": "success",
+        "run_id": 39736113552,
+        "logs_url": null,
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1
+          },
+          {
+            "name": "Checkout exact PR comparison BASE SHA",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2
+          },
+          {
+            "name": "Validate BASE checkout",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3
+          },
+          {
+            "name": "Checkout exact candidate evidence tools",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4
+          },
+          {
+            "name": "Setup Node",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5
+          },
+          {
+            "name": "Install dependencies",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 6
+          },
+          {
+            "name": "Build BASE validation artifacts",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 7
+          },
+          {
+            "name": "BASE PublicStore and Ecommerce focused regression evidence (50 repetitions per target)",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 8
+          },
+          {
+            "name": "BASE raw full-suite repetitions",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 9
+          },
+          {
+            "name": "BASE Vitest discovery isolation negative control",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 10
+          },
+          {
+            "name": "BASE CommercialAIAgents duplicate-submit test (50 independent runs)",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 11
+          },
+          {
+            "name": "Record BASE raw results",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 12
+          },
+          {
+            "name": "Upload BASE full-suite evidence",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 13
+          },
+          {
+            "name": "Post Setup Node",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 24
+          },
+          {
+            "name": "Post Checkout exact candidate evidence tools",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 25
+          },
+          {
+            "name": "Post Checkout exact PR comparison BASE SHA",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 26
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 27
+          }
+        ]
+      },
+      {
+        "id": 119693110921,
+        "name": "Differential repeated full-suite regression gate",
+        "status": "completed",
+        "conclusion": "success",
+        "run_id": 39736113552,
+        "logs_url": null,
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1
+          },
+          {
+            "name": "Checkout exact candidate HEAD",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2
+          },
+          {
+            "name": "Validate differential refs",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3
+          },
+          {
+            "name": "Download BASE evidence",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4
+          },
+          {
+            "name": "Download CANDIDATE evidence",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5
+          },
+          {
+            "name": "Compare repeated BASE vs CANDIDATE failure envelope",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 6
+          },
+          {
+            "name": "Upload differential evidence",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 7
+          },
+          {
+            "name": "Post Checkout exact candidate HEAD",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 14
+          },
+          {
+            "name": "Complete job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 15
+          }
+        ]
+      }
+    ]
+  },
+  "artifacts": {
+    "runtime": [
+      {
+        "id": 12408390959,
+        "name": "shared-terminal-full-suite-differential",
+        "size_in_bytes": 17427,
+        "url": "https://api.github.com/repos/fdxruli/Lanzo-POS/actions/artifacts/12408390959",
+        "archive_download_url": "https://api.github.com/repos/fdxruli/Lanzo-POS/actions/artifacts/12408390959/zip",
+        "expired": false,
+        "created_at": "2026-10-22T07:08:23Z",
+        "expires_at": "2027-01-20T06:46:58Z",
+        "updated_at": "2026-10-22T07:08:23Z",
+        "digest": "sha256:e217e1b3335e289f983a52613fce9e7fd543e4005988eeccbff1e3e369901021",
+        "workflow_run": {
+          "id": 39736113232,
+          "repository_id": 1044361831,
+          "head_repository_id": 1044361831,
+          "head_branch": "fix/admin-pwa-resume-expiry-f02-r2",
+          "head_sha": "eb9edff47cf16dad17f1bb80c5bca288edab0dbf"
+        }
+      },
+      {
+        "id": 12407838300,
+        "name": "shared-terminal-base-full-suite",
+        "size_in_bytes": 1243675,
+        "url": "https://api.github.com/repos/fdxruli/Lanzo-POS/actions/artifacts/12407838300",
+        "archive_download_url": "https://api.github.com/repos/fdxruli/Lanzo-POS/actions/artifacts/12407838300/zip",
+        "expired": false,
+        "created_at": "2026-10-22T07:05:45Z",
+        "expires_at": "2027-01-20T06:46:58Z",
+        "updated_at": "2026-10-22T07:05:45Z",
+        "digest": "sha256:72155c0cfd85d2b159dc052b50c92bac43160aaaa1527a3d6d5ecf16d240cd33",
+        "workflow_run": {
+          "id": 39736113232,
+          "repository_id": 1044361831,
+          "head_repository_id": 1044361831,
+          "head_branch": "fix/admin-pwa-resume-expiry-f02-r2",
+          "head_sha": "eb9edff47cf16dad17f1bb80c5bca288edab0dbf"
+        }
+      },
+      {
+        "id": 12407599824,
+        "name": "shared-terminal-candidate-full-suite",
+        "size_in_bytes": 1247451,
+        "url": "https://api.github.com/repos/fdxruli/Lanzo-POS/actions/artifacts/12407599824",
+        "archive_download_url": "https://api.github.com/repos/fdxruli/Lanzo-POS/actions/artifacts/12407599824/zip",
+        "expired": false,
+        "created_at": "2026-10-22T07:08:06Z",
+        "expires_at": "2027-01-20T06:46:58Z",
+        "updated_at": "2026-10-22T07:08:06Z",
+        "digest": "sha256:83599071ab54a65b0895b610b109916957b07573fd2144daa4a7d83bd69f47ba",
+        "workflow_run": {
+          "id": 39736113232,
+          "repository_id": 1044361831,
+          "head_repository_id": 1044361831,
+          "head_branch": "fix/admin-pwa-resume-expiry-f02-r2",
+          "head_sha": "eb9edff47cf16dad17f1bb80c5bca288edab0dbf"
+        }
+      }
+    ],
+    "scoped": [
+      {
+        "id": 12409080669,
+        "name": "shared-terminal-3-full-suite-differential-39736113552",
+        "size_in_bytes": 15955,
+        "url": "https://api.github.com/repos/fdxruli/Lanzo-POS/actions/artifacts/12409080669",
+        "archive_download_url": "https://api.github.com/repos/fdxruli/Lanzo-POS/actions/artifacts/12409080669/zip",
+        "expired": false,
+        "created_at": "2026-10-22T07:18:10Z",
+        "expires_at": "2027-01-20T06:46:59Z",
+        "updated_at": "2026-10-22T07:18:10Z",
+        "digest": "sha256:9544644a639afed791176ef197a744b382a8e8dc9157c7213c095e6ae740e3d0",
+        "workflow_run": {
+          "id": 39736113552,
+          "repository_id": 1044361831,
+          "head_repository_id": 1044361831,
+          "head_branch": "fix/admin-pwa-resume-expiry-f02-r2",
+          "head_sha": "eb9edff47cf16dad17f1bb80c5bca288edab0dbf"
+        }
+      },
+      {
+        "id": 12408183145,
+        "name": "shared-terminal-3-candidate-full-suite-39736113552",
+        "size_in_bytes": 1264462,
+        "url": "https://api.github.com/repos/fdxruli/Lanzo-POS/actions/artifacts/12408183145",
+        "archive_download_url": "https://api.github.com/repos/fdxruli/Lanzo-POS/actions/artifacts/12408183145/zip",
+        "expired": false,
+        "created_at": "2026-10-22T07:17:05Z",
+        "expires_at": "2027-01-20T06:46:59Z",
+        "updated_at": "2026-10-22T07:17:05Z",
+        "digest": "sha256:ae2a5ee5ec224c14ebd725d41f8fc99266e903298223fb6ee59ba730e00a1939",
+        "workflow_run": {
+          "id": 39736113552,
+          "repository_id": 1044361831,
+          "head_repository_id": 1044361831,
+          "head_branch": "fix/admin-pwa-resume-expiry-f02-r2",
+          "head_sha": "eb9edff47cf16dad17f1bb80c5bca288edab0dbf"
+        }
+      },
+      {
+        "id": 12408043404,
+        "name": "shared-terminal-3-base-full-suite-39736113552",
+        "size_in_bytes": 1251934,
+        "url": "https://api.github.com/repos/fdxruli/Lanzo-POS/actions/artifacts/12408043404",
+        "archive_download_url": "https://api.github.com/repos/fdxruli/Lanzo-POS/actions/artifacts/12408043404/zip",
+        "expired": false,
+        "created_at": "2026-10-22T07:17:55Z",
+        "expires_at": "2027-01-20T06:46:59Z",
+        "updated_at": "2026-10-22T07:17:55Z",
+        "digest": "sha256:fb5561b50e0d469a42bd6bda7a5bd54146f2feec5bd3d47fbb12bf6d84881d72",
+        "workflow_run": {
+          "id": 39736113552,
+          "repository_id": 1044361831,
+          "head_repository_id": 1044361831,
+          "head_branch": "fix/admin-pwa-resume-expiry-f02-r2",
+          "head_sha": "eb9edff47cf16dad17f1bb80c5bca288edab0dbf"
+        }
+      }
+    ],
+    "pr127": [
+      {
+        "id": 12407945362,
+        "name": "pr127-global-comparison-eb9edff47cf16dad17f1bb80c5bca288edab0dbf",
+        "size_in_bytes": 47727,
+        "url": "https://api.github.com/repos/fdxruli/Lanzo-POS/actions/artifacts/12407945362",
+        "archive_download_url": "https://api.github.com/repos/fdxruli/Lanzo-POS/actions/artifacts/12407945362/zip",
+        "expired": false,
+        "created_at": "2026-10-22T06:52:31Z",
+        "expires_at": "2026-11-05T06:52:31Z",
+        "updated_at": "2026-10-22T06:52:31Z",
+        "digest": "sha256:f2a763b2bdeb956d00c2eb4dbfed8455b7c40ae9ef80372762347d4604532348",
+        "workflow_run": {
+          "id": 39736113437,
+          "repository_id": 1044361831,
+          "head_repository_id": 1044361831,
+          "head_branch": "fix/admin-pwa-resume-expiry-f02-r2",
+          "head_sha": "eb9edff47cf16dad17f1bb80c5bca288edab0dbf"
+        }
+      }
+    ]
+  },
+  "note": "CI belongs to D; closure E contains documentation/evidence only. No signed download URLs are stored."
+}

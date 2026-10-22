@@ -1,0 +1,68 @@
+[
+  {
+    "file": "src/hooks/pos/__tests__/useEcommercePosCheckoutSingleFlight.test.jsx",
+    "testName": "useEcommercePosCheckoutSingleFlight absorbs twenty rapid clicks, exposes starting and pins the ecommerce target",
+    "sharedPR127": true,
+    "errorClass": "ReferenceError"
+  },
+  {
+    "file": "src/hooks/pos/__tests__/useEcommercePosCheckoutSingleFlight.test.jsx",
+    "testName": "useEcommercePosCheckoutSingleFlight keeps A as the expected target when selection changes to B before the deferred run",
+    "sharedPR127": true,
+    "errorClass": "ReferenceError"
+  },
+  {
+    "file": "src/hooks/pos/__tests__/useEcommercePosCheckoutSingleFlight.test.jsx",
+    "testName": "useEcommercePosCheckoutSingleFlight resets only non-current A when target change aborts before lock acquisition",
+    "sharedPR127": true,
+    "errorClass": "ReferenceError"
+  },
+  {
+    "file": "src/hooks/pos/__tests__/useEcommercePosCheckoutSingleFlight.test.jsx",
+    "testName": "useEcommercePosCheckoutSingleFlight ignores clicks silently while payment is already pending",
+    "sharedPR127": true,
+    "errorClass": "ReferenceError"
+  },
+  {
+    "file": "src/hooks/pos/__tests__/useEcommercePosCheckoutSingleFlight.test.jsx",
+    "testName": "useEcommercePosCheckoutSingleFlight preserves the canonical contention path for a lock owned elsewhere",
+    "sharedPR127": true,
+    "errorClass": "ReferenceError"
+  },
+  {
+    "file": "src/hooks/pos/__tests__/useEcommercePosCheckoutSingleFlight.test.jsx",
+    "testName": "useEcommercePosCheckoutSingleFlight clears stale starting and validating state and allows a real retry",
+    "sharedPR127": true,
+    "errorClass": "ReferenceError"
+  },
+  {
+    "file": "src/hooks/pos/__tests__/useEcommercePosCheckoutSingleFlight.test.jsx",
+    "testName": "useEcommercePosCheckoutSingleFlight does not change normal POS checkout behavior or pass ecommerce arguments",
+    "sharedPR127": true,
+    "errorClass": "ReferenceError"
+  },
+  {
+    "file": "src/hooks/pos/__tests__/usePosModals.mobileTransition.test.jsx",
+    "testName": "mobile POS history layer transitions hands the cart entry to payment without a second push or an unmarked duplicate",
+    "sharedPR127": true,
+    "errorClass": "AssertionError"
+  },
+  {
+    "file": "src/hooks/pos/__tests__/usePosModals.mobileTransition.test.jsx",
+    "testName": "mobile POS history layer transitions closes payment with the first Back and reaches the previous route with the second",
+    "sharedPR127": true,
+    "errorClass": "AssertionError"
+  },
+  {
+    "file": "src/hooks/pos/__tests__/usePosModals.mobileTransition.test.jsx",
+    "testName": "mobile POS history layer transitions does not accumulate invisible entries across three cart-payment-cancel cycles",
+    "sharedPR127": true,
+    "errorClass": "AssertionError"
+  },
+  {
+    "file": "src/hooks/pos/__tests__/usePosModals.mobileTransition.test.jsx",
+    "testName": "mobile POS history layer transitions reuses the cart entry for prescription and then payment",
+    "sharedPR127": true,
+    "errorClass": "AssertionError"
+  }
+]
