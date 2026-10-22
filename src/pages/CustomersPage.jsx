@@ -3,6 +3,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { AlertTriangle } from 'lucide-react';
 import CustomerForm from '../components/customers/CustomerForm';
 import CustomerList from '../components/customers/CustomerList';
+import HistoricalCreditImport from '../components/customers/HistoricalCreditImport';
 import CustomerMessageTemplatesSettings from '../components/settings/CustomerMessageTemplatesSettings';
 import CustomerMessageAutomationSettings from '../components/settings/CustomerMessageAutomationSettings';
 import CustomerMessagingProShowcase from '../components/customers/CustomerMessagingProShowcase';
@@ -1090,6 +1091,7 @@ export default function CustomersPage() {
         >
           {activeTab === 'list' && (
             <>
+            {actorRuntime?.actorType === 'admin' && <HistoricalCreditImport key={`${actorRuntime.actorKey}:${actorRuntime.generation}`} />}
             <section className="ui-section customers-overview" aria-label="Resumen de crédito">
               <article className="ui-card customers-metric">
                 <span>Fiado total</span>

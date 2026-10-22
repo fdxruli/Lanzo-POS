@@ -6,6 +6,7 @@ import { buildPhoneBuckets, summarizePhoneConflictGroups, toIndexedPhoneKey } fr
 import { customerCloudRepository } from './customerCloudRepository';
 import { customerLocalRepository } from './customerLocalRepository';
 import { localCustomerToCloudPayload } from './customerMapper';
+import { historicalCreditSnapshot } from '../customerCredit/historicalCreditSnapshot';
 
 const MIGRATED_KEY = 'customers_cloud_migrated';
 const MIGRATED_AT_KEY = 'customers_cloud_migrated_at';
@@ -89,6 +90,8 @@ export const customerMigrationService = {
   async runInitialMigrationIfNeeded({ licenseKey } = {}) {
     if (!licenseKey) return { skipped: true, reason: 'missing_license' };
     if (!isOnline()) return { skipped: true, reason: 'offline' };
+
+    await historicalCreditSnapshot.preserveAll();
 
     const alreadyMigrated = await syncMetaService.getMeta(MIGRATED_KEY, false, { licenseKey });
     if (alreadyMigrated) {

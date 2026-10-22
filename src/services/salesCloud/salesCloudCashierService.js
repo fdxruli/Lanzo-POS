@@ -267,6 +267,7 @@ const friendlyCloudCashierError = (error) => {
   const code = /^\d{5}$/.test(rawCode) ? rawCode : semanticCode || rawCode || raw;
 
   const messages = {
+    CREDIT_LIMIT_EXCEEDED: 'El saldo de esta venta supera el crédito autorizado del cliente. La venta no se confirmó; conserva el borrador y revisa el pago o el límite.',
     CLOUD_CASH_SESSION_REQUIRED: 'Para recibir abono inicial en efectivo necesitas abrir caja primero.',
     CASH_SESSION_NOT_FOUND: 'No se encontró la caja seleccionada. Abre tu caja e intenta de nuevo.',
     CASH_SESSION_FORBIDDEN: 'Esta caja pertenece a otro usuario o dispositivo.',
