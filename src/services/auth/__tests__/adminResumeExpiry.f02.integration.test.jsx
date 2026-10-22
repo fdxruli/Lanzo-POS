@@ -21,12 +21,15 @@ vi.mock('../../supabase', () => ({
   getStableDeviceId: async () => fixture.device
 }));
 
+import { getPendingActorOperations, runTrackedActorOperationWithHandle } from '../actorOperationalHandoff';
+import { startAdminServiceWorker, resetAdminServiceWorkerForTests, setAdminServiceWorkerReloadGuard, getAdminServiceWorkerState } from '../../../pwa/adminServiceWorker';
+import { startAdminResumeChecks } from '../../../pwa/adminResumeChecks';
 import { createLicenseMaintenanceActions } from '../../../store/slices/license/licenseMaintenanceActions';
 import { useActorRuntimeSnapshot } from '../useActorRuntimeSnapshot';
 import { actorRuntimeController } from '../actorRuntimeController';
 import { beginActorRuntimeAuthentication, restoreActorRuntimeFromCurrentSessionCache } from '../actorSessionRuntimeBridge';
 import { evaluateAdminOfflineAuthorization } from '../adminOfflineAuthorization';
-import { captureActorScopedStorageHandle, getActorScopedStorageState, invalidateActorScopedStorage } from '../actorScopedStorage';
+import { captureActorScopedStorageHandle, invalidateActorScopedStorage } from '../actorScopedStorage';
 import { clearActiveTenantStorageNamespace, markTenantStorageReady, setActiveTenantStorageNamespace } from '../../tenant/tenantScopedStorage';
 
 const START = Date.parse('2026-10-01T00:00:00Z');
@@ -37,19 +40,19 @@ const TENANT = Object.freeze({
 });
 const contextKey = () => `lanzo:t:${fixture.tenant.opaqueId}:actor-runtime-context:v1`;
 
-const restoreAdmin = async ({ session = 'session-a', expires = START + 1000 } = {}) => {
+const restoreAdmin = async ({ session = 'session-a', expires = START + 1000, validatedAt = START, licenseExpiry = START + 30 * DAY } = {}) => {
   fixture.session = session;
   fixture.authorize.mockImplementation(async () => evaluateAdminOfflineAuthorization({
     now: Date.now(),
     evidence: {
-      version: 2, validatedAt: Date.now(), expiresAt: new Date(expires).toISOString(),
+      version: 2, validatedAt, expiresAt: new Date(expires).toISOString(),
       sessionId: session, sessionTokenDigest: 'synthetic-token-digest', adminUserId: 'admin-a',
       licenseId: 'synthetic-license', deviceId: fixture.device, deviceRef: fixture.device,
       deviceTokenDigest: 'synthetic-device-digest', tenantOpaqueId: TENANT.opaqueId
     },
     credentials: { adminToken: 'synthetic-admin-token', adminSessionId: session, adminTokenDigest: 'synthetic-token-digest' },
     license: { license_id: 'synthetic-license', device_id: fixture.device, admin_user: { id: 'admin-a' },
-      device_role: 'admin', status: 'active', localExpiry: new Date(START + 30 * DAY).toISOString(), expires_at: null },
+      device_role: 'admin', status: 'active', localExpiry: new Date(licenseExpiry).toISOString(), expires_at: null },
     adminUser: { id: 'admin-a' }, deviceRef: fixture.device, deviceTokenDigest: 'synthetic-device-digest',
     tenantOpaqueId: TENANT.opaqueId, tenantBinding: { tenantIdentity: 'license-id:synthetic-license' }
   }));
@@ -141,6 +144,7 @@ describe('F-02 health check against canonical React authority', () => {
       vi.setSystemTime(START + 1001);
       const state = health();
       await Promise.all(['focus', 'visibility', 'online', 'pageshow'].map(r => state.performSystemHealthCheck(r)));
+      expect(observer).toHaveBeenCalledTimes(1);
       expect(actorRuntimeController.getState().generation).toBe(grant.generation + 1);
       expect(observer).toHaveBeenCalledTimes(1);
     } finally { unsubscribe(); }
@@ -154,5 +158,187 @@ describe('F-02 health check against canonical React authority', () => {
     await health().performSystemHealthCheck('focus');
     expect(actorRuntimeController.getState()).toEqual(locked);
     expect(fixture.authorize).toHaveBeenCalledTimes(calls);
+  });
+});
+
+
+describe('F-02 resume events and policy boundaries', () => {
+  let stop;
+  beforeEach(() => { Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' }); });
+  afterEach(() => { stop?.(); stop = null; });
+
+  it.each(['focus', 'pageshow', 'online', 'resume', 'visibilitychange'])('EXP-F02-03: %s publishes expiry before the remote debounce', async event => {
+    const grant = await restoreAdmin();
+    const { result } = renderHook(useActorRuntimeSnapshot);
+    const performHealthCheck = vi.fn();
+    stop = startAdminResumeChecks({ performHealthCheck });
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+    document.dispatchEvent(new Event('visibilitychange'));
+    vi.setSystemTime(START + 1000);
+    // React retains the old snapshot until a lifecycle signal evaluates it.
+    expect(result.current).toEqual(grant);
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' });
+    act(() => { (['resume', 'visibilitychange'].includes(event) ? document : window).dispatchEvent(new Event(event)); });
+    expect(result.current.status).toBe('locked');
+    expect(performHealthCheck).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['EXP-F02-05 / 168h', { expires: START + 30 * DAY }, START + 7 * DAY],
+    ['EXP-F02-06 / shorter session', { expires: START + 1000 }, START + 1000],
+    ['EXP-F02-07 / shorter license', { expires: START + 30 * DAY, licenseExpiry: START + 500 }, START + 500]
+  ])('%s: uses the existing shortest deadline without renewal', async (_name, options, deadline) => {
+    const grant = await restoreAdmin(options);
+    expect(grant.authorizationExpiresAt).toBe(deadline);
+    const { result } = renderHook(useActorRuntimeSnapshot);
+    const performHealthCheck = vi.fn();
+    stop = startAdminResumeChecks({ performHealthCheck });
+    vi.setSystemTime(deadline - 1);
+    act(() => window.dispatchEvent(new Event('focus')));
+    expect(result.current).toEqual(grant);
+    vi.setSystemTime(deadline);
+    act(() => window.dispatchEvent(new Event('focus')));
+    expect(result.current).toMatchObject({ status: 'locked', generation: grant.generation + 1 });
+    vi.setSystemTime(deadline + 1);
+    act(() => window.dispatchEvent(new Event('focus')));
+    expect(result.current.generation).toBe(grant.generation + 1);
+    expect(performHealthCheck).not.toHaveBeenCalled();
+  });
+
+  it('EXP-F02-12: onLine true with rejected transport preserves an unexpired grant', async () => {
+    const grant = await restoreAdmin();
+    vi.stubGlobal('navigator', { onLine: true });
+    const transportError = new Error('synthetic transport unreachable');
+    const state = health({ runLicenseSyncCheck: vi.fn().mockRejectedValue(transportError) });
+    await expect(state.performSystemHealthCheck('online')).rejects.toBe(transportError);
+    expect(actorRuntimeController.getState()).toEqual(grant);
+  });
+
+  it('EXP-F02-14: expiry via resume then a historical hint preserves new session B', async () => {
+    await restoreAdmin();
+    const oldHandle = actorRuntimeController.capture();
+    const oldStorage = captureActorScopedStorageHandle();
+    const state = health();
+    stop = startAdminResumeChecks({ performHealthCheck: state.performSystemHealthCheck });
+    vi.setSystemTime(START + 1000);
+    act(() => window.dispatchEvent(new Event('focus')));
+    const obsolete = localStorage.getItem(contextKey());
+    const grantB = await restoreAdmin({ session: 'session-b', expires: START + 10000, validatedAt: START + 1000 });
+    const runtimeB = actorRuntimeController.capture();
+    const storageB = captureActorScopedStorageHandle();
+    const durableB = localStorage.getItem(contextKey());
+    const calls = fixture.authorize.mock.calls.length;
+    window.dispatchEvent(new StorageEvent('storage', { key: contextKey(), newValue: obsolete, storageArea: localStorage }));
+    await vi.advanceTimersByTimeAsync(250);
+    expect(actorRuntimeController.getState()).toEqual(grantB);
+    expect(localStorage.getItem(contextKey())).toBe(durableB);
+    expect(() => oldHandle.assertCurrent()).toThrow();
+    expect(() => oldStorage.assertCurrent()).toThrow();
+    expect(() => runtimeB.assertCurrent()).not.toThrow();
+    expect(() => storageB.assertCurrent()).not.toThrow();
+    expect(fixture.authorize).toHaveBeenCalledTimes(calls);
+  });
+
+  it('EXP-F02-15: deferred tenant A work is discarded after a legitimate tenant B grant', async () => {
+    await restoreAdmin();
+    const performHealthCheck = vi.fn();
+    stop = startAdminResumeChecks({ performHealthCheck });
+    window.dispatchEvent(new Event('focus'));
+    actorRuntimeController.lock('tenant_transition');
+    invalidateActorScopedStorage('tenant_transition');
+    fixture.tenant = { ...TENANT, opaqueId: 't_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', generation: 2 };
+    // Synthetic direct grant isolates the helper boundary; no B login is claimed.
+    actorRuntimeController.beginAuthentication({ actorType: 'admin' });
+    const grantB = actorRuntimeController.grant({ actorType: 'admin', actorId: 'admin-b', sessionId: 'session-b', deviceRef: 'device-b',
+      tenantOpaqueId: fixture.tenant.opaqueId, authorizationExpiresAt: new Date(START + 10000).toISOString() });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(performHealthCheck).not.toHaveBeenCalled();
+    expect(actorRuntimeController.getState()).toEqual(grantB);
+  });
+
+  it('EXP-F02-16 / RESUME-07: a deferred protected callback cannot commit with an expired handle', async () => {
+    await restoreAdmin();
+    const handle = actorRuntimeController.capture();
+    const commit = vi.fn();
+    let resolve;
+    const pending = new Promise(done => { resolve = done; }).then(() => { handle.assertCurrent(); commit(); });
+    const rejected = expect(pending).rejects.toMatchObject({ code: 'ACTOR_CONTEXT_STALE' });
+    vi.setSystemTime(START + 1000);
+    await health().performSystemHealthCheck('focus');
+    resolve();
+    await rejected;
+    expect(commit).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('F02 resume with pending lifecycle services', () => {
+  let stop;
+  beforeEach(() => { Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' }); });
+  afterEach(() => { stop?.(); stop = null; resetAdminServiceWorkerForTests(); });
+
+  it('RESUME-08: hours away and pending transport do not delay local expiration or duplicate checks', async () => {
+    await restoreAdmin({ expires: START + 4 * 60 * 60 * 1000 });
+    const { result } = renderHook(useActorRuntimeSnapshot);
+    vi.stubGlobal('navigator', { onLine: true });
+    let reject;
+    const state = health({ runLicenseSyncCheck: vi.fn(() => new Promise((_resolve, fail) => { reject = fail; })) });
+    stop = startAdminResumeChecks({ performHealthCheck: state.performSystemHealthCheck });
+    window.dispatchEvent(new Event('online'));
+    await vi.advanceTimersByTimeAsync(250);
+    expect(state.runLicenseSyncCheck).toHaveBeenCalledTimes(1);
+    vi.setSystemTime(START + 4 * 60 * 60 * 1000);
+    act(() => { document.dispatchEvent(new Event('resume')); window.dispatchEvent(new Event('online')); });
+    expect(result.current.status).toBe('locked');
+    expect(state.runLicenseSyncCheck).toHaveBeenCalledTimes(1);
+    reject(Error('synthetic transport unreachable'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(result.current.status).toBe('locked');
+  });
+
+  it('RESUME-09: a resume during the real bridge authentication does not start another restore', async () => {
+    await restoreAdmin({ expires: START + 10000 });
+    actorRuntimeController.lock('fixture_new_authentication');
+    invalidateActorScopedStorage('fixture_new_authentication');
+    const authorize = fixture.authorize.getMockImplementation();
+    let release;
+    fixture.authorize.mockImplementation(async args => { await new Promise(done => { release = done; }); return authorize(args); });
+    beginActorRuntimeAuthentication('admin');
+    const pending = restoreActorRuntimeFromCurrentSessionCache({ actorType: 'admin', actor: { id: 'admin-a' } });
+    await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+    const authentication = actorRuntimeController.getState();
+    const state = health({ _isInitializing: true });
+    stop = startAdminResumeChecks({ performHealthCheck: state.performSystemHealthCheck });
+    window.dispatchEvent(new Event('focus')); document.dispatchEvent(new Event('resume'));
+    await vi.advanceTimersByTimeAsync(250);
+    expect(actorRuntimeController.getState()).toEqual(authentication);
+    expect(state.runLicenseSyncCheck).not.toHaveBeenCalled();
+    expect(fixture.authorize).toHaveBeenCalledTimes(2); // one initial, one pending restore
+    release(); await pending;
+    expect(actorRuntimeController.getState().status).toBe('granted');
+    expect(fixture.authorize).toHaveBeenCalledTimes(2);
+  });
+
+  it('RESUME-10: a waiting Service Worker and tracked operation survive resume without activation/reload', async () => {
+    await restoreAdmin({ expires: START + 10000 });
+    let finish;
+    const operation = runTrackedActorOperationWithHandle(actorRuntimeController.capture(), 'synthetic_pending', () => new Promise(done => { finish = done; }));
+    expect(getPendingActorOperations()).toHaveLength(1);
+    const waiting = { state: 'installed', postMessage: vi.fn() };
+    const registration = Object.assign(new EventTarget(), { active: {}, waiting, update: vi.fn() });
+    const serviceWorker = Object.assign(new EventTarget(), { controller: {}, register: vi.fn(async () => registration) });
+    const windowTarget = { location: { reload: vi.fn() }, setInterval: vi.fn(() => 1), clearInterval: vi.fn(), setTimeout: window.setTimeout.bind(window), clearTimeout: window.clearTimeout.bind(window) };
+    setAdminServiceWorkerReloadGuard(() => getPendingActorOperations().length === 0);
+    await startAdminServiceWorker({ navigatorTarget: { serviceWorker, onLine: true }, windowTarget });
+    const state = health();
+    stop = startAdminResumeChecks({ performHealthCheck: state.performSystemHealthCheck });
+    window.dispatchEvent(new Event('focus')); document.dispatchEvent(new Event('resume'));
+    await vi.advanceTimersByTimeAsync(250);
+    expect(getAdminServiceWorkerState().waiting).toBe(true);
+    expect(getPendingActorOperations()).toHaveLength(1);
+    expect(waiting.postMessage).not.toHaveBeenCalled();
+    expect(windowTarget.location.reload).not.toHaveBeenCalled();
+    finish(); await operation;
+    expect(getPendingActorOperations()).toHaveLength(0);
   });
 });
