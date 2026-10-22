@@ -1,0 +1,23 @@
+{
+  "base": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+  "candidateProductBlobs": {
+    "src/services/auth/actorScopedStorage.js": "61cda026d9a74b07e4a97a0e5013de234b50ffac",
+    "src/services/auth/actorSessionRuntimeBridge.js": "dd9cbe8d57aff393019740697bc61a1d2be0458b"
+  },
+  "identicalSections": {
+    "publication": {
+      "equal": true,
+      "sha256": "b02c071158b4cb4eb33f156690b0713a0c63086dc726970f8b3a60d024724495"
+    },
+    "invalidation": {
+      "equal": true,
+      "bytes": 724,
+      "sha256": "725cbe6b387fe814a987146162c55508667fc83bc4840658aa8313b38c02db92"
+    },
+    "preparation/activation": {
+      "equal": true,
+      "sha256": "b591d95c9c4241c636eb2b43377021caa3f242b509fdc1c0b09dc72766de2a1c"
+    }
+  },
+  "unchangedProtectedPaths": true
+}

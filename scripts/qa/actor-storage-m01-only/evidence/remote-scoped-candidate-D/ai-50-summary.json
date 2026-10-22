@@ -1,0 +1,12 @@
+{
+  "executedAndPassed": 50,
+  "target": "blocks same-turn duplicate submits so one UI action creates one analysis and one history entry",
+  "evidence": "commercial-ai-candidate-repetitions.txt",
+  "assertionContract": "Workflow requires exactly one passing target assertion per run, no failed tests; deletes raw passing per-run JSON/log after validation.",
+  "rawPassingReportsRetained": false,
+  "negativeControls": [
+    "NEG-01 discovery isolation PASS",
+    "NEG-02 duplicate analysis mutation PASS",
+    "NEG-03 duplicate history mutation PASS"
+  ]
+}

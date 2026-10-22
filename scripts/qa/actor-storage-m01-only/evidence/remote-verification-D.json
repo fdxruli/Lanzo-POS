@@ -1,0 +1,195 @@
+{
+  "candidateSha": "5ba07e42e52689e5f60825e3f6979f6ca7af047b",
+  "candidateTree": "46f8f162261a74b576e41128fd8e170bcfe57962",
+  "mainSha": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+  "mainProtected": false,
+  "requiredStatusChecks": [],
+  "rulesets": [],
+  "pr": {
+    "number": 367,
+    "draft": true,
+    "merged": false
+  },
+  "ci": {
+    "pr127": {
+      "runId": 39689600184,
+      "status": "completed",
+      "conclusion": "success",
+      "sharedFailures": 99,
+      "candidateOnly": 0,
+      "newFailures": 0,
+      "unresolved": 0,
+      "artifactId": 12387284624,
+      "artifactDigest": "sha256:5b15389ca06616e33f1aea3285f6ba7947c4303fee38ab1f9c319dea7bf2f04e"
+    },
+    "actorRuntime": {
+      "runId": 39689600221,
+      "status": "completed",
+      "focusedJob": 119532266669,
+      "focusedConclusion": "success",
+      "conclusion": "success",
+      "newRegressions": 0,
+      "stablePreexistingObservations": 93,
+      "baselineRuns": [
+        {
+          "pass": 5612,
+          "fail": 75,
+          "skip": 52
+        },
+        {
+          "pass": 5612,
+          "fail": 75,
+          "skip": 52
+        }
+      ],
+      "candidateRuns": [
+        {
+          "pass": 5637,
+          "fail": 75,
+          "skip": 52
+        },
+        {
+          "pass": 5637,
+          "fail": 75,
+          "skip": 52
+        }
+      ],
+      "focused": {
+        "targets": 7,
+        "repetitionsPerTarget": 50,
+        "basePass": 350,
+        "candidatePass": 350
+      },
+      "publicationJob": "SKIPPED_OTHER_BRANCH",
+      "artifacts": [
+        {
+          "id": 12388249459,
+          "digest": "sha256:2a276c81288101bd7180ba2a9c8498c4f1876fa79394206a304ffe78f7af0113"
+        },
+        {
+          "id": 12387724318,
+          "digest": "sha256:413bcd2c02665b23583813ef9e854f590e4de8be3ab3415d3c427d0a5d026fb2"
+        },
+        {
+          "id": 12388069052,
+          "digest": "sha256:4c43b8348651d506fe8138b88f30e36873f0fff71e06f86dc3fe6c9ac8d3c6c7"
+        }
+      ]
+    },
+    "actorScoped": {
+      "runId": 39689600173,
+      "status": "completed",
+      "focusedJob": 119532262514,
+      "focusedConclusion": "success",
+      "candidateJob": "success",
+      "candidateRuns": [
+        {
+          "pass": 5637,
+          "fail": 75,
+          "skip": 52
+        },
+        {
+          "pass": 5637,
+          "fail": 75,
+          "skip": 52
+        }
+      ],
+      "candidateFocusedPass": 350,
+      "aiDuplicateSubmissionPass": 50,
+      "negativeControls": [
+        "NEG-01 PASS",
+        "NEG-02 PASS",
+        "NEG-03 PASS"
+      ],
+      "candidateArtifact": {
+        "id": 12389620399,
+        "digest": "sha256:0ac35d2d75f9a8648801b7d4127b545a38ffc898d49e76171f90ddcf99da11d0"
+      },
+      "conclusion": "success",
+      "newRegressions": 0,
+      "stablePreexistingObservations": 93,
+      "baselineRuns": [
+        {
+          "pass": 5612,
+          "fail": 75,
+          "skip": 52
+        },
+        {
+          "pass": 5612,
+          "fail": 75,
+          "skip": 52
+        }
+      ],
+      "focused": {
+        "targets": 7,
+        "repetitionsPerTarget": 50,
+        "basePass": 350,
+        "candidatePass": 350
+      },
+      "aiDuplicateSubmissionBasePass": 50,
+      "baseArtifact": {
+        "id": 12390115379,
+        "digest": "sha256:2740726e1ba334b3394504b2b4ec8ae9b3e94e0ccd7f47a34d276e3a0b626169"
+      },
+      "differentialArtifact": {
+        "id": 12388859787,
+        "digest": "sha256:f5b05904a673db663c0e55265d1ef2c21951b6ee7267edcfdd39095f36c8900c"
+      }
+    },
+    "dexie": {
+      "status": "NOT_TRIGGERED_PATHS",
+      "workflowDispatch": false,
+      "requiredByBranchRules": false,
+      "localSelection": "127/127 PASS"
+    }
+  },
+  "preview": {
+    "id": "dpl_LM4PivQcha1hf5aziPDptLapFqXb",
+    "url": "https://lanzo-qg6zkdxqr-fdxrulis-projects.vercel.app",
+    "project": "lanzo-pos",
+    "projectId": "prj_tE5uWn6kLBYdS1eDFWVxRm449RUr",
+    "teamId": "team_buvft2mAJErTNR8gDhXcZGfS",
+    "state": "READY",
+    "target": "preview",
+    "html": 200,
+    "initialAssets": {
+      "count": 10,
+      "status": 200,
+      "mimeCorrect": true
+    },
+    "serviceWorker": 200,
+    "manifest": {
+      "status": 200,
+      "scope": "/",
+      "start_url": "/",
+      "display": "standalone"
+    },
+    "compiledBackendHost": "odlrhijtfyavryeqivaa.supabase.co",
+    "productionBackend": true,
+    "staticRequestsOnly": true,
+    "loginExecuted": false,
+    "supabaseCalls": false,
+    "commercialMutations": false
+  },
+  "qaPhysical": "PENDING",
+  "merge": "NOT_PERFORMED",
+  "finalBaseline": {
+    "main": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+    "productionDeployment": "dpl_7E212PvkFiHe2DK8SaiTEn3ANxJ5",
+    "productionSha": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+    "productionState": "READY",
+    "pr338": {
+      "head": "fef7205f76b173025f503e60d0968f446f741e78",
+      "open": true,
+      "draft": true,
+      "merged": false
+    },
+    "pr352": {
+      "head": "d758f69b2119f1bc346eb0ac86ba0a74c0265668",
+      "open": true,
+      "draft": true,
+      "merged": false
+    }
+  },
+  "deliveryStatus": "READY_FOR_OWNER_QA"
+}

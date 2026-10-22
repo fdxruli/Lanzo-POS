@@ -202,5 +202,117 @@
   "scripts/qa/actor-storage-m01-only/evidence/product.diff.gz": {
     "sha256": "359423829a6649d73ea9c119791e52a40733c6f64cd66852ffd9e7f7e73225a1",
     "bytes": 1490
+  },
+  "scripts/qa/actor-storage-m01-only/evidence/remote-pr127-D/global-comparison.json": {
+    "sha256": "10017261bc0f24dd8e12c51a49a3da81f8443591ec886923dffae1a79ab5f18f",
+    "bytes": 305394
+  },
+  "scripts/qa/actor-storage-m01-only/evidence/remote-pr127-D/global-comparison.md": {
+    "sha256": "f6eafc7b9e34138fa18db06f17aa6d3afdf0016dc91d6e65d9108b54e846d7d9",
+    "bytes": 201
+  },
+  "scripts/qa/actor-storage-m01-only/evidence/remote-pr127-D/phase-one.json": {
+    "sha256": "7d9c5157c177affeb702a53c8d1458b4f787dc2c2e5121f555353338cb33bd59",
+    "bytes": 305268
+  },
+  "scripts/qa/actor-storage-m01-only/evidence/remote-pr127-D/targets.json": {
+    "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+    "bytes": 3
+  },
+  "scripts/qa/actor-storage-m01-only/evidence/remote-runtime-base-D/focused-target-summary.json.gz": {
+    "sha256": "85eb77adda9aff1049337783dc6377f241a51546e253a062bd0c34f58e23a62e",
+    "bytes": 1966
+  },
+  "scripts/qa/actor-storage-m01-only/evidence/remote-runtime-base-D/full-suite-1.json.gz": {
+    "sha256": "a365184591750332c67055718cafa963fc3e637b65d2dfadbc1d19904b33506b",
+    "bytes": 268657
+  },
+  "scripts/qa/actor-storage-m01-only/evidence/remote-runtime-base-D/full-suite-2.json.gz": {
+    "sha256": "2b144322e0a3462ab8752021ebe33e440e43afd72999614361a9e7f45cff803b",
+    "bytes": 268432
+  },
+  "scripts/qa/actor-storage-m01-only/evidence/remote-runtime-candidate-D/focused-target-summary.json.gz": {
+    "sha256": "56ba59460c5df0fa765ce6cbb155e4f7c457a85dbd7ce95c2c6cb16c854aadfd",
+    "bytes": 1966
+  },
+  "scripts/qa/actor-storage-m01-only/evidence/remote-runtime-candidate-D/full-suite-1.json.gz": {
+    "sha256": "5fd2be4e974a0d287e309e786fb03452865b4761745193609a0b32fac2755e03",
+    "bytes": 269442
+  },
+  "scripts/qa/actor-storage-m01-only/evidence/remote-runtime-candidate-D/full-suite-2.json.gz": {
+    "sha256": "96be05251d2f2118be1677abe1e3c63859a5339f511bc12e96f9243ceabb3948",
+    "bytes": 269095
+  },
+  "scripts/qa/actor-storage-m01-only/evidence/remote-runtime-differential-D/focused-target-differential.json.gz": {
+    "sha256": "bfe8b24560afb6bca3b756528d942647d791ad1a5d29da5e9605be957fd6815c",
+    "bytes": 749
+  },
+  "scripts/qa/actor-storage-m01-only/evidence/remote-runtime-differential-D/focused-target-differential.md.gz": {
+    "sha256": "0bb5bd17dbaf6ca00da03c8ddce45e2aea6b74fc899a51ea18f5925e645dbc4a",
+    "bytes": 542
+  },
+  "scripts/qa/actor-storage-m01-only/evidence/remote-runtime-differential-D/full-suite-differential.json.gz": {
+    "sha256": "59bcde02b63a38bd79b08778ef129911180abf7825c75d61746d42441533f26a",
+    "bytes": 7532
+  },
+  "scripts/qa/actor-storage-m01-only/evidence/remote-runtime-differential-D/full-suite-differential.md.gz": {
+    "sha256": "f20b36826319d48113768bb995244f36cd5bb14f32aed8e4d70b8f8ea13e3169",
+    "bytes": 7866
+  },
+  "scripts/qa/actor-storage-m01-only/evidence/remote-scoped-base-D/commercial-ai-base-repetitions.txt": {
+    "sha256": "3e7691bf4c297a8f6026419445b8450f108889f85c1daf56c637094228ab43eb",
+    "bytes": 391
+  },
+  "scripts/qa/actor-storage-m01-only/evidence/remote-scoped-base-D/focused-target-summary.json.gz": {
+    "sha256": "ecd3e7edd71f41aa7acd500855ed41b47cfff11cae37a73a92b060a7f939a07c",
+    "bytes": 1966
+  },
+  "scripts/qa/actor-storage-m01-only/evidence/remote-scoped-base-D/full-suite-1.json.gz": {
+    "sha256": "96e717a2960a744df8ace2a3209005189abf491a4d0aa4240651ddf022d0122a",
+    "bytes": 269003
+  },
+  "scripts/qa/actor-storage-m01-only/evidence/remote-scoped-base-D/full-suite-2.json.gz": {
+    "sha256": "12449d060843bfc0c36794800e2e4a8d619811278fcaa306ebf6a90ffa9d5b35",
+    "bytes": 268683
+  },
+  "scripts/qa/actor-storage-m01-only/evidence/remote-scoped-candidate-D/ai-50-summary.json": {
+    "sha256": "a1fc22da088876ac593f42031e44737fe9eab57191bed6c571b40f3d48045720",
+    "bytes": 557
+  },
+  "scripts/qa/actor-storage-m01-only/evidence/remote-scoped-candidate-D/commercial-ai-candidate-repetitions.txt": {
+    "sha256": "3e7691bf4c297a8f6026419445b8450f108889f85c1daf56c637094228ab43eb",
+    "bytes": 391
+  },
+  "scripts/qa/actor-storage-m01-only/evidence/remote-scoped-candidate-D/focused-target-summary.json.gz": {
+    "sha256": "d8b27d0f32e688a37e435754d821e84fd49c581239073c4bd5bff912e7c485d3",
+    "bytes": 1966
+  },
+  "scripts/qa/actor-storage-m01-only/evidence/remote-scoped-candidate-D/full-suite-1.json.gz": {
+    "sha256": "e091f33197e6af56a7fde83fbd90a6ae3945e1feda77dcb33aa1f77eb61ece9a",
+    "bytes": 269198
+  },
+  "scripts/qa/actor-storage-m01-only/evidence/remote-scoped-candidate-D/full-suite-2.json.gz": {
+    "sha256": "c11a4069da3979e30efb71d5de09fa09a79412e4f5452829184bee2d1e4d6267",
+    "bytes": 269341
+  },
+  "scripts/qa/actor-storage-m01-only/evidence/remote-scoped-candidate-D/negative-control-ai-summary.txt": {
+    "sha256": "05a1425aaeb347844c1afb732d11c0923c29588e1f3145b11bd2f70ec2c3bdc3",
+    "bytes": 203
+  },
+  "scripts/qa/actor-storage-m01-only/evidence/remote-scoped-differential-D/full-suite-differential.json.gz": {
+    "sha256": "93fb310e62ffc4897b8724b83e3a41301331475ed2228ca443be822bf6d09c39",
+    "bytes": 7549
+  },
+  "scripts/qa/actor-storage-m01-only/evidence/remote-scoped-differential-D/full-suite-differential.md.gz": {
+    "sha256": "b135bea9523117be05cc68ec68d8be527c0cca6734caf51563d52d67104abb87",
+    "bytes": 7869
+  },
+  "scripts/qa/actor-storage-m01-only/evidence/remote-verification-D.json": {
+    "sha256": "6e3baa4ad6895578aa8521b7ed6215352b1b0da3edde4a32eff981e5292590d4",
+    "bytes": 5128
+  },
+  "scripts/qa/actor-storage-m01-only/evidence/scope-proof.json": {
+    "sha256": "6c88627a1e569e0e32a8d482aaea356a3afea0f3a08a9800fb5fc4e99b8e9179",
+    "bytes": 771
   }
 }

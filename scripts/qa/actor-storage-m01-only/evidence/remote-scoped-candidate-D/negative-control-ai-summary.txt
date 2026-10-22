@@ -1,0 +1,2 @@
+NEG-02 PASS: disabling the in-flight guard caused the same-turn test to detect two runAgent calls.
+NEG-03 PASS: a fixture write that persisted two history entries failed the same-turn history assertion.

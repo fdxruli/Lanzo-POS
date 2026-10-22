@@ -1,7 +1,7 @@
 # LANZO POS — FASE 3.2A.6 — M-01 ONLY
 
 Fecha: 21 de octubre de 2026, America/Mexico_City.
-Estado local: **ADMISSIBLE_FOR_DRAFT**. CI remota y Preview: **PENDING** hasta verificar el HEAD publicado. QA físico: **PENDING**. Merge: **NOT AUTHORIZED / NOT PERFORMED**.
+Estado: **READY_FOR_OWNER_QA**. PR #367 **OPEN / Draft**, candidata `5ba07e42e52689e5f60825e3f6979f6ca7af047b`. Los tres workflows aplicables terminaron SUCCESS y su Preview está READY. QA físico: **PENDING**. Merge: **NOT AUTHORIZED / NOT PERFORMED**. Este cierre E es documental y conserva intacto el HEAD probado del PR.
 
 ## 1. Resultado y procedencia
 
@@ -134,11 +134,25 @@ Regresiones financieras verifican repositorios reales con sus doubles/fake-IDB: 
 
 ## 9. PR Draft, CI y Preview
 
-**PENDING_REMOTE_VERIFICATION** al preparar este checkpoint. Sólo se abrirá Draft después del diferencial local sin nuevos fallos. Los checkpoints incompletos no se empujan como tips desplegables; todos serán alcanzables desde la publicación validada.
+[PR #367](https://github.com/fdxruli/Lanzo-POS/pull/367): OPEN / Draft / mergeable al revalidar, sin merge. HEAD comercial probado y Preview SHA: `5ba07e42e52689e5f60825e3f6979f6ca7af047b`, árbol `46f8f162261a74b576e41128fd8e170bcfe57962`. Main permanece f48aab53.
 
-Workflows que deben comprobarse en el SHA publicado: Actor Runtime, Actor Scoped Storage, Dexie Recovery, PR127 y otros aplicables. No se cambian workflows/triggers/umbrales. Skipped no es PASS. El cierre remoto se registrará después de ejecutar esos jobs.
+| Workflow sobre D | Resultado exacto |
+| --- | --- |
+| [PR127 #39689600184](https://github.com/fdxruli/Lanzo-POS/actions/runs/39689600184) | SUCCESS: 99 identidades compartidas, 0 exclusivas/nuevas/sin resolver; cero targets focales |
+| [Actor Runtime #39689600221](https://github.com/fdxruli/Lanzo-POS/actions/runs/39689600221) | SUCCESS: focal, dos globales por lado y diferencial; 93 observaciones preexistentes estables, 0 regresiones nuevas |
+| [Actor Scoped #39689600173](https://github.com/fdxruli/Lanzo-POS/actions/runs/39689600173) | SUCCESS: focal, dos globales por lado, 50 repeticiones por target, IA/controles negativos y diferencial; 93 observaciones heredadas, 0 regresiones nuevas |
+| HOTFIX Dexie | NOT_TRIGGERED_PATHS; no workflow_dispatch; no requerido por reglas. Su selección local pasa 127/127. No se declara SUCCESS remoto inexistente |
+| Device Actor Auth / FREE Local | No activados por filtros de este diff; no son gates requeridos por reglas para este cambio |
 
-Proyecto Vercel verificado: lanzo-pos `prj_tE5uWn6kLBYdS1eDFWVxRm449RUr`, team `team_buvft2mAJErTNR8gDhXcZGfS`. También existe lanzo-store. No se promueve a Production ni se cambian env vars. Se comprobará Preview READY con rama/SHA exactos, shell, assets y SW. Backend Preview debe identificarse por host compilado no secreto antes de QA; si corresponde a producción no se harán logins/registro de dispositivos o mutaciones automáticas.
+Global en ambos workflows repetidos: cada BASE 5612 PASS / 75 FAIL / 52 SKIP; cada CANDIDATE 5637 PASS / 75 FAIL / 52 SKIP. Sus siete targets focales pasan 50/50 por lado (350 por lado y por workflow), sin targets no ejecutados/ilegibles. Scoped añade IA duplicate-submit 50/50 en BASE y CANDIDATE y NEG-01/02/03 PASS. No sumar repeticiones como tests únicos. Runtime omite su job de publicación idempotente porque está limitado a otra rama; ese SKIPPED no es PASS ni bloquea la validación/diferencial.
+
+Los ocho fallos compartidos adicionales de PR127 remoto frente al local son ENOENT de artefactos ausentes en ambos checkouts sin build. Se conservaron los originales, se verificaron los hashes ZIP y se separan los contadores de comparadores (99 PR127 remoto, 91 PR127 local, 93 observaciones de cada gate repetido). Las suites brutas siguen rojas por fallos heredados.
+
+[Preview D](https://lanzo-qg6zkdxqr-fdxrulis-projects.vercel.app): **READY**, deployment `dpl_LM4PivQcha1hf5aziPDptLapFqXb`, proyecto lanzo-pos `prj_tE5uWn6kLBYdS1eDFWVxRm449RUr`, team `team_buvft2mAJErTNR8gDhXcZGfS`, target Preview, rama/SHA D exactos. HTML Lanzo POS, 10 recursos iniciales JS/CSS, SW y manifiesto: HTTP 200 y MIME correcto. El bundle incluye el handler M-01; manifiesto scope=/ y start_url=/. No se valida la pantalla de protección como si fuera la app.
+
+Host compilado de backend: `odlrhijtfyavryeqivaa.supabase.co`, producción. Se hicieron sólo lecturas estáticas autorizadas: cero login, registro de dispositivos, RPC o mutaciones comerciales. No se cambiaron variables de entorno. Production sigue READY en deployment `dpl_7E212PvkFiHe2DK8SaiTEn3ANxJ5`, SHA main f48aab53.
+
+El cierre E se preserva aparte en `audit/actor-storage-m01-only-closure-r1`, descendiente de D y sólo documental/evidencia. El PR mantiene D y sus checks/Preview exactos; no se atribuyen a E checks de otro SHA. En el PR se enlazan los informes finales de E y sus checkpoints recuperables.
 
 ## 10. PR #338 / #352 y orden de integración
 
@@ -169,8 +183,18 @@ Todos PENDING. No modificar reloj real ni datos de negocio para simular vencimie
 
 ## 12. Checkpoints y restricciones
 
-A `6f43f1ca5a456e11558fc11c741852ec9d248ba0`: reproducción EXP14. B `6363772ad4334d60ddb97b6662e7756936803a70`: M-01 idéntico al focal, sin M-03. C `9127d531bb6ae8af22424f603f91aed05416ba28`: fixtures/Chromium; complemento `95468ca974d2a9e5faeafdbf54286cf336696fd6`: negativas actor/tenant finales. D/E son los commits de documentación/evidencia y cierre que los contienen, identificados en la entrega/PR sin hash circular.
+Checkpoints remotos recuperables (todos ancestros del PR #367):
+
+| Etapa | SHA remoto | Árbol |
+| --- | --- | --- |
+| A: reproducción | `7343135ad841e3c65ff6a005a49496423a258745` | `fe5a3845002de7fe2cfbb23f148a724f13aa1a26` |
+| B: implementación focal | `89c8f67cfdda071bcc58f484c5b32348478a05be` | `d8239edff92f2eb342806410c3c76664cdfed490` |
+| C: pruebas finales | `9e98fd7fd5e6a0cf23e65e708bdecbd53134dbf7` | `b901b3869d874c59746862c7aa418ea64b62c0e4` |
+| D: candidata Draft | `5ba07e42e52689e5f60825e3f6979f6ca7af047b` | `46f8f162261a74b576e41128fd8e170bcfe57962` |
+| E: cierre | Commit que contiene este cierre, entregado en el PR | Sin cambio de producto |
+
+Los commits locales originales 6f43f1ca/6363772a/9127d531/95468ca9/8e518ffd conservan los mismos árboles equivalentes. El push CLI carecía de credenciales; se usó el conector GitHub para crear blobs/árboles/commits y la rama final. La metadata de autor/fecha produce SHAs de commit distintos; los hashes de árbol coinciden, incluido el global final sobre el árbol C. No se publicó ningún tip incompleto ni se hizo force push.
 
 MIGRATIONS=NONE; SUPABASE_CALLS=NONE; SUPABASE_PRODUCTION_WRITES=NONE; USER_IDB_CLEARED=NO; AUTO_CASH_CLOSE=NO. M-01 IMPLEMENTED; M-03/Authority v2/F-01/F-02 visual NOT INCLUDED. Sin merge.
 
-Dictamen local: M-01 mejora el falso bloqueo y conserva las revocaciones en las fronteras probadas; no se detectan regresiones nuevas en PR127 local. LC13 y los demás límites indicados permanecen abiertos. Preparación para QA del propietario depende todavía de CI y Preview del SHA exacto. Un merge requiere esos checks, QA físico confirmado y autorización posterior expresa.
+Dictamen final: **READY_FOR_OWNER_QA**. M-01 mejora el falso bloqueo y conserva las revocaciones en las fronteras probadas. PR127 local/remoto y ambos gates repetidos no detectan regresiones nuevas. LC13, callbacks/cleanup tardíos, convivencia sin exclusividad nueva y fencing global permanecen abiertos. La candidata D está preparada para QA físico; valorar un merge requiere los resultados del propietario, revalidación de su HEAD/CI y autorización posterior expresa. No se ejecutó merge.
