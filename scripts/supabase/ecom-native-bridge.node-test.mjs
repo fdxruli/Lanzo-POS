@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createBroker, createVault } from '../../supabase/functions/lanzo-ecom-bridge-qa/broker.mjs';
+import { createHash } from 'node:crypto';
+import { createBroker, createVault as keyringVault } from '../../supabase/functions/lanzo-ecom-bridge-qa/broker.mjs';
+const createVault = secret => keyringVault({ current: 'test', keys: { test: createHash('sha256').update(secret).digest('base64') } });
 import { createEcomSignalReceiver } from '../../src/services/ecommerce/ecomSignalReceiver.js';
 
 const url = 'https://fixture.supabase.co';
@@ -78,7 +80,7 @@ test('a malformed Auth scope is rejected before binding', async () => {
   assert.equal((await issue({})).status, 503);
   assert.equal(calls.some(([name]) => name === 'finish'), false);
 });
-test('renewal refreshes existing session without creating a user', async () => {
+test('renewal revalidates Lanzo without refreshing a still-valid Auth session', async () => {
   const vault = createVault('fixture-server-key');
   const box = await vault.seal(session(), 'grant');
   let refresh = 0;
@@ -86,7 +88,7 @@ test('renewal refreshes existing session without creating a user', async () => {
     auth: { refresh: async token => { assert.equal(token, 'server-only-refresh'); refresh++; return session(); },
       createUser: async () => { throw new Error('must not create'); }, signIn: async () => { throw new Error('must not login'); } } });
   assert.equal((await issue({})).status, 200);
-  assert.equal(refresh, 1);
+  assert.equal(refresh, 0);
 });
 
 function receiverFixture(broker) {

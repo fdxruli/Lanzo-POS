@@ -93,17 +93,18 @@ begin
   if g.revoked_at is not null or g.expires_at<=clock_timestamp() or g.actor_generation<>ag or g.tenant_generation<>tg then
    return jsonb_build_object('code','DENIED'); end if;
  else
-  if (select count(*) from lanzo_ecom_bridge_qa.grants where identity_id=i.id)>=4 then return jsonb_build_object('code','CAPACITY'); end if;
+  if (select count(*) from lanzo_ecom_bridge_qa.grants where identity_id=i.id and revoked_at is null and expires_at>clock_timestamp())>=4 then return jsonb_build_object('code','CAPACITY'); end if;
   insert into lanzo_ecom_bridge_qa.grants(identity_id,runtime_id,actor_generation,tenant_generation)
    values(i.id,runtime,ag,tg) returning * into g;
  end if;
  if not lanzo_ecom_bridge_qa.lock_authority(i.id) then return jsonb_build_object('code','DENIED'); end if;
+ if g.auth_session_id is not null and not exists(select 1 from auth.sessions where id=g.auth_session_id and user_id=i.auth_user_id) then return jsonb_build_object('code','DENIED'); end if;
  if g.last_attempt>clock_timestamp()-interval '10 seconds' and g.vault is not null then
-  return jsonb_build_object('code','CACHED','id',g.id,'identity_id',i.id,'vault',g.vault,'expires_at',g.expires_at); end if;
+  return jsonb_build_object('code','CACHED','id',g.id,'identity_id',i.id,'auth_user_id',i.auth_user_id,'auth_session_id',g.auth_session_id,'vault',g.vault,'expires_at',g.expires_at); end if;
  if g.attempts>=120 then return jsonb_build_object('code','CAPACITY'); end if;
  update lanzo_ecom_bridge_qa.grants set lease_id=lease,lease_until=clock_timestamp()+interval '30 seconds',last_attempt=clock_timestamp(),attempts=attempts+1 where id=g.id;
  return jsonb_build_object('code','RESERVED','id',g.id,'identity_id',i.id,'auth_user_id',i.auth_user_id,
-  'lease_id',lease,'vault',g.vault,'expires_at',g.expires_at);
+  'lease_id',lease,'auth_session_id',g.auth_session_id,'vault',g.vault,'expires_at',g.expires_at);
 exception when invalid_text_representation or numeric_value_out_of_range then return jsonb_build_object('code','DENIED');
 end $$;
 
@@ -115,6 +116,7 @@ create function public.lanzo_ecom_bridge_qa_finish(p jsonb)
 returns jsonb language plpgsql security definer set search_path='' as $$
 declare g lanzo_ecom_bridge_qa.grants; i lanzo_ecom_bridge_qa.identities; expiry timestamptz; session_expiry timestamptz;
 begin
+ perform pg_advisory_xact_lock(hashtextextended('lanzo-ecom-bridge-qa',0));
  select * into g from lanzo_ecom_bridge_qa.grants where id=(p->>'id')::uuid for update;
  if not found or g.lease_id is distinct from (p->>'lease_id')::uuid or g.lease_until<=clock_timestamp()
  or g.revoked_at is not null or g.expires_at<=clock_timestamp() then return jsonb_build_object('code','DENIED'); end if;

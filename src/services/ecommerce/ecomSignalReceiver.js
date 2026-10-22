@@ -33,6 +33,7 @@ export function createEcomSignalReceiver({ broker, createTransport, now = Date.n
     active = run;
     const current = () => active === run && generation === run.generation && !run.disposed;
     const later = (fn, ms) => {
+      if (!current()) return null;
       const timer = setTimer(() => { run.timers.delete(timer); if (current()) fn(); }, ms);
       run.timers.add(timer);
       return timer;
@@ -80,7 +81,7 @@ export function createEcomSignalReceiver({ broker, createTransport, now = Date.n
         run.transport = candidate;
         run.token = c.accessToken;
         await candidate.setAuth(run.token);
-        if (!current()) return;
+        if (!current() || run.transport !== candidate) return;
         const transport = candidate;
         const channel = transport.channel(c.topic, { config: { private: true, broadcast: { ack: true, self: false } } });
         channel.on('broadcast', { event: 'qa_probe' }, message => {
@@ -93,7 +94,7 @@ export function createEcomSignalReceiver({ broker, createTransport, now = Date.n
             completed = true;
             run.attempts = 0;
             onState('connected');
-            later(() => { closeTransport(); connect(); }, Math.max(1000, expiry - now() - 30000));
+            later(() => { closeTransport(); connect(); }, Math.max(1000, expiry - now() - (25000 + random() * 10000)));
           } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
             // Protocol Unauthorized is authoritative. Unknown CHANNEL_ERROR is
             // also terminal; transport timeouts/closures have bounded retries.
@@ -123,7 +124,7 @@ export async function createEcomSignalTransport(url, publicKey) {
 
 export function createEcomSignalBrokerClient({ endpoint, publicKey, fetcher = fetch }) {
   return async (capture, { signal }) => {
-    const response = await fetcher(endpoint, { method: 'POST', signal,
+    const response = await fetcher(endpoint, { method: 'POST', signal: AbortSignal.any([signal, AbortSignal.timeout(20000)]),
       headers: { apikey: publicKey, 'Content-Type': 'application/json' },
       body: JSON.stringify(capture) });
     return { ok: response.ok, status: response.status, connection: response.ok ? await response.json() : null };

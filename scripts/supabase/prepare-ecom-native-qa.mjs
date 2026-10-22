@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 const root = resolve(import.meta.dirname, '../..');
-const out = resolve(root, '.tmp/ecom-native-qa');
+const out = resolve(root, process.argv.find(a => a.startsWith('--out='))?.slice(6) || '.tmp/ecom-native-qa');
 mkdirSync(out, { recursive: true });
 if (existsSync(resolve(out, 'private-fixtures.json'))) throw new Error('Existing QA inventory must be cleaned and archived before generating another run');
 const id = () => randomUUID();

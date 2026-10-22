@@ -1,0 +1,208 @@
+{
+  "run": "42f9a16c-c36a-40ba-8fc1-6be4a66dd50f",
+  "started_at": "2026-10-22T06:42:37.115Z",
+  "results": [
+    {
+      "id": "HOSTED-JOIN",
+      "status": "PASS",
+      "at": "2026-10-22T06:42:40.052Z",
+      "state": "SUBSCRIBED",
+      "ms": 410.6183999999994
+    },
+    {
+      "id": "PUBLISH-IDEMPOTENCY",
+      "status": "PASS",
+      "at": "2026-10-22T06:42:41.885Z",
+      "first": "ENQUEUED",
+      "retry": "ALREADY_ENQUEUED"
+    },
+    {
+      "id": "GRANT-WITHOUT-AUTH-REFRESH",
+      "status": "PASS",
+      "at": "2026-10-22T06:42:53.219Z"
+    },
+    {
+      "id": "VAULT-ROTATION",
+      "status": "PASS",
+      "at": "2026-10-22T06:42:54.338Z",
+      "rotated": 1,
+      "conflicted": 0,
+      "failed": 0
+    },
+    {
+      "id": "LANZO-AUTHORITY-REQUIRED",
+      "status": "PASS",
+      "at": "2026-10-22T06:42:54.784Z"
+    },
+    {
+      "id": "TENANT-TOPIC-ISOLATION",
+      "status": "PASS",
+      "at": "2026-10-22T06:42:59.908Z",
+      "state": "CHANNEL_ERROR"
+    },
+    {
+      "id": "RECEIVER-DENIED-TABLE",
+      "status": "PASS",
+      "at": "2026-10-22T06:43:00.388Z",
+      "http": 403,
+      "code": "42501"
+    },
+    {
+      "id": "RECEIVER-DENIED-BINDING-RPC",
+      "status": "PASS",
+      "at": "2026-10-22T06:43:00.670Z",
+      "http": 403,
+      "code": "42501"
+    },
+    {
+      "id": "RECEIVER-DENIED-ADMIN-RPC",
+      "status": "PASS",
+      "at": "2026-10-22T06:43:00.804Z",
+      "http": 403,
+      "code": "42501"
+    },
+    {
+      "id": "RECEIVER-DENIED-AUTH-ADMIN-DELETE",
+      "status": "PASS",
+      "at": "2026-10-22T06:43:00.947Z",
+      "http": 403,
+      "code": 403
+    },
+    {
+      "id": "METADATA-NO-ESCALATION",
+      "status": "PASS",
+      "at": "2026-10-22T06:43:01.250Z",
+      "privileged_http": 403,
+      "ordinary_http": 200
+    },
+    {
+      "id": "PASSWORD-SELF-SERVICE-OBSERVED",
+      "status": "PASS",
+      "at": "2026-10-22T06:43:01.782Z",
+      "update_http": 200,
+      "login_http": 200,
+      "residual": "can create Auth sessions; never Lanzo bindings"
+    },
+    {
+      "id": "UNBOUND-SESSION-DENIED",
+      "status": "PASS",
+      "at": "2026-10-22T06:43:06.117Z",
+      "state": "CHANNEL_ERROR"
+    },
+    {
+      "id": "IDENTITY-LINKING",
+      "status": "PASS",
+      "at": "2026-10-22T06:43:06.445Z",
+      "http": 404,
+      "code": 404
+    },
+    {
+      "id": "USER-SELF-DELETE",
+      "status": "PASS",
+      "at": "2026-10-22T06:43:06.571Z",
+      "http": 405
+    },
+    {
+      "id": "PASSWORD-RECOVERY-SYNTHETIC",
+      "status": "PASS",
+      "http": 400,
+      "code": 400,
+      "scope": "only example.invalid, no real recipient"
+    },
+    {
+      "id": "EMAIL-SELF-SERVICE",
+      "status": "PASS",
+      "http": 400,
+      "code": 400,
+      "meaning": "observed endpoint result, not proof operation prohibited"
+    },
+    {
+      "id": "MFA-SELF-SERVICE-OBSERVED",
+      "status": "PASS",
+      "at": "2026-10-22T06:43:07.872Z",
+      "enroll_http": 200,
+      "verify_http": 200
+    },
+    {
+      "id": "OWNER-RECOVERY-AFTER-PASSWORD-EMAIL-MFA",
+      "status": "PASS",
+      "at": "2026-10-22T06:43:08.764Z",
+      "http": 200
+    },
+    {
+      "id": "RECOVERY-NEW-SUB-OLD-TOPIC-EXCLUDED",
+      "status": "PASS",
+      "at": "2026-10-22T06:43:09.851Z",
+      "old_user_http": 403,
+      "old_publish": "EXCLUDED",
+      "fresh_http": 200
+    },
+    {
+      "id": "RECOVERY-NO-TOPIC-REUSE",
+      "status": "PASS",
+      "at": "2026-10-22T06:43:14.221Z",
+      "state": "CHANNEL_ERROR"
+    },
+    {
+      "id": "LOGOUT-EXCLUDES-PUBLISH",
+      "status": "PASS",
+      "at": "2026-10-22T06:43:15.177Z",
+      "http": 204
+    },
+    {
+      "id": "AUTH-REFRESH-REPLAY",
+      "status": "PASS",
+      "at": "2026-10-22T06:43:28.336Z",
+      "refresh_http": [
+        200,
+        200,
+        200
+      ],
+      "replay_http": 400,
+      "code": "refresh_token_already_used"
+    },
+    {
+      "id": "ADDITIONAL-IDENTITY-NO-TECHNICAL-ROLE",
+      "status": "PASS",
+      "at": "2026-10-22T06:43:28.680Z",
+      "http": 429,
+      "scope": "global signup availability is separate from bridge authorization"
+    },
+    {
+      "id": "STAFF-ECOMMERCE-WITHOUT-SETTINGS",
+      "status": "PASS",
+      "at": "2026-10-22T06:43:29.684Z",
+      "http": 200
+    },
+    {
+      "id": "STAFF-WITHOUT-ECOMMERCE-DENIED",
+      "status": "PASS",
+      "at": "2026-10-22T06:43:29.985Z",
+      "http": 403
+    },
+    {
+      "id": "REVOKE-RESIDUAL-SOCKET",
+      "status": "PASS",
+      "at": "2026-10-22T06:43:36.248Z",
+      "barrier_at": 1792651410608,
+      "socket_state": "joined",
+      "new_join": "CHANNEL_ERROR"
+    }
+  ],
+  "received": [
+    {
+      "at": 1792651360470,
+      "topic": "ecom:qa-probe:1a2:15e513ef-d8cf-4351-ae61-9d79dfa953ab",
+      "event": "qa_probe",
+      "probe_id": "d796e525-0fbb-4aa7-821c-4301eb62b3c9"
+    }
+  ],
+  "auth_user_ids": [
+    "7f669a7e-c782-437f-9c62-de8431f8ba5d",
+    "7f669a7e-c782-437f-9c62-de8431f8ba5d",
+    "411120ed-2229-41b3-b0e3-801032d51b9e",
+    "7ba1cb6f-a6c7-4bc9-b180-d272ad62c52e"
+  ],
+  "status": "PASS",
+  "finished_at": "2026-10-22T06:43:36.252Z"
+}
