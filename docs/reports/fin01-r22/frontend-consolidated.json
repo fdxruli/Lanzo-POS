@@ -1,0 +1,199 @@
+{
+  "method": "Latest assertion per file and fullName. DB repository regression cases are counted only in regression-selection, not twice.",
+  "unique": 32,
+  "pass": 32,
+  "tests": [
+    {
+      "file": "src/components/common/__tests__/PaymentModal.test.jsx",
+      "name": "PaymentModal routes a fully paid Fiado as paid sale even with historical debt and zero limit",
+      "status": "passed",
+      "evidence": "new-feature-final.json"
+    },
+    {
+      "file": "src/components/common/__tests__/PaymentModal.test.jsx",
+      "name": "PaymentModal leaves processing state when checkout resolves with a failure result",
+      "status": "passed",
+      "evidence": "new-feature-final.json"
+    },
+    {
+      "file": "src/components/common/__tests__/PaymentModal.test.jsx",
+      "name": "PaymentModal envía el efectivo recibido y el cambio al confirmar",
+      "status": "passed",
+      "evidence": "new-feature-final.json"
+    },
+    {
+      "file": "src/components/customers/__tests__/HistoricalCreditImport.test.jsx",
+      "name": "explicit owner review UI; presentation boundary only opening the screen never approves or imports",
+      "status": "passed",
+      "evidence": "new-feature-final.json"
+    },
+    {
+      "file": "src/components/customers/__tests__/HistoricalCreditImport.test.jsx",
+      "name": "explicit owner review UI; presentation boundary only shows exact amounts and requires review confirmation before import",
+      "status": "passed",
+      "evidence": "new-feature-final.json"
+    },
+    {
+      "file": "src/components/customers/__tests__/HistoricalCreditImport.test.jsx",
+      "name": "explicit owner review UI; presentation boundary only a timeout preserves the preview and offers a status check",
+      "status": "passed",
+      "evidence": "new-feature-final.json"
+    },
+    {
+      "file": "src/services/customerCredit/__tests__/historicalCreditCloudApply.test.js",
+      "name": "real Cloud apply through tenant Dexie preserves debt before applying Cloud zero while synchronizing directory fields",
+      "status": "passed",
+      "evidence": "ledger-view-final.json"
+    },
+    {
+      "file": "src/services/customerCredit/__tests__/historicalCreditCloudApply.test.js",
+      "name": "real Cloud apply through tenant Dexie does not replace unresolved local debt even when Cloud has a nonzero ledger",
+      "status": "passed",
+      "evidence": "ledger-view-final.json"
+    },
+    {
+      "file": "src/services/customerCredit/__tests__/historicalCreditCloudApply.test.js",
+      "name": "real Cloud apply through tenant Dexie applies ordinary Cloud financial projections without classifying them as Local history",
+      "status": "passed",
+      "evidence": "ledger-view-final.json"
+    },
+    {
+      "file": "src/services/customerCredit/__tests__/historicalCreditCloudApply.test.js",
+      "name": "real Cloud apply through tenant Dexie keeps original and current balance when local activity follows the snapshot",
+      "status": "passed",
+      "evidence": "ledger-view-final.json"
+    },
+    {
+      "file": "src/services/customerCredit/__tests__/historicalCreditCloudApply.test.js",
+      "name": "real Cloud apply through tenant Dexie directory payload cannot carry arbitrary debt fields",
+      "status": "passed",
+      "evidence": "ledger-view-final.json"
+    },
+    {
+      "file": "src/services/customerCredit/__tests__/historicalCreditCloudApply.test.js",
+      "name": "real Cloud apply through tenant Dexie keeps the earlier Cloud projection checkpoint without freezing ordinary sync",
+      "status": "passed",
+      "evidence": "ledger-view-final.json"
+    },
+    {
+      "file": "src/services/customerCredit/__tests__/historicalCreditCloudApply.test.js",
+      "name": "real Cloud apply through tenant Dexie preserves a new Local period after earlier Cloud synchronization",
+      "status": "passed",
+      "evidence": "ledger-view-final.json"
+    },
+    {
+      "file": "src/services/customerCredit/__tests__/historicalCreditMigration.workflow.test.js",
+      "name": "durable import workflow; RPC transport is a controlled boundary double startup and reconnect preserve debt without approval or financial RPC",
+      "status": "passed",
+      "evidence": "ledger-preservation-final.json"
+    },
+    {
+      "file": "src/services/customerCredit/__tests__/historicalCreditMigration.workflow.test.js",
+      "name": "durable import workflow; RPC transport is a controlled boundary double preview persists exact manifest and only reads the server",
+      "status": "passed",
+      "evidence": "ledger-preservation-final.json"
+    },
+    {
+      "file": "src/services/customerCredit/__tests__/historicalCreditMigration.workflow.test.js",
+      "name": "durable import workflow; RPC transport is a controlled boundary double does not authorize a manifest which was not reviewed",
+      "status": "passed",
+      "evidence": "ledger-preservation-final.json"
+    },
+    {
+      "file": "src/services/customerCredit/__tests__/historicalCreditMigration.workflow.test.js",
+      "name": "durable import workflow; RPC transport is a controlled boundary double lost approval response preserves batch and recovers status after a reload",
+      "status": "passed",
+      "evidence": "ledger-preservation-final.json"
+    },
+    {
+      "file": "src/services/customerCredit/__tests__/historicalCreditMigration.workflow.test.js",
+      "name": "durable import workflow; RPC transport is a controlled boundary double checks status before retry and never reauthorizes automatically",
+      "status": "passed",
+      "evidence": "ledger-preservation-final.json"
+    },
+    {
+      "file": "src/services/customerCredit/__tests__/historicalCreditMigration.workflow.test.js",
+      "name": "durable import workflow; RPC transport is a controlled boundary double rejects stale actor responses before saving a batch into another context",
+      "status": "passed",
+      "evidence": "ledger-preservation-final.json"
+    },
+    {
+      "file": "src/services/customerCredit/__tests__/historicalCreditMigration.workflow.test.js",
+      "name": "durable import workflow; RPC transport is a controlled boundary double rejects a mismatched receipt without completing preserved debt",
+      "status": "passed",
+      "evidence": "ledger-preservation-final.json"
+    },
+    {
+      "file": "src/services/customerCredit/__tests__/historicalCreditMigration.workflow.test.js",
+      "name": "durable import workflow; RPC transport is a controlled boundary double archives a consumed batch before reviewing additional pending customers",
+      "status": "passed",
+      "evidence": "ledger-preservation-final.json"
+    },
+    {
+      "file": "src/services/customerCredit/__tests__/historicalCreditSnapshot.test.js",
+      "name": "durable historical credit snapshots using real Dexie opens an old schema without adding stores and preserves cents and identity",
+      "status": "passed",
+      "evidence": "ledger-preservation-final.json"
+    },
+    {
+      "file": "src/services/customerCredit/__tests__/historicalCreditSnapshot.test.js",
+      "name": "durable historical credit snapshots using real Dexie retains the original after overwrite, close and reopen",
+      "status": "passed",
+      "evidence": "ledger-preservation-final.json"
+    },
+    {
+      "file": "src/services/customerCredit/__tests__/historicalCreditSnapshot.test.js",
+      "name": "durable historical credit snapshots using real Dexie rolls back snapshot and customer together on interrupted apply",
+      "status": "passed",
+      "evidence": "ledger-preservation-final.json"
+    },
+    {
+      "file": "src/services/customerCredit/__tests__/historicalCreditSnapshot.test.js",
+      "name": "durable historical credit snapshots using real Dexie preserves original source through conflict and safe retry",
+      "status": "passed",
+      "evidence": "ledger-preservation-final.json"
+    },
+    {
+      "file": "src/services/customerCredit/__tests__/historicalCreditSnapshot.test.js",
+      "name": "durable historical credit snapshots using real Dexie serializes concurrent preservation without changing source",
+      "status": "passed",
+      "evidence": "ledger-preservation-final.json"
+    },
+    {
+      "file": "src/services/customerCredit/__tests__/historicalCreditSnapshot.test.js",
+      "name": "durable historical credit snapshots using real Dexie does not classify known Cloud debt as new historical debt",
+      "status": "passed",
+      "evidence": "ledger-preservation-final.json"
+    },
+    {
+      "file": "src/services/customerCredit/__tests__/historicalCreditMigration.workflow.test.js",
+      "name": "durable import workflow; RPC transport is a controlled boundary double does not mark a consumed batch confirmed without every receipt",
+      "status": "passed",
+      "evidence": "ledger-preservation-final.json"
+    },
+    {
+      "file": "src/services/customerCredit/__tests__/historicalCreditMigration.workflow.test.js",
+      "name": "durable import workflow; RPC transport is a controlled boundary double keeps later local activity visible when no importable snapshots remain",
+      "status": "passed",
+      "evidence": "ledger-preservation-final.json"
+    },
+    {
+      "file": "src/services/customerCredit/__tests__/historicalCreditCloudApply.test.js",
+      "name": "real Cloud apply through tenant Dexie reconciles confirmed history once with later Local activity; ledger pulled=false",
+      "status": "passed",
+      "evidence": "ledger-view-final.json"
+    },
+    {
+      "file": "src/services/customerCredit/__tests__/historicalCreditCloudApply.test.js",
+      "name": "real Cloud apply through tenant Dexie reconciles confirmed history once with later Local activity; ledger pulled=true",
+      "status": "passed",
+      "evidence": "ledger-view-final.json"
+    },
+    {
+      "file": "src/services/customerCredit/__tests__/historicalCreditCloudApply.test.js",
+      "name": "real Cloud apply through tenant Dexie keeps a pure confirmed Cloud projection distinct from later Local activity",
+      "status": "passed",
+      "evidence": "ledger-view-final.json"
+    }
+  ]
+}

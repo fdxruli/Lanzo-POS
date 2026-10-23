@@ -7,6 +7,7 @@ import {
 } from '../database';
 import { normalizeCustomerDebtCents } from '../db/customerDebtIndex';
 import { toIndexedPhoneKey } from '../db/customerPhoneUtils';
+import { historicalCreditSnapshot } from '../customerCredit/historicalCreditSnapshot';
 import {
   buildPendingCustomer,
   cloudCustomerToLocal,
@@ -105,17 +106,28 @@ export const customerLocalRepository = {
     if (!cloudCustomer?.id) return null;
 
     await ensureOpen();
-    const existing = await db.table(STORES.CUSTOMERS).get(cloudCustomer.id);
-    const localCustomer = cloudCustomerToLocal(cloudCustomer, existing);
+    return db.transaction('rw', db.table(STORES.CUSTOMERS), db.table(STORES.SYNC_CACHE), db.table(STORES.CUSTOMER_LEDGER), async () => {
+      const existing = await db.table(STORES.CUSTOMERS).get(cloudCustomer.id);
+      const snapshot = await historicalCreditSnapshot.preserveInTransaction(existing);
+      const localCustomer = cloudCustomerToLocal(cloudCustomer, existing);
+      if (snapshot && !['IMPORTED', 'ALREADY_IMPORTED_IDENTICAL', 'CLOUD_PROJECTION'].includes(snapshot.status)) {
+        localCustomer.debt = existing.debt;
+        localCustomer.debtCents = normalizeCustomerDebtCents(existing.debt);
+        localCustomer.creditMigrationStatus = snapshot.status;
+      } else {
+        localCustomer.financialSource = 'cloud';
+        localCustomer.lastCloudDebtCents = normalizeCustomerDebtCents(localCustomer.debt);
+      }
 
-    if (localCustomer.deletedAt || localCustomer.deletedTimestamp) {
-      localCustomer.isActive = false;
-      localCustomer.phoneKey = null;
-      delete localCustomer.phoneKey;
-    }
+      if (localCustomer.deletedAt || localCustomer.deletedTimestamp) {
+        localCustomer.isActive = false;
+        localCustomer.phoneKey = null;
+        delete localCustomer.phoneKey;
+      }
 
-    await db.table(STORES.CUSTOMERS).put(localCustomer);
-    return localCustomer;
+      await db.table(STORES.CUSTOMERS).put(localCustomer);
+      return localCustomer;
+    });
   },
 
   async applyCloudCustomers(customers = []) {

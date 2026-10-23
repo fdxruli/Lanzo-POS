@@ -43,6 +43,21 @@ afterEach(() => {
 });
 
 describe('PaymentModal', () => {
+  it('routes a fully paid Fiado as paid sale even with historical debt and zero limit', async () => {
+    mocks.loadData.mockImplementation(async (store) => store === 'customers'
+      ? [{ id:'synthetic-customer',name:'Sin credito',phone:'5551234567',creditLimit:0,debt:500 }]
+      : []);
+    const onConfirm=vi.fn().mockResolvedValue({success:true});
+    render(<PaymentModal show onClose={vi.fn()} onConfirm={onConfirm} total={100}/>);
+    fireEvent.click(await screen.findByRole('button',{name:'Fiado'}));
+    fireEvent.change(screen.getByLabelText('Asignar a Cliente (Obligatorio):'),{target:{value:'Sin'}});
+    fireEvent.click(await screen.findByText('Sin credito (5551234567)'));
+    fireEvent.change(screen.getByLabelText('Abono (Opcional):'),{target:{value:'100'}});
+    const confirm=screen.getByRole('button',{name:'Confirmar Pago'});
+    await waitFor(()=>expect(confirm).toBeEnabled());fireEvent.click(confirm);
+    await waitFor(()=>expect(onConfirm).toHaveBeenCalledTimes(1));
+    expect(onConfirm.mock.calls[0][0]).toMatchObject({paymentMethod:'efectivo',amountPaid:'100',saldoPendiente:'0',dueDate:null});
+  });
   it('leaves processing state when checkout resolves with a failure result', async () => {
     let resolveCheckout;
     const checkoutPromise = new Promise((resolve) => {

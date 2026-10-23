@@ -54,7 +54,7 @@ const CreditConfigModal = ({ isOpen, onClose, currentGlobal, onSaveGlobal, isSav
                         <span>
                             <strong>Aplicar a todos los clientes existentes</strong>
                             <br />
-                            <span className="credit-config-warning__copy">Cuidado: Esto sobrescribirá los límites personalizados de todos los clientes registrados.</span>
+                            <span className="credit-config-warning__copy">Esto sobrescribirá los límites personalizados. Las deudas se conservan; un límite inferior al saldo bloqueará nuevos cargos.</span>
                         </span>
                     </label>
                 </div>

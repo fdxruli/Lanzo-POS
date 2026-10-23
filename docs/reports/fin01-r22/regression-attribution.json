@@ -1,0 +1,23 @@
+{
+  "baselineSHA": "9ca65fc07804f40c2add5e59bee0e6edca940b8f",
+  "baseline": [
+    {
+      "file": "services/__test__/sales/inventoryFlow.test.js",
+      "name": "inventoryFlow committed stock reserva lotes y sincroniza committedStock del padre",
+      "messages": [
+        "AssertionError: expected [ { batchId: 'b-1', …(5) } ] to deeply equal [ { batchId: 'b-1', …(3) } ]\n    at C:/dev/Lanzo-POS-fin01-baseline/src/services/__test__/sales/inventoryFlow.test.js:112:64\n    at file:///C:/Users/pituf/.codex/worktrees/pr338-phase2-cert/Lanzo-POS-Git/node_modules/@vitest/runner/dist/index.js:919:20"
+      ]
+    }
+  ],
+  "candidate": [
+    {
+      "file": "services/__test__/sales/inventoryFlow.test.js",
+      "name": "inventoryFlow committed stock reserva lotes y sincroniza committedStock del padre",
+      "messages": [
+        "AssertionError: expected [ { batchId: 'b-1', …(5) } ] to deeply equal [ { batchId: 'b-1', …(3) } ]\n    at C:/dev/Lanzo-POS-fin01-r1/src/services/__test__/sales/inventoryFlow.test.js:112:64\n    at file:///C:/Users/pituf/.codex/worktrees/pr338-phase2-cert/Lanzo-POS-Git/node_modules/@vitest/runner/dist/index.js:919:20"
+      ]
+    }
+  ],
+  "classification": "PREEXISTING_REPRODUCED_ON_MAIN",
+  "expectationsModified": false
+}

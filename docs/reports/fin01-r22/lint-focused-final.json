@@ -1,0 +1,304 @@
+[
+  {
+    "filePath": "C:\\dev\\Lanzo-POS-fin01-r1\\src\\components\\common\\PaymentModal.jsx",
+    "messages": [],
+    "suppressedMessages": [],
+    "errorCount": 0,
+    "fatalErrorCount": 0,
+    "warningCount": 0,
+    "fixableErrorCount": 0,
+    "fixableWarningCount": 0,
+    "usedDeprecatedRules": []
+  },
+  {
+    "filePath": "C:\\dev\\Lanzo-POS-fin01-r1\\src\\components\\common\\__tests__\\PaymentModal.test.jsx",
+    "messages": [],
+    "suppressedMessages": [],
+    "errorCount": 0,
+    "fatalErrorCount": 0,
+    "warningCount": 0,
+    "fixableErrorCount": 0,
+    "fixableWarningCount": 0,
+    "usedDeprecatedRules": []
+  },
+  {
+    "filePath": "C:\\dev\\Lanzo-POS-fin01-r1\\src\\components\\customers\\CustomerCard.jsx",
+    "messages": [],
+    "suppressedMessages": [],
+    "errorCount": 0,
+    "fatalErrorCount": 0,
+    "warningCount": 0,
+    "fixableErrorCount": 0,
+    "fixableWarningCount": 0,
+    "usedDeprecatedRules": []
+  },
+  {
+    "filePath": "C:\\dev\\Lanzo-POS-fin01-r1\\src\\components\\customers\\CustomerForm.jsx",
+    "messages": [],
+    "suppressedMessages": [],
+    "errorCount": 0,
+    "fatalErrorCount": 0,
+    "warningCount": 0,
+    "fixableErrorCount": 0,
+    "fixableWarningCount": 0,
+    "usedDeprecatedRules": []
+  },
+  {
+    "filePath": "C:\\dev\\Lanzo-POS-fin01-r1\\src\\components\\customers\\CustomerList.jsx",
+    "messages": [],
+    "suppressedMessages": [],
+    "errorCount": 0,
+    "fatalErrorCount": 0,
+    "warningCount": 0,
+    "fixableErrorCount": 0,
+    "fixableWarningCount": 0,
+    "usedDeprecatedRules": []
+  },
+  {
+    "filePath": "C:\\dev\\Lanzo-POS-fin01-r1\\src\\components\\customers\\HistoricalCreditImport.jsx",
+    "messages": [],
+    "suppressedMessages": [],
+    "errorCount": 0,
+    "fatalErrorCount": 0,
+    "warningCount": 0,
+    "fixableErrorCount": 0,
+    "fixableWarningCount": 0,
+    "usedDeprecatedRules": []
+  },
+  {
+    "filePath": "C:\\dev\\Lanzo-POS-fin01-r1\\src\\components\\customers\\__tests__\\HistoricalCreditImport.test.jsx",
+    "messages": [],
+    "suppressedMessages": [],
+    "errorCount": 0,
+    "fatalErrorCount": 0,
+    "warningCount": 0,
+    "fixableErrorCount": 0,
+    "fixableWarningCount": 0,
+    "usedDeprecatedRules": []
+  },
+  {
+    "filePath": "C:\\dev\\Lanzo-POS-fin01-r1\\src\\pages\\CustomersPage.jsx",
+    "messages": [],
+    "suppressedMessages": [],
+    "errorCount": 0,
+    "fatalErrorCount": 0,
+    "warningCount": 0,
+    "fixableErrorCount": 0,
+    "fixableWarningCount": 0,
+    "usedDeprecatedRules": []
+  },
+  {
+    "filePath": "C:\\dev\\Lanzo-POS-fin01-r1\\src\\services\\customerCredit\\__tests__\\historicalCreditCloudApply.test.js",
+    "messages": [],
+    "suppressedMessages": [],
+    "errorCount": 0,
+    "fatalErrorCount": 0,
+    "warningCount": 0,
+    "fixableErrorCount": 0,
+    "fixableWarningCount": 0,
+    "usedDeprecatedRules": []
+  },
+  {
+    "filePath": "C:\\dev\\Lanzo-POS-fin01-r1\\src\\services\\customerCredit\\__tests__\\historicalCreditMigration.workflow.test.js",
+    "messages": [],
+    "suppressedMessages": [],
+    "errorCount": 0,
+    "fatalErrorCount": 0,
+    "warningCount": 0,
+    "fixableErrorCount": 0,
+    "fixableWarningCount": 0,
+    "usedDeprecatedRules": []
+  },
+  {
+    "filePath": "C:\\dev\\Lanzo-POS-fin01-r1\\src\\services\\customerCredit\\__tests__\\historicalCreditSnapshot.test.js",
+    "messages": [],
+    "suppressedMessages": [],
+    "errorCount": 0,
+    "fatalErrorCount": 0,
+    "warningCount": 0,
+    "fixableErrorCount": 0,
+    "fixableWarningCount": 0,
+    "usedDeprecatedRules": []
+  },
+  {
+    "filePath": "C:\\dev\\Lanzo-POS-fin01-r1\\src\\services\\customerCredit\\customerCreditCloudRepository.js",
+    "messages": [],
+    "suppressedMessages": [],
+    "errorCount": 0,
+    "fatalErrorCount": 0,
+    "warningCount": 0,
+    "fixableErrorCount": 0,
+    "fixableWarningCount": 0,
+    "usedDeprecatedRules": []
+  },
+  {
+    "filePath": "C:\\dev\\Lanzo-POS-fin01-r1\\src\\services\\customerCredit\\customerCreditMigrationService.js",
+    "messages": [],
+    "suppressedMessages": [],
+    "errorCount": 0,
+    "fatalErrorCount": 0,
+    "warningCount": 0,
+    "fixableErrorCount": 0,
+    "fixableWarningCount": 0,
+    "usedDeprecatedRules": []
+  },
+  {
+    "filePath": "C:\\dev\\Lanzo-POS-fin01-r1\\src\\services\\customerCredit\\historicalCreditSnapshot.js",
+    "messages": [],
+    "suppressedMessages": [],
+    "errorCount": 0,
+    "fatalErrorCount": 0,
+    "warningCount": 0,
+    "fixableErrorCount": 0,
+    "fixableWarningCount": 0,
+    "usedDeprecatedRules": []
+  },
+  {
+    "filePath": "C:\\dev\\Lanzo-POS-fin01-r1\\src\\services\\customers\\customerLocalRepository.js",
+    "messages": [],
+    "suppressedMessages": [],
+    "errorCount": 0,
+    "fatalErrorCount": 0,
+    "warningCount": 0,
+    "fixableErrorCount": 0,
+    "fixableWarningCount": 0,
+    "usedDeprecatedRules": []
+  },
+  {
+    "filePath": "C:\\dev\\Lanzo-POS-fin01-r1\\src\\services\\customers\\customerMapper.js",
+    "messages": [],
+    "suppressedMessages": [],
+    "errorCount": 0,
+    "fatalErrorCount": 0,
+    "warningCount": 0,
+    "fixableErrorCount": 0,
+    "fixableWarningCount": 0,
+    "usedDeprecatedRules": []
+  },
+  {
+    "filePath": "C:\\dev\\Lanzo-POS-fin01-r1\\src\\services\\customers\\customerMigrationService.js",
+    "messages": [],
+    "suppressedMessages": [],
+    "errorCount": 0,
+    "fatalErrorCount": 0,
+    "warningCount": 0,
+    "fixableErrorCount": 0,
+    "fixableWarningCount": 0,
+    "usedDeprecatedRules": []
+  },
+  {
+    "filePath": "C:\\dev\\Lanzo-POS-fin01-r1\\src\\services\\db\\customerCreditRepository.js",
+    "messages": [
+      {
+        "ruleId": "no-console",
+        "severity": 1,
+        "message": "Unexpected console statement. Only these console methods are allowed: warn, error, info.",
+        "line": 374,
+        "column": 25,
+        "nodeType": "MemberExpression",
+        "messageId": "limited",
+        "endLine": 374,
+        "endColumn": 36,
+        "suggestions": [
+          {
+            "fix": {
+              "range": [
+                16734,
+                16812
+              ],
+              "text": ""
+            },
+            "messageId": "removeConsole",
+            "data": {
+              "propertyName": "log"
+            },
+            "desc": "Remove the console.log()."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-console",
+        "severity": 1,
+        "message": "Unexpected console statement. Only these console methods are allowed: warn, error, info.",
+        "line": 398,
+        "column": 9,
+        "nodeType": "MemberExpression",
+        "messageId": "limited",
+        "endLine": 398,
+        "endColumn": 20,
+        "suggestions": [
+          {
+            "fix": {
+              "range": [
+                17740,
+                17821
+              ],
+              "text": ""
+            },
+            "messageId": "removeConsole",
+            "data": {
+              "propertyName": "log"
+            },
+            "desc": "Remove the console.log()."
+          }
+        ]
+      },
+      {
+        "ruleId": "no-console",
+        "severity": 1,
+        "message": "Unexpected console statement. Only these console methods are allowed: warn, error, info.",
+        "line": 412,
+        "column": 13,
+        "nodeType": "MemberExpression",
+        "messageId": "limited",
+        "endLine": 412,
+        "endColumn": 24,
+        "suggestions": [
+          {
+            "fix": {
+              "range": [
+                18392,
+                18481
+              ],
+              "text": ""
+            },
+            "messageId": "removeConsole",
+            "data": {
+              "propertyName": "log"
+            },
+            "desc": "Remove the console.log()."
+          }
+        ]
+      }
+    ],
+    "suppressedMessages": [],
+    "errorCount": 0,
+    "fatalErrorCount": 0,
+    "warningCount": 3,
+    "fixableErrorCount": 0,
+    "fixableWarningCount": 0,
+    "usedDeprecatedRules": []
+  },
+  {
+    "filePath": "C:\\dev\\Lanzo-POS-fin01-r1\\src\\services\\db\\sales.js",
+    "messages": [],
+    "suppressedMessages": [],
+    "errorCount": 0,
+    "fatalErrorCount": 0,
+    "warningCount": 0,
+    "fixableErrorCount": 0,
+    "fixableWarningCount": 0,
+    "usedDeprecatedRules": []
+  },
+  {
+    "filePath": "C:\\dev\\Lanzo-POS-fin01-r1\\src\\services\\salesCloud\\salesCloudCashierService.js",
+    "messages": [],
+    "suppressedMessages": [],
+    "errorCount": 0,
+    "fatalErrorCount": 0,
+    "warningCount": 0,
+    "fixableErrorCount": 0,
+    "fixableWarningCount": 0,
+    "usedDeprecatedRules": []
+  }
+]

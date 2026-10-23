@@ -1,0 +1,60 @@
+[
+  {
+    "file": "customer-messaging-phase4-validation.yml",
+    "dispatchOnly": false,
+    "sqlMutationLines": []
+  },
+  {
+    "file": "ecommerce-public-phase4-validation.yml",
+    "dispatchOnly": false,
+    "sqlMutationLines": []
+  },
+  {
+    "file": "free-local-product-authority-validation.yml",
+    "dispatchOnly": false,
+    "sqlMutationLines": []
+  },
+  {
+    "file": "hotfix-dexie-validation.yml",
+    "dispatchOnly": false,
+    "sqlMutationLines": []
+  },
+  {
+    "file": "incident-lab-validation.yml",
+    "dispatchOnly": false,
+    "sqlMutationLines": []
+  },
+  {
+    "file": "pr127-global-comparison.yml",
+    "dispatchOnly": false,
+    "sqlMutationLines": []
+  },
+  {
+    "file": "shared-terminal-actor-runtime.yml",
+    "dispatchOnly": false,
+    "sqlMutationLines": []
+  },
+  {
+    "file": "shared-terminal-actor-scoped-storage.yml",
+    "dispatchOnly": false,
+    "sqlMutationLines": []
+  },
+  {
+    "file": "shared-terminal-device-actor-auth.yml",
+    "dispatchOnly": false,
+    "sqlMutationLines": []
+  },
+  {
+    "file": "store-git-runtime-validation.yml",
+    "dispatchOnly": false,
+    "sqlMutationLines": []
+  },
+  {
+    "file": "supabase-production-migrations.yml",
+    "dispatchOnly": true,
+    "sqlMutationLines": [
+      "supabase db push --dry-run --linked | tee db-push-dry-run.txt",
+      "supabase db push --linked"
+    ]
+  }
+]

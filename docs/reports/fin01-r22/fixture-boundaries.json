@@ -1,0 +1,61 @@
+{
+  "realtimeTransportDouble": true,
+  "functions": 82,
+  "tables": 30,
+  "excludedForeignKeys": [
+    {
+      "table": "business_profiles",
+      "name": "business_profiles_user_id_fkey",
+      "type": "f",
+      "definition": "FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "ecommerce_order_items",
+      "name": "ecommerce_order_items_portal_id_fkey",
+      "type": "f",
+      "definition": "FOREIGN KEY (portal_id) REFERENCES ecommerce_portals(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "ecommerce_order_items",
+      "name": "ecommerce_order_items_portal_license_fkey",
+      "type": "f",
+      "definition": "FOREIGN KEY (portal_id, license_id) REFERENCES ecommerce_portals(id, license_id)"
+    },
+    {
+      "table": "ecommerce_orders",
+      "name": "ecommerce_orders_portal_id_fkey",
+      "type": "f",
+      "definition": "FOREIGN KEY (portal_id) REFERENCES ecommerce_portals(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "ecommerce_orders",
+      "name": "ecommerce_orders_portal_license_fkey",
+      "type": "f",
+      "definition": "FOREIGN KEY (portal_id, license_id) REFERENCES ecommerce_portals(id, license_id)"
+    },
+    {
+      "table": "ecommerce_published_products",
+      "name": "ecommerce_published_products_portal_id_fkey",
+      "type": "f",
+      "definition": "FOREIGN KEY (portal_id) REFERENCES ecommerce_portals(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "ecommerce_published_products",
+      "name": "ecommerce_published_products_portal_license_fkey",
+      "type": "f",
+      "definition": "FOREIGN KEY (portal_id, license_id) REFERENCES ecommerce_portals(id, license_id) ON DELETE CASCADE"
+    },
+    {
+      "table": "license_devices",
+      "name": "license_devices_user_id_fkey",
+      "type": "f",
+      "definition": "FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "pos_products",
+      "name": "pos_products_category_id_fkey",
+      "type": "f",
+      "definition": "FOREIGN KEY (category_id) REFERENCES pos_categories(id) ON DELETE SET NULL"
+    }
+  ]
+}

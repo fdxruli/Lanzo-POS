@@ -1,0 +1,17 @@
+[
+  "src/services/auth/__tests__/actorRuntimeController.test.js",
+  "src/services/auth/__tests__/actorScopedStorage.test.js",
+  "src/services/auth/__tests__/actorScopedStorage.m01.integration.test.js",
+  "src/services/tenant/__tests__/localTenantGuard.test.js",
+  "src/services/db/__tests__/tenantRuntimeRouter.test.js",
+  "src/services/db/__tests__/customerCreditRepository.test.js",
+  "src/services/db/__tests__/customerCreditRepository.autoHealLifecycle.test.js",
+  "src/services/salesCloud/__tests__/salesCloudFinancialRetry.integration.test.js",
+  "src/services/salesCloud/__tests__/salesCloudRepository.test.js",
+  "src/services/cash/cashRepository.stationAlignment.test.js",
+  "src/services/cash/cashRepository.networkRecovery.test.js",
+  "src/services/__test__/sales/splitOrderService.test.js",
+  "src/services/__test__/sales/inventoryFlow.test.js",
+  "src/services/sales/__tests__/inventoryFlow.temporal.test.js",
+  "src/pages/__tests__/CustomersPage.navigation.test.jsx"
+]

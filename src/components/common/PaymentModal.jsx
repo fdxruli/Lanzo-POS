@@ -80,10 +80,10 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
   const limit = Money.init(currentCustomer?.creditLimit || 0);
   const currentDebt = Money.init(currentCustomer?.debt || 0);
   const projectedDebt = Money.add(currentDebt, saldoPendiente);
-  const isOverLimit = isFiado && currentCustomer && (limit.eq(0) || projectedDebt.gt(limit));
+  const isOverLimit = isFiado && saldoPendiente.gt(0) && currentCustomer && (limit.eq(0) || projectedDebt.gt(limit));
   const limitMessage = limit.eq(0) ? 'Este cliente no tiene crédito autorizado.' : `Excede el límite de crédito ($${Money.toNumber(limit)}). Deuda final $${Money.toNumber(projectedDebt)}.`;
   const todayStr = new Date().toISOString().split('T')[0];
-  const isDueDateValid = isFiado ? (dueDate && dueDate >= todayStr) : true;
+  const isDueDateValid = isFiado && saldoPendiente.gt(0) ? (dueDate && dueDate >= todayStr) : true;
   const canConfirm = isEfectivo ? safePaid.gte(safeTotal) : (selectedCustomerId !== null && safePaid.lte(safeTotal) && !isOverLimit && isDueDateValid);
 
   const handleAmountChange = (event) => {
@@ -107,11 +107,11 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
         receivedAmount: isEfectivo || (hasInitialCreditPayment && initialPaymentMethod === 'efectivo') ? Money.toExactString(safePaid) : null,
         changeAmount: isEfectivo ? Money.toExactString(safeChange) : '0',
         customerId: selectedCustomerId,
-        paymentMethod,
-        initialPaymentMethod: hasInitialCreditPayment ? initialPaymentMethod : null,
+        paymentMethod: isFiado && saldoPendiente.eq(0) ? initialPaymentMethod : paymentMethod,
+        initialPaymentMethod: hasInitialCreditPayment && saldoPendiente.gt(0) ? initialPaymentMethod : null,
         saldoPendiente: Money.toExactString(saldoPendiente),
         sendReceipt,
-        dueDate: isFiado && dueDate ? new Date(dueDate).toISOString() : null,
+        dueDate: isFiado && saldoPendiente.gt(0) && dueDate ? new Date(dueDate).toISOString() : null,
         subtotal: activeTotals.subtotal || effectiveTotal,
         discountTotal: activeTotals.discountTotal || 0,
         discount_total: activeTotals.discountTotal || 0,
@@ -216,7 +216,7 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
 
                   {isEfectivo && <div className="quick-cash-options">{CASH_DENOMINATIONS.map((amount) => <button key={amount} type="button" className="btn-cash-option" onClick={() => handleDenominationClick(amount)}>${amount}</button>)}<button type="button" className="btn-cash-option btn-cash-option-exact" onClick={() => setAmountPaid(Money.toNumber(safeTotal).toFixed(2).toString())}>Exacto (${Money.toNumber(safeTotal).toFixed(2)})</button></div>}
 
-                  {isEfectivo ? <><p className="payment-label">Cambio:</p><p id="payment-change" className="payment-change">${Money.toNumber(safeChange).toFixed(2)}</p></> : <><p className="payment-label">Saldo Pendiente:</p><p id="payment-change" className="payment-saldo">${Money.toNumber(saldoPendiente).toFixed(2)}</p>{isFiado && currentCustomer && <div className={`ui-alert ${isOverLimit ? 'ui-alert--danger' : 'ui-alert--success'} payment-alert ${!isOverLimit ? 'payment-credit-available' : ''}`}>{isOverLimit ? <><span>Crédito insuficiente</span><p className="ui-alert__text">{limitMessage}</p></> : <><span>Crédito disponible:</span><strong>${Money.toNumber(Money.subtract(limit, projectedDebt)).toFixed(2)}</strong></>}</div>}{isFiado && safePaid.gt(safeTotal) && <p className="ui-inline-error payment-inline-message">El abono inicial no puede ser mayor al total.</p>}</>}
+                  {isEfectivo ? <><p className="payment-label">Cambio:</p><p id="payment-change" className="payment-change">${Money.toNumber(safeChange).toFixed(2)}</p></> : <><p className="payment-label">Saldo Pendiente:</p><p id="payment-change" className="payment-saldo">${Money.toNumber(saldoPendiente).toFixed(2)}</p>{isFiado && currentCustomer && <div className={`ui-alert ${isOverLimit ? 'ui-alert--danger' : 'ui-alert--success'} payment-alert ${!isOverLimit ? 'payment-credit-available' : ''}`}>{isOverLimit ? <><span>Crédito insuficiente</span><p className="ui-alert__text">{limitMessage}</p></> : saldoPendiente.eq(0) ? <span>Pago completo: no genera deuda nueva.</span> : <><span>Crédito disponible:</span><strong>${Money.toNumber(Money.subtract(limit, projectedDebt)).toFixed(2)}</strong></>}</div>}{isFiado && safePaid.gt(safeTotal) && <p className="ui-inline-error payment-inline-message">El abono inicial no puede ser mayor al total.</p>}</>}
                 </div>
 
                 <div className="payment-actions">
