@@ -126,7 +126,11 @@ Los avisos de React Doctor revisan cada fila del outbox antes de modificarla. Es
 | Cliente v2 | F+V | Contrato implementado localmente; integración PostgREST pendiente |
 | Cliente antiguo | F+V sin Q | HOLD; compatibilidad peligrosa no certificada |
 
-Vercel `lanzo-pos` está conectado al repositorio. No había deployment de la rama candidata en la consulta anterior a publicar. La QA funcional queda diferida hasta instalar/verificar dependencias SQL y superar los gates; cualquier Preview que GitHub genere automáticamente debe permanecer protegida y no abrirse contra Production para ejecutar acciones.
+Vercel `lanzo-pos` está conectado al repositorio. Después del push creó automáticamente el deployment `dpl_4HRi7K8jM1JakPymJWKcwZbbT2kU`, URL `https://lanzo-2ulcagnyn-fdxrulis-projects.vercel.app`, rama `feat/cloud-sync-protocol-v2-fin01-r1`, commit/SHA `ec7cdf2ade8da817ae8ca72d2c3774b93a019280`, proyecto `prj_tE5uWn6kLBYdS1eDFWVxRm449RUr`, framework Vite. En la última lectura estaba `BUILDING` y `target=null`; no se promovió a Production. La protección SSO del proyecto está activa para deployments no asociados a dominios custom.
+
+Se revisó la lista de nombres de variables del proyecto sin descifrar valores. Las variables con target Preview incluyen `VITE_ENABLE_CLOUD_SALE_CANCELLATIONS`, `VITE_ENABLE_CLOUD_CASHIER_SALES`, `VITE_AI_EDGE_FUNCTION`, `VITE_AI_PROVIDER`, `VITE_ENABLE_LICENSE_REALTIME`, `VITE_GOOGLE_CLIENT_ID`, `VITE_SUPPORT_EMAIL`, `VITE_LICENSE_SALT`, `VITE_SUPABASE_PUBLISHABLE_KEY` y `VITE_SUPABASE_URL`. No se exportó ningún valor. `VITE_LICENSE_SALT` también tiene target Production y `src/services/licenseStorage.js` la usa para una firma/hash local; Vite la entrega al navegador, así que no sirve como secreto. Esta configuración preexistente no se modificó y no se usó como autorización del servidor.
+
+La QA funcional queda diferida hasta instalar/verificar dependencias SQL y superar los gates. No se abrió la aplicación autenticada ni se ejecutaron acciones automáticas contra Production.
 
 ## H. Estados finales
 
@@ -143,14 +147,14 @@ PRODUCTION_SQL_STATUS=NOT_RUN_GATED
 PRODUCTION_FIN01_STATUS=F_ABSENT_NOT_APPLIED
 PRODUCTION_V2_STATUS=NOT_INSTALLED
 PRODUCTION_QA_STATUS=NOT_RUN
-VERCEL_PREVIEW_STATUS=FUNCTIONAL_QA_DEFERRED_GATE_HOLD
+VERCEL_PREVIEW_STATUS=AUTO_DEPLOY_BUILDING_EXACT_SHA_FUNCTIONAL_QA_DEFERRED
 POSTGREST_INTEGRATION_STATUS=NOT_RUN
 LEGACY_COMPATIBILITY_STATUS=HOLD_Q_MISSING
 LOCAL_DEBT_PRESERVATION_STATUS=CLIENT_GUARDS_PASS_REMOTE_UNCERTIFIED
 BACKUP_RESTORE_STATUS=HOLD_R3_4_AND_ISOLATED_RESTORE_MISSING
 SELECTIVE_MIGRATION_STATUS=PREPARED_LOCAL_NOT_APPLIED
 NEW_REGRESSIONS=0_CONFIRMED_IN_22_FILE_193_TEST_FOCAL_SCOPE
-PR_V2_STATUS=DRAFT_TO_BE_PUBLISHED_STACKED_ON_PR370
+PR_V2_STATUS=OPEN_DRAFT_371_STACKED_ON_PR370
 PR370_STATUS=OPEN_DRAFT_UNMODIFIED_HEAD_B31BBd80
 PR338_STATUS=OPEN_DRAFT_UNMODIFIED_HEAD_FEF7205F
 PR352_STATUS=OPEN_DRAFT_UNMODIFIED_HEAD_D758F69B
