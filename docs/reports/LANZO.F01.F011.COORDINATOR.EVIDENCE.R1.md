@@ -1,6 +1,6 @@
 # LANZO POS — F01-1 — COORDINATOR EVIDENCE R1
 
-Fecha: 23 de octubre de 2026, America/Mexico_City. **IMPLEMENTED_READY_FOR_OWNER_REVIEW / HOLD_MERGE.** Repositorio `fdxruli/Lanzo-POS`, base/main inicial/final `52bb573e651529b323b6617e3161cd76ece14a39`, rama `feat/f01-single-instance-coordinator-r1`. PR/HEAD publicado/CI exacto: se añaden después de publicar el primer commit. Merge NOT PERFORMED.
+Fecha: 23 de octubre de 2026, America/Mexico_City. **IMPLEMENTED_READY_FOR_OWNER_REVIEW / HOLD_MERGE.** Repositorio `fdxruli/Lanzo-POS`, base/main inicial/final `52bb573e651529b323b6617e3161cd76ece14a39`, rama `feat/f01-single-instance-coordinator-r1`. PR: [PR Draft #372](https://github.com/fdxruli/Lanzo-POS/pull/372), OPEN/Draft/NOT MERGED. HEAD de implementación: `f48c8c2c027ffddc08e06df5175a5f4fe34d91d4`; árbol `1b823405769c4b51daa39bf734182a2cc6ebd4ef`, idéntico al checkpoint local probado. Merge NOT PERFORMED.
 
 ## Procedencia y reproducción
 
@@ -109,4 +109,12 @@ Supabase calls/production writes NONE; SQL/migraciones NONE; licencias/dispositi
 
 ## Publicación y cierre
 
-Se completará con PR Draft, SHAs y resultados remotos exactos después del push. El HOLD de merge se mantiene independientemente de checks verdes. Ver el informe Implementation para contratos, transiciones, UX futura y dependencias F01-2.
+PR #372 confirmado OPEN/Draft, merged=false y mergeable=true en la lectura de cierre. Main sigue en 52bb573e651529b323b6617e3161cd76ece14a39. Publicación inicial mediante GitHub conectado; el transporte git directo no disponía de credencial de escritura. Se publicaron blobs/tree por API y se verificó igualdad exacta del tree contra el checkpoint local. Después se recuperó el commit remoto en una rama propia, conservando los checkpoints locales. Ningún force push ni modificación de ramas ajenas.
+
+[Preview del SHA de implementación](https://lanzo-f7rn4sd0h-fdxrulis-projects.vercel.app), deployment `dpl_3ci3hAKYMo2RJ3ywy541p69AsSdD`: READY; proyecto `lanzo-pos`, framework Vite, branch/commit exactos comprobados mediante metadatos. Target remoto literal null, despliegue de la rama de feature, no promoción a Production. No se ejecutó App ni RPC, no se presenta HTTP protegido como QA funcional y no hay laboratorio F011 en la Preview.
+
+[PR127 #1150](https://github.com/fdxruli/Lanzo-POS/actions/runs/40013974405) corresponde al SHA de implementación. En el snapshot versionado: candidata ejecutada, baseline en curso; NO se declara PASS del gate aún. Vercel status success. Los otros workflows con filtros auth/tenant/db no fueron disparados por este diff: NOT_TRIGGERED, no PASS implícito. `remote-publication.json` conserva el snapshot exacto; la conclusión remota final y el HEAD documental se actualizan en el cuerpo del PR, que debe consultarse antes de cualquier decisión de merge.
+
+Este commit de cierre sólo modifica los dos informes y evidencia/manifiesto; las tres fuentes del coordinador, sus pruebas y los archivos comerciales permanecen idénticos al SHA de implementación. No se atribuye una ejecución de un SHA a otro: fuente probada y commit documental se distinguen explícitamente. El HOLD de merge se mantiene incluso con checks verdes.
+
+¿Lista F01-1 para revisión del propietario? Sí, como infraestructura aislada con QA física/comercial pendiente. ¿Merge aislado autorizado? NO. No basta pasar el coordinador: revisar también aislamiento, diferencial, build/precache, CI exacto y los límites aceptados. Sin activación ni F01-2 al terminar.

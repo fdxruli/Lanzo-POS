@@ -4,7 +4,7 @@ Fecha: 23 de octubre de 2026, America/Mexico_City. Repositorio: `fdxruli/Lanzo-P
 
 **IMPLEMENTED_READY_FOR_OWNER_REVIEW / HOLD_MERGE.** Implementación aditiva del coordinador; inerte en el producto actual. No se integra F01-2 ni se certifica exclusión financiera universal. LC13 permanece abierto. Sólo las instancias compatibles que adquieren el mismo recurso nativo, dentro del mismo ámbito efectivo del navegador, comparten la exclusión.
 
-Main inicial/final verificado: `52bb573e651529b323b6617e3161cd76ece14a39`. Rama: `feat/f01-single-instance-coordinator-r1`. El SHA de implementación es el commit que añade estos archivos; el SHA publicado/PR y los checks exactos se registran al cierre en Evidence y en el PR, evitando hashes autorreferentes. PR: pendiente de publicación del primer commit. Merge: NOT PERFORMED.
+Main inicial/final verificado: `52bb573e651529b323b6617e3161cd76ece14a39`. Rama: `feat/f01-single-instance-coordinator-r1`. El SHA de implementación es el commit que añade estos archivos; el SHA publicado/PR y los checks exactos se registran al cierre en Evidence y en el PR, evitando hashes autorreferentes. PR: [PR Draft #372](https://github.com/fdxruli/Lanzo-POS/pull/372), OPEN/Draft/NOT MERGED. HEAD de implementación: `f48c8c2c027ffddc08e06df5175a5f4fe34d91d4`; el commit posterior sólo cierra documentación/evidencia. Merge: NOT PERFORMED.
 
 ## Alcance y antecedentes
 
@@ -91,7 +91,7 @@ Actor Runtime, Actor Scoped Storage, M-01, F-02, Admin 168h, Staff online-only, 
 
 Builds Production, Preview, Store y Store Vercel PASS. Precache: 24 assets iniciales Production y 32 Preview, cero faltantes; `coreLocalRouteAssets=[]` es el resultado literal del auditor actual, no evidencia de probar todas las rutas offline. CI/PR127 y Preview exactos se registran en el cierre de Evidence, sin atribuir checks de otros PR.
 
-AC-F011-01..28: implementados/verificados dentro del alcance documentado. AC-04/07 limitados a cohorte nativa compatible; AC-18/19 preservan explícitamente legacy/LC13. AC-26/27 probados mediante preservación del arranque y build, no mediante login LAN físico. AC-29/30 se verifican al publicar Draft y confirmar ausencia de merge. La matriz física pendiente no se convierte en PASS.
+AC-F011-01..28: implementados/verificados dentro del alcance documentado. AC-04/07 limitados a cohorte nativa compatible; AC-18/19 preservan explícitamente legacy/LC13. AC-26/27 probados mediante preservación del arranque y build, no mediante login LAN físico. AC-29/30 verificados: PR #372 OPEN/Draft y merged=false. La matriz física pendiente no se convierte en PASS.
 
 ¿Lista para revisión del propietario? Sí, infraestructura aislada con límites explícitos. ¿Puede mergearse aisladamente? **HOLD_OWNER_REVIEW**: la revisión debe considerar aislamiento, diferencial, CI exacto, build/precache y alcance aceptado; pasar sólo el coordinador no autoriza merge. Este encargo prohíbe merge y Ready for Review automático.
 
