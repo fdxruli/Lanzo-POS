@@ -25,6 +25,42 @@ const ensureOpen = async () => {
   }
 };
 
+const applyCloudCustomerInCurrentTransaction = async (cloudCustomer, actorHandle = null) => {
+  if (!cloudCustomer?.id) return null;
+  actorHandle?.assertCurrent?.();
+  const existing = await db.table(STORES.CUSTOMERS).get(cloudCustomer.id);
+  const snapshot = await historicalCreditSnapshot.preserveInTransaction(existing, { actorHandle });
+  const localCustomer = cloudCustomerToLocal(cloudCustomer, existing);
+  const projectionStatus = localCustomer.financialProjectionStatus;
+  const projectionUnknown = ['HISTORICAL_PENDING', 'CONFLICT', 'NOT_INCLUDED'].includes(projectionStatus);
+
+  if (snapshot && !['IMPORTED', 'ALREADY_IMPORTED_IDENTICAL', 'CLOUD_PROJECTION'].includes(snapshot.status)) {
+    localCustomer.debt = existing.debt;
+    localCustomer.debtCents = normalizeCustomerDebtCents(existing.debt);
+    localCustomer.creditMigrationStatus = snapshot.status;
+  } else if (projectionUnknown) {
+    localCustomer.financialSource = existing?.financialSource || 'unknown';
+    if (existing?.lastCloudDebtCents !== undefined) {
+      localCustomer.lastCloudDebtCents = existing.lastCloudDebtCents;
+    } else {
+      delete localCustomer.lastCloudDebtCents;
+    }
+  } else {
+    localCustomer.financialSource = 'cloud';
+    localCustomer.lastCloudDebtCents = normalizeCustomerDebtCents(localCustomer.debt);
+  }
+
+  if (localCustomer.deletedAt || localCustomer.deletedTimestamp) {
+    localCustomer.isActive = false;
+    localCustomer.phoneKey = null;
+    delete localCustomer.phoneKey;
+  }
+
+  actorHandle?.assertCurrent?.();
+  await db.table(STORES.CUSTOMERS).put(localCustomer);
+  return localCustomer;
+};
+
 const normalizeSearchTerm = (query = '') => String(query || '').trim().toLowerCase();
 
 const matchesSearch = (customer, normalizedTerm) => {
@@ -102,40 +138,42 @@ export const customerLocalRepository = {
     return { success: true, data: pendingCustomer };
   },
 
-  async applyCloudCustomer(cloudCustomer) {
+  async applyCloudCustomer(cloudCustomer, { actorHandle = null } = {}) {
     if (!cloudCustomer?.id) return null;
 
     await ensureOpen();
-    return db.transaction('rw', db.table(STORES.CUSTOMERS), db.table(STORES.SYNC_CACHE), db.table(STORES.CUSTOMER_LEDGER), async () => {
-      const existing = await db.table(STORES.CUSTOMERS).get(cloudCustomer.id);
-      const snapshot = await historicalCreditSnapshot.preserveInTransaction(existing);
-      const localCustomer = cloudCustomerToLocal(cloudCustomer, existing);
-      if (snapshot && !['IMPORTED', 'ALREADY_IMPORTED_IDENTICAL', 'CLOUD_PROJECTION'].includes(snapshot.status)) {
-        localCustomer.debt = existing.debt;
-        localCustomer.debtCents = normalizeCustomerDebtCents(existing.debt);
-        localCustomer.creditMigrationStatus = snapshot.status;
-      } else {
-        localCustomer.financialSource = 'cloud';
-        localCustomer.lastCloudDebtCents = normalizeCustomerDebtCents(localCustomer.debt);
-      }
-
-      if (localCustomer.deletedAt || localCustomer.deletedTimestamp) {
-        localCustomer.isActive = false;
-        localCustomer.phoneKey = null;
-        delete localCustomer.phoneKey;
-      }
-
-      await db.table(STORES.CUSTOMERS).put(localCustomer);
-      return localCustomer;
+    actorHandle?.assertCurrent?.();
+    const result = await db.transaction('rw', db.table(STORES.CUSTOMERS), db.table(STORES.SYNC_CACHE), db.table(STORES.CUSTOMER_LEDGER), async () => {
+      const applied = await applyCloudCustomerInCurrentTransaction(cloudCustomer, actorHandle);
+      actorHandle?.assertCurrent?.();
+      return applied;
     });
+    actorHandle?.assertCurrent?.();
+    return result;
   },
 
-  async applyCloudCustomers(customers = []) {
+  async applyCloudCustomers(customers = [], { actorHandle = null } = {}) {
+    const rows = Array.isArray(customers) ? customers : [];
+    await ensureOpen();
+    actorHandle?.assertCurrent?.();
+    const result = await db.transaction('rw', db.table(STORES.CUSTOMERS), db.table(STORES.SYNC_CACHE), db.table(STORES.CUSTOMER_LEDGER), async () => {
+      return this.applyCloudCustomersInCurrentTransaction(rows, { actorHandle });
+    });
+    actorHandle?.assertCurrent?.();
+    return result;
+  },
+
+  async applyCloudCustomersInCurrentTransaction(customers = [], { actorHandle = null } = {}) {
+    const rows = Array.isArray(customers) ? customers : [];
+    const ids = rows.filter((customer) => customer?.id).map((customer) => String(customer.id));
+    if (new Set(ids).size !== ids.length) throw new Error('CLOUD_SYNC_PROTOCOL_DUPLICATE_CUSTOMER');
+    actorHandle?.assertCurrent?.();
     const applied = [];
-    for (const customer of customers) {
-      const result = await this.applyCloudCustomer(customer);
+    for (const customer of rows) {
+      const result = await applyCloudCustomerInCurrentTransaction(customer, actorHandle);
       if (result) applied.push(result);
     }
+    actorHandle?.assertCurrent?.();
     return applied;
   },
 

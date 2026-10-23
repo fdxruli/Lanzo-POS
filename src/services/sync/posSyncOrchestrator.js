@@ -6,7 +6,7 @@ import {
 } from '../posRealtime';
 import { posSyncClient } from './posSyncClient';
 import { syncMetaService } from './syncMetaService';
-import { syncOutboxService } from './syncOutboxService';
+import { getCloudSyncProtocolFamilyForEntity, syncOutboxService } from './syncOutboxService';
 import {
   getLicenseKeyFromDetails,
   isCloudPosSyncEnabled,
@@ -21,6 +21,7 @@ import {
   isLocalTenantAccessError,
   runWithLocalTenantSyncLease
 } from '../tenant/localTenantGuard';
+import { isCloudClientUpdateRequired } from './cloudSyncProtocolV2';
 
 const entityHandlers = new Map();
 
@@ -705,6 +706,7 @@ export const posSyncOrchestrator = {
       }
 
       let processed = 0;
+      const updateRequiredFamilies = new Set();
 
       for (const operation of pending) {
         if (!isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey) || !runtime.started) {
@@ -718,6 +720,8 @@ export const posSyncOrchestrator = {
           return { processed, skipped: true, reason: 'runtime_changed' };
         }
         const handler = entityHandlers.get(operation.entityType);
+        const protocolFamily = getCloudSyncProtocolFamilyForEntity(operation.entityType);
+        if (protocolFamily && updateRequiredFamilies.has(protocolFamily)) continue;
 
         if (!handler?.pushOperation) {
           // Fase 0: la cola queda lista, pero sin handlers funcionales aun.
@@ -752,10 +756,18 @@ export const posSyncOrchestrator = {
         } catch (error) {
           if (isLocalTenantAccessError(error)) throw error;
           Logger.warn(`[PosSync] Outbox ${operation.entityType}/${operation.operation} fallo (${reason}):`, error);
-          await syncOutboxService.markFailed(operation.id, error, {
-            retry: true,
-            licenseKey: operationLicenseKey
-          });
+          if (isCloudClientUpdateRequired(error)) {
+            const family = error.family || protocolFamily;
+            if (family) updateRequiredFamilies.add(family);
+            await syncOutboxService.pauseForUpdateRequiredFamily(family, {
+              licenseKey: operationLicenseKey
+            });
+          } else {
+            await syncOutboxService.markFailed(operation.id, error, {
+              retry: true,
+              licenseKey: operationLicenseKey
+            });
+          }
         }
       }
 

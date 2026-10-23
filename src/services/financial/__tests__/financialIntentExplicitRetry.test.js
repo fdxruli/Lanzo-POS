@@ -4,6 +4,15 @@ const runtime = vi.hoisted(() => {
   const rows = new Map();
   const rpcCalls = [];
   let transactionTail = Promise.resolve();
+  const envelope = (endpoint, args, payload) => ({
+    contract_version: 2,
+    tenant_id: 'tenant-a',
+    endpoint,
+    family: 'financial_operations',
+    payload,
+    customer_projections: [],
+    operation: { idempotency_key: args.p_idempotency_key, request_hash: args.p_request_hash }
+  });
 
   const makeHandle = (overrides = {}) => {
     const handle = {
@@ -57,6 +66,7 @@ const runtime = vi.hoisted(() => {
   const state = {
     rows,
     rpcCalls,
+    envelope,
     table,
     handle: null,
     stationId: 'station-a',
@@ -109,6 +119,16 @@ vi.mock('../../supabase', () => ({
   supabaseClient: {
     async rpc(name, args) {
       runtime.rpcCalls.push({ name, args: structuredClone(args) });
+      if (name === 'pos_fin01_sync_contract_v1') {
+        return { data: {
+          contract_version: 2,
+          tenant_id: 'tenant-a',
+          server_status: 'SUPPORTED',
+          endpoint_families: ['financial_operations'],
+          endpoints: ['pos_execute_financial_operation_v2', 'pos_get_financial_operation_receipt_v2'],
+          capabilities: ['historical_credit_preservation_v1', 'customer_projection_safe_apply_v1']
+        }, error: null };
+      }
       if (name === 'pos_get_cash_station_state') {
         return {
           data: {
@@ -118,16 +138,16 @@ vi.mock('../../supabase', () => ({
           error: null
         };
       }
-      if (name === 'pos_get_financial_operation_receipt') {
+      if (name === 'pos_get_financial_operation_receipt_v2') {
         try {
-          return { data: await runtime.receipt(args), error: null };
+          return { data: runtime.envelope(name, args, await runtime.receipt(args)), error: null };
         } catch (error) {
           return { data: null, error };
         }
       }
-      if (name === 'pos_execute_financial_operation_v1') {
+      if (name === 'pos_execute_financial_operation_v2') {
         try {
-          return { data: await runtime.execute(args), error: null };
+          return { data: runtime.envelope(name, args, await runtime.execute(args)), error: null };
         } catch (error) {
           return { data: null, error };
         }
@@ -172,8 +192,8 @@ const saleRequest = ({ oldNullBatches = false, total = '10' } = {}) => ({
 
 const cashRequest = () => ({ opening_amount: '100', opening_origin: 'manual' });
 
-const executeCalls = () => runtime.rpcCalls.filter(({ name }) => name === 'pos_execute_financial_operation_v1');
-const receiptCalls = () => runtime.rpcCalls.filter(({ name }) => name === 'pos_get_financial_operation_receipt');
+const executeCalls = () => runtime.rpcCalls.filter(({ name }) => name === 'pos_execute_financial_operation_v2');
+const receiptCalls = () => runtime.rpcCalls.filter(({ name }) => name === 'pos_get_financial_operation_receipt_v2');
 
 const seedIntent = async ({
   operationType = SALE_OPERATION,

@@ -15,6 +15,7 @@ import { customerLocalRepository } from './customerLocalRepository';
 import { customerMigrationService } from './customerMigrationService';
 import { isLocalTenantAccessError } from '../tenant/localTenantGuard';
 import { hasCurrentActorPermission } from '../sync/actorPermission';
+import { actorRuntimeController } from '../auth/actorRuntimeController';
 
 const CUSTOMER_LAST_CHANGE_SEQ_KEY = 'customers_last_change_seq';
 const CONFLICT_CODES = new Set(['VERSION_CONFLICT', 'CUSTOMER_DELETED', 'DUPLICATE_PHONE']);
@@ -41,7 +42,8 @@ const getExpectedVersion = (operation = {}) => {
   return Number.isFinite(value) && value > 0 ? value : null;
 };
 
-const savePushConflict = async ({ operation, response }) => {
+const savePushConflict = async ({ operation, response, actorHandle }) => {
+  actorHandle.assertCurrent();
   const conflictType = response?.code || 'CUSTOMER_SYNC_CONFLICT';
 
   await syncConflictService.saveConflict({
@@ -57,7 +59,7 @@ const savePushConflict = async ({ operation, response }) => {
   });
 
   if (response?.customer) {
-    await customerLocalRepository.applyCloudCustomer(response.customer);
+    await customerLocalRepository.applyCloudCustomer(response.customer, { actorHandle });
   }
 
   if (operation?.entityId) {
@@ -79,7 +81,9 @@ export const customerSyncHandler = {
     }
 
     try {
-      const migrationResult = await customerMigrationService.runInitialMigrationIfNeeded({ licenseKey });
+      const actorHandle = actorRuntimeController.capture('customers');
+      const migrationResult = await customerMigrationService.runInitialMigrationIfNeeded({ licenseKey, actorHandle });
+      actorHandle.assertCurrent();
       if (migrationResult?.blocked) {
         Logger.warn('[Customers/Sync] Migracion inicial bloqueada:', migrationResult);
       }
@@ -95,6 +99,7 @@ export const customerSyncHandler = {
     const licenseKey = capturedLicenseKey || getRuntimeLicenseKey();
     if (!licenseKey || !isOnline()) return { applied: 0, skipped: true };
     if (!canSyncCustomers()) return { applied: 0, skipped: true, reason: 'actor_permission_missing' };
+    const actorHandle = actorRuntimeController.capture('customers');
 
     const hasCustomerEvents = events.some((event) => (event.entity_type || event.entityType) === SYNC_ENTITY_TYPES.CUSTOMER);
     if (events.length > 0 && !hasCustomerEvents) {
@@ -102,6 +107,7 @@ export const customerSyncHandler = {
     }
 
     let sinceChangeSeq = await syncMetaService.getMeta(CUSTOMER_LAST_CHANGE_SEQ_KEY, 0, { licenseKey });
+    actorHandle.assertCurrent();
     sinceChangeSeq = Number(sinceChangeSeq) || 0;
 
     let hasMore = true;
@@ -111,21 +117,25 @@ export const customerSyncHandler = {
       const response = await customerCloudRepository.pullCustomerChanges({
         licenseKey,
         sinceChangeSeq,
-        limit: SYNC_LIMITS.DEFAULT_PULL_LIMIT
+        limit: SYNC_LIMITS.DEFAULT_PULL_LIMIT,
+        actorHandle
       });
+      actorHandle.assertCurrent();
 
       if (response?.success === false) {
         throw new Error(response.message || response.code || 'CUSTOMER_CHANGES_PULL_FAILED');
       }
 
       const customers = Array.isArray(response.customers) ? response.customers : [];
-      const appliedCustomers = await customerLocalRepository.applyCloudCustomers(customers);
+      const appliedCustomers = await customerLocalRepository.applyCloudCustomers(customers, { actorHandle });
       applied += appliedCustomers.length;
 
       const latestChangeSeq = normalizeChangeSeq(response, sinceChangeSeq);
+      actorHandle.assertCurrent();
       if (latestChangeSeq > sinceChangeSeq) {
         sinceChangeSeq = latestChangeSeq;
         await syncMetaService.setMeta(CUSTOMER_LAST_CHANGE_SEQ_KEY, sinceChangeSeq, { licenseKey });
+        actorHandle.assertCurrent();
       }
 
       hasMore = Boolean(response.has_more || response.hasMore) && latestChangeSeq > 0;
@@ -146,6 +156,7 @@ export const customerSyncHandler = {
     if (!licenseKey) {
       throw new Error('CUSTOMER_OUTBOX_LICENSE_REQUIRED');
     }
+    const actorHandle = actorRuntimeController.capture('customers');
 
     const expectedVersion = getExpectedVersion(operation);
     const idempotencyKey = operation?.idempotencyKey || operation?.id;
@@ -158,20 +169,23 @@ export const customerSyncHandler = {
         licenseKey,
         customerId: operation.entityId,
         expectedVersion,
-        idempotencyKey
+        idempotencyKey,
+        actorHandle
       });
     } else {
       response = await customerCloudRepository.upsertCustomer({
         licenseKey,
         customer: operation?.payload?.customer,
         expectedVersion,
-        idempotencyKey
+        idempotencyKey,
+        actorHandle
       });
     }
+    actorHandle.assertCurrent();
 
     if (response?.success === false) {
       if (CONFLICT_CODES.has(response.code)) {
-        await savePushConflict({ operation, response });
+        await savePushConflict({ operation, response, actorHandle });
         notifyCustomersChanged();
         return { conflict: response };
       }
@@ -180,12 +194,13 @@ export const customerSyncHandler = {
     }
 
     if (response?.customer) {
-      await customerLocalRepository.applyCloudCustomer(response.customer);
+      await customerLocalRepository.applyCloudCustomer(response.customer, { actorHandle });
     }
 
     const latestChangeSeq = Number(response?.change_seq ?? response?.changeSeq);
     if (Number.isFinite(latestChangeSeq) && latestChangeSeq > 0) {
       await syncMetaService.setMeta(CUSTOMER_LAST_CHANGE_SEQ_KEY, latestChangeSeq, { licenseKey });
+      actorHandle.assertCurrent();
     }
 
     notifyCustomersChanged();

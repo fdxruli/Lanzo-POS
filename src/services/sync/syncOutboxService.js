@@ -23,6 +23,25 @@ import {
 
 const nowIso = () => new Date().toISOString();
 const LEGACY_ACTOR_BOUND_ENTITY_TYPES = new Set([SYNC_ENTITY_TYPES.SALE]);
+const PROTOCOL_FAMILY_ENTITIES = Object.freeze({
+  customer_directory: new Set([SYNC_ENTITY_TYPES.CUSTOMER]),
+  customer_credit: new Set([
+    SYNC_ENTITY_TYPES.CUSTOMER_LEDGER,
+    SYNC_ENTITY_TYPES.CUSTOMER_CREDIT,
+    SYNC_ENTITY_TYPES.CUSTOMER_PAYMENT,
+    SYNC_ENTITY_TYPES.CASH_MOVEMENT,
+    SYNC_ENTITY_TYPES.CASH_SESSION
+  ]),
+  financial_operations: new Set([
+    SYNC_ENTITY_TYPES.SALE,
+    SYNC_ENTITY_TYPES.SALE_CANCELLATION
+  ])
+});
+
+export const getCloudSyncProtocolFamilyForEntity = (entityType) => (
+  Object.entries(PROTOCOL_FAMILY_ENTITIES)
+    .find(([, entityTypes]) => entityTypes.has(entityType))?.[0] || null
+);
 
 const normalizeOriginActor = (originActor) => {
   if (!originActor?.actorKey) return null;
@@ -221,6 +240,78 @@ export const syncOutboxService = {
       nextRetryAt: shouldRetry ? computeRetryAt(attempts) : null,
       updatedAt: nowIso()
     });
+  },
+
+  async pauseForUpdateRequiredFamily(family, { licenseKey = null } = {}) {
+    if (!licenseKey) {
+      throw new LocalTenantAccessError(LOCAL_TENANT_ERROR_CODES.SYNC_BLOCKED, {
+        reason: 'outbox_license_missing'
+      });
+    }
+    await ensureOpen();
+    await assertLocalTenantSyncAccess({ license_key: licenseKey }, { reason: 'outbox_pause_update_required' });
+    const entityTypes = PROTOCOL_FAMILY_ENTITIES[family];
+    if (!entityTypes) return 0;
+    const table = db.table(POS_SYNC_STORES.OUTBOX);
+    const rows = await table.where('status').anyOf(OUTBOX_STATUS.PENDING, OUTBOX_STATUS.PROCESSING)
+      .filter((row) => row.licenseKey === licenseKey && entityTypes.has(row.entityType))
+      .toArray();
+    const pausedAt = nowIso();
+    for (const row of rows) {
+      await assertLocalTenantSyncAccess({ license_key: licenseKey }, { reason: 'outbox_pause_update_required_row' });
+      await table.update(row.id, {
+        status: OUTBOX_STATUS.UPDATE_REQUIRED,
+        protocolFamily: family,
+        lastError: 'CLOUD_CLIENT_UPDATE_REQUIRED',
+        nextRetryAt: null,
+        updatedAt: pausedAt
+      });
+    }
+    return rows.length;
+  },
+
+  async resumeUpdateRequired(family, { licenseKey = null } = {}) {
+    if (!licenseKey) {
+      throw new LocalTenantAccessError(LOCAL_TENANT_ERROR_CODES.SYNC_BLOCKED, {
+        reason: 'outbox_license_missing'
+      });
+    }
+    await assertLocalTenantSyncAccess({ license_key: licenseKey }, { reason: 'outbox_resume_update_required' });
+    await ensureOpen();
+    const rows = await db.table(POS_SYNC_STORES.OUTBOX)
+      .where('status')
+      .equals(OUTBOX_STATUS.UPDATE_REQUIRED)
+      .filter((row) => row.licenseKey === licenseKey && (!family || row.protocolFamily === family))
+      .toArray();
+    const resumedAt = nowIso();
+    for (const row of rows) {
+      await assertLocalTenantSyncAccess({ license_key: licenseKey }, { reason: 'outbox_resume_update_required_row' });
+      await db.table(POS_SYNC_STORES.OUTBOX).update(row.id, {
+        status: OUTBOX_STATUS.PENDING,
+        protocolFamily: null,
+        lastError: null,
+        nextRetryAt: null,
+        updatedAt: resumedAt
+      });
+    }
+    return rows.length;
+  },
+
+  async getUpdateRequiredSummary({ licenseKey = null } = {}) {
+    if (!licenseKey) return [];
+    await assertLocalTenantSyncAccess({ license_key: licenseKey }, { reason: 'outbox_update_required_read' });
+    await ensureOpen();
+    const rows = await db.table(POS_SYNC_STORES.OUTBOX)
+      .where('status')
+      .equals(OUTBOX_STATUS.UPDATE_REQUIRED)
+      .filter((row) => row.licenseKey === licenseKey)
+      .toArray();
+    const counts = new Map();
+    for (const row of rows) {
+      const family = row.protocolFamily || 'unknown';
+      counts.set(family, (counts.get(family) || 0) + 1);
+    }
+    return Array.from(counts, ([family, count]) => ({ family, count }));
   },
 
   async markConflict(id, conflictPayload = null, { licenseKey = null } = {}) {

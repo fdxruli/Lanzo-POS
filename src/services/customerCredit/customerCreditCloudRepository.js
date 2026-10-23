@@ -12,6 +12,8 @@ import {
 import { buildPosSyncAuthContext } from '../sync/posSyncClient';
 import { SYNC_LIMITS } from '../sync/syncConstants';
 import { localAllocationsToCloud } from './customerCreditMapper';
+import { actorRuntimeController } from '../auth/actorRuntimeController';
+import { callCloudSyncV2Rpc } from '../sync/cloudSyncProtocolV2';
 
 const parseRpcPayload = (data) => {
   if (typeof data === 'string') return JSON.parse(data);
@@ -49,6 +51,7 @@ const cachedCreditRpc = ({
   licenseKey,
   baseArgs,
   params = {},
+  cacheScope = null,
   ttlMs = CLOUD_REQUEST_TTL.MEDIUM,
   cooldownMs = CLOUD_REQUEST_COOLDOWN.SNAPSHOT,
   force = false,
@@ -57,7 +60,8 @@ const cachedCreditRpc = ({
   rpcName,
   key: buildRpcRequestKey(rpcName, {
     ...buildBaseRpcContextFromArgs(licenseKey, baseArgs),
-    params
+    params,
+    cacheScope
   }),
   ttlMs,
   cooldownMs,
@@ -98,96 +102,130 @@ export const customerCreditCloudRepository = {
     cashSessionId = null,
     note = '',
     allocations = [],
-    idempotencyKey
+    idempotencyKey,
+    actorHandle = actorRuntimeController.capture('customers')
   }) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
-    const { data, error } = await supabaseClient.rpc('pos_record_customer_payment', {
-      ...baseArgs,
-      p_customer_id: customerId,
-      p_amount: amount,
-      p_payment_method: paymentMethod,
-      p_cash_session_id: cashSessionId,
-      p_note: note,
-      p_allocations: localAllocationsToCloud(allocations),
-      p_idempotency_key: idempotencyKey
+    actorHandle.assertCurrent();
+    const response = await callCloudSyncV2Rpc({
+      client: supabaseClient,
+      rpcName: 'pos_record_customer_payment_v2',
+      authArgs: baseArgs,
+      params: {
+        p_customer_id: customerId,
+        p_amount: amount,
+        p_payment_method: paymentMethod,
+        p_cash_session_id: cashSessionId,
+        p_note: note,
+        p_allocations: localAllocationsToCloud(allocations),
+        p_idempotency_key: idempotencyKey
+      },
+      family: 'customer_credit',
+      expectedCustomerId: customerId,
+      expectedIdempotencyKey: idempotencyKey,
+      actorHandle
     });
-    if (error) throw error;
-    return invalidateAfterCreditSuccess(licenseKey, parseRpcPayload(data));
+    actorHandle.assertCurrent();
+    return invalidateAfterCreditSuccess(licenseKey, response);
   },
 
-  async getCustomerCreditSummary({ licenseKey, customerId, force = false }) {
+  async getCustomerCreditSummary({ licenseKey, customerId, force = false, actorHandle = actorRuntimeController.capture('customers') }) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
+    actorHandle.assertCurrent();
     const params = { p_customer_id: customerId };
-    return cachedCreditRpc({
-      rpcName: 'pos_get_customer_credit_summary',
+    const response = await cachedCreditRpc({
+      rpcName: 'pos_get_customer_credit_summary_v2',
       licenseKey,
       baseArgs,
       params,
+      cacheScope: { actorKey: actorHandle.actorKey, generation: actorHandle.generation },
       ttlMs: CLOUD_REQUEST_TTL.SHORT,
       cooldownMs: CLOUD_REQUEST_COOLDOWN.SHORT,
       force,
       fn: async () => {
-        const { data, error } = await supabaseClient.rpc('pos_get_customer_credit_summary', {
-          ...baseArgs,
-          ...params
+        const response = await callCloudSyncV2Rpc({
+          client: supabaseClient,
+          rpcName: 'pos_get_customer_credit_summary_v2',
+          authArgs: baseArgs,
+          params,
+          family: 'customer_credit',
+          expectedCustomerId: customerId,
+          actorHandle
         });
-        if (error) throw error;
-        return parseRpcPayload(data);
+        actorHandle.assertCurrent();
+        return response;
       }
     });
+    actorHandle.assertCurrent();
+    return response;
   },
 
-  async pullCreditSnapshot({ licenseKey, limit = SYNC_LIMITS.DEFAULT_PULL_LIMIT, offset = 0, customerId = null, includeDeleted = false, force = false }) {
+  async pullCreditSnapshot({ licenseKey, limit = SYNC_LIMITS.DEFAULT_PULL_LIMIT, offset = 0, customerId = null, includeDeleted = false, force = false, actorHandle = actorRuntimeController.capture('customers') }) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
+    actorHandle.assertCurrent();
     const params = {
       p_limit: normalizeLimit(limit),
       p_offset: Math.max(Number(offset) || 0, 0),
       p_customer_id: customerId,
       p_include_deleted: Boolean(includeDeleted)
     };
-    return cachedCreditRpc({
-      rpcName: 'pos_pull_customer_credit_snapshot',
+    const response = await cachedCreditRpc({
+      rpcName: 'pos_pull_customer_credit_snapshot_v2',
       licenseKey,
       baseArgs,
       params,
+      cacheScope: { actorKey: actorHandle.actorKey, generation: actorHandle.generation },
       force,
       fn: async () => {
-        const { data, error } = await supabaseClient.rpc('pos_pull_customer_credit_snapshot', {
-          ...baseArgs,
-          ...params
+        const response = await callCloudSyncV2Rpc({
+          client: supabaseClient,
+          rpcName: 'pos_pull_customer_credit_snapshot_v2',
+          authArgs: baseArgs,
+          params,
+          family: 'customer_credit',
+          expectedCustomerId: customerId,
+          requireCursor: true,
+          expectedOffset: params.p_offset,
+          actorHandle
         });
-        if (error) throw error;
-        return parseRpcPayload(data);
+        actorHandle.assertCurrent();
+        return response;
       }
     });
+    actorHandle.assertCurrent();
+    return response;
   },
 
-  async pullCreditChanges({ licenseKey, sinceChangeSeq = 0, limit = SYNC_LIMITS.DEFAULT_PULL_LIMIT }) {
+  async pullCreditChanges({ licenseKey, sinceChangeSeq = 0, limit = SYNC_LIMITS.DEFAULT_PULL_LIMIT, actorHandle = actorRuntimeController.capture('customers') }) {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
-    const { data, error } = await supabaseClient.rpc('pos_pull_customer_credit_changes', {
-      ...baseArgs,
-      p_since_change_seq: Math.max(Number(sinceChangeSeq) || 0, 0),
-      p_limit: normalizeLimit(limit)
+    actorHandle.assertCurrent();
+    const response = await callCloudSyncV2Rpc({
+      client: supabaseClient,
+      rpcName: 'pos_pull_customer_credit_changes_v2',
+      authArgs: baseArgs,
+      params: {
+        p_since_change_seq: Math.max(Number(sinceChangeSeq) || 0, 0),
+        p_limit: normalizeLimit(limit)
+      },
+      family: 'customer_credit',
+      requireCursor: true,
+      expectedChangeSeq: Math.max(Number(sinceChangeSeq) || 0, 0),
+      actorHandle
     });
-    if (error) throw error;
-    return parseRpcPayload(data);
+    actorHandle.assertCurrent();
+    return response;
   },
 
-  async migrateLocalCredit({ licenseKey, ledgerEntries = [], customerBalances = [], batchId = null }) {
-    assertSupabase();
-    const baseArgs = await buildBaseRpcArgs(licenseKey);
-    const { data, error } = await supabaseClient.rpc('pos_migrate_local_customer_credit', {
-      ...baseArgs,
-      p_ledger_entries: ledgerEntries,
-      p_customer_balances: customerBalances,
-      p_batch_id: batchId
-    });
-    if (error) throw error;
-    return invalidateAfterCreditSuccess(licenseKey, parseRpcPayload(data));
+  async migrateLocalCredit() {
+    const error = new Error('CLOUD_CLIENT_UPDATE_REQUIRED');
+    error.code = 'CLOUD_CLIENT_UPDATE_REQUIRED';
+    error.family = 'customer_credit';
+    error.retryable = false;
+    throw error;
   }
 };
 

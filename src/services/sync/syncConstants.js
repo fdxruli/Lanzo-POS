@@ -15,6 +15,7 @@ export const SYNC_STATUS = Object.freeze({
 export const OUTBOX_STATUS = Object.freeze({
   PENDING: 'pending',
   PROCESSING: 'processing',
+  UPDATE_REQUIRED: 'update_required',
   SYNCED: 'synced',
   FAILED: 'failed',
   CONFLICT: 'conflict'

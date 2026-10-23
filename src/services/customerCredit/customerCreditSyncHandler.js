@@ -17,6 +17,8 @@ import { customerCreditLocalRepository } from './customerCreditLocalRepository';
 import { customerCreditMigrationService } from './customerCreditMigrationService';
 import { isLocalTenantAccessError } from '../tenant/localTenantGuard';
 import { hasCurrentActorPermission } from '../sync/actorPermission';
+import { db, STORES } from '../db/dexie';
+import { actorRuntimeController } from '../auth/actorRuntimeController';
 
 const CREDIT_LAST_CHANGE_SEQ_KEY = 'customer_credit_last_change_seq';
 let registered = false;
@@ -36,7 +38,7 @@ const normalizeChangeSeq = (response, fallback = 0) => {
   return Number.isFinite(value) && value >= 0 ? value : fallback;
 };
 
-const applyCreditPayload = async (response = {}) => {
+const applyCreditPayload = async (response = {}, actorHandle) => {
   const ledgers = Array.isArray(response.ledger_entries) ? response.ledger_entries : [];
   const customers = Array.isArray(response.customers) ? response.customers : [];
   const movements = Array.isArray(response.cash_movements)
@@ -44,19 +46,32 @@ const applyCreditPayload = async (response = {}) => {
     : (Array.isArray(response.movements) ? response.movements : []);
   const sessions = Array.isArray(response.cash_sessions) ? response.cash_sessions : [];
 
-  const [
-    appliedLedgers,
-    appliedCustomers,
-    appliedMovements,
-    appliedSessions
-  ] = await Promise.all([
-    customerCreditLocalRepository.applyCloudLedgers(ledgers),
-    customerLocalRepository.applyCloudCustomers(customers),
-    cashLocalRepository.applyCloudCashMovements(movements),
-    cashLocalRepository.applyCloudCashSessions(sessions)
-  ]);
-
-  return appliedLedgers.length + appliedCustomers.length + appliedMovements.length + appliedSessions.length;
+  if (!db.isOpen()) await db.open();
+  actorHandle.assertCurrent();
+  let applied = 0;
+  await db.transaction('rw', [
+    db.table(STORES.CUSTOMER_LEDGER),
+    db.table(STORES.CUSTOMERS),
+    db.table(STORES.SYNC_CACHE),
+    db.table(STORES.CAJAS),
+    db.table(STORES.MOVIMIENTOS_CAJA)
+  ], async () => {
+    actorHandle.assertCurrent();
+    const appliedLedgers = await customerCreditLocalRepository.applyCloudLedgersInCurrentTransaction(ledgers, { actorHandle });
+    applied += appliedLedgers.length;
+    actorHandle.assertCurrent();
+    const appliedCustomers = await customerLocalRepository.applyCloudCustomersInCurrentTransaction(customers, { actorHandle });
+    applied += appliedCustomers.length;
+    actorHandle.assertCurrent();
+    const appliedMovements = await cashLocalRepository.applyCloudCashMovements(movements, { actorHandle });
+    applied += appliedMovements.length;
+    actorHandle.assertCurrent();
+    const appliedSessions = await cashLocalRepository.applyCloudCashSessions(sessions, { actorHandle });
+    applied += appliedSessions.length;
+    actorHandle.assertCurrent();
+  });
+  actorHandle.assertCurrent();
+  return applied;
 };
 
 export const customerCreditSyncHandler = {
@@ -68,6 +83,7 @@ export const customerCreditSyncHandler = {
     if (!canSyncCustomerCredit()) {
       return { skipped: true, reason: 'actor_permission_missing' };
     }
+    const actorHandle = actorRuntimeController.capture('customers');
 
     if (shouldDeferPosBootstrapStartHook(reason, { force })) {
       Logger.log('[CustomerCredit/Sync] Snapshot/migracion inicial diferida por bootstrap inteligente.');
@@ -75,22 +91,50 @@ export const customerCreditSyncHandler = {
     }
 
     try {
-      const migrationResult = await customerCreditMigrationService.runInitialMigrationIfNeeded({ licenseKey: resolvedLicenseKey });
-      const snapshot = await customerCreditCloudRepository.pullCreditSnapshot({
-        licenseKey: resolvedLicenseKey,
-        limit: SYNC_LIMITS.DEFAULT_PULL_LIMIT,
-        includeDeleted: false,
-        force
-      });
-
-      if (snapshot?.success === false) {
-        throw new Error(snapshot.message || snapshot.code || 'CUSTOMER_CREDIT_SNAPSHOT_FAILED');
+      const migrationResult = await customerCreditMigrationService.runInitialMigrationIfNeeded({ licenseKey: resolvedLicenseKey, actorHandle });
+      actorHandle.assertCurrent();
+      let offset = 0;
+      let latestChangeSeq = null;
+      let snapshotCount = 0;
+      let applied = 0;
+      let hasMore = true;
+      while (hasMore) {
+        const snapshot = await customerCreditCloudRepository.pullCreditSnapshot({
+          licenseKey: resolvedLicenseKey,
+          limit: SYNC_LIMITS.DEFAULT_PULL_LIMIT,
+          offset,
+          includeDeleted: false,
+          force,
+          actorHandle
+        });
+        actorHandle.assertCurrent();
+        if (snapshot?.success === false) {
+          throw new Error(snapshot.message || snapshot.code || 'CUSTOMER_CREDIT_SNAPSHOT_FAILED');
+        }
+        const pageSeq = normalizeChangeSeq(snapshot, 0);
+        if (latestChangeSeq !== null && latestChangeSeq !== pageSeq) {
+          throw new Error('CLOUD_SYNC_PROTOCOL_SNAPSHOT_CURSOR_CHANGED');
+        }
+        latestChangeSeq = pageSeq;
+        const pageApplied = await applyCreditPayload(snapshot, actorHandle);
+        applied += pageApplied;
+        snapshotCount += 1;
+        hasMore = Boolean(snapshot.has_more || snapshot.hasMore);
+        const nextOffset = snapshot.cloudSyncEnvelope?.cursor?.next_offset;
+        if (hasMore && (!Number.isSafeInteger(nextOffset) || nextOffset <= offset)) {
+          throw new Error('CLOUD_SYNC_PROTOCOL_CURSOR_INVALID');
+        }
+        if (hasMore && pageApplied === 0 && (snapshot.customers || []).length === 0) {
+          throw new Error('CUSTOMER_CREDIT_SNAPSHOT_EMPTY_PAGE');
+        }
+        offset = Number.isSafeInteger(nextOffset) ? nextOffset : offset + (snapshot.customers || []).length;
+        if (snapshotCount > 10000) throw new Error('CLOUD_SYNC_PROTOCOL_SNAPSHOT_PAGE_LIMIT');
       }
 
-      const applied = await applyCreditPayload(snapshot);
-      const latestChangeSeq = normalizeChangeSeq(snapshot, 0);
       if (latestChangeSeq > 0) {
+        actorHandle.assertCurrent();
         await syncMetaService.setMeta(CREDIT_LAST_CHANGE_SEQ_KEY, latestChangeSeq, { licenseKey: resolvedLicenseKey });
+        actorHandle.assertCurrent();
       }
 
       if (applied > 0) notifyCreditChanged();
@@ -106,6 +150,7 @@ export const customerCreditSyncHandler = {
     const licenseKey = capturedLicenseKey || getRuntimeLicenseKey();
     if (!licenseKey || !isBrowserOnline()) return { applied: 0, skipped: true };
     if (!canSyncCustomerCredit()) return { applied: 0, skipped: true, reason: 'actor_permission_missing' };
+    const actorHandle = actorRuntimeController.capture('customers');
 
     const hasCreditEvents = events.some((event) => {
       const entityType = event.entity_type || event.entityType;
@@ -121,6 +166,7 @@ export const customerCreditSyncHandler = {
     }
 
     let sinceChangeSeq = Number(await syncMetaService.getMeta(CREDIT_LAST_CHANGE_SEQ_KEY, 0, { licenseKey })) || 0;
+    actorHandle.assertCurrent();
     let hasMore = true;
     let applied = 0;
 
@@ -128,19 +174,23 @@ export const customerCreditSyncHandler = {
       const response = await customerCreditCloudRepository.pullCreditChanges({
         licenseKey,
         sinceChangeSeq,
-        limit: SYNC_LIMITS.DEFAULT_PULL_LIMIT
+        limit: SYNC_LIMITS.DEFAULT_PULL_LIMIT,
+        actorHandle
       });
+      actorHandle.assertCurrent();
 
       if (response?.success === false) {
         throw new Error(response.message || response.code || 'CUSTOMER_CREDIT_CHANGES_PULL_FAILED');
       }
 
-      applied += await applyCreditPayload(response);
+      applied += await applyCreditPayload(response, actorHandle);
 
       const latestChangeSeq = normalizeChangeSeq(response, sinceChangeSeq);
       if (latestChangeSeq > sinceChangeSeq) {
+        actorHandle.assertCurrent();
         sinceChangeSeq = latestChangeSeq;
         await syncMetaService.setMeta(CREDIT_LAST_CHANGE_SEQ_KEY, sinceChangeSeq, { licenseKey });
+        actorHandle.assertCurrent();
       }
 
       hasMore = Boolean(response.has_more || response.hasMore) && latestChangeSeq > 0;

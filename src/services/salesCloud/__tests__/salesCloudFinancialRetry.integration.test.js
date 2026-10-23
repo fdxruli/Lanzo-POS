@@ -39,7 +39,24 @@ vi.mock('../../db/dexie', () => ({
 vi.mock('../../supabase', () => ({
   getStableDeviceId: vi.fn(async () => 'device-a'),
   supabaseClient: {
-    rpc: vi.fn(async (name) => {
+    rpc: vi.fn(async (name, args) => {
+      const envelope = (payload) => ({
+        contract_version: 2,
+        tenant_id: 'tenant-a',
+        endpoint: name,
+        family: 'financial_operations',
+        payload,
+        customer_projections: [],
+        operation: { idempotency_key: args.p_idempotency_key, request_hash: args.p_request_hash }
+      });
+      if (name === 'pos_fin01_sync_contract_v1') return { data: {
+        contract_version: 2,
+        tenant_id: 'tenant-a',
+        server_status: 'SUPPORTED',
+        endpoint_families: ['financial_operations'],
+        endpoints: ['pos_execute_financial_operation_v2', 'pos_get_financial_operation_receipt_v2'],
+        capabilities: ['historical_credit_preservation_v1', 'customer_projection_safe_apply_v1']
+      }, error: null };
       if (name === 'pos_get_cash_station_state') {
         return {
           data: {
@@ -49,11 +66,11 @@ vi.mock('../../supabase', () => ({
           error: null
         };
       }
-      if (name === 'pos_get_financial_operation_receipt') {
+      if (name === 'pos_get_financial_operation_receipt_v2') {
         runtime.receiptCalls += 1;
-        return { data: runtime.receiptResult, error: null };
+        return { data: envelope(runtime.receiptResult), error: null };
       }
-      if (name === 'pos_execute_financial_operation_v1') {
+      if (name === 'pos_execute_financial_operation_v2') {
         runtime.executeCalls += 1;
         if (runtime.failNextExecute) {
           runtime.failNextExecute = false;
@@ -66,7 +83,7 @@ vi.mock('../../supabase', () => ({
           };
         }
         return {
-          data: {
+          data: envelope({
             success: true,
             sale: {
               id: 'cloud-sale-1',
@@ -76,7 +93,7 @@ vi.mock('../../supabase', () => ({
             },
             items: [],
             payments: []
-          },
+          }),
           error: null
         };
       }

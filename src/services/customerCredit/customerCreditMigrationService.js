@@ -55,9 +55,11 @@ const recordResults = async (batch, response, handle) => {
 };
 
 export const customerCreditMigrationService = {
-  async runInitialMigrationIfNeeded({ licenseKey } = {}) {
+  async runInitialMigrationIfNeeded({ licenseKey, actorHandle = actorRuntimeController.capture('customers') } = {}) {
     if (!licenseKey) return { skipped: true, reason: 'license_missing' };
-    await historicalCreditSnapshot.preserveAll();
+    actorHandle.assertCurrent();
+    await historicalCreditSnapshot.preserveAll({ actorHandle });
+    actorHandle.assertCurrent();
     const pending = (await historicalCreditSnapshot.list()).filter((row) => !completeStatuses.has(row.status));
     // Opening the app or reconnecting never grants financial approval.
     return { success: pending.length === 0, code: pending.length ? 'PENDING_AUTHORIZATION' : null, pending: pending.length };
