@@ -185,6 +185,11 @@
     "sha256": "3f6ee44718d787982e58c73485b3ebef5644417fc1ef2f7c0ff098b82eb49356"
   },
   {
+    "path": "scripts/qa/single-instance-f012/evidence/remote-publication.json",
+    "bytes": 3549,
+    "sha256": "d07663e8c6afbfcb3d0fadffd12c54b6c48a9657916c18f23514c336faaf14ac"
+  },
+  {
     "path": "scripts/qa/single-instance-f012/evidence/store-vercel.log.gz",
     "bytes": 2155,
     "sha256": "de304fa9bf6e9a9282e35274ffbe162c5dc260f8ac1a35376a1260e7523a0328"
