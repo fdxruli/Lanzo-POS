@@ -9,16 +9,19 @@ const snapshotKey = (id) => `${PREFIX}customer:${id}`;
 // Durable preservation against accidental overwrite; not proof of historical origin.
 // sync_cache is tenant owned and already exists in every supported schema.
 export const createHistoricalCreditSnapshotRepository = (database, tenantIdentity) => ({
-  async preserveInTransaction(customer) {
+  async preserveInTransaction(customer, { actorHandle = null } = {}) {
     if (!customer?.id) return null;
+    actorHandle?.assertCurrent?.();
     const cache = database.table(STORES.SYNC_CACHE);
     const previous = await cache.get(snapshotKey(customer.id));
+    actorHandle?.assertCurrent?.();
     const currentCents = Money.toCents(customer.debt || 0);
     const localActivity = customer.financialSource === 'local'
       || (customer.financialSource === 'cloud' && customer.lastCloudDebtCents !== undefined && customer.lastCloudDebtCents !== currentCents);
     if (previous) {
       if (localActivity && ['IMPORTED','ALREADY_IMPORTED_IDENTICAL','CLOUD_PROJECTION'].includes(previous.value.status)) {
         previous.value = { ...previous.value, status:'CONFLICT_LOCAL_ACTIVITY', latestLocalCustomer:structuredClone(customer) };
+        actorHandle?.assertCurrent?.();
         await cache.put(previous);
       }
       return previous.value;
@@ -27,8 +30,10 @@ export const createHistoricalCreditSnapshotRepository = (database, tenantIdentit
     const cents = Money.toCents(customer.debt);
     if (!Number.isSafeInteger(cents) || cents > 2147483647) throw new Error('HISTORICAL_BALANCE_OUT_OF_RANGE');
     let source = await cache.get(SOURCE_KEY);
+    actorHandle?.assertCurrent?.();
     if (!source) {
       source = { key: SOURCE_KEY, value: crypto.randomUUID() };
+      actorHandle?.assertCurrent?.();
       await cache.add(source);
     }
     const value = {
@@ -48,15 +53,24 @@ export const createHistoricalCreditSnapshotRepository = (database, tenantIdentit
       && customer.metadata?.debt_projection_source === 'pos_customer_ledger' && !customer.pendingOperationId) {
       value.status = 'CLOUD_PROJECTION';
     }
+    actorHandle?.assertCurrent?.();
     await cache.add({ key: snapshotKey(customer.id), value });
+    actorHandle?.assertCurrent?.();
     return value;
   },
-  async preserveAll() {
+  async preserveAll({ actorHandle = null } = {}) {
     if (!database.isOpen()) await database.open();
+    actorHandle?.assertCurrent?.();
     const tables = [database.table(STORES.CUSTOMERS), database.table(STORES.SYNC_CACHE)];
     if (database.tables.some((table) => table.name === STORES.CUSTOMER_LEDGER)) tables.push(database.table(STORES.CUSTOMER_LEDGER));
     return database.transaction('rw', tables, async () => {
-      for (const customer of await database.table(STORES.CUSTOMERS).toArray()) await this.preserveInTransaction(customer);
+      actorHandle?.assertCurrent?.();
+      const customers = await database.table(STORES.CUSTOMERS).toArray();
+      actorHandle?.assertCurrent?.();
+      for (const customer of customers) {
+        await this.preserveInTransaction(customer, { actorHandle });
+        actorHandle?.assertCurrent?.();
+      }
     });
   },
   async list() {

@@ -2,6 +2,7 @@ import { db, STORES } from '../db/dexie';
 import { actorRuntimeController } from '../auth/actorRuntimeController';
 import { supabaseClient } from '../supabase';
 import { buildPosSyncAuthContext } from '../sync/posSyncClient';
+import { callCloudSyncV2Rpc } from '../sync/cloudSyncProtocolV2';
 import {
   canonicalFinancialRequestV1,
   canonicalJsonV1,
@@ -109,7 +110,7 @@ const EXPLICIT_SALE_RETRY_OPERATION_TYPES = new Set([
   'sale.cashier', 'sale.cashier_inventory', 'sale.credit', 'sale.split', 'sale.layaway_complete',
   'layaway.create', 'layaway.payment', 'layaway.cancel'
 ]);
-const PROTOCOL_CODE_PATTERN = /(?:IDEMPOTENCY_CONFLICT|FINANCIAL_REQUEST_HASH_INVALID|FINANCIAL_OPERATION_ORIGIN_MISMATCH|FINANCIAL_[A-Z_]+|CASH_[A-Z_]+)/i;
+const PROTOCOL_CODE_PATTERN = /(?:CLOUD_CLIENT_UPDATE_REQUIRED|IDEMPOTENCY_CONFLICT|FINANCIAL_REQUEST_HASH_INVALID|FINANCIAL_OPERATION_ORIGIN_MISMATCH|FINANCIAL_[A-Z_]+|CASH_[A-Z_]+)/i;
 const TRANSPORT_MESSAGE_PATTERN = /(?:\bfailed to fetch\b|\bfetch failed\b|^load failed$|\bnetworkerror\b|\bnetwork (?:request )?(?:failed|failure|error|unavailable|offline|interrupted)\b|\b(?:network|request|connection|transport|fetch) (?:timed out|timeout|was aborted|aborted|was interrupted|interrupted)\b|\boperation (?:timed out|timeout)\b|\btimeout(?: of \S+)? (?:exceeded|expired)\b|^timeout$|\boffline\b|\bconnection (?:reset|aborted|interrupted|closed unexpectedly)\b|\bsocket hang up\b)/i;
 
 const safeRead = (value, key) => {
@@ -716,11 +717,17 @@ const receiptForCurrentOrigin = async ({ intent, licenseKey, handle, timeouts = 
   handle.assertCurrent();
   const auth = await buildAuth(licenseKey);
   handle.assertCurrent();
-  const { data, error } = await supabaseClient.rpc('pos_get_financial_operation_receipt', {
-    ...auth, p_idempotency_key: intent.idempotencyKey, p_request_hash: intent.requestHash
+  const response = await callCloudSyncV2Rpc({
+    client: supabaseClient,
+    rpcName: 'pos_get_financial_operation_receipt_v2',
+    authArgs: auth,
+    params: { p_idempotency_key: intent.idempotencyKey, p_request_hash: intent.requestHash },
+    family: 'financial_operations',
+    expectedIdempotencyKey: intent.idempotencyKey,
+    expectedRequestHash: intent.requestHash,
+    actorHandle: handle
   });
-  if (error) throw error;
-  return parseRpcPayload(data);
+  return response;
   },
   {
     timeoutMs: getFinancialTimeoutMs(timeouts, 'RECEIPT_MS'),
@@ -1007,16 +1014,24 @@ const executeDurableFinancialIntentForRecovery = async ({
   }, handle, { recoveryLeaseId, expectedStatus });
   let result;
   try {
-    const { data, error } = await withFinancialTimeout(
+    result = await withFinancialTimeout(
       async () => {
         const auth = await buildAuth(licenseKey);
         handle.assertCurrent();
-        return supabaseClient.rpc('pos_execute_financial_operation_v1', {
-          ...auth,
-          p_idempotency_key: durableIntent.idempotencyKey,
-          p_request_hash: durableIntent.requestHash,
-          p_operation_type: durableIntent.operationType,
-          p_request: durableIntent.requestPayload
+        return callCloudSyncV2Rpc({
+          client: supabaseClient,
+          rpcName: 'pos_execute_financial_operation_v2',
+          authArgs: auth,
+          params: {
+            p_idempotency_key: durableIntent.idempotencyKey,
+            p_request_hash: durableIntent.requestHash,
+            p_operation_type: durableIntent.operationType,
+            p_request: durableIntent.requestPayload
+          },
+          family: 'financial_operations',
+          expectedIdempotencyKey: durableIntent.idempotencyKey,
+          expectedRequestHash: durableIntent.requestHash,
+          actorHandle: handle
         });
       },
       {
@@ -1027,8 +1042,6 @@ const executeDurableFinancialIntentForRecovery = async ({
         ambiguous: true
       }
     );
-    if (error) throw error;
-    result = parseRpcPayload(data);
     if (result?.success === false && !isCashAdminCloseReviewResponse(durableIntent.operationType, result)) {
       throw rejectedFinancialResponseError(result);
     }

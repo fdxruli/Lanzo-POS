@@ -40,6 +40,23 @@ vi.mock('../../supabase', () => ({
   supabaseClient: {
     async rpc(name, args) {
       runtime.rpcCalls.push({ name, args: structuredClone(args) });
+      const envelope = (payload) => ({
+        contract_version: 2,
+        tenant_id: 'tenant-a',
+        endpoint: name,
+        family: 'financial_operations',
+        payload,
+        customer_projections: [],
+        operation: { idempotency_key: args.p_idempotency_key, request_hash: args.p_request_hash }
+      });
+      if (name === 'pos_fin01_sync_contract_v1') return { data: {
+        contract_version: 2,
+        tenant_id: 'tenant-a',
+        server_status: 'SUPPORTED',
+        endpoint_families: ['financial_operations'],
+        endpoints: ['pos_execute_financial_operation_v2', 'pos_get_financial_operation_receipt_v2'],
+        capabilities: ['historical_credit_preservation_v1', 'customer_projection_safe_apply_v1']
+      }, error: null };
       if (name === 'pos_get_cash_station_state') {
         return {
           data: {
@@ -49,16 +66,16 @@ vi.mock('../../supabase', () => ({
           error: null
         };
       }
-      if (name === 'pos_get_financial_operation_receipt') {
+      if (name === 'pos_get_financial_operation_receipt_v2') {
         try {
-          return { data: await runtime.receipt(args), error: null };
+          return { data: envelope(await runtime.receipt(args)), error: null };
         } catch (error) {
           return { data: null, error };
         }
       }
-      if (name === 'pos_execute_financial_operation_v1') {
+      if (name === 'pos_execute_financial_operation_v2') {
         try {
-          return { data: await runtime.execute(args), error: null };
+          return { data: envelope(await runtime.execute(args)), error: null };
         } catch (error) {
           return { data: null, error };
         }
@@ -111,7 +128,7 @@ const saleRequest = () => ({
   customer_id: null
 });
 
-const executeCalls = () => runtime.rpcCalls.filter(({ name }) => name === 'pos_execute_financial_operation_v1');
+const executeCalls = () => runtime.rpcCalls.filter(({ name }) => name === 'pos_execute_financial_operation_v2');
 
 const createIntent = (idempotencyKey = 'race-k') => createFinancialIntent({
   operationType: SALE_OPERATION,

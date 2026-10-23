@@ -637,47 +637,55 @@ export const cashLocalRepository = {
     });
   },
 
-  async applyCloudCashSession(cloudSession) {
+  async applyCloudCashSession(cloudSession, { actorHandle = null } = {}) {
     if (!isCompleteCloudCashSession(cloudSession)) {
       localCashProjectionDiagnostics.invalidCashSessionRecords += 1;
       return null;
     }
     await ensureOpen();
     const existing = await db.table(STORES.CAJAS).get(cloudSession.id);
+    actorHandle?.assertCurrent?.();
     const local = cloudCashSessionToLocal(cloudSession, existing);
     if (!local) return null;
+    actorHandle?.assertCurrent?.();
     await db.table(STORES.CAJAS).put(local);
     return local;
   },
 
-  async applyCloudCashSessions(cloudSessions = []) {
+  async applyCloudCashSessions(cloudSessions = [], { actorHandle = null } = {}) {
     const applied = [];
     for (const cloudSession of cloudSessions || []) {
-      const local = await this.applyCloudCashSession(cloudSession);
+      actorHandle?.assertCurrent?.();
+      const local = await this.applyCloudCashSession(cloudSession, { actorHandle });
       if (local) applied.push(local);
     }
+    actorHandle?.assertCurrent?.();
     return applied;
   },
 
-  async applyCloudCashMovement(cloudMovement) {
+  async applyCloudCashMovement(cloudMovement, { actorHandle = null } = {}) {
     if (!isCompleteCloudCashMovement(cloudMovement)) {
       localCashProjectionDiagnostics.invalidCashMovementRecords += 1;
       return null;
     }
     await ensureOpen();
     const existing = await db.table(STORES.MOVIMIENTOS_CAJA).get(cloudMovement.id);
+    actorHandle?.assertCurrent?.();
     const local = cloudCashMovementToLocal(cloudMovement, existing);
     if (!local) return null;
+    actorHandle?.assertCurrent?.();
     await db.table(STORES.MOVIMIENTOS_CAJA).put(local);
     return local;
   },
 
-  async applyCloudCashMovements(cloudMovements = []) {
+  async applyCloudCashMovements(cloudMovements = [], { actorHandle = null } = {}) {
     const applied = [];
     for (const cloudMovement of cloudMovements || []) {
-      const local = await this.applyCloudCashMovement(cloudMovement);
+      actorHandle?.assertCurrent?.();
+      const local = await this.applyCloudCashMovement(cloudMovement, { actorHandle });
       if (local) applied.push(local);
     }
+    actorHandle?.assertCurrent?.();
     return applied;
   },
 

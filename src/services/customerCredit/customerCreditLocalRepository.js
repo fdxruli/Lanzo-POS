@@ -36,13 +36,22 @@ export const customerCreditLocalRepository = {
 
   async applyCloudLedgers(ledgers = []) {
     await ensureOpen();
+    return this.applyCloudLedgersInCurrentTransaction(ledgers);
+  },
+
+  async applyCloudLedgersInCurrentTransaction(ledgers = [], { actorHandle = null } = {}) {
     const ids = (ledgers || []).reduce((result, ledger) => {
       if (ledger?.id) result.push(ledger.id);
       return result;
     }, []);
     if (ids.length === 0) return [];
 
+    if (new Set(ids.map(String)).size !== ids.length) {
+      throw new Error('CLOUD_SYNC_PROTOCOL_DUPLICATE_LEDGER');
+    }
+    actorHandle?.assertCurrent?.();
     const existingRows = await db.table(STORES.CUSTOMER_LEDGER).bulkGet(ids);
+    actorHandle?.assertCurrent?.();
     const applied = (ledgers || []).reduce((result, ledger, index) => {
       const local = cloudLedgerToLocal(ledger, existingRows[index]);
       if (local) result.push(local);
@@ -50,9 +59,11 @@ export const customerCreditLocalRepository = {
     }, []);
 
     if (applied.length > 0) {
+      actorHandle?.assertCurrent?.();
       await db.table(STORES.CUSTOMER_LEDGER).bulkPut(applied);
     }
 
+    actorHandle?.assertCurrent?.();
     return applied;
   },
 

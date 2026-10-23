@@ -23,6 +23,19 @@ const toNumber = (value, fallback = 0) => {
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
+const UNKNOWN_FINANCIAL_PROJECTION_STATES = new Set(['HISTORICAL_PENDING', 'CONFLICT', 'NOT_INCLUDED']);
+
+const projectionStatusOf = (customer = {}) => {
+  const explicitStatus = customer.financialProjectionStatus || customer.financial_projection?.status;
+  if (explicitStatus) return explicitStatus;
+
+  const hasDebt = Object.prototype.hasOwnProperty.call(customer, 'debt');
+  const cents = customer.debt_cents ?? customer.debtCents;
+  if (!hasDebt || !Number.isSafeInteger(cents) || cents < 0) return null;
+  if (normalizeCustomerDebtCents(customer.debt) !== cents) return null;
+  return cents === 0 ? 'KNOWN_ZERO' : 'KNOWN_POSITIVE';
+};
+
 const cleanText = (value) => {
   const text = String(value ?? '').trim();
   return text.length > 0 ? text : '';
@@ -33,12 +46,24 @@ export const normalizeCustomerForLocal = (customer = {}, existingCustomer = null
   const id = customer.id || existingCustomer?.id;
   const phone = cleanText(customer.phone ?? existingCustomer?.phone ?? '');
   const phoneKey = toIndexedPhoneKey(customer.phoneKey ?? customer.phone_key ?? phone);
-  const debt = toNumber(customer.debt ?? existingCustomer?.debt, 0);
-  const debtCents = toNumber(
-    customer.debtCents ?? customer.debt_cents ?? existingCustomer?.debtCents,
-    normalizeCustomerDebtCents(debt)
-  );
+  const financialProjectionStatus = projectionStatusOf(customer) || existingCustomer?.financialProjectionStatus || null;
+  const preserveDebt = UNKNOWN_FINANCIAL_PROJECTION_STATES.has(financialProjectionStatus);
+  const debt = preserveDebt
+    ? (existingCustomer && existingCustomer.debt !== undefined ? existingCustomer.debt : null)
+    : toNumber(customer.debt ?? existingCustomer?.debt, 0);
+  const debtCents = preserveDebt
+    ? (existingCustomer && existingCustomer.debtCents !== undefined
+      ? existingCustomer.debtCents
+      : (existingCustomer?.debt !== undefined ? normalizeCustomerDebtCents(existingCustomer.debt) : null))
+    : toNumber(
+      customer.debtCents ?? customer.debt_cents ?? existingCustomer?.debtCents,
+      normalizeCustomerDebtCents(debt)
+    );
   const deletedAt = pick(customer, 'deleted_at', 'deletedAt', existingCustomer?.deletedAt || existingCustomer?.deletedTimestamp || null);
+  const creditLimitValue = customer.creditLimit ?? customer.credit_limit;
+  const creditLimit = creditLimitValue === null || creditLimitValue === undefined
+    ? (existingCustomer?.creditLimit ?? null)
+    : toNumber(creditLimitValue, existingCustomer?.creditLimit ?? null);
 
   const local = {
     ...existingCustomer,
@@ -49,7 +74,8 @@ export const normalizeCustomerForLocal = (customer = {}, existingCustomer = null
     address: cleanText(customer.address ?? existingCustomer?.address ?? ''),
     debt,
     debtCents,
-    creditLimit: toNumber(customer.creditLimit ?? customer.credit_limit ?? existingCustomer?.creditLimit, 0),
+    financialProjectionStatus,
+    creditLimit,
     createdAt: pick(customer, 'created_at', 'createdAt', existingCustomer?.createdAt || now),
     updatedAt: pick(customer, 'updated_at', 'updatedAt', now),
     deletedAt,
@@ -73,14 +99,19 @@ export const normalizeCustomerForLocal = (customer = {}, existingCustomer = null
 };
 
 export const cloudCustomerToLocal = (cloudCustomer = {}, existingCustomer = null, overrides = {}) => {
+  const financialProjectionStatus = projectionStatusOf(cloudCustomer) || 'NOT_INCLUDED';
+  const unknownFinancialProjection = UNKNOWN_FINANCIAL_PROJECTION_STATES.has(financialProjectionStatus);
   const mapped = {
     id: cloudCustomer.id,
     name: cloudCustomer.name,
     phone: cloudCustomer.phone || '',
     phoneKey: cloudCustomer.phone_key || cloudCustomer.phoneKey || null,
     address: cloudCustomer.address || '',
-    debt: toNumber(cloudCustomer.debt, 0),
-    debtCents: toNumber(cloudCustomer.debt_cents ?? cloudCustomer.debtCents, 0),
+    debt: unknownFinancialProjection ? null : toNumber(cloudCustomer.debt, 0),
+    debtCents: unknownFinancialProjection
+      ? null
+      : toNumber(cloudCustomer.debt_cents ?? cloudCustomer.debtCents, 0),
+    financialProjectionStatus,
     creditLimit: toNumber(cloudCustomer.credit_limit ?? cloudCustomer.creditLimit, 0),
     createdAt: cloudCustomer.created_at || cloudCustomer.createdAt,
     updatedAt: cloudCustomer.updated_at || cloudCustomer.updatedAt,

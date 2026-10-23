@@ -53,7 +53,8 @@
     "version:minor": "node bump-version.js minor",
     "version:major": "node bump-version.js major",
     "version:set": "node bump-version.js set",
-    "test:cloud-layaways-read-serialization": "node --test scripts/supabase/cloud-layaways-read-rpc-serialization-hardening-r1.node-test.mjs"
+    "test:cloud-layaways-read-serialization": "node --test scripts/supabase/cloud-layaways-read-rpc-serialization-hardening-r1.node-test.mjs",
+    "test:fin01-cloud-sync-v2-contract": "node --test scripts/supabase/fin01-cloud-sync-protocol-v2-contract.node-test.mjs"
   },
   "dependencies": {
     "@fingerprintjs/fingerprintjs": "^5.0.1",
