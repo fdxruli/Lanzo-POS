@@ -1,3 +1,4 @@
+import { startAdminResumeChecks } from './pwa/adminResumeChecks';
 import { useEffect, lazy, Suspense, useState } from 'react';
 import { Routes, Route, useLocation } from 'react-router-dom';
 import { AlertTriangle, XCircle } from 'lucide-react';
@@ -289,70 +290,9 @@ function App() {
     return undefined;
   }, [appStatus, startLicenseSync, startNotificationRealtime, stopLicenseSync, stopNotificationRealtime]);
 
-  useEffect(() => {
-    let resumeCheckTimer = null;
-
-    const markInactive = () => {
-      sessionStorage.setItem('lanzo_last_active', Date.now().toString());
-    };
-
-    const scheduleResumeCheck = (reason) => {
-      if (document.visibilityState === 'hidden') return;
-
-      if (resumeCheckTimer) {
-        window.clearTimeout(resumeCheckTimer);
-      }
-
-      resumeCheckTimer = window.setTimeout(() => {
-        resumeCheckTimer = null;
-        useAppStore.getState().performSystemHealthCheck(reason);
-      }, 250);
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        scheduleResumeCheck('visibility');
-      } else {
-        markInactive();
-      }
-    };
-
-    const handlePageShow = () => {
-      scheduleResumeCheck('pageshow');
-    };
-
-    const handleWindowFocus = () => {
-      scheduleResumeCheck('focus');
-    };
-
-    const handleOnline = () => {
-      scheduleResumeCheck('online');
-    };
-
-    const handlePageHide = () => {
-      markInactive();
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    document.addEventListener('resume', handlePageShow);
-    window.addEventListener('pageshow', handlePageShow);
-    window.addEventListener('focus', handleWindowFocus);
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('pagehide', handlePageHide);
-
-    return () => {
-      if (resumeCheckTimer) {
-        window.clearTimeout(resumeCheckTimer);
-      }
-
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      document.removeEventListener('resume', handlePageShow);
-      window.removeEventListener('pageshow', handlePageShow);
-      window.removeEventListener('focus', handleWindowFocus);
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('pagehide', handlePageHide);
-    };
-  }, []);
+  useEffect(() => startAdminResumeChecks({
+    performHealthCheck: (reason) => useAppStore.getState().performSystemHealthCheck(reason)
+  }), []);
 
   if (isDuplicate) {
     return (
