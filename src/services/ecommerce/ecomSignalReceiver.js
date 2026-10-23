@@ -81,7 +81,7 @@ export function createEcomSignalReceiver({ broker, createTransport, now = Date.n
         }
         run.deadline = expiry;
         const connectionMetadata = { url: c.url, publicKey: c.publicKey, topic: c.topic,
-          grantExpiresAt: c.grantExpiresAt, jwtExpiresAt: c.jwtExpiresAt };
+          grantId: c.grantId, grantExpiresAt: c.grantExpiresAt, jwtExpiresAt: c.jwtExpiresAt };
         const schedule = (renew = true) => {
           for (const timer of run.timers) clearTimer(timer);
           run.timers.clear();
@@ -99,7 +99,7 @@ export function createEcomSignalReceiver({ broker, createTransport, now = Date.n
           // A session-clamped expiry (or cached reply) cannot advance. Wait for
           // the existing deadline instead of hammering the broker every second.
           schedule(expiry > Math.min(previous.grantExpiresAt, previous.jwtExpiresAt));
-          onState('connected', { grantExpiresAt: c.grantExpiresAt });
+          onState('connected', { grantId: c.grantId, grantExpiresAt: c.grantExpiresAt });
           return;
         }
         candidate = await createTransport(c.url, c.publicKey);
@@ -122,7 +122,7 @@ export function createEcomSignalReceiver({ broker, createTransport, now = Date.n
             completed = true;
             run.attempts = 0;
             schedule();
-            onState('connected', { grantExpiresAt: c.grantExpiresAt });
+            onState('connected', { grantId: c.grantId, grantExpiresAt: c.grantExpiresAt });
             // Signals are hints. A future inbox consumer must fetch through its
             // current Lanzo RPC after initial join, reconnect or topic rollover.
             onReconcileRequired({ reason: previous?.topic !== c.topic ? 'topic_changed' : 'reconnected' });

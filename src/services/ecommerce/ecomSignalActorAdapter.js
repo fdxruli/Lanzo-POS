@@ -68,7 +68,11 @@ export function attachEcomSignalQa({ enabled = false, runtime, receiver, capture
             // waits for an external lifecycle event instead of spinning.
             if (++slot.rollovers <= 1) queueMicrotask(sync);
           }
-          onState(state);
+          const safeDetail = state === 'connected' && typeof detail?.grantId === 'string'
+            ? { grantId: detail.grantId }
+            : undefined;
+          if (safeDetail) onState(state, safeDetail);
+          else onState(state);
         }, reason => { if (valid()) onReconcileRequired(reason); });
       if (valid()) cleanupRun = cleanup;
       else cleanup();

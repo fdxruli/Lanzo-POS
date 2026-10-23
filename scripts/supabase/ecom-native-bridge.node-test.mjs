@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { createBroker, createVault as keyringVault } from '../../supabase/functions/lanzo-ecom-bridge-qa/broker.mjs';
+import { createHandler } from '../../supabase/functions/lanzo-ecom-bridge-qa/handler.mjs';
 const createVault = secret => keyringVault({ current: 'test', keys: { test: createHash('sha256').update(secret).digest('base64') } });
 import { createEcomSignalReceiver } from '../../src/services/ecommerce/ecomSignalReceiver.js';
 
@@ -26,6 +27,37 @@ function fixture(overrides = {}) {
   return { calls, vault, issue: createBroker({ rpc: overrides.rpc ?? rpc, auth, vault,
     passwordFor: async () => 'server-only-password', url, publicKey: 'publishable' }) };
 }
+
+test('owner-control actions are rejected without the dedicated server control header', async () => {
+  let called = false;
+  const handler = createHandler({ rpc: async () => { called = true; } }, { controlToken: 'x'.repeat(48) });
+  const response = await handler(new Request('https://fixture.supabase.co/functions/v1/qa', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'approve_pilot' })
+  }));
+  assert.equal(response.status, 403);
+  assert.equal(called, false);
+});
+
+test('pilot approval, kill switch, and pilot revocation use only the server admin capability', async () => {
+  const calls = [];
+  const token = 'x'.repeat(48);
+  const handler = createHandler({ rpc: async (name, args) => { calls.push([name, args]); return { code: 'OK' }; } }, { controlToken: token });
+  const send = body => handler(new Request('https://fixture.supabase.co/functions/v1/qa', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-lanzo-qa-control': token },
+    body: JSON.stringify(body)
+  }));
+  await send({ action: 'approve_pilot', license_id: 'license', tenant_id: 'tenant', device_id: 'device',
+    expires_at: '2090-01-01T00:00:00Z', qa_run_id: 'run', authorized_by: 'owner', approval_ref: 'approval' });
+  await send({ action: 'kill_switch', active: true, reason: 'test rollback' });
+  await send({ action: 'revoke_pilot', id: 'allowlist-entry' });
+  assert.deepEqual(calls, [
+    ['approve_pilot', { p_license_id: 'license', p_tenant_id: 'tenant', p_device_id: 'device',
+      p_expires_at: '2090-01-01T00:00:00Z', p_qa_run_id: 'run', p_authorized_by: 'owner', p_approval_ref: 'approval' }],
+    ['set_kill_switch', { p_active: true, p_reason: 'test rollback' }],
+    ['revoke_pilot', { p_id: 'allowlist-entry' }]
+  ]);
+});
 
 test('broker returns only connection fields and never forwards asserted identity', async () => {
   const { issue, calls } = fixture();

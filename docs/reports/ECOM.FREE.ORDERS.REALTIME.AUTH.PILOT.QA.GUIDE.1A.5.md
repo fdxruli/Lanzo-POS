@@ -1,20 +1,33 @@
 # LANZO POS — Guía del propietario: QA física Realtime 1A.5
 
-**Estado de esta guía:** preparada, **todas las pruebas NOT RUN**. El piloto todavía está `BLOCKED`; no empezar hasta completar el checklist de habilitación.
+**Estado de esta guía (2026-10-23):** preparada, **todas las pruebas físicas NOT RUN**. El piloto sigue bloqueado; no empezar hasta completar el checklist de habilitación.
 
 **Informe de preflight:** [ECOM.FREE.ORDERS.REALTIME.AUTH.PILOT.READINESS.1A.5.md](ECOM.FREE.ORDERS.REALTIME.AUTH.PILOT.READINESS.1A.5.md).
 
+**Continuación de integración:** [ECOM.FREE.ORDERS.REALTIME.AUTH.PILOT.1A.5.CONTINUATION.md](ECOM.FREE.ORDERS.REALTIME.AUTH.PILOT.1A.5.CONTINUATION.md).
+
 ## No iniciar todavía
 
-La Production actual no incluye el receptor, una pantalla de diagnóstico ni el broker QA. El rol receptor, allowlist, grants y funciones QA no existen en Supabase Production. Las seis RPC compartidas conservan `EXECUTE` vía `PUBLIC`, y no se ha seleccionado una combinación de negocio/dispositivo controlada por el propietario. Esta guía describe cómo ejecutar las pruebas **después** del cierre de esos gates; no es una autorización para conectarse ahora.
+Production todavía no incluye el receptor, el broker QA ni una allowlist activa. Las seis RPC compartidas conservan `EXECUTE` vía `PUBLIC`. El montaje frontend y el overlay SQL están preparados en el PR, pero no desplegados ni instalados. Esta guía describe cómo ejecutar las pruebas **después** del cierre de esos gates; no autoriza conectarse ahora.
 
-No intentes habilitar el receptor desde DevTools, llamar el broker manualmente, copiar credenciales, usar una Preview como si fuera Production ni emitir pedidos. Si al abrir Production no aparece la superficie QA aprobada y un estado `AUTHORIZED`, detente: no hay prueba física válida.
+No intentes habilitar el receptor desde DevTools, llamar el broker manualmente, copiar credenciales, usar una Preview como si fuera Production ni emitir pedidos. La interfaz de diagnóstico preparada muestra `conectado` después de que el servidor emite el grant y el join termina; `AUTHORIZED` no es un estado de la interfaz. Si el estado es distinto, detente: no hay prueba física válida.
+
+## Candidatas que debe identificar el propietario
+
+La verificación de solo lectura del 2026-10-23 encontró estas dos licencias FREE elegibles. La candidata A se recomienda para el primer ensayo por tener menos actores autorizados. La consulta de base de datos no demuestra quién controla físicamente el dispositivo.
+
+| Candidata | Negocio | Licencia (prefijo) | Dispositivo | Modo | Staff Ecommerce activo |
+|---|---|---|---|---|---:|
+| A — recomendada | `tio antonio` | `b36a0a4e` | `6e5c9c16-1fa0-4edf-86da-e70a680c9308` | `admin_only` | 0 |
+| B | `Farmacia Gary Chrome` | `dd047a26` | `559f718d-7bfd-4af8-9774-b1c00409a9aa` | `admin_only` | 4 |
+
+Ambas están en plan efectivo `free_trial` (`Lanzo Local`), licencia `free` activa y tienen Ecommerce/Inbox y portal publicados con pedidos habilitados. El propietario aún debe confirmar el negocio y el dispositivo. No se ha creado ninguna fila activa de allowlist.
 
 ## Habilitación requerida antes de QA-01
 
 Completar y registrar todos los puntos:
 
-- [ ] El propietario confirmó una de las dos licencias FREE elegibles y un dispositivo físico bajo su control. No se incluyeron nombres, IDs ni huellas en este informe.
+- [ ] El propietario identificó A o B arriba y confirmó que controla físicamente el dispositivo exacto. La confirmación no se infiere de la relación SQL.
 - [ ] Se revisaron consumidores directos y externos de las seis RPC; el propietario aprobó o rechazó explícitamente la propuesta ACL separada y su rollback exacto.
 - [ ] Se aceptó expresamente el riesgo residual de Auth para QA acotada o se aprobó una arquitectura alternativa.
 - [ ] Los objetos QA son aditivos, versionados, revisados y están instalados solo en el proyecto Supabase autorizado. La allowlist contiene un negocio, dispositivo, actor y sesión actuales.
@@ -54,7 +67,7 @@ Completar y registrar todos los puntos:
 
 **Pasos:** 1) Abre la URL Production y verifica el SHA autorizado. 2) Inicia sesión como Admin. 3) Abre la sección Ecommerce autorizada y el panel QA discreto. 4) Espera la respuesta del broker sin recargar repetidamente.
 
-**Esperado / PASS:** autorización `AUTHORIZED`, grant vigente, conexión `SUBSCRIBED`, un líder y una conexión en el contexto. No se muestra ningún token.
+**Esperado / PASS:** estado `conectado`, grant vigente con referencia abreviada, conexión `SUBSCRIBED`, líder y una sola conexión en el contexto. No se muestra ningún token.
 
 **FAIL:** grant para otra licencia/dispositivo, más de una conexión, secreto visible, error repetido o modo Preview.
 

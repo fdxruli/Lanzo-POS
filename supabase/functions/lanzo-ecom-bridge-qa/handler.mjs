@@ -30,12 +30,31 @@ export function createHandler(backend, { controlToken } = {}) {
       && req.headers.get('x-lanzo-qa-control') === controlToken;
     try {
       const body = await boundedJson(req);
-      if (['collect', 'rotate_vault', 'publish', 'revoke'].includes(body.action)) {
+      if (['collect', 'rotate_vault', 'publish', 'revoke', 'approve_pilot', 'kill_switch', 'revoke_pilot'].includes(body.action)) {
         if (!administrative) return Response.json({ code: 'DENIED' }, { status: 403, headers });
         if (body.action === 'collect') return Response.json(await backend.collect(), { headers });
         if (body.action === 'rotate_vault') return Response.json(await backend.rotateVault(), { headers });
-        const args = body.action === 'publish' ? { p_id: body.id, p_probe: body.probe } : { p_id: body.id };
-        return Response.json(await backend.rpc(body.action, args), { headers });
+        if (body.action === 'approve_pilot') return Response.json(await backend.rpc('approve_pilot', {
+          p_license_id: body.license_id,
+          p_tenant_id: body.tenant_id,
+          p_device_id: body.device_id,
+          p_expires_at: body.expires_at,
+          p_qa_run_id: body.qa_run_id,
+          p_authorized_by: body.authorized_by,
+          p_approval_ref: body.approval_ref
+        }), { headers });
+        if (body.action === 'kill_switch') {
+          if (typeof body.active !== 'boolean') return Response.json({ code: 'DENIED' }, { status: 400, headers });
+          return Response.json(await backend.rpc('set_kill_switch', {
+            p_active: body.active,
+            p_reason: body.reason
+          }), { headers });
+        }
+        const args = body.action === 'publish'
+          ? { p_id: body.id, p_probe: body.probe }
+          : { p_id: body.id };
+        const rpcName = body.action === 'revoke_pilot' ? 'revoke_pilot' : body.action;
+        return Response.json(await backend.rpc(rpcName, args), { headers });
       }
       const result = await backend.issue(body);
       return Response.json(result.body, { status: result.status, headers });

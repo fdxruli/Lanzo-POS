@@ -145,3 +145,4 @@ El residual Auth de 1A.4 sigue abierto: el broker no controla todos los intentos
 - [App Production](https://lanzo-pos.vercel.app)
 - [Evidencia compacta de preflight](evidence/ecom-realtime-auth-1a5/preflight.json)
 - [Guía QA-01…22](ECOM.FREE.ORDERS.REALTIME.AUTH.PILOT.QA.GUIDE.1A.5.md)
+- [Continuación 1A.5: allowlist, montaje y estado actual](ECOM.FREE.ORDERS.REALTIME.AUTH.PILOT.1A.5.CONTINUATION.md)
