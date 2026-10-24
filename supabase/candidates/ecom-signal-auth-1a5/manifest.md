@@ -1,8 +1,10 @@
 # 1A.5 object manifest
 
-`allowlist.sql` is an unapplied candidate overlay. It depends on the reviewed
-1A.2, 1A.3, and 1A.4 candidate chain. No production QA objects were installed
-for this continuation.
+`allowlist.sql` is the reviewed overlay source. It was applied after the
+1A.2–1A.4 chain on 2026-10-24. The live allowlist remains empty and the singleton
+kill switch remains active; no Auth identity or grant was created. Applied
+migrations and postflight evidence are in `supabase/migrations` and
+`docs/reports/evidence/ecom-realtime-auth-1a5/`.
 
 ## Created
 
@@ -26,9 +28,9 @@ for this continuation.
 - Change `lanzo_ecom_bridge_qa.identities.license_id` from the synthetic
   `qa_tenants` foreign key to `public.licenses(id)`. Keep `qa_tenants` empty so
   the existing 1A.2 rollback remains available.
-- Do not modify the six shared function bodies or their ACLs. Their separate
-  proposal and exact rollback are `public-rpc-acl-proposal.sql` and
-  `public-rpc-acl-rollback.sql` in this candidate directory.
+- This overlay does not modify the six shared function bodies. Their ACL-only
+  revokes were applied separately under the explicit approval, with the exact
+  proposal and rollback in this candidate directory.
 
 ## Rollback order
 
@@ -41,5 +43,7 @@ for this continuation.
 4. Never roll back the shared ACL proposal unless separately approved; it is
    not part of this overlay.
 
-The SQL has source-contract and local authorization-matrix tests. PostgreSQL
-syntax, Hosted Auth, and Realtime have not been exercised for this overlay.
+The SQL has source-contract and local authorization-matrix tests. The chain was
+preflighted with rollback and then installed as additive Production migrations;
+live catalog, grants, empty inventories, allowlist, kill switch, and Realtime
+policy were postflighted. Hosted Auth and Realtime positive cases have not run.

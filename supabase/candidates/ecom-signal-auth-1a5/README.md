@@ -1,4 +1,4 @@
-# Realtime FREE pilot 1A.5 — owner approval required
+# Realtime FREE pilot 1A.5 — pilot remains closed pending Usage, secrets, and supervised QA
 
 ## Production continuation update — 2026-10-24
 
@@ -16,26 +16,33 @@ regression stopped at its sale-before-close reconciliation assertion with
 `CASH_TOTALS_CHANGED`; it is recorded separately and is not represented as a
 passing full-suite result. No synthetic fixture rows remain.
 
-The 1A.2–1A.5 backend overlay, pilot allowlist, QA Auth users/sessions, and QA
-Edge function remain uninstalled. The latest saved billing Usage baseline is
-from 2026-10-22; refresh the current-cycle values and verify the below-70%
-gates before any Hosted/Auth/Realtime pilot activity. Keep the kill switch
-closed until that check and supervised owner/device QA are complete.
+The 1A.2–1A.5 backend SQL is installed in seven migrations recorded in the
+live ledger after the ACL migration (six feature steps and one cleanup). The
+singleton kill switch is active;
+`pilot_allowlist` is empty; `authority_live` denies the selected device; and
+there are zero QA identities, grants, Auth users, or sessions. The private QA
+Realtime policy is present alongside the three original policies. The unused
+race probe was removed in its own cleanup migration. No QA Edge function or
+dedicated secret was deployed.
+
+The latest saved billing Usage baseline is from 2026-10-22. Refresh the
+current-cycle values and verify the below-70% gates before any Hosted/Auth/
+Realtime pilot activity. Access to the owner's secret manager is also needed
+to create and install the five purpose-separated QA secrets described below.
+Keep the kill switch active and the allowlist empty until both gates and
+supervised owner/device QA are ready. Backend state: `BACKEND_QA_BLOCKED`.
 
 This is a reviewed candidate overlay for the native Supabase Auth bridge from
 1A.2–1A.4. It replaces the effective synthetic R2 license-prefix gate with an
 exact, server-controlled license/tenant/device allowlist. The R2 migration and
 older candidate snapshots remain evidence only; do not install the R2 SQL.
 
-## Production facts captured 2026-10-23
+## Historical production snapshot — 2026-10-23
 
-- Project: `odlrhijtfyavryeqivaa` (Lanzo, active, us-east-2, PostgreSQL 17.6.1.063).
-- Migration ledger: 324 entries; latest `20261022184218 qa_ecom_bridge_1a4_cleanup`.
-- No QA role/schema, Auth user/session, broker function, Vault row, or pilot allowlist exists.
-- The six shared SECURITY DEFINER routines still have `PUBLIC EXECUTE`; the
-  candidate checks that ACL gate and denies issue, renewal, Auth binding, join,
-  and publish until the separate ACL proposal is approved and applied.
-- No pilot business/device was selected. A live allowlist row is not included.
+Before the authorized 2026-10-24 execution, the ledger had 324 entries, no QA
+schema/role or broker existed, the six shared functions still had `PUBLIC
+EXECUTE`, and no pilot business/device had been selected. These facts were
+superseded by the production continuation and live postflight recorded above.
 
 ## 1A.5 overlay
 
@@ -66,12 +73,14 @@ R2 issuer, role, or custom JWT is restored.
 
 1. Confirm the current production ledger and exact object/ACL diff; never use
    `db push`.
-2. Review consumers of the six exact functions in
-   `public-rpc-acl-proposal.sql`. Apply that separate proposal only after
-   specific owner approval; `public-rpc-acl-rollback.sql` is its exact rollback.
-3. Install and review the previously prepared 1A.2, 1A.3, and 1A.4 candidates
-   in their documented order, then `allowlist.sql`, with a postflight after
-   each step. Do not edit applied migration history.
+2. The six exact revokes were applied on 2026-10-24 and postflight verified;
+   see `docs/reports/evidence/ecom-realtime-auth-1a5/acl-postflight-live-20261024.json`.
+   Do not reapply the proposal; `public-rpc-acl-rollback.sql` remains the exact
+   ACL-only rollback reference.
+3. The 1A.2 foundation/bridge, 1A.3 hardening, 1A.4 lifecycle/collection, and
+   1A.5 closed allowlist overlay were applied as separate migrations in order,
+   with a postflight after each step. Their exact applied files are in
+   `supabase/migrations`. Do not edit applied migration history.
 4. Deploy `lanzo-ecom-bridge-qa` only after SQL postflight and dedicated secrets
    are reviewed. Secret names: `LANZO_ECOM_QA_CONTROL_TOKEN`,
    `LANZO_ECOM_VAULT_KEY_ID`, `LANZO_ECOM_VAULT_KEYS`,
@@ -102,14 +111,17 @@ object rollbacks in reverse order. Keep the ledger untouched and never roll back
 the shared ACL proposal without its separate owner approval.
 
 See [`manifest.md`](manifest.md) for the exact 1A.5 object inventory and
-rollback order. It is candidate documentation, not evidence that the overlay
-has been installed in Production.
+rollback order. Exact installed SQL is preserved under `supabase/migrations`;
+the ledger and current postflight are recorded in
+`docs/reports/evidence/ecom-realtime-auth-1a5/backend-postflight-live-20261024.json`.
 
 ## Test limits
 
 `scripts/supabase/ecom-realtime-allowlist-1a5.node-test.mjs` checks the source
 contract and a local authorization decision matrix. It is **not** a Hosted
 Postgres/Auth/Realtime test. The matrix includes positive Admin/Staff fixtures
-and each required negative case. Production positive cases remain gated on the
-owner's business/device selection, ACL approval, deployed broker, and the
-separate physical QA run in the 1A.5 guide.
+and each required negative case. Production Auth/Realtime positive cases remain
+gated on a fresh Usage baseline, installation of the five dedicated server-only
+secrets, and the supervised physical QA run. The ACL and SQL broker are
+installed, but the QA Edge function is not deployed and Hosted Auth/Realtime
+has not run.

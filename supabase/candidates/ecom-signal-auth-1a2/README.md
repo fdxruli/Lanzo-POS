@@ -1,13 +1,23 @@
 # Native Auth bridge — QA candidate, HOLD
 
+Production continuation (2026-10-24): the exact ACL-only revokes are applied,
+and the 1A.2–1A.5 QA backend is installed in additive migrations. It remains
+closed: the kill switch is active, the allowlist and QA tenant inventory are
+empty, and no QA Auth users or sessions exist. Do not start Hosted/Auth/Realtime
+activity until current Usage, five dedicated server-only secrets, and physical
+owner/device supervision are ready. See the 1A.5 README and live postflight
+evidence for the current state.
+
 `foundation.sql` retains R2's canonical authority checks. Apply `bridge.sql`
 after it, in the same transaction. These files deliberately remain outside
 `supabase/migrations`. No general db push, Auth global setting, shared ACL or
 commercial event is part of this candidate.
 
 Receiver: `lanzo_ecom_bridge_receiver`, no membership in authenticator, anon or
-authenticated. It retains the six existing PUBLIC EXECUTEs until the separate
-R2 ACL proposal is specifically approved. Therefore strict isolation is HOLD.
+authenticated. The six shared PUBLIC EXECUTEs were revoked under the specific
+owner approval on 2026-10-24; the explicit application-role grants remain. The
+server-side pilot guard stays closed until its separate usage, secret, and
+supervised QA gates pass.
 
 Identity key: canonical Lanzo device + actor session. Four runtime slots per
 identity; global QA limit ten identities; 20 broker attempts/device/minute;

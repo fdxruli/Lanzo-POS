@@ -1,14 +1,23 @@
 # Phase 1A.3 QA candidate — HOLD
 
-Continues 1A.2 without enabling `order_created` or mounting a global receiver.
-The six shared PUBLIC ACL changes remain a separate, unapproved proposal in
-`../ecom-signal-auth-r2/public-rpc-acl-proposal.sql`; its rollback is beside it.
+Production continuation (2026-10-24): the 1A.2–1A.5 backend is installed in
+`supabase/migrations` and remains closed pending current Usage, dedicated
+server-only secrets, and supervised owner/device QA. The kill switch is active;
+the allowlist and Auth inventory are empty. No Hosted Auth or Realtime test has
+run. See the 1A.5 README and backend postflight evidence.
 
-The timestamped files are exact, additive QA migrations generated with the CLI.
-They stay outside `supabase/migrations` to prevent a general `db push` from
-replaying restaurant aliases or installing legal previews. Remote ledger versions
-are recorded in the evidence: Supabase assigns an execution timestamp, which can
-differ from the local preparation timestamp. Never repair/delete that history.
+Continues 1A.2 without enabling `order_created` or mounting a global receiver.
+The six shared PUBLIC ACL revokes were specifically approved, applied, and
+verified on 2026-10-24 by
+`supabase/migrations/20261024123634_ecom_realtime_acl_six_rpcs_1a5.sql`.
+Explicit `anon`, `authenticated`, and `service_role` grants remain. The exact
+ACL-only rollback reference is in `../ecom-signal-auth-1a5/`.
+
+These files are candidate source snapshots. The exact SQL installed in
+Production is preserved as separate additive files under `supabase/migrations`;
+do not use a general `db push`, which can replay unrelated restaurant aliases
+or legal previews. Remote ledger versions are recorded in the evidence.
+Supabase assigns execution timestamps; never repair or delete that history.
 
 `hardening.sql` adds explicit Lanzo-authorized recovery, transactional publish
 receipts and vault compare-and-swap. The timestamped hardening migration also

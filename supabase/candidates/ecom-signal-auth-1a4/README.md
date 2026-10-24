@@ -1,10 +1,21 @@
-# Phase 1A.4 — QA only / HOLD
+# Phase 1A.4 — QA only / backend installed closed pending supervised QA
 
-No commercial migration, receiver mount, `order_created`, scheduler or shared ACL
-change is enabled. Apply only against authorized `odlrhijtfyavryeqivaa`, after
-catalog/ledger/inventory review. Never `db push` this repository.
+Production continuation (2026-10-24): the exact installed migration chain is
+`20261024130248`, `20261024130319`, `20261024130341`, `20261024130408`,
+`20261024130423`, `20261024130442`, and cleanup `20261024130558`. The final
+postflight has eight RLS-enabled QA tables, 16 server-only public RPCs, zero QA
+tenant/identity/grant/Auth rows, an empty pilot allowlist, and an active kill
+switch. The temporary QA race probe was removed in the cleanup migration. See
+`../ecom-signal-auth-1a5/README.md` and its live evidence.
 
-Executed installation order (preserve source snapshots and remote ledger):
+No commercial migration, receiver mount, `order_created`, or scheduler is
+enabled. The six shared ACL revokes were applied separately on 2026-10-24.
+The 1A.2–1A.5 QA SQL chain is installed against authorized
+`odlrhijtfyavryeqivaa`; the kill switch is active and the allowlist is empty.
+Never `db push` this repository.
+
+Earlier rehearsal history (superseded by the additive production migration
+chain above; preserve these source snapshots and remote ledger):
 
 1. 1A.2 `foundation.sql`, `bridge.sql`; 1A.3 timestamped hardening; this folder's
    `20261022181404_qa_ecom_bridge_1a4_lifecycle.sql`, in one temporary migration.
@@ -64,8 +75,8 @@ No CASCADE, shared ACL rollback, migration repair, global Auth setting or secret
 rotation. Keep all remote migration history. Test server secrets are local to
 ignored `.tmp/ecom-native-1a4`, never installed in Edge or committed.
 
-The six shared ACL REVOKEs and exact rollback remain in the separate R2 proposal.
-The 24-check rehearsal includes successful cash adoption/close under each known
-client role and rolls back every synthetic financial write. Persistent application
-still requires the owner's specific approval and confirmation of direct external
-infrastructure consumers.
+The exact six shared ACL REVOKEs and rollback reference remain in the 1A.5
+candidate. The 24-check rehearsal includes successful cash adoption/close under
+each known client role and rolls back every synthetic financial write. The
+production pilot remains closed pending fresh Usage, dedicated QA secrets, and
+supervised physical QA.
