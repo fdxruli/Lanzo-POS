@@ -1,0 +1,15 @@
+[
+  {
+    "id": "CE-RECOVERY-04",
+    "elapsedMs": 35024,
+    "dispatchTimeoutMs": 35000,
+    "result": "PASS_CANDIDATE_LIFETIME",
+    "atTimeout": {
+      "started": true,
+      "closed": false,
+      "unobservable": false,
+      "publicStatus": "rejected",
+      "pendingTasks": 1
+    }
+  }
+]

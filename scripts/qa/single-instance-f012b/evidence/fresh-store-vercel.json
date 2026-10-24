@@ -1,0 +1,13 @@
+{
+  "command": [
+    "npm",
+    "run",
+    "build:store:vercel"
+  ],
+  "cwd": "/workspace/scratch/bad875041265/Lanzo-F012B-build",
+  "base": "5bfd0693224d92ae8957684bc85bc61ed6cbab90",
+  "product_sources": "fresh-build-sources.json",
+  "exitCode": 0,
+  "source_tree_identical_for_build": true,
+  "scope": "fresh checkout, unchanged dependencies, six candidate sources copied and SHA-256 matched; no deployment"
+}

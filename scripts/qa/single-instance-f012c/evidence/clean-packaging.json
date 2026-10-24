@@ -1,0 +1,48 @@
+{
+  "command": [
+    "npm",
+    "run",
+    "build:store:vercel"
+  ],
+  "workspace": "/workspace/scratch/7ff92a751658/Lanzo-F012C-packaging",
+  "baseline": "d007bfe1cc2569391a2959ddff73bb2ed1e9c8ff",
+  "exitCode": 0,
+  "sources": [
+    {
+      "path": "src/services/bootstrap/bootstrapLifecycle.js",
+      "before": "c3b9cf9f88788dc796512b5aa114b3786edb99b77b7030c0ad04cdfc1eefdccc",
+      "after": "33907ca1a79ff93da6f054bfb43e406e49cff42643fc0fc23a0a0bdee37ae3ff"
+    },
+    {
+      "path": "src/services/supabase.js",
+      "before": "82e558286345b78b47fec9e4d7d4a231303e195504da24d99b54764077b3d3c3",
+      "after": "dc6576a70386658c196e7ebca59f8aa6f114cd2267c8ab2a29e916d79d6aa13a"
+    },
+    {
+      "path": "src/store/slices/createProfileSlice.js",
+      "before": "7e460f690cfed5beb96ace4dfaa43f9ecbf5a87e92a78d6627714e1b337e78c7",
+      "after": "2446da01f7e9c2a98db3f26dd4ee2fce7ec349f452103ed41ba379f7ca6beb33"
+    },
+    {
+      "path": "src/store/slices/license/licenseAdminActions.js",
+      "before": "91049045028f9e73a9611fa93cd284f6b7d8264b5a3d29b407cf018a2756ba72",
+      "after": "99ba9fcc868bdea80eac351091e8a4a88a29ee7ce694d603454b9c5060e3a187"
+    },
+    {
+      "path": "src/store/slices/license/licenseBackgroundValidationActions.js",
+      "before": "6a06f10865a08458de688d80cbf162ac81bfa4b09489b25c7a0117ecde0b5073",
+      "after": "0f017027098e224539cef622dba899e1d670173cad70eb15f8b7b317534e87c5"
+    },
+    {
+      "path": "src/store/slices/license/licenseBootstrapActions.js",
+      "before": "29c3169f661319fba7c8cf70536c991fc45cc16cc2ab02ef0caca122ce6518b5",
+      "after": "2f697514df4239436aa911ab4eadb1b1ebe7b8e926274f3d7d12512f837d6f88"
+    },
+    {
+      "path": "src/store/slices/license/licenseProcessingActions.js",
+      "before": "3feb05ad4d029113c5ee04eeb7937e0581be82ba7051430dc307588d81aa446b",
+      "after": "209a97bc4e6f8395d5b67d799c3916fd1a00a5a909cb4d240731d7df42053329"
+    }
+  ],
+  "scope": "Clean detached checkout, seven exact final product source hashes; local packaging only, no deployment."
+}

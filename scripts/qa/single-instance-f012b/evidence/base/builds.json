@@ -1,0 +1,120 @@
+[
+  {
+    "name": "preview",
+    "command": [
+      "node",
+      "node_modules/vite/bin/vite.js",
+      "build"
+    ],
+    "vercelEnv": "preview",
+    "exitCode": 0,
+    "audit": {
+      "bootstrapAsset": "assets/PosApplicationBootstrap-BS9vTLXM.js",
+      "appAsset": "assets/App-ILp1TcvB.js",
+      "referenced": [
+        "assets/App-DPx-xMxG.css",
+        "assets/App-ILp1TcvB.js",
+        "assets/DevConsole-DJaERFVC.js",
+        "assets/DevConsole-DNk0Aj1q.css",
+        "assets/ErrorBoundary-DK6JX1pD.js",
+        "assets/IncidentErrorBoundary-CJweRH_U.css",
+        "assets/IncidentErrorBoundary-KxJwkWXW.js",
+        "assets/actorOperationalHandoff-XQt3Xq1W.js",
+        "assets/actorRuntimeController-Dyzh8crO.js",
+        "assets/buttons-Ctq3T8gS.js",
+        "assets/buttons-DDqMnPSN.css",
+        "assets/contextSnapshotGuard-BMsBlXy0.js",
+        "assets/customerCreditSyncHandler-B7Dsf4AY.js",
+        "assets/databaseRuntime-CgPnUM7s.js",
+        "assets/devConsoleCapture-DLTkv5qh.js",
+        "assets/incidentCapture-CK6naJuX.js",
+        "assets/index-CcDD_Igj.css",
+        "assets/index-Cx4WwOF3.js",
+        "assets/index.esm-CimvAr6C.js",
+        "assets/localTenantGuard-DRfq-xXI.js",
+        "assets/posSyncBootstrapAutoCoordinator-bg18mdcY.js",
+        "assets/productStoreRecoveryGuard-DogecG4o.js",
+        "assets/recoveryContext-DkR72Lpa.js",
+        "assets/storageManager-CF5k2UEK.js",
+        "assets/supportContact-B19heqPF.js",
+        "assets/telegramContact-BMLGPHus.js",
+        "assets/useAppStore-DDvbDyV6.js",
+        "assets/useInventoryCatalogStore-DD2koEmm.js",
+        "assets/useMessageStore-DOa5A-U4.js",
+        "assets/vendor_icons-LN8PtF-0.js",
+        "assets/vendor_react-DxaSPtPq.js",
+        "assets/vendor_utils--67R870O.js"
+      ],
+      "coreLocalRouteAssets": [],
+      "missing": [],
+      "missingCoreLocalRoutes": [],
+      "fixtureOrCoordinatorViolations": []
+    }
+  },
+  {
+    "name": "production",
+    "command": [
+      "npm",
+      "run",
+      "build"
+    ],
+    "vercelEnv": "production",
+    "exitCode": 0,
+    "audit": {
+      "bootstrapAsset": "assets/PosApplicationBootstrap-DSF78sdY.js",
+      "appAsset": "assets/App-D-JQs1bP.js",
+      "referenced": [
+        "assets/App-D-JQs1bP.js",
+        "assets/App-DPx-xMxG.css",
+        "assets/DevConsole-CAsXqTO1.js",
+        "assets/DevConsole-DNk0Aj1q.css",
+        "assets/ErrorBoundary-Cx-4mugk.js",
+        "assets/IncidentErrorBoundary-BiEnQjux.js",
+        "assets/IncidentErrorBoundary-CJweRH_U.css",
+        "assets/customerCreditSyncHandler-DyO4Z1Nb.js",
+        "assets/databaseRuntime-Bs0f2CyQ.js",
+        "assets/devConsoleCapture-BtPmgiGE.js",
+        "assets/incidentCapture-DF38B989.js",
+        "assets/index-D5946WbS.js",
+        "assets/index-Ujcfz1t4.css",
+        "assets/index.esm-C1lHekhm.js",
+        "assets/posSyncBootstrapAutoCoordinator-CcW-2iZA.js",
+        "assets/productStoreRecoveryGuard-MzfJVAgT.js",
+        "assets/storageManager-oZEEa8ky.js",
+        "assets/telegramContact-BMLGPHus.js",
+        "assets/useAppStore-qXwq5oZ0.js",
+        "assets/useInventoryCatalogStore-DK5Q9DDT.js",
+        "assets/useMessageStore-CIDcxK5p.js",
+        "assets/vendor_icons-B0syiRGM.js",
+        "assets/vendor_react-CQX8XpTy.js",
+        "assets/vendor_utils-BhzrRB7R.js"
+      ],
+      "coreLocalRouteAssets": [],
+      "missing": [],
+      "missingCoreLocalRoutes": [],
+      "fixtureOrCoordinatorViolations": []
+    }
+  },
+  {
+    "name": "store",
+    "command": [
+      "npm",
+      "run",
+      "build:store"
+    ],
+    "vercelEnv": "production",
+    "exitCode": 0,
+    "audit": null
+  },
+  {
+    "name": "store-vercel",
+    "command": [
+      "npm",
+      "run",
+      "build:store:vercel"
+    ],
+    "vercelEnv": "production",
+    "exitCode": 0,
+    "audit": null
+  }
+]

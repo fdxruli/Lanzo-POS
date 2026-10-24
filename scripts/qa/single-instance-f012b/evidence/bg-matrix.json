@@ -1,0 +1,2043 @@
+[
+  {
+    "id": "BG-01",
+    "contract": "BG-01 concurrent callers share one flight",
+    "result": "passed",
+    "source": "scripts/qa/single-instance-f012b/bootstrap.test.js",
+    "initial": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 1,
+      "reason": "test_reset",
+      "appStatus": null
+    },
+    "events": "BG-01 concurrent callers share one flight",
+    "final_authority": {
+      "status": "granted",
+      "actorType": "admin",
+      "actorId": "owner-A",
+      "actorKey": "admin:owner-A",
+      "sessionId": "session-A",
+      "permissions": [
+        "*"
+      ],
+      "tenant": {
+        "opaqueId": "tenant-A",
+        "databaseName": "LanzoDB_t_A",
+        "generation": 1
+      },
+      "deviceRef": "device-A",
+      "authorizationExpiresAt": 1792821388744,
+      "generation": 4,
+      "reason": "authenticated_session_granted",
+      "appStatus": "ready"
+    },
+    "registrations": [],
+    "restorations": 1,
+    "background_effects": {
+      "restorations": 1,
+      "adminVerifications": 1,
+      "staffVerifications": 0,
+      "backgroundStarts": 1
+    },
+    "trace_file": "scripts/qa/single-instance-f012b/evidence/traces/bootstrap.json",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "id": "BG-02",
+    "contract": "BG-02 sequential calls prove and verify current Admin without second restore",
+    "result": "passed",
+    "source": "scripts/qa/single-instance-f012b/bootstrap.test.js",
+    "initial": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 5,
+      "reason": "test_reset",
+      "appStatus": null
+    },
+    "events": "BG-02 sequential calls prove and verify current Admin without second restore",
+    "final_authority": {
+      "status": "granted",
+      "actorType": "admin",
+      "actorId": "owner-A",
+      "actorKey": "admin:owner-A",
+      "sessionId": "session-A",
+      "permissions": [
+        "*"
+      ],
+      "tenant": {
+        "opaqueId": "tenant-A",
+        "databaseName": "LanzoDB_t_A",
+        "generation": 1
+      },
+      "deviceRef": "device-A",
+      "authorizationExpiresAt": 1792821418747,
+      "generation": 8,
+      "reason": "admin_session_reverified",
+      "appStatus": "ready"
+    },
+    "registrations": [],
+    "restorations": 1,
+    "background_effects": {
+      "restorations": 1,
+      "adminVerifications": 2,
+      "staffVerifications": 0,
+      "backgroundStarts": 1
+    },
+    "trace_file": "scripts/qa/single-instance-f012b/evidence/traces/bootstrap.json",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "id": "BG-03",
+    "contract": "BG-03 force uses normal restoration",
+    "result": "passed",
+    "source": "scripts/qa/single-instance-f012b/bootstrap.test.js",
+    "initial": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 9,
+      "reason": "test_reset",
+      "appStatus": null
+    },
+    "events": "BG-03 force uses normal restoration",
+    "final_authority": {
+      "status": "granted",
+      "actorType": "admin",
+      "actorId": "owner-A",
+      "actorKey": "admin:owner-A",
+      "sessionId": "session-A",
+      "permissions": [
+        "*"
+      ],
+      "tenant": {
+        "opaqueId": "tenant-A",
+        "databaseName": "LanzoDB_t_A",
+        "generation": 1
+      },
+      "deviceRef": "device-A",
+      "authorizationExpiresAt": 1792821388752,
+      "generation": 15,
+      "reason": "authenticated_session_granted",
+      "appStatus": "ready"
+    },
+    "registrations": [],
+    "restorations": 2,
+    "background_effects": {
+      "restorations": 2,
+      "adminVerifications": 2,
+      "staffVerifications": 0,
+      "backgroundStarts": 2
+    },
+    "trace_file": "scripts/qa/single-instance-f012b/evidence/traces/bootstrap.json",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "id": "BG-04",
+    "contract": "BG-04 preparation error permits retry",
+    "result": "passed",
+    "source": "scripts/qa/single-instance-f012b/bootstrap.test.js",
+    "initial": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 16,
+      "reason": "test_reset",
+      "appStatus": null
+    },
+    "events": "BG-04 preparation error permits retry",
+    "final_authority": {
+      "status": "granted",
+      "actorType": "admin",
+      "actorId": "owner-A",
+      "actorKey": "admin:owner-A",
+      "sessionId": "session-A",
+      "permissions": [
+        "*"
+      ],
+      "tenant": {
+        "opaqueId": "tenant-A",
+        "databaseName": "LanzoDB_t_A",
+        "generation": 1
+      },
+      "deviceRef": "device-A",
+      "authorizationExpiresAt": 1792821388759,
+      "generation": 21,
+      "reason": "authenticated_session_granted",
+      "appStatus": "ready"
+    },
+    "registrations": [],
+    "restorations": 1,
+    "background_effects": {
+      "restorations": 1,
+      "adminVerifications": 1,
+      "staffVerifications": 0,
+      "backgroundStarts": 1
+    },
+    "trace_file": "scripts/qa/single-instance-f012b/evidence/traces/bootstrap.json",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "id": "BG-05",
+    "contract": "BG-05 logout invalidates existing authority",
+    "result": "passed",
+    "source": "scripts/qa/single-instance-f012b/bootstrap.test.js",
+    "initial": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 22,
+      "reason": "test_reset",
+      "appStatus": null
+    },
+    "events": "BG-05 logout invalidates existing authority",
+    "final_authority": {
+      "status": "granted",
+      "actorType": "admin",
+      "actorId": "owner-A",
+      "actorKey": "admin:owner-A",
+      "sessionId": "session-A",
+      "permissions": [
+        "*"
+      ],
+      "tenant": {
+        "opaqueId": "tenant-A",
+        "databaseName": "LanzoDB_t_A",
+        "generation": 1
+      },
+      "deviceRef": "device-A",
+      "authorizationExpiresAt": 1792821388760,
+      "generation": 29,
+      "reason": "authenticated_session_granted",
+      "appStatus": "ready"
+    },
+    "registrations": [],
+    "restorations": 2,
+    "background_effects": {
+      "restorations": 2,
+      "adminVerifications": 2,
+      "staffVerifications": 0,
+      "backgroundStarts": 2
+    },
+    "trace_file": "scripts/qa/single-instance-f012b/evidence/traces/bootstrap.json",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "id": "BG-06",
+    "contract": "BG-06 legitimate reauthentication restores after logout",
+    "result": "passed",
+    "source": "scripts/qa/single-instance-f012b/bootstrap.test.js",
+    "initial": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 30,
+      "reason": "test_reset",
+      "appStatus": null
+    },
+    "events": "BG-06 legitimate reauthentication restores after logout",
+    "final_authority": {
+      "status": "granted",
+      "actorType": "admin",
+      "actorId": "owner-A",
+      "actorKey": "admin:owner-A",
+      "sessionId": "session-B",
+      "permissions": [
+        "*"
+      ],
+      "tenant": {
+        "opaqueId": "tenant-A",
+        "databaseName": "LanzoDB_t_A",
+        "generation": 1
+      },
+      "deviceRef": "device-A",
+      "authorizationExpiresAt": 1792821388761,
+      "generation": 37,
+      "reason": "authenticated_session_granted",
+      "appStatus": "ready"
+    },
+    "registrations": [],
+    "restorations": 2,
+    "background_effects": {
+      "restorations": 2,
+      "adminVerifications": 2,
+      "staffVerifications": 0,
+      "backgroundStarts": 2
+    },
+    "trace_file": "scripts/qa/single-instance-f012b/evidence/traces/bootstrap.json",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "id": "BG-07",
+    "contract": "BG-07 actor identity changes are reevaluated",
+    "result": "passed",
+    "source": "scripts/qa/single-instance-f012b/bootstrap.test.js",
+    "initial": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 38,
+      "reason": "test_reset",
+      "appStatus": null
+    },
+    "events": "BG-07 actor identity changes are reevaluated",
+    "final_authority": {
+      "status": "granted",
+      "actorType": "admin",
+      "actorId": "owner-B",
+      "actorKey": "admin:owner-B",
+      "sessionId": "session-A",
+      "permissions": [
+        "*"
+      ],
+      "tenant": {
+        "opaqueId": "tenant-A",
+        "databaseName": "LanzoDB_t_A",
+        "generation": 1
+      },
+      "deviceRef": "device-A",
+      "authorizationExpiresAt": 1792821388766,
+      "generation": 44,
+      "reason": "authenticated_session_granted",
+      "appStatus": "ready"
+    },
+    "registrations": [],
+    "restorations": 2,
+    "background_effects": {
+      "restorations": 2,
+      "adminVerifications": 2,
+      "staffVerifications": 0,
+      "backgroundStarts": 2
+    },
+    "trace_file": "scripts/qa/single-instance-f012b/evidence/traces/bootstrap.json",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "id": "BG-08",
+    "contract": "BG-08 license changes are reevaluated",
+    "result": "passed",
+    "source": "scripts/qa/single-instance-f012b/bootstrap.test.js",
+    "initial": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 45,
+      "reason": "test_reset",
+      "appStatus": null
+    },
+    "events": "BG-08 license changes are reevaluated",
+    "final_authority": {
+      "status": "granted",
+      "actorType": "admin",
+      "actorId": "owner-A",
+      "actorKey": "admin:owner-A",
+      "sessionId": "session-A",
+      "permissions": [
+        "*"
+      ],
+      "tenant": {
+        "opaqueId": "tenant-A",
+        "databaseName": "LanzoDB_t_A",
+        "generation": 1
+      },
+      "deviceRef": "device-A",
+      "authorizationExpiresAt": 1792821388767,
+      "generation": 51,
+      "reason": "authenticated_session_granted",
+      "appStatus": "ready"
+    },
+    "registrations": [],
+    "restorations": 2,
+    "background_effects": {
+      "restorations": 2,
+      "adminVerifications": 2,
+      "staffVerifications": 0,
+      "backgroundStarts": 2
+    },
+    "trace_file": "scripts/qa/single-instance-f012b/evidence/traces/bootstrap.json",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "id": "BG-09",
+    "contract": "BG-09 plan change does not reuse previous result",
+    "result": "passed",
+    "source": "scripts/qa/single-instance-f012b/bootstrap.test.js",
+    "initial": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 52,
+      "reason": "test_reset",
+      "appStatus": null
+    },
+    "events": "BG-09 plan change does not reuse previous result",
+    "final_authority": {
+      "status": "granted",
+      "actorType": "admin",
+      "actorId": "owner-A",
+      "actorKey": "admin:owner-A",
+      "sessionId": "session-A",
+      "permissions": [
+        "*"
+      ],
+      "tenant": {
+        "opaqueId": "tenant-A",
+        "databaseName": "LanzoDB_t_A",
+        "generation": 1
+      },
+      "deviceRef": "device-A",
+      "authorizationExpiresAt": 1792821388768,
+      "generation": 58,
+      "reason": "authenticated_session_granted",
+      "appStatus": "ready"
+    },
+    "registrations": [],
+    "restorations": 2,
+    "background_effects": {
+      "restorations": 2,
+      "adminVerifications": 2,
+      "staffVerifications": 0,
+      "backgroundStarts": 2
+    },
+    "trace_file": "scripts/qa/single-instance-f012b/evidence/traces/bootstrap.json",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "id": "BG-10",
+    "contract": "BG-10 store factories never share another stores flight",
+    "result": "passed",
+    "source": "scripts/qa/single-instance-f012b/bootstrap.test.js",
+    "initial": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 59,
+      "reason": "test_reset",
+      "appStatus": null
+    },
+    "events": "BG-10 store factories never share another stores flight",
+    "final_authority": {
+      "status": "granted",
+      "actorType": "admin",
+      "actorId": "owner-A",
+      "actorKey": "admin:owner-A",
+      "sessionId": "session-A",
+      "permissions": [
+        "*"
+      ],
+      "tenant": {
+        "opaqueId": "tenant-A",
+        "databaseName": "LanzoDB_t_A",
+        "generation": 1
+      },
+      "deviceRef": "device-A",
+      "authorizationExpiresAt": 1792821388770,
+      "generation": 63,
+      "reason": "authenticated_session_granted",
+      "appStatus": "ready"
+    },
+    "registrations": [],
+    "restorations": 1,
+    "background_effects": {
+      "restorations": 1,
+      "adminVerifications": 1,
+      "staffVerifications": 0,
+      "backgroundStarts": 1
+    },
+    "trace_file": "scripts/qa/single-instance-f012b/evidence/traces/bootstrap.json",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "id": "BG-11",
+    "contract": "BG-11 Staff still verifies online on sequential calls",
+    "result": "passed",
+    "source": "scripts/qa/single-instance-f012b/bootstrap.test.js",
+    "initial": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 64,
+      "reason": "test_reset",
+      "appStatus": null
+    },
+    "events": "BG-11 Staff still verifies online on sequential calls",
+    "final_authority": {
+      "status": "granted",
+      "actorType": "staff",
+      "actorId": "staff-A",
+      "actorKey": "staff:staff-A",
+      "sessionId": "session-A",
+      "permissions": [],
+      "tenant": {
+        "opaqueId": "tenant-A",
+        "databaseName": "LanzoDB_t_A",
+        "generation": 1
+      },
+      "deviceRef": "device-A",
+      "authorizationExpiresAt": null,
+      "generation": 67,
+      "reason": "authenticated_session_granted",
+      "appStatus": "ready"
+    },
+    "registrations": [],
+    "restorations": 1,
+    "background_effects": {
+      "restorations": 1,
+      "adminVerifications": 0,
+      "staffVerifications": 2,
+      "backgroundStarts": 1
+    },
+    "trace_file": "scripts/qa/single-instance-f012b/evidence/traces/bootstrap.json",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "id": "BG-12",
+    "contract": "BG-12 Staff offline denies reuse",
+    "result": "passed",
+    "source": "scripts/qa/single-instance-f012b/bootstrap.test.js",
+    "initial": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 68,
+      "reason": "test_reset",
+      "appStatus": null
+    },
+    "events": "BG-12 Staff offline denies reuse",
+    "final_authority": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 72,
+      "reason": "application_bootstrap",
+      "appStatus": "staff_login_required"
+    },
+    "registrations": [],
+    "restorations": 1,
+    "background_effects": {
+      "restorations": 1,
+      "adminVerifications": 0,
+      "staffVerifications": 1,
+      "backgroundStarts": 1
+    },
+    "trace_file": "scripts/qa/single-instance-f012b/evidence/traces/bootstrap.json",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "id": "BG-13",
+    "contract": "BG-13 Admin offline still calls current authorization proof",
+    "result": "passed",
+    "source": "scripts/qa/single-instance-f012b/bootstrap.test.js",
+    "initial": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 73,
+      "reason": "test_reset",
+      "appStatus": null
+    },
+    "events": "BG-13 Admin offline still calls current authorization proof",
+    "final_authority": {
+      "status": "granted",
+      "actorType": "admin",
+      "actorId": "owner-A",
+      "actorKey": "admin:owner-A",
+      "sessionId": "session-A",
+      "permissions": [
+        "*"
+      ],
+      "tenant": {
+        "opaqueId": "tenant-A",
+        "databaseName": "LanzoDB_t_A",
+        "generation": 1
+      },
+      "deviceRef": "device-A",
+      "authorizationExpiresAt": 1792821388772,
+      "generation": 76,
+      "reason": "authenticated_session_granted",
+      "appStatus": "ready"
+    },
+    "registrations": [],
+    "restorations": 1,
+    "background_effects": {
+      "restorations": 1,
+      "adminVerifications": 1,
+      "staffVerifications": 0,
+      "backgroundStarts": 1
+    },
+    "trace_file": "scripts/qa/single-instance-f012b/evidence/traces/bootstrap.json",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "id": "BG-14",
+    "contract": "BG-14 expired Admin authority is never a reused success",
+    "result": "passed",
+    "source": "scripts/qa/single-instance-f012b/bootstrap.test.js",
+    "initial": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 77,
+      "reason": "test_reset",
+      "appStatus": null
+    },
+    "events": "BG-14 expired Admin authority is never a reused success",
+    "final_authority": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 82,
+      "reason": "application_bootstrap",
+      "appStatus": "admin_login_required"
+    },
+    "registrations": [],
+    "restorations": 1,
+    "background_effects": {
+      "restorations": 1,
+      "adminVerifications": 1,
+      "staffVerifications": 0,
+      "backgroundStarts": 1
+    },
+    "trace_file": "scripts/qa/single-instance-f012b/evidence/traces/bootstrap.json",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "id": "BG-15",
+    "contract": "BG-15 a changed session requires normal reevaluation",
+    "result": "passed",
+    "source": "scripts/qa/single-instance-f012b/bootstrap.test.js",
+    "initial": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 83,
+      "reason": "test_reset",
+      "appStatus": null
+    },
+    "events": "BG-15 a changed session requires normal reevaluation",
+    "final_authority": {
+      "status": "granted",
+      "actorType": "admin",
+      "actorId": "owner-A",
+      "actorKey": "admin:owner-A",
+      "sessionId": "session-B",
+      "permissions": [
+        "*"
+      ],
+      "tenant": {
+        "opaqueId": "tenant-A",
+        "databaseName": "LanzoDB_t_A",
+        "generation": 1
+      },
+      "deviceRef": "device-A",
+      "authorizationExpiresAt": 1792821388775,
+      "generation": 89,
+      "reason": "authenticated_session_granted",
+      "appStatus": "ready"
+    },
+    "registrations": [],
+    "restorations": 2,
+    "background_effects": {
+      "restorations": 2,
+      "adminVerifications": 2,
+      "staffVerifications": 0,
+      "backgroundStarts": 2
+    },
+    "trace_file": "scripts/qa/single-instance-f012b/evidence/traces/bootstrap.json",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "id": "BG-16",
+    "contract": "BG-16 a changed device requires normal reevaluation",
+    "result": "passed",
+    "source": "scripts/qa/single-instance-f012b/bootstrap.test.js",
+    "initial": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 90,
+      "reason": "test_reset",
+      "appStatus": null
+    },
+    "events": "BG-16 a changed device requires normal reevaluation",
+    "final_authority": {
+      "status": "granted",
+      "actorType": "admin",
+      "actorId": "owner-A",
+      "actorKey": "admin:owner-A",
+      "sessionId": "session-A",
+      "permissions": [
+        "*"
+      ],
+      "tenant": {
+        "opaqueId": "tenant-A",
+        "databaseName": "LanzoDB_t_A",
+        "generation": 1
+      },
+      "deviceRef": "device-B",
+      "authorizationExpiresAt": 1792821388776,
+      "generation": 96,
+      "reason": "authenticated_session_granted",
+      "appStatus": "ready"
+    },
+    "registrations": [],
+    "restorations": 2,
+    "background_effects": {
+      "restorations": 2,
+      "adminVerifications": 2,
+      "staffVerifications": 0,
+      "backgroundStarts": 2
+    },
+    "trace_file": "scripts/qa/single-instance-f012b/evidence/traces/bootstrap.json",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "id": "BG-17",
+    "contract": "BG-17 stale verification cannot overwrite a new actor generation",
+    "result": "passed",
+    "source": "scripts/qa/single-instance-f012b/bootstrap.test.js",
+    "initial": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 97,
+      "reason": "test_reset",
+      "appStatus": null
+    },
+    "events": "BG-17 stale verification cannot overwrite a new actor generation",
+    "final_authority": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 101,
+      "reason": "logout_during_verification",
+      "appStatus": "admin_login_required"
+    },
+    "registrations": [],
+    "restorations": 1,
+    "background_effects": {
+      "restorations": 1,
+      "adminVerifications": 2,
+      "staffVerifications": 0,
+      "backgroundStarts": 1
+    },
+    "trace_file": "scripts/qa/single-instance-f012b/evidence/traces/bootstrap.json",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "id": "BG-18",
+    "contract": "BG-18 tenant generation change cannot reuse actor",
+    "result": "passed",
+    "source": "scripts/qa/single-instance-f012b/bootstrap.test.js",
+    "initial": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 102,
+      "reason": "test_reset",
+      "appStatus": null
+    },
+    "events": "BG-18 tenant generation change cannot reuse actor",
+    "final_authority": {
+      "status": "granted",
+      "actorType": "admin",
+      "actorId": "owner-A",
+      "actorKey": "admin:owner-A",
+      "sessionId": "session-A",
+      "permissions": [
+        "*"
+      ],
+      "tenant": {
+        "opaqueId": "tenant-A",
+        "databaseName": "LanzoDB_t_A",
+        "generation": 2
+      },
+      "deviceRef": "device-A",
+      "authorizationExpiresAt": 1792821388829,
+      "generation": 108,
+      "reason": "authenticated_session_granted",
+      "appStatus": "ready"
+    },
+    "registrations": [],
+    "restorations": 2,
+    "background_effects": {
+      "restorations": 2,
+      "adminVerifications": 2,
+      "staffVerifications": 0,
+      "backgroundStarts": 2
+    },
+    "trace_file": "scripts/qa/single-instance-f012b/evidence/traces/bootstrap.json",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "id": "BG-19",
+    "contract": "BG-19 remote denial follows existing login-required policy",
+    "result": "passed",
+    "source": "scripts/qa/single-instance-f012b/bootstrap.test.js",
+    "initial": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 109,
+      "reason": "test_reset",
+      "appStatus": null
+    },
+    "events": "BG-19 remote denial follows existing login-required policy",
+    "final_authority": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 114,
+      "reason": "denied",
+      "appStatus": "admin_login_required"
+    },
+    "registrations": [],
+    "restorations": 1,
+    "background_effects": {
+      "restorations": 1,
+      "adminVerifications": 3,
+      "staffVerifications": 0,
+      "backgroundStarts": 1
+    },
+    "trace_file": "scripts/qa/single-instance-f012b/evidence/traces/bootstrap.json",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "id": "BG-20",
+    "contract": "BG-20 StrictMode repeated invocation shares flight and later proves authority",
+    "result": "passed",
+    "source": "scripts/qa/single-instance-f012b/bootstrap.test.js",
+    "initial": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 115,
+      "reason": "test_reset",
+      "appStatus": null
+    },
+    "events": "BG-20 StrictMode repeated invocation shares flight and later proves authority",
+    "final_authority": {
+      "status": "granted",
+      "actorType": "admin",
+      "actorId": "owner-A",
+      "actorKey": "admin:owner-A",
+      "sessionId": "session-A",
+      "permissions": [
+        "*"
+      ],
+      "tenant": {
+        "opaqueId": "tenant-A",
+        "databaseName": "LanzoDB_t_A",
+        "generation": 1
+      },
+      "deviceRef": "device-A",
+      "authorizationExpiresAt": 1792821388832,
+      "generation": 118,
+      "reason": "admin_session_reverified",
+      "appStatus": "ready"
+    },
+    "registrations": [],
+    "restorations": 1,
+    "background_effects": {
+      "restorations": 1,
+      "adminVerifications": 2,
+      "staffVerifications": 0,
+      "backgroundStarts": 1
+    },
+    "trace_file": "scripts/qa/single-instance-f012b/evidence/traces/bootstrap.json",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "id": "BG-21",
+    "contract": "BG-21 registers before a factory starts",
+    "result": "passed",
+    "source": "scripts/qa/single-instance-f012b/bootstrap.test.js",
+    "initial": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 119,
+      "reason": "test_reset",
+      "appStatus": null
+    },
+    "events": "BG-21 registers before a factory starts",
+    "final_authority": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 119,
+      "reason": "test_reset",
+      "appStatus": null
+    },
+    "registrations": [
+      {
+        "registered": 1,
+        "started": 1,
+        "finished": 1,
+        "accepting": true,
+        "pending": 0,
+        "completed": 1,
+        "rejected": 0,
+        "unknown": []
+      }
+    ],
+    "restorations": 0,
+    "background_effects": {
+      "restorations": 0,
+      "adminVerifications": 0,
+      "staffVerifications": 0,
+      "backgroundStarts": 0
+    },
+    "trace_file": "scripts/qa/single-instance-f012b/evidence/traces/bootstrap.json",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "id": "BG-22",
+    "contract": "BG-22 public ready differs from background settled",
+    "result": "passed",
+    "source": "scripts/qa/single-instance-f012b/bootstrap.test.js",
+    "initial": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 120,
+      "reason": "test_reset",
+      "appStatus": null
+    },
+    "events": "BG-22 public ready differs from background settled",
+    "final_authority": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 120,
+      "reason": "test_reset",
+      "appStatus": null
+    },
+    "registrations": [
+      {
+        "registered": 1,
+        "started": 1,
+        "finished": 1,
+        "accepting": true,
+        "pending": 0,
+        "completed": 1,
+        "rejected": 0,
+        "unknown": []
+      }
+    ],
+    "restorations": 0,
+    "background_effects": {
+      "restorations": 0,
+      "adminVerifications": 0,
+      "staffVerifications": 0,
+      "backgroundStarts": 0
+    },
+    "trace_file": "scripts/qa/single-instance-f012b/evidence/traces/bootstrap.json",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "id": "BG-23",
+    "contract": "BG-23 quiesce denies new registration",
+    "result": "passed",
+    "source": "scripts/qa/single-instance-f012b/bootstrap.test.js",
+    "initial": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 121,
+      "reason": "test_reset",
+      "appStatus": null
+    },
+    "events": "BG-23 quiesce denies new registration",
+    "final_authority": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 121,
+      "reason": "test_reset",
+      "appStatus": null
+    },
+    "registrations": [
+      {
+        "registered": 1,
+        "started": 0,
+        "finished": 0,
+        "accepting": false,
+        "pending": 0,
+        "completed": 0,
+        "rejected": 0,
+        "unknown": []
+      }
+    ],
+    "restorations": 0,
+    "background_effects": {
+      "restorations": 0,
+      "adminVerifications": 0,
+      "staffVerifications": 0,
+      "backgroundStarts": 0
+    },
+    "trace_file": "scripts/qa/single-instance-f012b/evidence/traces/bootstrap.json",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "id": "BG-24",
+    "contract": "BG-24 invalidation before start blocks factory",
+    "result": "passed",
+    "source": "scripts/qa/single-instance-f012b/bootstrap.test.js",
+    "initial": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 122,
+      "reason": "test_reset",
+      "appStatus": null
+    },
+    "events": "BG-24 invalidation before start blocks factory",
+    "final_authority": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 122,
+      "reason": "test_reset",
+      "appStatus": null
+    },
+    "registrations": [
+      {
+        "registered": 1,
+        "started": 0,
+        "finished": 0,
+        "accepting": true,
+        "pending": 0,
+        "completed": 0,
+        "rejected": 1,
+        "unknown": []
+      }
+    ],
+    "restorations": 0,
+    "background_effects": {
+      "restorations": 0,
+      "adminVerifications": 0,
+      "staffVerifications": 0,
+      "backgroundStarts": 0
+    },
+    "trace_file": "scripts/qa/single-instance-f012b/evidence/traces/bootstrap.json",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "id": "BG-25",
+    "contract": "BG-25 guards reject stale continuations after await",
+    "result": "passed",
+    "source": "scripts/qa/single-instance-f012b/bootstrap.test.js",
+    "initial": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 123,
+      "reason": "test_reset",
+      "appStatus": null
+    },
+    "events": "BG-25 guards reject stale continuations after await",
+    "final_authority": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 123,
+      "reason": "test_reset",
+      "appStatus": null
+    },
+    "registrations": [
+      {
+        "registered": 1,
+        "started": 1,
+        "finished": 1,
+        "accepting": true,
+        "pending": 0,
+        "completed": 0,
+        "rejected": 1,
+        "unknown": []
+      }
+    ],
+    "restorations": 0,
+    "background_effects": {
+      "restorations": 0,
+      "adminVerifications": 0,
+      "staffVerifications": 0,
+      "backgroundStarts": 0
+    },
+    "trace_file": "scripts/qa/single-instance-f012b/evidence/traces/bootstrap.json",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "id": "BG-26",
+    "contract": "BG-26 late rejection is observed and removed",
+    "result": "passed",
+    "source": "scripts/qa/single-instance-f012b/bootstrap.test.js",
+    "initial": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 124,
+      "reason": "test_reset",
+      "appStatus": null
+    },
+    "events": "BG-26 late rejection is observed and removed",
+    "final_authority": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 124,
+      "reason": "test_reset",
+      "appStatus": null
+    },
+    "registrations": [
+      {
+        "registered": 1,
+        "started": 1,
+        "finished": 1,
+        "accepting": true,
+        "pending": 0,
+        "completed": 0,
+        "rejected": 1,
+        "unknown": []
+      }
+    ],
+    "restorations": 0,
+    "background_effects": {
+      "restorations": 0,
+      "adminVerifications": 0,
+      "staffVerifications": 0,
+      "backgroundStarts": 0
+    },
+    "trace_file": "scripts/qa/single-instance-f012b/evidence/traces/bootstrap.json",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "id": "BG-27",
+    "contract": "BG-27 factory throws synchronously without leaking registry",
+    "result": "passed",
+    "source": "scripts/qa/single-instance-f012b/bootstrap.test.js",
+    "initial": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 125,
+      "reason": "test_reset",
+      "appStatus": null
+    },
+    "events": "BG-27 factory throws synchronously without leaking registry",
+    "final_authority": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 125,
+      "reason": "test_reset",
+      "appStatus": null
+    },
+    "registrations": [
+      {
+        "registered": 1,
+        "started": 1,
+        "finished": 1,
+        "accepting": true,
+        "pending": 0,
+        "completed": 0,
+        "rejected": 1,
+        "unknown": []
+      }
+    ],
+    "restorations": 0,
+    "background_effects": {
+      "restorations": 0,
+      "adminVerifications": 0,
+      "staffVerifications": 0,
+      "backgroundStarts": 0
+    },
+    "trace_file": "scripts/qa/single-instance-f012b/evidence/traces/bootstrap.json",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "id": "BG-28",
+    "contract": "BG-28 unknown work never resolves drain by time",
+    "result": "passed",
+    "source": "scripts/qa/single-instance-f012b/bootstrap.test.js",
+    "initial": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 126,
+      "reason": "test_reset",
+      "appStatus": null
+    },
+    "events": "BG-28 unknown work never resolves drain by time",
+    "final_authority": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 126,
+      "reason": "test_reset",
+      "appStatus": null
+    },
+    "registrations": [
+      {
+        "registered": 0,
+        "started": 0,
+        "finished": 0,
+        "accepting": false,
+        "pending": 0,
+        "completed": 0,
+        "rejected": 0,
+        "unknown": [
+          "synthetic unknown"
+        ]
+      }
+    ],
+    "restorations": 0,
+    "background_effects": {
+      "restorations": 0,
+      "adminVerifications": 0,
+      "staffVerifications": 0,
+      "backgroundStarts": 0
+    },
+    "trace_file": "scripts/qa/single-instance-f012b/evidence/traces/bootstrap.json",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "id": "BG-29",
+    "contract": "BG-29 quiesce waits for already started work",
+    "result": "passed",
+    "source": "scripts/qa/single-instance-f012b/bootstrap.test.js",
+    "initial": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 127,
+      "reason": "test_reset",
+      "appStatus": null
+    },
+    "events": "BG-29 quiesce waits for already started work",
+    "final_authority": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 127,
+      "reason": "test_reset",
+      "appStatus": null
+    },
+    "registrations": [
+      {
+        "registered": 1,
+        "started": 1,
+        "finished": 1,
+        "accepting": false,
+        "pending": 0,
+        "completed": 1,
+        "rejected": 0,
+        "unknown": []
+      }
+    ],
+    "restorations": 0,
+    "background_effects": {
+      "restorations": 0,
+      "adminVerifications": 0,
+      "staffVerifications": 0,
+      "backgroundStarts": 0
+    },
+    "trace_file": "scripts/qa/single-instance-f012b/evidence/traces/bootstrap.json",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "id": "BG-30",
+    "contract": "BG-30 lifecycle rejects post-quiesce bootstrap without locking authority",
+    "result": "passed",
+    "source": "scripts/qa/single-instance-f012b/bootstrap.test.js",
+    "initial": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 128,
+      "reason": "test_reset",
+      "appStatus": null
+    },
+    "events": "BG-30 lifecycle rejects post-quiesce bootstrap without locking authority",
+    "final_authority": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 128,
+      "reason": "test_reset",
+      "appStatus": "loading"
+    },
+    "registrations": [
+      {
+        "registered": 1,
+        "started": 0,
+        "finished": 0,
+        "accepting": false,
+        "pending": 0,
+        "completed": 0,
+        "rejected": 0,
+        "unknown": []
+      }
+    ],
+    "restorations": 0,
+    "background_effects": {
+      "restorations": 0,
+      "adminVerifications": 0,
+      "staffVerifications": 0,
+      "backgroundStarts": 0
+    },
+    "trace_file": "scripts/qa/single-instance-f012b/evidence/traces/bootstrap.json",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "id": "BG-31",
+    "contract": "BG-31 actual background public timeout retains registered validation and transport",
+    "result": "passed",
+    "source": "scripts/qa/single-instance-f012b/background.test.js",
+    "initial": {
+      "actorGeneration": 1
+    },
+    "events": "BG-31 actual background public timeout retains registered validation and transport",
+    "final_authority": {
+      "actorGeneration": 1
+    },
+    "registrations": [
+      {
+        "registered": 3,
+        "started": 3,
+        "finished": 3,
+        "accepting": false,
+        "pending": 0,
+        "completed": 3,
+        "rejected": 0,
+        "unknown": []
+      }
+    ],
+    "restorations": "not_exercised",
+    "background_effects": {
+      "revalidations": 1,
+      "connectivityChecks": 1
+    },
+    "trace_file": "scripts/qa/single-instance-f012b/evidence/traces/background.json",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "id": "BG-32",
+    "contract": "BG-32 actual background observes late rejection after public ready",
+    "result": "passed",
+    "source": "scripts/qa/single-instance-f012b/background.test.js",
+    "initial": {
+      "actorGeneration": 1
+    },
+    "events": "BG-32 actual background observes late rejection after public ready",
+    "final_authority": {
+      "actorGeneration": 1
+    },
+    "registrations": [
+      {
+        "registered": 2,
+        "started": 2,
+        "finished": 2,
+        "accepting": true,
+        "pending": 0,
+        "completed": 1,
+        "rejected": 1,
+        "unknown": []
+      }
+    ],
+    "restorations": "not_exercised",
+    "background_effects": {
+      "revalidations": 1,
+      "connectivityChecks": 1
+    },
+    "trace_file": "scripts/qa/single-instance-f012b/evidence/traces/background.json",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "id": "BG-33",
+    "contract": "BG-33 stale health probe cannot write into a new generation",
+    "result": "passed",
+    "source": "scripts/qa/single-instance-f012b/background.test.js",
+    "initial": {
+      "actorGeneration": 1
+    },
+    "events": "BG-33 stale health probe cannot write into a new generation",
+    "final_authority": {
+      "actorGeneration": 2
+    },
+    "registrations": [
+      {
+        "registered": 2,
+        "started": 2,
+        "finished": 2,
+        "accepting": true,
+        "pending": 0,
+        "completed": 1,
+        "rejected": 1,
+        "unknown": []
+      }
+    ],
+    "restorations": "not_exercised",
+    "background_effects": {
+      "revalidations": 1,
+      "connectivityChecks": 1
+    },
+    "trace_file": "scripts/qa/single-instance-f012b/evidence/traces/background.json",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "id": "BG-34",
+    "contract": "BG-34 profile frontier is expressly unknown and cannot claim drain",
+    "result": "passed",
+    "source": "scripts/qa/single-instance-f012b/background.test.js",
+    "initial": {
+      "actorGeneration": 1
+    },
+    "events": "BG-34 profile frontier is expressly unknown and cannot claim drain",
+    "final_authority": {
+      "actorGeneration": 1
+    },
+    "registrations": [
+      {
+        "registered": 1,
+        "started": 1,
+        "finished": 1,
+        "accepting": true,
+        "pending": 0,
+        "completed": 1,
+        "rejected": 0,
+        "unknown": [
+          "background_profile_nested_work"
+        ]
+      }
+    ],
+    "restorations": "not_exercised",
+    "background_effects": {
+      "revalidations": 0,
+      "connectivityChecks": 0
+    },
+    "trace_file": "scripts/qa/single-instance-f012b/evidence/traces/background.json",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "id": "BG-35",
+    "contract": "BG-35 background admission rejection is observed when callers detach",
+    "result": "passed",
+    "source": "scripts/qa/single-instance-f012b/background.test.js",
+    "initial": {
+      "actorGeneration": 1
+    },
+    "events": "BG-35 background admission rejection is observed when callers detach",
+    "final_authority": {
+      "actorGeneration": 1
+    },
+    "registrations": [
+      {
+        "registered": 1,
+        "started": 0,
+        "finished": 0,
+        "accepting": false,
+        "pending": 0,
+        "completed": 0,
+        "rejected": 0,
+        "unknown": []
+      }
+    ],
+    "restorations": "not_exercised",
+    "background_effects": {
+      "revalidations": 0,
+      "connectivityChecks": 0
+    },
+    "trace_file": "scripts/qa/single-instance-f012b/evidence/traces/background.json",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "id": "BG-36",
+    "contract": "BG-36 preparation never activates commercial services",
+    "result": "passed",
+    "source": "scripts/qa/single-instance-f012b/boundaries.test.jsx",
+    "initial": {
+      "authority": "not_exercised"
+    },
+    "events": "BG-36 preparation never activates commercial services",
+    "final_authority": {
+      "authority": "not_exercised"
+    },
+    "registrations": [],
+    "restorations": "not_exercised",
+    "background_effects": {},
+    "trace_file": "scripts/qa/single-instance-f012b/evidence/traces/boundaries.json",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "id": "BG-37",
+    "contract": "BG-37 commercial activation follows preparation once",
+    "result": "passed",
+    "source": "scripts/qa/single-instance-f012b/boundaries.test.jsx",
+    "initial": {
+      "authority": "not_exercised"
+    },
+    "events": "BG-37 commercial activation follows preparation once",
+    "final_authority": {
+      "authority": "not_exercised"
+    },
+    "registrations": [],
+    "restorations": "not_exercised",
+    "background_effects": {},
+    "trace_file": "scripts/qa/single-instance-f012b/evidence/traces/boundaries.json",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "id": "BG-38",
+    "contract": "BG-38 existing default activation remains enabled",
+    "result": "passed",
+    "source": "scripts/qa/single-instance-f012b/boundaries.test.jsx",
+    "initial": {
+      "authority": "not_exercised"
+    },
+    "events": "BG-38 existing default activation remains enabled",
+    "final_authority": {
+      "authority": "not_exercised"
+    },
+    "registrations": [],
+    "restorations": "not_exercised",
+    "background_effects": {},
+    "trace_file": "scripts/qa/single-instance-f012b/evidence/traces/boundaries.json",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "id": "BG-39",
+    "contract": "BG-39 rejected loading never installs sync or recovery",
+    "result": "passed",
+    "source": "scripts/qa/single-instance-f012b/boundaries.test.jsx",
+    "initial": {
+      "authority": "not_exercised"
+    },
+    "events": "BG-39 rejected loading never installs sync or recovery",
+    "final_authority": {
+      "authority": "not_exercised"
+    },
+    "registrations": [],
+    "restorations": "not_exercised",
+    "background_effects": {},
+    "trace_file": "scripts/qa/single-instance-f012b/evidence/traces/boundaries.json",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "id": "BG-40",
+    "contract": "BG-40 DB preflight shares preparation without commercial activation",
+    "result": "passed",
+    "source": "scripts/qa/single-instance-f012b/boundaries.test.jsx",
+    "initial": {
+      "authority": "not_exercised"
+    },
+    "events": "BG-40 DB preflight shares preparation without commercial activation",
+    "final_authority": {
+      "authority": "not_exercised"
+    },
+    "registrations": [],
+    "restorations": "not_exercised",
+    "background_effects": {},
+    "trace_file": "scripts/qa/single-instance-f012b/evidence/traces/boundaries.json",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "id": "BG-41",
+    "contract": "BG-41 real revalidateLicense retains raw transport beyond its internal timeout",
+    "result": "passed",
+    "source": "scripts/qa/single-instance-f012b/transport.test.js",
+    "initial": {
+      "authority": "not_exercised"
+    },
+    "events": "BG-41 real revalidateLicense retains raw transport beyond its internal timeout",
+    "final_authority": {
+      "authority": "not_exercised"
+    },
+    "registrations": [
+      {
+        "registered": 1,
+        "started": 1,
+        "finished": 1,
+        "accepting": false,
+        "pending": 0,
+        "completed": 0,
+        "rejected": 1,
+        "unknown": []
+      }
+    ],
+    "restorations": "not_exercised",
+    "background_effects": {
+      "rpcStarts": 1
+    },
+    "trace_file": "scripts/qa/single-instance-f012b/evidence/traces/transport.json",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "id": "BG-42",
+    "contract": "BG-42 shared revalidation owner remains unknown instead of false drain",
+    "result": "passed",
+    "source": "scripts/qa/single-instance-f012b/transport.test.js",
+    "initial": {
+      "authority": "not_exercised"
+    },
+    "events": "BG-42 shared revalidation owner remains unknown instead of false drain",
+    "final_authority": {
+      "authority": "not_exercised"
+    },
+    "registrations": [
+      {
+        "registered": 0,
+        "started": 0,
+        "finished": 0,
+        "accepting": true,
+        "pending": 0,
+        "completed": 0,
+        "rejected": 0,
+        "unknown": [
+          "shared_license_revalidation_owner"
+        ]
+      }
+    ],
+    "restorations": "not_exercised",
+    "background_effects": {
+      "rpcStarts": 2
+    },
+    "trace_file": "scripts/qa/single-instance-f012b/evidence/traces/transport.json",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "id": "BG-43",
+    "contract": "BG-43 lifecycle observation cannot grant authority without a stored license",
+    "result": "passed",
+    "source": "scripts/qa/single-instance-f012b/bootstrap.test.js",
+    "initial": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 129,
+      "reason": "test_reset",
+      "appStatus": null
+    },
+    "events": "BG-43 lifecycle observation cannot grant authority without a stored license",
+    "final_authority": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 130,
+      "reason": "application_bootstrap",
+      "appStatus": "unauthenticated"
+    },
+    "registrations": [
+      {
+        "registered": 1,
+        "started": 1,
+        "finished": 1,
+        "accepting": true,
+        "pending": 0,
+        "completed": 1,
+        "rejected": 0,
+        "unknown": []
+      }
+    ],
+    "restorations": 0,
+    "background_effects": {
+      "restorations": 0,
+      "adminVerifications": 0,
+      "staffVerifications": 0,
+      "backgroundStarts": 0
+    },
+    "trace_file": "scripts/qa/single-instance-f012b/evidence/traces/bootstrap.json",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "id": "BG-44",
+    "contract": "BG-44 equivalent object key order does not duplicate restoration",
+    "result": "passed",
+    "source": "scripts/qa/single-instance-f012b/bootstrap.test.js",
+    "initial": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 131,
+      "reason": "test_reset",
+      "appStatus": null
+    },
+    "events": "BG-44 equivalent object key order does not duplicate restoration",
+    "final_authority": {
+      "status": "granted",
+      "actorType": "admin",
+      "actorId": "owner-A",
+      "actorKey": "admin:owner-A",
+      "sessionId": "session-A",
+      "permissions": [
+        "*"
+      ],
+      "tenant": {
+        "opaqueId": "tenant-A",
+        "databaseName": "LanzoDB_t_A",
+        "generation": 1
+      },
+      "deviceRef": "device-A",
+      "authorizationExpiresAt": 1792821388839,
+      "generation": 134,
+      "reason": "admin_session_reverified",
+      "appStatus": "ready"
+    },
+    "registrations": [],
+    "restorations": 1,
+    "background_effects": {
+      "restorations": 1,
+      "adminVerifications": 2,
+      "staffVerifications": 0,
+      "backgroundStarts": 1
+    },
+    "trace_file": "scripts/qa/single-instance-f012b/evidence/traces/bootstrap.json",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "id": "BG-45",
+    "contract": "BG-45 quiesce between registration and start clears flight for legitimate retry",
+    "result": "passed",
+    "source": "scripts/qa/single-instance-f012b/bootstrap.test.js",
+    "initial": {
+      "status": "locked",
+      "actorType": null,
+      "actorId": null,
+      "actorKey": null,
+      "sessionId": null,
+      "permissions": [],
+      "tenant": null,
+      "deviceRef": null,
+      "authorizationExpiresAt": null,
+      "generation": 135,
+      "reason": "test_reset",
+      "appStatus": null
+    },
+    "events": "BG-45 quiesce between registration and start clears flight for legitimate retry",
+    "final_authority": {
+      "status": "granted",
+      "actorType": "admin",
+      "actorId": "owner-A",
+      "actorKey": "admin:owner-A",
+      "sessionId": "session-A",
+      "permissions": [
+        "*"
+      ],
+      "tenant": {
+        "opaqueId": "tenant-A",
+        "databaseName": "LanzoDB_t_A",
+        "generation": 1
+      },
+      "deviceRef": "device-A",
+      "authorizationExpiresAt": 1792821388840,
+      "generation": 138,
+      "reason": "authenticated_session_granted",
+      "appStatus": "ready"
+    },
+    "registrations": [
+      {
+        "registered": 1,
+        "started": 0,
+        "finished": 0,
+        "accepting": false,
+        "pending": 0,
+        "completed": 0,
+        "rejected": 1,
+        "unknown": []
+      }
+    ],
+    "restorations": 1,
+    "background_effects": {
+      "restorations": 1,
+      "adminVerifications": 1,
+      "staffVerifications": 0,
+      "backgroundStarts": 1
+    },
+    "trace_file": "scripts/qa/single-instance-f012b/evidence/traces/bootstrap.json",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  }
+]
