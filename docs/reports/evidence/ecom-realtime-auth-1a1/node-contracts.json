@@ -1,0 +1,9 @@
+{
+  "command": "node --test scripts/supabase/ecommerce-phase3-admin-inbox-anon-rpc-grants.node-test.mjs scripts/supabase/license-effective-features-creation-contract-r1.node-test.mjs scripts/supabase/license-expiry-entitlement-contract-r1.node-test.mjs",
+  "cwd": "C:/dev/Lanzo-POS-ecom-auth-1a1",
+  "exitCode": 0,
+  "pass": 11,
+  "fail": 0,
+  "skipped": 0,
+  "observedDurationMs": 13152.836
+}

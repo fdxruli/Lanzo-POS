@@ -1,0 +1,56 @@
+[
+  {
+    "file": "src/services/__tests__/supabase.clientConfig.test.js",
+    "status": "passed",
+    "passed": 2,
+    "failed": 0
+  },
+  {
+    "file": "src/components/common/__tests__/StaffLoginModal.verification.test.jsx",
+    "status": "passed",
+    "passed": 2,
+    "failed": 0
+  },
+  {
+    "file": "src/services/auth/__tests__/actorRuntimeController.test.js",
+    "status": "passed",
+    "passed": 18,
+    "failed": 0
+  },
+  {
+    "file": "src/services/auth/__tests__/actorSessionRuntimeBridge.test.js",
+    "status": "passed",
+    "passed": 9,
+    "failed": 0
+  },
+  {
+    "file": "src/services/ecommerce/__tests__/ecommerceOrderCapabilities.test.js",
+    "status": "passed",
+    "passed": 9,
+    "failed": 0
+  },
+  {
+    "file": "src/services/notifications/__tests__/notificationCapabilities.ecommerce.test.js",
+    "status": "passed",
+    "passed": 13,
+    "failed": 0
+  },
+  {
+    "file": "src/services/notifications/__tests__/notificationRealtimeService.ecommerce.test.js",
+    "status": "passed",
+    "passed": 6,
+    "failed": 0
+  },
+  {
+    "file": "src/store/slices/license/licenseSessionActions.test.js",
+    "status": "passed",
+    "passed": 5,
+    "failed": 0
+  },
+  {
+    "file": "src/store/slices/license/__tests__/licenseGraceRuntime.test.js",
+    "status": "passed",
+    "passed": 13,
+    "failed": 0
+  }
+]

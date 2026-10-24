@@ -1,0 +1,423 @@
+{
+  "results": [
+    {
+      "id": "ACL-01-role-attributes",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "ACL-02-no-memberships",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "ACL-03-no-private-schema",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "ACL-04-no-business-table-grants",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "ACL-05-no-broadcast-insert",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "ACL-06-no-grant-enumeration",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "ACL-07-no-client-issue",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "B02-strict-no-privileged-rpc-execute",
+      "detail": {
+        "source": "PUBLIC",
+        "effective_security_definer_count": 6
+      },
+      "status": "FAIL"
+    },
+    {
+      "id": "CLAIM-missing-actor_generation",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "CLAIM-missing-actor_id",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "CLAIM-missing-actor_session_id",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "CLAIM-missing-actor_type",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "CLAIM-missing-aud",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "CLAIM-missing-device_id",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "CLAIM-missing-exp",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "CLAIM-missing-grant_id",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "CLAIM-missing-iat",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "CLAIM-missing-iss",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "CLAIM-missing-jti",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "CLAIM-missing-nbf",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "CLAIM-missing-role",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "CLAIM-missing-runtime_id",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "CLAIM-missing-scope",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "CLAIM-missing-stage",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "CLAIM-missing-sub",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "CLAIM-missing-tenant_generation",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "CLAIM-missing-tenant_id",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "CLAIM-missing-v",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "CLAIM-wrong-actor_generation",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "CLAIM-wrong-actor_id",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "CLAIM-wrong-actor_session_id",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "CLAIM-wrong-actor_type",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "CLAIM-wrong-aud",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "CLAIM-wrong-device_id",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "CLAIM-wrong-exp",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "CLAIM-wrong-grant_id",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "CLAIM-wrong-iat",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "CLAIM-wrong-iss",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "CLAIM-wrong-jti",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "CLAIM-wrong-nbf",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "CLAIM-wrong-role",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "CLAIM-wrong-runtime_id",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "CLAIM-wrong-scope",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "CLAIM-wrong-stage",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "CLAIM-wrong-sub",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "CLAIM-wrong-tenant_generation",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "CLAIM-wrong-tenant_id",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "CLAIM-wrong-v",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "RPC-01-list-staff-needs-original-auth",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "RPC-02-create-staff-needs-original-auth",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "RPC-03-update-staff-needs-original-auth",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "RPC-denied-select public.pos_admin_adopt_legacy_cash_session",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "RPC-denied-select public.pos_admin_close_cash_session",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "RPC-denied-select public.pos_get_cash_station_state",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "SQL-01-admin-canonical",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "SQL-02-receiver-helper",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "SQL-03-no-token-in-grant",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "SQL-04-staff-ecommerce-without-settings",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "SQL-05-staff-no-ecommerce",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "SQL-06-device-secret-mismatch",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "SQL-07-actor-secret-mismatch",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "SQL-08-other-tenant-not-allowlisted",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "SQL-09-other-tenant-session",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "SQL-10-malformed-uuid",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "SQL-11-malformed-exp",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "SQL-12-pro-topic",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "SQL-13-license-topic",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "SQL-14-other-grant-topic",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "SQL-15-second-session-same-owner",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "SQL-16-session-topic-isolation",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "SQL-17-renewal-replaces-grant",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "SQL-18-stale-actor-generation",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "SQL-19-stale-tenant-generation",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "SQL-20-ttl-bounded",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "SQL-21-permission-revoke-renewal",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "SQL-22-inactive-device-receive",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "SQL-23-inactive-device-issue",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "SQL-24-replaced-session-receive",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "SQL-25-revoked-session-renewal",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "SQL-26-other-session-still-live",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "SQL-27-exp-capped-by-session",
+      "detail": {},
+      "status": "PASS"
+    },
+    {
+      "id": "SQL-28-grant-revocation",
+      "detail": {
+        "sql_call_elapsed_ms": 0.496,
+        "transport_revocation_measured": false
+      },
+      "status": "PASS"
+    }
+  ],
+  "sql_only": true,
+  "production_ref": "odlrhijtfyavryeqivaa",
+  "realtime_transport_certified": false
+}

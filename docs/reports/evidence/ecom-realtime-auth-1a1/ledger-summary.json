@@ -1,0 +1,61 @@
+{
+  "main": "f014a1f340ed78335d3e704eefff49cda8465115",
+  "remoteCount": 312,
+  "mainFiles": 310,
+  "remoteOnly": [
+    {
+      "version": "20260929091708",
+      "name": "restaurant_payment_split_financial_r1",
+      "statement_count": 1,
+      "statement_md5": "41bebae3ef0ee16da6b09a919558aa9a",
+      "chars": 42693,
+      "prefix": "-- Phase 3: canonical split identity now distinguishes single-sale monetary splits.\n-- Payment rows retain stable T1..T8 payer IDs, never presentation names.\ncreate or replace function private.canonical_financial_split_p"
+    },
+    {
+      "version": "20261006224032",
+      "name": "restaurant_atomic_settlement_3d1",
+      "statement_count": 1,
+      "statement_md5": "122a19c2f5b21de45c2cbd19fea89467",
+      "chars": 64447,
+      "prefix": "begin;\n\n-- One per-license, per-localOrderId barrier for normal and split restaurant settlements.\ncreate or replace function private.lock_restaurant_order_settlement_v1(p_license_id uuid, p_local_order_id text)\nreturns p"
+    },
+    {
+      "version": "20261008030859",
+      "name": "restaurant_origin_cancel_contract_3d13",
+      "statement_count": 1,
+      "statement_md5": "c6a30d127df11b013b58fdc87a8f1603",
+      "chars": 8166,
+      "prefix": "begin;\n\n-- A late legacy upsert/Kitchen response may hold only the row lock. Preserve\n-- the new POS terminal invariant at the row, without changing those RPCs or\n-- the established Kitchen cancellation semantics.\ncreate"
+    }
+  ],
+  "bodyComparison": [
+    {
+      "remote_version": "20261006224032",
+      "local_file": "20261006181758_restaurant_atomic_settlement_3d1.sql",
+      "exactEqual": false,
+      "trimEqual": true,
+      "whitespaceEqual": true,
+      "remoteChars": 64447,
+      "localChars": 64445
+    },
+    {
+      "remote_version": "20261008030859",
+      "local_file": "20261008013643_restaurant_origin_cancel_contract_3d13.sql",
+      "exactEqual": false,
+      "trimEqual": true,
+      "whitespaceEqual": true,
+      "remoteChars": 8166,
+      "localChars": 8167
+    }
+  ],
+  "localOnly": {
+    "version": "20261008180000",
+    "file": "20261008180000_create_legal_policy_previews.sql",
+    "originCommit": "563dcb4215329ff033ad92d5684ea809f8c2f2d6",
+    "laterMainCommit": "31fadba8bdb4f92725d07572e2696f9af20c47ca",
+    "remoteObjectAbsent": true
+  },
+  "historyRepaired": false,
+  "dbPushRun": false,
+  "status": "PROVENANCE_RECONCILED_HISTORY_UNCHANGED"
+}

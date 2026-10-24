@@ -1,0 +1,74 @@
+name: Ecommerce Native Bridge QA
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/services/ecommerce/ecomSignal*'
+      - 'src/services/ecommerce/useEcomSignalQa.js'
+      - 'src/services/ecommerce/__tests__/ecomSignal*'
+      - 'supabase/functions/lanzo-ecom-bridge-qa/**'
+      - 'supabase/candidates/ecom-signal-auth-1a*/**'
+      - 'scripts/supabase/ecom-*.mjs'
+      - '.github/workflows/ecom-native-bridge-validation.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci
+      - name: Focal broker and receiver contracts
+        run: node --test scripts/supabase/ecom-native-bridge.node-test.mjs scripts/supabase/ecom-hardening-1a3.node-test.mjs scripts/supabase/ecom-lifecycle-1a4.node-test.mjs scripts/supabase/ecom-leadership-1a4.node-test.mjs
+      - run: node --test scripts/supabase/*.node-test.mjs
+      - uses: denoland/setup-deno@v2
+        if: always()
+        with:
+          deno-version: v2.x
+      - run: deno check supabase/functions/lanzo-ecom-bridge-qa/index.ts
+        if: always()
+      - run: npx eslint src/services/ecommerce/ecomSignalReceiver.js src/services/ecommerce/ecomSignalActorAdapter.js src/services/ecommerce/ecomSignalLeadership.js src/services/ecommerce/useEcomSignalQa.js src/services/ecommerce/__tests__/ecomSignalActorAdapter.test.jsx
+        if: always()
+  regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci
+      - name: Current actor, sessions, devices, licences, ecommerce, notification, PWA and cash suites
+        run: >-
+          npx vitest run src/services/auth src/services/tenant src/services/db
+          src/services/ecommerce src/services/__tests__ src/store/slices/license
+          src/pwa src/services/notifications src/hooks/notifications src/hooks/license
+          src/services/cashCloud src/components/caja src/hooks/caja
+          --maxWorkers=4 --reporter=json --outputFile=bridge-regressions.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bridge-regressions-${{ github.event.pull_request.head.sha || github.sha }}
+          path: bridge-regressions.json
+  builds:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm ci
+      - run: npm run build
+      - run: npm run build:store

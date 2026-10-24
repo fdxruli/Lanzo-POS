@@ -1,0 +1,68 @@
+{
+  "base_initial": "f014a1f340ed78335d3e704eefff49cda8465115",
+  "base_integrated": "f48aab53634663438a06dc5187fa7e6d17b74fb3",
+  "node": {
+    "status": "PASS",
+    "new_tests": 13,
+    "existing_contracts": 11,
+    "total": 24,
+    "failed": 0,
+    "source": ".tmp/ecom-native-qa/node-final.log"
+  },
+  "sql": {
+    "status": "PASS",
+    "checks": 11,
+    "failed": 0,
+    "rolled_back": true,
+    "source": "supabase/tests/ecom_native_bridge_qa_test.sql"
+  },
+  "native_realtime": {
+    "status": "PASS_PARTIAL",
+    "source": "native-hosted.json",
+    "jwt_natural_expiry": "BLOCKED",
+    "react_physical_integration": "NOT_RUN"
+  },
+  "deno_check": {
+    "status": "PASS",
+    "entrypoint": "supabase/functions/lanzo-ecom-bridge-qa/index.ts",
+    "exit_code": 0
+  },
+  "lint": {
+    "status": "PASS",
+    "exit_code": 0,
+    "files": [
+      "src/services/ecommerce/ecomSignalReceiver.js"
+    ],
+    "warning": "preexisting baseline-browser-mapping metadata age"
+  },
+  "react_doctor": {
+    "status": "PASS",
+    "score": 100,
+    "scanned_files": 1,
+    "issues": 0
+  },
+  "before_main_update": {
+    "pos_pwa_postbuild": "PASS",
+    "startup_assets": 24,
+    "store": "PASS",
+    "store_duration_seconds": 46.95
+  },
+  "after_main_update": {
+    "vitest": "HOLD_INCOMPLETE",
+    "vitest_selected_files": 6,
+    "vitest_result": "Only RUN header; no completed result or report. Not counted as PASS.",
+    "pos": "BUNDLE_COMPLETE_PWA_POSTBUILD_NOT_CONFIRMED",
+    "store": "NOT_RUN",
+    "ci_required": true
+  },
+  "attempts": [
+    "Initial JSON Vitest runner produced no report before executor interruption.",
+    "After main integration, selected Vitest runner and build validation did not produce complete final reports in the available execution context.",
+    "Prior successful POS/Store builds are retained but do not certify the integrated final main."
+  ],
+  "secret_scan": {
+    "status": "PASS",
+    "credential_findings": 0
+  },
+  "merge": "HOLD"
+}

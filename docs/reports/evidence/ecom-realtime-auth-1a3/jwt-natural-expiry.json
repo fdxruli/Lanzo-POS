@@ -1,0 +1,295 @@
+{
+  "started_at": "2026-10-22T06:27:43.084Z",
+  "observations": [
+    {
+      "at": "2026-10-22T06:27:46.335Z",
+      "event": "channel",
+      "state": "SUBSCRIBED"
+    },
+    {
+      "at": "2026-10-22T06:27:46.337Z",
+      "event": "waiting_natural_expiry",
+      "exp": 1792654064,
+      "ttl_seconds": 3600
+    },
+    {
+      "at": "2026-10-22T06:27:46.971Z",
+      "event": "probe",
+      "status": 200,
+      "probe_id": "75cb7053-5a02-4e2e-a2f4-2cd100563d13",
+      "remaining_ms": 3597662,
+      "socket_state": "joined"
+    },
+    {
+      "at": "2026-10-22T06:27:46.979Z",
+      "event": "qa_probe",
+      "probe_id": "75cb7053-5a02-4e2e-a2f4-2cd100563d13"
+    },
+    {
+      "at": "2026-10-22T06:28:17.660Z",
+      "event": "probe",
+      "status": 200,
+      "probe_id": "af11260d-c4f1-43b2-9f41-032c8b9e9532",
+      "remaining_ms": 3567007,
+      "socket_state": "joined"
+    },
+    {
+      "at": "2026-10-22T06:28:17.676Z",
+      "event": "qa_probe",
+      "probe_id": "af11260d-c4f1-43b2-9f41-032c8b9e9532"
+    },
+    {
+      "at": "2026-10-22T06:28:48.297Z",
+      "event": "probe",
+      "status": 200,
+      "probe_id": "3352fbb4-604c-43e8-be5e-20c42b9e5e6e",
+      "remaining_ms": 3536323,
+      "socket_state": "joined"
+    },
+    {
+      "at": "2026-10-22T06:28:48.299Z",
+      "event": "qa_probe",
+      "probe_id": "3352fbb4-604c-43e8-be5e-20c42b9e5e6e"
+    },
+    {
+      "at": "2026-10-22T06:29:19.275Z",
+      "event": "qa_probe",
+      "probe_id": "fc3ebfab-2b29-4044-842b-199f4b480d71"
+    },
+    {
+      "at": "2026-10-22T06:29:19.284Z",
+      "event": "probe",
+      "status": 200,
+      "probe_id": "fc3ebfab-2b29-4044-842b-199f4b480d71",
+      "remaining_ms": 3505185,
+      "socket_state": "joined"
+    },
+    {
+      "at": "2026-10-22T06:39:30.359Z",
+      "event": "channel",
+      "state": "CHANNEL_ERROR"
+    },
+    {
+      "at": "2026-10-22T06:39:30.688Z",
+      "event": "channel",
+      "state": "CHANNEL_ERROR"
+    },
+    {
+      "at": "2026-10-22T06:39:34.020Z",
+      "event": "channel",
+      "state": "SUBSCRIBED"
+    },
+    {
+      "at": "2026-10-22T06:39:57.577Z",
+      "event": "channel",
+      "state": "CHANNEL_ERROR"
+    },
+    {
+      "at": "2026-10-22T06:40:00.758Z",
+      "event": "channel",
+      "state": "SUBSCRIBED"
+    },
+    {
+      "at": "2026-10-22T06:40:24.113Z",
+      "event": "channel",
+      "state": "CHANNEL_ERROR"
+    },
+    {
+      "at": "2026-10-22T06:40:24.114Z",
+      "event": "channel",
+      "state": "CHANNEL_ERROR"
+    },
+    {
+      "at": "2026-10-22T06:40:27.539Z",
+      "event": "channel",
+      "state": "SUBSCRIBED"
+    },
+    {
+      "at": "2026-10-22T06:40:50.711Z",
+      "event": "channel",
+      "state": "CHANNEL_ERROR"
+    },
+    {
+      "at": "2026-10-22T06:40:54.609Z",
+      "event": "channel",
+      "state": "SUBSCRIBED"
+    },
+    {
+      "at": "2026-10-22T07:14:02.060Z",
+      "event": "channel",
+      "state": "CHANNEL_ERROR"
+    },
+    {
+      "at": "2026-10-22T07:14:02.061Z",
+      "event": "channel",
+      "state": "CHANNEL_ERROR"
+    },
+    {
+      "at": "2026-10-22T07:14:05.659Z",
+      "event": "channel",
+      "state": "SUBSCRIBED"
+    },
+    {
+      "at": "2026-10-22T07:27:25.214Z",
+      "event": "probe",
+      "status": 200,
+      "probe_id": "b2c95970-6182-486a-9eae-07b24d0ec662",
+      "remaining_ms": 19958,
+      "socket_state": "joined"
+    },
+    {
+      "at": "2026-10-22T07:27:25.217Z",
+      "event": "qa_probe",
+      "probe_id": "b2c95970-6182-486a-9eae-07b24d0ec662"
+    },
+    {
+      "at": "2026-10-22T07:27:30.703Z",
+      "event": "probe",
+      "status": 200,
+      "probe_id": "e1943275-b844-4b3c-a355-63e390519c37",
+      "remaining_ms": 13785,
+      "socket_state": "joined"
+    },
+    {
+      "at": "2026-10-22T07:27:30.705Z",
+      "event": "qa_probe",
+      "probe_id": "e1943275-b844-4b3c-a355-63e390519c37"
+    },
+    {
+      "at": "2026-10-22T07:27:36.193Z",
+      "event": "probe",
+      "status": 200,
+      "probe_id": "60cf7096-3dd8-4aee-a4b0-c0fb96925e14",
+      "remaining_ms": 8285,
+      "socket_state": "joined"
+    },
+    {
+      "at": "2026-10-22T07:27:36.197Z",
+      "event": "qa_probe",
+      "probe_id": "60cf7096-3dd8-4aee-a4b0-c0fb96925e14"
+    },
+    {
+      "at": "2026-10-22T07:27:41.601Z",
+      "event": "probe",
+      "status": 200,
+      "probe_id": "0522b802-b3db-4539-bca8-f39c60a17844",
+      "remaining_ms": 2791,
+      "socket_state": "joined"
+    },
+    {
+      "at": "2026-10-22T07:27:41.607Z",
+      "event": "qa_probe",
+      "probe_id": "0522b802-b3db-4539-bca8-f39c60a17844"
+    },
+    {
+      "at": "2026-10-22T07:27:44.281Z",
+      "event": "channel",
+      "state": "CLOSED"
+    },
+    {
+      "at": "2026-10-22T07:27:47.010Z",
+      "event": "probe",
+      "status": 200,
+      "probe_id": "1301fe9a-3df8-4fd9-8e94-5f2ed9409633",
+      "remaining_ms": -2606,
+      "socket_state": "closed"
+    },
+    {
+      "at": "2026-10-22T07:27:52.431Z",
+      "event": "probe",
+      "status": 200,
+      "probe_id": "48f814bf-c134-432f-b5c9-6e26144762e8",
+      "remaining_ms": -8016,
+      "socket_state": "closed"
+    },
+    {
+      "at": "2026-10-22T07:27:58.064Z",
+      "event": "probe",
+      "status": 200,
+      "probe_id": "810c5f28-ccf9-4c8f-9068-6992a7a74971",
+      "remaining_ms": -13626,
+      "socket_state": "closed"
+    },
+    {
+      "at": "2026-10-22T07:28:03.556Z",
+      "event": "probe",
+      "status": 200,
+      "probe_id": "a917e8ea-9e0d-45bd-aef5-9055541af7e5",
+      "remaining_ms": -19233,
+      "socket_state": "closed"
+    },
+    {
+      "at": "2026-10-22T07:28:09.040Z",
+      "event": "probe",
+      "status": 200,
+      "probe_id": "62bb097c-530f-43dc-ab2a-116f60704517",
+      "remaining_ms": -24571,
+      "socket_state": "closed"
+    },
+    {
+      "at": "2026-10-22T07:28:14.426Z",
+      "event": "probe",
+      "status": 200,
+      "probe_id": "b2d6e782-3286-480f-afb7-4118d9417299",
+      "remaining_ms": -30046,
+      "socket_state": "closed"
+    },
+    {
+      "at": "2026-10-22T07:28:19.891Z",
+      "event": "probe",
+      "status": 200,
+      "probe_id": "abd47032-cf73-4cec-b74e-2eeef4d2e7cf",
+      "remaining_ms": -35442,
+      "socket_state": "closed"
+    },
+    {
+      "at": "2026-10-22T07:28:25.304Z",
+      "event": "probe",
+      "status": 200,
+      "probe_id": "8d7fbfbe-55df-4d6b-b623-ac2c8277f6e4",
+      "remaining_ms": -40893,
+      "socket_state": "closed"
+    },
+    {
+      "at": "2026-10-22T07:28:34.760Z",
+      "event": "channel",
+      "state": "CHANNEL_ERROR",
+      "error": "\"InvalidJWTToken: Token has expired 47 seconds ago\""
+    },
+    {
+      "at": "2026-10-22T07:28:34.762Z",
+      "event": "expired_rejoin",
+      "state": "CHANNEL_ERROR"
+    },
+    {
+      "at": "2026-10-22T07:28:35.483Z",
+      "event": "auth_refresh_after_exp",
+      "status": 200
+    },
+    {
+      "at": "2026-10-22T07:28:39.998Z",
+      "event": "channel",
+      "state": "CHANNEL_ERROR",
+      "error": "\"Unauthorized: You do not have permissions to read from this Channel topic: ecom:qa-probe:1a3-expiry:c9eb574a-bb36-41ae-a04d-567afb90dbb3\""
+    },
+    {
+      "at": "2026-10-22T07:28:40.000Z",
+      "event": "fresh_token_expired_allowlist_rejoin",
+      "state": "CHANNEL_ERROR"
+    },
+    {
+      "at": "2026-10-22T07:28:40.440Z",
+      "event": "auth_cleanup",
+      "status": 200
+    }
+  ],
+  "status": "PASS_OBSERVATION",
+  "auth_user_id": "a98dfb3c-ff28-4898-84d6-cbafba67fee3",
+  "jwt": {
+    "exp": 1792654064,
+    "iat": 1792650464,
+    "session_id": "4f3dbf82-09fe-4b99-85fc-ff7ddb216ba4",
+    "role": "lanzo_ecom_bridge_receiver"
+  },
+  "finished_at": "2026-10-22T07:28:40.441Z"
+}

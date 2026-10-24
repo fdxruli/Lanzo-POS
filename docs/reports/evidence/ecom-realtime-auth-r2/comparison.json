@@ -1,0 +1,11 @@
+{
+  "functionsAndAclEqual": true,
+  "policiesEqual": true,
+  "roleAbsent": true,
+  "schemaAbsent": true,
+  "qaFixtureRowsRemaining": 0,
+  "ledgerCountUnchanged": true,
+  "ledgerLatest": "20261008161409",
+  "projectStatus": "ACTIVE_HEALTHY",
+  "scope": "11 inspected existing functions; 3 realtime policies; migration version inventory; synthetic license prefix; not a full database checksum"
+}

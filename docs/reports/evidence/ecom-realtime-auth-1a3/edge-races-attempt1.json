@@ -1,0 +1,75 @@
+{
+  "started_at": "2026-10-22T07:05:40.107Z",
+  "results": [
+    {
+      "id": "EDGE-RECOVERY",
+      "status": "PASS",
+      "http": 200
+    },
+    {
+      "id": "EDGE-SINGLE-FLIGHT",
+      "status": "PASS",
+      "http": [
+        200,
+        409,
+        409,
+        409
+      ],
+      "elapsed_ms": 962
+    },
+    {
+      "id": "EDGE-REALTIME-JOIN",
+      "status": "PASS",
+      "state": "SUBSCRIBED"
+    },
+    {
+      "id": "RACE-PUBLISH-BEFORE-REVOKE",
+      "status": "PASS",
+      "publish": {
+        "code": "ENQUEUED",
+        "probe_id": "8bc55203-cf99-40af-805f-7166622454ff",
+        "enqueued_at": "2026-10-22T07:05:47.511553+00:00"
+      },
+      "barrier": {
+        "code": "REVOKED",
+        "barrier_at": "2026-10-22T07:05:50.519534+00:00"
+      },
+      "revoke_elapsed_ms": 3086,
+      "retry": {
+        "code": "EXCLUDED"
+      },
+      "socket": "joined"
+    },
+    {
+      "id": "RACE-REVOKE-BEFORE-PUBLISH",
+      "status": "PASS",
+      "revoke": {
+        "code": "REVOKED",
+        "barrier_at": "2026-10-22T07:05:53.515345+00:00"
+      },
+      "publish": {
+        "code": "EXCLUDED"
+      },
+      "publish_elapsed_ms": 3194
+    },
+    {
+      "id": "HARNESS",
+      "status": "FAIL",
+      "message": "EDGE_ISSUE_503_UNAVAILABLE"
+    }
+  ],
+  "received": [
+    {
+      "at": 1792652750255,
+      "topic": "ecom:qa-probe:1a2:3aeaec60-fcad-4c00-8006-d0308d69fad5",
+      "event": "qa_probe",
+      "probe_id": "8bc55203-cf99-40af-805f-7166622454ff"
+    }
+  ],
+  "grants": [
+    "3aeaec60-fcad-4c00-8006-d0308d69fad5",
+    "a80b5e40-9f14-4285-a597-d344806267f5"
+  ],
+  "status": "FAIL",
+  "finished_at": "2026-10-22T07:05:57.237Z"
+}

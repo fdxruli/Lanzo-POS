@@ -1,0 +1,119 @@
+{
+  "algorithm": "SHA-256",
+  "normalization": "UTF-8 text, CRLF to LF",
+  "implementationCommit": "08b676404ff6561c6131a38aef6744d77aa59d25",
+  "files": [
+    {
+      "file": "docs/reports/ECOM.FREE.ORDERS.REALTIME.AUTH.PRODUCTION.R2.md",
+      "sha256": "b42526e959f87326b93e77c3cba2622af6f54dd3f304fbd3ca6423fb3937dfd7"
+    },
+    {
+      "file": "docs/reports/evidence/ecom-realtime-auth-r2/advisors-summary.json",
+      "sha256": "e68a4fa896cd10e70585542578faad4e5eb1f6da6c65c4411a220cf68319f928"
+    },
+    {
+      "file": "docs/reports/evidence/ecom-realtime-auth-r2/authority-definitions.json",
+      "sha256": "c4431c901e590c3e096a4ed96dd4297338eb3a04e1fb3b4d1b41fe549e2039dd"
+    },
+    {
+      "file": "docs/reports/evidence/ecom-realtime-auth-r2/catalog.json",
+      "sha256": "d02c22a136ffda7fbfb2a03d641f12055125e810b36187a0bcf1f7331cb2c0f7"
+    },
+    {
+      "file": "docs/reports/evidence/ecom-realtime-auth-r2/comparison.json",
+      "sha256": "def5fd461764e97ac585e0615633ecf3710c25585d04d8a4eb996da25a756b41"
+    },
+    {
+      "file": "docs/reports/evidence/ecom-realtime-auth-r2/execution-attempts.json",
+      "sha256": "4fdef66b8dfdf5fc80248eda02ea0cf6fc51610a34003cc6004b81b71c806683"
+    },
+    {
+      "file": "docs/reports/evidence/ecom-realtime-auth-r2/fixture-schema.json",
+      "sha256": "6279b2a0610542dad2668488a92b9eb1324aa6c0dffb411c9795e3c486f062dc"
+    },
+    {
+      "file": "docs/reports/evidence/ecom-realtime-auth-r2/jwt-metadata.json",
+      "sha256": "0d713719088c93761cd77b600bdb302c69715996cd573638f56c4c07f3fa8bfc"
+    },
+    {
+      "file": "docs/reports/evidence/ecom-realtime-auth-r2/ledger-comparison.json",
+      "sha256": "b6285d42c5c694bb3b3a37e8893434cbfd8d11e9907038f04eafe6bd95947707"
+    },
+    {
+      "file": "docs/reports/evidence/ecom-realtime-auth-r2/local-validation.json",
+      "sha256": "4f1a463cd8fc7c120b59345a14e5772ce8e8b1fcd65f3da75733bde042004e61"
+    },
+    {
+      "file": "docs/reports/evidence/ecom-realtime-auth-r2/logs-final.json",
+      "sha256": "6f852c2f207fb592df9f7ff967dc2a32f0843a0556a3bbdb91a799a8286ac18e"
+    },
+    {
+      "file": "docs/reports/evidence/ecom-realtime-auth-r2/logs-severity.json",
+      "sha256": "b1cd85396f93e1a38aff0e05fcd8c1cb0a3a8ff1f6c94bd9d11176c3d568051a"
+    },
+    {
+      "file": "docs/reports/evidence/ecom-realtime-auth-r2/logs-volume.json",
+      "sha256": "2b4fa2e52fce22c3c3e7e1ed7600167eae968ccd05dd175d93eb86ed09af65b0"
+    },
+    {
+      "file": "docs/reports/evidence/ecom-realtime-auth-r2/postflight-final.json",
+      "sha256": "260ba8923648d75f643096cc7c275c4b882d426b25e9529044d49437acc43bbb"
+    },
+    {
+      "file": "docs/reports/evidence/ecom-realtime-auth-r2/postflight.json",
+      "sha256": "260ba8923648d75f643096cc7c275c4b882d426b25e9529044d49437acc43bbb"
+    },
+    {
+      "file": "docs/reports/evidence/ecom-realtime-auth-r2/preflight.json",
+      "sha256": "83fc38ac697b672b649657ce153a4a9e1fa05f7126f968fa664454b3a4484e32"
+    },
+    {
+      "file": "docs/reports/evidence/ecom-realtime-auth-r2/qa-baseline.json",
+      "sha256": "285695834d9254a673573409596958f64367548395239233a215e6989ec53391"
+    },
+    {
+      "file": "docs/reports/evidence/ecom-realtime-auth-r2/qa-final.json",
+      "sha256": "18e5b35f977665a48f9ece0a20fa774f41d8afd23c630e59e8ee6e6cf2562f37"
+    },
+    {
+      "file": "docs/reports/evidence/ecom-realtime-auth-r2/roles.json",
+      "sha256": "36a2bd80c85bf07327548e9f7e3405bbbeffbfed0d455af49d4ba6455531b593"
+    },
+    {
+      "file": "docs/reports/evidence/ecom-realtime-auth-r2/rollback-drill.json",
+      "sha256": "343ba5944eef0169499c04b87353215c9a63fcd265fde1d73148a6b274392175"
+    },
+    {
+      "file": "docs/reports/evidence/ecom-realtime-auth-r2/vitest-suites.json",
+      "sha256": "9d7a341ce0ff64575b4a40e131621438d81fb7db6b57f7964779bc3111e91375"
+    },
+    {
+      "file": "scripts/supabase/prepare-ecom-signal-auth-r2.mjs",
+      "sha256": "0abfc861ae3900a3145192b81499a6aa6bf43eecdffff8ea51c43054c46beb85"
+    },
+    {
+      "file": "supabase/candidates/ecom-signal-auth-r2/20261020220455_ecom_signal_authorization_qa_foundation_r2.sql",
+      "sha256": "51a02e2275ccc7f617cfa17245f193097f13ed4eafba4af125766ebe5ef0a638"
+    },
+    {
+      "file": "supabase/candidates/ecom-signal-auth-r2/README.md",
+      "sha256": "1106237b3eb3c5744aa343882605c9c9ee3bc55c51f2b4ab6b330db38e70b00b"
+    },
+    {
+      "file": "supabase/candidates/ecom-signal-auth-r2/public-rpc-acl-proposal.sql",
+      "sha256": "d7e7be6778e9fbcef5da629912e2fb3df66a5fe233ac913b30142b6d6a7d8f45"
+    },
+    {
+      "file": "supabase/candidates/ecom-signal-auth-r2/public-rpc-acl-rollback.sql",
+      "sha256": "d095a1c4cf4227ec148456c60e660e080533f41bcd7509618b4dda149c0364d3"
+    },
+    {
+      "file": "supabase/candidates/ecom-signal-auth-r2/rollback.sql",
+      "sha256": "c710f4eee4606b1280bf1b1b385a8f3e76dfd63005f144f3e20af870d3597f6f"
+    },
+    {
+      "file": "supabase/tests/ecom_signal_authorization_qa_r2_test.sql",
+      "sha256": "22c7a587f134194f99c770f64c97024e946bef30bd257810110472bbf1463280"
+    }
+  ]
+}
