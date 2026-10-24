@@ -117,7 +117,7 @@ const createAttempt = (get, licenseKey) => {
   };
 };
 
-const completeAdminSession = async (set, get, licenseKey, result, reason, attempt, pending = null) => {
+const completeAdminSession = async (set, get, licenseKey, result, reason, attempt, pending = null, lifecycle = undefined) => {
   const confirmedFreeTakeover = reason === 'admin_free_device_takeover'
     && String(result.details?.plan_code || '').trim().toLowerCase() === 'free_trial'
     && Number(result.details?.max_devices) === 1
@@ -213,7 +213,8 @@ const completeAdminSession = async (set, get, licenseKey, result, reason, attemp
     traceAuth('PROFILE_LOAD_COMPLETED');
     if (get().appStatus === 'ready') {
       get()._validateInBackground?.(licenseKey, {
-        reason: reason === 'admin_login_resume' ? 'admin_login_resume' : 'admin_login'
+        reason: reason === 'admin_login_resume' ? 'admin_login_resume' : 'admin_login',
+        lifecycle
       });
     }
     // A ready profile completes the enrollment route. Keep an explicit owner
@@ -329,7 +330,8 @@ export const createLicenseAdminActions = ({ set, get }) => {
   pendingAdminSessionResult: null,
   _isAdminAuthenticationInFlight: () => authenticationInFlight,
 
-  _completeRestoredAdminPreparation: async (licenseKey) => {
+  _completeRestoredAdminPreparation: async (licenseKey, { lifecycle } = {}) => {
+    lifecycle?.markUnobservable('admin_profile_preparation_nested_work');
     const state = get();
     const attempt = createAttempt(get, licenseKey);
     attempt.assertCurrent();
@@ -340,7 +342,7 @@ export const createLicenseAdminActions = ({ set, get }) => {
     }
     const result = { success: true, admin_user: state.currentAdminUser, details: state.licenseDetails };
     const pending = { ...createPendingAdminSession({ licenseKey, result }), actorHandle: attempt.handle };
-    return completeAdminSession(set, get, licenseKey, result, 'admin_session_restore', attempt, pending);
+    return completeAdminSession(set, get, licenseKey, result, 'admin_session_restore', attempt, pending, lifecycle);
   },
 
   resumeAdminSessionPreparation: async () => {

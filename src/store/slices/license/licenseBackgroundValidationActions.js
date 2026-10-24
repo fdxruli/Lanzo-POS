@@ -44,7 +44,21 @@ export const createLicenseBackgroundValidationActions = ({
   clearLocalLicenseSession,
   hasStaffValidationContext
 }) => ({
-  _validateInBackground: async (licenseKey, options = {}) => {
+  _validateInBackground: (licenseKey, options = {}) => {
+    const lifecycle = options?.lifecycle;
+    const validate = async () => {
+    const loadBackgroundProfile = (...args) => {
+      // Profile has its own timeout-hidden RPC and detached preference/Drive
+      // refresh. Do not pretend that awaiting _loadProfile drains those jobs.
+      lifecycle?.markUnobservable('background_profile_nested_work');
+      return get()._loadProfile(...args);
+    };
+    let validationContext = null;
+    let timeoutId;
+    const assertCurrentContext = () => {
+      lifecycle?.assertCurrent();
+      if (validationContext) assertLicenseValidationContextCurrent(validationContext, get());
+    };
     const { refreshProfile = false, reason = 'background' } = options || {};
 
     try {
@@ -55,8 +69,8 @@ export const createLicenseBackgroundValidationActions = ({
         return;
       }
 
-      const validationContext = captureLicenseValidationContext(initialState, licenseKey);
-      const assertCurrentContext = () => assertLicenseValidationContextCurrent(validationContext, get());
+      validationContext = captureLicenseValidationContext(initialState, licenseKey);
+      assertCurrentContext();
 
       const localLicenseBeforeValidation = await getLicenseFromStorage();
       assertCurrentContext();
@@ -70,7 +84,7 @@ export const createLicenseBackgroundValidationActions = ({
         Logger.log(`[Background] Validación remota omitida por TTL exitoso de plan (${reason}).`);
 
         if (!get().companyProfile) {
-          await get()._loadProfile(licenseKey, {
+          await loadBackgroundProfile(licenseKey, {
             refreshProfile: false,
             profileLoadMode: 'background',
             reason: `background_cached_${reason}`
@@ -84,7 +98,7 @@ export const createLicenseBackgroundValidationActions = ({
         Logger.log(`[Background] Validación remota omitida por cooldown corto de error (${reason}).`);
 
         if (!get().companyProfile) {
-          await get()._loadProfile(licenseKey, {
+          await loadBackgroundProfile(licenseKey, {
             refreshProfile: false,
             profileLoadMode: 'background',
             reason: `background_error_cooldown_${reason}`
@@ -100,11 +114,13 @@ export const createLicenseBackgroundValidationActions = ({
       markLastLicenseValidationAttempt(licenseKey);
 
       const BACKGROUND_TIMEOUT = 8000;
-      const validationPromise = revalidateLicense(licenseKey, {
-        beforePersist: assertCurrentContext
+      const startValidation = () => revalidateLicense(licenseKey, {
+        beforePersist: assertCurrentContext,
+        bootstrapLifecycle: lifecycle
       });
+      const validationPromise = lifecycle ? lifecycle.track(startValidation) : startValidation();
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('BACKGROUND_TIMEOUT')), BACKGROUND_TIMEOUT)
+        { timeoutId = setTimeout(() => reject(new Error('BACKGROUND_TIMEOUT')), BACKGROUND_TIMEOUT); }
       );
 
       const serverValidation = await Promise.race([
@@ -319,6 +335,7 @@ export const createLicenseBackgroundValidationActions = ({
       ) {
         assertCurrentContext();
         Logger.log('[Background] Cambios detectados en licencia, actualizando...');
+        lifecycle?.markUnobservable('background_server_processing_sync_work');
         await get()._processServerValidation(serverValidation, localLicense, {
           refreshProfile,
           reason: `background_${reason}`,
@@ -341,7 +358,7 @@ export const createLicenseBackgroundValidationActions = ({
         Logger.log('[Background] Licencia validada sin cambios. No se refresca perfil.');
 
         if (refreshProfile || !get().companyProfile) {
-          await get()._loadProfile(localLicense.license_key, {
+          await loadBackgroundProfile(localLicense.license_key, {
             refreshProfile,
             profileLoadMode: 'background',
             reason: `background_${reason}`
@@ -357,7 +374,11 @@ export const createLicenseBackgroundValidationActions = ({
         Logger.log('[Background] Resultado descartado; cambió el tenant o la sesión del actor.');
         return;
       }
+      // A timeout/error continuation also belongs to its captured actor/tenant.
+      // In particular, connectivity probing must not report into a new login.
+      try { assertCurrentContext(); } catch { return; }
       const isOnlineNow = await checkInternetConnection();
+      try { assertCurrentContext(); } catch { return; }
 
       if (isOnlineNow) {
         if (error.message === 'BACKGROUND_TIMEOUT') {
@@ -396,6 +417,16 @@ export const createLicenseBackgroundValidationActions = ({
       } else {
         Logger.warn('[Background] Validación falló:', error.message);
       }
+    } finally {
+      clearTimeout(timeoutId);
     }
+    };
+    let task;
+    try { task = lifecycle ? lifecycle.track(validate) : validate(); }
+    catch (error) { task = Promise.reject(error); }
+    // Callers intentionally detach validation from login. Observe even failed
+    // admission; callers that await it still receive the original rejection.
+    task.catch(() => {});
+    return task;
   }
 });

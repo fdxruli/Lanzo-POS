@@ -1,0 +1,14 @@
+[
+  {
+    "tag": "base",
+    "prefix": "/workspace/scratch/7c604c25ac9c/Lanzo-F012A",
+    "replacement": "/tmp/lanzo-checkout",
+    "replacements": 719
+  },
+  {
+    "tag": "candidate",
+    "prefix": "/workspace/scratch/bad875041265/Lanzo-F012B",
+    "replacement": "/tmp/lanzo-checkout",
+    "replacements": 723
+  }
+]

@@ -11,7 +11,9 @@ import {
 import {
     beginActorRuntimeAuthentication,
     restoreActorRuntimeFromCurrentSessionCache,
-    lockActorRuntime
+    lockActorRuntime,
+    assertAuthenticatedActorSessionCurrent,
+    refreshAuthenticatedAdminSessionAuthorization
 } from '../../../services/auth/actorSessionRuntimeBridge';
 import { actorRuntimeController } from '../../../services/auth/actorRuntimeController';
 import {
@@ -52,7 +54,6 @@ import {
 } from '../../../services/tenant/localTenantGuard';
 import { enterLocalTenantIsolationFailure } from './localTenantIsolationState';
 
-let initializePromise = null;
 let coordinatorState = 'idle';
 
 const SAFE_BOOTSTRAP_DIAGNOSTIC_CODES = new Set([
@@ -239,7 +240,18 @@ const logFreeAdminAuthorityMode = (license, selectedMode) => {
 
 export const getInitializeAppCoordinatorState = () => coordinatorState;
 
-export const createLicenseBootstrapActions = ({ set, get }) => ({
+// Compare data, never a promise or a boolean authorization cache. Object key
+// order is immaterial; any changed stored license field forces the normal path.
+const canonicalLicense = (value) => JSON.stringify(value, (_key, entry) => (
+    entry && typeof entry === 'object' && !Array.isArray(entry)
+        ? Object.fromEntries(Object.keys(entry).sort().map(key => [key, entry[key]]))
+        : entry
+));
+
+export const createLicenseBootstrapActions = ({ set, get }) => {
+    // A flight belongs to this store instance, not another tenant/store factory.
+    let initializePromise = null;
+    return ({
     initializeApp: (options = {}) => {
         if (initializePromise) {
             Logger.debug('[AppStore] initializeApp reutiliza la promesa en ejecución.');
@@ -254,8 +266,8 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
         set({ _isInitializing: true });
         Logger.log('[AppStore] Iniciando aplicación (coordinador idempotente)...');
 
-        initializePromise = (async () => {
-            let bootstrapActorGeneration = null;
+        const runBootstrap = async () => {
+            let bootstrapActorGeneration = actorRuntimeController.getState().generation;
             const assertBootstrapActorCurrent = () => {
                 if (actorRuntimeController.getState().generation !== bootstrapActorGeneration) {
                     const stale = new Error('SESSION_VERIFICATION_CONTEXT_STALE');
@@ -302,6 +314,95 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
                 }
             };
             try {
+                // Recheck current authority on every invocation. No successful
+                // initialization promise is retained. In particular Staff still
+                // requires an online session check and Admin keeps F-02/168h.
+                const initialState = get();
+                let reusableHandle = null;
+                if (!force && initialState.appStatus === 'ready'
+                    && actorRuntimeController.getState().status === 'granted') {
+                    try { reusableHandle = actorRuntimeController.capture(); } catch {
+                        // A stale tenant binding cannot be reused. The normal
+                        // bootstrap below prepares and verifies the new context.
+                    }
+                }
+                if (reusableHandle) {
+                    const handle = reusableHandle;
+                    const actorAtStart = canonicalLicense(handle.actorType === 'admin'
+                        ? initialState.currentAdminUser : initialState.currentStaffUser);
+                    const licenseAtStart = canonicalLicense(initialState.licenseDetails);
+                    const assertReusableContext = () => {
+                        try { handle.assertCurrent(); } catch {
+                            const error = new Error('SESSION_VERIFICATION_CONTEXT_STALE');
+                            error.code = 'SESSION_VERIFICATION_CONTEXT_STALE';
+                            throw error;
+                        }
+                        if (actorAtStart !== canonicalLicense(handle.actorType === 'admin'
+                            ? get().currentAdminUser : get().currentStaffUser)
+                            || get().appStatus !== 'ready'
+                            || get().currentDeviceRole !== handle.actorType
+                            || canonicalLicense(get().licenseDetails) !== licenseAtStart) {
+                            const error = new Error('SESSION_VERIFICATION_CONTEXT_STALE');
+                            error.code = 'SESSION_VERIFICATION_CONTEXT_STALE';
+                            throw error;
+                        }
+                    };
+                    const stored = await getLicenseFromStorage();
+                    assertReusableContext();
+                    if (stored?.license_key && canonicalLicense(stored) === licenseAtStart
+                        && (handle.actorType === 'admin' || navigator.onLine)) {
+                        let reusable = false;
+                        try {
+                            const actor = handle.actorType === 'admin'
+                                ? initialState.currentAdminUser : initialState.currentStaffUser;
+                            await assertAuthenticatedActorSessionCurrent({ handle, actorType: handle.actorType, actor });
+                            assertReusableContext();
+                            let verification = { valid: true };
+                            if (navigator.onLine) {
+                                const beforeLocalPersistence = async (source = stored) => {
+                                    assertReusableContext();
+                                    await assertLocalTenantAccess(source, { reason: 'bootstrap_current_session_check' });
+                                    assertReusableContext();
+                                };
+                                verification = handle.actorType === 'admin'
+                                    ? await verifyAdminSession(stored.license_key, { beforeLocalPersistence })
+                                    : await runWithLocalTenantSyncLease(stored,
+                                        { reason: 'bootstrap_current_staff_check' },
+                                        () => verifyStaffSession(stored.license_key, { beforeLocalPersistence }));
+                                assertReusableContext();
+                            }
+                            const verifiedActor = handle.actorType === 'admin'
+                                ? verification.admin_user : verification.staff_user;
+                            const detailsUnchanged = !verification.details
+                                || canonicalLicense({ ...stored, ...verification.details }) === licenseAtStart;
+                            reusable = verification.valid === true && detailsUnchanged
+                                && (!verifiedActor || canonicalLicense(verifiedActor) === canonicalLicense(actor));
+                            if (reusable) {
+                                if (navigator.onLine && handle.actorType === 'admin') {
+                                    // Preserve the existing positive-verification
+                                    // refresh contract without creating a new epoch.
+                                    await refreshAuthenticatedAdminSessionAuthorization({ handle, actor });
+                                    assertReusableContext();
+                                }
+                                // Verification can rotate credentials or expire a
+                                // binding; prove it again after its last await.
+                                await assertAuthenticatedActorSessionCurrent({ handle, actorType: handle.actorType, actor });
+                                assertReusableContext();
+                            }
+                        } catch (error) {
+                            // Failed proof is never an authorization cache hit.
+                            // A new generation belongs to its new owner and must
+                            // not be locked by this old invocation.
+                            assertBootstrapActorCurrent();
+                            if (error?.code === 'SESSION_VERIFICATION_CONTEXT_STALE') throw error;
+                        }
+                        if (reusable) {
+                            coordinatorState = 'ready';
+                            return { status: 'ready' };
+                        }
+                    }
+                }
+                assertBootstrapActorCurrent();
                 // App bootstrap is a new actor authority epoch. Any async work
                 // captured by a previous in-memory actor must be stale before
                 // stored credentials are inspected or a tenant is prepared.
@@ -329,6 +430,7 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
                 Logger.log('[AppStore] Carga rápida activada - Usando caché local');
 
                 const hasStoredStaffSession = await hasStaffSessionToken();
+                assertBootstrapActorCurrent();
                 Logger.log(`[AppStore] Sesión staff local: ${hasStoredStaffSession ? 'encontrada' : 'no encontrada'}`);
                 const localDeviceRole = localLicense.device_role || null;
 
@@ -450,10 +552,11 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
                     }
 
                     assertBootstrapActorCurrent();
+                    options?.lifecycle?.markUnobservable('bootstrap_profile_nested_work');
                     await get()._loadProfile(restoredLicense.license_key);
                     assertBootstrapActorCurrent();
                     get()._validateInBackground(restoredLicense.license_key, {
-                        reason: 'staff_session_restore'
+                        reason: 'staff_session_restore', lifecycle: options?.lifecycle
                     });
                     coordinatorState = 'ready';
                     return { status: get().appStatus };
@@ -494,10 +597,11 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
                                 await restoreActorAuthority('admin', offlineAdmin);
                                 assertBootstrapActorCurrent();
                                 set({ currentAdminUser: offlineAdmin });
+                                options?.lifecycle?.markUnobservable('bootstrap_offline_preparation_nested_work');
                                 await get()._processOfflineMode(actorBoundAdminLicense);
                                 assertBootstrapActorCurrent();
                                 if (!['ready', 'setup_required', 'unauthenticated'].includes(get().appStatus)) {
-                                    await get()._completeRestoredAdminPreparation?.(actorBoundAdminLicense.license_key);
+                                    await get()._completeRestoredAdminPreparation?.(actorBoundAdminLicense.license_key, { lifecycle: options?.lifecycle });
                                     assertBootstrapActorCurrent();
                                 }
                             } catch (actorError) {
@@ -559,11 +663,12 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
                                     assertBootstrapActorCurrent();
                                     set({ currentAdminUser: offlineAdmin });
                                     restorationPhase = 'offline_mode_processing';
-                                    await get()._processOfflineMode(actorBoundAdminLicense);
+                                    options?.lifecycle?.markUnobservable('bootstrap_offline_preparation_nested_work');
+                                await get()._processOfflineMode(actorBoundAdminLicense);
                                     assertBootstrapActorCurrent();
                                     if (!['ready', 'setup_required', 'unauthenticated'].includes(get().appStatus)) {
                                         restorationPhase = 'restored_admin_preparation';
-                                        await get()._completeRestoredAdminPreparation?.(actorBoundAdminLicense.license_key);
+                                        await get()._completeRestoredAdminPreparation?.(actorBoundAdminLicense.license_key, { lifecycle: options?.lifecycle });
                                         assertBootstrapActorCurrent();
                                     }
                                     coordinatorState = 'ready';
@@ -656,13 +761,14 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
                     }
 
                     if (get()._completeRestoredAdminPreparation) {
-                        await get()._completeRestoredAdminPreparation(restoredLicense.license_key);
+                        await get()._completeRestoredAdminPreparation(restoredLicense.license_key, { lifecycle: options?.lifecycle });
                         assertBootstrapActorCurrent();
                     } else {
+                        options?.lifecycle?.markUnobservable('bootstrap_profile_nested_work');
                         await get()._loadProfile(restoredLicense.license_key);
                         assertBootstrapActorCurrent();
                         get()._validateInBackground(restoredLicense.license_key, {
-                            reason: 'admin_session_restore'
+                            reason: 'admin_session_restore', lifecycle: options?.lifecycle
                         });
                     }
                     coordinatorState = 'ready';
@@ -674,11 +780,12 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
                 // than manufacturing authority from a device identity.
                 logFreeAdminAuthorityMode(localLicense, 'legacy_local_owner');
                 assertBootstrapActorCurrent();
+                options?.lifecycle?.markUnobservable('bootstrap_offline_preparation_nested_work');
                 await get()._processOfflineMode(localLicense);
                 assertBootstrapActorCurrent();
                 if (navigator.onLine) {
                     get()._validateInBackground(localLicense.license_key, {
-                        reason: 'admin_legacy_restore'
+                        reason: 'admin_legacy_restore', lifecycle: options?.lifecycle
                     });
                 } else {
                     Logger.log('[AppStore] Sin red al iniciar, se mantiene cache local.');
@@ -722,12 +829,25 @@ export const createLicenseBootstrapActions = ({ set, get }) => ({
                     error: criticalError?.message || 'Error de inicialización'
                 };
             } finally {
-                set({ _isInitializing: false });
-                initializePromise = null;
                 if (coordinatorState === 'running') coordinatorState = 'ready';
             }
-        })();
+        };
+        try {
+            initializePromise = options?.lifecycle
+                ? options?.lifecycle.track(runBootstrap)
+                : runBootstrap();
+        } catch (error) {
+            set({ _isInitializing: false });
+            coordinatorState = 'failed';
+            return Promise.reject(error);
+        }
+        // Also clear a flight rejected before its factory could start.
+        initializePromise = initializePromise.finally(() => {
+            initializePromise = null;
+            set({ _isInitializing: false });
+        });
 
         return initializePromise;
     }
 });
+};

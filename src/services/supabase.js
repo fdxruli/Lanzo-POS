@@ -1301,6 +1301,9 @@ export const revalidateLicense = async function (licenseKeyProp, options = {}) {
     const existingPromise = currentRevalidationPromises.get(licenseKey);
     if (existingPromise) {
         Logger.log('⏳ [Security] Revalidación en curso para la misma licencia.');
+        // A shared owner may have started without observation. Its public
+        // promise cannot prove settlement of transport hidden by its timeout.
+        options?.bootstrapLifecycle?.markUnobservable('shared_license_revalidation_owner');
         return existingPromise;
     }
 
@@ -1332,11 +1335,14 @@ export const revalidateLicense = async function (licenseKeyProp, options = {}) {
 
             const securityToken = await getSecurityTokenForValidation(storedLicenseForActiveTenant);
 
-            const validationPromise = supabaseClient.rpc('verify_device_license_unified', {
+            const startValidationTransport = () => supabaseClient.rpc('verify_device_license_unified', {
                 p_license_key: licenseKey,
                 p_device_fingerprint: deviceFingerprint,
                 p_security_token: securityToken || null
             });
+            const validationPromise = options?.bootstrapLifecycle
+                ? options.bootstrapLifecycle.track(startValidationTransport)
+                : startValidationTransport();
 
             const { data, error } = await Promise.race([validationPromise, timeoutPromise]);
             clearTimeout(timeoutId);
