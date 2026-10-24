@@ -1,0 +1,45 @@
+{
+  "captured_at_utc": "2026-10-24T12:42:40Z",
+  "project_ref": "odlrhijtfyavryeqivaa",
+  "migration": {
+    "version": "20261024123634",
+    "name": "ecom_realtime_acl_six_rpcs_1a5",
+    "ledger_count": 325,
+    "latest_version": "20261024123634"
+  },
+  "acl_postflight": {
+    "functions": [
+      {"signature":"public.admin_list_staff_users(text,text,text,text)","body_md5":"717d41ff4d188c89b5f00a2f61166ca7","security_definer":true,"public_execute":false,"anon_execute":true,"authenticated_execute":true,"service_role_execute":true,"postgres_execute":true,"effective_roles":5},
+      {"signature":"public.admin_create_staff_user(text,text,text,text,text,text,jsonb,text,text)","body_md5":"89e845b034030c0c6cf2689cfd4e7b78","security_definer":true,"public_execute":false,"anon_execute":true,"authenticated_execute":true,"service_role_execute":true,"postgres_execute":true,"effective_roles":5},
+      {"signature":"public.admin_update_staff_user(text,text,text,uuid,text,jsonb,boolean,text,text,text)","body_md5":"ca00191aa85af9641bb0650d058b2866","security_definer":true,"public_execute":false,"anon_execute":true,"authenticated_execute":true,"service_role_execute":true,"postgres_execute":true,"effective_roles":5},
+      {"signature":"public.pos_get_cash_station_state(text,text,text,text)","body_md5":"675ef683a0c2ce92a39deb29ab4b81c3","security_definer":true,"public_execute":false,"anon_execute":true,"authenticated_execute":true,"service_role_execute":true,"postgres_execute":true,"effective_roles":5},
+      {"signature":"public.pos_admin_close_cash_session(text,text,text,text,text,text,numeric,numeric,text,text,integer,text)","body_md5":"957a49d539846acd7fa92b254fca113a","security_definer":true,"public_execute":false,"anon_execute":true,"authenticated_execute":true,"service_role_execute":true,"postgres_execute":true,"effective_roles":5},
+      {"signature":"public.pos_admin_adopt_legacy_cash_session(text,text,text,text,text,integer,text)","body_md5":"afb412158b7808449d4f7f4e774e4256","security_definer":true,"public_execute":false,"anon_execute":true,"authenticated_execute":true,"service_role_execute":true,"postgres_execute":true,"effective_roles":5}
+    ],
+    "realtime_policies_unchanged": [
+      "Lanzo private POS broadcast receive",
+      "Lanzo private ecommerce tracking broadcast receive",
+      "Lanzo private license broadcast receive"
+    ],
+    "synthetic_fixture_licenses_remaining": 0
+  },
+  "rollback_only_synthetic_checks": {
+    "staff_list_create_update_foundation": "passed",
+    "cash_station_state_multi_admin_regression": "passed",
+    "legacy_cash_adoption_identity_and_idempotency": "passed",
+    "cash_close_public_wrapper_focused_case": "passed; closed synthetic session with zero difference",
+    "full_cash_pro_admin_close_regression": "stopped at SALE_BEFORE_CLOSE_RECONCILIATION_FAILED; the close returned CASH_TOTALS_CHANGED after the sale-before-close setup; transaction was rolled back",
+    "financial_fixture_data_persisted": false
+  },
+  "pilot_gates": {
+    "1a2_to_1a5_overlay_installed": false,
+    "pilot_allowlist_installed": false,
+    "qa_auth_users_or_sessions_created": false,
+    "qa_edge_function_deployed": false,
+    "hosted_auth_realtime_or_qa_probe_run": false,
+    "billing_usage_current_cycle_read_at": "2026-10-22",
+    "billing_usage_requires_refresh_before_hosted_pilot": true,
+    "kill_switch": "closed"
+  },
+  "secrets_or_tokens_included": false
+}

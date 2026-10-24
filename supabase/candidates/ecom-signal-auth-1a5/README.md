@@ -1,5 +1,27 @@
 # Realtime FREE pilot 1A.5 — owner approval required
 
+## Production continuation update — 2026-10-24
+
+The user-authorized shared ACL change for PR #368 is applied and postflight
+verified in migration `20261024123634_ecom_realtime_acl_six_rpcs_1a5.sql`.
+It revokes only `PUBLIC EXECUTE` from the six routines listed in
+`public-rpc-acl-proposal.sql`; explicit `anon`, `authenticated`, and
+`service_role` execute grants remain, all six function body hashes are
+unchanged, and each routine is executable by five effective roles. See
+`docs/reports/evidence/ecom-realtime-auth-1a5/acl-postflight-live-20261024.json`.
+
+Synthetic, rollback-only checks passed for Staff list/create/update, station
+state, legacy adoption, and a focused cash-close wrapper case. The broader cash
+regression stopped at its sale-before-close reconciliation assertion with
+`CASH_TOTALS_CHANGED`; it is recorded separately and is not represented as a
+passing full-suite result. No synthetic fixture rows remain.
+
+The 1A.2–1A.5 backend overlay, pilot allowlist, QA Auth users/sessions, and QA
+Edge function remain uninstalled. The latest saved billing Usage baseline is
+from 2026-10-22; refresh the current-cycle values and verify the below-70%
+gates before any Hosted/Auth/Realtime pilot activity. Keep the kill switch
+closed until that check and supervised owner/device QA are complete.
+
 This is a reviewed candidate overlay for the native Supabase Auth bridge from
 1A.2–1A.4. It replaces the effective synthetic R2 license-prefix gate with an
 exact, server-controlled license/tenant/device allowlist. The R2 migration and

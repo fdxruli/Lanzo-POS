@@ -1,0 +1,55 @@
+{
+  "captured_at": "2026-10-24",
+  "project_id": "odlrhijtfyavryeqivaa",
+  "project_status": "ACTIVE_HEALTHY",
+  "database": "PostgreSQL 17.6.1.063",
+  "ledger": {
+    "count": 324,
+    "latest_version": "20261022184218",
+    "latest_name": "qa_ecom_bridge_1a4_cleanup"
+  },
+  "roles": {
+    "total": 31,
+    "current_effective_execute_per_function": 31,
+    "simulated_after_exact_public_revokes": 5,
+    "roles_losing_only_public_inherited_execute": 26,
+    "roles_preserved": ["anon", "authenticated", "postgres", "service_role", "supabase_admin"]
+  },
+  "functions": [
+    {"signature":"public.admin_list_staff_users(text,text,text,text)","security_definer":true,"body_md5":"717d41ff4d188c89b5f00a2f61166ca7","acl":"{=X/postgres,postgres=X/postgres,service_role=X/postgres,anon=X/postgres,authenticated=X/postgres}"},
+    {"signature":"public.admin_create_staff_user(text,text,text,text,text,text,jsonb,text,text)","security_definer":true,"body_md5":"89e845b034030c0c6cf2689cfd4e7b78","acl":"{=X/postgres,postgres=X/postgres,service_role=X/postgres,anon=X/postgres,authenticated=X/postgres}"},
+    {"signature":"public.admin_update_staff_user(text,text,text,uuid,text,jsonb,boolean,text,text,text)","security_definer":true,"body_md5":"ca00191aa85af9641bb0650d058b2866","acl":"{=X/postgres,postgres=X/postgres,service_role=X/postgres,anon=X/postgres,authenticated=X/postgres}"},
+    {"signature":"public.pos_get_cash_station_state(text,text,text,text)","security_definer":true,"body_md5":"675ef683a0c2ce92a39deb29ab4b81c3","acl":"{=X/postgres,postgres=X/postgres,service_role=X/postgres,anon=X/postgres,authenticated=X/postgres}"},
+    {"signature":"public.pos_admin_close_cash_session(text,text,text,text,text,text,numeric,numeric,text,text,integer,text)","security_definer":true,"body_md5":"957a49d539846acd7fa92b254fca113a","acl":"{=X/postgres,postgres=X/postgres,service_role=X/postgres,anon=X/postgres,authenticated=X/postgres}"},
+    {"signature":"public.pos_admin_adopt_legacy_cash_session(text,text,text,text,text,integer,text)","security_definer":true,"body_md5":"afb412158b7808449d4f7f4e774e4256","acl":"{=X/postgres,postgres=X/postgres,service_role=X/postgres,anon=X/postgres,authenticated=X/postgres}"}
+  ],
+  "source_consumers": [
+    "src/services/licenseService.js: anon/authenticated Supabase RPC calls for Staff list/create/update",
+    "src/services/financial/financialIntentLedger.js: pos_get_cash_station_state",
+    "src/services/cash/cashCloudRepository.js: pos_get_cash_station_state and legacy-adopt/close RPC paths"
+  ],
+  "catalog_dependencies": 0,
+  "realtime_policies": [
+    "Lanzo private POS broadcast receive",
+    "Lanzo private ecommerce tracking broadcast receive",
+    "Lanzo private license broadcast receive"
+  ],
+  "qa_inventory": {
+    "auth_users": 0,
+    "auth_sessions": 0,
+    "qa_roles_schemas_functions": 0,
+    "qa_edge_functions": 0
+  },
+  "database_bytes": 79408275,
+  "connections_observed_by_pg_stat_activity": 12,
+  "logs_last_24h_rows": {
+    "edge_logs": 8,
+    "postgres_logs": 1778,
+    "postgrest_logs": 3
+  },
+  "billing_usage": "Not exposed by available Supabase connector; requested from owner before pilot activation.",
+  "advisors": {
+    "security": {"rls_enabled_no_policy_info":34,"function_search_path_mutable_warn":7,"anon_security_definer_executable_warn":181,"authenticated_security_definer_executable_warn":182},
+    "performance": {"unindexed_foreign_keys_info":51,"unused_index_info":76}
+  }
+}

@@ -1,4 +1,7 @@
--- SEPARATE SHARED-ACL PROPOSAL. NOT AUTHORIZED FOR PERSISTENT APPLICATION.
+-- Historical shared-ACL proposal; the exact six-function change was authorized
+-- for PR #368 and applied 2026-10-24 by migration
+-- 20261024123634_ecom_realtime_acl_six_rpcs_1a5.sql. This file is not another
+-- migration to apply; preserve its rollback as the review reference.
 -- Preserve explicit anon/authenticated/service_role grants and all function bodies.
 do $gate$
 declare signature text; f oid; r text;
