@@ -1,3 +1,4 @@
+import { loadBootstrapProfile } from '../../../services/bootstrap/bootstrapLifecycle';
 // src/store/slices/license/licenseBackgroundValidationActions.js
 
 import { checkInternetConnection, showMessageModal } from '../../../services/utils';
@@ -47,12 +48,9 @@ export const createLicenseBackgroundValidationActions = ({
   _validateInBackground: (licenseKey, options = {}) => {
     const lifecycle = options?.lifecycle;
     const validate = async () => {
-    const loadBackgroundProfile = (...args) => {
-      // Profile has its own timeout-hidden RPC and detached preference/Drive
-      // refresh. Do not pretend that awaiting _loadProfile drains those jobs.
-      lifecycle?.markUnobservable('background_profile_nested_work');
-      return get()._loadProfile(...args);
-    };
+    const loadBackgroundProfile = (key, profileOptions) => loadBootstrapProfile(
+      get()._loadProfile, key, profileOptions, lifecycle, 'background_profile_nested_work'
+    );
     let validationContext = null;
     let timeoutId;
     const assertCurrentContext = () => {
@@ -340,6 +338,7 @@ export const createLicenseBackgroundValidationActions = ({
           refreshProfile,
           reason: `background_${reason}`,
           validationContext,
+          lifecycle,
           isContextCurrent: () => {
             try {
               assertCurrentContext();

@@ -1,3 +1,4 @@
+import { loadBootstrapProfile } from '../../../services/bootstrap/bootstrapLifecycle';
 // src/store/slices/license/licenseBootstrapActions.js
 
 import Logger from '../../../services/Logger';
@@ -552,8 +553,7 @@ export const createLicenseBootstrapActions = ({ set, get }) => {
                     }
 
                     assertBootstrapActorCurrent();
-                    options?.lifecycle?.markUnobservable('bootstrap_profile_nested_work');
-                    await get()._loadProfile(restoredLicense.license_key);
+                    await loadBootstrapProfile(get()._loadProfile, restoredLicense.license_key, {}, options?.lifecycle, 'bootstrap_profile_nested_work');
                     assertBootstrapActorCurrent();
                     get()._validateInBackground(restoredLicense.license_key, {
                         reason: 'staff_session_restore', lifecycle: options?.lifecycle
@@ -598,7 +598,9 @@ export const createLicenseBootstrapActions = ({ set, get }) => {
                                 assertBootstrapActorCurrent();
                                 set({ currentAdminUser: offlineAdmin });
                                 options?.lifecycle?.markUnobservable('bootstrap_offline_preparation_nested_work');
-                                await get()._processOfflineMode(actorBoundAdminLicense);
+                                await (options?.lifecycle
+                                    ? get()._processOfflineMode(actorBoundAdminLicense, { lifecycle: options.lifecycle })
+                                    : get()._processOfflineMode(actorBoundAdminLicense));
                                 assertBootstrapActorCurrent();
                                 if (!['ready', 'setup_required', 'unauthenticated'].includes(get().appStatus)) {
                                     await get()._completeRestoredAdminPreparation?.(actorBoundAdminLicense.license_key, { lifecycle: options?.lifecycle });
@@ -664,7 +666,9 @@ export const createLicenseBootstrapActions = ({ set, get }) => {
                                     set({ currentAdminUser: offlineAdmin });
                                     restorationPhase = 'offline_mode_processing';
                                     options?.lifecycle?.markUnobservable('bootstrap_offline_preparation_nested_work');
-                                await get()._processOfflineMode(actorBoundAdminLicense);
+                                await (options?.lifecycle
+                                    ? get()._processOfflineMode(actorBoundAdminLicense, { lifecycle: options.lifecycle })
+                                    : get()._processOfflineMode(actorBoundAdminLicense));
                                     assertBootstrapActorCurrent();
                                     if (!['ready', 'setup_required', 'unauthenticated'].includes(get().appStatus)) {
                                         restorationPhase = 'restored_admin_preparation';
@@ -764,8 +768,7 @@ export const createLicenseBootstrapActions = ({ set, get }) => {
                         await get()._completeRestoredAdminPreparation(restoredLicense.license_key, { lifecycle: options?.lifecycle });
                         assertBootstrapActorCurrent();
                     } else {
-                        options?.lifecycle?.markUnobservable('bootstrap_profile_nested_work');
-                        await get()._loadProfile(restoredLicense.license_key);
+                        await loadBootstrapProfile(get()._loadProfile, restoredLicense.license_key, {}, options?.lifecycle, 'bootstrap_profile_nested_work');
                         assertBootstrapActorCurrent();
                         get()._validateInBackground(restoredLicense.license_key, {
                             reason: 'admin_session_restore', lifecycle: options?.lifecycle
@@ -781,7 +784,9 @@ export const createLicenseBootstrapActions = ({ set, get }) => {
                 logFreeAdminAuthorityMode(localLicense, 'legacy_local_owner');
                 assertBootstrapActorCurrent();
                 options?.lifecycle?.markUnobservable('bootstrap_offline_preparation_nested_work');
-                await get()._processOfflineMode(localLicense);
+                await (options?.lifecycle
+                                    ? get()._processOfflineMode(localLicense, { lifecycle: options.lifecycle })
+                                    : get()._processOfflineMode(localLicense));
                 assertBootstrapActorCurrent();
                 if (navigator.onLine) {
                     get()._validateInBackground(localLicense.license_key, {

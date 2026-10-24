@@ -1,3 +1,4 @@
+import { createBootstrapLifecycle } from './bootstrap/bootstrapLifecycle';
 // src/services/supabase.js
 import { createClient } from "@supabase/supabase-js";
 import FingerprintJS from '@fingerprintjs/fingerprintjs';
@@ -471,8 +472,9 @@ function pickSecurityTokenFromLicense(license = {}) {
     )?.trim() || null;
 }
 
-async function getSecurityTokenForValidation(storedLicense = null) {
+async function getSecurityTokenForValidation(storedLicense = null, { assertCurrent, persist = write => write() } = {}) {
     const indexedToken = await getSecureCredentials();
+    assertCurrent?.();
 
     if (indexedToken) {
         return indexedToken;
@@ -481,7 +483,9 @@ async function getSecurityTokenForValidation(storedLicense = null) {
     const recoveredToken = pickSecurityTokenFromLicense(storedLicense);
 
     if (recoveredToken) {
-        await setSecureCredentials(recoveredToken);
+        assertCurrent?.();
+        await persist(() => setSecureCredentials(recoveredToken));
+        assertCurrent?.();
         Logger.warn('[Security] Token de dispositivo recuperado desde licencia local.');
         return recoveredToken;
     }
@@ -1218,6 +1222,7 @@ export const revalidateLicense = async function (licenseKeyProp, options = {}) {
         return error;
     };
     const initialActor = actorRuntimeController.getState();
+    const tenantBinding = JSON.stringify(getActiveTenantRuntime());
     let actorHandle = null;
     if (initialActor?.status === 'granted') {
         try {
@@ -1248,7 +1253,7 @@ export const revalidateLicense = async function (licenseKeyProp, options = {}) {
             tenant: currentActor?.tenant || null,
             deviceRef: currentActor?.deviceRef || null
         });
-        if (currentBinding !== actorBinding) throw staleValidationContextError();
+        if (currentBinding !== actorBinding || JSON.stringify(getActiveTenantRuntime()) !== tenantBinding) throw staleValidationContextError();
         try {
             actorHandle?.assertCurrent();
         } catch {
@@ -1298,16 +1303,27 @@ export const revalidateLicense = async function (licenseKeyProp, options = {}) {
         String(storedLicense?.license_key || '').trim() === String(licenseKey).trim()
     ) ? storedLicense : null;
 
-    const existingPromise = currentRevalidationPromises.get(licenseKey);
-    if (existingPromise) {
+    // Reuse only within the same actor/session/tenant binding. The shared
+    // record owns a dedicated local lifetime, independent of any consumer.
+    const revalidationKey = JSON.stringify([licenseKey, actorBinding, tenantBinding]);
+    const existing = currentRevalidationPromises.get(revalidationKey);
+    if (existing) {
         Logger.log('⏳ [Security] Revalidación en curso para la misma licencia.');
-        // A shared owner may have started without observation. Its public
-        // promise cannot prove settlement of transport hidden by its timeout.
-        options?.bootstrapLifecycle?.markUnobservable('shared_license_revalidation_owner');
-        return existingPromise;
+        if (!existing.observedOwner) {
+            options?.bootstrapLifecycle?.markUnobservable('shared_license_revalidation_owner');
+        }
+        options?.bootstrapLifecycle?.observe(existing.completion);
+        const result = await existing.promise;
+        assertValidationContext();
+        return result;
     }
 
-    const currentRevalidationPromise = (async () => {
+    const operationLifecycle = createBootstrapLifecycle();
+    let finishLifetime, rejectLifetime;
+    const completion = new Promise((resolve, reject) => { finishLifetime = resolve; rejectLifetime = reject; });
+    completion.catch(() => {});
+    options?.bootstrapLifecycle?.observe(completion);
+    const currentRevalidationPromise = operationLifecycle.track(async () => {
         await assertLocalTenantSyncAccess(
             { license_key: licenseKey },
             { reason: 'license_revalidation' }
@@ -1321,28 +1337,41 @@ export const revalidateLicense = async function (licenseKeyProp, options = {}) {
         const timeoutMs = 8000;
         let timeoutId;
 
+        let timedOut = false;
         const timeoutPromise = new Promise((_, reject) => {
-            timeoutId = setTimeout(() => reject(new Error('VALIDATION_TIMEOUT')), timeoutMs);
+            timeoutId = setTimeout(() => { timedOut = true; reject(new Error('VALIDATION_TIMEOUT')); }, timeoutMs);
         });
+        // Preparation may still be awaiting connectivity/device/credentials.
+        // Observe an early deadline rejection even before Promise.race attaches.
+        timeoutPromise.catch(() => {});
+        const assertCanStartTransport = () => {
+            assertValidationContext();
+            if (timedOut) throw new Error('VALIDATION_TIMEOUT');
+        };
 
         try {
             const isOnline = await checkInternetConnection();
+            assertCanStartTransport();
             if (!isOnline) {
                 throw new Error("OFFLINE_PRECHECK");
             }
 
             const deviceFingerprint = await getStableDeviceId();
+            assertCanStartTransport();
 
-            const securityToken = await getSecurityTokenForValidation(storedLicenseForActiveTenant);
+            const securityToken = await getSecurityTokenForValidation(storedLicenseForActiveTenant, {
+                assertCurrent: assertValidationContext,
+                persist: persistValidationState
+            });
+            assertCanStartTransport();
 
             const startValidationTransport = () => supabaseClient.rpc('verify_device_license_unified', {
                 p_license_key: licenseKey,
                 p_device_fingerprint: deviceFingerprint,
                 p_security_token: securityToken || null
             });
-            const validationPromise = options?.bootstrapLifecycle
-                ? options.bootstrapLifecycle.track(startValidationTransport)
-                : startValidationTransport();
+            assertValidationContext();
+            const validationPromise = operationLifecycle.track(startValidationTransport);
 
             const { data, error } = await Promise.race([validationPromise, timeoutPromise]);
             clearTimeout(timeoutId);
@@ -1516,18 +1545,29 @@ export const revalidateLicense = async function (licenseKeyProp, options = {}) {
                 reason: 'server_rejected',
                 details: error?.message || String(error) || 'Error desconocido del servidor'
             };
+        } finally {
+            clearTimeout(timeoutId);
         }
             }
         );
-    })();
+    });
 
-    currentRevalidationPromises.set(licenseKey, currentRevalidationPromise);
-
+    // Settlement of the public result is not settlement of a late transport.
+    const record = { promise: currentRevalidationPromise, completion,
+        observedOwner: Boolean(options?.bootstrapLifecycle) };
+    currentRevalidationPromises.set(revalidationKey, record);
+    const finish = async () => {
+        operationLifecycle.quiesce();
+        const final = await operationLifecycle.drain();
+        if (final.rejected) rejectLifetime(new Error('LICENSE_REVALIDATION_LIFETIME_REJECTED'));
+        else finishLifetime();
+    };
+    currentRevalidationPromise.then(finish, finish).catch(() => {});
     try {
         return await currentRevalidationPromise;
     } finally {
-        if (currentRevalidationPromises.get(licenseKey) === currentRevalidationPromise) {
-            currentRevalidationPromises.delete(licenseKey);
+        if (currentRevalidationPromises.get(revalidationKey) === record) {
+            currentRevalidationPromises.delete(revalidationKey);
         }
     }
 };
@@ -1639,30 +1679,31 @@ export const saveBusinessProfile = async function (licenseKey, profileData, { ac
 
 const BUSINESS_PROFILE_TIMEOUT_MS = 8_000;
 
-export const getBusinessProfile = async function (licenseKey) {
+export const getBusinessProfile = async function (licenseKey, { lifecycle, assertCurrent } = {}) {
+    let timeoutId;
     try {
-        const profileRequest = supabaseClient.rpc(
-            'get_business_profile_anon', {
-            license_key_param: licenseKey
-        });
-
+        const start = () => {
+            assertCurrent?.();
+            return supabaseClient.rpc('get_business_profile_anon', { license_key_param: licenseKey });
+        };
+        const profileRequest = lifecycle ? lifecycle.track(start) : start();
         const timeout = new Promise((_, reject) => {
-            setTimeout(() => {
-                const timeoutError = new Error(
-                    `La consulta del perfil superó ${BUSINESS_PROFILE_TIMEOUT_MS / 1000} segundos.`
-                );
-                timeoutError.name = 'BusinessProfileTimeoutError';
-                reject(timeoutError);
+            timeoutId = setTimeout(() => {
+                const error = new Error(`La consulta del perfil superó ${BUSINESS_PROFILE_TIMEOUT_MS / 1000} segundos.`);
+                error.name = 'BusinessProfileTimeoutError';
+                reject(error);
             }, BUSINESS_PROFILE_TIMEOUT_MS);
         });
-
         const { data, error } = await Promise.race([profileRequest, timeout]);
-
+        assertCurrent?.();
         if (error) throw error;
         return data;
     } catch (error) {
+        if (error?.code?.startsWith('ACTOR_') || error?.message?.startsWith('BOOTSTRAP_LIFECYCLE_')) throw error;
         Logger.error('Error obteniendo perfil:', error);
         return { success: false, message: error.message };
+    } finally {
+        clearTimeout(timeoutId);
     }
 };
 

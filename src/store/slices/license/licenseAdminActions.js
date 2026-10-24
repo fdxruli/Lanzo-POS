@@ -1,3 +1,4 @@
+import { loadBootstrapProfile } from '../../../services/bootstrap/bootstrapLifecycle';
 import { notifyPosCatalogSessionReset } from '../../../services/products/posCatalogSessionEvents';
 import {
   activateLicense,
@@ -200,7 +201,7 @@ const completeAdminSession = async (set, get, licenseKey, result, reason, attemp
       profileOptions.allowSetupTransition = true;
     }
     traceAuth('PROFILE_LOAD_PENDING');
-    await runTimedAuthOperation('admin_profile_load', () => get()._loadProfile(licenseKey, profileOptions));
+    await runTimedAuthOperation('admin_profile_load', () => loadBootstrapProfile(get()._loadProfile, licenseKey, profileOptions, lifecycle, 'admin_profile_preparation_nested_work'));
     attempt.assertCurrent();
     const outcome = preparedStatus === 'ready' && get().appStatus === 'ready' ? 'READY'
       : preparedStatus === 'setup_required' && get().appStatus === 'setup_required'
