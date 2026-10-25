@@ -103,7 +103,8 @@ import { showInputPromptModal } from '../../../components/common/InputPromptModa
 const grantActor = (actorId = 'owner-a') => {
   actorRuntimeController.lock('test_reauthenticate');
   actorRuntimeController.beginAuthentication({ actorType: 'admin', deviceRef: 'device-a' });
-  actorRuntimeController.grant({ actorType: 'admin', actorId, sessionId: crypto.randomUUID(), deviceRef: 'device-a' });
+  actorRuntimeController.grant({ actorType: 'admin', actorId, sessionId: crypto.randomUUID(), deviceRef: 'device-a',
+    authorizationExpiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString() });
 };
 const tableDeps = () => ({
   openModal: vi.fn(), closeModal: vi.fn(), refreshData: vi.fn(),
@@ -235,7 +236,8 @@ describe('Mini-phase 3B.0 saved table authority recovery', () => {
     expect(actorRuntimeController.getState().status).toBe('handoff_check');
     expect(selectCurrentOrder(useActiveOrders.getState())?.items).toEqual([]);
     expect(useActiveOrders.getState().activeOrders.has('table-a')).toBe(false);
-    actorRuntimeController.grant({ actorType: 'admin', actorId: 'owner-a', sessionId: crypto.randomUUID(), deviceRef: 'device-a' });
+    actorRuntimeController.grant({ actorType: 'admin', actorId: 'owner-a', sessionId: crypto.randomUUID(), deviceRef: 'device-a',
+      authorizationExpiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString() });
     await act(async () => { await useActiveOrders.getState().loadOrdersFromDB(); });
     expect(await db.table(STORES.SALES).get('table-a')).toMatchObject({ status: 'open' });
     await act(async () => { await hook.result.current.handleLoadOpenOrder('table-a'); });

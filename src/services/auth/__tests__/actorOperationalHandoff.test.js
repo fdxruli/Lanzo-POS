@@ -130,7 +130,8 @@ describe('actor operational handoff barrier', () => {
     actorRuntimeController.beginHandoffCheck();
     actorRuntimeController.grant({
       actorType: 'admin', actorId: 'admin-a', sessionId: 'session-a',
-      tenantOpaqueId: TENANT.opaqueId, deviceRef: 'device-a'
+      tenantOpaqueId: TENANT.opaqueId, deviceRef: 'device-a',
+      authorizationExpiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString()
     });
     let resolveSave;
     const pendingSave = new Promise((resolve) => { resolveSave = resolve; });
