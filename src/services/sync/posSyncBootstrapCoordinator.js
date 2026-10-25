@@ -308,7 +308,7 @@ const runDeferredSnapshot = async (resource, { reason = 'deferred_snapshot', for
 
   devLog('deferred snapshot start', { resource: normalizedResource, reason });
 
-  if (owner && (!owner.isContextCurrent() || epoch !== scopedEpoch)) return { skipped: true, reason: 'scope_stale' };
+  if (owner && (!canSchedule() || !owner.isContextCurrent() || epoch !== scopedEpoch)) return { skipped: true, reason: 'scope_stale' };
   // Snapshot providers do not yet expose their full raw/descendant lifetime.
   owner?.markUnobservable(`snapshot_handler_lifetime:${normalizedResource}`);
   const result = await runWithLocalTenantSyncLease(

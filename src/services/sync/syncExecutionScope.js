@@ -115,17 +115,32 @@ export const createSyncExecutionScope = ({
     assertAdmission();
     if (typeof stopScheduling !== 'function') throw new TypeError('Source requires cleanup');
     const key = ++sequence;
-    sources.set(key, { label, stopScheduling });
-    return () => sources.delete(key);
+    let stopping;
+    const stop = () => {
+      if (stopping) return stopping;
+      // Reserve teardown before removing its source, including manual stop
+      // during ACTIVE and cleanup after the original actor has gone away.
+      let resolveStop, rejectStop;
+      stopping = new Promise((resolve, reject) => { resolveStop = resolve; rejectStop = reject; });
+      stopping.catch(() => {});
+      const task = startTask(`stop:${label}`, stopScheduling, { cleanup: true });
+      task.then(resolveStop, rejectStop);
+      sources.delete(key);
+      return stopping;
+    };
+    sources.set(key, { label, stop });
+    const unregister = () => sources.delete(key);
+    // Compatibility: existing callers still receive their unregister function.
+    // stop only runs this already-registered source's cleanup, never a new job.
+    unregister.stop = stop;
+    return unregister;
   };
   const quiesce = () => {
     if (state !== 'ACTIVE') return snapshot();
     state = 'QUIESCING';
     for (const { cancel } of [...scheduled.values()]) cancel();
-    for (const [key, source] of [...sources]) {
-      sources.delete(key);
-      // Cleanup is an explicit internal continuation, never new commercial work.
-      startTask(`stop:${source.label}`, source.stopScheduling, { cleanup: true });
+    for (const source of [...sources.values()]) {
+      source.stop();
     }
     emit('quiesce');
     return snapshot();

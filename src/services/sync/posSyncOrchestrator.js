@@ -1,4 +1,5 @@
 import Logger from '../Logger';
+import { ownsScopedPosRealtimeListener } from './scopedPosRealtimeListener';
 import {
   buildPosRealtimeTopic,
   startPosRealtimeListener,
@@ -360,11 +361,9 @@ export const posSyncOrchestrator = {
             return { started: false, status: runtime.status };
           }
 
-          // The lower listener can reconnect/remove channels in detached callbacks.
-          // Its public stop is not a complete raw-lifetime contract.
-          executionScope?.markUnobservable('pos_realtime_internal_reconnect_lifetime');
           runtime.realtimeChannel = startPosRealtimeListener({
             posTopic,
+            executionScope,
             callbacks: {
               onPosChangeAvailable: ({ eventType, entity, changeSeq } = {}) => {
                 if (!isRuntimeGenerationCurrent(startGeneration, licenseKey) || !runtime.started || !canSchedule()) return;
@@ -374,13 +373,13 @@ export const posSyncOrchestrator = {
                   changeSeq
                 });
 
-                this.schedulePullIncremental('realtime').catch((error) => {
+                return this.schedulePullIncremental('realtime').catch((error) => {
                   Logger.warn('[PosSync] Pull por realtime fallo:', error);
                 });
               },
               onStatusChange: ({ status, reason: statusReason }) => {
                 if (!isRuntimeGenerationCurrent(startGeneration, licenseKey) || !runtime.started || !canSchedule()) return;
-                observeJob('realtime_status', () => setRuntimeStatus(status, {
+                return observeJob('realtime_status', () => setRuntimeStatus(status, {
                   licenseKey,
                   generation: startGeneration,
                   reason: statusReason
@@ -390,12 +389,16 @@ export const posSyncOrchestrator = {
               },
               onConnectionRestored: () => {
                 if (!isRuntimeGenerationCurrent(startGeneration, licenseKey) || !runtime.started || !canSchedule()) return;
-                this.schedulePullIncremental('realtime_restored').catch((error) => {
+                return this.schedulePullIncremental('realtime_restored').catch((error) => {
                   Logger.warn('[PosSync] Pull tras recuperar realtime fallo:', error);
                 });
               }
             }
           });
+
+          if (executionScope && !ownsScopedPosRealtimeListener(runtime.realtimeChannel, executionScope)) {
+            executionScope.markUnobservable('pos_realtime_internal_reconnect_lifetime');
+          }
 
           runtime.realtimeTopic = posTopic;
         }
@@ -770,6 +773,9 @@ export const posSyncOrchestrator = {
           await syncOutboxService.markProcessing(operation.id, {
             licenseKey: operationLicenseKey
           });
+          if (executionScope && (!canSchedule() || !isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey))) {
+            return { processed, skipped: true, reason: 'runtime_changed' };
+          }
           unknownHandler(`push:${operation.entityType}`);
           const result = await runWithLocalTenantSyncLease(
             { license_key: operationLicenseKey },
