@@ -37,3 +37,15 @@ No secret values were read or printed. The connector has no safe secret-presence
 ## Next gate
 
 After current Usage and owner secret confirmation, certify CI for the final SHA and deploy only `lanzo-ecom-bridge-qa`. Verify its effective `verify_jwt = false`, repeat negative HTTP checks while the kill switch is ON and allowlist empty, then pause for the owner's supervised physical-device session. Do not approve the pilot, disable the kill switch, or run Hosted QA autonomously.
+
+
+## CI results for implementation SHA dd97ceed
+
+The GitHub checks completed on 2026-10-25:
+
+- [Ecommerce Native Bridge QA, run 40162324270](https://github.com/fdxruli/Lanzo-POS/actions/runs/40162324270): **raw workflow FAIL**. Build, store build, Deno check, ESLint, and the focal broker/receiver contract step passed (47/47). The repository-wide Node contract command reported 237/238 passing; its sole failure is the unchanged `license-expired-material-downgrade-r1.node-test.mjs` assertion `phase 2 never mutates financial state`. The regex rejects `ledger`, which appears in a comment in the migration the test reads. The HTTP-auth tests are included among the passing contracts.
+- The same run’s regression artifact reports **20 failed suite records / 10 failed tests**. The failed assertions are in unchanged ecommerce catalog, draft, inventory, public checkout and tracking tests, including `ecommercePosDraftService.test.js`, `ecommercePosInventoryResolution.test.js`, `ecommercePublicConfiguredService.test.js`, `ecommercePublicService.test.js` and `ecommercePublicTrackingContract.test.js`. No files in those areas were changed by this gate. [Regression artifact](https://github.com/fdxruli/Lanzo-POS/actions/runs/40162324270/artifacts/12587115609).
+- [PR127 Global Comparison, run 40162324258](https://github.com/fdxruli/Lanzo-POS/actions/runs/40162324258): **workflow SUCCESS; differential artifact status=OK**. It reports 99 candidate failures, 100 base failures, 99 shared, 0 raw candidate-only, 0 new and 0 unresolved; one base failure was resolved. [Comparison artifact](https://github.com/fdxruli/Lanzo-POS/actions/runs/40162324258/artifacts/12587261017).
+- The PR’s `Vercel – lanzo-pos` check is **success**. No manual Vercel Production deployment or promotion was performed.
+
+The implementation’s local focused suite remains 77/77 PASS, and `deno check` and `git diff --check` pass. The raw repository workflow is not fully green; differential comparison found no new failure from this gate. This does not clear the Usage or owner-secret gates: status remains `HOLD_USAGE`, and no hosted QA step is authorized until the owner supplies current Usage and confirms secret presence/format.
