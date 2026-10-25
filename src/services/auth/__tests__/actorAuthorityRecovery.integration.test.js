@@ -25,6 +25,8 @@ vi.mock('../../db/tenantRuntimeRouter', () => ({
 }));
 vi.mock('../../supabase', () => ({
   getStableDeviceId: async () => 'fingerprint-X',
+  getAdminOfflineAuthorization: async () => ({ eligible: true, reason: 'authorized',
+    effectiveExpiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(), effectiveNow: Date.now() }),
   activateLicense: vi.fn(), adminLoginOnDevice: mocks.adminLogin,
   staffLoginOnDevice: mocks.staffLogin, adminLogoutSession: mocks.adminLogout,
   staffLogoutSession: mocks.staffLogout, adminTakeoverFreeDevice: vi.fn(),
