@@ -6,6 +6,7 @@ import { createHandler } from '../../supabase/functions/lanzo-ecom-bridge-qa/han
 const key = n => Buffer.alloc(32,n).toString('base64');
 const vault = keys => createVault(keys ?? {current:'one',keys:{one:key(1)}});
 const url='https://qa.supabase.co';
+const applicationKey='fixture-project-publishable-key';
 const jwt = extra => `h.${Buffer.from(JSON.stringify({sub:'u',role:'lanzo_ecom_bridge_receiver',iss:`${url}/auth/v1`,aud:'authenticated',session_id:'s',exp:4000000000,app_metadata:{lanzo_bridge:'qa_1a2',binding_id:'i'},...extra})).toString('base64url')}.s`;
 const session = extra => ({access_token:jwt(extra),refresh_token:'private-refresh'});
 const reservation = {code:'RESERVED',id:'g',identity_id:'i',auth_user_id:'u',auth_session_id:'s',lease_id:'l'};
@@ -81,16 +82,16 @@ test('vault rotation handles CAS conflict, missing key and partial success witho
 });
 test('HTTP QA controls require their dedicated capability and are disabled without configuration',async()=>{
   const calls=[];const backend={collect:async()=>{calls.push('collect');return {deleted:0};},issue:async()=>{calls.push('issue');return {status:403,body:{code:'DENIED'}};}};
-  const request=token=>new Request(url,{method:'POST',headers:token?{'x-lanzo-qa-control':token}:{Authorization:'Bearer valid-alternate-service-key'},body:JSON.stringify({action:'collect'})});
-  assert.equal((await createHandler(backend)(request())).status,403);
-  assert.equal((await createHandler(backend,{controlToken:'x'.repeat(43)})(request('wrong'))).status,403);
+  const request=token=>new Request(url,{method:'POST',headers:{apikey:applicationKey,'Content-Type':'application/json',...(token?{'x-lanzo-qa-control':token}:{Authorization:'Bearer valid-alternate-service-key'})},body:JSON.stringify({action:'collect'})});
+  assert.equal((await createHandler(backend,{applicationKeys:[applicationKey]})(request())).status,403);
+  assert.equal((await createHandler(backend,{controlToken:'x'.repeat(43),applicationKeys:[applicationKey]})(request('wrong'))).status,403);
   assert.deepEqual(calls,[]);
-  assert.equal((await createHandler(backend,{controlToken:'x'.repeat(43)})(request('x'.repeat(43)))).status,200);
+  assert.equal((await createHandler(backend,{controlToken:'x'.repeat(43),applicationKeys:[applicationKey]})(request('x'.repeat(43)))).status,200);
   assert.deepEqual(calls,['collect']);
 });
 test('HTTP boundary bounds chunked bytes, rejects malformed bodies and never calls backend',async()=>{
-  const backend={issue:()=>assert.fail('backend must not run')};const handler=createHandler(backend);
-  for(const body of ['null','[]','invalid'])assert.equal((await handler(new Request(url,{method:'POST',body}))).status,403);
+  const backend={issue:()=>assert.fail('backend must not run')};const handler=createHandler(backend,{applicationKeys:[applicationKey]});
+  for(const body of ['null','[]','invalid'])assert.equal((await handler(new Request(url,{method:'POST',headers:{apikey:applicationKey,'Content-Type':'application/json'},body}))).status,403);
   const stream=new ReadableStream({start(controller){controller.enqueue(new Uint8Array(4096));controller.enqueue(new Uint8Array(4097));controller.close();}});
-  assert.equal((await handler(new Request(url,{method:'POST',body:stream,duplex:'half'}))).status,413);
+  assert.equal((await handler(new Request(url,{method:'POST',headers:{apikey:applicationKey,'Content-Type':'application/json'},body:stream,duplex:'half'}))).status,413);
 });

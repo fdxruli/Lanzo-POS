@@ -7,6 +7,7 @@ const createVault = secret => keyringVault({ current: 'test', keys: { test: crea
 import { createEcomSignalReceiver } from '../../src/services/ecommerce/ecomSignalReceiver.js';
 
 const url = 'https://fixture.supabase.co';
+const applicationKey = 'fixture-project-publishable-key';
 const jwt = (extra = {}) => `header.${Buffer.from(JSON.stringify({ sub: 'user', role: 'lanzo_ecom_bridge_receiver',
   iss: `${url}/auth/v1`, aud: 'authenticated', exp: 4000000000, session_id: 'session',
   app_metadata: { lanzo_bridge: 'qa_1a2', binding_id: 'identity' }, ...extra })).toString('base64url')}.signature`;
@@ -30,9 +31,9 @@ function fixture(overrides = {}) {
 
 test('owner-control actions are rejected without the dedicated server control header', async () => {
   let called = false;
-  const handler = createHandler({ rpc: async () => { called = true; } }, { controlToken: 'x'.repeat(48) });
+  const handler = createHandler({ rpc: async () => { called = true; } }, { controlToken: 'x'.repeat(48), applicationKeys: [applicationKey] });
   const response = await handler(new Request('https://fixture.supabase.co/functions/v1/qa', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers: { 'Content-Type': 'application/json', apikey: applicationKey },
     body: JSON.stringify({ action: 'approve_pilot' })
   }));
   assert.equal(response.status, 403);
@@ -42,9 +43,9 @@ test('owner-control actions are rejected without the dedicated server control he
 test('pilot approval, kill switch, and pilot revocation use only the server admin capability', async () => {
   const calls = [];
   const token = 'x'.repeat(48);
-  const handler = createHandler({ rpc: async (name, args) => { calls.push([name, args]); return { code: 'OK' }; } }, { controlToken: token });
+  const handler = createHandler({ rpc: async (name, args) => { calls.push([name, args]); return { code: 'OK' }; } }, { controlToken: token, applicationKeys: [applicationKey] });
   const send = body => handler(new Request('https://fixture.supabase.co/functions/v1/qa', {
-    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-lanzo-qa-control': token },
+    method: 'POST', headers: { 'Content-Type': 'application/json', apikey: applicationKey, 'x-lanzo-qa-control': token },
     body: JSON.stringify(body)
   }));
   await send({ action: 'approve_pilot', license_id: 'license', tenant_id: 'tenant', device_id: 'device',

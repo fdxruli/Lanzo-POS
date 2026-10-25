@@ -1,7 +1,31 @@
-// Server-only HTTP boundary. Administrative QA controls have a dedicated
-// capability; valid alternate Supabase service keys are not compared as strings.
+// Server-only HTTP boundary. A project API key identifies the app; Lanzo
+// credentials authorize issuance. Administrative QA uses a separate capability.
 const headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization,apikey,content-type', 'Access-Control-Allow-Methods': 'POST,OPTIONS' };
+  'Access-Control-Allow-Headers': 'authorization,apikey,content-type,x-lanzo-qa-control', 'Access-Control-Allow-Methods': 'POST,OPTIONS' };
+const MAX_API_KEY_LENGTH = 4096;
+
+// Supabase publishable keys are application identifiers, not user credentials.
+// Accept only keys provisioned for this project; never include secret-key envs.
+export function applicationKeysFromEnvironment(env) {
+  const keys = new Set();
+  const legacyAnonKey = env.get('SUPABASE_ANON_KEY');
+  if (typeof legacyAnonKey === 'string' && legacyAnonKey.length > 0) keys.add(legacyAnonKey);
+
+  const publishableKeysJson = env.get('SUPABASE_PUBLISHABLE_KEYS');
+  if (publishableKeysJson) {
+    let publishableKeys;
+    try { publishableKeys = JSON.parse(publishableKeysJson); } catch { throw new Error('APP_KEY_CONFIG'); }
+    if (!publishableKeys || typeof publishableKeys !== 'object' || Array.isArray(publishableKeys)
+      || Object.values(publishableKeys).some(key => typeof key !== 'string'
+        || !key.startsWith('sb_publishable_') || key.length > MAX_API_KEY_LENGTH)) {
+      throw new Error('APP_KEY_CONFIG');
+    }
+    for (const key of Object.values(publishableKeys)) keys.add(key);
+  }
+  if (keys.size === 0) throw new Error('APP_KEY_CONFIG');
+  return keys;
+}
+
 async function boundedJson(req) {
   if (Number(req.headers.get('content-length') ?? 0) > 8192) throw new RangeError('BODY_SIZE');
   const reader = req.body?.getReader();
@@ -22,10 +46,23 @@ async function boundedJson(req) {
   if (!body || typeof body !== 'object' || Array.isArray(body)) throw new SyntaxError('BODY_OBJECT');
   return body;
 }
-export function createHandler(backend, { controlToken } = {}) {
+/** @param {{controlToken?: string | null, applicationKeys?: Set<string> | string[]}} [options] */
+export function createHandler(backend, options = {}) {
+  const { controlToken, applicationKeys } = options;
+  const allowedApplicationKeys = applicationKeys instanceof Set
+    ? applicationKeys
+    : new Set(Array.isArray(applicationKeys) ? applicationKeys : []);
   return async req => {
     if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers });
     if (req.method !== 'POST') return new Response(null, { status: 405, headers });
+    const applicationKey = req.headers.get('apikey');
+    if (!applicationKey || applicationKey.length > MAX_API_KEY_LENGTH || !allowedApplicationKeys.has(applicationKey)) {
+      return Response.json({ code: 'UNAUTHORIZED' }, { status: 401, headers });
+    }
+    const contentType = req.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase();
+    if (contentType !== 'application/json') {
+      return Response.json({ code: 'UNSUPPORTED_MEDIA_TYPE' }, { status: 415, headers });
+    }
     const administrative = typeof controlToken === 'string' && controlToken.length >= 43
       && req.headers.get('x-lanzo-qa-control') === controlToken;
     try {

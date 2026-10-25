@@ -11,6 +11,7 @@ const hardening = await readFile(new URL('../../supabase/candidates/ecom-signal-
 
 const good = () => ({
   allowlisted: true, selectedLicense: true, licenseId: 'license-a', tenantId: 'license-a', deviceId: 'device-a',
+  deviceTokenMatches: true,
   planCode: 'free_trial', licenseType: 'free', licenseStatus: 'active', entitled: true,
   ecommerce: true, inbox: true, portalPublished: true, orderingEnabled: true, ordersPaused: false,
   portalDeleted: false, deviceActive: true, deviceAuthorized: true, sessionCurrent: true,
@@ -21,6 +22,7 @@ const good = () => ({
 
 function canAuthorize(c) {
   return c.allowlisted && c.selectedLicense && c.licenseId === c.tenantId
+    && c.deviceTokenMatches
     && c.planCode === 'free_trial' && c.licenseType === 'free' && c.licenseStatus === 'active'
     && c.entitled && c.ecommerce && c.inbox && c.portalPublished && c.orderingEnabled
     && !c.ordersPaused && !c.portalDeleted && c.deviceActive && c.deviceAuthorized
@@ -43,6 +45,13 @@ test('candidate replaces the synthetic prefix throughout live 1A.5 routes and ke
   assert.match(sql, /p\.code = 'free_trial'/);
   assert.match(sql, /e\.effective_features->'ecommerce_order_inbox' = 'true'::jsonb/);
   assert.match(sql, /pilot_kill_switch/);
+  assert.match(sql, /security_token = p->>'security_token'/);
+  assert.match(sql, /resolve_device_actor_session\(d\.license_id,d\.id,d\.device_mode,p->>'actor_session_token'\)/);
+  assert.match(sql, /u\.permissions->'ecommerce' = 'true'::jsonb/);
+  assert.match(sql, /a\.tenant_id = l\.id/);
+  assert.match(sql, /k\.active is false/);
+  assert.match(sql, /attempts >= 20/);
+  assert.match(sql, /interval '1 minute'/);
   assert.match(sql, /authority_live\(/);
   assert.match(bridge, /auth\.sessions/);
   assert.match(bridge, /c->>'iss' is distinct from 'https:\/\/odlrhijtfyavryeqivaa\.supabase\.co\/auth\/v1'/);
@@ -93,6 +102,8 @@ const negativeCases = [
   ['expired Lanzo session', c => { c.sessionCurrent = false; }],
   ['replaced Admin', c => { c.actorActive = false; }],
   ['tenant changed', c => { c.tenantId = 'other-tenant'; }],
+  ['device security token incorrect', c => { c.deviceTokenMatches = false; }],
+  ['invalid actor type', c => { c.actorType = 'owner'; }],
   ['stale runtime generation', c => { c.runtimeCurrent = false; }],
   ['expired grant', c => { c.grantActive = false; }],
   ['JWT binding modified', c => { c.jwtNative = false; }],
