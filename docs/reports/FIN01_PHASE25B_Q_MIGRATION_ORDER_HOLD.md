@@ -19,9 +19,9 @@ Por este gate no se creó una migración Q, no se sustituyeron wrappers y no se 
 | `PR370_HEAD` | `b31bbd80bf398d956890debced5b20de7b0c928d` — OPEN / Draft / mergeable |
 | `PR371_HEAD` | `2f33cea480f3d478f797b495b168feac9aed483f` — OPEN / Draft / mergeable |
 | `NEW_BRANCH` | `feat/fin01-legacy-protocol-quarantine-r1` |
-| `NEW_PR_NUMBER` | Se asignará al publicar este Draft de diseño |
+| `NEW_PR_NUMBER` | `374` — OPEN / Draft |
 | `NEW_PR_BASE` | `feat/cloud-sync-protocol-v2-fin01-r1` |
-| `NEW_PR_HEAD_BEFORE_REPORT_COMMIT` | `2f33cea480f3d478f797b495b168feac9aed483f` |
+| `NEW_PR_HEAD` | `cfcdf5982bc57cbcca240484d651cdfd7674594a` al crear el Draft; después se añadió únicamente este metadato del PR al mismo informe |
 | `SUPABASE_PROJECT` | `odlrhijtfyavryeqivaa` (`Lanzo`, `us-east-2`, ACTIVE_HEALTHY, PostgreSQL 17.6.1) |
 | `PRODUCTION_WRITES` | `0`; solo se ejecutaron consultas `SELECT` remotas |
 
@@ -166,7 +166,7 @@ MIXED_TABS_STATUS=HOLD
 POSTGRESQL_17_STATUS=17.11_AVAILABLE; F_APPLY_PASS; V_AND_Q_NOT_CERTIFIED
 R3_4_BACKUP_GATE=R3_4_PARTIAL_WITH_BLOCKERS; REAL_BACKUP_RESTORE_PENDING
 PRODUCTION_WRITES=0
-PR_STATUS=DRAFT_DESIGN; PR_NUMBER_PENDING
+PR_STATUS=OPEN_DRAFT_374; MERGEABLE=false
 MERGE_READINESS=HOLD
 PRODUCTION_DEPLOY_READINESS=HOLD
 NEXT_RECOMMENDED_ACTION=PROVE_CANONICAL_PREFLIGHT_FREEZE_AND_LEDGER_ORDER; RESTORE_2_4_INVENTORY; RUN_COMPLETE_F_V_Q_FIXTURE
