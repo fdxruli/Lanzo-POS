@@ -21,7 +21,7 @@ Por este gate no se creó una migración Q, no se sustituyeron wrappers y no se 
 | `NEW_BRANCH` | `feat/fin01-legacy-protocol-quarantine-r1` |
 | `NEW_PR_NUMBER` | `374` — OPEN / Draft |
 | `NEW_PR_BASE` | `feat/cloud-sync-protocol-v2-fin01-r1` |
-| `NEW_PR_HEAD` | `cfcdf5982bc57cbcca240484d651cdfd7674594a` al crear el Draft; después se añadió únicamente este metadato del PR al mismo informe |
+| `NEW_PR_HEAD` | `cfcdf5982bc57cbcca240484d651cdfd7674594a` al abrir #374; los commits posteriores solo actualizan metadatos de este informe |
 | `SUPABASE_PROJECT` | `odlrhijtfyavryeqivaa` (`Lanzo`, `us-east-2`, ACTIVE_HEALTHY, PostgreSQL 17.6.1) |
 | `PRODUCTION_WRITES` | `0`; solo se ejecutaron consultas `SELECT` remotas |
 
@@ -33,6 +33,7 @@ La rama local se creó en un worktree aislado desde el HEAD remoto actual de #37
 | #371 | OPEN / Draft / mergeable; sin modificación | No se encontraron workflow runs para `2f33cea4…` |
 | #338 | OPEN / Draft; sin modificación | Nueve workflows SUCCESS en `fef7205f…` |
 | #352 | OPEN / Draft; sin modificación | No se encontraron workflow runs para `d758f69b…` |
+| #374 | OPEN / Draft / mergeable; informe únicamente | No se encontraron workflow runs para el HEAD de documentación consultado |
 
 La búsqueda de `INVENTORY.md`, `source-inventory.json`, `inventory-validation.json` y los artefactos 2.4 no encontró esos archivos en esta rama; GitHub tampoco devuelve historial para las rutas consultadas de `INVENTORY.md` y `source-inventory.json`. El informe 2.5A.1 conserva la lista de 14 RPC, pero no contiene el inventario fuente completo de 37 endpoints ni la matriz 2.3/2.4. El archivo `cloudCriticalRpcGuards.js` enumera 25 RPC críticos; no sustituye aquella matriz.
 
@@ -166,7 +167,7 @@ MIXED_TABS_STATUS=HOLD
 POSTGRESQL_17_STATUS=17.11_AVAILABLE; F_APPLY_PASS; V_AND_Q_NOT_CERTIFIED
 R3_4_BACKUP_GATE=R3_4_PARTIAL_WITH_BLOCKERS; REAL_BACKUP_RESTORE_PENDING
 PRODUCTION_WRITES=0
-PR_STATUS=OPEN_DRAFT_374; MERGEABLE=false
+PR_STATUS=OPEN_DRAFT_374; MERGEABLE=true; CI_RUNS=NONE_OBSERVED
 MERGE_READINESS=HOLD
 PRODUCTION_DEPLOY_READINESS=HOLD
 NEXT_RECOMMENDED_ACTION=PROVE_CANONICAL_PREFLIGHT_FREEZE_AND_LEDGER_ORDER; RESTORE_2_4_INVENTORY; RUN_COMPLETE_F_V_Q_FIXTURE
