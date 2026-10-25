@@ -79,7 +79,8 @@ export default function AdminLoginModal() {
   const adminLoginError = useAppStore((state) => state.adminLoginError);
   const verificationUnavailable = [
     'SESSION_VERIFICATION_INCONCLUSIVE',
-    'ACTOR_RUNTIME_RESTORE_FAILED'
+    'ACTOR_RUNTIME_RESTORE_FAILED',
+    'ADMIN_OFFLINE_EVIDENCE_PENDING'
   ].includes(adminLoginError?.code);
   const logout = useAppStore((state) => state.logout);
   const returnToLicenseAccessChoice = useAppStore((state) => state.returnToLicenseAccessChoice);

@@ -166,29 +166,41 @@ try {
   channel = null;
 }
 
-const handleForeignContext = (record) => {
-  if (
-    !activeBinding
-    || !record
-    || record.tenantOpaqueId !== activeBinding.tenantOpaqueId
-    || record.contextToken === activeBinding.contextToken
-  ) return;
+const contextMatchesBinding = (record, binding) => Boolean(
+  record
+  && record.status === 'granted'
+  && record.tenantOpaqueId === binding.tenantOpaqueId
+  && record.contextToken === binding.contextToken
+  && record.actorOpaqueId === binding.actorOpaqueId
+  && record.actorGeneration === binding.actorGeneration
+);
+
+const handleForeignContext = (tenantOpaqueId) => {
+  const binding = activeBinding;
+  if (!binding || tenantOpaqueId !== binding.tenantOpaqueId) return;
+
+  // Messages are hints, including a message carrying our own token. Delivery
+  // order does not establish authority: only the current durable record can
+  // prove this binding. Missing/unreadable/corrupt records fail closed.
+  const current = readContextRecord(binding.tenantOpaqueId);
+  if (activeBinding !== binding || contextMatchesBinding(current, binding)) return;
 
   writesSuspended = true;
   pendingBinding = null;
   notify({
     type: 'foreign_context',
-    tenantOpaqueId: activeBinding.tenantOpaqueId,
-    actorKey: activeBinding.actorKey,
-    actorGeneration: activeBinding.actorGeneration
+    tenantOpaqueId: binding.tenantOpaqueId,
+    actorKey: binding.actorKey,
+    actorGeneration: binding.actorGeneration,
+    contextToken: binding.contextToken
   });
 };
 
-channel?.addEventListener?.('message', (event) => handleForeignContext(event?.data || null));
+channel?.addEventListener?.('message', (event) => handleForeignContext(event?.data?.tenantOpaqueId));
 if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
   window.addEventListener('storage', (event) => {
-    if (!activeBinding || event.key !== actorContextPhysicalKey(activeBinding.tenantOpaqueId)) return;
-    handleForeignContext(parseContextRecord(event.newValue));
+    if (!activeBinding || (event.key !== null && event.key !== actorContextPhysicalKey(activeBinding.tenantOpaqueId))) return;
+    handleForeignContext(activeBinding.tenantOpaqueId);
   });
 }
 
@@ -291,13 +303,7 @@ const assertActiveContextCurrent = () => {
     });
   }
   const current = readContextRecord(activeBinding.tenantOpaqueId);
-  if (
-    !current
-    || current.status !== 'granted'
-    || current.contextToken !== activeBinding.contextToken
-    || current.actorOpaqueId !== activeBinding.actorOpaqueId
-    || current.actorGeneration !== activeBinding.actorGeneration
-  ) {
+  if (!contextMatchesBinding(current, activeBinding)) {
     writesSuspended = true;
     throw new ActorScopedStorageError(ACTOR_SCOPED_STORAGE_ERROR_CODES.CONTEXT_STALE, {
       reason: 'actor_storage_context_changed'
