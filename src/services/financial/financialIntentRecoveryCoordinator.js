@@ -5,6 +5,7 @@ import '../salesCloud/salesCloudCashierService';
 import './financialCancellationProjection';
 import { listFinancialIntentsForRecovery } from './financialIntentLedger';
 import { recoverFinancialIntent } from './financialIntentRecovery';
+import { applyFinancialProjection } from './financialProjectionRegistry';
 
 let installed = false;
 const activeRuns = new Map();
@@ -49,6 +50,11 @@ export const recoverCurrentFinancialIntents = async ({ reason = 'manual', limit 
       try {
         result = await recoverFinancialIntent({
           intentId: intent.id, licenseKey: mode.licenseKey, actorHandle: handle,
+          // Only carry original route ownership through the existing project
+          // injection point. No ledger/lease/receipt or other projection change.
+          ...(executionScope ? { project: args => applyFinancialProjection(
+            args.intent?.operationType === 'sale.cancel' ? { ...args, executionScope } : args
+          ) } : {}),
           ...(task ? { executionScope: task } : {})
         });
       } catch (error) {

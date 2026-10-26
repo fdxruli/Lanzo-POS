@@ -18,7 +18,7 @@ export const registerFinancialProjectionHandler = (operationType, handler) => {
 
 export const getFinancialProjectionHandler = (operationType) => handlers.get(operationType) || null;
 
-export const applyFinancialProjection = async ({ intent, actorHandle } = {}) => {
+export const applyFinancialProjection = async ({ intent, actorHandle, executionScope = null } = {}) => {
   const handler = getFinancialProjectionHandler(intent?.operationType);
   if (!handler) throw new Error('FINANCIAL_RECOVERY_PROJECTION_HANDLER_UNAVAILABLE');
   actorHandle?.assertCurrent?.();
@@ -27,7 +27,8 @@ export const applyFinancialProjection = async ({ intent, actorHandle } = {}) => 
     requestPayload: intent.requestPayload,
     responsePayload: intent.responsePayload,
     intent,
-    actorHandle
+    actorHandle,
+    ...(executionScope ? { executionScope } : {})
   });
   actorHandle?.assertCurrent?.();
   return result;
