@@ -1,0 +1,35 @@
+{
+  "beforeEditing": true,
+  "workingTree": "clean",
+  "branch": "feat/f01-early-admission-recovery-r1",
+  "localHead": "ce03b04918347898396957c8b7f35eb955896b89",
+  "remoteHeads": {
+    "main": "52bb573e651529b323b6617e3161cd76ece14a39",
+    "base": "f1d69093ffe3ad180752773c178b7fbaefd92ce1",
+    "pr373": "ce03b04918347898396957c8b7f35eb955896b89"
+  },
+  "pr373": {
+    "number": 373,
+    "state": "open",
+    "merged": false,
+    "draft": true,
+    "base": "feat/f01-single-instance-coordinator-r1",
+    "base_sha": "f1d69093ffe3ad180752773c178b7fbaefd92ce1",
+    "head": "feat/f01-early-admission-recovery-r1",
+    "head_sha": "ce03b04918347898396957c8b7f35eb955896b89",
+    "url": "https://github.com/fdxruli/Lanzo-POS/pull/373",
+    "updated_at": "2026-10-25T07:16:40Z"
+  },
+  "pr372": {
+    "number": 372,
+    "state": "open",
+    "merged": false,
+    "draft": true,
+    "base": "main",
+    "base_sha": "52bb573e651529b323b6617e3161cd76ece14a39",
+    "head": "feat/f01-single-instance-coordinator-r1",
+    "head_sha": "f1d69093ffe3ad180752773c178b7fbaefd92ce1",
+    "url": "https://github.com/fdxruli/Lanzo-POS/pull/372",
+    "updated_at": "2026-10-23T20:02:24Z"
+  }
+}

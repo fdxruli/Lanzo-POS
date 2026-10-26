@@ -1,0 +1,74 @@
+[
+  {
+    "file": "base/regressions.json",
+    "bytes": 443953,
+    "sha256": "7e81fd42a73304244c7f7f58861955097a3dff80e9d6c88eed05ed4ea8735ae4",
+    "archive": "base/regressions.json.gz",
+    "archiveSha256": "e2337abc7f0487b0e1265a7ed7086ccdc37562e190ee3ca810dfb9165315d300",
+    "losslessVerified": true
+  },
+  {
+    "file": "base/global.json",
+    "bytes": 2243910,
+    "sha256": "1fa30e9484edee26abbc87d20511941d9f1bc69901e8fa7ef9db3b105b543d8d",
+    "archive": "base/global.json.gz",
+    "archiveSha256": "a098325ab79513f27c7242174ecf7f5d0ecc84fb8fbdb9a6fc6abebc25862213",
+    "losslessVerified": true
+  },
+  {
+    "file": "candidate/regressions.json",
+    "bytes": 444486,
+    "sha256": "52957fa3695e894b6ecbd9040960b68adb6961d4a5d9109091d0e129cc396d3c",
+    "archive": "candidate/regressions.json.gz",
+    "archiveSha256": "50b9e16e44a2ff08005271215e4826f80e7df9fb955988fb5a698516928a2d2b",
+    "losslessVerified": true
+  },
+  {
+    "file": "candidate/global.json",
+    "bytes": 2255076,
+    "sha256": "fc57a643701547637452433a01ca3591c7e835db0e649b6d9fa1afb6c7f82a67",
+    "archive": "candidate/global.json.gz",
+    "archiveSha256": "c7c3573987e8897b57b1bc10dfbe677c17b098826d15f64cab96476854dd4160",
+    "losslessVerified": true
+  },
+  {
+    "file": "pr127-base/candidate.json",
+    "bytes": 2215301,
+    "sha256": "44157bc075173574b7a8f72af462685708ed35134ce92340a50bb91077a283c5",
+    "archive": "pr127-base/candidate.json.gz",
+    "archiveSha256": "c7d173994cecc0484e6bd313e360536d4f9ebcdfc0acb47973ced3ecc66d5aa7",
+    "losslessVerified": true
+  },
+  {
+    "file": "pr127-base/base.json",
+    "bytes": 2207878,
+    "sha256": "fb47c6324c2af7bec0d5ff31669064cae43c184072a8e59867e8571c58e2404e",
+    "archive": "pr127-base/base.json.gz",
+    "archiveSha256": "9499b7ab015c7fe0e36201fb64d2e1928bcc300af27622d945830be45cdab4b2",
+    "losslessVerified": true
+  },
+  {
+    "file": "pr127-base/phase-one.json",
+    "bytes": 327309,
+    "sha256": "37320572c8129a64f0bf1d609aba8fa8f475dbbd1578414c6d6c000feab018a1",
+    "archive": "pr127-base/phase-one.json.gz",
+    "archiveSha256": "73a0e60917de3a76468d3ba28600d1023257e761756a6359a9409d10a53f4ff0",
+    "losslessVerified": true
+  },
+  {
+    "file": "pr127-base/final.json",
+    "bytes": 327435,
+    "sha256": "25de1e3dd8b18639342752158703a278c54ff589344f6b708a98be96716eadc7",
+    "archive": "pr127-base/final.json.gz",
+    "archiveSha256": "7e36c299855af08bb4d4470533cbb13a2b7a59c75ce89ff17432bd82b3507022",
+    "losslessVerified": true
+  },
+  {
+    "file": "initial-related.log",
+    "bytes": 1149,
+    "sha256": "dc4efdf6df744bf059be66d75e643f7b182d0c6fd26f4c9f8dac27e91bcce414",
+    "archive": "initial-related.log.gz",
+    "archiveSha256": "dbfa14eb15c3e9cd56e9a4ecc49292f99df7031744b8d4108ab0e7bf755fb084",
+    "losslessVerified": true
+  }
+]

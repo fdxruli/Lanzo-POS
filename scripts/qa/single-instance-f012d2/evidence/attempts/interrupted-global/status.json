@@ -1,0 +1,6 @@
+{
+  "status": "NOT_VALID_RESULT",
+  "observation": "Combined parent driver disappeared before candidate global emitted any report/exit file. Base stages and candidate builds/regressions had completed.",
+  "cause": "UNKNOWN: no parent exit was captured. No assertion result inferred.",
+  "action": "Rerun candidate global only with the same unchanged F012A runner/cwd/code/config/dependencies. Earlier premature comparison ENOENT is not a test failure."
+}
