@@ -42,16 +42,24 @@ declare
     nullif(btrim(p_sale->>'cloudSaleId'), '')
   );
   v_local_sale_id text := coalesce(
-    nullif(btrim(p_sale->>'local_sale_id'), ''), nullif(btrim(p_sale->>'localSaleId'), '')
+    nullif(btrim(p_sale->>'local_sale_id'), ''), nullif(btrim(p_sale->>'localSaleId'), ''),
+    nullif(btrim(p_sale->>'id'), ''), nullif(btrim(p_sale->>'cloud_sale_id'), ''),
+    nullif(btrim(p_sale->>'cloudSaleId'), '')
   );
   v_context jsonb;
   v_license_id uuid;
+  v_device_id uuid;
+  v_actor_key text;
+  v_legacy_idempotency_key text;
+  v_legacy_operation_type text;
 begin
   if v_sale_id is null and v_local_sale_id is null then return; end if;
   v_context := private.validate_pos_sync_context(
     p_license_key, p_device_fingerprint, p_security_token, p_staff_session_token
   );
   v_license_id := (v_context->>'license_id')::uuid;
+  v_device_id := nullif(v_context->>'device_id', '')::uuid;
+  v_actor_key := private.resolve_cash_actor_key(v_context);
 
   if not exists (
     select 1 from public.pos_restaurant_orders r
@@ -70,7 +78,59 @@ begin
       and f.verified_device_id is not distinct from nullif(v_context->>'device_id', '')::uuid
       and f.verified_cash_session_id is not distinct from p_cash_session_id
   ) then
-    raise exception 'RESTAURANT_FINANCIAL_DISPATCHER_REQUIRED' using errcode = 'P0001';
+    v_legacy_operation_type := case
+      when p_operation_type = 'sale.cashier_inventory'
+        or (p_operation_type = 'sale.cashier'
+          and coalesce((p_sale->'metadata'->>'cloudInventoryEffects')::boolean, false))
+        then 'sales.cloud_commit.inventory'
+      when p_operation_type = 'sale.cashier' then 'sales.cloud_commit'
+      when p_operation_type = 'sale.credit' then 'sales.cloud_credit'
+      else null
+    end;
+    v_legacy_idempotency_key := coalesce(
+      nullif(btrim(p_internal_idempotency_key), ''),
+      case v_legacy_operation_type
+        when 'sales.cloud_commit.inventory' then 'sales.cloud_commit.inventory:' || v_local_sale_id || ':' || v_device_id::text
+        when 'sales.cloud_commit' then 'sales.cloud_commit:' || v_local_sale_id || ':' || v_device_id::text
+        when 'sales.cloud_credit' then 'sales.cloud_credit:' || v_local_sale_id || ':' || v_device_id::text
+      end
+    );
+
+    -- Legacy R2B still owns canonical request hashing and receipt replay. Let
+    -- only an exact, completed, actor/device/session-bound receipt reach it;
+    -- changed payloads continue to fail with IDEMPOTENCY_CONFLICT there.
+    if v_legacy_operation_type is null or v_legacy_idempotency_key is null or not exists (
+      select 1
+      from public.pos_idempotency_keys k
+      join public.pos_sales s
+        on s.license_id = k.license_id
+       and s.id = k.entity_id
+      join public.pos_restaurant_orders r
+        on r.license_id = s.license_id
+       and r.local_order_id in (s.id, s.local_sale_id)
+      where k.license_id = v_license_id
+        and k.idempotency_key = v_legacy_idempotency_key
+        and k.operation_type = v_legacy_operation_type
+        and k.entity_type = 'sale'
+        and k.status = 'completed'
+        and k.request_hash is not null
+        and k.response_payload is not null
+        and s.idempotency_key = k.idempotency_key
+        and (v_sale_id is null or s.id = v_sale_id)
+        and (coalesce(
+              nullif(btrim(p_sale->>'local_sale_id'), ''),
+              nullif(btrim(p_sale->>'localSaleId'), '')
+            ) is null
+          or s.local_sale_id = coalesce(
+              nullif(btrim(p_sale->>'local_sale_id'), ''),
+              nullif(btrim(p_sale->>'localSaleId'), '')
+            ))
+        and s.device_id is not distinct from v_device_id
+        and s.actor_key is not distinct from v_actor_key
+        and s.cash_session_id is not distinct from p_cash_session_id
+    ) then
+      raise exception 'RESTAURANT_FINANCIAL_DISPATCHER_REQUIRED' using errcode = 'P0001';
+    end if;
   end if;
 end;
 $function$;
