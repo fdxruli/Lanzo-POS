@@ -16,7 +16,7 @@ import {
   X,
   XCircle,
 } from 'lucide-react';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
@@ -41,7 +41,10 @@ import { getProductUnitShortLabel, resolveProductSaleUnit } from '../../utils/pr
 import { formatSelectedModifiersForDisplay } from '../../utils/restaurantModifierDisplay';
 import { canPerformRefunds } from '../../services/auth/salesPermissionPolicy';
 import { captureRefundsActorHandle } from '../../services/auth/refundsActorAuthorization';
+import { handlePosActorAuthorityError } from '../../hooks/pos/posActorAuthorityUi';
 import { useActorRuntimeSnapshot } from '../../services/auth/useActorRuntimeSnapshot';
+import { actorRuntimeController } from '../../services/auth/actorRuntimeController';
+import { isOriginRestaurantTable, isRestaurantCloudTableShadow } from '../../services/restaurant/restaurantCloudTableGuards';
 import OrderDiscountPanel from './OrderDiscountPanel';
 import EcommercePosDraftBanner from './EcommercePosDraftBanner';
 import './OrderSummary.css';
@@ -158,6 +161,12 @@ export default function OrderSummary({
   const total = getTotalPrice();
   const tablesBadgeTotal = activeTablesCount + kitchenRejectedOpenCount;
   const isEcommerceDraft = currentOrder?.origin === 'ecommerce';
+  const isRemoteTableReview = isRestaurantCloudTableShadow(currentOrder);
+  const isOriginTable = isOriginRestaurantTable(currentOrder);
+  const tableActionPending = useRef(false);
+  const [isTableActionPending, setIsTableActionPending] = useState(false);
+  const closingRemoteReview = useRef(false);
+  const [isClosingRemoteReview, setIsClosingRemoteReview] = useState(false);
   const ecommerceLocalSubtotal = useMemo(() => order.reduce(
     (sum, item) => sum + ((Number(item.price) || 0) * (Number(item.quantity) || 0)),
     0
@@ -181,6 +190,7 @@ export default function OrderSummary({
   }, [currentOrder, ecommerceLocalSubtotal, isEcommerceDraft, order]);
 
   const handleQuantityChange = (lineId, change) => {
+    if (isRemoteTableReview) return;
     const item = order.find((orderItem, index) => getCartLineId(orderItem, index) === lineId);
     if (!item) return;
 
@@ -192,6 +202,7 @@ export default function OrderSummary({
   };
 
   const handleRemoveKitchenCancelledItems = async () => {
+    if (isRemoteTableReview) return;
     if (!currentOrderId || !isEditMode) {
       showMessageModal('Primero carga una mesa guardada para ajustar cancelaciones de cocina.', null, { type: 'warning' });
       return;
@@ -288,6 +299,7 @@ export default function OrderSummary({
   };
 
   const handleBulkInputChange = (lineId, value) => {
+    if (isRemoteTableReview) return;
     const newQuantity = parseFloat(value);
     if (newQuantity === 0) {
       removeItem(lineId);
@@ -302,6 +314,7 @@ export default function OrderSummary({
   };
 
   const handleCancelOrder = async () => {
+    if (isOriginTable || isRemoteTableReview) return;
     if (isEcommerceDraft) {
       const confirmed = await showConfirmModal(
         'El pedido seguirá aceptado en la bandeja y podrá prepararse nuevamente. No se registrará ninguna venta.',
@@ -329,7 +342,8 @@ export default function OrderSummary({
       if (!canManageRefunds) return;
       try {
         actorHandle = captureRefundsActorHandle();
-      } catch {
+      } catch (error) {
+        if (handlePosActorAuthorityError(error, 'cancel_order')) return;
         showMessageModal('No tienes permiso vigente para anular esta venta.', null, { type: 'error' });
         return;
       }
@@ -350,12 +364,87 @@ export default function OrderSummary({
       await useActiveOrders.getState().cancelCurrentOrder({ actorHandle });
       if (isMobileModal) onClose?.();
     } catch (error) {
+      if (handlePosActorAuthorityError(error, 'cancel_order')) return;
       console.error('Error cancelando orden:', error);
       showMessageModal(
         error?.message || 'No se pudo cancelar la orden. Intenta cerrar el cobro activo y vuelve a intentar.',
         null,
         { type: 'warning' }
       );
+    }
+  };
+
+  const handleOriginTableAction = async (destructive) => {
+    if (tableActionPending.current || !isOriginTable || (destructive && !canManageRefunds)) return;
+    const id = currentOrderId;
+    const snapshot = currentOrder;
+    tableActionPending.current = true;
+    setIsTableActionPending(true);
+    try {
+      const actor = destructive ? captureRefundsActorHandle() : actorRuntimeController.capture();
+      const confirmed = await showConfirmModal(destructive
+        ? 'Esta acción cancelará la mesa y liberará sus reservas pendientes. No se registrará una venta. ¿Deseas continuar?'
+        : 'Se descartarán los cambios que no hayas guardado. La mesa seguirá abierta con su última versión guardada.', {
+        title: destructive ? 'Cancelar mesa' : 'Salir sin guardar',
+        ...(destructive ? { type: 'warning' } : {}),
+        confirmButtonText: destructive ? 'Sí, cancelar mesa' : 'Salir sin guardar',
+        cancelButtonText: destructive ? 'Volver' : 'Seguir editando'
+      });
+      if (!confirmed) return;
+      actor.assertCurrent(destructive ? 'refunds' : undefined);
+      const state = useActiveOrders.getState();
+      if (state.activeOrders.get(id) !== snapshot || state.currentOrderId !== id) return;
+      if (destructive) await state.cancelOrder(id, { actorHandle: actor });
+      else await state.discardTableEditSession(id, snapshot);
+      if (isMobileModal) onClose?.();
+    } catch (error) {
+      if (handlePosActorAuthorityError(error, destructive ? 'cancel_order' : 'exit_table')) return;
+      showMessageModal(error?.message || 'No se pudo completar la acción. Actualiza las mesas e intenta nuevamente.', null, { type: 'warning' });
+    } finally {
+      tableActionPending.current = false;
+      setIsTableActionPending(false);
+    }
+  };
+  const handleExitTableWithoutSaving = () => handleOriginTableAction(false);
+  const handleCancelTable = () => handleOriginTableAction(true);
+
+  const handleCloseRemoteReview = async () => {
+    if (closingRemoteReview.current) return;
+    const state = useActiveOrders.getState();
+    const orderId = currentOrderId;
+    const shadow = state.activeOrders.get(orderId);
+    if (state.currentOrderId !== orderId || !isRestaurantCloudTableShadow(shadow)) return;
+
+    closingRemoteReview.current = true;
+    setIsClosingRemoteReview(true);
+    try {
+      // Session/scope continuity only: closing a local view requires no refunds permission.
+      const actor = actorRuntimeController.capture();
+      if (shadow.restaurantCloudTenantId !== actor.tenant.opaqueId
+        || shadow.tenantOpaqueId !== actor.tenant.opaqueId) return;
+      const confirmed = await showConfirmModal(
+        'La mesa se quitará de este dispositivo, pero seguirá abierta y disponible en Mesas.',
+        {
+          title: 'Cerrar revisión',
+          confirmButtonText: 'Cerrar revisión',
+          cancelButtonText: 'Seguir revisando'
+        }
+      );
+      if (!confirmed) return;
+      actor.assertCurrent();
+      const latest = useActiveOrders.getState();
+      // A replaced/reloaded shadow is a different review, even if its ID was reused.
+      if (latest.activeOrders.get(orderId) !== shadow || !isRestaurantCloudTableShadow(shadow)) return;
+      const wasCurrent = latest.currentOrderId === orderId;
+      await latest.removeOrder(orderId);
+      actor.assertCurrent();
+      if (wasCurrent && isMobileModal) onClose?.();
+    } catch (error) {
+      if (handlePosActorAuthorityError(error, 'close_remote_review')) return;
+      showMessageModal('No se pudo cerrar la revisión. Intenta nuevamente.', null, { type: 'warning' });
+    } finally {
+      closingRemoteReview.current = false;
+      setIsClosingRemoteReview(false);
     }
   };
 
@@ -367,7 +456,7 @@ export default function OrderSummary({
         <div className="summary-header-copy">
           <h2 className="summary-title">
             {showRestaurantActions
-              ? (isEditMode ? `Editando: ${tableData || 'Mesa'}` : (isMobileModal ? 'Tu Pedido' : 'Resumen del Pedido'))
+              ? (isRemoteTableReview ? `Revisando: ${tableData || 'Mesa'}` : isEditMode ? `Editando: ${tableData || 'Mesa'}` : (isMobileModal ? 'Tu Pedido' : 'Resumen del Pedido'))
               : (tableData ? `Orden: ${tableData}` : (isMobileModal ? 'Tu Pedido' : 'Resumen del Pedido'))}
           </h2>
 
@@ -378,7 +467,7 @@ export default function OrderSummary({
           )}
 
           {isEditMode && showRestaurantActions && (
-            <span className="summary-edit-badge">Pedido guardado</span>
+            <span className="summary-edit-badge">{isRemoteTableReview ? 'Vista Cloud · Solo lectura' : 'Pedido guardado'}</span>
           )}
         </div>
 
@@ -423,6 +512,8 @@ export default function OrderSummary({
               className="table-identifier-input"
               placeholder="Ej. Mesa 4, Barra o Juan"
               value={tableData || ''}
+              disabled={isRemoteTableReview}
+              title={isRemoteTableReview ? 'Solo se puede cambiar el nombre desde la sesión de origen.' : undefined}
               onChange={(event) => setTableData(event.target.value)}
             />
           </div>
@@ -441,7 +532,9 @@ export default function OrderSummary({
         <div className="order-edit-notice" role="status">
           <AlertTriangle size={18} aria-hidden="true" />
           <span>
-            Estás modificando un pedido guardado. Actualiza la mesa para conservar los cambios.
+            {isRemoteTableReview
+              ? 'Vista sincronizada de solo lectura. Puedes revisar y cobrar. Para editar productos o cancelar, utiliza la sesión de origen.'
+              : 'Estás modificando un pedido guardado. Actualiza la mesa para conservar los cambios.'}
           </span>
         </div>
       )}
@@ -553,7 +646,8 @@ export default function OrderSummary({
                           type="button"
                           className="btn-fix-stock"
                           onClick={() => updateItemQuantity(lineId, item.stock)}
-                          title="Ajustar cantidad al máximo disponible"
+                          disabled={isRemoteTableReview}
+                          title={isRemoteTableReview ? 'Mesa en modo solo lectura' : 'Ajustar cantidad al máximo disponible'}
                         >
                           Ajustar a {item.stock}
                         </button>
@@ -566,7 +660,7 @@ export default function OrderSummary({
                           <AlertTriangle size={15} aria-hidden="true" />
                           <span>Cancelado por cocina. Quitar de la cuenta antes de cobrar.</span>
                         </div>
-                        {!isAccountAdjustedForKitchenCancelledItems && (
+                        {!isRemoteTableReview && !isAccountAdjustedForKitchenCancelledItems && (
                           <button
                             type="button"
                             className="order-item-kitchen-adjust-btn"
@@ -580,7 +674,7 @@ export default function OrderSummary({
                     )}
                   </div>
 
-                  {isUnitSale ? (
+                  {!isRemoteTableReview && (isUnitSale ? (
                     <div className="order-item-controls" aria-label={`Cantidad de ${item.name}`}>
                       <button
                         type="button"
@@ -626,7 +720,7 @@ export default function OrderSummary({
                         {quantityInputProps.unit.toUpperCase()}
                       </span>
                     </div>
-                  )}
+                  ))}
                 </div>
               );
             })}
@@ -635,7 +729,7 @@ export default function OrderSummary({
 
       </div>
 
-      {!isEcommerceDraft && order.length > 0 && isDiscountModalOpen && (
+      {!isEcommerceDraft && !isRemoteTableReview && order.length > 0 && isDiscountModalOpen && (
         <div
           className="order-discount-modal"
           role="dialog"
@@ -666,9 +760,9 @@ export default function OrderSummary({
         </div>
       )}
 
-      {order.length > 0 && (
+      {(order.length > 0 || isRemoteTableReview || isOriginTable) && (
           <footer className="order-checkout">
-            {!isEcommerceDraft && (
+            {!isEcommerceDraft && !isRemoteTableReview && order.length > 0 && (
               <div className="order-discount-trigger-row">
                 <OrderDiscountPanel
                   compact
@@ -686,6 +780,7 @@ export default function OrderSummary({
             </div>
 
             <div className={`order-actions${showRestaurantActions ? ' order-actions--restaurant' : ''}`}>
+              {order.length > 0 && (
               <button
                 type="button"
                 className="order-action-btn order-action-btn--primary"
@@ -694,8 +789,9 @@ export default function OrderSummary({
                 <CreditCard size={21} aria-hidden="true" />
                 <span>Cobrar</span>
               </button>
+              )}
 
-              {showRestaurantActions && (
+              {showRestaurantActions && !isRemoteTableReview && order.length > 0 && (
                 <button
                   type="button"
                   className={`order-action-btn order-action-btn--save${isEditMode ? ' order-action-btn--update' : ''}`}
@@ -707,7 +803,7 @@ export default function OrderSummary({
                 </button>
               )}
 
-              {showRestaurantActions && canSplitOrder && isEditMode && (
+              {showRestaurantActions && !isRemoteTableReview && canSplitOrder && isEditMode && order.length > 0 && (
                 <button
                   type="button"
                   className="order-action-btn order-action-btn--split"
@@ -719,7 +815,7 @@ export default function OrderSummary({
                 </button>
               )}
 
-              {features.hasLayaway && (
+              {!isRemoteTableReview && features.hasLayaway && order.length > 0 && (
                 <button
                   type="button"
                   className="order-action-btn order-action-btn--layaway"
@@ -731,14 +827,40 @@ export default function OrderSummary({
                 </button>
               )}
 
-              {(!isEditMode || isEcommerceDraft || canManageRefunds) && (
+              {isRemoteTableReview && (
+                <button
+                  type="button"
+                  className="order-action-btn"
+                  onClick={handleCloseRemoteReview}
+                  disabled={isClosingRemoteReview}
+                >
+                  <X size={19} aria-hidden="true" />
+                  Cerrar revisión
+                </button>
+              )}
+
+              {isOriginTable && (
+                <button type="button" className="order-action-btn" onClick={handleExitTableWithoutSaving}
+                  disabled={isTableActionPending}>
+                  <X size={19} aria-hidden="true" />
+                  Salir sin guardar
+                </button>
+              )}
+              {isOriginTable && canManageRefunds && (
+                <button type="button" className="order-action-btn order-action-btn--danger" onClick={handleCancelTable}
+                  disabled={isTableActionPending}>
+                  <Trash2 size={19} aria-hidden="true" />
+                  Cancelar mesa
+                </button>
+              )}
+              {!isOriginTable && !isRemoteTableReview && (!isEditMode || isEcommerceDraft || canManageRefunds) && (
                 <button
                   type="button"
                   className="order-action-btn order-action-btn--danger"
                   onClick={handleCancelOrder}
                 >
                   <X size={19} aria-hidden="true" />
-                  {isEcommerceDraft ? 'Liberar borrador' : ((isEditMode && showRestaurantActions) ? 'Salir sin guardar' : 'Cancelar')}
+                  {isEcommerceDraft ? 'Liberar borrador' : 'Cancelar'}
                 </button>
               )}
             </div>

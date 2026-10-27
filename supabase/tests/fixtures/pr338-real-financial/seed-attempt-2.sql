@@ -1,0 +1,19 @@
+\set ON_ERROR_STOP on
+BEGIN;
+INSERT INTO public.plans (id,code,name,features) VALUES ('00000000-0000-0000-0000-0000000000f0','qa_real_lab','Synthetic QA','{"cloud_pos_sync":true,"cloud_cash_sync":true,"cloud_products_sync":true,"cloud_sales_sync_base":true,"cloud_sales_cashier":true,"cloud_sales_inventory":true,"cloud_customer_credit_sync":true,"cloud_sales_credit":true,"cloud_sales_cancellations":true,"restaurant":true,"pos":true}'::jsonb);
+INSERT INTO public.licenses (id,license_key,status,is_lifetime,license_type,product_name,plan_id,features) VALUES
+ ('00000000-0000-0000-0000-000000000001','lab-license-a','active',true,'qa','Lab A','00000000-0000-0000-0000-0000000000f0','{}'),
+ ('00000000-0000-0000-0000-000000000002','lab-license-b','active',true,'qa','Lab B','00000000-0000-0000-0000-0000000000f0','{}');
+INSERT INTO public.license_devices (id,license_id,device_fingerprint,security_token,is_active,device_mode,device_role) VALUES
+ ('00000000-0000-0000-0000-00000000000a','00000000-0000-0000-0000-000000000001','lab-device-a','lab-device-token-a',true,'admin_only','admin'),
+ ('00000000-0000-0000-0000-00000000000b','00000000-0000-0000-0000-000000000001','lab-device-b','lab-device-token-b',true,'staff_only','staff');
+INSERT INTO public.license_admin_users (id,license_id,username,display_name,password_hash,is_owner,is_active) VALUES ('00000000-0000-0000-0000-0000000000aa','00000000-0000-0000-0000-000000000001','lab-admin','Lab Admin',extensions.crypt('lab-only',extensions.gen_salt('bf')),true,true);
+INSERT INTO public.license_admin_sessions (id,license_id,admin_user_id,device_id,session_token_hash,expires_at) VALUES ('00000000-0000-0000-0000-0000000000ba','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000aa','00000000-0000-0000-0000-00000000000a',extensions.crypt('lab-admin-session',extensions.gen_salt('bf')),now()+interval '1 day');
+INSERT INTO public.license_staff_users (id,license_id,username,display_name,password_hash,role_name,permissions,is_active) VALUES ('00000000-0000-0000-0000-0000000000ab','00000000-0000-0000-0000-000000000001','lab-staff','Lab Staff',extensions.crypt('lab-only',extensions.gen_salt('bf')),'staff','{"pos":true,"cash_register":true}'::jsonb,true);
+INSERT INTO public.license_staff_sessions (id,license_id,staff_user_id,device_id,session_token_hash,expires_at,last_seen_at) VALUES ('00000000-0000-0000-0000-0000000000c1','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-0000000000ab','00000000-0000-0000-0000-00000000000b',extensions.crypt('lab-staff-session',extensions.gen_salt('bf')),now()+interval '1 day',now());
+INSERT INTO public.pos_cash_stations (id,license_id,station_key,status,binding_mode) VALUES ('lab-station-a','00000000-0000-0000-0000-000000000001','lab-a','active','device_default'),('lab-station-b','00000000-0000-0000-0000-000000000001','lab-b','active','device_default');
+INSERT INTO public.pos_cash_station_bindings (id,license_id,cash_station_id,device_id,binding_mode,status) VALUES ('00000000-0000-0000-0000-0000000000d1','00000000-0000-0000-0000-000000000001','lab-station-a','00000000-0000-0000-0000-00000000000a','device_default','active'),('00000000-0000-0000-0000-0000000000d2','00000000-0000-0000-0000-000000000001','lab-station-b','00000000-0000-0000-0000-00000000000b','device_default','active');
+INSERT INTO public.pos_cash_sessions (id,license_id,device_id,actor_key,status,cash_station_id,responsible_name,device_role) VALUES
+ ('lab-cash-a','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-00000000000a','admin:00000000-0000-0000-0000-0000000000aa','open','lab-station-a','Lab Admin','admin'),
+ ('lab-cash-b','00000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-00000000000b','staff:00000000-0000-0000-0000-0000000000ab','open','lab-station-b','Lab Staff','staff');
+COMMIT;

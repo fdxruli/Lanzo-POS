@@ -38,6 +38,8 @@ import {
     lockActorRuntime
 } from '../../../services/auth/actorSessionRuntimeBridge';
 import { assertLocalTenantSyncAccess } from '../../../services/tenant/localTenantGuard';
+import { classifyActorAuthorityError } from '../../../services/auth/actorAuthorityErrors';
+import { getActorAuthorityRecoverySnapshot, reportActorAuthorityError } from '../../../services/auth/actorAuthorityRecovery';
 import { createEffectiveLicenseValidationEvidence } from '../../../utils/licenseStatusPresentation';
 import {
     assertLicenseValidationContextCurrent,
@@ -74,6 +76,15 @@ export const createLicenseProcessingActions = ({
                 : operation()
         );
         if (!contextIsCurrent()) return;
+        if (getActorAuthorityRecoverySnapshot()) return;
+        if (classifyActorAuthorityError(serverValidation)?.requiresReauthentication) {
+            if (get()._requireActorAuthorityRecovery) {
+                await get()._requireActorAuthorityRecovery(serverValidation, { operation: reason });
+            } else {
+                reportActorAuthorityError(serverValidation, { operation: reason });
+            }
+            return;
+        }
         options?.lifecycle?.markUnobservable('background_server_processing_sync_work');
         await assertLocalTenantSyncAccess(
             { ...localLicense, ...serverValidation, license_key: serverValidation?.license_key || localLicense?.license_key },

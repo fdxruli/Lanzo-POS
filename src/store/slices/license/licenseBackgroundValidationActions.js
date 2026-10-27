@@ -3,6 +3,9 @@ import { loadBootstrapProfile } from '../../../services/bootstrap/bootstrapLifec
 
 import { checkInternetConnection, showMessageModal } from '../../../services/utils';
 import Logger from '../../../services/Logger';
+import { classifyActorAuthorityError } from '../../../services/auth/actorAuthorityErrors';
+import { getActorAuthorityRecoverySnapshot, reportActorAuthorityError } from '../../../services/auth/actorAuthorityRecovery';
+import { actorRuntimeController, ACTOR_RUNTIME_STATUS } from '../../../services/auth/actorRuntimeController';
 import { lockActorRuntime } from '../../../services/auth/actorSessionRuntimeBridge';
 
 import {
@@ -58,11 +61,43 @@ export const createLicenseBackgroundValidationActions = ({
       if (validationContext) assertLicenseValidationContextCurrent(validationContext, get());
     };
     const { refreshProfile = false, reason = 'background' } = options || {};
+    const initialState = get();
+    const requestActorState = actorRuntimeController.getState();
+    const requestLicenseKey = initialState.licenseDetails?.license_key;
+    const validationContextChanged = () => (
+      get().appStatus !== 'ready' ||
+      get().licenseDetails?.license_key !== requestLicenseKey ||
+      (requestActorState.status === ACTOR_RUNTIME_STATUS.GRANTED &&
+        requestActorState.generation !== actorRuntimeController.getState().generation)
+    );
+
+    const clearRejectedLicense = async (validation) => {
+      lockActorRuntime('license_validation_fatal');
+      const invalidationContext = captureLicenseValidationContext(get(), licenseKey);
+      try { await clearLocalLicenseSession(); } catch {
+        Logger.warn('[Background] No se pudo completar la salida; el acceso permanece bloqueado.');
+      }
+      assertLicenseValidationContextCurrent(invalidationContext, get());
+      set({
+        appStatus: 'unauthenticated', licenseDetails: null,
+        licenseStatus: normalizeValidationCode(validation) || 'invalid',
+        companyProfile: null, profileImportCandidate: null, pendingTermsUpdate: null
+      });
+      Logger.error('[Background] Licencia remota no disponible:', normalizeValidationCode(validation));
+      showMessageModal(
+        'LICENCIA NO DISPONIBLE\n\nLa licencia local ya no existe o fue desactivada en el servidor. Ingresa una licencia valida para continuar.',
+        null,
+        { type: 'error', confirmButtonText: 'Entendido', showCancel: false, isDismissible: false }
+      );
+    };
+
+    const denyHardAuthority = async (error, classification) => {
+      reportActorAuthorityError(error, { operation: reason });
+      await clearRejectedLicense({ reason: classification.code });
+    };
 
     try {
-      const initialState = get();
-
-      if (initialState.appStatus !== 'ready') {
+      if (initialState.appStatus !== 'ready' || getActorAuthorityRecoverySnapshot()) {
         Logger.log('[Background] La sesión no está lista; se conserva la pantalla actual.');
         return;
       }
@@ -71,6 +106,8 @@ export const createLicenseBackgroundValidationActions = ({
       assertCurrentContext();
 
       const localLicenseBeforeValidation = await getLicenseFromStorage();
+      if (validationContextChanged()) return;
+
       assertCurrentContext();
       if (get().appStatus !== 'ready') return;
       const licenseDetails = initialState.licenseDetails || localLicenseBeforeValidation || {
@@ -127,6 +164,21 @@ export const createLicenseBackgroundValidationActions = ({
       ]);
       assertCurrentContext();
       if (get().appStatus !== 'ready') return;
+      if (validationContextChanged()) return;
+
+      const authorityFailure = classifyActorAuthorityError(serverValidation);
+      if (authorityFailure?.kind === 'device_blocked' || authorityFailure?.kind === 'cloning_detected') {
+        await denyHardAuthority(serverValidation, authorityFailure);
+        return;
+      }
+      if (authorityFailure?.requiresReauthentication) {
+        if (get()._requireActorAuthorityRecovery) {
+          await get()._requireActorAuthorityRecovery(serverValidation, { operation: reason });
+        } else {
+          reportActorAuthorityError(serverValidation, { operation: reason });
+        }
+        return;
+      }
 
       if (!serverValidation?.valid && serverValidation?.valid !== false) {
         Logger.warn('[Background] Respuesta inválida del servidor; no se marca success.');
@@ -142,6 +194,7 @@ export const createLicenseBackgroundValidationActions = ({
       }
 
       const localLicense = localLicenseBeforeValidation || await getLicenseFromStorage();
+      if (validationContextChanged()) return;
       assertCurrentContext();
       const activeLicenseKey = get().licenseDetails?.license_key;
       if (
@@ -333,7 +386,6 @@ export const createLicenseBackgroundValidationActions = ({
       ) {
         assertCurrentContext();
         Logger.log('[Background] Cambios detectados en licencia, actualizando...');
-        lifecycle?.markUnobservable('background_server_processing_sync_work');
         await get()._processServerValidation(serverValidation, localLicense, {
           refreshProfile,
           reason: `background_${reason}`,
@@ -376,6 +428,20 @@ export const createLicenseBackgroundValidationActions = ({
       // A timeout/error continuation also belongs to its captured actor/tenant.
       // In particular, connectivity probing must not report into a new login.
       try { assertCurrentContext(); } catch { return; }
+      if (validationContextChanged()) return;
+      const authorityFailure = classifyActorAuthorityError(error);
+      if (authorityFailure?.kind === 'device_blocked' || authorityFailure?.kind === 'cloning_detected') {
+        await denyHardAuthority(error, authorityFailure);
+        return;
+      }
+      if (authorityFailure?.requiresReauthentication) {
+        if (get()._requireActorAuthorityRecovery) {
+          await get()._requireActorAuthorityRecovery(error, { operation: reason });
+        } else {
+          reportActorAuthorityError(error, { operation: reason });
+        }
+        return;
+      }
       const isOnlineNow = await checkInternetConnection();
       try { assertCurrentContext(); } catch { return; }
 

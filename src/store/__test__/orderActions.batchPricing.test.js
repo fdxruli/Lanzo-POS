@@ -27,7 +27,11 @@ const batchTable = (batches) => ({
 
 const addWithBatches = async (product, batches) => {
   const added = vi.fn();
-  let state = { currentOrderId: 'order-1', pendingInventoryResolutions: new Map() };
+  let state = {
+    currentOrderId: 'order-1',
+    activeOrders: new Map([['order-1', { id: 'order-1', items: [] }]]),
+    pendingInventoryResolutions: new Map()
+  };
   const set = (updater) => { state = { ...state, ...(typeof updater === 'function' ? updater(state) : updater) }; };
   const get = () => ({ ...state, addItem: added });
   db.table.mockReturnValue(batchTable(batches));
