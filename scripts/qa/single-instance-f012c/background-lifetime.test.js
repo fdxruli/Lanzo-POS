@@ -3,10 +3,25 @@ import 'fake-indexeddb/auto';
 import { beforeEach, afterEach, afterAll, expect, it, vi } from 'vitest';
 import { writeFileSync, mkdirSync } from 'node:fs';
 vi.hoisted(() => { vi.stubEnv('VITE_SUPABASE_URL','https://synthetic.invalid'); vi.stubEnv('VITE_SUPABASE_PUBLISHABLE_KEY','synthetic'); });
-const m = vi.hoisted(() => ({
-  rpc: vi.fn(), load: vi.fn(), save: vi.fn(), online: vi.fn(), guard: vi.fn(),
-  registry: vi.fn(), actor: null, tenant: null, accessible: true, writes: [], storeWrites: [], scopes: [], checkpoints: []
-}));
+const m = vi.hoisted(() => {
+  const actorListeners = new Set();
+  const state = {
+    rpc: vi.fn(), load: vi.fn(), save: vi.fn(), online: vi.fn(), guard: vi.fn(),
+    registry: vi.fn(), actor: null, tenant: null, accessible: true, writes: [], storeWrites: [], scopes: [], checkpoints: [],
+    setActor(actor) {
+      state.actor = actor;
+      const snapshot = actor && { ...actor };
+      for (const listener of actorListeners) {
+        try { listener(snapshot); } catch { /* Match the runtime's observer isolation. */ }
+      }
+    },
+    subscribeActorRuntime(listener) {
+      actorListeners.add(listener);
+      return () => actorListeners.delete(listener);
+    }
+  };
+  return state;
+});
 vi.mock('@supabase/supabase-js', () => ({ createClient: () => ({ rpc: m.rpc }) }));
 vi.mock('@fingerprintjs/fingerprintjs', () => ({ default: { load: async () => ({ get: async () => ({ visitorId: 'synthetic-device' }) }) } }));
 vi.mock('../../../src/services/database', () => ({ STORES: { COMPANY: 'company', SYNC_CACHE: 'sync_cache' }, loadData: m.load, saveData: m.save }));
@@ -27,15 +42,16 @@ vi.mock('../../../src/services/tenant/localTenantGuard', () => ({
 vi.mock('../../../src/services/tenant/localTenantPolicy', () => ({ canAccessTenantOwnedRuntimeCache: () => m.accessible }));
 vi.mock('../../../src/services/tenant/tenantScopedStorage', () => ({ getTenantStorageItem: k => localStorage.getItem(k), setTenantStorageItem: (k,v) => localStorage.setItem(k,v) }));
 vi.mock('../../../src/services/auth/actorRuntimeController', () => ({
+  ACTOR_RUNTIME_STATUS: { LOCKED: 'locked', AUTHENTICATING: 'authenticating', HANDOFF_CHECK: 'handoff_check', GRANTED: 'granted' },
   actorRuntimeController: { getState: () => m.actor, capture: () => {
     const binding = JSON.stringify(m.actor);
     return { ...m.actor, assertCurrent: () => { if (JSON.stringify(m.actor) !== binding) throw Object.assign(new Error('ACTOR_CONTEXT_STALE'), { code: 'ACTOR_CONTEXT_STALE' }); } };
-  } },
+  }, subscribe: listener => m.subscribeActorRuntime(listener) },
   runWithActorHandle: async (_h,f) => f({ guardedWrite: op => op() }),
   ActorRuntimeError: class extends Error {}, ACTOR_RUNTIME_ERROR_CODES: { CONTEXT_STALE: 'ACTOR_CONTEXT_STALE' }
 }));
 vi.mock('../../../src/services/auth/actorSessionRuntimeBridge', () => ({
-  lockActorRuntime: () => { m.actor = { ...m.actor, status: 'locked', generation: m.actor.generation+1 }; },
+  lockActorRuntime: () => { m.setActor({ ...m.actor, status: 'locked', generation: m.actor.generation+1 }); },
   beginActorRuntimeAuthentication: vi.fn(), grantAuthenticatedActorRuntime: vi.fn()
 }));
 vi.mock('../../../src/services/storage/imageUploadService', () => ({ IMAGE_UPLOAD_PURPOSES: { BUSINESS_LOGO: 'logo' }, uploadImageFile: vi.fn() }));
@@ -66,7 +82,8 @@ const traces=[];
 beforeEach(() => {
   vi.useFakeTimers(); vi.resetAllMocks(); localStorage.clear(); sessionStorage.clear();
   vi.stubEnv('VITE_SUPABASE_URL','https://synthetic.invalid');vi.stubEnv('VITE_SUPABASE_PUBLISHABLE_KEY','synthetic');
-  m.actor={status:'granted',actorType:'admin',actorId:'admin-A',actorKey:'synthetic-actor-A',sessionId:'session-A',generation:1,deviceRef:'device-A'};
+  m.setActor({status:'locked',reason:'logged_out',generation:0});
+  m.setActor({status:'granted',actorType:'admin',actorId:'admin-A',actorKey:'synthetic-actor-A',sessionId:'session-A',generation:1,deviceRef:'device-A'});
   m.tenant={opaqueId:'synthetic-tenant-A',databaseName:'synthetic-db-A',generation:1};m.accessible=true;m.writes=[];m.storeWrites=[];m.scopes=[];m.checkpoints=[];
   m.guard.mockResolvedValue(true);m.online.mockResolvedValue(true);
   m.registry.mockImplementation(async k=>k==='lanzo_device_id'?'synthetic-device':null);
@@ -101,8 +118,8 @@ it('BGX-05 PROF-05 public profile timeout leaves transport pending without late 
 });
 for(const [id,label,change] of [
  ['06','PROF-06 tenant change',()=>{m.tenant={...m.tenant,opaqueId:'tenant-B',generation:2};}],
- ['07','PROF-07 actor change',()=>{m.actor={...m.actor,actorId:'admin-B',generation:2};}],
- ['08','PROF-08 logout',x=>{x.set({licenseDetails:null});m.actor={...m.actor,status:'locked',generation:2};}]
+ ['07','PROF-07 actor change',()=>{m.setActor({...m.actor,actorId:'admin-B',generation:2});}],
+ ['08','PROF-08 logout',x=>{x.set({licenseDetails:null});m.setActor({...m.actor,status:'locked',generation:2});}]
 ]) it(`BGX-${id} ${label} rejects old remote response before writes`,async()=>{
  const x=setup(),s=scopes(),d=deferred();m.rpc.mockReturnValue(d.promise);const p=x.load({lifecycle:s});const assertion=expect(p).rejects.toMatchObject({code:'ACTOR_CONTEXT_STALE'});await tick();change(x);d.resolve(response('Old'));await assertion;await s.drain();expect(m.writes).toHaveLength(0);expect(x.get().companyProfile).toBeNull();
 });
@@ -122,7 +139,7 @@ it('BGX-13 PROF-13 offline Admin profile uses tenant cache without extending aut
  const x=setup(),s=scopes();Object.defineProperty(navigator,'onLine',{value:false,configurable:true});m.load.mockResolvedValue(profile('Local'));const actor={...m.actor};await x.load({lifecycle:s});await s.drain();expect(m.rpc).not.toHaveBeenCalled();expect(x.get().companyProfile.name).toBe('Local');expect(m.actor).toEqual(actor);
 });
 it('BGX-14 PROF-14 profile observation cannot authorize a locked Staff',async()=>{
- const x=setup(),s=scopes();m.actor={...m.actor,status:'locked',actorType:'staff'};x.set({currentDeviceRole:'staff',currentStaffUser:{id:'staff-A'}});Object.defineProperty(navigator,'onLine',{value:false,configurable:true});await x.load({lifecycle:s});expect(m.actor.status).toBe('locked');expect(m.rpc).not.toHaveBeenCalled();
+ const x=setup(),s=scopes();m.setActor({...m.actor,status:'locked',actorType:'staff'});x.set({currentDeviceRole:'staff',currentStaffUser:{id:'staff-A'}});Object.defineProperty(navigator,'onLine',{value:false,configurable:true});await x.load({lifecycle:s});expect(m.actor.status).toBe('locked');expect(m.rpc).not.toHaveBeenCalled();
 });
 it('BGX-15 PROF-15 final local cache continuation is part of drain',async()=>{
  const x=setup(),s=scopes(),d=deferred();m.save.mockImplementationOnce(async()=>{await d.promise;});const p=x.load({lifecycle:s});await tick();expect(x.get().companyProfile).toBeNull();expect(s.getSnapshot().pending).toBe(1);d.resolve();await p;s.quiesce();await s.drain();expect(x.get().companyProfile.name).toBe('Remote');
@@ -180,7 +197,7 @@ it('BGX-30 SHARED-05 public deadline plus raw reject records late failure in bot
  const z=await shared();await advance(8000);await Promise.all([z.a,z.b]);z.d.reject(new Error('synthetic-late'));await z.owner.drain();await z.consumer.drain();expect(z.owner.getSnapshot().rejected).toBe(1);expect(z.consumer.getSnapshot().rejected).toBe(1);
 });
 for(const [id,label,change] of [
- ['31','SHARED-06 logout',()=>{m.actor={...m.actor,status:'locked',generation:2};}],
+ ['31','SHARED-06 logout',()=>{m.setActor({...m.actor,status:'locked',generation:2});}],
  ['32','SHARED-07 tenant switch',()=>{m.tenant={...m.tenant,generation:2};}]
 ]) it(`BGX-${id} ${label} blocks shared old continuations`,async()=>{
  const z=await shared();const aa=expect(z.a).rejects.toThrow('LICENSE_VALIDATION_CONTEXT_STALE'),bb=expect(z.b).rejects.toThrow('LICENSE_VALIDATION_CONTEXT_STALE');change();z.d.resolve({data:{valid:true,features:{},new_security_token:'must-not-persist'},error:null});await aa;await bb;await z.consumer.drain();expect(m.writes).toHaveLength(0);
@@ -189,7 +206,7 @@ it('BGX-33 SHARED-08 late shared rejection has no unhandled promise',async()=>{
  const z=await shared();await advance(8000);await Promise.all([z.a,z.b]);z.d.reject(new Error('late-shared-rejection'));await z.consumer.drain();expect(z.consumer.getSnapshot()).toMatchObject({pending:0,rejected:1});
 });
 it('BGX-34 SHARED-09 new actor cannot reuse old actor validation',async()=>{
- const z=await shared();const aa=expect(z.a).rejects.toThrow(),bb=expect(z.b).rejects.toThrow();m.actor={...m.actor,generation:2,actorId:'admin-B'};m.rpc.mockResolvedValue(denial);await revalidateLicense('synthetic-shared',{bootstrapLifecycle:scopes()});expect(m.rpc).toHaveBeenCalledTimes(2);z.d.resolve(denial);await aa;await bb;
+ const z=await shared();const aa=expect(z.a).rejects.toThrow(),bb=expect(z.b).rejects.toThrow();m.setActor({...m.actor,generation:2,actorId:'admin-B'});m.rpc.mockResolvedValue(denial);await revalidateLicense('synthetic-shared',{bootstrapLifecycle:scopes()});expect(m.rpc).toHaveBeenCalledTimes(2);z.d.resolve(denial);await aa;await bb;
 });
 it('BGX-35 SHARED-10 originally unobserved owner remains conservatively UNKNOWN',async()=>{
  const d=deferred();m.rpc.mockReturnValue(d.promise);const a=revalidateLicense('unobserved');await tick();const s=scopes(),b=revalidateLicense('unobserved',{bootstrapLifecycle:s});expect(s.getSnapshot().unknown).toContain('shared_license_revalidation_owner');d.resolve(denial);await Promise.all([a,b]);await tick();expect(s.getSnapshot().pending).toBe(0);expect(s.getSnapshot().unknown).toHaveLength(1);
@@ -283,14 +300,14 @@ it('BGX-60 observer and default queries keep identical public profile values',as
 });
 
 it('EXTRA-01 context captured at invocation blocks actor replacement before factory',async()=>{
- const x=setup(),s=scopes();const p=x.load({lifecycle:s});const a=expect(p).rejects.toMatchObject({code:'ACTOR_CONTEXT_STALE'});m.actor={...m.actor,generation:2};await a;expect(m.guard).not.toHaveBeenCalled();expect(m.rpc).not.toHaveBeenCalled();
+ const x=setup(),s=scopes();const p=x.load({lifecycle:s});const a=expect(p).rejects.toMatchObject({code:'ACTOR_CONTEXT_STALE'});m.setActor({...m.actor,generation:2});await a;expect(m.guard).not.toHaveBeenCalled();expect(m.rpc).not.toHaveBeenCalled();
 });
 it('EXTRA-02 asynchronous onPrepared callback stays observed and UNKNOWN',async()=>{
  const x=setup(),s=scopes(),d=deferred();await x.load({lifecycle:s,onPrepared:()=>d.promise});expect(s.getSnapshot()).toMatchObject({pending:1,unknown:['profile_async_onPrepared']});d.resolve();await tick();expect(s.getSnapshot().pending).toBe(0);expect(s.getSnapshot().unknown).toHaveLength(1);
 });
 
 for(const [label,change] of [
- ['actor',()=>{m.actor={...m.actor,generation:2,actorId:'admin-B'};}],
+ ['actor',()=>{m.setActor({...m.actor,generation:2,actorId:'admin-B'});}],
  ['tenant',()=>{m.tenant={...m.tenant,generation:2,opaqueId:'tenant-B'};}]
 ]) it(`EXTRA-TOKEN-${label} credential recovery rechecks context before persisting`,async()=>{
  const d=deferred(),s=scopes();localStorage.setItem('lanzo_license',JSON.stringify({data:{license_key:'synthetic-token-recovery',new_security_token:'synthetic-old-token'}}));

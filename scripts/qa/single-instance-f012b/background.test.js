@@ -1,12 +1,29 @@
 // @vitest-environment jsdom
 import { beforeEach, afterEach, expect, it, vi } from 'vitest';
-const mocks = vi.hoisted(() => ({ revalidateLicense: vi.fn(), online: vi.fn(), stored: null, generation: 1 }));
+const mocks = vi.hoisted(() => {
+  const actorListeners = new Set();
+  const state = { revalidateLicense: vi.fn(), online: vi.fn(), stored: null, generation: 1, actorListeners };
+  state.setGeneration = generation => {
+    state.generation = generation;
+    const snapshot = { status: 'locked', generation };
+    for (const listener of actorListeners) {
+      try { listener(snapshot); } catch { /* Match the runtime's observer isolation. */ }
+    }
+  };
+  return state;
+});
 vi.mock('../../../src/services/supabase', () => ({ revalidateLicense: mocks.revalidateLicense }));
 vi.mock('../../../src/services/utils', () => ({ checkInternetConnection: mocks.online, showMessageModal: vi.fn() }));
 vi.mock('../../../src/services/licenseStorage', () => ({ getLicenseFromStorage: async () => mocks.stored, saveLicenseToStorage: vi.fn() }));
 vi.mock('../../../src/services/auth/actorSessionRuntimeBridge', () => ({ lockActorRuntime: vi.fn() }));
-vi.mock('../../../src/services/auth/actorRuntimeController', () => ({ actorRuntimeController: {
-  getState: () => ({ status: 'locked', generation: mocks.generation })
+vi.mock('../../../src/services/auth/actorRuntimeController', () => ({
+  ACTOR_RUNTIME_STATUS: { LOCKED: 'locked', AUTHENTICATING: 'authenticating', HANDOFF_CHECK: 'handoff_check', GRANTED: 'granted' },
+  actorRuntimeController: {
+  getState: () => ({ status: 'locked', generation: mocks.generation }),
+  subscribe: listener => {
+    mocks.actorListeners.add(listener);
+    return () => mocks.actorListeners.delete(listener);
+  }
 } }));
 import { createLicenseBackgroundValidationActions } from '../../../src/store/slices/license/licenseBackgroundValidationActions';
 import { createBootstrapLifecycle, installTraceRecorder } from './trace.mjs';
@@ -19,7 +36,7 @@ const setup = () => {
     clearLocalLicenseSession: vi.fn(), hasStaffValidationContext: vi.fn() }));
   return state;
 };
-beforeEach(() => { vi.useFakeTimers(); vi.clearAllMocks(); mocks.generation = 1; localStorage.clear(); sessionStorage.clear(); mocks.online.mockResolvedValue(true); });
+beforeEach(() => { vi.useFakeTimers(); vi.clearAllMocks(); mocks.setGeneration(1); localStorage.clear(); sessionStorage.clear(); mocks.online.mockResolvedValue(true); });
 afterEach(() => { vi.useRealTimers(); });
 it('BG-31 actual background public timeout retains registered validation and transport', async () => {
   const state = setup(), lifecycle = createBootstrapLifecycle(), pending = deferred();
@@ -39,7 +56,7 @@ it('BG-33 stale health probe cannot write into a new generation', async () => {
   const state = setup(), lifecycle = createBootstrapLifecycle(), pending = deferred(); mocks.online.mockReturnValue(pending.promise);
   mocks.revalidateLicense.mockRejectedValue(new Error('network'));
   const task = state._validateInBackground('synthetic-A', { reason: 'force', lifecycle });
-  await vi.advanceTimersByTimeAsync(0); mocks.generation++; pending.resolve(true); await task;
+  await vi.advanceTimersByTimeAsync(0); mocks.setGeneration(mocks.generation + 1); pending.resolve(true); await task;
   expect(state.reportServerStatus).not.toHaveBeenCalled(); expect(state.clearServerStatus).not.toHaveBeenCalled();
 });
 it('BG-34 profile frontier is expressly unknown and cannot claim drain', async () => {
