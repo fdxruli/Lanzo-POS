@@ -13,6 +13,11 @@ import { dispatchTickerInventoryAlert } from '../tickerAlertEvents';
 import { salesCloudShadowService } from '../salesCloud/salesCloudShadowService';
 import { salesCloudCashierService } from '../salesCloud/salesCloudCashierService';
 import { calculateDiscountedTotals } from './discounts';
+import {
+    isRestaurantCloudTableShadow,
+    isRestaurantCloudTableTerminal,
+    restaurantCloudTableTerminalBlockedResult
+} from '../restaurant/restaurantCloudTableGuards';
 import { normalizeStableSaleTimestamp } from './stableSaleTimestamp';
 import {
   createFinancialNotificationResult,
@@ -71,13 +76,15 @@ const resolveStableSaleTimestamp = async ({
     loadData,
     STORES,
     fallback,
-    Logger
+    Logger,
+    persistedSale = undefined
 }) => {
     if (activeOrderId && STORES?.SALES && typeof loadData === 'function') {
         try {
-            const persistedSale = await loadData(STORES.SALES, activeOrderId);
-            const stablePersistedTimestamp = normalizeStableSaleTimestamp(persistedSale?.timestamp)
-                || normalizeStableSaleTimestamp(persistedSale?.createdAt);
+            const durableSale = persistedSale === undefined
+                ? await loadData(STORES.SALES, activeOrderId) : persistedSale;
+            const stablePersistedTimestamp = normalizeStableSaleTimestamp(durableSale?.timestamp)
+                || normalizeStableSaleTimestamp(durableSale?.createdAt);
             if (stablePersistedTimestamp) return stablePersistedTimestamp;
         } catch (error) {
             Logger?.warn('No se pudo leer la marca temporal durable de la orden.', error);
@@ -240,7 +247,21 @@ export const processSaleCore = async ({
     Logger.time('Service:ProcessSale');
 
     try {
+        let persistedOrder;
+        if (activeOrderId) {
+            persistedOrder = await loadData(STORES.SALES, activeOrderId);
+            if (isRestaurantCloudTableTerminal(persistedOrder)) {
+                return withFinancialFailure(restaurantCloudTableTerminalBlockedResult(persistedOrder));
+            }
+        }
         const itemsToProcess = order.filter(item => item.quantity && item.quantity > 0);
+        // Preserve the exact checkout lines before pricing/stock enrichment.
+        const restaurantCheckoutOrder = persistedOrder ? {
+            ...persistedOrder,
+            items: structuredClone(itemsToProcess),
+            total,
+            ...(paymentData.saleDiscount ? { saleDiscount: structuredClone(paymentData.saleDiscount) } : {})
+        } : null;
         if (itemsToProcess.length === 0) throw new Error('El pedido está vacío.');
 
         const ecommerceCheckout = getEcommerceCheckout(paymentData);
@@ -275,6 +296,23 @@ export const processSaleCore = async ({
             Logger.warn('Cloud cashier decision failed; usando flujo local + shadow:', decisionError);
             return { useCloud: false, reason: 'decision_error' };
         });
+
+        const cloudRestaurantSettlementRequired = Boolean(
+            isRestaurantCloudTableShadow(persistedOrder)
+            || persistedOrder?.cloudRestaurantOrderUpdatedAt
+            || persistedOrder?.restaurantCloudExpectedVersion
+            || persistedOrder?.cloudRestaurantOrderServerVersion
+            || persistedOrder?.restaurantOrderId
+            || persistedOrder?.cloudRestaurantOrderId
+        );
+        if (cloudRestaurantSettlementRequired && !cloudCashierDecision?.useCloud) {
+            return withFinancialFailure({
+                success: false,
+                errorType: 'CLOUD_CASHIER_FAILED',
+                code: 'RESTAURANT_CLOUD_SETTLEMENT_REQUIRED',
+                message: 'La comanda cloud requiere una caja conectada para validar y liquidar la mesa. No se cobró localmente.'
+            });
+        }
 
         const isCloudInventorySale = (
             cloudCashierDecision?.useCloud === true &&
@@ -386,7 +424,8 @@ export const processSaleCore = async ({
             loadData,
             STORES,
             fallback: new Date().toISOString(),
-            Logger
+            Logger,
+            persistedSale: persistedOrder
         });
         const discountTotal = Money.toExactString(financialTotals.discountTotal);
         const subtotal = Money.toExactString(financialTotals.subtotal);
@@ -464,7 +503,8 @@ export const processSaleCore = async ({
                     sale,
                     processedItems,
                     paymentData: { ...safePaymentData, saleDiscount: saleDiscountAudit },
-                    total: Money.toExactString(totalNum)
+                    total: Money.toExactString(totalNum),
+                    restaurantOrder: restaurantCheckoutOrder
                 });
             } catch (cloudCashierError) {
                 Logger.warn('Cloud cashier failed before local commit:', cloudCashierError);
@@ -521,7 +561,9 @@ export const processSaleCore = async ({
                 timestamp: cloudSale.timestamp,
                 folio: cloudSale.folio,
                 sourceMode: 'cloud_committed',
-                cloudCommitted: true
+                cloudCommitted: true,
+                restaurantSettlement: cloudResult.restaurantSettlement || cloudResult.response?.restaurant_settlement || null,
+                atomicRestaurantSettlement: cloudResult.atomicRestaurantSettlement === true
             };
 
             return {
@@ -536,6 +578,8 @@ export const processSaleCore = async ({
                 inventoryEffectStatus: cloudSale.inventoryEffectStatus || cloudResult.response?.sale?.inventory_effect_status || 'not_applied',
                 creditEffectStatus: cloudSale.creditEffectStatus || cloudResult.response?.sale?.credit_effect_status || 'not_applied',
                 cloudCommitted: true,
+                restaurantSettlement: cloudResult.restaurantSettlement || cloudResult.response?.restaurant_settlement || null,
+                atomicRestaurantSettlement: cloudResult.atomicRestaurantSettlement === true,
                 postEffectsFailed,
                 postEffectsError: postEffectsFailed ? postEffectsError : null,
                 pendingSyncRequired: false,

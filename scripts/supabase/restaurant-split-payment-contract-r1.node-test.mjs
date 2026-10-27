@@ -1,0 +1,78 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { test } from 'node:test';
+
+const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const read = (relativePath) => readFileSync(join(repoRoot, relativePath), 'utf8').replace(/\r\n/gu, '\n');
+const migration = read('supabase/migrations/20260929091708_restaurant_payment_split_financial_r1.sql');
+const packageJson = JSON.parse(read('package.json'));
+
+const functionBody = (source, marker, terminator = '$function$;') => {
+  const start = source.indexOf(marker);
+  assert.notEqual(start, -1, `missing function: ${marker}`);
+  const end = source.indexOf(terminator, start);
+  assert.ok(end > start, `incomplete function: ${marker}`);
+  return source.slice(start, end + terminator.length);
+};
+
+test('monetary split migration is a forward-only contract change with no live data mutation', () => {
+  assert.equal((migration.match(/create or replace function/giu) || []).length, 4);
+  assert.doesNotMatch(migration, /\b(drop|truncate|insert\s+into|update\s+public\.|delete\s+from|alter\s+table|create\s+table)\b/iu);
+  assert.match(migration, /revoke all on function private\.canonical_financial_request_v1\(text, jsonb\) from public, anon, authenticated;/u);
+  assert.match(migration, /revoke all on function private\.execute_split_sale_financial_v1\(text, text, text, text, jsonb, text\) from public, anon, authenticated;/u);
+  assert.match(packageJson.scripts['test:restaurant-split-payment-contract'], /restaurant-split-payment-contract-r1\.node-test\.mjs/u);
+});
+
+test('canonical identity pins monetary intent, payer cents, and stable payment-to-payer IDs', () => {
+  const canonicalRequest = functionBody(migration, 'create or replace function private.canonical_financial_request_v1(');
+  const canonicalPayment = functionBody(migration, 'create or replace function private.canonical_financial_payment_v1(');
+  const payerCanonical = functionBody(migration, 'create or replace function private.canonical_financial_split_payer_v1(');
+  assert.match(canonicalRequest, /v_split_intent in \('equal_payment', 'custom_payment'\)/u);
+  assert.match(canonicalRequest, /v_split_child_count <> 1/u);
+  assert.match(canonicalRequest, /'split_intent', v_split_intent/u);
+  assert.match(canonicalRequest, /'split_payers'/u);
+  assert.match(payerCanonical, /'payer_id'/u);
+  assert.match(payerCanonical, /'amount'/u);
+  assert.match(payerCanonical, /'payment_method'/u);
+  assert.match(canonicalPayment, /'split_payer_id'/u);
+  assert.match(canonicalPayment, /p_payment->'metadata'/u);
+  assert.match(canonicalRequest, /FINANCIAL_SPLIT_CREDIT_CUSTOMER_MISMATCH/u);
+  assert.match(canonicalRequest, /value->>'customerId'/u);
+  assert.match(canonicalRequest, /value->'sale'->>'customerId'/u);
+  assert.match(canonicalRequest, /v_credit_customer_id/u);
+  assert.match(canonicalRequest, /parent_order_version is null/u);
+  assert.match(canonicalRequest, /parent_order_version !~ /u);
+  assert.match(canonicalRequest, /v_split_payer_count < 2 or v_split_payer_count > 8/u);
+  assert.match(canonicalRequest, /when v_split_intent in \('equal_payment', 'custom_payment'\) then v_parent_order_version\s+else private\.financial_text_v1\(private\.financial_first_nonblank_scalar_v1/u);
+  assert.match(canonicalRequest, /else coalesce\(\s+nullif\(btrim\(value->>'customer_id'\), ''\),\s+nullif\(btrim\(value->'sale'->>'customer_id'\), ''\),\s+nullif\(btrim\(value->'sale'->>'customerId'\), ''\)\s+\)\s+end/u);
+});
+
+test('one-sale monetary executor validates payer tenders and reuses atomic sale plus table-close effects', () => {
+  const executor = functionBody(migration, 'create or replace function private.execute_split_sale_financial_v1(');
+  assert.match(executor, /\bv_credit_customer_id\s+text;/u);
+  assert.match(executor, /language plpgsql\s+security definer\s+set search_path = ''/u);
+  assert.match(executor, /v_child_count <> 1/u);
+  assert.match(executor, /FINANCIAL_SPLIT_EQUAL_DISTRIBUTION_INVALID/u);
+  assert.match(executor, /FINANCIAL_SPLIT_PAYER_PAYMENT_MISMATCH/u);
+  assert.match(executor, /FINANCIAL_SPLIT_PAYER_TOTAL_MISMATCH/u);
+  assert.match(executor, /v_payment->'metadata'->>'splitPayerId'/u);
+  assert.match(executor, /public\.pos_create_cloud_sale_cashier_unlimited\(/u);
+  assert.match(executor, /public\.pos_create_cloud_sale_cashier_inventory_unlimited\(/u);
+  assert.match(executor, /public\.pos_create_cloud_sale_credit_unlimited\(/u);
+  assert.match(executor, /public\.pos_close_restaurant_order_after_checkout_unlimited\(/u);
+  assert.match(executor, /'splitPayers', case when v_split_intent/u);
+  assert.match(executor, /FINANCIAL_SPLIT_CREDIT_CUSTOMER_MISMATCH/u);
+  assert.match(executor, /v_child_sale := jsonb_set/u);
+  assert.match(executor, /to_jsonb\(v_credit_customer_id\)/u);
+  assert.match(executor, /v_order\.updated_at is distinct from v_parent_order_version_at/u);
+  assert.match(executor, /v_split_intent in \('equal_payment', 'custom_payment'\)[\s\S]*?v_parent_order_version is null/u);
+  assert.match(executor, /v_parent_order_version !~ /u);
+  assert.match(executor, /if v_parent_order_version is not null then/u);
+  assert.match(executor, /then v_credit_customer_id[\s\S]*?v_child_key/u);
+  const firstSaleEffect = executor.indexOf('v_child_response := public.pos_create_cloud_sale_');
+  assert.ok(firstSaleEffect > 0);
+  assert.ok(executor.indexOf('v_order.updated_at is distinct from v_parent_order_version_at') < firstSaleEffect);
+  assert.ok(executor.indexOf('FINANCIAL_SPLIT_CREDIT_CUSTOMER_MISMATCH') < firstSaleEffect);
+});
