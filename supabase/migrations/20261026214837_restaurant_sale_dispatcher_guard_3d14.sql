@@ -10,6 +10,7 @@ begin
   for v_function, v_hash in
     select * from (values
       ('public.pos_execute_financial_operation_v1(text,text,text,text,text,text,text,jsonb)', '148918104b257982e3809a880bda7177'),
+      ('public.pos_create_cloud_sale_cashier_inventory_legacy_r2b(text,text,text,text,jsonb,jsonb,jsonb,text,text)', '24843a289bbfdb692b4d18a10880c0b5'),
       ('public.pos_create_cloud_sale_cashier(text,text,text,text,jsonb,jsonb,jsonb,text,text)', '653ad817084920aa6adc1a60266ef37c'),
       ('public.pos_create_cloud_sale_cashier_inventory(text,text,text,text,jsonb,jsonb,jsonb,text,text)', '0c9dd22833c208dc20d78dd14bfd005d'),
       ('public.pos_create_cloud_sale_credit(text,text,text,text,jsonb,jsonb,jsonb,text,text,text)', '59977522691c4008711e4361bcb1e0bd')
@@ -138,6 +139,72 @@ revoke all on function private.assert_restaurant_sale_dispatcher_context_v1(text
 
 
 
+
+-- The inventory effect engine delegates to the cashier wrapper with a
+-- derived core key. Validate its inventory attempt, then preserve the
+-- cashier wrapper's rate limit and station preflight before delegating.
+do $inventory_core$
+declare
+  v_definition text;
+  v_needle text := $needle$  v_core_response := public.pos_create_cloud_sale_cashier(
+    p_license_key,
+    p_device_fingerprint,
+    p_security_token,
+    p_staff_session_token,
+    v_sale_payload,
+    p_items,
+    p_payments,
+    p_cash_session_id,
+    v_core_idempotency_key
+  );$needle$;
+  v_replacement text := $replacement$  perform private.assert_restaurant_sale_dispatcher_context_v1(
+    p_license_key, p_device_fingerprint, p_security_token, p_staff_session_token,
+    v_sale_payload, p_cash_session_id, v_idempotency_key, 'sale.cashier_inventory'
+  );
+  v_core_response := public.enforce_pos_rpc_rate_limit_v2(
+    p_license_key := p_license_key,
+    p_device_fingerprint := p_device_fingerprint,
+    p_staff_session_token := p_staff_session_token,
+    p_rpc_name := 'pos_create_cloud_sale_cashier',
+    p_scope := 'POS_WRITE',
+    p_max_attempts := 60,
+    p_window_seconds := 600,
+    p_block_seconds := 300,
+    p_code := 'RPC_RATE_LIMITED',
+    p_metadata := '{}'::jsonb
+  );
+  if coalesce((v_core_response->>'allowed')::boolean, false) is false then
+    v_core_response := public.build_pos_rpc_rate_limited_response(v_core_response);
+  else
+    perform private.assert_cash_sale_station_for_request_v1(
+      p_license_key, p_device_fingerprint, p_security_token,
+      p_staff_session_token, p_cash_session_id
+    );
+    v_core_response := public.pos_create_cloud_sale_cashier_unlimited(
+      p_license_key,
+      p_device_fingerprint,
+      p_security_token,
+      p_staff_session_token,
+      v_sale_payload,
+      p_items,
+      p_payments,
+      p_cash_session_id,
+      v_core_idempotency_key
+    );
+  end if;$replacement$;
+begin
+  select pg_get_functiondef(
+    'public.pos_create_cloud_sale_cashier_inventory_legacy_r2b(text,text,text,text,jsonb,jsonb,jsonb,text,text)'::regprocedure
+  ) into v_definition;
+  v_needle := replace(v_needle, chr(13), '');
+  v_replacement := replace(v_replacement, chr(13), '');
+  if position(v_needle in v_definition) = 0
+     or length(v_definition) - length(replace(v_definition, v_needle, '')) <> length(v_needle) then
+    raise exception 'RESTAURANT_3D14_INVENTORY_CORE_DRIFT' using errcode = 'P0001';
+  end if;
+  execute replace(v_definition, v_needle, v_replacement);
+end;
+$inventory_core$;
 
 CREATE OR REPLACE FUNCTION public.pos_create_cloud_sale_cashier(p_license_key text, p_device_fingerprint text, p_security_token text DEFAULT NULL::text, p_staff_session_token text DEFAULT NULL::text, p_sale jsonb DEFAULT '{}'::jsonb, p_items jsonb DEFAULT '[]'::jsonb, p_payments jsonb DEFAULT '[]'::jsonb, p_cash_session_id text DEFAULT NULL::text, p_idempotency_key text DEFAULT NULL::text)
  RETURNS jsonb
