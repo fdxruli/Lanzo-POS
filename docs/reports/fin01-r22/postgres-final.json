@@ -1,0 +1,307 @@
+[
+  {
+    "area": "Authority",
+    "name": "real owner context",
+    "status": "PASS"
+  },
+  {
+    "area": "Authority",
+    "name": "Staff customers permission cannot authorize",
+    "status": "PASS"
+  },
+  {
+    "area": "Authority",
+    "name": "non-owner Admin session is rejected",
+    "status": "PASS"
+  },
+  {
+    "area": "Authority",
+    "name": "invalid session rejected",
+    "status": "PASS"
+  },
+  {
+    "area": "Authority",
+    "name": "revoked session rejected",
+    "status": "PASS"
+  },
+  {
+    "area": "Authority",
+    "name": "expired session rejected",
+    "status": "PASS"
+  },
+  {
+    "area": "Authority",
+    "name": "wrong tenant manifest rejected",
+    "status": "PASS"
+  },
+  {
+    "area": "Authority",
+    "name": "direct private tables denied to anon",
+    "status": "PASS"
+  },
+  {
+    "area": "Authority",
+    "name": "direct private tables denied to authenticated",
+    "status": "PASS"
+  },
+  {
+    "area": "Manifest",
+    "name": "canonical hash independent of entry order and batch ID",
+    "status": "PASS"
+  },
+  {
+    "area": "Manifest",
+    "name": "wrong total",
+    "status": "PASS"
+  },
+  {
+    "area": "Manifest",
+    "name": "wrong count",
+    "status": "PASS"
+  },
+  {
+    "area": "Manifest",
+    "name": "fractional cents",
+    "status": "PASS"
+  },
+  {
+    "area": "Manifest",
+    "name": "out of int32 range",
+    "status": "PASS"
+  },
+  {
+    "area": "Manifest",
+    "name": "duplicate destination",
+    "status": "PASS"
+  },
+  {
+    "area": "Manifest",
+    "name": "unknown bypass flag",
+    "status": "PASS"
+  },
+  {
+    "area": "Import",
+    "name": "legacy financial import requires independent approval",
+    "status": "PASS"
+  },
+  {
+    "area": "Import",
+    "name": "owner approves and imports above limit without Caja or sales",
+    "status": "PASS"
+  },
+  {
+    "area": "Import",
+    "name": "lost response and replay return receipt without duplicates",
+    "status": "PASS"
+  },
+  {
+    "area": "Import",
+    "name": "same content different batch returns original authorization",
+    "status": "PASS"
+  },
+  {
+    "area": "Import",
+    "name": "same batch modified content conflicts",
+    "status": "PASS"
+  },
+  {
+    "area": "Import",
+    "name": "same historical identity different amount conflicts",
+    "status": "PASS"
+  },
+  {
+    "area": "Import",
+    "name": "changing source cannot duplicate target balance",
+    "status": "PASS"
+  },
+  {
+    "area": "Import",
+    "name": "existing ledger never becomes silent success",
+    "status": "PASS"
+  },
+  {
+    "area": "Import",
+    "name": "partial batch reports exact imported and conflicted rows",
+    "status": "PASS"
+  },
+  {
+    "area": "Import",
+    "name": "expired approval requires a new explicit approval",
+    "status": "PASS"
+  },
+  {
+    "area": "Import",
+    "name": "changed actor session invalidates pending approval",
+    "status": "PASS"
+  },
+  {
+    "area": "Import",
+    "name": "two devices same target produce only one initial balance",
+    "status": "PASS"
+  },
+  {
+    "area": "Import",
+    "name": "exception rolls back ledger, projection, receipts and consumption",
+    "status": "PASS"
+  },
+  {
+    "area": "Upsert",
+    "name": "older client with positive or malformed balances fails before overwrite",
+    "status": "PASS"
+  },
+  {
+    "area": "Upsert",
+    "name": "ordinary directory create starts with zero debt",
+    "status": "PASS"
+  },
+  {
+    "area": "Upsert",
+    "name": "directory edit and lower limit preserve debt",
+    "status": "PASS"
+  },
+  {
+    "area": "Upsert",
+    "name": "Staff cannot change credit authority",
+    "status": "PASS"
+  },
+  {
+    "area": "Credit",
+    "name": "A inside limit",
+    "status": "PASS"
+  },
+  {
+    "area": "Credit",
+    "name": "B exact equality",
+    "status": "PASS"
+  },
+  {
+    "area": "Credit",
+    "name": "C one cent over",
+    "status": "PASS"
+  },
+  {
+    "area": "Credit",
+    "name": "D already above",
+    "status": "PASS"
+  },
+  {
+    "area": "Credit",
+    "name": "F zero limit",
+    "status": "PASS"
+  },
+  {
+    "area": "Credit",
+    "name": "one cent below",
+    "status": "PASS"
+  },
+  {
+    "area": "Credit",
+    "name": "H completed replay survives lower limit",
+    "status": "PASS"
+  },
+  {
+    "area": "Credit",
+    "name": "I changed request with same key conflicts in real authorizer",
+    "status": "PASS"
+  },
+  {
+    "area": "Credit",
+    "name": "J partial payment creates only net exposure",
+    "status": "PASS"
+  },
+  {
+    "area": "Credit",
+    "name": "K cash received and change are not extra applied payments",
+    "status": "PASS"
+  },
+  {
+    "area": "Concurrency",
+    "name": "G two real sessions admit one 150 credit and end at 950",
+    "status": "PASS"
+  },
+  {
+    "area": "Credit",
+    "name": "legacy public wrapper reaches the same SQL guard",
+    "status": "PASS"
+  },
+  {
+    "area": "Credit",
+    "name": "N other tenant customer is inaccessible",
+    "status": "PASS"
+  },
+  {
+    "area": "Credit",
+    "name": "S closed Caja rejects with zero partial effects",
+    "status": "PASS"
+  },
+  {
+    "area": "Credit",
+    "name": "E payment remains allowed above the credit limit",
+    "status": "PASS"
+  },
+  {
+    "area": "Concurrency",
+    "name": "payment and sale from two real sessions serialize without losing either",
+    "status": "PASS"
+  },
+  {
+    "area": "Concurrency",
+    "name": "limit update and sale observe an allowed serial ordering",
+    "status": "PASS"
+  },
+  {
+    "area": "Concurrency",
+    "name": "import and new credit never sum historical debt onto an existing ledger",
+    "status": "PASS"
+  },
+  {
+    "area": "Atomicity",
+    "name": "two real credit children sharing a customer roll back together",
+    "status": "PASS"
+  },
+  {
+    "area": "Concurrency",
+    "name": "inverse ambient Caja and customer locks abort one transaction without partial effects",
+    "status": "PASS"
+  },
+  {
+    "area": "Inventory",
+    "name": "admitted credit writes real stock and ledger atomically",
+    "status": "PASS"
+  },
+  {
+    "area": "Atomicity",
+    "name": "Q fault after inventory work rolls back sales, stock, ledger and Caja",
+    "status": "PASS"
+  },
+  {
+    "area": "Credit",
+    "name": "P authorized cancellation restores prior debt even after reducing the limit",
+    "status": "PASS"
+  },
+  {
+    "area": "Credit",
+    "name": "non-finite stored limit cannot bypass enforcement",
+    "status": "PASS"
+  },
+  {
+    "area": "Upsert",
+    "name": "non-finite credit limit is rejected",
+    "status": "PASS"
+  },
+  {
+    "area": "Authority",
+    "name": "internal financial import remains inaccessible to anon",
+    "status": "PASS"
+  },
+  {
+    "area": "Import",
+    "name": "explicit owner review can retry after a missing directory customer is synchronized",
+    "status": "PASS"
+  },
+  {
+    "area": "Integrity",
+    "name": "ledger and debt projections remain equal",
+    "status": "PASS"
+  }
+]

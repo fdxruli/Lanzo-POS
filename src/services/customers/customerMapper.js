@@ -103,7 +103,6 @@ export const cloudCustomerToLocal = (cloudCustomer = {}, existingCustomer = null
 export const localCustomerToCloudPayload = (customer = {}) => {
   const phone = cleanText(customer.phone);
   const phoneKey = toIndexedPhoneKey(customer.phoneKey ?? phone);
-  const debt = toNumber(customer.debt, 0);
 
   return {
     id: customer.id,
@@ -111,8 +110,6 @@ export const localCustomerToCloudPayload = (customer = {}) => {
     phone,
     phone_key: phoneKey,
     address: cleanText(customer.address),
-    debt,
-    debt_cents: normalizeCustomerDebtCents(customer.debtCents ?? debt),
     credit_limit: toNumber(customer.creditLimit, 0),
     created_at: customer.createdAt || nowIso(),
     updated_at: customer.updatedAt || nowIso(),

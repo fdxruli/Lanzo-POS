@@ -49,6 +49,33 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+const startFiadoCheckout = async ({ total = 100, creditLimit = 0, debt = 500 } = {}) => {
+  const user = userEvent.setup();
+  const customer = { id: 'cust-due-date', name: 'Cliente prueba', phone: '5551112222', creditLimit, debt };
+  const onConfirm = vi.fn().mockResolvedValue({ success: true });
+  let resolveCustomers;
+  const customerLoad = new Promise((resolve) => { resolveCustomers = resolve; });
+  mocks.loadData.mockReturnValue(customerLoad);
+  render(<PaymentModal show onClose={vi.fn()} onConfirm={onConfirm} total={total} />);
+
+  await act(async () => {
+    resolveCustomers([customer]);
+    await customerLoad;
+  });
+  await user.click(screen.getByRole('button', { name: 'Fiado' }));
+  await user.type(screen.getByLabelText('Asignar a Cliente (Obligatorio):'), 'Cliente');
+  await user.click(await screen.findByText('Cliente prueba (5551112222)'));
+
+  return {
+    user,
+    onConfirm,
+    amount: screen.getByLabelText('Abono (Opcional):'),
+    dueDate: screen.getByLabelText('Fecha de Vencimiento:'),
+    confirm: screen.getByRole('button', { name: 'Confirmar Pago' }),
+    form: screen.getByRole('button', { name: 'Confirmar Pago' }).closest('form')
+  };
+};
+
 describe('PaymentModal', () => {
   it('opens from a hydrated remote table total without starting a sale', async () => {
     const hydratedShadow = {
@@ -65,6 +92,21 @@ describe('PaymentModal', () => {
     expect(onConfirm).not.toHaveBeenCalled();
   });
 
+it('routes a fully paid Fiado as paid sale even with historical debt and zero limit', async () => {
+    mocks.loadData.mockImplementation(async (store) => store === 'customers'
+      ? [{ id:'synthetic-customer',name:'Sin credito',phone:'5551234567',creditLimit:0,debt:500 }]
+      : []);
+    const onConfirm=vi.fn().mockResolvedValue({success:true});
+    render(<PaymentModal show onClose={vi.fn()} onConfirm={onConfirm} total={100}/>);
+    fireEvent.click(await screen.findByRole('button',{name:'Fiado'}));
+    fireEvent.change(screen.getByLabelText('Asignar a Cliente (Obligatorio):'),{target:{value:'Sin'}});
+    fireEvent.click(await screen.findByText('Sin credito (5551234567)'));
+    fireEvent.change(screen.getByLabelText('Abono (Opcional):'),{target:{value:'100'}});
+    const confirm=screen.getByRole('button',{name:'Confirmar Pago'});
+    await waitFor(()=>expect(confirm).toBeEnabled());fireEvent.click(confirm);
+    await waitFor(()=>expect(onConfirm).toHaveBeenCalledTimes(1));
+    expect(onConfirm.mock.calls[0][0]).toMatchObject({paymentMethod:'efectivo',amountPaid:'100',saldoPendiente:'0',dueDate:null});
+  });
   it('leaves processing state when checkout resolves with a failure result', async () => {
     let resolveCheckout;
     const checkoutPromise = new Promise((resolve) => {
@@ -227,5 +269,163 @@ describe('PaymentModal', () => {
     await user.type(screen.getByLabelText('Abono (Opcional):'), '101');
     expect(screen.getByText('El abono inicial no puede ser mayor al total.')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Confirmar Pago' })).toBeDisabled();
+  });
+
+  it('C01/C10 confirma un Fiado totalmente pagado sin fecha mediante el envío normal del formulario', async () => {
+    const { user, onConfirm, amount, dueDate, confirm, form } = await startFiadoCheckout();
+    await user.type(amount, '100');
+    fireEvent.change(dueDate, { target: { value: '' } });
+
+    expect(dueDate).not.toBeRequired();
+    expect(dueDate).not.toHaveAttribute('min');
+    expect(confirm).toBeEnabled();
+    expect(form.checkValidity()).toBe(true);
+    await user.click(confirm);
+
+    await waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(1));
+    expect(onConfirm.mock.calls[0][0]).toMatchObject({
+      paymentMethod: 'efectivo', amountPaid: '100', receivedAmount: '100',
+      initialPaymentMethod: null, saldoPendiente: '0', dueDate: null
+    });
+  });
+
+  it('C02 ignora una fecha antigua cuando el Fiado queda completamente pagado', async () => {
+    const { user, onConfirm, amount, dueDate, confirm, form } = await startFiadoCheckout();
+    await user.type(amount, '100');
+    fireEvent.change(dueDate, { target: { value: '2000-01-01' } });
+
+    expect(dueDate).not.toHaveAttribute('min');
+    expect(form.checkValidity()).toBe(true);
+    expect(confirm).toBeEnabled();
+    await user.click(confirm);
+
+    await waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(1));
+    expect(onConfirm.mock.calls[0][0]).toMatchObject({ saldoPendiente: '0', dueDate: null });
+  });
+
+  it('C03 mantiene inválido un Fiado parcial sin fecha y conserva el abono', async () => {
+    const { user, onConfirm, amount, dueDate, confirm, form } = await startFiadoCheckout({ creditLimit: 100, debt: 10 });
+    await user.type(amount, '40');
+    fireEvent.change(dueDate, { target: { value: '' } });
+
+    expect(amount).toHaveValue('40');
+    expect(dueDate).toBeRequired();
+    expect(confirm).toBeDisabled();
+    expect(form.checkValidity()).toBe(false);
+    expect(screen.getByText('$60.00')).toBeInTheDocument();
+    await user.click(confirm);
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it('C04 rechaza una fecha anterior cuando el Fiado conserva saldo pendiente', async () => {
+    const { user, onConfirm, amount, dueDate, confirm, form } = await startFiadoCheckout({ creditLimit: 100, debt: 10 });
+    await user.type(amount, '40');
+    fireEvent.change(dueDate, { target: { value: '2000-01-01' } });
+
+    expect(dueDate).toBeRequired();
+    expect(dueDate).toHaveAttribute('min', new Date().toISOString().split('T')[0]);
+    expect(form.checkValidity()).toBe(false);
+    expect(confirm).toBeDisabled();
+    await user.click(confirm);
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it('C05 confirma Fiado parcial con fecha válida y conserva saldo y vencimiento', async () => {
+    const { user, onConfirm, amount, dueDate, confirm, form } = await startFiadoCheckout({ creditLimit: 100, debt: 10 });
+    await user.type(amount, '40');
+
+    expect(dueDate).toBeRequired();
+    expect(form.checkValidity()).toBe(true);
+    expect(confirm).toBeEnabled();
+    const expectedDueDate = new Date(dueDate.value).toISOString();
+    await user.click(confirm);
+
+    await waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(1));
+    expect(onConfirm.mock.calls[0][0]).toMatchObject({
+      paymentMethod: 'fiado', amountPaid: '40', initialPaymentMethod: 'efectivo',
+      receivedAmount: '40', saldoPendiente: '60', dueDate: expectedDueDate
+    });
+  });
+
+  it('C06 hace opcional la fecha al pasar de Fiado parcial a totalmente pagado', async () => {
+    const { user, onConfirm, amount, dueDate, confirm, form } = await startFiadoCheckout();
+    await user.type(amount, '40');
+    fireEvent.change(dueDate, { target: { value: '' } });
+    expect(dueDate).toBeRequired();
+    expect(form.checkValidity()).toBe(false);
+
+    await user.clear(amount);
+    await user.type(amount, '100');
+    expect(dueDate).not.toBeRequired();
+    expect(form.checkValidity()).toBe(true);
+    expect(confirm).toBeEnabled();
+    await user.click(confirm);
+
+    await waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(1));
+    expect(onConfirm.mock.calls[0][0]).toMatchObject({ saldoPendiente: '0', dueDate: null });
+  });
+
+  it('C07 vuelve a exigir una fecha al pasar de pago completo a Fiado parcial', async () => {
+    const { user, onConfirm, amount, dueDate, confirm, form } = await startFiadoCheckout();
+    await user.type(amount, '100');
+    fireEvent.change(dueDate, { target: { value: '' } });
+    expect(dueDate).not.toBeRequired();
+    expect(form.checkValidity()).toBe(true);
+
+    await user.clear(amount);
+    await user.type(amount, '40');
+    expect(dueDate).toBeRequired();
+    expect(dueDate).toHaveAttribute('min', new Date().toISOString().split('T')[0]);
+    expect(form.checkValidity()).toBe(false);
+    expect(confirm).toBeDisabled();
+    await user.click(confirm);
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['efectivo', 'efectivo', '100'],
+    ['tarjeta', 'tarjeta', null],
+    ['transferencia', 'transferencia', null]
+  ])('C08 conserva el medio real %s cuando Fiado queda totalmente pagado', async (selectedMethod, expectedMethod, expectedReceived) => {
+    const { user, onConfirm, amount, dueDate, confirm, form } = await startFiadoCheckout();
+    await user.type(amount, '100');
+    await user.selectOptions(screen.getByLabelText('Método del abono inicial:'), selectedMethod);
+    fireEvent.change(dueDate, { target: { value: '' } });
+
+    expect(form.checkValidity()).toBe(true);
+    await user.click(confirm);
+    await waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(1));
+    expect(onConfirm.mock.calls[0][0]).toMatchObject({
+      paymentMethod: expectedMethod, amountPaid: '100', receivedAmount: expectedReceived,
+      changeAmount: '0', initialPaymentMethod: null, saldoPendiente: '0', dueDate: null
+    });
+  });
+
+  it('C09 conserva el input estricto ante un importe con más de dos decimales', async () => {
+    mocks.loadData.mockResolvedValue([]);
+    render(<PaymentModal show onClose={vi.fn()} onConfirm={vi.fn()} total={57} />);
+    const amount = await screen.findByLabelText('Monto Recibido:');
+
+    fireEvent.change(amount, { target: { value: '57.999' } });
+    expect(amount).toHaveValue('57.00');
+    expect(screen.getByRole('button', { name: 'Confirmar Pago' })).toBeEnabled();
+  });
+
+  it('C09 bloquea una segunda confirmación mientras la primera está pendiente', async () => {
+    const user = userEvent.setup();
+    let resolveCheckout;
+    const pendingCheckout = new Promise((resolve) => { resolveCheckout = resolve; });
+    const onConfirm = vi.fn(() => pendingCheckout);
+    mocks.loadData.mockResolvedValue([]);
+    render(<PaymentModal show onClose={vi.fn()} onConfirm={onConfirm} total={57} />);
+    const confirm = await screen.findByRole('button', { name: 'Confirmar Pago' });
+
+    await user.dblClick(confirm);
+    expect(onConfirm).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'Procesando...' })).toBeDisabled();
+    await act(async () => {
+      resolveCheckout({ success: true });
+      await pendingCheckout;
+    });
   });
 });

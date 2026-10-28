@@ -1,0 +1,19 @@
+{
+  "method": "Full src scan, replacing every changed source file with final focal scan; baseline full src scan at 9ca65fc. Multiset path/rule/severity/message, excluding line shifts.",
+  "baseline": {
+    "files": 1432,
+    "errors": 159,
+    "warnings": 177
+  },
+  "candidate": {
+    "files": 1439,
+    "errors": 159,
+    "warnings": 177
+  },
+  "focal": {
+    "files": 22,
+    "errors": 0,
+    "warnings": 3
+  },
+  "candidateOnly": []
+}
