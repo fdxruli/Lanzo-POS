@@ -289,6 +289,33 @@ describe('customerRepository IndexedDB integration', () => {
     });
   });
 
+  it('retains the original credit limit and historical debt when Cloud rejects an edit', async () => {
+    setCloudMode();
+    const existing = {
+      id: 'rejected-limit-edit', name: 'Antes', phone: '5553334444', phoneKey: '5553334444',
+      debt: 80, debtCents: 8000, creditLimit: 100, serverVersion: 5,
+      syncStatus: 'synced', createdAt: '2026-10-01T00:00:00.000Z'
+    };
+    await db.table(STORES.CUSTOMERS).put(existing);
+    mocks.cloud.upsertCustomer.mockResolvedValue({
+      success: false,
+      code: 'CREDIT_LIMIT_REJECTED',
+      message: 'El cambio no fue aceptado.'
+    });
+
+    const result = await customerRepository.saveCustomer({
+      name: 'Después', phone: existing.phone, address: '', creditLimit: 50
+    }, { existingCustomer: existing });
+
+    expect(result).toMatchObject({ success: false, code: 'CREDIT_LIMIT_REJECTED' });
+    expect(mocks.cloud.upsertCustomer.mock.calls[0][0].customer).toMatchObject({ credit_limit: 50 });
+    expect(mocks.cloud.upsertCustomer.mock.calls[0][0].customer).not.toHaveProperty('debt');
+    expect(mocks.cloud.upsertCustomer.mock.calls[0][0].customer).not.toHaveProperty('debt_cents');
+    expect(await customerLocalRepository.getCustomerById(existing.id)).toMatchObject({
+      id: existing.id, creditLimit: 100, debt: 80, debtCents: 8000, serverVersion: 5, syncStatus: 'synced'
+    });
+  });
+
   it('SV-06/SV-07 queues a PRO offline customer without version zero and reapplies recovery idempotently', async () => {
     setCloudMode();
     Object.defineProperty(navigator, 'onLine', { value: false, configurable: true });
