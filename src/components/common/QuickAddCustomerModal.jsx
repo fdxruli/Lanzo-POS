@@ -131,7 +131,11 @@ export default function QuickAddCustomerModal({ show, onClose, onCustomerSaved, 
         const existingCustomer = pendingCustomerRef.current
           ? await customerRepository.getCustomerById(pendingCustomerRef.current.id) || pendingCustomerRef.current
           : null;
-        result = await customerRepository.saveCustomer(newCustomer, { existingCustomer });
+        result = await customerRepository.saveCustomer(newCustomer, {
+          existingCustomer,
+          creditLimitContext: 'quick_add',
+          minimumCreditLimit
+        });
       } else {
         result = await saveDataSafe(STORES.CUSTOMERS, newCustomer);
       }

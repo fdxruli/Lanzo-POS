@@ -16,6 +16,11 @@ import { customerMigrationService } from './customerMigrationService';
 import { normalizeCustomerServerVersion } from '../db/customerServerVersion';
 import { isLocalTenantAccessError } from '../tenant/localTenantGuard';
 import { hasCurrentActorPermission } from '../sync/actorPermission';
+import {
+  validateCustomerCreditLimitMoney,
+  validateDirectoryCreditLimit,
+  validateQuickAddCreditLimit
+} from './customerCreditLimit';
 
 const CUSTOMER_LAST_CHANGE_SEQ_KEY = 'customers_last_change_seq';
 const CONFLICT_CODES = new Set(['VERSION_CONFLICT', 'CUSTOMER_DELETED', 'DUPLICATE_PHONE']);
@@ -162,6 +167,25 @@ export const customerSyncHandler = {
         idempotencyKey
       });
     } else {
+      const queuedCustomer = operation?.payload?.customer || {};
+      const creditLimitContext = operation?.metadata?.creditLimitContext;
+      const limitValidation = creditLimitContext === 'directory'
+        ? validateDirectoryCreditLimit(queuedCustomer.credit_limit ?? queuedCustomer.creditLimit)
+        : creditLimitContext === 'quick_add'
+          ? validateQuickAddCreditLimit(queuedCustomer.credit_limit ?? queuedCustomer.creditLimit, 0)
+          : validateCustomerCreditLimitMoney(queuedCustomer.credit_limit ?? queuedCustomer.creditLimit);
+
+      if (!limitValidation.valid) {
+        const invalidLimit = {
+          success: false,
+          code: 'INVALID_CUSTOMER_CREDIT_LIMIT',
+          message: limitValidation.error
+        };
+        await savePushConflict({ operation, response: invalidLimit });
+        notifyCustomersChanged();
+        return { conflict: invalidLimit };
+      }
+
       response = await customerCloudRepository.upsertCustomer({
         licenseKey,
         customer: operation?.payload?.customer,

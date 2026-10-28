@@ -78,7 +78,7 @@ describe('CustomerForm required phone', () => {
 
     expect(await screen.findByRole('alert')).toHaveTextContent('El teléfono es obligatorio.');
     expect(onSave).not.toHaveBeenCalled();
-    expect(screen.getByLabelText('Limite de Credito ($)')).toHaveValue(100);
+    expect(screen.getByLabelText('Limite de Credito ($)')).toHaveValue('100');
   });
 
   it('keeps captured data after a persistence error and blocks duplicate submissions', async () => {
@@ -101,5 +101,64 @@ describe('CustomerForm required phone', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('El teléfono ya está registrado');
     expect(phone).toHaveFocus();
     expect(onSave).toHaveBeenCalledTimes(1);
+  });
+
+  it('accepts zero and multiples of $50 without changing the entered amount', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn().mockResolvedValue({ success: true });
+    render(<CustomerForm onSave={onSave} onCancel={vi.fn()} />);
+    await fillName(user);
+    await user.type(screen.getByLabelText('Teléfono *'), '5551234567');
+    const limit = screen.getByLabelText('Limite de Credito ($)');
+
+    for (const [draft, expected] of [['', 0], ['50', 50], ['100', 100]]) {
+      await user.clear(limit);
+      if (draft) await user.type(limit, draft);
+      await user.click(screen.getByRole('button', { name: 'Guardar Cliente' }));
+      await waitFor(() => expect(onSave).toHaveBeenLastCalledWith(expect.objectContaining({ creditLimit: expected })));
+    }
+
+    expect(onSave).toHaveBeenCalledTimes(3);
+  });
+
+  it('rejects invalid or off-step amounts inline and preserves the captured text', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn();
+    render(<CustomerForm onSave={onSave} onCancel={vi.fn()} />);
+    await fillName(user);
+    await user.type(screen.getByLabelText('Teléfono *'), '5551234567');
+    const limit = screen.getByLabelText('Limite de Credito ($)');
+
+    for (const value of ['-50', 'abc', '50abc', '50.25', '50.001', 'Infinity']) {
+      await user.clear(limit);
+      await user.type(limit, value);
+      await user.click(screen.getByRole('button', { name: 'Guardar Cliente' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent(/límite|importe/i);
+      expect(limit).toHaveValue(value);
+      expect(limit).toHaveAttribute('aria-invalid', 'true');
+      expect(onSave).not.toHaveBeenCalled();
+    }
+  });
+
+  it('shows repository credit errors without clearing the value and allows retry', async () => {
+    const user = userEvent.setup();
+    const onSave = vi.fn()
+      .mockResolvedValueOnce({ success: false, fieldErrors: { creditLimit: 'El límite debe ser múltiplo de $50.' } })
+      .mockResolvedValueOnce({ success: true });
+    render(<CustomerForm onSave={onSave} onCancel={vi.fn()} />);
+    await fillName(user);
+    await user.type(screen.getByLabelText('Teléfono *'), '5551234567');
+    const limit = screen.getByLabelText('Limite de Credito ($)');
+    await user.clear(limit);
+    await user.type(limit, '50');
+
+    await user.click(screen.getByRole('button', { name: 'Guardar Cliente' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('múltiplo de $50');
+    expect(limit).toHaveValue('50');
+    expect(screen.getByRole('button', { name: 'Guardar Cliente' })).toBeEnabled();
+
+    await user.click(screen.getByRole('button', { name: 'Guardar Cliente' }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(2));
+    expect(onSave).toHaveBeenLastCalledWith(expect.objectContaining({ creditLimit: 50 }));
   });
 });

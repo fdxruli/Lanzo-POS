@@ -26,10 +26,11 @@ import CustomerForm from '../../../components/customers/CustomerForm';
 import { useAppStore } from '../../../store/useAppStore';
 import { db, STORES } from '../../db/dexie';
 import { openTenantRuntime } from '../../db/tenantRuntimeRouter';
-import { POS_SYNC_STORES } from '../../sync/syncConstants';
+import { POS_SYNC_STORES, SYNC_OPERATIONS } from '../../sync/syncConstants';
 import { syncOutboxService } from '../../sync/syncOutboxService';
 import { openTestTenantRuntime, closeTestTenantRuntime } from '../../../test/tenantRuntimeTestHarness';
 import { customerLocalRepository } from '../customerLocalRepository';
+import { localCustomerToLegacyMigrationPayload } from '../customerMapper';
 import { customerMigrationService } from '../customerMigrationService';
 import { customerRepository } from '../customerRepository';
 import { customerSyncHandler } from '../customerSyncHandler';
@@ -144,6 +145,28 @@ describe('customerRepository IndexedDB integration', () => {
     expect(mocks.cloud.upsertCustomer).not.toHaveBeenCalled();
   });
 
+  it('keeps QuickAdd cent amounts and its pending-balance minimum without applying the Clientes $50 step', async () => {
+    setCloudMode();
+    mocks.cloud.upsertCustomer.mockResolvedValue({
+      success: true,
+      customer: remoteCustomer('quick-cents', { credit_limit: 80.25 })
+    });
+    const result = await customerRepository.saveCustomer({
+      id: 'quick-cents', name: 'Fiado con centavos', phone: '5551110000', creditLimit: 80.25
+    }, { creditLimitContext: 'quick_add', minimumCreditLimit: 80 });
+
+    expect(result.success).toBe(true);
+    expect(mocks.cloud.upsertCustomer.mock.calls[0][0].customer.credit_limit).toBe(80.25);
+    expect(mocks.cloud.upsertCustomer.mock.calls[0][0].customer).not.toHaveProperty('debt');
+    expect(await customerLocalRepository.getCustomerById('quick-cents')).toMatchObject({ creditLimit: 80.25, debt: 0 });
+
+    const rejected = await customerRepository.saveCustomer({
+      name: 'Fiado bajo mínimo', phone: '5551110001', creditLimit: 79.99
+    }, { creditLimitContext: 'quick_add', minimumCreditLimit: 80 });
+    expect(rejected).toMatchObject({ success: false, code: 'INVALID_CUSTOMER_CREDIT_LIMIT' });
+    expect(mocks.cloud.upsertCustomer).toHaveBeenCalledTimes(1);
+  });
+
   it('SV-05 creates a PRO customer online with the positive server version returned by Cloud', async () => {
     setCloudMode();
     mocks.cloud.upsertCustomer.mockResolvedValue({
@@ -156,11 +179,15 @@ describe('customerRepository IndexedDB integration', () => {
     });
 
     const result = await customerRepository.saveCustomer({
-      id: 'pro-new', name: 'Cliente PRO', phone: '5559090909', creditLimit: 0
+      id: 'pro-new', name: 'Cliente PRO', phone: '5559090909', creditLimit: 0,
+      debt: 99, debtCents: 9900
     });
 
     expect(mocks.cloud.upsertCustomer).toHaveBeenCalledWith(expect.objectContaining({ expectedVersion: null }));
+    expect(mocks.cloud.upsertCustomer.mock.calls[0][0].customer).not.toHaveProperty('debt');
+    expect(mocks.cloud.upsertCustomer.mock.calls[0][0].customer).not.toHaveProperty('debt_cents');
     expect(result.data).toMatchObject({ id: 'pro-new', serverVersion: 1, syncStatus: 'synced' });
+    expect(result.data).toMatchObject({ debt: 0, debtCents: 0 });
     expect(await db.table(STORES.CUSTOMERS).count()).toBe(1);
   });
 
@@ -225,6 +252,8 @@ describe('customerRepository IndexedDB integration', () => {
     }, { existingCustomer: existing });
 
     expect(mocks.cloud.upsertCustomer).toHaveBeenCalledWith(expect.objectContaining({ expectedVersion: 5 }));
+    expect(mocks.cloud.upsertCustomer.mock.calls[0][0].customer).not.toHaveProperty('debt');
+    expect(mocks.cloud.upsertCustomer.mock.calls[0][0].customer).not.toHaveProperty('debt_cents');
     expect(result.data).toMatchObject({
       id: 'cloud-edit', serverVersion: 6, syncStatus: 'synced',
       debt: 25, debtCents: 2500, creditLimit: 200
@@ -275,6 +304,9 @@ describe('customerRepository IndexedDB integration', () => {
       payload: { expectedVersion: null, customer: { id: created.data.id } }
     });
     expect(queued[0].payload.customer.server_version).toBeUndefined();
+    expect(queued[0].metadata.creditLimitContext).toBe('directory');
+    expect(queued[0].payload.customer).not.toHaveProperty('debt');
+    expect(queued[0].payload.customer).not.toHaveProperty('debt_cents');
     expect(await db.table(STORES.CUSTOMERS).count()).toBe(1);
 
     Object.defineProperty(navigator, 'onLine', { value: true, configurable: true });
@@ -303,7 +335,7 @@ describe('customerRepository IndexedDB integration', () => {
     Object.defineProperty(navigator, 'onLine', { value: false, configurable: true });
     const existing = {
       id: 'offline-edit', name: 'Antes', phone: '5551011121', phoneKey: '5551011121',
-      address: '', debt: 19, debtCents: 1900, creditLimit: 80,
+      address: '', debt: 19, debtCents: 1900, creditLimit: 100,
       serverVersion: 4, syncStatus: 'synced'
     };
     await db.table(STORES.CUSTOMERS).put(existing);
@@ -316,10 +348,13 @@ describe('customerRepository IndexedDB integration', () => {
     expect(result).toMatchObject({ success: true, pending: true, data: { serverVersion: 4, syncStatus: 'pending' } });
     expect(queued).toHaveLength(1);
     expect(queued[0].payload.expectedVersion).toBe(4);
+    expect(queued[0].metadata.creditLimitContext).toBe('directory');
     expect(await customerLocalRepository.getCustomerById(existing.id)).toMatchObject({
       id: existing.id, name: 'Después', serverVersion: 4,
-      debt: 19, debtCents: 1900, creditLimit: 80
+      debt: 19, debtCents: 1900, creditLimit: 100
     });
+    expect(queued[0].payload.customer).not.toHaveProperty('debt');
+    expect(queued[0].payload.customer).not.toHaveProperty('debt_cents');
     expect(mocks.cloud.upsertCustomer).not.toHaveBeenCalled();
   });
 
@@ -356,7 +391,7 @@ describe('customerRepository IndexedDB integration', () => {
   it('SV-09 reads historical records without sync metadata and cleans version zero only on a controlled save', async () => {
     const historic = {
       id: 'historic-zero', name: 'Histórico', phone: '5554445555', phoneKey: '5554445555',
-      address: '', debt: 17, debtCents: 1700, creditLimit: 90, serverVersion: 0
+      address: '', debt: 17, debtCents: 1700, creditLimit: 100, serverVersion: 0
     };
     await db.table(STORES.CUSTOMERS).put(historic);
     expect((await customerLocalRepository.getCustomerById(historic.id)).serverVersion).toBe(0);
@@ -368,7 +403,7 @@ describe('customerRepository IndexedDB integration', () => {
 
     expect(result.success).toBe(true);
     expect(await customerLocalRepository.getCustomerById(historic.id)).toMatchObject({
-      id: historic.id, serverVersion: null, debt: 17, debtCents: 1700, creditLimit: 90
+      id: historic.id, serverVersion: null, debt: 17, debtCents: 1700, creditLimit: 100
     });
   });
 
@@ -388,7 +423,7 @@ describe('customerRepository IndexedDB integration', () => {
     });
   });
 
-  it('imports a legacy customer with no phone or version and applies only the Cloud version returned', async () => {
+  it('uses the legacy migration serializer once and applies only the Cloud version returned', async () => {
     await db.table(STORES.CUSTOMERS).put({
       id: 'legacy-import', name: 'Cliente importado', phone: '', address: '',
       debt: 22, creditLimit: 90,
@@ -412,9 +447,67 @@ describe('customerRepository IndexedDB integration', () => {
     const sentCustomer = mocks.cloud.migrateLocalCustomers.mock.calls[0][0].customers[0];
     expect(sentCustomer).toMatchObject({ id: 'legacy-import', phone: '', debt: 22, debt_cents: 2200, credit_limit: 90 });
     expect(sentCustomer.server_version).toBeUndefined();
+    expect(sentCustomer.metadata).toEqual({ source: 'lanzo_pos_frontend', phase: 'fase1_customers_directory' });
     expect(await customerLocalRepository.getCustomerById('legacy-import')).toMatchObject({
       id: 'legacy-import', phone: '', serverVersion: 1, debt: 22, debtCents: 2200, creditLimit: 90
     });
+
+    const retried = await customerMigrationService.runInitialMigrationIfNeeded({ licenseKey: TEST_LICENSE_KEY });
+    expect(retried).toMatchObject({ skipped: true, reason: 'already_migrated' });
+    expect(mocks.cloud.migrateLocalCustomers).toHaveBeenCalledTimes(1);
+  });
+
+  it('blocks inconsistent historical debt before the migration RPC and preserves the local value', async () => {
+    const inconsistent = {
+      id: 'inconsistent-legacy', name: 'Saldo inconsistente', phone: '5551002000',
+      debt: 22, debtCents: 2201, creditLimit: 100
+    };
+    const readLegacyRows = vi.spyOn(customerLocalRepository, 'getAllActiveCustomers').mockResolvedValue([inconsistent]);
+    try {
+      expect(() => localCustomerToLegacyMigrationPayload(inconsistent)).toThrow('INCONSISTENT_LEGACY_CUSTOMER_DEBT');
+      await expect(customerMigrationService.runInitialMigrationIfNeeded({ licenseKey: TEST_LICENSE_KEY }))
+        .rejects.toThrow('INCONSISTENT_LEGACY_CUSTOMER_DEBT');
+      expect(mocks.cloud.migrateLocalCustomers).not.toHaveBeenCalled();
+      expect(inconsistent).toMatchObject({ debt: 22, debtCents: 2201 });
+    } finally {
+      readLegacyRows.mockRestore();
+    }
+  });
+
+  it('rejects invalid directory limits at the repository boundary before Cloud, local storage, or outbox writes', async () => {
+    setCloudMode();
+    for (const creditLimit of [-50, null, 'texto', '50texto', '50.001', '50.25', Infinity, NaN, '999999999999999999999999']) {
+      const result = await customerRepository.saveCustomer({
+        id: `invalid-${String(creditLimit)}`, name: 'Límite inválido', phone: '5557770000', creditLimit
+      });
+      expect(result).toMatchObject({ success: false, code: 'INVALID_CUSTOMER_CREDIT_LIMIT' });
+    }
+
+    expect(mocks.cloud.upsertCustomer).not.toHaveBeenCalled();
+    expect(await db.table(STORES.CUSTOMERS).count()).toBe(0);
+    expect(await db.table(POS_SYNC_STORES.OUTBOX).count()).toBe(0);
+  });
+
+  it('blocks a stale invalid outbox limit before the synchronization RPC', async () => {
+    setCloudMode();
+    const result = await customerSyncHandler.pushOperation({
+      id: 'invalid-limit-operation',
+      idempotencyKey: 'invalid-limit-operation',
+      licenseKey: TEST_LICENSE_KEY,
+      operation: SYNC_OPERATIONS.UPSERT,
+      entityId: 'invalid-outbox-limit',
+      metadata: { creditLimitContext: 'directory' },
+      payload: {
+        expectedVersion: null,
+        customer: {
+          id: 'invalid-outbox-limit', name: 'Límite antiguo', phone: '5551112222',
+          phone_key: '5551112222', credit_limit: -50
+        }
+      }
+    });
+
+    expect(result).toMatchObject({ conflict: { code: 'INVALID_CUSTOMER_CREDIT_LIMIT' } });
+    expect(mocks.cloud.upsertCustomer).not.toHaveBeenCalled();
   });
 
   it('SV-10 rejects invalid remote server versions before applying Cloud data', async () => {

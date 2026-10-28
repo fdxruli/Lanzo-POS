@@ -57,13 +57,19 @@ export const customerLocalRepository = {
 
   async saveCustomerLocal(customerData, { existingCustomer = null, syncStatus = CUSTOMER_SYNC_STATUS.LOCAL, pendingOperationId = null } = {}) {
     const now = nowIso();
+    const debt = customerData.debt ?? existingCustomer?.debt ?? 0;
+    const debtCents = customerData.debtCents
+      ?? customerData.debt_cents
+      ?? existingCustomer?.debtCents
+      ?? existingCustomer?.debt_cents
+      ?? normalizeCustomerDebtCents(debt);
     const payload = normalizeCustomerForLocal(
       {
         ...customerData,
         createdAt: existingCustomer?.createdAt || customerData.createdAt || now,
         updatedAt: now,
-        debt: customerData.debt ?? existingCustomer?.debt ?? 0,
-        debtCents: normalizeCustomerDebtCents(customerData.debt ?? existingCustomer?.debt ?? 0),
+        debt,
+        debtCents,
         phoneKey: toIndexedPhoneKey(customerData.phone),
         syncStatus,
         pendingOperationId

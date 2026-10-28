@@ -1,6 +1,8 @@
 import { toIndexedPhoneKey } from '../db/customerPhoneUtils';
 import { normalizeCustomerDebtCents } from '../db/customerDebtIndex';
 import { parseCustomerServerVersion } from '../db/customerServerVersion';
+import { Money } from '../../utils/moneyMath';
+import { validateCustomerCreditLimitMoney } from './customerCreditLimit';
 
 export const CUSTOMER_SYNC_STATUS = Object.freeze({
   LOCAL: 'local',
@@ -11,6 +13,7 @@ export const CUSTOMER_SYNC_STATUS = Object.freeze({
 });
 
 const nowIso = () => new Date().toISOString();
+const LEGACY_CUSTOMER_DEBT_CENTS_MAX = 2147483647;
 
 const pick = (source, snakeKey, camelKey, fallback = null) => {
   if (!source) return fallback;
@@ -22,18 +25,6 @@ const pick = (source, snakeKey, camelKey, fallback = null) => {
 const toNumber = (value, fallback = 0) => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
-};
-
-const getLocalDebtCents = (customer = {}, debt = 0) => {
-  const storedCents = customer.debtCents ?? customer.debt_cents;
-  if (storedCents === undefined || storedCents === null || storedCents === '') {
-    return normalizeCustomerDebtCents(debt);
-  }
-
-  const parsedCents = Number(storedCents);
-  return Number.isSafeInteger(parsedCents) && parsedCents >= 0
-    ? parsedCents
-    : normalizeCustomerDebtCents(debt);
 };
 
 const cleanText = (value) => {
@@ -142,7 +133,16 @@ export const cloudCustomerToLocal = (cloudCustomer = {}, existingCustomer = null
 export const localCustomerToCloudPayload = (customer = {}) => {
   const phone = cleanText(customer.phone);
   const phoneKey = toIndexedPhoneKey(customer.phoneKey ?? phone);
-  const debt = toNumber(customer.debt, 0);
+  const hasCamelLimit = Object.prototype.hasOwnProperty.call(customer, 'creditLimit');
+  const creditLimit = hasCamelLimit
+    ? customer.creditLimit
+    : (customer.credit_limit ?? 0);
+  const validatedCreditLimit = validateCustomerCreditLimitMoney(creditLimit);
+  if (!validatedCreditLimit.valid) {
+    const error = new Error('INVALID_CUSTOMER_CREDIT_LIMIT');
+    error.code = 'INVALID_CUSTOMER_CREDIT_LIMIT';
+    throw error;
+  }
 
   return {
     id: customer.id,
@@ -150,9 +150,7 @@ export const localCustomerToCloudPayload = (customer = {}) => {
     phone,
     phone_key: phoneKey,
     address: cleanText(customer.address),
-    debt,
-    debt_cents: getLocalDebtCents(customer, debt),
-    credit_limit: toNumber(customer.creditLimit, 0),
+    credit_limit: validatedCreditLimit.value,
     created_at: customer.createdAt || nowIso(),
     updated_at: customer.updatedAt || nowIso(),
     metadata: {
@@ -160,6 +158,56 @@ export const localCustomerToCloudPayload = (customer = {}) => {
       phase: 'fase1_customers_directory'
     }
   };
+};
+
+export const localCustomerToLegacyMigrationPayload = (customer = {}) => {
+  const debtInput = customer.debt ?? customer.currentDebt ?? customer.current_debt;
+  const rawCents = customer.debtCents ?? customer.debt_cents;
+  let debtCents = null;
+
+  if (rawCents !== undefined && rawCents !== null && rawCents !== '') {
+    debtCents = typeof rawCents === 'string' && /^\d+$/.test(rawCents)
+      ? Number(rawCents)
+      : rawCents;
+    if (!Number.isSafeInteger(debtCents) || debtCents < 0 || debtCents > LEGACY_CUSTOMER_DEBT_CENTS_MAX) {
+      const error = new Error('INVALID_LEGACY_CUSTOMER_DEBT_CENTS');
+      error.code = 'INVALID_LEGACY_CUSTOMER_DEBT_CENTS';
+      throw error;
+    }
+  }
+
+  const debtValue = debtInput === undefined
+    ? (debtCents === null ? 0 : Money.fromCents(debtCents).toString())
+    : debtInput;
+  const debt = validateCustomerCreditLimitMoney(debtValue);
+
+  if (!debt.valid) {
+    const error = new Error('INVALID_LEGACY_CUSTOMER_DEBT');
+    error.code = 'INVALID_LEGACY_CUSTOMER_DEBT';
+    throw error;
+  }
+
+  if (debtCents === null) {
+    debtCents = debt.cents;
+  } else {
+    if (debt.cents !== debtCents) {
+      const error = new Error('INCONSISTENT_LEGACY_CUSTOMER_DEBT');
+      error.code = 'INCONSISTENT_LEGACY_CUSTOMER_DEBT';
+      throw error;
+    }
+  }
+
+  if (!Number.isSafeInteger(debtCents) || debtCents < 0 || debtCents > LEGACY_CUSTOMER_DEBT_CENTS_MAX) {
+    const error = new Error('INVALID_LEGACY_CUSTOMER_DEBT_CENTS');
+    error.code = 'INVALID_LEGACY_CUSTOMER_DEBT_CENTS';
+    throw error;
+  }
+
+  const payload = localCustomerToCloudPayload({
+    ...customer,
+    creditLimit: customer.creditLimit ?? 0
+  });
+  return { ...payload, debt: debt.value, debt_cents: debtCents };
 };
 
 export const buildPendingCustomer = (customer = {}, existingCustomer = null, { operationId = null, operation = 'upsert' } = {}) => normalizeCustomerForLocal(

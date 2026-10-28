@@ -3,6 +3,7 @@ import { customerSchema } from '../../../schemas/customerSchema';
 import {
   buildPendingCustomer,
   cloudCustomerToLocal,
+  localCustomerToLegacyMigrationPayload,
   localCustomerToCloudPayload,
   normalizeCustomerForLocal
 } from '../customerMapper';
@@ -41,9 +42,48 @@ describe('customer serverVersion mapping', () => {
     });
   });
 
-  it('preserves debtCents as cents in Cloud payloads and derives cents only when absent', () => {
-    expect(localCustomerToCloudPayload({ id: 'cents', debt: 22, debtCents: 2200 }).debt_cents).toBe(2200);
-    expect(localCustomerToCloudPayload({ id: 'amount', debt: 22 }).debt_cents).toBe(2200);
+  it('keeps the ordinary directory payload free of debt and financial metadata', () => {
+    const payload = localCustomerToCloudPayload({
+      id: 'directory', name: 'Cliente', debt: 22, debtCents: 2200,
+      creditLimit: 100, metadata: { debt: 22, debt_cents: 2200 }
+    });
+
+    expect(payload).toMatchObject({ id: 'directory', credit_limit: 100 });
+    expect(payload).not.toHaveProperty('debt');
+    expect(payload).not.toHaveProperty('debt_cents');
+    expect(payload.metadata).not.toHaveProperty('debt');
+    expect(payload.metadata).not.toHaveProperty('debt_cents');
+  });
+
+  it('keeps the $50 directory step in the form contract while allowing exact legacy credit limits', () => {
+    expect(() => localCustomerToCloudPayload({ creditLimit: 'texto' })).toThrow('INVALID_CUSTOMER_CREDIT_LIMIT');
+    expect(() => localCustomerToCloudPayload({ creditLimit: '50.001' })).toThrow('INVALID_CUSTOMER_CREDIT_LIMIT');
+    expect(localCustomerToCloudPayload({ creditLimit: 50.25 }).credit_limit).toBe(50.25);
+  });
+
+  it('serializes $22 exactly once for the isolated legacy migration contract', () => {
+    expect(localCustomerToLegacyMigrationPayload({ id: 'peso', debt: 22 })).toMatchObject({ debt: 22, debt_cents: 2200 });
+    expect(localCustomerToLegacyMigrationPayload({ id: 'cents', debt: 22, debtCents: 2200 }))
+      .toMatchObject({ debt: 22, debt_cents: 2200 });
+    expect(localCustomerToLegacyMigrationPayload({ id: 'cents-only', debtCents: 2200 }))
+      .toMatchObject({ debt: 22, debt_cents: 2200 });
+    expect(localCustomerToLegacyMigrationPayload({ id: 'zero' })).toMatchObject({ debt: 0, debt_cents: 0 });
+  });
+
+  it('blocks inconsistent or invalid historical balances instead of silently replacing them with zero', () => {
+    expect(() => localCustomerToLegacyMigrationPayload({ id: 'mismatch', debt: 22, debtCents: 22 }))
+      .toThrow('INCONSISTENT_LEGACY_CUSTOMER_DEBT');
+    expect(() => localCustomerToLegacyMigrationPayload({ id: 'bad-money', debt: '22oops' }))
+      .toThrow('INVALID_LEGACY_CUSTOMER_DEBT');
+    expect(() => localCustomerToLegacyMigrationPayload({ id: 'bad-cents', debt: 22, debtCents: -1 }))
+      .toThrow('INVALID_LEGACY_CUSTOMER_DEBT_CENTS');
+    expect(() => localCustomerToLegacyMigrationPayload({ id: 'out-of-range', debtCents: 2147483648 }))
+      .toThrow('INVALID_LEGACY_CUSTOMER_DEBT_CENTS');
+  });
+
+  it('keeps historical debt out of the normal directory metadata contract', () => {
+    const directory = localCustomerToCloudPayload({ id: 'metadata', debt: 125, debtCents: 12500 });
+    expect(directory.metadata).toEqual({ source: 'lanzo_pos_frontend', phase: 'fase1_customers_directory' });
   });
 
   it('preserves a positive Cloud version and rejects an invalid remote version', () => {
@@ -68,5 +108,13 @@ describe('customer serverVersion mapping', () => {
     expect(customerSchema.safeParse({ ...base, serverVersion: '4' }).data.serverVersion).toBe(4);
     expect(customerSchema.safeParse({ ...base, serverVersion: 0 }).data.serverVersion).toBeNull();
     expect(customerSchema.safeParse({ ...base, serverVersion: '' }).data.serverVersion).toBeNull();
+  });
+
+  it('rejects non-finite and sub-cent credit limits in the storage schema', () => {
+    const base = { id: 'customer', name: 'Cliente', phone: '', debt: 0 };
+    expect(customerSchema.safeParse({ ...base, creditLimit: 0 }).success).toBe(true);
+    expect(customerSchema.safeParse({ ...base, creditLimit: Infinity }).success).toBe(false);
+    expect(customerSchema.safeParse({ ...base, creditLimit: NaN }).success).toBe(false);
+    expect(customerSchema.safeParse({ ...base, creditLimit: 50.001 }).success).toBe(false);
   });
 });

@@ -15,6 +15,8 @@ import { posSyncOrchestrator } from '../sync/posSyncOrchestrator';
 import { customerCloudRepository } from './customerCloudRepository';
 import { customerLocalRepository } from './customerLocalRepository';
 import { normalizeCustomerServerVersion } from '../db/customerServerVersion';
+import { normalizeCustomerDebtCents } from '../db/customerDebtIndex';
+import { validateDirectoryCreditLimit, validateQuickAddCreditLimit } from './customerCreditLimit';
 import {
   CUSTOMER_SYNC_STATUS,
   localCustomerToCloudPayload,
@@ -133,7 +135,7 @@ const saveConflictFromResponse = async ({ customer, response, operation }) => {
   }
 };
 
-const enqueueCustomerOperation = async ({ licenseKey, operation, customer, cloudPayload, idempotencyKey, expectedVersion = null }) => syncOutboxService.enqueueOperation({
+const enqueueCustomerOperation = async ({ licenseKey, operation, customer, cloudPayload, idempotencyKey, expectedVersion = null, creditLimitContext = 'directory' }) => syncOutboxService.enqueueOperation({
   licenseKey,
   entityType: SYNC_ENTITY_TYPES.CUSTOMER,
   operation,
@@ -145,6 +147,7 @@ const enqueueCustomerOperation = async ({ licenseKey, operation, customer, cloud
   idempotencyKey,
   metadata: {
     phase: 'fase1_customers_directory',
+    creditLimitContext,
     queuedAt: new Date().toISOString()
   }
 });
@@ -162,11 +165,35 @@ export const customerRepository = {
     return customerLocalRepository.searchCustomers(query);
   },
 
-  async saveCustomer(customerData, { existingCustomer = null } = {}) {
+  async saveCustomer(customerData, { existingCustomer = null, creditLimitContext = 'directory', minimumCreditLimit = 0 } = {}) {
     const mode = getMode();
+    const hasCreditLimit = Object.prototype.hasOwnProperty.call(customerData || {}, 'creditLimit');
+    const rawCreditLimit = hasCreditLimit ? customerData.creditLimit : (existingCustomer?.creditLimit ?? 0);
+    const creditLimitValidation = creditLimitContext === 'quick_add'
+      ? validateQuickAddCreditLimit(rawCreditLimit, minimumCreditLimit)
+      : validateDirectoryCreditLimit(rawCreditLimit);
+
+    if (!creditLimitValidation.valid) {
+      return {
+        success: false,
+        code: 'INVALID_CUSTOMER_CREDIT_LIMIT',
+        fieldErrors: { creditLimit: creditLimitValidation.error },
+        message: creditLimitValidation.error
+      };
+    }
+
     const id = existingCustomer?.id || customerData?.id || generateID('cust');
-    const debt = existingCustomer?.debt ?? customerData?.debt ?? 0;
-    const localCandidate = normalizeCustomerForLocal({ ...customerData, id, debt }, existingCustomer, {
+    const debt = existingCustomer?.debt ?? 0;
+    const debtCents = existingCustomer?.debtCents
+      ?? existingCustomer?.debt_cents
+      ?? normalizeCustomerDebtCents(debt);
+    const localCandidate = normalizeCustomerForLocal({
+      ...customerData,
+      id,
+      debt,
+      debtCents,
+      creditLimit: creditLimitValidation.value
+    }, existingCustomer, {
       syncStatus: mode.cloudEnabled ? CUSTOMER_SYNC_STATUS.PENDING : CUSTOMER_SYNC_STATUS.LOCAL
     });
 
@@ -201,7 +228,8 @@ export const customerRepository = {
         customer: localCandidate,
         cloudPayload,
         idempotencyKey,
-        expectedVersion
+        expectedVersion,
+        creditLimitContext
       });
 
       return {
@@ -249,7 +277,8 @@ export const customerRepository = {
           customer: localCandidate,
           cloudPayload,
           idempotencyKey,
-          expectedVersion
+          expectedVersion,
+          creditLimitContext
         });
 
         return {

@@ -107,7 +107,9 @@ describe('QuickAddCustomerModal', () => {
     await fillIdentity(user);
     await user.type(screen.getByLabelText('Límite de crédito *'), '500,50');
     await user.click(screen.getByRole('button', { name: 'Guardar Cliente' }));
-    await waitFor(() => expect(mocks.saveCustomer).toHaveBeenCalledWith(expect.objectContaining({ creditLimit: 500.5 }), { existingCustomer: null }));
+    await waitFor(() => expect(mocks.saveCustomer).toHaveBeenCalledWith(expect.objectContaining({ creditLimit: 500.5 }), expect.objectContaining({
+      existingCustomer: null, creditLimitContext: 'quick_add', minimumCreditLimit: 150.99
+    })));
     await waitFor(() => expect(onCustomerSaved).toHaveBeenCalledWith(expect.objectContaining({ id: 'cust-cloud', creditLimit: 500.5, debt: 0, serverVersion: 3 })));
     expect(mocks.saveDataSafe).not.toHaveBeenCalled();
   });
@@ -206,7 +208,9 @@ describe('QuickAddCustomerModal', () => {
     await user.click(screen.getByRole('button', { name: 'Guardar Cliente' }));
     await waitFor(() => expect(onCustomerSaved).toHaveBeenCalledWith(synchronized));
     expect(mocks.getCustomerById).toHaveBeenCalledWith('cust-new');
-    expect(mocks.saveCustomer).toHaveBeenNthCalledWith(2, expect.objectContaining({ id: 'cust-new' }), { existingCustomer: synchronized });
+    expect(mocks.saveCustomer).toHaveBeenNthCalledWith(2, expect.objectContaining({ id: 'cust-new' }), expect.objectContaining({
+      existingCustomer: synchronized, creditLimitContext: 'quick_add', minimumCreditLimit: 150
+    }));
     expect(mocks.saveDataSafe).not.toHaveBeenCalled();
   });
 

@@ -218,7 +218,9 @@ describe('PaymentModal', () => {
     await user.type(credit, '150');
     await user.click(screen.getByRole('button', { name: 'Guardar Cliente' }));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Nuevo cliente' })).not.toBeInTheDocument());
-    expect(mocks.saveCustomer).toHaveBeenCalledWith(expect.objectContaining({ id: 'cust-quick', creditLimit: 150, debt: 0 }), { existingCustomer: null });
+    expect(mocks.saveCustomer).toHaveBeenCalledWith(expect.objectContaining({ id: 'cust-quick', creditLimit: 150, debt: 0 }), expect.objectContaining({
+      existingCustomer: null, creditLimitContext: 'quick_add', minimumCreditLimit: 150
+    }));
     expect(mocks.saveDataSafe).not.toHaveBeenCalled();
     expect(screen.getByLabelText('Asignar a Cliente (Obligatorio):')).toHaveValue('Nuevo para Fiado - 5553334444');
     expect(screen.getByLabelText('Abono (Opcional):')).toHaveValue('250.00');
