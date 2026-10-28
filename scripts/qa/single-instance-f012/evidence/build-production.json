@@ -1,0 +1,253 @@
+{
+  "tag": "production",
+  "folder": "dist",
+  "fileCount": 53,
+  "violations": [],
+  "precache": {
+    "bootstrapAsset": "assets/PosApplicationBootstrap-BMlF0B24.js",
+    "appAsset": "assets/App-CS244E5R.js",
+    "referenced": [
+      "assets/App-CS244E5R.js",
+      "assets/App-DPx-xMxG.css",
+      "assets/DevConsole-C8FwyKRd.js",
+      "assets/DevConsole-DNk0Aj1q.css",
+      "assets/ErrorBoundary-DK3AWQVn.js",
+      "assets/IncidentErrorBoundary-CJweRH_U.css",
+      "assets/IncidentErrorBoundary-Js2t3jQR.js",
+      "assets/customerCreditSyncHandler-BmuFzzeT.js",
+      "assets/databaseRuntime-BQcOaFQV.js",
+      "assets/devConsoleCapture-7W-AUQqO.js",
+      "assets/incidentCapture-DZ_YJVkc.js",
+      "assets/index-BPtmvhV7.js",
+      "assets/index-Ujcfz1t4.css",
+      "assets/index.esm-C1lHekhm.js",
+      "assets/posSyncBootstrapAutoCoordinator-B2keH5mA.js",
+      "assets/productStoreRecoveryGuard-H7jDXpf1.js",
+      "assets/storageManager-DycG2ID6.js",
+      "assets/telegramContact-BMLGPHus.js",
+      "assets/useAppStore-BiaudmbG.js",
+      "assets/useInventoryCatalogStore-DtSyuAyW.js",
+      "assets/useMessageStore-Do2m_9ib.js",
+      "assets/vendor_icons-B0syiRGM.js",
+      "assets/vendor_react-CQX8XpTy.js",
+      "assets/vendor_utils-BhzrRB7R.js"
+    ],
+    "coreLocalRouteAssets": [],
+    "missing": [],
+    "missingCoreLocalRoutes": []
+  },
+  "hashes": [
+    {
+      "path": "dist/assets/App-CS244E5R.js",
+      "sha256": "ddfe2c154ace262b8d5b06a1258ea8e710eb3aab0a899b4ab5936625ef2d5161"
+    },
+    {
+      "path": "dist/assets/App-DPx-xMxG.css",
+      "sha256": "e6c60c1b0d879ce40ce0bebb2d063fc544e1718ce0db8e1b4858731fc0ae66ef"
+    },
+    {
+      "path": "dist/assets/AssistantBot-Chml91lv.js",
+      "sha256": "3726fd80e05c0e13a4e53c4387de4efb60b9668d1e1b9ebff2bbbcea94167c45"
+    },
+    {
+      "path": "dist/assets/AssistantBot-jHOyLdCH.css",
+      "sha256": "8efc9e793968620c199a78ab9ff178f240432100aee9c3a608c69baede5d5584"
+    },
+    {
+      "path": "dist/assets/CommercialAIAgentsPage-B6z7zicv.js",
+      "sha256": "de994d9a6d0ea82030a54219c0b44f2ddadf661af757fdc92c7c32a2cdeea17c"
+    },
+    {
+      "path": "dist/assets/CommercialAIAgentsPage-Bj93FzwI.css",
+      "sha256": "1229bc3f2ad5868b9dada484df1391203286212e2531964d46f1a7c24a4727fb"
+    },
+    {
+      "path": "dist/assets/DevConsole-C8FwyKRd.js",
+      "sha256": "be30aa29f65dbdba64246b1e66fb0e51c158a864b37eeb6caa0ca6e2983d7ee1"
+    },
+    {
+      "path": "dist/assets/DevConsole-DNk0Aj1q.css",
+      "sha256": "7928b51598374e53eda3d9cdd7b5ddaa4f31c044d9f787978aaa316f6b7b1b8d"
+    },
+    {
+      "path": "dist/assets/EcommerceOrdersPage-BhJC--Tk.js",
+      "sha256": "16d9bfbc45d5dd00244615bb534605f6fa396491a89c73aca4d25f7aad7d6721"
+    },
+    {
+      "path": "dist/assets/EcommerceOrdersPage-D3syt7f-.css",
+      "sha256": "717a6387a2b5d595dac8e0e84550971635807055679af4f985084378d99a547f"
+    },
+    {
+      "path": "dist/assets/EcommercePortalPage-DHhStFBd.css",
+      "sha256": "d081ff0fd00e4fdc3a9bf5081152ef032bce31c4d838e11cbba17bd4076ad625"
+    },
+    {
+      "path": "dist/assets/EcommercePortalPage-Dp1zn_3_.js",
+      "sha256": "021af929ca1a70e976e96c63289d8a9d118e1c1f9ea64927bdd27114f2056d66"
+    },
+    {
+      "path": "dist/assets/ErrorBoundary-DK3AWQVn.js",
+      "sha256": "e4151904bf47a54f410a767d300f5a3570531a9fa0d898d9e7bc6483e11c7c35"
+    },
+    {
+      "path": "dist/assets/IncidentErrorBoundary-CJweRH_U.css",
+      "sha256": "f9182b8c204c70d74647c5ead2874d7525f1f5c073710de6bf0009343e2e3762"
+    },
+    {
+      "path": "dist/assets/IncidentErrorBoundary-Js2t3jQR.js",
+      "sha256": "f0b27d92bdc8b5bcdb1a5e78326895f6f7bf263840ea2eb83136869112301cd4"
+    },
+    {
+      "path": "dist/assets/IncidentSupportContactForm-DnIw5vdP.js",
+      "sha256": "4d02930181d102dad3335af303851354ef0e3a9405361987a7d9a1c7cdef3489"
+    },
+    {
+      "path": "dist/assets/IncidentSupportContactForm-XP7jM8lP.css",
+      "sha256": "2109a42b00341f140f438c1becfc626e2cb513fae6ab5f5f9d78ec44bdd58e39"
+    },
+    {
+      "path": "dist/assets/PosApplicationBootstrap-BMlF0B24.js",
+      "sha256": "a218ef01307df7e266d3625509f6b04a4de7374bc28d82bee789aabc40df0cc4"
+    },
+    {
+      "path": "dist/assets/PublicProductConfigurationModal-BhmxwfLq.js",
+      "sha256": "1c2959e7ef7bd3382feaf0cddbdcb96dbbaf4c789080a8a8dbe0bcffa6956026"
+    },
+    {
+      "path": "dist/assets/backup.worker-C-YKOTRO.js",
+      "sha256": "c6715df0db934927f0405dbc4c0da5d1c4c5027405985373c78344c52b1a1c6a"
+    },
+    {
+      "path": "dist/assets/bot.worker-DCdhDT8S.js",
+      "sha256": "e35f2108996a276787ff5b419c5f01b3d15b06925d2b41551f7c0450cd3d575f"
+    },
+    {
+      "path": "dist/assets/customerCreditSyncHandler-BmuFzzeT.js",
+      "sha256": "79df9aa7981e4be0a24aa6dc6501d9079c74c9f3ff580071bf525bb30879a9b8"
+    },
+    {
+      "path": "dist/assets/databaseRuntime-BQcOaFQV.js",
+      "sha256": "dd4df413d47ebd6c6cf313c9b53625b04f203600c0a0f58ed2243121827c386c"
+    },
+    {
+      "path": "dist/assets/devConsoleCapture-7W-AUQqO.js",
+      "sha256": "28201b5279ec67d147b772816ba646ff376809ccb5eb6c0e532387f75b5d1519"
+    },
+    {
+      "path": "dist/assets/incidentCapture-DZ_YJVkc.js",
+      "sha256": "66e11a0ad41ad4ab3fd9020d736ae9dd81a404a068f8e5bc7c253cc4d75611e8"
+    },
+    {
+      "path": "dist/assets/index-BPtmvhV7.js",
+      "sha256": "da7470f98c2f9890b686ea05e34a7ccca0a8cca5232e55de1c4d9b696edf66ea"
+    },
+    {
+      "path": "dist/assets/index-Ujcfz1t4.css",
+      "sha256": "27aa4c4cc859214da4c8d4173f85ac61691f194bdecbb9a778d4750bfba4e7ff"
+    },
+    {
+      "path": "dist/assets/index.esm-C1lHekhm.js",
+      "sha256": "174901d3bacd3cdfe0ad966e59ec680255290949e1b28fc4e5ec0aa2f97e2b7f"
+    },
+    {
+      "path": "dist/assets/mobileZoomGuard-CN7AQsSf.js",
+      "sha256": "e413e5591625cf968aa9f07a6438af87daf8739ecf7e76979079a7f600c1a3da"
+    },
+    {
+      "path": "dist/assets/posSyncBootstrapAutoCoordinator-B2keH5mA.js",
+      "sha256": "4c2611da371898ea373295b877f919e9b47122120069b8da50418a44a0a39117"
+    },
+    {
+      "path": "dist/assets/productRepository-BVQAErab.js",
+      "sha256": "bdbcbd341d8ff3741000ade0dfd4fae84bb66338a1f670295efcf64f8610c9e9"
+    },
+    {
+      "path": "dist/assets/productStoreRecoveryGuard-H7jDXpf1.js",
+      "sha256": "5c2a8ce2de24a7bd1ad0aec2865a9cdb5cddade57313ffb236b4605d5e8eef45"
+    },
+    {
+      "path": "dist/assets/stats.worker-DxcCN2D9.js",
+      "sha256": "23235dd2fde420087e769b33055602bcaef502d9b4ae3e0fb846823c40721758"
+    },
+    {
+      "path": "dist/assets/storageManager-DycG2ID6.js",
+      "sha256": "8b882376e8926780e5a1b314b973df5f2d753a882148958dc28fc49492e714aa"
+    },
+    {
+      "path": "dist/assets/telegramContact-BMLGPHus.js",
+      "sha256": "46b3f950df8f0bffaf06c38dcd3d138687394b4d91ec3d8a208f625850e73de4"
+    },
+    {
+      "path": "dist/assets/useAppStore-BiaudmbG.js",
+      "sha256": "a772e32724d5a114c16f96f7b9f76d85d9630106d06e501116003617a17cb981"
+    },
+    {
+      "path": "dist/assets/useInventoryCatalogStore-DtSyuAyW.js",
+      "sha256": "3b5bda2380447eb3e271165d92e483f5633b27fe8bbaf1bc91ac92ac44daba01"
+    },
+    {
+      "path": "dist/assets/useMessageStore-Do2m_9ib.js",
+      "sha256": "c204abeab032137835aa27a57629f72f39eebbd33a9c27571cf041c6e9ce64b7"
+    },
+    {
+      "path": "dist/assets/vendor_charts-CRbHLB0H.js",
+      "sha256": "bf5f57d5b89812e6114d70928ba5d0baa680e80f96cf8a3bfb5e605f9773d03c"
+    },
+    {
+      "path": "dist/assets/vendor_icons-B0syiRGM.js",
+      "sha256": "eb6f3ff6029c6205235cfc1bfb18170ac3c622e6117b8926f2a87a7e638981a4"
+    },
+    {
+      "path": "dist/assets/vendor_react-CQX8XpTy.js",
+      "sha256": "65df90a8dd782e94e55b56e17aa201e834768539a83c4c361a76d65bdd9cc4f6"
+    },
+    {
+      "path": "dist/assets/vendor_supabase-l0sNRNKZ.js",
+      "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+    },
+    {
+      "path": "dist/assets/vendor_utils-BhzrRB7R.js",
+      "sha256": "50bf084f44e68bb899183b5ed81765e762ee1c22f60be943ad599b795e4af812"
+    },
+    {
+      "path": "dist/boticon.svg",
+      "sha256": "93bf10b60605088cfbd4f35fe23b82f4d9f387fa604f72f5fff54931debea1c4"
+    },
+    {
+      "path": "dist/icono-web.png",
+      "sha256": "85d444cf5d1e2545a916a48ccc8567667a98c890074929e5fab0f30b8bd29673"
+    },
+    {
+      "path": "dist/icono.png",
+      "sha256": "6d171dc8eecdb616bea0fe862880dc80fee5b3b4c8d91d8723839bc6f315dc0c"
+    },
+    {
+      "path": "dist/index.html",
+      "sha256": "880c75076f6806c3e2604bc01afd727300788635b9008c8335a19d72cc0729a6"
+    },
+    {
+      "path": "dist/log.svg",
+      "sha256": "3cc39f6eff3148fbeb418eb3ff18397e537067ebf8a172e2324782609f1c1ae2"
+    },
+    {
+      "path": "dist/logIcon.svg",
+      "sha256": "fd0e93e021a8d91d0272753f295d48862fef2c8c9bff91a8e6b90ddab313c98a"
+    },
+    {
+      "path": "dist/manifest.webmanifest",
+      "sha256": "be9d5c6387208bbfbd559f8b48121438c8422cd95264664a8b0022a77787b450"
+    },
+    {
+      "path": "dist/pwa-192x192.png",
+      "sha256": "85d444cf5d1e2545a916a48ccc8567667a98c890074929e5fab0f30b8bd29673"
+    },
+    {
+      "path": "dist/pwa-512x512.png",
+      "sha256": "b8dfbddccca477b9ca8125ab3f9a9f790e8f8040fb5a1f3480509680217f2460"
+    },
+    {
+      "path": "dist/sw.js",
+      "sha256": "647f94bcca9f11c161e27ddf9d8fc5ef6732d4f4770c8d06ee6eba36c5e82cee"
+    }
+  ]
+}

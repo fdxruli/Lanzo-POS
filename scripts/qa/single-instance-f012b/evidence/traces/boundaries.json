@@ -1,0 +1,67 @@
+[
+  {
+    "contract": "BG-36 preparation never activates commercial services",
+    "initial": {
+      "authority": "not_exercised"
+    },
+    "final": {
+      "authority": "not_exercised"
+    },
+    "metrics": {},
+    "scopes": [],
+    "result": "pass",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "contract": "BG-37 commercial activation follows preparation once",
+    "initial": {
+      "authority": "not_exercised"
+    },
+    "final": {
+      "authority": "not_exercised"
+    },
+    "metrics": {},
+    "scopes": [],
+    "result": "pass",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "contract": "BG-38 existing default activation remains enabled",
+    "initial": {
+      "authority": "not_exercised"
+    },
+    "final": {
+      "authority": "not_exercised"
+    },
+    "metrics": {},
+    "scopes": [],
+    "result": "pass",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "contract": "BG-39 rejected loading never installs sync or recovery",
+    "initial": {
+      "authority": "not_exercised"
+    },
+    "final": {
+      "authority": "not_exercised"
+    },
+    "metrics": {},
+    "scopes": [],
+    "result": "pass",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "contract": "BG-40 DB preflight shares preparation without commercial activation",
+    "initial": {
+      "authority": "not_exercised"
+    },
+    "final": {
+      "authority": "not_exercised"
+    },
+    "metrics": {},
+    "scopes": [],
+    "result": "pass",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  }
+]

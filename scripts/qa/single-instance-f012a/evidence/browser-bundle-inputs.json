@@ -1,0 +1,8 @@
+[
+  "src/services/instance/instanceCapabilities.js",
+  "src/services/instance/instanceProtocol.js",
+  "src/services/instance/instanceCoordinator.js",
+  "src/services/financial/financialTimeout.js",
+  "src/services/financial/financialExecutionLifetime.js",
+  "scripts/qa/single-instance-f012a/drain-fixture.js"
+]

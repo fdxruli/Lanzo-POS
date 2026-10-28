@@ -1,0 +1,158 @@
+{
+  "base": {
+    "regressions.json": {
+      "baseline": "ce03b04918347898396957c8b7f35eb955896b89",
+      "base": {
+        "numPassedTests": 1167,
+        "numFailedTests": 4,
+        "numPendingTests": 50,
+        "numTotalTests": 1221
+      },
+      "candidate": {
+        "numPassedTests": 1167,
+        "numFailedTests": 4,
+        "numPendingTests": 50,
+        "numTotalTests": 1221
+      },
+      "changed": [],
+      "added": []
+    },
+    "global.json": {
+      "baseline": "ce03b04918347898396957c8b7f35eb955896b89",
+      "base": {
+        "numPassedTests": 5969,
+        "numFailedTests": 88,
+        "numPendingTests": 52,
+        "numTotalTests": 6109
+      },
+      "candidate": {
+        "numPassedTests": 5986,
+        "numFailedTests": 88,
+        "numPendingTests": 52,
+        "numTotalTests": 6126
+      },
+      "changed": [],
+      "added": [
+        [
+          "/tmp/lanzo-checkout/scripts/qa/single-instance-f012d2/actual-read.test.jsx::actual Local cash repository/projection/Dexie: next initial load reads the cancellation whose refresh was discarded",
+          {
+            "status": "passed",
+            "error": ""
+          }
+        ],
+        [
+          "/tmp/lanzo-checkout/scripts/qa/single-instance-f012d2/route.test.jsx::F012D2 actual cancellation projection -> DOM -> useCaja publishes the same events/order/detail after the real Dexie transaction, with unchanged actor checks and durable key",
+          {
+            "status": "passed",
+            "error": ""
+          }
+        ],
+        [
+          "/tmp/lanzo-checkout/scripts/qa/single-instance-f012d2/route.test.jsx::F012D2 actual cancellation projection -> DOM -> useCaja active scope keeps zero-delay coalescing and reads exactly once for two projections",
+          {
+            "status": "passed",
+            "error": ""
+          }
+        ],
+        [
+          "/tmp/lanzo-checkout/scripts/qa/single-instance-f012d2/route.test.jsx::F012D2 actual cancellation projection -> DOM -> useCaja quiesce between publication and timer prevents every Caja read",
+          {
+            "status": "passed",
+            "error": ""
+          }
+        ],
+        [
+          "/tmp/lanzo-checkout/scripts/qa/single-instance-f012d2/route.test.jsx::F012D2 actual cancellation projection -> DOM -> useCaja cancelled-but-queued timer callback checks original scope before effects",
+          {
+            "status": "passed",
+            "error": ""
+          }
+        ],
+        [
+          "/tmp/lanzo-checkout/scripts/qa/single-instance-f012d2/route.test.jsx::F012D2 actual cancellation projection -> DOM -> useCaja fired-before-factory timer callback checks original scope before effects",
+          {
+            "status": "passed",
+            "error": ""
+          }
+        ],
+        [
+          "/tmp/lanzo-checkout/scripts/qa/single-instance-f012d2/route.test.jsx::F012D2 actual cancellation projection -> DOM -> useCaja stop is synchronous for admission, single-flight, and awaits the already-started read",
+          {
+            "status": "passed",
+            "error": ""
+          }
+        ],
+        [
+          "/tmp/lanzo-checkout/scripts/qa/single-instance-f012d2/route.test.jsx::F012D2 actual cancellation projection -> DOM -> useCaja late events and captured old listener are inert; duplicate stops do not repeat cleanup",
+          {
+            "status": "passed",
+            "error": ""
+          }
+        ],
+        [
+          "/tmp/lanzo-checkout/scripts/qa/single-instance-f012d2/route.test.jsx::F012D2 actual cancellation projection -> DOM -> useCaja next authorized scope obtains discarded update from existing initial load, without old-instance callbacks",
+          {
+            "status": "passed",
+            "error": ""
+          }
+        ],
+        [
+          "/tmp/lanzo-checkout/scripts/qa/single-instance-f012d2/route.test.jsx::F012D2 actual cancellation projection -> DOM -> useCaja same-owner initial read is observed and coalesced rather than retrospectively adopting a legacy promise",
+          {
+            "status": "passed",
+            "error": ""
+          }
+        ],
+        [
+          "/tmp/lanzo-checkout/scripts/qa/single-instance-f012d2/route.test.jsx::F012D2 actual cancellation projection -> DOM -> useCaja old in-flight verification cannot publish into a newly rendered hook owner",
+          {
+            "status": "passed",
+            "error": ""
+          }
+        ],
+        [
+          "/tmp/lanzo-checkout/scripts/qa/single-instance-f012d2/route.test.jsx::F012D2 actual cancellation projection -> DOM -> useCaja original context invalidation suppresses late state/error publication and new reads",
+          {
+            "status": "passed",
+            "error": ""
+          }
+        ],
+        [
+          "/tmp/lanzo-checkout/scripts/qa/single-instance-f012d2/route.test.jsx::F012D2 actual cancellation projection -> DOM -> useCaja never-settling admitted read is never reported stopped/drained by time",
+          {
+            "status": "passed",
+            "error": ""
+          }
+        ],
+        [
+          "/tmp/lanzo-checkout/scripts/qa/single-instance-f012d2/route.test.jsx::F012D2 actual cancellation projection -> DOM -> useCaja does not clear UNKNOWN from unrelated projection consumers",
+          {
+            "status": "passed",
+            "error": ""
+          }
+        ],
+        [
+          "/tmp/lanzo-checkout/scripts/qa/single-instance-f012d2/route.test.jsx::F012D2 actual cancellation projection -> DOM -> useCaja quiesce from the preceding sales notification preserves cancellation/event publication but rejects the cash listener immediately",
+          {
+            "status": "passed",
+            "error": ""
+          }
+        ],
+        [
+          "/tmp/lanzo-checkout/scripts/qa/single-instance-f012d2/route.test.jsx::F012D2 actual cancellation projection -> DOM -> useCaja StrictMode reinstall retains one live subscription and one active initial read",
+          {
+            "status": "passed",
+            "error": ""
+          }
+        ],
+        [
+          "/tmp/lanzo-checkout/scripts/qa/single-instance-f012d2/route.test.jsx::F012D2 actual cancellation projection -> DOM -> useCaja actual recovery coordinator carries original Sync scope through its existing project callback, retaining other subscriber UNKNOWN",
+          {
+            "status": "passed",
+            "error": ""
+          }
+        ]
+      ]
+    }
+  }
+}

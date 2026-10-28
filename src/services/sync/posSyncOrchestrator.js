@@ -1,4 +1,5 @@
 import Logger from '../Logger';
+import { ownsScopedPosRealtimeListener } from './scopedPosRealtimeListener';
 import {
   buildPosRealtimeTopic,
   startPosRealtimeListener,
@@ -23,6 +24,17 @@ import {
 } from '../tenant/localTenantGuard';
 
 const entityHandlers = new Map();
+// Opt-in singleton ownership. Default callers never install this binding.
+let executionScope = null;
+let legacyWorkStarted = false;
+let scopedStop = null;
+const canSchedule = (owner = executionScope) => !owner || (
+  owner === executionScope && owner.isContextCurrent() && owner.getSnapshot().accepting
+);
+const observeJob = (label, factory) => executionScope
+  ? executionScope.run(`pos:${label}`, factory) : (legacyWorkStarted = true, factory());
+const unknownHandler = label => executionScope?.markUnobservable(`pos_handler_lifetime:${label}`);
+
 
 const runtime = {
   started: false,
@@ -49,6 +61,7 @@ const isBrowserOnline = () => typeof navigator === 'undefined' || navigator.onLi
 
 const isRuntimeGenerationCurrent = (generation, licenseKey = runtime.licenseKey) => (
   runtime.generation === generation && runtime.licenseKey === licenseKey
+  && (!executionScope || executionScope.isContextCurrent())
 );
 
 const applyRuntimeStatus = async (
@@ -102,7 +115,9 @@ const setRuntimeStatus = (status, options = {}) => {
 const clearRealtimePullTimer = () => {
   if (!runtime.realtimePullTimer) return;
 
-  if (typeof window !== 'undefined') {
+  if (runtime.realtimePullTimer?.cancel) {
+    runtime.realtimePullTimer.cancel();
+  } else if (typeof window !== 'undefined') {
     window.clearTimeout(runtime.realtimePullTimer);
   } else {
     clearTimeout(runtime.realtimePullTimer);
@@ -127,10 +142,15 @@ const runEntityStartHooks = async ({ licenseDetails, licenseKey, reason }) => {
     if (!handler?.onStart) continue;
 
     try {
+      if (executionScope && !canSchedule()) return;
+      unknownHandler(`start:${entityType}`);
       await runWithLocalTenantSyncLease(
         { license_key: licenseKey },
         { reason: `pos_sync_start_handler_${entityType}` },
-        () => handler.onStart({ licenseDetails, licenseKey, reason })
+        () => {
+          if (executionScope && !canSchedule()) return { skipped: true, reason: 'scope_closed' };
+          return handler.onStart({ licenseDetails, licenseKey, reason });
+        }
       );
     } catch (error) {
       if (isLocalTenantAccessError(error)) throw error;
@@ -154,10 +174,15 @@ const dispatchPulledEvents = async (events = [], licenseKey = runtime.licenseKey
     if (!handler?.onEvents) continue;
 
     try {
+      if (executionScope && !canSchedule()) return;
+      unknownHandler(`events:${entityType}`);
       await runWithLocalTenantSyncLease(
         { license_key: licenseKey },
         { reason: `pos_sync_event_handler_${entityType}` },
-        () => handler.onEvents(entityEvents, { licenseKey })
+        () => {
+          if (executionScope && !canSchedule()) return { skipped: true, reason: 'scope_closed' };
+          return handler.onEvents(entityEvents, { licenseKey });
+        }
       );
     } catch (error) {
       if (isLocalTenantAccessError(error)) throw error;
@@ -169,7 +194,9 @@ const dispatchPulledEvents = async (events = [], licenseKey = runtime.licenseKey
 const attachOnlineListener = () => {
   if (runtime.onlineListener || typeof window === 'undefined') return;
 
+  const owner = executionScope;
   runtime.onlineListener = async () => {
+    if (!canSchedule(owner)) return;
     Logger.log('[POS Sync] Procesando outbox online.');
 
     try {
@@ -178,6 +205,7 @@ const attachOnlineListener = () => {
       Logger.warn('[PosSync] Outbox al reconectar fallo:', error);
     }
 
+    if (!canSchedule(owner)) return;
     posSyncOrchestrator.schedulePullIncremental('online').catch((error) => {
       Logger.warn('[PosSync] Pull al reconectar fallo:', error);
     });
@@ -232,7 +260,7 @@ export const posSyncOrchestrator = {
     try {
       if (licenseKey) {
         await assertLocalTenantSyncAccess(licenseDetails, { reason: `pos_sync_start_${reason}` });
-        if (runtime.startAttempt !== startAttempt || !runtime.startInProgress) {
+        if (runtime.startAttempt !== startAttempt || !runtime.startInProgress || !canSchedule()) {
           return { started: false, status: runtime.status, stale: true };
         }
       }
@@ -312,6 +340,7 @@ export const posSyncOrchestrator = {
       }
 
       await setRuntimeStatus(SYNC_STATUS.ONLINE, { licenseKey, reason, generation: startGeneration });
+      if (!isRuntimeGenerationCurrent(startGeneration, licenseKey) || !canSchedule()) return { started: false, stale: true };
       await runEntityStartHooks({ licenseDetails, licenseKey, reason });
       if (!isRuntimeGenerationCurrent(startGeneration, licenseKey)) return { started: false, status: runtime.status };
 
@@ -334,37 +363,42 @@ export const posSyncOrchestrator = {
 
           runtime.realtimeChannel = startPosRealtimeListener({
             posTopic,
+            executionScope,
             callbacks: {
               onPosChangeAvailable: ({ eventType, entity, changeSeq } = {}) => {
-                if (!isRuntimeGenerationCurrent(startGeneration, licenseKey) || !runtime.started) return;
+                if (!isRuntimeGenerationCurrent(startGeneration, licenseKey) || !runtime.started || !canSchedule()) return;
                 Logger.log('[POS Sync] Realtime avisó cambios; programando pull incremental.', {
                   eventType,
                   entity,
                   changeSeq
                 });
 
-                this.schedulePullIncremental('realtime').catch((error) => {
+                return this.schedulePullIncremental('realtime').catch((error) => {
                   Logger.warn('[PosSync] Pull por realtime fallo:', error);
                 });
               },
               onStatusChange: ({ status, reason: statusReason }) => {
-                if (!isRuntimeGenerationCurrent(startGeneration, licenseKey) || !runtime.started) return;
-                setRuntimeStatus(status, {
+                if (!isRuntimeGenerationCurrent(startGeneration, licenseKey) || !runtime.started || !canSchedule()) return;
+                return observeJob('realtime_status', () => setRuntimeStatus(status, {
                   licenseKey,
                   generation: startGeneration,
                   reason: statusReason
-                }).catch((error) => {
+                })).catch((error) => {
                   Logger.warn('[PosSync] Cambio de estado realtime bloqueado:', error);
                 });
               },
               onConnectionRestored: () => {
-                if (!isRuntimeGenerationCurrent(startGeneration, licenseKey) || !runtime.started) return;
-                this.schedulePullIncremental('realtime_restored').catch((error) => {
+                if (!isRuntimeGenerationCurrent(startGeneration, licenseKey) || !runtime.started || !canSchedule()) return;
+                return this.schedulePullIncremental('realtime_restored').catch((error) => {
                   Logger.warn('[PosSync] Pull tras recuperar realtime fallo:', error);
                 });
               }
             }
           });
+
+          if (executionScope && !ownsScopedPosRealtimeListener(runtime.realtimeChannel, executionScope)) {
+            executionScope.markUnobservable('pos_realtime_internal_reconnect_lifetime');
+          }
 
           runtime.realtimeTopic = posTopic;
         }
@@ -459,6 +493,16 @@ export const posSyncOrchestrator = {
     }
 
     runtime.realtimePullScheduled = true;
+    if (executionScope) {
+      const owner = executionScope;
+      runtime.realtimePullTimer = owner.schedule('pos:debounce', () => {
+        runtime.realtimePullTimer = null;
+        runtime.realtimePullScheduled = false;
+        if (!canSchedule(owner)) return null;
+        return this.pullIncremental(safeReason);
+      }, Number(resolvedDebounceMs));
+      return { scheduled: true, reason: safeReason, debounceMs: Number(resolvedDebounceMs) };
+    }
     runtime.realtimePullTimer = window.setTimeout(() => {
       runtime.realtimePullTimer = null;
       runtime.realtimePullScheduled = false;
@@ -638,6 +682,7 @@ export const posSyncOrchestrator = {
       };
     } catch (error) {
       if (isLocalTenantAccessError(error)) throw error;
+      if (executionScope && !isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey)) return null;
       Logger.warn('[PosSync] Pull incremental fallo:', error);
       await assertLocalTenantSyncAccess(
         { license_key: operationLicenseKey },
@@ -660,7 +705,7 @@ export const posSyncOrchestrator = {
         const pendingReason = runtime.pendingPull ? runtime.lastPullReason || 'pending' : null;
         runtime.pendingPull = false;
 
-        if (pendingReason && runtime.started && runtime.licenseKey && isBrowserOnline()) {
+        if (pendingReason && runtime.started && runtime.licenseKey && isBrowserOnline() && canSchedule()) {
           Logger.log('[POS Sync] Ejecutando pull incremental pendiente al terminar el actual.');
           await this.pullIncremental(`pending_after_${pendingReason}`);
         }
@@ -728,10 +773,19 @@ export const posSyncOrchestrator = {
           await syncOutboxService.markProcessing(operation.id, {
             licenseKey: operationLicenseKey
           });
+          if (executionScope && (!canSchedule() || !isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey))) {
+            return { processed, skipped: true, reason: 'runtime_changed' };
+          }
+          unknownHandler(`push:${operation.entityType}`);
           const result = await runWithLocalTenantSyncLease(
             { license_key: operationLicenseKey },
             { reason: `pos_sync_outbox_handler_${operation.entityType}` },
-            () => handler.pushOperation(operation)
+            () => {
+              if (executionScope && (!canSchedule() || !isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey))) {
+                throw new Error('SYNC_EXECUTION_CONTEXT_STALE');
+              }
+              return handler.pushOperation(operation);
+            }
           );
 
           if (!isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey) || !runtime.started) {
@@ -751,6 +805,7 @@ export const posSyncOrchestrator = {
           processed += 1;
         } catch (error) {
           if (isLocalTenantAccessError(error)) throw error;
+          if (executionScope && !isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey)) throw error;
           Logger.warn(`[PosSync] Outbox ${operation.entityType}/${operation.operation} fallo (${reason}):`, error);
           await syncOutboxService.markFailed(operation.id, error, {
             retry: true,
@@ -775,6 +830,49 @@ export const posSyncOrchestrator = {
       handlers: Array.from(entityHandlers.keys())
     };
   }
+};
+
+const originalStart = posSyncOrchestrator.start;
+const originalStop = posSyncOrchestrator.stop;
+posSyncOrchestrator.assertExecutionScopeAvailable = scope => {
+  scope.assertAdmission();
+  if (executionScope === scope) return;
+  if (executionScope && executionScope.getSnapshot().state !== 'DRAINED') {
+    throw new Error('SYNC_EXECUTION_OWNER_MISMATCH');
+  }
+  if (legacyWorkStarted || runtime.started || runtime.startInProgress || runtime.pullInProgress || runtime.outboxInProgress) {
+    throw new Error('SYNC_EXECUTION_LEGACY_OWNER_ACTIVE');
+  }
+};
+const bindExecutionScope = scope => {
+  posSyncOrchestrator.assertExecutionScopeAvailable(scope);
+  if (executionScope === scope) return;
+  executionScope = scope;
+  scopedStop = null;
+  scope.addSource('pos_orchestrator', () => {
+    scopedStop ||= originalStop.call(posSyncOrchestrator, { preserveStatus: true });
+    return scopedStop;
+  });
+};
+// Reserve ownership synchronously, before any bootstrap awaits or factories.
+posSyncOrchestrator.reserveExecutionScope = bindExecutionScope;
+posSyncOrchestrator.start = function start(options = {}) {
+  if (options.executionScope) bindExecutionScope(options.executionScope);
+  return observeJob('start', () => originalStart.call(this, options));
+};
+for (const name of ['pullIncremental', 'processOutbox', 'schedulePullIncremental', 'handleForegroundResume']) {
+  const original = posSyncOrchestrator[name];
+  posSyncOrchestrator[name] = function scopedJob(...args) {
+    // Event APIs expect a promise even when admission fails synchronously.
+    try { return observeJob(name, () => original.apply(this, args)); }
+    catch (error) { return Promise.reject(error); }
+  };
+}
+posSyncOrchestrator.stop = function stop(options = {}) {
+  if (!executionScope) return originalStop.call(this, options);
+  executionScope.quiesce();
+  // stopScheduling is not drain. The registered source owns its cleanup promise.
+  return Promise.resolve().then(() => scopedStop);
 };
 
 export default posSyncOrchestrator;

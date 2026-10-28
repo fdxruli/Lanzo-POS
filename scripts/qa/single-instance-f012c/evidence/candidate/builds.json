@@ -1,0 +1,123 @@
+[
+  {
+    "name": "preview",
+    "command": [
+      "node",
+      "node_modules/vite/bin/vite.js",
+      "build"
+    ],
+    "vercelEnv": "preview",
+    "exitCode": 0,
+    "audit": {
+      "bootstrapAsset": "assets/PosApplicationBootstrap-DQPROUww.js",
+      "appAsset": "assets/App-BD6tnN6A.js",
+      "referenced": [
+        "assets/App-BD6tnN6A.js",
+        "assets/App-DPx-xMxG.css",
+        "assets/DevConsole-DNk0Aj1q.css",
+        "assets/DevConsole-DmSTD0gn.js",
+        "assets/ErrorBoundary-BWxK4ARe.js",
+        "assets/IncidentErrorBoundary-CJweRH_U.css",
+        "assets/IncidentErrorBoundary-Cb4wCmBt.js",
+        "assets/actorOperationalHandoff-XQt3Xq1W.js",
+        "assets/actorRuntimeController-Dyzh8crO.js",
+        "assets/buttons-Ctq3T8gS.js",
+        "assets/buttons-DDqMnPSN.css",
+        "assets/contextSnapshotGuard-BMsBlXy0.js",
+        "assets/customerCreditSyncHandler-B5_kd5gC.js",
+        "assets/databaseRuntime-CgPnUM7s.js",
+        "assets/devConsoleCapture-B1iXHuQF.js",
+        "assets/incidentCapture-CDzBOtIe.js",
+        "assets/index-CcDD_Igj.css",
+        "assets/index-D-hMp8LI.js",
+        "assets/index.esm-CimvAr6C.js",
+        "assets/localTenantGuard-DRfq-xXI.js",
+        "assets/posSyncBootstrapAutoCoordinator-BNXoxx7V.js",
+        "assets/productStoreRecoveryGuard-slJljvjD.js",
+        "assets/recoveryContext-DkR72Lpa.js",
+        "assets/storageManager-CF5k2UEK.js",
+        "assets/supportContact-fQnjkVsL.js",
+        "assets/telegramContact-BMLGPHus.js",
+        "assets/useAppStore-Bau0eMxG.js",
+        "assets/useInventoryCatalogStore-B-5fEg3x.js",
+        "assets/useMessageStore-DOa5A-U4.js",
+        "assets/vendor_icons-LN8PtF-0.js",
+        "assets/vendor_react-DxaSPtPq.js",
+        "assets/vendor_utils--67R870O.js"
+      ],
+      "coreLocalRouteAssets": [],
+      "missing": [],
+      "missingCoreLocalRoutes": [],
+      "fixtureOrCoordinatorViolations": []
+    }
+  },
+  {
+    "name": "production",
+    "command": [
+      "npm",
+      "run",
+      "build"
+    ],
+    "vercelEnv": "production",
+    "exitCode": 0,
+    "audit": {
+      "bootstrapAsset": "assets/PosApplicationBootstrap-ClcNEIP0.js",
+      "appAsset": "assets/App-E68HzjZc.js",
+      "referenced": [
+        "assets/App-DPx-xMxG.css",
+        "assets/App-E68HzjZc.js",
+        "assets/DevConsole-D3_FgiZM.js",
+        "assets/DevConsole-DNk0Aj1q.css",
+        "assets/ErrorBoundary-kyPtGVak.js",
+        "assets/IncidentErrorBoundary-CJweRH_U.css",
+        "assets/IncidentErrorBoundary-D9qf4FV7.js",
+        "assets/customerCreditSyncHandler-B2X535cV.js",
+        "assets/databaseRuntime-D7_N_Rzj.js",
+        "assets/devConsoleCapture-Bs39uXjS.js",
+        "assets/incidentCapture-D9yRERRi.js",
+        "assets/index-BYNQFEwi.js",
+        "assets/index-Ujcfz1t4.css",
+        "assets/index.esm-C1lHekhm.js",
+        "assets/posSyncBootstrapAutoCoordinator-9uxU5eHA.js",
+        "assets/productStoreRecoveryGuard-CAidIYxi.js",
+        "assets/storageManager-ColEnAw1.js",
+        "assets/telegramContact-BMLGPHus.js",
+        "assets/useAppStore-Dmc-HTrc.js",
+        "assets/useInventoryCatalogStore-BB-VfaiX.js",
+        "assets/useMessageStore-C29A88AG.js",
+        "assets/vendor_icons-B0syiRGM.js",
+        "assets/vendor_react-CQX8XpTy.js",
+        "assets/vendor_utils-BhzrRB7R.js"
+      ],
+      "coreLocalRouteAssets": [],
+      "missing": [],
+      "missingCoreLocalRoutes": [],
+      "fixtureOrCoordinatorViolations": []
+    }
+  },
+  {
+    "name": "store",
+    "command": [
+      "npm",
+      "run",
+      "build:store"
+    ],
+    "vercelEnv": "production",
+    "exitCode": 0,
+    "audit": null
+  },
+  {
+    "name": "store-vercel",
+    "command": [
+      "npm",
+      "run",
+      "build:store:vercel"
+    ],
+    "vercelEnv": "production",
+    "exitCode": 0,
+    "audit": null,
+    "workspace": "/workspace/scratch/7ff92a751658/Lanzo-F012C-packaging",
+    "executionEvidence": "../clean-packaging.json",
+    "previousFailedAttempt": "../reused-packaging-attempt/builds.json"
+  }
+]

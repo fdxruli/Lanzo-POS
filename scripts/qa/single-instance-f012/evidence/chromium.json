@@ -1,0 +1,238 @@
+{
+  "version": "143.0.7499.0",
+  "origin": "http://127.0.0.1:43853",
+  "results": [
+    {
+      "id": "CE-NATIVE-DRAIN-03",
+      "result": "COUNTEREXAMPLE",
+      "atTimeout": {
+        "state": "COORDINATOR_HELD",
+        "instanceId": "0fb5df539a3ca9a5c869c2d0f957a027",
+        "localEpoch": 1,
+        "mode": "web-locks",
+        "nativeHeld": true,
+        "diagnostic": null,
+        "messaging": "available",
+        "observedOwner": null,
+        "pendingExecutors": 0,
+        "capabilities": {
+          "secureContext": true,
+          "randomIdentity": true,
+          "webLocks": true,
+          "broadcastChannel": true
+        },
+        "nativeActive": true,
+        "publicSettled": true,
+        "trackedNativeSettled": false,
+        "failure": "FINANCIAL_TIMEOUT"
+      },
+      "beforeNativeCompletion": {
+        "a": {
+          "state": "RELEASED",
+          "instanceId": "0fb5df539a3ca9a5c869c2d0f957a027",
+          "localEpoch": 2,
+          "mode": "web-locks",
+          "nativeHeld": false,
+          "diagnostic": null,
+          "messaging": "inactive",
+          "observedOwner": null,
+          "pendingExecutors": 0,
+          "capabilities": {
+            "secureContext": true,
+            "randomIdentity": true,
+            "webLocks": true,
+            "broadcastChannel": true
+          },
+          "nativeActive": true,
+          "publicSettled": true,
+          "trackedNativeSettled": false,
+          "failure": "FINANCIAL_TIMEOUT"
+        },
+        "b": {
+          "state": "COORDINATOR_HELD",
+          "instanceId": "208d1aa33afaf3478cda3d90d179da8e",
+          "localEpoch": 1,
+          "mode": "web-locks",
+          "nativeHeld": true,
+          "diagnostic": null,
+          "messaging": "available",
+          "observedOwner": null,
+          "pendingExecutors": 0,
+          "capabilities": {
+            "secureContext": true,
+            "randomIdentity": true,
+            "webLocks": true,
+            "broadcastChannel": true
+          },
+          "nativeActive": false,
+          "publicSettled": false,
+          "trackedNativeSettled": false,
+          "failure": null
+        }
+      },
+      "afterNativeCompletion": {
+        "a": {
+          "state": "RELEASED",
+          "instanceId": "0fb5df539a3ca9a5c869c2d0f957a027",
+          "localEpoch": 2,
+          "mode": "web-locks",
+          "nativeHeld": false,
+          "diagnostic": null,
+          "messaging": "inactive",
+          "observedOwner": null,
+          "pendingExecutors": 0,
+          "capabilities": {
+            "secureContext": true,
+            "randomIdentity": true,
+            "webLocks": true,
+            "broadcastChannel": true
+          },
+          "nativeActive": false,
+          "publicSettled": true,
+          "trackedNativeSettled": false,
+          "failure": "FINANCIAL_TIMEOUT"
+        },
+        "b": {
+          "state": "COORDINATOR_HELD",
+          "instanceId": "208d1aa33afaf3478cda3d90d179da8e",
+          "localEpoch": 1,
+          "mode": "web-locks",
+          "nativeHeld": true,
+          "diagnostic": null,
+          "messaging": "available",
+          "observedOwner": null,
+          "pendingExecutors": 0,
+          "capabilities": {
+            "secureContext": true,
+            "randomIdentity": true,
+            "webLocks": true,
+            "broadcastChannel": true
+          },
+          "nativeActive": false,
+          "publicSettled": false,
+          "trackedNativeSettled": false,
+          "failure": null
+        }
+      },
+      "scope": "real coordinator + real timeout + native Web Locks; raw transport is a synthetic deferred promise; no commercial bootstrap or actor"
+    },
+    {
+      "id": "RAW-TRACKING-PROPOSAL",
+      "result": "PASS",
+      "atTimeout": {
+        "state": "COORDINATOR_HELD",
+        "instanceId": "9b51bb2dcacec25a5dcd5c706983de7c",
+        "localEpoch": 1,
+        "mode": "web-locks",
+        "nativeHeld": true,
+        "diagnostic": null,
+        "messaging": "available",
+        "observedOwner": null,
+        "pendingExecutors": 1,
+        "capabilities": {
+          "secureContext": true,
+          "randomIdentity": true,
+          "webLocks": true,
+          "broadcastChannel": true
+        },
+        "nativeActive": true,
+        "publicSettled": true,
+        "trackedNativeSettled": false,
+        "failure": "FINANCIAL_TIMEOUT"
+      },
+      "beforeNativeCompletion": {
+        "a": {
+          "state": "QUIESCING",
+          "instanceId": "9b51bb2dcacec25a5dcd5c706983de7c",
+          "localEpoch": 2,
+          "mode": "web-locks",
+          "nativeHeld": true,
+          "diagnostic": null,
+          "messaging": "available",
+          "observedOwner": null,
+          "pendingExecutors": 1,
+          "capabilities": {
+            "secureContext": true,
+            "randomIdentity": true,
+            "webLocks": true,
+            "broadcastChannel": true
+          },
+          "nativeActive": true,
+          "publicSettled": true,
+          "trackedNativeSettled": false,
+          "failure": "FINANCIAL_TIMEOUT"
+        },
+        "b": {
+          "state": "SECONDARY",
+          "instanceId": "c9e07aa1ef2846f6225bc97cad896c51",
+          "localEpoch": 1,
+          "mode": "web-locks",
+          "nativeHeld": false,
+          "diagnostic": null,
+          "messaging": "available",
+          "observedOwner": {
+            "instanceId": "9b51bb2dcacec25a5dcd5c706983de7c",
+            "epoch": 1
+          },
+          "pendingExecutors": 0,
+          "capabilities": {
+            "secureContext": true,
+            "randomIdentity": true,
+            "webLocks": true,
+            "broadcastChannel": true
+          },
+          "nativeActive": false,
+          "publicSettled": false,
+          "trackedNativeSettled": false,
+          "failure": null
+        }
+      },
+      "afterNativeCompletion": {
+        "a": {
+          "state": "RELEASED",
+          "instanceId": "9b51bb2dcacec25a5dcd5c706983de7c",
+          "localEpoch": 2,
+          "mode": "web-locks",
+          "nativeHeld": false,
+          "diagnostic": null,
+          "messaging": "inactive",
+          "observedOwner": null,
+          "pendingExecutors": 0,
+          "capabilities": {
+            "secureContext": true,
+            "randomIdentity": true,
+            "webLocks": true,
+            "broadcastChannel": true
+          },
+          "nativeActive": false,
+          "publicSettled": true,
+          "trackedNativeSettled": true,
+          "failure": "INSTANCE_COORDINATION_STALE"
+        },
+        "b": {
+          "state": "COORDINATOR_HELD",
+          "instanceId": "c9e07aa1ef2846f6225bc97cad896c51",
+          "localEpoch": 1,
+          "mode": "web-locks",
+          "nativeHeld": true,
+          "diagnostic": null,
+          "messaging": "available",
+          "observedOwner": null,
+          "pendingExecutors": 0,
+          "capabilities": {
+            "secureContext": true,
+            "randomIdentity": true,
+            "webLocks": true,
+            "broadcastChannel": true
+          },
+          "nativeActive": false,
+          "publicSettled": false,
+          "trackedNativeSettled": false,
+          "failure": null
+        }
+      },
+      "scope": "real coordinator + real timeout + native Web Locks; raw transport is a synthetic deferred promise; no commercial bootstrap or actor"
+    }
+  ],
+  "pageErrors": []
+}

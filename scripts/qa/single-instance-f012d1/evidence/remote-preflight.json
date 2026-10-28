@@ -1,0 +1,24 @@
+{
+  "main": "52bb573e651529b323b6617e3161cd76ece14a39",
+  "pr371": "2f33cea480f3d478f797b495b168feac9aed483f",
+  "pr373": {
+    "head": "0f1625f46e6fe234e378487bb06f74f4bd1555e9",
+    "base": "feat/f01-single-instance-coordinator-r1",
+    "base_sha": "f1d69093ffe3ad180752773c178b7fbaefd92ce1",
+    "draft": true,
+    "state": "open",
+    "merged": false
+  },
+  "pr372": {
+    "head": "f1d69093ffe3ad180752773c178b7fbaefd92ce1",
+    "base": "main",
+    "base_sha": "52bb573e651529b323b6617e3161cd76ece14a39",
+    "draft": true,
+    "state": "open",
+    "merged": false
+  },
+  "pr371_overlap": [
+    "src/services/customerCredit/customerCreditSyncHandler.js",
+    "src/services/sync/posSyncOrchestrator.js"
+  ]
+}
