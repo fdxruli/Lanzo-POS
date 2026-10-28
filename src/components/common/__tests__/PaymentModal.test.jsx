@@ -165,6 +165,39 @@ describe('PaymentModal', () => {
     expect(mocks.saveCustomer).not.toHaveBeenCalled();
   });
 
+  it('keeps due date conditional to Fiado and allows the fully paid credit case', async () => {
+    const user = userEvent.setup();
+    const onConfirm = vi.fn().mockResolvedValue({ success: true });
+    mocks.loadData.mockResolvedValue([{ id: 'cust-paid', name: 'Cliente liquidado', phone: '5551212121', creditLimit: 100, debt: 0 }]);
+    render(<PaymentModal show onClose={vi.fn()} onConfirm={onConfirm} total={100} />);
+
+    expect(screen.queryByLabelText('Fecha de Vencimiento:')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Fiado' }));
+    expect(screen.getByLabelText('Fecha de Vencimiento:')).toBeRequired();
+    expect(screen.getByLabelText('Fecha de Vencimiento:')).not.toHaveValue('');
+    await user.type(screen.getByLabelText('Asignar a Cliente (Obligatorio):'), 'liquidado');
+    await user.click(await screen.findByText('Cliente liquidado (5551212121)'));
+    await user.type(screen.getByLabelText('Abono (Opcional):'), '100');
+
+    fireEvent.change(screen.getByLabelText('Fecha de Vencimiento:'), { target: { value: '' } });
+    expect(screen.getByRole('button', { name: 'Confirmar Pago' })).toBeDisabled();
+
+    const dueDate = new Date();
+    dueDate.setDate(dueDate.getDate() + 1);
+    const dueDateValue = dueDate.toISOString().slice(0, 10);
+    fireEvent.change(screen.getByLabelText('Fecha de Vencimiento:'), { target: { value: dueDateValue } });
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Confirmar Pago' })).toBeEnabled());
+    await user.selectOptions(screen.getByLabelText('Método del abono inicial:'), 'tarjeta');
+    await user.click(screen.getByRole('button', { name: 'Confirmar Pago' }));
+
+    await waitFor(() => expect(onConfirm).toHaveBeenCalledWith(expect.objectContaining({
+      customerId: 'cust-paid', paymentMethod: 'fiado', amountPaid: '100',
+      saldoPendiente: '0', initialPaymentMethod: 'tarjeta', dueDate: new Date(dueDateValue).toISOString()
+    })));
+    await user.click(screen.getByRole('button', { name: 'Efectivo' }));
+    expect(screen.queryByLabelText('Fecha de Vencimiento:')).not.toBeInTheDocument();
+  });
+
   it('crea y selecciona un cliente Fiado con límite explícito para el saldo después del abono', async () => {
     const user = userEvent.setup();
     const onConfirm = vi.fn().mockResolvedValue({ success: true });
@@ -175,7 +208,7 @@ describe('PaymentModal', () => {
     await user.type(screen.getByLabelText('Abono (Opcional):'), '250');
     await user.click(screen.getByRole('button', { name: '+ Nuevo Cliente' }));
     await user.type(screen.getByLabelText('Nombre Completo *'), 'Nuevo para Fiado');
-    await user.type(screen.getByLabelText('Telefono *'), '5553334444');
+    await user.type(screen.getByLabelText('Teléfono *'), '5553334444');
     const credit = screen.getByLabelText('Límite de crédito *');
     expect(credit).toHaveValue('');
     await user.type(credit, '100');
@@ -220,7 +253,7 @@ describe('PaymentModal', () => {
     await user.click(screen.getByRole('button', { name: '+ Nuevo Cliente' }));
     expect(screen.queryByLabelText('Límite de crédito *')).not.toBeInTheDocument();
     await user.type(screen.getByLabelText('Nombre Completo *'), 'Cliente sin crédito');
-    await user.type(screen.getByLabelText('Telefono *'), '5554445555');
+    await user.type(screen.getByLabelText('Teléfono *'), '5554445555');
     await user.click(screen.getByRole('button', { name: 'Guardar Cliente' }));
     await waitFor(() => expect(mocks.saveDataSafe).toHaveBeenCalledWith('customers', expect.objectContaining({ creditLimit: 0 })));
     await user.click(screen.getByRole('button', { name: 'Fiado' }));

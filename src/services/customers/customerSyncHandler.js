@@ -13,6 +13,7 @@ import {
 import { customerCloudRepository } from './customerCloudRepository';
 import { customerLocalRepository } from './customerLocalRepository';
 import { customerMigrationService } from './customerMigrationService';
+import { normalizeCustomerServerVersion } from '../db/customerServerVersion';
 import { isLocalTenantAccessError } from '../tenant/localTenantGuard';
 import { hasCurrentActorPermission } from '../sync/actorPermission';
 
@@ -37,8 +38,8 @@ const normalizeChangeSeq = (response, fallback = 0) => {
 };
 
 const getExpectedVersion = (operation = {}) => {
-  const value = Number(operation?.payload?.expectedVersion ?? operation?.payload?.expected_version);
-  return Number.isFinite(value) && value > 0 ? value : null;
+  const value = operation?.payload?.expectedVersion ?? operation?.payload?.expected_version;
+  return normalizeCustomerServerVersion(value);
 };
 
 const savePushConflict = async ({ operation, response }) => {

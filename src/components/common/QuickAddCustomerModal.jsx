@@ -6,6 +6,7 @@ import { generateID } from '../../services/utils';
 import { useDismissibleHistoryLayer } from '../../hooks/useDismissibleHistoryLayer';
 import { Money } from '../../utils/moneyMath';
 import { isMoneyInputDraft, normalizeMoneyInputDraft, parseMoneyInputDraft } from '../../utils/moneyInputDraft';
+import { getCustomerPhoneValidationError } from '../../services/db/customerPhoneUtils';
 
 const getFriendlyError = (result) => {
   if (!result?.error) {
@@ -24,9 +25,12 @@ export default function QuickAddCustomerModal({ show, onClose, onCustomerSaved, 
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [creditLimitDraft, setCreditLimitDraft] = useState('');
+  const [nameError, setNameError] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const dialogRef = useRef(null);
+  const nameInputRef = useRef(null);
+  const phoneInputRef = useRef(null);
   const pendingCustomerRef = useRef(null);
   const isLoadingRef = useRef(false);
   const minimumCredit = Money.init(minimumCreditLimit);
@@ -44,6 +48,7 @@ export default function QuickAddCustomerModal({ show, onClose, onCustomerSaved, 
     setName('');
     setPhone('');
     setCreditLimitDraft('');
+    setNameError('');
     pendingCustomerRef.current = null;
     setError('');
     onClose();
@@ -91,6 +96,21 @@ export default function QuickAddCustomerModal({ show, onClose, onCustomerSaved, 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (isLoadingRef.current || (creditMode && !hasValidCredit)) return;
+
+    setNameError('');
+    if (name.trim().length < 2) {
+      setNameError('El nombre debe tener al menos 2 caracteres.');
+      nameInputRef.current?.focus();
+      return;
+    }
+
+    const phoneValidationError = getCustomerPhoneValidationError(phone);
+    if (phoneValidationError) {
+      setError(phoneValidationError);
+      phoneInputRef.current?.focus();
+      return;
+    }
+
     setError('');
     isLoadingRef.current = true;
     setIsLoading(true);
@@ -98,7 +118,7 @@ export default function QuickAddCustomerModal({ show, onClose, onCustomerSaved, 
     try {
       const newCustomer = {
         id: pendingCustomerRef.current?.id || generateID('cust'),
-        name,
+        name: name.trim(),
         phone,
         address: '',
         debt: 0,
@@ -117,6 +137,7 @@ export default function QuickAddCustomerModal({ show, onClose, onCustomerSaved, 
       }
       if (!result.success) {
         setError(getFriendlyError(result));
+        phoneInputRef.current?.focus();
         return;
       }
 
@@ -131,6 +152,7 @@ export default function QuickAddCustomerModal({ show, onClose, onCustomerSaved, 
       dismissModal();
     } catch {
       setError('Error al guardar el cliente.');
+      phoneInputRef.current?.focus();
     } finally {
       isLoadingRef.current = false;
       setIsLoading(false);
@@ -143,7 +165,7 @@ export default function QuickAddCustomerModal({ show, onClose, onCustomerSaved, 
     <div className="modal" style={{ display: 'flex', zIndex: 'var(--z-modal-overlay)' }}>
       <div ref={dialogRef} className="modal-content quick-add-modal" role="dialog" aria-modal="true" aria-labelledby="quick-customer-title">
         <h2 id="quick-customer-title" className="modal-title">Nuevo cliente</h2>
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} noValidate>
           <div className="form-group">
             <label className="form-label" htmlFor="quick-customer-name">Nombre Completo *</label>
             <input
@@ -151,17 +173,26 @@ export default function QuickAddCustomerModal({ show, onClose, onCustomerSaved, 
               id="quick-customer-name"
               type="text"
               required
+              ref={nameInputRef}
+              minLength={2}
+              aria-invalid={Boolean(nameError)}
+              aria-describedby={nameError ? 'quick-customer-name-error' : undefined}
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => {
+                setName(e.target.value);
+                if (nameError) setNameError('');
+              }}
             />
+            {nameError && <p id="quick-customer-name-error" className="form-help-text validation-message error" role="alert">{nameError}</p>}
           </div>
           <div className="form-group">
-            <label className="form-label" htmlFor="quick-customer-phone">Telefono *</label>
+            <label className="form-label" htmlFor="quick-customer-phone">Teléfono *</label>
             <input
               className={`form-input ${error ? 'invalid' : ''}`}
               id="quick-customer-phone"
               type="tel"
               required
+              ref={phoneInputRef}
               aria-invalid={Boolean(error)}
               aria-describedby={error ? 'quick-customer-error' : undefined}
               value={phone}

@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Info } from 'lucide-react';
 import { showMessageModal } from '../../services/utils';
+import { getCustomerPhoneValidationError } from '../../services/db/customerPhoneUtils';
 import './CustomerForm.css';
 
 // Recibimos 'globalCreditLimit' para sugerirlo por defecto
@@ -11,6 +12,8 @@ export default function CustomerForm({ onSave, onCancel, customerToEdit, globalC
   const [creditLimit, setCreditLimit] = useState(0);
   const [phoneError, setPhoneError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const isSavingRef = useRef(false);
+  const phoneInputRef = useRef(null);
 
   useEffect(() => {
     if (customerToEdit) {
@@ -41,13 +44,21 @@ export default function CustomerForm({ onSave, onCancel, customerToEdit, globalC
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (isSaving) return;
+    if (isSavingRef.current) return;
 
     if (name.trim().length === 0) {
       showMessageModal('El nombre del cliente no puede estar vacio.', null, { type: 'warning' });
       return;
     }
 
+    const phoneValidationError = getCustomerPhoneValidationError(phone);
+    if (phoneValidationError) {
+      setPhoneError(phoneValidationError);
+      phoneInputRef.current?.focus();
+      return;
+    }
+
+    isSavingRef.current = true;
     setIsSaving(true);
     setPhoneError('');
 
@@ -61,10 +72,13 @@ export default function CustomerForm({ onSave, onCancel, customerToEdit, globalC
 
       if (result?.success === false && result?.fieldErrors?.phone) {
         setPhoneError(result.fieldErrors.phone);
+        phoneInputRef.current?.focus();
       }
     } catch {
       setPhoneError('No se pudo validar el telefono. Intenta de nuevo.');
+      phoneInputRef.current?.focus();
     } finally {
+      isSavingRef.current = false;
       setIsSaving(false);
     }
   };
@@ -74,7 +88,7 @@ export default function CustomerForm({ onSave, onCancel, customerToEdit, globalC
       <h3 className="subtitle" id="customer-form-title">
         {customerToEdit ? `Editar: ${customerToEdit.name}` : 'Anadir Nuevo Cliente'}
       </h3>
-      <form id="customer-form" onSubmit={handleSubmit}>
+      <form id="customer-form" onSubmit={handleSubmit} noValidate>
 
         {/* --- Seccion de Datos Basicos --- */}
         <div className="form-group">
@@ -92,16 +106,20 @@ export default function CustomerForm({ onSave, onCancel, customerToEdit, globalC
 
         <div className="form-row customer-form-row">
           <div className="form-group">
-            <label className="form-label" htmlFor="customer-phone">Telefono</label>
+            <label className="form-label" htmlFor="customer-phone">Teléfono *</label>
             <input
               className={`form-input ${phoneError ? 'invalid' : ''}`}
               id="customer-phone"
               type="tel"
+              required
+              ref={phoneInputRef}
+              aria-invalid={Boolean(phoneError)}
+              aria-describedby={phoneError ? 'customer-phone-error' : undefined}
               value={phone}
               onChange={handlePhoneChange}
-              placeholder="Opcional"
+              placeholder="Ej. 555 123 4567"
             />
-            {phoneError && <p className="form-help-text validation-message error">{phoneError}</p>}
+            {phoneError && <p id="customer-phone-error" className="form-help-text validation-message error" role="alert">{phoneError}</p>}
           </div>
 
           {/* --- NUEVO CAMPO: Limite de Credito --- */}

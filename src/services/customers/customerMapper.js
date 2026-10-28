@@ -1,5 +1,6 @@
 import { toIndexedPhoneKey } from '../db/customerPhoneUtils';
 import { normalizeCustomerDebtCents } from '../db/customerDebtIndex';
+import { parseCustomerServerVersion } from '../db/customerServerVersion';
 
 export const CUSTOMER_SYNC_STATUS = Object.freeze({
   LOCAL: 'local',
@@ -23,9 +24,47 @@ const toNumber = (value, fallback = 0) => {
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
+const getLocalDebtCents = (customer = {}, debt = 0) => {
+  const storedCents = customer.debtCents ?? customer.debt_cents;
+  if (storedCents === undefined || storedCents === null || storedCents === '') {
+    return normalizeCustomerDebtCents(debt);
+  }
+
+  const parsedCents = Number(storedCents);
+  return Number.isSafeInteger(parsedCents) && parsedCents >= 0
+    ? parsedCents
+    : normalizeCustomerDebtCents(debt);
+};
+
 const cleanText = (value) => {
   const text = String(value ?? '').trim();
   return text.length > 0 ? text : '';
+};
+
+const getLocalServerVersion = (customer = {}, existingCustomer = null) => {
+  const incoming = customer.serverVersion !== undefined
+    ? customer.serverVersion
+    : customer.server_version;
+  const parsedIncoming = parseCustomerServerVersion(incoming);
+  if (parsedIncoming.valid && parsedIncoming.version !== null) return parsedIncoming.version;
+
+  const existing = existingCustomer?.serverVersion ?? existingCustomer?.server_version;
+  const parsedExisting = parseCustomerServerVersion(existing);
+  return parsedExisting.valid ? parsedExisting.version : null;
+};
+
+const getCloudServerVersion = (cloudCustomer = {}) => {
+  const value = cloudCustomer.server_version ?? cloudCustomer.serverVersion;
+  const parsed = parseCustomerServerVersion(value);
+
+  if (!parsed.valid || parsed.version === null) {
+    const error = new Error('INVALID_CUSTOMER_SERVER_VERSION');
+    error.name = 'CustomerServerVersionError';
+    error.code = 'INVALID_CUSTOMER_SERVER_VERSION';
+    throw error;
+  }
+
+  return parsed.version;
 };
 
 export const normalizeCustomerForLocal = (customer = {}, existingCustomer = null, overrides = {}) => {
@@ -54,7 +93,7 @@ export const normalizeCustomerForLocal = (customer = {}, existingCustomer = null
     updatedAt: pick(customer, 'updated_at', 'updatedAt', now),
     deletedAt,
     deletedTimestamp: deletedAt || existingCustomer?.deletedTimestamp,
-    serverVersion: toNumber(pick(customer, 'server_version', 'serverVersion', existingCustomer?.serverVersion), existingCustomer?.serverVersion || null),
+    serverVersion: getLocalServerVersion(customer, existingCustomer),
     cloudUpdatedAt: pick(customer, 'updated_at', 'cloudUpdatedAt', existingCustomer?.cloudUpdatedAt || null),
     lastSyncedAt: overrides.lastSyncedAt ?? existingCustomer?.lastSyncedAt ?? null,
     syncStatus: overrides.syncStatus ?? existingCustomer?.syncStatus ?? CUSTOMER_SYNC_STATUS.SYNCED,
@@ -86,7 +125,7 @@ export const cloudCustomerToLocal = (cloudCustomer = {}, existingCustomer = null
     updatedAt: cloudCustomer.updated_at || cloudCustomer.updatedAt,
     deletedAt: cloudCustomer.deleted_at || cloudCustomer.deletedAt || null,
     deletedTimestamp: cloudCustomer.deleted_at || cloudCustomer.deletedAt || null,
-    serverVersion: toNumber(cloudCustomer.server_version ?? cloudCustomer.serverVersion, null),
+    serverVersion: getCloudServerVersion(cloudCustomer),
     cloudUpdatedAt: cloudCustomer.updated_at || cloudCustomer.updatedAt || null,
     metadata: cloudCustomer.metadata || {}
   };
@@ -112,7 +151,7 @@ export const localCustomerToCloudPayload = (customer = {}) => {
     phone_key: phoneKey,
     address: cleanText(customer.address),
     debt,
-    debt_cents: normalizeCustomerDebtCents(customer.debtCents ?? debt),
+    debt_cents: getLocalDebtCents(customer, debt),
     credit_limit: toNumber(customer.creditLimit, 0),
     created_at: customer.createdAt || nowIso(),
     updated_at: customer.updatedAt || nowIso(),

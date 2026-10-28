@@ -14,6 +14,7 @@ import {
 import { posSyncOrchestrator } from '../sync/posSyncOrchestrator';
 import { customerCloudRepository } from './customerCloudRepository';
 import { customerLocalRepository } from './customerLocalRepository';
+import { normalizeCustomerServerVersion } from '../db/customerServerVersion';
 import {
   CUSTOMER_SYNC_STATUS,
   localCustomerToCloudPayload,
@@ -183,7 +184,7 @@ export const customerRepository = {
       entityId: id,
       prefix: 'customer'
     });
-    const expectedVersion = existingCustomer?.serverVersion || null;
+    const expectedVersion = normalizeCustomerServerVersion(existingCustomer?.serverVersion ?? existingCustomer?.server_version);
 
     if (!isOnline()) {
       const localResult = await customerLocalRepository.saveCustomerLocal(localCandidate, {
@@ -289,7 +290,7 @@ export const customerRepository = {
       entityId: customerId,
       prefix: 'customer'
     });
-    const expectedVersion = existingCustomer.serverVersion || null;
+    const expectedVersion = normalizeCustomerServerVersion(existingCustomer.serverVersion ?? existingCustomer.server_version);
 
     if (!isOnline()) {
       const localResult = await customerLocalRepository.markCustomerDeletedPending(existingCustomer, { operationId: idempotencyKey });

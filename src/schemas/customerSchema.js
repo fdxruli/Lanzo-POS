@@ -1,4 +1,11 @@
 import { z } from 'zod';
+import { parseCustomerServerVersion } from '../services/db/customerServerVersion';
+
+const customerServerVersionSchema = z.preprocess((value) => {
+  if (value === 0 || value === '0' || value === '') return null;
+  const parsed = parseCustomerServerVersion(value);
+  return parsed.valid ? parsed.version : value;
+}, z.number().int().positive().refine(Number.isSafeInteger).nullable().optional());
 
 export const customerSchema = z.object({
   id: z.string().min(1),
@@ -18,7 +25,7 @@ export const customerSchema = z.object({
 
   // Metadatos de sincronizacion POS PRO (Fase 1 clientes/directorio)
   syncStatus: z.enum(['local', 'pending', 'synced', 'conflict', 'error']).optional(),
-  serverVersion: z.coerce.number().int().positive().nullable().optional(),
+  serverVersion: customerServerVersionSchema,
   lastSyncedAt: z.string().nullable().optional(),
   pendingOperationId: z.string().nullable().optional(),
   deletedAt: z.string().nullable().optional(),
