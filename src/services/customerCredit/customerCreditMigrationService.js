@@ -1,233 +1,157 @@
 import { db, STORES } from '../db/dexie';
-import Logger from '../Logger';
 import { Money } from '../../utils/moneyMath';
+import { actorRuntimeController } from '../auth/actorRuntimeController';
 import { syncMetaService } from '../sync/syncMetaService';
-import { SYNC_LIMITS } from '../sync/syncConstants';
 import { customerCreditCloudRepository } from './customerCreditCloudRepository';
-import { customerCreditLocalRepository } from './customerCreditLocalRepository';
+import { historicalCreditSnapshot } from './historicalCreditSnapshot';
 
-const MIGRATED_AT_KEY = 'customer_credit_migrated_at';
-const LAST_CHANGE_SEQ_KEY = 'customer_credit_last_change_seq';
-const MIGRATION_CONFLICTS_KEY = 'customer_credit_migration_conflicts';
-
-const buildStableBatchId = (licenseKey) => `customer_credit.initial_balance:${licenseKey}`;
-const buildInitialBalanceKey = (licenseKey, customerId) => `customer_credit.initial_balance:${licenseKey}:${customerId}`;
-
-const getLedgerEntriesFromSummary = (summary = {}) => {
-  if (Array.isArray(summary.ledger_entries)) return summary.ledger_entries;
-  if (Array.isArray(summary.ledgerEntries)) return summary.ledgerEntries;
-  if (Array.isArray(summary.ledger)) return summary.ledger;
-  return [];
+const BATCH_KEY = 'historical-credit:v1:batch';
+const completeStatuses = new Set(['IMPORTED', 'ALREADY_IMPORTED_IDENTICAL', 'CLOUD_PROJECTION']);
+const ownerHandle = () => {
+  const handle = actorRuntimeController.capture('customers');
+  if (handle.actorType !== 'admin') throw new Error('REJECTED_AUTHORITY');
+  return handle;
 };
-
-const getCustomerDebtFromSummary = (summary = {}) => (
-  summary.customer?.debt ??
-  summary.customer?.current_debt ??
-  summary.customer?.currentDebt ??
-  summary.debt ??
-  summary.current_debt ??
-  summary.currentDebt ??
-  null
-);
-
-const debtsDiffer = (localDebt, cloudDebt) => {
-  if (cloudDebt === null || cloudDebt === undefined) return false;
-  return Money.toCents(localDebt) !== Money.toCents(cloudDebt);
+const readBatch = async () => (await db.table(STORES.SYNC_CACHE).get(BATCH_KEY))?.value || null;
+const persist = async (batch, handle) => {
+  handle.assertCurrent();
+  await db.table(STORES.SYNC_CACHE).put({ key: BATCH_KEY, value: batch });
+  handle.assertCurrent();
 };
-
-const buildMigrationConflict = ({ customer, localDebt, cloudDebt, cloudLedgerExists, reason }) => ({
-  type: 'CUSTOMER_CREDIT_MIGRATION_CONFLICT',
-  customerId: customer.id,
-  customerName: customer.name || customer.nombre || null,
-  localDebt: Money.toExactString(localDebt),
-  cloudDebt: cloudDebt === null || cloudDebt === undefined ? null : Money.toExactString(cloudDebt),
-  cloudLedgerExists: Boolean(cloudLedgerExists),
-  createdAt: new Date().toISOString(),
-  reason,
-  recommendation: 'Resolver manualmente antes de intentar migracion historica avanzada. No se sobrescribio la deuda cloud.'
-});
-
-const saveMigrationConflicts = async (licenseKey, conflicts = []) => {
-  if (!licenseKey || conflicts.length === 0) return;
-
-  const previous = await syncMetaService.getMeta(MIGRATION_CONFLICTS_KEY, [], { licenseKey });
-  const previousList = Array.isArray(previous) ? previous : [];
-  const byCustomer = new Map();
-
-  [...previousList, ...conflicts].forEach((conflict) => {
-    const key = conflict?.customerId || `${conflict?.type}:${conflict?.createdAt}`;
-    byCustomer.set(key, conflict);
+const rpc = async (licenseKey, action, batch, handle, confirm = false) => {
+  handle.assertCurrent();
+  const response = await customerCreditCloudRepository.historicalCreditBatch({
+    licenseKey, action, manifest: batch?.manifest, authorizationId: batch?.authorizationId, confirm
   });
-
-  await syncMetaService.setMeta(MIGRATION_CONFLICTS_KEY, Array.from(byCustomer.values()), { licenseKey });
+  handle.assertCurrent();
+  if (batch?.previewHash && response.hash && response.hash !== batch.previewHash) throw new Error('HISTORICAL_RESPONSE_MISMATCH');
+  return response;
+};
+const recordResults = async (batch, response, handle) => {
+  const results = [];
+  const approvedEntries = new Map(batch.manifest.entries.map((entry) => [entry.customer_id, entry]));
+  const received = response.results || [];
+  if (response.state === 'CONSUMED' && (received.length !== approvedEntries.size
+    || new Set(received.map((row) => row.customer_id)).size !== approvedEntries.size)) {
+    throw new Error('HISTORICAL_RECEIPT_MISSING');
+  }
+  for (const result of response.results || []) {
+    handle.assertCurrent();
+    const approved = approvedEntries.get(result.customer_id);
+    if (!approved || approved.amount_cents !== result.amount_cents || approved.source_customer_id !== result.source_customer_id) {
+      throw new Error('HISTORICAL_RESPONSE_MISMATCH');
+    }
+    if (completeStatuses.has(result.status) && !result.ledger_id) throw new Error('HISTORICAL_RECEIPT_MISSING');
+    results.push(await historicalCreditSnapshot.saveResult(result.customer_id, result));
+  }
+  const localConflict = results.some((result) => result.status === 'CONFLICT_LOCAL_ACTIVITY');
+  const localResponse = localConflict
+    ? { ...response, success:false, state:'LOCAL_CONFLICT', cloudState:response.state, results }
+    : { ...response, results };
+  const updated = { ...batch, authorizationId: response.authorization_id || batch.authorizationId,
+    state: response.state || batch.state, response: localResponse };
+  await persist(updated, handle);
+  return updated;
 };
 
 export const customerCreditMigrationService = {
-  async runInitialMigrationIfNeeded({ licenseKey }) {
+  async runInitialMigrationIfNeeded({ licenseKey } = {}) {
     if (!licenseKey) return { skipped: true, reason: 'license_missing' };
-
-    const alreadyMigrated = await syncMetaService.getMeta(MIGRATED_AT_KEY, null, { licenseKey });
-    if (alreadyMigrated) return { skipped: true, migratedAt: alreadyMigrated };
-
-    const customers = await customerCreditLocalRepository.getCustomersWithDebt();
-    if (customers.length === 0) {
-      await syncMetaService.setMeta(MIGRATED_AT_KEY, new Date().toISOString(), { licenseKey });
-      return { success: true, inserted: 0, skipped: true };
-    }
-
-    const snapshot = await customerCreditCloudRepository.pullCreditSnapshot({
-      licenseKey,
-      limit: SYNC_LIMITS.DEFAULT_PULL_LIMIT,
-      includeDeleted: false
-    });
-
-    if (snapshot?.success === false) {
-      throw new Error(snapshot.message || snapshot.code || 'CUSTOMER_CREDIT_SNAPSHOT_FAILED');
-    }
-
-    const snapshotLedgers = Array.isArray(snapshot.ledger_entries) ? snapshot.ledger_entries : [];
-    const snapshotLedgerCustomerIds = snapshotLedgers.reduce((ids, ledger) => {
-      const customerId = ledger.customer_id || ledger.customerId;
-      if (customerId) ids.add(customerId);
-      return ids;
-    }, new Set());
-
-    const balances = [];
-    const conflicts = [];
-    let skippedExistingCloudLedger = 0;
-    let skippedZeroDebt = 0;
-
-    for (const customer of customers) {
-      const localDebt = Money.init(customer.debt || 0);
-
-      if (localDebt.lte(0)) {
-        skippedZeroDebt += 1;
-        continue;
-      }
-
-      let summary = null;
-      let summaryError = null;
-      try {
-        summary = await customerCreditCloudRepository.getCustomerCreditSummary({
-          licenseKey,
-          customerId: customer.id
-        });
-
-        if (summary?.success === false) {
-          throw new Error(summary.message || summary.code || 'CUSTOMER_CREDIT_SUMMARY_FAILED');
-        }
-      } catch (error) {
-        summaryError = error;
-        Logger.warn('[CustomerCredit/Migration] No se pudo leer resumen cloud de cliente; se omite para evitar duplicar saldo inicial:', {
-          customerId: customer.id,
-          error
-        });
-      }
-
-      const summaryLedgers = getLedgerEntriesFromSummary(summary);
-      const cloudLedgerExists = summaryLedgers.length > 0 || snapshotLedgerCustomerIds.has(customer.id);
-
-      if (summaryError) {
-        skippedExistingCloudLedger += cloudLedgerExists ? 1 : 0;
-        conflicts.push(buildMigrationConflict({
-          customer,
-          localDebt,
-          cloudDebt: getCustomerDebtFromSummary(summary),
-          cloudLedgerExists,
-          reason: cloudLedgerExists
-            ? 'cloud_ledger_exists_but_summary_unavailable'
-            : 'cloud_summary_unavailable_initial_balance_skipped'
-        }));
-        continue;
-      }
-
-      if (cloudLedgerExists) {
-        skippedExistingCloudLedger += 1;
-        const cloudDebt = getCustomerDebtFromSummary(summary);
-
-        if (debtsDiffer(localDebt, cloudDebt)) {
-          conflicts.push(buildMigrationConflict({
-            customer,
-            localDebt,
-            cloudDebt,
-            cloudLedgerExists,
-            reason: 'cloud_ledger_exists_with_different_debt'
-          }));
-        }
-
-        continue;
-      }
-
-      balances.push({
-        customer_id: customer.id,
-        debt: Money.toExactString(localDebt),
-        metadata: {
-          source: 'dexie_customer_debt',
-          migrationType: 'INITIAL_BALANCE_ONLY',
-          historicalLedgerMigrated: false,
-          idempotencyKey: buildInitialBalanceKey(licenseKey, customer.id),
-          note: 'Saldo inicial migrado. El historial local previo permanece en Dexie y no se migra en Fase 4.'
-        }
-      });
-    }
-
-    await saveMigrationConflicts(licenseKey, conflicts);
-
-    if (balances.length === 0) {
-      await syncMetaService.setMeta(MIGRATED_AT_KEY, new Date().toISOString(), { licenseKey });
-      return {
-        success: true,
-        inserted: 0,
-        skipped: customers.length,
-        skippedExistingCloudLedger,
-        skippedZeroDebt,
-        conflicts
-      };
-    }
-
-    const response = await customerCreditCloudRepository.migrateLocalCredit({
-      licenseKey,
-      customerBalances: balances,
-      batchId: buildStableBatchId(licenseKey)
-    });
-
-    if (response?.success === false) {
-      throw new Error(response.message || response.code || 'CUSTOMER_CREDIT_MIGRATION_FAILED');
-    }
-
-    await syncMetaService.setMeta(MIGRATED_AT_KEY, new Date().toISOString(), { licenseKey });
-    const latestChangeSeq = Number(response.latest_change_seq || 0);
-    if (latestChangeSeq > 0) {
-      await syncMetaService.setMeta(LAST_CHANGE_SEQ_KEY, latestChangeSeq, { licenseKey });
-    }
-
-    return {
-      ...response,
-      skippedExistingCloudLedger,
-      skippedZeroDebt,
-      conflicts,
-      migrationMode: 'INITIAL_BALANCE_ONLY'
-    };
+    await historicalCreditSnapshot.preserveAll();
+    const pending = (await historicalCreditSnapshot.list()).filter((row) => !completeStatuses.has(row.status));
+    // Opening the app or reconnecting never grants financial approval.
+    return { success: pending.length === 0, code: pending.length ? 'PENDING_AUTHORIZATION' : null, pending: pending.length };
   },
-
+  async preview({ licenseKey }) {
+    const handle = ownerHandle();
+    await historicalCreditSnapshot.preserveAll();
+    handle.assertCurrent();
+    let batch = await readBatch();
+    if (batch?.state === 'CONSUMED') {
+      // Archive the confirmed receipt before starting another bounded batch.
+      // Conflicts and later local activity remain preserved for manual review.
+      const previousCustomers = new Set(batch.manifest.entries.map((entry) => entry.customer_id));
+      const remaining = (await historicalCreditSnapshot.list()).some((row) =>
+        row.status === 'PENDING_AUTHORIZATION' && !previousCustomers.has(row.customerId));
+      if (remaining) {
+        handle.assertCurrent();
+        await db.transaction('rw', db.table(STORES.SYNC_CACHE), async () => {
+          await db.table(STORES.SYNC_CACHE).put({ key: `${BATCH_KEY}:archive:${batch.manifest.batch_id}`, value: batch });
+          await db.table(STORES.SYNC_CACHE).delete(BATCH_KEY);
+        });
+        handle.assertCurrent();
+        batch = null;
+      }
+    }
+    if (!batch) {
+      const context = await rpc(licenseKey, 'context', null, handle);
+      if (!context.success) throw new Error(context.code || 'REJECTED_AUTHORITY');
+      const preserved = await historicalCreditSnapshot.list();
+      const snapshots = preserved.filter((row) => row.status === 'PENDING_AUTHORIZATION').slice(0, 500);
+      if (!snapshots.length) {
+        const conflicts = preserved.filter((row) => !completeStatuses.has(row.status));
+        return { success: conflicts.length === 0, empty: conflicts.length === 0, state: conflicts.length ? 'LOCAL_CONFLICT' : null,
+          results: conflicts.map((row) => row.result || { customer_id: row.customerId, amount_cents: row.amountCents, status: row.status }) };
+      }
+      const sources = new Set(snapshots.map((row) => row.sourceId));
+      if (sources.size !== 1) throw new Error('HISTORICAL_SOURCE_CONFLICT');
+      const entries = snapshots.map((row) => ({ customer_id: row.customerId, source_customer_id: row.sourceCustomerId, amount_cents: row.amountCents }));
+      batch = { manifest: { version: 1, tenant_id: context.tenant_id, source_id: snapshots[0].sourceId,
+        batch_id: crypto.randomUUID(), entries, customer_count: entries.length,
+        total_cents: entries.reduce((sum, row) => sum + row.amount_cents, 0) }, state: 'PENDING_AUTHORIZATION' };
+      await persist(batch, handle);
+    }
+    const response = await rpc(licenseKey, 'preview', batch, handle);
+    if (!response.hash) throw new Error(response.code || 'HISTORICAL_PREVIEW_FAILED');
+    batch = { ...batch, previewHash: response.hash, preview: response };
+    await persist(batch, handle);
+    const snapshots = await historicalCreditSnapshot.list();
+    return { ...response, batch, names: Object.fromEntries(snapshots.map((row) => [row.customerId, row.originalCustomer.name])) };
+  },
+  async authorizeAndImport({ licenseKey, reviewedHash }) {
+    const handle = ownerHandle();
+    let batch = await readBatch();
+    if (!batch?.previewHash || batch.previewHash !== reviewedHash) throw new Error('HISTORICAL_REVIEW_REQUIRED');
+    // Persist the exact pending request before network I/O. A lost response is unknown, never success.
+    await persist({ ...batch, state: 'AUTHORIZATION_UNCERTAIN' }, handle);
+    const approved = await rpc(licenseKey, 'authorize', batch, handle, true);
+    if (!approved.authorization_id || approved.hash !== reviewedHash) throw new Error(approved.code || 'HISTORICAL_AUTHORIZATION_FAILED');
+    batch = { ...batch, authorizationId: approved.authorization_id, state: approved.state };
+    await persist(batch, handle);
+    return this.resumeImport({ licenseKey });
+  },
+  async status({ licenseKey }) {
+    const handle = ownerHandle();
+    const batch = await readBatch();
+    if (!batch) return { success: false, code: 'PENDING_AUTHORIZATION' };
+    const response = await rpc(licenseKey, 'status', batch, handle);
+    if (!response.authorization_id) throw new Error(response.code || 'PENDING_AUTHORIZATION');
+    return (await recordResults(batch, response, handle)).response;
+  },
+  async resumeImport({ licenseKey }) {
+    const handle = ownerHandle();
+    let batch = await readBatch();
+    if (!batch) throw new Error('PENDING_AUTHORIZATION');
+    // Reconcile first, including a timeout after server commit or approval.
+    const status = await rpc(licenseKey, 'status', batch, handle);
+    if (!status.authorization_id) throw new Error(status.code || 'PENDING_AUTHORIZATION');
+    batch = await recordResults(batch, status, handle);
+    if (status.state === 'CONSUMED') return batch.response;
+    if (['EXPIRED','SESSION_CHANGED','CONFLICT'].includes(status.state)) throw new Error(status.state);
+    const response = await rpc(licenseKey, 'consume', batch, handle);
+    if (!response.authorization_id) throw new Error(response.code || 'HISTORICAL_IMPORT_FAILED');
+    return (await recordResults(batch, response, handle)).response;
+  },
   async markLastChangeSeq(licenseKey, changeSeq) {
-    const normalized = Number(changeSeq) || 0;
-    if (!licenseKey || normalized <= 0) return;
-    await syncMetaService.setMeta(LAST_CHANGE_SEQ_KEY, normalized, { licenseKey });
+    if (licenseKey && Number(changeSeq) > 0) await syncMetaService.setMeta('customer_credit_last_change_seq', Number(changeSeq), { licenseKey });
   },
-
   async getLocalLedgerEntries(customerId = null) {
     if (!db.isOpen()) await db.open();
-    try {
-      if (customerId) {
-        return db.table(STORES.CUSTOMER_LEDGER).where('customerId').equals(customerId).toArray();
-      }
-      return db.table(STORES.CUSTOMER_LEDGER).toArray();
-    } catch (error) {
-      Logger.warn('[CustomerCredit/Migration] No se pudo leer ledger local:', error);
-      return [];
-    }
+    return customerId ? db.table(STORES.CUSTOMER_LEDGER).where('customerId').equals(customerId).toArray() : db.table(STORES.CUSTOMER_LEDGER).toArray();
+  },
+  async getPreservedBalance(customerId) {
+    const snapshot = (await historicalCreditSnapshot.list()).find((row) => row.customerId === customerId);
+    return snapshot ? Money.toExactString(Money.divide(snapshot.amountCents, 100)) : null;
   }
 };
-
 export default customerCreditMigrationService;

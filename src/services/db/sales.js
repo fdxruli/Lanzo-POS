@@ -406,6 +406,7 @@ const applyCustomerCreditCharge = async ({ sale, tables }) => {
 
     await tables.customers.update(sale.customerId, {
         debt: Money.toExactString(newDebt),
+        financialSource: 'local',
         debtCents: normalizeCustomerDebtCents(newDebt),
         updatedAt: timestamp
     });
