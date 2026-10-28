@@ -233,6 +233,98 @@ describe('customerRepository IndexedDB integration', () => {
     });
   });
 
+  it('preserves a FREE decimal limit across name and phone edits, reload, and rejects forged references', async () => {
+    const existing = { id: 'decimal-free', name: 'Antes', phone: '5551112222', address: '', debt: 42.5, debtCents: 4250, creditLimit: 80.25 };
+    await db.table(STORES.CUSTOMERS).put(existing);
+    let result = await customerRepository.saveCustomer({ name: 'Nuevo', phone: existing.phone, address: '', creditLimit: 80.25 }, { existingCustomer: existing });
+    expect(result.success).toBe(true);
+    let saved = await customerLocalRepository.getCustomerById(existing.id);
+    result = await customerRepository.saveCustomer({ name: 'Nuevo', phone: '5551113333', address: 'Centro', creditLimit: 80.25 }, { existingCustomer: saved });
+    expect(result.success).toBe(true);
+    saved = await customerLocalRepository.getCustomerById(existing.id);
+    expect(saved).toMatchObject({ creditLimit: 80.25, debt: 42.5, debtCents: 4250, phone: '5551113333', address: 'Centro' });
+    expect((await customerRepository.saveCustomer({ ...saved, creditLimit: 80.26 }, { existingCustomer: { ...saved, creditLimit: 80.26 } })).success).toBe(false);
+    expect((await customerRepository.saveCustomer({ ...saved, creditLimit: -1 }, { existingCustomer: saved })).success).toBe(false);
+    expect((await customerRepository.saveCustomer({ ...saved, creditLimit: 100 }, { existingCustomer: saved })).success).toBe(true);
+    expect(await customerLocalRepository.getCustomerById(existing.id)).toMatchObject({ creditLimit: 100, debt: 42.5, debtCents: 4250 });
+  });
+
+  it('reconciles a PRO name edit against a concurrent address with a decimal limit', async () => {
+    setCloudMode();
+    const existing = { id: 'decimal-online', name: 'Base', phone: '5553334406', address: 'Antes', debt: 22, debtCents: 2200, creditLimit: 80.25, serverVersion: 5, syncStatus: 'synced' };
+    await db.table(STORES.CUSTOMERS).put(existing);
+    mocks.cloud.upsertCustomer
+      .mockResolvedValueOnce({ success: false, code: 'VERSION_CONFLICT', customer: remoteCustomer(existing.id, { name: 'Base', phone: existing.phone, address: 'Cloud', credit_limit: 80.25, server_version: 6 }) })
+      .mockResolvedValueOnce({ success: true, customer: remoteCustomer(existing.id, { name: 'Local', phone: existing.phone, address: 'Cloud', credit_limit: 80.25, server_version: 7 }) });
+    const result = await customerRepository.saveCustomer({ ...existing, name: 'Local' }, { existingCustomer: existing });
+    expect(result.success).toBe(true);
+    expect(mocks.cloud.upsertCustomer).toHaveBeenCalledTimes(2);
+    expect(mocks.cloud.upsertCustomer.mock.calls[1][0]).toMatchObject({ expectedVersion: 6, customer: { name: 'Local', address: 'Cloud', credit_limit: 80.25 } });
+    expect(await customerLocalRepository.getCustomerById(existing.id)).toMatchObject({ creditLimit: 80.25, debt: 22, debtCents: 2200, serverVersion: 7 });
+  });
+
+  it('asks for review if a newer local snapshot changed the open decimal limit', async () => {
+    setCloudMode();
+    const opened = { id: 'decimal-refresh', name: 'Base', phone: '5553334406', address: '', debt: 22, debtCents: 2200, creditLimit: 80.25, serverVersion: 5, syncStatus: 'synced' };
+    await db.table(STORES.CUSTOMERS).put({ ...opened, creditLimit: 100, serverVersion: 6 });
+    const result = await customerRepository.saveCustomer({ ...opened, name: 'Local' }, { existingCustomer: opened });
+    expect(result).toMatchObject({ success: false, code: 'CUSTOMER_FIELDS_CONFLICT', currentCustomer: { creditLimit: 100 } });
+    expect(result.fieldConflicts).toEqual(expect.arrayContaining([expect.objectContaining({ field: 'creditLimit', proposedValue: 80.25, currentValue: 100 })]));
+    expect(mocks.cloud.upsertCustomer).not.toHaveBeenCalled();
+  });
+
+  it('requires review when both devices change a decimal credit limit', async () => {
+    setCloudMode();
+    const existing = { id: 'decimal-conflict', name: 'Base', phone: '5553334406', address: '', debt: 22, debtCents: 2200, creditLimit: 80.25, serverVersion: 5, syncStatus: 'synced' };
+    await db.table(STORES.CUSTOMERS).put(existing);
+    mocks.cloud.upsertCustomer.mockResolvedValueOnce({ success: false, code: 'VERSION_CONFLICT', customer: remoteCustomer(existing.id, { name: 'Base', phone: existing.phone, credit_limit: 150, server_version: 6 }) });
+    const result = await customerRepository.saveCustomer({ ...existing, creditLimit: 100 }, { existingCustomer: existing });
+    expect(result).toMatchObject({ success: false, code: 'CUSTOMER_FIELDS_CONFLICT' });
+    expect(result.fieldConflicts).toEqual(expect.arrayContaining([expect.objectContaining({ field: 'creditLimit', baseValue: 80.25, proposedValue: 100, currentValue: 150 })]));
+    expect(mocks.cloud.upsertCustomer).toHaveBeenCalledTimes(1);
+    expect(await customerLocalRepository.getCustomerById(existing.id)).toMatchObject({ debt: 22, debtCents: 2200 });
+  });
+
+  it('blocks a changed decimal outbox value despite a valid baseline', async () => {
+    setCloudMode();
+    const result = await customerSyncHandler.pushOperation({ id: 'bad-decimal', idempotencyKey: 'bad-decimal', licenseKey: TEST_LICENSE_KEY, operation: SYNC_OPERATIONS.UPSERT, entityId: 'bad-decimal', metadata: { creditLimitContext: 'directory' }, payload: { expectedVersion: 5, baseCustomer: { id: 'bad-decimal', credit_limit: 80.25 }, customer: { id: 'bad-decimal', name: 'Base', phone: '5553334406', credit_limit: 80.26 } } });
+    expect(result).toMatchObject({ conflict: { code: 'INVALID_CUSTOMER_CREDIT_LIMIT' } });
+    expect(mocks.cloud.upsertCustomer).not.toHaveBeenCalled();
+  });
+
+  it('preserves a decimal limit when the customer form edits a name', async () => {
+    const existing = { id: 'decimal-form', name: 'Antes', phone: '5551112222', address: '', debt: 10, debtCents: 1000, creditLimit: 80.25 };
+    await db.table(STORES.CUSTOMERS).put(existing);
+    const user = userEvent.setup();
+    const onSave = vi.fn((data) => customerRepository.saveCustomer(data, { existingCustomer: existing }));
+    render(<CustomerForm customerToEdit={existing} onSave={onSave} onCancel={() => {}} />);
+    const name = screen.getByLabelText(/nombre/i);
+    await user.clear(name);
+    await user.type(name, 'Después');
+    await user.click(screen.getByRole('button', { name: /guardar cliente/i }));
+    await waitFor(() => expect(onSave).toHaveBeenCalled());
+    await waitFor(async () => expect(await customerLocalRepository.getCustomerById(existing.id)).toMatchObject({ name: 'Después', creditLimit: 80.25, debtCents: 1000 }));
+  });
+
+  it('queues and synchronizes a preserved decimal limit exactly once', async () => {
+    setCloudMode();
+    Object.defineProperty(navigator, 'onLine', { value: false, configurable: true });
+    const existing = { id: 'decimal-offline', name: 'Base', phone: '5553334406', address: '', debt: 22, debtCents: 2200, creditLimit: 80.25, serverVersion: 5, syncStatus: 'synced' };
+    await db.table(STORES.CUSTOMERS).put(existing);
+    expect(await customerRepository.saveCustomer({ ...existing, name: 'Local' }, { existingCustomer: existing })).toMatchObject({ success: true, pending: true });
+    const queued = await syncOutboxService.getPendingOperations({ licenseKey: TEST_LICENSE_KEY });
+    expect(queued).toHaveLength(1);
+    expect(queued[0].payload.baseCustomer.credit_limit).toBe(80.25);
+    mocks.cloud.upsertCustomer.mockResolvedValue({ success: true, customer: remoteCustomer(existing.id, { name: 'Local', credit_limit: 80.25, server_version: 6 }) });
+    Object.defineProperty(navigator, 'onLine', { value: true, configurable: true });
+    await syncOutboxService.markProcessing(queued[0].id, { licenseKey: TEST_LICENSE_KEY });
+    const response = await customerSyncHandler.pushOperation(queued[0]);
+    await syncOutboxService.markSynced(queued[0].id, response, { licenseKey: TEST_LICENSE_KEY });
+    expect(mocks.cloud.upsertCustomer).toHaveBeenCalledTimes(1);
+    expect(mocks.cloud.upsertCustomer.mock.calls[0][0].customer).not.toHaveProperty('debt');
+    expect(await customerLocalRepository.getCustomerById(existing.id)).toMatchObject({ creditLimit: 80.25, debt: 22, debtCents: 2200, serverVersion: 6 });
+  });
+
   it('SV-05 applies a positive Cloud version and preserves expectedVersion on PRO edit', async () => {
     setCloudMode();
     await db.table(STORES.CUSTOMERS).put({

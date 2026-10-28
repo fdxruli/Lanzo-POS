@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   validateCustomerCreditLimitMoney,
   validateDirectoryCreditLimit,
+  validateDirectoryCreditLimitEdit,
   validateQuickAddCreditLimit
 } from '../customerCreditLimit';
 
@@ -25,6 +26,14 @@ describe('customer credit limit contracts', () => {
       expect(validateDirectoryCreditLimit(value).valid, String(value)).toBe(false);
       expect(validateCustomerCreditLimitMoney(value).valid, String(value)).toBe(false);
     }
+  });
+
+  it('allows only exact valid preserved decimal limits', () => {
+    expect(validateDirectoryCreditLimitEdit('80.25', 80.25)).toMatchObject({ valid: true, cents: 8025 });
+    expect(validateDirectoryCreditLimitEdit('80.26', 80.25).valid).toBe(false);
+    expect(validateDirectoryCreditLimitEdit('100', 80.25).valid).toBe(true);
+    expect(validateDirectoryCreditLimitEdit('-1', -1).valid).toBe(false);
+    expect(validateDirectoryCreditLimitEdit('80.25', undefined).valid).toBe(false);
   });
 
   it('keeps QuickAdd compatible with a positive balance-covering limit and cent amounts', () => {

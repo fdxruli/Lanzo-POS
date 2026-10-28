@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Info } from 'lucide-react';
 import { getCustomerPhoneValidationError } from '../../services/db/customerPhoneUtils';
-import { validateDirectoryCreditLimit } from '../../services/customers/customerCreditLimit';
+import { validateDirectoryCreditLimitEdit } from '../../services/customers/customerCreditLimit';
 import './CustomerForm.css';
 
 // Recibimos 'globalCreditLimit' para sugerirlo por defecto
@@ -99,7 +99,7 @@ export default function CustomerForm({ onSave, onCancel, customerToEdit, latestC
       return;
     }
 
-    const validatedCreditLimit = validateDirectoryCreditLimit(creditLimit);
+    const validatedCreditLimit = validateDirectoryCreditLimitEdit(creditLimit, (conflictBase || customerToEdit)?.creditLimit);
     if (!validatedCreditLimit.valid) {
       setCreditLimitError(validatedCreditLimit.error);
       creditLimitInputRef.current?.focus();
@@ -260,7 +260,7 @@ export default function CustomerForm({ onSave, onCancel, customerToEdit, latestC
               onChange={handleCreditLimitChange}
             />
             <p id="customer-credit-limit-help" className="form-help-text customer-credit-help">
-              $0 desactiva Fiado; los límites de Clientes deben ser múltiplos de $50.
+              Puedes conservar el límite actual. Para cambiarlo desde Clientes, utiliza $0 o múltiplos de $50.
               {' '}
               {customerToEdit ? `Deuda actual: $${latestCustomer?.debt ?? customerToEdit.debt ?? 0}` : `Global sugerido: $${globalCreditLimit}`}
             </p>

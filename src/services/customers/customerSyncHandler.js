@@ -21,7 +21,7 @@ import { isLocalTenantAccessError } from '../tenant/localTenantGuard';
 import { hasCurrentActorPermission } from '../sync/actorPermission';
 import {
   validateCustomerCreditLimitMoney,
-  validateDirectoryCreditLimit,
+  validateDirectoryCreditLimitEdit,
   validateQuickAddCreditLimit
 } from './customerCreditLimit';
 import {
@@ -123,7 +123,7 @@ const directoryPayloadToCustomer = (payload = {}, expectedVersion = null) => ({
   serverVersion: normalizeCustomerServerVersion(expectedVersion)
 });
 
-const validateRebasedCustomer = (customer, operation) => {
+const validateRebasedCustomer = (customer, operation, referenceCustomer) => {
   const fieldErrors = {};
   if (!String(customer?.name || '').trim()) fieldErrors.name = 'El nombre del cliente no puede estar vacío.';
   const phoneError = getCustomerPhoneValidationError(customer?.phone);
@@ -131,7 +131,7 @@ const validateRebasedCustomer = (customer, operation) => {
 
   const context = operation?.metadata?.creditLimitContext;
   const limit = context === 'directory'
-    ? validateDirectoryCreditLimit(customer?.creditLimit)
+    ? validateDirectoryCreditLimitEdit(customer?.creditLimit, referenceCustomer?.creditLimit)
     : context === 'quick_add'
       ? validateQuickAddCreditLimit(customer?.creditLimit, operation?.metadata?.minimumCreditLimit ?? 0)
       : validateCustomerCreditLimitMoney(customer?.creditLimit);
@@ -245,8 +245,11 @@ export const customerSyncHandler = {
       }
       const queuedPhoneError = getCustomerPhoneValidationError(queuedCustomerData.phone);
       if (queuedPhoneError) fieldErrors.phone = queuedPhoneError;
+      const baseCustomer = operation?.payload?.baseCustomer;
+      const hasValidBase = expectedVersion !== null && baseCustomer?.id === operation?.entityId
+        && queuedCustomer?.id === operation?.entityId;
       const limitValidation = creditLimitContext === 'directory'
-        ? validateDirectoryCreditLimit(queuedCustomer.credit_limit ?? queuedCustomer.creditLimit)
+        ? validateDirectoryCreditLimitEdit(queuedCustomer.credit_limit ?? queuedCustomer.creditLimit, hasValidBase ? (baseCustomer.credit_limit ?? baseCustomer.creditLimit) : undefined)
         : creditLimitContext === 'quick_add'
           ? validateQuickAddCreditLimit(queuedCustomer.credit_limit ?? queuedCustomer.creditLimit, operation?.metadata?.minimumCreditLimit ?? 0)
           : validateCustomerCreditLimitMoney(queuedCustomer.credit_limit ?? queuedCustomer.creditLimit);
@@ -298,7 +301,7 @@ export const customerSyncHandler = {
           if (attempts < 1 && baseline && current) {
             const merged = reconcileCustomerDirectoryEdit({ baseline, local, cloud: current });
             if (merged.ok) {
-              const validation = validateRebasedCustomer(merged.customer, currentOperation);
+              const validation = validateRebasedCustomer(merged.customer, currentOperation, current);
               const currentVersion = normalizeCustomerServerVersion(current.serverVersion ?? current.server_version);
               if (validation.valid && currentVersion !== null) {
                 const rebasedPayload = {

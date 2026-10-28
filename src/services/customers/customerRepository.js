@@ -18,7 +18,7 @@ import { customerLocalRepository } from './customerLocalRepository';
 import { normalizeCustomerServerVersion } from '../db/customerServerVersion';
 import { normalizeCustomerDebtCents } from '../db/customerDebtIndex';
 import { getCustomerPhoneValidationError, toIndexedPhoneKey } from '../db/customerPhoneUtils';
-import { validateDirectoryCreditLimit, validateQuickAddCreditLimit } from './customerCreditLimit';
+import { validateCustomerCreditLimitMoney, validateDirectoryCreditLimitEdit, validateQuickAddCreditLimit } from './customerCreditLimit';
 import { hasCurrentActorPermission } from '../sync/actorPermission';
 import {
   CUSTOMER_SYNC_STATUS,
@@ -144,14 +144,14 @@ const normalizeCloudFailure = (response) => {
   };
 };
 
-const validateCustomerDirectoryResult = (customer, { creditLimitContext = 'directory', minimumCreditLimit = 0 } = {}) => {
+const validateCustomerDirectoryResult = (customer, { creditLimitContext = 'directory', minimumCreditLimit = 0, referenceCustomer = null } = {}) => {
   const fieldErrors = {};
   if (!String(customer?.name || '').trim()) fieldErrors.name = 'El nombre del cliente no puede estar vacío.';
   const phoneError = getCustomerPhoneValidationError(customer?.phone);
   if (phoneError) fieldErrors.phone = phoneError;
   const limit = creditLimitContext === 'quick_add'
     ? validateQuickAddCreditLimit(customer?.creditLimit, minimumCreditLimit)
-    : validateDirectoryCreditLimit(customer?.creditLimit);
+    : validateDirectoryCreditLimitEdit(customer?.creditLimit, referenceCustomer?.creditLimit);
   if (!limit.valid) fieldErrors.creditLimit = limit.error;
 
   return {
@@ -315,11 +315,29 @@ export const customerRepository = {
     const rawCreditLimit = Object.prototype.hasOwnProperty.call(customerData || {}, 'creditLimit')
       ? customerData.creditLimit
       : (baseAtOpen?.creditLimit ?? 0);
+    const latestLocal = isUpdate ? await customerLocalRepository.getCustomerById(id) : null;
     const initialLimit = creditLimitContext === 'quick_add'
       ? validateQuickAddCreditLimit(rawCreditLimit, minimumCreditLimit)
-      : validateDirectoryCreditLimit(rawCreditLimit);
+      : validateDirectoryCreditLimitEdit(rawCreditLimit, latestLocal?.creditLimit);
 
     if (!initialLimit.valid) {
+      // A newer local snapshot may carry a different limit than the open draft.
+      // Do not treat the draft as an authoritative historical record; ask for
+      // review instead of accepting it or disguising the collision as a step error.
+      const proposedMoney = validateCustomerCreditLimitMoney(rawCreditLimit);
+      const openedMoney = validateCustomerCreditLimitMoney(baseAtOpen?.creditLimit);
+      const currentMoney = validateCustomerCreditLimitMoney(latestLocal?.creditLimit);
+      if (mode.cloudEnabled && isUpdate && latestLocal && proposedMoney.valid && openedMoney.valid
+        && currentMoney.valid && proposedMoney.cents === openedMoney.cents
+        && openedMoney.cents !== currentMoney.cents) {
+        return {
+          success: false,
+          code: 'CUSTOMER_FIELDS_CONFLICT',
+          message: 'El límite cambió mientras editabas. Revisa el valor antes de guardar.',
+          currentCustomer: latestLocal,
+          fieldConflicts: [{ field: 'creditLimit', label: 'límite de crédito', baseValue: baseAtOpen.creditLimit, proposedValue: rawCreditLimit, currentValue: latestLocal.creditLimit, reason: 'overlapping_change' }]
+        };
+      }
       return {
         success: false,
         code: 'INVALID_CUSTOMER_CREDIT_LIMIT',
@@ -328,7 +346,6 @@ export const customerRepository = {
       };
     }
 
-    const latestLocal = isUpdate ? await customerLocalRepository.getCustomerById(id) : null;
     let baseline = baseAtOpen;
     const duplicatePhoneCorrected = isUpdate
       && latestLocal?.conflictReason === 'DUPLICATE_PHONE'
@@ -407,7 +424,7 @@ export const customerRepository = {
       syncStatus: mode.cloudEnabled ? CUSTOMER_SYNC_STATUS.PENDING : CUSTOMER_SYNC_STATUS.LOCAL
     });
 
-    const initialValidation = validateCustomerDirectoryResult(candidate, { creditLimitContext, minimumCreditLimit });
+    const initialValidation = validateCustomerDirectoryResult(candidate, { creditLimitContext, minimumCreditLimit, referenceCustomer: latestLocal });
     if (!initialValidation.valid) {
       return {
         success: false,
@@ -511,7 +528,7 @@ export const customerRepository = {
       }
     }
 
-    const validatedCandidate = validateCustomerDirectoryResult(candidate, { creditLimitContext, minimumCreditLimit });
+    const validatedCandidate = validateCustomerDirectoryResult(candidate, { creditLimitContext, minimumCreditLimit, referenceCustomer: baseline });
     if (!validatedCandidate.valid) {
       return {
         success: false,
@@ -622,7 +639,7 @@ export const customerRepository = {
           });
         }
 
-        const validatedMerge = validateCustomerDirectoryResult(merged.customer, { creditLimitContext, minimumCreditLimit });
+        const validatedMerge = validateCustomerDirectoryResult(merged.customer, { creditLimitContext, minimumCreditLimit, referenceCustomer: current });
         if (!validatedMerge.valid) {
           return {
             success: false,

@@ -70,3 +70,16 @@ export const validateQuickAddCreditLimit = (value, minimumCreditLimit = 0) => {
 export const validateCustomerCreditLimitMoney = (value) => toMoneyDraft(value, { allowEmpty: true });
 
 export const isValidCustomerCreditLimitMoney = (value) => validateCustomerCreditLimitMoney(value).valid;
+
+// A preserved value is exempt from the directory step only when both amounts
+// are valid money and match exactly in cents against an existing record.
+export const validateDirectoryCreditLimitEdit = (value, reference) => {
+  if (reference === undefined || reference === null) return validateDirectoryCreditLimit(value);
+  const proposed = toMoneyDraft(value);
+  if (!proposed.valid) return proposed;
+  if (reference !== undefined && reference !== null) {
+    const existing = toMoneyDraft(reference);
+    if (existing.valid && existing.cents === proposed.cents) return proposed;
+  }
+  return validateDirectoryCreditLimit(value);
+};
