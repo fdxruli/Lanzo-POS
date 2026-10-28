@@ -5,7 +5,7 @@ import { validateDirectoryCreditLimit } from '../../services/customers/customerC
 import './CustomerForm.css';
 
 // Recibimos 'globalCreditLimit' para sugerirlo por defecto
-export default function CustomerForm({ onSave, onCancel, customerToEdit, globalCreditLimit = 0 }) {
+export default function CustomerForm({ onSave, onCancel, customerToEdit, latestCustomer = null, globalCreditLimit = 0 }) {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [address, setAddress] = useState('');
@@ -14,6 +14,10 @@ export default function CustomerForm({ onSave, onCancel, customerToEdit, globalC
   const [phoneError, setPhoneError] = useState('');
   const [creditLimitError, setCreditLimitError] = useState('');
   const [formError, setFormError] = useState('');
+  const [fieldConflicts, setFieldConflicts] = useState([]);
+  const [conflictBase, setConflictBase] = useState(null);
+  const [resolutionChoices, setResolutionChoices] = useState({});
+  const [needsConflictReview, setNeedsConflictReview] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const isSavingRef = useRef(false);
   const phoneInputRef = useRef(null);
@@ -39,6 +43,10 @@ export default function CustomerForm({ onSave, onCancel, customerToEdit, globalC
     setPhoneError('');
     setCreditLimitError('');
     setFormError('');
+    setFieldConflicts([]);
+    setConflictBase(null);
+    setResolutionChoices({});
+    setNeedsConflictReview(false);
     setIsSaving(false);
   }, [customerToEdit, globalCreditLimit]);
 
@@ -54,6 +62,24 @@ export default function CustomerForm({ onSave, onCancel, customerToEdit, globalC
     setCreditLimitError('');
     setFormError('');
   };
+
+  const setDirectoryField = (field, value) => {
+    const nextValue = value ?? '';
+    if (field === 'name') setName(String(nextValue));
+    if (field === 'phone') setPhone(String(nextValue));
+    if (field === 'address') setAddress(String(nextValue));
+    if (field === 'creditLimit') setCreditLimit(String(nextValue));
+  };
+
+  const resolveFieldConflict = (conflict, choice) => {
+    setDirectoryField(conflict.field, choice === 'current' ? conflict.currentValue : conflict.proposedValue);
+    setResolutionChoices((current) => ({ ...current, [conflict.field]: choice }));
+    setFormError('');
+    if (conflict.field === 'phone') setPhoneError('');
+    if (conflict.field === 'creditLimit') setCreditLimitError('');
+  };
+
+  const getFieldValue = (field) => ({ name, phone, address, creditLimit }[field]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -80,6 +106,12 @@ export default function CustomerForm({ onSave, onCancel, customerToEdit, globalC
       return;
     }
 
+    if (fieldConflicts.some((conflict) => !resolutionChoices[conflict.field])
+      || (needsConflictReview && fieldConflicts.length === 0 && !resolutionChoices.__retry)) {
+      setFormError('Elige qué valor conservar en cada campo marcado antes de guardar.');
+      return;
+    }
+
     isSavingRef.current = true;
     setIsSaving(true);
     setPhoneError('');
@@ -87,12 +119,15 @@ export default function CustomerForm({ onSave, onCancel, customerToEdit, globalC
     setFormError('');
 
     try {
-      const result = await onSave({
+      const customerData = {
         name,
         phone,
         address,
         creditLimit: validatedCreditLimit.value
-      });
+      };
+      const result = needsConflictReview
+        ? await onSave(customerData, { baseCustomer: conflictBase, resolutionAcknowledged: true })
+        : await onSave(customerData);
 
       if (result?.success === false && result?.fieldErrors?.phone) {
         setPhoneError(result.fieldErrors.phone);
@@ -100,6 +135,16 @@ export default function CustomerForm({ onSave, onCancel, customerToEdit, globalC
       } else if (result?.success === false && result?.fieldErrors?.creditLimit) {
         setCreditLimitError(result.fieldErrors.creditLimit);
         creditLimitInputRef.current?.focus();
+      } else if (result?.success === false && result?.code === 'CUSTOMER_FIELDS_CONFLICT') {
+        setFieldConflicts(result.fieldConflicts || []);
+        setConflictBase(result.currentCustomer || null);
+        setResolutionChoices({});
+        setNeedsConflictReview(true);
+        setFormError(result.message || 'Este cliente tiene cambios recientes. Revisa los campos indicados antes de guardar.');
+      } else if (result?.success === false && result?.code === 'CUSTOMER_DELETED') {
+        setFormError('Este cliente ya fue eliminado y no puede editarse.');
+      } else if (result?.success === false && result?.code === 'CUSTOMER_SYNC_PENDING') {
+        setFormError(result.message || 'Este cliente tiene cambios locales pendientes de sincronización.');
       } else if (result?.success === false) {
         setFormError(result.message || 'No se pudo guardar el cliente. Intenta de nuevo.');
       }
@@ -114,8 +159,47 @@ export default function CustomerForm({ onSave, onCancel, customerToEdit, globalC
   return (
     <div className="customer-form-container">
       <h3 className="subtitle" id="customer-form-title">
-        {customerToEdit ? `Editar: ${customerToEdit.name}` : 'Anadir Nuevo Cliente'}
+        {customerToEdit ? `Editar: ${latestCustomer?.name || customerToEdit.name}` : 'Anadir Nuevo Cliente'}
       </h3>
+      {needsConflictReview && (
+        <section className="customer-conflict-summary" aria-labelledby="customer-conflict-title">
+          <h4 id="customer-conflict-title">Este cliente tiene cambios recientes</h4>
+          <p>Revisa cada campo y elige el valor que deseas conservar antes de volver a guardar.</p>
+          {fieldConflicts.map((conflict) => (
+            <div className="customer-field-conflict" key={conflict.field}>
+              <strong>{conflict.label || conflict.field}</strong>
+              <p>Actual: <span>{String(conflict.currentValue ?? 'vacío')}</span></p>
+              <p>Tu edición: <span>{String(conflict.proposedValue ?? 'vacío')}</span></p>
+              <div className="customer-conflict-actions">
+                <button type="button" className="ui-button ui-button--ghost" onClick={() => resolveFieldConflict(conflict, 'current')} disabled={isSaving}>
+                  Usar valor actual
+                </button>
+                <button type="button" className="ui-button ui-button--ghost" onClick={() => resolveFieldConflict(conflict, 'proposed')} disabled={isSaving}>
+                  Conservar mi edición
+                </button>
+              </div>
+              {resolutionChoices[conflict.field] && (
+                <p className="customer-conflict-choice" role="status">
+                  Elegiste: {String(getFieldValue(conflict.field) ?? 'vacío')}
+                </p>
+              )}
+            </div>
+          ))}
+          {fieldConflicts.length === 0 && (
+            <div className="customer-field-conflict">
+              <p>Tu borrador sigue aquí. Elige de forma consciente si quieres volver a intentar con los datos Cloud actuales.</p>
+              <button
+                type="button"
+                className="ui-button ui-button--ghost"
+                onClick={() => setResolutionChoices((current) => ({ ...current, __retry: true }))}
+                disabled={isSaving}
+              >
+                Volver a intentar con los datos actuales
+              </button>
+            </div>
+          )}
+        </section>
+      )}
       <form id="customer-form" onSubmit={handleSubmit} noValidate>
 
         {/* --- Seccion de Datos Basicos --- */}
@@ -178,7 +262,7 @@ export default function CustomerForm({ onSave, onCancel, customerToEdit, globalC
             <p id="customer-credit-limit-help" className="form-help-text customer-credit-help">
               $0 desactiva Fiado; los límites de Clientes deben ser múltiplos de $50.
               {' '}
-              {customerToEdit ? `Deuda actual: $${customerToEdit.debt || 0}` : `Global sugerido: $${globalCreditLimit}`}
+              {customerToEdit ? `Deuda actual: $${latestCustomer?.debt ?? customerToEdit.debt ?? 0}` : `Global sugerido: $${globalCreditLimit}`}
             </p>
             {creditLimitError && <p id="customer-credit-limit-error" className="form-help-text validation-message error" role="alert">{creditLimitError}</p>}
           </div>

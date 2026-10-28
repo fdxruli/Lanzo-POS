@@ -8,6 +8,7 @@ import { syncOutboxService } from '../sync/syncOutboxService';
 import {
   getLicenseKeyFromDetails,
   isCloudPosSyncEnabled,
+  SYNC_LIMITS,
   SYNC_ENTITY_TYPES,
   SYNC_OPERATIONS
 } from '../sync/syncConstants';
@@ -16,12 +17,20 @@ import { customerCloudRepository } from './customerCloudRepository';
 import { customerLocalRepository } from './customerLocalRepository';
 import { normalizeCustomerServerVersion } from '../db/customerServerVersion';
 import { normalizeCustomerDebtCents } from '../db/customerDebtIndex';
+import { getCustomerPhoneValidationError, toIndexedPhoneKey } from '../db/customerPhoneUtils';
 import { validateDirectoryCreditLimit, validateQuickAddCreditLimit } from './customerCreditLimit';
+import { hasCurrentActorPermission } from '../sync/actorPermission';
 import {
   CUSTOMER_SYNC_STATUS,
+  cloudCustomerToLocal,
   localCustomerToCloudPayload,
   normalizeCustomerForLocal
 } from './customerMapper';
+import {
+  buildCustomerRetryLimitConflicts,
+  getCustomerDirectoryChangedFields,
+  reconcileCustomerDirectoryEdit
+} from './customerDirectoryReconciliation';
 
 const isOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false;
 
@@ -75,6 +84,7 @@ const isRetryableCloudError = (error) => {
 
 const buildPhoneFieldError = (message = 'El telefono ya esta registrado para otro cliente.') => ({
   success: false,
+  code: 'DUPLICATE_PHONE',
   fieldErrors: { phone: message },
   error: {
     code: DB_ERROR_CODES.CONSTRAINT_VIOLATION,
@@ -100,10 +110,26 @@ const getMode = () => {
 
 const normalizeCloudFailure = (response) => {
   const code = response?.code || response?.error?.code;
+  if (code === 'CUSTOMER_DELETED') {
+    return {
+      success: false,
+      code,
+      message: 'Este cliente ya fue eliminado y no puede editarse.',
+      error: { code, message: 'Este cliente ya fue eliminado y no puede editarse.' }
+    };
+  }
   const message = response?.message || 'No se pudo sincronizar cliente.';
 
   if (code === 'DUPLICATE_PHONE') {
     return buildPhoneFieldError(message);
+  }
+  if (code === 'VERSION_CONFLICT') {
+    return {
+      success: false,
+      code,
+      message: 'Este cliente tiene cambios recientes. Actualiza la lista antes de volver a eliminarlo.',
+      error: { code, message: 'Este cliente tiene cambios recientes. Actualiza la lista antes de volver a eliminarlo.' }
+    };
   }
 
   return {
@@ -118,36 +144,140 @@ const normalizeCloudFailure = (response) => {
   };
 };
 
-const saveConflictFromResponse = async ({ customer, response, operation }) => {
-  const code = response?.code || 'CUSTOMER_SYNC_CONFLICT';
+const validateCustomerDirectoryResult = (customer, { creditLimitContext = 'directory', minimumCreditLimit = 0 } = {}) => {
+  const fieldErrors = {};
+  if (!String(customer?.name || '').trim()) fieldErrors.name = 'El nombre del cliente no puede estar vacío.';
+  const phoneError = getCustomerPhoneValidationError(customer?.phone);
+  if (phoneError) fieldErrors.phone = phoneError;
+  const limit = creditLimitContext === 'quick_add'
+    ? validateQuickAddCreditLimit(customer?.creditLimit, minimumCreditLimit)
+    : validateDirectoryCreditLimit(customer?.creditLimit);
+  if (!limit.valid) fieldErrors.creditLimit = limit.error;
 
-  await syncConflictService.saveConflict({
-    entityType: SYNC_ENTITY_TYPES.CUSTOMER,
-    entityId: customer?.id || response?.customer?.id || 'unknown',
-    conflictType: code,
-    localPayload: { operation, customer },
-    serverPayload: response?.customer || response || null,
-    metadata: { source: 'customerRepository' }
-  });
-
-  if (customer?.id) {
-    await customerLocalRepository.markConflict({ ...customer, ...(response?.customer || {}) }, code);
-  }
+  return {
+    valid: Object.keys(fieldErrors).length === 0,
+    fieldErrors,
+    customer: limit.valid ? { ...customer, creditLimit: limit.value } : customer
+  };
 };
 
-const enqueueCustomerOperation = async ({ licenseKey, operation, customer, cloudPayload, idempotencyKey, expectedVersion = null, creditLimitContext = 'directory' }) => syncOutboxService.enqueueOperation({
+const getCloudCustomerById = async ({ licenseKey, customerId }) => {
+  let offset = 0;
+  for (let page = 0; page < 100; page += 1) {
+    const response = await customerCloudRepository.pullCustomerSnapshot({
+      licenseKey,
+      limit: SYNC_LIMITS.MAX_PULL_LIMIT,
+      offset,
+      includeDeleted: true,
+      force: true
+    });
+    if (response?.success === false) {
+      throw new Error(response.message || response.code || 'CUSTOMER_SNAPSHOT_FAILED');
+    }
+
+    const customers = Array.isArray(response?.customers) ? response.customers : [];
+    const found = customers.find((customer) => String(customer?.id) === String(customerId));
+    if (found) return { customer: cloudCustomerToLocal(found), complete: true };
+
+    const hasMore = Boolean(response?.has_more ?? response?.hasMore);
+    if (!hasMore || customers.length === 0) return { customer: null, complete: true };
+    const nextOffset = Number(response?.next_offset ?? response?.nextOffset);
+    offset = Number.isSafeInteger(nextOffset) && nextOffset > offset
+      ? nextOffset
+      : offset + customers.length;
+  }
+  return { customer: null, complete: false };
+};
+
+const getResponseCustomer = async ({ response, licenseKey, customerId }) => {
+  if (response?.customer?.id) return cloudCustomerToLocal(response.customer);
+  const snapshot = await getCloudCustomerById({ licenseKey, customerId });
+  if (!snapshot.complete) throw new Error('CUSTOMER_SNAPSHOT_INCOMPLETE');
+  return snapshot.customer;
+};
+
+const saveCustomerConflict = async ({ baseline, proposed, current, conflicts, source, reason = 'VERSION_CONFLICT' }) => {
+  const fieldConflicts = conflicts?.length
+    ? conflicts
+    : buildCustomerRetryLimitConflicts({ baseline, local: proposed, cloud: current });
+  const safeLocalPayload = localCustomerToCloudPayload(proposed);
+  const conflict = await syncConflictService.saveConflict({
+    entityType: SYNC_ENTITY_TYPES.CUSTOMER,
+    entityId: proposed.id,
+    conflictType: reason,
+    localPayload: {
+      baselineCustomer: baseline ? localCustomerToCloudPayload(baseline) : null,
+      customer: safeLocalPayload,
+      expectedVersion: normalizeCustomerServerVersion(baseline?.serverVersion ?? baseline?.server_version)
+    },
+    serverPayload: current || null,
+    metadata: { source, directoryFieldsOnly: true }
+  });
+
+  await customerLocalRepository.markConflict(proposed, reason, {
+    serverCustomer: current,
+    baselineCustomer: baseline,
+    conflicts: fieldConflicts
+  });
+
+  return {
+    success: false,
+    code: 'CUSTOMER_FIELDS_CONFLICT',
+    message: 'Este cliente tiene cambios recientes. Revisa los campos indicados antes de guardar.',
+    fieldConflicts,
+    currentCustomer: current,
+    conflictId: conflict?.id || null
+  };
+};
+
+const makeDeletedCustomerResult = async ({ baseline, proposed, current, source }) => {
+  await customerLocalRepository.markConflict(proposed, 'CUSTOMER_DELETED', {
+    serverCustomer: current,
+    baselineCustomer: baseline,
+    conflicts: []
+  });
+  await syncConflictService.saveConflict({
+    entityType: SYNC_ENTITY_TYPES.CUSTOMER,
+    entityId: proposed.id,
+    conflictType: 'CUSTOMER_DELETED',
+    localPayload: { customer: localCustomerToCloudPayload(proposed) },
+    serverPayload: current || null,
+    metadata: { source, directoryFieldsOnly: true }
+  });
+  return {
+    success: false,
+    code: 'CUSTOMER_DELETED',
+    message: 'Este cliente ya fue eliminado y no puede editarse.'
+  };
+};
+
+const enqueueCustomerOperation = async ({
+  licenseKey,
+  operation,
+  customer,
+  baseCustomer = null,
+  cloudPayload,
+  idempotencyKey,
+  expectedVersion = null,
+  creditLimitContext = 'directory',
+  minimumCreditLimit = 0,
+  reconciliationAttempts = 0
+}) => syncOutboxService.enqueueOperation({
   licenseKey,
   entityType: SYNC_ENTITY_TYPES.CUSTOMER,
   operation,
   entityId: customer?.id || cloudPayload?.id,
   payload: {
     customer: cloudPayload,
+    baseCustomer: baseCustomer ? localCustomerToCloudPayload(baseCustomer) : null,
     expectedVersion
   },
   idempotencyKey,
   metadata: {
     phase: 'fase1_customers_directory',
     creditLimitContext,
+    minimumCreditLimit,
+    reconciliationAttempts,
     queuedAt: new Date().toISOString()
   }
 });
@@ -165,133 +295,425 @@ export const customerRepository = {
     return customerLocalRepository.searchCustomers(query);
   },
 
-  async saveCustomer(customerData, { existingCustomer = null, creditLimitContext = 'directory', minimumCreditLimit = 0 } = {}) {
+  async saveCustomer(customerData, {
+    existingCustomer: openedCustomer = null,
+    creditLimitContext = 'directory',
+    minimumCreditLimit = 0,
+    resolutionAcknowledged = false
+  } = {}) {
     const mode = getMode();
-    const hasCreditLimit = Object.prototype.hasOwnProperty.call(customerData || {}, 'creditLimit');
-    const rawCreditLimit = hasCreditLimit ? customerData.creditLimit : (existingCustomer?.creditLimit ?? 0);
-    const creditLimitValidation = creditLimitContext === 'quick_add'
+    if (mode.cloudEnabled && !hasCurrentActorPermission('customers')) {
+      return {
+        success: false,
+        code: 'CUSTOMER_PERMISSION_REQUIRED',
+        message: 'Tu usuario no tiene permiso para gestionar clientes.'
+      };
+    }
+    const isUpdate = Boolean(openedCustomer?.id);
+    const id = openedCustomer?.id || customerData?.id || generateID('cust');
+    const baseAtOpen = openedCustomer?.conflictCloudSnapshot || openedCustomer;
+    const rawCreditLimit = Object.prototype.hasOwnProperty.call(customerData || {}, 'creditLimit')
+      ? customerData.creditLimit
+      : (baseAtOpen?.creditLimit ?? 0);
+    const initialLimit = creditLimitContext === 'quick_add'
       ? validateQuickAddCreditLimit(rawCreditLimit, minimumCreditLimit)
       : validateDirectoryCreditLimit(rawCreditLimit);
 
-    if (!creditLimitValidation.valid) {
+    if (!initialLimit.valid) {
       return {
         success: false,
         code: 'INVALID_CUSTOMER_CREDIT_LIMIT',
-        fieldErrors: { creditLimit: creditLimitValidation.error },
-        message: creditLimitValidation.error
+        fieldErrors: { creditLimit: initialLimit.error },
+        message: initialLimit.error
       };
     }
 
-    const id = existingCustomer?.id || customerData?.id || generateID('cust');
-    const debt = existingCustomer?.debt ?? 0;
-    const debtCents = existingCustomer?.debtCents
-      ?? existingCustomer?.debt_cents
-      ?? normalizeCustomerDebtCents(debt);
-    const localCandidate = normalizeCustomerForLocal({
+    const latestLocal = isUpdate ? await customerLocalRepository.getCustomerById(id) : null;
+    let baseline = baseAtOpen;
+    const duplicatePhoneCorrected = isUpdate
+      && latestLocal?.conflictReason === 'DUPLICATE_PHONE'
+      && toIndexedPhoneKey(customerData?.phone) !== toIndexedPhoneKey(latestLocal.phone);
+
+    if (isUpdate && openedCustomer?.syncStatus === CUSTOMER_SYNC_STATUS.CONFLICT && !resolutionAcknowledged && !duplicatePhoneCorrected) {
+      if (openedCustomer.conflictReason === 'DUPLICATE_PHONE') {
+        return {
+          success: false,
+          code: 'DUPLICATE_PHONE',
+          fieldErrors: { phone: 'El teléfono ya está registrado para otro cliente. Cámbialo para volver a guardar.' },
+          message: 'El teléfono ya está registrado para otro cliente. Cámbialo para volver a guardar.'
+        };
+      }
+      return {
+        success: false,
+        code: 'CUSTOMER_FIELDS_CONFLICT',
+        message: 'Este cliente tiene cambios recientes. Revisa los campos indicados antes de guardar.',
+        fieldConflicts: openedCustomer.conflictFields || [],
+        currentCustomer: openedCustomer.conflictCloudSnapshot || openedCustomer.latestCloudSnapshot || null
+      };
+    }
+
+    if (mode.cloudEnabled && isUpdate && latestLocal) {
+      if (latestLocal.deletedAt || latestLocal.deletedTimestamp || latestLocal.isActive === false) {
+        return {
+          success: false,
+          code: 'CUSTOMER_DELETED',
+          message: 'Este cliente ya fue eliminado y no puede editarse.'
+        };
+      }
+      if (latestLocal.syncStatus === CUSTOMER_SYNC_STATUS.PENDING) {
+        return {
+          success: false,
+          code: 'CUSTOMER_SYNC_PENDING',
+          message: 'Este cliente tiene cambios locales pendientes de sincronización. Espera a que se reconcilien y vuelve a guardar.'
+        };
+      }
+      if (!resolutionAcknowledged && latestLocal.syncStatus === CUSTOMER_SYNC_STATUS.CONFLICT && !duplicatePhoneCorrected) {
+        if (latestLocal.conflictReason === 'DUPLICATE_PHONE') {
+          return {
+            success: false,
+            code: 'DUPLICATE_PHONE',
+            fieldErrors: { phone: 'El teléfono ya está registrado para otro cliente. Cámbialo para volver a guardar.' },
+            message: 'El teléfono ya está registrado para otro cliente. Cámbialo para volver a guardar.'
+          };
+        }
+        return {
+          success: false,
+          code: latestLocal.conflictReason === 'CUSTOMER_DELETED' ? 'CUSTOMER_DELETED' : 'CUSTOMER_FIELDS_CONFLICT',
+          message: latestLocal.conflictReason === 'CUSTOMER_DELETED'
+            ? 'Este cliente ya fue eliminado y no puede editarse.'
+            : 'Este cliente tiene cambios recientes. Revisa los campos indicados antes de guardar.',
+          fieldConflicts: latestLocal.conflictFields || [],
+          currentCustomer: latestLocal.conflictCloudSnapshot || latestLocal.latestCloudSnapshot || null
+        };
+      }
+    }
+
+    const localDebt = latestLocal?.debt
+      ?? baseAtOpen?.debt
+      ?? 0;
+    const localDebtCents = latestLocal?.debtCents
+      ?? latestLocal?.debt_cents
+      ?? baseAtOpen?.debtCents
+      ?? baseAtOpen?.debt_cents
+      ?? normalizeCustomerDebtCents(localDebt);
+    let candidate = normalizeCustomerForLocal({
+      ...baseAtOpen,
       ...customerData,
       id,
-      debt,
-      debtCents,
-      creditLimit: creditLimitValidation.value
-    }, existingCustomer, {
+      debt: localDebt,
+      debtCents: localDebtCents,
+      creditLimit: initialLimit.value
+    }, baseAtOpen, {
       syncStatus: mode.cloudEnabled ? CUSTOMER_SYNC_STATUS.PENDING : CUSTOMER_SYNC_STATUS.LOCAL
     });
 
+    const initialValidation = validateCustomerDirectoryResult(candidate, { creditLimitContext, minimumCreditLimit });
+    if (!initialValidation.valid) {
+      return {
+        success: false,
+        code: 'INVALID_CUSTOMER_DIRECTORY_FIELDS',
+        fieldErrors: initialValidation.fieldErrors,
+        message: Object.values(initialValidation.fieldErrors)[0]
+      };
+    }
+    candidate = initialValidation.customer;
+
     if (!mode.cloudEnabled) {
-      return customerLocalRepository.saveCustomerLocal(localCandidate, {
-        existingCustomer,
+      return customerLocalRepository.saveCustomerLocal(candidate, {
+        existingCustomer: latestLocal || baseAtOpen,
         syncStatus: CUSTOMER_SYNC_STATUS.LOCAL
       });
     }
 
-    const cloudPayload = localCustomerToCloudPayload(localCandidate);
-    const idempotencyKey = generateIdempotencyKey({
-      entityType: SYNC_ENTITY_TYPES.CUSTOMER,
-      operation: existingCustomer ? SYNC_OPERATIONS.UPDATE : SYNC_OPERATIONS.CREATE,
-      entityId: id,
-      prefix: 'customer'
-    });
-    const expectedVersion = normalizeCustomerServerVersion(existingCustomer?.serverVersion ?? existingCustomer?.server_version);
+    let expectedVersion = isUpdate
+      ? normalizeCustomerServerVersion(baseline?.serverVersion ?? baseline?.server_version)
+      : null;
 
-    if (!isOnline()) {
-      const localResult = await customerLocalRepository.saveCustomerLocal(localCandidate, {
-        existingCustomer,
+    if (isUpdate && latestLocal?.syncStatus === CUSTOMER_SYNC_STATUS.SYNCED) {
+      const localVersion = normalizeCustomerServerVersion(latestLocal.serverVersion ?? latestLocal.server_version);
+      const openedVersion = normalizeCustomerServerVersion(baseline?.serverVersion ?? baseline?.server_version);
+      const localDirectoryChanged = getCustomerDirectoryChangedFields(baseline || {}, latestLocal).length > 0;
+      if (localVersion !== null && (localVersion > (openedVersion ?? 0) || localDirectoryChanged)) {
+        const merged = reconcileCustomerDirectoryEdit({ baseline, local: candidate, cloud: latestLocal });
+        if (!merged.ok) {
+          return saveCustomerConflict({
+            baseline,
+            proposed: candidate,
+            current: latestLocal,
+            conflicts: merged.conflicts,
+            source: 'customerRepository.local_snapshot_reconcile'
+          });
+        }
+        baseline = latestLocal;
+        expectedVersion = localVersion;
+        candidate = normalizeCustomerForLocal({
+          ...merged.customer,
+          debt: latestLocal.debt,
+          debtCents: latestLocal.debtCents ?? latestLocal.debt_cents
+        }, latestLocal, { syncStatus: CUSTOMER_SYNC_STATUS.PENDING });
+      }
+    }
+
+    if (isUpdate && expectedVersion === null) {
+      if (!isOnline()) {
+        return {
+          success: false,
+          code: 'CUSTOMER_VERSION_REQUIRED',
+          message: 'No se puede guardar esta edición sin confirmar la versión Cloud. Conéctate y sincroniza clientes antes de reintentar.'
+        };
+      }
+
+      try {
+        const snapshot = await getCloudCustomerById({ licenseKey: mode.licenseKey, customerId: id });
+        if (!snapshot.complete) throw new Error('CUSTOMER_SNAPSHOT_INCOMPLETE');
+        if (!snapshot.customer) {
+          return {
+            success: false,
+            code: 'CUSTOMER_NOT_IN_CLOUD',
+            message: 'No se encontró la versión Cloud de este cliente. La edición no se guardó para evitar recrear un registro.'
+          };
+        }
+        if (snapshot.customer.deletedAt || snapshot.customer.deletedTimestamp) {
+          return makeDeletedCustomerResult({
+            baseline,
+            proposed: candidate,
+            current: snapshot.customer,
+            source: 'customerRepository.version_snapshot'
+          });
+        }
+        const merged = reconcileCustomerDirectoryEdit({ baseline, local: candidate, cloud: snapshot.customer });
+        if (!merged.ok) {
+          return saveCustomerConflict({
+            baseline,
+            proposed: candidate,
+            current: snapshot.customer,
+            conflicts: merged.conflicts,
+            source: 'customerRepository.version_snapshot'
+          });
+        }
+        baseline = snapshot.customer;
+        expectedVersion = normalizeCustomerServerVersion(snapshot.customer.serverVersion ?? snapshot.customer.server_version);
+        candidate = normalizeCustomerForLocal({ ...merged.customer, debt: snapshot.customer.debt, debtCents: snapshot.customer.debtCents }, snapshot.customer);
+      } catch (error) {
+        return {
+          success: false,
+          code: 'CUSTOMER_VERSION_UNAVAILABLE',
+          message: 'No se pudo confirmar la versión actual del cliente. No se guardó ningún cambio; vuelve a intentarlo cuando haya conexión.',
+          error
+        };
+      }
+      if (expectedVersion === null) {
+        return {
+          success: false,
+          code: 'CUSTOMER_VERSION_REQUIRED',
+          message: 'No se recibió una versión Cloud válida. La edición no se guardó.'
+        };
+      }
+    }
+
+    const validatedCandidate = validateCustomerDirectoryResult(candidate, { creditLimitContext, minimumCreditLimit });
+    if (!validatedCandidate.valid) {
+      return {
+        success: false,
+        code: 'INVALID_CUSTOMER_DIRECTORY_FIELDS',
+        fieldErrors: validatedCandidate.fieldErrors,
+        message: Object.values(validatedCandidate.fieldErrors)[0]
+      };
+    }
+    candidate = validatedCandidate.customer;
+
+    let attempt = {
+      baseline,
+      candidate,
+      expectedVersion,
+      idempotencyKey: generateIdempotencyKey({
+        entityType: SYNC_ENTITY_TYPES.CUSTOMER,
+        operation: isUpdate ? SYNC_OPERATIONS.UPDATE : SYNC_OPERATIONS.CREATE,
+        entityId: id,
+        prefix: 'customer'
+      }),
+      reconciliationAttempts: 0
+    };
+
+    const queueAttempt = async (currentAttempt, message) => {
+      const payload = localCustomerToCloudPayload(currentAttempt.candidate);
+      const localResult = await customerLocalRepository.saveCustomerLocal(currentAttempt.candidate, {
+        existingCustomer: latestLocal || currentAttempt.baseline,
         syncStatus: CUSTOMER_SYNC_STATUS.PENDING,
-        pendingOperationId: idempotencyKey
+        pendingOperationId: currentAttempt.idempotencyKey
       });
-
       if (!localResult.success) return localResult;
 
       await enqueueCustomerOperation({
         licenseKey: mode.licenseKey,
         operation: SYNC_OPERATIONS.UPSERT,
-        customer: localCandidate,
-        cloudPayload,
-        idempotencyKey,
-        expectedVersion,
-        creditLimitContext
+        customer: currentAttempt.candidate,
+        baseCustomer: currentAttempt.baseline,
+        cloudPayload: payload,
+        idempotencyKey: currentAttempt.idempotencyKey,
+        expectedVersion: currentAttempt.expectedVersion,
+        creditLimitContext,
+        minimumCreditLimit,
+        reconciliationAttempts: currentAttempt.reconciliationAttempts
       });
-
       return {
         success: true,
         pending: true,
-        data: localCandidate,
-        message: 'Cliente guardado localmente. Se sincronizara cuando vuelva internet.'
+        data: currentAttempt.candidate,
+        message
       };
+    };
+
+    if (!isOnline()) {
+      if (isUpdate && attempt.expectedVersion === null) {
+        return {
+          success: false,
+          code: 'CUSTOMER_VERSION_REQUIRED',
+          message: 'No se puede guardar esta edición sin una versión Cloud confirmada.'
+        };
+      }
+      return queueAttempt(attempt, 'Cambios guardados en este dispositivo. Sincronización pendiente.');
     }
 
     try {
-      const response = await customerCloudRepository.upsertCustomer({
+      let response = await customerCloudRepository.upsertCustomer({
         licenseKey: mode.licenseKey,
-        customer: cloudPayload,
-        expectedVersion,
-        idempotencyKey
+        customer: localCustomerToCloudPayload(attempt.candidate),
+        expectedVersion: attempt.expectedVersion,
+        idempotencyKey: attempt.idempotencyKey
       });
 
-      if (response?.success === false) {
-        if (response.code === 'VERSION_CONFLICT' || response.code === 'CUSTOMER_DELETED') {
-          await saveConflictFromResponse({ customer: localCandidate, response, operation: SYNC_OPERATIONS.UPSERT });
-        }
-        return normalizeCloudFailure(response);
+      if (response?.success === false && response.code === 'CUSTOMER_DELETED') {
+        const deleted = response.customer ? cloudCustomerToLocal(response.customer) : null;
+        return makeDeletedCustomerResult({
+          baseline: attempt.baseline,
+          proposed: attempt.candidate,
+          current: deleted,
+          source: 'customerRepository.upsert'
+        });
       }
 
-      const saved = await customerLocalRepository.applyCloudCustomer(response.customer);
-      posSyncOrchestrator.pullIncremental('customer_save').catch(() => {});
+      if (response?.success === false && response.code === 'VERSION_CONFLICT' && isUpdate) {
+        const current = await getResponseCustomer({ response, licenseKey: mode.licenseKey, customerId: id });
+        if (!current) {
+          return {
+            success: false,
+            code: 'CUSTOMER_VERSION_UNAVAILABLE',
+            message: 'No se pudo confirmar la versión actual del cliente. Conserva tu edición e inténtalo de nuevo.'
+          };
+        }
+        if (current.deletedAt || current.deletedTimestamp) {
+          return makeDeletedCustomerResult({
+            baseline: attempt.baseline,
+            proposed: attempt.candidate,
+            current,
+            source: 'customerRepository.version_conflict'
+          });
+        }
 
-      return { success: true, data: saved, response };
-    } catch (error) {
-      Logger.warn('[Customers] Upsert cloud fallo:', error);
+        const merged = reconcileCustomerDirectoryEdit({ baseline: attempt.baseline, local: attempt.candidate, cloud: current });
+        if (!merged.ok) {
+          return saveCustomerConflict({
+            baseline: attempt.baseline,
+            proposed: attempt.candidate,
+            current,
+            conflicts: merged.conflicts,
+            source: 'customerRepository.version_conflict'
+          });
+        }
 
-      if (isRetryableCloudError(error)) {
-        const localResult = await customerLocalRepository.saveCustomerLocal(localCandidate, {
-          existingCustomer,
-          syncStatus: CUSTOMER_SYNC_STATUS.PENDING,
-          pendingOperationId: idempotencyKey
-        });
+        const validatedMerge = validateCustomerDirectoryResult(merged.customer, { creditLimitContext, minimumCreditLimit });
+        if (!validatedMerge.valid) {
+          return {
+            success: false,
+            code: 'INVALID_CUSTOMER_DIRECTORY_FIELDS',
+            fieldErrors: validatedMerge.fieldErrors,
+            message: Object.values(validatedMerge.fieldErrors)[0],
+            currentCustomer: current
+          };
+        }
 
-        if (!localResult.success) return localResult;
+        const currentVersion = normalizeCustomerServerVersion(current.serverVersion ?? current.server_version);
+        if (currentVersion === null) {
+          return {
+            success: false,
+            code: 'CUSTOMER_VERSION_REQUIRED',
+            message: 'No se recibió una versión Cloud válida. La edición no se guardó.'
+          };
+        }
+        attempt = {
+          baseline: current,
+          candidate: normalizeCustomerForLocal({
+            ...validatedMerge.customer,
+            debt: current.debt,
+            debtCents: current.debtCents
+          }, current, { syncStatus: CUSTOMER_SYNC_STATUS.PENDING }),
+          expectedVersion: currentVersion,
+          idempotencyKey: generateIdempotencyKey({
+            entityType: SYNC_ENTITY_TYPES.CUSTOMER,
+            operation: SYNC_OPERATIONS.UPDATE,
+            entityId: id,
+            prefix: 'customer-rebase'
+          }),
+          reconciliationAttempts: 1
+        };
 
-        await enqueueCustomerOperation({
+        response = await customerCloudRepository.upsertCustomer({
           licenseKey: mode.licenseKey,
-          operation: SYNC_OPERATIONS.UPSERT,
-          customer: localCandidate,
-          cloudPayload,
-          idempotencyKey,
-          expectedVersion,
-          creditLimitContext
+          customer: localCustomerToCloudPayload(attempt.candidate),
+          expectedVersion: attempt.expectedVersion,
+          idempotencyKey: attempt.idempotencyKey
         });
 
+        if (response?.success === false && response.code === 'VERSION_CONFLICT') {
+          const newest = await getResponseCustomer({ response, licenseKey: mode.licenseKey, customerId: id });
+          if (newest?.deletedAt || newest?.deletedTimestamp) {
+            return makeDeletedCustomerResult({ baseline: attempt.baseline, proposed: attempt.candidate, current: newest, source: 'customerRepository.retry_conflict' });
+          }
+          const secondMerge = newest
+            ? reconcileCustomerDirectoryEdit({ baseline: attempt.baseline, local: attempt.candidate, cloud: newest })
+            : null;
+          const secondConflicts = secondMerge?.conflicts?.length
+            ? secondMerge.conflicts
+            : buildCustomerRetryLimitConflicts({ baseline: attempt.baseline, local: attempt.candidate, cloud: newest || {} });
+          return saveCustomerConflict({
+            baseline: attempt.baseline,
+            proposed: attempt.candidate,
+            current: newest,
+            conflicts: secondConflicts,
+            source: 'customerRepository.retry_limit',
+            reason: 'CUSTOMER_RETRY_LIMIT_REACHED'
+          });
+        }
+      }
+
+      if (response?.success === false) return normalizeCloudFailure(response);
+      if (!response?.customer) {
         return {
-          success: true,
-          pending: true,
-          data: localCandidate,
-          message: 'Cliente guardado localmente. La sincronizacion quedo pendiente y se reintentara automaticamente.'
+          success: false,
+          code: 'CUSTOMER_SAVE_UNCONFIRMED',
+          message: 'El servidor no confirmó la actualización. Conserva tus cambios e inténtalo de nuevo.'
         };
       }
 
+      const saved = await customerLocalRepository.applyCloudCustomer(response.customer, {
+        source: 'mutation_ack',
+        operationId: 'customer_repository_direct_ack'
+      });
+      posSyncOrchestrator.pullIncremental('customer_save').catch(() => {});
+      return { success: true, data: saved, response };
+    } catch (error) {
+      Logger.warn('[Customers] Upsert cloud fallo:', error);
+      if (isRetryableCloudError(error)) {
+        return queueAttempt(
+          attempt,
+          'Cambios guardados en este dispositivo. Sincronización pendiente.'
+        );
+      }
       return {
         success: false,
-        message: error?.message || 'Error al guardar cliente cloud.',
+        code: error?.code || 'CUSTOMER_SAVE_FAILED',
+        message: error?.message || 'No se pudo guardar el cliente.',
         error
       };
     }
@@ -351,7 +773,7 @@ export const customerRepository = {
 
       if (response?.success === false) {
         if (response.code === 'VERSION_CONFLICT') {
-          await saveConflictFromResponse({ customer: existingCustomer, response, operation: SYNC_OPERATIONS.DELETE });
+          if (response.customer?.id) await customerLocalRepository.applyCloudCustomer(response.customer);
         }
         return normalizeCloudFailure(response);
       }

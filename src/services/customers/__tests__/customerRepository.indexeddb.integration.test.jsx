@@ -7,11 +7,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   cloud: { upsertCustomer: vi.fn(), deleteCustomer: vi.fn(), migrateLocalCustomers: vi.fn(), pullCustomerSnapshot: vi.fn() },
-  orchestrator: { registerEntitySyncHandler: vi.fn(), pullIncremental: vi.fn() }
+  orchestrator: { registerEntitySyncHandler: vi.fn(), pullIncremental: vi.fn() },
+  actorPermission: { allowed: true, actorType: 'admin' }
 }));
 
 vi.mock('../customerCloudRepository', () => ({ customerCloudRepository: mocks.cloud }));
 vi.mock('../../sync/posSyncOrchestrator', () => ({ posSyncOrchestrator: mocks.orchestrator }));
+vi.mock('../../sync/actorPermission', () => ({ hasCurrentActorPermission: () => mocks.actorPermission.allowed }));
 vi.mock('../../tenant/localTenantGuard', () => ({
   assertLocalTenantSyncAccess: vi.fn(async () => ({ status: 'pass' })),
   runWithLocalTenantSyncLease: async (_source, _options, operation) => operation(),
@@ -75,6 +77,8 @@ beforeEach(async () => {
   mocks.cloud.pullCustomerSnapshot.mockReset();
   mocks.orchestrator.registerEntitySyncHandler.mockClear();
   mocks.orchestrator.pullIncremental.mockReset().mockResolvedValue(undefined);
+  mocks.actorPermission.allowed = true;
+  mocks.actorPermission.actorType = 'admin';
 });
 
 afterEach(async () => {
@@ -283,9 +287,425 @@ describe('customerRepository IndexedDB integration', () => {
     }, { existingCustomer: existing });
 
     expect(mocks.cloud.upsertCustomer).toHaveBeenCalledWith(expect.objectContaining({ expectedVersion: 5 }));
-    expect(result).toMatchObject({ success: false, code: 'VERSION_CONFLICT' });
+    expect(result).toMatchObject({ success: false, code: 'CUSTOMER_FIELDS_CONFLICT' });
+    expect(result.fieldConflicts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ field: 'name', currentValue: 'Cliente Cloud', proposedValue: 'Edición local' })
+    ]));
     expect(await customerLocalRepository.getCustomerById(existing.id)).toMatchObject({
       id: existing.id, syncStatus: 'conflict', debt: 15, debtCents: 1500, creditLimit: 100
+    });
+  });
+
+  it('three-way merges a stale same-device edit after Cloud advanced and confirms once with a new key', async () => {
+    setCloudMode();
+    const existing = {
+      id: 'stale-device-edit', name: 'Base', phone: '5553334400', phoneKey: '5553334400',
+      address: 'Dirección base', debt: 22, debtCents: 2200, creditLimit: 100,
+      serverVersion: 5, syncStatus: 'synced'
+    };
+    await db.table(STORES.CUSTOMERS).put(existing);
+    mocks.cloud.upsertCustomer
+      .mockResolvedValueOnce({
+        success: false, code: 'VERSION_CONFLICT',
+        customer: remoteCustomer(existing.id, {
+          name: 'Base', address: 'Dirección Cloud', debt: 22, debt_cents: 2200,
+          credit_limit: 100, server_version: 6
+        })
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        customer: remoteCustomer(existing.id, {
+          name: 'Nombre local', address: 'Dirección Cloud', debt: 22, debt_cents: 2200,
+          credit_limit: 100, server_version: 7
+        })
+      });
+
+    const result = await customerRepository.saveCustomer({
+      name: 'Nombre local', phone: existing.phone, address: existing.address, creditLimit: 100
+    }, { existingCustomer: existing });
+
+    expect(result).toMatchObject({ success: true, data: { serverVersion: 7, syncStatus: 'synced' } });
+    expect(mocks.cloud.upsertCustomer).toHaveBeenCalledTimes(2);
+    expect(mocks.cloud.upsertCustomer.mock.calls.map(([call]) => call.expectedVersion)).toEqual([5, 6]);
+    expect(mocks.cloud.upsertCustomer.mock.calls[1][0].idempotencyKey)
+      .not.toBe(mocks.cloud.upsertCustomer.mock.calls[0][0].idempotencyKey);
+    expect(mocks.cloud.upsertCustomer.mock.calls[1][0].customer).toMatchObject({
+      name: 'Nombre local', address: 'Dirección Cloud'
+    });
+    expect(mocks.cloud.upsertCustomer.mock.calls[1][0].customer).not.toHaveProperty('debt');
+    expect(mocks.cloud.upsertCustomer.mock.calls[1][0].customer).not.toHaveProperty('debt_cents');
+    expect(await customerLocalRepository.getCustomerById(existing.id)).toMatchObject({
+      id: existing.id, name: 'Nombre local', debt: 22, debtCents: 2200, serverVersion: 7
+    });
+    expect(await db.table(STORES.CUSTOMERS).count()).toBe(1);
+  });
+
+  it('uses a newer local serverVersion when only the version changed before the open form was saved', async () => {
+    setCloudMode();
+    const opened = {
+      id: 'same-device-version-only', name: 'Base', phone: '5553334408', address: 'Dirección',
+      debt: 0, debtCents: 0, creditLimit: 100, serverVersion: 5, syncStatus: 'synced'
+    };
+    await db.table(STORES.CUSTOMERS).put(opened);
+    await customerLocalRepository.applyCloudCustomer(remoteCustomer(opened.id, {
+      name: opened.name, phone: opened.phone, address: opened.address, credit_limit: 100, server_version: 6
+    }));
+    mocks.cloud.upsertCustomer.mockResolvedValueOnce({
+      success: true,
+      customer: remoteCustomer(opened.id, { name: 'Edición', phone: opened.phone, address: opened.address, credit_limit: 100, server_version: 7 })
+    });
+
+    const result = await customerRepository.saveCustomer({
+      name: 'Edición', phone: opened.phone, address: opened.address, creditLimit: 100
+    }, { existingCustomer: opened });
+
+    expect(result).toMatchObject({ success: true, data: { serverVersion: 7 } });
+    expect(mocks.cloud.upsertCustomer).toHaveBeenCalledTimes(1);
+    expect(mocks.cloud.upsertCustomer.mock.calls[0][0].expectedVersion).toBe(6);
+  });
+
+  it('returns a field-level conflict for overlapping edits and preserves both values plus exact debt', async () => {
+    setCloudMode();
+    const existing = {
+      id: 'overlap-edit', name: 'Base', phone: '5553334401', phoneKey: '5553334401',
+      address: '', debt: 22.5, debtCents: 2250, creditLimit: 100,
+      serverVersion: 5, syncStatus: 'synced'
+    };
+    await db.table(STORES.CUSTOMERS).put(existing);
+    mocks.cloud.upsertCustomer.mockResolvedValueOnce({
+      success: false, code: 'VERSION_CONFLICT',
+      customer: remoteCustomer(existing.id, {
+        name: 'Nombre Cloud', debt: 99, debt_cents: 9900, credit_limit: 100, server_version: 6
+      })
+    });
+
+    const result = await customerRepository.saveCustomer({
+      name: 'Nombre local', phone: existing.phone, address: '', creditLimit: 100
+    }, { existingCustomer: existing });
+
+    expect(result).toMatchObject({ success: false, code: 'CUSTOMER_FIELDS_CONFLICT' });
+    expect(result.message).not.toMatch(/otro dispositivo/i);
+    expect(result.fieldConflicts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ field: 'name', currentValue: 'Nombre Cloud', proposedValue: 'Nombre local' })
+    ]));
+    expect(mocks.cloud.upsertCustomer).toHaveBeenCalledTimes(1);
+    expect(await customerLocalRepository.getCustomerById(existing.id)).toMatchObject({
+      name: 'Nombre local', debt: 22.5, debtCents: 2250, syncStatus: 'conflict'
+    });
+    expect(await customerLocalRepository.getCustomerById(existing.id)).toMatchObject({
+      conflictCloudSnapshot: { name: 'Nombre Cloud', serverVersion: 6, debt: 99, debtCents: 9900 },
+      debt: 22.5,
+      debtCents: 2250
+    });
+  });
+
+  it('applies a deliberate conflict resolution with a fresh Cloud base and keeps local debt projection', async () => {
+    setCloudMode();
+    const baseline = remoteCustomer('resolved-edit', {
+      name: 'Nombre Cloud', phone: '5553334410', address: '', debt: 99,
+      debt_cents: 9900, credit_limit: 100, server_version: 6
+    });
+    const existing = {
+      id: baseline.id, name: 'Nombre local', phone: baseline.phone, address: '',
+      debt: 22.5, debtCents: 2250, creditLimit: 100, serverVersion: 6,
+      syncStatus: 'conflict', conflictReason: 'VERSION_CONFLICT',
+      conflictCloudSnapshot: { ...baseline, debt: 99, debtCents: 9900, creditLimit: 100, serverVersion: 6 },
+      conflictBaseSnapshot: { ...baseline, name: 'Base', serverVersion: 5 }
+    };
+    await db.table(STORES.CUSTOMERS).put(existing);
+    mocks.cloud.upsertCustomer.mockResolvedValueOnce({
+      success: true,
+      customer: remoteCustomer(existing.id, {
+        name: 'Nombre local', phone: existing.phone, debt: 99, debt_cents: 9900,
+        credit_limit: 100, server_version: 7
+      })
+    });
+
+    const result = await customerRepository.saveCustomer({
+      name: 'Nombre local', phone: existing.phone, address: '', creditLimit: 100
+    }, { existingCustomer: existing.conflictCloudSnapshot, resolutionAcknowledged: true });
+
+    expect(result).toMatchObject({ success: true, data: { serverVersion: 7, syncStatus: 'synced' } });
+    expect(mocks.cloud.upsertCustomer).toHaveBeenCalledWith(expect.objectContaining({ expectedVersion: 6 }));
+    expect(mocks.cloud.upsertCustomer.mock.calls[0][0].customer).not.toHaveProperty('debt');
+    expect(await customerLocalRepository.getCustomerById(existing.id)).toMatchObject({
+      name: 'Nombre local', debt: 22.5, debtCents: 2250, serverVersion: 7, syncStatus: 'synced'
+    });
+  });
+
+  it('keeps a pending local draft when a Cloud snapshot arrives before the outbox is sent', async () => {
+    setCloudMode();
+    Object.defineProperty(navigator, 'onLine', { value: false, configurable: true });
+    const existing = {
+      id: 'realtime-pending-edit', name: 'Base', phone: '5553334411', address: 'Base address',
+      debt: 12, debtCents: 1200, creditLimit: 100, serverVersion: 5, syncStatus: 'synced'
+    };
+    await db.table(STORES.CUSTOMERS).put(existing);
+    await customerRepository.saveCustomer({
+      name: 'Local draft', phone: existing.phone, address: existing.address, creditLimit: 100
+    }, { existingCustomer: existing });
+
+    const applied = await customerLocalRepository.applyCloudCustomer(remoteCustomer(existing.id, {
+      name: 'Base', phone: existing.phone, address: 'Cloud address', credit_limit: 100,
+      debt: 88, debt_cents: 8800, server_version: 6
+    }));
+
+    expect(applied).toMatchObject({
+      name: 'Local draft', address: 'Base address', serverVersion: 5,
+      syncStatus: 'pending', debt: 12, debtCents: 1200,
+      latestCloudSnapshot: { name: 'Base', address: 'Cloud address', serverVersion: 6, debt: 88, debtCents: 8800 }
+    });
+    expect(mocks.cloud.upsertCustomer).not.toHaveBeenCalled();
+    expect(await syncOutboxService.getPendingOperations({ licenseKey: TEST_LICENSE_KEY })).toHaveLength(1);
+  });
+
+  it('requires explicit review when both Cloud and local changed the credit limit', async () => {
+    setCloudMode();
+    const existing = {
+      id: 'credit-limit-overlap', name: 'Cliente', phone: '5553334402', address: '',
+      debt: 80, debtCents: 8000, creditLimit: 100, serverVersion: 5, syncStatus: 'synced'
+    };
+    await db.table(STORES.CUSTOMERS).put(existing);
+    mocks.cloud.upsertCustomer.mockResolvedValueOnce({
+      success: false, code: 'VERSION_CONFLICT',
+      customer: remoteCustomer(existing.id, {
+        name: 'Cliente', debt: 80, debt_cents: 8000, credit_limit: 200, server_version: 6
+      })
+    });
+
+    const result = await customerRepository.saveCustomer({
+      name: existing.name, phone: existing.phone, address: '', creditLimit: 150
+    }, { existingCustomer: existing });
+
+    expect(result).toMatchObject({ success: false, code: 'CUSTOMER_FIELDS_CONFLICT' });
+    expect(result.fieldConflicts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ field: 'creditLimit', currentValue: 200, proposedValue: 150 })
+    ]));
+    expect(mocks.cloud.upsertCustomer).toHaveBeenCalledTimes(1);
+    expect(await customerLocalRepository.getCustomerById(existing.id)).toMatchObject({
+      creditLimit: 150, debt: 80, debtCents: 8000, syncStatus: 'conflict'
+    });
+  });
+
+  it('stops after one safe reattempt when Cloud changes again during the retry', async () => {
+    setCloudMode();
+    const existing = {
+      id: 'second-collision', name: 'Base', phone: '5553334403', address: 'Base address',
+      debt: 10, debtCents: 1000, creditLimit: 100, serverVersion: 5, syncStatus: 'synced'
+    };
+    await db.table(STORES.CUSTOMERS).put(existing);
+    mocks.cloud.upsertCustomer
+      .mockResolvedValueOnce({
+        success: false, code: 'VERSION_CONFLICT',
+        customer: remoteCustomer(existing.id, { name: 'Base', address: 'Cloud one', server_version: 6 })
+      })
+      .mockResolvedValueOnce({
+        success: false, code: 'VERSION_CONFLICT',
+        customer: remoteCustomer(existing.id, { name: 'Base', address: 'Cloud two', server_version: 7 })
+      });
+
+    const result = await customerRepository.saveCustomer({
+      name: 'Local name', phone: existing.phone, address: existing.address, creditLimit: 100
+    }, { existingCustomer: existing });
+
+    expect(result).toMatchObject({ success: false, code: 'CUSTOMER_FIELDS_CONFLICT' });
+    expect(result.fieldConflicts.length).toBeGreaterThan(0);
+    expect(mocks.cloud.upsertCustomer).toHaveBeenCalledTimes(2);
+    expect(await customerLocalRepository.getCustomerById(existing.id)).toMatchObject({
+      name: 'Local name', syncStatus: 'conflict'
+    });
+  });
+
+  it('blocks a deleted Cloud customer instead of recreating it', async () => {
+    setCloudMode();
+    const existing = {
+      id: 'deleted-edit', name: 'Cliente', phone: '5553334404', address: '',
+      debt: 0, debtCents: 0, creditLimit: 100, serverVersion: 5, syncStatus: 'synced'
+    };
+    await db.table(STORES.CUSTOMERS).put(existing);
+    mocks.cloud.upsertCustomer.mockResolvedValueOnce({
+      success: false, code: 'CUSTOMER_DELETED',
+      customer: remoteCustomer(existing.id, { deleted_at: '2026-10-28T10:00:00.000Z', server_version: 6 })
+    });
+
+    const result = await customerRepository.saveCustomer({
+      name: 'Edición', phone: existing.phone, address: '', creditLimit: 100
+    }, { existingCustomer: existing });
+
+    expect(result).toMatchObject({ success: false, code: 'CUSTOMER_DELETED' });
+    expect(result.message).toBe('Este cliente ya fue eliminado y no puede editarse.');
+    expect(mocks.cloud.upsertCustomer).toHaveBeenCalledTimes(1);
+    expect(await customerLocalRepository.getCustomerById(existing.id)).toMatchObject({
+      syncStatus: 'conflict', conflictReason: 'CUSTOMER_DELETED', isActive: false
+    });
+  });
+
+  it('returns an inline duplicate-phone error without attributing it to another device', async () => {
+    setCloudMode();
+    mocks.cloud.upsertCustomer.mockResolvedValueOnce({
+      success: false, code: 'DUPLICATE_PHONE',
+      message: 'El telefono ya esta registrado para otro cliente.'
+    });
+    const result = await customerRepository.saveCustomer({
+      name: 'Duplicado', phone: '5553334409', creditLimit: 0
+    });
+
+    expect(result).toMatchObject({ success: false, code: 'DUPLICATE_PHONE' });
+    expect(result.fieldErrors.phone).toMatch(/tel[eé]fono/i);
+    expect(result.message).not.toMatch(/otro dispositivo/i);
+    expect(await db.table(STORES.CUSTOMERS).count()).toBe(0);
+  });
+
+  it('lets the owner correct a phone after an outbox duplicate without reusing the failed Cloud mutation', async () => {
+    setCloudMode();
+    const conflicted = {
+      id: 'duplicate-outbox-phone', name: 'Cliente', phone: '5553334412', address: '',
+      debt: 14, debtCents: 1400, creditLimit: 100, serverVersion: 5,
+      syncStatus: 'conflict', conflictReason: 'DUPLICATE_PHONE'
+    };
+    await db.table(STORES.CUSTOMERS).put(conflicted);
+    const rejected = await customerRepository.saveCustomer({
+      name: conflicted.name, phone: conflicted.phone, address: '', creditLimit: 100
+    }, { existingCustomer: conflicted });
+    expect(rejected).toMatchObject({ code: 'DUPLICATE_PHONE', fieldErrors: { phone: expect.any(String) } });
+    expect(mocks.cloud.upsertCustomer).not.toHaveBeenCalled();
+
+    mocks.cloud.upsertCustomer.mockResolvedValueOnce({
+      success: true,
+      customer: remoteCustomer(conflicted.id, {
+        name: conflicted.name, phone: '5553334413', phone_key: '5553334413', debt: 90,
+        debt_cents: 9000, credit_limit: 100, server_version: 6
+      })
+    });
+    const corrected = await customerRepository.saveCustomer({
+      name: conflicted.name, phone: '5553334413', address: '', creditLimit: 100
+    }, { existingCustomer: conflicted });
+
+    expect(corrected).toMatchObject({ success: true, data: { phone: '5553334413', serverVersion: 6 } });
+    expect(mocks.cloud.upsertCustomer).toHaveBeenCalledTimes(1);
+    expect(mocks.cloud.upsertCustomer.mock.calls[0][0].expectedVersion).toBe(5);
+    expect(mocks.cloud.upsertCustomer.mock.calls[0][0].customer).not.toHaveProperty('debt');
+    expect(await customerLocalRepository.getCustomerById(conflicted.id)).toMatchObject({
+      phone: '5553334413', debt: 14, debtCents: 1400, syncStatus: 'synced'
+    });
+    expect(await db.table(STORES.CUSTOMERS).count()).toBe(1);
+  });
+
+  it('allows Staff with the effective customers permission and rejects Staff without it', async () => {
+    setCloudMode();
+    mocks.actorPermission.actorType = 'staff';
+    mocks.cloud.upsertCustomer.mockResolvedValueOnce({
+      success: true,
+      customer: remoteCustomer('authorized-staff', { name: 'Staff autorizado', phone: '5553334414', server_version: 1 })
+    });
+    const allowed = await customerRepository.saveCustomer({
+      id: 'authorized-staff', name: 'Staff autorizado', phone: '5553334414', creditLimit: 0
+    });
+    expect(allowed).toMatchObject({ success: true });
+    expect(mocks.cloud.upsertCustomer).toHaveBeenCalledTimes(1);
+
+    mocks.actorPermission.allowed = false;
+    const result = await customerRepository.saveCustomer({
+      name: 'No autorizado', phone: '5553334415', creditLimit: 0
+    });
+
+    expect(result).toMatchObject({ success: false, code: 'CUSTOMER_PERMISSION_REQUIRED' });
+    expect(mocks.cloud.upsertCustomer).toHaveBeenCalledTimes(1);
+    expect(await db.table(STORES.CUSTOMERS).count()).toBe(1);
+    mocks.actorPermission.allowed = true;
+    mocks.actorPermission.actorType = 'admin';
+  });
+
+  it('reuses the same rebased outbox key after an uncertain network response without duplicating the row', async () => {
+    setCloudMode();
+    Object.defineProperty(navigator, 'onLine', { value: false, configurable: true });
+    const existing = {
+      id: 'offline-rebase', name: 'Base', phone: '5553334406', address: 'Base address',
+      debt: 22, debtCents: 2200, creditLimit: 100, serverVersion: 5, syncStatus: 'synced'
+    };
+    await db.table(STORES.CUSTOMERS).put(existing);
+    const queuedSave = await customerRepository.saveCustomer({
+      name: 'Local name', phone: existing.phone, address: existing.address, creditLimit: 100
+    }, { existingCustomer: existing });
+    const queued = await syncOutboxService.getPendingOperations({ licenseKey: TEST_LICENSE_KEY });
+    expect(queuedSave.pending).toBe(true);
+    expect(queued).toHaveLength(1);
+    expect(queued[0].payload.baseCustomer).not.toHaveProperty('debt');
+
+    Object.defineProperty(navigator, 'onLine', { value: true, configurable: true });
+    mocks.cloud.upsertCustomer
+      .mockResolvedValueOnce({
+        success: false, code: 'VERSION_CONFLICT',
+        customer: remoteCustomer(existing.id, { name: 'Base', address: 'Cloud address', server_version: 6, debt: 22, debt_cents: 2200 })
+      })
+      .mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    await syncOutboxService.markProcessing(queued[0].id, { licenseKey: TEST_LICENSE_KEY });
+    await expect(customerSyncHandler.pushOperation(queued[0])).rejects.toThrow('Failed to fetch');
+    await syncOutboxService.markFailed(queued[0].id, new TypeError('Failed to fetch'), { licenseKey: TEST_LICENSE_KEY });
+
+    const retry = await syncOutboxService.getOperation(queued[0].id, { licenseKey: TEST_LICENSE_KEY });
+    expect(retry.id).toBe(queued[0].id);
+    expect(retry.status).toBe('pending');
+    expect(retry.idempotencyKey).toBe(mocks.cloud.upsertCustomer.mock.calls[1][0].idempotencyKey);
+    expect(retry.idempotencyKey).not.toBe(mocks.cloud.upsertCustomer.mock.calls[0][0].idempotencyKey);
+    expect(retry.payload.expectedVersion).toBe(6);
+    expect(retry.payload.customer).not.toHaveProperty('debt');
+    expect(retry.payload.customer).not.toHaveProperty('debt_cents');
+
+    mocks.cloud.upsertCustomer.mockResolvedValueOnce({
+      success: true,
+      customer: remoteCustomer(existing.id, {
+        name: 'Local name', address: 'Cloud address', debt: 22, debt_cents: 2200,
+        credit_limit: 100, server_version: 7
+      })
+    });
+    await syncOutboxService.markProcessing(retry.id, { licenseKey: TEST_LICENSE_KEY });
+    const confirmed = await customerSyncHandler.pushOperation(retry);
+    await syncOutboxService.markSynced(retry.id, confirmed, { licenseKey: TEST_LICENSE_KEY });
+
+    expect(mocks.cloud.upsertCustomer).toHaveBeenCalledTimes(3);
+    expect(mocks.cloud.upsertCustomer.mock.calls[2][0].idempotencyKey)
+      .toBe(mocks.cloud.upsertCustomer.mock.calls[1][0].idempotencyKey);
+    expect(await db.table(POS_SYNC_STORES.OUTBOX).count()).toBe(1);
+    expect(await customerLocalRepository.getCustomerById(existing.id)).toMatchObject({
+      name: 'Local name', address: 'Cloud address', debt: 22, debtCents: 2200,
+      serverVersion: 7, syncStatus: 'synced'
+    });
+  });
+
+  it('turns a second offline collision into one visible outbox conflict with no third write', async () => {
+    setCloudMode();
+    Object.defineProperty(navigator, 'onLine', { value: false, configurable: true });
+    const existing = {
+      id: 'offline-second-collision', name: 'Base', phone: '5553334407', address: 'Base address',
+      debt: 5, debtCents: 500, creditLimit: 100, serverVersion: 5, syncStatus: 'synced'
+    };
+    await db.table(STORES.CUSTOMERS).put(existing);
+    await customerRepository.saveCustomer({
+      name: 'Local name', phone: existing.phone, address: existing.address, creditLimit: 100
+    }, { existingCustomer: existing });
+    const queued = await syncOutboxService.getPendingOperations({ licenseKey: TEST_LICENSE_KEY });
+    Object.defineProperty(navigator, 'onLine', { value: true, configurable: true });
+    mocks.cloud.upsertCustomer
+      .mockResolvedValueOnce({
+        success: false, code: 'VERSION_CONFLICT',
+        customer: remoteCustomer(existing.id, { name: 'Base', address: 'Cloud one', server_version: 6 })
+      })
+      .mockResolvedValueOnce({
+        success: false, code: 'VERSION_CONFLICT',
+        customer: remoteCustomer(existing.id, { name: 'Base', address: 'Cloud two', server_version: 7 })
+      });
+
+    await syncOutboxService.markProcessing(queued[0].id, { licenseKey: TEST_LICENSE_KEY });
+    const result = await customerSyncHandler.pushOperation(queued[0]);
+    await syncOutboxService.markConflict(queued[0].id, result.conflict, { licenseKey: TEST_LICENSE_KEY });
+
+    expect(result.conflict.code).toBe('VERSION_CONFLICT');
+    expect(mocks.cloud.upsertCustomer).toHaveBeenCalledTimes(2);
+    expect(await db.table(POS_SYNC_STORES.OUTBOX).count()).toBe(1);
+    expect((await db.table(POS_SYNC_STORES.OUTBOX).get(queued[0].id)).status).toBe('conflict');
+    expect(await customerLocalRepository.getCustomerById(existing.id)).toMatchObject({
+      syncStatus: 'conflict', conflictReason: 'CUSTOMER_RETRY_LIMIT_REACHED', name: 'Local name'
     });
   });
 

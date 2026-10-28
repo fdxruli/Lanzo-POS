@@ -161,4 +161,39 @@ describe('CustomerForm required phone', () => {
     await waitFor(() => expect(onSave).toHaveBeenCalledTimes(2));
     expect(onSave).toHaveBeenLastCalledWith(expect.objectContaining({ creditLimit: 50 }));
   });
+
+  it('keeps the open draft through a Cloud refresh and requires an explicit field choice before retry', async () => {
+    const user = userEvent.setup();
+    const baseline = { id: 'concurrent-form', name: 'Base', phone: '5551234567', address: '', creditLimit: 100 };
+    const currentCloud = { ...baseline, name: 'Nombre Cloud', serverVersion: 6, syncStatus: 'synced' };
+    const onSave = vi.fn()
+      .mockResolvedValueOnce({
+        success: false,
+        code: 'CUSTOMER_FIELDS_CONFLICT',
+        message: 'Este cliente tiene cambios recientes. Revisa los campos indicados antes de guardar.',
+        fieldConflicts: [{ field: 'name', label: 'nombre', baseValue: 'Base', currentValue: 'Nombre Cloud', proposedValue: 'Mi borrador' }],
+        currentCustomer: currentCloud
+      })
+      .mockResolvedValueOnce({ success: true });
+    const view = render(<CustomerForm onSave={onSave} onCancel={vi.fn()} customerToEdit={baseline} latestCustomer={baseline} />);
+    const name = screen.getByLabelText('Nombre Completo *');
+    await user.clear(name);
+    await user.type(name, 'Mi borrador');
+
+    view.rerender(<CustomerForm onSave={onSave} onCancel={vi.fn()} customerToEdit={baseline} latestCustomer={currentCloud} />);
+    expect(name).toHaveValue('Mi borrador');
+
+    await user.click(screen.getByRole('button', { name: 'Guardar Cliente' }));
+    expect(await screen.findByText('Nombre Cloud')).toBeInTheDocument();
+    expect(name).toHaveValue('Mi borrador');
+    await user.click(screen.getByRole('button', { name: 'Guardar Cliente' }));
+    expect(onSave).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole('button', { name: 'Conservar mi edición' }));
+    await user.click(screen.getByRole('button', { name: 'Guardar Cliente' }));
+
+    await waitFor(() => expect(onSave).toHaveBeenCalledTimes(2));
+    expect(onSave.mock.calls[1][0]).toMatchObject({ name: 'Mi borrador', creditLimit: 100 });
+    expect(onSave.mock.calls[1][1]).toMatchObject({ baseCustomer: currentCloud, resolutionAcknowledged: true });
+  });
 });
