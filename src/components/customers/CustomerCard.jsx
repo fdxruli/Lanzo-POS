@@ -98,7 +98,7 @@ const CustomerCard = memo(({
                     <span className="customer-limit-copy">
                         {creditLimit > 0
                             ? `Limite: $${creditLimit.toFixed(2)}`
-                            : 'Sin limite configurado'}
+                            : 'Este cliente no tiene crédito autorizado'}
                     </span>
                     {creditLimit > 0 && (
                         <div className="customer-credit-progress">

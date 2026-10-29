@@ -1,0 +1,15 @@
+{
+  "purpose": "FIN-01 PostgreSQL 17 isolated GitHub Actions lab",
+  "base_main_sha": "1a0d758d09310f2914c475c37d358c4cf885cc01",
+  "base_tree_sha": "6e5e6f1c77a55cec4cafee016cbe277aab89bf30",
+  "candidate_patch_sha256": "882036cc2b87e2d98ac6cc46f22d55a6ec68588accc160c9bd8f6c589321964d",
+  "candidate_tree_sha_before_lab_harness": "3107e6a7ef7332b6b0fcd75fe6ed34ed7e3ddd0b",
+  "candidate_sql_path": "scripts/fin01/fin01-pay-n01-candidate.sql",
+  "candidate_sql_sha256": "de269931a034e9df25ff50ed321f6ab6a0cc23e93fe37f0255c64ed3e780b804",
+  "expected_pre_fix_function_sha256": "73ce2f73f985eada337800b1ed18b9242c1f57948a23c48a57542f522ead8bf4",
+  "expected_post_fix_function_sha256": "b978efa200c134a9754cd30568d6e1a824b5b07fa01c5c3ad0eaf475d84e5d1b",
+  "postgres_image": "postgres:17.11",
+  "synthetic_only": true,
+  "production_credentials": false,
+  "gate_f01": "off"
+}

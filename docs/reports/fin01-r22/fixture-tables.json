@@ -1,0 +1,5843 @@
+[
+  {
+    "schema_name": "public",
+    "relname": "business_profiles",
+    "relkind": "r",
+    "relrowsecurity": true,
+    "relacl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "not_null": true
+      },
+      {
+        "name": "license_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "user_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "business_name",
+        "type": "character varying(255)",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "phone_number",
+        "type": "character varying(50)",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "address",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "logo_url",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "business_type",
+        "type": "business_category[]",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": false
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": false
+      }
+    ],
+    "constraints": [
+      {
+        "name": "business_profiles_license_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "business_profiles_license_id_key",
+        "type": "u",
+        "definition": "UNIQUE (license_id)"
+      },
+      {
+        "name": "business_profiles_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "business_profiles_user_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE SET NULL"
+      }
+    ],
+    "indexes": [
+      "CREATE UNIQUE INDEX business_profiles_pkey ON public.business_profiles USING btree (id)",
+      "CREATE UNIQUE INDEX business_profiles_license_id_key ON public.business_profiles USING btree (license_id)",
+      "CREATE INDEX idx_business_profiles_user_id ON public.business_profiles USING btree (user_id)"
+    ]
+  },
+  {
+    "schema_name": "public",
+    "relname": "ecommerce_order_items",
+    "relkind": "r",
+    "relrowsecurity": true,
+    "relacl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "extensions.gen_random_uuid()",
+        "not_null": true
+      },
+      {
+        "name": "order_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "portal_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "license_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "published_product_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "source_product_id",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "product_name",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "unit_price",
+        "type": "numeric(12,2)",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "quantity",
+        "type": "numeric(12,3)",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "line_total",
+        "type": "numeric(12,2)",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "name": "options",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "not_null": true
+      },
+      {
+        "name": "metadata",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "not_null": true
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      }
+    ],
+    "constraints": [
+      {
+        "name": "ecommerce_order_items_amounts_valid",
+        "type": "c",
+        "definition": "CHECK (((unit_price >= (0)::numeric) AND (quantity > (0)::numeric) AND (line_total >= (0)::numeric)))"
+      },
+      {
+        "name": "ecommerce_order_items_id_portal_id_license_id_key",
+        "type": "u",
+        "definition": "UNIQUE (id, portal_id, license_id)"
+      },
+      {
+        "name": "ecommerce_order_items_license_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "ecommerce_order_items_order_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (order_id) REFERENCES ecommerce_orders(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "ecommerce_order_items_order_scope_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (order_id, portal_id, license_id) REFERENCES ecommerce_orders(id, portal_id, license_id) ON DELETE CASCADE"
+      },
+      {
+        "name": "ecommerce_order_items_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "ecommerce_order_items_portal_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (portal_id) REFERENCES ecommerce_portals(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "ecommerce_order_items_portal_license_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (portal_id, license_id) REFERENCES ecommerce_portals(id, license_id)"
+      },
+      {
+        "name": "ecommerce_order_items_product_name_not_blank",
+        "type": "c",
+        "definition": "CHECK ((length(btrim(product_name)) > 0))"
+      },
+      {
+        "name": "ecommerce_order_items_published_product_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (published_product_id) REFERENCES ecommerce_published_products(id) ON DELETE SET NULL"
+      }
+    ],
+    "indexes": [
+      "CREATE UNIQUE INDEX ecommerce_order_items_pkey ON public.ecommerce_order_items USING btree (id)",
+      "CREATE INDEX ix_ecommerce_order_items_order ON public.ecommerce_order_items USING btree (order_id)",
+      "CREATE INDEX ix_ecommerce_order_items_license_created ON public.ecommerce_order_items USING btree (license_id, created_at DESC)",
+      "CREATE UNIQUE INDEX ecommerce_order_items_id_portal_id_license_id_key ON public.ecommerce_order_items USING btree (id, portal_id, license_id)",
+      "CREATE INDEX ecommerce_order_items_order_scope_idx ON public.ecommerce_order_items USING btree (order_id, portal_id, license_id)",
+      "CREATE INDEX ecommerce_order_items_product_scope_idx ON public.ecommerce_order_items USING btree (published_product_id, portal_id, license_id) WHERE (published_product_id IS NOT NULL)"
+    ]
+  },
+  {
+    "schema_name": "public",
+    "relname": "ecommerce_orders",
+    "relkind": "r",
+    "relrowsecurity": true,
+    "relacl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "extensions.gen_random_uuid()",
+        "not_null": true
+      },
+      {
+        "name": "order_number",
+        "type": "bigint",
+        "default": null,
+        "not_null": true,
+        "identity": "a"
+      },
+      {
+        "name": "public_order_code",
+        "type": "text",
+        "default": "('EC-'::text || lpad((order_number)::text, 8, '0'::text))",
+        "not_null": false,
+        "generated": "s"
+      },
+      {
+        "name": "portal_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "license_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "default": "'new'::text",
+        "not_null": true
+      },
+      {
+        "name": "channel",
+        "type": "text",
+        "default": "'public_store'::text",
+        "not_null": true
+      },
+      {
+        "name": "fulfillment_method",
+        "type": "text",
+        "default": "'pickup'::text",
+        "not_null": true
+      },
+      {
+        "name": "customer_name",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "customer_phone",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "customer_address",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "customer_notes",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "subtotal",
+        "type": "numeric(12,2)",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "name": "delivery_fee",
+        "type": "numeric(12,2)",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "name": "discount_total",
+        "type": "numeric(12,2)",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "name": "tax_total",
+        "type": "numeric(12,2)",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "name": "total",
+        "type": "numeric(12,2)",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "name": "currency",
+        "type": "text",
+        "default": "'MXN'::text",
+        "not_null": true
+      },
+      {
+        "name": "payment_method",
+        "type": "text",
+        "default": "'on_delivery'::text",
+        "not_null": true
+      },
+      {
+        "name": "payment_status",
+        "type": "text",
+        "default": "'pending'::text",
+        "not_null": true
+      },
+      {
+        "name": "whatsapp_phone",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "whatsapp_message",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "whatsapp_status",
+        "type": "text",
+        "default": "'pending_client_send'::text",
+        "not_null": true
+      },
+      {
+        "name": "system_notification_status",
+        "type": "text",
+        "default": "'pending'::text",
+        "not_null": true
+      },
+      {
+        "name": "pos_visibility_status",
+        "type": "text",
+        "default": "'pending'::text",
+        "not_null": true
+      },
+      {
+        "name": "stock_reservation_status",
+        "type": "text",
+        "default": "'not_applicable'::text",
+        "not_null": true
+      },
+      {
+        "name": "idempotency_key",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "client_user_agent",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "client_ip_hash",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "seen_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "accepted_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "rejected_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "cancelled_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "converted_sale_id",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "metadata",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "not_null": true
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      },
+      {
+        "name": "pos_draft_status",
+        "type": "text",
+        "default": "'none'::text",
+        "not_null": true
+      },
+      {
+        "name": "pos_draft_id",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "pos_claim_token",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "pos_claim_request_key",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "pos_claimed_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "pos_claim_expires_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "pos_claim_actor_type",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "pos_claim_actor_ref",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "pos_draft_prepared_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "converted_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "pos_conversion_key",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "pos_conversion_status",
+        "type": "text",
+        "default": "'idle'::text",
+        "not_null": true
+      },
+      {
+        "name": "pos_conversion_attempt_id",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "pos_conversion_sale_id",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "pos_conversion_actor_ref",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "pos_conversion_started_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "fulfillment_status",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "fulfillment_version",
+        "type": "bigint",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "name": "fulfillment_updated_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "public_status_message",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "customer_delivery_address",
+        "type": "jsonb",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "stock_reservation_expires_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "stock_reservation_phase",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "fulfillment_hold_expires_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": false
+      }
+    ],
+    "constraints": [
+      {
+        "name": "ecommerce_orders_channel_valid",
+        "type": "c",
+        "definition": "CHECK ((channel = ANY (ARRAY['public_store'::text, 'whatsapp_checkout'::text, 'manual'::text])))"
+      },
+      {
+        "name": "ecommerce_orders_customer_name_not_blank",
+        "type": "c",
+        "definition": "CHECK ((length(btrim(customer_name)) > 0))"
+      },
+      {
+        "name": "ecommerce_orders_customer_phone_not_blank",
+        "type": "c",
+        "definition": "CHECK ((length(btrim(customer_phone)) > 0))"
+      },
+      {
+        "name": "ecommerce_orders_fulfillment_method_valid",
+        "type": "c",
+        "definition": "CHECK ((fulfillment_method = ANY (ARRAY['pickup'::text, 'delivery'::text])))"
+      },
+      {
+        "name": "ecommerce_orders_fulfillment_status_check",
+        "type": "c",
+        "definition": "CHECK (((fulfillment_status IS NULL) OR (fulfillment_status = ANY (ARRAY['accepted'::text, 'preparing'::text, 'ready'::text, 'out_for_delivery'::text, 'completed'::text, 'cancelled'::text, 'attention'::text]))))"
+      },
+      {
+        "name": "ecommerce_orders_fulfillment_version_check",
+        "type": "c",
+        "definition": "CHECK ((fulfillment_version >= 0))"
+      },
+      {
+        "name": "ecommerce_orders_id_portal_id_license_id_key",
+        "type": "u",
+        "definition": "UNIQUE (id, portal_id, license_id)"
+      },
+      {
+        "name": "ecommerce_orders_license_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "ecommerce_orders_license_id_unique",
+        "type": "u",
+        "definition": "UNIQUE (license_id, id)"
+      },
+      {
+        "name": "ecommerce_orders_payment_status_valid",
+        "type": "c",
+        "definition": "CHECK ((payment_status = ANY (ARRAY['pending'::text, 'paid'::text, 'failed'::text, 'refunded'::text, 'not_required'::text])))"
+      },
+      {
+        "name": "ecommerce_orders_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "ecommerce_orders_portal_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (portal_id) REFERENCES ecommerce_portals(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "ecommerce_orders_portal_license_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (portal_id, license_id) REFERENCES ecommerce_portals(id, license_id)"
+      },
+      {
+        "name": "ecommerce_orders_pos_conversion_status_valid",
+        "type": "c",
+        "definition": "CHECK ((pos_conversion_status = ANY (ARRAY['idle'::text, 'reserved'::text, 'completed'::text])))"
+      },
+      {
+        "name": "ecommerce_orders_pos_draft_state_coherent",
+        "type": "c",
+        "definition": "CHECK ((((pos_draft_status = ANY (ARRAY['none'::text, 'released'::text])) AND (pos_draft_id IS NULL) AND (pos_claim_token IS NULL) AND (pos_claim_request_key IS NULL) AND (pos_claimed_at IS NULL) AND (pos_claim_expires_at IS NULL) AND (pos_claim_actor_type IS NULL) AND (pos_claim_actor_ref IS NULL) AND (pos_draft_prepared_at IS NULL)) OR ((pos_draft_status = 'claimed'::text) AND (pos_draft_id IS NULL) AND (pos_claim_token IS NOT NULL) AND (NULLIF(btrim(pos_claim_request_key), ''::text) IS NOT NULL) AND (pos_claimed_at IS NOT NULL) AND (pos_claim_expires_at > pos_claimed_at) AND (pos_claim_actor_type = ANY (ARRAY['admin'::text, 'staff'::text])) AND (NULLIF(btrim(pos_claim_actor_ref), ''::text) IS NOT NULL) AND (pos_draft_prepared_at IS NULL)) OR ((pos_draft_status = 'prepared'::text) AND (NULLIF(btrim(pos_draft_id), ''::text) IS NOT NULL) AND (pos_claim_token IS NOT NULL) AND (NULLIF(btrim(pos_claim_request_key), ''::text) IS NOT NULL) AND (pos_claimed_at IS NOT NULL) AND (pos_claim_expires_at > pos_claimed_at) AND (pos_claim_actor_type = ANY (ARRAY['admin'::text, 'staff'::text])) AND (NULLIF(btrim(pos_claim_actor_ref), ''::text) IS NOT NULL) AND (pos_draft_prepared_at >= pos_claimed_at))))"
+      },
+      {
+        "name": "ecommerce_orders_pos_draft_status_valid",
+        "type": "c",
+        "definition": "CHECK ((pos_draft_status = ANY (ARRAY['none'::text, 'claimed'::text, 'prepared'::text, 'released'::text])))"
+      },
+      {
+        "name": "ecommerce_orders_pos_visibility_status_valid",
+        "type": "c",
+        "definition": "CHECK ((pos_visibility_status = ANY (ARRAY['pending'::text, 'visible'::text, 'hidden'::text, 'archived'::text])))"
+      },
+      {
+        "name": "ecommerce_orders_public_status_message_check",
+        "type": "c",
+        "definition": "CHECK (((public_status_message IS NULL) OR ((char_length(public_status_message) <= 280) AND (public_status_message !~ '[<>]'::text))))"
+      },
+      {
+        "name": "ecommerce_orders_status_valid",
+        "type": "c",
+        "definition": "CHECK ((status = ANY (ARRAY['new'::text, 'seen'::text, 'accepted'::text, 'preparing'::text, 'ready'::text, 'completed'::text, 'rejected'::text, 'cancelled'::text, 'converted_to_sale'::text])))"
+      },
+      {
+        "name": "ecommerce_orders_stock_reservation_phase_valid",
+        "type": "c",
+        "definition": "CHECK (((stock_reservation_phase IS NULL) OR (stock_reservation_phase = ANY (ARRAY['checkout'::text, 'fulfillment'::text]))))"
+      },
+      {
+        "name": "ecommerce_orders_stock_reservation_status_valid",
+        "type": "c",
+        "definition": "CHECK ((stock_reservation_status = ANY (ARRAY['not_applicable'::text, 'reserved'::text, 'released'::text, 'expired'::text, 'consumed'::text, 'failed'::text])))"
+      },
+      {
+        "name": "ecommerce_orders_system_notification_status_valid",
+        "type": "c",
+        "definition": "CHECK ((system_notification_status = ANY (ARRAY['pending'::text, 'notified'::text, 'read'::text, 'failed'::text])))"
+      },
+      {
+        "name": "ecommerce_orders_totals_valid",
+        "type": "c",
+        "definition": "CHECK (((subtotal >= (0)::numeric) AND (delivery_fee >= (0)::numeric) AND (discount_total >= (0)::numeric) AND (tax_total >= (0)::numeric) AND (total >= (0)::numeric)))"
+      },
+      {
+        "name": "ecommerce_orders_whatsapp_status_valid",
+        "type": "c",
+        "definition": "CHECK ((whatsapp_status = ANY (ARRAY['pending_client_send'::text, 'opened'::text, 'sent_by_api'::text, 'failed'::text, 'not_available'::text])))"
+      }
+    ],
+    "indexes": [
+      "CREATE INDEX ix_ecommerce_orders_license_created ON public.ecommerce_orders USING btree (license_id, created_at DESC)",
+      "CREATE UNIQUE INDEX ecommerce_orders_pkey ON public.ecommerce_orders USING btree (id)",
+      "CREATE UNIQUE INDEX ux_ecommerce_orders_public_order_code ON public.ecommerce_orders USING btree (public_order_code)",
+      "CREATE UNIQUE INDEX ux_ecommerce_orders_portal_idempotency_key ON public.ecommerce_orders USING btree (portal_id, idempotency_key) WHERE (idempotency_key IS NOT NULL)",
+      "CREATE INDEX ix_ecommerce_orders_license_status_created ON public.ecommerce_orders USING btree (license_id, status, created_at DESC)",
+      "CREATE INDEX ix_ecommerce_orders_portal_created ON public.ecommerce_orders USING btree (portal_id, created_at DESC)",
+      "CREATE INDEX ix_ecommerce_orders_license_pos_draft_expiry ON public.ecommerce_orders USING btree (license_id, pos_draft_status, pos_claim_expires_at)",
+      "CREATE UNIQUE INDEX ux_ecommerce_orders_license_pos_conversion_key ON public.ecommerce_orders USING btree (license_id, pos_conversion_key) WHERE (pos_conversion_key IS NOT NULL)",
+      "CREATE INDEX ix_ecommerce_orders_reservation_expiry ON public.ecommerce_orders USING btree (stock_reservation_expires_at) WHERE (stock_reservation_status = 'reserved'::text)",
+      "CREATE INDEX ecommerce_orders_fulfillment_status_updated_idx ON public.ecommerce_orders USING btree (license_id, fulfillment_status, fulfillment_updated_at DESC) WHERE (fulfillment_status IS NOT NULL)",
+      "CREATE INDEX ix_ecommerce_orders_fulfillment_reservation_expiry ON public.ecommerce_orders USING btree (fulfillment_hold_expires_at) WHERE ((stock_reservation_status = 'reserved'::text) AND (stock_reservation_phase = 'fulfillment'::text))",
+      "CREATE UNIQUE INDEX ecommerce_orders_license_id_unique ON public.ecommerce_orders USING btree (license_id, id)",
+      "CREATE UNIQUE INDEX ecommerce_orders_id_portal_id_license_id_key ON public.ecommerce_orders USING btree (id, portal_id, license_id)",
+      "CREATE INDEX ecommerce_orders_portal_license_created_idx ON public.ecommerce_orders USING btree (portal_id, license_id, created_at DESC)"
+    ]
+  },
+  {
+    "schema_name": "public",
+    "relname": "ecommerce_published_products",
+    "relkind": "r",
+    "relrowsecurity": true,
+    "relacl": "{postgres=arwdDxtm/postgres,service_role=rxtm/postgres}",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "extensions.gen_random_uuid()",
+        "not_null": true
+      },
+      {
+        "name": "portal_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "license_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "source_type",
+        "type": "text",
+        "default": "'local_snapshot'::text",
+        "not_null": true
+      },
+      {
+        "name": "product_id",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "local_product_ref",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "public_name",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "public_description",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "category_id",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "category_name",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "price",
+        "type": "numeric(12,2)",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "currency",
+        "type": "text",
+        "default": "'MXN'::text",
+        "not_null": true
+      },
+      {
+        "name": "image_url",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "image_ref",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "is_published",
+        "type": "boolean",
+        "default": "true",
+        "not_null": true
+      },
+      {
+        "name": "is_available",
+        "type": "boolean",
+        "default": "true",
+        "not_null": true
+      },
+      {
+        "name": "display_order",
+        "type": "integer",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "name": "track_stock",
+        "type": "boolean",
+        "default": "false",
+        "not_null": true
+      },
+      {
+        "name": "stock_mode",
+        "type": "text",
+        "default": "'hidden'::text",
+        "not_null": true
+      },
+      {
+        "name": "stock_snapshot",
+        "type": "numeric(12,3)",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "stock_updated_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "options",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "not_null": true
+      },
+      {
+        "name": "metadata",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "not_null": true
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      },
+      {
+        "name": "deleted_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "sync_config",
+        "type": "jsonb",
+        "default": "jsonb_build_object('name', 'manual', 'description', 'manual', 'category', 'manual', 'price', 'manual', 'image', 'manual')",
+        "not_null": true
+      },
+      {
+        "name": "manual_available",
+        "type": "boolean",
+        "default": "true",
+        "not_null": true
+      },
+      {
+        "name": "source_available",
+        "type": "boolean",
+        "default": "true",
+        "not_null": true
+      },
+      {
+        "name": "source_state",
+        "type": "text",
+        "default": "'manual'::text",
+        "not_null": true
+      },
+      {
+        "name": "sync_status",
+        "type": "text",
+        "default": "'manual'::text",
+        "not_null": true
+      },
+      {
+        "name": "sync_error_code",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "source_revision",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "last_sync_attempt_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "last_synced_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "source_revision_kind",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "source_revision_order",
+        "type": "numeric",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "source_payload_hash",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "configuration_type",
+        "type": "text",
+        "default": "'simple'::text",
+        "not_null": true
+      },
+      {
+        "name": "configuration_version",
+        "type": "integer",
+        "default": "1",
+        "not_null": true
+      },
+      {
+        "name": "has_recipe",
+        "type": "boolean",
+        "default": "false",
+        "not_null": true
+      },
+      {
+        "name": "has_variants",
+        "type": "boolean",
+        "default": "false",
+        "not_null": true
+      },
+      {
+        "name": "has_option_groups",
+        "type": "boolean",
+        "default": "false",
+        "not_null": true
+      },
+      {
+        "name": "requires_configuration",
+        "type": "boolean",
+        "default": "false",
+        "not_null": true
+      },
+      {
+        "name": "availability_source",
+        "type": "text",
+        "default": "'direct'::text",
+        "not_null": true
+      },
+      {
+        "name": "availability_reason_code",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "limiting_source_product_id",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "limiting_source_name",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "business_capability_status",
+        "type": "text",
+        "default": "'compatible'::text",
+        "not_null": true
+      },
+      {
+        "name": "business_capability_reason",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "public_configuration_mode",
+        "type": "text",
+        "default": "'compatible'::text",
+        "not_null": true
+      },
+      {
+        "name": "wholesale_enabled",
+        "type": "boolean",
+        "default": "false",
+        "not_null": true
+      },
+      {
+        "name": "wholesale_revision",
+        "type": "bigint",
+        "default": "1",
+        "not_null": true
+      }
+    ],
+    "constraints": [
+      {
+        "name": "ecommerce_published_products_availability_source_check",
+        "type": "c",
+        "definition": "CHECK ((availability_source = ANY (ARRAY['direct'::text, 'recipe'::text, 'variant_aggregate'::text, 'not_tracked'::text, 'manual'::text, 'unverified'::text])))"
+      },
+      {
+        "name": "ecommerce_published_products_capability_reason_check",
+        "type": "c",
+        "definition": "CHECK (((business_capability_reason IS NULL) OR (business_capability_reason = ANY (ARRAY['RESTAURANT_MODIFIERS_NOT_SUPPORTED'::text, 'WHOLESALE_NOT_SUPPORTED'::text, 'BUSINESS_TYPE_UNKNOWN'::text, 'BUSINESS_CAPABILITY_CHANGED'::text]))))"
+      },
+      {
+        "name": "ecommerce_published_products_capability_status_check",
+        "type": "c",
+        "definition": "CHECK ((business_capability_status = ANY (ARRAY['compatible'::text, 'requires_review'::text, 'simple_override'::text, 'hidden_incompatible'::text])))"
+      },
+      {
+        "name": "ecommerce_published_products_cloud_product_ref",
+        "type": "c",
+        "definition": "CHECK (((source_type <> 'cloud_product'::text) OR (NULLIF(product_id, ''::text) IS NOT NULL)))"
+      },
+      {
+        "name": "ecommerce_published_products_configuration_type_check",
+        "type": "c",
+        "definition": "CHECK ((configuration_type = ANY (ARRAY['simple'::text, 'recipe'::text, 'variant_parent'::text, 'configurable'::text])))"
+      },
+      {
+        "name": "ecommerce_published_products_configuration_version_check",
+        "type": "c",
+        "definition": "CHECK (((configuration_version >= 1) AND (configuration_version <= 100)))"
+      },
+      {
+        "name": "ecommerce_published_products_id_portal_id_license_id_key",
+        "type": "u",
+        "definition": "UNIQUE (id, portal_id, license_id)"
+      },
+      {
+        "name": "ecommerce_published_products_license_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "ecommerce_published_products_name_not_blank",
+        "type": "c",
+        "definition": "CHECK ((length(btrim(public_name)) > 0))"
+      },
+      {
+        "name": "ecommerce_published_products_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "ecommerce_published_products_portal_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (portal_id) REFERENCES ecommerce_portals(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "ecommerce_published_products_portal_license_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (portal_id, license_id) REFERENCES ecommerce_portals(id, license_id) ON DELETE CASCADE"
+      },
+      {
+        "name": "ecommerce_published_products_price_valid",
+        "type": "c",
+        "definition": "CHECK ((price >= (0)::numeric))"
+      },
+      {
+        "name": "ecommerce_published_products_public_configuration_mode_check",
+        "type": "c",
+        "definition": "CHECK ((public_configuration_mode = ANY (ARRAY['compatible'::text, 'requires_review'::text, 'simple_override'::text, 'hidden_incompatible'::text])))"
+      },
+      {
+        "name": "ecommerce_published_products_publication_eligible",
+        "type": "c",
+        "definition": "CHECK (((is_published IS NOT TRUE) OR ((business_capability_status = ANY (ARRAY['compatible'::text, 'simple_override'::text])) AND (public_configuration_mode = ANY (ARRAY['compatible'::text, 'simple_override'::text])))))"
+      },
+      {
+        "name": "ecommerce_published_products_source_revision_kind_valid",
+        "type": "c",
+        "definition": "CHECK (((source_revision_kind IS NULL) OR (source_revision_kind = ANY (ARRAY['version'::text, 'timestamp'::text, 'opaque'::text]))))"
+      },
+      {
+        "name": "ecommerce_published_products_source_state_valid",
+        "type": "c",
+        "definition": "CHECK ((source_state = ANY (ARRAY['manual'::text, 'source_missing'::text, 'inactive_source'::text, 'unverified'::text, 'not_tracked'::text, 'in_stock'::text, 'out_of_stock'::text])))"
+      },
+      {
+        "name": "ecommerce_published_products_source_type_valid",
+        "type": "c",
+        "definition": "CHECK ((source_type = ANY (ARRAY['local_snapshot'::text, 'cloud_product'::text])))"
+      },
+      {
+        "name": "ecommerce_published_products_stock_mode_valid",
+        "type": "c",
+        "definition": "CHECK ((stock_mode = ANY (ARRAY['hidden'::text, 'status'::text, 'exact'::text, 'reserve_on_confirm'::text])))"
+      },
+      {
+        "name": "ecommerce_published_products_sync_config_object",
+        "type": "c",
+        "definition": "CHECK ((jsonb_typeof(sync_config) = 'object'::text))"
+      },
+      {
+        "name": "ecommerce_published_products_sync_status_valid",
+        "type": "c",
+        "definition": "CHECK ((sync_status = ANY (ARRAY['synced'::text, 'pending'::text, 'review'::text, 'error'::text, 'manual'::text])))"
+      },
+      {
+        "name": "ecommerce_published_products_wholesale_revision_check",
+        "type": "c",
+        "definition": "CHECK ((wholesale_revision > 0))"
+      }
+    ],
+    "indexes": [
+      "CREATE UNIQUE INDEX ecommerce_published_products_pkey ON public.ecommerce_published_products USING btree (id)",
+      "CREATE INDEX ix_ecommerce_published_products_portal_display ON public.ecommerce_published_products USING btree (portal_id, display_order, public_name) WHERE ((deleted_at IS NULL) AND (is_published IS TRUE))",
+      "CREATE INDEX ix_ecommerce_published_products_license_updated ON public.ecommerce_published_products USING btree (license_id, updated_at DESC) WHERE (deleted_at IS NULL)",
+      "CREATE UNIQUE INDEX ux_ecommerce_published_products_portal_cloud_product ON public.ecommerce_published_products USING btree (portal_id, product_id) WHERE ((deleted_at IS NULL) AND (source_type = 'cloud_product'::text))",
+      "CREATE INDEX ix_ecommerce_published_products_portal_sync_status ON public.ecommerce_published_products USING btree (portal_id, sync_status, last_sync_attempt_at DESC) WHERE (deleted_at IS NULL)",
+      "CREATE INDEX ix_ecommerce_published_products_portal_local_ref ON public.ecommerce_published_products USING btree (portal_id, local_product_ref) WHERE ((deleted_at IS NULL) AND (local_product_ref IS NOT NULL))",
+      "CREATE UNIQUE INDEX ecommerce_published_products_id_portal_id_license_id_key ON public.ecommerce_published_products USING btree (id, portal_id, license_id)"
+    ]
+  },
+  {
+    "schema_name": "public",
+    "relname": "license_admin_sessions",
+    "relkind": "r",
+    "relrowsecurity": true,
+    "relacl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "extensions.gen_random_uuid()",
+        "not_null": true
+      },
+      {
+        "name": "license_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "admin_user_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "device_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "session_token_hash",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "expires_at",
+        "type": "timestamp with time zone",
+        "default": "(now() + '30 days'::interval)",
+        "not_null": true
+      },
+      {
+        "name": "revoked_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "last_used_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      },
+      {
+        "name": "metadata",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "not_null": true
+      }
+    ],
+    "constraints": [
+      {
+        "name": "license_admin_sessions_admin_user_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (admin_user_id) REFERENCES license_admin_users(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "license_admin_sessions_device_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (device_id) REFERENCES license_devices(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "license_admin_sessions_license_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "license_admin_sessions_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      }
+    ],
+    "indexes": [
+      "CREATE UNIQUE INDEX license_admin_sessions_pkey ON public.license_admin_sessions USING btree (id)",
+      "CREATE INDEX license_admin_sessions_license_device_active_idx ON public.license_admin_sessions USING btree (license_id, device_id, created_at DESC) WHERE (revoked_at IS NULL)",
+      "CREATE INDEX license_admin_sessions_admin_user_id_idx ON public.license_admin_sessions USING btree (admin_user_id)",
+      "CREATE INDEX license_admin_sessions_device_id_idx ON public.license_admin_sessions USING btree (device_id)"
+    ]
+  },
+  {
+    "schema_name": "public",
+    "relname": "license_admin_users",
+    "relkind": "r",
+    "relrowsecurity": true,
+    "relacl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "extensions.gen_random_uuid()",
+        "not_null": true
+      },
+      {
+        "name": "license_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "username",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "display_name",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "password_hash",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "is_owner",
+        "type": "boolean",
+        "default": "true",
+        "not_null": true
+      },
+      {
+        "name": "is_active",
+        "type": "boolean",
+        "default": "true",
+        "not_null": true
+      },
+      {
+        "name": "credentials_created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      },
+      {
+        "name": "password_changed_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      },
+      {
+        "name": "metadata",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "not_null": true
+      }
+    ],
+    "constraints": [
+      {
+        "name": "license_admin_users_display_name_length",
+        "type": "c",
+        "definition": "CHECK (((char_length(btrim(display_name)) >= 1) AND (char_length(btrim(display_name)) <= 120)))"
+      },
+      {
+        "name": "license_admin_users_id_license_id_key",
+        "type": "u",
+        "definition": "UNIQUE (id, license_id)"
+      },
+      {
+        "name": "license_admin_users_license_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "license_admin_users_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "license_admin_users_username_format",
+        "type": "c",
+        "definition": "CHECK (((username = lower(btrim(username))) AND ((char_length(username) >= 3) AND (char_length(username) <= 64))))"
+      }
+    ],
+    "indexes": [
+      "CREATE UNIQUE INDEX license_admin_users_id_license_id_key ON public.license_admin_users USING btree (id, license_id)",
+      "CREATE UNIQUE INDEX license_admin_users_pkey ON public.license_admin_users USING btree (id)",
+      "CREATE UNIQUE INDEX license_admin_users_license_username_uidx ON public.license_admin_users USING btree (license_id, lower(username))",
+      "CREATE UNIQUE INDEX license_admin_users_one_active_owner_uidx ON public.license_admin_users USING btree (license_id) WHERE ((is_owner IS TRUE) AND (is_active IS TRUE))",
+      "CREATE INDEX license_admin_users_license_id_idx ON public.license_admin_users USING btree (license_id)"
+    ]
+  },
+  {
+    "schema_name": "public",
+    "relname": "license_devices",
+    "relkind": "r",
+    "relrowsecurity": true,
+    "relacl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "not_null": true
+      },
+      {
+        "name": "license_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "user_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "device_fingerprint",
+        "type": "character varying(255)",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "device_name",
+        "type": "character varying(255)",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "device_info",
+        "type": "jsonb",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "ip_address",
+        "type": "inet",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "is_active",
+        "type": "boolean",
+        "default": "true",
+        "not_null": false
+      },
+      {
+        "name": "activated_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": false
+      },
+      {
+        "name": "last_used_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": false
+      },
+      {
+        "name": "security_token",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "previous_security_token",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "last_check_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": false
+      },
+      {
+        "name": "realtime_topic",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "device_role",
+        "type": "text",
+        "default": "'staff'::text",
+        "not_null": true
+      },
+      {
+        "name": "staff_user_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "device_mode",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      }
+    ],
+    "constraints": [
+      {
+        "name": "license_devices_device_mode_check",
+        "type": "c",
+        "definition": "CHECK ((device_mode = ANY (ARRAY['shared'::text, 'admin_only'::text, 'staff_only'::text])))"
+      },
+      {
+        "name": "license_devices_device_role_check",
+        "type": "c",
+        "definition": "CHECK ((device_role = ANY (ARRAY['admin'::text, 'staff'::text])))"
+      },
+      {
+        "name": "license_devices_license_id_device_fingerprint_key",
+        "type": "u",
+        "definition": "UNIQUE (license_id, device_fingerprint)"
+      },
+      {
+        "name": "license_devices_license_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "license_devices_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "license_devices_staff_user_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (staff_user_id) REFERENCES license_staff_users(id) ON DELETE SET NULL"
+      },
+      {
+        "name": "license_devices_user_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE SET NULL"
+      }
+    ],
+    "indexes": [
+      "CREATE UNIQUE INDEX license_devices_pkey ON public.license_devices USING btree (id)",
+      "CREATE UNIQUE INDEX license_devices_license_id_device_fingerprint_key ON public.license_devices USING btree (license_id, device_fingerprint)",
+      "CREATE UNIQUE INDEX idx_license_devices_realtime_topic ON public.license_devices USING btree (realtime_topic) WHERE (realtime_topic IS NOT NULL)",
+      "CREATE INDEX idx_license_devices_staff_user_id ON public.license_devices USING btree (staff_user_id) WHERE (staff_user_id IS NOT NULL)",
+      "CREATE INDEX idx_license_devices_user_id ON public.license_devices USING btree (user_id)",
+      "CREATE INDEX idx_license_devices_active_by_license ON public.license_devices USING btree (license_id) WHERE (is_active = true)",
+      "CREATE INDEX idx_license_devices_license_last_used ON public.license_devices USING btree (license_id, last_used_at DESC)",
+      "CREATE INDEX idx_license_devices_mode_by_license ON public.license_devices USING btree (license_id, device_mode) WHERE (is_active IS TRUE)",
+      "CREATE UNIQUE INDEX uq_license_devices_one_active_device_per_staff ON public.license_devices USING btree (staff_user_id) WHERE ((is_active IS TRUE) AND (device_mode = 'staff_only'::text) AND (staff_user_id IS NOT NULL))"
+    ]
+  },
+  {
+    "schema_name": "public",
+    "relname": "license_events",
+    "relkind": "r",
+    "relrowsecurity": true,
+    "relacl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "not_null": true
+      },
+      {
+        "name": "license_key",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "event_type",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "triggered_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": false
+      },
+      {
+        "name": "metadata",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "not_null": false
+      }
+    ],
+    "constraints": [
+      {
+        "name": "license_events_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      }
+    ],
+    "indexes": [
+      "CREATE UNIQUE INDEX license_events_pkey ON public.license_events USING btree (id)",
+      "CREATE INDEX idx_license_events_license_key_triggered_at ON public.license_events USING btree (license_key, triggered_at DESC)",
+      "CREATE INDEX idx_license_events_triggered_at ON public.license_events USING btree (triggered_at)"
+    ]
+  },
+  {
+    "schema_name": "public",
+    "relname": "license_staff_sessions",
+    "relkind": "r",
+    "relrowsecurity": true,
+    "relacl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "extensions.gen_random_uuid()",
+        "not_null": true
+      },
+      {
+        "name": "license_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "staff_user_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "device_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "session_token_hash",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      },
+      {
+        "name": "expires_at",
+        "type": "timestamp with time zone",
+        "default": "(now() + '12:00:00'::interval)",
+        "not_null": true
+      },
+      {
+        "name": "last_seen_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      },
+      {
+        "name": "revoked_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "metadata",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "not_null": true
+      }
+    ],
+    "constraints": [
+      {
+        "name": "license_staff_sessions_device_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (device_id) REFERENCES license_devices(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "license_staff_sessions_license_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "license_staff_sessions_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "license_staff_sessions_staff_user_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (staff_user_id) REFERENCES license_staff_users(id) ON DELETE CASCADE"
+      }
+    ],
+    "indexes": [
+      "CREATE INDEX idx_license_staff_sessions_ai_usage_active ON public.license_staff_sessions USING btree (license_id, device_id, created_at DESC) WHERE (revoked_at IS NULL)",
+      "CREATE UNIQUE INDEX license_staff_sessions_pkey ON public.license_staff_sessions USING btree (id)",
+      "CREATE INDEX idx_license_staff_sessions_user_active ON public.license_staff_sessions USING btree (staff_user_id, revoked_at, expires_at)",
+      "CREATE INDEX idx_license_staff_sessions_device_active ON public.license_staff_sessions USING btree (device_id, revoked_at, expires_at)",
+      "CREATE INDEX idx_license_staff_sessions_pos_sync_lookup ON public.license_staff_sessions USING btree (license_id, device_id, staff_user_id) WHERE (revoked_at IS NULL)",
+      "CREATE INDEX idx_license_staff_sessions_license_id ON public.license_staff_sessions USING btree (license_id)"
+    ]
+  },
+  {
+    "schema_name": "public",
+    "relname": "license_staff_users",
+    "relkind": "r",
+    "relrowsecurity": true,
+    "relacl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "extensions.gen_random_uuid()",
+        "not_null": true
+      },
+      {
+        "name": "license_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "username",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "display_name",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "password_hash",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "role_name",
+        "type": "text",
+        "default": "'staff'::text",
+        "not_null": true
+      },
+      {
+        "name": "permissions",
+        "type": "jsonb",
+        "default": "private.default_staff_permissions()",
+        "not_null": true
+      },
+      {
+        "name": "is_active",
+        "type": "boolean",
+        "default": "true",
+        "not_null": true
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      },
+      {
+        "name": "last_login_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "created_by_device_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "metadata",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "not_null": true
+      }
+    ],
+    "constraints": [
+      {
+        "name": "license_staff_users_id_license_id_key",
+        "type": "u",
+        "definition": "UNIQUE (id, license_id)"
+      },
+      {
+        "name": "license_staff_users_license_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "license_staff_users_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "license_staff_users_role_name_check",
+        "type": "c",
+        "definition": "CHECK ((role_name = ANY (ARRAY['staff'::text, 'cashier'::text, 'waiter'::text, 'supervisor'::text, 'custom'::text])))"
+      }
+    ],
+    "indexes": [
+      "CREATE UNIQUE INDEX license_staff_users_pkey ON public.license_staff_users USING btree (id)",
+      "CREATE UNIQUE INDEX uq_license_staff_users_username_lower ON public.license_staff_users USING btree (license_id, lower(username))",
+      "CREATE INDEX idx_license_staff_users_license_active ON public.license_staff_users USING btree (license_id, is_active)",
+      "CREATE UNIQUE INDEX license_staff_users_id_license_id_key ON public.license_staff_users USING btree (id, license_id)"
+    ]
+  },
+  {
+    "schema_name": "public",
+    "relname": "licenses",
+    "relkind": "r",
+    "relrowsecurity": true,
+    "relacl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "not_null": true
+      },
+      {
+        "name": "license_key",
+        "type": "character varying(255)",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "plan_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "license_type",
+        "type": "character varying(50)",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "max_devices",
+        "type": "integer",
+        "default": "1",
+        "not_null": true
+      },
+      {
+        "name": "duration_months",
+        "type": "integer",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "price",
+        "type": "numeric(10,2)",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "status",
+        "type": "character varying(20)",
+        "default": "'active'::character varying",
+        "not_null": false
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": false
+      },
+      {
+        "name": "expires_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "product_name",
+        "type": "character varying(255)",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "version",
+        "type": "character varying(50)",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "features",
+        "type": "jsonb",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "organization_name",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "owner_email",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "is_lifetime",
+        "type": "boolean",
+        "default": "false",
+        "not_null": false
+      }
+    ],
+    "constraints": [
+      {
+        "name": "licenses_license_key_key",
+        "type": "u",
+        "definition": "UNIQUE (license_key)"
+      },
+      {
+        "name": "licenses_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "licenses_plan_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (plan_id) REFERENCES plans(id)"
+      }
+    ],
+    "indexes": [
+      "CREATE UNIQUE INDEX licenses_pkey ON public.licenses USING btree (id)",
+      "CREATE UNIQUE INDEX licenses_license_key_key ON public.licenses USING btree (license_key)",
+      "CREATE INDEX idx_licenses_plan_id ON public.licenses USING btree (plan_id)",
+      "CREATE INDEX idx_licenses_status_expires_at ON public.licenses USING btree (status, expires_at)"
+    ]
+  },
+  {
+    "schema_name": "public",
+    "relname": "plans",
+    "relkind": "r",
+    "relrowsecurity": true,
+    "relacl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "not_null": true
+      },
+      {
+        "name": "code",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "name",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "description",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "max_devices",
+        "type": "integer",
+        "default": "1",
+        "not_null": false
+      },
+      {
+        "name": "features",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "not_null": false
+      },
+      {
+        "name": "price",
+        "type": "numeric(10,2)",
+        "default": "0",
+        "not_null": false
+      },
+      {
+        "name": "currency",
+        "type": "character(3)",
+        "default": "'MXN'::bpchar",
+        "not_null": false
+      },
+      {
+        "name": "is_active",
+        "type": "boolean",
+        "default": "true",
+        "not_null": false
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": false
+      }
+    ],
+    "constraints": [
+      {
+        "name": "plans_code_key",
+        "type": "u",
+        "definition": "UNIQUE (code)"
+      },
+      {
+        "name": "plans_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      }
+    ],
+    "indexes": [
+      "CREATE UNIQUE INDEX plans_pkey ON public.plans USING btree (id)",
+      "CREATE UNIQUE INDEX plans_code_key ON public.plans USING btree (code)"
+    ]
+  },
+  {
+    "schema_name": "public",
+    "relname": "pos_cash_movements",
+    "relkind": "r",
+    "relrowsecurity": true,
+    "relacl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+    "columns": [
+      {
+        "name": "id",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "license_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "cash_session_id",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "device_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "staff_user_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "actor_key",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "type",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "amount",
+        "type": "numeric",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "concept",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "source",
+        "type": "text",
+        "default": "'manual'::text",
+        "not_null": true
+      },
+      {
+        "name": "reference_type",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "reference_id",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "created_by_device_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "created_by_staff_user_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "actor_name",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      },
+      {
+        "name": "server_version",
+        "type": "integer",
+        "default": "1",
+        "not_null": true
+      },
+      {
+        "name": "idempotency_key",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "metadata",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "not_null": true
+      },
+      {
+        "name": "deleted_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "sale_id",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "customer_ledger_id",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "cash_station_id",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "performed_by_actor_key",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      }
+    ],
+    "constraints": [
+      {
+        "name": "pos_cash_movements_actor_key_chk",
+        "type": "c",
+        "definition": "CHECK ((length(btrim(actor_key)) > 0))"
+      },
+      {
+        "name": "pos_cash_movements_actor_name_chk",
+        "type": "c",
+        "definition": "CHECK ((length(btrim(actor_name)) > 0))"
+      },
+      {
+        "name": "pos_cash_movements_amount_chk",
+        "type": "c",
+        "definition": "CHECK ((amount > (0)::numeric))"
+      },
+      {
+        "name": "pos_cash_movements_cash_session_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (cash_session_id) REFERENCES pos_cash_sessions(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "pos_cash_movements_concept_chk",
+        "type": "c",
+        "definition": "CHECK ((length(btrim(concept)) > 0))"
+      },
+      {
+        "name": "pos_cash_movements_created_by_device_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (created_by_device_id) REFERENCES license_devices(id)"
+      },
+      {
+        "name": "pos_cash_movements_created_by_staff_user_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (created_by_staff_user_id) REFERENCES license_staff_users(id)"
+      },
+      {
+        "name": "pos_cash_movements_device_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (device_id) REFERENCES license_devices(id)"
+      },
+      {
+        "name": "pos_cash_movements_license_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "pos_cash_movements_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "pos_cash_movements_server_version_chk",
+        "type": "c",
+        "definition": "CHECK ((server_version >= 1))"
+      },
+      {
+        "name": "pos_cash_movements_staff_user_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (staff_user_id) REFERENCES license_staff_users(id)"
+      },
+      {
+        "name": "pos_cash_movements_station_fk",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id, cash_station_id) REFERENCES pos_cash_stations(license_id, id)"
+      },
+      {
+        "name": "pos_cash_movements_type_check",
+        "type": "c",
+        "definition": "CHECK ((type = ANY (ARRAY['entrada'::text, 'salida'::text, 'ajuste_entrada'::text, 'ajuste_salida'::text, 'fondo_inicial_ajuste'::text, 'venta'::text, 'venta_efectivo'::text, 'abono_cliente'::text, 'cancelacion'::text, 'cancelacion_venta'::text, 'cancelacion_abono_inicial'::text])))"
+      }
+    ],
+    "indexes": [
+      "CREATE UNIQUE INDEX pos_cash_movements_pkey ON public.pos_cash_movements USING btree (id)",
+      "CREATE INDEX idx_pos_cash_movements_license_session_created ON public.pos_cash_movements USING btree (license_id, cash_session_id, created_at DESC)",
+      "CREATE INDEX idx_pos_cash_movements_license_staff_created ON public.pos_cash_movements USING btree (license_id, staff_user_id, created_at DESC)",
+      "CREATE INDEX idx_pos_cash_movements_license_device_created ON public.pos_cash_movements USING btree (license_id, device_id, created_at DESC)",
+      "CREATE INDEX idx_pos_cash_movements_license_actor_created ON public.pos_cash_movements USING btree (license_id, actor_key, created_at DESC)",
+      "CREATE INDEX idx_pos_cash_movements_license_type_created ON public.pos_cash_movements USING btree (license_id, type, created_at DESC)",
+      "CREATE INDEX idx_pos_cash_movements_reference ON public.pos_cash_movements USING btree (license_id, reference_type, reference_id) WHERE ((reference_type IS NOT NULL) AND (reference_id IS NOT NULL))",
+      "CREATE UNIQUE INDEX ux_pos_cash_movements_idempotency ON public.pos_cash_movements USING btree (license_id, idempotency_key) WHERE (idempotency_key IS NOT NULL)",
+      "CREATE INDEX idx_pos_reports_cash_movements_license_created_type ON public.pos_cash_movements USING btree (license_id, created_at, type) WHERE (deleted_at IS NULL)",
+      "CREATE INDEX idx_pos_reports_cash_movements_license_staff_created ON public.pos_cash_movements USING btree (license_id, staff_user_id, created_at) WHERE (deleted_at IS NULL)",
+      "CREATE INDEX idx_pos_cash_movements_license_sale_id ON public.pos_cash_movements USING btree (license_id, sale_id) WHERE (sale_id IS NOT NULL)",
+      "CREATE INDEX idx_pos_cash_movements_license_source_created ON public.pos_cash_movements USING btree (license_id, source, created_at DESC)",
+      "CREATE INDEX idx_pos_cash_movements_license_customer_ledger ON public.pos_cash_movements USING btree (license_id, customer_ledger_id) WHERE (customer_ledger_id IS NOT NULL)",
+      "CREATE INDEX idx_pos_cash_movements_cash_session_id_fk ON public.pos_cash_movements USING btree (cash_session_id)",
+      "CREATE INDEX idx_pos_cash_movements_device_id_fk ON public.pos_cash_movements USING btree (device_id)",
+      "CREATE INDEX idx_pos_cash_movements_staff_user_id_fk ON public.pos_cash_movements USING btree (staff_user_id)",
+      "CREATE INDEX idx_pos_cash_movements_created_by_device_id_fk ON public.pos_cash_movements USING btree (created_by_device_id)",
+      "CREATE INDEX idx_pos_cash_movements_created_by_staff_user_id_fk ON public.pos_cash_movements USING btree (created_by_staff_user_id)",
+      "CREATE INDEX idx_pos_cash_movements_license_station_created ON public.pos_cash_movements USING btree (license_id, cash_station_id, created_at DESC)"
+    ]
+  },
+  {
+    "schema_name": "public",
+    "relname": "pos_cash_sessions",
+    "relkind": "r",
+    "relrowsecurity": true,
+    "relacl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+    "columns": [
+      {
+        "name": "id",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "license_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "device_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "staff_user_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "device_role",
+        "type": "text",
+        "default": "'admin'::text",
+        "not_null": true
+      },
+      {
+        "name": "scope",
+        "type": "text",
+        "default": "'actor'::text",
+        "not_null": true
+      },
+      {
+        "name": "actor_key",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "default": "'open'::text",
+        "not_null": true
+      },
+      {
+        "name": "opened_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      },
+      {
+        "name": "closed_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "opening_amount",
+        "type": "numeric",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "name": "opening_counted_amount",
+        "type": "numeric",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "opening_suggested_amount",
+        "type": "numeric",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "opening_difference",
+        "type": "numeric",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "opening_policy",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "opening_origin",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "is_auto_opening",
+        "type": "boolean",
+        "default": "false",
+        "not_null": true
+      },
+      {
+        "name": "closing_counted_amount",
+        "type": "numeric",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "next_shift_fund",
+        "type": "numeric",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "cash_sales_total",
+        "type": "numeric",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "name": "customer_payments_total",
+        "type": "numeric",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "name": "cash_entries_total",
+        "type": "numeric",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "name": "cash_exits_total",
+        "type": "numeric",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "name": "expected_cash_total",
+        "type": "numeric",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "name": "cash_difference",
+        "type": "numeric",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "responsible_name",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "opened_by_device_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "opened_by_staff_user_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "closed_by_device_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "closed_by_staff_user_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "audit_comments",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "close_detail",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "not_null": true
+      },
+      {
+        "name": "metadata",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "not_null": true
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      },
+      {
+        "name": "server_version",
+        "type": "integer",
+        "default": "1",
+        "not_null": true
+      },
+      {
+        "name": "last_idempotency_key",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "deleted_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "sales_total",
+        "type": "numeric",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "name": "non_cash_sales_total",
+        "type": "numeric",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "name": "sales_count",
+        "type": "integer",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "name": "closing_mode",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "reconciliation_status",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "closure_reason_code",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "closed_by_admin_user_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "admin_user_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "cash_station_id",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "opened_by_actor_key",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "closed_by_actor_key",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      }
+    ],
+    "constraints": [
+      {
+        "name": "pos_cash_sessions_actor_key_not_empty_chk",
+        "type": "c",
+        "definition": "CHECK ((length(btrim(actor_key)) > 0))"
+      },
+      {
+        "name": "pos_cash_sessions_admin_closure_integrity_chk",
+        "type": "c",
+        "definition": "CHECK (((closing_mode IS NULL) OR ((status = 'closed'::text) AND (closed_at IS NOT NULL) AND (closed_by_admin_user_id IS NOT NULL) AND (closed_by_device_id IS NOT NULL) AND (closure_reason_code IS NOT NULL) AND (close_detail @> jsonb_build_object('closing_mode', closing_mode)) AND (close_detail ? 'expected_cash_total'::text) AND (((closing_mode = 'admin_audited'::text) AND (closing_counted_amount IS NOT NULL) AND (closing_counted_amount >= (0)::numeric) AND (cash_difference IS NOT NULL) AND (next_shift_fund >= (0)::numeric) AND (next_shift_fund <= closing_counted_amount) AND (reconciliation_status = ANY (ARRAY['verified'::text, 'verified_with_difference'::text]))) OR ((closing_mode = 'admin_unverified'::text) AND (closing_counted_amount IS NULL) AND (cash_difference IS NULL) AND (next_shift_fund = (0)::numeric) AND (reconciliation_status = 'unverified'::text) AND (NULLIF(btrim(audit_comments), ''::text) IS NOT NULL))))))"
+      },
+      {
+        "name": "pos_cash_sessions_admin_user_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (admin_user_id) REFERENCES license_admin_users(id)"
+      },
+      {
+        "name": "pos_cash_sessions_amounts_chk",
+        "type": "c",
+        "definition": "CHECK (((opening_amount >= (0)::numeric) AND (COALESCE(opening_counted_amount, (0)::numeric) >= (0)::numeric) AND (COALESCE(opening_suggested_amount, (0)::numeric) >= (0)::numeric) AND (COALESCE(closing_counted_amount, (0)::numeric) >= (0)::numeric) AND (COALESCE(next_shift_fund, (0)::numeric) >= (0)::numeric) AND (cash_sales_total >= (0)::numeric) AND (customer_payments_total >= (0)::numeric) AND (cash_entries_total >= (0)::numeric) AND (cash_exits_total >= (0)::numeric) AND (expected_cash_total >= (0)::numeric)))"
+      },
+      {
+        "name": "pos_cash_sessions_closed_by_admin_user_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (closed_by_admin_user_id) REFERENCES license_admin_users(id)"
+      },
+      {
+        "name": "pos_cash_sessions_closed_by_device_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (closed_by_device_id) REFERENCES license_devices(id)"
+      },
+      {
+        "name": "pos_cash_sessions_closed_by_staff_user_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (closed_by_staff_user_id) REFERENCES license_staff_users(id)"
+      },
+      {
+        "name": "pos_cash_sessions_closing_mode_chk",
+        "type": "c",
+        "definition": "CHECK (((closing_mode IS NULL) OR (closing_mode = ANY (ARRAY['normal'::text, 'admin_audited'::text, 'admin_unverified'::text]))))"
+      },
+      {
+        "name": "pos_cash_sessions_closure_reason_code_chk",
+        "type": "c",
+        "definition": "CHECK (((closure_reason_code IS NULL) OR (closure_reason_code = ANY (ARRAY['historical_test'::text, 'device_replaced'::text, 'device_lost'::text, 'abandoned_session'::text, 'operational_error'::text, 'other'::text]))))"
+      },
+      {
+        "name": "pos_cash_sessions_device_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (device_id) REFERENCES license_devices(id)"
+      },
+      {
+        "name": "pos_cash_sessions_device_role_chk",
+        "type": "c",
+        "definition": "CHECK ((device_role = ANY (ARRAY['admin'::text, 'staff'::text])))"
+      },
+      {
+        "name": "pos_cash_sessions_license_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "pos_cash_sessions_license_id_id_uk",
+        "type": "u",
+        "definition": "UNIQUE (license_id, id)"
+      },
+      {
+        "name": "pos_cash_sessions_opened_by_device_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (opened_by_device_id) REFERENCES license_devices(id)"
+      },
+      {
+        "name": "pos_cash_sessions_opened_by_staff_user_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (opened_by_staff_user_id) REFERENCES license_staff_users(id)"
+      },
+      {
+        "name": "pos_cash_sessions_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "pos_cash_sessions_reconciliation_status_chk",
+        "type": "c",
+        "definition": "CHECK (((reconciliation_status IS NULL) OR (reconciliation_status = ANY (ARRAY['verified'::text, 'verified_with_difference'::text, 'unverified'::text]))))"
+      },
+      {
+        "name": "pos_cash_sessions_responsible_not_empty_chk",
+        "type": "c",
+        "definition": "CHECK ((length(btrim(responsible_name)) > 0))"
+      },
+      {
+        "name": "pos_cash_sessions_scope_chk",
+        "type": "c",
+        "definition": "CHECK ((scope = ANY (ARRAY['actor'::text, 'device'::text, 'staff'::text])))"
+      },
+      {
+        "name": "pos_cash_sessions_server_version_chk",
+        "type": "c",
+        "definition": "CHECK ((server_version >= 1))"
+      },
+      {
+        "name": "pos_cash_sessions_staff_user_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (staff_user_id) REFERENCES license_staff_users(id)"
+      },
+      {
+        "name": "pos_cash_sessions_station_fk",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id, cash_station_id) REFERENCES pos_cash_stations(license_id, id)"
+      },
+      {
+        "name": "pos_cash_sessions_status_chk",
+        "type": "c",
+        "definition": "CHECK ((status = ANY (ARRAY['open'::text, 'closed'::text, 'cancelled'::text])))"
+      }
+    ],
+    "indexes": [
+      "CREATE UNIQUE INDEX pos_cash_sessions_pkey ON public.pos_cash_sessions USING btree (id)",
+      "CREATE INDEX idx_pos_cash_sessions_license_opened ON public.pos_cash_sessions USING btree (license_id, opened_at DESC)",
+      "CREATE INDEX idx_pos_cash_sessions_license_staff_opened ON public.pos_cash_sessions USING btree (license_id, staff_user_id, opened_at DESC)",
+      "CREATE INDEX idx_pos_cash_sessions_license_device_opened ON public.pos_cash_sessions USING btree (license_id, device_id, opened_at DESC)",
+      "CREATE INDEX idx_pos_cash_sessions_license_actor_opened ON public.pos_cash_sessions USING btree (license_id, actor_key, opened_at DESC)",
+      "CREATE INDEX idx_pos_cash_sessions_license_status_opened ON public.pos_cash_sessions USING btree (license_id, status, opened_at DESC)",
+      "CREATE INDEX idx_pos_reports_cash_sessions_license_opened ON public.pos_cash_sessions USING btree (license_id, opened_at, status) WHERE (deleted_at IS NULL)",
+      "CREATE INDEX idx_pos_reports_cash_sessions_license_staff_opened ON public.pos_cash_sessions USING btree (license_id, staff_user_id, opened_at) WHERE (deleted_at IS NULL)",
+      "CREATE INDEX idx_pos_cash_sessions_device_id_fk ON public.pos_cash_sessions USING btree (device_id)",
+      "CREATE INDEX idx_pos_cash_sessions_staff_user_id_fk ON public.pos_cash_sessions USING btree (staff_user_id)",
+      "CREATE INDEX idx_pos_cash_sessions_opened_by_device_id_fk ON public.pos_cash_sessions USING btree (opened_by_device_id)",
+      "CREATE INDEX idx_pos_cash_sessions_opened_by_staff_user_id_fk ON public.pos_cash_sessions USING btree (opened_by_staff_user_id)",
+      "CREATE INDEX idx_pos_cash_sessions_closed_by_device_id_fk ON public.pos_cash_sessions USING btree (closed_by_device_id)",
+      "CREATE INDEX idx_pos_cash_sessions_closed_by_staff_user_id_fk ON public.pos_cash_sessions USING btree (closed_by_staff_user_id)",
+      "CREATE INDEX idx_pos_cash_sessions_license_admin_opened ON public.pos_cash_sessions USING btree (license_id, admin_user_id, opened_at DESC) WHERE ((admin_user_id IS NOT NULL) AND (deleted_at IS NULL))",
+      "CREATE UNIQUE INDEX ux_pos_cash_sessions_open_station ON public.pos_cash_sessions USING btree (license_id, cash_station_id) WHERE ((status = 'open'::text) AND (deleted_at IS NULL) AND (cash_station_id IS NOT NULL))",
+      "CREATE INDEX idx_pos_cash_sessions_license_station_opened ON public.pos_cash_sessions USING btree (license_id, cash_station_id, opened_at DESC)",
+      "CREATE UNIQUE INDEX ux_pos_cash_sessions_open_staff_actor ON public.pos_cash_sessions USING btree (license_id, actor_key) WHERE ((status = 'open'::text) AND (deleted_at IS NULL) AND (device_role = 'staff'::text) AND (actor_key IS NOT NULL))",
+      "CREATE UNIQUE INDEX pos_cash_sessions_license_id_id_uk ON public.pos_cash_sessions USING btree (license_id, id)",
+      "CREATE INDEX idx_pos_cash_sessions_license_closing_mode_closed ON public.pos_cash_sessions USING btree (license_id, closing_mode, closed_at DESC) WHERE ((deleted_at IS NULL) AND (closing_mode IS NOT NULL))",
+      "CREATE INDEX idx_pos_cash_sessions_closed_by_admin_user ON public.pos_cash_sessions USING btree (closed_by_admin_user_id) WHERE (closed_by_admin_user_id IS NOT NULL)"
+    ]
+  },
+  {
+    "schema_name": "public",
+    "relname": "pos_cash_station_bindings",
+    "relkind": "r",
+    "relrowsecurity": true,
+    "relacl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "not_null": true
+      },
+      {
+        "name": "license_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "cash_station_id",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "device_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "binding_mode",
+        "type": "text",
+        "default": "'device_default'::text",
+        "not_null": true
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "default": "'active'::text",
+        "not_null": true
+      },
+      {
+        "name": "metadata",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "not_null": true
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      }
+    ],
+    "constraints": [
+      {
+        "name": "pos_cash_station_bindings_device_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (device_id) REFERENCES license_devices(id)"
+      },
+      {
+        "name": "pos_cash_station_bindings_device_license_uk",
+        "type": "u",
+        "definition": "UNIQUE (license_id, device_id, cash_station_id)"
+      },
+      {
+        "name": "pos_cash_station_bindings_license_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "pos_cash_station_bindings_mode_chk",
+        "type": "c",
+        "definition": "CHECK ((binding_mode = ANY (ARRAY['device_default'::text, 'explicit'::text])))"
+      },
+      {
+        "name": "pos_cash_station_bindings_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "pos_cash_station_bindings_station_fk",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id, cash_station_id) REFERENCES pos_cash_stations(license_id, id)"
+      },
+      {
+        "name": "pos_cash_station_bindings_status_chk",
+        "type": "c",
+        "definition": "CHECK ((status = ANY (ARRAY['active'::text, 'retired'::text])))"
+      }
+    ],
+    "indexes": [
+      "CREATE UNIQUE INDEX pos_cash_station_bindings_pkey ON public.pos_cash_station_bindings USING btree (id)",
+      "CREATE UNIQUE INDEX pos_cash_station_bindings_device_license_uk ON public.pos_cash_station_bindings USING btree (license_id, device_id, cash_station_id)",
+      "CREATE UNIQUE INDEX ux_pos_cash_station_bindings_active_device ON public.pos_cash_station_bindings USING btree (license_id, device_id) WHERE (status = 'active'::text)",
+      "CREATE UNIQUE INDEX ux_pos_cash_station_bindings_active_station_device ON public.pos_cash_station_bindings USING btree (license_id, cash_station_id, device_id) WHERE (status = 'active'::text)",
+      "CREATE INDEX idx_pos_cash_station_bindings_license_station ON public.pos_cash_station_bindings USING btree (license_id, cash_station_id, status)"
+    ]
+  },
+  {
+    "schema_name": "public",
+    "relname": "pos_cash_stations",
+    "relkind": "r",
+    "relrowsecurity": true,
+    "relacl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+    "columns": [
+      {
+        "name": "id",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "license_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "station_key",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "default": "'active'::text",
+        "not_null": true
+      },
+      {
+        "name": "binding_mode",
+        "type": "text",
+        "default": "'device_default'::text",
+        "not_null": true
+      },
+      {
+        "name": "metadata",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "not_null": true
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      }
+    ],
+    "constraints": [
+      {
+        "name": "pos_cash_stations_binding_mode_chk",
+        "type": "c",
+        "definition": "CHECK ((binding_mode = ANY (ARRAY['device_default'::text, 'explicit'::text])))"
+      },
+      {
+        "name": "pos_cash_stations_license_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "pos_cash_stations_license_id_id_uk",
+        "type": "u",
+        "definition": "UNIQUE (license_id, id)"
+      },
+      {
+        "name": "pos_cash_stations_license_station_key_uk",
+        "type": "u",
+        "definition": "UNIQUE (license_id, station_key)"
+      },
+      {
+        "name": "pos_cash_stations_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "pos_cash_stations_status_chk",
+        "type": "c",
+        "definition": "CHECK ((status = ANY (ARRAY['active'::text, 'blocked'::text, 'retired'::text])))"
+      }
+    ],
+    "indexes": [
+      "CREATE UNIQUE INDEX pos_cash_stations_pkey ON public.pos_cash_stations USING btree (id)",
+      "CREATE UNIQUE INDEX pos_cash_stations_license_id_id_uk ON public.pos_cash_stations USING btree (license_id, id)",
+      "CREATE UNIQUE INDEX pos_cash_stations_license_station_key_uk ON public.pos_cash_stations USING btree (license_id, station_key)"
+    ]
+  },
+  {
+    "schema_name": "public",
+    "relname": "pos_customer_ledger",
+    "relkind": "r",
+    "relrowsecurity": true,
+    "relacl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+    "columns": [
+      {
+        "name": "id",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "license_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "customer_id",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "type",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "amount",
+        "type": "numeric",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "balance_after",
+        "type": "numeric",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "debt_cents_after",
+        "type": "integer",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "payment_method",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "note",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "cash_session_id",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "cash_movement_id",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "reference_type",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "reference_id",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "sale_id",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "allocation_payload",
+        "type": "jsonb",
+        "default": "'[]'::jsonb",
+        "not_null": true
+      },
+      {
+        "name": "actor_device_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "actor_staff_user_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "actor_name",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "idempotency_key",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "metadata",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "not_null": true
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      },
+      {
+        "name": "server_version",
+        "type": "integer",
+        "default": "1",
+        "not_null": true
+      },
+      {
+        "name": "deleted_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "sale_folio",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "actor_key",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      }
+    ],
+    "constraints": [
+      {
+        "name": "pos_customer_ledger_actor_device_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (actor_device_id) REFERENCES license_devices(id)"
+      },
+      {
+        "name": "pos_customer_ledger_actor_name_chk",
+        "type": "c",
+        "definition": "CHECK ((length(btrim(actor_name)) > 0))"
+      },
+      {
+        "name": "pos_customer_ledger_actor_staff_user_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (actor_staff_user_id) REFERENCES license_staff_users(id)"
+      },
+      {
+        "name": "pos_customer_ledger_amount_nonzero_chk",
+        "type": "c",
+        "definition": "CHECK ((amount <> (0)::numeric))"
+      },
+      {
+        "name": "pos_customer_ledger_balance_non_negative_chk",
+        "type": "c",
+        "definition": "CHECK ((balance_after >= (0)::numeric))"
+      },
+      {
+        "name": "pos_customer_ledger_cash_movement_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (cash_movement_id) REFERENCES pos_cash_movements(id)"
+      },
+      {
+        "name": "pos_customer_ledger_cash_session_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (cash_session_id) REFERENCES pos_cash_sessions(id)"
+      },
+      {
+        "name": "pos_customer_ledger_customer_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (customer_id) REFERENCES pos_customers(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "pos_customer_ledger_debt_cents_non_negative_chk",
+        "type": "c",
+        "definition": "CHECK ((debt_cents_after >= 0))"
+      },
+      {
+        "name": "pos_customer_ledger_license_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "pos_customer_ledger_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "pos_customer_ledger_server_version_chk",
+        "type": "c",
+        "definition": "CHECK ((server_version >= 1))"
+      },
+      {
+        "name": "pos_customer_ledger_type_chk",
+        "type": "c",
+        "definition": "CHECK ((type = ANY (ARRAY['INITIAL_BALANCE'::text, 'CHARGE'::text, 'PAYMENT'::text, 'ADJUSTMENT'::text, 'CANCEL_CHARGE'::text, 'CANCEL_PAYMENT'::text, 'MIGRATION'::text])))"
+      }
+    ],
+    "indexes": [
+      "CREATE UNIQUE INDEX pos_customer_ledger_license_idem_uq ON public.pos_customer_ledger USING btree (license_id, idempotency_key) WHERE (idempotency_key IS NOT NULL)",
+      "CREATE INDEX pos_customer_ledger_cash_movement_id_fk_idx ON public.pos_customer_ledger USING btree (cash_movement_id)",
+      "CREATE INDEX pos_customer_ledger_actor_device_id_fk_idx ON public.pos_customer_ledger USING btree (actor_device_id)",
+      "CREATE UNIQUE INDEX pos_customer_ledger_pkey ON public.pos_customer_ledger USING btree (id)",
+      "CREATE INDEX pos_customer_ledger_license_customer_created_idx ON public.pos_customer_ledger USING btree (license_id, customer_id, created_at)",
+      "CREATE INDEX pos_customer_ledger_license_type_created_idx ON public.pos_customer_ledger USING btree (license_id, type, created_at)",
+      "CREATE INDEX pos_customer_ledger_license_cash_session_idx ON public.pos_customer_ledger USING btree (license_id, cash_session_id)",
+      "CREATE INDEX pos_customer_ledger_license_cash_movement_idx ON public.pos_customer_ledger USING btree (license_id, cash_movement_id)",
+      "CREATE INDEX pos_customer_ledger_license_staff_created_idx ON public.pos_customer_ledger USING btree (license_id, actor_staff_user_id, created_at)",
+      "CREATE INDEX pos_customer_ledger_license_device_created_idx ON public.pos_customer_ledger USING btree (license_id, actor_device_id, created_at)",
+      "CREATE INDEX pos_customer_ledger_license_reference_idx ON public.pos_customer_ledger USING btree (license_id, reference_type, reference_id)",
+      "CREATE INDEX pos_customer_ledger_customer_id_fk_idx ON public.pos_customer_ledger USING btree (customer_id)",
+      "CREATE INDEX pos_customer_ledger_cash_session_id_fk_idx ON public.pos_customer_ledger USING btree (cash_session_id)",
+      "CREATE INDEX pos_customer_ledger_actor_staff_user_id_fk_idx ON public.pos_customer_ledger USING btree (actor_staff_user_id)",
+      "CREATE INDEX idx_pos_reports_ledger_license_created_type ON public.pos_customer_ledger USING btree (license_id, created_at, type) WHERE (deleted_at IS NULL)",
+      "CREATE INDEX idx_pos_reports_ledger_license_staff_created ON public.pos_customer_ledger USING btree (license_id, actor_staff_user_id, created_at) WHERE (deleted_at IS NULL)",
+      "CREATE INDEX idx_pos_customer_ledger_license_sale ON public.pos_customer_ledger USING btree (license_id, sale_id) WHERE (sale_id IS NOT NULL)"
+    ]
+  },
+  {
+    "schema_name": "public",
+    "relname": "pos_customers",
+    "relkind": "r",
+    "relrowsecurity": true,
+    "relacl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+    "columns": [
+      {
+        "name": "id",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "license_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "name",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "phone",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "phone_key",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "address",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "debt",
+        "type": "numeric",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "name": "debt_cents",
+        "type": "integer",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "name": "credit_limit",
+        "type": "numeric",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      },
+      {
+        "name": "deleted_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "server_version",
+        "type": "integer",
+        "default": "1",
+        "not_null": true
+      },
+      {
+        "name": "created_by_device_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "updated_by_device_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "created_by_staff_user_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "updated_by_staff_user_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "last_idempotency_key",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "metadata",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "not_null": true
+      }
+    ],
+    "constraints": [
+      {
+        "name": "pos_customers_created_by_device_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (created_by_device_id) REFERENCES license_devices(id)"
+      },
+      {
+        "name": "pos_customers_created_by_staff_user_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (created_by_staff_user_id) REFERENCES license_staff_users(id)"
+      },
+      {
+        "name": "pos_customers_credit_limit_non_negative",
+        "type": "c",
+        "definition": "CHECK ((credit_limit >= (0)::numeric))"
+      },
+      {
+        "name": "pos_customers_debt_cents_non_negative",
+        "type": "c",
+        "definition": "CHECK ((debt_cents >= 0))"
+      },
+      {
+        "name": "pos_customers_debt_non_negative",
+        "type": "c",
+        "definition": "CHECK ((debt >= (0)::numeric))"
+      },
+      {
+        "name": "pos_customers_license_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "pos_customers_name_not_blank",
+        "type": "c",
+        "definition": "CHECK ((length(btrim(name)) > 0))"
+      },
+      {
+        "name": "pos_customers_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "pos_customers_server_version_positive",
+        "type": "c",
+        "definition": "CHECK ((server_version >= 1))"
+      },
+      {
+        "name": "pos_customers_updated_by_device_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (updated_by_device_id) REFERENCES license_devices(id)"
+      },
+      {
+        "name": "pos_customers_updated_by_staff_user_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (updated_by_staff_user_id) REFERENCES license_staff_users(id)"
+      }
+    ],
+    "indexes": [
+      "CREATE INDEX idx_pos_customers_created_by_device_id ON public.pos_customers USING btree (created_by_device_id)",
+      "CREATE INDEX idx_pos_customers_updated_by_device_id ON public.pos_customers USING btree (updated_by_device_id)",
+      "CREATE INDEX idx_pos_customers_created_by_staff_user_id ON public.pos_customers USING btree (created_by_staff_user_id)",
+      "CREATE INDEX idx_pos_customers_updated_by_staff_user_id ON public.pos_customers USING btree (updated_by_staff_user_id)",
+      "CREATE UNIQUE INDEX pos_customers_pkey ON public.pos_customers USING btree (id)",
+      "CREATE INDEX idx_pos_customers_license_updated_at ON public.pos_customers USING btree (license_id, updated_at)",
+      "CREATE INDEX idx_pos_customers_license_server_version ON public.pos_customers USING btree (license_id, server_version)",
+      "CREATE INDEX idx_pos_customers_license_deleted_at ON public.pos_customers USING btree (license_id, deleted_at)",
+      "CREATE INDEX idx_pos_customers_license_name ON public.pos_customers USING btree (license_id, name)",
+      "CREATE INDEX idx_pos_customers_license_phone_key ON public.pos_customers USING btree (license_id, phone_key)",
+      "CREATE UNIQUE INDEX ux_pos_customers_license_phone_key_active ON public.pos_customers USING btree (license_id, phone_key) WHERE ((phone_key IS NOT NULL) AND (deleted_at IS NULL))",
+      "CREATE INDEX idx_pos_reports_customers_license_debt ON public.pos_customers USING btree (license_id, deleted_at, debt_cents)"
+    ]
+  },
+  {
+    "schema_name": "public",
+    "relname": "pos_folio_sequences",
+    "relkind": "r",
+    "relrowsecurity": true,
+    "relacl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+    "columns": [
+      {
+        "name": "license_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "sequence_name",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "current_value",
+        "type": "bigint",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "name": "prefix",
+        "type": "text",
+        "default": "'V'::text",
+        "not_null": true
+      },
+      {
+        "name": "padding",
+        "type": "integer",
+        "default": "6",
+        "not_null": true
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      },
+      {
+        "name": "operational_prefix",
+        "type": "text",
+        "default": "'LZ'::text",
+        "not_null": true
+      },
+      {
+        "name": "operational_terminal",
+        "type": "text",
+        "default": "'01'::text",
+        "not_null": true
+      }
+    ],
+    "constraints": [
+      {
+        "name": "pos_folio_sequences_current_value_check",
+        "type": "c",
+        "definition": "CHECK ((current_value >= 0))"
+      },
+      {
+        "name": "pos_folio_sequences_license_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "pos_folio_sequences_operational_prefix_check",
+        "type": "c",
+        "definition": "CHECK (((length(btrim(operational_prefix)) >= 1) AND (length(btrim(operational_prefix)) <= 12)))"
+      },
+      {
+        "name": "pos_folio_sequences_operational_terminal_check",
+        "type": "c",
+        "definition": "CHECK (((length(btrim(operational_terminal)) >= 1) AND (length(btrim(operational_terminal)) <= 4)))"
+      },
+      {
+        "name": "pos_folio_sequences_padding_check",
+        "type": "c",
+        "definition": "CHECK (((padding >= 1) AND (padding <= 12)))"
+      },
+      {
+        "name": "pos_folio_sequences_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (license_id, sequence_name)"
+      },
+      {
+        "name": "pos_folio_sequences_prefix_check",
+        "type": "c",
+        "definition": "CHECK ((length(btrim(prefix)) > 0))"
+      }
+    ],
+    "indexes": [
+      "CREATE UNIQUE INDEX pos_folio_sequences_pkey ON public.pos_folio_sequences USING btree (license_id, sequence_name)"
+    ]
+  },
+  {
+    "schema_name": "public",
+    "relname": "pos_idempotency_keys",
+    "relkind": "r",
+    "relrowsecurity": true,
+    "relacl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "not_null": true
+      },
+      {
+        "name": "license_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "idempotency_key",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "operation_type",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "entity_type",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "entity_id",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "request_hash",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "response_payload",
+        "type": "jsonb",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "default": "'completed'::text",
+        "not_null": true
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      },
+      {
+        "name": "expires_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": false
+      }
+    ],
+    "constraints": [
+      {
+        "name": "pos_idempotency_keys_license_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "pos_idempotency_keys_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "pos_idempotency_keys_status_check",
+        "type": "c",
+        "definition": "CHECK ((status = ANY (ARRAY['processing'::text, 'completed'::text, 'failed'::text])))"
+      }
+    ],
+    "indexes": [
+      "CREATE UNIQUE INDEX pos_idempotency_keys_pkey ON public.pos_idempotency_keys USING btree (id)",
+      "CREATE UNIQUE INDEX ux_pos_idempotency_license_key ON public.pos_idempotency_keys USING btree (license_id, idempotency_key)",
+      "CREATE INDEX idx_pos_idempotency_expires_at ON public.pos_idempotency_keys USING btree (expires_at) WHERE (expires_at IS NOT NULL)",
+      "CREATE INDEX idx_pos_idempotency_license_entity ON public.pos_idempotency_keys USING btree (license_id, entity_type, entity_id)"
+    ]
+  },
+  {
+    "schema_name": "public",
+    "relname": "pos_inventory_movements",
+    "relkind": "r",
+    "relrowsecurity": true,
+    "relacl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+    "columns": [
+      {
+        "name": "id",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "license_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "product_id",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "batch_id",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "sale_id",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "sale_item_id",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "movement_type",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "quantity",
+        "type": "numeric",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "previous_stock",
+        "type": "numeric",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "new_stock",
+        "type": "numeric",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "previous_batch_stock",
+        "type": "numeric",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "new_batch_stock",
+        "type": "numeric",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "unit_cost",
+        "type": "numeric",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "total_cost",
+        "type": "numeric",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "reason",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "source",
+        "type": "text",
+        "default": "'sale'::text",
+        "not_null": true
+      },
+      {
+        "name": "actor_device_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "actor_staff_user_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "actor_key",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "actor_name",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "idempotency_key",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "metadata",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "not_null": true
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      },
+      {
+        "name": "server_version",
+        "type": "bigint",
+        "default": "1",
+        "not_null": true
+      }
+    ],
+    "constraints": [
+      {
+        "name": "pos_inventory_movements_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "pos_inventory_movements_quantity_check",
+        "type": "c",
+        "definition": "CHECK ((quantity > (0)::numeric))"
+      },
+      {
+        "name": "pos_inventory_movements_source_check",
+        "type": "c",
+        "definition": "CHECK ((source = ANY (ARRAY['sale'::text, 'sale_cancellation'::text, 'adjustment'::text, 'migration'::text, 'manual'::text, 'inventory_entry'::text])))"
+      },
+      {
+        "name": "pos_inventory_movements_total_cost_check",
+        "type": "c",
+        "definition": "CHECK (((total_cost IS NULL) OR (total_cost >= (0)::numeric)))"
+      },
+      {
+        "name": "pos_inventory_movements_type_check",
+        "type": "c",
+        "definition": "CHECK ((movement_type = ANY (ARRAY['sale_out'::text, 'adjustment'::text, 'return_in'::text, 'manual_out'::text, 'manual_in'::text])))"
+      },
+      {
+        "name": "pos_inventory_movements_unit_cost_check",
+        "type": "c",
+        "definition": "CHECK (((unit_cost IS NULL) OR (unit_cost >= (0)::numeric)))"
+      }
+    ],
+    "indexes": [
+      "CREATE UNIQUE INDEX pos_inventory_movements_pkey ON public.pos_inventory_movements USING btree (id)",
+      "CREATE INDEX idx_pos_inventory_movements_license_product_created ON public.pos_inventory_movements USING btree (license_id, product_id, created_at DESC)",
+      "CREATE INDEX idx_pos_inventory_movements_license_batch_created ON public.pos_inventory_movements USING btree (license_id, batch_id, created_at DESC)",
+      "CREATE INDEX idx_pos_inventory_movements_license_sale ON public.pos_inventory_movements USING btree (license_id, sale_id)",
+      "CREATE INDEX idx_pos_inventory_movements_license_source_created ON public.pos_inventory_movements USING btree (license_id, source, created_at DESC)",
+      "CREATE INDEX idx_pos_inventory_movements_license_idempotency ON public.pos_inventory_movements USING btree (license_id, idempotency_key)",
+      "CREATE UNIQUE INDEX idx_pos_inventory_movements_license_idem_unique ON public.pos_inventory_movements USING btree (license_id, idempotency_key) WHERE (idempotency_key IS NOT NULL)",
+      "CREATE INDEX idx_pos_inventory_movements_expiry_waste_history ON public.pos_inventory_movements USING btree (license_id, created_at DESC) WHERE (((metadata ->> 'semantic_type'::text) = 'expiry_write_off'::text) OR (lower(COALESCE(reason, ''::text)) = ANY (ARRAY['caducidad'::text, 'caducidad_parcial'::text])))"
+    ]
+  },
+  {
+    "schema_name": "public",
+    "relname": "pos_product_batches",
+    "relkind": "r",
+    "relrowsecurity": true,
+    "relacl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+    "columns": [
+      {
+        "name": "id",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "license_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "product_id",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "sku",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "sku_key",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "stock",
+        "type": "numeric",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "name": "committed_stock",
+        "type": "numeric",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "name": "cost",
+        "type": "numeric",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "name": "price",
+        "type": "numeric",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "name": "track_stock",
+        "type": "boolean",
+        "default": "true",
+        "not_null": true
+      },
+      {
+        "name": "is_active",
+        "type": "boolean",
+        "default": "true",
+        "not_null": true
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "default": "'active'::text",
+        "not_null": true
+      },
+      {
+        "name": "active_stock_status",
+        "type": "integer",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "name": "expiry_date",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "alert_target_date",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "alert_type",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "manufacturer_batch_id",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "supplier",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "attributes",
+        "type": "jsonb",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "location",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "notes",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "update_global_price",
+        "type": "boolean",
+        "default": "false",
+        "not_null": true
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      },
+      {
+        "name": "deleted_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "server_version",
+        "type": "integer",
+        "default": "1",
+        "not_null": true
+      },
+      {
+        "name": "created_by_device_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "updated_by_device_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "created_by_staff_user_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "updated_by_staff_user_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "last_idempotency_key",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "metadata",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "not_null": true
+      }
+    ],
+    "constraints": [
+      {
+        "name": "pos_product_batches_active_stock_status_check",
+        "type": "c",
+        "definition": "CHECK ((active_stock_status = ANY (ARRAY[0, 1])))"
+      },
+      {
+        "name": "pos_product_batches_committed_stock_check",
+        "type": "c",
+        "definition": "CHECK ((committed_stock >= (0)::numeric))"
+      },
+      {
+        "name": "pos_product_batches_cost_check",
+        "type": "c",
+        "definition": "CHECK ((cost >= (0)::numeric))"
+      },
+      {
+        "name": "pos_product_batches_created_by_device_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (created_by_device_id) REFERENCES license_devices(id)"
+      },
+      {
+        "name": "pos_product_batches_created_by_staff_user_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (created_by_staff_user_id) REFERENCES license_staff_users(id)"
+      },
+      {
+        "name": "pos_product_batches_license_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "pos_product_batches_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "pos_product_batches_price_check",
+        "type": "c",
+        "definition": "CHECK ((price >= (0)::numeric))"
+      },
+      {
+        "name": "pos_product_batches_product_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (product_id) REFERENCES pos_products(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "pos_product_batches_server_version_check",
+        "type": "c",
+        "definition": "CHECK ((server_version >= 1))"
+      },
+      {
+        "name": "pos_product_batches_status_check",
+        "type": "c",
+        "definition": "CHECK ((status = ANY (ARRAY['active'::text, 'inactive'::text, 'archived'::text])))"
+      },
+      {
+        "name": "pos_product_batches_stock_check",
+        "type": "c",
+        "definition": "CHECK ((stock >= (0)::numeric))"
+      },
+      {
+        "name": "pos_product_batches_updated_by_device_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (updated_by_device_id) REFERENCES license_devices(id)"
+      },
+      {
+        "name": "pos_product_batches_updated_by_staff_user_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (updated_by_staff_user_id) REFERENCES license_staff_users(id)"
+      }
+    ],
+    "indexes": [
+      "CREATE INDEX idx_pos_product_batches_product_id ON public.pos_product_batches USING btree (product_id)",
+      "CREATE INDEX idx_pos_product_batches_created_by_device_id ON public.pos_product_batches USING btree (created_by_device_id)",
+      "CREATE INDEX idx_pos_product_batches_updated_by_device_id ON public.pos_product_batches USING btree (updated_by_device_id)",
+      "CREATE INDEX idx_pos_product_batches_created_by_staff_user_id ON public.pos_product_batches USING btree (created_by_staff_user_id)",
+      "CREATE INDEX idx_pos_product_batches_updated_by_staff_user_id ON public.pos_product_batches USING btree (updated_by_staff_user_id)",
+      "CREATE UNIQUE INDEX pos_product_batches_pkey ON public.pos_product_batches USING btree (id)",
+      "CREATE INDEX pos_product_batches_license_product_idx ON public.pos_product_batches USING btree (license_id, product_id)",
+      "CREATE INDEX pos_product_batches_license_updated_idx ON public.pos_product_batches USING btree (license_id, updated_at)",
+      "CREATE INDEX pos_product_batches_license_active_stock_idx ON public.pos_product_batches USING btree (license_id, active_stock_status)",
+      "CREATE INDEX pos_product_batches_license_status_idx ON public.pos_product_batches USING btree (license_id, status)",
+      "CREATE INDEX pos_product_batches_license_product_status_idx ON public.pos_product_batches USING btree (license_id, product_id, status)",
+      "CREATE INDEX pos_product_batches_license_product_active_stock_idx ON public.pos_product_batches USING btree (license_id, product_id, active_stock_status)",
+      "CREATE INDEX pos_product_batches_license_active_alert_idx ON public.pos_product_batches USING btree (license_id, active_stock_status, alert_target_date)",
+      "CREATE INDEX pos_product_batches_license_manufacturer_batch_idx ON public.pos_product_batches USING btree (license_id, manufacturer_batch_id)",
+      "CREATE INDEX pos_product_batches_license_sku_idx ON public.pos_product_batches USING btree (license_id, sku_key)",
+      "CREATE INDEX idx_pos_reports_batches_license_status ON public.pos_product_batches USING btree (license_id, deleted_at, product_id, is_active, stock)",
+      "CREATE INDEX idx_pos_product_batches_fefo_recommendations ON public.pos_product_batches USING btree (license_id, product_id, expiry_date, created_at) WHERE ((deleted_at IS NULL) AND (is_active IS TRUE) AND (track_stock IS TRUE) AND (status = 'active'::text))"
+    ]
+  },
+  {
+    "schema_name": "public",
+    "relname": "pos_products",
+    "relkind": "r",
+    "relrowsecurity": true,
+    "relacl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+    "columns": [
+      {
+        "name": "id",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "license_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "category_id",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "name",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "name_key",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "description",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "barcode",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "barcode_key",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "sku",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "sku_key",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "image_ref",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "image_url",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "location",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "price",
+        "type": "numeric",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "name": "cost",
+        "type": "numeric",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "name": "stock",
+        "type": "numeric",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "name": "committed_stock",
+        "type": "numeric",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "name": "min_stock",
+        "type": "numeric",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "max_stock",
+        "type": "numeric",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "track_stock",
+        "type": "boolean",
+        "default": "true",
+        "not_null": true
+      },
+      {
+        "name": "is_active",
+        "type": "boolean",
+        "default": "true",
+        "not_null": true
+      },
+      {
+        "name": "product_type",
+        "type": "text",
+        "default": "'sellable'::text",
+        "not_null": true
+      },
+      {
+        "name": "sale_type",
+        "type": "text",
+        "default": "'unit'::text",
+        "not_null": true
+      },
+      {
+        "name": "bulk_data",
+        "type": "jsonb",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "conversion_factor",
+        "type": "jsonb",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "batch_management",
+        "type": "jsonb",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "recipe",
+        "type": "jsonb",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "modifiers",
+        "type": "jsonb",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "wholesale_tiers",
+        "type": "jsonb",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "prescription_type",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "active_substance",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "laboratory",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "requires_prescription",
+        "type": "boolean",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "presentation",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "expiration_mode",
+        "type": "text",
+        "default": "'NONE'::text",
+        "not_null": true
+      },
+      {
+        "name": "shelf_life_value",
+        "type": "numeric",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "shelf_life_unit",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "search_tokens",
+        "type": "text[]",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "search_ngrams",
+        "type": "text[]",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "low_stock_alert_status",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "active_stock_status",
+        "type": "integer",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      },
+      {
+        "name": "deleted_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "server_version",
+        "type": "integer",
+        "default": "1",
+        "not_null": true
+      },
+      {
+        "name": "created_by_device_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "updated_by_device_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "created_by_staff_user_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "updated_by_staff_user_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "last_idempotency_key",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "metadata",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "not_null": true
+      }
+    ],
+    "constraints": [
+      {
+        "name": "pos_products_active_stock_status_check",
+        "type": "c",
+        "definition": "CHECK ((active_stock_status = ANY (ARRAY[0, 1])))"
+      },
+      {
+        "name": "pos_products_category_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (category_id) REFERENCES pos_categories(id) ON DELETE SET NULL"
+      },
+      {
+        "name": "pos_products_committed_stock_check",
+        "type": "c",
+        "definition": "CHECK ((committed_stock >= (0)::numeric))"
+      },
+      {
+        "name": "pos_products_cost_check",
+        "type": "c",
+        "definition": "CHECK ((cost >= (0)::numeric))"
+      },
+      {
+        "name": "pos_products_created_by_device_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (created_by_device_id) REFERENCES license_devices(id)"
+      },
+      {
+        "name": "pos_products_created_by_staff_user_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (created_by_staff_user_id) REFERENCES license_staff_users(id)"
+      },
+      {
+        "name": "pos_products_expiration_mode_check",
+        "type": "c",
+        "definition": "CHECK ((expiration_mode = ANY (ARRAY['STRICT'::text, 'SHELF_LIFE'::text, 'NONE'::text])))"
+      },
+      {
+        "name": "pos_products_license_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "pos_products_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "pos_products_price_check",
+        "type": "c",
+        "definition": "CHECK ((price >= (0)::numeric))"
+      },
+      {
+        "name": "pos_products_product_type_check",
+        "type": "c",
+        "definition": "CHECK ((product_type = ANY (ARRAY['sellable'::text, 'ingredient'::text])))"
+      },
+      {
+        "name": "pos_products_sale_type_check",
+        "type": "c",
+        "definition": "CHECK ((sale_type = ANY (ARRAY['unit'::text, 'bulk'::text])))"
+      },
+      {
+        "name": "pos_products_server_version_check",
+        "type": "c",
+        "definition": "CHECK ((server_version >= 1))"
+      },
+      {
+        "name": "pos_products_stock_check",
+        "type": "c",
+        "definition": "CHECK ((stock >= (0)::numeric))"
+      },
+      {
+        "name": "pos_products_updated_by_device_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (updated_by_device_id) REFERENCES license_devices(id)"
+      },
+      {
+        "name": "pos_products_updated_by_staff_user_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (updated_by_staff_user_id) REFERENCES license_staff_users(id)"
+      }
+    ],
+    "indexes": [
+      "CREATE INDEX idx_pos_products_category_id ON public.pos_products USING btree (category_id)",
+      "CREATE INDEX idx_pos_products_created_by_device_id ON public.pos_products USING btree (created_by_device_id)",
+      "CREATE INDEX idx_pos_products_updated_by_device_id ON public.pos_products USING btree (updated_by_device_id)",
+      "CREATE INDEX idx_pos_products_created_by_staff_user_id ON public.pos_products USING btree (created_by_staff_user_id)",
+      "CREATE INDEX idx_pos_products_updated_by_staff_user_id ON public.pos_products USING btree (updated_by_staff_user_id)",
+      "CREATE UNIQUE INDEX pos_products_pkey ON public.pos_products USING btree (id)",
+      "CREATE INDEX pos_products_license_updated_idx ON public.pos_products USING btree (license_id, updated_at)",
+      "CREATE INDEX pos_products_license_category_idx ON public.pos_products USING btree (license_id, category_id)",
+      "CREATE INDEX pos_products_license_active_idx ON public.pos_products USING btree (license_id, is_active)",
+      "CREATE INDEX pos_products_license_type_idx ON public.pos_products USING btree (license_id, product_type)",
+      "CREATE INDEX pos_products_license_active_stock_idx ON public.pos_products USING btree (license_id, active_stock_status)",
+      "CREATE INDEX pos_products_license_low_stock_idx ON public.pos_products USING btree (license_id, low_stock_alert_status)",
+      "CREATE INDEX pos_products_license_barcode_idx ON public.pos_products USING btree (license_id, barcode_key)",
+      "CREATE INDEX pos_products_license_sku_idx ON public.pos_products USING btree (license_id, sku_key)",
+      "CREATE INDEX pos_products_license_name_key_idx ON public.pos_products USING btree (license_id, name_key)",
+      "CREATE UNIQUE INDEX pos_products_license_barcode_active_uidx ON public.pos_products USING btree (license_id, barcode_key) WHERE ((barcode_key IS NOT NULL) AND (barcode_key <> ''::text) AND (deleted_at IS NULL))",
+      "CREATE UNIQUE INDEX pos_products_license_sku_active_uidx ON public.pos_products USING btree (license_id, sku_key) WHERE ((sku_key IS NOT NULL) AND (sku_key <> ''::text) AND (deleted_at IS NULL))",
+      "CREATE INDEX idx_pos_reports_products_license_status ON public.pos_products USING btree (license_id, deleted_at, is_active, track_stock)"
+    ]
+  },
+  {
+    "schema_name": "public",
+    "relname": "pos_rpc_rate_limits",
+    "relkind": "r",
+    "relrowsecurity": true,
+    "relacl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "extensions.gen_random_uuid()",
+        "not_null": true
+      },
+      {
+        "name": "license_key",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "device_fingerprint",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "staff_session_hash",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "rpc_name",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "window_start",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "window_seconds",
+        "type": "integer",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "request_count",
+        "type": "integer",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      },
+      {
+        "name": "scope",
+        "type": "text",
+        "default": "'legacy'::text",
+        "not_null": true
+      },
+      {
+        "name": "blocked_until",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "last_limited_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "metadata",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "not_null": true
+      }
+    ],
+    "constraints": [
+      {
+        "name": "pos_rpc_rate_limits_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "pos_rpc_rate_limits_request_count_nonnegative",
+        "type": "c",
+        "definition": "CHECK ((request_count >= 0))"
+      },
+      {
+        "name": "pos_rpc_rate_limits_window_seconds_positive",
+        "type": "c",
+        "definition": "CHECK ((window_seconds > 0))"
+      }
+    ],
+    "indexes": [
+      "CREATE UNIQUE INDEX pos_rpc_rate_limits_pkey ON public.pos_rpc_rate_limits USING btree (id)",
+      "CREATE UNIQUE INDEX pos_rpc_rate_limits_unique_window ON public.pos_rpc_rate_limits USING btree (license_key, device_fingerprint, rpc_name, window_start, window_seconds, COALESCE(staff_session_hash, ''::text))",
+      "CREATE INDEX idx_pos_rpc_rate_limits_cleanup ON public.pos_rpc_rate_limits USING btree (window_start)",
+      "CREATE INDEX idx_pos_rpc_rate_limits_license_rpc ON public.pos_rpc_rate_limits USING btree (license_key, rpc_name, window_start DESC)",
+      "CREATE INDEX idx_pos_rpc_rate_limits_blocked ON public.pos_rpc_rate_limits USING btree (license_key, device_fingerprint, rpc_name, blocked_until) WHERE (blocked_until IS NOT NULL)",
+      "CREATE INDEX idx_pos_rpc_rate_limits_scope_cleanup ON public.pos_rpc_rate_limits USING btree (scope, window_start)",
+      "CREATE INDEX idx_pos_rpc_rate_limits_scope_rpc_window ON public.pos_rpc_rate_limits USING btree (scope, rpc_name, window_start DESC)"
+    ]
+  },
+  {
+    "schema_name": "public",
+    "relname": "pos_sale_audit_events",
+    "relkind": "r",
+    "relrowsecurity": true,
+    "relacl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+    "columns": [
+      {
+        "name": "id",
+        "type": "bigint",
+        "default": "nextval('pos_sale_audit_events_id_seq'::regclass)",
+        "not_null": true
+      },
+      {
+        "name": "license_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "sale_id",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "event_type",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "actor_device_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "actor_staff_user_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "actor_name",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "payload",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "not_null": true
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      }
+    ],
+    "constraints": [
+      {
+        "name": "pos_sale_audit_events_license_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "pos_sale_audit_events_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      }
+    ],
+    "indexes": [
+      "CREATE UNIQUE INDEX pos_sale_audit_events_pkey ON public.pos_sale_audit_events USING btree (id)",
+      "CREATE INDEX pos_sale_audit_events_license_sale_created_idx ON public.pos_sale_audit_events USING btree (license_id, sale_id, created_at DESC)"
+    ]
+  },
+  {
+    "schema_name": "public",
+    "relname": "pos_sale_items",
+    "relkind": "r",
+    "relrowsecurity": true,
+    "relacl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+    "columns": [
+      {
+        "name": "id",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "license_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "sale_id",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "product_id",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "product_name",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "product_sku",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "barcode",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "category_id",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "category_name",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "quantity",
+        "type": "numeric",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "unit_price",
+        "type": "numeric",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "unit_cost",
+        "type": "numeric",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "discount_amount",
+        "type": "numeric",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "name": "tax_amount",
+        "type": "numeric",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "name": "line_total",
+        "type": "numeric",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "batch_id",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "batch_sku",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "batch_expiry_date",
+        "type": "date",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "rubro",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "metadata",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "not_null": true
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      },
+      {
+        "name": "server_version",
+        "type": "bigint",
+        "default": "1",
+        "not_null": true
+      },
+      {
+        "name": "inventory_effect_status",
+        "type": "text",
+        "default": "'not_applied'::text",
+        "not_null": false
+      },
+      {
+        "name": "inventory_movement_id",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "stock_source",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "stock_before",
+        "type": "numeric",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "stock_after",
+        "type": "numeric",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "batch_stock_before",
+        "type": "numeric",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "batch_stock_after",
+        "type": "numeric",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "inventory_reversal_status",
+        "type": "text",
+        "default": "'not_required'::text",
+        "not_null": false
+      }
+    ],
+    "constraints": [
+      {
+        "name": "pos_sale_items_discount_nonnegative_chk",
+        "type": "c",
+        "definition": "CHECK ((discount_amount >= (0)::numeric))"
+      },
+      {
+        "name": "pos_sale_items_license_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "pos_sale_items_line_total_nonnegative_chk",
+        "type": "c",
+        "definition": "CHECK ((line_total >= (0)::numeric))"
+      },
+      {
+        "name": "pos_sale_items_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "pos_sale_items_quantity_positive_chk",
+        "type": "c",
+        "definition": "CHECK ((quantity > (0)::numeric))"
+      },
+      {
+        "name": "pos_sale_items_sale_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (sale_id) REFERENCES pos_sales(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "pos_sale_items_tax_nonnegative_chk",
+        "type": "c",
+        "definition": "CHECK ((tax_amount >= (0)::numeric))"
+      },
+      {
+        "name": "pos_sale_items_unit_cost_nonnegative_chk",
+        "type": "c",
+        "definition": "CHECK (((unit_cost IS NULL) OR (unit_cost >= (0)::numeric)))"
+      },
+      {
+        "name": "pos_sale_items_unit_price_nonnegative_chk",
+        "type": "c",
+        "definition": "CHECK ((unit_price >= (0)::numeric))"
+      }
+    ],
+    "indexes": [
+      "CREATE UNIQUE INDEX pos_sale_items_pkey ON public.pos_sale_items USING btree (id)",
+      "CREATE INDEX pos_sale_items_license_sale_idx ON public.pos_sale_items USING btree (license_id, sale_id)",
+      "CREATE INDEX pos_sale_items_license_product_idx ON public.pos_sale_items USING btree (license_id, product_id)",
+      "CREATE INDEX pos_sale_items_license_category_idx ON public.pos_sale_items USING btree (license_id, category_id)",
+      "CREATE INDEX pos_sale_items_license_batch_idx ON public.pos_sale_items USING btree (license_id, batch_id)",
+      "CREATE INDEX idx_pos_sale_items_license_sale_inventory_reversal ON public.pos_sale_items USING btree (license_id, sale_id, inventory_reversal_status)",
+      "CREATE INDEX idx_pos_sale_items_sale_id_fk ON public.pos_sale_items USING btree (sale_id)"
+    ]
+  },
+  {
+    "schema_name": "public",
+    "relname": "pos_sale_payments",
+    "relkind": "r",
+    "relrowsecurity": true,
+    "relacl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+    "columns": [
+      {
+        "name": "id",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "license_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "sale_id",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "method",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "amount",
+        "type": "numeric",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "received_amount",
+        "type": "numeric",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "change_amount",
+        "type": "numeric",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "reference",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "cash_session_id",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "cash_movement_id",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "customer_ledger_id",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "metadata",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "not_null": true
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      },
+      {
+        "name": "server_version",
+        "type": "bigint",
+        "default": "1",
+        "not_null": true
+      },
+      {
+        "name": "reversal_status",
+        "type": "text",
+        "default": "'not_required'::text",
+        "not_null": false
+      }
+    ],
+    "constraints": [
+      {
+        "name": "pos_sale_payments_amount_nonnegative_chk",
+        "type": "c",
+        "definition": "CHECK ((amount >= (0)::numeric))"
+      },
+      {
+        "name": "pos_sale_payments_change_nonnegative_chk",
+        "type": "c",
+        "definition": "CHECK (((change_amount IS NULL) OR (change_amount >= (0)::numeric)))"
+      },
+      {
+        "name": "pos_sale_payments_license_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "pos_sale_payments_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "pos_sale_payments_received_nonnegative_chk",
+        "type": "c",
+        "definition": "CHECK (((received_amount IS NULL) OR (received_amount >= (0)::numeric)))"
+      },
+      {
+        "name": "pos_sale_payments_sale_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (sale_id) REFERENCES pos_sales(id) ON DELETE CASCADE"
+      }
+    ],
+    "indexes": [
+      "CREATE UNIQUE INDEX pos_sale_payments_pkey ON public.pos_sale_payments USING btree (id)",
+      "CREATE INDEX pos_sale_payments_license_sale_idx ON public.pos_sale_payments USING btree (license_id, sale_id)",
+      "CREATE INDEX pos_sale_payments_license_method_idx ON public.pos_sale_payments USING btree (license_id, method)",
+      "CREATE INDEX idx_pos_sale_payments_sale_id_fk ON public.pos_sale_payments USING btree (sale_id)"
+    ]
+  },
+  {
+    "schema_name": "public",
+    "relname": "pos_sales",
+    "relkind": "r",
+    "relrowsecurity": true,
+    "relacl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+    "columns": [
+      {
+        "name": "id",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "license_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "local_sale_id",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "device_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "staff_user_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "device_role",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "actor_key",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "actor_name",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "origin",
+        "type": "text",
+        "default": "'local_device'::text",
+        "not_null": true
+      },
+      {
+        "name": "source_mode",
+        "type": "text",
+        "default": "'shadow'::text",
+        "not_null": true
+      },
+      {
+        "name": "effects_status",
+        "type": "text",
+        "default": "'local_applied'::text",
+        "not_null": true
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "default": "'closed'::text",
+        "not_null": true
+      },
+      {
+        "name": "fulfillment_status",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "payment_method",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "payment_status",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "folio",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "local_folio",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "sale_number",
+        "type": "bigint",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "customer_id",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "customer_name",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "customer_phone",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "subtotal",
+        "type": "numeric",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "name": "discount_total",
+        "type": "numeric",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "name": "tax_total",
+        "type": "numeric",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "name": "total",
+        "type": "numeric",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "name": "amount_paid",
+        "type": "numeric",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "name": "change_amount",
+        "type": "numeric",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "name": "balance_due",
+        "type": "numeric",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "name": "currency",
+        "type": "text",
+        "default": "'MXN'::text",
+        "not_null": true
+      },
+      {
+        "name": "sold_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      },
+      {
+        "name": "deleted_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "cancelled_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "cancel_reason",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "cash_session_id",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "cash_movement_id",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "customer_ledger_id",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "local_payload",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "not_null": true
+      },
+      {
+        "name": "metadata",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "not_null": true
+      },
+      {
+        "name": "idempotency_key",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "server_version",
+        "type": "bigint",
+        "default": "1",
+        "not_null": true
+      },
+      {
+        "name": "cloud_folio",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "folio_sequence",
+        "type": "bigint",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "cash_effect_status",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "inventory_effect_status",
+        "type": "text",
+        "default": "'not_applied'::text",
+        "not_null": true
+      },
+      {
+        "name": "credit_effect_status",
+        "type": "text",
+        "default": "'not_applied'::text",
+        "not_null": true
+      },
+      {
+        "name": "committed_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "credit_ledger_charge_id",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "credit_ledger_payment_id",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "credit_customer_debt_before",
+        "type": "numeric",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "credit_customer_debt_after",
+        "type": "numeric",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "cancelled_by_device_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "cancelled_by_staff_user_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "cancellation_id",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "cancellation_status",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "reversal_status",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "cash_reversal_status",
+        "type": "text",
+        "default": "'not_required'::text",
+        "not_null": false
+      },
+      {
+        "name": "inventory_reversal_status",
+        "type": "text",
+        "default": "'not_required'::text",
+        "not_null": false
+      },
+      {
+        "name": "credit_reversal_status",
+        "type": "text",
+        "default": "'not_required'::text",
+        "not_null": false
+      },
+      {
+        "name": "sales_channel",
+        "type": "text",
+        "default": "'local'::text",
+        "not_null": true
+      },
+      {
+        "name": "ecommerce_order_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "ecommerce_order_code",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "pos_folio",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "layaway_id",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      }
+    ],
+    "constraints": [
+      {
+        "name": "pos_sales_amount_paid_nonnegative_chk",
+        "type": "c",
+        "definition": "CHECK ((amount_paid >= (0)::numeric))"
+      },
+      {
+        "name": "pos_sales_balance_due_nonnegative_chk",
+        "type": "c",
+        "definition": "CHECK ((balance_due >= (0)::numeric))"
+      },
+      {
+        "name": "pos_sales_cancelled_by_device_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (cancelled_by_device_id) REFERENCES license_devices(id) ON DELETE SET NULL"
+      },
+      {
+        "name": "pos_sales_cancelled_by_staff_user_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (cancelled_by_staff_user_id) REFERENCES license_staff_users(id) ON DELETE SET NULL"
+      },
+      {
+        "name": "pos_sales_change_nonnegative_chk",
+        "type": "c",
+        "definition": "CHECK ((change_amount >= (0)::numeric))"
+      },
+      {
+        "name": "pos_sales_device_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (device_id) REFERENCES license_devices(id) ON DELETE SET NULL"
+      },
+      {
+        "name": "pos_sales_discount_nonnegative_chk",
+        "type": "c",
+        "definition": "CHECK ((discount_total >= (0)::numeric))"
+      },
+      {
+        "name": "pos_sales_ecommerce_order_fk",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id, ecommerce_order_id) REFERENCES ecommerce_orders(license_id, id)"
+      },
+      {
+        "name": "pos_sales_ecommerce_traceability_coherence_check",
+        "type": "c",
+        "definition": "CHECK ((((sales_channel = 'local'::text) AND (ecommerce_order_id IS NULL) AND (ecommerce_order_code IS NULL)) OR ((sales_channel = 'ecommerce'::text) AND (ecommerce_order_id IS NOT NULL) AND (NULLIF(btrim(ecommerce_order_code), ''::text) IS NOT NULL))))"
+      },
+      {
+        "name": "pos_sales_effects_status_check",
+        "type": "c",
+        "definition": "CHECK ((effects_status = ANY (ARRAY['local_applied'::text, 'cloud_pending'::text, 'cloud_applied'::text, 'cash_applied'::text, 'payment_recorded'::text, 'inventory_applied'::text, 'cash_inventory_applied'::text, 'credit_applied'::text, 'cash_credit_applied'::text, 'cash_inventory_credit_applied'::text, 'failed'::text])))"
+      },
+      {
+        "name": "pos_sales_license_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "pos_sales_origin_chk",
+        "type": "c",
+        "definition": "CHECK ((origin = ANY (ARRAY['local_device'::text, 'cloud'::text])))"
+      },
+      {
+        "name": "pos_sales_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "pos_sales_sales_channel_check",
+        "type": "c",
+        "definition": "CHECK ((sales_channel = ANY (ARRAY['local'::text, 'ecommerce'::text])))"
+      },
+      {
+        "name": "pos_sales_shadow_no_cloud_effects_chk",
+        "type": "c",
+        "definition": "CHECK (((source_mode <> 'shadow'::text) OR ((origin = 'local_device'::text) AND (effects_status = 'local_applied'::text))))"
+      },
+      {
+        "name": "pos_sales_source_mode_chk",
+        "type": "c",
+        "definition": "CHECK ((source_mode = ANY (ARRAY['shadow'::text, 'cloud_draft'::text, 'cloud_committed'::text])))"
+      },
+      {
+        "name": "pos_sales_staff_user_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (staff_user_id) REFERENCES license_staff_users(id) ON DELETE SET NULL"
+      },
+      {
+        "name": "pos_sales_status_chk",
+        "type": "c",
+        "definition": "CHECK ((status = ANY (ARRAY['open'::text, 'closed'::text, 'cancelled'::text, 'voided'::text, 'draft'::text])))"
+      },
+      {
+        "name": "pos_sales_subtotal_nonnegative_chk",
+        "type": "c",
+        "definition": "CHECK ((subtotal >= (0)::numeric))"
+      },
+      {
+        "name": "pos_sales_tax_nonnegative_chk",
+        "type": "c",
+        "definition": "CHECK ((tax_total >= (0)::numeric))"
+      },
+      {
+        "name": "pos_sales_total_nonnegative_chk",
+        "type": "c",
+        "definition": "CHECK ((total >= (0)::numeric))"
+      }
+    ],
+    "indexes": [
+      "CREATE UNIQUE INDEX pos_sales_pkey ON public.pos_sales USING btree (id)",
+      "CREATE UNIQUE INDEX pos_sales_license_local_sale_uidx ON public.pos_sales USING btree (license_id, local_sale_id) WHERE (local_sale_id IS NOT NULL)",
+      "CREATE UNIQUE INDEX pos_sales_license_idempotency_uidx ON public.pos_sales USING btree (license_id, idempotency_key) WHERE (idempotency_key IS NOT NULL)",
+      "CREATE INDEX pos_sales_license_sold_at_idx ON public.pos_sales USING btree (license_id, sold_at DESC)",
+      "CREATE INDEX pos_sales_license_status_sold_at_idx ON public.pos_sales USING btree (license_id, status, sold_at DESC)",
+      "CREATE INDEX pos_sales_license_customer_sold_at_idx ON public.pos_sales USING btree (license_id, customer_id, sold_at DESC)",
+      "CREATE INDEX pos_sales_license_staff_sold_at_idx ON public.pos_sales USING btree (license_id, staff_user_id, sold_at DESC)",
+      "CREATE INDEX pos_sales_license_device_sold_at_idx ON public.pos_sales USING btree (license_id, device_id, sold_at DESC)",
+      "CREATE INDEX pos_sales_license_source_mode_sold_at_idx ON public.pos_sales USING btree (license_id, source_mode, sold_at DESC)",
+      "CREATE INDEX pos_sales_license_server_version_idx ON public.pos_sales USING btree (license_id, server_version)",
+      "CREATE UNIQUE INDEX ux_pos_sales_license_cloud_folio ON public.pos_sales USING btree (license_id, cloud_folio) WHERE ((cloud_folio IS NOT NULL) AND (deleted_at IS NULL))",
+      "CREATE INDEX idx_pos_sales_license_source_effects_sold ON public.pos_sales USING btree (license_id, source_mode, effects_status, sold_at DESC)",
+      "CREATE INDEX idx_pos_sales_license_credit_status_sold ON public.pos_sales USING btree (license_id, credit_effect_status, sold_at DESC) WHERE (deleted_at IS NULL)",
+      "CREATE INDEX idx_pos_sales_license_credit_charge ON public.pos_sales USING btree (license_id, credit_ledger_charge_id) WHERE (credit_ledger_charge_id IS NOT NULL)",
+      "CREATE INDEX idx_pos_sales_license_cancellation_id ON public.pos_sales USING btree (license_id, cancellation_id) WHERE (cancellation_id IS NOT NULL)",
+      "CREATE INDEX idx_pos_sales_device_id_fk ON public.pos_sales USING btree (device_id)",
+      "CREATE INDEX idx_pos_sales_staff_user_id_fk ON public.pos_sales USING btree (staff_user_id)",
+      "CREATE INDEX idx_pos_sales_cancelled_by_device_id_fk ON public.pos_sales USING btree (cancelled_by_device_id)",
+      "CREATE INDEX idx_pos_sales_cancelled_by_staff_user_id_fk ON public.pos_sales USING btree (cancelled_by_staff_user_id)",
+      "CREATE INDEX idx_pos_sales_license_cash_session_sold_at ON public.pos_sales USING btree (license_id, cash_session_id, sold_at DESC) WHERE ((deleted_at IS NULL) AND (cash_session_id IS NOT NULL))",
+      "CREATE UNIQUE INDEX ux_pos_sales_license_pos_folio ON public.pos_sales USING btree (license_id, pos_folio) WHERE ((pos_folio IS NOT NULL) AND (deleted_at IS NULL))",
+      "CREATE INDEX idx_pos_sales_license_folio_sequence ON public.pos_sales USING btree (license_id, folio_sequence) WHERE (folio_sequence IS NOT NULL)",
+      "CREATE UNIQUE INDEX ux_pos_sales_license_layaway_id ON public.pos_sales USING btree (license_id, layaway_id) WHERE ((layaway_id IS NOT NULL) AND (deleted_at IS NULL))",
+      "CREATE UNIQUE INDEX pos_sales_license_ecommerce_order_uidx ON public.pos_sales USING btree (license_id, ecommerce_order_id) WHERE (ecommerce_order_id IS NOT NULL)",
+      "CREATE INDEX pos_sales_license_ecommerce_code_idx ON public.pos_sales USING btree (license_id, ecommerce_order_code) WHERE (ecommerce_order_code IS NOT NULL)"
+    ]
+  },
+  {
+    "schema_name": "public",
+    "relname": "pos_sync_conflicts",
+    "relkind": "r",
+    "relrowsecurity": true,
+    "relacl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "not_null": true
+      },
+      {
+        "name": "license_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "entity_type",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "entity_id",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "conflict_type",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "local_payload",
+        "type": "jsonb",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "server_payload",
+        "type": "jsonb",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "resolution_status",
+        "type": "text",
+        "default": "'pending'::text",
+        "not_null": true
+      },
+      {
+        "name": "resolved_payload",
+        "type": "jsonb",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "actor_device_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "actor_staff_user_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      },
+      {
+        "name": "resolved_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": false
+      }
+    ],
+    "constraints": [
+      {
+        "name": "pos_sync_conflicts_actor_device_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (actor_device_id) REFERENCES license_devices(id)"
+      },
+      {
+        "name": "pos_sync_conflicts_actor_staff_user_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (actor_staff_user_id) REFERENCES license_staff_users(id)"
+      },
+      {
+        "name": "pos_sync_conflicts_license_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "pos_sync_conflicts_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "pos_sync_conflicts_resolution_status_check",
+        "type": "c",
+        "definition": "CHECK ((resolution_status = ANY (ARRAY['pending'::text, 'resolved'::text, 'ignored'::text])))"
+      }
+    ],
+    "indexes": [
+      "CREATE UNIQUE INDEX pos_sync_conflicts_pkey ON public.pos_sync_conflicts USING btree (id)",
+      "CREATE INDEX idx_pos_sync_conflicts_license_status ON public.pos_sync_conflicts USING btree (license_id, resolution_status)",
+      "CREATE INDEX idx_pos_sync_conflicts_license_entity ON public.pos_sync_conflicts USING btree (license_id, entity_type, entity_id)",
+      "CREATE INDEX idx_pos_sync_conflicts_created_at ON public.pos_sync_conflicts USING btree (created_at)",
+      "CREATE INDEX idx_pos_sync_conflicts_actor_device_id ON public.pos_sync_conflicts USING btree (actor_device_id)",
+      "CREATE INDEX idx_pos_sync_conflicts_actor_staff_user_id ON public.pos_sync_conflicts USING btree (actor_staff_user_id)"
+    ]
+  },
+  {
+    "schema_name": "public",
+    "relname": "pos_sync_events",
+    "relkind": "r",
+    "relrowsecurity": true,
+    "relacl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "not_null": true
+      },
+      {
+        "name": "license_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "entity_type",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "entity_id",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "operation",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "change_seq",
+        "type": "bigint",
+        "default": "nextval('pos_change_seq'::regclass)",
+        "not_null": true
+      },
+      {
+        "name": "server_version",
+        "type": "integer",
+        "default": "1",
+        "not_null": true
+      },
+      {
+        "name": "actor_device_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "actor_staff_user_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "idempotency_key",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "metadata",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "not_null": true
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      }
+    ],
+    "constraints": [
+      {
+        "name": "pos_sync_events_actor_device_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (actor_device_id) REFERENCES license_devices(id)"
+      },
+      {
+        "name": "pos_sync_events_actor_staff_user_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (actor_staff_user_id) REFERENCES license_staff_users(id)"
+      },
+      {
+        "name": "pos_sync_events_license_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "pos_sync_events_operation_check",
+        "type": "c",
+        "definition": "CHECK ((operation = ANY (ARRAY['create'::text, 'update'::text, 'delete'::text, 'restore'::text, 'upsert'::text, 'upsert_shadow'::text, 'cloud_commit'::text, 'cancel'::text, 'toggle_status'::text, 'status_update'::text, 'status_recalculate'::text, 'sync_checkpoint'::text, 'open'::text, 'close'::text, 'movement'::text, 'adjust'::text, 'identity_adopt'::text, 'unknown'::text])))"
+      },
+      {
+        "name": "pos_sync_events_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "pos_sync_events_server_version_check",
+        "type": "c",
+        "definition": "CHECK ((server_version > 0))"
+      }
+    ],
+    "indexes": [
+      "CREATE UNIQUE INDEX pos_sync_events_pkey ON public.pos_sync_events USING btree (id)",
+      "CREATE INDEX idx_pos_sync_events_license_seq ON public.pos_sync_events USING btree (license_id, change_seq)",
+      "CREATE INDEX idx_pos_sync_events_license_entity ON public.pos_sync_events USING btree (license_id, entity_type, entity_id)",
+      "CREATE INDEX idx_pos_sync_events_created_at ON public.pos_sync_events USING btree (created_at)",
+      "CREATE UNIQUE INDEX ux_pos_sync_events_license_change_seq ON public.pos_sync_events USING btree (license_id, change_seq)",
+      "CREATE INDEX idx_pos_sync_events_actor_device_id ON public.pos_sync_events USING btree (actor_device_id)",
+      "CREATE INDEX idx_pos_sync_events_actor_staff_user_id ON public.pos_sync_events USING btree (actor_staff_user_id)",
+      "CREATE INDEX idx_pos_sync_events_license_entity_seq ON public.pos_sync_events USING btree (license_id, entity_type, change_seq)"
+    ]
+  }
+]

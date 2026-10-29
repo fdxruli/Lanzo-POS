@@ -1,0 +1,9 @@
+.historical-credit { margin-block: 1rem; padding: 1rem; min-width: 0; }
+.historical-credit h2 { font-size: 1.15rem; margin-block: 0 .75rem; }
+.historical-credit__actions { display: flex; flex-wrap: wrap; gap: .75rem; margin-block: 1rem; }
+.historical-credit__actions button { min-height: 44px; white-space: normal; }
+.historical-credit__rows { max-height: 45vh; overflow: auto; overscroll-behavior: contain; padding: 0; list-style: none; }
+.historical-credit__rows li { display: grid; gap: .4rem; padding-block: .85rem; border-bottom: 1px solid var(--border-color, currentColor); overflow-wrap: anywhere; }
+.historical-credit__confirmation { display: flex; align-items: center; gap: .75rem; min-height: 48px; }
+.historical-credit__confirmation input { min-width: 24px; min-height: 24px; }
+@media (max-width: 480px) { .historical-credit__actions button { flex: 1 1 100%; } }

@@ -1,6 +1,7 @@
 import { generateID } from '../utils';
 import { db, STORES } from './dexie';
 import { DatabaseError, DB_ERROR_CODES } from './utils';
+import { historicalCreditLedgerView } from '../customerCredit/historicalCreditLedger';
 import { normalizeCustomerDebtCents } from './customerDebtIndex';
 import { Money } from '../../utils/moneyMath'; // <-- OBLIGATORIO
 import { registrarMovimientoCajaEnTransaccion } from '../cajaService';
@@ -105,6 +106,7 @@ export const customerCreditRepository = {
             const newDebtSafe = Money.subtract(currentDebtSafe, amountSafe);
             await db.table(STORES.CUSTOMERS).update(customerId, {
                 debt: Money.toExactString(newDebtSafe),
+                financialSource: 'local',
                 debtCents: normalizeCustomerDebtCents(newDebtSafe),
                 updatedAt: timestamp
             });
@@ -195,21 +197,27 @@ export const customerCreditRepository = {
     async recalculateDebtFromLedger(customerId) {
         return await db.transaction('rw', [
             db.table(STORES.CUSTOMERS),
-            db.table(STORES.CUSTOMER_LEDGER)
+            db.table(STORES.CUSTOMER_LEDGER),
+            db.table(STORES.SYNC_CACHE)
         ], async () => {
             const movements = await db.table(STORES.CUSTOMER_LEDGER)
                 .where('customerId').equals(customerId)
                 .toArray();
 
-            // Acumulación estricta usando reduce con Money
-            const exactDebtSafe = movements.reduce((acc, mov) => {
+            const snapshot = (await db.table(STORES.SYNC_CACHE).get(`historical-credit:v1:customer:${customerId}`))?.value;
+            const view = historicalCreditLedgerView(movements, snapshot);
+            // Captured Local rows remain intact; the confirmed import represents them.
+            const exactDebtSafe = view.active.reduce((acc, mov) => {
                 return Money.add(acc, mov.amount || 0);
-            }, Money.init(0));
+            }, Money.divide(view.baselineCents, 100));
 
             const exactDebtString = Money.toExactString(exactDebtSafe);
+            const cloudOnly = view.confirmed && view.active.every((row) => row.syncStatus === 'synced');
 
             await db.table(STORES.CUSTOMERS).update(customerId, {
                 debt: exactDebtString,
+                financialSource: cloudOnly ? 'cloud' : 'local',
+                ...(cloudOnly ? { lastCloudDebtCents: normalizeCustomerDebtCents(exactDebtString) } : {}),
                 debtCents: normalizeCustomerDebtCents(exactDebtString),
                 updatedAt: new Date().toISOString()
             });

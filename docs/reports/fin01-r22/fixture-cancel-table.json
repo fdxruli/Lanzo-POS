@@ -1,0 +1,174 @@
+[
+  {
+    "schema_name": "public",
+    "relname": "pos_sale_cancellations",
+    "relkind": "r",
+    "relrowsecurity": true,
+    "relacl": "{postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres}",
+    "columns": [
+      {
+        "name": "id",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "license_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "sale_id",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "sale_folio",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "reason",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "default": "'completed'::text",
+        "not_null": true
+      },
+      {
+        "name": "cash_reversal_status",
+        "type": "text",
+        "default": "'not_required'::text",
+        "not_null": true
+      },
+      {
+        "name": "inventory_reversal_status",
+        "type": "text",
+        "default": "'not_required'::text",
+        "not_null": true
+      },
+      {
+        "name": "credit_reversal_status",
+        "type": "text",
+        "default": "'not_required'::text",
+        "not_null": true
+      },
+      {
+        "name": "original_total",
+        "type": "numeric",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "name": "cash_reversal_amount",
+        "type": "numeric",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "name": "inventory_reversal_quantity",
+        "type": "numeric",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "name": "credit_reversal_amount",
+        "type": "numeric",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "name": "actor_device_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "actor_staff_user_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "actor_key",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "actor_name",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "idempotency_key",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "metadata",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "not_null": true
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      },
+      {
+        "name": "server_version",
+        "type": "bigint",
+        "default": "1",
+        "not_null": true
+      }
+    ],
+    "constraints": [
+      {
+        "name": "pos_sale_cancellations_actor_device_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (actor_device_id) REFERENCES license_devices(id) ON DELETE SET NULL"
+      },
+      {
+        "name": "pos_sale_cancellations_actor_staff_user_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (actor_staff_user_id) REFERENCES license_staff_users(id) ON DELETE SET NULL"
+      },
+      {
+        "name": "pos_sale_cancellations_license_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "pos_sale_cancellations_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "pos_sale_cancellations_sale_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (sale_id) REFERENCES pos_sales(id) ON DELETE CASCADE"
+      }
+    ],
+    "indexes": [
+      "CREATE UNIQUE INDEX pos_sale_cancellations_pkey ON public.pos_sale_cancellations USING btree (id)",
+      "CREATE INDEX idx_pos_sale_cancellations_license_sale ON public.pos_sale_cancellations USING btree (license_id, sale_id)",
+      "CREATE INDEX idx_pos_sale_cancellations_license_created ON public.pos_sale_cancellations USING btree (license_id, created_at DESC)",
+      "CREATE INDEX idx_pos_sale_cancellations_license_staff_created ON public.pos_sale_cancellations USING btree (license_id, actor_staff_user_id, created_at DESC)",
+      "CREATE UNIQUE INDEX ux_pos_sale_cancellations_license_idem ON public.pos_sale_cancellations USING btree (license_id, idempotency_key) WHERE (idempotency_key IS NOT NULL)",
+      "CREATE INDEX idx_pos_sale_cancellations_sale_id_fk ON public.pos_sale_cancellations USING btree (sale_id)",
+      "CREATE INDEX idx_pos_sale_cancellations_actor_device_id_fk ON public.pos_sale_cancellations USING btree (actor_device_id)",
+      "CREATE INDEX idx_pos_sale_cancellations_actor_staff_user_id_fk ON public.pos_sale_cancellations USING btree (actor_staff_user_id)"
+    ]
+  }
+]
