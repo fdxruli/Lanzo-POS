@@ -282,6 +282,10 @@ await test('Payment','PAY-N01 overpayment with positive debt and empty ledger ha
   assert.equal(payN01Evidence.after.idempotency.status,'completed');
   assert.deepEqual(payN01Evidence.after.idempotency.response_payload,response);
   assert.deepEqual(payN01Evidence.after_retry,payN01Evidence.after);
+  await q(`delete from public.pos_idempotency_keys where license_id='${tenant}' and idempotency_key=${lit(key)};
+    delete from public.pos_customers where license_id='${tenant}' and id=${lit(id)};`);
+  assert.equal((await q(`select count(*) from public.pos_customers where license_id='${tenant}' and id=${lit(id)};`)).trim(),'0');
+  payN01Evidence.synthetic_fixture_cleanup=true;
 });
 if(results.at(-1)?.name?.startsWith('PAY-N01')){
   results.at(-1).evidence=payN01Evidence;
