@@ -1,0 +1,6 @@
+{
+  "transform": "Only literal checkout prefixes and identical shared node_modules prefix; all results, messages, errors and remaining data preserved.",
+  "base": "/workspace/scratch/7c604c25ac9c/Lanzo-F012A-baseline -> /home/runner/work/Lanzo-POS/main",
+  "candidate": "/workspace/scratch/7c604c25ac9c/Lanzo-F012A -> /home/runner/work/Lanzo-POS/pr",
+  "shared": "/workspace/scratch/f55f4b6f351d/Lanzo-POS/node_modules -> /home/runner/work/Lanzo-POS/shared/node_modules"
+}

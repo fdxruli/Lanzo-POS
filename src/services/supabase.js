@@ -1,3 +1,4 @@
+import { createBootstrapLifecycle } from './bootstrap/bootstrapLifecycle';
 // src/services/supabase.js
 import { createClient } from "@supabase/supabase-js";
 import FingerprintJS from '@fingerprintjs/fingerprintjs';
@@ -13,14 +14,32 @@ import {
     assertLocalTenantAccess,
     assertLocalTenantSyncAccess,
     isLocalTenantAccessError,
+    getLocalTenantBinding,
     runWithLocalTenantSyncLease
 } from './tenant/localTenantGuard';
+import { getActiveTenantRuntime } from './db/tenantRuntimeRouter';
+import { getLicenseFromStorage } from './licenseStorage';
+import { deriveLocalGracePeriodEnd } from '../store/slices/license/licenseGuards';
 import {
+    actorRuntimeController,
+    runWithActorHandle,
     ActorRuntimeError,
     ACTOR_RUNTIME_ERROR_CODES
 } from './auth/actorRuntimeController';
 import { preflightIndexedDbCapability } from './db/indexedDbCapabilityPreflight';
-import { isBrowserStorageUnavailableError } from './db/databaseRecoveryState';
+import { classifyDatabaseError, isBrowserStorageUnavailableError } from './db/databaseRecoveryState';
+import {
+    classifySessionVerificationResponse,
+    createLocalCredentialsMissingResult,
+    createLocalStorageErrorResult,
+    isSessionVerificationContextError,
+    SESSION_VERIFICATION_STATUS
+} from './auth/sessionVerification';
+import {
+    ADMIN_OFFLINE_POLICY_VERSION,
+    ADMIN_OFFLINE_AUTHORIZATION_REASON,
+    evaluateAdminOfflineAuthorization
+} from './auth/adminOfflineAuthorization';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
@@ -30,13 +49,55 @@ const SUPABASE_MAIN_AUTH_OPTIONS = Object.freeze({
     detectSessionInUrl: false
 });
 
-// Creamos el cliente solo si las variables existen. Si no, exportamos null y dejamos 
+// Creamos el cliente solo si las variables existen. Si no, exportamos null y dejamos
 // que App.jsx lance el error para que sea capturado por el ErrorBoundary visual.
 export const supabaseClient = (supabaseUrl && supabaseKey)
     ? createClient(supabaseUrl, supabaseKey, {
         auth: SUPABASE_MAIN_AUTH_OPTIONS
     })
     : null;
+
+const safeAdminDiagnosticCode = (code) => (
+    /^(?:ADMIN|AUTH|ACTOR|DATABASE|DEVICE|FREE|HTTP|INDEXEDDB|LICENSE|LOCAL|NETWORK|PGRST|PROFILE|SESSION|STAFF|TENANT)_[A-Z0-9_:-]{1,72}$/i.test(String(code || ''))
+        || /^PGRST\d{3}$/i.test(String(code || ''))
+        ? String(code)
+        : null
+);
+
+const callAdminAuthRpc = async (rpcName, args) => {
+    const startedAt = globalThis.performance?.now?.() ?? Date.now();
+    const slowTimer = setTimeout(() => {
+        Logger.warn?.('[AdminAuth]', { phase: 'operation_slow', operation: `${rpcName}_rpc`, durationMs: 15_000 });
+    }, 15_000);
+    Logger.debug?.('[AdminAuth]', { phase: `${rpcName}_rpc_started` });
+    try {
+        const response = await supabaseClient.rpc(rpcName, args);
+        const status = response?.error
+            ? 'error'
+            : response?.data?.success === true && response?.data?.valid !== false
+                ? 'success'
+                : response?.data?.success === false || response?.data?.valid === false
+                    ? 'denied_or_incomplete'
+                    : 'invalid_response';
+        Logger.debug?.('[AdminAuth]', {
+            phase: `${rpcName}_rpc_completed`,
+            status,
+            code: safeAdminDiagnosticCode(response?.data?.code || response?.error?.code),
+            durationMs: Math.max(0, Math.round((globalThis.performance?.now?.() ?? Date.now()) - startedAt))
+        });
+        return response;
+    } catch (error) {
+        Logger.debug?.('[AdminAuth]', {
+            phase: `${rpcName}_rpc_completed`,
+            status: 'error',
+            code: safeAdminDiagnosticCode(error?.code),
+            durationMs: Math.max(0, Math.round((globalThis.performance?.now?.() ?? Date.now()) - startedAt))
+        });
+        throw error;
+    } finally {
+        clearTimeout(slowTimer);
+    }
+};
 
 const runAuthenticatedLocalPersistence = async ({
     tenantSource,
@@ -75,7 +136,11 @@ async function setSecureCredentials(newToken) {
         });
     } catch (e) {
         if (isLocalTenantAccessError(e)) throw e;
-        Logger.warn("No se pudo guardar el token de seguridad:", e);
+        if (e?.code === 'LICENSE_VALIDATION_CONTEXT_STALE') throw e;
+        Logger.warn?.('[AdminAuth]', {
+            phase: 'device_security_credential_persist_failed',
+            code: safeAdminDiagnosticCode(e?.code) || 'LOCAL_STORAGE_UNAVAILABLE'
+        });
     }
 }
 
@@ -84,6 +149,87 @@ const STAFF_SESSION_ID_KEY = 'staff_session_id';
 const ADMIN_SESSION_TOKEN_KEY = 'admin_session_token';
 const ADMIN_SESSION_ID_KEY = 'admin_session_id';
 const ADMIN_SESSION_CACHE_KEY = 'last_valid_admin_session';
+
+const digestOfflineBinding = async (value) => {
+    if (typeof value !== 'string' || !value || !globalThis.crypto?.subtle?.digest) return null;
+    const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+    return Array.from(new Uint8Array(digest))
+        .map((byte) => byte.toString(16).padStart(2, '0'))
+        .join('');
+};
+
+const normalizeOfflineId = (value) => (
+    (typeof value === 'string' && value.trim())
+    || (typeof value === 'number' && Number.isFinite(value) ? String(value) : null)
+);
+
+const getTenantLicenseKeyDigest = async (data) => digestOfflineBinding(
+    data?.details?.license_key || data?.details?.licenseKey || data?.license_key || data?.licenseKey || null
+);
+
+const hasVerifiedAdminEvidenceIdentity = (data) => Boolean(
+    normalizeOfflineId(data?.license_id || data?.licenseId || data?.details?.license_id || data?.details?.licenseId)
+    && normalizeOfflineId(data?.device_id || data?.deviceId || data?.details?.device_id || data?.details?.deviceId)
+    && normalizeOfflineId(data?.admin_user?.id || data?.admin_user_id)
+    && normalizeOfflineId(data?.admin_session_id || data?.session_id)
+    && (data?.admin_session_expires_at || data?.session_expires_at || data?.expires_at)
+);
+
+const createPersistedAdminOfflineEvidence = async ({
+    data,
+    sessionToken,
+    sessionId,
+    deviceToken,
+    validatedAt
+}) => {
+    const [sessionTokenDigest, deviceTokenDigest, deviceRef, tenantBinding, tenantLicenseKeyDigest] = await Promise.all([
+        digestOfflineBinding(sessionToken),
+        digestOfflineBinding(deviceToken),
+        getStableDeviceId(),
+        getLocalTenantBinding(),
+        getTenantLicenseKeyDigest(data)
+    ]);
+    const tenant = getActiveTenantRuntime();
+    const licenseId = normalizeOfflineId(data?.license_id || data?.licenseId || data?.details?.license_id);
+    const nestedAdminUserId = normalizeOfflineId(data?.admin_user?.id);
+    const directAdminUserId = normalizeOfflineId(data?.admin_user_id);
+    const adminUserId = nestedAdminUserId || directAdminUserId;
+    const directDeviceId = normalizeOfflineId(data?.device_id);
+    const detailDeviceId = normalizeOfflineId(data?.details?.device_id);
+    const deviceId = directDeviceId || detailDeviceId;
+    // verify_admin_session returns the server session expiry as root expires_at;
+    // login/enrollment RPCs use admin_session_expires_at. Never read details.expires_at,
+    // which is the commercial license expiry.
+    const serverExpiresAt = data?.admin_session_expires_at || data?.session_expires_at || data?.expires_at;
+
+    const tenantAliases = tenantBinding?.tenantAliases || [];
+    const tenantBoundByLicenseId = tenantAliases.includes(`license-id:${licenseId}`);
+    const tenantBoundByVerifiedLicenseKey = tenantLicenseKeyDigest
+        && tenantAliases.includes(`license-key-sha256:${tenantLicenseKeyDigest}`);
+
+    if (!sessionTokenDigest || !deviceTokenDigest || !sessionId || !serverExpiresAt
+        || !licenseId || !adminUserId || !deviceId || !deviceRef || !tenant?.opaqueId
+        || (nestedAdminUserId && directAdminUserId && nestedAdminUserId !== directAdminUserId)
+        || (directDeviceId && detailDeviceId && directDeviceId !== detailDeviceId)
+        || (!tenantBoundByLicenseId && !tenantBoundByVerifiedLicenseKey)) {
+        return null;
+    }
+
+    return {
+        version: ADMIN_OFFLINE_POLICY_VERSION,
+        validatedAt,
+        expiresAt: serverExpiresAt,
+        sessionId: String(sessionId),
+        sessionTokenDigest,
+        adminUserId,
+        licenseId,
+        tenantLicenseKeyDigest: tenantBoundByVerifiedLicenseKey ? tenantLicenseKeyDigest : null,
+        deviceId,
+        deviceRef,
+        deviceTokenDigest,
+        tenantOpaqueId: tenant.opaqueId
+    };
+};
 
 export async function getStaffSessionToken() {
     try {
@@ -132,32 +278,118 @@ export async function getAdminSessionToken() {
     }
 }
 
-export async function setAdminSessionCredentials(sessionToken, sessionId = null, expiresAt = null) {
-    await Promise.all([
+const persistAdminSessionCredentials = async (sessionToken, sessionId, expiresAt, offlineEvidence = null) => {
+    const proof = sessionToken && offlineEvidence?.version === ADMIN_OFFLINE_POLICY_VERSION
+        ? { ...offlineEvidence, expiresAt: expiresAt || null, sessionId: sessionId || null }
+        : null;
+    const previousClockRecord = proof
+        ? await loadData(STORES.SYNC_CACHE, 'security_monotonic_clock')
+        : null;
+    const writes = [
         saveData(STORES.SYNC_CACHE, { key: ADMIN_SESSION_TOKEN_KEY, value: sessionToken || null }),
         saveData(STORES.SYNC_CACHE, { key: ADMIN_SESSION_ID_KEY, value: sessionId || null }),
-        saveData(STORES.SYNC_CACHE, {
-            key: ADMIN_SESSION_CACHE_KEY,
-            value: sessionToken ? { validatedAt: Date.now(), expiresAt: expiresAt || null } : null
-        })
-    ]);
+        saveData(STORES.SYNC_CACHE, { key: ADMIN_SESSION_CACHE_KEY, value: proof })
+    ];
+    if (proof && Number.isFinite(proof.validatedAt)) {
+        const previousClock = previousClockRecord?.value;
+        writes.push(saveData(STORES.SYNC_CACHE, {
+            key: 'security_monotonic_clock',
+            value: Number.isFinite(previousClock) ? Math.max(previousClock, proof.validatedAt) : proof.validatedAt
+        }));
+    }
+    await Promise.all(writes);
+};
+
+export async function setAdminSessionCredentials(sessionToken, sessionId = null, expiresAt = null) {
+    await persistAdminSessionCredentials(sessionToken, sessionId, expiresAt);
 }
 
 export async function hasAdminSessionToken() {
     return Boolean(await getAdminSessionToken());
 }
 
-export async function hasValidOfflineAdminSession() {
+export async function getAdminOfflineAuthorization({
+    license = null,
+    adminUser = null,
+    actorRuntime = null,
+    actorRuntimeRestoreError = null,
+    verificationResult = null,
+    now = Date.now()
+} = {}) {
     try {
-        const record = await loadData(STORES.SYNC_CACHE, ADMIN_SESSION_CACHE_KEY);
-        const cache = record?.value;
-        if (!cache?.validatedAt) return false;
-        if (cache.expiresAt && Date.parse(cache.expiresAt) <= Date.now()) return false;
-        return Date.now() - cache.validatedAt <= 24 * 60 * 60 * 1000;
+        const [proofRecord, adminToken, adminSessionId, staffToken, staffSessionId, deviceToken, clockRecord] = await Promise.all([
+            loadData(STORES.SYNC_CACHE, ADMIN_SESSION_CACHE_KEY),
+            readSessionCredential(ADMIN_SESSION_TOKEN_KEY),
+            readSessionCredential(ADMIN_SESSION_ID_KEY),
+            readSessionCredential(STAFF_SESSION_TOKEN_KEY),
+            readSessionCredential(STAFF_SESSION_ID_KEY),
+            readSessionCredential('device_security_token'),
+            loadData(STORES.SYNC_CACHE, 'security_monotonic_clock')
+        ]);
+        const [deviceRef, tenantBinding, storedLicense] = await Promise.all([
+            getStableDeviceId(),
+            getLocalTenantBinding(),
+            getLicenseFromStorage()
+        ]);
+        const tenant = getActiveTenantRuntime();
+        const sessionTokenDigest = await digestOfflineBinding(adminToken);
+        const deviceTokenDigest = await digestOfflineBinding(deviceToken);
+        const currentLicense = license
+            ? { ...(storedLicense || {}), ...license }
+            : storedLicense;
+        const normalizedLicense = currentLicense && typeof currentLicense === 'object'
+            ? {
+                ...currentLicense,
+                grace_period_ends: currentLicense.grace_period_ends
+                    || currentLicense.gracePeriodEnds
+                    || deriveLocalGracePeriodEnd(currentLicense)
+            }
+            : currentLicense;
+        const result = evaluateAdminOfflineAuthorization({
+            now,
+            lastSeen: clockRecord?.value ?? null,
+            evidence: proofRecord?.value || null,
+            credentials: {
+                adminToken,
+                adminSessionId,
+                adminTokenDigest: sessionTokenDigest,
+                staffToken,
+                staffSessionId
+            },
+            license: normalizedLicense,
+            adminUser: adminUser || normalizedLicense?.admin_user || normalizedLicense?.details?.admin_user,
+            deviceRef,
+            deviceTokenDigest,
+            tenantOpaqueId: tenant?.opaqueId || null,
+            tenantBinding,
+            actorRuntime,
+            actorRuntimeRestoreError,
+            verificationResult
+        });
+
+        if (Number.isFinite(result.nextMonotonicTime)) {
+            await saveData(STORES.SYNC_CACHE, {
+                key: 'security_monotonic_clock',
+                value: result.nextMonotonicTime
+            });
+        }
+        return result;
     } catch (error) {
-        if (isLocalTenantAccessError(error)) throw error;
-        return false;
+        const reason = isLocalTenantAccessError(error)
+            ? ADMIN_OFFLINE_AUTHORIZATION_REASON.DEVICE_OR_TENANT_INCOMPATIBLE
+            : ADMIN_OFFLINE_AUTHORIZATION_REASON.LOCAL_STORAGE_UNAVAILABLE;
+        return {
+            eligible: false,
+            reason,
+            effectiveExpiresAt: null,
+            remainingMs: 0
+        };
     }
+}
+
+export async function hasValidOfflineAdminSession(options = {}) {
+    const result = await getAdminOfflineAuthorization(options);
+    return result.eligible === true;
 }
 
 export async function clearAdminSessionCache() {
@@ -240,8 +472,9 @@ function pickSecurityTokenFromLicense(license = {}) {
     )?.trim() || null;
 }
 
-async function getSecurityTokenForValidation(storedLicense = null) {
+async function getSecurityTokenForValidation(storedLicense = null, { assertCurrent, persist = write => write() } = {}) {
     const indexedToken = await getSecureCredentials();
+    assertCurrent?.();
 
     if (indexedToken) {
         return indexedToken;
@@ -250,7 +483,9 @@ async function getSecurityTokenForValidation(storedLicense = null) {
     const recoveredToken = pickSecurityTokenFromLicense(storedLicense);
 
     if (recoveredToken) {
-        await setSecureCredentials(recoveredToken);
+        assertCurrent?.();
+        await persist(() => setSecureCredentials(recoveredToken));
+        assertCurrent?.();
         Logger.warn('[Security] Token de dispositivo recuperado desde licencia local.');
         return recoveredToken;
     }
@@ -382,7 +617,7 @@ async function _generateStableDeviceId() {
     }
 }
 
-async function getUntamperedTime() {
+async function getUntamperedTime({ persist = (write) => write() } = {}) {
     const now = Date.now();
     let lastSeen = null;
     try {
@@ -409,7 +644,7 @@ async function getUntamperedTime() {
 
     // Actualizamos el reloj al tiempo más reciente
     try {
-        await saveData(STORES.SYNC_CACHE, { key: 'security_monotonic_clock', value: now });
+        await persist(() => saveData(STORES.SYNC_CACHE, { key: 'security_monotonic_clock', value: now }));
     } catch (error) {
         if (isLocalTenantAccessError(error)) throw error;
         // Best effort: the online validation result remains authoritative.
@@ -776,26 +1011,74 @@ export const staffLoginOnDevice = async function ({
     }
 };
 
-export const verifyStaffSession = async function (licenseKey) {
+const sessionVerificationContextStale = (actorType) => ({
+    success: false,
+    valid: false,
+    verificationStatus: SESSION_VERIFICATION_STATUS.INVALID_RESPONSE,
+    code: 'SESSION_VERIFICATION_CONTEXT_STALE',
+    message: `La sesión ${actorType} cambió mientras se verificaba.`
+});
+
+const createSessionVerificationContextStaleError = () => {
+    const error = new Error('SESSION_VERIFICATION_CONTEXT_STALE');
+    error.code = 'SESSION_VERIFICATION_CONTEXT_STALE';
+    return error;
+};
+
+const createSessionVerificationLocalStorageError = () => {
+    const error = new Error('SESSION_LOCAL_STORAGE_UNAVAILABLE');
+    error.code = 'SESSION_LOCAL_STORAGE_UNAVAILABLE';
+    error.sessionVerificationLocalStorageError = true;
+    return error;
+};
+
+const readSessionCredential = async (key) => {
+    const record = await loadData(STORES.SYNC_CACHE, key);
+    return record?.value || null;
+};
+
+const isSessionDatabaseRecoveryError = (error) => classifyDatabaseError(error).structural;
+
+export const verifyStaffSession = async function (licenseKey, { beforeLocalPersistence = null } = {}) {
     try {
         const isOnline = await checkInternetConnection();
         if (!isOnline) {
-            return {
-                success: false,
-                valid: false,
-                code: 'ONLINE_REQUIRED',
-                message: 'Necesitas internet para restaurar la sesion staff.'
-            };
+            return classifySessionVerificationResponse('staff', {
+                error: { code: 'ERR_NETWORK', message: 'NetworkError when attempting to fetch resource.' }
+            });
         }
 
-        const staffSessionToken = await getStaffSessionToken();
-        if (!staffSessionToken || !licenseKey) {
-            return {
-                success: false,
-                valid: false,
-                code: 'STAFF_SESSION_REQUIRED',
-                message: 'Inicia sesion staff para continuar.'
-            };
+        if (!licenseKey) {
+            return createLocalCredentialsMissingResult('staff', ['license_key']);
+        }
+
+        let staffSessionToken;
+        let staffSessionId;
+        try {
+            [staffSessionToken, staffSessionId] = await Promise.all([
+                readSessionCredential(STAFF_SESSION_TOKEN_KEY),
+                readSessionCredential(STAFF_SESSION_ID_KEY)
+            ]);
+        } catch (storageError) {
+            if (isSessionVerificationContextError(storageError)) throw storageError;
+            if (isSessionDatabaseRecoveryError(storageError)) throw storageError;
+            return createLocalStorageErrorResult('staff');
+        }
+        if (!staffSessionToken) {
+            return createLocalCredentialsMissingResult('staff', ['staff_session_token']);
+        }
+
+        let adminSessionSnapshot;
+        try {
+            const [adminSessionToken, adminSessionId] = await Promise.all([
+                readSessionCredential(ADMIN_SESSION_TOKEN_KEY),
+                readSessionCredential(ADMIN_SESSION_ID_KEY)
+            ]);
+            adminSessionSnapshot = { adminSessionToken, adminSessionId };
+        } catch (storageError) {
+            if (isSessionVerificationContextError(storageError)) throw storageError;
+            if (isSessionDatabaseRecoveryError(storageError)) throw storageError;
+            return createLocalStorageErrorResult('staff');
         }
 
         const deviceFingerprint = await getStableDeviceId();
@@ -805,32 +1088,97 @@ export const verifyStaffSession = async function (licenseKey) {
             p_staff_session_token: staffSessionToken
         });
 
-        if (error) throw error;
-
-        if (!data?.success || data?.valid === false) {
-            await clearStaffSessionCache();
+        const classified = classifySessionVerificationResponse('staff', { data, error });
+        if (classified.verificationStatus === SESSION_VERIFICATION_STATUS.VERIFIED) {
+            if (!data.staff_user || !data.staff_user.id) {
+                return classifySessionVerificationResponse('staff', { data: null });
+            }
+            const sessionContextResult = await runWithLocalTenantSyncLease(
+                { license_key: licenseKey },
+                { reason: 'verify_staff_session_result' },
+                async () => {
+                    let currentStaffSession;
+                    try {
+                        const [currentToken, currentSessionId] = await Promise.all([
+                            readSessionCredential(STAFF_SESSION_TOKEN_KEY),
+                            readSessionCredential(STAFF_SESSION_ID_KEY)
+                        ]);
+                        currentStaffSession = { token: currentToken, sessionId: currentSessionId };
+                    } catch (storageError) {
+                        if (isSessionVerificationContextError(storageError)) throw storageError;
+                        if (isSessionDatabaseRecoveryError(storageError)) throw storageError;
+                        return createLocalStorageErrorResult('staff');
+                    }
+                    if (currentStaffSession.token !== staffSessionToken
+                        || currentStaffSession.sessionId !== staffSessionId) {
+                        return sessionVerificationContextStale('Staff');
+                    }
+                    await beforeLocalPersistence?.({ license_key: licenseKey, actorType: 'staff' });
+                    return null;
+                }
+            );
+            if (sessionContextResult) return sessionContextResult;
             return {
-                success: false,
-                valid: false,
-                code: data?.code || data?.reason || 'STAFF_SESSION_INVALID',
-                message: data?.message || 'La sesion staff ya no es valida.'
+                ...classified,
+                staff_user: data.staff_user,
+                details: data.details || null
             };
         }
 
-        return {
-            success: true,
-            valid: true,
-            staff_user: data.staff_user || null,
-            details: data.details || null
-        };
+        if (classified.credentialDisposition === 'clear') {
+            const sessionContextResult = await runWithLocalTenantSyncLease(
+                { license_key: licenseKey },
+                { reason: 'invalid_staff_session_cleanup' },
+                async () => {
+                    let currentStaffSession;
+                    try {
+                        const [currentToken, currentSessionId] = await Promise.all([
+                            readSessionCredential(STAFF_SESSION_TOKEN_KEY),
+                            readSessionCredential(STAFF_SESSION_ID_KEY)
+                        ]);
+                        currentStaffSession = { token: currentToken, sessionId: currentSessionId };
+                    } catch (storageError) {
+                        if (isSessionVerificationContextError(storageError)) throw storageError;
+                        if (isSessionDatabaseRecoveryError(storageError)) throw storageError;
+                        return createLocalStorageErrorResult('staff');
+                    }
+                    if (currentStaffSession.token !== staffSessionToken
+                        || currentStaffSession.sessionId !== staffSessionId) {
+                        return sessionVerificationContextStale('Staff');
+                    }
+                    let currentAdminSession;
+                    try {
+                        const [adminSessionToken, adminSessionId] = await Promise.all([
+                            readSessionCredential(ADMIN_SESSION_TOKEN_KEY),
+                            readSessionCredential(ADMIN_SESSION_ID_KEY)
+                        ]);
+                        currentAdminSession = { adminSessionToken, adminSessionId };
+                    } catch (storageError) {
+                        if (isSessionVerificationContextError(storageError)) throw storageError;
+                        if (isSessionDatabaseRecoveryError(storageError)) throw storageError;
+                        return createLocalStorageErrorResult('staff');
+                    }
+                    if (currentAdminSession.adminSessionToken !== adminSessionSnapshot.adminSessionToken
+                        || currentAdminSession.adminSessionId !== adminSessionSnapshot.adminSessionId) {
+                        return sessionVerificationContextStale('Staff');
+                    }
+                    await beforeLocalPersistence?.({ license_key: licenseKey, actorType: 'staff' });
+                    await clearStaffSessionCache();
+                    await clearAdminSessionCache();
+                    return null;
+                }
+            );
+            if (sessionContextResult) return sessionContextResult;
+        }
+
+        return classified.credentialDisposition === 'clear'
+            ? { ...classified, sessionCredentialCleared: true }
+            : classified;
     } catch (error) {
-        Logger.warn('No se pudo verificar sesion staff:', error?.message || error);
-        return {
-            success: false,
-            valid: false,
-            code: error?.code || 'STAFF_SESSION_ERROR',
-            message: error?.message || 'No se pudo verificar la sesion staff.'
-        };
+        if (isSessionVerificationContextError(error)) throw error;
+        if (isSessionDatabaseRecoveryError(error)) throw error;
+        Logger.warn('No se pudo verificar sesion staff:', error?.code || error?.name || 'SESSION_SERVER_ERROR');
+        return classifySessionVerificationResponse('staff', { error });
     }
 };
 
@@ -867,7 +1215,80 @@ export const staffLogoutSession = async function (licenseKey) {
 
 const currentRevalidationPromises = new Map();
 
-export const revalidateLicense = async function (licenseKeyProp) {
+export const revalidateLicense = async function (licenseKeyProp, options = {}) {
+    const staleValidationContextError = () => {
+        const error = new Error('LICENSE_VALIDATION_CONTEXT_STALE');
+        error.code = 'LICENSE_VALIDATION_CONTEXT_STALE';
+        return error;
+    };
+    const initialActor = actorRuntimeController.getState();
+    const tenantBinding = JSON.stringify(getActiveTenantRuntime());
+    let actorHandle = null;
+    if (initialActor?.status === 'granted') {
+        try {
+            actorHandle = actorRuntimeController.capture();
+        } catch {
+            throw staleValidationContextError();
+        }
+    }
+    const actorBinding = JSON.stringify({
+        status: initialActor?.status || null,
+        actorType: initialActor?.actorType || null,
+        actorId: initialActor?.actorId || null,
+        actorKey: initialActor?.actorKey || null,
+        sessionId: initialActor?.sessionId || null,
+        generation: Number.isFinite(initialActor?.generation) ? initialActor.generation : null,
+        tenant: initialActor?.tenant || null,
+        deviceRef: initialActor?.deviceRef || null
+    });
+    const assertActorContext = () => {
+        const currentActor = actorRuntimeController.getState();
+        const currentBinding = JSON.stringify({
+            status: currentActor?.status || null,
+            actorType: currentActor?.actorType || null,
+            actorId: currentActor?.actorId || null,
+            actorKey: currentActor?.actorKey || null,
+            sessionId: currentActor?.sessionId || null,
+            generation: Number.isFinite(currentActor?.generation) ? currentActor.generation : null,
+            tenant: currentActor?.tenant || null,
+            deviceRef: currentActor?.deviceRef || null
+        });
+        if (currentBinding !== actorBinding || JSON.stringify(getActiveTenantRuntime()) !== tenantBinding) throw staleValidationContextError();
+        try {
+            actorHandle?.assertCurrent();
+        } catch {
+            throw staleValidationContextError();
+        }
+    };
+    const assertValidationContext = () => {
+        if (typeof options?.beforePersist === 'function') options.beforePersist();
+        assertActorContext();
+    };
+    const persistValidationState = async (operation) => {
+        assertValidationContext();
+        const guardedOperation = () => {
+            assertValidationContext();
+            return operation();
+        };
+
+        if (typeof options?.persist === 'function') {
+            return options.persist(guardedOperation);
+        }
+        if (actorHandle) {
+            try {
+                return await runWithActorHandle(
+                    actorHandle,
+                    ({ guardedWrite }) => guardedWrite(guardedOperation)
+                );
+            } catch (error) {
+                if (error?.code === ACTOR_RUNTIME_ERROR_CODES.CONTEXT_STALE) {
+                    throw staleValidationContextError();
+                }
+                throw error;
+            }
+        }
+        return guardedOperation();
+    };
     let storedLicense = null;
     try {
         const serializedLicense = localStorage.getItem('lanzo_license');
@@ -882,13 +1303,27 @@ export const revalidateLicense = async function (licenseKeyProp) {
         String(storedLicense?.license_key || '').trim() === String(licenseKey).trim()
     ) ? storedLicense : null;
 
-    const existingPromise = currentRevalidationPromises.get(licenseKey);
-    if (existingPromise) {
+    // Reuse only within the same actor/session/tenant binding. The shared
+    // record owns a dedicated local lifetime, independent of any consumer.
+    const revalidationKey = JSON.stringify([licenseKey, actorBinding, tenantBinding]);
+    const existing = currentRevalidationPromises.get(revalidationKey);
+    if (existing) {
         Logger.log('⏳ [Security] Revalidación en curso para la misma licencia.');
-        return existingPromise;
+        if (!existing.observedOwner) {
+            options?.bootstrapLifecycle?.markUnobservable('shared_license_revalidation_owner');
+        }
+        options?.bootstrapLifecycle?.observe(existing.completion);
+        const result = await existing.promise;
+        assertValidationContext();
+        return result;
     }
 
-    const currentRevalidationPromise = (async () => {
+    const operationLifecycle = createBootstrapLifecycle();
+    let finishLifetime, rejectLifetime;
+    const completion = new Promise((resolve, reject) => { finishLifetime = resolve; rejectLifetime = reject; });
+    completion.catch(() => {});
+    options?.bootstrapLifecycle?.observe(completion);
+    const currentRevalidationPromise = operationLifecycle.track(async () => {
         await assertLocalTenantSyncAccess(
             { license_key: licenseKey },
             { reason: 'license_revalidation' }
@@ -898,28 +1333,45 @@ export const revalidateLicense = async function (licenseKeyProp) {
             { license_key: licenseKey },
             { reason: 'license_revalidation' },
             async () => {
+        assertValidationContext();
         const timeoutMs = 8000;
         let timeoutId;
 
+        let timedOut = false;
         const timeoutPromise = new Promise((_, reject) => {
-            timeoutId = setTimeout(() => reject(new Error('VALIDATION_TIMEOUT')), timeoutMs);
+            timeoutId = setTimeout(() => { timedOut = true; reject(new Error('VALIDATION_TIMEOUT')); }, timeoutMs);
         });
+        // Preparation may still be awaiting connectivity/device/credentials.
+        // Observe an early deadline rejection even before Promise.race attaches.
+        timeoutPromise.catch(() => {});
+        const assertCanStartTransport = () => {
+            assertValidationContext();
+            if (timedOut) throw new Error('VALIDATION_TIMEOUT');
+        };
 
         try {
             const isOnline = await checkInternetConnection();
+            assertCanStartTransport();
             if (!isOnline) {
                 throw new Error("OFFLINE_PRECHECK");
             }
 
             const deviceFingerprint = await getStableDeviceId();
+            assertCanStartTransport();
 
-            const securityToken = await getSecurityTokenForValidation(storedLicenseForActiveTenant);
+            const securityToken = await getSecurityTokenForValidation(storedLicenseForActiveTenant, {
+                assertCurrent: assertValidationContext,
+                persist: persistValidationState
+            });
+            assertCanStartTransport();
 
-            const validationPromise = supabaseClient.rpc('verify_device_license_unified', {
+            const startValidationTransport = () => supabaseClient.rpc('verify_device_license_unified', {
                 p_license_key: licenseKey,
                 p_device_fingerprint: deviceFingerprint,
                 p_security_token: securityToken || null
             });
+            assertValidationContext();
+            const validationPromise = operationLifecycle.track(startValidationTransport);
 
             const { data, error } = await Promise.race([validationPromise, timeoutPromise]);
             clearTimeout(timeoutId);
@@ -951,35 +1403,37 @@ export const revalidateLicense = async function (licenseKeyProp) {
                     reason: 'license_revalidation_response_identity'
                 });
             }
+            assertValidationContext();
 
             // 🟢 NUEVO 3: Si el servidor nos da un nuevo token, lo guardamos inmediatamente (Rotación)
             if (data && data.valid) {
                 // Rotación del token
                 if (data.new_security_token) {
-                    await setSecureCredentials(data.new_security_token);
+                    await persistValidationState(() => setSecureCredentials(data.new_security_token));
                 }
 
                 const currentRealTime = Date.now();
 
                 // Guardar el estado validado en IndexedDB de forma exclusiva
-                await saveData(STORES.SYNC_CACHE, {
+                await persistValidationState(() => saveData(STORES.SYNC_CACHE, {
                     key: 'last_valid_license_state',
                     value: {
                         payload: data,
                         timestamp: currentRealTime
                     }
-                });
+                }));
 
                 // CORRECCIÓN CRÍTICA: "Sanar" el reloj monotónico.
                 // Si validamos online con éxito, asumimos que el reloj actual es la nueva verdad.
                 // Esto rescata al dispositivo de la trampa del "salto al futuro".
                 try {
-                    await saveData(STORES.SYNC_CACHE, {
+                    await persistValidationState(() => saveData(STORES.SYNC_CACHE, {
                         key: 'security_monotonic_clock',
                         value: currentRealTime
-                    });
+                    }));
                 } catch (e) {
                     if (isLocalTenantAccessError(e)) throw e;
+                    if (e?.code === 'LICENSE_VALIDATION_CONTEXT_STALE') throw e;
                     Logger.warn("Fallo al sanar el reloj monotónico", e);
                 }
             }
@@ -989,17 +1443,22 @@ export const revalidateLicense = async function (licenseKeyProp) {
                 // Si el servidor invalida, destruimos el caché offline local
                 await loadData(STORES.SYNC_CACHE, 'last_valid_license_state').then(async (record) => {
                     if (record) {
-                        // Implementa un borrado si tienes la función deleteData, 
+                        // Implementa un borrado si tienes la función deleteData,
                         // o sobrescribe con un objeto inválido
-                        await saveData(STORES.SYNC_CACHE, { key: 'last_valid_license_state', value: null });
+                        await persistValidationState(() => saveData(STORES.SYNC_CACHE, {
+                            key: 'last_valid_license_state',
+                            value: null
+                        }));
                     }
                 });
             }
 
+            assertValidationContext();
             return data;
 
         } catch (error) {
             if (isLocalTenantAccessError(error)) throw error;
+            if (error?.code === 'LICENSE_VALIDATION_CONTEXT_STALE') throw error;
             // ... (Todo el bloque catch se queda IGUAL para mantener el modo offline) ...
             clearTimeout(timeoutId);
             Logger.warn('⚠️ Error validando licencia:', error.message);
@@ -1027,6 +1486,7 @@ export const revalidateLicense = async function (licenseKeyProp) {
                 }
 
                 if (!securityToken || !storedState || !storedState.payload) {
+                    assertValidationContext();
                     return {
                         valid: false,
                         reason: 'no_secure_context',
@@ -1037,12 +1497,14 @@ export const revalidateLicense = async function (licenseKeyProp) {
                 // 3. Evaluar el tiempo transcurrido con el reloj antimanipulación
                 let now;
                 try {
-                    now = await getUntamperedTime();
+                    now = await getUntamperedTime({ persist: persistValidationState });
                 } catch (error) {
                     if (isLocalTenantAccessError(error)) throw error;
+                    if (error?.code === 'LICENSE_VALIDATION_CONTEXT_STALE') throw error;
                     if (error.message === "TIME_TAMPERING_DETECTED") {
                         // Bloqueo fulminante: Si detectamos trampa, destruimos la sesión offline
                         //await saveData(STORES.SYNC_CACHE, { key: 'last_valid_license_state', value: null });
+                        assertValidationContext();
                         return {
                             valid: false,
                             reason: 'time_tampering_detected',
@@ -1057,6 +1519,7 @@ export const revalidateLicense = async function (licenseKeyProp) {
 
                 // También validamos si de alguna forma storedState.timestamp está en el futuro (otra trampa)
                 if (!storedState.timestamp || isNaN(timeOffline) || timeOffline < 0 || timeOffline > MAX_OFFLINE_MS) {
+                    assertValidationContext();
                     return {
                         valid: false,
                         reason: 'offline_grace_expired',
@@ -1065,6 +1528,7 @@ export const revalidateLicense = async function (licenseKeyProp) {
                 }
 
                 // Conceder acceso offline temporal
+                assertValidationContext();
                 return {
                     ...storedState.payload,
                     valid: true,
@@ -1075,23 +1539,35 @@ export const revalidateLicense = async function (licenseKeyProp) {
                 };
             }
 
+            assertValidationContext();
             return {
                 valid: false,
                 reason: 'server_rejected',
                 details: error?.message || String(error) || 'Error desconocido del servidor'
             };
+        } finally {
+            clearTimeout(timeoutId);
         }
             }
         );
-    })();
+    });
 
-    currentRevalidationPromises.set(licenseKey, currentRevalidationPromise);
-
+    // Settlement of the public result is not settlement of a late transport.
+    const record = { promise: currentRevalidationPromise, completion,
+        observedOwner: Boolean(options?.bootstrapLifecycle) };
+    currentRevalidationPromises.set(revalidationKey, record);
+    const finish = async () => {
+        operationLifecycle.quiesce();
+        const final = await operationLifecycle.drain();
+        if (final.rejected) rejectLifetime(new Error('LICENSE_REVALIDATION_LIFETIME_REJECTED'));
+        else finishLifetime();
+    };
+    currentRevalidationPromise.then(finish, finish).catch(() => {});
     try {
         return await currentRevalidationPromise;
     } finally {
-        if (currentRevalidationPromises.get(licenseKey) === currentRevalidationPromise) {
-            currentRevalidationPromises.delete(licenseKey);
+        if (currentRevalidationPromises.get(revalidationKey) === record) {
+            currentRevalidationPromises.delete(revalidationKey);
         }
     }
 };
@@ -1203,30 +1679,31 @@ export const saveBusinessProfile = async function (licenseKey, profileData, { ac
 
 const BUSINESS_PROFILE_TIMEOUT_MS = 8_000;
 
-export const getBusinessProfile = async function (licenseKey) {
+export const getBusinessProfile = async function (licenseKey, { lifecycle, assertCurrent } = {}) {
+    let timeoutId;
     try {
-        const profileRequest = supabaseClient.rpc(
-            'get_business_profile_anon', {
-            license_key_param: licenseKey
-        });
-
+        const start = () => {
+            assertCurrent?.();
+            return supabaseClient.rpc('get_business_profile_anon', { license_key_param: licenseKey });
+        };
+        const profileRequest = lifecycle ? lifecycle.track(start) : start();
         const timeout = new Promise((_, reject) => {
-            setTimeout(() => {
-                const timeoutError = new Error(
-                    `La consulta del perfil superó ${BUSINESS_PROFILE_TIMEOUT_MS / 1000} segundos.`
-                );
-                timeoutError.name = 'BusinessProfileTimeoutError';
-                reject(timeoutError);
+            timeoutId = setTimeout(() => {
+                const error = new Error(`La consulta del perfil superó ${BUSINESS_PROFILE_TIMEOUT_MS / 1000} segundos.`);
+                error.name = 'BusinessProfileTimeoutError';
+                reject(error);
             }, BUSINESS_PROFILE_TIMEOUT_MS);
         });
-
         const { data, error } = await Promise.race([profileRequest, timeout]);
-
+        assertCurrent?.();
         if (error) throw error;
         return data;
     } catch (error) {
+        if (error?.code?.startsWith('ACTOR_') || error?.message?.startsWith('BOOTSTRAP_LIFECYCLE_')) throw error;
         Logger.error('Error obteniendo perfil:', error);
         return { success: false, message: error.message };
+    } finally {
+        clearTimeout(timeoutId);
     }
 };
 
@@ -1284,7 +1761,7 @@ export const deactivateCurrentDevice = async (licenseKey) => {
     }
 };
 
-export const createFreeTrial = async function (options = {}) {
+export const createFreeLicense = async function (options = {}) {
     try {
         // Free-license creation also needs the minimum local IndexedDB
         // capability required by the tenant runtime before any device-owned
@@ -1301,7 +1778,7 @@ export const createFreeTrial = async function (options = {}) {
         };
 
         const { data, error } = await supabaseClient.rpc(
-            'create_free_trial_license', {
+            'create_free_license', {
             device_fingerprint_param: deviceFingerprint,
             device_name_param: friendlyName,
             device_info_param: deviceInfo
@@ -1320,15 +1797,15 @@ export const createFreeTrial = async function (options = {}) {
 
             await runAuthenticatedLocalPersistence({
                 tenantSource: licenseData,
-                reason: 'free_trial_credentials',
+                reason: 'free_license_credentials',
                 beforeLocalPersistence: options.beforeLocalPersistence,
                 operation: async () => {
                     safeLocalStorageSet('fp', deviceFingerprint);
                     if (securityToken) {
                         await setSecureCredentials(securityToken);
-                        Logger.log('🔐 Token inicial de trial guardado correctamente.');
+                        Logger.log('🔐 Token inicial de licencia gratuita guardado correctamente.');
                     } else {
-                        Logger.warn('⚠️ Trial creado, pero el servidor no devolvió token de seguridad.');
+                        Logger.warn('⚠️ Licencia gratuita creada, pero el servidor no devolvió token de seguridad.');
                     }
                 }
             });
@@ -1344,12 +1821,15 @@ export const createFreeTrial = async function (options = {}) {
             || isBrowserStorageUnavailableError(error)) throw error;
         const isRateLimit = typeof error?.message === 'string' && error.message.includes('Demasiados intentos');
         if (!isRateLimit) {
-            Logger.error('❌ Error creando trial:', error);
+            Logger.error('❌ Error creando licencia gratuita:', error);
             await registerFailedAttempt();
         }
         return { success: false, error: error.message };
     }
 };
+
+// Compatibility alias for callers/tests that still use the historical name.
+export const createFreeTrial = createFreeLicense;
 
 export const deactivateDeviceById = async function (deviceId) {
     try {
@@ -1386,7 +1866,7 @@ export const removeRealtimeChannel = async (channel) => {
 
 /**
  * Descarga el contenido HTML de los términos activos desde Supabase.
- * @param {string} type - Tipo de documento ('terms_of_use' o 'privacy_policy')
+ * @param {string} type - Uno de los tipos definidos en legal_doc_type
  */
 export const fetchLegalTerms = async (type = 'terms_of_use') => {
     try {
@@ -1402,6 +1882,90 @@ export const fetchLegalTerms = async (type = 'terms_of_use') => {
         Logger.error('Error obteniendo términos legales:', error);
         return null;
     }
+};
+
+/** Avoids an error-level console message while a database rollout is missing the legal RPC. */
+const logLegalRpcError = (context, error) => {
+    if (error?.code === 'PGRST202') {
+        Logger.warn(context, { code: error.code, message: error.message });
+        return;
+    }
+    Logger.error(context, error);
+};
+
+/** Consulta versiones legales pendientes e historial de aceptación de la licencia activa. */
+export const fetchLegalPolicyState = async (licenseKey) => {
+    try {
+        if (!supabaseClient || !licenseKey) {
+            return { success: false, code: 'LEGAL_POLICY_STATE_UNAVAILABLE' };
+        }
+
+        const deviceFingerprint = await getStableDeviceId();
+        const { data, error } = await supabaseClient.rpc('get_legal_policy_state', {
+            p_license_key: licenseKey,
+            p_device_fingerprint: deviceFingerprint
+        });
+
+        if (error) throw error;
+        return data || { success: false, code: 'LEGAL_POLICY_STATE_EMPTY' };
+    } catch (error) {
+        logLegalRpcError('Error consultando el estado de documentos legales:', error);
+        return { success: false, code: error?.code || error?.message || 'LEGAL_POLICY_STATE_FAILED' };
+    }
+};
+
+/** Recupera el contenido inmutable de una versión que esta licencia ya aceptó. */
+export const fetchAcceptedLegalDocument = async (licenseKey, termId) => {
+    try {
+        if (!supabaseClient || !licenseKey || !termId) {
+            return { success: false, code: 'LEGAL_DOCUMENT_UNAVAILABLE' };
+        }
+
+        const deviceFingerprint = await getStableDeviceId();
+        const { data, error } = await supabaseClient.rpc('get_accepted_legal_document', {
+            p_license_key: licenseKey,
+            p_device_fingerprint: deviceFingerprint,
+            p_term_id: termId
+        });
+
+        if (error) throw error;
+        return data || { success: false, code: 'LEGAL_DOCUMENT_EMPTY' };
+    } catch (error) {
+        logLegalRpcError('Error descargando un documento legal aceptado:', error);
+        return { success: false, code: error?.code || error?.message || 'LEGAL_DOCUMENT_DOWNLOAD_FAILED' };
+    }
+};
+
+const LEGAL_POLICY_PREVIEW_TYPES = new Set([
+    'terms_of_use',
+    'privacy_policy',
+    'ai_policy',
+    'payment_policy',
+    'refund_policy',
+    'legal_notice'
+]);
+
+export const isLegalPolicyPreviewEnabled = () => (
+    import.meta.env.VITE_LEGAL_PREVIEW_MODE === 'true'
+);
+
+/** Descarga un borrador legal de la tabla aislada de vista previa. */
+export const fetchLegalPolicyPreview = async (type) => {
+    if (!isLegalPolicyPreviewEnabled() || !LEGAL_POLICY_PREVIEW_TYPES.has(type) || !supabaseClient) {
+        return null;
+    }
+
+    const { data, error } = await supabaseClient
+        .from('legal_policy_previews')
+        .select('id, document_type, version, content_html, published_at')
+        .eq('document_type', type)
+        .eq('is_active', true)
+        .order('published_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+    if (error) throw error;
+    return data || null;
 };
 
 /**
@@ -1440,8 +2004,13 @@ export const acceptLegalTerms = async (licenseKey, termId) => {
     }
 };
 
-const buildAdminSessionResult = async (data, licenseKey, { beforeLocalPersistence = null } = {}) => {
-    if (!data?.success) {
+const buildAdminSessionResult = async (data, licenseKey, {
+    beforeLocalPersistence = null,
+    beforeSessionPersistence = null,
+    verificationAlreadyConfirmed = false,
+    verificationAt = null
+} = {}) => {
+    if (!data?.success || data.valid === false) {
         const takeoverRequired = data?.code === 'FREE_DEVICE_TAKEOVER_REQUIRED';
         return {
             success: false,
@@ -1460,42 +2029,154 @@ const buildAdminSessionResult = async (data, licenseKey, { beforeLocalPersistenc
         license_key: data.details?.license_key || licenseKey
     };
 
+    let evidenceValidatedAt = Number.isFinite(verificationAt) ? verificationAt : Date.now();
     const deviceToken = data.device_security_token || data.details?.security_token || null;
+    let persistedData = data;
+    let evidenceVerificationStatus = null;
+    let evidenceVerificationCode = null;
+    let authorityDenied = false;
+    let offlineEvidencePersisted = false;
     await runAuthenticatedLocalPersistence({
         tenantSource,
         reason: 'admin_session_credentials',
         beforeLocalPersistence,
         operation: async () => {
+            await beforeLocalPersistence?.(tenantSource);
+            await beforeSessionPersistence?.();
             if (deviceToken) await setSecureCredentials(deviceToken);
+            await beforeLocalPersistence?.(tenantSource);
             await clearStaffSessionCache();
-            if (data.admin_session_token) {
-                await setAdminSessionCredentials(
-                    data.admin_session_token,
-                    data.admin_session_id,
-                    data.admin_session_expires_at
-                );
-            } else {
-                const existingToken = await getAdminSessionToken();
-                if (existingToken) {
-                    await setAdminSessionCredentials(existingToken, data.admin_session_id, data.expires_at);
+            await beforeLocalPersistence?.(tenantSource);
+            const sessionToken = data.admin_session_token || await getAdminSessionToken();
+            const sessionId = data.admin_session_id || data.session_id || null;
+            const currentDeviceToken = deviceToken || await getSecureCredentials();
+            if (!verificationAlreadyConfirmed && !hasVerifiedAdminEvidenceIdentity(persistedData)
+                && sessionToken && sessionId && currentDeviceToken && licenseKey && navigator.onLine) {
+                const startedAt = globalThis.performance?.now?.() ?? Date.now();
+                let verificationResponse;
+                try {
+                    const deviceFingerprint = await getStableDeviceId();
+                    await beforeLocalPersistence?.(tenantSource);
+                    await beforeSessionPersistence?.();
+                    verificationResponse = await callAdminAuthRpc('verify_admin_session', {
+                        p_license_key: licenseKey,
+                        p_device_fingerprint: deviceFingerprint,
+                        p_device_security_token: currentDeviceToken,
+                        p_admin_session_token: sessionToken
+                    });
+                    const verificationResponseAt = Date.now();
+                    if (verificationResponse?.data?.success === true && verificationResponse?.data?.valid !== false) {
+                        evidenceValidatedAt = verificationResponseAt;
+                    }
+                } catch (error) {
+                    if (isSessionVerificationContextError(error) || isLocalTenantAccessError(error)) throw error;
+                    verificationResponse = { error };
                 }
+                let classified = classifySessionVerificationResponse('admin', verificationResponse);
+                const verifiedData = verificationResponse?.data;
+                if (classified.verificationStatus === SESSION_VERIFICATION_STATUS.VERIFIED) {
+                    const returnedSessionId = normalizeOfflineId(verifiedData?.admin_session_id);
+                    const loginSessionId = normalizeOfflineId(sessionId);
+                    const loginAdminId = normalizeOfflineId(data.admin_user?.id || data.admin_user_id);
+                    const verifiedAdminId = normalizeOfflineId(verifiedData?.admin_user?.id || verifiedData?.admin_user_id);
+                    if (!returnedSessionId || returnedSessionId !== loginSessionId
+                        || !verifiedAdminId || (loginAdminId && loginAdminId !== verifiedAdminId)
+                        || !hasVerifiedAdminEvidenceIdentity(verifiedData)) {
+                        classified = {
+                            ...classified,
+                            verificationStatus: SESSION_VERIFICATION_STATUS.INVALID_RESPONSE,
+                            code: 'ADMIN_SESSION_EVIDENCE_IDENTITY_MISMATCH'
+                        };
+                    } else {
+                        persistedData = {
+                            ...data,
+                            ...verifiedData,
+                            admin_session_token: sessionToken,
+                            admin_session_id: returnedSessionId,
+                            admin_session_expires_at: verifiedData.expires_at,
+                            device_security_token: currentDeviceToken,
+                            details: {
+                                ...(data.details || {}),
+                                ...(verifiedData.details || {}),
+                                license_id: verifiedData.license_id,
+                                device_id: verifiedData.device_id,
+                                license_key: verifiedData.details?.license_key || licenseKey
+                            }
+                        };
+                        await beforeLocalPersistence?.(persistedData);
+                    }
+                }
+                evidenceVerificationStatus = classified.verificationStatus;
+                evidenceVerificationCode = classified.code || null;
+                authorityDenied = classified.verificationStatus === SESSION_VERIFICATION_STATUS.AUTHORITATIVE_DENIAL;
+                Logger.debug('[AdminAuth]', {
+                    phase: 'offline_evidence_verification',
+                    status: classified.verificationStatus,
+                    code: safeAdminDiagnosticCode(classified.code) || 'UNCLASSIFIED',
+                    durationMs: Math.max(0, Math.round((globalThis.performance?.now?.() ?? Date.now()) - startedAt))
+                });
+            }
+
+            const sessionExpiresAt = persistedData.admin_session_expires_at
+                || persistedData.session_expires_at
+                || persistedData.expires_at
+                || data.admin_session_expires_at
+                || data.session_expires_at
+                || data.expires_at
+                || null;
+            const offlineEvidence = sessionToken
+                ? await createPersistedAdminOfflineEvidence({
+                    data: persistedData,
+                    sessionToken,
+                    sessionId,
+                    deviceToken: currentDeviceToken,
+                    validatedAt: evidenceValidatedAt
+                })
+                : null;
+            await beforeLocalPersistence?.(tenantSource);
+            if (authorityDenied) {
+                await clearAdminSessionCache();
+            } else if (sessionToken) {
+                await persistAdminSessionCredentials(sessionToken, sessionId, sessionExpiresAt, offlineEvidence);
+                offlineEvidencePersisted = Boolean(offlineEvidence);
             }
 
             const fingerprint = await getStableDeviceId();
+            await beforeLocalPersistence?.(tenantSource);
             safeLocalStorageSet('fp', fingerprint);
         }
     });
 
+    if (authorityDenied) {
+        return {
+            success: false,
+            valid: false,
+            code: evidenceVerificationCode || 'ADMIN_SESSION_REVALIDATION_DENIED',
+            verificationStatus: SESSION_VERIFICATION_STATUS.AUTHORITATIVE_DENIAL
+        };
+    }
+
     return {
         success: true,
-        valid: data.valid !== false,
-        admin_user: data.admin_user || null,
+        valid: persistedData.valid !== false,
+        admin_user: persistedData.admin_user || null,
+        ...(persistedData.admin_session_id ? { session: { id: persistedData.admin_session_id } } : {}),
+        ...(persistedData.device_id ? { device_id: persistedData.device_id } : {}),
+        ...(!offlineEvidencePersisted
+            ? {
+                offlineEvidencePending: true,
+                offlineEvidenceStatus: evidenceVerificationStatus || 'local_evidence_incomplete',
+                offlineEvidenceCode: evidenceVerificationCode || 'ADMIN_OFFLINE_EVIDENCE_INCOMPLETE'
+            }
+            : {}),
         details: {
-            ...(data.details || {}),
-            license_key: data.details?.license_key || licenseKey,
+            ...(persistedData.details || {}),
+            license_id: persistedData.license_id || persistedData.details?.license_id || null,
+            device_id: persistedData.device_id || persistedData.details?.device_id || null,
+            license_key: persistedData.details?.license_key || licenseKey,
             device_role: 'admin',
             staff_user: null,
-            admin_user: data.admin_user || null
+            admin_user: persistedData.admin_user || null
         }
     };
 };
@@ -1514,7 +2195,7 @@ export const enrollAdminOwnerOnDevice = async ({
             getDeviceSecurityToken()
         ]);
         if (!deviceSecurityToken) return { success: false, code: 'DEVICE_TOKEN_REQUIRED', message: 'No se pudo confirmar este dispositivo.' };
-        const { data, error } = await supabaseClient.rpc('admin_enroll_owner_on_device', {
+        const { data, error } = await callAdminAuthRpc('admin_enroll_owner_on_device', {
             p_license_key: licenseKey,
             p_device_fingerprint: deviceFingerprint,
             p_device_security_token: deviceSecurityToken,
@@ -1523,10 +2204,13 @@ export const enrollAdminOwnerOnDevice = async ({
             p_display_name: displayName.trim()
         });
         if (error) throw error;
-        return buildAdminSessionResult(data, licenseKey, { beforeLocalPersistence });
+        return await buildAdminSessionResult(data, licenseKey, { beforeLocalPersistence });
     } catch (error) {
         if (String(error?.code || '').startsWith('LOCAL_TENANT_')) throw error;
-        Logger.error('Error registrando propietario admin:', error);
+        Logger.warn?.('[AdminAuth]', {
+            phase: 'admin_owner_enrollment_failed',
+            code: safeAdminDiagnosticCode(error?.code) || 'ADMIN_ENROLLMENT_ERROR'
+        });
         return { success: false, code: error?.code || 'ADMIN_ENROLLMENT_ERROR', message: error?.message || 'No se pudo crear la cuenta propietaria.' };
     }
 };
@@ -1540,7 +2224,7 @@ export const adminLoginOnDevice = async ({
     try {
         if (!navigator.onLine) return { success: false, code: 'ONLINE_REQUIRED', message: 'Necesitas internet para iniciar sesion administrativa.' };
         const deviceFingerprint = await getStableDeviceId();
-        const { data, error } = await supabaseClient.rpc('admin_login_on_device', {
+        const { data, error } = await callAdminAuthRpc('admin_login_on_device', {
             p_license_key: licenseKey,
             p_username: username.trim(),
             p_password: password,
@@ -1549,10 +2233,13 @@ export const adminLoginOnDevice = async ({
             p_device_info: { userAgent: navigator.userAgent, platform: navigator.platform }
         });
         if (error) throw error;
-        return buildAdminSessionResult(data, licenseKey, { beforeLocalPersistence });
+        return await buildAdminSessionResult(data, licenseKey, { beforeLocalPersistence });
     } catch (error) {
         if (String(error?.code || '').startsWith('LOCAL_TENANT_')) throw error;
-        Logger.error('Error iniciando sesion admin:', error);
+        Logger.warn?.('[AdminAuth]', {
+            phase: 'admin_login_failed',
+            code: safeAdminDiagnosticCode(error?.code) || 'ADMIN_LOGIN_ERROR'
+        });
         return { success: false, code: error?.code || 'ADMIN_LOGIN_ERROR', message: error?.message || 'No se pudo iniciar sesion administrativa.' };
     }
 };
@@ -1573,7 +2260,7 @@ export const adminTakeoverFreeDevice = async ({
         }
 
         const deviceFingerprint = await getStableDeviceId();
-        const { data, error } = await supabaseClient.rpc('admin_takeover_free_device', {
+        const { data, error } = await callAdminAuthRpc('admin_takeover_free_device', {
             p_license_key: licenseKey,
             p_username: username.trim(),
             p_password: password,
@@ -1582,10 +2269,13 @@ export const adminTakeoverFreeDevice = async ({
             p_device_info: { userAgent: navigator.userAgent, platform: navigator.platform }
         });
         if (error) throw error;
-        return buildAdminSessionResult(data, licenseKey, { beforeLocalPersistence });
+        return await buildAdminSessionResult(data, licenseKey, { beforeLocalPersistence });
     } catch (error) {
         if (String(error?.code || '').startsWith('LOCAL_TENANT_')) throw error;
-        Logger.error('Error recuperando dispositivo Free:', error);
+        Logger.warn?.('[AdminAuth]', {
+            phase: 'free_device_takeover_failed',
+            code: safeAdminDiagnosticCode(error?.code) || 'FREE_DEVICE_TAKEOVER_ERROR'
+        });
         return {
             success: false,
             code: error?.code || 'FREE_DEVICE_TAKEOVER_ERROR',
@@ -1596,31 +2286,142 @@ export const adminTakeoverFreeDevice = async ({
 
 export const verifyAdminSession = async (licenseKey, { beforeLocalPersistence = null } = {}) => {
     try {
-        const [deviceFingerprint, deviceSecurityToken, adminSessionToken] = await Promise.all([
-            getStableDeviceId(), getDeviceSecurityToken(), getAdminSessionToken()
-        ]);
-        if (!deviceSecurityToken || !adminSessionToken) {
-            return { success: false, valid: false, code: 'ADMIN_SESSION_REQUIRED', message: 'Inicia sesion como administrador.' };
+        if (!licenseKey) {
+            return createLocalCredentialsMissingResult('admin', ['license_key']);
         }
-        const { data, error } = await supabaseClient.rpc('verify_admin_session', {
+
+        let credentials;
+        try {
+            const [deviceSecurityToken, adminSessionToken, adminSessionId, staffSessionToken, staffSessionId] = await Promise.all([
+                readSessionCredential('device_security_token'),
+                readSessionCredential(ADMIN_SESSION_TOKEN_KEY),
+                readSessionCredential(ADMIN_SESSION_ID_KEY),
+                readSessionCredential(STAFF_SESSION_TOKEN_KEY),
+                readSessionCredential(STAFF_SESSION_ID_KEY)
+            ]);
+            credentials = { deviceSecurityToken, adminSessionToken, adminSessionId, staffSessionToken, staffSessionId };
+        } catch (storageError) {
+            if (isSessionVerificationContextError(storageError)) throw storageError;
+            if (isSessionDatabaseRecoveryError(storageError)) throw storageError;
+            return createLocalStorageErrorResult('admin');
+        }
+
+        const missingCredentials = [];
+        if (!credentials.adminSessionToken) missingCredentials.push('admin_session_token');
+        if (!credentials.deviceSecurityToken) missingCredentials.push('device_security_token');
+        if (missingCredentials.length) return createLocalCredentialsMissingResult('admin', missingCredentials);
+
+        const assertCurrentAdminSessionSnapshot = async () => {
+            let currentCredentials;
+            try {
+                const [deviceSecurityToken, adminSessionToken, adminSessionId, staffSessionToken, staffSessionId] = await Promise.all([
+                    readSessionCredential('device_security_token'),
+                    readSessionCredential(ADMIN_SESSION_TOKEN_KEY),
+                    readSessionCredential(ADMIN_SESSION_ID_KEY),
+                    readSessionCredential(STAFF_SESSION_TOKEN_KEY),
+                    readSessionCredential(STAFF_SESSION_ID_KEY)
+                ]);
+                currentCredentials = { deviceSecurityToken, adminSessionToken, adminSessionId, staffSessionToken, staffSessionId };
+            } catch (storageError) {
+                if (isSessionVerificationContextError(storageError)) throw storageError;
+                if (isSessionDatabaseRecoveryError(storageError)) throw storageError;
+                throw createSessionVerificationLocalStorageError();
+            }
+            if (currentCredentials.deviceSecurityToken !== credentials.deviceSecurityToken
+                || currentCredentials.adminSessionToken !== credentials.adminSessionToken
+                || currentCredentials.adminSessionId !== credentials.adminSessionId
+                || currentCredentials.staffSessionToken !== credentials.staffSessionToken
+                || currentCredentials.staffSessionId !== credentials.staffSessionId) {
+                throw createSessionVerificationContextStaleError();
+            }
+        };
+
+        const deviceFingerprint = await getStableDeviceId();
+        const verificationResponse = await callAdminAuthRpc('verify_admin_session', {
             p_license_key: licenseKey,
             p_device_fingerprint: deviceFingerprint,
-            p_device_security_token: deviceSecurityToken,
-            p_admin_session_token: adminSessionToken
+            p_device_security_token: credentials.deviceSecurityToken,
+            p_admin_session_token: credentials.adminSessionToken
         });
-        if (error) throw error;
-        if (!data?.success || data?.valid === false) {
-            await runWithLocalTenantSyncLease(
+
+        const verificationAt = Date.now();
+        const { data } = verificationResponse;
+        const classified = classifySessionVerificationResponse('admin', verificationResponse);
+        Logger.debug?.('[AdminAuth]', {
+            phase: 'session_verification_classified',
+            status: classified.verificationStatus,
+            code: safeAdminDiagnosticCode(classified.code)
+        });
+        if (classified.verificationStatus === SESSION_VERIFICATION_STATUS.VERIFIED) {
+            if (!data.admin_session_id || !data.admin_user?.id) {
+                return classifySessionVerificationResponse('admin', { data: null });
+            }
+            let currentCredentials;
+            try {
+                const [currentDeviceSecurityToken, currentAdminSessionToken, currentAdminSessionId] = await Promise.all([
+                    readSessionCredential('device_security_token'),
+                    readSessionCredential(ADMIN_SESSION_TOKEN_KEY),
+                    readSessionCredential(ADMIN_SESSION_ID_KEY)
+                ]);
+                currentCredentials = { currentDeviceSecurityToken, currentAdminSessionToken, currentAdminSessionId };
+            } catch (storageError) {
+                if (isSessionVerificationContextError(storageError)) throw storageError;
+                if (isSessionDatabaseRecoveryError(storageError)) throw storageError;
+                return createLocalStorageErrorResult('admin');
+            }
+            if (currentCredentials.currentDeviceSecurityToken !== credentials.deviceSecurityToken
+                || currentCredentials.currentAdminSessionToken !== credentials.adminSessionToken
+                || currentCredentials.currentAdminSessionId !== credentials.adminSessionId) {
+                return sessionVerificationContextStale('Admin');
+            }
+            let verified;
+            try {
+                verified = await buildAdminSessionResult(data, licenseKey, {
+                    beforeLocalPersistence,
+                    beforeSessionPersistence: assertCurrentAdminSessionSnapshot,
+                    verificationAlreadyConfirmed: true,
+                    verificationAt
+                });
+            } catch (persistenceError) {
+                if (isSessionVerificationContextError(persistenceError)) throw persistenceError;
+                if (isSessionDatabaseRecoveryError(persistenceError)) throw persistenceError;
+                if (isBrowserStorageUnavailableError(persistenceError)) {
+                    return createLocalStorageErrorResult('admin');
+                }
+                throw persistenceError;
+            }
+            return { ...verified, verificationStatus: SESSION_VERIFICATION_STATUS.VERIFIED };
+        }
+
+        if (classified.credentialDisposition === 'clear') {
+            const cleanupResult = await runWithLocalTenantSyncLease(
                 { license_key: licenseKey },
                 { reason: 'invalid_admin_session_cleanup' },
-                () => clearAdminSessionCache()
+                async () => {
+                    await assertCurrentAdminSessionSnapshot();
+                    await beforeLocalPersistence?.({ license_key: licenseKey });
+                    await clearAdminSessionCache();
+                    await clearStaffSessionCache();
+                    return null;
+                }
             );
-            return { success: false, valid: false, code: data?.code || 'ADMIN_SESSION_INVALID', message: data?.message || 'La sesion administrativa ya no es valida.' };
+            if (cleanupResult) return cleanupResult;
         }
-        return buildAdminSessionResult(data, licenseKey, { beforeLocalPersistence });
+
+        return classified.credentialDisposition === 'clear'
+            ? { ...classified, sessionCredentialCleared: true }
+            : classified;
     } catch (error) {
-        if (String(error?.code || '').startsWith('LOCAL_TENANT_')) throw error;
-        return { success: false, valid: false, code: error?.code || 'ADMIN_SESSION_ERROR', message: error?.message || 'No se pudo verificar la sesion administrativa.' };
+        if (isSessionVerificationContextError(error)) throw error;
+        if (isSessionDatabaseRecoveryError(error)) throw error;
+        Logger.warn?.('[AdminAuth]', {
+            phase: 'admin_session_verification_failed',
+            code: safeAdminDiagnosticCode(error?.code) || 'SESSION_SERVER_ERROR'
+        });
+        if (error?.sessionVerificationLocalStorageError || isBrowserStorageUnavailableError(error)) {
+            return createLocalStorageErrorResult('admin');
+        }
+        return classifySessionVerificationResponse('admin', { error });
     }
 };
 

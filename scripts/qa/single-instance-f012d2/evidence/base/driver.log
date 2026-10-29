@@ -1,0 +1,3 @@
+{"stage":"builds","exit":0}
+{"stage":"run-regressions","exit":1}
+{"stage":"global","exit":1}

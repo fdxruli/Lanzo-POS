@@ -1,0 +1,1871 @@
+[
+  {
+    "nspname": "private",
+    "proname": "apply_sale_inventory_effects",
+    "args": "p_license_id uuid, p_sale_id text, p_allocations jsonb, p_actor_device_id uuid, p_actor_staff_user_id uuid, p_actor_key text, p_actor_name text, p_idempotency_key text",
+    "md5": "1e16aaed4345f55c5798a2044e0b77f3",
+    "sha256": "c7cedc1562249e1968cef3e8526fced8541a3e7df09259fb868354b1ba21f894"
+  },
+  {
+    "nspname": "private",
+    "proname": "apply_sale_inventory_effects_direct_rest_inv5",
+    "args": "p_license_id uuid, p_sale_id text, p_allocations jsonb, p_actor_device_id uuid, p_actor_staff_user_id uuid, p_actor_key text, p_actor_name text, p_idempotency_key text",
+    "md5": "cf752f88306af0a0b3f06d5a66c4ead3",
+    "sha256": "31f3b120cb515e5b01719b641663372036025a201fdca79f2ee24b2068a47e7d"
+  },
+  {
+    "nspname": "private",
+    "proname": "assert_cash_permission",
+    "args": "p_context jsonb",
+    "md5": "3729ce628492e6a2a1e3ff9e74e846c4",
+    "sha256": "22e6284cd58822b4cb502369693b0d000bc5a10acb00dc06ec11426264866143"
+  },
+  {
+    "nspname": "private",
+    "proname": "assert_cash_sale_station_for_request_v1",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_cash_session_id text",
+    "md5": "22ecda123fbb661b8e615c03dcbc8ea5",
+    "sha256": "cade570f958f88a49f5caf5743e68d1c5dca73043082bc4cfe83e49c3b9e9c56"
+  },
+  {
+    "nspname": "private",
+    "proname": "assert_cash_session_station",
+    "args": "p_license_id uuid, p_device_id uuid, p_cash_session_id text",
+    "md5": "93d0760a3aa9ad7e0e96e38d284bcc52",
+    "sha256": "9cbc9c9caacfc2ae687a6d675abc85ba86fc1cb087d1a53bc7742a907dd8c2a7"
+  },
+  {
+    "nspname": "private",
+    "proname": "assert_cloud_cash_sync_enabled",
+    "args": "p_context jsonb",
+    "md5": "a7b570133feca29bcffac715192a46f6",
+    "sha256": "cb76d529ab2991db34bc74b80e8704b7fd4a2fdf85159c5c9326e21586b15c7e"
+  },
+  {
+    "nspname": "private",
+    "proname": "assert_cloud_customer_credit_sync_enabled",
+    "args": "p_context jsonb",
+    "md5": "f7dac48e9879ad292928426305b351e3",
+    "sha256": "7741c5e713d7192196fb6b08a76b28882e00656efe822c9fce69ae6b4e5c2d3b"
+  },
+  {
+    "nspname": "private",
+    "proname": "assert_cloud_layaways_enabled",
+    "args": "p_context jsonb",
+    "md5": "ec2ee6e001a88242af5106e418f38a9d",
+    "sha256": "838a0c8fc9f7fa893eed11b08e1a7183d6a78c5235e7a661382a0c007930b21e"
+  },
+  {
+    "nspname": "private",
+    "proname": "assert_cloud_pos_sync_enabled",
+    "args": "p_context jsonb",
+    "md5": "eee2ef0c78aa71adbcd7a3f2871e278b",
+    "sha256": "ce47e8b677750f61858e5b17bd9a603aa482ea92e199d006584a6808c48a6e43"
+  },
+  {
+    "nspname": "private",
+    "proname": "assert_cloud_products_sync_enabled",
+    "args": "p_context jsonb",
+    "md5": "7fff5fa0dea12522d8b4d78e2021db57",
+    "sha256": "b32544ed2d12b882092108e03a33926e0f31ba7f11f1e072d4d5ae36149b7aee"
+  },
+  {
+    "nspname": "private",
+    "proname": "assert_cloud_sales_cancellations_enabled",
+    "args": "p_context jsonb",
+    "md5": "9f1aeff69f23d5732d9aaef8fba3b020",
+    "sha256": "46a8d3f6e290c5faab0f40d67941410ffb4a7aa8d37cab604900b49ad6f2fb60"
+  },
+  {
+    "nspname": "private",
+    "proname": "assert_cloud_sales_cashier_enabled",
+    "args": "p_context jsonb",
+    "md5": "f7636853f9ee0d46fc978f516466221d",
+    "sha256": "94156abc625515605f7f9623325e404cc71d1883e390b79fefc8454c0bd58f6f"
+  },
+  {
+    "nspname": "private",
+    "proname": "assert_cloud_sales_credit_enabled",
+    "args": "p_context jsonb",
+    "md5": "35a805cc199b57e58422be075b412486",
+    "sha256": "77e0d4d897a83ed594d8f9b6faab78961e4fa25a74774d85b267ce4803e8f2cb"
+  },
+  {
+    "nspname": "private",
+    "proname": "assert_cloud_sales_inventory_enabled",
+    "args": "p_context jsonb",
+    "md5": "68c24a6fab21c2e2b866609f0d511a2d",
+    "sha256": "e3cf1f7b47cc9ee10fa7d8b02832981bb6ba4a82592ba2796dfa6608f4e2cd5e"
+  },
+  {
+    "nspname": "private",
+    "proname": "assert_cloud_sales_sync_base_enabled",
+    "args": "p_context jsonb",
+    "md5": "53f71db338db4cf0f6e8b2512e34f5dd",
+    "sha256": "0a02b95afba3bf53d49a92fe5c7ac3b60b4e1316d1854848ee27e1967352235f"
+  },
+  {
+    "nspname": "private",
+    "proname": "assert_financial_legacy_result_terminal_v1",
+    "args": "p_operation_type text, p_response jsonb",
+    "md5": "7771b623cec81c984070976bd2ac9fc8",
+    "sha256": "8739e04b1adbccd3103bc8be77c609e63eef9aece72d1c16d5a04b687d35874f"
+  },
+  {
+    "nspname": "private",
+    "proname": "assert_financial_operation_origin_v1",
+    "args": "p_operation pos_financial_operations, p_current_actor_key text, p_current_device_id uuid, p_requested_cash_session_id text",
+    "md5": "d2ee75c25efaba7f2d8eece831498610",
+    "sha256": "2f381e3af04174cb13bd880f17853ed0c1e5644cd1b68c454817203fc12f42a0"
+  },
+  {
+    "nspname": "private",
+    "proname": "assert_financial_request_hash_v1",
+    "args": "p_request_hash text",
+    "md5": "5dea27826171647f9dd273460dc4320f",
+    "sha256": "6f4e6453844890ed2254811ebfeb4d243151d73422e13c45db436d08a15abb33"
+  },
+  {
+    "nspname": "private",
+    "proname": "assert_financial_response_no_internal_key_v1",
+    "args": "p_value jsonb, p_internal_idempotency_key text",
+    "md5": "b3330e45201679a8dfae5e7786a56abf",
+    "sha256": "50bceb5f5dd32ced51e5c7f9b9958495fa5e475e3d4cdd543c82e93c55fa251a"
+  },
+  {
+    "nspname": "private",
+    "proname": "assert_pos_permission",
+    "args": "p_context jsonb, p_permission text",
+    "md5": "b51e67d5cbcb7f454a5edcc090900923",
+    "sha256": "29fc684dd52bb132a99bebabbf7b785035bd1ba3e4fa5a9a299b6d3b3fed0447"
+  },
+  {
+    "nspname": "private",
+    "proname": "assert_restaurant_order_write_permission",
+    "args": "p_context jsonb",
+    "md5": "71ebb1ef6daee61d98005f0588661e43",
+    "sha256": "073838b1486e2142150aec3c332090762d1d3547f68989a405d6281f86a3b2cc"
+  },
+  {
+    "nspname": "private",
+    "proname": "assert_restaurant_orders_food_service",
+    "args": "p_license_id uuid",
+    "md5": "4ffc38d48400c622ff20e266a4d4cc07",
+    "sha256": "545c951b70cc9fdd9105130d269c76525102a3ade70270f05d8cf74e0f77f352"
+  },
+  {
+    "nspname": "private",
+    "proname": "assign_pos_sale_operational_folio_v1",
+    "args": "",
+    "md5": "b9c44fe903aceed6cbf48e8d98165b52",
+    "sha256": "a3271ebc3fd47e3c06911a2ce9b2356f09a33c0b876a8399a94b71dccdb9677c"
+  },
+  {
+    "nspname": "private",
+    "proname": "audit_pos_inventory_block",
+    "args": "p_license_id uuid, p_sale_id text, p_event_type text, p_payload jsonb",
+    "md5": "06f9265e93bebf5c524fbba71d836356",
+    "sha256": "b9bf53e70dbb4e3818db6b44db4deef1dfa87a1e59d463a494fc72379de1f194"
+  },
+  {
+    "nspname": "private",
+    "proname": "broadcast_ecommerce_tracking_change_v1",
+    "args": "p_order_id uuid, p_reason text",
+    "md5": "abe83aeb05fb847e91ebe578f335c2f9",
+    "sha256": "85576b2632ed478f03a30ba61e8e8dc53cdb8da90c8cecf6398ebdb0534ce4c2"
+  },
+  {
+    "nspname": "private",
+    "proname": "broadcast_license_event",
+    "args": "",
+    "md5": "2d2b4f4443b0dddb0c297e90d1f96417",
+    "sha256": "463bb256ec737fe73588668872541c8cb91025fd2034999c4c0805ed09b077ec"
+  },
+  {
+    "nspname": "private",
+    "proname": "broadcast_notification_event",
+    "args": "p_license_id uuid, p_event text, p_reason text, p_notification_id uuid, p_ticket_id uuid, p_metadata jsonb",
+    "md5": "6f1a32be5f7db6764fd1354874daa927",
+    "sha256": "01a4576d06ebaff4d4ef9097a31143c68345dcc0ae44dde2eb38ca9f8d7ca5ff"
+  },
+  {
+    "nspname": "private",
+    "proname": "broadcast_pos_event",
+    "args": "p_license_id uuid, p_event jsonb",
+    "md5": "0335946064fcb55cb892fe9ccecbaaa0",
+    "sha256": "c51acb129e6e605132c85601589fed244c930f73bb7aba12d07f30cb655d0486"
+  },
+  {
+    "nspname": "private",
+    "proname": "broadcast_staff_notification_access_change_v1",
+    "args": "",
+    "md5": "9c96270bf4938074ad7824d73a5e651f",
+    "sha256": "4e54945ac8a843df5a12de59851ed7919d8fc9097bb33c01bd015e27b8475311"
+  },
+  {
+    "nspname": "private",
+    "proname": "calculate_pos_shelf_life_target",
+    "args": "p_base_date timestamp with time zone, p_shelf_life_value numeric, p_shelf_life_unit text",
+    "md5": "88dd2ec47639a5f5026f014d811063bf",
+    "sha256": "fd966a2b433682d2a717ed528b0e075fa3585e3245ced624e900f0d56fab79de"
+  },
+  {
+    "nspname": "private",
+    "proname": "canonical_financial_batch_allocations_v1",
+    "args": "p_item jsonb",
+    "md5": "754da25706c03c0c91b306d4f3363ff2",
+    "sha256": "c431e3e33cedbd3c49113c0d33a4c1bc47e5902be03b4fba0bb30f492c1fcf92"
+  },
+  {
+    "nspname": "private",
+    "proname": "canonical_financial_payment_v1",
+    "args": "p_operation_type text, p_payment jsonb",
+    "md5": "b369f4efed18d713815cf04d31f8d2eb",
+    "sha256": "4789b2182467a629dbd8bad067747edf0d7a0024bcff6827ff58a9792e2bd0f3"
+  },
+  {
+    "nspname": "private",
+    "proname": "canonical_financial_request_v1",
+    "args": "p_operation_type text, p_request jsonb",
+    "md5": "4169cbe60cf96ad170cdf6228b262d69",
+    "sha256": "f2d32eaa2ca2469051f3f1ac4467db83c886eb1a3d1bacff3d41ca86309ade04"
+  },
+  {
+    "nspname": "private",
+    "proname": "canonical_financial_sale_item_v1",
+    "args": "p_item jsonb",
+    "md5": "546baefebc53d78eec9bbc093e89c563",
+    "sha256": "92e1a8ddddf844d0d77c729ca9b50852684fba67169b269ecbab168247517abd"
+  },
+  {
+    "nspname": "private",
+    "proname": "canonical_financial_sale_v1",
+    "args": "p_operation_type text, p_sale jsonb",
+    "md5": "23e437b79da0def1be73fdbb61366049",
+    "sha256": "a8d27cd6ae5aba35c0dfb2522b65ed6ff1dfcebfb475e63d75d2add42686e1e1"
+  },
+  {
+    "nspname": "private",
+    "proname": "canonical_financial_selected_modifiers_v1",
+    "args": "p_item jsonb",
+    "md5": "8cc18674d463b83b8a5b3ca7ec60f0ed",
+    "sha256": "d1d686abc567d8e5ef88e07fb81a9ed2f44d6e8215e4916a710f4f7334a70a21"
+  },
+  {
+    "nspname": "private",
+    "proname": "canonical_financial_split_payer_v1",
+    "args": "p_payer jsonb",
+    "md5": "a3f4f651fc1cb826b0ba2eb68b7b35c3",
+    "sha256": "b6dcffb8ea5b6c9d46a160aff1350688f5eb1dcf0a504f2010a11462c28aa2ec"
+  },
+  {
+    "nspname": "private",
+    "proname": "canonical_layaway_financial_item_v1",
+    "args": "p_item jsonb",
+    "md5": "fbf897ca2a478bb3516f949ede6c0f08",
+    "sha256": "efbddaf458f84b659df53481408144fde94a54200306a69a11afc02e1938c2c4"
+  },
+  {
+    "nspname": "private",
+    "proname": "canonical_layaway_item_v1",
+    "args": "p_item jsonb",
+    "md5": "50d31283a14fa8860289d901c2b834c4",
+    "sha256": "24089b467932ac0e0eac69f7076265ce3cc84fee6f62255afc2fd68515bda221"
+  },
+  {
+    "nspname": "private",
+    "proname": "canonical_layaway_payment_v1",
+    "args": "p_payment jsonb",
+    "md5": "09f3083a056d2a25b113ba52242f6b40",
+    "sha256": "08eab1b87ef91ea878e45cf9e8b47de0a6c6fa8521fd8c2b16eae8a68db5b384"
+  },
+  {
+    "nspname": "private",
+    "proname": "canonical_layaway_request_v1",
+    "args": "p_operation_type text, p_request jsonb",
+    "md5": "44f0236fffea4c4cab6d8341f318958a",
+    "sha256": "2559757ba44a6e1f12619a29627ba377efcea5f74afa3227b23b87712e630fe3"
+  },
+  {
+    "nspname": "private",
+    "proname": "canonical_restaurant_settlement_v1",
+    "args": "p_request jsonb",
+    "md5": "d27434462b37fa13d4436d55220ef6ab",
+    "sha256": "2c7ac4b4a9c41dad25335fa5839777d726e6a66c9d6233a1ebda1341fcd8b204"
+  },
+  {
+    "nspname": "private",
+    "proname": "cash_audit_allowed",
+    "args": "p_context jsonb",
+    "md5": "081140d6966de8a04ba0d0462e9150b8",
+    "sha256": "220c478d5ac98be4e2614c93a6d8f85b6ef6916680e021d8d7075e3d0a9f9d0e"
+  },
+  {
+    "nspname": "private",
+    "proname": "cloud_pos_sync_enabled",
+    "args": "p_plan_features jsonb, p_license_features jsonb",
+    "md5": "c546ed95fc4f75818a16e372ac556831",
+    "sha256": "4a867c5323fc8e9c55d1d34f1e7571f807212f27e51070794a45f444d66c886a"
+  },
+  {
+    "nspname": "private",
+    "proname": "complete_financial_operation_v1",
+    "args": "p_license_id uuid, p_idempotency_key text, p_response jsonb",
+    "md5": "984abf9561f5e838aade4da1787ca0c2",
+    "sha256": "a0461e5972fd5fa0e2619a0de3dc8248aeeb69bc1d0af0f77284de0e25c5a143"
+  },
+  {
+    "nspname": "private",
+    "proname": "complete_pos_idempotency",
+    "args": "p_license_id uuid, p_idempotency_key text, p_response_payload jsonb",
+    "md5": "53f37d6fb8da2c6a382bd58e122631ce",
+    "sha256": "014d2cb6aec1e55fc8bb61503cafb7f1692d332e0eeb6c0d257ee1cdf2082f79"
+  },
+  {
+    "nspname": "private",
+    "proname": "consume_layaway_stock_v1",
+    "args": "p_license_id uuid, p_layaway_id text, p_sale_id text, p_actor_device_id uuid, p_actor_staff_user_id uuid, p_actor_key text, p_actor_name text, p_idempotency_key text",
+    "md5": "02c4f4ff3677a0d677d8b8c64925b861",
+    "sha256": "b95d5af17c77debb818cb428c49fdf1b9045005a201c984b110e0335e1be11c5"
+  },
+  {
+    "nspname": "private",
+    "proname": "default_staff_permissions",
+    "args": "",
+    "md5": "6d03ae971bc92b21c3a8fc683f44f7ee",
+    "sha256": "4be4c9792e2dca818e4a63e96f5600c7ff458df8a35214733e0f2c241495c71a"
+  },
+  {
+    "nspname": "private",
+    "proname": "derive_pos_operational_prefix_v1",
+    "args": "p_license_id uuid",
+    "md5": "8bc9f20b2f79094c7f6a6e832a6b2711",
+    "sha256": "567da8fb86d2a0b6b494af6a1462720f54557d5bcf11bcf2337b9f332e98073d"
+  },
+  {
+    "nspname": "private",
+    "proname": "ecommerce_broadcast_tracking_change_trigger_v1",
+    "args": "",
+    "md5": "0cf881ec47eb7820dba2688aa095d0de",
+    "sha256": "573fe8484eedb8ca8dd788b5a1459e2356c20ab9222d178fb0f46acfb105471f"
+  },
+  {
+    "nspname": "private",
+    "proname": "ecommerce_bump_catalog_revision_on_product_change",
+    "args": "",
+    "md5": "afc15728187f4dfa76a93ba5bb703384",
+    "sha256": "5b75d31dc8178b0e3af5cd447ae162f30a05af3025865fdf941b5402e4737b72"
+  },
+  {
+    "nspname": "private",
+    "proname": "ecommerce_business_capability_parent_guard",
+    "args": "",
+    "md5": "63ccdcf8f97a92791276828a9b038f4d",
+    "sha256": "53a74d42331dce4175db09ad041ea6a0e241a43bd385e587afc46af160162aa2"
+  },
+  {
+    "nspname": "private",
+    "proname": "ecommerce_business_supports_capability",
+    "args": "p_license_id uuid, p_capability text",
+    "md5": "1b49f89e06464817c8a8fd13cfb38481",
+    "sha256": "24e9f5663689fd2aacfcb844a82ab1eedd4b010143b2c062dac931f1130a1eb5"
+  },
+  {
+    "nspname": "private",
+    "proname": "ecommerce_convert_inventory_quantity",
+    "args": "p_quantity numeric, p_from_unit text, p_to_unit text",
+    "md5": "39bd9b40f74f2c9ecc85bbbc4880944a",
+    "sha256": "273c45e769cd7ec3b4da11fd204612d365a8f1a6b1589cf70d568ed6215cd1b6"
+  },
+  {
+    "nspname": "private",
+    "proname": "ecommerce_finalize_order_stock_reservations",
+    "args": "p_order_id uuid, p_license_id uuid, p_transition text, p_idempotency_key text",
+    "md5": "4c8e0bb1120fce7af31429eae1629336",
+    "sha256": "0f110e7dd861ff3109069ea7bc2e16f6125a3f28e6f1af28641f22ea88738580"
+  },
+  {
+    "nspname": "private",
+    "proname": "ecommerce_initialize_order_fulfillment_v1",
+    "args": "",
+    "md5": "9dd69f9ebfc7bca92443eadfbcfe5ee0",
+    "sha256": "4a08cac9ff468a3f272d2bb7625741353622273fcc6b3956bf906bc5bfcf2526"
+  },
+  {
+    "nspname": "private",
+    "proname": "ecommerce_inventory_unit_family",
+    "args": "p_unit text",
+    "md5": "bc2b102871637fc235b3b683145cde00",
+    "sha256": "17c8eb2cef1a7c6e5fdb27504dfa25ba99cd9637a6b89dce2509f9f94b85499b"
+  },
+  {
+    "nspname": "private",
+    "proname": "ecommerce_license_feature_bool",
+    "args": "p_license_id uuid, p_feature_key text, p_default boolean",
+    "md5": "7f2f4209812244602700acb6af10ae3b",
+    "sha256": "42034fb3474aabcd6d11b9472968a969b32433b8bb3776cf399ef92dbb83958a"
+  },
+  {
+    "nspname": "private",
+    "proname": "ecommerce_license_feature_int",
+    "args": "p_license_id uuid, p_feature_key text, p_default integer",
+    "md5": "08e8989919a2f6a8d3fc15262c792c09",
+    "sha256": "519bd7d2e8dd7a956350ebe42e932565831b28482fc8cb937287bf62d9799dcb"
+  },
+  {
+    "nspname": "private",
+    "proname": "ecommerce_license_feature_text",
+    "args": "p_license_id uuid, p_feature_key text",
+    "md5": "9c873f2a20a74a911955ae8eb22a8124",
+    "sha256": "44ca0a4b80765cded776ad1ca2b77dc7df46a902b051cdb41159d3df4302dd08"
+  },
+  {
+    "nspname": "private",
+    "proname": "ecommerce_normalize_inventory_unit",
+    "args": "p_unit text",
+    "md5": "9c13f6f178409a2869e2290935ec0dfe",
+    "sha256": "8ece866e43172ad89970430881cd0065970b2e9fb8bd69f38bf700ec2f0894c7"
+  },
+  {
+    "nspname": "private",
+    "proname": "ecommerce_normalize_sync_config",
+    "args": "p_config jsonb, p_fallback jsonb",
+    "md5": "1512129088667d8d943d1eb5bc1e1dc9",
+    "sha256": "f11fbf427aede4abc45f5a3a8829d259055d4928ce2634aa02f8cab4321f4300"
+  },
+  {
+    "nspname": "private",
+    "proname": "ecommerce_normalized_business_types",
+    "args": "p_license_id uuid",
+    "md5": "26ae5351ea313c81bfb23ed17949e865",
+    "sha256": "ba8867adfc7b48647e0a9c6eb498e4fed5bb598cd6ced06205ac7ccf1486f2de"
+  },
+  {
+    "nspname": "private",
+    "proname": "ecommerce_order_fulfillment_terminal_v1",
+    "args": "p_status text",
+    "md5": "be5eb311be4a1c8f004edfa2490b3e97",
+    "sha256": "33eba48ce0ef6346e3caddd4dca7ebe646aabcbfd3e655803489e16a58fdf43b"
+  },
+  {
+    "nspname": "private",
+    "proname": "ecommerce_order_guard",
+    "args": "",
+    "md5": "978ddf387e392712bb8f628681cc83a3",
+    "sha256": "6432ea959663e44c8d008b77ed47bb6b4c492a64a740fe1602b18470e7776381"
+  },
+  {
+    "nspname": "private",
+    "proname": "ecommerce_order_item_enrich_variant_identity_v1",
+    "args": "",
+    "md5": "4e7bcb40074468de90c31cc7040096ae",
+    "sha256": "d551cadfd1da5c4fff8e8f72674c6dc47ed87cf9290eabd3e369ea7934f19df9"
+  },
+  {
+    "nspname": "private",
+    "proname": "ecommerce_order_item_guard",
+    "args": "",
+    "md5": "245f5fcc21e75b68b1aa38444a3f2b50",
+    "sha256": "361b7dfeeec77ebefb7771cba33db6aefca32fbe6ce5aa91bf15a06236cdba30"
+  },
+  {
+    "nspname": "private",
+    "proname": "ecommerce_order_item_phase4_tenant_scope_guard",
+    "args": "",
+    "md5": "c8b57512306e796b26f63ecb0df32c24",
+    "sha256": "bbd78f9c9a5810ecc8956f30e5d0818d6c5b0816a407170f1877f8d7499e3026"
+  },
+  {
+    "nspname": "private",
+    "proname": "ecommerce_order_item_reservation_trigger",
+    "args": "",
+    "md5": "9a15a0e548a7485184a80830467d38ec",
+    "sha256": "0de73e99ef8078108f24d6cee0858e545bfd8749b21ca21b6b38d655b8182447"
+  },
+  {
+    "nspname": "private",
+    "proname": "ecommerce_order_reservation_lifecycle_trigger",
+    "args": "",
+    "md5": "971e459ac06e11482164430b4c03cd11",
+    "sha256": "682ae19871ab01ba23bbb629b30f8310d38a87ab6f7480bafc64d11903ad9d99"
+  },
+  {
+    "nspname": "private",
+    "proname": "ecommerce_orders_block_terminal_pos_mutation_v1",
+    "args": "",
+    "md5": "b49ed59d017f07c26c68de25e98c8b59",
+    "sha256": "3b37019c6b2c116ac39581e5e7395c7339cf21661adfce36131ea5d658cd4ce3"
+  },
+  {
+    "nspname": "private",
+    "proname": "ecommerce_product_public_jsonb",
+    "args": "p_product ecommerce_published_products, p_allow_stock_visibility boolean",
+    "md5": "dff6d3ddfd6e8f007c99a018a6878882",
+    "sha256": "69921564fb7b3b01fc550fff8bb84f99580203463b5c91966aff70d02e523ca6"
+  },
+  {
+    "nspname": "private",
+    "proname": "ecommerce_product_public_signature",
+    "args": "p_product ecommerce_published_products",
+    "md5": "33dc2dca789a07bfe6dd3523835d06a9",
+    "sha256": "61c18e6b4389658ac9530d904afe808e8183a0d21530cb3947ccae9e5755e5cb"
+  },
+  {
+    "nspname": "private",
+    "proname": "ecommerce_product_publicly_available",
+    "args": "p_product ecommerce_published_products",
+    "md5": "89c9e03a45a76134edf16dda89c59e86",
+    "sha256": "d8868a415cbfbf59bab29151e288164977211c86696beb9b4f10be275072ccf1"
+  },
+  {
+    "nspname": "private",
+    "proname": "ecommerce_profile_capability_reconcile_trigger",
+    "args": "",
+    "md5": "797bbc2a89a814082f737511ad0d904b",
+    "sha256": "5a9e8e5d7205df0fe67b2d0cd2f045b615d4c3e49549af83e48b1985999d32e3"
+  },
+  {
+    "nspname": "private",
+    "proname": "ecommerce_published_product_guard",
+    "args": "",
+    "md5": "483ba0b6ddb757f08fe1103c009fb63c",
+    "sha256": "81885246e86176d7a8b530da0367fe932ec0ce21c078c47a1ba655f598341621"
+  },
+  {
+    "nspname": "private",
+    "proname": "ecommerce_published_product_sync_guard",
+    "args": "",
+    "md5": "4958cb54348598aaabf68a29b9a5bb19",
+    "sha256": "d37c95bb9d4c8073a7b3117106023f193c708bf56578fd934bfded8aa6f41f1c"
+  },
+  {
+    "nspname": "private",
+    "proname": "ecommerce_recipe_capacity",
+    "args": "p_license_id uuid, p_recipe jsonb, p_evaluation_date date",
+    "md5": "c4734839943168e09c3ceded310d7f66",
+    "sha256": "61a706d4aa02cb37d74c69450eae012013a5b3a7006a3bad7be1b3d1d8aff45b"
+  },
+  {
+    "nspname": "private",
+    "proname": "ecommerce_reconcile_license_capabilities",
+    "args": "p_license_id uuid",
+    "md5": "08fcac4832151046bcf9ec8705a8ecb4",
+    "sha256": "e5a94794fb4d86462574752e8b07ad99dbf5e159fdf98eb2b2f83894b3ccc057"
+  },
+  {
+    "nspname": "private",
+    "proname": "ecommerce_reconcile_published_product_capability",
+    "args": "p_product_id uuid",
+    "md5": "fe06235728cc6ea566036f85828d8196",
+    "sha256": "e1d522df6dcef38657f5a955d68d4396e62a0bb59d0fe23fceee9b8b71178c09"
+  },
+  {
+    "nspname": "private",
+    "proname": "ecommerce_reconcile_recipe_projection",
+    "args": "",
+    "md5": "35dee49e0b86090857025fc65491de38",
+    "sha256": "941513584ba234e116a15f67fa10f315ad933daa0f623bf6d55fd151fae13e75"
+  },
+  {
+    "nspname": "private",
+    "proname": "ecommerce_record_initial_fulfillment_v1",
+    "args": "",
+    "md5": "2cf14bdf8a2e5b076383a38b95f9f4ab",
+    "sha256": "524ada13728fb703b7ab5c93cbaa43ba98a4a7cbb45863422eddd78f9387a37c"
+  },
+  {
+    "nspname": "private",
+    "proname": "ecommerce_require_fulfillment_reservation_trigger",
+    "args": "",
+    "md5": "de9de77d198541fa49963fa5980cb674",
+    "sha256": "de14d74eee83451de7d98b9e807b2e4bd19f70d6c1458a188fde05acd36df6d4"
+  },
+  {
+    "nspname": "private",
+    "proname": "ecommerce_reservation_feature_enabled",
+    "args": "p_license_id uuid",
+    "md5": "461a433d01573e6ba2d940add9def1c8",
+    "sha256": "febb9b40140b67cb39233a5cdcd7ecdc90c0a8bb72e738a6fe1eeea8a38d8b5e"
+  },
+  {
+    "nspname": "private",
+    "proname": "ecommerce_reservation_variant_id",
+    "args": "p_options jsonb",
+    "md5": "29352d35de935451e0f6beab740db8bf",
+    "sha256": "4219edfd36cc1de1c754dfcbe5925db8c5401395238db2e380c042a9bcf8a218"
+  },
+  {
+    "nspname": "private",
+    "proname": "ecommerce_reserve_order_item_stock",
+    "args": "p_order_item_id uuid",
+    "md5": "8c7ffa4413a8dc0926602804ecd10630",
+    "sha256": "f8a52cd315038b42af478acb19557dd699db3fff1839034f7a0c91c1ef9d6d13"
+  },
+  {
+    "nspname": "private",
+    "proname": "ecommerce_resolve_order_item_source_product_v1",
+    "args": "",
+    "md5": "84e61623abb0b17306e1699f253b6465",
+    "sha256": "0b09d292dc57ad42e8eda3a78542186f00b5b9d0e690677f27f1be5ef7da304f"
+  },
+  {
+    "nspname": "private",
+    "proname": "ecommerce_sync_published_stock_projection",
+    "args": "p_license_id uuid, p_source_product_id text",
+    "md5": "12fc6de98b4b14c1d5bf182363bdb45b",
+    "sha256": "b6d41706aeb6d27ddb84799ea196f43d5179e6f1e6dd0baf7234a5c90a402c47"
+  },
+  {
+    "nspname": "private",
+    "proname": "ecommerce_sync_published_stock_projection_trigger",
+    "args": "",
+    "md5": "6c14eaecc1d011e5136c36607ef05221",
+    "sha256": "4266c9a4faf1bddf9bf3a5741ad588f98ec856959cbdabc3a5de6778bf446772"
+  },
+  {
+    "nspname": "private",
+    "proname": "ecommerce_touch_updated_at",
+    "args": "",
+    "md5": "da2558a4f7eac876224a48158c47fce2",
+    "sha256": "74840c9f04228322d326985a8566858477752ea03464889ebb6ffa684b0400be"
+  },
+  {
+    "nspname": "private",
+    "proname": "ecommerce_tracking_topic_v1",
+    "args": "p_token_hash bytea",
+    "md5": "ea3c70590e0fdf85838bdcc4dc10f4c9",
+    "sha256": "cccb2f05936618becf9d0ba4d73e8d75b87b2c9ed9b8d243b1d7a5f9e906ff34"
+  },
+  {
+    "nspname": "private",
+    "proname": "ecommerce_variant_parent_guard",
+    "args": "",
+    "md5": "baddfe86998f2230d09097a4336ad100",
+    "sha256": "0d1b41d8494b3bf144526ff49e83e93de2c29df5f00618a18918e6446250f539"
+  },
+  {
+    "nspname": "private",
+    "proname": "emit_business_profile_updated_event",
+    "args": "",
+    "md5": "0e5a4f7c1919343ff473faacc2eaf3b0",
+    "sha256": "d3c9bf9e7323e4c85187645ebb23f3f300b176bfb87beeb3f257022b6575dbec"
+  },
+  {
+    "nspname": "private",
+    "proname": "ensure_license_device_mode",
+    "args": "",
+    "md5": "e2e09f1f9274e50f05e63cff0af83a1e",
+    "sha256": "49f14071d9f61a34366b208ba7cdd1e18095d30a554af7e28578e060582f718b"
+  },
+  {
+    "nspname": "private",
+    "proname": "execute_admin_cash_close_v2",
+    "args": "p_license_id uuid, p_device_id uuid, p_admin_user_id uuid, p_admin_session_id uuid, p_admin_name text, p_actor_key text, p_cash_session_id text, p_closing_mode text, p_counted_amount numeric, p_next_shift_fund numeric, p_reason_code text, p_comments text, p_expected_version integer, p_idempotency_key text, p_operation_type text, p_reconciliation_source text",
+    "md5": "e0382f5f5fdb41022f5ca389880a8700",
+    "sha256": "e1b88be4f32c6b072c804f2f25badbe02224738c84efd49937ed7d2852725636"
+  },
+  {
+    "nspname": "private",
+    "proname": "execute_layaway_cancel_financial_v1",
+    "args": "p_context jsonb, p_request jsonb, p_idempotency_key text, p_request_hash text, p_cash_station_id text",
+    "md5": "6c77d5cc233a2010a1b668c87e4550fa",
+    "sha256": "cfaf1f059f491aecdbb1d6fb1ee06e35a895c7a14399d572a9f8f2ebd4908e77"
+  },
+  {
+    "nspname": "private",
+    "proname": "execute_layaway_completion_financial_v1",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_request jsonb, p_idempotency_key text",
+    "md5": "fd189aafba5969dd4aea569c56681aee",
+    "sha256": "40df3e24df55828a460bdf87642e45a54da6769d29a61f13b70045fb045c6f99"
+  },
+  {
+    "nspname": "private",
+    "proname": "execute_layaway_create_financial_v1",
+    "args": "p_context jsonb, p_request jsonb, p_idempotency_key text, p_request_hash text, p_cash_station_id text",
+    "md5": "df2cfe3934cdc240742fc38b0cfa98de",
+    "sha256": "9ee20354243c3d699f86f0ab028e8f398dae92a08dadd467dfe2c3eeb6345b16"
+  },
+  {
+    "nspname": "private",
+    "proname": "execute_layaway_payment_financial_v1",
+    "args": "p_context jsonb, p_request jsonb, p_idempotency_key text, p_request_hash text, p_cash_station_id text",
+    "md5": "d72db889cd7479454cba8aedc97af239",
+    "sha256": "152d8e4c1b22687f73c82b06c964b607733db26db55ef9e5d15d3f776e715656"
+  },
+  {
+    "nspname": "private",
+    "proname": "execute_split_sale_financial_v1",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_split jsonb, p_internal_idempotency_key text",
+    "md5": "f87a08061fcb1b73859830cebf9b7719",
+    "sha256": "ec5aca07145b19a55fd65513960edb3e256aab568c725b1ca5eeba2b955bf0fb"
+  },
+  {
+    "nspname": "private",
+    "proname": "fill_pos_sale_item_batch_snapshot",
+    "args": "",
+    "md5": "0af58773a7f47a119e5dc75e0045e637",
+    "sha256": "0f3bfee8d766ee1dee14e82a5eb584a70191eafd3f67af6d028acb404dc3c153"
+  },
+  {
+    "nspname": "private",
+    "proname": "financial_canonical_json_v1",
+    "args": "p_value jsonb",
+    "md5": "f85849710fe1c7eba94a4ccfb45affc1",
+    "sha256": "f4242612248fd246e134f6c1266eb82e84548c38b2449a8366c8dcf43328695d"
+  },
+  {
+    "nspname": "private",
+    "proname": "financial_cash_movement_allowlist_v2",
+    "args": "p_movement jsonb",
+    "md5": "1eb215a0102dc441fcc9c33ac9e9e624",
+    "sha256": "4671e6491a0f4015d8deca4c6a490d9da700656c9f2f86ba9d0936b5bb5459f5"
+  },
+  {
+    "nspname": "private",
+    "proname": "financial_cash_movements_allowlist_v2",
+    "args": "p_movements jsonb",
+    "md5": "b1021f1c8cd68c837e69cf98ba412390",
+    "sha256": "e9042f8bb79c70390b4a8cc510e28406cdaccf7163765cabcdf959a6b7094fc1"
+  },
+  {
+    "nspname": "private",
+    "proname": "financial_compact_object_v1",
+    "args": "p_object jsonb",
+    "md5": "eaa369c58ba5281e2943598e42eb7635",
+    "sha256": "c7c58b31e96934a20dc56ad14e2692656326a915c7d60428e7e7b1f05cee4dfa"
+  },
+  {
+    "nspname": "private",
+    "proname": "financial_decimal_v1",
+    "args": "p_value jsonb",
+    "md5": "276872448d7bca242518044472429aee",
+    "sha256": "d49c2b0cff7bb859b7b3031fbbc3fb9dcc75b09e1a5fa7227a48068c446d5c1e"
+  },
+  {
+    "nspname": "private",
+    "proname": "financial_event_allowlist_v2",
+    "args": "p_event jsonb",
+    "md5": "f75171281b72d818df2c3870f00a628b",
+    "sha256": "7377c8f8d63a062e77b58df9b53acd416d2bb3f227ae00753ab365170798cf27"
+  },
+  {
+    "nspname": "private",
+    "proname": "financial_execution_request_v1",
+    "args": "p_request jsonb",
+    "md5": "b925cf40680e8128230bf82e2e7dbd2f",
+    "sha256": "f837502bbde208dd017ee6beca6c154f270ae0fe3ff841c6672237decb6833df"
+  },
+  {
+    "nspname": "private",
+    "proname": "financial_first_nonblank_scalar_v1",
+    "args": "p_object jsonb, p_keys text[]",
+    "md5": "9dc7cdbba1517c5620ad84fd03e5c832",
+    "sha256": "4cd092bce3b00f30a45eaed3a5dd3a86dadc0b25db0bd0f68df8b0e5d52813b2"
+  },
+  {
+    "nspname": "private",
+    "proname": "financial_first_present_value_v1",
+    "args": "p_object jsonb, p_keys text[]",
+    "md5": "c4555ed6f3b0dea3565627837f0c785a",
+    "sha256": "025eec6760403fcd4e8dc61e7f58c2620067cffdaf8afa31c8f8813bda5b9cf7"
+  },
+  {
+    "nspname": "private",
+    "proname": "financial_integer_v1",
+    "args": "p_value jsonb",
+    "md5": "dce5cae9e1838be7d48a630e28e36553",
+    "sha256": "001219ba721b9087f753f30cb8ee7fbe0b1968e86029451887761c25b56ff034"
+  },
+  {
+    "nspname": "private",
+    "proname": "financial_inventory_movement_allowlist_v2",
+    "args": "p_movement jsonb",
+    "md5": "b2be9427df7ebd50729f98f3cbafe30c",
+    "sha256": "2f31c67d0132fa68814121738966628fb85772b95f50a75c786edba1f14ab0e9"
+  },
+  {
+    "nspname": "private",
+    "proname": "financial_inventory_movements_allowlist_v2",
+    "args": "p_movements jsonb",
+    "md5": "fad3c22566bef5f74dc3de680f355ba7",
+    "sha256": "a49d72235d649ffa382bd0ca4ebdd048fbb04c834d8602e08b92b18bd7f0c0ca"
+  },
+  {
+    "nspname": "private",
+    "proname": "financial_layaway_allowlist_v2",
+    "args": "p_layaway jsonb",
+    "md5": "79e54ed6a22d44d2667fec7437f5f979",
+    "sha256": "94271fb988400e0d97b74f31a3c4cd596d21df97e2894d647d2b1696eb655040"
+  },
+  {
+    "nspname": "private",
+    "proname": "financial_layaway_item_allowlist_v2",
+    "args": "p_item jsonb",
+    "md5": "137466e1e732699f54a7bdd327deabf7",
+    "sha256": "2918f122451582b84e8aaf1e64490f150613463f5e933f601c1de12850ccccf7"
+  },
+  {
+    "nspname": "private",
+    "proname": "financial_layaway_items_allowlist_v2",
+    "args": "p_items jsonb",
+    "md5": "3356efdb60a853e1bc801b1f5737263a",
+    "sha256": "e70c770e1006e3a34f11865ddd46148b819dd9abf2edd72227094778fc368189"
+  },
+  {
+    "nspname": "private",
+    "proname": "financial_layaway_payment_allowlist_v2",
+    "args": "p_payment jsonb",
+    "md5": "3a2d36027f7b742533b37a172344d19c",
+    "sha256": "308c1e71c029f363460d25afa34dbd7b339ce2cb818bef7a9b46344d6fc82016"
+  },
+  {
+    "nspname": "private",
+    "proname": "financial_layaway_payments_allowlist_v2",
+    "args": "p_payments jsonb",
+    "md5": "450beffdde6ad1385fff5f35e557e020",
+    "sha256": "61b93d1d37a48068c5aac11f18043dc83ad327869640b4ef359561c25bba39a7"
+  },
+  {
+    "nspname": "private",
+    "proname": "financial_layaway_reservation_allowlist_v2",
+    "args": "p_reservation jsonb",
+    "md5": "0c35fb603d845eaa6fd2aa02b34802cb",
+    "sha256": "303a916289cbcbc388a2fac79ae9c76e7362e7f192185fe5ee0cd15e69e7d5ad"
+  },
+  {
+    "nspname": "private",
+    "proname": "financial_layaway_reservations_allowlist_v2",
+    "args": "p_reservations jsonb",
+    "md5": "dbe746458290cbb90d0e827881c20032",
+    "sha256": "7a8254934d6d2eea5401ab6ae78822378d82f5c0d7387cd9de5a68907a3a5fb6"
+  },
+  {
+    "nspname": "private",
+    "proname": "financial_layaway_response_allowlist_v2",
+    "args": "p_operation_type text, p_response jsonb",
+    "md5": "497595c1c12a7b3a97b0a6d313d6f0de",
+    "sha256": "34d9cb9e7358f425cefa437ab195ea398e48b010a3d607649421671871360d0a"
+  },
+  {
+    "nspname": "private",
+    "proname": "financial_operation_hash",
+    "args": "p_operation_type text, p_canonical_request jsonb, p_verified_actor_key text, p_verified_cash_session_id text, p_verified_cash_station_id text",
+    "md5": "62cb9288a86fd37404e48e3136467c40",
+    "sha256": "6ddd9359ea9d017a1951d7699c2f288f30f80c60ece11af0a918c8ed6d5f2a03"
+  },
+  {
+    "nspname": "private",
+    "proname": "financial_operation_internal_key_v1",
+    "args": "p_operation_type text, p_operation_id uuid",
+    "md5": "fff9a86b9ea08c053f01dc6e798bb0b3",
+    "sha256": "d22289cb4620549402474e947869ab1d3088c6b8dec58009377049c32cf4e340"
+  },
+  {
+    "nspname": "private",
+    "proname": "financial_payment_method_v1",
+    "args": "p_operation_type text, p_raw_method text",
+    "md5": "c2b0fbf6730fc6921014a70ee2f5e473",
+    "sha256": "a0035fa061aa64e93afb378b8bf0aef8e40e7a59ecc62caa4fd714ecbfead103"
+  },
+  {
+    "nspname": "private",
+    "proname": "financial_sale_allowlist_v2",
+    "args": "p_sale jsonb",
+    "md5": "60631d0ed0fecf22a00ccef0741ec715",
+    "sha256": "0f78f6f5bdea382608f8bfd09140ae67d4fb52c49edb054a69c6f2d4aaec3f71"
+  },
+  {
+    "nspname": "private",
+    "proname": "financial_sale_item_allowlist_v2",
+    "args": "p_item jsonb",
+    "md5": "b5be1fe708d31a4b045c26ece3eae80a",
+    "sha256": "33005ddd2d60ee8974871a863f6195f4835c0f2451a1a21515142cd2404fae38"
+  },
+  {
+    "nspname": "private",
+    "proname": "financial_sale_items_allowlist_v2",
+    "args": "p_items jsonb",
+    "md5": "69afb584692eb3201230ca5bf3764a1a",
+    "sha256": "541d2ee13db77fd32ab7c0ddf347df14ff7ad54104824ab6e02f1939548d7ce6"
+  },
+  {
+    "nspname": "private",
+    "proname": "financial_sale_payment_allowlist_v2",
+    "args": "p_payment jsonb",
+    "md5": "63a11369bca863f583d5349324195490",
+    "sha256": "2a7dcb1a4bace8b3dbdaa9218c379ca17b3aa4b222d9bb3538cb986d5b3ea842"
+  },
+  {
+    "nspname": "private",
+    "proname": "financial_sale_payments_allowlist_v2",
+    "args": "p_payments jsonb",
+    "md5": "932cd8eb9390008f519f7c9a8ecd71da",
+    "sha256": "4ef9502426dae6a10df5fad7f2d47be4345a3d663cb90eda3795bea3f640a77c"
+  },
+  {
+    "nspname": "private",
+    "proname": "financial_text_v1",
+    "args": "p_value jsonb",
+    "md5": "2534b0831e25b1dfcaa45ef555e2a679",
+    "sha256": "50d5e6ccd51631c9469234fc90175fe7c17d972bfeb37ec7134736faeb3f7fbc"
+  },
+  {
+    "nspname": "private",
+    "proname": "financial_timestamp_v1",
+    "args": "p_value jsonb",
+    "md5": "1c5d0cc21879e7364123f85ecce8af4b",
+    "sha256": "89275f6ed0016a40ad123a3c370bc23dac1032530eb8c55295c091346e0fe020"
+  },
+  {
+    "nspname": "private",
+    "proname": "format_pos_operational_folio_v1",
+    "args": "p_license_id uuid, p_sequence bigint",
+    "md5": "144ce3d051aeecd3ad36da4947aa1613",
+    "sha256": "e7a3cd95034fcb7634cb94e682ead5d71e73149affd2a198002357fa8d57d938"
+  },
+  {
+    "nspname": "private",
+    "proname": "has_pos_permission",
+    "args": "p_context jsonb, p_permission text",
+    "md5": "c1d451aab3f4c95fb8c096aabd56ab03",
+    "sha256": "3f1f47ea700af6506eeb8b8cffb760c110a7cb95ae1c1c4f62abbf4cf5391dde"
+  },
+  {
+    "nspname": "private",
+    "proname": "insert_pos_idempotency_processing",
+    "args": "p_license_id uuid, p_idempotency_key text, p_operation_type text, p_entity_type text, p_entity_id text, p_request_hash text",
+    "md5": "c808d93f60a8048f51417f689faee098",
+    "sha256": "71a3fd4f3c04920bece5237e1aea1ccc3388ee45c77f29db8442fe0456fc9d5d"
+  },
+  {
+    "nspname": "private",
+    "proname": "is_pos_batch_expired_for_sale",
+    "args": "p_expiry_date timestamp with time zone",
+    "md5": "b99ac169f305b4032e96865e94d084d5",
+    "sha256": "d36e570af10a571cc98da61f2d2708c35cceccd89974d971eca68d279ab9f7d3"
+  },
+  {
+    "nspname": "private",
+    "proname": "is_restaurant_order_payment_status",
+    "args": "p_status text",
+    "md5": "a8eb154545063762db310a8f38d69288",
+    "sha256": "271739978146efe3e6054f349e3e3d1794c3cccfd5d672da7dbeadeee4a166ed"
+  },
+  {
+    "nspname": "private",
+    "proname": "layaway_authoritative_base_price_v1",
+    "args": "p_product pos_products, p_batch pos_product_batches, p_quantity numeric",
+    "md5": "df42829feb846a00885df1e423d2d097",
+    "sha256": "d7574d2c598252c881e961c2f5aae2449c1ccc3ebbd67e4f6286b2b0d5187b89"
+  },
+  {
+    "nspname": "private",
+    "proname": "layaway_authoritative_item_v1",
+    "args": "p_product pos_products, p_batch pos_product_batches, p_item jsonb",
+    "md5": "3709b2545b242f5a8847de59d46dc295",
+    "sha256": "1b1708a07df1d12eea8994f16982dde8e2684a2c383f7fbcb06c9fda6526f730"
+  },
+  {
+    "nspname": "private",
+    "proname": "layaway_cash_session_v1",
+    "args": "p_license_id uuid, p_device_id uuid, p_actor_key text, p_cash_session_id text, p_cash_station_id text",
+    "md5": "b5c0a2e789154331df20d8ba80c437d2",
+    "sha256": "51d8c2c808755c6f85d2effd673c5a99c444a02205958972782802e18329c52e"
+  },
+  {
+    "nspname": "private",
+    "proname": "layaway_deadline_v1",
+    "args": "p_value jsonb",
+    "md5": "9915b64997ca9ae7ebacbd66d8241465",
+    "sha256": "402f6fa82c8d6a0fecf473781b83a749295c9f4bd4f92cf2ba6e32a7db22b007"
+  },
+  {
+    "nspname": "private",
+    "proname": "layaway_execution_request_v1",
+    "args": "p_request jsonb",
+    "md5": "1e781f6a6aaba454bf33cc7ceb396245",
+    "sha256": "de27eee01ab2628b5e5661fb310e4bd7598706255c2bc6c892843eab52fff0e8"
+  },
+  {
+    "nspname": "private",
+    "proname": "layaway_payment_payload_v1",
+    "args": "p_request jsonb",
+    "md5": "4a9848f18add7bebb35b55716db22561",
+    "sha256": "09eb1b2650ff8d9f71d13b9ddc9d7a9bdc4f462017445390cc9ca95655118a5e"
+  },
+  {
+    "nspname": "private",
+    "proname": "layaway_record_v1",
+    "args": "p_request jsonb",
+    "md5": "7066b738ed8732ed6da45b579b6d7d16",
+    "sha256": "e9cb701690453ba9fd7bf2c3148d32e92b66c2e280167673c88ffaeaa4b1d15f"
+  },
+  {
+    "nspname": "private",
+    "proname": "layaway_request_bool_v1",
+    "args": "p_payload jsonb, p_keys text[], p_default boolean",
+    "md5": "9ce6116d37ca1c61e5c9192d797b8d44",
+    "sha256": "c081d1ddf9a9c05f2ba1ead0975b8f5dd8a3c0cfe4f14c36142785e2091b5da3"
+  },
+  {
+    "nspname": "private",
+    "proname": "layaway_request_cash_session_id_v1",
+    "args": "p_request jsonb",
+    "md5": "a72f83a90b6ee40d7cf144f012d591e7",
+    "sha256": "800a30a664df689166264c2b2cbe35cfb0752678f89f038aab9d755b65a10542"
+  },
+  {
+    "nspname": "private",
+    "proname": "layaway_request_id_v1",
+    "args": "p_request jsonb",
+    "md5": "6fc83b220894969e96abe82496c20275",
+    "sha256": "1693933119debf6df2f17d1cd7385ab8d22fa9da2a21d34e25e26e74d99428a0"
+  },
+  {
+    "nspname": "private",
+    "proname": "layaway_request_numeric_v1",
+    "args": "p_payload jsonb, p_keys text[], p_default numeric",
+    "md5": "eebc20887f75f8aa005faf14253b7eb3",
+    "sha256": "d30bc52b4c32b0fcb3d3e1590772f065d7156c0905f731ba982c1838776c1fb9"
+  },
+  {
+    "nspname": "private",
+    "proname": "layaway_request_text_v1",
+    "args": "p_payload jsonb, p_keys text[], p_default text",
+    "md5": "af79e55ceecde6cd89042b6dff1bb1d2",
+    "sha256": "b5c536b5102c32313f560a29972c98b62fb3fa409e2f51afafe745bfc0928b17"
+  },
+  {
+    "nspname": "private",
+    "proname": "license_entitlement_state_v1",
+    "args": "p_license_id uuid",
+    "md5": "c439fa37b577a83c04811707f55d29f2",
+    "sha256": "0ac6c06a25414ac534fcef911d90f9dcad3faa5eadbba06c11f8d06e2f2a25f0"
+  },
+  {
+    "nspname": "private",
+    "proname": "license_realtime_enabled",
+    "args": "p_plan_features jsonb, p_license_features jsonb",
+    "md5": "e42788b516102e4e2080a945321c0d1b",
+    "sha256": "1a097ca4f73d2433df019d35dff95205d474c84d63a03b21334d6159c1629851"
+  },
+  {
+    "nspname": "private",
+    "proname": "lock_financial_operation_v1",
+    "args": "p_license_id uuid, p_external_idempotency_key text",
+    "md5": "37890e6faf0a75e97b723baddd2afcaa",
+    "sha256": "e34e74210ce2df9a6931d4d3ffd9f346bc466cb111ee8e1d3d5256e788e25f5a"
+  },
+  {
+    "nspname": "private",
+    "proname": "lock_restaurant_order_settlement_v1",
+    "args": "p_license_id uuid, p_local_order_id text",
+    "md5": "6f40bd7df0606a34d644833e52e89f41",
+    "sha256": "8d013a48abce5e1d7385a0d252baefc02fe28fe240c14ec853ec333ee25e2db7"
+  },
+  {
+    "nspname": "private",
+    "proname": "next_pos_change_seq",
+    "args": "",
+    "md5": "6919def96147bf924ddcb6ba0bc8ca4d",
+    "sha256": "18d2c979419c70947545f32fee6fa049ef091d7dfb54af1e6365e7761f2b561f"
+  },
+  {
+    "nspname": "private",
+    "proname": "next_pos_sale_folio",
+    "args": "p_license_id uuid",
+    "md5": "77c1afdcb35c8880c67eae88f9e78101",
+    "sha256": "09ab4bafa499c0d23cbb963644df60403cf3fca6b9c0ebc36ec3986b66f59d61"
+  },
+  {
+    "nspname": "private",
+    "proname": "normalize_layaway_items_v1",
+    "args": "p_items jsonb, p_total numeric",
+    "md5": "97c691a1c5de3d76df7f33d5ad881c67",
+    "sha256": "c998033b503c691b65f266f0c78437d7210c8e4756b981ac7da81088b8f479d6"
+  },
+  {
+    "nspname": "private",
+    "proname": "normalize_pos_sale_payment_method",
+    "args": "p_method text",
+    "md5": "50edc3690ae8f21d4c717b1382817527",
+    "sha256": "7ca2b3a42cedfd9106f5bf53e7401025ec25b46ee78c8b636d6c865b8e89c62f"
+  },
+  {
+    "nspname": "private",
+    "proname": "normalize_sale_inventory_item",
+    "args": "p_payload jsonb, p_ordinality bigint",
+    "md5": "4f13f7b151f1d4c1795ce7fd81a97cd9",
+    "sha256": "a27c70eb947345e93098ccfdc9122fb0c5bd2691eb2626cb4ea22b9c03807741"
+  },
+  {
+    "nspname": "private",
+    "proname": "notify_staff_user_permission_change",
+    "args": "",
+    "md5": "d6bcb251fb33c8ab1d8aa33c86796b0b",
+    "sha256": "f1dbc408e35cc25f9c02513fc577a23c4f99d9829f48fd43e72ce6a57622f819"
+  },
+  {
+    "nspname": "private",
+    "proname": "pos_cad6_normalize_text",
+    "args": "p_value text",
+    "md5": "32bd67597e4cb10c41d5e283c33dedcb",
+    "sha256": "5270e3cb111cc01ba73adc54f112eacde20aba3d9431b2199d9956d713d13ecc"
+  },
+  {
+    "nspname": "private",
+    "proname": "pos_cad6_product_context_text",
+    "args": "p_product pos_products",
+    "md5": "de944c4d64a3e4f64c8eb6a113b2f8d0",
+    "sha256": "a20163d7fe1f30cc445cfa3995e866fba58bb69759c05bb7ae9ba5ecbb77c1a8"
+  },
+  {
+    "nspname": "private",
+    "proname": "pos_cad6_product_is_perishable_blocking",
+    "args": "p_product pos_products",
+    "md5": "07caa6becc0eb51843ab96999011e525",
+    "sha256": "da60612c6548302e98a1763c3c7779f9d6b1c3deb31da61f0f7ae4e73ca40cd4"
+  },
+  {
+    "nspname": "private",
+    "proname": "pos_cad6_product_shelf_life_target_date",
+    "args": "p_product pos_products",
+    "md5": "7a66b522949088be5739145e46aa2edf",
+    "sha256": "adbb587a8d3a59ffabff15aa4883961f78f3bcd9139007f47f53f5e8d2087def"
+  },
+  {
+    "nspname": "private",
+    "proname": "pos_cad6_shelf_life_expired_for_sale",
+    "args": "p_product pos_products",
+    "md5": "90e71eb6131b9e2e7c5d2abd60c983a0",
+    "sha256": "6962e34eb8f23ca28a60b469637c9da7e58aa1d61dcae0cb12891f63c85f5213"
+  },
+  {
+    "nspname": "private",
+    "proname": "pos_cad6_text_matches_perishable",
+    "args": "p_value text",
+    "md5": "45758de4271607319f25de2c15c7c6b5",
+    "sha256": "a0ecd0930d9addeb996624773f2ff5d9830ccdc4918574c43d3aa78cd03e1c2e"
+  },
+  {
+    "nspname": "private",
+    "proname": "pos_cad6_truthy",
+    "args": "p_value text",
+    "md5": "53db4f8ab33582158e22668a2780f931",
+    "sha256": "e98e23493ed2cc8244fce9971096cd4b7189c5464bb513cd2b80f640413ce710"
+  },
+  {
+    "nspname": "private",
+    "proname": "pos_cash_movement_station_guard",
+    "args": "",
+    "md5": "b7cbbaf4e072d8a7bec5d1409e3b42a1",
+    "sha256": "806cda25f8cbddba25ca15cee5da87a6e078168258733bfd85cfcd21e8771fbc"
+  },
+  {
+    "nspname": "private",
+    "proname": "pos_cash_movement_to_jsonb",
+    "args": "p_movement pos_cash_movements",
+    "md5": "b370afdd514295a92e2dc0fa1f6e41d5",
+    "sha256": "775e29e6032c4cdd2baeb98c0a145707a5bdf99cf3e48c7a699dfcda11b25e5d"
+  },
+  {
+    "nspname": "private",
+    "proname": "pos_cash_session_to_jsonb",
+    "args": "p_session pos_cash_sessions",
+    "md5": "6d8abb1132f159f281924a37529db48f",
+    "sha256": "1fab757ae30901b4bdb91e9d74dea1eb84bfe6287f60098f19b9ce1532d5501e"
+  },
+  {
+    "nspname": "private",
+    "proname": "pos_customer_ledger_to_jsonb",
+    "args": "p_ledger pos_customer_ledger",
+    "md5": "583064761c966e2372a08b28a3c5ccb5",
+    "sha256": "de5a182ca2ac42adb29be025ad79c65c274f77a9611c64c858231a9a1a0c3027"
+  },
+  {
+    "nspname": "private",
+    "proname": "pos_customer_to_jsonb",
+    "args": "p_customer pos_customers",
+    "md5": "14d72480981fda9fb5485daab8516d1d",
+    "sha256": "87b7e3ea81aaa344cb5381d097b71d6e35773bb55f1c67a8b10220af67a38191"
+  },
+  {
+    "nspname": "private",
+    "proname": "pos_inventory_movement_to_jsonb",
+    "args": "p_movement pos_inventory_movements",
+    "md5": "37a1e5db5e998f44b8ecfd544cc0fde9",
+    "sha256": "169342fb17ad6c50ba89153fd4abe7dee3fb40f4658faed279fcb28720f4fc1f"
+  },
+  {
+    "nspname": "private",
+    "proname": "pos_layaway_cash_movement_financial_to_jsonb_v2",
+    "args": "p_movement pos_cash_movements",
+    "md5": "790b4b09e5289e6d88ceb02ab026c2da",
+    "sha256": "ec16bf4a7cfe9ce7bf5086b6a2568dbd0d7dc1869fccc159985cde8b3b361276"
+  },
+  {
+    "nspname": "private",
+    "proname": "pos_layaway_event_financial_to_jsonb_v2",
+    "args": "p_event pos_sync_events",
+    "md5": "b34fa0032daf21fea9dadf647f6b7013",
+    "sha256": "23ea6ccb04845f377a7583f52bf9a4c00e2f48859cc290f7dd80c70456caee5d"
+  },
+  {
+    "nspname": "private",
+    "proname": "pos_layaway_financial_to_jsonb_v2",
+    "args": "p_layaway pos_layaways",
+    "md5": "7f780505530d30bee840cecf73182b72",
+    "sha256": "daaee52265311ccd79b45148e543e5fd160b089b43ca33738566ecd0a2472faf"
+  },
+  {
+    "nspname": "private",
+    "proname": "pos_layaway_inventory_movement_financial_to_jsonb_v2",
+    "args": "p_movement pos_inventory_movements",
+    "md5": "d8944caaafaec8764a957549a4122004",
+    "sha256": "c81019d0ddb76ab72ea1b1c1c9f691f60f7fb328ea43c0dc8b3d95a07acea2fe"
+  },
+  {
+    "nspname": "private",
+    "proname": "pos_layaway_payment_financial_to_jsonb_v2",
+    "args": "p_payment pos_layaway_payments",
+    "md5": "08130d3aad6d7d25d5f13fe1865936b4",
+    "sha256": "aa042b7a655f5c383cede0f25b40a15b18cfa7d574f9a8a01f48c6a725f30ab5"
+  },
+  {
+    "nspname": "private",
+    "proname": "pos_layaway_reservation_financial_to_jsonb_v2",
+    "args": "p_reservation pos_layaway_inventory_reservations",
+    "md5": "54cea121ed27d0a24d1468b5caf931dc",
+    "sha256": "d59cdec4aee89c50b6936660928a79ae9fb81535375f78d5e6089f5852c98c64"
+  },
+  {
+    "nspname": "private",
+    "proname": "pos_layaway_reservation_to_jsonb",
+    "args": "p_reservation pos_layaway_inventory_reservations",
+    "md5": "77f4382d478ba667eb901ed2857373c2",
+    "sha256": "cbf9689e9ef7ee17adf2d8d7bac78863584062831823d8c677de9f7205c1d632"
+  },
+  {
+    "nspname": "private",
+    "proname": "pos_layaway_sale_financial_to_jsonb_v2",
+    "args": "p_sale pos_sales",
+    "md5": "b1aac2561533e0c95710416900f3dfea",
+    "sha256": "89471a3c786ce270d3a23cf3845c04214463c6bd52bcb41955d283e9c92ca148"
+  },
+  {
+    "nspname": "private",
+    "proname": "pos_layaway_sale_item_financial_to_jsonb_v2",
+    "args": "p_item pos_sale_items",
+    "md5": "33bb034107ef526c1511f3315011894a",
+    "sha256": "3ed882bb02adf329a40de0affb607fb713ce304ad6ea26446e71b90b1b7b888b"
+  },
+  {
+    "nspname": "private",
+    "proname": "pos_layaway_sale_payment_financial_to_jsonb_v2",
+    "args": "p_payment pos_sale_payments",
+    "md5": "24180ea9b021aa9265c86c277c3bacb8",
+    "sha256": "fc4928948241d108b384b864943d355e0c031536176e522fe3b4ae704852b5e9"
+  },
+  {
+    "nspname": "private",
+    "proname": "pos_product_batch_shelf_life_guard",
+    "args": "",
+    "md5": "a10a4ce7d49330721b70b1b0c33623cf",
+    "sha256": "ce0695dd37ca0dc978abcd3257e426df004277b32989451873e99bba4abb4904"
+  },
+  {
+    "nspname": "private",
+    "proname": "pos_restaurant_order_item_to_jsonb",
+    "args": "p_row pos_restaurant_order_items",
+    "md5": "b49a50c970aae41edbca6032905d8d75",
+    "sha256": "da5c2561fc3a176090958a4b13b5afb1c193b3565caf4f34772b751cdfaee5cc"
+  },
+  {
+    "nspname": "private",
+    "proname": "pos_restaurant_order_to_jsonb",
+    "args": "p_row pos_restaurant_orders, p_station_code text",
+    "md5": "65f57fdf59fac00f8f6ec10a864ff8d8",
+    "sha256": "b9d1509bb49217c86aa098fa4810f574d6e038a16f118157c71ea86647c1eae2"
+  },
+  {
+    "nspname": "private",
+    "proname": "pos_sale_item_to_jsonb",
+    "args": "p_item pos_sale_items",
+    "md5": "66f879712b8e8dbdd9fd600f9358eefd",
+    "sha256": "abcdb2a9dbf08763e6d08b34ef7702123bb2248b1a078159a0677d71a2af7414"
+  },
+  {
+    "nspname": "private",
+    "proname": "pos_sale_jsonb_numeric",
+    "args": "p_payload jsonb, p_keys text[], p_default numeric",
+    "md5": "015f8b5409b15d61b9eca6ff5aaf6c79",
+    "sha256": "a88ac6d96f6bf5d2562a4aba572d48aa12e1795d7f5013aa5bf7d137364318f8"
+  },
+  {
+    "nspname": "private",
+    "proname": "pos_sale_jsonb_text",
+    "args": "p_payload jsonb, p_keys text[], p_default text",
+    "md5": "24c3b6474a3c2e32814152ca36f6fe64",
+    "sha256": "40dba035c11fe2f223f359075edcada08ef3fb998e12e6114452cca4cd924cd9"
+  },
+  {
+    "nspname": "private",
+    "proname": "pos_sale_payment_to_jsonb",
+    "args": "p_payment pos_sale_payments",
+    "md5": "ca2bfca99adbc5755d5cd41d4f788da9",
+    "sha256": "8f1a0ba506fc34ce3c6e10a81f50d962c975c7043fe7a23d355bef6d3f754fc3"
+  },
+  {
+    "nspname": "private",
+    "proname": "pos_sale_to_jsonb",
+    "args": "p_sale pos_sales",
+    "md5": "9984080acc3ec55d5a7b90e02b3e6de0",
+    "sha256": "6395afe3312283501b60a4cebb2d7f2425951843dc89b7007503259e133c2ce9"
+  },
+  {
+    "nspname": "private",
+    "proname": "pos_sale_try_uuid",
+    "args": "p_value text",
+    "md5": "50dbe0aaf6e818317cd1655b314461a0",
+    "sha256": "667b662784e0a4812f0e7715129100b4a5419c73df4fd396e03f1d4f613ecb69"
+  },
+  {
+    "nspname": "private",
+    "proname": "pos_sales_normalize_ecommerce_traceability",
+    "args": "",
+    "md5": "96c1c1e2da6c8bf24022e2ddffbf7332",
+    "sha256": "0991f3f7fc7295c660ea0971eb0a9acf18b63bf7535cb629407bf4471d9dbab2"
+  },
+  {
+    "nspname": "private",
+    "proname": "post_downgrade_cash_boundary_v1",
+    "args": "p_license_id uuid",
+    "md5": "5c6e2349ba8525f69acb9366d80ebd55",
+    "sha256": "514e5b434b0b2d1709e195fb26fd73a019d4facfda213e213fd09ccd817d090d"
+  },
+  {
+    "nspname": "private",
+    "proname": "post_downgrade_cash_session_evidence_v1",
+    "args": "p_license_id uuid, p_cash_session_id text",
+    "md5": "ec50fd87b302129302730951369b316f",
+    "sha256": "6d30b99fb882fa052fecd092ee0e376ecf3ff7ad83c1e7292ead7ae9a5552b36"
+  },
+  {
+    "nspname": "private",
+    "proname": "product_uses_batches",
+    "args": "p_product pos_products",
+    "md5": "1aa1e4f7213a2772a823c8fae62755cd",
+    "sha256": "dade43f12912853a28cdfd4973b9bb4718e7c7850536b2aeac3a4ce0731718dd"
+  },
+  {
+    "nspname": "private",
+    "proname": "protect_restaurant_paid_sale_id_v1",
+    "args": "",
+    "md5": "5d4332fa32dd00c7018830514f890845",
+    "sha256": "2b1b373e4c4f90fa308d9aae1ed07efadd75b47a259b470abf1641b8b1ab1f4e"
+  },
+  {
+    "nspname": "private",
+    "proname": "protect_restaurant_pos_cancellation_v1",
+    "args": "",
+    "md5": "6ac320223f972948b18b7fb48cbe1eea",
+    "sha256": "963da87e2098e9bbfffb17746e384c409faaa7ca1c243ba50191670866f667ae"
+  },
+  {
+    "nspname": "private",
+    "proname": "public_financial_response_v1",
+    "args": "p_operation_type text, p_response jsonb, p_external_idempotency_key text, p_internal_idempotency_key text",
+    "md5": "65704b35757453828b40377483ddd7cb",
+    "sha256": "e26cbd53f385a50991ba764a99cd4eafaef04a79b322c021aee18b1c17ba0ec2"
+  },
+  {
+    "nspname": "private",
+    "proname": "r2b_assert_sale_idempotency_v1",
+    "args": "p_license_id uuid, p_idempotency_key text, p_request_hash text",
+    "md5": "27cb4236ca9fd7cad6c873f300425ace",
+    "sha256": "3dc31b4cac3a07cc16bbb38e40157ba88ea336595724bfd9002ef2c1c2e23113"
+  },
+  {
+    "nspname": "private",
+    "proname": "r2b_authoritative_modifiers_v1",
+    "args": "p_product pos_products, p_item jsonb",
+    "md5": "ddaf51437600323cc6d6afe8b7033245",
+    "sha256": "15ec720c5795f35acbb4ebfdd65f687d1445971744a458bc346a95103d773b98"
+  },
+  {
+    "nspname": "private",
+    "proname": "r2b_authorize_sale_financial_request_v1",
+    "args": "p_operation_type text, p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_sale jsonb, p_items jsonb, p_payments jsonb, p_cash_session_id text, p_customer_id text, p_idempotency_key text",
+    "md5": "f5c6872a33e53c7136dc10bc58be178b",
+    "sha256": "dedec9a34d43b34d2b1ee7193a9d480cc2ade22c91c229f8dbb9aa48c97cc78f"
+  },
+  {
+    "nspname": "private",
+    "proname": "r2b_finalize_inventory_costs_v1",
+    "args": "p_license_id uuid, p_sale_id text",
+    "md5": "faef9bc87a1c6a08b2261f8bc57cd179",
+    "sha256": "c43c20f5ad3c34dddc42a7244da1096d90021d7ae73a22b88ad38bbef208e782"
+  },
+  {
+    "nspname": "private",
+    "proname": "r2b_modifier_matches_v1",
+    "args": "p_selected jsonb, p_option jsonb",
+    "md5": "c29d36f5a27693ccdcd58322739c78db",
+    "sha256": "6498043bb10b9c5a9b7f4f5eaab0485246ea1b0ff7fd3a8c34727ac93459aacd"
+  },
+  {
+    "nspname": "private",
+    "proname": "r2b_normalize_discount_v1",
+    "args": "p_input jsonb, p_subtotal numeric, p_scope text",
+    "md5": "a9f1b18031e1c44efa86271834ac0a3c",
+    "sha256": "7180b09bbf0bec3c355f81c9c0759d5021f1dc385e373d0ffb46998b8de36a45"
+  },
+  {
+    "nspname": "private",
+    "proname": "recalculate_pos_cash_session_totals",
+    "args": "p_license_id uuid, p_cash_session_id text, p_bump_version boolean",
+    "md5": "fb69e2039d887f301dc9d6751ae8b87b",
+    "sha256": "6df7b732443e102c15bcfb5ffbbddf5f86d20f9e2f40cca18005a1d96740144c"
+  },
+  {
+    "nspname": "private",
+    "proname": "recalculate_pos_customer_debt",
+    "args": "p_license_id uuid, p_customer_id text",
+    "md5": "6a1eac017e6ad1f736c38a50e32ceaba",
+    "sha256": "d9f9de9d4c312795357bf697ab2490a7b1a75654b94d3896fe00ce010f96af6c"
+  },
+  {
+    "nspname": "private",
+    "proname": "record_pos_cash_event",
+    "args": "p_license_id uuid, p_cash_session_id text, p_event_type text, p_actor_device_id uuid, p_actor_staff_user_id uuid, p_actor_name text, p_payload jsonb",
+    "md5": "028491bcfeadbc4c97c4e384355fcd98",
+    "sha256": "90839dfd7c205cc7fdca058b417ab939e538cada9525193e03b8c160552f6bad"
+  },
+  {
+    "nspname": "private",
+    "proname": "record_pos_customer_credit_event",
+    "args": "p_license_id uuid, p_entity_type text, p_entity_id text, p_operation text, p_actor_device_id uuid, p_actor_staff_user_id uuid, p_idempotency_key text, p_metadata jsonb, p_server_version integer",
+    "md5": "a3da931ef7c0e295c7a5e4da19064895",
+    "sha256": "4460ae221b84d46485fb409d8d0217afa37cc9d8cdaaf70223f991f3cbeeab0b"
+  },
+  {
+    "nspname": "private",
+    "proname": "record_pos_inventory_movement",
+    "args": "p_license_id uuid, p_product_id text, p_batch_id text, p_sale_id text, p_sale_item_id text, p_movement_type text, p_quantity numeric, p_previous_stock numeric, p_new_stock numeric, p_previous_batch_stock numeric, p_new_batch_stock numeric, p_unit_cost numeric, p_reason text, p_source text, p_actor_device_id uuid, p_actor_staff_user_id uuid, p_actor_key text, p_actor_name text, p_idempotency_key text, p_metadata jsonb",
+    "md5": "14c63bd4a76695cea18eda948d6e0985",
+    "sha256": "9ad4a820b219f9cce9fc0362ae3e2216ffc081647d0c548e34c044842d23dadd"
+  },
+  {
+    "nspname": "private",
+    "proname": "record_pos_sale_audit_event",
+    "args": "p_license_id uuid, p_sale_id text, p_event_type text, p_actor_device_id uuid, p_actor_staff_user_id uuid, p_actor_name text, p_payload jsonb",
+    "md5": "cdea41c678577ecad6c596a104694a1a",
+    "sha256": "64b63002b816e623bca2795d9f545d86db9e776a91b5e7f6d08ac60c4ff870a1"
+  },
+  {
+    "nspname": "private",
+    "proname": "record_pos_sync_event",
+    "args": "p_license_id uuid, p_entity_type text, p_entity_id text, p_operation text, p_actor_device_id uuid, p_actor_staff_user_id uuid, p_idempotency_key text, p_metadata jsonb, p_server_version integer",
+    "md5": "a6d15fd981804853cc75124172431618",
+    "sha256": "50457d45eee579ab80f3cc32c5a6bd7f63c1a15120cbf8fd992401ca991ea814"
+  },
+  {
+    "nspname": "private",
+    "proname": "release_layaway_stock_v1",
+    "args": "p_license_id uuid, p_layaway_id text, p_actor_device_id uuid, p_actor_staff_user_id uuid, p_actor_key text, p_actor_name text, p_idempotency_key text",
+    "md5": "93b9cb899552b1d545e7a55caf541757",
+    "sha256": "d0a6e1b54200aba70bc8b490171a88fb25c50155b95af89e7e6f07eb68e9fc70"
+  },
+  {
+    "nspname": "private",
+    "proname": "require_active_admin_session",
+    "args": "p_license_key text, p_device_fingerprint text, p_device_security_token text, p_admin_session_token text",
+    "md5": "99a8293898a6200351a5d97027fc5c50",
+    "sha256": "dc915e5f5f03da36b1bb79782fc83c9e6d13d702fbc5ec9bddde48bbcec5316b"
+  },
+  {
+    "nspname": "private",
+    "proname": "reserve_financial_operation_v1",
+    "args": "p_license_id uuid, p_idempotency_key text, p_request_hash text, p_operation_type text, p_canonical_request jsonb, p_verified_actor_key text, p_verified_device_id uuid, p_cash_session_id text, p_verified_cash_station_id text",
+    "md5": "ea1b87bae421c011581d8d7230700348",
+    "sha256": "a475cc8cb1c9c047abea22d5018aa418a6ac0abeea918ed7b361bde64a445b98"
+  },
+  {
+    "nspname": "private",
+    "proname": "reserve_layaway_stock_v1",
+    "args": "p_license_id uuid, p_layaway_id text, p_items jsonb, p_actor_device_id uuid, p_actor_staff_user_id uuid, p_actor_key text, p_actor_name text, p_idempotency_key text",
+    "md5": "0c8f6e3e560f4e7b8c4588b3ed09230f",
+    "sha256": "87a5e88dae95fae6232045e6817b9cee59e06f1a216785007c25f88dfeae2dab"
+  },
+  {
+    "nspname": "private",
+    "proname": "resolve_cash_actor_key",
+    "args": "p_context jsonb",
+    "md5": "2788ffe00443f944adcb18f1d8c47afd",
+    "sha256": "0d6cca21e9d27ecbe79d9d9ae4f3afe3b4d876fecc00a9c897b2b727247339ca"
+  },
+  {
+    "nspname": "private",
+    "proname": "resolve_cash_actor_name",
+    "args": "p_context jsonb",
+    "md5": "f0cbb6fecc5122193937ec31ca75fa03",
+    "sha256": "eab354e3aa519b08aaa2353179395a191ff64ac98831cf54c1d4e4dda1b8a6ce"
+  },
+  {
+    "nspname": "private",
+    "proname": "resolve_cash_station_for_device",
+    "args": "p_license_id uuid, p_device_id uuid, p_create_default boolean",
+    "md5": "b23b3614e25471804de5191e13450928",
+    "sha256": "2a418891c8f577a902cd27b29eb7d195f6438578a7b9daafe65ccd27f5db174b"
+  },
+  {
+    "nspname": "private",
+    "proname": "resolve_financial_cash_station_v1",
+    "args": "p_license_id uuid, p_device_id uuid",
+    "md5": "159af13d86ed621b8f66393d9e6d0f9a",
+    "sha256": "3157ec50c970b2fb6e7655193a78cc311238b8bc5c963b021ded844be58c833c"
+  },
+  {
+    "nspname": "private",
+    "proname": "resolve_pos_actor_type",
+    "args": "p_context jsonb",
+    "md5": "472a3bccdc148b49076c4a9adb51eaa9",
+    "sha256": "b4ca15482fb227fd42565dd8d03a91c7343e8c30b7495c7735e52231bdc5d470"
+  },
+  {
+    "nspname": "private",
+    "proname": "resolve_sale_inventory_allocations",
+    "args": "p_license_id uuid, p_items jsonb, p_sale_id text",
+    "md5": "131502c429a3221a6d38310fd50f02d3",
+    "sha256": "dae24199f1eb3fb6432b62417e91bb4d70c3e0a899539b21ef1aa1d05a0303ed"
+  },
+  {
+    "nspname": "private",
+    "proname": "resolve_sale_inventory_allocations_direct_rest_inv5",
+    "args": "p_license_id uuid, p_items jsonb, p_sale_id text",
+    "md5": "2f07a19b1b7b083b8f6cc98f7f132a9b",
+    "sha256": "1914c469217133cafa0cb60681a694eecaef7228076caf41a08be77234853937"
+  },
+  {
+    "nspname": "private",
+    "proname": "rest_inv5_build_sale_inventory_requirements",
+    "args": "p_sale_id text, p_item_norm jsonb, p_source_product pos_products",
+    "md5": "7bf28c442e187d8226710d404a14ab17",
+    "sha256": "2a77541f8d8c4263cf7a86e382c8f6c2579d1cd2a481e3dad0e302a185344aad"
+  },
+  {
+    "nspname": "private",
+    "proname": "rest_inv5_enrich_inventory_allocations",
+    "args": "p_expanded_items jsonb, p_response jsonb",
+    "md5": "10580a6d07fb351bcb91a740681e37c0",
+    "sha256": "bc87cb7ff90847724d3bd2fdcf13d431a5476fa00e44cfea4f444db91e256c27"
+  },
+  {
+    "nspname": "private",
+    "proname": "rest_inv5_expand_sale_inventory_items",
+    "args": "p_license_id uuid, p_items jsonb, p_sale_id text",
+    "md5": "1e155b8f0d430c5f64cf6f6fe377ba3a",
+    "sha256": "d82f63a7615650b77faa6d1315fa1ae440bb3969c67bb4fa67548a884c1fc505"
+  },
+  {
+    "nspname": "private",
+    "proname": "rest_inv5_modifier_inventory_quantity",
+    "args": "p_modifier jsonb",
+    "md5": "8373416aaed51834c4f5d462db5484a7",
+    "sha256": "05d678f23f3d1353c1d7e9e101696dbe2cdd21e8d366624f29c76522b5ce46b4"
+  },
+  {
+    "nspname": "private",
+    "proname": "rest_inv5_modifier_tracks_inventory",
+    "args": "p_modifier jsonb",
+    "md5": "4aa77b7d471b0134997156602a714549",
+    "sha256": "9e5f85da4ceeded691c27444780cc9ba8ba447be6e11051a5ea5ca89f7b0bba4"
+  },
+  {
+    "nspname": "private",
+    "proname": "sanitize_financial_response_idempotency_v1",
+    "args": "p_value jsonb, p_external_idempotency_key text, p_internal_idempotency_key text",
+    "md5": "f9af87015fa0342c899e964998187b0f",
+    "sha256": "2b2028849517cd38c17f806781041b50c7b379924bc303577d943dcf34ff6ea2"
+  },
+  {
+    "nspname": "private",
+    "proname": "touch_license_staff_session_seen",
+    "args": "p_session_id uuid, p_min_interval interval",
+    "md5": "57c780e90573658d00445f3aeaa6a28b",
+    "sha256": "b976abd0fdcf93e87a6085045bdcb381847158ff9ebabde1abcfe894181614e4"
+  },
+  {
+    "nspname": "private",
+    "proname": "touch_license_staff_user_updated_at",
+    "args": "",
+    "md5": "fd16acdf4468d88f3bb92f82a76b6ad0",
+    "sha256": "7ebbc3248449dfc7e77219b8b56b965c4811190a08e49c5ee18e35184e7839c9"
+  },
+  {
+    "nspname": "private",
+    "proname": "validate_customer_payment_allocations",
+    "args": "p_allocations jsonb, p_amount numeric",
+    "md5": "fe744c59d925abd0827ed846261aade6",
+    "sha256": "8f04dc186e5bbc042c1130cd32ce9e5c58d4734701b84d1c23802539e6ecf5b2"
+  },
+  {
+    "nspname": "private",
+    "proname": "validate_pos_sync_context",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text",
+    "md5": "8f23a11866c54497f0a8e0f463152f4a",
+    "sha256": "42995c5088de44d28d7dac13e30fa00b1aa74e97ccd95c441d3c16e7c1488957"
+  },
+  {
+    "nspname": "public",
+    "proname": "build_pos_rpc_rate_limited_response",
+    "args": "p_rate_limit jsonb",
+    "md5": "2953c6bc92d41c272e8b66d07489f987",
+    "sha256": "f69f2edb8bae56dc12efdfcf1c19057a0e280025a38f1560096fd42c689ed8af"
+  },
+  {
+    "nspname": "public",
+    "proname": "enforce_license_plan_limits_after_change",
+    "args": "",
+    "md5": "9fdb1a5e207362af36a1d384cddf0d77",
+    "sha256": "a0aa3be1da6bb71f380af9fd977700d1ebee155f2cf1d708d95bb1eb9b852e95"
+  },
+  {
+    "nspname": "public",
+    "proname": "enforce_pos_rpc_rate_limit_v2",
+    "args": "p_license_key text, p_device_fingerprint text, p_staff_session_token text, p_rpc_name text, p_scope text, p_max_attempts integer, p_window_seconds integer, p_block_seconds integer, p_code text, p_metadata jsonb",
+    "md5": "123fcd23148172cc6873599ffe7fdf6d",
+    "sha256": "cb3c170fe4a0380c340703aa306b174f48c034bc46193b750c3440409b7a448a"
+  },
+  {
+    "nspname": "public",
+    "proname": "notify_device_change",
+    "args": "",
+    "md5": "50b72386eb7b382a99e2c13f9bfe220b",
+    "sha256": "b72a5796f2c44448cf5aa6c311aba54f30ff642f6f59fbb251f8d96453ee8f9f"
+  },
+  {
+    "nspname": "public",
+    "proname": "notify_license_change",
+    "args": "",
+    "md5": "c6bb5c0c92837f41e59401967a2c45ac",
+    "sha256": "f845403be3f0e189fc38f524b456e39f5924de76ce6a1f689c94b840368434b8"
+  },
+  {
+    "nspname": "public",
+    "proname": "pos_adjust_initial_cash_fund",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_cash_session_id text, p_new_opening_amount numeric, p_reason text, p_expected_version integer, p_idempotency_key text",
+    "md5": "bc837af6590dafd624b886217f3baba2",
+    "sha256": "652417492a12b600ddea58899ede208856604dc76c41e4df698e02a15b24f4c8"
+  },
+  {
+    "nspname": "public",
+    "proname": "pos_adjust_initial_cash_fund_unlimited",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_cash_session_id text, p_new_opening_amount numeric, p_reason text, p_expected_version integer, p_idempotency_key text",
+    "md5": "a78034ebefc8b7207fdf98dd648399bf",
+    "sha256": "79dcff14cd9d81d09b86bac1b5e49e8c50732982dc6b17d025f469d56a58fab2"
+  },
+  {
+    "nspname": "public",
+    "proname": "pos_admin_close_cash_session",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_cash_session_id text, p_closing_mode text, p_counted_amount numeric, p_next_shift_fund numeric, p_reason_code text, p_comments text, p_expected_version integer, p_idempotency_key text",
+    "md5": "957a49d539846acd7fa92b254fca113a",
+    "sha256": "04a6dd3c41c48464715b665830e5e751270d41c77fdd4498348be53bdb615864"
+  },
+  {
+    "nspname": "public",
+    "proname": "pos_admin_close_cash_session_unlimited",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_cash_session_id text, p_closing_mode text, p_counted_amount numeric, p_next_shift_fund numeric, p_reason_code text, p_comments text, p_expected_version integer, p_idempotency_key text",
+    "md5": "8e284ef1dd2d12c4c425bca891de60fa",
+    "sha256": "fd04dcb614639807ce3926752f68f8053fa89d52414384d9a616fd509c0d7fbd"
+  },
+  {
+    "nspname": "public",
+    "proname": "pos_cancel_cloud_sale",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_sale_id text, p_reason text, p_idempotency_key text",
+    "md5": "b5c162426ccc80be263efb13dd4452e6",
+    "sha256": "6c0ddbd33cc4c4cced7c2021b70b98e7ac239c2718892950641499f74a64b336"
+  },
+  {
+    "nspname": "public",
+    "proname": "pos_cancel_cloud_sale_apply_fase6e",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_sale_id text, p_reason text, p_idempotency_key text",
+    "md5": "f948f6c059433ccd6252fe12ba170ba8",
+    "sha256": "636aa06790bd656c77e4ba388019a8a0d06d8c7355fa0c6be49ecfdd15169eb1"
+  },
+  {
+    "nspname": "public",
+    "proname": "pos_cancel_cloud_sale_apply_fase6e_legacy_r1",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_sale_id text, p_reason text, p_idempotency_key text",
+    "md5": "646721056ad3d213e14b536453b9ef33",
+    "sha256": "5b060b0d0314e99398b6ee0b2440396f1218fee9b403e7183fcac120afdf0945"
+  },
+  {
+    "nspname": "public",
+    "proname": "pos_cancel_cloud_sale_unlimited",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_sale_id text, p_reason text, p_idempotency_key text",
+    "md5": "89094e41969e115168c8c22963b6f153",
+    "sha256": "988743703fbf74423dc308871667582f3f4517f3e0ea2da9ca0099012da90320"
+  },
+  {
+    "nspname": "public",
+    "proname": "pos_close_cash_session",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_cash_session_id text, p_closing jsonb, p_expected_version integer, p_idempotency_key text",
+    "md5": "f0622bef76cdb053836c352e6228a305",
+    "sha256": "b6792a55f9c620f9730b26cbcd8c5c30c3eb5b64ba179e1753990336c5279bed"
+  },
+  {
+    "nspname": "public",
+    "proname": "pos_close_cash_session_unlimited",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_cash_session_id text, p_closing jsonb, p_expected_version integer, p_idempotency_key text",
+    "md5": "3a7be45e49e660ba9298f42b0d4cb2f5",
+    "sha256": "8da5e13b7bacd18a0cbc4ba1cfcb2ab3c0d6a3c2791fa15ea225c9e43f6f2832"
+  },
+  {
+    "nspname": "public",
+    "proname": "pos_close_restaurant_order_after_checkout_unlimited",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_local_order_id text, p_paid_sale_id text, p_paid_sale_folio text, p_paid_total numeric, p_payment_summary jsonb, p_idempotency_key text",
+    "md5": "0ce01afd23095cf42f22a0d3982d5cc7",
+    "sha256": "566e06ea3196e60202b31090234620cc46c0323dd718d9bcd7751abf5eb4c0e6"
+  },
+  {
+    "nspname": "public",
+    "proname": "pos_create_cloud_sale_cashier",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_sale jsonb, p_items jsonb, p_payments jsonb, p_cash_session_id text, p_idempotency_key text",
+    "md5": "653ad817084920aa6adc1a60266ef37c",
+    "sha256": "ba074bad4e635091b2ce4e3a8088991547796a8afbfb828e3e65e6a28386ea6f"
+  },
+  {
+    "nspname": "public",
+    "proname": "pos_create_cloud_sale_cashier_inventory",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_sale jsonb, p_items jsonb, p_payments jsonb, p_cash_session_id text, p_idempotency_key text",
+    "md5": "0c9dd22833c208dc20d78dd14bfd005d",
+    "sha256": "b99555711ecc307ba1b88cc52677bdd4fbf33fdac3f863acfa3b9048fde9c41a"
+  },
+  {
+    "nspname": "public",
+    "proname": "pos_create_cloud_sale_cashier_inventory_legacy_r2b",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_sale jsonb, p_items jsonb, p_payments jsonb, p_cash_session_id text, p_idempotency_key text",
+    "md5": "24843a289bbfdb692b4d18a10880c0b5",
+    "sha256": "b375e877617e37d362f85b02a0044acc8c5a52d2e8db7c318a27f4d971abbdc4"
+  },
+  {
+    "nspname": "public",
+    "proname": "pos_create_cloud_sale_cashier_inventory_unlimited",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_sale jsonb, p_items jsonb, p_payments jsonb, p_cash_session_id text, p_idempotency_key text",
+    "md5": "95d183e518eabdb784e93461afecb421",
+    "sha256": "e638163ddf377b45e7cd63ad54364acdf85fe672213f44a6aa7bebbb86cb42fe"
+  },
+  {
+    "nspname": "public",
+    "proname": "pos_create_cloud_sale_cashier_legacy_r2b",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_sale jsonb, p_items jsonb, p_payments jsonb, p_cash_session_id text, p_idempotency_key text",
+    "md5": "cfe622050f457697e93f1dbb3c415360",
+    "sha256": "bc8dfec58a36c75d163fa5a68da4cda7aafffcb5dfacb962ea54478d3ea50e23"
+  },
+  {
+    "nspname": "public",
+    "proname": "pos_create_cloud_sale_cashier_unlimited",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_sale jsonb, p_items jsonb, p_payments jsonb, p_cash_session_id text, p_idempotency_key text",
+    "md5": "e731d16ce2b678220c359706cf85e184",
+    "sha256": "91f42b4cbf3ff16e870750da230db3b5d64a015e1bd8c540c359617129acffd3"
+  },
+  {
+    "nspname": "public",
+    "proname": "pos_create_cloud_sale_credit",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_sale jsonb, p_items jsonb, p_payments jsonb, p_cash_session_id text, p_customer_id text, p_idempotency_key text",
+    "md5": "59977522691c4008711e4361bcb1e0bd",
+    "sha256": "dc11363c60634e8d4615aa231c1f7ed22f0b9baeebdb1bb9cd161d4fa8e048f0"
+  },
+  {
+    "nspname": "public",
+    "proname": "pos_create_cloud_sale_credit_legacy_r2b",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_sale jsonb, p_items jsonb, p_payments jsonb, p_cash_session_id text, p_customer_id text, p_idempotency_key text",
+    "md5": "c75dff5b4bab23bcb09f0c155df21f44",
+    "sha256": "55a5f013ff4b8f04c5c7ffbc83be50e29b6435baa9bf08bffe3b08b0f8dc26fd"
+  },
+  {
+    "nspname": "public",
+    "proname": "pos_create_cloud_sale_credit_unlimited",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_sale jsonb, p_items jsonb, p_payments jsonb, p_cash_session_id text, p_customer_id text, p_idempotency_key text",
+    "md5": "37cc056a4c0bcdc373116459394c2eea",
+    "sha256": "269e267aacd03ba0dda023c6baacd7ccc8473679065b80b6072083bc95fe68d2"
+  },
+  {
+    "nspname": "public",
+    "proname": "pos_execute_financial_operation_v1",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_idempotency_key text, p_request_hash text, p_operation_type text, p_request jsonb",
+    "md5": "148918104b257982e3809a880bda7177",
+    "sha256": "c575e9751a0a2b70a14231ab9e9073d9cdac8775ac0571de5989d6435ade559b"
+  },
+  {
+    "nspname": "public",
+    "proname": "pos_get_financial_operation_receipt",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_idempotency_key text, p_request_hash text",
+    "md5": "0da9f157f5d0855ec8e1945a6392f7b5",
+    "sha256": "d9704b8d30f17fd594af05b668e7b11cf007f96ef5cf31367506935852272a73"
+  },
+  {
+    "nspname": "public",
+    "proname": "pos_open_cash_session",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_opening jsonb, p_idempotency_key text",
+    "md5": "3e2a9683bb4bf753eaaaad1423456bdc",
+    "sha256": "4f5f19fc42a30c727ab54e092def596a53081f33bf5f17b54aaf90808562851e"
+  },
+  {
+    "nspname": "public",
+    "proname": "pos_preview_cloud_sale_cancellation",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_sale_id text, p_reason text",
+    "md5": "fbd4bd84ec1af9953ebef6b01f4516e8",
+    "sha256": "a6c487867a40448db30741ee7032997099a59fa6d29245c64c4c3b1161022957"
+  },
+  {
+    "nspname": "public",
+    "proname": "pos_preview_cloud_sale_cancellation_legacy_r1",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_sale_id text, p_reason text",
+    "md5": "1625f41a80232e295331a1ee24987104",
+    "sha256": "17120637c301c4c4cc58824643752d2287793ca82c48a02caec5b48e355cee01"
+  },
+  {
+    "nspname": "public",
+    "proname": "pos_preview_cloud_sale_cancellation_unlimited",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_sale_id text, p_reason text",
+    "md5": "62f18b189b7f640da9ec1ca2e1d55d9b",
+    "sha256": "61a318cc1990aacc948847eb1a18503db95c9f397886f44263612bf149c5f4fd"
+  },
+  {
+    "nspname": "public",
+    "proname": "pos_record_customer_payment",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_customer_id text, p_amount numeric, p_payment_method text, p_cash_session_id text, p_note text, p_allocations jsonb, p_idempotency_key text",
+    "md5": "134fb85a7b6df787e8c560c51bc7ab55",
+    "sha256": "da5ca36d00b29a3163907fed17786a7853805e79561ee4da173bd8681c90300c"
+  },
+  {
+    "nspname": "public",
+    "proname": "pos_record_customer_payment_unlimited",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_customer_id text, p_amount numeric, p_payment_method text, p_cash_session_id text, p_note text, p_allocations jsonb, p_idempotency_key text",
+    "md5": "6b666116ae23029caef4e0ac373ddd6e",
+    "sha256": "73ce2f73f985eada337800b1ed18b9242c1f57948a23c48a57542f522ead8bf4"
+  },
+  {
+    "nspname": "public",
+    "proname": "pos_register_cash_movement",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_cash_session_id text, p_type text, p_amount numeric, p_concept text, p_idempotency_key text, p_metadata jsonb",
+    "md5": "dbe6892c8cd0624c38b2de744c6002e9",
+    "sha256": "0712bfdd705c939e8baa79e133aa9bb9bd39a057895bc2d9d8657551437edc60"
+  },
+  {
+    "nspname": "public",
+    "proname": "pos_register_cash_movement_unlimited",
+    "args": "p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_cash_session_id text, p_type text, p_amount numeric, p_concept text, p_idempotency_key text, p_metadata jsonb",
+    "md5": "ac75c5d916c0b4ad060a1886360bac89",
+    "sha256": "41cb584a9130876db794c11f291ff603c35b8b872d7dc47ccb9972580e90ceba"
+  },
+  {
+    "nspname": "public",
+    "proname": "sync_license_plan_snapshot",
+    "args": "",
+    "md5": "c321b96bf384d88275516ee4630e5d28",
+    "sha256": "2bcdfbcb6ccd088623d2073c35e7caba8b07c181e96601af4865c3c9fef63d00"
+  }
+]

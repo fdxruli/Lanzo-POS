@@ -90,8 +90,8 @@
 }
 
 .expiration-widget .btn-restore:hover {
-  background: var(--secondary-color);
-  color: var(--ui-text-on-primary);
+  background: var(--ui-action-primary-bg);
+  color: var(--ui-action-primary-text);
 }
 
 /* --- HEADER VARIANTS --- */
@@ -385,9 +385,9 @@
 }
 
 .expiration-widget .btn-edit:hover:not(:disabled) {
-  border-color: var(--secondary-color);
-  background: var(--secondary-color);
-  color: var(--ui-text-on-primary);
+  border-color: var(--ui-action-primary-bg);
+  background: var(--ui-action-primary-bg);
+  color: var(--ui-action-primary-text);
 }
 
 .expiration-widget .btn-waste {
@@ -578,8 +578,8 @@
 }
 
 .expiration-widget .btn-secondary {
-  background: var(--secondary-color);
-  color: var(--ui-text-on-primary);
+  background: var(--ui-action-primary-bg);
+  color: var(--ui-action-primary-text);
   border: none;
 }
 

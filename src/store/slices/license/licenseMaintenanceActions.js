@@ -10,6 +10,8 @@ import {
     renewLicenseService
 } from '../../../services/licenseService';
 import { assertLocalTenantSyncAccess } from '../../../services/tenant/localTenantGuard';
+import { getTenantRuntimeReadiness } from '../../../services/db/tenantRuntimeRouter';
+import { actorRuntimeController } from '../../../services/auth/actorRuntimeController';
 
 const LAST_ACTIVE_STORAGE_KEY = 'lanzo_last_active';
 const LAST_OFFLINE_STORAGE_KEY = 'lanzo_last_offline';
@@ -54,6 +56,9 @@ export const createLicenseMaintenanceActions = ({
     get
 }) => ({
     performSystemHealthCheck: async (reason = 'wake', metadata = {}) => {
+        // Stateful local expiry evaluation must precede every early return.
+        // This publishes existing LOCKED semantics without refreshing evidence.
+        actorRuntimeController.getState();
         const state = get();
 
         // Caso límite 1: No interrumpir la carga inicial ni ejecutar en pantallas sin autenticación.
@@ -61,6 +66,11 @@ export const createLicenseMaintenanceActions = ({
             state.appStatus !== 'ready' ||
             state._isInitializing
         ) {
+            return;
+        }
+
+        if (!getTenantRuntimeReadiness().ready) {
+            Logger.warn('[HealthCheck] Se omite ' + reason + ': TenantRuntime no está listo.');
             return;
         }
 

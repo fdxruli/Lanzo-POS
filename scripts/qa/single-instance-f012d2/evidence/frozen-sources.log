@@ -1,0 +1,7 @@
+src/hooks/useCaja.js: OK
+src/services/financial/cancellationCashRefreshRoute.js: OK
+src/services/financial/financialCancellationProjection.js: OK
+src/services/financial/financialProjectionRegistry.js: OK
+src/services/financial/financialIntentRecoveryCoordinator.js: OK
+package-lock.json: OK
+vite.config.js: OK

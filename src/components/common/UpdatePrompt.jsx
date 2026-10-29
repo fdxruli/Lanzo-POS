@@ -28,7 +28,7 @@ const persistDismissedState = () => {
   }
 };
 
-const UpdatePrompt = () => {
+const UpdatePrompt = ({ isSuppressed = false } = {}) => {
   const showUpdateModal = useAppStore((state) => state.showUpdateModal);
   const isUpdating = useAppStore((state) => state.isUpdating);
   const setUpdateAvailable = useAppStore((state) => state.setUpdateAvailable);
@@ -69,7 +69,7 @@ const UpdatePrompt = () => {
     closeUpdateModal();
   };
 
-  if (!showUpdateModal || isDismissed) return null;
+  if (isSuppressed || !showUpdateModal || isDismissed) return null;
 
   return (
     <div className="ui-card ui-card--compact update-prompt">

@@ -3,11 +3,18 @@ import { useAppStore } from '../../store/useAppStore';
 import { useSettingsAccess } from '../../services/auth/useSettingsAccess';
 import DeviceManager from '../common/DeviceManager';
 import NoPermission from '../common/NoPermission';
+import { DeviceProShowcase } from './LanzoNubeCapabilitiesShowcase';
+import { canShowLocalPlanDiscovery } from './localPlanDiscovery';
 
 export default function DevicesSettings() {
   const access = useSettingsAccess();
   const licenseDetails = useAppStore((state) => state.licenseDetails);
   const currentStaffUser = useAppStore((state) => state.currentStaffUser);
+  const showLocalNubeDiscovery = canShowLocalPlanDiscovery(
+    licenseDetails,
+    access,
+    'devices'
+  );
 
   if (!access.canAccessSection('devices')) return <NoPermission />;
 
@@ -72,6 +79,8 @@ export default function DevicesSettings() {
           </dl>
         </section>
       )}
+
+      {showLocalNubeDiscovery && <DeviceProShowcase />}
     </div>
   );
 }

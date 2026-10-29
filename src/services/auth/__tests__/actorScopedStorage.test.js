@@ -254,4 +254,16 @@ describe('ActorScopedStorage cart ownership', () => {
     expect(state.active.tenantDatabaseName).toBe(TENANT_A.databaseName);
     expect(state.active.tenantOpaqueId).toBe(TENANT_A.opaqueId);
   });
+  it('rejects obsolete preparation before replacing the current actor storage binding', async () => {
+    await mountActor(TENANT_A, 'staff:current-staff', 8);
+    writeCart({ items: ['CURRENT'] });
+    await expect(prepareActorScopedStorage({
+      tenant: TENANT_A, actorKey: 'admin:obsolete-admin', actorGeneration: 2,
+      assertCurrent: () => { throw Object.assign(new Error('obsolete'), { code: 'ACTOR_CONTEXT_STALE' }); }
+    })).rejects.toMatchObject({ code: 'ACTOR_CONTEXT_STALE' });
+    expect(getActorScopedStorageState().active.actorKey).toBe('staff:current-staff');
+    expect(getActorScopedStorageState().pending).toBeNull();
+    expect(readCart()).toEqual({ items: ['CURRENT'] });
+  });
+
 });

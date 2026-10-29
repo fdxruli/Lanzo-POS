@@ -45,7 +45,8 @@ vi.mock('../../../../services/auth/actorSessionRuntimeBridge', () => ({
   beginActorRuntimeAuthentication: mocks.beginActorRuntimeAuthentication,
   grantAuthenticatedActorRuntime: mocks.grantAuthenticatedActorRuntime,
   restoreActorRuntimeFromCurrentSessionCache: mocks.restoreActorRuntimeFromCurrentSessionCache,
-  lockActorRuntime: mocks.lockActorRuntime
+  lockActorRuntime: mocks.lockActorRuntime,
+  assertAuthenticatedActorSessionCurrent: vi.fn(async () => true)
 }));
 vi.mock('../../../../services/licenseStorage', () => ({
   saveLicenseToStorage: mocks.saveLicenseToStorage,
@@ -66,6 +67,15 @@ vi.mock('../../../../services/tenant/localTenantGuard', () => ({
   lockLocalTenantAccess: vi.fn(),
   runWithLocalTenantSyncLease: vi.fn(async (_source, _options, operation) => operation())
 }));
+
+vi.mock('../../../../services/auth/actorRuntimeController', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, actorRuntimeController: {
+    getState: () => ({ status: 'locked', generation: 0 }),
+    capture: () => ({ actorType: 'admin', actorId: mocks.restoreActorRuntimeFromCurrentSessionCache?.mock.lastCall?.[0]?.actor?.id || mocks.grantAuthenticatedActorRuntime.mock.lastCall?.[0]?.actor?.id, assertCurrent: vi.fn() }),
+    subscribe: () => () => {}
+  } };
+});
 
 import { createLicenseAdminActions } from '../licenseAdminActions';
 import { createLicenseBootstrapActions } from '../licenseBootstrapActions';
@@ -105,8 +115,8 @@ const createStore = () => {
     stopLicenseSync: vi.fn(),
     refreshLicenseSyncMode: vi.fn(),
     _validateInBackground: vi.fn(),
-    _loadProfile: vi.fn(async () => { state.appStatus = 'ready'; }),
-    _processOfflineMode: vi.fn(async () => { state.appStatus = 'ready'; }),
+    _loadProfile: vi.fn(async (_key, options = {}) => { state.appStatus = 'ready'; options.onPrepared?.('ready'); }),
+    _processOfflineMode: vi.fn(async (_key, options = {}) => { state.appStatus = 'ready'; options.onPrepared?.('ready'); }),
     _requireLicenseChange: vi.fn(),
     clearLocalLicenseSession: vi.fn()
   };
@@ -123,7 +133,7 @@ const createStore = () => {
       hasStaffValidationContext: async () => false
     })
   );
-  state._processOfflineMode = vi.fn(async () => { state.appStatus = 'ready'; });
+  state._processOfflineMode = vi.fn(async (_key, options = {}) => { state.appStatus = 'ready'; options.onPrepared?.('ready'); });
   return state;
 };
 
@@ -140,7 +150,7 @@ describe('modern Admin cutover across PRO to FREE expiry', () => {
     mocks.clearStaffSessionCache.mockResolvedValue(undefined);
     mocks.saveLicenseToStorage.mockResolvedValue(undefined);
     mocks.grantAuthenticatedActorRuntime.mockResolvedValue({ status: 'granted' });
-    mocks.restoreActorRuntimeFromCurrentSessionCache.mockResolvedValue({ status: 'granted' });
+    mocks.restoreActorRuntimeFromCurrentSessionCache.mockResolvedValue({ status: 'granted', generation: 0 });
   });
 
   it('keeps Admin login required after PRO → FREE when the Admin session is later removed and discovery receives a stale legacy response', async () => {
@@ -162,6 +172,12 @@ describe('modern Admin cutover across PRO to FREE expiry', () => {
     mocks.lockActorRuntime.mockClear();
     mocks.hasAdminSessionToken.mockResolvedValue(false);
     mocks.getLicenseFromStorage.mockResolvedValue(storedFree);
+    mocks.verifyAdminSession.mockResolvedValue({
+      success: false,
+      valid: false,
+      verificationStatus: 'local_credentials_missing',
+      missingCredentials: ['admin_session_token']
+    });
     mocks.activateLicense.mockResolvedValue({
       valid: true,
       details: {

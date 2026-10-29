@@ -77,7 +77,9 @@ export default function EcommerceBusinessInformationPanel({
   onShareLink,
   whatsappShareUrl,
   onChangeStatus,
-  requirements
+  requirements,
+  showNubeBenefits = false,
+  onOpenNubeBenefits
 }) {
   const canPublish = Object.values(requirements).every(Boolean);
 
@@ -86,7 +88,7 @@ export default function EcommerceBusinessInformationPanel({
       id="ecom-portal-panel-information"
       className="ecom-admin-information-grid"
       role="tabpanel"
-      aria-labelledby={portal ? 'ecom-portal-tab-information' : undefined}
+      aria-labelledby="ecom-portal-tab-information"
     >
       <form className="ui-card ecom-admin-form-card" onSubmit={onSubmit}>
         <div className="ecom-admin-card-heading">
@@ -230,6 +232,8 @@ export default function EcommerceBusinessInformationPanel({
           onFieldChange={onFieldChange}
           plan={plan}
           features={features}
+          showNubeBenefits={showNubeBenefits}
+          onOpenNubeBenefits={onOpenNubeBenefits}
         />
 
         <div className="ecom-admin-form-actions">

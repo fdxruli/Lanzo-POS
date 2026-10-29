@@ -1,10 +1,17 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Bell } from 'lucide-react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../../store/useAppStore';
 import { useEcommercePublishedStockAlerts } from '../../hooks/useEcommercePublishedStockAlerts';
 import { useInventoryOperationalAlertsSnapshot } from '../../hooks/useInventoryOperationalAlertsSnapshot';
+import usePostDowngradeCashPending from '../../hooks/usePostDowngradeCashPending';
+import { useLocalBackupAttention } from '../../hooks/useLocalBackupAttention';
+import {
+  buildPostDowngradeCashAttentionKey,
+  POST_DOWNGRADE_CASH_ATTENTION_EVENT,
+  readPostDowngradeCashAttention
+} from '../../services/cash/postDowngradeCashAttention';
 import {
   canStaffAccessEcommerceOperationalAlert,
   canStaffAccessLocalInventoryOperationalAlerts,
@@ -27,6 +34,7 @@ export default function NotificationBell({
 }) {
   const navigate = useNavigate();
   const [isLocalOpen, setIsLocalOpen] = useState(false);
+  const closeLocal = useCallback(() => setIsLocalOpen(false), []);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
   const currentDeviceRole = useAppStore((state) => state.currentDeviceRole);
   const currentStaffUser = useAppStore((state) => state.currentStaffUser);
@@ -36,6 +44,9 @@ export default function NotificationBell({
   const openNotificationCenter = useAppStore((state) => state.openNotificationCenter);
   const closeNotificationCenter = useAppStore((state) => state.closeNotificationCenter);
   const localSnapshot = useInventoryOperationalAlertsSnapshot();
+  const postDowngradeCashPending = usePostDowngradeCashPending();
+  const [cashAttentionKey, setCashAttentionKey] = useState(null);
+  const [cashAttentionRecord, setCashAttentionRecord] = useState(null);
   const staffSession = { currentDeviceRole, currentStaffUser };
 
   const cloudEnabled = (
@@ -43,10 +54,68 @@ export default function NotificationBell({
     isCloudNotificationsEnabled(licenseDetails) &&
     canStaffAccessNotifications(licenseDetails, staffSession)
   );
-  const localEnabled = (
+  const localInventoryEnabled = (
     shouldUseLocalInventoryOperationalBell(licenseDetails) &&
     canStaffAccessLocalInventoryOperationalAlerts(licenseDetails, staffSession)
   );
+  const backupAttention = useLocalBackupAttention();
+  const localEnabled = localInventoryEnabled || backupAttention.enabled;
+  const hasBackupAttention = Boolean(backupAttention.ready && backupAttention.condition?.active);
+  const hasConfirmedCashAttention = Boolean(
+    postDowngradeCashPending.eligible
+    && Number.isInteger(postDowngradeCashPending.pendingCount)
+    && postDowngradeCashPending.pendingCount > 0
+  );
+  const cashPendingCount = hasConfirmedCashAttention
+    ? postDowngradeCashPending.pendingCount
+    : 0;
+
+  useEffect(() => {
+    let current = true;
+
+    if (!hasConfirmedCashAttention || !postDowngradeCashPending.scopeKey) {
+      setCashAttentionKey(null);
+      setCashAttentionRecord(null);
+      return () => {
+        current = false;
+      };
+    }
+
+    setCashAttentionKey(null);
+    setCashAttentionRecord(null);
+    void buildPostDowngradeCashAttentionKey({
+      scopeKey: postDowngradeCashPending.scopeKey,
+      downgradedAt: postDowngradeCashPending.downgradedAt
+    }).then((key) => {
+      if (!current) return;
+      setCashAttentionKey(key);
+      setCashAttentionRecord(readPostDowngradeCashAttention(key));
+    });
+
+    return () => {
+      current = false;
+    };
+  }, [
+    hasConfirmedCashAttention,
+    postDowngradeCashPending.downgradedAt,
+    postDowngradeCashPending.scopeKey
+  ]);
+
+  useEffect(() => {
+    if (!cashAttentionKey || typeof window === 'undefined') return undefined;
+
+    const handleAttentionChange = (event) => {
+      if (event?.detail?.key !== cashAttentionKey) return;
+      setCashAttentionRecord(readPostDowngradeCashAttention(cashAttentionKey));
+    };
+
+    window.addEventListener(POST_DOWNGRADE_CASH_ATTENTION_EVENT, handleAttentionChange);
+    return () => window.removeEventListener(POST_DOWNGRADE_CASH_ATTENTION_EVENT, handleAttentionChange);
+  }, [cashAttentionKey]);
+
+  const handleCashAttentionRead = useCallback((record) => {
+    setCashAttentionRecord(record);
+  }, []);
 
   const canShowLocalOperationalAlert = (
     !localOnly
@@ -67,8 +136,14 @@ export default function NotificationBell({
   if (localOnly && !localEnabled) return null;
 
   if (localEnabled) {
-    const safeActiveCount = Math.max(Number(localSnapshot?.activeCount || 0), 0);
-    const badge = safeActiveCount > 99 ? '99+' : safeActiveCount;
+    const safeActiveCount = localInventoryEnabled ? Math.max(Number(localSnapshot?.activeCount || 0), 0) : 0;
+    const localIncidentCount = safeActiveCount + (hasConfirmedCashAttention ? 1 : 0) + (hasBackupAttention ? 1 : 0);
+    const badge = localIncidentCount > 99 ? '99+' : localIncidentCount;
+    const localOpenLabel = backupAttention.enabled || !localInventoryEnabled
+      ? `Abrir alertas locales, ${localIncidentCount} ${localIncidentCount === 1 ? 'incidencia activa' : 'incidencias activas'}${hasBackupAttention ? '; respaldos necesitan atención' : ''}`
+      : hasConfirmedCashAttention
+      ? `Abrir alertas locales, ${localIncidentCount} ${localIncidentCount === 1 ? 'incidencia activa' : 'incidencias activas'}; una agrupa ${cashPendingCount} cajas para conciliación`
+      : `Abrir alertas operativas de inventario, ${safeActiveCount} activas`;
     const localButtonClassName = [
       'notification-bell',
       'notification-bell--local-inventory',
@@ -77,8 +152,14 @@ export default function NotificationBell({
     const drawer = (
       <LocalInventoryOperationalAlertsDrawer
         isOpen={isLocalOpen}
-        onClose={() => setIsLocalOpen(false)}
+        onClose={closeLocal}
         snapshot={localSnapshot}
+        postDowngradeCashPending={postDowngradeCashPending}
+        cashAttentionKey={cashAttentionKey}
+        cashAttentionRecord={cashAttentionRecord}
+        onCashAttentionRecordChange={handleCashAttentionRead}
+        backupAttention={backupAttention}
+        inventoryEnabled={localInventoryEnabled}
       />
     );
 
@@ -97,19 +178,23 @@ export default function NotificationBell({
           }}
           aria-label={
             isLocalOpen
-              ? 'Cerrar alertas operativas de inventario'
-              : `Abrir alertas operativas de inventario, ${safeActiveCount} activas`
+              ? 'Cerrar alertas locales'
+              : localOpenLabel
           }
           aria-haspopup="dialog"
           aria-expanded={isLocalOpen}
           aria-controls="local-inventory-operational-alerts-drawer"
         >
           <Bell size={20} strokeWidth={2.35} aria-hidden="true" />
-          {showLabel && <span className="notification-bell__label">Alertas de inventario</span>}
-          {safeActiveCount > 0 && (
+          {showLabel && <span className="notification-bell__label">Alertas locales</span>}
+          {localIncidentCount > 0 && (
             <span
               className="notification-bell__badge"
-              aria-label={`${safeActiveCount} alertas operativas activas`}
+              aria-label={hasBackupAttention
+                ? `${localIncidentCount} ${localIncidentCount === 1 ? 'incidencia activa' : 'incidencias activas'}: ${safeActiveCount} de inventario, ${hasConfirmedCashAttention ? 1 : 0} de Caja y conciliación y 1 de respaldos`
+                : hasConfirmedCashAttention
+              ? `${localIncidentCount} ${localIncidentCount === 1 ? 'incidencia' : 'incidencias'} activas: ${safeActiveCount} de inventario y 1 de Caja y conciliación`
+                : `${safeActiveCount} alertas operativas activas`}
             >
               {badge}
             </span>

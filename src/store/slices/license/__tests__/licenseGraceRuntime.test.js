@@ -271,4 +271,46 @@ describe('license runtime Active → Grace → Free admission', () => {
       expect.anything()
     );
   });
+
+  it('blocks a transaction when the server confirms an administrative block inside grace', async () => {
+    const state = createStore(makeLicense({
+      status: 'grace_period',
+      expires_at: GRACE_EXPIRY,
+      grace_period_ends: GRACE_END
+    }));
+    mocks.revalidateLicense.mockResolvedValue({
+      valid: false,
+      status: 'administratively_blocked',
+      lifecycle_state: 'administratively_blocked',
+      reason: 'LICENSE_NOT_ACTIVE',
+      license_key: 'TEST-LICENSE-GRACE',
+      is_entitled: false,
+      is_in_grace: false,
+      expires_at: GRACE_EXPIRY,
+      grace_period_ends: GRACE_END
+    });
+
+    const allowed = await state.verifySessionIntegrity({
+      reason: 'sale_checkout',
+      forceRemote: true,
+      transactionMode: true,
+      allowLocalOnly: true
+    });
+
+    expect(allowed).toBe(false);
+    expect(state.licenseStatus).toBe('administratively_blocked');
+    expect(state.licenseDetails).toMatchObject({
+      valid: false,
+      status: 'administratively_blocked',
+      effective_lifecycle_validation: expect.objectContaining({
+        status: 'administratively_blocked',
+        is_entitled: false,
+        is_in_grace: false
+      })
+    });
+    expect(mocks.saveLicenseToStorage).toHaveBeenCalledWith(expect.objectContaining({
+      valid: false,
+      status: 'administratively_blocked'
+    }));
+  });
 });

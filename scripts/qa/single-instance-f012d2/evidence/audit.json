@@ -1,0 +1,20 @@
+{
+  "baseline": "ce03b04918347898396957c8b7f35eb955896b89",
+  "preexistingFiles": 2063,
+  "unchanged": 2059,
+  "changed": [
+    "src/hooks/useCaja.js",
+    "src/services/financial/financialCancellationProjection.js",
+    "src/services/financial/financialIntentRecoveryCoordinator.js",
+    "src/services/financial/financialProjectionRegistry.js"
+  ],
+  "newSource": {
+    "path": "src/services/financial/cancellationCashRefreshRoute.js",
+    "sha256": "ba55135826767b9202fdad139147b713195dca0b15ee33520057ea5a7d297833"
+  },
+  "originalScopeImplementationUnchanged": true,
+  "scannedAssets": 45,
+  "violations": [],
+  "gate": "OFF: App/main/ready activation callers unchanged, no new scope constructed by the commercial graph. Optional route code is reachable; scoped ownership requires explicit injection. Legacy remains uncertified.",
+  "preserved": "Actor Runtime/Scoped Storage, M01/F02, Admin168h/Staff policy, six reserved Caja financial callsites, durable financial contracts, SQL, dependencies, workflows, license/security realtime and Ecommerce topics/capabilities preserve baseline blobs."
+}

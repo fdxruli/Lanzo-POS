@@ -309,7 +309,7 @@
   padding: 8px 10px;
   color: var(--text-dark);
   background: var(--light-background);
-  border: 1px solid var(--border-color);
+  border: 1px solid var(--ui-border-control);
   border-radius: 8px;
   font: inherit;
   font-size: 0.84rem;
@@ -342,9 +342,25 @@
 }
 
 .order-discount-btn--primary {
-  color: #fff;
-  background: var(--primary-color, #3b82f6);
-  border-color: var(--primary-color, #3b82f6);
+  color: var(--ui-action-primary-text);
+  background: var(--ui-action-primary-bg);
+  border-color: var(--ui-action-primary-bg);
+}
+
+.order-discount-btn--primary:hover:not(:disabled) {
+  color: var(--ui-action-primary-text);
+  background: var(--ui-action-primary-hover-bg);
+  border-color: var(--ui-action-primary-hover-bg);
+}
+
+.order-discount-btn--primary:active:not(:disabled) {
+  background: var(--ui-action-primary-active-bg);
+  border-color: var(--ui-action-primary-active-bg);
+}
+
+.order-discount-btn:focus-visible {
+  outline: 2px solid var(--ui-focus-color);
+  outline-offset: 2px;
 }
 
 .order-discount-btn--danger {

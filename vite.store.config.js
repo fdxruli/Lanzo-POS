@@ -35,6 +35,10 @@ export default defineConfig({
     sourcemap: false,
     chunkSizeWarningLimit: 1000,
     rollupOptions: {
+      input: {
+        index: path.join(projectRoot, 'store', 'index.html'),
+        home: path.join(projectRoot, 'store', 'home.html')
+      },
       output: {
         manualChunks: publicVendorChunk
       }

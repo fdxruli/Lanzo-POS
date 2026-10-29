@@ -27,6 +27,11 @@ const SUPPORT_DISABLED = Object.freeze({
 
 const clampLimit = (limit) => Math.min(Math.max(Number(limit) || 20, 1), 100);
 const clampOffset = (offset) => Math.max(Number(offset) || 0, 0);
+const ALLOWED_TICKET_METADATA_SOURCES = new Set(['notification_center']);
+const SAFE_RPC_CODE_PATTERN = /^[A-Z][A-Z0-9_]{1,79}$/;
+const boundedString = (value, fallback = '', maxLength = 160) => (
+  typeof value === 'string' ? value.slice(0, maxLength) : fallback
+);
 
 const parseRpcPayload = (data) => {
   if (typeof data === 'string') {
@@ -59,30 +64,41 @@ const canUseSupportTickets = (licenseDetails = {}) => {
 };
 
 const normalizeTicket = (ticket = {}) => ({
-  id: ticket.id,
-  subject: ticket.subject || 'Solicitud de soporte',
-  category: ticket.category || 'help',
-  priority: ticket.priority || 'normal',
-  status: ticket.status || 'open',
-  last_message_preview: ticket.last_message_preview || '',
-  last_message_at: ticket.last_message_at || null,
-  created_at: ticket.created_at || null,
-  updated_at: ticket.updated_at || null,
-  closed_at: ticket.closed_at || null
+  id: boundedString(ticket.id, '', 128),
+  subject: boundedString(ticket.subject, 'Solicitud de soporte'),
+  category: boundedString(ticket.category, 'help', 40),
+  priority: boundedString(ticket.priority, 'normal', 24),
+  status: boundedString(ticket.status, 'open', 24),
+  last_message_preview: boundedString(ticket.last_message_preview, '', 240),
+  last_message_at: boundedString(ticket.last_message_at, '', 40) || null,
+  created_at: boundedString(ticket.created_at, '', 40) || null,
+  updated_at: boundedString(ticket.updated_at, '', 40) || null,
+  closed_at: boundedString(ticket.closed_at, '', 40) || null
 });
 
 const normalizeMessage = (message = {}) => ({
-  id: message.id,
-  sender_type: message.sender_type || 'user',
-  sender_staff_user_id: message.sender_staff_user_id || null,
-  sender_device_fingerprint: message.sender_device_fingerprint || null,
-  message: message.message || '',
-  attachments_metadata: Array.isArray(message.attachments_metadata)
-    ? message.attachments_metadata
-    : [],
-  metadata: message.metadata || {},
-  created_at: message.created_at || null
+  id: boundedString(message.id, '', 128),
+  sender_type: ['user', 'staff'].includes(message.sender_type) ? message.sender_type : 'user',
+  message: boundedString(message.message, '', 4_000),
+  created_at: boundedString(message.created_at, '', 40) || null
 });
+
+const normalizeRpcCode = (payload) => (
+  typeof payload?.code === 'string' && SAFE_RPC_CODE_PATTERN.test(payload.code)
+    ? payload.code
+    : undefined
+);
+
+const normalizeTicketMetadata = (metadata) => {
+  try {
+    const source = metadata?.source;
+    return typeof source === 'string' && ALLOWED_TICKET_METADATA_SOURCES.has(source)
+      ? { source }
+      : {};
+  } catch {
+    return {};
+  }
+};
 
 const normalizeListResponse = (data) => {
   const payload = parseRpcPayload(data);
@@ -91,8 +107,8 @@ const normalizeListResponse = (data) => {
     : [];
 
   return {
-    ...payload,
     success: payload.success !== false,
+    ...(normalizeRpcCode(payload) ? { code: normalizeRpcCode(payload) } : {}),
     tickets
   };
 };
@@ -101,8 +117,8 @@ const normalizeThreadResponse = (data) => {
   const payload = parseRpcPayload(data);
 
   return {
-    ...payload,
     success: payload.success !== false,
+    ...(normalizeRpcCode(payload) ? { code: normalizeRpcCode(payload) } : {}),
     ticket: payload.ticket ? normalizeTicket(payload.ticket) : null,
     messages: Array.isArray(payload.messages)
       ? payload.messages.map(normalizeMessage).filter((message) => message.id)
@@ -114,8 +130,8 @@ const normalizeMutationResponse = (data) => {
   const payload = parseRpcPayload(data);
 
   return {
-    ...payload,
     success: payload.success !== false,
+    ...(normalizeRpcCode(payload) ? { code: normalizeRpcCode(payload) } : {}),
     ticket: payload.ticket ? normalizeTicket(payload.ticket) : null
   };
 };
@@ -171,7 +187,7 @@ export async function createSupportTicket({
     p_category: category,
     p_priority: priority,
     p_message: message,
-    p_metadata: metadata || {}
+    p_metadata: normalizeTicketMetadata(metadata)
   });
 
   if (error) throw error;

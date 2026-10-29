@@ -123,7 +123,7 @@ const CustomerCard = memo(({
                     {hasDebt && (
                         <button
                             type="button"
-                            className="ui-button ui-button--success btn btn-abono"
+                            className="ui-button ui-button--primary btn btn-abono"
                             onClick={() => onAbonar(customer)}
                         >
                             <Wallet size={18} aria-hidden="true" />

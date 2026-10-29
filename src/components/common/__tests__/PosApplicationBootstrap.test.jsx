@@ -23,6 +23,7 @@ vi.mock('../../../services/db/databaseRuntime', () => gateRuntimeMocks);
 vi.mock('../../../services/Logger', () => ({ default: loggerMocks }));
 
 import PosApplicationBootstrap, {
+  getAdminBootErrorCode,
   resetPosApplicationBootstrapForTests,
   runStorageManagerBestEffort
 } from '../PosApplicationBootstrap';
@@ -94,6 +95,18 @@ const createReadyRuntime = ({ storageResult = { isVolatile: false } } = {}) => {
     startPosSyncAutoBootstrap
   };
 };
+
+describe('admin boot error code sanitization', () => {
+  it('keeps allowlisted boot codes and replaces unknown or unreadable values', () => {
+    expect(getAdminBootErrorCode({ code: 'TENANT_RUNTIME_NOT_READY' })).toBe('TENANT_RUNTIME_NOT_READY');
+    expect(getAdminBootErrorCode({ code: 'token=secret-value' })).toBe('INCIDENT_UNKNOWN');
+
+    const unreadableError = {};
+    Object.defineProperty(unreadableError, 'code', { get() { throw new Error('license secret'); } });
+    Object.defineProperty(unreadableError, 'message', { get() { throw new Error('customer secret'); } });
+    expect(getAdminBootErrorCode(unreadableError)).toBe('ADMIN_RUNTIME_INITIALIZATION_FAILED');
+  });
+});
 
 const renderBootstrap = ({
   prepareLocalDatabase,
@@ -204,10 +217,11 @@ describe('PosApplicationBootstrap initial recovery shell', () => {
     });
 
     expect(screen.getByRole('heading', {
-      name: /actualizando la base local de forma segura/i
+      name: /preparando una actualización de la base local/i
     })).toBeInTheDocument();
     expect(screen.getByText(/backup_complete/i)).toBeInTheDocument();
-    expect(screen.getByText(/"sales":2/i)).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('"sales":2');
+    expect(document.body.textContent).not.toContain('deleted_sales');
     expect(screen.queryByTestId('admin-app')).not.toBeInTheDocument();
     expect(readyRuntime.startPosSyncAutoBootstrap).not.toHaveBeenCalled();
 
@@ -270,7 +284,8 @@ describe('PosApplicationBootstrap initial recovery shell', () => {
     expect(await screen.findByRole('heading', {
       name: /esta versión de lanzo no puede abrir tu base local/i
     })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /enviar reporte a soporte/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /abrir correo de soporte/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Detalles del problema'));
     expect(screen.getByRole('button', { name: /copiar diagnóstico/i })).toBeInTheDocument();
     expect(screen.queryByText(/^No se pudo iniciar Lanzo POS$/i)).not.toBeInTheDocument();
     expect(screen.queryByTestId('admin-app')).not.toBeInTheDocument();
@@ -308,20 +323,22 @@ describe('PosApplicationBootstrap initial recovery shell', () => {
       loadReadyRuntime,
       recoverStartup,
       reloadPage,
-      openSupportMailto
+      openSupportMailto,
+      createContextGuard: () => () => true
     });
 
-    expect(await screen.findByRole('heading', { name: /no se pudo iniciar lanzo pos/i })).toBeInTheDocument();
-    expect(screen.getByText('TENANT_RUNTIME_NOT_READY')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: /no pudimos iniciar lanzo pos/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /reintentar inicio/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /enviar reporte a soporte/i })).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Detalles del problema y opciones de soporte'));
+    expect(screen.getByText('TENANT_RUNTIME_NOT_READY')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /abrir correo de soporte/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /copiar diagnóstico/i })).toBeInTheDocument();
     expect(recoverStartup).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('button', { name: /reintentar inicio/i }));
     expect(reloadPage).toHaveBeenCalledOnce();
 
-    fireEvent.click(screen.getByRole('button', { name: /enviar reporte a soporte/i }));
+    fireEvent.click(screen.getByRole('button', { name: /abrir correo de soporte/i }));
     expect(openSupportMailto).toHaveBeenCalledWith(expect.stringContaining('TENANT_RUNTIME_NOT_READY'));
 
     fireEvent.click(screen.getByRole('button', { name: /copiar diagnóstico/i }));
@@ -339,12 +356,36 @@ describe('PosApplicationBootstrap initial recovery shell', () => {
     renderBootstrap({
       prepareLocalDatabase,
       loadReadyRuntime: vi.fn().mockRejectedValue(error),
-      recoverStartup
+      recoverStartup,
+      createContextGuard: () => () => true
     });
 
-    expect(await screen.findByRole('button', { name: /actualizar lanzo pos/i })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /actualizar archivos de lanzo pos/i })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /reintentar inicio/i })).not.toBeInTheDocument();
-    expect(recoverStartup).toHaveBeenCalledWith({ error });
+    expect(recoverStartup).toHaveBeenCalledWith(expect.objectContaining({
+      error,
+      isContextCurrent: expect.any(Function)
+    }));
+  });
+
+  it('does not retry startup assets after actor or tenant context changes', async () => {
+    const error = Object.assign(new Error('Loading chunk 123 failed'), { name: 'ChunkLoadError' });
+    const prepareLocalDatabase = vi.fn(async () => {
+      setRecovery(DATABASE_RECOVERY_STATUS.READY);
+      return { ready: true };
+    });
+    const recoverStartup = vi.fn();
+
+    renderBootstrap({
+      prepareLocalDatabase,
+      loadReadyRuntime: vi.fn().mockRejectedValue(error),
+      recoverStartup,
+      createContextGuard: () => () => false
+    });
+
+    expect(await screen.findByText(/sesión o el tenant cambió durante el inicio/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /actualizar archivos de lanzo pos/i })).toBeDisabled();
+    expect(recoverStartup).not.toHaveBeenCalled();
   });
 
   it('deduplicates preparation and runtime activation under StrictMode', async () => {

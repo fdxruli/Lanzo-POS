@@ -57,6 +57,15 @@ const bootstrapState = {
 
 let routeDemandEventHandler = null;
 let historyPatch = null;
+let executionScope = null;
+let legacyWorkStarted = false;
+let scopedStop = null;
+let scopedEpoch = 0;
+const canSchedule = () => !executionScope || (
+  executionScope.isContextCurrent() && executionScope.getSnapshot().accepting
+);
+const observeJob = (label, factory) => executionScope
+  ? executionScope.run(`bootstrap:${label}`, factory) : (legacyWorkStarted = true, factory());
 
 const isDevLogEnabled = () => import.meta.env.MODE !== 'production';
 
@@ -88,7 +97,8 @@ const randomJitterMs = () => {
 const clearTimer = (key) => {
   const timer = bootstrapState.timers.get(key);
   if (!timer) return;
-  getTimerApi().clearTimeout(timer);
+  if (timer.cancel) timer.cancel();
+  else getTimerApi().clearTimeout(timer);
   bootstrapState.timers.delete(key);
 };
 
@@ -100,6 +110,14 @@ const clearAllTimers = () => {
 
 const setTimer = (key, callback, delayMs) => {
   clearTimer(key);
+  if (executionScope) {
+    const timer = executionScope.schedule(`bootstrap:${key}`, () => {
+      bootstrapState.timers.delete(key);
+      return callback();
+    }, delayMs);
+    bootstrapState.timers.set(key, timer);
+    return timer;
+  }
   const timer = getTimerApi().setTimeout(() => {
     bootstrapState.timers.delete(key);
     callback();
@@ -154,7 +172,7 @@ const getResourcesForCurrentRoute = () => {
 };
 
 const emitRouteDemand = () => {
-  if (bootstrapState.routeDemandInProgress) return;
+  if (bootstrapState.routeDemandInProgress || !canSchedule()) return;
 
   const resources = getResourcesForCurrentRoute();
   if (resources.length > 0) {
@@ -172,9 +190,16 @@ const attachRouteDemandListener = () => {
 
   routeDemandEventHandler = () => {
     const patchAtSchedule = historyPatch;
-    getTimerApi().setTimeout(() => {
-      if (patchAtSchedule?.active) emitRouteDemand();
-    }, 0);
+    if (executionScope) {
+      if (!canSchedule()) return;
+      executionScope.schedule('bootstrap:route', () => {
+        if (patchAtSchedule?.active) emitRouteDemand();
+      }, 0);
+    } else {
+      getTimerApi().setTimeout(() => {
+        if (patchAtSchedule?.active) emitRouteDemand();
+      }, 0);
+    }
   };
 
   if (!bootstrapState.historyPatched && window.history) {
@@ -261,6 +286,9 @@ const hasLocalProductCache = async () => {
 const runDeferredSnapshot = async (resource, { reason = 'deferred_snapshot', force = false } = {}) => {
   const normalizedResource = normalizeResource(resource);
   if (!normalizedResource) return { skipped: true, reason: 'invalid_resource' };
+  if (!canSchedule()) return { skipped: true, reason: 'scope_quiesced' };
+  const owner = executionScope;
+  const epoch = scopedEpoch;
 
   const { licenseDetails, licenseKey, cloudEnabled } = getRuntimeContext();
   if (!cloudEnabled || !licenseKey || !isBrowserOnline()) {
@@ -280,10 +308,14 @@ const runDeferredSnapshot = async (resource, { reason = 'deferred_snapshot', for
 
   devLog('deferred snapshot start', { resource: normalizedResource, reason });
 
+  if (owner && (!canSchedule() || !owner.isContextCurrent() || epoch !== scopedEpoch)) return { skipped: true, reason: 'scope_stale' };
+  // Snapshot providers do not yet expose their full raw/descendant lifetime.
+  owner?.markUnobservable(`snapshot_handler_lifetime:${normalizedResource}`);
   const result = await runWithLocalTenantSyncLease(
     { license_key: licenseKey },
     { reason: `deferred_snapshot_handler_${normalizedResource}` },
     async () => {
+      if (owner && (!canSchedule() || epoch !== scopedEpoch)) return { skipped: true, reason: 'scope_stale' };
       switch (normalizedResource) {
         case POS_BOOTSTRAP_RESOURCES.PRODUCTS:
           return productSyncHandler.onStart({ licenseDetails, licenseKey, reason, force });
@@ -308,6 +340,7 @@ const runDeferredSnapshot = async (resource, { reason = 'deferred_snapshot', for
     { reason: `deferred_snapshot_commit_${normalizedResource}` }
   );
 
+  if (owner && (!owner.isContextCurrent() || epoch !== scopedEpoch)) return { skipped: true, reason: 'scope_stale' };
   if (result?.success !== false && !result?.blocked) {
     markSnapshotCompleted(normalizedResource, licenseKey);
   }
@@ -327,9 +360,9 @@ const scheduleInitialPull = ({ reason = 'bootstrap_initial_pull', force = false 
   devLog('pull scheduled', { delayMs, reason });
 
   setTimer('initial_pull', () => {
-    posSyncOrchestrator.schedulePullIncremental(reason, { debounceMs: 0 })
+    return posSyncOrchestrator.schedulePullIncremental(reason, { debounceMs: 0 })
       .then(() => {
-        bootstrapState.initialPullCompleted = true;
+        if (canSchedule()) bootstrapState.initialPullCompleted = true;
       })
       .catch((error) => {
         Logger.warn('[PosBootstrap] Pull incremental inicial diferido fallo:', error);
@@ -350,7 +383,7 @@ const scheduleOutbox = ({ reason = 'bootstrap_outbox', force = false } = {}) => 
   devLog('outbox scheduled', { delayMs, reason });
 
   setTimer('outbox', () => {
-    posSyncOrchestrator.processOutbox(reason).catch((error) => {
+    return posSyncOrchestrator.processOutbox(reason).catch((error) => {
       Logger.warn('[PosBootstrap] Outbox inicial diferido fallo:', error);
     });
   }, delayMs);
@@ -364,6 +397,7 @@ const ensureProductsIfCacheMissing = async () => {
     return { skipped: true, reason: 'local_cache_available' };
   }
 
+  if (!canSchedule()) return { skipped: true, reason: 'scope_quiesced' };
   return scheduleDeferredSnapshot({
     resource: POS_BOOTSTRAP_RESOURCES.PRODUCTS,
     reason: 'missing_local_product_cache',
@@ -376,7 +410,7 @@ const scheduleDemandSnapshot = (resource, options = {}) => {
   if (!normalizedResource) return { skipped: true, reason: 'invalid_resource' };
 
   if (normalizedResource === POS_BOOTSTRAP_RESOURCES.POS) {
-    ensureProductsIfCacheMissing().catch((error) => {
+    observeJob('product_warmup', ensureProductsIfCacheMissing).catch((error) => {
       Logger.warn('[PosBootstrap] Warmup de productos para POS fallo:', error);
     });
     return { scheduled: false, reason: 'pos_uses_local_cache_first' };
@@ -400,12 +434,14 @@ const scheduleDemandSnapshot = (resource, options = {}) => {
   });
 };
 
-export const startPosCloudBootstrap = async ({
+const startPosCloudBootstrapLegacy = async ({
   licenseDetails = null,
   licenseKey = null,
   reason = 'app_start',
   force = false
 } = {}) => {
+  const owner = executionScope;
+  const epoch = scopedEpoch;
   const context = getRuntimeContext({ licenseDetails, licenseKey });
   if (!context.cloudEnabled) {
     detachRouteDemandListener();
@@ -419,6 +455,7 @@ export const startPosCloudBootstrap = async ({
     { reason: `pos_cloud_bootstrap_${reason}` }
   );
 
+  if (owner && (!canSchedule() || epoch !== scopedEpoch)) return { started: false, stale: true };
   attachRouteDemandListener();
 
   const signature = buildBootstrapSignature(context);
@@ -449,15 +486,19 @@ export const startPosCloudBootstrap = async ({
 
   bootstrapState.startPromise = posSyncOrchestrator.start({
     licenseDetails: context.licenseDetails,
-    reason
+    reason,
+    ...(owner ? { executionScope: owner } : {})
   }).then((result) => {
+    if (owner && (!canSchedule() || epoch !== scopedEpoch || bootstrapState.signature !== signature)) {
+      return { started: false, stale: true };
+    }
     bootstrapState.realtimeStarted = result?.started !== false;
     scheduleInitialPull({ reason: 'bootstrap_initial_pull', force });
     scheduleOutbox({ reason: 'bootstrap_outbox', force });
     emitRouteDemand();
     return result;
   }).finally(() => {
-    bootstrapState.startPromise = null;
+    if (!owner || (epoch === scopedEpoch && bootstrapState.signature === signature)) bootstrapState.startPromise = null;
   });
 
   return bootstrapState.startPromise;
@@ -471,6 +512,7 @@ export const scheduleDeferredSnapshot = ({
 } = {}) => {
   const normalizedResource = normalizeResource(resource);
   if (!normalizedResource) return { skipped: true, reason: 'invalid_resource' };
+  if (!canSchedule()) return { skipped: true, reason: 'scope_quiesced' };
 
   const { licenseKey, cloudEnabled } = getRuntimeContext();
   if (!cloudEnabled || !licenseKey) return { skipped: true, reason: 'cloud_disabled' };
@@ -490,7 +532,7 @@ export const scheduleDeferredSnapshot = ({
   devLog('deferred snapshot scheduled', { resource: normalizedResource, delayMs: resolvedDelayMs, reason });
 
   setTimer(timerKey, () => {
-    runDeferredSnapshot(normalizedResource, { reason, force }).catch((error) => {
+    return runDeferredSnapshot(normalizedResource, { reason, force }).catch((error) => {
       Logger.warn(`[PosBootstrap] Snapshot diferido ${normalizedResource} fallo:`, error);
     });
   }, resolvedDelayMs);
@@ -501,6 +543,7 @@ export const scheduleDeferredSnapshot = ({
 export const markModuleDemand = (resource, options = {}) => {
   const resources = normalizeResources(resource);
   if (resources.length === 0) return { skipped: true, reason: 'invalid_resource' };
+  if (!canSchedule()) return { skipped: true, reason: 'scope_quiesced' };
 
   const { licenseDetails, licenseKey, cloudEnabled } = getRuntimeContext();
   if (!cloudEnabled || !licenseKey) return { skipped: true, reason: 'cloud_disabled' };
@@ -510,15 +553,16 @@ export const markModuleDemand = (resource, options = {}) => {
     devLog('module demand', { resource: item, reason: options.reason || 'module_demand' });
   }
 
-  startPosCloudBootstrap({
+  observeJob('module_demand', () => startPosCloudBootstrap({
     licenseDetails,
     licenseKey,
     reason: options.reason || 'module_demand'
   }).then(() => {
+    if (!canSchedule()) return;
     for (const item of resources) {
       scheduleDemandSnapshot(item, options);
     }
-  }).catch((error) => {
+  })).catch((error) => {
     Logger.warn('[PosBootstrap] No se pudo procesar demanda de modulo:', error);
   });
 
@@ -527,12 +571,47 @@ export const markModuleDemand = (resource, options = {}) => {
 
 export const markPosCloudModuleDemand = markModuleDemand;
 
-export const stopPosCloudBootstrap = async ({ preserveSync = false } = {}) => {
+const stopPosCloudBootstrapLegacy = async ({ preserveSync = false } = {}) => {
   detachRouteDemandListener();
   resetBootstrapState();
   if (!preserveSync) {
     await posSyncOrchestrator.stop({ preserveStatus: false });
   }
+};
+
+// A scope can be attached only before an unowned bootstrap starts. UNKNOWN
+// ownership can never be silently replaced by a newer generation.
+export const assertPosCloudBootstrapScopeAvailable = scope => {
+  scope.assertAdmission();
+  if (scope !== executionScope) {
+    if (executionScope && executionScope.getSnapshot().state !== 'DRAINED') throw new Error('SYNC_EXECUTION_OWNER_MISMATCH');
+    if (legacyWorkStarted || bootstrapState.started || bootstrapState.startPromise || bootstrapState.timers.size) throw new Error('SYNC_EXECUTION_LEGACY_OWNER_ACTIVE');
+  }
+  posSyncOrchestrator.assertExecutionScopeAvailable(scope);
+};
+export const reservePosCloudBootstrapScope = scope => {
+  assertPosCloudBootstrapScopeAvailable(scope);
+  if (scope !== executionScope) {
+    posSyncOrchestrator.reserveExecutionScope(scope);
+    executionScope = scope;
+    scopedStop = null;
+    scopedEpoch++;
+    scope.addSource('pos_bootstrap', () => {
+      scopedEpoch++;
+      scopedStop ||= stopPosCloudBootstrapLegacy({ preserveSync: false });
+      return scopedStop;
+    });
+  }
+};
+export const startPosCloudBootstrap = (options = {}) => {
+  if (options.executionScope) reservePosCloudBootstrapScope(options.executionScope);
+  try { return observeJob('start', () => startPosCloudBootstrapLegacy(options)); }
+  catch (error) { return Promise.reject(error); }
+};
+export const stopPosCloudBootstrap = (options = {}) => {
+  if (!executionScope) return stopPosCloudBootstrapLegacy(options);
+  executionScope.quiesce();
+  return Promise.resolve().then(() => scopedStop);
 };
 
 export const getPosCloudBootstrapState = () => ({

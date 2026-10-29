@@ -23,15 +23,16 @@ describe('PublicStoreErrorBoundary', () => {
       </PublicStoreErrorBoundary>
     );
 
-    expect(screen.getByRole('heading', { name: 'No pudimos restaurar la tienda' }))
+    expect(screen.getByRole('heading', { name: 'No pudimos cargar esta tienda' }))
       .toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Intentar de nuevo' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Reintentar tienda' }));
     expect(listener).toHaveBeenCalledOnce();
-    expect(screen.getByRole('heading', { name: 'No pudimos restaurar la tienda' }))
+    expect(screen.getByRole('heading', { name: 'No pudimos cargar esta tienda' }))
       .toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Reintento utilizado' })).toBeDisabled();
   });
 
-  it('keeps a manual full refresh as the last action', () => {
+  it('does not expose a general reload action that could interrupt the cart', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     const reload = vi.fn();
     render(
@@ -39,7 +40,7 @@ describe('PublicStoreErrorBoundary', () => {
         <BrokenStore />
       </PublicStoreErrorBoundary>
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Actualizar tienda' }));
-    expect(reload).toHaveBeenCalledOnce();
+    expect(screen.queryByRole('button', { name: 'Actualizar tienda' })).not.toBeInTheDocument();
+    expect(reload).not.toHaveBeenCalled();
   });
 });

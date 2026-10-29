@@ -30,6 +30,7 @@
     "test:restaurant-split-payment-contract": "node --test scripts/supabase/restaurant-split-payment-contract-r1.node-test.mjs",
     "test:restaurant-atomic-settlement-3d1": "node --test scripts/supabase/restaurant-atomic-settlement-3d1.node-test.mjs",
     "test:restaurant-origin-cancel-3d13": "node scripts/supabase/restaurant-origin-cancel-3d13-test.mjs --isolated-fixture",
+    "test:supabase-technical-incident-reporting-contract": "node --test scripts/supabase/technical-incident-reporting-r1-contract.node-test.mjs",
     "test:ecommerce-phase3-stock-reservations-contract": "node --test scripts/supabase/ecommerce-phase3-stock-reservations-contract.node-test.mjs",
     "test:ecommerce-phase3-reservation-expiry-scheduler": "node --test scripts/supabase/ecommerce-phase3-reservation-expiry-scheduler.node-test.mjs",
     "test:ecommerce-phase3-fulfillment-reservation-hold": "node --test scripts/supabase/ecommerce-phase3-fulfillment-reservation-hold.node-test.mjs",

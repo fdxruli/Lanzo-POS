@@ -25,6 +25,8 @@ vi.mock('../../db/tenantRuntimeRouter', () => ({
 }));
 vi.mock('../../supabase', () => ({
   getStableDeviceId: async () => 'fingerprint-X',
+  getAdminOfflineAuthorization: async () => ({ eligible: true, reason: 'authorized',
+    effectiveExpiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(), effectiveNow: Date.now() }),
   activateLicense: vi.fn(), adminLoginOnDevice: mocks.adminLogin,
   staffLoginOnDevice: mocks.staffLogin, adminLogoutSession: mocks.adminLogout,
   staffLogoutSession: mocks.staffLogout, adminTakeoverFreeDevice: vi.fn(),
@@ -45,7 +47,7 @@ vi.mock('../../tenant/localTenantGuard', () => ({
 }));
 vi.mock('../../licenseStorage', () => ({ saveLicenseToStorage: mocks.saveLicense }));
 vi.mock('../../db/databaseRuntime', () => ({ ensureLocalDatabaseReady: async () => true }));
-vi.mock('../../Logger', () => ({ default: { log: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
+vi.mock('../../Logger', () => ({ default: { log: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 vi.mock('../../products/posCatalogSessionEvents', () => ({ notifyPosCatalogSessionReset: vi.fn() }));
 
 import { actorRuntimeController } from '../actorRuntimeController';
@@ -71,7 +73,10 @@ const createStore = () => {
     appStatus: 'ready', licenseStatus: 'active', currentDeviceRole: 'admin',
     licenseDetails: { license_key: 'QA-RECOVERY', valid: true, status: 'active', device_role: 'admin' },
     stopLicenseSync: vi.fn(async () => {}),
-    _loadProfile: vi.fn(async () => { state.appStatus = 'ready'; })
+    _loadProfile: vi.fn(async (_licenseKey, options = {}) => {
+      options.onPrepared?.('ready');
+      state.appStatus = 'ready';
+    })
   };
   const context = { set: (partial) => Object.assign(state, partial), get: () => state };
   Object.assign(state, createLicenseAuthorityRecoveryActions(context),
@@ -99,13 +104,24 @@ beforeEach(() => {
     mocks.cache.set('device_security_token', 'token-B');
     mocks.cache.set('admin_session_token', 'admin-token-B');
     mocks.cache.set('admin_session_id', 'admin-session-B');
-    return { success: true, admin_user: { id: 'admin-qa' }, details: { license_key: 'QA-RECOVERY' } };
+    mocks.cache.set('last_valid_admin_session', { validatedAt: Date.now(), expiresAt: null });
+    return {
+      success: true,
+      admin_user: { id: 'admin-qa' },
+      session: { id: 'admin-session-B' },
+      details: { license_key: 'QA-RECOVERY' }
+    };
   });
   mocks.staffLogin.mockImplementation(async () => {
     mocks.cache.set('device_security_token', 'token-B');
     mocks.cache.set('staff_session_token', 'staff-token-B');
     mocks.cache.set('staff_session_id', 'staff-session-B');
-    return { success: true, staff_user: { id: 'staff-qa', permissions: ['sales'] }, details: { license_key: 'QA-RECOVERY' } };
+    return {
+      success: true,
+      staff_user: { id: 'staff-qa', permissions: ['sales'] },
+      session: { id: 'staff-session-B' },
+      details: { license_key: 'QA-RECOVERY' }
+    };
   });
 });
 afterEach(() => {

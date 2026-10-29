@@ -1,0 +1,208 @@
+{
+  "implementationSHA": "f48c8c2c027ffddc08e06df5175a5f4fe34d91d4",
+  "baseSHA": "52bb573e651529b323b6617e3161cd76ece14a39",
+  "pr": {
+    "url": "https://github.com/fdxruli/Lanzo-POS/pull/372",
+    "number": 372,
+    "state": "open",
+    "merged": false,
+    "mergeable": true,
+    "draft": true,
+    "body": "Implementa la infraestructura F01-1 para coordinar documentos compatibles mediante Web Locks y mensajería dirigida opcional. La segunda y siguientes ventanas esperan sin desalojar a la propietaria; cierre, cancelación, tickets locales y drenaje sintético tienen contratos explícitos.\n\n**Coordinador inerte: no se activa en App ni en el entrypoint actual. OPEN / DRAFT / NOT MERGED. HOLD de merge.**\n\n- Web Lock estable `lanzo-pos-administrative-instance`; sin Web Locks el nuevo módulo queda restringido. BroadcastChannel no concede propiedad y no hay fallback BC-only.\n- Servicio de documento independiente de React, protocolo versionado/correlacionado con memoria acotada, tickets revocables y drain de ejecutores sintéticos.\n- Sin cambios activos de bootstrap, Admin/Staff, Actor Runtime/Storage, finanzas, licencias, dispositivos o sincronización. Sin SQL, migraciones ni llamadas/escrituras Supabase.\n- F01-2 no implementada. LC13 permanece abierto; legacy, otros perfiles/orígenes/dispositivos quedan fuera de exclusión conjunta. El contraejemplo legacy sigue COUNTEREXAMPLE.\n\nValidación:\n- Unitarios **45/45 PASS** y ESLint focal exit 0.\n- Chromium real: **38 PASS / 1 COUNTEREXAMPLE / 1 PARTIAL**, cero pageerrors.\n- Diferencial de 831 assertions por lado: **827 PASS / mismos 4 FAIL históricos** en main y candidata; **0 regresiones nuevas**. No se declara suite global verde.\n- Builds Production, Preview, Store y Store Vercel PASS; precache 24/32 assets iniciales Production/Preview, sin faltantes ni fixtures F011.\n- Grafo de imports y assets: coordinador no alcanzable desde el arranque comercial; 2.055 archivos preexistentes preservan sus blobs.\n\nBase verificada: `52bb573e651529b323b6617e3161cd76ece14a39`. HEAD de implementación: `f48c8c2c027ffddc08e06df5175a5f4fe34d91d4`. Árbol publicado idéntico al checkpoint local probado.\n\n[Contratos y alcance](docs/reports/LANZO.F01.F011.COORDINATOR.IMPLEMENTATION.R1.md) · [Matriz F011-01..40 y evidencia](docs/reports/LANZO.F01.F011.COORDINATOR.EVIDENCE.R1.md) · [Reproducción](scripts/qa/single-instance-f011/README.md).\n\nQA física Windows/Edge/Android/PWA/HTTPS/LAN y futura integración comercial pendientes. La Preview conserva el POS actual; no expone el laboratorio F011 ni activa el coordinador. CI/Preview exactos se registrarán al cierre. No marcar Ready for Review ni fusionar sin autorización posterior del propietario.",
+    "title": "feat(pwa): deterministic single-instance coordinator foundation (F01-1)",
+    "base": "main",
+    "base_sha": "52bb573e651529b323b6617e3161cd76ece14a39",
+    "head": "feat/f01-single-instance-coordinator-r1",
+    "head_sha": "f48c8c2c027ffddc08e06df5175a5f4fe34d91d4",
+    "head_repo_id": 1044361831,
+    "head_repo_full_name": "fdxruli/Lanzo-POS",
+    "merge_commit_sha": "323e397e57f89d99af316ae9cb00014f97b00a72",
+    "user": {
+      "login": "fdxruli",
+      "name": "fdxruli",
+      "email": null,
+      "avatar_url": "https://avatars.githubusercontent.com/u/48109415?v=4",
+      "id": 48109415
+    },
+    "requested_reviewers": null,
+    "requested_team_reviewers": null,
+    "diff": null,
+    "comments": null,
+    "created_at": "2026-10-23T19:45:50Z",
+    "updated_at": "2026-10-23T19:46:24Z",
+    "closed_at": null,
+    "merged_at": null,
+    "commits": 1,
+    "changed_files": 46,
+    "additions": 1283,
+    "deletions": 0,
+    "display_url": "https://github.com/fdxruli/Lanzo-POS/pull/372",
+    "display_title": "feat(pwa): deterministic single-instance coordinator foundation (F01-1)"
+  },
+  "ci": {
+    "workflow_runs": [
+      {
+        "id": 40013974405,
+        "name": "PR127 Global Comparison",
+        "status": "in_progress",
+        "conclusion": null,
+        "run_number": 1150,
+        "jobs_url": "https://api.github.com/repos/fdxruli/Lanzo-POS/actions/runs/40013974405/jobs",
+        "logs_url": "https://api.github.com/repos/fdxruli/Lanzo-POS/actions/runs/40013974405/logs",
+        "workflow_id": 320004704
+      }
+    ]
+  },
+  "jobs": {
+    "jobs": [
+      {
+        "id": 120621173321,
+        "name": "compare-global-suite",
+        "status": "in_progress",
+        "conclusion": null,
+        "run_id": 40013974405,
+        "logs_url": null,
+        "steps": [
+          {
+            "name": "Set up job",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 1
+          },
+          {
+            "name": "Checkout PR head",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 2
+          },
+          {
+            "name": "Checkout main base",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 3
+          },
+          {
+            "name": "Setup Node",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 4
+          },
+          {
+            "name": "Install PR dependencies",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 5
+          },
+          {
+            "name": "Install main dependencies",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 6
+          },
+          {
+            "name": "Run PR global suite",
+            "status": "completed",
+            "conclusion": "success",
+            "number": 7
+          },
+          {
+            "name": "Run main global suite",
+            "status": "in_progress",
+            "conclusion": null,
+            "number": 8
+          },
+          {
+            "name": "Extract error-aware candidate-only failures",
+            "status": "pending",
+            "conclusion": null,
+            "number": 9
+          },
+          {
+            "name": "Run PR focused evidence for candidate-only failures",
+            "status": "pending",
+            "conclusion": null,
+            "number": 10
+          },
+          {
+            "name": "Run base focused evidence for candidate-only failures",
+            "status": "pending",
+            "conclusion": null,
+            "number": 11
+          },
+          {
+            "name": "Normalize and compare failures",
+            "status": "pending",
+            "conclusion": null,
+            "number": 12
+          },
+          {
+            "name": "Upload normalized comparison",
+            "status": "pending",
+            "conclusion": null,
+            "number": 13
+          },
+          {
+            "name": "Post Setup Node",
+            "status": "pending",
+            "conclusion": null,
+            "number": 24
+          },
+          {
+            "name": "Post Checkout main base",
+            "status": "pending",
+            "conclusion": null,
+            "number": 25
+          },
+          {
+            "name": "Post Checkout PR head",
+            "status": "pending",
+            "conclusion": null,
+            "number": 26
+          }
+        ]
+      }
+    ]
+  },
+  "preview": {
+    "result": {
+      "deployment": {
+        "id": "dpl_3ci3hAKYMo2RJ3ywy541p69AsSdD",
+        "name": "lanzo-pos",
+        "url": "lanzo-f7rn4sd0h-fdxrulis-projects.vercel.app",
+        "type": "LAMBDAS",
+        "state": "READY",
+        "createdAt": 1792784752253,
+        "creator": {
+          "uid": "XGlhqlCwuQNLromG5evpSFlh",
+          "username": "fdxruli"
+        },
+        "project": {
+          "id": "prj_tE5uWn6kLBYdS1eDFWVxRm449RUr",
+          "name": "lanzo-pos",
+          "framework": "vite"
+        },
+        "meta": {
+          "githubCommitRef": "feat/f01-single-instance-coordinator-r1",
+          "githubCommitSha": "f48c8c2c027ffddc08e06df5175a5f4fe34d91d4",
+          "githubCommitMessage": "feat(pwa): isolated deterministic single-instance coordinator foundation (F01-1)\n\nAdd document lifetime, native Web Locks, directed informational protocol, local tickets and synthetic drain. Keep commercial bootstrap inactive. Include unit, Chromium and baseline evidence. No SQL or merge.",
+          "githubRepo": "Lanzo-POS",
+          "githubOrg": "fdxruli"
+        },
+        "alias": [
+          "lanzo-pos-git-feat-f01-single-instance-52a94c-fdxrulis-projects.vercel.app"
+        ],
+        "target": null,
+        "regions": [
+          "iad1"
+        ],
+        "buildingAt": 1792784753224,
+        "ready": 1792784783449,
+        "readyState": "READY",
+        "source": "git",
+        "aliasError": null
+      }
+    }
+  },
+  "mergePerformed": false,
+  "commercialActivation": false
+}

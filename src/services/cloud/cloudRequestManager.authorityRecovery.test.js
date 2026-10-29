@@ -20,7 +20,8 @@ const grantAdmin = () => {
   actorRuntimeController.beginHandoffCheck();
   return actorRuntimeController.grant({
     actorType: 'admin', actorId: 'admin-qa', sessionId: 'session-A',
-    tenantOpaqueId: tenant.opaqueId, deviceRef: 'fingerprint-X'
+    tenantOpaqueId: tenant.opaqueId, deviceRef: 'fingerprint-X',
+    authorizationExpiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString()
   });
 };
 const request = (fn, overrides = {}) => cloudRequestManager.request({

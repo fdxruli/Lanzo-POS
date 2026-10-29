@@ -370,7 +370,7 @@ function buildSummaryMessages({
   return messages.slice(0, 3);
 }
 
-export default function Ticker() {
+export default function Ticker({ isSuppressed = false } = {}) {
   const navigate = useNavigate();
   const licenseStatus = useAppStore(state => state.licenseStatus);
   const gracePeriodEnds = useAppStore(state => state.gracePeriodEnds);
@@ -425,24 +425,19 @@ export default function Ticker() {
     const now = new Date();
     const licenseForPresentation = {
       ...licenseDetails,
-      status: licenseStatus || licenseDetails?.status,
       grace_period_ends: licenseDetails?.grace_period_ends || gracePeriodEnds || null
     };
     const effectiveLicenseStatus = getLicenseStatusPresentation(
       licenseForPresentation,
-      now
+      now,
+      { licenseStatus }
     ).status;
     const effectiveGracePeriodEnds =
       licenseForPresentation.grace_period_ends ||
       (effectiveLicenseStatus === 'grace_period'
         ? deriveGracePeriodEnd(licenseDetails?.expires_at)
         : null);
-    const graceDate = effectiveGracePeriodEnds ? new Date(effectiveGracePeriodEnds) : null;
-    const expiryDate = licenseDetails?.expires_at
-      ? new Date(licenseDetails.expires_at)
-      : null;
-    const isGracePeriod = effectiveLicenseStatus === 'grace_period'
-      || (effectiveLicenseStatus !== 'expired' && expiryDate && graceDate && expiryDate < now && graceDate > now);
+    const isGracePeriod = effectiveLicenseStatus === 'grace_period';
 
     if (isGracePeriod) {
       const canonicalGraceEnd = effectiveGracePeriodEnds;
@@ -536,6 +531,8 @@ export default function Ticker() {
     isPriority ? 'priority-warning' : '',
     shouldPauseAnimation ? 'ticker-animation-paused' : ''
   ].filter(Boolean).join(' ');
+
+  if (isSuppressed) return null;
 
   return (
     <div

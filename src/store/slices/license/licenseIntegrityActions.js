@@ -16,6 +16,7 @@ import {
     isStaffLoginRequiredFailure,
     isStaffDeviceAuthorizationFailure,
     isLicensePlanBlockFailure,
+    isAdministrativelyBlockedLicense,
     deriveGracePeriodEnd
 } from './licenseGuards';
 import {
@@ -31,6 +32,16 @@ import {
     getActorAuthorityRecoverySnapshot,
     reportActorAuthorityError
 } from '../../../services/auth/actorAuthorityRecovery';
+import {
+    createEffectiveLicenseValidationEvidence,
+    shouldReplaceEffectiveLicenseValidationEvidence
+} from '../../../utils/licenseStatusPresentation';
+import {
+    assertLicenseValidationContextCurrent,
+    captureLicenseValidationContext,
+    isLicenseValidationContextStaleError,
+    persistWithinLicenseValidationContext
+} from './licenseValidationContext';
 
 const normalizeOptions = (options = {}) => {
     if (typeof options === 'string') {
@@ -101,6 +112,12 @@ export const createLicenseIntegrityActions = ({
             (requestActorState.status === ACTOR_RUNTIME_STATUS.GRANTED &&
                 requestActorState.generation !== actorRuntimeController.getState().generation)
         );
+        const validationContext = licenseDetails?.license_key
+            ? captureLicenseValidationContext(state, licenseDetails.license_key)
+            : null;
+        const assertCurrentContext = () => {
+            if (validationContext) assertLicenseValidationContextCurrent(validationContext, get());
+        };
 
         const failIntegrity = (failure = {}, source = 'integrity') => {
             const normalized = buildIntegrityFailure({
@@ -202,7 +219,10 @@ export const createLicenseIntegrityActions = ({
             Logger.log(`[Integrity] Verificando sesión con servidor (${reason}).`);
             markLastLicenseValidationAttempt(licenseDetails.license_key);
 
-            const serverCheck = await revalidateLicense(licenseDetails.license_key);
+            const serverCheck = await revalidateLicense(licenseDetails.license_key, {
+                beforePersist: assertCurrentContext
+            });
+            assertCurrentContext();
 
             if (validationContextChanged()) {
                 Logger.log('[Integrity] La sesión cambió durante la validación; se descarta la respuesta.');
@@ -222,12 +242,31 @@ export const createLicenseIntegrityActions = ({
                 return failIntegrity({ code: 'ACTOR_REAUTHENTICATION_REQUIRED', message: authorityFailure.message }, 'authority');
             }
 
+            if (
+                (serverCheck.license_key &&
+                    String(serverCheck.license_key).trim() !== String(licenseDetails.license_key).trim()) ||
+                (serverCheck.license_id && licenseDetails.license_id &&
+                    String(serverCheck.license_id).trim().toLowerCase() !== String(licenseDetails.license_id).trim().toLowerCase())
+            ) {
+                Logger.warn('[Integrity] Respuesta descartada; la identidad de licencia no coincide.');
+                return false;
+            }
+
             if (!serverCheck?.valid && serverCheck?.valid !== false) {
                 Logger.warn('[Integrity] Respuesta inválida del servidor; no se marca validación exitosa.');
                 return failIntegrity({
                     code: 'VALIDATION_RESPONSE_INVALID',
                     message: 'El servidor no pudo confirmar el estado de la licencia.'
                 }, 'server');
+            }
+
+            if (serverCheck.is_fallback === true) {
+                Logger.warn('[Integrity] Respuesta fallback; se conserva el contexto local sin renovar la validación remota.');
+                if (localCheck.ok && allowLocalOnly) return true;
+                return failIntegrity({
+                    code: 'VALIDATION_UNAVAILABLE',
+                    message: 'No se pudo confirmar el estado remoto de la licencia.'
+                }, 'network');
             }
 
             markLastLicenseValidationSuccess(licenseDetails.license_key);
@@ -237,6 +276,36 @@ export const createLicenseIntegrityActions = ({
                 return failIntegrity({
                     ...serverCheck,
                     code: serverCheck.block_reason || serverCheck.reason || 'LICENSE_PLAN_BLOCKED'
+                }, 'server');
+            }
+
+            if (isAdministrativelyBlockedLicense(serverCheck)) {
+                const blockedEvidence = createEffectiveLicenseValidationEvidence(
+                    { ...serverCheck, valid: false },
+                    { effectiveStatus: 'administratively_blocked' }
+                );
+                const blockedDetails = {
+                    ...licenseDetails,
+                    ...serverCheck,
+                    valid: false,
+                    status: 'administratively_blocked',
+                    ...(blockedEvidence ? { effective_lifecycle_validation: blockedEvidence } : {})
+                };
+
+                await persistWithinLicenseValidationContext(
+                    validationContext,
+                    get,
+                    () => saveLicenseToStorage(blockedDetails)
+                );
+                assertCurrentContext();
+                set({
+                    licenseStatus: 'administratively_blocked',
+                    gracePeriodEnds: null,
+                    licenseDetails: blockedDetails
+                });
+                return failIntegrity({
+                    code: 'LICENSE_ADMINISTRATIVELY_BLOCKED',
+                    message: serverCheck.message || 'La licencia está bloqueada por administración.'
                 }, 'server');
             }
 
@@ -272,21 +341,30 @@ export const createLicenseIntegrityActions = ({
                 if (RENEWAL_REASONS.includes(serverCheck.reason)) {
                     Logger.log('[Integrity] Licencia expirada. Activando pantalla de renovación.');
 
+                    const expiredEvidence = createEffectiveLicenseValidationEvidence(
+                        { ...serverCheck, valid: false },
+                        { effectiveStatus: 'expired', now }
+                    );
                     const expiredDetails = {
                         ...licenseDetails,
                         ...serverCheck,
                         valid: false,
-                        status: 'expired'
+                        status: 'expired',
+                        ...(expiredEvidence ? { effective_lifecycle_validation: expiredEvidence } : {})
                     };
 
+                    await persistWithinLicenseValidationContext(
+                        validationContext,
+                        get,
+                        () => saveLicenseToStorage(expiredDetails)
+                    );
+                    assertCurrentContext();
                     set({
                         appStatus: 'locked_renewal',
                         licenseStatus: 'expired',
                         licenseDetails: expiredDetails,
                         gracePeriodEnds: null
                     });
-
-                    await saveLicenseToStorage(expiredDetails);
                     return failIntegrity({
                         code: 'LICENSE_EXPIRED',
                         message: 'Tu período de gracia terminó. Lanzo está confirmando la transición a tu plan Local; revisa Licencia para continuar.'
@@ -340,20 +418,46 @@ export const createLicenseIntegrityActions = ({
                 }, 'server');
             }
 
-            let newStatus = serverCheck.status || serverCheck.reason || 'active';
-            if (serverCheck.status === 'grace_period' || isWithinGracePeriod) {
+            let newStatus = serverCheck.lifecycle_state || serverCheck.status || serverCheck.reason || 'active';
+            if (
+                serverCheck.lifecycle_state === 'grace_period' ||
+                serverCheck.status === 'grace_period' ||
+                isWithinGracePeriod
+            ) {
                 newStatus = 'grace_period';
             }
+
+            const effectiveLifecycleEvidence = serverCheck.is_fallback === true
+                ? (
+                    licenseDetails?.effective_lifecycle_validation ||
+                    serverCheck?.effective_lifecycle_validation ||
+                    null
+                )
+                : createEffectiveLicenseValidationEvidence(
+                    { ...serverCheck, valid: isTechnicallyValid },
+                    { effectiveStatus: newStatus, now }
+                );
 
             const updatedDetails = {
                 ...licenseDetails,
                 ...serverCheck,
                 grace_period_ends: derivedGracePeriodEnd,
                 status: newStatus,
-                valid: isTechnicallyValid
+                valid: isTechnicallyValid,
+                ...(effectiveLifecycleEvidence
+                    ? { effective_lifecycle_validation: effectiveLifecycleEvidence }
+                    : {})
             };
 
+            const previousEvidence = licenseDetails.effective_lifecycle_validation;
+            const evidenceChanged = shouldReplaceEffectiveLicenseValidationEvidence(
+                previousEvidence,
+                effectiveLifecycleEvidence
+            );
+
             const hasChanges =
+                state.licenseStatus !== newStatus ||
+                evidenceChanged ||
                 JSON.stringify(licenseDetails.valid) !== JSON.stringify(updatedDetails.valid) ||
                 licenseDetails.status !== updatedDetails.status ||
                 licenseDetails.expires_at !== updatedDetails.expires_at ||
@@ -369,7 +473,12 @@ export const createLicenseIntegrityActions = ({
 
             if (hasChanges) {
                 Logger.log(`[Integrity] Sesión actualizada. Estado: ${newStatus}`);
-
+                await persistWithinLicenseValidationContext(
+                    validationContext,
+                    get,
+                    () => saveLicenseToStorage(updatedDetails)
+                );
+                assertCurrentContext();
                 set({
                     licenseStatus: newStatus,
                     gracePeriodEnds: derivedGracePeriodEnd,
@@ -380,7 +489,6 @@ export const createLicenseIntegrityActions = ({
                         : null
                 });
 
-                await saveLicenseToStorage(updatedDetails);
             }
 
             if (newStatus === 'grace_period') {
@@ -396,6 +504,7 @@ export const createLicenseIntegrityActions = ({
             })) {
                 await get()._loadProfile(updatedDetails.license_key, {
                     refreshProfile,
+                    profileLoadMode: 'background',
                     reason: `integrity_${reason}`
                 });
             }
@@ -408,6 +517,10 @@ export const createLicenseIntegrityActions = ({
 
             set({ lastIntegrityFailure: null });
         } catch (error) {
+            if (isLicenseValidationContextStaleError(error)) {
+                Logger.log('[Integrity] Resultado descartado; cambió el tenant o la sesión del actor.');
+                return false;
+            }
             if (validationContextChanged()) return failChangedSession();
             markLastLicenseValidationAttempt(licenseDetails.license_key);
             const authorityFailure = classifyActorAuthorityError(error);

@@ -135,6 +135,12 @@ describe('ECOM.PUBLIC.PWA.1 architecture', () => {
     }
   });
 
+  it('precaches the shared manual support helper emitted by the preview QA entry', async () => {
+    const config = await readProjectFile('vite.config.js');
+
+    expect(config).toContain("'assets/supportContact-*.js'");
+  });
+
   it('starts install and worker infrastructure only in the administrative branch', async () => {
     const main = await readProjectFile('src/main.jsx');
     const publicStart = main.indexOf('if (isPublicStorePath');
@@ -195,7 +201,7 @@ describe('ECOM.PUBLIC.PWA.1 architecture', () => {
     expect(html).not.toMatch(/rel=["']manifest|beforeinstallprompt|appinstalled|serviceWorker/i);
   });
 
-  it('keeps prompt activation while limiting forced takeover to one completed bridge', async () => {
+  it('keeps the legacy bridge pending until explicit activation and avoids forced navigation', async () => {
     const [registration, worker, bridge] = await Promise.all([
       readProjectFile('src/pwa/adminServiceWorker.js'),
       readProjectFile('src/pwa/sw.js'),
@@ -210,7 +216,8 @@ describe('ECOM.PUBLIC.PWA.1 architecture', () => {
     expect(bridge).toMatch(/registration\?\.active/);
     expect(bridge).toContain("reason: 'already-completed'");
     expect(bridge).toContain('await clients.claim()');
-    expect(bridge).toContain('PUBLIC_NAVIGATION_DENYLIST');
+    expect(bridge).not.toContain('skipWaiting');
+    expect(bridge).not.toContain('client.navigate');
   });
 
   it('uses anchored public, api, and auth exclusions plus explicit NetworkOnly', async () => {
@@ -297,7 +304,7 @@ describe('ECOM.PUBLIC.PWA.1 architecture', () => {
     const app = await readProjectFile('src/App.jsx');
 
     expect(app).not.toMatch(/registration\.unregister|getRegistrations\(/);
-    expect(app).toContain('clearCurrentAdminRuntimeCaches(window.caches)');
+    expect(app).not.toMatch(/caches\.delete|clearCurrentAdminRuntimeCaches|cleanupObsoleteAdminRuntimeCaches/);
   });
 
   it('preserves explicit waiting activation in UpdatePrompt without virtual auto registration', async () => {

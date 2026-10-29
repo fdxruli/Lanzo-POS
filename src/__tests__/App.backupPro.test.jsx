@@ -60,23 +60,27 @@ vi.mock('../components/common/SettingsRoute', () => ({
 }));
 
 vi.mock('../components/common/ServerStatusBanner', () => ({
-  default: () => <div data-testid="server-status-banner" />
+  default: ({ isSuppressed }) => (isSuppressed ? null : <div data-testid="server-status-banner" />)
 }));
 
 vi.mock('../components/common/UpdatePrompt', () => ({
-  default: () => <div />
+  default: ({ isSuppressed }) => (isSuppressed ? null : <div data-testid="update-prompt" />)
 }));
 
 vi.mock('../components/common/InstallPrompt', () => ({
-  default: () => <div />
+  default: ({ isSuppressed }) => (isSuppressed ? null : <div data-testid="install-prompt" />)
 }));
 
 vi.mock('../components/common/PersistenceWarningBanner', () => ({
-  default: () => <div />
+  default: ({ suppressSecondaryBanner }) => (
+    <div data-testid="persistence-warning" data-secondary-suppressed={String(suppressSecondaryBanner)} />
+  )
 }));
 
 vi.mock('../components/common/BackupReminder', () => ({
-  default: () => <div data-testid="backup-reminder" />
+  default: ({ suppressSecondaryBanner }) => (
+    <div data-testid="backup-reminder" data-secondary-suppressed={String(suppressSecondaryBanner)} />
+  )
 }));
 
 vi.mock('../components/common/BackupRuntime', () => ({
@@ -96,9 +100,9 @@ vi.mock('../pages/DashboardPage', () => ({ default: () => <div /> }));
 vi.mock('../pages/SettingsPage', () => ({ default: () => <div /> }));
 vi.mock('../pages/AboutPage', () => ({ default: () => <div /> }));
 
-function renderApp() {
+function renderApp(path = '/') {
   return renderToStaticMarkup(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={[path]}>
       <App />
     </MemoryRouter>
   );
@@ -122,6 +126,19 @@ describe('App local backup runtime gating', () => {
     vi.stubEnv('VITE_SUPABASE_URL', 'https://example.supabase.co');
     vi.stubEnv('VITE_SUPABASE_PUBLISHABLE_KEY', 'anon-key');
     Object.keys(storeMock.appState).forEach((key) => delete storeMock.appState[key]);
+  });
+
+  it('hides only secondary banners on 404 while keeping persistence and backup runtimes mounted', () => {
+    setReadyState({ features: { cloud_pos_sync: false } });
+
+    const markup = renderApp('/ruta-que-no-existe');
+
+    expect(markup).not.toContain('data-testid="server-status-banner"');
+    expect(markup).not.toContain('data-testid="update-prompt"');
+    expect(markup).not.toContain('data-testid="install-prompt"');
+    expect(markup).toContain('data-testid="persistence-warning" data-secondary-suppressed="true"');
+    expect(markup).toContain('data-testid="backup-reminder" data-secondary-suppressed="true"');
+    expect(markup).toContain('data-testid="backup-runtime"');
   });
 
   it('mounts BackupRuntime and BackupReminder for FREE/local licenses', () => {

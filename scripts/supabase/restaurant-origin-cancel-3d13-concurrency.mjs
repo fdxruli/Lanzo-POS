@@ -35,7 +35,8 @@ const call = (operation, id, suffix) => {
 const results = [];
 const runId = Date.now();
 for (const [index, [first, second]] of [['cancel','cashier'], ['cashier','cancel'], ['cancel','split'],
-  ['split','cancel'], ['cancel','cancel'], ['cancel','cancel']].entries()) {
+  ['split','cancel'], ['cancel','cancel'], ['cancel','cancel'],
+  ['cashier','split'], ['split','cashier']].entries()) {
   const id = `race-3d13-${runId}-${index}`;
   sql(`insert into public.pos_restaurant_orders(id,license_id,local_order_id,created_by_device_id,updated_at,payment_status,total)
     values('${id}','${license}','${id}','00000000-0000-0000-0000-00000000000a','${version}','unpaid',50);`);

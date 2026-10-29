@@ -47,15 +47,19 @@ function validRoutes() {
       continue: true,
     },
     {
-      src: '^/(?:index\\.html)?$',
+      src: '^/(?:|home\\.html|index\\.html|tienda|conoce-lanzo|tienda/[^/]+/pedido/[^/]+)$',
       headers: { 'Cache-Control': 'public, max-age=0, must-revalidate' },
       continue: true,
     },
+    { src: '^/$', dest: '/home.html' },
     { handle: 'filesystem' },
     { src: '^/tienda/([^/]+)/pedido/([^/]+)$', dest: '/index.html' },
     { src: '^/tienda/([^/]+)$', dest: '/api/store-page?slug=$1' },
-    { src: '^/tienda/[^/]+/.+$', dest: '/index.html' },
-    { src: '^/(?:|tienda|conoce-lanzo)$', dest: '/index.html' },
+    { src: '^/(?:tienda|conoce-lanzo)$', dest: '/index.html' },
+    {
+      src: '^/(?!(?:api|assets)(?:/|$)|(?:home|index)\\.html$|robots[^/]*\\.txt$)(.*)$',
+      dest: '/index.html',
+    },
     { handle: 'error' },
   ];
 }
@@ -108,6 +112,7 @@ async function createFixture() {
     mkdir(path.join(sourceStatic, 'assets'), { recursive: true }),
   ]);
   const staticFiles = {
+    'home.html': INDEX_HTML.replace('<title>Tienda</title>', '<title>Lanzo Tienda Online</title>'),
     'index.html': INDEX_HTML,
     'robots.txt': 'User-agent: *\nDisallow: /\n',
     'assets/index-AbCd1234.css': 'body{color:#123456}',
@@ -819,10 +824,22 @@ exports.STORE_HTML_TEMPLATE=${JSON.stringify(INDEX_HTML)};`,
       path.join(fixture.functionsRoot, 'api', 'store-page.func', 'index.mjs'),
       'export default {}',
     ), 'htmlResolvesTemplate'],
+    ['raíz comercial detrás del filesystem', async () => {
+      const configPath = path.join(fixture.outputRoot, 'config.json');
+      const config = JSON.parse(await readFile(configPath, 'utf8'));
+      const rootIndex = config.routes.findIndex((route) => route.src === '^/$');
+      const [rootRoute] = config.routes.splice(rootIndex, 1);
+      const filesystemIndex = config.routes.findIndex((route) => route.handle === 'filesystem');
+      config.routes.splice(filesystemIndex + 1, 0, rootRoute);
+      await writeJson(configPath, config);
+    }, 'rootBeforeFilesystem'],
     ['tracking incorrecto', async () => {
       const configPath = path.join(fixture.outputRoot, 'config.json');
       const config = JSON.parse(await readFile(configPath, 'utf8'));
-      config.routes[5].dest = '/api/store-page?slug=$1&tracking=$2';
+      const trackingRoute = config.routes.find(
+        (route) => route.src === '^/tienda/([^/]+)/pedido/([^/]+)$',
+      );
+      trackingRoute.dest = '/api/store-page?slug=$1&tracking=$2';
       await writeJson(configPath, config);
     }, 'trackingStatic'],
     ['HTML immutable', async () => {

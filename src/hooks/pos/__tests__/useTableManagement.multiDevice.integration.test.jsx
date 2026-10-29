@@ -199,7 +199,8 @@ beforeEach(async () => {
   actorRuntimeController.lock('test_device_b');
   actorRuntimeController.beginAuthentication({ actorType: 'admin', deviceRef: 'device-b' });
   actorRuntimeController.grant({ actorType: 'admin', actorId: 'owner-a',
-    sessionId: crypto.randomUUID(), deviceRef: 'device-b' });
+    sessionId: crypto.randomUUID(), deviceRef: 'device-b',
+    authorizationExpiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString() });
   registerActorOperationalActiveOrders({ useActiveOrders, db, STORES });
   await installActorOperationalHandoffGuards();
   ensureOrderDiscountRuntime();

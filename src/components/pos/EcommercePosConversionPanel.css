@@ -157,9 +157,9 @@
 
 .ecommerce-conversion-panel__checkout,
 .ecommerce-conversion-panel__button--primary {
-  border-color: var(--primary-color, #2563eb);
-  background: var(--primary-color, #2563eb);
-  color: #fff;
+  border-color: var(--ui-action-primary-bg);
+  background: var(--ui-action-primary-bg);
+  color: var(--ui-action-primary-text);
 }
 
 .ecommerce-conversion-panel__button--danger {

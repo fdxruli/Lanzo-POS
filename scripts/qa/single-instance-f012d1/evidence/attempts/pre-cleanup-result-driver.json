@@ -1,0 +1,33 @@
+[
+  {
+    "tag": "base",
+    "cwd": "/workspace/scratch/2a5709f8e222/Lanzo-baseline",
+    "command": [
+      "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node",
+      "/workspace/scratch/2a5709f8e222/Lanzo-POS/scripts/qa/single-instance-f012a/global.mjs",
+      "/workspace/scratch/2a5709f8e222/Lanzo-POS/scripts/qa/single-instance-f012d1/evidence/base"
+    ],
+    "exit": 1
+  },
+  {
+    "tag": "main",
+    "cwd": "/workspace/scratch/2a5709f8e222/Lanzo-main",
+    "command": [
+      "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node",
+      "/workspace/scratch/2a5709f8e222/Lanzo-POS/scripts/qa/single-instance-f012a/global.mjs",
+      "/workspace/scratch/2a5709f8e222/Lanzo-POS/scripts/qa/single-instance-f012d1/evidence/main"
+    ],
+    "exit": 1
+  },
+  {
+    "tag": "candidate",
+    "cwd": "/workspace/scratch/2a5709f8e222/Lanzo-candidate-validated",
+    "command": [
+      "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node",
+      "/workspace/scratch/2a5709f8e222/Lanzo-POS/scripts/qa/single-instance-f012d1/validate.mjs",
+      "/workspace/scratch/2a5709f8e222/Lanzo-POS/scripts/qa/single-instance-f012d1/evidence/candidate",
+      "--build"
+    ],
+    "exit": 1
+  }
+]

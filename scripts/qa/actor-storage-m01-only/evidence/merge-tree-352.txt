@@ -1,0 +1,95 @@
+646e626557f049cf7e9674c275437810996543fb
+100644 5b2fbbcea9c1a0b7a3c0b356aec93b5211544f09 1	.github/workflows/shared-terminal-actor-scoped-storage.yml
+100644 c62e3762f81cdd69a56109c510b305bbee1b27ff 2	.github/workflows/shared-terminal-actor-scoped-storage.yml
+100644 0def1056b22a45595f7410c744b26b51f0375f35 3	.github/workflows/shared-terminal-actor-scoped-storage.yml
+100644 66ac98be01b1524bd78805ab5417ef12be76807c 1	package.json
+100644 517639eb6daf617e32f4d90093f3522965ca89e7 2	package.json
+100644 aac835bdecd9aa4ac348db45ae0594f12b70f935 3	package.json
+100644 1ab14bd73e497def45113b6afe50a16da05cbc2a 1	src/App.jsx
+100644 eeea3df3db1f6754399c1c1ead022f72223ad27c 2	src/App.jsx
+100644 bc454eecd11568bebf32561970ce2319f641d856 3	src/App.jsx
+100644 e4c6c96e726705ac1fe812e4a4c097d6d02a70db 1	src/architecture/__tests__/adminPwaArchitecture.test.js
+100644 9a7a7e889f74b9c39735544600e678bfefcae63f 2	src/architecture/__tests__/adminPwaArchitecture.test.js
+100644 9f9d574ef039a1ee7f4cf66ae49b2275af6f9615 3	src/architecture/__tests__/adminPwaArchitecture.test.js
+100644 2fc2091eb1a96f27af48c232cc20b2a3ab739863 1	src/components/common/AdminLoginModal.jsx
+100644 f123067648ea4065ff4c5053b7b862f71eb4e606 2	src/components/common/AdminLoginModal.jsx
+100644 b8358e0ee7afc86a72b3dd7c08b4d2d2f8f15e9b 3	src/components/common/AdminLoginModal.jsx
+100644 3948277484831bbbf6607f9c1f4ec1503a40cbc8 1	src/components/common/StaffLoginModal.jsx
+100644 ecbdd3fdbedfa34f847c3265f324d9b5f40d2cc4 2	src/components/common/StaffLoginModal.jsx
+100644 76ab4bdfacab855522896bd24be0f040d8dd3365 3	src/components/common/StaffLoginModal.jsx
+100644 ab695261cf0c3680166edcf5f006efa8e132d21a 1	src/components/common/UpdatePrompt.test.jsx
+100644 9ca9c72bc78633f71ccacc40b2f721203f205a25 2	src/components/common/UpdatePrompt.test.jsx
+100644 544d5a31861f9abb48643f22bad0c2cc2f96b74a 3	src/components/common/UpdatePrompt.test.jsx
+100644 d2c3ad762d5f52641d798ed7ea90a27aa860ebfe 1	src/components/ecommerce/__tests__/EcommercePortalSettings.productModalLifecycle.test.jsx
+100644 52639326143a21d19ad7e6d7333b8e8de486b886 2	src/components/ecommerce/__tests__/EcommercePortalSettings.productModalLifecycle.test.jsx
+100644 e246c372ced71d3979c2d93e48fcef21b277ad3c 3	src/components/ecommerce/__tests__/EcommercePortalSettings.productModalLifecycle.test.jsx
+100644 49ef19440e670cbd819f41a41d7e8106d9b9a1a0 1	src/main.jsx
+100644 3b444fd18eaf59ae7f49b67951f6ff2ddb53f460 2	src/main.jsx
+100644 6fef16f3ca2ea20c5691907e89c5159b72231734 3	src/main.jsx
+100644 8442179aab431fdac9fc3852bd3ae524ac1472dc 1	src/pages/__tests__/PublicStorePage.test.jsx
+100644 e5d8d8922b5709b6807737a9ac904496f965d553 2	src/pages/__tests__/PublicStorePage.test.jsx
+100644 4fe79db33afe945ce82954d84b2873d01418d226 3	src/pages/__tests__/PublicStorePage.test.jsx
+100644 b21a753e5e5f5d0af85ef1dee2de01e90dd0b34e 1	src/pwa/adminServiceWorker.js
+100644 078abdefab8f591a5617afe2b847b81e00e3dd71 2	src/pwa/adminServiceWorker.js
+100644 a9b269d79f40ce839ed526b40fabb2cd187ecd33 3	src/pwa/adminServiceWorker.js
+100644 693c772e7f3e239f73fd0f0e7d3e4d0015baa18a 1	src/services/auth/actorRuntimeController.js
+100644 5a87791742557fd3cadf1398e188a7a26f9d91ac 2	src/services/auth/actorRuntimeController.js
+100644 ec78185f2c099c0c6a2bb37d98039914f93122b6 3	src/services/auth/actorRuntimeController.js
+100644 d0db302be37e2c00db037dde20e57ac5e8e4d64e 1	src/store/slices/license/licenseBackgroundValidationActions.js
+100644 07a9cc42d0919ab747424eb2348e13cda60cc943 2	src/store/slices/license/licenseBackgroundValidationActions.js
+100644 2f0c10c86e905f0b1684d6e17f65f605e860ac52 3	src/store/slices/license/licenseBackgroundValidationActions.js
+100644 6fbdad80fda2d9591157345dabf86be141b33b2e 1	src/store/slices/license/licenseIntegrityActions.js
+100644 f9a3c215d953197f3e6a2e419599d31afe6bc2e8 2	src/store/slices/license/licenseIntegrityActions.js
+100644 d10f97c1b19c4ccc446df868a8e5c62a8f461bbc 3	src/store/slices/license/licenseIntegrityActions.js
+100644 57199844ba48fb067addd28500f942e97a194ca3 1	src/store/slices/license/licenseProcessingActions.js
+100644 d2c043cc30061dfc8770e701c17fe084c64cd943 2	src/store/slices/license/licenseProcessingActions.js
+100644 381d32b891353cb50cd86456e753a770b38ade27 3	src/store/slices/license/licenseProcessingActions.js
+100644 37bb7e650036cdd3db1ef3a6811b802a9f3fe867 1	vite.config.js
+100644 11cde708fea3e719ab3ac2ccc6e3e44afd47021b 2	vite.config.js
+100644 eb093b0a2b91751b268cb7a63749f3c61127e618 3	vite.config.js
+
+Auto-merging .github/workflows/shared-terminal-actor-runtime.yml
+Auto-merging .github/workflows/shared-terminal-actor-scoped-storage.yml
+CONFLICT (content): Merge conflict in .github/workflows/shared-terminal-actor-scoped-storage.yml
+Auto-merging package.json
+CONFLICT (content): Merge conflict in package.json
+Auto-merging src/App.jsx
+CONFLICT (content): Merge conflict in src/App.jsx
+Auto-merging src/architecture/__tests__/adminLazyRouteRecoveryArchitecture.test.js
+Auto-merging src/architecture/__tests__/adminPwaArchitecture.test.js
+CONFLICT (content): Merge conflict in src/architecture/__tests__/adminPwaArchitecture.test.js
+Auto-merging src/components/common/AdminLoginModal.jsx
+CONFLICT (content): Merge conflict in src/components/common/AdminLoginModal.jsx
+Auto-merging src/components/common/StaffLoginModal.jsx
+CONFLICT (content): Merge conflict in src/components/common/StaffLoginModal.jsx
+Auto-merging src/components/common/UpdatePrompt.jsx
+Auto-merging src/components/common/UpdatePrompt.test.jsx
+CONFLICT (content): Merge conflict in src/components/common/UpdatePrompt.test.jsx
+Auto-merging src/components/common/__tests__/PaymentModal.test.jsx
+Auto-merging src/components/common/__tests__/PosApplicationBootstrap.coldAppImport.test.jsx
+Auto-merging src/components/ecommerce/__tests__/EcommercePortalSettings.productModalLifecycle.test.jsx
+CONFLICT (content): Merge conflict in src/components/ecommerce/__tests__/EcommercePortalSettings.productModalLifecycle.test.jsx
+Auto-merging src/components/pos/ProductMenu.css
+Auto-merging src/components/pos/SplitBillModal.css
+Auto-merging src/components/pos/TablesView.css
+Auto-merging src/components/settings/GeneralSettings.jsx
+Auto-merging src/main.jsx
+CONFLICT (content): Merge conflict in src/main.jsx
+Auto-merging src/pages/__tests__/PublicStorePage.siteVersion.test.jsx
+Auto-merging src/pages/__tests__/PublicStorePage.test.jsx
+CONFLICT (content): Merge conflict in src/pages/__tests__/PublicStorePage.test.jsx
+Auto-merging src/pwa/__tests__/adminServiceWorker.test.js
+Auto-merging src/pwa/adminServiceWorker.js
+CONFLICT (content): Merge conflict in src/pwa/adminServiceWorker.js
+Auto-merging src/services/auth/actorRuntimeController.js
+CONFLICT (content): Merge conflict in src/services/auth/actorRuntimeController.js
+Auto-merging src/services/auth/actorSessionRuntimeBridge.js
+Auto-merging src/store/slices/createPWASlice.test.js
+Auto-merging src/store/slices/license/licenseBackgroundValidationActions.js
+CONFLICT (content): Merge conflict in src/store/slices/license/licenseBackgroundValidationActions.js
+Auto-merging src/store/slices/license/licenseIntegrityActions.js
+CONFLICT (content): Merge conflict in src/store/slices/license/licenseIntegrityActions.js
+Auto-merging src/store/slices/license/licenseProcessingActions.js
+CONFLICT (content): Merge conflict in src/store/slices/license/licenseProcessingActions.js
+Auto-merging vite.config.js
+CONFLICT (content): Merge conflict in vite.config.js

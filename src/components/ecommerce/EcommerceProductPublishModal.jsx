@@ -90,8 +90,8 @@ const isProductStockTracked = (product = {}) => {
   );
 };
 
-const resolveStockMode = ({ isPro, featureEnabled, stockTracked, requestedMode }) => {
-  if (!isPro || !featureEnabled || !stockTracked) return 'hidden';
+const resolveStockMode = ({ canUseStockVisibility, featureEnabled, stockTracked, requestedMode }) => {
+  if (!canUseStockVisibility || !featureEnabled || !stockTracked) return 'hidden';
   return normalizeStockMode(requestedMode);
 };
 
@@ -101,7 +101,8 @@ export default function EcommerceProductPublishModal({
   localProducts,
   categoriesById,
   linkedRefs,
-  isPro,
+  canSyncCatalog = false,
+  canUseStockVisibility = false,
   limitReached,
   localCatalogLoading = false,
   localCatalogHasMore = false,
@@ -193,7 +194,7 @@ export default function EcommerceProductPublishModal({
       setForm({
         ...emptyForm,
         isPublished: !limitReached,
-        syncConfig: isPro ? SOURCE_SYNC_CONFIG : MANUAL_SYNC_CONFIG
+        syncConfig: canSyncCatalog ? SOURCE_SYNC_CONFIG : MANUAL_SYNC_CONFIG
       });
       return;
     }
@@ -223,11 +224,11 @@ export default function EcommerceProductPublishModal({
       wholesaleEnabled: editingProduct.wholesaleEnabled
         ?? editingProduct.wholesale_enabled
         ?? false,
-      syncConfig: isPro
+      syncConfig: canSyncCatalog
         ? normalizeSyncConfig(editingProduct.syncConfig, MANUAL_SYNC_CONFIG)
         : MANUAL_SYNC_CONFIG
     });
-  }, [editingProduct, isPro, limitReached, localProducts, open]);
+  }, [canSyncCatalog, editingProduct, limitReached, localProducts, open]);
 
   useEffect(() => {
     if (!open || !form.localProductRef) return;
@@ -276,7 +277,7 @@ export default function EcommerceProductPublishModal({
 
   useEffect(() => {
     let active = true;
-    if (!open || !isPro) {
+    if (!open || !canUseStockVisibility) {
       setStockFeatureLoading(false);
       setStockFeatureError(false);
       setStockVisibilityEnabled(false);
@@ -303,7 +304,7 @@ export default function EcommerceProductPublishModal({
     });
 
     return () => { active = false; };
-  }, [isPro, open]);
+  }, [canUseStockVisibility, open]);
 
   if (!open) return null;
 
@@ -373,8 +374,10 @@ export default function EcommerceProductPublishModal({
     if (!localProduct) return toast.error('No se pudo leer el producto local seleccionado.');
     if (!form.publicName.trim()) return toast.error('El nombre público es obligatorio.');
     if (!Number.isFinite(price) || price < 0) return toast.error('El precio público debe ser mayor o igual a cero.');
-    if (!editingProduct && limitReached && form.isPublished) return toast.error('Plan Free ya alcanzó el límite de 10 productos.');
-    if (isPro && stockFeatureError) {
+    if (!editingProduct && limitReached && form.isPublished) {
+      return toast.error('Llegaste al límite de productos publicados de tu plan.');
+    }
+    if (canUseStockVisibility && stockFeatureError) {
       return toast.error('No se pudo validar la política de inventario público. Intenta nuevamente.');
     }
     if (form.isPublished && [
@@ -407,14 +410,14 @@ export default function EcommerceProductPublishModal({
       displayOrder: Math.max(0, Math.trunc(safeNumber(form.displayOrder, 0))),
       imageUrl: publicUrl(form.imageUrl),
       stockMode: resolveStockMode({
-        isPro,
+        canUseStockVisibility,
         featureEnabled: stockVisibilityEnabled,
         stockTracked: form.stockTracked,
         requestedMode: form.stockMode
       }),
       publicConfigurationMode: form.publicConfigurationMode,
       wholesaleEnabled: form.wholesaleEnabled,
-      syncConfig: isPro ? normalizeSyncConfig(form.syncConfig) : MANUAL_SYNC_CONFIG,
+      syncConfig: canSyncCatalog ? normalizeSyncConfig(form.syncConfig) : MANUAL_SYNC_CONFIG,
       metadata: { source: 'admin_ui' }
     });
     setSaving(false);
@@ -540,7 +543,7 @@ export default function EcommerceProductPublishModal({
               })}
             </select>
             <small className="ecom-admin-help">
-              {isPro
+              {canSyncCatalog
                 ? 'Lanzo Nube puede mantener vinculados los campos elegidos sin sobrescribir los campos manuales.'
                 : 'Se guarda una copia pública; tu producto local no se modifica.'}
             </small>
@@ -560,7 +563,7 @@ export default function EcommerceProductPublishModal({
             )}
           </div>
 
-          {isPro && (
+          {canSyncCatalog && (
             <fieldset className="ecom-admin-sync-fields ecom-admin-span-2">
               <legend>Vinculación con el producto local</legend>
               <label className="ecom-admin-sync-master">
@@ -598,15 +601,15 @@ export default function EcommerceProductPublishModal({
 
           <label className="form-group">
             <span className="form-label">Nombre público *</span>
-            <input className="form-input" value={form.publicName} disabled={isPro && form.syncConfig.name === 'source'} onChange={(event) => setForm((current) => ({ ...current, publicName: event.target.value }))} maxLength={160} required />
+            <input className="form-input" value={form.publicName} disabled={canSyncCatalog && form.syncConfig.name === 'source'} onChange={(event) => setForm((current) => ({ ...current, publicName: event.target.value }))} maxLength={160} required />
           </label>
           <label className="form-group">
             <span className="form-label">Precio público *</span>
-            <input className="form-input" type="number" min="0" step="0.01" value={form.price} disabled={isPro && form.syncConfig.price === 'source'} onChange={(event) => setForm((current) => ({ ...current, price: event.target.value }))} required />
+            <input className="form-input" type="number" min="0" step="0.01" value={form.price} disabled={canSyncCatalog && form.syncConfig.price === 'source'} onChange={(event) => setForm((current) => ({ ...current, price: event.target.value }))} required />
           </label>
           <label className="form-group">
             <span className="form-label">Categoría pública</span>
-            <input className="form-input" value={form.categoryName} disabled={isPro && form.syncConfig.category === 'source'} onChange={(event) => setForm((current) => ({ ...current, categoryName: event.target.value }))} maxLength={120} />
+            <input className="form-input" value={form.categoryName} disabled={canSyncCatalog && form.syncConfig.category === 'source'} onChange={(event) => setForm((current) => ({ ...current, categoryName: event.target.value }))} maxLength={120} />
           </label>
           <label className="form-group">
             <span className="form-label">Orden</span>
@@ -614,10 +617,10 @@ export default function EcommerceProductPublishModal({
           </label>
           <label className="form-group ecom-admin-span-2">
             <span className="form-label">Descripción pública</span>
-            <textarea className="form-textarea" rows={4} value={form.publicDescription} disabled={isPro && form.syncConfig.description === 'source'} onChange={(event) => setForm((current) => ({ ...current, publicDescription: event.target.value }))} maxLength={1000} />
+            <textarea className="form-textarea" rows={4} value={form.publicDescription} disabled={canSyncCatalog && form.syncConfig.description === 'source'} onChange={(event) => setForm((current) => ({ ...current, publicDescription: event.target.value }))} maxLength={1000} />
           </label>
 
-          {isPro && (
+          {canUseStockVisibility && (
             <label className="form-group ecom-admin-span-2">
               <span className="form-label">Visibilidad del inventario</span>
               <select
@@ -708,7 +711,7 @@ export default function EcommerceProductPublishModal({
               )}
             </div>
           )}
-          {isPro && (
+          {canUseStockVisibility && (
             <small className="ecom-admin-help ecom-admin-span-2">
               La disponibilidad pública requiere que el producto esté publicado, habilitado manualmente y disponible en la fuente local.
             </small>

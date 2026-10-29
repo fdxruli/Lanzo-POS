@@ -1,0 +1,79 @@
+[
+  {
+    "actions": "278px",
+    "minTarget": 44,
+    "overflow": 0,
+    "panelWidth": 310,
+    "width": 320
+  },
+  {
+    "actions": "314px",
+    "minTarget": 44,
+    "overflow": 0,
+    "panelWidth": 350,
+    "width": 360
+  },
+  {
+    "actions": "327.5px",
+    "minTarget": 44,
+    "overflow": 0,
+    "panelWidth": 365,
+    "width": 375
+  },
+  {
+    "actions": "341px",
+    "minTarget": 44,
+    "overflow": 0,
+    "panelWidth": 380,
+    "width": 390
+  },
+  {
+    "actions": "377px",
+    "minTarget": 44,
+    "overflow": 0,
+    "panelWidth": 420,
+    "width": 430
+  },
+  {
+    "actions": "530px",
+    "minTarget": 44,
+    "overflow": 0,
+    "panelWidth": 590,
+    "width": 600
+  },
+  {
+    "actions": "266px 266px",
+    "minTarget": 44,
+    "overflow": 0,
+    "panelWidth": 768,
+    "width": 768
+  },
+  {
+    "actions": "266px 266px",
+    "minTarget": 44,
+    "overflow": 0,
+    "panelWidth": 820,
+    "width": 820
+  },
+  {
+    "actions": "517.031px",
+    "minTarget": 44,
+    "overflow": 0,
+    "panelWidth": 1024,
+    "width": 1024
+  },
+  {
+    "actions": "544px",
+    "minTarget": 44,
+    "overflow": 0,
+    "panelWidth": 1280,
+    "width": 1280
+  },
+  {
+    "actions": "544px",
+    "minTarget": 44,
+    "overflow": 0,
+    "panelWidth": 1440,
+    "width": 1440
+  }
+]

@@ -433,8 +433,8 @@
 }
 
 .scan-feedback-message {
-  background-color: var(--success-color);
-  color: white;
+  background-color: var(--ui-action-success-bg);
+  color: var(--ui-action-success-text);
   padding: var(--spacing-lg) var(--spacing-xl);
   border-radius: var(--border-radius);
   font-size: 1.2rem;
@@ -467,8 +467,8 @@
 }
 
 .unknown-badge {
-  background-color: var(--error-color);
-  color: white; /* Aquí es correcto forzar blanco por contraste */
+  background-color: var(--ui-action-danger-bg);
+  color: var(--ui-action-danger-text); /* Aquí es correcto forzar blanco por contraste */
   padding: 4px 8px;
   border-radius: 4px;
   font-size: 0.85rem;
@@ -490,8 +490,8 @@
 
 #scanner-modal .btn-clear-errors:hover, /* Añadido para mejor UX */
 #scanner-modal .btn-clear-errors:active {
-  background: var(--error-color);
-  color: white;
+  background: var(--ui-action-danger-bg);
+  color: var(--ui-action-danger-text);
 }
 
 .unknown-codes-list {

@@ -13,6 +13,8 @@ describe('administrative startup version recovery architecture', () => {
 
     expect(config).toContain("'assets/databaseRuntime-*.js'");
     expect(config).toContain("'assets/PosApplicationBootstrap-*.{js,css}'");
+    expect(config).toContain("'assets/actorOperationalHandoff-*.js'");
+    expect(config).toContain("'assets/actorRuntimeController-*.js'");
   });
 
   it('detects stale imports in both startup phases and keeps the manual action on the same recovery path', async () => {
@@ -24,16 +26,22 @@ describe('administrative startup version recovery architecture', () => {
 
     expect(main).toContain('isRecoverableAdminStartupError(error)');
     expect(main).toContain("renderStartupRecoveryScreen({ mode: 'recovering' })");
-    expect(main).toContain('recoverAdminStartup({ error })');
-    expect(main).toContain('recoverAdminStartup({ error, force: true })');
+    expect(main).toContain('recoverAdminStartup({ error, isContextCurrent })');
+    expect(main).toContain('const recovery = await recoverAdminStartup({ error, force: true, isContextCurrent });');
+    expect(main).toContain("if (recovery?.status === 'reloading') return;");
+    expect(main).toContain("renderStartupRecoveryScreen({ mode: 'updateError', onRetry: retryRecovery });");
     expect(main).not.toContain('completeAdminStartupRecovery()');
+    expect(main).toContain('createRecoveryContextGuard()');
+    expect(main).toContain('force: true, isContextCurrent');
+    expect(bootstrap).toContain('recoverStartup({ error, isContextCurrent })');
 
     expect(bootstrap).toContain('isRecoverableAdminStartupError(error)');
-    expect(bootstrap).toContain('const result = await recoverStartup({ error })');
+    expect(bootstrap).toContain('const result = await recoverStartup({ error, isContextCurrent })');
     expect(bootstrap).toContain('force: true');
     expect(bootstrap).toContain('completeStartupRecovery();');
     expect(bootstrap).toContain('reloadPage = () => window.location.reload()');
-    expect(bootstrap).toContain('const retryAdministrativeStart = () => reloadPage();');
+    expect(bootstrap).toContain('const retryAdministrativeStart = () => {');
+    expect(bootstrap).toContain('if (!canRetryAdministrativeStart())');
 
     expect(recovery).toContain("const RECOVERY_ATTEMPT_KEY = 'lanzo:admin-startup-recovery:v1'");
     expect(recovery).toContain('function getSessionStorage(windowTarget)');
@@ -44,11 +52,19 @@ describe('administrative startup version recovery architecture', () => {
   });
 
   it('limits the hard reset to the root Lanzo worker and Lanzo-owned Cache Storage entries', async () => {
-    const recovery = await readProjectFile('src/pwa/adminStartupRecovery.js');
+    const [recovery, app] = await Promise.all([
+      readProjectFile('src/pwa/adminStartupRecovery.js'),
+      readProjectFile('src/App.jsx'),
+    ]);
 
-    expect(recovery).toMatch(/scope\.origin === origin && scope\.pathname === '\/'/);
+    expect(recovery).toContain('cacheUrl.origin === new URL(origin).origin');
+    expect(recovery).toContain("cacheUrl.pathname === '/'");
     expect(recovery).toMatch(/workbox-precache/);
     expect(recovery).toMatch(/lanzo-admin-\(\?:static\|media\)/);
+    expect(recovery).not.toContain('unregisterLanzoWorkers');
+    expect(recovery).toContain('isContextCurrent');
+    expect(app).not.toContain('clearCurrentAdminRuntimeCaches');
+    expect(app).not.toContain('resetAppShellCache');
     expect(recovery).not.toMatch(/indexedDB\.deleteDatabase|localStorage\.clear|sessionStorage\.clear/);
   });
 

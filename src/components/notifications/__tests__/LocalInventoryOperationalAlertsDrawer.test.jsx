@@ -19,6 +19,10 @@ const localMocks = vi.hoisted(() => ({
   refresh: vi.fn(async () => ({ status: 'ready' }))
 }));
 
+const cashAttentionMocks = vi.hoisted(() => ({
+  markRead: vi.fn(() => ({ version: 1, readAt: 'read', postponedAt: null }))
+}));
+
 const routerMocks = vi.hoisted(() => ({
   navigate: vi.fn()
 }));
@@ -38,6 +42,10 @@ vi.mock('../../../services/auth/useActorRuntimeSnapshot', () => ({
 vi.mock('../../../services/localInventoryOperationalAlerts', () => ({
   markCurrentLocalInventoryOperationalAlertsSeen: localMocks.markSeen,
   refreshLocalInventoryOperationalAlertsSnapshot: localMocks.refresh
+}));
+
+vi.mock('../../../services/cash/postDowngradeCashAttention', () => ({
+  markPostDowngradeCashAttentionRead: (...args) => cashAttentionMocks.markRead(...args)
 }));
 
 import LocalInventoryOperationalAlertsDrawer from '../LocalInventoryOperationalAlertsDrawer';
@@ -125,6 +133,118 @@ describe('LocalInventoryOperationalAlertsDrawer', () => {
     expect(screen.getByText('2 alertas activas')).toBeInTheDocument();
     expect(screen.getByText('Producto stock 1')).toBeInTheDocument();
     expect(screen.getByText('Producto caducidad 1')).toBeInTheDocument();
+  });
+
+  it('shows one grouped Caja y conciliación item and keeps it after it is read', async () => {
+    const onCashAttentionRecordChange = vi.fn();
+    renderDrawer({
+      postDowngradeCashPending: {
+        eligible: true,
+        online: true,
+        status: 'success',
+        pendingCount: 7,
+        isPostDowngrade: true,
+        downgradedAt: '2026-09-24T05:53:00.000Z',
+        refresh: vi.fn()
+      },
+      cashAttentionKey: 'opaque-attention-key',
+      cashAttentionRecord: { version: 1, readAt: null, postponedAt: null },
+      onCashAttentionRecordChange
+    });
+
+    expect(screen.getByText('Caja y conciliación')).toBeInTheDocument();
+    expect(screen.getByText('7 cajas pendientes de revisión')).toBeInTheDocument();
+    expect(screen.getByText(/Quedaron cajas abiertas de tu plan anterior/i)).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(cashAttentionMocks.markRead).toHaveBeenCalledWith(
+        'opaque-attention-key',
+        { source: 'local-alerts-drawer' }
+      );
+    });
+    expect(onCashAttentionRecordChange).toHaveBeenCalledWith({
+      version: 1,
+      readAt: 'read',
+      postponedAt: null
+    });
+    expect(screen.getByText('7 cajas pendientes de revisión')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Ir a Caja' }));
+    expect(routerMocks.navigate).toHaveBeenCalledWith('/caja');
+  });
+
+  it('keeps the last confirmed cash count offline and does not block navigation to Caja', () => {
+    renderDrawer({
+      postDowngradeCashPending: {
+        eligible: true,
+        online: false,
+        status: 'offline_known',
+        pendingCount: 7,
+        isPostDowngrade: true,
+        refresh: vi.fn()
+      }
+    });
+
+    expect(screen.getByText('7 cajas pendientes de revisión')).toBeInTheDocument();
+    expect(screen.getByText(/última cantidad confirmada/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Ir a Caja' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'Actualizar' })).not.toBeInTheDocument();
+  });
+
+  it('preserves a confirmed count after a query error and offers a manual refresh', () => {
+    const refresh = vi.fn();
+    renderDrawer({
+      postDowngradeCashPending: {
+        eligible: true,
+        online: true,
+        status: 'error',
+        pendingCount: 2,
+        isPostDowngrade: true,
+        error: 'private low-level error',
+        refresh
+      }
+    });
+
+    expect(screen.getByText('2 cajas pendientes de revisión')).toBeInTheDocument();
+    expect(screen.getByText(/Conservamos la última cantidad confirmada/i)).toBeInTheDocument();
+    expect(screen.queryByText('private low-level error')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Actualizar' }));
+    expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not invent zero offline and shows verification without a number only with downgrade evidence', () => {
+    const { rerender } = renderDrawer({
+      postDowngradeCashPending: {
+        eligible: true,
+        online: false,
+        status: 'unknown',
+        pendingCount: null,
+        isPostDowngrade: false
+      }
+    });
+
+    expect(screen.queryByText('Caja y conciliación')).not.toBeInTheDocument();
+    expect(screen.queryByText(/0 cajas/i)).not.toBeInTheDocument();
+
+    rerender(
+      <MemoryRouter>
+        <LocalInventoryOperationalAlertsDrawer
+          isOpen
+          onClose={vi.fn()}
+          snapshot={snapshot}
+          postDowngradeCashPending={{
+            eligible: true,
+            online: false,
+            status: 'unknown',
+            pendingCount: null,
+            isPostDowngrade: true
+          }}
+        />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText('Verificación pendiente')).toBeInTheDocument();
+    expect(screen.queryByText(/\d+ cajas? pendientes/i)).not.toBeInTheDocument();
   });
 
   it('shows only the Reabastecimiento CTA when only stock categories have counts', () => {
@@ -314,7 +434,7 @@ describe('LocalInventoryOperationalAlertsDrawer', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
 
     const closeControls = screen.getAllByRole('button', {
-      name: 'Cerrar alertas operativas de inventario'
+      name: 'Cerrar alertas locales'
     });
     fireEvent.click(closeControls[0]);
     expect(onClose).toHaveBeenCalledTimes(2);
@@ -323,7 +443,7 @@ describe('LocalInventoryOperationalAlertsDrawer', () => {
   it('moves focus into the drawer and traps keyboard focus', async () => {
     renderDrawer();
 
-    const drawer = screen.getByRole('dialog', { name: 'Inventario requiere atención' });
+    const drawer = screen.getByRole('dialog', { name: 'Alertas locales' });
     const closeButton = drawer.querySelector('.notification-center-close');
     await waitFor(() => expect(document.activeElement).toBe(closeButton));
 

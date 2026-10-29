@@ -1,0 +1,8 @@
+{
+  "id": "CE-BOOT-01",
+  "result": "COUNTEREXAMPLE",
+  "guarantee": "sequential restricted bootstrap then unchanged App initialize is one restoration with no background work",
+  "restores": 2,
+  "backgroundActiveAfterPublicCompletion": 2,
+  "authentication": "synthetic; no policy claim"
+}

@@ -85,7 +85,7 @@ const isMobileViewport = () => (
   window.matchMedia(MOBILE_MEDIA_QUERY).matches
 );
 
-function DevConsole() {
+function DevConsole({ isSuppressed = false } = {}) {
   const [entries, setEntries] = useState(() => getDevConsoleEntries());
   const [isOpen, setIsOpen] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -282,7 +282,7 @@ function DevConsole() {
     setIsOpen(true);
   };
 
-  if (!isMobile) return null;
+  if (isSuppressed || !isMobile) return null;
 
   if (!isOpen) {
     const fabStyle = fabPosition

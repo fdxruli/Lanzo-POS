@@ -14,6 +14,7 @@ const worker = vi.hoisted(() => ({
     waiting: false,
     active: false,
     error: false,
+    reloadDeferred: false,
   },
 }));
 
@@ -37,6 +38,7 @@ describe('UpdatePrompt controlled activation', () => {
       waiting: false,
       active: false,
       error: false,
+      reloadDeferred: false,
     };
     useAppStore.setState({
       updateAvailable: false,
@@ -46,6 +48,22 @@ describe('UpdatePrompt controlled activation', () => {
   });
 
   afterEach(() => cleanup());
+
+  it('retains the waiting-worker state while the prompt is suppressed on a 404', () => {
+    const view = render(<UpdatePrompt isSuppressed />);
+    act(() => worker.listener({
+      registered: true,
+      installing: false,
+      waiting: true,
+      active: true,
+      error: false,
+    }));
+
+    expect(screen.queryByText('Nueva version disponible')).not.toBeInTheDocument();
+    view.rerender(<UpdatePrompt />);
+    expect(screen.getByText('Nueva version disponible')).toBeInTheDocument();
+    expect(useAppStore.getState().updateAvailable).toBe(true);
+  });
 
   it('shows the administrative prompt when the coordinator reports a waiting worker', () => {
     render(<UpdatePrompt />);
@@ -61,9 +79,19 @@ describe('UpdatePrompt controlled activation', () => {
     expect(screen.getByText('Nueva version disponible')).toBeInTheDocument();
   });
 
-  it('TR-39 keeps the update action visible when the worker activated but financial reload was deferred', () => {
+  it('TR-39 keeps the update prompt available after activation while a financial reload is deferred', () => {
     render(<UpdatePrompt />);
-    act(() => worker.listener({ registered: true, installing: false, waiting: false, active: true, error: false, reloadDeferred: true }));
+
+    act(() => worker.listener({
+      registered: true,
+      installing: false,
+      waiting: false,
+      active: true,
+      error: false,
+      reloadDeferred: true,
+    }));
+
+    expect(screen.getByText('Nueva version disponible')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /actualizar ahora/i })).toBeInTheDocument();
     expect(useAppStore.getState().updateAvailable).toBe(true);
     expect(worker.setGuard).toHaveBeenCalledWith(expect.any(Function));

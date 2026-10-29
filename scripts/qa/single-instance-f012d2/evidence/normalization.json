@@ -1,0 +1,42 @@
+[
+  {
+    "tag": "base/regressions.json",
+    "prefix": "/workspace/scratch/2a5709f8e222/Lanzo-cash-route-base",
+    "count": 113
+  },
+  {
+    "tag": "base/regressions.json",
+    "prefix": "/workspace/scratch/2a5709f8e222/Lanzo-POS",
+    "count": 16
+  },
+  {
+    "tag": "candidate/regressions.json",
+    "prefix": "/workspace/scratch/2a5709f8e222/Lanzo-cash-route-candidate",
+    "count": 113
+  },
+  {
+    "tag": "candidate/regressions.json",
+    "prefix": "/workspace/scratch/2a5709f8e222/Lanzo-POS",
+    "count": 16
+  },
+  {
+    "tag": "base/global.json",
+    "prefix": "/workspace/scratch/2a5709f8e222/Lanzo-cash-route-base",
+    "count": 733
+  },
+  {
+    "tag": "base/global.json",
+    "prefix": "/workspace/scratch/2a5709f8e222/Lanzo-POS",
+    "count": 505
+  },
+  {
+    "tag": "candidate/global.json",
+    "prefix": "/workspace/scratch/2a5709f8e222/Lanzo-cash-route-candidate",
+    "count": 735
+  },
+  {
+    "tag": "candidate/global.json",
+    "prefix": "/workspace/scratch/2a5709f8e222/Lanzo-POS",
+    "count": 505
+  }
+]

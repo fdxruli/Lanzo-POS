@@ -4,10 +4,6 @@ import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Navbar from '../Navbar';
 
-const noticeMock = vi.hoisted(() => ({
-  getBackupRuntimeNotice: vi.fn(() => null)
-}));
-
 const appState = {
   isVolatileDismissed: false,
   setVolatileDismissed: vi.fn(),
@@ -56,10 +52,6 @@ vi.mock('../../../services/BackupRiskEvaluator', () => ({
   useBackupRiskStore: vi.fn((selector) => selector({ riskLevel: 0 }))
 }));
 
-vi.mock('../../../utils/backupRuntimeNotice', () => ({
-  getBackupRuntimeNotice: noticeMock.getBackupRuntimeNotice
-}));
-
 vi.mock('../../common/Logo', () => ({
   default: () => <div aria-label="Lanzo" />
 }));
@@ -79,10 +71,6 @@ function openMobileMenu() {
 describe('Navbar backup actions by license type', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    noticeMock.getBackupRuntimeNotice.mockReturnValue({
-      key: 'configure',
-      navbarLabel: 'Configurar respaldos'
-    });
     Object.assign(appState, {
       dismissedBackupNotice: 'configure',
       updateAvailable: false,
@@ -101,12 +89,13 @@ describe('Navbar backup actions by license type', () => {
     expect(screen.queryByRole('button', { name: 'Configurar respaldos' })).toBeNull();
   });
 
-  it('shows local backup actions for FREE local when a notice applies', () => {
+  it('does not re-open the backup banner from either FREE menu presentation', () => {
     appState.licenseDetails = { features: { cloud_pos_sync: false } };
 
     renderNavbar();
     openMobileMenu();
 
-    expect(screen.queryByRole('button', { name: 'Configurar respaldos' })).not.toBeNull();
+    expect(screen.queryByRole('button', { name: 'Configurar respaldos' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Configurar respaldos en barra lateral' })).toBeNull();
   });
 });

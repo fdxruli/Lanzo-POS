@@ -271,7 +271,7 @@ DESCRIBE TU PROBLEMA:
                   id="license-key"
                   type="text"
                   required
-                  placeholder="LANZO-XXXX-XXXX-XXXX"
+                  placeholder="LANZO-XXXX-XXXX-XXXX-XXXX"
                   value={licenseKey}
                   onChange={(e) => setLicenseKey(e.target.value.toUpperCase())}
                   disabled={isLoading || !isOnline}

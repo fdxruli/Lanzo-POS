@@ -5,16 +5,16 @@
   /* --- PALETA PRINCIPAL --- */
   --primary-color: #334155;
   --primary-hover: #1F2937;
-  --secondary-color: #0EA5A4;
-  --brand-accent: #0EA5A4;
-  --brand-accent-hover: #0F766E;
-  --brand-accent-text: #0F766E;
-  --brand-accent-soft: rgba(14, 165, 164, 0.12);
-  --brand-accent-border: rgba(14, 165, 164, 0.32);
+  --secondary-color: #2563EB;
+  --brand-accent: #2563EB;
+  --brand-accent-hover: #1D4ED8;
+  --brand-accent-text: #1D4ED8;
+  --brand-accent-soft: rgba(37, 99, 235, 0.10);
+  --brand-accent-border: rgba(37, 99, 235, 0.35);
   --text-on-primary: #FFFFFF;
 
   /* --- ESTADOS --- */
-  --success-color: #218A5A;
+  --success-color: #1D7A50;
   --warning-color: #D97706;
   --error-color: #D14343;
 
@@ -33,7 +33,7 @@
   /* --- TEXTOS --- */
   --text-dark: #171A1F;
   --text-color: #3F4652;
-  --text-light: #68707D;
+  --text-light: #636B78;
 
   /* --- SCROLLBAR --- */
   --scrollbar-track: rgba(23, 26, 31, 0.06);
@@ -106,27 +106,28 @@
    MODO OSCURO (Dark Mode)
 ====================================================== */
 [data-theme="dark"] {
+  color-scheme: dark;
   --primary-color: #CBD5E1;
   --primary-hover: #E2E8F0;
-  --secondary-color: #2DD4BF;
-  --brand-accent: #2DD4BF;
-  --brand-accent-hover: #5EEAD4;
-  --brand-accent-text: #5EEAD4;
-  --brand-accent-soft: rgba(45, 212, 191, 0.14);
-  --brand-accent-border: rgba(45, 212, 191, 0.38);
-  --text-on-primary: #0E1116;
-  --success-color: #32D583;
-  --warning-color: #FDBA74;
-  --error-color: #F97066;
+  --secondary-color: #7DAAFF;
+  --brand-accent: #7DAAFF;
+  --brand-accent-hover: #93B9FF;
+  --brand-accent-text: #7DAAFF;
+  --brand-accent-soft: rgba(125, 170, 255, 0.15);
+  --brand-accent-border: rgba(125, 170, 255, 0.45);
+  --text-on-primary: #101820;
+  --success-color: #75D5A6;
+  --warning-color: #F2C477;
+  --error-color: #F28B91;
 
-  --background-color: #0E1116;
-  --card-background-color: #171B22;
-  --light-background: #202630;
-  --border-color: #2E3541;
+  --background-color: #12171D;
+  --card-background-color: #1B222B;
+  --light-background: #252E39;
+  --border-color: #364252;
 
-  --text-dark: #F4F6F8;
-  --text-color: #D5DAE1;
-  --text-light: #9BA3AF;
+  --text-dark: #E7EBEF;
+  --text-color: #CDD5DF;
+  --text-light: #A5AFBC;
 
   --scrollbar-track: rgba(155, 163, 175, 0.1);
   --scrollbar-thumb: #3A4350;
@@ -252,46 +253,107 @@ body {
 .app-boot-recovery {
   display: flex;
   min-height: 100vh;
+  min-height: 100dvh;
   align-items: center;
   justify-content: center;
-  padding: 1.5rem;
+  padding:
+    max(1.25rem, env(safe-area-inset-top, 0px))
+    max(1rem, env(safe-area-inset-right, 0px))
+    max(1.25rem, env(safe-area-inset-bottom, 0px))
+    max(1rem, env(safe-area-inset-left, 0px));
+  overflow-y: auto;
   background: var(--background-color);
   color: var(--text-color);
 }
 
 .app-boot-recovery__card {
-  width: min(100%, 30rem);
-  padding: 2rem;
-  border: 1px solid var(--border-color);
-  border-radius: var(--border-radius);
-  background: var(--card-background-color);
-  box-shadow: var(--box-shadow-lg);
-  text-align: center;
+  width: min(100%, 64rem);
+  margin: auto;
+  padding: clamp(1rem, 3vw, 2.75rem);
+  border: 0;
+  border-inline-start: 3px solid var(--brand-accent);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  text-align: left;
 }
 
 .app-boot-recovery__card > svg {
-  color: var(--warning-color);
-  margin-bottom: 1rem;
+  color: var(--brand-accent-text);
+  margin-bottom: 0.75rem;
 }
 
 .app-boot-recovery__card h1 {
-  font-size: 1.35rem;
+  max-width: 22ch;
+  margin: 0 0 0.75rem;
+  color: var(--text-dark);
+  font-size: clamp(1.65rem, 4vw, 2.6rem);
+  line-height: 1.15;
 }
 
 .app-boot-recovery__card p {
-  margin-bottom: 1.5rem;
-  color: var(--text-light);
+  max-width: 70ch;
+  margin: 0.65rem 0;
+  color: var(--text-color);
+  line-height: 1.55;
 }
 
 .app-boot-recovery__actions {
-  display: grid;
-  gap: 0.75rem;
-  margin-bottom: 1.25rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin: 1rem 0;
 }
 
 .app-boot-recovery__actions .ui-button {
-  width: 100%;
   justify-content: center;
+  min-height: 2.75rem;
+  white-space: normal;
+}
+
+.app-boot-recovery__support {
+  width: min(100%, 44rem);
+  margin-top: 1rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.app-boot-recovery__support summary {
+  display: flex;
+  min-height: 2.75rem;
+  align-items: center;
+  color: var(--brand-accent-text);
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.app-boot-recovery__details {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0.5rem 0 0.85rem;
+  color: var(--text-light);
+  font-size: 0.86rem;
+}
+
+.app-boot-recovery__details p {
+  margin: 0.2rem 0;
+}
+
+.app-boot-recovery__note {
+  max-width: 70ch;
+  color: var(--text-light);
+  font-size: 0.88rem;
+}
+
+@media (max-width: 520px) {
+  .app-boot-recovery__actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .app-boot-recovery__actions .ui-button {
+    width: 100%;
+  }
 }
 
 img,
@@ -357,8 +419,16 @@ input:focus,
 textarea:focus,
 select:focus {
   outline: none;
-  border-color: var(--secondary-color);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--secondary-color) 22%, transparent);
+  border-color: var(--ui-focus-color, var(--secondary-color));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ui-focus-color, var(--secondary-color)) 22%, transparent);
+}
+
+input:not([type="radio"]):focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--ui-focus-color, var(--secondary-color));
+  outline-offset: 2px;
+  box-shadow: none;
 }
 
 input:disabled {

@@ -559,7 +559,7 @@ export default function LayawayModal({
                                                                 Apartado liquidado. Falta confirmar entrega para reconocer la venta.
                                                             </div>
                                                             <button
-                                                                className="ui-button ui-button--success ui-button--block customer-layaway-card__deliver"
+                                                                className="ui-button ui-button--primary ui-button--block customer-layaway-card__deliver"
                                                                 type="button"
                                                                 onClick={() => handleDeliver(layaway)}
                                                                 disabled={processingId === layaway.id}

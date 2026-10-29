@@ -216,11 +216,11 @@ describe('remote table review closure', () => {
     await act(async () => resolve(kind !== 'declined'));
     expect(mocks.state.cancelOrder).not.toHaveBeenCalled();
   });
-  it('keeps checkout and split callbacks available', () => {
+  it('keeps cloud settlement available while hiding the split callback', () => {
     render(<OrderSummary {...props} />);
     fireEvent.click(screen.getByRole('button', { name: 'Cobrar' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Dividir Cuenta' }));
+    expect(screen.queryByRole('button', { name: 'Dividir Cuenta' })).not.toBeInTheDocument();
     expect(props.onOpenPayment).toHaveBeenCalledOnce();
-    expect(props.onOpenSplit).toHaveBeenCalledOnce();
+    expect(props.onOpenSplit).not.toHaveBeenCalled();
   });
 });

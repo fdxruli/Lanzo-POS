@@ -9,6 +9,11 @@ const staleChunkError = new TypeError(
   'Failed to fetch dynamically imported module: https://lanzo-pos.vercel.app/assets/PosPage-old.js'
 );
 
+const createOnlineProbe = () => vi.fn().mockResolvedValue({
+  status: 'online',
+  reason: 'origin-reachable',
+});
+
 describe('administrative lazy route recovery', () => {
   afterEach(() => resetAdminLazyRouteRecoveryForTests());
 
@@ -17,61 +22,148 @@ describe('administrative lazy route recovery', () => {
     const recoverStartup = vi.fn(() => new Promise((resolve) => {
       resolveRecovery = resolve;
     }));
+    const probeConnectivity = createOnlineProbe();
 
-    const first = recoverAdminLazyRoute({ error: staleChunkError, recoverStartup });
-    const second = recoverAdminLazyRoute({ error: staleChunkError, recoverStartup });
+    const first = recoverAdminLazyRoute({
+      error: staleChunkError,
+      recoverStartup,
+      probeConnectivity,
+    });
+    const second = recoverAdminLazyRoute({
+      error: staleChunkError,
+      recoverStartup,
+      probeConnectivity,
+    });
+    await Promise.resolve();
     await Promise.resolve();
 
     expect(first).toBe(second);
+    expect(probeConnectivity).not.toHaveBeenCalled();
     expect(recoverStartup).toHaveBeenCalledOnce();
-    expect(recoverStartup).toHaveBeenCalledWith({ error: staleChunkError, force: false });
+    expect(recoverStartup).toHaveBeenCalledWith(expect.objectContaining({
+      error: staleChunkError,
+      force: false,
+      isContextCurrent: expect.any(Function),
+    }));
 
     resolveRecovery({ status: 'reloading' });
     await expect(first).resolves.toEqual({ status: 'reloading' });
   });
 
-  it('does not reset the installed shell while the device is offline', async () => {
+  it('does not reset the installed shell while navigator already reports offline', async () => {
     const recoverStartup = vi.fn();
+    const probeConnectivity = vi.fn();
 
     await expect(recoverAdminLazyRoute({
       error: staleChunkError,
       navigatorTarget: { onLine: false },
       recoverStartup,
-    })).resolves.toEqual({ status: 'offline' });
+      probeConnectivity,
+    })).resolves.toEqual({
+      status: 'offline',
+      reason: 'navigator-offline',
+    });
 
+    expect(probeConnectivity).not.toHaveBeenCalled();
+    expect(recoverStartup).not.toHaveBeenCalled();
+  });
+
+  it('treats a failed origin probe as offline before an explicit recovery', async () => {
+    const recoverStartup = vi.fn();
+    const probeConnectivity = vi.fn().mockResolvedValue({
+      status: 'offline',
+      reason: 'probe-failed',
+    });
+
+    await expect(recoverAdminLazyRoute({
+      error: staleChunkError,
+      force: true,
+      navigatorTarget: { onLine: true },
+      recoverStartup,
+      probeConnectivity,
+    })).resolves.toEqual({
+      status: 'offline',
+      reason: 'probe-failed',
+    });
+
+    expect(probeConnectivity).toHaveBeenCalledOnce();
     expect(recoverStartup).not.toHaveBeenCalled();
   });
 
   it('does not treat ordinary application errors as version mismatches', async () => {
     const recoverStartup = vi.fn();
+    const probeConnectivity = vi.fn();
 
     await expect(recoverAdminLazyRoute({
       error: new Error('ordinary business error'),
       recoverStartup,
+      probeConnectivity,
     })).resolves.toEqual({ status: 'not-recoverable' });
 
+    expect(probeConnectivity).not.toHaveBeenCalled();
     expect(recoverStartup).not.toHaveBeenCalled();
   });
 
   it('allows a manual forced retry after an automatic attempt completed without reload', async () => {
     const recoverStartup = vi.fn()
-      .mockResolvedValueOnce({ status: 'already-attempted' })
+      .mockResolvedValueOnce({ status: 'preserved' })
       .mockResolvedValueOnce({ status: 'reloading' });
+    const probeConnectivity = createOnlineProbe();
 
     await expect(recoverAdminLazyRoute({
       error: staleChunkError,
       recoverStartup,
-    })).resolves.toEqual({ status: 'already-attempted' });
+      probeConnectivity,
+    })).resolves.toEqual({ status: 'preserved' });
 
     await expect(recoverAdminLazyRoute({
       error: staleChunkError,
       force: true,
       recoverStartup,
+      probeConnectivity,
     })).resolves.toEqual({ status: 'reloading' });
 
     expect(recoverStartup).toHaveBeenNthCalledWith(2, {
       error: staleChunkError,
       force: true,
+      isContextCurrent: expect.any(Function),
     });
+  });
+
+  it('does not retry after the actor, session, or tenant changes', async () => {
+    const recoverStartup = vi.fn();
+    const probeConnectivity = createOnlineProbe();
+
+    await expect(recoverAdminLazyRoute({
+      error: staleChunkError,
+      force: true,
+      recoverStartup,
+      probeConnectivity,
+      createContextGuard: () => () => false,
+    })).resolves.toMatchObject({ status: 'stale-context' });
+
+    expect(probeConnectivity).not.toHaveBeenCalled();
+    expect(recoverStartup).not.toHaveBeenCalled();
+  });
+
+  it('uses the context snapshot captured before a lazy import failed', async () => {
+    const isContextCurrent = vi.fn().mockReturnValue(false);
+    const recoverStartup = vi.fn();
+
+    const result = await recoverAdminLazyRoute({
+      error: new Error('Failed to fetch dynamically imported module'),
+      force: true,
+      isContextCurrent,
+      recoverStartup,
+      navigatorTarget: { onLine: true },
+    });
+
+    expect(result).toMatchObject({ status: 'stale-context' });
+    expect(recoverStartup).not.toHaveBeenCalled();
+  });
+
+  it('does not check the service worker as a side effect of preparing a route', async () => {
+    const { prepareAdminLazyRoute } = await import('../adminLazyRouteRecovery');
+    await expect(prepareAdminLazyRoute()).resolves.toEqual({ status: 'not-required' });
   });
 });

@@ -17,9 +17,9 @@ let skipWaitingSent = false;
 let currentController = null;
 let activatedUpdateObserved = false;
 let reloadRequested = false;
+let reloadGuard = null;
 let navigatorRef = null;
 let windowRef = null;
-let reloadGuard = null;
 
 let state = {
   registered: false,
@@ -194,9 +194,12 @@ export function startAdminServiceWorker({
 
 export function activateAdminServiceWorkerUpdate() {
   if (activationPromise) return activationPromise;
-  if (!canReloadNow()) return Promise.reject(Object.assign(new Error(
-    'Termina o recupera el cobro en curso antes de actualizar. Tus datos locales se conservarán.'
-  ), { code: 'ADMIN_UPDATE_FINANCIAL_OPERATION_ACTIVE' }));
+  if (!canReloadNow()) {
+    return Promise.reject(Object.assign(
+      new Error('Termina la operación en curso antes de actualizar.'),
+      { code: 'ADMIN_UPDATE_OPERATION_ACTIVE' }
+    ));
+  }
 
   const registeredWaitingWorker = registration?.waiting || null;
   if (registeredWaitingWorker) waitingWorker = registeredWaitingWorker;

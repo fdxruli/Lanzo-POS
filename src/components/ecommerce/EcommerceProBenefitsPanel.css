@@ -1,0 +1,171 @@
+.ecommerce-pro-benefits {
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.ecommerce-pro-benefits__hero {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: clamp(1.1rem, 3vw, 1.75rem);
+  border: 1px solid color-mix(in srgb, var(--primary-color) 24%, var(--border-color));
+  border-radius: 1rem;
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--primary-color) 10%, var(--card-background-color)),
+    var(--card-background-color));
+}
+
+.ecommerce-pro-benefits__hero > div { min-width: 0; }
+
+.ecommerce-pro-benefits__eyebrow {
+  display: inline-flex;
+  color: var(--primary-color);
+  font-size: .72rem;
+  font-weight: 800;
+  letter-spacing: .08em;
+}
+
+.ecommerce-pro-benefits__hero h2 {
+  margin: .4rem 0 .45rem;
+  color: var(--text-color, var(--text-dark));
+  font-size: clamp(1.4rem, 3vw, 2rem);
+  line-height: 1.15;
+}
+
+.ecommerce-pro-benefits__hero h2:focus { outline: none; }
+.ecommerce-pro-benefits__hero h2:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 4px; border-radius: 2px; }
+
+.ecommerce-pro-benefits__hero p,
+.ecommerce-pro-benefit > p,
+.ecommerce-pro-benefits__cta p {
+  margin: 0;
+  color: var(--text-light);
+  line-height: 1.5;
+}
+
+.ecommerce-pro-benefits__badge {
+  flex: 0 0 auto;
+  padding: .28rem .55rem;
+  border: 1px solid color-mix(in srgb, var(--primary-color) 30%, var(--border-color));
+  border-radius: 999px;
+  color: var(--primary-color);
+  background: color-mix(in srgb, var(--primary-color) 8%, var(--card-background-color));
+  font-size: .7rem;
+  font-weight: 800;
+  letter-spacing: .04em;
+}
+
+.ecommerce-pro-benefits__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 270px), 1fr));
+  gap: .85rem;
+}
+
+.ecommerce-pro-benefit {
+  display: grid;
+  align-content: start;
+  gap: .7rem;
+  min-width: 0;
+  padding: 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: .85rem;
+  background: var(--card-background-color);
+}
+
+.ecommerce-pro-benefit__heading {
+  display: flex;
+  align-items: center;
+  gap: .65rem;
+}
+
+.ecommerce-pro-benefit__icon {
+  display: grid;
+  flex: 0 0 2.4rem;
+  width: 2.4rem;
+  height: 2.4rem;
+  place-items: center;
+  border-radius: .7rem;
+  color: var(--primary-color);
+  background: color-mix(in srgb, var(--primary-color) 10%, var(--card-background-color));
+}
+
+.ecommerce-pro-benefit h3 {
+  margin: 0;
+  color: var(--text-color, var(--text-dark));
+  font-size: 1rem;
+  line-height: 1.3;
+}
+
+.ecommerce-pro-benefit ul {
+  display: grid;
+  gap: .5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ecommerce-pro-benefit li {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: start;
+  gap: .45rem;
+  color: var(--text-color, var(--text-dark));
+  font-size: .82rem;
+  line-height: 1.4;
+}
+
+.ecommerce-pro-benefit li > svg { margin-top: .05rem; color: var(--text-light); }
+.ecommerce-pro-benefit li.is-available > svg { color: var(--ui-text-success, #23834d); }
+.ecommerce-pro-benefit li.is-pro > svg { color: var(--primary-color); }
+
+.ecommerce-pro-benefit li small {
+  grid-column: 2;
+  color: var(--text-light);
+  font-size: .72rem;
+}
+
+.ecommerce-pro-benefit li.ecommerce-pro-benefit__detail { color: var(--text-light); }
+.ecommerce-pro-benefit li.ecommerce-pro-benefit__detail > svg { color: var(--text-light); }
+
+.ecommerce-pro-benefits__cta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.1rem clamp(1rem, 3vw, 1.5rem);
+  border: 1px solid var(--border-color);
+  border-radius: .9rem;
+  background: var(--light-background, var(--card-background-color));
+}
+
+.ecommerce-pro-benefits__cta h3 {
+  margin: .3rem 0;
+  color: var(--text-color, var(--text-dark));
+  font-size: 1.05rem;
+}
+
+.ecommerce-pro-benefits__cta-button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: .45rem;
+  min-height: 2.75rem;
+  padding: .65rem .9rem;
+  border-radius: .65rem;
+  color: var(--ui-text-on-brand, #fff);
+  background: var(--primary-color);
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.ecommerce-pro-benefits__cta-button:hover { filter: brightness(.96); }
+.ecommerce-pro-benefits__cta-button:focus-visible { outline: 2px solid var(--primary-color); outline-offset: 3px; }
+
+@media (max-width: 640px) {
+  .ecommerce-pro-benefits__hero,
+  .ecommerce-pro-benefits__cta { align-items: flex-start; flex-direction: column; }
+  .ecommerce-pro-benefits__cta-button { width: 100%; }
+}

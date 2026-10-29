@@ -33,7 +33,8 @@ const grantAdmin = () => {
   actorRuntimeController.beginHandoffCheck();
   actorRuntimeController.grant({
     actorType: 'admin', actorId: 'admin-qa', sessionId: 'session-QA',
-    tenantOpaqueId: tenant.opaqueId, deviceRef: 'fingerprint-QA'
+    tenantOpaqueId: tenant.opaqueId, deviceRef: 'fingerprint-QA',
+    authorizationExpiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString()
   });
   clearActorAuthorityRecovery();
 };
@@ -137,7 +138,11 @@ describe('license integrity authority recovery admission', () => {
       expect(state.logout).not.toHaveBeenCalled();
       expect(state._processOfflineMode).not.toHaveBeenCalled();
       expect(actorRuntimeController.getState().status).toBe('granted');
-      expect(state.lastIntegrityFailure.code).toBe('SESSION_CHANGED');
+      if (completion === 'response') {
+        expect(state.lastIntegrityFailure).toBeNull();
+      } else {
+        expect(state.lastIntegrityFailure.code).toBe('SESSION_CHANGED');
+      }
     }
   );
 

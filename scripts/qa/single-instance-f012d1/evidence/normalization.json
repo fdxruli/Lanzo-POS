@@ -1,0 +1,82 @@
+[
+  {
+    "tag": "base/regressions.json",
+    "prefix": "/workspace/scratch/2a5709f8e222/Lanzo-baseline",
+    "count": 113
+  },
+  {
+    "tag": "base/regressions.json",
+    "prefix": "/workspace/scratch/2a5709f8e222/Lanzo-POS",
+    "count": 16
+  },
+  {
+    "tag": "candidate/regressions.json",
+    "prefix": "/workspace/scratch/2a5709f8e222/Lanzo-final-validated",
+    "count": 113
+  },
+  {
+    "tag": "candidate/regressions.json",
+    "prefix": "/workspace/scratch/2a5709f8e222/Lanzo-POS",
+    "count": 16
+  },
+  {
+    "tag": "base/global.json",
+    "prefix": "/workspace/scratch/2a5709f8e222/Lanzo-baseline",
+    "count": 728
+  },
+  {
+    "tag": "base/global.json",
+    "prefix": "/workspace/scratch/2a5709f8e222/Lanzo-POS",
+    "count": 505
+  },
+  {
+    "tag": "candidate/global.json",
+    "prefix": "/workspace/scratch/2a5709f8e222/Lanzo-final-validated",
+    "count": 733
+  },
+  {
+    "tag": "candidate/global.json",
+    "prefix": "/workspace/scratch/2a5709f8e222/Lanzo-POS",
+    "count": 505
+  },
+  {
+    "tag": "main/regressions.json",
+    "prefix": "/workspace/scratch/2a5709f8e222/Lanzo-main",
+    "count": 112
+  },
+  {
+    "tag": "main/regressions.json",
+    "prefix": "/workspace/scratch/2a5709f8e222/Lanzo-POS",
+    "count": 16
+  },
+  {
+    "tag": "candidate/regressions.json",
+    "prefix": "/workspace/scratch/2a5709f8e222/Lanzo-final-validated",
+    "count": 113
+  },
+  {
+    "tag": "candidate/regressions.json",
+    "prefix": "/workspace/scratch/2a5709f8e222/Lanzo-POS",
+    "count": 16
+  },
+  {
+    "tag": "main/global.json",
+    "prefix": "/workspace/scratch/2a5709f8e222/Lanzo-main",
+    "count": 714
+  },
+  {
+    "tag": "main/global.json",
+    "prefix": "/workspace/scratch/2a5709f8e222/Lanzo-POS",
+    "count": 505
+  },
+  {
+    "tag": "candidate/global.json",
+    "prefix": "/workspace/scratch/2a5709f8e222/Lanzo-final-validated",
+    "count": 733
+  },
+  {
+    "tag": "candidate/global.json",
+    "prefix": "/workspace/scratch/2a5709f8e222/Lanzo-POS",
+    "count": 505
+  }
+]
