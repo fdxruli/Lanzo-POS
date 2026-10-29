@@ -4,12 +4,13 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  state: null, actor: null, capture: vi.fn(), confirm: vi.fn(), message: vi.fn(),
+  state: null, actor: null, capabilities: { canSplitTable: true }, capture: vi.fn(), confirm: vi.fn(), message: vi.fn(),
   refunds: vi.fn(), table: vi.fn(), releaseStock: vi.fn(), cloudWrite: vi.fn(), prompt: vi.fn()
 }));
 vi.mock('../../../components/common/InputPromptModal', () => ({ showInputPromptModal: mocks.prompt }));
 vi.mock('../../../hooks/restaurant/useRestaurantTableCapabilities', () => ({
-  useRestaurantTableCapabilities: (order) => ({ canViewTable: true, canCheckoutTable: true, canSplitTable: true,
+  useRestaurantTableCapabilities: (order) => ({ canViewTable: true, canCheckoutTable: true,
+    canSplitTable: mocks.capabilities.canSplitTable,
     canCancelTable: true, canEditTable: !order?.restaurantCloudHydrated && order?.reservationAuthority !== 'cloud' })
 }));
 vi.mock('react-router-dom', () => ({ useNavigate: () => vi.fn() }));
@@ -46,6 +47,7 @@ const click = async () => act(async () => { fireEvent.click(screen.getByRole('bu
 
 beforeEach(() => {
   vi.resetAllMocks();
+  mocks.capabilities.canSplitTable = true;
   mocks.actor = { status: 'granted', actorType: 'staff', actorId: 'staff-1', sessionId: 'session-1', permissions: [] };
   mocks.capture.mockReturnValue({ tenant: { opaqueId: 'tenant-1' }, assertCurrent: vi.fn() });
   mocks.refunds.mockReturnValue({ assertCurrent: vi.fn() });
@@ -102,8 +104,10 @@ describe('remote table review closure', () => {
   it('closes the mobile summary after removing the current shadow', async () => {
     const onClose = vi.fn();
     render(<OrderSummary {...props} isMobileModal onClose={onClose} />);
+    expect(screen.queryByRole('button', { name: 'Dividir Cuenta' })).not.toBeInTheDocument();
     await click();
     expect(onClose).toHaveBeenCalledOnce();
+    expect(props.onOpenSplit).not.toHaveBeenCalled();
     expect(mocks.state.removeOrder.mock.invocationCallOrder[0]).toBeLessThan(onClose.mock.invocationCallOrder[0]);
   });
   it('removes only the captured shadow after switching tabs and leaves the new mobile view open', async () => {
@@ -221,6 +225,68 @@ describe('remote table review closure', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cobrar' }));
     expect(screen.queryByRole('button', { name: 'Dividir Cuenta' })).not.toBeInTheDocument();
     expect(props.onOpenPayment).toHaveBeenCalledOnce();
+    expect(props.onOpenSplit).not.toHaveBeenCalled();
+  });
+
+  it.each([true, false])('hides split in a remote read-only review when canSplitTable is %s', async (canSplitTable) => {
+    mocks.capabilities.canSplitTable = canSplitTable;
+    render(<OrderSummary {...props} />);
+    expect(screen.getByRole('button', { name: 'Cobrar' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Cerrar revisión' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'Dividir Cuenta' })).not.toBeInTheDocument();
+    expect(props.onOpenSplit).not.toHaveBeenCalled();
+    await click();
+    expect(mocks.state.removeOrder).toHaveBeenCalledOnce();
+  });
+
+  const setEditableTable = () => {
+    const table = {
+      id: 'LOCAL-EDITABLE-1', localOrderId: 'LOCAL-EDITABLE-1', isSaved: true,
+      orderType: 'table', tableData: 'Mesa A',
+      items: [{ id: 'pizza', name: 'Pizza', price: 50, quantity: 1 }]
+    };
+    mocks.state.currentOrderId = table.id;
+    mocks.state.activeOrders.set(table.id, table);
+    return table;
+  };
+
+  it('keeps split available for an editable table with split authority', () => {
+    setEditableTable();
+    render(<OrderSummary {...props} />);
+    const split = screen.getByRole('button', { name: 'Dividir Cuenta' });
+    expect(split).toBeEnabled();
+    fireEvent.click(split);
+    expect(props.onOpenSplit).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ['table capability', true, false],
+    ['caller permission', false, true]
+  ])('hides split for an editable table without %s', (_reason, canSplitOrder, canSplitTable) => {
+    setEditableTable();
+    mocks.capabilities.canSplitTable = canSplitTable;
+    render(<OrderSummary {...props} canSplitOrder={canSplitOrder} />);
+    expect(screen.queryByRole('button', { name: 'Dividir Cuenta' })).not.toBeInTheDocument();
+    expect(props.onOpenSplit).not.toHaveBeenCalled();
+  });
+
+  it('removes split when an editable table changes into a remote review', () => {
+    const editableTable = setEditableTable();
+    const { rerender } = render(<OrderSummary {...props} />);
+    expect(screen.getByRole('button', { name: 'Dividir Cuenta' })).toBeInTheDocument();
+
+    mocks.state.activeOrders.set(editableTable.id, {
+      ...editableTable,
+      restaurantCloudHydrated: true,
+      reservationAuthority: 'cloud',
+      tenantOpaqueId: 'tenant-1',
+      restaurantCloudTenantId: 'tenant-1'
+    });
+    rerender(<OrderSummary {...props} />);
+
+    expect(screen.queryByRole('button', { name: 'Dividir Cuenta' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cobrar' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Cerrar revisión' })).toBeEnabled();
     expect(props.onOpenSplit).not.toHaveBeenCalled();
   });
 });

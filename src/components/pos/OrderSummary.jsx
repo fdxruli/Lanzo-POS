@@ -819,7 +819,7 @@ export default function OrderSummary({
                 </button>
               )}
 
-              {showRestaurantActions && tableCapabilities.canSplitTable && canSplitOrder && isEditMode && order.length > 0 && (
+              {showRestaurantActions && !isTableReview && tableCapabilities.canSplitTable && canSplitOrder && isEditMode && order.length > 0 && (
                 <button
                   type="button"
                   className="order-action-btn order-action-btn--split"

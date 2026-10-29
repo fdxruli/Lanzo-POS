@@ -23,7 +23,7 @@ assert.equal(sql('select current_database()'), process.env.PGDATABASE);
 assert.equal(sql('select inet_server_port()'), process.env.PGPORT);
 if (process.env.PR352_FIXTURE_MODE === 'github-actions-postgres-service') {
   assert.equal(process.env.PGPORT, '5432');
-  assert.equal(sql('select current_setting(\'server_version_num\')'), '171100');
+  assert.equal(sql('select current_setting(\'server_version_num\')'), process.env.PR352_EXPECTED_SERVER_VERSION_NUM);
   assert.equal(sql("select shobj_description(oid,'pg_database') from pg_database where datname=current_database()"),
     'LANZO_PR352_EPHEMERAL_PG17_SERVICE');
 } else {

@@ -51,5 +51,18 @@ test('PR352 SQL workflow parses as an isolated, read-only PostgreSQL 17 check', 
   const job = workflow.jobs['isolated-postgres-17'];
   assert.equal(job.permissions.contents, 'read');
   assert.equal(job.services.postgres.image, 'postgres:17.11-bookworm');
+  assert.equal(job.env.PR352_EXPECTED_SERVER_VERSION_NUM, '170011');
   assert.match(job.if, /pull_request\.number\s*==\s*352/);
+  const verifyServiceStep = job.steps.find(step => /Verify and mark/.test(step.name || ''));
+  assert.match(verifyServiceStep.run, /PR352_EXPECTED_SERVER_VERSION_NUM/);
+  assert.match(verifyServiceStep.run, /actual=%s expected=%s/);
+
+  for (const path of [
+    'scripts/supabase/restaurant-admin-supervision-test.mjs',
+    'scripts/supabase/restaurant-transition-test.mjs'
+  ]) {
+    const harness = readFileSync(path, 'utf8');
+    assert.match(harness, /process\.env\.PR352_EXPECTED_SERVER_VERSION_NUM/);
+    assert.doesNotMatch(harness, /171100/u);
+  }
 });
