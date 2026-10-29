@@ -6,6 +6,7 @@ const bridge = readFileSync('supabase/migrations/20261010013257_restaurant_cloud
 const supervision = readFileSync('supabase/migrations/20261010013258_restaurant_admin_supervision_r1.sql', 'utf8');
 const historical3d14 = readFileSync('supabase/migrations/20261026214837_restaurant_sale_dispatcher_guard_3d14.sql', 'utf8');
 const fixture = readFileSync('supabase/tests/fixtures/pr352_financial_dispatcher_context.sql', 'utf8');
+const supervisionHarness = readFileSync('scripts/supabase/restaurant-admin-supervision-test.mjs', 'utf8');
 const workflow = readFileSync('.github/workflows/pr352-financial-postgres.yml', 'utf8');
 const scopedStorageWorkflow = readFileSync('.github/workflows/shared-terminal-actor-scoped-storage.yml', 'utf8');
 
@@ -90,6 +91,14 @@ test('candidate restores the metadata-aware 3D.14 guard and R2B has admission on
   assert.match(r2b, /enter_restaurant_financial_transition_write_v1/);
   assert.doesNotMatch(r2b, /lock_restaurant_order_settlement_v1/);
   assert.match(historical3d14, /RESTAURANT_FINANCIAL_DISPATCHER_REQUIRED/);
+});
+
+test('held-parent race dispatches the SQL contender before awaiting its result', () => {
+  const spawned = supervisionHarness.indexOf('const contender = openSession(name);');
+  const dispatched = supervisionHarness.indexOf("contender.child.stdin.end(query + '\\n');", spawned);
+  const awaited = supervisionHarness.indexOf('const outcomePromise = contender.done.then', spawned);
+  assert.ok(spawned >= 0 && dispatched > spawned && awaited > dispatched,
+    'the SQL contender must receive a complete statement before its completion is awaited');
 });
 
 test('3D.14 fixture overlay adds the missing guard columns without editing historical migration', () => {

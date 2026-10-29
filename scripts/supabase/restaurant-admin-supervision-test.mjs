@@ -339,6 +339,7 @@ const runAgainstHeldParent = async (query,name,parentId,expectedCode) => {
   holder.child.stdin.write(`begin; select private.lock_restaurant_order_settlement_v1('${license}','${parentId}');\n`);
   assert.ok(await waitFor(`select exists(select 1 from pg_stat_activity where application_name='${name}-parent-holder' and state='idle in transaction')`));
   const contender = openSession(name);
+  contender.child.stdin.end(query + '\n');
   let finished = false;
   const outcomePromise = contender.done.then(outcome => { finished = true; return outcome; });
   let blockedOnLock = false;
