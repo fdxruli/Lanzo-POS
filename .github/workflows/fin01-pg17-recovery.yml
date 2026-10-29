@@ -36,15 +36,21 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '24.18.1'
-      - name: Verify exact lab ref and main ancestry
+      - name: Verify exact lab ref and preserved base trees
         env:
           FIN01_MAIN_SHA: 1a0d758d09310f2914c475c37d358c4cf885cc01
+          FIN01_CANDIDATE_COMMIT: d2af51d0636b0e83fad924f08c6e688b2e2bfb5e
+          FIN01_WORKFLOW_COMMIT: 2aab313c4948110402d6fea77c399605427ea12b
         run: |
           set -euo pipefail
           test "${GITHUB_REF}" = "refs/heads/lab/fin01-pg17-recovery-20261029"
           test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
-          test "$(git rev-parse HEAD~2)" = "${FIN01_MAIN_SHA}"
-          test "$(git rev-parse 'HEAD~1^{tree}')" = "a04237a9e7e0a07b52a3c2247b8affff94f30a32"
+          test "$(git rev-parse "${FIN01_MAIN_SHA}^{tree}")" = "6e5e6f1c77a55cec4cafee016cbe277aab89bf30"
+          test "$(git rev-parse '${FIN01_CANDIDATE_COMMIT}^')" = "${FIN01_MAIN_SHA}"
+          test "$(git rev-parse "${FIN01_CANDIDATE_COMMIT}^{tree}")" = "a04237a9e7e0a07b52a3c2247b8affff94f30a32"
+          test "$(git rev-parse '${FIN01_WORKFLOW_COMMIT}^')" = "${FIN01_CANDIDATE_COMMIT}"
+          test "$(git rev-parse "${FIN01_WORKFLOW_COMMIT}^{tree}")" = "19a3525723449fb5764f075c3d18ab92ff34c165"
+          git merge-base --is-ancestor "${FIN01_WORKFLOW_COMMIT}" HEAD
           test "$(sha256sum scripts/fin01/fin01-pay-n01-candidate.sql | cut -d ' ' -f 1)" = "de269931a034e9df25ff50ed321f6ab6a0cc23e93fe37f0255c64ed3e780b804"
       - name: Prepare disposable synthetic PostgreSQL fixture
         env:
@@ -96,15 +102,21 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '24.18.1'
-      - name: Verify exact lab ref and main ancestry
+      - name: Verify exact lab ref and preserved base trees
         env:
           FIN01_MAIN_SHA: 1a0d758d09310f2914c475c37d358c4cf885cc01
+          FIN01_CANDIDATE_COMMIT: d2af51d0636b0e83fad924f08c6e688b2e2bfb5e
+          FIN01_WORKFLOW_COMMIT: 2aab313c4948110402d6fea77c399605427ea12b
         run: |
           set -euo pipefail
           test "${GITHUB_REF}" = "refs/heads/lab/fin01-pg17-recovery-20261029"
           test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
-          test "$(git rev-parse HEAD~2)" = "${FIN01_MAIN_SHA}"
-          test "$(git rev-parse 'HEAD~1^{tree}')" = "a04237a9e7e0a07b52a3c2247b8affff94f30a32"
+          test "$(git rev-parse '${FIN01_MAIN_SHA}^{tree}')" = "6e5e6f1c77a55cec4cafee016cbe277aab89bf30"
+          test "$(git rev-parse '${FIN01_CANDIDATE_COMMIT}^')" = "${FIN01_MAIN_SHA}"
+          test "$(git rev-parse '${FIN01_CANDIDATE_COMMIT}^{tree}')" = "a04237a9e7e0a07b52a3c2247b8affff94f30a32"
+          test "$(git rev-parse '${FIN01_WORKFLOW_COMMIT}^')" = "${FIN01_CANDIDATE_COMMIT}"
+          test "$(git rev-parse '${FIN01_WORKFLOW_COMMIT}^{tree}')" = "19a3525723449fb5764f075c3d18ab92ff34c165"
+          git merge-base --is-ancestor "${FIN01_WORKFLOW_COMMIT}" HEAD
           test "$(sha256sum scripts/fin01/fin01-pay-n01-candidate.sql | cut -d ' ' -f 1)" = "de269931a034e9df25ff50ed321f6ab6a0cc23e93fe37f0255c64ed3e780b804"
       - name: Prepare disposable synthetic PostgreSQL fixture
         env:
@@ -162,15 +174,21 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '24.18.1'
-      - name: Verify exact lab ref and main ancestry
+      - name: Verify exact lab ref and preserved base trees
         env:
           FIN01_MAIN_SHA: 1a0d758d09310f2914c475c37d358c4cf885cc01
+          FIN01_CANDIDATE_COMMIT: d2af51d0636b0e83fad924f08c6e688b2e2bfb5e
+          FIN01_WORKFLOW_COMMIT: 2aab313c4948110402d6fea77c399605427ea12b
         run: |
           set -euo pipefail
           test "${GITHUB_REF}" = "refs/heads/lab/fin01-pg17-recovery-20261029"
           test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
-          test "$(git rev-parse HEAD~2)" = "${FIN01_MAIN_SHA}"
-          test "$(git rev-parse 'HEAD~1^{tree}')" = "a04237a9e7e0a07b52a3c2247b8affff94f30a32"
+          test "$(git rev-parse '${FIN01_MAIN_SHA}^{tree}')" = "6e5e6f1c77a55cec4cafee016cbe277aab89bf30"
+          test "$(git rev-parse '${FIN01_CANDIDATE_COMMIT}^')" = "${FIN01_MAIN_SHA}"
+          test "$(git rev-parse '${FIN01_CANDIDATE_COMMIT}^{tree}')" = "a04237a9e7e0a07b52a3c2247b8affff94f30a32"
+          test "$(git rev-parse '${FIN01_WORKFLOW_COMMIT}^')" = "${FIN01_CANDIDATE_COMMIT}"
+          test "$(git rev-parse '${FIN01_WORKFLOW_COMMIT}^{tree}')" = "19a3525723449fb5764f075c3d18ab92ff34c165"
+          git merge-base --is-ancestor "${FIN01_WORKFLOW_COMMIT}" HEAD
           test "$(sha256sum scripts/fin01/fin01-pay-n01-candidate.sql | cut -d ' ' -f 1)" = "de269931a034e9df25ff50ed321f6ab6a0cc23e93fe37f0255c64ed3e780b804"
       - name: Prepare disposable synthetic PostgreSQL fixture
         env:
