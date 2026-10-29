@@ -11,16 +11,24 @@ assert.ok(process.argv.includes('--isolated-fixture'));
 assert.equal(process.env.PGHOST, '127.0.0.1');
 assert.equal(process.env.PGDATABASE, 'lanzo_admin_supervision_fixture');
 assert.ok(process.env.PGPORT && process.env.PSQL_BIN);
-const args = ['-X', '-q', '-t', '-A', '-v', 'ON_ERROR_STOP=1'];
+const args = ['-X','-h','127.0.0.1','-p',process.env.PGPORT,'-U',process.env.PGUSER || 'postgres',
+  '-d',process.env.PGDATABASE,'-q','-t','-A','-v','ON_ERROR_STOP=1','-v','VERBOSITY=verbose'];
 const execute = query => {
   writeFileSync('.tmp-transition-query.sql', query);
   return spawnSync(process.env.PSQL_BIN, [...args, '-f', '.tmp-transition-query.sql'], { encoding: 'utf8', windowsHide: true });
 };
 const sql = query => { const r = execute(query); assert.equal(r.status, 0, r.stderr); return r.stdout.trim(); };
-const denied = (query, code) => { const r = execute(query); assert.notEqual(r.status, 0, r.stdout); assert.match(r.stderr, new RegExp(code)); };
+const denied = (query, code) => { const r = execute(query); assert.notEqual(r.status, 0, r.stdout); assert.match(r.stderr, new RegExp(code)); return r; };
 assert.equal(sql('select current_database()'), process.env.PGDATABASE);
-assert.ok(['127.0.0.1', '127.0.0.1/32'].includes(sql('select inet_server_addr()')));
 assert.equal(sql('select inet_server_port()'), process.env.PGPORT);
+if (process.env.PR352_FIXTURE_MODE === 'github-actions-postgres-service') {
+  assert.equal(process.env.PGPORT, '5432');
+  assert.equal(sql('select current_setting(\'server_version_num\')'), '171100');
+  assert.equal(sql("select shobj_description(oid,'pg_database') from pg_database where datname=current_database()"),
+    'LANZO_PR352_EPHEMERAL_PG17_SERVICE');
+} else {
+  assert.ok(['127.0.0.1', '127.0.0.1/32'].includes(sql('select inet_server_addr()')));
+}
 const source = readFileSync('.tmp-transition-mapper-payloads.json', 'utf8');
 const { payloads, provenance } = JSON.parse(source);
 assert.equal(provenance.production, 'a8547bfc34f483d1d72020114510c8ebea74aace');
@@ -29,12 +37,29 @@ sql('drop schema public cascade; drop schema private cascade; drop schema extens
 const load = file => sql('BEGIN;' + readFileSync(file, 'utf8') + 'COMMIT;');
 load('supabase/tests/fixtures/restaurant_origin_cancel_3d13_setup.sql');
 load('supabase/tests/fixtures/restaurant_admin_supervision_context.sql');
+load('supabase/tests/fixtures/pr352_financial_dispatcher_context.sql');
 sql(`create function public.enforce_pos_rpc_rate_limit_v2(p_license_key text,p_device_fingerprint text,
 p_staff_session_token text,p_rpc_name text,p_scope text,p_max_attempts integer,p_window_seconds integer,
 p_block_seconds integer,p_code text,p_metadata jsonb) returns jsonb language sql as $$ select '{"allowed":true}'::jsonb $$;
 create function public.build_pos_rpc_rate_limited_response(jsonb) returns jsonb language sql as $$ select '{"success":false}'::jsonb $$;
 create function private.is_restaurant_order_status(text) returns boolean language sql as $$
 select lower(trim($1)) in ('pending','preparing','ready','delivered','cancelled') $$;`);
+sql(`create or replace function public.pos_create_cloud_sale_cashier(
+  p_license_key text,p_device_fingerprint text,p_security_token text,p_staff_session_token text,
+  p_sale jsonb,p_items jsonb,p_payments jsonb,p_cash_session_id text,p_internal_idempotency_key text)
+returns jsonb language plpgsql as $$
+declare c jsonb; sale_id text;
+begin
+  c:=private.validate_pos_sync_context($1,$2,$3,$4);
+  sale_id:=coalesce($5->>'id',$5->>'cloud_sale_id',$5->>'cloudSaleId');
+  insert into public.pos_sales(id,local_order_id,total,license_id,local_sale_id,device_id,actor_key,
+    cash_session_id,idempotency_key)
+  values('sale-'||sale_id,sale_id,coalesce(($5->>'total')::numeric,0),(c->>'license_id')::uuid,
+    sale_id,(c->>'device_id')::uuid,private.resolve_cash_actor_key(c),$8,$9);
+  insert into public.pos_sale_payments(id) values('payment-'||sale_id);
+  insert into public.pos_cash_movements(id) values('cash-'||sale_id);
+  return jsonb_build_object('success',true,'sale',jsonb_build_object('id','sale-'||sale_id));
+end $$;`);
 sql(`create function private.pos_restaurant_order_to_jsonb(public.pos_restaurant_orders,jsonb) returns jsonb language sql as $$ select to_jsonb($1) $$;`);
 load('supabase/tests/fixtures/restaurant_transition_production_writers.sql');
 load('supabase/tests/fixtures/restaurant_hotfix_kitchen_wrappers.sql');
@@ -147,7 +172,9 @@ returns public.pos_financial_operations language plpgsql as $$ declare v public.
 perform pg_advisory_xact_lock(hashtextextended($1::text||':'||$2,0));
 select * into v from public.pos_financial_operations where fixture_license=$1 and legacy_idempotency_key=$2 for update;
 if found then return v; end if;
-insert into public.pos_financial_operations(fixture_license,status,legacy_idempotency_key) values($1,'processing',$2) returning * into v;
+insert into public.pos_financial_operations(fixture_license,license_id,status,legacy_idempotency_key,operation_type,
+  canonical_request,verified_actor_key,verified_device_id,verified_cash_session_id,request_hash)
+values($1,$1,'processing',$2,$4,$5,$6,$7,$8,$3) returning * into v;
 return v; end $$;
 create or replace function private.complete_financial_operation_v1(uuid,text,jsonb) returns void language sql as $$
 update public.pos_financial_operations set status='completed',response_payload=$3 where fixture_license=$1 and legacy_idempotency_key=$2 $$;
@@ -164,7 +191,9 @@ returns jsonb language plpgsql as $$ declare v public.pos_restaurant_orders; c j
 perform private.enter_restaurant_transition_write_v1(); c:=private.validate_pos_sync_context($1,$2,$3,$4);
 v:=private.lock_restaurant_order_settlement_v1((c->>'license_id')::uuid,$5->>'parent_order_id');
 perform private.assert_restaurant_table_actor_v1(c,v,'split'); perform private.assert_restaurant_settlement_permit_v1(c,v.local_order_id);
-insert into public.pos_sales values('split-'||v.local_order_id,v.local_order_id,50);
+insert into public.pos_sales(id,local_order_id,total,license_id,local_sale_id,device_id,actor_key,cash_session_id,idempotency_key)
+values('split-'||v.local_order_id,v.local_order_id,50,v.license_id,v.local_order_id,(c->>'device_id')::uuid,
+  private.resolve_cash_actor_key(c),$5->>'cash_session_id',$6);
 insert into private.transition_fixture_releases values(v.local_order_id);
 update public.pos_restaurant_orders set payment_status='paid',paid_at=now(),paid_sale_id='split-'||v.local_order_id,updated_at=now() where id=v.id;
 return jsonb_build_object('success',true); end $$;`);
@@ -180,7 +209,10 @@ const race = async (name, id, first, second, expectedCode) => {
   const [win, lose] = await Promise.all([winner.done, loser.done]); assert.equal(win.code, 0, win.output);
   if (expectedCode) { assert.notEqual(lose.code, 0, lose.output); assert.match(lose.output, new RegExp(expectedCode)); }
   else assert.equal(lose.code, 0, lose.output);
-  results.races.push({ case: name, result: expectedCode || 'ONE_DURABLE_EFFECT_SAME_RECEIPT' });
+  const sqlstate = lose.output.match(/ERROR:\s+([0-9A-Z]{5}):/i)?.[1] ?? null;
+  if (expectedCode) assert.equal(sqlstate, 'P0001', lose.output);
+  results.races.push({ case: name, result: expectedCode || 'ONE_DURABLE_EFFECT_SAME_RECEIPT',
+    sqlstate, winnerExitCode: win.code, loserExitCode: lose.code });
 };
 let p = seedStrict('transition-kitchen');
 const item = sql(`select id from public.pos_restaurant_order_items where restaurant_order_id=${quote(p.id)} limit 1`);
@@ -192,7 +224,9 @@ await race('transition-staff-vs-admin', p.local_order_id, upsert('transition', p
 p = seedStrict('transition-payment-cutover');
 const payment = financial(p.local_order_id, p.updated_at);
 await race('transition-payment-vs-policy', p.local_order_id, payment, 'select private.set_restaurant_transition_policy_v1(true)', null);
-denied(payment, 'RESTAURANT_CONTRACT_MAINTENANCE');
+const pausedPaymentRetry = denied(payment, 'RESTAURANT_CONTRACT_MAINTENANCE');
+assert.equal(pausedPaymentRetry.stderr.match(/ERROR:\s+([0-9A-Z]{5}):/i)?.[1] ?? null, 'P0001', pausedPaymentRetry.stderr);
+results.races.find(r => r.case === 'transition-payment-vs-policy').pausedRetrySqlstate = 'P0001';
 assert.equal(sql(`select status from public.pos_financial_operations where legacy_idempotency_key='${p.local_order_id}-payment'`), 'completed');
 sql('select private.set_restaurant_transition_policy_v1(false)');
 sql(payment); // Lost response retry keeps the original key/version/request.
