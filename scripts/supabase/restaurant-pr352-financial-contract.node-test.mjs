@@ -106,6 +106,7 @@ test('held-parent race observes the blocker, sends SQL, and requires completion 
   assert.match(held, /contenderSnapshot=activity\(name\)/);
   assert.match(held, /blockedOnLock=waitsForParentSettlementLock\(contenderSnapshot\)/);
   assert.match(held, /contenderSqlSubmitted:contender\.stdinFinished/);
+  assert.match(held, /contenderCompletedBeforeBlockerRelease:contenderCompletedBeforeRelease/);
   assert.match(supervisionHarness, /last pg_stat_activity\/pg_locks snapshot=/);
   assert.match(held, /sqlState\(contenderResult\.output\)/);
 });

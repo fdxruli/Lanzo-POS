@@ -421,7 +421,8 @@ const runAgainstHeldParent = async (query,name,parentId,expectedCode) => {
     holderResult=await closePsqlSession(holder,{input:'ROLLBACK;\n'});
     assertSuccessfulSession(holderResult,`${name} parent-holder rollback`);
     const result={case:name,query:query.trim(),blockerQuery:lockQuery.trim(),
-      contenderSqlSubmitted:contender.stdinFinished,contenderCompletedBeforeBlockerRelease,
+      contenderSqlSubmitted:contender.stdinFinished,
+      contenderCompletedBeforeBlockerRelease:contenderCompletedBeforeRelease,
       contenderCompletionObservedAfterMs:Math.round(completedAt-contenderSubmittedAt),
       blockerAdvisoryLockObserved:true,contenderWaitObserved:blockedOnLock,
       blockerLockSnapshot:holderSnapshot,contenderActivitySnapshot:contenderSnapshot,
