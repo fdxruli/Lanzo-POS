@@ -72,6 +72,139 @@ end;
 $function$;
 revoke all on function private.assert_restaurant_table_actor_v1(jsonb,public.pos_restaurant_orders,text) from public,anon,authenticated;
 
+-- Keep the installed 3D.14 legacy-sale guard authoritative after the bridge
+-- stops locking raw aliases. Metadata parent aliases are Restaurant references
+-- too; they must reach the same dispatcher/replay check as sale IDs.
+CREATE OR REPLACE FUNCTION private.assert_restaurant_sale_dispatcher_context_v1(
+  p_license_key text,
+  p_device_fingerprint text,
+  p_security_token text,
+  p_staff_session_token text,
+  p_sale jsonb,
+  p_cash_session_id text,
+  p_internal_idempotency_key text,
+  p_operation_type text
+) RETURNS void
+LANGUAGE plpgsql
+SET search_path TO ''
+AS $function$
+DECLARE
+  v_sale_id text := coalesce(
+    nullif(btrim(p_sale->>'id'), ''), nullif(btrim(p_sale->>'cloud_sale_id'), ''),
+    nullif(btrim(p_sale->>'cloudSaleId'), '')
+  );
+  v_local_sale_id text := coalesce(
+    nullif(btrim(p_sale->>'local_sale_id'), ''), nullif(btrim(p_sale->>'localSaleId'), ''),
+    nullif(btrim(p_sale->>'id'), ''), nullif(btrim(p_sale->>'cloud_sale_id'), ''),
+    nullif(btrim(p_sale->>'cloudSaleId'), '')
+  );
+  v_metadata_parent_ids text[] := ARRAY[
+    nullif(btrim(p_sale->'metadata'->>'splitParentId'), ''),
+    nullif(btrim(p_sale->'metadata'->>'split_parent_id'), ''),
+    nullif(btrim(p_sale->'metadata'->'restaurant'->>'parentOrderId'), ''),
+    nullif(btrim(p_sale->'metadata'->'restaurant'->>'parent_order_id'), '')
+  ];
+  v_context jsonb;
+  v_license_id uuid;
+  v_device_id uuid;
+  v_actor_key text;
+  v_legacy_idempotency_key text;
+  v_legacy_operation_type text;
+BEGIN
+  if v_sale_id is null and v_local_sale_id is null
+     and not exists (
+       select 1 from unnest(v_metadata_parent_ids) as candidate(parent_id)
+       where candidate.parent_id is not null
+     ) then
+    return;
+  end if;
+
+  v_context := private.validate_pos_sync_context(
+    p_license_key, p_device_fingerprint, p_security_token, p_staff_session_token
+  );
+  v_license_id := (v_context->>'license_id')::uuid;
+  v_device_id := nullif(v_context->>'device_id', '')::uuid;
+  v_actor_key := private.resolve_cash_actor_key(v_context);
+
+  if not exists (
+    select 1 from public.pos_restaurant_orders r
+    where r.license_id = v_license_id
+      and (r.local_order_id in (v_sale_id, v_local_sale_id)
+        or r.local_order_id = any(v_metadata_parent_ids))
+  ) then
+    return;
+  end if;
+
+  if not exists (
+    select 1 from public.pos_financial_operations f
+    where f.license_id = v_license_id
+      and f.legacy_idempotency_key = p_internal_idempotency_key
+      and f.operation_type = p_operation_type
+      and f.status = 'processing'
+      and f.canonical_request #>> '{sale,id}' = v_sale_id
+      and f.verified_actor_key = private.resolve_cash_actor_key(v_context)
+      and f.verified_device_id is not distinct from nullif(v_context->>'device_id', '')::uuid
+      and f.verified_cash_session_id is not distinct from p_cash_session_id
+  ) then
+    v_legacy_operation_type := case
+      when p_operation_type = 'sale.cashier_inventory'
+        or (p_operation_type = 'sale.cashier'
+          and coalesce((p_sale->'metadata'->>'cloudInventoryEffects')::boolean, false))
+        then 'sales.cloud_commit.inventory'
+      when p_operation_type = 'sale.cashier' then 'sales.cloud_commit'
+      when p_operation_type = 'sale.credit' then 'sales.cloud_credit'
+      else null
+    end;
+    v_legacy_idempotency_key := coalesce(
+      nullif(btrim(p_internal_idempotency_key), ''),
+      case v_legacy_operation_type
+        when 'sales.cloud_commit.inventory' then 'sales.cloud_commit.inventory:' || v_local_sale_id || ':' || v_device_id::text
+        when 'sales.cloud_commit' then 'sales.cloud_commit:' || v_local_sale_id || ':' || v_device_id::text
+        when 'sales.cloud_credit' then 'sales.cloud_credit:' || v_local_sale_id || ':' || v_device_id::text
+      end
+    );
+
+    -- Only an exact, completed, actor/device/session-bound receipt may use a
+    -- direct legacy retry. The alias joins identify its Restaurant parent.
+    if v_legacy_operation_type is null or v_legacy_idempotency_key is null or not exists (
+      select 1
+      from public.pos_idempotency_keys k
+      join public.pos_sales s
+        on s.license_id = k.license_id
+       and s.id = k.entity_id
+      join public.pos_restaurant_orders r
+        on r.license_id = s.license_id
+       and (r.local_order_id in (s.id, s.local_sale_id)
+         or r.local_order_id = any(v_metadata_parent_ids))
+      where k.license_id = v_license_id
+        and k.idempotency_key = v_legacy_idempotency_key
+        and k.operation_type = v_legacy_operation_type
+        and k.entity_type = 'sale'
+        and k.status = 'completed'
+        and k.request_hash is not null
+        and k.response_payload is not null
+        and s.idempotency_key = k.idempotency_key
+        and (v_sale_id is null or s.id = v_sale_id)
+        and (coalesce(
+              nullif(btrim(p_sale->>'local_sale_id'), ''),
+              nullif(btrim(p_sale->>'localSaleId'), '')
+            ) is null
+          or s.local_sale_id = coalesce(
+              nullif(btrim(p_sale->>'local_sale_id'), ''),
+              nullif(btrim(p_sale->>'localSaleId'), '')
+            ))
+        and s.device_id is not distinct from v_device_id
+        and s.actor_key is not distinct from v_actor_key
+        and s.cash_session_id is not distinct from p_cash_session_id
+    ) then
+      raise exception 'RESTAURANT_FINANCIAL_DISPATCHER_REQUIRED' using errcode = 'P0001';
+    end if;
+  end if;
+END;
+$function$;
+REVOKE ALL ON FUNCTION private.assert_restaurant_sale_dispatcher_context_v1(text,text,text,text,jsonb,text,text,text)
+  FROM public, anon, authenticated, service_role;
+
 create or replace function private.record_restaurant_intervention_v1(
   p_context jsonb, p_order public.pos_restaurant_orders, p_operation text,
   p_expected_version timestamptz, p_reason text, p_idempotency_key text, p_result jsonb
@@ -287,14 +420,89 @@ begin
     v_execution := private.financial_execution_request_v1(p_request);
 
     if p_operation_type = 'sale.split' then
-      v_restaurant_order_id := nullif(btrim(v_execution->>'parent_order_id'), '');
+      v_restaurant_order_id := nullif(btrim(v_canonical->>'parent_order_id'), '');
       v_restaurant_version := nullif(btrim(v_canonical->>'parent_order_version'), '');
+      if v_restaurant_order_id is null then
+        raise exception 'RESTAURANT_PARENT_ORDER_REQUIRED' using errcode = 'P0001';
+      end if;
+      if nullif(btrim(p_request->>'parent_order_id'), '') is not null
+         and nullif(btrim(p_request->>'parentOrderId'), '') is not null
+         and nullif(btrim(p_request->>'parent_order_id'), '') is distinct from nullif(btrim(p_request->>'parentOrderId'), '') then
+        raise exception 'RESTAURANT_ORDER_CONTEXT_MISMATCH' using errcode = 'P0001';
+      end if;
+      -- A child sale ID or a child's parent metadata may not redirect this
+      -- split to another table after the dispatcher has locked the real parent.
+      if exists (
+        select 1
+        from jsonb_array_elements(v_execution->'children') as child(value)
+        cross join lateral unnest(array[
+          child.value #>> '{sale,id}',
+          child.value #>> '{sale,cloud_sale_id}',
+          child.value #>> '{sale,cloudSaleId}',
+          child.value #>> '{sale,local_sale_id}',
+          child.value #>> '{sale,localSaleId}'
+        ]) as candidate(parent_id)
+        where nullif(btrim(candidate.parent_id), '') is not null
+          and (
+            btrim(candidate.parent_id) = v_restaurant_order_id
+            or exists (
+              select 1 from public.pos_restaurant_orders o
+              where o.license_id = v_license_id
+                and (o.local_order_id = btrim(candidate.parent_id) or o.id = btrim(candidate.parent_id))
+                and o.local_order_id is distinct from v_restaurant_order_id
+            )
+          )
+      ) or exists (
+        select 1
+        from jsonb_array_elements(v_execution->'children') as child(value)
+        where (nullif(btrim(child.value #>> '{sale,metadata,splitParentId}'), '') is not null
+               and nullif(btrim(child.value #>> '{sale,metadata,splitParentId}'), '') is distinct from v_restaurant_order_id)
+           or (nullif(btrim(child.value #>> '{sale,metadata,split_parent_id}'), '') is not null
+               and nullif(btrim(child.value #>> '{sale,metadata,split_parent_id}'), '') is distinct from v_restaurant_order_id)
+           or (nullif(btrim(child.value #>> '{sale,metadata,restaurant,parentOrderId}'), '') is not null
+               and nullif(btrim(child.value #>> '{sale,metadata,restaurant,parentOrderId}'), '') is distinct from v_restaurant_order_id)
+           or (nullif(btrim(child.value #>> '{sale,metadata,restaurant,parent_order_id}'), '') is not null
+               and nullif(btrim(child.value #>> '{sale,metadata,restaurant,parent_order_id}'), '') is distinct from v_restaurant_order_id)
+           or (nullif(btrim(child.value->>'parent_order_id'), '') is not null
+               and nullif(btrim(child.value->>'parent_order_id'), '') is distinct from v_restaurant_order_id)
+           or (nullif(btrim(child.value->>'parentOrderId'), '') is not null
+               and nullif(btrim(child.value->>'parentOrderId'), '') is distinct from v_restaurant_order_id)
+      ) then
+        raise exception 'RESTAURANT_ORDER_CONTEXT_MISMATCH' using errcode = 'P0001';
+      end if;
+      -- The internal split routine accepts both aliases with COALESCE; write
+      -- the already-canonical identity explicitly so it cannot select a second
+      -- parent if the caller supplied only the camel-case form.
+      v_execution := jsonb_set(v_execution, '{parent_order_id}', to_jsonb(v_restaurant_order_id), true);
     else
-      v_restaurant_order_id := coalesce(
-        nullif(btrim(v_canonical->'sale'->>'local_sale_id'), ''),
-        nullif(btrim(v_canonical->'sale'->>'id'), '')
-      );
+      v_restaurant_order_id := nullif(btrim(v_canonical->'sale'->>'id'), '');
       v_restaurant_context_supplied := p_request ? 'restaurant_settlement';
+      -- Preserve the 3D.14 identity contract: the canonical sale ID is the
+      -- parent candidate; any other supplied sale/settlement parent alias that
+      -- resolves to a different Restaurant row is a contradiction.
+      if exists (
+        select 1
+        from unnest(array[
+          v_execution #>> '{sale,id}',
+          v_execution #>> '{sale,cloud_sale_id}',
+          v_execution #>> '{sale,cloudSaleId}',
+          v_execution #>> '{sale,local_sale_id}',
+          v_execution #>> '{sale,localSaleId}',
+          v_execution #>> '{sale,metadata,splitParentId}',
+          v_execution #>> '{sale,metadata,split_parent_id}',
+          v_execution #>> '{sale,metadata,restaurant,parentOrderId}',
+          v_execution #>> '{sale,metadata,restaurant,parent_order_id}',
+          v_execution #>> '{restaurant_settlement,parent_order_id}',
+          v_execution #>> '{restaurant_settlement,parentOrderId}'
+        ]) as candidate(parent_id)
+        join public.pos_restaurant_orders o
+          on o.license_id = v_license_id
+         and (o.local_order_id = btrim(candidate.parent_id) or o.id = btrim(candidate.parent_id))
+        where nullif(btrim(candidate.parent_id), '') is not null
+          and o.local_order_id is distinct from v_restaurant_order_id
+      ) then
+        raise exception 'RESTAURANT_ORDER_CONTEXT_MISMATCH' using errcode = 'P0001';
+      end if;
       if v_restaurant_context_supplied then
         if v_restaurant_order_id is distinct from nullif(btrim(v_canonical #>> '{restaurant_settlement,parent_order_id}'), '') then
           raise exception 'RESTAURANT_ORDER_CONTEXT_MISMATCH' using errcode = 'P0001';
@@ -454,6 +662,17 @@ begin
         raise exception 'RESTAURANT_SETTLEMENT_TOTAL_MISMATCH' using errcode = 'P0001';
       end if;
     end if;
+  end if;
+
+  -- This guard is deliberately after K/H reservation replay returns above.
+  -- Historical sales block a new settlement, while an exact completed receipt
+  -- still returns its original response without executing financial effects.
+  if v_is_restaurant_settlement and exists (
+    select 1 from public.pos_sales s
+    where s.license_id = v_license_id
+      and (s.id = v_restaurant_order_id or s.local_sale_id = v_restaurant_order_id)
+  ) then
+    raise exception 'RESTAURANT_ORDER_SALE_RECONCILIATION_REQUIRED' using errcode = 'P0001';
   end if;
 
   if v_is_restaurant_settlement then

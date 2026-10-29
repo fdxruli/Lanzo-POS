@@ -252,24 +252,28 @@ grant execute on function public.pos_upsert_restaurant_order_versioned_v1(text,t
 create function private.enter_restaurant_financial_transition_write_v1(p_license_key text,p_device_fingerprint text,
   p_security_token text,p_staff_session_token text,p_request jsonb)
 returns void language plpgsql security definer set search_path='' as $function$
-declare c jsonb; ids text[]; o public.pos_restaurant_orders;
+declare c jsonb; ids text[];
 begin
-  ids:=array[p_request->>'parent_order_id',p_request#>>'{restaurant_settlement,parent_order_id}',
-    p_request#>>'{sale,id}',p_request#>>'{sale,local_sale_id}',p_request#>>'{sale,localSaleId}',
-    p_request#>>'{sale,cloud_sale_id}',p_request#>>'{sale,cloudSaleId}',
-    p_request#>>'{sale,metadata,splitParentId}',p_request#>>'{sale,metadata,restaurant,parentOrderId}'];
-  -- Take the policy lock before parent locks even when no matching parent exists.
-  -- Other rubros are never blocked by Restaurant maintenance.
+  -- Admission is transaction-scoped and must precede all business locks. This
+  -- bridge intentionally does not lock parents from raw aliases: the canonical
+  -- dispatcher resolves one coherent parent and locks it before Caja/ledger.
   perform pg_catalog.pg_advisory_xact_lock_shared(pg_catalog.hashtextextended('restaurant_contract_cutover_v1',0));
   c:=private.validate_pos_sync_context($1,$2,$3,$4);
-  for o in select * from public.pos_restaurant_orders where license_id=(c->>'license_id')::uuid
-    and (local_order_id=any(ids) or id=any(ids)) order by local_order_id,id loop
-    o:=private.lock_restaurant_order_settlement_v1(o.license_id,o.local_order_id);
-    perform private.assert_restaurant_bridge_actor_v1(c,o,'financial');
-  end loop;
+  ids:=array[p_request->>'parent_order_id',p_request->>'parentOrderId',
+    p_request#>>'{restaurant_settlement,parent_order_id}',p_request#>>'{restaurant_settlement,parentOrderId}',
+    p_request#>>'{sale,id}',p_request#>>'{sale,local_sale_id}',p_request#>>'{sale,localSaleId}',
+    p_request#>>'{sale,cloud_sale_id}',p_request#>>'{sale,cloudSaleId}',
+    p_request#>>'{sale,metadata,splitParentId}',p_request#>>'{sale,metadata,split_parent_id}',
+    p_request#>>'{sale,metadata,restaurant,parentOrderId}',p_request#>>'{sale,metadata,restaurant,parent_order_id}'];
+  -- The shared lock is held through COMMIT/ROLLBACK. While paused, inspect the
+  -- raw aliases only to reject Restaurant writes; never acquire parent locks
+  -- until the dispatcher has canonicalized and reconciled the full request.
   if not (select writes_paused from private.restaurant_cloud_contract_state where singleton) then return; end if;
-  if exists(select 1 from public.pos_restaurant_orders where license_id=(c->>'license_id')::uuid and local_order_id=any(ids))
-    or nullif(p_request->>'parent_order_id','') is not null or p_request ? 'restaurant_settlement' then
+  if exists(select 1 from public.pos_restaurant_orders where license_id=(c->>'license_id')::uuid
+      and (local_order_id=any(ids) or id=any(ids)))
+    or nullif(p_request->>'parent_order_id','') is not null
+    or nullif(p_request->>'parentOrderId','') is not null
+    or p_request ? 'restaurant_settlement' then
     raise exception 'RESTAURANT_CONTRACT_MAINTENANCE' using errcode='P0001';
   end if;
 end;
