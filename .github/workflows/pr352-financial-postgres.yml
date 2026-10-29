@@ -18,10 +18,12 @@ on:
       - 'scripts/supabase/restaurant-pr352-financial-contract.node-test.mjs'
       - 'scripts/supabase/restaurant-atomic-settlement-3d1.node-test.mjs'
       - 'scripts/supabase/restaurant-split-payment-contract-r1.node-test.mjs'
+      - 'scripts/ci/restaurant-transition-workflows.node-test.mjs'
       - 'src/services/restaurant/**'
       - 'package.json'
       - 'package-lock.json'
       - 'src/services/restaurant/__tests__/restaurantTransition.mapperPayloads.test.js'
+      - '.github/workflows/shared-terminal-actor-scoped-storage.yml'
       - '.github/workflows/pr352-financial-postgres.yml'
 
 permissions:
@@ -100,6 +102,7 @@ jobs:
           scripts/supabase/restaurant-pr352-financial-contract.node-test.mjs
           scripts/supabase/restaurant-atomic-settlement-3d1.node-test.mjs
           scripts/supabase/restaurant-split-payment-contract-r1.node-test.mjs
+          scripts/ci/restaurant-transition-workflows.node-test.mjs
 
       - name: Export actual mapper payloads for the SQL transition matrix
         run: npx vitest run src/services/restaurant/__tests__/restaurantTransition.mapperPayloads.test.js

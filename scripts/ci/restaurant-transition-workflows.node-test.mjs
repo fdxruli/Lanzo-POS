@@ -3,10 +3,13 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import yaml from 'js-yaml';
 
+const workflowTriggers = workflow => workflow.on ?? workflow[true];
+
 for (const name of ['runtime', 'scoped-storage']) {
   test(`manual ${name} resolves one base and executes the complete differential`, () => {
     const workflow = yaml.load(readFileSync(`.github/workflows/shared-terminal-actor-${name}.yml`, 'utf8'));
-    assert.equal(workflow.on.workflow_dispatch.inputs.base_ref.required, true);
+    const triggers = workflowTriggers(workflow);
+    assert.equal(triggers.workflow_dispatch.inputs.base_ref.required, true);
     const resolve = workflow.jobs['resolve-pr-base'];
     assert.match(resolve.steps[0].with.ref, /inputs\.base_ref/);
     for (const key of ['full-suite-baseline', 'full-suite-candidate']) {
@@ -28,11 +31,25 @@ for (const name of ['runtime', 'scoped-storage']) {
 
 test('manual PR127 accepts an immutable BASE instead of assuming main', () => {
   const workflow = yaml.load(readFileSync('.github/workflows/pr127-global-comparison.yml', 'utf8'));
-  assert.equal(workflow.on.workflow_dispatch.inputs.base_ref.required, true);
+  const triggers = workflowTriggers(workflow);
+  assert.equal(triggers.workflow_dispatch.inputs.base_ref.required, true);
   const job = workflow.jobs['compare-global-suite'];
   assert.match(job.steps[1].with.ref, /PR127_BASE_REF/);
   assert.equal(job.steps[1].with.path, 'base');
   assert.ok(job.steps.some(step => /Validate immutable comparison refs/.test(step.name || '')));
   assert.match(job.steps.find(step => /Extract error-aware/.test(step.name || '')).run, /global-base\.json/);
   assert.match(job.steps.find(step => /Normalize and compare/.test(step.name || '')).run, /focused\/base/);
+});
+
+test('PR352 SQL workflow parses as an isolated, read-only PostgreSQL 17 check', () => {
+  const workflow = yaml.load(readFileSync('.github/workflows/pr352-financial-postgres.yml', 'utf8'));
+  const pullRequest = workflowTriggers(workflow).pull_request;
+  assert.ok(pullRequest.types.includes('edited'));
+  assert.deepEqual(pullRequest.branches, ['main']);
+  assert.ok(pullRequest.paths.includes('.github/workflows/pr352-financial-postgres.yml'));
+  assert.ok(pullRequest.paths.includes('scripts/ci/restaurant-transition-workflows.node-test.mjs'));
+  const job = workflow.jobs['isolated-postgres-17'];
+  assert.equal(job.permissions.contents, 'read');
+  assert.equal(job.services.postgres.image, 'postgres:17.11-bookworm');
+  assert.match(job.if, /pull_request\.number\s*==\s*352/);
 });

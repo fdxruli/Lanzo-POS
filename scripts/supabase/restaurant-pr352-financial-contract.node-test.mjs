@@ -7,6 +7,7 @@ const supervision = readFileSync('supabase/migrations/20261010013258_restaurant_
 const historical3d14 = readFileSync('supabase/migrations/20261026214837_restaurant_sale_dispatcher_guard_3d14.sql', 'utf8');
 const fixture = readFileSync('supabase/tests/fixtures/pr352_financial_dispatcher_context.sql', 'utf8');
 const workflow = readFileSync('.github/workflows/pr352-financial-postgres.yml', 'utf8');
+const scopedStorageWorkflow = readFileSync('.github/workflows/shared-terminal-actor-scoped-storage.yml', 'utf8');
 
 function section(source, start, end) {
   const searchable = source.toLowerCase();
@@ -110,4 +111,9 @@ test('PostgreSQL CI targets PR352 on main and runs when the PR is retargeted', (
   assert.match(workflow, /image:\s*postgres:17\.11-bookworm/);
   assert.match(workflow, /permissions:\s*\r?\n\s+contents:\s*read/i);
   assert.doesNotMatch(workflow, /secrets\.|supabase db (?:push|reset)|vercel deploy/i);
+});
+
+test('Scoped Storage preserves the manual base_ref and pins PR runs to the base SHA', () => {
+  const resolveBase = section(scopedStorageWorkflow, 'name: Checkout current base branch', 'fetch-depth: 1');
+  assert.match(resolveBase, /github\.event\.pull_request\.base\.sha\s*\|\|\s*inputs\.base_ref\s*\|\|\s*github\.event\.repository\.default_branch/);
 });
