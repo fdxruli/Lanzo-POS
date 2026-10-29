@@ -552,6 +552,7 @@ const unrelatedQuery=`begin; select private.enter_restaurant_financial_transitio
   'fixture-license','B','valid','admin','{"operation_type":"cash.movement","cash_session_id":"cash-a","amount":3}');\n`;
 let cutoverLockSnapshot=[]; let unrelatedWaitSnapshot=[]; let unrelatedSharedSnapshot=[];
 let unrelatedSubmittedAt=null; let unrelatedWaitObservedAfterMs=null; let unrelatedAdmissionResumedAfterMs=null;
+let unrelatedParentLockCount=null; let cashEffectsAfterCutover=null;
 try {
   await cutover.write(cutoverQuery);
   cutoverLockSnapshot=await waitForActivity(cutoverName,
@@ -578,10 +579,10 @@ try {
   const sharedLock=unrelatedSharedSnapshot.flatMap(row=>row.locks).find(lock=>lock.locktype==='advisory'&&lock.granted&&lock.mode==='ShareLock'&&lock.objsubid===1);
   assert.equal(sharedLock.classid,cutoverLock.classid);
   assert.equal(sharedLock.objid,cutoverLock.objid);
-  const unrelatedParentLockCount=unrelatedSharedSnapshot.flatMap(row=>row.locks)
+  unrelatedParentLockCount=unrelatedSharedSnapshot.flatMap(row=>row.locks)
     .filter(lock=>lock.locktype==='advisory'&&lock.granted&&lock.objsubid===2).length;
   assert.equal(unrelatedParentLockCount,0);
-  const cashEffectsAfterCutover=sql('select count(*) from public.pos_cash_movements');
+  cashEffectsAfterCutover=sql('select count(*) from public.pos_cash_movements');
   assert.equal(cashEffectsAfterCutover,cashEffectsBeforeCutover);
   await unrelated.end('rollback;\n');
   unrelatedResult=await unrelated.done;

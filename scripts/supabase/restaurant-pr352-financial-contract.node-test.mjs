@@ -111,6 +111,20 @@ test('held-parent race observes the blocker, sends SQL, and requires completion 
   assert.match(held, /sqlState\(contenderResult\.output\)/);
 });
 
+test('SQL-09/10 cutover evidence remains in outer scope for serialization', () => {
+  const cutover = section(supervisionHarness, '// SQL-09/10: during pause', 'console.log(JSON.stringify({sql01:');
+  const tryStart = cutover.indexOf('\ntry {');
+  const resultStart = cutover.indexOf("results.push({case:'SQL-09/10 paused other-rubro admission and cutover'");
+  assert.ok(tryStart >= 0 && resultStart > tryStart);
+  for (const name of ['unrelatedParentLockCount', 'cashEffectsAfterCutover']) {
+    const declaration = cutover.indexOf(`let ${name}=`);
+    const assignment = cutover.indexOf(`${name}=`, tryStart);
+    assert.ok(declaration >= 0 && declaration < tryStart, `${name} must be declared outside the try block`);
+    assert.ok(assignment > tryStart && assignment < resultStart, `${name} must be assigned by the completed SQL scenario`);
+    assert.ok(cutover.indexOf(name, resultStart) >= resultStart, `${name} must be included in serialized cutover evidence`);
+  }
+});
+
 test('all SQL-08 to SQL-10 sessions have bounded lifecycle and lock diagnostics', () => {
   assert.match(psqlSession, /child\.on\('error'/);
   assert.match(psqlSession, /child\.on\('close'/);
