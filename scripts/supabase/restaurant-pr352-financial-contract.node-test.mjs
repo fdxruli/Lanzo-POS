@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { buildCutoverEvidence } from './restaurant-cutover-evidence.mjs';
 
 const bridge = readFileSync('supabase/migrations/20261010013257_restaurant_cloud_transition_bridge_v1.sql', 'utf8');
 const supervision = readFileSync('supabase/migrations/20261010013258_restaurant_admin_supervision_r1.sql', 'utf8');
@@ -114,7 +115,7 @@ test('held-parent race observes the blocker, sends SQL, and requires completion 
 test('SQL-09/10 cutover evidence remains in outer scope for serialization', () => {
   const cutover = section(supervisionHarness, '// SQL-09/10: during pause', 'console.log(JSON.stringify({sql01:');
   const tryStart = cutover.indexOf('\ntry {');
-  const resultStart = cutover.indexOf("results.push({case:'SQL-09/10 paused other-rubro admission and cutover'");
+  const resultStart = cutover.indexOf('results.push(buildCutoverEvidence({');
   assert.ok(tryStart >= 0 && resultStart > tryStart);
   for (const name of ['unrelatedParentLockCount', 'cashEffectsAfterCutover']) {
     const declaration = cutover.indexOf(`let ${name}=`);
@@ -123,6 +124,88 @@ test('SQL-09/10 cutover evidence remains in outer scope for serialization', () =
     assert.ok(assignment > tryStart && assignment < resultStart, `${name} must be assigned by the completed SQL scenario`);
     assert.ok(cutover.indexOf(name, resultStart) >= resultStart, `${name} must be included in serialized cutover evidence`);
   }
+});
+
+test('SQL-09/10 report builder serializes complete runtime-shaped evidence and rejects invalid results', () => {
+  const lockSnapshot = (mode, granted, waitEventType, state) => [{
+    pid: granted ? 101 : 202,
+    state,
+    wait_event_type: waitEventType,
+    query_excerpt: 'select private.enter_restaurant_financial_transition_write_v1(...)',
+    query_length: 84,
+    locks: [{
+      locktype: 'advisory',
+      mode,
+      granted,
+      classid: 24680,
+      objid: 13579,
+      objsubid: 1
+    }]
+  }];
+  const input = {
+    cutoverQuery: "begin; select pg_advisory_xact_lock(hashtextextended('restaurant_contract_cutover_v1',0));",
+    unrelatedAdmissionQuery: "begin; select private.enter_restaurant_financial_transition_write_v1(...);",
+    unrelatedSqlSubmitted: true,
+    exclusiveCutoverLockObserved: lockSnapshot('ExclusiveLock', true, null, 'idle in transaction'),
+    unrelatedShareLockWaitObserved: lockSnapshot('ShareLock', false, 'Lock', 'active'),
+    unrelatedWaitObservedAfterMs: 7,
+    unrelatedAdmissionResumedAfterMs: 13,
+    cutoverExitCode: 0,
+    unrelatedExitCode: 0,
+    finalFinancialEffects: {
+      cashMovementsBefore: 4,
+      cashMovementsAfter: 4,
+      unrelatedParentAdvisoryLocks: 0
+    },
+    sessionsRemaining: 0,
+    reentrantSharedLocks: 1,
+    pausedRestaurantSqlstate: 'P0001',
+    limitation: 'The global exclusive lock temporarily delays unrelated rubros.'
+  };
+
+  const report = buildCutoverEvidence(input);
+  const serialized = JSON.stringify(report);
+  const parsed = JSON.parse(serialized);
+  assert.deepEqual(parsed, report);
+  assert.deepEqual(Object.keys(parsed).sort(), [
+    'case', 'result', 'semantics', 'cutoverQuery', 'unrelatedAdmissionQuery',
+    'unrelatedSqlSubmitted', 'exclusiveCutoverLockObserved', 'unrelatedShareLockWaitObserved',
+    'releaseOrder', 'unrelatedWaitObservedAfterMs', 'unrelatedAdmissionResumedAfterMs',
+    'cutoverExitCode', 'unrelatedExitCode', 'finalFinancialEffects', 'sessionsRemaining',
+    'reentrantSharedLocks', 'pausedRestaurantSqlstate', 'limitation'
+  ].sort());
+  assert.equal(parsed.result, 'PASS');
+  assert.equal(parsed.unrelatedSqlSubmitted, true);
+  assert.equal(parsed.finalFinancialEffects.cashMovementsAfter, 4);
+  assert.equal(parsed.finalFinancialEffects.unrelatedParentAdvisoryLocks, 0);
+  assert.equal(parsed.exclusiveCutoverLockObserved[0].locks[0].granted, true);
+  assert.equal(parsed.unrelatedShareLockWaitObserved[0].locks[0].granted, false);
+  assert.doesNotMatch(serialized, /undefined|NaN/);
+
+  assert.throws(() => buildCutoverEvidence({ ...input, unrelatedAdmissionQuery: '' }), /unrelatedAdmissionQuery/);
+  assert.throws(() => buildCutoverEvidence({ ...input, finalFinancialEffects: undefined }), /cashMovementsBefore/);
+  assert.throws(() => buildCutoverEvidence({ ...input, unrelatedWaitObservedAfterMs: undefined }), /unrelatedWaitObservedAfterMs/);
+  assert.throws(() => buildCutoverEvidence({ ...input, unrelatedAdmissionResumedAfterMs: Number.NaN }), /unrelatedAdmissionResumedAfterMs/);
+  assert.throws(() => buildCutoverEvidence({
+    ...input,
+    finalFinancialEffects: { ...input.finalFinancialEffects, cashMovementsAfter: 5 }
+  }), /rollback must preserve/);
+  const circularSnapshot = lockSnapshot('ExclusiveLock', true, null, 'idle in transaction');
+  circularSnapshot[0].cycle = circularSnapshot;
+  assert.throws(() => buildCutoverEvidence({ ...input, exclusiveCutoverLockObserved: circularSnapshot }), /circular references/);
+});
+
+test('PostgreSQL workflow runs focal no-undef checks for all SQL harness processes', () => {
+  assert.match(workflow, /restaurant-pr352-eslint\.config\.mjs/);
+  for (const file of [
+    'scripts/supabase/restaurant-admin-supervision-test.mjs',
+    'scripts/supabase/restaurant-transition-test.mjs',
+    'scripts/supabase/psql-session.mjs',
+    'scripts/supabase/restaurant-cutover-evidence.mjs',
+    'scripts/supabase/psql-session.node-test.mjs',
+    'scripts/supabase/restaurant-pr352-financial-contract.node-test.mjs',
+    'scripts/supabase/restaurant-pr352-eslint.config.mjs'
+  ]) assert.ok(workflow.includes(file), 'missing focused ESLint target ' + file);
 });
 
 test('all SQL-08 to SQL-10 sessions have bounded lifecycle and lock diagnostics', () => {

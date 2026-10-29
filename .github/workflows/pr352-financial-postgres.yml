@@ -14,6 +14,8 @@ on:
       - 'supabase/tests/fixtures/restaurant_hotfix_kitchen_wrappers.sql'
       - 'supabase/tests/fixtures/pr352_financial_dispatcher_context.sql'
       - 'scripts/supabase/restaurant-admin-supervision-test.mjs'
+      - 'scripts/supabase/restaurant-cutover-evidence.mjs'
+      - 'scripts/supabase/restaurant-pr352-eslint.config.mjs'
       - 'scripts/supabase/restaurant-transition-test.mjs'
       - 'scripts/supabase/restaurant-pr352-financial-contract.node-test.mjs'
       - 'scripts/supabase/psql-session.mjs'
@@ -113,6 +115,18 @@ jobs:
           scripts/supabase/restaurant-atomic-settlement-3d1.node-test.mjs
           scripts/supabase/restaurant-split-payment-contract-r1.node-test.mjs
           scripts/ci/restaurant-transition-workflows.node-test.mjs
+
+      - name: Check PostgreSQL harness for undeclared identifiers
+        run: >-
+          ./node_modules/.bin/eslint
+          --config scripts/supabase/restaurant-pr352-eslint.config.mjs
+          scripts/supabase/restaurant-admin-supervision-test.mjs
+          scripts/supabase/restaurant-transition-test.mjs
+          scripts/supabase/psql-session.mjs
+          scripts/supabase/restaurant-cutover-evidence.mjs
+          scripts/supabase/psql-session.node-test.mjs
+          scripts/supabase/restaurant-pr352-financial-contract.node-test.mjs
+          scripts/supabase/restaurant-pr352-eslint.config.mjs
 
       - name: Export actual mapper payloads for the SQL transition matrix
         run: npx vitest run src/services/restaurant/__tests__/restaurantTransition.mapperPayloads.test.js

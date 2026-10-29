@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { closePsqlSession, openPsqlSession } from './psql-session.mjs';
+import { buildCutoverEvidence } from './restaurant-cutover-evidence.mjs';
 
 assert.ok(process.argv.includes('--isolated-fixture'));
 assert.equal(process.env.PGHOST, '127.0.0.1');
@@ -534,7 +535,7 @@ assert.equal(sql('select count(*) from private.restaurant_settlement_permits'),'
 // SQL-09/10: during pause, an unrelated financial admission is accepted but
 // holds the shared global cutover lock. The exclusive cutover waits for it;
 // no Restaurant-parent advisory lock is acquired. Rollback releases the lock.
-const cashEffectsBeforeCutover = sql('select count(*) from public.pos_cash_movements');
+const cashEffectsBeforeCutover = Number(sql('select count(*) from public.pos_cash_movements'));
 sql('select private.set_restaurant_transition_policy_v1(true)');
 const reentrantQuery=`begin;
   select private.enter_restaurant_financial_transition_write_v1('fixture-license','B','valid','admin','{"operation_type":"cash.movement","cash_session_id":"cash-a","amount":3}');
@@ -543,7 +544,8 @@ const reentrantQuery=`begin;
   rollback;`;
 const reentrant=await run(reentrantQuery,'pr352-cutover-lock-reentry');
 assertSuccessfulSession(reentrant,'reentrant transition admission');
-assert.ok(reentrant.output.split(/\r?\n/).includes('1'),reentrant.output);
+const reentrantSharedLocks=Number(reentrant.output.trim());
+assert.equal(reentrantSharedLocks,1,reentrant.output);
 const cutoverName='pr352-other-rubro-cutover';
 const unrelatedName='pr352-other-rubro-admission';
 const cutover=openSession(cutoverName); let unrelated=null; let cutoverResult=null; let unrelatedResult=null;
@@ -582,7 +584,7 @@ try {
   unrelatedParentLockCount=unrelatedSharedSnapshot.flatMap(row=>row.locks)
     .filter(lock=>lock.locktype==='advisory'&&lock.granted&&lock.objsubid===2).length;
   assert.equal(unrelatedParentLockCount,0);
-  cashEffectsAfterCutover=sql('select count(*) from public.pos_cash_movements');
+  cashEffectsAfterCutover=Number(sql('select count(*) from public.pos_cash_movements'));
   assert.equal(cashEffectsAfterCutover,cashEffectsBeforeCutover);
   await unrelated.end('rollback;\n');
   unrelatedResult=await unrelated.done;
@@ -597,17 +599,26 @@ const pausedRestaurantAttempt = rejected("select private.enter_restaurant_financ
   'RESTAURANT_CONTRACT_MAINTENANCE');
 assert.equal(sqlState(pausedRestaurantAttempt.stderr),'P0001',pausedRestaurantAttempt.stderr);
 sql('select private.set_restaurant_transition_policy_v1(false)');
-results.push({case:'SQL-09/10 paused other-rubro admission and cutover',
-  result:'PASS',semantics:'ADMITTED_NO_PARENT_LOCK_GLOBAL_CUTOVER_WAIT_OBSERVED_ROLLBACK_RELEASED',
-  cutoverQuery:cutoverQuery.trim(),unrelatedAdmissionQuery:unrelatedQuery.trim(),
-  unrelatedSqlSubmitted:unrelatedResult.stdinEnded,exclusiveCutoverLockObserved:cutoverLockSnapshot,
-  unrelatedShareLockWaitObserved:unrelatedWaitSnapshot,releaseOrder:'commit_cutover_then_unrelated_admission_rollback',
-  unrelatedWaitObservedAfterMs,unrelatedAdmissionResumedAfterMs,
-  cutoverExitCode:cutoverResult.code,unrelatedExitCode:unrelatedResult.code,
+const sessionsRemaining=Number(sql("select count(*) from pg_stat_activity where application_name in ("+
+  quoteSql(cutoverName)+","+quoteSql(unrelatedName)+")"));
+assert.equal(sessionsRemaining,0);
+results.push(buildCutoverEvidence({
+  cutoverQuery:cutoverQuery.trim(),
+  unrelatedAdmissionQuery:unrelatedQuery.trim(),
+  unrelatedSqlSubmitted:unrelatedResult.stdinEnded,
+  exclusiveCutoverLockObserved:cutoverLockSnapshot,
+  unrelatedShareLockWaitObserved:unrelatedWaitSnapshot,
+  unrelatedWaitObservedAfterMs,
+  unrelatedAdmissionResumedAfterMs,
+  cutoverExitCode:cutoverResult.code,
+  unrelatedExitCode:unrelatedResult.code,
   finalFinancialEffects:{cashMovementsBefore:cashEffectsBeforeCutover,cashMovementsAfter:cashEffectsAfterCutover,
-    unrelatedParentAdvisoryLocks:unrelatedParentLockCount},sessionsRemaining:0,
-  reentrantSharedLocks:1,pausedRestaurantSqlstate:sqlState(pausedRestaurantAttempt.stderr),
-  limitation:'shared transition lock also delays unrelated rubros while cutover holds exclusive lock'});
+    unrelatedParentAdvisoryLocks:unrelatedParentLockCount},
+  sessionsRemaining,
+  reentrantSharedLocks,
+  pausedRestaurantSqlstate:sqlState(pausedRestaurantAttempt.stderr),
+  limitation:'shared transition lock also delays unrelated rubros while cutover holds exclusive lock'
+}));
 persistSqlEvidence();
 
 persistSqlEvidence();
