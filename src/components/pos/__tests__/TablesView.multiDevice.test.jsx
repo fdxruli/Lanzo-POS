@@ -14,13 +14,14 @@ vi.mock('../../../store/useAppStore', () => ({
 }));
 vi.mock('../../../hooks/pos/useActiveOrders', () => ({ useActiveOrders: { getState: () => ({ recoverRestaurantCancellationCleanup: vi.fn(async () => {}) }) } }));
 vi.mock('../../../services/auth/useActorRuntimeSnapshot', () => ({
-  useActorRuntimeSnapshot: () => ({ status: 'granted', actorKey: 'admin:qa', generation: fixture.generation,
+  useActorRuntimeSnapshot: () => ({ status: 'granted', actorType: 'admin', actorId: 'qa', sessionId: 'session-qa', permissions: ['*'], actorKey: 'admin:qa', generation: fixture.generation,
     tenant: { opaqueId: 'tenant-qa', databaseName: 'qa', generation: 1 } })
 }));
 vi.mock('../../../services/auth/actorRuntimeController', () => ({ actorRuntimeController: {
+  getState: () => ({ status: 'granted' }), subscribe: () => () => {},
   capture: () => {
     const generation = fixture.generation;
-    return { actorKey: 'admin:qa', tenant: { opaqueId: 'tenant-qa', databaseName: 'qa', generation: 1 },
+    return { actorType: 'admin', actorId: 'qa', sessionId: 'session-qa', generation, actorKey: 'admin:qa', tenant: { opaqueId: 'tenant-qa', databaseName: 'qa', generation: 1 },
       assertCurrent: () => { if (generation !== fixture.generation) throw Object.assign(new Error('ACTOR_CONTEXT_STALE'), { code: 'ACTOR_CONTEXT_STALE' }); } };
   }
 } }));
@@ -30,6 +31,9 @@ vi.mock('../../../services/sync/syncConstants', () => ({
   isRestaurantOrdersCloudEnabled: (license) => license?.cloud === true
 }));
 vi.mock('../../../services/restaurant/restaurantOrdersRepository', () => ({ restaurantOrdersRepository: {
+  getTableCapabilities: async ({ localOrderId }) => ({ success: true, contractVersion: 1, localOrderId,
+    cloudOrderId: `cloud-${localOrderId}`, parentVersion: '2026-10-05T10:00:00.000Z',
+    capabilities: { canViewTable: true, canCheckoutTable: true, canSplitTable: true } }),
   getRestaurantOrders: (...args) => fixture.list(...args),
   getRestaurantOrderByLocalOrder: (...args) => fixture.lookup(...args)
 } }));

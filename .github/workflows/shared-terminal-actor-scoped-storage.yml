@@ -31,6 +31,12 @@ on:
       - 'docs/reports/SHARED.TERMINAL.4.CASH.STATION.FINANCIAL.HANDOFF.md'
       - '.github/workflows/shared-terminal-actor-scoped-storage.yml'
   workflow_dispatch:
+    inputs:
+      base_ref:
+        description: 'Base branch/ref for the immutable BASE/CANDIDATE comparison'
+        required: true
+        default: main
+        type: string
 
 permissions:
   contents: read
@@ -54,7 +60,7 @@ jobs:
       - name: Checkout current base branch
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.base.sha || github.event.repository.default_branch }}
+          ref: ${{ github.event.pull_request.base.sha || inputs.base_ref || github.event.repository.default_branch }}
           fetch-depth: 1
       - name: Capture immutable base SHA
         id: resolve
@@ -730,11 +736,17 @@ jobs:
 
       - name: Compare repeated BASE vs CANDIDATE failure envelope
         run: |
+          node scripts/ci/compare-focused-target-evidence.mjs \
+            differential/base/focused-target-summary.json \
+            differential/candidate/focused-target-summary.json \
+            differential/focused-target-differential.md \
+            differential/focused-target-differential.json
           node scripts/compare-shared-terminal-full-suite.mjs \
             differential/base \
             differential/candidate \
             differential/full-suite-differential.md \
             differential/full-suite-differential.json
+          cat differential/focused-target-differential.md >> "$GITHUB_STEP_SUMMARY"
           cat differential/full-suite-differential.md >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload differential evidence
@@ -745,5 +757,7 @@ jobs:
           path: |
             differential/full-suite-differential.md
             differential/full-suite-differential.json
+            differential/focused-target-differential.md
+            differential/focused-target-differential.json
           if-no-files-found: error
           overwrite: true

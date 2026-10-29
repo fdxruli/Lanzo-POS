@@ -23,6 +23,12 @@ on:
       - 'docs/reports/SHARED.TERMINAL.4.CASH.STATION.FINANCIAL.HANDOFF.md'
       - '.github/workflows/shared-terminal-actor-runtime.yml'
   workflow_dispatch:
+    inputs:
+      base_ref:
+        description: 'Base branch/ref for the complete immutable BASE/CANDIDATE comparison'
+        required: true
+        default: main
+        type: string
 
 permissions:
   contents: read
@@ -43,7 +49,7 @@ jobs:
       - name: Checkout current base branch
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.pull_request.base.ref || github.event.repository.default_branch }}
+          ref: ${{ github.event.pull_request.base.ref || inputs.base_ref || github.event.repository.default_branch }}
           fetch-depth: 1
       - name: Capture immutable base SHA
         id: resolve
@@ -58,7 +64,7 @@ jobs:
     needs:
       - resolve-pr-base
     env:
-      SHARED_TERMINAL_PR_BASE_SHA: ${{ github.event_name == 'pull_request' && needs.resolve-pr-base.outputs.sha || '' }}
+      SHARED_TERMINAL_PR_BASE_SHA: ${{ needs.resolve-pr-base.outputs.sha }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -79,7 +85,7 @@ jobs:
           git cat-file -e "${SHARED_TERMINAL_CANDIDATE_SHA}^{commit}"
           git cat-file -e "${SHARED_TERMINAL_CONTRACT_BASE_SHA}^{commit}"
 
-          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" || "${GITHUB_EVENT_NAME}" == "workflow_dispatch" ]]; then
             echo "PR_BASE_SHA=${SHARED_TERMINAL_PR_BASE_SHA}"
             test -n "${SHARED_TERMINAL_PR_BASE_SHA}"
             git cat-file -e "${SHARED_TERMINAL_PR_BASE_SHA}^{commit}"
@@ -93,23 +99,9 @@ jobs:
           fi
 
       - name: PR-local blocking whitespace hygiene
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
         shell: bash
         run: git diff --check "${SHARED_TERMINAL_PR_BASE_SHA}...${SHARED_TERMINAL_CANDIDATE_SHA}"
-
-      - name: Manual whitespace hygiene classification
-        if: github.event_name == 'workflow_dispatch'
-        shell: bash
-        run: |
-          echo "EVENT_MODE=workflow_dispatch"
-          echo "MANUAL_BASE_SHA=N/A"
-          echo "MANUAL_CANDIDATE_SHA=${SHARED_TERMINAL_CANDIDATE_SHA}"
-          echo "WHITESPACE_GATE_MODE=NOT_APPLICABLE"
-          echo "FULL_SUITE_BASE_MODE=NOT_APPLICABLE"
-          echo "FULL_SUITE_CANDIDATE_MODE=NOT_APPLICABLE"
-          echo "BASE_CANDIDATE_DIFFERENTIAL_MODE=NOT_APPLICABLE"
-          echo "PR-local blocking whitespace hygiene is not applicable without pull_request attribution."
-          echo "Full-suite regression attribution requires BASE/CANDIDATE evidence and is not applicable to current-state manual diagnostics."
 
       - name: Historical contract-base whitespace observation
         if: always()
@@ -184,7 +176,7 @@ jobs:
 
   full-suite-baseline:
     name: Full suite BASE repeated (observational)
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     needs:
       - resolve-pr-base
     env:
@@ -276,7 +268,7 @@ jobs:
 
   full-suite-candidate:
     name: Full suite CANDIDATE repeated (observational)
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 90
     outputs:
@@ -364,7 +356,7 @@ jobs:
 
   differential-regression-gate:
     name: Differential repeated full-suite regression gate
-    if: ${{ always() && github.event_name == 'pull_request' }}
+    if: ${{ always() && (github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') }}
     needs:
       - full-suite-baseline
       - full-suite-candidate

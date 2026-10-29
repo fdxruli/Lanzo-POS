@@ -13,6 +13,16 @@ const createSliceHarness = () => {
 };
 
 describe('createPWASlice install invitation', () => {
+  it('keeps the update available if checkout deferred the actual reload', async () => {
+    const harness = createSliceHarness();
+    harness.actions.setUpdateAvailable(true);
+    harness.actions.setTriggerUpdate(async () => false);
+    await harness.actions.runUpdate();
+    expect(harness.state()).toMatchObject({ updateAvailable: true, showUpdateModal: true, isUpdating: false });
+    harness.actions.setTriggerUpdate(async () => true);
+    await harness.actions.runUpdate();
+    expect(harness.state()).toMatchObject({ updateAvailable: false, showUpdateModal: false, isUpdating: false });
+  });
   it('does not open the automatic modal when the app becomes installable', () => {
     const harness = createSliceHarness();
 

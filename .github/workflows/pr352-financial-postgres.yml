@@ -1,0 +1,154 @@
+name: PR 352 Financial SQL Validation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+    branches: [main]
+    paths:
+      - 'supabase/migrations/20261010013257_restaurant_cloud_transition_bridge_v1.sql'
+      - 'supabase/migrations/20261010013258_restaurant_admin_supervision_r1.sql'
+      - 'supabase/migrations/20261026214837_restaurant_sale_dispatcher_guard_3d14.sql'
+      - 'supabase/tests/fixtures/restaurant_origin_cancel_3d13_setup.sql'
+      - 'supabase/tests/fixtures/restaurant_admin_supervision_context.sql'
+      - 'supabase/tests/fixtures/restaurant_transition_production_writers.sql'
+      - 'supabase/tests/fixtures/restaurant_hotfix_kitchen_wrappers.sql'
+      - 'supabase/tests/fixtures/pr352_financial_dispatcher_context.sql'
+      - 'scripts/supabase/restaurant-admin-supervision-test.mjs'
+      - 'scripts/supabase/restaurant-cutover-evidence.mjs'
+      - 'scripts/supabase/restaurant-pr352-eslint.config.mjs'
+      - 'scripts/supabase/restaurant-transition-test.mjs'
+      - 'scripts/supabase/restaurant-pr352-financial-contract.node-test.mjs'
+      - 'scripts/supabase/psql-session.mjs'
+      - 'scripts/supabase/psql-session.node-test.mjs'
+      - 'scripts/supabase/restaurant-atomic-settlement-3d1.node-test.mjs'
+      - 'scripts/supabase/restaurant-split-payment-contract-r1.node-test.mjs'
+      - 'scripts/ci/restaurant-transition-workflows.node-test.mjs'
+      - 'src/services/restaurant/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'src/services/restaurant/__tests__/restaurantTransition.mapperPayloads.test.js'
+      - '.github/workflows/shared-terminal-actor-scoped-storage.yml'
+      - '.github/workflows/pr352-financial-postgres.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr352-financial-sql-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  isolated-postgres-17:
+    if: github.event.pull_request.number == 352
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    permissions:
+      contents: read
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: '5432'
+      PGUSER: postgres
+      PGDATABASE: lanzo_admin_supervision_fixture
+      PSQL_BIN: psql
+      PR352_FIXTURE_MODE: github-actions-postgres-service
+      PR352_EXPECTED_SERVER_VERSION_NUM: '170011'
+    services:
+      postgres:
+        image: postgres:17.11-bookworm
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 24
+    steps:
+      - name: Checkout PR merge candidate
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Node 24
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install the ephemeral runner PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-client
+          psql --version
+
+      - name: Verify and mark the disposable PostgreSQL service
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected_server_version_num="${PR352_EXPECTED_SERVER_VERSION_NUM:?expected PostgreSQL server_version_num is required}"
+          actual_server_version_num="$(psql -X -h 127.0.0.1 -p 5432 -U postgres -d postgres -Atc 'show server_version_num')"
+          printf 'PostgreSQL server_version_num: actual=%s expected=%s\n' "$actual_server_version_num" "$expected_server_version_num"
+          if [ "$actual_server_version_num" != "$expected_server_version_num" ]; then
+            echo "::error::Unexpected PostgreSQL server_version_num; expected the pinned 17.11 target."
+            exit 1
+          fi
+          psql -X -h 127.0.0.1 -p 5432 -U postgres -d postgres -v ON_ERROR_STOP=1 \
+            -c 'CREATE DATABASE lanzo_admin_supervision_fixture'
+          psql -X -h 127.0.0.1 -p 5432 -U postgres -d postgres -v ON_ERROR_STOP=1 \
+            -c "COMMENT ON DATABASE lanzo_admin_supervision_fixture IS 'LANZO_PR352_EPHEMERAL_PG17_SERVICE'"
+          empty_count="$(psql -X -h 127.0.0.1 -p 5432 -U postgres -d lanzo_admin_supervision_fixture -Atc \
+            "SELECT count(*) FROM information_schema.tables WHERE table_schema IN ('public','private')")"
+          test "${empty_count}" = '0'
+          psql -X -h 127.0.0.1 -p 5432 -U postgres -d lanzo_admin_supervision_fixture -Atc \
+            "SELECT current_database(), current_setting('server_version_num'), shobj_description(oid,'pg_database') FROM pg_database WHERE datname=current_database()"
+
+      - name: Install locked Node dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Run local static and Node contract checks
+        run: >-
+          node --test
+          scripts/supabase/restaurant-pr352-financial-contract.node-test.mjs
+          scripts/supabase/psql-session.node-test.mjs
+          scripts/supabase/restaurant-atomic-settlement-3d1.node-test.mjs
+          scripts/supabase/restaurant-split-payment-contract-r1.node-test.mjs
+          scripts/ci/restaurant-transition-workflows.node-test.mjs
+
+      - name: Check PostgreSQL harness for undeclared identifiers
+        run: >-
+          ./node_modules/.bin/eslint
+          --config scripts/supabase/restaurant-pr352-eslint.config.mjs
+          scripts/supabase/restaurant-admin-supervision-test.mjs
+          scripts/supabase/restaurant-transition-test.mjs
+          scripts/supabase/psql-session.mjs
+          scripts/supabase/restaurant-cutover-evidence.mjs
+          scripts/supabase/psql-session.node-test.mjs
+          scripts/supabase/restaurant-pr352-financial-contract.node-test.mjs
+          scripts/supabase/restaurant-pr352-eslint.config.mjs
+
+      - name: Export actual mapper payloads for the SQL transition matrix
+        run: npx vitest run src/services/restaurant/__tests__/restaurantTransition.mapperPayloads.test.js
+
+      - name: Install migrations and run dispatcher, authority, replay, and races
+        run: node scripts/supabase/restaurant-admin-supervision-test.mjs --isolated-fixture
+
+      - name: Run transition cutoff and independent-session races
+        run: node scripts/supabase/restaurant-transition-test.mjs --isolated-fixture
+
+      - name: Publish machine-readable test evidence to the job summary
+        if: always()
+        shell: bash
+        run: |
+          for result in .tmp-sql-admin-supervision-results.json .tmp-transition-sql-results.json; do
+            if [ -f "$result" ]; then
+              printf '\n### %s\n\n```json\n' "$result" >> "$GITHUB_STEP_SUMMARY"
+              cat "$result" >> "$GITHUB_STEP_SUMMARY"
+              printf '\n```\n' >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
+
+      - name: Check repository whitespace
+        if: always()
+        run: git diff --check

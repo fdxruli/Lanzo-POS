@@ -9,7 +9,7 @@ const writeJson = (file, value) => fs.writeFileSync(file, `${JSON.stringify(valu
 
 export function normalizeFileName(fileName) {
   const normalized = String(fileName || 'unknown file').replaceAll('\\', '/');
-  const checkoutMatch = normalized.match(/\/(?:pr|main)\/(.*)$/);
+  const checkoutMatch = normalized.match(/\/(?:pr|main|base)\/(.*)$/);
   if (checkoutMatch) return checkoutMatch[1];
   const sourceIndex = normalized.indexOf('/src/');
   return sourceIndex >= 0 ? normalized.slice(sourceIndex + 1) : normalized;

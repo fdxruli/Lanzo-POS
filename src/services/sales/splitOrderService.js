@@ -959,6 +959,7 @@ export const splitOpenTableOrderCore = async ({
                 licenseKey: getLicenseKeyFromDetails(licenseDetails),
                 parentOrderId,
                 parentSale,
+                operation: 'split',
                 repository: restaurantOrdersRepositoryOverride
             });
             if (!cloudPreflight.success) return cloudPreflight;

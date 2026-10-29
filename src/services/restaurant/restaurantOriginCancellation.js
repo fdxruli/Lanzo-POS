@@ -31,7 +31,7 @@ const cancellationEvidence = (response, id) => {
 // All local cancellation callers share this gate. Free/local orders never
 // contact Cloud. Known parents, including legacy origins without parent IDs,
 // must be resolved before any local release.
-export const cancelOriginRestaurantTable = ({ orderId, actorHandle = null, cancelLocal, onCloudConfirmed = () => {} }) => {
+export const cancelOriginRestaurantTable = ({ orderId, actorHandle = null, reason = 'Mesa cancelada desde Punto de Venta', cancelLocal, onCloudConfirmed = () => {} }) => {
   const actor = actorHandle || captureRefundsActorHandle();
   actor.assertCurrent('refunds');
   const key = `${actor.tenant?.opaqueId || ''}:${orderId}`;
@@ -65,8 +65,10 @@ export const cancelOriginRestaurantTable = ({ orderId, actorHandle = null, cance
           }
           const preflight = await preflightCloudRestaurantOrderSettlement({
             licenseKey, parentOrderId: orderId, parentSale: sale, actorHandle: actor, permission: 'refunds',
+            operation: 'cancel',
             // This response was forced above, under this same refunds actor.
-            repository: { getRestaurantOrderByLocalOrder: async () => remote }
+            repository: { getRestaurantOrderByLocalOrder: async () => remote,
+              getTableCapabilities: (args) => restaurantOrdersRepository.getTableCapabilities(args) }
           });
           actor.assertCurrent('refunds');
           if (preflight.success !== true) throw failure(preflight.code, preflight.code === 'RESTAURANT_ORDER_COMMERCIAL_CONFLICT'
@@ -81,7 +83,7 @@ export const cancelOriginRestaurantTable = ({ orderId, actorHandle = null, cance
           const idempotencyKey = generateIdempotencyKey({ entityType: 'restaurant_order', operation: 'cancel', entityId: orderId, prefix: 'restaurant-pos' });
           try {
             receipt = await restaurantOrdersRepository.cancelRestaurantOrderFromPos({ licenseKey, localOrderId: orderId,
-              expectedVersion, reason: 'Mesa cancelada desde Punto de Venta', idempotencyKey, actorHandle: actor });
+              expectedVersion, reason, idempotencyKey, actorHandle: actor });
             if (!confirmed(receipt, orderId)) throw unknown();
           } catch (error) {
             actor.assertCurrent('refunds');

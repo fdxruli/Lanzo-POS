@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const runtime = vi.hoisted(() => ({
   database: null,
   failNextExecute: false,
+  failureCode: 'BATCH_ALLOCATION_INVALID',
   executeCalls: 0,
   receiptCalls: 0,
   snapshotCalls: 0,
@@ -63,8 +64,8 @@ vi.mock('../../supabase', () => ({
           runtime.failNextExecute = false;
           return {
             data: null,
-            error: Object.assign(new Error('BATCH_ALLOCATION_INVALID'), {
-              code: 'BATCH_ALLOCATION_INVALID',
+            error: Object.assign(new Error(runtime.failureCode), {
+              code: runtime.failureCode === 'RESTAURANT_CONTRACT_MAINTENANCE' ? 'P0001' : runtime.failureCode,
               isDeterministicServerResponse: true
             })
           };
@@ -258,6 +259,7 @@ beforeEach(async () => {
   await database.open();
   runtime.database = database;
   runtime.failNextExecute = true;
+  runtime.failureCode = 'BATCH_ALLOCATION_INVALID';
   runtime.executeCalls = 0;
   runtime.receiptCalls = 0;
   runtime.snapshotCalls = 0;
@@ -352,6 +354,24 @@ describe('active-order cloud retry transport', () => {
       projectionStatus: 'APPLIED',
       recoveryLeaseId: null
     });
+  });
+
+  it('TR-37 preserves the durable financial identity across SQL P0001 maintenance and recovery', async () => {
+    runtime.failureCode = 'RESTAURANT_CONTRACT_MAINTENANCE';
+    await useActiveOrders.getState().loadOrdersFromDB();
+    const checkout = checkoutTransport();
+    await expect(salesCloudCashierService.processCloudCashierSale(checkout)).rejects.toMatchObject({
+      code: 'RESTAURANT_CONTRACT_MAINTENANCE', message: expect.stringContaining('Tus datos locales se conservarán.')
+    });
+    const first = (await runtime.database.table('financial_intents').toArray())[0];
+    expect(first.status).toBe('BLOCKED');
+    expect(runtime.snapshotCalls).toBe(0);
+    await expect(salesCloudCashierService.processCloudCashierSale(checkoutTransport())).resolves.toMatchObject({ success: true });
+    const recovered = await getFinancialIntent(first.id);
+    expect(recovered).toMatchObject({ id: first.id, idempotencyKey: first.idempotencyKey, requestHash: first.requestHash, status: 'COMPLETED' });
+    expect(recovered.requestPayload).toEqual(first.requestPayload);
+    expect(await runtime.database.table('financial_intents').count()).toBe(1);
+    expect(runtime.executeCalls).toBe(2);
   });
 
   it('keeps SALE_ID, timestamp, K and H stable across a blocked retry after clock advance', async () => {

@@ -7,6 +7,7 @@ import {
   deriveSemanticFailureFromLog,
   isOpaqueFailureSignature,
   normalizeErrorSignature,
+  normalizeFileName,
 } from './pr127-global-comparison.mjs';
 
 const report = (message, status = 'failed', { name = '/home/runner/work/Lanzo-POS/pr/src/example.test.jsx', fullName = 'example assertion' } = {}) => ({
@@ -128,6 +129,17 @@ test('preserves existing path and line/column normalization', () => {
     normalizeErrorSignature('Error at /home/runner/work/Lanzo-POS/pr/src/example.test.jsx:42:9'),
   );
   assert.equal(normalizeErrorSignature('Error at helper:10:3'), 'Error at helper:<line>:<column>');
+});
+
+test('normalizes non-src paths from the immutable base checkout', () => {
+  assert.equal(
+    normalizeFileName('/home/runner/work/Lanzo-POS/Lanzo-POS/base/scripts/oss/release-boundary.test.mjs'),
+    'scripts/oss/release-boundary.test.mjs',
+  );
+  assert.equal(
+    normalizeFileName('/home/runner/work/Lanzo-POS/Lanzo-POS/base/supabase/functions/lanzo-ai-agent/index.test.ts'),
+    'supabase/functions/lanzo-ai-agent/index.test.ts',
+  );
 });
 
 test('an empty candidate-only set needs no focused semantic parsing', () => {

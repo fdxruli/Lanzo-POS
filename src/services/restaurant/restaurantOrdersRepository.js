@@ -9,6 +9,7 @@ import { preparationStationsRepository } from './preparationStationsRepository';
 import { buildRestaurantOrderPayloadFromOpenSale } from './restaurantOrderMapper';
 import { reportActorAuthorityError } from '../auth/actorAuthorityRecovery';
 import { actorRuntimeController } from '../auth/actorRuntimeController';
+import { assertRestaurantCloudContract, normalizeRestaurantCloudContract, RESTAURANT_CLIENT_CONTRACT_VERSION, RESTAURANT_UPGRADE_MESSAGE, restaurantContractError } from './restaurantCloudContract';
 
 const isOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false;
 const getAuthContextKey = () => ['sec', 'urity'].join('') + ['Tok', 'en'].join('');
@@ -17,6 +18,15 @@ const LOOKUP_ERROR_ORDER = Object.freeze({ __statusError: true, items: [] });
 const parseRpcPayload = (data) => (typeof data === 'string' ? JSON.parse(data) : data || {});
 const assertSupabase = () => { if (!supabaseClient) throw new Error('SUPABASE_NOT_CONFIGURED'); };
 const assertOnlineForMutation = () => { if (!isOnline()) throw new Error('No se pudo enviar a cocina cloud porque el dispositivo está sin conexión.'); };
+export const friendlyRestaurantMutationError = (error) => {
+  const code = `${error?.code || ''} ${error?.message || ''} ${error?.details || ''}`;
+  if (/RESTAURANT_ORDER_VERSION_CONFLICT/.test(code)) return 'La mesa recibió cambios. Actualízala antes de guardar.';
+  if (/RESTAURANT_CONTRACT_MAINTENANCE/.test(code)) return restaurantContractError('RESTAURANT_CONTRACT_MAINTENANCE').message;
+  if (/RESTAURANT_ORDER_VERSION_REQUIRED|RESTAURANT_CLIENT_UPGRADE_REQUIRED|RESTAURANT_CONTRACT_UNSUPPORTED|RESTAURANT_ADMIN_SUPERVISION_NOT_ACTIVE|PGRST202/.test(code)) return RESTAURANT_UPGRADE_MESSAGE;
+  if (/RESTAURANT_PARENT_CANCEL_CONTRACT_REQUIRED/.test(code)) return 'Cancela la mesa desde Mesas con los permisos y el motivo correspondientes.';
+  if (/RESTAURANT_TABLE_OWNER_REQUIRED|POS_PERMISSION_DENIED/.test(code)) return 'Tu usuario no tiene permiso para modificar esta mesa.';
+  return null;
+};
 const normalizeLookupResponse = (response = {}) => (response?.success === false && !response?.order ? { ...response, order: LOOKUP_ERROR_ORDER } : response);
 
 const friendlyRestaurantOrderLookupError = (error) => {
@@ -64,6 +74,7 @@ const callRpc = async (name, args, actorHandle) => {
     assertCapturedRpcActor(actorHandle);
     if (error) throw error;
     const response = parseRpcPayload(data);
+    if (response?.success === false && friendlyRestaurantMutationError(response)) throw response;
     if (response?.success === false) reportActorAuthorityError(response, { operation: name });
     return response;
   } catch (error) {
@@ -72,6 +83,12 @@ const callRpc = async (name, args, actorHandle) => {
     assertCapturedRpcActor(actorHandle);
     // Report before a lookup caller or cache boundary can translate P0001.
     // Recovery never retries the RPC or replaces its original rejection.
+    const friendly = friendlyRestaurantMutationError(error);
+    if (friendly) {
+      const semantic = `${error?.code || ''} ${error?.message || ''}`.match(/RESTAURANT_(?:CONTRACT_MAINTENANCE|CLIENT_UPGRADE_REQUIRED|CONTRACT_UNSUPPORTED|ADMIN_SUPERVISION_NOT_ACTIVE|ORDER_VERSION_CONFLICT|ORDER_VERSION_REQUIRED)/)?.[0];
+      throw Object.assign(new Error(friendly), { code: semantic || error?.code, cause: error,
+        ...(semantic && /CONTRACT_|UPGRADE|SUPERVISION/.test(semantic) ? { restaurantContractError: true } : {}) });
+    }
     reportActorAuthorityError(error, { operation: name });
     throw error;
   }
@@ -79,12 +96,47 @@ const callRpc = async (name, args, actorHandle) => {
 const cachedRestaurantOrdersRpc = ({ rpcName, licenseKey, baseArgs, params = {}, force = false, fn }) => cloudRequestManager.request({ rpcName, key: buildRpcRequestKey(rpcName, { ...buildBaseRpcContextFromArgs(licenseKey, baseArgs), params }), ttlMs: CLOUD_REQUEST_TTL.VERY_SHORT, cooldownMs: CLOUD_REQUEST_COOLDOWN.VERY_SHORT, force, tags: [CLOUD_REQUEST_TAGS.RESTAURANT, CLOUD_REQUEST_TAGS.SALES, cloudRequestTags.license(licenseKey), cloudRequestTags.rpc(rpcName)], fn });
 const normalizeLimit = (limit = 100) => Math.min(Math.max(Number(limit) || 100, 1), 300);
 const getProductsById = async () => { try { const products = await loadData(STORES.MENU); return new Map((Array.isArray(products) ? products : []).filter((product) => product?.id).map((product) => [product.id, product])); } catch (error) { Logger.warn('[RestaurantOrders] No se pudo cargar catalogo local para resolver estaciones:', error); return new Map(); } };
+const discoverContract = async (args, actorHandle) => {
+  try {
+    const response = await callRpc('pos_restaurant_cloud_contract_v1', args, actorHandle);
+    if (response?.success === false) throw response;
+    return normalizeRestaurantCloudContract(response);
+  } catch (error) {
+    assertCapturedRpcActor(actorHandle);
+    // Absence is a known old backend. Network/auth/actor failures are never
+    // evidence of an old supported contract, and never authorize a fallback.
+    if (error?.code === 'PGRST202' || error?.cause?.code === 'PGRST202') return normalizeRestaurantCloudContract(null);
+    throw error;
+  }
+};
 
 export const restaurantOrdersRepository = {
+  async getCloudContract({ licenseKey, actorHandle: caller = null } = {}) {
+    caller?.assertCurrent();
+    assertOnlineForMutation();
+    const { args, actorHandle } = await buildBaseRpcArgs(licenseKey);
+    caller?.assertCurrent();
+    const contract = await discoverContract(args, actorHandle);
+    caller?.assertCurrent();
+    return contract;
+  },
+  async getTableCapabilities({ licenseKey, localOrderId, actorHandle: caller }) {
+    caller?.assertCurrent();
+    const { args, actorHandle } = await buildBaseRpcArgs(licenseKey);
+    caller?.assertCurrent();
+    assertRestaurantCloudContract(await discoverContract(args, actorHandle));
+    const response = await callRpc('pos_restaurant_transition_table_capabilities_v1', {
+      ...args, p_local_order_id: localOrderId
+    }, actorHandle);
+    caller?.assertCurrent();
+    return response;
+  },
   async cancelRestaurantOrderFromPos({ licenseKey, localOrderId, expectedVersion, reason, idempotencyKey, actorHandle: refundsActor }) {
     refundsActor.assertCurrent('refunds');
     assertOnlineForMutation();
     const { args, actorHandle } = await buildBaseRpcArgs(licenseKey);
+    refundsActor.assertCurrent('refunds');
+    assertRestaurantCloudContract(await discoverContract(args, actorHandle), { mutation: true });
     refundsActor.assertCurrent('refunds');
     const response = await callRpc('pos_cancel_restaurant_order_from_pos_v1', { ...args,
       p_local_order_id: localOrderId, p_expected_parent_version: expectedVersion,
@@ -93,12 +145,19 @@ export const restaurantOrdersRepository = {
     if (response?.success === true) invalidateCloudCacheAfterRestaurantOrderMutation(licenseKey);
     return response;
   },
-  async upsertRestaurantOrder({ licenseKey, order, items = [], idempotencyKey = null }) {
+  async upsertRestaurantOrder({ licenseKey, order, items = [], idempotencyKey = null, actorHandle: caller = null }) {
+    caller?.assertCurrent('pos');
     if (!licenseKey) throw new Error('LICENSE_KEY_REQUIRED');
     assertOnlineForMutation();
     const resolvedIdempotencyKey = idempotencyKey || generateIdempotencyKey({ entityType: SYNC_ENTITY_TYPES.RESTAURANT_ORDER, operation: SYNC_OPERATIONS.UPSERT, entityId: order?.localOrderId || order?.saleId || order?.id || 'new', prefix: 'restaurant' });
     const { args: baseArgs, actorHandle } = await buildBaseRpcArgs(licenseKey);
-    const response = await callRpc('pos_upsert_restaurant_order', { ...baseArgs, p_order: order || {}, p_items: Array.isArray(items) ? items : [], p_idempotency_key: resolvedIdempotencyKey }, actorHandle);
+    caller?.assertCurrent('pos');
+    assertRestaurantCloudContract(await discoverContract(baseArgs, actorHandle), { mutation: true });
+    caller?.assertCurrent('pos');
+    const response = await callRpc('pos_upsert_restaurant_order_versioned_v1', { ...baseArgs,
+      p_order: { ...order, clientContractVersion: RESTAURANT_CLIENT_CONTRACT_VERSION },
+      p_items: Array.isArray(items) ? items : [], p_idempotency_key: resolvedIdempotencyKey }, actorHandle);
+    caller?.assertCurrent('pos');
     if (response?.success !== false) invalidateCloudCacheAfterRestaurantOrderMutation(licenseKey);
     return response;
   },
@@ -128,6 +187,8 @@ export const restaurantOrdersRepository = {
   async updateRestaurantOrderStatus({ licenseKey, restaurantOrderId, status, idempotencyKey = null }) {
     if (!licenseKey) throw new Error('LICENSE_KEY_REQUIRED');
     if (!restaurantOrderId) throw new Error('RESTAURANT_ORDER_ID_REQUIRED');
+    if (String(status).trim().toLowerCase() === 'cancelled') throw Object.assign(
+      new Error('Cancela la mesa desde Mesas con los permisos y el motivo correspondientes.'), { code: 'RESTAURANT_PARENT_CANCEL_CONTRACT_REQUIRED' });
     assertOnlineForMutation();
     const resolvedIdempotencyKey = idempotencyKey || generateIdempotencyKey({ entityType: SYNC_ENTITY_TYPES.RESTAURANT_ORDER, operation: SYNC_OPERATIONS.STATUS_UPDATE, entityId: restaurantOrderId, prefix: 'restaurant' });
     const { args: baseArgs, actorHandle } = await buildBaseRpcArgs(licenseKey);
@@ -166,9 +227,12 @@ export const restaurantOrdersRepository = {
   },
   async upsertRestaurantOrderFromLocalSale({ licenseKey, sale, idempotencyKey = null }) {
     if (!sale?.id) throw new Error('RESTAURANT_ORDER_SALE_REQUIRED');
+    const caller = actorRuntimeController.capture();
+    caller.assertCurrent('pos');
     const [stationsResult, productsById] = await Promise.all([preparationStationsRepository.getPreparationStations({ licenseKey, includeInactive: false, force: false, useCloud: Boolean(licenseKey) }), getProductsById()]);
+    caller.assertCurrent('pos');
     const payload = buildRestaurantOrderPayloadFromOpenSale({ sale, stations: stationsResult?.stations || [], productsById });
-    return this.upsertRestaurantOrder({ licenseKey, order: payload.order, items: payload.items, idempotencyKey });
+    return this.upsertRestaurantOrder({ licenseKey, order: payload.order, items: payload.items, idempotencyKey, actorHandle: caller });
   }
 };
 

@@ -30,6 +30,16 @@ let state = {
   reloadDeferred: false,
 };
 
+// The POS installs a synchronous guard after bootstrap. Keep this startup
+// module independent of business stores; absence/exception is fail-closed.
+export function setAdminServiceWorkerReloadGuard(guard) {
+  reloadGuard = typeof guard === 'function' ? guard : null;
+}
+
+function canReloadNow() {
+  try { return reloadGuard?.() === true; } catch { return false; }
+}
+
 const publish = (patch) => {
   state = { ...state, ...patch };
   listeners.forEach((listener) => listener({ ...state }));
@@ -41,18 +51,6 @@ export function subscribeAdminServiceWorker(listener) {
   listeners.add(listener);
   return () => listeners.delete(listener);
 }
-
-export function setAdminServiceWorkerReloadGuard(guard) {
-  reloadGuard = typeof guard === 'function' ? guard : null;
-}
-
-const canReloadNow = () => {
-  try {
-    return reloadGuard?.() === true;
-  } catch {
-    return false;
-  }
-};
 
 function clearActivationTimer() {
   if (activationTimeout === null || activationTimeout === undefined || !windowRef) return;

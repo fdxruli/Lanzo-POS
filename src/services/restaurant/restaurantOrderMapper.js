@@ -90,6 +90,10 @@ export const buildRestaurantOrderPayloadFromOpenSale = ({
   const order = {
     localOrderId: sale.id,
     saleId: sale.id,
+    // Preserve the exact Cloud timestamp (including sub-millisecond precision).
+    // Device updatedAt and Date.now() are never parent-version substitutes.
+    expectedParentVersion: sale.cloudRestaurantOrderUpdatedAt || sale.restaurantCloudExpectedVersion || null,
+    interventionReason: sale.restaurantInterventionReason || null,
     tableLabel: normalizeText(sale.tableData, null),
     customerId: normalizeText(sale.customerId || sale.customer?.id, null),
     customerName: normalizeText(sale.customerName || sale.customer?.name, null),

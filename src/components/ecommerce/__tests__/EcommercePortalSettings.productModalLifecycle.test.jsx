@@ -379,7 +379,7 @@ describe('EcommercePortalSettings + EcommerceProductPublishModal catalog lifecyc
     await openPublishModal();
     expect(screen.getByPlaceholderText('Buscar por nombre, código o SKU').value).toBe('');
     expect(getProductSelect().value).toBe('');
-    await waitFor(() => expect(productRepository.listProductsPage).toHaveBeenCalledTimes(3));
+    await waitForCatalogRequest('', null, 3);
     await screen.findByRole('option', { name: /Producto Dos/ });
     expect(screen.queryByRole('option', { name: /Producto Uno/ })).toBeNull();
     expect(screen.queryByDisplayValue(productOne.name)).toBeNull();
