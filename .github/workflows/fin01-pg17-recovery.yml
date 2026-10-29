@@ -46,9 +46,9 @@ jobs:
           test "${GITHUB_REF}" = "refs/heads/lab/fin01-pg17-recovery-20261029"
           test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
           test "$(git rev-parse "${FIN01_MAIN_SHA}^{tree}")" = "6e5e6f1c77a55cec4cafee016cbe277aab89bf30"
-          test "$(git rev-parse '${FIN01_CANDIDATE_COMMIT}^')" = "${FIN01_MAIN_SHA}"
+          test "$(git rev-parse "${FIN01_CANDIDATE_COMMIT}^")" = "${FIN01_MAIN_SHA}"
           test "$(git rev-parse "${FIN01_CANDIDATE_COMMIT}^{tree}")" = "a04237a9e7e0a07b52a3c2247b8affff94f30a32"
-          test "$(git rev-parse '${FIN01_WORKFLOW_COMMIT}^')" = "${FIN01_CANDIDATE_COMMIT}"
+          test "$(git rev-parse "${FIN01_WORKFLOW_COMMIT}^")" = "${FIN01_CANDIDATE_COMMIT}"
           test "$(git rev-parse "${FIN01_WORKFLOW_COMMIT}^{tree}")" = "19a3525723449fb5764f075c3d18ab92ff34c165"
           git merge-base --is-ancestor "${FIN01_WORKFLOW_COMMIT}" HEAD
           test "$(sha256sum scripts/fin01/fin01-pay-n01-candidate.sql | cut -d ' ' -f 1)" = "de269931a034e9df25ff50ed321f6ab6a0cc23e93fe37f0255c64ed3e780b804"
@@ -67,7 +67,9 @@ jobs:
         if: always()
         env:
           PG_CONTAINER_ID: ${{ job.services.postgres.id }}
-        run: docker logs "${PG_CONTAINER_ID}" > artifacts/fin01/logs/postgres.log 2>&1 || true
+        run: |
+          mkdir -p artifacts/fin01/logs
+          docker logs "${PG_CONTAINER_ID}" > artifacts/fin01/logs/postgres.log 2>&1 || true
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
@@ -111,11 +113,11 @@ jobs:
           set -euo pipefail
           test "${GITHUB_REF}" = "refs/heads/lab/fin01-pg17-recovery-20261029"
           test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
-          test "$(git rev-parse '${FIN01_MAIN_SHA}^{tree}')" = "6e5e6f1c77a55cec4cafee016cbe277aab89bf30"
-          test "$(git rev-parse '${FIN01_CANDIDATE_COMMIT}^')" = "${FIN01_MAIN_SHA}"
-          test "$(git rev-parse '${FIN01_CANDIDATE_COMMIT}^{tree}')" = "a04237a9e7e0a07b52a3c2247b8affff94f30a32"
-          test "$(git rev-parse '${FIN01_WORKFLOW_COMMIT}^')" = "${FIN01_CANDIDATE_COMMIT}"
-          test "$(git rev-parse '${FIN01_WORKFLOW_COMMIT}^{tree}')" = "19a3525723449fb5764f075c3d18ab92ff34c165"
+          test "$(git rev-parse "${FIN01_MAIN_SHA}^{tree}")" = "6e5e6f1c77a55cec4cafee016cbe277aab89bf30"
+          test "$(git rev-parse "${FIN01_CANDIDATE_COMMIT}^")" = "${FIN01_MAIN_SHA}"
+          test "$(git rev-parse "${FIN01_CANDIDATE_COMMIT}^{tree}")" = "a04237a9e7e0a07b52a3c2247b8affff94f30a32"
+          test "$(git rev-parse "${FIN01_WORKFLOW_COMMIT}^")" = "${FIN01_CANDIDATE_COMMIT}"
+          test "$(git rev-parse "${FIN01_WORKFLOW_COMMIT}^{tree}")" = "19a3525723449fb5764f075c3d18ab92ff34c165"
           git merge-base --is-ancestor "${FIN01_WORKFLOW_COMMIT}" HEAD
           test "$(sha256sum scripts/fin01/fin01-pay-n01-candidate.sql | cut -d ' ' -f 1)" = "de269931a034e9df25ff50ed321f6ab6a0cc23e93fe37f0255c64ed3e780b804"
       - name: Prepare disposable synthetic PostgreSQL fixture
@@ -139,7 +141,9 @@ jobs:
         if: always()
         env:
           PG_CONTAINER_ID: ${{ job.services.postgres.id }}
-        run: docker logs "${PG_CONTAINER_ID}" > artifacts/fin01/logs/postgres.log 2>&1 || true
+        run: |
+          mkdir -p artifacts/fin01/logs
+          docker logs "${PG_CONTAINER_ID}" > artifacts/fin01/logs/postgres.log 2>&1 || true
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
@@ -183,11 +187,11 @@ jobs:
           set -euo pipefail
           test "${GITHUB_REF}" = "refs/heads/lab/fin01-pg17-recovery-20261029"
           test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
-          test "$(git rev-parse '${FIN01_MAIN_SHA}^{tree}')" = "6e5e6f1c77a55cec4cafee016cbe277aab89bf30"
-          test "$(git rev-parse '${FIN01_CANDIDATE_COMMIT}^')" = "${FIN01_MAIN_SHA}"
-          test "$(git rev-parse '${FIN01_CANDIDATE_COMMIT}^{tree}')" = "a04237a9e7e0a07b52a3c2247b8affff94f30a32"
-          test "$(git rev-parse '${FIN01_WORKFLOW_COMMIT}^')" = "${FIN01_CANDIDATE_COMMIT}"
-          test "$(git rev-parse '${FIN01_WORKFLOW_COMMIT}^{tree}')" = "19a3525723449fb5764f075c3d18ab92ff34c165"
+          test "$(git rev-parse "${FIN01_MAIN_SHA}^{tree}")" = "6e5e6f1c77a55cec4cafee016cbe277aab89bf30"
+          test "$(git rev-parse "${FIN01_CANDIDATE_COMMIT}^")" = "${FIN01_MAIN_SHA}"
+          test "$(git rev-parse "${FIN01_CANDIDATE_COMMIT}^{tree}")" = "a04237a9e7e0a07b52a3c2247b8affff94f30a32"
+          test "$(git rev-parse "${FIN01_WORKFLOW_COMMIT}^")" = "${FIN01_CANDIDATE_COMMIT}"
+          test "$(git rev-parse "${FIN01_WORKFLOW_COMMIT}^{tree}")" = "19a3525723449fb5764f075c3d18ab92ff34c165"
           git merge-base --is-ancestor "${FIN01_WORKFLOW_COMMIT}" HEAD
           test "$(sha256sum scripts/fin01/fin01-pay-n01-candidate.sql | cut -d ' ' -f 1)" = "de269931a034e9df25ff50ed321f6ab6a0cc23e93fe37f0255c64ed3e780b804"
       - name: Prepare disposable synthetic PostgreSQL fixture
@@ -211,7 +215,9 @@ jobs:
         if: always()
         env:
           PG_CONTAINER_ID: ${{ job.services.postgres.id }}
-        run: docker logs "${PG_CONTAINER_ID}" > artifacts/fin01/logs/postgres.log 2>&1 || true
+        run: |
+          mkdir -p artifacts/fin01/logs
+          docker logs "${PG_CONTAINER_ID}" > artifacts/fin01/logs/postgres.log 2>&1 || true
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
