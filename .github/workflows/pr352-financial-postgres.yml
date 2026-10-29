@@ -2,7 +2,8 @@ name: PR 352 Financial SQL Validation
 
 on:
   pull_request:
-    branches: [feat/restaurant-split-flexible-payments-r1]
+    types: [opened, synchronize, reopened, edited, ready_for_review]
+    branches: [main]
     paths:
       - 'supabase/migrations/20261010013257_restaurant_cloud_transition_bridge_v1.sql'
       - 'supabase/migrations/20261010013258_restaurant_admin_supervision_r1.sql'

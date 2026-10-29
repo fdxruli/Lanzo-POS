@@ -6,6 +6,7 @@ const bridge = readFileSync('supabase/migrations/20261010013257_restaurant_cloud
 const supervision = readFileSync('supabase/migrations/20261010013258_restaurant_admin_supervision_r1.sql', 'utf8');
 const historical3d14 = readFileSync('supabase/migrations/20261026214837_restaurant_sale_dispatcher_guard_3d14.sql', 'utf8');
 const fixture = readFileSync('supabase/tests/fixtures/pr352_financial_dispatcher_context.sql', 'utf8');
+const workflow = readFileSync('.github/workflows/pr352-financial-postgres.yml', 'utf8');
 
 function section(source, start, end) {
   const searchable = source.toLowerCase();
@@ -99,4 +100,14 @@ test('3D.14 fixture overlay adds the missing guard columns without editing histo
   }
   assert.match(fixture, /drop table public\.pos_sales;[\s\S]*?create table public\.pos_sales/i);
   assert.match(fixture, /unique index pr352_financial_operations_key/i);
+});
+
+test('PostgreSQL CI targets PR352 on main and runs when the PR is retargeted', () => {
+  const pullRequest = section(workflow, 'pull_request:', 'permissions:');
+  assert.match(pullRequest, /types:\s*\[[^\]]*\bedited\b[^\]]*\]/i);
+  assert.match(pullRequest, /branches:\s*\[main\]/i);
+  assert.match(workflow, /if:\s*github\.event\.pull_request\.number\s*==\s*352/);
+  assert.match(workflow, /image:\s*postgres:17\.11-bookworm/);
+  assert.match(workflow, /permissions:\s*\r?\n\s+contents:\s*read/i);
+  assert.doesNotMatch(workflow, /secrets\.|supabase db (?:push|reset)|vercel deploy/i);
 });
