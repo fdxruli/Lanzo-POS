@@ -376,7 +376,9 @@ test('safe projections preserve the client contract and permitted effects', () =
   assert.match(layawayDb, /payment\.payment_method/u);
   assert.match(layawayDb, /cash_movement_id/u);
   assert.match(localRepository, /item\.sale_id/u);
-  assert.match(localRepository, /payment\.sale_id/u);
+  assert.match(localRepository, /payment\?\.sale_id\s*===\s*sale\.id\s*\|\|\s*payment\?\.saleId\s*===\s*sale\.id/u);
+  assert.match(localRepository, /!\(payment\?\.sale_id\s*\|\|\s*payment\?\.saleId\)\s*&&\s*sales\.length\s*===\s*1\s*&&\s*response\.sale\?\.id\s*===\s*sale\.id/u);
+  assert.match(localRepository, /normalizeCloudSalePaymentRows\(payments\.filter/u);
 
   for (const field of [
     "'sale_id'", "'inventory_movement_id'", "'cash_movement_id'", "'payment_id'",
