@@ -16,6 +16,8 @@ on:
       - 'scripts/supabase/restaurant-admin-supervision-test.mjs'
       - 'scripts/supabase/restaurant-transition-test.mjs'
       - 'scripts/supabase/restaurant-pr352-financial-contract.node-test.mjs'
+      - 'scripts/supabase/psql-session.mjs'
+      - 'scripts/supabase/psql-session.node-test.mjs'
       - 'scripts/supabase/restaurant-atomic-settlement-3d1.node-test.mjs'
       - 'scripts/supabase/restaurant-split-payment-contract-r1.node-test.mjs'
       - 'scripts/ci/restaurant-transition-workflows.node-test.mjs'
@@ -107,6 +109,7 @@ jobs:
         run: >-
           node --test
           scripts/supabase/restaurant-pr352-financial-contract.node-test.mjs
+          scripts/supabase/psql-session.node-test.mjs
           scripts/supabase/restaurant-atomic-settlement-3d1.node-test.mjs
           scripts/supabase/restaurant-split-payment-contract-r1.node-test.mjs
           scripts/ci/restaurant-transition-workflows.node-test.mjs

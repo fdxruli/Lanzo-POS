@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { closePsqlSession, openPsqlSession } from './psql-session.mjs';
 
 // Destructive setup is restricted to the named disposable loopback database.
 // Never run against Supabase or an application database. Auth/rate and financial
@@ -13,12 +14,24 @@ assert.equal(process.env.PGDATABASE, 'lanzo_admin_supervision_fixture');
 assert.ok(process.env.PGPORT && process.env.PSQL_BIN);
 const args = ['-X','-h','127.0.0.1','-p',process.env.PGPORT,'-U',process.env.PGUSER || 'postgres',
   '-d',process.env.PGDATABASE,'-q','-t','-A','-v','ON_ERROR_STOP=1','-v','VERBOSITY=verbose'];
+const PSQL_SESSION_TIMEOUT_MS = 30_000;
+const OBSERVATION_TIMEOUT_MS = 10_000;
+const POLL_INTERVAL_MS = 25;
 const execute = query => {
   writeFileSync('.tmp-transition-query.sql', query);
-  return spawnSync(process.env.PSQL_BIN, [...args, '-f', '.tmp-transition-query.sql'], { encoding: 'utf8', windowsHide: true });
+  return spawnSync(process.env.PSQL_BIN, [...args, '-f', '.tmp-transition-query.sql'], {
+    encoding: 'utf8', windowsHide: true, timeout: PSQL_SESSION_TIMEOUT_MS, maxBuffer: 10 * 1024 * 1024
+  });
 };
-const sql = query => { const r = execute(query); assert.equal(r.status, 0, r.stderr); return r.stdout.trim(); };
-const denied = (query, code) => { const r = execute(query); assert.notEqual(r.status, 0, r.stdout); assert.match(r.stderr, new RegExp(code)); return r; };
+const sql = query => { const r = execute(query); assert.equal(r.status, 0, `${r.stderr || ''}${r.error ? `\n${r.error.message}` : ''}`); return r.stdout.trim(); };
+const denied = (query, code) => {
+  const r=execute(query);
+  assert.equal(r.error,undefined,`${r.error?.message || ''}\n${r.stderr || ''}`);
+  assert.ok(r.status!==null&&r.status!==undefined,`${r.stdout || ''}${r.stderr || ''}`);
+  assert.notEqual(r.status,0,`${r.stdout || ''}${r.stderr || ''}`);
+  assert.match(r.stderr,new RegExp(code));
+  return r;
+};
 assert.equal(sql('select current_database()'), process.env.PGDATABASE);
 assert.equal(sql('select inet_server_port()'), process.env.PGPORT);
 if (process.env.PR352_FIXTURE_MODE === 'github-actions-postgres-service') {
@@ -85,6 +98,7 @@ const financial = (id, expected, operation = 'cashier', key = `${id}-payment`, a
 };
 const results = { provenance, payloadHash: createHash('sha256').update(source).digest('hex'), matrix: [], races: [],
   limitations: 'REAL_POSTGRES_CONTROLLED_AUTH_RATE_FINANCIAL_LEAVES; NOT_INTEGRATED_AUTH_REALTIME_CASH_INVENTORY_QA' };
+const persistTransitionEvidence = () => writeFileSync('.tmp-transition-sql-results.json',JSON.stringify(results,null,2));
 
 // SQL current: the old mapper really creates and updates without a parent token.
 seed('matrix-historical');
@@ -112,41 +126,123 @@ assert.equal(caps(old.local_order_id, 'admin').capabilities.canAdministerTable, 
 results.matrix.push({ frontend: 'Production', backend: 'bridge', result: 'ORIGIN_CREATE_UPDATE_PASS_ADMIN_OFF_UNSAFE_IDS_OWNERSHIP_CANCEL_DENIED' },
   { frontend: 'transition', backend: 'bridge', result: 'VERSIONED_CREATE_UPDATE_AUTHORITY_DISCOVERY_PASS' });
 
-const openSession = name => {
-  const child = spawn(process.env.PSQL_BIN, args, { env: { ...process.env, PGAPPNAME: name }, windowsHide: true });
-  let output = ''; child.stdout.on('data', x => { output += x; }); child.stderr.on('data', x => { output += x; });
-  return { child, done: new Promise(resolve => child.on('exit', code => resolve({ code, output }))) };
+const openSession = name => openPsqlSession({ command:process.env.PSQL_BIN,args,applicationName:name,
+  timeoutMs:PSQL_SESSION_TIMEOUT_MS });
+const quoteSql = value => "'"+String(value).replaceAll("'","''")+"'";
+const activity = name => JSON.parse(sql(`select coalesce(json_agg(json_build_object(
+  'pid',a.pid,'state',a.state,'wait_event_type',a.wait_event_type,'wait_event',a.wait_event,
+  'query_excerpt',left(a.query,500),'query_length',length(a.query),
+  'locks',coalesce((select json_agg(json_build_object('locktype',l.locktype,'mode',l.mode,
+    'granted',l.granted,'classid',l.classid,'objid',l.objid,'objsubid',l.objsubid))
+    from pg_locks l where l.pid=a.pid),'[]'::json)
+)),'[]'::json)::text from pg_stat_activity a where a.application_name=${quoteSql(name)}`));
+const delay = ms => new Promise(resolve=>setTimeout(resolve,ms));
+const waitForActivity = async (name,predicate,label,timeoutMs=OBSERVATION_TIMEOUT_MS) => {
+  const deadline=Date.now()+timeoutMs; let snapshot=[];
+  do {
+    snapshot=activity(name);
+    if(predicate(snapshot)) return snapshot;
+    if(Date.now()>=deadline) break;
+    await delay(POLL_INTERVAL_MS);
+  } while(Date.now()<=deadline);
+  assert.fail(`${label}: expected PostgreSQL session state was not observed within ${timeoutMs}ms; last pg_stat_activity/pg_locks snapshot=${JSON.stringify(snapshot)}`);
 };
-const waitFor = async query => {
-  for (let i = 0; i < 80; i++) { if (sql(query) === 't') return; await new Promise(resolve => setTimeout(resolve, 25)); }
-  assert.fail('Observed lock barrier was not reached');
+const hasSharedTransitionLock = rows => rows.some(row => row.locks.some(lock=>lock.locktype==='advisory'&&lock.granted&&
+  lock.mode==='ShareLock'&&lock.objsubid===1));
+const hasParentSettlementLock = rows => rows.some(row => row.locks.some(lock=>lock.locktype==='advisory'&&lock.granted&&
+  lock.mode==='ExclusiveLock'&&lock.objsubid===2));
+const waitsForAdvisoryLock = (rows,mode,objsubid) => rows.some(row=>row.wait_event_type==='Lock'&&row.locks.some(lock=>
+  lock.locktype==='advisory'&&!lock.granted&&lock.mode===mode&&lock.objsubid===objsubid));
+const assertSuccessfulSession = (result,label) => {
+  assert.ok(result,`${label}: no process result`);
+  assert.equal(result.timedOut,false,`${label}: ${result.output}`);
+  assert.equal(result.spawnError,null,`${label}: ${result.output}`);
+  assert.equal(result.inputError,null,`${label}: ${result.output}`);
+  assert.equal(result.code,0,`${label}: ${result.output}`);
 };
-const blocked = name => `select exists(select 1 from pg_stat_activity where application_name='${name}' and wait_event_type='Lock')`;
-const idle = name => `select exists(select 1 from pg_stat_activity where application_name='${name}' and state='idle in transaction')`;
+const assertNoSessions = (...names) => {
+  for(const name of names) assert.equal(sql(`select count(*) from pg_stat_activity where application_name=${quoteSql(name)}`),'0',
+    `psql session ${name} remained connected after its scenario`);
+};
+const sqlState = output => output.match(/ERROR:\s+([0-9A-Z]{5}):/i)?.[1] ?? null;
 // R1: an actual old writer commits before the exclusive, atomic strict DDL.
 seed('transition-cutover');
-const before = openSession('transition-old-before-cutover');
-before.child.stdin.write(`begin; ${upsert('production', 'transition-cutover', null, 'staff-a', 'A', 'cutover-old')};\n`);
-await waitFor(idle('transition-old-before-cutover'));
-const ddl = openSession('transition-strict-ddl');
-ddl.child.stdin.end('BEGIN;' + readFileSync('supabase/migrations/20261010013258_restaurant_admin_supervision_r1.sql', 'utf8') + 'COMMIT;\n');
-await waitFor(blocked('transition-strict-ddl'));
-const queuedOld = openSession('transition-old-queued-across-ddl');
-queuedOld.child.stdin.end(upsert('production', 'transition-cutover', null, 'staff-a', 'A', 'old-queued-cutover') + ';\n');
-await waitFor(blocked('transition-old-queued-across-ddl'));
-const forgedOld = openSession('transition-forged-contract-queued-across-ddl');
-forgedOld.child.stdin.end(upsert('production', 'transition-cutover', null, 'staff-a', 'A', 'forged-queued-cutover', {
-  localOrderId: null, local_order_id: 'transition-cutover', clientContractVersion: 2
-}) + ';\n');
-await waitFor(blocked('transition-forged-contract-queued-across-ddl'));
-before.child.stdin.end('commit;\n');
-for (const r of await Promise.all([before.done, ddl.done])) assert.equal(r.code, 0, r.output);
-const obsoleteFrame = await queuedOld.done;
-assert.notEqual(obsoleteFrame.code, 0, obsoleteFrame.output);
-assert.match(obsoleteFrame.output, /RESTAURANT_CLIENT_UPGRADE_REQUIRED/);
-const forgedFrame = await forgedOld.done;
-assert.notEqual(forgedFrame.code, 0, forgedFrame.output);
-assert.match(forgedFrame.output, /RESTAURANT_ORDER_VERSION_REQUIRED/);
+const beforeName='transition-old-before-cutover';
+const ddlName='transition-strict-ddl';
+const queuedOldName='transition-old-queued-across-ddl';
+const forgedOldName='transition-forged-contract-queued-across-ddl';
+const before=openSession(beforeName); let ddl=null; let queuedOld=null; let forgedOld=null;
+const beforeQuery=`begin; ${upsert('production', 'transition-cutover', null, 'staff-a', 'A', 'cutover-old')};\n`;
+const ddlSourcePath='supabase/migrations/20261010013258_restaurant_admin_supervision_r1.sql';
+const ddlMigration=readFileSync(ddlSourcePath,'utf8');
+const ddlMigrationSha256=createHash('sha256').update(ddlMigration).digest('hex');
+const ddlQuery='BEGIN;'+ddlMigration+'COMMIT;\n';
+const queuedOldQuery=upsert('production','transition-cutover',null,'staff-a','A','old-queued-cutover')+';\n';
+const forgedOldQuery=upsert('production','transition-cutover',null,'staff-a','A','forged-queued-cutover',{
+  localOrderId:null,local_order_id:'transition-cutover',clientContractVersion:2
+})+';\n';
+let ddlInput=null; let queuedInput=null; let forgedInput=null;
+let beforeLockSnapshot=[]; let ddlWaitSnapshot=[]; let queuedWaitSnapshot=[]; let forgedWaitSnapshot=[];
+let beforeResult=null; let ddlResult=null; let obsoleteFrame=null; let forgedFrame=null;
+let ddlWaitObservedAfterMs=null; let queuedWaitObservedAfterMs=null; let forgedWaitObservedAfterMs=null;
+try {
+  await before.write(beforeQuery);
+  beforeLockSnapshot=await waitForActivity(beforeName,
+    rows=>rows.some(row=>row.state==='idle in transaction')&&hasSharedTransitionLock(rows),
+    'pre-cutover old writer must hold its shared admission lock in a transaction');
+  ddl=openSession(ddlName);
+  const ddlSubmittedAt=performance.now();
+  ddlInput=ddl.end(ddlQuery).then(()=>null,error=>error);
+  ddlWaitSnapshot=await waitForActivity(ddlName,
+    rows=>waitsForAdvisoryLock(rows,'ExclusiveLock',1),
+    'strict DDL must queue behind the pre-cutover writer');
+  ddlWaitObservedAfterMs=Math.round(performance.now()-ddlSubmittedAt);
+  queuedOld=openSession(queuedOldName);
+  const queuedSubmittedAt=performance.now();
+  queuedInput=queuedOld.end(queuedOldQuery).then(()=>null,error=>error);
+  queuedWaitSnapshot=await waitForActivity(queuedOldName,
+    rows=>waitsForAdvisoryLock(rows,'ShareLock',1),
+    'queued old client must reach the cutover barrier');
+  queuedWaitObservedAfterMs=Math.round(performance.now()-queuedSubmittedAt);
+  forgedOld=openSession(forgedOldName);
+  const forgedSubmittedAt=performance.now();
+  forgedInput=forgedOld.end(forgedOldQuery).then(()=>null,error=>error);
+  forgedWaitSnapshot=await waitForActivity(forgedOldName,
+    rows=>waitsForAdvisoryLock(rows,'ShareLock',1),
+    'queued forged old client must reach the cutover barrier');
+  forgedWaitObservedAfterMs=Math.round(performance.now()-forgedSubmittedAt);
+  assert.ok(activity(beforeName).some(row=>row.state==='idle in transaction'&&hasSharedTransitionLock([row])),
+    'old writer must still hold admission before release');
+  await before.end('commit;\n');
+  beforeResult=await before.done;
+  assertSuccessfulSession(beforeResult,'pre-cutover writer commit');
+  [ddlResult,obsoleteFrame,forgedFrame]=await Promise.all([ddl.done,queuedOld.done,forgedOld.done]);
+  for(const [label,result] of [['strict DDL',ddlResult],['queued old client',obsoleteFrame],['queued forged client',forgedFrame]]) {
+    assert.ok(result,`${label}: no process result`);
+    assert.equal(result.timedOut,false,`${label}: ${result.output}`);
+    assert.equal(result.spawnError,null,`${label}: ${result.output}`);
+    assert.equal(result.inputError,null,`${label}: ${result.output}`);
+  }
+  assert.equal(await ddlInput,null,'strict DDL stdin failed before PostgreSQL consumed the migration');
+  assert.equal(await queuedInput,null,'queued old client stdin failed');
+  assert.equal(await forgedInput,null,'queued forged client stdin failed');
+  assert.equal(ddl.stdinFinished,true,'strict DDL SQL stdin did not finish');
+  assert.equal(queuedOld.stdinFinished,true,'queued old client SQL stdin did not finish');
+  assert.equal(forgedOld.stdinFinished,true,'queued forged client SQL stdin did not finish');
+  assert.equal(ddlResult.code,0,ddlResult.output);
+  assert.notEqual(obsoleteFrame.code,0,obsoleteFrame.output);
+  assert.equal(sqlState(obsoleteFrame.output),'P0001',obsoleteFrame.output);
+  assert.match(obsoleteFrame.output,/RESTAURANT_CLIENT_UPGRADE_REQUIRED/);
+  assert.notEqual(forgedFrame.code,0,forgedFrame.output);
+  assert.equal(sqlState(forgedFrame.output),'P0001',forgedFrame.output);
+  assert.match(forgedFrame.output,/RESTAURANT_ORDER_VERSION_REQUIRED/);
+  assertNoSessions(beforeName,ddlName,queuedOldName,forgedOldName);
+} finally {
+  if(!before.closed) await closePsqlSession(before,{input:'ROLLBACK;\n'});
+  if(ddl&&!ddl.closed) await closePsqlSession(ddl,{input:null});
+  if(queuedOld&&!queuedOld.closed) await closePsqlSession(queuedOld,{input:null});
+  if(forgedOld&&!forgedOld.closed) await closePsqlSession(forgedOld,{input:null});
+}
 assert.equal(contract().contractVersion, 2); assert.equal(contract().legacyWritesAllowed, false);
 denied(upsert('production', 'transition-cutover', null, 'staff-a', 'A', 'old-after-cutover'), 'RESTAURANT_CLIENT_UPGRADE_REQUIRED');
 const strict = parent('transition-cutover');
@@ -156,7 +252,17 @@ denied(cancel('matrix-historical', parent('matrix-historical').updated_at), 'RES
 sql(`select private.set_restaurant_transition_policy_v1(false,'${license}',true)`);
 assert.equal(contract('admin').adminSupervisionAvailable, true);
 assert.equal(contract('admin','fixture-other').adminSupervisionAvailable, false);
-results.races.push({ case: 'old_writer_vs_atomic_strict_cutover', result: 'DRAINED_COMMIT_THEN_LEGACY_REJECTED' });
+results.races.push({ case:'old_writer_vs_atomic_strict_cutover',result:'PASS',semantics:'DRAINED_COMMIT_THEN_LEGACY_REJECTED',
+  oldWriterQuery:beforeQuery.trim(),strictDdlQuery:{wrapper:'BEGIN; <migration>; COMMIT;',source:ddlSourcePath,sha256:ddlMigrationSha256},
+  queuedOldQuery:queuedOldQuery.trim(),forgedOldQuery:forgedOldQuery.trim(),
+  sqlSubmitted:{oldWriter:before.stdinFinished,strictDdl:ddl.stdinFinished,queuedOld:queuedOld.stdinFinished,forgedOld:forgedOld.stdinFinished},
+  observedLocks:{oldWriter:beforeLockSnapshot,strictDdlWait:ddlWaitSnapshot,queuedOldWait:queuedWaitSnapshot,forgedOldWait:forgedWaitSnapshot},
+  waitObservedAfterMs:{strictDdl:ddlWaitObservedAfterMs,queuedOld:queuedWaitObservedAfterMs,forgedOld:forgedWaitObservedAfterMs},
+  releaseOrder:'old_writer_commit_then_strict_ddl_and_queued_rejections',
+  sqlstates:{oldWriter:null,strictDdl:null,queuedOld:sqlState(obsoleteFrame.output),forgedOld:sqlState(forgedFrame.output)},
+  exitCodes:{oldWriter:beforeResult.code,strictDdl:ddlResult.code,queuedOld:obsoleteFrame.code,forgedOld:forgedFrame.code},
+  sessionsRemaining:0 });
+persistTransitionEvidence();
 results.matrix.push({ frontend: 'transition', backend: 'strict', result: 'VERSIONED_PASS_DEFAULT_ADMIN_DISABLED' },
   { frontend: '352', backend: 'strict activated license', result: 'ADMIN_GATED_SAME_TENANT_NO_REMOTE_EDIT' },
   { frontend: 'old bundle', backend: 'strict', result: 'SAFE_REJECTION_REQUIRES_COORDINATED_UPDATE_NOT_OPERATIONAL_COMPATIBILITY' });
@@ -199,20 +305,71 @@ update public.pos_restaurant_orders set payment_status='paid',paid_at=now(),paid
 return jsonb_build_object('success',true); end $$;`);
 const seedStrict = id => { sql(upsert('transition', id, null)); return parent(id); };
 const race = async (name, id, first, second, expectedCode) => {
-  const winner = openSession(name);
-  // Shared policy lock must precede the parent barrier (the production order).
-  winner.child.stdin.write(`begin; select private.enter_restaurant_transition_write_v1(); select private.lock_restaurant_order_settlement_v1('${license}',${quote(id)});\n`);
-  await waitFor(idle(name));
-  const loser = openSession(name + '-loser'); loser.child.stdin.end(second + ';\n');
-  await waitFor(blocked(name + '-loser'));
-  winner.child.stdin.end(first + '; commit;\n');
-  const [win, lose] = await Promise.all([winner.done, loser.done]); assert.equal(win.code, 0, win.output);
-  if (expectedCode) { assert.notEqual(lose.code, 0, lose.output); assert.match(lose.output, new RegExp(expectedCode)); }
-  else assert.equal(lose.code, 0, lose.output);
-  const sqlstate = lose.output.match(/ERROR:\s+([0-9A-Z]{5}):/i)?.[1] ?? null;
-  if (expectedCode) assert.equal(sqlstate, 'P0001', lose.output);
-  results.races.push({ case: name, result: expectedCode || 'ONE_DURABLE_EFFECT_SAME_RECEIPT',
-    sqlstate, winnerExitCode: win.code, loserExitCode: lose.code });
+  const winner=openSession(name); let loser=null; let win=null; let lose=null;
+  const winnerHoldQuery=`begin; select private.enter_restaurant_transition_write_v1(); select private.lock_restaurant_order_settlement_v1('${license}',${quote(id)});\n`;
+  const contenderQuery=second+';\n';
+  try {
+    // Observe both locks in the production acquisition order before submitting the contender.
+    await winner.write(winnerHoldQuery);
+    const winnerLock=await waitForActivity(name,rows=>rows.some(row=>row.state==='idle in transaction'&&
+      row.locks.some(lock=>lock.locktype==='advisory'&&lock.granted&&lock.mode==='ShareLock'&&lock.objsubid===1)&&
+      row.locks.some(lock=>lock.locktype==='advisory'&&lock.granted&&lock.mode==='ExclusiveLock'&&lock.objsubid===2)),
+    `${name}: shared admission and exclusive parent locks must both be held`);
+    loser=openSession(name+'-loser');
+    const loserSubmittedAt=performance.now();
+    const loserInput=loser.end(contenderQuery).then(()=>null,error=>error);
+    let loserSettled=false;
+    const loserDone=loser.done.then(result=>{lose=result;loserSettled=true;return result;});
+    let loserSnapshot=[]; let contending=false; let contenderWaitObservedAfterMs=null;
+    const waitsForCutover=second.includes('set_restaurant_transition_policy_v1');
+    const deadline=Date.now()+OBSERVATION_TIMEOUT_MS;
+    do {
+      loserSnapshot=activity(name+'-loser');
+      contending=waitsForCutover
+        ? waitsForAdvisoryLock(loserSnapshot,'ExclusiveLock',1)
+        : waitsForAdvisoryLock(loserSnapshot,'ExclusiveLock',2);
+      if(contending) contenderWaitObservedAfterMs=Math.round(performance.now()-loserSubmittedAt);
+      if(contending||loserSettled||loser.closed||Date.now()>=deadline) break;
+      await delay(POLL_INTERVAL_MS);
+    } while(Date.now()<=deadline);
+    assert.equal(contending,true,
+      `${name}: contender never reached a PostgreSQL lock wait; pg_stat_activity=${JSON.stringify(loserSnapshot)} output=${loser.output}`);
+    assert.ok(activity(name).some(row=>row.state==='idle in transaction'&&hasSharedTransitionLock([row])&&hasParentSettlementLock([row])),
+      `${name}: winner admission or parent lock disappeared before contender wait was observed`);
+    const winnerReleaseQuery=first+'; commit;\n';
+    await winner.end(winnerReleaseQuery);
+    [win,lose]=await Promise.all([winner.done,loserDone]);
+    const inputError=await loserInput;
+    assert.equal(inputError,null,`${name}: contender SQL stdin failed: ${inputError?.message}; ${lose.output}`);
+    assert.equal(loser.stdinFinished,true,`${name}: contender SQL stdin did not finish after release`);
+    assertSuccessfulSession(win,`${name} winner`);
+    assert.ok(lose,`${name}: no contender process result`);
+    assert.equal(lose.timedOut,false,lose.output);
+    assert.equal(lose.spawnError,null,lose.output);
+    if(expectedCode) {
+      assert.notEqual(lose.code,0,lose.output);
+      assert.match(lose.output,new RegExp(expectedCode));
+    } else assert.equal(lose.code,0,lose.output);
+    const state=sqlState(lose.output);
+    if(expectedCode) assert.equal(state,'P0001',lose.output);
+    const finalFinancialEffects={
+      sales:Number(sql(`select count(*) from public.pos_sales where local_order_id=${quoteSql(id)}`)),
+      cashMovements:Number(sql(`select count(*) from public.pos_cash_movements where id like ${quoteSql(`cash-${id}%`)}`)),
+      fixtureReleases:Number(sql(`select count(*) from private.transition_fixture_releases where parent_id=${quoteSql(id)}`))
+    };
+    results.races.push({case:name,result:'PASS',semantics:expectedCode||'ONE_DURABLE_EFFECT_SAME_RECEIPT',
+      winnerHoldQuery:winnerHoldQuery.trim(),contenderQuery:contenderQuery.trim(),winnerReleaseQuery:winnerReleaseQuery.trim(),
+      contenderSqlSubmitted:loser.stdinFinished,winnerLocksObserved:winnerLock,contenderWaitObserved:contending,
+      contenderWaitObservedAfterMs,
+      winnerLockSnapshot:winnerLock,contenderLockSnapshot:loserSnapshot,
+      releaseOrder:'winner_operation_and_commit_after_contender_lock_wait_observed',
+      sqlstate:state,winnerExitCode:win.code,loserExitCode:lose.code,finalFinancialEffects,sessionsRemaining:0});
+    assertNoSessions(name,name+'-loser');
+    persistTransitionEvidence();
+  } finally {
+    if(!winner.closed) await closePsqlSession(winner,{input:'ROLLBACK;\n'});
+    if(loser&&!loser.closed) await closePsqlSession(loser,{input:null});
+  }
 };
 let p = seedStrict('transition-kitchen');
 const item = sql(`select id from public.pos_restaurant_order_items where restaurant_order_id=${quote(p.id)} limit 1`);
@@ -246,5 +403,5 @@ assert.equal(parent(p.local_order_id).created_by_staff_user_id, '00000000-0000-0
 assert.equal(sql('select count(*) from private.restaurant_settlement_permits'), '0');
 assert.equal(sql('select count(*) from private.restaurant_bridge_cancel_permits'), '0');
 assert.equal(results.races.length, 7);
-writeFileSync('.tmp-transition-sql-results.json', JSON.stringify(results, null, 2));
+persistTransitionEvidence();
 console.log('TRANSITION SQL PASS: actual mapper/backend matrix; seven observed multi-session races; financial fixture limits explicit');

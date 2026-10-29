@@ -7,6 +7,8 @@ const supervision = readFileSync('supabase/migrations/20261010013258_restaurant_
 const historical3d14 = readFileSync('supabase/migrations/20261026214837_restaurant_sale_dispatcher_guard_3d14.sql', 'utf8');
 const fixture = readFileSync('supabase/tests/fixtures/pr352_financial_dispatcher_context.sql', 'utf8');
 const supervisionHarness = readFileSync('scripts/supabase/restaurant-admin-supervision-test.mjs', 'utf8');
+const transitionHarness = readFileSync('scripts/supabase/restaurant-transition-test.mjs', 'utf8');
+const psqlSession = readFileSync('scripts/supabase/psql-session.mjs', 'utf8');
 const workflow = readFileSync('.github/workflows/pr352-financial-postgres.yml', 'utf8');
 const scopedStorageWorkflow = readFileSync('.github/workflows/shared-terminal-actor-scoped-storage.yml', 'utf8');
 
@@ -93,12 +95,39 @@ test('candidate restores the metadata-aware 3D.14 guard and R2B has admission on
   assert.match(historical3d14, /RESTAURANT_FINANCIAL_DISPATCHER_REQUIRED/);
 });
 
-test('held-parent race dispatches the SQL contender before awaiting its result', () => {
-  const spawned = supervisionHarness.indexOf('const contender = openSession(name);');
-  const dispatched = supervisionHarness.indexOf("contender.child.stdin.end(query + '\\n');", spawned);
-  const awaited = supervisionHarness.indexOf('const outcomePromise = contender.done.then', spawned);
-  assert.ok(spawned >= 0 && dispatched > spawned && awaited > dispatched,
-    'the SQL contender must receive a complete statement before its completion is awaited');
+test('held-parent race observes the blocker, sends SQL, and requires completion before release', () => {
+  const held = section(supervisionHarness, 'const runAgainstHeldParent = async', '// SQL-08: contradictory aliases');
+  const blockerObserved = held.indexOf('waitForActivity(holderName');
+  const submitted = held.indexOf("await contender.end(query+'\\n');");
+  const completionRequired = held.indexOf('assert.equal(contenderCompletedBeforeRelease,true');
+  const blockerReleased = held.indexOf("closePsqlSession(holder,{input:'ROLLBACK;\\n'})");
+  assert.ok(blockerObserved >= 0 && submitted > blockerObserved && completionRequired > submitted && blockerReleased > completionRequired,
+    'the contender must reach a confirmed holder-lock barrier, submit complete SQL and finish while the blocker remains held');
+  assert.match(held, /contenderSnapshot=activity\(name\)/);
+  assert.match(held, /blockedOnLock=waitsForParentSettlementLock\(contenderSnapshot\)/);
+  assert.match(held, /contenderSqlSubmitted:contender\.stdinFinished/);
+  assert.match(supervisionHarness, /last pg_stat_activity\/pg_locks snapshot=/);
+  assert.match(held, /sqlState\(contenderResult\.output\)/);
+});
+
+test('all SQL-08 to SQL-10 sessions have bounded lifecycle and lock diagnostics', () => {
+  assert.match(psqlSession, /child\.on\('error'/);
+  assert.match(psqlSession, /child\.on\('close'/);
+  assert.match(psqlSession, /timedOut/);
+  assert.match(psqlSession, /child\.kill\('SIGKILL'\)/);
+  assert.match(supervisionHarness, /PSQL_SESSION_TIMEOUT_MS\s*=\s*30_000/);
+  assert.match(supervisionHarness, /OBSERVATION_TIMEOUT_MS\s*=\s*10_000/);
+  assert.match(supervisionHarness, /finally\s*\{[\s\S]*?closePsqlSession/);
+  assert.match(supervisionHarness, /pg_stat_activity/);
+  assert.match(supervisionHarness, /pg_locks/);
+  assert.match(supervisionHarness, /mode==='ExclusiveLock'&&lock\.objsubid===2/);
+  assert.match(transitionHarness, /PSQL_SESSION_TIMEOUT_MS\s*=\s*30_000/);
+  assert.match(transitionHarness, /OBSERVATION_TIMEOUT_MS\s*=\s*10_000/);
+  assert.match(transitionHarness, /pg_stat_activity/);
+  assert.match(transitionHarness, /pg_locks/);
+  assert.match(transitionHarness, /mode==='ExclusiveLock'&&lock\.objsubid===2/);
+  assert.match(transitionHarness, /waitsForAdvisoryLock\(rows,'ExclusiveLock',1\)/);
+  assert.match(transitionHarness, /finally\s*\{[\s\S]*?closePsqlSession/);
 });
 
 test('3D.14 fixture overlay adds the missing guard columns without editing historical migration', () => {
@@ -119,6 +148,8 @@ test('PostgreSQL CI targets PR352 on main and runs when the PR is retargeted', (
   assert.match(workflow, /if:\s*github\.event\.pull_request\.number\s*==\s*352/);
   assert.match(workflow, /image:\s*postgres:17\.11-bookworm/);
   assert.match(workflow, /permissions:\s*\r?\n\s+contents:\s*read/i);
+  assert.match(workflow, /scripts\/supabase\/psql-session\.mjs/);
+  assert.match(workflow, /scripts\/supabase\/psql-session\.node-test\.mjs/);
   assert.doesNotMatch(workflow, /secrets\.|supabase db (?:push|reset)|vercel deploy/i);
 });
 
