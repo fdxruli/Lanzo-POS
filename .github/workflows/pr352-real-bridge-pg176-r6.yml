@@ -1,0 +1,137 @@
+name: PR352 R6 real bridge and synthetic ledger overlay PostgreSQL 17.6
+
+on:
+  push:
+    branches:
+      - qa/pr352-real-bridge-pg176-r6-20261030
+    paths:
+      - '.github/workflows/pr352-real-bridge-pg176-r6.yml'
+      - 'docs/evidence/20261030182733_restaurant_cloud_transition_bridge_v1.sql'
+      - 'scripts/supabase/pr352-r6-*'
+      - 'supabase/migrations/20261026214837_restaurant_sale_dispatcher_guard_3d14.sql'
+      - 'supabase/tests/fixtures/pr338-real-financial/**'
+      - 'supabase/tests/fixtures/pr352-r6/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr352-r6-real-bridge-pg176
+  cancel-in-progress: false
+
+jobs:
+  isolated-validation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17.6
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: r6_synthetic_only
+          POSTGRES_DB: pr352_bridge_isolated
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d pr352_bridge_isolated"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: r6_synthetic_only
+      PGDATABASE: pr352_bridge_isolated
+      PGCONNECT_TIMEOUT: 5
+      PSQL_BIN: psql
+      PR352_R6_EVIDENCE_DIR: ${{ runner.temp }}/pr352-r6-evidence
+      CI: 'true'
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+
+      - name: Create private evidence directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence_dir="${RUNNER_TEMP}/pr352-r6-evidence"
+          test ! -e "${evidence_dir}"
+          install -d -m 700 "${evidence_dir}"
+          test "$(stat -c '%a' "${evidence_dir}")" = "700"
+          test "$(stat -c '%u' "${evidence_dir}")" = "$(id -u)"
+
+      - name: Validate Node contracts and JavaScript syntax
+        id: contracts
+        shell: bash
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          node --version
+          node --check scripts/supabase/pr352-r6-real-bridge-pg176-test.mjs
+          node --check scripts/supabase/pr352-r6-concurrency.mjs
+          node --check scripts/supabase/pr352-r6-real-bridge.node-test.mjs
+          node --check scripts/supabase/pr352-r6-synthetic-ledger-overlay.mjs
+          node --check scripts/supabase/pr352-r6-synthetic-ledger-overlay-test.mjs
+          node --test scripts/supabase/pr352-r6-real-bridge.node-test.mjs
+
+      - name: Install psql client in ephemeral runner if missing
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install --no-install-recommends -y postgresql-client
+          fi
+          psql --version
+          pg_isready -h 127.0.0.1 -p 5432 -U postgres -d pr352_bridge_isolated
+
+      - name: Apply real 3D.14 and bridge, exercise clients and concurrency
+        id: bridge
+        shell: bash
+        continue-on-error: true
+        run: node scripts/supabase/pr352-r6-real-bridge-pg176-test.mjs
+
+      - name: Validate 333-version synthetic overlay independently
+        id: overlay
+        shell: bash
+        continue-on-error: true
+        run: node scripts/supabase/pr352-r6-synthetic-ledger-overlay-test.mjs
+
+      - name: Upload structured JSON evidence only
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pr352-r6-evidence-${{ github.sha }}
+          path: ${{ runner.temp }}/pr352-r6-evidence/*.json
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Require both evidence blocks and static contracts to pass
+        if: always()
+        shell: bash
+        env:
+          CONTRACTS_OUTCOME: ${{ steps.contracts.outcome }}
+          BRIDGE_OUTCOME: ${{ steps.bridge.outcome }}
+          OVERLAY_OUTCOME: ${{ steps.overlay.outcome }}
+        run: |
+          set -euo pipefail
+          test "${CONTRACTS_OUTCOME}" = "success"
+          test "${BRIDGE_OUTCOME}" = "success"
+          test "${OVERLAY_OUTCOME}" = "success"
+          node --input-type=module -e '
+            import { readFile } from "node:fs/promises";
+            const root = process.env.RUNNER_TEMP + "/pr352-r6-evidence/";
+            const bridge = JSON.parse(await readFile(root + "real-bridge.json", "utf8"));
+            const overlay = JSON.parse(await readFile(root + "synthetic-overlay.json", "utf8"));
+            if (bridge.status !== "PASS" || overlay.status !== "PASS") process.exit(1);
+            if (bridge.postgresServerVersionNum !== "170006" || bridge.productionConnections !== 0) process.exit(1);
+            if (overlay.expectedLedgerRows !== 333 || overlay.caseCount !== overlay.passed || overlay.failed !== 0) process.exit(1);
+            console.log("PR352_R6_EVIDENCE_PASS", JSON.stringify({
+              bridge: bridge.status,
+              overlay: overlay.status,
+              postgresServerVersionNum: bridge.postgresServerVersionNum,
+              syntheticLedgerRows: overlay.expectedLedgerRows
+            }));
+          '

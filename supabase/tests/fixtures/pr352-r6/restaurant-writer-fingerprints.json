@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "source": "R5 read-only pg_get_functiondef catalog snapshot; exact function sources only",
+  "observedAt": "2026-10-30",
+  "postgresServerVersionNum": "170006",
+  "hashDefinition": "SHA-256 of UTF-8 pg_get_functiondef bytes after removing CR characters",
+  "rawDataIncluded": false,
+  "credentialsIncluded": false,
+  "entries": [
+    {
+      "signature": "private.recalculate_restaurant_order_status(uuid,text)",
+      "md5": "bafcbf9dc49db40282fbbd150128a329",
+      "sha256": "6779f97db6a1418b877671077e4d75e865515113fd9306eee4dc42b2dec5488c",
+      "owner": "postgres",
+      "securityDefiner": true,
+      "config": [
+        "search_path=\"\""
+      ],
+      "acl": "{postgres=X/postgres}"
+    },
+    {
+      "signature": "public.pos_archive_restaurant_order_unlimited(text,text,text,text,text,text,jsonb,text)",
+      "md5": "11e35a658bbf965b4b15047614a3e9c6",
+      "sha256": "2bb9323eff79173899caa6e98cb0ddaf79660505ea277ea0c38ddafb095d93b0",
+      "owner": "postgres",
+      "securityDefiner": true,
+      "config": [
+        "search_path=\"\""
+      ],
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "signature": "public.pos_cancel_restaurant_order_from_pos_v1(text,text,text,text,text,text,text,text)",
+      "md5": "c8db3fcd3a9b93419705c61d20ad2827",
+      "sha256": "7ca56acce3e9ea5cc20ee47c3a7959156aba262624602cd59dfcc04ce413fe69",
+      "owner": "postgres",
+      "securityDefiner": true,
+      "config": [
+        "search_path=\"\"",
+        "statement_timeout=45s",
+        "lock_timeout=20s"
+      ],
+      "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres}"
+    },
+    {
+      "signature": "public.pos_update_restaurant_order_item_status_unlimited(text,text,text,text,text,text,text,text)",
+      "md5": "18c6f39b54647a2e4c866349fabf2554",
+      "sha256": "e1c6b14556d520e526a001390fd269480c9bbbaab9b892e4133e243fd36920f2",
+      "owner": "postgres",
+      "securityDefiner": true,
+      "config": [
+        "search_path=\"\""
+      ],
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "signature": "public.pos_update_restaurant_order_status_unlimited(text,text,text,text,text,text,text)",
+      "md5": "73366de9e7266e0c8fd4ae09e85ab89f",
+      "sha256": "be08b5a4db870d5641eb7351c438c501c3e8ce25bda1e55bbd6f581c4eeeba6f",
+      "owner": "postgres",
+      "securityDefiner": true,
+      "config": [
+        "search_path=\"\""
+      ],
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    },
+    {
+      "signature": "public.pos_upsert_restaurant_order_unlimited(text,text,text,text,jsonb,jsonb,text)",
+      "md5": "ab9c43cc4e1cbe0f7361a4f778acfacb",
+      "sha256": "4613c03ba2a463c774612a5955873c68c009707ea64de9ea56ada096542fb469",
+      "owner": "postgres",
+      "securityDefiner": true,
+      "config": [
+        "search_path=\"\""
+      ],
+      "acl": "{postgres=X/postgres,service_role=X/postgres}"
+    }
+  ]
+}

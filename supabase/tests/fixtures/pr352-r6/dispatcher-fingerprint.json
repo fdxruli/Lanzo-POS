@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "source": "R5 read-only pg_get_functiondef catalog snapshot, cross-checked against 3D.14",
+  "observedAt": "2026-10-30",
+  "postgresServerVersionNum": "170006",
+  "hashDefinition": "SHA-256 of UTF-8 pg_get_functiondef bytes after removing CR characters",
+  "rawDataIncluded": false,
+  "credentialsIncluded": false,
+  "entry": {
+    "signature": "public.pos_execute_financial_operation_v1(text,text,text,text,text,text,text,jsonb)",
+    "md5": "9c92bd0ad3dcbab07f3a02d46ce820e0",
+    "sha256": "aa0bd977c3b47fef871a8cf099c7c84a87f9e0512d49c0676d31d49c5fe6a3f4",
+    "owner": "postgres",
+    "securityDefiner": true,
+    "config": [
+      "search_path=\"\"",
+      "statement_timeout=45s",
+      "lock_timeout=20s"
+    ],
+    "acl": "{postgres=X/postgres,service_role=X/postgres,anon=X/postgres,authenticated=X/postgres}"
+  }
+}
