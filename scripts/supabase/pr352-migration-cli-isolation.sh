@@ -47,7 +47,7 @@ if (runStatus !== '0' && failedCase && !cases.some((item) => item.caseId === fai
   cases.push({ caseId: failedCase, status: 'FAIL', summary: failure || 'scenario did not complete' });
 }
 const suitePassed = runStatus === '0' && cleanupStatus === '0'
-  && cases.length === 10 && cases.every((item) => item.status === 'PASS');
+  && !failure && cases.length === 10 && cases.every((item) => item.status === 'PASS');
 const report = {
   schemaVersion: 1,
   suite: 'PR352 Supabase CLI/PostgreSQL isolated migration matrix',
@@ -107,6 +107,9 @@ cleanup() {
 
   if [[ "$original_status" != '0' && -z "$FAIL_MESSAGE" ]]; then
     FAIL_MESSAGE="harness exited with status $original_status"
+  fi
+  if [[ "$original_status" == '0' && -n "$FAIL_MESSAGE" ]]; then
+    original_status=1
   fi
   if [[ -n "${TEMP_ROOT:-}" && -d "$TEMP_ROOT" ]]; then
     rm -rf -- "$TEMP_ROOT" || cleanup_status=1
@@ -354,10 +357,11 @@ expect_cli_failure() {
   local output="$1"
   shift
   local status=0
-  set +e
-  "$@" > "$output" 2>&1
-  status=$?
-  set -e
+  if "$@" > "$output" 2>&1; then
+    status=0
+  else
+    status=$?
+  fi
   [[ "$status" != '0' ]] || fail "expected command failure but it returned success: $(basename "$output")"
   [[ "$status" != '124' && "$status" != '137' ]] || fail "command timed out while expecting a diagnostic: $(basename "$output")"
   LAST_FAILURE_STATUS="$status"

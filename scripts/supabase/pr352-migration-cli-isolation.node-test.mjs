@@ -18,6 +18,13 @@ function bashPath(value) {
   return match ? `/${match[1].toLowerCase()}/${match[2].replaceAll('\\', '/')}` : value;
 }
 
+function testBashExecutable() {
+  const candidates = process.platform === 'win32'
+    ? [path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Git', 'bin', 'bash.exe'), 'bash']
+    : ['bash'];
+  return candidates.find((candidate) => candidate === 'bash' || fs.existsSync(candidate));
+}
+
 function runHarnessPreflight(databaseUrl, extraEnv = {}) {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pr352-r4-preflight-'));
   const binDir = path.join(tempDir, 'bin');
@@ -30,10 +37,7 @@ function runHarnessPreflight(databaseUrl, extraEnv = {}) {
   fs.writeFileSync(path.join(binDir, 'psql'), '#!/usr/bin/env bash\nprintf invoked > "$PSQL_SENTINEL"\nexit 98\n', { mode: 0o755 });
   fs.writeFileSync(path.join(binDir, 'node'), '#!/usr/bin/env bash\nexit 0\n', { mode: 0o755 });
 
-  const bashCandidates = process.platform === 'win32'
-    ? [path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Git', 'bin', 'bash.exe'), 'bash']
-    : ['bash'];
-  const bash = bashCandidates.find((candidate) => candidate === 'bash' || fs.existsSync(candidate));
+  const bash = testBashExecutable();
   const inheritedEnv = Object.fromEntries(Object.entries(process.env).filter(([name]) =>
     !/^PG/i.test(name) && !/^SUPABASE_(ACCESS_TOKEN|DB_PASSWORD|PROJECT_ID|PROJECT_REF|URL|DB_URL|SERVICE_ROLE_KEY|SECRET_KEY|ANON_KEY|PUBLISHABLE_KEY|JWT_SECRET)$/i.test(name)));
   const result = spawnSync(bash, ['scripts/supabase/pr352-migration-cli-isolation.sh'], {
@@ -142,6 +146,31 @@ test('inherited PostgreSQL connection variables are rejected before CLI or psql 
   }
 });
 
+test('expected CLI failures do not pollute unexpected failure state', () => {
+  const onError = harness.match(/on_error\(\) \{[\s\S]*?\n\}/)?.[0];
+  const expectedFailure = harness.match(/expect_cli_failure\(\) \{[\s\S]*?\n\}/)?.[0];
+  assert.ok(onError, 'unexpected-error handler must be available to the test');
+  assert.ok(expectedFailure, 'expected-failure helper must be available to the test');
+  const shell = [
+    'set -Eeuo pipefail',
+    "FAIL_MESSAGE=''",
+    "trap 'on_error \"$LINENO\" \"$?\"' ERR",
+    onError,
+    expectedFailure,
+    'cli_project() ( false )',
+    'expect_cli_failure /dev/null cli_project',
+    '[[ "$LAST_FAILURE_STATUS" == 1 ]]',
+    '[[ -z "$FAIL_MESSAGE" ]]',
+  ].join('\n');
+  const result = spawnSync(testBashExecutable(), ['-c', shell], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    timeout: 10_000,
+  });
+  assert.equal(result.status, 0, result.stderr || result.error?.message);
+  assert.match(result.stdout, /EXPECTED_FAILURE: null exit=1/);
+});
+
 test('the matrix records every case and verifies rejected SQL caused no object or ledger change', () => {
   for (let caseNumber = 1; caseNumber <= 10; caseNumber += 1) {
     const padded = String(caseNumber).padStart(2, '0');
@@ -220,6 +249,24 @@ test('final JSON artifact writer serializes only synthetic, versioned matrix evi
     assert.equal(report.cases.length, 10);
     assert.deepEqual(report.cleanup.createdSyntheticDatabases, ['pr352_cli_match']);
     assert.equal(report.cleanup.leakedSessionsAfterCleanup, 0);
+
+    const inconsistentDestination = path.join(tempDir, 'inconsistent-results.json');
+    const diagnostic = 'command failed at line 283 (exit 1)';
+    const inconsistent = spawnSync(process.execPath, ['-', inconsistentDestination, casesFile, '2.79.0', '170006', '0', '0', diagnostic, 'CLI-10', 'pr352_cli_match', '0'], {
+      input: embedded[1],
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        GITHUB_REPOSITORY: 'fdxruli/Lanzo-POS',
+        GITHUB_REF: 'refs/heads/' + branch,
+        GITHUB_SHA: 'a'.repeat(40),
+        PR352_STARTED_AT: '2026-10-29T00:00:00Z',
+      },
+    });
+    assert.equal(inconsistent.status, 0, inconsistent.stderr);
+    const inconsistentReport = JSON.parse(fs.readFileSync(inconsistentDestination, 'utf8'));
+    assert.equal(inconsistentReport.failure, diagnostic);
+    assert.equal(inconsistentReport.finalStatus, 'FAIL', 'a report with a failure diagnostic must never claim PASS');
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
