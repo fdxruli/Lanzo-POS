@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildPhoneBuckets,
+  getCustomerPhoneValidationError,
   getPhoneConflictGroups,
   normalizePhoneKey,
   summarizePhoneConflictGroups,
@@ -17,6 +18,14 @@ describe('customerPhoneUtils', () => {
     expect(toIndexedPhoneKey('')).toBeNull();
     expect(toIndexedPhoneKey('---')).toBeNull();
     expect(toIndexedPhoneKey('(55) 1234')).toBe('551234');
+  });
+
+  it('comparte la validación obligatoria sin imponer una longitud fija', () => {
+    expect(getCustomerPhoneValidationError('')).toBe('El teléfono es obligatorio.');
+    expect(getCustomerPhoneValidationError('   ')).toBe('El teléfono es obligatorio.');
+    expect(getCustomerPhoneValidationError('---')).toBe('Escribe un teléfono que contenga al menos un dígito.');
+    expect(getCustomerPhoneValidationError('55')).toBe('');
+    expect(getCustomerPhoneValidationError('+52 (55) 1234-5678')).toBe('');
   });
 
   it('detecta grupos duplicados por telefono normalizado', () => {

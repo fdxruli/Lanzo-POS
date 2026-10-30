@@ -33,7 +33,7 @@ describe('LayawayModal shared QuickAdd compatibility', () => {
     await user.click(screen.getByRole('button', { name: 'Nuevo' }));
     expect(screen.queryByLabelText('Límite de crédito *')).not.toBeInTheDocument();
     await user.type(screen.getByLabelText('Nombre Completo *'), 'Cliente apartado');
-    await user.type(screen.getByLabelText('Telefono *'), '5559876543');
+    await user.type(screen.getByLabelText('Teléfono *'), '5559876543');
     await user.click(screen.getByRole('button', { name: 'Guardar Cliente' }));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Nuevo cliente' })).not.toBeInTheDocument());
     expect(mocks.saveDataSafe).toHaveBeenCalledWith('customers', expect.objectContaining({ creditLimit: 0, debt: 0 }));
