@@ -1,0 +1,83 @@
+name: PR352 isolated Supabase CLI migration conformance
+
+on:
+  push:
+    branches:
+      - 'qa/pr352-cli279-pg176-isolation-r3-20261029'
+
+permissions:
+  contents: read
+
+jobs:
+  migration-cli-isolation:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:17.6
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: pr352_synthetic_only
+          POSTGRES_DB: pr352_cli_bootstrap
+        ports:
+          - '127.0.0.1:5432:5432'
+        options: >-
+          --health-cmd "pg_isready -U postgres -d pr352_cli_bootstrap"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql://postgres:pr352_synthetic_only@127.0.0.1:5432/pr352_cli_bootstrap?sslmode=disable
+      SUPABASE_TELEMETRY_DISABLED: '1'
+      CI: 'true'
+    steps:
+      - name: Verify repository and exact QA ref
+        shell: bash
+        env:
+          ACTUAL_REPOSITORY: ${{ github.repository }}
+          ACTUAL_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          test "$ACTUAL_REPOSITORY" = 'fdxruli/Lanzo-POS'
+          test "$ACTUAL_REF" = 'refs/heads/qa/pr352-cli279-pg176-isolation-r3-20261029'
+
+      - name: Prepare sanitized result artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          result_file="$RUNNER_TEMP/pr352-cli-isolation-results.json"
+          mkdir -p "$(dirname "$result_file")"
+          printf '{"schemaVersion":1,"suite":"PR352 CLI/PostgreSQL matrix","finalStatus":"NOT_RUN","cases":[]}\n' > "$result_file"
+
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+
+      - uses: supabase/setup-cli@d347ba47d3fb7eeeddbbc793bc8d4779caf773ea
+        with:
+          version: 2.79.0
+
+      - name: Verify toolchain and test contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(timeout -k 5s 20s supabase --version)" = '2.79.0'
+          node --test scripts/supabase/pr352-migration-cli-isolation.node-test.mjs
+          bash -n scripts/supabase/pr352-migration-cli-isolation.sh
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install --no-install-recommends -y postgresql-client
+          fi
+          psql --version
+
+      - name: Exercise CLI against disposable PostgreSQL only
+        shell: bash
+        run: bash scripts/supabase/pr352-migration-cli-isolation.sh
+
+      - name: Upload sanitized matrix results
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pr352-cli-isolation-results
+          path: ${{ runner.temp }}/pr352-cli-isolation-results.json
+          if-no-files-found: warn

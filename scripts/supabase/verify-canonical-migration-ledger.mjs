@@ -73,12 +73,19 @@ export const assertCanonicalLedger = ({ local, remote, expected, afterApply = fa
   const expectedAlreadyApplied = expected.filter((version) => remoteSet.has(version));
   const unexpectedPending = pending.filter((version) => !expectedSet.has(version));
   const missingExpected = expected.filter((version) => !pending.includes(version) && !remoteSet.has(version));
+  const latestRemote = remote.at(-1);
+  const pendingBeforeOrAtLatestRemote = latestRemote
+    ? pending.filter((version) => version <= latestRemote)
+    : [];
   if (remoteOnly.length) fail(`unexpected remote-only versions: ${remoteOnly.join(',')}`);
   if (afterApply) {
     if (!expected.length) fail('NONE is invalid after apply');
     if (expectedAlreadyApplied.length !== expected.length) fail(`applied version missing from remote ledger: ${expected.filter((version) => !remoteSet.has(version)).join(',')}`);
     if (pending.length) fail(`migration remains pending after apply: ${pending.join(',')}`);
   } else {
+    if (pendingBeforeOrAtLatestRemote.length) {
+      fail(`pending versions must follow the latest applied remote version ${latestRemote}: ${pendingBeforeOrAtLatestRemote.join(',')}`);
+    }
     if (expectedAlreadyApplied.length) fail(`expected version already applied: ${expectedAlreadyApplied.join(',')}`);
     if (unexpectedPending.length) fail(`unexpected pending versions: ${unexpectedPending.join(',')}`);
     if (missingExpected.length) fail(`missing expected versions: ${missingExpected.join(',')}`);
