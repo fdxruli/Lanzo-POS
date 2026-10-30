@@ -25,6 +25,37 @@ function testBashExecutable() {
   return candidates.find((candidate) => candidate === 'bash' || fs.existsSync(candidate));
 }
 
+function runReportWriter(tempDir, options = {}) {
+  const embedded = harness.match(/node - "\$RESULTS_JSON"[\s\S]*?<<'NODE'\n([\s\S]*?)\nNODE/);
+  assert.ok(embedded, 'write_results_json must contain a testable JSON serializer');
+  const destination = path.join(tempDir, options.filename || 'results.json');
+  const casesFile = destination + '.cases.ndjson';
+  const cases = options.cases || Array.from({ length: 10 }, (_, index) => ({
+    caseId: 'CLI-' + String(index + 1).padStart(2, '0'),
+    status: 'PASS',
+    summary: 'synthetic report-unit-test fixture; no PostgreSQL was run',
+  }));
+  fs.writeFileSync(casesFile, options.casesContent ?? cases.map((item) => JSON.stringify(item)).join('\n') + '\n');
+  const sha = options.sha ?? 'a'.repeat(40);
+  const result = spawnSync(process.execPath, ['-', destination, casesFile,
+    options.cliVersion ?? '2.79.0', options.pgVersion ?? '170006',
+    options.runStatus ?? '0', options.cleanupStatus ?? '0', options.failure ?? '',
+    options.failedCase ?? 'CLI-10', options.createdDatabases ?? 'pr352_cli_match',
+    options.leakedSessions ?? '0'], {
+    input: embedded[1],
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      GITHUB_REPOSITORY: options.repository ?? 'fdxruli/Lanzo-POS',
+      GITHUB_REF: options.ref ?? 'refs/heads/' + branch,
+      GITHUB_SHA: sha,
+      PR352_STARTED_AT: '2026-10-29T00:00:00Z',
+    },
+  });
+  const report = fs.existsSync(destination) ? JSON.parse(fs.readFileSync(destination, 'utf8')) : null;
+  return { result, report, destination, sha };
+}
+
 function runHarnessPreflight(databaseUrl, extraEnv = {}) {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pr352-r4-preflight-'));
   const binDir = path.join(tempDir, 'bin');
@@ -154,13 +185,15 @@ test('expected CLI failures do not pollute unexpected failure state', () => {
   const shell = [
     'set -Eeuo pipefail',
     "FAIL_MESSAGE=''",
-    "trap 'on_error \"$LINENO\" \"$?\"' ERR",
+    'ERR_TRAP_COUNT=0',
+    "trap 'ERR_TRAP_COUNT=$((ERR_TRAP_COUNT + 1)); on_error \"$LINENO\" \"$?\"' ERR",
     onError,
     expectedFailure,
     'cli_project() ( false )',
     'expect_cli_failure /dev/null cli_project',
     '[[ "$LAST_FAILURE_STATUS" == 1 ]]',
     '[[ -z "$FAIL_MESSAGE" ]]',
+    '[[ "$ERR_TRAP_COUNT" == 0 ]]',
   ].join('\n');
   const result = spawnSync(testBashExecutable(), ['-c', shell], {
     cwd: repoRoot,
@@ -169,6 +202,37 @@ test('expected CLI failures do not pollute unexpected failure state', () => {
   });
   assert.equal(result.status, 0, result.stderr || result.error?.message);
   assert.match(result.stdout, /EXPECTED_FAILURE: null exit=1/);
+});
+
+test('unexpected errors trip the ERR handler, preserve a diagnostic, and terminate nonzero', () => {
+  const onError = harness.match(/on_error\(\) \{[\s\S]*?\n\}/)?.[0];
+  assert.ok(onError, 'unexpected-error handler must be available to the test');
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pr352-r4-err-trap-'));
+  try {
+    const diagnosticPath = path.join(tempDir, 'diagnostic.txt');
+    const shell = [
+      'set -Eeuo pipefail',
+      "FAIL_MESSAGE=''",
+      "trap 'on_error \"$LINENO\" \"$?\"' ERR",
+      `trap 'printf "%s" "$FAIL_MESSAGE" > "${bashPath(diagnosticPath)}"' EXIT`,
+      onError,
+      'false',
+    ].join('\n');
+    const result = spawnSync(testBashExecutable(), ['-c', shell], {
+      cwd: repoRoot,
+      encoding: 'utf8',
+      timeout: 10_000,
+    });
+    assert.equal(result.status, 1, result.stderr || result.error?.message);
+    const diagnostic = fs.readFileSync(diagnosticPath, 'utf8');
+    assert.match(diagnostic, /command failed at line \d+ \(exit 1\)/);
+    const report = runReportWriter(tempDir, { filename: 'unexpected-error.json', runStatus: '1', failure: diagnostic });
+    assert.equal(report.result.status, 1);
+    assert.equal(report.report.finalStatus, 'FAIL');
+    assert.match(report.report.failure, /command failed at line \d+ \(exit 1\)/);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
 });
 
 test('the matrix records every case and verifies rejected SQL caused no object or ledger change', () => {
@@ -219,54 +283,75 @@ test('sanitized JSON result builder keeps operation names, exit codes, and migra
   }
 });
 
-test('final JSON artifact writer serializes only synthetic, versioned matrix evidence', () => {
-  const embedded = harness.match(/node - "\$RESULTS_JSON"[\s\S]*?<<'NODE'\n([\s\S]*?)\nNODE/);
-  assert.ok(embedded, 'write_results_json must contain a testable JSON serializer');
+test('final JSON writer rejects contradictory or incomplete evidence and preserves a coherent SHA', () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pr352-r4-report-'));
   try {
-    const destination = path.join(tempDir, 'results.json');
-    const casesFile = destination + '.cases.ndjson';
-    fs.writeFileSync(casesFile, Array.from({ length: 10 }, (_, index) => JSON.stringify({
-      caseId: 'CLI-' + String(index + 1).padStart(2, '0'),
-      status: 'PASS',
-    })).join('\n') + '\n');
-    const result = spawnSync(process.execPath, ['-', destination, casesFile, '2.79.0', '170006', '0', '0', '', 'CLI-10', 'pr352_cli_match', '0'], {
-      input: embedded[1],
-      encoding: 'utf8',
-      env: {
-        ...process.env,
-        GITHUB_REPOSITORY: 'fdxruli/Lanzo-POS',
-        GITHUB_REF: 'refs/heads/' + branch,
-        GITHUB_SHA: 'a'.repeat(40),
-        PR352_STARTED_AT: '2026-10-29T00:00:00Z',
-      },
-    });
-    assert.equal(result.status, 0, result.stderr);
-    const report = JSON.parse(fs.readFileSync(destination, 'utf8'));
+    const valid = runReportWriter(tempDir);
+    assert.equal(valid.result.status, 0, valid.result.stderr);
+    const report = valid.report;
     assert.equal(report.finalStatus, 'PASS');
+    assert.equal(report.failure, null);
+    assert.equal(report.repository, 'fdxruli/Lanzo-POS');
+    assert.equal(report.ref, 'refs/heads/' + branch);
+    assert.equal(report.commit, valid.sha);
     assert.equal(report.cliVersion, '2.79.0');
     assert.equal(report.postgresServerVersionNum, '170006');
     assert.equal(report.cases.length, 10);
+    assert.deepEqual(report.cases.map((item) => item.caseId), Array.from({ length: 10 }, (_, index) => `CLI-${String(index + 1).padStart(2, '0')}`));
+    assert.ok(report.cases.every((item) => item.status === 'PASS'));
     assert.deepEqual(report.cleanup.createdSyntheticDatabases, ['pr352_cli_match']);
+    assert.equal(report.cleanup.status, 'PASS');
     assert.equal(report.cleanup.leakedSessionsAfterCleanup, 0);
 
-    const inconsistentDestination = path.join(tempDir, 'inconsistent-results.json');
-    const diagnostic = 'command failed at line 283 (exit 1)';
-    const inconsistent = spawnSync(process.execPath, ['-', inconsistentDestination, casesFile, '2.79.0', '170006', '0', '0', diagnostic, 'CLI-10', 'pr352_cli_match', '0'], {
-      input: embedded[1],
+    const duplicatedCases = report.cases.map((item, index) => index === 8 ? { ...item, caseId: 'CLI-10' } : item);
+    const invalidReports = [
+      ['unexpected diagnostic', { failure: 'command failed at line 283 (exit 1)' }, /command failed at line 283/],
+      ['missing case', { cases: report.cases.slice(0, 9) }, /expected 10 case records/],
+      ['duplicate case', { cases: duplicatedCases }, /case IDs are duplicated/],
+      ['non-passing case', { cases: report.cases.map((item, index) => index === 4 ? { ...item, status: 'FAIL' } : item) }, /one or more cases did not pass/],
+      ['wrong CLI version', { cliVersion: '2.80.0' }, /expected Supabase CLI 2.79.0/],
+      ['wrong PostgreSQL version', { pgVersion: '170017' }, /expected PostgreSQL server 170006/],
+      ['cleanup failure', { cleanupStatus: '1' }, /cleanup did not pass/],
+      ['leaked session', { leakedSessions: '1' }, /cleanup did not pass/],
+      ['missing SHA', { sha: 'bad-sha' }, /workflow SHA is missing or malformed/],
+      ['wrong repository', { repository: 'another/repo' }, /workflow repository does not match/],
+      ['wrong ref', { ref: 'refs/heads/main' }, /workflow ref does not match/],
+      ['nonzero harness status', { runStatus: '1' }, /harness exited with status 1/],
+      ['malformed case JSON', { casesContent: '{bad json\n' }, /case result file is invalid/],
+    ];
+    for (const [name, options, diagnostic] of invalidReports) {
+      const attempt = runReportWriter(tempDir, { ...options, filename: `${name.replaceAll(' ', '-')}.json` });
+      assert.equal(attempt.result.status, 1, `${name} should produce a failing process status`);
+      assert.equal(attempt.report.finalStatus, 'FAIL', `${name} must never claim PASS`);
+      assert.notEqual(attempt.report.failure, null, `${name} must include a diagnostic`);
+      assert.match(attempt.report.failure, diagnostic, name);
+      assert.equal(JSON.parse(fs.readFileSync(attempt.destination, 'utf8')).commit, attempt.sha);
+    }
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('workflow rejects a missing, malformed, contradictory, or wrong-SHA result artifact', () => {
+  assert.match(workflow, /test "\$\(git rev-parse HEAD\)" = "\$GITHUB_SHA"/);
+  const verifier = workflow.match(/node - "\$RUNNER_TEMP\/pr352-cli-isolation-results\.json" "\$GITHUB_REPOSITORY" "\$GITHUB_REF" "\$GITHUB_SHA" <<'NODE'\r?\n([\s\S]*?)\r?\n\s+NODE/);
+  assert.ok(verifier, 'workflow must validate the uploaded report for the exact event context');
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pr352-r4-workflow-report-'));
+  try {
+    const reportPath = path.join(tempDir, 'results.json');
+    const expectedSha = 'b'.repeat(40);
+    const report = runReportWriter(tempDir, { filename: 'workflow-results.json', sha: expectedSha }).report;
+    fs.writeFileSync(reportPath, JSON.stringify(report));
+    const invokeVerifier = (sha) => spawnSync(process.execPath, ['-', reportPath, 'fdxruli/Lanzo-POS', 'refs/heads/' + branch, sha], {
+      input: verifier[1],
       encoding: 'utf8',
-      env: {
-        ...process.env,
-        GITHUB_REPOSITORY: 'fdxruli/Lanzo-POS',
-        GITHUB_REF: 'refs/heads/' + branch,
-        GITHUB_SHA: 'a'.repeat(40),
-        PR352_STARTED_AT: '2026-10-29T00:00:00Z',
-      },
     });
-    assert.equal(inconsistent.status, 0, inconsistent.stderr);
-    const inconsistentReport = JSON.parse(fs.readFileSync(inconsistentDestination, 'utf8'));
-    assert.equal(inconsistentReport.failure, diagnostic);
-    assert.equal(inconsistentReport.finalStatus, 'FAIL', 'a report with a failure diagnostic must never claim PASS');
+    assert.equal(invokeVerifier(expectedSha).status, 0, 'matching workflow SHA should pass');
+    assert.notEqual(invokeVerifier('c'.repeat(40)).status, 0, 'a different workflow SHA must fail');
+    fs.writeFileSync(reportPath, '{malformed');
+    assert.notEqual(invokeVerifier(expectedSha).status, 0, 'malformed JSON must fail');
+    fs.writeFileSync(reportPath, JSON.stringify({ ...report, failure: 'unexpected error' }));
+    assert.notEqual(invokeVerifier(expectedSha).status, 0, 'a contradictory report must fail');
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }

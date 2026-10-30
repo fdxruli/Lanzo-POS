@@ -53,6 +53,12 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Verify checkout matches the triggering commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
       - uses: supabase/setup-cli@d347ba47d3fb7eeeddbbc793bc8d4779caf773ea
         with:
           version: 2.79.0
@@ -73,6 +79,37 @@ jobs:
       - name: Exercise CLI against disposable PostgreSQL only
         shell: bash
         run: bash scripts/supabase/pr352-migration-cli-isolation.sh
+
+      - name: Verify structured report for the exact workflow SHA
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          node - "$RUNNER_TEMP/pr352-cli-isolation-results.json" "$GITHUB_REPOSITORY" "$GITHUB_REF" "$GITHUB_SHA" <<'NODE'
+          const fs = require('node:fs');
+          const [file, repository, ref, sha] = process.argv.slice(2);
+          const report = JSON.parse(fs.readFileSync(file, 'utf8'));
+          const expectedIds = Array.from({ length: 10 }, (_, index) => `CLI-${String(index + 1).padStart(2, '0')}`);
+          const ids = report.cases?.map((item) => item?.caseId) || [];
+          const valid = report.finalStatus === 'PASS'
+            && report.failure === null
+            && report.repository === repository
+            && report.ref === ref
+            && report.commit === sha
+            && report.cliVersion === '2.79.0'
+            && report.postgresServerVersionNum === '170006'
+            && ids.length === 10
+            && new Set(ids).size === 10
+            && expectedIds.every((id) => ids.includes(id))
+            && report.cases.every((item) => item.status === 'PASS')
+            && report.cleanup?.status === 'PASS'
+            && report.cleanup?.leakedSessionsAfterCleanup === 0;
+          if (!valid) {
+            console.error('PR352 structured result is missing, malformed, contradictory, or not for this workflow SHA');
+            process.exit(1);
+          }
+          console.log(`PR352_STRUCTURED_REPORT_PASS: SHA=${sha} cases=${ids.length}`);
+          NODE
 
       - name: Upload sanitized matrix results
         if: always()

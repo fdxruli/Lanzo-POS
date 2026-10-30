@@ -40,14 +40,42 @@ const fs = require('node:fs');
 const [destination, ndjson, cliVersion, pgVersion, runStatus, cleanupStatus,
   failure, failedCase, createdDatabases, leakedSessions] = process.argv.slice(2);
 let cases = [];
+let caseReadFailure = null;
 if (fs.existsSync(ndjson)) {
-  cases = fs.readFileSync(ndjson, 'utf8').split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line));
+  try {
+    cases = fs.readFileSync(ndjson, 'utf8').split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line));
+  } catch (error) {
+    caseReadFailure = `case result file is invalid: ${error.message}`;
+  }
+} else {
+  caseReadFailure = 'case result file is missing';
 }
 if (runStatus !== '0' && failedCase && !cases.some((item) => item.caseId === failedCase)) {
   cases.push({ caseId: failedCase, status: 'FAIL', summary: failure || 'scenario did not complete' });
 }
-const suitePassed = runStatus === '0' && cleanupStatus === '0'
-  && !failure && cases.length === 10 && cases.every((item) => item.status === 'PASS');
+const expectedCaseIds = Array.from({ length: 10 }, (_, index) => `CLI-${String(index + 1).padStart(2, '0')}`);
+const caseIds = cases.map((item) => item?.caseId);
+const uniqueCaseIds = new Set(caseIds);
+const leakedSessionCount = /^\d+$/.test(leakedSessions || '') ? Number(leakedSessions) : Number.NaN;
+const cleanupPassed = cleanupStatus === '0' && leakedSessionCount === 0;
+const failures = [];
+if (failure) failures.push(String(failure));
+if (caseReadFailure) failures.push(caseReadFailure);
+if (runStatus !== '0') failures.push(`harness exited with status ${runStatus}`);
+if (cliVersion !== '2.79.0') failures.push(`expected Supabase CLI 2.79.0, received ${cliVersion || 'missing'}`);
+if (pgVersion !== '170006') failures.push(`expected PostgreSQL server 170006, received ${pgVersion || 'missing'}`);
+if (process.env.GITHUB_REPOSITORY !== 'fdxruli/Lanzo-POS') failures.push('workflow repository does not match fdxruli/Lanzo-POS');
+if (process.env.GITHUB_REF !== 'refs/heads/qa/pr352-cli279-pg176-isolation-r3-20261029') failures.push('workflow ref does not match the authorized QA branch');
+if (!/^[0-9a-f]{40}$/.test(process.env.GITHUB_SHA || '')) failures.push('workflow SHA is missing or malformed');
+if (cases.length !== 10) failures.push(`expected 10 case records, received ${cases.length}`);
+if (uniqueCaseIds.size !== 10) failures.push('case IDs are duplicated or missing');
+if (expectedCaseIds.some((caseId) => !uniqueCaseIds.has(caseId))
+    || caseIds.some((caseId) => !expectedCaseIds.includes(caseId))) {
+  failures.push('case IDs must be exactly CLI-01 through CLI-10');
+}
+if (cases.some((item) => item?.status !== 'PASS')) failures.push('one or more cases did not pass');
+if (!cleanupPassed) failures.push('cleanup did not pass or residual session count was nonzero');
+const suitePassed = failures.length === 0;
 const report = {
   schemaVersion: 1,
   suite: 'PR352 Supabase CLI/PostgreSQL isolated migration matrix',
@@ -60,14 +88,15 @@ const report = {
   postgresServerVersionNum: pgVersion || null,
   finalStatus: suitePassed ? 'PASS' : 'FAIL',
   cases,
-  failure: failure || null,
+  failure: failures.length ? failures.join('; ') : null,
   cleanup: {
-    status: cleanupStatus === '0' ? 'PASS' : 'FAIL',
+    status: cleanupPassed ? 'PASS' : 'FAIL',
     createdSyntheticDatabases: (createdDatabases || '').split(',').filter(Boolean),
-    leakedSessionsAfterCleanup: Number(leakedSessions || 0),
+    leakedSessionsAfterCleanup: Number.isFinite(leakedSessionCount) ? leakedSessionCount : null,
   },
 };
 fs.writeFileSync(destination, `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600 });
+if (!suitePassed) process.exitCode = 1;
 NODE
 }
 
@@ -108,15 +137,18 @@ cleanup() {
   if [[ "$original_status" != '0' && -z "$FAIL_MESSAGE" ]]; then
     FAIL_MESSAGE="harness exited with status $original_status"
   fi
-  if [[ "$original_status" == '0' && -n "$FAIL_MESSAGE" ]]; then
-    original_status=1
+  if [[ "$cleanup_status" != '0' && -z "$FAIL_MESSAGE" ]]; then
+    FAIL_MESSAGE='laboratory cleanup failed'
   fi
+  if [[ "$original_status" == '0' && ( -n "$FAIL_MESSAGE" || "$cleanup_status" != '0' ) ]]; then original_status=1; fi
   if [[ -n "${TEMP_ROOT:-}" && -d "$TEMP_ROOT" ]]; then
     rm -rf -- "$TEMP_ROOT" || cleanup_status=1
   fi
-  write_results_json "$original_status" "$cleanup_status" "${leaked:-0}" || cleanup_status=1
-  if [[ "$cleanup_status" != '0' ]]; then
-    [[ -n "$FAIL_MESSAGE" ]] || FAIL_MESSAGE='laboratory cleanup or result serialization failed'
+  write_results_json "$original_status" "$cleanup_status" "${leaked:-0}"
+  local report_status=$?
+  if [[ "$report_status" != '0' ]]; then
+    [[ -n "$FAIL_MESSAGE" ]] || FAIL_MESSAGE='result integrity validation failed'
+    original_status=1
     write_results_json "$original_status" "$cleanup_status" "${leaked:-unknown}" || true
   fi
   rm -f -- "$RESULTS_NDJSON" || true
