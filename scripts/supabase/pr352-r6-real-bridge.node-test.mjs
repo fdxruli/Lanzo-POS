@@ -105,6 +105,9 @@ test('isolated workflow runs only on the exact QA push branch without secrets or
   assert.match(workflow, /overlay\.expectedLedgerRows !== 333/);
   assert.match(workflow, /real-bridge\.json/);
   assert.match(workflow, /synthetic-overlay\.json/);
+  assert.doesNotMatch(workflow, /^\s{6}PR352_R6_EVIDENCE_DIR:/m, 'runner context is not valid in job-level env');
+  assert.equal((workflow.match(/^\s{10}PR352_R6_EVIDENCE_DIR: \$\{\{ runner\.temp \}\}\/pr352-r6-evidence$/gm) || []).length, 2,
+    'runner temp path must be scoped to the two steps that write JSON evidence');
 });
 
 test('synthetic overlay helper is self-contained and never embeds the remote ledger', async () => {

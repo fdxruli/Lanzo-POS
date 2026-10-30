@@ -45,7 +45,6 @@ jobs:
       PGDATABASE: pr352_bridge_isolated
       PGCONNECT_TIMEOUT: 5
       PSQL_BIN: psql
-      PR352_R6_EVIDENCE_DIR: ${{ runner.temp }}/pr352-r6-evidence
       CI: 'true'
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -91,12 +90,16 @@ jobs:
         id: bridge
         shell: bash
         continue-on-error: true
+        env:
+          PR352_R6_EVIDENCE_DIR: ${{ runner.temp }}/pr352-r6-evidence
         run: node scripts/supabase/pr352-r6-real-bridge-pg176-test.mjs
 
       - name: Validate 333-version synthetic overlay independently
         id: overlay
         shell: bash
         continue-on-error: true
+        env:
+          PR352_R6_EVIDENCE_DIR: ${{ runner.temp }}/pr352-r6-evidence
         run: node scripts/supabase/pr352-r6-synthetic-ledger-overlay-test.mjs
 
       - name: Upload structured JSON evidence only
