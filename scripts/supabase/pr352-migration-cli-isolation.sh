@@ -140,6 +140,11 @@ for credential_name in SUPABASE_ACCESS_TOKEN SUPABASE_DB_PASSWORD SUPABASE_PROJE
   SUPABASE_SECRET_KEY SUPABASE_ANON_KEY SUPABASE_PUBLISHABLE_KEY SUPABASE_JWT_SECRET; do
   [[ -z "${!credential_name:-}" ]] || fail 'unexpected Supabase credential or project environment variable is present'
 done
+while IFS= read -r pg_variable_name; do
+  case "$pg_variable_name" in
+    PG*) fail "unexpected PostgreSQL environment variable is present: ${pg_variable_name}" ;;
+  esac
+done < <(compgen -e)
 command -v psql >/dev/null 2>&1 || fail 'psql client is unavailable'
 command -v supabase >/dev/null 2>&1 || fail 'Supabase CLI is unavailable'
 command -v timeout >/dev/null 2>&1 || fail 'timeout utility is unavailable'
@@ -265,7 +270,9 @@ cli() {
     [[ ! -e "$project_dir/supabase/.temp/project-ref" ]] || fail 'linked Supabase project metadata is forbidden'
   fi
   [[ "$(timeout -k 5s 20s supabase --version)" == "$EXPECTED_CLI_VERSION" ]] || fail "Supabase CLI changed from ${EXPECTED_CLI_VERSION} during the matrix"
-  timeout -k 5s 90s supabase "${original_args[@]}"
+  # CLI 2.79.0 drops sslmode while round-tripping --db-url through ToPostgresURL.
+  # Set the mode only after the URL has been proven to target marked loopback PostgreSQL.
+  PGSSLMODE=disable timeout -k 5s 90s supabase "${original_args[@]}"
 }
 
 cli_project() (

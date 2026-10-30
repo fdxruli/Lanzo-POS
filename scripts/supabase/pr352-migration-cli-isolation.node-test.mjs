@@ -4,11 +4,54 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { assertCanonicalLedger } from './verify-canonical-migration-ledger.mjs';
 
 const workflow = fs.readFileSync(new URL('../../.github/workflows/pr352-migration-cli-isolation.yml', import.meta.url), 'utf8');
 const harness = fs.readFileSync(new URL('./pr352-migration-cli-isolation.sh', import.meta.url), 'utf8');
+const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
 const branch = 'qa/pr352-cli279-pg176-isolation-r3-20261029';
+
+function bashPath(value) {
+  if (process.platform !== 'win32') return value;
+  const match = path.resolve(value).match(/^([A-Za-z]):\\(.*)$/);
+  return match ? `/${match[1].toLowerCase()}/${match[2].replaceAll('\\', '/')}` : value;
+}
+
+function runHarnessPreflight(databaseUrl, extraEnv = {}) {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pr352-r4-preflight-'));
+  const binDir = path.join(tempDir, 'bin');
+  const reportPath = path.join(tempDir, 'results.json');
+  const cliSentinel = path.join(tempDir, 'supabase-invoked');
+  const psqlSentinel = path.join(tempDir, 'psql-invoked');
+  fs.mkdirSync(binDir);
+  const fakeSupabase = path.join(binDir, 'supabase');
+  fs.writeFileSync(fakeSupabase, '#!/usr/bin/env bash\nprintf invoked > "$CLI_SENTINEL"\nexit 97\n', { mode: 0o755 });
+  fs.writeFileSync(path.join(binDir, 'psql'), '#!/usr/bin/env bash\nprintf invoked > "$PSQL_SENTINEL"\nexit 98\n', { mode: 0o755 });
+  fs.writeFileSync(path.join(binDir, 'node'), '#!/usr/bin/env bash\nexit 0\n', { mode: 0o755 });
+
+  const bashCandidates = process.platform === 'win32'
+    ? [path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Git', 'bin', 'bash.exe'), 'bash']
+    : ['bash'];
+  const bash = bashCandidates.find((candidate) => candidate === 'bash' || fs.existsSync(candidate));
+  const inheritedEnv = Object.fromEntries(Object.entries(process.env).filter(([name]) =>
+    !/^PG/i.test(name) && !/^SUPABASE_(ACCESS_TOKEN|DB_PASSWORD|PROJECT_ID|PROJECT_REF|URL|DB_URL|SERVICE_ROLE_KEY|SECRET_KEY|ANON_KEY|PUBLISHABLE_KEY|JWT_SECRET)$/i.test(name)));
+  const result = spawnSync(bash, ['scripts/supabase/pr352-migration-cli-isolation.sh'], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    timeout: 15_000,
+    env: {
+      ...inheritedEnv,
+      PATH: binDir + path.delimiter + (inheritedEnv.PATH || ''),
+      DATABASE_URL: databaseUrl,
+      PR352_RESULTS_JSON: bashPath(reportPath),
+      CLI_SENTINEL: bashPath(cliSentinel),
+      PSQL_SENTINEL: bashPath(psqlSentinel),
+      ...extraEnv,
+    },
+  });
+  return { tempDir, result, cliSentinel, psqlSentinel, reportPath };
+}
 
 test('workflow triggers only the exact QA branch push and checks repository/ref in-job', () => {
   assert.match(workflow, /on:\s*\n\s+push:\s*\n\s+branches:\s*\n\s+- 'qa\/pr352-cli279-pg176-isolation-r3-20261029'/);
@@ -48,6 +91,17 @@ test('the shell harness fails closed unless every SQL-capable CLI operation targ
   assert.match(harness, /every SQL-capable CLI operation requires an explicit local --db-url/);
   assert.match(harness, /verify_db "\$database"/);
   assert.match(harness, /timeout -k 5s 90s supabase/);
+  const cliFunction = harness.slice(harness.indexOf('cli() {'), harness.indexOf('\n}\n\ncli_project'));
+  assert.ok(cliFunction.indexOf('verify_db "$database"') < cliFunction.indexOf('PGSSLMODE=disable timeout'));
+  assert.match(harness, /PGSSLMODE=disable timeout -k 5s 90s supabase/);
+  assert.match(harness, /Set the mode only after the URL has been proven to target marked loopback PostgreSQL/);
+  assert.doesNotMatch(harness, /export\s+PGSSLMODE/);
+  assert.match(harness, /unexpected PostgreSQL environment variable is present/);
+  assert.match(harness, /PG\*\)/);
+  const startupOffset = harness.indexOf(': "${DATABASE_URL:');
+  const pgGuardOffset = harness.indexOf('PG*) fail', startupOffset);
+  assert.ok(pgGuardOffset < harness.indexOf('command -v psql', startupOffset));
+  assert.ok(pgGuardOffset < harness.indexOf('command -v supabase', startupOffset));
   assert.match(harness, /--linked\|--linked=\*\|--project-ref\|--project-ref=\*/);
   assert.match(harness, /DROP DATABASE IF EXISTS/);
   assert.match(harness, /pg_stat_activity/);
@@ -56,6 +110,35 @@ test('the shell harness fails closed unless every SQL-capable CLI operation targ
   assert.doesNotMatch(harness, /supabase\.co|supabase link|migration repair|db reset/i);
   for (const variable of ['SUPABASE_ACCESS_TOKEN', 'SUPABASE_DB_PASSWORD', 'SUPABASE_PROJECT_ID', 'SUPABASE_PROJECT_REF', 'SUPABASE_SERVICE_ROLE_KEY']) {
     assert.ok(harness.includes(variable), 'missing fail-closed environment check for ' + variable);
+  }
+});
+
+test('an unauthorized database URL is rejected before any Supabase CLI process can run', () => {
+  const attempt = runHarnessPreflight('postgresql://postgres:synthetic@198.51.100.7:5432/not_synthetic?sslmode=disable');
+  try {
+    assert.equal(attempt.result.status, 1, attempt.result.stderr || attempt.result.error?.message);
+    assert.match(attempt.result.stderr, /refusing a non-loopback or non-synthetic database URL/);
+    assert.equal(fs.existsSync(attempt.cliSentinel), false, 'Supabase CLI ran before destination validation');
+    assert.equal(fs.existsSync(attempt.psqlSentinel), false, 'psql ran before destination validation');
+    assert.match(attempt.result.stdout, /PR352_CLI_ISOLATION_CLEANUP_PASS/);
+  } finally {
+    fs.rmSync(attempt.tempDir, { recursive: true, force: true });
+  }
+});
+
+test('inherited PostgreSQL connection variables are rejected before CLI or psql can run', () => {
+  const attempt = runHarnessPreflight(
+    'postgresql://postgres:pr352_synthetic_only@127.0.0.1:5432/pr352_cli_bootstrap?sslmode=disable',
+    { PGHOSTADDR: '198.51.100.7' },
+  );
+  try {
+    assert.equal(attempt.result.status, 1, attempt.result.stderr || attempt.result.error?.message);
+    assert.match(attempt.result.stderr, /unexpected PostgreSQL environment variable is present: PGHOSTADDR/);
+    assert.equal(fs.existsSync(attempt.cliSentinel), false, 'Supabase CLI ran with an inherited PGHOSTADDR override');
+    assert.equal(fs.existsSync(attempt.psqlSentinel), false, 'psql ran with an inherited PGHOSTADDR override');
+    assert.match(attempt.result.stdout, /PR352_CLI_ISOLATION_CLEANUP_PASS/);
+  } finally {
+    fs.rmSync(attempt.tempDir, { recursive: true, force: true });
   }
 });
 
