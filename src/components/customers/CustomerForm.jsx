@@ -11,6 +11,9 @@ export default function CustomerForm({ onSave, onCancel, customerToEdit, globalC
   const [creditLimit, setCreditLimit] = useState(0);
   const [phoneError, setPhoneError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [limitConfirmed, setLimitConfirmed] = useState(false);
+  const reducesBelowDebt = customerToEdit && Number(creditLimit) < Number(customerToEdit.debt || 0)
+    && Number(creditLimit) !== Number(customerToEdit.creditLimit || 0);
 
   useEffect(() => {
     if (customerToEdit) {
@@ -42,6 +45,7 @@ export default function CustomerForm({ onSave, onCancel, customerToEdit, globalC
     e.preventDefault();
 
     if (isSaving) return;
+    if (reducesBelowDebt && !limitConfirmed) return;
 
     if (name.trim().length === 0) {
       showMessageModal('El nombre del cliente no puede estar vacio.', null, { type: 'warning' });
@@ -74,7 +78,11 @@ export default function CustomerForm({ onSave, onCancel, customerToEdit, globalC
       <h3 className="subtitle" id="customer-form-title">
         {customerToEdit ? `Editar: ${customerToEdit.name}` : 'Anadir Nuevo Cliente'}
       </h3>
-      <form id="customer-form" onSubmit={handleSubmit}>
+      <form id="customer-form" onSubmit={handleSubmit} onChange={() => setLimitConfirmed(false)}>
+        {reducesBelowDebt && <label className="ui-alert ui-alert--warning">
+          <input type="checkbox" checked={limitConfirmed} onChange={(event) => { event.stopPropagation(); setLimitConfirmed(event.target.checked); }} required />
+          Confirmo reducir el límite por debajo de la deuda actual. La deuda se conserva y se bloquearán nuevos cargos.
+        </label>}
 
         {/* --- Seccion de Datos Basicos --- */}
         <div className="form-group">
