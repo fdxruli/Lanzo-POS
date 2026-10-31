@@ -12,6 +12,11 @@ import { queryLoopbackPostgres } from './loopback-postgres-client.mjs';
 import { splitAndTrim, transactionBody } from './supabase-migration-parser.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
+function isValidReportPath(value) {
+  if (!/^artifacts\/fin01\/[a-z0-9._/-]+\.json$/u.test(value ?? '')) return false;
+  const artifactsRoot = `${path.resolve(root, 'artifacts/fin01')}${path.sep}`;
+  return path.resolve(root, value).startsWith(artifactsRoot);
+}
 const report = {
   result: 'INCOMPLETE',
   mode: null,
@@ -61,7 +66,7 @@ function parseArgs(argv) {
   if (!/^fin01_cert_[a-z0-9_]+$/u.test(values['--database'])) throw new Error('SYNTHETIC_DATABASE_REQUIRED');
   if (values['--project-id'] !== 'fin01-synthetic-replay') throw new Error('SYNTHETIC_PROJECT_ID_REQUIRED');
   if (!/^[0-9a-f]{40}$/u.test(values['--expected-sha'])) throw new Error('EXPECTED_GIT_SHA_REQUIRED');
-  if (values['--report'] && !/^artifacts\/fin01\/[a-z0-9._/-]+\.json$/u.test(values['--report'])) {
+  if (values['--report'] && !isValidReportPath(values['--report'])) {
     throw new Error('ARTIFACT_REPORT_PATH_REQUIRED');
   }
   return values;
@@ -540,7 +545,9 @@ try {
   }
 }
 
-const reportPath = args?.['--report'] ?? 'artifacts/fin01/selective-apply-report.json';
+const reportArgument = process.argv.slice(2).find((arg) => arg.startsWith('--report='));
+const requestedReport = reportArgument?.slice('--report='.length);
+const reportPath = args?.['--report'] ?? (isValidReportPath(requestedReport) ? requestedReport : 'artifacts/fin01/selective-apply-report.json');
 await fs.mkdir(path.dirname(path.join(root, reportPath)), { recursive: true });
 await fs.writeFile(path.join(root, reportPath), `${JSON.stringify(report, null, 2)}\n`);
 process.stdout.write(`${report.result}${report.failure ? ` ${report.failure.message}` : ''}\n`);
