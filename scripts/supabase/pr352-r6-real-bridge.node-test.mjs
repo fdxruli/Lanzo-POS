@@ -8,6 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { canonicalizePostgresAcl } from './pr352-r6-canonical-postgres-acl.mjs';
+import { canonicalizePostgresConstraints } from './pr352-r6-canonical-postgres-constraints.mjs';
 import { runPreparationStationBehavior } from './pr352-r6-preparation-station.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -238,6 +239,41 @@ test('PostgreSQL ACL comparisons ignore display order but preserve the exact gra
   assert.match(runner, /firstTextDifference/);
   assert.doesNotMatch(runner, /after\.definition\.replace\(insertion, '\\n'\)/,
     'Post-bridge comparison must remove only the injected guard without normalizing original SQL');
+});
+
+test('PostgreSQL CHECK comparison removes only redundant deparser text casts', () => {
+  const expected = [{
+    name: 'pos_preparation_stations_default_code',
+    type: 'c',
+    definition: "CHECK (is_default IS FALSE OR code = 'kitchen')",
+  }];
+  const actual = [{
+    name: 'pos_preparation_stations_default_code',
+    type: 'c',
+    definition: "CHECK (is_default IS FALSE OR code = 'kitchen'::text)",
+  }];
+
+  assert.deepEqual(canonicalizePostgresConstraints(actual), canonicalizePostgresConstraints(expected));
+  assert.notDeepEqual(canonicalizePostgresConstraints([{
+    ...actual[0],
+    definition: "CHECK (is_default IS FALSE OR code = 'kitchen-2'::text)",
+  }]), canonicalizePostgresConstraints(expected), 'A changed CHECK literal must remain visible');
+  assert.notDeepEqual(canonicalizePostgresConstraints([{
+    ...actual[0],
+    definition: "CHECK (is_default IS TRUE OR code = 'kitchen'::text)",
+  }]), canonicalizePostgresConstraints(expected), 'A changed CHECK operator must remain visible');
+  assert.equal(canonicalizePostgresConstraints([{
+    name: 'station_fk',
+    type: 'f',
+    definition: "FOREIGN KEY (code) REFERENCES stations(code) CHECK ('kitchen'::text)",
+  }])[0].definition, "FOREIGN KEY (code) REFERENCES stations(code) CHECK ('kitchen'::text)",
+  'Non-CHECK catalog definitions must not be normalized');
+  assert.equal(canonicalizePostgresConstraints([{
+    name: 'quoted_literal',
+    type: 'c',
+    definition: "CHECK (code = 'kitchen''s'::text)",
+  }])[0].definition, "CHECK (code = 'kitchen''s')");
+  assert.throws(() => canonicalizePostgresConstraints(null), /must be an array/);
 });
 
 test('real PostgreSQL runner applies 3D.14 before the bridge and proves finite loopback-only setup', async () => {

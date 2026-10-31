@@ -8,6 +8,7 @@ import path from 'node:path';
 import { runRestaurantCutoverConcurrency } from './pr352-r6-concurrency.mjs';
 import { runPreparationStationBehavior } from './pr352-r6-preparation-station.mjs';
 import { canonicalizePostgresAcl } from './pr352-r6-canonical-postgres-acl.mjs';
+import { canonicalizePostgresConstraints } from './pr352-r6-canonical-postgres-constraints.mjs';
 
 const execFileAsync = promisify(execFile);
 const root = process.cwd();
@@ -278,7 +279,15 @@ async function run() {
       where n.nspname='private' and p.proname in ('ensure_default_preparation_station','is_restaurant_order_status',
         'normalize_pos_preparation_station_name_key','normalize_restaurant_order_status','resolve_restaurant_order_station','safe_jsonb_numeric'))
   )::text`));
-  assert.deepEqual(preparationStationActual.table, preparationStationManifest.table,
+  const preparationStationActualTable = {
+    ...preparationStationActual.table,
+    constraints: canonicalizePostgresConstraints(preparationStationActual.table.constraints),
+  };
+  const preparationStationExpectedTable = {
+    ...preparationStationManifest.table,
+    constraints: canonicalizePostgresConstraints(preparationStationManifest.table.constraints),
+  };
+  assert.deepEqual(preparationStationActualTable, preparationStationExpectedTable,
     'Synthetic Cocina schema metadata must match the read-only Production catalog fingerprint');
   assert.deepEqual(preparationStationActual.triggers, preparationStationManifest.triggers,
     'Cocina fixture must not invent Production triggers');
