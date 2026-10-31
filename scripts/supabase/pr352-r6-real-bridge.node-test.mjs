@@ -8,7 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { canonicalizePostgresAcl } from './pr352-r6-canonical-postgres-acl.mjs';
-import { canonicalizePostgresConstraints } from './pr352-r6-canonical-postgres-constraints.mjs';
+import { assertEquivalentPreparationStationCatalog } from './pr352-r6-canonical-postgres-constraints.mjs';
 import { runPreparationStationBehavior } from './pr352-r6-preparation-station.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -86,7 +86,8 @@ test('Cocina fixture matches production station schema and helper function finge
   const fixture = await readFile(restaurantDependenciesFixturePath, 'utf8');
   const manifest = JSON.parse(await readFile(preparationStationManifestPath, 'utf8'));
   assert.match(runner, /Production-matched synthetic Cocina schema and functions/);
-  assert.match(runner, /preparationStationActual\.functions, preparationStationManifest\.functions/);
+  assert.match(runner, /assertEquivalentPreparationStationCatalog\(preparationStationActual,/);
+  assert.match(runner, /table:\s*preparationStationManifest\.table,[\s\S]*?functions:\s*preparationStationManifest\.functions/);
   assert.match(fixture, /create table public\.pos_preparation_stations\s*\(/i);
   assert.match(fixture, /alter table public\.pos_preparation_stations enable row level security/i);
   assert.match(fixture, /grant all on table public\.pos_preparation_stations to service_role/i);
@@ -241,39 +242,53 @@ test('PostgreSQL ACL comparisons ignore display order but preserve the exact gra
     'Post-bridge comparison must remove only the injected guard without normalizing original SQL');
 });
 
-test('PostgreSQL CHECK comparison removes only redundant deparser text casts', () => {
-  const expected = [{
-    name: 'pos_preparation_stations_default_code',
-    type: 'c',
-    definition: "CHECK (is_default IS FALSE OR code = 'kitchen')",
-  }];
-  const actual = [{
-    name: 'pos_preparation_stations_default_code',
-    type: 'c',
-    definition: "CHECK (is_default IS FALSE OR code = 'kitchen'::text)",
-  }];
+test('full Cocina catalog comparison accepts only the named default CHECK text-cast rendering', async () => {
+  const manifest = JSON.parse(await readFile(preparationStationManifestPath, 'utf8'));
+  const expected = {
+    table: manifest.table,
+    triggers: manifest.triggers,
+    policies: manifest.policies,
+    functions: manifest.functions,
+  };
+  const cloneExpected = () => JSON.parse(JSON.stringify(expected));
+  const kitchenCheck = (catalog) => catalog.table.constraints.find((constraint) =>
+    constraint.name === 'pos_preparation_stations_default_code');
+  const actualWithRenderedCast = cloneExpected();
+  kitchenCheck(actualWithRenderedCast).definition = "CHECK (is_default IS FALSE OR code = 'kitchen'::text)";
+  assert.doesNotThrow(() => assertEquivalentPreparationStationCatalog(actualWithRenderedCast, expected));
+  assert.doesNotThrow(() => assertEquivalentPreparationStationCatalog(cloneExpected(), expected),
+    'The exact uncast definition remains valid too');
 
-  assert.deepEqual(canonicalizePostgresConstraints(actual), canonicalizePostgresConstraints(expected));
-  assert.notDeepEqual(canonicalizePostgresConstraints([{
-    ...actual[0],
-    definition: "CHECK (is_default IS FALSE OR code = 'kitchen-2'::text)",
-  }]), canonicalizePostgresConstraints(expected), 'A changed CHECK literal must remain visible');
-  assert.notDeepEqual(canonicalizePostgresConstraints([{
-    ...actual[0],
-    definition: "CHECK (is_default IS TRUE OR code = 'kitchen'::text)",
-  }]), canonicalizePostgresConstraints(expected), 'A changed CHECK operator must remain visible');
-  assert.equal(canonicalizePostgresConstraints([{
-    name: 'station_fk',
-    type: 'f',
-    definition: "FOREIGN KEY (code) REFERENCES stations(code) CHECK ('kitchen'::text)",
-  }])[0].definition, "FOREIGN KEY (code) REFERENCES stations(code) CHECK ('kitchen'::text)",
-  'Non-CHECK catalog definitions must not be normalized');
-  assert.equal(canonicalizePostgresConstraints([{
-    name: 'quoted_literal',
-    type: 'c',
-    definition: "CHECK (code = 'kitchen''s'::text)",
-  }])[0].definition, "CHECK (code = 'kitchen''s')");
-  assert.throws(() => canonicalizePostgresConstraints(null), /must be an array/);
+  const negativeCatalogs = [
+    ['different literal', (catalog) => { kitchenCheck(catalog).definition = "CHECK (is_default IS FALSE OR code = 'bar'::text)"; }],
+    ['different operator', (catalog) => { kitchenCheck(catalog).definition = "CHECK (is_default IS FALSE OR code <> 'kitchen'::text)"; }],
+    ['different column', (catalog) => { kitchenCheck(catalog).definition = "CHECK (is_default IS FALSE OR name = 'kitchen'::text)"; }],
+    ['empty literal', (catalog) => { kitchenCheck(catalog).definition = "CHECK (is_default IS FALSE OR code = ''::text)"; }],
+    ['missing default flag predicate', (catalog) => { kitchenCheck(catalog).definition = "CHECK (code = 'kitchen'::text)"; }],
+    ['AND substituted for OR', (catalog) => { kitchenCheck(catalog).definition = "CHECK (is_default IS FALSE AND code = 'kitchen'::text)"; }],
+    ['additional CHECK expression', (catalog) => { catalog.table.constraints.push({ name: 'unexpected_check', type: 'c', definition: 'CHECK (true)' }); }],
+    ['missing CHECK constraint', (catalog) => { catalog.table.constraints = catalog.table.constraints.filter((constraint) => constraint.name !== 'pos_preparation_stations_default_code'); }],
+    ['duplicate CHECK constraint', (catalog) => { catalog.table.constraints.push({ ...kitchenCheck(catalog) }); }],
+    ['renamed CHECK constraint', (catalog) => { kitchenCheck(catalog).name = 'different_default_code'; }],
+    ['changed foreign key', (catalog) => { catalog.table.constraints.find((constraint) => constraint.type === 'f').definition = 'FOREIGN KEY (license_id) REFERENCES other_table(id)'; }],
+    ['missing index', (catalog) => { catalog.table.indexes.pop(); }],
+    ['changed index predicate', (catalog) => { catalog.table.indexes.find((index) => index.name === 'pos_preparation_stations_license_active_idx').definition = 'CREATE INDEX pos_preparation_stations_license_active_idx ON public.pos_preparation_stations USING btree (license_id, is_active) WHERE (deleted_at IS NOT NULL)'; }],
+    ['different code type', (catalog) => { catalog.table.columns.find((column) => column.name === 'code').type = 'character varying'; }],
+    ['changed ACL', (catalog) => { catalog.table.acl = 'postgres=arwdDxtm/postgres'; }],
+    ['RLS disabled', (catalog) => { catalog.table.rlsEnabled = false; }],
+    ['changed helper fingerprint', (catalog) => { catalog.functions[0].bodySha256 = '0'.repeat(64); }],
+  ];
+  for (const [description, mutate] of negativeCatalogs) {
+    const actual = cloneExpected();
+    kitchenCheck(actual).definition = "CHECK (is_default IS FALSE OR code = 'kitchen'::text)";
+    mutate(actual);
+    assert.throws(() => assertEquivalentPreparationStationCatalog(actual, expected), undefined, description);
+  }
+
+  const alteredExpected = cloneExpected();
+  kitchenCheck(alteredExpected).definition = "CHECK (is_default IS FALSE OR code = 'bar')";
+  assert.throws(() => assertEquivalentPreparationStationCatalog(actualWithRenderedCast, alteredExpected),
+    undefined, 'The expected manifest must not be broadened to justify the live catalog');
 });
 
 test('real PostgreSQL runner applies 3D.14 before the bridge and proves finite loopback-only setup', async () => {
