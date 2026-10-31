@@ -27,7 +27,7 @@ const ADMIN_SHELL_GLOB_PATTERNS = Object.freeze([
   'assets/PosApplicationBootstrap-*.{js,css}',
   'assets/vendor_react-*.js',
   'assets/vendor_icons-*.js',
-  'assets/vendor_supabase-*.js',
+  'assets/{vendor_supabase,supabase}-*.js',
   'assets/vendor_utils-*.js',
   'assets/useAppStore-*.js',
   'assets/useMessageStore-*.js',

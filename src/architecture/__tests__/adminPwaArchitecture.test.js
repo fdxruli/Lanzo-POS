@@ -243,6 +243,35 @@ describe('ECOM.PUBLIC.PWA.1 architecture', () => {
     expect(inventory.urls).toHaveLength(inventory.uniqueUrls.length);
   });
 
+  itWithAdminBuild('precaches the emitted Supabase chunk variants within the existing per-file limit and excludes incident-lab assets', async () => {
+    const [inventory, emittedAssets, config] = await Promise.all([
+      precacheInventory(),
+      walk('dist/assets'),
+      readProjectFile('vite.config.js'),
+    ]);
+    const supabaseAssets = emittedAssets
+      .map((asset) => asset.replace(/^dist\//, ''))
+      .filter((asset) => /^assets\/(?:vendor_)?supabase-[^/]+\.js$/.test(asset));
+    const previewBuildAvailable = existsSync(path.join(projectRoot, 'dist', 'incident-qa.html'));
+
+    expect(supabaseAssets.length).toBeGreaterThan(0);
+    expect(config).toContain('assets/{vendor_supabase,supabase}-*.js');
+    expect(config).toContain('maximumFileSizeToCacheInBytes: 3 * 1024 * 1024');
+    expect(config).not.toMatch(/assets\/\*\.js/);
+
+    for (const asset of supabaseAssets) {
+      expect(inventory.uniqueUrls).toContain(asset);
+      const { size } = await stat(path.join(projectRoot, 'dist', asset));
+      expect(size).toBeLessThanOrEqual(3 * 1024 * 1024);
+    }
+
+    if (previewBuildAvailable) {
+      expect(supabaseAssets.some((asset) => asset.startsWith('assets/supabase-'))).toBe(true);
+    }
+
+    expect(inventory.uniqueUrls.join('\n')).not.toMatch(/incident-qa|IncidentRecoveryQaGallery|IncidentLabBoot|incidentLabAdapters/);
+  });
+
   itWithAdminBuild('precache covers any emitted Local startup chunks while cloud-only lazy surfaces stay excluded', async () => {
     const inventory = await precacheInventory();
     const emittedAssets = (await walk('dist/assets'))
