@@ -25,6 +25,48 @@ const preparationStationTestPath = path.join(root, 'scripts/supabase/pr352-r6-pr
 const concurrencyPath = path.join(root, 'scripts/supabase/pr352-r6-concurrency.mjs');
 const overlayPath = path.join(root, 'scripts/supabase/pr352-r6-synthetic-ledger-overlay.mjs');
 
+// This small scanner is intentionally limited to function-call argument lists
+// in the SQL strings below. It tracks SQL string literals and nested calls so
+// source assertions stay tied to the p_order argument, not nearby p_items SQL.
+function readSqlCallArguments(source, callStart) {
+  const open = source.indexOf('(', callStart);
+  assert.ok(open >= 0, 'SQL function call must have an opening parenthesis');
+  const args = [];
+  let depth = 1;
+  let inString = false;
+  let start = open + 1;
+
+  for (let index = open + 1; index < source.length; index += 1) {
+    const character = source[index];
+    if (inString) {
+      if (character === "'" && source[index + 1] === "'") {
+        index += 1;
+      } else if (character === "'") {
+        inString = false;
+      }
+      continue;
+    }
+    if (character === "'") {
+      inString = true;
+    } else if (character === '(') {
+      depth += 1;
+    } else if (character === ')') {
+      depth -= 1;
+      if (depth === 0) {
+        args.push(source.slice(start, index).trim());
+        return args;
+      }
+    } else if (character === ',' && depth === 1) {
+      args.push(source.slice(start, index).trim());
+      start = index + 1;
+    }
+  }
+
+  throw new Error('Unterminated SQL function call in bridge QA runner');
+}
+
+const countOccurrences = (source, needle) => source.split(needle).length - 1;
+
 test('bridge candidate stays out of the canonical migration set and runs after 3D.14', async () => {
   const sql = await readFile(bridgePath, 'utf8');
   assert.equal(existsSync(path.join(root, 'supabase/migrations/20261030182733_restaurant_cloud_transition_bridge_v1.sql')), false);
@@ -353,6 +395,62 @@ test('isolated workflow runs only on the exact QA push branch without secrets or
   assert.doesNotMatch(workflow, /^\s{6}PR352_R6_EVIDENCE_DIR:/m, 'runner context is not valid in job-level env');
   assert.equal((workflow.match(/^\s{10}PR352_R6_EVIDENCE_DIR: \$\{\{ runner\.temp \}\}\/pr352-r6-evidence$/gm) || []).length, 2,
     'runner temp path must be scoped to the two steps that write JSON evidence');
+});
+
+test('all seven synthetic Restaurant writes match the mapper source contract without changing actor coverage', async () => {
+  const runner = await readFile(runnerPath, 'utf8');
+  const mapper = await readFile(path.join(root, 'src/services/restaurant/restaurantOrderMapper.js'), 'utf8');
+  const writers = await readFile(writersPath, 'utf8');
+  const orderSchema = await readFile(path.join(root, 'supabase/tests/fixtures/restaurant_origin_cancel_3d13_setup.sql'), 'utf8');
+  assert.match(mapper, /source:\s*'tables'/,
+    'Use the exact source value emitted by the production Restaurant order mapper');
+  assert.match(writers, /nullif\(btrim\(coalesce\(p_order->>'source'\s*,\s*''\)\)\s*,\s*''\)/,
+    'The authentic writer must continue passing explicit NULL when source is absent');
+  assert.match(orderSchema, /source\s+text\s+not null\s+default\s+'pos'/i,
+    'The schema default does not apply to the writer\'s explicit NULL');
+
+  const expectedCalls = [
+    { scenario: 'concurrency seed', functionName: 'pos_upsert_restaurant_order_unlimited', args: ["'lab-license-a'", "'lab-device-a'", "'lab-device-token-a'", "'lab-admin-session'"] },
+    { scenario: 'Staff owner', functionName: 'pos_upsert_restaurant_order_unlimited', args: ["'lab-license-a'", "'lab-device-b'", "'lab-device-token-b'", "'lab-staff-session'"] },
+    { scenario: 'Admin non-owner', functionName: 'pos_upsert_restaurant_order_unlimited', args: ["'lab-license-a'", "'lab-device-a'", "'lab-device-token-a'", "'lab-admin-session'"] },
+    { scenario: 'Staff non-owner', functionName: 'pos_upsert_restaurant_order_unlimited', args: ["'lab-license-a'", "'lab-device-c'", "'lab-device-token-c'", "'lab-staff-session-c'"] },
+    { scenario: 'invalid session', functionName: 'pos_upsert_restaurant_order_unlimited', args: ["'lab-license-a'", "'lab-device-b'", "'lab-device-token-b'", "'wrong-session'"] },
+    { scenario: 'legacy client', functionName: 'pos_upsert_restaurant_order_unlimited', args: ["'lab-license-a'", "'lab-device-a'", "'lab-device-token-a'", "'lab-admin-session'"] },
+    { scenario: 'versioned client', functionName: 'pos_upsert_restaurant_order_versioned_v1', args: ["'lab-license-a'", "'lab-device-a'", "'lab-device-token-a'", "'lab-admin-session'"] },
+  ];
+  const matches = [...runner.matchAll(/(?:select|perform)\s+public\.(pos_upsert_restaurant_order(?:_unlimited|_versioned_v1))\s*\(/g)];
+  assert.equal(matches.length, expectedCalls.length, 'All seven harness upsert calls must remain under review');
+
+  for (const [index, match] of matches.entries()) {
+    const expected = expectedCalls[index];
+    const args = readSqlCallArguments(runner, match.index + match[0].lastIndexOf('('));
+    assert.equal(match[1], expected.functionName, `${expected.scenario} must keep its original RPC`);
+    assert.deepEqual(args.slice(0, 4), expected.args, `${expected.scenario} credentials and actor session must not drift`);
+
+    const orderArgument = args[4];
+    assert.match(orderArgument, /^jsonb_build_object\s*\(/i, `${expected.scenario} source must be in p_order`);
+    const orderPairs = readSqlCallArguments(orderArgument, 0);
+    const sourceKeyPositions = orderPairs
+      .map((argument, pairIndex) => argument === "'source'" ? pairIndex : -1)
+      .filter((pairIndex) => pairIndex >= 0);
+    assert.equal(sourceKeyPositions.length, 1, `${expected.scenario} p_order must contain source exactly once`);
+    assert.equal(orderPairs[sourceKeyPositions[0] + 1], "'tables'",
+      `${expected.scenario} p_order must carry the mapper's exact source value`);
+    assert.ok(!args[5].includes("'source'"), `${expected.scenario} source must not be added to p_items`);
+  }
+
+  assert.equal(countOccurrences(runner, 'RESTAURANT_TABLE_OWNER_REQUIRED'), 2,
+    'Admin and non-owning Staff must each continue to be rejected by the ownership rule');
+  assert.match(runner, /if state not in \('P0001','42501'\) then raise; end if;/,
+    'The invalid-session case must still reject rather than succeed');
+  assert.match(runner, /where local_order_id='bridge-invalid-session-parent'\"\), '0'/,
+    'Invalid-session rejection must leave no order row');
+  assert.match(runner, /const legacyUpsertSql = `set role service_role;/,
+    'Legacy route must retain its original service_role execution context');
+  assert.match(runner, /const versionedUpsertSql = `set role anon;/,
+    'Versioned route must retain its original anon execution context');
+  assert.match(runner, /public\.pos_upsert_restaurant_order_versioned_v1\(/,
+    'The harness must keep invoking the real versioned wrapper');
 });
 
 test('structured evidence gate binds the Admin report to this run and SHA and rejects malformed evidence', async () => {

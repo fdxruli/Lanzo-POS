@@ -112,7 +112,7 @@ async function createLegacyOrder(localOrderId, idempotencyKey) {
   const result = JSON.parse(await query(`select public.pos_upsert_restaurant_order_unlimited(
     'lab-license-a','lab-device-a','lab-device-token-a','lab-admin-session',
     jsonb_build_object('localOrderId',${quoteSql(localOrderId)},'tableLabel','R6 concurrency seed','status','pending',
-      'fulfillmentStatus','pending','subtotal',10,'total',10),
+      'fulfillmentStatus','pending','source','tables','subtotal',10,'total',10),
     jsonb_build_array(jsonb_build_object('localLineId',${quoteSql(localOrderId + '-line')},
       'productId','bridge-restaurant-product','productName','Bridge synthetic product','quantity',1,'unitPrice',10,'lineTotal',10)),
     ${quoteSql(idempotencyKey)})::text`));
@@ -599,7 +599,7 @@ async function run() {
   await runSql(`select public.pos_upsert_restaurant_order_unlimited(
     'lab-license-a','lab-device-b','lab-device-token-b','lab-staff-session',
     jsonb_build_object('localOrderId','${ownedOrder}','tableLabel','Staff owned','status','pending',
-      'fulfillmentStatus','pending','subtotal',10,'total',10),
+      'fulfillmentStatus','pending','source','tables','subtotal',10,'total',10),
     jsonb_build_array(jsonb_build_object('localLineId','${ownedOrder}-line','productId','bridge-restaurant-product',
       'productName','Bridge synthetic product','quantity',1,'unitPrice',10,'lineTotal',10)),
     'r6-staff-owner-seed');`, 'staff-owner-seed');
@@ -620,7 +620,7 @@ async function run() {
     begin perform public.pos_upsert_restaurant_order_unlimited(
       'lab-license-a','lab-device-a','lab-device-token-a','lab-admin-session',
       jsonb_build_object('localOrderId','${ownedOrder}','tableLabel','Admin non-owner','status','pending',
-        'fulfillmentStatus','pending','subtotal',10,'total',10),
+        'fulfillmentStatus','pending','source','tables','subtotal',10,'total',10),
       jsonb_build_array(jsonb_build_object('localLineId','${ownedOrder}-line','productId','bridge-restaurant-product',
         'productName','Bridge synthetic product','quantity',1,'unitPrice',10,'lineTotal',10)),
       'r6-admin-non-owner');
@@ -643,7 +643,7 @@ async function run() {
     begin perform public.pos_upsert_restaurant_order_unlimited(
       'lab-license-a','lab-device-c','lab-device-token-c','lab-staff-session-c',
       jsonb_build_object('localOrderId','${ownedOrder}','tableLabel','Staff C non-owner','status','pending',
-        'fulfillmentStatus','pending','subtotal',10,'total',10),
+        'fulfillmentStatus','pending','source','tables','subtotal',10,'total',10),
       jsonb_build_array(jsonb_build_object('localLineId','${ownedOrder}-line','productId','bridge-restaurant-product',
         'productName','Bridge synthetic product','quantity',1,'unitPrice',10,'lineTotal',10)),
       'r6-staff-c-non-owner');
@@ -657,7 +657,7 @@ async function run() {
     begin perform public.pos_upsert_restaurant_order_unlimited(
       'lab-license-a','lab-device-b','lab-device-token-b','wrong-session',
       jsonb_build_object('localOrderId','bridge-invalid-session-parent','tableLabel','Invalid session','status','pending',
-        'fulfillmentStatus','pending','subtotal',10,'total',10),
+        'fulfillmentStatus','pending','source','tables','subtotal',10,'total',10),
       jsonb_build_array(jsonb_build_object('localLineId','bridge-invalid-session-line','productId','bridge-restaurant-product',
         'productName','Bridge synthetic product','quantity',1,'unitPrice',10,'lineTotal',10)),
       'r6-invalid-session');
@@ -689,7 +689,7 @@ async function run() {
   const legacyUpsertSql = `set role service_role; select public.pos_upsert_restaurant_order_unlimited(
     'lab-license-a','lab-device-a','lab-device-token-a','lab-admin-session',
     jsonb_build_object('localOrderId','bridge-legacy-client','tableLabel','Legacy client','status','pending',
-      'fulfillmentStatus','pending','subtotal',10,'total',10),
+      'fulfillmentStatus','pending','source','tables','subtotal',10,'total',10),
     jsonb_build_array(jsonb_build_object('localLineId','bridge-legacy-line','productId','bridge-restaurant-product',
       'productName','Bridge synthetic product','quantity',1,'unitPrice',10,'lineTotal',10)),
     'bridge-legacy-client-upsert')::text; reset role;`;
@@ -702,7 +702,7 @@ async function run() {
   const versionedUpsertSql = `set role anon; select public.pos_upsert_restaurant_order_versioned_v1(
     'lab-license-a','lab-device-a','lab-device-token-a','lab-admin-session',
     jsonb_build_object('localOrderId','bridge-versioned-client','clientContractVersion',2,'tableLabel','Versioned client',
-      'status','pending','fulfillmentStatus','pending','subtotal',10,'total',10),
+      'status','pending','fulfillmentStatus','pending','source','tables','subtotal',10,'total',10),
     jsonb_build_array(jsonb_build_object('localLineId','bridge-versioned-line','productId','bridge-restaurant-product',
       'productName','Bridge synthetic product','quantity',1,'unitPrice',10,'lineTotal',10)),
     'bridge-versioned-client-upsert')::text; reset role;`;
