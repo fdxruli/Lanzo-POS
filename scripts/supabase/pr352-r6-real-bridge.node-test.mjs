@@ -78,10 +78,38 @@ test('PostgreSQL ACL comparisons ignore display order but preserve the exact gra
   const expected = '{postgres=X/postgres,service_role=X/postgres,anon=X/postgres,authenticated=X/postgres}';
   const actual = '{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}';
   assert.deepEqual(canonicalizePostgresAcl(actual), canonicalizePostgresAcl(expected));
-  assert.notDeepEqual(canonicalizePostgresAcl('{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres}'),
-    canonicalizePostgresAcl(expected));
+  const expectedSet = canonicalizePostgresAcl(expected);
+  const driftCases = [
+    ['missing grant', '{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres}'],
+    ['additional role', '{postgres=X/postgres,service_role=X/postgres,anon=X/postgres,authenticated=X/postgres,unexpected=X/postgres}'],
+    ['different grantee', '{postgres=X/postgres,service_role=X/postgres,anon=X/postgres,other_role=X/postgres}'],
+    ['different grantor', '{postgres=X/postgres,service_role=X/postgres,anon=X/postgres,authenticated=X/other_grantor}'],
+    ['different privilege', '{postgres=X/postgres,service_role=X/postgres,anon=X/postgres,authenticated=U/postgres}'],
+    ['grant option drift', '{postgres=X*/postgres,service_role=X/postgres,anon=X/postgres,authenticated=X/postgres}'],
+    ['PUBLIC confused with a named role', '{=X/postgres,service_role=X/postgres,anon=X/postgres,authenticated=X/postgres}'],
+  ];
+  for (const [description, acl] of driftCases) {
+    assert.notDeepEqual(canonicalizePostgresAcl(acl), expectedSet, description);
+  }
+
+  const duplicateGrant = canonicalizePostgresAcl('{postgres=X/postgres,postgres=X/postgres}');
+  assert.equal(duplicateGrant.length, 2, 'Duplicate ACL entries must not be silently removed');
+  assert.notDeepEqual(duplicateGrant, canonicalizePostgresAcl('{postgres=X/postgres}'));
+
+  const quotedIdentifiers = String.raw`{"\"role,with,comma\"=X/postgres","\"role\"\"quoted\"=X/postgres"}`;
+  const quotedIdentifiersReordered = String.raw`{"\"role\"\"quoted\"=X/postgres","\"role,with,comma\"=X/postgres"}`;
+  assert.deepEqual(canonicalizePostgresAcl(quotedIdentifiers), [
+    '"role""quoted"=X/postgres', '"role,with,comma"=X/postgres',
+  ]);
+  assert.deepEqual(canonicalizePostgresAcl(quotedIdentifiers), canonicalizePostgresAcl(quotedIdentifiersReordered),
+    'Quoted and escaped identifiers must survive array decoding while order is ignored');
+  assert.notDeepEqual(canonicalizePostgresAcl(quotedIdentifiers),
+    canonicalizePostgresAcl(String.raw`{"\"other,role\"=X/postgres","\"role\"\"quoted\"=X/postgres"}`),
+    'A quoted grantee change must remain visible');
+
   assert.deepEqual(canonicalizePostgresAcl('<default>'), ['<default>']);
   assert.throws(() => canonicalizePostgresAcl('not-an-acl'), /brace-delimited array literal/);
+  assert.throws(() => canonicalizePostgresAcl(null), /brace-delimited array literal/);
   const runner = await readFile(runnerPath, 'utf8');
   assert.match(runner, /canonicalizePostgresAcl\(liveDispatcher\.acl\)/);
   assert.match(runner, /canonicalizePostgresAcl\(actual\.acl\)/);
