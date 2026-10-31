@@ -72,6 +72,11 @@ describe('salesCloudRepository projection callback transport', () => {
       payments: [],
       cashSessionId: 'session-1',
       customerId: 'customer-1',
+      restaurantSettlement: {
+        parent_order_id: 'sale-1',
+        parent_order_version: '2026-01-02T03:04:05.123456Z',
+        contract_version: 1
+      },
       idempotencyKey: 'sale-key',
       actorHandle: { actorKey: 'actor-1' },
       project
@@ -79,7 +84,14 @@ describe('salesCloudRepository projection callback transport', () => {
 
     expect(mocks.executeNewFinancialIntent).toHaveBeenCalledWith(expect.objectContaining({
       operationType,
-      project
+      project,
+      request: expect.objectContaining({
+        restaurant_settlement: {
+          parent_order_id: 'sale-1',
+          parent_order_version: '2026-01-02T03:04:05.123456Z',
+          contract_version: 1
+        }
+      })
     }));
     expect(result).toMatchObject({
       financialIntentId: 'intent-1',

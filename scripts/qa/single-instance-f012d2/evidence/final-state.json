@@ -1,0 +1,39 @@
+{
+  "verifiedAt": "2026-10-26T17:13:39.949Z",
+  "implementationSha": "2765a8a85a8246df2916db76c01f5e94ff22dccb",
+  "lastVerificationFile": "remote-final-verification.json",
+  "remotePr373": {
+    "number": 373,
+    "url": "https://github.com/fdxruli/Lanzo-POS/pull/373",
+    "state": "open",
+    "merged": false,
+    "draft": true,
+    "base": "feat/f01-single-instance-coordinator-r1",
+    "base_sha": "f1d69093ffe3ad180752773c178b7fbaefd92ce1",
+    "head": "feat/f01-early-admission-recovery-r1",
+    "head_sha": "ce03b04918347898396957c8b7f35eb955896b89",
+    "updated_at": "2026-10-25T07:16:40Z"
+  },
+  "remotePr372": {
+    "number": 372,
+    "url": "https://github.com/fdxruli/Lanzo-POS/pull/372",
+    "state": "open",
+    "merged": false,
+    "draft": true,
+    "base": "main",
+    "base_sha": "52bb573e651529b323b6617e3161cd76ece14a39",
+    "head": "feat/f01-single-instance-coordinator-r1",
+    "head_sha": "f1d69093ffe3ad180752773c178b7fbaefd92ce1",
+    "updated_at": "2026-10-23T20:02:24Z"
+  },
+  "pr373PublicationUnchanged": true,
+  "pr372Unchanged": true,
+  "mainSha": "52bb573e651529b323b6617e3161cd76ece14a39",
+  "publication": "LOCAL_ONLY_NO_PUSH",
+  "gate": "OFF",
+  "productionDeploy": "NOT_PERFORMED",
+  "supabaseProjectCalls": "NONE",
+  "migrations": "NONE",
+  "merge": "NOT_PERFORMED",
+  "ciForThisLocalChange": "NOT_EXECUTED_NOT_PUBLISHED"
+}

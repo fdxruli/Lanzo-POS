@@ -1,0 +1,57 @@
+{
+  "base": {
+    "total": 831,
+    "passed": 827,
+    "failed": [
+      {
+        "file": "services/__test__/restaurant/restaurantOrderCheckoutClose.test.js",
+        "name": "restaurantOrderCheckoutClose split bill support saves pending split close when offline",
+        "status": "failed"
+      },
+      {
+        "file": "services/__test__/restaurant/restaurantOrderCheckoutClose.test.js",
+        "name": "restaurantOrderCheckoutClose split bill support saves pending split close when repository returns failure",
+        "status": "failed"
+      },
+      {
+        "file": "services/__test__/restaurant/restaurantOrderCheckoutClose.test.js",
+        "name": "restaurantOrderCheckoutClose split bill support retries pending split close without losing paymentSummary",
+        "status": "failed"
+      },
+      {
+        "file": "services/__test__/restaurant/restaurantOrderCheckoutClose.test.js",
+        "name": "restaurantOrderCheckoutClose split bill support does not evict legacy rows when adding a new tenant-scoped retry",
+        "status": "failed"
+      }
+    ]
+  },
+  "candidate": {
+    "total": 831,
+    "passed": 827,
+    "failed": [
+      {
+        "file": "services/__test__/restaurant/restaurantOrderCheckoutClose.test.js",
+        "name": "restaurantOrderCheckoutClose split bill support saves pending split close when offline",
+        "status": "failed"
+      },
+      {
+        "file": "services/__test__/restaurant/restaurantOrderCheckoutClose.test.js",
+        "name": "restaurantOrderCheckoutClose split bill support saves pending split close when repository returns failure",
+        "status": "failed"
+      },
+      {
+        "file": "services/__test__/restaurant/restaurantOrderCheckoutClose.test.js",
+        "name": "restaurantOrderCheckoutClose split bill support retries pending split close without losing paymentSummary",
+        "status": "failed"
+      },
+      {
+        "file": "services/__test__/restaurant/restaurantOrderCheckoutClose.test.js",
+        "name": "restaurantOrderCheckoutClose split bill support does not evict legacy rows when adding a new tenant-scoped retry",
+        "status": "failed"
+      }
+    ]
+  },
+  "newFailures": [],
+  "missingAssertions": [],
+  "identicalStatuses": true
+}

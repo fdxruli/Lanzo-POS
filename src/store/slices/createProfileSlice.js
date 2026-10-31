@@ -26,13 +26,6 @@ import {
   isTenantRuntimeError
 } from '../../services/db/tenantRuntimeRouter';
 
-let _profileLoadGeneration = 0;
-let _profileSessionGeneration = 0;
-
-const isProfileLoadCurrent = (generation, sessionGeneration) => (
-  generation === _profileLoadGeneration && sessionGeneration === _profileSessionGeneration
-);
-
 const LEGACY_COMPANY_KEY = 'company';
 
 const getProfileCacheKey = (licenseKey) => `company:${licenseKey}`;
@@ -188,15 +181,28 @@ const applyProfileState = (set, get, companyData, profileImportCandidate) => {
   }
 };
 
-export const createProfileSlice = (set, get) => ({
-  companyProfile: null,
-  profileImportCandidate: null,
-
-  _invalidateProfileLoads: () => {
-    _profileSessionGeneration += 1;
-  },
-
-  _loadProfile: async (licenseKey, options = {}) => {
+export const createProfileSlice = (set, get) => {
+  let _profileLoadGeneration = 0;
+  let _profileSessionGeneration = 0;
+  const isProfileLoadCurrent = (generation, sessionGeneration) => (
+    generation === _profileLoadGeneration && sessionGeneration === _profileSessionGeneration
+  );
+  const loadProfile = async (licenseKey, options = {}) => {
+    const lifecycle = options?.lifecycle;
+    const sessionGeneration = _profileSessionGeneration;
+    const generation = ++_profileLoadGeneration;
+    const stateAtRequest = { ...get() };
+    const tenantAtRequest = getTenantRuntimeReadiness().runtime;
+    const actorBinding = () => {
+      const actor = actorRuntimeController.getState?.();
+      return JSON.stringify(actor && {
+        status: actor.status, generation: actor.generation, actorType: actor.actorType,
+        actorId: actor.actorId, actorKey: actor.actorKey, sessionId: actor.sessionId,
+        tenant: actor.tenant, deviceRef: actor.deviceRef
+      });
+    };
+    const actorAtRequest = actorBinding();
+    const run = async () => {
     const {
       forceRemote = false,
       refreshProfile = false,
@@ -206,15 +212,20 @@ export const createProfileSlice = (set, get) => ({
       assertCurrent = null,
       onPrepared = null
     } = options || {};
-    const sessionGeneration = _profileSessionGeneration;
-    const generation = ++_profileLoadGeneration;
-    const stateAtRequest = get();
-    const tenantAtRequest = getTenantRuntimeReadiness().runtime;
+    const actorHandle = actorRuntimeController.getState?.()?.status === 'granted'
+      ? actorRuntimeController.capture() : null;
     const assertLoadContext = () => {
+      lifecycle?.assertCurrent();
       assertCurrent?.();
+      actorHandle?.assertCurrent();
       const tenant = getTenantRuntimeReadiness().runtime;
       const currentLicense = get().licenseDetails?.license_key;
-      if (!isProfileLoadCurrent(generation, sessionGeneration)
+      if (actorBinding() !== actorAtRequest
+        || get().currentDeviceRole !== stateAtRequest.currentDeviceRole
+        || (get().currentAdminUser?.id || null) !== (stateAtRequest.currentAdminUser?.id || null)
+        || (get().currentStaffUser?.id || null) !== (stateAtRequest.currentStaffUser?.id || null)
+        || !isProfileLoadCurrent(generation, sessionGeneration)
+        || (stateAtRequest.licenseDetails?.license_key && currentLicense !== licenseKey)
         || (currentLicense && currentLicense !== licenseKey)
         || tenant?.opaqueId !== tenantAtRequest?.opaqueId
         || tenant?.generation !== tenantAtRequest?.generation
@@ -227,10 +238,19 @@ export const createProfileSlice = (set, get) => ({
     const publishPreparedProfile = (companyData, importCandidate) => {
       assertLoadContext();
       applyProfileState(set, get, companyData, importCandidate);
-      onPrepared?.(get().appStatus);
+      const continuation = onPrepared?.(get().appStatus);
+      if (continuation && typeof continuation.then === 'function') {
+        // The callback may synchronously quiesce/invalidate its scope before
+        // returning. Observe rejection before any admission check can throw.
+        const task = Promise.resolve(continuation);
+        task.catch(error => Logger.warn('[Profile] Callback auxiliar falló:', error));
+        lifecycle?.markUnobservable('profile_async_onPrepared');
+        if (lifecycle) lifecycle.observe(task);
+      }
     };
 
     if (!licenseKey) return null;
+    assertLoadContext();
 
     if (profileLoadMode === 'background' && !getTenantRuntimeReadiness().ready) {
       Logger.warn('[Profile] Se omite carga de fondo (' + reason + '): TenantRuntime no está listo.');
@@ -252,8 +272,19 @@ export const createProfileSlice = (set, get) => ({
 
     assertLoadContext();
 
-    get().refreshTenantUiPreferences?.();
-    get().refreshDriveSession?.();
+    // These production providers are synchronous local reads, not Google RPCs.
+    // A substituted async provider is observed but cannot promise guarded effects.
+    for (const name of ['refreshTenantUiPreferences', 'refreshDriveSession']) {
+      assertLoadContext();
+      const result = get()[name]?.();
+      if (result && typeof result.then === 'function') {
+        const task = Promise.resolve(result);
+        task.catch(error => Logger.warn('[Profile] Refresh auxiliar falló:', error));
+        lifecycle?.markUnobservable(`profile_async_${name}`);
+        if (lifecycle) lifecycle.observe(task);
+      }
+      assertLoadContext();
+    }
 
     const stateAtLoad = get();
     const isAuthenticatedStaffTransition =
@@ -301,7 +332,7 @@ export const createProfileSlice = (set, get) => ({
         }
       }
     } catch (error) {
-      if (isLocalTenantAccessError(error) || isTenantRuntimeError(error) || error?.code?.startsWith('ACTOR_')) throw error;
+      if (isLocalTenantAccessError(error) || isTenantRuntimeError(error) || error?.code?.startsWith('ACTOR_') || error?.message?.startsWith('BOOTSTRAP_LIFECYCLE_')) throw error;
       profileStorageReadFailed = true;
       Logger.warn('[AppStore] Fallo carga perfil local:', error);
     }
@@ -309,7 +340,9 @@ export const createProfileSlice = (set, get) => ({
     if (licenseKey && navigator.onLine && (!companyData || shouldForceRemote || !cacheMeta.isFresh)) {
       try {
         Logger.log(`[Profile] Refrescando perfil remoto (${reason}).`);
-        const profileResult = await getBusinessProfile(licenseKey);
+        const profileResult = await (lifecycle
+          ? getBusinessProfile(licenseKey, { lifecycle, assertCurrent: assertLoadContext })
+          : getBusinessProfile(licenseKey));
 
         if (!isProfileLoadCurrent(generation, sessionGeneration)) {
           Logger.log(`[Profile] Carga #${generation} descartada`);
@@ -347,7 +380,7 @@ export const createProfileSlice = (set, get) => ({
           profileMissingRemotely = true;
         }
       } catch (error) {
-        if (isLocalTenantAccessError(error) || isTenantRuntimeError(error) || error?.code?.startsWith('ACTOR_')) throw error;
+        if (isLocalTenantAccessError(error) || isTenantRuntimeError(error) || error?.code?.startsWith('ACTOR_') || error?.message?.startsWith('BOOTSTRAP_LIFECYCLE_')) throw error;
         Logger.warn('[AppStore] Fallo carga perfil online:', error);
       }
     }
@@ -422,7 +455,15 @@ export const createProfileSlice = (set, get) => ({
 
     publishPreparedProfile(companyData, profileImportCandidate);
     return companyData;
-  },
+    };
+    return lifecycle ? lifecycle.track(run) : run();
+  };
+  loadProfile.bootstrapLifecycleVersion = 1;
+  return {
+    companyProfile: null,
+    profileImportCandidate: null,
+    _invalidateProfileLoads: () => { _profileSessionGeneration += 1; },
+    _loadProfile: loadProfile,
 
   handleSetup: async (setupData) => {
     const licenseKey = get().licenseDetails?.license_key;
@@ -548,4 +589,5 @@ export const createProfileSlice = (set, get) => ({
   dismissProfileImportCandidate: () => {
     set({ profileImportCandidate: null });
   }
-});
+  };
+};

@@ -1,0 +1,501 @@
+{
+  "baseline": "ce03b04918347898396957c8b7f35eb955896b89",
+  "failures": [
+    {
+      "file": "src/hooks/__tests__/useNavigationGuard.test.jsx",
+      "failed": 8,
+      "assertions": [
+        {
+          "test": "useNavigationGuard bloquea la navegaci\u00f3n aunque el formulario no haya cambiado",
+          "error": "TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)')"
+        },
+        {
+          "test": "useNavigationGuard cancela la salida y conserva los datos capturados",
+          "error": "TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)')"
+        },
+        {
+          "test": "useNavigationGuard descarta la operaci\u00f3n y contin\u00faa al destino al confirmar",
+          "error": "TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)')"
+        },
+        {
+          "test": "useNavigationGuard permite navegar sin advertencia despu\u00e9s de guardar",
+          "error": "TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)')"
+        },
+        {
+          "test": "useNavigationGuard activa la advertencia nativa del navegador mientras est\u00e1 habilitado",
+          "error": "ReferenceError: document is not defined"
+        },
+        {
+          "test": "useNavigationGuard bloquea cambios de pesta\u00f1a representados por par\u00e1metros de b\u00fasqueda",
+          "error": "TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)')"
+        },
+        {
+          "test": "useNavigationGuard cierra el modal al confirmar salida hacia otra pesta\u00f1a de la misma ruta",
+          "error": "TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)')"
+        },
+        {
+          "test": "useNavigationGuard bloquea la navegaci\u00f3n hacia atr\u00e1s del historial",
+          "error": "ReferenceError: document is not defined"
+        }
+      ]
+    },
+    {
+      "file": "src/store/__test__/useOrderStore.test.js",
+      "failed": 5,
+      "assertions": [
+        {
+          "test": "useOrderStore - mesas abiertas loadOpenOrder carga solo ventas con status open",
+          "error": "AssertionError: expected { success: false, \u2026(1) } to deeply equal { success: true }"
+        },
+        {
+          "test": "useOrderStore - mesas abiertas saveOrderAsOpen inserta nueva orden abierta y limpia la sesi\u00f3n",
+          "error": "AssertionError: expected { success: false, \u2026(1) } to deeply equal { success: true, \u2026(1) }"
+        },
+        {
+          "test": "useOrderStore - mesas abiertas saveOrderAsOpen actualiza orden activa liberando y re-reservando stock",
+          "error": "AssertionError: expected { success: false, \u2026(1) } to deeply equal { success: true, id: 'sale-open-2' }"
+        },
+        {
+          "test": "useOrderStore - mesas abiertas saveOrderAsOpen hace rollback best-effort si falla el upsert",
+          "error": "AssertionError: expected 'El pedido est\u00e1 vac\u00edo.' to contain 'put failed'"
+        },
+        {
+          "test": "useOrderStore - mesas abiertas clearSession limpia order, activeOrderId y tableData",
+          "error": "AssertionError: expected [ { id: 'prod', quantity: 1, \u2026(1) } ] to deeply equal []"
+        }
+      ]
+    },
+    {
+      "file": "src/store/__test__/useStoreSync.test.js",
+      "failed": 4,
+      "assertions": [
+        {
+          "test": "Bidirectional Syncing: useOrderStore <-> useActiveOrders 1. deber\u00eda enlazar correctamente ambos stores",
+          "error": "TypeError: __vi_import_1__.useOrderStore.getState(...).linkWithActiveOrders is not a function"
+        },
+        {
+          "test": "Bidirectional Syncing: useOrderStore <-> useActiveOrders 2. deber\u00eda volcar datos a useOrderStore cuando se hace switchOrder",
+          "error": "TypeError: __vi_import_1__.useOrderStore.getState(...).linkWithActiveOrders is not a function"
+        },
+        {
+          "test": "Bidirectional Syncing: useOrderStore <-> useActiveOrders 3. deber\u00eda actualizar useActiveOrders cuando useOrderStore es modificado",
+          "error": "TypeError: __vi_import_1__.useOrderStore.getState(...).linkWithActiveOrders is not a function"
+        },
+        {
+          "test": "Bidirectional Syncing: useOrderStore <-> useActiveOrders 4. el getter currentOrder en useOrderStore debe retornar la orden actual",
+          "error": "TypeError: __vi_import_1__.useOrderStore.getState(...).linkWithActiveOrders is not a function"
+        }
+      ]
+    },
+    {
+      "file": "src/services/__test__/BackupRiskEvaluator.test.js",
+      "failed": 8,
+      "assertions": [
+        {
+          "test": "BackupRiskEvaluator debe calcular el riesgo L1 cuando pasa el umbral de 50",
+          "error": "ReferenceError: localStorage is not defined"
+        },
+        {
+          "test": "BackupRiskEvaluator debe escalar al riesgo L3 cuando pasa de 300",
+          "error": "ReferenceError: localStorage is not defined"
+        },
+        {
+          "test": "BackupRiskEvaluator no debe disparar alerta si el posponer esta activo",
+          "error": "ReferenceError: localStorage is not defined"
+        },
+        {
+          "test": "BackupRiskEvaluator debe reanudar la alerta L3 si se rebasa el limite de posponer",
+          "error": "ReferenceError: localStorage is not defined"
+        },
+        {
+          "test": "BackupRiskEvaluator debe marcar el respaldo como completado correctamente (Async)",
+          "error": "ReferenceError: localStorage is not defined"
+        },
+        {
+          "test": "BackupRiskEvaluator no debe lanzar ni registrar error cuando localStorage no existe",
+          "error": "ReferenceError: localStorage is not defined"
+        },
+        {
+          "test": "BackupRiskEvaluator startBackupRiskEvaluator no hace nada cuando localStorage no existe",
+          "error": "ReferenceError: localStorage is not defined"
+        },
+        {
+          "test": "BackupRiskEvaluator startBackupRiskEvaluator programa un solo ping inicial",
+          "error": "ReferenceError: localStorage is not defined"
+        }
+      ]
+    },
+    {
+      "file": "src/services/__test__/cashOpeningPolicy.test.js",
+      "failed": 5,
+      "assertions": [
+        {
+          "test": "cashOpeningPolicy usa apertura manual como politica segura por defecto",
+          "error": "ReferenceError: localStorage is not defined"
+        },
+        {
+          "test": "cashOpeningPolicy persiste la autoapertura solo cuando se configura explicitamente",
+          "error": "ReferenceError: localStorage is not defined"
+        },
+        {
+          "test": "cashOpeningPolicy exige responsable y coincidencia entre fondo y conteo",
+          "error": "ReferenceError: localStorage is not defined"
+        },
+        {
+          "test": "cashOpeningPolicy registra la diferencia contra el fondo sugerido",
+          "error": "ReferenceError: localStorage is not defined"
+        },
+        {
+          "test": "cashOpeningPolicy identifica de forma explicita una apertura automatica",
+          "error": "ReferenceError: localStorage is not defined"
+        }
+      ]
+    },
+    {
+      "file": "src/services/__test__/cashOpeningPolicyService.test.js",
+      "failed": 1,
+      "assertions": [
+        {
+          "test": "cashOpeningPolicy persiste la autoapertura solo cuando se configura explicitamente",
+          "error": "AssertionError: expected 'manual' to be 'automatic' // Object.is equality"
+        }
+      ]
+    },
+    {
+      "file": "src/services/orders/orderVersioning.test.js",
+      "failed": 3,
+      "assertions": [
+        {
+          "test": "orderVersioning compares revision before updatedAt or item count",
+          "error": "ReferenceError: localStorage is not defined"
+        },
+        {
+          "test": "orderVersioning uses updatedAt and then deviceId as deterministic tie breakers",
+          "error": "ReferenceError: localStorage is not defined"
+        },
+        {
+          "test": "orderVersioning reuses the main device id when available",
+          "error": "ReferenceError: localStorage is not defined"
+        }
+      ]
+    },
+    {
+      "file": "src/utils/__tests__/ecommerceConfiguredProduct.test.js",
+      "failed": 3,
+      "assertions": [
+        {
+          "test": "ecommerceConfiguredProduct validates required, single, multiple, min and max groups",
+          "error": "AssertionError: expected false to be true // Object.is equality"
+        },
+        {
+          "test": "ecommerceConfiguredProduct builds a configured cart line and clamps quantity to exact variant stock",
+          "error": "AssertionError: expected { success: false, valid: false, \u2026(2) } to match object { success: true, \u2026(4) }"
+        },
+        {
+          "test": "ecommerceConfiguredProduct creates a minimal server payload without client prices or names",
+          "error": "AssertionError: expected { productId: '', quantity: 1 } to deeply equal { productId: 'product-1', \u2026(3) }"
+        }
+      ]
+    },
+    {
+      "file": "store/tests/social-preview/storePrebuiltPackaging.test.js",
+      "failed": 13,
+      "assertions": [
+        {
+          "test": "workspace prebuilt saneado limpia workspace y no crea manifiesto si el build falla",
+          "error": "AssertionError: expected [Function] to throw error including 'controlled Vercel failure' but got 'Unable to resolve the npm CLI safely:\u2026'"
+        },
+        {
+          "test": "workspace prebuilt saneado preserva un enlace administrativo .vercel preexistente",
+          "error": "AssertionError: expected [Function] to throw error including 'controlled local stop' but got 'Unable to resolve the npm CLI safely:\u2026'"
+        },
+        {
+          "test": "workspace prebuilt saneado no crea .vercel administrativo cuando no exist\u00eda",
+          "error": "AssertionError: expected [Function] to throw error including 'controlled local stop' but got 'Unable to resolve the npm CLI safely:\u2026'"
+        },
+        {
+          "test": "workspace prebuilt saneado rechaza modificaci\u00f3n de projectId y limpia el workspace",
+          "error": "AssertionError: expected [Function] to throw error including 'Repository protected state changed' but got 'Unable to resolve the npm CLI safely:\u2026'"
+        },
+        {
+          "test": "workspace prebuilt saneado rechaza modificaci\u00f3n de orgId y limpia el workspace",
+          "error": "AssertionError: expected [Function] to throw error including 'Repository protected state changed' but got 'Unable to resolve the npm CLI safely:\u2026'"
+        },
+        {
+          "test": "workspace prebuilt saneado rechaza creaci\u00f3n de .vercel y limpia el workspace",
+          "error": "AssertionError: expected [Function] to throw error including 'Repository protected state changed' but got 'Unable to resolve the npm CLI safely:\u2026'"
+        },
+        {
+          "test": "workspace prebuilt saneado rechaza creaci\u00f3n de .env.local y limpia el workspace",
+          "error": "AssertionError: expected [Function] to throw error including 'Repository protected state changed' but got 'Unable to resolve the npm CLI safely:\u2026'"
+        },
+        {
+          "test": "workspace prebuilt saneado rechaza modificaci\u00f3n de vercel.json y limpia el workspace",
+          "error": "AssertionError: expected [Function] to throw error including 'Repository protected state changed' but got 'Unable to resolve the npm CLI safely:\u2026'"
+        },
+        {
+          "test": "workspace prebuilt saneado rechaza creaci\u00f3n de .gitignore y limpia el workspace",
+          "error": "AssertionError: expected [Function] to throw error including 'Repository protected state changed' but got 'Unable to resolve the npm CLI safely:\u2026'"
+        },
+        {
+          "test": "workspace prebuilt saneado rechaza creaci\u00f3n de .vercel/repo.json y limpia el workspace",
+          "error": "AssertionError: expected [Function] to throw error including 'Repository protected state changed' but got 'Unable to resolve the npm CLI safely:\u2026'"
+        },
+        {
+          "test": "workspace prebuilt saneado rechaza modificaci\u00f3n de store/vercel.json y limpia el workspace",
+          "error": "AssertionError: expected [Function] to throw error including 'Repository protected state changed' but got 'Unable to resolve the npm CLI safely:\u2026'"
+        },
+        {
+          "test": "workspace prebuilt saneado rechaza eliminaci\u00f3n del enlace administrativo y limpia el workspace",
+          "error": "AssertionError: expected [Function] to throw error including 'Repository protected state changed' but got 'Unable to resolve the npm CLI safely:\u2026'"
+        },
+        {
+          "test": "workspace prebuilt saneado rechaza creaci\u00f3n de .vercel/.env.production.local y limpia el workspace",
+          "error": "AssertionError: expected [Function] to throw error including 'Repository protected state changed' but got 'Unable to resolve the npm CLI safely:\u2026'"
+        }
+      ]
+    },
+    {
+      "file": "src/components/products/__tests__/ProductList.test.jsx",
+      "failed": 1,
+      "assertions": [
+        {
+          "test": "ProductList batch-backed grocery details uses sale units and the nearest active batch expiry on cards",
+          "error": "TestingLibraryElementError: Unable to find an element with the text: /Caduca en \\d+ d\u00edas/. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible."
+        }
+      ]
+    },
+    {
+      "file": "src/components/settings/__tests__/OperationalSettings.cashOpening.test.jsx",
+      "failed": 2,
+      "assertions": [
+        {
+          "test": "OperationalSettings cash opening control disables automatic cash opening for cloud cash licenses",
+          "error": "ReferenceError: document is not defined"
+        },
+        {
+          "test": "OperationalSettings cash opening control warns FREE/local users when automatic cash opening is enabled",
+          "error": "ReferenceError: document is not defined"
+        }
+      ]
+    },
+    {
+      "file": "src/hooks/pos/__tests__/useEcommercePosCheckoutSingleFlight.test.jsx",
+      "failed": 7,
+      "assertions": [
+        {
+          "test": "useEcommercePosCheckoutSingleFlight absorbs twenty rapid clicks, exposes starting and pins the ecommerce target",
+          "error": "ReferenceError: document is not defined"
+        },
+        {
+          "test": "useEcommercePosCheckoutSingleFlight keeps A as the expected target when selection changes to B before the deferred run",
+          "error": "ReferenceError: document is not defined"
+        },
+        {
+          "test": "useEcommercePosCheckoutSingleFlight resets only non-current A when target change aborts before lock acquisition",
+          "error": "ReferenceError: document is not defined"
+        },
+        {
+          "test": "useEcommercePosCheckoutSingleFlight ignores clicks silently while payment is already pending",
+          "error": "ReferenceError: document is not defined"
+        },
+        {
+          "test": "useEcommercePosCheckoutSingleFlight preserves the canonical contention path for a lock owned elsewhere",
+          "error": "ReferenceError: document is not defined"
+        },
+        {
+          "test": "useEcommercePosCheckoutSingleFlight clears stale starting and validating state and allows a real retry",
+          "error": "ReferenceError: document is not defined"
+        },
+        {
+          "test": "useEcommercePosCheckoutSingleFlight does not change normal POS checkout behavior or pass ecommerce arguments",
+          "error": "ReferenceError: document is not defined"
+        }
+      ]
+    },
+    {
+      "file": "src/hooks/pos/__tests__/usePosModals.mobileTransition.test.jsx",
+      "failed": 4,
+      "assertions": [
+        {
+          "test": "mobile POS history layer transitions hands the cart entry to payment without a second push or an unmarked duplicate",
+          "error": "AssertionError: expected \"pushState\" to be called 1 times, but got 2 times"
+        },
+        {
+          "test": "mobile POS history layer transitions closes payment with the first Back and reaches the previous route with the second",
+          "error": "AssertionError: expected 2 to be 1 // Object.is equality"
+        },
+        {
+          "test": "mobile POS history layer transitions does not accumulate invisible entries across three cart-payment-cancel cycles",
+          "error": "AssertionError: expected 2 to be 1 // Object.is equality"
+        },
+        {
+          "test": "mobile POS history layer transitions reuses the cart entry for prescription and then payment",
+          "error": "AssertionError: expected \"pushState\" to be called 1 times, but got 2 times"
+        }
+      ]
+    },
+    {
+      "file": "src/services/__test__/restaurant/restaurantOrderCheckoutClose.test.js",
+      "failed": 4,
+      "assertions": [
+        {
+          "test": "restaurantOrderCheckoutClose split bill support saves pending split close when offline",
+          "error": "AssertionError: expected [] to have a length of 1 but got +0"
+        },
+        {
+          "test": "restaurantOrderCheckoutClose split bill support saves pending split close when repository returns failure",
+          "error": "AssertionError: expected [] to have a length of 1 but got +0"
+        },
+        {
+          "test": "restaurantOrderCheckoutClose split bill support retries pending split close without losing paymentSummary",
+          "error": "AssertionError: expected { success: true, closed: +0, \u2026(2) } to match object { success: true, closed: 1, \u2026(2) }"
+        },
+        {
+          "test": "restaurantOrderCheckoutClose split bill support does not evict legacy rows when adding a new tenant-scoped retry",
+          "error": "AssertionError: expected [ \u2026(51) ] to have a length of 52 but got 51"
+        }
+      ]
+    },
+    {
+      "file": "src/services/__test__/sales/financialStats.test.js",
+      "failed": 1,
+      "assertions": [
+        {
+          "test": "financialStats solo agrega ventas con status closed en daily stats",
+          "error": "AssertionError: expected [ { id: '2026-03-12', \u2026(14) } ] to deeply equal [ { id: '2026-03-12', \u2026(7) } ]"
+        }
+      ]
+    },
+    {
+      "file": "src/services/__test__/sales/inventoryFlow.test.js",
+      "failed": 1,
+      "assertions": [
+        {
+          "test": "inventoryFlow committed stock reserva lotes y sincroniza committedStock del padre",
+          "error": "AssertionError: expected [ { batchId: 'b-1', \u2026(5) } ] to deeply equal [ { batchId: 'b-1', \u2026(3) } ]"
+        }
+      ]
+    },
+    {
+      "file": "src/services/ecommerce/__tests__/ecommercePosDraftService.test.js",
+      "failed": 2,
+      "assertions": [
+        {
+          "test": "ecommercePosDraftService maps the server-resolved sourceProductId while excluding customer PII from the draft",
+          "error": "AssertionError: expected { id: 'product-1', \u2026(19) } to match object { id: 'product-1', \u2026(7) }"
+        },
+        {
+          "test": "ecommercePosDraftService opens an existing local draft only when remote prepared identity matches completely",
+          "error": "AssertionError: expected { success: true, created: true, \u2026(2) } to match object { success: true, created: false, \u2026(1) }"
+        }
+      ]
+    },
+    {
+      "file": "src/services/ecommerce/__tests__/ecommercePosInventoryResolution.test.js",
+      "failed": 2,
+      "assertions": [
+        {
+          "test": "stale response protection does not replace a manual selection with an older automatic response",
+          "error": "AssertionError: expected false to be true // Object.is equality"
+        },
+        {
+          "test": "stale response protection does not recreate a released draft after a delayed response",
+          "error": "AssertionError: expected 'ECOMMERCE_INVENTORY_DRAFT_INVALID' to be 'ECOMMERCE_INVENTORY_STALE_RESPONSE' // Object.is equality"
+        }
+      ]
+    },
+    {
+      "file": "src/services/ecommerce/__tests__/ecommercePublicConfiguredService.test.js",
+      "failed": 2,
+      "assertions": [
+        {
+          "test": "ecommercePublicService configurable products loads and normalizes the safe product configuration RPC",
+          "error": "EcommercePublicError: La configuraci\u00f3n cambi\u00f3. Actualiza el cat\u00e1logo."
+        },
+        {
+          "test": "ecommercePublicService configurable products sends only productId, quantity, variantId and canonical selections",
+          "error": "AssertionError: expected \"vi.fn()\" to be called with arguments: [ 'ecommerce_create_order', \u2026(1) ]"
+        }
+      ]
+    },
+    {
+      "file": "src/services/ecommerce/__tests__/ecommercePublicService.test.js",
+      "failed": 3,
+      "assertions": [
+        {
+          "test": "ecommercePublicService maps ECOMMERCE_CATALOG_REVISION_CHANGED to a controlled checkout message",
+          "error": "AssertionError: expected EcommercePublicError: No pudimos confirma\u2026 { \u2026(6) } to match object { \u2026(2) }"
+        },
+        {
+          "test": "ecommercePublicService maps ECOMMERCE_PRODUCT_NOT_AVAILABLE to a controlled checkout message",
+          "error": "AssertionError: expected EcommercePublicError: Este producto ya no\u2026 { \u2026(6) } to match object { \u2026(2) }"
+        },
+        {
+          "test": "ecommercePublicService maps ECOMMERCE_ORDER_CREATE_FAILED to a controlled checkout message",
+          "error": "AssertionError: expected EcommercePublicError: No pudimos procesar\u2026 { \u2026(5) } to match object { \u2026(2) }"
+        }
+      ]
+    },
+    {
+      "file": "src/services/ecommerce/__tests__/ecommercePublicTrackingContract.test.js",
+      "failed": 1,
+      "assertions": [
+        {
+          "test": "checkout tracking contract keeps the same tracking link on an idempotent response",
+          "error": "AssertionError: expected { success: true, \u2026(3) } to match object { idempotent: true, order: { \u2026(3) } }"
+        }
+      ]
+    },
+    {
+      "file": "src/services/backup/__tests__/backupConfigDb.test.js",
+      "failed": 1,
+      "assertions": [
+        {
+          "test": "backupConfigDb persisted CryptoKey guarda y recupera una clave AES-GCM no extraible",
+          "error": "MissingAPIError IndexedDB API missing. Please visit https://tinyurl.com/y2uuvskb"
+        }
+      ]
+    },
+    {
+      "file": "src/services/backup/__tests__/backupRestore.test.js",
+      "failed": 1,
+      "assertions": [
+        {
+          "test": "restoreWhitelistedDatabase revierte los clear si una insercion falla dentro de la transaccion",
+          "error": "AssertionError: expected [] to deeply equal [ { id: 'product-local' } ]"
+        }
+      ]
+    },
+    {
+      "file": "src/services/sales/__tests__/receiptWhatsApp.ecommerce.test.js",
+      "failed": 6,
+      "assertions": [
+        {
+          "test": "receiptWhatsApp money formatting and ecommerce traceability formats exact-string prices and totals while preserving ecommerce references",
+          "error": "AssertionError: expected \"vi.fn()\" to be called 1 times, but got 0 times"
+        },
+        {
+          "test": "receiptWhatsApp money formatting and ecommerce traceability shows subtotal, discount detail, final total, received cash and change",
+          "error": "TypeError: undefined is not iterable (cannot read property Symbol(Symbol.iterator))"
+        },
+        {
+          "test": "receiptWhatsApp money formatting and ecommerce traceability reads aggregate discount data from metadata when needed",
+          "error": "TypeError: undefined is not iterable (cannot read property Symbol(Symbol.iterator))"
+        },
+        {
+          "test": "receiptWhatsApp money formatting and ecommerce traceability calculates cash change from exact-string monetary values",
+          "error": "TypeError: undefined is not iterable (cannot read property Symbol(Symbol.iterator))"
+        },
+        {
+          "test": "receiptWhatsApp money formatting and ecommerce traceability formats credit payment and pending balance from exact strings",
+          "error": "TypeError: undefined is not iterable (cannot read property Symbol(Symbol.iterator))"
+        },
+        {
+          "test": "receiptWhatsApp money formatting and ecommerce traceability preserves pharmacy receipt details and metadata-only ecommerce references",
+          "error": "TypeError: undefined is not iterable (cannot read property Symbol(Symbol.iterator))"
+        }
+      ]
+    }
+  ]
+}

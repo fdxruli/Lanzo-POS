@@ -1,0 +1,10 @@
+import { spawnSync } from 'node:child_process';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { resolve, join } from 'node:path';
+import { gzipSync } from 'node:zlib';
+const out = resolve(process.argv[2]); mkdirSync(out, { recursive: true });
+const args = ['node_modules/vitest/vitest.mjs', 'run', '--maxWorkers=2', '--reporter=json', `--outputFile=${join(out, 'global.json')}`];
+const r = spawnSync(process.execPath, args, { encoding: 'utf8', maxBuffer: 60 * 1024 * 1024 });
+writeFileSync(join(out, 'global.log.gz'), gzipSync(`${r.stdout || ''}\n${r.stderr || ''}`));
+writeFileSync(join(out, 'global-exit.json'), JSON.stringify({ command: [process.execPath, ...args], exitCode: r.status, error: r.error?.message }, null, 2));
+process.exitCode = r.status ?? 1;

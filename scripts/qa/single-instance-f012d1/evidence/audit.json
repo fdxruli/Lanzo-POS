@@ -1,0 +1,21 @@
+{
+  "baseline": "0f1625f46e6fe234e378487bb06f74f4bd1555e9",
+  "preexistingFiles": 2062,
+  "unchanged": 2057,
+  "changed": [
+    "src/services/customerCredit/customerCreditSyncHandler.js",
+    "src/services/posRealtime.js",
+    "src/services/sync/posSyncBootstrapCoordinator.js",
+    "src/services/sync/posSyncOrchestrator.js",
+    "src/services/sync/syncExecutionScope.js"
+  ],
+  "newSource": {
+    "path": "src/services/sync/scopedPosRealtimeListener.js",
+    "sha256": "676d6d335582e29f0125b09fbbdb12ea69178654d61dd98ba87fa7e4c8545cc6"
+  },
+  "legacyStartBodyUnchanged": true,
+  "scannedAssets": 45,
+  "violations": [],
+  "gate": "OFF: App/main/ready activation callers unchanged, no new scope constructed by the commercial graph. Optional producer code is reachable; inert without an injected scope.",
+  "preserved": "Actor Runtime/Scoped Storage, M01/F02, Admin168h/Staff policy, six reserved Caja financial callsites, durable financial contracts, SQL, dependencies, workflows, license/security realtime and Ecommerce topics/capabilities preserve baseline blobs."
+}

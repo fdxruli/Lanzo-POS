@@ -1,0 +1,28 @@
+[
+  {
+    "tree": "base",
+    "cwd": "/workspace/scratch/2a5709f8e222/Lanzo-cash-route-base",
+    "command": [
+      "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node",
+      "/workspace/scratch/2a5709f8e222/Lanzo-POS/scripts/qa/single-instance-f012d1/validate.mjs",
+      "/workspace/scratch/2a5709f8e222/Lanzo-POS/scripts/qa/single-instance-f012d2/evidence/base",
+      "--build"
+    ],
+    "exit": 1
+  },
+  {
+    "tree": "candidate",
+    "cwd": "/workspace/scratch/2a5709f8e222/Lanzo-cash-route-candidate",
+    "combinedDriverExit": null,
+    "interruptedGlobalAttempt": "NOT_VALID_RESULT",
+    "completedStages": {
+      "builds": 0,
+      "run-regressions": 1
+    },
+    "globalResumed": {
+      "runner": "scripts/qa/single-instance-f012a/global.mjs",
+      "exit": 1,
+      "evidence": "candidate/global-exit.json"
+    }
+  }
+]

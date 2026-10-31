@@ -1,0 +1,233 @@
+[
+  {
+    "id": "LIFE-01",
+    "result": "passed",
+    "file": "single-instance-f012a/lifetime.test.js",
+    "name": "F01-2A two lifetimes (synthetic work, unchanged product timeout defaults) LIFE-01 completes before timeout and preserves the value reference",
+    "scopeLimit": null
+  },
+  {
+    "id": "LIFE-02",
+    "result": "passed",
+    "file": "single-instance-f012a/lifetime.test.js",
+    "name": "F01-2A two lifetimes (synthetic work, unchanged product timeout defaults) LIFE-02 public timeout does not settle client execution",
+    "scopeLimit": null
+  },
+  {
+    "id": "LIFE-03",
+    "result": "passed",
+    "file": "single-instance-f012a/lifetime.test.js",
+    "name": "F01-2A two lifetimes (synthetic work, unchanged product timeout defaults) LIFE-03 preserves rejection identity before timeout",
+    "scopeLimit": null
+  },
+  {
+    "id": "LIFE-04",
+    "result": "passed",
+    "file": "single-instance-f012a/lifetime.test.js",
+    "name": "F01-2A two lifetimes (synthetic work, unchanged product timeout defaults) LIFE-04 observes a rejection after public timeout",
+    "scopeLimit": null
+  },
+  {
+    "id": "LIFE-05",
+    "result": "passed",
+    "file": "single-instance-f012a/lifetime.test.js",
+    "name": "F01-2A two lifetimes (synthetic work, unchanged product timeout defaults) LIFE-05 transport completion alone does not drain a local continuation",
+    "scopeLimit": null
+  },
+  {
+    "id": "LIFE-06",
+    "result": "passed",
+    "file": "single-instance-f012a/lifetime.test.js",
+    "name": "F01-2A two lifetimes (synthetic work, unchanged product timeout defaults) LIFE-06 failed synchronous or asynchronous registration never starts work",
+    "scopeLimit": null
+  },
+  {
+    "id": "LIFE-07",
+    "result": "passed",
+    "file": "single-instance-f012a/lifetime.test.js",
+    "name": "F01-2A two lifetimes (synthetic work, unchanged product timeout defaults) LIFE-07 no observer retains legacy function and promise timeout behavior",
+    "scopeLimit": null
+  },
+  {
+    "id": "LIFE-08",
+    "result": "passed",
+    "file": "single-instance-f012a/lifetime.test.js",
+    "name": "F01-2A two lifetimes (synthetic work, unchanged product timeout defaults) LIFE-08 invocations have independent task registries",
+    "scopeLimit": null
+  },
+  {
+    "id": "LIFE-09",
+    "result": "passed",
+    "file": "single-instance-f012a/lifetime.test.js",
+    "name": "F01-2A two lifetimes (synthetic work, unchanged product timeout defaults) LIFE-09 root and nested tasks register before their factories run",
+    "scopeLimit": null
+  },
+  {
+    "id": "LIFE-10",
+    "result": "passed",
+    "file": "single-instance-f012a/lifetime.test.js",
+    "name": "F01-2A two lifetimes (synthetic work, unchanged product timeout defaults) LIFE-10 quiesce during local continuation retains the real coordinator executor",
+    "scopeLimit": null
+  },
+  {
+    "id": "LIFE-11",
+    "result": "passed",
+    "file": "single-instance-f012a/lifetime.test.js",
+    "name": "F01-2A two lifetimes (synthetic work, unchanged product timeout defaults) LIFE-11 quiesce after public timeout retains the real coordinator executor",
+    "scopeLimit": null
+  },
+  {
+    "id": "LIFE-12",
+    "result": "passed",
+    "file": "single-instance-f012a/lifetime.test.js",
+    "name": "F01-2A two lifetimes (synthetic work, unchanged product timeout defaults) LIFE-12 revoked ticket must still fence the local effect explicitly",
+    "scopeLimit": null
+  },
+  {
+    "id": "LIFE-23",
+    "result": "passed",
+    "file": "single-instance-f012a/lifetime.test.js",
+    "name": "F01-2A two lifetimes (synthetic work, unchanged product timeout defaults) LIFE-23 late rejection produces no unhandled rejection",
+    "scopeLimit": null
+  },
+  {
+    "id": "LIFE-24",
+    "result": "passed",
+    "file": "single-instance-f012a/lifetime.test.js",
+    "name": "F01-2A two lifetimes (synthetic work, unchanged product timeout defaults) LIFE-24 non-settling task cannot gain release by a second timeout",
+    "scopeLimit": null
+  },
+  {
+    "id": "LIFE-26",
+    "result": "passed",
+    "file": "single-instance-f012a/lifetime.test.js",
+    "name": "F01-2A two lifetimes (synthetic work, unchanged product timeout defaults) LIFE-26 finishing one of two underlying tasks cannot drain both",
+    "scopeLimit": null
+  },
+  {
+    "id": "LIFE-27",
+    "result": "passed",
+    "file": "single-instance-f012a/lifetime.test.js",
+    "name": "F01-2A two lifetimes (synthetic work, unchanged product timeout defaults) LIFE-27 composed observers both retain the complete lifetime",
+    "scopeLimit": null
+  },
+  {
+    "id": "LIFE-28",
+    "result": "passed",
+    "file": "single-instance-f012a/lifetime.test.js",
+    "name": "F01-2A two lifetimes (synthetic work, unchanged product timeout defaults) LIFE-28 settlement removes task references and closes escaped scopes",
+    "scopeLimit": null
+  },
+  {
+    "id": "LIFE-29",
+    "result": "passed",
+    "file": "single-instance-f012a/lifetime.test.js",
+    "name": "F01-2A two lifetimes (synthetic work, unchanged product timeout defaults) LIFE-29 prestarted/unobservable promise is rejected by opt-in contract; detached work remains outside it",
+    "scopeLimit": "Caller reports an unknown frontier, no automatic discovery of detached work."
+  },
+  {
+    "id": "LIFE-05B",
+    "result": "passed",
+    "file": "single-instance-f012a/recovery.test.js",
+    "name": "F01-2A real ledger/recovery, Dexie fake-IDB, synthetic auth/actor/transport LIFE-05B completed receipt still waits for real projection lease lifecycle and cleanup",
+    "scopeLimit": null
+  },
+  {
+    "id": "LIFE-09B",
+    "result": "passed",
+    "file": "single-instance-f012a/recovery.test.js",
+    "name": "F01-2A real ledger/recovery, Dexie fake-IDB, synthetic auth/actor/transport LIFE-09B nested station/preflight work remains registered after the outer preflight timeout",
+    "scopeLimit": null
+  },
+  {
+    "id": "LIFE-13",
+    "result": "passed",
+    "file": "single-instance-f012a/recovery.test.js",
+    "name": "F01-2A real ledger/recovery, Dexie fake-IDB, synthetic auth/actor/transport LIFE-13 actor changed during dispatch cannot write a late response",
+    "scopeLimit": null
+  },
+  {
+    "id": "LIFE-14",
+    "result": "passed",
+    "file": "single-instance-f012a/recovery.test.js",
+    "name": "F01-2A real ledger/recovery, Dexie fake-IDB, synthetic auth/actor/transport LIFE-14 tenant/generation changed while receipt pending cannot dispatch or mutate",
+    "scopeLimit": null
+  },
+  {
+    "id": "LIFE-15",
+    "result": "passed",
+    "file": "single-instance-f012a/recovery.test.js",
+    "name": "F01-2A real ledger/recovery, Dexie fake-IDB, synthetic auth/actor/transport LIFE-15 receipt PROCESSING preserves ambiguity without dispatch",
+    "scopeLimit": null
+  },
+  {
+    "id": "LIFE-16",
+    "result": "passed",
+    "file": "single-instance-f012a/recovery.test.js",
+    "name": "F01-2A real ledger/recovery, Dexie fake-IDB, synthetic auth/actor/transport LIFE-16 late COMPLETED receipt confirms only through recovery and preserves immutable origin",
+    "scopeLimit": null
+  },
+  {
+    "id": "LIFE-17",
+    "result": "passed",
+    "file": "single-instance-f012a/recovery.test.js",
+    "name": "F01-2A real ledger/recovery, Dexie fake-IDB, synthetic auth/actor/transport LIFE-17 receipt inaccessible never authorizes sending",
+    "scopeLimit": null
+  },
+  {
+    "id": "LIFE-18",
+    "result": "passed",
+    "file": "single-instance-f012a/recovery.test.js",
+    "name": "F01-2A real ledger/recovery, Dexie fake-IDB, synthetic auth/actor/transport LIFE-18 NOT_FOUND after an attempt never authorizes automatic redispatch",
+    "scopeLimit": null
+  },
+  {
+    "id": "LIFE-19",
+    "result": "passed",
+    "file": "single-instance-f012a/recovery.test.js",
+    "name": "F01-2A real ledger/recovery, Dexie fake-IDB, synthetic auth/actor/transport LIFE-19 PREPARED/0 retains the one legitimate first dispatch",
+    "scopeLimit": null
+  },
+  {
+    "id": "LIFE-20",
+    "result": "passed",
+    "file": "single-instance-f012a/recovery.test.js",
+    "name": "F01-2A real ledger/recovery, Dexie fake-IDB, synthetic auth/actor/transport LIFE-20 PREPARED with previous attempts requires receipt without dispatch",
+    "scopeLimit": null
+  },
+  {
+    "id": "LIFE-21",
+    "result": "passed",
+    "file": "single-instance-f012a/recovery.test.js",
+    "name": "F01-2A real ledger/recovery, Dexie fake-IDB, synthetic auth/actor/transport LIFE-21 financial lease is released at timeout while observer still retains client task; new recovery does not resend",
+    "scopeLimit": null
+  },
+  {
+    "id": "LIFE-22",
+    "result": "passed",
+    "file": "single-instance-f012a/recovery.test.js",
+    "name": "F01-2A real ledger/recovery, Dexie fake-IDB, synthetic auth/actor/transport LIFE-22 expired lease cannot mutate ledger on late success; no lease extension for observation",
+    "scopeLimit": null
+  },
+  {
+    "id": "LIFE-25",
+    "result": "passed",
+    "file": "single-instance-f012a/recovery.test.js",
+    "name": "F01-2A real ledger/recovery, Dexie fake-IDB, synthetic auth/actor/transport LIFE-25 abrupt-document boundary model: reopen durable attempted row and require receipt, never resend",
+    "scopeLimit": "Document/reopen boundary only; not E2E server crash/payment."
+  },
+  {
+    "id": "LIFE-30",
+    "result": "passed",
+    "file": "single-instance-f012a/recovery.test.js",
+    "name": "F01-2A real ledger/recovery, Dexie fake-IDB, synthetic auth/actor/transport LIFE-30 legacy financial consumer retains identical receipt-first behavior without observer",
+    "scopeLimit": null
+  },
+  {
+    "id": "CE-RECOVERY-04",
+    "result": "passed",
+    "file": "single-instance-f012a/recovery.test.js",
+    "name": "F01-2A real ledger/recovery, Dexie fake-IDB, synthetic auth/actor/transport CE-RECOVERY-04 candidate: real unchanged 35s timeout retains underlying dispatch without confirming it",
+    "scopeLimit": null
+  }
+]

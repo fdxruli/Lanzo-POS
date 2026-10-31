@@ -7,6 +7,7 @@ import { Money } from '../../utils/moneyMath';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 import { orderTotals } from '../../services/sales/orderTotals';
 import { isCreditPaymentMethod, isOverdueCreditNote } from '../../services/customerMessaging';
+import { isMoneyInputDraft, normalizeMoneyInputDraft, parseMoneyInputDraft } from '../../utils/moneyInputDraft';
 
 const CASH_DENOMINATIONS = [20, 50, 100, 200, 500, 1000];
 const selectCurrentOrder = (state) => (state.currentOrderId ? state.activeOrders.get(state.currentOrderId) || null : null);
@@ -45,6 +46,7 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
       setIsSubmitting(false);
       setDueDate('');
       setHasOverdueCredit(false);
+      setIsQuickAddOpen(false);
     }
   }, [show, effectiveTotal, paymentMethod]);
 
@@ -67,11 +69,11 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
   }, [show, paymentMethod, selectedCustomerId]);
 
   const safeTotal = Money.init(effectiveTotal);
-  let safePaid;
-  try { safePaid = Money.init(amountPaid.toString().replace(',', '.') || '0'); } catch { safePaid = Money.init(0); }
-
   const isEfectivo = paymentMethod === 'efectivo';
   const isFiado = isCreditPaymentMethod(paymentMethod);
+  const paidDraft = parseMoneyInputDraft(amountPaid, { allowEmpty: isFiado });
+  const isAmountValid = paidDraft.status !== 'invalid' && paidDraft.cents !== null;
+  const safePaid = Money.fromCents(paidDraft.cents ?? 0);
   const hasInitialCreditPayment = isFiado && safePaid.gt(0);
   const change = isEfectivo ? Money.subtract(safePaid, safeTotal) : Money.init('0');
   const safeChange = change.gte(0) ? change : Money.init('0');
@@ -84,11 +86,11 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
   const limitMessage = limit.eq(0) ? 'Este cliente no tiene crédito autorizado.' : `Excede el límite de crédito ($${Money.toNumber(limit)}). Deuda final $${Money.toNumber(projectedDebt)}.`;
   const todayStr = new Date().toISOString().split('T')[0];
   const isDueDateValid = isFiado ? (dueDate && dueDate >= todayStr) : true;
-  const canConfirm = isEfectivo ? safePaid.gte(safeTotal) : (selectedCustomerId !== null && safePaid.lte(safeTotal) && !isOverLimit && isDueDateValid);
+  const canConfirm = isAmountValid && (isEfectivo ? safePaid.gte(safeTotal) : (selectedCustomerId !== null && safePaid.lte(safeTotal) && !isOverLimit && isDueDateValid));
 
   const handleAmountChange = (event) => {
     const val = event.target.value;
-    if (val === '' || /^\d+(\.\d{0,2})?$/.test(val)) setAmountPaid(val);
+    if (isMoneyInputDraft(val)) setAmountPaid(val);
   };
 
   const handleDenominationClick = (amount) => {
@@ -143,7 +145,7 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
   };
 
   const handleQuickCustomerSaved = (newCustomer) => {
-    setCustomers((prev) => [...prev, newCustomer]);
+    setCustomers((prev) => [...prev.filter((customer) => customer.id !== newCustomer.id), newCustomer]);
     handleCustomerClick(newCustomer);
     setIsQuickAddOpen(false);
   };
@@ -210,13 +212,14 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
               <div className="payment-col-right">
                 <div className="payment-details">
                   <label className="payment-input-label" htmlFor="payment-amount">{isEfectivo ? 'Monto Recibido:' : 'Abono (Opcional):'}</label>
-                  <input className="payment-input" id="payment-amount" type="text" inputMode="decimal" value={amountPaid} onChange={handleAmountChange} onFocus={(event) => event.target.select()} required={isEfectivo} autoFocus={isEfectivo} />
+                  <input className="payment-input" id="payment-amount" type="text" inputMode="decimal" value={amountPaid} onChange={handleAmountChange} onBlur={() => { const normalized = normalizeMoneyInputDraft(amountPaid, { allowEmpty: isFiado }); if (normalized !== null) setAmountPaid(normalized); }} onFocus={(event) => event.target.select()} required={isEfectivo} autoFocus={isEfectivo} aria-invalid={(amountPaid !== '' && !isAmountValid) || (isFiado && safePaid.gt(safeTotal))} aria-describedby={amountPaid !== '' && !isAmountValid ? 'payment-amount-error' : isFiado && safePaid.gt(safeTotal) ? 'payment-advance-error' : undefined} />
+                  {amountPaid !== '' && !isAmountValid && <p id="payment-amount-error" className="ui-inline-error payment-inline-message" role="alert">Escribe un monto válido con hasta dos decimales.</p>}
 
                   {hasInitialCreditPayment && <div className="form-group payment-initial-payment-method"><label className="form-label" htmlFor="initial-payment-method">Método del abono inicial:</label><select id="initial-payment-method" className="form-input" value={initialPaymentMethod} onChange={(event) => setInitialPaymentMethod(event.target.value)}><option value="efectivo">Efectivo</option><option value="tarjeta">Tarjeta</option><option value="transferencia">Transferencia</option></select><p className="ui-inline-help payment-inline-message payment-inline-message--helper">Solo efectivo se reflejará en caja.</p></div>}
 
                   {isEfectivo && <div className="quick-cash-options">{CASH_DENOMINATIONS.map((amount) => <button key={amount} type="button" className="btn-cash-option" onClick={() => handleDenominationClick(amount)}>${amount}</button>)}<button type="button" className="btn-cash-option btn-cash-option-exact" onClick={() => setAmountPaid(Money.toNumber(safeTotal).toFixed(2).toString())}>Exacto (${Money.toNumber(safeTotal).toFixed(2)})</button></div>}
 
-                  {isEfectivo ? <><p className="payment-label">Cambio:</p><p id="payment-change" className="payment-change">${Money.toNumber(safeChange).toFixed(2)}</p></> : <><p className="payment-label">Saldo Pendiente:</p><p id="payment-change" className="payment-saldo">${Money.toNumber(saldoPendiente).toFixed(2)}</p>{isFiado && currentCustomer && <div className={`ui-alert ${isOverLimit ? 'ui-alert--danger' : 'ui-alert--success'} payment-alert ${!isOverLimit ? 'payment-credit-available' : ''}`}>{isOverLimit ? <><span>Crédito insuficiente</span><p className="ui-alert__text">{limitMessage}</p></> : <><span>Crédito disponible:</span><strong>${Money.toNumber(Money.subtract(limit, projectedDebt)).toFixed(2)}</strong></>}</div>}{isFiado && safePaid.gt(safeTotal) && <p className="ui-inline-error payment-inline-message">El abono inicial no puede ser mayor al total.</p>}</>}
+                  {isEfectivo ? <><p className="payment-label">Cambio:</p><p id="payment-change" className="payment-change">${Money.toNumber(safeChange).toFixed(2)}</p></> : <><p className="payment-label">Saldo Pendiente:</p><p id="payment-change" className="payment-saldo">${Money.toNumber(saldoPendiente).toFixed(2)}</p>{isFiado && currentCustomer && <div className={`ui-alert ${isOverLimit ? 'ui-alert--danger' : 'ui-alert--success'} payment-alert ${!isOverLimit ? 'payment-credit-available' : ''}`}>{isOverLimit ? <><span>Crédito insuficiente</span><p className="ui-alert__text">{limitMessage}</p></> : <><span>Crédito disponible:</span><strong>${Money.toNumber(Money.subtract(limit, projectedDebt)).toFixed(2)}</strong></>}</div>}{isFiado && safePaid.gt(safeTotal) && <p id="payment-advance-error" className="ui-inline-error payment-inline-message">El abono inicial no puede ser mayor al total.</p>}</>}
                 </div>
 
                 <div className="payment-actions">
@@ -228,7 +231,7 @@ export default function PaymentModal({ show, onClose, onConfirm, total }) {
           </form>
         </div>
       </div>
-      {isQuickAddOpen && <QuickAddCustomerModal show={true} onClose={() => setIsQuickAddOpen(false)} onCustomerSaved={handleQuickCustomerSaved} />}
+      {isQuickAddOpen && <QuickAddCustomerModal show={true} creditMode={isFiado} minimumCreditLimit={Money.toNumber(saldoPendiente.gt(0) ? saldoPendiente : Money.init(0))} onClose={() => setIsQuickAddOpen(false)} onCustomerSaved={handleQuickCustomerSaved} />}
     </>
   );
 }

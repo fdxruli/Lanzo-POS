@@ -1,0 +1,34 @@
+{
+  "base": "f1d69093ffe3ad180752773c178b7fbaefd92ce1",
+  "baseTotal": 831,
+  "candidateTotal": 831,
+  "identicalStatusesAndFirstFailureMessage": true,
+  "passed": 827,
+  "sharedFailures": [
+    {
+      "file": "services/__test__/restaurant/restaurantOrderCheckoutClose.test.js",
+      "name": "restaurantOrderCheckoutClose split bill support saves pending split close when offline",
+      "status": "failed",
+      "failure": "AssertionError: expected [] to have a length of 1 but got +0"
+    },
+    {
+      "file": "services/__test__/restaurant/restaurantOrderCheckoutClose.test.js",
+      "name": "restaurantOrderCheckoutClose split bill support saves pending split close when repository returns failure",
+      "status": "failed",
+      "failure": "AssertionError: expected [] to have a length of 1 but got +0"
+    },
+    {
+      "file": "services/__test__/restaurant/restaurantOrderCheckoutClose.test.js",
+      "name": "restaurantOrderCheckoutClose split bill support retries pending split close without losing paymentSummary",
+      "status": "failed",
+      "failure": "AssertionError: expected { success: true, closed: +0, \u2026(2) } to match object { success: true, closed: 1, \u2026(2) }"
+    },
+    {
+      "file": "services/__test__/restaurant/restaurantOrderCheckoutClose.test.js",
+      "name": "restaurantOrderCheckoutClose split bill support does not evict legacy rows when adding a new tenant-scoped retry",
+      "status": "failed",
+      "failure": "AssertionError: expected [ \u2026(51) ] to have a length of 52 but got 51"
+    }
+  ],
+  "newFailures": []
+}

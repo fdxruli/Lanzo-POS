@@ -1,0 +1,27 @@
+[
+  {
+    "path": "src/services/sync/posSyncBootstrapAutoCoordinator.js",
+    "sha256": "f2eb27828615879feca90add2b993f4c0c861d544252954028fd7879d5519116",
+    "validationSha256": "f2eb27828615879feca90add2b993f4c0c861d544252954028fd7879d5519116"
+  },
+  {
+    "path": "src/services/sync/posSyncBootstrapCoordinator.js",
+    "sha256": "90d87cd543198b98c309248f1ac6ca09007e427661a52f8c49e79f9f315c0961",
+    "validationSha256": "90d87cd543198b98c309248f1ac6ca09007e427661a52f8c49e79f9f315c0961"
+  },
+  {
+    "path": "src/services/sync/posSyncOrchestrator.js",
+    "sha256": "551a1fe3f37ffb8a7e4009b95944b8c20897309dfeaa79362a5a74c5881cde84",
+    "validationSha256": "551a1fe3f37ffb8a7e4009b95944b8c20897309dfeaa79362a5a74c5881cde84"
+  },
+  {
+    "path": "src/services/sync/syncExecutionScope.js",
+    "sha256": "a0fd2034eac140c6209bf685201cb61824643584304959d4835c793cfcf99b0d",
+    "validationSha256": "a0fd2034eac140c6209bf685201cb61824643584304959d4835c793cfcf99b0d"
+  },
+  {
+    "path": "src/services/financial/financialIntentRecoveryCoordinator.js",
+    "sha256": "cb2a5683f7dbdee7615255779489f623e9cb79341a76c2ddf2e8b619b76d5d4b",
+    "validationSha256": "cb2a5683f7dbdee7615255779489f623e9cb79341a76c2ddf2e8b619b76d5d4b"
+  }
+]

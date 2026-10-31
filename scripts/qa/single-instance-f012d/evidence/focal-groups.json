@@ -1,0 +1,32 @@
+{
+  "F01-1": {
+    "passed": 45,
+    "failed": 0,
+    "pending": 0
+  },
+  "F01-2": {
+    "passed": 5,
+    "failed": 0,
+    "pending": 0
+  },
+  "F01-2A": {
+    "passed": 33,
+    "failed": 0,
+    "pending": 0
+  },
+  "F01-2B": {
+    "passed": 45,
+    "failed": 0,
+    "pending": 0
+  },
+  "F01-2C": {
+    "passed": 71,
+    "failed": 0,
+    "pending": 0
+  },
+  "F01-2D": {
+    "passed": 69,
+    "failed": 0,
+    "pending": 0
+  }
+}

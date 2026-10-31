@@ -1,0 +1,19 @@
+{
+  "native_result": "NOT_EXECUTED",
+  "installed_tooling": "Playwright from CODEX_PRIMARY_RUNTIME_NODE_MODULES; compatible Chromium executable absent",
+  "attempts": [
+    {
+      "command": "playwright install chromium",
+      "result": "FAILED",
+      "observed_error": "End of central directory record signature not found; not a zip file or truncated; download failure code 1"
+    },
+    {
+      "command": "playwright install chromium-headless-shell",
+      "result": "FAILED",
+      "observed_error": "Download failure code 1"
+    }
+  ],
+  "evidence_type": "Summary of tool outputs observed before continuation; original transient install logs no longer available. Current launch cause retained verbatim in chromium.json.",
+  "browser_security_disabled": false,
+  "synthetic_lock_manager_substitution": false
+}

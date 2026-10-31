@@ -1,0 +1,17 @@
+{
+  "baseline": "7d9f4562a4b12efdcdfb8d5fbb77a4ff9d81ec50",
+  "baselineCounts": {
+    "numPassedTests": 1167,
+    "numFailedTests": 4,
+    "numPendingTests": 50,
+    "numTotalTests": 1221
+  },
+  "candidateCounts": {
+    "numPassedTests": 1167,
+    "numFailedTests": 4,
+    "numPendingTests": 50,
+    "numTotalTests": 1221
+  },
+  "assertions": 1221,
+  "differences": []
+}
