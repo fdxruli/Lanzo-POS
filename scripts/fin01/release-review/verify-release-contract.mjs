@@ -89,9 +89,15 @@ const fixtureMigrationPath = 'supabase/migrations/20260820165842_shared_terminal
 const fixtureMigrationBytes = await fs.readFile(path.join(root, fixtureMigrationPath));
 const fixtureMigrationSha = createHash('sha256').update(fixtureMigrationBytes).digest('hex');
 assert.equal(fixtureMigrationSha, '23a93e388cbb82c9079efc508e8491bc5e0d9b5d8760bfddd6ee1102da73df9e', 'SHARED_TERMINAL_5A_CANONICAL_SOURCE_HASH_MISMATCH');
+const dispatcherFixturePath = 'supabase/tests/fixtures/restaurant_sale_dispatcher_guard_3d14_setup.sql';
+const dispatcherFixtureBytes = await fs.readFile(path.join(root, dispatcherFixturePath));
+const dispatcherFixtureSha = createHash('sha256').update(dispatcherFixtureBytes).digest('hex');
+assert.equal(dispatcherFixtureSha, '5adb0261a49d8dccae5e9fbe292f4612cb8e5ce1f8db6692595e1ec0be4bd22c', 'DISPATCHER_FIXTURE_CANONICAL_SOURCE_HASH_MISMATCH');
 assert.ok(financialOperationsFixture.includes("'23a93e388cbb82c9079efc508e8491bc5e0d9b5d8760bfddd6ee1102da73df9e'"), 'SHARED_TERMINAL_5A_SOURCE_HASH_PIN_REQUIRED');
+assert.ok(financialOperationsFixture.includes("'5adb0261a49d8dccae5e9fbe292f4612cb8e5ce1f8db6692595e1ec0be4bd22c'"), 'DISPATCHER_FIXTURE_SOURCE_HASH_PIN_REQUIRED');
 assert.ok(financialOperationsFixture.includes('SHARED_TERMINAL_FINANCIAL_RECEIPT_FIXTURE_PREREQUISITE_MISSING')
-  && financialOperationsFixture.includes('FINANCIAL_RECEIPT_FIXTURE_SECURITY_PROFILE_MISMATCH'), 'SHARED_TERMINAL_5A_FIXTURE_MUST_FAIL_CLOSED');
+  && financialOperationsFixture.includes('FINANCIAL_RECEIPT_FIXTURE_SECURITY_PROFILE_MISMATCH')
+  && financialOperationsFixture.includes('RESTAURANT_DISPATCHER_FIXTURE_PROFILE_MISMATCH'), 'SHARED_TERMINAL_5A_FIXTURE_MUST_FAIL_CLOSED');
 assert.ok(!workflow.includes('docker logs') && !workflow.includes('postgres-${{ matrix.postgres }}.log'), 'POSTGRES_SERVICE_SQL_LOG_MUST_NOT_BE_UPLOADED');
 assert.ok(post3d14ReplayVerifier.includes('POST_3D14_REPLAY_PROFILE_MISMATCH') && post3d14ReplayVerifier.includes('02eafa69f7a91343890ecc3cb2515cb37d4fcddb1de0f0fe187aa3db9a26a18b'), 'CANONICAL_3D14_REPLAY_MUST_FAIL_CLOSED');
 assert.ok(workflow.includes('npm audit --omit=dev --audit-level=high'), 'PRODUCTION_DEPENDENCY_SECURITY_AUDIT_REQUIRED');

@@ -10,6 +10,8 @@ The runner fetches the existing laboratory evidence at commit `9853236a31d55d9cb
 
 The published fixture table snapshot predates `public.pos_financial_operations`, which canonical 3D14 references with `%rowtype`. To represent the existing SHARED.TERMINAL prerequisite, the runner extracts only that table's exact DDL, receipt index, RLS enablement, and default ACL revoke from the hash-pinned canonical `20260820165842_shared_terminal_financial_receipt_contract.sql`. It checks prerequisite constraints and the resulting table/security profile before applying 3D14. The migration itself and 3D14 remain unchanged, and the extracted SQL is temporary runtime material.
 
+The same snapshot also omits `public.pos_restaurant_orders`. The runner adds only the three-column synthetic table definition from the already checked-in narrow 3D14 dispatcher fixture, pinned to its source SHA-256 and profile-checked. The focus runner uses these existing synthetic tables and removes only its own rows, preserving the full tables and migration functions through the financial suite.
+
 No altered copy of 3D14 is installed. The runner reports the source commit/file hashes in `artifacts/fin01/fixture-source-manifest.json`; generated fixture SQL and catalog dumps are never uploaded. PostgreSQL service logs are not captured, preventing failed server statements from duplicating function source in artifacts. The raw archive and existing branch commit remain the evidence source for the original fixture.
 
 ## Selective migration lab

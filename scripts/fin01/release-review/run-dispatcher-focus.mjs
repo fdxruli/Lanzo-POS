@@ -23,8 +23,11 @@ assert.ok(['170006', '170011'].includes(serverVersion), `POSTGRES_VERSION_NOT_AL
 const tenant = '10000000-0000-0000-0000-000000000001';
 const device = '20000000-0000-0000-0000-000000000001';
 const actor = '30000000-0000-0000-0000-000000000001';
-const saleId = 'restaurant-sale-synthetic';
-const key = 'restaurant-dispatcher-synthetic-key';
+const suffix = process.env.GITHUB_SHA.slice(0, 12);
+const saleId = `restaurant-sale-${suffix}`;
+const restaurantOrderId = `restaurant-order-${suffix}`;
+const key = `restaurant-dispatcher-${suffix}`;
+const operationId = `60000000-0000-4000-a000-${suffix}`;
 const results = [];
 
 const effects = async () => JSON.parse(await q(`select jsonb_build_object(
@@ -52,23 +55,23 @@ async function expectReject(name, sql, expected) {
   results.push({ name, status: 'PASS', sqlstate: error.code, message: error.message });
 }
 
-await q(`do $fin01_dispatcher_fixture$
+await q(`do $fin01_dispatcher_fixture_preflight$
 begin
-  if to_regclass('public.pos_restaurant_orders') is not null
-     or to_regclass('public.pos_financial_operations') is not null then
-    raise exception 'DISPATCHER_FIXTURE_TABLE_ALREADY_EXISTS';
+  if to_regclass('public.pos_restaurant_orders') is null
+     or to_regclass('public.pos_financial_operations') is null
+     or not exists(select 1 from public.licenses where id=${lit(tenant)}::uuid)
+     or not exists(select 1 from information_schema.columns where table_schema='public' and table_name='pos_restaurant_orders' and column_name='local_order_id')
+     or not exists(select 1 from information_schema.columns where table_schema='public' and table_name='pos_financial_operations' and column_name='idempotency_key') then
+    raise exception 'DISPATCHER_FINANCIAL_SCHEMA_REQUIRED' using errcode='P0001';
   end if;
-end $fin01_dispatcher_fixture$;
-create table public.pos_restaurant_orders (
-  id text primary key, license_id uuid not null, local_order_id text not null
-);
-create table public.pos_financial_operations (
-  id uuid primary key, license_id uuid not null, legacy_idempotency_key text not null,
-  operation_type text not null, status text not null, canonical_request jsonb not null,
-  verified_actor_key text not null, verified_device_id uuid not null, verified_cash_session_id text
-);
+  if exists(select 1 from public.pos_restaurant_orders where id=${lit(restaurantOrderId)})
+     or exists(select 1 from public.pos_financial_operations where id=${lit(operationId)}::uuid)
+     or exists(select 1 from public.pos_financial_operations where license_id=${lit(tenant)}::uuid and idempotency_key=${lit(key)}) then
+    raise exception 'DISPATCHER_SYNTHETIC_ID_COLLISION' using errcode='P0001';
+  end if;
+end $fin01_dispatcher_fixture_preflight$;
 insert into public.pos_restaurant_orders(id,license_id,local_order_id)
-values ('restaurant-order-synthetic',${lit(tenant)}::uuid,${lit(saleId)});`);
+values (${lit(restaurantOrderId)},${lit(tenant)}::uuid,${lit(saleId)});`);
 
 let failure = null;
 try {
@@ -76,11 +79,12 @@ try {
   await expectReject('valid owner auth without in-flight financial operation is blocked', call(), /RESTAURANT_FINANCIAL_DISPATCHER_REQUIRED/u);
 
   await q(`insert into public.pos_financial_operations(
-    id,license_id,legacy_idempotency_key,operation_type,status,canonical_request,
-    verified_actor_key,verified_device_id,verified_cash_session_id
+    id,license_id,idempotency_key,legacy_idempotency_key,request_hash,request_contract_version,
+    operation_type,status,canonical_request,verified_actor_key,verified_device_id,verified_cash_session_id
   ) values (
-    '60000000-0000-0000-0000-000000000001',${lit(tenant)}::uuid,${lit(key)},
-    'sale.cashier','processing',${lit(JSON.stringify({ sale: { id: saleId } }))}::jsonb,
+    ${lit(operationId)}::uuid,${lit(tenant)}::uuid,${lit(key)},${lit(key)},
+    ${lit(`sha256:${'a'.repeat(64)}`)},1,'sale.cashier','processing',
+    ${lit(JSON.stringify({ sale: { id: saleId } }))}::jsonb,
     ${lit(`admin:${actor}`)},${lit(device)}::uuid,'cash-a'
   );`);
   await q(call());
@@ -94,7 +98,8 @@ try {
 } catch (error) {
   failure = { message: error.message, sqlstate: error.code ?? null };
 } finally {
-  await q('drop table if exists public.pos_financial_operations; drop table if exists public.pos_restaurant_orders;');
+  await q(`delete from public.pos_financial_operations where id=${lit(operationId)}::uuid;
+           delete from public.pos_restaurant_orders where id=${lit(restaurantOrderId)} and license_id=${lit(tenant)}::uuid;`);
 }
 
 const report = {
