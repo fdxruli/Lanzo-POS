@@ -284,10 +284,8 @@ function ledgerSchemaPreflightSql() {
   `;
 }
 
-function preflightSql(database, projectId, baselineVersions, mode, contract) {
-  const allowedVersions = [...baselineVersions];
-  if (mode === 'resume') allowedVersions.push(expectedFiles[0].version);
-  const ids = expectedVersionSql(allowedVersions);
+function preflightSql(database, projectId, expectedVersions, mode, contract) {
+  const ids = expectedVersionSql(expectedVersions);
   return `
     do $fin01_preflight$
     declare actual text[]; pgver integer; project text; recorded_base text;

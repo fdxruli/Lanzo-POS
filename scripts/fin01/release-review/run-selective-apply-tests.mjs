@@ -293,7 +293,7 @@ await expect('synthetic backup restores the 335-row ledger and guarded post-PAY 
   await fs.writeFile(dumpPath, dump.stdout);
   const restoreDb = `fin01_cert_restore_${suffix}`;
   docker(['createdb', '-U', 'postgres', restoreDb]);
-  const restore = run('docker', ['exec', '-i', container, 'pg_restore', '-U', 'postgres', '-d', restoreDb, '--no-owner', '--no-privileges', '--exit-on-error'], { input: dump.stdout });
+  const restore = run('docker', ['exec', '-i', container, 'pg_restore', '-U', 'postgres', '-d', restoreDb, '--no-owner', '--exit-on-error'], { input: dump.stdout });
   assert.equal(restore.status, 0, restore.stderr || restore.stdout);
   const restored = await snapshot(restoreDb);
   const restoredLedgerSchema = await (async () => {
