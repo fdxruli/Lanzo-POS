@@ -203,6 +203,46 @@ jobs:
             if (!validRoleDenial(anonDenial, anonSetterCheck, "anon")
               || !validRoleDenial(authenticatedDenial, authenticatedSetterCheck, "authenticated")) process.exit(1);
             if (!Array.isArray(bridge.writerChecks) || bridge.writerChecks.length !== 10 || !bridge.writerChecks.every((writer) => writer.status === "PASS" && writer.admissionOccurrences === 1 && writer.bodyRecoveredExactly && writer.oidPreserved && writer.ownerPreserved && writer.securityDefinerPreserved && writer.configurationPreserved && writer.aclSemanticallyPreserved)) process.exit(1);
+            const station = bridge.preparationStationDependencies;
+            const stationNames = [
+              "A/G: first authenticated Staff write creates and attributes Kitchen",
+              "B: active station reuse and authentic resolver fallback",
+              "C: inactive station reactivation",
+              "D: incomplete station fields repaired without rewriting metadata",
+              "E: concurrent creation, independent psql sessions",
+              "F: different licenses keep distinct default stations",
+              "H: failed transaction rolls back station initialization"
+            ];
+            if (!station || station.status !== "PASS" || station.initialStationCountBeforeStaffWriter !== 0
+              || !Array.isArray(station.cases) || station.cases.length !== stationNames.length
+              || stationNames.some((name) => station.cases.filter((row) => row.name === name && row.status === "PASS").length !== 1)) process.exit(1);
+            const relationValid = (relation, localOrderId, localLineId) => relation
+              && relation.licenseId === "00000000-0000-0000-0000-000000000001"
+              && relation.localOrderId === localOrderId && relation.localLineId === localLineId
+              && typeof relation.parentId === "string" && relation.parentId.length > 0
+              && typeof relation.itemId === "string" && relation.itemId.length > 0
+              && relation.itemParentId === relation.parentId && relation.itemLicenseId === relation.licenseId
+              && relation.stationCode === "kitchen" && relation.stationName === "Cocina" && relation.activeItemCount === 1;
+            const firstStation = station.cases.find((row) => row.name === stationNames[0]);
+            if (firstStation.count !== 1 || firstStation.actor?.deviceId !== "00000000-0000-0000-0000-00000000000b"
+              || firstStation.actor?.staffUserId !== "00000000-0000-0000-0000-0000000000ab"
+              || !relationValid(firstStation.parentItemRelationship, "bridge-staff-owned-parent", "bridge-staff-owned-parent-line")) process.exit(1);
+            const stationRace = station.cases.find((row) => row.name === stationNames[4]);
+            if (stationRace.sqlSubmittedAndObserved !== true || !Array.isArray(stationRace.sessions)
+              || stationRace.sessions.length !== 2 || new Set(stationRace.sessions).size !== 2
+              || !Array.isArray(stationRace.observation) || stationRace.observation.length !== 2
+              || !stationRace.sessions.every((name) => stationRace.observation.some((row) => row.applicationName === name
+                && row.state === "active" && row.waitEventType === "Lock" && row.waitEvent === "advisory" && row.lockGranted === false
+                && typeof row.queryText === "string" && row.queryText.includes("ensure_default_preparation_station")))
+              || stationRace.controllerLock?.granted !== true || stationRace.controllerExit?.code !== 0
+              || !Array.isArray(stationRace.exits) || stationRace.exits.length !== 2
+              || !stationRace.exits.every((row) => row.code === 0 && row.signal === null)
+              || stationRace.finalStationCount !== 1 || stationRace.pendingSessionCount !== 0) process.exit(1);
+            uniqueCheck("Staff owner admitted; Admin and another Staff denied while Admin remains OFF; invalid session has no effect");
+            const clients = uniqueCheck("legacy and versioned clients persist and replay one correctly licensed parent and item");
+            if (clients.legacy?.role !== "service_role" || clients.versioned?.role !== "anon"
+              || !relationValid(clients.legacy.relationship, "bridge-legacy-client", "bridge-legacy-line")
+              || !relationValid(clients.versioned.relationship, "bridge-versioned-client", "bridge-versioned-line")) process.exit(1);
             if (!Array.isArray(bridge.concurrency) || bridge.concurrency.length !== 4 || !bridge.concurrency.every((scenario) => scenario.status === "PASS")) process.exit(1);
             if (bridge.postgresServerVersionNum !== "170006" || bridge.productionConnections !== 0) process.exit(1);
             if (!Array.isArray(overlay.cases) || overlay.cases.length !== overlay.caseCount || !overlay.cases.every((scenario) => scenario.status === "PASS")) process.exit(1);

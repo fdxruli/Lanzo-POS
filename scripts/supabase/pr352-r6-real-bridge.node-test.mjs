@@ -9,7 +9,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { canonicalizePostgresAcl } from './pr352-r6-canonical-postgres-acl.mjs';
 import { assertEquivalentPreparationStationCatalog } from './pr352-r6-canonical-postgres-constraints.mjs';
-import { runPreparationStationBehavior } from './pr352-r6-preparation-station.mjs';
+import { assertRestaurantOrderItemRelationship, restaurantOrderItemSnapshotSql, runPreparationStationBehavior } from './pr352-r6-preparation-station.mjs';
+import './pr352-r6-concurrency-id.node-test.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const bridgePath = path.join(root, 'docs/evidence/20261030182733_restaurant_cloud_transition_bridge_v1.sql');
@@ -187,10 +188,7 @@ test('station behavior test covers independent PG sessions and Cocina invariants
     'H: failed transaction rolls back station initialization',
   ]) assert.ok(testSource.includes(name), `Missing runtime Cocina assertion ${name}`);
   assert.match(runner, /runPreparationStationBehavior\(\{ query, runSql, psqlBin, env \}\)/);
-  assert.match(testSource, /join public\.pos_restaurant_orders parent\s+on parent\.id=item\.restaurant_order_id and parent\.license_id=item\.license_id\s+where parent\.license_id=\$\{quote\(LICENSE_A\)\}::uuid\s+and parent\.local_order_id=\$\{quote\('bridge-staff-owned-parent'\)\}/,
-    'Persisted item station must be resolved through the parent local order ID and its real parent key');
-  assert.doesNotMatch(testSource, /from public\.pos_restaurant_order_items where restaurant_order_id='bridge-staff-owned-parent'/,
-    'A localOrderId must not be mistaken for the database parent primary key');
+  assert.match(testSource, /assertRestaurantOrderItemRelationship\(itemSnapshot/);
   assert.match(runner, /statementBatch\.endsWith\(';'\)/);
   assert.match(testSource, /spawn\(psqlBin/);
   assert.match(testSource, /'-h', '127\.0\.0\.1'/);
@@ -202,6 +200,51 @@ test('station behavior test covers independent PG sessions and Cocina invariants
   assert.match(testSource, /controller\.finish\('COMMIT;'\)/);
   assert.match(testSource, /finally\s*\{[\s\S]*?controller\.finish\('ROLLBACK;'\)/);
   assert.match(testSource, /pendingConcurrencySessions/);
+});
+
+test('Staff parent and item evidence rejects missing, duplicate, cross-license and wrong-key rows', () => {
+  const expected = { licenseId: 'license-a', localOrderId: 'local-order', localLineId: 'local-line' };
+  const valid = {
+    parents: [{ id: 'internal-order', licenseId: 'license-a', localOrderId: 'local-order', deletedAt: null }],
+    items: [{ id: 'item-a', licenseId: 'license-a', parentId: 'internal-order', localLineId: 'local-line',
+      stationCode: 'kitchen', stationName: 'Cocina', deletedAt: null }],
+    joinedItems: [{ id: 'item-a', parentId: 'internal-order', licenseId: 'license-a' }],
+  };
+  assert.equal(assertRestaurantOrderItemRelationship(valid, expected).itemId, 'item-a');
+  const changed = (edit) => { const value = JSON.parse(JSON.stringify(valid)); edit(value); return value; };
+  const failures = [
+    ['missing parent', (v) => { v.parents = []; }, /parent missing/],
+    ['duplicate parents', (v) => { v.parents.push({ ...v.parents[0], id: 'internal-order-2' }); }, /Duplicate Restaurant parents/],
+    ['wrong local order', (v) => { v.parents[0].localOrderId = 'other-local'; }, /incorrect local order ID/],
+    ['wrong parent license', (v) => { v.parents[0].licenseId = 'license-b'; }, /parent has an inconsistent license/],
+    ['deleted parent', (v) => { v.parents[0].deletedAt = '2026-01-01'; }, /parent must be active/],
+    ['missing item', (v) => { v.items = []; v.joinedItems = []; }, /item is missing/],
+    ['wrong local line', (v) => { v.items[0].localLineId = 'other-line'; }, /item is missing/],
+    ['duplicate expected line', (v) => { v.items.push({ ...v.items[0], id: 'item-b' }); }, /Duplicate expected Restaurant order items/],
+    ['item under another parent', (v) => { v.items[0].parentId = 'other-parent'; v.joinedItems = []; }, /incorrect parent foreign key/],
+    ['item with another license', (v) => { v.items[0].licenseId = 'license-b'; v.joinedItems = []; }, /item has an inconsistent license/],
+    ['deleted item', (v) => { v.items[0].deletedAt = '2026-01-01'; }, /item must be active/],
+    ['extra item under parent', (v) => { v.items.push({ ...v.items[0], id: 'item-b', localLineId: 'other-line' }); }, /Duplicate or unexpected active items/],
+    ['join on local order ID', (v) => { v.joinedItems = []; }, /internal-ID and license join/],
+    ['wrong station', (v) => { v.items[0].stationCode = 'bar'; }, /assigned to kitchen/],
+    ['wrong station name', (v) => { v.items[0].stationName = 'Bar'; }, /Cocina station name/],
+  ];
+  for (const [name, edit, message] of failures) {
+    assert.throws(() => assertRestaurantOrderItemRelationship(changed(edit), expected), message, name);
+  }
+
+  const sql = restaurantOrderItemSnapshotSql('00000000-0000-0000-0000-000000000001', 'local-order', 'local-line');
+  const requireSafeJoin = (statement) => {
+    assert.match(statement, /where license_id='00000000-0000-0000-0000-000000000001'::uuid and local_order_id='local-order' and deleted_at is null/);
+    assert.match(statement, /from public\.pos_restaurant_order_items\s+where deleted_at is null/);
+    assert.match(statement, /local_line_id='local-line' and license_id='00000000-0000-0000-0000-000000000001'::uuid/);
+    assert.match(statement, /on p\.id=i\.restaurant_order_id and p\.license_id=i\.license_id/);
+    assert.doesNotMatch(statement, /\blimit\s+1\b|\bcoalesce\s*\(/i);
+  };
+  requireSafeJoin(sql);
+  assert.throws(() => requireSafeJoin(sql.replace('p.id=i.restaurant_order_id', 'p.local_order_id=i.restaurant_order_id')));
+  assert.throws(() => requireSafeJoin(sql.replace('p.license_id=i.license_id', 'true')));
+  assert.throws(() => requireSafeJoin(sql.replace("license_id='00000000-0000-0000-0000-000000000001'::uuid and ", '')));
 });
 
 test('historical 3D.14 remains the exact reviewed blob and dispatcher fingerprint', async () => {
@@ -445,8 +488,13 @@ test('all seven synthetic Restaurant writes match the mapper source contract wit
 
   assert.equal(countOccurrences(runner, 'RESTAURANT_TABLE_OWNER_REQUIRED'), 2,
     'Admin and non-owning Staff must each continue to be rejected by the ownership rule');
-  assert.match(runner, /if state not in \('P0001','42501'\) then raise; end if;/,
-    'The invalid-session case must still reject rather than succeed');
+  assert.match(runner, /if state<>'P0001' or message<>'ACTOR_SESSION_INVALID' then raise; end if;/,
+    'The invalid-session case must reject for the authentication failure, not an unrelated error');
+  const capturedFunctions = JSON.parse(await readFile(path.join(root, 'supabase/tests/fixtures/pr338-real-financial/02-function-sources.json'), 'utf8'));
+  const sessionValidator = capturedFunctions.find((source) => /FUNCTION private\.validate_pos_sync_context\(/i.test(source));
+  assert.ok(sessionValidator, 'The captured session validator must exist');
+  assert.match(sessionValidator, /raise exception 'ACTOR_SESSION_INVALID' using errcode = 'P0001'/i,
+    'The expected authentication error must match the captured server validator');
   assert.match(runner, /where local_order_id='bridge-invalid-session-parent'\"\), '0'/,
     'Invalid-session rejection must leave no order row');
   assert.match(runner, /const legacyUpsertSql = `set role service_role;/,
@@ -470,6 +518,21 @@ test('structured evidence gate binds the Admin report to this run and SHA and re
   const commitSha = 'a'.repeat(40);
   const runId = '1234567890';
   const runAttempt = '2';
+  const relation = (localOrderId, localLineId) => ({
+    parentId: 'internal-' + localOrderId, itemId: 'item-' + localLineId,
+    itemParentId: 'internal-' + localOrderId, itemLicenseId: '00000000-0000-0000-0000-000000000001',
+    licenseId: '00000000-0000-0000-0000-000000000001', localOrderId, localLineId,
+    stationCode: 'kitchen', stationName: 'Cocina', activeItemCount: 1,
+  });
+  const stationNames = [
+    'A/G: first authenticated Staff write creates and attributes Kitchen',
+    'B: active station reuse and authentic resolver fallback',
+    'C: inactive station reactivation',
+    'D: incomplete station fields repaired without rewriting metadata',
+    'E: concurrent creation, independent psql sessions',
+    'F: different licenses keep distinct default stations',
+    'H: failed transaction rolls back station initialization',
+  ];
   let bridge = {
     commitSha,
     runId,
@@ -484,6 +547,10 @@ test('structured evidence gate binds the Admin report to this run and SHA and re
       { name: 'admin-off-setter-rejected-no-state-change', status: 'PASS', attempted: true, rejected: true, errorMessage: 'RESTAURANT_ADMIN_BACKEND_NOT_AVAILABLE', sqlstate: 'P0001', stateBefore: { contractVersion: 1, writesPaused: false, activeActivationRows: 0 }, stateAfter: { contractVersion: 1, writesPaused: false, activeActivationRows: 0 } },
       { name: 'admin-off-private-setter-denied-anon', status: 'PASS', role: 'anon', denialSqlstate: '42501', denialMessage: 'permission denied for schema private', stateAfter: { contractVersion: 1, writesPaused: false, activeActivationRows: 0 } },
       { name: 'admin-off-private-setter-denied-authenticated', status: 'PASS', role: 'authenticated', denialSqlstate: '42501', denialMessage: 'permission denied for schema private', stateAfter: { contractVersion: 1, writesPaused: false, activeActivationRows: 0 } },
+      { name: 'Staff owner admitted; Admin and another Staff denied while Admin remains OFF; invalid session has no effect', status: 'PASS' },
+      { name: 'legacy and versioned clients persist and replay one correctly licensed parent and item', status: 'PASS',
+        legacy: { role: 'service_role', relationship: relation('bridge-legacy-client', 'bridge-legacy-line') },
+        versioned: { role: 'anon', relationship: relation('bridge-versioned-client', 'bridge-versioned-line') } },
     ],
     adminOff: {
       status: 'PASS',
@@ -500,6 +567,19 @@ test('structured evidence gate binds the Admin report to this run and SHA and re
           stateAfter: { contractVersion: 1, writesPaused: false, activeActivationRows: 0 },
         })),
       },
+    },
+    preparationStationDependencies: {
+      status: 'PASS', initialStationCountBeforeStaffWriter: 0,
+      cases: stationNames.map((name, index) => ({ name, status: 'PASS', ...(index === 0 ? {
+        count: 1, actor: { deviceId: '00000000-0000-0000-0000-00000000000b', staffUserId: '00000000-0000-0000-0000-0000000000ab' },
+        parentItemRelationship: relation('bridge-staff-owned-parent', 'bridge-staff-owned-parent-line'),
+      } : index === 4 ? {
+        sqlSubmittedAndObserved: true, sessions: ['worker-a', 'worker-b'],
+        observation: ['worker-a', 'worker-b'].map((applicationName) => ({ applicationName, state: 'active',
+          waitEventType: 'Lock', waitEvent: 'advisory', lockGranted: false, queryText: 'ensure_default_preparation_station' })),
+        controllerLock: { granted: true }, controllerExit: { code: 0 },
+        exits: [{ code: 0, signal: null }, { code: 0, signal: null }], finalStationCount: 1, pendingSessionCount: 0,
+      } : {}) })),
     },
     writerChecks: Array.from({ length: 10 }, () => ({
       status: 'PASS',
@@ -647,6 +727,20 @@ test('structured evidence gate binds the Admin report to this run and SHA and re
       report.errorStack = 'synthetic stack';
     });
     await rejectBridgeMutation('missing Admin evidence report must fail closed', (report) => { delete report.adminOff; });
+    await rejectBridgeMutation('missing Cocina evidence must fail closed', (report) => { delete report.preparationStationDependencies; });
+    await rejectBridgeMutation('missing Cocina scenario must fail closed', (report) => { report.preparationStationDependencies.cases.pop(); });
+    await rejectBridgeMutation('wrong item parent must fail closed', (report) => {
+      report.preparationStationDependencies.cases[0].parentItemRelationship.itemParentId = 'another-parent';
+    });
+    await rejectBridgeMutation('missing observed Cocina locks must fail closed', (report) => {
+      report.preparationStationDependencies.cases[4].observation = [];
+    });
+    await rejectBridgeMutation('missing client evidence must fail closed', (report) => {
+      report.checks = report.checks.filter((check) => !check.name.startsWith('legacy and versioned clients'));
+    });
+    await rejectBridgeMutation('client item license must fail closed', (report) => {
+      report.checks.find((check) => check.name.startsWith('legacy and versioned clients')).versioned.relationship.itemLicenseId = 'another-license';
+    });
 
     await rejectBridgeMutation('writer body drift must fail closed', (report) => { report.writerChecks[3].bodyRecoveredExactly = false; });
 

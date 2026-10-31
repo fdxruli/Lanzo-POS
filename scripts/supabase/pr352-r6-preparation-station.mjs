@@ -15,6 +15,64 @@ function quote(value) {
   return "'" + String(value).replaceAll("'", "''") + "'";
 }
 
+export function restaurantOrderItemSnapshotSql(licenseId, localOrderId, localLineId) {
+  return `with target_parents as (
+    select id, license_id, local_order_id, deleted_at
+    from public.pos_restaurant_orders
+    where license_id=${quote(licenseId)}::uuid and local_order_id=${quote(localOrderId)} and deleted_at is null
+  ), candidate_items as (
+    select id, license_id, restaurant_order_id, local_line_id, station_code, station_name, deleted_at
+    from public.pos_restaurant_order_items
+    where deleted_at is null and (
+      (local_line_id=${quote(localLineId)} and license_id=${quote(licenseId)}::uuid)
+      or restaurant_order_id in (select id from target_parents)
+    )
+  )
+  select jsonb_build_object(
+    'parents', to_jsonb(array(select jsonb_build_object(
+      'id',p.id,'licenseId',p.license_id,'localOrderId',p.local_order_id,'deletedAt',p.deleted_at
+    ) from target_parents p order by p.id)),
+    'items', to_jsonb(array(select jsonb_build_object(
+      'id',i.id,'licenseId',i.license_id,'parentId',i.restaurant_order_id,
+      'localLineId',i.local_line_id,'stationCode',i.station_code,'stationName',i.station_name,'deletedAt',i.deleted_at
+    ) from candidate_items i order by i.id)),
+    'joinedItems', to_jsonb(array(select jsonb_build_object('id',i.id,'parentId',p.id,'licenseId',i.license_id)
+      from target_parents p join candidate_items i
+      on p.id=i.restaurant_order_id and p.license_id=i.license_id order by i.id))
+  )::text`;
+}
+
+export function assertRestaurantOrderItemRelationship(snapshot, { licenseId, localOrderId, localLineId }) {
+  assert.ok(snapshot && Array.isArray(snapshot.parents) && Array.isArray(snapshot.items) && Array.isArray(snapshot.joinedItems),
+    'Restaurant parent/item snapshot must contain parent, item and joined item arrays');
+  assert.notEqual(snapshot.parents.length, 0, 'Restaurant parent missing for expected license and local order ID');
+  assert.equal(snapshot.parents.length, 1, 'Duplicate Restaurant parents for expected license and local order ID');
+  const [parent] = snapshot.parents;
+  assert.equal(parent.licenseId, licenseId, 'Restaurant parent has an inconsistent license');
+  assert.equal(parent.localOrderId, localOrderId, 'Restaurant parent has an incorrect local order ID');
+  assert.equal(parent.deletedAt, null, 'Restaurant parent must be active');
+  assert.ok(typeof parent.id === 'string' && parent.id.length > 0, 'Restaurant parent internal ID is missing');
+
+  const expectedItems = snapshot.items.filter((item) => item.localLineId === localLineId);
+  assert.notEqual(expectedItems.length, 0, 'Expected Restaurant order item is missing');
+  assert.equal(expectedItems.length, 1, 'Duplicate expected Restaurant order items');
+  const [item] = expectedItems;
+  assert.equal(item.licenseId, licenseId, 'Restaurant order item has an inconsistent license');
+  assert.equal(item.parentId, parent.id, 'Restaurant order item has an incorrect parent foreign key');
+  assert.equal(item.deletedAt, null, 'Restaurant order item must be active');
+  assert.ok(typeof item.id === 'string' && item.id.length > 0, 'Restaurant order item ID is missing');
+  assert.equal(snapshot.items.filter((candidate) => candidate.parentId === parent.id).length, 1,
+    'Duplicate or unexpected active items attached to Restaurant parent');
+  assert.equal(snapshot.joinedItems.length, 1, 'Restaurant parent/item internal-ID and license join must return exactly one row');
+  assert.deepEqual(snapshot.joinedItems[0], { id: item.id, parentId: parent.id, licenseId },
+    'Joined Restaurant item must be the expected item under the expected parent and license');
+  assert.equal(item.stationCode, 'kitchen', 'Restaurant item must be assigned to kitchen');
+  assert.equal(item.stationName, 'Cocina', 'Restaurant item must retain the Cocina station name');
+  return { parentId: parent.id, itemId: item.id, itemParentId: item.parentId, itemLicenseId: item.licenseId,
+    licenseId, localOrderId, localLineId,
+    stationCode: item.stationCode, stationName: item.stationName, activeItemCount: 1 };
+}
+
 function startPsqlSession(name, psqlBin, baseEnv) {
   const child = spawn(psqlBin, [
     '-X', '-q', '-A', '-t', '-v', 'ON_ERROR_STOP=1',
@@ -142,14 +200,13 @@ export async function runPreparationStationBehavior({ query, runSql, psqlBin, en
   assert.equal(created.createdByStaffUserId, STAFF_A);
   assert.equal(created.updatedByStaffUserId, STAFF_A);
   assert.deepEqual(created.metadata, { phase: 'REST.1', bootstrap: true });
-  const itemResolution = JSON.parse(await query(`select jsonb_build_object(
-    'stationCode',item.station_code,'stationName',item.station_name
-  )::text
-  from public.pos_restaurant_order_items item
-  join public.pos_restaurant_orders parent
-    on parent.id=item.restaurant_order_id and parent.license_id=item.license_id
-  where parent.license_id=${quote(LICENSE_A)}::uuid
-    and parent.local_order_id=${quote('bridge-staff-owned-parent')}`));
+  const orderId = 'bridge-staff-owned-parent';
+  const localLineId = `${orderId}-line`;
+  const itemSnapshot = JSON.parse(await query(restaurantOrderItemSnapshotSql(LICENSE_A, orderId, localLineId)));
+  const parentItemRelationship = assertRestaurantOrderItemRelationship(itemSnapshot, {
+    licenseId: LICENSE_A, localOrderId: orderId, localLineId,
+  });
+  const itemResolution = { stationCode: parentItemRelationship.stationCode, stationName: parentItemRelationship.stationName };
   assert.deepEqual(itemResolution, { stationCode: 'kitchen', stationName: 'Cocina' });
   results.push({
     name: 'A/G: first authenticated Staff write creates and attributes Kitchen',
@@ -158,6 +215,7 @@ export async function runPreparationStationBehavior({ query, runSql, psqlBin, en
     count: createdRows.length,
     actor: { deviceId: created.createdByDeviceId, staffUserId: created.createdByStaffUserId },
     persistedOrderItemStation: itemResolution,
+    parentItemRelationship,
   });
 
   const beforeReuse = JSON.parse(JSON.stringify(created));
@@ -326,6 +384,7 @@ export async function runPreparationStationBehavior({ query, runSql, psqlBin, en
   const pendingConcurrencySessions = Number(await query(`select count(*) from pg_stat_activity
     where application_name in (${[...WORKER_NAMES, CONTROLLER_NAME].map(quote).join(',')})`));
   assert.equal(pendingConcurrencySessions, 0, 'No concurrency helper sessions may survive the station test');
+  results.find((row) => row.name === 'E: concurrent creation, independent psql sessions').pendingSessionCount = pendingConcurrencySessions;
   assert.equal(await query(`select count(*) from pg_trigger where tgname='pr352_r6_station_insert_barrier_v1' and not tgisinternal`), '0',
     'The temporary concurrency barrier must be removed from the disposable schema');
   assert.equal(await query(`select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 
 const LICENSE = 'lab-license-a';
+const LICENSE_ID = '00000000-0000-0000-0000-000000000001';
 const DEVICE = 'lab-device-a';
 const TOKEN = 'lab-device-token-a';
 const ADMIN_SESSION = 'lab-admin-session';
@@ -10,10 +11,15 @@ function quote(value) {
   return "'" + String(value).replaceAll("'", "''") + "'";
 }
 
-function statusUpdateSql(localOrderId, status, idempotencyKey) {
-  return "select public.pos_update_restaurant_order_status_unlimited("
-    + [LICENSE, DEVICE, TOKEN, ADMIN_SESSION, localOrderId, status, idempotencyKey].map(quote).join(',')
-    + ');';
+export function statusUpdateSql(orderId, status, idempotencyKey) {
+  return 'do $r6_status$ declare receipt jsonb; begin '
+    + 'receipt:=public.pos_update_restaurant_order_status_unlimited('
+    + [LICENSE, DEVICE, TOKEN, ADMIN_SESSION, orderId, status, idempotencyKey].map(quote).join(',')
+    + '); '
+    + "if coalesce((receipt->>'success')::boolean,false) is not true "
+    + "or receipt->'order'->>'id' is distinct from " + quote(orderId)
+    + " then raise exception 'R6_STATUS_UPDATE_FAILED: %',receipt; end if; "
+    + "raise notice 'R6_STATUS_UPDATE_ACCEPTED:%',receipt; end; $r6_status$;";
 }
 
 function startPsqlSession(name, psqlBin, env) {
@@ -144,7 +150,8 @@ function stateQuery(localOrderId, expectedPausedWriteId = null) {
       + quote(expectedPausedWriteId) + ')'
     : '';
   return "select json_build_object('paused',(select writes_paused from private.restaurant_cloud_contract_state where singleton),"
-    + "'parentStatus',(select status from public.pos_restaurant_orders where local_order_id="
+    + "'parentStatus',(select status from public.pos_restaurant_orders where license_id=" + quote(LICENSE_ID)
+    + "::uuid and deleted_at is null and local_order_id="
     + quote(localOrderId) + "),"
     + "'saleCount',(select count(*) from public.pos_sales where id=" + quote(localOrderId) + ')'
     + extra + ')::text';
@@ -161,13 +168,13 @@ export async function runRestaurantCutoverConcurrency({ query, psqlBin, env, cre
 
   try {
     const commitOrder = 'bridge-r6-concurrency-commit';
-    await createLegacyOrder(commitOrder, 'r6-concurrency-commit-seed');
+    const commitOrderId = await createLegacyOrder(commitOrder, 'r6-concurrency-commit-seed');
     const writeApp = 'pr352-r6-inflight-commit';
     const pauseApp = 'pr352-r6-pause-after-commit';
     const newWriteApp = 'pr352-r6-write-during-pause';
     const holder = start(writeApp);
     holder.send('begin;');
-    holder.send(statusUpdateSql(commitOrder, 'preparing', 'r6-inflight-commit'));
+    holder.send(statusUpdateSql(commitOrderId, 'preparing', 'r6-inflight-commit'));
     const holderLocks = await waitForObserved(writeApp + ' shared transaction lock',
       () => observeLocks(query, writeApp), (rows) => appHasLock(rows, true, 'ShareLock'));
     const holderActivity = await waitForObserved(writeApp + ' open transaction',
@@ -228,6 +235,7 @@ export async function runRestaurantCutoverConcurrency({ query, psqlBin, env, cre
     const pauseExit = await waitForSessionExit(pause);
     const newWriteExit = await waitForSessionExit(newWrite);
     assertSessionSuccess(writeApp, holderExit);
+    assert.match(holderExit.stderr, /R6_STATUS_UPDATE_ACCEPTED:/, 'The in-flight writer must report a successful RPC receipt');
     assertSessionSuccess(pauseApp, pauseExit);
     assertSessionSuccess(newWriteApp, newWriteExit);
     const rejected = newWriteExit.stderr.match(/R6_NEW_WRITE_REJECTED:([0-9A-Z]{5}):([^\r\n]+)/);
@@ -245,7 +253,7 @@ export async function runRestaurantCutoverConcurrency({ query, psqlBin, env, cre
       name: 'in-flight real writer commits, pause waits exclusively, new writer rejects',
       status: 'PASS',
       sql: {
-        inFlight: statusUpdateSql(commitOrder, 'preparing', 'r6-inflight-commit'),
+        inFlight: statusUpdateSql(commitOrderId, 'preparing', 'r6-inflight-commit'),
         pause: 'select private.set_restaurant_transition_policy_v1(true,null,null)',
         newWrite: newWriteSql,
       },
@@ -262,7 +270,7 @@ export async function runRestaurantCutoverConcurrency({ query, psqlBin, env, cre
       sqlstate: { newWrite: rejected[1], message: rejected[2] },
       stderrMarkers: newWriteExit.stderr,
       finalState: commitState,
-      pendingProcesses: sessions.filter((session) => !session.closed).length,
+      pendingProcesses: [...sessions].filter((session) => !session.closed).length,
       pendingDatabaseSessions: firstScenarioPending,
     });
 
@@ -292,12 +300,12 @@ export async function runRestaurantCutoverConcurrency({ query, psqlBin, env, cre
     await query('select private.set_restaurant_transition_policy_v1(false,null,null)');
 
     const rollbackOrder = 'bridge-r6-concurrency-rollback';
-    await createLegacyOrder(rollbackOrder, 'r6-concurrency-rollback-seed');
+    const rollbackOrderId = await createLegacyOrder(rollbackOrder, 'r6-concurrency-rollback-seed');
     const rollbackApp = 'pr352-r6-inflight-rollback';
     const rollbackPauseApp = 'pr352-r6-pause-after-rollback';
     const rollbackHolder = start(rollbackApp);
     rollbackHolder.send('begin;');
-    rollbackHolder.send(statusUpdateSql(rollbackOrder, 'preparing', 'r6-inflight-rollback'));
+    rollbackHolder.send(statusUpdateSql(rollbackOrderId, 'preparing', 'r6-inflight-rollback'));
     const rollbackHolderLocks = await waitForObserved(rollbackApp + ' shared transaction lock',
       () => observeLocks(query, rollbackApp), (rows) => appHasLock(rows, true, 'ShareLock'));
     const rollbackHolderActivity = await waitForObserved(rollbackApp + ' open transaction',
@@ -321,6 +329,7 @@ export async function runRestaurantCutoverConcurrency({ query, psqlBin, env, cre
     const rollbackHolderExit = await waitForSessionExit(rollbackHolder);
     const rollbackPauseExit = await waitForSessionExit(rollbackPause);
     assertSessionSuccess(rollbackApp, rollbackHolderExit);
+    assert.match(rollbackHolderExit.stderr, /R6_STATUS_UPDATE_ACCEPTED:/, 'The rolled-back writer must report a successful RPC receipt');
     assertSessionSuccess(rollbackPauseApp, rollbackPauseExit);
     const rollbackScenarioPending = await countPendingSessions(query, [rollbackApp, rollbackPauseApp]);
     assert.equal(rollbackScenarioPending, 0, 'No PostgreSQL backend may remain after the rollback scenario');
@@ -332,7 +341,7 @@ export async function runRestaurantCutoverConcurrency({ query, psqlBin, env, cre
       name: 'in-flight real writer rolls back and releases shared lock for pause',
       status: 'PASS',
       sql: {
-        inFlight: statusUpdateSql(rollbackOrder, 'preparing', 'r6-inflight-rollback'),
+        inFlight: statusUpdateSql(rollbackOrderId, 'preparing', 'r6-inflight-rollback'),
         pause: 'select private.set_restaurant_transition_policy_v1(true,null,null)',
       },
       submitted: { inFlight: true, pause: true },
@@ -341,7 +350,7 @@ export async function runRestaurantCutoverConcurrency({ query, psqlBin, env, cre
       exitCodes: { holder: rollbackHolderExit.code, pause: rollbackPauseExit.code },
       sqlstate: { holder: '00000', pause: '00000' },
       finalState: rolledBackState,
-      pendingProcesses: sessions.filter((session) => !session.closed).length,
+      pendingProcesses: [...sessions].filter((session) => !session.closed).length,
       pendingDatabaseSessions: rollbackScenarioPending,
     });
 
@@ -352,12 +361,14 @@ export async function runRestaurantCutoverConcurrency({ query, psqlBin, env, cre
       'begin',
       '  first_receipt:=public.pos_update_restaurant_order_status_unlimited(',
       "    'lab-license-a','lab-device-a','lab-device-token-a','lab-admin-session',",
-      '    ' + quote(rollbackOrder) + ",'preparing','r6-inflight-rollback-replay');",
+      '    ' + quote(rollbackOrderId) + ",'preparing','r6-inflight-rollback-replay');",
       '  replay_receipt:=public.pos_update_restaurant_order_status_unlimited(',
       "    'lab-license-a','lab-device-a','lab-device-token-a','lab-admin-session',",
-      '    ' + quote(rollbackOrder) + ",'preparing','r6-inflight-rollback-replay');",
+      '    ' + quote(rollbackOrderId) + ",'preparing','r6-inflight-rollback-replay');",
+      "  if coalesce((first_receipt->>'success')::boolean,false) is not true or first_receipt->'order'->>'id' is distinct from " + quote(rollbackOrderId) + " then raise exception 'R6_POST_RESUME_FIRST_FAILED: %',first_receipt; end if;",
+      "  if coalesce((replay_receipt->>'success')::boolean,false) is not true then raise exception 'R6_POST_RESUME_REPLAY_FAILED: %',replay_receipt; end if;",
       "  if first_receipt is distinct from replay_receipt then raise exception 'R6_POST_RESUME_REPLAY_MISMATCH'; end if;",
-      "  if (select count(*) from public.pos_restaurant_orders where local_order_id=" + quote(rollbackOrder) + " and status='preparing')<>1",
+      "  if (select count(*) from public.pos_restaurant_orders where license_id=" + quote(LICENSE_ID) + "::uuid and deleted_at is null and local_order_id=" + quote(rollbackOrder) + " and status='preparing')<>1",
       "    or (select count(*) from public.pos_idempotency_keys where license_id='00000000-0000-0000-0000-000000000001'",
       "      and idempotency_key='r6-inflight-rollback-replay')<>1 then",
       "    raise exception 'R6_POST_RESUME_REPLAY_EFFECT_MISMATCH';",
@@ -370,7 +381,7 @@ export async function runRestaurantCutoverConcurrency({ query, psqlBin, env, cre
     assert.equal(replay, 'PASS');
     const replayState = JSON.parse(await query("select json_build_object("
       + "'paused',(select writes_paused from private.restaurant_cloud_contract_state where singleton),"
-      + "'parentStatus',(select status from public.pos_restaurant_orders where local_order_id=" + quote(rollbackOrder) + "),"
+      + "'parentStatus',(select status from public.pos_restaurant_orders where license_id=" + quote(LICENSE_ID) + "::uuid and deleted_at is null and local_order_id=" + quote(rollbackOrder) + "),"
       + "'operationRows',(select count(*) from public.pos_idempotency_keys where license_id='00000000-0000-0000-0000-000000000001'"
       + " and idempotency_key='r6-inflight-rollback-replay'))::text"));
     assert.equal(replayState.paused, false);
@@ -379,7 +390,7 @@ export async function runRestaurantCutoverConcurrency({ query, psqlBin, env, cre
     results.push({
       name: 'replay after resume commits exactly once after concurrent rollback',
       status: 'PASS',
-      sql: statusUpdateSql(rollbackOrder, 'preparing', 'r6-inflight-rollback-replay') + ' repeated with the same key',
+      sql: statusUpdateSql(rollbackOrderId, 'preparing', 'r6-inflight-rollback-replay') + ' repeated with the same key',
       submitted: true,
       lockObservations: 'shared lock was observed before pause; no session remains after replay',
       releaseOrder: ['pause disabled', 'same operation committed', 'same key replayed'],

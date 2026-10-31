@@ -6,7 +6,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { runRestaurantCutoverConcurrency } from './pr352-r6-concurrency.mjs';
-import { runPreparationStationBehavior } from './pr352-r6-preparation-station.mjs';
+import { assertRestaurantOrderItemRelationship, restaurantOrderItemSnapshotSql, runPreparationStationBehavior } from './pr352-r6-preparation-station.mjs';
 import { canonicalizePostgresAcl } from './pr352-r6-canonical-postgres-acl.mjs';
 import { assertEquivalentPreparationStationCatalog } from './pr352-r6-canonical-postgres-constraints.mjs';
 
@@ -117,6 +117,11 @@ async function createLegacyOrder(localOrderId, idempotencyKey) {
       'productId','bridge-restaurant-product','productName','Bridge synthetic product','quantity',1,'unitPrice',10,'lineTotal',10)),
     ${quoteSql(idempotencyKey)})::text`));
   assert.equal(result.success, true, 'Synthetic legacy parent seed must succeed');
+  assert.equal(result.order?.localOrderId, localOrderId, 'Seed receipt must identify the intended local order');
+  assert.ok(typeof result.order?.id === 'string' && result.order.id.length > 0,
+    'Seed receipt must contain the internal Restaurant order id');
+  assert.notEqual(result.order.id, localOrderId, 'Concurrency seed must exercise distinct internal and local ids');
+  return result.order.id;
 }
 
 function quoteSql(value) {
@@ -614,7 +619,8 @@ async function run() {
     cases: preparationStationCases.map(({ name, status }) => ({ name, status })),
   });
   const staffOwner = await query(`select created_by_staff_user_id::text||'|'||created_by_device_id::text
-    from public.pos_restaurant_orders where local_order_id='${ownedOrder}'`);
+    from public.pos_restaurant_orders where license_id='00000000-0000-0000-0000-000000000001'::uuid
+      and local_order_id='${ownedOrder}' and deleted_at is null`);
   assert.equal(staffOwner, '00000000-0000-0000-0000-0000000000ab|00000000-0000-0000-0000-00000000000b');
   await runSql(`do $owner$ declare state text; message text; begin
     begin perform public.pos_upsert_restaurant_order_unlimited(
@@ -664,7 +670,7 @@ async function run() {
       raise exception 'R6_INVALID_SESSION_UNEXPECTEDLY_ALLOWED';
     exception when others then get stacked diagnostics state=returned_sqlstate,message=message_text;
       if message='R6_INVALID_SESSION_UNEXPECTEDLY_ALLOWED' then raise; end if;
-      if state not in ('P0001','42501') then raise; end if;
+      if state<>'P0001' or message<>'ACTOR_SESSION_INVALID' then raise; end if;
     end;
   end $session$;`, 'invalid-session-rejected');
   assert.equal(await query("select count(*) from public.pos_restaurant_orders where local_order_id='bridge-invalid-session-parent'"), '0');
@@ -697,8 +703,13 @@ async function run() {
   assert.equal(legacyUpsert.success, true, 'Old client payload without a contract-version marker must remain admitted in v1');
   const legacyReplay = JSON.parse(await query(legacyUpsertSql));
   assert.deepEqual(legacyReplay, legacyUpsert, 'A legitimate legacy replay must recover the exact receipt');
-  assert.equal(await query("select count(*) from public.pos_restaurant_orders where local_order_id='bridge-legacy-client'"), '1');
-  assert.equal(await query("select count(*) from public.pos_restaurant_order_items i join public.pos_restaurant_orders o on o.id=i.restaurant_order_id where o.local_order_id='bridge-legacy-client'"), '1');
+  const clientLicenseId = '00000000-0000-0000-0000-000000000001';
+  const legacyRelation = assertRestaurantOrderItemRelationship(
+    JSON.parse(await query(restaurantOrderItemSnapshotSql(clientLicenseId, 'bridge-legacy-client', 'bridge-legacy-line'))),
+    { licenseId: clientLicenseId, localOrderId: 'bridge-legacy-client', localLineId: 'bridge-legacy-line' },
+  );
+  assert.equal(legacyUpsert.order?.id, legacyRelation.parentId, 'Legacy receipt must identify its persisted parent');
+  assert.equal(legacyUpsert.order?.localOrderId, legacyRelation.localOrderId);
   const versionedUpsertSql = `set role anon; select public.pos_upsert_restaurant_order_versioned_v1(
     'lab-license-a','lab-device-a','lab-device-token-a','lab-admin-session',
     jsonb_build_object('localOrderId','bridge-versioned-client','clientContractVersion',2,'tableLabel','Versioned client',
@@ -710,7 +721,16 @@ async function run() {
   assert.equal(versionedUpsert.success, true, 'New client contract version 2 payload must remain admitted during bridge v1');
   const versionedReplay = JSON.parse(await query(versionedUpsertSql));
   assert.deepEqual(versionedReplay, versionedUpsert, 'A legitimate versioned replay must recover the exact receipt');
-  assert.equal(await query("select count(*) from public.pos_restaurant_orders where local_order_id='bridge-versioned-client'"), '1');
+  const versionedRelation = assertRestaurantOrderItemRelationship(
+    JSON.parse(await query(restaurantOrderItemSnapshotSql(clientLicenseId, 'bridge-versioned-client', 'bridge-versioned-line'))),
+    { licenseId: clientLicenseId, localOrderId: 'bridge-versioned-client', localLineId: 'bridge-versioned-line' },
+  );
+  assert.equal(versionedUpsert.order?.id, versionedRelation.parentId, 'Versioned receipt must identify its persisted parent');
+  assert.equal(versionedUpsert.order?.localOrderId, versionedRelation.localOrderId);
+  passed('legacy and versioned clients persist and replay one correctly licensed parent and item', {
+    legacy: { role: 'service_role', relationship: legacyRelation },
+    versioned: { role: 'anon', relationship: versionedRelation },
+  });
   process.stdout.write('BRIDGE_OLD_AND_NEW_CLIENTS_PASS legacy=accepted versioned_v2_payload=accepted bridge_contract=v1\n');
 
   currentStage = 'contradictory aliases';
