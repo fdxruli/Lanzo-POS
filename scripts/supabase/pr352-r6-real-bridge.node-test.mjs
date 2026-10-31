@@ -57,6 +57,24 @@ test('bridge candidate stays out of the canonical migration set and runs after 3
   assert.doesNotMatch(sql.slice(0, policyStart), /insert\s+into\s+private\.restaurant_admin_activation\s*\(/i);
 });
 
+test('Staff bridge authorization matches validate_pos_sync_context session fields', async () => {
+  const sql = await readFile(bridgePath, 'utf8');
+  const functionSources = JSON.parse(await readFile(
+    path.join(root, 'supabase/tests/fixtures/pr338-real-financial/02-function-sources.json'), 'utf8'));
+  const validator = functionSources.find((source) => /CREATE OR REPLACE FUNCTION private\.validate_pos_sync_context\(/i.test(source));
+  assert.ok(validator, 'The reviewed auth context function must be present in the PostgreSQL fixture');
+  assert.match(validator, /'actor_session_id',\s*v_actor_session_id/);
+  assert.doesNotMatch(validator, /'staff_session_id'/,
+    'validate_pos_sync_context exports the validated Staff session as actor_session_id');
+
+  const staffGuard = sql.match(/create function private\.assert_restaurant_bridge_actor_v1\([\s\S]*?\$function\$;/i)?.[0];
+  assert.ok(staffGuard, 'The bridge actor guard must be present');
+  assert.match(staffGuard, /nullif\(c->>'staff_user_id',''\)\s+is distinct from c->>'actor_id'/);
+  assert.match(staffGuard, /nullif\(c->>'actor_session_id',''\)\s+is null/);
+  assert.doesNotMatch(staffGuard, /c->>'staff_session_id'/,
+    'The guard must not read a Staff session field that the validated context does not return');
+});
+
 test('historical 3D.14 remains the exact reviewed blob and dispatcher fingerprint', async () => {
   const blob = execFileSync('git', ['hash-object', threeD14Path], { cwd: root, encoding: 'utf8' }).trim();
   assert.equal(blob, 'e1ab62ed387a3da7798d03d46e2c0723d12526a8');
