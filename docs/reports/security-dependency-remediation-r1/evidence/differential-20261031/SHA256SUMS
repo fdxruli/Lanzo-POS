@@ -1,7 +1,7 @@
 a85d367bb5c26fdcb8b406436cedaef8eefd8a8de11b349e97e0c71f2143ca9d  ./audit-fix-apply.log
 1f8fc8deae98504aef426c8770a12957cca570298c1c944b7d28fb88ba302de1  ./audit-fix-dry-run.json
 9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa  ./build-admin.exit
-6e44c744aec5a4b97f440df65c4cd14ec28303c2eddcdac635f8a8ce4d0bca73  ./build-admin.log
+8603095f96d575ca6a42879e70d38c9390bff00fd88b135abb0811760811cb41  ./build-admin.log
 797d7df0cdf5d38ecf9f77f03215ac1c23c532c4abfc3ad7582041978c0df691  ./build-artifact-architecture-tests.json
 9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa  ./build-store-vercel.exit
 c5c25636b1811aa05caaf63ed79cb3d3e6ef90cec432a710027d19e2810984f2  ./build-store-vercel.log
@@ -20,7 +20,6 @@ e0607ba58a860d678a9535f007ca1328c8f0ad29945964dc1062248e0a2d6019  ./differential
 203d7cd60c740870306490f6d8070255c85dd57def4cb9a4f4b63987cdb4dcd8  ./fin01-pg1711/dispatcher-focus.json
 39f31d6d037d77eea6092b8617b91a9de156ec0cc44b9f6b9d9fa1dc68ad40aa  ./fin01-pg1711/dispatcher-focus.log
 4aa547a69bda9f6c7a1ae51912b0235f8fc9ec7d50093ae1601ce302b0061335  ./fin01-pg1711/financial-regression-tests.json
-4fe4ff682bb0a80c7e229e0b3e07a6ad5ec556cd762c197784e2c06bd11c5ff2  ./fin01-pg1711/fixture-setup.log
 df3ed8d0c96512ba51e4ba27c6d9daa2d727e6019c7f06c95090b1b328cdd5d2  ./fin01-pg1711/fixture-source-manifest.json
 9350af4ee4909eef6838ae3505aa0e7c9e159c23ac450e0381b910bd8127af2e  ./fin01-pg1711/frontend-fin01-tests.json
 9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa  ./fin01-pg1711/full-tests.exit

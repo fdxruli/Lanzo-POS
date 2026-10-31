@@ -84,7 +84,9 @@ Los reportes guardan `COMMIT`/`ROLLBACK`, SQLSTATE y estados de tablas sintétic
 
 ## Evidencia y hashes
 
-Los JSON originales de main/candidata, clasificación normalizada, audits, lint, builds, pruebas focales y reportes FIN-01 están en [`evidence/differential-20261031/`](security-dependency-remediation-r1/evidence/differential-20261031/). Son **48 archivos de evidencia** más su manifiesto `SHA256SUMS`; todos los hashes se comprobaron con `sha256sum -c`. SHA-256 del manifiesto: `4610a8d046e9dcc4f57161779a80de0112a5926788d63e30891c019eea14d97e`.
+Los JSON originales de main/candidata, clasificación normalizada, audits, lint, builds, pruebas focales y reportes FIN-01 están en [`evidence/differential-20261031/`](security-dependency-remediation-r1/evidence/differential-20261031/). Son **47 archivos de evidencia presentes en este árbol** más su manifiesto `SHA256SUMS`; todos los hashes se comprobaron con `sha256sum -c`. SHA-256 del manifiesto: `b25b8c3a7d2717d9bc065ed56d6d5a26b107633075a544e30bd59524f8ede82b`.
+
+**Procedencia y normalización:** `build-admin.log` es una copia normalizada para control de calidad del repositorio del archivo del commit padre (`4266922d4f5bce71a28933196288f56d338c1b7d`); no se regeneró y la única diferencia byte a byte son los espacios ASCII finales de las líneas 34 y 37. `fin01-pg1711/fixture-setup.log` no forma parte de este árbol; el original sigue recuperable desde ese mismo commit, con SHA-256 `4fe4ff682bb0a80c7e229e0b3e07a6ad5ec556cd762c197784e2c06bd11c5ff2`. No se eliminó del historial ni se republicó en el commit nuevo. Esta corrección solo actualiza evidencia y hashes: no hubo nuevas ejecuciones PostgreSQL ni cambios de código financiero.
 
 ## Riesgos residuales y decisión
 
