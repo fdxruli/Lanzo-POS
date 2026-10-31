@@ -1,0 +1,98 @@
+name: PR378 checkout timeout diagnostic
+
+on:
+  push:
+    branches:
+      - diagnostics/pr378-checkout-timeout-r1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr378-checkout-timeout-diagnostic-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  checkout-timeout-diagnostic:
+    if: github.repository == 'fdxruli/Lanzo-POS' && github.ref == 'refs/heads/diagnostics/pr378-checkout-timeout-r1'
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      PR378_BASE_SHA: 1a0d758d09310f2914c475c37d358c4cf885cc01
+      PR378_EXPECTED_HEAD_SHA: 048b57b1b8db214665dbc290a5446114df69e76a
+      PR378_SOURCE_TEST_SHA256: c1eb160db61c7ae45a97380005087a347d72b0ae24c464832d134c70a6ea5d27
+      PR378_MAIN_LOCK_SHA256: 59e12324df46b964748524051be34760fcc3c1050ef57a8b03deb16c4ae2b581
+      PR378_CANDIDATE_LOCK_SHA256: 3926447716c6de58763b104adb3187d7fe3c85a9b7c6e2bdfd973171eec7fb48
+      PR378_NODE_VERSION: 24.19.0
+      PR378_NPM_VERSION: 11.9.0
+
+    steps:
+      - name: Checkout diagnostic candidate commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          path: candidate
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Checkout exact main base
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ env.PR378_BASE_SHA }}
+          path: main
+          persist-credentials: false
+
+      - name: Set up exact Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: ${{ env.PR378_NODE_VERSION }}
+
+      - name: Pin npm CLI
+        run: |
+          npm install --global "npm@${PR378_NPM_VERSION}"
+          test "$(node --version)" = "v${PR378_NODE_VERSION}"
+          test "$(npm --version)" = "${PR378_NPM_VERSION}"
+
+      - name: Verify ancestry, source and lockfile hashes
+        shell: bash
+        run: |
+          test "$(git -C candidate rev-parse HEAD^ )" = "${PR378_EXPECTED_HEAD_SHA}"
+          test "$(git -C candidate rev-parse HEAD)" = "${GITHUB_SHA}"
+          test "$(git -C main rev-parse HEAD)" = "${PR378_BASE_SHA}"
+          test "$(git -C candidate show "${PR378_EXPECTED_HEAD_SHA}:src/pages/__tests__/PublicStoreCheckout.test.jsx" | sha256sum | cut -d ' ' -f 1)" = "${PR378_SOURCE_TEST_SHA256}"
+          test "$(sha256sum main/src/pages/__tests__/PublicStoreCheckout.test.jsx | cut -d ' ' -f 1)" = "${PR378_SOURCE_TEST_SHA256}"
+          test "$(sha256sum main/package-lock.json | cut -d ' ' -f 1)" = "${PR378_MAIN_LOCK_SHA256}"
+          test "$(sha256sum candidate/package-lock.json | cut -d ' ' -f 1)" = "${PR378_CANDIDATE_LOCK_SHA256}"
+
+      - name: Install main dependencies from its lockfile
+        working-directory: main
+        run: npm ci --no-audit --no-fund
+
+      - name: Install candidate dependencies from its lockfile
+        working-directory: candidate
+        run: npm ci --no-audit --no-fund
+
+      - name: Overlay identical diagnostic harness onto main
+        shell: bash
+        run: |
+          mkdir -p main/scripts/diagnostics/pr378
+          cp candidate/src/pages/__tests__/PublicStoreCheckout.test.jsx main/src/pages/__tests__/PublicStoreCheckout.test.jsx
+          cp candidate/scripts/diagnostics/pr378/checkpoint-recorder.mjs main/scripts/diagnostics/pr378/
+          cp candidate/scripts/diagnostics/pr378/reporter.mjs main/scripts/diagnostics/pr378/
+          cp candidate/vite.pr378-diagnostic.config.mjs main/vite.pr378-diagnostic.config.mjs
+
+      - name: Run bounded diagnostics on both trees
+        run: node candidate/scripts/diagnostics/pr378/run.mjs
+
+      - name: Upload focused timeout diagnostics and summaries
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: pr378-checkout-timeout-diagnostic-${{ github.sha }}
+          path: pr378-diagnostic-artifacts/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Preserve native test outcomes
+        if: always()
+        run: node candidate/scripts/diagnostics/pr378/validate.mjs

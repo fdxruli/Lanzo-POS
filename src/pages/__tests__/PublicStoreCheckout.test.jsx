@@ -4,7 +4,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import '@testing-library/jest-dom/vitest';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, onTestFailed, onTestFinished, vi } from 'vitest';
+import { createCheckpointRecorder } from '../../../scripts/diagnostics/pr378/checkpoint-recorder.mjs';
 import PublicStorePage from '../PublicStorePage';
 import { getPublicCartStorageKey } from '../../hooks/ecommerce/usePublicCart';
 import { EcommercePublicError } from '../../services/ecommerce/ecommercePublicService';
@@ -16,6 +17,16 @@ const serviceMocks = vi.hoisted(() => ({
   getPublicCatalog: vi.fn(),
   createPublicOrder: vi.fn(),
 }));
+
+let activeCheckoutDiagnostic = null;
+
+function beginCheckoutStep(name) {
+  return activeCheckoutDiagnostic?.begin(name) ?? null;
+}
+
+function completeCheckoutStep(id, state = 'completed') {
+  if (id !== null) activeCheckoutDiagnostic?.complete(id, state);
+}
 
 vi.mock('../../services/ecommerce/ecommercePublicService', async (importOriginal) => {
   const actual = await importOriginal();
@@ -132,17 +143,33 @@ const setVisibilityState = (value) => {
 };
 
 async function addAndOpenCart(user) {
-  await user.click(await screen.findByRole('button', { name: 'Agregar Alitas BBQ' }));
+  let checkpoint = beginCheckoutStep('catalog add button appears');
+  const addButton = await screen.findByRole('button', { name: 'Agregar Alitas BBQ' });
+  completeCheckoutStep(checkpoint);
+  checkpoint = beginCheckoutStep('add product to cart');
+  await user.click(addButton);
+  completeCheckoutStep(checkpoint);
+  checkpoint = beginCheckoutStep('open cart');
   await user.click(screen.getByRole('button', {
     name: 'Ver carrito, 1 unidades, subtotal $80.00'
   }));
+  completeCheckoutStep(checkpoint);
 }
 
 async function openAndFillCheckout(user) {
   await addAndOpenCart(user);
+  let checkpoint = beginCheckoutStep('continue from cart into checkout');
   await user.click(screen.getByRole('button', { name: 'Continuar pedido' }));
-  await user.type(await screen.findByLabelText('Nombre *'), 'Cliente QA');
+  completeCheckoutStep(checkpoint);
+  checkpoint = beginCheckoutStep('first checkout form appears');
+  const nameField = await screen.findByLabelText('Nombre *');
+  completeCheckoutStep(checkpoint);
+  checkpoint = beginCheckoutStep('fill first checkout name');
+  await user.type(nameField, 'Cliente QA');
+  completeCheckoutStep(checkpoint);
+  checkpoint = beginCheckoutStep('fill first checkout phone');
   await user.type(screen.getByLabelText('Teléfono *'), '9610000000');
+  completeCheckoutStep(checkpoint);
 }
 
 async function fillDeliveryAddress(user, {
@@ -169,6 +196,7 @@ describe('PublicStorePage checkout integration', () => {
   });
 
   afterEach(() => {
+    const cleanupCheckpoint = beginCheckoutStep('cleanup effects, storage and mocks');
     try {
       cleanup();
     } finally {
@@ -184,6 +212,8 @@ describe('PublicStorePage checkout integration', () => {
       });
       vi.restoreAllMocks();
       vi.useRealTimers();
+      completeCheckoutStep(cleanupCheckpoint, 'cleanup-finally');
+      activeCheckoutDiagnostic = null;
     }
   });
 
@@ -356,38 +386,97 @@ describe('PublicStorePage checkout integration', () => {
   });
 
   it('closes editing and recoverable checkout states without clearing the cart', async () => {
+    const diagnostic = createCheckpointRecorder('PublicStorePage checkout integration closes editing and recoverable checkout states without clearing the cart');
+    activeCheckoutDiagnostic = diagnostic;
+    if (diagnostic) {
+      diagnostic.event('test-body-start', {
+        timers: { fakeTimersActive: vi.isFakeTimers(), fakeTimerCount: vi.isFakeTimers() ? vi.getTimerCount() : null },
+      });
+      onTestFailed(({ errors, signal }) => diagnostic.failure({
+        errors,
+        signalAborted: signal.aborted,
+        fakeTimersActive: vi.isFakeTimers(),
+        fakeTimerCount: vi.isFakeTimers() ? vi.getTimerCount() : null,
+      }));
+      onTestFinished(() => {
+        try {
+          diagnostic.finish({
+            testState: 'onTestFinished',
+            fakeTimersActive: vi.isFakeTimers(),
+            fakeTimerCount: vi.isFakeTimers() ? vi.getTimerCount() : null,
+          });
+        } finally {
+          diagnostic.close();
+        }
+      });
+    }
+
     const user = userEvent.setup();
+    let checkpoint = beginCheckoutStep('render PublicStore');
     renderPage();
+    completeCheckoutStep(checkpoint);
     await openAndFillCheckout(user);
+
+    checkpoint = beginCheckoutStep('first persisted pageshow recovery');
     await act(async () => {
       dispatchPersistedPageShow();
     });
+    completeCheckoutStep(checkpoint);
+    checkpoint = beginCheckoutStep('wait for first checkout dialog close');
     await waitFor(() => {
       expect(screen.queryByRole('dialog', { name: 'Finalizar pedido' })).not.toBeInTheDocument();
     });
+    completeCheckoutStep(checkpoint);
+    checkpoint = beginCheckoutStep('wait for second catalog load');
     await waitFor(() => expect(serviceMocks.getPublicCatalog).toHaveBeenCalledTimes(2));
+    completeCheckoutStep(checkpoint);
+    checkpoint = beginCheckoutStep('verify cart after first recovery');
     expect(window.sessionStorage.getItem(getPublicCartStorageKey('mi-negocio'))).not.toBeNull();
+    completeCheckoutStep(checkpoint);
 
+    checkpoint = beginCheckoutStep('reopen cart after recovery');
     await user.click(screen.getByRole('button', {
       name: 'Ver carrito, 1 unidades, subtotal $80.00'
     }));
+    completeCheckoutStep(checkpoint);
+    checkpoint = beginCheckoutStep('open second checkout form');
     await user.click(screen.getByRole('button', { name: 'Continuar pedido' }));
+    completeCheckoutStep(checkpoint);
     serviceMocks.createPublicOrder.mockRejectedValueOnce(
       new EcommercePublicError('ECOMMERCE_ORDER_CREATE_FAILED', 'No se pudo confirmar.')
     );
-    await user.type(await screen.findByLabelText('Nombre *'), 'Cliente QA');
+    checkpoint = beginCheckoutStep('second checkout name field appears');
+    const nameField = await screen.findByLabelText('Nombre *');
+    completeCheckoutStep(checkpoint);
+    checkpoint = beginCheckoutStep('fill second checkout name');
+    await user.type(nameField, 'Cliente QA');
+    completeCheckoutStep(checkpoint);
+    checkpoint = beginCheckoutStep('fill second checkout phone');
     await user.type(screen.getByLabelText('Teléfono *'), '9610000000');
+    completeCheckoutStep(checkpoint);
+    checkpoint = beginCheckoutStep('submit simulated recoverable rejection');
     fireEvent.click(screen.getByRole('button', { name: 'Confirmar pedido' }));
+    completeCheckoutStep(checkpoint);
+    checkpoint = beginCheckoutStep('wait for recoverable error message');
     expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo confirmar');
+    completeCheckoutStep(checkpoint);
 
+    checkpoint = beginCheckoutStep('second persisted pageshow recovery');
     await act(async () => {
       dispatchPersistedPageShow();
     });
+    completeCheckoutStep(checkpoint);
+    checkpoint = beginCheckoutStep('wait for second checkout dialog close');
     await waitFor(() => {
       expect(screen.queryByRole('dialog', { name: 'Finalizar pedido' })).not.toBeInTheDocument();
     });
+    completeCheckoutStep(checkpoint);
+    checkpoint = beginCheckoutStep('wait for third catalog load');
     await waitFor(() => expect(serviceMocks.getPublicCatalog).toHaveBeenCalledTimes(3));
+    completeCheckoutStep(checkpoint);
+    checkpoint = beginCheckoutStep('final cart conservation check');
     expect(window.sessionStorage.getItem(getPublicCartStorageKey('mi-negocio'))).not.toBeNull();
+    completeCheckoutStep(checkpoint);
   });
 
   it('also clears the cart after an idempotent success', async () => {
