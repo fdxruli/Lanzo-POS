@@ -99,7 +99,9 @@ assert.ok(financialOperationsFixture.includes('SHARED_TERMINAL_FINANCIAL_RECEIPT
   && financialOperationsFixture.includes('FINANCIAL_RECEIPT_FIXTURE_SECURITY_PROFILE_MISMATCH')
   && financialOperationsFixture.includes('RESTAURANT_DISPATCHER_FIXTURE_PROFILE_MISMATCH'), 'SHARED_TERMINAL_5A_FIXTURE_MUST_FAIL_CLOSED');
 assert.ok(!workflow.includes('docker logs') && !workflow.includes('postgres-${{ matrix.postgres }}.log'), 'POSTGRES_SERVICE_SQL_LOG_MUST_NOT_BE_UPLOADED');
-assert.ok(post3d14ReplayVerifier.includes('POST_3D14_REPLAY_PROFILE_MISMATCH') && post3d14ReplayVerifier.includes('02eafa69f7a91343890ecc3cb2515cb37d4fcddb1de0f0fe187aa3db9a26a18b'), 'CANONICAL_3D14_REPLAY_MUST_FAIL_CLOSED');
+assert.ok(post3d14ReplayVerifier.includes('POST_3D14_REPLAY_PROFILE_MISMATCH')
+  && post3d14ReplayVerifier.includes('02eafa69f7a91343890ecc3cb2515cb37d4fcddb1de0f0fe187aa3db9a26a18b')
+  && post3d14ReplayVerifier.includes("to_jsonb(p.proconfig),'[]'::jsonb"), 'CANONICAL_3D14_REPLAY_MUST_FAIL_CLOSED');
 assert.ok(workflow.includes('npm audit --omit=dev --audit-level=high'), 'PRODUCTION_DEPENDENCY_SECURITY_AUDIT_REQUIRED');
 assert.ok(!workflow.includes('release-review/fixtures/**'), 'RUNTIME_FIXTURE_BODY_MUST_NOT_BE_UPLOADED');
 assert.ok(!workflow.includes('pg17.11-post-pay.dump') && !workflow.includes('pg17.6-post-pay.dump'), 'SYNTHETIC_CATALOG_DUMP_MUST_NOT_BE_UPLOADED');

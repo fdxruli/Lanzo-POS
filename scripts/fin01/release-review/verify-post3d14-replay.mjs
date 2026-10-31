@@ -46,7 +46,7 @@ ${rows}
        or pg_get_userbyid(p.proowner) is distinct from e.owner
        or coalesce(p.proacl::text,'') is distinct from e.acl
        or p.prosecdef is distinct from e.security_definer
-       or coalesce(to_json(p.proconfig),'[]'::json) is distinct from e.config::json then
+       or coalesce(to_jsonb(p.proconfig),'[]'::jsonb) is distinct from e.config then
       raise exception 'POST_3D14_REPLAY_PROFILE_MISMATCH:%',e.signature using errcode='P0001';
     end if;
   end loop;
