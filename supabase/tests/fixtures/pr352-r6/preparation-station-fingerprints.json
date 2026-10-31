@@ -1,0 +1,125 @@
+{
+  "postgresServerVersionNum": "170006",
+  "source": {
+    "projectRef": "odlrhijtfyavryeqivaa",
+    "method": "read-only pg_catalog inspection",
+    "inspectionDate": "2026-10-31",
+    "rawRowsIncluded": false,
+    "credentialsIncluded": false
+  },
+  "table": {
+    "name": "public.pos_preparation_stations",
+    "owner": "postgres",
+    "acl": "postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres",
+    "rolePrivileges": [
+      { "role": "anon", "select": false, "insert": false, "update": false, "delete": false },
+      { "role": "authenticated", "select": false, "insert": false, "update": false, "delete": false },
+      { "role": "postgres", "select": true, "insert": true, "update": true, "delete": true },
+      { "role": "service_role", "select": true, "insert": true, "update": true, "delete": true }
+    ],
+    "rlsEnabled": true,
+    "rlsForced": false,
+    "columns": [
+      { "name": "id", "type": "text", "nullable": "NO", "default": null },
+      { "name": "license_id", "type": "uuid", "nullable": "NO", "default": null },
+      { "name": "code", "type": "text", "nullable": "NO", "default": null },
+      { "name": "name", "type": "text", "nullable": "NO", "default": null },
+      { "name": "name_key", "type": "text", "nullable": "NO", "default": null },
+      { "name": "sort_order", "type": "integer", "nullable": "NO", "default": "0" },
+      { "name": "is_default", "type": "boolean", "nullable": "NO", "default": "false" },
+      { "name": "is_active", "type": "boolean", "nullable": "NO", "default": "true" },
+      { "name": "created_at", "type": "timestamp with time zone", "nullable": "NO", "default": "now()" },
+      { "name": "updated_at", "type": "timestamp with time zone", "nullable": "NO", "default": "now()" },
+      { "name": "deleted_at", "type": "timestamp with time zone", "nullable": "YES", "default": null },
+      { "name": "server_version", "type": "integer", "nullable": "NO", "default": "1" },
+      { "name": "created_by_device_id", "type": "uuid", "nullable": "YES", "default": null },
+      { "name": "updated_by_device_id", "type": "uuid", "nullable": "YES", "default": null },
+      { "name": "created_by_staff_user_id", "type": "uuid", "nullable": "YES", "default": null },
+      { "name": "updated_by_staff_user_id", "type": "uuid", "nullable": "YES", "default": null },
+      { "name": "last_idempotency_key", "type": "text", "nullable": "YES", "default": null },
+      { "name": "metadata", "type": "jsonb", "nullable": "NO", "default": "'{}'::jsonb" }
+    ],
+    "constraints": [
+      { "name": "pos_preparation_stations_code_not_blank", "type": "c", "definition": "CHECK (length(btrim(code)) > 0)" },
+      { "name": "pos_preparation_stations_created_by_device_id_fkey", "type": "f", "definition": "FOREIGN KEY (created_by_device_id) REFERENCES license_devices(id) ON DELETE SET NULL" },
+      { "name": "pos_preparation_stations_created_by_staff_user_id_fkey", "type": "f", "definition": "FOREIGN KEY (created_by_staff_user_id) REFERENCES license_staff_users(id) ON DELETE SET NULL" },
+      { "name": "pos_preparation_stations_default_code", "type": "c", "definition": "CHECK (is_default IS FALSE OR code = 'kitchen')" },
+      { "name": "pos_preparation_stations_license_id_fkey", "type": "f", "definition": "FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE" },
+      { "name": "pos_preparation_stations_name_not_blank", "type": "c", "definition": "CHECK (length(btrim(name)) > 0)" },
+      { "name": "pos_preparation_stations_pkey", "type": "p", "definition": "PRIMARY KEY (id)" },
+      { "name": "pos_preparation_stations_updated_by_device_id_fkey", "type": "f", "definition": "FOREIGN KEY (updated_by_device_id) REFERENCES license_devices(id) ON DELETE SET NULL" },
+      { "name": "pos_preparation_stations_updated_by_staff_user_id_fkey", "type": "f", "definition": "FOREIGN KEY (updated_by_staff_user_id) REFERENCES license_staff_users(id) ON DELETE SET NULL" }
+    ],
+    "indexes": [
+      { "name": "pos_preparation_stations_license_active_idx", "definition": "CREATE INDEX pos_preparation_stations_license_active_idx ON public.pos_preparation_stations USING btree (license_id, is_active) WHERE (deleted_at IS NULL)" },
+      { "name": "pos_preparation_stations_license_code_uidx", "definition": "CREATE UNIQUE INDEX pos_preparation_stations_license_code_uidx ON public.pos_preparation_stations USING btree (license_id, code) WHERE (deleted_at IS NULL)" },
+      { "name": "pos_preparation_stations_license_name_key_uidx", "definition": "CREATE UNIQUE INDEX pos_preparation_stations_license_name_key_uidx ON public.pos_preparation_stations USING btree (license_id, name_key) WHERE (deleted_at IS NULL)" },
+      { "name": "pos_preparation_stations_license_updated_idx", "definition": "CREATE INDEX pos_preparation_stations_license_updated_idx ON public.pos_preparation_stations USING btree (license_id, updated_at DESC)" },
+      { "name": "pos_preparation_stations_pkey", "definition": "CREATE UNIQUE INDEX pos_preparation_stations_pkey ON public.pos_preparation_stations USING btree (id)" }
+    ]
+  },
+  "functions": [
+    {
+      "signature": "private.ensure_default_preparation_station(p_license_id uuid, p_device_id uuid, p_staff_user_id uuid)",
+      "returnType": "pos_preparation_stations",
+      "language": "plpgsql",
+      "securityDefiner": true,
+      "config": ["search_path=\"\""],
+      "owner": "postgres",
+      "acl": "postgres=X/postgres",
+      "bodySha256": "e1066fb33e7d039894e7e00a72022c60aa8bfd6d76ffe66588660ca1915cf354"
+    },
+    {
+      "signature": "private.is_restaurant_order_status(p_status text)",
+      "returnType": "boolean",
+      "language": "sql",
+      "securityDefiner": false,
+      "config": ["search_path=\"\""],
+      "owner": "postgres",
+      "acl": "postgres=X/postgres",
+      "bodySha256": "e53203f861b7b12664f5f6be6c60aca2c2e665b123cd860f00baf7d3d5edf067"
+    },
+    {
+      "signature": "private.normalize_pos_preparation_station_name_key(p_name text)",
+      "returnType": "text",
+      "language": "sql",
+      "securityDefiner": false,
+      "config": ["search_path=\"\""],
+      "owner": "postgres",
+      "acl": "postgres=X/postgres",
+      "bodySha256": "6081c68c27009c7a5321e26a0326f47d704c8b8dc8e4b6b06cb23f701d7aa483"
+    },
+    {
+      "signature": "private.normalize_restaurant_order_status(p_status text)",
+      "returnType": "text",
+      "language": "sql",
+      "securityDefiner": false,
+      "config": ["search_path=\"\""],
+      "owner": "postgres",
+      "acl": "postgres=X/postgres",
+      "bodySha256": "48366fb567674aa121e73c592afe8f64ca60a586fed754e7e82e026ffda242d2"
+    },
+    {
+      "signature": "private.resolve_restaurant_order_station(p_license_id uuid, p_station_code text, p_station_name text, p_device_id uuid, p_staff_user_id uuid)",
+      "returnType": "jsonb",
+      "language": "plpgsql",
+      "securityDefiner": true,
+      "config": ["search_path=\"\""],
+      "owner": "postgres",
+      "acl": "postgres=X/postgres",
+      "bodySha256": "5edfd0a90e3b0c9ebac65e4b3c294e4a9ddf1b97ea7b17be56b909be87f78383"
+    },
+    {
+      "signature": "private.safe_jsonb_numeric(p_payload jsonb, p_key text, p_default numeric)",
+      "returnType": "numeric",
+      "language": "plpgsql",
+      "securityDefiner": false,
+      "config": ["search_path=\"\""],
+      "owner": "postgres",
+      "acl": "postgres=X/postgres",
+      "bodySha256": "198597d536352802e548f2bfc5c48a9e8e6f7ae6fbf1b13db7993d1b93f0d680"
+    }
+  ],
+  "triggers": [],
+  "policies": []
+}

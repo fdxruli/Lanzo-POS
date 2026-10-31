@@ -6,12 +6,14 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { runRestaurantCutoverConcurrency } from './pr352-r6-concurrency.mjs';
+import { runPreparationStationBehavior } from './pr352-r6-preparation-station.mjs';
 import { canonicalizePostgresAcl } from './pr352-r6-canonical-postgres-acl.mjs';
 
 const execFileAsync = promisify(execFile);
 const root = process.cwd();
 const fixture = path.join(root, 'supabase/tests/fixtures/pr338-real-financial');
 const restaurantDependenciesFixture = path.join(root, 'supabase/tests/fixtures/pr352-r6/restaurant-dependencies.sql');
+const preparationStationManifestPath = path.join(root, 'supabase/tests/fixtures/pr352-r6/preparation-station-fingerprints.json');
 const restaurantWritersFixture = path.join(root, 'supabase/tests/fixtures/pr352-r6/verified-restaurant-writers.sql');
 const restaurantWritersManifestPath = path.join(root, 'supabase/tests/fixtures/pr352-r6/restaurant-writer-fingerprints.json');
 const dispatcherManifestPath = path.join(root, 'supabase/tests/fixtures/pr352-r6/dispatcher-fingerprint.json');
@@ -26,6 +28,7 @@ let serverVersionNum = null;
 let bridgeStatus = 'FAIL';
 let failure = null;
 let adminOffEvidence = null;
+let preparationStationEvidence = null;
 const completedChecks = [];
 let concurrencyResults = [];
 const writerChecks = [];
@@ -98,7 +101,9 @@ async function runExpectedRollback(file, marker) {
 async function runSql(sql, label) {
   if (!tempRoot) tempRoot = await mkdtemp(path.join(os.tmpdir(), 'pr352-bridge-pg176-'));
   const file = path.join(tempRoot, `${label}.sql`);
-  await writeFile(file, `\\set ON_ERROR_STOP on\n${sql}\n`);
+  const statementBatch = sql.trim();
+  assert.ok(statementBatch.endsWith(';'), `${label} must end with a SQL terminator before psql -f`);
+  await writeFile(file, `\\set ON_ERROR_STOP on\n${statementBatch}\n`);
   await runFile(file, label);
 }
 
@@ -139,9 +144,10 @@ async function writeEvidence() {
     adminOff: adminOffEvidence,
     writerChecks,
     concurrency: concurrencyResults,
+    preparationStationDependencies: preparationStationEvidence,
     mockedDependencies: [
       'Authentication and license/device/session rows are synthetic.',
-      'private.ensure_default_preparation_station(uuid,uuid,uuid) is a no-op synthetic fixture dependency; preparation-station provisioning is outside this bridge authorization test.',
+      'Cocina station schema and six direct Restaurant helper bodies are matched to read-only Production pg_catalog fingerprints; station rows and actor IDs are synthetic.',
       'Schema, RLS, constraints, triggers, financial dispatcher, 3D.14 wrappers, six Restaurant writer bodies and bridge SQL execute in PostgreSQL.',
       'No Supabase Production connection or credentials are available to this job.',
     ],
@@ -231,7 +237,61 @@ async function run() {
   for (const file of ['03-trigger-dependencies.sql', '04-constraints-indexes-triggers.sql', '05-policies.sql', '06-function-acl.sql']) {
     await runFile(path.join(fixture, file), file);
   }
-  await runFile(restaurantDependenciesFixture, 'isolated nonfinancial Restaurant dependency stubs');
+  await runFile(restaurantDependenciesFixture, 'Production-matched synthetic Cocina schema and functions');
+  const preparationStationManifest = JSON.parse(await readFile(preparationStationManifestPath, 'utf8'));
+  assert.equal(preparationStationManifest.postgresServerVersionNum, '170006');
+  assert.equal(preparationStationManifest.source.rawRowsIncluded, false);
+  assert.equal(preparationStationManifest.source.credentialsIncluded, false);
+  const preparationStationActual = JSON.parse(await query(`select json_build_object(
+    'table',json_build_object(
+      'name','public.pos_preparation_stations',
+      'owner',(select pg_get_userbyid(c.relowner) from pg_class c where c.oid='public.pos_preparation_stations'::regclass),
+      'acl',(select regexp_replace(c.relacl::text,'[{}]','','g') from pg_class c where c.oid='public.pos_preparation_stations'::regclass),
+      'rolePrivileges',(select json_agg(json_build_object(
+        'role',role_name,'select',has_table_privilege(role_name,'public.pos_preparation_stations','SELECT'),
+        'insert',has_table_privilege(role_name,'public.pos_preparation_stations','INSERT'),
+        'update',has_table_privilege(role_name,'public.pos_preparation_stations','UPDATE'),
+        'delete',has_table_privilege(role_name,'public.pos_preparation_stations','DELETE')
+      ) order by role_name) from unnest(ARRAY['anon','authenticated','postgres','service_role']) AS role_name),
+      'rlsEnabled',(select c.relrowsecurity from pg_class c where c.oid='public.pos_preparation_stations'::regclass),
+      'rlsForced',(select c.relforcerowsecurity from pg_class c where c.oid='public.pos_preparation_stations'::regclass),
+      'columns',(select json_agg(json_build_object('name',column_name,'type',data_type,'nullable',is_nullable,'default',column_default) order by ordinal_position)
+        from information_schema.columns where table_schema='public' and table_name='pos_preparation_stations'),
+      'constraints',(select json_agg(json_build_object('name',conname,'type',contype,'definition',pg_get_constraintdef(oid,true)) order by conname)
+        from pg_constraint where conrelid='public.pos_preparation_stations'::regclass),
+      'indexes',(select json_agg(json_build_object('name',indexrelid::regclass::text,'definition',pg_get_indexdef(indexrelid)) order by indexrelid::regclass::text)
+        from pg_index where indrelid='public.pos_preparation_stations'::regclass)
+    ),
+    'triggers',(select coalesce(json_agg(json_build_object('name',tgname,'definition',pg_get_triggerdef(oid,true)) order by tgname),'[]'::json)
+      from pg_trigger where tgrelid='public.pos_preparation_stations'::regclass and not tgisinternal),
+    'policies',(select coalesce(json_agg(json_build_object('name',polname,'command',polcmd,'roles',polroles,'qual',polqual,'withCheck',polwithcheck) order by polname),'[]'::json)
+      from pg_policy where polrelid='public.pos_preparation_stations'::regclass),
+    'functions',(select json_agg(json_build_object(
+      'signature',n.nspname||'.'||p.proname||'('||pg_get_function_identity_arguments(p.oid)||')',
+      'returnType',pg_get_function_result(p.oid),'language',l.lanname,'securityDefiner',p.prosecdef,
+      'config',coalesce(to_json(p.proconfig),'[]'::json),'owner',r.rolname,
+      'acl',regexp_replace(p.proacl::text,'[{}]','','g'),
+      'bodySha256',encode(extensions.digest(p.prosrc,'sha256'),'hex')
+    ) order by p.proname)
+      from pg_proc p join pg_namespace n on n.oid=p.pronamespace join pg_language l on l.oid=p.prolang
+      join pg_roles r on r.oid=p.proowner
+      where n.nspname='private' and p.proname in ('ensure_default_preparation_station','is_restaurant_order_status',
+        'normalize_pos_preparation_station_name_key','normalize_restaurant_order_status','resolve_restaurant_order_station','safe_jsonb_numeric'))
+  )::text`));
+  assert.deepEqual(preparationStationActual.table, preparationStationManifest.table,
+    'Synthetic Cocina schema metadata must match the read-only Production catalog fingerprint');
+  assert.deepEqual(preparationStationActual.triggers, preparationStationManifest.triggers,
+    'Cocina fixture must not invent Production triggers');
+  assert.deepEqual(preparationStationActual.policies, preparationStationManifest.policies,
+    'Cocina fixture must not invent Production policies');
+  assert.deepEqual(preparationStationActual.functions, preparationStationManifest.functions,
+    'Cocina helper source, signature, owner, security settings, ACL, or hash differs from Production');
+  passed('Cocina schema and six direct Restaurant helper functions match read-only Production catalog metadata', {
+    tableColumnCount: preparationStationActual.table.columns.length,
+    constraintCount: preparationStationActual.table.constraints.length,
+    indexCount: preparationStationActual.table.indexes.length,
+    functionCount: preparationStationActual.functions.length,
+  });
   await runFile(restaurantWritersFixture, 'audited Restaurant writer definitions');
   const expectedHashes = JSON.parse(await readFile(path.join(fixture, 'function-hashes.json'), 'utf8'));
   const functionNames = [...new Set(expectedHashes.map((row) => row.proname))];
@@ -263,6 +323,13 @@ async function run() {
     'The applied 3D.14 dispatcher body must match the current read-only Production fingerprint');
   passed('authentic 3D.14 dispatcher fingerprint matches reviewed read-only fingerprint', { sha256: dispatcherAfterThreeD14.sha256 });
   await runFile(path.join(fixture, 'seed-attempt-2.sql'), 'synthetic actors');
+  const preparationStationInitialCount = Number(await query('select count(*) from public.pos_preparation_stations'));
+  assert.equal(preparationStationInitialCount, 0,
+    'No Kitchen station row may exist before the first authenticated Restaurant writer invocation');
+  preparationStationEvidence = { initialStationCountBeforeStaffWriter: preparationStationInitialCount, status: 'PARTIAL', cases: [] };
+  passed('synthetic Cocina table starts empty before the Staff writer creates its default station', {
+    stationCount: preparationStationInitialCount,
+  });
   const threeD14Functions = [
     'public.pos_execute_financial_operation_v1(text,text,text,text,text,text,text,jsonb)',
     'public.pos_create_cloud_sale_cashier_inventory_legacy_r2b(text,text,text,text,jsonb,jsonb,jsonb,text,text)',
@@ -270,7 +337,15 @@ async function run() {
     'public.pos_create_cloud_sale_cashier_inventory(text,text,text,text,jsonb,jsonb,jsonb,text,text)',
     'public.pos_create_cloud_sale_credit(text,text,text,text,jsonb,jsonb,jsonb,text,text,text)',
   ];
-  const allFunctionSignatures = [...new Set([...targetFunctions.map((row) => row.signature), ...threeD14Functions])];
+  const preparationStationFunctions = [
+    'private.ensure_default_preparation_station(uuid,uuid,uuid)',
+    'private.is_restaurant_order_status(text)',
+    'private.normalize_pos_preparation_station_name_key(text)',
+    'private.normalize_restaurant_order_status(text)',
+    'private.resolve_restaurant_order_station(uuid,text,text,uuid,uuid)',
+    'private.safe_jsonb_numeric(jsonb,text,numeric)',
+  ];
+  const allFunctionSignatures = [...new Set([...targetFunctions.map((row) => row.signature), ...threeD14Functions, ...preparationStationFunctions])];
   const beforeBridge = await captureFunctions(allFunctionSignatures);
   assert.equal(beforeBridge.length, allFunctionSignatures.length, 'Every exact 3D.14 target must exist before bridge installation');
   const writerManifest = JSON.parse(await readFile(restaurantWritersManifestPath, 'utf8'));
@@ -529,6 +604,16 @@ async function run() {
     jsonb_build_array(jsonb_build_object('localLineId','${ownedOrder}-line','productId','bridge-restaurant-product',
       'productName','Bridge synthetic product','quantity',1,'unitPrice',10,'lineTotal',10)),
     'r6-staff-owner-seed');`, 'staff-owner-seed');
+  currentStage = 'authentic Cocina station behavior';
+  const preparationStationCases = await runPreparationStationBehavior({ query, runSql, psqlBin, env });
+  preparationStationEvidence = {
+    initialStationCountBeforeStaffWriter: preparationStationInitialCount,
+    status: 'PASS',
+    cases: preparationStationCases,
+  };
+  passed('authentic Cocina provisioning, resolution, attribution, license isolation, rollback and concurrency checks completed', {
+    cases: preparationStationCases.map(({ name, status }) => ({ name, status })),
+  });
   const staffOwner = await query(`select created_by_staff_user_id::text||'|'||created_by_device_id::text
     from public.pos_restaurant_orders where local_order_id='${ownedOrder}'`);
   assert.equal(staffOwner, '00000000-0000-0000-0000-0000000000ab|00000000-0000-0000-0000-00000000000b');

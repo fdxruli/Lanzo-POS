@@ -8,6 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { canonicalizePostgresAcl } from './pr352-r6-canonical-postgres-acl.mjs';
+import { runPreparationStationBehavior } from './pr352-r6-preparation-station.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const bridgePath = path.join(root, 'docs/evidence/20261030182733_restaurant_cloud_transition_bridge_v1.sql');
@@ -16,8 +17,10 @@ const writerManifestPath = path.join(root, 'supabase/tests/fixtures/pr352-r6/res
 const dispatcherManifestPath = path.join(root, 'supabase/tests/fixtures/pr352-r6/dispatcher-fingerprint.json');
 const writersPath = path.join(root, 'supabase/tests/fixtures/pr352-r6/verified-restaurant-writers.sql');
 const restaurantDependenciesFixturePath = path.join(root, 'supabase/tests/fixtures/pr352-r6/restaurant-dependencies.sql');
+const preparationStationManifestPath = path.join(root, 'supabase/tests/fixtures/pr352-r6/preparation-station-fingerprints.json');
 const workflowPath = path.join(root, '.github/workflows/pr352-real-bridge-pg176-r6.yml');
 const runnerPath = path.join(root, 'scripts/supabase/pr352-r6-real-bridge-pg176-test.mjs');
+const preparationStationTestPath = path.join(root, 'scripts/supabase/pr352-r6-preparation-station.mjs');
 const concurrencyPath = path.join(root, 'scripts/supabase/pr352-r6-concurrency.mjs');
 const overlayPath = path.join(root, 'scripts/supabase/pr352-r6-synthetic-ledger-overlay.mjs');
 
@@ -77,15 +80,80 @@ test('Staff bridge authorization matches validate_pos_sync_context session field
     'The guard must not read a Staff session field that the validated context does not return');
 });
 
-test('Staff bridge fixture isolates preparation-station setup as an explicit no-op dependency', async () => {
+test('Cocina fixture matches production station schema and helper function fingerprints', async () => {
   const runner = await readFile(runnerPath, 'utf8');
   const fixture = await readFile(restaurantDependenciesFixturePath, 'utf8');
-  assert.match(runner, /runFile\(restaurantDependenciesFixture, 'isolated nonfinancial Restaurant dependency stubs'\)/);
-  assert.match(fixture, /create or replace function private\.ensure_default_preparation_station\(\s*p_license_id uuid,\s*p_device_id uuid,\s*p_staff_user_id uuid\s*\)/i);
-  assert.match(fixture, /returns void\s+language plpgsql\s+security definer\s+set search_path to ''/i);
-  assert.match(fixture, /begin\s+return;\s+end;/i);
-  assert.doesNotMatch(fixture, /\b(?:insert|update|delete)\s+(?:into\s+)?(?:public|private)\./i,
-    'The test double must not mutate financial, Restaurant, or preparation-station rows');
+  const manifest = JSON.parse(await readFile(preparationStationManifestPath, 'utf8'));
+  assert.match(runner, /Production-matched synthetic Cocina schema and functions/);
+  assert.match(runner, /preparationStationActual\.functions, preparationStationManifest\.functions/);
+  assert.match(fixture, /create table public\.pos_preparation_stations\s*\(/i);
+  assert.match(fixture, /alter table public\.pos_preparation_stations enable row level security/i);
+  assert.match(fixture, /grant all on table public\.pos_preparation_stations to service_role/i);
+  assert.match(fixture, /create unique index pos_preparation_stations_license_code_uidx/i);
+  assert.match(fixture, /create unique index pos_preparation_stations_license_name_key_uidx/i);
+  assert.match(fixture, /references public\.license_devices\(id\) on delete set null/i);
+  assert.match(fixture, /references public\.license_staff_users\(id\) on delete set null/i);
+  assert.match(fixture, /references public\.licenses\(id\) on delete cascade/i);
+  assert.match(fixture, /returns public\.pos_preparation_stations\s+language plpgsql\s+security definer\s+set search_path to ''/i);
+  assert.match(fixture, /select \* into v_station[\s\S]*?for update;/i);
+  assert.match(fixture, /exception when unique_violation then[\s\S]*?where license_id = p_license_id[\s\S]*?and code = 'kitchen'/i);
+  assert.match(fixture, /create or replace function private\.resolve_restaurant_order_station/i);
+  assert.match(fixture, /perform private\.ensure_default_preparation_station\(p_license_id, p_device_id, p_staff_user_id\)/);
+  assert.match(fixture, /revoke all on function private\.ensure_default_preparation_station\(uuid,uuid,uuid\)\s+from public, anon, authenticated, service_role/i);
+  assert.doesNotMatch(fixture, /returns void\s+language plpgsql\s+security definer[\s\S]*?begin\s+return;\s+end;/i,
+    'The prior no-op helper must not remain as the writer dependency');
+  assert.equal(manifest.source.rawRowsIncluded, false);
+  assert.equal(manifest.source.credentialsIncluded, false);
+  assert.equal(manifest.table.columns.length, 18);
+  assert.equal(manifest.table.constraints.length, 9);
+  assert.equal(manifest.table.indexes.length, 5);
+  assert.equal(manifest.table.acl, 'postgres=arwdDxtm/postgres,service_role=arwdDxtm/postgres');
+  assert.equal(manifest.functions.length, 6);
+  assert.equal(manifest.functions.find((fn) => fn.signature.startsWith('private.ensure_default')).bodySha256,
+    'e1066fb33e7d039894e7e00a72022c60aa8bfd6d76ffe66588660ca1915cf354');
+  for (const name of ['is_restaurant_order_status', 'normalize_restaurant_order_status', 'safe_jsonb_numeric']) {
+    assert.ok(manifest.functions.some((fn) => fn.signature.startsWith(`private.${name}(`)),
+      `Missing authentic direct writer helper ${name}`);
+  }
+  for (const fn of manifest.functions) {
+    const start = fixture.indexOf(`CREATE OR REPLACE FUNCTION ${fn.signature.split('(')[0]}`);
+    assert.ok(start >= 0, `Missing source function ${fn.signature}`);
+    const delimiter = 'AS $function$\n';
+    const bodyStart = fixture.indexOf(delimiter, start);
+    assert.ok(bodyStart >= 0, `Missing function body delimiter ${fn.signature}`);
+    const bodyEnd = fixture.indexOf('\n$function$;', bodyStart + delimiter.length);
+    assert.ok(bodyEnd >= 0, `Missing function body end ${fn.signature}`);
+    const exactProsrc = `\n${fixture.slice(bodyStart + delimiter.length, bodyEnd)}\n`;
+    assert.equal(createHash('sha256').update(exactProsrc).digest('hex'), fn.bodySha256,
+      `The fixture body must match the read-only Production prosrc hash: ${fn.signature}`);
+  }
+});
+
+test('station behavior test covers independent PG sessions and Cocina invariants A-H', async () => {
+  const runner = await readFile(runnerPath, 'utf8');
+  const testSource = await readFile(preparationStationTestPath, 'utf8');
+  assert.equal(typeof runPreparationStationBehavior, 'function', 'The imported PostgreSQL behavior suite must parse and load in CI');
+  for (const name of [
+    'A/G: first authenticated Staff write creates and attributes Kitchen',
+    'B: active station reuse and authentic resolver fallback',
+    'C: inactive station reactivation',
+    'D: incomplete station fields repaired without rewriting metadata',
+    'E: concurrent creation, independent psql sessions',
+    'F: different licenses keep distinct default stations',
+    'H: failed transaction rolls back station initialization',
+  ]) assert.ok(testSource.includes(name), `Missing runtime Cocina assertion ${name}`);
+  assert.match(runner, /runPreparationStationBehavior\(\{ query, runSql, psqlBin, env \}\)/);
+  assert.match(runner, /statementBatch\.endsWith\(';'\)/);
+  assert.match(testSource, /spawn\(psqlBin/);
+  assert.match(testSource, /'-h', '127\.0\.0\.1'/);
+  assert.match(testSource, /'-d', 'pr352_bridge_isolated'/);
+  assert.match(testSource, /child\.stdin\.end\(\)/);
+  assert.match(testSource, /pg_stat_activity/);
+  assert.match(testSource, /pg_locks/);
+  assert.match(testSource, /wait_event_type/);
+  assert.match(testSource, /controller\.finish\('COMMIT;'\)/);
+  assert.match(testSource, /finally\s*\{[\s\S]*?controller\.finish\('ROLLBACK;'\)/);
+  assert.match(testSource, /pendingConcurrencySessions/);
 });
 
 test('historical 3D.14 remains the exact reviewed blob and dispatcher fingerprint', async () => {
