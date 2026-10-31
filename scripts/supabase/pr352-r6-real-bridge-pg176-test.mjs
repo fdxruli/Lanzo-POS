@@ -26,6 +26,7 @@ let bridgeStatus = 'FAIL';
 let failure = null;
 const completedChecks = [];
 let concurrencyResults = [];
+const writerChecks = [];
 
 function passed(name, details = {}) {
   completedChecks.push({ name, status: 'PASS', ...details });
@@ -39,6 +40,19 @@ function summarizeFunctionRows(rows) {
   return rows.map(({ signature, oid, sha256: digest, owner, security_definer, config, acl }) => ({
     signature, oid, sha256: digest, owner, security_definer, config, acl,
   }));
+}
+
+function firstTextDifference(left, right) {
+  const limit = Math.min(left.length, right.length);
+  for (let offset = 0; offset < limit; offset += 1) {
+    if (left[offset] !== right[offset]) return { offset, kind: 'text' };
+  }
+  return left.length === right.length ? null : {
+    offset: limit,
+    kind: 'length',
+    originalLength: left.length,
+    recoveredLength: right.length,
+  };
 }
 
 function evidenceDirectory() {
@@ -118,6 +132,7 @@ async function writeEvidence() {
     bridge: { path: 'docs/evidence/20261030182733_restaurant_cloud_transition_bridge_v1.sql', sha256: sha256(bridgeBytes) },
     authenticWriterSnapshot: { sha256: sha256(writerBytes), expectedFunctions: 6 },
     checks: completedChecks,
+    writerChecks,
     concurrency: concurrencyResults,
     mockedDependencies: [
       'Authentication and license/device/session rows are synthetic.',
@@ -179,7 +194,7 @@ const targetFunctions = [
 async function captureFunctions(signatures) {
   const values = signatures.map((signature) => `('${signature.replaceAll("'", "''")}')`).join(',');
   const sql = `select coalesce(json_agg(json_build_object(
-    'signature',required.signature,'oid',p.oid::text,'definition',pg_get_functiondef(p.oid),
+    'signature',required.signature,'oid',p.oid::text,'source',p.prosrc,'definition',pg_get_functiondef(p.oid),
     'sha256',encode(extensions.digest(replace(pg_get_functiondef(p.oid),chr(13),''),'sha256'),'hex'),
     'owner',r.rolname,'security_definer',p.prosecdef,'config',p.proconfig,'acl',coalesce(p.proacl::text,'<default>')
   ) order by required.signature),'[]'::json)::text
@@ -318,18 +333,44 @@ async function run() {
   for (const target of targetFunctions) {
     const before = beforeBySignature.get(target.signature);
     const after = afterBySignature.get(target.signature);
-    assert.ok(before && after, `Missing function ${target.signature}`);
-    assert.equal(after.oid, before.oid, `Function OID/dependencies changed for ${target.signature}`);
-    assert.equal(after.owner, before.owner, `Owner changed for ${target.signature}`);
-    assert.equal(after.security_definer, before.security_definer, `SECURITY DEFINER changed for ${target.signature}`);
-    assert.deepEqual(after.config, before.config, `Function settings changed for ${target.signature}`);
-    assert.deepEqual(canonicalizePostgresAcl(after.acl), canonicalizePostgresAcl(before.acl),
-      `Function ACL grants changed for ${target.signature}`);
-    const insertion = `\n  ${target.instruction}\n`;
-    assert.equal(after.definition.split(target.instruction).length - 1, 1, `Admission statement missing or duplicated in ${target.signature}`);
-    if (after.definition.replace(insertion, '\n') !== before.definition) {
-      throw new Error(`Bridge changed business logic beyond admission in ${target.signature}`);
+    const insertion = `\n  ${target.instruction}`;
+    const recoveredDefinition = after?.definition?.replace(insertion, '');
+    const writerCheck = {
+      signature: target.signature,
+      originalFingerprint: before?.sha256 ?? null,
+      postBridgeFingerprint: after?.sha256 ?? null,
+      admissionInstruction: target.instruction,
+      admissionOccurrences: after?.definition ? after.definition.split(target.instruction).length - 1 : 0,
+      insertionPoint: 'first lexical outer BEGIN token identified by the migration scanner',
+      bodyRecoveredExactly: recoveredDefinition === before?.definition,
+      oidPreserved: after?.oid === before?.oid,
+      ownerPreserved: after?.owner === before?.owner,
+      securityDefinerPreserved: after?.security_definer === before?.security_definer,
+      configurationPreserved: JSON.stringify(after?.config) === JSON.stringify(before?.config),
+      aclSemanticallyPreserved: Boolean(before && after)
+        && JSON.stringify(canonicalizePostgresAcl(after.acl)) === JSON.stringify(canonicalizePostgresAcl(before.acl)),
+      status: 'FAIL',
+    };
+    try {
+      assert.ok(before && after, `Missing function ${target.signature}`);
+      assert.equal(after.oid, before.oid, `Function OID/dependencies changed for ${target.signature}`);
+      assert.equal(after.owner, before.owner, `Owner changed for ${target.signature}`);
+      assert.equal(after.security_definer, before.security_definer, `SECURITY DEFINER changed for ${target.signature}`);
+      assert.deepEqual(after.config, before.config, `Function settings changed for ${target.signature}`);
+      assert.deepEqual(canonicalizePostgresAcl(after.acl), canonicalizePostgresAcl(before.acl),
+        `Function ACL grants changed for ${target.signature}`);
+      assert.equal(writerCheck.admissionOccurrences, 1, `Admission statement missing or duplicated in ${target.signature}`);
+      if (!writerCheck.bodyRecoveredExactly) {
+        writerCheck.firstDifference = firstTextDifference(before.definition, recoveredDefinition);
+        throw new Error(`Exact original body reconstruction failed for ${target.signature} at offset ${writerCheck.firstDifference?.offset ?? 'unknown'}`);
+      }
+      writerCheck.status = 'PASS';
+    } catch (error) {
+      writerCheck.failure = String(error.message || error).slice(0, 500);
+      writerChecks.push(writerCheck);
+      throw error;
     }
+    writerChecks.push(writerCheck);
   }
   for (const signature of threeD14Functions.slice(1)) {
     if (afterBySignature.get(signature).definition !== beforeBySignature.get(signature).definition) {

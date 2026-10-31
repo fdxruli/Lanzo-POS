@@ -29,8 +29,19 @@ test('bridge candidate stays out of the canonical migration set and runs after 3
   assert.match(sql, /BRIDGE_FUNCTION_OVERLOAD_UNSUPPORTED/);
   assert.match(sql, /BRIDGE_FUNCTION_SECURITY_DRIFT/);
   assert.match(sql, /pg_get_functiondef\(target_oid\)/);
-  assert.ok(sql.includes("definition:=regexp_replace(definition,E'(\\n[Bb][Ee][Gg][Ii][Nn])',E'\\\\1\\n  '||instruction);"),
-    'Writer instrumentation must preserve the original first-statement indentation');
+  assert.match(sql, /private\.pr352_r6_outer_begin_position_v1/);
+  assert.match(sql, /private\.pr352_r6_inject_writer_admission_v1/);
+  assert.doesNotMatch(sql, /definition:=regexp_replace\(definition/,
+    'Writer admission must not use an unbounded regular expression over deparsed SQL');
+  for (const lexicalState of ['line_comment', 'block_comment', 'single_quote', 'double_quote', 'dollar_quote']) {
+    assert.ok(sql.includes(`v_state='${lexicalState}'`), `PostgreSQL scanner must handle ${lexicalState}`);
+  }
+  assert.match(sql, /BRIDGE_DOUBLE_INJECTION_UNEXPECTEDLY_ALLOWED/);
+  assert.match(sql, /BRIDGE_WRITER_BODY_MATCH_AMBIGUOUS/);
+  assert.match(sql, /BRIDGE_WRITER_BODY_UNSUPPORTED: no unambiguous outer BEGIN/);
+  assert.match(sql, /first\\nBEGIN\\nlast/);
+  assert.match(sql, /\$literal\$first\\nBEGIN\\nlast\$literal\$/);
+  assert.match(sql, /v_value text;\\nbegin\\n\\tperform 1;/);
   assert.match(sql, /pg_advisory_xact_lock_shared\(pg_catalog\.hashtextextended\('restaurant_contract_cutover_v1',0\)\)/);
   assert.match(sql, /contract_version integer not null default 1/);
   assert.doesNotMatch(sql, /set contract_version\s*=\s*2/i);
@@ -116,6 +127,13 @@ test('PostgreSQL ACL comparisons ignore display order but preserve the exact gra
   assert.match(runner, /canonicalizePostgresAcl\(liveDispatcher\.acl\)/);
   assert.match(runner, /canonicalizePostgresAcl\(actual\.acl\)/);
   assert.match(runner, /canonicalizePostgresAcl\(after\.acl\)/);
+  assert.match(runner, /writerChecks,/);
+  assert.match(runner, /originalFingerprint:/);
+  assert.match(runner, /postBridgeFingerprint:/);
+  assert.match(runner, /bodyRecoveredExactly:/);
+  assert.match(runner, /firstTextDifference/);
+  assert.doesNotMatch(runner, /after\.definition\.replace\(insertion, '\\n'\)/,
+    'Post-bridge comparison must remove only the injected guard without normalizing original SQL');
 });
 
 test('real PostgreSQL runner applies 3D.14 before the bridge and proves finite loopback-only setup', async () => {
@@ -154,6 +172,8 @@ test('isolated workflow runs only on the exact QA push branch without secrets or
   assert.match(workflow, /synthetic-overlay\.json/);
   assert.match(workflow, /EXPECTED_EXECUTION_SHA:\s*\$\{\{ github\.sha \}\}/);
   assert.match(workflow, /bridge\.commitSha !== expectedSha \|\| overlay\.commitSha !== expectedSha/);
+  assert.match(workflow, /bridge\.writerChecks\.length !== 10/);
+  assert.match(workflow, /writer\.bodyRecoveredExactly && writer\.oidPreserved/);
   assert.match(workflow, /bridge\.concurrency\.length !== 4/);
   assert.match(workflow, /overlay\.cases\.length !== overlay\.caseCount/);
   assert.match(workflow, /overlay\.productionConnections !== 0 \|\| overlay\.cleanupFailures !== 0/);
@@ -177,6 +197,16 @@ test('structured evidence gate binds both reports to this SHA and rejects failed
     commitSha,
     status: 'PASS',
     checks: [{ status: 'PASS' }],
+    writerChecks: Array.from({ length: 10 }, () => ({
+      status: 'PASS',
+      admissionOccurrences: 1,
+      bodyRecoveredExactly: true,
+      oidPreserved: true,
+      ownerPreserved: true,
+      securityDefinerPreserved: true,
+      configurationPreserved: true,
+      aclSemanticallyPreserved: true,
+    })),
     concurrency: Array.from({ length: 4 }, () => ({ status: 'PASS' })),
     postgresServerVersionNum: '170006',
     productionConnections: 0,
@@ -212,6 +242,11 @@ test('structured evidence gate binds both reports to this SHA and rejects failed
     assert.throws(runGate, (error) => error.status === 1, 'wrong commit SHA must fail closed');
 
     bridge.commitSha = commitSha;
+    bridge.writerChecks[3].bodyRecoveredExactly = false;
+    await writeReports();
+    assert.throws(runGate, (error) => error.status === 1, 'writer body drift must fail closed');
+    bridge.writerChecks[3].bodyRecoveredExactly = true;
+
     overlay.cases[4].status = 'FAIL';
     await writeReports();
     assert.throws(runGate, (error) => error.status === 1, 'failed case status must fail closed');
