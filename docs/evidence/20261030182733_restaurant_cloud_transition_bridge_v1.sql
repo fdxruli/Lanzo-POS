@@ -100,7 +100,8 @@ begin
       raise exception 'ACTOR_SESSION_INVALID';
     end if;
   elsif c->>'actor_type'='staff' then
-    if nullif(c->>'staff_user_id','') is distinct from c->>'actor_id'
+    if nullif(c->>'actor_id','') is null
+      or nullif(c->>'staff_user_id','') is distinct from c->>'actor_id'
       or nullif(c->>'actor_session_id','') is null then
       raise exception 'ACTOR_SESSION_INVALID';
     end if;

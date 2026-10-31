@@ -70,6 +70,7 @@ test('Staff bridge authorization matches validate_pos_sync_context session field
   const staffGuard = sql.match(/create function private\.assert_restaurant_bridge_actor_v1\([\s\S]*?\$function\$;/i)?.[0];
   assert.ok(staffGuard, 'The bridge actor guard must be present');
   assert.match(staffGuard, /nullif\(c->>'staff_user_id',''\)\s+is distinct from c->>'actor_id'/);
+  assert.match(staffGuard, /nullif\(c->>'actor_id',''\)\s+is null/);
   assert.match(staffGuard, /nullif\(c->>'actor_session_id',''\)\s+is null/);
   assert.doesNotMatch(staffGuard, /c->>'staff_session_id'/,
     'The guard must not read a Staff session field that the validated context does not return');
@@ -147,6 +148,10 @@ test('PostgreSQL ACL comparisons ignore display order but preserve the exact gra
   assert.match(runner, /canonicalizePostgresAcl\(after\.acl\)/);
   assert.match(runner, /writerChecks,/);
   assert.match(runner, /adminOff: adminOffEvidence/);
+  assert.match(runner, /const adminState = JSON\.parse\(await query/);
+  assert.match(runner, /adminOffEvidence\.status = 'PASS'/);
+  assert.doesNotMatch(runner, /adminOffEvidence = \{ status: 'PASS', contractVersion:/,
+    'Admin OFF evidence must be derived from executed PostgreSQL observations');
   assert.match(runner, /originalFingerprint:/);
   assert.match(runner, /postBridgeFingerprint:/);
   assert.match(runner, /bodyRecoveredExactly:/);
@@ -193,7 +198,14 @@ test('isolated workflow runs only on the exact QA push branch without secrets or
   assert.match(workflow, /bridge\.commitSha !== expectedSha \|\| overlay\.commitSha !== expectedSha/);
   assert.match(workflow, /bridge\.writerChecks\.length !== 10/);
   assert.match(workflow, /writer\.bodyRecoveredExactly && writer\.oidPreserved/);
-  assert.match(workflow, /bridge\.adminOff\.activeActivationRows !== 0/);
+  assert.match(workflow, /adminOff\.initialState\.activeActivationRows !== 0/);
+  for (const check of ['admin-off-initial-state', 'admin-off-contract-response', 'admin-off-setter-rejected-no-state-change',
+    'admin-off-private-setter-denied-anon', 'admin-off-private-setter-denied-authenticated']) {
+    assert.ok(workflow.includes(check), `evidence gate must require the executed check ${check}`);
+  }
+  assert.match(workflow, /contractResponse\.adminSupervisionAvailable !== false/);
+  assert.match(workflow, /setterAttempt\.errorMessage !== "RESTAURANT_ADMIN_BACKEND_NOT_AVAILABLE"/);
+  assert.match(workflow, /roleMatrix\.authenticatedCanExecuteSetter !== false/);
   assert.match(workflow, /bridge\.concurrency\.length !== 4/);
   assert.match(workflow, /overlay\.cases\.length !== overlay\.caseCount/);
   assert.match(workflow, /overlay\.productionConnections !== 0 \|\| overlay\.cleanupFailures !== 0/);
@@ -216,8 +228,20 @@ test('structured evidence gate binds both reports to this SHA and rejects failed
   const bridge = {
     commitSha,
     status: 'PASS',
-    checks: [{ status: 'PASS' }],
-    adminOff: { status: 'PASS', contractVersion: 1, writesPaused: false, activeActivationRows: 0 },
+    checks: [
+      { name: 'admin-off-initial-state', status: 'PASS', contractVersion: 1, writesPaused: false, activeActivationRows: 0 },
+      { name: 'admin-off-contract-response', status: 'PASS', success: true, contractVersion: 1, writesPaused: false, adminSupervisionAvailable: false },
+      { name: 'admin-off-setter-rejected-no-state-change', status: 'PASS', attempted: true, rejected: true, errorMessage: 'RESTAURANT_ADMIN_BACKEND_NOT_AVAILABLE', stateBefore: { contractVersion: 1, writesPaused: false, activeActivationRows: 0 }, stateAfter: { contractVersion: 1, writesPaused: false, activeActivationRows: 0 } },
+      { name: 'admin-off-private-setter-denied-anon', status: 'PASS', role: 'anon', denialSqlstate: '42501' },
+      { name: 'admin-off-private-setter-denied-authenticated', status: 'PASS', role: 'authenticated', denialSqlstate: '42501' },
+    ],
+    adminOff: {
+      status: 'PASS',
+      initialState: { contractVersion: 1, writesPaused: false, activeActivationRows: 0 },
+      contractResponse: { success: true, contractVersion: 1, writesPaused: false, adminSupervisionAvailable: false },
+      setterAttempt: { attempted: true, rejected: true, errorMessage: 'RESTAURANT_ADMIN_BACKEND_NOT_AVAILABLE', stateBefore: { contractVersion: 1, writesPaused: false, activeActivationRows: 0 }, stateAfter: { contractVersion: 1, writesPaused: false, activeActivationRows: 0 } },
+      roleMatrix: { anonCanExecuteSetter: false, authenticatedCanExecuteSetter: false, deniedRoles: ['anon', 'authenticated'], runtimeDenialSqlstate: '42501' },
+    },
     writerChecks: Array.from({ length: 10 }, () => ({
       status: 'PASS',
       admissionOccurrences: 1,
@@ -263,10 +287,35 @@ test('structured evidence gate binds both reports to this SHA and rejects failed
     assert.throws(runGate, (error) => error.status === 1, 'wrong commit SHA must fail closed');
 
     bridge.commitSha = commitSha;
-    bridge.adminOff.activeActivationRows = 1;
+    bridge.adminOff.initialState.activeActivationRows = 1;
     await writeReports();
     assert.throws(runGate, (error) => error.status === 1, 'enabled Admin state must fail closed');
-    bridge.adminOff.activeActivationRows = 0;
+    bridge.adminOff.initialState.activeActivationRows = 0;
+
+    delete bridge.adminOff.contractResponse.adminSupervisionAvailable;
+    await writeReports();
+    assert.throws(runGate, (error) => error.status === 1, 'missing Admin contract evidence must fail closed');
+    bridge.adminOff.contractResponse.adminSupervisionAvailable = false;
+
+    bridge.adminOff.setterAttempt.stateAfter.activeActivationRows = 1;
+    await writeReports();
+    assert.throws(runGate, (error) => error.status === 1, 'contradictory post-rejection state must fail closed');
+    bridge.adminOff.setterAttempt.stateAfter.activeActivationRows = 0;
+
+    bridge.adminOff.roleMatrix.authenticatedCanExecuteSetter = true;
+    await writeReports();
+    assert.throws(runGate, (error) => error.status === 1, 'browser role setter grant must fail closed');
+    bridge.adminOff.roleMatrix.authenticatedCanExecuteSetter = false;
+
+    bridge.checks = bridge.checks.filter((check) => check.name !== 'admin-off-private-setter-denied-anon');
+    await writeReports();
+    assert.throws(runGate, (error) => error.status === 1, 'missing executed role denial check must fail closed');
+    bridge.checks.push({ name: 'admin-off-private-setter-denied-anon', status: 'PASS', role: 'anon', denialSqlstate: '42501' });
+
+    bridge.checks.push({ name: 'admin-off-private-setter-denied-anon', status: 'PASS', role: 'anon', denialSqlstate: '99999' });
+    await writeReports();
+    assert.throws(runGate, (error) => error.status === 1, 'duplicate contradictory Admin evidence must fail closed');
+    bridge.checks.pop();
 
     bridge.writerChecks[3].bodyRecoveredExactly = false;
     await writeReports();

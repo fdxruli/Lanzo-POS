@@ -392,9 +392,15 @@ async function run() {
   const tables = JSON.parse(tableState);
   assert.equal(tables.length, 3, 'All private bridge tables must be installed');
   assert.ok(tables.every((row) => row.rls && !row.anon_select && !row.authenticated_select), 'Bridge tables must be RLS protected and unreadable to browser roles');
-  assert.equal(await query("select contract_version||'|'||writes_paused||'|'||(select count(*) from private.restaurant_admin_activation) from private.restaurant_cloud_contract_state where singleton"), '1|false|0', 'Bridge must start at v1, unpaused and with Admin disabled');
-  adminOffEvidence = { status: 'PASS', contractVersion: 1, writesPaused: false, activeActivationRows: 0 };
-  passed('default v1 contract is unpaused with Admin disabled', adminOffEvidence);
+  const adminState = JSON.parse(await query(`select json_build_object(
+    'contractVersion',s.contract_version,
+    'writesPaused',s.writes_paused,
+    'activeActivationRows',(select count(*) from private.restaurant_admin_activation)
+  )::text from private.restaurant_cloud_contract_state s where singleton`));
+  assert.deepEqual(adminState, { contractVersion: 1, writesPaused: false, activeActivationRows: 0 },
+    'Bridge must start at v1, unpaused and with Admin disabled');
+  adminOffEvidence = { status: 'INCOMPLETE', initialState: adminState };
+  passed('admin-off-initial-state', adminState);
   const contract = JSON.parse(await query("set role anon; select public.pos_restaurant_cloud_contract_v1('lab-license-a','lab-device-a','lab-device-token-a','lab-admin-session')::text; reset role;"));
   assert.deepEqual({
     success: contract.success,
@@ -421,14 +427,39 @@ async function run() {
     writesPaused: false,
     serverCapabilityGeneration: '1:0',
   }, 'The v1 bridge response must satisfy both legacy and versioned client negotiation while Admin stays unavailable');
-  await runSql(`do $test$ declare message text; begin
-    begin perform private.set_restaurant_transition_policy_v1(false,'00000000-0000-0000-0000-000000000001',true);
-      raise exception 'ADMIN_ACTIVATION_UNEXPECTEDLY_ALLOWED';
-    exception when others then get stacked diagnostics message=message_text;
-      if message<>'RESTAURANT_ADMIN_BACKEND_NOT_AVAILABLE' then raise; end if;
-    end;
-    if (select count(*) from private.restaurant_admin_activation)<>0 then raise exception 'ADMIN_ACTIVATION_ROW_CREATED'; end if;
-  end $test$;`, 'admin-stays-off');
+  adminOffEvidence.contractResponse = {
+    success: contract.success,
+    contractVersion: contract.contractVersion,
+    writesPaused: contract.writesPaused,
+    adminSupervisionAvailable: contract.adminSupervisionAvailable,
+  };
+  passed('admin-off-contract-response', adminOffEvidence.contractResponse);
+  let setterError = null;
+  try {
+    await runPsql(['-c', `begin; select private.set_restaurant_transition_policy_v1(false,'00000000-0000-0000-0000-000000000001',true); rollback;`]);
+  } catch (error) {
+    const detail = String(error.stderr || error.message || '');
+    const match = detail.match(/ERROR:\s*(RESTAURANT_ADMIN_BACKEND_NOT_AVAILABLE)\b/);
+    if (!match) throw new Error(`Admin activation setter failed unexpectedly: ${detail.slice(0, 800)}`);
+    setterError = match[1];
+  }
+  assert.equal(setterError, 'RESTAURANT_ADMIN_BACKEND_NOT_AVAILABLE',
+    'The Admin activation setter must reject activation while the v1 backend is active');
+  const adminStateAfterSetter = JSON.parse(await query(`select json_build_object(
+    'contractVersion',s.contract_version,
+    'writesPaused',s.writes_paused,
+    'activeActivationRows',(select count(*) from private.restaurant_admin_activation)
+  )::text from private.restaurant_cloud_contract_state s where singleton`));
+  assert.deepEqual(adminStateAfterSetter, adminState,
+    'The rejected Admin activation attempt must leave the bridge state unchanged');
+  adminOffEvidence.setterAttempt = {
+    attempted: true,
+    rejected: setterError !== null,
+    errorMessage: setterError,
+    stateBefore: adminState,
+    stateAfter: adminStateAfterSetter,
+  };
+  passed('admin-off-setter-rejected-no-state-change', adminOffEvidence.setterAttempt);
   process.stdout.write('BRIDGE_RLS_ACL_V1_ADMIN_OFF_PASS\n');
   const privilegeMatrix = await query(`select json_build_object(
     'anonContract',has_function_privilege('anon','public.pos_restaurant_cloud_contract_v1(text,text,text,text)','EXECUTE'),
@@ -446,6 +477,7 @@ async function run() {
     anonPolicySetter: false,
     authenticatedPolicySetter: false,
   }, 'Public client grants and private policy setter isolation must match the contract');
+  const deniedRoles = [];
   for (const role of ['anon', 'authenticated']) {
     await runSql(`set role ${role};
       do $denied$ declare state text; message text; begin
@@ -457,7 +489,23 @@ async function run() {
         end;
       end $denied$;
       reset role;`, `private-policy-denied-${role}`);
+    deniedRoles.push(role);
+    passed(`admin-off-private-setter-denied-${role}`, { role, denialSqlstate: '42501' });
   }
+  adminOffEvidence.roleMatrix = {
+    anonCanExecuteSetter: privileges.anonPolicySetter,
+    authenticatedCanExecuteSetter: privileges.authenticatedPolicySetter,
+    deniedRoles,
+    runtimeDenialSqlstate: '42501',
+  };
+  assert.deepEqual(adminOffEvidence.roleMatrix, {
+    anonCanExecuteSetter: false,
+    authenticatedCanExecuteSetter: false,
+    deniedRoles: ['anon', 'authenticated'],
+    runtimeDenialSqlstate: '42501',
+  });
+  adminOffEvidence.status = 'PASS';
+  passed('admin-off-evidence-complete', { status: adminOffEvidence.status });
   passed('anon/authenticated public grants and private policy setter denial verified', { privilegeMatrix: privileges });
 
   currentStage = 'Staff ownership and invalid session authorization';
