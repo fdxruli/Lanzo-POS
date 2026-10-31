@@ -66,6 +66,7 @@ const pre3d14 = [
   ['public.pos_create_cloud_sale_cashier_inventory_legacy_r2b(text,text,text,text,jsonb,jsonb,jsonb,text,text)', '24843a289bbfdb692b4d18a10880c0b5', ['service_role']],
   ['public.pos_create_cloud_sale_credit_legacy_r2b(text,text,text,text,jsonb,jsonb,jsonb,text,text,text)', 'c75dff5b4bab23bcb09f0c155df21f44', ['service_role']],
   ['public.pos_record_customer_payment_unlimited(text,text,text,text,text,numeric,text,text,text,jsonb,text)', '6b666116ae23029caef4e0ac373ddd6e', ['service_role']],
+  ['public.pos_record_customer_payment(text,text,text,text,text,numeric,text,text,text,jsonb,text)', '134fb85a7b6df787e8c560c51bc7ab55', ['anon', 'authenticated', 'service_role']],
   ['public.pos_create_cloud_sale_cashier(text,text,text,text,jsonb,jsonb,jsonb,text,text)', '653ad817084920aa6adc1a60266ef37c', ['anon', 'authenticated', 'service_role']],
   ['public.pos_create_cloud_sale_cashier_inventory(text,text,text,text,jsonb,jsonb,jsonb,text,text)', '0c9dd22833c208dc20d78dd14bfd005d', ['anon', 'authenticated', 'service_role']],
   ['public.pos_create_cloud_sale_credit(text,text,text,text,jsonb,jsonb,jsonb,text,text,text)', '59977522691c4008711e4361bcb1e0bd', ['anon', 'authenticated', 'service_role']]
