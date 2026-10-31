@@ -10,6 +10,7 @@ const targets = JSON.parse(fs.readFileSync(argument('--targets'), 'utf8'));
 const outputDir = argument('--output-dir');
 const repetitions = Number(argument('--repetitions') || 20);
 const maxWorkers = Number(argument('--max-workers') || 4);
+const escapeRegExp = (value) => value.replace(/[.*+?^$()|{}[\]\\]/g, '\\$&');
 
 if (!Array.isArray(targets) || targets.length === 0) process.exit(0);
 if (!Number.isInteger(repetitions) || repetitions < 10 || repetitions > 20) throw new Error('repetitions must be between 10 and 20');
@@ -29,7 +30,7 @@ for (let repetition = 1; repetition <= repetitions; repetition += 1) {
     const outputFile = path.join(outputDir, `focused-${suffix}.json`);
     const logFile = path.join(outputDir, `focused-${suffix}.log`);
     const result = spawnSync(process.execPath, [
-      './node_modules/vitest/vitest.mjs', 'run', target.file, '-t', target.testName,
+      './node_modules/vitest/vitest.mjs', 'run', target.file, '-t', escapeRegExp(target.testName),
       `--maxWorkers=${maxWorkers}`, '--reporter=json', `--outputFile=${outputFile}`,
     ], { encoding: 'utf8' });
     fs.writeFileSync(logFile, `${result.stdout || ''}${result.stderr || ''}`);

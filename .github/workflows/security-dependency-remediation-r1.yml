@@ -128,6 +128,10 @@ jobs:
         working-directory: pr
         run: npm ci
 
+      - name: "Test stable differential comparator and legacy PR #127 contract"
+        working-directory: pr
+        run: node --test scripts/ci/pr127-global-comparison.node-test.mjs
+
       - name: Prepare comparison directory
         run: mkdir -p comparison
 
