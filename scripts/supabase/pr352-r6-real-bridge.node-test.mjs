@@ -177,6 +177,14 @@ test('real PostgreSQL runner applies 3D.14 before the bridge and proves finite l
   assert.match(runner, /SERVICE_ROLE|service_role|anon|authenticated/);
   assert.doesNotMatch(runner, /SUPABASE_ACCESS_TOKEN|SUPABASE_DB_PASSWORD/);
   assert.match(runner, /commitSha:\s*process\.env\.GITHUB_SHA\s*\?\?\s*null/);
+  assert.match(runner, /runId:\s*process\.env\.GITHUB_RUN_ID\s*\?\?\s*null/);
+  assert.match(runner, /runAttempt:\s*process\.env\.GITHUB_RUN_ATTEMPT\s*\?\?\s*null/);
+  assert.match(runner, /VERBOSITY=verbose/);
+  assert.match(runner, /denialSqlstate: match\[1\]/);
+  assert.match(runner, /denialMessage: match\[2\]/);
+  assert.match(runner, /assert\.deepEqual\(stateAfterDenial, adminState/);
+  assert.doesNotMatch(runner, /passed\(`admin-off-private-setter-denied-\$\{role\}`,\s*\{\s*role,\s*denialSqlstate:\s*'42501'/,
+    'Runtime role evidence must contain SQLSTATE read from PostgreSQL, not a fixed pass value');
 });
 
 test('isolated workflow runs only on the exact QA push branch without secrets or dispatch', async () => {
@@ -195,10 +203,12 @@ test('isolated workflow runs only on the exact QA push branch without secrets or
   assert.match(workflow, /real-bridge\.json/);
   assert.match(workflow, /synthetic-overlay\.json/);
   assert.match(workflow, /EXPECTED_EXECUTION_SHA:\s*\$\{\{ github\.sha \}\}/);
+  assert.match(workflow, /EXPECTED_RUN_ID:\s*\$\{\{ github\.run_id \}\}/);
+  assert.match(workflow, /EXPECTED_RUN_ATTEMPT:\s*\$\{\{ github\.run_attempt \}\}/);
   assert.match(workflow, /bridge\.commitSha !== expectedSha \|\| overlay\.commitSha !== expectedSha/);
   assert.match(workflow, /bridge\.writerChecks\.length !== 10/);
   assert.match(workflow, /writer\.bodyRecoveredExactly && writer\.oidPreserved/);
-  assert.match(workflow, /adminOff\.initialState\.activeActivationRows !== 0/);
+  assert.match(workflow, /state\.activeActivationRows === 0/);
   for (const check of ['admin-off-initial-state', 'admin-off-contract-response', 'admin-off-setter-rejected-no-state-change',
     'admin-off-private-setter-denied-anon', 'admin-off-private-setter-denied-authenticated']) {
     assert.ok(workflow.includes(check), `evidence gate must require the executed check ${check}`);
@@ -214,7 +224,7 @@ test('isolated workflow runs only on the exact QA push branch without secrets or
     'runner temp path must be scoped to the two steps that write JSON evidence');
 });
 
-test('structured evidence gate binds both reports to this SHA and rejects failed or missing evidence', async () => {
+test('structured evidence gate binds the Admin report to this run and SHA and rejects malformed evidence', async () => {
   const workflow = await readFile(workflowPath, 'utf8');
   const match = workflow.match(/node --input-type=module -e '\r?\n([\s\S]*?)\r?\n[ \t]{10}'/);
   assert.ok(match, 'workflow evidence gate JavaScript must be extractable');
@@ -225,22 +235,38 @@ test('structured evidence gate binds both reports to this SHA and rejects failed
   const bridgePath = path.join(evidenceRoot, 'real-bridge.json');
   const overlayPath = path.join(evidenceRoot, 'synthetic-overlay.json');
   const commitSha = 'a'.repeat(40);
-  const bridge = {
+  const runId = '1234567890';
+  const runAttempt = '2';
+  let bridge = {
     commitSha,
+    runId,
+    runAttempt,
     status: 'PASS',
+    failedStage: null,
+    error: null,
+    errorStack: null,
     checks: [
       { name: 'admin-off-initial-state', status: 'PASS', contractVersion: 1, writesPaused: false, activeActivationRows: 0 },
       { name: 'admin-off-contract-response', status: 'PASS', success: true, contractVersion: 1, writesPaused: false, adminSupervisionAvailable: false },
-      { name: 'admin-off-setter-rejected-no-state-change', status: 'PASS', attempted: true, rejected: true, errorMessage: 'RESTAURANT_ADMIN_BACKEND_NOT_AVAILABLE', stateBefore: { contractVersion: 1, writesPaused: false, activeActivationRows: 0 }, stateAfter: { contractVersion: 1, writesPaused: false, activeActivationRows: 0 } },
-      { name: 'admin-off-private-setter-denied-anon', status: 'PASS', role: 'anon', denialSqlstate: '42501' },
-      { name: 'admin-off-private-setter-denied-authenticated', status: 'PASS', role: 'authenticated', denialSqlstate: '42501' },
+      { name: 'admin-off-setter-rejected-no-state-change', status: 'PASS', attempted: true, rejected: true, errorMessage: 'RESTAURANT_ADMIN_BACKEND_NOT_AVAILABLE', sqlstate: 'P0001', stateBefore: { contractVersion: 1, writesPaused: false, activeActivationRows: 0 }, stateAfter: { contractVersion: 1, writesPaused: false, activeActivationRows: 0 } },
+      { name: 'admin-off-private-setter-denied-anon', status: 'PASS', role: 'anon', denialSqlstate: '42501', denialMessage: 'permission denied for schema private', stateAfter: { contractVersion: 1, writesPaused: false, activeActivationRows: 0 } },
+      { name: 'admin-off-private-setter-denied-authenticated', status: 'PASS', role: 'authenticated', denialSqlstate: '42501', denialMessage: 'permission denied for schema private', stateAfter: { contractVersion: 1, writesPaused: false, activeActivationRows: 0 } },
     ],
     adminOff: {
       status: 'PASS',
       initialState: { contractVersion: 1, writesPaused: false, activeActivationRows: 0 },
       contractResponse: { success: true, contractVersion: 1, writesPaused: false, adminSupervisionAvailable: false },
-      setterAttempt: { attempted: true, rejected: true, errorMessage: 'RESTAURANT_ADMIN_BACKEND_NOT_AVAILABLE', stateBefore: { contractVersion: 1, writesPaused: false, activeActivationRows: 0 }, stateAfter: { contractVersion: 1, writesPaused: false, activeActivationRows: 0 } },
-      roleMatrix: { anonCanExecuteSetter: false, authenticatedCanExecuteSetter: false, deniedRoles: ['anon', 'authenticated'], runtimeDenialSqlstate: '42501' },
+      setterAttempt: { attempted: true, rejected: true, errorMessage: 'RESTAURANT_ADMIN_BACKEND_NOT_AVAILABLE', sqlstate: 'P0001', stateBefore: { contractVersion: 1, writesPaused: false, activeActivationRows: 0 }, stateAfter: { contractVersion: 1, writesPaused: false, activeActivationRows: 0 } },
+      roleMatrix: {
+        anonCanExecuteSetter: false,
+        authenticatedCanExecuteSetter: false,
+        denials: ['anon', 'authenticated'].map((role) => ({
+          role,
+          denialSqlstate: '42501',
+          denialMessage: 'permission denied for schema private',
+          stateAfter: { contractVersion: 1, writesPaused: false, activeActivationRows: 0 },
+        })),
+      },
     },
     writerChecks: Array.from({ length: 10 }, () => ({
       status: 'PASS',
@@ -274,53 +300,135 @@ test('structured evidence gate binds both reports to this SHA and rejects failed
   };
   const runGate = () => execFileSync(process.execPath, ['--input-type=module', '-e', gateSource], {
     cwd: root,
-    env: { ...process.env, RUNNER_TEMP: tempRoot, EXPECTED_EXECUTION_SHA: commitSha },
+    env: {
+      ...process.env,
+      RUNNER_TEMP: tempRoot,
+      EXPECTED_EXECUTION_SHA: commitSha,
+      EXPECTED_RUN_ID: runId,
+      EXPECTED_RUN_ATTEMPT: runAttempt,
+    },
     encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
   });
+  const rejectBridgeMutation = async (description, mutate) => {
+    const validBridge = structuredClone(bridge);
+    mutate(bridge);
+    await writeReports();
+    assert.throws(runGate, (error) => error.status === 1, description);
+    bridge = validBridge;
+  };
 
   try {
     await writeReports();
     assert.match(runGate(), /PR352_R6_EVIDENCE_PASS/);
 
-    bridge.commitSha = 'b'.repeat(40);
-    await writeReports();
-    assert.throws(runGate, (error) => error.status === 1, 'wrong commit SHA must fail closed');
+    await rejectBridgeMutation('wrong commit SHA must fail closed', (report) => { report.commitSha = 'b'.repeat(40); });
+    await rejectBridgeMutation('wrong workflow run ID must fail closed', (report) => { report.runId = '1234567891'; });
+    await rejectBridgeMutation('wrong workflow run attempt must fail closed', (report) => { report.runAttempt = '1'; });
+    await rejectBridgeMutation('missing Admin check must fail closed', (report) => {
+      report.checks = report.checks.filter((check) => check.name !== 'admin-off-private-setter-denied-anon');
+    });
+    await rejectBridgeMutation('duplicate Admin check must fail closed', (report) => {
+      report.checks.push(structuredClone(report.checks.find((check) => check.name === 'admin-off-private-setter-denied-anon')));
+    });
+    await rejectBridgeMutation('unknown Admin check ID must fail closed', (report) => {
+      report.checks.find((check) => check.name === 'admin-off-initial-state').name = 'admin-off-initial-state-unknown';
+    });
+    await rejectBridgeMutation('unknown extra Admin check ID must fail closed', (report) => {
+      report.checks.push({ name: 'admin-off-unexpected', status: 'PASS' });
+    });
+    await rejectBridgeMutation('FAIL Admin status must fail closed', (report) => {
+      report.checks.find((check) => check.name === 'admin-off-private-setter-denied-authenticated').status = 'FAIL';
+    });
+    await rejectBridgeMutation('string boolean must fail closed', (report) => {
+      report.adminOff.initialState.writesPaused = 'false';
+      report.checks.find((check) => check.name === 'admin-off-initial-state').writesPaused = 'false';
+    });
+    await rejectBridgeMutation('wrong contract version must fail closed', (report) => {
+      report.adminOff.initialState.contractVersion = 2;
+      report.checks.find((check) => check.name === 'admin-off-initial-state').contractVersion = 2;
+    });
+    await rejectBridgeMutation('wrong endpoint contract version must fail closed', (report) => {
+      report.adminOff.contractResponse.contractVersion = 2;
+      report.checks.find((check) => check.name === 'admin-off-contract-response').contractVersion = 2;
+    });
+    await rejectBridgeMutation('activation rows above zero must fail closed', (report) => {
+      report.adminOff.initialState.activeActivationRows = 1;
+      report.checks.find((check) => check.name === 'admin-off-initial-state').activeActivationRows = 1;
+    });
+    await rejectBridgeMutation('endpoint Admin enabled must fail closed', (report) => {
+      report.adminOff.contractResponse.adminSupervisionAvailable = true;
+      report.checks.find((check) => check.name === 'admin-off-contract-response').adminSupervisionAvailable = true;
+    });
+    await rejectBridgeMutation('missing endpoint capability must fail closed', (report) => {
+      delete report.adminOff.contractResponse.adminSupervisionAvailable;
+    });
+    await rejectBridgeMutation('setter success must fail closed', (report) => {
+      report.adminOff.setterAttempt.rejected = false;
+      report.checks.find((check) => check.name === 'admin-off-setter-rejected-no-state-change').rejected = false;
+    });
+    await rejectBridgeMutation('unexpected setter rejection must fail closed', (report) => {
+      report.adminOff.setterAttempt.errorMessage = 'arbitrary exception';
+      report.checks.find((check) => check.name === 'admin-off-setter-rejected-no-state-change').errorMessage = 'arbitrary exception';
+    });
+    await rejectBridgeMutation('unexpected setter SQLSTATE must fail closed', (report) => {
+      report.adminOff.setterAttempt.sqlstate = '42501';
+      report.checks.find((check) => check.name === 'admin-off-setter-rejected-no-state-change').sqlstate = '42501';
+    });
+    await rejectBridgeMutation('contradictory post-rejection state must fail closed', (report) => {
+      report.adminOff.setterAttempt.stateAfter.activeActivationRows = 1;
+    });
+    await rejectBridgeMutation('anon denial mutation must fail closed', (report) => {
+      report.checks.find((check) => check.name === 'admin-off-private-setter-denied-anon').denialSqlstate = '00000';
+      report.adminOff.roleMatrix.denials.find((denial) => denial.role === 'anon').denialSqlstate = '00000';
+    });
+    await rejectBridgeMutation('anon denial message mutation must fail closed', (report) => {
+      report.adminOff.roleMatrix.denials.find((denial) => denial.role === 'anon').denialMessage = 'an unrelated error';
+      report.checks.find((check) => check.name === 'admin-off-private-setter-denied-anon').denialMessage = 'an unrelated error';
+    });
+    await rejectBridgeMutation('anon denial state mutation must fail closed', (report) => {
+      report.adminOff.roleMatrix.denials.find((denial) => denial.role === 'anon').stateAfter.activeActivationRows = 1;
+      report.checks.find((check) => check.name === 'admin-off-private-setter-denied-anon').stateAfter.activeActivationRows = 1;
+    });
+    await rejectBridgeMutation('anon role privilege mutation must fail closed', (report) => {
+      report.adminOff.roleMatrix.anonCanExecuteSetter = true;
+    });
+    await rejectBridgeMutation('authenticated denial mutation must fail closed', (report) => {
+      report.checks.find((check) => check.name === 'admin-off-private-setter-denied-authenticated').denialSqlstate = '00000';
+      report.adminOff.roleMatrix.denials.find((denial) => denial.role === 'authenticated').denialSqlstate = '00000';
+    });
+    await rejectBridgeMutation('authenticated denial message mutation must fail closed', (report) => {
+      report.adminOff.roleMatrix.denials.find((denial) => denial.role === 'authenticated').denialMessage = 'an unrelated error';
+      report.checks.find((check) => check.name === 'admin-off-private-setter-denied-authenticated').denialMessage = 'an unrelated error';
+    });
+    await rejectBridgeMutation('authenticated denial state mutation must fail closed', (report) => {
+      report.adminOff.roleMatrix.denials.find((denial) => denial.role === 'authenticated').stateAfter.activeActivationRows = 1;
+      report.checks.find((check) => check.name === 'admin-off-private-setter-denied-authenticated').stateAfter.activeActivationRows = 1;
+    });
+    await rejectBridgeMutation('authenticated role privilege mutation must fail closed', (report) => {
+      report.adminOff.roleMatrix.authenticatedCanExecuteSetter = true;
+    });
+    await rejectBridgeMutation('PASS with failure diagnostics must fail closed', (report) => {
+      report.failedStage = 'synthetic failure';
+      report.error = 'synthetic error';
+      report.errorStack = 'synthetic stack';
+    });
+    await rejectBridgeMutation('missing Admin evidence report must fail closed', (report) => { delete report.adminOff; });
 
-    bridge.commitSha = commitSha;
-    bridge.adminOff.initialState.activeActivationRows = 1;
-    await writeReports();
-    assert.throws(runGate, (error) => error.status === 1, 'enabled Admin state must fail closed');
-    bridge.adminOff.initialState.activeActivationRows = 0;
+    await rejectBridgeMutation('writer body drift must fail closed', (report) => { report.writerChecks[3].bodyRecoveredExactly = false; });
 
-    delete bridge.adminOff.contractResponse.adminSupervisionAvailable;
-    await writeReports();
-    assert.throws(runGate, (error) => error.status === 1, 'missing Admin contract evidence must fail closed');
-    bridge.adminOff.contractResponse.adminSupervisionAvailable = false;
+    const originalBridgeBytes = await readFile(bridgePath);
+    await rm(bridgePath);
+    assert.throws(runGate, (error) => error.status === 1, 'missing bridge report must fail closed');
+    await writeFile(bridgePath, originalBridgeBytes);
 
-    bridge.adminOff.setterAttempt.stateAfter.activeActivationRows = 1;
-    await writeReports();
-    assert.throws(runGate, (error) => error.status === 1, 'contradictory post-rejection state must fail closed');
-    bridge.adminOff.setterAttempt.stateAfter.activeActivationRows = 0;
+    await writeFile(bridgePath, '{malformed');
+    assert.throws(runGate, (error) => error.status === 1, 'malformed bridge JSON must fail closed');
 
-    bridge.adminOff.roleMatrix.authenticatedCanExecuteSetter = true;
-    await writeReports();
-    assert.throws(runGate, (error) => error.status === 1, 'browser role setter grant must fail closed');
-    bridge.adminOff.roleMatrix.authenticatedCanExecuteSetter = false;
-
-    bridge.checks = bridge.checks.filter((check) => check.name !== 'admin-off-private-setter-denied-anon');
-    await writeReports();
-    assert.throws(runGate, (error) => error.status === 1, 'missing executed role denial check must fail closed');
-    bridge.checks.push({ name: 'admin-off-private-setter-denied-anon', status: 'PASS', role: 'anon', denialSqlstate: '42501' });
-
-    bridge.checks.push({ name: 'admin-off-private-setter-denied-anon', status: 'PASS', role: 'anon', denialSqlstate: '99999' });
-    await writeReports();
-    assert.throws(runGate, (error) => error.status === 1, 'duplicate contradictory Admin evidence must fail closed');
-    bridge.checks.pop();
-
-    bridge.writerChecks[3].bodyRecoveredExactly = false;
-    await writeReports();
-    assert.throws(runGate, (error) => error.status === 1, 'writer body drift must fail closed');
-    bridge.writerChecks[3].bodyRecoveredExactly = true;
+    const originalOverlayBytes = await readFile(overlayPath);
+    await rm(overlayPath);
+    assert.throws(runGate, (error) => error.status === 1, 'missing overlay report must fail closed');
+    await writeFile(overlayPath, originalOverlayBytes);
 
     overlay.cases[4].status = 'FAIL';
     await writeReports();
@@ -328,9 +436,6 @@ test('structured evidence gate binds both reports to this SHA and rejects failed
 
     overlay.cases[4].status = 'PASS';
     await writeReports();
-    await rm(overlayPath);
-    assert.throws(runGate, (error) => error.status === 1, 'missing report must fail closed');
-
     await writeFile(overlayPath, '{malformed');
     assert.throws(runGate, (error) => error.status === 1, 'malformed JSON must fail closed');
   } finally {

@@ -125,6 +125,8 @@ async function writeEvidence() {
     schemaVersion: 1,
     suite: 'PR352_R6_REAL_BRIDGE',
     commitSha: process.env.GITHUB_SHA ?? null,
+    runId: process.env.GITHUB_RUN_ID ?? null,
+    runAttempt: process.env.GITHUB_RUN_ATTEMPT ?? null,
     status: bridgeStatus,
     database: 'pr352_bridge_isolated',
     postgresServerVersionNum: serverVersionNum,
@@ -436,14 +438,14 @@ async function run() {
   passed('admin-off-contract-response', adminOffEvidence.contractResponse);
   let setterError = null;
   try {
-    await runPsql(['-c', `begin; select private.set_restaurant_transition_policy_v1(false,'00000000-0000-0000-0000-000000000001',true); rollback;`]);
+    await runPsql(['-v', 'VERBOSITY=verbose', '-c', `begin; select private.set_restaurant_transition_policy_v1(false,'00000000-0000-0000-0000-000000000001',true); rollback;`]);
   } catch (error) {
     const detail = String(error.stderr || error.message || '');
-    const match = detail.match(/ERROR:\s*(RESTAURANT_ADMIN_BACKEND_NOT_AVAILABLE)\b/);
+    const match = detail.match(/ERROR:\s*(P0001):\s*(RESTAURANT_ADMIN_BACKEND_NOT_AVAILABLE)\b/);
     if (!match) throw new Error(`Admin activation setter failed unexpectedly: ${detail.slice(0, 800)}`);
-    setterError = match[1];
+    setterError = { sqlstate: match[1], message: match[2] };
   }
-  assert.equal(setterError, 'RESTAURANT_ADMIN_BACKEND_NOT_AVAILABLE',
+  assert.deepEqual(setterError, { sqlstate: 'P0001', message: 'RESTAURANT_ADMIN_BACKEND_NOT_AVAILABLE' },
     'The Admin activation setter must reject activation while the v1 backend is active');
   const adminStateAfterSetter = JSON.parse(await query(`select json_build_object(
     'contractVersion',s.contract_version,
@@ -455,7 +457,8 @@ async function run() {
   adminOffEvidence.setterAttempt = {
     attempted: true,
     rejected: setterError !== null,
-    errorMessage: setterError,
+    errorMessage: setterError.message,
+    sqlstate: setterError.sqlstate,
     stateBefore: adminState,
     stateAfter: adminStateAfterSetter,
   };
@@ -477,35 +480,41 @@ async function run() {
     anonPolicySetter: false,
     authenticatedPolicySetter: false,
   }, 'Public client grants and private policy setter isolation must match the contract');
-  const deniedRoles = [];
+  const roleDenials = [];
   for (const role of ['anon', 'authenticated']) {
-    await runSql(`set role ${role};
-      do $denied$ declare state text; message text; begin
-        begin perform private.set_restaurant_transition_policy_v1(true,null,null);
-          raise exception 'R6_PRIVATE_POLICY_CALL_UNEXPECTEDLY_ALLOWED';
-        exception when others then get stacked diagnostics state=returned_sqlstate,message=message_text;
-          if message='R6_PRIVATE_POLICY_CALL_UNEXPECTEDLY_ALLOWED' then raise; end if;
-          if state<>'42501' then raise exception 'R6_PRIVATE_POLICY_DENIAL_SQLSTATE:%:%',state,message; end if;
-        end;
-      end $denied$;
-      reset role;`, `private-policy-denied-${role}`);
-    deniedRoles.push(role);
-    passed(`admin-off-private-setter-denied-${role}`, { role, denialSqlstate: '42501' });
+    let denial = null;
+    try {
+      await runPsql(['-v', 'VERBOSITY=verbose', '-c', `set role ${role}; select private.set_restaurant_transition_policy_v1(true,null,null);`]);
+    } catch (error) {
+      const detail = String(error.stderr || error.message || '');
+      const match = detail.match(/ERROR:\s*([0-9A-Z]{5}):\s*(permission denied for (?:schema private|function set_restaurant_transition_policy_v1))\b/);
+      if (!match) throw new Error(`Browser role ${role} setter denial was unexpected: ${detail.slice(0, 800)}`);
+      denial = { role, denialSqlstate: match[1], denialMessage: match[2] };
+    }
+    assert.ok(denial, `Browser role ${role} must not execute the private Admin setter`);
+    assert.equal(denial.denialSqlstate, '42501', `Browser role ${role} must be denied by PostgreSQL ACL`);
+    const stateAfterDenial = JSON.parse(await query(`select json_build_object(
+      'contractVersion',s.contract_version,
+      'writesPaused',s.writes_paused,
+      'activeActivationRows',(select count(*) from private.restaurant_admin_activation)
+    )::text from private.restaurant_cloud_contract_state s where singleton`));
+    assert.deepEqual(stateAfterDenial, adminState, `Browser role ${role} denial must have no Admin state effects`);
+    const roleEvidence = { ...denial, stateAfter: stateAfterDenial };
+    roleDenials.push(roleEvidence);
+    passed(`admin-off-private-setter-denied-${role}`, roleEvidence);
   }
   adminOffEvidence.roleMatrix = {
     anonCanExecuteSetter: privileges.anonPolicySetter,
     authenticatedCanExecuteSetter: privileges.authenticatedPolicySetter,
-    deniedRoles,
-    runtimeDenialSqlstate: '42501',
+    denials: roleDenials,
   };
-  assert.deepEqual(adminOffEvidence.roleMatrix, {
-    anonCanExecuteSetter: false,
-    authenticatedCanExecuteSetter: false,
-    deniedRoles: ['anon', 'authenticated'],
-    runtimeDenialSqlstate: '42501',
-  });
+  assert.equal(adminOffEvidence.roleMatrix.anonCanExecuteSetter, false);
+  assert.equal(adminOffEvidence.roleMatrix.authenticatedCanExecuteSetter, false);
+  assert.deepEqual(roleDenials.map(({ role, denialSqlstate, denialMessage }) => ({ role, denialSqlstate, denialMessage })), [
+    { role: 'anon', denialSqlstate: '42501', denialMessage: roleDenials[0].denialMessage },
+    { role: 'authenticated', denialSqlstate: '42501', denialMessage: roleDenials[1].denialMessage },
+  ]);
   adminOffEvidence.status = 'PASS';
-  passed('admin-off-evidence-complete', { status: adminOffEvidence.status });
   passed('anon/authenticated public grants and private policy setter denial verified', { privilegeMatrix: privileges });
 
   currentStage = 'Staff ownership and invalid session authorization';
