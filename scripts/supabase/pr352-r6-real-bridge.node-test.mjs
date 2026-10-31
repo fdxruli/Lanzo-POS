@@ -187,6 +187,10 @@ test('station behavior test covers independent PG sessions and Cocina invariants
     'H: failed transaction rolls back station initialization',
   ]) assert.ok(testSource.includes(name), `Missing runtime Cocina assertion ${name}`);
   assert.match(runner, /runPreparationStationBehavior\(\{ query, runSql, psqlBin, env \}\)/);
+  assert.match(testSource, /join public\.pos_restaurant_orders parent\s+on parent\.id=item\.restaurant_order_id and parent\.license_id=item\.license_id\s+where parent\.license_id=\$\{quote\(LICENSE_A\)\}::uuid\s+and parent\.local_order_id=\$\{quote\('bridge-staff-owned-parent'\)\}/,
+    'Persisted item station must be resolved through the parent local order ID and its real parent key');
+  assert.doesNotMatch(testSource, /from public\.pos_restaurant_order_items where restaurant_order_id='bridge-staff-owned-parent'/,
+    'A localOrderId must not be mistaken for the database parent primary key');
   assert.match(runner, /statementBatch\.endsWith\(';'\)/);
   assert.match(testSource, /spawn\(psqlBin/);
   assert.match(testSource, /'-h', '127\.0\.0\.1'/);

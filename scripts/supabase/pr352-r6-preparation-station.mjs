@@ -143,8 +143,13 @@ export async function runPreparationStationBehavior({ query, runSql, psqlBin, en
   assert.equal(created.updatedByStaffUserId, STAFF_A);
   assert.deepEqual(created.metadata, { phase: 'REST.1', bootstrap: true });
   const itemResolution = JSON.parse(await query(`select jsonb_build_object(
-    'stationCode',station_code,'stationName',station_name
-  )::text from public.pos_restaurant_order_items where restaurant_order_id='bridge-staff-owned-parent'`));
+    'stationCode',item.station_code,'stationName',item.station_name
+  )::text
+  from public.pos_restaurant_order_items item
+  join public.pos_restaurant_orders parent
+    on parent.id=item.restaurant_order_id and parent.license_id=item.license_id
+  where parent.license_id=${quote(LICENSE_A)}::uuid
+    and parent.local_order_id=${quote('bridge-staff-owned-parent')}`));
   assert.deepEqual(itemResolution, { stationCode: 'kitchen', stationName: 'Cocina' });
   results.push({
     name: 'A/G: first authenticated Staff write creates and attributes Kitchen',
