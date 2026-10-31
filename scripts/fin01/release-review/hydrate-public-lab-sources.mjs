@@ -64,6 +64,7 @@ assert.ok(Array.isArray(sources) && sources.length === 238, 'PUBLIC_FUNCTION_SOU
 const pre3d14 = [
   ['public.pos_execute_financial_operation_v1(text,text,text,text,text,text,text,jsonb)', '148918104b257982e3809a880bda7177', ['anon', 'authenticated', 'service_role']],
   ['public.pos_create_cloud_sale_cashier_inventory_legacy_r2b(text,text,text,text,jsonb,jsonb,jsonb,text,text)', '24843a289bbfdb692b4d18a10880c0b5', ['service_role']],
+  ['public.pos_create_cloud_sale_credit_legacy_r2b(text,text,text,text,jsonb,jsonb,jsonb,text,text,text)', 'c75dff5b4bab23bcb09f0c155df21f44', ['service_role']],
   ['public.pos_create_cloud_sale_cashier(text,text,text,text,jsonb,jsonb,jsonb,text,text)', '653ad817084920aa6adc1a60266ef37c', ['anon', 'authenticated', 'service_role']],
   ['public.pos_create_cloud_sale_cashier_inventory(text,text,text,text,jsonb,jsonb,jsonb,text,text)', '0c9dd22833c208dc20d78dd14bfd005d', ['anon', 'authenticated', 'service_role']],
   ['public.pos_create_cloud_sale_credit(text,text,text,text,jsonb,jsonb,jsonb,text,text,text)', '59977522691c4008711e4361bcb1e0bd', ['anon', 'authenticated', 'service_role']]
