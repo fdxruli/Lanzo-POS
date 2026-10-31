@@ -253,7 +253,7 @@ function expectedContractSql(contract, stage) {
 }
 
 function expectedVersionSql(versions) {
-  return sqlArray(versions);
+  return sqlArray([...versions].sort());
 }
 
 function ledgerSchemaPreflightSql() {
@@ -391,7 +391,15 @@ async function validateIdentityAndSchema(database, projectId, baseline, snapshot
   assert.ok(['170006', '170011'].includes(snapshot.server_version_num), 'POSTGRES_17_6_OR_17_11_REQUIRED');
   assert.ok(snapshot.client_addr, 'SYNTHETIC_CLIENT_ADDRESS_EVIDENCE_REQUIRED');
   const ids = snapshot.ledger.map((row) => row.version).sort();
-  compareRows(ids, [...baseline].sort(), 'BASELINE_VERSION_SET');
+  const baselineIds = [...baseline].sort();
+  const baselinePlusF = [...baseline, expectedFiles[0].version].sort();
+  const exactFreshState = JSON.stringify(ids) === JSON.stringify(baselineIds);
+  const exactFResumeState = JSON.stringify(ids) === JSON.stringify(baselinePlusF);
+  if (!exactFreshState && !exactFResumeState) {
+    const unknown = ids.filter((version) => !baseline.includes(version) && version !== expectedFiles[0].version);
+    assert.deepEqual(unknown, [], 'UNEXPECTED_LEDGER_VERSION');
+    assert.fail('BASELINE_VERSION_SET_MISMATCH');
+  }
   await getLedgerSchema(database).then(assertLedgerSchema);
 }
 
