@@ -118,6 +118,7 @@ jobs:
           CONTRACTS_OUTCOME: ${{ steps.contracts.outcome }}
           BRIDGE_OUTCOME: ${{ steps.bridge.outcome }}
           OVERLAY_OUTCOME: ${{ steps.overlay.outcome }}
+          EXPECTED_EXECUTION_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           test "${CONTRACTS_OUTCOME}" = "success"
@@ -128,12 +129,23 @@ jobs:
             const root = process.env.RUNNER_TEMP + "/pr352-r6-evidence/";
             const bridge = JSON.parse(await readFile(root + "real-bridge.json", "utf8"));
             const overlay = JSON.parse(await readFile(root + "synthetic-overlay.json", "utf8"));
+            const expectedSha = process.env.EXPECTED_EXECUTION_SHA;
+            if (!/^[0-9a-f]{40}$/.test(expectedSha ?? "")) process.exit(1);
+            if (bridge.commitSha !== expectedSha || overlay.commitSha !== expectedSha) process.exit(1);
             if (bridge.status !== "PASS" || overlay.status !== "PASS") process.exit(1);
+            if (!Array.isArray(bridge.checks) || bridge.checks.length === 0 || !bridge.checks.every((check) => check.status === "PASS")) process.exit(1);
+            if (!Array.isArray(bridge.concurrency) || bridge.concurrency.length !== 4 || !bridge.concurrency.every((scenario) => scenario.status === "PASS")) process.exit(1);
             if (bridge.postgresServerVersionNum !== "170006" || bridge.productionConnections !== 0) process.exit(1);
-            if (overlay.expectedLedgerRows !== 333 || overlay.caseCount !== overlay.passed || overlay.failed !== 0) process.exit(1);
+            if (!Array.isArray(overlay.cases) || overlay.cases.length !== overlay.caseCount || !overlay.cases.every((scenario) => scenario.status === "PASS")) process.exit(1);
+            if (overlay.expectedLedgerRows !== 333 || overlay.caseCount !== 13 || overlay.caseCount !== overlay.passed || overlay.failed !== 0) process.exit(1);
+            if (overlay.productionConnections !== 0 || overlay.cleanupFailures !== 0 || overlay.sqlContentsEmitted !== false) process.exit(1);
             console.log("PR352_R6_EVIDENCE_PASS", JSON.stringify({
+              commitSha: expectedSha,
               bridge: bridge.status,
               overlay: overlay.status,
+              bridgeChecks: bridge.checks.length,
+              concurrencyScenarios: bridge.concurrency.length,
+              overlayCases: overlay.caseCount,
               postgresServerVersionNum: bridge.postgresServerVersionNum,
               syntheticLedgerRows: overlay.expectedLedgerRows
             }));

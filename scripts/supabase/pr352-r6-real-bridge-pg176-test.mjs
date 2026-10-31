@@ -108,6 +108,7 @@ async function writeEvidence() {
   const report = {
     schemaVersion: 1,
     suite: 'PR352_R6_REAL_BRIDGE',
+    commitSha: process.env.GITHUB_SHA ?? null,
     status: bridgeStatus,
     database: 'pr352_bridge_isolated',
     postgresServerVersionNum: serverVersionNum,

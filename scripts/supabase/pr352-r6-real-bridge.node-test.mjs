@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -88,6 +89,7 @@ test('real PostgreSQL runner applies 3D.14 before the bridge and proves finite l
   assert.match(concurrency, /newWriteWaiting/);
   assert.match(runner, /SERVICE_ROLE|service_role|anon|authenticated/);
   assert.doesNotMatch(runner, /SUPABASE_ACCESS_TOKEN|SUPABASE_DB_PASSWORD/);
+  assert.match(runner, /commitSha:\s*process\.env\.GITHUB_SHA\s*\?\?\s*null/);
 });
 
 test('isolated workflow runs only on the exact QA push branch without secrets or dispatch', async () => {
@@ -105,13 +107,86 @@ test('isolated workflow runs only on the exact QA push branch without secrets or
   assert.match(workflow, /overlay\.expectedLedgerRows !== 333/);
   assert.match(workflow, /real-bridge\.json/);
   assert.match(workflow, /synthetic-overlay\.json/);
+  assert.match(workflow, /EXPECTED_EXECUTION_SHA:\s*\$\{\{ github\.sha \}\}/);
+  assert.match(workflow, /bridge\.commitSha !== expectedSha \|\| overlay\.commitSha !== expectedSha/);
+  assert.match(workflow, /bridge\.concurrency\.length !== 4/);
+  assert.match(workflow, /overlay\.cases\.length !== overlay\.caseCount/);
+  assert.match(workflow, /overlay\.productionConnections !== 0 \|\| overlay\.cleanupFailures !== 0/);
   assert.doesNotMatch(workflow, /^\s{6}PR352_R6_EVIDENCE_DIR:/m, 'runner context is not valid in job-level env');
   assert.equal((workflow.match(/^\s{10}PR352_R6_EVIDENCE_DIR: \$\{\{ runner\.temp \}\}\/pr352-r6-evidence$/gm) || []).length, 2,
     'runner temp path must be scoped to the two steps that write JSON evidence');
 });
 
+test('structured evidence gate binds both reports to this SHA and rejects failed or missing evidence', async () => {
+  const workflow = await readFile(workflowPath, 'utf8');
+  const match = workflow.match(/node --input-type=module -e '\r?\n([\s\S]*?)\r?\n[ \t]{10}'/);
+  assert.ok(match, 'workflow evidence gate JavaScript must be extractable');
+  const gateSource = match[1].split(/\r?\n/).map((line) => line.replace(/^ {12}/, '')).join('\n');
+  const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'pr352-r6-evidence-gate-'));
+  const evidenceRoot = path.join(tempRoot, 'pr352-r6-evidence');
+  await mkdir(evidenceRoot, { mode: 0o700 });
+  const bridgePath = path.join(evidenceRoot, 'real-bridge.json');
+  const overlayPath = path.join(evidenceRoot, 'synthetic-overlay.json');
+  const commitSha = 'a'.repeat(40);
+  const bridge = {
+    commitSha,
+    status: 'PASS',
+    checks: [{ status: 'PASS' }],
+    concurrency: Array.from({ length: 4 }, () => ({ status: 'PASS' })),
+    postgresServerVersionNum: '170006',
+    productionConnections: 0,
+  };
+  const overlay = {
+    commitSha,
+    status: 'PASS',
+    expectedLedgerRows: 333,
+    cases: Array.from({ length: 13 }, () => ({ status: 'PASS' })),
+    caseCount: 13,
+    passed: 13,
+    failed: 0,
+    productionConnections: 0,
+    cleanupFailures: 0,
+    sqlContentsEmitted: false,
+  };
+  const writeReports = async () => {
+    await writeFile(bridgePath, JSON.stringify(bridge));
+    await writeFile(overlayPath, JSON.stringify(overlay));
+  };
+  const runGate = () => execFileSync(process.execPath, ['--input-type=module', '-e', gateSource], {
+    cwd: root,
+    env: { ...process.env, RUNNER_TEMP: tempRoot, EXPECTED_EXECUTION_SHA: commitSha },
+    encoding: 'utf8',
+  });
+
+  try {
+    await writeReports();
+    assert.match(runGate(), /PR352_R6_EVIDENCE_PASS/);
+
+    bridge.commitSha = 'b'.repeat(40);
+    await writeReports();
+    assert.throws(runGate, (error) => error.status === 1, 'wrong commit SHA must fail closed');
+
+    bridge.commitSha = commitSha;
+    overlay.cases[4].status = 'FAIL';
+    await writeReports();
+    assert.throws(runGate, (error) => error.status === 1, 'failed case status must fail closed');
+
+    overlay.cases[4].status = 'PASS';
+    await writeReports();
+    await rm(overlayPath);
+    assert.throws(runGate, (error) => error.status === 1, 'missing report must fail closed');
+
+    await writeFile(overlayPath, '{malformed');
+    assert.throws(runGate, (error) => error.status === 1, 'malformed JSON must fail closed');
+  } finally {
+    await rm(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test('synthetic overlay helper is self-contained and never embeds the remote ledger', async () => {
   const source = await readFile(overlayPath, 'utf8');
+  const runner = await readFile(path.join(root, 'scripts/supabase/pr352-r6-synthetic-ledger-overlay-test.mjs'), 'utf8');
+  assert.match(runner, /report\.commitSha = process\.env\.GITHUB_SHA\s*\?\?\s*null/);
   assert.match(source, /synthetic-only/);
   assert.match(source, /canonicalLedgerRepresentation/);
   assert.match(source, /fingerprint mismatch/);
