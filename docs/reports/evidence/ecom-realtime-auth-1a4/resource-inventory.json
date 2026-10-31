@@ -1,0 +1,32 @@
+{
+  "run": "43d9fccc-23a8-4e6e-b2a1-fa10ddcba918",
+  "tenants": [
+    {
+      "license_id": "4f8420a8-e6ad-4a50-9528-1d1cc59e7162",
+      "device": "81e8bda5-7e17-4dc0-902f-a72d6b8d62f4",
+      "device2": "5e41a834-18c5-4935-9709-3ad2fb893d1a",
+      "admin": "ff2ea4e1-6093-4aac-aa4c-391e6f52aa7b",
+      "session": "6d4fa2cc-9080-434b-a16a-7201f1e785c6",
+      "session2": "cc6ec8b6-8f9a-452c-91f6-d72d4ef085b6",
+      "staff": "96fc0b4b-cf5a-4ad1-8e71-7857cac5502a",
+      "staff_session": "6ecf7d8e-c637-43bd-a4ad-d3634f0e0141",
+      "denied_staff": "e1e57e69-a623-4b27-8047-3089a0a73e5a",
+      "denied_session": "884a68c9-ca68-4360-9769-8e67da1e9140"
+    },
+    {
+      "license_id": "fb8027aa-cfea-4991-a7ae-78da071938cb",
+      "device": "6b4f81fe-d720-4fae-9e2a-bcaeafb7be8d",
+      "device2": "046db592-36ec-4f3c-9064-fc87e8c95d83",
+      "admin": "034b8405-06b4-43ee-ab7b-f4c48d0f8db2",
+      "session": "6ef2f040-04e8-4cc5-b325-7615b3d266c4",
+      "session2": "0ff90c22-fc72-4fb9-a700-229d64baba17",
+      "staff": "89425127-872d-4f84-8b85-b355b84f159b",
+      "staff_session": "10f1c206-6a6f-4596-abc6-5844e3b7abbc",
+      "denied_staff": "0d512123-91a8-4b02-bc44-abf674fb28ef",
+      "denied_session": "41684bc1-54a1-4bf8-a34f-39e208d646a6"
+    }
+  ],
+  "replacement_session": "f7f9751b-cdf6-4710-be94-9527f7b47953",
+  "server": "local QA only; no Edge endpoint or secrets installed",
+  "cleanup": "collector 4 users / 9 Auth sessions; selective SQL migration 20261022184218; no synthetic resources remain"
+}

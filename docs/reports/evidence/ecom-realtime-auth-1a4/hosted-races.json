@@ -1,0 +1,22 @@
+{
+  "stage": "races",
+  "ttl": 600,
+  "started_at": "2026-10-22T18:25:54.591Z",
+  "results": [
+    {
+      "id": "PUBLISH-THEN-REVOKE",
+      "status": "PASS",
+      "revoke_wait_ms": 2935.759,
+      "sent": "ENQUEUED",
+      "retry": "EXCLUDED"
+    },
+    {
+      "id": "REVOKE-THEN-PUBLISH",
+      "status": "PASS",
+      "publish_wait_ms": 2870.7872000000007,
+      "selected": "EXCLUDED"
+    }
+  ],
+  "status": "PASS",
+  "finished_at": "2026-10-22T18:26:03.686Z"
+}

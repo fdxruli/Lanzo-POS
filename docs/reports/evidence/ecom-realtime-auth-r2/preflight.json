@@ -1,0 +1,263 @@
+{
+  "project": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"id\":\"odlrhijtfyavryeqivaa\",\"ref\":\"odlrhijtfyavryeqivaa\",\"organization_id\":\"mvxjptarjussdpasqtln\",\"organization_slug\":\"mvxjptarjussdpasqtln\",\"name\":\"Lanzo\",\"region\":\"us-east-2\",\"status\":\"ACTIVE_HEALTHY\",\"database\":{\"host\":\"db.odlrhijtfyavryeqivaa.supabase.co\",\"version\":\"17.6.1.063\",\"postgres_engine\":\"17\",\"release_channel\":\"ga\"},\"created_at\":\"2026-01-19T22:44:56.732991Z\"}"
+      }
+    ],
+    "isError": false
+  },
+  "main": "f014a1f340ed78335d3e704eefff49cda8465115",
+  "prs": [
+    {
+      "number": 366,
+      "title": "feat(auth): bounded 7-day Admin offline continuity",
+      "draft": true,
+      "head": "11f6115afc843e55dcfa0780842c326db752bd90",
+      "branch": "feat/admin-offline-continuity-extended-r1",
+      "base": "main"
+    },
+    {
+      "number": 352,
+      "title": "feat(restaurant): supervisión administrativa y autoridad Staff por mesa",
+      "draft": true,
+      "head": "d758f69b2119f1bc346eb0ac86ba0a74c0265668",
+      "branch": "feat/restaurant-admin-supervision-r1",
+      "base": "feat/restaurant-split-flexible-payments-r1"
+    },
+    {
+      "number": 338,
+      "title": "feat(restaurant): cobro flexible y división monetaria",
+      "draft": true,
+      "head": "fef7205f76b173025f503e60d0968f446f741e78",
+      "branch": "feat/restaurant-split-flexible-payments-r1",
+      "base": "main"
+    }
+  ],
+  "roles": [
+    {
+      "name": "authenticated",
+      "login": false,
+      "super": false,
+      "inherit": true,
+      "bypassrls": false
+    },
+    {
+      "name": "anon",
+      "login": false,
+      "super": false,
+      "inherit": true,
+      "bypassrls": false
+    },
+    {
+      "name": "service_role",
+      "login": false,
+      "super": false,
+      "inherit": true,
+      "bypassrls": true
+    },
+    {
+      "name": "authenticator",
+      "login": true,
+      "super": false,
+      "inherit": false,
+      "bypassrls": false
+    }
+  ],
+  "policies": [
+    {
+      "cmd": "SELECT",
+      "qual": "((extension = 'broadcast'::text) AND realtime.lanzo_can_access_license_realtime_topic(( SELECT realtime.topic() AS topic)))",
+      "roles": [
+        "anon",
+        "authenticated"
+      ],
+      "tablename": "messages",
+      "permissive": "PERMISSIVE",
+      "policyname": "Lanzo private license broadcast receive",
+      "schemaname": "realtime",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "((extension = 'broadcast'::text) AND realtime.lanzo_can_access_pos_realtime_topic(( SELECT realtime.topic() AS topic)))",
+      "roles": [
+        "anon",
+        "authenticated"
+      ],
+      "tablename": "messages",
+      "permissive": "PERMISSIVE",
+      "policyname": "Lanzo private POS broadcast receive",
+      "schemaname": "realtime",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "((extension = 'broadcast'::text) AND realtime.lanzo_can_access_ecommerce_tracking_topic(( SELECT realtime.topic() AS topic)))",
+      "roles": [
+        "anon",
+        "authenticated"
+      ],
+      "tablename": "messages",
+      "permissive": "PERMISSIVE",
+      "policyname": "Lanzo private ecommerce tracking broadcast receive",
+      "schemaname": "realtime",
+      "with_check": null
+    }
+  ],
+  "functions": [
+    {
+      "acl": [
+        "=X/postgres",
+        "postgres=X/postgres",
+        "service_role=X/postgres",
+        "anon=X/postgres",
+        "authenticated=X/postgres"
+      ],
+      "def": "CREATE OR REPLACE FUNCTION public.pos_get_cash_station_state(p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text DEFAULT NULL::text)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\r\ndeclare\r\n  v_context jsonb;\r\n  v_license_id uuid;\r\n  v_device_id uuid;\r\n  v_actor_key text;\r\n  v_role text;\r\n  v_station public.pos_cash_stations;\r\n  v_own_session public.pos_cash_sessions;\r\n  v_station_open public.pos_cash_sessions;\r\n  v_other_station_session public.pos_cash_sessions;\r\n  v_status text;\r\n  v_code text;\r\nbegin\r\n  v_context := private.validate_pos_sync_context(\r\n    p_license_key, p_device_fingerprint, p_security_token, p_staff_session_token\r\n  );\r\n  perform private.assert_cloud_cash_sync_enabled(v_context);\r\n  perform private.assert_cash_permission(v_context);\r\n\r\n  v_license_id := (v_context->>'license_id')::uuid;\r\n  v_device_id := (v_context->>'device_id')::uuid;\r\n  v_role := coalesce(v_context->>'device_role', 'staff');\r\n  v_actor_key := private.resolve_cash_actor_key(v_context);\r\n  v_station := private.resolve_cash_station_for_device(v_license_id, v_device_id, true);\r\n\r\n  select * into v_own_session\r\n    from public.pos_cash_sessions s\r\n   where s.license_id = v_license_id\r\n     and s.cash_station_id = v_station.id\r\n     and s.actor_key = v_actor_key\r\n     and s.status = 'open'\r\n     and s.deleted_at is null\r\n   order by s.opened_at desc\r\n   limit 1;\r\n\r\n  select * into v_station_open\r\n    from public.pos_cash_sessions s\r\n   where s.license_id = v_license_id\r\n     and s.cash_station_id = v_station.id\r\n     and s.status = 'open'\r\n     and s.deleted_at is null\r\n   order by s.opened_at desc\r\n   limit 1;\r\n\r\n  select * into v_other_station_session\r\n    from public.pos_cash_sessions s\r\n   where s.license_id = v_license_id\r\n     and s.actor_key = v_actor_key\r\n     and s.status = 'open'\r\n     and s.deleted_at is null\r\n     and s.cash_station_id is distinct from v_station.id\r\n   order by s.opened_at desc\r\n   limit 1;\r\n\r\n  if v_station_open.id is not null and v_station_open.actor_key <> v_actor_key then\r\n    v_status := 'HANDOFF_REQUIRED';\r\n    v_code := 'CASH_HANDOFF_REQUIRED';\r\n  elsif v_own_session.id is not null then\r\n    v_status := 'OWN_SESSION_OPEN';\r\n    v_code := null;\r\n  elsif v_role = 'staff' and v_other_station_session.id is not null then\r\n    v_status := 'BLOCKED';\r\n    v_code := 'CASH_SESSION_ALREADY_OPEN';\r\n  else\r\n    v_status := 'NO_SESSION';\r\n    v_code := null;\r\n  end if;\r\n\r\n  return jsonb_strip_nulls(jsonb_build_object(\r\n    'success', true,\r\n    'financial_status', v_status,\r\n    'financial_code', v_code,\r\n    'cash_station', to_jsonb(v_station),\r\n    'cash_session', case when v_own_session.id is null then null else private.pos_cash_session_to_jsonb(v_own_session) end,\r\n    'station_open_cash_session', case when v_station_open.id is null then null else private.pos_cash_session_to_jsonb(v_station_open) end,\r\n    'actor_key', v_actor_key,\r\n    'cash_station_id', v_station.id,\r\n    'sync_context', jsonb_strip_nulls(jsonb_build_object(\r\n      'device_role', v_context->>'device_role',\r\n      'staff_user_id', v_context->>'staff_user_id',\r\n      'admin_user_id', v_context->>'admin_user_id',\r\n      'cash_station_id', v_station.id\r\n    ))\r\n  ));\r\nend;\r\n$function$\n",
+      "md5": "675ef683a0c2ce92a39deb29ab4b81c3",
+      "signature": "pos_get_cash_station_state(text,text,text,text)"
+    },
+    {
+      "acl": [
+        "=X/postgres",
+        "postgres=X/postgres",
+        "service_role=X/postgres",
+        "anon=X/postgres",
+        "authenticated=X/postgres"
+      ],
+      "def": "CREATE OR REPLACE FUNCTION public.pos_admin_close_cash_session(p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text DEFAULT NULL::text, p_cash_session_id text DEFAULT NULL::text, p_closing_mode text DEFAULT NULL::text, p_counted_amount numeric DEFAULT NULL::numeric, p_next_shift_fund numeric DEFAULT NULL::numeric, p_reason_code text DEFAULT NULL::text, p_comments text DEFAULT NULL::text, p_expected_version integer DEFAULT NULL::integer, p_idempotency_key text DEFAULT NULL::text)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\ndeclare\n  v_rate_limit jsonb;\nbegin\n  v_rate_limit := public.enforce_pos_rpc_rate_limit_v2(\n    p_license_key := p_license_key,\n    p_device_fingerprint := p_device_fingerprint,\n    p_staff_session_token := p_staff_session_token,\n    p_rpc_name := 'pos_admin_close_cash_session',\n    p_scope := 'POS_WRITE',\n    p_max_attempts := 20,\n    p_window_seconds := 600,\n    p_block_seconds := 300,\n    p_code := 'RPC_RATE_LIMITED',\n    p_metadata := '{}'::jsonb\n  );\n  if coalesce((v_rate_limit->>'allowed')::boolean, false) is false then\n    return public.build_pos_rpc_rate_limited_response(v_rate_limit);\n  end if;\n  return public.pos_admin_close_cash_session_unlimited(\n    p_license_key, p_device_fingerprint, p_security_token, p_staff_session_token,\n    p_cash_session_id, p_closing_mode, p_counted_amount, p_next_shift_fund,\n    p_reason_code, p_comments, p_expected_version, p_idempotency_key\n  );\nend;\n$function$\n",
+      "md5": "957a49d539846acd7fa92b254fca113a",
+      "signature": "pos_admin_close_cash_session(text,text,text,text,text,text,numeric,numeric,text,text,integer,text)"
+    },
+    {
+      "acl": [
+        "=X/postgres",
+        "postgres=X/postgres",
+        "service_role=X/postgres",
+        "anon=X/postgres",
+        "authenticated=X/postgres"
+      ],
+      "def": "CREATE OR REPLACE FUNCTION public.pos_admin_adopt_legacy_cash_session(p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text DEFAULT NULL::text, p_cash_session_id text DEFAULT NULL::text, p_expected_version integer DEFAULT NULL::integer, p_idempotency_key text DEFAULT NULL::text)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\r\ndeclare v_rate_limit jsonb;\r\nbegin\r\n  v_rate_limit := public.enforce_pos_rpc_rate_limit_v2(\r\n    p_license_key := p_license_key, p_device_fingerprint := p_device_fingerprint,\r\n    p_staff_session_token := p_staff_session_token, p_rpc_name := 'pos_admin_adopt_legacy_cash_session',\r\n    p_scope := 'POS_WRITE', p_max_attempts := 20, p_window_seconds := 600, p_block_seconds := 300,\r\n    p_code := 'RPC_RATE_LIMITED', p_metadata := '{}'::jsonb\r\n  );\r\n  if coalesce((v_rate_limit->>'allowed')::boolean, false) is false then\r\n    return public.build_pos_rpc_rate_limited_response(v_rate_limit);\r\n  end if;\r\n  return public.pos_admin_adopt_legacy_cash_session_unlimited(\r\n    p_license_key, p_device_fingerprint, p_security_token, p_staff_session_token,\r\n    p_cash_session_id, p_expected_version, p_idempotency_key\r\n  );\r\nend;\r\n$function$\n",
+      "md5": "afb412158b7808449d4f7f4e774e4256",
+      "signature": "pos_admin_adopt_legacy_cash_session(text,text,text,text,text,integer,text)"
+    },
+    {
+      "acl": [
+        "=X/postgres",
+        "postgres=X/postgres",
+        "service_role=X/postgres",
+        "anon=X/postgres",
+        "authenticated=X/postgres"
+      ],
+      "def": "CREATE OR REPLACE FUNCTION public.admin_list_staff_users(p_license_key text, p_admin_device_fingerprint text, p_admin_security_token text, p_admin_session_token text)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\ndeclare\n  v_auth jsonb;\nbegin\n  v_auth := private.require_active_admin_session(\n    p_license_key,\n    p_admin_device_fingerprint,\n    p_admin_security_token,\n    p_admin_session_token\n  );\n  if coalesce((v_auth->>'success')::boolean, false) is false then\n    return v_auth;\n  end if;\n\n  return private.admin_list_staff_users_impl((v_auth->>'license_id')::uuid);\nend;\n$function$\n",
+      "md5": "717d41ff4d188c89b5f00a2f61166ca7",
+      "signature": "admin_list_staff_users(text,text,text,text)"
+    },
+    {
+      "acl": [
+        "=X/postgres",
+        "postgres=X/postgres",
+        "service_role=X/postgres",
+        "anon=X/postgres",
+        "authenticated=X/postgres"
+      ],
+      "def": "CREATE OR REPLACE FUNCTION public.admin_create_staff_user(p_license_key text, p_admin_device_fingerprint text, p_admin_security_token text, p_username text, p_password text, p_display_name text, p_permissions jsonb, p_role_name text, p_admin_session_token text)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\ndeclare\n  v_auth jsonb;\nbegin\n  v_auth := private.require_active_admin_session(\n    p_license_key,\n    p_admin_device_fingerprint,\n    p_admin_security_token,\n    p_admin_session_token\n  );\n  if coalesce((v_auth->>'success')::boolean, false) is false then\n    return v_auth;\n  end if;\n\n  return private.admin_create_staff_user_impl(\n    (v_auth->>'license_id')::uuid,\n    (v_auth->>'device_id')::uuid,\n    p_username,\n    p_password,\n    p_display_name,\n    p_permissions,\n    p_role_name\n  );\nend;\n$function$\n",
+      "md5": "89e845b034030c0c6cf2689cfd4e7b78",
+      "signature": "admin_create_staff_user(text,text,text,text,text,text,jsonb,text,text)"
+    },
+    {
+      "acl": [
+        "=X/postgres",
+        "postgres=X/postgres",
+        "service_role=X/postgres",
+        "anon=X/postgres",
+        "authenticated=X/postgres"
+      ],
+      "def": "CREATE OR REPLACE FUNCTION public.admin_update_staff_user(p_license_key text, p_admin_device_fingerprint text, p_admin_security_token text, p_staff_user_id uuid, p_display_name text, p_permissions jsonb, p_is_active boolean, p_new_password text, p_role_name text, p_admin_session_token text)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\ndeclare\n  v_auth jsonb;\nbegin\n  v_auth := private.require_active_admin_session(\n    p_license_key,\n    p_admin_device_fingerprint,\n    p_admin_security_token,\n    p_admin_session_token\n  );\n  if coalesce((v_auth->>'success')::boolean, false) is false then\n    return v_auth;\n  end if;\n\n  return private.admin_update_staff_user_impl(\n    (v_auth->>'license_id')::uuid,\n    p_license_key,\n    p_staff_user_id,\n    p_display_name,\n    p_permissions,\n    p_is_active,\n    p_new_password,\n    p_role_name\n  );\nend;\n$function$\n",
+      "md5": "ca00191aa85af9641bb0650d058b2866",
+      "signature": "admin_update_staff_user(text,text,text,uuid,text,jsonb,boolean,text,text,text)"
+    },
+    {
+      "acl": [
+        "postgres=X/postgres"
+      ],
+      "def": "CREATE OR REPLACE FUNCTION private.can_access_license_realtime_topic(p_topic text)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO ''\nAS $function$\n  select exists (\n    select 1\n    from public.license_devices d\n    cross join lateral private.license_entitlement_state_v1(d.license_id) entitlement\n    where p_topic like 'license:%'\n      and d.realtime_topic = p_topic\n      and d.is_active is true\n      and d.security_token is not null\n      and entitlement.is_entitled is true\n      and coalesce((entitlement.effective_features->>'realtime_license_sync')::boolean, false) is true\n  );\n$function$\n",
+      "md5": "38259b69a79e0e26465855f0db7ac3a3",
+      "signature": "private.can_access_license_realtime_topic(text)"
+    },
+    {
+      "acl": [
+        "postgres=X/postgres",
+        "service_role=X/postgres"
+      ],
+      "def": "CREATE OR REPLACE FUNCTION private.license_entitlement_state_v1(p_license_id uuid)\n RETURNS TABLE(license_id uuid, plan_code text, plan_name text, expires_at timestamp with time zone, grace_period_ends timestamp with time zone, lifecycle_state text, is_entitled boolean, is_in_grace boolean, effective_features jsonb)\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO ''\nAS $function$\n  with source as (\n    select\n      l.id as license_id,\n      coalesce(p.code, l.license_type::text) as plan_code,\n      coalesce(p.name, l.product_name::text) as plan_name,\n      l.status as administrative_status,\n      coalesce(l.is_lifetime, false) as is_lifetime,\n      l.expires_at,\n      coalesce(p.features, '{}'::jsonb) || coalesce(l.features, '{}'::jsonb) as stored_features\n    from public.licenses l\n    left join public.plans p on p.id = l.plan_id\n    where l.id = p_license_id\n  ), classified as (\n    select\n      source.*,\n      case\n        when lower(coalesce(source.administrative_status::text, '')) <> 'active'\n          then 'administratively_blocked'\n        when source.is_lifetime or source.expires_at is null or now() <= source.expires_at\n          then 'active'\n        when now() <= source.expires_at + interval '7 days'\n          then 'grace_period'\n        else 'expired'\n      end as derived_state\n    from source\n  )\n  select\n    classified.license_id,\n    classified.plan_code,\n    classified.plan_name,\n    classified.expires_at,\n    case\n      when not classified.is_lifetime and classified.expires_at is not null\n        then classified.expires_at + interval '7 days'\n      else null\n    end as grace_period_ends,\n    classified.derived_state as lifecycle_state,\n    classified.derived_state in ('active', 'grace_period') as is_entitled,\n    classified.derived_state = 'grace_period' as is_in_grace,\n    case\n      when classified.derived_state in ('active', 'grace_period')\n        then classified.stored_features\n      else '{}'::jsonb\n    end as effective_features\n  from classified;\n$function$\n",
+      "md5": "c439fa37b577a83c04811707f55d29f2",
+      "signature": "private.license_entitlement_state_v1(uuid)"
+    },
+    {
+      "acl": [
+        "postgres=X/postgres"
+      ],
+      "def": "CREATE OR REPLACE FUNCTION private.require_active_admin_session(p_license_key text, p_device_fingerprint text, p_device_security_token text, p_admin_session_token text)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\ndeclare\n  v_license record;\n  v_device record;\n  v_session record;\nbegin\n  if nullif(btrim(coalesce(p_license_key, '')), '') is null\n     or nullif(btrim(coalesce(p_device_fingerprint, '')), '') is null\n     or nullif(btrim(coalesce(p_device_security_token, '')), '') is null\n     or nullif(btrim(coalesce(p_admin_session_token, '')), '') is null then\n    return jsonb_build_object('success', false, 'valid', false, 'code', 'ADMIN_SESSION_REQUIRED');\n  end if;\n\n  select\n    l.id as license_id,\n    l.license_key,\n    entitlement.lifecycle_state,\n    entitlement.is_entitled,\n    entitlement.is_in_grace,\n    entitlement.grace_period_ends\n  into v_license\n  from public.licenses l\n  cross join lateral private.license_entitlement_state_v1(l.id) entitlement\n  where l.license_key = p_license_key\n  limit 1;\n\n  if v_license.license_id is null then\n    return jsonb_build_object('success', false, 'valid', false, 'code', 'LICENSE_NOT_ACTIVE');\n  end if;\n  if v_license.lifecycle_state = 'administratively_blocked' then\n    return jsonb_build_object('success', false, 'valid', false, 'code', 'LICENSE_NOT_ACTIVE');\n  end if;\n  if v_license.is_entitled is not true then\n    return jsonb_build_object('success', false, 'valid', false, 'code', 'LICENSE_EXPIRED');\n  end if;\n\n  select d.id as device_id, d.device_mode, d.device_role as legacy_device_role\n  into v_device\n  from public.license_devices d\n  where d.license_id = v_license.license_id\n    and d.device_fingerprint = p_device_fingerprint\n    and d.is_active is true\n    and d.device_mode in ('admin_only', 'shared')\n    and (d.security_token = p_device_security_token or d.previous_security_token = p_device_security_token)\n  limit 1;\n\n  if v_device.device_id is null then\n    return jsonb_build_object('success', false, 'valid', false, 'code', 'ADMIN_DEVICE_REQUIRED');\n  end if;\n\n  select candidate.id as session_id, candidate.admin_user_id, candidate.expires_at,\n         u.username, u.display_name\n  into v_session\n  from (\n    select s.id, s.admin_user_id, s.session_token_hash, s.expires_at, s.created_at\n    from public.license_admin_sessions s\n    where s.license_id = v_license.license_id\n      and s.device_id = v_device.device_id\n      and s.revoked_at is null\n    order by s.created_at desc\n    limit 3\n  ) candidate\n  join public.license_admin_users u on u.id = candidate.admin_user_id\n  where u.license_id = v_license.license_id\n    and u.is_owner is true\n    and u.is_active is true\n    and extensions.crypt(p_admin_session_token, candidate.session_token_hash) = candidate.session_token_hash\n  limit 1;\n\n  if v_session.session_id is null then\n    return jsonb_build_object('success', false, 'valid', false, 'code', 'ADMIN_SESSION_INVALID');\n  end if;\n\n  if v_session.expires_at <= now() then\n    update public.license_admin_sessions\n    set revoked_at = coalesce(revoked_at, now())\n    where id = v_session.session_id;\n    return jsonb_build_object('success', false, 'valid', false, 'code', 'ADMIN_SESSION_EXPIRED');\n  end if;\n\n  update public.license_admin_sessions\n  set last_used_at = now()\n  where id = v_session.session_id\n    and last_used_at < now() - interval '30 seconds';\n\n  return jsonb_build_object(\n    'success', true,\n    'valid', true,\n    'license_id', v_license.license_id,\n    'device_id', v_device.device_id,\n    'device_mode', v_device.device_mode,\n    'legacy_device_role', v_device.legacy_device_role,\n    'admin_session_id', v_session.session_id,\n    'admin_user_id', v_session.admin_user_id,\n    'admin_user', jsonb_build_object(\n      'id', v_session.admin_user_id,\n      'username', v_session.username,\n      'display_name', v_session.display_name,\n      'is_owner', true\n    ),\n    'expires_at', v_session.expires_at,\n    'license_lifecycle_state', v_license.lifecycle_state,\n    'license_is_in_grace', v_license.is_in_grace,\n    'license_grace_period_ends', v_license.grace_period_ends\n  );\nend;\n$function$\n",
+      "md5": "99a8293898a6200351a5d97027fc5c50",
+      "signature": "private.require_active_admin_session(text,text,text,text)"
+    },
+    {
+      "acl": [
+        "postgres=X/postgres"
+      ],
+      "def": "CREATE OR REPLACE FUNCTION private.resolve_device_actor_session(p_license_id uuid, p_device_id uuid, p_device_mode text, p_actor_session_token text)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\ndeclare\n  v_token text := nullif(btrim(coalesce(p_actor_session_token, '')), '');\n  v_admin record;\n  v_staff record;\n  v_admin_valid boolean := false;\n  v_staff_valid boolean := false;\nbegin\n  if p_device_mode not in ('admin_only', 'staff_only', 'shared') then\n    return jsonb_build_object('success', false, 'code', 'DEVICE_MODE_INVALID');\n  end if;\n\n  if v_token is null then\n    return jsonb_build_object('success', false, 'code', 'ACTOR_SESSION_REQUIRED');\n  end if;\n\n  if p_device_mode in ('admin_only', 'shared') then\n    select candidate.id as session_id, candidate.admin_user_id, candidate.expires_at, u.username, u.display_name\n    into v_admin\n    from (\n      select s.id, s.admin_user_id, s.session_token_hash, s.expires_at, s.created_at\n      from public.license_admin_sessions s\n      where s.license_id = p_license_id and s.device_id = p_device_id and s.revoked_at is null\n      order by s.created_at desc limit 3\n    ) candidate\n    join public.license_admin_users u on u.id = candidate.admin_user_id\n    where u.license_id = p_license_id and u.is_owner is true and u.is_active is true\n      and extensions.crypt(v_token, candidate.session_token_hash) = candidate.session_token_hash\n    limit 1;\n\n    if v_admin.session_id is not null then\n      if v_admin.expires_at <= now() then\n        update public.license_admin_sessions set revoked_at = coalesce(revoked_at, now()) where id = v_admin.session_id;\n      else\n        v_admin_valid := true;\n      end if;\n    end if;\n  end if;\n\n  if p_device_mode in ('staff_only', 'shared') then\n    select candidate.id as session_id, candidate.staff_user_id, candidate.expires_at,\n           s.username, s.display_name, s.role_name, s.permissions, s.is_active as staff_is_active\n    into v_staff\n    from (\n      select ss.id, ss.staff_user_id, ss.session_token_hash, ss.expires_at, ss.created_at\n      from public.license_staff_sessions ss\n      where ss.license_id = p_license_id and ss.device_id = p_device_id and ss.revoked_at is null\n      order by ss.created_at desc limit 3\n    ) candidate\n    join public.license_staff_users s on s.id = candidate.staff_user_id\n    where s.license_id = p_license_id\n      and extensions.crypt(v_token, candidate.session_token_hash) = candidate.session_token_hash\n    limit 1;\n\n    if v_staff.session_id is not null then\n      if v_staff.expires_at <= now() then\n        update public.license_staff_sessions set revoked_at = coalesce(revoked_at, now()) where id = v_staff.session_id;\n      elsif v_staff.staff_is_active is not true then\n        return jsonb_build_object('success', false, 'code', 'STAFF_USER_INACTIVE');\n      else\n        v_staff_valid := true;\n      end if;\n    end if;\n  end if;\n\n  if v_admin_valid and v_staff_valid then\n    return jsonb_build_object('success', false, 'code', 'ACTOR_SESSION_AMBIGUOUS');\n  end if;\n  if not v_admin_valid and not v_staff_valid then\n    return jsonb_build_object('success', false, 'code', 'ACTOR_SESSION_INVALID');\n  end if;\n\n  if v_admin_valid then\n    update public.license_admin_sessions\n    set last_used_at = now()\n    where id = v_admin.session_id and last_used_at < now() - interval '30 seconds';\n    return jsonb_build_object(\n      'success', true,\n      'actor_type', 'admin',\n      'actor_id', v_admin.admin_user_id,\n      'actor_key', 'admin:' || v_admin.admin_user_id::text,\n      'actor_session_id', v_admin.session_id,\n      'actor_permissions', jsonb_build_object('*', true),\n      'admin_user_id', v_admin.admin_user_id,\n      'admin_user', jsonb_build_object('id', v_admin.admin_user_id, 'username', v_admin.username, 'display_name', v_admin.display_name, 'is_owner', true)\n    );\n  end if;\n\n  perform private.touch_license_staff_session_seen(v_staff.session_id, '30 seconds'::interval);\n  return jsonb_build_object(\n    'success', true,\n    'actor_type', 'staff',\n    'actor_id', v_staff.staff_user_id,\n    'actor_key', 'staff:' || v_staff.staff_user_id::text,\n    'actor_session_id', v_staff.session_id,\n    'actor_permissions', coalesce(v_staff.permissions, '{}'::jsonb),\n    'staff_user_id', v_staff.staff_user_id,\n    'staff_user', jsonb_build_object('id', v_staff.staff_user_id, 'username', v_staff.username, 'display_name', v_staff.display_name, 'role_name', v_staff.role_name, 'permissions', coalesce(v_staff.permissions, '{}'::jsonb))\n  );\nend;\n$function$\n",
+      "md5": "0bb250d966993a3cc86639357c3d3f40",
+      "signature": "private.resolve_device_actor_session(uuid,uuid,text,text)"
+    },
+    {
+      "acl": [
+        "postgres=X/postgres"
+      ],
+      "def": "CREATE OR REPLACE FUNCTION private.ecommerce_admin_authorize_v2(p_license_key text, p_device_fingerprint text, p_security_token text, p_staff_session_token text, p_rpc_name text)\n RETURNS jsonb\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\ndeclare\n  v_rate_limit jsonb;\n  v_license record;\n  v_device record;\n  v_actor jsonb;\n  v_permissions jsonb;\nbegin\n  if nullif(btrim(coalesce(p_license_key, '')), '') is null\n     or nullif(btrim(coalesce(p_device_fingerprint, '')), '') is null\n     or nullif(btrim(coalesce(p_security_token, '')), '') is null then\n    return private.ecommerce_admin_error('ECOMMERCE_ADMIN_ACCESS_DENIED');\n  end if;\n\n  v_rate_limit := public.enforce_pos_rpc_rate_limit_v2(\n    p_license_key, p_device_fingerprint, null,\n    coalesce(nullif(btrim(p_rpc_name), ''), 'ecommerce_admin'),\n    'ECOM_ADMIN', 180, 600, 300, 'ECOMMERCE_RATE_LIMITED',\n    jsonb_build_object('actor_partition', 'device')\n  );\n  if coalesce((v_rate_limit->>'allowed')::boolean, false) is false then\n    return private.ecommerce_admin_error('ECOMMERCE_RATE_LIMITED');\n  end if;\n\n  select\n    l.id as license_id,\n    entitlement.plan_code,\n    entitlement.plan_name,\n    entitlement.lifecycle_state,\n    entitlement.is_entitled,\n    entitlement.is_in_grace,\n    entitlement.grace_period_ends,\n    entitlement.effective_features\n  into v_license\n  from public.licenses l\n  cross join lateral private.license_entitlement_state_v1(l.id) entitlement\n  where l.license_key = p_license_key\n  limit 1;\n\n  if v_license.license_id is null\n     or v_license.lifecycle_state = 'administratively_blocked' then\n    return private.ecommerce_admin_error('LICENSE_NOT_ACTIVE');\n  end if;\n  if v_license.is_entitled is not true then\n    return private.ecommerce_admin_error('LICENSE_EXPIRED');\n  end if;\n  if coalesce((v_license.effective_features->>'ecommerce_portal_enabled')::boolean, false) is not true then\n    return private.ecommerce_admin_error('ECOMMERCE_PORTAL_DISABLED');\n  end if;\n\n  select d.id as device_id, d.device_mode\n  into v_device\n  from public.license_devices d\n  where d.license_id = v_license.license_id\n    and d.device_fingerprint = p_device_fingerprint\n    and d.is_active is true\n    and (d.security_token = p_security_token or d.previous_security_token = p_security_token)\n  limit 1;\n  if v_device.device_id is null then\n    return private.ecommerce_admin_error('ECOMMERCE_ADMIN_ACCESS_DENIED');\n  end if;\n\n  v_actor := private.resolve_device_actor_session(\n    v_license.license_id, v_device.device_id, v_device.device_mode, p_staff_session_token\n  );\n  if coalesce((v_actor->>'success')::boolean, false) is false then\n    return private.ecommerce_admin_error(coalesce(v_actor->>'code', 'ECOMMERCE_ADMIN_ACCESS_DENIED'));\n  end if;\n\n  if v_actor->>'actor_type' = 'admin' then\n    return jsonb_build_object(\n      'success', true,\n      'license_id', v_license.license_id,\n      'device_id', v_device.device_id,\n      'device_mode', v_device.device_mode,\n      'device_role', 'admin',\n      'actor_type', 'admin_owner',\n      'actor_id', v_actor->>'actor_id',\n      'actor_key', v_actor->>'actor_key',\n      'actor_session_id', v_actor->>'actor_session_id',\n      'admin_user_id', v_actor->>'admin_user_id',\n      'staff_user_id', null,\n      'plan_code', v_license.plan_code,\n      'plan_name', v_license.plan_name,\n      'features', v_license.effective_features,\n      'license_lifecycle_state', v_license.lifecycle_state,\n      'license_is_in_grace', v_license.is_in_grace,\n      'license_grace_period_ends', v_license.grace_period_ends\n    );\n  end if;\n\n  v_permissions := coalesce(v_actor->'actor_permissions', '{}'::jsonb);\n  if coalesce((v_permissions->>'settings')::boolean, false) is not true\n     or coalesce((v_permissions->>'ecommerce')::boolean, false) is not true then\n    return private.ecommerce_admin_error('ECOMMERCE_STAFF_PERMISSION_DENIED');\n  end if;\n\n  return jsonb_build_object(\n    'success', true,\n    'license_id', v_license.license_id,\n    'device_id', v_device.device_id,\n    'device_mode', v_device.device_mode,\n    'device_role', 'staff',\n    'actor_type', 'staff',\n    'actor_id', v_actor->>'actor_id',\n    'actor_key', v_actor->>'actor_key',\n    'actor_session_id', v_actor->>'actor_session_id',\n    'actor_permissions', v_permissions,\n    'admin_user_id', null,\n    'staff_user_id', v_actor->>'staff_user_id',\n    'plan_code', v_license.plan_code,\n    'plan_name', v_license.plan_name,\n    'features', v_license.effective_features,\n    'license_lifecycle_state', v_license.lifecycle_state,\n    'license_is_in_grace', v_license.is_in_grace,\n    'license_grace_period_ends', v_license.grace_period_ends\n  );\nexception\n  when others then\n    return private.ecommerce_admin_error('ECOMMERCE_ADMIN_ACCESS_DENIED');\nend;\n$function$\n",
+      "md5": "4443b5f0a92ef37641e0f22310804714",
+      "signature": "private.ecommerce_admin_authorize_v2(text,text,text,text,text)"
+    }
+  ],
+  "schema_acl": [
+    {
+      "acl": [
+        "pg_database_owner=UC/pg_database_owner",
+        "=U/pg_database_owner",
+        "postgres=U/pg_database_owner",
+        "anon=U/pg_database_owner",
+        "authenticated=U/pg_database_owner",
+        "service_role=U/pg_database_owner"
+      ],
+      "schema": "public"
+    },
+    {
+      "acl": [
+        "postgres=UC/postgres"
+      ],
+      "schema": "private"
+    },
+    {
+      "acl": [
+        "supabase_admin=UC/supabase_admin",
+        "postgres=U*/supabase_admin",
+        "anon=U/supabase_admin",
+        "authenticated=U/supabase_admin",
+        "service_role=U/supabase_admin",
+        "supabase_realtime_admin=UC/supabase_admin"
+      ],
+      "schema": "realtime"
+    }
+  ],
+  "realtime_acl": [
+    "supabase_realtime_admin=arwdDxtm/supabase_realtime_admin",
+    "postgres=a*r*wdDxtm/supabase_realtime_admin",
+    "dashboard_user=arwdDxtm/supabase_realtime_admin",
+    "anon=arw/supabase_realtime_admin",
+    "authenticated=arw/supabase_realtime_admin",
+    "service_role=arw/supabase_realtime_admin"
+  ],
+  "realtime_rls": true
+}

@@ -1,0 +1,37 @@
+{
+  "stage": "ttl",
+  "ttl": 300,
+  "started_at": "2026-10-22T18:21:44.736Z",
+  "results": [
+    {
+      "id": "TTL-SERVER",
+      "status": "PASS",
+      "remaining_seconds": 299.455,
+      "native_jwt_seconds": 3600
+    },
+    {
+      "id": "LIVE-PROBE",
+      "status": "PASS",
+      "roundtrip_ms": 429.2012000000004
+    },
+    {
+      "id": "RENEW-NO-REJOIN",
+      "status": "PASS",
+      "transport_setups": 1,
+      "broker_calls": 2,
+      "method": "controlled renewal callback; real SQL/Auth/Realtime, 11s wall wait"
+    },
+    {
+      "id": "POST-RENEW-DELIVERY",
+      "status": "PASS"
+    },
+    {
+      "id": "REVOKE-BARRIER",
+      "status": "PASS"
+    }
+  ],
+  "auth_user": "c84bf671-9229-44d1-855f-5cc2bc60852c",
+  "auth_session": "a73dc1ad-d1b9-49ba-809f-1e292bad5e3b",
+  "status": "PASS",
+  "finished_at": "2026-10-22T18:21:59.895Z"
+}

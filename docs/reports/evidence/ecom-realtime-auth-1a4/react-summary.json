@@ -1,0 +1,259 @@
+{
+  "total": 57,
+  "passed": 57,
+  "failed": 0,
+  "files": [
+    {
+      "file": "src/services/auth/__tests__/actorRuntimeController.test.js",
+      "status": "passed",
+      "cases": [
+        {
+          "name": "ActorRuntimeController starts LOCKED without actor authority",
+          "status": "passed"
+        },
+        {
+          "name": "ActorRuntimeController grants an admin using a stable user-owned actor key",
+          "status": "passed"
+        },
+        {
+          "name": "ActorRuntimeController requires and enforces a finite Admin authorization deadline",
+          "status": "passed"
+        },
+        {
+          "name": "ActorRuntimeController does not let a local clock rollback pause an active Admin authorization deadline",
+          "status": "passed"
+        },
+        {
+          "name": "ActorRuntimeController locks the actor and increments generation without changing the tenant authority",
+          "status": "passed"
+        },
+        {
+          "name": "ActorRuntimeController rejects a handle captured before logout after a new staff actor is granted",
+          "status": "passed"
+        },
+        {
+          "name": "ActorRuntimeController never lets an Admin A captured reference operate as Staff B",
+          "status": "passed"
+        },
+        {
+          "name": "ActorRuntimeController prevents a stale handle from entering protected work after logout",
+          "status": "passed"
+        },
+        {
+          "name": "ActorRuntimeController revalidates actor generation at the effective write boundary after an await",
+          "status": "passed"
+        },
+        {
+          "name": "ActorRuntimeController does not let a new actor reuse a handle from the previous actor generation",
+          "status": "passed"
+        },
+        {
+          "name": "ActorRuntimeController keeps only explicit staff permissions and cannot inherit admin wildcard authority",
+          "status": "passed"
+        },
+        {
+          "name": "ActorRuntimeController normalizes persisted boolean permission objects without granting false keys",
+          "status": "passed"
+        },
+        {
+          "name": "ActorRuntimeController does not change tenant opaque id or database when actors change",
+          "status": "passed"
+        },
+        {
+          "name": "ActorRuntimeController fails closed when the tenant runtime changes from A to B",
+          "status": "passed"
+        },
+        {
+          "name": "ActorRuntimeController fails closed when the same tenant database is reopened under a new tenant generation",
+          "status": "passed"
+        },
+        {
+          "name": "ActorRuntimeController does not grant actor authority while TenantRuntime is unavailable",
+          "status": "passed"
+        },
+        {
+          "name": "ActorRuntimeController requires an authenticated session id before GRANTED",
+          "status": "passed"
+        },
+        {
+          "name": "ActorRuntimeController requires an explicit lock before replacing a granted actor",
+          "status": "passed"
+        },
+        {
+          "name": "ActorRuntimeController actor lock cannot delete or reassign tenant-owned business state",
+          "status": "passed"
+        },
+        {
+          "name": "ActorRuntimeController blocks actor-sensitive writes while locked",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "file": "src/services/auth/__tests__/actorScopedStorage.test.js",
+      "status": "passed",
+      "cases": [
+        {
+          "name": "ActorScopedStorage cart ownership keeps Admin A and Staff B carts isolated inside the same tenant namespace",
+          "status": "passed"
+        },
+        {
+          "name": "ActorScopedStorage cart ownership isolates Staff X from Staff Y and restores X after restart-style remount",
+          "status": "passed"
+        },
+        {
+          "name": "ActorScopedStorage cart ownership persists only actor-owned drafts and never serializes a tenant-shared SALES row",
+          "status": "passed"
+        },
+        {
+          "name": "ActorScopedStorage cart ownership fails closed instead of persisting malformed actor-sensitive payloads",
+          "status": "passed"
+        },
+        {
+          "name": "ActorScopedStorage cart ownership never auto-claims a legacy tenant-scoped cart",
+          "status": "passed"
+        },
+        {
+          "name": "ActorScopedStorage cart ownership uses an opaque actor namespace without raw actor ids in physical cart keys",
+          "status": "passed"
+        },
+        {
+          "name": "ActorScopedStorage cart ownership invalidates an old storage handle on logout with ACTOR_CONTEXT_STALE",
+          "status": "passed"
+        },
+        {
+          "name": "ActorScopedStorage cart ownership invalidates the old tab when another tab publishes a different actor context",
+          "status": "passed"
+        },
+        {
+          "name": "ActorScopedStorage cart ownership keeps actor namespaces distinct across tenants and restores A after A→B→A",
+          "status": "passed"
+        },
+        {
+          "name": "ActorScopedStorage cart ownership rejects obsolete preparation before replacing the current actor storage binding",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "file": "src/services/auth/__tests__/actorSessionRuntimeBridge.test.js",
+      "status": "passed",
+      "cases": [
+        {
+          "name": "actor session runtime bridge resolves stable actor ids only from user identity fields",
+          "status": "passed"
+        },
+        {
+          "name": "actor session runtime bridge keeps staff permissions explicit and never grants the admin wildcard",
+          "status": "passed"
+        },
+        {
+          "name": "actor session runtime bridge reads only the explicitly requested staff session binding",
+          "status": "passed"
+        },
+        {
+          "name": "actor session runtime bridge fails closed on admin plus staff token ambiguity instead of selecting Admin",
+          "status": "passed"
+        },
+        {
+          "name": "actor session runtime bridge requires both the actor-specific token and session id",
+          "status": "passed"
+        },
+        {
+          "name": "actor session runtime bridge restores Admin only after durable checkout inspection and handoff validation",
+          "status": "passed"
+        },
+        {
+          "name": "actor session runtime bridge does not grant Admin Actor Runtime when the common offline policy denies",
+          "status": "passed"
+        },
+        {
+          "name": "actor session runtime bridge restores Staff when Staff is the only valid session evidence and preserves only Staff permissions",
+          "status": "passed"
+        },
+        {
+          "name": "actor session runtime bridge locks ActorRuntime when valid Admin and Staff session evidence coexist",
+          "status": "passed"
+        },
+        {
+          "name": "actor session runtime bridge rejects late session restoration without locking a newer granted actor",
+          "status": "passed"
+        }
+      ]
+    },
+    {
+      "file": "src/services/ecommerce/__tests__/ecomSignalActorAdapter.test.jsx",
+      "status": "passed",
+      "cases": [
+        {
+          "name": "QA signal lifecycle with the current Actor Runtime is disabled by default, including locally recovered GRANTED sessions",
+          "status": "passed"
+        },
+        {
+          "name": "QA signal lifecycle with the current Actor Runtime cannot authorize offline or while local authentication is pending",
+          "status": "passed"
+        },
+        {
+          "name": "QA signal lifecycle with the current Actor Runtime drops previous actor callbacks during admin to staff",
+          "status": "passed"
+        },
+        {
+          "name": "QA signal lifecycle with the current Actor Runtime drops previous actor callbacks during staff to admin",
+          "status": "passed"
+        },
+        {
+          "name": "QA signal lifecycle with the current Actor Runtime discards late credentials when the same owner session is replaced",
+          "status": "passed"
+        },
+        {
+          "name": "QA signal lifecycle with the current Actor Runtime discards a late broker response after tenant switch or logout",
+          "status": "passed"
+        },
+        {
+          "name": "QA signal lifecycle with the current Actor Runtime drops credentials belonging to another cached session",
+          "status": "passed"
+        },
+        {
+          "name": "QA signal lifecycle with the current Actor Runtime stops synchronously on device release, actor lock and denied staff permission",
+          "status": "passed"
+        },
+        {
+          "name": "QA signal lifecycle with the current Actor Runtime keeps one owner across duplicate mounts and ignores old cleanup",
+          "status": "passed"
+        },
+        {
+          "name": "QA signal lifecycle with the current Actor Runtime does not rejoin an authoritative denial after hiding, reconnecting or rerendering",
+          "status": "passed"
+        },
+        {
+          "name": "QA signal lifecycle with the current Actor Runtime closes on hidden/offline, reuses the same runtime and revalidates on return",
+          "status": "passed"
+        },
+        {
+          "name": "QA signal lifecycle with the current Actor Runtime React Strict Mode leaves one transport and fully cleans up on unmount",
+          "status": "passed"
+        },
+        {
+          "name": "QA signal lifecycle with the current Actor Runtime uses a fresh runtime after a suspended grant expires, keeping Lanzo authority unchanged",
+          "status": "passed"
+        },
+        {
+          "name": "QA signal lifecycle with the current Actor Runtime rolls over an expired tombstone once and latches an actual denial",
+          "status": "passed"
+        },
+        {
+          "name": "QA signal lifecycle with the current Actor Runtime does not accept credentials or callbacks after losing leadership",
+          "status": "passed"
+        },
+        {
+          "name": "QA signal lifecycle with the current Actor Runtime releases leadership on page freeze and waits for resume before authorizing",
+          "status": "passed"
+        },
+        {
+          "name": "QA signal lifecycle with the current Actor Runtime requests authoritative reconciliation only for the current actor after a join",
+          "status": "passed"
+        }
+      ]
+    }
+  ]
+}

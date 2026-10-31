@@ -1,0 +1,13 @@
+{
+  "stage": "prepare-session",
+  "ttl": 600,
+  "started_at": "2026-10-22T18:39:33.604Z",
+  "results": [
+    {
+      "id": "SESSION-ROTATION-PREPARED",
+      "status": "PASS"
+    }
+  ],
+  "status": "PASS",
+  "finished_at": "2026-10-22T18:39:35.092Z"
+}

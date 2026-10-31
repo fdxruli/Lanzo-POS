@@ -1,0 +1,17 @@
+{
+  "stage": "session-rotation",
+  "ttl": 600,
+  "started_at": "2026-10-22T18:40:04.005Z",
+  "results": [
+    {
+      "id": "OLD-ADMIN-SESSION-DENIED",
+      "status": "PASS"
+    },
+    {
+      "id": "SAME-ADMIN-NEW-SESSION-ISOLATED",
+      "status": "PASS"
+    }
+  ],
+  "status": "PASS",
+  "finished_at": "2026-10-22T18:40:12.385Z"
+}

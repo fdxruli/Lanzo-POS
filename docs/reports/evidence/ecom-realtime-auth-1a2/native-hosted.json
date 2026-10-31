@@ -1,0 +1,314 @@
+{
+  "run": "b279597f-c56b-4a47-ad6b-9b50bb050150",
+  "project": "odlrhijtfyavryeqivaa",
+  "captured_at": "2026-10-21T06:23:34.144Z",
+  "results": [
+    {
+      "id": "AUTH-01",
+      "status": "PASS",
+      "http": 200,
+      "ms": 2060
+    },
+    {
+      "id": "AUTH-07",
+      "status": "PASS",
+      "join": "SUBSCRIBED",
+      "ms": 2421
+    },
+    {
+      "id": "PROBE-DELIVERY",
+      "status": "PASS",
+      "published": {
+        "code": "ENQUEUED",
+        "probe_id": "68077e5c-4566-4c65-9496-9bfe843221a8",
+        "enqueued_at": "2026-10-21T06:03:19.014408+00:00",
+        "ms": 603
+      },
+      "events": [
+        {
+          "at": 1792562598989,
+          "topic": "ecom:qa-probe:1a2:47f1db84-a2b6-4912-8248-b84baf5cdd9d",
+          "event": "qa_probe",
+          "payload": {
+            "id": "9072d138-1adf-42dd-ade5-70a69fe0cacd",
+            "probe_id": "68077e5c-4566-4c65-9496-9bfe843221a8"
+          }
+        }
+      ]
+    },
+    {
+      "id": "BROKER-RENEWAL",
+      "status": "PASS",
+      "http": 200,
+      "ms": 692,
+      "same_grant": true
+    },
+    {
+      "id": "AUTH-12",
+      "status": "PASS",
+      "revocation": {
+        "code": "REVOKED",
+        "barrier_at": "2026-10-21T06:03:43.665814+00:00",
+        "ms": 510
+      },
+      "excluded": {
+        "code": "EXCLUDED",
+        "ms": 299
+      },
+      "socket_state": "joined",
+      "confirmed_at": 1792562623630,
+      "post_confirmation": []
+    },
+    {
+      "id": "AUTH-13",
+      "status": "PASS",
+      "http": 403
+    },
+    {
+      "id": "REVOKED-NEW-JOIN",
+      "status": "PASS",
+      "join": "CHANNEL_ERROR",
+      "error": "\"Unauthorized: You do not have permissions to read from this Channel topic: ecom:qa-probe:1a2:47f1db84-a2b6-4912-8248-b84baf5cdd9d\"",
+      "ms": 4925
+    },
+    {
+      "id": "AUTH-02",
+      "status": "PASS",
+      "http": 403,
+      "ms": 753
+    },
+    {
+      "id": "AUTH-03",
+      "status": "PASS",
+      "http": 403,
+      "ms": 294
+    },
+    {
+      "id": "AUTH-06",
+      "status": "PASS",
+      "http": 403,
+      "ms": 613
+    },
+    {
+      "id": "NATIVE-CLAIMS",
+      "status": "PASS",
+      "role": "lanzo_ecom_bridge_receiver",
+      "issuer": "https://odlrhijtfyavryeqivaa.supabase.co/auth/v1",
+      "aud": "authenticated",
+      "native_ttl_seconds": 3600
+    },
+    {
+      "id": "AUTH-21",
+      "status": "PASS",
+      "response": "error"
+    },
+    {
+      "id": "AUTH-22",
+      "status": "PASS",
+      "response": "error"
+    },
+    {
+      "id": "AUTH-09",
+      "status": "PASS",
+      "join": "CHANNEL_ERROR",
+      "error": "\"Unauthorized: You do not have permissions to read from this Channel topic: ecom:qa-probe:1a2:47f1db84-a2b6-4912-8248-b84baf5cdd9d-foreign\"",
+      "ms": 4637
+    },
+    {
+      "id": "AUTH-08",
+      "status": "PASS",
+      "join": "CHANNEL_ERROR",
+      "error": "\"JwtSignatureError: Failed to validate JWT signature\"",
+      "ms": 4525
+    },
+    {
+      "id": "AUTH-24",
+      "status": "PASS",
+      "http": 403,
+      "code": "42501"
+    },
+    {
+      "id": "AUTH-23",
+      "status": "PASS",
+      "http": 403,
+      "code": "42501"
+    },
+    {
+      "id": "AUTH-27-CONCURRENT",
+      "status": "PASS",
+      "responses": [
+        409,
+        200,
+        409,
+        409
+      ],
+      "grants_returned": [
+        "921a82be-6fcc-4057-9d8a-c019023ec33b"
+      ]
+    },
+    {
+      "id": "AUTH-17",
+      "status": "PASS",
+      "prior_runtime_slots": 2,
+      "responses": [
+        [
+          409,
+          200,
+          409,
+          409
+        ],
+        200,
+        429
+      ]
+    },
+    {
+      "id": "AUTH-16",
+      "status": "PASS",
+      "http": 200
+    },
+    {
+      "id": "AUTH-15-BROKER",
+      "status": "PASS",
+      "http": 200
+    },
+    {
+      "id": "STAFF-ECOMMERCE-WITHOUT-SETTINGS",
+      "status": "PASS",
+      "http": 200
+    },
+    {
+      "id": "AUTH-25-METADATA",
+      "status": "FAIL",
+      "http": 403
+    },
+    {
+      "id": "AUTH-25-PASSWORD",
+      "status": "PASS",
+      "password_http": 200,
+      "login_http": 200,
+      "residual": "Self-service password change and unbound session creation are available to receiver bearer"
+    },
+    {
+      "id": "AUTH-10",
+      "status": "PASS",
+      "topic_was_live": true,
+      "join": "CHANNEL_ERROR",
+      "error": "\"Unauthorized: You do not have permissions to read from this Channel topic: ecom:qa-probe:1a2:921a82be-6fcc-4057-9d8a-c019023ec33b\""
+    },
+    {
+      "id": "AUTH-15-REALTIME",
+      "status": "PASS",
+      "join": "CHANNEL_ERROR",
+      "error": "\"Unauthorized: You do not have permissions to read from this Channel topic: ecom:qa-probe:1a2:186ce2b6-94c6-4ba0-9b4e-14b21b39b3fb\""
+    },
+    {
+      "id": "AUTH-25-PROTECTED-METADATA",
+      "status": "PASS",
+      "protected_change_http": 403,
+      "protected_error_code": "not_admin",
+      "user_metadata_http": 200,
+      "role": "lanzo_ecom_bridge_receiver",
+      "server_scope": "qa_1a2",
+      "corrected_harness_assumption": "403 is the expected denial when role/app_metadata are supplied"
+    },
+    {
+      "id": "AUTH-11",
+      "status": "PASS",
+      "new_join": "CHANNEL_ERROR",
+      "error": "\"Unauthorized: You do not have permissions to read from this Channel topic: ecom:qa-probe:1a2:7159844d-9d71-47f6-adc0-d98ad314cbc5\"",
+      "old_socket_state": "joined",
+      "publisher": "EXCLUDED",
+      "native_jwt_still_valid": true,
+      "auth_http": 200
+    },
+    {
+      "id": "AUTH-26-REAL-AUTH-INJECTED-FAILURE",
+      "status": "PASS",
+      "response": {
+        "status": 503,
+        "code": "UNAVAILABLE",
+        "ms": 1133
+      },
+      "coverage": "Real createUser/signIn with injected finish HTTP denial; requires SQL cleanup verification"
+    },
+    {
+      "id": "REVOCATION-RACE-PUBLISH-FIRST",
+      "status": "PASS",
+      "results": [
+        {
+          "code": "ENQUEUED",
+          "probe_id": "b583a023-9ac6-4739-8509-8fb935217131",
+          "enqueued_at": "2026-10-21T06:19:12.972035+00:00",
+          "ms": 3952
+        },
+        {
+          "code": "REVOKED",
+          "barrier_at": "2026-10-21T06:19:15.979011+00:00",
+          "ms": 3269
+        }
+      ]
+    },
+    {
+      "id": "REVOCATION-RACE-AFTER-COMMIT",
+      "status": "PASS",
+      "result": {
+        "code": "EXCLUDED",
+        "ms": 250
+      }
+    },
+    {
+      "id": "REVOCATION-RACE-REVOKE-FIRST",
+      "status": "PASS",
+      "results": [
+        {
+          "code": "REVOKED",
+          "barrier_at": "2026-10-21T06:20:06.621707+00:00",
+          "ms": 3455
+        },
+        {
+          "code": "EXCLUDED",
+          "ms": 3043
+        }
+      ]
+    },
+    {
+      "id": "AUTH-26-FINAL-CODE",
+      "status": "PASS",
+      "response": {
+        "status": 503,
+        "code": "UNAVAILABLE",
+        "ms": 716
+      }
+    },
+    {
+      "id": "AUTH-04-BROKER",
+      "status": "PASS",
+      "http": 403,
+      "ms": 644
+    },
+    {
+      "id": "AUTH-05-BROKER",
+      "status": "PASS",
+      "http": 403,
+      "ms": 958
+    },
+    {
+      "id": "AUTH-28",
+      "status": "BLOCKED",
+      "reason": "Native JWT 3600s expiry was not awaited; grant expiration is independently measured"
+    }
+  ],
+  "received": [
+    {
+      "at": 1792562598989,
+      "topic": "ecom:qa-probe:1a2:47f1db84-a2b6-4912-8248-b84baf5cdd9d",
+      "event": "qa_probe",
+      "payload": {
+        "id": "9072d138-1adf-42dd-ade5-70a69fe0cacd",
+        "probe_id": "68077e5c-4566-4c65-9496-9bfe843221a8"
+      }
+    }
+  ],
+  "post_revocation_events": [],
+  "credentials_omitted": true
+}

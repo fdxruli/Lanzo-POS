@@ -1,0 +1,71 @@
+{
+  "date": "2026-10-20",
+  "timezone": "America/Mexico_City",
+  "vitest": {
+    "exitCode": 0,
+    "files": 12,
+    "passed": 129,
+    "failed": 0,
+    "pending": 0,
+    "success": true,
+    "failures": [],
+    "sourceRoot": "C:/Users/pituf/.codex/worktrees/ecom-realtime-auth-r2/Lanzo-POS-Git",
+    "sourceHead": "4e37703198caeb91531af1bd1a8ec5238b80da01",
+    "filesAndRuntimeIdenticalToDelivery": true
+  },
+  "nodeContracts": {
+    "command": "node --test scripts/supabase/ecommerce-phase3-admin-inbox-anon-rpc-grants.node-test.mjs scripts/supabase/license-effective-features-creation-contract-r1.node-test.mjs scripts/supabase/license-expiry-entitlement-contract-r1.node-test.mjs",
+    "cwd": "C:/dev/Lanzo-POS-ecom-auth-1a1",
+    "exitCode": 0,
+    "pass": 11,
+    "fail": 0,
+    "skipped": 0,
+    "observedDurationMs": 13152.836
+  },
+  "sql": {
+    "r2Pass": 88,
+    "r2Fail": 1,
+    "fail": "PUBLIC EXECUTE strict isolation",
+    "rolesCompared": 33,
+    "signatures": 6,
+    "explicitConsumerPermissionsPreserved": 18,
+    "receiverPublicSecurityDefinerAfterProposal": 0,
+    "actualExecuteDenials": {
+      "pass": 6,
+      "fail": 0,
+      "sqlstate": "42501"
+    },
+    "transactionsRolledBack": true
+  },
+  "nativeRealtime": {
+    "evidence": "native-auth.json",
+    "nativeIssuerAccepted": true,
+    "qaProbeReceived": true,
+    "revocationResidualObserved": true,
+    "jwtNaturalExpiry": "NOT_RUN",
+    "lanzoNativeBindingIntegration": "BLOCKED_PENDING_IMPLEMENTATION"
+  },
+  "attempts": [
+    {
+      "type": "vitest",
+      "cwd": "C:/dev/Lanzo-POS-ecom-auth-1a1",
+      "pid": 9264,
+      "outcome": "STOPPED_WITHOUT_REPORT",
+      "reason": "No result after prolonged run from junction; not counted as PASS or assertion failure."
+    },
+    {
+      "type": "node_repl",
+      "outcome": "TIMEOUT_AFTER_AUTH_CLEANUP",
+      "reason": "Git subprocess exceeded tool deadline; saved evidence recovered, SQL cleanup independently verified."
+    }
+  ],
+  "build": "NOT_RUN_DOCS_EVIDENCE_ONLY",
+  "reactDoctor": "NOT_APPLICABLE_NO_REACT_EDITS",
+  "secretScan": "PASS",
+  "sharedDeployment": "HOLD",
+  "artifactChecks": {
+    "links": "PASS",
+    "credentialScan": "PASS",
+    "diffCheck": "PASS after preserving historical SQL bytes in JSON to avoid EOF whitespace warning"
+  }
+}
