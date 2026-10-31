@@ -39,6 +39,14 @@ if [[ "${version_num}" != '170011' && "${version_num}" != '170006' ]]; then
   exit 2
 fi
 
+# Keep PostgreSQL's server log from echoing a failed SQL statement (which can
+# contain canonical function source); SQLSTATE remains available to psql and
+# the synthetic test reports.
+docker exec "${container_id}" psql -X -v ON_ERROR_STOP=1 -U postgres -d postgres \
+  -c "alter system set log_min_error_statement='panic'" >/dev/null
+docker exec "${container_id}" psql -X -v ON_ERROR_STOP=1 -U postgres -d postgres \
+  -c 'select pg_reload_conf()' >/dev/null
+
 mkdir -p "${fixture_dir}" artifacts/fin01/logs
 git show "${evidence_commit}:docs/reports/fin01-r22/raw-evidence.zip" > "${temp_dir}/raw-evidence.zip"
 printf '%s  %s\n' "${evidence_zip_sha}" "${temp_dir}/raw-evidence.zip" | sha256sum --check --status
@@ -56,6 +64,7 @@ node scripts/fin01/release-review/hydrate-public-lab-sources.mjs \
   "--acl=${temp_dir}/06-function-acl.sql" \
   "--fixtures=${fixture_dir}"
 node scripts/fin01/release-review/build-isolated-fixture.mjs
+node scripts/fin01/release-review/render-financial-operations-fixture.mjs > "${temp_dir}/financial-operations-fixture.sql"
 
 if [[ "$(sha256sum "${migration_3d14}" | awk '{print $1}')" != "${migration_3d14_sha}" ]]; then
   echo 'CANONICAL_3D14_MIGRATION_SHA256_MISMATCH' >&2
@@ -65,6 +74,7 @@ fi
 docker exec -i "${container_id}" createdb -U postgres "${database}"
 for fixture in \
   "${fixture_dir}/isolated-schema.sql" \
+  "${temp_dir}/financial-operations-fixture.sql" \
   "${fixture_dir}/extra-functions.sql" \
   "${fixture_dir}/isolated-cancel-payment.sql" \
   scripts/fin01/release-review/seed.sql \
@@ -86,4 +96,4 @@ node scripts/fin01/release-review/render-synthetic-ledger.mjs \
 docker exec "${container_id}" psql -X -v ON_ERROR_STOP=1 -U postgres -d "${database}" \
   -c "alter database ${database} set application_name='fin01-selective-lab';"
 
-echo "FIN01_SYNTHETIC_POST_3D14_REPLAY_READY database=${database} server_version_num=${version_num} ledger_rows=333 evidence_commit=${evidence_commit}"
+echo "FIN01_SYNTHETIC_POST_3D14_REPLAY_READY database=${database} server_version_num=${version_num} ledger_rows=333 evidence_commit=${evidence_commit} canonical_table_fixture=SHARED_TERMINAL_5A"

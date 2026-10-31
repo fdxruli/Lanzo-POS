@@ -8,7 +8,9 @@ The workflow runs only on `review/fin01-f-pay-n01-release-r1`, grants `contents:
 
 The runner fetches the existing laboratory evidence at commit `9853236a31d55d9cb6542364c30e9e06be6eddd3` and the function source/ACL fixture at `fd4975ea8b525f2e0b1a812e91142b24fd435dc3`. It verifies the raw archive SHA, the exact `extra-functions.sql` SHA from the existing evidence, fixture JSON hashes, and all source-file hashes. The exact pre-3D14 definitions needed by the canonical 3D14 preconditions are reconstructed at runtime from the already published source snapshot. The runner then applies the hash-pinned canonical `20261026214837_restaurant_sale_dispatcher_guard_3d14.sql` and checks the resulting body hashes, owner, ACL, `SECURITY DEFINER`, and `search_path` against the hash-only contract.
 
-No altered copy of 3D14 is installed. The runner reports the source commit/file hashes in `artifacts/fin01/fixture-source-manifest.json`; generated fixture SQL and catalog dumps are never uploaded. The raw archive and existing branch commit remain the evidence source for the original fixture.
+The published fixture table snapshot predates `public.pos_financial_operations`, which canonical 3D14 references with `%rowtype`. To represent the existing SHARED.TERMINAL prerequisite, the runner extracts only that table's exact DDL, receipt index, RLS enablement, and default ACL revoke from the hash-pinned canonical `20260820165842_shared_terminal_financial_receipt_contract.sql`. It checks prerequisite constraints and the resulting table/security profile before applying 3D14. The migration itself and 3D14 remain unchanged, and the extracted SQL is temporary runtime material.
+
+No altered copy of 3D14 is installed. The runner reports the source commit/file hashes in `artifacts/fin01/fixture-source-manifest.json`; generated fixture SQL and catalog dumps are never uploaded. PostgreSQL service logs are not captured, preventing failed server statements from duplicating function source in artifacts. The raw archive and existing branch commit remain the evidence source for the original fixture.
 
 ## Selective migration lab
 

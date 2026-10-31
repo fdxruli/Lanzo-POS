@@ -69,6 +69,7 @@ for (const [file, expected] of migrations) {
 const applier = await fs.readFile(path.join(root, 'scripts/fin01/release-review/selective-apply-lab.mjs'), 'utf8');
 const workflow = await fs.readFile(path.join(root, '.github/workflows/fin01-release-review.yml'), 'utf8');
 const fixturePrep = await fs.readFile(path.join(root, 'scripts/fin01/release-review/prepare-lab.sh'), 'utf8');
+const financialOperationsFixture = await fs.readFile(path.join(root, 'scripts/fin01/release-review/render-financial-operations-fixture.mjs'), 'utf8');
 const post3d14ReplayVerifier = await fs.readFile(path.join(root, 'scripts/fin01/release-review/verify-post3d14-replay.mjs'), 'utf8');
 const gateTest = await fs.readFile(path.join(root, 'src/services/sync/__tests__/syncConstants.fin01Gate.test.js'), 'utf8');
 assert.ok(!applier.includes('scripts/fin01/fin01-pay-n01-candidate.sql'), 'LEGACY_PAY_HELPER_REFERENCED');
@@ -83,6 +84,15 @@ assert.ok(workflow.includes("node-version: '24.19.0'") && workflow.includes('--m
 assert.ok(workflow.includes('run-dispatcher-focus.mjs') && workflow.includes('Exercise the 3D14 dispatcher guard after F and PAY-N01'), 'POST_MIGRATION_3D14_DISPATCHER_FOCUS_REQUIRED');
 assert.ok(fixturePrep.includes('verify-post3d14-replay.mjs') && fixturePrep.includes('20261026214837_restaurant_sale_dispatcher_guard_3d14.sql'), 'CANONICAL_3D14_REPLAY_REQUIRED');
 assert.ok(fixturePrep.includes('9853236a31d55d9cb6542364c30e9e06be6eddd3') && fixturePrep.includes('fd4975ea8b525f2e0b1a812e91142b24fd435dc3'), 'IMMUTABLE_PUBLIC_SOURCE_COMMITS_REQUIRED');
+assert.ok(fixturePrep.includes('render-financial-operations-fixture.mjs'), 'SHARED_TERMINAL_5A_FIXTURE_REQUIRED');
+const fixtureMigrationPath = 'supabase/migrations/20260820165842_shared_terminal_financial_receipt_contract.sql';
+const fixtureMigrationBytes = await fs.readFile(path.join(root, fixtureMigrationPath));
+const fixtureMigrationSha = createHash('sha256').update(fixtureMigrationBytes).digest('hex');
+assert.equal(fixtureMigrationSha, '23a93e388cbb82c9079efc508e8491bc5e0d9b5d8760bfddd6ee1102da73df9e', 'SHARED_TERMINAL_5A_CANONICAL_SOURCE_HASH_MISMATCH');
+assert.ok(financialOperationsFixture.includes("'23a93e388cbb82c9079efc508e8491bc5e0d9b5d8760bfddd6ee1102da73df9e'"), 'SHARED_TERMINAL_5A_SOURCE_HASH_PIN_REQUIRED');
+assert.ok(financialOperationsFixture.includes('SHARED_TERMINAL_FINANCIAL_RECEIPT_FIXTURE_PREREQUISITE_MISSING')
+  && financialOperationsFixture.includes('FINANCIAL_RECEIPT_FIXTURE_SECURITY_PROFILE_MISMATCH'), 'SHARED_TERMINAL_5A_FIXTURE_MUST_FAIL_CLOSED');
+assert.ok(!workflow.includes('docker logs') && !workflow.includes('postgres-${{ matrix.postgres }}.log'), 'POSTGRES_SERVICE_SQL_LOG_MUST_NOT_BE_UPLOADED');
 assert.ok(post3d14ReplayVerifier.includes('POST_3D14_REPLAY_PROFILE_MISMATCH') && post3d14ReplayVerifier.includes('02eafa69f7a91343890ecc3cb2515cb37d4fcddb1de0f0fe187aa3db9a26a18b'), 'CANONICAL_3D14_REPLAY_MUST_FAIL_CLOSED');
 assert.ok(workflow.includes('npm audit --omit=dev --audit-level=high'), 'PRODUCTION_DEPENDENCY_SECURITY_AUDIT_REQUIRED');
 assert.ok(!workflow.includes('release-review/fixtures/**'), 'RUNTIME_FIXTURE_BODY_MUST_NOT_BE_UPLOADED');
