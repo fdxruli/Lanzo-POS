@@ -1,0 +1,319 @@
+{
+  "source": "captured and laboratory-reconciled current catalog; no row/business data",
+  "server_versions_tested": [
+    "17.6",
+    "17.11"
+  ],
+  "production_version_count": 333,
+  "production_version_max": "20261026214837",
+  "3d1_remote_alias": "20261006224032",
+  "3d13_remote_alias": "20261008030859",
+  "3d14_remote_version": "20261026214837",
+  "3d14_migration_sha256": "02eafa69f7a91343890ecc3cb2515cb37d4fcddb1de0f0fe187aa3db9a26a18b",
+  "stages": {
+    "post_3d14": {
+      "pos_create_cloud_sale_cashier_inventory_legacy_r2b(text,text,text,text,jsonb,jsonb,jsonb,text,text)": {
+        "md5_cr_removed": "ff91cb7b166ecc8af7fa6caf795018a1",
+        "owner": "postgres",
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "security_definer": true,
+        "config": [
+          "search_path=\"\""
+        ]
+      },
+      "pos_create_cloud_sale_cashier_inventory(text,text,text,text,jsonb,jsonb,jsonb,text,text)": {
+        "md5_cr_removed": "f5a3b1587f65e73e04aa16121881f764",
+        "owner": "postgres",
+        "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+        "security_definer": true,
+        "config": [
+          "search_path=\"\""
+        ]
+      },
+      "pos_create_cloud_sale_cashier(text,text,text,text,jsonb,jsonb,jsonb,text,text)": {
+        "md5_cr_removed": "3ce63cdd05c3877d0e7cc4b58079aef2",
+        "owner": "postgres",
+        "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+        "security_definer": true,
+        "config": [
+          "search_path=\"\""
+        ]
+      },
+      "pos_create_cloud_sale_credit_legacy_r2b(text,text,text,text,jsonb,jsonb,jsonb,text,text,text)": {
+        "md5_cr_removed": "c75dff5b4bab23bcb09f0c155df21f44",
+        "owner": "postgres",
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "security_definer": true,
+        "config": [
+          "search_path=\"\""
+        ]
+      },
+      "pos_create_cloud_sale_credit(text,text,text,text,jsonb,jsonb,jsonb,text,text,text)": {
+        "md5_cr_removed": "f1e7e82ef7c789389db37b375c42982e",
+        "owner": "postgres",
+        "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+        "security_definer": true,
+        "config": [
+          "search_path=\"\""
+        ]
+      },
+      "pos_execute_financial_operation_v1(text,text,text,text,text,text,text,jsonb)": {
+        "md5_cr_removed": "9c92bd0ad3dcbab07f3a02d46ce820e0",
+        "owner": "postgres",
+        "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+        "security_definer": true,
+        "config": [
+          "search_path=\"\"",
+          "statement_timeout=45s",
+          "lock_timeout=20s"
+        ]
+      },
+      "pos_migrate_local_customer_credit_unlimited(text,text,text,text,jsonb,jsonb,text)": {
+        "md5_cr_removed": "16a2e7539918f7048247eae6e26bfc86",
+        "owner": "postgres",
+        "acl": "{postgres=X/postgres}",
+        "security_definer": true,
+        "config": [
+          "search_path=\"\""
+        ]
+      },
+      "pos_record_customer_payment_unlimited(text,text,text,text,text,numeric,text,text,text,jsonb,text)": {
+        "md5_cr_removed": "6b666116ae23029caef4e0ac373ddd6e",
+        "owner": "postgres",
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "security_definer": true,
+        "config": [
+          "search_path=\"\""
+        ]
+      },
+      "pos_upsert_customer_unlimited(text,text,text,text,jsonb,integer,text)": {
+        "md5_cr_removed": "c7e33d0905c0188cfea21ecc7dbcbb39",
+        "owner": "postgres",
+        "acl": "{postgres=X/postgres}",
+        "security_definer": true,
+        "config": [
+          "search_path=\"\""
+        ]
+      },
+      "private.assert_restaurant_sale_dispatcher_context_v1(text,text,text,text,jsonb,text,text,text)": {
+        "md5_cr_removed": "a377b576a53cae0cde89e20ed38a7ed1",
+        "owner": "postgres",
+        "acl": "{postgres=X/postgres}",
+        "security_definer": false,
+        "config": [
+          "search_path=\"\""
+        ]
+      }
+    },
+    "post_f": {
+      "pos_create_cloud_sale_cashier_inventory_legacy_r2b(text,text,text,text,jsonb,jsonb,jsonb,text,text)": {
+        "md5_cr_removed": "ff91cb7b166ecc8af7fa6caf795018a1",
+        "owner": "postgres",
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "security_definer": true,
+        "config": [
+          "search_path=\"\""
+        ]
+      },
+      "pos_create_cloud_sale_cashier_inventory(text,text,text,text,jsonb,jsonb,jsonb,text,text)": {
+        "md5_cr_removed": "f5a3b1587f65e73e04aa16121881f764",
+        "owner": "postgres",
+        "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+        "security_definer": true,
+        "config": [
+          "search_path=\"\""
+        ]
+      },
+      "pos_create_cloud_sale_cashier(text,text,text,text,jsonb,jsonb,jsonb,text,text)": {
+        "md5_cr_removed": "3ce63cdd05c3877d0e7cc4b58079aef2",
+        "owner": "postgres",
+        "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+        "security_definer": true,
+        "config": [
+          "search_path=\"\""
+        ]
+      },
+      "pos_create_cloud_sale_credit_legacy_r2b(text,text,text,text,jsonb,jsonb,jsonb,text,text,text)": {
+        "md5_cr_removed": "1933a892a9191b02cc603c9e25afc1df",
+        "owner": "postgres",
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "security_definer": true,
+        "config": [
+          "search_path=\"\""
+        ]
+      },
+      "pos_create_cloud_sale_credit(text,text,text,text,jsonb,jsonb,jsonb,text,text,text)": {
+        "md5_cr_removed": "f1e7e82ef7c789389db37b375c42982e",
+        "owner": "postgres",
+        "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+        "security_definer": true,
+        "config": [
+          "search_path=\"\""
+        ]
+      },
+      "pos_execute_financial_operation_v1(text,text,text,text,text,text,text,jsonb)": {
+        "md5_cr_removed": "9c92bd0ad3dcbab07f3a02d46ce820e0",
+        "owner": "postgres",
+        "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+        "security_definer": true,
+        "config": [
+          "search_path=\"\"",
+          "statement_timeout=45s",
+          "lock_timeout=20s"
+        ]
+      },
+      "pos_historical_credit_batch_v1(text,text,text,text,text,jsonb,uuid,boolean)": {
+        "md5_cr_removed": "cf55f781a63805e1e47576893c4cca5d",
+        "owner": "postgres",
+        "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres}",
+        "security_definer": true,
+        "config": [
+          "search_path=\"\"",
+          "statement_timeout=45s",
+          "lock_timeout=20s"
+        ]
+      },
+      "pos_migrate_local_customer_credit_unlimited(text,text,text,text,jsonb,jsonb,text)": {
+        "md5_cr_removed": "337b2acfb1775a52895f08dfc00e42d4",
+        "owner": "postgres",
+        "acl": "{postgres=X/postgres}",
+        "security_definer": true,
+        "config": [
+          "search_path=\"\""
+        ]
+      },
+      "pos_record_customer_payment_unlimited(text,text,text,text,text,numeric,text,text,text,jsonb,text)": {
+        "md5_cr_removed": "6b666116ae23029caef4e0ac373ddd6e",
+        "owner": "postgres",
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "security_definer": true,
+        "config": [
+          "search_path=\"\""
+        ]
+      },
+      "pos_upsert_customer_unlimited(text,text,text,text,jsonb,integer,text)": {
+        "md5_cr_removed": "3d63ec48269884974c041c3faf2f5e33",
+        "owner": "postgres",
+        "acl": "{postgres=X/postgres}",
+        "security_definer": true,
+        "config": [
+          "search_path=\"\""
+        ]
+      },
+      "private.assert_restaurant_sale_dispatcher_context_v1(text,text,text,text,jsonb,text,text,text)": {
+        "md5_cr_removed": "a377b576a53cae0cde89e20ed38a7ed1",
+        "owner": "postgres",
+        "acl": "{postgres=X/postgres}",
+        "security_definer": false,
+        "config": [
+          "search_path=\"\""
+        ]
+      }
+    },
+    "post_pay": {
+      "pos_create_cloud_sale_cashier_inventory_legacy_r2b(text,text,text,text,jsonb,jsonb,jsonb,text,text)": {
+        "md5_cr_removed": "ff91cb7b166ecc8af7fa6caf795018a1",
+        "owner": "postgres",
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "security_definer": true,
+        "config": [
+          "search_path=\"\""
+        ]
+      },
+      "pos_create_cloud_sale_cashier_inventory(text,text,text,text,jsonb,jsonb,jsonb,text,text)": {
+        "md5_cr_removed": "f5a3b1587f65e73e04aa16121881f764",
+        "owner": "postgres",
+        "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+        "security_definer": true,
+        "config": [
+          "search_path=\"\""
+        ]
+      },
+      "pos_create_cloud_sale_cashier(text,text,text,text,jsonb,jsonb,jsonb,text,text)": {
+        "md5_cr_removed": "3ce63cdd05c3877d0e7cc4b58079aef2",
+        "owner": "postgres",
+        "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+        "security_definer": true,
+        "config": [
+          "search_path=\"\""
+        ]
+      },
+      "pos_create_cloud_sale_credit_legacy_r2b(text,text,text,text,jsonb,jsonb,jsonb,text,text,text)": {
+        "md5_cr_removed": "1933a892a9191b02cc603c9e25afc1df",
+        "owner": "postgres",
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "security_definer": true,
+        "config": [
+          "search_path=\"\""
+        ]
+      },
+      "pos_create_cloud_sale_credit(text,text,text,text,jsonb,jsonb,jsonb,text,text,text)": {
+        "md5_cr_removed": "f1e7e82ef7c789389db37b375c42982e",
+        "owner": "postgres",
+        "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+        "security_definer": true,
+        "config": [
+          "search_path=\"\""
+        ]
+      },
+      "pos_execute_financial_operation_v1(text,text,text,text,text,text,text,jsonb)": {
+        "md5_cr_removed": "9c92bd0ad3dcbab07f3a02d46ce820e0",
+        "owner": "postgres",
+        "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}",
+        "security_definer": true,
+        "config": [
+          "search_path=\"\"",
+          "statement_timeout=45s",
+          "lock_timeout=20s"
+        ]
+      },
+      "pos_historical_credit_batch_v1(text,text,text,text,text,jsonb,uuid,boolean)": {
+        "md5_cr_removed": "cf55f781a63805e1e47576893c4cca5d",
+        "owner": "postgres",
+        "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres}",
+        "security_definer": true,
+        "config": [
+          "search_path=\"\"",
+          "statement_timeout=45s",
+          "lock_timeout=20s"
+        ]
+      },
+      "pos_migrate_local_customer_credit_unlimited(text,text,text,text,jsonb,jsonb,text)": {
+        "md5_cr_removed": "337b2acfb1775a52895f08dfc00e42d4",
+        "owner": "postgres",
+        "acl": "{postgres=X/postgres}",
+        "security_definer": true,
+        "config": [
+          "search_path=\"\""
+        ]
+      },
+      "pos_record_customer_payment_unlimited(text,text,text,text,text,numeric,text,text,text,jsonb,text)": {
+        "md5_cr_removed": "739b626cd2fdc9d3f8261fee7e2d972e",
+        "owner": "postgres",
+        "acl": "{postgres=X/postgres,service_role=X/postgres}",
+        "security_definer": true,
+        "config": [
+          "search_path=\"\""
+        ]
+      },
+      "pos_upsert_customer_unlimited(text,text,text,text,jsonb,integer,text)": {
+        "md5_cr_removed": "3d63ec48269884974c041c3faf2f5e33",
+        "owner": "postgres",
+        "acl": "{postgres=X/postgres}",
+        "security_definer": true,
+        "config": [
+          "search_path=\"\""
+        ]
+      },
+      "private.assert_restaurant_sale_dispatcher_context_v1(text,text,text,text,jsonb,text,text,text)": {
+        "md5_cr_removed": "a377b576a53cae0cde89e20ed38a7ed1",
+        "owner": "postgres",
+        "acl": "{postgres=X/postgres}",
+        "security_definer": false,
+        "config": [
+          "search_path=\"\""
+        ]
+      }
+    }
+  }
+}

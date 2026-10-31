@@ -1,0 +1,181 @@
+name: FIN-01 reviewed release and selective lab
+
+on:
+  push:
+    branches:
+      - review/fin01-f-pay-n01-release-r1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fin01-release-review-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  frontend-and-release-contract:
+    if: github.ref == 'refs/heads/review/fin01-f-pay-n01-release-r1'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24.19.0'
+          cache: npm
+      - name: Verify base, product tree, candidate manifest, SQL hashes, gate and workflow scope
+        env:
+          FIN01_MAIN_SHA: 1a0d758d09310f2914c475c37d358c4cf885cc01
+          FIN01_PRODUCT_SHA: 5a9896451d39436be91fac2698d1836f103f0da7
+          FIN01_PRODUCT_TREE_SHA: 5720cff059e50b1316e4554f960bb741f005dc44
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          mkdir -p artifacts/fin01/logs
+          node scripts/fin01/release-review/verify-release-contract.mjs 2>&1 | tee artifacts/fin01/logs/release-contract.log
+      - name: Install pinned project dependencies
+        run: npm ci
+      - name: Audit production dependency advisories
+        run: npm audit --omit=dev --audit-level=high 2>&1 | tee artifacts/fin01/logs/npm-audit-production.log
+      - name: Test parser, ledger snapshot and transaction controls
+        run: node scripts/fin01/release-review/release-review-contract.node-test.mjs 2>&1 | tee artifacts/fin01/logs/release-review-contract-tests.log
+      - name: Compare ESLint diagnostics with approved main
+        env:
+          FIN01_MAIN_SHA: 1a0d758d09310f2914c475c37d358c4cf885cc01
+        run: node scripts/fin01/release-review/eslint-differential.mjs 2>&1 | tee artifacts/fin01/logs/eslint-differential.log
+      - name: Run FIN-01 frontend and financial regressions
+        run: |
+          set -euo pipefail
+          ./node_modules/.bin/vitest run \
+            src/components/common/__tests__/PaymentModal.test.jsx \
+            src/components/customers/__tests__/HistoricalCreditImport.test.jsx \
+            src/services/customerCredit/__tests__/historicalCreditCloudApply.test.js \
+            src/services/customerCredit/__tests__/historicalCreditMigration.workflow.test.js \
+            src/services/customerCredit/__tests__/historicalCreditSnapshot.test.js \
+            src/services/sync/__tests__/syncConstants.fin01Gate.test.js \
+            src/services/db/__tests__/customerCreditRepository.test.js \
+            src/services/db/__tests__/customerCreditRepository.autoHealLifecycle.test.js \
+            src/services/salesCloud/__tests__/salesCloudCashierService.ecommerce.test.js \
+            src/services/salesCloud/__tests__/salesCloudFinancialRetry.integration.test.js \
+            src/services/__test__/db/salesRepository.test.js \
+            --maxWorkers=1 2>&1 | tee artifacts/fin01/logs/vitest-fin01.log
+      - name: Build frontend and run postbuild audit
+        run: npm run build 2>&1 | tee artifacts/fin01/logs/build-postbuild.log
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: fin01-release-review-frontend-${{ github.sha }}
+          path: |
+            artifacts/fin01/**
+            dist/**
+          if-no-files-found: warn
+          retention-days: 30
+
+  postgres-selective-apply:
+    if: github.ref == 'refs/heads/review/fin01-f-pay-n01-release-r1'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - postgres: '17.11'
+            suffix: '1711'
+          - postgres: '17.6'
+            suffix: '176'
+    services:
+      postgres:
+        image: postgres:${{ matrix.postgres }}
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 55847:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24.19.0'
+      - name: Verify exact release SHA and migration hashes
+        env:
+          FIN01_MAIN_SHA: 1a0d758d09310f2914c475c37d358c4cf885cc01
+          FIN01_PRODUCT_SHA: 5a9896451d39436be91fac2698d1836f103f0da7
+          FIN01_PRODUCT_TREE_SHA: 5720cff059e50b1316e4554f960bb741f005dc44
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          mkdir -p artifacts/fin01/logs docs/reports/fin01-r22
+          node scripts/fin01/release-review/verify-release-contract.mjs 2>&1 | tee artifacts/fin01/logs/release-contract-pg.log
+      - name: Rebuild canonical post-3D14 state from immutable published sources
+        env:
+          PG_CONTAINER_ID: ${{ job.services.postgres.id }}
+        run: |
+          set -euo pipefail
+          scripts/fin01/release-review/prepare-lab.sh fin01_cert_template 2>&1 | tee artifacts/fin01/logs/fixture-setup.log
+      - name: Test the selective F then PAY-N01 lab applier and recovery paths
+        id: lab
+        env:
+          PG_CONTAINER_ID: ${{ job.services.postgres.id }}
+        run: |
+          set -euo pipefail
+          node scripts/fin01/release-review/run-selective-apply-tests.mjs 2>&1 | tee artifacts/fin01/logs/selective-apply-tests.log
+          database="$(node -p "JSON.parse(require('fs').readFileSync('artifacts/fin01/selective-apply-tests-${{ matrix.postgres }}.json')).success_database")"
+          test -n "${database}"
+          echo "database=${database}" >> "${GITHUB_OUTPUT}"
+      - name: Run PAY-N01, PAY-N02 and complete financial regressions
+        env:
+          PG_CONTAINER_ID: ${{ job.services.postgres.id }}
+        run: |
+          set -euo pipefail
+          database="${{ steps.lab.outputs.database }}"
+          test -n "${database}"
+          node scripts/fin01/release-review/run-postgres-tests.mjs \
+            --database="${database}" \
+            --report=release-review-pg${{ matrix.suffix }} \
+            2>&1 | tee "artifacts/fin01/logs/financial-suite-${{ matrix.postgres }}.log"
+          node --input-type=module - <<'JS'
+          import assert from 'node:assert/strict';
+          import fs from 'node:fs';
+          const file = 'docs/reports/fin01-r22/release-review-pg${{ matrix.suffix }}.json';
+          const tests = JSON.parse(fs.readFileSync(file, 'utf8'));
+          assert.equal(tests.length, 63, `EXPECTED_63_FINANCIAL_TESTS:${tests.length}`);
+          assert.ok(tests.every((test) => test.status === 'PASS'), 'FINANCIAL_TEST_FAILURE');
+          assert.ok(tests.some((test) => test.name.includes('PAY-N01')));
+          assert.ok(tests.some((test) => test.name.includes('PAY-N02')));
+          process.stdout.write(JSON.stringify({ executed: tests.length, passed: 63, failed: 0 }) + '\n');
+          JS
+      - name: Exercise the 3D14 dispatcher guard after F and PAY-N01
+        env:
+          PG_CONTAINER_ID: ${{ job.services.postgres.id }}
+        run: |
+          set -euo pipefail
+          database="${{ steps.lab.outputs.database }}"
+          test -n "${database}"
+          node scripts/fin01/release-review/run-dispatcher-focus.mjs \
+            --database="${database}" \
+            --report=artifacts/fin01/dispatcher-${{ matrix.suffix }}.json \
+            2>&1 | tee "artifacts/fin01/logs/dispatcher-focus-${{ matrix.postgres }}.log"
+      - name: Capture PostgreSQL service log
+        if: always()
+        env:
+          PG_CONTAINER_ID: ${{ job.services.postgres.id }}
+        run: |
+          mkdir -p artifacts/fin01/logs
+          docker logs "${PG_CONTAINER_ID}" > "artifacts/fin01/logs/postgres-${{ matrix.postgres }}.log" 2>&1 || true
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: fin01-release-review-pg${{ matrix.suffix }}-${{ github.sha }}
+          path: |
+            artifacts/fin01/**
+            docs/reports/fin01-r22/release-review-pg*.json
+          if-no-files-found: warn
+          retention-days: 30

@@ -1,0 +1,135 @@
+CREATE SCHEMA
+DO
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE INDEX
+CREATE TABLE
+CREATE SEQUENCE
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+INSERT 0 1
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+BEGIN
+CREATE FUNCTION
+REVOKE
+CREATE TRIGGER
+CREATE FUNCTION
+REVOKE
+GRANT
+COMMIT
+BEGIN
+INSERT 0 1
+INSERT 0 5
+INSERT 0 1
+UPDATE 1
+DO
+ROLLBACK
+[
+  {
+    "first": "cancel",
+    "second": "cashier",
+    "result": "SERIALIZED",
+    "sales": 0,
+    "events": 1,
+    "status": "cancelled",
+    "payment": "unpaid",
+    "cancelLedger": 1
+  },
+  {
+    "first": "cashier",
+    "second": "cancel",
+    "result": "SERIALIZED",
+    "sales": 1,
+    "events": 0,
+    "status": "pending",
+    "payment": "paid",
+    "cancelLedger": 0
+  },
+  {
+    "first": "cancel",
+    "second": "split",
+    "result": "SERIALIZED",
+    "sales": 0,
+    "events": 1,
+    "status": "cancelled",
+    "payment": "unpaid",
+    "cancelLedger": 1
+  },
+  {
+    "first": "split",
+    "second": "cancel",
+    "result": "SERIALIZED",
+    "sales": 1,
+    "events": 0,
+    "status": "pending",
+    "payment": "paid",
+    "cancelLedger": 0
+  },
+  {
+    "first": "cancel",
+    "second": "cancel",
+    "result": "SERIALIZED",
+    "sales": 0,
+    "events": 1,
+    "status": "cancelled",
+    "payment": "unpaid",
+    "cancelLedger": 1
+  },
+  {
+    "first": "cancel",
+    "second": "cancel",
+    "result": "SERIALIZED",
+    "sales": 0,
+    "events": 1,
+    "status": "cancelled",
+    "payment": "unpaid",
+    "cancelLedger": 1
+  },
+  {
+    "first": "cashier",
+    "second": "split",
+    "result": "SERIALIZED",
+    "sales": 1,
+    "events": 0,
+    "status": "pending",
+    "payment": "paid",
+    "cancelLedger": 0
+  },
+  {
+    "first": "split",
+    "second": "cashier",
+    "result": "SERIALIZED",
+    "sales": 1,
+    "events": 0,
+    "status": "pending",
+    "payment": "paid",
+    "cancelLedger": 0
+  }
+]

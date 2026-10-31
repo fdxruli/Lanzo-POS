@@ -1,0 +1,23 @@
+DO
+CREATE SCHEMA
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE TABLE
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+CREATE FUNCTION
+BEGIN
+CREATE FUNCTION
+INSERT 0 8
+INSERT 0 1
+INSERT 0 5
+INSERT 0 5
+DO
+ROLLBACK
+                  result                  
+------------------------------------------
+ 3D14 helper legacy-replay contract: PASS
+(1 row)
+
