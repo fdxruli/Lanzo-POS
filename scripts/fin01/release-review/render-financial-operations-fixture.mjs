@@ -62,7 +62,7 @@ declare actual_columns text[]; table_oid oid;
 begin
   table_oid := to_regclass('public.pos_financial_operations');
   if table_oid is null then raise exception 'FINANCIAL_RECEIPT_FIXTURE_TABLE_MISSING' using errcode='P0001'; end if;
-  select array_agg(column_name order by ordinal_position)
+  select array_agg(column_name::text order by ordinal_position)
     into actual_columns
     from information_schema.columns
     where table_schema='public' and table_name='pos_financial_operations';
@@ -72,7 +72,7 @@ begin
     'verified_cash_session_id','verified_cash_station_id','canonical_request','status',
     'response_payload','created_at','completed_at'
   ]::text[] then raise exception 'FINANCIAL_RECEIPT_FIXTURE_COLUMN_PROFILE_MISMATCH' using errcode='P0001'; end if;
-  if (select array_agg(column_name order by ordinal_position)
+  if (select array_agg(column_name::text order by ordinal_position)
         from information_schema.columns
         where table_schema='public' and table_name='pos_restaurant_orders')
        is distinct from array['id','license_id','local_order_id']::text[] then
