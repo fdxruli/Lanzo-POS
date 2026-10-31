@@ -15,6 +15,7 @@ const threeD14Path = path.join(root, 'supabase/migrations/20261026214837_restaur
 const writerManifestPath = path.join(root, 'supabase/tests/fixtures/pr352-r6/restaurant-writer-fingerprints.json');
 const dispatcherManifestPath = path.join(root, 'supabase/tests/fixtures/pr352-r6/dispatcher-fingerprint.json');
 const writersPath = path.join(root, 'supabase/tests/fixtures/pr352-r6/verified-restaurant-writers.sql');
+const restaurantDependenciesFixturePath = path.join(root, 'supabase/tests/fixtures/pr352-r6/restaurant-dependencies.sql');
 const workflowPath = path.join(root, '.github/workflows/pr352-real-bridge-pg176-r6.yml');
 const runnerPath = path.join(root, 'scripts/supabase/pr352-r6-real-bridge-pg176-test.mjs');
 const concurrencyPath = path.join(root, 'scripts/supabase/pr352-r6-concurrency.mjs');
@@ -74,6 +75,17 @@ test('Staff bridge authorization matches validate_pos_sync_context session field
   assert.match(staffGuard, /nullif\(c->>'actor_session_id',''\)\s+is null/);
   assert.doesNotMatch(staffGuard, /c->>'staff_session_id'/,
     'The guard must not read a Staff session field that the validated context does not return');
+});
+
+test('Staff bridge fixture isolates preparation-station setup as an explicit no-op dependency', async () => {
+  const runner = await readFile(runnerPath, 'utf8');
+  const fixture = await readFile(restaurantDependenciesFixturePath, 'utf8');
+  assert.match(runner, /runFile\(restaurantDependenciesFixture, 'isolated nonfinancial Restaurant dependency stubs'\)/);
+  assert.match(fixture, /create or replace function private\.ensure_default_preparation_station\(\s*p_license_id uuid,\s*p_device_id uuid,\s*p_staff_user_id uuid\s*\)/i);
+  assert.match(fixture, /returns void\s+language plpgsql\s+security definer\s+set search_path to ''/i);
+  assert.match(fixture, /begin\s+return;\s+end;/i);
+  assert.doesNotMatch(fixture, /\b(?:insert|update|delete)\s+(?:into\s+)?(?:public|private)\./i,
+    'The test double must not mutate financial, Restaurant, or preparation-station rows');
 });
 
 test('historical 3D.14 remains the exact reviewed blob and dispatcher fingerprint', async () => {

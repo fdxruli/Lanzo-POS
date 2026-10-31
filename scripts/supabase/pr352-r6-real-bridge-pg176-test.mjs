@@ -11,6 +11,7 @@ import { canonicalizePostgresAcl } from './pr352-r6-canonical-postgres-acl.mjs';
 const execFileAsync = promisify(execFile);
 const root = process.cwd();
 const fixture = path.join(root, 'supabase/tests/fixtures/pr338-real-financial');
+const restaurantDependenciesFixture = path.join(root, 'supabase/tests/fixtures/pr352-r6/restaurant-dependencies.sql');
 const restaurantWritersFixture = path.join(root, 'supabase/tests/fixtures/pr352-r6/verified-restaurant-writers.sql');
 const restaurantWritersManifestPath = path.join(root, 'supabase/tests/fixtures/pr352-r6/restaurant-writer-fingerprints.json');
 const dispatcherManifestPath = path.join(root, 'supabase/tests/fixtures/pr352-r6/dispatcher-fingerprint.json');
@@ -140,6 +141,7 @@ async function writeEvidence() {
     concurrency: concurrencyResults,
     mockedDependencies: [
       'Authentication and license/device/session rows are synthetic.',
+      'private.ensure_default_preparation_station(uuid,uuid,uuid) is a no-op synthetic fixture dependency; preparation-station provisioning is outside this bridge authorization test.',
       'Schema, RLS, constraints, triggers, financial dispatcher, 3D.14 wrappers, six Restaurant writer bodies and bridge SQL execute in PostgreSQL.',
       'No Supabase Production connection or credentials are available to this job.',
     ],
@@ -229,6 +231,7 @@ async function run() {
   for (const file of ['03-trigger-dependencies.sql', '04-constraints-indexes-triggers.sql', '05-policies.sql', '06-function-acl.sql']) {
     await runFile(path.join(fixture, file), file);
   }
+  await runFile(restaurantDependenciesFixture, 'isolated nonfinancial Restaurant dependency stubs');
   await runFile(restaurantWritersFixture, 'audited Restaurant writer definitions');
   const expectedHashes = JSON.parse(await readFile(path.join(fixture, 'function-hashes.json'), 'utf8'));
   const functionNames = [...new Set(expectedHashes.map((row) => row.proname))];
