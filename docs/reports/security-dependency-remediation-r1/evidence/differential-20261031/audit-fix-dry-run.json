@@ -1,0 +1,4902 @@
+add @babel/plugin-bugfix-safari-rest-destructuring-rhs-array 7.29.7
+add eta 4.6.0
+add @trickfilm400/rollup-plugin-off-main-thread 3.0.0-pre1
+add @rollup/plugin-replace 6.0.3
+add @rollup/plugin-babel 6.1.0
+add @napi-rs/lzma-linux-x64-gnu 1.5.1
+add @humanfs/types 0.15.0
+change @vitest/utils 4.0.14 => 4.1.12
+change @vitest/pretty-format 4.0.14 => 4.1.12
+change @vitest/expect 4.0.14 => 4.1.12
+change @vitest/runner 4.0.14 => 4.1.12
+change @vitest/snapshot 4.0.14 => 4.1.12
+change @vitest/spy 4.0.14 => 4.1.12
+change @vitest/mocker 4.0.14 => 4.1.12
+change @types/estree 1.0.8 => 1.0.10
+remove @surma/rollup-plugin-off-main-thread 2.2.3
+remove magic-string 0.25.9
+change @standard-schema/spec 1.0.0 => 1.1.0
+remove @rollup/rollup-linux-x64-musl 4.53.2
+change @rollup/rollup-linux-x64-gnu 4.53.2 => 4.67.2
+change @rollup/pluginutils 5.3.0 => 5.5.1
+change @rollup/plugin-terser 0.4.4 => 1.0.2
+change @rollup/plugin-node-resolve 15.3.1 => 16.0.3
+remove @isaacs/brace-expansion 5.0.0
+remove @isaacs/balanced-match 4.0.1
+change @isaacs/cliui 8.0.2 => 9.0.0
+change @humanfs/core 0.19.1 => 0.19.2
+change @humanfs/node 0.16.7 => 0.16.8
+change @esbuild/linux-x64 0.25.12 => 0.28.2
+change @babel/types 7.28.6 => 7.29.11
+change @babel/plugin-transform-unicode-regex 7.27.1 => 7.29.7
+change @babel/traverse 7.28.6 => 7.29.12
+change @babel/template 7.28.6 => 7.29.7
+change @babel/plugin-transform-unicode-sets-regex 7.28.6 => 7.29.7
+change @babel/preset-env 7.28.6 => 7.29.7
+change @babel/plugin-transform-template-literals 7.27.1 => 7.29.7
+change @babel/plugin-transform-regexp-modifiers 7.28.6 => 7.29.7
+change @babel/plugin-transform-typeof-symbol 7.27.1 => 7.29.7
+change @babel/plugin-transform-unicode-property-regex 7.28.6 => 7.29.7
+change @babel/plugin-transform-unicode-escapes 7.27.1 => 7.29.7
+change @babel/plugin-transform-spread 7.28.6 => 7.29.11
+change @babel/plugin-transform-sticky-regex 7.27.1 => 7.29.7
+change @babel/plugin-transform-shorthand-properties 7.27.1 => 7.29.7
+change @babel/plugin-transform-regenerator 7.28.6 => 7.29.8
+change @babel/plugin-transform-reserved-words 7.27.1 => 7.29.7
+change @babel/plugin-transform-property-literals 7.27.1 => 7.29.7
+change @babel/plugin-transform-numeric-separator 7.28.6 => 7.29.7
+change @babel/plugin-transform-private-property-in-object 7.28.6 => 7.29.7
+change @babel/plugin-transform-parameters 7.27.7 => 7.29.7
+change @babel/plugin-transform-private-methods 7.28.6 => 7.29.7
+change @babel/plugin-transform-optional-catch-binding 7.28.6 => 7.29.7
+change @babel/plugin-transform-optional-chaining 7.28.6 => 7.29.7
+change @babel/plugin-transform-object-rest-spread 7.28.6 => 7.29.7
+change @babel/plugin-transform-object-super 7.27.1 => 7.29.7
+change @babel/plugin-transform-new-target 7.27.1 => 7.29.7
+change @babel/plugin-transform-modules-umd 7.27.1 => 7.29.7
+change @babel/plugin-transform-named-capturing-groups-regex 7.27.1 => 7.29.7
+change @babel/plugin-transform-nullish-coalescing-operator 7.28.6 => 7.29.7
+change @babel/plugin-transform-function-name 7.27.1 => 7.29.7
+change @babel/plugin-transform-json-strings 7.28.6 => 7.29.7
+change @babel/plugin-transform-modules-systemjs 7.28.5 => 7.29.8
+change @babel/plugin-transform-literals 7.27.1 => 7.29.7
+change @babel/plugin-transform-modules-commonjs 7.28.6 => 7.29.7
+change @babel/plugin-transform-modules-amd 7.27.1 => 7.29.7
+change @babel/plugin-transform-member-expression-literals 7.27.1 => 7.29.7
+change @babel/plugin-transform-logical-assignment-operators 7.28.6 => 7.29.7
+change @babel/plugin-transform-export-namespace-from 7.27.1 => 7.29.7
+change @babel/plugin-transform-for-of 7.27.1 => 7.29.7
+change @babel/plugin-transform-classes 7.28.6 => 7.29.11
+change @babel/plugin-transform-explicit-resource-management 7.28.6 => 7.29.7
+change @babel/plugin-transform-class-properties 7.28.6 => 7.29.7
+change @babel/plugin-transform-exponentiation-operator 7.28.6 => 7.29.7
+change @babel/plugin-transform-dynamic-import 7.27.1 => 7.29.7
+change @babel/plugin-transform-duplicate-keys 7.27.1 => 7.29.7
+change @babel/plugin-transform-duplicate-named-capturing-groups-regex 7.28.6 => 7.29.7
+change @babel/plugin-transform-dotall-regex 7.28.6 => 7.29.7
+change @babel/plugin-transform-class-static-block 7.28.6 => 7.29.7
+change @babel/plugin-transform-destructuring 7.28.5 => 7.29.7
+change @babel/generator 7.28.6 => 7.29.12
+change @babel/plugin-transform-computed-properties 7.28.6 => 7.29.7
+change @babel/plugin-transform-block-scoping 7.28.6 => 7.29.12
+change @babel/plugin-transform-arrow-functions 7.27.1 => 7.29.7
+change @babel/plugin-transform-async-to-generator 7.28.6 => 7.29.7
+change @babel/plugin-transform-block-scoped-functions 7.27.1 => 7.29.7
+change @babel/plugin-transform-async-generator-functions 7.28.6 => 7.29.7
+change @babel/plugin-bugfix-v8-spread-parameters-in-optional-chaining 7.27.1 => 7.29.7
+change @babel/plugin-bugfix-v8-static-class-fields-redefine-readonly 7.28.6 => 7.29.7
+change @babel/plugin-syntax-import-assertions 7.28.6 => 7.29.7
+change @babel/plugin-syntax-import-attributes 7.28.6 => 7.29.7
+change @babel/plugin-bugfix-firefox-class-in-computed-class-key 7.28.5 => 7.29.7
+change @babel/helpers 7.28.4 => 7.29.10
+change @babel/plugin-bugfix-safari-class-field-initializer-scope 7.27.1 => 7.29.7
+change @babel/parser 7.28.6 => 7.29.12
+change @babel/plugin-bugfix-safari-id-destructuring-collision-in-function-expression 7.27.1 => 7.29.7
+change @babel/helper-wrap-function 7.28.6 => 7.29.7
+change @babel/helper-validator-option 7.27.1 => 7.29.7
+change @babel/helper-module-imports 7.28.6 => 7.29.7
+change @babel/helper-validator-identifier 7.28.5 => 7.29.7
+change @babel/helper-string-parser 7.27.1 => 7.29.11
+change @babel/helper-module-transforms 7.28.6 => 7.29.7
+change @babel/helper-plugin-utils 7.28.6 => 7.29.7
+change @babel/helper-skip-transparent-expression-wrappers 7.27.1 => 7.29.7
+change @babel/helper-replace-supers 7.28.6 => 7.29.7
+change @babel/helper-remap-async-to-generator 7.27.1 => 7.29.7
+change @babel/helper-optimise-call-expression 7.27.1 => 7.29.7
+change @babel/helper-member-expression-to-functions 7.28.5 => 7.29.7
+change @babel/helper-create-regexp-features-plugin 7.28.5 => 7.29.10
+change @babel/helper-define-polyfill-provider 0.6.5 => 0.6.8
+change @babel/helper-globals 7.28.0 => 7.29.7
+change @babel/helper-compilation-targets 7.28.6 => 7.29.7
+remove wrap-ansi 8.1.0
+remove ansi-styles 6.2.3
+change @babel/helper-create-class-features-plugin 7.28.6 => 7.29.12
+change @babel/code-frame 7.28.6 => 7.29.7
+change @babel/helper-annotate-as-pure 7.27.3 => 7.29.7
+change @babel/core 7.28.5 => 7.29.7
+change @babel/compat-data 7.28.6 => 7.29.7
+change vite-plugin-pwa 1.2.0 => 1.3.0
+remove wrap-ansi-cjs 7.0.0
+remove emoji-regex 8.0.0
+remove string-width 4.2.3
+remove ansi-regex 5.0.1
+remove strip-ansi 6.0.1
+change workbox-window 7.4.0 => 7.4.1
+change workbox-sw 7.4.0 => 7.4.1
+change workbox-streams 7.4.0 => 7.4.1
+change workbox-strategies 7.4.0 => 7.4.1
+change workbox-routing 7.4.0 => 7.4.1
+change workbox-recipes 7.4.0 => 7.4.1
+change workbox-core 7.4.0 => 7.4.1
+change workbox-precaching 7.4.0 => 7.4.1
+change workbox-range-requests 7.4.0 => 7.4.1
+change workbox-navigation-preload 7.4.0 => 7.4.1
+change workbox-google-analytics 7.4.0 => 7.4.1
+change workbox-expiration 7.4.0 => 7.4.1
+change workbox-build 7.4.0 => 7.4.1
+remove @types/estree 0.0.39
+remove @rollup/pluginutils 3.1.0
+remove @rollup/plugin-replace 2.4.2
+remove @rollup/plugin-babel 5.3.1
+change @apideck/better-ajv-errors 0.3.6 => 0.3.7
+change ajv 8.17.1 => 8.20.0
+remove magic-string 0.25.9
+remove rollup 2.79.2
+remove picomatch 2.3.1
+remove estree-walker 1.0.1
+change workbox-cacheable-response 7.4.0 => 7.4.1
+change workbox-background-sync 7.4.0 => 7.4.1
+change workbox-broadcast-update 7.4.0 => 7.4.1
+remove webidl-conversions 4.0.2
+remove whatwg-url 7.1.0
+change vite 7.2.2 => 7.3.7
+change vitest 4.0.14 => 4.1.12
+change update-browserslist-db 1.1.4 => 1.3.4
+remove tr46 1.0.1
+change undici 7.25.0 => 7.30.1
+change tinyrainbow 3.0.3 => 3.2.0
+change tinyexec 0.3.2 => 1.3.1
+change terser 5.46.0 => 5.51.2
+remove string-width-cjs 4.2.3
+remove emoji-regex 8.0.0
+remove strip-ansi 6.0.1
+remove ansi-regex 5.0.1
+change std-env 3.10.0 => 4.3.0
+remove strip-ansi-cjs 6.0.1
+remove ansi-regex 5.0.1
+remove strip-ansi 7.1.2
+remove string-width 5.1.2
+remove sourcemap-codec 1.4.8
+change source-map-js 1.2.1 => 1.2.2
+change source-map 0.8.0-beta.0 => 0.8.0
+change smob 1.5.0 => 1.6.2
+change serialize-javascript 6.0.2 => 7.1.4
+change rollup 4.53.2 => 4.67.2
+change resolve 1.22.11 => 1.22.13
+change regexpu-core 6.4.0 => 6.5.3
+change regjsparser 0.13.0 => 0.13.4
+change regenerate-unicode-properties 10.2.2 => 10.3.0
+change regenerate 1.4.2 => 1.5.0
+remove randombytes 2.1.0
+change picomatch 4.0.3 => 4.0.7
+change postcss 8.5.6 => 8.5.32
+change path-scurry 2.0.1 => 2.0.2
+change lru-cache 11.2.4 => 11.5.3
+change node-releases 2.0.27 => 2.0.63
+change nanoid 3.3.11 => 3.3.20
+change minipass 7.1.2 => 7.1.3
+change minimatch 3.1.2 => 3.1.5
+remove lodash 4.17.23
+remove lodash.sortby 4.7.0
+change jsonfile 6.2.0 => 6.2.1
+remove json-schema 0.4.0
+change js-yaml 4.1.1 => 4.3.2
+change jackspeak 4.1.1 => 4.2.3
+remove is-fullwidth-code-point 3.0.0
+change is-core-module 2.16.1 => 2.17.0
+change hasown 2.0.2 => 2.0.4
+add balanced-match 4.0.4
+add brace-expansion 5.0.12
+change minimatch 10.1.1 => 10.2.6
+change flatted 3.3.3 => 3.4.4
+change filelist 1.0.4 => 1.0.6
+change brace-expansion 2.0.2 => 2.1.7
+change minimatch 5.1.6 => 5.1.9
+change fast-uri 3.1.0 => 3.1.9
+change expect-type 1.2.2 => 1.4.0
+change electron-to-chromium 1.5.250 => 1.5.472
+change esbuild 0.25.12 => 0.28.2
+change es-module-lexer 1.7.0 => 2.3.2
+remove emoji-regex 9.2.2
+remove eastasianwidth 0.2.0
+change core-js-compat 3.47.0 => 3.51.0
+change caniuse-lite 1.0.30001754 => 1.0.30001820
+change chai 6.2.1 => 6.3.0
+change brace-expansion 1.1.12 => 1.1.21
+change browserslist 4.28.0 => 4.29.5
+change babel-plugin-polyfill-corejs2 0.4.14 => 0.4.17
+change babel-plugin-polyfill-corejs3 0.13.0 => 0.14.2
+change baseline-browser-mapping 2.8.28 => 2.11.34
+change babel-plugin-polyfill-regenerator 0.6.5 => 0.6.8
+remove ansi-regex 6.2.2
+change ajv 6.12.6 => 6.15.0
+{
+  "add": [
+    {
+      "name": "@babel/plugin-bugfix-safari-rest-destructuring-rhs-array",
+      "version": "7.29.7",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-bugfix-safari-rest-destructuring-rhs-array"
+    },
+    {
+      "name": "eta",
+      "version": "4.6.0",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/eta"
+    },
+    {
+      "name": "@trickfilm400/rollup-plugin-off-main-thread",
+      "version": "3.0.0-pre1",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@trickfilm400/rollup-plugin-off-main-thread"
+    },
+    {
+      "name": "@rollup/plugin-replace",
+      "version": "6.0.3",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@rollup/plugin-replace"
+    },
+    {
+      "name": "@rollup/plugin-babel",
+      "version": "6.1.0",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@rollup/plugin-babel"
+    },
+    {
+      "name": "@napi-rs/lzma-linux-x64-gnu",
+      "version": "1.5.1",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@napi-rs/lzma-linux-x64-gnu"
+    },
+    {
+      "name": "@humanfs/types",
+      "version": "0.15.0",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@humanfs/types"
+    },
+    {
+      "name": "balanced-match",
+      "version": "4.0.4",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/glob/node_modules/balanced-match"
+    },
+    {
+      "name": "brace-expansion",
+      "version": "5.0.12",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/glob/node_modules/brace-expansion"
+    }
+  ],
+  "added": 9,
+  "audited": 676,
+  "change": [
+    {
+      "from": {
+        "name": "@vitest/utils",
+        "version": "4.0.14",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@vitest/utils"
+      },
+      "to": {
+        "name": "@vitest/utils",
+        "version": "4.1.12",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@vitest/utils"
+      }
+    },
+    {
+      "from": {
+        "name": "@vitest/pretty-format",
+        "version": "4.0.14",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@vitest/pretty-format"
+      },
+      "to": {
+        "name": "@vitest/pretty-format",
+        "version": "4.1.12",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@vitest/pretty-format"
+      }
+    },
+    {
+      "from": {
+        "name": "@vitest/expect",
+        "version": "4.0.14",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@vitest/expect"
+      },
+      "to": {
+        "name": "@vitest/expect",
+        "version": "4.1.12",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@vitest/expect"
+      }
+    },
+    {
+      "from": {
+        "name": "@vitest/runner",
+        "version": "4.0.14",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@vitest/runner"
+      },
+      "to": {
+        "name": "@vitest/runner",
+        "version": "4.1.12",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@vitest/runner"
+      }
+    },
+    {
+      "from": {
+        "name": "@vitest/snapshot",
+        "version": "4.0.14",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@vitest/snapshot"
+      },
+      "to": {
+        "name": "@vitest/snapshot",
+        "version": "4.1.12",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@vitest/snapshot"
+      }
+    },
+    {
+      "from": {
+        "name": "@vitest/spy",
+        "version": "4.0.14",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@vitest/spy"
+      },
+      "to": {
+        "name": "@vitest/spy",
+        "version": "4.1.12",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@vitest/spy"
+      }
+    },
+    {
+      "from": {
+        "name": "@vitest/mocker",
+        "version": "4.0.14",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@vitest/mocker"
+      },
+      "to": {
+        "name": "@vitest/mocker",
+        "version": "4.1.12",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@vitest/mocker"
+      }
+    },
+    {
+      "from": {
+        "name": "@types/estree",
+        "version": "1.0.8",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@types/estree"
+      },
+      "to": {
+        "name": "@types/estree",
+        "version": "1.0.10",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@types/estree"
+      }
+    },
+    {
+      "from": {
+        "name": "@standard-schema/spec",
+        "version": "1.0.0",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@standard-schema/spec"
+      },
+      "to": {
+        "name": "@standard-schema/spec",
+        "version": "1.1.0",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@standard-schema/spec"
+      }
+    },
+    {
+      "from": {
+        "name": "@rollup/rollup-linux-x64-gnu",
+        "version": "4.53.2",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@rollup/rollup-linux-x64-gnu"
+      },
+      "to": {
+        "name": "@rollup/rollup-linux-x64-gnu",
+        "version": "4.67.2",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@rollup/rollup-linux-x64-gnu"
+      }
+    },
+    {
+      "from": {
+        "name": "@rollup/pluginutils",
+        "version": "5.3.0",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@rollup/pluginutils"
+      },
+      "to": {
+        "name": "@rollup/pluginutils",
+        "version": "5.5.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@rollup/pluginutils"
+      }
+    },
+    {
+      "from": {
+        "name": "@rollup/plugin-terser",
+        "version": "0.4.4",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@rollup/plugin-terser"
+      },
+      "to": {
+        "name": "@rollup/plugin-terser",
+        "version": "1.0.2",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@rollup/plugin-terser"
+      }
+    },
+    {
+      "from": {
+        "name": "@rollup/plugin-node-resolve",
+        "version": "15.3.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@rollup/plugin-node-resolve"
+      },
+      "to": {
+        "name": "@rollup/plugin-node-resolve",
+        "version": "16.0.3",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@rollup/plugin-node-resolve"
+      }
+    },
+    {
+      "from": {
+        "name": "@isaacs/cliui",
+        "version": "8.0.2",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@isaacs/cliui"
+      },
+      "to": {
+        "name": "@isaacs/cliui",
+        "version": "9.0.0",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@isaacs/cliui"
+      }
+    },
+    {
+      "from": {
+        "name": "@humanfs/core",
+        "version": "0.19.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@humanfs/core"
+      },
+      "to": {
+        "name": "@humanfs/core",
+        "version": "0.19.2",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@humanfs/core"
+      }
+    },
+    {
+      "from": {
+        "name": "@humanfs/node",
+        "version": "0.16.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@humanfs/node"
+      },
+      "to": {
+        "name": "@humanfs/node",
+        "version": "0.16.8",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@humanfs/node"
+      }
+    },
+    {
+      "from": {
+        "name": "@esbuild/linux-x64",
+        "version": "0.25.12",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@esbuild/linux-x64"
+      },
+      "to": {
+        "name": "@esbuild/linux-x64",
+        "version": "0.28.2",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@esbuild/linux-x64"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/types",
+        "version": "7.28.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/types"
+      },
+      "to": {
+        "name": "@babel/types",
+        "version": "7.29.11",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/types"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-unicode-regex",
+        "version": "7.27.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-unicode-regex"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-unicode-regex",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-unicode-regex"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/traverse",
+        "version": "7.28.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/traverse"
+      },
+      "to": {
+        "name": "@babel/traverse",
+        "version": "7.29.12",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/traverse"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/template",
+        "version": "7.28.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/template"
+      },
+      "to": {
+        "name": "@babel/template",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/template"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-unicode-sets-regex",
+        "version": "7.28.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-unicode-sets-regex"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-unicode-sets-regex",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-unicode-sets-regex"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/preset-env",
+        "version": "7.28.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/preset-env"
+      },
+      "to": {
+        "name": "@babel/preset-env",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/preset-env"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-template-literals",
+        "version": "7.27.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-template-literals"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-template-literals",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-template-literals"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-regexp-modifiers",
+        "version": "7.28.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-regexp-modifiers"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-regexp-modifiers",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-regexp-modifiers"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-typeof-symbol",
+        "version": "7.27.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-typeof-symbol"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-typeof-symbol",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-typeof-symbol"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-unicode-property-regex",
+        "version": "7.28.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-unicode-property-regex"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-unicode-property-regex",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-unicode-property-regex"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-unicode-escapes",
+        "version": "7.27.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-unicode-escapes"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-unicode-escapes",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-unicode-escapes"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-spread",
+        "version": "7.28.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-spread"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-spread",
+        "version": "7.29.11",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-spread"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-sticky-regex",
+        "version": "7.27.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-sticky-regex"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-sticky-regex",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-sticky-regex"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-shorthand-properties",
+        "version": "7.27.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-shorthand-properties"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-shorthand-properties",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-shorthand-properties"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-regenerator",
+        "version": "7.28.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-regenerator"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-regenerator",
+        "version": "7.29.8",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-regenerator"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-reserved-words",
+        "version": "7.27.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-reserved-words"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-reserved-words",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-reserved-words"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-property-literals",
+        "version": "7.27.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-property-literals"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-property-literals",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-property-literals"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-numeric-separator",
+        "version": "7.28.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-numeric-separator"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-numeric-separator",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-numeric-separator"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-private-property-in-object",
+        "version": "7.28.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-private-property-in-object"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-private-property-in-object",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-private-property-in-object"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-parameters",
+        "version": "7.27.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-parameters"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-parameters",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-parameters"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-private-methods",
+        "version": "7.28.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-private-methods"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-private-methods",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-private-methods"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-optional-catch-binding",
+        "version": "7.28.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-optional-catch-binding"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-optional-catch-binding",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-optional-catch-binding"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-optional-chaining",
+        "version": "7.28.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-optional-chaining"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-optional-chaining",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-optional-chaining"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-object-rest-spread",
+        "version": "7.28.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-object-rest-spread"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-object-rest-spread",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-object-rest-spread"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-object-super",
+        "version": "7.27.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-object-super"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-object-super",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-object-super"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-new-target",
+        "version": "7.27.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-new-target"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-new-target",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-new-target"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-modules-umd",
+        "version": "7.27.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-modules-umd"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-modules-umd",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-modules-umd"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-named-capturing-groups-regex",
+        "version": "7.27.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-named-capturing-groups-regex"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-named-capturing-groups-regex",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-named-capturing-groups-regex"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-nullish-coalescing-operator",
+        "version": "7.28.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-nullish-coalescing-operator"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-nullish-coalescing-operator",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-nullish-coalescing-operator"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-function-name",
+        "version": "7.27.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-function-name"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-function-name",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-function-name"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-json-strings",
+        "version": "7.28.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-json-strings"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-json-strings",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-json-strings"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-modules-systemjs",
+        "version": "7.28.5",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-modules-systemjs"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-modules-systemjs",
+        "version": "7.29.8",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-modules-systemjs"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-literals",
+        "version": "7.27.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-literals"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-literals",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-literals"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-modules-commonjs",
+        "version": "7.28.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-modules-commonjs"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-modules-commonjs",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-modules-commonjs"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-modules-amd",
+        "version": "7.27.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-modules-amd"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-modules-amd",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-modules-amd"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-member-expression-literals",
+        "version": "7.27.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-member-expression-literals"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-member-expression-literals",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-member-expression-literals"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-logical-assignment-operators",
+        "version": "7.28.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-logical-assignment-operators"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-logical-assignment-operators",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-logical-assignment-operators"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-export-namespace-from",
+        "version": "7.27.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-export-namespace-from"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-export-namespace-from",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-export-namespace-from"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-for-of",
+        "version": "7.27.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-for-of"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-for-of",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-for-of"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-classes",
+        "version": "7.28.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-classes"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-classes",
+        "version": "7.29.11",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-classes"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-explicit-resource-management",
+        "version": "7.28.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-explicit-resource-management"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-explicit-resource-management",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-explicit-resource-management"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-class-properties",
+        "version": "7.28.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-class-properties"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-class-properties",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-class-properties"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-exponentiation-operator",
+        "version": "7.28.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-exponentiation-operator"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-exponentiation-operator",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-exponentiation-operator"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-dynamic-import",
+        "version": "7.27.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-dynamic-import"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-dynamic-import",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-dynamic-import"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-duplicate-keys",
+        "version": "7.27.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-duplicate-keys"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-duplicate-keys",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-duplicate-keys"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-duplicate-named-capturing-groups-regex",
+        "version": "7.28.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-duplicate-named-capturing-groups-regex"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-duplicate-named-capturing-groups-regex",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-duplicate-named-capturing-groups-regex"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-dotall-regex",
+        "version": "7.28.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-dotall-regex"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-dotall-regex",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-dotall-regex"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-class-static-block",
+        "version": "7.28.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-class-static-block"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-class-static-block",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-class-static-block"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-destructuring",
+        "version": "7.28.5",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-destructuring"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-destructuring",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-destructuring"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/generator",
+        "version": "7.28.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/generator"
+      },
+      "to": {
+        "name": "@babel/generator",
+        "version": "7.29.12",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/generator"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-computed-properties",
+        "version": "7.28.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-computed-properties"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-computed-properties",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-computed-properties"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-block-scoping",
+        "version": "7.28.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-block-scoping"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-block-scoping",
+        "version": "7.29.12",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-block-scoping"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-arrow-functions",
+        "version": "7.27.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-arrow-functions"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-arrow-functions",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-arrow-functions"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-async-to-generator",
+        "version": "7.28.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-async-to-generator"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-async-to-generator",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-async-to-generator"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-block-scoped-functions",
+        "version": "7.27.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-block-scoped-functions"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-block-scoped-functions",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-block-scoped-functions"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-transform-async-generator-functions",
+        "version": "7.28.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-async-generator-functions"
+      },
+      "to": {
+        "name": "@babel/plugin-transform-async-generator-functions",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-transform-async-generator-functions"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-bugfix-v8-spread-parameters-in-optional-chaining",
+        "version": "7.27.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-bugfix-v8-spread-parameters-in-optional-chaining"
+      },
+      "to": {
+        "name": "@babel/plugin-bugfix-v8-spread-parameters-in-optional-chaining",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-bugfix-v8-spread-parameters-in-optional-chaining"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-bugfix-v8-static-class-fields-redefine-readonly",
+        "version": "7.28.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-bugfix-v8-static-class-fields-redefine-readonly"
+      },
+      "to": {
+        "name": "@babel/plugin-bugfix-v8-static-class-fields-redefine-readonly",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-bugfix-v8-static-class-fields-redefine-readonly"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-syntax-import-assertions",
+        "version": "7.28.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-syntax-import-assertions"
+      },
+      "to": {
+        "name": "@babel/plugin-syntax-import-assertions",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-syntax-import-assertions"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-syntax-import-attributes",
+        "version": "7.28.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-syntax-import-attributes"
+      },
+      "to": {
+        "name": "@babel/plugin-syntax-import-attributes",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-syntax-import-attributes"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-bugfix-firefox-class-in-computed-class-key",
+        "version": "7.28.5",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-bugfix-firefox-class-in-computed-class-key"
+      },
+      "to": {
+        "name": "@babel/plugin-bugfix-firefox-class-in-computed-class-key",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-bugfix-firefox-class-in-computed-class-key"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/helpers",
+        "version": "7.28.4",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/helpers"
+      },
+      "to": {
+        "name": "@babel/helpers",
+        "version": "7.29.10",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/helpers"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-bugfix-safari-class-field-initializer-scope",
+        "version": "7.27.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-bugfix-safari-class-field-initializer-scope"
+      },
+      "to": {
+        "name": "@babel/plugin-bugfix-safari-class-field-initializer-scope",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-bugfix-safari-class-field-initializer-scope"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/parser",
+        "version": "7.28.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/parser"
+      },
+      "to": {
+        "name": "@babel/parser",
+        "version": "7.29.12",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/parser"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/plugin-bugfix-safari-id-destructuring-collision-in-function-expression",
+        "version": "7.27.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-bugfix-safari-id-destructuring-collision-in-function-expression"
+      },
+      "to": {
+        "name": "@babel/plugin-bugfix-safari-id-destructuring-collision-in-function-expression",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/plugin-bugfix-safari-id-destructuring-collision-in-function-expression"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/helper-wrap-function",
+        "version": "7.28.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/helper-wrap-function"
+      },
+      "to": {
+        "name": "@babel/helper-wrap-function",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/helper-wrap-function"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/helper-validator-option",
+        "version": "7.27.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/helper-validator-option"
+      },
+      "to": {
+        "name": "@babel/helper-validator-option",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/helper-validator-option"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/helper-module-imports",
+        "version": "7.28.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/helper-module-imports"
+      },
+      "to": {
+        "name": "@babel/helper-module-imports",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/helper-module-imports"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/helper-validator-identifier",
+        "version": "7.28.5",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/helper-validator-identifier"
+      },
+      "to": {
+        "name": "@babel/helper-validator-identifier",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/helper-validator-identifier"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/helper-string-parser",
+        "version": "7.27.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/helper-string-parser"
+      },
+      "to": {
+        "name": "@babel/helper-string-parser",
+        "version": "7.29.11",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/helper-string-parser"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/helper-module-transforms",
+        "version": "7.28.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/helper-module-transforms"
+      },
+      "to": {
+        "name": "@babel/helper-module-transforms",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/helper-module-transforms"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/helper-plugin-utils",
+        "version": "7.28.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/helper-plugin-utils"
+      },
+      "to": {
+        "name": "@babel/helper-plugin-utils",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/helper-plugin-utils"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/helper-skip-transparent-expression-wrappers",
+        "version": "7.27.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/helper-skip-transparent-expression-wrappers"
+      },
+      "to": {
+        "name": "@babel/helper-skip-transparent-expression-wrappers",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/helper-skip-transparent-expression-wrappers"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/helper-replace-supers",
+        "version": "7.28.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/helper-replace-supers"
+      },
+      "to": {
+        "name": "@babel/helper-replace-supers",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/helper-replace-supers"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/helper-remap-async-to-generator",
+        "version": "7.27.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/helper-remap-async-to-generator"
+      },
+      "to": {
+        "name": "@babel/helper-remap-async-to-generator",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/helper-remap-async-to-generator"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/helper-optimise-call-expression",
+        "version": "7.27.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/helper-optimise-call-expression"
+      },
+      "to": {
+        "name": "@babel/helper-optimise-call-expression",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/helper-optimise-call-expression"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/helper-member-expression-to-functions",
+        "version": "7.28.5",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/helper-member-expression-to-functions"
+      },
+      "to": {
+        "name": "@babel/helper-member-expression-to-functions",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/helper-member-expression-to-functions"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/helper-create-regexp-features-plugin",
+        "version": "7.28.5",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/helper-create-regexp-features-plugin"
+      },
+      "to": {
+        "name": "@babel/helper-create-regexp-features-plugin",
+        "version": "7.29.10",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/helper-create-regexp-features-plugin"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/helper-define-polyfill-provider",
+        "version": "0.6.5",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/helper-define-polyfill-provider"
+      },
+      "to": {
+        "name": "@babel/helper-define-polyfill-provider",
+        "version": "0.6.8",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/helper-define-polyfill-provider"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/helper-globals",
+        "version": "7.28.0",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/helper-globals"
+      },
+      "to": {
+        "name": "@babel/helper-globals",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/helper-globals"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/helper-compilation-targets",
+        "version": "7.28.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/helper-compilation-targets"
+      },
+      "to": {
+        "name": "@babel/helper-compilation-targets",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/helper-compilation-targets"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/helper-create-class-features-plugin",
+        "version": "7.28.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/helper-create-class-features-plugin"
+      },
+      "to": {
+        "name": "@babel/helper-create-class-features-plugin",
+        "version": "7.29.12",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/helper-create-class-features-plugin"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/code-frame",
+        "version": "7.28.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/code-frame"
+      },
+      "to": {
+        "name": "@babel/code-frame",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/code-frame"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/helper-annotate-as-pure",
+        "version": "7.27.3",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/helper-annotate-as-pure"
+      },
+      "to": {
+        "name": "@babel/helper-annotate-as-pure",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/helper-annotate-as-pure"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/core",
+        "version": "7.28.5",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/core"
+      },
+      "to": {
+        "name": "@babel/core",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/core"
+      }
+    },
+    {
+      "from": {
+        "name": "@babel/compat-data",
+        "version": "7.28.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/compat-data"
+      },
+      "to": {
+        "name": "@babel/compat-data",
+        "version": "7.29.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@babel/compat-data"
+      }
+    },
+    {
+      "from": {
+        "name": "vite-plugin-pwa",
+        "version": "1.2.0",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/vite-plugin-pwa"
+      },
+      "to": {
+        "name": "vite-plugin-pwa",
+        "version": "1.3.0",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/vite-plugin-pwa"
+      }
+    },
+    {
+      "from": {
+        "name": "workbox-window",
+        "version": "7.4.0",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/workbox-window"
+      },
+      "to": {
+        "name": "workbox-window",
+        "version": "7.4.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/workbox-window"
+      }
+    },
+    {
+      "from": {
+        "name": "workbox-sw",
+        "version": "7.4.0",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/workbox-sw"
+      },
+      "to": {
+        "name": "workbox-sw",
+        "version": "7.4.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/workbox-sw"
+      }
+    },
+    {
+      "from": {
+        "name": "workbox-streams",
+        "version": "7.4.0",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/workbox-streams"
+      },
+      "to": {
+        "name": "workbox-streams",
+        "version": "7.4.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/workbox-streams"
+      }
+    },
+    {
+      "from": {
+        "name": "workbox-strategies",
+        "version": "7.4.0",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/workbox-strategies"
+      },
+      "to": {
+        "name": "workbox-strategies",
+        "version": "7.4.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/workbox-strategies"
+      }
+    },
+    {
+      "from": {
+        "name": "workbox-routing",
+        "version": "7.4.0",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/workbox-routing"
+      },
+      "to": {
+        "name": "workbox-routing",
+        "version": "7.4.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/workbox-routing"
+      }
+    },
+    {
+      "from": {
+        "name": "workbox-recipes",
+        "version": "7.4.0",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/workbox-recipes"
+      },
+      "to": {
+        "name": "workbox-recipes",
+        "version": "7.4.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/workbox-recipes"
+      }
+    },
+    {
+      "from": {
+        "name": "workbox-core",
+        "version": "7.4.0",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/workbox-core"
+      },
+      "to": {
+        "name": "workbox-core",
+        "version": "7.4.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/workbox-core"
+      }
+    },
+    {
+      "from": {
+        "name": "workbox-precaching",
+        "version": "7.4.0",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/workbox-precaching"
+      },
+      "to": {
+        "name": "workbox-precaching",
+        "version": "7.4.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/workbox-precaching"
+      }
+    },
+    {
+      "from": {
+        "name": "workbox-range-requests",
+        "version": "7.4.0",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/workbox-range-requests"
+      },
+      "to": {
+        "name": "workbox-range-requests",
+        "version": "7.4.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/workbox-range-requests"
+      }
+    },
+    {
+      "from": {
+        "name": "workbox-navigation-preload",
+        "version": "7.4.0",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/workbox-navigation-preload"
+      },
+      "to": {
+        "name": "workbox-navigation-preload",
+        "version": "7.4.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/workbox-navigation-preload"
+      }
+    },
+    {
+      "from": {
+        "name": "workbox-google-analytics",
+        "version": "7.4.0",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/workbox-google-analytics"
+      },
+      "to": {
+        "name": "workbox-google-analytics",
+        "version": "7.4.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/workbox-google-analytics"
+      }
+    },
+    {
+      "from": {
+        "name": "workbox-expiration",
+        "version": "7.4.0",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/workbox-expiration"
+      },
+      "to": {
+        "name": "workbox-expiration",
+        "version": "7.4.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/workbox-expiration"
+      }
+    },
+    {
+      "from": {
+        "name": "workbox-build",
+        "version": "7.4.0",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/workbox-build"
+      },
+      "to": {
+        "name": "workbox-build",
+        "version": "7.4.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/workbox-build"
+      }
+    },
+    {
+      "from": {
+        "name": "@apideck/better-ajv-errors",
+        "version": "0.3.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/workbox-build/node_modules/@apideck/better-ajv-errors"
+      },
+      "to": {
+        "name": "@apideck/better-ajv-errors",
+        "version": "0.3.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/workbox-build/node_modules/@apideck/better-ajv-errors"
+      }
+    },
+    {
+      "from": {
+        "name": "ajv",
+        "version": "8.17.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/workbox-build/node_modules/ajv"
+      },
+      "to": {
+        "name": "ajv",
+        "version": "8.20.0",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/workbox-build/node_modules/ajv"
+      }
+    },
+    {
+      "from": {
+        "name": "workbox-cacheable-response",
+        "version": "7.4.0",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/workbox-cacheable-response"
+      },
+      "to": {
+        "name": "workbox-cacheable-response",
+        "version": "7.4.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/workbox-cacheable-response"
+      }
+    },
+    {
+      "from": {
+        "name": "workbox-background-sync",
+        "version": "7.4.0",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/workbox-background-sync"
+      },
+      "to": {
+        "name": "workbox-background-sync",
+        "version": "7.4.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/workbox-background-sync"
+      }
+    },
+    {
+      "from": {
+        "name": "workbox-broadcast-update",
+        "version": "7.4.0",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/workbox-broadcast-update"
+      },
+      "to": {
+        "name": "workbox-broadcast-update",
+        "version": "7.4.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/workbox-broadcast-update"
+      }
+    },
+    {
+      "from": {
+        "name": "vite",
+        "version": "7.2.2",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/vite"
+      },
+      "to": {
+        "name": "vite",
+        "version": "7.3.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/vite"
+      }
+    },
+    {
+      "from": {
+        "name": "vitest",
+        "version": "4.0.14",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/vitest"
+      },
+      "to": {
+        "name": "vitest",
+        "version": "4.1.12",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/vitest"
+      }
+    },
+    {
+      "from": {
+        "name": "update-browserslist-db",
+        "version": "1.1.4",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/update-browserslist-db"
+      },
+      "to": {
+        "name": "update-browserslist-db",
+        "version": "1.3.4",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/update-browserslist-db"
+      }
+    },
+    {
+      "from": {
+        "name": "undici",
+        "version": "7.25.0",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/undici"
+      },
+      "to": {
+        "name": "undici",
+        "version": "7.30.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/undici"
+      }
+    },
+    {
+      "from": {
+        "name": "tinyrainbow",
+        "version": "3.0.3",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/tinyrainbow"
+      },
+      "to": {
+        "name": "tinyrainbow",
+        "version": "3.2.0",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/tinyrainbow"
+      }
+    },
+    {
+      "from": {
+        "name": "tinyexec",
+        "version": "0.3.2",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/tinyexec"
+      },
+      "to": {
+        "name": "tinyexec",
+        "version": "1.3.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/tinyexec"
+      }
+    },
+    {
+      "from": {
+        "name": "terser",
+        "version": "5.46.0",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/terser"
+      },
+      "to": {
+        "name": "terser",
+        "version": "5.51.2",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/terser"
+      }
+    },
+    {
+      "from": {
+        "name": "std-env",
+        "version": "3.10.0",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/std-env"
+      },
+      "to": {
+        "name": "std-env",
+        "version": "4.3.0",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/std-env"
+      }
+    },
+    {
+      "from": {
+        "name": "source-map-js",
+        "version": "1.2.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/source-map-js"
+      },
+      "to": {
+        "name": "source-map-js",
+        "version": "1.2.2",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/source-map-js"
+      }
+    },
+    {
+      "from": {
+        "name": "source-map",
+        "version": "0.8.0-beta.0",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/source-map"
+      },
+      "to": {
+        "name": "source-map",
+        "version": "0.8.0",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/source-map"
+      }
+    },
+    {
+      "from": {
+        "name": "smob",
+        "version": "1.5.0",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/smob"
+      },
+      "to": {
+        "name": "smob",
+        "version": "1.6.2",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/smob"
+      }
+    },
+    {
+      "from": {
+        "name": "serialize-javascript",
+        "version": "6.0.2",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/serialize-javascript"
+      },
+      "to": {
+        "name": "serialize-javascript",
+        "version": "7.1.4",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/serialize-javascript"
+      }
+    },
+    {
+      "from": {
+        "name": "rollup",
+        "version": "4.53.2",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/rollup"
+      },
+      "to": {
+        "name": "rollup",
+        "version": "4.67.2",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/rollup"
+      }
+    },
+    {
+      "from": {
+        "name": "resolve",
+        "version": "1.22.11",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/resolve"
+      },
+      "to": {
+        "name": "resolve",
+        "version": "1.22.13",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/resolve"
+      }
+    },
+    {
+      "from": {
+        "name": "regexpu-core",
+        "version": "6.4.0",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/regexpu-core"
+      },
+      "to": {
+        "name": "regexpu-core",
+        "version": "6.5.3",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/regexpu-core"
+      }
+    },
+    {
+      "from": {
+        "name": "regjsparser",
+        "version": "0.13.0",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/regjsparser"
+      },
+      "to": {
+        "name": "regjsparser",
+        "version": "0.13.4",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/regjsparser"
+      }
+    },
+    {
+      "from": {
+        "name": "regenerate-unicode-properties",
+        "version": "10.2.2",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/regenerate-unicode-properties"
+      },
+      "to": {
+        "name": "regenerate-unicode-properties",
+        "version": "10.3.0",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/regenerate-unicode-properties"
+      }
+    },
+    {
+      "from": {
+        "name": "regenerate",
+        "version": "1.4.2",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/regenerate"
+      },
+      "to": {
+        "name": "regenerate",
+        "version": "1.5.0",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/regenerate"
+      }
+    },
+    {
+      "from": {
+        "name": "picomatch",
+        "version": "4.0.3",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/picomatch"
+      },
+      "to": {
+        "name": "picomatch",
+        "version": "4.0.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/picomatch"
+      }
+    },
+    {
+      "from": {
+        "name": "postcss",
+        "version": "8.5.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/postcss"
+      },
+      "to": {
+        "name": "postcss",
+        "version": "8.5.32",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/postcss"
+      }
+    },
+    {
+      "from": {
+        "name": "path-scurry",
+        "version": "2.0.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/path-scurry"
+      },
+      "to": {
+        "name": "path-scurry",
+        "version": "2.0.2",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/path-scurry"
+      }
+    },
+    {
+      "from": {
+        "name": "lru-cache",
+        "version": "11.2.4",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/path-scurry/node_modules/lru-cache"
+      },
+      "to": {
+        "name": "lru-cache",
+        "version": "11.5.3",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/path-scurry/node_modules/lru-cache"
+      }
+    },
+    {
+      "from": {
+        "name": "node-releases",
+        "version": "2.0.27",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/node-releases"
+      },
+      "to": {
+        "name": "node-releases",
+        "version": "2.0.63",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/node-releases"
+      }
+    },
+    {
+      "from": {
+        "name": "nanoid",
+        "version": "3.3.11",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/nanoid"
+      },
+      "to": {
+        "name": "nanoid",
+        "version": "3.3.20",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/nanoid"
+      }
+    },
+    {
+      "from": {
+        "name": "minipass",
+        "version": "7.1.2",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/minipass"
+      },
+      "to": {
+        "name": "minipass",
+        "version": "7.1.3",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/minipass"
+      }
+    },
+    {
+      "from": {
+        "name": "minimatch",
+        "version": "3.1.2",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/minimatch"
+      },
+      "to": {
+        "name": "minimatch",
+        "version": "3.1.5",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/minimatch"
+      }
+    },
+    {
+      "from": {
+        "name": "jsonfile",
+        "version": "6.2.0",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/jsonfile"
+      },
+      "to": {
+        "name": "jsonfile",
+        "version": "6.2.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/jsonfile"
+      }
+    },
+    {
+      "from": {
+        "name": "js-yaml",
+        "version": "4.1.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/js-yaml"
+      },
+      "to": {
+        "name": "js-yaml",
+        "version": "4.3.2",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/js-yaml"
+      }
+    },
+    {
+      "from": {
+        "name": "jackspeak",
+        "version": "4.1.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/jackspeak"
+      },
+      "to": {
+        "name": "jackspeak",
+        "version": "4.2.3",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/jackspeak"
+      }
+    },
+    {
+      "from": {
+        "name": "is-core-module",
+        "version": "2.16.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/is-core-module"
+      },
+      "to": {
+        "name": "is-core-module",
+        "version": "2.17.0",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/is-core-module"
+      }
+    },
+    {
+      "from": {
+        "name": "hasown",
+        "version": "2.0.2",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/hasown"
+      },
+      "to": {
+        "name": "hasown",
+        "version": "2.0.4",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/hasown"
+      }
+    },
+    {
+      "from": {
+        "name": "minimatch",
+        "version": "10.1.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/glob/node_modules/minimatch"
+      },
+      "to": {
+        "name": "minimatch",
+        "version": "10.2.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/glob/node_modules/minimatch"
+      }
+    },
+    {
+      "from": {
+        "name": "flatted",
+        "version": "3.3.3",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/flatted"
+      },
+      "to": {
+        "name": "flatted",
+        "version": "3.4.4",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/flatted"
+      }
+    },
+    {
+      "from": {
+        "name": "filelist",
+        "version": "1.0.4",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/filelist"
+      },
+      "to": {
+        "name": "filelist",
+        "version": "1.0.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/filelist"
+      }
+    },
+    {
+      "from": {
+        "name": "brace-expansion",
+        "version": "2.0.2",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/filelist/node_modules/brace-expansion"
+      },
+      "to": {
+        "name": "brace-expansion",
+        "version": "2.1.7",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/filelist/node_modules/brace-expansion"
+      }
+    },
+    {
+      "from": {
+        "name": "minimatch",
+        "version": "5.1.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/filelist/node_modules/minimatch"
+      },
+      "to": {
+        "name": "minimatch",
+        "version": "5.1.9",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/filelist/node_modules/minimatch"
+      }
+    },
+    {
+      "from": {
+        "name": "fast-uri",
+        "version": "3.1.0",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/fast-uri"
+      },
+      "to": {
+        "name": "fast-uri",
+        "version": "3.1.9",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/fast-uri"
+      }
+    },
+    {
+      "from": {
+        "name": "expect-type",
+        "version": "1.2.2",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/expect-type"
+      },
+      "to": {
+        "name": "expect-type",
+        "version": "1.4.0",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/expect-type"
+      }
+    },
+    {
+      "from": {
+        "name": "electron-to-chromium",
+        "version": "1.5.250",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/electron-to-chromium"
+      },
+      "to": {
+        "name": "electron-to-chromium",
+        "version": "1.5.472",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/electron-to-chromium"
+      }
+    },
+    {
+      "from": {
+        "name": "esbuild",
+        "version": "0.25.12",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/esbuild"
+      },
+      "to": {
+        "name": "esbuild",
+        "version": "0.28.2",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/esbuild"
+      }
+    },
+    {
+      "from": {
+        "name": "es-module-lexer",
+        "version": "1.7.0",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/es-module-lexer"
+      },
+      "to": {
+        "name": "es-module-lexer",
+        "version": "2.3.2",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/es-module-lexer"
+      }
+    },
+    {
+      "from": {
+        "name": "core-js-compat",
+        "version": "3.47.0",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/core-js-compat"
+      },
+      "to": {
+        "name": "core-js-compat",
+        "version": "3.51.0",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/core-js-compat"
+      }
+    },
+    {
+      "from": {
+        "name": "caniuse-lite",
+        "version": "1.0.30001754",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/caniuse-lite"
+      },
+      "to": {
+        "name": "caniuse-lite",
+        "version": "1.0.30001820",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/caniuse-lite"
+      }
+    },
+    {
+      "from": {
+        "name": "chai",
+        "version": "6.2.1",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/chai"
+      },
+      "to": {
+        "name": "chai",
+        "version": "6.3.0",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/chai"
+      }
+    },
+    {
+      "from": {
+        "name": "brace-expansion",
+        "version": "1.1.12",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/brace-expansion"
+      },
+      "to": {
+        "name": "brace-expansion",
+        "version": "1.1.21",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/brace-expansion"
+      }
+    },
+    {
+      "from": {
+        "name": "browserslist",
+        "version": "4.28.0",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/browserslist"
+      },
+      "to": {
+        "name": "browserslist",
+        "version": "4.29.5",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/browserslist"
+      }
+    },
+    {
+      "from": {
+        "name": "babel-plugin-polyfill-corejs2",
+        "version": "0.4.14",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/babel-plugin-polyfill-corejs2"
+      },
+      "to": {
+        "name": "babel-plugin-polyfill-corejs2",
+        "version": "0.4.17",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/babel-plugin-polyfill-corejs2"
+      }
+    },
+    {
+      "from": {
+        "name": "babel-plugin-polyfill-corejs3",
+        "version": "0.13.0",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/babel-plugin-polyfill-corejs3"
+      },
+      "to": {
+        "name": "babel-plugin-polyfill-corejs3",
+        "version": "0.14.2",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/babel-plugin-polyfill-corejs3"
+      }
+    },
+    {
+      "from": {
+        "name": "baseline-browser-mapping",
+        "version": "2.8.28",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/baseline-browser-mapping"
+      },
+      "to": {
+        "name": "baseline-browser-mapping",
+        "version": "2.11.34",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/baseline-browser-mapping"
+      }
+    },
+    {
+      "from": {
+        "name": "babel-plugin-polyfill-regenerator",
+        "version": "0.6.5",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/babel-plugin-polyfill-regenerator"
+      },
+      "to": {
+        "name": "babel-plugin-polyfill-regenerator",
+        "version": "0.6.8",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/babel-plugin-polyfill-regenerator"
+      }
+    },
+    {
+      "from": {
+        "name": "ajv",
+        "version": "6.12.6",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/ajv"
+      },
+      "to": {
+        "name": "ajv",
+        "version": "6.15.0",
+        "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/ajv"
+      }
+    }
+  ],
+  "changed": 173,
+  "funding": 0,
+  "remove": [
+    {
+      "name": "@surma/rollup-plugin-off-main-thread",
+      "version": "2.2.3",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@surma/rollup-plugin-off-main-thread"
+    },
+    {
+      "name": "magic-string",
+      "version": "0.25.9",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@surma/rollup-plugin-off-main-thread/node_modules/magic-string"
+    },
+    {
+      "name": "@rollup/rollup-linux-x64-musl",
+      "version": "4.53.2",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@rollup/rollup-linux-x64-musl"
+    },
+    {
+      "name": "@isaacs/brace-expansion",
+      "version": "5.0.0",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@isaacs/brace-expansion"
+    },
+    {
+      "name": "@isaacs/balanced-match",
+      "version": "4.0.1",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/@isaacs/balanced-match"
+    },
+    {
+      "name": "wrap-ansi",
+      "version": "8.1.0",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/wrap-ansi"
+    },
+    {
+      "name": "ansi-styles",
+      "version": "6.2.3",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/wrap-ansi/node_modules/ansi-styles"
+    },
+    {
+      "name": "wrap-ansi-cjs",
+      "version": "7.0.0",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/wrap-ansi-cjs"
+    },
+    {
+      "name": "emoji-regex",
+      "version": "8.0.0",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/wrap-ansi-cjs/node_modules/emoji-regex"
+    },
+    {
+      "name": "string-width",
+      "version": "4.2.3",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/wrap-ansi-cjs/node_modules/string-width"
+    },
+    {
+      "name": "ansi-regex",
+      "version": "5.0.1",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/wrap-ansi-cjs/node_modules/ansi-regex"
+    },
+    {
+      "name": "strip-ansi",
+      "version": "6.0.1",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/wrap-ansi-cjs/node_modules/strip-ansi"
+    },
+    {
+      "name": "@types/estree",
+      "version": "0.0.39",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/workbox-build/node_modules/@types/estree"
+    },
+    {
+      "name": "@rollup/pluginutils",
+      "version": "3.1.0",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/workbox-build/node_modules/@rollup/pluginutils"
+    },
+    {
+      "name": "@rollup/plugin-replace",
+      "version": "2.4.2",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/workbox-build/node_modules/@rollup/plugin-replace"
+    },
+    {
+      "name": "@rollup/plugin-babel",
+      "version": "5.3.1",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/workbox-build/node_modules/@rollup/plugin-babel"
+    },
+    {
+      "name": "magic-string",
+      "version": "0.25.9",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/workbox-build/node_modules/magic-string"
+    },
+    {
+      "name": "rollup",
+      "version": "2.79.2",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/workbox-build/node_modules/rollup"
+    },
+    {
+      "name": "picomatch",
+      "version": "2.3.1",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/workbox-build/node_modules/picomatch"
+    },
+    {
+      "name": "estree-walker",
+      "version": "1.0.1",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/workbox-build/node_modules/estree-walker"
+    },
+    {
+      "name": "webidl-conversions",
+      "version": "4.0.2",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/webidl-conversions"
+    },
+    {
+      "name": "whatwg-url",
+      "version": "7.1.0",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/whatwg-url"
+    },
+    {
+      "name": "tr46",
+      "version": "1.0.1",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/tr46"
+    },
+    {
+      "name": "string-width-cjs",
+      "version": "4.2.3",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/string-width-cjs"
+    },
+    {
+      "name": "emoji-regex",
+      "version": "8.0.0",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/string-width-cjs/node_modules/emoji-regex"
+    },
+    {
+      "name": "strip-ansi",
+      "version": "6.0.1",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/string-width-cjs/node_modules/strip-ansi"
+    },
+    {
+      "name": "ansi-regex",
+      "version": "5.0.1",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/string-width-cjs/node_modules/ansi-regex"
+    },
+    {
+      "name": "strip-ansi-cjs",
+      "version": "6.0.1",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/strip-ansi-cjs"
+    },
+    {
+      "name": "ansi-regex",
+      "version": "5.0.1",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/strip-ansi-cjs/node_modules/ansi-regex"
+    },
+    {
+      "name": "strip-ansi",
+      "version": "7.1.2",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/strip-ansi"
+    },
+    {
+      "name": "string-width",
+      "version": "5.1.2",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/string-width"
+    },
+    {
+      "name": "sourcemap-codec",
+      "version": "1.4.8",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/sourcemap-codec"
+    },
+    {
+      "name": "randombytes",
+      "version": "2.1.0",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/randombytes"
+    },
+    {
+      "name": "lodash",
+      "version": "4.17.23",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/lodash"
+    },
+    {
+      "name": "lodash.sortby",
+      "version": "4.7.0",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/lodash.sortby"
+    },
+    {
+      "name": "json-schema",
+      "version": "0.4.0",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/json-schema"
+    },
+    {
+      "name": "is-fullwidth-code-point",
+      "version": "3.0.0",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/is-fullwidth-code-point"
+    },
+    {
+      "name": "emoji-regex",
+      "version": "9.2.2",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/emoji-regex"
+    },
+    {
+      "name": "eastasianwidth",
+      "version": "0.2.0",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/eastasianwidth"
+    },
+    {
+      "name": "ansi-regex",
+      "version": "6.2.2",
+      "path": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/node_modules/ansi-regex"
+    }
+  ],
+  "removed": 40,
+  "audit": {
+    "auditReportVersion": 2,
+    "vulnerabilities": {
+      "@babel/core": {
+        "name": "@babel/core",
+        "severity": "low",
+        "isDirect": false,
+        "via": [
+          {
+            "source": 1123528,
+            "name": "@babel/core",
+            "dependency": "@babel/core",
+            "title": "@babel/core: Arbitrary File Read via sourceMappingURL Comment",
+            "url": "https://github.com/advisories/GHSA-4x5r-pxfx-6jf8",
+            "severity": "low",
+            "cwe": [
+              "CWE-22",
+              "CWE-200"
+            ],
+            "cvss": {
+              "score": 3.2,
+              "vectorString": "CVSS:3.1/AV:L/AC:H/PR:N/UI:N/S:C/C:L/I:N/A:N"
+            },
+            "range": "<=7.29.0"
+          }
+        ],
+        "effects": [],
+        "range": "<=7.29.0",
+        "nodes": [
+          ""
+        ],
+        "fixAvailable": true
+      },
+      "@babel/plugin-transform-modules-systemjs": {
+        "name": "@babel/plugin-transform-modules-systemjs",
+        "severity": "high",
+        "isDirect": false,
+        "via": [
+          {
+            "source": 1120258,
+            "name": "@babel/plugin-transform-modules-systemjs",
+            "dependency": "@babel/plugin-transform-modules-systemjs",
+            "title": "@babel/plugin-transform-modules-systemjs generates arbitrary code when compiling malicious input",
+            "url": "https://github.com/advisories/GHSA-fv7c-fp4j-7gwp",
+            "severity": "high",
+            "cwe": [
+              "CWE-94",
+              "CWE-843"
+            ],
+            "cvss": {
+              "score": 8.2,
+              "vectorString": "CVSS:3.1/AV:L/AC:L/PR:L/UI:R/S:C/C:H/I:H/A:H"
+            },
+            "range": ">=7.12.0 <=7.29.3"
+          }
+        ],
+        "effects": [],
+        "range": "7.12.0 - 7.29.0",
+        "nodes": [
+          ""
+        ],
+        "fixAvailable": true
+      },
+      "@humanfs/node": {
+        "name": "@humanfs/node",
+        "severity": "moderate",
+        "isDirect": false,
+        "via": [
+          {
+            "source": 1158499,
+            "name": "@humanfs/node",
+            "dependency": "@humanfs/node",
+            "title": "humanfs: Recursive copy follows symlinked files and copies data from outside the source tree",
+            "url": "https://github.com/advisories/GHSA-p498-v437-472g",
+            "severity": "moderate",
+            "cwe": [
+              "CWE-22"
+            ],
+            "cvss": {
+              "score": 0,
+              "vectorString": null
+            },
+            "range": "<0.16.8"
+          }
+        ],
+        "effects": [],
+        "range": "<0.16.8",
+        "nodes": [
+          ""
+        ],
+        "fixAvailable": true
+      },
+      "@isaacs/brace-expansion": {
+        "name": "@isaacs/brace-expansion",
+        "severity": "high",
+        "isDirect": false,
+        "via": [
+          {
+            "source": 1112954,
+            "name": "@isaacs/brace-expansion",
+            "dependency": "@isaacs/brace-expansion",
+            "title": "@isaacs/brace-expansion has Uncontrolled Resource Consumption",
+            "url": "https://github.com/advisories/GHSA-7h2j-956f-4vf2",
+            "severity": "high",
+            "cwe": [
+              "CWE-1333"
+            ],
+            "cvss": {
+              "score": 0,
+              "vectorString": null
+            },
+            "range": "<=5.0.0"
+          }
+        ],
+        "effects": [],
+        "range": "5.0.0",
+        "nodes": [
+          ""
+        ],
+        "fixAvailable": true
+      },
+      "@rollup/plugin-node-resolve": {
+        "name": "@rollup/plugin-node-resolve",
+        "severity": "low",
+        "isDirect": false,
+        "via": [
+          "deepmerge"
+        ],
+        "effects": [
+          "workbox-build"
+        ],
+        "range": ">=8.0.0",
+        "nodes": [
+          ""
+        ],
+        "fixAvailable": {
+          "name": "vite-plugin-pwa",
+          "version": "1.1.0",
+          "isSemVerMajor": true
+        }
+      },
+      "@rollup/plugin-terser": {
+        "name": "@rollup/plugin-terser",
+        "severity": "moderate",
+        "isDirect": false,
+        "via": [
+          "serialize-javascript"
+        ],
+        "effects": [
+          "workbox-build"
+        ],
+        "range": "0.2.0 - 0.4.4",
+        "nodes": [
+          ""
+        ],
+        "fixAvailable": {
+          "name": "vite-plugin-pwa",
+          "version": "1.1.0",
+          "isSemVerMajor": true
+        }
+      },
+      "@vitest/mocker": {
+        "name": "@vitest/mocker",
+        "severity": "moderate",
+        "isDirect": false,
+        "via": [
+          {
+            "source": 1193684,
+            "name": "@vitest/mocker",
+            "dependency": "@vitest/mocker",
+            "title": "Vitest: Path Traversal / Arbitrary File Read via @vitest/mocker Redirect Mock",
+            "url": "https://github.com/advisories/GHSA-82fw-gwwq-j7x9",
+            "severity": "moderate",
+            "cwe": [
+              "CWE-22"
+            ],
+            "cvss": {
+              "score": 5.9,
+              "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:N/A:N"
+            },
+            "range": ">=2.1.0 <4.1.11"
+          },
+          {
+            "source": 1242767,
+            "name": "@vitest/mocker",
+            "dependency": "@vitest/mocker",
+            "title": "Vitest: Code injection via unauthenticated manual mock registration",
+            "url": "https://github.com/advisories/GHSA-qxg6-89mg-rqv8",
+            "severity": "moderate",
+            "cwe": [
+              "CWE-94",
+              "CWE-116",
+              "CWE-306"
+            ],
+            "cvss": {
+              "score": 4.7,
+              "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:C/C:L/I:L/A:N"
+            },
+            "range": ">=2.1.0-beta.7 <4.1.12"
+          }
+        ],
+        "effects": [
+          "vitest"
+        ],
+        "range": "<=4.1.11",
+        "nodes": [
+          ""
+        ],
+        "fixAvailable": true
+      },
+      "ajv": {
+        "name": "ajv",
+        "severity": "moderate",
+        "isDirect": false,
+        "via": [
+          {
+            "source": 1113714,
+            "name": "ajv",
+            "dependency": "ajv",
+            "title": "ajv has ReDoS when using `$data` option",
+            "url": "https://github.com/advisories/GHSA-2g4f-4pwh-qvx6",
+            "severity": "moderate",
+            "cwe": [
+              "CWE-400",
+              "CWE-1333"
+            ],
+            "cvss": {
+              "score": 0,
+              "vectorString": null
+            },
+            "range": "<6.14.0"
+          },
+          {
+            "source": 1113715,
+            "name": "ajv",
+            "dependency": "ajv",
+            "title": "ajv has ReDoS when using `$data` option",
+            "url": "https://github.com/advisories/GHSA-2g4f-4pwh-qvx6",
+            "severity": "moderate",
+            "cwe": [
+              "CWE-400",
+              "CWE-1333"
+            ],
+            "cvss": {
+              "score": 0,
+              "vectorString": null
+            },
+            "range": ">=7.0.0-alpha.0 <8.18.0"
+          }
+        ],
+        "effects": [],
+        "range": "<6.14.0 || >=7.0.0-alpha.0 <8.18.0",
+        "nodes": [
+          "",
+          ""
+        ],
+        "fixAvailable": true
+      },
+      "baseline-browser-mapping": {
+        "name": "baseline-browser-mapping",
+        "severity": "moderate",
+        "isDirect": false,
+        "via": [
+          {
+            "source": 1193686,
+            "name": "baseline-browser-mapping",
+            "dependency": "baseline-browser-mapping",
+            "title": "baseline-browser-mapping process termination on invalid input causes denial of service",
+            "url": "https://github.com/advisories/GHSA-w5vr-8v7q-w6rv",
+            "severity": "moderate",
+            "cwe": [
+              "CWE-705"
+            ],
+            "cvss": {
+              "score": 0,
+              "vectorString": null
+            },
+            "range": ">=2.0.0 <2.11.0"
+          }
+        ],
+        "effects": [],
+        "range": ">=2.0.0 <2.11.0",
+        "nodes": [
+          ""
+        ],
+        "fixAvailable": true
+      },
+      "brace-expansion": {
+        "name": "brace-expansion",
+        "severity": "high",
+        "isDirect": false,
+        "via": [
+          {
+            "source": 1115540,
+            "name": "brace-expansion",
+            "dependency": "brace-expansion",
+            "title": "brace-expansion: Zero-step sequence causes process hang and memory exhaustion",
+            "url": "https://github.com/advisories/GHSA-f886-m6hf-6m8v",
+            "severity": "moderate",
+            "cwe": [
+              "CWE-400"
+            ],
+            "cvss": {
+              "score": 6.5,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:N/I:N/A:H"
+            },
+            "range": "<1.1.13"
+          },
+          {
+            "source": 1115541,
+            "name": "brace-expansion",
+            "dependency": "brace-expansion",
+            "title": "brace-expansion: Zero-step sequence causes process hang and memory exhaustion",
+            "url": "https://github.com/advisories/GHSA-f886-m6hf-6m8v",
+            "severity": "moderate",
+            "cwe": [
+              "CWE-400"
+            ],
+            "cvss": {
+              "score": 6.5,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:U/C:N/I:N/A:H"
+            },
+            "range": ">=2.0.0 <2.0.3"
+          },
+          {
+            "source": 1123896,
+            "name": "brace-expansion",
+            "dependency": "brace-expansion",
+            "title": "brace-expansion: DoS via exponential-time expansion of consecutive non-expanding {} groups",
+            "url": "https://github.com/advisories/GHSA-3jxr-9vmj-r5cp",
+            "severity": "high",
+            "cwe": [
+              "CWE-400",
+              "CWE-407"
+            ],
+            "cvss": {
+              "score": 5.3,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L"
+            },
+            "range": ">=2.0.0 <2.1.2"
+          },
+          {
+            "source": 1123897,
+            "name": "brace-expansion",
+            "dependency": "brace-expansion",
+            "title": "brace-expansion: DoS via exponential-time expansion of consecutive non-expanding {} groups",
+            "url": "https://github.com/advisories/GHSA-3jxr-9vmj-r5cp",
+            "severity": "high",
+            "cwe": [
+              "CWE-400",
+              "CWE-407"
+            ],
+            "cvss": {
+              "score": 5.3,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L"
+            },
+            "range": "<1.1.16"
+          },
+          {
+            "source": 1130588,
+            "name": "brace-expansion",
+            "dependency": "brace-expansion",
+            "title": "brace-expansion: DoS via unbounded expansion length causing an out-of-memory process crash",
+            "url": "https://github.com/advisories/GHSA-mh99-v99m-4gvg",
+            "severity": "high",
+            "cwe": [
+              "CWE-400",
+              "CWE-770"
+            ],
+            "cvss": {
+              "score": 7.5,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+            },
+            "range": "<1.1.17"
+          },
+          {
+            "source": 1130589,
+            "name": "brace-expansion",
+            "dependency": "brace-expansion",
+            "title": "brace-expansion: DoS via unbounded expansion length causing an out-of-memory process crash",
+            "url": "https://github.com/advisories/GHSA-mh99-v99m-4gvg",
+            "severity": "high",
+            "cwe": [
+              "CWE-400",
+              "CWE-770"
+            ],
+            "cvss": {
+              "score": 7.5,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+            },
+            "range": ">=2.0.0 <2.1.3"
+          },
+          {
+            "source": 1130736,
+            "name": "brace-expansion",
+            "dependency": "brace-expansion",
+            "title": "brace-expansion: DoS via unbounded intermediate arrays, bypassing the CVE-2026-14257 mitigation",
+            "url": "https://github.com/advisories/GHSA-rgw5-rvv9-x895",
+            "severity": "high",
+            "cwe": [
+              "CWE-400",
+              "CWE-770"
+            ],
+            "cvss": {
+              "score": 7.5,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+            },
+            "range": ">=2.0.0 <2.1.4"
+          },
+          {
+            "source": 1130737,
+            "name": "brace-expansion",
+            "dependency": "brace-expansion",
+            "title": "brace-expansion: DoS via unbounded intermediate arrays, bypassing the CVE-2026-14257 mitigation",
+            "url": "https://github.com/advisories/GHSA-rgw5-rvv9-x895",
+            "severity": "high",
+            "cwe": [
+              "CWE-400",
+              "CWE-770"
+            ],
+            "cvss": {
+              "score": 7.5,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+            },
+            "range": "<1.1.18"
+          },
+          {
+            "source": 1240100,
+            "name": "brace-expansion",
+            "dependency": "brace-expansion",
+            "title": "brace-expansion: Quadratic-time expansion of the `{a},b}` rewrite causes CPU denial of service",
+            "url": "https://github.com/advisories/GHSA-q2hr-2g5m-vwhr",
+            "severity": "moderate",
+            "cwe": [
+              "CWE-400",
+              "CWE-407"
+            ],
+            "cvss": {
+              "score": 5.3,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L"
+            },
+            "range": "<1.1.21"
+          },
+          {
+            "source": 1240101,
+            "name": "brace-expansion",
+            "dependency": "brace-expansion",
+            "title": "brace-expansion: Quadratic-time expansion of the `{a},b}` rewrite causes CPU denial of service",
+            "url": "https://github.com/advisories/GHSA-q2hr-2g5m-vwhr",
+            "severity": "moderate",
+            "cwe": [
+              "CWE-400",
+              "CWE-407"
+            ],
+            "cvss": {
+              "score": 5.3,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L"
+            },
+            "range": ">=2.0.0 <2.1.7"
+          },
+          {
+            "source": 1240104,
+            "name": "brace-expansion",
+            "dependency": "brace-expansion",
+            "title": "brace-expansion: DoS via uncontrolled recursion on nested brace groups causing stack exhaustion",
+            "url": "https://github.com/advisories/GHSA-qhr7-859c-m2p7",
+            "severity": "high",
+            "cwe": [
+              "CWE-400",
+              "CWE-674"
+            ],
+            "cvss": {
+              "score": 7.5,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+            },
+            "range": "<1.1.20"
+          },
+          {
+            "source": 1240105,
+            "name": "brace-expansion",
+            "dependency": "brace-expansion",
+            "title": "brace-expansion: DoS via uncontrolled recursion on nested brace groups causing stack exhaustion",
+            "url": "https://github.com/advisories/GHSA-qhr7-859c-m2p7",
+            "severity": "high",
+            "cwe": [
+              "CWE-400",
+              "CWE-674"
+            ],
+            "cvss": {
+              "score": 7.5,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+            },
+            "range": ">=2.0.0 <2.1.6"
+          },
+          {
+            "source": 1240108,
+            "name": "brace-expansion",
+            "dependency": "brace-expansion",
+            "title": "brace-expansion: DoS via uncontrolled recursion in parseCommaParts causing stack exhaustion",
+            "url": "https://github.com/advisories/GHSA-6j4f-fj2g-mc7p",
+            "severity": "high",
+            "cwe": [
+              "CWE-400",
+              "CWE-674"
+            ],
+            "cvss": {
+              "score": 7.5,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+            },
+            "range": "<1.1.19"
+          },
+          {
+            "source": 1240109,
+            "name": "brace-expansion",
+            "dependency": "brace-expansion",
+            "title": "brace-expansion: DoS via uncontrolled recursion in parseCommaParts causing stack exhaustion",
+            "url": "https://github.com/advisories/GHSA-6j4f-fj2g-mc7p",
+            "severity": "high",
+            "cwe": [
+              "CWE-400",
+              "CWE-674"
+            ],
+            "cvss": {
+              "score": 7.5,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+            },
+            "range": ">=2.0.0 <2.1.5"
+          }
+        ],
+        "effects": [],
+        "range": "<=1.1.20 || 2.0.0 - 2.1.6",
+        "nodes": [
+          "",
+          ""
+        ],
+        "fixAvailable": true
+      },
+      "browserslist": {
+        "name": "browserslist",
+        "severity": "high",
+        "isDirect": false,
+        "via": [
+          {
+            "source": 1153171,
+            "name": "browserslist",
+            "dependency": "browserslist",
+            "title": "Browserslist: Unbounded memory growth (no cache eviction) via distinct query results, leading to eventual OOM",
+            "url": "https://github.com/advisories/GHSA-c83g-rgw3-j3cx",
+            "severity": "high",
+            "cwe": [
+              "CWE-770"
+            ],
+            "cvss": {
+              "score": 7.5,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+            },
+            "range": "<=4.28.6"
+          },
+          {
+            "source": 1153172,
+            "name": "browserslist",
+            "dependency": "browserslist",
+            "title": "Browserslist: Uncaught crash / prototype write via untrusted browserslist-stats.json custom stats (normalizeStats)",
+            "url": "https://github.com/advisories/GHSA-73wf-gq98-2v4g",
+            "severity": "high",
+            "cwe": [
+              "CWE-248",
+              "CWE-1321"
+            ],
+            "cvss": {
+              "score": 7.5,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+            },
+            "range": "<=4.28.6"
+          }
+        ],
+        "effects": [],
+        "range": "<=4.28.6",
+        "nodes": [
+          ""
+        ],
+        "fixAvailable": true
+      },
+      "deepmerge": {
+        "name": "deepmerge",
+        "severity": "low",
+        "isDirect": false,
+        "via": [
+          {
+            "source": 1243505,
+            "name": "deepmerge",
+            "dependency": "deepmerge",
+            "title": "deepmerge mergeObject() allows prototype poisoning of returned objects",
+            "url": "https://github.com/advisories/GHSA-gcqx-w48m-w2h4",
+            "severity": "low",
+            "cwe": [
+              "CWE-1321"
+            ],
+            "cvss": {
+              "score": 5.3,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:L/A:N"
+            },
+            "range": ">=4.2.0 <=4.3.1"
+          }
+        ],
+        "effects": [
+          "@rollup/plugin-node-resolve"
+        ],
+        "range": ">=4.2.0",
+        "nodes": [
+          ""
+        ],
+        "fixAvailable": {
+          "name": "vite-plugin-pwa",
+          "version": "1.1.0",
+          "isSemVerMajor": true
+        }
+      },
+      "fast-uri": {
+        "name": "fast-uri",
+        "severity": "high",
+        "isDirect": false,
+        "via": [
+          {
+            "source": 1124064,
+            "name": "fast-uri",
+            "dependency": "fast-uri",
+            "title": "fast-uri vulnerable to host confusion via literal backslash authority delimiter",
+            "url": "https://github.com/advisories/GHSA-v2hh-gcrm-f6hx",
+            "severity": "high",
+            "cwe": [
+              "CWE-436"
+            ],
+            "cvss": {
+              "score": 7.5,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:H/A:N"
+            },
+            "range": ">=3.0.0 <=3.1.3"
+          },
+          {
+            "source": 1130720,
+            "name": "fast-uri",
+            "dependency": "fast-uri",
+            "title": "fast-uri vulnerable to host confusion via backslash authority introducer",
+            "url": "https://github.com/advisories/GHSA-7p8r-x3mc-p8w7",
+            "severity": "high",
+            "cwe": [
+              "CWE-436"
+            ],
+            "cvss": {
+              "score": 7.5,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:H/A:N"
+            },
+            "range": ">=3.0.0 <3.1.5"
+          },
+          {
+            "source": 1145559,
+            "name": "fast-uri",
+            "dependency": "fast-uri",
+            "title": "fast-uri vulnerable to path traversal via percent-encoded dot segments",
+            "url": "https://github.com/advisories/GHSA-q3j6-qgpj-74h6",
+            "severity": "high",
+            "cwe": [
+              "CWE-22"
+            ],
+            "cvss": {
+              "score": 7.5,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:H/A:N"
+            },
+            "range": ">=3.0.0 <=3.1.0"
+          },
+          {
+            "source": 1153168,
+            "name": "fast-uri",
+            "dependency": "fast-uri",
+            "title": "fast-uri vulnerable to host confusion via percent-encoded authority delimiters",
+            "url": "https://github.com/advisories/GHSA-v39h-62p7-jpjc",
+            "severity": "high",
+            "cwe": [
+              "CWE-140",
+              "CWE-436"
+            ],
+            "cvss": {
+              "score": 7.5,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:H/A:N"
+            },
+            "range": ">=3.0.0 <=3.1.1"
+          },
+          {
+            "source": 1158524,
+            "name": "fast-uri",
+            "dependency": "fast-uri",
+            "title": "fast-uri vulnerable to server-side request forgery via malformed IPv6 normalization",
+            "url": "https://github.com/advisories/GHSA-f65p-4m7j-42xc",
+            "severity": "high",
+            "cwe": [
+              "CWE-20",
+              "CWE-918"
+            ],
+            "cvss": {
+              "score": 7.5,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:H/A:N"
+            },
+            "range": ">=3.0.0 <3.1.6"
+          },
+          {
+            "source": 1158530,
+            "name": "fast-uri",
+            "dependency": "fast-uri",
+            "title": "fast-uri vulnerable to host confusion via percent-encoded scheme normalization",
+            "url": "https://github.com/advisories/GHSA-jqff-g426-hqxp",
+            "severity": "high",
+            "cwe": [
+              "CWE-177"
+            ],
+            "cvss": {
+              "score": 7.5,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:H/A:N"
+            },
+            "range": ">=3.0.0 <3.1.6"
+          },
+          {
+            "source": 1204921,
+            "name": "fast-uri",
+            "dependency": "fast-uri",
+            "title": "fast-uri vulnerable to host confusion via failed IDN canonicalization",
+            "url": "https://github.com/advisories/GHSA-4c8g-83qw-93j6",
+            "severity": "high",
+            "cwe": [
+              "CWE-436",
+              "CWE-551"
+            ],
+            "cvss": {
+              "score": 7.5,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:H/A:N"
+            },
+            "range": ">=3.0.0 <3.1.3"
+          },
+          {
+            "source": 1239943,
+            "name": "fast-uri",
+            "dependency": "fast-uri",
+            "title": "fast-uri vulnerable to authority injection via an unvalidated port in serialize",
+            "url": "https://github.com/advisories/GHSA-qw65-cvwx-89v3",
+            "severity": "high",
+            "cwe": [
+              "CWE-116"
+            ],
+            "cvss": {
+              "score": 7.5,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:H/A:N"
+            },
+            "range": ">=3.0.0 <3.1.7"
+          },
+          {
+            "source": 1240091,
+            "name": "fast-uri",
+            "dependency": "fast-uri",
+            "title": "fast-uri vulnerable to inconsistent host case normalization via percent-encoded octets",
+            "url": "https://github.com/advisories/GHSA-hrr3-gc8f-f4qj",
+            "severity": "moderate",
+            "cwe": [
+              "CWE-178"
+            ],
+            "cvss": {
+              "score": 4.8,
+              "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:L/A:N"
+            },
+            "range": ">=3.0.0 <3.1.8"
+          },
+          {
+            "source": 1243098,
+            "name": "fast-uri",
+            "dependency": "fast-uri",
+            "title": "fast-uri vulnerable to URI scheme spoofing via percent-encoded scheme decoding",
+            "url": "https://github.com/advisories/GHSA-w74x-v6f9-j3xg",
+            "severity": "moderate",
+            "cwe": [
+              "CWE-172",
+              "CWE-180"
+            ],
+            "cvss": {
+              "score": 6.1,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N"
+            },
+            "range": ">=3.0.0 <3.1.9"
+          },
+          {
+            "source": 1243101,
+            "name": "fast-uri",
+            "dependency": "fast-uri",
+            "title": "fast-uri vulnerable to improper path equivalence in relative reference normalization",
+            "url": "https://github.com/advisories/GHSA-xhq7-xmqj-769h",
+            "severity": "low",
+            "cwe": [
+              "CWE-41"
+            ],
+            "cvss": {
+              "score": 3.7,
+              "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:L/A:N"
+            },
+            "range": ">=3.0.0 <3.1.9"
+          },
+          {
+            "source": 1243107,
+            "name": "fast-uri",
+            "dependency": "fast-uri",
+            "title": "fast-uri vulnerable to scheme injection via an unescaped first-segment colon in suffix references",
+            "url": "https://github.com/advisories/GHSA-333x-w4r6-6crp",
+            "severity": "low",
+            "cwe": [
+              "CWE-41",
+              "CWE-116"
+            ],
+            "cvss": {
+              "score": 3.7,
+              "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:L/A:N"
+            },
+            "range": ">=3.0.0 <3.1.9"
+          }
+        ],
+        "effects": [],
+        "range": "3.0.0 - 3.1.8",
+        "nodes": [
+          ""
+        ],
+        "fixAvailable": true
+      },
+      "flatted": {
+        "name": "flatted",
+        "severity": "high",
+        "isDirect": false,
+        "via": [
+          {
+            "source": 1114526,
+            "name": "flatted",
+            "dependency": "flatted",
+            "title": "flatted vulnerable to unbounded recursion DoS in parse() revive phase",
+            "url": "https://github.com/advisories/GHSA-25h7-pfq9-p65f",
+            "severity": "high",
+            "cwe": [
+              "CWE-674"
+            ],
+            "cvss": {
+              "score": 7.5,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+            },
+            "range": "<3.4.0"
+          },
+          {
+            "source": 1241196,
+            "name": "flatted",
+            "dependency": "flatted",
+            "title": "Prototype Pollution via parse() in NodeJS flatted",
+            "url": "https://github.com/advisories/GHSA-rf6f-7fwh-wjgh",
+            "severity": "high",
+            "cwe": [
+              "CWE-915",
+              "CWE-1321"
+            ],
+            "cvss": {
+              "score": 0,
+              "vectorString": null
+            },
+            "range": "<=3.4.1"
+          }
+        ],
+        "effects": [],
+        "range": "<=3.4.1",
+        "nodes": [
+          ""
+        ],
+        "fixAvailable": true
+      },
+      "glob": {
+        "name": "glob",
+        "severity": "moderate",
+        "isDirect": false,
+        "via": [
+          {
+            "source": 1244013,
+            "name": "glob",
+            "dependency": "glob",
+            "title": "Glob: AbortSignal cancellation bypass allows post-timeout filesystem traversal",
+            "url": "https://github.com/advisories/GHSA-3g3m-2fjr-6pw4",
+            "severity": "moderate",
+            "cwe": [
+              "CWE-400"
+            ],
+            "cvss": {
+              "score": 0,
+              "vectorString": null
+            },
+            "range": ">=9.0.0 <=14.0.1"
+          }
+        ],
+        "effects": [
+          "workbox-build"
+        ],
+        "range": "9.0.0 - 14.0.1",
+        "nodes": [
+          ""
+        ],
+        "fixAvailable": {
+          "name": "vite-plugin-pwa",
+          "version": "1.1.0",
+          "isSemVerMajor": true
+        }
+      },
+      "js-yaml": {
+        "name": "js-yaml",
+        "severity": "high",
+        "isDirect": false,
+        "via": [
+          {
+            "source": 1121860,
+            "name": "js-yaml",
+            "dependency": "js-yaml",
+            "title": "JS-YAML: Quadratic-complexity DoS in merge key handling via repeated aliases",
+            "url": "https://github.com/advisories/GHSA-h67p-54hq-rp68",
+            "severity": "moderate",
+            "cwe": [
+              "CWE-407"
+            ],
+            "cvss": {
+              "score": 5.3,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:L"
+            },
+            "range": ">=4.0.0 <=4.1.1"
+          },
+          {
+            "source": 1123911,
+            "name": "js-yaml",
+            "dependency": "js-yaml",
+            "title": "js-yaml: YAML merge-key chains can force quadratic CPU consumption",
+            "url": "https://github.com/advisories/GHSA-52cp-r559-cp3m",
+            "severity": "high",
+            "cwe": [
+              "CWE-400",
+              "CWE-407"
+            ],
+            "cvss": {
+              "score": 7.5,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+            },
+            "range": ">=4.0.0 <4.3.0"
+          },
+          {
+            "source": 1138115,
+            "name": "js-yaml",
+            "dependency": "js-yaml",
+            "title": "JS-YAML: Quadratic CPU consumption in !!omap resolution (3.x and 4.x) — CVE-2026-59870 fix not backported",
+            "url": "https://github.com/advisories/GHSA-5p4m-2wfm-xmqj",
+            "severity": "high",
+            "cwe": [
+              "CWE-407"
+            ],
+            "cvss": {
+              "score": 7.5,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+            },
+            "range": ">=4.0.0 <4.3.1"
+          },
+          {
+            "source": 1193727,
+            "name": "js-yaml",
+            "dependency": "js-yaml",
+            "title": "js-yaml: maxTotalMergeKeys does not limit CPU use for empty merge sources",
+            "url": "https://github.com/advisories/GHSA-2883-xcg3-v3hh",
+            "severity": "high",
+            "cwe": [
+              "CWE-400",
+              "CWE-407"
+            ],
+            "cvss": {
+              "score": 7.5,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+            },
+            "range": ">=4.0.0 <4.3.2"
+          }
+        ],
+        "effects": [],
+        "range": "4.0.0 - 4.3.1",
+        "nodes": [
+          ""
+        ],
+        "fixAvailable": true
+      },
+      "lodash": {
+        "name": "lodash",
+        "severity": "high",
+        "isDirect": false,
+        "via": [
+          {
+            "source": 1115806,
+            "name": "lodash",
+            "dependency": "lodash",
+            "title": "lodash vulnerable to Code Injection via `_.template` imports key names",
+            "url": "https://github.com/advisories/GHSA-r5fr-rjxr-66jc",
+            "severity": "high",
+            "cwe": [
+              "CWE-94"
+            ],
+            "cvss": {
+              "score": 8.1,
+              "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H"
+            },
+            "range": ">=4.0.0 <=4.17.23"
+          },
+          {
+            "source": 1115810,
+            "name": "lodash",
+            "dependency": "lodash",
+            "title": "lodash vulnerable to Prototype Pollution via array path bypass in `_.unset` and `_.omit`",
+            "url": "https://github.com/advisories/GHSA-f23m-r3pf-42rh",
+            "severity": "moderate",
+            "cwe": [
+              "CWE-1321"
+            ],
+            "cvss": {
+              "score": 6.5,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:L/A:L"
+            },
+            "range": "<=4.17.23"
+          }
+        ],
+        "effects": [],
+        "range": "<=4.17.23",
+        "nodes": [
+          ""
+        ],
+        "fixAvailable": true
+      },
+      "minimatch": {
+        "name": "minimatch",
+        "severity": "high",
+        "isDirect": false,
+        "via": [
+          {
+            "source": 1113459,
+            "name": "minimatch",
+            "dependency": "minimatch",
+            "title": "minimatch has a ReDoS via repeated wildcards with non-matching literal in pattern",
+            "url": "https://github.com/advisories/GHSA-3ppc-4f35-3m26",
+            "severity": "high",
+            "cwe": [
+              "CWE-1333"
+            ],
+            "cvss": {
+              "score": 0,
+              "vectorString": null
+            },
+            "range": "<3.1.3"
+          },
+          {
+            "source": 1113461,
+            "name": "minimatch",
+            "dependency": "minimatch",
+            "title": "minimatch has a ReDoS via repeated wildcards with non-matching literal in pattern",
+            "url": "https://github.com/advisories/GHSA-3ppc-4f35-3m26",
+            "severity": "high",
+            "cwe": [
+              "CWE-1333"
+            ],
+            "cvss": {
+              "score": 0,
+              "vectorString": null
+            },
+            "range": ">=5.0.0 <5.1.7"
+          },
+          {
+            "source": 1113466,
+            "name": "minimatch",
+            "dependency": "minimatch",
+            "title": "minimatch has a ReDoS via repeated wildcards with non-matching literal in pattern",
+            "url": "https://github.com/advisories/GHSA-3ppc-4f35-3m26",
+            "severity": "high",
+            "cwe": [
+              "CWE-1333"
+            ],
+            "cvss": {
+              "score": 0,
+              "vectorString": null
+            },
+            "range": ">=10.0.0 <10.2.1"
+          },
+          {
+            "source": 1113538,
+            "name": "minimatch",
+            "dependency": "minimatch",
+            "title": "minimatch has ReDoS: matchOne() combinatorial backtracking via multiple non-adjacent GLOBSTAR segments",
+            "url": "https://github.com/advisories/GHSA-7r86-cg39-jmmj",
+            "severity": "high",
+            "cwe": [
+              "CWE-407"
+            ],
+            "cvss": {
+              "score": 7.5,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+            },
+            "range": "<3.1.3"
+          },
+          {
+            "source": 1113540,
+            "name": "minimatch",
+            "dependency": "minimatch",
+            "title": "minimatch has ReDoS: matchOne() combinatorial backtracking via multiple non-adjacent GLOBSTAR segments",
+            "url": "https://github.com/advisories/GHSA-7r86-cg39-jmmj",
+            "severity": "high",
+            "cwe": [
+              "CWE-407"
+            ],
+            "cvss": {
+              "score": 7.5,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+            },
+            "range": ">=5.0.0 <5.1.8"
+          },
+          {
+            "source": 1113545,
+            "name": "minimatch",
+            "dependency": "minimatch",
+            "title": "minimatch has ReDoS: matchOne() combinatorial backtracking via multiple non-adjacent GLOBSTAR segments",
+            "url": "https://github.com/advisories/GHSA-7r86-cg39-jmmj",
+            "severity": "high",
+            "cwe": [
+              "CWE-407"
+            ],
+            "cvss": {
+              "score": 7.5,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+            },
+            "range": ">=10.0.0 <10.2.3"
+          },
+          {
+            "source": 1113546,
+            "name": "minimatch",
+            "dependency": "minimatch",
+            "title": "minimatch ReDoS: nested *() extglobs generate catastrophically backtracking regular expressions",
+            "url": "https://github.com/advisories/GHSA-23c5-xmqv-rm74",
+            "severity": "high",
+            "cwe": [
+              "CWE-1333"
+            ],
+            "cvss": {
+              "score": 7.5,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+            },
+            "range": "<3.1.4"
+          },
+          {
+            "source": 1113548,
+            "name": "minimatch",
+            "dependency": "minimatch",
+            "title": "minimatch ReDoS: nested *() extglobs generate catastrophically backtracking regular expressions",
+            "url": "https://github.com/advisories/GHSA-23c5-xmqv-rm74",
+            "severity": "high",
+            "cwe": [
+              "CWE-1333"
+            ],
+            "cvss": {
+              "score": 7.5,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+            },
+            "range": ">=5.0.0 <5.1.8"
+          },
+          {
+            "source": 1113553,
+            "name": "minimatch",
+            "dependency": "minimatch",
+            "title": "minimatch ReDoS: nested *() extglobs generate catastrophically backtracking regular expressions",
+            "url": "https://github.com/advisories/GHSA-23c5-xmqv-rm74",
+            "severity": "high",
+            "cwe": [
+              "CWE-1333"
+            ],
+            "cvss": {
+              "score": 7.5,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+            },
+            "range": ">=10.0.0 <10.2.3"
+          },
+          {
+            "source": 1244012,
+            "name": "minimatch",
+            "dependency": "minimatch",
+            "title": "minimatch has potential denial of service via globparts amplification",
+            "url": "https://github.com/advisories/GHSA-g3hv-75wg-m249",
+            "severity": "moderate",
+            "cwe": [
+              "CWE-405"
+            ],
+            "cvss": {
+              "score": 0,
+              "vectorString": null
+            },
+            "range": "<11.0.1"
+          }
+        ],
+        "effects": [],
+        "range": "<=11.0.0",
+        "nodes": [
+          "",
+          "",
+          "",
+          "node_modules/minimatch"
+        ],
+        "fixAvailable": true
+      },
+      "nanoid": {
+        "name": "nanoid",
+        "severity": "high",
+        "isDirect": false,
+        "via": [
+          {
+            "source": 1138811,
+            "name": "nanoid",
+            "dependency": "nanoid",
+            "title": "nanoid: non-secure generators can loop indefinitely with negative size",
+            "url": "https://github.com/advisories/GHSA-28wg-ghj8-5hjv",
+            "severity": "high",
+            "cwe": [
+              "CWE-835"
+            ],
+            "cvss": {
+              "score": 5.9,
+              "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:N/A:H"
+            },
+            "range": "<3.3.16"
+          },
+          {
+            "source": 1139427,
+            "name": "nanoid",
+            "dependency": "nanoid",
+            "title": "nanoid: custom generators can loop indefinitely when size is zero",
+            "url": "https://github.com/advisories/GHSA-2v37-7h3g-55p8",
+            "severity": "high",
+            "cwe": [
+              "CWE-835"
+            ],
+            "cvss": {
+              "score": 5.9,
+              "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:N/A:H"
+            },
+            "range": "<3.3.18"
+          },
+          {
+            "source": 1153189,
+            "name": "nanoid",
+            "dependency": "nanoid",
+            "title": "nanoid: Integer Overflow or Wraparound",
+            "url": "https://github.com/advisories/GHSA-xwg4-73v4-xw9w",
+            "severity": "high",
+            "cwe": [
+              "CWE-190"
+            ],
+            "cvss": {
+              "score": 7.4,
+              "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N"
+            },
+            "range": "<3.3.12"
+          }
+        ],
+        "effects": [],
+        "range": "<=3.3.17",
+        "nodes": [
+          ""
+        ],
+        "fixAvailable": true
+      },
+      "picomatch": {
+        "name": "picomatch",
+        "severity": "high",
+        "isDirect": false,
+        "via": [
+          {
+            "source": 1115549,
+            "name": "picomatch",
+            "dependency": "picomatch",
+            "title": "Picomatch: Method Injection in POSIX Character Classes causes incorrect Glob Matching",
+            "url": "https://github.com/advisories/GHSA-3v7f-55p6-f55p",
+            "severity": "moderate",
+            "cwe": [
+              "CWE-1321"
+            ],
+            "cvss": {
+              "score": 5.3,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:L/A:N"
+            },
+            "range": "<2.3.2"
+          },
+          {
+            "source": 1115551,
+            "name": "picomatch",
+            "dependency": "picomatch",
+            "title": "Picomatch: Method Injection in POSIX Character Classes causes incorrect Glob Matching",
+            "url": "https://github.com/advisories/GHSA-3v7f-55p6-f55p",
+            "severity": "moderate",
+            "cwe": [
+              "CWE-1321"
+            ],
+            "cvss": {
+              "score": 5.3,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:L/A:N"
+            },
+            "range": ">=4.0.0 <4.0.4"
+          },
+          {
+            "source": 1115552,
+            "name": "picomatch",
+            "dependency": "picomatch",
+            "title": "Picomatch has a ReDoS vulnerability via extglob quantifiers",
+            "url": "https://github.com/advisories/GHSA-c2c7-rcm5-vvqj",
+            "severity": "high",
+            "cwe": [
+              "CWE-1333"
+            ],
+            "cvss": {
+              "score": 7.5,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+            },
+            "range": "<2.3.2"
+          },
+          {
+            "source": 1115554,
+            "name": "picomatch",
+            "dependency": "picomatch",
+            "title": "Picomatch has a ReDoS vulnerability via extglob quantifiers",
+            "url": "https://github.com/advisories/GHSA-c2c7-rcm5-vvqj",
+            "severity": "high",
+            "cwe": [
+              "CWE-1333"
+            ],
+            "cvss": {
+              "score": 7.5,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+            },
+            "range": ">=4.0.0 <4.0.4"
+          }
+        ],
+        "effects": [],
+        "range": "<=2.3.1 || 4.0.0 - 4.0.3",
+        "nodes": [
+          "",
+          ""
+        ],
+        "fixAvailable": true
+      },
+      "postcss": {
+        "name": "postcss",
+        "severity": "high",
+        "isDirect": false,
+        "via": [
+          {
+            "source": 1117015,
+            "name": "postcss",
+            "dependency": "postcss",
+            "title": "PostCSS has XSS via Unescaped </style> in its CSS Stringify Output",
+            "url": "https://github.com/advisories/GHSA-qx2v-qp2m-jg93",
+            "severity": "moderate",
+            "cwe": [
+              "CWE-79"
+            ],
+            "cvss": {
+              "score": 6.1,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:R/S:C/C:L/I:L/A:N"
+            },
+            "range": "<8.5.10"
+          },
+          {
+            "source": 1124252,
+            "name": "postcss",
+            "dependency": "postcss",
+            "title": "PostCSS: Arbitrary file read and information disclosure via attacker-controlled sourceMappingURL in CSS comments",
+            "url": "https://github.com/advisories/GHSA-6g55-p6wh-862q",
+            "severity": "high",
+            "cwe": [
+              "CWE-22",
+              "CWE-200"
+            ],
+            "cvss": {
+              "score": 7.5,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N"
+            },
+            "range": "<=8.5.11"
+          },
+          {
+            "source": 1130709,
+            "name": "postcss",
+            "dependency": "postcss",
+            "title": "PostCSS: incomplete fix of GHSA-6g55-p6wh-862q — attacker-controlled sourceMappingURL reads arbitrary .map files when `from` is unset",
+            "url": "https://github.com/advisories/GHSA-fxqj-rqcc-2cmp",
+            "severity": "moderate",
+            "cwe": [
+              "CWE-22",
+              "CWE-200"
+            ],
+            "cvss": {
+              "score": 0,
+              "vectorString": null
+            },
+            "range": "<=8.5.22"
+          },
+          {
+            "source": 1139510,
+            "name": "postcss",
+            "dependency": "postcss",
+            "title": "PostCSS: Path Traversal in Previous Source Map Auto-Loading (sourceMappingURL) leads to Arbitrary .map File Disclosure",
+            "url": "https://github.com/advisories/GHSA-r28c-9q8g-f849",
+            "severity": "high",
+            "cwe": [
+              "CWE-22"
+            ],
+            "cvss": {
+              "score": 7.5,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N"
+            },
+            "range": "<=8.5.17"
+          }
+        ],
+        "effects": [],
+        "range": "<=8.5.22",
+        "nodes": [
+          ""
+        ],
+        "fixAvailable": true
+      },
+      "rollup": {
+        "name": "rollup",
+        "severity": "high",
+        "isDirect": false,
+        "via": [
+          {
+            "source": 1113515,
+            "name": "rollup",
+            "dependency": "rollup",
+            "title": "Rollup 4 has Arbitrary File Write via Path Traversal",
+            "url": "https://github.com/advisories/GHSA-mw96-cpmx-2vgc",
+            "severity": "high",
+            "cwe": [
+              "CWE-22"
+            ],
+            "cvss": {
+              "score": 0,
+              "vectorString": null
+            },
+            "range": ">=4.0.0 <4.59.0"
+          },
+          {
+            "source": 1113517,
+            "name": "rollup",
+            "dependency": "rollup",
+            "title": "Rollup 4 has Arbitrary File Write via Path Traversal",
+            "url": "https://github.com/advisories/GHSA-mw96-cpmx-2vgc",
+            "severity": "high",
+            "cwe": [
+              "CWE-22"
+            ],
+            "cvss": {
+              "score": 0,
+              "vectorString": null
+            },
+            "range": "<2.80.0"
+          }
+        ],
+        "effects": [],
+        "range": ">=4.0.0 <4.59.0 || <2.80.0",
+        "nodes": [
+          "",
+          ""
+        ],
+        "fixAvailable": true
+      },
+      "serialize-javascript": {
+        "name": "serialize-javascript",
+        "severity": "high",
+        "isDirect": false,
+        "via": [
+          {
+            "source": 1113686,
+            "name": "serialize-javascript",
+            "dependency": "serialize-javascript",
+            "title": "Serialize JavaScript is Vulnerable to RCE via RegExp.flags and Date.prototype.toISOString()",
+            "url": "https://github.com/advisories/GHSA-5c6j-r48x-rmvq",
+            "severity": "high",
+            "cwe": [
+              "CWE-96"
+            ],
+            "cvss": {
+              "score": 8.1,
+              "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:H"
+            },
+            "range": "<=7.0.2"
+          },
+          {
+            "source": 1119440,
+            "name": "serialize-javascript",
+            "dependency": "serialize-javascript",
+            "title": "Serialize JavaScript has CPU Exhaustion Denial of Service via crafted array-like objects",
+            "url": "https://github.com/advisories/GHSA-qj8w-gfj5-8c6v",
+            "severity": "moderate",
+            "cwe": [
+              "CWE-400",
+              "CWE-834"
+            ],
+            "cvss": {
+              "score": 5.9,
+              "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:N/A:H"
+            },
+            "range": ">=5.0.0 <7.0.5"
+          },
+          {
+            "source": 1243082,
+            "name": "serialize-javascript",
+            "dependency": "serialize-javascript",
+            "title": "Serialize JavaScript: Cross-site scripting (XSS) via unescaped </script at the end of a serialized function body",
+            "url": "https://github.com/advisories/GHSA-m5mm-p8h7-m29v",
+            "severity": "low",
+            "cwe": [
+              "CWE-79"
+            ],
+            "cvss": {
+              "score": 0,
+              "vectorString": null
+            },
+            "range": "<7.1.3"
+          }
+        ],
+        "effects": [
+          "@rollup/plugin-terser"
+        ],
+        "range": "<=7.1.2",
+        "nodes": [
+          ""
+        ],
+        "fixAvailable": {
+          "name": "vite-plugin-pwa",
+          "version": "1.1.0",
+          "isSemVerMajor": true
+        }
+      },
+      "source-map-js": {
+        "name": "source-map-js",
+        "severity": "high",
+        "isDirect": false,
+        "via": [
+          {
+            "source": 1241209,
+            "name": "source-map-js",
+            "dependency": "source-map-js",
+            "title": "source-map-js allows event-loop denial of service through indexed source-map section offsets",
+            "url": "https://github.com/advisories/GHSA-68fv-2mgg-jv7q",
+            "severity": "high",
+            "cwe": [
+              "CWE-1284"
+            ],
+            "cvss": {
+              "score": 7.5,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+            },
+            "range": ">=1.0.0 <1.2.2"
+          }
+        ],
+        "effects": [],
+        "range": "1.0.0 - 1.2.1",
+        "nodes": [
+          ""
+        ],
+        "fixAvailable": true
+      },
+      "undici": {
+        "name": "undici",
+        "severity": "high",
+        "isDirect": false,
+        "via": [
+          {
+            "source": 1121187,
+            "name": "undici",
+            "dependency": "undici",
+            "title": "undici vulnerable to TLS certificate validation bypass via dropped requestTls in SOCKS5 ProxyAgent",
+            "url": "https://github.com/advisories/GHSA-vmh5-mc38-953g",
+            "severity": "high",
+            "cwe": [
+              "CWE-295"
+            ],
+            "cvss": {
+              "score": 7.4,
+              "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N"
+            },
+            "range": ">=7.23.0 <7.28.0"
+          },
+          {
+            "source": 1121241,
+            "name": "undici",
+            "dependency": "undici",
+            "title": "undici vulnerable to HTTP header injection via Set-Cookie percent-decoding",
+            "url": "https://github.com/advisories/GHSA-p88m-4jfj-68fv",
+            "severity": "moderate",
+            "cwe": [
+              "CWE-93"
+            ],
+            "cvss": {
+              "score": 5.9,
+              "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:H/A:N"
+            },
+            "range": ">=7.0.0 <7.28.0"
+          },
+          {
+            "source": 1121244,
+            "name": "undici",
+            "dependency": "undici",
+            "title": "undici WebSocket client vulnerable to denial of service via fragment count bypass",
+            "url": "https://github.com/advisories/GHSA-vxpw-j846-p89q",
+            "severity": "high",
+            "cwe": [
+              "CWE-400",
+              "CWE-770"
+            ],
+            "cvss": {
+              "score": 7.5,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+            },
+            "range": ">=7.0.0 <7.28.0"
+          },
+          {
+            "source": 1121247,
+            "name": "undici",
+            "dependency": "undici",
+            "title": "undici vulnerable to cross-origin request routing via SOCKS5 proxy pool reuse",
+            "url": "https://github.com/advisories/GHSA-hm92-r4w5-c3mj",
+            "severity": "high",
+            "cwe": [
+              "CWE-346"
+            ],
+            "cvss": {
+              "score": 7.5,
+              "vectorString": "CVSS:3.1/AV:N/AC:H/PR:L/UI:N/S:U/C:H/I:H/A:H"
+            },
+            "range": ">=7.23.0 <7.28.0"
+          },
+          {
+            "source": 1121254,
+            "name": "undici",
+            "dependency": "undici",
+            "title": "undici vulnerable to Set-Cookie SameSite attribute downgrade via permissive substring matching",
+            "url": "https://github.com/advisories/GHSA-g8m3-5g58-fq7m",
+            "severity": "low",
+            "cwe": [
+              "CWE-183"
+            ],
+            "cvss": {
+              "score": 3.7,
+              "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:L/A:N"
+            },
+            "range": ">=7.0.0 <7.28.0"
+          },
+          {
+            "source": 1121428,
+            "name": "undici",
+            "dependency": "undici",
+            "title": "undici vulnerable to cross-user information disclosure via shared cache whitespace bypass",
+            "url": "https://github.com/advisories/GHSA-pr7r-676h-xcf6",
+            "severity": "moderate",
+            "cwe": [
+              "CWE-524"
+            ],
+            "cvss": {
+              "score": 5.9,
+              "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:N/A:N"
+            },
+            "range": ">=7.0.0 <7.28.0"
+          },
+          {
+            "source": 1130715,
+            "name": "undici",
+            "dependency": "undici",
+            "title": "undici vulnerable to downstream response desynchronization via retry interceptor",
+            "url": "https://github.com/advisories/GHSA-8xcm-r25x-g524",
+            "severity": "moderate",
+            "cwe": [
+              "CWE-444"
+            ],
+            "cvss": {
+              "score": 4.8,
+              "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:L/A:N"
+            },
+            "range": ">=7.0.0 <7.29.0"
+          },
+          {
+            "source": 1130718,
+            "name": "undici",
+            "dependency": "undici",
+            "title": "undici vulnerable to cross-user information disclosure and parse-time crash via degenerate private cache directives",
+            "url": "https://github.com/advisories/GHSA-4cwx-7wf7-3272",
+            "severity": "high",
+            "cwe": [
+              "CWE-200",
+              "CWE-248",
+              "CWE-525"
+            ],
+            "cvss": {
+              "score": 7.4,
+              "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:N/A:H"
+            },
+            "range": ">=7.0.0 <7.29.0"
+          },
+          {
+            "source": 1130726,
+            "name": "undici",
+            "dependency": "undici",
+            "title": "undici vulnerable to CRLF Injection via blob-like body 'type' property",
+            "url": "https://github.com/advisories/GHSA-m8rv-5g2x-5cg5",
+            "severity": "moderate",
+            "cwe": [
+              "CWE-93"
+            ],
+            "cvss": {
+              "score": 4.2,
+              "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:L/I:L/A:N"
+            },
+            "range": ">=7.0.0 <7.29.0"
+          },
+          {
+            "source": 1130729,
+            "name": "undici",
+            "dependency": "undici",
+            "title": "undici vulnerable to cross-user information disclosure via whitespace around equals in Cache-Control directives",
+            "url": "https://github.com/advisories/GHSA-jr45-8vmc-qm54",
+            "severity": "moderate",
+            "cwe": [
+              "CWE-436",
+              "CWE-524"
+            ],
+            "cvss": {
+              "score": 5.9,
+              "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:N/A:N"
+            },
+            "range": ">=7.0.0 <7.29.0"
+          },
+          {
+            "source": 1130731,
+            "name": "undici",
+            "dependency": "undici",
+            "title": "undici vulnerable to cookie attribute injection via unsanitized domain and unparsed setCookie fields",
+            "url": "https://github.com/advisories/GHSA-v3r7-h72x-cjcm",
+            "severity": "moderate",
+            "cwe": [
+              "CWE-74"
+            ],
+            "cvss": {
+              "score": 4.8,
+              "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:L/I:L/A:N"
+            },
+            "range": ">=7.0.0 <7.29.0"
+          },
+          {
+            "source": 1137242,
+            "name": "undici",
+            "dependency": "undici",
+            "title": "undici vulnerable to HTTP response queue poisoning via keep-alive socket reuse",
+            "url": "https://github.com/advisories/GHSA-35p6-xmwp-9g52",
+            "severity": "low",
+            "cwe": [
+              "CWE-367"
+            ],
+            "cvss": {
+              "score": 3.7,
+              "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:L/A:N"
+            },
+            "range": ">=7.0.0 <7.28.0"
+          },
+          {
+            "source": 1240036,
+            "name": "undici",
+            "dependency": "undici",
+            "title": "undici vulnerable to Denial of Service via orphaned RetryHandler response body",
+            "url": "https://github.com/advisories/GHSA-pmjh-fq2x-6v4x",
+            "severity": "moderate",
+            "cwe": [
+              "CWE-772"
+            ],
+            "cvss": {
+              "score": 5.9,
+              "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:N/A:H"
+            },
+            "range": ">=7.11.0 <7.29.1"
+          },
+          {
+            "source": 1240038,
+            "name": "undici",
+            "dependency": "undici",
+            "title": "undici vulnerable to downstream response splitting via retry interceptor",
+            "url": "https://github.com/advisories/GHSA-r53p-7pc4-xj5r",
+            "severity": "low",
+            "cwe": [
+              "CWE-444"
+            ],
+            "cvss": {
+              "score": 3.7,
+              "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:L/A:N"
+            },
+            "range": ">=7.0.0 <7.29.1"
+          },
+          {
+            "source": 1240041,
+            "name": "undici",
+            "dependency": "undici",
+            "title": "undici vulnerable to Denial of Service via unrequested WebSocket subprotocol",
+            "url": "https://github.com/advisories/GHSA-rfgv-xxqx-mfg5",
+            "severity": "high",
+            "cwe": [
+              "CWE-248",
+              "CWE-252"
+            ],
+            "cvss": {
+              "score": 7.5,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+            },
+            "range": ">=7.0.0 <7.29.1"
+          },
+          {
+            "source": 1240044,
+            "name": "undici",
+            "dependency": "undici",
+            "title": "undici vulnerable to Denial of Service via unbounded decompression of compressed responses",
+            "url": "https://github.com/advisories/GHSA-3xpg-4rpp-hhhm",
+            "severity": "moderate",
+            "cwe": [
+              "CWE-770"
+            ],
+            "cvss": {
+              "score": 5.9,
+              "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:N/A:H"
+            },
+            "range": ">=7.15.0 <7.29.1"
+          },
+          {
+            "source": 1240046,
+            "name": "undici",
+            "dependency": "undici",
+            "title": "undici vulnerable to cross-user cookie disclosure via Set-Cookie caching in shared caches",
+            "url": "https://github.com/advisories/GHSA-2jfj-6hjv-fm6j",
+            "severity": "moderate",
+            "cwe": [
+              "CWE-200",
+              "CWE-524"
+            ],
+            "cvss": {
+              "score": 6.5,
+              "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:L/A:N"
+            },
+            "range": ">=7.0.0 <7.29.1"
+          },
+          {
+            "source": 1240048,
+            "name": "undici",
+            "dependency": "undici",
+            "title": "undici vulnerable to response truncation via oversized chunked responses in the dump interceptor",
+            "url": "https://github.com/advisories/GHSA-2gqq-gqf2-x968",
+            "severity": "low",
+            "cwe": [
+              "CWE-20",
+              "CWE-248"
+            ],
+            "cvss": {
+              "score": 3.7,
+              "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:L/A:N"
+            },
+            "range": ">=7.1.0 <7.29.1"
+          },
+          {
+            "source": 1240050,
+            "name": "undici",
+            "dependency": "undici",
+            "title": "undici vulnerable to TLS certificate validation bypass via dropped connect options in BalancedPool",
+            "url": "https://github.com/advisories/GHSA-w293-vg96-wgc3",
+            "severity": "high",
+            "cwe": [
+              "CWE-295"
+            ],
+            "cvss": {
+              "score": 7.4,
+              "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N"
+            },
+            "range": ">=7.24.1 <7.29.1"
+          },
+          {
+            "source": 1240052,
+            "name": "undici",
+            "dependency": "undici",
+            "title": "undici vulnerable to caching and replay of unsafe HTTP method responses",
+            "url": "https://github.com/advisories/GHSA-8436-99hf-9mmv",
+            "severity": "low",
+            "cwe": [
+              "CWE-345"
+            ],
+            "cvss": {
+              "score": 3.7,
+              "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:L/A:N"
+            },
+            "range": ">=7.0.0 <7.29.1"
+          },
+          {
+            "source": 1240055,
+            "name": "undici",
+            "dependency": "undici",
+            "title": "undici vulnerable to Denial of Service via WebSocketStream unclean close",
+            "url": "https://github.com/advisories/GHSA-rx4f-c7p8-82vq",
+            "severity": "moderate",
+            "cwe": [
+              "CWE-248",
+              "CWE-754"
+            ],
+            "cvss": {
+              "score": 5.9,
+              "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:N/A:H"
+            },
+            "range": ">=7.0.0 <7.29.1"
+          },
+          {
+            "source": 1243078,
+            "name": "undici",
+            "dependency": "undici",
+            "title": "undici vulnerable to Denial of Service via unbounded memory in the EventSource parser",
+            "url": "https://github.com/advisories/GHSA-4qv8-2p9j-2685",
+            "severity": "moderate",
+            "cwe": [
+              "CWE-770"
+            ],
+            "cvss": {
+              "score": 5.9,
+              "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:N/A:H"
+            },
+            "range": ">=7.0.0 <7.30.1"
+          },
+          {
+            "source": 1243081,
+            "name": "undici",
+            "dependency": "undici",
+            "title": "undici vulnerable to Subresource Integrity bypass via non-lowercase algorithm tokens",
+            "url": "https://github.com/advisories/GHSA-f72v-6w45-q472",
+            "severity": "moderate",
+            "cwe": [
+              "CWE-178"
+            ],
+            "cvss": {
+              "score": 5.9,
+              "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:H/A:N"
+            },
+            "range": ">=7.15.0 <7.30.1"
+          },
+          {
+            "source": 1243113,
+            "name": "undici",
+            "dependency": "undici",
+            "title": "undici vulnerable to Denial of Service via unhandled error on excessive content-encodings",
+            "url": "https://github.com/advisories/GHSA-xjj6-f33q-929c",
+            "severity": "high",
+            "cwe": [
+              "CWE-248",
+              "CWE-459"
+            ],
+            "cvss": {
+              "score": 7.5,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+            },
+            "range": ">=7.18.0 <7.30.1"
+          },
+          {
+            "source": 1243473,
+            "name": "undici",
+            "dependency": "undici",
+            "title": "undici vulnerable to cache poisoning and cross-user disclosure via cross-origin redirects",
+            "url": "https://github.com/advisories/GHSA-4w7w-5xrc-9h26",
+            "severity": "high",
+            "cwe": [
+              "CWE-346",
+              "CWE-524"
+            ],
+            "cvss": {
+              "score": 7.4,
+              "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N"
+            },
+            "range": ">=7.0.0 <7.30.1"
+          },
+          {
+            "source": 1243475,
+            "name": "undici",
+            "dependency": "undici",
+            "title": "undici vulnerable to TLS certificate validation bypass via dropped tls options in Agent",
+            "url": "https://github.com/advisories/GHSA-2m5v-pch6-74hx",
+            "severity": "high",
+            "cwe": [
+              "CWE-295"
+            ],
+            "cvss": {
+              "score": 7.4,
+              "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:H/A:N"
+            },
+            "range": ">=7.0.0 <7.30.1"
+          },
+          {
+            "source": 1243478,
+            "name": "undici",
+            "dependency": "undici",
+            "title": "undici vulnerable to Denial of Service via TLS 1.2 certificate-changing renegotiation",
+            "url": "https://github.com/advisories/GHSA-qrxm-fqhp-jwvm",
+            "severity": "high",
+            "cwe": [
+              "CWE-248",
+              "CWE-617"
+            ],
+            "cvss": {
+              "score": 7.5,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:H"
+            },
+            "range": ">=7.0.0 <7.30.1"
+          },
+          {
+            "source": 1243481,
+            "name": "undici",
+            "dependency": "undici",
+            "title": "undici WebSocket client vulnerable to Denial of Service via unbounded automatic PONG buffering",
+            "url": "https://github.com/advisories/GHSA-9fm3-97px-rjf6",
+            "severity": "moderate",
+            "cwe": [
+              "CWE-400",
+              "CWE-405",
+              "CWE-770"
+            ],
+            "cvss": {
+              "score": 5.9,
+              "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:N/A:H"
+            },
+            "range": ">=7.0.0 <7.30.1"
+          },
+          {
+            "source": 1243484,
+            "name": "undici",
+            "dependency": "undici",
+            "title": "undici vulnerable to Denial of Service via unhandled exception in the decompress interceptor",
+            "url": "https://github.com/advisories/GHSA-55wc-3pg8-jfw6",
+            "severity": "moderate",
+            "cwe": [
+              "CWE-248"
+            ],
+            "cvss": {
+              "score": 5.9,
+              "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:N/I:N/A:H"
+            },
+            "range": ">=7.15.0 <7.30.1"
+          }
+        ],
+        "effects": [],
+        "range": "7.0.0 - 7.30.0",
+        "nodes": [
+          ""
+        ],
+        "fixAvailable": true
+      },
+      "vite": {
+        "name": "vite",
+        "severity": "high",
+        "isDirect": false,
+        "via": [
+          {
+            "source": 1116230,
+            "name": "vite",
+            "dependency": "vite",
+            "title": "Vite Vulnerable to Path Traversal in Optimized Deps `.map` Handling",
+            "url": "https://github.com/advisories/GHSA-4w7w-66w2-5vf9",
+            "severity": "moderate",
+            "cwe": [
+              "CWE-22",
+              "CWE-200"
+            ],
+            "cvss": {
+              "score": 0,
+              "vectorString": null
+            },
+            "range": ">=7.0.0 <=7.3.1"
+          },
+          {
+            "source": 1116232,
+            "name": "vite",
+            "dependency": "vite",
+            "title": "Vite: `server.fs.deny` bypassed with queries",
+            "url": "https://github.com/advisories/GHSA-v2wj-q39q-566r",
+            "severity": "high",
+            "cwe": [
+              "CWE-180",
+              "CWE-284"
+            ],
+            "cvss": {
+              "score": 0,
+              "vectorString": null
+            },
+            "range": ">=7.1.0 <=7.3.1"
+          },
+          {
+            "source": 1116235,
+            "name": "vite",
+            "dependency": "vite",
+            "title": "Vite Vulnerable to Arbitrary File Read via Vite Dev Server WebSocket",
+            "url": "https://github.com/advisories/GHSA-p9ff-h696-f583",
+            "severity": "high",
+            "cwe": [
+              "CWE-200",
+              "CWE-306"
+            ],
+            "cvss": {
+              "score": 0,
+              "vectorString": null
+            },
+            "range": ">=7.0.0 <=7.3.1"
+          },
+          {
+            "source": 1120785,
+            "name": "vite",
+            "dependency": "vite",
+            "title": "launch-editor: NTLMv2 hash disclosure via UNC path handling on Windows",
+            "url": "https://github.com/advisories/GHSA-v6wh-96g9-6wx3",
+            "severity": "moderate",
+            "cwe": [
+              "CWE-73",
+              "CWE-522"
+            ],
+            "cvss": {
+              "score": 0,
+              "vectorString": null
+            },
+            "range": ">=7.0.0 <=7.3.4"
+          },
+          {
+            "source": 1242623,
+            "name": "vite",
+            "dependency": "vite",
+            "title": "launch-editor: escapeCmdArgs() omits % escaping on Windows",
+            "url": "https://github.com/advisories/GHSA-698v-4r3x-3vcv",
+            "severity": "moderate",
+            "cwe": [
+              "CWE-78"
+            ],
+            "cvss": {
+              "score": 0,
+              "vectorString": null
+            },
+            "range": ">=7.0.0 <=7.3.6"
+          },
+          {
+            "source": 1242652,
+            "name": "vite",
+            "dependency": "vite",
+            "title": "launch-editor: Editor CLI flag misinterpretation causing arbitrary command execution for some editors",
+            "url": "https://github.com/advisories/GHSA-r825-w8mm-5pxw",
+            "severity": "moderate",
+            "cwe": [
+              "CWE-88"
+            ],
+            "cvss": {
+              "score": 0,
+              "vectorString": null
+            },
+            "range": ">=7.0.0 <=7.3.6"
+          },
+          {
+            "source": 1242659,
+            "name": "vite",
+            "dependency": "vite",
+            "title": "launch-editor: `fs.existsSync()` existence check can be bypassed on Windows",
+            "url": "https://github.com/advisories/GHSA-587h-7wmj-h5pm",
+            "severity": "high",
+            "cwe": [
+              "CWE-77"
+            ],
+            "cvss": {
+              "score": 0,
+              "vectorString": null
+            },
+            "range": ">=7.0.0 <=7.3.6"
+          },
+          {
+            "source": 1242725,
+            "name": "vite",
+            "dependency": "vite",
+            "title": "Vite: Cross origin script execution through Vite custom middleware",
+            "url": "https://github.com/advisories/GHSA-9jrq-w75r-8gcw",
+            "severity": "low",
+            "cwe": [
+              "CWE-80"
+            ],
+            "cvss": {
+              "score": 0,
+              "vectorString": null
+            },
+            "range": ">=7.0.0 <=7.3.6"
+          },
+          {
+            "source": 1242731,
+            "name": "vite",
+            "dependency": "vite",
+            "title": "Vite: Files outside `server.fs.allow` could be served when project paths match system paths on non-Windows machine",
+            "url": "https://github.com/advisories/GHSA-rq7h-c2jc-7f22",
+            "severity": "moderate",
+            "cwe": [
+              "CWE-22",
+              "CWE-284"
+            ],
+            "cvss": {
+              "score": 0,
+              "vectorString": null
+            },
+            "range": ">=7.0.0 <=7.3.6"
+          },
+          {
+            "source": 1243433,
+            "name": "vite",
+            "dependency": "vite",
+            "title": "vite: `server.fs.deny` bypass on Windows alternate paths",
+            "url": "https://github.com/advisories/GHSA-fx2h-pf6j-xcff",
+            "severity": "moderate",
+            "cwe": [
+              "CWE-22",
+              "CWE-200"
+            ],
+            "cvss": {
+              "score": 0,
+              "vectorString": null
+            },
+            "range": ">=7.0.0 <=7.3.4"
+          }
+        ],
+        "effects": [],
+        "range": "7.0.0 - 7.3.6",
+        "nodes": [
+          ""
+        ],
+        "fixAvailable": true
+      },
+      "vite-plugin-pwa": {
+        "name": "vite-plugin-pwa",
+        "severity": "moderate",
+        "isDirect": false,
+        "via": [
+          "workbox-build"
+        ],
+        "effects": [],
+        "range": ">=1.2.0",
+        "nodes": [
+          ""
+        ],
+        "fixAvailable": {
+          "name": "vite-plugin-pwa",
+          "version": "1.1.0",
+          "isSemVerMajor": true
+        }
+      },
+      "vitest": {
+        "name": "vitest",
+        "severity": "critical",
+        "isDirect": false,
+        "via": [
+          "@vitest/mocker",
+          {
+            "source": 1139529,
+            "name": "vitest",
+            "dependency": "vitest",
+            "title": "When Vitest UI server is listening, arbitrary file can be read and executed",
+            "url": "https://github.com/advisories/GHSA-5xrq-8626-4rwp",
+            "severity": "critical",
+            "cwe": [
+              "CWE-22",
+              "CWE-862"
+            ],
+            "cvss": {
+              "score": 9.8,
+              "vectorString": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H"
+            },
+            "range": ">=4.0.0 <4.1.0"
+          },
+          {
+            "source": 1193683,
+            "name": "vitest",
+            "dependency": "vitest",
+            "title": "Vitest: Path Traversal / Arbitrary File Read via @vitest/mocker Redirect Mock",
+            "url": "https://github.com/advisories/GHSA-82fw-gwwq-j7x9",
+            "severity": "moderate",
+            "cwe": [
+              "CWE-22"
+            ],
+            "cvss": {
+              "score": 5.9,
+              "vectorString": "CVSS:3.1/AV:N/AC:H/PR:N/UI:N/S:U/C:H/I:N/A:N"
+            },
+            "range": ">=2.1.0 <4.1.11"
+          }
+        ],
+        "effects": [],
+        "range": "2.1.0-beta.1 - 4.1.10",
+        "nodes": [
+          ""
+        ],
+        "fixAvailable": true
+      },
+      "workbox-build": {
+        "name": "workbox-build",
+        "severity": "moderate",
+        "isDirect": false,
+        "via": [
+          "@rollup/plugin-node-resolve",
+          "@rollup/plugin-terser",
+          "glob"
+        ],
+        "effects": [
+          "vite-plugin-pwa"
+        ],
+        "range": ">=6.0.0-alpha.0",
+        "nodes": [
+          ""
+        ],
+        "fixAvailable": {
+          "name": "vite-plugin-pwa",
+          "version": "1.1.0",
+          "isSemVerMajor": true
+        }
+      }
+    },
+    "metadata": {
+      "vulnerabilities": {
+        "info": 0,
+        "low": 3,
+        "moderate": 8,
+        "high": 17,
+        "critical": 1,
+        "total": 29
+      },
+      "dependencies": {
+        "prod": 145,
+        "dev": 524,
+        "optional": 10,
+        "peer": 8,
+        "peerOptional": 0,
+        "total": 675
+      }
+    }
+  }
+}

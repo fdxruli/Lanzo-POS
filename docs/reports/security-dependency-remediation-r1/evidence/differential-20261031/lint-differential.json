@@ -1,0 +1,16 @@
+{
+  "main": {
+    "total": 334,
+    "errors": 158,
+    "warnings": 176
+  },
+  "candidate": {
+    "total": 334,
+    "errors": 158,
+    "warnings": 176
+  },
+  "newDiagnostics": 0,
+  "removedDiagnostics": 0,
+  "newExamples": [],
+  "removedExamples": []
+}

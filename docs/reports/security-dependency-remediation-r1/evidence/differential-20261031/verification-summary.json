@@ -1,0 +1,199 @@
+{
+  "schema": 1,
+  "base_main": "1a0d758d09310f2914c475c37d358c4cf885cc01",
+  "candidate_entry_head": "2515fc44f566f4acbc99fd0868fa27af4e3ac24a",
+  "fin01_release_sha": "f81f09aaf40164ed896d11b766dc77477f3afff4",
+  "fin01_combined_local_test_sha": "ef83120c73ac1a64887f34b31c6700d7eadb016a",
+  "candidate_branch": "security/production-dependencies-remediation-r1",
+  "toolchain": {
+    "node": "v24.19.0",
+    "npm": "11.9.0",
+    "vite": "7.3.7",
+    "vitest": "4.1.12",
+    "vitePluginPwa": "1.3.0",
+    "sharp": "0.35.5",
+    "vercelOg": "0.11.1",
+    "satori": "0.33.5",
+    "protobufjs": "7.6.6",
+    "reactRouter": "7.18.5",
+    "ws": "8.22.0",
+    "zod": "4.6.7",
+    "standardSchemaSpec": "1.1.0"
+  },
+  "manifest_sha256": {
+    "packageJson": "c26334ad6533484fe1b04165cb1242794ce3791212f2d5302e14ccf213ae9f93",
+    "packageLock": "3926447716c6de58763b104adb3187d7fe3c85a9b7c6e2bdfd973171eec7fb48"
+  },
+  "audit": {
+    "mainFull": {
+      "info": 0,
+      "low": 67,
+      "moderate": 14,
+      "high": 60,
+      "critical": 1,
+      "total": 142
+    },
+    "candidatePreToolchain": {
+      "info": 0,
+      "low": 67,
+      "moderate": 11,
+      "high": 51,
+      "critical": 1,
+      "total": 130
+    },
+    "candidateFinal": {
+      "info": 0,
+      "low": 2,
+      "moderate": 14,
+      "high": 0,
+      "critical": 0,
+      "total": 16
+    },
+    "mainProduction": {
+      "info": 0,
+      "low": 0,
+      "moderate": 4,
+      "high": 7,
+      "critical": 0,
+      "total": 11
+    },
+    "candidateFinalProduction": {
+      "info": 0,
+      "low": 0,
+      "moderate": 0,
+      "high": 0,
+      "critical": 0,
+      "total": 0
+    },
+    "fullAuditExitCode": 1,
+    "productionAuditExitCode": 0,
+    "npmLsExitCode": 0,
+    "signatureCheckExitCode": 0,
+    "signaturesInvalid": 0,
+    "signaturesMissing": 0
+  },
+  "globalTests": {
+    "main": {
+      "testSuites": 1418,
+      "total": 6674,
+      "passed": 6534,
+      "failed": 84,
+      "skipped": 56,
+      "files": 661
+    },
+    "candidate": {
+      "testSuites": 1418,
+      "total": 6674,
+      "passed": 6534,
+      "failed": 84,
+      "skipped": 56,
+      "files": 661
+    },
+    "differential": {
+      "SKIPPED": 56,
+      "BASELINE_FAILURE": 36,
+      "UNRESOLVED": 0,
+      "failedPairedCases": 84,
+      "ENVIRONMENT_FAILURE": 48,
+      "NEW_REGRESSION": 0,
+      "FLAKY": 0,
+      "environmentCauses": {
+        "BUILD_ARTIFACTS_ABSENT_DURING_CLEAN_GLOBAL_RUN": 6,
+        "DOM_TEST_ENVIRONMENT_NOT_CONFIGURED": 17,
+        "BROWSER_STORAGE_UNAVAILABLE_IN_NODE_TEST_ENV": 16,
+        "NODE_CHILD_SMOKE_BLOCKED_BY_SANDBOX": 8,
+        "INDEXEDDB_TEST_API_UNAVAILABLE": 1
+      }
+    }
+  },
+  "lint": {
+    "main": {
+      "total": 334,
+      "errors": 158,
+      "warnings": 176
+    },
+    "candidate": {
+      "total": 334,
+      "errors": 158,
+      "warnings": 176
+    },
+    "newDiagnostics": 0,
+    "removedDiagnostics": 0,
+    "newExamples": [],
+    "removedExamples": []
+  },
+  "focus": {
+    "fin01Frontend": {
+      "suites": 22,
+      "passed": 83,
+      "failed": 0
+    },
+    "imageRouter": {
+      "testSuites": 19,
+      "passed": 134,
+      "failed": 0
+    },
+    "routeSecurity": {
+      "testSuites": 10,
+      "passed": 91,
+      "failed": 0
+    },
+    "storeOutputAudit": {
+      "testSuites": 2,
+      "passed": 61,
+      "failed": 0
+    },
+    "buildArtifactArchitecture": {
+      "testSuites": 4,
+      "passed": 18,
+      "failed": 0
+    }
+  },
+  "builds": {
+    "npmCi": 0,
+    "admin": 0,
+    "store": 0,
+    "storeVercelStaging": 0
+  },
+  "fin01": {
+    "postgres": "17.11",
+    "serverVersionNum": "170011",
+    "selectiveApply": {
+      "executed": 15,
+      "passed": 15,
+      "failed": 0
+    },
+    "financialSuite": {
+      "executed": 63,
+      "passed": 63,
+      "failed": 0,
+      "sqlstateRejections": 29
+    },
+    "dispatcher": {
+      "executed": 5,
+      "passed": 5,
+      "failed": 0
+    },
+    "frontendGateDefaultsOffCases": [
+      {
+        "test": "defaults off for existing licenses without the explicit capability",
+        "status": "passed"
+      },
+      {
+        "test": "requires the exact explicit capability to be true",
+        "status": "passed"
+      }
+    ]
+  },
+  "migrationsSha256": {
+    "F": "855a25f313741d4181be90dede4925cbfdce59fce23a1ff34a5fff463eff5e9e",
+    "PAY_N01": "a53cc7865092737752949bfe5db455521290206c70907040e3b920223380b244"
+  },
+  "sideEffects": {
+    "githubPushes": 0,
+    "prMerges": 0,
+    "supabaseProductionWrites": 0,
+    "vercelProductionDeployments": 0
+  },
+  "postgresContainerStopped": true
+}

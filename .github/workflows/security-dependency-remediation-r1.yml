@@ -1,0 +1,376 @@
+name: Security dependency remediation R1
+
+on:
+  push:
+    branches:
+      - security/production-dependencies-remediation-r1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-dependency-remediation-r1-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  SECURITY_BASE_SHA: 1a0d758d09310f2914c475c37d358c4cf885cc01
+  SECURITY_PRODUCT_SHA: 29f4ac29ee25f6f085432ba582057cfca4bffe7e
+  NODE_VERSION: 24.19.0
+  NPM_VERSION: 11.9.0
+
+jobs:
+  dependency-security:
+    name: Dependency audit and inventory
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout candidate
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Set up exact Node.js version
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Pin and record npm CLI
+        run: |
+          npm install --global "npm@${NPM_VERSION}"
+          test "$(node --version)" = "v${NODE_VERSION}"
+          test "$(npm --version)" = "${NPM_VERSION}"
+          mkdir -p artifacts/security-r1-audit
+          node -e 'const npm=require("node:child_process").execFileSync("npm",["--version"],{encoding:"utf8"}).trim(); console.log(JSON.stringify({node:process.version,npm,product_sha:process.env.SECURITY_PRODUCT_SHA,tested_sha:process.env.GITHUB_SHA,base_sha:process.env.SECURITY_BASE_SHA},null,2))' > artifacts/security-r1-audit/runtime.json
+
+      - name: Install from lockfile
+        run: npm ci
+
+      - name: Production dependency gate
+        run: npm audit --omit=dev --audit-level=moderate
+
+      - name: Capture production audit JSON and exit code
+        shell: bash
+        run: |
+          set +e
+          npm audit --omit=dev --json > artifacts/security-r1-audit/production-audit.json
+          status=$?
+          set -e
+          printf '%s\n' "$status" > artifacts/security-r1-audit/production-audit.exit
+          node -e 'const r=require("./artifacts/security-r1-audit/production-audit.json"); console.log(JSON.stringify(r.metadata.vulnerabilities)); if(r.metadata.vulnerabilities.total!==0) process.exit(1)'
+          test "$status" -eq 0
+
+      - name: Critical and high dependency gate
+        run: npm audit --audit-level=high
+
+      - name: Capture complete audit JSON and preserve npm exit code
+        shell: bash
+        run: |
+          set +e
+          npm audit --json > artifacts/security-r1-audit/full-audit.json
+          status=$?
+          set -e
+          printf '%s\n' "$status" > artifacts/security-r1-audit/full-audit.exit
+          node - <<'NODE' >> "$GITHUB_STEP_SUMMARY"
+          const report = require('./artifacts/security-r1-audit/full-audit.json');
+          const v = report.metadata.vulnerabilities;
+          console.log(`Full npm audit exit code: ${require('node:fs').readFileSync('artifacts/security-r1-audit/full-audit.exit','utf8').trim()}`);
+          console.log(`Findings: critical=${v.critical}, high=${v.high}, moderate=${v.moderate}, low=${v.low}, total=${v.total}`);
+          if (v.critical !== 0 || v.high !== 0) process.exit(1);
+          NODE
+
+      - name: Record installed dependency inventory
+        run: npm ls --all --json > artifacts/security-r1-audit/npm-ls.json
+
+      - name: Upload audit and inventory
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-r1-audit-${{ github.sha }}
+          path: artifacts/security-r1-audit/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  global-differential:
+    name: Global tests and lint versus approved main
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout approved main base
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SECURITY_BASE_SHA }}
+          path: main
+          persist-credentials: false
+
+      - name: Checkout candidate SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: pr
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Set up exact Node.js version
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Pin npm CLI
+        run: npm install --global "npm@${NPM_VERSION}"
+
+      - name: Install main dependencies from its lockfile
+        working-directory: main
+        run: npm ci
+
+      - name: Install candidate dependencies from its lockfile
+        working-directory: pr
+        run: npm ci
+
+      - name: "Test stable differential comparator and legacy PR #127 contract"
+        working-directory: pr
+        run: node --test scripts/ci/pr127-global-comparison.node-test.mjs
+
+      - name: Prepare comparison directory
+        run: mkdir -p comparison
+
+      - name: Run full main test suite and retain native exit code
+        working-directory: main
+        shell: bash
+        run: |
+          set +e
+          npm run test:ci -- --reporter=json --outputFile=../comparison/global-main.json > ../comparison/global-main.log 2>&1
+          status=$?
+          set -e
+          printf '%s\n' "$status" > ../comparison/global-main.exit
+          cat ../comparison/global-main.log
+
+      - name: Run full candidate test suite and retain native exit code
+        working-directory: pr
+        shell: bash
+        run: |
+          set +e
+          npm run test:ci -- --reporter=json --outputFile=../comparison/global-pr.json > ../comparison/global-pr.log 2>&1
+          status=$?
+          set -e
+          printf '%s\n' "$status" > ../comparison/global-pr.exit
+          cat ../comparison/global-pr.log
+
+      - name: Run main ESLint and retain native exit code
+        working-directory: main
+        shell: bash
+        run: |
+          set +e
+          npm run lint -- --format=json --output-file=../comparison/lint-main.json > ../comparison/lint-main.log 2>&1
+          status=$?
+          set -e
+          printf '%s\n' "$status" > ../comparison/lint-main.exit
+          cat ../comparison/lint-main.log
+
+      - name: Run candidate ESLint and retain native exit code
+        working-directory: pr
+        shell: bash
+        run: |
+          set +e
+          npm run lint -- --format=json --output-file=../comparison/lint-pr.json > ../comparison/lint-pr.log 2>&1
+          status=$?
+          set -e
+          printf '%s\n' "$status" > ../comparison/lint-pr.exit
+          cat ../comparison/lint-pr.log
+
+      - name: Extract candidate-only global failures
+        working-directory: pr
+        run: >-
+          node scripts/ci/pr127-global-comparison.mjs extract
+          --candidate ../comparison/global-pr.json
+          --base ../comparison/global-main.json
+          --output ../comparison/phase-one.json
+
+      - name: Collect repeated focused evidence for candidate-only failures
+        working-directory: pr
+        run: >-
+          node scripts/ci/pr127-focused-evidence.mjs
+          --targets ../comparison/targets.json
+          --output-dir ../comparison/focused/pr
+          --repetitions 10
+          --max-workers 4
+
+      - name: Collect repeated focused evidence on approved main
+        working-directory: main
+        run: >-
+          node ../pr/scripts/ci/pr127-focused-evidence.mjs
+          --targets ../comparison/targets.json
+          --output-dir ../comparison/focused/main
+          --repetitions 10
+          --max-workers 4
+
+      - name: Classify global differential
+        working-directory: pr
+        run: >-
+          node scripts/ci/pr127-global-comparison.mjs classify
+          --phase ../comparison/phase-one.json
+          --base-focused ../comparison/focused/main
+          --candidate-focused ../comparison/focused/pr
+          --output ../comparison/global-comparison.json
+
+      - name: Compare ESLint diagnostics without line-number noise
+        shell: bash
+        run: |
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs';
+          const read = (file) => JSON.parse(fs.readFileSync(file, 'utf8'));
+          const normalizeFile = (file) => {
+            const value = String(file || 'unknown').replaceAll('\\', '/');
+            for (const marker of ['/main/', '/pr/']) {
+              const index = value.lastIndexOf(marker);
+              if (index >= 0) return value.slice(index + marker.length);
+            }
+            return value;
+          };
+          const collect = (report) => {
+            const counts = new Map();
+            let errors = 0;
+            let warnings = 0;
+            for (const file of report) {
+              for (const message of file.messages || []) {
+                const row = JSON.stringify([normalizeFile(file.filePath), message.ruleId, message.severity, message.messageId, message.nodeType, message.message]);
+                counts.set(row, (counts.get(row) || 0) + 1);
+                if (message.severity === 2) errors += 1;
+                if (message.severity === 1) warnings += 1;
+              }
+            }
+            return { counts, errors, warnings };
+          };
+          const main = collect(read('comparison/lint-main.json'));
+          const candidate = collect(read('comparison/lint-pr.json'));
+          const delta = (left, right) => {
+            const output = [];
+            for (const [key, count] of left) {
+              const remaining = count - (right.get(key) || 0);
+              for (let i = 0; i < remaining; i += 1) output.push(JSON.parse(key));
+            }
+            return output;
+          };
+          const result = {
+            main: { errors: main.errors, warnings: main.warnings, total: main.errors + main.warnings },
+            candidate: { errors: candidate.errors, warnings: candidate.warnings, total: candidate.errors + candidate.warnings },
+            newDiagnostics: delta(candidate.counts, main.counts),
+            removedDiagnostics: delta(main.counts, candidate.counts),
+          };
+          fs.writeFileSync('comparison/lint-differential.json', `${JSON.stringify(result, null, 2)}\n`);
+          fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `\n## ESLint differential\n- Main: ${result.main.errors} errors, ${result.main.warnings} warnings\n- Candidate: ${result.candidate.errors} errors, ${result.candidate.warnings} warnings\n- New diagnostics: ${result.newDiagnostics.length}\n`);
+          if (result.newDiagnostics.length > 0) process.exit(1);
+          NODE
+
+      - name: Upload global and lint comparison
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-r1-differential-${{ github.sha }}
+          path: comparison/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  product-regressions:
+    name: Focused app, image and build regressions
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout candidate SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Set up exact Node.js version
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Pin npm CLI
+        run: npm install --global "npm@${NPM_VERSION}"
+
+      - name: Install from lockfile
+        run: npm ci
+
+      - name: Record tested commit and runtime
+        run: |
+          mkdir -p artifacts/security-r1-regressions
+          node -e 'const npm=require("node:child_process").execFileSync("npm",["--version"],{encoding:"utf8"}).trim(); console.log(JSON.stringify({node:process.version,npm,product_sha:process.env.SECURITY_PRODUCT_SHA,tested_sha:process.env.GITHUB_SHA,base_sha:process.env.SECURITY_BASE_SHA},null,2))' > artifacts/security-r1-regressions/runtime.json
+
+      - name: Run focused regression suites and builds
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT=artifacts/security-r1-regressions
+          run_logged() {
+            name="$1"
+            shift
+            if "$@" > "$OUT/$name.log" 2>&1; then status=0; else status=$?; fi
+            printf '%s\n' "$status" > "$OUT/$name.exit"
+            cat "$OUT/$name.log"
+          }
+          run_logged image-router npx vitest run --maxWorkers=4 --reporter=json --outputFile="$OUT/image-router.json" \
+            store/tests/social-preview/storeOgRender.test.js \
+            src/router/__tests__/adminNotFoundRouting.test.jsx \
+            store/tests/social-preview/storeOgV2Render.test.js \
+            store/tests/social-preview/storeOgEndpoint.test.js \
+            store/tests/social-preview/safePublicImage.test.js \
+            store/tests/social-preview/safePublicImageNormalization.test.js \
+            src/router/__tests__/publicStoreRouting.test.jsx
+          run_logged route-security npx vitest run --maxWorkers=4 --reporter=json --outputFile="$OUT/route-security.json" \
+            src/router/__tests__/publicStoreRouting.test.jsx \
+            store/tests/social-preview/publicPortal.test.js \
+            store/tests/social-preview/storeVercelRouting.test.js
+          run_logged store-output-audit npx vitest run --maxWorkers=1 --reporter=json --outputFile="$OUT/store-output-audit.json" \
+            store/tests/social-preview/storeBuildOutputAudit.test.js
+          run_logged admin-build npm run build
+          run_logged store-build npm run build:store
+          run_logged vercel-store-staging-build npm run build:store:vercel
+          run_logged artifact-architecture npx vitest run --maxWorkers=4 --reporter=json --outputFile="$OUT/artifact-architecture.json" \
+            src/architecture/__tests__/publicBuildArchitecture.test.js \
+            src/architecture/__tests__/publicGitDeploymentArchitecture.test.js
+
+      - name: Run synthetic Sharp and Open Graph smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT=artifacts/security-r1-regressions
+          if node --input-type=module > "$OUT/image-runtime-smoke.json" 2> "$OUT/image-runtime-smoke.log" <<'NODE'
+          import { createElement } from 'react';
+          import { ImageResponse } from '@vercel/og';
+          import sharp from 'sharp';
+          const png = Buffer.from(await new ImageResponse(createElement('div',{style:{display:'flex',fontSize:40,color:'#123456'},children:'Security R1 synthetic'}),{width:1200,height:630}).arrayBuffer());
+          const webp = await sharp(png).webp().toBuffer();
+          const normalizedPng = await sharp(webp).png().toBuffer();
+          const metadata = await sharp(png).metadata();
+          const output = { imageResponse:{status:200,contentType:'image/png',width:metadata.width,height:metadata.height,bytes:png.length,pngSignature:png.subarray(0,8).toString('hex')}, sharp:{format:(await sharp(webp).metadata()).format,pngToWebpBytes:webp.length,normalizedPngBytes:normalizedPng.length,normalizedSignature:normalizedPng.subarray(0,8).toString('hex')} };
+          if(output.imageResponse.width!==1200||output.imageResponse.height!==630||output.imageResponse.pngSignature!=='89504e470d0a1a0a'||output.sharp.format!=='webp'||output.sharp.normalizedSignature!=='89504e470d0a1a0a') process.exit(1);
+          console.log(JSON.stringify(output,null,2));
+          NODE
+          then status=0; else status=$?; fi
+          printf '%s\n' "$status" > "$OUT/image-runtime-smoke.exit"
+          cat "$OUT/image-runtime-smoke.log"
+          test "$status" -eq 0
+
+      - name: Fail if any focused test or build failed
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const root = 'artifacts/security-r1-regressions';
+          const names = ['image-router','route-security','store-output-audit','admin-build','store-build','vercel-store-staging-build','artifact-architecture','image-runtime-smoke'];
+          const failures = names.map((name) => ({name,code:Number(fs.readFileSync(`${root}/${name}.exit`,'utf8').trim())})).filter((item)=>item.code!==0);
+          console.log(JSON.stringify({commands:names.length,failures},null,2));
+          if (failures.length) process.exit(1);
+          NODE
+
+      - name: Upload focused regression and build evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-r1-regressions-${{ github.sha }}
+          path: artifacts/security-r1-regressions/
+          if-no-files-found: ignore
+          retention-days: 14

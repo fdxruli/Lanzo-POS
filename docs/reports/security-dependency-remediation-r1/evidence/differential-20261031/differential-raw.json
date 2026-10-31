@@ -1,0 +1,1425 @@
+{
+  "main": {
+    "exit": 1,
+    "files": 661,
+    "total": 6674,
+    "passed": 6534,
+    "failed": 84,
+    "skipped": 56
+  },
+  "candidate": {
+    "exit": 1,
+    "files": 661,
+    "total": 6674,
+    "passed": 6534,
+    "failed": 84,
+    "skipped": 56
+  },
+  "counts": {
+    "SKIPPED": 56,
+    "BASELINE_FAILURE": 81,
+    "UNRESOLVED": 3
+  },
+  "cases": [
+    {
+      "id": "src/architecture/__tests__/adminDeploymentPackage.test.js :: isolated administrative deployment package > prepares without deploying",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "isolated administrative deployment package prepares without deploying",
+      "candidateFullName": "isolated administrative deployment package prepares without deploying"
+    },
+    {
+      "id": "src/architecture/__tests__/adminDeploymentPackage.test.js :: isolated administrative deployment package > contains every required administrative artifact",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "isolated administrative deployment package contains every required administrative artifact",
+      "candidateFullName": "isolated administrative deployment package contains every required administrative artifact"
+    },
+    {
+      "id": "src/architecture/__tests__/adminDeploymentPackage.test.js :: isolated administrative deployment package > preserves the asset-safe administrative SPA rewrite without redirects",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "isolated administrative deployment package preserves the asset-safe administrative SPA rewrite without redirects",
+      "candidateFullName": "isolated administrative deployment package preserves the asset-safe administrative SPA rewrite without redirects"
+    },
+    {
+      "id": "src/architecture/__tests__/adminDeploymentPackage.test.js :: isolated administrative deployment package > contains no forbidden path or secret",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "isolated administrative deployment package contains no forbidden path or secret",
+      "candidateFullName": "isolated administrative deployment package contains no forbidden path or secret"
+    },
+    {
+      "id": "src/architecture/__tests__/adminDeploymentPackage.test.js :: isolated administrative deployment package > publishes only dist plus administrative Vercel configuration",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "isolated administrative deployment package publishes only dist plus administrative Vercel configuration",
+      "candidateFullName": "isolated administrative deployment package publishes only dist plus administrative Vercel configuration"
+    },
+    {
+      "id": "src/architecture/__tests__/adminDeploymentPackage.test.js :: isolated administrative deployment package > does not create root Vercel or Git metadata",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "isolated administrative deployment package does not create root Vercel or Git metadata",
+      "candidateFullName": "isolated administrative deployment package does not create root Vercel or Git metadata"
+    },
+    {
+      "id": "src/architecture/__tests__/adminPwaArchitecture.test.js :: ECOM.PUBLIC.PWA.1 architecture > generates a valid Lanzo POS manifest without injecting it into dist HTML",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "ECOM.PUBLIC.PWA.1 architecture generates a valid Lanzo POS manifest without injecting it into dist HTML",
+      "candidateFullName": "ECOM.PUBLIC.PWA.1 architecture generates a valid Lanzo POS manifest without injecting it into dist HTML"
+    },
+    {
+      "id": "src/architecture/__tests__/adminPwaArchitecture.test.js :: ECOM.PUBLIC.PWA.1 architecture > keeps the public standalone build completely PWA-free",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "ECOM.PUBLIC.PWA.1 architecture keeps the public standalone build completely PWA-free",
+      "candidateFullName": "ECOM.PUBLIC.PWA.1 architecture keeps the public standalone build completely PWA-free"
+    },
+    {
+      "id": "src/architecture/__tests__/adminPwaArchitecture.test.js :: ECOM.PUBLIC.PWA.1 architecture > keeps the reviewed administrative offline precache within the legacy production envelope",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "ECOM.PUBLIC.PWA.1 architecture keeps the reviewed administrative offline precache within the legacy production envelope",
+      "candidateFullName": "ECOM.PUBLIC.PWA.1 architecture keeps the reviewed administrative offline precache within the legacy production envelope"
+    },
+    {
+      "id": "src/architecture/__tests__/adminPwaArchitecture.test.js :: ECOM.PUBLIC.PWA.1 architecture > precache covers any emitted Local startup chunks while cloud-only lazy surfaces stay excluded",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "ECOM.PUBLIC.PWA.1 architecture precache covers any emitted Local startup chunks while cloud-only lazy surfaces stay excluded",
+      "candidateFullName": "ECOM.PUBLIC.PWA.1 architecture precache covers any emitted Local startup chunks while cloud-only lazy surfaces stay excluded"
+    },
+    {
+      "id": "src/architecture/__tests__/publicBuildArchitecture.test.js :: standalone public build architecture > contains no Service Worker, Workbox, manifest, or administrative chunks after the public build",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "Error: ENOENT: no such file or directory, scandir '<ROOT>/dist-store'",
+      "candidateSignature": "Error: ENOENT: no such file or directory, scandir '<ROOT>/dist-store'",
+      "mainFullName": "standalone public build architecture contains no Service Worker, Workbox, manifest, or administrative chunks after the public build",
+      "candidateFullName": "standalone public build architecture contains no Service Worker, Workbox, manifest, or administrative chunks after the public build"
+    },
+    {
+      "id": "src/architecture/__tests__/publicDeploymentArchitecture.test.js :: standalone public Vercel deployment architecture > keeps a dedicated static public config without server, PWA, Git, domain, or paid resources",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "standalone public Vercel deployment architecture keeps a dedicated static public config without server, PWA, Git, domain, or paid resources",
+      "candidateFullName": "standalone public Vercel deployment architecture keeps a dedicated static public config without server, PWA, Git, domain, or paid resources"
+    },
+    {
+      "id": "src/architecture/__tests__/publicDeploymentArchitecture.test.js :: standalone public Vercel deployment architecture > uses an explicit no-trailing-slash route without hardcoded storefront slugs",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "standalone public Vercel deployment architecture uses an explicit no-trailing-slash route without hardcoded storefront slugs",
+      "candidateFullName": "standalone public Vercel deployment architecture uses an explicit no-trailing-slash route without hardcoded storefront slugs"
+    },
+    {
+      "id": "src/architecture/__tests__/publicDeploymentArchitecture.test.js :: standalone public Vercel deployment architecture > does not reuse or modify the administrative vercel.json",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "standalone public Vercel deployment architecture does not reuse or modify the administrative vercel.json",
+      "candidateFullName": "standalone public Vercel deployment architecture does not reuse or modify the administrative vercel.json"
+    },
+    {
+      "id": "src/architecture/__tests__/publicDeploymentArchitecture.test.js :: standalone public Vercel deployment architecture > resolves the acquisition root to home.html before implicit index.html",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "standalone public Vercel deployment architecture resolves the acquisition root to home.html before implicit index.html",
+      "candidateFullName": "standalone public Vercel deployment architecture resolves the acquisition root to home.html before implicit index.html"
+    },
+    {
+      "id": "src/architecture/__tests__/publicDeploymentArchitecture.test.js :: standalone public Vercel deployment architecture > keeps the shared or fallback public route /tienda on index.html",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "standalone public Vercel deployment architecture keeps the shared or fallback public route /tienda on index.html",
+      "candidateFullName": "standalone public Vercel deployment architecture keeps the shared or fallback public route /tienda on index.html"
+    },
+    {
+      "id": "src/architecture/__tests__/publicDeploymentArchitecture.test.js :: standalone public Vercel deployment architecture > keeps the shared or fallback public route /tienda/demo-seguro/pedido/token-seguro on index.html",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "standalone public Vercel deployment architecture keeps the shared or fallback public route /tienda/demo-seguro/pedido/token-seguro on index.html",
+      "candidateFullName": "standalone public Vercel deployment architecture keeps the shared or fallback public route /tienda/demo-seguro/pedido/token-seguro on index.html"
+    },
+    {
+      "id": "src/architecture/__tests__/publicDeploymentArchitecture.test.js :: standalone public Vercel deployment architecture > keeps the shared or fallback public route /tienda/demo-seguro/ruta-anidada on index.html",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "standalone public Vercel deployment architecture keeps the shared or fallback public route /tienda/demo-seguro/ruta-anidada on index.html",
+      "candidateFullName": "standalone public Vercel deployment architecture keeps the shared or fallback public route /tienda/demo-seguro/ruta-anidada on index.html"
+    },
+    {
+      "id": "src/architecture/__tests__/publicDeploymentArchitecture.test.js :: standalone public Vercel deployment architecture > keeps the shared or fallback public route /conoce-lanzo on index.html",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "standalone public Vercel deployment architecture keeps the shared or fallback public route /conoce-lanzo on index.html",
+      "candidateFullName": "standalone public Vercel deployment architecture keeps the shared or fallback public route /conoce-lanzo on index.html"
+    },
+    {
+      "id": "src/architecture/__tests__/publicDeploymentArchitecture.test.js :: standalone public Vercel deployment architecture > keeps the shared or fallback public route /esto-no-existe on index.html",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "standalone public Vercel deployment architecture keeps the shared or fallback public route /esto-no-existe on index.html",
+      "candidateFullName": "standalone public Vercel deployment architecture keeps the shared or fallback public route /esto-no-existe on index.html"
+    },
+    {
+      "id": "src/architecture/__tests__/publicDeploymentArchitecture.test.js :: standalone public Vercel deployment architecture > keeps the one-segment storefront route on the HTML function",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "standalone public Vercel deployment architecture keeps the one-segment storefront route on the HTML function",
+      "candidateFullName": "standalone public Vercel deployment architecture keeps the one-segment storefront route on the HTML function"
+    },
+    {
+      "id": "src/architecture/__tests__/publicDeploymentArchitecture.test.js :: standalone public Vercel deployment architecture > canonicalizes /tienda/ once to /tienda before public routing",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "standalone public Vercel deployment architecture canonicalizes /tienda/ once to /tienda before public routing",
+      "candidateFullName": "standalone public Vercel deployment architecture canonicalizes /tienda/ once to /tienda before public routing"
+    },
+    {
+      "id": "src/architecture/__tests__/publicDeploymentArchitecture.test.js :: standalone public Vercel deployment architecture > canonicalizes /tienda/demo-seguro/ once to /tienda/demo-seguro before public routing",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "standalone public Vercel deployment architecture canonicalizes /tienda/demo-seguro/ once to /tienda/demo-seguro before public routing",
+      "candidateFullName": "standalone public Vercel deployment architecture canonicalizes /tienda/demo-seguro/ once to /tienda/demo-seguro before public routing"
+    },
+    {
+      "id": "src/architecture/__tests__/publicDeploymentArchitecture.test.js :: standalone public Vercel deployment architecture > canonicalizes /tienda/demo-seguro/pedido/token-seguro/ once to /tienda/demo-seguro/pedido/token-seguro before public routing",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "standalone public Vercel deployment architecture canonicalizes /tienda/demo-seguro/pedido/token-seguro/ once to /tienda/demo-seguro/pedido/token-seguro before public routing",
+      "candidateFullName": "standalone public Vercel deployment architecture canonicalizes /tienda/demo-seguro/pedido/token-seguro/ once to /tienda/demo-seguro/pedido/token-seguro before public routing"
+    },
+    {
+      "id": "src/architecture/__tests__/publicDeploymentArchitecture.test.js :: standalone public Vercel deployment architecture > canonicalizes /conoce-lanzo/ once to /conoce-lanzo before public routing",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "standalone public Vercel deployment architecture canonicalizes /conoce-lanzo/ once to /conoce-lanzo before public routing",
+      "candidateFullName": "standalone public Vercel deployment architecture canonicalizes /conoce-lanzo/ once to /conoce-lanzo before public routing"
+    },
+    {
+      "id": "src/architecture/__tests__/publicDeploymentArchitecture.test.js :: standalone public Vercel deployment architecture > canonicalizes /tienda/demo-seguro/?arch=deploy-1-1 once to /tienda/demo-seguro?arch=deploy-1-1 before public routing",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "standalone public Vercel deployment architecture canonicalizes /tienda/demo-seguro/?arch=deploy-1-1 once to /tienda/demo-seguro?arch=deploy-1-1 before public routing",
+      "candidateFullName": "standalone public Vercel deployment architecture canonicalizes /tienda/demo-seguro/?arch=deploy-1-1 once to /tienda/demo-seguro?arch=deploy-1-1 before public routing"
+    },
+    {
+      "id": "src/architecture/__tests__/publicDeploymentArchitecture.test.js :: standalone public Vercel deployment architecture > does not rewrite the forbidden, reserved, API, or asset route /sw.js",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "standalone public Vercel deployment architecture does not rewrite the forbidden, reserved, API, or asset route /sw.js",
+      "candidateFullName": "standalone public Vercel deployment architecture does not rewrite the forbidden, reserved, API, or asset route /sw.js"
+    },
+    {
+      "id": "src/architecture/__tests__/publicDeploymentArchitecture.test.js :: standalone public Vercel deployment architecture > does not rewrite the forbidden, reserved, API, or asset route /manifest.webmanifest",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "standalone public Vercel deployment architecture does not rewrite the forbidden, reserved, API, or asset route /manifest.webmanifest",
+      "candidateFullName": "standalone public Vercel deployment architecture does not rewrite the forbidden, reserved, API, or asset route /manifest.webmanifest"
+    },
+    {
+      "id": "src/architecture/__tests__/publicDeploymentArchitecture.test.js :: standalone public Vercel deployment architecture > does not rewrite the forbidden, reserved, API, or asset route /registerSW.js",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "standalone public Vercel deployment architecture does not rewrite the forbidden, reserved, API, or asset route /registerSW.js",
+      "candidateFullName": "standalone public Vercel deployment architecture does not rewrite the forbidden, reserved, API, or asset route /registerSW.js"
+    },
+    {
+      "id": "src/architecture/__tests__/publicDeploymentArchitecture.test.js :: standalone public Vercel deployment architecture > does not rewrite the forbidden, reserved, API, or asset route /workbox-fixture.js",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "standalone public Vercel deployment architecture does not rewrite the forbidden, reserved, API, or asset route /workbox-fixture.js",
+      "candidateFullName": "standalone public Vercel deployment architecture does not rewrite the forbidden, reserved, API, or asset route /workbox-fixture.js"
+    },
+    {
+      "id": "src/architecture/__tests__/publicDeploymentArchitecture.test.js :: standalone public Vercel deployment architecture > does not rewrite the forbidden, reserved, API, or asset route /.env",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "standalone public Vercel deployment architecture does not rewrite the forbidden, reserved, API, or asset route /.env",
+      "candidateFullName": "standalone public Vercel deployment architecture does not rewrite the forbidden, reserved, API, or asset route /.env"
+    },
+    {
+      "id": "src/architecture/__tests__/publicDeploymentArchitecture.test.js :: standalone public Vercel deployment architecture > does not rewrite the forbidden, reserved, API, or asset route /.env.local",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "standalone public Vercel deployment architecture does not rewrite the forbidden, reserved, API, or asset route /.env.local",
+      "candidateFullName": "standalone public Vercel deployment architecture does not rewrite the forbidden, reserved, API, or asset route /.env.local"
+    },
+    {
+      "id": "src/architecture/__tests__/publicDeploymentArchitecture.test.js :: standalone public Vercel deployment architecture > does not rewrite the forbidden, reserved, API, or asset route /package.json",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "standalone public Vercel deployment architecture does not rewrite the forbidden, reserved, API, or asset route /package.json",
+      "candidateFullName": "standalone public Vercel deployment architecture does not rewrite the forbidden, reserved, API, or asset route /package.json"
+    },
+    {
+      "id": "src/architecture/__tests__/publicDeploymentArchitecture.test.js :: standalone public Vercel deployment architecture > does not rewrite the forbidden, reserved, API, or asset route /package-lock.json",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "standalone public Vercel deployment architecture does not rewrite the forbidden, reserved, API, or asset route /package-lock.json",
+      "candidateFullName": "standalone public Vercel deployment architecture does not rewrite the forbidden, reserved, API, or asset route /package-lock.json"
+    },
+    {
+      "id": "src/architecture/__tests__/publicDeploymentArchitecture.test.js :: standalone public Vercel deployment architecture > does not rewrite the forbidden, reserved, API, or asset route /src/main-store.jsx",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "standalone public Vercel deployment architecture does not rewrite the forbidden, reserved, API, or asset route /src/main-store.jsx",
+      "candidateFullName": "standalone public Vercel deployment architecture does not rewrite the forbidden, reserved, API, or asset route /src/main-store.jsx"
+    },
+    {
+      "id": "src/architecture/__tests__/publicDeploymentArchitecture.test.js :: standalone public Vercel deployment architecture > does not rewrite the forbidden, reserved, API, or asset route /vite.store.config.js",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "standalone public Vercel deployment architecture does not rewrite the forbidden, reserved, API, or asset route /vite.store.config.js",
+      "candidateFullName": "standalone public Vercel deployment architecture does not rewrite the forbidden, reserved, API, or asset route /vite.store.config.js"
+    },
+    {
+      "id": "src/architecture/__tests__/publicDeploymentArchitecture.test.js :: standalone public Vercel deployment architecture > does not rewrite the forbidden, reserved, API, or asset route /vercel.json",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "standalone public Vercel deployment architecture does not rewrite the forbidden, reserved, API, or asset route /vercel.json",
+      "candidateFullName": "standalone public Vercel deployment architecture does not rewrite the forbidden, reserved, API, or asset route /vercel.json"
+    },
+    {
+      "id": "src/architecture/__tests__/publicDeploymentArchitecture.test.js :: standalone public Vercel deployment architecture > does not rewrite the forbidden, reserved, API, or asset route /_src",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "standalone public Vercel deployment architecture does not rewrite the forbidden, reserved, API, or asset route /_src",
+      "candidateFullName": "standalone public Vercel deployment architecture does not rewrite the forbidden, reserved, API, or asset route /_src"
+    },
+    {
+      "id": "src/architecture/__tests__/publicDeploymentArchitecture.test.js :: standalone public Vercel deployment architecture > does not rewrite the forbidden, reserved, API, or asset route /robots-no-existente.txt",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "standalone public Vercel deployment architecture does not rewrite the forbidden, reserved, API, or asset route /robots-no-existente.txt",
+      "candidateFullName": "standalone public Vercel deployment architecture does not rewrite the forbidden, reserved, API, or asset route /robots-no-existente.txt"
+    },
+    {
+      "id": "src/architecture/__tests__/publicDeploymentArchitecture.test.js :: standalone public Vercel deployment architecture > does not rewrite the forbidden, reserved, API, or asset route /api/ruta-inexistente",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "standalone public Vercel deployment architecture does not rewrite the forbidden, reserved, API, or asset route /api/ruta-inexistente",
+      "candidateFullName": "standalone public Vercel deployment architecture does not rewrite the forbidden, reserved, API, or asset route /api/ruta-inexistente"
+    },
+    {
+      "id": "src/architecture/__tests__/publicDeploymentArchitecture.test.js :: standalone public Vercel deployment architecture > does not rewrite the forbidden, reserved, API, or asset route /assets/ruta-inexistente.js",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "standalone public Vercel deployment architecture does not rewrite the forbidden, reserved, API, or asset route /assets/ruta-inexistente.js",
+      "candidateFullName": "standalone public Vercel deployment architecture does not rewrite the forbidden, reserved, API, or asset route /assets/ruta-inexistente.js"
+    },
+    {
+      "id": "src/architecture/__tests__/publicDeploymentArchitecture.test.js :: standalone public Vercel deployment architecture > leaves real assets on filesystem before the SPA fallback",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "standalone public Vercel deployment architecture leaves real assets on filesystem before the SPA fallback",
+      "candidateFullName": "standalone public Vercel deployment architecture leaves real assets on filesystem before the SPA fallback"
+    },
+    {
+      "id": "src/architecture/__tests__/publicDeploymentArchitecture.test.js :: standalone public Vercel deployment architecture > classifies a 404 /_src response as an acceptable reserved platform route",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "standalone public Vercel deployment architecture classifies a 404 /_src response as an acceptable reserved platform route",
+      "candidateFullName": "standalone public Vercel deployment architecture classifies a 404 /_src response as an acceptable reserved platform route"
+    },
+    {
+      "id": "src/architecture/__tests__/publicDeploymentArchitecture.test.js :: standalone public Vercel deployment architecture > accepts a guarded /_src redirect only to an official Vercel host: https://vercel.com/deployments/lanzo-store.vercel.app/source",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "standalone public Vercel deployment architecture accepts a guarded /_src redirect only to an official Vercel host: https://vercel.com/deployments/lanzo-store.vercel.app/source",
+      "candidateFullName": "standalone public Vercel deployment architecture accepts a guarded /_src redirect only to an official Vercel host: https://vercel.com/deployments/lanzo-store.vercel.app/source"
+    },
+    {
+      "id": "src/architecture/__tests__/publicDeploymentArchitecture.test.js :: standalone public Vercel deployment architecture > accepts a guarded /_src redirect only to an official Vercel host: https://www.vercel.com/deployments/lanzo-store.vercel.app/source",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "standalone public Vercel deployment architecture accepts a guarded /_src redirect only to an official Vercel host: https://www.vercel.com/deployments/lanzo-store.vercel.app/source",
+      "candidateFullName": "standalone public Vercel deployment architecture accepts a guarded /_src redirect only to an official Vercel host: https://www.vercel.com/deployments/lanzo-store.vercel.app/source"
+    },
+    {
+      "id": "src/architecture/__tests__/publicDeploymentArchitecture.test.js :: standalone public Vercel deployment architecture > rejects a /_src redirect to an unauthorized hostname",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "standalone public Vercel deployment architecture rejects a /_src redirect to an unauthorized hostname",
+      "candidateFullName": "standalone public Vercel deployment architecture rejects a /_src redirect to an unauthorized hostname"
+    },
+    {
+      "id": "src/architecture/__tests__/publicDeploymentArchitecture.test.js :: standalone public Vercel deployment architecture > rejects a 200 /_src response that serves the public Lanzo index",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "standalone public Vercel deployment architecture rejects a 200 /_src response that serves the public Lanzo index",
+      "candidateFullName": "standalone public Vercel deployment architecture rejects a 200 /_src response that serves the public Lanzo index"
+    },
+    {
+      "id": "src/architecture/__tests__/publicDeploymentArchitecture.test.js :: standalone public Vercel deployment architecture > rejects /_src when a redirect body exposes package or source content",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "standalone public Vercel deployment architecture rejects /_src when a redirect body exposes package or source content",
+      "candidateFullName": "standalone public Vercel deployment architecture rejects /_src when a redirect body exposes package or source content"
+    },
+    {
+      "id": "src/architecture/__tests__/publicDeploymentArchitecture.test.js :: standalone public Vercel deployment architecture > applies noindex globally, revalidation to canonical HTML, and immutable caching only to hashed assets",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "standalone public Vercel deployment architecture applies noindex globally, revalidation to canonical HTML, and immutable caching only to hashed assets",
+      "candidateFullName": "standalone public Vercel deployment architecture applies noindex globally, revalidation to canonical HTML, and immutable caching only to hashed assets"
+    },
+    {
+      "id": "src/architecture/__tests__/publicDeploymentArchitecture.test.js :: standalone public Vercel deployment architecture > prepares only dist-store plus robots.txt and the public config",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "standalone public Vercel deployment architecture prepares only dist-store plus robots.txt and the public config",
+      "candidateFullName": "standalone public Vercel deployment architecture prepares only dist-store plus robots.txt and the public config"
+    },
+    {
+      "id": "src/architecture/__tests__/publicDeploymentArchitecture.test.js :: standalone public Vercel deployment architecture > stores a path-safe SHA-256 manifest outside the deployable directory",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "standalone public Vercel deployment architecture stores a path-safe SHA-256 manifest outside the deployable directory",
+      "candidateFullName": "standalone public Vercel deployment architecture stores a path-safe SHA-256 manifest outside the deployable directory"
+    },
+    {
+      "id": "src/architecture/__tests__/publicDeploymentArchitecture.test.js :: standalone public Vercel deployment architecture > contains no forbidden files, PWA, administrative code, or detected secrets",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "standalone public Vercel deployment architecture contains no forbidden files, PWA, administrative code, or detected secrets",
+      "candidateFullName": "standalone public Vercel deployment architecture contains no forbidden files, PWA, administrative code, or detected secrets"
+    },
+    {
+      "id": "src/architecture/__tests__/publicDeploymentArchitecture.test.js :: standalone public Vercel deployment architecture > keeps the package free of PWA and administrative files",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "standalone public Vercel deployment architecture keeps the package free of PWA and administrative files",
+      "candidateFullName": "standalone public Vercel deployment architecture keeps the package free of PWA and administrative files"
+    },
+    {
+      "id": "src/architecture/__tests__/publicDeploymentArchitecture.test.js :: standalone public Vercel deployment architecture > never deploys and never creates a root Vercel link",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "standalone public Vercel deployment architecture never deploys and never creates a root Vercel link",
+      "candidateFullName": "standalone public Vercel deployment architecture never deploys and never creates a root Vercel link"
+    },
+    {
+      "id": "src/architecture/__tests__/publicDeploymentArchitecture.test.js :: standalone public Vercel deployment architecture > leaves dist-store byte-identical and keeps Git absent",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "standalone public Vercel deployment architecture leaves dist-store byte-identical and keeps Git absent",
+      "candidateFullName": "standalone public Vercel deployment architecture leaves dist-store byte-identical and keeps Git absent"
+    },
+    {
+      "id": "src/architecture/__tests__/publicGitDeploymentArchitecture.test.js :: ECOM.PUBLIC.GIT.1 architecture > stages an audited real artifact with robots.txt",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "Error: ENOENT: no such file or directory, scandir '<ROOT>/store/dist'",
+      "candidateSignature": "Error: ENOENT: no such file or directory, scandir '<ROOT>/store/dist'",
+      "mainFullName": "ECOM.PUBLIC.GIT.1 architecture stages an audited real artifact with robots.txt",
+      "candidateFullName": "ECOM.PUBLIC.GIT.1 architecture stages an audited real artifact with robots.txt"
+    },
+    {
+      "id": "src/architecture/__tests__/publicGitDeploymentArchitecture.test.js :: ECOM.PUBLIC.GIT.1 architecture > fails when administrative code is injected into the real artifact",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "Error: ENOENT: no such file or directory, lstat '<ROOT>/store/dist'",
+      "candidateSignature": "Error: ENOENT: no such file or directory, lstat '<ROOT>/store/dist'",
+      "mainFullName": "ECOM.PUBLIC.GIT.1 architecture fails when administrative code is injected into the real artifact",
+      "candidateFullName": "ECOM.PUBLIC.GIT.1 architecture fails when administrative code is injected into the real artifact"
+    },
+    {
+      "id": "src/architecture/__tests__/publicGitDeploymentArchitecture.test.js :: ECOM.PUBLIC.GIT.1 architecture > fails when robots.txt is missing",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "Error: ENOENT: no such file or directory, lstat '<ROOT>/store/dist'",
+      "candidateSignature": "Error: ENOENT: no such file or directory, lstat '<ROOT>/store/dist'",
+      "mainFullName": "ECOM.PUBLIC.GIT.1 architecture fails when robots.txt is missing",
+      "candidateFullName": "ECOM.PUBLIC.GIT.1 architecture fails when robots.txt is missing"
+    },
+    {
+      "id": "src/architecture/__tests__/publicGitDeploymentArchitecture.test.js :: ECOM.PUBLIC.GIT.1 architecture > fails when a private secret is injected",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "Error: ENOENT: no such file or directory, lstat '<ROOT>/store/dist'",
+      "candidateSignature": "Error: ENOENT: no such file or directory, lstat '<ROOT>/store/dist'",
+      "mainFullName": "ECOM.PUBLIC.GIT.1 architecture fails when a private secret is injected",
+      "candidateFullName": "ECOM.PUBLIC.GIT.1 architecture fails when a private secret is injected"
+    },
+    {
+      "id": "src/architecture/__tests__/publicGitDeploymentArchitecture.test.js :: ECOM.PUBLIC.GIT.1 architecture > keeps dist-store and store/dist byte-identical except robots.txt",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "Error: ENOENT: no such file or directory, scandir '<ROOT>/dist-store'",
+      "candidateSignature": "Error: ENOENT: no such file or directory, scandir '<ROOT>/dist-store'",
+      "mainFullName": "ECOM.PUBLIC.GIT.1 architecture keeps dist-store and store/dist byte-identical except robots.txt",
+      "candidateFullName": "ECOM.PUBLIC.GIT.1 architecture keeps dist-store and store/dist byte-identical except robots.txt"
+    },
+    {
+      "id": "src/hooks/__tests__/useNavigationGuard.test.jsx :: useNavigationGuard > bloquea la navegación aunque el formulario no haya cambiado",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)')",
+      "candidateSignature": "TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)')",
+      "mainFullName": "useNavigationGuard bloquea la navegación aunque el formulario no haya cambiado",
+      "candidateFullName": "useNavigationGuard bloquea la navegación aunque el formulario no haya cambiado"
+    },
+    {
+      "id": "src/hooks/__tests__/useNavigationGuard.test.jsx :: useNavigationGuard > cancela la salida y conserva los datos capturados",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)')",
+      "candidateSignature": "TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)')",
+      "mainFullName": "useNavigationGuard cancela la salida y conserva los datos capturados",
+      "candidateFullName": "useNavigationGuard cancela la salida y conserva los datos capturados"
+    },
+    {
+      "id": "src/hooks/__tests__/useNavigationGuard.test.jsx :: useNavigationGuard > descarta la operación y continúa al destino al confirmar",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)')",
+      "candidateSignature": "TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)')",
+      "mainFullName": "useNavigationGuard descarta la operación y continúa al destino al confirmar",
+      "candidateFullName": "useNavigationGuard descarta la operación y continúa al destino al confirmar"
+    },
+    {
+      "id": "src/hooks/__tests__/useNavigationGuard.test.jsx :: useNavigationGuard > permite navegar sin advertencia después de guardar",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)')",
+      "candidateSignature": "TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)')",
+      "mainFullName": "useNavigationGuard permite navegar sin advertencia después de guardar",
+      "candidateFullName": "useNavigationGuard permite navegar sin advertencia después de guardar"
+    },
+    {
+      "id": "src/hooks/__tests__/useNavigationGuard.test.jsx :: useNavigationGuard > activa la advertencia nativa del navegador mientras está habilitado",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "ReferenceError: document is not defined",
+      "candidateSignature": "ReferenceError: document is not defined",
+      "mainFullName": "useNavigationGuard activa la advertencia nativa del navegador mientras está habilitado",
+      "candidateFullName": "useNavigationGuard activa la advertencia nativa del navegador mientras está habilitado"
+    },
+    {
+      "id": "src/hooks/__tests__/useNavigationGuard.test.jsx :: useNavigationGuard > bloquea cambios de pestaña representados por parámetros de búsqueda",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)')",
+      "candidateSignature": "TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)')",
+      "mainFullName": "useNavigationGuard bloquea cambios de pestaña representados por parámetros de búsqueda",
+      "candidateFullName": "useNavigationGuard bloquea cambios de pestaña representados por parámetros de búsqueda"
+    },
+    {
+      "id": "src/hooks/__tests__/useNavigationGuard.test.jsx :: useNavigationGuard > cierra el modal al confirmar salida hacia otra pestaña de la misma ruta",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)')",
+      "candidateSignature": "TypeError: Cannot read properties of undefined (reading 'Symbol(Node prepared with document state workarounds)')",
+      "mainFullName": "useNavigationGuard cierra el modal al confirmar salida hacia otra pestaña de la misma ruta",
+      "candidateFullName": "useNavigationGuard cierra el modal al confirmar salida hacia otra pestaña de la misma ruta"
+    },
+    {
+      "id": "src/hooks/__tests__/useNavigationGuard.test.jsx :: useNavigationGuard > bloquea la navegación hacia atrás del historial",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "ReferenceError: document is not defined",
+      "candidateSignature": "ReferenceError: document is not defined",
+      "mainFullName": "useNavigationGuard bloquea la navegación hacia atrás del historial",
+      "candidateFullName": "useNavigationGuard bloquea la navegación hacia atrás del historial"
+    },
+    {
+      "id": "src/store/__test__/useOrderStore.test.js :: useOrderStore - mesas abiertas > loadOpenOrder carga solo ventas con status open",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "AssertionError: expected { success: false, …(1) } to deeply equal { success: true }",
+      "candidateSignature": "AssertionError: expected { success: false, …(1) } to deeply equal { success: true }",
+      "mainFullName": "useOrderStore - mesas abiertas loadOpenOrder carga solo ventas con status open",
+      "candidateFullName": "useOrderStore - mesas abiertas loadOpenOrder carga solo ventas con status open"
+    },
+    {
+      "id": "src/store/__test__/useOrderStore.test.js :: useOrderStore - mesas abiertas > saveOrderAsOpen inserta nueva orden abierta y limpia la sesión",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "AssertionError: expected { success: false, …(1) } to deeply equal { success: true, …(1) }",
+      "candidateSignature": "AssertionError: expected { success: false, …(1) } to deeply equal { success: true, …(1) }",
+      "mainFullName": "useOrderStore - mesas abiertas saveOrderAsOpen inserta nueva orden abierta y limpia la sesión",
+      "candidateFullName": "useOrderStore - mesas abiertas saveOrderAsOpen inserta nueva orden abierta y limpia la sesión"
+    },
+    {
+      "id": "src/store/__test__/useOrderStore.test.js :: useOrderStore - mesas abiertas > saveOrderAsOpen actualiza orden activa liberando y re-reservando stock",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "AssertionError: expected { success: false, …(1) } to deeply equal { success: true, id: 'sale-open-2' }",
+      "candidateSignature": "AssertionError: expected { success: false, …(1) } to deeply equal { success: true, id: 'sale-open-2' }",
+      "mainFullName": "useOrderStore - mesas abiertas saveOrderAsOpen actualiza orden activa liberando y re-reservando stock",
+      "candidateFullName": "useOrderStore - mesas abiertas saveOrderAsOpen actualiza orden activa liberando y re-reservando stock"
+    },
+    {
+      "id": "src/store/__test__/useOrderStore.test.js :: useOrderStore - mesas abiertas > saveOrderAsOpen hace rollback best-effort si falla el upsert",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "AssertionError: expected 'El pedido está vacío.' to contain 'put failed'",
+      "candidateSignature": "AssertionError: expected 'El pedido está vacío.' to contain 'put failed'",
+      "mainFullName": "useOrderStore - mesas abiertas saveOrderAsOpen hace rollback best-effort si falla el upsert",
+      "candidateFullName": "useOrderStore - mesas abiertas saveOrderAsOpen hace rollback best-effort si falla el upsert"
+    },
+    {
+      "id": "src/store/__test__/useOrderStore.test.js :: useOrderStore - mesas abiertas > clearSession limpia order, activeOrderId y tableData",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "AssertionError: expected [ { id: 'prod', quantity: 1, …(1) } ] to deeply equal []",
+      "candidateSignature": "AssertionError: expected [ { id: 'prod', quantity: 1, …(1) } ] to deeply equal []",
+      "mainFullName": "useOrderStore - mesas abiertas clearSession limpia order, activeOrderId y tableData",
+      "candidateFullName": "useOrderStore - mesas abiertas clearSession limpia order, activeOrderId y tableData"
+    },
+    {
+      "id": "src/store/__test__/useStoreSync.test.js :: Bidirectional Syncing: useOrderStore <-> useActiveOrders > 1. debería enlazar correctamente ambos stores",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "TypeError: __vi_import_1__.useOrderStore.getState(...).linkWithActiveOrders is not a function",
+      "candidateSignature": "TypeError: __vi_import_1__.useOrderStore.getState(...).linkWithActiveOrders is not a function",
+      "mainFullName": "Bidirectional Syncing: useOrderStore <-> useActiveOrders 1. debería enlazar correctamente ambos stores",
+      "candidateFullName": "Bidirectional Syncing: useOrderStore <-> useActiveOrders 1. debería enlazar correctamente ambos stores"
+    },
+    {
+      "id": "src/store/__test__/useStoreSync.test.js :: Bidirectional Syncing: useOrderStore <-> useActiveOrders > 2. debería volcar datos a useOrderStore cuando se hace switchOrder",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "TypeError: __vi_import_1__.useOrderStore.getState(...).linkWithActiveOrders is not a function",
+      "candidateSignature": "TypeError: __vi_import_1__.useOrderStore.getState(...).linkWithActiveOrders is not a function",
+      "mainFullName": "Bidirectional Syncing: useOrderStore <-> useActiveOrders 2. debería volcar datos a useOrderStore cuando se hace switchOrder",
+      "candidateFullName": "Bidirectional Syncing: useOrderStore <-> useActiveOrders 2. debería volcar datos a useOrderStore cuando se hace switchOrder"
+    },
+    {
+      "id": "src/store/__test__/useStoreSync.test.js :: Bidirectional Syncing: useOrderStore <-> useActiveOrders > 3. debería actualizar useActiveOrders cuando useOrderStore es modificado",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "TypeError: __vi_import_1__.useOrderStore.getState(...).linkWithActiveOrders is not a function",
+      "candidateSignature": "TypeError: __vi_import_1__.useOrderStore.getState(...).linkWithActiveOrders is not a function",
+      "mainFullName": "Bidirectional Syncing: useOrderStore <-> useActiveOrders 3. debería actualizar useActiveOrders cuando useOrderStore es modificado",
+      "candidateFullName": "Bidirectional Syncing: useOrderStore <-> useActiveOrders 3. debería actualizar useActiveOrders cuando useOrderStore es modificado"
+    },
+    {
+      "id": "src/store/__test__/useStoreSync.test.js :: Bidirectional Syncing: useOrderStore <-> useActiveOrders > 4. el getter currentOrder en useOrderStore debe retornar la orden actual",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "TypeError: __vi_import_1__.useOrderStore.getState(...).linkWithActiveOrders is not a function",
+      "candidateSignature": "TypeError: __vi_import_1__.useOrderStore.getState(...).linkWithActiveOrders is not a function",
+      "mainFullName": "Bidirectional Syncing: useOrderStore <-> useActiveOrders 4. el getter currentOrder en useOrderStore debe retornar la orden actual",
+      "candidateFullName": "Bidirectional Syncing: useOrderStore <-> useActiveOrders 4. el getter currentOrder en useOrderStore debe retornar la orden actual"
+    },
+    {
+      "id": "src/services/__test__/BackupRiskEvaluator.test.js :: BackupRiskEvaluator > debe calcular el riesgo L1 cuando pasa el umbral de 50",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "ReferenceError: localStorage is not defined",
+      "candidateSignature": "ReferenceError: localStorage is not defined",
+      "mainFullName": "BackupRiskEvaluator debe calcular el riesgo L1 cuando pasa el umbral de 50",
+      "candidateFullName": "BackupRiskEvaluator debe calcular el riesgo L1 cuando pasa el umbral de 50"
+    },
+    {
+      "id": "src/services/__test__/BackupRiskEvaluator.test.js :: BackupRiskEvaluator > debe escalar al riesgo L3 cuando pasa de 300",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "ReferenceError: localStorage is not defined",
+      "candidateSignature": "ReferenceError: localStorage is not defined",
+      "mainFullName": "BackupRiskEvaluator debe escalar al riesgo L3 cuando pasa de 300",
+      "candidateFullName": "BackupRiskEvaluator debe escalar al riesgo L3 cuando pasa de 300"
+    },
+    {
+      "id": "src/services/__test__/BackupRiskEvaluator.test.js :: BackupRiskEvaluator > no debe disparar alerta si el posponer esta activo",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "ReferenceError: localStorage is not defined",
+      "candidateSignature": "ReferenceError: localStorage is not defined",
+      "mainFullName": "BackupRiskEvaluator no debe disparar alerta si el posponer esta activo",
+      "candidateFullName": "BackupRiskEvaluator no debe disparar alerta si el posponer esta activo"
+    },
+    {
+      "id": "src/services/__test__/BackupRiskEvaluator.test.js :: BackupRiskEvaluator > debe reanudar la alerta L3 si se rebasa el limite de posponer",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "ReferenceError: localStorage is not defined",
+      "candidateSignature": "ReferenceError: localStorage is not defined",
+      "mainFullName": "BackupRiskEvaluator debe reanudar la alerta L3 si se rebasa el limite de posponer",
+      "candidateFullName": "BackupRiskEvaluator debe reanudar la alerta L3 si se rebasa el limite de posponer"
+    },
+    {
+      "id": "src/services/__test__/BackupRiskEvaluator.test.js :: BackupRiskEvaluator > debe marcar el respaldo como completado correctamente (Async)",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "ReferenceError: localStorage is not defined",
+      "candidateSignature": "ReferenceError: localStorage is not defined",
+      "mainFullName": "BackupRiskEvaluator debe marcar el respaldo como completado correctamente (Async)",
+      "candidateFullName": "BackupRiskEvaluator debe marcar el respaldo como completado correctamente (Async)"
+    },
+    {
+      "id": "src/services/__test__/BackupRiskEvaluator.test.js :: BackupRiskEvaluator > no debe lanzar ni registrar error cuando localStorage no existe",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "ReferenceError: localStorage is not defined",
+      "candidateSignature": "ReferenceError: localStorage is not defined",
+      "mainFullName": "BackupRiskEvaluator no debe lanzar ni registrar error cuando localStorage no existe",
+      "candidateFullName": "BackupRiskEvaluator no debe lanzar ni registrar error cuando localStorage no existe"
+    },
+    {
+      "id": "src/services/__test__/BackupRiskEvaluator.test.js :: BackupRiskEvaluator > startBackupRiskEvaluator no hace nada cuando localStorage no existe",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "ReferenceError: localStorage is not defined",
+      "candidateSignature": "ReferenceError: localStorage is not defined",
+      "mainFullName": "BackupRiskEvaluator startBackupRiskEvaluator no hace nada cuando localStorage no existe",
+      "candidateFullName": "BackupRiskEvaluator startBackupRiskEvaluator no hace nada cuando localStorage no existe"
+    },
+    {
+      "id": "src/services/__test__/BackupRiskEvaluator.test.js :: BackupRiskEvaluator > startBackupRiskEvaluator programa un solo ping inicial",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "ReferenceError: localStorage is not defined",
+      "candidateSignature": "ReferenceError: localStorage is not defined",
+      "mainFullName": "BackupRiskEvaluator startBackupRiskEvaluator programa un solo ping inicial",
+      "candidateFullName": "BackupRiskEvaluator startBackupRiskEvaluator programa un solo ping inicial"
+    },
+    {
+      "id": "src/services/__test__/cashOpeningPolicy.test.js :: cashOpeningPolicy > usa apertura manual como politica segura por defecto",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "ReferenceError: localStorage is not defined",
+      "candidateSignature": "ReferenceError: localStorage is not defined",
+      "mainFullName": "cashOpeningPolicy usa apertura manual como politica segura por defecto",
+      "candidateFullName": "cashOpeningPolicy usa apertura manual como politica segura por defecto"
+    },
+    {
+      "id": "src/services/__test__/cashOpeningPolicy.test.js :: cashOpeningPolicy > persiste la autoapertura solo cuando se configura explicitamente",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "ReferenceError: localStorage is not defined",
+      "candidateSignature": "ReferenceError: localStorage is not defined",
+      "mainFullName": "cashOpeningPolicy persiste la autoapertura solo cuando se configura explicitamente",
+      "candidateFullName": "cashOpeningPolicy persiste la autoapertura solo cuando se configura explicitamente"
+    },
+    {
+      "id": "src/services/__test__/cashOpeningPolicy.test.js :: cashOpeningPolicy > exige responsable y coincidencia entre fondo y conteo",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "ReferenceError: localStorage is not defined",
+      "candidateSignature": "ReferenceError: localStorage is not defined",
+      "mainFullName": "cashOpeningPolicy exige responsable y coincidencia entre fondo y conteo",
+      "candidateFullName": "cashOpeningPolicy exige responsable y coincidencia entre fondo y conteo"
+    },
+    {
+      "id": "src/services/__test__/cashOpeningPolicy.test.js :: cashOpeningPolicy > registra la diferencia contra el fondo sugerido",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "ReferenceError: localStorage is not defined",
+      "candidateSignature": "ReferenceError: localStorage is not defined",
+      "mainFullName": "cashOpeningPolicy registra la diferencia contra el fondo sugerido",
+      "candidateFullName": "cashOpeningPolicy registra la diferencia contra el fondo sugerido"
+    },
+    {
+      "id": "src/services/__test__/cashOpeningPolicy.test.js :: cashOpeningPolicy > identifica de forma explicita una apertura automatica",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "ReferenceError: localStorage is not defined",
+      "candidateSignature": "ReferenceError: localStorage is not defined",
+      "mainFullName": "cashOpeningPolicy identifica de forma explicita una apertura automatica",
+      "candidateFullName": "cashOpeningPolicy identifica de forma explicita una apertura automatica"
+    },
+    {
+      "id": "src/services/__test__/cashOpeningPolicyService.test.js :: cashOpeningPolicy > persiste la autoapertura solo cuando se configura explicitamente",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "AssertionError: expected 'manual' to be 'automatic' // Object.is equality",
+      "candidateSignature": "AssertionError: expected 'manual' to be 'automatic' // Object.is equality",
+      "mainFullName": "cashOpeningPolicy persiste la autoapertura solo cuando se configura explicitamente",
+      "candidateFullName": "cashOpeningPolicy persiste la autoapertura solo cuando se configura explicitamente"
+    },
+    {
+      "id": "src/services/orders/orderVersioning.test.js :: orderVersioning > compares revision before updatedAt or item count",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "ReferenceError: localStorage is not defined",
+      "candidateSignature": "ReferenceError: localStorage is not defined",
+      "mainFullName": "orderVersioning compares revision before updatedAt or item count",
+      "candidateFullName": "orderVersioning compares revision before updatedAt or item count"
+    },
+    {
+      "id": "src/services/orders/orderVersioning.test.js :: orderVersioning > uses updatedAt and then deviceId as deterministic tie breakers",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "ReferenceError: localStorage is not defined",
+      "candidateSignature": "ReferenceError: localStorage is not defined",
+      "mainFullName": "orderVersioning uses updatedAt and then deviceId as deterministic tie breakers",
+      "candidateFullName": "orderVersioning uses updatedAt and then deviceId as deterministic tie breakers"
+    },
+    {
+      "id": "src/services/orders/orderVersioning.test.js :: orderVersioning > reuses the main device id when available",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "ReferenceError: localStorage is not defined",
+      "candidateSignature": "ReferenceError: localStorage is not defined",
+      "mainFullName": "orderVersioning reuses the main device id when available",
+      "candidateFullName": "orderVersioning reuses the main device id when available"
+    },
+    {
+      "id": "src/utils/__tests__/ecommerceConfiguredProduct.test.js :: ecommerceConfiguredProduct > validates required, single, multiple, min and max groups",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "AssertionError: expected false to be true // Object.is equality",
+      "candidateSignature": "AssertionError: expected false to be true // Object.is equality",
+      "mainFullName": "ecommerceConfiguredProduct validates required, single, multiple, min and max groups",
+      "candidateFullName": "ecommerceConfiguredProduct validates required, single, multiple, min and max groups"
+    },
+    {
+      "id": "src/utils/__tests__/ecommerceConfiguredProduct.test.js :: ecommerceConfiguredProduct > builds a configured cart line and clamps quantity to exact variant stock",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "AssertionError: expected { success: false, valid: false, …(2) } to match object { success: true, …(4) }\n(4 matching properties omitted from actual)",
+      "candidateSignature": "AssertionError: expected { success: false, valid: false, …(2) } to match object { success: true, …(4) }\n(4 matching properties omitted from actual)",
+      "mainFullName": "ecommerceConfiguredProduct builds a configured cart line and clamps quantity to exact variant stock",
+      "candidateFullName": "ecommerceConfiguredProduct builds a configured cart line and clamps quantity to exact variant stock"
+    },
+    {
+      "id": "src/utils/__tests__/ecommerceConfiguredProduct.test.js :: ecommerceConfiguredProduct > creates a minimal server payload without client prices or names",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "AssertionError: expected { productId: '', quantity: 1 } to deeply equal { productId: 'product-1', …(3) }",
+      "candidateSignature": "AssertionError: expected { productId: '', quantity: 1 } to deeply equal { productId: 'product-1', …(3) }",
+      "mainFullName": "ecommerceConfiguredProduct creates a minimal server payload without client prices or names",
+      "candidateFullName": "ecommerceConfiguredProduct creates a minimal server payload without client prices or names"
+    },
+    {
+      "id": "store/tests/social-preview/storeBuildOutputAudit.test.js :: auditoría de .vercel/output > acepta un output mínimo válido",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "AssertionError: [\"functionHandlersInvocable\",\"functionHandlersLoadable\",\"functionRequestsCompleted\",\"functionRuntimeModulesLoadable\",\"independentFunctionSmokePassed\",\"noExternalSmokeRequests\",\"ogEndToEndSmokePassed\",\"storePageEndToEndSmokePassed\"]: expected 'FAIL' to be 'PASS' // Object.is equality",
+      "candidateSignature": "AssertionError: [\"functionHandlersInvocable\",\"functionHandlersLoadable\",\"functionRequestsCompleted\",\"functionRuntimeModulesLoadable\",\"independentFunctionSmokePassed\",\"noExternalSmokeRequests\",\"ogEndToEndSmokePassed\",\"storePageEndToEndSmokePassed\"]: expected 'FAIL' to be 'PASS' // Object.is equality",
+      "mainFullName": "auditoría de .vercel/output acepta un output mínimo válido",
+      "candidateFullName": "auditoría de .vercel/output acepta un output mínimo válido"
+    },
+    {
+      "id": "store/tests/social-preview/storeBuildOutputAudit.test.js :: auditoría de .vercel/output > reproduce el fallo transitorio de la plantilla y corrige atómicamente ambos scopes",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "AssertionError: expected false to be true // Object.is equality",
+      "candidateSignature": "AssertionError: expected false to be true // Object.is equality",
+      "mainFullName": "auditoría de .vercel/output reproduce el fallo transitorio de la plantilla y corrige atómicamente ambos scopes",
+      "candidateFullName": "auditoría de .vercel/output reproduce el fallo transitorio de la plantilla y corrige atómicamente ambos scopes"
+    },
+    {
+      "id": "store/tests/social-preview/storeBuildOutputAudit.test.js :: auditoría de .vercel/output > normaliza solamente los bundles de entrada esperados con evidencia",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "AssertionError: [\"functionHandlersInvocable\",\"functionHandlersLoadable\",\"functionRequestsCompleted\",\"functionRuntimeModulesLoadable\",\"independentFunctionSmokePassed\",\"noExternalSmokeRequests\",\"ogEndToEndSmokePassed\",\"storePageEndToEndSmokePassed\"]: expected 'FAIL' to be 'PASS' // Object.is equality",
+      "candidateSignature": "AssertionError: [\"functionHandlersInvocable\",\"functionHandlersLoadable\",\"functionRequestsCompleted\",\"functionRuntimeModulesLoadable\",\"independentFunctionSmokePassed\",\"noExternalSmokeRequests\",\"ogEndToEndSmokePassed\",\"storePageEndToEndSmokePassed\"]: expected 'FAIL' to be 'PASS' // Object.is equality",
+      "mainFullName": "auditoría de .vercel/output normaliza solamente los bundles de entrada esperados con evidencia",
+      "candidateFullName": "auditoría de .vercel/output normaliza solamente los bundles de entrada esperados con evidencia"
+    },
+    {
+      "id": "store/tests/social-preview/storeBuildOutputAudit.test.js :: auditoría de .vercel/output > clasifica mapas internos seguros y bloquea mapas públicos o con secretos",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "AssertionError: [\"functionHandlersInvocable\",\"functionHandlersLoadable\",\"functionRequestsCompleted\",\"functionRuntimeModulesLoadable\",\"independentFunctionSmokePassed\",\"noExternalSmokeRequests\",\"ogEndToEndSmokePassed\",\"storePageEndToEndSmokePassed\"]: expected 'FAIL' to be 'PASS' // Object.is equality",
+      "candidateSignature": "AssertionError: [\"functionHandlersInvocable\",\"functionHandlersLoadable\",\"functionRequestsCompleted\",\"functionRuntimeModulesLoadable\",\"independentFunctionSmokePassed\",\"noExternalSmokeRequests\",\"ogEndToEndSmokePassed\",\"storePageEndToEndSmokePassed\"]: expected 'FAIL' to be 'PASS' // Object.is equality",
+      "mainFullName": "auditoría de .vercel/output clasifica mapas internos seguros y bloquea mapas públicos o con secretos",
+      "candidateFullName": "auditoría de .vercel/output clasifica mapas internos seguros y bloquea mapas públicos o con secretos"
+    },
+    {
+      "id": "store/tests/social-preview/storeBuildOutputAudit.test.js :: auditoría de .vercel/output > no trata ruta Windows en un sourcemap seguro como import ejecutable",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "AssertionError: [\"functionHandlersInvocable\",\"functionHandlersLoadable\",\"functionRequestsCompleted\",\"functionRuntimeModulesLoadable\",\"independentFunctionSmokePassed\",\"noExternalSmokeRequests\",\"ogEndToEndSmokePassed\",\"storePageEndToEndSmokePassed\"]: expected 'FAIL' to be 'PASS' // Object.is equality",
+      "candidateSignature": "AssertionError: [\"functionHandlersInvocable\",\"functionHandlersLoadable\",\"functionRequestsCompleted\",\"functionRuntimeModulesLoadable\",\"independentFunctionSmokePassed\",\"noExternalSmokeRequests\",\"ogEndToEndSmokePassed\",\"storePageEndToEndSmokePassed\"]: expected 'FAIL' to be 'PASS' // Object.is equality",
+      "mainFullName": "auditoría de .vercel/output no trata ruta Windows en un sourcemap seguro como import ejecutable",
+      "candidateFullName": "auditoría de .vercel/output no trata ruta Windows en un sourcemap seguro como import ejecutable"
+    },
+    {
+      "id": "store/tests/social-preview/storeBuildOutputAudit.test.js :: auditoría de .vercel/output > no trata file URL en un sourcemap seguro como import ejecutable",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "AssertionError: [\"functionHandlersInvocable\",\"functionHandlersLoadable\",\"functionRequestsCompleted\",\"functionRuntimeModulesLoadable\",\"independentFunctionSmokePassed\",\"noExternalSmokeRequests\",\"ogEndToEndSmokePassed\",\"storePageEndToEndSmokePassed\"]: expected 'FAIL' to be 'PASS' // Object.is equality",
+      "candidateSignature": "AssertionError: [\"functionHandlersInvocable\",\"functionHandlersLoadable\",\"functionRequestsCompleted\",\"functionRuntimeModulesLoadable\",\"independentFunctionSmokePassed\",\"noExternalSmokeRequests\",\"ogEndToEndSmokePassed\",\"storePageEndToEndSmokePassed\"]: expected 'FAIL' to be 'PASS' // Object.is equality",
+      "mainFullName": "auditoría de .vercel/output no trata file URL en un sourcemap seguro como import ejecutable",
+      "candidateFullName": "auditoría de .vercel/output no trata file URL en un sourcemap seguro como import ejecutable"
+    },
+    {
+      "id": "store/tests/social-preview/storeBuildOutputAudit.test.js :: auditoría de .vercel/output > enumera fuentes del closure OG y rechaza las no autorizadas",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "AssertionError: [\"functionHandlersInvocable\",\"functionHandlersLoadable\",\"functionRequestsCompleted\",\"functionRuntimeModulesLoadable\",\"independentFunctionSmokePassed\",\"noExternalSmokeRequests\",\"ogEndToEndSmokePassed\",\"storePageEndToEndSmokePassed\"]: expected 'FAIL' to be 'PASS' // Object.is equality",
+      "candidateSignature": "AssertionError: [\"functionHandlersInvocable\",\"functionHandlersLoadable\",\"functionRequestsCompleted\",\"functionRuntimeModulesLoadable\",\"independentFunctionSmokePassed\",\"noExternalSmokeRequests\",\"ogEndToEndSmokePassed\",\"storePageEndToEndSmokePassed\"]: expected 'FAIL' to be 'PASS' // Object.is equality",
+      "mainFullName": "auditoría de .vercel/output enumera fuentes del closure OG y rechaza las no autorizadas",
+      "candidateFullName": "auditoría de .vercel/output enumera fuentes del closure OG y rechaza las no autorizadas"
+    },
+    {
+      "id": "store/tests/social-preview/storeBuildOutputAudit.test.js :: auditoría de .vercel/output > acepta vocabulario defensivo sin valores credenciales",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "AssertionError: [\"functionHandlersInvocable\",\"functionHandlersLoadable\",\"functionRequestsCompleted\",\"functionRuntimeModulesLoadable\",\"independentFunctionSmokePassed\",\"noExternalSmokeRequests\",\"ogEndToEndSmokePassed\",\"storePageEndToEndSmokePassed\"]: expected 'FAIL' to be 'PASS' // Object.is equality",
+      "candidateSignature": "AssertionError: [\"functionHandlersInvocable\",\"functionHandlersLoadable\",\"functionRequestsCompleted\",\"functionRuntimeModulesLoadable\",\"independentFunctionSmokePassed\",\"noExternalSmokeRequests\",\"ogEndToEndSmokePassed\",\"storePageEndToEndSmokePassed\"]: expected 'FAIL' to be 'PASS' // Object.is equality",
+      "mainFullName": "auditoría de .vercel/output acepta vocabulario defensivo sin valores credenciales",
+      "candidateFullName": "auditoría de .vercel/output acepta vocabulario defensivo sin valores credenciales"
+    },
+    {
+      "id": "store/tests/social-preview/storePrebuiltPackaging.test.js :: workspace prebuilt saneado > resuelve el CLI autenticado de Vercel como JavaScript directo, sin vercel.cmd",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "workspace prebuilt saneado resuelve el CLI autenticado de Vercel como JavaScript directo, sin vercel.cmd",
+      "candidateFullName": "workspace prebuilt saneado resuelve el CLI autenticado de Vercel como JavaScript directo, sin vercel.cmd"
+    },
+    {
+      "id": "store/tests/social-preview/storePrebuiltPackaging.test.js :: workspace prebuilt saneado > ejecuta realmente node.exe npm-cli.js --version con la entrada heredada",
+      "category": "SKIPPED",
+      "mainStatus": "skipped",
+      "candidateStatus": "skipped",
+      "mainSignature": "",
+      "candidateSignature": "",
+      "mainFullName": "workspace prebuilt saneado ejecuta realmente node.exe npm-cli.js --version con la entrada heredada",
+      "candidateFullName": "workspace prebuilt saneado ejecuta realmente node.exe npm-cli.js --version con la entrada heredada"
+    },
+    {
+      "id": "src/components/settings/__tests__/OperationalSettings.cashOpening.test.jsx :: OperationalSettings cash opening control > disables automatic cash opening for cloud cash licenses",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "ReferenceError: document is not defined",
+      "candidateSignature": "ReferenceError: document is not defined",
+      "mainFullName": "OperationalSettings cash opening control disables automatic cash opening for cloud cash licenses",
+      "candidateFullName": "OperationalSettings cash opening control disables automatic cash opening for cloud cash licenses"
+    },
+    {
+      "id": "src/components/settings/__tests__/OperationalSettings.cashOpening.test.jsx :: OperationalSettings cash opening control > warns FREE/local users when automatic cash opening is enabled",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "ReferenceError: document is not defined",
+      "candidateSignature": "ReferenceError: document is not defined",
+      "mainFullName": "OperationalSettings cash opening control warns FREE/local users when automatic cash opening is enabled",
+      "candidateFullName": "OperationalSettings cash opening control warns FREE/local users when automatic cash opening is enabled"
+    },
+    {
+      "id": "src/components/products/__tests__/ProductList.test.jsx :: ProductList batch-backed grocery details > uses sale units and the nearest active batch expiry on cards",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "TestingLibraryElementError: Unable to find an element with the text: /Caduca en \\d+ días/. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.\nIgnored nodes: comments, script, style\n<body>\n  <div>\n    <div\n      class=\"product-list-container\"\n    >\n      <div\n        class=\"list-header\"\n      >\n        <div\n          class=\"title-group\"\n        >\n          <h3\n            class=\"subtitle\"\n          >\n            Inventario\n          </h3>\n          <span\n            class=\"product-count\"\n          >\n            1\n             items mostrados\n          </span>\n        </div>\n        <div\n          class=\"product-list-actions\"\n        >\n          <div\n            class=\"search-box product-list-search\"\n          >\n            <span\n              class=\"search-icon\"\n            >\n              <svg\n                fill=\"none\"\n                height=\"18\"\n                stroke=\"currentColor\"\n                stroke-linecap=\"round\"\n                stroke-linejoin=\"round\"\n                stroke-width=\"2\"\n                viewBox=\"0 0 24 24\"\n                width=\"18\"\n                xmlns=\"http://www.w3.org/2000/svg\"\n              >\n                <circle\n                  cx=\"11\"\n                  cy=\"11\"\n                  r=\"8\"\n                />\n                <line\n                  x1=\"21\"\n                  x2=\"16.65\"\n                  y1=\"21\"\n                  y2=\"16.65\"\n                />\n              </svg>\n            </span>\n            <input\n              placeholder=\"Buscar: Nombre, Código...\"\n              type=\"text\"\n              value=\"\"\n            />\n          </div>\n          <select\n            class=\"product-status-filter\"\n          >\n            <option\n              value=\"all\"\n            >\n              Todos los estados\n            </option>\n            <option\n              value=\"active\"\n            >\n              Solo Activos\n            </option>\n            <option\n              value=\"inactive\"\n            >\n              Solo Inactivos\n            </option>\n          </select>\n        </div>\n      </div>\n      <div\n        class=\"product-grid\"\n      >\n        <div\n          class=\"ui-card ui-card--interactive product-card-complex border-critical \"\n        >\n          <div\n            class=\"complex-header\"\n          >\n            <div\n              class=\"img-area\"\n            >\n              <div />\n            </div>\n            <div\n              class=\"title-area\"\n            >\n              <div\n                class=\"title-top\"\n              >\n                <h4\n                  title=\"Arroz a granel\"\n                >\n                  Arroz a granel\n                </h4>\n              </div>\n              <div\n                class=\"sub-meta\"\n              >\n                <span\n                  class=\"ui-badge ui-badge--neutral category-badge\"\n                >\n                  General\n                </span>\n              </div>\n            </div>\n            <div\n              class=\"actions-area\"\n            >\n              <button\n                class=\"ui-button ui-button--neutral ui-button--sm btn-action btn-batches\"\n                title=\"Gestionar Lotes / Caducidades\"\n              >\n                <svg\n                  fill=\"none\"\n                  height=\"16\"\n                  stroke=\"currentColor\"\n                  stroke-linecap=\"round\"\n                  stroke-linejoin=\"round\"\n                  stroke-width=\"2\"\n                  viewBox=\"0 0 24 24\"\n                  width=\"16\"\n                  xmlns=\"http://www.w3.org/2000/svg\"\n                >\n                  <polygon\n                    points=\"12 2 2 7 12 12 22 7 12 2\"\n                  />\n                  <polyline\n                    points=\"2 17 12 22 22 17\"\n                  />\n                  <polyline\n                    points=\"2 12 12 17 22 12\"\n                  />\n                </svg>\n                <span>\n                  Lotes\n                </span>\n              </button>\n              <button\n                class=\"ui-button ui-button--primary ui-button--sm btn-action\"\n                title=\"Agregar existencia\"\n              >\n                <span>\n                  ＋\n                </span>\n                <span>\n                  Agregar existencia\n                </span>\n              </button>\n              <button\n                class=\"ui-button ui-button--ghost ui-button--sm btn-action btn-edit\"\n                title=\"Editar\"\n              >\n                <svg\n                  fill=\"none\"\n                  height=\"16\"\n                  stroke=\"currentColor\"\n                  stroke-linecap=\"round\"\n                  stroke-linejoin=\"round\"\n                  stroke-width=\"2\"\n                  viewBox=\"0 0 24 24\"\n                  width=\"16\"\n                  xmlns=\"http://www.w3.org/2000/svg\"\n                >\n                  <path\n                    d=\"M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7\"\n                  />\n                  <path\n                    d=\"M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z\"\n                  />\n                </svg>\n                <span>\n                  Editar\n                </span>\n              </button>\n              <button\n                class=\"ui-button ui-button--danger ui-button--sm btn-action btn-delete\"\n                title=\"Eliminar\"\n              >\n                <svg\n                  fill=\"none\"\n                  height=\"16\"\n                  stroke=\"currentColor\"\n                  stroke-linecap=\"round\"\n                  stroke-linejoin=\"round\"\n                  stroke-width=\"2\"\n                  viewBox=\"0 0 24 24\"\n                  width=\"16\"\n                  xmlns=\"http://www.w3.org/2000/svg\"\n                >\n                  <polyline\n                    points=\"3 6 5 6 21 6\"\n                  />\n                  <path\n                    d=\"M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2\"\n                  />\n                  <line\n                    x1=\"10\"\n                    x2=\"10\"\n                    y1=\"11\"\n                    y2=\"17\"\n                  />\n                  <line\n                    x1=\"14\"\n                    x2=\"14\"\n                    y1=\"11\"\n                    y2=\"17\"\n                  />\n                </svg>\n                <span>\n                  Eliminar\n                </span>\n              </button>\n            </div>\n          </div>\n          <div\n            class=\"alert-section-wrapper\"\n          >\n            <div\n              class=\"ui-alert ui-alert--danger alert-banner alert-red\"\n            >\n              Caducado\n            </div>\n          </div>\n          <div\n            class=\"main-stats\"\n          >\n            <div\n              class=\"stat-block\"\n            >\n              <span\n                class=\"stat-label\"\n              >\n                Precio\n              </span>\n              <span\n                class=\"stat-value price\"\n              >\n                $\n                20.00\n              </span>\n            </div>\n            <div\n              class=\"stat-block\"\n            >\n              <span\n                class=\"stat-label\"\n              >\n                Disponible\n              </span>\n              <span\n                class=\"stat-value stock \"\n              >\n                12\n                <small>\n                  kg\n                </small>\n              </span>\n              <span\n                class=\"stock-breakdown\"\n              >\n                Total:\n                12\n                 | Comprometido:\n                0\n              </span>\n            </div>\n            <div\n              class=\"stat-block\"\n            >\n              <span\n                class=\"stat-label\"\n              >\n                Margen\n              </span>\n              <span\n                class=\"stat-value text-success\"\n              >\n                50.0%\n              </span>\n            </div>\n          </div>\n          <div\n            class=\"details-container\"\n          >\n            <div\n              class=\"rubro-section logistics\"\n            >\n              <div\n                class=\"detail-item\"\n              >\n                <span\n                  class=\"label\"\n                >\n                  Próxima caducidad:\n                </span>\n                <span\n                  class=\"value\"\n                >\n                  12/08/2026\n                </span>\n              </div>\n              <div\n                class=\"detail-item\"\n              >\n                <span\n                  class=\"label\"\n                >\n                  Vida útil para nuevas entradas:\n                </span>\n                <span\n                  class=\"value\"\n                >\n                  4 semanas\n                </span>\n              </div>\n              <div\n                class=\"detail-item\"\n              >\n                <span\n                  class=\"label\"\n                >\n                  Consumo recomendado:\n                </span>\n                <span\n                  class=\"value\"\n                >\n                  12/08/2026\n                </span>\n              </div>\n            </div>\n          </div>\n          <div\n            class=\"complex-footer\"\n          >\n            <div\n              class=\"status-switch-container\"\n              title=\"Desactivar\"\n            >\n              <div\n                class=\"switch-track checked\"\n              >\n                <div\n                  class=\"switch-thumb\"\n                />\n              </div>\n              <span\n                class=\"switch-label\"\n              >\n                Activo\n              </span>\n            </div>\n            <div\n              class=\"footer-actions\"\n            />\n          </div>\n        </div>\n      </div>\n    </div>\n  </div>\n</body>",
+      "candidateSignature": "TestingLibraryElementError: Unable to find an element with the text: /Caduca en \\d+ días/. This could be because the text is broken up by multiple elements. In this case, you can provide a function for your text matcher to make your matcher more flexible.\nIgnored nodes: comments, script, style\n<body>\n  <div>\n    <div\n      class=\"product-list-container\"\n    >\n      <div\n        class=\"list-header\"\n      >\n        <div\n          class=\"title-group\"\n        >\n          <h3\n            class=\"subtitle\"\n          >\n            Inventario\n          </h3>\n          <span\n            class=\"product-count\"\n          >\n            1\n             items mostrados\n          </span>\n        </div>\n        <div\n          class=\"product-list-actions\"\n        >\n          <div\n            class=\"search-box product-list-search\"\n          >\n            <span\n              class=\"search-icon\"\n            >\n              <svg\n                fill=\"none\"\n                height=\"18\"\n                stroke=\"currentColor\"\n                stroke-linecap=\"round\"\n                stroke-linejoin=\"round\"\n                stroke-width=\"2\"\n                viewBox=\"0 0 24 24\"\n                width=\"18\"\n                xmlns=\"http://www.w3.org/2000/svg\"\n              >\n                <circle\n                  cx=\"11\"\n                  cy=\"11\"\n                  r=\"8\"\n                />\n                <line\n                  x1=\"21\"\n                  x2=\"16.65\"\n                  y1=\"21\"\n                  y2=\"16.65\"\n                />\n              </svg>\n            </span>\n            <input\n              placeholder=\"Buscar: Nombre, Código...\"\n              type=\"text\"\n              value=\"\"\n            />\n          </div>\n          <select\n            class=\"product-status-filter\"\n          >\n            <option\n              value=\"all\"\n            >\n              Todos los estados\n            </option>\n            <option\n              value=\"active\"\n            >\n              Solo Activos\n            </option>\n            <option\n              value=\"inactive\"\n            >\n              Solo Inactivos\n            </option>\n          </select>\n        </div>\n      </div>\n      <div\n        class=\"product-grid\"\n      >\n        <div\n          class=\"ui-card ui-card--interactive product-card-complex border-critical \"\n        >\n          <div\n            class=\"complex-header\"\n          >\n            <div\n              class=\"img-area\"\n            >\n              <div />\n            </div>\n            <div\n              class=\"title-area\"\n            >\n              <div\n                class=\"title-top\"\n              >\n                <h4\n                  title=\"Arroz a granel\"\n                >\n                  Arroz a granel\n                </h4>\n              </div>\n              <div\n                class=\"sub-meta\"\n              >\n                <span\n                  class=\"ui-badge ui-badge--neutral category-badge\"\n                >\n                  General\n                </span>\n              </div>\n            </div>\n            <div\n              class=\"actions-area\"\n            >\n              <button\n                class=\"ui-button ui-button--neutral ui-button--sm btn-action btn-batches\"\n                title=\"Gestionar Lotes / Caducidades\"\n              >\n                <svg\n                  fill=\"none\"\n                  height=\"16\"\n                  stroke=\"currentColor\"\n                  stroke-linecap=\"round\"\n                  stroke-linejoin=\"round\"\n                  stroke-width=\"2\"\n                  viewBox=\"0 0 24 24\"\n                  width=\"16\"\n                  xmlns=\"http://www.w3.org/2000/svg\"\n                >\n                  <polygon\n                    points=\"12 2 2 7 12 12 22 7 12 2\"\n                  />\n                  <polyline\n                    points=\"2 17 12 22 22 17\"\n                  />\n                  <polyline\n                    points=\"2 12 12 17 22 12\"\n                  />\n                </svg>\n                <span>\n                  Lotes\n                </span>\n              </button>\n              <button\n                class=\"ui-button ui-button--primary ui-button--sm btn-action\"\n                title=\"Agregar existencia\"\n              >\n                <span>\n                  ＋\n                </span>\n                <span>\n                  Agregar existencia\n                </span>\n              </button>\n              <button\n                class=\"ui-button ui-button--ghost ui-button--sm btn-action btn-edit\"\n                title=\"Editar\"\n              >\n                <svg\n                  fill=\"none\"\n                  height=\"16\"\n                  stroke=\"currentColor\"\n                  stroke-linecap=\"round\"\n                  stroke-linejoin=\"round\"\n                  stroke-width=\"2\"\n                  viewBox=\"0 0 24 24\"\n                  width=\"16\"\n                  xmlns=\"http://www.w3.org/2000/svg\"\n                >\n                  <path\n                    d=\"M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7\"\n                  />\n                  <path\n                    d=\"M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z\"\n                  />\n                </svg>\n                <span>\n                  Editar\n                </span>\n              </button>\n              <button\n                class=\"ui-button ui-button--danger ui-button--sm btn-action btn-delete\"\n                title=\"Eliminar\"\n              >\n                <svg\n                  fill=\"none\"\n                  height=\"16\"\n                  stroke=\"currentColor\"\n                  stroke-linecap=\"round\"\n                  stroke-linejoin=\"round\"\n                  stroke-width=\"2\"\n                  viewBox=\"0 0 24 24\"\n                  width=\"16\"\n                  xmlns=\"http://www.w3.org/2000/svg\"\n                >\n                  <polyline\n                    points=\"3 6 5 6 21 6\"\n                  />\n                  <path\n                    d=\"M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2\"\n                  />\n                  <line\n                    x1=\"10\"\n                    x2=\"10\"\n                    y1=\"11\"\n                    y2=\"17\"\n                  />\n                  <line\n                    x1=\"14\"\n                    x2=\"14\"\n                    y1=\"11\"\n                    y2=\"17\"\n                  />\n                </svg>\n                <span>\n                  Eliminar\n                </span>\n              </button>\n            </div>\n          </div>\n          <div\n            class=\"alert-section-wrapper\"\n          >\n            <div\n              class=\"ui-alert ui-alert--danger alert-banner alert-red\"\n            >\n              Caducado\n            </div>\n          </div>\n          <div\n            class=\"main-stats\"\n          >\n            <div\n              class=\"stat-block\"\n            >\n              <span\n                class=\"stat-label\"\n              >\n                Precio\n              </span>\n              <span\n                class=\"stat-value price\"\n              >\n                $\n                20.00\n              </span>\n            </div>\n            <div\n              class=\"stat-block\"\n            >\n              <span\n                class=\"stat-label\"\n              >\n                Disponible\n              </span>\n              <span\n                class=\"stat-value stock \"\n              >\n                12\n                <small>\n                  kg\n                </small>\n              </span>\n              <span\n                class=\"stock-breakdown\"\n              >\n                Total:\n                12\n                 | Comprometido:\n                0\n              </span>\n            </div>\n            <div\n              class=\"stat-block\"\n            >\n              <span\n                class=\"stat-label\"\n              >\n                Margen\n              </span>\n              <span\n                class=\"stat-value text-success\"\n              >\n                50.0%\n              </span>\n            </div>\n          </div>\n          <div\n            class=\"details-container\"\n          >\n            <div\n              class=\"rubro-section logistics\"\n            >\n              <div\n                class=\"detail-item\"\n              >\n                <span\n                  class=\"label\"\n                >\n                  Próxima caducidad:\n                </span>\n                <span\n                  class=\"value\"\n                >\n                  12/08/2026\n                </span>\n              </div>\n              <div\n                class=\"detail-item\"\n              >\n                <span\n                  class=\"label\"\n                >\n                  Vida útil para nuevas entradas:\n                </span>\n                <span\n                  class=\"value\"\n                >\n                  4 semanas\n                </span>\n              </div>\n              <div\n                class=\"detail-item\"\n              >\n                <span\n                  class=\"label\"\n                >\n                  Consumo recomendado:\n                </span>\n                <span\n                  class=\"value\"\n                >\n                  12/08/2026\n                </span>\n              </div>\n            </div>\n          </div>\n          <div\n            class=\"complex-footer\"\n          >\n            <div\n              class=\"status-switch-container\"\n              title=\"Desactivar\"\n            >\n              <div\n                class=\"switch-track checked\"\n              >\n                <div\n                  class=\"switch-thumb\"\n                />\n              </div>\n              <span\n                class=\"switch-label\"\n              >\n                Activo\n              </span>\n            </div>\n            <div\n              class=\"footer-actions\"\n            />\n          </div>\n        </div>\n      </div>\n    </div>\n  </div>\n</body>",
+      "mainFullName": "ProductList batch-backed grocery details uses sale units and the nearest active batch expiry on cards",
+      "candidateFullName": "ProductList batch-backed grocery details uses sale units and the nearest active batch expiry on cards"
+    },
+    {
+      "id": "src/hooks/pos/__tests__/useEcommercePosCheckoutSingleFlight.test.jsx :: useEcommercePosCheckoutSingleFlight > absorbs twenty rapid clicks, exposes starting and pins the ecommerce target",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "ReferenceError: document is not defined",
+      "candidateSignature": "ReferenceError: document is not defined",
+      "mainFullName": "useEcommercePosCheckoutSingleFlight absorbs twenty rapid clicks, exposes starting and pins the ecommerce target",
+      "candidateFullName": "useEcommercePosCheckoutSingleFlight absorbs twenty rapid clicks, exposes starting and pins the ecommerce target"
+    },
+    {
+      "id": "src/hooks/pos/__tests__/useEcommercePosCheckoutSingleFlight.test.jsx :: useEcommercePosCheckoutSingleFlight > keeps A as the expected target when selection changes to B before the deferred run",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "ReferenceError: document is not defined",
+      "candidateSignature": "ReferenceError: document is not defined",
+      "mainFullName": "useEcommercePosCheckoutSingleFlight keeps A as the expected target when selection changes to B before the deferred run",
+      "candidateFullName": "useEcommercePosCheckoutSingleFlight keeps A as the expected target when selection changes to B before the deferred run"
+    },
+    {
+      "id": "src/hooks/pos/__tests__/useEcommercePosCheckoutSingleFlight.test.jsx :: useEcommercePosCheckoutSingleFlight > resets only non-current A when target change aborts before lock acquisition",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "ReferenceError: document is not defined",
+      "candidateSignature": "ReferenceError: document is not defined",
+      "mainFullName": "useEcommercePosCheckoutSingleFlight resets only non-current A when target change aborts before lock acquisition",
+      "candidateFullName": "useEcommercePosCheckoutSingleFlight resets only non-current A when target change aborts before lock acquisition"
+    },
+    {
+      "id": "src/hooks/pos/__tests__/useEcommercePosCheckoutSingleFlight.test.jsx :: useEcommercePosCheckoutSingleFlight > ignores clicks silently while payment is already pending",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "ReferenceError: document is not defined",
+      "candidateSignature": "ReferenceError: document is not defined",
+      "mainFullName": "useEcommercePosCheckoutSingleFlight ignores clicks silently while payment is already pending",
+      "candidateFullName": "useEcommercePosCheckoutSingleFlight ignores clicks silently while payment is already pending"
+    },
+    {
+      "id": "src/hooks/pos/__tests__/useEcommercePosCheckoutSingleFlight.test.jsx :: useEcommercePosCheckoutSingleFlight > preserves the canonical contention path for a lock owned elsewhere",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "ReferenceError: document is not defined",
+      "candidateSignature": "ReferenceError: document is not defined",
+      "mainFullName": "useEcommercePosCheckoutSingleFlight preserves the canonical contention path for a lock owned elsewhere",
+      "candidateFullName": "useEcommercePosCheckoutSingleFlight preserves the canonical contention path for a lock owned elsewhere"
+    },
+    {
+      "id": "src/hooks/pos/__tests__/useEcommercePosCheckoutSingleFlight.test.jsx :: useEcommercePosCheckoutSingleFlight > clears stale starting and validating state and allows a real retry",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "ReferenceError: document is not defined",
+      "candidateSignature": "ReferenceError: document is not defined",
+      "mainFullName": "useEcommercePosCheckoutSingleFlight clears stale starting and validating state and allows a real retry",
+      "candidateFullName": "useEcommercePosCheckoutSingleFlight clears stale starting and validating state and allows a real retry"
+    },
+    {
+      "id": "src/hooks/pos/__tests__/useEcommercePosCheckoutSingleFlight.test.jsx :: useEcommercePosCheckoutSingleFlight > does not change normal POS checkout behavior or pass ecommerce arguments",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "ReferenceError: document is not defined",
+      "candidateSignature": "ReferenceError: document is not defined",
+      "mainFullName": "useEcommercePosCheckoutSingleFlight does not change normal POS checkout behavior or pass ecommerce arguments",
+      "candidateFullName": "useEcommercePosCheckoutSingleFlight does not change normal POS checkout behavior or pass ecommerce arguments"
+    },
+    {
+      "id": "src/hooks/pos/__tests__/usePosModals.mobileTransition.test.jsx :: mobile POS history layer transitions > hands the cart entry to payment without a second push or an unmarked duplicate",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "AssertionError: expected \"pushState\" to be called 1 times, but got 2 times",
+      "candidateSignature": "AssertionError: expected \"pushState\" to be called 1 times, but got 2 times",
+      "mainFullName": "mobile POS history layer transitions hands the cart entry to payment without a second push or an unmarked duplicate",
+      "candidateFullName": "mobile POS history layer transitions hands the cart entry to payment without a second push or an unmarked duplicate"
+    },
+    {
+      "id": "src/hooks/pos/__tests__/usePosModals.mobileTransition.test.jsx :: mobile POS history layer transitions > closes payment with the first Back and reaches the previous route with the second",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "AssertionError: expected 2 to be 1 // Object.is equality",
+      "candidateSignature": "AssertionError: expected 2 to be 1 // Object.is equality",
+      "mainFullName": "mobile POS history layer transitions closes payment with the first Back and reaches the previous route with the second",
+      "candidateFullName": "mobile POS history layer transitions closes payment with the first Back and reaches the previous route with the second"
+    },
+    {
+      "id": "src/hooks/pos/__tests__/usePosModals.mobileTransition.test.jsx :: mobile POS history layer transitions > does not accumulate invisible entries across three cart-payment-cancel cycles",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "AssertionError: expected 2 to be 1 // Object.is equality",
+      "candidateSignature": "AssertionError: expected 2 to be 1 // Object.is equality",
+      "mainFullName": "mobile POS history layer transitions does not accumulate invisible entries across three cart-payment-cancel cycles",
+      "candidateFullName": "mobile POS history layer transitions does not accumulate invisible entries across three cart-payment-cancel cycles"
+    },
+    {
+      "id": "src/hooks/pos/__tests__/usePosModals.mobileTransition.test.jsx :: mobile POS history layer transitions > reuses the cart entry for prescription and then payment",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "AssertionError: expected \"pushState\" to be called 1 times, but got 2 times",
+      "candidateSignature": "AssertionError: expected \"pushState\" to be called 1 times, but got 2 times",
+      "mainFullName": "mobile POS history layer transitions reuses the cart entry for prescription and then payment",
+      "candidateFullName": "mobile POS history layer transitions reuses the cart entry for prescription and then payment"
+    },
+    {
+      "id": "src/services/__test__/sales/financialStats.test.js :: financialStats > solo agrega ventas con status closed en daily stats",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "AssertionError: expected [ { id: '2026-03-12', …(14) } ] to deeply equal [ { id: '2026-03-12', …(7) } ]",
+      "candidateSignature": "AssertionError: expected [ { id: '2026-03-12', …(14) } ] to deeply equal [ { id: '2026-03-12', …(7) } ]",
+      "mainFullName": "financialStats solo agrega ventas con status closed en daily stats",
+      "candidateFullName": "financialStats solo agrega ventas con status closed en daily stats"
+    },
+    {
+      "id": "src/services/backup/__tests__/backupConfigDb.test.js :: backupConfigDb persisted CryptoKey > guarda y recupera una clave AES-GCM no extraible",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "MissingAPIError IndexedDB API missing. Please visit https://tinyurl.com/y2uuvskb\nMissingAPIError IndexedDB API missing. Please visit https://tinyurl.com/y2uuvskb",
+      "candidateSignature": "MissingAPIError IndexedDB API missing. Please visit https://tinyurl.com/y2uuvskb\nMissingAPIError IndexedDB API missing. Please visit https://tinyurl.com/y2uuvskb",
+      "mainFullName": "backupConfigDb persisted CryptoKey guarda y recupera una clave AES-GCM no extraible",
+      "candidateFullName": "backupConfigDb persisted CryptoKey guarda y recupera una clave AES-GCM no extraible"
+    },
+    {
+      "id": "src/services/backup/__tests__/backupRestore.test.js :: restoreWhitelistedDatabase > revierte los clear si una insercion falla dentro de la transaccion",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "AssertionError: expected [] to deeply equal [ { id: 'product-local' } ]",
+      "candidateSignature": "AssertionError: expected [] to deeply equal [ { id: 'product-local' } ]",
+      "mainFullName": "restoreWhitelistedDatabase revierte los clear si una insercion falla dentro de la transaccion",
+      "candidateFullName": "restoreWhitelistedDatabase revierte los clear si una insercion falla dentro de la transaccion"
+    },
+    {
+      "id": "src/services/ecommerce/__tests__/ecommercePosDraftService.test.js :: ecommercePosDraftService > maps the server-resolved sourceProductId while excluding customer PII from the draft",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "AssertionError: expected { id: 'product-1', …(19) } to match object { id: 'product-1', …(7) }\n(13 matching properties omitted from actual)",
+      "candidateSignature": "AssertionError: expected { id: 'product-1', …(19) } to match object { id: 'product-1', …(7) }\n(13 matching properties omitted from actual)",
+      "mainFullName": "ecommercePosDraftService maps the server-resolved sourceProductId while excluding customer PII from the draft",
+      "candidateFullName": "ecommercePosDraftService maps the server-resolved sourceProductId while excluding customer PII from the draft"
+    },
+    {
+      "id": "src/services/ecommerce/__tests__/ecommercePosDraftService.test.js :: ecommercePosDraftService > opens an existing local draft only when remote prepared identity matches completely",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "AssertionError: expected { success: true, created: true, …(2) } to match object { success: true, created: false, …(1) }\n(17 matching properties omitted from actual)",
+      "candidateSignature": "AssertionError: expected { success: true, created: true, …(2) } to match object { success: true, created: false, …(1) }\n(17 matching properties omitted from actual)",
+      "mainFullName": "ecommercePosDraftService opens an existing local draft only when remote prepared identity matches completely",
+      "candidateFullName": "ecommercePosDraftService opens an existing local draft only when remote prepared identity matches completely"
+    },
+    {
+      "id": "src/services/ecommerce/__tests__/ecommercePosInventoryResolution.test.js :: stale response protection > does not replace a manual selection with an older automatic response",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "AssertionError: expected false to be true // Object.is equality",
+      "candidateSignature": "AssertionError: expected false to be true // Object.is equality",
+      "mainFullName": "stale response protection does not replace a manual selection with an older automatic response",
+      "candidateFullName": "stale response protection does not replace a manual selection with an older automatic response"
+    },
+    {
+      "id": "src/services/ecommerce/__tests__/ecommercePosInventoryResolution.test.js :: stale response protection > does not recreate a released draft after a delayed response",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "AssertionError: expected 'ECOMMERCE_INVENTORY_DRAFT_INVALID' to be 'ECOMMERCE_INVENTORY_STALE_RESPONSE' // Object.is equality",
+      "candidateSignature": "AssertionError: expected 'ECOMMERCE_INVENTORY_DRAFT_INVALID' to be 'ECOMMERCE_INVENTORY_STALE_RESPONSE' // Object.is equality",
+      "mainFullName": "stale response protection does not recreate a released draft after a delayed response",
+      "candidateFullName": "stale response protection does not recreate a released draft after a delayed response"
+    },
+    {
+      "id": "src/services/ecommerce/__tests__/ecommercePublicConfiguredService.test.js :: ecommercePublicService configurable products > loads and normalizes the safe product configuration RPC",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "EcommercePublicError: La configuración cambió. Actualiza el catálogo.",
+      "candidateSignature": "EcommercePublicError: La configuración cambió. Actualiza el catálogo.",
+      "mainFullName": "ecommercePublicService configurable products loads and normalizes the safe product configuration RPC",
+      "candidateFullName": "ecommercePublicService configurable products loads and normalizes the safe product configuration RPC"
+    },
+    {
+      "id": "src/services/ecommerce/__tests__/ecommercePublicConfiguredService.test.js :: ecommercePublicService configurable products > sends only productId, quantity, variantId and canonical selections",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "AssertionError: expected \"vi.fn()\" to be called with arguments: [ 'ecommerce_create_order', …(1) ]\nReceived:\n  1st vi.fn() call:\n@@ -1,10 +1,20 @@\n  [\n    \"ecommerce_create_order\",\n-   ObjectContaining {\n+   {\n+     \"p_customer\": {\n+       \"address\": \"\",\n+       \"fulfillmentMethod\": \"pickup\",\n+       \"name\": \"Cliente\",\n+       \"notes\": \"\",\n+       \"phone\": \"9610000000\",\n+     },\n+     \"p_idempotency_key\": \"web-key\",\n      \"p_items\": [\n        {\n+         \"configurationRevision\": \"\",\n+         \"configurationVersion\": 1,\n          \"productId\": \"p1\",\n          \"quantity\": 2,\n          \"selections\": [\n            {\n              \"groupId\": \"g2\",\n@@ -15,7 +25,8 @@\n            },\n          ],\n          \"variantId\": \"v1\",\n        },\n      ],\n+     \"p_slug\": \"store\",\n    },\n  ]\nNumber of calls: 1",
+      "candidateSignature": "AssertionError: expected \"vi.fn()\" to be called with arguments: [ 'ecommerce_create_order', …(1) ]\nReceived:\n  1st vi.fn() call:\n@@ -1,10 +1,20 @@\n  [\n    \"ecommerce_create_order\",\n-   ObjectContaining {\n+   {\n+     \"p_customer\": {\n+       \"address\": \"\",\n+       \"fulfillmentMethod\": \"pickup\",\n+       \"name\": \"Cliente\",\n+       \"notes\": \"\",\n+       \"phone\": \"9610000000\",\n+     },\n+     \"p_idempotency_key\": \"web-key\",\n      \"p_items\": [\n        {\n+         \"configurationRevision\": \"\",\n+         \"configurationVersion\": 1,\n          \"productId\": \"p1\",\n          \"quantity\": 2,\n          \"selections\": [\n            {\n              \"groupId\": \"g2\",\n@@ -15,7 +25,8 @@\n            },\n          ],\n          \"variantId\": \"v1\",\n        },\n      ],\n+     \"p_slug\": \"store\",\n    },\n  ]\nNumber of calls: 1",
+      "mainFullName": "ecommercePublicService configurable products sends only productId, quantity, variantId and canonical selections",
+      "candidateFullName": "ecommercePublicService configurable products sends only productId, quantity, variantId and canonical selections"
+    },
+    {
+      "id": "src/services/ecommerce/__tests__/ecommercePublicService.test.js :: ecommercePublicService > maps ECOMMERCE_CATALOG_REVISION_CHANGED to a controlled checkout message",
+      "category": "UNRESOLVED",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "AssertionError: expected EcommercePublicError: No pudimos confirma… { …(6) } to match object { …(2) }\n(9 matching properties omitted from actual)",
+      "candidateSignature": "Error: expected EcommercePublicError: No pudimos confirma… { …(6) } to match object { …(2) }\n(9 matching properties omitted from actual)",
+      "mainFullName": "ecommercePublicService maps ECOMMERCE_CATALOG_REVISION_CHANGED to a controlled checkout message",
+      "candidateFullName": "ecommercePublicService maps ECOMMERCE_CATALOG_REVISION_CHANGED to a controlled checkout message"
+    },
+    {
+      "id": "src/services/ecommerce/__tests__/ecommercePublicService.test.js :: ecommercePublicService > maps ECOMMERCE_PRODUCT_NOT_AVAILABLE to a controlled checkout message",
+      "category": "UNRESOLVED",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "AssertionError: expected EcommercePublicError: Este producto ya no… { …(6) } to match object { …(2) }\n(9 matching properties omitted from actual)",
+      "candidateSignature": "Error: expected EcommercePublicError: Este producto ya no… { …(6) } to match object { …(2) }\n(9 matching properties omitted from actual)",
+      "mainFullName": "ecommercePublicService maps ECOMMERCE_PRODUCT_NOT_AVAILABLE to a controlled checkout message",
+      "candidateFullName": "ecommercePublicService maps ECOMMERCE_PRODUCT_NOT_AVAILABLE to a controlled checkout message"
+    },
+    {
+      "id": "src/services/ecommerce/__tests__/ecommercePublicService.test.js :: ecommercePublicService > maps ECOMMERCE_ORDER_CREATE_FAILED to a controlled checkout message",
+      "category": "UNRESOLVED",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "AssertionError: expected EcommercePublicError: No pudimos procesar… { …(5) } to match object { …(2) }\n(8 matching properties omitted from actual)",
+      "candidateSignature": "Error: expected EcommercePublicError: No pudimos procesar… { …(5) } to match object { …(2) }\n(8 matching properties omitted from actual)",
+      "mainFullName": "ecommercePublicService maps ECOMMERCE_ORDER_CREATE_FAILED to a controlled checkout message",
+      "candidateFullName": "ecommercePublicService maps ECOMMERCE_ORDER_CREATE_FAILED to a controlled checkout message"
+    },
+    {
+      "id": "src/services/ecommerce/__tests__/ecommercePublicTrackingContract.test.js :: checkout tracking contract > keeps the same tracking link on an idempotent response",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "AssertionError: expected { success: true, …(3) } to match object { idempotent: true, order: { …(3) } }\n(12 matching properties omitted from actual)",
+      "candidateSignature": "AssertionError: expected { success: true, …(3) } to match object { idempotent: true, order: { …(3) } }\n(12 matching properties omitted from actual)",
+      "mainFullName": "checkout tracking contract keeps the same tracking link on an idempotent response",
+      "candidateFullName": "checkout tracking contract keeps the same tracking link on an idempotent response"
+    },
+    {
+      "id": "src/services/sales/__tests__/receiptWhatsApp.ecommerce.test.js :: receiptWhatsApp money formatting and ecommerce traceability > formats exact-string prices and totals while preserving ecommerce references",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "AssertionError: expected \"vi.fn()\" to be called 1 times, but got 0 times",
+      "candidateSignature": "AssertionError: expected \"vi.fn()\" to be called 1 times, but got 0 times",
+      "mainFullName": "receiptWhatsApp money formatting and ecommerce traceability formats exact-string prices and totals while preserving ecommerce references",
+      "candidateFullName": "receiptWhatsApp money formatting and ecommerce traceability formats exact-string prices and totals while preserving ecommerce references"
+    },
+    {
+      "id": "src/services/sales/__tests__/receiptWhatsApp.ecommerce.test.js :: receiptWhatsApp money formatting and ecommerce traceability > shows subtotal, discount detail, final total, received cash and change",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "TypeError: undefined is not iterable (cannot read property Symbol(Symbol.iterator))",
+      "candidateSignature": "TypeError: undefined is not iterable (cannot read property Symbol(Symbol.iterator))",
+      "mainFullName": "receiptWhatsApp money formatting and ecommerce traceability shows subtotal, discount detail, final total, received cash and change",
+      "candidateFullName": "receiptWhatsApp money formatting and ecommerce traceability shows subtotal, discount detail, final total, received cash and change"
+    },
+    {
+      "id": "src/services/sales/__tests__/receiptWhatsApp.ecommerce.test.js :: receiptWhatsApp money formatting and ecommerce traceability > reads aggregate discount data from metadata when needed",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "TypeError: undefined is not iterable (cannot read property Symbol(Symbol.iterator))",
+      "candidateSignature": "TypeError: undefined is not iterable (cannot read property Symbol(Symbol.iterator))",
+      "mainFullName": "receiptWhatsApp money formatting and ecommerce traceability reads aggregate discount data from metadata when needed",
+      "candidateFullName": "receiptWhatsApp money formatting and ecommerce traceability reads aggregate discount data from metadata when needed"
+    },
+    {
+      "id": "src/services/sales/__tests__/receiptWhatsApp.ecommerce.test.js :: receiptWhatsApp money formatting and ecommerce traceability > calculates cash change from exact-string monetary values",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "TypeError: undefined is not iterable (cannot read property Symbol(Symbol.iterator))",
+      "candidateSignature": "TypeError: undefined is not iterable (cannot read property Symbol(Symbol.iterator))",
+      "mainFullName": "receiptWhatsApp money formatting and ecommerce traceability calculates cash change from exact-string monetary values",
+      "candidateFullName": "receiptWhatsApp money formatting and ecommerce traceability calculates cash change from exact-string monetary values"
+    },
+    {
+      "id": "src/services/sales/__tests__/receiptWhatsApp.ecommerce.test.js :: receiptWhatsApp money formatting and ecommerce traceability > formats credit payment and pending balance from exact strings",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "TypeError: undefined is not iterable (cannot read property Symbol(Symbol.iterator))",
+      "candidateSignature": "TypeError: undefined is not iterable (cannot read property Symbol(Symbol.iterator))",
+      "mainFullName": "receiptWhatsApp money formatting and ecommerce traceability formats credit payment and pending balance from exact strings",
+      "candidateFullName": "receiptWhatsApp money formatting and ecommerce traceability formats credit payment and pending balance from exact strings"
+    },
+    {
+      "id": "src/services/sales/__tests__/receiptWhatsApp.ecommerce.test.js :: receiptWhatsApp money formatting and ecommerce traceability > preserves pharmacy receipt details and metadata-only ecommerce references",
+      "category": "BASELINE_FAILURE",
+      "mainStatus": "failed",
+      "candidateStatus": "failed",
+      "mainSignature": "TypeError: undefined is not iterable (cannot read property Symbol(Symbol.iterator))",
+      "candidateSignature": "TypeError: undefined is not iterable (cannot read property Symbol(Symbol.iterator))",
+      "mainFullName": "receiptWhatsApp money formatting and ecommerce traceability preserves pharmacy receipt details and metadata-only ecommerce references",
+      "candidateFullName": "receiptWhatsApp money formatting and ecommerce traceability preserves pharmacy receipt details and metadata-only ecommerce references"
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+
+> lanzo-pos-react@4.0.0 build:store
+> vite build --config vite.store.config.js
+
+vite v7.3.7 building client environment for production...
+transforming...
+✓ 1847 modules transformed.
+Generated an empty chunk: "vendor_public".
+Generated an empty chunk: "vendor_supabase_public".
+rendering chunks...
+computing gzip size...
+../dist-store/assets/logIcon-Cg6EELVY.svg                           0.34 kB │ gzip:  0.23 kB
+../dist-store/index.html                                            1.02 kB │ gzip:  0.49 kB
+../dist-store/home.html                                             1.86 kB │ gzip:  0.67 kB
+../dist-store/assets/main-store--eNxLOHg.css                      121.35 kB │ gzip: 19.20 kB
+../dist-store/assets/vendor_public-l0sNRNKZ.js                      0.00 kB │ gzip:  0.02 kB
+../dist-store/assets/vendor_supabase_public-l0sNRNKZ.js             0.00 kB │ gzip:  0.02 kB
+../dist-store/assets/PublicProductConfigurationModal-BVTAzQpq.js   10.11 kB │ gzip:  3.44 kB
+../dist-store/assets/vendor_icons_public-DIMtQK-L.js               12.66 kB │ gzip:  4.82 kB
+../dist-store/assets/vendor_store_public-BXrGnuFd.js              103.50 kB │ gzip: 35.57 kB
+../dist-store/assets/main-store-ByCgEzin.js                       177.03 kB │ gzip: 51.57 kB
+../dist-store/assets/vendor_react_public-4JpO9mi3.js              285.62 kB │ gzip: 91.73 kB
+✓ built in 5.08s

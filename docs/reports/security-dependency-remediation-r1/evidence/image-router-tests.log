@@ -1,0 +1,20 @@
+
+ RUN  v4.0.14 /workspace/SECURITY_DEPENDENCY_REMEDIATION_R1
+
+ ✓ store/tests/social-preview/storeOgRender.test.js (3 tests) 1069ms
+     ✓ produce PNG real para tarjeta genérica sin imágenes  390ms
+     ✓ produce PNG real para fallback de tienda inexistente  462ms
+ ✓ src/router/__tests__/adminNotFoundRouting.test.jsx (11 tests) 743ms
+     ✓ muestra el 404 amable dentro del Layout para una ruta inválida  308ms
+ ✓ store/tests/social-preview/storeOgV2Render.test.js (26 tests) 3997ms
+     ✓ renderiza PNG real 1200x630 para showcase: no images  308ms
+ ✓ store/tests/social-preview/storeOgEndpoint.test.js (36 tests) 100ms
+ ✓ store/tests/social-preview/safePublicImage.test.js (48 tests) 39ms
+ ✓ store/tests/social-preview/safePublicImageNormalization.test.js (3 tests) 45ms
+ ✓ src/router/__tests__/publicStoreRouting.test.jsx (7 tests) 731ms
+     ✓ opens the store product landing at / without mounting the POS shell  423ms
+
+ Test Files  7 passed (7)
+      Tests  134 passed (134)
+   Start at  04:23:21
+   Duration  6.45s (transform 916ms, setup 787ms, import 2.11s, tests 6.72s, environment 1.54s)

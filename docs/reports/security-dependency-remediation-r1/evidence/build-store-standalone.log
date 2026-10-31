@@ -1,0 +1,423 @@
+
+> lanzo-pos-react@4.0.0 build:store:vercel
+> node scripts/build-store-vercel.mjs
+
+
+> lanzo-pos-react@4.0.0 build:store
+> vite build --config vite.store.config.js
+
+vite v7.2.2 building client environment for production...
+transforming...
+✓ 1847 modules transformed.
+Generated an empty chunk: "vendor_supabase_public".
+rendering chunks...
+computing gzip size...
+../dist-store/assets/logIcon-Cg6EELVY.svg                           0.34 kB │ gzip:  0.23 kB
+../dist-store/index.html                                            1.11 kB │ gzip:  0.50 kB
+../dist-store/home.html                                             1.95 kB │ gzip:  0.69 kB
+../dist-store/assets/main-store--eNxLOHg.css                      121.35 kB │ gzip: 19.20 kB
+../dist-store/assets/vendor_supabase_public-l0sNRNKZ.js             0.00 kB │ gzip:  0.02 kB
+../dist-store/assets/vendor_public-Cpj98o6Y.js                      0.24 kB │ gzip:  0.18 kB
+../dist-store/assets/PublicProductConfigurationModal-Ds8BdfD4.js   10.14 kB │ gzip:  3.45 kB
+../dist-store/assets/vendor_icons_public-D5kiQom6.js               12.66 kB │ gzip:  4.82 kB
+../dist-store/assets/vendor_store_public-DhwKUplI.js              103.50 kB │ gzip: 35.57 kB
+../dist-store/assets/main-store-CnNKzJl3.js                       177.06 kB │ gzip: 51.58 kB
+../dist-store/assets/vendor_react_public-qKLyNXQ2.js              285.58 kB │ gzip: 91.71 kB
+✓ built in 3.43s
+{
+  "generatedAt": "2026-10-31T04:22:43.360Z",
+  "target": {
+    "requested": "dist-store",
+    "directory": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/dist-store",
+    "standalonePublicBuild": true
+  },
+  "dist": {
+    "files": 11,
+    "bytes": 713919,
+    "javascriptFiles": 7,
+    "javascriptBytes": 589172,
+    "cssFiles": 1,
+    "cssBytes": 121354,
+    "largestFiles": [
+      {
+        "path": "assets/vendor_react_public-qKLyNXQ2.js",
+        "bytes": 285579,
+        "extension": ".js"
+      },
+      {
+        "path": "assets/main-store-CnNKzJl3.js",
+        "bytes": 177063,
+        "extension": ".js"
+      },
+      {
+        "path": "assets/main-store--eNxLOHg.css",
+        "bytes": 121354,
+        "extension": ".css"
+      },
+      {
+        "path": "assets/vendor_store_public-DhwKUplI.js",
+        "bytes": 103496,
+        "extension": ".js"
+      },
+      {
+        "path": "assets/vendor_icons_public-D5kiQom6.js",
+        "bytes": 12655,
+        "extension": ".js"
+      },
+      {
+        "path": "assets/PublicProductConfigurationModal-Ds8BdfD4.js",
+        "bytes": 10142,
+        "extension": ".js"
+      },
+      {
+        "path": "home.html",
+        "bytes": 1950,
+        "extension": ".html"
+      },
+      {
+        "path": "index.html",
+        "bytes": 1105,
+        "extension": ".html"
+      },
+      {
+        "path": "assets/logIcon-Cg6EELVY.svg",
+        "bytes": 338,
+        "extension": ".svg"
+      },
+      {
+        "path": "assets/vendor_public-Cpj98o6Y.js",
+        "bytes": 236,
+        "extension": ".js"
+      },
+      {
+        "path": "assets/vendor_supabase_public-l0sNRNKZ.js",
+        "bytes": 1,
+        "extension": ".js"
+      }
+    ]
+  },
+  "htmlEntry": {
+    "moduleEntry": "assets/vendor_public-Cpj98o6Y.js",
+    "moduleEntryBytes": 236,
+    "modulePreloads": [],
+    "stylesheets": [
+      "assets/main-store--eNxLOHg.css"
+    ],
+    "manifestLinks": [],
+    "directServiceWorkerRegistrationContent": []
+  },
+  "pwa": {
+    "manifestFiles": [],
+    "serviceWorkerFiles": [],
+    "workboxFiles": [],
+    "registerSwFiles": [],
+    "virtualPwaRegisterContent": []
+  },
+  "administrativeAudit": {
+    "namedChunks": {
+      "app": [],
+      "pos": [],
+      "caja": [],
+      "dashboard": [],
+      "settings": [],
+      "assistantBot": [],
+      "scannerModal": [],
+      "charts": [],
+      "workers": []
+    },
+    "contentContracts": {
+      "createFreeLicense": [],
+      "createFreeTrialLicense": [],
+      "deviceSecurityToken": [],
+      "staffSessionToken": [],
+      "releaseDeviceAnon": [],
+      "lanzoDb": [],
+      "assistantBot": [],
+      "processSale": [],
+      "cashSync": [],
+      "posSync": [],
+      "googleDrive": []
+    }
+  },
+  "primaryPublicDependencies": {
+    "reactRouter": [
+      "assets/vendor_react_public-qKLyNXQ2.js"
+    ],
+    "supabase": [
+      "assets/vendor_supabase_public-l0sNRNKZ.js"
+    ],
+    "dexieAndBig": [
+      "assets/vendor_store_public-DhwKUplI.js"
+    ],
+    "icons": [
+      "assets/vendor_icons_public-D5kiQom6.js"
+    ]
+  },
+  "assetAudit": {
+    "localReferences": [
+      "assets/vendor_public-Cpj98o6Y.js",
+      "assets/vendor_react_public-qKLyNXQ2.js",
+      "assets/vendor_icons_public-D5kiQom6.js",
+      "assets/vendor_store_public-DhwKUplI.js",
+      "assets/main-store-CnNKzJl3.js",
+      "assets/logIcon-Cg6EELVY.svg",
+      "assets/main-store--eNxLOHg.css"
+    ],
+    "missingLocalAssets": []
+  },
+  "precache": {
+    "declaredEntries": 0,
+    "uniqueUrls": 0,
+    "matchedLocalFiles": 0,
+    "matchedLocalBytes": 0,
+    "javascriptFiles": 0,
+    "javascriptBytes": 0,
+    "cssFiles": 0,
+    "cssBytes": 0
+  },
+  "compliance": {
+    "passed": true,
+    "violations": []
+  }
+}
+{
+  "generatedAt": "2026-10-31T04:22:43.477Z",
+  "target": {
+    "requested": "store/dist",
+    "directory": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/store/dist",
+    "standalonePublicBuild": true
+  },
+  "dist": {
+    "files": 12,
+    "bytes": 713945,
+    "javascriptFiles": 7,
+    "javascriptBytes": 589172,
+    "cssFiles": 1,
+    "cssBytes": 121354,
+    "largestFiles": [
+      {
+        "path": "assets/vendor_react_public-qKLyNXQ2.js",
+        "bytes": 285579,
+        "extension": ".js"
+      },
+      {
+        "path": "assets/main-store-CnNKzJl3.js",
+        "bytes": 177063,
+        "extension": ".js"
+      },
+      {
+        "path": "assets/main-store--eNxLOHg.css",
+        "bytes": 121354,
+        "extension": ".css"
+      },
+      {
+        "path": "assets/vendor_store_public-DhwKUplI.js",
+        "bytes": 103496,
+        "extension": ".js"
+      },
+      {
+        "path": "assets/vendor_icons_public-D5kiQom6.js",
+        "bytes": 12655,
+        "extension": ".js"
+      },
+      {
+        "path": "assets/PublicProductConfigurationModal-Ds8BdfD4.js",
+        "bytes": 10142,
+        "extension": ".js"
+      },
+      {
+        "path": "home.html",
+        "bytes": 1950,
+        "extension": ".html"
+      },
+      {
+        "path": "index.html",
+        "bytes": 1105,
+        "extension": ".html"
+      },
+      {
+        "path": "assets/logIcon-Cg6EELVY.svg",
+        "bytes": 338,
+        "extension": ".svg"
+      },
+      {
+        "path": "assets/vendor_public-Cpj98o6Y.js",
+        "bytes": 236,
+        "extension": ".js"
+      },
+      {
+        "path": "robots.txt",
+        "bytes": 26,
+        "extension": ".txt"
+      },
+      {
+        "path": "assets/vendor_supabase_public-l0sNRNKZ.js",
+        "bytes": 1,
+        "extension": ".js"
+      }
+    ]
+  },
+  "htmlEntry": {
+    "moduleEntry": "assets/vendor_public-Cpj98o6Y.js",
+    "moduleEntryBytes": 236,
+    "modulePreloads": [],
+    "stylesheets": [
+      "assets/main-store--eNxLOHg.css"
+    ],
+    "manifestLinks": [],
+    "directServiceWorkerRegistrationContent": []
+  },
+  "pwa": {
+    "manifestFiles": [],
+    "serviceWorkerFiles": [],
+    "workboxFiles": [],
+    "registerSwFiles": [],
+    "virtualPwaRegisterContent": []
+  },
+  "administrativeAudit": {
+    "namedChunks": {
+      "app": [],
+      "pos": [],
+      "caja": [],
+      "dashboard": [],
+      "settings": [],
+      "assistantBot": [],
+      "scannerModal": [],
+      "charts": [],
+      "workers": []
+    },
+    "contentContracts": {
+      "createFreeLicense": [],
+      "createFreeTrialLicense": [],
+      "deviceSecurityToken": [],
+      "staffSessionToken": [],
+      "releaseDeviceAnon": [],
+      "lanzoDb": [],
+      "assistantBot": [],
+      "processSale": [],
+      "cashSync": [],
+      "posSync": [],
+      "googleDrive": []
+    }
+  },
+  "primaryPublicDependencies": {
+    "reactRouter": [
+      "assets/vendor_react_public-qKLyNXQ2.js"
+    ],
+    "supabase": [
+      "assets/vendor_supabase_public-l0sNRNKZ.js"
+    ],
+    "dexieAndBig": [
+      "assets/vendor_store_public-DhwKUplI.js"
+    ],
+    "icons": [
+      "assets/vendor_icons_public-D5kiQom6.js"
+    ]
+  },
+  "assetAudit": {
+    "localReferences": [
+      "assets/vendor_public-Cpj98o6Y.js",
+      "assets/vendor_react_public-qKLyNXQ2.js",
+      "assets/vendor_icons_public-D5kiQom6.js",
+      "assets/vendor_store_public-DhwKUplI.js",
+      "assets/main-store-CnNKzJl3.js",
+      "assets/logIcon-Cg6EELVY.svg",
+      "assets/main-store--eNxLOHg.css"
+    ],
+    "missingLocalAssets": []
+  },
+  "precache": {
+    "declaredEntries": 0,
+    "uniqueUrls": 0,
+    "matchedLocalFiles": 0,
+    "matchedLocalBytes": 0,
+    "javascriptFiles": 0,
+    "javascriptBytes": 0,
+    "cssFiles": 0,
+    "cssBytes": 0
+  },
+  "compliance": {
+    "passed": true,
+    "violations": []
+  }
+}
+{
+  "phase": "ECOM.PUBLIC.SOCIAL.PREVIEW.1.6",
+  "status": "staged",
+  "deployed": false,
+  "source": {
+    "directory": "dist-store",
+    "files": 11,
+    "bytes": 713919,
+    "treeSha256": "5fa015c90b2ba276c23f6fd17fa243a98074a2c33635c1f3f355397bb56d7279"
+  },
+  "staging": {
+    "directory": "store/dist",
+    "files": 12,
+    "bytes": 713945,
+    "treeSha256": "3e3473d9a89358069d1223e4d03121514a394c4cf4db1e36dcbd9fd44fdb00e0",
+    "robotsTxt": true
+  },
+  "copiedFilesByteIdentical": true,
+  "template": {
+    "hashes": {
+      "source": "b9097f7e0f2453362d09d7f3f9bf8f5910b55d393f1c971888194d87bbf8af22",
+      "template": "b9097f7e0f2453362d09d7f3f9bf8f5910b55d393f1c971888194d87bbf8af22",
+      "staged": "b9097f7e0f2453362d09d7f3f9bf8f5910b55d393f1c971888194d87bbf8af22"
+    },
+    "bytes": {
+      "source": 1105,
+      "template": 1105,
+      "staged": 1105
+    },
+    "assets": [
+      "assets/logIcon-Cg6EELVY.svg",
+      "assets/main-store--eNxLOHg.css",
+      "assets/main-store-CnNKzJl3.js",
+      "assets/vendor_icons_public-D5kiQom6.js",
+      "assets/vendor_public-Cpj98o6Y.js",
+      "assets/vendor_react_public-qKLyNXQ2.js",
+      "assets/vendor_store_public-DhwKUplI.js"
+    ]
+  },
+  "functions": {
+    "publicFunctions": [
+      "/api/og/store",
+      "/api/store-page"
+    ],
+    "dependencyClosure": {
+      "/api/og/store": {
+        "files": [
+          "api/_portalTheme.js",
+          "api/_publicPortal.js",
+          "api/_safePublicImage.js",
+          "api/_socialMetadata.js",
+          "api/_storeOgCardV2.js",
+          "api/_storeOgCardV2Model.js",
+          "api/_storeOgFallbackCard.js",
+          "api/_storeSlug.js",
+          "api/og/store.js"
+        ],
+        "packages": [
+          "@vercel/og",
+          "react",
+          "sharp"
+        ]
+      },
+      "/api/store-page": {
+        "files": [
+          "api/_portalTheme.js",
+          "api/_publicPortal.js",
+          "api/_publicRequestOrigin.js",
+          "api/_socialHead.js",
+          "api/_socialMetadata.js",
+          "api/_storeHtmlTemplate.js",
+          "api/_storeSlug.js",
+          "api/store-page.js"
+        ],
+        "packages": []
+      }
+    }
+  },
+  "violations": []
+}

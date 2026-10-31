@@ -1,0 +1,27 @@
+{
+  "command": "npm run test:ci",
+  "exit_code": 1,
+  "node_version": "24.19.0",
+  "test_files": { "total": 661, "passed": 621, "failed": 40 },
+  "tests": { "total": 6674, "passed": 6544, "failed": 78, "skipped": 52 },
+  "duration_seconds": 536.99,
+  "follow_up_checks": [
+    {
+      "file": "store/tests/social-preview/storeBuildOutputAudit.test.js",
+      "initial_sandbox_result": "8 generated-handler smoke assertions failed to load/invoke child Node processes in the restricted full-suite run",
+      "isolated_result": "61/61 passed",
+      "external_fetch": "explicitly blocked by the smoke runner"
+    },
+    {
+      "file": "src/hooks/pos/__tests__/usePosModals.mobileTransition.test.jsx",
+      "candidate_result": "4/9 failed",
+      "clean_main_comparison": "same 4 failures on the approved base"
+    }
+  ],
+  "remaining_failure_classes": [
+    "test files that require jsdom but run without a DOM environment",
+    "test discovery or import failures in existing test files",
+    "assertion mismatches in unchanged Ecommerce, backup, cash-opening, and store-state test files; the full test-file set was not replayed on the clean base"
+  ],
+  "interpretation": "The full repository test command remains red. Package-focused image, route, dependency-smoke, FIN-01, and PostgreSQL tests passed separately. The full-suite failures are not treated as a PASS; unchanged test files outside those focused checks need a clean-baseline comparison before using this full command as a release gate."
+}

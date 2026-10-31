@@ -1,0 +1,12 @@
+
+ RUN  v4.0.14 /workspace/SECURITY_DEPENDENCY_REMEDIATION_R1
+
+ ✓ src/router/__tests__/publicStoreRouting.test.jsx (7 tests) 802ms
+     ✓ opens the store product landing at / without mounting the POS shell  466ms
+ ✓ store/tests/social-preview/publicPortal.test.js (68 tests) 44ms
+ ✓ store/tests/social-preview/storeVercelRouting.test.js (16 tests) 13ms
+
+ Test Files  3 passed (3)
+      Tests  91 passed (91)
+   Start at  04:23:15
+   Duration  2.84s (transform 497ms, setup 239ms, import 788ms, tests 859ms, environment 542ms)
