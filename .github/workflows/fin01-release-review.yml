@@ -37,8 +37,6 @@ jobs:
           node scripts/fin01/release-review/verify-release-contract.mjs 2>&1 | tee artifacts/fin01/logs/release-contract.log
       - name: Install pinned project dependencies
         run: npm ci
-      - name: Audit production dependency advisories
-        run: npm audit --omit=dev --audit-level=high 2>&1 | tee artifacts/fin01/logs/npm-audit-production.log
       - name: Test parser, ledger snapshot and transaction controls
         run: node scripts/fin01/release-review/release-review-contract.node-test.mjs 2>&1 | tee artifacts/fin01/logs/release-review-contract-tests.log
       - name: Compare ESLint diagnostics with approved main
@@ -63,6 +61,10 @@ jobs:
             --maxWorkers=1 2>&1 | tee artifacts/fin01/logs/vitest-fin01.log
       - name: Build frontend and run postbuild audit
         run: npm run build 2>&1 | tee artifacts/fin01/logs/build-postbuild.log
+      - name: Audit production dependency advisories
+        run: |
+          set -euo pipefail
+          npm audit --omit=dev --audit-level=high 2>&1 | tee artifacts/fin01/logs/npm-audit-production.log
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
