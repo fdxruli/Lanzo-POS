@@ -1,0 +1,182 @@
+{
+  "postgres": "17.11",
+  "server_version_num": "170011",
+  "code_sha": "ef83120c73ac1a64887f34b31c6700d7eadb016a",
+  "template_database": "fin01_cert_template",
+  "success_database": "fin01_cert_success_1711",
+  "executed": 15,
+  "passed": 15,
+  "failed": 0,
+  "results": [
+    {
+      "name": "PG service version is exactly PostgreSQL 17.11 or 17.6",
+      "status": "PASS",
+      "detail": {
+        "server_version_num": "170011",
+        "postgres": "17.11"
+      }
+    },
+    {
+      "name": "fresh state applies only F then PAY-N01 and preserves all 333 original ledger rows",
+      "status": "PASS",
+      "detail": {
+        "database": "fin01_cert_success_1711",
+        "before": 333,
+        "after": 335,
+        "targets": [
+          "20261022135915",
+          "20261029235906"
+        ],
+        "statement_counts": [
+          20,
+          8
+        ],
+        "commit_evidence": [
+          {
+            "migration": "20261022135915",
+            "atomic_unit": "migration SQL + postflight + compatible ledger row",
+            "transaction_end": "COMMIT",
+            "commit_evidence": "post-commit catalog and exact ledger snapshot",
+            "recoverable_state_after_commit": "exactly 333 baseline rows plus F"
+          },
+          {
+            "migration": "20261029235906",
+            "atomic_unit": "migration SQL + postflight + compatible ledger row",
+            "transaction_end": "COMMIT",
+            "commit_evidence": "post-commit catalog and exact ledger snapshot",
+            "recoverable_state_after_commit": "exactly 333 baseline rows plus F and PAY-N01"
+          }
+        ]
+      }
+    },
+    {
+      "name": "a second completed invocation is rejected without changing the ledger",
+      "status": "PASS",
+      "detail": {
+        "database": "fin01_cert_success_1711",
+        "rejected": true,
+        "rows_unchanged": true
+      }
+    },
+    {
+      "name": "wrong migration SHA is rejected before any database write",
+      "status": "PASS",
+      "detail": {
+        "database": "fin01_cert_hash_1711",
+        "rejected": true,
+        "ledger_rows_unchanged": true
+      }
+    },
+    {
+      "name": "wrong release SHA is rejected before any database write",
+      "status": "PASS",
+      "detail": {
+        "database": "fin01_cert_release_sha_1711",
+        "rejected": true,
+        "ledger_rows_unchanged": true
+      }
+    },
+    {
+      "name": "unexpected project identity is rejected before any database write",
+      "status": "PASS",
+      "detail": {
+        "database": "fin01_cert_project_1711",
+        "rejected": true,
+        "ledger_rows_unchanged": true
+      }
+    },
+    {
+      "name": "unexpected version is rejected before any migration runs",
+      "status": "PASS",
+      "detail": {
+        "database": "fin01_cert_unexpected_1711",
+        "rejected": true,
+        "added_version_preserved": "20990101000000"
+      }
+    },
+    {
+      "name": "3D14 function drift is rejected before any migration runs",
+      "status": "PASS",
+      "detail": {
+        "database": "fin01_cert_drift_1711",
+        "rejected": true,
+        "reason": "3D14 dispatcher helper drift"
+      }
+    },
+    {
+      "name": "3D14 dispatcher signature drift is rejected before any migration runs",
+      "status": "PASS",
+      "detail": {
+        "database": "fin01_cert_signature_1711",
+        "rejected": true,
+        "reason": "required dispatcher signature missing"
+      }
+    },
+    {
+      "name": "3D14 dispatcher ACL drift is rejected before any migration runs",
+      "status": "PASS",
+      "detail": {
+        "database": "fin01_cert_acl_1711",
+        "rejected": true,
+        "reason": "dispatcher ACL changed"
+      }
+    },
+    {
+      "name": "failure inside F rolls back all F SQL and leaves the original 333-row ledger intact",
+      "status": "PASS",
+      "detail": {
+        "database": "fin01_cert_fault_f_1711",
+        "sqlstate": "P0001",
+        "transaction": "ROLLBACK",
+        "ledger_before": 333,
+        "ledger_after": 333,
+        "catalog_unchanged": true
+      }
+    },
+    {
+      "name": "failure inside PAY-N01 retains only completed F; retry resumes PAY-N01 safely",
+      "status": "PASS",
+      "detail": {
+        "database": "fin01_cert_fault_pay_1711",
+        "sqlstate": "P0001",
+        "failed_transaction": "ROLLBACK",
+        "committed_prior_state": "baseline plus F",
+        "retry_transaction": "COMMIT",
+        "retry_state": "baseline plus F and PAY-N01",
+        "catalog_preserved_after_failed_pay": true
+      }
+    },
+    {
+      "name": "advisory session lock rejects a concurrent applier before writes",
+      "status": "PASS",
+      "detail": {
+        "database": "fin01_cert_concurrent_1711",
+        "rejected": true,
+        "ledger_rows_unchanged": true
+      }
+    },
+    {
+      "name": "unsupported migration selection is rejected; only F and PAY-N01 are selectable",
+      "status": "PASS",
+      "detail": {
+        "requested_version": "20261008180000",
+        "rejected": true,
+        "allowed": [
+          "20261022135915",
+          "20261029235906"
+        ]
+      }
+    },
+    {
+      "name": "synthetic backup restores the 335-row ledger and guarded post-PAY catalog",
+      "status": "PASS",
+      "detail": {
+        "backup": "fin01-cert-pg17.11-local-post-pay.dump",
+        "bytes": 698433,
+        "restored_database": "fin01_cert_restore_1711",
+        "restored_ledger_rows": 335,
+        "guarded_functions": 11
+      }
+    }
+  ]
+}

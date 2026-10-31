@@ -1,0 +1,272 @@
+
+> lanzo-pos-react@4.0.0 build
+> vite build
+
+vite v7.3.7 building client environment for production...
+transforming...
+node_modules/zod/v4/core/util.js (400:0): A comment
+
+"// Wrapped in a `@__PURE__` IIFE: esbuild never tree-shakes a top-level initializer that contains a member access on `Number`, so the bare object literal survived into every bundle."
+
+in "node_modules/zod/v4/core/util.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+node_modules/zod/v4/core/regexes.js (74:0): A comment
+
+"/** Anchors a pattern source. The interpolation lives here rather than at the call site because
+ * esbuild will not drop a `@__PURE__` call whose own argument interpolates a variable, but it
+ * will drop `anchor(dateSource)`. Keeping it inline pinned `date` into every bundle. */"
+
+in "node_modules/zod/v4/core/regexes.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+node_modules/zod/v4/core/regexes.js (74:0): A comment
+
+"/** Anchors a pattern source. The interpolation lives here rather than at the call site because
+ * esbuild will not drop a `@__PURE__` call whose own argument interpolates a variable, but it
+ * will drop `anchor(dateSource)`. Keeping it inline pinned `date` into every bundle. */"
+
+in "node_modules/zod/v4/core/regexes.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+node_modules/zod/v4/core/util.js (400:0): A comment
+
+"// Wrapped in a `@__PURE__` IIFE: esbuild never tree-shakes a top-level initializer that contains a member access on `Number`, so the bare object literal survived into every bundle."
+
+in "node_modules/zod/v4/core/util.js" contains an annotation that Rollup cannot interpret due to the position of the comment. The comment will be removed to avoid issues.
+✓ 3658 modules transformed.
+Generated an empty chunk: "vendor_supabase".
+rendering chunks...
+[plugin vite:reporter] 
+(!) /tmp/lanzo-security-diff/fin01-final-run/src/services/sync/posSyncClient.js is dynamically imported by /tmp/lanzo-security-diff/fin01-final-run/src/services/diagnostics/incidentReporter.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/ecommerce/ecommerceAdminService.js but also statically imported by /tmp/lanzo-security-diff/fin01-final-run/src/services/cash/cashCloudRepository.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/cash/postDowngradeCashReconciliation.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/customerCredit/customerCreditCloudRepository.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/customerMessaging/cloudRepository.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/customers/customerCloudRepository.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/ecommerce/ecommerceOrderFulfillmentService.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/ecommerce/ecommerceOrderServiceBase.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/ecommerce/ecommercePosConversionServiceBase.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/financial/financialIntentLedger.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/notifications/cloudNotificationService.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/products/productCloudRepository.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/products/productExpirationWasteCloudRepository.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/reports/reportsCloudRepository.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/restaurant/preparationStationsRepository.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/restaurant/restaurantOrdersHistoryRepository.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/restaurant/restaurantOrdersRepository.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/salesCloud/salesCloudRepository.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/support/supportTicketService.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/sync/posSyncOrchestrator.js, dynamic import will not move module into another chunk.
+
+[plugin vite:reporter] 
+(!) /tmp/lanzo-security-diff/fin01-final-run/src/services/supabase.js is dynamically imported by /tmp/lanzo-security-diff/fin01-final-run/src/services/diagnostics/incidentReporter.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/utils.js but also statically imported by /tmp/lanzo-security-diff/fin01-final-run/src/App.jsx, /tmp/lanzo-security-diff/fin01-final-run/src/components/common/LicenseAccessChooser.jsx, /tmp/lanzo-security-diff/fin01-final-run/src/components/common/SetupModal.jsx, /tmp/lanzo-security-diff/fin01-final-run/src/components/common/TermsAndConditionsModal.jsx, /tmp/lanzo-security-diff/fin01-final-run/src/services/aiService.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/auth/actorSessionRuntimeBridge.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/cash/cashCloudRepository.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/cash/cashStation.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/cash/postDowngradeCashReconciliation.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/customerCredit/customerCreditCloudRepository.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/customerMessaging/cloudRepository.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/customerMessaging/templateRepository.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/customers/customerCloudRepository.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/deviceModeService.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/ecommerce/ecommerceAdminService.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/ecommerce/ecommerceOrderFulfillmentService.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/ecommerce/ecommerceOrderServiceBase.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/ecommerce/ecommercePosConversionServiceBase.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/ecommerce/ecommerceSiteBuilderService.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/financial/financialIntentLedger.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/licenseRealtime.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/licenseService.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/notifications/cloudNotificationService.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/notifications/notificationRealtimeService.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/posRealtime.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/products/productCloudRepository.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/products/productExpirationWasteCloudRepository.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/reports/reportsCloudRepository.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/restaurant/preparationStationsRepository.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/restaurant/restaurantOrdersHistoryRepository.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/restaurant/restaurantOrdersRepository.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/salesCloud/salesCloudCancellationService.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/salesCloud/salesCloudCashierService.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/salesCloud/salesCloudRepository.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/salesCloud/salesCloudShadowService.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/storage/imageUploadService.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/support/supportTicketService.js, /tmp/lanzo-security-diff/fin01-final-run/src/services/sync/posSyncClient.js, /tmp/lanzo-security-diff/fin01-final-run/src/store/slices/createProfileSlice.js, /tmp/lanzo-security-diff/fin01-final-run/src/store/slices/license/licenseActivationActions.js, /tmp/lanzo-security-diff/fin01-final-run/src/store/slices/license/licenseAdminActions.js, /tmp/lanzo-security-diff/fin01-final-run/src/store/slices/license/licenseBackgroundValidationActions.js, /tmp/lanzo-security-diff/fin01-final-run/src/store/slices/license/licenseBootstrapActions.js, /tmp/lanzo-security-diff/fin01-final-run/src/store/slices/license/licenseIntegrityActions.js, /tmp/lanzo-security-diff/fin01-final-run/src/store/slices/license/licenseProcessingActions.js, /tmp/lanzo-security-diff/fin01-final-run/src/store/slices/license/licenseRealtimeActions.js, /tmp/lanzo-security-diff/fin01-final-run/src/store/slices/license/licenseSessionActions.js, /tmp/lanzo-security-diff/fin01-final-run/src/store/slices/license/licenseStaffActions.js, dynamic import will not move module into another chunk.
+
+computing gzip size...
+dist/manifest.webmanifest                                  0.47 kB
+dist/index.html                                            2.43 kB │ gzip:   0.98 kB
+dist/assets/stats.worker-DxcCN2D9.js                     112.08 kB
+dist/assets/backup.worker-Dua6jm6o.js                    179.98 kB
+dist/assets/bot.worker-Bz9m8Y2G.js                       978.78 kB
+dist/assets/DevConsole-DNk0Aj1q.css                        4.26 kB │ gzip:   1.37 kB
+dist/assets/IncidentErrorBoundary-CJweRH_U.css             8.32 kB │ gzip:   1.97 kB
+dist/assets/IncidentSupportContactForm-XP7jM8lP.css        8.54 kB │ gzip:   1.67 kB
+dist/assets/AssistantBot-jHOyLdCH.css                     12.58 kB │ gzip:   2.96 kB
+dist/assets/EcommerceOrdersPage-D3syt7f-.css              27.60 kB │ gzip:   4.94 kB
+dist/assets/CommercialAIAgentsPage-Bj93FzwI.css           42.24 kB │ gzip:   7.12 kB
+dist/assets/EcommercePortalPage-DHhStFBd.css              42.60 kB │ gzip:   7.25 kB
+dist/assets/index-Ujcfz1t4.css                           141.54 kB │ gzip:  21.81 kB
+dist/assets/App-C9qIn5o4.css                             705.45 kB │ gzip: 106.31 kB
+dist/assets/vendor_supabase-l0sNRNKZ.js                    0.00 kB │ gzip:   0.02 kB
+dist/assets/vendor_charts-DslYig1l.js                      0.04 kB │ gzip:   0.06 kB
+dist/assets/mobileZoomGuard-CN7AQsSf.js                    0.64 kB │ gzip:   0.32 kB
+dist/assets/vendor_utils-gbdVjlmZ.js                       0.66 kB │ gzip:   0.41 kB
+dist/assets/ErrorBoundary-BDzMc2b1.js                      0.70 kB │ gzip:   0.44 kB
+dist/assets/useMessageStore-CYleYwhx.js                    0.77 kB │ gzip:   0.40 kB
+dist/assets/databaseRuntime-FLiY1M7S.js                    1.11 kB │ gzip:   0.60 kB
+dist/assets/productStoreRecoveryGuard-DDWNC4j7.js          1.11 kB │ gzip:   0.62 kB
+dist/assets/telegramContact-BMLGPHus.js                    1.78 kB │ gzip:   0.78 kB
+dist/assets/devConsoleCapture-0tddBVdr.js                  2.94 kB │ gzip:   1.41 kB
+dist/assets/index.esm-DAEuQ1Xh.js                          5.68 kB │ gzip:   1.99 kB
+dist/assets/incidentCapture-DEM6k7hp.js                    5.70 kB │ gzip:   2.69 kB
+dist/assets/storageManager-B0CtqWPR.js                     5.99 kB │ gzip:   1.93 kB
+dist/assets/DevConsole-D-7GZHmg.js                         6.72 kB │ gzip:   2.63 kB
+dist/assets/PublicProductConfigurationModal-W1igpyxZ.js   10.05 kB │ gzip:   3.42 kB
+dist/assets/IncidentSupportContactForm-DAIqS7OT.js        10.74 kB │ gzip:   3.87 kB
+dist/assets/productRepository-B7aAr1PG.js                 15.89 kB │ gzip:   3.89 kB
+dist/assets/useInventoryCatalogStore-CtoDlv7l.js          24.43 kB │ gzip:   6.83 kB
+dist/assets/IncidentErrorBoundary-CO1s8x7K.js             25.54 kB │ gzip:   6.98 kB
+dist/assets/AssistantBot-QKXfJM_y.js                      26.97 kB │ gzip:   9.72 kB
+dist/assets/posSyncBootstrapAutoCoordinator-D9wdjBwW.js   32.88 kB │ gzip:  10.43 kB
+dist/assets/vendor_icons-hRBzNV37.js                      35.18 kB │ gzip:  11.46 kB
+dist/assets/customerCreditSyncHandler-BiZKpg-1.js         36.74 kB │ gzip:  10.63 kB
+dist/assets/EcommerceOrdersPage-CXMVV3AE.js               41.72 kB │ gzip:  12.51 kB
+dist/assets/PosApplicationBootstrap-YEybYB65.js           80.61 kB │ gzip:  26.89 kB
+dist/assets/EcommercePortalPage-DQMpmUzw.js              105.52 kB │ gzip:  30.30 kB
+dist/assets/vendor_react-DgBHsnsQ.js                     212.87 kB │ gzip:  69.91 kB
+dist/assets/CommercialAIAgentsPage-D9zPJVq5.js           420.78 kB │ gzip: 112.66 kB
+dist/assets/index-DUBeN2sb.js                            553.09 kB │ gzip: 172.79 kB
+dist/assets/App-DUu7DlNU.js                              718.82 kB │ gzip: 196.54 kB
+dist/assets/useAppStore-toXLJ6EJ.js                      736.79 kB │ gzip: 212.41 kB
+✓ built in 22.19s
+
+PWA v1.3.0
+Building src/pwa/sw.js service worker ("es" format)...
+vite v7.3.7 building client environment for production...
+transforming...
+✓ 85 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/sw.mjs  27.80 kB │ gzip: 9.04 kB
+✓ built in 290ms
+
+PWA v1.3.0
+mode      injectManifest
+format:   es
+precache  34 entries (3311.96 KiB)
+files generated
+  dist/sw.js
+warnings
+  One of the glob patterns doesn't match any files. Please remove or fix the following: {
+  "globDirectory": "/tmp/lanzo-security-diff/fin01-final-run/dist",
+  "globPattern": "assets/customerLocalRepository-*.js",
+  "globIgnores": [
+    "**/node_modules/**/*",
+    "sw.js",
+    "sw.js"
+  ]
+}
+  One of the glob patterns doesn't match any files. Please remove or fix the following: {
+  "globDirectory": "/tmp/lanzo-security-diff/fin01-final-run/dist",
+  "globPattern": "assets/actorOperationalHandoff-*.js",
+  "globIgnores": [
+    "**/node_modules/**/*",
+    "sw.js",
+    "sw.js"
+  ]
+}
+  One of the glob patterns doesn't match any files. Please remove or fix the following: {
+  "globDirectory": "/tmp/lanzo-security-diff/fin01-final-run/dist",
+  "globPattern": "assets/actorRuntimeController-*.js",
+  "globIgnores": [
+    "**/node_modules/**/*",
+    "sw.js",
+    "sw.js"
+  ]
+}
+  One of the glob patterns doesn't match any files. Please remove or fix the following: {
+  "globDirectory": "/tmp/lanzo-security-diff/fin01-final-run/dist",
+  "globPattern": "assets/financialReceiptClassifier-*.js",
+  "globIgnores": [
+    "**/node_modules/**/*",
+    "sw.js",
+    "sw.js"
+  ]
+}
+  One of the glob patterns doesn't match any files. Please remove or fix the following: {
+  "globDirectory": "/tmp/lanzo-security-diff/fin01-final-run/dist",
+  "globPattern": "assets/Logger-*.js",
+  "globIgnores": [
+    "**/node_modules/**/*",
+    "sw.js",
+    "sw.js"
+  ]
+}
+  One of the glob patterns doesn't match any files. Please remove or fix the following: {
+  "globDirectory": "/tmp/lanzo-security-diff/fin01-final-run/dist",
+  "globPattern": "assets/IncidentRecoveryPanel-*.{js,css}",
+  "globIgnores": [
+    "**/node_modules/**/*",
+    "sw.js",
+    "sw.js"
+  ]
+}
+  One of the glob patterns doesn't match any files. Please remove or fix the following: {
+  "globDirectory": "/tmp/lanzo-security-diff/fin01-final-run/dist",
+  "globPattern": "assets/IncidentReportForm-*.{js,css}",
+  "globIgnores": [
+    "**/node_modules/**/*",
+    "sw.js",
+    "sw.js"
+  ]
+}
+  One of the glob patterns doesn't match any files. Please remove or fix the following: {
+  "globDirectory": "/tmp/lanzo-security-diff/fin01-final-run/dist",
+  "globPattern": "assets/supportContact-*.js",
+  "globIgnores": [
+    "**/node_modules/**/*",
+    "sw.js",
+    "sw.js"
+  ]
+}
+  One of the glob patterns doesn't match any files. Please remove or fix the following: {
+  "globDirectory": "/tmp/lanzo-security-diff/fin01-final-run/dist",
+  "globPattern": "assets/buttons-*.{js,css}",
+  "globIgnores": [
+    "**/node_modules/**/*",
+    "sw.js",
+    "sw.js"
+  ]
+}
+  One of the glob patterns doesn't match any files. Please remove or fix the following: {
+  "globDirectory": "/tmp/lanzo-security-diff/fin01-final-run/dist",
+  "globPattern": "assets/contextSnapshotGuard-*.js",
+  "globIgnores": [
+    "**/node_modules/**/*",
+    "sw.js",
+    "sw.js"
+  ]
+}
+  One of the glob patterns doesn't match any files. Please remove or fix the following: {
+  "globDirectory": "/tmp/lanzo-security-diff/fin01-final-run/dist",
+  "globPattern": "assets/recoveryContext-*.js",
+  "globIgnores": [
+    "**/node_modules/**/*",
+    "sw.js",
+    "sw.js"
+  ]
+}
+  One of the glob patterns doesn't match any files. Please remove or fix the following: {
+  "globDirectory": "/tmp/lanzo-security-diff/fin01-final-run/dist",
+  "globPattern": "assets/salesCloudShadowService-*.js",
+  "globIgnores": [
+    "**/node_modules/**/*",
+    "sw.js",
+    "sw.js"
+  ]
+}
+  One of the glob patterns doesn't match any files. Please remove or fix the following: {
+  "globDirectory": "/tmp/lanzo-security-diff/fin01-final-run/dist",
+  "globPattern": "assets/cashSyncHandler-*.js",
+  "globIgnores": [
+    "**/node_modules/**/*",
+    "sw.js",
+    "sw.js"
+  ]
+}
+  One of the glob patterns doesn't match any files. Please remove or fix the following: {
+  "globDirectory": "/tmp/lanzo-security-diff/fin01-final-run/dist",
+  "globPattern": "assets/devServiceWorkerCleanup-*.js",
+  "globIgnores": [
+    "**/node_modules/**/*",
+    "sw.js",
+    "sw.js"
+  ]
+}
+  One of the glob patterns doesn't match any files. Please remove or fix the following: {
+  "globDirectory": "/tmp/lanzo-security-diff/fin01-final-run/dist",
+  "globPattern": "assets/incidentEventCenter-*.js",
+  "globIgnores": [
+    "**/node_modules/**/*",
+    "sw.js",
+    "sw.js"
+  ]
+}
+  One of the glob patterns doesn't match any files. Please remove or fix the following: {
+  "globDirectory": "/tmp/lanzo-security-diff/fin01-final-run/dist",
+  "globPattern": "assets/IncidentReportEntry-*.js",
+  "globIgnores": [
+    "**/node_modules/**/*",
+    "sw.js",
+    "sw.js"
+  ]
+}
+  One of the glob patterns doesn't match any files. Please remove or fix the following: {
+  "globDirectory": "/tmp/lanzo-security-diff/fin01-final-run/dist",
+  "globPattern": "assets/localTenantGuard-*.js",
+  "globIgnores": [
+    "**/node_modules/**/*",
+    "sw.js",
+    "sw.js"
+  ]
+}
+  One of the glob patterns doesn't match any files. Please remove or fix the following: {
+  "globDirectory": "/tmp/lanzo-security-diff/fin01-final-run/dist",
+  "globPattern": "assets/{PosPage,CajaPage,OrderPage,ProductsPage,CustomersPage,DashboardPage,SettingsPage,AboutPage}-*.{js,css}",
+  "globIgnores": [
+    "**/node_modules/**/*",
+    "sw.js",
+    "sw.js"
+  ]
+}
+
+
+> lanzo-pos-react@4.0.0 postbuild
+> node scripts/admin-startup-precache-audit.mjs
+
+[lanzo-admin-startup-precache-audit] Verified 24 startup assets and 0 core Local route assets.

@@ -1,0 +1,16 @@
+{
+  "imageResponse": {
+    "status": 200,
+    "contentType": "image/png",
+    "width": 1200,
+    "height": 630,
+    "bytes": 7178,
+    "pngSignature": "89504e470d0a1a0a"
+  },
+  "sharp": {
+    "format": "webp",
+    "pngToWebpBytes": 4616,
+    "normalizedPngBytes": 24903,
+    "normalizedSignature": "89504e470d0a1a0a"
+  }
+}

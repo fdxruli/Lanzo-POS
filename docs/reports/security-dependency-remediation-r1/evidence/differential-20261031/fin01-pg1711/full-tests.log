@@ -1,0 +1,64 @@
+PASS Authority: real owner context
+PASS Authority: Staff customers permission cannot authorize
+PASS Authority: non-owner Admin session is rejected
+PASS Authority: invalid session rejected
+PASS Authority: revoked session rejected
+PASS Authority: expired session rejected
+PASS Authority: wrong tenant manifest rejected
+PASS Authority: direct private tables denied to anon
+PASS Authority: direct private tables denied to authenticated
+PASS Manifest: canonical hash independent of entry order and batch ID
+PASS Manifest: wrong total
+PASS Manifest: wrong count
+PASS Manifest: fractional cents
+PASS Manifest: out of int32 range
+PASS Manifest: duplicate destination
+PASS Manifest: unknown bypass flag
+PASS Import: legacy financial import requires independent approval
+PASS Import: owner approves and imports above limit without Caja or sales
+PASS Import: lost response and replay return receipt without duplicates
+PASS Import: same content different batch returns original authorization
+PASS Import: same batch modified content conflicts
+PASS Import: same historical identity different amount conflicts
+PASS Import: changing source cannot duplicate target balance
+PASS Import: existing ledger never becomes silent success
+PASS Import: partial batch reports exact imported and conflicted rows
+PASS Import: expired approval requires a new explicit approval
+PASS Import: changed actor session invalidates pending approval
+PASS Import: two devices same target produce only one initial balance
+PASS Import: exception rolls back ledger, projection, receipts and consumption
+PASS Upsert: older client with positive or malformed balances fails before overwrite
+PASS Upsert: ordinary directory create starts with zero debt
+PASS Upsert: directory edit and lower limit preserve debt
+PASS Upsert: Staff cannot change credit authority
+PASS Credit: A inside limit
+PASS Credit: B exact equality
+PASS Credit: C one cent over
+PASS Credit: D already above
+PASS Credit: F zero limit
+PASS Credit: one cent below
+PASS Credit: H completed replay survives lower limit
+PASS Credit: I changed request with same key conflicts in real authorizer
+PASS Credit: J partial payment creates only net exposure
+PASS Credit: K cash received and change are not extra applied payments
+PASS Concurrency: G two real sessions admit one 150 credit and end at 950
+PASS Credit: legacy public wrapper reaches the same SQL guard
+PASS Credit: N other tenant customer is inaccessible
+PASS Credit: S closed Caja rejects with zero partial effects
+PASS Credit: E payment remains allowed above the credit limit
+PASS Payment: PAY-N01 overpayment with positive debt and empty ledger has no partial effects
+PASS Payment: PAY-N02 valid public payment replay creates no duplicate effects
+PASS Concurrency: payment and sale from two real sessions serialize without losing either
+PASS Concurrency: limit update and sale observe an allowed serial ordering
+PASS Concurrency: import and new credit never sum historical debt onto an existing ledger
+PASS Atomicity: two real credit children sharing a customer roll back together
+PASS Concurrency: inverse ambient Caja and customer locks abort one transaction without partial effects
+PASS Inventory: admitted credit writes real stock and ledger atomically
+PASS Atomicity: Q fault after inventory work rolls back sales, stock, ledger and Caja
+PASS Credit: P authorized cancellation restores prior debt even after reducing the limit
+PASS Credit: non-finite stored limit cannot bypass enforcement
+PASS Upsert: non-finite credit limit is rejected
+PASS Authority: internal financial import remains inaccessible to anon
+PASS Import: explicit owner review can retry after a missing directory customer is synchronized
+PASS Integrity: ledger and debt projections remain equal
+{"executed":63,"pass":63,"fail":0}

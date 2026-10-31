@@ -1,0 +1,23 @@
+{
+  "esm": {
+    "googleGenAI": true,
+    "websocketOpen": 1,
+    "protobufRoundTrip": "synthetic-fin01-smoke"
+  },
+  "zod": {
+    "largeInvalidRejected": true,
+    "inputLength": 1000000,
+    "elapsedMs": 47
+  },
+  "sharp": {
+    "pngToWebpBytes": 66,
+    "normalizedPngBytes": 96,
+    "pngSignature": "89504e470d0a1a0a"
+  },
+  "vercelOg": {
+    "status": 200,
+    "contentType": "image/png",
+    "bytes": 7414,
+    "pngSignature": "89504e470d0a1a0a"
+  }
+}

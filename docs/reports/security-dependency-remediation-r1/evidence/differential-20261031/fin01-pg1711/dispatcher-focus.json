@@ -1,0 +1,56 @@
+{
+  "result": "PASS",
+  "code_sha": "ef83120c73ac1a64887f34b31c6700d7eadb016a",
+  "database": "fin01_cert_success_1711",
+  "postgres_version_num": "170011",
+  "state": "post-3D14 then F then PAY-N01; functions also verified by the selective applier",
+  "executed": 5,
+  "passed": 5,
+  "failed": 0,
+  "failure": null,
+  "results": [
+    {
+      "name": "valid owner auth without in-flight financial operation is blocked",
+      "status": "PASS",
+      "sqlstate": "P0001",
+      "message": "RESTAURANT_FINANCIAL_DISPATCHER_REQUIRED\nPL/pgSQL function private.assert_restaurant_sale_dispatcher_context_v1(text,text,text,text,jsonb,text,text,text) line 95 at RAISE"
+    },
+    {
+      "name": "exact owner-bound in-flight operation is accepted by 3D14 guard",
+      "status": "PASS",
+      "sqlstate": null
+    },
+    {
+      "name": "operation with mismatched Caja session is blocked",
+      "status": "PASS",
+      "sqlstate": "P0001",
+      "message": "RESTAURANT_FINANCIAL_DISPATCHER_REQUIRED\nPL/pgSQL function private.assert_restaurant_sale_dispatcher_context_v1(text,text,text,text,jsonb,text,text,text) line 95 at RAISE"
+    },
+    {
+      "name": "invalid actor session is blocked before dispatch",
+      "status": "PASS",
+      "sqlstate": "P0001",
+      "message": "ACTOR_SESSION_INVALID\nPL/pgSQL function private.validate_pos_sync_context(text,text,text,text) line 108 at RAISE\nPL/pgSQL function private.assert_restaurant_sale_dispatcher_context_v1(text,text,text,text,jsonb,text,text,text) line 20 at assignment"
+    },
+    {
+      "name": "dispatcher checks created no sales, payments, debt, Caja, inventory, or idempotency effects",
+      "status": "PASS",
+      "before": {
+        "cash": 4,
+        "sales": 12,
+        "ledger": 43,
+        "payments": 2,
+        "inventory": 1,
+        "idempotency": 18
+      },
+      "after": {
+        "cash": 4,
+        "sales": 12,
+        "ledger": 43,
+        "payments": 2,
+        "inventory": 1,
+        "idempotency": 18
+      }
+    }
+  ]
+}
