@@ -29,6 +29,8 @@ test('bridge candidate stays out of the canonical migration set and runs after 3
   assert.match(sql, /BRIDGE_FUNCTION_OVERLOAD_UNSUPPORTED/);
   assert.match(sql, /BRIDGE_FUNCTION_SECURITY_DRIFT/);
   assert.match(sql, /pg_get_functiondef\(target_oid\)/);
+  assert.ok(sql.includes("definition:=regexp_replace(definition,E'(\\n[Bb][Ee][Gg][Ii][Nn])',E'\\\\1\\n  '||instruction);"),
+    'Writer instrumentation must preserve the original first-statement indentation');
   assert.match(sql, /pg_advisory_xact_lock_shared\(pg_catalog\.hashtextextended\('restaurant_contract_cutover_v1',0\)\)/);
   assert.match(sql, /contract_version integer not null default 1/);
   assert.doesNotMatch(sql, /set contract_version\s*=\s*2/i);

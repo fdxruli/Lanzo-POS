@@ -364,7 +364,7 @@ begin
       instruction:='perform private.enter_restaurant_transition_write_v1(); if lower(btrim(p_status))=''cancelled'' then raise exception ''RESTAURANT_PARENT_CANCEL_CONTRACT_REQUIRED''; end if;';
     else instruction:='perform private.enter_restaurant_transition_write_v1();'; end if;
     if definition !~ E'\n[Bb][Ee][Gg][Ii][Nn][[:space:]]+' then raise exception 'BRIDGE_UNSUPPORTED_FUNCTION_BODY: %',expected.signature; end if;
-    definition:=regexp_replace(definition,E'(\n[Bb][Ee][Gg][Ii][Nn][[:space:]]+)',E'\\1  '||instruction||E'\n');
+    definition:=regexp_replace(definition,E'(\n[Bb][Ee][Gg][Ii][Nn])',E'\\1\n  '||instruction);
     execute definition;
   end loop;
 end;
