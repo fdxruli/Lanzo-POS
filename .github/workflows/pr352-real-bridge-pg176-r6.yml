@@ -134,6 +134,7 @@ jobs:
             if (bridge.commitSha !== expectedSha || overlay.commitSha !== expectedSha) process.exit(1);
             if (bridge.status !== "PASS" || overlay.status !== "PASS") process.exit(1);
             if (!Array.isArray(bridge.checks) || bridge.checks.length === 0 || !bridge.checks.every((check) => check.status === "PASS")) process.exit(1);
+            if (!bridge.adminOff || bridge.adminOff.status !== "PASS" || bridge.adminOff.contractVersion !== 1 || bridge.adminOff.writesPaused !== false || bridge.adminOff.activeActivationRows !== 0) process.exit(1);
             if (!Array.isArray(bridge.writerChecks) || bridge.writerChecks.length !== 10 || !bridge.writerChecks.every((writer) => writer.status === "PASS" && writer.admissionOccurrences === 1 && writer.bodyRecoveredExactly && writer.oidPreserved && writer.ownerPreserved && writer.securityDefinerPreserved && writer.configurationPreserved && writer.aclSemanticallyPreserved)) process.exit(1);
             if (!Array.isArray(bridge.concurrency) || bridge.concurrency.length !== 4 || !bridge.concurrency.every((scenario) => scenario.status === "PASS")) process.exit(1);
             if (bridge.postgresServerVersionNum !== "170006" || bridge.productionConnections !== 0) process.exit(1);

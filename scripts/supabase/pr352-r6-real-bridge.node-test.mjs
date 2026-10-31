@@ -146,6 +146,7 @@ test('PostgreSQL ACL comparisons ignore display order but preserve the exact gra
   assert.match(runner, /canonicalizePostgresAcl\(actual\.acl\)/);
   assert.match(runner, /canonicalizePostgresAcl\(after\.acl\)/);
   assert.match(runner, /writerChecks,/);
+  assert.match(runner, /adminOff: adminOffEvidence/);
   assert.match(runner, /originalFingerprint:/);
   assert.match(runner, /postBridgeFingerprint:/);
   assert.match(runner, /bodyRecoveredExactly:/);
@@ -192,6 +193,7 @@ test('isolated workflow runs only on the exact QA push branch without secrets or
   assert.match(workflow, /bridge\.commitSha !== expectedSha \|\| overlay\.commitSha !== expectedSha/);
   assert.match(workflow, /bridge\.writerChecks\.length !== 10/);
   assert.match(workflow, /writer\.bodyRecoveredExactly && writer\.oidPreserved/);
+  assert.match(workflow, /bridge\.adminOff\.activeActivationRows !== 0/);
   assert.match(workflow, /bridge\.concurrency\.length !== 4/);
   assert.match(workflow, /overlay\.cases\.length !== overlay\.caseCount/);
   assert.match(workflow, /overlay\.productionConnections !== 0 \|\| overlay\.cleanupFailures !== 0/);
@@ -215,6 +217,7 @@ test('structured evidence gate binds both reports to this SHA and rejects failed
     commitSha,
     status: 'PASS',
     checks: [{ status: 'PASS' }],
+    adminOff: { status: 'PASS', contractVersion: 1, writesPaused: false, activeActivationRows: 0 },
     writerChecks: Array.from({ length: 10 }, () => ({
       status: 'PASS',
       admissionOccurrences: 1,
@@ -260,6 +263,11 @@ test('structured evidence gate binds both reports to this SHA and rejects failed
     assert.throws(runGate, (error) => error.status === 1, 'wrong commit SHA must fail closed');
 
     bridge.commitSha = commitSha;
+    bridge.adminOff.activeActivationRows = 1;
+    await writeReports();
+    assert.throws(runGate, (error) => error.status === 1, 'enabled Admin state must fail closed');
+    bridge.adminOff.activeActivationRows = 0;
+
     bridge.writerChecks[3].bodyRecoveredExactly = false;
     await writeReports();
     assert.throws(runGate, (error) => error.status === 1, 'writer body drift must fail closed');

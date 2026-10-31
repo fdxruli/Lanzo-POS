@@ -24,6 +24,7 @@ let tempRoot = null;
 let serverVersionNum = null;
 let bridgeStatus = 'FAIL';
 let failure = null;
+let adminOffEvidence = null;
 const completedChecks = [];
 let concurrencyResults = [];
 const writerChecks = [];
@@ -132,6 +133,7 @@ async function writeEvidence() {
     bridge: { path: 'docs/evidence/20261030182733_restaurant_cloud_transition_bridge_v1.sql', sha256: sha256(bridgeBytes) },
     authenticWriterSnapshot: { sha256: sha256(writerBytes), expectedFunctions: 6 },
     checks: completedChecks,
+    adminOff: adminOffEvidence,
     writerChecks,
     concurrency: concurrencyResults,
     mockedDependencies: [
@@ -391,6 +393,8 @@ async function run() {
   assert.equal(tables.length, 3, 'All private bridge tables must be installed');
   assert.ok(tables.every((row) => row.rls && !row.anon_select && !row.authenticated_select), 'Bridge tables must be RLS protected and unreadable to browser roles');
   assert.equal(await query("select contract_version||'|'||writes_paused||'|'||(select count(*) from private.restaurant_admin_activation) from private.restaurant_cloud_contract_state where singleton"), '1|false|0', 'Bridge must start at v1, unpaused and with Admin disabled');
+  adminOffEvidence = { status: 'PASS', contractVersion: 1, writesPaused: false, activeActivationRows: 0 };
+  passed('default v1 contract is unpaused with Admin disabled', adminOffEvidence);
   const contract = JSON.parse(await query("set role anon; select public.pos_restaurant_cloud_contract_v1('lab-license-a','lab-device-a','lab-device-token-a','lab-admin-session')::text; reset role;"));
   assert.deepEqual({
     success: contract.success,
