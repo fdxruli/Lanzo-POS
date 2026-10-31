@@ -6,6 +6,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { runRestaurantCutoverConcurrency } from './pr352-r6-concurrency.mjs';
+import { canonicalizePostgresAcl } from './pr352-r6-canonical-postgres-acl.mjs';
 
 const execFileAsync = promisify(execFile);
 const root = process.cwd();
@@ -264,7 +265,8 @@ async function run() {
   assert.equal(liveDispatcher.owner, dispatcherManifest.entry.owner);
   assert.equal(liveDispatcher.security_definer, dispatcherManifest.entry.securityDefiner);
   assert.deepEqual(liveDispatcher.config, dispatcherManifest.entry.config);
-  assert.equal(liveDispatcher.acl, dispatcherManifest.entry.acl);
+  assert.deepEqual(canonicalizePostgresAcl(liveDispatcher.acl), canonicalizePostgresAcl(dispatcherManifest.entry.acl),
+    '3D.14 dispatcher ACL grants differ from the reviewed Production snapshot');
   for (const expected of writerManifest.entries) {
     const actual = beforeBySignature.get(expected.signature);
     assert.ok(actual, `Missing current Production writer ${expected.signature}`);
@@ -272,7 +274,8 @@ async function run() {
     assert.equal(actual.owner, expected.owner, `Production writer owner mismatch: ${expected.signature}`);
     assert.equal(actual.security_definer, expected.securityDefiner, `Production writer SECURITY DEFINER mismatch: ${expected.signature}`);
     assert.deepEqual(actual.config, expected.config, `Production writer settings mismatch: ${expected.signature}`);
-    assert.equal(actual.acl, expected.acl, `Production writer ACL mismatch: ${expected.signature}`);
+    assert.deepEqual(canonicalizePostgresAcl(actual.acl), canonicalizePostgresAcl(expected.acl),
+      `Production writer ACL mismatch: ${expected.signature}`);
   }
   assert.deepEqual(new Set(writerManifest.entries.map((row) => row.signature)), new Set([
     'private.recalculate_restaurant_order_status(uuid,text)',
@@ -320,7 +323,8 @@ async function run() {
     assert.equal(after.owner, before.owner, `Owner changed for ${target.signature}`);
     assert.equal(after.security_definer, before.security_definer, `SECURITY DEFINER changed for ${target.signature}`);
     assert.deepEqual(after.config, before.config, `Function settings changed for ${target.signature}`);
-    assert.equal(after.acl, before.acl, `Function ACL changed for ${target.signature}`);
+    assert.deepEqual(canonicalizePostgresAcl(after.acl), canonicalizePostgresAcl(before.acl),
+      `Function ACL grants changed for ${target.signature}`);
     const insertion = `\n  ${target.instruction}\n`;
     assert.equal(after.definition.split(target.instruction).length - 1, 1, `Admission statement missing or duplicated in ${target.signature}`);
     if (after.definition.replace(insertion, '\n') !== before.definition) {

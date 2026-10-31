@@ -7,6 +7,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { canonicalizePostgresAcl } from './pr352-r6-canonical-postgres-acl.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const bridgePath = path.join(root, 'docs/evidence/20261030182733_restaurant_cloud_transition_bridge_v1.sql');
@@ -71,6 +72,20 @@ test('six authentic writer definitions are fingerprinted without row data or cre
   const source = await readFile(writersPath, 'utf8');
   assert.equal((source.match(/create or replace function/gi) || []).length, 6);
   assert.doesNotMatch(source, /(eyJ[A-Za-z0-9_-]{20,}|Bearer\s+[A-Za-z0-9._-]{16,}|postgres(?:ql)?:\/\/[^\s"']+|password\s*[:=]\s*['"][^'"]{6,}|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})/i);
+});
+
+test('PostgreSQL ACL comparisons ignore display order but preserve the exact grant set', async () => {
+  const expected = '{postgres=X/postgres,service_role=X/postgres,anon=X/postgres,authenticated=X/postgres}';
+  const actual = '{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres,service_role=X/postgres}';
+  assert.deepEqual(canonicalizePostgresAcl(actual), canonicalizePostgresAcl(expected));
+  assert.notDeepEqual(canonicalizePostgresAcl('{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres}'),
+    canonicalizePostgresAcl(expected));
+  assert.deepEqual(canonicalizePostgresAcl('<default>'), ['<default>']);
+  assert.throws(() => canonicalizePostgresAcl('not-an-acl'), /brace-delimited array literal/);
+  const runner = await readFile(runnerPath, 'utf8');
+  assert.match(runner, /canonicalizePostgresAcl\(liveDispatcher\.acl\)/);
+  assert.match(runner, /canonicalizePostgresAcl\(actual\.acl\)/);
+  assert.match(runner, /canonicalizePostgresAcl\(after\.acl\)/);
 });
 
 test('real PostgreSQL runner applies 3D.14 before the bridge and proves finite loopback-only setup', async () => {
