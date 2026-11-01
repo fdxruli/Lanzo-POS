@@ -307,7 +307,7 @@ async function runPrepareEcommerceOrderPosDraft({ order } = {}) {
   const isRemoteOwner = remoteOrder?.posDraft?.isClaimedByCurrentActor === true;
   const remoteToken = remoteOrder?.posDraft?.claimToken || null;
 
-  if (localMatchesPreparedRemote({ existing, remoteOrder, draftId, licenseIdentity })) {
+  if (localMatchesPreparedRemote({ local: existing, remoteOrder, draftId, licenseIdentity })) {
     activeOrders.updateOrder(draftId, {
       ecommerceOperationalStatus: remoteOrder.fulfillment?.internalStatus
         || remoteOrder.fulfillment?.status

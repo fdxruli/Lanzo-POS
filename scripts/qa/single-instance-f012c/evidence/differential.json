@@ -1,0 +1,534 @@
+{
+  "regressions.json": {
+    "baseline": "d007bfe1cc2569391a2959ddff73bb2ed1e9c8ff",
+    "base": {
+      "numPassedTests": 1167,
+      "numFailedTests": 4,
+      "numPendingTests": 50,
+      "numTotalTests": 1221
+    },
+    "candidate": {
+      "numPassedTests": 1167,
+      "numFailedTests": 4,
+      "numPendingTests": 50,
+      "numTotalTests": 1221
+    },
+    "changed": [],
+    "added": []
+  },
+  "global.json": {
+    "baseline": "d007bfe1cc2569391a2959ddff73bb2ed1e9c8ff",
+    "base": {
+      "numPassedTests": 5793,
+      "numFailedTests": 88,
+      "numPendingTests": 52,
+      "numTotalTests": 5933
+    },
+    "candidate": {
+      "numPassedTests": 5864,
+      "numFailedTests": 88,
+      "numPendingTests": 52,
+      "numTotalTests": 6004
+    },
+    "changed": [],
+    "added": [
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-01 PROF-01 no cache: raw RPC, both local writes and publication settle",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-02 PROF-02 fresh memory cache avoids remote work",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-03 PROF-03 slow raw RPC keeps root and transport pending",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-04 PROF-04 quiesce before transport admission starts no RPC",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-05 PROF-05 public profile timeout leaves transport pending without late publication",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-06 PROF-06 tenant change rejects old remote response before writes",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-07 PROF-07 actor change rejects old remote response before writes",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-08 PROF-08 logout rejects old remote response before writes",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-09 PROF-09 new profile wins over previous request",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-10 PROF-10 asynchronous preference substitute is observed and remains UNKNOWN",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-11 PROF-11 asynchronous refresh rejection is observed",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-12 PROF-12 invalidated request never invokes onPrepared",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-13 PROF-13 offline Admin profile uses tenant cache without extending authorization",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-14 PROF-14 profile observation cannot authorize a locked Staff",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-15 PROF-15 final local cache continuation is part of drain",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-16 Drive refresh is synchronous and issues no network request",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-17 Drive local token rehydrates only through existing cache permission",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-18 locking Drive hides token without deleting credentials",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-19 expired Drive session retains existing reauth behavior",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-20 malformed Drive session is safely cleared as before",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-21 async Drive replacement keeps UNKNOWN until its own contract exists",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-22 pending profile cannot refresh Drive after tenant switch at local guard",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-23 UI preference refresh is synchronous tenant-local policy read",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-24 permission-denied preference refresh falls back to manual",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-25 profile and Drive refresh never auto-backup or mutate remote credentials",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-26 SHARED-01 owner and consumer join one raw lifetime",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-27 SHARED-02 two consumers share owner without additional transport",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-28 SHARED-03 public owner timeout does not settle either lifetime",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-29 SHARED-04 consumer quiesce never cancels shared transport",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-30 SHARED-05 public deadline plus raw reject records late failure in both consumers",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-31 SHARED-06 logout blocks shared old continuations",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-32 SHARED-07 tenant switch blocks shared old continuations",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-33 SHARED-08 late shared rejection has no unhandled promise",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-34 SHARED-09 new actor cannot reuse old actor validation",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-35 SHARED-10 originally unobserved owner remains conservatively UNKNOWN",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-36 processing settlement retains delegated sync UNKNOWN",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-37 processing waits for profile public result but cannot infer child raw settlement",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-38 context invalidated during profile never starts subsequent sync refresh",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-39 context invalidated during persistence never publishes result",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-40 stale processing before admission has no effects",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-41 processing persistence errors remain failures without sync side effects",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-42 pending sync refresh remains pending processing without confirmation",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-43 processing can settle while a subscriber child is still running",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-44 asynchronous store-triggered work is a reproducible unknown counterexample",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-45 processing UNKNOWN prevents a false SYNC_QUIESCED drain",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-46 joining an owned promise registers synchronously",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-47 quiesced consumer cannot join or start more work",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-48 context invalidation before profile factory blocks all providers",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-49 two stores do not invalidate each others profile generation",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-50 license cleared without actor update still rejects old profile",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-51 timeout before validation transport suppresses later RPC and observes deadline rejection",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-52 raw profile rejection after timeout remains observed",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-53 unknown profile substitute cannot claim complete drain",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-54 scope invalidation after raw result blocks profile publication",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-55 successful profile RPC clears its public deadline timer",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-56 default non-observed profile still publishes usable profile",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-57 default non-observed revalidation preserves server denial result",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-58 no license cannot acquire authority through lifecycle",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-59 no ready tenant skips background profile and all refresh providers",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::BGX-60 observer and default queries keep identical public profile values",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::EXTRA-01 context captured at invocation blocks actor replacement before factory",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::EXTRA-02 asynchronous onPrepared callback stays observed and UNKNOWN",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::EXTRA-TOKEN-actor credential recovery rechecks context before persisting",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::EXTRA-TOKEN-tenant credential recovery rechecks context before persisting",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::EXTRA-TOKEN-valid credential recovery preserves legitimate persistence",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::EXTRA-LATE-refreshTenantUiPreferences synchronous quiesce retains unknown continuation and rejection",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::EXTRA-LATE-refreshTenantUiPreferences synchronous invalidate retains unknown continuation and rejection",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::EXTRA-LATE-refreshDriveSession synchronous quiesce retains unknown continuation and rejection",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::EXTRA-LATE-refreshDriveSession synchronous invalidate retains unknown continuation and rejection",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::EXTRA-LATE-onPrepared synchronous quiesce retains unknown continuation and rejection",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ],
+      [
+        "/tmp/lanzo-checkout/scripts/qa/single-instance-f012c/background-lifetime.test.js::EXTRA-LATE-onPrepared synchronous invalidate retains unknown continuation and rejection",
+        {
+          "status": "passed",
+          "error": ""
+        }
+      ]
+    ]
+  }
+}

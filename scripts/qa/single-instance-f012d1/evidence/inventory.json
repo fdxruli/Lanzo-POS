@@ -1,0 +1,506 @@
+{
+  "baseline": "0f1625f46e6fe234e378487bb06f74f4bd1555e9",
+  "scope": "Finite POS Sync boundaries; not full per-tenant financial inventory",
+  "rows": [
+    {
+      "id": "P01",
+      "producer": "syncExecutionScope.addSource.stop",
+      "trigger": "manual stop or scope quiesce",
+      "owner_context": "Original scope + registered source identity; cleanup has no business authority",
+      "effects": "Local source cleanup only",
+      "public_result": "Single-flight cleanup promise",
+      "underlying_work": "Cleanup registered before factory, including after context loss",
+      "descendants": "No root drain called from cleanup",
+      "scheduling": "Microtask factory; no new commercial admission",
+      "cleanup": "Existing unregister callable remains compatible; .stop is idempotent",
+      "after_quiesce": "Cleanup completes; no timeout release",
+      "before": "CRITICAL_UNKNOWN",
+      "after": "OBSERVED_CRITICAL_WORK",
+      "evidence": [
+        "src/services/sync/syncExecutionScope.js:addSource",
+        "realtime.test.js:registered cleanup contract"
+      ],
+      "remaining_limit": ""
+    },
+    {
+      "id": "P02",
+      "producer": "scoped POS Realtime connect",
+      "trigger": "startPosRealtimeListener({executionScope})",
+      "owner_context": "Captured scope and tenant/actor/session predicate; singleton refuses legacy/active/UNKNOWN adoption",
+      "effects": "Create private POS channel; status notifications",
+      "public_result": "Owned handle may return before channel creation",
+      "underlying_work": "Registered connect includes async connecting callback",
+      "descendants": "Channel callbacks; scoped reconnect; cleanup",
+      "scheduling": "Register before channel/on/subscribe factories",
+      "cleanup": "Source cleanup owns every connecting or retiring channel",
+      "after_quiesce": "Queued connect cannot start; already-started task remains observed",
+      "before": "CRITICAL_UNKNOWN",
+      "after": "OBSERVED_CRITICAL_WORK",
+      "evidence": [
+        "src/services/posRealtime.js:startPosRealtimeListener",
+        "src/services/sync/scopedPosRealtimeListener.js:connect",
+        "realtime.test.js:registers connection before first effect"
+      ],
+      "remaining_limit": ""
+    },
+    {
+      "id": "P03",
+      "producer": "Realtime reconnect timer / online listener",
+      "trigger": "CHANNEL_ERROR, TIMED_OUT, CLOSED, offline initial connect",
+      "owner_context": "Original producer handle + current channel identity",
+      "effects": "Reconnect same private topic",
+      "public_result": "Scheduling acknowledgment is not completion",
+      "underlying_work": "Fired timer/online task stays registered",
+      "descendants": "New connect only while allowed()",
+      "scheduling": "owner.schedule, online listener with captured function identity",
+      "cleanup": "Cancel pending timer/remove listener; already fired callbacks retained",
+      "after_quiesce": "allowed() checks closed admission synchronously; no reconnect after retirement if closed",
+      "before": "CRITICAL_UNKNOWN",
+      "after": "FENCED_SOURCE_OR_CONTINUATION",
+      "evidence": [
+        "scopedPosRealtimeListener.js:reconnect",
+        "realtime.test.js:cancels untriggered reconnect; fired reconnect; online captured/already fired"
+      ],
+      "remaining_limit": ""
+    },
+    {
+      "id": "P04",
+      "producer": "Realtime broadcast / status / restored callbacks",
+      "trigger": "SDK callback",
+      "owner_context": "Captured original owner; channel must be current and not retiring",
+      "effects": "Orchestrator pulls, debounce, status metadata",
+      "public_result": "Callback promise returned to producer",
+      "underlying_work": "scope.run registers callback before effects and awaits returned promise",
+      "descendants": "Real orchestrator callbacks now return their child promises",
+      "scheduling": "Task per callback; status queue remains separately observed",
+      "cleanup": "Channel retirement fences old callbacks; existing work awaited",
+      "after_quiesce": "Queued callback rejected if context/admission changed; in-flight work retained",
+      "before": "CRITICAL_UNKNOWN",
+      "after": "OBSERVED_CRITICAL_WORK",
+      "evidence": [
+        "scopedPosRealtimeListener.js:observe/notify",
+        "posSyncOrchestrator.js:Realtime callbacks",
+        "outbox.test.js:D-29",
+        "realtime.test.js:async change/status callbacks"
+      ],
+      "remaining_limit": "Arbitrary detached work inside a caller callback is not certified by return-value observation; audited orchestrator callbacks and their remaining UNKNOWN delimit the claim."
+    },
+    {
+      "id": "P05",
+      "producer": "Realtime channel retirement",
+      "trigger": "error/close callback or manual/scope stop",
+      "owner_context": "Original handle; cleanup does not require a new actor grant",
+      "effects": "removeChannel; local channel teardown",
+      "public_result": "Handle.stop or registered status promise",
+      "underlying_work": "Removal promise awaited once per channel; allSettled waits all pending cleanup",
+      "descendants": "No reconnect before retirement settles",
+      "scheduling": "Retiring WeakMap prevents duplicate remove/reentrant callbacks",
+      "cleanup": "Idempotent source stop; failures retain UNKNOWN",
+      "after_quiesce": "Fence sources before awaits; never-settling removal blocks drain",
+      "before": "CRITICAL_UNKNOWN",
+      "after": "OBSERVED_CRITICAL_WORK",
+      "evidence": [
+        "scopedPosRealtimeListener.js:retire/stop",
+        "realtime.test.js:late rejection, never settles, duplicate stop, all retirements"
+      ],
+      "remaining_limit": "Non-success cleanup is UNKNOWN. timed out is local unsubscribe settlement per pinned SDK close path, not server confirmation."
+    },
+    {
+      "id": "P06",
+      "producer": "Pinned Realtime SDK internal socket/rejoin timers",
+      "trigger": "SDK join/error/push timers",
+      "owner_context": "Shared Supabase socket is not owned/adopted by this generation",
+      "effects": "Read/transport mechanics and notifications only on this channel",
+      "public_result": "No claim to stop the whole shared client",
+      "underlying_work": "Inspected installed RealtimeChannel.unsubscribe/onClose and RealtimeClient.removeChannel",
+      "descendants": "Commercial descendants only through fenced provider callbacks",
+      "scheduling": "SDK clocks may exist until local unsubscribe settles",
+      "cleanup": "Successful unsubscribe closes channel; callback fence independently prevents old business triggers",
+      "after_quiesce": "Internal transport cannot create a new business task through closed callbacks",
+      "before": "CRITICAL_UNKNOWN",
+      "after": "FENCED_SOURCE_OR_CONTINUATION",
+      "evidence": [
+        "node_modules/@supabase/realtime-js/src/RealtimeChannel.ts:unsubscribe,_onClose",
+        "node_modules/@supabase/realtime-js/src/RealtimeClient.ts:removeChannel",
+        "realtime.test.js:old callbacks"
+      ],
+      "remaining_limit": "No native SDK/server certification, no shared socket/auth shutdown claim. Failed removal remains UNKNOWN."
+    },
+    {
+      "id": "P07",
+      "producer": "Unknown/substituted POS Realtime provider",
+      "trigger": "Injected provider returns foreign object/null",
+      "owner_context": "Unverified owner",
+      "effects": "Unknown hidden reconnect/remove/children",
+      "public_result": "Foreign public handle insufficient",
+      "underlying_work": "Unknown",
+      "descendants": "Unknown",
+      "scheduling": "Unknown",
+      "cleanup": "Unknown",
+      "after_quiesce": "Orchestrator preserves irreversible marker",
+      "before": "CRITICAL_UNKNOWN",
+      "after": "CRITICAL_UNKNOWN",
+      "evidence": [
+        "posSyncOrchestrator.js:ownsScopedPosRealtimeListener check",
+        "single-instance-f012d/sync.test.js:D-29",
+        "realtime.test.js:private WeakMap provenance"
+      ],
+      "remaining_limit": "A copied version flag or handle properties cannot satisfy provenance."
+    },
+    {
+      "id": "P08",
+      "producer": "Bootstrap deferred snapshot admission",
+      "trigger": "resource timer, route demand, warmup",
+      "owner_context": "Captured owner + scopedEpoch + licenseKey",
+      "effects": "Invoke real snapshot handler and publish completedSnapshots",
+      "public_result": "Scheduled task or snapshot result",
+      "underlying_work": "Root observed; provider descendants not generally certified",
+      "descendants": "Products/customers/cash/credit/sales; reports skip",
+      "scheduling": "Owner timers already registered in D; extra admission check after tenant await",
+      "cleanup": "Existing bootstrap source stop and epoch invalidation",
+      "after_quiesce": "Quiesce while tenant guard awaits prevents provider start and needless UNKNOWN marking",
+      "before": "FENCED_SOURCE_OR_CONTINUATION",
+      "after": "FENCED_SOURCE_OR_CONTINUATION",
+      "evidence": [
+        "posSyncBootstrapCoordinator.js:runDeferredSnapshot",
+        "single-instance-f012d/sync.test.js:D-15/D-30"
+      ],
+      "remaining_limit": "Actual admitted handlers still retain snapshot_handler_lifetime; successful root is not entire descendant drain."
+    },
+    {
+      "id": "P09",
+      "producer": "Products handler: onStart/onEvents/pushOperation",
+      "trigger": "start snapshot, pulled category/product/batch/inventory-entry; outbox",
+      "owner_context": "Original tenant lease at outer boundary; product mutation handles inside push",
+      "effects": "Migration/recovery, catalog writes/conflicts/cursor, DOM/ticker/BC, cloud mutation",
+      "public_result": "Handler public promise",
+      "underlying_work": "Most direct repository calls awaited; catalog reads fan out with Promise.all",
+      "descendants": "productEvents -> catalog subscribers/stock alerts/Ecommerce publishers",
+      "scheduling": "Downstream timers/BC and store hydrations lack one execution owner",
+      "cleanup": "No complete handler/subscriber cleanup contract",
+      "after_quiesce": "Outer UNKNOWN retains lock; optional scope is not propagated through entire provider graph",
+      "before": "CRITICAL_UNKNOWN",
+      "after": "CRITICAL_UNKNOWN",
+      "evidence": [
+        "products/productSyncHandler.js",
+        "products/productMigrationService.js",
+        "products/productLocalCatalogRecovery.js",
+        "products/productEvents.js",
+        "products/productCatalogEvents.js"
+      ],
+      "remaining_limit": "inventory_movement is also registered by sales; effective cold auto root maps it to sales. Do not assume a separate handler for each entity."
+    },
+    {
+      "id": "P10",
+      "producer": "Customers handler and initial migration",
+      "trigger": "onStart, customer events, outbox push",
+      "owner_context": "Tenant lease outer; migration/cloud auth builds current credentials internally",
+      "effects": "Migrate batches, snapshot, local customers/conflicts/meta, notify",
+      "public_result": "Awaited migration/pull/push promise",
+      "underlying_work": "Real migration batches and writes awaited in tested success; no complete original-session propagation",
+      "descendants": "CustomersPage/Dashboard refresh",
+      "scheduling": "DOM callbacks detach their returned work",
+      "cleanup": "No global consumer drain",
+      "after_quiesce": "Existing UNKNOWN remains; migrated flag is not proof of descendant completion",
+      "before": "CRITICAL_UNKNOWN",
+      "after": "CRITICAL_UNKNOWN",
+      "evidence": [
+        "customers/customerSyncHandler.js",
+        "customers/customerMigrationService.js",
+        "handlers.test.js:real customer initial migration"
+      ],
+      "remaining_limit": "Real migration tested with actual Dexie, local mapping and controlled RPC. Policy unchanged."
+    },
+    {
+      "id": "P11",
+      "producer": "Credit local projection siblings",
+      "trigger": "snapshot/events payload apply",
+      "owner_context": "Already admitted real credit handler; no new financial grant",
+      "effects": "Local ledgers/customers/cash movements/cash sessions",
+      "public_result": "Reject with same earliest error, or return applied count",
+      "underlying_work": "allSettled now waits every initiated actual local repository operation",
+      "descendants": "No notification after failed apply; normal notification after all success",
+      "scheduling": "Four concurrent local operations unchanged",
+      "cleanup": "No new cancellation or rollback; observe even late sibling rejection",
+      "after_quiesce": "Already initiated writes finish locally; never-settling sibling prevents public settlement",
+      "before": "CRITICAL_UNKNOWN",
+      "after": "OBSERVED_CRITICAL_WORK",
+      "evidence": [
+        "customerCredit/customerCreditSyncHandler.js:applyCreditPayload",
+        "handlers.test.js:events/snapshot real Dexie sibling; earliest rejection; never settles"
+      ],
+      "remaining_limit": "This closes the rejection/sibling gap only; it does not certify full credit handler authority or event consumers."
+    },
+    {
+      "id": "P12",
+      "producer": "Credit handler and initial debt migration",
+      "trigger": "onStart, customer_ledger/customer_credit events",
+      "owner_context": "Original outer tenant lease; nested migration/auth does not carry complete scope context",
+      "effects": "Credit migration/summary reads, local projections/cursor and shared DOM notifications",
+      "public_result": "Handler promise includes fixed local fan-out",
+      "underlying_work": "Local fan-out closed; migration/provider/session and event descendants still incomplete",
+      "descendants": "cash/customer/customer-credit subscribers",
+      "scheduling": "DOM + consumer timers and store refresh",
+      "cleanup": "No full nested owner/cleanup contract",
+      "after_quiesce": "UNKNOWN preserved for full handler and snapshot",
+      "before": "CRITICAL_UNKNOWN",
+      "after": "CRITICAL_UNKNOWN",
+      "evidence": [
+        "customerCredit/customerCreditSyncHandler.js",
+        "customerCredit/customerCreditMigrationService.js",
+        "handlers.test.js:real credit migration path"
+      ],
+      "remaining_limit": "No change to credit migration policy, debt rules or RPC contracts."
+    },
+    {
+      "id": "P13",
+      "producer": "Cash handler",
+      "trigger": "onStart, cash_session/cash_movement events",
+      "owner_context": "Outer tenant lease; runtime cache actor/session captured by helper",
+      "effects": "Snapshot/changes, local sessions/movements/cursor; cash DOM event",
+      "public_result": "Sequential awaited repository writes",
+      "underlying_work": "Direct writes awaited, nested provider/session + consumer unclosed",
+      "descendants": "useCaja/Dashboard",
+      "scheduling": "Consumer timer and detached refresh",
+      "cleanup": "No complete consumer barrier",
+      "after_quiesce": "UNKNOWN preserved",
+      "before": "CRITICAL_UNKNOWN",
+      "after": "CRITICAL_UNKNOWN",
+      "evidence": [
+        "cash/cashSyncHandler.js",
+        "cash/cashLocalRepository.js",
+        "subscribers.test.jsx:real cancellation -> useCaja"
+      ],
+      "remaining_limit": "pushOperation explicitly disallowed; this task does not enter six reserved financial callsites."
+    },
+    {
+      "id": "P14",
+      "producer": "Sales handler / snapshot shadow retry",
+      "trigger": "onStart, sale/item/payment/cancellation/inventory movement events; shadow outbox",
+      "owner_context": "Outer tenant lease; shadow service obtains current runtime context per retry",
+      "effects": "Actual shadow mutation, mark pending/synced/failed, enqueue on failure, sales cache/cursors/events",
+      "public_result": "onStart awaits retryPendingShadowSales before snapshot",
+      "underlying_work": "Real retry loop and actual local writes tested; public snapshot is not a read-only boundary",
+      "descendants": "Shared sales/cash/product/credit refresh and nested cloud cache effects",
+      "scheduling": "Awaited retry loop; event descendants detached",
+      "cleanup": "No end-to-end provider/subscriber cleanup contract",
+      "after_quiesce": "UNKNOWN remains; no forced resend or deletion",
+      "before": "CRITICAL_UNKNOWN",
+      "after": "CRITICAL_UNKNOWN",
+      "evidence": [
+        "salesCloud/salesCloudSyncHandler.js",
+        "salesCloud/salesCloudShadowService.js",
+        "salesCloud/salesCloudLocalRepository.js",
+        "handlers.test.js:real sales snapshot awaits shadow"
+      ],
+      "remaining_limit": "Receipt-first/idempotency/origin policy untouched. Local observed completion never confirms remote result."
+    },
+    {
+      "id": "P15",
+      "producer": "Restaurant handler",
+      "trigger": "restaurant_order / restaurant_order_item pulled event",
+      "owner_context": "Outer lease only; handler emits DOM",
+      "effects": "KDS reload notification",
+      "public_result": "Synchronous dispatch wrapped by async handler",
+      "underlying_work": "Consumer timer/reload is detached",
+      "descendants": "useKitchenOrdersCloud",
+      "scheduling": "700ms debounce + independent polling/visibility/online",
+      "cleanup": "Hook removes timers/listeners on unmount, not emitter scope drain",
+      "after_quiesce": "UNKNOWN preserved",
+      "before": "CRITICAL_UNKNOWN",
+      "after": "CRITICAL_UNKNOWN",
+      "evidence": [
+        "restaurant/restaurantOrdersSyncHandler.js",
+        "hooks/restaurant/useKitchenOrdersCloud.js:requestForceRefresh/handleRestaurantOrdersUpdated"
+      ],
+      "remaining_limit": ""
+    },
+    {
+      "id": "P16",
+      "producer": "Outbox execution and durable rows",
+      "trigger": "processOutbox start/online/route",
+      "owner_context": "Captured runtime generation and license, outer scope + tenant checks",
+      "effects": "Mark processing; invoke push; mark synced/conflict/failure only on eligible return",
+      "public_result": "processOutbox public promise",
+      "underlying_work": "Real Dexie service operations awaited; handler children retain UNKNOWN",
+      "descendants": "Handler-specific work above",
+      "scheduling": "Serial row processing; no durable order/retry changes",
+      "cleanup": "Stop invalidates generation; current RPC retained; rows retained",
+      "after_quiesce": "New post-markProcessing guard avoids starting handler after quiesce; no retry conversion",
+      "before": "OBSERVED_CRITICAL_WORK",
+      "after": "OBSERVED_CRITICAL_WORK",
+      "evidence": [
+        "sync/syncOutboxService.js",
+        "posSyncOrchestrator.js:processOutbox",
+        "outbox.test.js:D-14, markProcessing, late rejection"
+      ],
+      "remaining_limit": "Pending rows are durable recovery input, not live work. Processing/remote ambiguity are not cleared to make drain pass."
+    },
+    {
+      "id": "P17",
+      "producer": "Durable pending outbox rows without live executor",
+      "trigger": "Stored rows after all local jobs settle",
+      "owner_context": "Persisted original tenant/key/origin",
+      "effects": "No effect while no executor runs",
+      "public_result": "No active promise",
+      "underlying_work": "None locally; future authorized recovery is a new lifecycle",
+      "descendants": "Future discovery/recovery only",
+      "scheduling": "No timer implied by a row",
+      "cleanup": "No row deletion",
+      "after_quiesce": "A clean scope may drain with pending rows; not remote confirmation",
+      "before": "NOT_CRITICAL_FOR_THIS_DRAIN",
+      "after": "NOT_CRITICAL_FOR_THIS_DRAIN",
+      "evidence": [
+        "outbox.test.js:pending durable rows do not equal live executions",
+        "syncOutboxService.js:getPendingOperations"
+      ],
+      "remaining_limit": ""
+    },
+    {
+      "id": "P18",
+      "producer": "CloudRequestManager read cache/dedupe",
+      "trigger": "Snapshot/changes and consumer reads",
+      "owner_context": "Request-key/connection generation, shared cache; not source-scope ownership",
+      "effects": "Read RPC plus cache/backoff/metadata publication",
+      "public_result": "request promise awaits own fn and cache pipeline",
+      "underlying_work": "Inspected no timeout race in this manager; deduped legacy ownership still shared",
+      "descendants": "Caller local application and DOM consumers",
+      "scheduling": "Promise chain; independent request dedupe",
+      "cleanup": "Key generation stale response rejection; no source-scope stop",
+      "after_quiesce": "Complete per-request original actor/scope contract not proven; do not mark read innocuous",
+      "before": "CRITICAL_UNKNOWN",
+      "after": "CRITICAL_UNKNOWN",
+      "evidence": [
+        "cloud/cloudRequestManager.js:request",
+        "customers/customerCloudRepository.js",
+        "salesCloud/salesCloudRepository.js"
+      ],
+      "remaining_limit": ""
+    },
+    {
+      "id": "P19",
+      "producer": "useCaja shared sync-event consumer",
+      "trigger": "cash-sync-updated from cash/credit/cancellation",
+      "owner_context": "Mounted hook, sequence refs; no emitter-scope owner",
+      "effects": "Timer -> getCurrentCashSession -> cash state/financial gate publication",
+      "public_result": "Event returns before timer; refresh result not returned to emitter",
+      "underlying_work": "Real hook counterexample proves work starts after emitter quiesce",
+      "descendants": "Repository read/cache and UI state",
+      "scheduling": "0ms refresh timer, online/offline/storage listeners",
+      "cleanup": "Effect unmount removes pending timer; in-flight callback is not emitter drain",
+      "after_quiesce": "CRITICAL UNKNOWN; emitter mark must remain",
+      "before": "CRITICAL_UNKNOWN",
+      "after": "CRITICAL_UNKNOWN",
+      "evidence": [
+        "hooks/useCaja.js:event refresh effect",
+        "subscribers.test.jsx:COUNTEREXAMPLE actual cancellation projection + actual hook"
+      ],
+      "remaining_limit": "Proving this needs contextual shared consumers/providers, not attaching an observer above the emitter. Six financial callsites untouched."
+    },
+    {
+      "id": "P20",
+      "producer": "Dashboard / CustomersPage refresh consumers",
+      "trigger": "customers/credit/cash/products/sales/report sync DOM events",
+      "owner_context": "Mounted route/store; no original emitter scope carried",
+      "effects": "loadStats/loadCustomers/report sources and state/cache effects",
+      "public_result": "Event callback discards work",
+      "underlying_work": "No full original scope/context continuation proof",
+      "descendants": "Reporting repositories and store actions",
+      "scheduling": "Detached async callbacks",
+      "cleanup": "Listener removal only",
+      "after_quiesce": "CRITICAL UNKNOWN; not classified as harmless UI",
+      "before": "CRITICAL_UNKNOWN",
+      "after": "CRITICAL_UNKNOWN",
+      "evidence": [
+        "pages/DashboardPage.jsx:refreshReportSources",
+        "pages/CustomersPage.jsx:refreshFromSync"
+      ],
+      "remaining_limit": ""
+    },
+    {
+      "id": "P21",
+      "producer": "Product catalog subscribers / BroadcastChannel",
+      "trigger": "productEvents PRODUCT_SYNC_EVENT",
+      "owner_context": "Global subscribers/stores; BC messages have metadata but no executable scope authority",
+      "effects": "Catalog hydration, invalidation, cross-document refresh",
+      "public_result": "DOM dispatch/notifySubscribers does not await subscriber tasks",
+      "underlying_work": "Async subscriber/store work unobserved",
+      "descendants": "usePosCatalogStore/useInventoryCatalogStore/useAvailableIngredients",
+      "scheduling": "Store refresh scheduling, BC close timer, focus/visibility wakeup",
+      "cleanup": "Unsubscribe stops sources, not already-started hydrations",
+      "after_quiesce": "CRITICAL UNKNOWN; no scope token serialized through BC",
+      "before": "CRITICAL_UNKNOWN",
+      "after": "CRITICAL_UNKNOWN",
+      "evidence": [
+        "products/productCatalogEvents.js",
+        "store/usePosCatalogStore.js",
+        "store/useInventoryCatalogStore.js",
+        "hooks/products/useAvailableIngredients.js"
+      ],
+      "remaining_limit": ""
+    },
+    {
+      "id": "P22",
+      "producer": "Ticker/stock alerts and Ecommerce catalog publication",
+      "trigger": "productEvents dispatchTickerInventoryAlert and product event",
+      "owner_context": "Existing runtime/service scheduling shared with online/manual/visibility",
+      "effects": "Operational alert persistence, published-stock alerts, remote catalog synchronization",
+      "public_result": "scheduleSync public acknowledgment is not job termination",
+      "underlying_work": "Shared producer owns retry/debounce across triggers; no emitter owner reservation",
+      "descendants": "EcommerceCatalogSyncRuntime; EcommercePublishedStockAlertRuntime; LocalInventoryOperationalAlertsRuntime",
+      "scheduling": "Service debounce/retry, hydration and remote mutation",
+      "cleanup": "Removing a DOM listener cannot revoke/reassign an already scheduled service job",
+      "after_quiesce": "CRITICAL UNKNOWN; never retrospectively adopt shared active work",
+      "before": "CRITICAL_UNKNOWN",
+      "after": "CRITICAL_UNKNOWN",
+      "evidence": [
+        "components/ecommerce/EcommerceCatalogSyncRuntime.jsx:scheduleFromEvent",
+        "components/ecommerce/EcommercePublishedStockAlertRuntime.jsx",
+        "components/inventory/LocalInventoryOperationalAlertsRuntime.jsx",
+        "services/ecommerce/ecommerceCatalogSyncService.js"
+      ],
+      "remaining_limit": "Concrete boundary preventing safe generic event-lifetime attestation. No topics, plans, FREE capabilities, publisher policy or broad app lifecycle redesigned."
+    },
+    {
+      "id": "P23",
+      "producer": "Financial projection shared notifications",
+      "trigger": "Recovery cancellation projection after local transaction",
+      "owner_context": "Financial actor handle remains mandatory; source scope only observes root",
+      "effects": "Real cancellation patch transaction then sales/cash/products/credit/reports DOM events",
+      "public_result": "applyFinancialProjection awaits handler, not DOM consumers",
+      "underlying_work": "Durable patch is awaited; shared subscribers remain live",
+      "descendants": "Same useCaja, catalog, Dashboard and reports consumers",
+      "scheduling": "DOM dispatch -> independent scheduling",
+      "cleanup": "No shared subscriber barrier",
+      "after_quiesce": "financial_projection_subscriber_lifetime remains irreversible",
+      "before": "CRITICAL_UNKNOWN",
+      "after": "CRITICAL_UNKNOWN",
+      "evidence": [
+        "financial/financialProjectionRegistry.js",
+        "financial/financialCancellationProjection.js",
+        "financial/financialIntentRecoveryCoordinator.js",
+        "subscribers.test.jsx"
+      ],
+      "remaining_limit": "No financial state-machine/lease/receipt changes. One tested counterexample is sufficient to reject full closure; it is not all-subscriber certification."
+    },
+    {
+      "id": "P24",
+      "producer": "Explicitly skipped report snapshot branch",
+      "trigger": "reports resource deferred snapshot",
+      "owner_context": "Bootstrap original owner",
+      "effects": "Returns reports_load_on_repository_demand, no report fetch here",
+      "public_result": "Immediate skipped result",
+      "underlying_work": "No report snapshot provider invoked here",
+      "descendants": "Actual report repository loading belongs to consumers, row P20",
+      "scheduling": "No child scheduling from this branch",
+      "cleanup": "Bootstrap timer cancellation",
+      "after_quiesce": "No report work started by this branch",
+      "before": "NOT_CRITICAL_FOR_THIS_DRAIN",
+      "after": "NOT_CRITICAL_FOR_THIS_DRAIN",
+      "evidence": [
+        "posSyncBootstrapCoordinator.js:runDeferredSnapshot reports case"
+      ],
+      "remaining_limit": "Existing conservative generic snapshot marker may still be emitted; this intervention does not reset it or claim report consumers are drained."
+    }
+  ]
+}

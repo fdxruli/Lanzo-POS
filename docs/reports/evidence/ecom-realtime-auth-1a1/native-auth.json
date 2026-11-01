@@ -1,0 +1,331 @@
+{
+  "runId": "f748296e-1fba-4c89-b3e3-c2a4a489bc06",
+  "qaRole": "qa_ecom_1a1_f748296e",
+  "qaTopic": "ecom:qa-probe:1a1:f748296e-1fba-4c89-b3e3-c2a4a489bc06",
+  "server": {
+    "status": 200,
+    "body": {
+      "version": "v2.197.0",
+      "name": "GoTrue",
+      "description": "GoTrue is a user registration and authentication API"
+    }
+  },
+  "results": [
+    {
+      "test": "native-admin-create-custom-role",
+      "status": "PASS",
+      "error": null,
+      "user_id": "7fbeaf5b-d4d5-4119-acad-eb0a66ee33fb",
+      "role": "qa_ecom_1a1_f748296e"
+    },
+    {
+      "test": "native-token-custom-role",
+      "status": "PASS",
+      "role": "qa_ecom_1a1_f748296e",
+      "issuer": "https://odlrhijtfyavryeqivaa.supabase.co/auth/v1",
+      "audience": "authenticated",
+      "ttl": 3600,
+      "session_id": "18d098cb-82de-4021-b29e-fbcdbd8525d6",
+      "sub": "7fbeaf5b-d4d5-4119-acad-eb0a66ee33fb",
+      "topLevelScope": null,
+      "appMetadataScope": "qa_probe"
+    },
+    {
+      "test": "hosted-custom-role-private-join",
+      "status": "CHANNEL_ERROR",
+      "error": "\"MissingPartition: Realtime was unable to find the expected messages partition\"",
+      "ms": 5250
+    },
+    {
+      "test": "hosted-service-control-same-qa-topic",
+      "status": "SUBSCRIBED"
+    },
+    {
+      "test": "hosted-custom-role-retry",
+      "status": "SUBSCRIBED"
+    },
+    {
+      "test": "hosted-own-topic",
+      "status": "SUBSCRIBED",
+      "ms": 651
+    },
+    {
+      "test": "receive-qa-probe",
+      "status": "PASS",
+      "send": "ok"
+    },
+    {
+      "test": "deny-other-topics",
+      "cases": [
+        {
+          "topic": "ecom:qa-probe:1a1:f748296e-1fba-4c89-b3e3-c2a4a489bc06:other-grant",
+          "status": "CHANNEL_ERROR",
+          "error": "\"Unauthorized: You do not have permissions to read from this Channel topic: ecom:qa-probe:1a1:f748296e-1fba-4c89-b3e3-c2a4a489bc06:other-grant\"",
+          "ms": 4626
+        },
+        {
+          "topic": "ecom:qa-probe:1a1:other-tenant:f748296e-1fba-4c89-b3e3-c2a4a489bc06",
+          "status": "CHANNEL_ERROR",
+          "error": "\"Unauthorized: You do not have permissions to read from this Channel topic: ecom:qa-probe:1a1:other-tenant:f748296e-1fba-4c89-b3e3-c2a4a489bc06\"",
+          "ms": 4606
+        }
+      ]
+    },
+    {
+      "test": "receiver-publish-and-presence",
+      "broadcast": "error",
+      "presence": "error"
+    },
+    {
+      "test": "wrong-scope-signed-native-token",
+      "status": "CHANNEL_ERROR",
+      "error": "\"Unauthorized: You do not have permissions to read from this Channel topic: ecom:qa-probe:1a1:f748296e-1fba-4c89-b3e3-c2a4a489bc06\"",
+      "ms": 4398
+    },
+    {
+      "test": "native-refresh-preserves-session-role",
+      "status": "PASS",
+      "ttl": 3600
+    },
+    {
+      "test": "different-auth-session-same-user",
+      "status": "CHANNEL_ERROR",
+      "error": "\"Unauthorized: You do not have permissions to read from this Channel topic: ecom:qa-probe:1a1:f748296e-1fba-4c89-b3e3-c2a4a489bc06\"",
+      "ms": 4527,
+      "distinct_session": true
+    },
+    {
+      "test": "revoked-grant-existing-socket",
+      "observations": [
+        {
+          "probe": "after-revoke-0",
+          "sentAt": 1792540776111,
+          "send": "ok",
+          "received": {
+            "at": 1792540776234,
+            "event": "qa_probe",
+            "probe": "after-revoke-0"
+          },
+          "sinceClientObservationMs": 3
+        },
+        {
+          "probe": "after-revoke-1",
+          "sentAt": 1792540776987,
+          "send": "ok",
+          "received": {
+            "at": 1792540777123,
+            "event": "qa_probe",
+            "probe": "after-revoke-1"
+          },
+          "sinceClientObservationMs": 879
+        },
+        {
+          "probe": "after-revoke-2",
+          "sentAt": 1792540777838,
+          "send": "ok",
+          "received": {
+            "at": 1792540777967,
+            "event": "qa_probe",
+            "probe": "after-revoke-2"
+          },
+          "sinceClientObservationMs": 1730
+        }
+      ],
+      "state": "joined"
+    },
+    {
+      "test": "revoked-grant-new-connection",
+      "status": "CHANNEL_ERROR",
+      "error": "\"Unauthorized: You do not have permissions to read from this Channel topic: ecom:qa-probe:1a1:f748296e-1fba-4c89-b3e3-c2a4a489bc06\"",
+      "ms": 4830
+    },
+    {
+      "test": "revoked-grant-access-token-reauthorization",
+      "state": "closed",
+      "send": "ok",
+      "received": false
+    },
+    {
+      "test": "two-concurrent-native-sessions",
+      "a": {
+        "status": "SUBSCRIBED",
+        "ms": 1399
+      },
+      "b": {
+        "status": "SUBSCRIBED",
+        "ms": 839
+      }
+    },
+    {
+      "test": "cross-session-topics-denied",
+      "a": {
+        "status": "CHANNEL_ERROR",
+        "error": "\"Unauthorized: You do not have permissions to read from this Channel topic: ecom:qa-probe:1a1:f748296e-1fba-4c89-b3e3-c2a4a489bc06:parallel\"",
+        "ms": 4184
+      },
+      "b": {
+        "status": "CHANNEL_ERROR",
+        "error": "\"Unauthorized: You do not have permissions to read from this Channel topic: ecom:qa-probe:1a1:f748296e-1fba-4c89-b3e3-c2a4a489bc06\"",
+        "ms": 4139
+      }
+    },
+    {
+      "test": "auth-signout-blocks-refresh",
+      "refreshDenied": true,
+      "refreshCode": "refresh_token_not_found"
+    },
+    {
+      "test": "auth-signout-existing-socket-residual",
+      "state": "joined",
+      "send": "ok",
+      "received": false
+    },
+    {
+      "test": "auth-session-signout-reconnect",
+      "status": "CHANNEL_ERROR",
+      "error": "\"Unauthorized: You do not have permissions to read from this Channel topic: ecom:qa-probe:1a1:f748296e-1fba-4c89-b3e3-c2a4a489bc06\"",
+      "ms": 5464
+    },
+    {
+      "test": "logout-residual-with-parallel-control",
+      "publisherState": "joined",
+      "a": "joined",
+      "b": "joined",
+      "sendA": "ok",
+      "sendB": "ok",
+      "pA2": [
+        {
+          "at": 1792540881794,
+          "event": "qa_probe",
+          "probe": "after-auth-session-signout"
+        },
+        {
+          "at": 1792540908304,
+          "event": "qa_probe",
+          "probe": "logout-residual-confirm"
+        }
+      ],
+      "pB": [
+        {
+          "at": 1792540908590,
+          "event": "qa_probe",
+          "probe": "parallel-control"
+        }
+      ]
+    },
+    {
+      "test": "grant-expiry-versus-native-jwt-expiry",
+      "grantExpired": true,
+      "jwtStillValid": true,
+      "existingChannel": "joined",
+      "residualReceived": true,
+      "publish": "ok",
+      "newJoin": {
+        "status": "CHANNEL_ERROR",
+        "error": "\"Unauthorized: You do not have permissions to read from this Channel topic: ecom:qa-probe:1a1:f748296e-1fba-4c89-b3e3-c2a4a489bc06:parallel\"",
+        "ms": 5541
+      }
+    },
+    {
+      "test": "auth-refresh-independent-of-grant-expiry",
+      "authRefreshSucceeded": true
+    },
+    {
+      "test": "commercial-rest-and-rpc-with-receiver",
+      "cases": [
+        {
+          "path": "/rest/v1/licenses?select=id&limit=1",
+          "status": 403,
+          "code": "42501",
+          "message": "permission denied to set role \"qa_ecom_1a1_f748296e\""
+        },
+        {
+          "path": "/rest/v1/rpc/admin_list_staff_users",
+          "status": 404,
+          "code": "PGRST202",
+          "message": "Could not find the function public.admin_list_staff_users(p_admin_session_token, p_device_fingerprint, p_license_key, p_security_token) in the schema cache"
+        }
+      ]
+    },
+    {
+      "test": "tampered-signature",
+      "status": "CHANNEL_ERROR",
+      "error": "\"JwtSignatureError: Failed to validate JWT signature\"",
+      "ms": 4455
+    },
+    {
+      "test": "auth-selective-cleanup",
+      "user_id": "7fbeaf5b-d4d5-4119-acad-eb0a66ee33fb",
+      "lookupStatus": 404,
+      "lookupCode": "user_not_found"
+    },
+    {
+      "test": "commercial-rpc-correct-signature",
+      "status": 403,
+      "code": "42501",
+      "message": "permission denied to set role \"qa_ecom_1a1_f748296e\"",
+      "note": "Earlier PGRST202 used incorrect parameter names and is not an ACL pass."
+    }
+  ],
+  "probes": [
+    {
+      "at": 1792540657227,
+      "event": "qa_probe",
+      "probe": "initial"
+    },
+    {
+      "at": 1792540776234,
+      "event": "qa_probe",
+      "probe": "after-revoke-0"
+    },
+    {
+      "at": 1792540777123,
+      "event": "qa_probe",
+      "probe": "after-revoke-1"
+    },
+    {
+      "at": 1792540777967,
+      "event": "qa_probe",
+      "probe": "after-revoke-2"
+    }
+  ],
+  "realtimeEvents": [
+    {
+      "at": 1792540573022,
+      "status": "CHANNEL_ERROR",
+      "error": "\"MissingPartition: Realtime was unable to find the expected messages partition\""
+    },
+    {
+      "at": 1792540574267,
+      "status": "SUBSCRIBED"
+    },
+    {
+      "at": 1792540605503,
+      "status": "CLOSED"
+    }
+  ],
+  "pA2": [
+    {
+      "at": 1792540881794,
+      "event": "qa_probe",
+      "probe": "after-auth-session-signout"
+    },
+    {
+      "at": 1792540908304,
+      "event": "qa_probe",
+      "probe": "logout-residual-confirm"
+    }
+  ],
+  "pB": [
+    {
+      "at": 1792540908590,
+      "event": "qa_probe",
+      "probe": "parallel-control"
+    },
+    {
+      "at": 1792541000073,
+      "event": "qa_probe",
+      "probe": "after-grant-expiry"
+    }
+  ]
+}

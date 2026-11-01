@@ -6,6 +6,7 @@ import { createPWASlice } from './slices/createPWASlice';
 import { createDriveSlice } from './slices/createDriveSlice';
 import { createNotificationSlice } from './slices/createNotificationActorStateSlice';
 import { createEcommercePublishedStockAlertSlice } from './slices/createEcommercePublishedStockAlertSlice';
+import { bindEcommerceAdminStoreState } from '../services/ecommerce/ecommerceAdminRuntime';
 import { localTenantAccessController } from '../services/tenant/localTenantPolicy';
 import { isUnsafeTenantStatePatch } from './tenantSafeState';
 
@@ -31,6 +32,10 @@ export const useAppStore = create((set, get, store) => {
     ...createEcommercePublishedStockAlertSlice(...args)
   };
 });
+
+// Ecommerce admin services read the canonical Zustand state through a neutral
+// adapter so service imports do not point back into store initialization.
+bindEcommerceAdminStoreState(useAppStore.getState);
 
 // Zustand exposes a public setState that bypasses the creator's `set` wrapper.
 // Lazy-installed slices and tests use that API, so it must enforce the same

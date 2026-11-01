@@ -26,6 +26,9 @@
     "test:oss-bootstrap": "node --test scripts/oss/reset-local-with-bootstrap.node-test.mjs",
     "test:oss-release": "node --test scripts/oss/release-boundary.test.mjs scripts/oss/reset-local-with-bootstrap.node-test.mjs",
     "test:supabase-ledger-baseline": "node --test scripts/supabase/migration-ledger-baseline.node-test.mjs",
+    "test:restaurant-split-payment-contract": "node --test scripts/supabase/restaurant-split-payment-contract-r1.node-test.mjs",
+    "test:restaurant-atomic-settlement-3d1": "node --test scripts/supabase/restaurant-atomic-settlement-3d1.node-test.mjs",
+    "test:restaurant-origin-cancel-3d13": "node scripts/supabase/restaurant-origin-cancel-3d13-test.mjs --isolated-fixture",
     "test:supabase-technical-incident-reporting-contract": "node --test scripts/supabase/technical-incident-reporting-r1-contract.node-test.mjs",
     "test:ecommerce-phase3-stock-reservations-contract": "node --test scripts/supabase/ecommerce-phase3-stock-reservations-contract.node-test.mjs",
     "test:ecommerce-phase3-reservation-expiry-scheduler": "node --test scripts/supabase/ecommerce-phase3-reservation-expiry-scheduler.node-test.mjs",
@@ -75,7 +78,7 @@
     "react-virtualized-auto-sizer": "^1.0.26",
     "react-window": "^2.2.3",
     "recharts": "^3.8.1",
-    "sharp": "^0.34.5",
+    "sharp": "^0.35.5",
     "zod": "^4.1.13",
     "zustand": "^5.0.8"
   },
@@ -94,8 +97,15 @@
     "fake-indexeddb": "^6.2.5",
     "globals": "^16.5.0",
     "jsdom": "^28.1.0",
-    "vite": "^7.2.2",
-    "vite-plugin-pwa": "^1.2.0",
-    "vitest": "^4.0.14"
+    "vite": "^7.3.7",
+    "vite-plugin-pwa": "^1.3.0",
+    "vitest": "^4.1.12"
+  },
+  "overrides": {
+    "satori": {
+      ".": "0.33.5",
+      "fflate": "0.7.5"
+    },
+    "sharp": "$sharp"
   }
 }

@@ -10,6 +10,10 @@ export const ACTOR_HANDOFF_CHECKOUT_OWNED = 'ACTOR_HANDOFF_CHECKOUT_OWNED';
 
 const pendingOperations = new Map();
 const checkoutOwnership = new Map();
+// The raw unlock is private and used solely to compensate this attempt's
+// acquired lock. Re-registering discount wrappers must not turn compensation
+// into a new protected request from the actor that has just lost authority.
+const checkoutUnlockCompensations = new WeakMap();
 let operationSequence = 0;
 let guardsEnabled = false;
 let operationalDb = null;
@@ -272,6 +276,7 @@ const isGuarded = (fn) => Boolean(fn?.__lanzoActorOperationalGuard);
 const ACTIVE_ORDER_ASYNC_ACTIONS = Object.freeze([
   'releaseEcommerceDraft',
   'loadOpenOrder',
+  'saveOrderAsOpen',
   'loadOrdersFromDB',
   'addItemToOrder',
   'cancelCurrentOrder',
@@ -303,6 +308,7 @@ const installActiveOrderGuards = ({ useActiveOrders, db, STORES }) => {
 
   const originalLock = state.lockOrderForCheckout;
   const originalUnlock = state.unlockOrder;
+  const compensateAcquiredLock = checkoutUnlockCompensations.get(originalUnlock) || originalUnlock;
   if (typeof originalLock === 'function' && !isGuarded(originalLock)) {
     patch.lockOrderForCheckout = markGuarded((orderId, ...args) => {
       const handle = actorRuntimeController.capture();
@@ -310,30 +316,35 @@ const installActiveOrderGuards = ({ useActiveOrders, db, STORES }) => {
         handle,
         'activeOrders.lockOrderForCheckout',
         async ({ assertCurrent }) => {
-          const result = await originalLock(orderId, ...args);
-          assertCurrent();
-          if (result?.success && orderId) {
-            try {
+          let result;
+          try {
+            result = await originalLock(orderId, ...args);
+            assertCurrent();
+            if (result?.success && orderId) {
               await db.table(STORES.SALES).update(orderId, {
                 checkoutActorKey: handle.actorKey,
                 checkoutActorGeneration: handle.generation,
                 checkoutLockedAt: new Date().toISOString()
               });
               assertCurrent();
-            } catch (error) {
-              try { await originalUnlock?.(orderId); } catch { /* keep original error */ }
-              throw error;
+              checkoutOwnership.set(orderId, {
+                orderId,
+                handle,
+                actorKey: handle.actorKey,
+                actorGeneration: handle.generation,
+                tenantOpaqueId: handle.tenant?.opaqueId || null,
+                tenantGeneration: handle.tenant?.generation ?? null,
+                acquiredAt: new Date().toISOString(),
+                persisted: true
+              });
             }
-            checkoutOwnership.set(orderId, {
-              orderId,
-              handle,
-              actorKey: handle.actorKey,
-              actorGeneration: handle.generation,
-              tenantOpaqueId: handle.tenant?.opaqueId || null,
-              tenantGeneration: handle.tenant?.generation ?? null,
-              acquiredAt: new Date().toISOString(),
-              persisted: true
-            });
+          } catch (error) {
+            // Compensate only the lock this attempt just acquired; no sale,
+            // stock or payment is replayed during authority recovery.
+            if ((result?.success || error?.details?.checkoutLockAcquired) && orderId) {
+              try { await compensateAcquiredLock?.(orderId); } catch { /* keep original error */ }
+            }
+            throw error;
           }
           return result;
         }
@@ -368,6 +379,7 @@ const installActiveOrderGuards = ({ useActiveOrders, db, STORES }) => {
         }
       );
     });
+    checkoutUnlockCompensations.set(patch.unlockOrder, originalUnlock);
   }
 
   const originalRemove = state.removeOrder;

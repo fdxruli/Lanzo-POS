@@ -21,12 +21,17 @@ export const withFinancialTimeout = (
     code = 'FINANCIAL_TIMEOUT',
     message = null,
     phase = null,
-    ambiguous = false
+    ambiguous = false,
+    executionScope = null
   } = {}
 ) => {
-  const task = typeof operation === 'function'
-    ? Promise.resolve().then(operation)
-    : Promise.resolve(operation);
+  // Only the opt-in path requires a factory: an already-started promise cannot
+  // prove registration before dispatch. Legacy consumers retain their contract.
+  const task = executionScope
+    ? executionScope.track(operation)
+    : typeof operation === 'function'
+      ? Promise.resolve().then(operation)
+      : Promise.resolve(operation);
   const duration = Number(timeoutMs);
 
   if (!Number.isFinite(duration) || duration <= 0) return task;

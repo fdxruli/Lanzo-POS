@@ -1,0 +1,30 @@
+{
+  "base": {
+    "regressions.json": {
+      "numPassedTests": 1167,
+      "numFailedTests": 4,
+      "numPendingTests": 50,
+      "numTotalTests": 1221
+    },
+    "global.json": {
+      "numPassedTests": 5969,
+      "numFailedTests": 88,
+      "numPendingTests": 52,
+      "numTotalTests": 6109
+    }
+  },
+  "candidate": {
+    "regressions.json": {
+      "numPassedTests": 1167,
+      "numFailedTests": 4,
+      "numPendingTests": 50,
+      "numTotalTests": 1221
+    },
+    "global.json": {
+      "numPassedTests": 5986,
+      "numFailedTests": 88,
+      "numPendingTests": 52,
+      "numTotalTests": 6126
+    }
+  }
+}

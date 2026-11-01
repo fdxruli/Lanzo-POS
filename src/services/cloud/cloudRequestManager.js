@@ -5,6 +5,12 @@ import {
   ENABLE_CLOUD_REQUEST_DEBUG
 } from './cloudRequestConstants';
 import { hashCloudContextPart } from './cloudRequestKeys';
+import { classifyActorAuthorityError } from '../auth/actorAuthorityErrors';
+import {
+  getActorAuthorityRecoverySnapshot,
+  reportActorAuthorityError
+} from '../auth/actorAuthorityRecovery';
+import { actorRuntimeController } from '../auth/actorRuntimeController';
 
 const cache = new Map();
 const inFlight = new Map();
@@ -41,6 +47,8 @@ const CRITICAL_ERROR_CODES = new Set([
   'LICENSE_REQUIRED',
   'STAFF_LOGIN_REQUIRED',
   'DEVICE_NOT_ALLOWED',
+  'DEVICE_TOKEN_INVALID',
+  'DEVICE_TOKEN_REQUIRED',
   'PRODUCT_NOT_SYNCED_FOR_CLOUD_SALE',
   'CASH_SESSION_REQUIRED',
   'INSUFFICIENT_STOCK',
@@ -137,6 +145,12 @@ const attachErrorMetadata = (error, metadata) => {
 };
 
 const isStaleResponseError = (error) => error?.code === STALE_RESPONSE_ERROR_CODE;
+
+const requiresActorAuthorityBlock = (classification) => Boolean(
+  classification?.requiresReauthentication
+  || classification?.kind === 'device_blocked'
+  || classification?.kind === 'cloning_detected'
+);
 
 const buildStaleResponseError = (record, reason) => {
   stats.staleDiscarded += 1;
@@ -261,6 +275,7 @@ const isCriticalOrBusinessError = (error) => {
 };
 
 export const isTemporaryCloudRequestError = (error) => {
+  if (classifyActorAuthorityError(error)) return false;
   if (isCriticalOrBusinessError(error)) return false;
   if (getErrorCode(error) === RATE_LIMITED_ERROR_CODE) return true;
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return true;
@@ -448,6 +463,12 @@ export const cloudRequestManager = {
   } = {}) {
     assertNonCriticalCloudRequestRpc(rpcName);
 
+    if (getActorAuthorityRecoverySnapshot()) {
+      const error = new Error('ACTOR_CONTEXT_LOCKED');
+      error.code = 'ACTOR_CONTEXT_LOCKED';
+      throw error;
+    }
+
     const requestKey = normalizeKey(key);
     if (typeof fn !== 'function') throw new Error('CLOUD_REQUEST_FN_REQUIRED');
 
@@ -461,6 +482,7 @@ export const cloudRequestManager = {
     const requestGeneration = currentVersion(requestKey);
     const requestId = `cloud-${++requestSequence}`;
     const requestConnectionGeneration = connectionGeneration;
+    const requestActorState = actorRuntimeController.getState();
 
     const freshCache = allowCache && !force ? getFreshCache(requestKey, time) : null;
     if (freshCache) {
@@ -553,6 +575,10 @@ export const cloudRequestManager = {
     const promise = Promise.resolve()
       .then(fn)
       .then((result) => {
+        if (requestActorState.status === 'granted'
+          && requestActorState.generation !== actorRuntimeController.getState().generation) {
+          throw buildStaleResponseError(requestRecord, 'actor_changed');
+        }
         if (currentVersion(requestKey) !== requestGeneration) {
           throw buildStaleResponseError(requestRecord, 'generation_changed');
         }
@@ -564,6 +590,12 @@ export const cloudRequestManager = {
         }
         if (isRateLimitedPayload(result)) {
           throw buildRateLimitedError(result);
+        }
+        const authorityFailure = classifyActorAuthorityError(result);
+        if (result?.success === false && requiresActorAuthorityBlock(authorityFailure)) {
+          const error = new Error(authorityFailure.code);
+          error.code = authorityFailure.code;
+          throw error;
         }
 
         backoff.delete(requestKey);
@@ -594,6 +626,13 @@ export const cloudRequestManager = {
         }
         if (connectionGeneration !== requestConnectionGeneration) {
           throw buildStaleResponseError(requestRecord, 'connection_lost_after_error');
+        }
+        if (requiresActorAuthorityBlock(classifyActorAuthorityError(error))) {
+          if (requestActorState.status === 'granted'
+            && requestActorState.generation !== actorRuntimeController.getState().generation) {
+            throw buildStaleResponseError(requestRecord, 'actor_changed_after_error');
+          }
+          reportActorAuthorityError(error, { operation: rpcName || 'cloud_read' });
         }
         if (isTransportUnavailableError(error)) {
           advanceConnectionGeneration('transport_error');

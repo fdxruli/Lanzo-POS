@@ -104,6 +104,6 @@ describe('isolated administrative deployment package', () => {
     expect(preparation.protectedRoot.rootVercelDirectoryPresentBefore).toBe(false);
     expect(preparation.protectedRoot.rootVercelDirectoryPresentAfter).toBe(false);
     expect(await pathExists(path.join(projectRoot, '.vercel'))).toBe(false);
-    expect(await pathExists(path.join(projectRoot, '.git'))).toBe(false);
+    expect(await pathExists(path.join(preparation.packageDirectory, '.git'))).toBe(false);
   });
 });

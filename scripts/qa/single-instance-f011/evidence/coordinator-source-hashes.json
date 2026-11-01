@@ -1,0 +1,14 @@
+[
+  {
+    "path": "src/services/instance/instanceCapabilities.js",
+    "sha256": "ce5e9584f98041ec3ddebb134e36f669e90350a8175490b30d9660712828cf42"
+  },
+  {
+    "path": "src/services/instance/instanceCoordinator.js",
+    "sha256": "0244d443af5eef5566e06bb7446d315914cf7064ae2ef35243fbe8f402607256"
+  },
+  {
+    "path": "src/services/instance/instanceProtocol.js",
+    "sha256": "7b448d19ab7908d9de71a4b8ed62fe4dffc4b9debeadef1d293de53a3e7f9739"
+  }
+]

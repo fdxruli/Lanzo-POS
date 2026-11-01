@@ -1,0 +1,400 @@
+[
+  {
+    "test": "CE-PROFILE-ACTOR-01 baseline old response writes after actor change",
+    "initial": {
+      "actor": "admin-A",
+      "tenant": "synthetic-tenant-A",
+      "providers": "synthetic"
+    },
+    "finalActor": {
+      "status": "granted",
+      "actorType": "admin",
+      "actorId": "admin-B",
+      "actorKey": "synthetic-actor-A",
+      "sessionId": "session-A",
+      "generation": 2,
+      "deviceRef": "device-A"
+    },
+    "finalTenant": {
+      "opaqueId": "synthetic-tenant-A",
+      "databaseName": "synthetic-db-A",
+      "generation": 1
+    },
+    "rpcCalls": [
+      "get_business_profile_anon"
+    ],
+    "writes": [
+      {
+        "args": [
+          "company",
+          {
+            "id": "company:synthetic-A",
+            "profile_id": null,
+            "license_key": "synthetic-A",
+            "name": "Old",
+            "phone": "",
+            "address": "",
+            "logo": "",
+            "business_type": [
+              "abarrotes"
+            ]
+          }
+        ],
+        "tenant": {
+          "opaqueId": "synthetic-tenant-A",
+          "databaseName": "synthetic-db-A",
+          "generation": 1
+        },
+        "actor": {
+          "status": "granted",
+          "actorType": "admin",
+          "actorId": "admin-B",
+          "actorKey": "synthetic-actor-A",
+          "sessionId": "session-A",
+          "generation": 2,
+          "deviceRef": "device-A"
+        }
+      },
+      {
+        "args": [
+          "company",
+          {
+            "id": "company",
+            "profile_id": null,
+            "license_key": "synthetic-A",
+            "name": "Old",
+            "phone": "",
+            "address": "",
+            "logo": "",
+            "business_type": [
+              "abarrotes"
+            ]
+          }
+        ],
+        "tenant": {
+          "opaqueId": "synthetic-tenant-A",
+          "databaseName": "synthetic-db-A",
+          "generation": 1
+        },
+        "actor": {
+          "status": "granted",
+          "actorType": "admin",
+          "actorId": "admin-B",
+          "actorKey": "synthetic-actor-A",
+          "sessionId": "session-A",
+          "generation": 2,
+          "deviceRef": "device-A"
+        }
+      }
+    ],
+    "storeWrites": [
+      [
+        "cashOpeningPolicy"
+      ],
+      [
+        "driveAccessToken",
+        "driveTokenExpiresAt",
+        "isDriveConnected",
+        "needsDriveReauth"
+      ],
+      [
+        "companyProfile",
+        "profileImportCandidate"
+      ],
+      [
+        "appStatus"
+      ]
+    ],
+    "checkpoints": [
+      {
+        "afterAdvanceMs": 0,
+        "actor": {
+          "status": "granted",
+          "actorType": "admin",
+          "actorId": "admin-A",
+          "actorKey": "synthetic-actor-A",
+          "sessionId": "session-A",
+          "generation": 1,
+          "deviceRef": "device-A"
+        },
+        "tenant": {
+          "opaqueId": "synthetic-tenant-A",
+          "databaseName": "synthetic-db-A",
+          "generation": 1
+        },
+        "rpcStarted": 1,
+        "localWrites": 0,
+        "lifecycles": []
+      }
+    ],
+    "lifecycles": [],
+    "outcome": "pass",
+    "limits": "Local synthetic scope; no server confirmation, sync quiescence or physical browser certification."
+  },
+  {
+    "test": "CE-PROFILE-RAW-03 baseline public profile timeout leaves raw outside direct scope",
+    "initial": {
+      "actor": "admin-A",
+      "tenant": "synthetic-tenant-A",
+      "providers": "synthetic"
+    },
+    "finalActor": {
+      "status": "granted",
+      "actorType": "admin",
+      "actorId": "admin-A",
+      "actorKey": "synthetic-actor-A",
+      "sessionId": "session-A",
+      "generation": 1,
+      "deviceRef": "device-A"
+    },
+    "finalTenant": {
+      "opaqueId": "synthetic-tenant-A",
+      "databaseName": "synthetic-db-A",
+      "generation": 1
+    },
+    "rpcCalls": [
+      "get_business_profile_anon"
+    ],
+    "writes": [],
+    "storeWrites": [
+      [
+        "cashOpeningPolicy"
+      ],
+      [
+        "driveAccessToken",
+        "driveTokenExpiresAt",
+        "isDriveConnected",
+        "needsDriveReauth"
+      ]
+    ],
+    "checkpoints": [
+      {
+        "afterAdvanceMs": 8000,
+        "actor": {
+          "status": "granted",
+          "actorType": "admin",
+          "actorId": "admin-A",
+          "actorKey": "synthetic-actor-A",
+          "sessionId": "session-A",
+          "generation": 1,
+          "deviceRef": "device-A"
+        },
+        "tenant": {
+          "opaqueId": "synthetic-tenant-A",
+          "databaseName": "synthetic-db-A",
+          "generation": 1
+        },
+        "rpcStarted": 1,
+        "localWrites": 0,
+        "lifecycles": [
+          {
+            "accepting": true,
+            "pending": 0,
+            "completed": 0,
+            "rejected": 0,
+            "unknown": []
+          }
+        ]
+      },
+      {
+        "afterAdvanceMs": 0,
+        "actor": {
+          "status": "granted",
+          "actorType": "admin",
+          "actorId": "admin-A",
+          "actorKey": "synthetic-actor-A",
+          "sessionId": "session-A",
+          "generation": 1,
+          "deviceRef": "device-A"
+        },
+        "tenant": {
+          "opaqueId": "synthetic-tenant-A",
+          "databaseName": "synthetic-db-A",
+          "generation": 1
+        },
+        "rpcStarted": 1,
+        "localWrites": 0,
+        "lifecycles": [
+          {
+            "accepting": true,
+            "pending": 0,
+            "completed": 0,
+            "rejected": 0,
+            "unknown": []
+          }
+        ]
+      }
+    ],
+    "lifecycles": [
+      {
+        "accepting": true,
+        "pending": 0,
+        "completed": 0,
+        "rejected": 0,
+        "unknown": []
+      }
+    ],
+    "outcome": "pass",
+    "limits": "Local synthetic scope; no server confirmation, sync quiescence or physical browser certification."
+  },
+  {
+    "test": "CE-SHARED-OWNER-02 baseline observed owner still gives consumer UNKNOWN",
+    "initial": {
+      "actor": "admin-A",
+      "tenant": "synthetic-tenant-A",
+      "providers": "synthetic"
+    },
+    "finalActor": {
+      "status": "granted",
+      "actorType": "admin",
+      "actorId": "admin-A",
+      "actorKey": "synthetic-actor-A",
+      "sessionId": "session-A",
+      "generation": 1,
+      "deviceRef": "device-A"
+    },
+    "finalTenant": {
+      "opaqueId": "synthetic-tenant-A",
+      "databaseName": "synthetic-db-A",
+      "generation": 1
+    },
+    "rpcCalls": [
+      "verify_device_license_unified"
+    ],
+    "writes": [],
+    "storeWrites": [],
+    "checkpoints": [
+      {
+        "afterAdvanceMs": 0,
+        "actor": {
+          "status": "granted",
+          "actorType": "admin",
+          "actorId": "admin-A",
+          "actorKey": "synthetic-actor-A",
+          "sessionId": "session-A",
+          "generation": 1,
+          "deviceRef": "device-A"
+        },
+        "tenant": {
+          "opaqueId": "synthetic-tenant-A",
+          "databaseName": "synthetic-db-A",
+          "generation": 1
+        },
+        "rpcStarted": 1,
+        "localWrites": 0,
+        "lifecycles": [
+          {
+            "accepting": true,
+            "pending": 1,
+            "completed": 0,
+            "rejected": 0,
+            "unknown": []
+          },
+          {
+            "accepting": true,
+            "pending": 0,
+            "completed": 0,
+            "rejected": 0,
+            "unknown": []
+          }
+        ]
+      }
+    ],
+    "lifecycles": [
+      {
+        "accepting": true,
+        "pending": 0,
+        "completed": 1,
+        "rejected": 0,
+        "unknown": []
+      },
+      {
+        "accepting": true,
+        "pending": 0,
+        "completed": 0,
+        "rejected": 0,
+        "unknown": [
+          "shared_license_revalidation_owner"
+        ]
+      }
+    ],
+    "outcome": "pass",
+    "limits": "Local synthetic scope; no server confirmation, sync quiescence or physical browser certification."
+  },
+  {
+    "test": "CE-TOKEN-04 baseline token recovery writes old credential before context rejection",
+    "initial": {
+      "actor": "admin-A",
+      "tenant": "synthetic-tenant-A",
+      "providers": "synthetic"
+    },
+    "finalActor": {
+      "status": "granted",
+      "actorType": "admin",
+      "actorId": "admin-B",
+      "actorKey": "synthetic-actor-A",
+      "sessionId": "session-A",
+      "generation": 2,
+      "deviceRef": "device-A"
+    },
+    "finalTenant": {
+      "opaqueId": "synthetic-tenant-A",
+      "databaseName": "synthetic-db-A",
+      "generation": 1
+    },
+    "rpcCalls": [
+      "verify_device_license_unified"
+    ],
+    "writes": [
+      {
+        "args": [
+          "sync_cache",
+          {
+            "key": "device_security_token",
+            "value": "synthetic-old-token"
+          }
+        ],
+        "tenant": {
+          "opaqueId": "synthetic-tenant-A",
+          "databaseName": "synthetic-db-A",
+          "generation": 1
+        },
+        "actor": {
+          "status": "granted",
+          "actorType": "admin",
+          "actorId": "admin-B",
+          "actorKey": "synthetic-actor-A",
+          "sessionId": "session-A",
+          "generation": 2,
+          "deviceRef": "device-A"
+        }
+      }
+    ],
+    "storeWrites": [],
+    "checkpoints": [
+      {
+        "afterAdvanceMs": 0,
+        "actor": {
+          "status": "granted",
+          "actorType": "admin",
+          "actorId": "admin-A",
+          "actorKey": "synthetic-actor-A",
+          "sessionId": "session-A",
+          "generation": 1,
+          "deviceRef": "device-A"
+        },
+        "tenant": {
+          "opaqueId": "synthetic-tenant-A",
+          "databaseName": "synthetic-db-A",
+          "generation": 1
+        },
+        "rpcStarted": 0,
+        "localWrites": 0,
+        "lifecycles": []
+      }
+    ],
+    "lifecycles": [],
+    "outcome": "pass",
+    "limits": "Local synthetic scope; no server confirmation, sync quiescence or physical browser certification."
+  }
+]

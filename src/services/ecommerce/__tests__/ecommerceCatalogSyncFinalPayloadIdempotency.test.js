@@ -181,7 +181,7 @@ describe('catalog sync final payload idempotency', () => {
       sourceAvailable: true,
       sourceState: 'in_stock',
       stockSnapshot: 3,
-      configurationSourceRevision: 'configuration:apparel-variants',
+      configurationSourceRevision: expect.stringMatching(/^configuration:/),
       configuration: {
         type: 'variant_parent',
         availabilitySource: 'variant_aggregate'

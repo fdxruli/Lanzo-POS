@@ -1,0 +1,72 @@
+[
+  {
+    "number": 338,
+    "head": "feat/restaurant-split-flexible-payments-r1",
+    "head_sha": "fef7205f76b173025f503e60d0968f446f741e78",
+    "base": "main",
+    "base_sha": "f014a1f340ed78335d3e704eefff49cda8465115",
+    "state": "open",
+    "draft": true,
+    "merged": false
+  },
+  {
+    "number": 352,
+    "head": "feat/restaurant-admin-supervision-r1",
+    "head_sha": "d758f69b2119f1bc346eb0ac86ba0a74c0265668",
+    "base": "feat/restaurant-split-flexible-payments-r1",
+    "base_sha": "fb17e9a43929d54087ab937cb760a8cd6e087c36",
+    "state": "open",
+    "draft": true,
+    "merged": false
+  },
+  {
+    "number": 368,
+    "head": "codex/ecom-realtime-auth-1a2",
+    "head_sha": "a7eb0932906df4348610f275f0f1d4b9180f43cc",
+    "base": "main",
+    "base_sha": "9ca65fc07804f40c2add5e59bee0e6edca940b8f",
+    "state": "open",
+    "draft": true,
+    "merged": false
+  },
+  {
+    "number": 370,
+    "head": "fix/financial-credit-limit-enforcement-r1",
+    "head_sha": "b31bbd80bf398d956890debced5b20de7b0c928d",
+    "base": "main",
+    "base_sha": "9ca65fc07804f40c2add5e59bee0e6edca940b8f",
+    "state": "open",
+    "draft": true,
+    "merged": false
+  },
+  {
+    "number": 371,
+    "head": "feat/cloud-sync-protocol-v2-fin01-r1",
+    "head_sha": "2f33cea480f3d478f797b495b168feac9aed483f",
+    "base": "fix/financial-credit-limit-enforcement-r1",
+    "base_sha": "b31bbd80bf398d956890debced5b20de7b0c928d",
+    "state": "open",
+    "draft": true,
+    "merged": false
+  },
+  {
+    "number": 372,
+    "head": "feat/f01-single-instance-coordinator-r1",
+    "head_sha": "f1d69093ffe3ad180752773c178b7fbaefd92ce1",
+    "base": "main",
+    "base_sha": "52bb573e651529b323b6617e3161cd76ece14a39",
+    "state": "open",
+    "draft": true,
+    "merged": false
+  },
+  {
+    "number": 373,
+    "head": "feat/f01-early-admission-recovery-r1",
+    "head_sha": "7d9f4562a4b12efdcdfb8d5fbb77a4ff9d81ec50",
+    "base": "feat/f01-single-instance-coordinator-r1",
+    "base_sha": "f1d69093ffe3ad180752773c178b7fbaefd92ce1",
+    "state": "open",
+    "draft": true,
+    "merged": false
+  }
+]

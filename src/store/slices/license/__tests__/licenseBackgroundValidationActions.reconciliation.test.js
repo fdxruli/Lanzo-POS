@@ -34,9 +34,11 @@ vi.mock('../../../../services/tenant/localTenantGuard', () => ({
   isLocalTenantAccessError: () => false
 }));
 vi.mock('../../../../services/auth/actorRuntimeController', () => ({
+  ACTOR_RUNTIME_STATUS: { GRANTED: 'granted' },
   actorRuntimeController: {
     getState: mocks.getActorRuntimeState,
-    capture: () => ({ assertCurrent: mocks.assertActorCurrent })
+    capture: () => ({ assertCurrent: mocks.assertActorCurrent }),
+    subscribe: () => () => {}
   },
   runWithActorHandle: async (handle, operation) => {
     handle.assertCurrent();

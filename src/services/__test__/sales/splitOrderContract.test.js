@@ -27,20 +27,20 @@ describe('restaurant split contract', () => {
     });
   });
 
-  it('keeps legacy equal readable as a deferred equal-payment intent', () => {
+  it('maps legacy equal mode to executable equal-payment intent', () => {
     expect(normalizeRestaurantSplitIntent({ mode: 'equal' })).toMatchObject({
       intent: RESTAURANT_SPLIT_INTENTS.EQUAL_PAYMENT,
-      status: 'deferred',
-      code: 'SPLIT_INTENT_NOT_SUPPORTED',
+      status: 'ready',
+      code: null,
       source: 'legacy_mode'
     });
   });
 
-  it('defines equal_payment without allowing it to execute', () => {
+  it('allows equal_payment to execute through the monetary split route', () => {
     expect(normalizeRestaurantSplitIntent({ splitIntent: 'equal_payment' })).toMatchObject({
       intent: RESTAURANT_SPLIT_INTENTS.EQUAL_PAYMENT,
-      status: 'deferred',
-      code: 'SPLIT_INTENT_NOT_SUPPORTED'
+      status: 'ready',
+      code: null
     });
   });
 

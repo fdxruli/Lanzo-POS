@@ -63,6 +63,44 @@ const runPreflight = (sale = buildSale(), order = buildCloudOrder(sale), respons
 };
 
 describe('preflightCloudRestaurantOrderSplit', () => {
+  it.each(['restaurantCloudExpectedVersion', 'cloudRestaurantOrderUpdatedAt'])('refreshes stale %s after kitchen delivery without mutating the local account', async (field) => {
+    const sale = buildSale({ [field]: '2026-09-27T10:00:00.000001Z' });
+    const original = structuredClone(sale);
+    const order = buildCloudOrder(sale, { status: 'delivered', fulfillmentStatus: 'delivered' });
+    await expect(runPreflight(sale, order).promise).resolves.toMatchObject({
+      success: true, commercialEquivalent: true, parentExpectedVersion: VERSION
+    });
+    expect(sale).toEqual(original);
+  });
+  it.each([
+    ['paid sale', { paidSaleId: 'other-payment' }, 'RESTAURANT_ORDER_ALREADY_PAID'],
+    ['deleted parent', { deletedAt: VERSION }, 'RESTAURANT_ORDER_PREFLIGHT_FAILED'],
+    ['POS cancellation', { metadata: { cancelledFromPos: true } }, 'RESTAURANT_ORDER_PREFLIGHT_FAILED'],
+    ['wrong license', { licenseKey: 'other-license' }, 'RESTAURANT_ORDER_PREFLIGHT_FAILED'],
+    ['fractional cent', { total: '60.001' }, 'RESTAURANT_ORDER_COMMERCIAL_CONFLICT']
+  ])('blocks %s', async (_label, updates, code) => {
+    const sale = buildSale();
+    await expect(runPreflight(sale, buildCloudOrder(sale, updates)).promise).resolves.toMatchObject({ success: false, code });
+  });
+  it('rejects a Cloud response older by one microsecond', async () => {
+    const sale = buildSale({ restaurantCloudExpectedVersion: '2026-09-28T16:05:05.123457Z' });
+    await expect(runPreflight(sale).promise).resolves.toMatchObject({ success: false, code: 'RESTAURANT_ORDER_PREFLIGHT_FAILED' });
+  });
+  it('rejects an older numeric server version even when the timestamp appears newer', async () => {
+    const sale = buildSale({ cloudRestaurantOrderServerVersion: 4 });
+    await expect(runPreflight(sale, buildCloudOrder(sale, { serverVersion: 3 })).promise)
+      .resolves.toMatchObject({ success: false, code: 'RESTAURANT_ORDER_PREFLIGHT_FAILED' });
+  });
+  it('rejects an actor changed while the forced parent lookup is in flight', async () => {
+    const sale = buildSale();
+    let current = true;
+    const actorHandle = { assertCurrent: () => { if (!current) throw new Error('ACTOR_CONTEXT_STALE'); } };
+    await expect(preflightCloudRestaurantOrderSplit({ licenseKey: 'license-1', parentOrderId: sale.id, parentSale: sale,
+      actorHandle, repository: { getRestaurantOrderByLocalOrder: async () => {
+        current = false; return { success: true, found: true, order: buildCloudOrder(sale) };
+      } }
+    })).rejects.toThrow('ACTOR_CONTEXT_STALE');
+  });
   it.each(['preparing', 'ready', 'delivered'])('allows kitchen status %s when commercial data is unchanged', async (status) => {
     const sale = buildSale();
     const order = buildCloudOrder(sale, {
@@ -100,6 +138,7 @@ describe('preflightCloudRestaurantOrderSplit', () => {
     const sale = {
       id: 'sale-open-1',
       total: '60',
+      status: 'open',
       items: [{ id: 'product-1', cartLineId: 'cart-line-stable', quantity: 2, price: '30' }]
     };
     const order = buildCloudOrder(sale);
@@ -113,7 +152,7 @@ describe('preflightCloudRestaurantOrderSplit', () => {
 
   it('blocks a local item without a verifiable unit price', async () => {
     const sale = {
-      id: 'sale-open-1', total: '60',
+      id: 'sale-open-1', total: '60', status: 'open',
       items: [{ id: 'product-1', lineId: 'line-1', quantity: 2 }]
     };
     await expect(runPreflight(sale, buildCloudOrder(sale)).promise)

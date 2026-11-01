@@ -680,7 +680,8 @@ const resolveStation = async ({
   cashSessionId,
   operationType,
   targetCashStationId = null,
-  timeouts = null
+  timeouts = null,
+  executionScope = null
 }) => {
   if (operationType === 'sale.cancel') return null;
   const { data, error } = await withFinancialTimeout(
@@ -689,7 +690,8 @@ const resolveStation = async ({
       timeoutMs: getFinancialTimeoutMs(timeouts, 'STATION_RESOLUTION_MS'),
       code: 'CASH_STATION_RESOLUTION_TIMEOUT',
       message: 'No se pudo resolver la estación financiera a tiempo.',
-      phase: 'station_resolution'
+      phase: 'station_resolution',
+      executionScope
     }
   );
   if (error) throw error;
@@ -711,7 +713,7 @@ const resolveStation = async ({
   return stationId;
 };
 
-const receiptForCurrentOrigin = async ({ intent, licenseKey, handle, timeouts = null }) => withFinancialTimeout(
+const receiptForCurrentOrigin = async ({ intent, licenseKey, handle, timeouts = null, executionScope = null }) => withFinancialTimeout(
   async () => {
   handle.assertCurrent();
   const auth = await buildAuth(licenseKey);
@@ -726,17 +728,18 @@ const receiptForCurrentOrigin = async ({ intent, licenseKey, handle, timeouts = 
     timeoutMs: getFinancialTimeoutMs(timeouts, 'RECEIPT_MS'),
     code: 'FINANCIAL_RECEIPT_TIMEOUT',
     message: 'No se pudo verificar el recibo financiero a tiempo.',
-    phase: 'receipt'
+    phase: 'receipt',
+    executionScope
   }
 );
 
-export const getFinancialIntentReceiptForRecovery = async ({ intent, licenseKey, actorHandle = null, timeouts = null } = {}) => {
+export const getFinancialIntentReceiptForRecovery = async ({ intent, licenseKey, actorHandle = null, timeouts = null, executionScope = null } = {}) => {
   const handle = actorHandle || actorRuntimeController.capture();
   assertFinancialIntentRecoveryAuthority(intent, handle);
   const row = await db.table(STORES.FINANCIAL_INTENTS).get(intent.id);
   if (!row) throw new Error('FINANCIAL_INTENT_NOT_FOUND');
   assertFinancialIntentRecoveryAuthority(row, handle);
-  return receiptForCurrentOrigin({ intent: row, licenseKey, handle, timeouts });
+  return receiptForCurrentOrigin({ intent: row, licenseKey, handle, timeouts, executionScope });
 };
 
 const initialIntent = ({ operationType, request, idempotencyKey, requestHash, canonicalRequest, handle, cashSessionId, cashStationId, projectionStatus }) => ({
@@ -761,7 +764,8 @@ const prepareFinancialIntent = async ({
   targetCashStationId = null,
   actorHandle = null,
   projectionRequired = true,
-  timeouts = null
+  timeouts = null,
+  executionScope = null
 }) => {
   assertSupabase();
   const immutableRequest = JSON.parse(JSON.stringify(request));
@@ -776,7 +780,8 @@ const prepareFinancialIntent = async ({
     cashSessionId,
     operationType,
     targetCashStationId,
-    timeouts
+    timeouts,
+    executionScope
   });
   handle.assertCurrent();
   const { canonicalRequest, requestHash } = await financialRequestHashV1({ operationType, request: immutableRequest, actorKey: handle.actorKey, cashSessionId, cashStationId: stationId });
@@ -804,7 +809,8 @@ export const createFinancialIntent = async (options) => {
       timeoutMs: getFinancialTimeoutMs(options?.timeouts, 'PREFLIGHT_MS'),
       code: 'FINANCIAL_PREFLIGHT_TIMEOUT',
       message: 'La verificación financiera previa tardó demasiado; la operación no fue enviada.',
-      phase: 'preflight'
+      phase: 'preflight',
+      executionScope: options?.executionScope
     }
   );
   await persistPreparedFinancialIntent(intent);
@@ -836,7 +842,8 @@ export const executeNewFinancialIntent = async (options) => {
       timeoutMs: getFinancialTimeoutMs(options?.timeouts, 'PREFLIGHT_MS'),
       code: 'FINANCIAL_PREFLIGHT_TIMEOUT',
       message: 'La verificación financiera previa tardó demasiado; la operación no fue enviada.',
-      phase: 'preflight'
+      phase: 'preflight',
+      executionScope: options?.executionScope
     }
   );
   const initialLease = createRecoveryLease({ leaseMs: options?.leaseMs });
@@ -873,7 +880,8 @@ export const executeNewFinancialIntent = async (options) => {
       licenseKey: options.licenseKey,
       actorHandle: prepared.handle,
       project: options?.project,
-      leaseMs: options.leaseMs
+      leaseMs: options.leaseMs,
+      executionScope: options?.executionScope
     });
     return {
       intent: retry.intent,
@@ -895,7 +903,8 @@ export const executeNewFinancialIntent = async (options) => {
         lastRecoveryCode: 'FINANCIAL_RECOVERY_INITIAL_DISPATCH',
         resolveAmbiguousReceipt: true,
         project: options?.project,
-        timeouts: options?.timeouts
+        timeouts: options?.timeouts,
+        executionScope: options?.executionScope
       }))
     };
   } finally {
@@ -911,7 +920,7 @@ export const executeNewFinancialIntent = async (options) => {
   }
 };
 
-export const executeFinancialIntent = async ({ intent, licenseKey, actorHandle = null, timeouts = null }) => {
+export const executeFinancialIntent = async ({ intent, licenseKey, actorHandle = null, timeouts = null, executionScope = null }) => {
   if (!intent?.id || !intent?.idempotencyKey || !intent?.requestHash) throw new Error('FINANCIAL_INTENT_INVALID');
   const handle = actorHandle || actorRuntimeController.capture();
   handle.assertCurrent();
@@ -940,7 +949,8 @@ export const executeFinancialIntent = async ({ intent, licenseKey, actorHandle =
       recoveryLeaseId: claim.recoveryLeaseId,
       lastRecoveryCode: 'FINANCIAL_RECOVERY_FIRST_DISPATCH',
       resolveAmbiguousReceipt: true,
-      timeouts
+      timeouts,
+      executionScope
     });
   } finally {
     try {
@@ -964,7 +974,8 @@ const executeDurableFinancialIntentForRecovery = async ({
   lastRecoveryCode,
   resolveAmbiguousReceipt = false,
   project = null,
-  timeouts = null
+  timeouts = null,
+  executionScope = null
 }) => {
   if (!recoveryLeaseId) throw new Error('FINANCIAL_RECOVERY_LEASE_REQUIRED');
   const handle = actorHandle || actorRuntimeController.capture();
@@ -1024,7 +1035,8 @@ const executeDurableFinancialIntentForRecovery = async ({
         code: 'FINANCIAL_DISPATCH_TIMEOUT',
         message: 'El servidor no confirmó la operación financiera a tiempo.',
         phase: 'dispatch',
-        ambiguous: true
+        ambiguous: true,
+        executionScope
       }
     );
     if (error) throw error;
@@ -1055,7 +1067,8 @@ const executeDurableFinancialIntentForRecovery = async ({
           intent: durableIntent,
           licenseKey,
           handle,
-          timeouts
+          timeouts,
+          executionScope
         });
         if (receipt?.status === 'COMPLETED') {
           await updateFinancialIntentForRecovery(intentId, {
@@ -1139,7 +1152,7 @@ const executeDurableFinancialIntentForRecovery = async ({
  * The first-dispatch recovery path is intentionally restricted to an
  * immutable PREPARED row that has never crossed the durable dispatch boundary.
  */
-export const executePreparedFinancialIntentForRecovery = async ({ intentId, licenseKey, actorHandle = null, recoveryLeaseId = null, leaseMs, timeouts = null } = {}) => {
+export const executePreparedFinancialIntentForRecovery = async ({ intentId, licenseKey, actorHandle = null, recoveryLeaseId = null, leaseMs, timeouts = null, executionScope = null } = {}) => {
   const handle = actorHandle || actorRuntimeController.capture();
   handle.assertCurrent();
   const durableIntent = await db.table(STORES.FINANCIAL_INTENTS).get(intentId);
@@ -1163,7 +1176,8 @@ export const executePreparedFinancialIntentForRecovery = async ({ intentId, lice
       recoveryLeaseId,
       lastRecoveryCode: 'FINANCIAL_RECOVERY_FIRST_DISPATCH',
       resolveAmbiguousReceipt: true,
-      timeouts
+      timeouts,
+      executionScope
     });
   } finally {
     if (claim) {
@@ -1181,7 +1195,7 @@ export const executePreparedFinancialIntentForRecovery = async ({ intentId, lice
  * already validated the immutable retry evidence, acquired the recovery lease
  * and obtained an authoritative NOT_FOUND receipt.
  */
-export const executeBlockedFinancialIntentForRecovery = async ({ intentId, licenseKey, actorHandle = null, recoveryLeaseId = null, timeouts = null } = {}) => {
+export const executeBlockedFinancialIntentForRecovery = async ({ intentId, licenseKey, actorHandle = null, recoveryLeaseId = null, timeouts = null, executionScope = null } = {}) => {
   if (!recoveryLeaseId) throw new Error('FINANCIAL_RECOVERY_LEASE_REQUIRED');
   const handle = actorHandle || actorRuntimeController.capture();
   handle.assertCurrent();
@@ -1200,7 +1214,8 @@ export const executeBlockedFinancialIntentForRecovery = async ({ intentId, licen
     recoveryLeaseId,
     lastRecoveryCode: 'FINANCIAL_RECOVERY_BLOCKED_REDISPATCH',
     resolveAmbiguousReceipt: true,
-    timeouts
+    timeouts,
+    executionScope
   });
 };
 

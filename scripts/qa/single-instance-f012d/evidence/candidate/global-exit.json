@@ -1,0 +1,11 @@
+{
+  "command": [
+    "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "--maxWorkers=2",
+    "--reporter=json",
+    "--outputFile=/workspace/scratch/957e4a974cde/Lanzo-F012D/scripts/qa/single-instance-f012d/evidence/candidate/global.json"
+  ],
+  "exitCode": 1
+}

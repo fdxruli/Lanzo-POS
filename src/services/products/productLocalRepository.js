@@ -20,6 +20,7 @@ import {
 } from './productMapper';
 import { PRODUCT_SYNC_STATUS } from './productConstants';
 import { createProductCatalogSyncError } from './productCatalogSyncDiagnostics';
+import { reconcileActiveTableReservations } from '../sales/tableReservationReconciliation';
 
 const nowIso = () => new Date().toISOString();
 
@@ -426,19 +427,23 @@ export const productLocalRepository = {
   async applyCloudProduct(product) {
     if (!product?.id) return null;
     await ensureOpen();
-    const existing = await db.table(STORES.MENU).get(product.id);
-    const local = cloudProductToLocal(product, existing);
-    await db.table(STORES.MENU).put(local);
-    return local;
+    return db.transaction('rw', [db.table(STORES.MENU), db.table(STORES.PRODUCT_BATCHES), db.table(STORES.SALES)], async () => {
+      const existing = await db.table(STORES.MENU).get(product.id);
+      await db.table(STORES.MENU).put(cloudProductToLocal(product, existing));
+      await reconcileActiveTableReservations({ db, STORES });
+      return db.table(STORES.MENU).get(product.id);
+    });
   },
 
   async applyCloudBatch(batch) {
     if (!batch?.id) return null;
     await ensureOpen();
-    const existing = await db.table(STORES.PRODUCT_BATCHES).get(batch.id);
-    const local = cloudBatchToLocal(batch, existing);
-    await db.table(STORES.PRODUCT_BATCHES).put(local);
-    return local;
+    return db.transaction('rw', [db.table(STORES.MENU), db.table(STORES.PRODUCT_BATCHES), db.table(STORES.SALES)], async () => {
+      const existing = await db.table(STORES.PRODUCT_BATCHES).get(batch.id);
+      await db.table(STORES.PRODUCT_BATCHES).put(cloudBatchToLocal(batch, existing));
+      await reconcileActiveTableReservations({ db, STORES });
+      return db.table(STORES.PRODUCT_BATCHES).get(batch.id);
+    });
   },
 
   async applyCloudCatalog(response = {}) {
@@ -457,7 +462,7 @@ export const productLocalRepository = {
 
     await ensureOpen();
     try {
-      await db.transaction('rw', db.table(STORES.CATEGORIES), db.table(STORES.MENU), db.table(STORES.PRODUCT_BATCHES), async () => {
+      await db.transaction('rw', db.table(STORES.CATEGORIES), db.table(STORES.MENU), db.table(STORES.PRODUCT_BATCHES), db.table(STORES.SALES), async () => {
         for (const [entityType, store, records, mapper] of collections) {
           for (let index = 0; index < records.length; index += 1) {
             const record = records[index];
@@ -483,6 +488,7 @@ export const productLocalRepository = {
             }
           }
         }
+        await reconcileActiveTableReservations({ db, STORES });
       });
     } catch (cause) {
       throw createProductCatalogSyncError(cause?.message, {

@@ -1,0 +1,248 @@
+{
+  "callsites": 11,
+  "scope": "Five ledger callsites opt-in; six cash/hook callsites pending, legacy behavior unchanged.",
+  "operations": [
+    {
+      "id": "LEDGER-STATION",
+      "path": "src/services/financial/financialIntentLedger.js",
+      "caller": "resolveStation",
+      "realStart": "Preparación auth seguida del factory diferido; sale.cancel omite esta consulta.",
+      "publicPromise": "Promise.race de task con timer; settlement de UI no demuestra fin subyacente.",
+      "underlyingTask": "pos_get_cash_station_state — RPC/thenable original, sin cancelación por este wrapper.",
+      "timeout": {
+        "key": "STATION_RESOLUTION_MS",
+        "defaultMs": 10000,
+        "unchanged": true
+      },
+      "cancellation": "Ninguna señal de cancelación RPC introducida ni cancelación confirmada en servidor. Revocar ticket no aborta fetch.",
+      "observableClientEnd": "RPC/thenable original, sin cancelación por este wrapper.",
+      "localContinuations": "Parseo/validación de estación y continuación prepareFinancialIntent/hash; persistencia sólo por el llamador que no recibió timeout.",
+      "localWrites": "Sin escritura durable en el factory de estación; preparación/allocator posteriores dentro de la invocación raíz.",
+      "possibleServerEffects": "No acredita ausencia de efectos del endpoint remoto; no envía un cobro mediante este RPC.",
+      "idempotency": "Operaciones financieras usan K/hash/origen y receipt-first originales; consultas auxiliares no reciben nuevas claves ni permisos.",
+      "authority": "Handle vigente y contexto auth; cash.admin_close conserva estación objetivo separada.",
+      "cleanup": "Timer limpiado al settlement público; leases y finally originales conservados. Contexto opcional retiene raíz y tareas registradas hasta settlement real; sin contexto no hay registro nuevo.",
+      "coverage": "OPT_IN_COVERED"
+    },
+    {
+      "id": "LEDGER-RECEIPT",
+      "path": "src/services/financial/financialIntentLedger.js",
+      "caller": "receiptForCurrentOrigin",
+      "realStart": "Factory async: assertCurrent, buildAuth, assertCurrent, RPC.",
+      "publicPromise": "Promise.race de task con timer; settlement de UI no demuestra fin subyacente.",
+      "underlyingTask": "pos_get_financial_operation_receipt — Incluye finalización RPC, error y parseRpcPayload, aunque ya venció la promesa pública.",
+      "timeout": {
+        "key": "RECEIPT_MS",
+        "defaultMs": 10000,
+        "unchanged": true
+      },
+      "cancellation": "Ninguna señal de cancelación RPC introducida ni cancelación confirmada en servidor. Revocar ticket no aborta fetch.",
+      "observableClientEnd": "Incluye finalización RPC, error y parseRpcPayload, aunque ya venció la promesa pública.",
+      "localContinuations": "Recovery receipt-first continúa persistReceipt/proyección/lease cleanup sólo por la rama que obtuvo el resultado público.",
+      "localWrites": "updateFinancialIntentForRecovery, projectionStatus y proyección awaitable dentro de raíz; tardío tras timeout no los ejecuta por sí mismo.",
+      "possibleServerEffects": "Consulta recibo por K/hash; su inaccesibilidad no autoriza envío.",
+      "idempotency": "Operaciones financieras usan K/hash/origen y receipt-first originales; consultas auxiliares no reciben nuevas claves ni permisos.",
+      "authority": "Handle actor/tenant/device y lease en escrituras existentes.",
+      "cleanup": "Timer limpiado al settlement público; leases y finally originales conservados. Contexto opcional retiene raíz y tareas registradas hasta settlement real; sin contexto no hay registro nuevo.",
+      "coverage": "OPT_IN_COVERED"
+    },
+    {
+      "id": "LEDGER-CREATE-PREFLIGHT",
+      "path": "src/services/financial/financialIntentLedger.js",
+      "caller": "createFinancialIntent",
+      "realStart": "Factory diferido cubre buildAuth/estación/hash/preparación; registro anidado previo.",
+      "publicPromise": "Promise.race de task con timer; settlement de UI no demuestra fin subyacente.",
+      "underlyingTask": "prepareFinancialIntent — Promesa completa prepareFinancialIntent, incluida estación interna y hashing.",
+      "timeout": {
+        "key": "PREFLIGHT_MS",
+        "defaultMs": 15000,
+        "unchanged": true
+      },
+      "cancellation": "Ninguna señal de cancelación RPC introducida ni cancelación confirmada en servidor. Revocar ticket no aborta fetch.",
+      "observableClientEnd": "Promesa completa prepareFinancialIntent, incluida estación interna y hashing.",
+      "localContinuations": "PersistPreparedFinancialIntent se espera en raíz sólo tras éxito público; timeout no persiste tardíamente.",
+      "localWrites": "Transacción Dexie de inserción y devolución inmutable dentro de raíz.",
+      "possibleServerEffects": "Sólo consulta de estación antes del dispatch financiero; el hash no confirma servidor.",
+      "idempotency": "Operaciones financieras usan K/hash/origen y receipt-first originales; consultas auxiliares no reciben nuevas claves ni permisos.",
+      "authority": "Handle vigente, device, tenant y claves originales.",
+      "cleanup": "Timer limpiado al settlement público; leases y finally originales conservados. Contexto opcional retiene raíz y tareas registradas hasta settlement real; sin contexto no hay registro nuevo.",
+      "coverage": "OPT_IN_COVERED"
+    },
+    {
+      "id": "LEDGER-NEW-PREFLIGHT",
+      "path": "src/services/financial/financialIntentLedger.js",
+      "caller": "executeNewFinancialIntent",
+      "realStart": "Mismo preflight diferido; luego claim inicial y allocator.",
+      "publicPromise": "Promise.race de task con timer; settlement de UI no demuestra fin subyacente.",
+      "underlyingTask": "prepareFinancialIntent — Prepare completa y sus tareas anidadas por contexto compartido.",
+      "timeout": {
+        "key": "PREFLIGHT_MS",
+        "defaultMs": 15000,
+        "unchanged": true
+      },
+      "cancellation": "Ninguna señal de cancelación RPC introducida ni cancelación confirmada en servidor. Revocar ticket no aborta fetch.",
+      "observableClientEnd": "Prepare completa y sus tareas anidadas por contexto compartido.",
+      "localContinuations": "La raíz abarca persistencia/duplicate owner/retry explícito/dispatch/proyección y finally de lease.",
+      "localWrites": "Fila PREPARED con lease inicial atómico y estados posteriores existentes.",
+      "possibleServerEffects": "Sólo dispatch posterior con K/hash originales puede producir efecto financiero.",
+      "idempotency": "Operaciones financieras usan K/hash/origen y receipt-first originales; consultas auxiliares no reciben nuevas claves ni permisos.",
+      "authority": "Autoridad de actor/tenant/device y validación de equivalencia original.",
+      "cleanup": "Timer limpiado al settlement público; leases y finally originales conservados. Contexto opcional retiene raíz y tareas registradas hasta settlement real; sin contexto no hay registro nuevo.",
+      "coverage": "OPT_IN_COVERED"
+    },
+    {
+      "id": "LEDGER-DISPATCH",
+      "path": "src/services/financial/financialIntentLedger.js",
+      "caller": "executeDurableFinancialIntentForRecovery",
+      "realStart": "Antes del factory existe DISPATCHING bajo lease; factory espera buildAuth, vuelve a comprobar handle y solicita RPC.",
+      "publicPromise": "Promise.race de task con timer; settlement de UI no demuestra fin subyacente.",
+      "underlyingTask": "pos_execute_financial_operation_v1 — Promesa async completa del factory, con asimilación del thenable RPC; no sólo promesa pública con timeout.",
+      "timeout": {
+        "key": "DISPATCH_MS",
+        "defaultMs": 35000,
+        "unchanged": true
+      },
+      "cancellation": "Ninguna señal de cancelación RPC introducida ni cancelación confirmada en servidor. Revocar ticket no aborta fetch.",
+      "observableClientEnd": "Promesa async completa del factory, con asimilación del thenable RPC; no sólo promesa pública con timeout.",
+      "localContinuations": "La raíz espera parseo/clasificación/update, receipt alternativo, proyección awaitable y finally de lease. Tras perder race, raw no ejecuta estas continuaciones externas.",
+      "localWrites": "COMPLETED o ambiguo/BLOCKED/CONFLICT conforme a código existente; observación no añade escrituras.",
+      "possibleServerEffects": "Puede haber commit aceptado/procesándose después del timeout o fin cliente; resultado exige receipt-first/idempotencia.",
+      "idempotency": "Operaciones financieras usan K/hash/origen y receipt-first originales; consultas auxiliares no reciben nuevas claves ni permisos.",
+      "authority": "Actor/tenant/device, estado durable y lease existentes; observer no concede permisos.",
+      "cleanup": "Timer limpiado al settlement público; leases y finally originales conservados. Contexto opcional retiene raíz y tareas registradas hasta settlement real; sin contexto no hay registro nuevo.",
+      "coverage": "OPT_IN_COVERED"
+    },
+    {
+      "id": "CASH-TARGET-AUDIT",
+      "path": "src/services/cash/cashRepository.js",
+      "caller": "resolveAdministrativeTargetStation",
+      "realStart": "Factory diferido del detalle objetivo salvo estación canónica provista.",
+      "publicPromise": "Promise.race de task con timer; settlement de UI no demuestra fin subyacente.",
+      "underlyingTask": "cashCloudRepository.getCashSessionDetailForAudit — Promesa del repositorio decorado; no se certifica que incluya cada transporte interno de CloudRequestManager.",
+      "timeout": {
+        "key": "AUDIT_DETAIL_MS",
+        "defaultMs": 10000,
+        "unchanged": true
+      },
+      "cancellation": "Ninguna señal de cancelación RPC introducida ni cancelación confirmada en servidor. Revocar ticket no aborta fetch.",
+      "observableClientEnd": "Promesa del repositorio decorado; no se certifica que incluya cada transporte interno de CloudRequestManager.",
+      "localContinuations": "Parseo estación objetivo; posterior cierre administrativo y proyecciones/sync tienen otras fronteras.",
+      "localWrites": "Cache del repositorio y operaciones posteriores deben inventariarse por separado.",
+      "possibleServerEffects": "Consulta remota de detalle; no convertir su timeout en permiso de cierre.",
+      "idempotency": "Operaciones financieras usan K/hash/origen y receipt-first originales; consultas auxiliares no reciben nuevas claves ni permisos.",
+      "authority": "Admin/tenant/station por contrato actual, sin nueva autoridad.",
+      "cleanup": "Timer limpiado al settlement público; leases y finally originales conservados. Contexto opcional retiene raíz y tareas registradas hasta settlement real; sin contexto no hay registro nuevo.",
+      "coverage": "PENDING_NOT_DRAIN_CERTIFIED"
+    },
+    {
+      "id": "CASH-AUDIT-DETAIL",
+      "path": "src/services/cash/cashRepository.js",
+      "caller": "getCashSessionDetailForAudit",
+      "realStart": "Tras modo online/permiso audit y resolución estación best effort.",
+      "publicPromise": "Promise.race de task con timer; settlement de UI no demuestra fin subyacente.",
+      "underlyingTask": "cashCloudRepository.getCashSessionDetailForAudit — Promesa decorada con cache/dedupe; finalización real interna no expuesta al contexto nuevo.",
+      "timeout": {
+        "key": "AUDIT_DETAIL_MS",
+        "defaultMs": 10000,
+        "unchanged": true
+      },
+      "cancellation": "Ninguna señal de cancelación RPC introducida ni cancelación confirmada en servidor. Revocar ticket no aborta fetch.",
+      "observableClientEnd": "Promesa decorada con cache/dedupe; finalización real interna no expuesta al contexto nuevo.",
+      "localContinuations": "applyCloudResponse después de la carrera puede persistir sesiones/movimientos; debe estar dentro de la futura raíz.",
+      "localWrites": "Proyecciones de caja locales y cache; posibles effects deferred requieren tracking propio.",
+      "possibleServerEffects": "Lectura remota; no confirma mutación financiera.",
+      "idempotency": "Operaciones financieras usan K/hash/origen y receipt-first originales; consultas auxiliares no reciben nuevas claves ni permisos.",
+      "authority": "Permiso de auditoría y contexto auth del repositorio.",
+      "cleanup": "Timer limpiado al settlement público; leases y finally originales conservados. Contexto opcional retiene raíz y tareas registradas hasta settlement real; sin contexto no hay registro nuevo.",
+      "coverage": "PENDING_NOT_DRAIN_CERTIFIED"
+    },
+    {
+      "id": "CASH-ADMIN-STATION",
+      "path": "src/services/cash/cashRepository.js",
+      "caller": "adminCloseCashSession:station",
+      "realStart": "Tras cloud/online/Admin checks.",
+      "publicPromise": "Promise.race de task con timer; settlement de UI no demuestra fin subyacente.",
+      "underlyingTask": "getStationForMode/getCashStationIdentity — Resolución de identidad de estación local por helper, no se instrumenta en esta fase.",
+      "timeout": {
+        "key": "STATION_RESOLUTION_MS",
+        "defaultMs": 10000,
+        "unchanged": true
+      },
+      "cancellation": "Ninguna señal de cancelación RPC introducida ni cancelación confirmada en servidor. Revocar ticket no aborta fetch.",
+      "observableClientEnd": "Resolución de identidad de estación local por helper, no se instrumenta en esta fase.",
+      "localContinuations": "Preflight/target/execute/proyección/sync posteriores deben incluirse en raíz del flujo completo.",
+      "localWrites": "Identidad/cache local de estación según helper, y estados posteriores separados.",
+      "possibleServerEffects": "Esta fase no realiza dispatch financiero por sí sola.",
+      "idempotency": "Operaciones financieras usan K/hash/origen y receipt-first originales; consultas auxiliares no reciben nuevas claves ni permisos.",
+      "authority": "Contexto modo y luego captureFinancialActor; sin cambios.",
+      "cleanup": "Timer limpiado al settlement público; leases y finally originales conservados. Contexto opcional retiene raíz y tareas registradas hasta settlement real; sin contexto no hay registro nuevo.",
+      "coverage": "PENDING_NOT_DRAIN_CERTIFIED"
+    },
+    {
+      "id": "CASH-ADMIN-PREFLIGHT",
+      "path": "src/services/cash/cashRepository.js",
+      "caller": "adminCloseCashSession:preflight",
+      "realStart": "Tras station y captureFinancialActor.",
+      "publicPromise": "Promise.race de task con timer; settlement de UI no demuestra fin subyacente.",
+      "underlyingTask": "assertCloudStationKnownBeforeWrite — Helper completo del preflight, con consulta de estación/cache y binding local.",
+      "timeout": {
+        "key": "PREFLIGHT_MS",
+        "defaultMs": 15000,
+        "unchanged": true
+      },
+      "cancellation": "Ninguna señal de cancelación RPC introducida ni cancelación confirmada en servidor. Revocar ticket no aborta fetch.",
+      "observableClientEnd": "Helper completo del preflight, con consulta de estación/cache y binding local.",
+      "localContinuations": "La función puede seguir y persistir binding local después de que el wrapper arroje timeout.",
+      "localWrites": "Binding/cache de estación; ruta futura debe observar el helper y sus continuaciones.",
+      "possibleServerEffects": "Consulta remota de estación; no equivale al cierre posterior.",
+      "idempotency": "Operaciones financieras usan K/hash/origen y receipt-first originales; consultas auxiliares no reciben nuevas claves ni permisos.",
+      "authority": "Actor/cash station/tenant/auth vigentes conforme al código actual.",
+      "cleanup": "Timer limpiado al settlement público; leases y finally originales conservados. Contexto opcional retiene raíz y tareas registradas hasta settlement real; sin contexto no hay registro nuevo.",
+      "coverage": "PENDING_NOT_DRAIN_CERTIFIED"
+    },
+    {
+      "id": "CASH-ADMIN-PROJECTION",
+      "path": "src/services/cash/cashRepository.js",
+      "caller": "adminCloseCashSession:post_sync",
+      "realStart": "Después de respuesta de cierre financiero, sin cambiar confirmación remota.",
+      "publicPromise": "Promise.race de task con timer; settlement de UI no demuestra fin subyacente.",
+      "underlyingTask": "applyFinancialCloudResponse — Helper de proyección y marca applied/failed; puede continuar tras timeout.",
+      "timeout": {
+        "key": "POST_SYNC_MS",
+        "defaultMs": 10000,
+        "unchanged": true
+      },
+      "cancellation": "Ninguna señal de cancelación RPC introducida ni cancelación confirmada en servidor. Revocar ticket no aborta fetch.",
+      "observableClientEnd": "Helper de proyección y marca applied/failed; puede continuar tras timeout.",
+      "localContinuations": "invalidateCloudCacheAfterCashMutation y pullIncremental detached posteriores no están cubiertos por nuevo contexto.",
+      "localWrites": "Sesiones/movimientos locales/projection status/cache; pull puede escribir después.",
+      "possibleServerEffects": "Cierre ya confirmado por flujo previo; timeout de proyección no lo revierte.",
+      "idempotency": "Operaciones financieras usan K/hash/origen y receipt-first originales; consultas auxiliares no reciben nuevas claves ni permisos.",
+      "authority": "actorContext y guards de proyección/lease actuales.",
+      "cleanup": "Timer limpiado al settlement público; leases y finally originales conservados. Contexto opcional retiene raíz y tareas registradas hasta settlement real; sin contexto no hay registro nuevo.",
+      "coverage": "PENDING_NOT_DRAIN_CERTIFIED"
+    },
+    {
+      "id": "HOOK-CASH-POST-SYNC",
+      "path": "src/hooks/useCaja.js",
+      "caller": "cerrarCajaAdministrativamente",
+      "realStart": "Después del éxito público de cashRepository.adminCloseCashSession.",
+      "publicPromise": "Promise.race de task con timer; settlement de UI no demuestra fin subyacente.",
+      "underlyingTask": "sincronizarEstadoCaja — Callback de sincronización de caja, potencialmente pendiente tras timeout.",
+      "timeout": {
+        "key": "POST_SYNC_MS",
+        "defaultMs": 10000,
+        "unchanged": true
+      },
+      "cancellation": "Ninguna señal de cancelación RPC introducida ni cancelación confirmada en servidor. Revocar ticket no aborta fetch.",
+      "observableClientEnd": "Callback de sincronización de caja, potencialmente pendiente tras timeout.",
+      "localContinuations": "Estado UI/repositorios internos y tareas detached de los servicios inferiores necesitan frontera explícita.",
+      "localWrites": "Actualización local/estado caja; no se declara drain de caja completa.",
+      "possibleServerEffects": "Un fallo de sync posterior no cancela el cierre aceptado.",
+      "idempotency": "Operaciones financieras usan K/hash/origen y receipt-first originales; consultas auxiliares no reciben nuevas claves ni permisos.",
+      "authority": "Actor/tenant/station existentes; no wiring ni gates nuevos.",
+      "cleanup": "Timer limpiado al settlement público; leases y finally originales conservados. Contexto opcional retiene raíz y tareas registradas hasta settlement real; sin contexto no hay registro nuevo.",
+      "coverage": "PENDING_NOT_DRAIN_CERTIFIED"
+    }
+  ]
+}

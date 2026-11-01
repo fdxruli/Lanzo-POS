@@ -1,0 +1,1328 @@
+[
+  {
+    "test": "D-31 actor GRANTED admits a scoped recovery before list work",
+    "events": [
+      {
+        "type": "registered",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 2,
+        "label": "recovery:run",
+        "parent": null
+      },
+      {
+        "type": "started",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 2,
+        "label": "recovery:run"
+      },
+      {
+        "type": "settled",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 2,
+        "label": "recovery:run"
+      },
+      {
+        "type": "registered",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 3,
+        "label": "stop:financial_recovery",
+        "parent": null
+      },
+      {
+        "type": "quiesce",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      },
+      {
+        "type": "started",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 3,
+        "label": "stop:financial_recovery"
+      },
+      {
+        "type": "settled",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 3,
+        "label": "stop:financial_recovery"
+      },
+      {
+        "type": "drained",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      }
+    ],
+    "scopes": [
+      {
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "state": "DRAINED",
+        "accepting": false,
+        "pending": 0,
+        "scheduled": 0,
+        "sources": 0,
+        "completed": 2,
+        "rejected": 0,
+        "observerFailed": false,
+        "unknown": [],
+        "tasks": []
+      }
+    ],
+    "calls": {
+      "list": 1,
+      "recovery": [
+        {
+          "intentId": "intent-A",
+          "licenseKey": "tenant-A",
+          "hasExecutionScope": true
+        }
+      ]
+    },
+    "synthetic": true
+  },
+  {
+    "test": "D-32 existing activeRun is shared without extra dispatch or ownership replacement",
+    "events": [
+      {
+        "type": "registered",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "recovery:run",
+        "parent": null
+      },
+      {
+        "type": "started",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "recovery:run"
+      },
+      {
+        "type": "settled",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "recovery:run"
+      },
+      {
+        "type": "quiesce",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      },
+      {
+        "type": "drained",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      }
+    ],
+    "scopes": [
+      {
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "state": "DRAINED",
+        "accepting": false,
+        "pending": 0,
+        "scheduled": 0,
+        "sources": 0,
+        "completed": 1,
+        "rejected": 0,
+        "observerFailed": false,
+        "unknown": [],
+        "tasks": []
+      }
+    ],
+    "calls": {
+      "list": 1,
+      "recovery": [
+        {
+          "intentId": "intent-A",
+          "licenseKey": "tenant-A",
+          "hasExecutionScope": true
+        }
+      ]
+    },
+    "synthetic": true
+  },
+  {
+    "test": "D-33 online admits through owned listener and duplicate install is idempotent",
+    "events": [
+      {
+        "type": "registered",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 2,
+        "label": "recovery:run",
+        "parent": null
+      },
+      {
+        "type": "started",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 2,
+        "label": "recovery:run"
+      },
+      {
+        "type": "settled",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 2,
+        "label": "recovery:run"
+      },
+      {
+        "type": "registered",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 3,
+        "label": "stop:financial_recovery",
+        "parent": null
+      },
+      {
+        "type": "quiesce",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      },
+      {
+        "type": "started",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 3,
+        "label": "stop:financial_recovery"
+      },
+      {
+        "type": "settled",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 3,
+        "label": "stop:financial_recovery"
+      },
+      {
+        "type": "drained",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      }
+    ],
+    "scopes": [
+      {
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "state": "DRAINED",
+        "accepting": false,
+        "pending": 0,
+        "scheduled": 0,
+        "sources": 0,
+        "completed": 2,
+        "rejected": 0,
+        "observerFailed": false,
+        "unknown": [],
+        "tasks": []
+      }
+    ],
+    "calls": {
+      "list": 1,
+      "recovery": [
+        {
+          "intentId": "intent-A",
+          "licenseKey": "tenant-A",
+          "hasExecutionScope": true
+        }
+      ]
+    },
+    "synthetic": true
+  },
+  {
+    "test": "D-34 uninstall during activeRun removes sources but retains executor",
+    "events": [
+      {
+        "type": "registered",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 2,
+        "label": "recovery:run",
+        "parent": null
+      },
+      {
+        "type": "started",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 2,
+        "label": "recovery:run"
+      },
+      {
+        "type": "registered",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 3,
+        "label": "stop:financial_recovery",
+        "parent": null
+      },
+      {
+        "type": "quiesce",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      },
+      {
+        "type": "started",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 3,
+        "label": "stop:financial_recovery"
+      },
+      {
+        "type": "settled",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 3,
+        "label": "stop:financial_recovery"
+      },
+      {
+        "type": "settled",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 2,
+        "label": "recovery:run"
+      },
+      {
+        "type": "drained",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      }
+    ],
+    "scopes": [
+      {
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "state": "DRAINED",
+        "accepting": false,
+        "pending": 0,
+        "scheduled": 0,
+        "sources": 0,
+        "completed": 2,
+        "rejected": 0,
+        "observerFailed": false,
+        "unknown": [],
+        "tasks": []
+      }
+    ],
+    "calls": {
+      "list": 1,
+      "recovery": [
+        {
+          "intentId": "intent-A",
+          "licenseKey": "tenant-A",
+          "hasExecutionScope": true
+        }
+      ]
+    },
+    "synthetic": true
+  },
+  {
+    "test": "D-35 run registered synchronously before factory and activeRun publication",
+    "events": [
+      {
+        "type": "registered",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "recovery:run",
+        "parent": null
+      },
+      {
+        "type": "started",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "recovery:run"
+      },
+      {
+        "type": "settled",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "recovery:run"
+      },
+      {
+        "type": "quiesce",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      },
+      {
+        "type": "drained",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      }
+    ],
+    "scopes": [
+      {
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "state": "DRAINED",
+        "accepting": false,
+        "pending": 0,
+        "scheduled": 0,
+        "sources": 0,
+        "completed": 1,
+        "rejected": 0,
+        "observerFailed": false,
+        "unknown": [],
+        "tasks": []
+      }
+    ],
+    "calls": {
+      "list": 1,
+      "recovery": [
+        {
+          "intentId": "intent-A",
+          "licenseKey": "tenant-A",
+          "hasExecutionScope": true
+        }
+      ]
+    },
+    "synthetic": true
+  },
+  {
+    "test": "D-36 actor changes while list is pending: no recovery begins",
+    "events": [
+      {
+        "type": "registered",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "recovery:run",
+        "parent": null
+      },
+      {
+        "type": "started",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "recovery:run"
+      },
+      {
+        "type": "rejected",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "recovery:run"
+      },
+      {
+        "type": "quiesce",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      },
+      {
+        "type": "drained",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      }
+    ],
+    "scopes": [
+      {
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "state": "DRAINED",
+        "accepting": false,
+        "pending": 0,
+        "scheduled": 0,
+        "sources": 0,
+        "completed": 0,
+        "rejected": 1,
+        "observerFailed": false,
+        "unknown": [],
+        "tasks": []
+      }
+    ],
+    "calls": {
+      "list": 1,
+      "recovery": []
+    },
+    "synthetic": true
+  },
+  {
+    "test": "D-37 tenant changes while list is pending: next intent remains blocked",
+    "events": [
+      {
+        "type": "registered",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "recovery:run",
+        "parent": null
+      },
+      {
+        "type": "started",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "recovery:run"
+      },
+      {
+        "type": "rejected",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "recovery:run"
+      },
+      {
+        "type": "quiesce",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      },
+      {
+        "type": "drained",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      }
+    ],
+    "scopes": [
+      {
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "state": "DRAINED",
+        "accepting": false,
+        "pending": 0,
+        "scheduled": 0,
+        "sources": 0,
+        "completed": 0,
+        "rejected": 1,
+        "observerFailed": false,
+        "unknown": [],
+        "tasks": []
+      }
+    ],
+    "calls": {
+      "list": 1,
+      "recovery": []
+    },
+    "synthetic": true
+  },
+  {
+    "test": "D-38 receipt pending public result does not settle registered raw child",
+    "events": [
+      {
+        "type": "registered",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "recovery:run",
+        "parent": null
+      },
+      {
+        "type": "started",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "recovery:run"
+      },
+      {
+        "type": "registered",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 2,
+        "label": "recovery:run:continuation",
+        "parent": 1
+      },
+      {
+        "type": "started",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 2,
+        "label": "recovery:run:continuation"
+      },
+      {
+        "type": "settled",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "recovery:run"
+      },
+      {
+        "type": "quiesce",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      },
+      {
+        "type": "settled",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 2,
+        "label": "recovery:run:continuation"
+      },
+      {
+        "type": "drained",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      }
+    ],
+    "scopes": [
+      {
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "state": "DRAINED",
+        "accepting": false,
+        "pending": 0,
+        "scheduled": 0,
+        "sources": 0,
+        "completed": 2,
+        "rejected": 0,
+        "observerFailed": false,
+        "unknown": [],
+        "tasks": []
+      }
+    ],
+    "calls": {
+      "list": 1,
+      "recovery": [
+        {
+          "intentId": "intent-A",
+          "licenseKey": "tenant-A",
+          "hasExecutionScope": true
+        }
+      ]
+    },
+    "synthetic": true
+  },
+  {
+    "test": "D-39 ambiguous remote outcome retains UNKNOWN after public recovery",
+    "events": [
+      {
+        "type": "registered",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "recovery:run",
+        "parent": null
+      },
+      {
+        "type": "started",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "recovery:run"
+      },
+      {
+        "type": "unknown",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "reason": "receipt_processing_remote"
+      },
+      {
+        "type": "settled",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "recovery:run"
+      },
+      {
+        "type": "quiesce",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      },
+      {
+        "type": "unknown",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      }
+    ],
+    "scopes": [
+      {
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "state": "UNKNOWN",
+        "accepting": false,
+        "pending": 0,
+        "scheduled": 0,
+        "sources": 0,
+        "completed": 1,
+        "rejected": 0,
+        "observerFailed": false,
+        "unknown": [
+          "receipt_processing_remote"
+        ],
+        "tasks": []
+      }
+    ],
+    "calls": {
+      "list": 1,
+      "recovery": [
+        {
+          "intentId": "intent-A",
+          "licenseKey": "tenant-A",
+          "hasExecutionScope": true
+        }
+      ]
+    },
+    "synthetic": true
+  },
+  {
+    "test": "D-40 no new recovery is dispatched after quiesce or late actor callback",
+    "events": [
+      {
+        "type": "registered",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 2,
+        "label": "stop:financial_recovery",
+        "parent": null
+      },
+      {
+        "type": "quiesce",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      },
+      {
+        "type": "started",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 2,
+        "label": "stop:financial_recovery"
+      },
+      {
+        "type": "settled",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 2,
+        "label": "stop:financial_recovery"
+      },
+      {
+        "type": "drained",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      }
+    ],
+    "scopes": [
+      {
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "state": "DRAINED",
+        "accepting": false,
+        "pending": 0,
+        "scheduled": 0,
+        "sources": 0,
+        "completed": 1,
+        "rejected": 0,
+        "observerFailed": false,
+        "unknown": [],
+        "tasks": []
+      }
+    ],
+    "calls": {
+      "list": 0,
+      "recovery": []
+    },
+    "synthetic": true
+  },
+  {
+    "test": "EXTRA unknown original recovery owner is observed without becoming owner",
+    "events": [
+      {
+        "type": "unknown",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "reason": "shared_financial_recovery_owner"
+      },
+      {
+        "type": "registered",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "recovery:shared_public",
+        "parent": null
+      },
+      {
+        "type": "started",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "recovery:shared_public"
+      },
+      {
+        "type": "settled",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "recovery:shared_public"
+      },
+      {
+        "type": "quiesce",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      },
+      {
+        "type": "unknown",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      }
+    ],
+    "scopes": [
+      {
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "state": "UNKNOWN",
+        "accepting": false,
+        "pending": 0,
+        "scheduled": 0,
+        "sources": 0,
+        "completed": 1,
+        "rejected": 0,
+        "observerFailed": false,
+        "unknown": [
+          "shared_financial_recovery_owner"
+        ],
+        "tasks": []
+      }
+    ],
+    "calls": {
+      "list": 1,
+      "recovery": [
+        {
+          "intentId": "intent-A",
+          "licenseKey": "tenant-A",
+          "hasExecutionScope": false
+        }
+      ]
+    },
+    "synthetic": true
+  },
+  {
+    "test": "EXTRA completed financial projection retains detached subscriber UNKNOWN",
+    "events": [
+      {
+        "type": "registered",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "recovery:run",
+        "parent": null
+      },
+      {
+        "type": "started",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "recovery:run"
+      },
+      {
+        "type": "unknown",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "reason": "financial_projection_subscriber_lifetime"
+      },
+      {
+        "type": "settled",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "recovery:run"
+      },
+      {
+        "type": "quiesce",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      },
+      {
+        "type": "unknown",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      }
+    ],
+    "scopes": [
+      {
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "state": "UNKNOWN",
+        "accepting": false,
+        "pending": 0,
+        "scheduled": 0,
+        "sources": 0,
+        "completed": 1,
+        "rejected": 0,
+        "observerFailed": false,
+        "unknown": [
+          "financial_projection_subscriber_lifetime"
+        ],
+        "tasks": []
+      }
+    ],
+    "calls": {
+      "list": 1,
+      "recovery": [
+        {
+          "intentId": "intent-A",
+          "licenseKey": "tenant-A",
+          "hasExecutionScope": true
+        }
+      ]
+    },
+    "synthetic": true
+  },
+  {
+    "test": "EXTRA default recovery has identical arguments without executionScope",
+    "events": [],
+    "scopes": [],
+    "calls": {
+      "list": 1,
+      "recovery": [
+        {
+          "intentId": "intent-A",
+          "licenseKey": "tenant-A",
+          "hasExecutionScope": false
+        }
+      ]
+    },
+    "synthetic": true
+  },
+  {
+    "test": "EXTRA recovery sources cannot be appropriated by another generation",
+    "events": [
+      {
+        "type": "registered",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 2,
+        "label": "stop:financial_recovery",
+        "parent": null
+      },
+      {
+        "type": "quiesce",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      },
+      {
+        "type": "quiesce",
+        "id": "recovery-1",
+        "generation": 2,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      },
+      {
+        "type": "started",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 2,
+        "label": "stop:financial_recovery"
+      },
+      {
+        "type": "settled",
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 2,
+        "label": "stop:financial_recovery"
+      }
+    ],
+    "scopes": [
+      {
+        "id": "recovery-0",
+        "generation": 1,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "state": "QUIESCING",
+        "accepting": false,
+        "pending": 0,
+        "scheduled": 0,
+        "sources": 0,
+        "completed": 1,
+        "rejected": 0,
+        "observerFailed": false,
+        "unknown": [],
+        "tasks": []
+      },
+      {
+        "id": "recovery-1",
+        "generation": 2,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "state": "QUIESCING",
+        "accepting": false,
+        "pending": 0,
+        "scheduled": 0,
+        "sources": 0,
+        "completed": 0,
+        "rejected": 0,
+        "observerFailed": false,
+        "unknown": [],
+        "tasks": []
+      }
+    ],
+    "calls": {
+      "list": 0,
+      "recovery": []
+    },
+    "synthetic": true
+  }
+]

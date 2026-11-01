@@ -1,0 +1,1633 @@
+[
+  {
+    "test": "D-41 quiesce before factory starts blocks effects",
+    "events": [
+      {
+        "type": "registered",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "job",
+        "parent": null
+      },
+      {
+        "type": "quiesce",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      },
+      {
+        "type": "rejected",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "job"
+      },
+      {
+        "type": "drained",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      }
+    ],
+    "snapshots": [
+      {
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "state": "DRAINED",
+        "accepting": false,
+        "pending": 0,
+        "scheduled": 0,
+        "sources": 0,
+        "completed": 0,
+        "rejected": 1,
+        "observerFailed": false,
+        "unknown": [],
+        "tasks": []
+      }
+    ],
+    "synthetic": true
+  },
+  {
+    "test": "D-42 quiesce during admitted callback retains real settlement",
+    "events": [
+      {
+        "type": "registered",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "job",
+        "parent": null
+      },
+      {
+        "type": "started",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "job"
+      },
+      {
+        "type": "quiesce",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      },
+      {
+        "type": "settled",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "job"
+      },
+      {
+        "type": "drained",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      }
+    ],
+    "snapshots": [
+      {
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "state": "DRAINED",
+        "accepting": false,
+        "pending": 0,
+        "scheduled": 0,
+        "sources": 0,
+        "completed": 1,
+        "rejected": 0,
+        "observerFailed": false,
+        "unknown": [],
+        "tasks": []
+      }
+    ],
+    "synthetic": true
+  },
+  {
+    "test": "D-43 rejects all external admissions after quiesce",
+    "events": [
+      {
+        "type": "quiesce",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      }
+    ],
+    "snapshots": [
+      {
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "state": "QUIESCING",
+        "accepting": false,
+        "pending": 0,
+        "scheduled": 0,
+        "sources": 0,
+        "completed": 0,
+        "rejected": 0,
+        "observerFailed": false,
+        "unknown": [],
+        "tasks": []
+      }
+    ],
+    "synthetic": true
+  },
+  {
+    "test": "D-44 live parent registers a required continuation after quiesce",
+    "events": [
+      {
+        "type": "registered",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "root",
+        "parent": null
+      },
+      {
+        "type": "started",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "root"
+      },
+      {
+        "type": "quiesce",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      },
+      {
+        "type": "registered",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 2,
+        "label": "root:continuation",
+        "parent": 1
+      },
+      {
+        "type": "started",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 2,
+        "label": "root:continuation"
+      },
+      {
+        "type": "settled",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 2,
+        "label": "root:continuation"
+      },
+      {
+        "type": "settled",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "root"
+      },
+      {
+        "type": "drained",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      }
+    ],
+    "snapshots": [
+      {
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "state": "DRAINED",
+        "accepting": false,
+        "pending": 0,
+        "scheduled": 0,
+        "sources": 0,
+        "completed": 2,
+        "rejected": 0,
+        "observerFailed": false,
+        "unknown": [],
+        "tasks": []
+      }
+    ],
+    "synthetic": true
+  },
+  {
+    "test": "D-45 UNKNOWN keeps drain unresolved without a timeout escape",
+    "events": [
+      {
+        "type": "unknown",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "reason": "remote_ambiguous"
+      },
+      {
+        "type": "quiesce",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      },
+      {
+        "type": "unknown",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      },
+      {
+        "type": "unknown",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      }
+    ],
+    "snapshots": [
+      {
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "state": "UNKNOWN",
+        "accepting": false,
+        "pending": 0,
+        "scheduled": 0,
+        "sources": 0,
+        "completed": 0,
+        "rejected": 0,
+        "observerFailed": false,
+        "unknown": [
+          "remote_ambiguous"
+        ],
+        "tasks": []
+      }
+    ],
+    "synthetic": true
+  },
+  {
+    "test": "D-46 empty closed scope drains only after sources stop",
+    "events": [
+      {
+        "type": "registered",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 2,
+        "label": "stop:listener",
+        "parent": null
+      },
+      {
+        "type": "quiesce",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      },
+      {
+        "type": "started",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 2,
+        "label": "stop:listener"
+      },
+      {
+        "type": "settled",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 2,
+        "label": "stop:listener"
+      },
+      {
+        "type": "drained",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      }
+    ],
+    "snapshots": [
+      {
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "state": "DRAINED",
+        "accepting": false,
+        "pending": 0,
+        "scheduled": 0,
+        "sources": 0,
+        "completed": 1,
+        "rejected": 0,
+        "observerFailed": false,
+        "unknown": [],
+        "tasks": []
+      }
+    ],
+    "synthetic": true
+  },
+  {
+    "test": "D-47 failing synchronous and asynchronous observers cannot lose tasks",
+    "events": [],
+    "snapshots": [
+      {
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "state": "DRAINED",
+        "accepting": false,
+        "pending": 0,
+        "scheduled": 0,
+        "sources": 0,
+        "completed": 0,
+        "rejected": 1,
+        "observerFailed": true,
+        "unknown": [],
+        "tasks": []
+      },
+      {
+        "id": "synthetic-1",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "state": "DRAINED",
+        "accepting": false,
+        "pending": 0,
+        "scheduled": 0,
+        "sources": 0,
+        "completed": 0,
+        "rejected": 1,
+        "observerFailed": true,
+        "unknown": [],
+        "tasks": []
+      }
+    ],
+    "synthetic": true
+  },
+  {
+    "test": "D-16 cancelled timer has no executor and is distinct from settlement",
+    "events": [
+      {
+        "type": "scheduled",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "label": "later"
+      },
+      {
+        "type": "timer_cancelled",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "label": "later"
+      },
+      {
+        "type": "quiesce",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      },
+      {
+        "type": "drained",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      }
+    ],
+    "snapshots": [
+      {
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "state": "DRAINED",
+        "accepting": false,
+        "pending": 0,
+        "scheduled": 0,
+        "sources": 0,
+        "completed": 0,
+        "rejected": 0,
+        "observerFailed": false,
+        "unknown": [],
+        "tasks": []
+      }
+    ],
+    "synthetic": true
+  },
+  {
+    "test": "D-17 fired timer is registered before callback and remains pending",
+    "events": [
+      {
+        "type": "scheduled",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "label": "timer"
+      },
+      {
+        "type": "registered",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 2,
+        "label": "timer",
+        "parent": null
+      },
+      {
+        "type": "started",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 2,
+        "label": "timer"
+      },
+      {
+        "type": "quiesce",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      },
+      {
+        "type": "settled",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 2,
+        "label": "timer"
+      },
+      {
+        "type": "drained",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      }
+    ],
+    "snapshots": [
+      {
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "state": "DRAINED",
+        "accepting": false,
+        "pending": 0,
+        "scheduled": 0,
+        "sources": 0,
+        "completed": 1,
+        "rejected": 0,
+        "observerFailed": false,
+        "unknown": [],
+        "tasks": []
+      }
+    ],
+    "synthetic": true
+  },
+  {
+    "test": "D-21 public root finishes before its detached registered child",
+    "events": [
+      {
+        "type": "registered",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "root",
+        "parent": null
+      },
+      {
+        "type": "started",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "root"
+      },
+      {
+        "type": "registered",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 2,
+        "label": "root:continuation",
+        "parent": 1
+      },
+      {
+        "type": "started",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 2,
+        "label": "root:continuation"
+      },
+      {
+        "type": "settled",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "root"
+      },
+      {
+        "type": "quiesce",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      },
+      {
+        "type": "settled",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 2,
+        "label": "root:continuation"
+      },
+      {
+        "type": "drained",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      }
+    ],
+    "snapshots": [
+      {
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "state": "DRAINED",
+        "accepting": false,
+        "pending": 0,
+        "scheduled": 0,
+        "sources": 0,
+        "completed": 2,
+        "rejected": 0,
+        "observerFailed": false,
+        "unknown": [],
+        "tasks": []
+      }
+    ],
+    "synthetic": true
+  },
+  {
+    "test": "D-24 concurrent jobs retain distinct ids and finish independently",
+    "events": [
+      {
+        "type": "registered",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "a",
+        "parent": null
+      },
+      {
+        "type": "registered",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 2,
+        "label": "b",
+        "parent": null
+      },
+      {
+        "type": "started",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "a"
+      },
+      {
+        "type": "started",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 2,
+        "label": "b"
+      },
+      {
+        "type": "settled",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "a"
+      },
+      {
+        "type": "quiesce",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      },
+      {
+        "type": "settled",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 2,
+        "label": "b"
+      },
+      {
+        "type": "drained",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      }
+    ],
+    "snapshots": [
+      {
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "state": "DRAINED",
+        "accepting": false,
+        "pending": 0,
+        "scheduled": 0,
+        "sources": 0,
+        "completed": 2,
+        "rejected": 0,
+        "observerFailed": false,
+        "unknown": [],
+        "tasks": []
+      }
+    ],
+    "synthetic": true
+  },
+  {
+    "test": "D-27 rejected detached child is observed and counted after public result",
+    "events": [
+      {
+        "type": "registered",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "parent",
+        "parent": null
+      },
+      {
+        "type": "started",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "parent"
+      },
+      {
+        "type": "registered",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 2,
+        "label": "parent:continuation",
+        "parent": 1
+      },
+      {
+        "type": "started",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 2,
+        "label": "parent:continuation"
+      },
+      {
+        "type": "settled",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "parent"
+      },
+      {
+        "type": "quiesce",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      },
+      {
+        "type": "rejected",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 2,
+        "label": "parent:continuation"
+      },
+      {
+        "type": "drained",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      }
+    ],
+    "snapshots": [
+      {
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "state": "DRAINED",
+        "accepting": false,
+        "pending": 0,
+        "scheduled": 0,
+        "sources": 0,
+        "completed": 1,
+        "rejected": 1,
+        "observerFailed": false,
+        "unknown": [],
+        "tasks": []
+      }
+    ],
+    "synthetic": true
+  },
+  {
+    "test": "D-28 nonsettling executor stays pending after arbitrarily long time",
+    "events": [
+      {
+        "type": "registered",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "never",
+        "parent": null
+      },
+      {
+        "type": "started",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "never"
+      },
+      {
+        "type": "quiesce",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      }
+    ],
+    "snapshots": [
+      {
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "state": "DRAINING",
+        "accepting": false,
+        "pending": 1,
+        "scheduled": 0,
+        "sources": 0,
+        "completed": 0,
+        "rejected": 0,
+        "observerFailed": false,
+        "unknown": [],
+        "tasks": [
+          {
+            "id": 1,
+            "label": "never",
+            "parent": null,
+            "started": true,
+            "cleanup": false
+          }
+        ]
+      }
+    ],
+    "synthetic": true
+  },
+  {
+    "test": "EXTRA registration precedes reentrant observer quiesce",
+    "events": [],
+    "snapshots": [
+      {
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "state": "DRAINED",
+        "accepting": false,
+        "pending": 0,
+        "scheduled": 0,
+        "sources": 0,
+        "completed": 0,
+        "rejected": 1,
+        "observerFailed": false,
+        "unknown": [],
+        "tasks": []
+      }
+    ],
+    "synthetic": true
+  },
+  {
+    "test": "EXTRA stale context before admission invokes no factory",
+    "events": [],
+    "snapshots": [
+      {
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "state": "ACTIVE",
+        "accepting": true,
+        "pending": 0,
+        "scheduled": 0,
+        "sources": 0,
+        "completed": 0,
+        "rejected": 0,
+        "observerFailed": false,
+        "unknown": [],
+        "tasks": []
+      }
+    ],
+    "synthetic": true
+  },
+  {
+    "test": "EXTRA parent token survives public settlement while registered raw child needs a continuation",
+    "events": [
+      {
+        "type": "registered",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "public",
+        "parent": null
+      },
+      {
+        "type": "started",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "public"
+      },
+      {
+        "type": "registered",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 2,
+        "label": "public:continuation",
+        "parent": 1
+      },
+      {
+        "type": "started",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 2,
+        "label": "public:continuation"
+      },
+      {
+        "type": "settled",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "public"
+      },
+      {
+        "type": "quiesce",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      },
+      {
+        "type": "registered",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 3,
+        "label": "public:continuation",
+        "parent": 1
+      },
+      {
+        "type": "started",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 3,
+        "label": "public:continuation"
+      },
+      {
+        "type": "settled",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 3,
+        "label": "public:continuation"
+      },
+      {
+        "type": "settled",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 2,
+        "label": "public:continuation"
+      },
+      {
+        "type": "drained",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      }
+    ],
+    "snapshots": [
+      {
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "state": "DRAINED",
+        "accepting": false,
+        "pending": 0,
+        "scheduled": 0,
+        "sources": 0,
+        "completed": 3,
+        "rejected": 0,
+        "observerFailed": false,
+        "unknown": [],
+        "tasks": []
+      }
+    ],
+    "synthetic": true
+  },
+  {
+    "test": "EXTRA context changes between registration and factory",
+    "events": [
+      {
+        "type": "registered",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "root",
+        "parent": null
+      },
+      {
+        "type": "rejected",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "root"
+      },
+      {
+        "type": "quiesce",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      },
+      {
+        "type": "drained",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      }
+    ],
+    "snapshots": [
+      {
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "state": "DRAINED",
+        "accepting": false,
+        "pending": 0,
+        "scheduled": 0,
+        "sources": 0,
+        "completed": 0,
+        "rejected": 1,
+        "observerFailed": false,
+        "unknown": [],
+        "tasks": []
+      }
+    ],
+    "synthetic": true
+  },
+  {
+    "test": "EXTRA parent loses context before continuation",
+    "events": [
+      {
+        "type": "registered",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "root",
+        "parent": null
+      },
+      {
+        "type": "started",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "root"
+      },
+      {
+        "type": "quiesce",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      },
+      {
+        "type": "settled",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "root"
+      },
+      {
+        "type": "drained",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      }
+    ],
+    "snapshots": [
+      {
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "state": "DRAINED",
+        "accepting": false,
+        "pending": 0,
+        "scheduled": 0,
+        "sources": 0,
+        "completed": 1,
+        "rejected": 0,
+        "observerFailed": false,
+        "unknown": [],
+        "tasks": []
+      }
+    ],
+    "synthetic": true
+  },
+  {
+    "test": "EXTRA failed source cleanup conservatively retains UNKNOWN",
+    "events": [
+      {
+        "type": "registered",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 2,
+        "label": "stop:bad",
+        "parent": null
+      },
+      {
+        "type": "quiesce",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      },
+      {
+        "type": "started",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 2,
+        "label": "stop:bad"
+      },
+      {
+        "type": "unknown",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "reason": "cleanup_failed:stop:bad"
+      },
+      {
+        "type": "rejected",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 2,
+        "label": "stop:bad"
+      },
+      {
+        "type": "unknown",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      }
+    ],
+    "snapshots": [
+      {
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "state": "UNKNOWN",
+        "accepting": false,
+        "pending": 0,
+        "scheduled": 0,
+        "sources": 0,
+        "completed": 0,
+        "rejected": 1,
+        "observerFailed": false,
+        "unknown": [
+          "cleanup_failed:stop:bad"
+        ],
+        "tasks": []
+      }
+    ],
+    "synthetic": true
+  },
+  {
+    "test": "EXTRA repeated quiesce never repeats teardown",
+    "events": [
+      {
+        "type": "registered",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 2,
+        "label": "stop:one",
+        "parent": null
+      },
+      {
+        "type": "quiesce",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      },
+      {
+        "type": "started",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 2,
+        "label": "stop:one"
+      },
+      {
+        "type": "settled",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 2,
+        "label": "stop:one"
+      },
+      {
+        "type": "drained",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      }
+    ],
+    "snapshots": [
+      {
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "state": "DRAINED",
+        "accepting": false,
+        "pending": 0,
+        "scheduled": 0,
+        "sources": 0,
+        "completed": 1,
+        "rejected": 0,
+        "observerFailed": false,
+        "unknown": [],
+        "tasks": []
+      }
+    ],
+    "synthetic": true
+  },
+  {
+    "test": "EXTRA UNKNOWN discovered by late completion survives quiesce",
+    "events": [
+      {
+        "type": "registered",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "root",
+        "parent": null
+      },
+      {
+        "type": "started",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "root"
+      },
+      {
+        "type": "quiesce",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      },
+      {
+        "type": "unknown",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "reason": "late"
+      },
+      {
+        "type": "settled",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "taskId": 1,
+        "label": "root"
+      },
+      {
+        "type": "unknown",
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        }
+      }
+    ],
+    "snapshots": [
+      {
+        "id": "synthetic-0",
+        "generation": 7,
+        "context": {
+          "actor": "actor-A",
+          "tenant": "tenant-A"
+        },
+        "state": "UNKNOWN",
+        "accepting": false,
+        "pending": 0,
+        "scheduled": 0,
+        "sources": 0,
+        "completed": 1,
+        "rejected": 0,
+        "observerFailed": false,
+        "unknown": [
+          "late"
+        ],
+        "tasks": []
+      }
+    ],
+    "synthetic": true
+  }
+]

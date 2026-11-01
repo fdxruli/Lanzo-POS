@@ -1,0 +1,83 @@
+{
+  "sha": "3355288f5f59213443283475f3df5a7a7fde14ed",
+  "regressions": {
+    "pass": 1316,
+    "fail": 10,
+    "attribution": [
+      {
+        "file": "src/services/ecommerce/__tests__/ecommercePosDraftService.test.js",
+        "name": "ecommercePosDraftService maps the server-resolved sourceProductId while excluding customer PII from the draft",
+        "baseline_shared": true
+      },
+      {
+        "file": "src/services/ecommerce/__tests__/ecommercePosDraftService.test.js",
+        "name": "ecommercePosDraftService opens an existing local draft only when remote prepared identity matches completely",
+        "baseline_shared": true
+      },
+      {
+        "file": "src/services/ecommerce/__tests__/ecommercePosInventoryResolution.test.js",
+        "name": "stale response protection does not replace a manual selection with an older automatic response",
+        "baseline_shared": true
+      },
+      {
+        "file": "src/services/ecommerce/__tests__/ecommercePosInventoryResolution.test.js",
+        "name": "stale response protection does not recreate a released draft after a delayed response",
+        "baseline_shared": true
+      },
+      {
+        "file": "src/services/ecommerce/__tests__/ecommercePublicConfiguredService.test.js",
+        "name": "ecommercePublicService configurable products loads and normalizes the safe product configuration RPC",
+        "baseline_shared": true
+      },
+      {
+        "file": "src/services/ecommerce/__tests__/ecommercePublicConfiguredService.test.js",
+        "name": "ecommercePublicService configurable products sends only productId, quantity, variantId and canonical selections",
+        "baseline_shared": true
+      },
+      {
+        "file": "src/services/ecommerce/__tests__/ecommercePublicService.test.js",
+        "name": "ecommercePublicService maps ECOMMERCE_CATALOG_REVISION_CHANGED to a controlled checkout message",
+        "baseline_shared": true
+      },
+      {
+        "file": "src/services/ecommerce/__tests__/ecommercePublicService.test.js",
+        "name": "ecommercePublicService maps ECOMMERCE_PRODUCT_NOT_AVAILABLE to a controlled checkout message",
+        "baseline_shared": true
+      },
+      {
+        "file": "src/services/ecommerce/__tests__/ecommercePublicService.test.js",
+        "name": "ecommercePublicService maps ECOMMERCE_ORDER_CREATE_FAILED to a controlled checkout message",
+        "baseline_shared": true
+      },
+      {
+        "file": "src/services/ecommerce/__tests__/ecommercePublicTrackingContract.test.js",
+        "name": "checkout tracking contract keeps the same tracking link on an idempotent response",
+        "baseline_shared": true
+      }
+    ]
+  },
+  "pr127": {
+    "status": "OK",
+    "shared": 99,
+    "new": 0,
+    "unresolved": 0
+  },
+  "local_node": {
+    "pass": 171,
+    "fail": 12,
+    "baseline_reproduction": {
+      "pass": 16,
+      "fail": 12
+    }
+  },
+  "linux_node": {
+    "pass": 182,
+    "fail": 1
+  },
+  "builds": "CI POS/PWA/postbuild and Store PASS",
+  "windows_focal": {
+    "status": "BLOCKED",
+    "reason": "No completed JSON; owned stalled process tree stopped on resumption. Root cause unproven. Actor coverage executed in CI."
+  },
+  "local_build_metadata": "Earlier runner recorded HEAD at completion, without a clean-tree proof. Use exact-SHA CI for certification."
+}

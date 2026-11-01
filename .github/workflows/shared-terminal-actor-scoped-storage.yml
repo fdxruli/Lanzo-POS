@@ -5,6 +5,8 @@ on:
     branches:
       - main
     paths:
+      - 'src/App.jsx'
+      - 'src/main.jsx'
       - 'src/services/auth/actorScopedStorage.js'
       - 'src/services/auth/actorOperationalHandoff.js'
       - 'src/services/auth/actorSessionRuntimeBridge.js'
@@ -235,10 +237,11 @@ jobs:
 
       - name: Validate BASE checkout
         shell: bash
+        working-directory: subject
         run: |
           echo "PR_BASE_SHA=${SHARED_TERMINAL_3_PR_BASE_SHA}"
           echo "COMPARISON_BASE_SHA=${SHARED_TERMINAL_3_COMPARISON_BASE_SHA}"
-          test "$(git -C subject rev-parse HEAD)" = "${SHARED_TERMINAL_3_COMPARISON_BASE_SHA}"
+          test "$(git rev-parse HEAD)" = "${SHARED_TERMINAL_3_COMPARISON_BASE_SHA}"
           test "${SHARED_TERMINAL_3_COMPARISON_BASE_SHA}" = "${SHARED_TERMINAL_3_PR_BASE_SHA}"
 
       - name: Checkout exact candidate evidence tools
@@ -277,6 +280,9 @@ jobs:
       - name: BASE raw full-suite repetitions
         shell: bash
         working-directory: subject
+        env:
+          LANZO_ADMIN_PWA_BUILD_REQUIRED: '1'
+          LANZO_STORE_PWA_BUILD_REQUIRED: '1'
         run: |
           set -o pipefail
           for i in 1 2; do
@@ -402,9 +408,10 @@ jobs:
 
       - name: Validate CANDIDATE checkout
         shell: bash
+        working-directory: subject
         run: |
           echo "CANDIDATE_SHA=${SHARED_TERMINAL_3_CANDIDATE_SHA}"
-          test "$(git -C subject rev-parse HEAD)" = "${SHARED_TERMINAL_3_CANDIDATE_SHA}"
+          test "$(git rev-parse HEAD)" = "${SHARED_TERMINAL_3_CANDIDATE_SHA}"
 
       - name: Checkout exact candidate evidence tools
         uses: actions/checkout@v4
@@ -442,6 +449,9 @@ jobs:
       - name: CANDIDATE raw full-suite repetitions
         shell: bash
         working-directory: subject
+        env:
+          LANZO_ADMIN_PWA_BUILD_REQUIRED: '1'
+          LANZO_STORE_PWA_BUILD_REQUIRED: '1'
         run: |
           set -o pipefail
           for i in 1 2; do

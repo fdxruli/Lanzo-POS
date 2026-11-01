@@ -254,10 +254,10 @@ describe('ecommercePublicService', () => {
     ['ECOMMERCE_DELIVERY_MUNICIPALITY_REQUIRED', 'Escribe el municipio o ciudad'],
     ['ECOMMERCE_DELIVERY_POSTAL_CODE_INVALID', 'código postal válido'],
     ['ECOMMERCE_DELIVERY_ADDRESS_INVALID', 'Revisa los datos de la dirección'],
-    ['ECOMMERCE_CATALOG_REVISION_CHANGED', 'No se pudo confirmar el pedido.'],
-    ['ECOMMERCE_PRODUCT_NOT_AVAILABLE', 'Uno de los productos ya no est'],
+    ['ECOMMERCE_CATALOG_REVISION_CHANGED', 'El catálogo cambió mientras preparabas el pedido.'],
+    ['ECOMMERCE_PRODUCT_NOT_AVAILABLE', 'Este producto ya no está disponible.'],
     ['ECOMMERCE_RATE_LIMITED', 'Se realizaron demasiados intentos.'],
-    ['ECOMMERCE_ORDER_CREATE_FAILED', 'No se pudo confirmar el pedido.'],
+    ['ECOMMERCE_ORDER_CREATE_FAILED', 'No pudimos procesar el pedido en este momento.'],
   ])('maps %s to a controlled checkout message', async (code, safeMessage) => {
     const rpc = vi.fn().mockResolvedValue({
       data: {
