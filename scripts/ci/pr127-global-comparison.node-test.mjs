@@ -386,6 +386,38 @@ test('preserves existing path and line/column normalization', () => {
   assert.equal(normalizeErrorSignature('Error at helper:10:3'), 'Error at helper:<line>:<column>');
 });
 
+test('normalizes only quoting and worktree roots around a reported missing-import path', () => {
+  const baseMessage = "Cannot find package '@testing-library/react-hooks' imported from '/tmp/pr378-reconcile/main/src/tests/useStoreSync.test.js'";
+  const candidateMessage = "Cannot find package '@testing-library/react-hooks' imported from /tmp/pr378-reconcile/pr/src/tests/useStoreSync.test.js";
+  const baseFailure = normalizeFailures(fileFailure(baseMessage, '/tmp/pr378-reconcile/main/src/tests/useStoreSync.test.js'), 'BASE')[0];
+  const candidateFailure = normalizeFailures(fileFailure(candidateMessage, '/tmp/pr378-reconcile/pr/src/tests/useStoreSync.test.js'), 'CANDIDATE')[0];
+  const comparison = compareFullReports(
+    fileFailure(baseMessage, '/tmp/pr378-reconcile/main/src/tests/useStoreSync.test.js'),
+    fileFailure(candidateMessage, '/tmp/pr378-reconcile/pr/src/tests/useStoreSync.test.js'),
+  );
+
+  assert.equal(baseFailure.originalMessage, baseMessage);
+  assert.equal(candidateFailure.originalMessage, candidateMessage);
+  assert.equal(baseFailure.normalizedSignature, candidateFailure.normalizedSignature);
+  assert.equal(baseFailure.normalizedMessage, candidateFailure.normalizedMessage);
+  assert.equal(comparison.sharedFailures.length, 1);
+  assert.equal(comparison.rawCandidateOnlyFailures.length, 0);
+  assert.equal(comparison.focusTargets.length, 0);
+  assert.equal(comparison.unresolvedDiagnosticComparisons.length, 0);
+});
+
+test('keeps distinct missing-import package names as distinct diagnostics', () => {
+  const comparison = compareFullReports(
+    fileFailure("Cannot find package 'base-package' imported from /tmp/pr378-reconcile/main/src/tests/useStoreSync.test.js", '/tmp/pr378-reconcile/main/src/tests/useStoreSync.test.js'),
+    fileFailure("Cannot find package 'candidate-package' imported from '/tmp/pr378-reconcile/pr/src/tests/useStoreSync.test.js'", '/tmp/pr378-reconcile/pr/src/tests/useStoreSync.test.js'),
+  );
+
+  assert.equal(comparison.sharedFailures.length, 0);
+  assert.equal(comparison.rawCandidateOnlyFailures.length, 1);
+  assert.equal(comparison.unresolvedDiagnosticComparisons.length, 1);
+  assert.equal(comparison.unresolvedDiagnosticComparisons[0].classification, 'SEMANTIC_DIAGNOSTIC_CHANGE');
+});
+
 test('normalizes volatile Promise.all stack indexes without changing test identity', () => {
   const comparison = compareFullReports(
     report('ENOENT: file missing\n    at Promise.all (index 0)'),

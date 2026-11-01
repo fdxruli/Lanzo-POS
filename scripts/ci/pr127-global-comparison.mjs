@@ -72,8 +72,9 @@ export function normalizeErrorSignature(message) {
   return String(message || 'missing failure message')
     .replaceAll('\\', '/')
     .replace(/\u001b\[[0-9;]*m/g, '')
-    .replace(/[A-Za-z]:\/[^\s)]+/g, '<workspace-path>')
-    .replace(/\/(?:home|tmp|runner|github|__w)\/[^\s)]+/g, '<workspace-path>')
+    .replace(/[A-Za-z]:\/[^\s)'\"]+/g, '<workspace-path>')
+    .replace(/\/(?:home|tmp|runner|github|__w)\/[^\s)'\"]+/g, '<workspace-path>')
+    .replace(/(['"])<workspace-path>\1/g, '<workspace-path>')
     .replace(/:(\d+):(\d+)\b/g, ':<line>:<column>')
     .replace(/\b\d+(?:\.\d+)?(?:ms|s)\b/gi, '<duration>')
     .replace(/\b(?:20\d{2}-\d{2}-\d{2}[T ][^\s]+|\d{2}:\d{2}:\d{2}\.\d{3})\b/g, '<timestamp>')
@@ -95,6 +96,7 @@ function extractPrimaryMessage(message) {
 function normalizeCheckoutPaths(message) {
   return String(message || '')
     .replace(/\/home\/runner\/work\/[^/\s)]+\/[^/\s)]+\/(?:main|pr)\//g, '<checkout>/')
+    .replace(/\/tmp\/[^/\s)]+\/(?:main|pr)\//g, '<checkout>/')
     .replace(/(['"])<checkout>\/([^'"]+)\1/g, '<checkout>/$2');
 }
 
