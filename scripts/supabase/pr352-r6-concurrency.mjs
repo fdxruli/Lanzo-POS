@@ -432,3 +432,109 @@ export async function runRestaurantCutoverConcurrency({ query, psqlBin, env, cre
     if (cleanupFailures.length) throw new AggregateError(cleanupFailures, 'one or more psql sessions failed cleanup');
   }
 }
+
+function versionedUpsertSql(localOrderId, idempotencyKey, lineId, itemName = 'Bridge synthetic product') {
+  return `set role anon; select public.pos_upsert_restaurant_order_versioned_v1(
+    'lab-license-a','lab-device-a','lab-device-token-a','lab-admin-session',
+    jsonb_build_object('localOrderId',${quote(localOrderId)},'clientContractVersion',2,
+      'tableLabel','Concurrent versioned request','status','pending','fulfillmentStatus','pending',
+      'source','tables','subtotal',10,'total',10),
+    jsonb_build_array(jsonb_build_object('localLineId',${quote(lineId)},'productId','bridge-restaurant-product',
+      'productName',${quote(itemName)},'quantity',1,'unitPrice',10,'lineTotal',10)),
+    ${quote(idempotencyKey)})::text; reset role;`;
+}
+
+function sessionJson(session, description) {
+  const jsonLines = session.stdout.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.startsWith('{'));
+  assert.ok(jsonLines.length > 0, description + ' must emit the PostgreSQL JSON receipt');
+  return JSON.parse(jsonLines.at(-1));
+}
+
+export async function runVersionedUpsertIdempotencyRaces({ query, psqlBin, env }) {
+  const scenarios = [];
+  const sessions = new Set();
+  const start = (name) => {
+    const session = startPsqlSession(name, psqlBin, env);
+    sessions.add(session);
+    return session;
+  };
+
+  const runRace = async ({ name, localOrderId, idempotencyKey, conflict }) => {
+    const holderName = `pr352-r6-${name}-holder`;
+    const contenderName = `pr352-r6-${name}-contender`;
+    const holder = start(holderName);
+    const contender = start(contenderName);
+    holder.send('begin;');
+    holder.send(versionedUpsertSql(localOrderId, idempotencyKey, localOrderId + '-line'));
+    const holderReady = await waitForObserved(holderName + ' first versioned request remains uncommitted',
+      () => observeActivity(query, holderName),
+      (rows) => rows.some((row) => row.state === 'idle in transaction'));
+    const holderResponse = sessionJson(holder, holderName);
+    assert.equal(holderResponse.success, true, holderName + ' must complete the authentic upsert before commit');
+    assert.ok(holderResponse.order?.id, holderName + ' must return its persisted parent identity');
+
+    contender.send('begin;');
+    contender.send(versionedUpsertSql(localOrderId, idempotencyKey, localOrderId + '-line',
+      conflict ? 'Different synthetic product name' : 'Bridge synthetic product'));
+    const contenderBlocked = await waitForObserved(contenderName + ' waits for first transaction',
+      () => observeActivity(query, contenderName),
+      (rows) => rows.some((row) => row.state === 'active' && row.waitEventType === 'Lock'
+        && row.blockedBy.includes(holderReady.find((row) => row.state === 'idle in transaction').pid)));
+    const contenderActivity = contenderBlocked.find((row) => row.state === 'active' && row.waitEventType === 'Lock');
+    assert.ok(contenderActivity.queryText.includes('pos_upsert_restaurant_order_versioned_v1'),
+      contenderName + ' must have submitted the complete versioned SQL call to PostgreSQL');
+
+    holder.finish('commit;');
+    contender.finish('commit;');
+    const holderExit = await waitForSessionExit(holder);
+    const contenderExit = await waitForSessionExit(contender);
+    assertSessionSuccess(holderName, holderExit);
+    assertSessionSuccess(contenderName, contenderExit);
+    const contenderResponse = sessionJson(contender, contenderName);
+    if (conflict) {
+      assert.equal(contenderResponse.success, false);
+      assert.equal(contenderResponse.code, 'IDEMPOTENCY_CONFLICT');
+      assert.equal('order' in contenderResponse, false, 'A conflicting request must never receive the stored receipt');
+    } else {
+      assert.deepEqual(contenderResponse, holderResponse,
+        'A concurrent exact retry must recover the one committed receipt');
+    }
+    const finalState = JSON.parse(await query(`select json_build_object(
+      'parents',(select count(*) from public.pos_restaurant_orders where license_id='00000000-0000-0000-0000-000000000001'::uuid and local_order_id=${quote(localOrderId)}),
+      'items',(select count(*) from public.pos_restaurant_order_items where license_id='00000000-0000-0000-0000-000000000001'::uuid and restaurant_order_id=${quote(holderResponse.order.id)}),
+      'events',(select count(*) from public.pos_sync_events where license_id='00000000-0000-0000-0000-000000000001'::uuid and idempotency_key=${quote(idempotencyKey)}),
+      'ledger',(select count(*) from public.pos_idempotency_keys where license_id='00000000-0000-0000-0000-000000000001'::uuid and idempotency_key=${quote(idempotencyKey)}),
+      'proofs',(select count(*) from private.restaurant_order_upsert_replay_proofs_v1 where license_id='00000000-0000-0000-0000-000000000001'::uuid and idempotency_key=${quote(idempotencyKey)})
+    )::text`));
+    assert.deepEqual(finalState, { parents: 1, items: 1, events: 2, ledger: 1, proofs: 1 },
+      name + ' must leave exactly one parent, item, idempotency row, and strong proof');
+    assert.equal(holderExit.signal, null);
+    assert.equal(contenderExit.signal, null);
+    scenarios.push({
+      name,
+      contenderQuerySubmitted: true,
+      waitEventType: contenderActivity.waitEventType,
+      waitEvent: contenderActivity.waitEvent,
+      blockedBy: contenderActivity.blockedBy,
+      releaseOrder: 'holder COMMIT, then contender COMMIT',
+      holderExitCode: holderExit.code,
+      contenderExitCode: contenderExit.code,
+      holderResponse: conflict ? 'successful first write' : 'receipt preserved',
+      contenderResponse: conflict ? 'IDEMPOTENCY_CONFLICT without receipt' : 'same committed receipt',
+      finalState,
+      status: 'PASS',
+    });
+  };
+
+  try {
+    await runRace({ name: 'versioned-idempotency-identical', localOrderId: 'bridge-r20-concurrent-identical',
+      idempotencyKey: 'bridge-r20-concurrent-identical-key', conflict: false });
+    await runRace({ name: 'versioned-idempotency-conflict', localOrderId: 'bridge-r20-concurrent-conflict',
+      idempotencyKey: 'bridge-r20-concurrent-conflict-key', conflict: true });
+    return scenarios;
+  } finally {
+    for (const session of sessions) {
+      if (!session.closed) await session.kill();
+    }
+  }
+}

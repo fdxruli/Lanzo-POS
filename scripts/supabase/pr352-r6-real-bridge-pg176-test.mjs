@@ -5,7 +5,7 @@ import { promisify } from 'node:util';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { runRestaurantCutoverConcurrency } from './pr352-r6-concurrency.mjs';
+import { runRestaurantCutoverConcurrency, runVersionedUpsertIdempotencyRaces } from './pr352-r6-concurrency.mjs';
 import { runRestaurantFinancialRaces } from './pr352-r6-financial-races.mjs';
 import { runRestaurantCancellationScenarios } from './pr352-r6-cancellation.mjs';
 import { assertRestaurantOrderItemRelationship, restaurantOrderItemSnapshotSql, runPreparationStationBehavior } from './pr352-r6-preparation-station.mjs';
@@ -25,6 +25,7 @@ const rateLimitedUpsertWrapperManifestPath = path.join(root, 'supabase/tests/fix
 const dispatcherManifestPath = path.join(root, 'supabase/tests/fixtures/pr352-r6/dispatcher-fingerprint.json');
 const bridgePath = path.join(root, 'docs/evidence/20261030182733_restaurant_cloud_transition_bridge_v1.sql');
 const threeD14Path = path.join(root, 'supabase/migrations/20261026214837_restaurant_sale_dispatcher_guard_3d14.sql');
+const versionedUpsertCall = 'public.pos_upsert_restaurant_order_versioned_v1(';
 const psqlBin = process.env.PSQL_BIN || 'psql';
 const connect = ['-X', '-q', '-v', 'ON_ERROR_STOP=1', '-h', '127.0.0.1', '-p', process.env.PGPORT || '5432', '-U', process.env.PGUSER || 'postgres', '-d', 'pr352_bridge_isolated'];
 const env = { ...process.env, PGHOST: '127.0.0.1', PGDATABASE: 'pr352_bridge_isolated', PGCONNECT_TIMEOUT: '5' };
@@ -35,8 +36,10 @@ let bridgeStatus = 'FAIL';
 let failure = null;
 let adminOffEvidence = null;
 let preparationStationEvidence = null;
+let idempotencyEvidence = null;
 const completedChecks = [];
 let concurrencyResults = [];
+let idempotencyConcurrencyResults = [];
 let financialRaceResults = [];
 let cancellationResults = [];
 const writerChecks = [];
@@ -115,6 +118,20 @@ async function runSql(sql, label) {
   await runFile(file, label);
 }
 
+async function assertSqlFailure(sql, expectedState, expectedMessage, label) {
+  let failureResult = null;
+  try {
+    await runPsql(['-A', '-t', '-v', 'VERBOSITY=verbose', '-c', sql]);
+  } catch (error) {
+    failureResult = error;
+  }
+  assert.ok(failureResult, `${label} must be rejected by PostgreSQL`);
+  const stderr = String(failureResult.stderr || failureResult.message || '');
+  assert.match(stderr, new RegExp(`ERROR:\\s+${expectedState}:`), `${label} SQLSTATE must be observed from PostgreSQL`);
+  assert.ok(stderr.includes(expectedMessage), `${label} must fail with ${expectedMessage}; stderr=${stderr}`);
+  return { sqlstate: expectedState, message: expectedMessage, stderr: stderr.slice(0, 1000) };
+}
+
 async function createLegacyOrder(localOrderId, idempotencyKey) {
   const result = JSON.parse(await query(`select public.pos_upsert_restaurant_order_unlimited(
     'lab-license-a','lab-device-a','lab-device-token-a','lab-admin-session',
@@ -133,6 +150,55 @@ async function createLegacyOrder(localOrderId, idempotencyKey) {
 
 function quoteSql(value) {
   return "'" + String(value).replaceAll("'", "''") + "'";
+}
+
+function versionedClientUpsertSql({
+  licenseKey = 'lab-license-a', device = 'lab-device-a', deviceToken = 'lab-device-token-a',
+  staffSession = 'lab-admin-session', role = 'anon', localOrderId, idempotencyKey, lineId,
+  tableLabel = 'Versioned client', itemName = 'Bridge synthetic product', quantity = 1,
+  expectedParentVersion = null, physicalOrderId = null, physicalLineId = null,
+}) {
+  const orderPairs = [
+    "'localOrderId'", quoteSql(localOrderId), "'clientContractVersion'", '2',
+    "'tableLabel'", quoteSql(tableLabel), "'status'", "'pending'",
+    "'fulfillmentStatus'", "'pending'", "'source'", "'tables'", "'subtotal'", '10', "'total'", '10',
+  ];
+  if (expectedParentVersion !== null) {
+    orderPairs.push("'expectedParentVersion'", quoteSql(expectedParentVersion));
+  }
+  if (physicalOrderId !== null) orderPairs.push("'id'", quoteSql(physicalOrderId));
+  const itemPairs = ["'localLineId'", quoteSql(lineId)];
+  if (physicalLineId !== null) itemPairs.push("'id'", quoteSql(physicalLineId));
+  itemPairs.push("'productId'", "'bridge-restaurant-product'", "'productName'", quoteSql(itemName),
+    "'quantity'", String(Number(quantity)), "'unitPrice'", '10', "'lineTotal'", '10');
+  return `set role ${role}; select ${versionedUpsertCall}
+    ${quoteSql(licenseKey)},${quoteSql(device)},${quoteSql(deviceToken)},${quoteSql(staffSession)},
+    jsonb_build_object(${orderPairs.join(',')}),
+    jsonb_build_array(jsonb_build_object(${itemPairs.join(',')})),
+    ${quoteSql(idempotencyKey)})::text; reset role;`;
+}
+
+async function captureVersionedOrderState(localOrderId, idempotencyKey) {
+  return JSON.parse(await query(`select json_build_object(
+    'parent', (select json_build_object('id',id,'serverVersion',server_version,'updatedAt',updated_at,
+      'status',status,'paymentStatus',payment_status) from public.pos_restaurant_orders
+      where license_id='00000000-0000-0000-0000-000000000001' and local_order_id=${quoteSql(localOrderId)}),
+    'items', (select json_agg(json_build_object('id',id,'serverVersion',server_version,'updatedAt',updated_at,
+      'quantity',quantity) order by id) from public.pos_restaurant_order_items
+      where license_id='00000000-0000-0000-0000-000000000001' and restaurant_order_id=(select id from public.pos_restaurant_orders
+        where license_id='00000000-0000-0000-0000-000000000001' and local_order_id=${quoteSql(localOrderId)})),
+    'eventsForKey',(select count(*) from public.pos_sync_events where license_id='00000000-0000-0000-0000-000000000001'
+      and idempotency_key=${quoteSql(idempotencyKey)}),
+    'ledgerRowsForKey',(select count(*) from public.pos_idempotency_keys where license_id='00000000-0000-0000-0000-000000000001'
+      and idempotency_key=${quoteSql(idempotencyKey)}),
+    'proofRowsForKey',(select count(*) from private.restaurant_order_upsert_replay_proofs_v1 where license_id='00000000-0000-0000-0000-000000000001'
+      and idempotency_key=${quoteSql(idempotencyKey)}),
+    'sales',(select count(*) from public.pos_sales),
+    'cashMovements',(select count(*) from public.pos_cash_movements),
+    'inventoryMovements',(select count(*) from public.pos_inventory_movements),
+    'customerLedger',(select count(*) from public.pos_customer_ledger),
+    'financialOperations',(select count(*) from public.pos_financial_operations)
+  )::text`));
 }
 
 async function writeEvidence() {
@@ -157,9 +223,11 @@ async function writeEvidence() {
     adminOff: adminOffEvidence,
     writerChecks,
     concurrency: concurrencyResults,
+    idempotencyConcurrency: idempotencyConcurrencyResults,
     financialRaces: financialRaceResults,
     cancellation: cancellationResults,
     preparationStationDependencies: preparationStationEvidence,
+    idempotency: idempotencyEvidence,
     mockedDependencies: [
       'Authentication and license/device/session rows are synthetic.',
       'Cocina station schema and six direct Restaurant helper bodies are matched to read-only Production pg_catalog fingerprints; station rows and actor IDs are synthetic.',
@@ -421,7 +489,7 @@ async function run() {
   const bridgeSource = await readFile(bridgePath, 'utf8');
   await writeFile(rollbackPath, `${bridgeSource}\nDO $rollback_probe$ BEGIN RAISE EXCEPTION 'PR352_BRIDGE_ROLLBACK_PROBE' USING ERRCODE='P0001'; END $rollback_probe$;\n`);
   await runExpectedRollback(rollbackPath, 'PR352_BRIDGE_ROLLBACK_PROBE');
-  assert.equal(await query("select count(*) from pg_class where oid in (to_regclass('private.restaurant_cloud_contract_state'),to_regclass('private.restaurant_admin_activation'),to_regclass('private.restaurant_bridge_cancel_permits'))"), '0',
+  assert.equal(await query("select count(*) from pg_class where oid in (to_regclass('private.restaurant_cloud_contract_state'),to_regclass('private.restaurant_admin_activation'),to_regclass('private.restaurant_bridge_cancel_permits'),to_regclass('private.restaurant_order_upsert_replay_proofs_v1'))"), '0',
     'Failed bridge migration must leave no created private tables');
   assert.equal(await query(`select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
     where (n.nspname='private' and p.proname in ('enter_restaurant_transition_write_v1','set_restaurant_transition_policy_v1',
@@ -502,12 +570,15 @@ async function run() {
   const tableState = await query(`select json_agg(json_build_object(
     'name',c.relname,'rls',c.relrowsecurity,
     'anon_select',has_table_privilege('anon',c.oid,'select'),
-    'authenticated_select',has_table_privilege('authenticated',c.oid,'select')
+    'authenticated_select',has_table_privilege('authenticated',c.oid,'select'),
+    'service_role_select',has_table_privilege('service_role',c.oid,'select')
   ) order by c.relname)::text from pg_class c join pg_namespace n on n.oid=c.relnamespace
-  where n.nspname='private' and c.relname in ('restaurant_cloud_contract_state','restaurant_admin_activation','restaurant_bridge_cancel_permits')`);
+  where n.nspname='private' and c.relname in ('restaurant_cloud_contract_state','restaurant_admin_activation','restaurant_bridge_cancel_permits',
+    'restaurant_order_upsert_replay_proofs_v1')`);
   const tables = JSON.parse(tableState);
-  assert.equal(tables.length, 3, 'All private bridge tables must be installed');
-  assert.ok(tables.every((row) => row.rls && !row.anon_select && !row.authenticated_select), 'Bridge tables must be RLS protected and unreadable to browser roles');
+  assert.equal(tables.length, 4, 'All private bridge tables must be installed');
+  assert.ok(tables.every((row) => row.rls && !row.anon_select && !row.authenticated_select && !row.service_role_select),
+    'Bridge tables must be RLS protected and unreadable to browser and service roles');
   const adminState = JSON.parse(await query(`select json_build_object(
     'contractVersion',s.contract_version,
     'writesPaused',s.writes_paused,
@@ -749,16 +820,259 @@ async function run() {
     jsonb_build_array(jsonb_build_object('localLineId','bridge-versioned-line','productId','bridge-restaurant-product',
       'productName','Bridge synthetic product','quantity',1,'unitPrice',10,'lineTotal',10)),
     'bridge-versioned-client-upsert')::text; reset role;`;
-  const versionedUpsert = JSON.parse(await query(versionedUpsertSql));
+  const canonicalVersionedSql = versionedUpsertSql;
+  const versionedUpsert = JSON.parse(await query(canonicalVersionedSql));
   assert.equal(versionedUpsert.success, true, 'New client contract version 2 payload must remain admitted during bridge v1');
-  const versionedReplay = JSON.parse(await query(versionedUpsertSql));
-  assert.deepEqual(versionedReplay, versionedUpsert, 'A legitimate versioned replay must recover the exact receipt');
   const versionedRelation = assertRestaurantOrderItemRelationship(
     JSON.parse(await query(restaurantOrderItemSnapshotSql(clientLicenseId, 'bridge-versioned-client', 'bridge-versioned-line'))),
     { licenseId: clientLicenseId, localOrderId: 'bridge-versioned-client', localLineId: 'bridge-versioned-line' },
   );
   assert.equal(versionedUpsert.order?.id, versionedRelation.parentId, 'Versioned receipt must identify its persisted parent');
   assert.equal(versionedUpsert.order?.localOrderId, versionedRelation.localOrderId);
+
+  currentStage = 'R20 canonical fingerprint and post-commit retry';
+  const orderExpr = `jsonb_build_object('localOrderId','bridge-versioned-client','clientContractVersion',2,
+    'tableLabel','Versioned client','status','pending','fulfillmentStatus','pending','source','tables','subtotal',10,'total',10)
+    || jsonb_build_object('clientContractVersion',2)`;
+  const itemsExpr = `jsonb_build_array(jsonb_build_object('localLineId','bridge-versioned-line','productId','bridge-restaurant-product',
+    'productName','Bridge synthetic product','quantity',1,'unitPrice',10,'lineTotal',10))`;
+  const fingerprintText = `(${orderExpr})::text||'|'||(${itemsExpr})::text`;
+  const ledgerProof = JSON.parse(await query(`select json_build_object(
+    'operation',i.operation_type,'entityType',i.entity_type,'entityId',i.entity_id,'status',i.status,
+    'requestHashMatches',i.request_hash=md5(${fingerprintText}),
+    'responseMatches',i.response_payload=${quoteSql(JSON.stringify(versionedUpsert))}::jsonb,
+    'responseKeyMatches',i.response_payload->>'idempotency_key'=i.idempotency_key,
+    'responseOrderMatches',i.response_payload->'order'->>'id'=i.entity_id,
+    'proofCount',(select count(*) from private.restaurant_order_upsert_replay_proofs_v1 p
+      where p.license_id=i.license_id and p.idempotency_key=i.idempotency_key),
+    'proofMatches',p.request_sha256=encode(extensions.digest(convert_to(${fingerprintText},'UTF8'),'sha256'),'hex'),
+    'proofParentMatches',p.local_order_id='bridge-versioned-client' and p.restaurant_order_id=i.entity_id,
+    'proofActorMatches',p.actor_type='admin' and p.actor_id='00000000-0000-0000-0000-0000000000aa'::uuid
+      and p.device_id='00000000-0000-0000-0000-00000000000a'::uuid,
+    'expiresAtPresent',i.expires_at is not null
+  )::text from public.pos_idempotency_keys i join private.restaurant_order_upsert_replay_proofs_v1 p
+    on p.license_id=i.license_id and p.idempotency_key=i.idempotency_key
+  where i.license_id=${quoteSql(clientLicenseId)}::uuid and i.idempotency_key='bridge-versioned-client-upsert'`));
+  assert.deepEqual(ledgerProof, {
+    operation: 'restaurant_order.upsert', entityType: 'restaurant_order', entityId: versionedUpsert.order.id,
+    status: 'completed', requestHashMatches: true, responseMatches: true, responseKeyMatches: true,
+    responseOrderMatches: true, proofCount: 1, proofMatches: true, proofParentMatches: true,
+    proofActorMatches: true, expiresAtPresent: true,
+  }, 'The replay proof must match the writer JSONB hash input, ledger receipt and actor binding');
+  const beforeReplayState = await captureVersionedOrderState('bridge-versioned-client','bridge-versioned-client-upsert');
+  const versionedReplay = JSON.parse(await query(canonicalVersionedSql));
+  const afterReplayState = await captureVersionedOrderState('bridge-versioned-client','bridge-versioned-client-upsert');
+  assert.deepEqual(versionedReplay, versionedUpsert, 'A post-COMMIT request with lost version/response must recover its original receipt');
+  assert.deepEqual(afterReplayState, beforeReplayState,
+    'An exact replay must not modify the parent, lines, sync events, sales, cash, inventory or credit');
+  const replayRateCount = await query(`select request_count from public.pos_rpc_rate_limits where license_key='lab-license-a'
+    and device_fingerprint='lab-device-a' and rpc_name='pos_upsert_restaurant_order' and scope='POS_WRITE'
+    and staff_session_hash=encode(extensions.digest('lab-admin-session','sha256'),'hex')`);
+  assert.equal(replayRateCount, '2', 'The original write and its exact replay must each consume one authentic rate-limit attempt');
+
+  const changedOrderReplay = JSON.parse(await query(versionedClientUpsertSql({ localOrderId:'bridge-versioned-client',
+    idempotencyKey:'bridge-versioned-client-upsert',lineId:'bridge-versioned-line',tableLabel:'Changed payload' })));
+  assert.equal(changedOrderReplay.success,false);
+  assert.equal(changedOrderReplay.code,'IDEMPOTENCY_CONFLICT');
+  assert.equal('order' in changedOrderReplay,false,'Changed payload must not receive the stored receipt');
+  const changedItemReplay = JSON.parse(await query(versionedClientUpsertSql({ localOrderId:'bridge-versioned-client',
+    idempotencyKey:'bridge-versioned-client-upsert',lineId:'bridge-versioned-line',itemName:'Different item' })));
+  assert.equal(changedItemReplay.code,'IDEMPOTENCY_CONFLICT','Changed articles must not receive the stored receipt');
+  assert.deepEqual(await captureVersionedOrderState('bridge-versioned-client','bridge-versioned-client-upsert'),beforeReplayState,
+    'Payload conflicts must leave every business row unchanged');
+
+  currentStage = 'R20 same-key different-parent conflict';
+  const secondParent = JSON.parse(await query(versionedClientUpsertSql({ localOrderId:'bridge-versioned-second-parent',
+    idempotencyKey:'bridge-versioned-second-parent-key',lineId:'bridge-versioned-second-line' })));
+  assert.equal(secondParent.success,true);
+  const otherParentConflict = JSON.parse(await query(versionedClientUpsertSql({ localOrderId:'bridge-versioned-second-parent',
+    idempotencyKey:'bridge-versioned-client-upsert',lineId:'bridge-versioned-second-line' })));
+  assert.equal(otherParentConflict.success,false);
+  assert.equal(otherParentConflict.code,'IDEMPOTENCY_CONFLICT');
+  assert.equal('order' in otherParentConflict,false,'A key bound to another parent must not return the first parent receipt');
+
+  currentStage = 'R20 version checks and physical ID isolation';
+  const noVersionError = await assertSqlFailure(versionedClientUpsertSql({ localOrderId:'bridge-versioned-client',
+    idempotencyKey:'bridge-versioned-new-key-no-version',lineId:'bridge-versioned-line' }),
+    'P0001','RESTAURANT_ORDER_VERSION_REQUIRED','new key on existing parent without version');
+  const staleVersionError = await assertSqlFailure(versionedClientUpsertSql({ localOrderId:'bridge-versioned-client',
+    idempotencyKey:'bridge-versioned-stale-key',lineId:'bridge-versioned-line',expectedParentVersion:'2000-01-01T00:00:00Z' }),
+    'P0001','RESTAURANT_ORDER_VERSION_CONFLICT','stale parent version');
+  const physicalParentError = await assertSqlFailure(versionedClientUpsertSql({ localOrderId:'bridge-versioned-client',
+    idempotencyKey:'bridge-versioned-physical-id',lineId:'bridge-versioned-line',physicalOrderId:versionedUpsert.order.id }),
+    'P0001','RESTAURANT_ORDER_PHYSICAL_ID_NOT_SUPPORTED','physical parent ID injection');
+  const currentVersion = JSON.parse(await query(`select json_build_object('updatedAt',updated_at)::text
+    from public.pos_restaurant_orders where license_id=${quoteSql(clientLicenseId)}::uuid and local_order_id='bridge-versioned-client'`)).updatedAt;
+  const physicalLineError = await assertSqlFailure(versionedClientUpsertSql({ localOrderId:'bridge-versioned-client',
+    idempotencyKey:'bridge-versioned-physical-line-id',lineId:'bridge-versioned-line',expectedParentVersion:currentVersion,
+    physicalLineId:'bridge-versioned-line' }),
+    'P0001','RESTAURANT_ORDER_LINE_ID_CONFLICT','physical line ID injection');
+  assert.deepEqual(await captureVersionedOrderState('bridge-versioned-client','bridge-versioned-client-upsert'),beforeReplayState,
+    'Version and physical ID rejections must leave the original successful write unchanged');
+
+  currentStage = 'R20 authorization and license isolation';
+  const foreignDeviceError = await assertSqlFailure(versionedClientUpsertSql({ localOrderId:'bridge-versioned-client',
+    idempotencyKey:'bridge-versioned-client-upsert',lineId:'bridge-versioned-line',device:'lab-device-b',
+    deviceToken:'lab-device-token-b',staffSession:'lab-staff-session' }),
+    'P0001','RESTAURANT_TABLE_OWNER_REQUIRED','non-owner Staff replay');
+  const invalidSessionError = await assertSqlFailure(versionedClientUpsertSql({ localOrderId:'bridge-versioned-client',
+    idempotencyKey:'bridge-versioned-client-upsert',lineId:'bridge-versioned-line',staffSession:'invalid-session' }),
+    'P0001','ACTOR_SESSION_INVALID','invalid-session replay');
+  const wrongDeviceSessionError = await assertSqlFailure(versionedClientUpsertSql({ localOrderId:'bridge-versioned-client',
+    idempotencyKey:'bridge-versioned-client-upsert',lineId:'bridge-versioned-line',device:'lab-device-b',
+    deviceToken:'lab-device-token-b',staffSession:'lab-admin-session' }),
+    'P0001','ACTOR_SESSION_INVALID','Admin session replayed from a different device');
+  await runSql(`begin;
+    insert into public.license_devices(id,license_id,device_fingerprint,security_token,is_active,device_mode,device_role)
+      values ('00000000-0000-0000-0000-00000000000e','00000000-0000-0000-0000-000000000002',
+        'lab-device-b-license-b','lab-device-token-b-license-b',true,'admin_only','admin');
+    insert into public.license_admin_users(id,license_id,username,display_name,password_hash,is_owner,is_active)
+      values ('00000000-0000-0000-0000-0000000000ae','00000000-0000-0000-0000-000000000002','lab-admin-b','Lab Admin B',
+        extensions.crypt('lab-only',extensions.gen_salt('bf')),true,true);
+    insert into public.license_admin_sessions(id,license_id,admin_user_id,device_id,session_token_hash,expires_at)
+      values ('00000000-0000-0000-0000-0000000000be','00000000-0000-0000-0000-000000000002',
+        '00000000-0000-0000-0000-0000000000ae','00000000-0000-0000-0000-00000000000e',
+        extensions.crypt('lab-admin-session-b',extensions.gen_salt('bf')),now()+interval '1 day');
+    insert into public.pos_products(id,license_id,name,name_key,price,cost,stock,track_stock)
+      values ('bridge-restaurant-product-b','00000000-0000-0000-0000-000000000002','Bridge synthetic product B',
+        'bridge synthetic product b',10,4,20,true);
+    commit;`, 'second-synthetic-license');
+  const independentLicenseReceipt = JSON.parse(await query(versionedClientUpsertSql({ licenseKey:'lab-license-b',
+    device:'lab-device-b-license-b',deviceToken:'lab-device-token-b-license-b',staffSession:'lab-admin-session-b',
+    localOrderId:'bridge-versioned-client',idempotencyKey:'bridge-versioned-client-upsert',lineId:'bridge-versioned-line-b' })
+    .replaceAll("'bridge-restaurant-product'", "'bridge-restaurant-product-b'")));
+  assert.equal(independentLicenseReceipt.success,true,'The ledger key namespace is per license');
+  assert.notEqual(independentLicenseReceipt.order.id,versionedUpsert.order.id,
+    'A different license must create its own receipt and never receive the first license receipt');
+
+  const staffOwnedVersioned = JSON.parse(await query(versionedClientUpsertSql({ device:'lab-device-b',
+    deviceToken:'lab-device-token-b',staffSession:'lab-staff-session',localOrderId:'bridge-r20-staff-owned',
+    idempotencyKey:'bridge-r20-staff-owned-key',lineId:'bridge-r20-staff-owned-line' })));
+  assert.equal(staffOwnedVersioned.success,true);
+  const otherStaffReplayError = await assertSqlFailure(versionedClientUpsertSql({ device:'lab-device-c',
+    deviceToken:'lab-device-token-c',staffSession:'lab-staff-session-c',localOrderId:'bridge-r20-staff-owned',
+    idempotencyKey:'bridge-r20-staff-owned-key',lineId:'bridge-r20-staff-owned-line' }),
+    'P0001','RESTAURANT_TABLE_OWNER_REQUIRED','different Staff replay');
+  const adminOffReplayError = await assertSqlFailure(versionedClientUpsertSql({ localOrderId:'bridge-r20-staff-owned',
+    idempotencyKey:'bridge-r20-staff-owned-key',lineId:'bridge-r20-staff-owned-line' }),
+    'P0001','RESTAURANT_TABLE_OWNER_REQUIRED','Admin OFF replay of Staff-owned parent');
+  await runSql(`update public.license_staff_users set permissions='{}'::jsonb
+    where id='00000000-0000-0000-0000-0000000000ab'::uuid;`, 'revoke-staff-pos-permission-synthetic');
+  let revokedPermissionError;
+  try {
+    revokedPermissionError = await assertSqlFailure(versionedClientUpsertSql({ device:'lab-device-b',
+      deviceToken:'lab-device-token-b',staffSession:'lab-staff-session',localOrderId:'bridge-r20-staff-owned',
+      idempotencyKey:'bridge-r20-staff-owned-key',lineId:'bridge-r20-staff-owned-line' }),
+      'P0001','POS_PERMISSION_DENIED','revoked Staff POS permission replay');
+  } finally {
+    await runSql(`update public.license_staff_users set permissions='{"pos":true,"cash_register":true}'::jsonb
+      where id='00000000-0000-0000-0000-0000000000ab'::uuid;`, 'restore-staff-pos-permission-synthetic');
+  }
+
+  currentStage = 'R20 processing and damaged ledger rejection';
+  await runSql(`insert into public.pos_idempotency_keys(license_id,idempotency_key,operation_type,entity_type,entity_id,request_hash,status,expires_at)
+    values (${quoteSql(clientLicenseId)}::uuid,'bridge-r20-processing-key','restaurant_order.upsert','restaurant_order',
+      'bridge-r20-processing-order',null,'processing',now()+interval '1 day');`, 'seed-processing-idempotency');
+  const processingReplay = JSON.parse(await query(versionedClientUpsertSql({ localOrderId:'bridge-r20-processing-order',
+    idempotencyKey:'bridge-r20-processing-key',lineId:'bridge-r20-processing-line' })));
+  assert.equal(processingReplay.code,'IDEMPOTENCY_PROCESSING');
+  assert.equal('order' in processingReplay,false);
+  const savedReceiptSql = quoteSql(JSON.stringify(versionedUpsert));
+  await runSql(`update public.pos_idempotency_keys set response_payload=null where license_id=${quoteSql(clientLicenseId)}::uuid
+    and idempotency_key='bridge-versioned-client-upsert';`, 'corrupt-receipt-synthetic');
+  const missingReceipt = JSON.parse(await query(canonicalVersionedSql));
+  assert.equal(missingReceipt.code,'IDEMPOTENCY_CONFLICT','A completed ledger row without its receipt must not replay');
+  assert.equal('order' in missingReceipt,false);
+  await runSql(`update public.pos_idempotency_keys set response_payload=${savedReceiptSql}::jsonb
+    where license_id=${quoteSql(clientLicenseId)}::uuid and idempotency_key='bridge-versioned-client-upsert';`, 'restore-receipt-synthetic');
+  await runSql(`update public.pos_idempotency_keys set response_payload=response_payload-'success'
+    where license_id=${quoteSql(clientLicenseId)}::uuid and idempotency_key='bridge-versioned-client-upsert';`, 'remove-receipt-success-field-synthetic');
+  const missingSuccess = JSON.parse(await query(canonicalVersionedSql));
+  assert.equal(missingSuccess.code,'IDEMPOTENCY_CONFLICT','A malformed receipt missing its success flag must not be returned');
+  assert.equal('order' in missingSuccess,false);
+  await runSql(`update public.pos_idempotency_keys set response_payload=${savedReceiptSql}::jsonb
+    where license_id=${quoteSql(clientLicenseId)}::uuid and idempotency_key='bridge-versioned-client-upsert';`, 'restore-success-field-synthetic');
+  await runSql(`update public.pos_idempotency_keys set operation_type='restaurant_order.cancel_from_pos'
+    where license_id=${quoteSql(clientLicenseId)}::uuid and idempotency_key='bridge-versioned-client-upsert';`, 'alter-operation-binding-synthetic');
+  const otherOperation = JSON.parse(await query(canonicalVersionedSql));
+  assert.equal(otherOperation.code,'IDEMPOTENCY_CONFLICT','A key stored for another operation must not return the upsert receipt');
+  assert.equal('order' in otherOperation,false);
+  await runSql(`update public.pos_idempotency_keys set operation_type='restaurant_order.upsert'
+    where license_id=${quoteSql(clientLicenseId)}::uuid and idempotency_key='bridge-versioned-client-upsert';`, 'restore-operation-binding-synthetic');
+
+  currentStage = 'R20 rollback of first attempt';
+  const rollbackSql = versionedClientUpsertSql({ localOrderId:'bridge-r20-rollback-order',
+    idempotencyKey:'bridge-r20-rollback-key',lineId:'bridge-r20-rollback-line' });
+  await runSql(`begin; ${rollbackSql} rollback;`, 'r20-first-attempt-rollback');
+  const rolledBackState = JSON.parse(await query(`select json_build_object(
+    'parents',(select count(*) from public.pos_restaurant_orders where local_order_id='bridge-r20-rollback-order'),
+    'items',(select count(*) from public.pos_restaurant_order_items where local_line_id='bridge-r20-rollback-line'),
+    'ledger',(select count(*) from public.pos_idempotency_keys where license_id=${quoteSql(clientLicenseId)}::uuid and idempotency_key='bridge-r20-rollback-key'),
+    'proofs',(select count(*) from private.restaurant_order_upsert_replay_proofs_v1 where license_id=${quoteSql(clientLicenseId)}::uuid and idempotency_key='bridge-r20-rollback-key'),
+    'events',(select count(*) from public.pos_sync_events where license_id=${quoteSql(clientLicenseId)}::uuid and idempotency_key='bridge-r20-rollback-key')
+  )::text`));
+  assert.deepEqual(rolledBackState,{parents:0,items:0,ledger:0,proofs:0,events:0},
+    'A rolled-back first attempt must leave no receipt, proof, parent, item or event');
+  const afterRollbackRetry = JSON.parse(await query(rollbackSql));
+  assert.equal(afterRollbackRetry.success,true,'Retry after the first transaction rollback must execute as a new operation');
+
+  currentStage = 'R20 concurrent identical and conflicting requests';
+  idempotencyConcurrencyResults = await runVersionedUpsertIdempotencyRaces({ query, psqlBin, env });
+  assert.equal(idempotencyConcurrencyResults.length,2);
+
+  currentStage = 'R20 terminal parent replay and real rate-limit rejection';
+  const beforeCancellationVersion = JSON.parse(await query(`select json_build_object('updatedAt',updated_at)::text
+    from public.pos_restaurant_orders where license_id=${quoteSql(clientLicenseId)}::uuid and local_order_id='bridge-versioned-client'`)).updatedAt;
+  await query(`select public.pos_cancel_restaurant_order_from_pos_v1('lab-license-a','lab-device-a','lab-device-token-a',
+    'lab-admin-session','bridge-versioned-client',${quoteSql(beforeCancellationVersion)},'R20 synthetic terminal check','bridge-r20-terminal-cancel')::text`);
+  const terminalBeforeReplay = await captureVersionedOrderState('bridge-versioned-client','bridge-versioned-client-upsert');
+  assert.equal(terminalBeforeReplay.parent.status,'cancelled');
+  const terminalReplay = JSON.parse(await query(canonicalVersionedSql));
+  const terminalAfterReplay = await captureVersionedOrderState('bridge-versioned-client','bridge-versioned-client-upsert');
+  assert.deepEqual(terminalReplay,versionedUpsert,'An exact authorized retry may recover its old receipt after a later terminal transition');
+  assert.deepEqual(terminalAfterReplay,terminalBeforeReplay,'Terminal replay must not reopen, edit or duplicate anything');
+  const terminalNewKeyError = await assertSqlFailure(versionedClientUpsertSql({ localOrderId:'bridge-versioned-client',
+    idempotencyKey:'bridge-r20-terminal-new-key',lineId:'bridge-versioned-line',expectedParentVersion:beforeCancellationVersion }),
+    'P0001','RESTAURANT_ORDER_ALREADY_CANCELLED','new write against terminal parent');
+
+  await runSql(`update public.pos_rpc_rate_limits set blocked_until=now()+interval '5 minutes'
+    where license_key='lab-license-a' and device_fingerprint='lab-device-a'
+      and rpc_name='pos_upsert_restaurant_order' and scope='POS_WRITE'
+      and staff_session_hash=encode(extensions.digest('lab-admin-session','sha256'),'hex');`, 'block-versioned-rate-limit');
+  const blockedReplay = JSON.parse(await query(canonicalVersionedSql));
+  assert.equal(blockedReplay.success,false);
+  assert.equal(blockedReplay.code,'RPC_RATE_LIMITED');
+  assert.equal('order' in blockedReplay,false,'Rate-limit rejection must not expose the stored receipt');
+  assert.deepEqual(await captureVersionedOrderState('bridge-versioned-client','bridge-versioned-client-upsert'),terminalBeforeReplay,
+    'A rate-limited replay must not modify business rows or expose a receipt');
+  await runSql(`delete from public.pos_rpc_rate_limits where license_key='lab-license-a'
+    and device_fingerprint='lab-device-a' and rpc_name='pos_upsert_restaurant_order' and scope='POS_WRITE'
+    and staff_session_hash=encode(extensions.digest('lab-admin-session','sha256'),'hex');`, 'cleanup-versioned-rate-limit');
+
+  await runSql(`update public.pos_idempotency_keys set expires_at=clock_timestamp()-interval '1 second'
+    where license_id=${quoteSql(clientLicenseId)}::uuid and idempotency_key='bridge-versioned-client-upsert';`, 'expire-replay-ledger-synthetic');
+  const expiredReplay = JSON.parse(await query(canonicalVersionedSql));
+  assert.equal(expiredReplay.success,false);
+  assert.equal(expiredReplay.code,'IDEMPOTENCY_KEY_EXPIRED');
+  assert.equal('order' in expiredReplay,false,'Expired ledger entries must not return a stale receipt');
+
+  idempotencyEvidence = {
+    status:'PASS',
+    firstWrite: 'R20-01 PASS', postCommitLostResponseReplay: 'R20-02/R20-03 PASS',
+    noDuplicateBusinessEffects: 'PASS', rateLimitBlockedReplay: 'PASS',
+    concurrent: idempotencyConcurrencyResults, rollbackRetry: 'PASS',
+    conflictCases: ['changed order payload','changed articles','different parent','other operation','processing row','missing receipt',
+      'foreign Staff/device','Admin session on another device','different Staff','Admin OFF','revoked POS permission','invalid session','physical parent ID','physical line ID','new key without version',
+      'stale version','terminal parent new write','expired receipt'],
+    terminalReplay: 'exact authorized receipt returned read-only after cancellation',
+    otherLicense: 'same key used in a separate license namespace; separate parent/receipt created',
+    errors: [noVersionError,staleVersionError,physicalParentError,physicalLineError,foreignDeviceError,
+      invalidSessionError,wrongDeviceSessionError,terminalNewKeyError,otherStaffReplayError,adminOffReplayError,revokedPermissionError],
+    hash: { legacyWriter: 'MD5 cross-check only', bridgeProof: 'SHA-256 of exact writer JSONB text hash input' },
+  };
+  passed('versioned idempotency binds the strong request proof, preserves the authentic rate-limit and rejects conflicts',
+    idempotencyEvidence);
+
   passed('legacy and versioned clients persist and replay one correctly licensed parent and item', {
     legacy: { role: 'service_role', relationship: legacyRelation },
     versioned: { role: 'anon', relationship: versionedRelation },

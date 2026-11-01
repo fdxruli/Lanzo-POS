@@ -552,8 +552,9 @@ test('all seven synthetic Restaurant writes match the mapper source contract wit
     assert.ok(!args[5].includes("'source'"), `${expected.scenario} source must not be added to p_items`);
   }
 
-  assert.equal(countOccurrences(runner, 'RESTAURANT_TABLE_OWNER_REQUIRED'), 2,
-    'Admin and non-owning Staff must each continue to be rejected by the ownership rule');
+  assert.equal(countOccurrences(runner,
+    "if state<>'P0001' or message<>'RESTAURANT_TABLE_OWNER_REQUIRED' then raise; end if;"), 2,
+    'Admin and non-owning Staff legacy fixtures must each continue to be rejected by the ownership rule');
   assert.match(runner, /if state<>'P0001' or message<>'ACTOR_SESSION_INVALID' then raise; end if;/,
     'The invalid-session case must reject for the authentication failure, not an unrelated error');
   const capturedFunctions = JSON.parse(await readFile(path.join(root, 'supabase/tests/fixtures/pr338-real-financial/02-function-sources.json'), 'utf8'));
@@ -569,6 +570,59 @@ test('all seven synthetic Restaurant writes match the mapper source contract wit
     'Versioned route must retain its original anon execution context');
   assert.match(runner, /public\.pos_upsert_restaurant_order_versioned_v1\(/,
     'The harness must keep invoking the real versioned wrapper');
+});
+
+test('R20 replay path binds a completed receipt without weakening auth, rate limits, or version guards', async () => {
+  const bridge = await readFile(path.join(root, 'docs/evidence/20261030182733_restaurant_cloud_transition_bridge_v1.sql'), 'utf8');
+  const runner = await readFile(runnerPath, 'utf8');
+  const concurrency = await readFile(path.join(root, 'scripts/supabase/pr352-r6-concurrency.mjs'), 'utf8');
+  const functionMatch = bridge.match(/create function public\.pos_upsert_restaurant_order_versioned_v1\([\s\S]*?\$function\$;/i);
+  assert.ok(functionMatch, 'The exact versioned bridge function must be present');
+  const upsert = functionMatch[0];
+
+  assert.match(bridge, /create table private\.restaurant_order_upsert_replay_proofs_v1[\s\S]*?references public\.pos_idempotency_keys\(license_id,idempotency_key\) on delete cascade/i);
+  assert.match(bridge, /alter table private\.restaurant_order_upsert_replay_proofs_v1 enable row level security/i);
+  assert.match(bridge, /revoke all on private\.restaurant_order_upsert_replay_proofs_v1 from public,anon,authenticated,service_role/i);
+  assert.equal((upsert.match(/public\.enforce_pos_rpc_rate_limit_v2\(/g) || []).length, 1,
+    'The versioned path must consume exactly one attempt under the authentic public wrapper policy');
+  assert.match(upsert, /p_rpc_name:='pos_upsert_restaurant_order',[\s\S]*?p_scope:='POS_WRITE',[\s\S]*?p_max_attempts:=120,p_window_seconds:=600,p_block_seconds:=300/);
+  assert.ok(upsert.indexOf('public.enforce_pos_rpc_rate_limit_v2(') < upsert.indexOf('private.lock_restaurant_order_settlement_v1('),
+    'Rate limiting must precede the parent lock, as in the authentic wrapper');
+  assert.match(upsert, /public\.build_pos_rpc_rate_limited_response\(rate_limit\)/);
+  assert.ok(upsert.includes("request_hash:=md5(coalesce(p_order::text,'')||'|'||coalesce(p_items::text,''));"),
+    'The MD5 cross-check must use exactly the authentic writer input');
+  assert.match(upsert, /extensions\.digest\(convert_to\([\s\S]*?'sha256'\)/);
+  assert.ok(upsert.indexOf('if has_idem or has_proof then') < upsert.indexOf('if o.id is not null then'),
+    'Exact replay must be resolved before version and terminal mutation guards');
+  assert.match(upsert, /jsonb_typeof\(idem\.response_payload->'success'\) is distinct from 'boolean'/,
+    'A missing/null success field must fail closed despite SQL three-valued logic');
+  assert.match(upsert, /proof\.request_sha256 is distinct from request_sha256[\s\S]*?proof\.actor_type is distinct from c->>'actor_type'[\s\S]*?proof\.actor_id is distinct from[\s\S]*?proof\.device_id is distinct from/);
+  assert.match(upsert, /idem\.request_hash is distinct from request_hash/,
+    'The legacy MD5 is only an additional compatibility cross-check');
+  assert.match(upsert, /idem\.response_payload->>'idempotency_key' is distinct from p_idempotency_key/);
+  assert.match(upsert, /idem\.response_payload->'order'->>'id' is distinct from idem\.entity_id/);
+  assert.match(upsert, /public\.pos_upsert_restaurant_order_unlimited\(/);
+  assert.doesNotMatch(upsert, /public\.pos_upsert_restaurant_order\(/,
+    'Delegating to the public wrapper would count the rate limit twice');
+  assert.match(upsert, /i\.xmin=pg_catalog\.pg_current_xact_id\(\)::xid/,
+    'Strong proof must only bind the ledger entry inserted in this transaction');
+
+  for (const requiredStage of [
+    'R20 canonical fingerprint and post-commit retry',
+    'R20 authorization and license isolation',
+    'R20 concurrent identical and conflicting requests',
+    'R20 terminal parent replay and real rate-limit rejection',
+  ]) assert.ok(runner.includes(requiredStage), `${requiredStage} must be emitted by the real PostgreSQL runner`);
+  assert.match(runner, /const beforeReplayState = await captureVersionedOrderState\('bridge-versioned-client','bridge-versioned-client-upsert'\)[\s\S]*?assert\.deepEqual\(afterReplayState,\s*beforeReplayState/,
+    'Post-commit retry must compare business and financial state before and after');
+  assert.match(runner, /response_payload=response_payload-'success'[\s\S]*?missingSuccess\.code,'IDEMPOTENCY_CONFLICT'/,
+    'The PostgreSQL runner must dynamically reject a malformed receipt with a missing success field');
+  assert.match(runner, /wrongDeviceSessionError = await assertSqlFailure[\s\S]*?ACTOR_SESSION_INVALID/,
+    'The PostgreSQL runner must reject reusing an Admin session from a different device');
+  assert.match(concurrency, /contenderQuerySubmitted: true/);
+  assert.match(concurrency, /pg_blocking_pids/);
+  assert.match(concurrency, /holder COMMIT, then contender COMMIT/);
+  assert.match(concurrency, /finalState,\s+status: 'PASS'/);
 });
 
 test('structured evidence gate binds the Admin report to this run and SHA and rejects malformed evidence', async () => {
