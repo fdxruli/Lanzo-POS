@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "source": "Read-only Lanzo Production pg_proc catalog; function definition only",
+  "postgresServerVersionNum": "170006",
+  "rawDataIncluded": false,
+  "credentialsIncluded": false,
+  "entry": {
+    "signature": "public.pos_upsert_restaurant_order(text,text,text,text,jsonb,jsonb,text)",
+    "prosrcSha256": "9e7512bfed56993512f48f6f88bdcda1ee89701f01c262af3d1b3a42e191a8c0",
+    "owner": "postgres",
+    "securityDefiner": true,
+    "config": ["search_path=\"\""],
+    "acl": "{postgres=X/postgres,service_role=X/postgres,anon=X/postgres,authenticated=X/postgres}"
+  }
+}

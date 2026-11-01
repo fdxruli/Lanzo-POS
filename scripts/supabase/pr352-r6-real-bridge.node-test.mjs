@@ -387,7 +387,16 @@ test('full Cocina catalog comparison accepts only the named default CHECK text-c
 test('real PostgreSQL runner applies 3D.14 before the bridge and proves finite loopback-only setup', async () => {
   const runner = await readFile(runnerPath, 'utf8');
   const concurrency = await readFile(concurrencyPath, 'utf8');
+  const clientWrapper = await readFile(path.join(root, 'supabase/tests/fixtures/pr352-r6/verified-rate-limited-upsert-wrapper.sql'), 'utf8');
+  const clientWrapperManifest = JSON.parse(await readFile(path.join(root, 'supabase/tests/fixtures/pr352-r6/verified-rate-limited-upsert-wrapper.json'), 'utf8'));
   assert.ok(runner.indexOf("currentStage = 'apply 3D.14'") < runner.indexOf("currentStage = 'apply forward bridge migration'"));
+  assert.match(runner, /rateLimitedUpsertWrapperFixture[\s\S]*runFile\(rateLimitedUpsertWrapperFixture/);
+  assert.match(runner, /sha256\(rateLimitedUpsert\[0\]\.source\)[\s\S]*prosrcSha256/);
+  assert.match(clientWrapper, /CREATE OR REPLACE FUNCTION public\.pos_upsert_restaurant_order\(/i);
+  assert.match(clientWrapper, /public\.enforce_pos_rpc_rate_limit_v2/);
+  assert.match(clientWrapper, /public\.pos_upsert_restaurant_order_unlimited/);
+  assert.equal(clientWrapperManifest.entry.signature, 'public.pos_upsert_restaurant_order(text,text,text,text,jsonb,jsonb,text)');
+  assert.equal(clientWrapperManifest.entry.prosrcSha256, '9e7512bfed56993512f48f6f88bdcda1ee89701f01c262af3d1b3a42e191a8c0');
   assert.match(runner, /server_version_num/);
   assert.match(runner, /170006/);
   assert.match(runner, /127\.0\.0\.1/);

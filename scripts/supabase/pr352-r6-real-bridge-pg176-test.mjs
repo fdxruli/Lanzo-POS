@@ -19,6 +19,8 @@ const restaurantDependenciesFixture = path.join(root, 'supabase/tests/fixtures/p
 const preparationStationManifestPath = path.join(root, 'supabase/tests/fixtures/pr352-r6/preparation-station-fingerprints.json');
 const restaurantWritersFixture = path.join(root, 'supabase/tests/fixtures/pr352-r6/verified-restaurant-writers.sql');
 const restaurantWritersManifestPath = path.join(root, 'supabase/tests/fixtures/pr352-r6/restaurant-writer-fingerprints.json');
+const rateLimitedUpsertWrapperFixture = path.join(root, 'supabase/tests/fixtures/pr352-r6/verified-rate-limited-upsert-wrapper.sql');
+const rateLimitedUpsertWrapperManifestPath = path.join(root, 'supabase/tests/fixtures/pr352-r6/verified-rate-limited-upsert-wrapper.json');
 const dispatcherManifestPath = path.join(root, 'supabase/tests/fixtures/pr352-r6/dispatcher-fingerprint.json');
 const bridgePath = path.join(root, 'docs/evidence/20261030182733_restaurant_cloud_transition_bridge_v1.sql');
 const threeD14Path = path.join(root, 'supabase/migrations/20261026214837_restaurant_sale_dispatcher_guard_3d14.sql');
@@ -303,6 +305,25 @@ async function run() {
     functionCount: preparationStationActual.functions.length,
   });
   await runFile(restaurantWritersFixture, 'audited Restaurant writer definitions');
+  const rateLimitedUpsertManifest = JSON.parse(await readFile(rateLimitedUpsertWrapperManifestPath, 'utf8'));
+  assert.equal(rateLimitedUpsertManifest.postgresServerVersionNum, '170006');
+  assert.equal(rateLimitedUpsertManifest.rawDataIncluded, false);
+  assert.equal(rateLimitedUpsertManifest.credentialsIncluded, false);
+  await runFile(rateLimitedUpsertWrapperFixture, 'read-only Production-matched rate-limited client wrapper');
+  const rateLimitedUpsert = await captureFunctions([rateLimitedUpsertManifest.entry.signature]);
+  assert.equal(rateLimitedUpsert.length, 1, 'The exact rate-limited upsert wrapper required by the v1 versioned endpoint must exist');
+  assert.equal(sha256(rateLimitedUpsert[0].source), rateLimitedUpsertManifest.entry.prosrcSha256,
+    'The rate-limited public wrapper body must match the read-only Production pg_proc fingerprint');
+  assert.equal(rateLimitedUpsert[0].owner, rateLimitedUpsertManifest.entry.owner);
+  assert.equal(rateLimitedUpsert[0].security_definer, rateLimitedUpsertManifest.entry.securityDefiner);
+  assert.deepEqual(rateLimitedUpsert[0].config, rateLimitedUpsertManifest.entry.config);
+  assert.deepEqual(canonicalizePostgresAcl(rateLimitedUpsert[0].acl), canonicalizePostgresAcl(rateLimitedUpsertManifest.entry.acl));
+  passed('authentic rate-limited public upsert wrapper required by versioned client is present', {
+    signature: rateLimitedUpsertManifest.entry.signature,
+    prosrcSha256: rateLimitedUpsertManifest.entry.prosrcSha256,
+    owner: rateLimitedUpsert[0].owner,
+    securityDefiner: rateLimitedUpsert[0].security_definer,
+  });
   const expectedHashes = JSON.parse(await readFile(path.join(fixture, 'function-hashes.json'), 'utf8'));
   const functionNames = [...new Set(expectedHashes.map((row) => row.proname))];
   const namesSql = functionNames.map((name) => `'${name.replaceAll("'", "''")}'`).join(',');
