@@ -576,18 +576,27 @@ test('R20 replay path binds a completed receipt without weakening auth, rate lim
   const bridge = await readFile(path.join(root, 'docs/evidence/20261030182733_restaurant_cloud_transition_bridge_v1.sql'), 'utf8');
   const runner = await readFile(runnerPath, 'utf8');
   const concurrency = await readFile(path.join(root, 'scripts/supabase/pr352-r6-concurrency.mjs'), 'utf8');
+  const wrapperSnapshot = await readFile(path.join(root, 'supabase/tests/fixtures/pr352-r6/verified-rate-limited-upsert-wrapper.sql'), 'utf8');
   const functionMatch = bridge.match(/create function public\.pos_upsert_restaurant_order_versioned_v1\([\s\S]*?\$function\$;/i);
   assert.ok(functionMatch, 'The exact versioned bridge function must be present');
   const upsert = functionMatch[0];
 
+  assert.ok(wrapperSnapshot.indexOf('public.enforce_pos_rpc_rate_limit_v2(')
+    < wrapperSnapshot.indexOf('public.pos_upsert_restaurant_order_unlimited('),
+  'The versioned route must preserve the read-only Production wrapper’s rate-limit-before-writer order');
+
   assert.match(bridge, /create table private\.restaurant_order_upsert_replay_proofs_v1[\s\S]*?references public\.pos_idempotency_keys\(license_id,idempotency_key\) on delete cascade/i);
   assert.match(bridge, /alter table private\.restaurant_order_upsert_replay_proofs_v1 enable row level security/i);
   assert.match(bridge, /revoke all on private\.restaurant_order_upsert_replay_proofs_v1 from public,anon,authenticated,service_role/i);
+  assert.match(bridge, /request_sha256 text not null check \(request_sha256 ~ '\^\[0-9a-f\]\{64\}\$'\),\s*response_sha256 text not null check \(response_sha256 ~ '\^\[0-9a-f\]\{64\}\$'\)/,
+    'The private proof must bind both the canonical request and the exact stored receipt');
   assert.equal((upsert.match(/public\.enforce_pos_rpc_rate_limit_v2\(/g) || []).length, 1,
     'The versioned path must consume exactly one attempt under the authentic public wrapper policy');
   assert.match(upsert, /p_rpc_name:='pos_upsert_restaurant_order',[\s\S]*?p_scope:='POS_WRITE',[\s\S]*?p_max_attempts:=120,p_window_seconds:=600,p_block_seconds:=300/);
-  assert.ok(upsert.indexOf('public.enforce_pos_rpc_rate_limit_v2(') < upsert.indexOf('private.lock_restaurant_order_settlement_v1('),
-    'Rate limiting must precede the parent lock, as in the authentic wrapper');
+  assert.ok(upsert.indexOf('public.enforce_pos_rpc_rate_limit_v2(') < upsert.indexOf('private.enter_restaurant_transition_write_v1()')
+    && upsert.indexOf('private.enter_restaurant_transition_write_v1()') < upsert.indexOf('private.validate_pos_sync_context(')
+    && upsert.indexOf('public.enforce_pos_rpc_rate_limit_v2(') < upsert.indexOf('private.lock_restaurant_order_settlement_v1('),
+  'The authentic limiter must precede transition admission, which must precede auth/session touch and every business lock');
   assert.match(upsert, /public\.build_pos_rpc_rate_limited_response\(rate_limit\)/);
   assert.ok(upsert.includes("request_hash:=md5(coalesce(p_order::text,'')||'|'||coalesce(p_items::text,''));"),
     'The MD5 cross-check must use exactly the authentic writer input');
@@ -597,6 +606,8 @@ test('R20 replay path binds a completed receipt without weakening auth, rate lim
   assert.match(upsert, /jsonb_typeof\(idem\.response_payload->'success'\) is distinct from 'boolean'/,
     'A missing/null success field must fail closed despite SQL three-valued logic');
   assert.match(upsert, /proof\.request_sha256 is distinct from request_sha256[\s\S]*?proof\.actor_type is distinct from c->>'actor_type'[\s\S]*?proof\.actor_id is distinct from[\s\S]*?proof\.device_id is distinct from/);
+  assert.match(upsert, /proof\.response_sha256 is distinct from encode\(extensions\.digest\(convert_to\(idem\.response_payload::text,'UTF8'\),'sha256'\),'hex'\)/,
+    'Any modified receipt must fail closed before its payload is returned');
   assert.match(upsert, /idem\.request_hash is distinct from request_hash/,
     'The legacy MD5 is only an additional compatibility cross-check');
   assert.match(upsert, /idem\.response_payload->>'idempotency_key' is distinct from p_idempotency_key/);
@@ -605,7 +616,11 @@ test('R20 replay path binds a completed receipt without weakening auth, rate lim
   assert.doesNotMatch(upsert, /public\.pos_upsert_restaurant_order\(/,
     'Delegating to the public wrapper would count the rate limit twice');
   assert.match(upsert, /i\.xmin=pg_catalog\.pg_current_xact_id\(\)::xid/,
-    'Strong proof must only bind the ledger entry inserted in this transaction');
+    'The same-transaction sentinel may mint proof only for this call’s freshly written ledger tuple');
+  assert.match(upsert, /xmin is an ephemeral same-transaction sentinel[\s\S]*?not a durable operation/,
+    'The code must not imply xmin is a permanent logical identity');
+  assert.doesNotMatch(upsert, /idem\.expires_at\s*(?:is null|<=)/,
+    'Replay policy must follow the retained ledger row; the shared writer does not enforce its seven-day marker');
 
   for (const requiredStage of [
     'R20 canonical fingerprint and post-commit retry',
@@ -617,9 +632,26 @@ test('R20 replay path binds a completed receipt without weakening auth, rate lim
     'Post-commit retry must compare business and financial state before and after');
   assert.match(runner, /response_payload=response_payload-'success'[\s\S]*?missingSuccess\.code,'IDEMPOTENCY_CONFLICT'/,
     'The PostgreSQL runner must dynamically reject a malformed receipt with a missing success field');
+  assert.match(runner, /proofResponseMatches',p\.response_sha256=encode\(extensions\.digest\(convert_to\(i\.response_payload::text,'UTF8'\),'sha256'\),'hex'\)/,
+    'The successful receipt evidence must dynamically verify the private response hash');
+  assert.match(runner, /publicAnyPrivilege.*policyCount/s,
+    'The catalog evidence must reject public table ACL entries and unreviewed private-table policies');
+  assert.match(runner, /xidRollbackState[\s\S]*?assert\.deepEqual\(xidRollbackState,\{parents:0,items:0,ledger:0,proofs:0,events:0\}/,
+    'A real top-level rollback must be checked from a separate connection after proof insertion');
+  assert.match(runner, /R20_TEST_IDEMPOTENCY_COMPLETION_FAILURE[\s\S]*?completionFailureState[\s\S]*?assert\.deepEqual\(completionFailureState,\{parents:0,items:0,ledger:0,proofs:0,events:0\}/,
+    'An injected completion failure must prove parent, item, ledger, proof and event atomicity');
+  assert.match(runner, /R20_TEST_PROOF_INSERT_FAILURE[\s\S]*?proofFailureState[\s\S]*?assert\.deepEqual\(proofFailureState,\{parents:0,items:0,ledger:0,proofs:0,events:0\}/,
+    'An injected after-proof failure must prove no private proof or business effect survives');
   assert.match(runner, /wrongDeviceSessionError = await assertSqlFailure[\s\S]*?ACTOR_SESSION_INVALID/,
     'The PostgreSQL runner must reject reusing an Admin session from a different device');
   assert.match(concurrency, /contenderQuerySubmitted: true/);
+  assert.match(concurrency, /name: 'versioned-same-parent-distinct-keys'[\s\S]*?RESTAURANT_ORDER_VERSION_CONFLICT/,
+    'RC-05 must contend with a different key and require the stale parent-version rejection');
+  assert.match(concurrency, /observeRestaurantIdempotencyLock\(query,keyContenderName,sharedKey\)/);
+  assert.match(concurrency, /name:'versioned-same-key-distinct-parents'[\s\S]*?IDEMPOTENCY_CONFLICT/,
+    'A cross-parent retry must wait on and report the exact shared idempotency advisory lock, then reject without receipt disclosure');
+  assert.match(concurrency, /name:'versioned-cutover-rate-limit-order'[\s\S]*?rateWait:[\s\S]*?transitionWait:[\s\S]*?RESTAURANT_CONTRACT_MAINTENANCE/,
+    'The PostgreSQL runner must observe limiter-row wait followed by real exclusive/shared transition-lock wait');
   assert.match(concurrency, /pg_blocking_pids/);
   assert.match(concurrency, /holder COMMIT, then contender COMMIT/);
   assert.match(concurrency, /finalState,\s+status: 'PASS'/);

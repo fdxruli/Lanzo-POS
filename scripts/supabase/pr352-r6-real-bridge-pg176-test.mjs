@@ -181,7 +181,9 @@ function versionedClientUpsertSql({
 async function captureVersionedOrderState(localOrderId, idempotencyKey) {
   return JSON.parse(await query(`select json_build_object(
     'parent', (select json_build_object('id',id,'serverVersion',server_version,'updatedAt',updated_at,
-      'status',status,'paymentStatus',payment_status) from public.pos_restaurant_orders
+      'status',status,'paymentStatus',payment_status,'paidAt',paid_at,'paidSaleId',paid_sale_id,
+      'cancelledAt',cancelled_at,'deletedAt',deleted_at,'archivedAt',archived_at,'checkoutClosedAt',checkout_closed_at)
+      from public.pos_restaurant_orders
       where license_id='00000000-0000-0000-0000-000000000001' and local_order_id=${quoteSql(localOrderId)}),
     'items', (select json_agg(json_build_object('id',id,'serverVersion',server_version,'updatedAt',updated_at,
       'quantity',quantity) order by id) from public.pos_restaurant_order_items
@@ -570,15 +572,39 @@ async function run() {
   const tableState = await query(`select json_agg(json_build_object(
     'name',c.relname,'rls',c.relrowsecurity,
     'anon_select',has_table_privilege('anon',c.oid,'select'),
+    'anon_insert',has_table_privilege('anon',c.oid,'insert'),
+    'anon_update',has_table_privilege('anon',c.oid,'update'),
+    'anon_delete',has_table_privilege('anon',c.oid,'delete'),
     'authenticated_select',has_table_privilege('authenticated',c.oid,'select'),
-    'service_role_select',has_table_privilege('service_role',c.oid,'select')
+    'authenticated_insert',has_table_privilege('authenticated',c.oid,'insert'),
+    'authenticated_update',has_table_privilege('authenticated',c.oid,'update'),
+    'authenticated_delete',has_table_privilege('authenticated',c.oid,'delete'),
+    'service_role_select',has_table_privilege('service_role',c.oid,'select'),
+    'service_role_insert',has_table_privilege('service_role',c.oid,'insert'),
+    'service_role_update',has_table_privilege('service_role',c.oid,'update'),
+    'service_role_delete',has_table_privilege('service_role',c.oid,'delete'),
+    'anon_truncate',has_table_privilege('anon',c.oid,'truncate'),
+    'authenticated_truncate',has_table_privilege('authenticated',c.oid,'truncate'),
+    'service_role_truncate',has_table_privilege('service_role',c.oid,'truncate'),
+    'publicAnyPrivilege',exists(select 1 from aclexplode(coalesce(c.relacl,acldefault('r',c.relowner))) acl where acl.grantee=0),
+    'policyCount',(select count(*) from pg_policy pol where pol.polrelid=c.oid)
   ) order by c.relname)::text from pg_class c join pg_namespace n on n.oid=c.relnamespace
   where n.nspname='private' and c.relname in ('restaurant_cloud_contract_state','restaurant_admin_activation','restaurant_bridge_cancel_permits',
     'restaurant_order_upsert_replay_proofs_v1')`);
   const tables = JSON.parse(tableState);
   assert.equal(tables.length, 4, 'All private bridge tables must be installed');
-  assert.ok(tables.every((row) => row.rls && !row.anon_select && !row.authenticated_select && !row.service_role_select),
-    'Bridge tables must be RLS protected and unreadable to browser and service roles');
+  const effectiveTablePrivilegeKeys = Object.keys(tables[0]).filter((key) =>
+    /^(anon|authenticated|service_role)_(select|insert|update|delete|truncate)$/.test(key));
+  assert.ok(tables.every((row) => row.rls && effectiveTablePrivilegeKeys.every((key) => row[key] === false)),
+    'Bridge private tables must be RLS enabled and have no effective read, write or truncate grants to browser/service roles');
+  assert.ok(tables.every((row) => row.publicAnyPrivilege === false && row.policyCount === 0),
+    'Private bridge tables must have no PUBLIC ACL entry and no row policy that could expose rows');
+  const privateSchemaUsage = JSON.parse(await query(`select json_build_object(
+    'anon',has_schema_privilege('anon','private','usage'),
+    'authenticated',has_schema_privilege('authenticated','private','usage'),
+    'service_role',has_schema_privilege('service_role','private','usage'))::text`));
+  assert.deepEqual(privateSchemaUsage,{anon:false,authenticated:false,service_role:false},
+    'Browser and service roles must not have direct schema access to private bridge tables');
   const adminState = JSON.parse(await query(`select json_build_object(
     'contractVersion',s.contract_version,
     'writesPaused',s.writes_paused,
@@ -830,6 +856,90 @@ async function run() {
   assert.equal(versionedUpsert.order?.id, versionedRelation.parentId, 'Versioned receipt must identify its persisted parent');
   assert.equal(versionedUpsert.order?.localOrderId, versionedRelation.localOrderId);
 
+  const xidProbeSql = `begin; ${versionedClientUpsertSql({ localOrderId:'bridge-r20-xid-probe',
+    idempotencyKey:'bridge-r20-xid-probe-key',lineId:'bridge-r20-xid-probe-line' })}
+    select json_build_object('xminType',pg_typeof(i.xmin)::text,
+      'currentXid8Type',pg_typeof(pg_current_xact_id())::text,
+      'sameTransaction',i.xmin=pg_current_xact_id()::xid)::text
+    from public.pos_idempotency_keys i where i.license_id=${quoteSql(clientLicenseId)}::uuid
+      and i.idempotency_key='bridge-r20-xid-probe-key'; rollback;`;
+  const xidProbeRun = await runPsql(['-A','-t','-c',xidProbeSql]);
+  const xidProbeRows = xidProbeRun.stdout.split(/\r?\n/).map((line) => line.trim()).filter((line) => line.startsWith('{'));
+  assert.equal(xidProbeRows.length, 2, 'The same-transaction XID probe must return both the RPC receipt and catalog observation');
+  const xidProbeReceipt = JSON.parse(xidProbeRows[0]);
+  const xidProbe = JSON.parse(xidProbeRows[1]);
+  assert.equal(xidProbeReceipt.success, true, 'The XID probe must execute the real versioned writer');
+  assert.deepEqual(xidProbe,{ xminType:'xid',currentXid8Type:'xid8',sameTransaction:true },
+    'PostgreSQL must expose xmin as xid, pg_current_xact_id as xid8, and the cast must identify this transaction');
+  const xidRollbackState = JSON.parse(await query(`select json_build_object(
+    'parents',(select count(*) from public.pos_restaurant_orders where license_id=${quoteSql(clientLicenseId)}::uuid and local_order_id='bridge-r20-xid-probe'),
+    'items',(select count(*) from public.pos_restaurant_order_items where license_id=${quoteSql(clientLicenseId)}::uuid and local_line_id='bridge-r20-xid-probe-line'),
+    'ledger',(select count(*) from public.pos_idempotency_keys where license_id=${quoteSql(clientLicenseId)}::uuid and idempotency_key='bridge-r20-xid-probe-key'),
+    'proofs',(select count(*) from private.restaurant_order_upsert_replay_proofs_v1 where license_id=${quoteSql(clientLicenseId)}::uuid and idempotency_key='bridge-r20-xid-probe-key'),
+    'events',(select count(*) from public.pos_sync_events where license_id=${quoteSql(clientLicenseId)}::uuid and idempotency_key='bridge-r20-xid-probe-key'))::text`));
+  assert.deepEqual(xidRollbackState,{parents:0,items:0,ledger:0,proofs:0,events:0},
+    'A top-level ROLLBACK after the writer has inserted its proof must remove every effect visible to a new connection');
+
+  currentStage = 'R20 failure during idempotency completion';
+  const completionFailureKey = 'bridge-r20-completion-failure-key';
+  try {
+    await runSql(`create function private.pr352_test_fail_idempotency_completion_v1()
+      returns trigger language plpgsql set search_path='' as $function$
+      begin
+        if new.idempotency_key=${quoteSql(completionFailureKey)} and new.status='completed' then
+          raise exception 'R20_TEST_IDEMPOTENCY_COMPLETION_FAILURE' using errcode='P0001';
+        end if;
+        return new;
+      end; $function$;
+      create trigger pr352_test_fail_idempotency_completion_v1 before update on public.pos_idempotency_keys
+        for each row execute function private.pr352_test_fail_idempotency_completion_v1();`,
+    'install-completion-fault-injection');
+    await assertSqlFailure(versionedClientUpsertSql({ localOrderId:'bridge-r20-completion-failure',
+      idempotencyKey:completionFailureKey,lineId:'bridge-r20-completion-failure-line' }),
+      'P0001','R20_TEST_IDEMPOTENCY_COMPLETION_FAILURE','injected completion failure after parent/item/event writes');
+    const completionFailureState = JSON.parse(await query(`select json_build_object(
+      'parents',(select count(*) from public.pos_restaurant_orders where license_id=${quoteSql(clientLicenseId)}::uuid and local_order_id='bridge-r20-completion-failure'),
+      'items',(select count(*) from public.pos_restaurant_order_items where license_id=${quoteSql(clientLicenseId)}::uuid and local_line_id='bridge-r20-completion-failure-line'),
+      'ledger',(select count(*) from public.pos_idempotency_keys where license_id=${quoteSql(clientLicenseId)}::uuid and idempotency_key=${quoteSql(completionFailureKey)}),
+      'proofs',(select count(*) from private.restaurant_order_upsert_replay_proofs_v1 where license_id=${quoteSql(clientLicenseId)}::uuid and idempotency_key=${quoteSql(completionFailureKey)}),
+      'events',(select count(*) from public.pos_sync_events where license_id=${quoteSql(clientLicenseId)}::uuid and idempotency_key=${quoteSql(completionFailureKey)}))::text`));
+    assert.deepEqual(completionFailureState,{parents:0,items:0,ledger:0,proofs:0,events:0},
+      'A failure while completing idempotency must roll back the entire operation');
+  } finally {
+    await runSql(`drop trigger if exists pr352_test_fail_idempotency_completion_v1 on public.pos_idempotency_keys;
+      drop function if exists private.pr352_test_fail_idempotency_completion_v1();`, 'remove-completion-fault-injection');
+  }
+
+  currentStage = 'R20 failure after private replay proof insert';
+  const proofFailureKey = 'bridge-r20-proof-failure-key';
+  try {
+    await runSql(`create function private.pr352_test_fail_after_replay_proof_v1()
+      returns trigger language plpgsql set search_path='' as $function$
+      begin
+        if new.idempotency_key=${quoteSql(proofFailureKey)} then
+          raise exception 'R20_TEST_PROOF_INSERT_FAILURE' using errcode='P0001';
+        end if;
+        return new;
+      end; $function$;
+      create trigger pr352_test_fail_after_replay_proof_v1 after insert on private.restaurant_order_upsert_replay_proofs_v1
+        for each row execute function private.pr352_test_fail_after_replay_proof_v1();`,
+    'install-proof-fault-injection');
+    await assertSqlFailure(versionedClientUpsertSql({ localOrderId:'bridge-r20-proof-failure',
+      idempotencyKey:proofFailureKey,lineId:'bridge-r20-proof-failure-line' }),
+      'P0001','R20_TEST_PROOF_INSERT_FAILURE','injected failure after private proof insertion');
+    const proofFailureState = JSON.parse(await query(`select json_build_object(
+      'parents',(select count(*) from public.pos_restaurant_orders where license_id=${quoteSql(clientLicenseId)}::uuid and local_order_id='bridge-r20-proof-failure'),
+      'items',(select count(*) from public.pos_restaurant_order_items where license_id=${quoteSql(clientLicenseId)}::uuid and local_line_id='bridge-r20-proof-failure-line'),
+      'ledger',(select count(*) from public.pos_idempotency_keys where license_id=${quoteSql(clientLicenseId)}::uuid and idempotency_key=${quoteSql(proofFailureKey)}),
+      'proofs',(select count(*) from private.restaurant_order_upsert_replay_proofs_v1 where license_id=${quoteSql(clientLicenseId)}::uuid and idempotency_key=${quoteSql(proofFailureKey)}),
+      'events',(select count(*) from public.pos_sync_events where license_id=${quoteSql(clientLicenseId)}::uuid and idempotency_key=${quoteSql(proofFailureKey)}))::text`));
+    assert.deepEqual(proofFailureState,{parents:0,items:0,ledger:0,proofs:0,events:0},
+      'A failure after proof insertion must roll back the proof and every operation effect');
+  } finally {
+    await runSql(`drop trigger if exists pr352_test_fail_after_replay_proof_v1 on private.restaurant_order_upsert_replay_proofs_v1;
+      drop function if exists private.pr352_test_fail_after_replay_proof_v1();`, 'remove-proof-fault-injection');
+  }
+
   currentStage = 'R20 canonical fingerprint and post-commit retry';
   const orderExpr = `jsonb_build_object('localOrderId','bridge-versioned-client','clientContractVersion',2,
     'tableLabel','Versioned client','status','pending','fulfillmentStatus','pending','source','tables','subtotal',10,'total',10)
@@ -846,6 +956,7 @@ async function run() {
     'proofCount',(select count(*) from private.restaurant_order_upsert_replay_proofs_v1 p
       where p.license_id=i.license_id and p.idempotency_key=i.idempotency_key),
     'proofMatches',p.request_sha256=encode(extensions.digest(convert_to(${fingerprintText},'UTF8'),'sha256'),'hex'),
+    'proofResponseMatches',p.response_sha256=encode(extensions.digest(convert_to(i.response_payload::text,'UTF8'),'sha256'),'hex'),
     'proofParentMatches',p.local_order_id='bridge-versioned-client' and p.restaurant_order_id=i.entity_id,
     'proofActorMatches',p.actor_type='admin' and p.actor_id='00000000-0000-0000-0000-0000000000aa'::uuid
       and p.device_id='00000000-0000-0000-0000-00000000000a'::uuid,
@@ -856,7 +967,7 @@ async function run() {
   assert.deepEqual(ledgerProof, {
     operation: 'restaurant_order.upsert', entityType: 'restaurant_order', entityId: versionedUpsert.order.id,
     status: 'completed', requestHashMatches: true, responseMatches: true, responseKeyMatches: true,
-    responseOrderMatches: true, proofCount: 1, proofMatches: true, proofParentMatches: true,
+    responseOrderMatches: true, proofCount: 1, proofMatches: true, proofResponseMatches: true, proofParentMatches: true,
     proofActorMatches: true, expiresAtPresent: true,
   }, 'The replay proof must match the writer JSONB hash input, ledger receipt and actor binding');
   const beforeReplayState = await captureVersionedOrderState('bridge-versioned-client','bridge-versioned-client-upsert');
@@ -949,6 +1060,24 @@ async function run() {
     deviceToken:'lab-device-token-b',staffSession:'lab-staff-session',localOrderId:'bridge-r20-staff-owned',
     idempotencyKey:'bridge-r20-staff-owned-key',lineId:'bridge-r20-staff-owned-line' })));
   assert.equal(staffOwnedVersioned.success,true);
+  const staffOwnedSessionId = await query(`select id::text from public.license_staff_sessions
+    where license_id=${quoteSql(clientLicenseId)}::uuid and device_id='00000000-0000-0000-0000-00000000000b'::uuid
+      and session_token_hash=extensions.crypt('lab-staff-session',session_token_hash) and revoked_at is null limit 1`);
+  const staffOwnedStateBeforeRevokedReplay = await captureVersionedOrderState('bridge-r20-staff-owned','bridge-r20-staff-owned-key');
+  await runSql(`update public.license_staff_sessions set revoked_at=clock_timestamp()
+    where id=${quoteSql(staffOwnedSessionId)}::uuid;`, 'revoke-versioned-owner-session');
+  let revokedStaffSessionError;
+  try {
+    revokedStaffSessionError = await assertSqlFailure(versionedClientUpsertSql({ device:'lab-device-b',
+      deviceToken:'lab-device-token-b',staffSession:'lab-staff-session',localOrderId:'bridge-r20-staff-owned',
+      idempotencyKey:'bridge-r20-staff-owned-key',lineId:'bridge-r20-staff-owned-line' }),
+      'P0001','ACTOR_SESSION_INVALID','revoked Staff session replay');
+  } finally {
+    await runSql(`update public.license_staff_sessions set revoked_at=null
+      where id=${quoteSql(staffOwnedSessionId)}::uuid;`, 'restore-versioned-owner-session');
+  }
+  assert.deepEqual(await captureVersionedOrderState('bridge-r20-staff-owned','bridge-r20-staff-owned-key'),
+    staffOwnedStateBeforeRevokedReplay,'A revoked session must not receive a receipt or change any stored state');
   const otherStaffReplayError = await assertSqlFailure(versionedClientUpsertSql({ device:'lab-device-c',
     deviceToken:'lab-device-token-c',staffSession:'lab-staff-session-c',localOrderId:'bridge-r20-staff-owned',
     idempotencyKey:'bridge-r20-staff-owned-key',lineId:'bridge-r20-staff-owned-line' }),
@@ -977,6 +1106,29 @@ async function run() {
     idempotencyKey:'bridge-r20-processing-key',lineId:'bridge-r20-processing-line' })));
   assert.equal(processingReplay.code,'IDEMPOTENCY_PROCESSING');
   assert.equal('order' in processingReplay,false);
+  const savedProof = JSON.parse(await query(`select json_build_object(
+    'licenseId',license_id,'idempotencyKey',idempotency_key,'localOrderId',local_order_id,
+    'restaurantOrderId',restaurant_order_id,'requestSha256',request_sha256,'responseSha256',response_sha256,
+    'actorType',actor_type,'actorId',actor_id,'deviceId',device_id)::text
+    from private.restaurant_order_upsert_replay_proofs_v1
+    where license_id=${quoteSql(clientLicenseId)}::uuid and idempotency_key='bridge-versioned-client-upsert'`));
+  await runSql(`delete from private.restaurant_order_upsert_replay_proofs_v1
+    where license_id=${quoteSql(clientLicenseId)}::uuid and idempotency_key='bridge-versioned-client-upsert';`, 'remove-versioned-replay-proof');
+  const missingProof = JSON.parse(await query(canonicalVersionedSql));
+  assert.equal(missingProof.code,'IDEMPOTENCY_CONFLICT','A completed ledger receipt without its private proof must fail closed');
+  assert.equal('order' in missingProof,false,'A missing proof must not disclose the stored receipt');
+  await runSql(`insert into private.restaurant_order_upsert_replay_proofs_v1(
+      license_id,idempotency_key,local_order_id,restaurant_order_id,request_sha256,response_sha256,actor_type,actor_id,device_id)
+    values (${quoteSql(savedProof.licenseId)}::uuid,${quoteSql(savedProof.idempotencyKey)},${quoteSql(savedProof.localOrderId)},
+      ${quoteSql(savedProof.restaurantOrderId)},${quoteSql(savedProof.requestSha256)},${quoteSql(savedProof.responseSha256)},
+      ${quoteSql(savedProof.actorType)},${quoteSql(savedProof.actorId)}::uuid,${quoteSql(savedProof.deviceId)}::uuid);`, 'restore-versioned-replay-proof');
+  await runSql(`update private.restaurant_order_upsert_replay_proofs_v1 set request_sha256=repeat('0',64)
+    where license_id=${quoteSql(clientLicenseId)}::uuid and idempotency_key='bridge-versioned-client-upsert';`, 'corrupt-versioned-request-proof');
+  const inconsistentProof = JSON.parse(await query(canonicalVersionedSql));
+  assert.equal(inconsistentProof.code,'IDEMPOTENCY_CONFLICT','An inconsistent strong request proof must fail closed');
+  assert.equal('order' in inconsistentProof,false,'An inconsistent proof must not disclose the receipt');
+  await runSql(`update private.restaurant_order_upsert_replay_proofs_v1 set request_sha256=${quoteSql(savedProof.requestSha256)}
+    where license_id=${quoteSql(clientLicenseId)}::uuid and idempotency_key='bridge-versioned-client-upsert';`, 'restore-versioned-request-proof');
   const savedReceiptSql = quoteSql(JSON.stringify(versionedUpsert));
   await runSql(`update public.pos_idempotency_keys set response_payload=null where license_id=${quoteSql(clientLicenseId)}::uuid
     and idempotency_key='bridge-versioned-client-upsert';`, 'corrupt-receipt-synthetic');
@@ -992,6 +1144,15 @@ async function run() {
   assert.equal('order' in missingSuccess,false);
   await runSql(`update public.pos_idempotency_keys set response_payload=${savedReceiptSql}::jsonb
     where license_id=${quoteSql(clientLicenseId)}::uuid and idempotency_key='bridge-versioned-client-upsert';`, 'restore-success-field-synthetic');
+  await runSql(`update public.pos_idempotency_keys
+    set response_payload=jsonb_set(response_payload,'{order,tableLabel}',to_jsonb('tampered receipt'::text),true)
+    where license_id=${quoteSql(clientLicenseId)}::uuid and idempotency_key='bridge-versioned-client-upsert';`, 'tamper-valid-receipt-synthetic');
+  const tamperedReceipt = JSON.parse(await query(canonicalVersionedSql));
+  assert.equal(tamperedReceipt.code,'IDEMPOTENCY_CONFLICT',
+    'A structurally valid but altered receipt must fail its private response SHA-256 proof');
+  assert.equal('order' in tamperedReceipt,false,'A receipt hash mismatch must not expose the altered payload');
+  await runSql(`update public.pos_idempotency_keys set response_payload=${savedReceiptSql}::jsonb
+    where license_id=${quoteSql(clientLicenseId)}::uuid and idempotency_key='bridge-versioned-client-upsert';`, 'restore-tampered-receipt-synthetic');
   await runSql(`update public.pos_idempotency_keys set operation_type='restaurant_order.cancel_from_pos'
     where license_id=${quoteSql(clientLicenseId)}::uuid and idempotency_key='bridge-versioned-client-upsert';`, 'alter-operation-binding-synthetic');
   const otherOperation = JSON.parse(await query(canonicalVersionedSql));
@@ -1018,7 +1179,11 @@ async function run() {
 
   currentStage = 'R20 concurrent identical and conflicting requests';
   idempotencyConcurrencyResults = await runVersionedUpsertIdempotencyRaces({ query, psqlBin, env });
-  assert.equal(idempotencyConcurrencyResults.length,2);
+  assert.deepEqual(idempotencyConcurrencyResults.map((row) => row.name),[
+    'versioned-idempotency-identical','versioned-idempotency-conflict','versioned-same-key-distinct-parents',
+    'versioned-same-parent-distinct-keys',
+    'versioned-cutover-rate-limit-order',
+  ],'RC-03/04 identical-key replay, same-key cross-parent serialization, RC-05 distinct-key parent serialization and cutover/rate-lock ordering must all run independently');
 
   currentStage = 'R20 terminal parent replay and real rate-limit rejection';
   const beforeCancellationVersion = JSON.parse(await query(`select json_build_object('updatedAt',updated_at)::text
@@ -1035,39 +1200,145 @@ async function run() {
     idempotencyKey:'bridge-r20-terminal-new-key',lineId:'bridge-versioned-line',expectedParentVersion:beforeCancellationVersion }),
     'P0001','RESTAURANT_ORDER_ALREADY_CANCELLED','new write against terminal parent');
 
-  await runSql(`update public.pos_rpc_rate_limits set blocked_until=now()+interval '5 minutes'
-    where license_key='lab-license-a' and device_fingerprint='lab-device-a'
-      and rpc_name='pos_upsert_restaurant_order' and scope='POS_WRITE'
-      and staff_session_hash=encode(extensions.digest('lab-admin-session','sha256'),'hex');`, 'block-versioned-rate-limit');
-  const blockedReplay = JSON.parse(await query(canonicalVersionedSql));
+  const paidReceipt = JSON.parse(await query(versionedClientUpsertSql({ localOrderId:'bridge-r20-paid-terminal',
+    idempotencyKey:'bridge-r20-paid-terminal-key',lineId:'bridge-r20-paid-terminal-line' })));
+  assert.equal(paidReceipt.success,true);
+  await runSql(`update public.pos_restaurant_orders set payment_status='paid',paid_at=clock_timestamp()
+    where license_id=${quoteSql(clientLicenseId)}::uuid and local_order_id='bridge-r20-paid-terminal';`,
+  'mark-paid-terminal-parent-synthetic');
+  const paidBeforeReplay = await captureVersionedOrderState('bridge-r20-paid-terminal','bridge-r20-paid-terminal-key');
+  const paidReplay = JSON.parse(await query(versionedClientUpsertSql({ localOrderId:'bridge-r20-paid-terminal',
+    idempotencyKey:'bridge-r20-paid-terminal-key',lineId:'bridge-r20-paid-terminal-line' })));
+  const paidAfterReplay = await captureVersionedOrderState('bridge-r20-paid-terminal','bridge-r20-paid-terminal-key');
+  assert.deepEqual(paidReplay,paidReceipt,'An exact authorized retry may recover the receipt after the parent is marked paid');
+  assert.deepEqual(paidAfterReplay,paidBeforeReplay,'Paid-parent receipt recovery must be read-only');
+  const paidNewKeyError = await assertSqlFailure(versionedClientUpsertSql({ localOrderId:'bridge-r20-paid-terminal',
+    idempotencyKey:'bridge-r20-paid-terminal-new-key',lineId:'bridge-r20-paid-terminal-line' }),
+    'P0001','RESTAURANT_ORDER_ALREADY_PAID','new write against paid parent');
+
+  const archivedReceipt = JSON.parse(await query(versionedClientUpsertSql({ localOrderId:'bridge-r20-archived-terminal',
+    idempotencyKey:'bridge-r20-archived-terminal-key',lineId:'bridge-r20-archived-terminal-line' })));
+  assert.equal(archivedReceipt.success,true);
+  await runSql(`update public.pos_restaurant_orders set archived_at=clock_timestamp(),deleted_at=clock_timestamp(),
+      checkout_closed_at=clock_timestamp()
+    where license_id=${quoteSql(clientLicenseId)}::uuid and local_order_id='bridge-r20-archived-terminal';`,
+  'mark-archived-soft-deleted-and-checkout-closed-synthetic');
+  const archivedBeforeReplay = await captureVersionedOrderState('bridge-r20-archived-terminal','bridge-r20-archived-terminal-key');
+  const archivedReplay = JSON.parse(await query(versionedClientUpsertSql({ localOrderId:'bridge-r20-archived-terminal',
+    idempotencyKey:'bridge-r20-archived-terminal-key',lineId:'bridge-r20-archived-terminal-line' })));
+  const archivedAfterReplay = await captureVersionedOrderState('bridge-r20-archived-terminal','bridge-r20-archived-terminal-key');
+  assert.deepEqual(archivedReplay,archivedReceipt,'An exact replay may retrieve the receipt for an authorized archived/tombstoned parent');
+  assert.deepEqual(archivedAfterReplay,archivedBeforeReplay,'Archived/tombstoned replay must not reopen or mutate the parent');
+  const archivedNewKeyError = await assertSqlFailure(versionedClientUpsertSql({ localOrderId:'bridge-r20-archived-terminal',
+    idempotencyKey:'bridge-r20-archived-terminal-new-key',lineId:'bridge-r20-archived-terminal-line' }),
+    'P0001','RESTAURANT_ORDER_NOT_ACTIVE','new write against archived/deleted/checkout-closed parent');
+
+  const physicallyDeletedReceipt = JSON.parse(await query(versionedClientUpsertSql({ localOrderId:'bridge-r20-physical-delete',
+    idempotencyKey:'bridge-r20-physical-delete-key',lineId:'bridge-r20-physical-delete-line' })));
+  assert.equal(physicallyDeletedReceipt.success,true);
+  await runSql(`delete from public.pos_restaurant_orders where license_id=${quoteSql(clientLicenseId)}::uuid
+    and local_order_id='bridge-r20-physical-delete';`, 'delete-versioned-parent-synthetically');
+  const physicallyDeletedReplay = JSON.parse(await query(versionedClientUpsertSql({ localOrderId:'bridge-r20-physical-delete',
+    idempotencyKey:'bridge-r20-physical-delete-key',lineId:'bridge-r20-physical-delete-line' })));
+  assert.equal(physicallyDeletedReplay.code,'IDEMPOTENCY_CONFLICT',
+    'A deleted parent no longer proves authorization or receipt-parent correspondence and must fail closed');
+  assert.equal('order' in physicallyDeletedReplay,false,"A physically deleted parent's receipt must not be disclosed");
+
+  const staffSessionId = await query(`select id::text from public.license_staff_sessions
+    where license_id=${quoteSql(clientLicenseId)}::uuid and device_id='00000000-0000-0000-0000-00000000000b'::uuid
+      and session_token_hash=extensions.crypt('lab-staff-session',session_token_hash) and revoked_at is null limit 1`);
+  assert.ok(staffSessionId, 'The valid Staff session must exist for the limiter order check');
+  await runSql(`update public.license_staff_sessions set last_seen_at=clock_timestamp()-interval '1 minute'
+    where id=${quoteSql(staffSessionId)}::uuid;`, 'age-staff-session-before-blocked-request');
+  const staffSessionHash = await query(`select encode(extensions.digest('lab-staff-session','sha256'),'hex')`);
+  await runSql(`delete from public.pos_rpc_rate_limits
+    where license_key='lab-license-a' and device_fingerprint='lab-device-b'
+      and rpc_name='pos_upsert_restaurant_order'
+      and staff_session_hash=${quoteSql(staffSessionHash)};`, 'clear-authentic-rate-limit-window');
+  await runSql(`insert into public.pos_rpc_rate_limits(
+      license_key,device_fingerprint,staff_session_hash,rpc_name,window_start,window_seconds,request_count,
+      created_at,updated_at,scope,blocked_until,last_limited_at,metadata)
+    values ('lab-license-a','lab-device-b',${quoteSql(staffSessionHash)},'pos_upsert_restaurant_order',
+      to_timestamp(floor(extract(epoch from now())/600)*600),600,120,now(),now(),'POS_WRITE',null,null,'{}'::jsonb);`,
+  'seed-authentic-rate-limit-window');
+  const lastSeenBeforeBlocked = await query(`select last_seen_at::text from public.license_staff_sessions where id=${quoteSql(staffSessionId)}::uuid`);
+  const staffOwnedStateBeforeBlockedReplay = await captureVersionedOrderState('bridge-r20-staff-owned','bridge-r20-staff-owned-key');
+  const blockedReplay = JSON.parse(await query(versionedClientUpsertSql({ device:'lab-device-b',
+    deviceToken:'lab-device-token-b',staffSession:'lab-staff-session',localOrderId:'bridge-r20-staff-owned',
+    idempotencyKey:'bridge-r20-staff-owned-key',lineId:'bridge-r20-staff-owned-line' })));
   assert.equal(blockedReplay.success,false);
   assert.equal(blockedReplay.code,'RPC_RATE_LIMITED');
   assert.equal('order' in blockedReplay,false,'Rate-limit rejection must not expose the stored receipt');
-  assert.deepEqual(await captureVersionedOrderState('bridge-versioned-client','bridge-versioned-client-upsert'),terminalBeforeReplay,
-    'A rate-limited replay must not modify business rows or expose a receipt');
+  const blockedRateState = JSON.parse(await query(`select json_build_object(
+    'requestCount',request_count,'isBlocked',blocked_until>clock_timestamp())::text
+    from public.pos_rpc_rate_limits where license_key='lab-license-a' and device_fingerprint='lab-device-b'
+      and rpc_name='pos_upsert_restaurant_order' and scope='POS_WRITE'
+      and staff_session_hash=${quoteSql(staffSessionHash)}`));
+  assert.deepEqual(blockedRateState,{ requestCount:121,isBlocked:true },
+    'The real 120-attempt limiter must record and block the 121st request');
+  const lastSeenAfterBlocked = await query(`select last_seen_at::text from public.license_staff_sessions where id=${quoteSql(staffSessionId)}::uuid`);
+  assert.equal(lastSeenAfterBlocked,lastSeenBeforeBlocked,
+    'A blocked request must be rejected before validation touches the Staff session');
+  assert.deepEqual(await captureVersionedOrderState('bridge-r20-staff-owned','bridge-r20-staff-owned-key'),staffOwnedStateBeforeBlockedReplay,
+    'A rate-limited replay must not modify its target parent, items, receipts or financial state');
   await runSql(`delete from public.pos_rpc_rate_limits where license_key='lab-license-a'
-    and device_fingerprint='lab-device-a' and rpc_name='pos_upsert_restaurant_order' and scope='POS_WRITE'
-    and staff_session_hash=encode(extensions.digest('lab-admin-session','sha256'),'hex');`, 'cleanup-versioned-rate-limit');
+    and device_fingerprint='lab-device-b' and rpc_name='pos_upsert_restaurant_order' and scope='POS_WRITE'
+    and staff_session_hash=${quoteSql(staffSessionHash)};`, 'cleanup-versioned-rate-limit');
 
   await runSql(`update public.pos_idempotency_keys set expires_at=clock_timestamp()-interval '1 second'
     where license_id=${quoteSql(clientLicenseId)}::uuid and idempotency_key='bridge-versioned-client-upsert';`, 'expire-replay-ledger-synthetic');
   const expiredReplay = JSON.parse(await query(canonicalVersionedSql));
-  assert.equal(expiredReplay.success,false);
-  assert.equal(expiredReplay.code,'IDEMPOTENCY_KEY_EXPIRED');
-  assert.equal('order' in expiredReplay,false,'Expired ledger entries must not return a stale receipt');
+  assert.deepEqual(expiredReplay,versionedUpsert,
+    'The shared ledger does not enforce expires_at for completed receipts; an uncollected row remains replayable');
+  assert.deepEqual(await captureVersionedOrderState('bridge-versioned-client','bridge-versioned-client-upsert'),terminalBeforeReplay,
+    'A receipt replay after expires_at passes must remain read-only on a terminal parent');
+  const expiredConflict = JSON.parse(await query(versionedClientUpsertSql({ localOrderId:'bridge-versioned-client',
+    idempotencyKey:'bridge-versioned-client-upsert',lineId:'bridge-versioned-line',tableLabel:'Different after expiry' })));
+  assert.equal(expiredConflict.code,'IDEMPOTENCY_CONFLICT',
+    'An expired marker must not silently release the key while its unique ledger row remains');
+  assert.equal('order' in expiredConflict,false);
+
+  const ledgerDeletionLocalId = 'bridge-r20-ledger-deletion';
+  const ledgerDeletionKey = 'bridge-r20-ledger-deletion-key';
+  const ledgerDeletionLineId = 'bridge-r20-ledger-deletion-line';
+  const ledgerDeletionReceipt = JSON.parse(await query(versionedClientUpsertSql({ localOrderId:ledgerDeletionLocalId,
+    idempotencyKey:ledgerDeletionKey,lineId:ledgerDeletionLineId })));
+  assert.equal(ledgerDeletionReceipt.success,true);
+  const ledgerDeletionBefore = await captureVersionedOrderState(ledgerDeletionLocalId,ledgerDeletionKey);
+  await runSql(`delete from public.pos_idempotency_keys where license_id=${quoteSql(clientLicenseId)}::uuid
+    and idempotency_key=${quoteSql(ledgerDeletionKey)};`, 'delete-shared-ledger-row-synthetic');
+  const orphanProofCount = await query(`select count(*)::text from private.restaurant_order_upsert_replay_proofs_v1
+    where license_id=${quoteSql(clientLicenseId)}::uuid and idempotency_key=${quoteSql(ledgerDeletionKey)}`);
+  assert.equal(orphanProofCount,'0','Deleting the shared ledger row must cascade-delete its private proof');
+  const deletedLedgerRetryError = await assertSqlFailure(versionedClientUpsertSql({ localOrderId:ledgerDeletionLocalId,
+    idempotencyKey:ledgerDeletionKey,lineId:ledgerDeletionLineId }),
+    'P0001','RESTAURANT_ORDER_VERSION_REQUIRED','retry after retained ledger row deletion');
+  const ledgerDeletionAfter = await captureVersionedOrderState(ledgerDeletionLocalId,ledgerDeletionKey);
+  assert.deepEqual(ledgerDeletionAfter,{...ledgerDeletionBefore,ledgerRowsForKey:0,proofRowsForKey:0},
+    'After ledger deletion, the orphan proof is gone and a stale no-version request cannot recreate or mutate the parent');
 
   idempotencyEvidence = {
     status:'PASS',
     firstWrite: 'R20-01 PASS', postCommitLostResponseReplay: 'R20-02/R20-03 PASS',
     noDuplicateBusinessEffects: 'PASS', rateLimitBlockedReplay: 'PASS',
     concurrent: idempotencyConcurrencyResults, rollbackRetry: 'PASS',
+    atomicity: {
+      explicitTopLevelRollbackAfterProof: 'PASS',
+      injectedFailureDuringLedgerCompletion: 'PASS',
+      injectedFailureAfterProofInsert: 'PASS',
+      checkedFromSeparateConnection: true,
+    },
     conflictCases: ['changed order payload','changed articles','different parent','other operation','processing row','missing receipt',
-      'foreign Staff/device','Admin session on another device','different Staff','Admin OFF','revoked POS permission','invalid session','physical parent ID','physical line ID','new key without version',
-      'stale version','terminal parent new write','expired receipt'],
-    terminalReplay: 'exact authorized receipt returned read-only after cancellation',
+      'missing proof','corrupt request proof','tampered receipt','foreign Staff/device','Admin session on another device','different Staff','revoked Staff session','Admin OFF','revoked POS permission','invalid session','physical parent ID','physical line ID','new key without version',
+      'stale version','terminal parent new write','different payload after expiry','ledger deletion cascades proof and stale retry requires parent refresh'],
+    terminalReplay: 'exact authorized receipt returned read-only after cancellation, paid marker, and archived/soft-deleted/checkout-closed markers',
+    physicalDeleteReplay: 'IDEMPOTENCY_CONFLICT without receipt when canonical parent row is physically absent',
+    paidStateSetup: 'synthetic terminal marker only; no cashier, payment, inventory, credit, or ledger operation is claimed',
+    expirationPolicy: 'expires_at is a legacy retention marker; completed rows remain replayable and keys are not reusable while retained',
+    ledgerDeletionPolicy: 'deleting a ledger row cascades its proof; a stale no-version retry cannot recreate a key on an existing parent',
     otherLicense: 'same key used in a separate license namespace; separate parent/receipt created',
-    errors: [noVersionError,staleVersionError,physicalParentError,physicalLineError,foreignDeviceError,
-      invalidSessionError,wrongDeviceSessionError,terminalNewKeyError,otherStaffReplayError,adminOffReplayError,revokedPermissionError],
+    errors: [noVersionError,staleVersionError,physicalParentError,physicalLineError,foreignDeviceError,revokedStaffSessionError,
+      invalidSessionError,wrongDeviceSessionError,terminalNewKeyError,otherStaffReplayError,adminOffReplayError,revokedPermissionError,deletedLedgerRetryError],
     hash: { legacyWriter: 'MD5 cross-check only', bridgeProof: 'SHA-256 of exact writer JSONB text hash input' },
   };
   passed('versioned idempotency binds the strong request proof, preserves the authentic rate-limit and rejects conflicts',

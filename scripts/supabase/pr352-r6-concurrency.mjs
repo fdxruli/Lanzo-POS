@@ -23,7 +23,7 @@ export function statusUpdateSql(orderId, status, idempotencyKey) {
 }
 
 function startPsqlSession(name, psqlBin, env) {
-  const child = spawn(psqlBin, ['-X', '-q', '-A', '-t', '-v', 'ON_ERROR_STOP=1'], {
+  const child = spawn(psqlBin, ['-X', '-q', '-A', '-t', '-v', 'ON_ERROR_STOP=1', '-v', 'VERBOSITY=verbose'], {
     env: {
       ...env,
       PGHOST: '127.0.0.1',
@@ -119,6 +119,19 @@ async function observeLocks(query, name) {
     'where a.application_name=' + quote(name) + " and l.locktype='advisory' and l.objsubid=1",
     "and l.classid::bigint=((pg_catalog.hashtextextended('restaurant_contract_cutover_v1',0) >> 32) & 4294967295::bigint)",
     "and l.objid::bigint=(pg_catalog.hashtextextended('restaurant_contract_cutover_v1',0) & 4294967295::bigint)",
+  ].join(' ');
+  return JSON.parse(await query(sql, 4000));
+}
+
+async function observeRestaurantIdempotencyLock(query, name, idempotencyKey) {
+  const lockKey = 'restaurant_order_upsert_idempotency_v1:' + LICENSE_ID + ':' + idempotencyKey;
+  const sql = [
+    "select coalesce(json_agg(json_build_object('pid',l.pid,'granted',l.granted,'mode',l.mode,'locktype',l.locktype,",
+    "'state',a.state,'waitEventType',a.wait_event_type,'waitEvent',a.wait_event,'blockedBy',pg_catalog.pg_blocking_pids(l.pid)) order by l.granted,l.pid),'[]'::json)::text",
+    'from pg_locks l join pg_stat_activity a on a.pid=l.pid',
+    'where a.application_name=' + quote(name) + " and l.locktype='advisory' and l.objsubid=1",
+    'and l.classid::bigint=((pg_catalog.hashtextextended(' + quote(lockKey) + ',0) >> 32) & 4294967295::bigint)',
+    'and l.objid::bigint=(pg_catalog.hashtextextended(' + quote(lockKey) + ',0) & 4294967295::bigint)',
   ].join(' ');
   return JSON.parse(await query(sql, 4000));
 }
@@ -433,12 +446,16 @@ export async function runRestaurantCutoverConcurrency({ query, psqlBin, env, cre
   }
 }
 
-function versionedUpsertSql(localOrderId, idempotencyKey, lineId, itemName = 'Bridge synthetic product') {
+function versionedUpsertSql(localOrderId, idempotencyKey, lineId, itemName = 'Bridge synthetic product',
+  expectedParentVersion = null, staffSession = 'lab-admin-session') {
+  const expectedPair = expectedParentVersion === null
+    ? ''
+    : `,'expectedParentVersion',${quote(expectedParentVersion)}`;
   return `set role anon; select public.pos_upsert_restaurant_order_versioned_v1(
-    'lab-license-a','lab-device-a','lab-device-token-a','lab-admin-session',
+    'lab-license-a','lab-device-a','lab-device-token-a',${quote(staffSession)},
     jsonb_build_object('localOrderId',${quote(localOrderId)},'clientContractVersion',2,
       'tableLabel','Concurrent versioned request','status','pending','fulfillmentStatus','pending',
-      'source','tables','subtotal',10,'total',10),
+      'source','tables','subtotal',10,'total',10${expectedPair}),
     jsonb_build_array(jsonb_build_object('localLineId',${quote(lineId)},'productId','bridge-restaurant-product',
       'productName',${quote(itemName)},'quantity',1,'unitPrice',10,'lineTotal',10)),
     ${quote(idempotencyKey)})::text; reset role;`;
@@ -453,6 +470,8 @@ function sessionJson(session, description) {
 export async function runVersionedUpsertIdempotencyRaces({ query, psqlBin, env }) {
   const scenarios = [];
   const sessions = new Set();
+  const contenderSession = 'lab-admin-session-r20-distinct';
+  const contenderSessionId = '00000000-0000-0000-0000-0000000000f1';
   const start = (name) => {
     const session = startPsqlSession(name, psqlBin, env);
     sessions.add(session);
@@ -475,7 +494,7 @@ export async function runVersionedUpsertIdempotencyRaces({ query, psqlBin, env }
 
     contender.send('begin;');
     contender.send(versionedUpsertSql(localOrderId, idempotencyKey, localOrderId + '-line',
-      conflict ? 'Different synthetic product name' : 'Bridge synthetic product'));
+      conflict ? 'Different synthetic product name' : 'Bridge synthetic product',null,contenderSession));
     const contenderBlocked = await waitForObserved(contenderName + ' waits for first transaction',
       () => observeActivity(query, contenderName),
       (rows) => rows.some((row) => row.state === 'active' && row.waitEventType === 'Lock'
@@ -527,14 +546,296 @@ export async function runVersionedUpsertIdempotencyRaces({ query, psqlBin, env }
   };
 
   try {
+    await query(`insert into public.license_admin_sessions(id,license_id,admin_user_id,device_id,session_token_hash,expires_at)
+      values (${quote(contenderSessionId)}::uuid,'${LICENSE_ID}'::uuid,
+        '00000000-0000-0000-0000-0000000000aa'::uuid,'00000000-0000-0000-0000-00000000000a'::uuid,
+        extensions.crypt(${quote(contenderSession)},extensions.gen_salt('bf')),now()+interval '1 day')`);
     await runRace({ name: 'versioned-idempotency-identical', localOrderId: 'bridge-r20-concurrent-identical',
       idempotencyKey: 'bridge-r20-concurrent-identical-key', conflict: false });
     await runRace({ name: 'versioned-idempotency-conflict', localOrderId: 'bridge-r20-concurrent-conflict',
       idempotencyKey: 'bridge-r20-concurrent-conflict-key', conflict: true });
+
+    const keyHolderLocalId = 'bridge-r20-same-key-parent-holder';
+    const keyContenderLocalId = 'bridge-r20-same-key-parent-contender';
+    const sharedKey = 'bridge-r20-cross-parent-same-key';
+    const keyHolderName = 'pr352-r6-cross-parent-same-key-holder';
+    const keyContenderName = 'pr352-r6-cross-parent-same-key-contender';
+    const keyHolder = start(keyHolderName);
+    const keyContender = start(keyContenderName);
+    keyHolder.send('begin;');
+    keyHolder.send(versionedUpsertSql(keyHolderLocalId,sharedKey,keyHolderLocalId+'-line'));
+    const keyHolderRows = await waitForObserved(keyHolderName + ' holds parent A and idempotency key lock',
+      () => observeActivity(query,keyHolderName),
+      (rows) => rows.some((row) => row.state === 'idle in transaction'));
+    const keyHolderReceipt = sessionJson(keyHolder,keyHolderName);
+    assert.equal(keyHolderReceipt.success,true,'The cross-parent key holder must perform the authentic first write');
+    const keyHolderPid = keyHolderRows.find((row) => row.state === 'idle in transaction').pid;
+    const heldKeyLock = await observeRestaurantIdempotencyLock(query,keyHolderName,sharedKey);
+    assert.ok(heldKeyLock.some((row) => row.granted && row.mode === 'ExclusiveLock'),
+      'The first request must own the exact per-license idempotency advisory lock');
+
+    keyContender.send('begin;');
+    keyContender.send(versionedUpsertSql(keyContenderLocalId,sharedKey,keyContenderLocalId+'-line',
+      'Different parent, same key',null,contenderSession));
+    const keyWaitRows = await waitForObserved(keyContenderName + ' waits for the same idempotency key across distinct parents',
+      () => observeActivity(query,keyContenderName),
+      (rows) => rows.some((row) => row.state === 'active' && row.waitEventType === 'Lock'
+        && row.blockedBy.includes(keyHolderPid)));
+    const keyWait = keyWaitRows.find((row) => row.state === 'active' && row.waitEventType === 'Lock');
+    assert.ok(keyWait.queryText.includes('pos_upsert_restaurant_order_versioned_v1'),
+      'The second distinct-parent call must submit the complete writer SQL');
+    const waitingKeyLock = await observeRestaurantIdempotencyLock(query,keyContenderName,sharedKey);
+    assert.ok(waitingKeyLock.some((row) => !row.granted && row.mode === 'ExclusiveLock' && row.blockedBy.includes(keyHolderPid)),
+      'The observed conflict must be waiting on the exact matching idempotency advisory lock, after taking a distinct parent lock');
+
+    keyHolder.finish('commit;');
+    keyContender.finish('commit;');
+    const keyHolderExit = await waitForSessionExit(keyHolder);
+    const keyContenderExit = await waitForSessionExit(keyContender);
+    assertSessionSuccess(keyHolderName,keyHolderExit);
+    assertSessionSuccess(keyContenderName,keyContenderExit);
+    const keyContenderResponse = sessionJson(keyContender,keyContenderName);
+    assert.equal(keyContenderResponse.success,false);
+    assert.equal(keyContenderResponse.code,'IDEMPOTENCY_CONFLICT');
+    assert.equal('order' in keyContenderResponse,false,'A different parent must not receive the holder receipt');
+    const crossParentFinal = JSON.parse(await query(`select json_build_object(
+      'holderParents',(select count(*) from public.pos_restaurant_orders where license_id='${LICENSE_ID}'::uuid and local_order_id=${quote(keyHolderLocalId)}),
+      'contenderParents',(select count(*) from public.pos_restaurant_orders where license_id='${LICENSE_ID}'::uuid and local_order_id=${quote(keyContenderLocalId)}),
+      'holderItems',(select count(*) from public.pos_restaurant_order_items where license_id='${LICENSE_ID}'::uuid and local_line_id=${quote(keyHolderLocalId+'-line')} and deleted_at is null),
+      'contenderItems',(select count(*) from public.pos_restaurant_order_items where license_id='${LICENSE_ID}'::uuid and local_line_id=${quote(keyContenderLocalId+'-line')} and deleted_at is null),
+      'ledger',(select count(*) from public.pos_idempotency_keys where license_id='${LICENSE_ID}'::uuid and idempotency_key=${quote(sharedKey)}),
+      'proofs',(select count(*) from private.restaurant_order_upsert_replay_proofs_v1 where license_id='${LICENSE_ID}'::uuid and idempotency_key=${quote(sharedKey)}),
+      'events',(select count(*) from public.pos_sync_events where license_id='${LICENSE_ID}'::uuid and idempotency_key=${quote(sharedKey)}))::text`));
+    assert.deepEqual(crossParentFinal,{holderParents:1,contenderParents:0,holderItems:1,contenderItems:0,ledger:1,proofs:1,events:2},
+      'A same-key request for a different parent must leave only the original parent, receipt, proof and writer events');
+    const crossParentPending = await countPendingSessions(query,[keyHolderName,keyContenderName]);
+    assert.equal(crossParentPending,0,'The cross-parent advisory-key race must leave no PostgreSQL sessions');
+    scenarios.push({
+      name:'versioned-same-key-distinct-parents',
+      holderQuerySubmitted:true,
+      contenderQuerySubmitted:true,
+      holderLock:heldKeyLock.find((row)=>row.granted),
+      contenderLockWait:waitingKeyLock.find((row)=>!row.granted),
+      waitEventType:keyWait.waitEventType,
+      waitEvent:keyWait.waitEvent,
+      blockedBy:keyWait.blockedBy,
+      releaseOrder:'same-key holder COMMIT, then contender resumes and returns IDEMPOTENCY_CONFLICT',
+      holderExitCode:keyHolderExit.code,
+      contenderExitCode:keyContenderExit.code,
+      contenderResponse:'IDEMPOTENCY_CONFLICT without receipt',
+      finalState:crossParentFinal,
+      pendingDatabaseSessions:crossParentPending,
+      status:'PASS',
+    });
+
+    // A fresh authorization session for the same actor/device isolates the
+    // parent's advisory lock from the shared rate-limit row in this race.
+    const parentLocalId = 'bridge-r20-same-parent-distinct-keys';
+    const seedKey = parentLocalId + '-seed-key';
+    const seedReceipt = JSON.parse(await query(versionedUpsertSql(parentLocalId, seedKey,
+      parentLocalId + '-line')));
+    assert.equal(seedReceipt.success, true, 'RC-05 parent seed must be a real versioned write');
+    const initialParentVersion = await query(`select updated_at::text from public.pos_restaurant_orders
+      where license_id=${quote(LICENSE_ID)}::uuid and local_order_id=${quote(parentLocalId)}`);
+    const holderName = 'pr352-r6-same-parent-distinct-keys-holder';
+    const contenderName = 'pr352-r6-same-parent-distinct-keys-contender';
+    const holder = start(holderName);
+    const contender = start(contenderName);
+    holder.send('begin;');
+    holder.send(versionedUpsertSql(parentLocalId, parentLocalId + '-key-a', parentLocalId + '-line',
+      'Bridge holder update', initialParentVersion));
+    const holderActivityRows = await waitForObserved(holderName + ' holds canonical parent lock',
+      () => observeActivity(query, holderName),
+      (rows) => rows.some((row) => row.state === 'idle in transaction'));
+    const holderResponse = sessionJson(holder, holderName);
+    assert.equal(holderResponse.success, true, 'RC-05 first key must perform its real parent update');
+    const holderPid = holderActivityRows.find((row) => row.state === 'idle in transaction').pid;
+
+    contender.send('begin;');
+    contender.send(versionedUpsertSql(parentLocalId, parentLocalId + '-key-b', parentLocalId + '-line',
+      'Bridge contender update', initialParentVersion, contenderSession));
+    const contenderActivityRows = await waitForObserved(contenderName + ' waits on canonical parent serialization',
+      () => observeActivity(query, contenderName),
+      (rows) => rows.some((row) => row.state === 'active' && row.waitEventType === 'Lock'
+        && row.blockedBy.includes(holderPid)));
+    const blockedActivity = contenderActivityRows.find((row) => row.state === 'active' && row.waitEventType === 'Lock');
+    assert.ok(blockedActivity.queryText.includes('pos_upsert_restaurant_order_versioned_v1'),
+      'RC-05 contender must submit its complete distinct-key writer request');
+
+    holder.finish('commit;');
+    const holderExit = await waitForSessionExit(holder);
+    const contenderExit = await waitForSessionExit(contender);
+    assertSessionSuccess(holderName, holderExit);
+    assert.equal(contenderExit.code, 1, 'The stale distinct-key contender must fail its SQL statement');
+    assert.equal(contenderExit.signal, null, 'The contender must exit from PostgreSQL rejection, not a process signal');
+    assert.equal(contenderExit.spawnError, null, 'The contender must not fail to start or write SQL');
+    assert.match(contenderExit.stderr, /RESTAURANT_ORDER_VERSION_CONFLICT/,
+      'The second distinct key must observe the committed parent version and be rejected as stale');
+    assert.match(contenderExit.stderr, /P0001/,
+      'RC-05 must retain the specific PostgreSQL SQLSTATE for version conflict');
+    const finalState = JSON.parse(await query(`select json_build_object(
+      'parents',(select count(*) from public.pos_restaurant_orders where license_id='${LICENSE_ID}'::uuid and local_order_id=${quote(parentLocalId)}),
+      'items',(select count(*) from public.pos_restaurant_order_items where license_id='${LICENSE_ID}'::uuid and local_line_id=${quote(parentLocalId + '-line')} and deleted_at is null),
+      'holderLedger',(select count(*) from public.pos_idempotency_keys where license_id='${LICENSE_ID}'::uuid and idempotency_key=${quote(parentLocalId + '-key-a')}),
+      'contenderLedger',(select count(*) from public.pos_idempotency_keys where license_id='${LICENSE_ID}'::uuid and idempotency_key=${quote(parentLocalId + '-key-b')}),
+      'holderProof',(select count(*) from private.restaurant_order_upsert_replay_proofs_v1 where license_id='${LICENSE_ID}'::uuid and idempotency_key=${quote(parentLocalId + '-key-a')}),
+      'contenderProof',(select count(*) from private.restaurant_order_upsert_replay_proofs_v1 where license_id='${LICENSE_ID}'::uuid and idempotency_key=${quote(parentLocalId + '-key-b')}),
+      'holderEvents',(select count(*) from public.pos_sync_events where license_id='${LICENSE_ID}'::uuid and idempotency_key=${quote(parentLocalId + '-key-a')}),
+      'contenderEvents',(select count(*) from public.pos_sync_events where license_id='${LICENSE_ID}'::uuid and idempotency_key=${quote(parentLocalId + '-key-b')}),
+      'serverVersion',(select server_version from public.pos_restaurant_orders where license_id='${LICENSE_ID}'::uuid and local_order_id=${quote(parentLocalId)})
+    )::text`));
+    assert.deepEqual(finalState, {
+      parents: 1, items: 1, holderLedger: 1, contenderLedger: 0,
+      holderProof: 1, contenderProof: 0, holderEvents: 2, contenderEvents: 0,
+      serverVersion: seedReceipt.order.serverVersion + 1,
+    }, 'RC-05 must commit one parent version and no second ledger, proof, event or duplicate item');
+    const databaseSessions = await countPendingSessions(query, [holderName, contenderName]);
+    assert.equal(databaseSessions, 0, 'RC-05 must leave no PostgreSQL test sessions');
+    assert.equal(holderExit.signal, null);
+    assert.equal(contenderExit.signal, null);
+    scenarios.push({
+      name: 'versioned-same-parent-distinct-keys',
+      holderQuerySubmitted: true,
+      contenderQuerySubmitted: true,
+      waitEventType: blockedActivity.waitEventType,
+      waitEvent: blockedActivity.waitEvent,
+      blockedBy: blockedActivity.blockedBy,
+      releaseOrder: 'holder COMMIT, then contender resumes under a distinct session rate-limit key',
+      holderExitCode: holderExit.code,
+      contenderExitCode: contenderExit.code,
+      holderResponse: 'versioned parent update committed',
+      contenderSqlstate: 'P0001',
+      contenderResponse: 'RESTAURANT_ORDER_VERSION_CONFLICT',
+      finalState,
+      pendingDatabaseSessions: databaseSessions,
+      status: 'PASS',
+    });
+
+    // Match the authentic public wrapper's rate-row -> transition-lock order.
+    // The exclusive pause is queued while a second request owns the same
+    // limiter row; the contender must wait on the rate row first, then on the
+    // pause lock, and fail closed after the pause commits without a lock cycle.
+    const orderingToken = 'lab-admin-session-r20-cutover-order';
+    const orderingSessionId = '00000000-0000-0000-0000-0000000000f2';
+    const orderingHash = await query(`select encode(extensions.digest(${quote(orderingToken)},'sha256'),'hex')`);
+    const rateHolderName = 'pr352-r6-cutover-rate-row-holder';
+    const pauseName = 'pr352-r6-cutover-exclusive-pause';
+    const pausedWriterName = 'pr352-r6-cutover-versioned-writer';
+    const rateHolder = start(rateHolderName);
+    const pauseSession = start(pauseName);
+    const pausedWriter = start(pausedWriterName);
+    try {
+      await query(`insert into public.license_admin_sessions(id,license_id,admin_user_id,device_id,session_token_hash,expires_at)
+        values (${quote(orderingSessionId)}::uuid,'${LICENSE_ID}'::uuid,
+          '00000000-0000-0000-0000-0000000000aa'::uuid,'00000000-0000-0000-0000-00000000000a'::uuid,
+          extensions.crypt(${quote(orderingToken)},extensions.gen_salt('bf')),now()+interval '1 day')`);
+
+      rateHolder.send('begin;');
+      rateHolder.send(`select public.enforce_pos_rpc_rate_limit_v2(
+        p_license_key:='lab-license-a',p_device_fingerprint:='lab-device-a',p_staff_session_token:=${quote(orderingToken)},
+        p_rpc_name:='pos_upsert_restaurant_order',p_scope:='POS_WRITE',p_max_attempts:=120,
+        p_window_seconds:=600,p_block_seconds:=300,p_code:='RPC_RATE_LIMITED',p_metadata:='{}'::jsonb)::text;`);
+      const rateHolderRows = await waitForObserved(rateHolderName + ' retains the authentic limiter row lock',
+        () => observeActivity(query, rateHolderName),
+        (rows) => rows.some((row) => row.state === 'idle in transaction'));
+      const rateHolderResponse = sessionJson(rateHolder, rateHolderName);
+      assert.equal(rateHolderResponse.allowed, true, 'The held rate-limit attempt must remain below the threshold');
+      const rateHolderPid = rateHolderRows.find((row) => row.state === 'idle in transaction').pid;
+
+      pauseSession.send('begin;');
+      pauseSession.send('select private.set_restaurant_transition_policy_v1(true,null,null);');
+      const pauseActivityRows = await waitForObserved(pauseName + ' owns the exclusive transition lock',
+        () => observeActivity(query, pauseName),
+        (rows) => rows.some((row) => row.state === 'idle in transaction'));
+      const pausePid = pauseActivityRows.find((row) => row.state === 'idle in transaction').pid;
+      const pauseLocks = await observeLocks(query, pauseName);
+      assert.ok(pauseLocks.some((lock) => lock.granted && lock.mode === 'ExclusiveLock'),
+        'The cutover setter must hold the real exclusive advisory lock before the competing writer starts');
+
+      pausedWriter.send('begin;');
+      pausedWriter.send(versionedUpsertSql('bridge-r20-cutover-rate-order',
+        'bridge-r20-cutover-rate-order-key','bridge-r20-cutover-rate-order-line',
+        'Cutover lock-order request',null,orderingToken));
+      const rateWaitRows = await waitForObserved(pausedWriterName + ' waits on the holder rate-limit row first',
+        () => observeActivity(query, pausedWriterName),
+        (rows) => rows.some((row) => row.state === 'active' && row.waitEventType === 'Lock'
+          && row.blockedBy.includes(rateHolderPid)));
+      const rateWait = rateWaitRows.find((row) => row.state === 'active' && row.waitEventType === 'Lock');
+      assert.ok(rateWait.queryText.includes('pos_upsert_restaurant_order_versioned_v1'),
+        'The blocked contender must have submitted the complete versioned RPC');
+      assert.ok(!(await observeLocks(query, pausedWriterName)).some((lock) => lock.granted),
+        'The contender must not acquire the transition shared lock while blocked on the earlier limiter row');
+
+      rateHolder.finish('commit;');
+      const rateHolderExit = await waitForSessionExit(rateHolder);
+      assertSessionSuccess(rateHolderName, rateHolderExit);
+      const transitionWaitRows = await waitForObserved(pausedWriterName + ' then waits on exclusive cutover pause',
+        () => observeActivity(query, pausedWriterName),
+        (rows) => rows.some((row) => row.state === 'active' && row.waitEventType === 'Lock'
+          && row.blockedBy.includes(pausePid)));
+      const transitionWait = transitionWaitRows.find((row) => row.state === 'active' && row.waitEventType === 'Lock');
+      const transitionWaitLocks = await observeLocks(query, pausedWriterName);
+      assert.ok(transitionWaitLocks.some((lock) => !lock.granted && lock.mode === 'ShareLock'),
+        'After the rate row is released, the contender must wait for shared admission behind the exclusive pause');
+
+      pauseSession.finish('commit;');
+      const pauseExit = await waitForSessionExit(pauseSession);
+      assertSessionSuccess(pauseName, pauseExit);
+      const pausedWriterExit = await waitForSessionExit(pausedWriter);
+      assert.equal(pausedWriterExit.code, 1, 'A writer released after committed pause must fail in PostgreSQL');
+      assert.equal(pausedWriterExit.signal, null);
+      assert.equal(pausedWriterExit.spawnError, null);
+      assert.match(pausedWriterExit.stderr, /RESTAURANT_CONTRACT_MAINTENANCE/);
+      assert.match(pausedWriterExit.stderr, /P0001/);
+      const pausedFinalState = JSON.parse(await query(`select json_build_object(
+        'parents',(select count(*) from public.pos_restaurant_orders where license_id='${LICENSE_ID}'::uuid and local_order_id='bridge-r20-cutover-rate-order'),
+        'items',(select count(*) from public.pos_restaurant_order_items where license_id='${LICENSE_ID}'::uuid and local_line_id='bridge-r20-cutover-rate-order-line'),
+        'ledger',(select count(*) from public.pos_idempotency_keys where license_id='${LICENSE_ID}'::uuid and idempotency_key='bridge-r20-cutover-rate-order-key'),
+        'proofs',(select count(*) from private.restaurant_order_upsert_replay_proofs_v1 where license_id='${LICENSE_ID}'::uuid and idempotency_key='bridge-r20-cutover-rate-order-key'),
+        'events',(select count(*) from public.pos_sync_events where license_id='${LICENSE_ID}'::uuid and idempotency_key='bridge-r20-cutover-rate-order-key'))::text`));
+      assert.deepEqual(pausedFinalState,{parents:0,items:0,ledger:0,proofs:0,events:0},
+        'A paused versioned write must not leave business, ledger, proof or sync effects');
+      const rateCountAfterPausedError = await query(`select request_count::text from public.pos_rpc_rate_limits
+        where license_key='lab-license-a' and device_fingerprint='lab-device-a'
+          and rpc_name='pos_upsert_restaurant_order' and scope='POS_WRITE'
+          and staff_session_hash=${quote(orderingHash)}`);
+      assert.equal(rateCountAfterPausedError,'1',
+        'The denied writer transaction must roll back its rate-row increment after transition admission fails');
+      const pending = await countPendingSessions(query,[rateHolderName,pauseName,pausedWriterName]);
+      assert.equal(pending,0,'The cutover/rate-order scenario must leave no PostgreSQL sessions');
+      scenarios.push({
+        name:'versioned-cutover-rate-limit-order',
+        rateHolderQuerySubmitted:true,
+        pauseSetterQuerySubmitted:true,
+        contenderQuerySubmitted:true,
+        rateWait:{waitEventType:rateWait.waitEventType,waitEvent:rateWait.waitEvent,blockedBy:rateWait.blockedBy},
+        transitionWait:{waitEventType:transitionWait.waitEventType,waitEvent:transitionWait.waitEvent,blockedBy:transitionWait.blockedBy},
+        releaseOrder:'rate-row holder COMMIT, then exclusive pause COMMIT',
+        rateHolderExitCode:rateHolderExit.code,
+        pauseExitCode:pauseExit.code,
+        contenderExitCode:pausedWriterExit.code,
+        contenderSqlstate:'P0001',
+        contenderResponse:'RESTAURANT_CONTRACT_MAINTENANCE',
+        pausedFinalState,
+        rateCountAfterPausedError,
+        pendingDatabaseSessions:pending,
+        status:'PASS',
+      });
+    } finally {
+      for (const session of [rateHolder,pauseSession,pausedWriter]) {
+        if (!session.closed) await session.kill();
+      }
+      await query(`select private.set_restaurant_transition_policy_v1(false,null,null)`);
+      await query(`delete from public.pos_rpc_rate_limits where license_key='lab-license-a'
+        and device_fingerprint='lab-device-a' and rpc_name='pos_upsert_restaurant_order'
+        and scope='POS_WRITE' and staff_session_hash=${quote(orderingHash)}`);
+      await query(`delete from public.license_admin_sessions where id=${quote(orderingSessionId)}::uuid`);
+    }
     return scenarios;
   } finally {
     for (const session of sessions) {
       if (!session.closed) await session.kill();
     }
+    await query(`delete from public.license_admin_sessions where id='00000000-0000-0000-0000-0000000000f1'::uuid`);
   }
 }

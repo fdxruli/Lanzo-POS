@@ -34,6 +34,7 @@ create table private.restaurant_order_upsert_replay_proofs_v1 (
   local_order_id text not null,
   restaurant_order_id text not null,
   request_sha256 text not null check (request_sha256 ~ '^[0-9a-f]{64}$'),
+  response_sha256 text not null check (response_sha256 ~ '^[0-9a-f]{64}$'),
   actor_type text not null check (actor_type in ('staff','admin')),
   actor_id uuid not null,
   device_id uuid not null,
@@ -226,6 +227,18 @@ declare c jsonb; o public.pos_restaurant_orders; saved_order public.pos_restaura
   local_id text; expected timestamptz; item jsonb; line_id text; request_hash text;
   request_sha256 text; has_idem boolean; has_proof boolean; idem_created_here boolean;
 begin
+  -- Preserve the authentic public wrapper's control order: it consumes the
+  -- rate-limit attempt before invoking this versioned route. Transition
+  -- admission still precedes authentication and every business-row lock.
+  rate_limit:=public.enforce_pos_rpc_rate_limit_v2(
+    p_license_key:=$1,p_device_fingerprint:=$2,p_staff_session_token:=$4,
+    p_rpc_name:='pos_upsert_restaurant_order',p_scope:='POS_WRITE',
+    p_max_attempts:=120,p_window_seconds:=600,p_block_seconds:=300,
+    p_code:='RPC_RATE_LIMITED',p_metadata:='{}'::jsonb);
+  if coalesce((rate_limit->>'allowed')::boolean,false) is false then
+    return public.build_pos_rpc_rate_limited_response(rate_limit);
+  end if;
+
   perform private.enter_restaurant_transition_write_v1();
   c:=private.validate_pos_sync_context($1,$2,$3,$4);
   perform private.assert_cloud_sales_sync_base_enabled(c);
@@ -235,18 +248,6 @@ begin
   if nullif(btrim(p_order->>'id'),'') is not null then raise exception 'RESTAURANT_ORDER_PHYSICAL_ID_NOT_SUPPORTED'; end if;
   if local_id is null then raise exception 'RESTAURANT_PARENT_ORDER_REQUIRED'; end if;
   if nullif(btrim(p_idempotency_key),'') is null then raise exception 'IDEMPOTENCY_KEY_REQUIRED'; end if;
-
-  -- Preserve the authentic public wrapper's limiter identity and policy exactly
-  -- once. Run it before parent/ledger locks; this matches the wrapper's order and
-  -- avoids rate-limit-row/parent-row lock inversion with legacy clients.
-  rate_limit:=public.enforce_pos_rpc_rate_limit_v2(
-    p_license_key:=$1,p_device_fingerprint:=$2,p_staff_session_token:=$4,
-    p_rpc_name:='pos_upsert_restaurant_order',p_scope:='POS_WRITE',
-    p_max_attempts:=120,p_window_seconds:=600,p_block_seconds:=300,
-    p_code:='RPC_RATE_LIMITED',p_metadata:='{}'::jsonb);
-  if coalesce((rate_limit->>'allowed')::boolean,false) is false then
-    return public.build_pos_rpc_rate_limited_response(rate_limit);
-  end if;
 
   -- This is the exact JSONB value/hash input received by the authentic writer:
   -- it adds clientContractVersion=2, then hashes order::text || '|' || items::text.
@@ -289,16 +290,13 @@ begin
       return jsonb_build_object('success',false,'code','IDEMPOTENCY_CONFLICT',
         'message','El registro de idempotencia no contiene un recibo recuperable.','idempotency_key',p_idempotency_key);
     end if;
-    if idem.expires_at is null or idem.expires_at<=clock_timestamp() then
-      return jsonb_build_object('success',false,'code','IDEMPOTENCY_KEY_EXPIRED',
-        'message','La ventana de recuperación del recibo ha expirado.','idempotency_key',p_idempotency_key);
-    end if;
     if idem.operation_type is distinct from 'restaurant_order.upsert'
       or idem.entity_type is distinct from 'restaurant_order'
       or idem.entity_id is distinct from o.id
       or proof.local_order_id is distinct from local_id
       or proof.restaurant_order_id is distinct from o.id
       or proof.request_sha256 is distinct from request_sha256
+      or proof.response_sha256 is distinct from encode(extensions.digest(convert_to(idem.response_payload::text,'UTF8'),'sha256'),'hex')
       or proof.actor_type is distinct from c->>'actor_type'
       or proof.actor_id is distinct from (c->>'actor_id')::uuid
       or proof.device_id is distinct from (c->>'device_id')::uuid
@@ -352,10 +350,10 @@ begin
   response:=public.pos_upsert_restaurant_order_unlimited($1,$2,$3,$4,p_order,p_items,$7);
   if coalesce((response->>'success')::boolean,false) is not true then return response; end if;
 
-  -- Only mint strong proof when this call itself inserted/completed the ledger
-  -- row and the returned successful receipt identifies the persisted parent.
-  -- A legacy/concurrent duplicate with an MD5 collision can never be certified
-  -- by stamping this request onto an older ledger entry.
+  -- xmin is an ephemeral same-transaction sentinel here, not a durable operation
+  -- identity and not a replay-time check. The authentic helper inserts a new
+  -- processing row and completes it in this transaction before returning, so
+  -- a row created in another transaction cannot receive this request's proof.
   select i,i.xmin=pg_catalog.pg_current_xact_id()::xid into idem,idem_created_here
     from public.pos_idempotency_keys i
     where i.license_id=(c->>'license_id')::uuid and i.idempotency_key=p_idempotency_key for update;
@@ -371,9 +369,10 @@ begin
     where r.license_id=(c->>'license_id')::uuid and r.id=idem.entity_id and r.local_order_id=local_id for update;
   if saved_order.id is null then raise exception 'IDEMPOTENCY_CONFLICT' using errcode='P0001'; end if;
   insert into private.restaurant_order_upsert_replay_proofs_v1(
-    license_id,idempotency_key,local_order_id,restaurant_order_id,request_sha256,
+    license_id,idempotency_key,local_order_id,restaurant_order_id,request_sha256,response_sha256,
     actor_type,actor_id,device_id)
   values ((c->>'license_id')::uuid,p_idempotency_key,local_id,saved_order.id,request_sha256,
+    encode(extensions.digest(convert_to(idem.response_payload::text,'UTF8'),'sha256'),'hex'),
     c->>'actor_type',(c->>'actor_id')::uuid,(c->>'device_id')::uuid);
   return response;
 end;
