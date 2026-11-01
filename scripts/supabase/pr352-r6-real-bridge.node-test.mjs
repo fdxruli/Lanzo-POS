@@ -11,7 +11,7 @@ import { canonicalizePostgresAcl } from './pr352-r6-canonical-postgres-acl.mjs';
 import { assertEquivalentPreparationStationCatalog } from './pr352-r6-canonical-postgres-constraints.mjs';
 import { assertRateLimitedRestaurantUpsertCatalog } from './pr352-r6-wrapper-catalog.mjs';
 import { assertPsqlScriptRejection } from './pr352-r6-concurrency.mjs';
-import { sharedLedgerProbeSql, sharedLedgerInvariants, compareSharedLedger } from './pr352-r6-shared-ledger.mjs';
+import { sharedLedgerProbeSql, sharedLedgerInvariants, compareSharedLedger, runSharedLedgerProbe } from './pr352-r6-shared-ledger.mjs';
 import { assertRestaurantOrderItemRelationship, restaurantOrderItemSnapshotSql, runPreparationStationBehavior } from './pr352-r6-preparation-station.mjs';
 import './pr352-r6-concurrency-id.node-test.mjs';
 import './pr352-r6-relationship-diagnostics.node-test.mjs';
@@ -36,14 +36,19 @@ const overlayPath = path.join(root, 'scripts/supabase/pr352-r6-synthetic-ledger-
 function syntheticSharedLedger(phase) {
   const receipt = { success: true, mode: 'cloud_cashier_inventory',
     idempotency_key: `r627-${phase}-key`, sale: { id: `r627-${phase}-1`, total: 20 } };
+  const empty = { sales:0,payments:0,inventory:0,cash:0,credit:0,operations:0,ledger:0 };
+  const security = {owner:'postgres',rls:true,acl:[[10,10,'SELECT',false]]};
   return { phase, status: 'PASS', backendPid: phase === 'before' ? 601 : 602, transactionId: '900',
+    sqlCompleted:true,countsBeforeProbe:structuredClone(empty),countsAfterRollback:structuredClone(empty),securityBefore:structuredClone(security),
+    queries:{operationLookup:`select count(*) from public.pos_financial_operations where license_id='00000000-0000-0000-0000-000000000001'::uuid and idempotency_key='r627-${phase}-key'`},
+    operation:{licenseId:'00000000-0000-0000-0000-000000000001',externalKey:`r627-${phase}-key`,operationType:'sale.cashier_inventory',status:'completed',receiptSuccess:true},
     transactionScope: 'BEGIN_EFFECTS_THEN_ROLLBACK', rollbackVerified: true,
     statementTimeout:'8s',lockTimeout:'2s',blockedBy:[],pendingSessions:0,
     receipt, replayReceipt: structuredClone(receipt), privateTablesPresent: phase === 'after', proofRows: 0, attemptRows: 0,
     countsBefore: { sales:0,payments:0,inventory:0,cash:0,credit:0,operations:0,ledger:0 },
     countsAfter: { sales:1,payments:1,inventory:1,cash:1,credit:0,operations:1,ledger:2 },
     stock:18,saleTotal:20,paymentTotal:20,ledgerRows:2,ledgerCompleted:true,ledgerReceiptValid:true,
-    operationRows:1,operationCompleted:true,security:{owner:'postgres',rls:true,acl:[[10,10,'SELECT',false]]} };
+    operationRows:1,operationCompleted:true,security };
 }
 
 test('shared ledger baseline runs the authentic fixture in bounded rollback transactions around bridge installation', async () => {
@@ -70,11 +75,89 @@ test('shared ledger invariant comparison rejects financial drift, invalid receip
     row=>{row.receipt.sale.total=21;},row=>{row.replayReceipt.success=false;},
     row=>{row.proofRows=1;},row=>{row.attemptRows=1;},row=>{row.ledgerReceiptValid=false;},
     row=>{row.security.rls=false;},row=>{row.security.acl.push([10,0,'SELECT',false]);},
-    row=>{row.rollbackVerified=false;}]) {
+    row=>{row.rollbackVerified=false;},row=>{row.operation.licenseId='00000000-0000-0000-0000-000000000002';},
+    row=>{row.operation.externalKey='foreign-key';},row=>{row.operation.operationType='cash.open';},
+    row=>{row.operation.status='processing';},row=>{row.operationCompleted=false;},
+    row=>{delete row.receipt;},row=>{row.receipt.success=false;},row=>{row.operation.receiptSuccess=false;},
+    row=>{row.ledgerRows=0;},row=>{delete row.countsBeforeProbe;},row=>{delete row.queries;},
+    row=>{row.queries.operationLookup=row.queries.operationLookup.replace('and idempotency_key=','and legacy_idempotency_key=');},
+    row=>{row.sqlCompleted=false;}]) {
     const changed=structuredClone(after); mutate(changed);
     assert.throws(()=>compareSharedLedger(baseline,changed,{}));
   }
   assert.throws(()=>sharedLedgerInvariants(null));
+  assert.throws(()=>compareSharedLedger(baseline,undefined,{}));
+});
+
+test('shared ledger driver retains observed data and confirmed rollback on a later assertion failure', async () => {
+  const source=await readFile(path.join(root,'supabase/tests/fixtures/pr338-real-financial/ordinary-sale.sql'),'utf8');
+  const row=syntheticSharedLedger('after');
+  const changedSecurity={...row.security,rls:false};
+  const replies=[row.countsBefore,{proof:true,attempt:true},row.security,row,row.countsBefore,changedSecurity,0];
+  let calls=0;
+  await assert.rejects(runSharedLedgerProbe({source,phase:'after',identity:{runId:'123'},baseline:syntheticSharedLedger('before'),
+    query:async()=>JSON.stringify(replies[calls++])}),error=>{
+    assert.equal(calls,7);
+    const check=error.sharedLedgerCheck;
+    assert.equal(check.status,'FAIL');assert.equal(check.runId,'123');
+    assert.equal(check.after.status,'FAIL');assert.equal(check.after.phase,'after');
+    assert.equal(check.after.sqlCompleted,true);assert.equal(check.after.rollbackVerified,true);
+    assert.deepEqual(check.after.operation,row.operation);assert.deepEqual(check.after.receipt,row.receipt);
+    assert.deepEqual(check.after.security,changedSecurity);assert.equal(check.comparisonExecuted,false);
+    assert.match(check.failedAssertion,/privileges/);
+    return true;
+  });
+});
+
+test('shared ledger driver preserves partial before snapshot without asserting unconfirmed SQL or rollback', async () => {
+  const source=await readFile(path.join(root,'supabase/tests/fixtures/pr338-real-financial/ordinary-sale.sql'),'utf8');
+  const row=syntheticSharedLedger('before');let calls=0;
+  const replies=[row.countsBefore,{proof:false,attempt:false},row.security];
+  await assert.rejects(runSharedLedgerProbe({source,phase:'before',query:async()=>{
+    if(calls===3){calls++;throw new Error('controlled SQL/client failure');}
+    return JSON.stringify(replies[calls++]);
+  }}),error=>{
+    assert.equal(calls,4);const check=error.sharedLedgerCheck;
+    assert.equal(check.status,'FAIL');assert.equal(check.after,null);
+    assert.equal(check.baseline.phase,'before');assert.equal(check.baseline.status,'FAIL');
+    assert.equal(check.baseline.queryAttempted,true);assert.equal(check.baseline.sqlCompleted,false);
+    assert.equal(check.baseline.rollbackVerified,false);
+    assert.deepEqual(check.baseline.countsBeforeProbe,row.countsBefore);
+    assert.deepEqual(check.baseline.securityBefore,row.security);
+    assert.match(check.baseline.queries.operationLookup,/idempotency_key='r627-before-key'/);
+    assert.equal(check.comparisonExecuted,false);return true;
+  });
+});
+
+test('shared-ledger probe resolves the external operation key in its authentic financial namespace', async () => {
+  const sources=JSON.parse(await readFile(path.join(root,'supabase/tests/fixtures/pr338-real-financial/02-function-sources.json'),'utf8'));
+  const reserve=sources.find(source=>source.startsWith('CREATE OR REPLACE FUNCTION private.reserve_financial_operation_v1('));
+  assert.ok(reserve);
+  assert.match(reserve,/o\.idempotency_key = p_idempotency_key/);
+  assert.match(reserve,/p_license_id, p_idempotency_key, v_internal_idempotency_key, p_request_hash/);
+  const source=await readFile(path.join(root,'supabase/tests/fixtures/pr338-real-financial/ordinary-sale.sql'),'utf8');
+  for(const phase of ['before','after']) {
+    const sql=sharedLedgerProbeSql(source,phase);
+    const operationQueries=[...sql.matchAll(/from public\.pos_financial_operations where ([^)]+)/g)];
+    assert.equal(operationQueries.length,3);
+    for(const [,where] of operationQueries) {
+      assert.ok(where.includes("license_id='00000000-0000-0000-0000-000000000001'::uuid"));
+      assert.ok(where.includes(`and idempotency_key='r627-${phase}-key'`));
+      assert.ok(!where.includes('legacy_idempotency_key'));
+    }
+  }
+  const baseline=syntheticSharedLedger('before'), after=syntheticSharedLedger('after');
+  after.operationRows=0;
+  assert.throws(()=>compareSharedLedger(baseline,after,{runId:'123'}),error=>{
+    assert.equal(error.sharedLedgerCheck.status,'FAIL');
+    assert.equal(error.sharedLedgerCheck.after,after);
+    assert.equal(error.sharedLedgerCheck.baseline,baseline);
+    assert.equal(error.sharedLedgerCheck.runId,'123');
+    assert.equal(error.sharedLedgerCheck.invariantsEqual,false);
+    return true;
+  });
+  const runner=await readFile(runnerPath,'utf8');
+  assert.match(runner,/if \(error\.sharedLedgerCheck\) completedChecks\.push\(error\.sharedLedgerCheck\)/);
 });
 
 test('stdin psql rejection requires script exit 3 and the exact PostgreSQL error', () => {
@@ -1092,6 +1175,11 @@ test('structured evidence gate binds the Admin report to this run and SHA and re
       ['wrong run',row=>{row.runId='999';}],
       ['wrong attempt',row=>{row.runAttempt='999';}],
       ['wrong SQL receipt',row=>{row.after.ledgerReceiptValid=false;}],
+      ['wrong operation license',row=>{row.after.operation.licenseId='00000000-0000-0000-0000-000000000002';}],
+      ['processing operation',row=>{row.after.operation.status='processing';}],
+      ['missing financial receipt',row=>{delete row.after.receipt;}],
+      ['missing ledger',row=>{row.after.ledgerRows=0;}],
+      ['partial SQL snapshot',row=>{delete row.after.countsAfterRollback;}],
     ]) await rejectBridgeMutation(name,report=>mutate(report.checks.find(row=>row.name==='UNRELATED_LEDGER_BEFORE_AFTER')));
 
     await rejectBridgeMutation('missing insertion provenance fails closed',(report)=>{delete report.idempotency.provenance;});

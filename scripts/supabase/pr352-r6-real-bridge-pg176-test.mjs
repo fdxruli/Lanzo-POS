@@ -493,7 +493,9 @@ async function run() {
 
   currentStage = 'shared ledger baseline before bridge';
   const ordinarySaleSource = await readFile(path.join(fixture, 'ordinary-sale.sql'), 'utf8');
-  const sharedLedgerBaseline = await runSharedLedgerProbe({ query, source: ordinarySaleSource, phase: 'before' });
+  const sharedLedgerIdentity = { commitSha: process.env.GITHUB_SHA ?? null,
+    runId: process.env.GITHUB_RUN_ID ?? null, runAttempt: process.env.GITHUB_RUN_ATTEMPT ?? null };
+  const sharedLedgerBaseline = await runSharedLedgerProbe({ query, source: ordinarySaleSource, phase: 'before', identity: sharedLedgerIdentity });
 
   currentStage = 'apply forward bridge migration';
   if (!tempRoot) tempRoot = await mkdtemp(path.join(os.tmpdir(), 'pr352-bridge-pg176-'));
@@ -526,11 +528,9 @@ async function run() {
     contractStateTablePresent: true, contractReaderPresent: true,
   });
   currentStage = 'shared ledger comparison after bridge';
-  const sharedLedgerAfter = await runSharedLedgerProbe({ query, source: ordinarySaleSource, phase: 'after' });
-  completedChecks.push(compareSharedLedger(sharedLedgerBaseline, sharedLedgerAfter, {
-    commitSha: process.env.GITHUB_SHA ?? null,
-    runId: process.env.GITHUB_RUN_ID ?? null, runAttempt: process.env.GITHUB_RUN_ATTEMPT ?? null,
-  }));
+  const sharedLedgerAfter = await runSharedLedgerProbe({ query, source: ordinarySaleSource, phase: 'after',
+    identity: sharedLedgerIdentity, baseline: sharedLedgerBaseline });
+  completedChecks.push(compareSharedLedger(sharedLedgerBaseline, sharedLedgerAfter, sharedLedgerIdentity));
   process.stdout.write('UNRELATED_LEDGER_BEFORE_AFTER_PASS\n');
   currentStage = 'bridge writer preservation';
   const afterBridge = await captureFunctions(allFunctionSignatures);
@@ -1586,6 +1586,7 @@ async function run() {
 
 run().catch((error) => {
   failure = error;
+  if (error.sharedLedgerCheck) completedChecks.push(error.sharedLedgerCheck);
   process.stderr.write(`PR352_FORWARD_BRIDGE_PG176_FAIL stage=${currentStage}\n${error.stack || error.message}\n`);
   process.exitCode = 1;
 }).finally(async () => {
