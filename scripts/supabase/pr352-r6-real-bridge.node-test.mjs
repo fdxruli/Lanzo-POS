@@ -9,6 +9,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { canonicalizePostgresAcl } from './pr352-r6-canonical-postgres-acl.mjs';
 import { assertEquivalentPreparationStationCatalog } from './pr352-r6-canonical-postgres-constraints.mjs';
+import { assertRateLimitedRestaurantUpsertCatalog } from './pr352-r6-wrapper-catalog.mjs';
 import { assertRestaurantOrderItemRelationship, restaurantOrderItemSnapshotSql, runPreparationStationBehavior } from './pr352-r6-preparation-station.mjs';
 import './pr352-r6-concurrency-id.node-test.mjs';
 import './pr352-r6-relationship-diagnostics.node-test.mjs';
@@ -384,6 +385,54 @@ test('full Cocina catalog comparison accepts only the named default CHECK text-c
     undefined, 'The expected manifest must not be broadened to justify the live catalog');
 });
 
+test('rate-limited wrapper catalog comparator binds exact Production identity and rejects altered catalog rows', async () => {
+  const manifest = JSON.parse(await readFile(path.join(root, 'supabase/tests/fixtures/pr352-r6/verified-rate-limited-upsert-wrapper.json'), 'utf8'));
+  const wrapperSql = await readFile(path.join(root, 'supabase/tests/fixtures/pr352-r6/verified-rate-limited-upsert-wrapper.sql'), 'utf8');
+  const body = wrapperSql.match(/AS \$function\$(.*?)\$function\$;/s)?.[1];
+  assert.equal(typeof body, 'string', 'Synthetic wrapper fixture must expose the captured prosrc body');
+  const expected = manifest.entry;
+  const authenticRow = {
+    signature: expected.signature,
+    returnType: expected.returnType,
+    language: expected.language,
+    owner: expected.owner,
+    security_definer: expected.securityDefiner,
+    config: expected.config,
+    acl: expected.acl,
+    source: body,
+  };
+  assert.doesNotThrow(() => assertRateLimitedRestaurantUpsertCatalog([authenticRow], expected));
+
+  const catalogNegatives = [
+    ['return type text', (row) => { row.returnType = 'text'; }],
+    ['language other than plpgsql', (row) => { row.language = 'sql'; }],
+    ['incorrect signature', (row) => { row.signature = 'public.pos_upsert_restaurant_order(text,text)'; }],
+    ['altered owner', (row) => { row.owner = 'authenticated'; }],
+    ['SECURITY DEFINER disabled', (row) => { row.security_definer = false; }],
+    ['incorrect search_path', (row) => { row.config = ['search_path=public']; }],
+    ['altered ACL', (row) => { row.acl = '{postgres=X/postgres,anon=X/postgres}'; }],
+    ['altered function body', (row) => { row.source = `${row.source} -- altered`; }],
+  ];
+  for (const [description, mutate] of catalogNegatives) {
+    const row = structuredClone(authenticRow);
+    mutate(row);
+    assert.throws(() => assertRateLimitedRestaurantUpsertCatalog([row], expected), undefined, description);
+  }
+  assert.throws(() => assertRateLimitedRestaurantUpsertCatalog([], expected), undefined, 'missing wrapper');
+  assert.throws(() => assertRateLimitedRestaurantUpsertCatalog([authenticRow, authenticRow], expected), undefined,
+    'duplicate wrapper signature');
+  for (const field of ['returnType', 'language', 'signature', 'owner', 'securityDefiner', 'config', 'acl', 'prosrcSha256']) {
+    const alteredManifest = structuredClone(expected);
+    if (field === 'config') alteredManifest[field] = ['search_path=public'];
+    else if (field === 'acl') alteredManifest[field] = '{postgres=X/postgres}';
+    else if (field === 'prosrcSha256') alteredManifest[field] = '0'.repeat(64);
+    else if (field === 'securityDefiner') alteredManifest[field] = false;
+    else alteredManifest[field] = 'unexpected';
+    assert.throws(() => assertRateLimitedRestaurantUpsertCatalog([authenticRow], alteredManifest), undefined,
+      `altered manifest ${field}`);
+  }
+});
+
 test('real PostgreSQL runner applies 3D.14 before the bridge and proves finite loopback-only setup', async () => {
   const runner = await readFile(runnerPath, 'utf8');
   const concurrency = await readFile(concurrencyPath, 'utf8');
@@ -391,11 +440,15 @@ test('real PostgreSQL runner applies 3D.14 before the bridge and proves finite l
   const clientWrapperManifest = JSON.parse(await readFile(path.join(root, 'supabase/tests/fixtures/pr352-r6/verified-rate-limited-upsert-wrapper.json'), 'utf8'));
   assert.ok(runner.indexOf("currentStage = 'apply 3D.14'") < runner.indexOf("currentStage = 'apply forward bridge migration'"));
   assert.match(runner, /rateLimitedUpsertWrapperFixture[\s\S]*runFile\(rateLimitedUpsertWrapperFixture/);
-  assert.match(runner, /sha256\(rateLimitedUpsert\[0\]\.source\)[\s\S]*prosrcSha256/);
+  assert.match(runner, /pg_catalog\.format_type\(p\.prorettype,\s*NULL\)/);
+  assert.match(runner, /join pg_language l on l\.oid=p\.prolang/i);
+  assert.match(runner, /assertRateLimitedRestaurantUpsertCatalog\(rateLimitedUpsert,\s*rateLimitedUpsertManifest\.entry\)/);
   assert.match(clientWrapper, /CREATE OR REPLACE FUNCTION public\.pos_upsert_restaurant_order\(/i);
   assert.match(clientWrapper, /public\.enforce_pos_rpc_rate_limit_v2/);
   assert.match(clientWrapper, /public\.pos_upsert_restaurant_order_unlimited/);
   assert.equal(clientWrapperManifest.entry.signature, 'public.pos_upsert_restaurant_order(text,text,text,text,jsonb,jsonb,text)');
+  assert.equal(clientWrapperManifest.entry.returnType, 'jsonb');
+  assert.equal(clientWrapperManifest.entry.language, 'plpgsql');
   assert.equal(clientWrapperManifest.entry.prosrcSha256, '9e7512bfed56993512f48f6f88bdcda1ee89701f01c262af3d1b3a42e191a8c0');
   assert.match(runner, /server_version_num/);
   assert.match(runner, /170006/);

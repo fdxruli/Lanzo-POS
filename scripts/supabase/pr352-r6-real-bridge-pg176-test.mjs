@@ -11,6 +11,7 @@ import { runRestaurantCancellationScenarios } from './pr352-r6-cancellation.mjs'
 import { assertRestaurantOrderItemRelationship, restaurantOrderItemSnapshotSql, runPreparationStationBehavior } from './pr352-r6-preparation-station.mjs';
 import { canonicalizePostgresAcl } from './pr352-r6-canonical-postgres-acl.mjs';
 import { assertEquivalentPreparationStationCatalog } from './pr352-r6-canonical-postgres-constraints.mjs';
+import { assertRateLimitedRestaurantUpsertCatalog } from './pr352-r6-wrapper-catalog.mjs';
 
 const execFileAsync = promisify(execFile);
 const root = process.cwd();
@@ -222,10 +223,12 @@ async function captureFunctions(signatures) {
   const sql = `select coalesce(json_agg(json_build_object(
     'signature',required.signature,'oid',p.oid::text,'source',p.prosrc,'definition',pg_get_functiondef(p.oid),
     'sha256',encode(extensions.digest(replace(pg_get_functiondef(p.oid),chr(13),''),'sha256'),'hex'),
+    'returnType',pg_catalog.format_type(p.prorettype,NULL),'language',l.lanname,
     'owner',r.rolname,'security_definer',p.prosecdef,'config',p.proconfig,'acl',coalesce(p.proacl::text,'<default>')
   ) order by required.signature),'[]'::json)::text
   from (values ${values}) as required(signature)
   join pg_proc p on p.oid=to_regprocedure(required.signature)::oid
+  join pg_language l on l.oid=p.prolang
   join pg_roles r on r.oid=p.proowner`;
   return JSON.parse(await query(sql));
 }
@@ -311,16 +314,12 @@ async function run() {
   assert.equal(rateLimitedUpsertManifest.credentialsIncluded, false);
   await runFile(rateLimitedUpsertWrapperFixture, 'read-only Production-matched rate-limited client wrapper');
   const rateLimitedUpsert = await captureFunctions([rateLimitedUpsertManifest.entry.signature]);
-  assert.equal(rateLimitedUpsert.length, 1, 'The exact rate-limited upsert wrapper required by the v1 versioned endpoint must exist');
-  assert.equal(sha256(rateLimitedUpsert[0].source), rateLimitedUpsertManifest.entry.prosrcSha256,
-    'The rate-limited public wrapper body must match the read-only Production pg_proc fingerprint');
-  assert.equal(rateLimitedUpsert[0].owner, rateLimitedUpsertManifest.entry.owner);
-  assert.equal(rateLimitedUpsert[0].security_definer, rateLimitedUpsertManifest.entry.securityDefiner);
-  assert.deepEqual(rateLimitedUpsert[0].config, rateLimitedUpsertManifest.entry.config);
-  assert.deepEqual(canonicalizePostgresAcl(rateLimitedUpsert[0].acl), canonicalizePostgresAcl(rateLimitedUpsertManifest.entry.acl));
+  assertRateLimitedRestaurantUpsertCatalog(rateLimitedUpsert, rateLimitedUpsertManifest.entry);
   passed('authentic rate-limited public upsert wrapper required by versioned client is present', {
     signature: rateLimitedUpsertManifest.entry.signature,
     prosrcSha256: rateLimitedUpsertManifest.entry.prosrcSha256,
+    returnType: rateLimitedUpsert[0].returnType,
+    language: rateLimitedUpsert[0].language,
     owner: rateLimitedUpsert[0].owner,
     securityDefiner: rateLimitedUpsert[0].security_definer,
   });

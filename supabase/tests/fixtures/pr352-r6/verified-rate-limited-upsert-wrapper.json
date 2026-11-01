@@ -6,6 +6,8 @@
   "credentialsIncluded": false,
   "entry": {
     "signature": "public.pos_upsert_restaurant_order(text,text,text,text,jsonb,jsonb,text)",
+    "returnType": "jsonb",
+    "language": "plpgsql",
     "prosrcSha256": "9e7512bfed56993512f48f6f88bdcda1ee89701f01c262af3d1b3a42e191a8c0",
     "owner": "postgres",
     "securityDefiner": true,
