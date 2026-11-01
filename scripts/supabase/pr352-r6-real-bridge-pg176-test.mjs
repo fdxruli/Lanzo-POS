@@ -6,6 +6,8 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { runRestaurantCutoverConcurrency } from './pr352-r6-concurrency.mjs';
+import { runRestaurantFinancialRaces } from './pr352-r6-financial-races.mjs';
+import { runRestaurantCancellationScenarios } from './pr352-r6-cancellation.mjs';
 import { assertRestaurantOrderItemRelationship, restaurantOrderItemSnapshotSql, runPreparationStationBehavior } from './pr352-r6-preparation-station.mjs';
 import { canonicalizePostgresAcl } from './pr352-r6-canonical-postgres-acl.mjs';
 import { assertEquivalentPreparationStationCatalog } from './pr352-r6-canonical-postgres-constraints.mjs';
@@ -32,6 +34,8 @@ let adminOffEvidence = null;
 let preparationStationEvidence = null;
 const completedChecks = [];
 let concurrencyResults = [];
+let financialRaceResults = [];
+let cancellationResults = [];
 const writerChecks = [];
 
 function passed(name, details = {}) {
@@ -150,6 +154,8 @@ async function writeEvidence() {
     adminOff: adminOffEvidence,
     writerChecks,
     concurrency: concurrencyResults,
+    financialRaces: financialRaceResults,
+    cancellation: cancellationResults,
     preparationStationDependencies: preparationStationEvidence,
     mockedDependencies: [
       'Authentication and license/device/session rows are synthetic.',
@@ -834,6 +840,17 @@ async function run() {
     end if;
   end $test$;`, 'restaurant-settlement-replay');
   process.stdout.write('BRIDGE_RESTAURANT_SETTLEMENT_REPLAY_PASS receipts=identical sales=1 payments=1 inventory_movements=1 parent=paid\n');
+
+  currentStage = 'concurrent settlement versus cancellation and concurrent replay';
+  financialRaceResults = await runRestaurantFinancialRaces({ query, psqlBin, env, createLegacyOrder });
+  assert.deepEqual(financialRaceResults.map((row) => row.name), ['F1', 'F2']);
+  passed('financial settlement races completed with observed parent locks', { scenarios: financialRaceResults.map((row) => row.name) });
+
+  currentStage = 'Restaurant cancellation and rollback';
+  cancellationResults = await runRestaurantCancellationScenarios({ query, createLegacyOrder, paidOrderId: 'r6-f2-parent' });
+  assert.equal(financialRaceResults[0].status, 'PASS');
+  cancellationResults.push({ name: 'C5', status: 'PASS', financialRace: 'F1' });
+  passed('Restaurant cancellation scenarios completed', { scenarios: cancellationResults.map((row) => row.name) });
 
   currentStage = 'final disposable database checks';
   assert.equal(await query("select contract_version||'|'||writes_paused||'|'||(select count(*) from private.restaurant_admin_activation) from private.restaurant_cloud_contract_state where singleton"), '1|false|0');

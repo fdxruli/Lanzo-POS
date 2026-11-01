@@ -11,6 +11,9 @@ import { canonicalizePostgresAcl } from './pr352-r6-canonical-postgres-acl.mjs';
 import { assertEquivalentPreparationStationCatalog } from './pr352-r6-canonical-postgres-constraints.mjs';
 import { assertRestaurantOrderItemRelationship, restaurantOrderItemSnapshotSql, runPreparationStationBehavior } from './pr352-r6-preparation-station.mjs';
 import './pr352-r6-concurrency-id.node-test.mjs';
+import './pr352-r6-relationship-diagnostics.node-test.mjs';
+import './pr352-r6-cancellation.node-test.mjs';
+import './pr352-r6-financial-races.node-test.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const bridgePath = path.join(root, 'docs/evidence/20261030182733_restaurant_cloud_transition_bridge_v1.sql');
@@ -209,6 +212,7 @@ test('Staff parent and item evidence rejects missing, duplicate, cross-license a
     items: [{ id: 'item-a', licenseId: 'license-a', parentId: 'internal-order', localLineId: 'local-line',
       stationCode: 'kitchen', stationName: 'Cocina', deletedAt: null }],
     joinedItems: [{ id: 'item-a', parentId: 'internal-order', licenseId: 'license-a' }],
+    deletedParents: [], deletedItems: [],
   };
   assert.equal(assertRestaurantOrderItemRelationship(valid, expected).itemId, 'item-a');
   const changed = (edit) => { const value = JSON.parse(JSON.stringify(valid)); edit(value); return value; };
@@ -533,6 +537,15 @@ test('structured evidence gate binds the Admin report to this run and SHA and re
     'F: different licenses keep distinct default stations',
     'H: failed transaction rolls back station initialization',
   ];
+  const lock = (pid, mode, granted) => ({ pid, mode, granted, locktype: 'advisory', classId: 123, objectId: 456, objectSubId: 1 });
+  const cutoverLocks = (includeNewWriter) => ({
+    holderGranted: [lock(101, 'ShareLock', true)],
+    holderActivity: [{ pid: 101, state: 'idle in transaction', queryText: 'pos_update_restaurant_order_status_unlimited' }],
+    pauseWaiting: [lock(102, 'ExclusiveLock', false)],
+    pauseActivity: [{ pid: 102, state: 'active', waitEventType: 'Lock', blockedBy: [101] }],
+    ...(includeNewWriter ? { newWriteWaiting: [lock(103, 'ShareLock', false)],
+      newWriteActivity: [{ pid: 103, state: 'active', waitEventType: 'Lock', blockedBy: [102] }] } : {}),
+  });
   let bridge = {
     commitSha,
     runId,
@@ -591,7 +604,41 @@ test('structured evidence gate binds the Admin report to this run and SHA and re
       configurationPreserved: true,
       aclSemanticallyPreserved: true,
     })),
-    concurrency: Array.from({ length: 4 }, () => ({ status: 'PASS' })),
+    concurrency: [
+      { category: 'CUTOVER_COMMIT_RACE', name: 'in-flight real writer commits, pause waits exclusively, new writer rejects', status: 'PASS',
+        submitted: { inFlight: true, pause: true, newWrite: true }, lockObservations: cutoverLocks(true),
+        exitCodes: { holder: 0, pause: 0, newWrite: 0 }, sqlstate: { newWrite: 'P0001', message: 'RESTAURANT_CONTRACT_MAINTENANCE' },
+        finalState: { paused: true, parentStatus: 'preparing', saleCount: 0, pausedWriteParentCount: 0 }, pendingProcesses: 0, pendingDatabaseSessions: 0 },
+      { category: 'UNRELATED_RUBRIC_CONTINUITY', name: 'unrelated cashier financial operation completes while Restaurant transition is paused', status: 'PASS',
+        submitted: true, finalState: { paused: true, saleCount: 1, paymentCount: 1, inventoryCount: 1 } },
+      { category: 'CUTOVER_ROLLBACK_RACE', name: 'in-flight real writer rolls back and releases shared lock for pause', status: 'PASS',
+        submitted: { inFlight: true, pause: true }, lockObservations: cutoverLocks(false), exitCodes: { holder: 0, pause: 0 },
+        finalState: { paused: true, parentStatus: 'pending', saleCount: 0 }, pendingProcesses: 0, pendingDatabaseSessions: 0 },
+      { category: 'POST_RESUME_REPLAY', name: 'replay after resume commits exactly once after concurrent rollback', status: 'PASS',
+        submitted: true, exitCodes: { first: 0, replay: 0 }, finalState: { paused: false, parentStatus: 'preparing', operationRows: 1 } },
+    ],
+    financialRaces: ['F1', 'F2'].map((name) => ({
+      name, status: 'PASS', submitted: { holder: true, contender: true },
+      sql: { holder: 'pos_execute_financial_operation_v1', contender: name === 'F1' ? 'pos_cancel_restaurant_order_from_pos_v1' : 'pos_execute_financial_operation_v1' },
+      holderState: [{ pid: 201, state: 'idle in transaction' }],
+      lockObservations: [{ holderPid: 201, contenderPid: 202, holderGranted: true, contenderGranted: false,
+        holderMode: 'ExclusiveLock', contenderMode: 'ExclusiveLock', wait: 'Lock', classId: 123, objectId: 456, objectSubId: 2, blockedBy: [201],
+        query: name === 'F1' ? 'pos_cancel_restaurant_order_from_pos_v1' : 'R6_FINANCIAL_RPC' }],
+      exitCodes: { holder: 0, contender: 0 }, sqlstate: { holder: '00000', contender: name === 'F1' ? 'P0001' : '00000', message: name === 'F1' ? 'RESTAURANT_ORDER_ALREADY_PAID' : null },
+      stockBefore: 20,
+      finalState: { parentCount: 1, parentStatus: 'delivered', paymentStatus: 'paid', paidSaleId: name === 'F1' ? 'r6-f1-parent' : 'r6-f2-parent', stock: 19, cashMovements: 1, sales: 1, payments: 1,
+        operations: 1, inventory: 1, cancelledItems: 0, cancelKeys: 0, permits: 0 },
+      receipt: { success: true }, contenderReceipt: name === 'F2' ? { success: true } : null,
+      pendingDatabaseSessions: 0, pendingProcesses: 0,
+    })),
+    cancellation: [
+      { name: 'C1', status: 'PASS', parent: 'cancelled', item: 'cancelled', permitGranted: true, permitRows: 0 },
+      { name: 'C2', status: 'PASS', denial: 'P0001 RESTAURANT_TABLE_OWNER_REQUIRED', parentUnchanged: true },
+      { name: 'C3', status: 'PASS', denial: 'P0001 RESTAURANT_ORDER_ALREADY_PAID', parentUnchanged: true },
+      { name: 'C4', status: 'PASS', sameKey: 'identical receipt', differentKey: 'P0001 RESTAURANT_ORDER_ALREADY_CANCELLED', cancellationEvents: 1 },
+      { name: 'C5', status: 'PASS', financialRace: 'F1' },
+      { name: 'C6', status: 'PASS', parentAndItemRestored: true, permitRows: 0 },
+    ],
     postgresServerVersionNum: '170006',
     productionConnections: 0,
   };
@@ -634,6 +681,14 @@ test('structured evidence gate binds the Admin report to this run and SHA and re
   try {
     await writeReports();
     assert.match(runGate(), /PR352_R6_EVIDENCE_PASS/);
+
+    await rejectBridgeMutation('missing financial race fails closed', (report) => { report.financialRaces.pop(); });
+    await rejectBridgeMutation('unobserved financial blocker fails closed', (report) => { report.financialRaces[0].lockObservations[0].blockedBy = []; });
+    await rejectBridgeMutation('financial receipt mismatch fails closed', (report) => { report.financialRaces[1].contenderReceipt.success = false; });
+    await rejectBridgeMutation('duplicate payment fails closed', (report) => { report.financialRaces[0].finalState.payments = 2; });
+    await rejectBridgeMutation('missing cancellation fails closed', (report) => { report.cancellation.pop(); });
+    await rejectBridgeMutation('wrong paid cancellation denial fails closed', (report) => { report.cancellation.find((row) => row.name === 'C3').denial = 'unknown'; });
+    await rejectBridgeMutation('cancellation race must refer to F1', (report) => { report.cancellation.find((row) => row.name === 'C5').financialRace = 'F2'; });
 
     await rejectBridgeMutation('wrong commit SHA must fail closed', (report) => { report.commitSha = 'b'.repeat(40); });
     await rejectBridgeMutation('wrong workflow run ID must fail closed', (report) => { report.runId = '1234567891'; });
@@ -740,6 +795,18 @@ test('structured evidence gate binds the Admin report to this run and SHA and re
     });
     await rejectBridgeMutation('client item license must fail closed', (report) => {
       report.checks.find((check) => check.name.startsWith('legacy and versioned clients')).versioned.relationship.itemLicenseId = 'another-license';
+    });
+    await rejectBridgeMutation('replay cannot be counted as a cutover race', (report) => {
+      report.concurrency[3].category = 'CUTOVER_COMMIT_RACE';
+    });
+    await rejectBridgeMutation('missing lock identity must fail closed', (report) => {
+      report.concurrency[0].lockObservations.pauseWaiting[0].objectId = 999;
+    });
+    await rejectBridgeMutation('unrelated blocking session must fail closed', (report) => {
+      report.concurrency[0].lockObservations.pauseActivity[0].blockedBy = [999];
+    });
+    await rejectBridgeMutation('missing new writer wait must fail closed', (report) => {
+      report.concurrency[0].lockObservations.newWriteActivity = [];
     });
 
     await rejectBridgeMutation('writer body drift must fail closed', (report) => { report.writerChecks[3].bodyRecoveredExactly = false; });

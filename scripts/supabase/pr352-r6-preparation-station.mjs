@@ -20,6 +20,10 @@ export function restaurantOrderItemSnapshotSql(licenseId, localOrderId, localLin
     select id, license_id, local_order_id, deleted_at
     from public.pos_restaurant_orders
     where license_id=${quote(licenseId)}::uuid and local_order_id=${quote(localOrderId)} and deleted_at is null
+  ), deleted_parents as (
+    select id, license_id, local_order_id, deleted_at
+    from public.pos_restaurant_orders
+    where license_id=${quote(licenseId)}::uuid and local_order_id=${quote(localOrderId)} and deleted_at is not null
   ), candidate_items as (
     select id, license_id, restaurant_order_id, local_line_id, station_code, station_name, deleted_at
     from public.pos_restaurant_order_items
@@ -27,6 +31,11 @@ export function restaurantOrderItemSnapshotSql(licenseId, localOrderId, localLin
       (local_line_id=${quote(localLineId)} and license_id=${quote(licenseId)}::uuid)
       or restaurant_order_id in (select id from target_parents)
     )
+  ), deleted_items as (
+    select id, license_id, restaurant_order_id, local_line_id, deleted_at
+    from public.pos_restaurant_order_items
+    where deleted_at is not null and local_line_id=${quote(localLineId)}
+      and (license_id=${quote(licenseId)}::uuid or restaurant_order_id in (select id from target_parents))
   )
   select jsonb_build_object(
     'parents', to_jsonb(array(select jsonb_build_object(
@@ -36,6 +45,11 @@ export function restaurantOrderItemSnapshotSql(licenseId, localOrderId, localLin
       'id',i.id,'licenseId',i.license_id,'parentId',i.restaurant_order_id,
       'localLineId',i.local_line_id,'stationCode',i.station_code,'stationName',i.station_name,'deletedAt',i.deleted_at
     ) from candidate_items i order by i.id)),
+    'deletedParents', to_jsonb(array(select jsonb_build_object('id',p.id,'deletedAt',p.deleted_at)
+      from deleted_parents p order by p.id)),
+    'deletedItems', to_jsonb(array(select jsonb_build_object('id',i.id,'parentId',i.restaurant_order_id,
+      'licenseId',i.license_id,'localLineId',i.local_line_id,'deletedAt',i.deleted_at)
+      from deleted_items i order by i.id)),
     'joinedItems', to_jsonb(array(select jsonb_build_object('id',i.id,'parentId',p.id,'licenseId',i.license_id)
       from target_parents p join candidate_items i
       on p.id=i.restaurant_order_id and p.license_id=i.license_id order by i.id))
@@ -43,8 +57,12 @@ export function restaurantOrderItemSnapshotSql(licenseId, localOrderId, localLin
 }
 
 export function assertRestaurantOrderItemRelationship(snapshot, { licenseId, localOrderId, localLineId }) {
-  assert.ok(snapshot && Array.isArray(snapshot.parents) && Array.isArray(snapshot.items) && Array.isArray(snapshot.joinedItems),
-    'Restaurant parent/item snapshot must contain parent, item and joined item arrays');
+  assert.ok(snapshot && Array.isArray(snapshot.parents) && Array.isArray(snapshot.items) && Array.isArray(snapshot.joinedItems)
+    && Array.isArray(snapshot.deletedParents) && Array.isArray(snapshot.deletedItems),
+    'Restaurant parent/item snapshot must contain active, deleted and joined row arrays');
+  if (snapshot.parents.length === 0 && snapshot.deletedParents?.length) {
+    throw new Error('Restaurant parent must be active: expected parent is deleted');
+  }
   assert.notEqual(snapshot.parents.length, 0, 'Restaurant parent missing for expected license and local order ID');
   assert.equal(snapshot.parents.length, 1, 'Duplicate Restaurant parents for expected license and local order ID');
   const [parent] = snapshot.parents;
@@ -54,7 +72,13 @@ export function assertRestaurantOrderItemRelationship(snapshot, { licenseId, loc
   assert.ok(typeof parent.id === 'string' && parent.id.length > 0, 'Restaurant parent internal ID is missing');
 
   const expectedItems = snapshot.items.filter((item) => item.localLineId === localLineId);
-  assert.notEqual(expectedItems.length, 0, 'Expected Restaurant order item is missing');
+  if (expectedItems.length === 0 && snapshot.deletedItems?.some((item) => item.parentId === parent.id && item.licenseId === licenseId)) {
+    throw new Error('Restaurant order item must be active: expected item is deleted');
+  }
+  assert.notEqual(expectedItems.length, 0,
+    snapshot.items.some((item) => item.parentId === parent.id)
+      ? 'Expected Restaurant order item is missing: incorrect local line on parent'
+      : 'Expected Restaurant order item is missing');
   assert.equal(expectedItems.length, 1, 'Duplicate expected Restaurant order items');
   const [item] = expectedItems;
   assert.equal(item.licenseId, licenseId, 'Restaurant order item has an inconsistent license');

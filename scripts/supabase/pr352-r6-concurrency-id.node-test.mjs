@@ -1,7 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { statusUpdateSql } from './pr352-r6-concurrency.mjs';
+import { countOpenSessions, statusUpdateSql } from './pr352-r6-concurrency.mjs';
+
+test('Set session cleanup counts only children that have not closed', () => {
+  const open = { closed: false };
+  const sessions = new Set([{ closed: true }, open]);
+  assert.equal(countOpenSessions(sessions), 1);
+  open.closed = true;
+  assert.equal(countOpenSessions(sessions), 0);
+});
 
 test('status writer submits the internal id and fails when the RPC rejects it', () => {
   const sql = statusUpdateSql("rest_order_o'brien", 'preparing', 'test-key');

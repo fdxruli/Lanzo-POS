@@ -113,17 +113,19 @@ async function waitForObserved(description, observe, predicate, timeoutMs = 9000
 
 async function observeLocks(query, name) {
   const sql = [
-    "select coalesce(json_agg(json_build_object('pid',l.pid,'granted',l.granted,'mode',l.mode,'locktype',l.locktype,",
+    "select coalesce(json_agg(json_build_object('pid',l.pid,'granted',l.granted,'mode',l.mode,'locktype',l.locktype,'classId',l.classid,'objectId',l.objid,'objectSubId',l.objsubid,",
     "'state',a.state,'waitEventType',a.wait_event_type,'waitEvent',a.wait_event) order by l.granted,l.pid),'[]'::json)::text",
     'from pg_locks l join pg_stat_activity a on a.pid=l.pid',
-    'where a.application_name=' + quote(name) + " and l.locktype='advisory'",
+    'where a.application_name=' + quote(name) + " and l.locktype='advisory' and l.objsubid=1",
+    "and l.classid::bigint=((pg_catalog.hashtextextended('restaurant_contract_cutover_v1',0) >> 32) & 4294967295::bigint)",
+    "and l.objid::bigint=(pg_catalog.hashtextextended('restaurant_contract_cutover_v1',0) & 4294967295::bigint)",
   ].join(' ');
   return JSON.parse(await query(sql, 4000));
 }
 
 async function observeActivity(query, name) {
   const sql = [
-    "select coalesce(json_agg(json_build_object('pid',pid,'state',state,'waitEventType',wait_event_type,'waitEvent',wait_event,'queryText',left(query,300))",
+    "select coalesce(json_agg(json_build_object('pid',pid,'state',state,'waitEventType',wait_event_type,'waitEvent',wait_event,'queryText',left(query,300),'blockedBy',pg_catalog.pg_blocking_pids(pid))",
     "order by pid),'[]'::json)::text",
     'from pg_stat_activity where application_name=' + quote(name),
   ].join(' ');
@@ -142,6 +144,11 @@ function appHasLock(rows, granted, mode) {
 function assertSessionSuccess(name, result) {
   assert.equal(result.code, 0, name + ' must exit 0; stderr=' + result.stderr);
   assert.equal(result.signal, null, name + ' must not be signal-terminated');
+  assert.equal(result.spawnError, null, name + ' must not have a process or stdin error');
+}
+
+export function countOpenSessions(sessions) {
+  return [...sessions].filter((session) => !session.closed).length;
 }
 
 function stateQuery(localOrderId, expectedPausedWriteId = null) {
@@ -189,7 +196,8 @@ export async function runRestaurantCutoverConcurrency({ query, psqlBin, env, cre
       () => observeLocks(query, pauseApp), (rows) => appHasLock(rows, false, 'ExclusiveLock'));
     const pauseActivity = await waitForObserved(pauseApp + ' waiting on the transition lock',
       () => observeActivity(query, pauseApp),
-      (rows) => rows.some((row) => row.state === 'active' && row.waitEventType === 'Lock'));
+      (rows) => rows.some((row) => row.state === 'active' && row.waitEventType === 'Lock'
+        && row.blockedBy.includes(holderLocks.find((lock) => lock.granted && lock.mode === 'ShareLock').pid)));
     assert.ok(pauseActivity.some((row) => row.queryText.includes('set_restaurant_transition_policy_v1')),
       'The pause session must be executing its policy transition while waiting');
 
@@ -203,7 +211,7 @@ export async function runRestaurantCutoverConcurrency({ query, psqlBin, env, cre
       '    perform public.pos_upsert_restaurant_order_unlimited(',
       "      'lab-license-a','lab-device-a','lab-device-token-a','lab-admin-session',",
       "      jsonb_build_object('localOrderId','bridge-r6-paused-write','tableLabel','Synthetic paused write',",
-      "        'status','pending','fulfillmentStatus','pending','subtotal',10,'total',10),",
+      "        'status','pending','fulfillmentStatus','pending','source','tables','subtotal',10,'total',10),",
       "      jsonb_build_array(jsonb_build_object('localLineId','bridge-r6-paused-line',",
       "        'productId','bridge-restaurant-product','productName','Bridge synthetic product',",
       "        'quantity',1,'unitPrice',10,'lineTotal',10)),",
@@ -222,7 +230,8 @@ export async function runRestaurantCutoverConcurrency({ query, psqlBin, env, cre
       () => observeLocks(query, newWriteApp), (rows) => appHasLock(rows, false, 'ShareLock'));
     const newWriteActivity = await waitForObserved(newWriteApp + ' waiting behind pause request',
       () => observeActivity(query, newWriteApp),
-      (rows) => rows.some((row) => row.state === 'active' && row.waitEventType === 'Lock'));
+      (rows) => rows.some((row) => row.state === 'active' && row.waitEventType === 'Lock'
+        && row.blockedBy.includes(pauseLocks.find((lock) => !lock.granted && lock.mode === 'ExclusiveLock').pid)));
     assert.ok(newWriteActivity.some((row) => row.queryText.includes('pos_upsert_restaurant_order_unlimited')),
       'The contender must have sent its complete legacy write call to PostgreSQL');
 
@@ -250,6 +259,7 @@ export async function runRestaurantCutoverConcurrency({ query, psqlBin, env, cre
     assert.equal(commitState.saleCount, 0);
     assert.equal(commitState.pausedWriteParentCount, 0);
     results.push({
+      category: 'CUTOVER_COMMIT_RACE',
       name: 'in-flight real writer commits, pause waits exclusively, new writer rejects',
       status: 'PASS',
       sql: {
@@ -260,6 +270,7 @@ export async function runRestaurantCutoverConcurrency({ query, psqlBin, env, cre
       submitted: { inFlight: true, pause: true, newWrite: true },
       lockObservations: {
         holderGranted: holderLocks,
+        holderActivity,
         pauseWaiting: pauseLocks,
         pauseActivity,
         newWriteWaiting: newWriteLocks,
@@ -270,7 +281,7 @@ export async function runRestaurantCutoverConcurrency({ query, psqlBin, env, cre
       sqlstate: { newWrite: rejected[1], message: rejected[2] },
       stderrMarkers: newWriteExit.stderr,
       finalState: commitState,
-      pendingProcesses: [...sessions].filter((session) => !session.closed).length,
+      pendingProcesses: countOpenSessions(sessions),
       pendingDatabaseSessions: firstScenarioPending,
     });
 
@@ -285,6 +296,7 @@ export async function runRestaurantCutoverConcurrency({ query, psqlBin, env, cre
     assert.equal(pausedOther.paymentCount, 1);
     assert.equal(pausedOther.inventoryCount, 1);
     results.push({
+      category: 'UNRELATED_RUBRIC_CONTINUITY',
       name: 'unrelated cashier financial operation completes while Restaurant transition is paused',
       status: 'PASS',
       sql: 'public.pos_execute_financial_operation_v1(... operation=sale.cashier_inventory, no Restaurant parent or settlement)',
@@ -320,7 +332,8 @@ export async function runRestaurantCutoverConcurrency({ query, psqlBin, env, cre
       () => observeLocks(query, rollbackPauseApp), (rows) => appHasLock(rows, false, 'ExclusiveLock'));
     const rollbackPauseActivity = await waitForObserved(rollbackPauseApp + ' waiting for rollback holder',
       () => observeActivity(query, rollbackPauseApp),
-      (rows) => rows.some((row) => row.state === 'active' && row.waitEventType === 'Lock'));
+      (rows) => rows.some((row) => row.state === 'active' && row.waitEventType === 'Lock'
+        && row.blockedBy.includes(rollbackHolderLocks.find((lock) => lock.granted && lock.mode === 'ShareLock').pid)));
     assert.ok(rollbackPauseActivity.some((row) => row.queryText.includes('set_restaurant_transition_policy_v1')),
       'The rollback scenario pause session must have issued the policy transition');
 
@@ -338,6 +351,7 @@ export async function runRestaurantCutoverConcurrency({ query, psqlBin, env, cre
     assert.equal(rolledBackState.parentStatus, 'pending');
     assert.equal(rolledBackState.saleCount, 0);
     results.push({
+      category: 'CUTOVER_ROLLBACK_RACE',
       name: 'in-flight real writer rolls back and releases shared lock for pause',
       status: 'PASS',
       sql: {
@@ -345,12 +359,12 @@ export async function runRestaurantCutoverConcurrency({ query, psqlBin, env, cre
         pause: 'select private.set_restaurant_transition_policy_v1(true,null,null)',
       },
       submitted: { inFlight: true, pause: true },
-      lockObservations: { holderGranted: rollbackHolderLocks, pauseWaiting: rollbackPauseLocks, pauseActivity: rollbackPauseActivity },
+      lockObservations: { holderGranted: rollbackHolderLocks, holderActivity: rollbackHolderActivity, pauseWaiting: rollbackPauseLocks, pauseActivity: rollbackPauseActivity },
       releaseOrder: ['holder ROLLBACK', 'exclusive pause COMMIT'],
       exitCodes: { holder: rollbackHolderExit.code, pause: rollbackPauseExit.code },
       sqlstate: { holder: '00000', pause: '00000' },
       finalState: rolledBackState,
-      pendingProcesses: [...sessions].filter((session) => !session.closed).length,
+      pendingProcesses: countOpenSessions(sessions),
       pendingDatabaseSessions: rollbackScenarioPending,
     });
 
@@ -388,6 +402,7 @@ export async function runRestaurantCutoverConcurrency({ query, psqlBin, env, cre
     assert.equal(replayState.parentStatus, 'preparing');
     assert.equal(replayState.operationRows, 1);
     results.push({
+      category: 'POST_RESUME_REPLAY',
       name: 'replay after resume commits exactly once after concurrent rollback',
       status: 'PASS',
       sql: statusUpdateSql(rollbackOrderId, 'preparing', 'r6-inflight-rollback-replay') + ' repeated with the same key',

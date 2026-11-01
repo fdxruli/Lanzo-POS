@@ -243,7 +243,88 @@ jobs:
             if (clients.legacy?.role !== "service_role" || clients.versioned?.role !== "anon"
               || !relationValid(clients.legacy.relationship, "bridge-legacy-client", "bridge-legacy-line")
               || !relationValid(clients.versioned.relationship, "bridge-versioned-client", "bridge-versioned-line")) process.exit(1);
-            if (!Array.isArray(bridge.concurrency) || bridge.concurrency.length !== 4 || !bridge.concurrency.every((scenario) => scenario.status === "PASS")) process.exit(1);
+            const requiredCutoverScenarios = {
+              CUTOVER_COMMIT_RACE: "in-flight real writer commits, pause waits exclusively, new writer rejects",
+              UNRELATED_RUBRIC_CONTINUITY: "unrelated cashier financial operation completes while Restaurant transition is paused",
+              CUTOVER_ROLLBACK_RACE: "in-flight real writer rolls back and releases shared lock for pause",
+              POST_RESUME_REPLAY: "replay after resume commits exactly once after concurrent rollback"
+            };
+            if (!Array.isArray(bridge.concurrency) || bridge.concurrency.length !== 4
+              || Object.entries(requiredCutoverScenarios).some(([category, name]) => bridge.concurrency.filter((row) =>
+                row.category === category && row.name === name && row.status === "PASS").length !== 1)) process.exit(1);
+            const scenario = (category) => bridge.concurrency.find((row) => row.category === category);
+            const cutoverLocksValid = (row, includeNewWriter) => {
+              const evidence = row.lockObservations;
+              const held = evidence?.holderGranted?.find((lock) => lock.granted === true && lock.mode === "ShareLock");
+              const waiting = evidence?.pauseWaiting?.find((lock) => lock.granted === false && lock.mode === "ExclusiveLock");
+              const sameKey = (a, b) => a && b && a.locktype === "advisory" && b.locktype === "advisory"
+                && Number.isInteger(a.pid) && Number.isInteger(b.pid) && a.pid !== b.pid
+                && Number.isInteger(a.classId) && Number.isInteger(a.objectId) && a.objectSubId === 1
+                && a.classId === b.classId && a.objectId === b.objectId && a.objectSubId === b.objectSubId;
+              if (!sameKey(held, waiting) || !evidence.holderActivity?.some((activity) => activity.pid === held.pid
+                && activity.state === "idle in transaction" && activity.queryText?.includes("pos_update_restaurant_order_status_unlimited"))
+                || !evidence.pauseActivity?.some((activity) => activity.pid === waiting.pid && activity.state === "active"
+                  && activity.waitEventType === "Lock" && activity.blockedBy?.includes(held.pid))) return false;
+              if (includeNewWriter) {
+                const newWait = evidence.newWriteWaiting?.find((lock) => lock.granted === false && lock.mode === "ShareLock");
+                if (!sameKey(held, newWait) || !evidence.newWriteActivity?.some((activity) => activity.pid === newWait.pid
+                  && activity.state === "active" && activity.waitEventType === "Lock" && activity.blockedBy?.includes(waiting.pid))) return false;
+              }
+              return row.pendingProcesses === 0 && row.pendingDatabaseSessions === 0;
+            };
+            const cutoverCommit = scenario("CUTOVER_COMMIT_RACE");
+            const cutoverRollback = scenario("CUTOVER_ROLLBACK_RACE");
+            const continuity = scenario("UNRELATED_RUBRIC_CONTINUITY");
+            const replay = scenario("POST_RESUME_REPLAY");
+            if (!cutoverLocksValid(cutoverCommit, true) || !cutoverLocksValid(cutoverRollback, false)
+              || cutoverCommit.submitted?.inFlight !== true || cutoverCommit.submitted?.pause !== true || cutoverCommit.submitted?.newWrite !== true
+              || cutoverCommit.exitCodes?.holder !== 0 || cutoverCommit.exitCodes?.pause !== 0 || cutoverCommit.exitCodes?.newWrite !== 0
+              || cutoverCommit.sqlstate?.newWrite !== "P0001" || cutoverCommit.sqlstate?.message !== "RESTAURANT_CONTRACT_MAINTENANCE"
+              || cutoverCommit.finalState?.paused !== true || cutoverCommit.finalState?.parentStatus !== "preparing"
+              || cutoverCommit.finalState?.saleCount !== 0 || cutoverCommit.finalState?.pausedWriteParentCount !== 0
+              || cutoverRollback.submitted?.inFlight !== true || cutoverRollback.submitted?.pause !== true
+              || cutoverRollback.exitCodes?.holder !== 0 || cutoverRollback.exitCodes?.pause !== 0
+              || cutoverRollback.finalState?.paused !== true || cutoverRollback.finalState?.parentStatus !== "pending" || cutoverRollback.finalState?.saleCount !== 0
+              || continuity.submitted !== true || continuity.finalState?.paused !== true || continuity.finalState?.saleCount !== 1
+              || continuity.finalState?.paymentCount !== 1 || continuity.finalState?.inventoryCount !== 1
+              || replay.submitted !== true || replay.finalState?.paused !== false || replay.finalState?.parentStatus !== "preparing"
+              || replay.finalState?.operationRows !== 1 || replay.exitCodes?.first !== 0 || replay.exitCodes?.replay !== 0) process.exit(1);
+            if (!Array.isArray(bridge.financialRaces) || bridge.financialRaces.length !== 2
+              || ["F1", "F2"].some((name) => bridge.financialRaces.filter((row) => row.name === name && row.status === "PASS").length !== 1)) process.exit(1);
+            const financial = (name) => bridge.financialRaces.find((row) => row.name === name);
+            for (const row of bridge.financialRaces) {
+              const locks = row.lockObservations;
+              if (row.submitted?.holder !== true || row.submitted?.contender !== true
+                || !row.sql?.holder?.includes("pos_execute_financial_operation_v1")
+                || !row.sql?.contender?.includes(row.name === "F1" ? "pos_cancel_restaurant_order_from_pos_v1" : "pos_execute_financial_operation_v1")
+                || !Array.isArray(locks) || !locks.some((lock) => Number.isInteger(lock.holderPid) && Number.isInteger(lock.contenderPid)
+                  && lock.holderPid !== lock.contenderPid && lock.holderGranted === true && lock.contenderGranted === false
+                  && lock.holderMode === "ExclusiveLock" && lock.contenderMode === "ExclusiveLock" && lock.wait === "Lock"
+                  && Number.isInteger(lock.classId) && Number.isInteger(lock.objectId) && lock.objectSubId === 2
+                  && lock.query?.includes(row.name === "F1" ? "pos_cancel_restaurant_order_from_pos_v1" : "R6_FINANCIAL_RPC")
+                  && lock.blockedBy?.includes(lock.holderPid) && row.holderState?.some((holder) => holder.pid === lock.holderPid && holder.state === "idle in transaction"))
+                || row.exitCodes?.holder !== 0 || row.exitCodes?.contender !== 0 || row.sqlstate?.holder !== "00000"
+                || row.sqlstate?.contender !== (row.name === "F1" ? "P0001" : "00000")
+                || row.pendingProcesses !== 0 || row.pendingDatabaseSessions !== 0
+                || row.finalState?.parentCount !== 1 || !["pending", "preparing", "ready", "delivered"].includes(row.finalState?.parentStatus) || row.finalState?.paymentStatus !== "paid"
+                || row.finalState?.paidSaleId !== (row.name === "F1" ? "r6-f1-parent" : "r6-f2-parent")
+                || row.finalState?.sales !== 1 || row.finalState?.payments !== 1 || row.finalState?.operations !== 1
+                || row.finalState?.inventory !== 1 || row.finalState?.cancelledItems !== 0 || row.finalState?.cancelKeys !== 0
+                || !Number.isFinite(row.stockBefore) || Number(row.finalState?.stock) !== row.stockBefore - 1
+                || !Number.isInteger(row.finalState?.cashMovements) || row.finalState.cashMovements < 0 || row.finalState.cashMovements > 1
+                || row.finalState?.permits !== 0 || !row.receipt || row.receipt.success !== true) process.exit(1);
+            }
+            if (financial("F1").sqlstate.message !== "RESTAURANT_ORDER_ALREADY_PAID"
+              || JSON.stringify(financial("F2").receipt) !== JSON.stringify(financial("F2").contenderReceipt)) process.exit(1);
+            if (!Array.isArray(bridge.cancellation) || bridge.cancellation.length !== 6
+              || ["C1", "C2", "C3", "C4", "C5", "C6"].some((name) => bridge.cancellation.filter((row) => row.name === name && row.status === "PASS").length !== 1)) process.exit(1);
+            const cancel = (name) => bridge.cancellation.find((row) => row.name === name);
+            if (cancel("C1").parent !== "cancelled" || cancel("C1").item !== "cancelled" || cancel("C1").permitGranted !== true || cancel("C1").permitRows !== 0
+              || cancel("C2").denial !== "P0001 RESTAURANT_TABLE_OWNER_REQUIRED" || cancel("C2").parentUnchanged !== true
+              || cancel("C3").denial !== "P0001 RESTAURANT_ORDER_ALREADY_PAID" || cancel("C3").parentUnchanged !== true
+              || cancel("C4").sameKey !== "identical receipt" || cancel("C4").differentKey !== "P0001 RESTAURANT_ORDER_ALREADY_CANCELLED"
+              || cancel("C4").cancellationEvents !== 1 || cancel("C5").financialRace !== "F1"
+              || cancel("C6").parentAndItemRestored !== true || cancel("C6").permitRows !== 0) process.exit(1);
             if (bridge.postgresServerVersionNum !== "170006" || bridge.productionConnections !== 0) process.exit(1);
             if (!Array.isArray(overlay.cases) || overlay.cases.length !== overlay.caseCount || !overlay.cases.every((scenario) => scenario.status === "PASS")) process.exit(1);
             if (overlay.expectedLedgerRows !== 333 || overlay.caseCount !== 13 || overlay.caseCount !== overlay.passed || overlay.failed !== 0) process.exit(1);
@@ -255,7 +336,11 @@ jobs:
               bridge: bridge.status,
               overlay: overlay.status,
               bridgeChecks: bridge.checks.length,
-              concurrencyScenarios: bridge.concurrency.length,
+              cutoverRaces: 2,
+              continuityChecks: 1,
+              postResumeReplays: 1,
+              financialRaces: 2,
+              cancellationCases: 6,
               overlayCases: overlay.caseCount,
               postgresServerVersionNum: bridge.postgresServerVersionNum,
               syntheticLedgerRows: overlay.expectedLedgerRows
