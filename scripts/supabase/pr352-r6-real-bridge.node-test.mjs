@@ -572,6 +572,36 @@ test('all seven synthetic Restaurant writes match the mapper source contract wit
     'The harness must keep invoking the real versioned wrapper');
 });
 
+test('replay proof INTO source contract rejects composite/scalar targets and fails closed without a ledger sentinel', async () => {
+  const bridge = await readFile(bridgePath, 'utf8');
+  const block = bridge.slice(bridge.indexOf('-- xmin is an ephemeral'), bridge.indexOf('select * into saved_order'));
+  // Source regression only: PostgreSQL compilation remains a separate CI check.
+  const assertIntoContract = (source) => {
+    const sql = source.replace(/--[^\r\n]*/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+    assert.doesNotMatch(sql, /\binto\s+idem\s*,|\binto\s+idem_created_here\s*,/);
+    const statements = sql.match(/\bselect\b[^;]*;/g) ?? [];
+    const row = statements.find((statement) => /\binto\s+idem\b/.test(statement));
+    const sentinel = statements.find((statement) => /\binto\s+idem_created_here\b/.test(statement));
+    assert.ok(row && sentinel, 'The composite row and scalar sentinel need separate SELECT statements');
+    assert.match(row, /\bfor update\s*;/);
+    assert.match(sql, /for update;\s*if found then\b/);
+    const predicate = (statement) => statement.match(/\bwhere\s+(.+?)(?:\s+for update)?;$/)?.[1];
+    assert.equal(predicate(row), predicate(sentinel), 'Both reads must bind the same license and key');
+    assert.match(sentinel, /i\.xmin\s*=\s*pg_catalog\.pg_current_xact_id\(\)::xid/);
+    assert.match(sql, /else\s+idem_created_here\s*:=\s*false;\s*end if;/);
+    assert.match(sql, /if\s+idem_created_here\s+is not true\s+or/);
+  };
+  assertIntoContract(block);
+  assertIntoContract(block.replace('select i.* into idem', 'SELECT * INTO idem').replace('if found then', '-- alternate formatting\nIF FOUND THEN'));
+  const invalid = block.replace(/select i\.\* into idem[\s\S]*?end if;/,
+    "select i,i.xmin=pg_catalog.pg_current_xact_id()::xid into idem,idem_created_here from public.pos_idempotency_keys i where i.license_id=(c->>'license_id')::uuid and i.idempotency_key=p_idempotency_key for update;");
+  assert.throws(() => assertIntoContract(invalid), 'The original PostgreSQL-invalid INTO must be rejected');
+  assert.throws(() => assertIntoContract(block.replace('for update;', ';')));
+  assert.throws(() => assertIntoContract(block.replace('if found then', 'perform 1; if found then')));
+  assert.throws(() => assertIntoContract(block.replace(/(into idem_created_here[\s\S]*?)p_idempotency_key;/, "$1'other-key';")));
+  assert.throws(() => assertIntoContract(block.replace('idem_created_here is not true', 'not idem_created_here')));
+});
+
 test('R20 replay path binds a completed receipt without weakening auth, rate limits, or version guards', async () => {
   const bridge = await readFile(path.join(root, 'docs/evidence/20261030182733_restaurant_cloud_transition_bridge_v1.sql'), 'utf8');
   const runner = await readFile(runnerPath, 'utf8');

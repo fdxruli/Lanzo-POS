@@ -354,10 +354,19 @@ begin
   -- identity and not a replay-time check. The authentic helper inserts a new
   -- processing row and completes it in this transaction before returning, so
   -- a row created in another transaction cannot receive this request's proof.
-  select i,i.xmin=pg_catalog.pg_current_xact_id()::xid into idem,idem_created_here
+  select i.* into idem
     from public.pos_idempotency_keys i
     where i.license_id=(c->>'license_id')::uuid and i.idempotency_key=p_idempotency_key for update;
-  if not found or not idem_created_here or idem.status<>'completed'
+  if found then
+    -- A composite row variable cannot share a multi-target PL/pgSQL INTO list.
+    -- Keep xmin as a same-transaction boolean observation after the locked row read.
+    select i.xmin=pg_catalog.pg_current_xact_id()::xid into idem_created_here
+      from public.pos_idempotency_keys i
+      where i.license_id=(c->>'license_id')::uuid and i.idempotency_key=p_idempotency_key;
+  else
+    idem_created_here:=false;
+  end if;
+  if idem_created_here is not true or idem.status<>'completed'
     or idem.operation_type is distinct from 'restaurant_order.upsert'
     or idem.entity_type is distinct from 'restaurant_order'
     or idem.request_hash is distinct from request_hash
