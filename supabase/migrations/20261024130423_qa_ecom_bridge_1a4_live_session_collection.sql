@@ -30,5 +30,3 @@ begin
     and u.created_at<clock_timestamp()-interval '3 minutes')) ) order by i.id)
    from lanzo_ecom_bridge_qa.identities i where i.id=any(ids)),'[]'::jsonb);
 end $$;
-
-

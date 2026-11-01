@@ -284,5 +284,3 @@ do $$ declare signature text; begin
  execute 'grant execute on function '||signature||' to service_role';
  end loop;
 end $$;
-
-

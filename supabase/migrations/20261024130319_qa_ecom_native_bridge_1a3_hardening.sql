@@ -172,5 +172,3 @@ begin
 end $$;
 revoke all on function public.lanzo_ecom_bridge_qa_quarantine(jsonb),public.lanzo_ecom_bridge_qa_reset_identity(jsonb),public.lanzo_ecom_bridge_qa_vault_batch(),public.lanzo_ecom_bridge_qa_vault_cas(uuid,text,text) from public,anon,authenticated,lanzo_ecom_bridge_receiver;
 grant execute on function public.lanzo_ecom_bridge_qa_quarantine(jsonb),public.lanzo_ecom_bridge_qa_reset_identity(jsonb),public.lanzo_ecom_bridge_qa_vault_batch(),public.lanzo_ecom_bridge_qa_vault_cas(uuid,text,text) to service_role;
-
-

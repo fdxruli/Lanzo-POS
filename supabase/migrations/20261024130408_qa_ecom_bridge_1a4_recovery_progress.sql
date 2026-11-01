@@ -28,5 +28,3 @@ begin
 end $$;
 revoke all on function public.lanzo_ecom_bridge_qa_race(uuid,uuid,text) from public,anon,authenticated,lanzo_ecom_bridge_receiver;
 grant execute on function public.lanzo_ecom_bridge_qa_race(uuid,uuid,text) to service_role;
-
-

@@ -376,5 +376,3 @@ grant execute on function public.lanzo_ecom_bridge_qa_set_kill_switch(boolean,te
 grant execute on function public.lanzo_ecom_bridge_qa_revoke_pilot(uuid) to service_role;
 
 commit;
-
-

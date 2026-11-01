@@ -183,5 +183,3 @@ revoke all on function public.lanzo_ecom_bridge_qa_retention(integer) from publi
 grant execute on function public.lanzo_ecom_bridge_qa_retention(integer) to service_role;
 -- No purge while a Lanzo session can still be valid. Tombstones and receipts
 -- survive at least 30 days after Auth cleanup. No cron is installed.
-
-
