@@ -1,0 +1,37 @@
+{
+  "project": "odlrhijtfyavryeqivaa",
+  "runId": "f748296e-1fba-4c89-b3e3-c2a4a489bc06",
+  "auth": [
+    {
+      "id": "7fbeaf5b-d4d5-4119-acad-eb0a66ee33fb",
+      "email": "qa-ecom-1a1-f748296e-1fba-4c89-b3e3-c2a4a489bc06@example.invalid",
+      "deleted": true,
+      "sessions": [
+        "18d098cb-82de-4021-b29e-fbcdbd8525d6",
+        "96c643fb-2342-4b24-a0f2-e4066086774f"
+      ],
+      "sessionsRemaining": 0,
+      "identitiesRemaining": 0
+    }
+  ],
+  "sql": {
+    "role": "qa_ecom_1a1_f748296e",
+    "schema": "qa_ecom_1a1_f748296e",
+    "table": "qa_ecom_1a1_f748296e.grants",
+    "helper": "qa_ecom_1a1_f748296e.can_receive(text)",
+    "policy": "qa_ecom_1a1_f748296e_receive",
+    "removed": true
+  },
+  "r2": {
+    "persistentApplied": false,
+    "testsRolledBack": true
+  },
+  "shared": {
+    "authConfigChanged": false,
+    "keysChanged": false,
+    "hooksChanged": false,
+    "existingPoliciesChanged": false,
+    "aclPersisted": false
+  },
+  "residuals": "Auth audit records and QA-only broadcast records may remain in platform retention. No tokens or passwords were put in payloads."
+}

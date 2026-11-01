@@ -17,8 +17,8 @@ const portalResult = () => ({
 });
 
 const publishedProduct = (index) => ({
-  id: `published-product-${index}`,
-  localProductRef: `product-${index}`,
+  id: `published-product-${String(index).padStart(3, '0')}`,
+  localProductRef: `product-${String(index).padStart(3, '0')}`,
   publicName: `Producto ${index}`,
   isPublished: true,
   syncConfig: {
@@ -31,7 +31,7 @@ const publishedProduct = (index) => ({
 });
 
 const localProduct = (index) => ({
-  id: `product-${index}`,
+  id: `product-${String(index).padStart(3, '0')}`,
   name: `Producto local ${index}`,
   description: 'Descripción local',
   categoryId: 'category-1',

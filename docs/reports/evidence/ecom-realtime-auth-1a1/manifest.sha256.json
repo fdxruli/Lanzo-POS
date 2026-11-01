@@ -1,0 +1,40 @@
+{
+  "algorithm": "SHA-256",
+  "normalization": "raw bytes",
+  "files": {
+    "20261006224032.remote.json": "1c004083ab3bcfa8fb028a0ff4b5c294cc40cc1c960cb12b2e590184565b2e37",
+    "20261008030859.remote.json": "192e20b52f7931a831221c14606c7ca8c2bae77c2c5286900ff56a2ff94017fe",
+    "acl-execution-denial.json": "c1ec99cd42e6fba4d9a82e139166e6cc9172a609be9100d23ac7458f847e7810",
+    "acl-execution-denial.sql": "0078d6d9eca6df09c60f5581b8bcbd36273a96d1bb69975847dcfff6ed023755",
+    "acl-result.json": "98a853a072af1f7f0ce1802fec53e4366a4f538e10a9b53c7b654c899f20b740",
+    "acl-result.raw.json": "6a52bf25de38eb7b965c521fb44e33cee452a3e2063ee41846de0152a9b1aa8c",
+    "acl-summary.json": "206adfc4c3cbddec879995870f6bf33d96e24b5d67edef7eb12908bcb904d6c1",
+    "acl-transaction.sql": "7b1733fb7de597a5e97404e106aea898e46bc67bcd1789d35566ae6e34555482",
+    "comparison.json": "49202f4ec588e04d0cdd73d607d90756f571f9e4432fd8baec481da17ca4ea4a",
+    "git-preflight.json": "0536d67e23824a0cd49f7b5afd2274a0390ed4f366b6d7c27b66d2163d0ea50f",
+    "ledger-body-comparison.json": "a9736ddcd24b9cc91becb8e2a81643b9c34a79c51bb024b0ec24668d2c623a01",
+    "ledger-current-comparison.json": "5928a20aa20c5253e6485d602e41844858decdc5e7a68341c8131ac89513c94a",
+    "ledger-current.json": "532e3caa0c7e34f5a9a544b6b709dc019d188a8ff19983082ee121aff6c22083",
+    "ledger-divergent-remote.json": "b016049395868ec5a9da3faa706b5dcfbb1fe2d1113821cfd01f0928b3a934ec",
+    "ledger-local-provenance.json": "96d4caea51581fbdc3f8de554145f6c50cb0c0efcec68f18242253f7a2190334",
+    "ledger-summary.json": "7fa03a0b4689c998e961f38ed299bce2080138ee05b3771eec495fd512c34f0b",
+    "local-validation.json": "b72a33fa6f9d965a8730944680998a34d996fbd63a200c1261bc2ed9511048aa",
+    "native-auth.json": "b643197d451b8ca61bec654fe36bf4da6eb218c93c8547cdcb1577b2b7421902",
+    "node-contracts.json": "c1225356847ec6aac96013a71549fe3a65648a6e4398a8b277f439e6c1914270",
+    "partition-preflight.json": "333ef2be113b55c1643dc731945e81c7350fd0230b12f19e7ce6b88616774830",
+    "postflight.json": "31008b724f5716a07c4385e46cb7aeab32f76813c274efb2d213761a2896f533",
+    "prs.json": "51a25fe0f41e52acc3f6519c0edd171de8895ba0efd54a6b8c18efcc6a8f41d3",
+    "qa-cleanup.sql": "bd4bf16b3fc776450e17721b1e53101e5f58068005b7744832b4fb5a44859935",
+    "qa-setup-result.json": "4d2beb79526576a0648f05594f6eccb0bf5cd4b08b69c2a135d3e130d7c6f872",
+    "qa-setup.sql": "6f5d9ec9f95687f6d65e4ef43657347c98acad5972f355c00a701a60e1a328cb",
+    "REPRODUCTION.md": "1fa3b3181370c44a0e49a8528b95b01939641c6955aaa04623f533e7d78f3de4",
+    "resource-inventory.json": "f255d7a306b77644bd0e07b83db8c88a82b3b0110e09bb7fc366c4914d722720",
+    "revoke-commit.json": "7b9cc6865eb10f78bfe7c49e3ed9b7772d2073c18f24e75fb4955a33db835d8d",
+    "vitest.json": "ca8cffec9f173b452bfc6e6e467a3caf5bee658d18e8dafeec3d8f6a98ab193d",
+    "vitest.log": "b79427c4b91c91dce13c39bf551b1bbd3f4c5690f2b0f899fc4d54258eb163fa"
+  },
+  "report": {
+    "path": "../../ECOM.FREE.ORDERS.REALTIME.AUTH.PHASE1A.1.md",
+    "sha256": "aa837067fb652e5c7ae4bafb3b1fa92d015bcabb42f22cc98c566b746ac6590e"
+  }
+}

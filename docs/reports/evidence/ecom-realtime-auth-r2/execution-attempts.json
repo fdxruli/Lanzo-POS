@@ -1,0 +1,30 @@
+{
+  "attempt1": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"error\":{\"name\":\"HttpException\",\"message\":\"Failed to run sql query: ERROR:  42501: permission denied to set role \\\"lanzo_ecom_signal_receiver\\\"\\nCONTEXT:  SQL statement \\\"set local role lanzo_ecom_signal_receiver\\\"\\nPL/pgSQL function pg_temp_49.ecom_receive(jsonb,text) line 5 at EXECUTE\\nSQL statement \\\"SELECT pg_temp.ecom_check('SQL-02-receiver-helper',pg_temp.ecom_receive(a->'claims',a->>'topic'))\\\"\\nPL/pgSQL function inline_code_block line 49 at PERFORM\\n\"}}"
+      }
+    ],
+    "structuredContent": {
+      "error_code": "INVALID_ARGUMENT"
+    },
+    "isError": true
+  },
+  "attempt2": "Candidate syntax DDL succeeded and rolled back; test file not loaded yet; NOT a QA pass.",
+  "attempt3": "82 checks, 81 PASS / 1 FAIL (strict PUBLIC ACL).",
+  "attempt4": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"error\":{\"name\":\"HttpException\",\"message\":\"Failed to run sql query: ERROR:  P0001: ECOM_QA_ASSERTION_FAILED:SQL-02-receiver-helper\\nCONTEXT:  PL/pgSQL function pg_temp_52.ecom_check(text,boolean,jsonb) line 4 at RAISE\\nSQL statement \\\"SELECT pg_temp.ecom_check('SQL-02-receiver-helper',pg_temp.ecom_receive(a->'claims',a->>'topic'))\\\"\\nPL/pgSQL function inline_code_block line 49 at PERFORM\\n\"}}"
+      }
+    ],
+    "structuredContent": {
+      "error_code": "INVALID_ARGUMENT"
+    },
+    "isError": true
+  },
+  "attempt5": "Expanded suite reached separate ACL gate; gate selected legacy overloads by name and correctly aborted. Fixed to six exact signatures.",
+  "final": "91 results: 88 base PASS + 1 base FAIL + 2 separate ACL proposal PASS; all rolled back."
+}

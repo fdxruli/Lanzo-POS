@@ -1,0 +1,93 @@
+{
+  "started_at": "2026-10-22T07:08:50.925Z",
+  "results": [
+    {
+      "id": "EDGE-RECOVERY",
+      "status": "PASS",
+      "http": 200
+    },
+    {
+      "id": "EDGE-SINGLE-FLIGHT",
+      "status": "PASS",
+      "http": [
+        200,
+        409,
+        409,
+        409
+      ],
+      "elapsed_ms": 1097
+    },
+    {
+      "id": "EDGE-REALTIME-JOIN",
+      "status": "PASS",
+      "state": "SUBSCRIBED"
+    },
+    {
+      "id": "RACE-PUBLISH-BEFORE-REVOKE",
+      "status": "PASS",
+      "publish": {
+        "code": "ENQUEUED",
+        "probe_id": "f52e5185-5b49-41c6-9a43-80205d8ace9c",
+        "enqueued_at": "2026-10-22T07:08:56.690136+00:00"
+      },
+      "barrier": {
+        "code": "REVOKED",
+        "barrier_at": "2026-10-22T07:08:59.695323+00:00"
+      },
+      "revoke_elapsed_ms": 3042,
+      "retry": {
+        "code": "EXCLUDED"
+      },
+      "socket": "joined"
+    },
+    {
+      "id": "RACE-REVOKE-BEFORE-PUBLISH",
+      "status": "PASS",
+      "revoke": {
+        "code": "REVOKED",
+        "barrier_at": "2026-10-22T07:09:01.81302+00:00"
+      },
+      "publish": {
+        "code": "EXCLUDED"
+      },
+      "publish_elapsed_ms": 2779
+    },
+    {
+      "id": "EDGE-STAFF-KEY-TRANSITION",
+      "status": "PASS",
+      "http": 200
+    },
+    {
+      "id": "EXPIRY-PRECONDITION",
+      "status": "PASS",
+      "grant_id": "e6e63176-8267-4ac6-a9c0-ba58e6657832",
+      "jwt_exp": 1792656545000,
+      "grant_exp": 1792653065801
+    },
+    {
+      "id": "GRANT-EXPIRES-WHILE-JWT-VALID",
+      "status": "PASS",
+      "old_socket": "joined",
+      "new_join": "CHANNEL_ERROR",
+      "publish": {
+        "code": "EXCLUDED"
+      },
+      "observed_at": 1792653073040
+    }
+  ],
+  "received": [
+    {
+      "at": 1792652939486,
+      "topic": "ecom:qa-probe:1a2:58889948-ab19-42eb-8982-4303956bad52",
+      "event": "qa_probe",
+      "probe_id": "f52e5185-5b49-41c6-9a43-80205d8ace9c"
+    }
+  ],
+  "grants": [
+    "58889948-ab19-42eb-8982-4303956bad52",
+    "61f31b3c-9657-41cc-a16c-ed1ac0abb383",
+    "e6e63176-8267-4ac6-a9c0-ba58e6657832"
+  ],
+  "status": "PASS",
+  "finished_at": "2026-10-22T07:11:13.044Z"
+}

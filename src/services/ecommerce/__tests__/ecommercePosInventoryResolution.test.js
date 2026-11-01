@@ -13,6 +13,7 @@ import {
   ECOMMERCE_INVENTORY_READ_FAILED,
   ECOMMERCE_INVENTORY_STALE_RESPONSE,
   applyEcommerceInventoryResolution,
+  beginEcommerceInventoryResolutionAttempt,
   calculateEcommerceInventoryStatus,
   getEcommerceDraftBatchOptions,
   revalidateEcommerceDraftInventory,
@@ -390,16 +391,87 @@ describe('manual selection service', () => {
 });
 
 describe('stale response protection', () => {
+  it('does not finalize recipe and apparel state after a newer attempt starts during update', async () => {
+    const recipeProduct = exactProduct({
+      id: 'recipe-product',
+      name: 'Receta',
+      recipe: [{ ingredientId: 'ingredient-1', quantity: 1 }]
+    });
+    const ingredient = exactProduct({ id: 'ingredient-1', name: 'Ingrediente', stock: 8 });
+    const apparelProduct = exactProduct({ id: 'apparel-product', name: 'Polo' });
+    const apparelLine = line(apparelProduct, {
+      lineId: 'apparel-line',
+      ecommerceVariantResolutionConflict: {
+        code: 'ECOMMERCE_VARIANT_LOCAL_MAPPING_MISSING',
+        selection: { sourceVariantRef: 'sku:POLO-BLACK-M', sku: 'POLO-BLACK-M' }
+      },
+      inventoryResolution: {
+        mode: 'batch', status: 'pending', code: 'ECOMMERCE_VARIANT_LOCAL_MAPPING_MISSING'
+      }
+    });
+    const current = order([
+      line(recipeProduct, { lineId: 'recipe-line' }),
+      apparelLine
+    ]);
+    const state = activeState(current);
+    const updateOrder = state.updateOrder;
+    let newerAttemptStarted = false;
+    let updateCountWhenNewerAttemptStarted = 0;
+    state.updateOrder = vi.fn((orderId, patch) => {
+      updateOrder(orderId, patch);
+      if (!newerAttemptStarted && patch.items?.some((item) => (
+        item.inventoryResolution?.selectionMode === 'recipe_ingredients'
+      ))) {
+        newerAttemptStarted = true;
+        beginEcommerceInventoryResolutionAttempt(orderId);
+        updateCountWhenNewerAttemptStarted = state.updateOrder.mock.calls.length;
+      }
+    });
+    const products = [recipeProduct, ingredient, apparelProduct];
+    const productById = new Map(products.map((product) => [product.id, product]));
+
+    const result = await revalidateEcommerceDraftInventory({
+      orderId: current.id,
+      now,
+      deps: deps(state, products, {
+        loadData: async (_store, id) => productById.get(id) || null,
+        loadMultipleData: async (_store, ids) => ids.map((id) => productById.get(id) || null),
+        queryBatchesByProduct: async () => [],
+        queryBatchesByProductIdAndActive: async () => [],
+        STORES: { MENU: 'menu', PRODUCT_BATCHES: 'product_batches' }
+      })
+    });
+
+    expect(newerAttemptStarted).toBe(true);
+    expect(result).toMatchObject({
+      success: false,
+      stale: true,
+      changed: false,
+      code: ECOMMERCE_INVENTORY_STALE_RESPONSE
+    });
+    expect(state.activeOrders.get(current.id).items[1])
+      .toHaveProperty('ecommerceVariantResolutionConflict');
+    expect(state.activeOrders.get(current.id)).not.toHaveProperty('ecommerceInventoryVariantCheckedAt');
+    expect(state.updateOrder).toHaveBeenCalledTimes(updateCountWhenNewerAttemptStarted);
+  });
+
   it('rejects R1 after a newer R2 writes conflict', async () => {
     const product = batchProduct();
     const current = order([line(product)]);
     const state = activeState(current);
     const r1Read = deferred();
+    const r1ReadStarted = deferred();
     const r2Read = deferred();
     const r1 = revalidateEcommerceDraftInventory({
       orderId: current.id, now,
-      deps: deps(state, [product], { queryBatchesByProduct: () => r1Read.promise })
+      deps: deps(state, [product], {
+        queryBatchesByProduct: () => {
+          r1ReadStarted.resolve();
+          return r1Read.promise;
+        }
+      })
     });
+    await r1ReadStarted.promise;
     const r2 = revalidateEcommerceDraftInventory({
       orderId: current.id, now,
       deps: deps(state, [product], { queryBatchesByProduct: () => r2Read.promise })
@@ -418,10 +490,17 @@ describe('stale response protection', () => {
     const current = order([line(product)]);
     const state = activeState(current);
     const oldRead = deferred();
+    const oldReadStarted = deferred();
     const oldResolution = revalidateEcommerceDraftInventory({
       orderId: current.id, now,
-      deps: deps(state, [product], { queryBatchesByProduct: () => oldRead.promise })
+      deps: deps(state, [product], {
+        queryBatchesByProduct: () => {
+          oldReadStarted.resolve();
+          return oldRead.promise;
+        }
+      })
     });
+    await oldReadStarted.promise;
     const manual = await selectEcommerceDraftBatch({
       orderId: current.id, lineId: 'line-1', batchId: 'l2', now,
       deps: deps(state, [product], {
@@ -443,10 +522,17 @@ describe('stale response protection', () => {
     const current = order([line(product)]);
     const state = activeState(current);
     const read = deferred();
+    const readStarted = deferred();
     const pending = revalidateEcommerceDraftInventory({
       orderId: current.id, now,
-      deps: deps(state, [product], { queryBatchesByProduct: () => read.promise })
+      deps: deps(state, [product], {
+        queryBatchesByProduct: () => {
+          readStarted.resolve();
+          return read.promise;
+        }
+      })
     });
+    await readStarted.promise;
     state.removeEcommerceDraftLocal(current.id);
     read.resolve([batch('l1', '2026-08-01', 5)]);
     expect((await pending).code).toBe(ECOMMERCE_INVENTORY_STALE_RESPONSE);
@@ -489,10 +575,17 @@ describe('read failures and recovery', () => {
     const current = order([line(product)]);
     const state = activeState(current);
     const oldRead = deferred();
+    const oldReadStarted = deferred();
     const r1 = revalidateEcommerceDraftInventory({
       orderId: current.id, now,
-      deps: deps(state, [product], { queryBatchesByProduct: () => oldRead.promise })
+      deps: deps(state, [product], {
+        queryBatchesByProduct: () => {
+          oldReadStarted.resolve();
+          return oldRead.promise;
+        }
+      })
     });
+    await oldReadStarted.promise;
     const r2 = revalidateEcommerceDraftInventory({
       orderId: current.id, now,
       deps: deps(state, [product], {

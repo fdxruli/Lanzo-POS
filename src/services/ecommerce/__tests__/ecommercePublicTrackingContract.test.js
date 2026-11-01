@@ -38,9 +38,9 @@ describe('checkout tracking contract', () => {
       idempotent: true,
       order: {
         trackingToken: token,
-        trackingPath: `/tienda/mi-tienda/pedido/${token}`,
-        trackingVersion: 1
+        trackingPath: `/tienda/mi-tienda/pedido/${token}`
       }
     });
+    expect(result.order).not.toHaveProperty('trackingVersion');
   });
 });

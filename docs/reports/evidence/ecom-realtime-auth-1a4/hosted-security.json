@@ -1,0 +1,48 @@
+{
+  "stage": "security",
+  "ttl": 600,
+  "started_at": "2026-10-22T18:26:06.375Z",
+  "results": [
+    {
+      "id": "SELF-SERVICE-RESIDUAL",
+      "status": "PASS",
+      "update_http": 200,
+      "login_http": 200,
+      "meaning": "observed residual, not prevention"
+    },
+    {
+      "id": "UNBOUND-DENIED",
+      "status": "PASS"
+    },
+    {
+      "id": "ANOMALY-QUARANTINE",
+      "status": "PASS",
+      "http": 403,
+      "publish": "EXCLUDED"
+    },
+    {
+      "id": "RECOVER-COMPROMISED-IDENTITY",
+      "status": "PASS"
+    },
+    {
+      "id": "MFA-QUARANTINE",
+      "status": "PASS",
+      "enroll_http": 200,
+      "broker_http": 403
+    },
+    {
+      "id": "STAFF-ISOLATED",
+      "status": "PASS"
+    },
+    {
+      "id": "STAFF-AND-TENANT-DENIED",
+      "status": "PASS"
+    },
+    {
+      "id": "TENANT-SOCKET-ISOLATION",
+      "status": "PASS"
+    }
+  ],
+  "status": "PASS",
+  "finished_at": "2026-10-22T18:26:37.718Z"
+}

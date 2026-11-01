@@ -1,0 +1,32 @@
+[
+  {
+    "statement": "select public.admin_list_staff_users(null::text,null::text,null::text,null::text)",
+    "status": "PASS",
+    "sqlstate": "42501"
+  },
+  {
+    "statement": "select public.admin_create_staff_user(null::text,null::text,null::text,null::text,null::text,null::text,null::jsonb,null::text,null::text)",
+    "status": "PASS",
+    "sqlstate": "42501"
+  },
+  {
+    "statement": "select public.admin_update_staff_user(null::text,null::text,null::text,null::uuid,null::text,null::jsonb,null::boolean,null::text,null::text,null::text)",
+    "status": "PASS",
+    "sqlstate": "42501"
+  },
+  {
+    "statement": "select public.pos_get_cash_station_state(null::text,null::text,null::text,null::text)",
+    "status": "PASS",
+    "sqlstate": "42501"
+  },
+  {
+    "statement": "select public.pos_admin_close_cash_session(null::text,null::text,null::text,null::text,null::text,null::text,null::numeric,null::numeric,null::text,null::text,null::integer,null::text)",
+    "status": "PASS",
+    "sqlstate": "42501"
+  },
+  {
+    "statement": "select public.pos_admin_adopt_legacy_cash_session(null::text,null::text,null::text,null::text,null::text,null::integer,null::text)",
+    "status": "PASS",
+    "sqlstate": "42501"
+  }
+]

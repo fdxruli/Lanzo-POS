@@ -1,0 +1,8 @@
+{
+  "rollback_drill": {
+    "role_absent": true,
+    "schema_absent": true,
+    "legacy_policies": 3,
+    "public_sd_functions": 6
+  }
+}

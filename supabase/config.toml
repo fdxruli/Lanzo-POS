@@ -72,6 +72,11 @@ policy = "per_worker"
 inspector_port = 8083
 deno_version = 2
 
+[functions.lanzo-ecom-bridge-qa]
+# This QA endpoint receives a project API key, not a Supabase Auth user JWT.
+# The handler validates the exact project key and then enforces Lanzo authority.
+verify_jwt = false
+
 [analytics]
 # Analytics local no es necesario para esta validación y no se inicia.
 enabled = false
