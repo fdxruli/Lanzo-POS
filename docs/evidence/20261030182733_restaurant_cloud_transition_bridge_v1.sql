@@ -46,6 +46,36 @@ create table private.restaurant_order_upsert_replay_proofs_v1 (
 alter table private.restaurant_order_upsert_replay_proofs_v1 enable row level security;
 revoke all on private.restaurant_order_upsert_replay_proofs_v1 from public,anon,authenticated,service_role;
 
+-- Ephemeral call-local witness, not another idempotency ledger. Only the
+-- versioned SECURITY DEFINER route can create an attempt. The observer never
+-- changes shared ledger rows or writer bodies. A foreign transaction cannot see
+-- this uncommitted attempt, and cannot mark an attempt belonging to another XID.
+create table private.restaurant_upsert_attempts_v1 (
+  transaction_id xid8 not null, license_id uuid not null, idempotency_key text not null,
+  attempt_id uuid not null, request_hash text not null,
+  inserted_entity_id text,
+  primary key(transaction_id,license_id,idempotency_key)
+);
+alter table private.restaurant_upsert_attempts_v1 enable row level security;
+revoke all on private.restaurant_upsert_attempts_v1 from public,anon,authenticated,service_role;
+
+create function private.observe_restaurant_upsert_insert_v1()
+returns trigger language plpgsql security definer set search_path='' as $function$
+begin
+  if new.operation_type='restaurant_order.upsert' and new.entity_type='restaurant_order'
+    and new.status='processing' then
+    update private.restaurant_upsert_attempts_v1 a set inserted_entity_id=new.entity_id
+      where a.transaction_id=pg_catalog.pg_current_xact_id()
+        and a.license_id=new.license_id and a.idempotency_key=new.idempotency_key
+        and a.request_hash=new.request_hash and a.inserted_entity_id is null;
+  end if;
+  return new;
+end;
+$function$;
+revoke all on function private.observe_restaurant_upsert_insert_v1() from public,anon,authenticated,service_role;
+create trigger restaurant_upsert_insert_witness_v1 after insert on public.pos_idempotency_keys
+  for each row execute function private.observe_restaurant_upsert_insert_v1();
+
 -- All instrumented writers acquire SHARED before parent/cash/idempotency locks.
 -- The operator takes EXCLUSIVE and drains in-flight transactions before changing
 -- policy. It never settles a sale or changes a table. Browser roles cannot call it.
@@ -225,7 +255,8 @@ declare c jsonb; o public.pos_restaurant_orders; saved_order public.pos_restaura
   existing_line public.pos_restaurant_order_items; idem public.pos_idempotency_keys;
   proof private.restaurant_order_upsert_replay_proofs_v1; rate_limit jsonb; response jsonb;
   local_id text; expected timestamptz; item jsonb; line_id text; request_hash text;
-  request_sha256 text; has_idem boolean; has_proof boolean; idem_created_here boolean;
+  request_sha256 text; has_idem boolean; has_proof boolean;
+  v_attempt_id uuid; v_inserted_entity_id text;
 begin
   -- Preserve the authentic public wrapper's control order: it consumes the
   -- rate-limit attempt before invoking this versioned route. Transition
@@ -347,26 +378,29 @@ begin
 
   -- The limiter above is the same authentic check used by the public wrapper.
   -- Delegate directly to its reviewed unlimited leaf to avoid counting twice.
+  v_attempt_id:=gen_random_uuid();
+  insert into private.restaurant_upsert_attempts_v1(transaction_id,license_id,idempotency_key,attempt_id,request_hash)
+    values(pg_catalog.pg_current_xact_id(),(c->>'license_id')::uuid,p_idempotency_key,v_attempt_id,request_hash);
   response:=public.pos_upsert_restaurant_order_unlimited($1,$2,$3,$4,p_order,p_items,$7);
-  if coalesce((response->>'success')::boolean,false) is not true then return response; end if;
+  if coalesce((response->>'success')::boolean,false) is not true then
+    delete from private.restaurant_upsert_attempts_v1 a where a.transaction_id=pg_catalog.pg_current_xact_id()
+      and a.license_id=(c->>'license_id')::uuid and a.idempotency_key=p_idempotency_key;
+    return response;
+  end if;
 
-  -- xmin is an ephemeral same-transaction sentinel here, not a durable operation
-  -- identity and not a replay-time check. The authentic helper inserts a new
-  -- processing row and completes it in this transaction before returning, so
-  -- a row created in another transaction cannot receive this request's proof.
+  -- The AFTER INSERT observation survives a successful writer subtransaction,
+  -- but rolls back with it on an exception. An older/concurrent receipt cannot
+  -- supply this nonce-bound insertion witness, even with a colliding MD5 hash.
+  select a.inserted_entity_id into v_inserted_entity_id from private.restaurant_upsert_attempts_v1 a
+    where a.transaction_id=pg_catalog.pg_current_xact_id() and a.license_id=(c->>'license_id')::uuid
+      and a.idempotency_key=p_idempotency_key and a.attempt_id=v_attempt_id;
+  if not found or v_inserted_entity_id is null then
+    raise exception 'IDEMPOTENCY_CONFLICT' using errcode='P0001';
+  end if;
   select i.* into idem
     from public.pos_idempotency_keys i
     where i.license_id=(c->>'license_id')::uuid and i.idempotency_key=p_idempotency_key for update;
-  if found then
-    -- A composite row variable cannot share a multi-target PL/pgSQL INTO list.
-    -- Keep xmin as a same-transaction boolean observation after the locked row read.
-    select i.xmin=pg_catalog.pg_current_xact_id()::xid into idem_created_here
-      from public.pos_idempotency_keys i
-      where i.license_id=(c->>'license_id')::uuid and i.idempotency_key=p_idempotency_key;
-  else
-    idem_created_here:=false;
-  end if;
-  if idem_created_here is not true or idem.status<>'completed'
+  if not found or idem.entity_id is distinct from v_inserted_entity_id or idem.status<>'completed'
     or idem.operation_type is distinct from 'restaurant_order.upsert'
     or idem.entity_type is distinct from 'restaurant_order'
     or idem.request_hash is distinct from request_hash
@@ -383,6 +417,8 @@ begin
   values ((c->>'license_id')::uuid,p_idempotency_key,local_id,saved_order.id,request_sha256,
     encode(extensions.digest(convert_to(idem.response_payload::text,'UTF8'),'sha256'),'hex'),
     c->>'actor_type',(c->>'actor_id')::uuid,(c->>'device_id')::uuid);
+  delete from private.restaurant_upsert_attempts_v1 a where a.transaction_id=pg_catalog.pg_current_xact_id()
+    and a.license_id=(c->>'license_id')::uuid and a.idempotency_key=p_idempotency_key;
   return response;
 end;
 $function$;

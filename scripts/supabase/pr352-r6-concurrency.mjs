@@ -467,6 +467,132 @@ function sessionJson(session, description) {
   return JSON.parse(jsonLines.at(-1));
 }
 
+// Both routes are authentic; only actors, requests and the F receipt setup are synthetic.
+export async function runLegacyProvenanceRaces({ query, psqlBin, env }) {
+  const results = [];
+  const sessions = new Set();
+  const token = 'lab-admin-session-r25-legacy';
+  const sessionId = '00000000-0000-0000-0000-0000000000f3';
+  const start = (name) => {
+    const session = startPsqlSession(name,psqlBin,env);
+    sessions.add(session);
+    return session;
+  };
+  const legacy = (sql) => sql.replace('public.pos_upsert_restaurant_order_versioned_v1(', 'public.pos_upsert_restaurant_order(');
+  const financialState = async () => JSON.parse(await query(`select json_build_object(
+    'sales',(select count(*) from public.pos_sales),'payments',(select count(*) from public.pos_sale_payments),
+    'cash',(select count(*) from public.pos_cash_movements),'inventory',(select count(*) from public.pos_inventory_movements),
+    'credit',(select count(*) from public.pos_customer_ledger),'operations',(select count(*) from public.pos_financial_operations))::text`));
+  const state = async (key, parents) => JSON.parse(await query(`select json_build_object(
+    'parents',(select count(*) from public.pos_restaurant_orders where license_id='${LICENSE_ID}'::uuid and local_order_id in (${parents.map(quote).join(',')})),
+    'items',(select count(*) from public.pos_restaurant_order_items where license_id='${LICENSE_ID}'::uuid and local_line_id in (${parents.map((p) => quote(p+'-line')).join(',')})),
+    'ledger',(select count(*) from public.pos_idempotency_keys where license_id='${LICENSE_ID}'::uuid and idempotency_key=${quote(key)}),
+    'proofs',(select count(*) from private.restaurant_order_upsert_replay_proofs_v1 where license_id='${LICENSE_ID}'::uuid and idempotency_key=${quote(key)}),
+    'attempts',(select count(*) from private.restaurant_upsert_attempts_v1))::text`));
+  try {
+    await query(`insert into public.license_admin_sessions(id,license_id,admin_user_id,device_id,session_token_hash,expires_at)
+      values (${quote(sessionId)}::uuid,'${LICENSE_ID}'::uuid,'00000000-0000-0000-0000-0000000000aa'::uuid,
+      '00000000-0000-0000-0000-00000000000a'::uuid,extensions.crypt(${quote(token)},extensions.gen_salt('bf')),now()+interval '1 day')`);
+    for (const scenario of [
+      {name:'legacy-first-same-parent',legacyFirst:true,crossParent:false},
+      {name:'versioned-first-legacy-same-parent',legacyFirst:false,crossParent:false},
+      {name:'legacy-first-cross-parent',legacyFirst:true,crossParent:true},
+      {name:'foreign-completed-receipt-no-insert',foreign:true},
+    ]) {
+      const holderName='pr352-r25-'+scenario.name+'-holder';
+      const contenderName='pr352-r25-'+scenario.name+'-contender';
+      const holder=start(holderName), contender=start(contenderName);
+      const parent='r25-'+scenario.name, other=scenario.crossParent?parent+'-other':parent;
+      const key=parent+'-key';
+      const financialBefore=await financialState();
+      assert.deepEqual(await state(key,[parent,other]),{parents:0,items:0,ledger:0,proofs:0,attempts:0},
+        'Every provenance race must start with fresh parents and an unused key');
+      let holderSql=versionedUpsertSql(parent,key,parent+'-line');
+      let contenderSql=versionedUpsertSql(other,key,other+'-line','Bridge synthetic product',null,token);
+      let beforeParent = null;
+      if (scenario.foreign) {
+        // A matching prior receipt is forced through the authentic helper's duplicate-return path.
+        // This is controlled ledger setup, not a claimed legacy commercial write.
+        const seed=JSON.parse(await query(legacy(versionedUpsertSql(parent,key+'-seed',parent+'-line'))));
+        assert.equal(seed.success,true);
+        beforeParent=await query(`select row_to_json(r)::text from public.pos_restaurant_orders r where id=${quote(seed.order.id)}`);
+        const version=await query(`select updated_at::text from public.pos_restaurant_orders where id=${quote(seed.order.id)}`);
+        const order=quote(JSON.stringify({localOrderId:parent,clientContractVersion:2,tableLabel:'Concurrent versioned request',
+          status:'pending',fulfillmentStatus:'pending',source:'tables',subtotal:10,total:10,expectedParentVersion:version}))+'::jsonb';
+        const items=quote(JSON.stringify([{localLineId:parent+'-line',productId:'bridge-restaurant-product',
+          productName:'Bridge synthetic product',quantity:1,unitPrice:10,lineTotal:10}]))+'::jsonb';
+        holderSql=`do $r25_foreign$ begin
+          if private.insert_pos_idempotency_processing('${LICENSE_ID}'::uuid,${quote(key)},
+            'restaurant_order.upsert','restaurant_order',${quote(seed.order.id)},md5((${order})::text||'|'||(${items})::text)) is not true
+            then raise exception 'R25_FOREIGN_LEDGER_NOT_CREATED'; end if;
+          perform private.complete_pos_idempotency('${LICENSE_ID}'::uuid,${quote(key)},
+            jsonb_build_object('success',true,'order',jsonb_build_object('id',${quote(seed.order.id)}),'idempotency_key',${quote(key)}));
+          end; $r25_foreign$;
+          select json_build_object('success',true,'controlledForeignLedger',true)::text;`;
+        contenderSql=`set role anon; select public.pos_upsert_restaurant_order_versioned_v1(
+          'lab-license-a','lab-device-a','lab-device-token-a',${quote(token)},${order},${items},${quote(key)})::text; reset role;`;
+      } else if (scenario.legacyFirst) holderSql=legacy(holderSql);
+      else contenderSql=legacy(contenderSql);
+      try {
+        holder.send('begin;'); holder.send(holderSql);
+        const ready=await waitForObserved(holderName+' has executed and holds its transaction',
+          ()=>observeActivity(query,holderName),rows=>rows.some(r=>r.state==='idle in transaction'));
+        const holderPid=ready.find(r=>r.state==='idle in transaction').pid;
+        const receipt=sessionJson(holder,holderName);
+        assert.equal(receipt.success,true);
+        contender.send('begin;'); contender.send(contenderSql);
+        const waiting=await waitForObserved(contenderName+' is blocked by the independent holder',
+          ()=>observeActivity(query,contenderName),rows=>rows.some(r=>r.state==='active'&&r.waitEventType==='Lock'&&r.blockedBy.includes(holderPid)));
+        const wait=waiting.find(r=>r.state==='active'&&r.waitEventType==='Lock');
+        assert.notEqual(wait.pid,holderPid);
+        assert.ok(wait.queryText.includes('pos_upsert_restaurant_order'), 'The contender must submit the real SQL');
+        const locks=JSON.parse(await query(`select json_agg(json_build_object('pid',pid,'type',locktype,'mode',mode,'granted',granted))::text
+          from pg_locks where pid in (${holderPid},${wait.pid})`));
+        assert.ok(locks.some(r=>r.pid===wait.pid&&!r.granted));
+        const keyLocks=await observeRestaurantIdempotencyLock(query,contenderName,key);
+        if (scenario.crossParent || scenario.foreign) {
+          assert.equal(wait.waitEvent,'transactionid','The contender must reach the authentic ledger unique-key wait');
+          assert.ok(keyLocks.some(r=>r.granted),'The versioned contender must have passed auth/parent and taken its key lock');
+        } else assert.equal(wait.waitEvent,'advisory','Same-parent requests must serialize on the real parent lock');
+        // Close input while blocked, before PostgreSQL can exit on the expected error.
+        contender.finish('commit;');
+        holder.finish('commit;');
+        const hx=await waitForSessionExit(holder); assertSessionSuccess(holderName,hx);
+        const cx=await waitForSessionExit(contender);
+        const mustThrow=scenario.crossParent||scenario.foreign;
+        if (mustThrow) {
+          assert.equal(cx.code,1); assert.equal(cx.signal,null); assert.equal(cx.spawnError,null);
+          assert.match(cx.stderr,/P0001/); assert.match(cx.stderr,/IDEMPOTENCY_CONFLICT/);
+          assert.equal(cx.stdout.split(/\r?\n/).some(l=>l.trim().startsWith('{')),false,'No prior receipt may escape');
+        } else {
+          assertSessionSuccess(contenderName,cx);
+          const response=sessionJson(contender,contenderName);
+          if (scenario.legacyFirst) {
+            assert.equal(response.code,'IDEMPOTENCY_CONFLICT'); assert.equal('order' in response,false);
+          } else assert.deepEqual(response,receipt,'Legacy duplicate must return the committed versioned receipt');
+        }
+        const finalState=await state(key,[parent,other]);
+        assert.deepEqual(finalState,{parents:1,items:1,ledger:1,proofs:scenario.legacyFirst||scenario.foreign?0:1,attempts:0});
+        if (scenario.foreign) assert.equal(await query(`select row_to_json(r)::text from public.pos_restaurant_orders r where local_order_id=${quote(parent)} and license_id='${LICENSE_ID}'::uuid`),beforeParent);
+        const pending=await countPendingSessions(query,[holderName,contenderName]); assert.equal(pending,0);
+        const financialAfter=await financialState(); assert.deepEqual(financialAfter,financialBefore,'Upsert races must not create financial effects');
+        results.push({name:scenario.name,status:'PASS',holderSql,contenderSql,queriesSubmitted:true,
+          holderPid,contenderPid:wait.pid,wait,locks,keyLocks,financialBefore,financialAfter,
+          releaseOrder:'holder COMMIT releases the observed wait, then contender completes',
+          exitCodes:{holder:hx.code,contender:cx.code},sqlstate:mustThrow?'P0001':'00000',
+          holderMode:scenario.foreign?'controlled foreign receipt via authentic ledger helpers':'authentic public RPC',
+          finalState,pendingDatabaseSessions:pending});
+      } finally {
+        for(const session of [holder,contender]) if(!session.closed) await session.kill();
+      }
+    }
+    return results;
+  } finally {
+    for(const session of sessions) if(!session.closed) await session.kill();
+    await query(`delete from public.license_admin_sessions where id=${quote(sessionId)}::uuid`);
+  }
+}
+
 export async function runVersionedUpsertIdempotencyRaces({ query, psqlBin, env }) {
   const scenarios = [];
   const sessions = new Set();

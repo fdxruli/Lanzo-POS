@@ -5,7 +5,7 @@ import { promisify } from 'node:util';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { runRestaurantCutoverConcurrency, runVersionedUpsertIdempotencyRaces } from './pr352-r6-concurrency.mjs';
+import { runRestaurantCutoverConcurrency, runVersionedUpsertIdempotencyRaces, runLegacyProvenanceRaces } from './pr352-r6-concurrency.mjs';
 import { runRestaurantFinancialRaces } from './pr352-r6-financial-races.mjs';
 import { runRestaurantCancellationScenarios } from './pr352-r6-cancellation.mjs';
 import { assertRestaurantOrderItemRelationship, restaurantOrderItemSnapshotSql, runPreparationStationBehavior } from './pr352-r6-preparation-station.mjs';
@@ -37,6 +37,8 @@ let failure = null;
 let adminOffEvidence = null;
 let preparationStationEvidence = null;
 let idempotencyEvidence = null;
+let provenanceDiagnostic = null;
+let legacyProvenanceResults = [];
 const completedChecks = [];
 let concurrencyResults = [];
 let idempotencyConcurrencyResults = [];
@@ -195,6 +197,7 @@ async function captureVersionedOrderState(localOrderId, idempotencyKey) {
       and idempotency_key=${quoteSql(idempotencyKey)}),
     'proofRowsForKey',(select count(*) from private.restaurant_order_upsert_replay_proofs_v1 where license_id='00000000-0000-0000-0000-000000000001'
       and idempotency_key=${quoteSql(idempotencyKey)}),
+    'pendingAttempts',(select count(*) from private.restaurant_upsert_attempts_v1),
     'sales',(select count(*) from public.pos_sales),
     'cashMovements',(select count(*) from public.pos_cash_movements),
     'inventoryMovements',(select count(*) from public.pos_inventory_movements),
@@ -230,6 +233,8 @@ async function writeEvidence() {
     cancellation: cancellationResults,
     preparationStationDependencies: preparationStationEvidence,
     idempotency: idempotencyEvidence,
+    provenanceDiagnostic,
+    legacyProvenance: legacyProvenanceResults,
     mockedDependencies: [
       'Authentication and license/device/session rows are synthetic.',
       'Cocina station schema and six direct Restaurant helper bodies are matched to read-only Production pg_catalog fingerprints; station rows and actor IDs are synthetic.',
@@ -491,20 +496,20 @@ async function run() {
   const bridgeSource = await readFile(bridgePath, 'utf8');
   await writeFile(rollbackPath, `${bridgeSource}\nDO $rollback_probe$ BEGIN RAISE EXCEPTION 'PR352_BRIDGE_ROLLBACK_PROBE' USING ERRCODE='P0001'; END $rollback_probe$;\n`);
   await runExpectedRollback(rollbackPath, 'PR352_BRIDGE_ROLLBACK_PROBE');
-  assert.equal(await query("select count(*) from pg_class where oid in (to_regclass('private.restaurant_cloud_contract_state'),to_regclass('private.restaurant_admin_activation'),to_regclass('private.restaurant_bridge_cancel_permits'),to_regclass('private.restaurant_order_upsert_replay_proofs_v1'))"), '0',
+  assert.equal(await query("select count(*) from pg_class where oid in (to_regclass('private.restaurant_cloud_contract_state'),to_regclass('private.restaurant_admin_activation'),to_regclass('private.restaurant_bridge_cancel_permits'),to_regclass('private.restaurant_order_upsert_replay_proofs_v1'),to_regclass('private.restaurant_upsert_attempts_v1'))"), '0',
     'Failed bridge migration must leave no created private tables');
   assert.equal(await query(`select count(*) from pg_proc p join pg_namespace n on n.oid=p.pronamespace
     where (n.nspname='private' and p.proname in ('enter_restaurant_transition_write_v1','set_restaurant_transition_policy_v1',
       'restaurant_admin_supervision_enabled_v1','assert_restaurant_bridge_actor_v1','prepare_restaurant_bridge_upsert_v1',
       'enter_restaurant_financial_transition_write_v1','prepare_restaurant_bridge_cancel_v1',
-      'guard_restaurant_bridge_parent_v1','cleanup_restaurant_bridge_cancel_permit_v1'))
+      'guard_restaurant_bridge_parent_v1','cleanup_restaurant_bridge_cancel_permit_v1','observe_restaurant_upsert_insert_v1'))
       or (n.nspname='public' and p.proname in ('pos_restaurant_cloud_contract_v1',
         'pos_restaurant_transition_table_capabilities_v1','pos_upsert_restaurant_order_versioned_v1'))`), '0',
     'Failed bridge transaction must remove every newly created bridge function and grant surface');
   const afterRollback = await captureFunctions(allFunctionSignatures);
   assert.deepEqual(summarizeFunctionRows(afterRollback), summarizeFunctionRows(beforeBridge),
     'Failed bridge migration must restore all function definitions and metadata fingerprints');
-  assert.equal(await query("select count(*) from pg_trigger where tgname in ('restaurant_bridge_terminal_guard_v1','restaurant_bridge_cancel_permit_cleanup_v1') and not tgisinternal"), '0');
+  assert.equal(await query("select count(*) from pg_trigger where tgname in ('restaurant_bridge_terminal_guard_v1','restaurant_bridge_cancel_permit_cleanup_v1','restaurant_upsert_insert_witness_v1') and not tgisinternal"), '0');
   process.stdout.write('BRIDGE_MIGRATION_TRANSACTION_ROLLBACK_PASS\n');
   passed('bridge installation transaction fully rolls back after induced failure');
 
@@ -590,15 +595,23 @@ async function run() {
     'policyCount',(select count(*) from pg_policy pol where pol.polrelid=c.oid)
   ) order by c.relname)::text from pg_class c join pg_namespace n on n.oid=c.relnamespace
   where n.nspname='private' and c.relname in ('restaurant_cloud_contract_state','restaurant_admin_activation','restaurant_bridge_cancel_permits',
-    'restaurant_order_upsert_replay_proofs_v1')`);
+    'restaurant_order_upsert_replay_proofs_v1','restaurant_upsert_attempts_v1')`);
   const tables = JSON.parse(tableState);
-  assert.equal(tables.length, 4, 'All private bridge tables must be installed');
+  assert.equal(tables.length, 5, 'All private bridge tables must be installed');
   const effectiveTablePrivilegeKeys = Object.keys(tables[0]).filter((key) =>
     /^(anon|authenticated|service_role)_(select|insert|update|delete|truncate)$/.test(key));
   assert.ok(tables.every((row) => row.rls && effectiveTablePrivilegeKeys.every((key) => row[key] === false)),
     'Bridge private tables must be RLS enabled and have no effective read, write or truncate grants to browser/service roles');
   assert.ok(tables.every((row) => row.publicAnyPrivilege === false && row.policyCount === 0),
     'Private bridge tables must have no PUBLIC ACL entry and no row policy that could expose rows');
+  const observer = JSON.parse(await query(`select json_build_object('table',t.tgrelid::regclass::text,
+    'type',t.tgtype,'enabled',t.tgenabled,'securityDefiner',p.prosecdef,'owner',pg_get_userbyid(p.proowner),
+    'config',p.proconfig,'browserExecute',has_function_privilege('anon',p.oid,'execute')
+      or has_function_privilege('authenticated',p.oid,'execute') or has_function_privilege('service_role',p.oid,'execute'))::text
+    from pg_trigger t join pg_proc p on p.oid=t.tgfoid where t.tgname='restaurant_upsert_insert_witness_v1' and not t.tgisinternal`));
+  assert.deepEqual(observer,{table:'pos_idempotency_keys',type:5,enabled:'O',securityDefiner:true,owner:'postgres',
+    config:['search_path=""'],browserExecute:false}, 'The ledger observer must be the private AFTER INSERT row trigger');
+  passed('private insertion witness has restricted ACL, RLS and an enabled authentic-ledger observer',observer);
   const privateSchemaUsage = JSON.parse(await query(`select json_build_object(
     'anon',has_schema_privilege('anon','private','usage'),
     'authenticated',has_schema_privilege('authenticated','private','usage'),
@@ -839,6 +852,45 @@ async function run() {
   );
   assert.equal(legacyUpsert.order?.id, legacyRelation.parentId, 'Legacy receipt must identify its persisted parent');
   assert.equal(legacyUpsert.order?.localOrderId, legacyRelation.localOrderId);
+
+  currentStage = 'R25 authentic writer provenance diagnostic';
+  const diagnosticBefore = await captureVersionedOrderState('bridge-r25-diagnostic','bridge-r25-diagnostic-key');
+  provenanceDiagnostic = JSON.parse(await query(`begin;
+    create temporary table r25_probe(request_order jsonb,request_items jsonb,receipt jsonb) on commit drop;
+    insert into r25_probe values (
+      jsonb_build_object('localOrderId','bridge-r25-diagnostic','clientContractVersion',2,'status','pending',
+        'fulfillmentStatus','pending','source','tables','subtotal',10,'total',10),
+      jsonb_build_array(jsonb_build_object('localLineId','bridge-r25-diagnostic-line','productId','bridge-restaurant-product',
+        'productName','Synthetic diagnostic','quantity',1,'unitPrice',10,'lineTotal',10)),null);
+    update r25_probe d set receipt=public.pos_upsert_restaurant_order_unlimited(
+      'lab-license-a','lab-device-a','lab-device-token-a','lab-admin-session',
+      d.request_order,d.request_items,'bridge-r25-diagnostic-key');
+    select json_build_object('topLevelXid',pg_current_xact_id()::text,'observedLedgerXmin',i.xmin::text,
+      'ledgerStatus',i.status,'operation',i.operation_type,'writerSuccess',d.receipt->'success',
+      'receiptSha256',encode(extensions.digest(convert_to(d.receipt::text,'UTF8'),'sha256'),'hex'),
+      'predicates',json_build_object(
+        'sameTopLevelXid',coalesce(i.xmin=pg_current_xact_id()::xid,false),
+        'ledgerPresent',i.idempotency_key is not null,'completed',i.status is not distinct from 'completed',
+        'operationMatches',i.operation_type is not distinct from 'restaurant_order.upsert',
+        'entityMatches',i.entity_type is not distinct from 'restaurant_order',
+        'md5Matches',i.request_hash is not distinct from md5(d.request_order::text||'|'||d.request_items::text),
+        'receiptMatches',i.response_payload is not distinct from d.receipt,
+        'parentMatches',i.entity_id is not null and i.entity_id is not distinct from d.receipt->'order'->>'id'))::text
+      from r25_probe d left join public.pos_idempotency_keys i
+        on i.license_id=${quoteSql(clientLicenseId)}::uuid and i.idempotency_key='bridge-r25-diagnostic-key';
+    rollback;`));
+  provenanceDiagnostic.failedPredicates = Object.entries(provenanceDiagnostic.predicates)
+    .filter(([, value]) => value !== true).map(([name]) => name);
+  provenanceDiagnostic.subtransactionHypothesis = provenanceDiagnostic.predicates.sameTopLevelXid
+    ? 'NOT_REPRODUCED' : 'DISTINCT_XIDS_OBSERVED';
+  assert.equal(provenanceDiagnostic.writerSuccess,true,JSON.stringify(provenanceDiagnostic));
+  for (const [name,value] of Object.entries(provenanceDiagnostic.predicates)) {
+    if (name !== 'sameTopLevelXid') assert.equal(value,true,JSON.stringify(provenanceDiagnostic));
+  }
+  assert.deepEqual(await captureVersionedOrderState('bridge-r25-diagnostic','bridge-r25-diagnostic-key'),diagnosticBefore,
+    'The diagnostic must roll back the authentic writer and retain no test effects');
+  passed('authentic writer provenance diagnostic records every original rejection predicate',provenanceDiagnostic);
+  currentStage = 'legacy and versioned client writes while bridge remains v1';
   const versionedUpsertSql = `set role anon; select public.pos_upsert_restaurant_order_versioned_v1(
     'lab-license-a','lab-device-a','lab-device-token-a','lab-admin-session',
     jsonb_build_object('localOrderId','bridge-versioned-client','clientContractVersion',2,'tableLabel','Versioned client',
@@ -860,7 +912,9 @@ async function run() {
     idempotencyKey:'bridge-r20-xid-probe-key',lineId:'bridge-r20-xid-probe-line' })}
     select json_build_object('xminType',pg_typeof(i.xmin)::text,
       'currentXid8Type',pg_typeof(pg_current_xact_id())::text,
-      'sameTransaction',i.xmin=pg_current_xact_id()::xid)::text
+      'sameTransaction',i.xmin=pg_current_xact_id()::xid,
+      'proofs',(select count(*) from private.restaurant_order_upsert_replay_proofs_v1 where idempotency_key='bridge-r20-xid-probe-key'),
+      'pendingAttempts',(select count(*) from private.restaurant_upsert_attempts_v1))::text
     from public.pos_idempotency_keys i where i.license_id=${quoteSql(clientLicenseId)}::uuid
       and i.idempotency_key='bridge-r20-xid-probe-key'; rollback;`;
   const xidProbeRun = await runPsql(['-A','-t','-c',xidProbeSql]);
@@ -869,15 +923,19 @@ async function run() {
   const xidProbeReceipt = JSON.parse(xidProbeRows[0]);
   const xidProbe = JSON.parse(xidProbeRows[1]);
   assert.equal(xidProbeReceipt.success, true, 'The XID probe must execute the real versioned writer');
-  assert.deepEqual(xidProbe,{ xminType:'xid',currentXid8Type:'xid8',sameTransaction:true },
-    'PostgreSQL must expose xmin as xid, pg_current_xact_id as xid8, and the cast must identify this transaction');
+  assert.equal(xidProbe.xminType,'xid');
+  assert.equal(xidProbe.currentXid8Type,'xid8');
+  assert.equal(typeof xidProbe.sameTransaction,'boolean', 'XID equality is diagnostic, not provenance');
+  assert.equal(xidProbe.proofs,1,'An actual ledger insertion must mint exactly one strong proof despite subtransactions');
+  assert.equal(xidProbe.pendingAttempts,0,'A successful call must consume its private insertion witness');
   const xidRollbackState = JSON.parse(await query(`select json_build_object(
     'parents',(select count(*) from public.pos_restaurant_orders where license_id=${quoteSql(clientLicenseId)}::uuid and local_order_id='bridge-r20-xid-probe'),
     'items',(select count(*) from public.pos_restaurant_order_items where license_id=${quoteSql(clientLicenseId)}::uuid and local_line_id='bridge-r20-xid-probe-line'),
     'ledger',(select count(*) from public.pos_idempotency_keys where license_id=${quoteSql(clientLicenseId)}::uuid and idempotency_key='bridge-r20-xid-probe-key'),
     'proofs',(select count(*) from private.restaurant_order_upsert_replay_proofs_v1 where license_id=${quoteSql(clientLicenseId)}::uuid and idempotency_key='bridge-r20-xid-probe-key'),
-    'events',(select count(*) from public.pos_sync_events where license_id=${quoteSql(clientLicenseId)}::uuid and idempotency_key='bridge-r20-xid-probe-key'))::text`));
-  assert.deepEqual(xidRollbackState,{parents:0,items:0,ledger:0,proofs:0,events:0},
+    'attempts',(select count(*) from private.restaurant_upsert_attempts_v1),
+      'events',(select count(*) from public.pos_sync_events where license_id=${quoteSql(clientLicenseId)}::uuid and idempotency_key='bridge-r20-xid-probe-key'))::text`));
+  assert.deepEqual(xidRollbackState,{parents:0,items:0,ledger:0,proofs:0,attempts:0,events:0},
     'A top-level ROLLBACK after the writer has inserted its proof must remove every effect visible to a new connection');
 
   currentStage = 'R20 failure during idempotency completion';
@@ -902,8 +960,9 @@ async function run() {
       'items',(select count(*) from public.pos_restaurant_order_items where license_id=${quoteSql(clientLicenseId)}::uuid and local_line_id='bridge-r20-completion-failure-line'),
       'ledger',(select count(*) from public.pos_idempotency_keys where license_id=${quoteSql(clientLicenseId)}::uuid and idempotency_key=${quoteSql(completionFailureKey)}),
       'proofs',(select count(*) from private.restaurant_order_upsert_replay_proofs_v1 where license_id=${quoteSql(clientLicenseId)}::uuid and idempotency_key=${quoteSql(completionFailureKey)}),
+      'attempts',(select count(*) from private.restaurant_upsert_attempts_v1),
       'events',(select count(*) from public.pos_sync_events where license_id=${quoteSql(clientLicenseId)}::uuid and idempotency_key=${quoteSql(completionFailureKey)}))::text`));
-    assert.deepEqual(completionFailureState,{parents:0,items:0,ledger:0,proofs:0,events:0},
+    assert.deepEqual(completionFailureState,{parents:0,items:0,ledger:0,proofs:0,attempts:0,events:0},
       'A failure while completing idempotency must roll back the entire operation');
   } finally {
     await runSql(`drop trigger if exists pr352_test_fail_idempotency_completion_v1 on public.pos_idempotency_keys;
@@ -932,8 +991,9 @@ async function run() {
       'items',(select count(*) from public.pos_restaurant_order_items where license_id=${quoteSql(clientLicenseId)}::uuid and local_line_id='bridge-r20-proof-failure-line'),
       'ledger',(select count(*) from public.pos_idempotency_keys where license_id=${quoteSql(clientLicenseId)}::uuid and idempotency_key=${quoteSql(proofFailureKey)}),
       'proofs',(select count(*) from private.restaurant_order_upsert_replay_proofs_v1 where license_id=${quoteSql(clientLicenseId)}::uuid and idempotency_key=${quoteSql(proofFailureKey)}),
+      'attempts',(select count(*) from private.restaurant_upsert_attempts_v1),
       'events',(select count(*) from public.pos_sync_events where license_id=${quoteSql(clientLicenseId)}::uuid and idempotency_key=${quoteSql(proofFailureKey)}))::text`));
-    assert.deepEqual(proofFailureState,{parents:0,items:0,ledger:0,proofs:0,events:0},
+    assert.deepEqual(proofFailureState,{parents:0,items:0,ledger:0,proofs:0,attempts:0,events:0},
       'A failure after proof insertion must roll back the proof and every operation effect');
   } finally {
     await runSql(`drop trigger if exists pr352_test_fail_after_replay_proof_v1 on private.restaurant_order_upsert_replay_proofs_v1;
@@ -980,6 +1040,28 @@ async function run() {
     and device_fingerprint='lab-device-a' and rpc_name='pos_upsert_restaurant_order' and scope='POS_WRITE'
     and staff_session_hash=encode(extensions.digest('lab-admin-session','sha256'),'hex')`);
   assert.equal(replayRateCount, '2', 'The original write and its exact replay must each consume one authentic rate-limit attempt');
+
+  currentStage = 'R25 preexisting legacy ledger and unsuccessful leaf response';
+  const priorSql = versionedClientUpsertSql({localOrderId:'bridge-r25-prior',idempotencyKey:'bridge-r25-prior-key',lineId:'bridge-r25-prior-line'});
+  const priorReceipt = JSON.parse(await query(priorSql.replace('public.pos_upsert_restaurant_order_versioned_v1(', 'public.pos_upsert_restaurant_order(')));
+  assert.equal(priorReceipt.success,true,'The authentic legacy wrapper must complete the prior operation');
+  const priorState = await captureVersionedOrderState('bridge-r25-prior','bridge-r25-prior-key');
+  assert.equal(priorState.proofRowsForKey,0,'Legacy success must not manufacture a versioned SHA proof');
+  const priorRejected = JSON.parse(await query(priorSql));
+  assert.equal(priorRejected.code,'IDEMPOTENCY_CONFLICT');
+  assert.equal('order' in priorRejected,false,'A preexisting completed ledger without proof must not disclose its receipt');
+  assert.deepEqual(await captureVersionedOrderState('bridge-r25-prior','bridge-r25-prior-key'),priorState);
+  const emptyBefore = await captureVersionedOrderState('bridge-r25-empty','bridge-r25-empty-key');
+  const emptyResponse = JSON.parse(await query(`set role anon; select public.pos_upsert_restaurant_order_versioned_v1(
+    'lab-license-a','lab-device-a','lab-device-token-a','lab-admin-session',
+    jsonb_build_object('localOrderId','bridge-r25-empty','clientContractVersion',2,'source','tables'),
+    '[]'::jsonb,'bridge-r25-empty-key')::text; reset role;`));
+  assert.equal(emptyResponse.success,false);
+  assert.equal(emptyResponse.code,'RESTAURANT_ORDER_EMPTY');
+  assert.deepEqual(await captureVersionedOrderState('bridge-r25-empty','bridge-r25-empty-key'),emptyBefore,
+    'A non-successful authentic leaf response must clean the private attempt without a proof or business effect');
+  passed('prior legacy ledger rejected without attribution and unsuccessful writer response cleans its attempt');
+  currentStage = 'R20 canonical fingerprint and post-commit retry';
 
   const changedOrderReplay = JSON.parse(await query(versionedClientUpsertSql({ localOrderId:'bridge-versioned-client',
     idempotencyKey:'bridge-versioned-client-upsert',lineId:'bridge-versioned-line',tableLabel:'Changed payload' })));
@@ -1185,6 +1267,12 @@ async function run() {
     'versioned-cutover-rate-limit-order',
   ],'RC-03/04 identical-key replay, same-key cross-parent serialization, RC-05 distinct-key parent serialization and cutover/rate-lock ordering must all run independently');
 
+  legacyProvenanceResults = await runLegacyProvenanceRaces({ query, psqlBin, env });
+  assert.deepEqual(legacyProvenanceResults.map((row) => row.name),[
+    'legacy-first-same-parent','versioned-first-legacy-same-parent','legacy-first-cross-parent',
+    'foreign-completed-receipt-no-insert',
+  ],'Legacy races and a forced duplicate receipt must all complete before replay certification');
+
   currentStage = 'R20 terminal parent replay and real rate-limit rejection';
   const beforeCancellationVersion = JSON.parse(await query(`select json_build_object('updatedAt',updated_at)::text
     from public.pos_restaurant_orders where license_id=${quoteSql(clientLicenseId)}::uuid and local_order_id='bridge-versioned-client'`)).updatedAt;
@@ -1319,6 +1407,8 @@ async function run() {
 
   idempotencyEvidence = {
     status:'PASS',
+    provenance: { mechanism:'private call nonce witnessed by authentic ledger INSERT', legacy:legacyProvenanceResults,
+      diagnostic:provenanceDiagnostic, xidProbe },
     firstWrite: 'R20-01 PASS', postCommitLostResponseReplay: 'R20-02/R20-03 PASS',
     noDuplicateBusinessEffects: 'PASS', rateLimitBlockedReplay: 'PASS',
     concurrent: idempotencyConcurrencyResults, rollbackRetry: 'PASS',
@@ -1476,6 +1566,7 @@ async function run() {
   currentStage = 'final disposable database checks';
   assert.equal(await query("select contract_version||'|'||writes_paused||'|'||(select count(*) from private.restaurant_admin_activation) from private.restaurant_cloud_contract_state where singleton"), '1|false|0');
   assert.equal(await query("select count(*) from pg_stat_activity where datname='pr352_bridge_isolated' and pid<>pg_backend_pid()"), '0', 'No child database sessions may remain');
+  assert.equal(await query('select count(*) from private.restaurant_upsert_attempts_v1'),'0','No private attempt may survive a completed suite');
   process.stdout.write('PR352_FORWARD_BRIDGE_PG176_PASS\n');
   passed('bridge integration assertions and zero-session cleanup complete');
 }

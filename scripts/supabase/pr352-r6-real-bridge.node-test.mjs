@@ -510,7 +510,7 @@ test('isolated workflow runs only on the exact QA push branch without secrets or
     'runner temp path must be scoped to the two steps that write JSON evidence');
 });
 
-test('all seven synthetic Restaurant writes match the mapper source contract without changing actor coverage', async () => {
+test('original Restaurant writes and the empty-response regression preserve mapper source and actor coverage', async () => {
   const runner = await readFile(runnerPath, 'utf8');
   const mapper = await readFile(path.join(root, 'src/services/restaurant/restaurantOrderMapper.js'), 'utf8');
   const writers = await readFile(writersPath, 'utf8');
@@ -530,9 +530,10 @@ test('all seven synthetic Restaurant writes match the mapper source contract wit
     { scenario: 'invalid session', functionName: 'pos_upsert_restaurant_order_unlimited', args: ["'lab-license-a'", "'lab-device-b'", "'lab-device-token-b'", "'wrong-session'"] },
     { scenario: 'legacy client', functionName: 'pos_upsert_restaurant_order_unlimited', args: ["'lab-license-a'", "'lab-device-a'", "'lab-device-token-a'", "'lab-admin-session'"] },
     { scenario: 'versioned client', functionName: 'pos_upsert_restaurant_order_versioned_v1', args: ["'lab-license-a'", "'lab-device-a'", "'lab-device-token-a'", "'lab-admin-session'"] },
+    { scenario: 'unsuccessful empty writer response', functionName: 'pos_upsert_restaurant_order_versioned_v1', args: ["'lab-license-a'", "'lab-device-a'", "'lab-device-token-a'", "'lab-admin-session'"] },
   ];
   const matches = [...runner.matchAll(/(?:select|perform)\s+public\.(pos_upsert_restaurant_order(?:_unlimited|_versioned_v1))\s*\(/g)];
-  assert.equal(matches.length, expectedCalls.length, 'All seven harness upsert calls must remain under review');
+  assert.equal(matches.length, expectedCalls.length, 'Every original call and the new negative writer response must remain under review');
 
   for (const [index, match] of matches.entries()) {
     const expected = expectedCalls[index];
@@ -572,34 +573,60 @@ test('all seven synthetic Restaurant writes match the mapper source contract wit
     'The harness must keep invoking the real versioned wrapper');
 });
 
-test('replay proof INTO source contract rejects composite/scalar targets and fails closed without a ledger sentinel', async () => {
-  const bridge = await readFile(bridgePath, 'utf8');
-  const block = bridge.slice(bridge.indexOf('-- xmin is an ephemeral'), bridge.indexOf('select * into saved_order'));
-  // Source regression only: PostgreSQL compilation remains a separate CI check.
-  const assertIntoContract = (source) => {
-    const sql = source.replace(/--[^\r\n]*/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
-    assert.doesNotMatch(sql, /\binto\s+idem\s*,|\binto\s+idem_created_here\s*,/);
-    const statements = sql.match(/\bselect\b[^;]*;/g) ?? [];
-    const row = statements.find((statement) => /\binto\s+idem\b/.test(statement));
-    const sentinel = statements.find((statement) => /\binto\s+idem_created_here\b/.test(statement));
-    assert.ok(row && sentinel, 'The composite row and scalar sentinel need separate SELECT statements');
-    assert.match(row, /\bfor update\s*;/);
-    assert.match(sql, /for update;\s*if found then\b/);
-    const predicate = (statement) => statement.match(/\bwhere\s+(.+?)(?:\s+for update)?;$/)?.[1];
-    assert.equal(predicate(row), predicate(sentinel), 'Both reads must bind the same license and key');
-    assert.match(sentinel, /i\.xmin\s*=\s*pg_catalog\.pg_current_xact_id\(\)::xid/);
-    assert.match(sql, /else\s+idem_created_here\s*:=\s*false;\s*end if;/);
-    assert.match(sql, /if\s+idem_created_here\s+is not true\s+or/);
+test('private insertion witness is scoped to the active call and cannot certify a prior receipt', async () => {
+  const source = await readFile(bridgePath,'utf8');
+  const check = (sql) => {
+    const upsert=sql.match(/create function public\.pos_upsert_restaurant_order_versioned_v1\([\s\S]*?\$function\$;/i)?.[0];
+    const observer=sql.match(/create function private\.observe_restaurant_upsert_insert_v1\([\s\S]*?\$function\$;/i)?.[0];
+    assert.ok(upsert && observer);
+    assert.doesNotMatch(upsert,/\.xmin|into\s+idem\s*,/i,'No tuple/top-XID equality or composite/scalar INTO');
+    assert.match(sql,/create trigger restaurant_upsert_insert_witness_v1 after insert on public\.pos_idempotency_keys/i);
+    assert.match(sql,/alter table private\.restaurant_upsert_attempts_v1 enable row level security/i);
+    assert.match(sql,/revoke all on private\.restaurant_upsert_attempts_v1 from public,anon,authenticated,service_role/i);
+    assert.match(sql,/revoke all on function private\.observe_restaurant_upsert_insert_v1\(\) from public,anon,authenticated,service_role/i);
+    assert.match(observer,/a\.transaction_id=pg_catalog\.pg_current_xact_id\(\)/);
+    assert.match(observer,/a\.license_id=new\.license_id and a\.idempotency_key=new\.idempotency_key/);
+    assert.match(observer,/a\.request_hash=new\.request_hash and a\.inserted_entity_id is null/);
+    assert.match(observer,/new\.operation_type='restaurant_order\.upsert' and new\.entity_type='restaurant_order'/);
+    assert.doesNotMatch(observer,/(?:insert into|update|delete from) public\./i,'Observer must not write the shared ledger');
+    const intent=upsert.indexOf('insert into private.restaurant_upsert_attempts_v1');
+    const writer=upsert.indexOf('response:=public.pos_upsert_restaurant_order_unlimited(');
+    const proof=upsert.indexOf('insert into private.restaurant_order_upsert_replay_proofs_v1');
+    assert.ok(intent>upsert.indexOf('return idem.response_payload;') && writer>intent && proof>writer);
+    assert.match(upsert,/a\.attempt_id=v_attempt_id/);
+    assert.match(upsert,/if not found or v_inserted_entity_id is null then[\s\S]*?raise exception 'IDEMPOTENCY_CONFLICT'/);
+    assert.match(upsert,/select i\.\* into idem[\s\S]*?for update;\s*if not found or idem\.entity_id is distinct from v_inserted_entity_id/);
+    assert.equal((upsert.match(/delete from private\.restaurant_upsert_attempts_v1/g)||[]).length,2,
+      'Both an unsuccessful leaf response and successful proof mint must consume the attempt');
+    assert.ok(upsert.lastIndexOf('delete from private.restaurant_upsert_attempts_v1')>proof);
   };
-  assertIntoContract(block);
-  assertIntoContract(block.replace('select i.* into idem', 'SELECT * INTO idem').replace('if found then', '-- alternate formatting\nIF FOUND THEN'));
-  const invalid = block.replace(/select i\.\* into idem[\s\S]*?end if;/,
-    "select i,i.xmin=pg_catalog.pg_current_xact_id()::xid into idem,idem_created_here from public.pos_idempotency_keys i where i.license_id=(c->>'license_id')::uuid and i.idempotency_key=p_idempotency_key for update;");
-  assert.throws(() => assertIntoContract(invalid), 'The original PostgreSQL-invalid INTO must be rejected');
-  assert.throws(() => assertIntoContract(block.replace('for update;', ';')));
-  assert.throws(() => assertIntoContract(block.replace('if found then', 'perform 1; if found then')));
-  assert.throws(() => assertIntoContract(block.replace(/(into idem_created_here[\s\S]*?)p_idempotency_key;/, "$1'other-key';")));
-  assert.throws(() => assertIntoContract(block.replace('idem_created_here is not true', 'not idem_created_here')));
+  check(source);
+  assert.throws(()=>check(source.replace('a.transaction_id=pg_catalog.pg_current_xact_id()','true')));
+  assert.throws(()=>check(source.replace('a.request_hash=new.request_hash and a.inserted_entity_id is null','true')));
+  assert.throws(()=>check(source.replace('if not found or v_inserted_entity_id is null then','if false then')));
+  assert.throws(()=>check(source.replace('a.attempt_id=v_attempt_id','true')));
+});
+
+test('provenance diagnosis and legacy races must execute before the replay evidence can pass', async () => {
+  const runner=await readFile(runnerPath,'utf8');
+  const races=await readFile(concurrencyPath,'utf8');
+  for(const key of ['topLevelXid','observedLedgerXmin','ledgerStatus','operation','writerSuccess','sameTopLevelXid',
+    'ledgerPresent','completed','operationMatches','entityMatches','md5Matches','receiptMatches','parentMatches','failedPredicates']) {
+    assert.ok(runner.includes(key),'Missing diagnostic predicate '+key);
+  }
+  assert.match(runner,/provenanceDiagnostic = JSON\.parse[\s\S]*?rollback;/);
+  assert.match(runner,/captureVersionedOrderState\('bridge-r25-diagnostic','bridge-r25-diagnostic-key'\),diagnosticBefore/);
+  assert.match(runner,/xidProbe\.proofs,1/);
+  assert.match(runner,/xidProbe\.pendingAttempts,0/);
+  assert.doesNotMatch(runner,/sameTransaction:true/,'XID equality must not be an acceptance criterion');
+  for(const name of ['legacy-first-same-parent','versioned-first-legacy-same-parent','legacy-first-cross-parent','foreign-completed-receipt-no-insert']) {
+    assert.ok(runner.includes(name) && races.includes(name),'Missing independent scenario '+name);
+  }
+  assert.ok(runner.indexOf('legacyProvenanceResults = await runLegacyProvenanceRaces')<runner.indexOf('  idempotencyEvidence = {'));
+  assert.match(races,/blockedBy\.includes\(holderPid\)/);
+  assert.match(races,/assert\.notEqual\(wait\.pid,holderPid\)/);
+  assert.match(races,/No prior receipt may escape/);
+  assert.match(races,/pendingDatabaseSessions:pending/);
 });
 
 test('R20 replay path binds a completed receipt without weakening auth, rate limits, or version guards', async () => {
@@ -645,10 +672,7 @@ test('R20 replay path binds a completed receipt without weakening auth, rate lim
   assert.match(upsert, /public\.pos_upsert_restaurant_order_unlimited\(/);
   assert.doesNotMatch(upsert, /public\.pos_upsert_restaurant_order\(/,
     'Delegating to the public wrapper would count the rate limit twice');
-  assert.match(upsert, /i\.xmin=pg_catalog\.pg_current_xact_id\(\)::xid/,
-    'The same-transaction sentinel may mint proof only for this call’s freshly written ledger tuple');
-  assert.match(upsert, /xmin is an ephemeral same-transaction sentinel[\s\S]*?not a durable operation/,
-    'The code must not imply xmin is a permanent logical identity');
+  assert.doesNotMatch(upsert, /\.xmin/, 'Ledger provenance must support successful writer subtransactions');
   assert.doesNotMatch(upsert, /idem\.expires_at\s*(?:is null|<=)/,
     'Replay policy must follow the retained ledger row; the shared writer does not enforce its seven-day marker');
 
@@ -666,11 +690,11 @@ test('R20 replay path binds a completed receipt without weakening auth, rate lim
     'The successful receipt evidence must dynamically verify the private response hash');
   assert.match(runner, /publicAnyPrivilege.*policyCount/s,
     'The catalog evidence must reject public table ACL entries and unreviewed private-table policies');
-  assert.match(runner, /xidRollbackState[\s\S]*?assert\.deepEqual\(xidRollbackState,\{parents:0,items:0,ledger:0,proofs:0,events:0\}/,
+  assert.match(runner, /xidRollbackState[\s\S]*?assert\.deepEqual\(xidRollbackState,\{parents:0,items:0,ledger:0,proofs:0,attempts:0,events:0\}/,
     'A real top-level rollback must be checked from a separate connection after proof insertion');
-  assert.match(runner, /R20_TEST_IDEMPOTENCY_COMPLETION_FAILURE[\s\S]*?completionFailureState[\s\S]*?assert\.deepEqual\(completionFailureState,\{parents:0,items:0,ledger:0,proofs:0,events:0\}/,
+  assert.match(runner, /R20_TEST_IDEMPOTENCY_COMPLETION_FAILURE[\s\S]*?completionFailureState[\s\S]*?assert\.deepEqual\(completionFailureState,\{parents:0,items:0,ledger:0,proofs:0,attempts:0,events:0\}/,
     'An injected completion failure must prove parent, item, ledger, proof and event atomicity');
-  assert.match(runner, /R20_TEST_PROOF_INSERT_FAILURE[\s\S]*?proofFailureState[\s\S]*?assert\.deepEqual\(proofFailureState,\{parents:0,items:0,ledger:0,proofs:0,events:0\}/,
+  assert.match(runner, /R20_TEST_PROOF_INSERT_FAILURE[\s\S]*?proofFailureState[\s\S]*?assert\.deepEqual\(proofFailureState,\{parents:0,items:0,ledger:0,proofs:0,attempts:0,events:0\}/,
     'An injected after-proof failure must prove no private proof or business effect survives');
   assert.match(runner, /wrongDeviceSessionError = await assertSqlFailure[\s\S]*?ACTOR_SESSION_INVALID/,
     'The PostgreSQL runner must reject reusing an Admin session from a different device');
@@ -920,6 +944,31 @@ test('structured evidence gate binds the Admin report to this run and SHA and re
     await writeFile(bridgePath, JSON.stringify(bridge));
     await writeFile(overlayPath, JSON.stringify(overlay));
   };
+  // Synthetic complete report for the gate contract, not PostgreSQL evidence.
+  bridge.provenanceDiagnostic = {topLevelXid:'900',observedLedgerXmin:'901',ledgerStatus:'completed',operation:'restaurant_order.upsert',
+    writerSuccess:true,receiptSha256:'b'.repeat(64),predicates:{sameTopLevelXid:false,ledgerPresent:true,completed:true,
+      operationMatches:true,entityMatches:true,md5Matches:true,receiptMatches:true,parentMatches:true},
+    failedPredicates:['sameTopLevelXid'],subtransactionHypothesis:'DISTINCT_XIDS_OBSERVED'};
+  bridge.legacyProvenance = ['legacy-first-same-parent','versioned-first-legacy-same-parent','legacy-first-cross-parent',
+    'foreign-completed-receipt-no-insert'].map((name) => {
+      const rejected=name==='legacy-first-cross-parent'||name==='foreign-completed-receipt-no-insert';
+      return {name,status:'PASS',queriesSubmitted:true,holderPid:501,contenderPid:502,
+        wait:{pid:502,waitEventType:'Lock',waitEvent:rejected?'transactionid':'advisory',blockedBy:[501]},locks:[{pid:502,granted:false}],
+        keyLocks:rejected?[{pid:502,granted:true}]:[],
+        financialBefore:{sales:0,payments:0,cash:0,inventory:0,credit:0,operations:0},
+        financialAfter:{sales:0,payments:0,cash:0,inventory:0,credit:0,operations:0},
+        exitCodes:{holder:0,contender:rejected?1:0},sqlstate:rejected?'P0001':'00000',pendingDatabaseSessions:0,
+        finalState:{parents:1,items:1,ledger:1,proofs:name==='versioned-first-legacy-same-parent'?1:0,attempts:0}};
+    });
+  bridge.idempotency={status:'PASS',provenance:{mechanism:'private call nonce witnessed by authentic ledger INSERT',
+    legacy:bridge.legacyProvenance,diagnostic:bridge.provenanceDiagnostic,xidProbe:{proofs:1,pendingAttempts:0}}};
+  bridge.checks.push(
+    {name:'authentic writer provenance diagnostic records every original rejection predicate',status:'PASS',...bridge.provenanceDiagnostic},
+    {name:'private insertion witness has restricted ACL, RLS and an enabled authentic-ledger observer',status:'PASS',
+      table:'pos_idempotency_keys',type:5,enabled:'O',securityDefiner:true,owner:'postgres',config:['search_path=""'],browserExecute:false},
+    {name:'prior legacy ledger rejected without attribution and unsuccessful writer response cleans its attempt',status:'PASS'},
+    {name:'versioned idempotency binds the strong request proof, preserves the authentic rate-limit and rejects conflicts',...bridge.idempotency},
+  );
   const runGate = () => { try { return execFileSync(process.execPath, [gatePath], {
     cwd: root,
     env: {
@@ -944,6 +993,12 @@ test('structured evidence gate binds the Admin report to this run and SHA and re
     await writeReports();
     assert.match(runGate(), /PR352_R6_EVIDENCE_PASS/);
 
+    await rejectBridgeMutation('missing insertion provenance fails closed',(report)=>{delete report.idempotency.provenance;});
+    await rejectBridgeMutation('duplicate legacy scenario fails closed',(report)=>{report.legacyProvenance[1]=structuredClone(report.legacyProvenance[0]);});
+    await rejectBridgeMutation('missing original rejection predicate fails closed',(report)=>{delete report.provenanceDiagnostic.predicates.md5Matches;});
+    await rejectBridgeMutation('same PID is not concurrent evidence',(report)=>{report.legacyProvenance[0].contenderPid=501;});
+    await rejectBridgeMutation('unconsumed private attempt fails closed',(report)=>{report.idempotency.provenance.xidProbe.pendingAttempts=1;});
+
     for (const name of [
       'Cocina schema and six direct Restaurant helper functions match read-only Production catalog metadata',
       'authentic 3D.14 dispatcher fingerprint matches reviewed read-only fingerprint',
@@ -952,6 +1007,10 @@ test('structured evidence gate binds the Admin report to this run and SHA and re
       'bridge preserves function OIDs, owners, SECURITY DEFINER, settings, ACL and business bodies',
       'Restaurant settlement and replay materialize one sale, payment, operation and inventory movement',
       'bridge integration assertions and zero-session cleanup complete',
+      'authentic writer provenance diagnostic records every original rejection predicate',
+      'private insertion witness has restricted ACL, RLS and an enabled authentic-ledger observer',
+      'prior legacy ledger rejected without attribution and unsuccessful writer response cleans its attempt',
+      'versioned idempotency binds the strong request proof, preserves the authentic rate-limit and rejects conflicts',
     ]) await rejectBridgeMutation(`missing mandatory check ${name} fails closed`, (report) => {
       report.checks = report.checks.filter((check) => check.name !== name);
     });

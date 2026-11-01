@@ -277,6 +277,50 @@ jobs:
               || stationRace.finalStationCount !== 1 || stationRace.pendingSessionCount !== 0) process.exit(1);
             uniqueCheck("Staff owner admitted; Admin and another Staff denied while Admin remains OFF; invalid session has no effect");
             const clients = uniqueCheck("legacy and versioned clients persist and replay one correctly licensed parent and item");
+            const observer = uniqueCheck("private insertion witness has restricted ACL, RLS and an enabled authentic-ledger observer");
+            if (observer.table !== "pos_idempotency_keys" || observer.type !== 5 || observer.enabled !== "O"
+              || observer.securityDefiner !== true || observer.owner !== "postgres" || observer.browserExecute !== false
+              || JSON.stringify(observer.config) !== JSON.stringify(["search_path=\"\""])) process.exit(1);
+            uniqueCheck("prior legacy ledger rejected without attribution and unsuccessful writer response cleans its attempt");
+            const diagnosis = uniqueCheck("authentic writer provenance diagnostic records every original rejection predicate");
+            const diagnostic = bridge.provenanceDiagnostic;
+            const predicateNames = ["sameTopLevelXid","ledgerPresent","completed","operationMatches","entityMatches","md5Matches","receiptMatches","parentMatches"];
+            if (!diagnostic || typeof diagnostic.topLevelXid !== "string" || typeof diagnostic.observedLedgerXmin !== "string"
+              || !/^\d+$/.test(diagnostic.topLevelXid) || !/^\d+$/.test(diagnostic.observedLedgerXmin)
+              || diagnostic.writerSuccess !== true || diagnostic.ledgerStatus !== "completed" || diagnostic.operation !== "restaurant_order.upsert"
+              || !/^[0-9a-f]{64}$/.test(diagnostic.receiptSha256 ?? "")
+              || !exactKeys(diagnostic.predicates,predicateNames)
+              || predicateNames.some((name) => typeof diagnostic.predicates[name] !== "boolean" || (name !== "sameTopLevelXid" && !diagnostic.predicates[name]))
+              || JSON.stringify(diagnostic.failedPredicates) !== JSON.stringify(predicateNames.filter((name) => !diagnostic.predicates[name]))
+              || diagnosis.topLevelXid !== diagnostic.topLevelXid || diagnosis.observedLedgerXmin !== diagnostic.observedLedgerXmin
+              || JSON.stringify(diagnosis.predicates) !== JSON.stringify(diagnostic.predicates)) process.exit(1);
+            if (diagnostic.subtransactionHypothesis !== (diagnostic.predicates.sameTopLevelXid ? "NOT_REPRODUCED" : "DISTINCT_XIDS_OBSERVED")) process.exit(1);
+            const idem = uniqueCheck("versioned idempotency binds the strong request proof, preserves the authentic rate-limit and rejects conflicts");
+            const provenance = bridge.idempotency?.provenance;
+            if (bridge.idempotency?.status !== "PASS" || !provenance || provenance.mechanism !== "private call nonce witnessed by authentic ledger INSERT"
+              || JSON.stringify(provenance) !== JSON.stringify(idem.provenance)
+              || JSON.stringify(provenance.diagnostic) !== JSON.stringify(diagnostic)
+              || provenance.xidProbe?.proofs !== 1 || provenance.xidProbe?.pendingAttempts !== 0) process.exit(1);
+            const legacyNames = ["legacy-first-same-parent","versioned-first-legacy-same-parent","legacy-first-cross-parent","foreign-completed-receipt-no-insert"];
+            const legacy = bridge.legacyProvenance;
+            if (!Array.isArray(legacy) || legacy.length !== legacyNames.length || JSON.stringify(legacy) !== JSON.stringify(provenance.legacy)
+              || legacyNames.some((name) => legacy.filter((row) => row.name === name).length !== 1)) process.exit(1);
+            for (const row of legacy) {
+              const rejected = row.name === "legacy-first-cross-parent" || row.name === "foreign-completed-receipt-no-insert";
+              if (row.status !== "PASS" || row.queriesSubmitted !== true || !Number.isInteger(row.holderPid) || !Number.isInteger(row.contenderPid)
+                || row.holderPid <= 0 || row.contenderPid <= 0 || row.holderPid === row.contenderPid
+                || row.wait?.pid !== row.contenderPid || row.wait?.waitEventType !== "Lock" || !row.wait?.blockedBy?.includes(row.holderPid)
+                || !Array.isArray(row.locks) || !row.locks.some((lock) => lock.pid === row.contenderPid && lock.granted === false)
+                || row.wait.waitEvent !== (rejected ? "transactionid" : "advisory")
+                || (rejected && (!Array.isArray(row.keyLocks) || !row.keyLocks.some((lock) => lock.granted === true)))
+                || !exactKeys(row.financialBefore,["sales","payments","cash","inventory","credit","operations"])
+                || Object.values(row.financialBefore).some((value) => !Number.isInteger(value) || value < 0)
+                || JSON.stringify(row.financialBefore) !== JSON.stringify(row.financialAfter)
+                || row.exitCodes?.holder !== 0 || row.exitCodes?.contender !== (rejected ? 1 : 0) || row.sqlstate !== (rejected ? "P0001" : "00000")
+                || row.finalState?.parents !== 1 || row.finalState?.items !== 1 || row.finalState?.ledger !== 1
+                || row.finalState?.proofs !== (row.name === "versioned-first-legacy-same-parent" ? 1 : 0)
+                || row.finalState?.attempts !== 0 || row.pendingDatabaseSessions !== 0) process.exit(1);
+            }
             if (clients.legacy?.role !== "service_role" || clients.versioned?.role !== "anon"
               || !relationValid(clients.legacy.relationship, "bridge-legacy-client", "bridge-legacy-line")
               || !relationValid(clients.versioned.relationship, "bridge-versioned-client", "bridge-versioned-line")) process.exit(1);
