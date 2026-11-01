@@ -172,6 +172,13 @@ export const isCloudCustomerCreditSyncEnabled = (licenseDetails = {}) => {
     && isFeatureEnabled(features, 'cloud_customer_credit_sync');
 };
 
+// FIN-01 historical imports remain unavailable until the database migration
+// and a separately authorized capability rollout are both complete.
+export const isFin01HistoricalCreditImportEnabled = (licenseDetails = {}) => {
+  const features = getPlanFeaturesFromLicenseDetails(licenseDetails);
+  return isFeatureEnabled(features, 'fin01_historical_credit_import');
+};
+
 export const isCloudSalesBaseSyncEnabled = (licenseDetails = {}) => {
   const features = getPlanFeaturesFromLicenseDetails(licenseDetails);
   return isFeatureEnabled(features, 'cloud_pos_sync') && isFeatureEnabled(features, 'cloud_sales_sync_base');

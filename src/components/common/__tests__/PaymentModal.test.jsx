@@ -77,6 +77,27 @@ const startFiadoCheckout = async ({ total = 100, creditLimit = 0, debt = 500 } =
 };
 
 describe('PaymentModal', () => {
+  it.each([
+    ['below', 200, 50, true],
+    ['equal', 150, 50, true],
+    ['above', 149.99, 50, false],
+    ['zero', 0, 0, false]
+  ])('checks %s credit limit without changing historical debt', async (_case, creditLimit, debt, allowed) => {
+    const { user, onConfirm, confirm } = await startFiadoCheckout({ creditLimit, debt });
+    if (allowed) {
+      expect(confirm).toBeEnabled();
+      await user.click(confirm);
+      await waitFor(() => expect(onConfirm).toHaveBeenCalledTimes(1));
+      expect(onConfirm.mock.calls[0][0]).toMatchObject({ paymentMethod: 'fiado', saldoPendiente: '100' });
+    } else {
+      expect(confirm).toBeDisabled();
+      await user.click(confirm);
+      expect(onConfirm).not.toHaveBeenCalled();
+    }
+    expect(mocks.saveDataSafe).not.toHaveBeenCalled();
+    expect(mocks.saveCustomer).not.toHaveBeenCalled();
+  });
+
   it('opens from a hydrated remote table total without starting a sale', async () => {
     const hydratedShadow = {
       restaurantCloudHydrated: true,

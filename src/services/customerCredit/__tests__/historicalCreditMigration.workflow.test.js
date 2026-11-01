@@ -1,9 +1,9 @@
 import 'fake-indexeddb/auto';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
-const runtime = vi.hoisted(() => ({ generation: 1, rpc: vi.fn() }));
+const runtime = vi.hoisted(() => ({ generation: 1, actorType: 'admin', rpc: vi.fn() }));
 vi.mock('../../auth/actorRuntimeController', () => ({ actorRuntimeController: { capture: () => {
   const generation = runtime.generation;
-  return { actorType:'admin', assertCurrent: () => { if (generation !== runtime.generation) throw new Error('ACTOR_CONTEXT_STALE'); } };
+  return { actorType:runtime.actorType, assertCurrent: () => { if (generation !== runtime.generation) throw new Error('ACTOR_CONTEXT_STALE'); } };
 } } }));
 vi.mock('../customerCreditCloudRepository', () => ({ customerCreditCloudRepository: { historicalCreditBatch: runtime.rpc } }));
 import { db, STORES } from '../../db/dexie';
@@ -16,7 +16,7 @@ const licenseKey='synthetic-license';
 const tenant='10000000-0000-0000-0000-000000000001';
 const readBatch=async()=>(await db.table(STORES.SYNC_CACHE).get(key))?.value;
 beforeEach(async()=>{
-  runtime.generation=1;runtime.rpc.mockReset();await openTestTenantRuntime();
+  runtime.generation=1;runtime.actorType='admin';runtime.rpc.mockReset();await openTestTenantRuntime();
   await db.table(STORES.CUSTOMERS).put({id:'legacy',name:'Synthetic',debt:'125.01'});
   runtime.rpc.mockImplementation(async({action,manifest})=>{
     if(action==='context')return {success:true,tenant_id:tenant};
@@ -26,6 +26,14 @@ beforeEach(async()=>{
 });
 afterEach(()=>closeTestTenantRuntime());
 describe('durable import workflow; RPC transport is a controlled boundary double',()=>{
+  it('rejects Staff before preview or authorization touches the server',async()=>{
+    runtime.actorType='staff';
+    await expect(migration.preview({licenseKey})).rejects.toThrow('REJECTED_AUTHORITY');
+    await expect(migration.authorizeAndImport({licenseKey,reviewedHash:'server-hash'})).rejects.toThrow('REJECTED_AUTHORITY');
+    expect(runtime.rpc).not.toHaveBeenCalled();
+    expect(await readBatch()).toBeUndefined();
+  });
+
   it('startup and reconnect preserve debt without approval or financial RPC',async()=>{
     expect(await migration.runInitialMigrationIfNeeded({licenseKey})).toMatchObject({success:false,code:'PENDING_AUTHORIZATION'});
     expect(runtime.rpc).not.toHaveBeenCalled();expect((await historicalCreditSnapshot.list())[0].amountCents).toBe(12501);

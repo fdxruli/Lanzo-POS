@@ -1,6 +1,10 @@
 import { useState } from 'react';
 import { useAppStore } from '../../store/useAppStore';
-import { getLicenseKeyFromDetails, isCloudCustomerCreditSyncEnabled } from '../../services/sync/syncConstants';
+import {
+  getLicenseKeyFromDetails,
+  isCloudCustomerCreditSyncEnabled,
+  isFin01HistoricalCreditImportEnabled
+} from '../../services/sync/syncConstants';
 import { customerCreditMigrationService as migration } from '../../services/customerCredit/customerCreditMigrationService';
 import './HistoricalCreditImport.css';
 
@@ -28,7 +32,7 @@ export default function HistoricalCreditImport() {
   const [confirmed, setConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  if (!isCloudCustomerCreditSyncEnabled(details)) return null;
+  if (!isFin01HistoricalCreditImportEnabled(details) || !isCloudCustomerCreditSyncEnabled(details)) return null;
   const licenseKey = getLicenseKeyFromDetails(details);
   const run = async (operation) => {
     if (busy) return;
