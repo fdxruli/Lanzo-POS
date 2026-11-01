@@ -237,6 +237,12 @@ test('terminal snapshot validator distinguishes archive-only from synthetic mark
   const {assertTerminalSnapshot,assertTerminalNoFinancialChange}=await terminalAssertions();
   const {receipt,snapshot}=syntheticTerminalSnapshot();
   assert.doesNotThrow(()=>assertTerminalSnapshot(snapshot,receipt,false));
+  const nullableUnpaid=structuredClone(snapshot);nullableUnpaid.detail.parent.payment_status=null;
+  assert.doesNotThrow(()=>assertTerminalSnapshot(nullableUnpaid,receipt,false));
+  for(const status of ['paid','partial','',undefined]) {
+    const invalid=structuredClone(snapshot);invalid.detail.parent.payment_status=status;
+    assert.throws(()=>assertTerminalSnapshot(invalid,receipt,false));
+  }
   const marked=structuredClone(snapshot);marked.detail.parent.deleted_at='synthetic';marked.detail.parent.checkout_closed_at='synthetic';
   assert.doesNotThrow(()=>assertTerminalSnapshot(marked,receipt,true));
   assert.throws(()=>assertTerminalSnapshot(marked,receipt,false));
@@ -261,6 +267,19 @@ test('terminal archive rejection requires the observed SQLSTATE and exact messag
   snapshot.detail.items[0].status='pending';
   const error={sqlstate:'P0001',message:'RESTAURANT_PARENT_CANCEL_CONTRACT_REQUIRED',stderr:'ERROR:  P0001: RESTAURANT_PARENT_CANCEL_CONTRACT_REQUIRED\n'};
   assert.doesNotThrow(()=>assertTerminalArchiveRejection(error,snapshot,structuredClone(snapshot)));
+  const nullableUnpaid=structuredClone(snapshot);nullableUnpaid.detail.parent.payment_status=null;
+  assert.doesNotThrow(()=>assertTerminalArchiveRejection(error,nullableUnpaid,structuredClone(nullableUnpaid)));
+  // Preserve raw NULL in comparisons: accepting the unpaid contract does not
+  // permit changing NULL to a string, or accepting paid/unknown/missing state.
+  assert.throws(()=>assertTerminalArchiveRejection(error,nullableUnpaid,snapshot));
+  for(const status of ['paid','partial','',undefined]) {
+    const invalid=structuredClone(snapshot);invalid.detail.parent.payment_status=status;
+    assert.throws(()=>assertTerminalArchiveRejection(error,invalid,structuredClone(invalid)));
+  }
+  for(const field of ['paid_at','paid_sale_id']) {
+    const invalid=structuredClone(snapshot);invalid.detail.parent[field]='paid-marker';
+    assert.throws(()=>assertTerminalArchiveRejection(error,invalid,structuredClone(invalid)));
+  }
   for(const mutation of [{sqlstate:'42501'},{message:'OTHER_ERROR'},
     {stderr:'ERROR: P0001: RESTAURANT_PARENT_CANCEL_CONTRACT_REQUIRED_EXTRA\n'},
     {stderr:'ERROR: 42501: RESTAURANT_PARENT_CANCEL_CONTRACT_REQUIRED\n'}]) {

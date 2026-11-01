@@ -245,7 +245,9 @@ function assertTerminalSnapshot(snapshot, receipt, markers) {
   assert.equal(detail.parent.license_id,'00000000-0000-0000-0000-000000000001');
   assert.equal(detail.parent.status,'cancelled'); assert.equal(detail.parent.fulfillment_status,'cancelled');
   assert.ok(detail.parent.cancelled_at); assert.ok(detail.parent.archived_at);
-  assert.equal(detail.parent.payment_status,'unpaid');
+  // Authentic cancellation and the bridge treat SQL NULL as unpaid. Keep the
+  // raw value in the snapshot; absent fields and other states must still fail.
+  assert.ok(detail.parent.payment_status === null || detail.parent.payment_status === 'unpaid');
   assert.equal(detail.parent.paid_at,null); assert.equal(detail.parent.paid_sale_id,null);
   assert.equal(Boolean(detail.parent.deleted_at),markers);
   assert.equal(Boolean(detail.parent.checkout_closed_at),markers);
@@ -290,7 +292,9 @@ function assertTerminalArchiveRejection(rejection, before, after) {
   assert.equal(rejection.message,'RESTAURANT_PARENT_CANCEL_CONTRACT_REQUIRED');
   assert.match(rejection.stderr,/ERROR:\s+P0001: RESTAURANT_PARENT_CANCEL_CONTRACT_REQUIRED(?:\r?\n|$)/);
   assert.equal(before?.detail?.parent?.status,'pending');
-  assert.equal(before.detail.parent.payment_status,'unpaid');
+  assert.ok(before.detail.parent.payment_status === null || before.detail.parent.payment_status === 'unpaid');
+  assert.equal(before.detail.parent.paid_at,null);
+  assert.equal(before.detail.parent.paid_sale_id,null);
   assert.equal(before.detail.parent.archived_at,null);
   assert.equal(before.detail.parent.deleted_at,null);
   assert.equal(before.detail.parent.checkout_closed_at,null);
