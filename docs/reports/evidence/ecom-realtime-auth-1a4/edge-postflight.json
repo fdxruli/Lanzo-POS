@@ -1,0 +1,10 @@
+{
+  "content": [
+    {
+      "type": "text",
+      "text": "{\"functions\":[{\"id\":\"bd2fa8d3-2009-46a5-a5a7-a393b46669b5\",\"slug\":\"lanzo-ai-agent\",\"name\":\"lanzo-ai-agent\",\"status\":\"ACTIVE\",\"version\":49,\"created_at\":1781901857386,\"updated_at\":1790576421021,\"verify_jwt\":false,\"import_map\":false,\"entrypoint_path\":\"file:///tmp/user_fn_odlrhijtfyavryeqivaa_bd2fa8d3-2009-46a5-a5a7-a393b46669b5_46/source/index.ts\",\"ezbr_sha256\":\"3fffad1164d4764ed80e14867d10edd2e878387e3711d7823f675164eec931bc\"},{\"id\":\"15fa9802-73d3-4ebb-8187-810b5bae5797\",\"slug\":\"authorize-image-upload\",\"name\":\"authorize-image-upload\",\"status\":\"ACTIVE\",\"version\":31,\"created_at\":1783322970042,\"updated_at\":1787073353322,\"verify_jwt\":true,\"import_map\":false,\"entrypoint_path\":\"file:///tmp/user_fn_odlrhijtfyavryeqivaa_15fa9802-73d3-4ebb-8187-810b5bae5797_8/source/index.ts\",\"ezbr_sha256\":\"25c0c069341b9bc504bc6307f0619ae36d471a610f1007513ccf446d6fd9f699\"}]}"
+    }
+  ],
+  "structuredContent": null,
+  "isError": false
+}

@@ -5,6 +5,9 @@ import { validateStockBeforeSale } from '../sales/stockValidation';
 import {
   ECOMMERCE_INVENTORY_RESOLUTION_VERSION,
   getEcommerceInventoryLineMessage as getBaseEcommerceInventoryLineMessage,
+  beginEcommerceInventoryResolutionAttempt,
+  captureEcommerceInventoryOrderExpectation,
+  isEcommerceInventoryResolutionAttemptCurrent,
   revalidateEcommerceDraftInventory as revalidateBaseEcommerceDraftInventory
 } from './ecommercePosInventoryResolutionBase';
 import { reconcileEcommerceConfiguredItems } from './ecommercePosConfiguredItem';
@@ -199,8 +202,19 @@ const buildResultFromStoredOrder = (baseResult, order) => ({
   } : baseResult?.resolution
 });
 
-const finalizeApparelVariantResolution = ({ baseResult, orderId, now, deps }) => {
+const finalizeApparelVariantResolution = ({ baseResult, orderId, now, deps, attemptId }) => {
   if (baseResult?.stale || baseResult?.success === false) return baseResult;
+  const expectedOrder = baseResult?.order
+    || getActiveOrdersState(deps).activeOrders?.get?.(orderId)
+    || {};
+  if (!isEcommerceInventoryResolutionAttemptCurrent({
+    orderId,
+    attemptId,
+    expectation: captureEcommerceInventoryOrderExpectation(expectedOrder),
+    deps
+  })) {
+    return { success: false, stale: true, changed: false, code: 'ECOMMERCE_INVENTORY_STALE_RESPONSE' };
+  }
   const state = getActiveOrdersState(deps);
   const current = baseResult?.order || state.activeOrders?.get?.(orderId) || null;
   if (!current) return baseResult;
@@ -225,6 +239,14 @@ export const revalidateEcommerceDraftInventory = async ({ orderId, now = new Dat
   const products = getProducts(deps);
   let order = reconcileStoredConfiguredItems({ orderId, products, deps });
   if (!order) return { success: false, changed: false, code: 'ECOMMERCE_INVENTORY_DRAFT_INVALID' };
+  const attemptId = beginEcommerceInventoryResolutionAttempt(orderId);
+  let expectation = captureEcommerceInventoryOrderExpectation(order);
+  const isCurrentAttempt = (expected = expectation) => isEcommerceInventoryResolutionAttemptCurrent({
+    orderId,
+    attemptId,
+    expectation: expected,
+    deps
+  });
 
   const stockDeps = buildStockDeps(deps);
   const variantPreparation = await prepareEcommerceApparelVariantInventory({
@@ -233,20 +255,32 @@ export const revalidateEcommerceDraftInventory = async ({ orderId, now = new Dat
     queryBatchesByProduct: stockDeps.queryBatchesByProductIdAndActive,
     now
   });
+  if (!isCurrentAttempt()) {
+    return { success: false, stale: true, changed: false, code: 'ECOMMERCE_INVENTORY_STALE_RESPONSE' };
+  }
   if (variantPreparation.changed) {
     order = updateOrder({
       orderId,
       patch: { items: variantPreparation.order.items },
       deps
     }) || variantPreparation.order;
+    expectation = captureEcommerceInventoryOrderExpectation(order);
   }
 
   const mappingConflictIds = new Set(asArray(order.items)
     .filter((item) => item.ecommerceConfiguredModifierMappingStatus === 'conflict')
     .map(getProductId));
   if (mappingConflictIds.size > 0) {
-    const baseResult = await revalidateBaseEcommerceDraftInventory({ orderId, now, deps: { ...deps, products } });
+    const baseResult = await revalidateBaseEcommerceDraftInventory({
+      orderId,
+      now,
+      attemptId,
+      deps: { ...deps, products }
+    });
     if (baseResult?.stale || baseResult?.success === false) return baseResult;
+    if (!isCurrentAttempt(captureEcommerceInventoryOrderExpectation(baseResult?.order || {}))) {
+      return { success: false, stale: true, changed: false, code: 'ECOMMERCE_INVENTORY_STALE_RESPONSE' };
+    }
     const patched = patchInventoryLines({
       orderId,
       targetIds: mappingConflictIds,
@@ -260,7 +294,8 @@ export const revalidateEcommerceDraftInventory = async ({ orderId, now = new Dat
       baseResult: buildResultFromStoredOrder(baseResult, patched),
       orderId,
       now,
-      deps
+      deps,
+      attemptId
     });
   }
 
@@ -269,15 +304,27 @@ export const revalidateEcommerceDraftInventory = async ({ orderId, now = new Dat
     const baseResult = await revalidateBaseEcommerceDraftInventory({
       orderId,
       now,
+      attemptId,
       deps: { ...deps, products }
     });
-    return finalizeApparelVariantResolution({ baseResult, orderId, now, deps });
+    return finalizeApparelVariantResolution({ baseResult, orderId, now, deps, attemptId });
   }
 
   const stockValidation = await validateRecipeAndConfiguredInventory({ order, products, deps });
+  if (!isCurrentAttempt()) {
+    return { success: false, stale: true, changed: false, code: 'ECOMMERCE_INVENTORY_STALE_RESPONSE' };
+  }
   if (!stockValidation?.ok) {
-    const baseResult = await revalidateBaseEcommerceDraftInventory({ orderId, now, deps: { ...deps, products } });
+    const baseResult = await revalidateBaseEcommerceDraftInventory({
+      orderId,
+      now,
+      attemptId,
+      deps: { ...deps, products }
+    });
     if (baseResult?.stale || baseResult?.success === false) return baseResult;
+    if (!isCurrentAttempt(captureEcommerceInventoryOrderExpectation(baseResult?.order || {}))) {
+      return { success: false, stale: true, changed: false, code: 'ECOMMERCE_INVENTORY_STALE_RESPONSE' };
+    }
     const patched = patchInventoryLines({
       orderId,
       targetIds: recipeProductIds,
@@ -294,7 +341,8 @@ export const revalidateEcommerceDraftInventory = async ({ orderId, now = new Dat
       baseResult: buildResultFromStoredOrder(baseResult, patched),
       orderId,
       now,
-      deps
+      deps,
+      attemptId
     });
   }
 
@@ -304,14 +352,22 @@ export const revalidateEcommerceDraftInventory = async ({ orderId, now = new Dat
   const safeItems = asArray(order.items).map((item) => (
     recipeProductIds.has(getProductId(item)) ? buildRecipeSafeItem(item) : item
   ));
+  if (!isCurrentAttempt()) {
+    return { success: false, stale: true, changed: false, code: 'ECOMMERCE_INVENTORY_STALE_RESPONSE' };
+  }
   order = updateOrder({ orderId, patch: { items: safeItems }, deps }) || { ...order, items: safeItems };
+  expectation = captureEcommerceInventoryOrderExpectation(order);
 
   const baseResult = await revalidateBaseEcommerceDraftInventory({
     orderId,
     now,
+    attemptId,
     deps: { ...deps, products: safeProducts }
   });
   if (baseResult?.stale || baseResult?.success === false) return baseResult;
+  if (!isCurrentAttempt(captureEcommerceInventoryOrderExpectation(baseResult?.order || {}))) {
+    return { success: false, stale: true, changed: false, code: 'ECOMMERCE_INVENTORY_STALE_RESPONSE' };
+  }
 
   const patched = patchInventoryLines({
     orderId,
@@ -326,7 +382,8 @@ export const revalidateEcommerceDraftInventory = async ({ orderId, now = new Dat
     baseResult: buildResultFromStoredOrder(baseResult, patched),
     orderId,
     now,
-    deps
+    deps,
+    attemptId
   });
 };
 

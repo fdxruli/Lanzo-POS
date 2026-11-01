@@ -1,0 +1,42 @@
+{
+  "qa_licenses": 0,
+  "ledger_count": 316,
+  "policy_count": 3,
+  "qa_functions": 0,
+  "qa_auth_users": 0,
+  "qa_migrations": [
+    {
+      "name": "qa_ecom_native_bridge_1a2_race_temporary",
+      "version": "20261021061233"
+    },
+    {
+      "name": "qa_ecom_native_bridge_1a2_race_short_window",
+      "version": "20261021061734"
+    },
+    {
+      "name": "qa_ecom_native_bridge_1a2_temporary",
+      "version": "20261021045416"
+    },
+    {
+      "name": "qa_ecom_native_bridge_1a2_cleanup",
+      "version": "20261021062854"
+    }
+  ],
+  "qa_role_exists": false,
+  "qa_schema_exists": false,
+  "public_sd_execute": 6,
+  "edge_functions": [
+    {
+      "name": "lanzo-ai-agent",
+      "version": 46,
+      "status": "ACTIVE"
+    },
+    {
+      "name": "authorize-image-upload",
+      "version": 28,
+      "status": "ACTIVE"
+    }
+  ],
+  "project_status": "ACTIVE_HEALTHY",
+  "cleanup": "PASS"
+}

@@ -1,0 +1,32 @@
+{
+  "stage": "collect",
+  "ttl": 600,
+  "started_at": "2026-10-22T18:41:12.418Z",
+  "results": [
+    {
+      "id": "COLLECT-INCREMENTAL",
+      "status": "PASS",
+      "retired": 4,
+      "deleted": 4,
+      "failed": 0,
+      "after": "eb283946-ee73-4251-b9fd-05aac3ebf848",
+      "complete": true
+    }
+  ],
+  "collection": {
+    "retired": 4,
+    "deleted": 4,
+    "failed": 0,
+    "after": "eb283946-ee73-4251-b9fd-05aac3ebf848",
+    "complete": true
+  },
+  "repeat": {
+    "retired": 0,
+    "deleted": 0,
+    "failed": 0,
+    "after": null,
+    "complete": true
+  },
+  "status": "PASS",
+  "finished_at": "2026-10-22T18:41:16.083Z"
+}

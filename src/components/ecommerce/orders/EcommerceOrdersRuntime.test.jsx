@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
-import { act, cleanup, render } from '@testing-library/react';
+import { act, cleanup, render, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   state: {},
-  pruneDrafts: vi.fn()
+  pruneDrafts: vi.fn(),
+  qaMount: vi.fn()
 }));
 
 vi.mock('../../../store/useAppStore', () => {
@@ -33,6 +34,10 @@ vi.mock('../../../hooks/pos/useActiveOrders', () => ({
   useActiveOrders: { getState: () => ({ pruneEcommerceDraftsForContext: mocks.pruneDrafts }) }
 }));
 
+vi.mock('./EcommerceOrdersRealtimeQa', () => ({
+  default: props => { mocks.qaMount(props); return null; }
+}));
+
 import { ECOMMERCE_SELECTED_ORDER_REFRESH_DEBOUNCE_MS } from '../../../services/ecommerce/ecommerceOrderRealtimeEvent';
 import EcommerceOrdersRuntime from './EcommerceOrdersRuntime';
 
@@ -42,8 +47,8 @@ const createDeferred = () => {
   return { promise, resolve };
 };
 
-const renderRuntime = () => render(
-  <MemoryRouter initialEntries={['/pedidos-online']}>
+const renderRuntime = (initialEntry = '/pedidos-online') => render(
+  <MemoryRouter initialEntries={[initialEntry]}>
     <EcommerceOrdersRuntime />
   </MemoryRouter>
 );
@@ -54,6 +59,7 @@ const dispatchOrderEvent = (detail) => {
 
 beforeEach(() => {
   vi.useFakeTimers();
+  mocks.qaMount.mockClear();
   mocks.state = {
     licenseDetails: { license_key: 'license-a', features: { ecommerce_order_inbox: true } },
     currentDeviceRole: 'admin',
@@ -74,10 +80,36 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllEnvs();
   vi.useRealTimers();
 });
 
 describe('EcommerceOrdersRuntime selected order revalidation', () => {
+  it('does not mount the Realtime QA receiver when the opt-in flag is unset', () => {
+    renderRuntime();
+
+    expect(mocks.qaMount).not.toHaveBeenCalled();
+  });
+
+  it('mounts the lazy QA receiver only when explicitly enabled on the Ecommerce orders route', async () => {
+    vi.useRealTimers();
+    vi.stubEnv('VITE_ENABLE_ECOM_SIGNAL_QA', 'true');
+    renderRuntime();
+
+    await waitFor(() => expect(mocks.qaMount).toHaveBeenCalledWith(expect.objectContaining({
+      enabled: true,
+      licenseKey: 'license-a',
+      adminDiagnostic: true
+    })));
+  });
+
+  it('does not mount the QA receiver on other POS routes even if the opt-in flag is set', () => {
+    vi.stubEnv('VITE_ENABLE_ECOM_SIGNAL_QA', 'true');
+    renderRuntime('/ventas');
+
+    expect(mocks.qaMount).not.toHaveBeenCalled();
+  });
+
   it('revalidates the selected detail for the real metadata.order_id contract', async () => {
     renderRuntime();
     mocks.state.loadEcommerceOrderSummary.mockClear();

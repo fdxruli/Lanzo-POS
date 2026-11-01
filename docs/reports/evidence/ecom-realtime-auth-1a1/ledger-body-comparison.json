@@ -1,0 +1,20 @@
+[
+  {
+    "remote_version": "20261006224032",
+    "local_file": "20261006181758_restaurant_atomic_settlement_3d1.sql",
+    "exactEqual": false,
+    "trimEqual": true,
+    "whitespaceEqual": true,
+    "remoteChars": 64447,
+    "localChars": 64445
+  },
+  {
+    "remote_version": "20261008030859",
+    "local_file": "20261008013643_restaurant_origin_cancel_contract_3d13.sql",
+    "exactEqual": false,
+    "trimEqual": true,
+    "whitespaceEqual": true,
+    "remoteChars": 8166,
+    "localChars": 8167
+  }
+]
