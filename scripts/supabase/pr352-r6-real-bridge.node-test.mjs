@@ -176,6 +176,103 @@ test('stdin psql rejection requires script exit 3 and the exact PostgreSQL error
   }
 });
 
+test('archived replay setup rejects unpaid archival then uses authentic cancel and archive without bypassing the guard', async () => {
+  const runner=await readFile(runnerPath,'utf8');
+  const block=runner.slice(runner.indexOf('  const archivedReceipt ='),runner.indexOf('  const physicallyDeletedReceipt ='));
+  const rejected=block.indexOf("'P0001','RESTAURANT_PARENT_CANCEL_CONTRACT_REQUIRED'");
+  const cancelled=block.indexOf('select public.pos_cancel_restaurant_order_from_pos_v1(');
+  const archived=block.indexOf('select public.pos_archive_restaurant_order_unlimited(');
+  const tombstone=block.indexOf('set deleted_at=clock_timestamp(),checkout_closed_at=clock_timestamp()');
+  const replay=block.indexOf('const archivedReplay =');
+  const syntheticReplay=block.indexOf('const syntheticReplay =');
+  assert.ok(rejected>0 && cancelled>rejected && archived>cancelled && replay>archived && tombstone>replay && syntheticReplay>tombstone);
+  assert.match(block,/set role anon; select public\.pos_cancel_restaurant_order_from_pos_v1/);
+  assert.match(block,/set role service_role; select public\.pos_archive_restaurant_order_unlimited/);
+  assert.match(block,/assert\.equal\(archivedCancellation\.success,true\)/);
+  assert.match(block,/assert\.equal\(archivedResult\.success,true\)/);
+  assert.match(block,/assert\.deepEqual\(archivedAfterReplay,archivedBeforeReplay/);
+  assert.match(block,/assertTerminalSnapshot\(archivedBeforeReplay,archivedReceipt,false\)/);
+  assert.match(block,/assertTerminalSnapshot\(syntheticBeforeReplay,archivedReceipt,true\)/);
+  assert.match(block,/assertTerminalArchiveRejection\(invalidArchiveError,archivedSeedState,afterInvalidArchive\)/);
+  assert.ok(!/disable trigger|session_replication_role|insert into private\.restaurant.*permits/i.test(block));
+  const bridge=await readFile(bridgePath,'utf8');
+  const guard=bridge.slice(bridge.indexOf('create or replace function private.guard_restaurant_bridge_parent_v1()'));
+  assert.ok(guard.indexOf("old.status='cancelled'")<guard.indexOf('if (new.archived_at is not null'));
+  assert.match(guard,/RESTAURANT_PARENT_CANCEL_CONTRACT_REQUIRED.*errcode='P0001'/);
+  const versioned=bridge.slice(bridge.indexOf('create function public.pos_upsert_restaurant_order_versioned_v1('));
+  const terminalOrder=versioned.slice(versioned.indexOf('  if o.id is not null then'),versioned.indexOf('  -- Global line identities'));
+  assert.ok(terminalOrder.indexOf("raise exception 'RESTAURANT_ORDER_ALREADY_CANCELLED'")
+    < terminalOrder.indexOf("raise exception 'RESTAURANT_ORDER_NOT_ACTIVE'"));
+  assert.match(block,/'P0001','RESTAURANT_ORDER_ALREADY_CANCELLED','new write against cancelled and authentically archived parent'/);
+  assert.match(block,/'P0001','RESTAURANT_ORDER_ALREADY_CANCELLED','new write against cancelled parent with synthetic tombstone/);
+  const manifest=JSON.parse(await readFile(writerManifestPath,'utf8'));
+  assert.match(manifest.entries.find(row=>row.signature.startsWith('public.pos_archive_restaurant_order_unlimited(')).acl,/service_role=X/);
+  assert.match(manifest.entries.find(row=>row.signature.startsWith('public.pos_cancel_restaurant_order_from_pos_v1(')).acl,/anon=X/);
+});
+
+async function terminalAssertions() {
+  const source=await readFile(runnerPath,'utf8');
+  const pure=source.slice(source.indexOf('function assertTerminalSnapshot('),source.indexOf('async function writeEvidence('));
+  return Function('assert',pure+';return {assertTerminalSnapshot,assertTerminalNoFinancialChange,assertTerminalArchiveRejection};')(assert);
+}
+
+function syntheticTerminalSnapshot() {
+  const receipt={success:true,idempotency_key:'bridge-r20-archived-terminal-key',order:{id:'internal-terminal-parent'}};
+  const license='00000000-0000-0000-0000-000000000001';
+  return {receipt,snapshot:{state:{parent:{id:receipt.order.id},ledgerRowsForKey:1,proofRowsForKey:1,pendingAttempts:0,
+    sales:0,cashMovements:0,inventoryMovements:0,customerLedger:0,financialOperations:0},
+    detail:{parent:{id:receipt.order.id,local_order_id:'bridge-r20-archived-terminal',license_id:license,
+      status:'cancelled',fulfillment_status:'cancelled',cancelled_at:'synthetic-cancel-time',archived_at:'synthetic-archive-time',
+      payment_status:'unpaid',paid_at:null,paid_sale_id:null,deleted_at:null,checkout_closed_at:null},
+      items:[{id:'item-terminal',restaurant_order_id:receipt.order.id,license_id:license,status:'cancelled'}],
+      ledger:{license_id:license,idempotency_key:receipt.idempotency_key,operation_type:'restaurant_order.upsert',
+        entity_id:receipt.order.id,status:'completed',response_payload:structuredClone(receipt)},
+      proof:{license_id:license,idempotency_key:receipt.idempotency_key,restaurant_order_id:receipt.order.id,
+        local_order_id:'bridge-r20-archived-terminal',actor_type:'admin',actor_id:'00000000-0000-0000-0000-0000000000aa',
+        device_id:'00000000-0000-0000-0000-00000000000a',request_sha256:'a'.repeat(64),response_sha256:'b'.repeat(64)},
+      responseShaMatches:true,events:[{id:'event-terminal'}],payments:0,productStock:20,permits:0,pendingSessions:0}}};
+}
+
+test('terminal snapshot validator distinguishes archive-only from synthetic markers and rejects invalid proofs or states', async () => {
+  const {assertTerminalSnapshot,assertTerminalNoFinancialChange}=await terminalAssertions();
+  const {receipt,snapshot}=syntheticTerminalSnapshot();
+  assert.doesNotThrow(()=>assertTerminalSnapshot(snapshot,receipt,false));
+  const marked=structuredClone(snapshot);marked.detail.parent.deleted_at='synthetic';marked.detail.parent.checkout_closed_at='synthetic';
+  assert.doesNotThrow(()=>assertTerminalSnapshot(marked,receipt,true));
+  assert.throws(()=>assertTerminalSnapshot(marked,receipt,false));
+  for(const mutate of [s=>{s.detail.parent.status='pending';},s=>{s.detail.parent.archived_at=null;},
+    s=>{s.detail.items[0].status='pending';},s=>{s.detail.parent.license_id='other';},
+    s=>{s.detail.ledger.response_payload.success=false;},s=>{s.detail.proof.request_sha256='bad';},
+    s=>{s.detail.proof.device_id='other';},s=>{s.detail.responseShaMatches=false;},
+    s=>{s.state.pendingAttempts=1;},s=>{s.detail.permits=1;},s=>{s.state.proofRowsForKey=0;},s=>{s.detail.pendingSessions=1;}]) {
+    const changed=structuredClone(snapshot);mutate(changed);assert.throws(()=>assertTerminalSnapshot(changed,receipt,false));
+  }
+  assert.throws(()=>assertTerminalSnapshot(null,receipt,false));
+  assert.doesNotThrow(()=>assertTerminalNoFinancialChange(snapshot,structuredClone(snapshot)));
+  for(const mutate of [s=>{s.state.sales++;},s=>{s.detail.payments++;},s=>{s.detail.productStock--;},s=>{delete s.state.inventoryMovements;}]) {
+    const changed=structuredClone(snapshot);mutate(changed);assert.throws(()=>assertTerminalNoFinancialChange(snapshot,changed));
+  }
+});
+
+test('terminal archive rejection requires the observed SQLSTATE and exact message plus an unchanged full snapshot', async () => {
+  const {assertTerminalArchiveRejection}=await terminalAssertions();
+  const {snapshot}=syntheticTerminalSnapshot();
+  Object.assign(snapshot.detail.parent,{status:'pending',fulfillment_status:'pending',cancelled_at:null,archived_at:null});
+  snapshot.detail.items[0].status='pending';
+  const error={sqlstate:'P0001',message:'RESTAURANT_PARENT_CANCEL_CONTRACT_REQUIRED',stderr:'ERROR:  P0001: RESTAURANT_PARENT_CANCEL_CONTRACT_REQUIRED\n'};
+  assert.doesNotThrow(()=>assertTerminalArchiveRejection(error,snapshot,structuredClone(snapshot)));
+  for(const mutation of [{sqlstate:'42501'},{message:'OTHER_ERROR'},
+    {stderr:'ERROR: P0001: RESTAURANT_PARENT_CANCEL_CONTRACT_REQUIRED_EXTRA\n'},
+    {stderr:'ERROR: 42501: RESTAURANT_PARENT_CANCEL_CONTRACT_REQUIRED\n'}]) {
+    assert.throws(()=>assertTerminalArchiveRejection({...error,...mutation},snapshot,structuredClone(snapshot)));
+  }
+  for(const mutate of [s=>{s.detail.items[0].status='cancelled';},s=>{s.detail.payments++;},
+    s=>{s.detail.events.push({id:'extra'});},s=>{s.detail.proof.request_sha256='c'.repeat(64);},s=>{s.detail.ledger.status='processing';}]) {
+    const changed=structuredClone(snapshot);mutate(changed);assert.throws(()=>assertTerminalArchiveRejection(error,snapshot,changed));
+  }
+  assert.throws(()=>assertTerminalArchiveRejection(error,null,null));
+});
+
 // This small scanner is intentionally limited to function-call argument lists
 // in the SQL strings below. It tracks SQL string literals and nested calls so
 // source assertions stay tied to the p_order argument, not nearby p_items SQL.

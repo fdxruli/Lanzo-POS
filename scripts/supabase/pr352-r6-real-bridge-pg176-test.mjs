@@ -207,6 +207,99 @@ async function captureVersionedOrderState(localOrderId, idempotencyKey) {
   )::text`));
 }
 
+async function captureTerminalReplayState(localOrderId, idempotencyKey) {
+  const state = await captureVersionedOrderState(localOrderId, idempotencyKey);
+  const detail = JSON.parse(await query(`select jsonb_build_object(
+    'parent',to_jsonb(o),
+    'items',(select coalesce(jsonb_agg(to_jsonb(i) order by i.id),'[]'::jsonb)
+      from public.pos_restaurant_order_items i where i.license_id=o.license_id and i.restaurant_order_id=o.id),
+    'ledger',(select to_jsonb(k) from public.pos_idempotency_keys k
+      where k.license_id=o.license_id and k.idempotency_key=${quoteSql(idempotencyKey)}),
+    'proof',(select to_jsonb(p) from private.restaurant_order_upsert_replay_proofs_v1 p
+      where p.license_id=o.license_id and p.idempotency_key=${quoteSql(idempotencyKey)}),
+    'events',(select coalesce(jsonb_agg(to_jsonb(e) order by e.id),'[]'::jsonb) from public.pos_sync_events e
+      where e.license_id=o.license_id and (e.entity_id=o.id or e.idempotency_key=${quoteSql(idempotencyKey)}
+        or e.entity_id in (select i.id from public.pos_restaurant_order_items i
+          where i.license_id=o.license_id and i.restaurant_order_id=o.id))),
+    'responseShaMatches',(select p.response_sha256=encode(extensions.digest(convert_to(k.response_payload::text,'UTF8'),'sha256'),'hex')
+      from public.pos_idempotency_keys k join private.restaurant_order_upsert_replay_proofs_v1 p
+        using(license_id,idempotency_key) where k.license_id=o.license_id and k.idempotency_key=${quoteSql(idempotencyKey)}),
+    'eventCount',(select count(*) from public.pos_sync_events where license_id=o.license_id),
+    'ledgerCount',(select count(*) from public.pos_idempotency_keys where license_id=o.license_id),
+    'proofCount',(select count(*) from private.restaurant_order_upsert_replay_proofs_v1 where license_id=o.license_id),
+    'payments',(select count(*) from public.pos_sale_payments),
+    'productStock',(select stock from public.pos_products where license_id=o.license_id and id='bridge-restaurant-product'),
+    'pendingSessions',(select count(*) from pg_stat_activity where datname=current_database() and pid<>pg_backend_pid()),
+    'permits',(select count(*) from private.restaurant_bridge_cancel_permits))::text
+    from public.pos_restaurant_orders o where o.license_id='00000000-0000-0000-0000-000000000001'::uuid
+      and o.local_order_id=${quoteSql(localOrderId)}`));
+  return { state, detail };
+}
+
+function assertTerminalSnapshot(snapshot, receipt, markers) {
+  assert.ok(snapshot?.detail?.parent && snapshot?.state?.parent, 'Terminal parent snapshot is required');
+  const { state, detail } = snapshot;
+  assert.equal(detail.parent.id,receipt.order.id);
+  assert.equal(state.parent.id,detail.parent.id);
+  assert.equal(detail.parent.local_order_id,'bridge-r20-archived-terminal');
+  assert.equal(detail.parent.license_id,'00000000-0000-0000-0000-000000000001');
+  assert.equal(detail.parent.status,'cancelled'); assert.equal(detail.parent.fulfillment_status,'cancelled');
+  assert.ok(detail.parent.cancelled_at); assert.ok(detail.parent.archived_at);
+  assert.equal(detail.parent.payment_status,'unpaid');
+  assert.equal(detail.parent.paid_at,null); assert.equal(detail.parent.paid_sale_id,null);
+  assert.equal(Boolean(detail.parent.deleted_at),markers);
+  assert.equal(Boolean(detail.parent.checkout_closed_at),markers);
+  assert.equal(detail.items.length,1);
+  assert.equal(detail.items[0].restaurant_order_id,detail.parent.id);
+  assert.equal(detail.items[0].license_id,detail.parent.license_id);
+  assert.equal(detail.items[0].status,'cancelled');
+  assert.equal(detail.ledger.status,'completed');
+  assert.equal(detail.ledger.idempotency_key,receipt.idempotency_key);
+  assert.equal(detail.ledger.operation_type,'restaurant_order.upsert');
+  assert.equal(detail.ledger.license_id,detail.parent.license_id);
+  assert.equal(detail.ledger.entity_id,detail.parent.id);
+  assert.deepEqual(detail.ledger.response_payload,receipt);
+  assert.equal(detail.proof.idempotency_key,receipt.idempotency_key);
+  assert.equal(detail.proof.license_id,detail.parent.license_id);
+  assert.equal(detail.proof.restaurant_order_id,detail.parent.id);
+  assert.equal(detail.proof.local_order_id,detail.parent.local_order_id);
+  assert.equal(detail.proof.actor_type,'admin');
+  assert.equal(detail.proof.actor_id,'00000000-0000-0000-0000-0000000000aa');
+  assert.equal(detail.proof.device_id,'00000000-0000-0000-0000-00000000000a');
+  assert.match(detail.proof.request_sha256,/^[0-9a-f]{64}$/);
+  assert.match(detail.proof.response_sha256,/^[0-9a-f]{64}$/);
+  assert.equal(detail.responseShaMatches,true);
+  assert.ok(Array.isArray(detail.events) && detail.events.length>0);
+  assert.equal(state.ledgerRowsForKey,1); assert.equal(state.proofRowsForKey,1);
+  assert.equal(state.pendingAttempts,0); assert.equal(detail.permits,0); assert.equal(detail.pendingSessions,0);
+}
+
+function assertTerminalNoFinancialChange(before, after) {
+  for (const key of ['sales','cashMovements','inventoryMovements','customerLedger','financialOperations']) {
+    assert.ok(Number.isInteger(before?.state?.[key]),'Financial snapshot must be complete');
+    assert.equal(after?.state?.[key],before.state[key],`Terminal setup must not create ${key}`);
+  }
+  assert.ok(Number.isInteger(before?.detail?.payments));
+  assert.equal(after?.detail?.payments,before.detail.payments);
+  assert.ok(typeof before?.detail?.productStock==='number');
+  assert.equal(after?.detail?.productStock,before.detail.productStock);
+}
+
+function assertTerminalArchiveRejection(rejection, before, after) {
+  assert.equal(rejection.sqlstate,'P0001');
+  assert.equal(rejection.message,'RESTAURANT_PARENT_CANCEL_CONTRACT_REQUIRED');
+  assert.match(rejection.stderr,/ERROR:\s+P0001: RESTAURANT_PARENT_CANCEL_CONTRACT_REQUIRED(?:\r?\n|$)/);
+  assert.equal(before?.detail?.parent?.status,'pending');
+  assert.equal(before.detail.parent.payment_status,'unpaid');
+  assert.equal(before.detail.parent.archived_at,null);
+  assert.equal(before.detail.parent.deleted_at,null);
+  assert.equal(before.detail.parent.checkout_closed_at,null);
+  assert.equal(before.state.ledgerRowsForKey,1); assert.equal(before.state.proofRowsForKey,1);
+  assert.equal(before.detail.items.length,1);
+  assert.equal(before.detail.items[0].status,'pending');
+  assert.deepEqual(after,before,'Rejected direct archive must not change parent, items, events, ledger, proof or finances');
+}
+
 async function writeEvidence() {
   const directory = evidenceDirectory();
   await mkdir(directory, { recursive: true, mode: 0o700 });
@@ -1317,22 +1410,86 @@ async function run() {
     idempotencyKey:'bridge-r20-paid-terminal-new-key',lineId:'bridge-r20-paid-terminal-line' }),
     'P0001','RESTAURANT_ORDER_ALREADY_PAID','new write against paid parent');
 
-  const archivedReceipt = JSON.parse(await query(versionedClientUpsertSql({ localOrderId:'bridge-r20-archived-terminal',
-    idempotencyKey:'bridge-r20-archived-terminal-key',lineId:'bridge-r20-archived-terminal-line' })));
+  currentStage = 'terminal fixture: reject unpaid archival';
+  const archivedOriginalSql = versionedClientUpsertSql({ localOrderId:'bridge-r20-archived-terminal',
+    idempotencyKey:'bridge-r20-archived-terminal-key',lineId:'bridge-r20-archived-terminal-line' });
+  const archivedReceipt = JSON.parse(await query(archivedOriginalSql));
   assert.equal(archivedReceipt.success,true);
-  await runSql(`update public.pos_restaurant_orders set archived_at=clock_timestamp(),deleted_at=clock_timestamp(),
+  const archivedSeedState = await captureTerminalReplayState('bridge-r20-archived-terminal','bridge-r20-archived-terminal-key');
+  const invalidArchiveError = await assertSqlFailure(`update public.pos_restaurant_orders set archived_at=clock_timestamp(),deleted_at=clock_timestamp(),
       checkout_closed_at=clock_timestamp()
     where license_id=${quoteSql(clientLicenseId)}::uuid and local_order_id='bridge-r20-archived-terminal';`,
-  'mark-archived-soft-deleted-and-checkout-closed-synthetic');
-  const archivedBeforeReplay = await captureVersionedOrderState('bridge-r20-archived-terminal','bridge-r20-archived-terminal-key');
-  const archivedReplay = JSON.parse(await query(versionedClientUpsertSql({ localOrderId:'bridge-r20-archived-terminal',
-    idempotencyKey:'bridge-r20-archived-terminal-key',lineId:'bridge-r20-archived-terminal-line' })));
-  const archivedAfterReplay = await captureVersionedOrderState('bridge-r20-archived-terminal','bridge-r20-archived-terminal-key');
-  assert.deepEqual(archivedReplay,archivedReceipt,'An exact replay may retrieve the receipt for an authorized archived/tombstoned parent');
-  assert.deepEqual(archivedAfterReplay,archivedBeforeReplay,'Archived/tombstoned replay must not reopen or mutate the parent');
+  'P0001','RESTAURANT_PARENT_CANCEL_CONTRACT_REQUIRED','active unpaid parent cannot be archived synthetically');
+  const afterInvalidArchive = await captureTerminalReplayState('bridge-r20-archived-terminal','bridge-r20-archived-terminal-key');
+  assertTerminalArchiveRejection(invalidArchiveError,archivedSeedState,afterInvalidArchive);
+  passed('terminal fixture rejects active unpaid archival without mutation', {
+    rejection:invalidArchiveError, before:archivedSeedState, after:afterInvalidArchive,
+  });
+  currentStage = 'terminal fixture: authentic cancellation';
+  const archivedVersion = JSON.parse(await query(`select json_build_object('updatedAt',updated_at)::text
+    from public.pos_restaurant_orders where license_id=${quoteSql(clientLicenseId)}::uuid
+      and local_order_id='bridge-r20-archived-terminal'`)).updatedAt;
+  const archivedCancellation = JSON.parse(await query(`set role anon; select public.pos_cancel_restaurant_order_from_pos_v1(
+    'lab-license-a','lab-device-a','lab-device-token-a','lab-admin-session','bridge-r20-archived-terminal',
+    ${quoteSql(archivedVersion)},'R20 archived replay setup','bridge-r20-archived-terminal-cancel')::text; reset role;`));
+  assert.equal(archivedCancellation.success,true);
+  assert.equal(archivedCancellation.localOrderId,'bridge-r20-archived-terminal');
+  assert.equal(archivedCancellation.status,'cancelled');
+  const cancelledForArchive = await captureTerminalReplayState('bridge-r20-archived-terminal','bridge-r20-archived-terminal-key');
+  assert.equal(cancelledForArchive.detail.parent.status,'cancelled');
+  assert.equal(cancelledForArchive.detail.parent.archived_at,null);
+  assertTerminalNoFinancialChange(archivedSeedState,cancelledForArchive);
+  currentStage = 'terminal fixture: authentic archive and original replay';
+  const archivedResult = JSON.parse(await query(`set role service_role; select public.pos_archive_restaurant_order_unlimited(
+    'lab-license-a','lab-device-a','lab-device-token-a','lab-admin-session',${quoteSql(archivedReceipt.order.id)},
+    'R20 archived replay setup','{}'::jsonb,'bridge-r20-archived-terminal-archive')::text; reset role;`));
+  assert.equal(archivedResult.success,true);
+  assert.equal(archivedResult.order.id,archivedReceipt.order.id);
+  const archivedBeforeReplay = await captureTerminalReplayState('bridge-r20-archived-terminal','bridge-r20-archived-terminal-key');
+  assertTerminalSnapshot(archivedBeforeReplay,archivedReceipt,false);
+  assertTerminalNoFinancialChange(archivedSeedState,archivedBeforeReplay);
+  assert.deepEqual(archivedBeforeReplay.detail.ledger,archivedSeedState.detail.ledger);
+  assert.deepEqual(archivedBeforeReplay.detail.proof,archivedSeedState.detail.proof);
+  assert.equal(archivedBeforeReplay.detail.proofCount,archivedSeedState.detail.proofCount);
+  const archivedReplay = JSON.parse(await query(archivedOriginalSql));
+  const archivedAfterReplay = await captureTerminalReplayState('bridge-r20-archived-terminal','bridge-r20-archived-terminal-key');
+  assert.deepEqual(archivedReplay,archivedReceipt,'Archive-only replay must return the original receipt');
+  assert.deepEqual(archivedAfterReplay,archivedBeforeReplay,'Archive-only replay must not mutate any tracked state');
   const archivedNewKeyError = await assertSqlFailure(versionedClientUpsertSql({ localOrderId:'bridge-r20-archived-terminal',
     idempotencyKey:'bridge-r20-archived-terminal-new-key',lineId:'bridge-r20-archived-terminal-line' }),
-    'P0001','RESTAURANT_ORDER_NOT_ACTIVE','new write against archived/deleted/checkout-closed parent');
+    'P0001','RESTAURANT_ORDER_ALREADY_CANCELLED','new write against cancelled and authentically archived parent');
+  assert.deepEqual(await captureTerminalReplayState('bridge-r20-archived-terminal','bridge-r20-archived-terminal-key'),archivedAfterReplay);
+  passed('terminal archive-only replay preserves original receipt, ledger, proof and financial state', {
+    cancelRole:'anon',archiveRole:'service_role',cancellation:archivedCancellation,cancelledState:cancelledForArchive,archive:archivedResult,
+    before:archivedBeforeReplay,after:archivedAfterReplay,newKeyRejection:archivedNewKeyError,
+  });
+
+  // Separate synthetic coverage: the real archive above does not set these
+  // markers. The unchanged guard permits them on an already cancelled parent.
+  currentStage = 'terminal fixture: synthetic tombstone and checkout markers';
+  await runSql(`update public.pos_restaurant_orders set deleted_at=clock_timestamp(),checkout_closed_at=clock_timestamp()
+    where license_id=${quoteSql(clientLicenseId)}::uuid and local_order_id='bridge-r20-archived-terminal';`,
+  'mark-cancelled-archived-parent-tombstoned-synthetic');
+  assert.equal(await query(`select (status='cancelled' and archived_at is not null and deleted_at is not null
+    and checkout_closed_at is not null)::text from public.pos_restaurant_orders
+    where license_id=${quoteSql(clientLicenseId)}::uuid and local_order_id='bridge-r20-archived-terminal'`),'true');
+  const syntheticBeforeReplay = await captureTerminalReplayState('bridge-r20-archived-terminal','bridge-r20-archived-terminal-key');
+  assertTerminalSnapshot(syntheticBeforeReplay,archivedReceipt,true);
+  assertTerminalNoFinancialChange(archivedSeedState,syntheticBeforeReplay);
+  assert.deepEqual(syntheticBeforeReplay.detail.ledger,archivedAfterReplay.detail.ledger);
+  assert.deepEqual(syntheticBeforeReplay.detail.proof,archivedAfterReplay.detail.proof);
+  const syntheticReplay = JSON.parse(await query(archivedOriginalSql));
+  const syntheticAfterReplay = await captureTerminalReplayState('bridge-r20-archived-terminal','bridge-r20-archived-terminal-key');
+  assert.deepEqual(syntheticReplay,archivedReceipt,'Synthetic tombstone/checkout replay must return the original receipt');
+  assert.deepEqual(syntheticAfterReplay,syntheticBeforeReplay);
+  await assertSqlFailure(versionedClientUpsertSql({ localOrderId:'bridge-r20-archived-terminal',
+    idempotencyKey:'bridge-r20-tombstone-new-key',lineId:'bridge-r20-archived-terminal-line' }),
+    'P0001','RESTAURANT_ORDER_ALREADY_CANCELLED','new write against cancelled parent with synthetic tombstone/checkout markers');
+  assert.deepEqual(await captureTerminalReplayState('bridge-r20-archived-terminal','bridge-r20-archived-terminal-key'),syntheticAfterReplay);
+  passed('synthetic tombstone and checkout markers preserve terminal replay without financial effects', {
+    preparation:'synthetic markers on an authentically cancelled and archived parent',
+    before:syntheticBeforeReplay,after:syntheticAfterReplay,
+  });
 
   const physicallyDeletedReceipt = JSON.parse(await query(versionedClientUpsertSql({ localOrderId:'bridge-r20-physical-delete',
     idempotencyKey:'bridge-r20-physical-delete-key',lineId:'bridge-r20-physical-delete-line' })));
