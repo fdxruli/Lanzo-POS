@@ -11,6 +11,21 @@ function quote(value) {
   return "'" + String(value).replaceAll("'", "''") + "'";
 }
 
+// Sessions feed scripts through stdin with ON_ERROR_STOP, rather than psql -c.
+// PostgreSQL documents exit 3 for script SQL errors; exit 1 is a client failure.
+export function assertPsqlScriptRejection(exit, message) {
+  assert.equal(exit.code, 3, 'Expected a PostgreSQL script rejection: ' + exit.stderr);
+  assert.equal(exit.signal, null);
+  assert.equal(exit.spawnError, null);
+  const errors = [...exit.stderr.matchAll(/\bERROR:\s+([A-Z0-9]{5}): ([^\r\n]*)/g)];
+  assert.equal(errors.length, 1, 'Expected exactly one verbose PostgreSQL error');
+  assert.equal(errors[0][1], 'P0001');
+  assert.equal(errors[0][2], message);
+  assert.equal(exit.stdout?.trim() ?? '', '', 'A rejected script must not emit a receipt or other SQL result');
+  return { exitCode: exit.code, signal: exit.signal, spawnError: exit.spawnError,
+    sqlstate: errors[0][1], message: errors[0][2], noReceipt: true };
+}
+
 export function statusUpdateSql(orderId, status, idempotencyKey) {
   return 'do $r6_status$ declare receipt jsonb; begin '
     + 'receipt:=public.pos_update_restaurant_order_status_unlimited('
@@ -560,8 +575,9 @@ export async function runLegacyProvenanceRaces({ query, psqlBin, env }) {
         const hx=await waitForSessionExit(holder); assertSessionSuccess(holderName,hx);
         const cx=await waitForSessionExit(contender);
         const mustThrow=scenario.crossParent||scenario.foreign;
+        let rejection = null;
         if (mustThrow) {
-          assert.equal(cx.code,1); assert.equal(cx.signal,null); assert.equal(cx.spawnError,null);
+          rejection = assertPsqlScriptRejection(cx, 'IDEMPOTENCY_CONFLICT');
           assert.match(cx.stderr,/P0001/); assert.match(cx.stderr,/IDEMPOTENCY_CONFLICT/);
           assert.equal(cx.stdout.split(/\r?\n/).some(l=>l.trim().startsWith('{')),false,'No prior receipt may escape');
         } else {
@@ -579,7 +595,7 @@ export async function runLegacyProvenanceRaces({ query, psqlBin, env }) {
         results.push({name:scenario.name,status:'PASS',holderSql,contenderSql,queriesSubmitted:true,
           holderPid,contenderPid:wait.pid,wait,locks,keyLocks,financialBefore,financialAfter,
           releaseOrder:'holder COMMIT releases the observed wait, then contender completes',
-          exitCodes:{holder:hx.code,contender:cx.code},sqlstate:mustThrow?'P0001':'00000',
+          exitCodes:{holder:hx.code,contender:cx.code},sqlstate:rejection?.sqlstate ?? '00000',rejection,
           holderMode:scenario.foreign?'controlled foreign receipt via authentic ledger helpers':'authentic public RPC',
           finalState,pendingDatabaseSessions:pending});
       } finally {
@@ -655,8 +671,12 @@ export async function runVersionedUpsertIdempotencyRaces({ query, psqlBin, env }
       name + ' must leave exactly one parent, item, idempotency row, and strong proof');
     assert.equal(holderExit.signal, null);
     assert.equal(contenderExit.signal, null);
+    const pendingDatabaseSessions = await countPendingSessions(query, [holderName, contenderName]);
+    assert.equal(pendingDatabaseSessions, 0);
     scenarios.push({
       name,
+      holderPid: holderReady.find((row) => row.state === 'idle in transaction').pid,
+      contenderPid: contenderActivity.pid, pendingDatabaseSessions,
       contenderQuerySubmitted: true,
       waitEventType: contenderActivity.waitEventType,
       waitEvent: contenderActivity.waitEvent,
@@ -738,6 +758,7 @@ export async function runVersionedUpsertIdempotencyRaces({ query, psqlBin, env }
     assert.equal(crossParentPending,0,'The cross-parent advisory-key race must leave no PostgreSQL sessions');
     scenarios.push({
       name:'versioned-same-key-distinct-parents',
+      holderPid: keyHolderPid, contenderPid: keyWait.pid,
       holderQuerySubmitted:true,
       contenderQuerySubmitted:true,
       holderLock:heldKeyLock.find((row)=>row.granted),
@@ -792,7 +813,7 @@ export async function runVersionedUpsertIdempotencyRaces({ query, psqlBin, env }
     const holderExit = await waitForSessionExit(holder);
     const contenderExit = await waitForSessionExit(contender);
     assertSessionSuccess(holderName, holderExit);
-    assert.equal(contenderExit.code, 1, 'The stale distinct-key contender must fail its SQL statement');
+    const versionRejection = assertPsqlScriptRejection(contenderExit, 'RESTAURANT_ORDER_VERSION_CONFLICT');
     assert.equal(contenderExit.signal, null, 'The contender must exit from PostgreSQL rejection, not a process signal');
     assert.equal(contenderExit.spawnError, null, 'The contender must not fail to start or write SQL');
     assert.match(contenderExit.stderr, /RESTAURANT_ORDER_VERSION_CONFLICT/,
@@ -821,6 +842,7 @@ export async function runVersionedUpsertIdempotencyRaces({ query, psqlBin, env }
     assert.equal(contenderExit.signal, null);
     scenarios.push({
       name: 'versioned-same-parent-distinct-keys',
+      holderPid, contenderPid: blockedActivity.pid, rejection: versionRejection,
       holderQuerySubmitted: true,
       contenderQuerySubmitted: true,
       waitEventType: blockedActivity.waitEventType,
@@ -908,7 +930,7 @@ export async function runVersionedUpsertIdempotencyRaces({ query, psqlBin, env }
       const pauseExit = await waitForSessionExit(pauseSession);
       assertSessionSuccess(pauseName, pauseExit);
       const pausedWriterExit = await waitForSessionExit(pausedWriter);
-      assert.equal(pausedWriterExit.code, 1, 'A writer released after committed pause must fail in PostgreSQL');
+      const pauseRejection = assertPsqlScriptRejection(pausedWriterExit, 'RESTAURANT_CONTRACT_MAINTENANCE');
       assert.equal(pausedWriterExit.signal, null);
       assert.equal(pausedWriterExit.spawnError, null);
       assert.match(pausedWriterExit.stderr, /RESTAURANT_CONTRACT_MAINTENANCE/);
@@ -931,6 +953,7 @@ export async function runVersionedUpsertIdempotencyRaces({ query, psqlBin, env }
       assert.equal(pending,0,'The cutover/rate-order scenario must leave no PostgreSQL sessions');
       scenarios.push({
         name:'versioned-cutover-rate-limit-order',
+        holderPid: pausePid, contenderPid: transitionWait.pid, rejection: pauseRejection,
         rateHolderQuerySubmitted:true,
         pauseSetterQuerySubmitted:true,
         contenderQuerySubmitted:true,

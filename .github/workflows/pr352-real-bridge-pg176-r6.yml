@@ -70,6 +70,7 @@ jobs:
           node --version
           node --check scripts/supabase/pr352-r6-real-bridge-pg176-test.mjs
           node --check scripts/supabase/pr352-r6-concurrency.mjs
+          node --check scripts/supabase/pr352-r6-shared-ledger.mjs
           node --check scripts/supabase/pr352-r6-real-bridge.node-test.mjs
           node --check scripts/supabase/pr352-r6-synthetic-ledger-overlay.mjs
           node --check scripts/supabase/pr352-r6-synthetic-ledger-overlay-test.mjs
@@ -160,6 +161,14 @@ jobs:
               return matches[0];
             };
             const catalog = uniqueCheck("Cocina schema and six direct Restaurant helper functions match read-only Production catalog metadata");
+            const sharedLedger = uniqueCheck("UNRELATED_LEDGER_BEFORE_AFTER");
+            if (sharedLedger.commitSha !== expectedSha || sharedLedger.runId !== expectedRunId || sharedLedger.runAttempt !== expectedRunAttempt
+              || sharedLedger.comparisonExecuted !== true || sharedLedger.invariantsEqual !== true) process.exit(1);
+            const { pathToFileURL } = await import("node:url");
+            const { compareSharedLedger } = await import(pathToFileURL(process.cwd() + "/scripts/supabase/pr352-r6-shared-ledger.mjs").href);
+            compareSharedLedger(sharedLedger.baseline, sharedLedger.after, {
+              commitSha: expectedSha, runId: expectedRunId, runAttempt: expectedRunAttempt
+            });
             if (catalog.tableColumnCount !== 18 || catalog.constraintCount !== 9 || catalog.indexCount !== 5 || catalog.functionCount !== 6) process.exit(1);
             const dispatcher = uniqueCheck("authentic 3D.14 dispatcher fingerprint matches reviewed read-only fingerprint");
             const dispatcherManifest = JSON.parse(await readFile("supabase/tests/fixtures/pr352-r6/dispatcher-fingerprint.json", "utf8"));
@@ -302,12 +311,53 @@ jobs:
               || JSON.stringify(provenance.diagnostic) !== JSON.stringify(diagnostic)
               || provenance.xidProbe?.proofs !== 1 || provenance.xidProbe?.pendingAttempts !== 0) process.exit(1);
             const legacyNames = ["legacy-first-same-parent","versioned-first-legacy-same-parent","legacy-first-cross-parent","foreign-completed-receipt-no-insert"];
+            const validRejection = (row, message) => row?.exitCode === 3 && row.signal === null && row.spawnError === null
+              && row.sqlstate === "P0001" && row.message === message && row.noReceipt === true;
+            const races = bridge.idempotencyConcurrency;
+            const raceNames = ["versioned-idempotency-identical","versioned-idempotency-conflict","versioned-same-key-distinct-parents",
+              "versioned-same-parent-distinct-keys","versioned-cutover-rate-limit-order"];
+            if (!Array.isArray(races) || races.length !== raceNames.length || JSON.stringify(races) !== JSON.stringify(bridge.idempotency.concurrent)
+              || raceNames.some((name) => races.filter((row) => row.name === name && row.status === "PASS").length !== 1)) process.exit(1);
+            for (const row of races) {
+              const wait = row.name === "versioned-cutover-rate-limit-order" ? row.transitionWait : row;
+              if (!Number.isInteger(row.holderPid) || !Number.isInteger(row.contenderPid) || row.holderPid <= 0 || row.contenderPid <= 0
+                || row.holderPid === row.contenderPid || row.contenderQuerySubmitted !== true
+                || wait?.waitEventType !== "Lock" || !wait.blockedBy?.includes(row.holderPid)
+                || row.pendingDatabaseSessions !== 0 || typeof row.releaseOrder !== "string" || row.releaseOrder.length === 0) process.exit(1);
+            }
+            for (const row of races.slice(0,3)) {
+              if (row.holderExitCode !== 0 || row.contenderExitCode !== 0) process.exit(1);
+              const expected = row.name === "versioned-same-key-distinct-parents"
+                ? {holderParents:1,contenderParents:0,holderItems:1,contenderItems:0,ledger:1,proofs:1,events:2}
+                : {parents:1,items:1,events:2,ledger:1,proofs:1};
+              if (Object.entries(expected).some(([key,value]) => row.finalState?.[key] !== value)) process.exit(1);
+            }
+            for (const [name, message] of [["versioned-same-parent-distinct-keys","RESTAURANT_ORDER_VERSION_CONFLICT"],
+              ["versioned-cutover-rate-limit-order","RESTAURANT_CONTRACT_MAINTENANCE"]]) {
+              const row = races.find((item) => item.name === name);
+              const wait = name === "versioned-same-parent-distinct-keys" ? row : row.transitionWait;
+              if (!validRejection(row.rejection,message) || row.contenderExitCode !== 3
+                || row.contenderSqlstate !== row.rejection.sqlstate || row.contenderResponse !== message
+                || !Number.isInteger(row.holderPid) || !Number.isInteger(row.contenderPid) || row.holderPid <= 0 || row.contenderPid <= 0
+                || row.holderPid === row.contenderPid || wait?.waitEventType !== "Lock" || wait.waitEvent !== "advisory" || !wait.blockedBy?.includes(row.holderPid)
+                || row.contenderQuerySubmitted !== true || typeof row.releaseOrder !== "string" || row.releaseOrder.length === 0
+                || row.pendingDatabaseSessions !== 0) process.exit(1);
+              if (name === "versioned-same-parent-distinct-keys") {
+                const expected = {parents:1,items:1,holderLedger:1,contenderLedger:0,holderProof:1,contenderProof:0,holderEvents:2,contenderEvents:0};
+                if (row.holderExitCode !== 0 || !Number.isInteger(row.finalState?.serverVersion) || row.finalState.serverVersion < 2
+                  || Object.entries(expected).some(([key,value]) => row.finalState?.[key] !== value)) process.exit(1);
+              } else {
+                if (row.pauseExitCode !== 0 || row.rateHolderExitCode !== 0 || row.rateCountAfterPausedError !== "1"
+                  || ["parents","items","ledger","proofs","events"].some((key) => row.pausedFinalState?.[key] !== 0)) process.exit(1);
+              }
+            }
             const legacy = bridge.legacyProvenance;
             if (!Array.isArray(legacy) || legacy.length !== legacyNames.length || JSON.stringify(legacy) !== JSON.stringify(provenance.legacy)
               || legacyNames.some((name) => legacy.filter((row) => row.name === name).length !== 1)) process.exit(1);
             for (const row of legacy) {
               const rejected = row.name === "legacy-first-cross-parent" || row.name === "foreign-completed-receipt-no-insert";
               if (row.status !== "PASS" || row.queriesSubmitted !== true || !Number.isInteger(row.holderPid) || !Number.isInteger(row.contenderPid)
+                || (rejected && !validRejection(row.rejection,"IDEMPOTENCY_CONFLICT"))
                 || row.holderPid <= 0 || row.contenderPid <= 0 || row.holderPid === row.contenderPid
                 || row.wait?.pid !== row.contenderPid || row.wait?.waitEventType !== "Lock" || !row.wait?.blockedBy?.includes(row.holderPid)
                 || !Array.isArray(row.locks) || !row.locks.some((lock) => lock.pid === row.contenderPid && lock.granted === false)
@@ -316,7 +366,7 @@ jobs:
                 || !exactKeys(row.financialBefore,["sales","payments","cash","inventory","credit","operations"])
                 || Object.values(row.financialBefore).some((value) => !Number.isInteger(value) || value < 0)
                 || JSON.stringify(row.financialBefore) !== JSON.stringify(row.financialAfter)
-                || row.exitCodes?.holder !== 0 || row.exitCodes?.contender !== (rejected ? 1 : 0) || row.sqlstate !== (rejected ? "P0001" : "00000")
+                || row.exitCodes?.holder !== 0 || row.exitCodes?.contender !== (rejected ? 3 : 0) || row.sqlstate !== (rejected ? "P0001" : "00000")
                 || row.finalState?.parents !== 1 || row.finalState?.items !== 1 || row.finalState?.ledger !== 1
                 || row.finalState?.proofs !== (row.name === "versioned-first-legacy-same-parent" ? 1 : 0)
                 || row.finalState?.attempts !== 0 || row.pendingDatabaseSessions !== 0) process.exit(1);

@@ -10,6 +10,8 @@ import { fileURLToPath } from 'node:url';
 import { canonicalizePostgresAcl } from './pr352-r6-canonical-postgres-acl.mjs';
 import { assertEquivalentPreparationStationCatalog } from './pr352-r6-canonical-postgres-constraints.mjs';
 import { assertRateLimitedRestaurantUpsertCatalog } from './pr352-r6-wrapper-catalog.mjs';
+import { assertPsqlScriptRejection } from './pr352-r6-concurrency.mjs';
+import { sharedLedgerProbeSql, sharedLedgerInvariants, compareSharedLedger } from './pr352-r6-shared-ledger.mjs';
 import { assertRestaurantOrderItemRelationship, restaurantOrderItemSnapshotSql, runPreparationStationBehavior } from './pr352-r6-preparation-station.mjs';
 import './pr352-r6-concurrency-id.node-test.mjs';
 import './pr352-r6-relationship-diagnostics.node-test.mjs';
@@ -29,6 +31,67 @@ const runnerPath = path.join(root, 'scripts/supabase/pr352-r6-real-bridge-pg176-
 const preparationStationTestPath = path.join(root, 'scripts/supabase/pr352-r6-preparation-station.mjs');
 const concurrencyPath = path.join(root, 'scripts/supabase/pr352-r6-concurrency.mjs');
 const overlayPath = path.join(root, 'scripts/supabase/pr352-r6-synthetic-ledger-overlay.mjs');
+
+// Controlled Node input for the validator, never a PostgreSQL observation.
+function syntheticSharedLedger(phase) {
+  const receipt = { success: true, mode: 'cloud_cashier_inventory',
+    idempotency_key: `r627-${phase}-key`, sale: { id: `r627-${phase}-1`, total: 20 } };
+  return { phase, status: 'PASS', backendPid: phase === 'before' ? 601 : 602, transactionId: '900',
+    transactionScope: 'BEGIN_EFFECTS_THEN_ROLLBACK', rollbackVerified: true,
+    statementTimeout:'8s',lockTimeout:'2s',blockedBy:[],pendingSessions:0,
+    receipt, replayReceipt: structuredClone(receipt), privateTablesPresent: phase === 'after', proofRows: 0, attemptRows: 0,
+    countsBefore: { sales:0,payments:0,inventory:0,cash:0,credit:0,operations:0,ledger:0 },
+    countsAfter: { sales:1,payments:1,inventory:1,cash:1,credit:0,operations:1,ledger:2 },
+    stock:18,saleTotal:20,paymentTotal:20,ledgerRows:2,ledgerCompleted:true,ledgerReceiptValid:true,
+    operationRows:1,operationCompleted:true,security:{owner:'postgres',rls:true,acl:[[10,10,'SELECT',false]]} };
+}
+
+test('shared ledger baseline runs the authentic fixture in bounded rollback transactions around bridge installation', async () => {
+  const source = await readFile(path.join(root,'supabase/tests/fixtures/pr338-real-financial/ordinary-sale.sql'),'utf8');
+  for (const phase of ['before','after']) {
+    const sql = sharedLedgerProbeSql(source, phase);
+    assert.match(sql,/^BEGIN;/); assert.match(sql,/ROLLBACK;$/);
+    assert.match(sql,/statement_timeout='8s'/); assert.match(sql,/lock_timeout='2s'/);
+    assert.equal((sql.match(/public\.pos_execute_financial_operation_v1\(/g)||[]).length,2);
+    assert.match(sql,/pg_temp\.r627_receipts VALUES \(a,b\)/);
+    assert.ok(sql.includes(`r627-${phase}-key`)); assert.ok(!sql.includes('lab-ordinary-'));
+    assert.equal(sql.includes('from private.restaurant_upsert_attempts_v1'),phase==='after');
+    assert.ok(!/insert into public\.pos_idempotency_keys/i.test(sql));
+  }
+  const runner=await readFile(runnerPath,'utf8');
+  assert.ok(runner.indexOf("phase: 'before'") < runner.indexOf("await runFile(bridgePath, 'bridge-v1')"));
+  assert.ok(runner.indexOf("phase: 'after'") > runner.indexOf("await runFile(bridgePath, 'bridge-v1')"));
+});
+
+test('shared ledger invariant comparison rejects financial drift, invalid receipts and private residue', () => {
+  const baseline=syntheticSharedLedger('before'), after=syntheticSharedLedger('after');
+  assert.doesNotThrow(()=>compareSharedLedger(baseline,after,{}));
+  for(const mutate of [row=>{row.countsAfter.sales=2;},row=>{row.countsAfter.cash=2;},
+    row=>{row.receipt.sale.total=21;},row=>{row.replayReceipt.success=false;},
+    row=>{row.proofRows=1;},row=>{row.attemptRows=1;},row=>{row.ledgerReceiptValid=false;},
+    row=>{row.security.rls=false;},row=>{row.security.acl.push([10,0,'SELECT',false]);},
+    row=>{row.rollbackVerified=false;}]) {
+    const changed=structuredClone(after); mutate(changed);
+    assert.throws(()=>compareSharedLedger(baseline,changed,{}));
+  }
+  assert.throws(()=>sharedLedgerInvariants(null));
+});
+
+test('stdin psql rejection requires script exit 3 and the exact PostgreSQL error', () => {
+  const valid = { code: 3, signal: null, spawnError: null,
+    stderr: 'ERROR: P0001: RESTAURANT_ORDER_VERSION_CONFLICT' };
+  assert.doesNotThrow(() => assertPsqlScriptRejection(valid, 'RESTAURANT_ORDER_VERSION_CONFLICT'));
+  for (const code of [0, 1, 2, null]) {
+    assert.throws(() => assertPsqlScriptRejection({ ...valid, code }, 'RESTAURANT_ORDER_VERSION_CONFLICT'));
+  }
+  for (const mutation of [{ signal: 'SIGTERM' }, { spawnError: new Error('spawn failed') },
+    { stderr: 'ERROR: 23505: RESTAURANT_ORDER_VERSION_CONFLICT' }, { stderr: 'ERROR: P0001: OTHER_ERROR' },
+    { stderr: 'ERROR: P0001: RESTAURANT_ORDER_VERSION_CONFLICT_EXTRA' },
+    { stderr: 'ERROR: P0001: OTHER_ERROR\nCONTEXT: RESTAURANT_ORDER_VERSION_CONFLICT' },
+    { stderr: valid.stderr+'\n'+valid.stderr }, { stdout: '{"success":true}' }]) {
+    assert.throws(() => assertPsqlScriptRejection({ ...valid, ...mutation }, 'RESTAURANT_ORDER_VERSION_CONFLICT'));
+  }
+});
 
 // This small scanner is intentionally limited to function-call argument lists
 // in the SQL strings below. It tracks SQL string literals and nested calls so
@@ -957,12 +1020,32 @@ test('structured evidence gate binds the Admin report to this run and SHA and re
         keyLocks:rejected?[{pid:502,granted:true}]:[],
         financialBefore:{sales:0,payments:0,cash:0,inventory:0,credit:0,operations:0},
         financialAfter:{sales:0,payments:0,cash:0,inventory:0,credit:0,operations:0},
-        exitCodes:{holder:0,contender:rejected?1:0},sqlstate:rejected?'P0001':'00000',pendingDatabaseSessions:0,
+      exitCodes:{holder:0,contender:rejected?3:0},sqlstate:rejected?'P0001':'00000',pendingDatabaseSessions:0,
+        rejection:rejected?{exitCode:3,signal:null,spawnError:null,sqlstate:'P0001',message:'IDEMPOTENCY_CONFLICT',noReceipt:true}:null,
         finalState:{parents:1,items:1,ledger:1,proofs:name==='versioned-first-legacy-same-parent'?1:0,attempts:0}};
     });
   bridge.idempotency={status:'PASS',provenance:{mechanism:'private call nonce witnessed by authentic ledger INSERT',
     legacy:bridge.legacyProvenance,diagnostic:bridge.provenanceDiagnostic,xidProbe:{proofs:1,pendingAttempts:0}}};
+  bridge.idempotencyConcurrency=['versioned-idempotency-identical','versioned-idempotency-conflict',
+    'versioned-same-key-distinct-parents','versioned-same-parent-distinct-keys','versioned-cutover-rate-limit-order'].map(name=>{
+    if (!['versioned-same-parent-distinct-keys','versioned-cutover-rate-limit-order'].includes(name)) return {
+      name,status:'PASS',holderPid:701,contenderPid:702,contenderQuerySubmitted:true,
+      waitEventType:'Lock',waitEvent:'advisory',blockedBy:[701],pendingDatabaseSessions:0,releaseOrder:'holder COMMIT',
+      holderExitCode:0,contenderExitCode:0,finalState:name==='versioned-same-key-distinct-parents'
+        ?{holderParents:1,contenderParents:0,holderItems:1,contenderItems:0,ledger:1,proofs:1,events:2}
+        :{parents:1,items:1,events:2,ledger:1,proofs:1}};
+    const message=name==='versioned-same-parent-distinct-keys'?'RESTAURANT_ORDER_VERSION_CONFLICT':'RESTAURANT_CONTRACT_MAINTENANCE';
+    return {name,status:'PASS',holderPid:701,contenderPid:702,contenderQuerySubmitted:true,
+      waitEventType:'Lock',waitEvent:'advisory',blockedBy:[701],transitionWait:{waitEventType:'Lock',waitEvent:'advisory',blockedBy:[701]},
+      holderExitCode:0,pauseExitCode:0,rateHolderExitCode:0,rateCountAfterPausedError:'1',
+      finalState:{parents:1,items:1,holderLedger:1,contenderLedger:0,holderProof:1,contenderProof:0,holderEvents:2,contenderEvents:0,serverVersion:2},
+      pausedFinalState:{parents:0,items:0,ledger:0,proofs:0,events:0},
+      releaseOrder:'holder COMMIT',pendingDatabaseSessions:0,contenderExitCode:3,contenderSqlstate:'P0001',contenderResponse:message,
+      rejection:{exitCode:3,signal:null,spawnError:null,sqlstate:'P0001',message,noReceipt:true}};
+  });
+  bridge.idempotency.concurrent=bridge.idempotencyConcurrency;
   bridge.checks.push(
+    compareSharedLedger(syntheticSharedLedger('before'),syntheticSharedLedger('after'),{commitSha,runId,runAttempt}),
     {name:'authentic writer provenance diagnostic records every original rejection predicate',status:'PASS',...bridge.provenanceDiagnostic},
     {name:'private insertion witness has restricted ACL, RLS and an enabled authentic-ledger observer',status:'PASS',
       table:'pos_idempotency_keys',type:5,enabled:'O',securityDefiner:true,owner:'postgres',config:['search_path=""'],browserExecute:false},
@@ -993,11 +1076,57 @@ test('structured evidence gate binds the Admin report to this run and SHA and re
     await writeReports();
     assert.match(runGate(), /PR352_R6_EVIDENCE_PASS/);
 
+    await rejectBridgeMutation('missing shared-ledger evidence',report=>{
+      report.checks=report.checks.filter(row=>row.name!=='UNRELATED_LEDGER_BEFORE_AFTER');
+    });
+    await rejectBridgeMutation('duplicate shared-ledger evidence',report=>{
+      report.checks.push(structuredClone(report.checks.find(row=>row.name==='UNRELATED_LEDGER_BEFORE_AFTER')));
+    });
+    for(const [name,mutate] of [
+      ['missing baseline',row=>{delete row.baseline;}],
+      ['comparison not executed',row=>{row.comparisonExecuted=false;}],
+      ['financial difference',row=>{row.after.countsAfter.cash++;}],
+      ['unexpected Restaurant proof',row=>{row.after.proofRows=1;}],
+      ['residual attempt',row=>{row.after.attemptRows=1;}],
+      ['wrong SHA',row=>{row.commitSha='b'.repeat(40);}],
+      ['wrong run',row=>{row.runId='999';}],
+      ['wrong attempt',row=>{row.runAttempt='999';}],
+      ['wrong SQL receipt',row=>{row.after.ledgerReceiptValid=false;}],
+    ]) await rejectBridgeMutation(name,report=>mutate(report.checks.find(row=>row.name==='UNRELATED_LEDGER_BEFORE_AFTER')));
+
     await rejectBridgeMutation('missing insertion provenance fails closed',(report)=>{delete report.idempotency.provenance;});
     await rejectBridgeMutation('duplicate legacy scenario fails closed',(report)=>{report.legacyProvenance[1]=structuredClone(report.legacyProvenance[0]);});
     await rejectBridgeMutation('missing original rejection predicate fails closed',(report)=>{delete report.provenanceDiagnostic.predicates.md5Matches;});
     await rejectBridgeMutation('same PID is not concurrent evidence',(report)=>{report.legacyProvenance[0].contenderPid=501;});
     await rejectBridgeMutation('unconsumed private attempt fails closed',(report)=>{report.idempotency.provenance.xidProbe.pendingAttempts=1;});
+    for (const code of [0, 1, 2]) await rejectBridgeMutation(`legacy rejection exit ${code} fails closed`, (report) => {
+      report.legacyProvenance.find((row) => row.name === 'legacy-first-cross-parent').exitCodes.contender = code;
+    });
+    for(const [name,mutate] of [
+      ['SQLSTATE',row=>{row.rejection.sqlstate='23505';}],
+      ['message',row=>{row.rejection.message='OTHER_ERROR';}],
+      ['signal',row=>{row.rejection.signal='SIGTERM';}],
+      ['client failure',row=>{row.rejection.exitCode=1;}],
+      ['spawn error',row=>{row.rejection.spawnError='failed';}],
+      ['receipt',row=>{row.rejection.noReceipt=false;}],
+    ]) await rejectBridgeMutation(`legacy invalid ${name}`,report=>mutate(report.legacyProvenance[2]));
+    for(const [name,mutate] of [
+      ['missing rejection',row=>{delete row.rejection;}],
+      ['wrong exit',row=>{row.contenderExitCode=1;}],
+      ['signal',row=>{row.rejection.signal='SIGTERM';}],
+      ['wrong SQLSTATE',row=>{row.rejection.sqlstate='23505';}],
+      ['wrong message',row=>{row.rejection.message='OTHER_ERROR';}],
+      ['no SQL sent',row=>{row.contenderQuerySubmitted=false;}],
+      ['no blocker',row=>{row.blockedBy=[];}],
+      ['no final state',row=>{delete row.finalState;}],
+      ['duplicate effect',row=>{row.finalState.contenderLedger=1;}],
+    ]) await rejectBridgeMutation(`RC05 invalid ${name}`,report=>mutate(report.idempotencyConcurrency[3]));
+    await rejectBridgeMutation('successful replay without observed blocking fails closed',report=>{
+      report.idempotencyConcurrency[0].blockedBy=[];
+    });
+    await rejectBridgeMutation('successful replay missing final ledger fails closed',report=>{
+      delete report.idempotencyConcurrency[0].finalState.ledger;
+    });
 
     for (const name of [
       'Cocina schema and six direct Restaurant helper functions match read-only Production catalog metadata',

@@ -12,6 +12,7 @@ import { assertRestaurantOrderItemRelationship, restaurantOrderItemSnapshotSql, 
 import { canonicalizePostgresAcl } from './pr352-r6-canonical-postgres-acl.mjs';
 import { assertEquivalentPreparationStationCatalog } from './pr352-r6-canonical-postgres-constraints.mjs';
 import { assertRateLimitedRestaurantUpsertCatalog } from './pr352-r6-wrapper-catalog.mjs';
+import { runSharedLedgerProbe, compareSharedLedger } from './pr352-r6-shared-ledger.mjs';
 
 const execFileAsync = promisify(execFile);
 const root = process.cwd();
@@ -490,6 +491,10 @@ async function run() {
   process.stdout.write(`VERIFIED_RESTAURANT_WRITERS_PASS ${writerManifest.entries.length}\n`);
   passed('six authentic Restaurant writer bodies and security metadata match fingerprints', { writerCount: writerManifest.entries.length });
 
+  currentStage = 'shared ledger baseline before bridge';
+  const ordinarySaleSource = await readFile(path.join(fixture, 'ordinary-sale.sql'), 'utf8');
+  const sharedLedgerBaseline = await runSharedLedgerProbe({ query, source: ordinarySaleSource, phase: 'before' });
+
   currentStage = 'apply forward bridge migration';
   if (!tempRoot) tempRoot = await mkdtemp(path.join(os.tmpdir(), 'pr352-bridge-pg176-'));
   const rollbackPath = path.join(tempRoot, 'bridge-v1-deliberate-rollback.sql');
@@ -520,6 +525,14 @@ async function run() {
   passed('forward bridge v1 migration installed and committed in disposable PostgreSQL', {
     contractStateTablePresent: true, contractReaderPresent: true,
   });
+  currentStage = 'shared ledger comparison after bridge';
+  const sharedLedgerAfter = await runSharedLedgerProbe({ query, source: ordinarySaleSource, phase: 'after' });
+  completedChecks.push(compareSharedLedger(sharedLedgerBaseline, sharedLedgerAfter, {
+    commitSha: process.env.GITHUB_SHA ?? null,
+    runId: process.env.GITHUB_RUN_ID ?? null, runAttempt: process.env.GITHUB_RUN_ATTEMPT ?? null,
+  }));
+  process.stdout.write('UNRELATED_LEDGER_BEFORE_AFTER_PASS\n');
+  currentStage = 'bridge writer preservation';
   const afterBridge = await captureFunctions(allFunctionSignatures);
   assert.equal(afterBridge.length, beforeBridge.length, 'Bridge changed the number of protected functions');
   const afterBySignature = new Map(afterBridge.map((row) => [row.signature, row]));
