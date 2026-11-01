@@ -5,10 +5,21 @@ import { spawn } from 'node:child_process';
 const licenseId = '00000000-0000-0000-0000-000000000001';
 const q = (value) => "'" + String(value).replaceAll("'", "''") + "'";
 
-export function settlementSql(order, version, key) {
+export function settlementSql(order, version, key, expectCancelled = false) {
   const name = q(order);
+  const call = `public.pos_execute_financial_operation_v1('lab-license-a','lab-device-a','lab-device-token-a','lab-admin-session',${q(key)},h,'sale.cashier_inventory',req)`;
+  const operation = expectCancelled ? `begin
+      perform ${call};
+      raise exception 'R6_CANCELLED_SALE_UNEXPECTEDLY_ACCEPTED';
+    exception when others then
+      get stacked diagnostics state=returned_sqlstate,message=message_text;
+      if state<>'P0001' or message<>'RESTAURANT_ORDER_ALREADY_CANCELLED' then raise; end if;
+      raise notice 'R6_CANCELLED_SALE_REJECTED:%:%',state,message;
+    end;` : `receipt:=${call};
+    if coalesce((receipt->>'success')::boolean,false) is not true then raise exception 'R6_RACE_SETTLEMENT_FAILED: %',receipt; end if;
+    raise notice 'R6_RACE_RECEIPT:%',receipt;`;
   return `do $r6_financial$ -- R6_FINANCIAL_RPC: public.pos_execute_financial_operation_v1
-  declare req jsonb; h text; receipt jsonb; begin
+  declare req jsonb; h text; receipt jsonb; state text; message text; begin
     req:=jsonb_build_object('cash_session_id','lab-cash-a',
       'sale',jsonb_build_object('id',${name},'subtotal',10,'total',10,'payment_method','cash','amount_paid',10,'balance_due',0,'change_amount',0),
       'items',jsonb_build_array(jsonb_build_object('id',${q(order + '-sale-item')},'product_id','bridge-restaurant-product','product_name','Bridge synthetic product','quantity',1,'unit_price',10,'line_subtotal',10,'line_total',10)),
@@ -16,10 +27,19 @@ export function settlementSql(order, version, key) {
       'restaurant_settlement',jsonb_build_object('parent_order_id',${name},'parent_order_version',${q(version)}));
     h:=private.financial_operation_hash('sale.cashier_inventory',private.canonical_financial_request_v1('sale.cashier_inventory',req),
       'admin:00000000-0000-0000-0000-0000000000aa','lab-cash-a','lab-station-a');
-    receipt:=public.pos_execute_financial_operation_v1('lab-license-a','lab-device-a','lab-device-token-a','lab-admin-session',${q(key)},h,'sale.cashier_inventory',req);
-    if coalesce((receipt->>'success')::boolean,false) is not true then raise exception 'R6_RACE_SETTLEMENT_FAILED: %',receipt; end if;
-    raise notice 'R6_RACE_RECEIPT:%',receipt;
+    ${operation}
   end $r6_financial$;`;
+}
+
+export function cancellationWinnerSql(order, version) {
+  return `do $r6_cancel_winner$ -- R6_CANCEL_WINNER: public.pos_cancel_restaurant_order_from_pos_v1
+    declare receipt jsonb; begin
+      receipt:=public.pos_cancel_restaurant_order_from_pos_v1('lab-license-a','lab-device-a','lab-device-token-a','lab-admin-session',${q(order)},${q(version)},'synthetic race',${q(order + '-cancel')});
+      if receipt->>'success' is distinct from 'true' or receipt->>'status' is distinct from 'cancelled' then
+        raise exception 'R6_CANCEL_WINNER_FAILED: %',receipt;
+      end if;
+      raise notice 'R6_CANCEL_WINNER_RECEIPT:%',receipt;
+    end $r6_cancel_winner$;`;
 }
 
 export function cancellationContenderSql(order, version) {
@@ -96,6 +116,78 @@ export function assertRaceState(state, order, key, stockBefore) {
   assert.equal(state.operationKey,key);
 }
 
+export function assertCancellationFirstState(state, stockBefore) {
+  assert.equal(state.parentCount,1); assert.equal(state.parentStatus,'cancelled'); assert.ok(state.paymentStatus === null || state.paymentStatus === 'unpaid');
+  assert.equal(state.paidSaleId,null); assert.equal(state.sales,0); assert.equal(state.payments,0); assert.equal(state.cashMovements,0);
+  assert.equal(state.operations,0); assert.equal(state.inventory,0); assert.equal(Number(state.stock),Number(stockBefore));
+  assert.equal(state.cancelledItems,1); assert.equal(state.cancelKeys,1); assert.equal(state.permits,0);
+}
+
+// Exercise the opposite serialization of F1 on another synthetic parent.
+// The actual cancellation completes inside an open transaction; the real
+// settlement must wait on that same parent's lock and reject after COMMIT.
+async function cancellationFirstRace({ query, psqlBin, env, createLegacyOrder, sessions }) {
+  const order='r6-f1-cancel-first-parent', key=`${order}-settlement`;
+  const internalId=await createLegacyOrder(order,`${order}-seed`);
+  const seed=JSON.parse(await query(`select json_build_object('version',updated_at,
+    'parentId',id,'localOrderId',local_order_id,'parentStatus',status,'paymentStatus',payment_status,'paidSaleId',paid_sale_id,
+    'stock',(select stock from public.pos_products where license_id=${q(licenseId)}::uuid and id='bridge-restaurant-product'))::text
+    from public.pos_restaurant_orders where license_id=${q(licenseId)}::uuid and id=${q(internalId)}
+      and local_order_id=${q(order)} and deleted_at is null`));
+  assert.ok(seed.version && seed.stock !== null, 'F1 cancellation-first seed must exist');
+  assert.equal(seed.parentId,internalId); assert.equal(seed.localOrderId,order);
+  assert.ok(seed.paymentStatus === null || seed.paymentStatus === 'unpaid'); assert.equal(seed.paidSaleId,null);
+  const firstSql=cancellationWinnerSql(order,seed.version), secondSql=settlementSql(order,seed.version,key,true);
+  const firstName='pr352-r6-financial-f1-cancel-holder', secondName='pr352-r6-financial-f1-sale-contender';
+  const holder=session(firstName,psqlBin,env), contender=session(secondName,psqlBin,env); sessions.push(holder,contender);
+  holder.send('begin;'); holder.send(firstSql);
+  const holderState=await observeUntil('F1 cancellation completed, transaction open',
+    async()=>JSON.parse(await query(`select coalesce(json_agg(json_build_object('pid',pid,'state',state,'query',query)),'[]'::json)::text
+      from pg_stat_activity where application_name=${q(firstName)}`,4000)),
+    rows=>rows.length===1 && rows[0].state==='idle in transaction' && rows[0].query.includes('R6_CANCEL_WINNER')
+      && holder.err.includes('R6_CANCEL_WINNER_RECEIPT:'),[holder]);
+  contender.send('begin;'); contender.send(secondSql);
+  const observed=await observeUntil('F1 settlement blocked by cancellation on parent lock',
+    async()=>JSON.parse(await query(`select coalesce(json_agg(json_build_object('holderPid',h.pid,'contenderPid',c.pid,'wait',c.wait_event_type,
+      'query',c.query,'holderMode',hl.mode,'contenderMode',cl.mode,'holderGranted',hl.granted,'contenderGranted',cl.granted,
+      'classId',hl.classid::bigint,'objectId',hl.objid::bigint,'objectSubId',hl.objsubid,'blockedBy',pg_blocking_pids(c.pid))),'[]'::json)::text
+      from pg_stat_activity h join pg_stat_activity c on h.pid=any(pg_blocking_pids(c.pid))
+      join pg_locks hl on hl.pid=h.pid and hl.locktype='advisory' and hl.mode='ExclusiveLock' and hl.granted
+        and hl.classid::bigint=(hashtext(${q(licenseId)})::bigint & 4294967295)
+        and hl.objid::bigint=(hashtext('restaurant_split:' || ${q(order)})::bigint & 4294967295) and hl.objsubid=2
+      join pg_locks cl on cl.pid=c.pid and cl.locktype=hl.locktype and cl.mode='ExclusiveLock'
+        and cl.database is not distinct from hl.database and cl.classid is not distinct from hl.classid
+        and cl.objid is not distinct from hl.objid and cl.objsubid is not distinct from hl.objsubid and not cl.granted
+      where h.application_name=${q(firstName)} and c.application_name=${q(secondName)} and c.wait_event_type='Lock'`,4000)),
+    rows=>rows.some(x=>x.holderPid===holderState[0].pid && x.contenderPid!==x.holderPid && x.query.includes('R6_FINANCIAL_RPC')),[holder,contender]);
+  contender.finish('commit;'); holder.finish('commit;');
+  const first=await exitWithin(holder), second=await exitWithin(contender);
+  assert.match(first.stderr,/R6_CANCEL_WINNER_RECEIPT:/);
+  assert.match(second.stderr,/R6_CANCELLED_SALE_REJECTED:P0001:RESTAURANT_ORDER_ALREADY_CANCELLED/);
+  const state=JSON.parse(await query(`select json_build_object(
+    'parentCount',(select count(*) from public.pos_restaurant_orders where license_id=${q(licenseId)}::uuid and local_order_id=${q(order)}),
+    'parentStatus',o.status,'paymentStatus',o.payment_status,'paidSaleId',o.paid_sale_id,
+    'sales',(select count(*) from public.pos_sales where license_id=${q(licenseId)}::uuid and id=${q(order)}),
+    'payments',(select count(*) from public.pos_sale_payments where license_id=${q(licenseId)}::uuid and sale_id=${q(order)}),
+    'cashMovements',(select count(*) from public.pos_cash_movements where license_id=${q(licenseId)}::uuid and sale_id=${q(order)}),
+    'operations',(select count(*) from public.pos_financial_operations where license_id=${q(licenseId)}::uuid and legacy_idempotency_key=${q(key)}),
+    'inventory',(select count(*) from public.pos_inventory_movements where license_id=${q(licenseId)}::uuid and sale_id=${q(order)}),
+    'stock',(select stock from public.pos_products where license_id=${q(licenseId)}::uuid and id='bridge-restaurant-product'),
+    'cancelledItems',(select count(*) from public.pos_restaurant_order_items where license_id=${q(licenseId)}::uuid and restaurant_order_id=o.id and status='cancelled'),
+    'cancelKeys',(select count(*) from public.pos_idempotency_keys where license_id=${q(licenseId)}::uuid and idempotency_key=${q(order+'-cancel')} and status='completed'),
+    'permits',(select count(*) from private.restaurant_bridge_cancel_permits where license_id=${q(licenseId)}::uuid and order_id=o.id))::text
+    from public.pos_restaurant_orders o where o.license_id=${q(licenseId)}::uuid and o.id=${q(internalId)}`));
+  assertCancellationFirstState(state,seed.stock);
+  const pending=Number(await query(`select count(*) from pg_stat_activity where application_name in (${q(firstName)},${q(secondName)})`,4000));
+  assert.equal(pending,0,'F1 cancellation-first leaked database sessions');
+  return {status:'PASS',actor:{licenseId,device:'lab-device-a',session:'lab-admin-session'},parentId:seed.parentId,
+    stateBefore:{parentId:seed.parentId,localOrderId:seed.localOrderId,parentStatus:seed.parentStatus,paymentStatus:seed.paymentStatus,paidSaleId:seed.paidSaleId,stock:Number(seed.stock)},
+    sessionNames:{holder:firstName,contender:secondName},submitted:{holder:true,contender:true},sql:{holder:firstSql,contender:secondSql},holderState,lockObservations:observed,
+    releaseOrder:['holder cancellation completed within transaction','contender waits on holder parent advisory lock','holder COMMIT','contender COMMIT'],
+    exitCodes:{holder:first.code,contender:second.code},sqlstate:{holder:'00000',contender:'P0001',message:'RESTAURANT_ORDER_ALREADY_CANCELLED'},
+    stockBefore:Number(seed.stock),finalState:state,pendingDatabaseSessions:pending,pendingProcesses:sessions.filter(s=>!s.closed).length};
+}
+
 export async function runRestaurantFinancialRaces({query, psqlBin, env, createLegacyOrder}) {
   const all=[]; const sessions=[]; let primaryError;
   try {
@@ -105,8 +197,10 @@ export async function runRestaurantFinancialRaces({query, psqlBin, env, createLe
       const order=`r6-${kind.toLowerCase()}-parent`;
       const key=`${order}-settlement`;
       const internalId=await createLegacyOrder(order,`${order}-seed`);
-      const seed=JSON.parse(await query(`select json_build_object('version',updated_at,'stock',(select stock from public.pos_products where license_id=${q(licenseId)}::uuid and id='bridge-restaurant-product'))::text from public.pos_restaurant_orders where license_id=${q(licenseId)}::uuid and id=${q(internalId)} and local_order_id=${q(order)} and deleted_at is null`));
+      const seed=JSON.parse(await query(`select json_build_object('version',updated_at,'parentId',id,'localOrderId',local_order_id,'parentStatus',status,'paymentStatus',payment_status,'paidSaleId',paid_sale_id,'stock',(select stock from public.pos_products where license_id=${q(licenseId)}::uuid and id='bridge-restaurant-product'))::text from public.pos_restaurant_orders where license_id=${q(licenseId)}::uuid and id=${q(internalId)} and local_order_id=${q(order)} and deleted_at is null`));
       assert.ok(seed.version && seed.stock !== null, `${kind} seed must exist`);
+      assert.equal(seed.parentId,internalId); assert.equal(seed.localOrderId,order);
+      assert.ok(seed.paymentStatus === null || seed.paymentStatus === 'unpaid'); assert.equal(seed.paidSaleId,null);
       const firstSql=settlementSql(order,seed.version,key);
       const secondSql=kind==='F1' ? cancellationContenderSql(order,seed.version) : settlementSql(order,seed.version,key);
       const firstName=`pr352-r6-financial-${kind.toLowerCase()}-holder`, secondName=`pr352-r6-financial-${kind.toLowerCase()}-contender`;
@@ -146,11 +240,14 @@ export async function runRestaurantFinancialRaces({query, psqlBin, env, createLe
       assertRaceState(state,order,key,seed.stock);
       const pending=Number(await query(`select count(*) from pg_stat_activity where application_name in (${q(firstName)},${q(secondName)})`,4000));
       assert.equal(pending,0,`${kind} leaked database sessions`);
-      all.push({name:kind,status:'PASS',submitted:{holder:true,contender:true},sql:{holder:firstSql,contender:secondSql},holderState,lockObservations:observed,
+      all.push({name:kind,status:'PASS',actor:{licenseId,device:'lab-device-a',session:'lab-admin-session'},
+        stateBefore:{parentId:seed.parentId,localOrderId:seed.localOrderId,parentStatus:seed.parentStatus,paymentStatus:seed.paymentStatus,paidSaleId:seed.paidSaleId,stock:Number(seed.stock)},
+        sessionNames:{holder:firstName,contender:secondName},submitted:{holder:true,contender:true},sql:{holder:firstSql,contender:secondSql},holderState,lockObservations:observed,
         releaseOrder:['holder settlement completed within transaction','contender waits on holder parent advisory lock','holder COMMIT','contender COMMIT'],
         exitCodes:{holder:first.code,contender:second.code},sqlstate:{holder:'00000',contender:kind==='F1'?'P0001':'00000',message:kind==='F1'?'RESTAURANT_ORDER_ALREADY_PAID':null},
         stockBefore:Number(seed.stock),finalState:state,receipt:firstReceipt,contenderReceipt,pendingDatabaseSessions:pending,pendingProcesses:sessions.filter(s=>!s.closed).length});
     }
+    all.find(row=>row.name==='F1').alternateOrder=await cancellationFirstRace({query,psqlBin,env,createLegacyOrder,sessions});
     return all;
   } catch (error) {
     primaryError=error;

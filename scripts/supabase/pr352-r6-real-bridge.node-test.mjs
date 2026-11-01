@@ -431,7 +431,7 @@ test('isolated workflow runs only on the exact QA push branch without secrets or
   assert.match(workflow, /EXPECTED_RUN_ATTEMPT:\s*\$\{\{ github\.run_attempt \}\}/);
   assert.match(workflow, /bridge\.commitSha !== expectedSha \|\| overlay\.commitSha !== expectedSha/);
   assert.match(workflow, /bridge\.writerChecks\.length !== 10/);
-  assert.match(workflow, /writer\.bodyRecoveredExactly && writer\.oidPreserved/);
+  assert.match(workflow, /writer\.bodyRecoveredExactly === true && writer\.oidPreserved === true/);
   assert.match(workflow, /state\.activeActivationRows === 0/);
   for (const check of ['admin-off-initial-state', 'admin-off-contract-response', 'admin-off-setter-rejected-no-state-change',
     'admin-off-private-setter-denied-anon', 'admin-off-private-setter-denied-authenticated']) {
@@ -513,10 +513,24 @@ test('structured evidence gate binds the Admin report to this run and SHA and re
   const workflow = await readFile(workflowPath, 'utf8');
   const match = workflow.match(/node --input-type=module -e '\r?\n([\s\S]*?)\r?\n[ \t]{10}'/);
   assert.ok(match, 'workflow evidence gate JavaScript must be extractable');
-  const gateSource = match[1].split(/\r?\n/).map((line) => line.replace(/^ {12}/, '')).join('\n');
+  const gateSource = match[1].split(/\r?\n/).map((line) => line.replace(/^ {12}/, '')).join('\n')
+    .replaceAll('process.exit(1)', 'throw new Error("invalid evidence")');
+  const runnerSource = await readFile(path.join(root, 'scripts/supabase/pr352-r6-real-bridge-pg176-test.mjs'), 'utf8');
+  const targetBlock = runnerSource.match(/const targetFunctions = \[([\s\S]*?)\n\];/);
+  assert.ok(targetBlock, 'runner must declare its reviewed 10-function bridge contract');
+  const canonicalWriterSignatures = [...targetBlock[1].matchAll(/signature: '([^']+)'/g)].map((row) => row[1]);
+  const gateWriterBlock = gateSource.match(/const writerSignatures = \[([\s\S]*?)\n\s*\];/);
+  assert.ok(gateWriterBlock, 'workflow gate must declare the required writer set');
+  const gateWriterSignatures = [...gateWriterBlock[1].matchAll(/"([^"]+)"/g)].map((row) => row[1]);
+  assert.equal(canonicalWriterSignatures.length, 10);
+  assert.equal(new Set(canonicalWriterSignatures).size, 10);
+  assert.deepEqual(gateWriterSignatures, canonicalWriterSignatures,
+    'workflow gate writer set must match the exact runner bridge instrumentation contract');
   const tempRoot = await mkdtemp(path.join(os.tmpdir(), 'pr352-r6-evidence-gate-'));
   const evidenceRoot = path.join(tempRoot, 'pr352-r6-evidence');
+  const gatePath = path.join(tempRoot, 'evidence-gate.mjs');
   await mkdir(evidenceRoot, { mode: 0o700 });
+  await writeFile(gatePath, gateSource, { mode: 0o600 });
   const bridgePath = path.join(evidenceRoot, 'real-bridge.json');
   const overlayPath = path.join(evidenceRoot, 'synthetic-overlay.json');
   const commitSha = 'a'.repeat(40);
@@ -555,6 +569,21 @@ test('structured evidence gate binds the Admin report to this run and SHA and re
     error: null,
     errorStack: null,
     checks: [
+      { name: 'loopback disposable PostgreSQL 17.6 endpoint', status: 'PASS', serverVersionNum: '170006' },
+      { name: 'Cocina schema and six direct Restaurant helper functions match read-only Production catalog metadata', status: 'PASS', tableColumnCount: 18, constraintCount: 9, indexCount: 5, functionCount: 6 },
+      { name: 'financial schema and captured function snapshot installed', status: 'PASS', functionCount: 267 },
+      { name: 'authentic 3D.14 dispatcher fingerprint matches reviewed read-only fingerprint', status: 'PASS', sha256: 'aa0bd977c3b47fef871a8cf099c7c84a87f9e0512d49c0676d31d49c5fe6a3f4' },
+      { name: 'six authentic Restaurant writer bodies and security metadata match fingerprints', status: 'PASS', writerCount: 6 },
+      { name: 'bridge installation transaction fully rolls back after induced failure', status: 'PASS' },
+      { name: 'forward bridge v1 migration installed and committed in disposable PostgreSQL', status: 'PASS', contractStateTablePresent: true, contractReaderPresent: true },
+      { name: 'bridge preserves function OIDs, owners, SECURITY DEFINER, settings, ACL and business bodies', status: 'PASS', instrumentedFunctions: 10 },
+      { name: 'anon/authenticated public grants and private policy setter denial verified', status: 'PASS' },
+      { name: 'authentic Cocina provisioning, resolution, attribution, license isolation, rollback and concurrency checks completed', status: 'PASS' },
+      { name: 'cutover lock, concurrent commit/rollback, paused write rejection, replay and unrelated sale scenarios completed', status: 'PASS' },
+      { name: 'Restaurant settlement and replay materialize one sale, payment, operation and inventory movement', status: 'PASS', receiptsIdentical: true, sales: 1, payments: 1, operations: 1, inventoryMovements: 1, parentPaid: true },
+      { name: 'financial settlement races completed with observed parent locks', status: 'PASS' },
+      { name: 'Restaurant cancellation scenarios completed', status: 'PASS' },
+      { name: 'bridge integration assertions and zero-session cleanup complete', status: 'PASS' },
       { name: 'admin-off-initial-state', status: 'PASS', contractVersion: 1, writesPaused: false, activeActivationRows: 0 },
       { name: 'admin-off-contract-response', status: 'PASS', success: true, contractVersion: 1, writesPaused: false, adminSupervisionAvailable: false },
       { name: 'admin-off-setter-rejected-no-state-change', status: 'PASS', attempted: true, rejected: true, errorMessage: 'RESTAURANT_ADMIN_BACKEND_NOT_AVAILABLE', sqlstate: 'P0001', stateBefore: { contractVersion: 1, writesPaused: false, activeActivationRows: 0 }, stateAfter: { contractVersion: 1, writesPaused: false, activeActivationRows: 0 } },
@@ -594,7 +623,8 @@ test('structured evidence gate binds the Admin report to this run and SHA and re
         exits: [{ code: 0, signal: null }, { code: 0, signal: null }], finalStationCount: 1, pendingSessionCount: 0,
       } : {}) })),
     },
-    writerChecks: Array.from({ length: 10 }, () => ({
+    writerChecks: canonicalWriterSignatures.map((signature) => ({
+      signature,
       status: 'PASS',
       admissionOccurrences: 1,
       bodyRecoveredExactly: true,
@@ -619,7 +649,13 @@ test('structured evidence gate binds the Admin report to this run and SHA and re
     ],
     financialRaces: ['F1', 'F2'].map((name) => ({
       name, status: 'PASS', submitted: { holder: true, contender: true },
-      sql: { holder: 'pos_execute_financial_operation_v1', contender: name === 'F1' ? 'pos_cancel_restaurant_order_from_pos_v1' : 'pos_execute_financial_operation_v1' },
+      actor: { licenseId: '00000000-0000-0000-0000-000000000001', device: 'lab-device-a', session: 'lab-admin-session' },
+      stateBefore: { parentId: 'internal-' + name, localOrderId: name === 'F1' ? 'r6-f1-parent' : 'r6-f2-parent', parentStatus: 'pending', paymentStatus: null, paidSaleId: null, stock: 20 },
+      sessionNames: { holder: `holder-${name}`, contender: `contender-${name}` },
+      sql: { holder: `public.pos_execute_financial_operation_v1('lab-license-a','lab-device-a','lab-admin-session',${name === 'F1' ? 'r6-f1-parent' : 'r6-f2-parent'})`,
+        contender: name === 'F1' ? `public.pos_cancel_restaurant_order_from_pos_v1('lab-license-a','lab-device-a','lab-admin-session',r6-f1-parent)`
+          : `public.pos_execute_financial_operation_v1('lab-license-a','lab-device-a','lab-admin-session',r6-f2-parent)` },
+      releaseOrder: ['holder settlement completed within transaction','contender waits on holder parent advisory lock','holder COMMIT','contender COMMIT'],
       holderState: [{ pid: 201, state: 'idle in transaction' }],
       lockObservations: [{ holderPid: 201, contenderPid: 202, holderGranted: true, contenderGranted: false,
         holderMode: 'ExclusiveLock', contenderMode: 'ExclusiveLock', wait: 'Lock', classId: 123, objectId: 456, objectSubId: 2, blockedBy: [201],
@@ -632,21 +668,69 @@ test('structured evidence gate binds the Admin report to this run and SHA and re
       pendingDatabaseSessions: 0, pendingProcesses: 0,
     })),
     cancellation: [
-      { name: 'C1', status: 'PASS', parent: 'cancelled', item: 'cancelled', permitGranted: true, permitRows: 0 },
+      { name: 'C1', status: 'PASS', parent: 'cancelled', item: 'cancelled', permitGranted: true, permitRows: 0,
+        transactionBoundary: { backendPid: 401, transactionId: '10001', committed: true, scope: 'separate psql -c implicit transaction completed before C4' } },
       { name: 'C2', status: 'PASS', denial: 'P0001 RESTAURANT_TABLE_OWNER_REQUIRED', parentUnchanged: true },
       { name: 'C3', status: 'PASS', denial: 'P0001 RESTAURANT_ORDER_ALREADY_PAID', parentUnchanged: true },
-      { name: 'C4', status: 'PASS', sameKey: 'identical receipt', differentKey: 'P0001 RESTAURANT_ORDER_ALREADY_CANCELLED', cancellationEvents: 1 },
+      { name: 'C4', status: 'PASS', sameKey: 'identical receipt', differentKey: 'P0001 RESTAURANT_ORDER_ALREADY_CANCELLED', cancellationEvents: 1, completedKeys: 1,
+        replayBoundary: { backendPid: 402, transactionId: '10002', afterTransactionId: '10001', priorBackendPid: 401, separateConnection: true, priorTransactionCommitted: true } },
       { name: 'C5', status: 'PASS', financialRace: 'F1' },
       { name: 'C6', status: 'PASS', parentAndItemRestored: true, permitRows: 0 },
-    ],
+    ].map((row) => {
+      if (row.name === 'C5') return row;
+      const parentId = row.name === 'C3' ? 'r6-f2-parent' : row.name === 'C2' ? 'r6-cancel-nonowner' : row.name === 'C6' ? 'r6-cancel-rollback' : 'r6-cancel-valid';
+      const beforeStatus = row.name === 'C4' ? 'cancelled' : 'pending';
+      const snapshot = (status, cancelEvents) => ({ parent: { id: 'internal-' + parentId, license_id: '00000000-0000-0000-0000-000000000001', local_order_id: parentId, status, payment_status: row.name === 'C3' ? 'paid' : 'unpaid' },
+        items: [{ id: 'item-' + parentId, license_id: '00000000-0000-0000-0000-000000000001', restaurant_order_id: 'internal-' + parentId, status }], cancelEvents });
+      const before = snapshot(beforeStatus, row.name === 'C4' ? 1 : 0);
+      const after = row.name === 'C1' ? snapshot('cancelled', 1) : structuredClone(before);
+      const message = { C1: null, C2: 'RESTAURANT_TABLE_OWNER_REQUIRED', C3: 'RESTAURANT_ORDER_ALREADY_PAID', C4: 'RESTAURANT_ORDER_ALREADY_CANCELLED', C6: 'R6_C6_ROLLBACK_PROBE' }[row.name];
+      const effects = { sales: 3, payments: 3, inventory: 3, cash: 2 };
+      return { ...row, operation: 'public.pos_cancel_restaurant_order_from_pos_v1', actor: 'synthetic actor', parentId: before.parent.id, localOrderId: parentId,
+        stateBefore: before, stateAfter: after, financialEffects: { before: effects, after: structuredClone(effects) },
+        cleanup: { permitRows: 0 }, sqlstate: { state: row.name === 'C1' ? '00000' : 'P0001', message },
+        ...(row.name === 'C6' ? { rollbackKind: 'plpgsql_subtransaction' } : {}) };
+    }),
     postgresServerVersionNum: '170006',
     productionConnections: 0,
   };
+  const f1 = bridge.financialRaces[0];
+  f1.alternateOrder = { status: 'PASS', submitted: { holder: true, contender: true },
+    actor: { licenseId: '00000000-0000-0000-0000-000000000001', device: 'lab-device-a', session: 'lab-admin-session' },
+    parentId: 'internal-r6-f1-cancel-first-parent',
+    stateBefore: { parentId: 'internal-r6-f1-cancel-first-parent', localOrderId: 'r6-f1-cancel-first-parent', parentStatus: 'pending', paymentStatus: 'unpaid', paidSaleId: null, stock: 20 },
+    sessionNames: { holder: 'cancel-first-holder', contender: 'cancel-first-contender' },
+    sql: { holder: "public.pos_cancel_restaurant_order_from_pos_v1('lab-license-a','lab-device-a','lab-admin-session',r6-f1-cancel-first-parent)",
+      contender: "public.pos_execute_financial_operation_v1('lab-license-a','lab-device-a','lab-admin-session',r6-f1-cancel-first-parent)" },
+    holderState: [{ pid: 301, state: 'idle in transaction' }],
+    lockObservations: [{ holderPid: 301, contenderPid: 302, holderGranted: true, contenderGranted: false,
+      holderMode: 'ExclusiveLock', contenderMode: 'ExclusiveLock', wait: 'Lock', classId: 123, objectId: 456,
+      objectSubId: 2, blockedBy: [301], query: 'R6_FINANCIAL_RPC' }],
+    exitCodes: { holder: 0, contender: 0 }, sqlstate: { holder: '00000', contender: 'P0001', message: 'RESTAURANT_ORDER_ALREADY_CANCELLED' },
+    stockBefore: 20, finalState: { parentCount: 1, parentStatus: 'cancelled', paymentStatus: null, paidSaleId: null,
+      sales: 0, payments: 0, operations: 0, inventory: 0, cashMovements: 0, stock: 20, cancelledItems: 1, cancelKeys: 1, permits: 0 },
+    releaseOrder: ['holder cancellation completed within transaction','contender waits on holder parent advisory lock','holder COMMIT','contender COMMIT'],
+    pendingDatabaseSessions: 0, pendingProcesses: 0 };
+  Object.assign(bridge.cancellation.find((row) => row.name === 'C5'), { operation: f1.sql.contender, actor: f1.actor,
+    parentId: f1.stateBefore.parentId, localOrderId: f1.stateBefore.localOrderId, stateBefore: f1.stateBefore, stateAfter: f1.finalState,
+    financialEffects: f1.finalState, sqlstate: f1.sqlstate, cleanup: { permitRows: 0, pendingProcesses: 0, pendingDatabaseSessions: 0 } });
   const overlay = {
+    schemaVersion: 1,
+    suite: 'PR352_R6_LEDGER_OVERLAY',
+    fixtureKind: 'synthetic-only',
     commitSha,
+    runId,
+    runAttempt,
     status: 'PASS',
     expectedLedgerRows: 333,
-    cases: Array.from({ length: 13 }, () => ({ status: 'PASS' })),
+    cases: [
+      '333 harmless entries, deterministic order, exactly one candidate', 'missing fetched version rejected',
+      'duplicate ledger identity rejected', 'renamed file identity rejected', 'modified SQL bytes rejected by per-file fingerprint',
+      'reordered entries rejected even with a recomputed aggregate fingerprint', 'manifest fingerprint tamper rejected',
+      'unexpected fetched migration rejected', 'older candidate version rejected', 'second pending candidate rejected',
+      'drift between validation and application rejected', 'candidate source drift between validation and application rejected',
+      'temporary overlay removed after a thrown error',
+    ].map((name) => ({ name, status: 'PASS' })),
     caseCount: 13,
     passed: 13,
     failed: 0,
@@ -658,7 +742,7 @@ test('structured evidence gate binds the Admin report to this run and SHA and re
     await writeFile(bridgePath, JSON.stringify(bridge));
     await writeFile(overlayPath, JSON.stringify(overlay));
   };
-  const runGate = () => execFileSync(process.execPath, ['--input-type=module', '-e', gateSource], {
+  const runGate = () => { try { return execFileSync(process.execPath, [gatePath], {
     cwd: root,
     env: {
       ...process.env,
@@ -669,7 +753,7 @@ test('structured evidence gate binds the Admin report to this run and SHA and re
     },
     encoding: 'utf8',
     stdio: ['ignore', 'pipe', 'pipe'],
-  });
+  }); } catch (error) { if (error.stderr) error.message = String(error.stderr); throw error; } };
   const rejectBridgeMutation = async (description, mutate) => {
     const validBridge = structuredClone(bridge);
     mutate(bridge);
@@ -682,11 +766,95 @@ test('structured evidence gate binds the Admin report to this run and SHA and re
     await writeReports();
     assert.match(runGate(), /PR352_R6_EVIDENCE_PASS/);
 
+    for (const name of [
+      'Cocina schema and six direct Restaurant helper functions match read-only Production catalog metadata',
+      'authentic 3D.14 dispatcher fingerprint matches reviewed read-only fingerprint',
+      'bridge installation transaction fully rolls back after induced failure',
+      'forward bridge v1 migration installed and committed in disposable PostgreSQL',
+      'bridge preserves function OIDs, owners, SECURITY DEFINER, settings, ACL and business bodies',
+      'Restaurant settlement and replay materialize one sale, payment, operation and inventory movement',
+      'bridge integration assertions and zero-session cleanup complete',
+    ]) await rejectBridgeMutation(`missing mandatory check ${name} fails closed`, (report) => {
+      report.checks = report.checks.filter((check) => check.name !== name);
+    });
+    await rejectBridgeMutation('mismatched Cocina catalog fails closed', (report) => {
+      report.checks.find((check) => check.name.startsWith('Cocina schema')).constraintCount = 8;
+    });
+    await rejectBridgeMutation('mismatched 3D.14 fingerprint fails closed', (report) => {
+      report.checks.find((check) => check.name.startsWith('authentic 3D.14')).sha256 = '0'.repeat(64);
+    });
+    await rejectBridgeMutation('contradictory settlement effects fail closed', (report) => {
+      report.checks.find((check) => check.name.startsWith('Restaurant settlement and replay')).payments = 2;
+    });
+    await rejectBridgeMutation('missing Staff owner admission check fails closed', (report) => {
+      report.checks = report.checks.filter((check) => !check.name.startsWith('Staff owner admitted'));
+    });
+    await rejectBridgeMutation('missing Cocina producer check fails closed', (report) => {
+      report.checks = report.checks.filter((check) => !check.name.startsWith('authentic Cocina provisioning'));
+    });
+    await rejectBridgeMutation('duplicate mandatory catalog check fails closed', (report) => {
+      report.checks.push(structuredClone(report.checks.find((check) => check.name.startsWith('Cocina schema'))));
+    });
+    await rejectBridgeMutation('NOT_RUN mandatory check fails closed', (report) => {
+      report.checks.find((check) => check.name.startsWith('financial schema')).status = 'NOT_RUN';
+    });
+    for (const key of ['runId', 'runAttempt']) {
+      const original = overlay[key];
+      overlay[key] = '999999';
+      await writeReports();
+      assert.throws(runGate, (error) => error.status === 1, `wrong overlay ${key} fails closed`);
+      overlay[key] = original;
+    }
+    const originalOverlaySha = overlay.commitSha;
+    overlay.commitSha = 'c'.repeat(40);
+    await writeReports();
+    assert.throws(runGate, (error) => error.status === 1, 'wrong overlay SHA fails closed');
+    overlay.commitSha = originalOverlaySha;
+    const originalOverlaySchemaVersion = overlay.schemaVersion;
+    delete overlay.schemaVersion;
+    await writeReports();
+    assert.throws(runGate, (error) => error.status === 1, 'missing overlay schema version fails closed');
+    overlay.schemaVersion = originalOverlaySchemaVersion;
+    const originalOverlayFixtureKind = overlay.fixtureKind;
+    overlay.fixtureKind = 1;
+    await writeReports();
+    assert.throws(runGate, (error) => error.status === 1, 'wrong overlay synthetic fixture type fails closed');
+    overlay.fixtureKind = originalOverlayFixtureKind;
+    const originalOverlayCase = overlay.cases[1];
+    overlay.cases[1] = structuredClone(overlay.cases[0]);
+    await writeReports();
+    assert.throws(runGate, (error) => error.status === 1, 'duplicate overlay scenario fails closed');
+    overlay.cases[1] = originalOverlayCase;
+
     await rejectBridgeMutation('missing financial race fails closed', (report) => { report.financialRaces.pop(); });
+    for (const name of ['F1', 'F2']) await rejectBridgeMutation(`missing ${name} fails closed`, (report) => {
+      report.financialRaces = report.financialRaces.filter((row) => row.name !== name);
+    });
+    await rejectBridgeMutation('missing cancellation-first serialization fails closed', (report) => { delete report.financialRaces[0].alternateOrder; });
+    await rejectBridgeMutation('unobserved cancellation-first lock fails closed', (report) => { report.financialRaces[0].alternateOrder.lockObservations[0].blockedBy = []; });
+    await rejectBridgeMutation('cancellation-first orphan sale fails closed', (report) => { report.financialRaces[0].alternateOrder.finalState.sales = 1; });
+    await rejectBridgeMutation('cancellation-first wrong parent fails closed', (report) => { report.financialRaces[0].alternateOrder.parentId = 'another-parent'; });
+    await rejectBridgeMutation('cancellation-first wrong license fails closed', (report) => { report.financialRaces[0].alternateOrder.actor.licenseId = 'another-license'; });
+    await rejectBridgeMutation('cancellation-first unreported release order fails closed', (report) => { report.financialRaces[0].alternateOrder.releaseOrder.pop(); });
+    await rejectBridgeMutation('C5 contradictory parent fails closed', (report) => { report.cancellation.find((row) => row.name === 'C5').parentId = 'another'; });
+    await rejectBridgeMutation('duplicate writer signature fails closed', (report) => { report.writerChecks[1].signature = report.writerChecks[0].signature; });
+    await rejectBridgeMutation('unknown writer signature fails closed', (report) => { report.writerChecks[9].signature = 'public.unknown_writer()'; });
+    await rejectBridgeMutation('missing writer signature fails closed', (report) => { report.writerChecks.pop(); });
+    await rejectBridgeMutation('writer security metadata drift fails closed', (report) => { report.writerChecks[3].aclSemanticallyPreserved = false; });
     await rejectBridgeMutation('unobserved financial blocker fails closed', (report) => { report.financialRaces[0].lockObservations[0].blockedBy = []; });
     await rejectBridgeMutation('financial receipt mismatch fails closed', (report) => { report.financialRaces[1].contenderReceipt.success = false; });
     await rejectBridgeMutation('duplicate payment fails closed', (report) => { report.financialRaces[0].finalState.payments = 2; });
-    await rejectBridgeMutation('missing cancellation fails closed', (report) => { report.cancellation.pop(); });
+    for (const name of ['C1', 'C2', 'C3', 'C4', 'C5', 'C6']) await rejectBridgeMutation(`missing ${name} fails closed`, (report) => {
+      report.cancellation = report.cancellation.filter((row) => row.name !== name);
+    });
+    await rejectBridgeMutation('missing C4 post-commit connection evidence fails closed', (report) => { delete report.cancellation.find((row) => row.name === 'C4').replayBoundary; });
+    await rejectBridgeMutation('C4 same transaction as C1 fails closed', (report) => {
+      report.cancellation.find((row) => row.name === 'C4').replayBoundary.transactionId = report.cancellation.find((row) => row.name === 'C1').transactionBoundary.transactionId;
+    });
+    await rejectBridgeMutation('missing cancellation snapshot fails closed', (report) => { delete report.cancellation.find((row) => row.name === 'C1').stateAfter; });
+    await rejectBridgeMutation('denied cancellation mutation fails closed', (report) => { report.cancellation.find((row) => row.name === 'C2').stateAfter.parent.status = 'cancelled'; });
+    await rejectBridgeMutation('cancellation financial effect fails closed', (report) => { report.cancellation.find((row) => row.name === 'C6').financialEffects.after.sales += 1; });
+    await rejectBridgeMutation('cancellation wrong SQLSTATE fails closed', (report) => { report.cancellation.find((row) => row.name === 'C3').sqlstate.state = '23505'; });
     await rejectBridgeMutation('wrong paid cancellation denial fails closed', (report) => { report.cancellation.find((row) => row.name === 'C3').denial = 'unknown'; });
     await rejectBridgeMutation('cancellation race must refer to F1', (report) => { report.cancellation.find((row) => row.name === 'C5').financialRace = 'F2'; });
 

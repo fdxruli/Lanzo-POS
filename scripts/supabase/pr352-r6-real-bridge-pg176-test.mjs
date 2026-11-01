@@ -419,6 +419,12 @@ async function run() {
   passed('bridge installation transaction fully rolls back after induced failure');
 
   await runFile(bridgePath, 'bridge-v1');
+  assert.equal(await query(`select (to_regclass('private.restaurant_cloud_contract_state') is not null
+    and to_regprocedure('public.pos_restaurant_cloud_contract_v1(text,text,text,text)') is not null)::text`), 'true',
+    'Bridge migration must be installed and committed before behavioral checks');
+  passed('forward bridge v1 migration installed and committed in disposable PostgreSQL', {
+    contractStateTablePresent: true, contractReaderPresent: true,
+  });
   const afterBridge = await captureFunctions(allFunctionSignatures);
   assert.equal(afterBridge.length, beforeBridge.length, 'Bridge changed the number of protected functions');
   const afterBySignature = new Map(afterBridge.map((row) => [row.signature, row]));
@@ -840,6 +846,9 @@ async function run() {
     end if;
   end $test$;`, 'restaurant-settlement-replay');
   process.stdout.write('BRIDGE_RESTAURANT_SETTLEMENT_REPLAY_PASS receipts=identical sales=1 payments=1 inventory_movements=1 parent=paid\n');
+  passed('Restaurant settlement and replay materialize one sale, payment, operation and inventory movement', {
+    receiptsIdentical: true, sales: 1, payments: 1, operations: 1, inventoryMovements: 1, parentPaid: true,
+  });
 
   currentStage = 'concurrent settlement versus cancellation and concurrent replay';
   financialRaceResults = await runRestaurantFinancialRaces({ query, psqlBin, env, createLegacyOrder });
@@ -849,7 +858,14 @@ async function run() {
   currentStage = 'Restaurant cancellation and rollback';
   cancellationResults = await runRestaurantCancellationScenarios({ query, createLegacyOrder, paidOrderId: 'r6-f2-parent' });
   assert.equal(financialRaceResults[0].status, 'PASS');
-  cancellationResults.push({ name: 'C5', status: 'PASS', financialRace: 'F1' });
+  const cancellationRace = financialRaceResults[0];
+  cancellationResults.push({ name: 'C5', status: cancellationRace.status, financialRace: 'F1',
+    operation: cancellationRace.sql.contender, actor: cancellationRace.actor, parentId: cancellationRace.stateBefore.parentId,
+    localOrderId: cancellationRace.stateBefore.localOrderId,
+    stateBefore: cancellationRace.stateBefore, stateAfter: cancellationRace.finalState,
+    financialEffects: cancellationRace.finalState, sqlstate: cancellationRace.sqlstate,
+    cleanup: { pendingProcesses: cancellationRace.pendingProcesses, pendingDatabaseSessions: cancellationRace.pendingDatabaseSessions,
+      permitRows: cancellationRace.finalState.permits } });
   passed('Restaurant cancellation scenarios completed', { scenarios: cancellationResults.map((row) => row.name) });
 
   currentStage = 'final disposable database checks';

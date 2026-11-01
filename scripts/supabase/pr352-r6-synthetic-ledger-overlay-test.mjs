@@ -21,6 +21,8 @@ function evidenceFile() {
 
 async function writeEvidence(report) {
   report.commitSha = process.env.GITHUB_SHA ?? null;
+  report.runId = process.env.GITHUB_RUN_ID ?? null;
+  report.runAttempt = process.env.GITHUB_RUN_ATTEMPT ?? null;
   const outputPath = evidenceFile();
   await mkdir(path.dirname(outputPath), { recursive: true, mode: 0o700 });
   await writeFile(outputPath, JSON.stringify(report, null, 2) + '\n', { mode: 0o600, flag: 'w' });

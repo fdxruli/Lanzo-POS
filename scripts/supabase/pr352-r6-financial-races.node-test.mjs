@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
-import { assertRaceState, cancellationContenderSql, runRestaurantFinancialRaces, settlementSql } from './pr352-r6-financial-races.mjs';
+import { assertCancellationFirstState, assertRaceState, cancellationContenderSql, cancellationWinnerSql, runRestaurantFinancialRaces, settlementSql } from './pr352-r6-financial-races.mjs';
 
 const valid = { parentCount:1,parentStatus:'ready',paymentStatus:'paid',paidSaleId:'test-order',
   sales:1,payments:1,operations:1,inventory:1,stock:19,cashMovements:1,
@@ -41,6 +41,24 @@ test('F1 contender invokes the authentic cancel RPC and requires the paid reject
   assert.match(sql,/R6_CANCEL_UNEXPECTEDLY_ACCEPTED/);
 });
 
+test('F1 cancellation-first invokes real RPCs and rejects any financial effect', async () => {
+  const holder=cancellationWinnerSql('cancel-parent','2026-10-30T00:00:00Z');
+  const contender=settlementSql('cancel-parent','2026-10-30T00:00:00Z','cancel-parent-settlement',true);
+  assert.match(holder,/public\.pos_cancel_restaurant_order_from_pos_v1\(/);
+  assert.match(contender,/public\.pos_execute_financial_operation_v1\(/);
+  assert.match(contender,/state<>'P0001' or message<>'RESTAURANT_ORDER_ALREADY_CANCELLED'/);
+  const dispatcher=await readFile('supabase/migrations/20261026214837_restaurant_sale_dispatcher_guard_3d14.sql','utf8');
+  assert.match(dispatcher,/raise exception 'RESTAURANT_ORDER_ALREADY_CANCELLED' using errcode = 'P0001'/);
+  const state={parentCount:1,parentStatus:'cancelled',paymentStatus:null,paidSaleId:null,sales:0,payments:0,
+    cashMovements:0,operations:0,inventory:0,stock:20,cancelledItems:1,cancelKeys:1,permits:0};
+  assert.doesNotThrow(()=>assertCancellationFirstState(state,20));
+  assert.doesNotThrow(()=>assertCancellationFirstState({...state,paymentStatus:'unpaid'},20));
+  for (const [field,value] of Object.entries({parentCount:2,parentStatus:'pending',paymentStatus:'paid',paidSaleId:'sale',
+    sales:1,payments:1,cashMovements:1,operations:1,inventory:1,stock:19,cancelledItems:0,cancelKeys:2,permits:1})) {
+    assert.throws(()=>assertCancellationFirstState({...state,[field]:value},20),undefined,field);
+  }
+});
+
 test('F2 same K/H submissions are identical and retain parent and settlement context', () => {
   const first=settlementSql('r6-order','2026-10-30T00:00:00Z','same-key');
   const replay=settlementSql('r6-order','2026-10-30T00:00:00Z','same-key');
@@ -57,7 +75,8 @@ test('unexpected psql exit fails the race and runs session cleanup', async () =>
   let cleanupChecked=false;
   const query=async (sql)=>{
     if (sql.includes("current_database() ||")) return 'pr352_bridge_isolated|170006';
-    if (sql.includes("'version',updated_at")) return JSON.stringify({version:'2026-10-30T00:00:00Z',stock:20});
+    if (sql.includes("'version',updated_at")) return JSON.stringify({version:'2026-10-30T00:00:00Z',stock:20,
+      parentId:'internal-test-id',localOrderId:'r6-f1-parent',parentStatus:'pending',paymentStatus:null,paidSaleId:null});
     if (sql.includes('json_agg')) return '[]';
     if (sql.includes('count(*) from pg_stat_activity')) { cleanupChecked=true; return '0'; }
     throw new Error(`Unexpected query: ${sql}`);

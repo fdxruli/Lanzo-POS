@@ -137,7 +137,8 @@ jobs:
             if (!/^[0-9a-f]{40}$/.test(expectedSha ?? "")) process.exit(1);
             if (!/^\d+$/.test(expectedRunId ?? "") || !/^\d+$/.test(expectedRunAttempt ?? "")) process.exit(1);
             if (bridge.commitSha !== expectedSha || overlay.commitSha !== expectedSha) process.exit(1);
-            if (bridge.runId !== expectedRunId || bridge.runAttempt !== expectedRunAttempt) process.exit(1);
+            if (bridge.runId !== expectedRunId || bridge.runAttempt !== expectedRunAttempt
+              || overlay.runId !== expectedRunId || overlay.runAttempt !== expectedRunAttempt) process.exit(1);
             if (bridge.status !== "PASS" || overlay.status !== "PASS") process.exit(1);
             if (bridge.failedStage !== null || bridge.error !== null || bridge.errorStack !== null || overlay.error != null) process.exit(1);
             if (!Array.isArray(bridge.checks) || bridge.checks.length === 0 || !bridge.checks.every((check) => check && typeof check.name === "string" && check.status === "PASS")) process.exit(1);
@@ -158,6 +159,28 @@ jobs:
               if (matches.length !== 1) process.exit(1);
               return matches[0];
             };
+            const catalog = uniqueCheck("Cocina schema and six direct Restaurant helper functions match read-only Production catalog metadata");
+            if (catalog.tableColumnCount !== 18 || catalog.constraintCount !== 9 || catalog.indexCount !== 5 || catalog.functionCount !== 6) process.exit(1);
+            const dispatcher = uniqueCheck("authentic 3D.14 dispatcher fingerprint matches reviewed read-only fingerprint");
+            const dispatcherManifest = JSON.parse(await readFile("supabase/tests/fixtures/pr352-r6/dispatcher-fingerprint.json", "utf8"));
+            if (!/^[0-9a-f]{64}$/.test(dispatcher.sha256 ?? "") || dispatcher.sha256 !== dispatcherManifest.entry.sha256) process.exit(1);
+            const sourceWriters = uniqueCheck("six authentic Restaurant writer bodies and security metadata match fingerprints");
+            const bridgeWriters = uniqueCheck("bridge preserves function OIDs, owners, SECURITY DEFINER, settings, ACL and business bodies");
+            if (sourceWriters.writerCount !== 6 || bridgeWriters.instrumentedFunctions !== 10) process.exit(1);
+            uniqueCheck("loopback disposable PostgreSQL 17.6 endpoint");
+            uniqueCheck("financial schema and captured function snapshot installed");
+            uniqueCheck("bridge installation transaction fully rolls back after induced failure");
+            const bridgeInstallation = uniqueCheck("forward bridge v1 migration installed and committed in disposable PostgreSQL");
+            if (bridgeInstallation.contractStateTablePresent !== true || bridgeInstallation.contractReaderPresent !== true) process.exit(1);
+            uniqueCheck("anon/authenticated public grants and private policy setter denial verified");
+            uniqueCheck("authentic Cocina provisioning, resolution, attribution, license isolation, rollback and concurrency checks completed");
+            uniqueCheck("cutover lock, concurrent commit/rollback, paused write rejection, replay and unrelated sale scenarios completed");
+            uniqueCheck("financial settlement races completed with observed parent locks");
+            uniqueCheck("Restaurant cancellation scenarios completed");
+            uniqueCheck("bridge integration assertions and zero-session cleanup complete");
+            const settlement = uniqueCheck("Restaurant settlement and replay materialize one sale, payment, operation and inventory movement");
+            if (settlement.receiptsIdentical !== true || settlement.sales !== 1 || settlement.payments !== 1
+              || settlement.operations !== 1 || settlement.inventoryMovements !== 1 || settlement.parentPaid !== true) process.exit(1);
             const adminStateCheck = uniqueCheck("admin-off-initial-state");
             const contractCheck = uniqueCheck("admin-off-contract-response");
             const setterCheck = uniqueCheck("admin-off-setter-rejected-no-state-change");
@@ -202,7 +225,21 @@ jobs:
               && check.denialMessage === denial.denialMessage && JSON.stringify(check.stateAfter) === JSON.stringify(denial.stateAfter);
             if (!validRoleDenial(anonDenial, anonSetterCheck, "anon")
               || !validRoleDenial(authenticatedDenial, authenticatedSetterCheck, "authenticated")) process.exit(1);
-            if (!Array.isArray(bridge.writerChecks) || bridge.writerChecks.length !== 10 || !bridge.writerChecks.every((writer) => writer.status === "PASS" && writer.admissionOccurrences === 1 && writer.bodyRecoveredExactly && writer.oidPreserved && writer.ownerPreserved && writer.securityDefinerPreserved && writer.configurationPreserved && writer.aclSemanticallyPreserved)) process.exit(1);
+            if (!Array.isArray(bridge.writerChecks) || bridge.writerChecks.length !== 10 || !bridge.writerChecks.every((writer) => writer.status === "PASS" && writer.admissionOccurrences === 1 && writer.bodyRecoveredExactly === true && writer.oidPreserved === true && writer.ownerPreserved === true && writer.securityDefinerPreserved === true && writer.configurationPreserved === true && writer.aclSemanticallyPreserved === true)) process.exit(1);
+            const writerSignatures = [
+              "public.pos_upsert_restaurant_order_unlimited(text,text,text,text,jsonb,jsonb,text)",
+              "public.pos_update_restaurant_order_status_unlimited(text,text,text,text,text,text,text)",
+              "public.pos_update_restaurant_order_item_status_unlimited(text,text,text,text,text,text,text,text)",
+              "public.pos_close_restaurant_order_after_checkout_unlimited(text,text,text,text,text,text,text,numeric,jsonb,text)",
+              "public.pos_archive_restaurant_order_unlimited(text,text,text,text,text,text,jsonb,text)",
+              "public.pos_execute_financial_operation_v1(text,text,text,text,text,text,text,jsonb)",
+              "public.pos_cancel_restaurant_order_from_pos_v1(text,text,text,text,text,text,text,text)",
+              "private.r2b_authorize_sale_financial_request_v1(text,text,text,text,text,jsonb,jsonb,jsonb,text,text,text)",
+              "private.execute_split_sale_financial_v1(text,text,text,text,jsonb,text)",
+              "private.recalculate_restaurant_order_status(uuid,text)"
+            ];
+            if (new Set(writerSignatures).size !== 10 || bridge.writerChecks.some((row) => !writerSignatures.includes(row.signature))
+              || writerSignatures.some((signature) => bridge.writerChecks.filter((row) => row.signature === signature).length !== 1)) process.exit(1);
             const station = bridge.preparationStationDependencies;
             const stationNames = [
               "A/G: first authenticated Staff write creates and attributes Kitchen",
@@ -295,8 +332,20 @@ jobs:
             for (const row of bridge.financialRaces) {
               const locks = row.lockObservations;
               if (row.submitted?.holder !== true || row.submitted?.contender !== true
-                || !row.sql?.holder?.includes("pos_execute_financial_operation_v1")
+                || row.actor?.licenseId !== "00000000-0000-0000-0000-000000000001" || row.actor?.device !== "lab-device-a" || row.actor?.session !== "lab-admin-session"
+                || row.stateBefore?.localOrderId !== (row.name === "F1" ? "r6-f1-parent" : "r6-f2-parent")
+                || typeof row.stateBefore?.parentId !== "string" || !row.stateBefore.parentId || row.stateBefore.paidSaleId !== null
+                || ![null, "unpaid"].includes(row.stateBefore.paymentStatus) || Number(row.stateBefore.stock) !== row.stockBefore
+                || row.sessionNames?.holder === row.sessionNames?.contender || !row.sessionNames?.holder || !row.sessionNames?.contender
+                || !row.sql?.holder?.includes("public.pos_execute_financial_operation_v1(")
+                || !row.sql?.holder?.includes("'lab-license-a'") || !row.sql?.holder?.includes("'lab-device-a'") || !row.sql?.holder?.includes("'lab-admin-session'")
                 || !row.sql?.contender?.includes(row.name === "F1" ? "pos_cancel_restaurant_order_from_pos_v1" : "pos_execute_financial_operation_v1")
+                || !row.sql?.contender?.includes("'lab-license-a'") || !row.sql?.contender?.includes("'lab-device-a'") || !row.sql?.contender?.includes("'lab-admin-session'")
+                || !row.sql?.holder?.includes(row.stateBefore.localOrderId) || !row.sql?.contender?.includes(row.stateBefore.localOrderId)
+                || !Array.isArray(row.releaseOrder) || row.releaseOrder.length !== 4
+                || row.releaseOrder[0] !== "holder settlement completed within transaction"
+                || row.releaseOrder[1] !== "contender waits on holder parent advisory lock"
+                || row.releaseOrder[2] !== "holder COMMIT" || row.releaseOrder[3] !== "contender COMMIT"
                 || !Array.isArray(locks) || !locks.some((lock) => Number.isInteger(lock.holderPid) && Number.isInteger(lock.contenderPid)
                   && lock.holderPid !== lock.contenderPid && lock.holderGranted === true && lock.contenderGranted === false
                   && lock.holderMode === "ExclusiveLock" && lock.contenderMode === "ExclusiveLock" && lock.wait === "Lock"
@@ -316,17 +365,105 @@ jobs:
             }
             if (financial("F1").sqlstate.message !== "RESTAURANT_ORDER_ALREADY_PAID"
               || JSON.stringify(financial("F2").receipt) !== JSON.stringify(financial("F2").contenderReceipt)) process.exit(1);
+            const reverse = financial("F1").alternateOrder;
+            if (reverse?.status !== "PASS" || reverse.submitted?.holder !== true || reverse.submitted?.contender !== true
+              || reverse.actor?.licenseId !== "00000000-0000-0000-0000-000000000001" || reverse.actor?.device !== "lab-device-a" || reverse.actor?.session !== "lab-admin-session"
+              || reverse.stateBefore?.parentId !== reverse.parentId || reverse.parentId === financial("F1").stateBefore.parentId
+              || reverse.stateBefore?.localOrderId !== "r6-f1-cancel-first-parent" || reverse.stateBefore?.paymentStatus !== "unpaid"
+              || reverse.stateBefore?.paidSaleId !== null || Number(reverse.stateBefore?.stock) !== reverse.stockBefore
+              || typeof reverse.stateBefore?.parentId !== "string" || !reverse.stateBefore.parentId
+              || !reverse.sessionNames?.holder || !reverse.sessionNames?.contender || reverse.sessionNames.holder === reverse.sessionNames.contender
+              || !reverse.sql?.holder?.includes("public.pos_cancel_restaurant_order_from_pos_v1(")
+              || !reverse.sql?.contender?.includes("public.pos_execute_financial_operation_v1(")
+              || !reverse.sql?.holder?.includes("'lab-license-a'") || !reverse.sql?.holder?.includes("'lab-device-a'") || !reverse.sql?.holder?.includes("'lab-admin-session'")
+              || !reverse.sql?.contender?.includes("'lab-license-a'") || !reverse.sql?.contender?.includes("'lab-device-a'") || !reverse.sql?.contender?.includes("'lab-admin-session'")
+              || !reverse.sql?.holder?.includes("r6-f1-cancel-first-parent") || !reverse.sql?.contender?.includes("r6-f1-cancel-first-parent")
+              || !Array.isArray(reverse.releaseOrder) || reverse.releaseOrder.length !== 4
+              || reverse.releaseOrder[0] !== "holder cancellation completed within transaction"
+              || reverse.releaseOrder[1] !== "contender waits on holder parent advisory lock"
+              || reverse.releaseOrder[2] !== "holder COMMIT" || reverse.releaseOrder[3] !== "contender COMMIT"
+              || !Array.isArray(reverse.lockObservations) || !reverse.lockObservations.some((lock) =>
+                Number.isInteger(lock.holderPid) && Number.isInteger(lock.contenderPid) && lock.holderPid !== lock.contenderPid
+                && lock.holderGranted === true && lock.contenderGranted === false && lock.holderMode === "ExclusiveLock"
+                && lock.contenderMode === "ExclusiveLock" && lock.wait === "Lock" && Number.isInteger(lock.classId)
+                && Number.isInteger(lock.objectId) && lock.objectSubId === 2 && lock.blockedBy?.includes(lock.holderPid)
+                && lock.query?.includes("R6_FINANCIAL_RPC") && reverse.holderState?.some((holder) => holder.pid === lock.holderPid && holder.state === "idle in transaction"))
+              || reverse.exitCodes?.holder !== 0 || reverse.exitCodes?.contender !== 0
+              || reverse.sqlstate?.holder !== "00000" || reverse.sqlstate?.contender !== "P0001"
+              || reverse.sqlstate?.message !== "RESTAURANT_ORDER_ALREADY_CANCELLED"
+              || reverse.finalState?.parentCount !== 1 || reverse.finalState?.parentStatus !== "cancelled"
+              || ![null, "unpaid"].includes(reverse.finalState?.paymentStatus) || reverse.finalState?.paidSaleId !== null
+              || reverse.finalState?.sales !== 0 || reverse.finalState?.payments !== 0 || reverse.finalState?.operations !== 0
+              || reverse.finalState?.inventory !== 0 || reverse.finalState?.cashMovements !== 0
+              || reverse.finalState?.cancelledItems !== 1 || reverse.finalState?.cancelKeys !== 1 || reverse.finalState?.permits !== 0
+              || !Number.isFinite(reverse.stockBefore) || Number(reverse.finalState?.stock) !== reverse.stockBefore
+              || reverse.pendingProcesses !== 0 || reverse.pendingDatabaseSessions !== 0) process.exit(1);
             if (!Array.isArray(bridge.cancellation) || bridge.cancellation.length !== 6
               || ["C1", "C2", "C3", "C4", "C5", "C6"].some((name) => bridge.cancellation.filter((row) => row.name === name && row.status === "PASS").length !== 1)) process.exit(1);
             const cancel = (name) => bridge.cancellation.find((row) => row.name === name);
+            for (const name of ["C1", "C2", "C3", "C4", "C6"]) {
+              const row = cancel(name);
+              const before = row.stateBefore;
+              const after = row.stateAfter;
+              const effects = row.financialEffects;
+              if (row.operation !== "public.pos_cancel_restaurant_order_from_pos_v1" || typeof row.actor !== "string" || !row.actor
+                || typeof row.parentId !== "string" || !row.parentId || typeof row.localOrderId !== "string" || !row.localOrderId || !before?.parent || !after?.parent
+                || before.parent.id !== row.parentId || before.parent.local_order_id !== row.localOrderId || after.parent.local_order_id !== row.localOrderId
+                || before.parent.id !== after.parent.id || !Array.isArray(before.items) || before.items.length !== 1
+                || !Array.isArray(after.items) || after.items.length !== 1 || before.items[0].id !== after.items[0].id
+                || before.items[0].restaurant_order_id !== before.parent.id || after.items[0].restaurant_order_id !== after.parent.id
+                || before.parent.license_id !== "00000000-0000-0000-0000-000000000001" || after.parent.license_id !== before.parent.license_id
+                || before.items[0].license_id !== before.parent.license_id || after.items[0].license_id !== before.parent.license_id
+                || !Number.isInteger(before.cancelEvents) || !Number.isInteger(after.cancelEvents)
+                || !effects?.before || !effects?.after || ["sales", "payments", "inventory", "cash"].some((key) =>
+                  !Number.isInteger(effects.before[key]) || effects.before[key] < 0 || effects.before[key] !== effects.after[key])
+                || row.cleanup?.permitRows !== 0 || !row.sqlstate) process.exit(1);
+              if (name !== "C1" && JSON.stringify(before) !== JSON.stringify(after)) process.exit(1);
+            }
             if (cancel("C1").parent !== "cancelled" || cancel("C1").item !== "cancelled" || cancel("C1").permitGranted !== true || cancel("C1").permitRows !== 0
+              || cancel("C1").stateBefore.parent.status === "cancelled" || cancel("C1").stateAfter.parent.status !== "cancelled"
+              || cancel("C1").stateAfter.items[0].status !== "cancelled" || cancel("C1").stateBefore.cancelEvents !== 0 || cancel("C1").stateAfter.cancelEvents !== 1
+              || cancel("C1").sqlstate.state !== "00000" || cancel("C1").sqlstate.message !== null
+              || cancel("C1").transactionBoundary?.committed !== true || cancel("C1").transactionBoundary?.scope !== "separate psql -c implicit transaction completed before C4"
+              || !Number.isInteger(cancel("C1").transactionBoundary?.backendPid) || !cancel("C1").transactionBoundary?.transactionId
               || cancel("C2").denial !== "P0001 RESTAURANT_TABLE_OWNER_REQUIRED" || cancel("C2").parentUnchanged !== true
+              || cancel("C2").sqlstate.state !== "P0001" || cancel("C2").sqlstate.message !== "RESTAURANT_TABLE_OWNER_REQUIRED"
               || cancel("C3").denial !== "P0001 RESTAURANT_ORDER_ALREADY_PAID" || cancel("C3").parentUnchanged !== true
+              || cancel("C3").localOrderId !== "r6-f2-parent" || cancel("C3").stateBefore.parent.payment_status !== "paid"
+              || cancel("C3").sqlstate.state !== "P0001" || cancel("C3").sqlstate.message !== "RESTAURANT_ORDER_ALREADY_PAID"
               || cancel("C4").sameKey !== "identical receipt" || cancel("C4").differentKey !== "P0001 RESTAURANT_ORDER_ALREADY_CANCELLED"
-              || cancel("C4").cancellationEvents !== 1 || cancel("C5").financialRace !== "F1"
-              || cancel("C6").parentAndItemRestored !== true || cancel("C6").permitRows !== 0) process.exit(1);
+              || cancel("C4").stateBefore.parent.status !== "cancelled" || cancel("C4").stateBefore.cancelEvents !== 1
+              || cancel("C4").sqlstate.state !== "P0001" || cancel("C4").sqlstate.message !== "RESTAURANT_ORDER_ALREADY_CANCELLED"
+              || cancel("C4").cancellationEvents !== 1 || cancel("C4").completedKeys !== 1
+              || cancel("C4").replayBoundary?.separateConnection !== true || cancel("C4").replayBoundary?.priorTransactionCommitted !== true
+              || cancel("C4").replayBoundary?.afterTransactionId !== cancel("C1").transactionBoundary.transactionId
+              || cancel("C4").replayBoundary?.priorBackendPid !== cancel("C1").transactionBoundary.backendPid
+              || !Number.isInteger(cancel("C4").replayBoundary?.backendPid) || !cancel("C4").replayBoundary?.transactionId
+              || cancel("C4").replayBoundary?.transactionId === cancel("C1").transactionBoundary.transactionId
+              || cancel("C5").financialRace !== "F1"
+              || cancel("C5").operation !== financial("F1").sql.contender || cancel("C5").parentId !== financial("F1").stateBefore.parentId
+              || cancel("C5").localOrderId !== financial("F1").stateBefore.localOrderId
+              || JSON.stringify(cancel("C5").actor) !== JSON.stringify(financial("F1").actor)
+              || JSON.stringify(cancel("C5").stateBefore) !== JSON.stringify(financial("F1").stateBefore)
+              || JSON.stringify(cancel("C5").stateAfter) !== JSON.stringify(financial("F1").finalState)
+              || JSON.stringify(cancel("C5").financialEffects) !== JSON.stringify(financial("F1").finalState)
+              || JSON.stringify(cancel("C5").sqlstate) !== JSON.stringify(financial("F1").sqlstate)
+              || cancel("C5").cleanup?.permitRows !== 0 || cancel("C5").cleanup?.pendingProcesses !== 0 || cancel("C5").cleanup?.pendingDatabaseSessions !== 0
+              || cancel("C6").parentAndItemRestored !== true || cancel("C6").permitRows !== 0
+              || cancel("C6").rollbackKind !== "plpgsql_subtransaction" || cancel("C6").sqlstate.state !== "P0001"
+              || cancel("C6").sqlstate.message !== "R6_C6_ROLLBACK_PROBE") process.exit(1);
             if (bridge.postgresServerVersionNum !== "170006" || bridge.productionConnections !== 0) process.exit(1);
             if (!Array.isArray(overlay.cases) || overlay.cases.length !== overlay.caseCount || !overlay.cases.every((scenario) => scenario.status === "PASS")) process.exit(1);
+            const overlayCaseNames = [
+              "333 harmless entries, deterministic order, exactly one candidate", "missing fetched version rejected",
+              "duplicate ledger identity rejected", "renamed file identity rejected", "modified SQL bytes rejected by per-file fingerprint",
+              "reordered entries rejected even with a recomputed aggregate fingerprint", "manifest fingerprint tamper rejected",
+              "unexpected fetched migration rejected", "older candidate version rejected", "second pending candidate rejected",
+              "drift between validation and application rejected", "candidate source drift between validation and application rejected",
+              "temporary overlay removed after a thrown error"
+            ];
+            if (overlayCaseNames.some((name) => overlay.cases.filter((row) => row.name === name && row.status === "PASS").length !== 1)) process.exit(1);
+            if (overlay.schemaVersion !== 1 || overlay.suite !== "PR352_R6_LEDGER_OVERLAY" || overlay.fixtureKind !== "synthetic-only") process.exit(1);
             if (overlay.expectedLedgerRows !== 333 || overlay.caseCount !== 13 || overlay.caseCount !== overlay.passed || overlay.failed !== 0) process.exit(1);
             if (overlay.productionConnections !== 0 || overlay.cleanupFailures !== 0 || overlay.sqlContentsEmitted !== false) process.exit(1);
             console.log("PR352_R6_EVIDENCE_PASS", JSON.stringify({
