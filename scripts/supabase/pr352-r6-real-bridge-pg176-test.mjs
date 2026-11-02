@@ -1642,7 +1642,7 @@ async function run() {
     exception when others then get stacked diagnostics message=message_text, state=returned_sqlstate;
       if state<>'P0001' or message<>'RESTAURANT_ORDER_CONTEXT_MISMATCH' then raise; end if;
     end;
-    if exists(select 1 from public.pos_financial_operations where legacy_idempotency_key='bridge-alias-contradiction')
+    if exists(select 1 from public.pos_financial_operations where license_id='00000000-0000-0000-0000-000000000001'::uuid and idempotency_key='bridge-alias-contradiction')
       or exists(select 1 from public.pos_sales where id='bridge-restaurant-a')
       or exists(select 1 from public.pos_restaurant_orders where local_order_id in ('bridge-restaurant-a','bridge-restaurant-b') and payment_status='paid') then
       raise exception 'CONTRADICTORY_ALIAS_CAUSED_FINANCIAL_EFFECT';
@@ -1664,7 +1664,7 @@ async function run() {
     exception when others then get stacked diagnostics message=message_text, state=returned_sqlstate;
       if state<>'P0001' or message<>'RESTAURANT_CONTRACT_MAINTENANCE' then raise; end if;
     end;
-    if exists(select 1 from public.pos_financial_operations where legacy_idempotency_key='bridge-paused-write')
+    if exists(select 1 from public.pos_financial_operations where license_id='00000000-0000-0000-0000-000000000001'::uuid and idempotency_key='bridge-paused-write')
       or exists(select 1 from public.pos_sales where id='bridge-restaurant-a') then
       raise exception 'PAUSED_RESTAURANT_WRITE_CAUSED_FINANCIAL_EFFECT';
     end if;
@@ -1720,11 +1720,17 @@ async function run() {
     end if;
     if (select count(*) from public.pos_sales where id='bridge-restaurant-a')<>1
       or (select count(*) from public.pos_sale_payments where sale_id='bridge-restaurant-a')<>1
-      or (select count(*) from public.pos_financial_operations where legacy_idempotency_key='bridge-restaurant-settlement')<>1
+      or (select count(*) from public.pos_financial_operations where license_id='00000000-0000-0000-0000-000000000001'::uuid and idempotency_key='bridge-restaurant-settlement')<>1
       or (select count(*) from public.pos_inventory_movements where product_id='bridge-restaurant-product')<>1
       or not exists(select 1 from public.pos_restaurant_orders where local_order_id='bridge-restaurant-a'
         and payment_status='paid' and paid_sale_id='bridge-restaurant-a') then
-      raise exception 'BRIDGE_SETTLEMENT_EFFECT_COUNT_MISMATCH';
+      raise exception 'BRIDGE_SETTLEMENT_EFFECT_COUNT_MISMATCH' using detail=jsonb_build_object(
+        'sales',(select count(*) from public.pos_sales where id='bridge-restaurant-a'),
+        'payments',(select count(*) from public.pos_sale_payments where sale_id='bridge-restaurant-a'),
+        'operations',(select count(*) from public.pos_financial_operations where license_id='00000000-0000-0000-0000-000000000001'::uuid and idempotency_key='bridge-restaurant-settlement'),
+        'inventoryMovements',(select count(*) from public.pos_inventory_movements where product_id='bridge-restaurant-product'),
+        'parentPaid',exists(select 1 from public.pos_restaurant_orders where local_order_id='bridge-restaurant-a'
+          and payment_status='paid' and paid_sale_id='bridge-restaurant-a'))::text;
     end if;
   end $test$;`, 'restaurant-settlement-replay');
   process.stdout.write('BRIDGE_RESTAURANT_SETTLEMENT_REPLAY_PASS receipts=identical sales=1 payments=1 inventory_movements=1 parent=paid\n');

@@ -1674,3 +1674,42 @@ test('synthetic overlay helper is self-contained and never embeds the remote led
   assert.match(source, /0700/);
   assert.doesNotMatch(source, /productionProjectRef|pr352-r5-production-ledger-fingerprint-manifest|DELETE\s+FROM/i);
 });
+
+// The captured reserve function stores caller K separately from its server-owned internal key.
+test('settlement and rejection probes query the authentic external financial key namespace',async()=>{
+  const source=await readFile(path.join(root,'scripts/supabase/pr352-r6-real-bridge-pg176-test.mjs'),'utf8');
+  const functions=JSON.parse(await readFile(path.join(root,'supabase/tests/fixtures/pr338-real-financial/02-function-sources.json'),'utf8'));
+  const reserve=functions.find(sql=>sql.startsWith('CREATE OR REPLACE FUNCTION private.reserve_financial_operation_v1('));
+  assert.ok(reserve);
+  assert.match(reserve,/id, license_id, idempotency_key, legacy_idempotency_key/);
+  assert.match(reserve,/v_operation_id, p_license_id, p_idempotency_key, v_internal_idempotency_key/);
+  const internalKey=functions.find(sql=>sql.startsWith('CREATE OR REPLACE FUNCTION private.financial_operation_internal_key_v1('));
+  assert.ok(internalKey);
+  assert.ok(internalKey.includes("return 'financial-v1:' || p_operation_type || ':' || p_operation_id::text;"));
+  for(const key of ['bridge-alias-contradiction','bridge-paused-write','bridge-restaurant-settlement']) {
+    assert.ok(source.includes("where license_id='00000000-0000-0000-0000-000000000001'::uuid and idempotency_key='"+key+"'"));
+    assert.ok(!source.includes("legacy_idempotency_key='"+key+"'"));
+  }
+  const alias=source.slice(source.indexOf("currentStage = 'contradictory aliases'"),
+    source.indexOf("currentStage = 'paused transition blocks a new Restaurant operation'"));
+  const paused=source.slice(source.indexOf("currentStage = 'paused transition blocks a new Restaurant operation'"),
+    source.indexOf("currentStage = 'cutover concurrency and unrelated rubric operation'"));
+  for(const [block,key,rejection,effectError] of [
+    [alias,'bridge-alias-contradiction','RESTAURANT_ORDER_CONTEXT_MISMATCH','CONTRADICTORY_ALIAS_CAUSED_FINANCIAL_EFFECT'],
+    [paused,'bridge-paused-write','RESTAURANT_CONTRACT_MAINTENANCE','PAUSED_RESTAURANT_WRITE_CAUSED_FINANCIAL_EFFECT'],
+  ]) {
+    assert.ok(block.includes("if exists(select 1 from public.pos_financial_operations where license_id='00000000-0000-0000-0000-000000000001'::uuid and idempotency_key='"+key+"')"));
+    assert.ok(block.includes("if state<>'P0001' or message<>'"+rejection+"' then raise; end if;"));
+    assert.ok(block.includes("or exists(select 1 from public.pos_sales where id='bridge-restaurant-a')"));
+    assert.ok(block.includes("raise exception '"+effectError+"';"));
+  }
+  assert.ok(alias.includes("local_order_id in ('bridge-restaurant-a','bridge-restaurant-b') and payment_status='paid'"));
+  const settlement=source.slice(source.indexOf("currentStage = 'Restaurant financial settlement and replay'"),
+    source.indexOf("currentStage = 'concurrent settlement versus cancellation and concurrent replay'"));
+  assert.ok(settlement.includes("'bridge-restaurant-settlement',h,'sale.cashier_inventory',req)"));
+  assert.ok(settlement.includes("if first_receipt is distinct from replay_receipt or coalesce((first_receipt->>'success')::boolean,false) is not true then"));
+  assert.ok(settlement.includes("if (select count(*) from public.pos_sales where id='bridge-restaurant-a')<>1\n      or (select count(*) from public.pos_sale_payments where sale_id='bridge-restaurant-a')<>1\n      or (select count(*) from public.pos_financial_operations where license_id='00000000-0000-0000-0000-000000000001'::uuid and idempotency_key='bridge-restaurant-settlement')<>1\n      or (select count(*) from public.pos_inventory_movements where product_id='bridge-restaurant-product')<>1\n      or not exists(select 1 from public.pos_restaurant_orders where local_order_id='bridge-restaurant-a'\n        and payment_status='paid' and paid_sale_id='bridge-restaurant-a') then"));
+  assert.ok(settlement.includes("raise exception 'BRIDGE_SETTLEMENT_EFFECT_COUNT_MISMATCH' using detail=jsonb_build_object("));
+  for(const field of ['sales','payments','operations','inventoryMovements','parentPaid'])
+    assert.ok(settlement.includes("'"+field+"',"),'Failure detail must identify '+field);
+});
