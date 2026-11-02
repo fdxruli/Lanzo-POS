@@ -100,6 +100,7 @@ const CHECKOUT_ERROR_MESSAGES = Object.freeze({
   ECOMMERCE_PRODUCT_NOT_FOUND: 'Uno de los productos ya no está disponible.',
   ECOMMERCE_PRODUCT_NOT_AVAILABLE: 'Uno de los productos ya no está disponible.',
   ECOMMERCE_PRODUCT_UNAVAILABLE: 'Uno de los productos ya no está disponible.',
+  ECOMMERCE_CATALOG_REVISION_CHANGED: 'El catálogo cambió mientras preparabas el pedido. Actualízalo e inténtalo nuevamente.',
   ECOMMERCE_INVALID_QUANTITY: 'Revisa las cantidades del carrito.',
   ECOMMERCE_STOCK_LIMIT_EXCEEDED: 'La cantidad solicitada supera la disponibilidad actual.',
   ECOMMERCE_INSUFFICIENT_STOCK: 'La cantidad solicitada supera la disponibilidad actual.',

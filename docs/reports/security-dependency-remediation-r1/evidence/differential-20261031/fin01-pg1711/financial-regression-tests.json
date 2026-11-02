@@ -1,0 +1,880 @@
+[
+  {
+    "area": "Authority",
+    "name": "real owner context",
+    "status": "PASS"
+  },
+  {
+    "area": "Authority",
+    "name": "Staff customers permission cannot authorize",
+    "status": "PASS"
+  },
+  {
+    "area": "Authority",
+    "name": "non-owner Admin session is rejected",
+    "status": "PASS"
+  },
+  {
+    "area": "Authority",
+    "name": "invalid session rejected",
+    "status": "PASS"
+  },
+  {
+    "area": "Authority",
+    "name": "revoked session rejected",
+    "status": "PASS"
+  },
+  {
+    "area": "Authority",
+    "name": "expired session rejected",
+    "status": "PASS"
+  },
+  {
+    "area": "Authority",
+    "name": "wrong tenant manifest rejected",
+    "status": "PASS"
+  },
+  {
+    "area": "Authority",
+    "name": "direct private tables denied to anon",
+    "status": "PASS"
+  },
+  {
+    "area": "Authority",
+    "name": "direct private tables denied to authenticated",
+    "status": "PASS"
+  },
+  {
+    "area": "Manifest",
+    "name": "canonical hash independent of entry order and batch ID",
+    "status": "PASS"
+  },
+  {
+    "area": "Manifest",
+    "name": "wrong total",
+    "status": "PASS"
+  },
+  {
+    "area": "Manifest",
+    "name": "wrong count",
+    "status": "PASS"
+  },
+  {
+    "area": "Manifest",
+    "name": "fractional cents",
+    "status": "PASS"
+  },
+  {
+    "area": "Manifest",
+    "name": "out of int32 range",
+    "status": "PASS"
+  },
+  {
+    "area": "Manifest",
+    "name": "duplicate destination",
+    "status": "PASS"
+  },
+  {
+    "area": "Manifest",
+    "name": "unknown bypass flag",
+    "status": "PASS"
+  },
+  {
+    "area": "Import",
+    "name": "legacy financial import requires independent approval",
+    "status": "PASS"
+  },
+  {
+    "area": "Import",
+    "name": "owner approves and imports above limit without Caja or sales",
+    "status": "PASS"
+  },
+  {
+    "area": "Import",
+    "name": "lost response and replay return receipt without duplicates",
+    "status": "PASS"
+  },
+  {
+    "area": "Import",
+    "name": "same content different batch returns original authorization",
+    "status": "PASS"
+  },
+  {
+    "area": "Import",
+    "name": "same batch modified content conflicts",
+    "status": "PASS"
+  },
+  {
+    "area": "Import",
+    "name": "same historical identity different amount conflicts",
+    "status": "PASS"
+  },
+  {
+    "area": "Import",
+    "name": "changing source cannot duplicate target balance",
+    "status": "PASS"
+  },
+  {
+    "area": "Import",
+    "name": "existing ledger never becomes silent success",
+    "status": "PASS"
+  },
+  {
+    "area": "Import",
+    "name": "partial batch reports exact imported and conflicted rows",
+    "status": "PASS"
+  },
+  {
+    "area": "Import",
+    "name": "expired approval requires a new explicit approval",
+    "status": "PASS"
+  },
+  {
+    "area": "Import",
+    "name": "changed actor session invalidates pending approval",
+    "status": "PASS"
+  },
+  {
+    "area": "Import",
+    "name": "two devices same target produce only one initial balance",
+    "status": "PASS"
+  },
+  {
+    "area": "Import",
+    "name": "exception rolls back ledger, projection, receipts and consumption",
+    "status": "PASS"
+  },
+  {
+    "area": "Upsert",
+    "name": "older client with positive or malformed balances fails before overwrite",
+    "status": "PASS"
+  },
+  {
+    "area": "Upsert",
+    "name": "ordinary directory create starts with zero debt",
+    "status": "PASS"
+  },
+  {
+    "area": "Upsert",
+    "name": "directory edit and lower limit preserve debt",
+    "status": "PASS"
+  },
+  {
+    "area": "Upsert",
+    "name": "Staff cannot change credit authority",
+    "status": "PASS"
+  },
+  {
+    "area": "Credit",
+    "name": "A inside limit",
+    "status": "PASS"
+  },
+  {
+    "area": "Credit",
+    "name": "B exact equality",
+    "status": "PASS"
+  },
+  {
+    "area": "Credit",
+    "name": "C one cent over",
+    "status": "PASS"
+  },
+  {
+    "area": "Credit",
+    "name": "D already above",
+    "status": "PASS"
+  },
+  {
+    "area": "Credit",
+    "name": "F zero limit",
+    "status": "PASS"
+  },
+  {
+    "area": "Credit",
+    "name": "one cent below",
+    "status": "PASS"
+  },
+  {
+    "area": "Credit",
+    "name": "H completed replay survives lower limit",
+    "status": "PASS"
+  },
+  {
+    "area": "Credit",
+    "name": "I changed request with same key conflicts in real authorizer",
+    "status": "PASS"
+  },
+  {
+    "area": "Credit",
+    "name": "J partial payment creates only net exposure",
+    "status": "PASS"
+  },
+  {
+    "area": "Credit",
+    "name": "K cash received and change are not extra applied payments",
+    "status": "PASS"
+  },
+  {
+    "area": "Concurrency",
+    "name": "G two real sessions admit one 150 credit and end at 950",
+    "status": "PASS"
+  },
+  {
+    "area": "Credit",
+    "name": "legacy public wrapper reaches the same SQL guard",
+    "status": "PASS"
+  },
+  {
+    "area": "Credit",
+    "name": "N other tenant customer is inaccessible",
+    "status": "PASS"
+  },
+  {
+    "area": "Credit",
+    "name": "S closed Caja rejects with zero partial effects",
+    "status": "PASS"
+  },
+  {
+    "area": "Credit",
+    "name": "E payment remains allowed above the credit limit",
+    "status": "PASS"
+  },
+  {
+    "area": "Payment",
+    "name": "PAY-N01 overpayment with positive debt and empty ledger has no partial effects",
+    "status": "PASS",
+    "evidence": {
+      "customer_id": "customer-c8d90fc0-37a5-4941-9241-6b7699d04e99",
+      "idempotency_key": "pay-n01-55f5dca5-9bdf-4f4e-b189-c84627db7825",
+      "before": {
+        "cash": 0,
+        "events": 0,
+        "ledger": 0,
+        "payment": 0,
+        "customer": {
+          "debt": 100,
+          "debt_cents": 10000
+        },
+        "cash_status": "open",
+        "idempotency": null,
+        "initial_balance": 0,
+        "historical_receipts": 0
+      },
+      "transaction": "COMMIT_SUCCEEDED",
+      "sqlstate": null,
+      "response": {
+        "code": "PAYMENT_EXCEEDS_DEBT",
+        "message": "El abono excede la deuda actual.",
+        "success": false,
+        "current_debt": 100,
+        "idempotency_key": "pay-n01-55f5dca5-9bdf-4f4e-b189-c84627db7825"
+      },
+      "after": {
+        "cash": 0,
+        "events": 0,
+        "ledger": 0,
+        "payment": 0,
+        "customer": {
+          "debt": 100,
+          "debt_cents": 10000
+        },
+        "cash_status": "open",
+        "idempotency": {
+          "status": "completed",
+          "response_payload": {
+            "code": "PAYMENT_EXCEEDS_DEBT",
+            "message": "El abono excede la deuda actual.",
+            "success": false,
+            "current_debt": 100,
+            "idempotency_key": "pay-n01-55f5dca5-9bdf-4f4e-b189-c84627db7825"
+          }
+        },
+        "initial_balance": 0,
+        "historical_receipts": 0
+      },
+      "retry_response": {
+        "code": "PAYMENT_EXCEEDS_DEBT",
+        "message": "El abono excede la deuda actual.",
+        "success": false,
+        "current_debt": 100,
+        "idempotency_key": "pay-n01-55f5dca5-9bdf-4f4e-b189-c84627db7825"
+      },
+      "after_retry": {
+        "cash": 0,
+        "events": 0,
+        "ledger": 0,
+        "payment": 0,
+        "customer": {
+          "debt": 100,
+          "debt_cents": 10000
+        },
+        "cash_status": "open",
+        "idempotency": {
+          "status": "completed",
+          "response_payload": {
+            "code": "PAYMENT_EXCEEDS_DEBT",
+            "message": "El abono excede la deuda actual.",
+            "success": false,
+            "current_debt": 100,
+            "idempotency_key": "pay-n01-55f5dca5-9bdf-4f4e-b189-c84627db7825"
+          }
+        },
+        "initial_balance": 0,
+        "historical_receipts": 0
+      },
+      "synthetic_fixture_cleanup": true
+    }
+  },
+  {
+    "area": "Payment",
+    "name": "PAY-N02 valid public payment replay creates no duplicate effects",
+    "status": "PASS",
+    "evidence": {
+      "customer_id": "customer-26435484-92e7-47f0-bbaf-a16d27a43a85",
+      "idempotency_key": "pay-n02-3bbf60a5-b11f-4c72-867f-26d6af8ca574",
+      "before": {
+        "cash": 0,
+        "events": 0,
+        "ledger": 0,
+        "payment": 0,
+        "customer": {
+          "debt": 100,
+          "debt_cents": 10000
+        },
+        "cash_status": "open",
+        "idempotency": null,
+        "initial_balance": 0,
+        "historical_receipts": 0
+      },
+      "first_response": {
+        "receipt": {
+          "amount": 25,
+          "new_debt": 75,
+          "ledger_id": "ldg_9777cc064d4d4d5ba58ebdd5fb9bf7bf",
+          "actor_name": "Synthetic Owner",
+          "created_at": "2026-10-31T15:08:54.173614+00:00",
+          "customer_id": "customer-26435484-92e7-47f0-bbaf-a16d27a43a85",
+          "customer_name": "Synthetic",
+          "previous_debt": 100,
+          "payment_method": "efectivo",
+          "cash_session_id": "cash-a"
+        },
+        "success": true,
+        "customer": {
+          "id": "customer-26435484-92e7-47f0-bbaf-a16d27a43a85",
+          "debt": 75,
+          "name": "Synthetic",
+          "metadata": {
+            "debt_projection_source": "pos_customer_ledger"
+          },
+          "created_at": "2026-10-31T15:08:54.151969+00:00",
+          "debt_cents": 7500,
+          "license_id": "10000000-0000-0000-0000-000000000001",
+          "updated_at": "2026-10-31T15:08:54.173614+00:00",
+          "credit_limit": 1000,
+          "server_version": 2
+        },
+        "new_debt": 75,
+        "change_seq": 68,
+        "cash_session": {
+          "id": "cash-a",
+          "scope": "actor",
+          "status": "open",
+          "metadata": {},
+          "actor_key": "admin:30000000-0000-0000-0000-000000000001",
+          "device_id": "20000000-0000-0000-0000-000000000001",
+          "opened_at": "2026-10-31T15:06:36.210693+00:00",
+          "created_at": "2026-10-31T15:06:36.210693+00:00",
+          "license_id": "10000000-0000-0000-0000-000000000001",
+          "updated_at": "2026-10-31T15:08:54.173614+00:00",
+          "device_role": "admin",
+          "sales_count": 7,
+          "sales_total": 1449.99,
+          "close_detail": {},
+          "opening_amount": 0,
+          "server_version": 11,
+          "cash_station_id": "cash_station_device_20000000-0000-0000-0000-000000000001",
+          "is_auto_opening": false,
+          "cash_exits_total": 0,
+          "cash_sales_total": 0,
+          "responsible_name": "Synthetic",
+          "cash_entries_total": 0,
+          "cash_identity_state": "legacy",
+          "expected_cash_total": 325,
+          "last_idempotency_key": "5a39f818-5a7d-40cc-96d2-8d6397780f6b",
+          "non_cash_sales_total": 200,
+          "customer_payments_total": 325
+        },
+        "ledger_entry": {
+          "id": "ldg_9777cc064d4d4d5ba58ebdd5fb9bf7bf",
+          "note": "PAY-N01 synthetic",
+          "type": "PAYMENT",
+          "amount": -25,
+          "metadata": {
+            "source": "pos_record_customer_payment"
+          },
+          "actor_name": "Synthetic Owner",
+          "created_at": "2026-10-31T15:08:54.173614+00:00",
+          "license_id": "10000000-0000-0000-0000-000000000001",
+          "customer_id": "customer-26435484-92e7-47f0-bbaf-a16d27a43a85",
+          "reference_id": "customer-26435484-92e7-47f0-bbaf-a16d27a43a85",
+          "balance_after": 75,
+          "payment_method": "efectivo",
+          "reference_type": "customer",
+          "server_version": 1,
+          "actor_device_id": "20000000-0000-0000-0000-000000000001",
+          "cash_session_id": "cash-a",
+          "idempotency_key": "pay-n02-3bbf60a5-b11f-4c72-867f-26d6af8ca574",
+          "cash_movement_id": "mov_badd6b031ac847399f76a2e596342e52",
+          "debt_cents_after": 7500,
+          "allocation_payload": []
+        },
+        "cash_movement": {
+          "id": "mov_badd6b031ac847399f76a2e596342e52",
+          "type": "abono_cliente",
+          "amount": 25,
+          "source": "customer_payment",
+          "concept": "Abono de cliente: Synthetic",
+          "metadata": {
+            "ledger_id": "ldg_9777cc064d4d4d5ba58ebdd5fb9bf7bf",
+            "customer_id": "customer-26435484-92e7-47f0-bbaf-a16d27a43a85",
+            "customer_name": "Synthetic"
+          },
+          "actor_key": "admin:30000000-0000-0000-0000-000000000001",
+          "device_id": "20000000-0000-0000-0000-000000000001",
+          "actor_name": "Synthetic Owner",
+          "created_at": "2026-10-31T15:08:54.173614+00:00",
+          "license_id": "10000000-0000-0000-0000-000000000001",
+          "reference_id": "ldg_9777cc064d4d4d5ba58ebdd5fb9bf7bf",
+          "reference_type": "customer_ledger",
+          "server_version": 1,
+          "cash_session_id": "cash-a",
+          "idempotency_key": "pay-n02-3bbf60a5-b11f-4c72-867f-26d6af8ca574",
+          "created_by_device_id": "20000000-0000-0000-0000-000000000001"
+        },
+        "idempotency_key": "pay-n02-3bbf60a5-b11f-4c72-867f-26d6af8ca574"
+      },
+      "after": {
+        "cash": 1,
+        "events": 3,
+        "ledger": 2,
+        "payment": 1,
+        "customer": {
+          "debt": 75,
+          "debt_cents": 7500
+        },
+        "cash_status": "open",
+        "idempotency": {
+          "status": "completed",
+          "response_payload": {
+            "receipt": {
+              "amount": 25,
+              "new_debt": 75,
+              "ledger_id": "ldg_9777cc064d4d4d5ba58ebdd5fb9bf7bf",
+              "actor_name": "Synthetic Owner",
+              "created_at": "2026-10-31T15:08:54.173614+00:00",
+              "customer_id": "customer-26435484-92e7-47f0-bbaf-a16d27a43a85",
+              "customer_name": "Synthetic",
+              "previous_debt": 100,
+              "payment_method": "efectivo",
+              "cash_session_id": "cash-a"
+            },
+            "success": true,
+            "customer": {
+              "id": "customer-26435484-92e7-47f0-bbaf-a16d27a43a85",
+              "debt": 75,
+              "name": "Synthetic",
+              "metadata": {
+                "debt_projection_source": "pos_customer_ledger"
+              },
+              "created_at": "2026-10-31T15:08:54.151969+00:00",
+              "debt_cents": 7500,
+              "license_id": "10000000-0000-0000-0000-000000000001",
+              "updated_at": "2026-10-31T15:08:54.173614+00:00",
+              "credit_limit": 1000,
+              "server_version": 2
+            },
+            "new_debt": 75,
+            "change_seq": 68,
+            "cash_session": {
+              "id": "cash-a",
+              "scope": "actor",
+              "status": "open",
+              "metadata": {},
+              "actor_key": "admin:30000000-0000-0000-0000-000000000001",
+              "device_id": "20000000-0000-0000-0000-000000000001",
+              "opened_at": "2026-10-31T15:06:36.210693+00:00",
+              "created_at": "2026-10-31T15:06:36.210693+00:00",
+              "license_id": "10000000-0000-0000-0000-000000000001",
+              "updated_at": "2026-10-31T15:08:54.173614+00:00",
+              "device_role": "admin",
+              "sales_count": 7,
+              "sales_total": 1449.99,
+              "close_detail": {},
+              "opening_amount": 0,
+              "server_version": 11,
+              "cash_station_id": "cash_station_device_20000000-0000-0000-0000-000000000001",
+              "is_auto_opening": false,
+              "cash_exits_total": 0,
+              "cash_sales_total": 0,
+              "responsible_name": "Synthetic",
+              "cash_entries_total": 0,
+              "cash_identity_state": "legacy",
+              "expected_cash_total": 325,
+              "last_idempotency_key": "5a39f818-5a7d-40cc-96d2-8d6397780f6b",
+              "non_cash_sales_total": 200,
+              "customer_payments_total": 325
+            },
+            "ledger_entry": {
+              "id": "ldg_9777cc064d4d4d5ba58ebdd5fb9bf7bf",
+              "note": "PAY-N01 synthetic",
+              "type": "PAYMENT",
+              "amount": -25,
+              "metadata": {
+                "source": "pos_record_customer_payment"
+              },
+              "actor_name": "Synthetic Owner",
+              "created_at": "2026-10-31T15:08:54.173614+00:00",
+              "license_id": "10000000-0000-0000-0000-000000000001",
+              "customer_id": "customer-26435484-92e7-47f0-bbaf-a16d27a43a85",
+              "reference_id": "customer-26435484-92e7-47f0-bbaf-a16d27a43a85",
+              "balance_after": 75,
+              "payment_method": "efectivo",
+              "reference_type": "customer",
+              "server_version": 1,
+              "actor_device_id": "20000000-0000-0000-0000-000000000001",
+              "cash_session_id": "cash-a",
+              "idempotency_key": "pay-n02-3bbf60a5-b11f-4c72-867f-26d6af8ca574",
+              "cash_movement_id": "mov_badd6b031ac847399f76a2e596342e52",
+              "debt_cents_after": 7500,
+              "allocation_payload": []
+            },
+            "cash_movement": {
+              "id": "mov_badd6b031ac847399f76a2e596342e52",
+              "type": "abono_cliente",
+              "amount": 25,
+              "source": "customer_payment",
+              "concept": "Abono de cliente: Synthetic",
+              "metadata": {
+                "ledger_id": "ldg_9777cc064d4d4d5ba58ebdd5fb9bf7bf",
+                "customer_id": "customer-26435484-92e7-47f0-bbaf-a16d27a43a85",
+                "customer_name": "Synthetic"
+              },
+              "actor_key": "admin:30000000-0000-0000-0000-000000000001",
+              "device_id": "20000000-0000-0000-0000-000000000001",
+              "actor_name": "Synthetic Owner",
+              "created_at": "2026-10-31T15:08:54.173614+00:00",
+              "license_id": "10000000-0000-0000-0000-000000000001",
+              "reference_id": "ldg_9777cc064d4d4d5ba58ebdd5fb9bf7bf",
+              "reference_type": "customer_ledger",
+              "server_version": 1,
+              "cash_session_id": "cash-a",
+              "idempotency_key": "pay-n02-3bbf60a5-b11f-4c72-867f-26d6af8ca574",
+              "created_by_device_id": "20000000-0000-0000-0000-000000000001"
+            },
+            "idempotency_key": "pay-n02-3bbf60a5-b11f-4c72-867f-26d6af8ca574"
+          }
+        },
+        "initial_balance": 1,
+        "historical_receipts": 0
+      },
+      "retry_response": {
+        "receipt": {
+          "amount": 25,
+          "new_debt": 75,
+          "ledger_id": "ldg_9777cc064d4d4d5ba58ebdd5fb9bf7bf",
+          "actor_name": "Synthetic Owner",
+          "created_at": "2026-10-31T15:08:54.173614+00:00",
+          "customer_id": "customer-26435484-92e7-47f0-bbaf-a16d27a43a85",
+          "customer_name": "Synthetic",
+          "previous_debt": 100,
+          "payment_method": "efectivo",
+          "cash_session_id": "cash-a"
+        },
+        "success": true,
+        "customer": {
+          "id": "customer-26435484-92e7-47f0-bbaf-a16d27a43a85",
+          "debt": 75,
+          "name": "Synthetic",
+          "metadata": {
+            "debt_projection_source": "pos_customer_ledger"
+          },
+          "created_at": "2026-10-31T15:08:54.151969+00:00",
+          "debt_cents": 7500,
+          "license_id": "10000000-0000-0000-0000-000000000001",
+          "updated_at": "2026-10-31T15:08:54.173614+00:00",
+          "credit_limit": 1000,
+          "server_version": 2
+        },
+        "new_debt": 75,
+        "change_seq": 68,
+        "cash_session": {
+          "id": "cash-a",
+          "scope": "actor",
+          "status": "open",
+          "metadata": {},
+          "actor_key": "admin:30000000-0000-0000-0000-000000000001",
+          "device_id": "20000000-0000-0000-0000-000000000001",
+          "opened_at": "2026-10-31T15:06:36.210693+00:00",
+          "created_at": "2026-10-31T15:06:36.210693+00:00",
+          "license_id": "10000000-0000-0000-0000-000000000001",
+          "updated_at": "2026-10-31T15:08:54.173614+00:00",
+          "device_role": "admin",
+          "sales_count": 7,
+          "sales_total": 1449.99,
+          "close_detail": {},
+          "opening_amount": 0,
+          "server_version": 11,
+          "cash_station_id": "cash_station_device_20000000-0000-0000-0000-000000000001",
+          "is_auto_opening": false,
+          "cash_exits_total": 0,
+          "cash_sales_total": 0,
+          "responsible_name": "Synthetic",
+          "cash_entries_total": 0,
+          "cash_identity_state": "legacy",
+          "expected_cash_total": 325,
+          "last_idempotency_key": "5a39f818-5a7d-40cc-96d2-8d6397780f6b",
+          "non_cash_sales_total": 200,
+          "customer_payments_total": 325
+        },
+        "ledger_entry": {
+          "id": "ldg_9777cc064d4d4d5ba58ebdd5fb9bf7bf",
+          "note": "PAY-N01 synthetic",
+          "type": "PAYMENT",
+          "amount": -25,
+          "metadata": {
+            "source": "pos_record_customer_payment"
+          },
+          "actor_name": "Synthetic Owner",
+          "created_at": "2026-10-31T15:08:54.173614+00:00",
+          "license_id": "10000000-0000-0000-0000-000000000001",
+          "customer_id": "customer-26435484-92e7-47f0-bbaf-a16d27a43a85",
+          "reference_id": "customer-26435484-92e7-47f0-bbaf-a16d27a43a85",
+          "balance_after": 75,
+          "payment_method": "efectivo",
+          "reference_type": "customer",
+          "server_version": 1,
+          "actor_device_id": "20000000-0000-0000-0000-000000000001",
+          "cash_session_id": "cash-a",
+          "idempotency_key": "pay-n02-3bbf60a5-b11f-4c72-867f-26d6af8ca574",
+          "cash_movement_id": "mov_badd6b031ac847399f76a2e596342e52",
+          "debt_cents_after": 7500,
+          "allocation_payload": []
+        },
+        "cash_movement": {
+          "id": "mov_badd6b031ac847399f76a2e596342e52",
+          "type": "abono_cliente",
+          "amount": 25,
+          "source": "customer_payment",
+          "concept": "Abono de cliente: Synthetic",
+          "metadata": {
+            "ledger_id": "ldg_9777cc064d4d4d5ba58ebdd5fb9bf7bf",
+            "customer_id": "customer-26435484-92e7-47f0-bbaf-a16d27a43a85",
+            "customer_name": "Synthetic"
+          },
+          "actor_key": "admin:30000000-0000-0000-0000-000000000001",
+          "device_id": "20000000-0000-0000-0000-000000000001",
+          "actor_name": "Synthetic Owner",
+          "created_at": "2026-10-31T15:08:54.173614+00:00",
+          "license_id": "10000000-0000-0000-0000-000000000001",
+          "reference_id": "ldg_9777cc064d4d4d5ba58ebdd5fb9bf7bf",
+          "reference_type": "customer_ledger",
+          "server_version": 1,
+          "cash_session_id": "cash-a",
+          "idempotency_key": "pay-n02-3bbf60a5-b11f-4c72-867f-26d6af8ca574",
+          "created_by_device_id": "20000000-0000-0000-0000-000000000001"
+        },
+        "idempotency_key": "pay-n02-3bbf60a5-b11f-4c72-867f-26d6af8ca574"
+      },
+      "after_retry": {
+        "cash": 1,
+        "events": 3,
+        "ledger": 2,
+        "payment": 1,
+        "customer": {
+          "debt": 75,
+          "debt_cents": 7500
+        },
+        "cash_status": "open",
+        "idempotency": {
+          "status": "completed",
+          "response_payload": {
+            "receipt": {
+              "amount": 25,
+              "new_debt": 75,
+              "ledger_id": "ldg_9777cc064d4d4d5ba58ebdd5fb9bf7bf",
+              "actor_name": "Synthetic Owner",
+              "created_at": "2026-10-31T15:08:54.173614+00:00",
+              "customer_id": "customer-26435484-92e7-47f0-bbaf-a16d27a43a85",
+              "customer_name": "Synthetic",
+              "previous_debt": 100,
+              "payment_method": "efectivo",
+              "cash_session_id": "cash-a"
+            },
+            "success": true,
+            "customer": {
+              "id": "customer-26435484-92e7-47f0-bbaf-a16d27a43a85",
+              "debt": 75,
+              "name": "Synthetic",
+              "metadata": {
+                "debt_projection_source": "pos_customer_ledger"
+              },
+              "created_at": "2026-10-31T15:08:54.151969+00:00",
+              "debt_cents": 7500,
+              "license_id": "10000000-0000-0000-0000-000000000001",
+              "updated_at": "2026-10-31T15:08:54.173614+00:00",
+              "credit_limit": 1000,
+              "server_version": 2
+            },
+            "new_debt": 75,
+            "change_seq": 68,
+            "cash_session": {
+              "id": "cash-a",
+              "scope": "actor",
+              "status": "open",
+              "metadata": {},
+              "actor_key": "admin:30000000-0000-0000-0000-000000000001",
+              "device_id": "20000000-0000-0000-0000-000000000001",
+              "opened_at": "2026-10-31T15:06:36.210693+00:00",
+              "created_at": "2026-10-31T15:06:36.210693+00:00",
+              "license_id": "10000000-0000-0000-0000-000000000001",
+              "updated_at": "2026-10-31T15:08:54.173614+00:00",
+              "device_role": "admin",
+              "sales_count": 7,
+              "sales_total": 1449.99,
+              "close_detail": {},
+              "opening_amount": 0,
+              "server_version": 11,
+              "cash_station_id": "cash_station_device_20000000-0000-0000-0000-000000000001",
+              "is_auto_opening": false,
+              "cash_exits_total": 0,
+              "cash_sales_total": 0,
+              "responsible_name": "Synthetic",
+              "cash_entries_total": 0,
+              "cash_identity_state": "legacy",
+              "expected_cash_total": 325,
+              "last_idempotency_key": "5a39f818-5a7d-40cc-96d2-8d6397780f6b",
+              "non_cash_sales_total": 200,
+              "customer_payments_total": 325
+            },
+            "ledger_entry": {
+              "id": "ldg_9777cc064d4d4d5ba58ebdd5fb9bf7bf",
+              "note": "PAY-N01 synthetic",
+              "type": "PAYMENT",
+              "amount": -25,
+              "metadata": {
+                "source": "pos_record_customer_payment"
+              },
+              "actor_name": "Synthetic Owner",
+              "created_at": "2026-10-31T15:08:54.173614+00:00",
+              "license_id": "10000000-0000-0000-0000-000000000001",
+              "customer_id": "customer-26435484-92e7-47f0-bbaf-a16d27a43a85",
+              "reference_id": "customer-26435484-92e7-47f0-bbaf-a16d27a43a85",
+              "balance_after": 75,
+              "payment_method": "efectivo",
+              "reference_type": "customer",
+              "server_version": 1,
+              "actor_device_id": "20000000-0000-0000-0000-000000000001",
+              "cash_session_id": "cash-a",
+              "idempotency_key": "pay-n02-3bbf60a5-b11f-4c72-867f-26d6af8ca574",
+              "cash_movement_id": "mov_badd6b031ac847399f76a2e596342e52",
+              "debt_cents_after": 7500,
+              "allocation_payload": []
+            },
+            "cash_movement": {
+              "id": "mov_badd6b031ac847399f76a2e596342e52",
+              "type": "abono_cliente",
+              "amount": 25,
+              "source": "customer_payment",
+              "concept": "Abono de cliente: Synthetic",
+              "metadata": {
+                "ledger_id": "ldg_9777cc064d4d4d5ba58ebdd5fb9bf7bf",
+                "customer_id": "customer-26435484-92e7-47f0-bbaf-a16d27a43a85",
+                "customer_name": "Synthetic"
+              },
+              "actor_key": "admin:30000000-0000-0000-0000-000000000001",
+              "device_id": "20000000-0000-0000-0000-000000000001",
+              "actor_name": "Synthetic Owner",
+              "created_at": "2026-10-31T15:08:54.173614+00:00",
+              "license_id": "10000000-0000-0000-0000-000000000001",
+              "reference_id": "ldg_9777cc064d4d4d5ba58ebdd5fb9bf7bf",
+              "reference_type": "customer_ledger",
+              "server_version": 1,
+              "cash_session_id": "cash-a",
+              "idempotency_key": "pay-n02-3bbf60a5-b11f-4c72-867f-26d6af8ca574",
+              "created_by_device_id": "20000000-0000-0000-0000-000000000001"
+            },
+            "idempotency_key": "pay-n02-3bbf60a5-b11f-4c72-867f-26d6af8ca574"
+          }
+        },
+        "initial_balance": 1,
+        "historical_receipts": 0
+      }
+    }
+  },
+  {
+    "area": "Concurrency",
+    "name": "payment and sale from two real sessions serialize without losing either",
+    "status": "PASS"
+  },
+  {
+    "area": "Concurrency",
+    "name": "limit update and sale observe an allowed serial ordering",
+    "status": "PASS"
+  },
+  {
+    "area": "Concurrency",
+    "name": "import and new credit never sum historical debt onto an existing ledger",
+    "status": "PASS"
+  },
+  {
+    "area": "Atomicity",
+    "name": "two real credit children sharing a customer roll back together",
+    "status": "PASS"
+  },
+  {
+    "area": "Concurrency",
+    "name": "inverse ambient Caja and customer locks abort one transaction without partial effects",
+    "status": "PASS"
+  },
+  {
+    "area": "Inventory",
+    "name": "admitted credit writes real stock and ledger atomically",
+    "status": "PASS"
+  },
+  {
+    "area": "Atomicity",
+    "name": "Q fault after inventory work rolls back sales, stock, ledger and Caja",
+    "status": "PASS"
+  },
+  {
+    "area": "Credit",
+    "name": "P authorized cancellation restores prior debt even after reducing the limit",
+    "status": "PASS"
+  },
+  {
+    "area": "Credit",
+    "name": "non-finite stored limit cannot bypass enforcement",
+    "status": "PASS"
+  },
+  {
+    "area": "Upsert",
+    "name": "non-finite credit limit is rejected",
+    "status": "PASS"
+  },
+  {
+    "area": "Authority",
+    "name": "internal financial import remains inaccessible to anon",
+    "status": "PASS"
+  },
+  {
+    "area": "Import",
+    "name": "explicit owner review can retry after a missing directory customer is synchronized",
+    "status": "PASS"
+  },
+  {
+    "area": "Integrity",
+    "name": "ledger and debt projections remain equal",
+    "status": "PASS"
+  }
+]

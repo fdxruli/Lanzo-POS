@@ -1,0 +1,304 @@
+{
+  "project": "odlrhijtfyavryeqivaa",
+  "run": "b279597f-c56b-4a47-ad6b-9b50bb050150",
+  "baselineLedger": 312,
+  "qa": {
+    "grants": [
+      {
+        "id": "306ca03d-a6f5-41ea-bd40-61dd225ef8a7",
+        "attempts": 1,
+        "expires_at": "2026-10-21T05:21:41.967925+00:00",
+        "revoked_at": null,
+        "runtime_id": "28876f9d-fa5d-4851-9c17-c25b1b0496f4",
+        "identity_id": "d3eb3316-db97-4eee-aa07-9dc6b1aaca19",
+        "lease_until": null,
+        "last_attempt": "2026-10-21T05:19:41.25867+00:00",
+        "auth_session_id": "a1e5dcb5-36c6-4a13-8f9d-ce39c864dd00",
+        "actor_generation": 1,
+        "tenant_generation": 1
+      },
+      {
+        "id": "47f1db84-a2b6-4912-8248-b84baf5cdd9d",
+        "attempts": 2,
+        "expires_at": "2026-10-21T06:05:21.622292+00:00",
+        "revoked_at": "2026-10-21T06:03:43.665749+00:00",
+        "runtime_id": "013af550-b24c-4814-b406-fc753232f7a7",
+        "identity_id": "d3eb3316-db97-4eee-aa07-9dc6b1aaca19",
+        "lease_until": null,
+        "last_attempt": "2026-10-21T06:03:21.287695+00:00",
+        "auth_session_id": "fe4914c4-f467-4108-88c3-ab676f076204",
+        "actor_generation": 1,
+        "tenant_generation": 1
+      },
+      {
+        "id": "921a82be-6fcc-4057-9d8a-c019023ec33b",
+        "attempts": 1,
+        "expires_at": "2026-10-21T06:08:14.313928+00:00",
+        "revoked_at": null,
+        "runtime_id": "a846727e-534b-446d-ac94-13602430ffd6",
+        "identity_id": "d3eb3316-db97-4eee-aa07-9dc6b1aaca19",
+        "lease_until": null,
+        "last_attempt": "2026-10-21T06:06:13.984967+00:00",
+        "auth_session_id": "d29d0ec1-38e2-4397-b24c-913cf8b21d48",
+        "actor_generation": 1,
+        "tenant_generation": 1
+      },
+      {
+        "id": "c5f55860-3771-4525-8739-0e3f67bdf815",
+        "attempts": 1,
+        "expires_at": "2026-10-21T06:08:14.744847+00:00",
+        "revoked_at": null,
+        "runtime_id": "ea1dc9d3-c908-4ce6-9790-44a281079e24",
+        "identity_id": "d3eb3316-db97-4eee-aa07-9dc6b1aaca19",
+        "lease_until": null,
+        "last_attempt": "2026-10-21T06:06:14.578207+00:00",
+        "auth_session_id": "d69d0547-8b66-4a90-9f70-a4fbf69c59c8",
+        "actor_generation": 1,
+        "tenant_generation": 1
+      },
+      {
+        "id": "186ce2b6-94c6-4ba0-9b4e-14b21b39b3fb",
+        "attempts": 1,
+        "expires_at": "2026-10-21T06:08:15.625056+00:00",
+        "revoked_at": null,
+        "runtime_id": "b4ab492c-2937-468a-b684-f15ac119a919",
+        "identity_id": "c2a86be5-66d8-46bd-b62a-ad7ef77640c5",
+        "lease_until": null,
+        "last_attempt": "2026-10-21T06:06:15.313589+00:00",
+        "auth_session_id": "15a48ce1-a026-4b9d-a0f1-63d643de9811",
+        "actor_generation": 1,
+        "tenant_generation": 1
+      },
+      {
+        "id": "c77254ae-7b87-4178-9dd0-bed980df9295",
+        "attempts": 1,
+        "expires_at": "2026-10-21T06:08:16.193481+00:00",
+        "revoked_at": null,
+        "runtime_id": "ed1e2767-52d6-40c0-b106-18fe4ff68f11",
+        "identity_id": "0cceafca-aedf-4cdc-aad5-f39b36d447e1",
+        "lease_until": null,
+        "last_attempt": "2026-10-21T06:06:15.908492+00:00",
+        "auth_session_id": "e04227e1-706a-41ba-a694-a7824706766b",
+        "actor_generation": 1,
+        "tenant_generation": 1
+      },
+      {
+        "id": "7159844d-9d71-47f6-adc0-d98ad314cbc5",
+        "attempts": 1,
+        "expires_at": "2026-10-21T06:08:16.742948+00:00",
+        "revoked_at": null,
+        "runtime_id": "4ffccc3a-9d32-45e8-b34a-34232fe707fb",
+        "identity_id": "64140a60-5cfc-4816-a716-852217f5e912",
+        "lease_until": null,
+        "last_attempt": "2026-10-21T06:06:16.474521+00:00",
+        "auth_session_id": "0e9838ab-8f9c-4af3-80e8-f2b12edf8a53",
+        "actor_generation": 1,
+        "tenant_generation": 1
+      },
+      {
+        "id": "51ce4cfd-1a8e-482a-9b65-13524bf56ac4",
+        "attempts": 1,
+        "expires_at": "2026-10-21T06:10:11.313506+00:00",
+        "revoked_at": "2026-10-21T06:08:53.568232+00:00",
+        "runtime_id": "eb4d9c18-efcb-475a-bd47-4899ffc11f16",
+        "identity_id": "64140a60-5cfc-4816-a716-852217f5e912",
+        "lease_until": null,
+        "last_attempt": "2026-10-21T06:08:11.077382+00:00",
+        "auth_session_id": "96830b48-2259-4076-94ae-5cea105f8c2d",
+        "actor_generation": 1,
+        "tenant_generation": 1
+      },
+      {
+        "id": "ce14d167-6ed6-46aa-b212-664899e0a408",
+        "attempts": 1,
+        "expires_at": "2026-10-21T06:12:22.787512+00:00",
+        "revoked_at": "2026-10-21T06:10:34.039764+00:00",
+        "runtime_id": "baaa6015-301f-41cf-8b3a-b3602283c7d9",
+        "identity_id": "64140a60-5cfc-4816-a716-852217f5e912",
+        "lease_until": null,
+        "last_attempt": "2026-10-21T06:10:22.481638+00:00",
+        "auth_session_id": "8ead2ed5-9752-41d5-a809-d2eed54f2cbf",
+        "actor_generation": 1,
+        "tenant_generation": 1
+      },
+      {
+        "id": "1547df87-35f5-484f-ae3e-cfa5cba78a8b",
+        "attempts": 1,
+        "expires_at": "2026-10-21T06:16:42.610715+00:00",
+        "revoked_at": "2026-10-21T06:14:51.172346+00:00",
+        "runtime_id": "69b0a498-2695-48fd-9cde-090bcdfdbb66",
+        "identity_id": "64140a60-5cfc-4816-a716-852217f5e912",
+        "lease_until": null,
+        "last_attempt": "2026-10-21T06:14:42.100877+00:00",
+        "auth_session_id": "c0624bcc-72f7-41fb-a583-c9a51ba6b4c9",
+        "actor_generation": 1,
+        "tenant_generation": 1
+      },
+      {
+        "id": "0f0c5842-e417-4da6-aded-62c31890cee3",
+        "attempts": 1,
+        "expires_at": "2026-10-21T06:17:38.175232+00:00",
+        "revoked_at": "2026-10-21T06:15:38.808455+00:00",
+        "runtime_id": "cd1cc462-ec03-4a66-b220-aa6104c3922c",
+        "identity_id": "7ada50b0-6e87-47e9-ace9-3c7b9c3740ac",
+        "lease_until": null,
+        "last_attempt": "2026-10-21T06:15:38.178324+00:00",
+        "auth_session_id": null,
+        "actor_generation": 1,
+        "tenant_generation": 1
+      },
+      {
+        "id": "3b84df17-04e9-4517-bebb-797316639d78",
+        "attempts": 1,
+        "expires_at": "2026-10-21T06:21:12.322562+00:00",
+        "revoked_at": "2026-10-21T06:19:15.978797+00:00",
+        "runtime_id": "06ed856a-0ccb-491c-81ec-7d682ad4b6a6",
+        "identity_id": "c2a86be5-66d8-46bd-b62a-ad7ef77640c5",
+        "lease_until": null,
+        "last_attempt": "2026-10-21T06:19:11.901829+00:00",
+        "auth_session_id": "9aea386e-69a0-48e3-8d52-767eea075275",
+        "actor_generation": 1,
+        "tenant_generation": 1
+      },
+      {
+        "id": "f36ad2e6-d68d-4be0-a2b9-41d202c0717d",
+        "attempts": 1,
+        "expires_at": "2026-10-21T06:22:06.315415+00:00",
+        "revoked_at": "2026-10-21T06:20:06.621596+00:00",
+        "runtime_id": "d427b22c-d964-4344-915e-dfad891f4e3b",
+        "identity_id": "c2a86be5-66d8-46bd-b62a-ad7ef77640c5",
+        "lease_until": null,
+        "last_attempt": "2026-10-21T06:20:05.913019+00:00",
+        "auth_session_id": "a281466a-a37e-4fc2-baf0-1710f0889d69",
+        "actor_generation": 1,
+        "tenant_generation": 1
+      },
+      {
+        "id": "46123c69-55b8-43a4-9541-b5abcef2bbbb",
+        "attempts": 1,
+        "expires_at": "2026-10-21T06:22:10.090713+00:00",
+        "revoked_at": "2026-10-21T06:20:10.398547+00:00",
+        "runtime_id": "3cfe083e-8480-4d4d-8891-34460badd8c9",
+        "identity_id": "7ada50b0-6e87-47e9-ace9-3c7b9c3740ac",
+        "lease_until": null,
+        "last_attempt": "2026-10-21T06:20:10.09393+00:00",
+        "auth_session_id": null,
+        "actor_generation": 1,
+        "tenant_generation": 1
+      }
+    ],
+    "auth_users": [
+      "61c059b7-e3c1-4b8f-8f48-ce078d348a19",
+      "fc05cc1d-43c7-4073-824c-8692cb563339",
+      "ebacc143-cf3b-4bcc-970d-8b0a5da7ac3c",
+      "5f8356eb-9e01-4662-a681-7a1fcc41c8e2"
+    ],
+    "identities": [
+      {
+        "id": "d3eb3316-db97-4eee-aa07-9dc6b1aaca19",
+        "actor_id": "98cd94d5-4dde-458e-9499-f10eaa2a01dd",
+        "device_id": "a820cc44-0e05-495f-ac20-e72f05e85896",
+        "actor_type": "admin",
+        "created_at": "2026-10-21T05:19:41.240882+00:00",
+        "license_id": "0aa0c1e2-d501-448c-b951-93873b13ca97",
+        "retired_at": null,
+        "auth_user_id": "fc05cc1d-43c7-4073-824c-8692cb563339",
+        "actor_session_id": "80d0d8f5-7ec2-4bec-8fb7-b5393ac12cd9"
+      },
+      {
+        "id": "0cceafca-aedf-4cdc-aad5-f39b36d447e1",
+        "actor_id": "8b93bc96-2e48-47e2-8e7e-5194b0104725",
+        "device_id": "4c722f68-50f4-47ee-8935-cc01a36b20e8",
+        "actor_type": "admin",
+        "created_at": "2026-10-21T06:06:15.90501+00:00",
+        "license_id": "ac78fc1e-bbe3-45bd-bd09-21076a7eb6bf",
+        "retired_at": null,
+        "auth_user_id": "5f8356eb-9e01-4662-a681-7a1fcc41c8e2",
+        "actor_session_id": "42570695-143e-4b32-8dfb-7767855e73df"
+      },
+      {
+        "id": "64140a60-5cfc-4816-a716-852217f5e912",
+        "actor_id": "9fadac00-2836-4bc8-aef3-2d252cc92bee",
+        "device_id": "a820cc44-0e05-495f-ac20-e72f05e85896",
+        "actor_type": "staff",
+        "created_at": "2026-10-21T06:06:16.471371+00:00",
+        "license_id": "0aa0c1e2-d501-448c-b951-93873b13ca97",
+        "retired_at": null,
+        "auth_user_id": "ebacc143-cf3b-4bcc-970d-8b0a5da7ac3c",
+        "actor_session_id": "3938860c-fe23-477d-81af-54fa6fadd185"
+      },
+      {
+        "id": "7ada50b0-6e87-47e9-ace9-3c7b9c3740ac",
+        "actor_id": "a1bcb66b-7ac9-4564-81ed-89185ff3361b",
+        "device_id": "4c722f68-50f4-47ee-8935-cc01a36b20e8",
+        "actor_type": "staff",
+        "created_at": "2026-10-21T06:15:38.173564+00:00",
+        "license_id": "ac78fc1e-bbe3-45bd-bd09-21076a7eb6bf",
+        "retired_at": null,
+        "auth_user_id": null,
+        "actor_session_id": "672fc4cc-cff3-4907-93ef-8b35c9a451f8"
+      },
+      {
+        "id": "c2a86be5-66d8-46bd-b62a-ad7ef77640c5",
+        "actor_id": "98cd94d5-4dde-458e-9499-f10eaa2a01dd",
+        "device_id": "224e98a4-e32e-4c90-89f6-b3b3500704ff",
+        "actor_type": "admin",
+        "created_at": "2026-10-21T06:06:15.310035+00:00",
+        "license_id": "0aa0c1e2-d501-448c-b951-93873b13ca97",
+        "retired_at": null,
+        "auth_user_id": "61c059b7-e3c1-4b8f-8f48-ce078d348a19",
+        "actor_session_id": "28f44599-ea10-4e49-bb88-b596950d17ce"
+      }
+    ],
+    "migrations": [
+      {
+        "name": "qa_ecom_native_bridge_1a2_race_temporary",
+        "version": "20261021061233"
+      },
+      {
+        "name": "qa_ecom_native_bridge_1a2_race_short_window",
+        "version": "20261021061734"
+      },
+      {
+        "name": "qa_ecom_native_bridge_1a2_temporary",
+        "version": "20261021045416"
+      }
+    ],
+    "shared_public_execute": 6
+  },
+  "fixtures": [
+    {
+      "id": "0aa0c1e2-d501-448c-b951-93873b13ca97",
+      "device": "a820cc44-0e05-495f-ac20-e72f05e85896",
+      "device2": "224e98a4-e32e-4c90-89f6-b3b3500704ff",
+      "admin": "98cd94d5-4dde-458e-9499-f10eaa2a01dd",
+      "session": "80d0d8f5-7ec2-4bec-8fb7-b5393ac12cd9",
+      "staff": "9fadac00-2836-4bc8-aef3-2d252cc92bee",
+      "staffSession": "3938860c-fe23-477d-81af-54fa6fadd185",
+      "denied": "3160eb87-bffa-4419-bea4-a143d2b45a83",
+      "deniedSession": "98d637f1-da0d-459f-9c73-a2c3c1c1373e"
+    },
+    {
+      "id": "ac78fc1e-bbe3-45bd-bd09-21076a7eb6bf",
+      "device": "4c722f68-50f4-47ee-8935-cc01a36b20e8",
+      "device2": "841e9cc3-6299-4e3f-a796-4a757480776f",
+      "admin": "8b93bc96-2e48-47e2-8e7e-5194b0104725",
+      "session": "42570695-143e-4b32-8dfb-7767855e73df",
+      "staff": "a1bcb66b-7ac9-4564-81ed-89185ff3361b",
+      "staffSession": "672fc4cc-cff3-4907-93ef-8b35c9a451f8",
+      "denied": "fff901f3-1f9e-4862-b05b-db89c5628854",
+      "deniedSession": "5a3340d1-a112-49c0-8709-a2bdae50e86e"
+    }
+  ],
+  "additionalAdminSession": "28f44599-ea10-4e49-bb88-b596950d17ce",
+  "edgeFunctions": [
+    "lanzo-ecom-bridge-qa",
+    "lanzo-ecom-bridge-qa-driver"
+  ],
+  "authConfigChanged": false,
+  "keysRotated": false,
+  "sharedAclPersisted": false,
+  "commercialActivation": false,
+  "cleanup": "PASS",
+  "cleanupEvidence": "postflight.json"
+}

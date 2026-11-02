@@ -1,0 +1,1588 @@
+{
+  "ledger": [
+    {
+      "hash": "dd1391c7ad5fbbc0a477e55bd5faeccc",
+      "name": "harden_public_tables_and_pos_rpcs",
+      "version": "20260614224210"
+    },
+    {
+      "hash": "226b395484652d88a404dec2be29f9d2",
+      "name": "revoke_public_function_execute_and_regrant_pos_rpcs",
+      "version": "20260614224233"
+    },
+    {
+      "hash": "1b527d3eeeb6bc2930e7347b0089adcc",
+      "name": "fix_function_search_path_security",
+      "version": "20260614232311"
+    },
+    {
+      "hash": "33cead8b24a1a642afe0c1e375d61151",
+      "name": "add_indexes_for_foreign_keys_and_pos_queries",
+      "version": "20260614233240"
+    },
+    {
+      "hash": "5b70f35dd9084e0f0e27784f30cdb675",
+      "name": "harden_license_storage_and_trials",
+      "version": "20260615223751"
+    },
+    {
+      "hash": "ac6545d21c2d8b95ac8c4f9802b1a89e",
+      "name": "create_fresh_manual_test_license",
+      "version": "20260616020429"
+    },
+    {
+      "hash": "f6b1e0eaf8fcaa949f6ff8b6474a636f",
+      "name": "private_license_broadcast_realtime",
+      "version": "20260616201029"
+    },
+    {
+      "hash": "759813812c2b4ebdb7640772bebb9301",
+      "name": "harden_license_token_rotation_after_broadcast",
+      "version": "20260616225151"
+    },
+    {
+      "hash": "3a7d08b3ae2ecf958247c974a89ec43a",
+      "name": "tighten_release_device_execute_grants",
+      "version": "20260618060247"
+    },
+    {
+      "hash": "563d9143990b4e330eac698ebc632951",
+      "name": "license_plan_downgrade_automation",
+      "version": "20260618070608"
+    },
+    {
+      "hash": "f74ec080496596286a3b52e09df5e040",
+      "name": "license_verification_downgrade_block_context",
+      "version": "20260618070649"
+    },
+    {
+      "hash": "92ce6a63c0040f667eab308fe36c6917",
+      "name": "fase6e1_hardening_cancelaciones_cloud",
+      "version": "20260627014034"
+    },
+    {
+      "hash": "2c7f9fde2ebc64e0968ecdf4a60544a4",
+      "name": "shared_terminal_financial_receipt_contract",
+      "version": "20260820165842"
+    },
+    {
+      "hash": "5565afd39c1025049a388f3342c1a7a6",
+      "name": "add_plan_metadata_to_verify_license_payload",
+      "version": "20260617045610"
+    },
+    {
+      "hash": "0facff222f50d0fd182f0b7908daf89c",
+      "name": "broadcast_license_plan_and_limit_changes",
+      "version": "20260617051538"
+    },
+    {
+      "hash": "fb40b9a6112924d5aa3c9f705e6b8ba5",
+      "name": "broadcast_critical_license_events_after_downgrade",
+      "version": "20260617052545"
+    },
+    {
+      "hash": "1e5289bce3109778e6bd8b0c8d975c46",
+      "name": "phase1_device_roles_and_staff_users",
+      "version": "20260617060812"
+    },
+    {
+      "hash": "00072a8bb394ad05d0ec7d0e48a7b750",
+      "name": "fix_staff_login_for_update_lock",
+      "version": "20260617061025"
+    },
+    {
+      "hash": "cc33ef636e39e639fdab1ee6900b8ef7",
+      "name": "index_staff_sessions_license_id",
+      "version": "20260617061142"
+    },
+    {
+      "hash": "74fb828a97cd653fa27136135d5f9004",
+      "name": "extend_get_license_devices_with_roles_staff",
+      "version": "20260617141103"
+    },
+    {
+      "hash": "f067dcf4dbf8ec399478394d6bb9988c",
+      "name": "enforce_single_device_per_staff_and_broadcast_disable",
+      "version": "20260617163342"
+    },
+    {
+      "hash": "8d0880ff746a1527f05011b251b03c03",
+      "name": "prevent_staff_reactivation_by_license_and_revoke_release_sessions",
+      "version": "20260617180253"
+    },
+    {
+      "hash": "975748075363d607cdeec3a1806f3a5c",
+      "name": "harden_release_device_admin_only",
+      "version": "20260618060145"
+    },
+    {
+      "hash": "c61454c7fd424d0d64ea8ae8b5f47ee7",
+      "name": "fix_admin_change_license_plan_locking",
+      "version": "20260618070730"
+    },
+    {
+      "hash": "9851642eaa9afb69f92627c797f96915",
+      "name": "create_ai_agent_usage_table",
+      "version": "20260619204242"
+    },
+    {
+      "hash": "f3d7cf5ce6ace62cc3ab9b97d48ad037",
+      "name": "create_ai_agent_usage_rpcs",
+      "version": "20260619204304"
+    },
+    {
+      "hash": "f42c4040c36052fc047abe551cbb47b7",
+      "name": "add_ai_agent_usage_lookup_rpc",
+      "version": "20260620062018"
+    },
+    {
+      "hash": "6b2562b4780447a0e5dabbcc6ceb5f45",
+      "name": "fix_ai_agent_begin_for_update_nullable_join",
+      "version": "20260620080954"
+    },
+    {
+      "hash": "335c5c2ab1a001e87f119f763d059c25",
+      "name": "fix_ai_agent_usage_rpc_staff_session_and_features",
+      "version": "20260620081024"
+    },
+    {
+      "hash": "cd46bbe225efe2a3aa9a394d30ffac56",
+      "name": "fase6e_harden_sale_cancellations_access",
+      "version": "20260626214614"
+    },
+    {
+      "hash": "ed9ed1cc4b74eac1b3c2712ac2dab391",
+      "name": "notify_staff_user_permission_changes",
+      "version": "20260623052752"
+    },
+    {
+      "hash": "1fbb18f436e59fa9390ea31c4acf2f95",
+      "name": "fase0_motor_sync_pro_base",
+      "version": "20260623192708"
+    },
+    {
+      "hash": "dd9ed8b9c6907fd201761b90a655318f",
+      "name": "fase1_clientes_directorio_cloud",
+      "version": "20260623204031"
+    },
+    {
+      "hash": "5502295dcdc49dbab1bfce0e8ddce616",
+      "name": "fase1_fix_idempotency_insert_rowcount",
+      "version": "20260623204046"
+    },
+    {
+      "hash": "d90cf1911b003642b6d2e72e51d2985f",
+      "name": "fase1_mobile_staff_timeout_fix",
+      "version": "20260624002218"
+    },
+    {
+      "hash": "d1676f4fa8ca88486776c94885fa5418",
+      "name": "fase2_productos_catalogo_cloud",
+      "version": "20260624013300"
+    },
+    {
+      "hash": "3e3a0b230391a53d0e1c2324e7698add",
+      "name": "fase2_1_pos_catalog_rls_hardening",
+      "version": "20260624042605"
+    },
+    {
+      "hash": "91e2c42981b0860bbfed7b6d2912e201",
+      "name": "fase3_caja_cloud_pro",
+      "version": "20260624045720"
+    },
+    {
+      "hash": "096e401f0e7a3e47d7fd3b24881e9baa",
+      "name": "fase3_cash_adjust_noop_guard",
+      "version": "20260624050105"
+    },
+    {
+      "hash": "39c1dea8c5852bd586e400bc2a55b174",
+      "name": "optimize_ai_agent_usage_staff_session_lookup",
+      "version": "20260624063444"
+    },
+    {
+      "hash": "c43d2a4a57a3e2da37beb737d4c1852f",
+      "name": "fase5_reportes_cloud_pro",
+      "version": "20260625031439"
+    },
+    {
+      "hash": "1d938ad9f9114c3e669827b910c8fabb",
+      "name": "fase6a_ventas_cloud_base",
+      "version": "20260625112333"
+    },
+    {
+      "hash": "c68de3acafe75cce5b2fbc3ec2983d31",
+      "name": "fase6b_cloud_cashier_sales_folio",
+      "version": "20260625191304"
+    },
+    {
+      "hash": "7ba9093bcdd23d54cbef659b1db364f8",
+      "name": "fase6c_cloud_sales_inventory_batches",
+      "version": "20260626043014"
+    },
+    {
+      "hash": "14a9c41c4d71527bf3bb3d4f56e1457d",
+      "name": "fase6c_reports_inventory_overview",
+      "version": "20260626043656"
+    },
+    {
+      "hash": "61f8f53eef573173dc2990439fb4ed33",
+      "name": "fase6d_credit_schema_flags_helpers",
+      "version": "20260626053252"
+    },
+    {
+      "hash": "5ede30b11391187049a21259ca753290",
+      "name": "fase6d_create_cloud_sale_credit_rpc",
+      "version": "20260626053437"
+    },
+    {
+      "hash": "2f21a900d0397b30eddf17586abe412b",
+      "name": "fase6d_reports_credit_metrics_rpc",
+      "version": "20260626053620"
+    },
+    {
+      "hash": "0acc6e46b0306b5a102112f5490a1b95",
+      "name": "fase6e_sale_cancellations_schema",
+      "version": "20260626071714"
+    },
+    {
+      "hash": "539ce130bd710cbd09c3fe71585cdf1c",
+      "name": "fase6e_pos_cancel_cloud_sale_rpc",
+      "version": "20260626071914"
+    },
+    {
+      "hash": "de6c9e44b047cee850cffc22d665801d",
+      "name": "fase6e_reports_overview_cancellations",
+      "version": "20260626072048"
+    },
+    {
+      "hash": "0bbdeab0500e2c0fd68e7cc7042396bd",
+      "name": "fase6f_feature_flag_sales_final_reports",
+      "version": "20260627020117"
+    },
+    {
+      "hash": "cb95797ad493f7ffa9bbda5b12dd65ed",
+      "name": "fase6f_sales_final_source_metadata",
+      "version": "20260627020358"
+    },
+    {
+      "hash": "1ffab017bfa8dcc2af83bb3789e5deba",
+      "name": "fase6f_smoke_private",
+      "version": "20260627020544"
+    },
+    {
+      "hash": "b2e2bb4e9ec28292609c1b08d1a30978",
+      "name": "fase6f_public_view_smoke",
+      "version": "20260627020557"
+    },
+    {
+      "hash": "e6e02e7152bc2c4e229773332d4057d6",
+      "name": "enforce_open_cash_session_for_cloud_sales",
+      "version": "20260627052041"
+    },
+    {
+      "hash": "b96c4c7d369593e0619345ba783c3e5b",
+      "name": "add_missing_pos_fk_indexes",
+      "version": "20260627213510"
+    },
+    {
+      "hash": "40caa21957c95b22c845dec267e81fa9",
+      "name": "add_remaining_fk_indexes",
+      "version": "20260627214235"
+    },
+    {
+      "hash": "c6c2dacbae50bfc7eeebb13ff4580090",
+      "name": "fase_6h_7_3_pos_rpc_rate_limits",
+      "version": "20260628211547"
+    },
+    {
+      "hash": "a14c17092b6330792fa552f88776972c",
+      "name": "fase_6h_7_3_1_rate_limit_auth_preflight",
+      "version": "20260628214208"
+    },
+    {
+      "hash": "374accd0ccc292b4ba712e56f060ee3d",
+      "name": "fase_6h_7_4_peak_pro_performance",
+      "version": "20260629164304"
+    },
+    {
+      "hash": "1bfae3d9b36fedf6b24e3cfa98c54af0",
+      "name": "fase_cad_1_expiry_block_and_audit",
+      "version": "20260629211428"
+    },
+    {
+      "hash": "7cc39b4715dd364962acbdea6959d63f",
+      "name": "cloud_layaways_read_rpc_transaction_mode_r1",
+      "version": "20260906000029"
+    },
+    {
+      "hash": "878e7923fca804eeaa91d07d74a173d5",
+      "name": "fase_cad_1_1_harden_expiry_rpc_permissions_minimal",
+      "version": "20260629214103"
+    },
+    {
+      "hash": "710179a9c41f07e92d7eb075435272fd",
+      "name": "fase_cad_3_expiration_waste_history",
+      "version": "20260630012236"
+    },
+    {
+      "hash": "8901c4621c47146a18387ebe85d3c38c",
+      "name": "fase_cad_3_1_expiration_waste_history_unit",
+      "version": "20260630014408"
+    },
+    {
+      "hash": "d781b7c14317af3e09858a8553eaf24c",
+      "name": "fase_cad_4_expiration_fefo_recommendations",
+      "version": "20260630020638"
+    },
+    {
+      "hash": "348e41cac95593fb737d6a08135868a4",
+      "name": "fase_cad_5_1_strict_expiry_sale_guard",
+      "version": "20260630045029"
+    },
+    {
+      "hash": "ccb5b4481bced39454dca6d845601d54",
+      "name": "test_small_noop_cad6",
+      "version": "20260630061414"
+    },
+    {
+      "hash": "a61d0d762b50e993175e318cf6fd2459",
+      "name": "fase_cad_6_helper_normalize_minimal",
+      "version": "20260630061427"
+    },
+    {
+      "hash": "7d6e036bc230ca589880de052ccc0d64",
+      "name": "fase_cad_6_helpers_remaining",
+      "version": "20260630061453"
+    },
+    {
+      "hash": "fe46e347df4e5d4351c0be1c5b7bfddd",
+      "name": "cad6_test_jsonb_fn",
+      "version": "20260630061616"
+    },
+    {
+      "hash": "daab84b804730718e25e4354c373ef90",
+      "name": "cad6_test_replace_report_stub",
+      "version": "20260630061623"
+    },
+    {
+      "hash": "81bcb98280166abeb14d36f0e3d73b3f",
+      "name": "fase_cad_6_new_report_function_stub",
+      "version": "20260630061813"
+    },
+    {
+      "hash": "996f685b884e14ca41ab0ed50afaf3e2",
+      "name": "cad6_test_private_comment",
+      "version": "20260630062113"
+    },
+    {
+      "hash": "a0ff86680e9a212664bf61906473f24e",
+      "name": "cad6_test_fn_read_products",
+      "version": "20260630062245"
+    },
+    {
+      "hash": "0a0a9c7df91ffc71292dc0371648eb09",
+      "name": "fase_cad_6_cleanup_connector_test_functions",
+      "version": "20260630062345"
+    },
+    {
+      "hash": "27077283b2d6576c180dc4b6612d8803",
+      "name": "fase_cad_6_1_expiring_report_extended",
+      "version": "20260630064942"
+    },
+    {
+      "hash": "95a817872f57c97785b1ccd714e8a7d8",
+      "name": "fase_cad_6_1_report_shelf_life_warning_patch",
+      "version": "20260630065152"
+    },
+    {
+      "hash": "d8c6cb2c0a7d28509117424e71e4f44a",
+      "name": "fase_cad_6_1_sale_inventory_preflight",
+      "version": "20260630065235"
+    },
+    {
+      "hash": "a11751e45946259dc8b0e9b8e419e403",
+      "name": "fase_cad_6_1_upsert_product_initial_batch_guard",
+      "version": "20260630065254"
+    },
+    {
+      "hash": "60429bf1e6ecbf82d6abc27f30f191bf",
+      "name": "fase_cad_6_1_create_batch_from_parent_stock_rpc",
+      "version": "20260630065317"
+    },
+    {
+      "hash": "76cf5a6e144134734324f68f0c2cc758",
+      "name": "fase_cad_6_1_adjust_stock_without_batch_zero_rpc",
+      "version": "20260630065338"
+    },
+    {
+      "hash": "ba1e75160a995fd1fcd0b621f874bafb",
+      "name": "fase_cad_6_1_product_context_business_profile",
+      "version": "20260630073352"
+    },
+    {
+      "hash": "28e367109aa30f8213843cbbd2393b94",
+      "name": "fase_cad_6_2_shelf_life_initial_batch_regularization",
+      "version": "20260630193600"
+    },
+    {
+      "hash": "919a1806fa432a719074d9c4a4375320",
+      "name": "fase_cad_6_2_shelf_life_batch_guard_trigger",
+      "version": "20260630193654"
+    },
+    {
+      "hash": "42146f130939778ae5e5b4989b4f0ec9",
+      "name": "fase_rest_2_restaurant_orders_cloud",
+      "version": "20260701205851"
+    },
+    {
+      "hash": "4f915db992ef67c1a810801cf11ef5ef",
+      "name": "fase_rest_2_1_restaurant_orders_reconciliation",
+      "version": "20260702014017"
+    },
+    {
+      "hash": "765a302a07fe54cc0ca5c1ca75ac5dc0",
+      "name": "fase_rest_2_1_1_restaurant_orders_rpc_reconciliation",
+      "version": "20260702023137"
+    },
+    {
+      "hash": "1d308d1dccd0622f235a1898049d2d77",
+      "name": "fase_rest_4_restaurant_order_item_status",
+      "version": "20260702035043"
+    },
+    {
+      "hash": "d65e2b63c37de8320ebaf0fe232ec35e",
+      "name": "fase_rest_4_1_cancel_restaurant_order_items",
+      "version": "20260702040616"
+    },
+    {
+      "hash": "4bcf0261c22341e547c69aaa834d326c",
+      "name": "fase_rest_5_table_cloud_kitchen_status",
+      "version": "20260702043113"
+    },
+    {
+      "hash": "10a3d4df3369b01602f9729e79fb37f1",
+      "name": "fase_rest_7_close_restaurant_order_after_checkout",
+      "version": "20260702231833"
+    },
+    {
+      "hash": "723e6ff99f5a117023f115c9f0413816",
+      "name": "fase_rest_8_restaurant_orders_history_archive",
+      "version": "20260703004846"
+    },
+    {
+      "hash": "64deb13a87f720cdd2dd7b4004ed96af",
+      "name": "fase_rest_8_1_revoke_public_execute_restaurant_history_archive",
+      "version": "20260703021252"
+    },
+    {
+      "hash": "6309df5f1d297561cef28e25f1168557",
+      "name": "fase_rest_8_6_preserve_cancelled_items_on_delivered",
+      "version": "20260703024801"
+    },
+    {
+      "hash": "1a3c4b45fde3ef5f5418f374f328f0de",
+      "name": "rest_inv_5_cloud_inventory_recipes_extras",
+      "version": "20260703145223"
+    },
+    {
+      "hash": "00299d14e36603d80b419857bfe25b14",
+      "name": "rest_inv_5_safety_probe",
+      "version": "20260703145549"
+    },
+    {
+      "hash": "415ab2c3fbf6f989f14d715384aac3aa",
+      "name": "rest_inv_5_keep_direct_inventory_resolver",
+      "version": "20260703145634"
+    },
+    {
+      "hash": "89cd8d5fc3ef39039efb1b5cfc89f8bf",
+      "name": "rest_inv_5_expand_inventory_items_min",
+      "version": "20260703145713"
+    },
+    {
+      "hash": "61a9305834f84e3bfdce1473be39cd0e",
+      "name": "rest_inv_5_restore_resolver_wrapper_min",
+      "version": "20260703145834"
+    },
+    {
+      "hash": "5b1641bbe7f993663fa50975f20e1d9a",
+      "name": "rest_inv_5_resolver_wrapper_enriched",
+      "version": "20260703145916"
+    },
+    {
+      "hash": "b5a159e67c2bba122fc990e55b02cb88",
+      "name": "rest_inv_5_1_modifier_tracks_inventory_consistency",
+      "version": "20260703151331"
+    },
+    {
+      "hash": "8723ea3aad31e82a9f84af4159911410",
+      "name": "license_free_1_rename_visible_plan",
+      "version": "20260705033303"
+    },
+    {
+      "hash": "fe9ea264a953cc7edc0a221f32a4ebd9",
+      "name": "license_free_2_new_free_lifetime",
+      "version": "20260705035837"
+    },
+    {
+      "hash": "72b06ae2146540e013478e2c04a04987",
+      "name": "license_free_2_1_restore_free_fields",
+      "version": "20260705040103"
+    },
+    {
+      "hash": "e3afeabc7eaa48799a5656bc076bd4a2",
+      "name": "license_free_3_migrate_existing_free_lifetime",
+      "version": "20260705041554"
+    },
+    {
+      "hash": "8072c1e390f835f92676237f376cd8c5",
+      "name": "license_free_4_admin_downgrade_free_lifetime",
+      "version": "20260705043355"
+    },
+    {
+      "hash": "b887364d558f9cf813779251f21ad63d",
+      "name": "license_free_5_1_replace_renew_license_free_base64",
+      "version": "20260705051103"
+    },
+    {
+      "hash": "519f45bd94ec0e23bc93f87df5780c86",
+      "name": "sec_1_close_legacy_security_surface",
+      "version": "20260706053350"
+    },
+    {
+      "hash": "2681ea35ddea2f0568c97a763a480308",
+      "name": "sec_2_rpc_rate_limits",
+      "version": "20260706053527"
+    },
+    {
+      "hash": "0e5af717edebc24343b5861db22ad6a4",
+      "name": "sec_2_1_fix_license_contract_and_rpc_coverage",
+      "version": "20260706053602"
+    },
+    {
+      "hash": "2c99ee796208153d308fee8bbb5e79c8",
+      "name": "sec_3_storage_upload_hardening",
+      "version": "20260706072656"
+    },
+    {
+      "hash": "52db4af533827a838cde862273313a17",
+      "name": "sec_4_function_definer_search_path_ownership_grants",
+      "version": "20260706082151"
+    },
+    {
+      "hash": "55b0194baabba5186538bd67f5e2c5dd",
+      "name": "sec_4_1_refine_security_surface_audit",
+      "version": "20260706082349"
+    },
+    {
+      "hash": "ca60d14d8cc82693ff4e3c9571bd56c7",
+      "name": "20260709000002_legal_db_1_hardening",
+      "version": "20260707164239"
+    },
+    {
+      "hash": "9b00b9b018a67596460d1ac9bea1922d",
+      "name": "20260709000003_legal_db_1_drop_duplicate_acceptance_index",
+      "version": "20260707164601"
+    },
+    {
+      "hash": "7377e442800c9f30e638d176107e917e",
+      "name": "staff_notif_1_notification_staff_permissions",
+      "version": "20260709232838"
+    },
+    {
+      "hash": "5edb467509604e70277a7e46d0516f8f",
+      "name": "ecom_db_1_portal_foundation",
+      "version": "20260710023642"
+    },
+    {
+      "hash": "fca01ae9903fb5b505910bc4dd6a5c45",
+      "name": "ecom_rpc_1_public_contracts",
+      "version": "20260710023743"
+    },
+    {
+      "hash": "97d8cb7882e82347794b4cf0adecb2ff",
+      "name": "ecom_rpc_1_2_rate_limit_adapter",
+      "version": "20260710032739"
+    },
+    {
+      "hash": "a6f1633e80ea7238679def7a91e7018a",
+      "name": "ecom_fe_admin_1_portal_admin_rpcs",
+      "version": "20260710035722"
+    },
+    {
+      "hash": "08f1a4efa33441db77193043bf84c758",
+      "name": "ecom_fe_admin_1_1_staff_permission",
+      "version": "20260710055224"
+    },
+    {
+      "hash": "24a22c6fa113588f0dd7c2d9a53de0ae",
+      "name": "ecom_fe_admin_1_1_rate_limit_actor_partition",
+      "version": "20260710060654"
+    },
+    {
+      "hash": "60bddd5befe8855d379259a2713645c9",
+      "name": "ecom_fe_admin_1_1_device_rate_limit",
+      "version": "20260710062356"
+    },
+    {
+      "hash": "53b96b52deb62d1613548793805d3840",
+      "name": "ecom_rpc_1_3_checkout_integrity",
+      "version": "20260710072519"
+    },
+    {
+      "hash": "9b63e7e45ea340a2110e44fb83f491ed",
+      "name": "ecom_rpc_1_3_1_quantity_null_guard",
+      "version": "20260710074524"
+    },
+    {
+      "hash": "8063f444a2d9d8632f9c69a5ef9c86f9",
+      "name": "ecom_rpc_1_3_2_null_cart_exact_stock",
+      "version": "20260710125119"
+    },
+    {
+      "hash": "342935c9dc0b2ca4ea33d2371b75a660",
+      "name": "ecom_rpc_2_order_management",
+      "version": "20260710174725"
+    },
+    {
+      "hash": "05718b1e6343ed5ba680d43ddaadc00e",
+      "name": "ecom_notif_1_order_notifications",
+      "version": "20260710175017"
+    },
+    {
+      "hash": "204cd1c5ced704491ec4004195110084",
+      "name": "ecom_orders_1_3_runtime_grants",
+      "version": "20260710222247"
+    },
+    {
+      "hash": "f369cc891f7838623d888e070e450662",
+      "name": "ecom_pos_1_prepare_order_draft",
+      "version": "20260711024125"
+    },
+    {
+      "hash": "65cc9c9ae30af334aba2e9a30b28b23a",
+      "name": "ecom_pos_1_1_product_mapping_and_guards",
+      "version": "20260711122554"
+    },
+    {
+      "hash": "22f4d2cb540aacd0ca030c7b15be7648",
+      "name": "ecom_pos_3_conversion_schema",
+      "version": "20260712032309"
+    },
+    {
+      "hash": "fdc5ed3b312649d99043d94dab9e68c4",
+      "name": "ecom_pos_3_conversion_state_rpc",
+      "version": "20260712032334"
+    },
+    {
+      "hash": "26978cf360eaf5aef158d427fbd712fb",
+      "name": "ecom_pos_3_begin_conversion_rpc",
+      "version": "20260712032400"
+    },
+    {
+      "hash": "2016dedf529e80abcfc85bc4032a66b2",
+      "name": "ecom_pos_3_cancel_conversion_rpc",
+      "version": "20260712032421"
+    },
+    {
+      "hash": "cdc471689aa3d2dc9030e2cb44e81618",
+      "name": "ecom_pos_3_complete_conversion_rpc",
+      "version": "20260712032444"
+    },
+    {
+      "hash": "3f15fe05e9dcb0b127fe8450f6cb6380",
+      "name": "ecom_pos_3_admin_release_fail_closed",
+      "version": "20260712032510"
+    },
+    {
+      "hash": "c2765de305928ca235633d8235ec8ffd",
+      "name": "ecom_pos_3_conversion_grants",
+      "version": "20260712032526"
+    },
+    {
+      "hash": "8678a7f986a8bb9ce6070c110457368e",
+      "name": "ecom_fe_catalog_3_legacy_availability_snapshot",
+      "version": "20260712192900"
+    },
+    {
+      "hash": "20ac070068aa44264a014cabd78549b6",
+      "name": "ecom_fe_catalog_3_sync_and_public_cache",
+      "version": "20260712193000"
+    },
+    {
+      "hash": "df45a597f6c7222b51df4db932b8207f",
+      "name": "ecom_products_model_1_child_guard_fix",
+      "version": "20260715191822"
+    },
+    {
+      "hash": "610b3e9634799459b9dbcef910ade025",
+      "name": "ecom_fe_catalog_3_backfill_and_trigger_fix",
+      "version": "20260712193100"
+    },
+    {
+      "hash": "b0ad6804650dd4cb290dd4ba463b458e",
+      "name": "ecom_fe_catalog_3_1_source_revision_schema",
+      "version": "20260712210000"
+    },
+    {
+      "hash": "c5948d89738abd49e3008bf49ad0f789",
+      "name": "ecom_fe_catalog_3_1_sync_rpc",
+      "version": "20260712210100"
+    },
+    {
+      "hash": "f6d007f0b910b484c09ef2b69c6967b7",
+      "name": "ecom_fe_catalog_3_1_residual_blockers",
+      "version": "20260712210200"
+    },
+    {
+      "hash": "7b1c364353006bcb27f42092bfaabaeb",
+      "name": "ecom_fe_catalog_3_2_source_missing",
+      "version": "20260712210300"
+    },
+    {
+      "hash": "36053a528ac72d164bbd12eeab54697b",
+      "name": "ecom_orders_2_tracking_schema",
+      "version": "20260712235439"
+    },
+    {
+      "hash": "138ea0f95dd4fc247e62669aca8e1fff",
+      "name": "ecom_orders_2_tracking_rpc",
+      "version": "20260712235807"
+    },
+    {
+      "hash": "b94b8b70d5d738cb87940d25fd6a3e10",
+      "name": "ecom_orders_2_fulfillment_state_machine",
+      "version": "20260713000133"
+    },
+    {
+      "hash": "96e42e6a1f43de4c3c2889f3f03a6f33",
+      "name": "ecom_orders_2_grants_realtime_hardening",
+      "version": "20260713000326"
+    },
+    {
+      "hash": "c362b4bd2ef30250dc297972cb36f8d7",
+      "name": "ecom_orders_2_conversion_independence_hardening",
+      "version": "20260713002329"
+    },
+    {
+      "hash": "b572124f21904360ba2a212da95db376",
+      "name": "ecom_orders_2_converted_fulfillment_visibility",
+      "version": "20260713003008"
+    },
+    {
+      "hash": "8105099fcb548f11e2197294bed6a535",
+      "name": "ecom_orders_2_1_terminal_fulfillment_policy",
+      "version": "20260713011641"
+    },
+    {
+      "hash": "6c9676f7cc65d955aa4933d45d4f524d",
+      "name": "ecom_orders_2_1_terminal_operational_visibility",
+      "version": "20260713011837"
+    },
+    {
+      "hash": "85c8a14ac74c2bd80f1eee6c0d91ce3e",
+      "name": "ecom_orders_2_1_pos_terminal_guards",
+      "version": "20260713012025"
+    },
+    {
+      "hash": "58ef052c869fb005ea60c2ae61a0e8b9",
+      "name": "ecom_orders_2_1_tracking_resolver_rate_limit",
+      "version": "20260713012117"
+    },
+    {
+      "hash": "7b144c0c3f7dd55b0fa054c61de2ed62",
+      "name": "ecom_orders_2_2_tracking_client_rate_limit",
+      "version": "20260713023529"
+    },
+    {
+      "hash": "368cab4e37598412835b52730a7a7d31",
+      "name": "ecom_orders_2_2_pos_single_authorization",
+      "version": "20260713024130"
+    },
+    {
+      "hash": "b38865f9a5a617441fa5f3ed00a02111",
+      "name": "ecom_catalog_preserve_unverified_and_recover_farmaciagary",
+      "version": "20260713042152"
+    },
+    {
+      "hash": "8da729b471c70e49808d79379c201557",
+      "name": "ecom_orders_2_3_pos_preparation_fulfillment_sync",
+      "version": "20260713061218"
+    },
+    {
+      "hash": "92b11e04b4d528be43366dc6321024a0",
+      "name": "ecom_operations_1_business_hours",
+      "version": "20260715061240"
+    },
+    {
+      "hash": "3c505bd39b27359294800e6fbcd997e5",
+      "name": "hotfix_ecom_operations_1_idempotency",
+      "version": "20260715164925"
+    },
+    {
+      "hash": "23ae3046dd5876c6556c146d8f41b356",
+      "name": "ecom_products_model_1",
+      "version": "20260715190958"
+    },
+    {
+      "hash": "006a890345e445b03711506cbb48577d",
+      "name": "ecom_portal_builder_foundation",
+      "version": "20260719173158"
+    },
+    {
+      "hash": "4d6cc83fa84a40ba4b7d8356f5144894",
+      "name": "ecom_products_model_1_option_soft_delete_fix",
+      "version": "20260715192025"
+    },
+    {
+      "hash": "8cdc793b4ac50edee30b5a6b7d287f01",
+      "name": "ecom_products_model_1_fk_indexes",
+      "version": "20260715192456"
+    },
+    {
+      "hash": "cccb03084154a23c8074b30fda3e5628",
+      "name": "ecom_products_model_1_1_integration_availability",
+      "version": "20260715221029"
+    },
+    {
+      "hash": "192a95cd72c34e2d02d47a847c332f6e",
+      "name": "ecom_products_model_1_1_revision_idempotency",
+      "version": "20260715222335"
+    },
+    {
+      "hash": "29f0cacab43e452c6bc2d4276d179461",
+      "name": "ecom_products_model_1_1_revision_guard_fix",
+      "version": "20260715222524"
+    },
+    {
+      "hash": "ecbae70517c4e07278def300560fd18c",
+      "name": "ecom_products_model_1_1_revision_metadata_fix",
+      "version": "20260715222639"
+    },
+    {
+      "hash": "5dcf6449e6078408f7c65ef9bab17a9a",
+      "name": "ecom_products_model_1_1_configuration_revision_isolation",
+      "version": "20260715223230"
+    },
+    {
+      "hash": "2e777cbbf6f9ec4877efa09bcbf30968",
+      "name": "ecom_products_public_1",
+      "version": "20260716012251"
+    },
+    {
+      "hash": "323da0b09a493146a89a396e107290e1",
+      "name": "ecom_products_public_1_parent_gate_fix",
+      "version": "20260716012935"
+    },
+    {
+      "hash": "4e2ab4bf25f9d053aa495275660fca89",
+      "name": "ecom_products_public_1_availability_revision_fix",
+      "version": "20260716045221"
+    },
+    {
+      "hash": "c8821049dcba67de30486464a5943833",
+      "name": "shared_terminal_4_cash_station_financial_handoff",
+      "version": "20260819084636"
+    },
+    {
+      "hash": "653033c963a0264ce6bcfcc4b2f9c58a",
+      "name": "ecom_products_public_1_checkout_revision_fix",
+      "version": "20260716045242"
+    },
+    {
+      "hash": "9133c1954bfc3169123362ba2a2ec583",
+      "name": "ecom_products_public_1_rate_limit_isolation",
+      "version": "20260716045301"
+    },
+    {
+      "hash": "c3974e7bca0e3171686d6b9bc556597d",
+      "name": "ecom_products_public_1_atomic_snapshot_fix",
+      "version": "20260716055921"
+    },
+    {
+      "hash": "5d5ce8cbd4f64b7e03f11ca74b6db235",
+      "name": "ecom_products_public_1_rate_limit_fallback_fix",
+      "version": "20260716055941"
+    },
+    {
+      "hash": "83131e8d6c1da5ef27abe34ee8615c9d",
+      "name": "ecom_products_public_1_writer_lock_order_fix",
+      "version": "20260716062053"
+    },
+    {
+      "hash": "21818f8f456d8667bed64aa7ba89db6e",
+      "name": "ecom_products_recover_source_missing",
+      "version": "20260716083734"
+    },
+    {
+      "hash": "cbe741b2e4b4c58a9158d136aad0dd17",
+      "name": "ecom_catalog_bootstrap_consistency",
+      "version": "20260716155538"
+    },
+    {
+      "hash": "4dac2c114977318b2c92a738b151ec7e",
+      "name": "ecom_catalog_bootstrap_repair",
+      "version": "20260716155623"
+    },
+    {
+      "hash": "092038e768b8611a6e75dc0839eb7048",
+      "name": "ecom_catalog_bootstrap_review_cleanup",
+      "version": "20260716155739"
+    },
+    {
+      "hash": "c03d9dca69296b3bd9b6b4c5f5bbe91c",
+      "name": "20260819090000_shared_terminal_cash_station_financial_handoff",
+      "version": "20260819084719"
+    },
+    {
+      "hash": "7202d304a17abe48fcd4c6e5fca76d0f",
+      "name": "ecom_recipe_projection_nonblocking_reconciliation",
+      "version": "20260717010320"
+    },
+    {
+      "hash": "bb0a6a4a366e23d153aba9919c821fa2",
+      "name": "ecom_catalog_revision_conflict_recovery",
+      "version": "20260717011407"
+    },
+    {
+      "hash": "a882753677b0d5a5212cb620f10fe3b9",
+      "name": "ecom_reset_legacy_source_revision_drift",
+      "version": "20260717012402"
+    },
+    {
+      "hash": "6fe9227f08304277896887a11922c02b",
+      "name": "ecom_modifier_configuration_reseal",
+      "version": "20260717055736"
+    },
+    {
+      "hash": "586cae99fcf4f25e9a891c277b8b257d",
+      "name": "ecom_products_apparel_variant_snapshot",
+      "version": "20260717160018"
+    },
+    {
+      "hash": "87940bf713dc53d5f06355c7a7c74337",
+      "name": "ecom_apparel_variant_parent_consistency",
+      "version": "20260717171605"
+    },
+    {
+      "hash": "abfb779867707101c885ba39eb5edb5f",
+      "name": "ecom_configuration_content_revision_coordination",
+      "version": "20260718173439"
+    },
+    {
+      "hash": "da4a88925d9095e8d0a4246f1598fde7",
+      "name": "ecom_portal_pro_customization_hardening",
+      "version": "20260719070213"
+    },
+    {
+      "hash": "259a7ca8b03b1405b3aeb8b4437fc295",
+      "name": "ecom_portal_customization_image_intent_and_slug_source_fix",
+      "version": "20260719150457"
+    },
+    {
+      "hash": "12fb2ee448d0933a07326df624d7274f",
+      "name": "ecom_portal_builder_document_validation_fix",
+      "version": "20260719173300"
+    },
+    {
+      "hash": "464038cc64eef99f99bfe24ddd51b0e0",
+      "name": "ecom_portal_builder_document_validation_operator_fix",
+      "version": "20260719173452"
+    },
+    {
+      "hash": "704dc0b9e4cb4aa4ebbe75706bbbf36a",
+      "name": "ecom_portal_builder_versions_immutable",
+      "version": "20260719174618"
+    },
+    {
+      "hash": "9b1f3d2dceda9b4752a165503a590fb3",
+      "name": "ecom_portal_builder_foundation_hardening",
+      "version": "20260721113522"
+    },
+    {
+      "hash": "f06bbad53110535fc886a6bca9cbe1b8",
+      "name": "license_admin_auth_1_foundation",
+      "version": "20260722222305"
+    },
+    {
+      "hash": "c2b0f769a5e8ee1227f506b2d9b023e3",
+      "name": "license_admin_auth_1_foundation_multidevice_fix",
+      "version": "20260723173112"
+    },
+    {
+      "hash": "242e40c3270b8b948aa964fe269cb107",
+      "name": "license_admin_auth_1_cutover",
+      "version": "20260723180000"
+    },
+    {
+      "hash": "fa2e304532b70ce23ec7666862858718",
+      "name": "ecom_business_capabilities_wholesale_1",
+      "version": "20260725081822"
+    },
+    {
+      "hash": "6ea066aed3401550f2ce04f3aceabf54",
+      "name": "ecom_business_capabilities_wholesale_1_legacy_writer_guard",
+      "version": "20260725082414"
+    },
+    {
+      "hash": "09bb3b6f78a4c9614577f5f65a73a1b1",
+      "name": "ecom_business_capabilities_wholesale_1_blockers_fix",
+      "version": "20260725131157"
+    },
+    {
+      "hash": "7e00d9699952d4debfb2c68e20de16de",
+      "name": "ecom_business_capabilities_wholesale_1_signed_adjustments_fix",
+      "version": "20260725140305"
+    },
+    {
+      "hash": "6c857ee1f992d061f05f2be62141eb65",
+      "name": "ecom_business_capabilities_wholesale_1_tier_activation_fix",
+      "version": "20260725140405"
+    },
+    {
+      "hash": "58b377ba84e354ce6b73b0d8d866402d",
+      "name": "ecom_simple_override_reconciliation_fix",
+      "version": "20260725162006"
+    },
+    {
+      "hash": "c884abeffb474dd6c581368bbfab8d8c",
+      "name": "ecom_simple_override_auto_sync_reconciliation",
+      "version": "20260725164039"
+    },
+    {
+      "hash": "18b10e4f63654877034a6e00f6f2ac35",
+      "name": "ecom_simple_override_auto_sync_reconciliation_v2",
+      "version": "20260725164238"
+    },
+    {
+      "hash": "a7de61295579b742504f0513375e3aba",
+      "name": "ecommerce_portal_business_contact_requirements",
+      "version": "20260726133923"
+    },
+    {
+      "hash": "0609ed56d6ca380c0a98609bdd201cc6",
+      "name": "ecommerce_public_store_business_type_label",
+      "version": "20260726173547"
+    },
+    {
+      "hash": "37ec94e309138dc4eea8b57e96e9c69e",
+      "name": "ecommerce_portal_business_contact_compat_1",
+      "version": "20260726191819"
+    },
+    {
+      "hash": "c25f4c69244ee0573b2479ab9f857863",
+      "name": "ecom_order_tracking_storefront_branding",
+      "version": "20260726200000"
+    },
+    {
+      "hash": "29b535dd6a9fa5c6ef0d000c3a1eaa7f",
+      "name": "ecommerce_pos_sale_traceability",
+      "version": "20260727220529"
+    },
+    {
+      "hash": "e54954657b7f7db936f1b6e3db0d4b8c",
+      "name": "ecom_portal_unified_site_document_v2",
+      "version": "20260802053039"
+    },
+    {
+      "hash": "6f6b4d5b406906f3032bbb4b4909207e",
+      "name": "ecommerce_site_version_deletion",
+      "version": "20260802074419"
+    },
+    {
+      "hash": "2a1fc6c70bf20ae9b981dd042c2a0f96",
+      "name": "business_profile_rubro_realtime_sync",
+      "version": "20260806061500"
+    },
+    {
+      "hash": "b2ca23f0603e27157b4104206667cd93",
+      "name": "ecom_catalog_revision_forward_baseline",
+      "version": "20260810092512"
+    },
+    {
+      "hash": "2a9a1c5e3cda971f6907fc073236f11c",
+      "name": "20260819090100_shared_terminal_cash_movement_performed_by",
+      "version": "20260819085828"
+    },
+    {
+      "hash": "0def769d76500a298b3ad09c75545e0c",
+      "name": "apparel_conflict_fix_initial_batches_create_only",
+      "version": "20260810161224"
+    },
+    {
+      "hash": "1ac377cfae191879146176ed7dfac17a",
+      "name": "product_inventory_entry_engine",
+      "version": "20260811004650"
+    },
+    {
+      "hash": "d97fa4bfcc51939d148b5652da48a211",
+      "name": "cash_pro_admin_close",
+      "version": "20260814092914"
+    },
+    {
+      "hash": "3d5de7b98f27e1b5877129109d012487",
+      "name": "cash_admin_close_recalc_guard",
+      "version": "20260814133721"
+    },
+    {
+      "hash": "7be4da15a943ba26df8dccba76ee04f0",
+      "name": "cash_pro_admin_stable_identity",
+      "version": "20260814142827"
+    },
+    {
+      "hash": "e038e4891daa54779306a4d21acc6556",
+      "name": "cash_pro_reconciliation_lifecycle_integrity",
+      "version": "20260814150000"
+    },
+    {
+      "hash": "9b9af87b8f9a6ea47a3ffc87c91e4589",
+      "name": "notification_tenant_permissions_actor_reads",
+      "version": "20260816201807"
+    },
+    {
+      "hash": "78898c672b9682260c255c9ff71b03bc",
+      "name": "notification_staff_permission_contract",
+      "version": "20260816201822"
+    },
+    {
+      "hash": "ed8a3314ba01eacd0f0cd42d919cf4d3",
+      "name": "shared_terminal_device_actor_auth",
+      "version": "20260818164207"
+    },
+    {
+      "hash": "0053326e9ad03d5f28d643d2c5c37edf",
+      "name": "shared_terminal_legacy_admin_fail_closed",
+      "version": "20260818165736"
+    },
+    {
+      "hash": "8dbb8bd983ed25c4a1db5dd127c6e166",
+      "name": "shared_terminal_secondary_actor_context",
+      "version": "20260818170333"
+    },
+    {
+      "hash": "4dea8cb1819b0ec690c503fbb47f9639",
+      "name": "shared_terminal_staff_occupancy_fix",
+      "version": "20260818234329"
+    },
+    {
+      "hash": "a6cea5a1ed36c88e43f02a7969396a9c",
+      "name": "notification_center_seen_state",
+      "version": "20260823084100"
+    },
+    {
+      "hash": "bbc00b4cb1e00f0dea3d638b0c07a37f",
+      "name": "notification_center_seen_rpc",
+      "version": "20260823084200"
+    },
+    {
+      "hash": "9c3af09546a64966293ea5f47aa3f769",
+      "name": "notification_operational_incidents",
+      "version": "20260823084300"
+    },
+    {
+      "hash": "239c10f4337a1df700b4571acc623231",
+      "name": "notification_operational_incident_fk_hardening",
+      "version": "20260823084350"
+    },
+    {
+      "hash": "31302869db00c6f386e30a6097223777",
+      "name": "notification_operational_generators",
+      "version": "20260823084400"
+    },
+    {
+      "hash": "50bf9902441ff38e28c968eb3b97961d",
+      "name": "fix_shared_terminal_admin_cash_close_actor_key",
+      "version": "20260824085526"
+    },
+    {
+      "hash": "178740b5be5fb0725437b43e70d1b8e0",
+      "name": "allow_terminal_admin_cash_close_refresh_results",
+      "version": "20260824101231"
+    },
+    {
+      "hash": "de5225ce931a7d2d5c8e49a88dd00491",
+      "name": "admin_staff_profile_actor_authorization_r1",
+      "version": "20260824165820"
+    },
+    {
+      "hash": "0a90a7d60e102dd43bedabea63063860",
+      "name": "sales_refunds_actor_authorization_r1",
+      "version": "20260824165839"
+    },
+    {
+      "hash": "2a2ce18e7c566407d52c69bb8e6e66e2",
+      "name": "admin_staff_rbac_r2b_sale_price_discount_server_authority",
+      "version": "20260824230045"
+    },
+    {
+      "hash": "71e56d9889f3b0fb0c0db992c1812803",
+      "name": "20260825090000_admin_staff_rbac_r2c_ai_agent_authority",
+      "version": "20260825214805"
+    },
+    {
+      "hash": "a9712159e9e3281c3f3998c4ef41ca25",
+      "name": "20260825232859_admin_staff_rbac_r2c_strict_ai_agent_boolean_authority",
+      "version": "20260825233834"
+    },
+    {
+      "hash": "777e3d8ccae9368c4a8e089365c88741",
+      "name": "admin_staff_rbac_r2d_product_inventory_authority",
+      "version": "20260826010000"
+    },
+    {
+      "hash": "d850a496a886df2d2d50a14ea0449ed4",
+      "name": "ecom_delivery_structured_address_v1",
+      "version": "20260828192621"
+    },
+    {
+      "hash": "d38a57d818c1ea0a7c2e5bfba26c7a82",
+      "name": "ecom_order_lifecycle_stabilization_v1",
+      "version": "20260829024753"
+    },
+    {
+      "hash": "41dac6e1c81d826ab2adc3e411ae8958",
+      "name": "cash_multi_admin_stations",
+      "version": "20260829140000"
+    },
+    {
+      "hash": "9b4a3d6f626978bbf4c0e3911e3df5e3",
+      "name": "cash_multi_admin_station_server_guard_r1",
+      "version": "20260829145747"
+    },
+    {
+      "hash": "1901ed64f060a7f4f39bc0ce727800f3",
+      "name": "cash_financial_timestamp_station_alignment_r2",
+      "version": "20260829164612"
+    },
+    {
+      "hash": "0c64885cf4028a83c1e63aeef57b220c",
+      "name": "sale_batch_allocation_null_compat_r1",
+      "version": "20260829214848"
+    },
+    {
+      "hash": "0571f85a5ab1cfbe7b62c9071029566b",
+      "name": "cash_current_session_read_projection_r1",
+      "version": "20260831213345"
+    },
+    {
+      "hash": "173b77efe2f5709b64784814c0c54901",
+      "name": "sales_operational_folio_financial_timeout_r1",
+      "version": "20260831235548"
+    },
+    {
+      "hash": "5bc94b1a9cca10b4a7d9d15fc5ec6006",
+      "name": "cloud_special_checkout_r1",
+      "version": "20260901044425"
+    },
+    {
+      "hash": "da6cd0a3ccfe3acb7163136fc9b58594",
+      "name": "cloud_layaways_server_contract_r1",
+      "version": "20260902010950"
+    },
+    {
+      "hash": "15ed11d993349e839b51dc0fd96e9ed0",
+      "name": "cloud_layaways_fk_indexes_r1",
+      "version": "20260903161627"
+    },
+    {
+      "hash": "4a1264cf2dd22539c2aad667a8f9064c",
+      "name": "cloud_layaways_read_rpc_serialization_hardening_r1",
+      "version": "20260903172023"
+    },
+    {
+      "hash": "109ab8f632b53df2bf1436c4e0c85668",
+      "name": "cloud_layaways_financial_response_serialization_hardening_r2",
+      "version": "20260903180000"
+    },
+    {
+      "hash": "d170c0826e81a8520106f91a4c4c819d",
+      "name": "cloud_layaways_financial_timestamp_normalization_r1",
+      "version": "20260904161407"
+    },
+    {
+      "hash": "7dc9372aa89b8cad343f6e687e7d3649",
+      "name": "cloud_layaways_financial_request_canonicalization_r1",
+      "version": "20260905020312"
+    },
+    {
+      "hash": "5722ea9913af1da01e9de0f18cbe57af",
+      "name": "cloud_layaways_numeric_decimal_validation_r1",
+      "version": "20260905053610"
+    },
+    {
+      "hash": "a256b934f8953f3a178fef5eb055d1e9",
+      "name": "cloud_layaways_completed_history_sale_folio_r1",
+      "version": "20260906000110"
+    },
+    {
+      "hash": "098e7a221945b8087d17c12be234f324",
+      "name": "cash_station_labels_read_r1",
+      "version": "20260908075954"
+    },
+    {
+      "hash": "5dd89725bafd0dfeb42484bcb319432e",
+      "name": "ecommerce_phase1_publication_eligibility",
+      "version": "20260909232752"
+    },
+    {
+      "hash": "379d2266e208f2422900ca39fc860e54",
+      "name": "ecommerce_phase3_stock_reservations",
+      "version": "20260910030440"
+    },
+    {
+      "hash": "f516916448062983ab4d0f9b8b355753",
+      "name": "ecommerce_phase3_reservation_expiry_scheduler_r1",
+      "version": "20260910053018"
+    },
+    {
+      "hash": "167ef78e96a93a8a98ef4909f70e405b",
+      "name": "ecommerce_phase3_fulfillment_reservation_hold_r1",
+      "version": "20260910075733"
+    },
+    {
+      "hash": "dd74a5c5e691cbfe8b0dec1704d478cf",
+      "name": "ecommerce_phase3_reservation_admin_summary_r1",
+      "version": "20260910082620"
+    },
+    {
+      "hash": "d8872d97db8199b26885df31af16ef82",
+      "name": "ecommerce_phase3_admin_inbox_anon_rpc_grants_r1",
+      "version": "20260910212349"
+    },
+    {
+      "hash": "05f8eee4cf2c22c575fe21668b2a758b",
+      "name": "ecommerce_phase3_catalog_stock_projection_sync_r1",
+      "version": "20260910225909"
+    },
+    {
+      "hash": "f5e9a5008364912f25f6c2afcd8d2589",
+      "name": "ecommerce_phase4_tenant_hardening_r1",
+      "version": "20260911041914"
+    },
+    {
+      "hash": "6424e9eec45dd436a5b12519bbaad7f3",
+      "name": "ecommerce_admin_delivery_pickup_settings_contract_r1",
+      "version": "20260912071043"
+    },
+    {
+      "hash": "433ea69952fba2c337f404ae0ce183e0",
+      "name": "license_effective_features_creation_contract_r1",
+      "version": "20260914092514"
+    },
+    {
+      "hash": "01b249b7c9d8c1b227ddf9968227d788",
+      "name": "ecommerce_published_product_rpc_recursion_r1",
+      "version": "20260914215627"
+    },
+    {
+      "hash": "b9bee34d5f22e7febef58181c40a58b4",
+      "name": "ecommerce_published_product_legacy_compat_r1",
+      "version": "20260915000239"
+    },
+    {
+      "hash": "c671959024cc4402fd21214c68fd3876",
+      "name": "license_expiry_entitlement_contract_r1",
+      "version": "20260916072854"
+    },
+    {
+      "hash": "5d2d065ef86e9f4bd35f65d07280eb4b",
+      "name": "license_expiry_entitlement_boundaries_r1_1",
+      "version": "20260916073309"
+    },
+    {
+      "hash": "2bb9ee3bdfa3e7a057f5307b96bc592f",
+      "name": "license_expired_material_downgrade_r1",
+      "version": "20260916083608"
+    },
+    {
+      "hash": "eaa38d47bd86366077efb6b4bf55a8f6",
+      "name": "license_expiry_scheduler_r1",
+      "version": "20260916204753"
+    },
+    {
+      "hash": "ddaf0c436c3ae01e8fd76d13459dd1fd",
+      "name": "license_upgrade_restoration_hardening_r1",
+      "version": "20260917021509"
+    },
+    {
+      "hash": "729e0e28bbc861331c3948caf5a6c1bc",
+      "name": "license_paid_renewal_idempotency_r1",
+      "version": "20260917025038"
+    },
+    {
+      "hash": "8c6dd0fa069067521524b7507c9d698f",
+      "name": "license_grace_runtime_realtime_r1",
+      "version": "20260918060949"
+    },
+    {
+      "hash": "63b42046723dc116ecad776531283daa",
+      "name": "license_expiry_verified_handoff_r1",
+      "version": "20260918061350"
+    },
+    {
+      "hash": "e477fefe7d71332209cecf29752e3972",
+      "name": "customer_message_templates_phase3",
+      "version": "20260918070000"
+    },
+    {
+      "hash": "3dc93f68ed8bb89efee000a40d0d1cb9",
+      "name": "customer_message_templates_phase3_hardening",
+      "version": "20260918080000"
+    },
+    {
+      "hash": "a704f5a0c368ec10f4b669873dc1987f",
+      "name": "customer_message_templates_phase3_sql_regex_fix",
+      "version": "20260918090000"
+    },
+    {
+      "hash": "6dbef3f33a4f3c62d95d66602a988af2",
+      "name": "customer_messaging_phase5_automation",
+      "version": "20260919044030"
+    },
+    {
+      "hash": "2535b4073fe19ef8e215ff55e52c1e16",
+      "name": "customer_messaging_phase5_scheduler_hardening",
+      "version": "20260919045237"
+    },
+    {
+      "hash": "1e2762dd690f17db9a4b8dc7765d0a4c",
+      "name": "customer_messaging_phase5_license_entitlement_scheduler_r1",
+      "version": "20260919195822"
+    },
+    {
+      "hash": "bfb2a3d966e66a1b6699b7558dbd1e97",
+      "name": "inventory_operational_alerts_phase4_cloud_generation_r1",
+      "version": "20260923162227"
+    },
+    {
+      "hash": "af379288b99a23c87fda8fec38f6af4b",
+      "name": "inventory_operational_alerts_phase4_archived_batch_parity_r1",
+      "version": "20260923163414"
+    },
+    {
+      "hash": "35abf18a4a537739e4aad65f466b8088",
+      "name": "inventory_operational_alerts_phase4_actor_safe_action_contract_r1",
+      "version": "20260923163709"
+    },
+    {
+      "hash": "59d9dcda83f655fac00fb0ed2322f0c2",
+      "name": "inventory_operational_alerts_phase5_category_permissions_hardening_r1",
+      "version": "20260923202837"
+    },
+    {
+      "hash": "b33b50cd78970fd83520ea0c04726aad",
+      "name": "license_free_owner_device_takeover_r1",
+      "version": "20260924051208"
+    },
+    {
+      "hash": "58e63211ec447098dd356b90aee4144a",
+      "name": "license_free_owner_device_takeover_evidence_cycle_hardening_r1",
+      "version": "20260924052752"
+    },
+    {
+      "hash": "1e69eb556711314dd1f5088e20aaf0ba",
+      "name": "license_downgrade_session_consistency_r1",
+      "version": "20260924143303"
+    },
+    {
+      "hash": "16cc5bc40a4a46d9ac37febe06698466",
+      "name": "license_post_downgrade_cash_reconciliation_r1",
+      "version": "20260924150417"
+    },
+    {
+      "hash": "5ce090c93606e39f936e5f8f98c8df79",
+      "name": "license_post_downgrade_cash_entitlement_evidence_hardening_r1",
+      "version": "20260924152624"
+    },
+    {
+      "hash": "caa4064cba200b9f03a5e6d2ebfc4300",
+      "name": "license_post_downgrade_cash_reconciliation_feature_evidence_hardening_r1",
+      "version": "20260924162309"
+    },
+    {
+      "hash": "75746001de93886462f9cee29b1637d7",
+      "name": "license_post_downgrade_cash_canonical_open_evidence_r1",
+      "version": "20260924162919"
+    },
+    {
+      "hash": "f8a5db1ef993f283122d850c446f24df",
+      "name": "license_free_owner_takeover_current_cycle_hardening_r1",
+      "version": "20260924211248"
+    },
+    {
+      "hash": "a0ca2e929542e53df01263399c151ca3",
+      "name": "ecommerce_public_portal_status_contract_r1",
+      "version": "20260926014446"
+    },
+    {
+      "hash": "86bd3ce5e753541e989aea55371b7448",
+      "name": "ecommerce_paused_whatsapp_contact_r1",
+      "version": "20260926142912"
+    },
+    {
+      "hash": "06bf99228d3ee86991f5c56c10bfb8a4",
+      "name": "cloud_split_customer_id_jsonb_contract_r1",
+      "version": "20260928033123"
+    },
+    {
+      "hash": "41bebae3ef0ee16da6b09a919558aa9a",
+      "name": "restaurant_payment_split_financial_r1",
+      "version": "20260929091708"
+    },
+    {
+      "hash": "049469da00b80f2d594f6b5aa6a80ee3",
+      "name": "license_neutral_identity_r1",
+      "version": "20261006193851"
+    },
+    {
+      "hash": "122a19c2f5b21de45c2cbd19fea89467",
+      "name": "restaurant_atomic_settlement_3d1",
+      "version": "20261006224032"
+    },
+    {
+      "hash": "c6a30d127df11b013b58fdc87a8f1603",
+      "name": "restaurant_origin_cancel_contract_3d13",
+      "version": "20261008030859"
+    },
+    {
+      "hash": "ab751745f17442610efc6bafb66ea726",
+      "name": "20261008190000_add_legal_policy_document_types",
+      "version": "20261008142141"
+    },
+    {
+      "hash": "3cb3cef7dc4ff90dfe8138e2b3e670c5",
+      "name": "20261008200000_publish_lanzo_legal_documents",
+      "version": "20261008142147"
+    },
+    {
+      "hash": "faecf14c1328b4b4bed970e7c7cb5e56",
+      "name": "20261008150000_legal_policy_acceptance_history",
+      "version": "20261008161409"
+    }
+  ],
+  "memberships": [
+    {
+      "set": true,
+      "role": "anon",
+      "admin": false,
+      "member": "authenticator",
+      "inherit": false
+    },
+    {
+      "set": true,
+      "role": "authenticated",
+      "admin": false,
+      "member": "authenticator",
+      "inherit": false
+    },
+    {
+      "set": true,
+      "role": "service_role",
+      "admin": false,
+      "member": "authenticator",
+      "inherit": false
+    }
+  ],
+  "public_table_acl": null
+}

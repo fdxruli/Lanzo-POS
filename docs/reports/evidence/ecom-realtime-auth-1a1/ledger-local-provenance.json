@@ -1,0 +1,20 @@
+[
+  {
+    "file": "20260929091708_restaurant_payment_split_financial_r1.sql",
+    "ref": "codex/pr338-main-reconciliation",
+    "md5": "41bebae3ef0ee16da6b09a919558aa9a",
+    "chars": 42693
+  },
+  {
+    "file": "20261006181758_restaurant_atomic_settlement_3d1.sql",
+    "ref": "codex/pr338-main-reconciliation",
+    "md5": "1a906fe3f3d1731aa45b2bd41a5416fb",
+    "chars": 64445
+  },
+  {
+    "file": "20261008013643_restaurant_origin_cancel_contract_3d13.sql",
+    "ref": "codex/pr338-main-reconciliation",
+    "md5": "fe3dc3d44b51671764db3383cfe772e6",
+    "chars": 8167
+  }
+]

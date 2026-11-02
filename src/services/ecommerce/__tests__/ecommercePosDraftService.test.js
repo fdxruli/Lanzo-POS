@@ -36,7 +36,6 @@ vi.mock('../ecommerceOrderService', () => ({
 
 import {
   getEcommercePosContextIdentity,
-  getEcommercePosDraftId,
   mapEcommerceOrderToPosDraft,
   prepareEcommerceOrderPosDraft,
   retryReleaseEcommerceDraft
@@ -151,7 +150,9 @@ describe('ecommercePosDraftService', () => {
     expect(result.draft.id).toBe(draftId);
     expect(result.draft.items[0]).toMatchObject({
       id: 'product-1',
-      name: 'Nombre POS actual',
+      name: 'Nombre POS actual — Salsa: BBQ',
+      ecommerceBasePosName: 'Nombre POS actual',
+      ecommerceConfigurationSummary: 'Salsa: BBQ',
       price: 25,
       currentPosPrice: 30,
       ecommerceSnapshotName: 'Nombre aceptado',

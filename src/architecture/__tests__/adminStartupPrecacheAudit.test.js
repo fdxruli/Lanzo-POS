@@ -54,6 +54,18 @@ describe('administrative startup precache audit', () => {
     ]);
   });
 
+  it.each([
+    'assets/vendor_supabase-l0sNRNKZ.js',
+    'assets/supabase-B9GutRR_.js',
+  ])('verifies the administrative startup closure for %s', (asset) => {
+    const missing = findMissingStartupPrecacheAssets({
+      bootstrapSource: 'import("./' + asset + '");',
+      workerSource: 'precacheAndRoute([{revision:null,url:"' + asset + '"}]);',
+    });
+
+    expect(missing).toEqual([]);
+  });
+
   it('reports every referenced startup asset missing from the Service Worker', () => {
     const missing = findMissingStartupPrecacheAssets({
       bootstrapSource,

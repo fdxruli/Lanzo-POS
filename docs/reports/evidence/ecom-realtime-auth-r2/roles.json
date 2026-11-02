@@ -1,0 +1,98 @@
+[
+  {
+    "rolname": "anon",
+    "rolsuper": false,
+    "rolbypassrls": false,
+    "public_usage": true
+  },
+  {
+    "rolname": "authenticated",
+    "rolsuper": false,
+    "rolbypassrls": false,
+    "public_usage": true
+  },
+  {
+    "rolname": "authenticator",
+    "rolsuper": false,
+    "rolbypassrls": false,
+    "public_usage": true
+  },
+  {
+    "rolname": "cli_login_postgres",
+    "rolsuper": false,
+    "rolbypassrls": false,
+    "public_usage": true
+  },
+  {
+    "rolname": "dashboard_user",
+    "rolsuper": false,
+    "rolbypassrls": false,
+    "public_usage": true
+  },
+  {
+    "rolname": "pgbouncer",
+    "rolsuper": false,
+    "rolbypassrls": false,
+    "public_usage": true
+  },
+  {
+    "rolname": "postgres",
+    "rolsuper": false,
+    "rolbypassrls": true,
+    "public_usage": true
+  },
+  {
+    "rolname": "service_role",
+    "rolsuper": false,
+    "rolbypassrls": true,
+    "public_usage": true
+  },
+  {
+    "rolname": "supabase_admin",
+    "rolsuper": true,
+    "rolbypassrls": true,
+    "public_usage": true
+  },
+  {
+    "rolname": "supabase_auth_admin",
+    "rolsuper": false,
+    "rolbypassrls": false,
+    "public_usage": true
+  },
+  {
+    "rolname": "supabase_etl_admin",
+    "rolsuper": false,
+    "rolbypassrls": true,
+    "public_usage": true
+  },
+  {
+    "rolname": "supabase_privileged_role",
+    "rolsuper": false,
+    "rolbypassrls": false,
+    "public_usage": true
+  },
+  {
+    "rolname": "supabase_read_only_user",
+    "rolsuper": false,
+    "rolbypassrls": true,
+    "public_usage": true
+  },
+  {
+    "rolname": "supabase_realtime_admin",
+    "rolsuper": false,
+    "rolbypassrls": false,
+    "public_usage": true
+  },
+  {
+    "rolname": "supabase_replication_admin",
+    "rolsuper": false,
+    "rolbypassrls": false,
+    "public_usage": true
+  },
+  {
+    "rolname": "supabase_storage_admin",
+    "rolsuper": false,
+    "rolbypassrls": false,
+    "public_usage": true
+  }
+]

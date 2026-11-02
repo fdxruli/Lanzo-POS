@@ -1,4 +1,7 @@
-import { useAppStore } from '../../store/useAppStore';
+import {
+  bindEcommerceAdminReadApi,
+  getEcommerceAdminStoreState
+} from './ecommerceAdminRuntime';
 import { getLicenseKeyFromDetails } from '../sync/syncConstants';
 import { supabaseClient } from '../supabase';
 import {
@@ -108,7 +111,7 @@ const normalizeFailure = normalizeEcommerceAdminFailure;
 export const getEcommerceAdminAuthorizationContext = async ({
   isConfigured = () => Boolean(supabaseClient),
   isOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false,
-  getLicenseDetails = () => useAppStore.getState()?.licenseDetails || {},
+  getLicenseDetails = () => getEcommerceAdminStoreState()?.licenseDetails || {},
   buildAuthContext = buildDefaultEcommerceAdminAuthContext
 } = {}) => {
   if (!isConfigured()) throw new Error('La conexion con Supabase no esta configurada.');
@@ -292,8 +295,8 @@ const preparePublishedProductPayloadAsync = async (
 export const createEcommerceAdminService = ({
   rpc = (name, payload) => supabaseClient?.rpc(name, payload),
   isConfigured = () => Boolean(supabaseClient),
-  getLicenseDetails = () => useAppStore.getState()?.licenseDetails || {},
-  getCompanyProfile = () => useAppStore.getState()?.companyProfile || null,
+  getLicenseDetails = () => getEcommerceAdminStoreState()?.licenseDetails || {},
+  getCompanyProfile = () => getEcommerceAdminStoreState()?.companyProfile || null,
   buildAuthContext = buildDefaultEcommerceAdminAuthContext,
   isOnline = () => typeof navigator === 'undefined' || navigator.onLine !== false,
   localSource = ecommercePublishedStockLocalSource
@@ -468,3 +471,5 @@ export const ecommerceAdminServiceInternals = Object.freeze({
   preparePublishedProductPayloadAsync,
   hydrateLocalProductApparelVariants
 });
+
+bindEcommerceAdminReadApi({ getEcommercePortal, listPublishedProducts });
