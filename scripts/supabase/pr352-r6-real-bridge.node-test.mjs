@@ -13,7 +13,7 @@ import { assertRateLimitedRestaurantUpsertCatalog } from './pr352-r6-wrapper-cat
 import { assertPsqlScriptRejection } from './pr352-r6-concurrency.mjs';
 import { sharedLedgerProbeSql, sharedLedgerInvariants, compareSharedLedger, runSharedLedgerProbe } from './pr352-r6-shared-ledger.mjs';
 import { priorOperations,candidateOperations,migrationSha256,sourceCommit,assertMigrationBytes,
-  assertArchiveCheckEvidence } from './pr352-r6-archive-check.mjs';
+  assertArchiveCheckEvidence,archiveInstallRollbackSql } from './pr352-r6-archive-check.mjs';
 import { assertRestaurantOrderItemRelationship, restaurantOrderItemSnapshotSql, runPreparationStationBehavior } from './pr352-r6-preparation-station.mjs';
 import './pr352-r6-concurrency-id.node-test.mjs';
 import './pr352-r6-relationship-diagnostics.node-test.mjs';
@@ -47,6 +47,18 @@ function syntheticArchiveChecks(identity) {
       ...(name==='ARCHIVE_CHECK_AFTER_MIGRATION'?{rejectedMigrations:
         ['missing-check','unknown-check','unvalidated-check','top-level-install-rollback'].map(name=>({name,exitCode:3,sqlstate:'P0001'}))}:{})}));
 }
+
+test('archive installation rollback probe preserves literal PostgreSQL dollar quotes',async()=>{
+  const source=await readFile(path.join(root,'docs/evidence/20261101235323_repair_pos_sync_archive_operation_contract.sql'),'utf8');
+  const generated=archiveInstallRollbackSql(source);
+  assert.equal(generated,source.replace(/commit;\s*$/,()=>
+    "do $$ begin raise exception 'R635_FORCED_INSTALL_ROLLBACK' using errcode='P0001'; end $$;\ncommit;"));
+  assert.match(generated,/do \$\$ begin raise exception 'R635_FORCED_INSTALL_ROLLBACK' using errcode='P0001'; end \$\$;\ncommit;$/);
+  assert.doesNotMatch(generated,/do \$ begin/);
+  assert.equal((generated.match(/\$\$/g)||[]).length,2);
+  assert.equal(generated.slice(0,source.lastIndexOf('commit;')),source.slice(0,source.lastIndexOf('commit;')));
+  assert.throws(()=>archiveInstallRollbackSql('select 1;'));
+});
 
 test('archive repair QA SQL matches the reviewed canonical SHA and rejects tampering',async()=>{
   const copy=await readFile(path.join(root,'docs/evidence/20261101235323_repair_pos_sync_archive_operation_contract.sql'));

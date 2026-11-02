@@ -21,6 +21,14 @@ export function assertMigrationBytes(bytes) {
     'QA must execute the exact canonical R6.35 migration bytes');
 }
 
+export function archiveInstallRollbackSql(source) {
+  assert.match(source,/commit;\s*$/,'Rollback probe requires the final migration COMMIT');
+  // A replacement string interprets $$ as a single dollar. A callback returns
+  // the literal SQL bytes, retaining both PL/pgSQL dollar-quote delimiters.
+  return source.replace(/commit;\s*$/,()=>
+    "do $$ begin raise exception 'R635_FORCED_INSTALL_ROLLBACK' using errcode='P0001'; end $$;\ncommit;");
+}
+
 export function assertArchiveCheckEvidence(checks,identity) {
   const phases=[['ARCHIVE_CHECK_BEFORE_MIGRATION','BASELINE_PRODUCTION_CURRENT',priorOperations,'archive'],
     ['ARCHIVE_CHECK_AFTER_MIGRATION','CANDIDATE_SCHEMA_AFTER_MIGRATION',candidateOperations,'r635_invalid_operation']];
@@ -153,8 +161,7 @@ export async function runArchiveContractRepair({query,psqlBin,env,migrationPath,
     ]) {
       await expectFailure(label,source.replace('lock table public.pos_sync_events',ddl+'\nlock table public.pos_sync_events'),message);
     }
-    await expectFailure('top-level-install-rollback',source.replace(/commit;\s*$/,
-      "do $$ begin raise exception 'R635_FORCED_INSTALL_ROLLBACK' using errcode='P0001'; end $$;\ncommit;"),
+    await expectFailure('top-level-install-rollback',archiveInstallRollbackSql(source),
       'R635_FORCED_INSTALL_ROLLBACK');
     await call(migrationPath);
     const afterCatalog=await catalog(query); assertCatalog(afterCatalog,candidateOperations);
