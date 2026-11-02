@@ -13,6 +13,7 @@ import { canonicalizePostgresAcl } from './pr352-r6-canonical-postgres-acl.mjs';
 import { assertEquivalentPreparationStationCatalog } from './pr352-r6-canonical-postgres-constraints.mjs';
 import { assertRateLimitedRestaurantUpsertCatalog } from './pr352-r6-wrapper-catalog.mjs';
 import { runSharedLedgerProbe, compareSharedLedger } from './pr352-r6-shared-ledger.mjs';
+import { runArchiveContractRepair, assertArchiveReplay, assertArchiveCheckEvidence, businessSnapshot } from './pr352-r6-archive-check.mjs';
 
 const execFileAsync = promisify(execFile);
 const root = process.cwd();
@@ -26,6 +27,9 @@ const rateLimitedUpsertWrapperManifestPath = path.join(root, 'supabase/tests/fix
 const dispatcherManifestPath = path.join(root, 'supabase/tests/fixtures/pr352-r6/dispatcher-fingerprint.json');
 const bridgePath = path.join(root, 'docs/evidence/20261030182733_restaurant_cloud_transition_bridge_v1.sql');
 const threeD14Path = path.join(root, 'supabase/migrations/20261026214837_restaurant_sale_dispatcher_guard_3d14.sql');
+const archiveRepairPath = path.join(root, 'docs/evidence/20261101235323_repair_pos_sync_archive_operation_contract.sql');
+const archiveCheckIdentity = {commitSha:process.env.GITHUB_SHA ?? null,
+  runId:process.env.GITHUB_RUN_ID ?? null,runAttempt:process.env.GITHUB_RUN_ATTEMPT ?? null};
 const versionedUpsertCall = 'public.pos_upsert_restaurant_order_versioned_v1(';
 const psqlBin = process.env.PSQL_BIN || 'psql';
 const connect = ['-X', '-q', '-v', 'ON_ERROR_STOP=1', '-h', '127.0.0.1', '-p', process.env.PGPORT || '5432', '-U', process.env.PGUSER || 'postgres', '-d', 'pr352_bridge_isolated'];
@@ -312,6 +316,8 @@ async function writeEvidence() {
   const report = {
     schemaVersion: 1,
     suite: 'PR352_R6_REAL_BRIDGE',
+    schemaContractState: completedChecks.some(c=>c.name==='ARCHIVE_CHECK_AFTER_MIGRATION'&&c.status==='PASS')
+      ? 'CANDIDATE_SCHEMA_AFTER_MIGRATION' : 'BASELINE_PRODUCTION_CURRENT',
     commitSha: process.env.GITHUB_SHA ?? null,
     runId: process.env.GITHUB_RUN_ID ?? null,
     runAttempt: process.env.GITHUB_RUN_ATTEMPT ?? null,
@@ -526,6 +532,10 @@ async function run() {
     'The applied 3D.14 dispatcher body must match the current read-only Production fingerprint');
   passed('authentic 3D.14 dispatcher fingerprint matches reviewed read-only fingerprint', { sha256: dispatcherAfterThreeD14.sha256 });
   await runFile(path.join(fixture, 'seed-attempt-2.sql'), 'synthetic actors');
+  currentStage = 'exact archive CHECK repair before bridge';
+  completedChecks.push(await runArchiveContractRepair({query,psqlBin,env,migrationPath:archiveRepairPath,
+    identity:archiveCheckIdentity,onBefore:check=>completedChecks.push(check)}));
+  assertArchiveCheckEvidence(completedChecks,archiveCheckIdentity);
   const preparationStationInitialCount = Number(await query('select count(*) from public.pos_preparation_stations'));
   assert.equal(preparationStationInitialCount, 0,
     'No Kitchen station row may exist before the first authenticated Restaurant writer invocation');
@@ -1444,9 +1454,12 @@ async function run() {
   assert.equal(cancelledForArchive.detail.parent.archived_at,null);
   assertTerminalNoFinancialChange(archivedSeedState,cancelledForArchive);
   currentStage = 'terminal fixture: authentic archive and original replay';
-  const archivedResult = JSON.parse(await query(`set role service_role; select public.pos_archive_restaurant_order_unlimited(
+  const archiveSql = `set role service_role; select public.pos_archive_restaurant_order_unlimited(
     'lab-license-a','lab-device-a','lab-device-token-a','lab-admin-session',${quoteSql(archivedReceipt.order.id)},
-    'R20 archived replay setup','{}'::jsonb,'bridge-r20-archived-terminal-archive')::text; reset role;`));
+    'R20 archived replay setup','{}'::jsonb,'bridge-r20-archived-terminal-archive')::text; reset role;`;
+  const archivedResult = JSON.parse(await query(archiveSql));
+  completedChecks.push(await assertArchiveReplay({query,receipt:archivedResult,originalSql:archiveSql,
+    snapshot:()=>businessSnapshot(query)}));
   assert.equal(archivedResult.success,true);
   assert.equal(archivedResult.order.id,archivedReceipt.order.id);
   const archivedBeforeReplay = await captureTerminalReplayState('bridge-r20-archived-terminal','bridge-r20-archived-terminal-key');

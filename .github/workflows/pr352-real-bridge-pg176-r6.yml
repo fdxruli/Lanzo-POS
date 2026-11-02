@@ -7,6 +7,7 @@ on:
     paths:
       - '.github/workflows/pr352-real-bridge-pg176-r6.yml'
       - 'docs/evidence/20261030182733_restaurant_cloud_transition_bridge_v1.sql'
+      - 'docs/evidence/20261101235323_repair_pos_sync_archive_operation_contract.sql'
       - 'scripts/supabase/pr352-r6-*'
       - 'supabase/migrations/20261026214837_restaurant_sale_dispatcher_guard_3d14.sql'
       - 'supabase/tests/fixtures/pr338-real-financial/**'
@@ -71,6 +72,7 @@ jobs:
           node --check scripts/supabase/pr352-r6-real-bridge-pg176-test.mjs
           node --check scripts/supabase/pr352-r6-concurrency.mjs
           node --check scripts/supabase/pr352-r6-shared-ledger.mjs
+          node --check scripts/supabase/pr352-r6-archive-check.mjs
           node --check scripts/supabase/pr352-r6-real-bridge.node-test.mjs
           node --check scripts/supabase/pr352-r6-synthetic-ledger-overlay.mjs
           node --check scripts/supabase/pr352-r6-synthetic-ledger-overlay-test.mjs
@@ -165,6 +167,16 @@ jobs:
             if (sharedLedger.commitSha !== expectedSha || sharedLedger.runId !== expectedRunId || sharedLedger.runAttempt !== expectedRunAttempt
               || sharedLedger.comparisonExecuted !== true || sharedLedger.invariantsEqual !== true) process.exit(1);
             const { pathToFileURL } = await import("node:url");
+            const { assertArchiveCheckEvidence, assertMigrationBytes } = await import(pathToFileURL(process.cwd() + "/scripts/supabase/pr352-r6-archive-check.mjs").href);
+            assertMigrationBytes(await readFile("docs/evidence/20261101235323_repair_pos_sync_archive_operation_contract.sql"));
+            assertArchiveCheckEvidence(bridge.checks, {
+              commitSha: expectedSha, runId: expectedRunId, runAttempt: expectedRunAttempt
+            });
+            if (bridge.schemaContractState !== "CANDIDATE_SCHEMA_AFTER_MIGRATION") process.exit(1);
+            const archiveReplay = uniqueCheck("ARCHIVE_RPC_REPLAY_AFTER_REPAIR");
+            if (archiveReplay.persistedEvents !== 1 || archiveReplay.replayIdentical !== true
+              || archiveReplay.businessSnapshotUnchanged !== true || archiveReplay.event?.operation !== "archive"
+              || archiveReplay.event?.entity_type !== "restaurant_order") process.exit(1);
             const { compareSharedLedger } = await import(pathToFileURL(process.cwd() + "/scripts/supabase/pr352-r6-shared-ledger.mjs").href);
             compareSharedLedger(sharedLedger.baseline, sharedLedger.after, {
               commitSha: expectedSha, runId: expectedRunId, runAttempt: expectedRunAttempt

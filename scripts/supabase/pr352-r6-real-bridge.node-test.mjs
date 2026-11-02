@@ -12,6 +12,8 @@ import { assertEquivalentPreparationStationCatalog } from './pr352-r6-canonical-
 import { assertRateLimitedRestaurantUpsertCatalog } from './pr352-r6-wrapper-catalog.mjs';
 import { assertPsqlScriptRejection } from './pr352-r6-concurrency.mjs';
 import { sharedLedgerProbeSql, sharedLedgerInvariants, compareSharedLedger, runSharedLedgerProbe } from './pr352-r6-shared-ledger.mjs';
+import { priorOperations,candidateOperations,migrationSha256,sourceCommit,assertMigrationBytes,
+  assertArchiveCheckEvidence } from './pr352-r6-archive-check.mjs';
 import { assertRestaurantOrderItemRelationship, restaurantOrderItemSnapshotSql, runPreparationStationBehavior } from './pr352-r6-preparation-station.mjs';
 import './pr352-r6-concurrency-id.node-test.mjs';
 import './pr352-r6-relationship-diagnostics.node-test.mjs';
@@ -31,6 +33,62 @@ const runnerPath = path.join(root, 'scripts/supabase/pr352-r6-real-bridge-pg176-
 const preparationStationTestPath = path.join(root, 'scripts/supabase/pr352-r6-preparation-station.mjs');
 const concurrencyPath = path.join(root, 'scripts/supabase/pr352-r6-concurrency.mjs');
 const overlayPath = path.join(root, 'scripts/supabase/pr352-r6-synthetic-ledger-overlay.mjs');
+
+// Controlled Node evidence, never a PostgreSQL execution result.
+function syntheticArchiveChecks(identity) {
+  return [['ARCHIVE_CHECK_BEFORE_MIGRATION','BASELINE_PRODUCTION_CURRENT',priorOperations,'archive'],
+    ['ARCHIVE_CHECK_AFTER_MIGRATION','CANDIDATE_SCHEMA_AFTER_MIGRATION',candidateOperations,'r635_invalid_operation']]
+    .map(([name,schema,operations,rejectedOperation])=>({name,status:'PASS',...identity,
+      schema,sourceCommit,migrationSha256,serverVersionNum:'170006',
+      catalog:{type:'c',validated:true,
+        definition:`CHECK (operation = ANY (ARRAY[${operations.map(x=>"'"+x+"'::text").join(', ')}]))`},
+      allowedOperations:[...operations],recorder:{accepted:operations.length,rejectedSqlstate:'23514'},
+      rejectedOperation,rowsAndSecurityUnchanged:true,rollbackObservedFromIndependentConnections:true,
+      ...(name==='ARCHIVE_CHECK_AFTER_MIGRATION'?{rejectedMigrations:
+        ['missing-check','unknown-check','unvalidated-check','top-level-install-rollback'].map(name=>({name,exitCode:3,sqlstate:'P0001'}))}:{})}));
+}
+
+test('archive repair QA SQL matches the reviewed canonical SHA and rejects tampering',async()=>{
+  const copy=await readFile(path.join(root,'docs/evidence/20261101235323_repair_pos_sync_archive_operation_contract.sql'));
+  assert.equal(createHash('sha256').update(copy).digest('hex'),
+    '9e89b368be660dd31a975a5afd87082944bb0601f045c33be6e134476e2cf5ab');
+  assertMigrationBytes(copy);
+  assert.match(await readFile(path.join(root,'.gitattributes'),'utf8'),
+    /^docs\/evidence\/20261101235323_repair_pos_sync_archive_operation_contract\.sql text eol=lf$/m);
+  assert.throws(()=>assertMigrationBytes(Buffer.concat([copy,Buffer.from('\n')])));
+  assert.equal(priorOperations.length,18);assert.deepEqual(candidateOperations,[...priorOperations,'archive']);
+  assert.equal(new Set(candidateOperations).size,19);
+  assert.equal(existsSync(path.join(root,'supabase/migrations/20261101235323_repair_pos_sync_archive_operation_contract.sql')),false);
+});
+
+test('archive CHECK evidence requires both unique phases, exact operations, SQL rejection and run identity',()=>{
+  const identity={commitSha:'a'.repeat(40),runId:'123',runAttempt:'1'};
+  const good=syntheticArchiveChecks(identity); assert.doesNotThrow(()=>assertArchiveCheckEvidence(good,identity));
+  for(const phase of [0,1]) {
+    assert.throws(()=>assertArchiveCheckEvidence(good.filter((_,i)=>i!==phase),identity));
+    assert.throws(()=>assertArchiveCheckEvidence([...good,structuredClone(good[phase])],identity));
+    for(const mutate of [c=>{c.allowedOperations.pop();},c=>{c.allowedOperations.push('bogus');},
+      c=>{c.catalog.validated=false;},c=>{c.catalog.definition+=' OR true';},c=>{c.recorder.rejectedSqlstate='00000';},
+      c=>{c.recorder.accepted=0;},c=>{c.migrationSha256='0'.repeat(64);},c=>{c.sourceCommit='0'.repeat(40);},
+      c=>{c.commitSha='b'.repeat(40);},c=>{c.runId='other';},c=>{c.runAttempt='2';},c=>{c.status='NOT_RUN';},
+      c=>{c.rowsAndSecurityUnchanged=false;},c=>{c.rollbackObservedFromIndependentConnections=false;}]) {
+      const bad=structuredClone(good);mutate(bad[phase]);assert.throws(()=>assertArchiveCheckEvidence(bad,identity));
+    }
+  }
+});
+
+test('archive CHECK runtime contract precedes bridge and archive replay retains the original financial matrices',async()=>{
+  const source=await readFile(runnerPath,'utf8');
+  assert.ok(source.indexOf('completedChecks.push(await runArchiveContractRepair')<source.indexOf("currentStage = 'verify bridge ACL"));
+  assert.match(source,/onBefore:check=>completedChecks\.push\(check\)/);
+  assert.match(source,/completedChecks\.push\(await assertArchiveReplay/);
+  const helper=await readFile(path.join(root,'scripts/supabase/pr352-r6-archive-check.mjs'),'utf8');
+  assert.ok(helper.indexOf('assertMigrationBytes(bytes)')<helper.indexOf('const beforeCatalog='));
+  assert.match(helper,/rollback;`/);assert.match(helper,/exception when check_violation/);
+  assert.match(helper,/error\.code,3/);assert.match(helper,/ERROR:\\\\s\+P0001/);
+  assert.match(helper,/assert\.deepEqual\(await snapshot\(\),before/);
+  assert.match(helper,/persisted\.events,1/);
+});
 
 // Controlled Node input for the validator, never a PostgreSQL observation.
 function syntheticSharedLedger(phase) {
@@ -1032,7 +1090,11 @@ test('structured evidence gate binds the Admin report to this run and SHA and re
     failedStage: null,
     error: null,
     errorStack: null,
+    schemaContractState:'CANDIDATE_SCHEMA_AFTER_MIGRATION',
     checks: [
+      ...syntheticArchiveChecks({commitSha,runId,runAttempt}),
+      {name:'ARCHIVE_RPC_REPLAY_AFTER_REPAIR',status:'PASS',event:{entity_type:'restaurant_order',operation:'archive'},
+        persistedEvents:1,replayIdentical:true,businessSnapshotUnchanged:true},
       { name: 'loopback disposable PostgreSQL 17.6 endpoint', status: 'PASS', serverVersionNum: '170006' },
       { name: 'Cocina schema and six direct Restaurant helper functions match read-only Production catalog metadata', status: 'PASS', tableColumnCount: 18, constraintCount: 9, indexCount: 5, functionCount: 6 },
       { name: 'financial schema and captured function snapshot installed', status: 'PASS', functionCount: 267 },
@@ -1274,6 +1336,19 @@ test('structured evidence gate binds the Admin report to this run and SHA and re
   try {
     await writeReports();
     assert.match(runGate(), /PR352_R6_EVIDENCE_PASS/);
+
+    for(const checkName of ['ARCHIVE_CHECK_BEFORE_MIGRATION','ARCHIVE_CHECK_AFTER_MIGRATION']) {
+      await rejectBridgeMutation('missing '+checkName,report=>{report.checks=report.checks.filter(c=>c.name!==checkName);});
+      await rejectBridgeMutation('duplicate '+checkName,report=>{report.checks.push(structuredClone(report.checks.find(c=>c.name===checkName)));});
+    }
+    for(const [label,mutate] of [
+      ['migration hash',c=>{c.migrationSha256='0'.repeat(64);}],
+      ['missing operation',c=>{c.allowedOperations.pop();}],
+      ['invalid operation accepted',c=>{c.recorder.rejectedSqlstate='00000';}],
+      ['another run',c=>{c.runId='999';}],['another SHA',c=>{c.commitSha='b'.repeat(40);}],
+      ['another attempt',c=>{c.runAttempt='999';}],
+    ]) await rejectBridgeMutation('archive evidence '+label,report=>mutate(report.checks.find(c=>c.name==='ARCHIVE_CHECK_AFTER_MIGRATION')));
+    await rejectBridgeMutation('archive schema label missing',report=>{delete report.schemaContractState;});
 
     await rejectBridgeMutation('missing shared-ledger evidence',report=>{
       report.checks=report.checks.filter(row=>row.name!=='UNRELATED_LEDGER_BEFORE_AFTER');
