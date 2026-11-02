@@ -1,0 +1,4 @@
+
+# Preserve the exact SQL bytes certified in R6.41.
+supabase/migrations/20261101235323_repair_pos_sync_archive_operation_contract.sql text eol=lf
+supabase/migrations/20261102065554_restaurant_cloud_transition_bridge_v1.sql text eol=lf
