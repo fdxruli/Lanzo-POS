@@ -1,0 +1,124 @@
+{
+  "schemaVersion": 2,
+  "projectRef": "odlrhijtfyavryeqivaa",
+  "cliVersion": "2.79.0",
+  "postgresServerVersionNum": "170006",
+  "rawSqlIncluded": false,
+  "sensitiveValuesIncluded": false,
+  "baseline": {
+    "count": 333,
+    "lastVersion": "20261026214837",
+    "metadataSha256": "95d57988e6456ef4ac84034b1e86bd2e879415c9cfe4280fa5152cd7d24bdcb8",
+    "serialization": "version|name|UTF8_byteLength|sha256 joined by LF with a final LF; sorted by version"
+  },
+  "historicalRemoteOnly": [
+    {
+      "version": "20261006224032",
+      "name": "restaurant_atomic_settlement_3d1",
+      "fetchSqlSha256": "a83f6e392ccd3b5453673fc0b6c4d0a27cb247512451895c7fd73c9f72d1a617"
+    },
+    {
+      "version": "20261008030859",
+      "name": "restaurant_origin_cancel_contract_3d13",
+      "fetchSqlSha256": "c6f1c0913cf9ae386269061a7048880d9d68b9aa30be72406824866417c7cc2c"
+    },
+    {
+      "version": "20261021045416",
+      "name": "qa_ecom_native_bridge_1a2_temporary",
+      "fetchSqlSha256": "0b17316b7afbd509bb9aa25223e192673a44a6682c3605c9d788335bee5e0a16"
+    },
+    {
+      "version": "20261021061233",
+      "name": "qa_ecom_native_bridge_1a2_race_temporary",
+      "fetchSqlSha256": "a6fedbe9b7caf46ce47389ea9c45f5c9b2a334caf86249465a6b5d2463e37dc4"
+    },
+    {
+      "version": "20261021061734",
+      "name": "qa_ecom_native_bridge_1a2_race_short_window",
+      "fetchSqlSha256": "e27f55422abbc5045040ad0ae15668961788ea1e73ca4eb2b61fa96c5810b35f"
+    },
+    {
+      "version": "20261021062854",
+      "name": "qa_ecom_native_bridge_1a2_cleanup",
+      "fetchSqlSha256": "6c4825b878f59e23bd23f87789928766cf8c19ee1358c778eb9a85447ca0cb50"
+    },
+    {
+      "version": "20261022062731",
+      "name": "qa_ecom_native_bridge_1a3_temporary",
+      "fetchSqlSha256": "cb887a88de580dcc0d60f6badd230931e54c9be59432ff92777fdc9aeec217be"
+    },
+    {
+      "version": "20261022063527",
+      "name": "qa_ecom_native_bridge_1a3_hardening",
+      "fetchSqlSha256": "767627bf3213efdd3a55dbb4801abf5437d5e11e59a5b6e5a58395b1095fc097"
+    },
+    {
+      "version": "20261022070244",
+      "name": "qa_ecom_native_bridge_1a3_race",
+      "fetchSqlSha256": "8499267f36d6fea1d5c4492bf7f25b60ae8ea9bea2cedb26d5f25439d0bae536"
+    },
+    {
+      "version": "20261022135736",
+      "name": "qa_ecom_native_bridge_1a3_cleanup",
+      "fetchSqlSha256": "cccc0cfa6e81447de2ad1aa142ad81c3b6cd09d40d5c6dbe656a96db56965dcf"
+    },
+    {
+      "version": "20261022181812",
+      "name": "qa_ecom_bridge_1a4_temporary",
+      "fetchSqlSha256": "8e3f86e7321bd5ac4ee13ee47b7cb121d334ef7b303d89b151ef111d0123c5ee"
+    },
+    {
+      "version": "20261022182500",
+      "name": "qa_ecom_bridge_1a4_recovery_progress",
+      "fetchSqlSha256": "3ec644d1b61cb2921f7cbb4bc0bfe6c09b8bdcbc3cd86b38bc5c8c355655a296"
+    },
+    {
+      "version": "20261022183458",
+      "name": "qa_ecom_bridge_1a4_live_session_collection",
+      "fetchSqlSha256": "0542e40e4df4be9dd4ab787373181ad6a5cf41814d8c242f5550eea9a40eca2e"
+    },
+    {
+      "version": "20261022184218",
+      "name": "qa_ecom_bridge_1a4_cleanup",
+      "fetchSqlSha256": "cd31a50855641f6961a827a5511c3088e4929c85003e9c4dc91cad7c5806177f"
+    }
+  ],
+  "excludedCanonicalFiles": [
+    {
+      "file": "20261006181758_restaurant_atomic_settlement_3d1.sql",
+      "gitBlob": "16de1c605926cf858ca96f9c9b442b8998043053",
+      "reason": "Applied as 20261006224032"
+    },
+    {
+      "file": "20261008013643_restaurant_origin_cancel_contract_3d13.sql",
+      "gitBlob": "db9bb67b4e63baaf481adc7ef83415939dc4c57e",
+      "reason": "Applied as 20261008030859"
+    },
+    {
+      "file": "20261008180000_create_legal_policy_previews.sql",
+      "gitBlob": "a1c57273ec636582cde933ee9a519e4e539e4349",
+      "reason": "Preview only; never install on Production"
+    }
+  ],
+  "threeD14GitBlob": "e1ab62ed387a3da7798d03d46e2c0723d12526a8",
+  "candidates": [
+    {
+      "file": "20261101235323_repair_pos_sync_archive_operation_contract.sql",
+      "sha256": "9e89b368be660dd31a975a5afd87082944bb0601f045c33be6e134476e2cf5ab",
+      "bytes": 3174,
+      "role": "archive"
+    },
+    {
+      "file": "20261102065554_restaurant_cloud_transition_bridge_v1.sql",
+      "sha256": "555c718c18da25e0fb6d7ed02ff68f16f04129530707ff7f9b81ab4534e9c97f",
+      "bytes": 50073,
+      "role": "bridge_v1_admin_off",
+      "generatedByCli": "2.79.0"
+    }
+  ],
+  "acceptedRuntimeEvidence": {
+    "runId": "41381445439",
+    "attempt": "1",
+    "scope": "Exact archive and bridge installation, Staff/Admin OFF, legacy/versioned clients and sequential financial replay; full R6 not claimed"
+  }
+}
