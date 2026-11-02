@@ -9,7 +9,6 @@ import {
   isOpaqueFailureSignature,
   normalizeErrorSignature,
   normalizeFailures,
-  normalizeFileName,
 } from './pr127-global-comparison.mjs';
 
 const DEFAULT_FILE = '/home/runner/work/Lanzo-POS/Lanzo-POS/pr/src/example.test.jsx';
@@ -434,9 +433,4 @@ test('an empty differential requires no focused reruns', () => {
   const classified = classifyFocusedEvidence(comparison.focusTargets, [], []);
   assert.equal(classified.status, 'OK');
   assert.equal(comparison.focusTargets.length, 0);
-});
-
-test('normalizes non-src paths from the immutable base checkout', () => {
-  assert.equal(normalizeFileName('/home/runner/work/Lanzo-POS/Lanzo-POS/base/scripts/oss/release-boundary.test.mjs'), 'scripts/oss/release-boundary.test.mjs');
-  assert.equal(normalizeFileName('/home/runner/work/Lanzo-POS/Lanzo-POS/base/supabase/functions/lanzo-ai-agent/index.test.ts'), 'supabase/functions/lanzo-ai-agent/index.test.ts');
 });

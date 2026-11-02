@@ -10,7 +10,7 @@ const SUMMARY_FIELDS = ['numFailedTests', 'numPassedTests', 'numPendingTests', '
 
 export function normalizeFileName(fileName) {
   const normalized = String(fileName || 'unknown file').replaceAll('\\', '/');
-  const checkoutMarkers = ['/pr/', '/main/', '/base/'];
+  const checkoutMarkers = ['/pr/', '/main/'];
   for (const marker of checkoutMarkers) {
     const checkoutIndex = normalized.lastIndexOf(marker);
     if (checkoutIndex >= 0) return normalized.slice(checkoutIndex + marker.length);

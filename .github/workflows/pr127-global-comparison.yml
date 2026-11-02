@@ -24,19 +24,9 @@ on:
       - '.github/workflows/pr127-global-comparison.yml'
       - 'docs/reports/SHARED.TERMINAL.4.CASH.STATION.FINANCIAL.HANDOFF.md'
   workflow_dispatch:
-    inputs:
-      base_ref:
-        description: 'Base branch/ref for the immutable BASE/CANDIDATE comparison'
-        required: true
-        default: main
-        type: string
 
 permissions:
   contents: read
-
-env:
-  PR127_CANDIDATE_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
-  PR127_BASE_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || inputs.base_ref || github.event.repository.default_branch }}
 
 jobs:
   compare-global-suite:
@@ -47,24 +37,14 @@ jobs:
       - name: Checkout PR head
         uses: actions/checkout@v4
         with:
-          ref: ${{ env.PR127_CANDIDATE_SHA }}
+          ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           path: pr
 
-      - name: Checkout immutable BASE
+      - name: Checkout main base
         uses: actions/checkout@v4
         with:
-          ref: ${{ env.PR127_BASE_REF }}
-          path: base
-
-      - name: Validate immutable comparison refs
-        shell: bash
-        run: |
-          candidate_sha="$(git -C pr rev-parse HEAD)"
-          base_sha="$(git -C base rev-parse HEAD)"
-          echo "PR127_CANDIDATE_SHA=${candidate_sha}"
-          echo "PR127_BASE_SHA=${base_sha}"
-          test "${candidate_sha}" = "${PR127_CANDIDATE_SHA}"
-          git -C base cat-file -e "${base_sha}^{commit}"
+          ref: main
+          path: main
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -75,8 +55,8 @@ jobs:
         working-directory: pr
         run: npm ci
 
-      - name: Install BASE dependencies
-        working-directory: base
+      - name: Install main dependencies
+        working-directory: main
         run: npm ci
 
       - name: Run PR global suite
@@ -85,11 +65,11 @@ jobs:
         working-directory: pr
         run: npm run test:ci -- --reporter=json --outputFile=global-pr.json
 
-      - name: Run BASE global suite
-        id: base-suite
+      - name: Run main global suite
+        id: main-suite
         continue-on-error: true
-        working-directory: base
-        run: npm run test:ci -- --reporter=json --outputFile=global-base.json
+        working-directory: main
+        run: npm run test:ci -- --reporter=json --outputFile=global-main.json
 
       - name: Extract error-aware candidate-only failures
         id: phase-one
@@ -99,7 +79,7 @@ jobs:
           mkdir -p ../comparison
           node scripts/ci/pr127-global-comparison.mjs extract \
             --candidate global-pr.json \
-            --base ../base/global-base.json \
+            --base ../main/global-main.json \
             --output ../comparison/phase-one.json
 
       - name: Run PR focused evidence for candidate-only failures
@@ -112,26 +92,25 @@ jobs:
             --repetitions 20 \
             --max-workers 4
 
-      - name: Run BASE focused evidence for candidate-only failures
+      - name: Run base focused evidence for candidate-only failures
         if: steps.phase-one.outcome == 'success'
-        working-directory: base
+        working-directory: main
         run: |
           node ../pr/scripts/ci/pr127-focused-evidence.mjs \
             --targets ../comparison/targets.json \
-            --output-dir ../comparison/focused/base \
+            --output-dir ../comparison/focused/main \
             --repetitions 20 \
             --max-workers 4
 
       - name: Normalize and compare failures
         env:
           PR_OUTCOME: ${{ steps.pr-suite.outcome }}
-          BASE_OUTCOME: ${{ steps.base-suite.outcome }}
-          PR_SHA: ${{ env.PR127_CANDIDATE_SHA }}
-          BASE_SHA: ${{ env.PR127_BASE_REF }}
+          MAIN_OUTCOME: ${{ steps.main-suite.outcome }}
+          PR_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
         run: |
           node pr/scripts/ci/pr127-global-comparison.mjs classify \
             --phase comparison/phase-one.json \
-            --base-focused comparison/focused/base \
+            --base-focused comparison/focused/main \
             --candidate-focused comparison/focused/pr \
             --output comparison/global-comparison.json
 
@@ -139,7 +118,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pr127-global-comparison-${{ env.PR127_CANDIDATE_SHA }}
+          name: pr127-global-comparison-${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
           path: comparison/
           if-no-files-found: error
           retention-days: 14
