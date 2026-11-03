@@ -1,10 +1,14 @@
 import { db, STORES } from '../db/dexie';
 import { customerCreditRepository as dexieCustomerCreditRepository } from '../db/customerCreditRepository';
 import { cloudLedgerToLocal } from './customerCreditMapper';
+import { customerLocalRepository } from '../customers/customerLocalRepository';
+import { POS_SYNC_STORES } from '../sync/syncConstants';
 
 const ensureOpen = async () => {
   if (!db.isOpen()) await db.open();
 };
+const projectionTables = () => [STORES.CUSTOMERS, STORES.SYNC_CACHE, STORES.CUSTOMER_LEDGER, POS_SYNC_STORES.CONFLICTS]
+  .map((name) => db.table(name));
 
 export const customerCreditLocalRepository = {
   async processPayment(...args) {
@@ -26,33 +30,28 @@ export const customerCreditLocalRepository = {
   async applyCloudLedger(ledger) {
     if (!ledger?.id) return null;
     await ensureOpen();
-    const existing = await db.table(STORES.CUSTOMER_LEDGER).get(ledger.id);
-    const local = cloudLedgerToLocal(ledger, existing);
-    if (!local) return null;
-    await db.table(STORES.CUSTOMER_LEDGER).put(local);
-    return local;
+    return db.transaction('rw', projectionTables(), async () => {
+      if ((await customerLocalRepository.protectHistoricalCustomer(ledger.customer_id || ledger.customerId)).blocked) {
+        return null;
+      }
+      const existing = await db.table(STORES.CUSTOMER_LEDGER).get(ledger.id);
+      const local = cloudLedgerToLocal(ledger, existing);
+      if (!local) return null;
+      await db.table(STORES.CUSTOMER_LEDGER).put(local);
+      return local;
+    });
   },
 
   async applyCloudLedgers(ledgers = []) {
     await ensureOpen();
-    const ids = (ledgers || []).reduce((result, ledger) => {
-      if (ledger?.id) result.push(ledger.id);
-      return result;
-    }, []);
-    if (ids.length === 0) return [];
-
-    const existingRows = await db.table(STORES.CUSTOMER_LEDGER).bulkGet(ids);
-    const applied = (ledgers || []).reduce((result, ledger, index) => {
-      const local = cloudLedgerToLocal(ledger, existingRows[index]);
-      if (local) result.push(local);
-      return result;
-    }, []);
-
-    if (applied.length > 0) {
-      await db.table(STORES.CUSTOMER_LEDGER).bulkPut(applied);
-    }
-
-    return applied;
+    return db.transaction('rw', projectionTables(), async () => {
+      const applied = [];
+      for (const ledger of ledgers || []) {
+        const local = await this.applyCloudLedger(ledger);
+        if (local) applied.push(local);
+      }
+      return applied;
+    });
   },
 
   async getCustomerLedger(customerId) {

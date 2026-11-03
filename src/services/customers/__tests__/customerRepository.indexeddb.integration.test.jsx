@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   cloud: { upsertCustomer: vi.fn(), deleteCustomer: vi.fn(), migrateLocalCustomers: vi.fn(), pullCustomerSnapshot: vi.fn() },
-  creditCloud: { pullCreditChanges: vi.fn() },
+  creditCloud: { pullCreditChanges: vi.fn(), migrateLocalCredit: vi.fn() },
   orchestrator: { registerEntitySyncHandler: vi.fn(), pullIncremental: vi.fn() },
   actorPermission: { allowed: true, actorType: 'admin' }
 }));
@@ -39,6 +39,9 @@ import { customerMigrationService } from '../customerMigrationService';
 import { customerRepository } from '../customerRepository';
 import { customerSyncHandler } from '../customerSyncHandler';
 import { customerCreditSyncHandler } from '../../customerCredit/customerCreditSyncHandler';
+import { customerCreditLocalRepository } from '../../customerCredit/customerCreditLocalRepository';
+import { customerCreditMigrationService } from '../../customerCredit/customerCreditMigrationService';
+import { syncMetaService } from '../../sync/syncMetaService';
 
 const TEST_LICENSE_KEY = 'license-key-sha256:test-tenant-runtime-a';
 const TEST_TENANT_IDENTITY = Object.freeze({
@@ -69,6 +72,12 @@ const remoteCustomer = (id, overrides = {}) => ({
 
 const setCloudMode = () => useAppStore.setState({ licenseDetails: CLOUD_LICENSE });
 const setFreeMode = () => useAppStore.setState({ licenseDetails: null });
+// These fixtures represent known Cloud projections, rather than unclassified
+// Local history. Keep their financial checkpoint when seeding IndexedDB.
+const knownCloudProjection = (customer) => customer.serverVersion > 0 ? {
+  ...customer, financialSource: 'cloud',
+  lastCloudDebtCents: customer.debtCents ?? Math.round(Number(customer.debt || 0) * 100)
+} : customer;
 
 beforeEach(async () => {
   await openTestTenantRuntime();
@@ -79,6 +88,7 @@ beforeEach(async () => {
   mocks.cloud.migrateLocalCustomers.mockReset();
   mocks.cloud.pullCustomerSnapshot.mockReset();
   mocks.creditCloud.pullCreditChanges.mockReset();
+  mocks.creditCloud.migrateLocalCredit.mockReset();
   mocks.orchestrator.registerEntitySyncHandler.mockClear();
   mocks.orchestrator.pullIncremental.mockReset().mockResolvedValue(undefined);
   mocks.actorPermission.allowed = true;
@@ -93,6 +103,133 @@ afterEach(async () => {
 });
 
 describe('customerRepository IndexedDB integration', () => {
+  it('HDG preserves $22 and its Local movements after a rejected migration, Cloud zero, delayed ack and restart', async () => {
+    setCloudMode();
+    const local = {
+      id: 'guard-local-history', name: 'Historia Local', phone: '5553334497', address: '',
+      debt: 22, debtCents: 2200, creditLimit: 100, serverVersion: null, syncStatus: 'local'
+    };
+    const movement = {
+      id: 'guard-local-movement', customerId: local.id, type: 'INITIAL_BALANCE',
+      amount: '22', balanceAfter: '22', timestamp: '2025-01-01T00:00:00.000Z'
+    };
+    await db.table(STORES.CUSTOMERS).put(local);
+    await db.table(STORES.CUSTOMER_LEDGER).put(movement);
+    mocks.cloud.migrateLocalCustomers.mockRejectedValue({ code: 'P0001', message: 'HISTORICAL_DEBT_PRESERVATION_REQUIRED' });
+    await customerSyncHandler.onStart({ licenseKey: TEST_LICENSE_KEY, reason: 'route_demand' });
+    const cloud = remoteCustomer(local.id, { phone: local.phone, debt: 0, debt_cents: 0, credit_limit: 100 });
+    await customerLocalRepository.applyCloudCustomer(cloud);
+    expect(await customerRepository.getCustomerById(local.id)).toMatchObject({
+      debt: 22, debtCents: 2200, syncStatus: 'conflict', conflictReason: 'HISTORICAL_DEBT_PRESERVATION_REQUIRED'
+    });
+    await customerLocalRepository.applyCloudCustomer({ ...cloud, server_version: 2 }, {
+      source: 'mutation_ack', operationId: 'customer_repository_direct_ack'
+    });
+    await customerLocalRepository.applyCloudCustomer({ ...cloud, server_version: 3 }, { source: 'credit_projection' });
+    await customerCreditLocalRepository.applyCloudLedgers([{
+      id: movement.id, customer_id: local.id, type: 'INITIAL_BALANCE', amount: '0', server_version: 3
+    }]);
+    expect(await db.table(STORES.CUSTOMER_LEDGER).get(movement.id)).toEqual(movement);
+    const snapshotBefore = await db.table(STORES.SYNC_CACHE).get(`historical-credit:v1:customer:${local.id}`);
+    expect(snapshotBefore.value).toMatchObject({
+      version: 1, customerId: local.id, amountCents: 2200, status: 'PENDING_AUTHORIZATION',
+      originalCustomer: { debt: 22 }, originalLedgerEntries: [movement]
+    });
+    await closeTestTenantRuntime();
+    await openTenantRuntime(TEST_TENANT_IDENTITY);
+    await customerLocalRepository.applyCloudCustomer({ ...cloud, server_version: 4 });
+    await customerMigrationService.runInitialMigrationIfNeeded({ licenseKey: TEST_LICENSE_KEY });
+    expect(await customerCreditMigrationService.runInitialMigrationIfNeeded({ licenseKey: TEST_LICENSE_KEY }))
+      .toMatchObject({ success: false, blocked: true, inserted: 0 });
+    expect(await customerRepository.getCustomerById(local.id)).toMatchObject({ debt: 22, debtCents: 2200, syncStatus: 'conflict' });
+    expect(await db.table(STORES.CUSTOMER_LEDGER).toArray()).toEqual([movement]);
+    expect(await db.table(STORES.SYNC_CACHE).get(`historical-credit:v1:customer:${local.id}`)).toEqual(snapshotBefore);
+    expect(mocks.cloud.migrateLocalCustomers).not.toHaveBeenCalled();
+    expect(mocks.creditCloud.migrateLocalCredit).not.toHaveBeenCalled();
+    expect(await syncMetaService.getMeta('customers_cloud_migrated', false, { licenseKey: TEST_LICENSE_KEY })).toBe(false);
+    expect(await syncMetaService.getMeta('customer_credit_migrated_at', null, { licenseKey: TEST_LICENSE_KEY })).toBeNull();
+    expect(await db.table(STORES.CUSTOMERS).count()).toBe(1);
+    expect(await db.table(POS_SYNC_STORES.CONFLICTS).filter((row) => row.conflictType === 'HISTORICAL_DEBT_PRESERVATION_REQUIRED').count()).toBe(1);
+    const staleSave = await customerLocalRepository.saveCustomerLocal({ ...local, debt: 0, debtCents: 0 }, { syncStatus: 'pending' });
+    expect(staleSave).toMatchObject({ success: false, code: 'HISTORICAL_DEBT_PRESERVATION_REQUIRED' });
+    expect(await customerRepository.getCustomerById(local.id)).toMatchObject({ debt: 22, debtCents: 2200, syncStatus: 'conflict' });
+  });
+
+  it('HDG lets normal Cloud customers create, pull, edit and replay without duplicate rows or history conflicts', async () => {
+    setCloudMode();
+    const cloud = remoteCustomer('guard-normal-cloud', { name: 'Normal Cloud', phone: '5553334496', credit_limit: 100 });
+    mocks.cloud.upsertCustomer.mockResolvedValueOnce({ success: true, customer: cloud });
+    const created = await customerRepository.saveCustomer({ id: cloud.id, name: cloud.name, phone: cloud.phone, creditLimit: 100 });
+    expect(created.success).toBe(true);
+    const projection = { ...cloud, debt: 30.25, debt_cents: 3025, server_version: 2 };
+    const ledger = { id: 'guard-normal-cloud-ledger', customer_id: cloud.id, type: 'CARGO', amount: '30.25', balance_after: '30.25', server_version: 1 };
+    mocks.creditCloud.pullCreditChanges.mockResolvedValue({
+      success: true, customers: [projection], ledger_entries: [ledger], latest_change_seq: 44, has_more: false
+    });
+    await customerCreditSyncHandler.onEvents([], { licenseKey: TEST_LICENSE_KEY });
+    await customerCreditSyncHandler.onEvents([], { licenseKey: TEST_LICENSE_KEY });
+    const current = await customerRepository.getCustomerById(cloud.id);
+    expect(current).toMatchObject({ debt: 30.25, debtCents: 3025, financialSource: 'cloud', syncStatus: 'synced' });
+    mocks.cloud.upsertCustomer.mockResolvedValueOnce({ success: true, customer: { ...projection, name: 'Editado', server_version: 3 } });
+    expect((await customerRepository.saveCustomer({ ...current, name: 'Editado' }, { existingCustomer: current })).success).toBe(true);
+    expect(await db.table(STORES.CUSTOMERS).count()).toBe(1);
+    expect(await db.table(STORES.CUSTOMER_LEDGER).count()).toBe(1);
+    expect(await db.table(POS_SYNC_STORES.CONFLICTS).count()).toBe(0);
+    expect(await db.table(STORES.SYNC_CACHE).get(`historical-credit:v1:customer:${cloud.id}`)).toBeUndefined();
+    expect(await db.table(STORES.MOVIMIENTOS_CAJA).count()).toBe(0);
+  });
+
+  it('HDG protects Local movements before a ledger-first response even when the current balance is zero', async () => {
+    const local = { id: 'guard-zero-history', name: 'Historia saldada', phone: '5553334495', debt: 0, debtCents: 0, creditLimit: 100 };
+    const entries = [
+      { id: 'local-charge', customerId: local.id, type: 'CARGO', amount: '22' },
+      { id: 'local-payment', customerId: local.id, type: 'ABONO', amount: '-22' }
+    ];
+    await db.table(STORES.CUSTOMERS).put(local);
+    await db.table(STORES.CUSTOMER_LEDGER).bulkPut(entries);
+    expect(await customerCreditLocalRepository.applyCloudLedger({
+      id: entries[0].id, customer_id: local.id, type: 'CARGO', amount: '0', server_version: 1
+    })).toBeNull();
+    expect(await db.table(STORES.CUSTOMER_LEDGER).toArray()).toEqual(entries);
+    expect(await customerRepository.getCustomerById(local.id)).toMatchObject({ debt: 0, syncStatus: 'conflict' });
+    expect((await db.table(STORES.SYNC_CACHE).get(`historical-credit:v1:customer:${local.id}`)).value)
+      .toMatchObject({ amountCents: 0, status: 'CONFLICT_LOCAL_ACTIVITY', originalLedgerEntries: entries });
+  });
+
+  it('HDG keeps preservation and conflicts isolated when two tenants use the same customer ID', async () => {
+    const id = 'guard-shared-id';
+    // Use valid identities and ownership records for cross-tenant discovery;
+    // the shared single-tenant harness deliberately uses a placeholder hash.
+    const identityA = { primary: 'license-id:guard-tenant-a', aliases: ['license-id:guard-tenant-a'], authority: 'license_id' };
+    await closeTestTenantRuntime();
+    await openTenantRuntime(identityA);
+    await db.table('local_tenant_binding').put({
+      key: 'primary', tenantIdentity: identityA.primary,
+      tenantAliases: [...identityA.aliases], bindingVersion: 1
+    });
+    await db.table(STORES.CUSTOMERS).put({ id, name: 'Negocio A', phone: '5553334494', debt: 22, debtCents: 2200, creditLimit: 100 });
+    await customerLocalRepository.applyCloudCustomer(remoteCustomer(id));
+    const original = await db.table(STORES.SYNC_CACHE).get(`historical-credit:v1:customer:${id}`);
+    await closeTestTenantRuntime();
+    const identityB = { primary: 'license-id:guard-tenant-b', aliases: ['license-id:guard-tenant-b'], authority: 'license_id' };
+    await openTenantRuntime(identityB);
+    for (const table of db.tables) await table.clear();
+    await db.table('local_tenant_binding').put({
+      key: 'primary', tenantIdentity: identityB.primary,
+      tenantAliases: [...identityB.aliases], bindingVersion: 1
+    });
+    useAppStore.setState({ licenseDetails: { ...CLOUD_LICENSE, license_key: identityB.primary } });
+    await customerLocalRepository.applyCloudCustomer(remoteCustomer(id, { name: 'Negocio B' }));
+    expect(await customerRepository.getCustomerById(id)).toMatchObject({ name: 'Negocio B', debt: 0, syncStatus: 'synced' });
+    expect(await db.table(STORES.SYNC_CACHE).get(`historical-credit:v1:customer:${id}`)).toBeUndefined();
+    expect(await db.table(POS_SYNC_STORES.CONFLICTS).count()).toBe(0);
+    await closeTestTenantRuntime();
+    await openTenantRuntime(identityA);
+    useAppStore.setState({ licenseDetails: { ...CLOUD_LICENSE, license_key: identityA.primary } });
+    expect(await customerRepository.getCustomerById(id)).toMatchObject({ name: 'Negocio A', debt: 22, syncStatus: 'conflict' });
+    expect(await db.table(STORES.SYNC_CACHE).get(`historical-credit:v1:customer:${id}`)).toEqual(original);
+  });
+
   it('refreshes $22 to the $30.25 credit projection during a pending directory edit without losing its draft or OCC base', async () => {
     setCloudMode();
     Object.defineProperty(navigator, 'onLine', { value: false, configurable: true });
@@ -100,7 +237,7 @@ describe('customerRepository IndexedDB integration', () => {
       id: 'pending-credit-projection', name: 'Base', phone: '5553334499', address: '',
       debt: 22, debtCents: 2200, creditLimit: 100, serverVersion: 5, syncStatus: 'synced'
     };
-    await db.table(STORES.CUSTOMERS).put(existing);
+    await db.table(STORES.CUSTOMERS).put(knownCloudProjection(existing));
     await customerRepository.saveCustomer({ ...existing, name: 'Borrador local' }, { existingCustomer: existing });
     const pending = await customerLocalRepository.getCustomerById(existing.id);
     const operations = await syncOutboxService.getPendingOperations({ licenseKey: TEST_LICENSE_KEY });
@@ -149,7 +286,7 @@ describe('customerRepository IndexedDB integration', () => {
       id: 'credit-conflict', name: 'Borrador', phone: '5553334498', address: '',
       debt: 30.25, debtCents: 3025, creditLimit: 100, serverVersion: 5, syncStatus: 'pending'
     };
-    await db.table(STORES.CUSTOMERS).put(existing);
+    await db.table(STORES.CUSTOMERS).put(knownCloudProjection(existing));
     await customerLocalRepository.markConflict({ ...existing, debt: 22, debtCents: 2200 }, 'VERSION_CONFLICT', {
       serverCustomer: remoteCustomer(existing.id, { debt: 30.25, debt_cents: 3025, server_version: 6 })
     });
@@ -304,7 +441,7 @@ describe('customerRepository IndexedDB integration', () => {
 
   it('preserves a FREE decimal limit across name and phone edits, reload, and rejects forged references', async () => {
     const existing = { id: 'decimal-free', name: 'Antes', phone: '5551112222', address: '', debt: 42.5, debtCents: 4250, creditLimit: 80.25 };
-    await db.table(STORES.CUSTOMERS).put(existing);
+    await db.table(STORES.CUSTOMERS).put(knownCloudProjection(existing));
     let result = await customerRepository.saveCustomer({ name: 'Nuevo', phone: existing.phone, address: '', creditLimit: 80.25 }, { existingCustomer: existing });
     expect(result.success).toBe(true);
     let saved = await customerLocalRepository.getCustomerById(existing.id);
@@ -321,7 +458,7 @@ describe('customerRepository IndexedDB integration', () => {
   it('reconciles a PRO name edit against a concurrent address with a decimal limit', async () => {
     setCloudMode();
     const existing = { id: 'decimal-online', name: 'Base', phone: '5553334406', address: 'Antes', debt: 22, debtCents: 2200, creditLimit: 80.25, serverVersion: 5, syncStatus: 'synced' };
-    await db.table(STORES.CUSTOMERS).put(existing);
+    await db.table(STORES.CUSTOMERS).put(knownCloudProjection(existing));
     mocks.cloud.upsertCustomer
       .mockResolvedValueOnce({ success: false, code: 'VERSION_CONFLICT', customer: remoteCustomer(existing.id, { name: 'Base', phone: existing.phone, address: 'Cloud', credit_limit: 80.25, server_version: 6 }) })
       .mockResolvedValueOnce({ success: true, customer: remoteCustomer(existing.id, { name: 'Local', phone: existing.phone, address: 'Cloud', credit_limit: 80.25, server_version: 7 }) });
@@ -335,7 +472,7 @@ describe('customerRepository IndexedDB integration', () => {
   it('asks for review if a newer local snapshot changed the open decimal limit', async () => {
     setCloudMode();
     const opened = { id: 'decimal-refresh', name: 'Base', phone: '5553334406', address: '', debt: 22, debtCents: 2200, creditLimit: 80.25, serverVersion: 5, syncStatus: 'synced' };
-    await db.table(STORES.CUSTOMERS).put({ ...opened, creditLimit: 100, serverVersion: 6 });
+    await db.table(STORES.CUSTOMERS).put(knownCloudProjection({ ...opened, creditLimit: 100, serverVersion: 6 }));
     const result = await customerRepository.saveCustomer({ ...opened, name: 'Local' }, { existingCustomer: opened });
     expect(result).toMatchObject({ success: false, code: 'CUSTOMER_FIELDS_CONFLICT', currentCustomer: { creditLimit: 100 } });
     expect(result.fieldConflicts).toEqual(expect.arrayContaining([expect.objectContaining({ field: 'creditLimit', proposedValue: 80.25, currentValue: 100 })]));
@@ -345,7 +482,7 @@ describe('customerRepository IndexedDB integration', () => {
   it('requires review when both devices change a decimal credit limit', async () => {
     setCloudMode();
     const existing = { id: 'decimal-conflict', name: 'Base', phone: '5553334406', address: '', debt: 22, debtCents: 2200, creditLimit: 80.25, serverVersion: 5, syncStatus: 'synced' };
-    await db.table(STORES.CUSTOMERS).put(existing);
+    await db.table(STORES.CUSTOMERS).put(knownCloudProjection(existing));
     mocks.cloud.upsertCustomer.mockResolvedValueOnce({ success: false, code: 'VERSION_CONFLICT', customer: remoteCustomer(existing.id, { name: 'Base', phone: existing.phone, credit_limit: 150, server_version: 6 }) });
     const result = await customerRepository.saveCustomer({ ...existing, creditLimit: 100 }, { existingCustomer: existing });
     expect(result).toMatchObject({ success: false, code: 'CUSTOMER_FIELDS_CONFLICT' });
@@ -363,7 +500,7 @@ describe('customerRepository IndexedDB integration', () => {
 
   it('preserves a decimal limit when the customer form edits a name', async () => {
     const existing = { id: 'decimal-form', name: 'Antes', phone: '5551112222', address: '', debt: 10, debtCents: 1000, creditLimit: 80.25 };
-    await db.table(STORES.CUSTOMERS).put(existing);
+    await db.table(STORES.CUSTOMERS).put(knownCloudProjection(existing));
     const user = userEvent.setup();
     const onSave = vi.fn((data) => customerRepository.saveCustomer(data, { existingCustomer: existing }));
     render(<CustomerForm customerToEdit={existing} onSave={onSave} onCancel={() => {}} />);
@@ -379,7 +516,7 @@ describe('customerRepository IndexedDB integration', () => {
     setCloudMode();
     Object.defineProperty(navigator, 'onLine', { value: false, configurable: true });
     const existing = { id: 'decimal-offline', name: 'Base', phone: '5553334406', address: '', debt: 22, debtCents: 2200, creditLimit: 80.25, serverVersion: 5, syncStatus: 'synced' };
-    await db.table(STORES.CUSTOMERS).put(existing);
+    await db.table(STORES.CUSTOMERS).put(knownCloudProjection(existing));
     expect(await customerRepository.saveCustomer({ ...existing, name: 'Local' }, { existingCustomer: existing })).toMatchObject({ success: true, pending: true });
     const queued = await syncOutboxService.getPendingOperations({ licenseKey: TEST_LICENSE_KEY });
     expect(queued).toHaveLength(1);
@@ -399,7 +536,7 @@ describe('customerRepository IndexedDB integration', () => {
     await db.table(STORES.CUSTOMERS).put({
       ...remoteCustomer('cloud-edit', { name: 'Antes', debt: 25, debt_cents: 2500, credit_limit: 200, server_version: 5 }),
       phoneKey: '5551234567', debt: 25, debtCents: 2500, creditLimit: 200,
-      serverVersion: 5, syncStatus: 'synced'
+      serverVersion: 5, syncStatus: 'synced', financialSource: 'cloud', lastCloudDebtCents: 2500
     });
     const existing = await customerLocalRepository.getCustomerById('cloud-edit');
     mocks.cloud.upsertCustomer.mockResolvedValue({
@@ -435,7 +572,7 @@ describe('customerRepository IndexedDB integration', () => {
       debt: 15, debtCents: 1500, creditLimit: 100, serverVersion: 5,
       syncStatus: 'synced', createdAt: '2026-10-01T00:00:00.000Z'
     };
-    await db.table(STORES.CUSTOMERS).put(existing);
+    await db.table(STORES.CUSTOMERS).put(knownCloudProjection(existing));
     mocks.cloud.upsertCustomer.mockResolvedValue({
       success: false,
       code: 'VERSION_CONFLICT',
@@ -464,7 +601,7 @@ describe('customerRepository IndexedDB integration', () => {
       address: 'Dirección base', debt: 22, debtCents: 2200, creditLimit: 100,
       serverVersion: 5, syncStatus: 'synced'
     };
-    await db.table(STORES.CUSTOMERS).put(existing);
+    await db.table(STORES.CUSTOMERS).put(knownCloudProjection(existing));
     mocks.cloud.upsertCustomer
       .mockResolvedValueOnce({
         success: false, code: 'VERSION_CONFLICT',
@@ -507,7 +644,7 @@ describe('customerRepository IndexedDB integration', () => {
       id: 'same-device-version-only', name: 'Base', phone: '5553334408', address: 'Dirección',
       debt: 0, debtCents: 0, creditLimit: 100, serverVersion: 5, syncStatus: 'synced'
     };
-    await db.table(STORES.CUSTOMERS).put(opened);
+    await db.table(STORES.CUSTOMERS).put(knownCloudProjection(opened));
     await customerLocalRepository.applyCloudCustomer(remoteCustomer(opened.id, {
       name: opened.name, phone: opened.phone, address: opened.address, credit_limit: 100, server_version: 6
     }));
@@ -532,7 +669,7 @@ describe('customerRepository IndexedDB integration', () => {
       address: '', debt: 22.5, debtCents: 2250, creditLimit: 100,
       serverVersion: 5, syncStatus: 'synced'
     };
-    await db.table(STORES.CUSTOMERS).put(existing);
+    await db.table(STORES.CUSTOMERS).put(knownCloudProjection(existing));
     mocks.cloud.upsertCustomer.mockResolvedValueOnce({
       success: false, code: 'VERSION_CONFLICT',
       customer: remoteCustomer(existing.id, {
@@ -573,7 +710,7 @@ describe('customerRepository IndexedDB integration', () => {
       conflictCloudSnapshot: { ...baseline, debt: 99, debtCents: 9900, creditLimit: 100, serverVersion: 6 },
       conflictBaseSnapshot: { ...baseline, name: 'Base', serverVersion: 5 }
     };
-    await db.table(STORES.CUSTOMERS).put(existing);
+    await db.table(STORES.CUSTOMERS).put(knownCloudProjection(existing));
     mocks.cloud.upsertCustomer.mockResolvedValueOnce({
       success: true,
       customer: remoteCustomer(existing.id, {
@@ -601,7 +738,7 @@ describe('customerRepository IndexedDB integration', () => {
       id: 'realtime-pending-edit', name: 'Base', phone: '5553334411', address: 'Base address',
       debt: 12, debtCents: 1200, creditLimit: 100, serverVersion: 5, syncStatus: 'synced'
     };
-    await db.table(STORES.CUSTOMERS).put(existing);
+    await db.table(STORES.CUSTOMERS).put(knownCloudProjection(existing));
     await customerRepository.saveCustomer({
       name: 'Local draft', phone: existing.phone, address: existing.address, creditLimit: 100
     }, { existingCustomer: existing });
@@ -626,7 +763,7 @@ describe('customerRepository IndexedDB integration', () => {
       id: 'credit-limit-overlap', name: 'Cliente', phone: '5553334402', address: '',
       debt: 80, debtCents: 8000, creditLimit: 100, serverVersion: 5, syncStatus: 'synced'
     };
-    await db.table(STORES.CUSTOMERS).put(existing);
+    await db.table(STORES.CUSTOMERS).put(knownCloudProjection(existing));
     mocks.cloud.upsertCustomer.mockResolvedValueOnce({
       success: false, code: 'VERSION_CONFLICT',
       customer: remoteCustomer(existing.id, {
@@ -654,7 +791,7 @@ describe('customerRepository IndexedDB integration', () => {
       id: 'second-collision', name: 'Base', phone: '5553334403', address: 'Base address',
       debt: 10, debtCents: 1000, creditLimit: 100, serverVersion: 5, syncStatus: 'synced'
     };
-    await db.table(STORES.CUSTOMERS).put(existing);
+    await db.table(STORES.CUSTOMERS).put(knownCloudProjection(existing));
     mocks.cloud.upsertCustomer
       .mockResolvedValueOnce({
         success: false, code: 'VERSION_CONFLICT',
@@ -683,7 +820,7 @@ describe('customerRepository IndexedDB integration', () => {
       id: 'deleted-edit', name: 'Cliente', phone: '5553334404', address: '',
       debt: 0, debtCents: 0, creditLimit: 100, serverVersion: 5, syncStatus: 'synced'
     };
-    await db.table(STORES.CUSTOMERS).put(existing);
+    await db.table(STORES.CUSTOMERS).put(knownCloudProjection(existing));
     mocks.cloud.upsertCustomer.mockResolvedValueOnce({
       success: false, code: 'CUSTOMER_DELETED',
       customer: remoteCustomer(existing.id, { deleted_at: '2026-10-28T10:00:00.000Z', server_version: 6 })
@@ -724,7 +861,7 @@ describe('customerRepository IndexedDB integration', () => {
       debt: 14, debtCents: 1400, creditLimit: 100, serverVersion: 5,
       syncStatus: 'conflict', conflictReason: 'DUPLICATE_PHONE'
     };
-    await db.table(STORES.CUSTOMERS).put(conflicted);
+    await db.table(STORES.CUSTOMERS).put(knownCloudProjection(conflicted));
     const rejected = await customerRepository.saveCustomer({
       name: conflicted.name, phone: conflicted.phone, address: '', creditLimit: 100
     }, { existingCustomer: conflicted });
@@ -784,7 +921,7 @@ describe('customerRepository IndexedDB integration', () => {
       id: 'offline-rebase', name: 'Base', phone: '5553334406', address: 'Base address',
       debt: 22, debtCents: 2200, creditLimit: 100, serverVersion: 5, syncStatus: 'synced'
     };
-    await db.table(STORES.CUSTOMERS).put(existing);
+    await db.table(STORES.CUSTOMERS).put(knownCloudProjection(existing));
     const queuedSave = await customerRepository.saveCustomer({
       name: 'Local name', phone: existing.phone, address: existing.address, creditLimit: 100
     }, { existingCustomer: existing });
@@ -841,7 +978,7 @@ describe('customerRepository IndexedDB integration', () => {
       id: 'offline-second-collision', name: 'Base', phone: '5553334407', address: 'Base address',
       debt: 5, debtCents: 500, creditLimit: 100, serverVersion: 5, syncStatus: 'synced'
     };
-    await db.table(STORES.CUSTOMERS).put(existing);
+    await db.table(STORES.CUSTOMERS).put(knownCloudProjection(existing));
     await customerRepository.saveCustomer({
       name: 'Local name', phone: existing.phone, address: existing.address, creditLimit: 100
     }, { existingCustomer: existing });
@@ -877,7 +1014,7 @@ describe('customerRepository IndexedDB integration', () => {
       debt: 80, debtCents: 8000, creditLimit: 100, serverVersion: 5,
       syncStatus: 'synced', createdAt: '2026-10-01T00:00:00.000Z'
     };
-    await db.table(STORES.CUSTOMERS).put(existing);
+    await db.table(STORES.CUSTOMERS).put(knownCloudProjection(existing));
     mocks.cloud.upsertCustomer.mockResolvedValue({
       success: false,
       code: 'CREDIT_LIMIT_REJECTED',
@@ -893,7 +1030,7 @@ describe('customerRepository IndexedDB integration', () => {
     expect(mocks.cloud.upsertCustomer.mock.calls[0][0].customer).not.toHaveProperty('debt');
     expect(mocks.cloud.upsertCustomer.mock.calls[0][0].customer).not.toHaveProperty('debt_cents');
     expect(await customerLocalRepository.getCustomerById(existing.id)).toMatchObject({
-      id: existing.id, creditLimit: 100, debt: 80, debtCents: 8000, serverVersion: 5, syncStatus: 'synced'
+      id: existing.id, creditLimit: 100, debt: 80, debtCents: 8000, serverVersion: 5, syncStatus: 'synced', financialSource: 'cloud', lastCloudDebtCents: 8000
     });
   });
 
@@ -946,7 +1083,7 @@ describe('customerRepository IndexedDB integration', () => {
       address: '', debt: 19, debtCents: 1900, creditLimit: 100,
       serverVersion: 4, syncStatus: 'synced'
     };
-    await db.table(STORES.CUSTOMERS).put(existing);
+    await db.table(STORES.CUSTOMERS).put(knownCloudProjection(existing));
 
     const result = await customerRepository.saveCustomer({
       name: 'Después', phone: existing.phone, creditLimit: existing.creditLimit
@@ -1031,40 +1168,19 @@ describe('customerRepository IndexedDB integration', () => {
     });
   });
 
-  it('uses the legacy migration serializer once and applies only the Cloud version returned', async () => {
-    await db.table(STORES.CUSTOMERS).put({
-      id: 'legacy-import', name: 'Cliente importado', phone: '', address: '',
-      debt: 22, creditLimit: 90,
-      createdAt: '2025-01-01T00:00:00.000Z'
-    });
-    mocks.cloud.migrateLocalCustomers.mockResolvedValue({
-      success: true,
-      results: [{
-        success: true,
-        customer: remoteCustomer('legacy-import', {
-          name: 'Cliente importado', phone: '', phone_key: null,
-          debt: 22, debt_cents: 2200, credit_limit: 90, server_version: 1
-        })
-      }]
-    });
-    mocks.cloud.pullCustomerSnapshot.mockResolvedValue({ success: true, customers: [], has_more: false });
-
+  it('blocks the legacy migration before any RPC and preserves its exact source for future FIN-01', async () => {
+    const legacy = { id: 'legacy-import', name: 'Cliente importado', phone: '', address: '', debt: 22, debtCents: 2200, creditLimit: 90, createdAt: '2025-01-01T00:00:00.000Z' };
+    await db.table(STORES.CUSTOMERS).put(legacy);
     const result = await customerMigrationService.runInitialMigrationIfNeeded({ licenseKey: TEST_LICENSE_KEY });
-
-    expect(result).toMatchObject({ success: true, migrated: 1, snapshotCount: 0 });
-    const sentCustomer = mocks.cloud.migrateLocalCustomers.mock.calls[0][0].customers[0];
-    expect(sentCustomer).toMatchObject({ id: 'legacy-import', phone: '', debt: 22, debt_cents: 2200, credit_limit: 90 });
-    expect(sentCustomer.server_version).toBeUndefined();
-    expect(sentCustomer.metadata).toEqual({ source: 'lanzo_pos_frontend', phase: 'fase1_customers_directory' });
-    expect(await customerLocalRepository.getCustomerById('legacy-import')).toMatchObject({
-      id: 'legacy-import', phone: '', serverVersion: 1, debt: 22, debtCents: 2200, creditLimit: 90
-    });
-
-    const retried = await customerMigrationService.runInitialMigrationIfNeeded({ licenseKey: TEST_LICENSE_KEY });
-    expect(retried).toMatchObject({ skipped: true, reason: 'already_migrated' });
-    expect(mocks.cloud.migrateLocalCustomers).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ success: false, blocked: true, code: 'HISTORICAL_DEBT_PRESERVATION_REQUIRED' });
+    const preserved = await db.table(STORES.SYNC_CACHE).get('historical-credit:v1:customer:legacy-import');
+    expect(preserved.value).toMatchObject({ version: 1, sourceCustomerId: legacy.id, customerId: legacy.id, amountCents: 2200, originalCustomer: legacy, status: 'PENDING_AUTHORIZATION' });
+    expect(preserved.value.sourceId).toEqual(expect.any(String));
+    expect(await customerRepository.getCustomerById(legacy.id)).toMatchObject({ debt: 22, debtCents: 2200, syncStatus: 'conflict' });
+    await customerMigrationService.runInitialMigrationIfNeeded({ licenseKey: TEST_LICENSE_KEY });
+    expect(mocks.cloud.migrateLocalCustomers).not.toHaveBeenCalled();
+    expect(await db.table(STORES.SYNC_CACHE).get('historical-credit:v1:customer:legacy-import')).toEqual(preserved);
   });
-
   it('blocks inconsistent historical debt before the migration RPC and preserves the local value', async () => {
     const inconsistent = {
       id: 'inconsistent-legacy', name: 'Saldo inconsistente', phone: '5551002000',
@@ -1073,10 +1189,17 @@ describe('customerRepository IndexedDB integration', () => {
     const readLegacyRows = vi.spyOn(customerLocalRepository, 'getAllActiveCustomers').mockResolvedValue([inconsistent]);
     try {
       expect(() => localCustomerToLegacyMigrationPayload(inconsistent)).toThrow('INCONSISTENT_LEGACY_CUSTOMER_DEBT');
-      await expect(customerMigrationService.runInitialMigrationIfNeeded({ licenseKey: TEST_LICENSE_KEY }))
-        .rejects.toThrow('INCONSISTENT_LEGACY_CUSTOMER_DEBT');
+      await db.table(STORES.CUSTOMERS).put({ ...inconsistent });
+      // Creation hooks normalize cents. Model an older inconsistent record
+      // through a cents-only update, which leaves its original debt untouched.
+      await db.table(STORES.CUSTOMERS).update(inconsistent.id, { debtCents: 2201 });
+      expect(await customerMigrationService.runInitialMigrationIfNeeded({ licenseKey: TEST_LICENSE_KEY }))
+        .toMatchObject({ success: false, blocked: true, code: 'HISTORICAL_DEBT_PRESERVATION_REQUIRED' });
+      expect(await customerRepository.getCustomerById(inconsistent.id)).toMatchObject({ debt: 22, debtCents: 2201, syncStatus: 'conflict' });
       expect(mocks.cloud.migrateLocalCustomers).not.toHaveBeenCalled();
       expect(inconsistent).toMatchObject({ debt: 22, debtCents: 2201 });
+      expect((await db.table(STORES.SYNC_CACHE).get(`historical-credit:v1:customer:${inconsistent.id}`)).value)
+        .toMatchObject({ status: 'CONFLICT_LOCAL_ACTIVITY', originalCustomer: { debt: 22, debtCents: 2201 } });
     } finally {
       readLegacyRows.mockRestore();
     }

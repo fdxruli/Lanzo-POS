@@ -7,6 +7,9 @@ import {
 } from '../database';
 import { normalizeCustomerDebtCents } from '../db/customerDebtIndex';
 import { toIndexedPhoneKey } from '../db/customerPhoneUtils';
+import { historicalCreditSnapshot } from '../customerCredit/historicalCreditSnapshot';
+import { syncConflictService } from '../sync/syncConflictService';
+import { POS_SYNC_STORES, SYNC_ENTITY_TYPES } from '../sync/syncConstants';
 import {
   buildPendingCustomer,
   cloudCustomerToLocal,
@@ -20,6 +23,34 @@ import {
 } from './customerDirectoryReconciliation';
 
 const nowIso = () => new Date().toISOString();
+const HISTORY_BLOCKED = 'HISTORICAL_DEBT_PRESERVATION_REQUIRED';
+const historyTables = () => [STORES.CUSTOMERS, STORES.SYNC_CACHE, STORES.CUSTOMER_LEDGER, POS_SYNC_STORES.CONFLICTS]
+  .map((name) => db.table(name));
+
+const protectHistoryInTransaction = async (existing, cloudCustomer = null) => {
+  const snapshot = await historicalCreditSnapshot.preserveInTransaction(existing);
+  if (!snapshot || ['IMPORTED', 'ALREADY_IMPORTED_IDENTICAL', 'CLOUD_PROJECTION'].includes(snapshot.status)) {
+    return { blocked: false, customer: existing, snapshot };
+  }
+  const id = `historical-credit-conflict:${existing.id}`;
+  const conflicts = db.table(POS_SYNC_STORES.CONFLICTS);
+  if (!await conflicts.get(id)) {
+    await syncConflictService.saveConflict({
+      id, entityType: SYNC_ENTITY_TYPES.CUSTOMER, entityId: existing.id,
+      conflictType: HISTORY_BLOCKED, localPayload: snapshot, serverPayload: cloudCustomer,
+      metadata: { source: 'local_history_guard', snapshotKey: `historical-credit:v1:customer:${existing.id}` }
+    });
+  } else if (cloudCustomer) {
+    await conflicts.update(id, { serverPayload: cloudCustomer });
+  }
+  const customer = {
+    ...existing, syncStatus: CUSTOMER_SYNC_STATUS.CONFLICT, conflictReason: HISTORY_BLOCKED,
+    creditMigrationStatus: snapshot.status,
+    ...(cloudCustomer ? { latestCloudSnapshot: cloudCustomer } : {})
+  };
+  await db.table(STORES.CUSTOMERS).put(customer);
+  return { blocked: true, customer, snapshot };
+};
 
 const ensureOpen = async () => {
   if (!db.isOpen()) {
@@ -38,6 +69,12 @@ const matchesSearch = (customer, normalizedTerm) => {
 };
 
 export const customerLocalRepository = {
+  async protectHistoricalCustomer(customerId) {
+    await ensureOpen();
+    return db.transaction('rw', historyTables(), async () => (
+      protectHistoryInTransaction(await db.table(STORES.CUSTOMERS).get(customerId))
+    ));
+  },
   async listCustomersPage({ limit = 50, offset = 0, snapshotAt = null } = {}) {
     return loadCustomersByDebtPaginated({ limit, offset, snapshotAt });
   },
@@ -59,29 +96,40 @@ export const customerLocalRepository = {
   },
 
   async saveCustomerLocal(customerData, { existingCustomer = null, syncStatus = CUSTOMER_SYNC_STATUS.LOCAL, pendingOperationId = null } = {}) {
-    const now = nowIso();
-    const debt = customerData.debt ?? existingCustomer?.debt ?? 0;
-    const debtCents = customerData.debtCents
-      ?? customerData.debt_cents
-      ?? existingCustomer?.debtCents
-      ?? existingCustomer?.debt_cents
-      ?? normalizeCustomerDebtCents(debt);
-    const payload = normalizeCustomerForLocal(
-      {
-        ...customerData,
-        createdAt: existingCustomer?.createdAt || customerData.createdAt || now,
-        updatedAt: now,
-        debt,
-        debtCents,
-        phoneKey: toIndexedPhoneKey(customerData.phone),
-        syncStatus,
-        pendingOperationId
-      },
-      existingCustomer,
-      { syncStatus, pendingOperationId }
-    );
+    await ensureOpen();
+    return db.transaction('rw', historyTables(), async () => {
+      existingCustomer = await db.table(STORES.CUSTOMERS).get(customerData.id) || existingCustomer;
+      if (syncStatus !== CUSTOMER_SYNC_STATUS.LOCAL) {
+        const history = await protectHistoryInTransaction(existingCustomer);
+        if (history.blocked) return {
+          success: false, code: HISTORY_BLOCKED, data: history.customer,
+          message: 'La historia financiera Local está preservada y pendiente de revisión. No se importó ni sustituyó su saldo.'
+        };
+      }
+      const now = nowIso();
+      const debt = existingCustomer?.debt ?? customerData.debt ?? 0;
+      const debtCents = existingCustomer?.debtCents
+        ?? existingCustomer?.debt_cents
+        ?? customerData.debtCents
+        ?? customerData.debt_cents
+        ?? normalizeCustomerDebtCents(debt);
+      const payload = normalizeCustomerForLocal(
+        {
+          ...customerData,
+          createdAt: existingCustomer?.createdAt || customerData.createdAt || now,
+          updatedAt: now,
+          debt,
+          debtCents,
+          phoneKey: toIndexedPhoneKey(customerData.phone),
+          syncStatus,
+          pendingOperationId
+        },
+        existingCustomer,
+        { syncStatus, pendingOperationId }
+      );
 
-    return saveDataSafe(STORES.CUSTOMERS, payload);
+      return saveDataSafe(STORES.CUSTOMERS, payload);
+    });
   },
 
   async deleteCustomerLocal(customerId, reason = 'Eliminado desde Directorio') {
@@ -114,112 +162,121 @@ export const customerLocalRepository = {
     if (!cloudCustomer?.id) return null;
 
     await ensureOpen();
-    const existing = await db.table(STORES.CUSTOMERS).get(cloudCustomer.id);
-    const incoming = cloudCustomerToLocal(cloudCustomer, existing);
-    if (source === 'mutation_ack' && existing) {
-      // A directory mutation cannot authoritatively alter a local financial
-      // projection. A later Cloud snapshot/ledger event will refresh it.
-      incoming.debt = existing.debt ?? incoming.debt;
-      incoming.debtCents = existing.debtCents
-        ?? existing.debt_cents
-        ?? normalizeCustomerDebtCents(existing.debt ?? incoming.debt);
-    }
-    const incomingVersion = Number(incoming.serverVersion) || 0;
-    const existingVersion = Number(existing?.serverVersion) || 0;
-    const latestObservedVersion = Math.max(
-      existingVersion,
-      Number(existing?.latestCloudSnapshot?.serverVersion) || 0,
-      Number(existing?.conflictCloudSnapshot?.serverVersion) || 0
-    );
-    // Credit responses own the debt projection; directory drafts and acks do not.
-    const creditProjection = source === 'credit_projection'
-      ? { debt: incoming.debt, debtCents: incoming.debtCents }
-      : {};
-    const acknowledgedPendingOperation = source === 'mutation_ack' && (
-      (existing?.pendingOperationId && operationId === existing.pendingOperationId)
-      || (existing?.syncStatus === CUSTOMER_SYNC_STATUS.CONFLICT && operationId === 'customer_repository_direct_ack')
-    );
+    return db.transaction('rw', historyTables(), async () => {
+      const existing = await db.table(STORES.CUSTOMERS).get(cloudCustomer.id);
+      const incoming = cloudCustomerToLocal(cloudCustomer, existing);
+      const history = await protectHistoryInTransaction(existing, incoming);
+      if (history.blocked) return history.customer;
+      if (source === 'mutation_ack' && existing) {
+        // A directory mutation cannot authoritatively alter a local financial
+        // projection. A later Cloud snapshot/ledger event will refresh it.
+        incoming.debt = existing.debt ?? incoming.debt;
+        incoming.debtCents = existing.debtCents
+          ?? existing.debt_cents
+          ?? normalizeCustomerDebtCents(existing.debt ?? incoming.debt);
+      }
+      const incomingVersion = Number(incoming.serverVersion) || 0;
+      const existingVersion = Number(existing?.serverVersion) || 0;
+      const latestObservedVersion = Math.max(
+        existingVersion,
+        Number(existing?.latestCloudSnapshot?.serverVersion) || 0,
+        Number(existing?.conflictCloudSnapshot?.serverVersion) || 0
+      );
+      // Credit responses own the debt projection; directory drafts and acks do not.
+      const creditProjection = source === 'credit_projection'
+        ? {
+          debt: incoming.debt, debtCents: incoming.debtCents,
+          financialSource: 'cloud', lastCloudDebtCents: normalizeCustomerDebtCents(incoming.debt)
+        }
+        : {};
+      const acknowledgedPendingOperation = source === 'mutation_ack' && (
+        (existing?.pendingOperationId && operationId === existing.pendingOperationId)
+        || (existing?.syncStatus === CUSTOMER_SYNC_STATUS.CONFLICT && operationId === 'customer_repository_direct_ack')
+      );
 
-    if (existing && incomingVersion < existingVersion) return existing;
-    if (existing && source !== 'mutation_ack' && incomingVersion < latestObservedVersion) return existing;
+      if (existing && incomingVersion < existingVersion) return existing;
+      if (existing && source !== 'mutation_ack' && incomingVersion < latestObservedVersion) return existing;
 
-    if (existing
-      && !acknowledgedPendingOperation
-      && [CUSTOMER_SYNC_STATUS.PENDING, CUSTOMER_SYNC_STATUS.CONFLICT].includes(existing.syncStatus)) {
-      if (incoming.deletedAt || incoming.deletedTimestamp) {
-        const deletedConflict = normalizeCustomerForLocal({
+      if (existing
+        && !acknowledgedPendingOperation
+        && [CUSTOMER_SYNC_STATUS.PENDING, CUSTOMER_SYNC_STATUS.CONFLICT].includes(existing.syncStatus)) {
+        if (incoming.deletedAt || incoming.deletedTimestamp) {
+          const deletedConflict = normalizeCustomerForLocal({
+            ...existing,
+            ...creditProjection,
+            isActive: false,
+            deletedAt: incoming.deletedAt || incoming.deletedTimestamp,
+            deletedTimestamp: incoming.deletedAt || incoming.deletedTimestamp,
+            conflictCloudSnapshot: incoming,
+            latestCloudSnapshot: incoming,
+            conflictReason: 'CUSTOMER_DELETED'
+          }, existing, {
+            syncStatus: CUSTOMER_SYNC_STATUS.CONFLICT,
+            pendingOperationId: existing.pendingOperationId || null,
+            conflictReason: 'CUSTOMER_DELETED'
+          });
+          await db.table(STORES.CUSTOMERS).put(deletedConflict);
+          return deletedConflict;
+        }
+
+        const refreshedConflicts = existing.syncStatus === CUSTOMER_SYNC_STATUS.CONFLICT
+          && existing.conflictBaseSnapshot
+          ? reconcileCustomerDirectoryEdit({
+            baseline: existing.conflictBaseSnapshot,
+            local: existing,
+            cloud: incoming
+          }).conflicts
+          : existing.conflictFields;
+        const conflicts = existing.syncStatus === CUSTOMER_SYNC_STATUS.CONFLICT
+          && existing.conflictBaseSnapshot
+          && refreshedConflicts.length === 0
+          ? buildCustomerRetryLimitConflicts({
+            baseline: existing.conflictBaseSnapshot,
+            local: existing,
+            cloud: incoming
+          })
+          : refreshedConflicts;
+
+        const preserved = normalizeCustomerForLocal({
           ...existing,
-          ...creditProjection,
-          isActive: false,
-          deletedAt: incoming.deletedAt || incoming.deletedTimestamp,
-          deletedTimestamp: incoming.deletedAt || incoming.deletedTimestamp,
-          conflictCloudSnapshot: incoming,
           latestCloudSnapshot: incoming,
-          conflictReason: 'CUSTOMER_DELETED'
+          conflictCloudSnapshot: existing.syncStatus === CUSTOMER_SYNC_STATUS.CONFLICT
+            ? incoming
+            : existing.conflictCloudSnapshot,
+          conflictFields: conflicts,
+          // Preserve the local operation's original OCC base. The new Cloud row
+          // is kept separately until the queued operation is reconciled.
+          serverVersion: existing.serverVersion,
+          debt: existing.debt ?? incoming.debt,
+          debtCents: existing.debtCents ?? incoming.debtCents,
+          ...creditProjection
         }, existing, {
-          syncStatus: CUSTOMER_SYNC_STATUS.CONFLICT,
+          syncStatus: existing.syncStatus,
           pendingOperationId: existing.pendingOperationId || null,
-          conflictReason: 'CUSTOMER_DELETED'
+          conflictReason: existing.conflictReason || null
         });
-        await db.table(STORES.CUSTOMERS).put(deletedConflict);
-        return deletedConflict;
+        await db.table(STORES.CUSTOMERS).put(preserved);
+        return preserved;
       }
 
-      const refreshedConflicts = existing.syncStatus === CUSTOMER_SYNC_STATUS.CONFLICT
-        && existing.conflictBaseSnapshot
-        ? reconcileCustomerDirectoryEdit({
-          baseline: existing.conflictBaseSnapshot,
-          local: existing,
-          cloud: incoming
-        }).conflicts
-        : existing.conflictFields;
-      const conflicts = existing.syncStatus === CUSTOMER_SYNC_STATUS.CONFLICT
-        && existing.conflictBaseSnapshot
-        && refreshedConflicts.length === 0
-        ? buildCustomerRetryLimitConflicts({
-          baseline: existing.conflictBaseSnapshot,
-          local: existing,
-          cloud: incoming
-        })
-        : refreshedConflicts;
+      const localCustomer = incoming;
+      localCustomer.financialSource = 'cloud';
+      localCustomer.lastCloudDebtCents = normalizeCustomerDebtCents(localCustomer.debt);
 
-      const preserved = normalizeCustomerForLocal({
-        ...existing,
-        latestCloudSnapshot: incoming,
-        conflictCloudSnapshot: existing.syncStatus === CUSTOMER_SYNC_STATUS.CONFLICT
-          ? incoming
-          : existing.conflictCloudSnapshot,
-        conflictFields: conflicts,
-        // Preserve the local operation's original OCC base. The new Cloud row
-        // is kept separately until the queued operation is reconciled.
-        serverVersion: existing.serverVersion,
-        debt: existing.debt ?? incoming.debt,
-        debtCents: existing.debtCents ?? incoming.debtCents,
-        ...creditProjection
-      }, existing, {
-        syncStatus: existing.syncStatus,
-        pendingOperationId: existing.pendingOperationId || null,
-        conflictReason: existing.conflictReason || null
-      });
-      await db.table(STORES.CUSTOMERS).put(preserved);
-      return preserved;
-    }
+      if (localCustomer.deletedAt || localCustomer.deletedTimestamp) {
+        localCustomer.isActive = false;
+        localCustomer.phoneKey = null;
+        delete localCustomer.phoneKey;
+      }
 
-    const localCustomer = incoming;
+      delete localCustomer.latestCloudSnapshot;
+      delete localCustomer.conflictCloudSnapshot;
+      delete localCustomer.conflictBaseSnapshot;
+      delete localCustomer.conflictFields;
 
-    if (localCustomer.deletedAt || localCustomer.deletedTimestamp) {
-      localCustomer.isActive = false;
-      localCustomer.phoneKey = null;
-      delete localCustomer.phoneKey;
-    }
-
-    delete localCustomer.latestCloudSnapshot;
-    delete localCustomer.conflictCloudSnapshot;
-    delete localCustomer.conflictBaseSnapshot;
-    delete localCustomer.conflictFields;
-
-    await db.table(STORES.CUSTOMERS).put(localCustomer);
-    return localCustomer;
+      await db.table(STORES.CUSTOMERS).put(localCustomer);
+      return localCustomer;
+    });
   },
 
   async applyCloudCustomers(customers = [], options = {}) {
@@ -239,28 +296,34 @@ export const customerLocalRepository = {
   } = {}) {
     if (!customer?.id) return null;
     await ensureOpen();
-    const existing = await db.table(STORES.CUSTOMERS).get(customer.id);
-    const cloud = serverCustomer
-      ? cloudCustomerToLocal(serverCustomer, existing)
-      : null;
-    const proposal = normalizeCustomerForLocal(customer, existing);
-    const conflictCustomer = normalizeCustomerForLocal({
-      ...(cloud || existing || {}),
-      ...proposal,
-      debt: existing?.debt ?? proposal.debt,
-      debtCents: existing?.debtCents ?? existing?.debt_cents ?? proposal.debtCents ?? proposal.debt_cents,
-      serverVersion: cloud?.serverVersion ?? proposal.serverVersion,
-      conflictCloudSnapshot: cloud || existing?.conflictCloudSnapshot || null,
-      conflictBaseSnapshot: baselineCustomer || existing?.conflictBaseSnapshot || null,
-      conflictFields: conflicts,
-      isActive: cloud?.deletedAt ? false : proposal.isActive
-    }, existing, {
-      syncStatus: CUSTOMER_SYNC_STATUS.CONFLICT,
-      pendingOperationId: preservePendingOperation ? existing?.pendingOperationId || null : null,
-      conflictReason: reason
+    return db.transaction('rw', historyTables(), async () => {
+      const existing = await db.table(STORES.CUSTOMERS).get(customer.id);
+      const history = await protectHistoryInTransaction(existing, serverCustomer);
+      if (history.blocked) return history.customer;
+      const cloud = serverCustomer
+        ? cloudCustomerToLocal(serverCustomer, existing)
+        : null;
+      const proposal = normalizeCustomerForLocal(customer, existing);
+      const conflictCustomer = normalizeCustomerForLocal({
+        ...(cloud || existing || {}),
+        ...proposal,
+        debt: existing?.debt ?? proposal.debt,
+        debtCents: existing?.debtCents ?? existing?.debt_cents ?? proposal.debtCents ?? proposal.debt_cents,
+        financialSource: existing?.financialSource ?? proposal.financialSource,
+        lastCloudDebtCents: existing?.lastCloudDebtCents ?? proposal.lastCloudDebtCents,
+        serverVersion: cloud?.serverVersion ?? proposal.serverVersion,
+        conflictCloudSnapshot: cloud || existing?.conflictCloudSnapshot || null,
+        conflictBaseSnapshot: baselineCustomer || existing?.conflictBaseSnapshot || null,
+        conflictFields: conflicts,
+        isActive: cloud?.deletedAt ? false : proposal.isActive
+      }, existing, {
+        syncStatus: CUSTOMER_SYNC_STATUS.CONFLICT,
+        pendingOperationId: preservePendingOperation ? existing?.pendingOperationId || null : null,
+        conflictReason: reason
+      });
+      await db.table(STORES.CUSTOMERS).put(conflictCustomer);
+      return conflictCustomer;
     });
-    await db.table(STORES.CUSTOMERS).put(conflictCustomer);
-    return conflictCustomer;
   },
 
   async getAllActiveCustomers() {
