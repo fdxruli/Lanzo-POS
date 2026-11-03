@@ -1,0 +1,14 @@
+{
+  "stage": "prepare-expiry",
+  "ttl": 600,
+  "started_at": "2026-10-22T18:25:05.694Z",
+  "results": [
+    {
+      "id": "EXPIRY-PREPARED",
+      "status": "PASS"
+    }
+  ],
+  "grant_id": "c19d32e1-670c-47bf-a2a4-34a5ba3e3e9b",
+  "status": "PASS",
+  "finished_at": "2026-10-22T18:25:07.542Z"
+}

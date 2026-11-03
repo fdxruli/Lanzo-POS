@@ -221,7 +221,9 @@ export const startInitialDatabasePreparation = ({
   return initialPreparationPromise;
 };
 
-export const activatePosReadyRuntime = (loadReadyRuntime = loadPosReadyRuntime) => {
+// Import/preparation alone never calls runtime.activate and must not mount App:
+// App's ready effects (license realtime/credit autoheal) are commercial effects.
+export const preparePosReadyRuntime = (loadReadyRuntime = loadPosReadyRuntime) => {
   if (!readyRuntimePromise) {
     // Database preflight has completed before this function is reached. Lock
     // tenant-owned Dexie/runtime caches before importing App and its stores.
@@ -229,14 +231,19 @@ export const activatePosReadyRuntime = (loadReadyRuntime = loadPosReadyRuntime) 
     readyRuntimePromise = Promise.resolve().then(loadReadyRuntime);
   }
 
-  return readyRuntimePromise.then((runtime) => {
+  return readyRuntimePromise;
+};
+
+// Existing commercial entrypoint keeps its default activation and ordering.
+export const activatePosReadyRuntime = (loadReadyRuntime = loadPosReadyRuntime) => (
+  preparePosReadyRuntime(loadReadyRuntime).then((runtime) => {
     if (!readyRuntimeActivated) {
       runtime.activate?.();
       readyRuntimeActivated = true;
     }
     return runtime;
-  });
-};
+  })
+);
 
 export const getAdminBootErrorCode = (error) => {
   let candidate = 'ADMIN_RUNTIME_INITIALIZATION_FAILED';

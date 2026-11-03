@@ -1,0 +1,33 @@
+{
+  "command": [
+    "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "src/services/instance/__tests__",
+    "src/services/auth/__tests__",
+    "src/services/tenant/__tests__",
+    "src/services/db/__tests__",
+    "src/pwa/__tests__",
+    "src/architecture/__tests__",
+    "src/services/financial/__tests__",
+    "src/services/sync/__tests__/syncOutboxService",
+    "src/services/sync/__tests__/posSyncBootstrap",
+    "src/components/common/__tests__/PosApplicationBootstrap",
+    "src/components/common/__tests__/DatabaseRecoveryGate",
+    "src/__tests__/main.initialRecoveryBootstrap.test.jsx",
+    "src/store/slices/license/__tests__/licenseBootstrapCoordinator.test.js",
+    "src/store/slices/license/__tests__/licenseAdminActions.localRecovery.test.js",
+    "src/components/common/__tests__/StaffLoginModal.verification.test.jsx",
+    "src/services/__test__/restaurant/restaurantOrderCheckoutClose.test.js",
+    "src/services/cash",
+    "src/services/__test__/db/salesRepository.test.js",
+    "src/services/__test__/sales/splitOrderService.test.js",
+    "src/services/__tests__/layawayFinancialService.test.js",
+    "src/services/salesCloud/__tests__/salesCloudFinancialRetry.integration.test.js",
+    "src/services/inventory/__tests__/inventoryEntryService",
+    "--maxWorkers=2",
+    "--reporter=json",
+    "--outputFile=/workspace/scratch/7c604c25ac9c/Lanzo-F012A/scripts/qa/single-instance-f012a/evidence/candidate/regressions.json"
+  ],
+  "exitCode": 1
+}

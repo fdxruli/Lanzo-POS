@@ -1,0 +1,29 @@
+{
+  "project": "odlrhijtfyavryeqivaa",
+  "jwks": [
+    {
+      "kid": "a740bc90-1a67-4457-a6b3-2cb406524238",
+      "kty": "EC",
+      "alg": "ES256",
+      "use": "sig"
+    }
+  ],
+  "edgeSecretNames": [
+    "AI_API_KEY",
+    "AI_API_URL",
+    "AI_MAX_PROMPT_CHARS",
+    "AI_MODEL",
+    "AI_PROVIDER",
+    "SUPABASE_ANON_KEY",
+    "SUPABASE_DB_URL",
+    "SUPABASE_JWKS",
+    "SUPABASE_PUBLISHABLE_KEYS",
+    "SUPABASE_SECRET_KEYS",
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "SUPABASE_URL"
+  ],
+  "valuesRead": false,
+  "activeSigningKeyStateVerified": false,
+  "oidcConfigurationVerified": false,
+  "browserReadAttempt": "CUA getState timed out; no UI opened or modified"
+}

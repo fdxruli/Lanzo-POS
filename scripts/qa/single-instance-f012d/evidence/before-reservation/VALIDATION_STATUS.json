@@ -1,0 +1,5 @@
+{
+  "status": "SUPERSEDED_MIXED_SOURCE_RUN",
+  "reason": "Audit added reservation/projection changes during validation. One new test ran against previously cached source. Not accepted as differential evidence. Final validation uses isolated immutable checkout.",
+  "result": "5930 PASS / 89 FAIL / 52 SKIP; extra failure is new projection UNKNOWN assertion against earlier cached coordinator."
+}

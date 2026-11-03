@@ -1,0 +1,36 @@
+{
+  "accepted_for_final_sources": false,
+  "reason": "Before strict unknown-cleanup-result guard and 36th assertion; final validation is in candidate/.",
+  "results": {
+    "global.json": {
+      "numPassedTests": 5968,
+      "numFailedTests": 88,
+      "numPendingTests": 52,
+      "numTotalTests": 6108
+    },
+    "regressions.json": {
+      "numPassedTests": 1167,
+      "numFailedTests": 4,
+      "numPendingTests": 50,
+      "numTotalTests": 1221
+    }
+  },
+  "builds": [
+    {
+      "name": "preview",
+      "exitCode": 0
+    },
+    {
+      "name": "production",
+      "exitCode": 0
+    },
+    {
+      "name": "store",
+      "exitCode": 0
+    },
+    {
+      "name": "store-vercel",
+      "exitCode": 0
+    }
+  ]
+}

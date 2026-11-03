@@ -1,0 +1,26 @@
+[
+  {
+    "tag": "base/regressions.json",
+    "prefix": "/workspace/scratch/957e4a974cde/Lanzo-F012D-baseline",
+    "replacement": "/tmp/lanzo-checkout",
+    "replacements": 113
+  },
+  {
+    "tag": "candidate/regressions.json",
+    "prefix": "/workspace/scratch/957e4a974cde/Lanzo-F012D-validation",
+    "replacement": "/tmp/lanzo-checkout",
+    "replacements": 113
+  },
+  {
+    "tag": "base/global.json",
+    "prefix": "/workspace/scratch/957e4a974cde/Lanzo-F012D-baseline",
+    "replacement": "/tmp/lanzo-checkout",
+    "replacements": 724
+  },
+  {
+    "tag": "candidate/global.json",
+    "prefix": "/workspace/scratch/957e4a974cde/Lanzo-F012D-validation",
+    "replacement": "/tmp/lanzo-checkout",
+    "replacements": 728
+  }
+]

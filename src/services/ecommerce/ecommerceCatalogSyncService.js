@@ -295,6 +295,23 @@ const withoutPublicOptionGroups = (configuration = {}) => {
   };
 };
 
+const preserveEvaluatedAvailability = (configuration = {}, evaluated = {}) => {
+  const evaluatedReason = asText(evaluated?.availabilityReasonCode);
+  const projectedReason = asText(configuration?.availabilityReasonCode);
+  const evaluatedLimit = evaluated?.limitingSource || {};
+  const hasEvaluatedLimit = Boolean(
+    asText(evaluatedLimit.productId) || asText(evaluatedLimit.name)
+  );
+
+  return {
+    ...configuration,
+    availabilityReasonCode: evaluatedReason || projectedReason || null,
+    limitingSource: hasEvaluatedLimit
+      ? evaluatedLimit
+      : configuration?.limitingSource || { productId: null, name: null }
+  };
+};
+
 const patchConfigurationProjections = (
   projections = [],
   configurationsByProduct = new Map()
@@ -314,9 +331,13 @@ const patchConfigurationProjections = (
     const projected = configurationsByProduct.get(localProductRef);
     if (!localProductRef || !projected) return projection;
 
-    const configuration = asText(projection.publicConfigurationMode) === 'simple_override'
+    const projectedConfiguration = asText(projection.publicConfigurationMode) === 'simple_override'
       ? withoutPublicOptionGroups(projected.configuration)
       : projected.configuration;
+    const configuration = preserveEvaluatedAvailability(
+      projectedConfiguration,
+      projection.configuration
+    );
     const apparelState = projected.apparelState;
     return {
       ...projection,

@@ -1,0 +1,718 @@
+{
+  "columns": [
+    {
+      "data_type": "uuid",
+      "table_name": "license_admin_sessions",
+      "column_name": "id",
+      "is_nullable": "NO",
+      "column_default": "extensions.gen_random_uuid()"
+    },
+    {
+      "data_type": "uuid",
+      "table_name": "license_admin_sessions",
+      "column_name": "license_id",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "data_type": "uuid",
+      "table_name": "license_admin_sessions",
+      "column_name": "admin_user_id",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "data_type": "uuid",
+      "table_name": "license_admin_sessions",
+      "column_name": "device_id",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "data_type": "text",
+      "table_name": "license_admin_sessions",
+      "column_name": "session_token_hash",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "data_type": "timestamp with time zone",
+      "table_name": "license_admin_sessions",
+      "column_name": "expires_at",
+      "is_nullable": "NO",
+      "column_default": "(now() + '30 days'::interval)"
+    },
+    {
+      "data_type": "timestamp with time zone",
+      "table_name": "license_admin_sessions",
+      "column_name": "revoked_at",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "data_type": "timestamp with time zone",
+      "table_name": "license_admin_sessions",
+      "column_name": "last_used_at",
+      "is_nullable": "NO",
+      "column_default": "now()"
+    },
+    {
+      "data_type": "timestamp with time zone",
+      "table_name": "license_admin_sessions",
+      "column_name": "created_at",
+      "is_nullable": "NO",
+      "column_default": "now()"
+    },
+    {
+      "data_type": "jsonb",
+      "table_name": "license_admin_sessions",
+      "column_name": "metadata",
+      "is_nullable": "NO",
+      "column_default": "'{}'::jsonb"
+    },
+    {
+      "data_type": "uuid",
+      "table_name": "license_admin_users",
+      "column_name": "id",
+      "is_nullable": "NO",
+      "column_default": "extensions.gen_random_uuid()"
+    },
+    {
+      "data_type": "uuid",
+      "table_name": "license_admin_users",
+      "column_name": "license_id",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "data_type": "text",
+      "table_name": "license_admin_users",
+      "column_name": "username",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "data_type": "text",
+      "table_name": "license_admin_users",
+      "column_name": "display_name",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "data_type": "text",
+      "table_name": "license_admin_users",
+      "column_name": "password_hash",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "data_type": "boolean",
+      "table_name": "license_admin_users",
+      "column_name": "is_owner",
+      "is_nullable": "NO",
+      "column_default": "true"
+    },
+    {
+      "data_type": "boolean",
+      "table_name": "license_admin_users",
+      "column_name": "is_active",
+      "is_nullable": "NO",
+      "column_default": "true"
+    },
+    {
+      "data_type": "timestamp with time zone",
+      "table_name": "license_admin_users",
+      "column_name": "credentials_created_at",
+      "is_nullable": "NO",
+      "column_default": "now()"
+    },
+    {
+      "data_type": "timestamp with time zone",
+      "table_name": "license_admin_users",
+      "column_name": "password_changed_at",
+      "is_nullable": "NO",
+      "column_default": "now()"
+    },
+    {
+      "data_type": "timestamp with time zone",
+      "table_name": "license_admin_users",
+      "column_name": "created_at",
+      "is_nullable": "NO",
+      "column_default": "now()"
+    },
+    {
+      "data_type": "timestamp with time zone",
+      "table_name": "license_admin_users",
+      "column_name": "updated_at",
+      "is_nullable": "NO",
+      "column_default": "now()"
+    },
+    {
+      "data_type": "jsonb",
+      "table_name": "license_admin_users",
+      "column_name": "metadata",
+      "is_nullable": "NO",
+      "column_default": "'{}'::jsonb"
+    },
+    {
+      "data_type": "uuid",
+      "table_name": "license_devices",
+      "column_name": "id",
+      "is_nullable": "NO",
+      "column_default": "gen_random_uuid()"
+    },
+    {
+      "data_type": "uuid",
+      "table_name": "license_devices",
+      "column_name": "license_id",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "data_type": "uuid",
+      "table_name": "license_devices",
+      "column_name": "user_id",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "data_type": "character varying",
+      "table_name": "license_devices",
+      "column_name": "device_fingerprint",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "data_type": "character varying",
+      "table_name": "license_devices",
+      "column_name": "device_name",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "data_type": "jsonb",
+      "table_name": "license_devices",
+      "column_name": "device_info",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "data_type": "inet",
+      "table_name": "license_devices",
+      "column_name": "ip_address",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "data_type": "boolean",
+      "table_name": "license_devices",
+      "column_name": "is_active",
+      "is_nullable": "YES",
+      "column_default": "true"
+    },
+    {
+      "data_type": "timestamp with time zone",
+      "table_name": "license_devices",
+      "column_name": "activated_at",
+      "is_nullable": "YES",
+      "column_default": "now()"
+    },
+    {
+      "data_type": "timestamp with time zone",
+      "table_name": "license_devices",
+      "column_name": "last_used_at",
+      "is_nullable": "YES",
+      "column_default": "now()"
+    },
+    {
+      "data_type": "text",
+      "table_name": "license_devices",
+      "column_name": "security_token",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "data_type": "text",
+      "table_name": "license_devices",
+      "column_name": "previous_security_token",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "data_type": "timestamp with time zone",
+      "table_name": "license_devices",
+      "column_name": "last_check_at",
+      "is_nullable": "YES",
+      "column_default": "now()"
+    },
+    {
+      "data_type": "text",
+      "table_name": "license_devices",
+      "column_name": "realtime_topic",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "data_type": "text",
+      "table_name": "license_devices",
+      "column_name": "device_role",
+      "is_nullable": "NO",
+      "column_default": "'staff'::text"
+    },
+    {
+      "data_type": "uuid",
+      "table_name": "license_devices",
+      "column_name": "staff_user_id",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "data_type": "text",
+      "table_name": "license_devices",
+      "column_name": "device_mode",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "data_type": "uuid",
+      "table_name": "license_staff_sessions",
+      "column_name": "id",
+      "is_nullable": "NO",
+      "column_default": "extensions.gen_random_uuid()"
+    },
+    {
+      "data_type": "uuid",
+      "table_name": "license_staff_sessions",
+      "column_name": "license_id",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "data_type": "uuid",
+      "table_name": "license_staff_sessions",
+      "column_name": "staff_user_id",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "data_type": "uuid",
+      "table_name": "license_staff_sessions",
+      "column_name": "device_id",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "data_type": "text",
+      "table_name": "license_staff_sessions",
+      "column_name": "session_token_hash",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "data_type": "timestamp with time zone",
+      "table_name": "license_staff_sessions",
+      "column_name": "created_at",
+      "is_nullable": "NO",
+      "column_default": "now()"
+    },
+    {
+      "data_type": "timestamp with time zone",
+      "table_name": "license_staff_sessions",
+      "column_name": "expires_at",
+      "is_nullable": "NO",
+      "column_default": "(now() + '12:00:00'::interval)"
+    },
+    {
+      "data_type": "timestamp with time zone",
+      "table_name": "license_staff_sessions",
+      "column_name": "last_seen_at",
+      "is_nullable": "NO",
+      "column_default": "now()"
+    },
+    {
+      "data_type": "timestamp with time zone",
+      "table_name": "license_staff_sessions",
+      "column_name": "revoked_at",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "data_type": "jsonb",
+      "table_name": "license_staff_sessions",
+      "column_name": "metadata",
+      "is_nullable": "NO",
+      "column_default": "'{}'::jsonb"
+    },
+    {
+      "data_type": "uuid",
+      "table_name": "license_staff_users",
+      "column_name": "id",
+      "is_nullable": "NO",
+      "column_default": "extensions.gen_random_uuid()"
+    },
+    {
+      "data_type": "uuid",
+      "table_name": "license_staff_users",
+      "column_name": "license_id",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "data_type": "text",
+      "table_name": "license_staff_users",
+      "column_name": "username",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "data_type": "text",
+      "table_name": "license_staff_users",
+      "column_name": "display_name",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "data_type": "text",
+      "table_name": "license_staff_users",
+      "column_name": "password_hash",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "data_type": "text",
+      "table_name": "license_staff_users",
+      "column_name": "role_name",
+      "is_nullable": "NO",
+      "column_default": "'staff'::text"
+    },
+    {
+      "data_type": "jsonb",
+      "table_name": "license_staff_users",
+      "column_name": "permissions",
+      "is_nullable": "NO",
+      "column_default": "private.default_staff_permissions()"
+    },
+    {
+      "data_type": "boolean",
+      "table_name": "license_staff_users",
+      "column_name": "is_active",
+      "is_nullable": "NO",
+      "column_default": "true"
+    },
+    {
+      "data_type": "timestamp with time zone",
+      "table_name": "license_staff_users",
+      "column_name": "created_at",
+      "is_nullable": "NO",
+      "column_default": "now()"
+    },
+    {
+      "data_type": "timestamp with time zone",
+      "table_name": "license_staff_users",
+      "column_name": "updated_at",
+      "is_nullable": "NO",
+      "column_default": "now()"
+    },
+    {
+      "data_type": "timestamp with time zone",
+      "table_name": "license_staff_users",
+      "column_name": "last_login_at",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "data_type": "uuid",
+      "table_name": "license_staff_users",
+      "column_name": "created_by_device_id",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "data_type": "jsonb",
+      "table_name": "license_staff_users",
+      "column_name": "metadata",
+      "is_nullable": "NO",
+      "column_default": "'{}'::jsonb"
+    },
+    {
+      "data_type": "uuid",
+      "table_name": "licenses",
+      "column_name": "id",
+      "is_nullable": "NO",
+      "column_default": "gen_random_uuid()"
+    },
+    {
+      "data_type": "character varying",
+      "table_name": "licenses",
+      "column_name": "license_key",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "data_type": "uuid",
+      "table_name": "licenses",
+      "column_name": "plan_id",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "data_type": "character varying",
+      "table_name": "licenses",
+      "column_name": "license_type",
+      "is_nullable": "NO",
+      "column_default": null
+    },
+    {
+      "data_type": "integer",
+      "table_name": "licenses",
+      "column_name": "max_devices",
+      "is_nullable": "NO",
+      "column_default": "1"
+    },
+    {
+      "data_type": "integer",
+      "table_name": "licenses",
+      "column_name": "duration_months",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "data_type": "numeric",
+      "table_name": "licenses",
+      "column_name": "price",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "data_type": "character varying",
+      "table_name": "licenses",
+      "column_name": "status",
+      "is_nullable": "YES",
+      "column_default": "'active'::character varying"
+    },
+    {
+      "data_type": "timestamp with time zone",
+      "table_name": "licenses",
+      "column_name": "created_at",
+      "is_nullable": "YES",
+      "column_default": "now()"
+    },
+    {
+      "data_type": "timestamp with time zone",
+      "table_name": "licenses",
+      "column_name": "expires_at",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "data_type": "character varying",
+      "table_name": "licenses",
+      "column_name": "product_name",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "data_type": "character varying",
+      "table_name": "licenses",
+      "column_name": "version",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "data_type": "jsonb",
+      "table_name": "licenses",
+      "column_name": "features",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "data_type": "text",
+      "table_name": "licenses",
+      "column_name": "organization_name",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "data_type": "text",
+      "table_name": "licenses",
+      "column_name": "owner_email",
+      "is_nullable": "YES",
+      "column_default": null
+    },
+    {
+      "data_type": "boolean",
+      "table_name": "licenses",
+      "column_name": "is_lifetime",
+      "is_nullable": "YES",
+      "column_default": "false"
+    }
+  ],
+  "triggers": [
+    {
+      "def": "CREATE TRIGGER license_devices_ensure_device_mode BEFORE INSERT OR UPDATE OF device_mode, device_role ON public.license_devices FOR EACH ROW EXECUTE FUNCTION private.ensure_license_device_mode()",
+      "table": "license_devices",
+      "trigger": "license_devices_ensure_device_mode",
+      "function": "private.ensure_license_device_mode()",
+      "function_def": "CREATE OR REPLACE FUNCTION private.ensure_license_device_mode()\n RETURNS trigger\n LANGUAGE plpgsql\n SET search_path TO ''\nAS $function$\nbegin\n  if new.device_mode is null then\n    new.device_mode := case new.device_role\n      when 'admin' then 'admin_only'\n      when 'staff' then 'staff_only'\n      else null\n    end;\n  end if;\n\n  if new.device_mode not in ('shared', 'admin_only', 'staff_only') then\n    raise exception 'DEVICE_MODE_INVALID' using errcode = 'P0001';\n  end if;\n\n  return new;\nend;\n$function$\n"
+    },
+    {
+      "def": "CREATE TRIGGER on_device_change AFTER DELETE OR UPDATE ON public.license_devices FOR EACH ROW EXECUTE FUNCTION notify_device_change()",
+      "table": "license_devices",
+      "trigger": "on_device_change",
+      "function": "notify_device_change()",
+      "function_def": "CREATE OR REPLACE FUNCTION public.notify_device_change()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\nDECLARE\n    v_license_key text;\nBEGIN\n    SELECT l.license_key\n    INTO v_license_key\n    FROM public.licenses l\n    WHERE l.id = COALESCE(NEW.license_id, OLD.license_id);\n\n    IF (TG_OP = 'UPDATE' AND OLD.is_active = true AND NEW.is_active = false) THEN\n        INSERT INTO public.license_events (license_key, event_type, metadata)\n        VALUES (\n            v_license_key,\n            'DEVICE_BANNED',\n            jsonb_build_object('fingerprint', NEW.device_fingerprint)\n        );\n    END IF;\n\n    IF (TG_OP = 'DELETE') THEN\n        INSERT INTO public.license_events (license_key, event_type, metadata)\n        VALUES (\n            v_license_key,\n            'DEVICE_DELETED',\n            jsonb_build_object('fingerprint', OLD.device_fingerprint)\n        );\n    END IF;\n\n    RETURN NULL;\nEND;\n$function$\n"
+    },
+    {
+      "def": "CREATE TRIGGER trg_license_staff_notification_access_changed AFTER UPDATE OF permissions, is_active ON public.license_staff_users FOR EACH ROW WHEN (((old.permissions IS DISTINCT FROM new.permissions) OR (old.is_active IS DISTINCT FROM new.is_active))) EXECUTE FUNCTION private.broadcast_staff_notification_access_change_v1()",
+      "table": "license_staff_users",
+      "trigger": "trg_license_staff_notification_access_changed",
+      "function": "private.broadcast_staff_notification_access_change_v1()",
+      "function_def": "CREATE OR REPLACE FUNCTION private.broadcast_staff_notification_access_change_v1()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\nbegin\n  if old.permissions is not distinct from new.permissions\n     and old.is_active is not distinct from new.is_active then\n    return new;\n  end if;\n\n  perform private.broadcast_notification_event(\n    p_license_id => new.license_id,\n    p_event => 'notifications_changed',\n    p_reason => 'staff_notification_access_changed',\n    p_metadata => jsonb_build_object(\n      'scope', 'staff_notification_access',\n      'access_changed', true\n    )\n  );\n\n  return new;\nexception\n  when others then\n    -- Permission persistence remains authoritative even if Realtime delivery is\n    -- temporarily unavailable. The next RPC/TTL refresh still enforces access.\n    return new;\nend;\n$function$\n"
+    },
+    {
+      "def": "CREATE TRIGGER trg_notify_staff_user_permission_change AFTER UPDATE OF display_name, role_name, permissions, is_active ON public.license_staff_users FOR EACH ROW EXECUTE FUNCTION private.notify_staff_user_permission_change()",
+      "table": "license_staff_users",
+      "trigger": "trg_notify_staff_user_permission_change",
+      "function": "private.notify_staff_user_permission_change()",
+      "function_def": "CREATE OR REPLACE FUNCTION private.notify_staff_user_permission_change()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\ndeclare\n  v_license_key text;\n  v_changed_fields text[] := array[]::text[];\nbegin\n  if old.display_name is distinct from new.display_name then\n    v_changed_fields := array_append(v_changed_fields, 'display_name');\n  end if;\n\n  if old.role_name is distinct from new.role_name then\n    v_changed_fields := array_append(v_changed_fields, 'role_name');\n  end if;\n\n  if old.permissions is distinct from new.permissions then\n    v_changed_fields := array_append(v_changed_fields, 'permissions');\n  end if;\n\n  if old.is_active is distinct from new.is_active then\n    v_changed_fields := array_append(v_changed_fields, 'is_active');\n  end if;\n\n  if array_length(v_changed_fields, 1) is null then\n    return new;\n  end if;\n\n  select l.license_key\n  into v_license_key\n  from public.licenses l\n  where l.id = new.license_id;\n\n  if v_license_key is null then\n    return new;\n  end if;\n\n  insert into public.license_events (license_key, event_type, metadata)\n  values (\n    v_license_key,\n    'LICENSE_UPDATE',\n    jsonb_strip_nulls(jsonb_build_object(\n      'source', 'license_staff_users_update_trigger',\n      'reason', 'STAFF_USER_UPDATED',\n      'staff_user_id', new.id,\n      'username', new.username,\n      'display_name', new.display_name,\n      'role_name', new.role_name,\n      'is_active', new.is_active,\n      'changed_fields', to_jsonb(v_changed_fields)\n    ))\n  );\n\n  return new;\nend;\n$function$\n"
+    },
+    {
+      "def": "CREATE TRIGGER trg_touch_license_staff_user_updated_at BEFORE UPDATE ON public.license_staff_users FOR EACH ROW EXECUTE FUNCTION private.touch_license_staff_user_updated_at()",
+      "table": "license_staff_users",
+      "trigger": "trg_touch_license_staff_user_updated_at",
+      "function": "private.touch_license_staff_user_updated_at()",
+      "function_def": "CREATE OR REPLACE FUNCTION private.touch_license_staff_user_updated_at()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\nbegin\n  new.updated_at := now();\n  return new;\nend;\n$function$\n"
+    },
+    {
+      "def": "CREATE TRIGGER aa_enforce_license_plan_limits_after_update AFTER UPDATE ON public.licenses FOR EACH ROW WHEN (((old.plan_id IS DISTINCT FROM new.plan_id) OR (old.max_devices IS DISTINCT FROM new.max_devices) OR (old.features IS DISTINCT FROM new.features) OR ((old.license_type)::text IS DISTINCT FROM (new.license_type)::text))) EXECUTE FUNCTION enforce_license_plan_limits_after_change()",
+      "table": "licenses",
+      "trigger": "aa_enforce_license_plan_limits_after_update",
+      "function": "enforce_license_plan_limits_after_change()",
+      "function_def": "CREATE OR REPLACE FUNCTION public.enforce_license_plan_limits_after_change()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\ndeclare\n  v_plan_code text;\n  v_plan_name text;\n  v_features jsonb;\n  v_staff_roles_enabled boolean;\n  v_max_devices integer;\n  v_active_before integer := 0;\n  v_active_after integer := 0;\n  v_staff_blocked integer := 0;\n  v_staff_sessions_revoked integer := 0;\n  v_staff_device_sessions_revoked integer := 0;\n  v_admin_sessions_revoked integer := 0;\n  v_over_limit_blocked integer := 0;\n  v_staff_blocked_device_ids uuid[] := array[]::uuid[];\n  v_over_limit_device_ids uuid[] := array[]::uuid[];\n  v_blocked_device_ids uuid[] := array[]::uuid[];\n  v_active_device_ids uuid[] := array[]::uuid[];\n  v_now timestamptz := now();\nbegin\n  select p.code, p.name, coalesce(p.features, '{}'::jsonb) || coalesce(new.features, '{}'::jsonb)\n    into v_plan_code, v_plan_name, v_features\n    from public.plans p\n   where p.id = new.plan_id;\n\n  v_staff_roles_enabled := coalesce((v_features->>'staff_roles')::boolean, false);\n  v_max_devices := greatest(coalesce(new.max_devices, 1), 0);\n\n  select count(*)\n    into v_active_before\n    from public.license_devices d\n   where d.license_id = new.id\n     and d.is_active is true;\n\n  if not v_staff_roles_enabled then\n    with blocked as (\n      update public.license_devices d\n         set is_active = false,\n             security_token = null,\n             previous_security_token = null,\n             last_check_at = v_now,\n             device_info = coalesce(d.device_info, '{}'::jsonb) || jsonb_build_object(\n               'license_block', jsonb_build_object(\n                 'reason', 'PLAN_DOWNGRADE_STAFF_NOT_INCLUDED',\n                 'message', 'Esta licencia cambio a un plan que no incluye usuarios staff.',\n                 'plan_code', v_plan_code,\n                 'plan_name', v_plan_name,\n                 'blocked_at', v_now\n               )\n             )\n       where d.license_id = new.id\n         and d.is_active is true\n         and d.device_mode = 'staff_only'\n      returning d.id\n    )\n    select coalesce(array_agg(id order by id), array[]::uuid[]), count(*)\n      into v_staff_blocked_device_ids, v_staff_blocked\n      from blocked;\n\n    with revoked as (\n      update public.license_staff_sessions s\n         set revoked_at = coalesce(s.revoked_at, v_now),\n             metadata = coalesce(s.metadata, '{}'::jsonb) || jsonb_build_object(\n               'revoked_reason', 'PLAN_DOWNGRADE_STAFF_NOT_INCLUDED',\n               'revoked_at', v_now,\n               'plan_code', v_plan_code,\n               'plan_name', v_plan_name\n             )\n       where s.license_id = new.id\n         and s.revoked_at is null\n      returning s.id\n    )\n    select count(*) into v_staff_sessions_revoked from revoked;\n  end if;\n\n  with ranked_devices as (\n    select d.id,\n           row_number() over (\n             order by\n               case d.device_mode\n                 when 'admin_only' then 0\n                 when 'shared' then 1\n                 else 2\n               end,\n               d.activated_at asc nulls last,\n               d.last_used_at desc nulls last,\n               d.id asc\n           ) as keep_rank\n      from public.license_devices d\n     where d.license_id = new.id\n       and d.is_active is true\n  ), blocked as (\n    update public.license_devices d\n       set is_active = false,\n           security_token = null,\n           previous_security_token = null,\n           last_check_at = v_now,\n           device_info = coalesce(d.device_info, '{}'::jsonb) || jsonb_build_object(\n             'license_block', jsonb_build_object(\n               'reason', 'PLAN_DOWNGRADE_DEVICE_LIMIT',\n               'message', 'Esta licencia cambio a un plan con menos dispositivos permitidos.',\n               'plan_code', v_plan_code,\n               'plan_name', v_plan_name,\n               'max_devices', v_max_devices,\n               'blocked_at', v_now\n             )\n           )\n      from ranked_devices ranked\n     where d.id = ranked.id\n       and ranked.keep_rank > v_max_devices\n    returning d.id\n  )\n  select coalesce(array_agg(id order by id), array[]::uuid[]), count(*)\n    into v_over_limit_device_ids, v_over_limit_blocked\n    from blocked;\n\n  select coalesce(array_agg(distinct blocked_id order by blocked_id), array[]::uuid[])\n    into v_blocked_device_ids\n    from unnest(v_staff_blocked_device_ids || v_over_limit_device_ids) as blocked(blocked_id);\n\n  if coalesce(cardinality(v_blocked_device_ids), 0) > 0 then\n    with revoked as (\n      update public.license_admin_sessions s\n         set revoked_at = coalesce(s.revoked_at, v_now),\n             metadata = coalesce(s.metadata, '{}'::jsonb) || jsonb_build_object(\n               'revoked_reason', coalesce(d.device_info #>> '{license_block,reason}', 'PLAN_DOWNGRADE_DEVICE_REMOVED'),\n               'revoked_at', v_now,\n               'plan_code', v_plan_code,\n               'plan_name', v_plan_name\n             )\n        from public.license_devices d\n       where s.license_id = new.id\n         and s.device_id = d.id\n         and d.license_id = new.id\n         and d.id = any(v_blocked_device_ids)\n         and s.revoked_at is null\n      returning s.id\n    )\n    select count(*) into v_admin_sessions_revoked from revoked;\n\n    with revoked as (\n      update public.license_staff_sessions s\n         set revoked_at = coalesce(s.revoked_at, v_now),\n             metadata = coalesce(s.metadata, '{}'::jsonb) || jsonb_build_object(\n               'revoked_reason', coalesce(d.device_info #>> '{license_block,reason}', 'PLAN_DOWNGRADE_DEVICE_REMOVED'),\n               'revoked_at', v_now,\n               'plan_code', v_plan_code,\n               'plan_name', v_plan_name\n             )\n        from public.license_devices d\n       where s.license_id = new.id\n         and s.device_id = d.id\n         and d.license_id = new.id\n         and d.id = any(v_blocked_device_ids)\n         and s.revoked_at is null\n      returning s.id\n    )\n    select count(*) into v_staff_device_sessions_revoked from revoked;\n\n    v_staff_sessions_revoked := v_staff_sessions_revoked + v_staff_device_sessions_revoked;\n  end if;\n\n  select count(*),\n         coalesce(array_agg(d.id order by d.id), array[]::uuid[])\n    into v_active_after, v_active_device_ids\n    from public.license_devices d\n   where d.license_id = new.id\n     and d.is_active is true;\n\n  if v_staff_blocked > 0\n     or v_staff_sessions_revoked > 0\n     or v_admin_sessions_revoked > 0\n     or v_over_limit_blocked > 0 then\n    insert into public.license_events (license_key, event_type, metadata)\n    values (\n      new.license_key,\n      'LICENSE_UPDATE',\n      jsonb_build_object(\n        'source', 'enforce_license_plan_limits_after_change',\n        'reason', 'PLAN_LIMITS_ENFORCED',\n        'plan', v_plan_code,\n        'plan_name', v_plan_name,\n        'staff_devices_blocked', v_staff_blocked,\n        'staff_sessions_revoked', v_staff_sessions_revoked,\n        'admin_sessions_revoked', v_admin_sessions_revoked,\n        'over_limit_devices_blocked', v_over_limit_blocked,\n        'blocked_device_ids', to_jsonb(v_blocked_device_ids),\n        'active_device_ids_after', to_jsonb(v_active_device_ids),\n        'active_devices_before', v_active_before,\n        'active_devices_after', v_active_after,\n        'max_devices', v_max_devices\n      )\n    );\n  end if;\n\n  return null;\nend;\n$function$\n"
+    },
+    {
+      "def": "CREATE TRIGGER on_license_update AFTER UPDATE ON public.licenses FOR EACH ROW EXECUTE FUNCTION notify_license_change()",
+      "table": "licenses",
+      "trigger": "on_license_update",
+      "function": "notify_license_change()",
+      "function_def": "CREATE OR REPLACE FUNCTION public.notify_license_change()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\ndeclare\n    v_changed_fields text[] := array[]::text[];\n    v_event_type text;\n    v_metadata jsonb;\n    v_old_plan_code text;\n    v_new_plan_code text;\n    v_old_plan_name text;\n    v_new_plan_name text;\nbegin\n    if old.plan_id is distinct from new.plan_id then\n        v_changed_fields := array_append(v_changed_fields, 'plan_id');\n    end if;\n\n    if old.max_devices is distinct from new.max_devices then\n        v_changed_fields := array_append(v_changed_fields, 'max_devices');\n    end if;\n\n    if old.product_name is distinct from new.product_name then\n        v_changed_fields := array_append(v_changed_fields, 'product_name');\n    end if;\n\n    if old.status is distinct from new.status then\n        v_changed_fields := array_append(v_changed_fields, 'status');\n    end if;\n\n    if old.expires_at is distinct from new.expires_at then\n        v_changed_fields := array_append(v_changed_fields, 'expires_at');\n    end if;\n\n    if old.features is distinct from new.features then\n        v_changed_fields := array_append(v_changed_fields, 'features');\n    end if;\n\n    if array_length(v_changed_fields, 1) is null then\n        return new;\n    end if;\n\n    select p.code, p.name\n    into v_old_plan_code, v_old_plan_name\n    from public.plans p\n    where p.id = old.plan_id;\n\n    select p.code, p.name\n    into v_new_plan_code, v_new_plan_name\n    from public.plans p\n    where p.id = new.plan_id;\n\n    v_event_type := case\n        when old.plan_id is distinct from new.plan_id then 'PLAN_CHANGED'\n        else 'LICENSE_UPDATE'\n    end;\n\n    v_metadata := jsonb_build_object(\n        'source', 'licenses_update_trigger',\n        'changed_fields', to_jsonb(v_changed_fields),\n        'status', new.status,\n        'plan', v_new_plan_code,\n        'plan_name', v_new_plan_name,\n        'max_devices', new.max_devices,\n        'product_name', new.product_name\n    );\n\n    if old.plan_id is distinct from new.plan_id then\n        v_metadata := v_metadata || jsonb_build_object(\n            'from_plan', v_old_plan_code,\n            'to_plan', v_new_plan_code,\n            'from_plan_name', v_old_plan_name,\n            'to_plan_name', v_new_plan_name\n        );\n    end if;\n\n    if old.max_devices is distinct from new.max_devices then\n        v_metadata := v_metadata || jsonb_build_object(\n            'old_max_devices', old.max_devices,\n            'new_max_devices', new.max_devices\n        );\n    end if;\n\n    insert into public.license_events (license_key, event_type, metadata)\n    values (new.license_key, v_event_type, v_metadata);\n\n    return new;\nend;\n$function$\n"
+    },
+    {
+      "def": "CREATE TRIGGER trg_sync_license_plan_snapshot_before_write BEFORE INSERT OR UPDATE ON public.licenses FOR EACH ROW EXECUTE FUNCTION sync_license_plan_snapshot()",
+      "table": "licenses",
+      "trigger": "trg_sync_license_plan_snapshot_before_write",
+      "function": "sync_license_plan_snapshot()",
+      "function_def": "CREATE OR REPLACE FUNCTION public.sync_license_plan_snapshot()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\n SET search_path TO ''\nAS $function$\ndeclare\n  v_plan record;\n  v_free_plan_id uuid;\n  v_should_sync boolean := false;\n  v_existing_features jsonb;\n  v_base_features jsonb;\n  v_plan_features jsonb;\n  v_plan_feature_keys text[] := array[]::text[];\nbegin\n  if tg_op = 'INSERT' then\n    v_should_sync := true;\n  else\n    v_should_sync :=\n      new.plan_id is distinct from old.plan_id\n      or (\n        new.license_type is distinct from old.license_type\n        and lower(coalesce(new.license_type, '')) in ('trial', 'free_trial')\n      );\n  end if;\n\n  if not v_should_sync then\n    return new;\n  end if;\n\n  if lower(coalesce(new.license_type, '')) in ('trial', 'free_trial')\n     and (tg_op = 'INSERT' or new.plan_id is not distinct from old.plan_id) then\n    select p.id\n      into v_free_plan_id\n      from public.plans p\n     where p.code = 'free_trial'\n       and p.is_active is true\n     limit 1;\n\n    if v_free_plan_id is not null then\n      new.plan_id := v_free_plan_id;\n    end if;\n  end if;\n\n  if new.plan_id is null then\n    return new;\n  end if;\n\n  select *\n    into v_plan\n    from public.plans p\n   where p.id = new.plan_id;\n\n  if v_plan.id is null then\n    return new;\n  end if;\n\n  select coalesce(array_agg(distinct plan_key.feature_key), array[]::text[])\n    into v_plan_feature_keys\n    from public.plans candidate\n    cross join lateral jsonb_object_keys(coalesce(candidate.features, '{}'::jsonb))\n      as plan_key(feature_key);\n\n  v_existing_features := coalesce(new.features, '{}'::jsonb);\n  v_plan_features := coalesce(v_plan.features, '{}'::jsonb);\n  v_base_features :=\n    (v_existing_features - v_plan_feature_keys - 'max_rubros' - 'allowed_rubros')\n    || jsonb_build_object(\n      'full_access', coalesce((v_existing_features->>'full_access')::boolean, true),\n      'max_rubros', 1,\n      'allowed_rubros', jsonb_build_array('*')\n    );\n\n  new.features := v_base_features || v_plan_features;\n  new.max_devices := coalesce(v_plan.max_devices, new.max_devices, 1);\n  new.price := coalesce(v_plan.price, new.price);\n  new.product_name := case\n    when v_plan.code = 'free_trial' then 'Lanzo POS Free'\n    when v_plan.code = 'basic_monthly' then 'Lanzo POS Basico'\n    when v_plan.code = 'pro_monthly' then 'Lanzo POS Pro'\n    else coalesce(nullif(trim(new.product_name), ''), 'Lanzo POS - ' || v_plan.name)\n  end;\n  new.license_type := case\n    when v_plan.code = 'free_trial' then 'free'\n    when v_plan.code like '%monthly' then 'subscription'\n    else coalesce(nullif(trim(new.license_type), ''), v_plan.code)\n  end;\n\n  return new;\nend;\n$function$\n"
+    }
+  ],
+  "constraints": [
+    {
+      "table": "licenses",
+      "definition": "UNIQUE (license_key)"
+    },
+    {
+      "table": "licenses",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table": "licenses",
+      "definition": "FOREIGN KEY (plan_id) REFERENCES plans(id)"
+    },
+    {
+      "table": "license_devices",
+      "definition": "CHECK ((device_mode = ANY (ARRAY['shared'::text, 'admin_only'::text, 'staff_only'::text])))"
+    },
+    {
+      "table": "license_devices",
+      "definition": "CHECK ((device_role = ANY (ARRAY['admin'::text, 'staff'::text])))"
+    },
+    {
+      "table": "license_devices",
+      "definition": "UNIQUE (license_id, device_fingerprint)"
+    },
+    {
+      "table": "license_devices",
+      "definition": "FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "license_devices",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table": "license_devices",
+      "definition": "FOREIGN KEY (staff_user_id) REFERENCES license_staff_users(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "license_devices",
+      "definition": "FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE SET NULL"
+    },
+    {
+      "table": "license_staff_users",
+      "definition": "UNIQUE (id, license_id)"
+    },
+    {
+      "table": "license_staff_users",
+      "definition": "FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "license_staff_users",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table": "license_staff_users",
+      "definition": "CHECK ((role_name = ANY (ARRAY['staff'::text, 'cashier'::text, 'waiter'::text, 'supervisor'::text, 'custom'::text])))"
+    },
+    {
+      "table": "license_staff_sessions",
+      "definition": "FOREIGN KEY (device_id) REFERENCES license_devices(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "license_staff_sessions",
+      "definition": "FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "license_staff_sessions",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table": "license_staff_sessions",
+      "definition": "FOREIGN KEY (staff_user_id) REFERENCES license_staff_users(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "license_admin_users",
+      "definition": "CHECK (((char_length(btrim(display_name)) >= 1) AND (char_length(btrim(display_name)) <= 120)))"
+    },
+    {
+      "table": "license_admin_users",
+      "definition": "UNIQUE (id, license_id)"
+    },
+    {
+      "table": "license_admin_users",
+      "definition": "FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "license_admin_users",
+      "definition": "PRIMARY KEY (id)"
+    },
+    {
+      "table": "license_admin_users",
+      "definition": "CHECK (((username = lower(btrim(username))) AND ((char_length(username) >= 3) AND (char_length(username) <= 64))))"
+    },
+    {
+      "table": "license_admin_sessions",
+      "definition": "FOREIGN KEY (admin_user_id) REFERENCES license_admin_users(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "license_admin_sessions",
+      "definition": "FOREIGN KEY (device_id) REFERENCES license_devices(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "license_admin_sessions",
+      "definition": "FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE"
+    },
+    {
+      "table": "license_admin_sessions",
+      "definition": "PRIMARY KEY (id)"
+    }
+  ]
+}

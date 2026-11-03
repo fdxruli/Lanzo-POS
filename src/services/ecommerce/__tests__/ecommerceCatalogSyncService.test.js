@@ -119,8 +119,9 @@ describe('ecommerceCatalogSyncService', () => {
   });
 
   it('consolidates twenty rapid events into one batch execution', async () => {
-    vi.useFakeTimers();
+    const scheduledTimers = [];
     const syncBatch = vi.fn().mockResolvedValue(successResult());
+    const clearTimeoutFn = vi.fn();
     const service = createEcommerceCatalogSyncService({
       getState: adminState,
       getPortal: vi.fn().mockResolvedValue(portalResult()),
@@ -128,13 +129,23 @@ describe('ecommerceCatalogSyncService', () => {
       syncBatch,
       localSource: localSource(),
       outbox: outbox(),
-      debounceMs: 100
+      debounceMs: 100,
+      setTimeoutFn: (callback, delay) => {
+        scheduledTimers.push({ callback, delay });
+        return scheduledTimers.length;
+      },
+      clearTimeoutFn
     });
 
     for (let index = 0; index < 20; index += 1) {
       service.scheduleSync({ productIds: ['product-1'], reason: `event-${index}` });
     }
-    await vi.advanceTimersByTimeAsync(101);
+
+    expect(scheduledTimers).toHaveLength(20);
+    expect(scheduledTimers[19].delay).toBe(100);
+    expect(clearTimeoutFn).toHaveBeenCalledTimes(19);
+    scheduledTimers[19].callback();
+    await waitForCondition(() => syncBatch.mock.calls.length === 1);
     await flush();
 
     expect(syncBatch).toHaveBeenCalledTimes(1);
@@ -236,8 +247,8 @@ describe('ecommerceCatalogSyncService', () => {
     expect(syncBatch.mock.calls[0][0].projections[0]).toMatchObject({
       publishedProductId: 'published-product-1',
       sourceRevision: null,
-      sourceState: 'unverified',
-      sourceAvailable: null,
+      sourceState: 'source_missing',
+      sourceAvailable: false,
       stockSnapshot: null,
       fields: {}
     });

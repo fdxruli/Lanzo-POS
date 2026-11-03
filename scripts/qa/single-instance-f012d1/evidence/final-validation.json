@@ -1,0 +1,187 @@
+{
+  "code_commit": "1bd74b26e0b53ccbe00f335964978a5ac1f9700b",
+  "baseline": "0f1625f46e6fe234e378487bb06f74f4bd1555e9",
+  "main": "52bb573e651529b323b6617e3161cd76ece14a39",
+  "candidate_cwd": "/workspace/scratch/2a5709f8e222/Lanzo-final-validated",
+  "pairs": {
+    "base": {
+      "global.json": {
+        "numPassedTests": 5933,
+        "numFailedTests": 88,
+        "numPendingTests": 52,
+        "numTotalTests": 6073
+      },
+      "regressions.json": {
+        "numPassedTests": 1167,
+        "numFailedTests": 4,
+        "numPendingTests": 50,
+        "numTotalTests": 1221
+      }
+    },
+    "main": {
+      "global.json": {
+        "numPassedTests": 5665,
+        "numFailedTests": 88,
+        "numPendingTests": 52,
+        "numTotalTests": 5805
+      },
+      "regressions.json": {
+        "numPassedTests": 1122,
+        "numFailedTests": 4,
+        "numPendingTests": 50,
+        "numTotalTests": 1176
+      }
+    },
+    "candidate": {
+      "global.json": {
+        "numPassedTests": 5969,
+        "numFailedTests": 88,
+        "numPendingTests": 52,
+        "numTotalTests": 6109
+      },
+      "regressions.json": {
+        "numPassedTests": 1167,
+        "numFailedTests": 4,
+        "numPendingTests": 50,
+        "numTotalTests": 1221
+      }
+    }
+  },
+  "builds": {
+    "base": [
+      {
+        "name": "preview",
+        "exitCode": 0,
+        "vercelEnv": "preview",
+        "precacheReferenced": 32,
+        "missing": []
+      },
+      {
+        "name": "production",
+        "exitCode": 0,
+        "vercelEnv": "production",
+        "precacheReferenced": 24,
+        "missing": []
+      },
+      {
+        "name": "store",
+        "exitCode": 0,
+        "vercelEnv": "production",
+        "precacheReferenced": null,
+        "missing": null
+      },
+      {
+        "name": "store-vercel",
+        "exitCode": 0,
+        "vercelEnv": "production",
+        "precacheReferenced": null,
+        "missing": null
+      }
+    ],
+    "main": [
+      {
+        "name": "preview",
+        "exitCode": 0,
+        "vercelEnv": "preview",
+        "precacheReferenced": 32,
+        "missing": []
+      },
+      {
+        "name": "production",
+        "exitCode": 0,
+        "vercelEnv": "production",
+        "precacheReferenced": 24,
+        "missing": []
+      },
+      {
+        "name": "store",
+        "exitCode": 0,
+        "vercelEnv": "production",
+        "precacheReferenced": null,
+        "missing": null
+      },
+      {
+        "name": "store-vercel",
+        "exitCode": 0,
+        "vercelEnv": "production",
+        "precacheReferenced": null,
+        "missing": null
+      }
+    ],
+    "candidate": [
+      {
+        "name": "preview",
+        "exitCode": 0,
+        "vercelEnv": "preview",
+        "precacheReferenced": 32,
+        "missing": []
+      },
+      {
+        "name": "production",
+        "exitCode": 0,
+        "vercelEnv": "production",
+        "precacheReferenced": 24,
+        "missing": []
+      },
+      {
+        "name": "store",
+        "exitCode": 0,
+        "vercelEnv": "production",
+        "precacheReferenced": null,
+        "missing": null
+      },
+      {
+        "name": "store-vercel",
+        "exitCode": 0,
+        "vercelEnv": "production",
+        "precacheReferenced": null,
+        "missing": null
+      }
+    ]
+  },
+  "pr127": {
+    "base": {
+      "status": "OK",
+      "newFailures": [],
+      "unresolvedFailures": [],
+      "shared": 104,
+      "exclusive": 0
+    },
+    "main": {
+      "status": "OK",
+      "newFailures": [],
+      "unresolvedFailures": [],
+      "shared": 104,
+      "exclusive": 0
+    }
+  },
+  "limits": [
+    "POS_SYNC_BOUNDARIES_PARTIAL",
+    "Chromium NOT_EXECUTED",
+    "No commercial gate or production QA"
+  ],
+  "differential": {
+    "base": {
+      "regressions.json": {
+        "changed": 0,
+        "added": 0
+      },
+      "global.json": {
+        "changed": 0,
+        "added": 36
+      }
+    },
+    "main": {
+      "regressions.json": {
+        "changed": 0,
+        "added": 45
+      },
+      "global.json": {
+        "changed": 0,
+        "added": 304
+      }
+    }
+  },
+  "local_code_commit": "51158e00cec0c83e3e0c1600b6e3f50b672a6ed4",
+  "code_tree": "8618a6ce3083da5f3a4880a0e8debe0e6d41417b"
+}

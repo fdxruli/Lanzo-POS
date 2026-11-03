@@ -1,0 +1,53 @@
+
+ RUN  v4.0.14 /workspace/SECURITY_DEPENDENCY_REMEDIATION_R1
+
+ ✓ store/tests/social-preview/storeBuildOutputAudit.test.js (61 tests) 21001ms
+     ✓ rechaza el Build Output con production  346ms
+     ✓ rechaza el Build Output con target ausente  315ms
+     ✓ rechaza el Build Output con flag production contradictorio  322ms
+     ✓ acepta un output mínimo válido  328ms
+     ✓ rechaza el placeholder desplegable invalid-for-local-build en assets estáticos  309ms
+     ✓ rechaza el placeholder desplegable supabase.invalid en assets estáticos  325ms
+     ✓ rechaza el placeholder desplegable sb_publishable_invalid_for_local_build en assets estáticos  331ms
+     ✓ rechaza el placeholder desplegable store.invalid en assets estáticos  342ms
+     ✓ rechaza require de @vercel/og aunque la dependencia esté empacada  306ms
+     ✓ reproduce el fallo transitorio de la plantilla y corrige atómicamente ambos scopes  1335ms
+     ✓ rechaza un handler ESM .js bajo type=commonjs antes del deployment  317ms
+     ✓ normaliza solamente los bundles de entrada esperados con evidencia  344ms
+     ✓ rechaza una extensión arbitraria aunque tenga handler y runtime  746ms
+     ✓ clasifica mapas internos seguros y bloquea mapas públicos o con secretos  958ms
+     ✓ no trata ruta Windows en un sourcemap seguro como import ejecutable  464ms
+     ✓ no trata file URL en un sourcemap seguro como import ejecutable  343ms
+     ✓ sigue bloqueando un sourcemap que referencia src  513ms
+     ✓ sigue bloqueando un sourcemap que referencia supabase  354ms
+     ✓ sigue bloqueando secretos dentro de un sourcemap  393ms
+     ✓ bloquea imports ejecutables con ruta absoluta Windows  453ms
+     ✓ bloquea imports ejecutables con file URL  371ms
+     ✓ bloquea imports ejecutables con escape con ../  335ms
+     ✓ no interpreta texto normal con C:\ como import ejecutable  344ms
+     ✓ enumera fuentes del closure OG y rechaza las no autorizadas  830ms
+     ✓ mantiene las fuentes prohibidas en static y store-page, y bloquea una fuente administrativa  940ms
+     ✓ emite diagnóstico acotado de fuentes e imports sin rutas absolutas ni contenido  332ms
+     ✓ usa solo código ejecutable para clasificar dependencias y conserva sourcemaps para seguridad  308ms
+     ✓ acepta vocabulario defensivo sin valores credenciales  327ms
+     ✓ acepta Dexie y copy público de caja en el storefront  302ms
+     ✓ conserva los marcadores administrativos de alta precisión  307ms
+     ✓ clasifica vocabulario OAuth y placeholders sin ocultar valores reales  338ms
+     ✓ bloquea asignaciones OAuth con apariencia de credencial y no expone su valor  333ms
+     ✓ rechaza tercera función  441ms
+     ✓ rechaza helper publicado  484ms
+     ✓ rechaza asset administrativo  387ms
+     ✓ rechaza secreto  494ms
+     ✓ rechaza clave Supabase secreta  304ms
+     ✓ rechaza clave privada sintética  300ms
+     ✓ rechaza variable Supabase service role  312ms
+     ✓ rechaza archivo env con service role  319ms
+     ✓ rechaza JWT service role  317ms
+     ✓ rechaza tracking incorrecto  362ms
+     ✓ rechaza loop  316ms
+     ✓ rechaza source map público  306ms
+
+ Test Files  1 passed (1)
+      Tests  61 passed (61)
+   Start at  04:22:49
+   Duration  21.37s (transform 135ms, setup 96ms, import 144ms, tests 21.00s, environment 0ms)

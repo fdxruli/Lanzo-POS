@@ -1,0 +1,62 @@
+{
+  "plan": "free (confirmed via Management API)",
+  "assumptions": {
+    "devices_per_business": 2,
+    "lanzo_sessions_per_device_per_day": 2,
+    "tabs_per_device": 2,
+    "online_hours_per_day": 8,
+    "days": 30,
+    "grant_renewal_seconds": 90,
+    "orders_per_business_day": 50,
+    "auth_refresh_every_grant_renewals": 39
+  },
+  "measured": {
+    "baseline_auth_users": 0,
+    "baseline_auth_sessions": 0,
+    "qa_global_identity_cap": 10,
+    "qa_active_grant_cap_per_identity": 4,
+    "observed_vault_bytes_snapshot": 9380,
+    "observed_grants_snapshot": 4
+  },
+  "scenarios": [
+    {
+      "businesses": 10,
+      "peak_bridge_connections": 40,
+      "technical_MAU_upper_model": 1200,
+      "broker_invocations_month_model": 386400,
+      "auth_refreshes_month_model": 9847,
+      "order_signal_messages_model": 120000
+    },
+    {
+      "businesses": 100,
+      "peak_bridge_connections": 400,
+      "technical_MAU_upper_model": 12000,
+      "broker_invocations_month_model": 3864000,
+      "auth_refreshes_month_model": 98462,
+      "order_signal_messages_model": 1200000
+    },
+    {
+      "businesses": 500,
+      "peak_bridge_connections": 2000,
+      "technical_MAU_upper_model": 60000,
+      "broker_invocations_month_model": 19320000,
+      "auth_refreshes_month_model": 492308,
+      "order_signal_messages_model": 6000000
+    },
+    {
+      "businesses": 1000,
+      "peak_bridge_connections": 4000,
+      "technical_MAU_upper_model": 120000,
+      "broker_invocations_month_model": 38640000,
+      "auth_refreshes_month_model": 984616,
+      "order_signal_messages_model": 12000000
+    }
+  ],
+  "limitations": [
+    "not a load test",
+    "existing project traffic and remaining quotas unavailable",
+    "QA cap 10 is intentionally not a commercial configuration",
+    "MFA/password self-service can create unbound sessions beyond grant cap",
+    "no paid plan or configuration change authorized"
+  ]
+}

@@ -1,0 +1,362 @@
+===protobufjs===
+[
+  {
+    "name": "protobufjs",
+    "version": "7.6.6",
+    "location": "node_modules/protobufjs",
+    "isWorkspace": false,
+    "dependents": [
+      {
+        "type": "prod",
+        "name": "protobufjs",
+        "spec": "^7.5.4",
+        "from": {
+          "name": "@google/genai",
+          "version": "1.50.1",
+          "location": "node_modules/@google/genai",
+          "isWorkspace": false,
+          "dependents": [
+            {
+              "type": "prod",
+              "name": "@google/genai",
+              "spec": "^1.50.1",
+              "from": {
+                "location": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1"
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "dev": false,
+    "optional": false,
+    "devOptional": false,
+    "peer": false,
+    "bundled": false,
+    "overridden": false
+  }
+]
+===react-router-dom===
+[
+  {
+    "name": "react-router-dom",
+    "version": "7.18.5",
+    "location": "node_modules/react-router-dom",
+    "isWorkspace": false,
+    "dependents": [
+      {
+        "type": "prod",
+        "name": "react-router-dom",
+        "spec": "^7.9.6",
+        "from": {
+          "location": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1"
+        }
+      }
+    ],
+    "dev": false,
+    "optional": false,
+    "devOptional": false,
+    "peer": false,
+    "bundled": false,
+    "overridden": false
+  }
+]
+===react-router===
+[
+  {
+    "name": "react-router",
+    "version": "7.18.5",
+    "location": "node_modules/react-router",
+    "isWorkspace": false,
+    "dependents": [
+      {
+        "type": "prod",
+        "name": "react-router",
+        "spec": "7.18.5",
+        "from": {
+          "name": "react-router-dom",
+          "version": "7.18.5",
+          "location": "node_modules/react-router-dom",
+          "isWorkspace": false,
+          "dependents": [
+            {
+              "type": "prod",
+              "name": "react-router-dom",
+              "spec": "^7.9.6",
+              "from": {
+                "location": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1"
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "dev": false,
+    "optional": false,
+    "devOptional": false,
+    "peer": false,
+    "bundled": false,
+    "overridden": false
+  }
+]
+===ws===
+[
+  {
+    "name": "ws",
+    "version": "8.22.0",
+    "location": "node_modules/ws",
+    "isWorkspace": false,
+    "dependents": [
+      {
+        "type": "prod",
+        "name": "ws",
+        "spec": "^8.18.0",
+        "from": {
+          "name": "@google/genai",
+          "version": "1.50.1",
+          "location": "node_modules/@google/genai",
+          "isWorkspace": false,
+          "dependents": [
+            {
+              "type": "prod",
+              "name": "@google/genai",
+              "spec": "^1.50.1",
+              "from": {
+                "location": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "type": "prod",
+        "name": "ws",
+        "spec": "^8.18.2",
+        "from": {
+          "name": "@supabase/realtime-js",
+          "version": "2.87.1",
+          "location": "node_modules/@supabase/realtime-js",
+          "isWorkspace": false,
+          "dependents": [
+            {
+              "type": "prod",
+              "name": "@supabase/realtime-js",
+              "spec": "2.87.1",
+              "from": {
+                "name": "@supabase/supabase-js",
+                "version": "2.87.1",
+                "location": "node_modules/@supabase/supabase-js",
+                "isWorkspace": false,
+                "dependents": [
+                  {
+                    "type": "prod",
+                    "name": "@supabase/supabase-js",
+                    "spec": "^2.87.1",
+                    "from": {
+                      "location": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "dev": false,
+    "optional": false,
+    "devOptional": false,
+    "peer": false,
+    "bundled": false,
+    "overridden": false
+  }
+]
+===zod===
+[
+  {
+    "name": "zod",
+    "version": "4.6.7",
+    "location": "node_modules/zod",
+    "isWorkspace": false,
+    "dependents": [
+      {
+        "type": "prod",
+        "name": "zod",
+        "spec": "^4.1.13",
+        "from": {
+          "location": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1"
+        }
+      },
+      {
+        "type": "prod",
+        "name": "zod",
+        "spec": "^3.25.0 || ^4.0.0",
+        "from": {
+          "name": "eslint-plugin-react-hooks",
+          "version": "7.0.1",
+          "location": "node_modules/eslint-plugin-react-hooks",
+          "isWorkspace": false,
+          "dependents": [
+            {
+              "type": "dev",
+              "name": "eslint-plugin-react-hooks",
+              "spec": "^7.0.1",
+              "from": {
+                "location": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "type": "peer",
+        "name": "zod",
+        "spec": "^3.25.0 || ^4.0.0",
+        "from": {
+          "name": "zod-validation-error",
+          "version": "4.0.2",
+          "location": "node_modules/zod-validation-error",
+          "isWorkspace": false,
+          "dependents": [
+            {
+              "type": "prod",
+              "name": "zod-validation-error",
+              "spec": "^3.5.0 || ^4.0.0",
+              "from": {
+                "name": "eslint-plugin-react-hooks",
+                "version": "7.0.1",
+                "location": "node_modules/eslint-plugin-react-hooks",
+                "isWorkspace": false,
+                "dependents": [
+                  {
+                    "type": "dev",
+                    "name": "eslint-plugin-react-hooks",
+                    "spec": "^7.0.1",
+                    "from": {
+                      "location": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1"
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "dev": false,
+    "optional": false,
+    "devOptional": false,
+    "peer": false,
+    "bundled": false,
+    "overridden": false
+  }
+]
+===sharp===
+[
+  {
+    "name": "sharp",
+    "version": "0.35.5",
+    "location": "node_modules/sharp",
+    "isWorkspace": false,
+    "dependents": [
+      {
+        "type": "prod",
+        "name": "sharp",
+        "spec": "^0.35.5",
+        "from": {
+          "location": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1"
+        }
+      },
+      {
+        "type": "optional",
+        "name": "sharp",
+        "spec": "^0.35.3",
+        "from": {
+          "name": "@vercel/og",
+          "version": "1.0.3",
+          "location": "node_modules/@vercel/og",
+          "isWorkspace": false,
+          "dependents": [
+            {
+              "type": "prod",
+              "name": "@vercel/og",
+              "spec": "^1.0.3",
+              "from": {
+                "location": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1"
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "dev": false,
+    "optional": false,
+    "devOptional": false,
+    "peer": false,
+    "bundled": false,
+    "overridden": false
+  }
+]
+===satori===
+[
+  {
+    "name": "satori",
+    "version": "0.33.5",
+    "location": "node_modules/satori",
+    "isWorkspace": false,
+    "dependents": [
+      {
+        "type": "prod",
+        "name": "satori",
+        "spec": "0.33.5",
+        "from": {
+          "name": "@vercel/og",
+          "version": "1.0.3",
+          "location": "node_modules/@vercel/og",
+          "isWorkspace": false,
+          "dependents": [
+            {
+              "type": "prod",
+              "name": "@vercel/og",
+              "spec": "^1.0.3",
+              "from": {
+                "location": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1"
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "dev": false,
+    "optional": false,
+    "devOptional": false,
+    "peer": false,
+    "bundled": false,
+    "overridden": false
+  }
+]
+===@vercel/og===
+[
+  {
+    "name": "@vercel/og",
+    "version": "1.0.3",
+    "location": "node_modules/@vercel/og",
+    "isWorkspace": false,
+    "dependents": [
+      {
+        "type": "prod",
+        "name": "@vercel/og",
+        "spec": "^1.0.3",
+        "from": {
+          "location": "/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1"
+        }
+      }
+    ],
+    "dev": false,
+    "optional": false,
+    "devOptional": false,
+    "peer": false,
+    "bundled": false,
+    "overridden": false
+  }
+]

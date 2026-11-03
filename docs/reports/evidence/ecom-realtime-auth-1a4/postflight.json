@@ -1,0 +1,176 @@
+{
+  "users": 0,
+  "latest": "20261022184218",
+  "ledger": 324,
+  "policies": [
+    {
+      "name": "Lanzo private ecommerce tracking broadcast receive",
+      "qual": "((extension = 'broadcast'::text) AND realtime.lanzo_can_access_ecommerce_tracking_topic(( SELECT realtime.topic() AS topic)))",
+      "roles": [
+        "anon",
+        "authenticated"
+      ]
+    },
+    {
+      "name": "Lanzo private license broadcast receive",
+      "qual": "((extension = 'broadcast'::text) AND realtime.lanzo_can_access_license_realtime_topic(( SELECT realtime.topic() AS topic)))",
+      "roles": [
+        "anon",
+        "authenticated"
+      ]
+    },
+    {
+      "name": "Lanzo private POS broadcast receive",
+      "qual": "((extension = 'broadcast'::text) AND realtime.lanzo_can_access_pos_realtime_topic(( SELECT realtime.topic() AS topic)))",
+      "roles": [
+        "anon",
+        "authenticated"
+      ]
+    }
+  ],
+  "qa_roles": 0,
+  "sessions": 0,
+  "functions": [
+    {
+      "acl": [
+        "postgres=X/postgres",
+        "service_role=X/postgres"
+      ],
+      "md5": "b2e001e1e3d63db0bcb051e9958a33cb",
+      "signature": "admin_create_staff_user(text,text,text,text,text,text,jsonb,text)"
+    },
+    {
+      "acl": [
+        "=X/postgres",
+        "anon=X/postgres",
+        "authenticated=X/postgres",
+        "postgres=X/postgres",
+        "service_role=X/postgres"
+      ],
+      "md5": "89e845b034030c0c6cf2689cfd4e7b78",
+      "signature": "admin_create_staff_user(text,text,text,text,text,text,jsonb,text,text)"
+    },
+    {
+      "acl": [
+        "postgres=X/postgres",
+        "service_role=X/postgres"
+      ],
+      "md5": "fb55333a810a00d6f43aeaf7cf820162",
+      "signature": "admin_list_staff_users(text,text,text)"
+    },
+    {
+      "acl": [
+        "=X/postgres",
+        "anon=X/postgres",
+        "authenticated=X/postgres",
+        "postgres=X/postgres",
+        "service_role=X/postgres"
+      ],
+      "md5": "717d41ff4d188c89b5f00a2f61166ca7",
+      "signature": "admin_list_staff_users(text,text,text,text)"
+    },
+    {
+      "acl": [
+        "postgres=X/postgres",
+        "service_role=X/postgres"
+      ],
+      "md5": "c38ddc2cd2d4d045ff7261361e55cdde",
+      "signature": "admin_update_staff_user(text,text,text,uuid,text,jsonb,boolean,text,text)"
+    },
+    {
+      "acl": [
+        "=X/postgres",
+        "anon=X/postgres",
+        "authenticated=X/postgres",
+        "postgres=X/postgres",
+        "service_role=X/postgres"
+      ],
+      "md5": "ca00191aa85af9641bb0650d058b2866",
+      "signature": "admin_update_staff_user(text,text,text,uuid,text,jsonb,boolean,text,text,text)"
+    },
+    {
+      "acl": [
+        "=X/postgres",
+        "anon=X/postgres",
+        "authenticated=X/postgres",
+        "postgres=X/postgres",
+        "service_role=X/postgres"
+      ],
+      "md5": "afb412158b7808449d4f7f4e774e4256",
+      "signature": "pos_admin_adopt_legacy_cash_session(text,text,text,text,text,integer,text)"
+    },
+    {
+      "acl": [
+        "=X/postgres",
+        "anon=X/postgres",
+        "authenticated=X/postgres",
+        "postgres=X/postgres",
+        "service_role=X/postgres"
+      ],
+      "md5": "957a49d539846acd7fa92b254fca113a",
+      "signature": "pos_admin_close_cash_session(text,text,text,text,text,text,numeric,numeric,text,text,integer,text)"
+    },
+    {
+      "acl": [
+        "=X/postgres",
+        "anon=X/postgres",
+        "authenticated=X/postgres",
+        "postgres=X/postgres",
+        "service_role=X/postgres"
+      ],
+      "md5": "675ef683a0c2ce92a39deb29ab4b81c3",
+      "signature": "pos_get_cash_station_state(text,text,text,text)"
+    }
+  ],
+  "qa_schemas": 0,
+  "qa_licenses": 0,
+  "qa_functions": 0,
+  "comparisons": [
+    {
+      "signature": "admin_create_staff_user(text,text,text,text,text,text,jsonb,text)",
+      "body_unchanged": true,
+      "acl_unchanged": true
+    },
+    {
+      "signature": "admin_create_staff_user(text,text,text,text,text,text,jsonb,text,text)",
+      "body_unchanged": true,
+      "acl_unchanged": true
+    },
+    {
+      "signature": "admin_list_staff_users(text,text,text)",
+      "body_unchanged": true,
+      "acl_unchanged": true
+    },
+    {
+      "signature": "admin_list_staff_users(text,text,text,text)",
+      "body_unchanged": true,
+      "acl_unchanged": true
+    },
+    {
+      "signature": "admin_update_staff_user(text,text,text,uuid,text,jsonb,boolean,text,text)",
+      "body_unchanged": true,
+      "acl_unchanged": true
+    },
+    {
+      "signature": "admin_update_staff_user(text,text,text,uuid,text,jsonb,boolean,text,text,text)",
+      "body_unchanged": true,
+      "acl_unchanged": true
+    },
+    {
+      "signature": "pos_admin_adopt_legacy_cash_session(text,text,text,text,text,integer,text)",
+      "body_unchanged": true,
+      "acl_unchanged": true
+    },
+    {
+      "signature": "pos_admin_close_cash_session(text,text,text,text,text,text,numeric,numeric,text,text,integer,text)",
+      "body_unchanged": true,
+      "acl_unchanged": true
+    },
+    {
+      "signature": "pos_get_cash_station_state(text,text,text,text)",
+      "body_unchanged": true,
+      "acl_unchanged": true
+    }
+  ],
+  "policies_unchanged": true
+}

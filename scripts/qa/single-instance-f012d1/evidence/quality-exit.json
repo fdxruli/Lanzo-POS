@@ -1,0 +1,37 @@
+[
+  {
+    "name": "lint",
+    "command": [
+      "node",
+      "node_modules/eslint/bin/eslint.js",
+      "src/services/sync/syncExecutionScope.js",
+      "src/services/sync/scopedPosRealtimeListener.js",
+      "src/services/posRealtime.js",
+      "src/services/sync/posSyncOrchestrator.js",
+      "src/services/sync/posSyncBootstrapCoordinator.js",
+      "src/services/customerCredit/customerCreditSyncHandler.js",
+      "scripts/qa/single-instance-f012d1"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "diff-check",
+    "command": [
+      "git",
+      "diff",
+      "--cached",
+      "--check",
+      "0f1625f46e6fe234e378487bb06f74f4bd1555e9"
+    ],
+    "exit": 0
+  },
+  {
+    "name": "frozen-sources",
+    "command": [
+      "sha256sum",
+      "-c",
+      "scripts/qa/single-instance-f012d1/evidence/frozen-sources.sha256"
+    ],
+    "exit": 0
+  }
+]

@@ -1,0 +1,11 @@
+{
+  "method": "Git Data API after native git push failed with missing write credentials",
+  "expected_remote_head": "0f1625f46e6fe234e378487bb06f74f4bd1555e9",
+  "local_code_commit": "51158e00cec0c83e3e0c1600b6e3f50b672a6ed4",
+  "remote_code_commit": "1bd74b26e0b53ccbe00f335964978a5ac1f9700b",
+  "code_tree_exact_match": "8618a6ce3083da5f3a4880a0e8debe0e6d41417b",
+  "force": false,
+  "branch": "feat/f01-early-admission-recovery-r1",
+  "base_preserved": "feat/f01-single-instance-coordinator-r1",
+  "remote_final_sha_and_checks": "Recorded after publication in PR body and final delivery to avoid self-reference"
+}

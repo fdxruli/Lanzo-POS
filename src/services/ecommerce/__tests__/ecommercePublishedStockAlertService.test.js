@@ -90,8 +90,9 @@ describe('ecommercePublishedStockAlertService', () => {
     expect(statuses.get('local-negative')).toBe('out_of_stock');
     expect(statuses.get('local-positive')).toBe('in_stock');
     expect(statuses.get('local-not-tracked')).toBe('not_tracked');
-    expect(statuses.get('local-missing')).toBe('unverified');
-    expect(result.unverifiedCount).toBe(1);
+    expect(statuses.get('local-missing')).toBe('source_missing');
+    expect(result.sourceMissingCount).toBe(1);
+    expect(result.unverifiedCount).toBe(0);
     expect(statuses.get('local-inactive')).toBe('inactive_source');
     expect(statuses.has('local-hidden')).toBe(false);
     expect(statuses.has('local-no-ref')).toBe(false);

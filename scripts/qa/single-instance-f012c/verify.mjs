@@ -1,0 +1,15 @@
+import {execFileSync} from 'node:child_process';
+import {readFileSync,writeFileSync,readdirSync,statSync} from 'node:fs';
+import {createHash} from 'node:crypto';
+import assert from 'node:assert/strict';
+const baseline='d007bfe1cc2569391a2959ddff73bb2ed1e9c8ff';
+const allowed=['src/services/bootstrap/bootstrapLifecycle.js','src/services/supabase.js','src/store/slices/createProfileSlice.js','src/store/slices/license/licenseAdminActions.js','src/store/slices/license/licenseBackgroundValidationActions.js','src/store/slices/license/licenseBootstrapActions.js','src/store/slices/license/licenseProcessingActions.js'];
+const files=execFileSync('git',['ls-tree','-r','--name-only',baseline],{encoding:'utf8'}).trim().split('\n').filter(p=>/^(src|public|store|supabase|\.github)\//.test(p)||/^(package.*json|vite.*|vercel.*)$/.test(p));
+const sha=x=>createHash('sha256').update(x).digest('hex');
+const rows=files.map(path=>({path,before:sha(execFileSync('git',['show',`${baseline}:${path}`],{maxBuffer:64*1024*1024})),after:sha(readFileSync(path))}));
+const changed=rows.filter(r=>r.before!==r.after);assert.deepEqual(changed.map(r=>r.path).sort(),allowed.sort());
+const outputs=[];const walk=dir=>{for(const f of readdirSync(dir)){const p=`${dir}/${f}`;if(statSync(p).isDirectory())walk(p);else if(/\.(js|html|json)$/.test(p))outputs.push(p);}};
+for(const dir of ['dist','dist-store','store/dist'])walk(dir);
+const fixtureOrCoordinatorViolations=outputs.filter(p=>/single-instance-f012c|synthetic-shared|synthetic-tenant-A|lanzo-pos-administrative-instance/.test(readFileSync(p,'utf8')));assert.deepEqual(fixtureOrCoordinatorViolations,[]);
+const report={baseline,allowed,files:rows.length,unchanged:rows.length-changed.length,changed,fixtureOrCoordinatorViolations,bundleFiles:outputs.length,scope:'Exact preservation of all other product/config source blobs; no commercial gate activation. Not a browser or server certification.'};
+writeFileSync('scripts/qa/single-instance-f012c/evidence/preservation.json',JSON.stringify(report,null,2));console.log(JSON.stringify(report));

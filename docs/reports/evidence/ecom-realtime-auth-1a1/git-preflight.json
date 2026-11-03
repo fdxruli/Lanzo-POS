@@ -1,0 +1,15 @@
+{
+  "branch": "codex/ecom-realtime-auth-1a1",
+  "initialHead": "4e37703198caeb91531af1bd1a8ec5238b80da01",
+  "originMain": "f014a1f340ed78335d3e704eefff49cda8465115",
+  "mainCheckout": "C:/dev/Lanzo-POS-Git",
+  "mainHead": "54c4f9e83068bf6d1578f785877f4cc85a90552a",
+  "mainAhead": 6,
+  "mainBehind": 34,
+  "mainUntrackedPreserved": true,
+  "worktree": "C:/dev/Lanzo-POS-ecom-auth-1a1",
+  "sourceDiffFromR2": "none in src/store/api/package files/executable migrations",
+  "merge": false,
+  "push": false,
+  "newPr": false
+}

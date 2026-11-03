@@ -11,7 +11,8 @@ const adminState = () => ({
   licenseDetails: { license_key: 'PRO-LICENSE' },
   currentDeviceRole: 'admin',
   currentStaffUser: null,
-  deviceFingerprint: 'device-1'
+  deviceFingerprint: 'device-1',
+  companyProfile: { business_type: ['restaurante'] }
 });
 
 const portalResult = () => ({
@@ -140,18 +141,27 @@ const createServiceHarness = (fixture) => {
     localProductRef: fixture.product.id,
     isPublished: true
   };
+  const productsById = new Map([
+    [fixture.product.id, fixture.product],
+    [fixture.potato.id, fixture.potato],
+    [fixture.sauce.id, fixture.sauce]
+  ]);
   const localSource = {
-    getProductsByIds: vi.fn().mockImplementation(async () => new Map([
-      [fixture.product.id, fixture.product],
-      [fixture.potato.id, fixture.potato],
-      [fixture.sauce.id, fixture.sauce]
-    ])),
+    getProductsByIds: vi.fn().mockImplementation(async (ids) => new Map(
+      ids.map((id) => [id, productsById.get(id)]).filter(([, product]) => product)
+    )),
     getCategoriesByIds: vi.fn().mockResolvedValue(new Map([
       ['food', { id: 'food', name: 'Comida' }]
     ])),
-    getBatchesByProductIds: vi.fn().mockImplementation(async () => new Map([
-      [fixture.product.id, [fixture.potatoBatch, fixture.sauceBatch]]
-    ]))
+    getBatchesByProductIds: vi.fn().mockImplementation(async (ids) => new Map(
+      ids.map((id) => [id, id === fixture.product.id
+        ? [fixture.potatoBatch, fixture.sauceBatch]
+        : id === fixture.potato.id
+          ? [fixture.potatoBatch]
+          : id === fixture.sauce.id
+            ? [fixture.sauceBatch]
+            : []])
+    ))
   };
   const syncBatch = vi.fn().mockResolvedValue(successResult());
   const service = createEcommerceCatalogSyncService({
@@ -189,7 +199,8 @@ describe('catalog sync recipe inventory dependencies', () => {
     });
     expect(projection.configuration.optionGroups[0].options[0].sourceAvailable).toBe(false);
     expect(projection.sourceRevision).toBe(`version:${Date.parse(fixture.sauceBatch.updatedAt)}`);
-    expect(projection.configurationSourceRevision).toBe(projection.sourceRevision);
+    expect(projection.configurationSourceRevision).toMatch(/^configuration:/);
+    expect(projection.configurationSourceRevision).not.toBe(projection.sourceRevision);
   });
 
   it('keeps the parent available when only an optional extra is unavailable', async () => {
@@ -244,6 +255,9 @@ describe('catalog sync recipe inventory dependencies', () => {
       `version:${Date.parse(fixture.sauceBatch.updatedAt)}`
     );
     expect(second.projections[0].sourceRevision).not.toBe(first.projections[0].sourceRevision);
+    expect(second.projections[0].configurationSourceRevision).toBe(
+      first.projections[0].configurationSourceRevision
+    );
     expect(second.idempotencyKey).not.toBe(first.idempotencyKey);
   });
 });

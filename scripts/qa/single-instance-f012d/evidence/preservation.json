@@ -1,0 +1,111 @@
+{
+  "baseline": "c20e3538c8be897dc7b3c937429000ac8006f42d",
+  "files": 2060,
+  "unchanged": 2056,
+  "changed": [
+    {
+      "path": "src/services/financial/financialIntentRecoveryCoordinator.js",
+      "before": "7a86a166f0ecaf3d5e6bf13ff9ea5113eca9cb45badff36287adc0ae667a2e91",
+      "after": "cb2a5683f7dbdee7615255779489f623e9cb79341a76c2ddf2e8b619b76d5d4b"
+    },
+    {
+      "path": "src/services/sync/posSyncBootstrapAutoCoordinator.js",
+      "before": "638e37f779a5833b532e7e03f2e1e186234a8c01beb77bd6726f709cb8b56ca3",
+      "after": "f2eb27828615879feca90add2b993f4c0c861d544252954028fd7879d5519116"
+    },
+    {
+      "path": "src/services/sync/posSyncBootstrapCoordinator.js",
+      "before": "8915f9f55047561428c1b1b267800c34186c77768ae0ceaa56f437097b309490",
+      "after": "90d87cd543198b98c309248f1ac6ca09007e427661a52f8c49e79f9f315c0961"
+    },
+    {
+      "path": "src/services/sync/posSyncOrchestrator.js",
+      "before": "0cb65dfdd46d26f4a7bec0fb3cf5112d105cb6d47157997906b1b49124b0495c",
+      "after": "551a1fe3f37ffb8a7e4009b95944b8c20897309dfeaa79362a5a74c5881cde84"
+    }
+  ],
+  "newSource": {
+    "path": "src/services/sync/syncExecutionScope.js",
+    "sha256": "a0fd2034eac140c6209bf685201cb61824643584304959d4835c793cfcf99b0d"
+  },
+  "bundleFiles": 54,
+  "fixtureOrCoordinatorViolations": [],
+  "largestAssets": [
+    {
+      "path": "dist/assets/bot.worker-DFhElios.js",
+      "bytes": 910687,
+      "sha256": "e93018185654d76701fce34d8774688851dda0ce345992f32957d676d3c37d72"
+    },
+    {
+      "path": "dist/assets/App-MQClk0Be.js",
+      "bytes": 691752,
+      "sha256": "b67910afb53a44ad6a111463d63d954a55baf1d3a1589c843b10649046da6eff"
+    },
+    {
+      "path": "dist/assets/useAppStore-C9RMHEXA.js",
+      "bytes": 665341,
+      "sha256": "10894ddef54d661d042980ef9ed4c53e97a6e6c2dbff2e4fea5ce87f40ea2bf4"
+    },
+    {
+      "path": "dist/assets/index-b0VZTp8f.js",
+      "bytes": 552769,
+      "sha256": "0099315a9eaf7f931a95024b06dcc4c7fb1a95dcfa23b11ff339d064a99cce8f"
+    },
+    {
+      "path": "dist/assets/CommercialAIAgentsPage-_1qDf1l6.js",
+      "bytes": 420794,
+      "sha256": "3fec2d4b722823598b20106f6c3b026ca1c265362eaf88c9fbc7239466ef1746"
+    },
+    {
+      "path": "dist-store/assets/vendor_react_public-CrEvRHNo.js",
+      "bytes": 280008,
+      "sha256": "7b7442d8358e45b257930370bc2d516064ff823fd2fdc8c2c6de1a7685ab80e5"
+    },
+    {
+      "path": "store/dist/assets/vendor_react_public-CrEvRHNo.js",
+      "bytes": 280008,
+      "sha256": "7b7442d8358e45b257930370bc2d516064ff823fd2fdc8c2c6de1a7685ab80e5"
+    },
+    {
+      "path": "dist/assets/vendor_react-CQX8XpTy.js",
+      "bytes": 204252,
+      "sha256": "65df90a8dd782e94e55b56e17aa201e834768539a83c4c361a76d65bdd9cc4f6"
+    },
+    {
+      "path": "dist/assets/backup.worker-C-YKOTRO.js",
+      "bytes": 180000,
+      "sha256": "c6715df0db934927f0405dbc4c0da5d1c4c5027405985373c78344c52b1a1c6a"
+    },
+    {
+      "path": "dist-store/assets/main-store-Bv9ib-Lx.js",
+      "bytes": 177063,
+      "sha256": "e35182bff8c5b071b1fbd712c3c36beb306551d7a123f239368ae2d42065d0a9"
+    },
+    {
+      "path": "store/dist/assets/main-store-Bv9ib-Lx.js",
+      "bytes": 177063,
+      "sha256": "e35182bff8c5b071b1fbd712c3c36beb306551d7a123f239368ae2d42065d0a9"
+    },
+    {
+      "path": "dist/assets/stats.worker-DxcCN2D9.js",
+      "bytes": 112078,
+      "sha256": "23235dd2fde420087e769b33055602bcaef502d9b4ae3e0fb846823c40721758"
+    },
+    {
+      "path": "dist/assets/EcommercePortalPage-D7LHOVYL.js",
+      "bytes": 105519,
+      "sha256": "79aea73db1522f36befdd3aaf759e566b567a9c0d8c2d8ec8df3a00c38f2397e"
+    },
+    {
+      "path": "dist-store/assets/vendor_store_public-DhwKUplI.js",
+      "bytes": 103496,
+      "sha256": "6a9ac545ee1d7de73a560ae57ec19dba5d7bc614dcacf28d92b89c06337fc58f"
+    },
+    {
+      "path": "store/dist/assets/vendor_store_public-DhwKUplI.js",
+      "bytes": 103496,
+      "sha256": "6a9ac545ee1d7de73a560ae57ec19dba5d7bc614dcacf28d92b89c06337fc58f"
+    }
+  ],
+  "sourceContracts": "App/main, Actor Runtime/Storage, M-01/F-02, tenant, financial durable contracts, license/realtime actions, SQL, SW, dependencies, workflows and Ecommerce have identical blobs. Optional scope factory is absent from commercial bundles. This is preservation, not physical QA."
+}

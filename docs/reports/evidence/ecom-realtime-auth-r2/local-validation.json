@@ -1,0 +1,33 @@
+{
+  "date": "2026-10-20",
+  "timezone": "America/Mexico_City",
+  "nodeInstall": {
+    "command": "npm ci --ignore-scripts --no-audit --no-fund",
+    "exitCode": 0,
+    "packages": 701
+  },
+  "vitest": {
+    "exitCode": 0,
+    "files": 9,
+    "passed": 77,
+    "failed": 0,
+    "skipped": 0,
+    "report": ".tmp/ecom-signal-auth-r2/vitest-regression.json"
+  },
+  "nodeContracts": {
+    "exitCode": 0,
+    "passed": 11,
+    "failed": 0,
+    "log": ".tmp/ecom-signal-auth-r2/node-regression.log"
+  },
+  "buildPos": {
+    "command": "npm run build",
+    "exitCode": 0,
+    "log": ".tmp/ecom-signal-auth-r2/build-pos.log"
+  },
+  "scriptSyntax": {
+    "exitCode": 0
+  },
+  "runtimeDiffAgainstMain": "none in src, store, api, package files or executable migrations",
+  "liveRealtimeCertification": false
+}

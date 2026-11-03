@@ -1,0 +1,54 @@
+[
+  {
+    "id": "CE-DRAIN-01",
+    "guarantee": "public promise settlement proves native task settled",
+    "result": "COUNTEREXAMPLE",
+    "nativeSettledAtPublicTimeout": false
+  },
+  {
+    "id": "CE-DRAIN-02",
+    "result": "COUNTEREXAMPLE",
+    "guarantee": "ledger promise/lease settlement proves transport drained",
+    "atPublicSettlement": {
+      "nativeActive": 1,
+      "nativeCompleted": 0,
+      "executeCount": 1,
+      "intentStatus": "PENDING_RECEIPT",
+      "lease": null
+    }
+  },
+  {
+    "id": "RECOVERY-PRESERVED",
+    "result": "PASS",
+    "executeCount": 1,
+    "rows": 1,
+    "status": "COMPLETED",
+    "identityPreserved": true
+  },
+  {
+    "id": "CE-INVENTORY-01",
+    "result": "COUNTEREXAMPLE",
+    "guarantee": "ordinary recovery query is a complete tenant inventory",
+    "persisted": 63,
+    "returned": 50,
+    "excluded": [
+      "BLOCKED",
+      "CONFLICT",
+      "other actor",
+      "ten rows over limit"
+    ]
+  },
+  {
+    "id": "CE-RECOVERY-04",
+    "result": "COUNTEREXAMPLE",
+    "guarantee": "recoverFinancialIntent settlement proves native dispatch drained",
+    "elapsedMs": 35028,
+    "dispatchTimeoutMs": 35000,
+    "leaseMs": 120000,
+    "nativeActive": 1,
+    "executeCount": 1,
+    "receiptCount": 2,
+    "intentStatus": "PENDING_RECEIPT",
+    "lease": null
+  }
+]

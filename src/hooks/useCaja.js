@@ -18,6 +18,7 @@ import {
 import { resolveCashSessionAmounts } from '../services/cajaProjection';
 import { getFinancialTimeoutMs, withFinancialTimeout } from '../services/financial/financialTimeout';
 import { useAppStore } from '../store/useAppStore';
+import { getCancellationCashRefreshRoute, isCancellationCashEventForScope } from '../services/financial/cancellationCashRefreshRoute';
 import {
   CASH_OPENING_POLICY,
   CASH_OPENING_POLICY_EVENT,
@@ -147,7 +148,7 @@ const normalizeRepositoryResult = (result = {}) => {
   };
 };
 
-export function useCaja() {
+export function useCaja({ executionScope = null } = {}) {
   const [cajaActual, setCajaActual] = useState(null);
   const [historialCajas, setHistorialCajas] = useState([]);
   const [movimientosCaja, setMovimientosCaja] = useState([]);
@@ -168,6 +169,7 @@ export function useCaja() {
   const lastAppliedSequenceRef = useRef(0);
   const lastSuccessfulSequenceRef = useRef(0);
   const mountedRef = useRef(true);
+  const readLifecycleRef = useRef(null);
   const networkUnavailableRef = useRef(Boolean(cashMode.networkUnavailable));
   const lastCashStateRef = useRef({
     cashSession: null,
@@ -331,16 +333,15 @@ export function useCaja() {
   }, []);
 
   const cargarEstadoCaja = useCallback(({ showLoading = true, force = false } = {}) => {
+    const readOwner = readLifecycleRef.current;
+    const isReadCurrent = () => readOwner
+      ? readOwner.active && readOwner === readLifecycleRef.current && readOwner.route.isCurrent()
+      : readLifecycleRef.current === null;
+    if (!isReadCurrent()) return Promise.resolve(null);
     const currentVerification = verificationInFlightRef.current;
-    if (currentVerification && (!force || currentVerification.force)) {
+    if (currentVerification && currentVerification.readOwner === readOwner && (!force || currentVerification.force)) {
       return currentVerification.promise;
     }
-
-    if (showLoading) {
-      setIsLoading(true);
-      setEstadoCaja('loading');
-    }
-    setError(null);
 
     const sequence = verificationSequenceRef.current + 1;
     verificationSequenceRef.current = sequence;
@@ -349,11 +350,19 @@ export function useCaja() {
     const verification = {
       promise: null,
       sequence,
-      force
+      force,
+      readOwner
     };
-    const request = (async () => {
+    const performRead = async () => {
+      if (!isReadCurrent()) return null;
+      if (showLoading) {
+        setIsLoading(true);
+        setEstadoCaja('loading');
+      }
+      setError(null);
       try {
         const result = await cashRepository.getCurrentCashSession({ force });
+        if (!isReadCurrent()) return null;
         if (result?.success === false) {
           const loadError = new Error(result.message || 'No se pudo cargar la caja.');
           loadError.code = result.code;
@@ -372,6 +381,7 @@ export function useCaja() {
         }
         return result;
       } catch (loadError) {
+        if (!isReadCurrent()) return null;
         if (isCashNetworkUnavailableError(loadError)) {
           const networkResult = buildNetworkFallbackResult();
           if (sequence >= lastAppliedSequenceRef.current
@@ -389,26 +399,34 @@ export function useCaja() {
         }
         return null;
       } finally {
-        if (mountedRef.current && verificationInFlightRef.current === verification) {
+        if (isReadCurrent() && mountedRef.current && verificationInFlightRef.current === verification) {
           setIsLoading(false);
         }
       }
-    })();
+    };
+    const request = readOwner ? readOwner.route.runRead(performRead) : performRead();
 
     verification.promise = request;
     verificationInFlightRef.current = verification;
     const settleVerification = () => {
       if (verificationInFlightRef.current !== verification) return;
       verificationInFlightRef.current = null;
-      if (mountedRef.current) setIsRetrying(false);
+      if (isReadCurrent() && mountedRef.current) setIsRetrying(false);
     };
     request.then(settleVerification, settleVerification);
     return request;
   }, [applyCashState, buildNetworkFallbackResult]);
 
   useEffect(() => {
+    mountedRef.current = true;
+    const owner = executionScope ? { active: true, route: getCancellationCashRefreshRoute(executionScope) } : null;
+    readLifecycleRef.current = owner;
+    return () => { if (owner) owner.active = false; };
+  }, [executionScope]);
+
+  useEffect(() => {
     cargarEstadoCaja();
-  }, [cargarEstadoCaja]);
+  }, [cargarEstadoCaja, executionScope]);
 
   useEffect(() => {
     let refreshTimer = null;
@@ -439,21 +457,29 @@ export function useCaja() {
       lastAppliedSequenceRef.current = offlineSequence;
       applyCashState(buildNetworkFallbackResult());
     };
-    const refresh = () => scheduleRefresh();
+    const refresh = event => {
+      if (isCancellationCashEventForScope(event, executionScope)) scheduleRefresh();
+    };
+    const cashSubscription = executionScope
+      ? readLifecycleRef.current.route.subscribe(
+        () => cargarEstadoCaja({ showLoading: false }),
+        () => !networkUnavailableRef.current
+      ) : null;
     window.addEventListener(CASH_OPENING_POLICY_EVENT, refresh);
-    window.addEventListener('lanzo:cash-sync-updated', refresh);
+    if (!cashSubscription) window.addEventListener('lanzo:cash-sync-updated', refresh);
     window.addEventListener('online', refreshOnline);
     window.addEventListener('offline', refreshOffline);
     window.addEventListener('storage', refresh);
     return () => {
       if (refreshTimer) window.clearTimeout(refreshTimer);
       window.removeEventListener(CASH_OPENING_POLICY_EVENT, refresh);
-      window.removeEventListener('lanzo:cash-sync-updated', refresh);
+      cashSubscription?.unsubscribe();
+      if (!cashSubscription) window.removeEventListener('lanzo:cash-sync-updated', refresh);
       window.removeEventListener('online', refreshOnline);
       window.removeEventListener('offline', refreshOffline);
       window.removeEventListener('storage', refresh);
     };
-  }, [applyCashState, buildNetworkFallbackResult, cargarEstadoCaja]);
+  }, [applyCashState, buildNetworkFallbackResult, cargarEstadoCaja, executionScope]);
 
   const sincronizarEstadoCaja = useCallback(async ({ force = false } = {}) => (
     cargarEstadoCaja({ showLoading: false, force })

@@ -1,0 +1,34 @@
+{
+  "stage": "natural-expiry",
+  "ttl": 120,
+  "started_at": "2026-10-22T18:35:21.532Z",
+  "results": [
+    {
+      "id": "NATURAL-PRECONDITION",
+      "status": "PASS",
+      "grant_expires_at": 1792694243643,
+      "jwt_expires_at": 1792697723000
+    },
+    {
+      "id": "COLLECT-KEEPS-LIVE-LANZO-IDENTITY",
+      "status": "PASS",
+      "retired": 0,
+      "deleted": 0
+    },
+    {
+      "id": "NATURAL-GRANT-EXPIRED",
+      "status": "PASS",
+      "old_http": 410,
+      "publish": "EXCLUDED",
+      "old_socket": "joined"
+    },
+    {
+      "id": "NATURAL-RECOVERY",
+      "status": "PASS",
+      "new_join": "SUBSCRIBED",
+      "old_topic": "CHANNEL_ERROR"
+    }
+  ],
+  "status": "PASS",
+  "finished_at": "2026-10-22T18:37:32.841Z"
+}

@@ -44,17 +44,26 @@ const applyCreditPayload = async (response = {}) => {
     : (Array.isArray(response.movements) ? response.movements : []);
   const sessions = Array.isArray(response.cash_sessions) ? response.cash_sessions : [];
 
+  // A failed projection must not finish the handler while sibling local writes
+  // are still running. Preserve the original operation order and first error;
+  // this waits for local settlement, not remote financial confirmation.
+  let failed = false, firstFailure;
+  const settled = await Promise.allSettled([
+    customerCreditLocalRepository.applyCloudLedgers(ledgers),
+    customerLocalRepository.applyCloudCustomers(customers),
+    cashLocalRepository.applyCloudCashMovements(movements),
+    cashLocalRepository.applyCloudCashSessions(sessions)
+  ].map(promise => Promise.resolve(promise).catch(error => {
+    if (!failed) { failed = true; firstFailure = error; }
+    throw error;
+  })));
+  if (failed) throw firstFailure;
   const [
     appliedLedgers,
     appliedCustomers,
     appliedMovements,
     appliedSessions
-  ] = await Promise.all([
-    customerCreditLocalRepository.applyCloudLedgers(ledgers),
-    customerLocalRepository.applyCloudCustomers(customers),
-    cashLocalRepository.applyCloudCashMovements(movements),
-    cashLocalRepository.applyCloudCashSessions(sessions)
-  ]);
+  ] = settled.map(result => result.value);
 
   return appliedLedgers.length + appliedCustomers.length + appliedMovements.length + appliedSessions.length;
 };

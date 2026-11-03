@@ -1,0 +1,11 @@
+{
+  "command": [
+    "/opt/codex/runtimes/codex-primary-runtime/dependencies/node/bin/node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "--maxWorkers=2",
+    "--reporter=json",
+    "--outputFile=/workspace/scratch/7ff92a751658/current-baseline/global.json"
+  ],
+  "exitCode": 1
+}

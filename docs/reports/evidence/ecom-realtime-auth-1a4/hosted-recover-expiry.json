@@ -1,0 +1,24 @@
+{
+  "stage": "recover-expiry",
+  "ttl": 600,
+  "started_at": "2026-10-22T18:25:43.773Z",
+  "results": [
+    {
+      "id": "EXPIRED-TOMBSTONE",
+      "status": "PASS",
+      "http": 410
+    },
+    {
+      "id": "NEW-GRANT-SAME-IDENTITY",
+      "status": "PASS"
+    },
+    {
+      "id": "RECOVERY-JOIN",
+      "status": "PASS",
+      "new_join": "SUBSCRIBED",
+      "old_topic": "CHANNEL_ERROR"
+    }
+  ],
+  "status": "PASS",
+  "finished_at": "2026-10-22T18:25:51.646Z"
+}

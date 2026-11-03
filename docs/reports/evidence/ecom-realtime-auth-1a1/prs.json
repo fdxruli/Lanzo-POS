@@ -1,0 +1,44 @@
+[
+  {
+    "url": "https://github.com/fdxruli/Lanzo-POS/pull/366",
+    "number": 366,
+    "state": "open",
+    "merged": false,
+    "mergeable": true,
+    "draft": true,
+    "title": "feat(auth): bounded 7-day Admin offline continuity",
+    "base": "main",
+    "base_sha": "f014a1f340ed78335d3e704eefff49cda8465115",
+    "head": "feat/admin-offline-continuity-extended-r1",
+    "head_sha": "11f6115afc843e55dcfa0780842c326db752bd90",
+    "updated_at": "2026-10-20T07:46:06Z"
+  },
+  {
+    "url": "https://github.com/fdxruli/Lanzo-POS/pull/338",
+    "number": 338,
+    "state": "open",
+    "merged": false,
+    "mergeable": true,
+    "draft": true,
+    "title": "feat(restaurant): cobro flexible y división monetaria",
+    "base": "main",
+    "base_sha": "f014a1f340ed78335d3e704eefff49cda8465115",
+    "head": "feat/restaurant-split-flexible-payments-r1",
+    "head_sha": "fef7205f76b173025f503e60d0968f446f741e78",
+    "updated_at": "2026-10-20T15:09:14Z"
+  },
+  {
+    "url": "https://github.com/fdxruli/Lanzo-POS/pull/352",
+    "number": 352,
+    "state": "open",
+    "merged": false,
+    "mergeable": false,
+    "draft": true,
+    "title": "feat(restaurant): supervisión administrativa y autoridad Staff por mesa",
+    "base": "feat/restaurant-split-flexible-payments-r1",
+    "base_sha": "fb17e9a43929d54087ab937cb760a8cd6e087c36",
+    "head": "feat/restaurant-admin-supervision-r1",
+    "head_sha": "d758f69b2119f1bc346eb0ac86ba0a74c0265668",
+    "updated_at": "2026-10-13T15:28:45Z"
+  }
+]

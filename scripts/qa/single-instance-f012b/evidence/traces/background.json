@@ -1,0 +1,139 @@
+[
+  {
+    "contract": "BG-31 actual background public timeout retains registered validation and transport",
+    "initial": {
+      "actorGeneration": 1
+    },
+    "final": {
+      "actorGeneration": 1
+    },
+    "metrics": {
+      "revalidations": 1,
+      "connectivityChecks": 1
+    },
+    "scopes": [
+      {
+        "registered": 3,
+        "started": 3,
+        "finished": 3,
+        "accepting": false,
+        "pending": 0,
+        "completed": 3,
+        "rejected": 0,
+        "unknown": []
+      }
+    ],
+    "result": "pass",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "contract": "BG-32 actual background observes late rejection after public ready",
+    "initial": {
+      "actorGeneration": 1
+    },
+    "final": {
+      "actorGeneration": 1
+    },
+    "metrics": {
+      "revalidations": 1,
+      "connectivityChecks": 1
+    },
+    "scopes": [
+      {
+        "registered": 2,
+        "started": 2,
+        "finished": 2,
+        "accepting": true,
+        "pending": 0,
+        "completed": 1,
+        "rejected": 1,
+        "unknown": []
+      }
+    ],
+    "result": "pass",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "contract": "BG-33 stale health probe cannot write into a new generation",
+    "initial": {
+      "actorGeneration": 1
+    },
+    "final": {
+      "actorGeneration": 2
+    },
+    "metrics": {
+      "revalidations": 1,
+      "connectivityChecks": 1
+    },
+    "scopes": [
+      {
+        "registered": 2,
+        "started": 2,
+        "finished": 2,
+        "accepting": true,
+        "pending": 0,
+        "completed": 1,
+        "rejected": 1,
+        "unknown": []
+      }
+    ],
+    "result": "pass",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "contract": "BG-34 profile frontier is expressly unknown and cannot claim drain",
+    "initial": {
+      "actorGeneration": 1
+    },
+    "final": {
+      "actorGeneration": 1
+    },
+    "metrics": {
+      "revalidations": 0,
+      "connectivityChecks": 0
+    },
+    "scopes": [
+      {
+        "registered": 1,
+        "started": 1,
+        "finished": 1,
+        "accepting": true,
+        "pending": 0,
+        "completed": 1,
+        "rejected": 0,
+        "unknown": [
+          "background_profile_nested_work"
+        ]
+      }
+    ],
+    "result": "pass",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "contract": "BG-35 background admission rejection is observed when callers detach",
+    "initial": {
+      "actorGeneration": 1
+    },
+    "final": {
+      "actorGeneration": 1
+    },
+    "metrics": {
+      "revalidations": 0,
+      "connectivityChecks": 0
+    },
+    "scopes": [
+      {
+        "registered": 1,
+        "started": 0,
+        "finished": 0,
+        "accepting": false,
+        "pending": 0,
+        "completed": 0,
+        "rejected": 0,
+        "unknown": []
+      }
+    ],
+    "result": "pass",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  }
+]

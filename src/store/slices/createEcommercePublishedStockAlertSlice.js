@@ -2,7 +2,7 @@ import { evaluateEcommercePortalAccess } from '../../pages/settingsPageAccess';
 import {
   createEcommercePublishedStockAlertService,
   getEcommercePublishedStockAlertContextKey
-} from '../../services/ecommerce/ecommercePublishedStockAlertService';
+} from '../../services/ecommerce/ecommercePublishedStockAlertCore';
 
 const initialState = Object.freeze({
   ecommercePublishedStockAlertSnapshot: null,

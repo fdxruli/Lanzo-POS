@@ -1,0 +1,2 @@
+{"postgres":"17.11","server_version_num":"170011","code_sha":"ef83120c73ac1a64887f34b31c6700d7eadb016a","template_database":"fin01_cert_template","success_database":"fin01_cert_success_1711","executed":15,"passed":15,"failed":0}
+SUCCESS_DATABASE=fin01_cert_success_1711
