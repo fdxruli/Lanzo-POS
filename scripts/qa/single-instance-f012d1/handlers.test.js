@@ -37,7 +37,7 @@ const deferred = () => {
 };
 const flush = async () => { for (let i = 0; i < 30; i++) await Promise.resolve(); };
 const payload = () => ({
-  success: true, customers: [{ id: 'synthetic-customer', name: 'Synthetic customer', current_debt: 0 }],
+  success: true, customers: [{ id: 'synthetic-customer', name: 'Synthetic customer', current_debt: 0, server_version: 1 }],
   ledger_entries: [], cash_movements: [], cash_sessions: [], latest_change_seq: 1
 });
 beforeEach(async () => {
@@ -56,8 +56,8 @@ it.each(['events', 'snapshot'])('real credit %s waits for delayed Dexie sibling 
   vi.spyOn(customerLocalRepository, 'applyCloudCustomers').mockImplementation(async rows => {
     started.resolve(); await gate.promise; return original(rows);
   });
-  // Keep the real migration path: no local debt -> durable migrated-at marker,
-  // then the actual handler snapshot. Only external RPC responses are controlled.
+  // Keep the real migration check: no Local history -> no automatic credit
+  // import, then the actual handler snapshot. Only external RPCs are controlled.
   const migration = vi.spyOn(customerCreditMigrationService, 'runInitialMigrationIfNeeded');
   const scope = createSyncExecutionScope();
   let settled = false;
@@ -132,7 +132,7 @@ it('real customer onStart retains initial migration and snapshot, including dura
   m.customerMigration.mockImplementation(() => { started.resolve(); return gate.promise; });
   const result = customerSyncHandler.onStart({ licenseKey: 'synthetic-T' });
   await started.promise; expect(m.customerSnapshot).not.toHaveBeenCalled();
-  gate.resolve({ success: true, results: [{ success: true, customer: { id: 'synthetic-migrate', name: 'Synthetic', phone: '5551234567' } }] });
+  gate.resolve({ success: true, results: [{ success: true, customer: { id: 'synthetic-migrate', name: 'Synthetic', phone: '5551234567', server_version: 1 } }] });
   expect(await result).toMatchObject({ success: true, migrated: 1 });
   expect(m.customerMigration).toHaveBeenCalledTimes(1); expect(m.customerSnapshot).toHaveBeenCalledTimes(1);
   expect(await db.table('sync_meta').get('synthetic-T:customers_cloud_migrated')).toMatchObject({ value: true });

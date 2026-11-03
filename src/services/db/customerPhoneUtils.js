@@ -3,6 +3,12 @@ export const normalizePhoneKey = (phone) => {
   return raw.replace(/\D/g, '');
 };
 
+export const getCustomerPhoneValidationError = (phone) => {
+  if (!String(phone ?? '').trim()) return 'El teléfono es obligatorio.';
+  if (!normalizePhoneKey(phone)) return 'Escribe un teléfono que contenga al menos un dígito.';
+  return '';
+};
+
 export const toIndexedPhoneKey = (phone) => {
   const normalized = normalizePhoneKey(phone);
   return normalized.length > 0 ? normalized : null;

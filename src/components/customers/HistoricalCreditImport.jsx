@@ -12,7 +12,7 @@ const money = (cents) => new Intl.NumberFormat('es-MX', { style: 'currency', cur
 const statusCopy = {
   READY: 'Sin conflicto', IMPORTED: 'Importado', ALREADY_IMPORTED_IDENTICAL: 'Importación anterior verificada',
   CONFLICT_DIFFERENT_BALANCE: 'Conflicto: saldo diferente', CONFLICT_EXISTING_CLOUD_LEDGER: 'Conflicto: existe historial en Nube',
-  CONFLICT_CUSTOMER_MISSING: 'Conflicto: falta sincronizar el cliente', CONFLICT_LOCAL_ACTIVITY: 'Importado; hay actividad local pendiente'
+  CONFLICT_CUSTOMER_MISSING: 'Falta preparar el directorio en Nube', CONFLICT_LOCAL_ACTIVITY: 'Hay actividad Local pendiente de revisión'
 };
 const errorCopy = (error) => ({
   REJECTED_AUTHORITY: 'Se requiere una sesión vigente del propietario.',
@@ -22,7 +22,15 @@ const errorCopy = (error) => ({
   EXPIRED: 'La autorización venció. Revisa el lote y autorízalo nuevamente.',
   SESSION_CHANGED: 'La sesión cambió. El propietario debe revisar y autorizar nuevamente.',
   AUTHORIZATION_SESSION_CHANGED: 'La sesión cambió. El propietario debe revisar y autorizar nuevamente.',
-  PENDING_AUTHORIZATION: 'El lote espera autorización del propietario.'
+  PENDING_AUTHORIZATION: 'El lote espera autorización del propietario.',
+  HISTORICAL_REVIEW_REQUIRED: 'Revisa nuevamente los saldos antes de continuar.',
+  HISTORICAL_DIRECTORY_PREPARATION_REQUIRED: 'Prepara primero el directorio Cloud faltante y revisa nuevamente los saldos.',
+  HISTORICAL_DIRECTORY_FIELDS_REQUIRED: 'Completa el nombre y teléfono del cliente en Local antes de preparar su directorio.',
+  HISTORICAL_DIRECTORY_CONTEXT_CHANGED: 'Cambió la licencia, sesión o capacidad disponible. Revisa nuevamente antes de continuar.',
+  HISTORICAL_DIRECTORY_CONFLICT: 'El directorio Nube tiene datos incompatibles. No se sobrescribió; revisa el conflicto.',
+  HISTORICAL_DIRECTORY_SOURCE_CONFLICT: 'El origen Local cambió. Sus datos siguen preservados; revisa el conflicto antes de continuar.',
+  VERSION_CONFLICT: 'El cliente ya existe en Nube. Revisa nuevamente los saldos y su directorio.',
+  DUPLICATE_PHONE: 'El teléfono o identificador está en conflicto en Nube. No se sobrescribió el directorio.'
 }[error?.message] || 'No se confirmó la operación. Los saldos locales siguen preservados. Consulta el estado antes de reintentar.');
 
 export default function HistoricalCreditImport() {
@@ -42,6 +50,7 @@ export default function HistoricalCreditImport() {
   };
   const rows = result?.results || preview?.results || [];
   const conflicts = rows.filter((row) => row.status.startsWith('CONFLICT_')).length;
+  const missingDirectory = preview?.results?.some((row) => row.status === 'CONFLICT_CUSTOMER_MISSING');
   return (
     <section className="ui-card historical-credit" aria-labelledby="historical-credit-title" aria-busy={busy}>
       <h2 id="historical-credit-title">Importar saldos históricos</h2>
@@ -64,11 +73,20 @@ export default function HistoricalCreditImport() {
           {row.over_limit && <span className="ui-alert ui-alert--warning">Supera el límite actual. El saldo se conserva; no autoriza nuevos cargos.</span>}
         </li>)}
       </ul>}
+      {missingDirectory && !result && <>
+        <p>Falta el directorio de algunos clientes en Nube. Prepararlo conserva sus identificadores y envía solo sus datos de contacto y límite de crédito. No importa deuda ni autoriza saldos.</p>
+        <button type="button" className="ui-button ui-button--secondary" disabled={busy} onClick={() => run(async () => {
+          const reviewedHash = preview.hash;
+          setConfirmed(false); setResult(null); setPreview(null);
+          await migration.prepareDirectory({ licenseKey, reviewedHash });
+          setPreview(await migration.preview({ licenseKey }));
+        })}>Preparar directorio Cloud faltante</button>
+      </>}
       {preview?.batch && result?.state !== 'CONSUMED' && result?.cloudState !== 'CONSUMED' && <>
         <p>Confirmar autoriza los importes exactos declarados. Solo se aplicarán los clientes sin conflicto; un historial Nube distinto requiere revisión manual.</p>
         <label className="historical-credit__confirmation"><input type="checkbox" checked={confirmed} disabled={busy} onChange={(event) => setConfirmed(event.target.checked)} />Revisé los clientes, saldos y total y autorizo su importación histórica.</label>
         <div className="historical-credit__actions">
-          <button type="button" className="ui-button ui-button--primary" disabled={busy || !confirmed} onClick={() => run(async () => {
+          <button type="button" className="ui-button ui-button--primary" disabled={busy || !confirmed || missingDirectory} onClick={() => run(async () => {
             setConfirmed(false); setResult(await migration.authorizeAndImport({ licenseKey, reviewedHash: preview.hash }));
           })}>Autorizar e importar estos saldos</button>
           <button type="button" className="ui-button ui-button--secondary" disabled={busy} onClick={() => run(async () => setResult(await migration.resumeImport({ licenseKey })))}>Consultar y reintentar lote autorizado</button>

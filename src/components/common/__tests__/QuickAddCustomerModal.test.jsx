@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import '@testing-library/jest-dom/vitest';
 import { useState } from 'react';
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -31,10 +31,40 @@ afterEach(() => { cleanup(); vi.clearAllMocks(); });
 
 async function fillIdentity(user) {
   await user.type(screen.getByLabelText('Nombre Completo *'), 'Cliente QA 3C');
-  await user.type(screen.getByLabelText('Telefono *'), '5551234567');
+  await user.type(screen.getByLabelText('Teléfono *'), '5551234567');
 }
 
 describe('QuickAddCustomerModal', () => {
+  it('blocks an empty phone before saving and focuses the phone field', async () => {
+    const user = userEvent.setup();
+    render(<QuickAddCustomerModal show onClose={vi.fn()} onCustomerSaved={vi.fn()} />);
+    await user.type(screen.getByLabelText('Nombre Completo *'), 'Cliente sin teléfono');
+    await user.click(screen.getByRole('button', { name: 'Guardar Cliente' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('El teléfono es obligatorio.');
+    expect(screen.getByLabelText('Teléfono *')).toHaveFocus();
+    expect(mocks.saveDataSafe).not.toHaveBeenCalled();
+    expect(mocks.saveCustomer).not.toHaveBeenCalled();
+  });
+
+  it('blocks whitespace and a phone with no digits before saving', async () => {
+    const user = userEvent.setup();
+    render(<QuickAddCustomerModal show onClose={vi.fn()} onCustomerSaved={vi.fn()} />);
+    await user.type(screen.getByLabelText('Nombre Completo *'), 'Cliente inválido');
+    const phone = screen.getByLabelText('Teléfono *');
+
+    await user.type(phone, '   ');
+    await user.click(screen.getByRole('button', { name: 'Guardar Cliente' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('El teléfono es obligatorio.');
+    expect(mocks.saveDataSafe).not.toHaveBeenCalled();
+
+    await user.clear(phone);
+    await user.type(phone, '---()');
+    await user.click(screen.getByRole('button', { name: 'Guardar Cliente' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('al menos un dígito');
+    expect(mocks.saveDataSafe).not.toHaveBeenCalled();
+  });
+
   it('keeps the legacy customer creation without a credit field or authorization', async () => {
     const user = userEvent.setup();
     const onCustomerSaved = vi.fn();
@@ -77,7 +107,9 @@ describe('QuickAddCustomerModal', () => {
     await fillIdentity(user);
     await user.type(screen.getByLabelText('Límite de crédito *'), '500,50');
     await user.click(screen.getByRole('button', { name: 'Guardar Cliente' }));
-    await waitFor(() => expect(mocks.saveCustomer).toHaveBeenCalledWith(expect.objectContaining({ creditLimit: 500.5 }), { existingCustomer: null }));
+    await waitFor(() => expect(mocks.saveCustomer).toHaveBeenCalledWith(expect.objectContaining({ creditLimit: 500.5 }), expect.objectContaining({
+      existingCustomer: null, creditLimitContext: 'quick_add', minimumCreditLimit: 150.99
+    })));
     await waitFor(() => expect(onCustomerSaved).toHaveBeenCalledWith(expect.objectContaining({ id: 'cust-cloud', creditLimit: 500.5, debt: 0, serverVersion: 3 })));
     expect(mocks.saveDataSafe).not.toHaveBeenCalled();
   });
@@ -135,7 +167,26 @@ describe('QuickAddCustomerModal', () => {
     expect(onClose).not.toHaveBeenCalled();
     expect(onCustomerSaved).not.toHaveBeenCalled();
     expect(mocks.saveCustomer).toHaveBeenCalledTimes(1);
+    expect(screen.getByLabelText('Nombre Completo *')).toHaveValue('Cliente QA 3C');
+    expect(screen.getByLabelText('Teléfono *')).toHaveValue('5551234567');
     expect(mocks.saveDataSafe).not.toHaveBeenCalled();
+  });
+
+  it('blocks two fast submit events from creating a duplicate', async () => {
+    const user = userEvent.setup();
+    let resolveSave;
+    const onCustomerSaved = vi.fn();
+    mocks.saveCustomer.mockImplementation(() => new Promise((resolve) => { resolveSave = resolve; }));
+    render(<QuickAddCustomerModal show creditMode onClose={vi.fn()} onCustomerSaved={onCustomerSaved} />);
+    await fillIdentity(user);
+    await user.type(screen.getByLabelText('Límite de crédito *'), '150');
+
+    const form = screen.getByRole('button', { name: 'Guardar Cliente' }).closest('form');
+    fireEvent.submit(form);
+    fireEvent.submit(form);
+    await waitFor(() => expect(mocks.saveCustomer).toHaveBeenCalledTimes(1));
+    resolveSave({ success: true, data: { id: 'cust-new', name: 'Cliente QA 3C', phone: '5551234567' } });
+    await waitFor(() => expect(onCustomerSaved).toHaveBeenCalledTimes(1));
   });
 
   it('keeps a pending Cloud customer open and retries its existing identity before selecting the synchronized record', async () => {
@@ -157,7 +208,9 @@ describe('QuickAddCustomerModal', () => {
     await user.click(screen.getByRole('button', { name: 'Guardar Cliente' }));
     await waitFor(() => expect(onCustomerSaved).toHaveBeenCalledWith(synchronized));
     expect(mocks.getCustomerById).toHaveBeenCalledWith('cust-new');
-    expect(mocks.saveCustomer).toHaveBeenNthCalledWith(2, expect.objectContaining({ id: 'cust-new' }), { existingCustomer: synchronized });
+    expect(mocks.saveCustomer).toHaveBeenNthCalledWith(2, expect.objectContaining({ id: 'cust-new' }), expect.objectContaining({
+      existingCustomer: synchronized, creditLimitContext: 'quick_add', minimumCreditLimit: 150
+    }));
     expect(mocks.saveDataSafe).not.toHaveBeenCalled();
   });
 

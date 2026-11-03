@@ -1,7 +1,7 @@
 import 'fake-indexeddb/auto';
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 const runtime = vi.hoisted(() => ({ generation: 1, actorType: 'admin', rpc: vi.fn() }));
-vi.mock('../../auth/actorRuntimeController', () => ({ actorRuntimeController: { capture: () => {
+vi.mock('../../auth/actorRuntimeController', async (importOriginal) => ({ ...await importOriginal(), actorRuntimeController: { ...(await importOriginal()).actorRuntimeController, capture: () => {
   const generation = runtime.generation;
   return { actorType:runtime.actorType, assertCurrent: () => { if (generation !== runtime.generation) throw new Error('ACTOR_CONTEXT_STALE'); } };
 } } }));
@@ -35,7 +35,7 @@ describe('durable import workflow; RPC transport is a controlled boundary double
   });
 
   it('startup and reconnect preserve debt without approval or financial RPC',async()=>{
-    expect(await migration.runInitialMigrationIfNeeded({licenseKey})).toMatchObject({success:false,code:'PENDING_AUTHORIZATION'});
+    expect(await migration.runInitialMigrationIfNeeded({licenseKey})).toMatchObject({success:false,blocked:true,code:'HISTORICAL_DEBT_PRESERVATION_REQUIRED'});
     expect(runtime.rpc).not.toHaveBeenCalled();expect((await historicalCreditSnapshot.list())[0].amountCents).toBe(12501);
   });
   it('preview persists exact manifest and only reads the server',async()=>{

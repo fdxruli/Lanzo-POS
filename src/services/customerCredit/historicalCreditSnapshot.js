@@ -14,7 +14,15 @@ export const createHistoricalCreditSnapshotRepository = (database, tenantIdentit
     const cache = database.table(STORES.SYNC_CACHE);
     const previous = await cache.get(snapshotKey(customer.id));
     const currentCents = Money.toCents(customer.debt || 0);
-    const localActivity = customer.financialSource === 'local'
+    const entries = database.tables.some((table) => table.name === STORES.CUSTOMER_LEDGER)
+      ? await database.table(STORES.CUSTOMER_LEDGER).where('customerId').equals(customer.id).toArray() : [];
+    const represented = new Set(['IMPORTED', 'ALREADY_IMPORTED_IDENTICAL'].includes(previous?.value.status)
+      ? (previous.value.originalLedgerEntries || []).map((row) => row.id) : []);
+    const hasLocalEntries = entries.some((row) => row.syncStatus !== 'synced' && !represented.has(row.id));
+    const confirmedUnchanged = ['IMPORTED', 'ALREADY_IMPORTED_IDENTICAL'].includes(previous?.value.status)
+      && previous.value.result?.ledger_id && currentCents === previous.value.amountCents && !hasLocalEntries;
+    const localActivity = (customer.financialSource === 'local' && !confirmedUnchanged)
+      || hasLocalEntries
       || (customer.financialSource === 'cloud' && customer.lastCloudDebtCents !== undefined && customer.lastCloudDebtCents !== currentCents);
     if (previous) {
       if (localActivity && ['IMPORTED','ALREADY_IMPORTED_IDENTICAL','CLOUD_PROJECTION'].includes(previous.value.status)) {
@@ -23,7 +31,7 @@ export const createHistoricalCreditSnapshotRepository = (database, tenantIdentit
       }
       return previous.value;
     }
-    if ((customer.financialSource === 'cloud' && !localActivity) || currentCents <= 0) return null;
+    if ((customer.financialSource === 'cloud' && !localActivity) || (currentCents <= 0 && !hasLocalEntries)) return null;
     const cents = Money.toCents(customer.debt);
     if (!Number.isSafeInteger(cents) || cents > 2147483647) throw new Error('HISTORICAL_BALANCE_OUT_OF_RANGE');
     let source = await cache.get(SOURCE_KEY);
@@ -36,9 +44,9 @@ export const createHistoricalCreditSnapshotRepository = (database, tenantIdentit
       customerId: customer.id, amountCents: cents, tenant: tenantIdentity(),
       databaseName: database.name, capturedAt: new Date().toISOString(),
       originalCustomer: structuredClone(customer),
-      originalLedgerEntries: database.tables.some((table) => table.name === STORES.CUSTOMER_LEDGER)
-        ? structuredClone(await database.table(STORES.CUSTOMER_LEDGER).where('customerId').equals(customer.id).toArray()) : [],
-      status: 'PENDING_AUTHORIZATION'
+      originalLedgerEntries: structuredClone(entries),
+      status: cents > 0 && (customer.debtCents === undefined || customer.debtCents === cents)
+        ? 'PENDING_AUTHORIZATION' : 'CONFLICT_LOCAL_ACTIVITY'
     };
     // Older installations have a server projection checkpoint, but no new
     // financialSource field. Preserve that checkpoint too, without importing it

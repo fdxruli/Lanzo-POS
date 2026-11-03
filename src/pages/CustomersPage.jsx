@@ -13,7 +13,6 @@ import LayawayModal from '../components/customers/LayawayModal';
 import { useCaja } from '../hooks/useCaja';
 import { showConfirmModal, showMessageModal } from '../services/utils';
 import { useAppStore } from '../store/useAppStore';
-import { useNavigate } from 'react-router-dom';
 import Logger from '../services/Logger';
 import { useSearchParams } from 'react-router-dom';
 import { customerCreditRepository, CUSTOMER_CREDIT_CLOUD_OFFLINE_MESSAGE } from '../services/customerCredit/customerCreditRepository';
@@ -122,10 +121,10 @@ const upsertCustomerReminder = (reminders, nextReminder) => {
 };
 
 export default function CustomersPage() {
-  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [customers, setCustomers] = useState([]);
   const [editingCustomer, setEditingCustomer] = useState(null);
+  const [latestEditingCustomer, setLatestEditingCustomer] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [offset, setOffset] = useState(0);
@@ -280,7 +279,10 @@ export default function CustomersPage() {
   }, [cashMode?.online, cajaActual, isCloudCash, sincronizarEstadoCaja]);
 
   useEffect(() => {
-    if (activeTab === 'list') setEditingCustomer(null);
+    if (activeTab === 'list') {
+      setEditingCustomer(null);
+      setLatestEditingCustomer(null);
+    }
   }, [activeTab]);
 
   useEffect(() => {
@@ -292,7 +294,10 @@ export default function CustomersPage() {
 
   const handleTabChange = (tabKey) => {
     if (!visibleCustomerTabs.some((tab) => tab.key === tabKey)) return;
-    if (tabKey === 'list') setEditingCustomer(null);
+    if (tabKey === 'list') {
+      setEditingCustomer(null);
+      setLatestEditingCustomer(null);
+    }
     setSearchParams({ tab: tabKey });
   };
 
@@ -380,6 +385,12 @@ export default function CustomersPage() {
     });
   }, [loadCustomersPage]);
 
+  const refreshLatestEditingCustomer = useCallback(async () => {
+    if (!editingCustomer?.id) return;
+    const latest = await customerRepository.getCustomerById(editingCustomer.id);
+    if (latest) setLatestEditingCustomer(latest);
+  }, [editingCustomer?.id]);
+
   useEffect(() => {
     loadInitialCustomers();
   }, [loadInitialCustomers]);
@@ -447,7 +458,7 @@ export default function CustomersPage() {
 
   useEffect(() => {
     const refreshFromSync = () => {
-      loadInitialCustomers().catch((error) => {
+      Promise.all([loadInitialCustomers(), refreshLatestEditingCustomer()]).catch((error) => {
         Logger.warn('[CustomersPage] No se pudo refrescar tras sync:', error);
       });
     };
@@ -459,7 +470,7 @@ export default function CustomersPage() {
       window.removeEventListener('lanzo:customers-sync-updated', refreshFromSync);
       window.removeEventListener('online', refreshFromSync);
     };
-  }, [loadInitialCustomers]);
+  }, [loadInitialCustomers, refreshLatestEditingCustomer]);
 
   const loadMoreCustomers = useCallback(async () => {
     if (loading || isLoadingMore || requestInFlightRef.current || !hasMore) return;
@@ -666,23 +677,6 @@ export default function CustomersPage() {
     setCustomerReminderFeedback
   ]);
 
-  const handleActionableError = (result) => {
-    const message = result?.error?.message || result?.message || 'Error en base de datos.';
-    const details = result?.error?.details || {};
-
-    if (details.actionable === 'SUGGEST_RELOAD') {
-      showMessageModal(message, () => window.location.reload(), {
-        confirmButtonText: 'Recargar Pagina'
-      });
-    } else if (details.actionable === 'SUGGEST_BACKUP') {
-      showMessageModal(message, () => navigate('/configuracion'), {
-        confirmButtonText: 'Ir a Respaldar'
-      });
-    } else {
-      showMessageModal(message, null, { type: 'error' });
-    }
-  };
-
   const getCustomerPhoneFieldError = (result) => {
     if (result?.fieldErrors?.phone) return result.fieldErrors.phone;
 
@@ -696,28 +690,38 @@ export default function CustomersPage() {
     return null;
   };
 
-  const handleSaveCustomer = async (customerData) => {
+  const getCustomerCreditLimitFieldError = (result) => result?.fieldErrors?.creditLimit || null;
+
+  const handleSaveCustomer = async (customerData, saveContext = {}) => {
     try {
       const result = await customerRepository.saveCustomer(customerData, {
-        existingCustomer: editingCustomer
+        existingCustomer: saveContext.baseCustomer || editingCustomer,
+        resolutionAcknowledged: saveContext.resolutionAcknowledged === true
       });
 
       if (!result.success) {
         const phoneFieldError = getCustomerPhoneFieldError(result);
         if (phoneFieldError) {
-          return { success: false, fieldErrors: { phone: phoneFieldError } };
+          return { ...result, success: false, fieldErrors: { ...(result.fieldErrors || {}), phone: phoneFieldError } };
         }
 
-        handleActionableError(result);
-        return { success: false };
+        const creditLimitFieldError = getCustomerCreditLimitFieldError(result);
+        if (creditLimitFieldError) {
+          return { ...result, success: false, fieldErrors: { ...(result.fieldErrors || {}), creditLimit: creditLimitFieldError } };
+        }
+
+        return result;
       }
 
       setEditingCustomer(null);
+      setLatestEditingCustomer(null);
       setSearchParams({ tab: 'list' });
       await loadInitialCustomers();
       showMessageModal(result.pending
-        ? 'Cliente guardado localmente. Sincronizacion pendiente.'
-        : 'Cliente guardado con exito!');
+        ? 'Cambios guardados en este dispositivo. Sincronización pendiente.'
+        : editingCustomer
+          ? 'Cliente actualizado correctamente'
+          : 'Cliente creado correctamente');
 
       return { success: true };
     } catch (error) {
@@ -729,6 +733,7 @@ export default function CustomersPage() {
 
   const handleEditCustomer = (customer) => {
     setEditingCustomer(customer);
+    setLatestEditingCustomer(customer);
     setSearchParams({ tab: 'add' });
   };
 
@@ -1157,6 +1162,7 @@ export default function CustomersPage() {
               onSave={handleSaveCustomer}
               onCancel={() => handleTabChange('list')}
               customerToEdit={editingCustomer}
+              latestCustomer={latestEditingCustomer}
               globalCreditLimit={globalCreditLimit}
             />
           )}

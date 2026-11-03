@@ -11,20 +11,20 @@ import { customerCreditLocalRepository } from '../customerCreditLocalRepository'
 beforeEach(() => openTestTenantRuntime());
 afterEach(() => closeTestTenantRuntime());
 describe('real Cloud apply through tenant Dexie', () => {
-  it('preserves debt before applying Cloud zero while synchronizing directory fields', async () => {
+  it('preserves debt and directory source before applying Cloud zero, pending explicit FIN-01', async () => {
     await db.table(STORES.CUSTOMERS).put({ id:'legacy', name:'Original', debt:'123.45', syncStatus:'local' });
     await customerLocalRepository.applyCloudCustomer({ id:'legacy', name:'Cloud name', phone:'5551234567', debt:0, debt_cents:0, server_version:1 });
-    expect(await db.table(STORES.CUSTOMERS).get('legacy')).toMatchObject({ name:'Cloud name', debt:'123.45', debtCents:12345, creditMigrationStatus:'PENDING_AUTHORIZATION' });
+    expect(await db.table(STORES.CUSTOMERS).get('legacy')).toMatchObject({ name:'Original', debt:'123.45', debtCents:12345, creditMigrationStatus:'PENDING_AUTHORIZATION', conflictReason:'HISTORICAL_DEBT_PRESERVATION_REQUIRED' });
     expect((await historicalCreditSnapshot.list())[0]).toMatchObject({ amountCents:12345, originalCustomer:{name:'Original',debt:'123.45'} });
   });
   it('does not replace unresolved local debt even when Cloud has a nonzero ledger', async () => {
     await db.table(STORES.CUSTOMERS).put({ id:'legacy', name:'Original', debt:'123.45' });
-    await customerLocalRepository.applyCloudCustomer({ id:'legacy', name:'Updated', debt:50, debt_cents:5000 });
+    await customerLocalRepository.applyCloudCustomer({ id:'legacy', name:'Updated', debt:50, debt_cents:5000, server_version:1 });
     expect((await db.table(STORES.CUSTOMERS).get('legacy')).debt).toBe('123.45');
   });
   it('applies ordinary Cloud financial projections without classifying them as Local history', async () => {
-    await customerLocalRepository.applyCloudCustomer({ id:'cloud', name:'Cloud', debt:50, debt_cents:5000 });
-    await customerLocalRepository.applyCloudCustomer({ id:'cloud', name:'Cloud', debt:25, debt_cents:2500 });
+    await customerLocalRepository.applyCloudCustomer({ id:'cloud', name:'Cloud', debt:50, debt_cents:5000, server_version:1 });
+    await customerLocalRepository.applyCloudCustomer({ id:'cloud', name:'Cloud', debt:25, debt_cents:2500, server_version:2 });
     expect((await db.table(STORES.CUSTOMERS).get('cloud')).debt).toBe(25);
     expect(await historicalCreditSnapshot.list()).toEqual([]);
   });
@@ -33,7 +33,7 @@ describe('real Cloud apply through tenant Dexie', () => {
     await historicalCreditSnapshot.preserveAll();
     await db.table(STORES.CUSTOMERS).update('legacy', { debt:'100' });
     expect(await historicalCreditSnapshot.saveResult('legacy',{status:'IMPORTED',ledger_id:'receipt'})).toMatchObject({status:'CONFLICT_LOCAL_ACTIVITY',cloudStatus:'IMPORTED'});
-    await customerLocalRepository.applyCloudCustomer({ id:'legacy',name:'Cloud',debt:123.45,debt_cents:12345 });
+    await customerLocalRepository.applyCloudCustomer({ id:'legacy',name:'Cloud',debt:123.45,debt_cents:12345,server_version:1 });
     expect((await db.table(STORES.CUSTOMERS).get('legacy')).debt).toBe('100');
     expect((await historicalCreditSnapshot.list())[0].amountCents).toBe(12345);
   });
@@ -44,14 +44,14 @@ describe('real Cloud apply through tenant Dexie', () => {
   it('keeps the earlier Cloud projection checkpoint without freezing ordinary sync', async () => {
     await db.table(STORES.CUSTOMERS).put({id:'cloud-old',name:'Cloud',debt:'80',syncStatus:'synced',serverVersion:2,
       updatedAt:'2026-01-01T00:00:00Z',lastSyncedAt:'2026-01-02T00:00:00Z',metadata:{debt_projection_source:'pos_customer_ledger'}});
-    await customerLocalRepository.applyCloudCustomer({id:'cloud-old',name:'Cloud',debt:50,debt_cents:5000});
+    await customerLocalRepository.applyCloudCustomer({id:'cloud-old',name:'Cloud',debt:50,debt_cents:5000,server_version:3});
     expect((await db.table(STORES.CUSTOMERS).get('cloud-old')).debt).toBe(50);
     expect((await historicalCreditSnapshot.list())[0]).toMatchObject({status:'CLOUD_PROJECTION',originalCustomer:{debt:'80'}});
   });
   it('preserves a new Local period after earlier Cloud synchronization', async () => {
-    await customerLocalRepository.applyCloudCustomer({id:'returning',name:'Cloud',debt:50,debt_cents:5000});
+    await customerLocalRepository.applyCloudCustomer({id:'returning',name:'Cloud',debt:50,debt_cents:5000,server_version:1});
     await db.table(STORES.CUSTOMERS).update('returning',{debt:'70',financialSource:'local'});
-    await customerLocalRepository.applyCloudCustomer({id:'returning',name:'Cloud updated',debt:50,debt_cents:5000});
+    await customerLocalRepository.applyCloudCustomer({id:'returning',name:'Cloud updated',debt:50,debt_cents:5000,server_version:2});
     expect((await db.table(STORES.CUSTOMERS).get('returning')).debt).toBe('70');
     expect((await historicalCreditSnapshot.list())[0]).toMatchObject({status:'PENDING_AUTHORIZATION',amountCents:7000});
   });
@@ -76,7 +76,7 @@ describe('real Cloud apply through tenant Dexie', () => {
     await historicalCreditSnapshot.saveResult('legacy',{status:'IMPORTED',ledger_id:'cloud-initial'});
     await customerCreditLocalRepository.applyCloudLedger({id:'cloud-initial',customer_id:'legacy',type:'INITIAL_BALANCE',amount:100});
     expect(await customerCreditRepository.recalculateDebtFromLedger('legacy')).toBe('100');
-    await customerLocalRepository.applyCloudCustomer({id:'legacy',name:'Cloud',debt:90,debt_cents:9000});
+    await customerLocalRepository.applyCloudCustomer({id:'legacy',name:'Cloud',debt:90,debt_cents:9000,server_version:1});
     expect((await db.table(STORES.CUSTOMERS).get('legacy')).debt).toBe(90);
     expect((await historicalCreditSnapshot.list())[0].status).toBe('IMPORTED');
   });
