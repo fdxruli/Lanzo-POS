@@ -9,6 +9,7 @@ import {
   POS_SYNC_STORES,
   RETRY_CONFIG,
   SYNC_ENTITY_TYPES,
+  SYNC_OPERATIONS,
   SYNC_LIMITS
 } from './syncConstants';
 import {
@@ -231,6 +232,56 @@ export const syncOutboxService = {
       conflictPayload,
       updatedAt: nowIso()
     });
+  },
+
+  async getOperation(id, { licenseKey = null } = {}) {
+    const row = await assertOperationOwnership(id, licenseKey);
+    return row;
+  },
+
+  async rebaseProcessingCustomerOperation(id, {
+    licenseKey = null,
+    expectedIdempotencyKey,
+    idempotencyKey,
+    payload,
+    metadata = {}
+  } = {}) {
+    await ensureOpen();
+    const table = db.table(POS_SYNC_STORES.OUTBOX);
+    return runWithLocalTenantSyncLease(
+      { license_key: licenseKey },
+      { reason: 'outbox_customer_rebase' },
+      async () => {
+        await assertOperationOwnership(id, licenseKey);
+        return db.transaction('rw', table, async () => {
+          const row = await table.get(id);
+          if (!row || row.licenseKey !== licenseKey || !hasBoundActorOrigin(row)) {
+            throw new LocalTenantAccessError(LOCAL_TENANT_ERROR_CODES.SYNC_BLOCKED, {
+              reason: 'outbox_customer_rebase_ownership_changed'
+            });
+          }
+          if (row.entityType !== SYNC_ENTITY_TYPES.CUSTOMER || row.operation !== SYNC_OPERATIONS.UPSERT) {
+            throw new Error('CUSTOMER_OUTBOX_REBASE_ENTITY_MISMATCH');
+          }
+          if (row.status !== OUTBOX_STATUS.PROCESSING
+            || row.idempotencyKey !== expectedIdempotencyKey
+            || !idempotencyKey
+            || idempotencyKey === expectedIdempotencyKey) {
+            throw new Error('CUSTOMER_OUTBOX_REBASE_STATE_CHANGED');
+          }
+
+          const next = {
+            ...row,
+            idempotencyKey,
+            payload,
+            metadata: { ...(row.metadata || {}), ...metadata },
+            updatedAt: nowIso()
+          };
+          await table.put(next);
+          return next;
+        });
+      }
+    );
   },
 
   async scheduleRetry(id, error = null, { licenseKey = null } = {}) {

@@ -1,4 +1,12 @@
 import { z } from 'zod';
+import { parseCustomerServerVersion } from '../services/db/customerServerVersion';
+import { isValidCustomerCreditLimitMoney } from '../services/customers/customerCreditLimit';
+
+const customerServerVersionSchema = z.preprocess((value) => {
+  if (value === 0 || value === '0' || value === '') return null;
+  const parsed = parseCustomerServerVersion(value);
+  return parsed.valid ? parsed.version : value;
+}, z.number().int().positive().refine(Number.isSafeInteger).nullable().optional());
 
 export const customerSchema = z.object({
   id: z.string().min(1),
@@ -8,7 +16,9 @@ export const customerSchema = z.object({
   address: z.string().optional().or(z.literal('')),
   debt: z.coerce.number().default(0),
   debtCents: z.coerce.number().int().default(0),
-  creditLimit: z.coerce.number().min(0).default(0),
+  creditLimit: z.coerce.number().finite().min(0)
+    .refine(isValidCustomerCreditLimitMoney, 'El límite de crédito debe ser un importe válido con hasta dos decimales.')
+    .default(0),
 
   // Metadatos locales existentes
   createdAt: z.string().optional(),
@@ -18,7 +28,7 @@ export const customerSchema = z.object({
 
   // Metadatos de sincronizacion POS PRO (Fase 1 clientes/directorio)
   syncStatus: z.enum(['local', 'pending', 'synced', 'conflict', 'error']).optional(),
-  serverVersion: z.coerce.number().int().positive().nullable().optional(),
+  serverVersion: customerServerVersionSchema,
   lastSyncedAt: z.string().nullable().optional(),
   pendingOperationId: z.string().nullable().optional(),
   deletedAt: z.string().nullable().optional(),

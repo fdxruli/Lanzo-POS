@@ -5,7 +5,7 @@ import { SYNC_ENTITY_TYPES, SYNC_LIMITS } from '../sync/syncConstants';
 import { buildPhoneBuckets, summarizePhoneConflictGroups, toIndexedPhoneKey } from '../db/customerPhoneUtils';
 import { customerCloudRepository } from './customerCloudRepository';
 import { customerLocalRepository } from './customerLocalRepository';
-import { localCustomerToCloudPayload } from './customerMapper';
+import { localCustomerToLegacyMigrationPayload } from './customerMapper';
 
 const MIGRATED_KEY = 'customers_cloud_migrated';
 const MIGRATED_AT_KEY = 'customers_cloud_migrated_at';
@@ -90,12 +90,25 @@ export const customerMigrationService = {
     if (!licenseKey) return { skipped: true, reason: 'missing_license' };
     if (!isOnline()) return { skipped: true, reason: 'offline' };
 
+    const localCustomers = await customerLocalRepository.getAllActiveCustomers();
+    const blockedCustomerIds = [];
+    for (const customer of localCustomers) {
+      if ((await customerLocalRepository.protectHistoricalCustomer(customer.id)).blocked) {
+        blockedCustomerIds.push(customer.id);
+      }
+    }
+    if (blockedCustomerIds.length > 0) {
+      await syncMetaService.setMeta(MIGRATED_KEY, false, { licenseKey });
+      return {
+        success: false, blocked: true, code: 'HISTORICAL_DEBT_PRESERVATION_REQUIRED', blockedCustomerIds
+      };
+    }
+
     const alreadyMigrated = await syncMetaService.getMeta(MIGRATED_KEY, false, { licenseKey });
     if (alreadyMigrated) {
       return { skipped: true, reason: 'already_migrated' };
     }
 
-    const localCustomers = await customerLocalRepository.getAllActiveCustomers();
     const issues = validateLocalCustomersForMigration(localCustomers);
 
     if (issues.length > 0) {
@@ -135,7 +148,9 @@ export const customerMigrationService = {
     for (let index = 0; index < localCustomers.length; index += BATCH_SIZE) {
       const slice = localCustomers.slice(index, index + BATCH_SIZE);
       const payload = slice.map((customer) => {
-        const mapped = localCustomerToCloudPayload(customer);
+        // Pending Local history is blocked above; this legacy path cannot
+        // authorize or import historical credit.
+        const mapped = localCustomerToLegacyMigrationPayload(customer);
         mapped.phone_key = toIndexedPhoneKey(mapped.phone_key || mapped.phone);
         return mapped;
       });
