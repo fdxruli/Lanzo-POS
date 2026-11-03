@@ -10,7 +10,10 @@ import {
   IMAGE_UPLOAD_PURPOSES,
   uploadImageFile
 } from '../../services/storage/imageUploadService';
-import { normalizeBusinessTypes as normalizeCanonicalBusinessTypes } from '../../utils/businessType';
+import {
+  normalizeBusinessTypes as normalizeCanonicalBusinessTypes,
+  normalizeBusinessTypesForPersistence
+} from '../../utils/businessType';
 import {
   PROFILE_LAST_LICENSE_KEY,
   PROFILE_LAST_LOAD_KEY,
@@ -489,7 +492,7 @@ export const createProfileSlice = (set, get) => {
       const profileData = {
         ...setupData,
         logo: logoUrl,
-        business_type: normalizeBusinessTypes(setupData.business_type)
+        business_type: normalizeBusinessTypesForPersistence(setupData.business_type)
       };
 
       const saveResult = await saveBusinessProfile(licenseKey, profileData, { actorHandle });
@@ -556,7 +559,7 @@ export const createProfileSlice = (set, get) => {
       actorHandle.assertCurrent('settings');
       if (sessionGeneration !== _profileSessionGeneration) return null;
 
-      nextCompanyData.business_type = normalizeBusinessTypes(nextCompanyData.business_type);
+      nextCompanyData.business_type = normalizeBusinessTypesForPersistence(nextCompanyData.business_type);
 
       const saveResult = await saveBusinessProfile(licenseKey, nextCompanyData, { actorHandle });
       if (!saveResult?.success) {

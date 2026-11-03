@@ -199,6 +199,25 @@ describe('profile refresh during authenticated staff transition', () => {
     expect(state.companyProfile).toMatchObject({ name: 'Actor profile' });
   });
 
+  it('persists a restaurant conversion canonically without losing the other rubro', async () => {
+    mocks.saveBusinessProfile.mockResolvedValue({ success: true });
+    const state = { licenseDetails: { license_key: 'LANZO-PRO' }, companyProfile: { business_type: ['hardware'] } };
+    const set = vi.fn((partial) => Object.assign(state, partial));
+    Object.assign(state, createProfileSlice(set, () => state));
+    await state.updateCompanyProfile({ name: 'QA conversion', business_type: ['hardware', 'restaurante', 'food_service'] });
+    expect(mocks.saveBusinessProfile).toHaveBeenCalledWith('LANZO-PRO',
+      expect.objectContaining({ business_type: ['hardware', 'food_service'] }), { actorHandle: mocks.actorHandle });
+    expect(state.companyProfile.business_type).toEqual(['hardware', 'food_service']);
+  });
+
+  it('does not persist or cache an unknown rubro as otro', async () => {
+    const state = { licenseDetails: { license_key: 'LANZO-PRO' } };
+    Object.assign(state, createProfileSlice(vi.fn(), () => state));
+    await expect(state.updateCompanyProfile({ name: 'QA', business_type: ['unknown'] })).rejects.toMatchObject({ code: 'BUSINESS_TYPE_INVALID' });
+    expect(mocks.saveBusinessProfile).not.toHaveBeenCalled();
+    expect(mocks.saveData).not.toHaveBeenCalled();
+  });
+
   it('refreshes effective license features before marking first-time setup ready', async () => {
     mocks.saveBusinessProfile.mockResolvedValue({ success: true });
     const state = {

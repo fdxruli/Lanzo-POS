@@ -10,6 +10,7 @@ import {
     writeDeviceRegistryValue
 } from './device/deviceRegistry';
 import Logger from "./Logger";
+import { normalizeBusinessTypesForPersistence } from '../utils/businessType';
 import {
     assertLocalTenantAccess,
     assertLocalTenantSyncAccess,
@@ -1613,11 +1614,7 @@ export const saveBusinessProfile = async function (licenseKey, profileData, { ac
             };
         }
 
-        const businessType = Array.isArray(profileData.business_type)
-            ? profileData.business_type.filter(Boolean)
-            : profileData.business_type
-                ? [profileData.business_type].filter(Boolean)
-                : [];
+        const businessType = normalizeBusinessTypesForPersistence(profileData.business_type);
 
         if (!profileData.name?.trim() || businessType.length === 0) {
             return {

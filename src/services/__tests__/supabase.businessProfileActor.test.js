@@ -112,6 +112,28 @@ describe('saveBusinessProfile actor binding', () => {
     localStorage.clear();
   });
 
+  it.each([
+    [['restaurante'], ['food_service']],
+    [['hardware', 'restaurante', 'food_service'], ['hardware', 'food_service']]
+  ])('normalizes rubros at the authenticated RPC boundary: %j', async (input, expected) => {
+    setSessionCache();
+    const { saveBusinessProfile } = await importSupabase();
+    await expect(saveBusinessProfile('LANZO-PROFILE', { name: 'QA', business_type: input },
+      { actorHandle: createActorHandle() })).resolves.toEqual({ success: true });
+    expect(mocks.rpc).toHaveBeenCalledWith('save_business_profile_secure', expect.objectContaining({
+      profile_data: expect.objectContaining({ business_type: expected }),
+      actor_session_token_param: 'admin-token'
+    }));
+  });
+
+  it('does not send unknown rubros or replace them with otro', async () => {
+    setSessionCache();
+    const { saveBusinessProfile } = await importSupabase();
+    await expect(saveBusinessProfile('LANZO-PROFILE', { name: 'QA', business_type: ['unknown'] },
+      { actorHandle: createActorHandle() })).resolves.toMatchObject({ success: false, code: 'BUSINESS_TYPE_INVALID' });
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
   it.each(['admin', 'staff'])('sends the captured %s session token in the unique five-argument RPC payload', async (actorType) => {
     setSessionCache({ actorType });
     const actorHandle = createActorHandle(actorType);

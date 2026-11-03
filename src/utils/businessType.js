@@ -127,6 +127,20 @@ export const normalizeBusinessTypes = (
   return uniqueTypes.length > 0 ? uniqueTypes : [fallback];
 };
 
+// Persistence must not use the display fallback ("otro") or drop unknown rubros.
+export const normalizeBusinessTypesForPersistence = (rawBusinessTypes) => {
+  const types = splitBusinessTypeInput(rawBusinessTypes).filter((value) => value != null && value !== '');
+  return [...new Set(types.map((value) => {
+    const canonical = typeof value === 'string' ? normalizeBusinessType(value, null) : null;
+    if (canonical) return canonical;
+    // Valid historical enum values, preserved without inventing a new category.
+    if (value === 'antojitos' || value === 'darkitchen') return value;
+    throw Object.assign(new Error('El rubro del negocio no es válido. Selecciona un rubro conocido.'), {
+      code: 'BUSINESS_TYPE_INVALID'
+    });
+  }))];
+};
+
 export const isFoodBusinessType = (businessType) => {
   const normalized = normalizeBusinessType(businessType);
   return normalized === CANONICAL_BUSINESS_TYPES.FOOD_SERVICE

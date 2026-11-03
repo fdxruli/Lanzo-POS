@@ -29,6 +29,7 @@ declare
   v_result jsonb;
   v_profile_name text;
   v_definition text;
+  v_category_case record;
 begin
   -- Contract/ACL checks: there is one public Data API name and only the
   -- five-argument actor-aware signature is executable by client roles.
@@ -160,6 +161,25 @@ begin
   if coalesce((v_result->>'success')::boolean, false) is not true then
     raise exception 'PROFILE_R1_STAFF_SETTINGS_EXPECTED_ALLOW:%', v_result;
   end if;
+
+  -- The same authenticated writer must persist canonical, legacy and multi-rubro
+  -- Restaurante payloads. Authorization and the PROFILE rate-limit remain intact.
+  for v_category_case in select * from (values
+    ('["food_service"]'::jsonb, '["food_service"]'::jsonb),
+    ('["restaurante"]'::jsonb, '["food_service"]'::jsonb),
+    ('["hardware","restaurante","food_service"]'::jsonb, '["hardware","food_service"]'::jsonb)
+  ) cases(input, expected) loop
+    v_result := public.save_business_profile_secure(
+      v_license_key, v_fingerprint, v_device_token, v_staff_token,
+      jsonb_build_object('name', 'Staff profile', 'business_type', v_category_case.input)
+    );
+    if coalesce((v_result->>'success')::boolean, false) is not true
+      or (select to_jsonb(business_type) from public.business_profiles where license_id=v_license_id)
+         is distinct from v_category_case.expected then
+      raise exception 'PROFILE_RESTAURANT_CATEGORY_FAILED:%',v_result;
+    end if;
+    perform private.assert_restaurant_orders_food_service(v_license_id);
+  end loop;
 
   -- Staff with settings=false is denied and cannot mutate the row.
   update public.license_staff_users

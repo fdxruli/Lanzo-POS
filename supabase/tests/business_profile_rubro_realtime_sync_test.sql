@@ -91,4 +91,56 @@ begin
 end;
 $$;
 
+-- Focused Restaurante category regression. Isolated fixtures only; rolled back.
+do $restaurant_category$
+declare
+  v_profile public.business_profiles%rowtype;
+  v_types public.business_category[];
+begin
+  select * into strict v_profile from public.business_profiles order by id limit 1;
+
+  -- E: an existing non-Restaurante profile remains forbidden.
+  update public.business_profiles set business_type=array['hardware','hardware']::public.business_category[] where id=v_profile.id;
+  if (select business_type from public.business_profiles where id=v_profile.id)
+    is distinct from array['hardware','hardware']::public.business_category[] then
+    raise exception 'UNRELATED_PROFILE_CHANGED';
+  end if;
+  begin
+    perform private.assert_restaurant_orders_food_service(v_profile.license_id);
+    raise exception 'NON_RESTAURANT_WAS_ADMITTED';
+  exception when sqlstate 'P0001' then
+    if sqlerrm <> 'RESTAURANT_ORDERS_FOOD_SERVICE_REQUIRED' then raise; end if;
+  end;
+
+  -- A/C: a conversion from another rubro to the canonical restaurant type.
+  update public.business_profiles set business_type=array['food_service']::public.business_category[] where id=v_profile.id;
+  perform private.assert_restaurant_orders_food_service(v_profile.license_id);
+
+  -- B: the table boundary also covers legacy/administrative and secure RPC writes.
+  update public.business_profiles set business_type=array['restaurante']::public.business_category[] where id=v_profile.id;
+  select business_type into v_types from public.business_profiles where id=v_profile.id;
+  if v_types is distinct from array['food_service']::public.business_category[] then
+    raise exception 'RESTAURANT_ALIAS_NOT_CANONICAL';
+  end if;
+  perform private.assert_restaurant_orders_food_service(v_profile.license_id);
+
+  -- D: preserve other rubros and first-occurrence order, without duplicates.
+  update public.business_profiles set business_type=array['hardware','restaurante','farmacia','food_service','hardware']::public.business_category[] where id=v_profile.id;
+  select business_type into v_types from public.business_profiles where id=v_profile.id;
+  if v_types is distinct from array['hardware','food_service','farmacia']::public.business_category[] then
+    raise exception 'RESTAURANT_MULTI_RUBRO_CHANGED';
+  end if;
+  perform private.assert_restaurant_orders_food_service(v_profile.license_id);
+
+  begin
+    update public.business_profiles set business_type=array['unknown']::public.business_category[] where id=v_profile.id;
+    raise exception 'UNKNOWN_CATEGORY_WAS_ADMITTED';
+  exception when invalid_text_representation then null;
+  end;
+  if (select business_type from public.business_profiles where id=v_profile.id) is distinct from v_types then
+    raise exception 'INVALID_CATEGORY_MUTATED_PROFILE';
+  end if;
+end;
+$restaurant_category$;
+
 rollback;
