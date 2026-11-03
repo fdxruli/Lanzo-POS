@@ -17,7 +17,7 @@ if (!Number.isInteger(repetitions) || repetitions < 10 || repetitions > 20) thro
 if (!Number.isInteger(maxWorkers) || maxWorkers < 1) throw new Error('max-workers must be a positive integer');
 
 for (const target of targets) {
-  if (!target || typeof target.file !== 'string' || typeof target.testName !== 'string' || !/^src\/[A-Za-z0-9_./-]+$/.test(target.file) || target.file.includes('..') || !target.testName.trim()) {
+  if (!target || typeof target.file !== 'string' || typeof target.testName !== 'string' || !/^(?:src\/[A-Za-z0-9_./-]+|scripts\/qa\/[A-Za-z0-9_./-]+\.test\.[cm]?[jt]sx?)$/.test(target.file) || target.file.includes('..') || !target.testName.trim()) {
     throw new Error('unsafe focused target metadata');
   }
 }

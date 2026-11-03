@@ -1,5 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   MAX_FOCUSED_FAILURES,
   classifyFocusedEvidence,
@@ -433,4 +438,65 @@ test('an empty differential requires no focused reruns', () => {
   const classified = classifyFocusedEvidence(comparison.focusTargets, [], []);
   assert.equal(classified.status, 'OK');
   assert.equal(comparison.focusTargets.length, 0);
+});
+
+function runFocusedCli(t, targets) {
+  const root = mkdtempSync(path.join(tmpdir(), 'pr127-focused-cli-'));
+  t.after(() => {
+    assert.equal(path.dirname(root), path.resolve(tmpdir()));
+    assert.ok(path.basename(root).startsWith('pr127-focused-cli-'));
+    rmSync(root, { recursive: true, force: true });
+  });
+  mkdirSync(path.join(root, 'node_modules/vitest'), { recursive: true });
+  // Exercise the real CLI validator and argument dispatch without running a
+  // second product suite. Each accepted invocation records its exact arguments.
+  writeFileSync(path.join(root, 'node_modules/vitest/vitest.mjs'), `
+    import fs from 'node:fs';
+    fs.appendFileSync('calls.jsonl', JSON.stringify(process.argv.slice(2)) + '\\n');
+  `);
+  writeFileSync(path.join(root, 'targets.json'), JSON.stringify(targets));
+  const result = spawnSync(process.execPath, [
+    fileURLToPath(new URL('./pr127-focused-evidence.mjs', import.meta.url)),
+    '--targets', path.join(root, 'targets.json'),
+    '--output-dir', path.join(root, 'evidence'), '--repetitions', '10', '--max-workers', '1'
+  ], { cwd: root, encoding: 'utf8' });
+  const calls = existsSync(path.join(root, 'calls.jsonl'))
+    ? readFileSync(path.join(root, 'calls.jsonl'), 'utf8').trim().split('\n').map((line) => JSON.parse(line))
+    : [];
+  return { ...result, calls };
+}
+
+test('focused CLI executes both src and scripts/qa test targets without suppressing evidence', (t) => {
+  const targets = [
+    { file: 'src/example.test.jsx', testName: 'example assertion' },
+    { file: 'scripts/qa/single-instance-f012d1/handlers.test.js', testName: 'real credit success' }
+  ];
+  const result = runFocusedCli(t, targets);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.calls.length, 20);
+  for (const target of targets) {
+    const calls = result.calls.filter((args) => args[1] === target.file);
+    assert.equal(calls.length, 10);
+    assert.ok(calls.every((args) => args[args.indexOf('-t') + 1] === target.testName));
+  }
+});
+
+test('focused CLI still rejects traversal, absolute paths, other scripts and unsafe metadata before dispatch', (t) => {
+  const files = [
+    '../src/example.test.js', '/src/example.test.js', 'C:\\src\\example.test.js',
+    'scripts/qa/../../example.test.js', 'src/../example.test.js',
+    'scripts/ci/example.test.js', 'scripts/qa/example.js',
+    'scripts/qa/example.test.js;echo', 'src/example test.js'
+  ];
+  const targets = [
+    ...files.map((file) => ({ file, testName: 'example assertion' })),
+    { file: 'scripts/qa/example.test.js', testName: '  ' },
+    { file: 'scripts/qa/example.test.js', testName: null }
+  ];
+  for (const target of targets) {
+    const result = runFocusedCli(t, [target]);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /unsafe focused target metadata/);
+    assert.equal(result.calls.length, 0);
+  }
 });
