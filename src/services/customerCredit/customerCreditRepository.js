@@ -63,7 +63,7 @@ const applyCreditCloudResponse = async (response = {}) => {
   };
 
   if (response.customer) {
-    applied.customer = await customerLocalRepository.applyCloudCustomer(response.customer);
+    applied.customer = await customerLocalRepository.applyCloudCustomer(response.customer, { source: 'credit_projection' });
   }
 
   if (response.ledger_entry) {
@@ -77,7 +77,7 @@ const applyCreditCloudResponse = async (response = {}) => {
 
   const customers = response.customers || [];
   if (Array.isArray(customers)) {
-    applied.customers = await customerLocalRepository.applyCloudCustomers(customers);
+    applied.customers = await customerLocalRepository.applyCloudCustomers(customers, { source: 'credit_projection' });
   }
 
   if (response.cash_movement) {

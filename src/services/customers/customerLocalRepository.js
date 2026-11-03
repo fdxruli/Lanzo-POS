@@ -126,12 +126,22 @@ export const customerLocalRepository = {
     }
     const incomingVersion = Number(incoming.serverVersion) || 0;
     const existingVersion = Number(existing?.serverVersion) || 0;
+    const latestObservedVersion = Math.max(
+      existingVersion,
+      Number(existing?.latestCloudSnapshot?.serverVersion) || 0,
+      Number(existing?.conflictCloudSnapshot?.serverVersion) || 0
+    );
+    // Credit responses own the debt projection; directory drafts and acks do not.
+    const creditProjection = source === 'credit_projection'
+      ? { debt: incoming.debt, debtCents: incoming.debtCents }
+      : {};
     const acknowledgedPendingOperation = source === 'mutation_ack' && (
       (existing?.pendingOperationId && operationId === existing.pendingOperationId)
       || (existing?.syncStatus === CUSTOMER_SYNC_STATUS.CONFLICT && operationId === 'customer_repository_direct_ack')
     );
 
     if (existing && incomingVersion < existingVersion) return existing;
+    if (existing && source !== 'mutation_ack' && incomingVersion < latestObservedVersion) return existing;
 
     if (existing
       && !acknowledgedPendingOperation
@@ -139,6 +149,7 @@ export const customerLocalRepository = {
       if (incoming.deletedAt || incoming.deletedTimestamp) {
         const deletedConflict = normalizeCustomerForLocal({
           ...existing,
+          ...creditProjection,
           isActive: false,
           deletedAt: incoming.deletedAt || incoming.deletedTimestamp,
           deletedTimestamp: incoming.deletedAt || incoming.deletedTimestamp,
@@ -183,7 +194,8 @@ export const customerLocalRepository = {
         // is kept separately until the queued operation is reconciled.
         serverVersion: existing.serverVersion,
         debt: existing.debt ?? incoming.debt,
-        debtCents: existing.debtCents ?? incoming.debtCents
+        debtCents: existing.debtCents ?? incoming.debtCents,
+        ...creditProjection
       }, existing, {
         syncStatus: existing.syncStatus,
         pendingOperationId: existing.pendingOperationId || null,
@@ -235,8 +247,8 @@ export const customerLocalRepository = {
     const conflictCustomer = normalizeCustomerForLocal({
       ...(cloud || existing || {}),
       ...proposal,
-      debt: proposal.debt,
-      debtCents: proposal.debtCents ?? proposal.debt_cents,
+      debt: existing?.debt ?? proposal.debt,
+      debtCents: existing?.debtCents ?? existing?.debt_cents ?? proposal.debtCents ?? proposal.debt_cents,
       serverVersion: cloud?.serverVersion ?? proposal.serverVersion,
       conflictCloudSnapshot: cloud || existing?.conflictCloudSnapshot || null,
       conflictBaseSnapshot: baselineCustomer || existing?.conflictBaseSnapshot || null,

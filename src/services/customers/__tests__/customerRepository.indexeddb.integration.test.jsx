@@ -7,11 +7,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   cloud: { upsertCustomer: vi.fn(), deleteCustomer: vi.fn(), migrateLocalCustomers: vi.fn(), pullCustomerSnapshot: vi.fn() },
+  creditCloud: { pullCreditChanges: vi.fn() },
   orchestrator: { registerEntitySyncHandler: vi.fn(), pullIncremental: vi.fn() },
   actorPermission: { allowed: true, actorType: 'admin' }
 }));
 
 vi.mock('../customerCloudRepository', () => ({ customerCloudRepository: mocks.cloud }));
+vi.mock('../../customerCredit/customerCreditCloudRepository', () => ({ customerCreditCloudRepository: mocks.creditCloud }));
 vi.mock('../../sync/posSyncOrchestrator', () => ({ posSyncOrchestrator: mocks.orchestrator }));
 vi.mock('../../sync/actorPermission', () => ({ hasCurrentActorPermission: () => mocks.actorPermission.allowed }));
 vi.mock('../../tenant/localTenantGuard', () => ({
@@ -36,6 +38,7 @@ import { localCustomerToLegacyMigrationPayload } from '../customerMapper';
 import { customerMigrationService } from '../customerMigrationService';
 import { customerRepository } from '../customerRepository';
 import { customerSyncHandler } from '../customerSyncHandler';
+import { customerCreditSyncHandler } from '../../customerCredit/customerCreditSyncHandler';
 
 const TEST_LICENSE_KEY = 'license-key-sha256:test-tenant-runtime-a';
 const TEST_TENANT_IDENTITY = Object.freeze({
@@ -75,6 +78,7 @@ beforeEach(async () => {
   mocks.cloud.deleteCustomer.mockReset();
   mocks.cloud.migrateLocalCustomers.mockReset();
   mocks.cloud.pullCustomerSnapshot.mockReset();
+  mocks.creditCloud.pullCreditChanges.mockReset();
   mocks.orchestrator.registerEntitySyncHandler.mockClear();
   mocks.orchestrator.pullIncremental.mockReset().mockResolvedValue(undefined);
   mocks.actorPermission.allowed = true;
@@ -89,6 +93,71 @@ afterEach(async () => {
 });
 
 describe('customerRepository IndexedDB integration', () => {
+  it('refreshes $22 to the $30.25 credit projection during a pending directory edit without losing its draft or OCC base', async () => {
+    setCloudMode();
+    Object.defineProperty(navigator, 'onLine', { value: false, configurable: true });
+    const existing = {
+      id: 'pending-credit-projection', name: 'Base', phone: '5553334499', address: '',
+      debt: 22, debtCents: 2200, creditLimit: 100, serverVersion: 5, syncStatus: 'synced'
+    };
+    await db.table(STORES.CUSTOMERS).put(existing);
+    await customerRepository.saveCustomer({ ...existing, name: 'Borrador local' }, { existingCustomer: existing });
+    const pending = await customerLocalRepository.getCustomerById(existing.id);
+    const operations = await syncOutboxService.getPendingOperations({ licenseKey: TEST_LICENSE_KEY });
+    expect(operations).toHaveLength(1);
+    expect(operations[0].payload.customer).not.toHaveProperty('debt');
+    expect(operations[0].payload.customer).not.toHaveProperty('debt_cents');
+    Object.defineProperty(navigator, 'onLine', { value: true, configurable: true });
+    mocks.creditCloud.pullCreditChanges.mockResolvedValueOnce({
+      success: true, latest_change_seq: 42, has_more: false,
+      customers: [remoteCustomer(existing.id, {
+        name: existing.name, phone: existing.phone, credit_limit: 100,
+        debt: 30.25, debt_cents: 3025, server_version: 6
+      })]
+    });
+    await customerCreditSyncHandler.onEvents([], { licenseKey: TEST_LICENSE_KEY });
+    expect(await customerLocalRepository.getCustomerById(existing.id)).toMatchObject({
+      name: 'Borrador local', debt: 30.25, debtCents: 3025, creditLimit: 100,
+      serverVersion: 5, syncStatus: 'pending', pendingOperationId: pending.pendingOperationId
+    });
+    // A delayed financial snapshot cannot roll the projection back to $22.
+    await customerLocalRepository.applyCloudCustomer(remoteCustomer(existing.id, {
+      phone: existing.phone, debt: 22, debt_cents: 2200, server_version: 5
+    }));
+    mocks.creditCloud.pullCreditChanges.mockResolvedValueOnce({
+      success: true, latest_change_seq: 42, has_more: false,
+      customers: [remoteCustomer(existing.id, {
+        phone: existing.phone, debt: 22, debt_cents: 2200, server_version: 5
+      })]
+    });
+    await customerCreditSyncHandler.onEvents([], { licenseKey: TEST_LICENSE_KEY });
+    await customerLocalRepository.applyCloudCustomer(remoteCustomer(existing.id, {
+      name: 'Borrador local', phone: existing.phone, credit_limit: 100,
+      debt: 22, debt_cents: 2200, server_version: 7
+    }), { source: 'mutation_ack', operationId: pending.pendingOperationId });
+    expect(await customerLocalRepository.getCustomerById(existing.id)).toMatchObject({
+      name: 'Borrador local', debt: 30.25, debtCents: 3025, creditLimit: 100,
+      serverVersion: 7, syncStatus: 'synced'
+    });
+    expect(await syncOutboxService.getPendingOperations({ licenseKey: TEST_LICENSE_KEY })).toHaveLength(1);
+    expect(await db.table(STORES.CUSTOMER_LEDGER).count()).toBe(0);
+    expect(mocks.cloud.upsertCustomer).not.toHaveBeenCalled();
+  });
+
+  it('keeps a refreshed credit projection when an in-flight directory edit becomes a conflict', async () => {
+    const existing = {
+      id: 'credit-conflict', name: 'Borrador', phone: '5553334498', address: '',
+      debt: 30.25, debtCents: 3025, creditLimit: 100, serverVersion: 5, syncStatus: 'pending'
+    };
+    await db.table(STORES.CUSTOMERS).put(existing);
+    await customerLocalRepository.markConflict({ ...existing, debt: 22, debtCents: 2200 }, 'VERSION_CONFLICT', {
+      serverCustomer: remoteCustomer(existing.id, { debt: 30.25, debt_cents: 3025, server_version: 6 })
+    });
+    expect(await customerLocalRepository.getCustomerById(existing.id)).toMatchObject({
+      name: 'Borrador', debt: 30.25, debtCents: 3025, syncStatus: 'conflict'
+    });
+  });
+
   it('SV-01/SV-02 saves and recovers a FREE customer without Cloud or server version', async () => {
     const result = await customerRepository.saveCustomer({
       id: 'free-record',

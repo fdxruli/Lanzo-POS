@@ -50,7 +50,7 @@ const applyCreditPayload = async (response = {}) => {
   let failed = false, firstFailure;
   const settled = await Promise.allSettled([
     customerCreditLocalRepository.applyCloudLedgers(ledgers),
-    customerLocalRepository.applyCloudCustomers(customers),
+    customerLocalRepository.applyCloudCustomers(customers, { source: 'credit_projection' }),
     cashLocalRepository.applyCloudCashMovements(movements),
     cashLocalRepository.applyCloudCashSessions(sessions)
   ].map(promise => Promise.resolve(promise).catch(error => {
