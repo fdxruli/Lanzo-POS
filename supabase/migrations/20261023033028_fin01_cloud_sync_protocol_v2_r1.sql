@@ -41,8 +41,20 @@ begin
     raise exception 'FIN01_F_CUSTOMER_CORE_MISMATCH';
   end if;
 
+  -- R3: the five reviewed definitions retain Restaurant transition admission,
+  -- dispatcher origin checks and duplicate-parent-sale protection. Pin their
+  -- new helpers/delegates too; never accept an alternate or unchecked hash.
+  if to_regclass('private.restaurant_cloud_contract_state') is null then
+    raise exception 'FIN01_V_RESTAURANT_CONTRACT_STATE_MISSING';
+  end if;
+
   -- SHA-256 guards were read from the Production catalog. Abort on any drift.
   for v_name, v_expected in select * from (values
+    ('private.assert_restaurant_sale_dispatcher_context_v1(text,text,text,text,jsonb,text,text,text)', 'd644851fe9afd0c594d6ca46760c2613fb4fe1444166772fea51a0427a0d3286'),
+    ('private.enter_restaurant_financial_transition_write_v1(text,text,text,text,jsonb)', '85929a9e044662df850ee81c055f188b928412cb1b04b6237938c1fb61b64d15'),
+    ('private.enter_restaurant_transition_write_v1()', '89038017d6e0084499c50f102ba8d613a5990823a1b5daba0ff1f147d23de3e2'),
+    ('public.pos_create_cloud_sale_cashier_unlimited(text,text,text,text,jsonb,jsonb,jsonb,text,text)', 'c15dceb93d5c75762dc2fce94229925c128e3b9bd43e9cb7357dbb2f2c47b0c0'),
+    ('public.pos_create_cloud_sale_cashier_inventory_unlimited(text,text,text,text,jsonb,jsonb,jsonb,text,text)', '09cb159cfd209d54d547f1dc8cfdf3cc66f13ad46239c082a4cb68df974c3d9b'),
     ('private.assert_cloud_customer_credit_sync_enabled(jsonb)', '7741c5e713d7192196fb6b08a76b28882e00656efe822c9fce69ae6b4e5c2d3b'),
     ('private.assert_cloud_layaways_enabled(jsonb)', '1f4c4dacde46ccc3a89e69f074e0c4a8da44b62677c7dec35ac0aa9074e6d99c'),
     ('private.assert_cloud_pos_sync_enabled(jsonb)', 'ce47e8b677750f61858e5b17bd9a603aa482ea92e199d006584a6808c48a6e43'),
@@ -57,7 +69,7 @@ begin
     ('private.execute_layaway_completion_financial_v1(text,text,text,text,jsonb,text)', '9fd84cbdc9ce7b7c435647ee4ac6ffc81a225d2a5597a88028f2bbbc1477a372'),
     ('private.execute_layaway_create_financial_v1(jsonb,jsonb,text,text,text)', '7b31c8b6d9230c8c6c4ccd8f8dcd2bc16825a4bb963b26e6d2e5f95ae2a68647'),
     ('private.execute_layaway_payment_financial_v1(jsonb,jsonb,text,text,text)', '3bfb5d35ae96fa4fa42a1f07a95a4b2dc1e45d1881fa903dcc0d1e6540f1d929'),
-    ('private.execute_split_sale_financial_v1(text,text,text,text,jsonb,text)', 'ec5aca07145b19a55fd65513960edb3e256aab568c725b1ca5eeba2b955bf0fb'),
+    ('private.execute_split_sale_financial_v1(text,text,text,text,jsonb,text)', '989f580aba16357d010f30663b93dbd6d9873d06b40c4bc3844155bf97dcffc0'),
     ('private.financial_execution_request_v1(jsonb)', 'f837502bbde208dd017ee6beca6c154f270ae0fe3ff841c6672237decb6833df'),
     ('private.layaway_execution_request_v1(jsonb)', '77662715253e8e0f777729f7de3e8fcb69019fee97d8a6be5c6fb3aa9eff02ad'),
     ('private.layaway_payment_payload_v1(jsonb)', 'e0833e99022a86faea91642d2597deca80331c0465d5e445509a0c4421aae3f3'),
@@ -78,12 +90,12 @@ begin
     ('public.pos_adjust_initial_cash_fund(text,text,text,text,text,numeric,text,integer,text)', '652417492a12b600ddea58899ede208856604dc76c41e4df698e02a15b24f4c8'),
     ('public.pos_admin_close_cash_session(text,text,text,text,text,text,numeric,numeric,text,text,integer,text)', '04a6dd3c41c48464715b665830e5e751270d41c77fdd4498348be53bdb615864'),
     ('public.pos_close_cash_session(text,text,text,text,text,jsonb,integer,text)', 'b6792a55f9c620f9730b26cbcd8c5c30c3eb5b64ba179e1753990336c5279bed'),
-    ('public.pos_close_restaurant_order_after_checkout_unlimited(text,text,text,text,text,text,text,numeric,jsonb,text)', '566e06ea3196e60202b31090234620cc46c0323dd718d9bcd7751abf5eb4c0e6'),
-    ('public.pos_create_cloud_sale_cashier(text,text,text,text,jsonb,jsonb,jsonb,text,text)', '862489302c5cb892261f04f838c8eac4ec7e36882ad5e0febd738a35c91ae0ee'),
-    ('public.pos_create_cloud_sale_cashier_inventory(text,text,text,text,jsonb,jsonb,jsonb,text,text)', '73a462065adbae48fbcd188675b4e59a9d16bebe776ccb455ba3454b5fdfb10c'),
+    ('public.pos_close_restaurant_order_after_checkout_unlimited(text,text,text,text,text,text,text,numeric,jsonb,text)', 'b90926b0c72fb8762121eb3273becf764a19d87bb8fc2cfc73e54d25b3a1fd18'),
+    ('public.pos_create_cloud_sale_cashier(text,text,text,text,jsonb,jsonb,jsonb,text,text)', '79b6ccbe257637404be926d270f228f27c9264d820949f2f2ead2c8c2df3a78b'),
+    ('public.pos_create_cloud_sale_cashier_inventory(text,text,text,text,jsonb,jsonb,jsonb,text,text)', '17c8108f78043e2f84382a65aca2fe15e7cceecc079867dac4fc7fd50147d0ed'),
     ('public.pos_create_cloud_sale_credit_unlimited(text,text,text,text,jsonb,jsonb,jsonb,text,text,text)', '6372d9f9e1550ea328101138877ebb0d069d828782252599360f13b99a990b38'),
     ('public.pos_delete_customer_unlimited(text,text,text,text,text,integer,text)', '3b7073c54b08cd2f46ec4ddf09249dd71ab1e8c91a58a42109d28c6a19d04f01'),
-    ('public.pos_execute_financial_operation_v1(text,text,text,text,text,text,text,jsonb)', 'c575e9751a0a2b70a14231ab9e9073d9cdac8775ac0571de5989d6435ade559b'),
+    ('public.pos_execute_financial_operation_v1(text,text,text,text,text,text,text,jsonb)', 'c7b87bfbdf5929ce14c1625066c594b8400bbafda8fbc1f18347e57e3fdebf76'),
     ('public.pos_get_customer_credit_summary_unlimited(text,text,text,text,text)', 'fd1278d820f6a0ea481534b2ffd7a411a94c54edcac4b46ce166eeb309c19745'),
     ('public.pos_pull_customer_changes_unlimited(text,text,text,text,bigint,integer)', '43f04a7dde80b1e77b2e9d6bb4d05cb90db4c150c41af25ecaa0473e98450121'),
     ('public.pos_pull_customer_credit_changes_unlimited(text,text,text,text,bigint,integer)', '89baf719e4a16619c09605cb6652962f467cd552eb691b44fdc7314bbfc8a0f5'),
@@ -113,6 +125,11 @@ begin
 
   -- Existing internal cores stay service-role only; v2 calls them as postgres.
   foreach v_name in array array[
+    'private.assert_restaurant_sale_dispatcher_context_v1(text,text,text,text,jsonb,text,text,text)',
+    'private.enter_restaurant_financial_transition_write_v1(text,text,text,text,jsonb)',
+    'private.enter_restaurant_transition_write_v1()',
+    'public.pos_create_cloud_sale_cashier_unlimited(text,text,text,text,jsonb,jsonb,jsonb,text,text)',
+    'public.pos_create_cloud_sale_cashier_inventory_unlimited(text,text,text,text,jsonb,jsonb,jsonb,text,text)',
     'public.pos_upsert_customer_unlimited(text,text,text,text,jsonb,integer,text)',
     'public.pos_delete_customer_unlimited(text,text,text,text,text,integer,text)',
     'public.pos_pull_customers_snapshot_unlimited(text,text,text,text,integer,integer,boolean)',
@@ -893,9 +910,12 @@ begin
   v_definition := pg_get_functiondef(
     to_regprocedure('public.pos_execute_financial_operation_v1(text,text,text,text,text,text,text,jsonb)')
   );
-  if position('CREATE OR REPLACE FUNCTION public.pos_execute_financial_operation_v1(' in v_definition) = 0
-     or position('public.pos_create_cloud_sale_credit(' in v_definition) = 0
-     or position('public.pos_cancel_cloud_sale(' in v_definition) = 0 then
+  -- Only these three exact substitutions are permitted in the hash-pinned
+  -- source. Transition admission, parent locks/origin checks and completed-sale
+  -- reconciliation remain byte-for-byte in the copied core.
+  if array_length(string_to_array(v_definition, 'CREATE OR REPLACE FUNCTION public.pos_execute_financial_operation_v1('), 1) is distinct from 2
+     or array_length(string_to_array(v_definition, 'public.pos_create_cloud_sale_credit('), 1) is distinct from 2
+     or array_length(string_to_array(v_definition, 'public.pos_cancel_cloud_sale('), 1) is distinct from 2 then
     raise exception 'FIN01_V_DISPATCHER_SOURCE_UNEXPECTED';
   end if;
   v_definition := replace(v_definition,
