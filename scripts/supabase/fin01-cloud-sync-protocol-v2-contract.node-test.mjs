@@ -108,3 +108,15 @@ test('frontend discovers v2 only and recursively projects nested financial custo
   assert.match(frontend, /CLOUD_CLIENT_UPDATE_REQUIRED/u);
   assert.match(frontendTest, /sale: \{ credit: \{ customer: nestedCustomer \} \}/u);
 });
+
+test('financial results are immutable evidence, without a current-debt projection or legacy-capability write', () => {
+  const envelope = functionBody(migration, 'create or replace function private.pos_fin01_sync_envelope_v2(');
+  assert.match(envelope, /'customer_projection_scope',[\s\S]*'OPERATION_RESULT'[\s\S]*'CURRENT'/u);
+  assert.match(envelope, /'customer_projections', case when p_family = 'financial_operations' then '\[\]'::jsonb/u);
+  for (const endpoint of ['pos_execute_financial_operation_v2', 'pos_get_financial_operation_receipt_v2']) {
+    const body = functionBody(migration, `create or replace function public.${endpoint}(`);
+    assert.match(body, /financial_operation_result_v1/u);
+    assert.ok(body.indexOf('financial_operation_result_v1') < body.indexOf('v_context := private.validate_pos_sync_context'));
+  }
+  assert.match(frontend, /CLOUD_FINANCIAL_RESULT_CAPABILITY/u);
+});

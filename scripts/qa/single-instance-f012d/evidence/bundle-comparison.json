@@ -1,0 +1,36 @@
+{
+  "baseline": {
+    "dist": {
+      "files": 45,
+      "bytes": 5225936,
+      "gzipBytes": 1407184
+    },
+    "dist-store": {
+      "files": 10,
+      "bytes": 708010,
+      "gzipBytes": 204899
+    },
+    "store/dist": {
+      "files": 10,
+      "bytes": 708010,
+      "gzipBytes": 204899
+    }
+  },
+  "candidate": {
+    "dist": {
+      "files": 45,
+      "bytes": 5233127,
+      "gzipBytes": 1409724
+    },
+    "dist-store": {
+      "files": 10,
+      "bytes": 708010,
+      "gzipBytes": 204899
+    },
+    "store/dist": {
+      "files": 10,
+      "bytes": 708010,
+      "gzipBytes": 204899
+    }
+  }
+}

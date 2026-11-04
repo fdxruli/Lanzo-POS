@@ -2,6 +2,7 @@ import { syncOutboxService } from './syncOutboxService';
 
 export const CLOUD_SYNC_CONTRACT_VERSION = 2;
 export const CLOUD_SYNC_CONTRACT_RPC = 'pos_fin01_sync_contract_v1';
+export const CLOUD_FINANCIAL_RESULT_CAPABILITY = 'financial_operation_result_v1';
 export const CLOUD_SYNC_CAPABILITIES = Object.freeze([
   'historical_credit_preservation_v1',
   'customer_projection_safe_apply_v1'
@@ -56,7 +57,9 @@ const validatePayloadCollections = (payload) => {
       || !hasText(ledger.created_at || ledger.createdAt)) {
       throw new Error('CLOUD_SYNC_PROTOCOL_INVALID_LEDGER');
     }
-    requireValidMoney(ledger.amount, 'CLOUD_SYNC_PROTOCOL_INVALID_LEDGER');
+    // Ledger deltas are signed: a real PAYMENT decreases the debt. Balances
+    // and the resulting debt projection remain nonnegative below.
+    requireValidMoney(ledger.amount, 'CLOUD_SYNC_PROTOCOL_INVALID_LEDGER', { allowNegative: true });
     requireValidMoney(ledger.balance_after ?? ledger.balanceAfter, 'CLOUD_SYNC_PROTOCOL_INVALID_LEDGER');
     const debtCents = ledger.debt_cents_after ?? ledger.debtCentsAfter;
     if (!Number.isSafeInteger(debtCents) || debtCents < 0 || debtCents > 2147483647) {
@@ -194,7 +197,7 @@ const findCustomerRecords = (payload) => {
     }
   }
 
-  const records = new Map();
+  const records = new Set();
   const pending = [{ value: payload, customerField: false, depth: 0 }];
   const visited = new Set();
 
@@ -214,14 +217,14 @@ const findCustomerRecords = (payload) => {
       if (!isRecord(value) || typeof value.id !== 'string' || value.id.trim() === '') {
         throw new Error('CLOUD_SYNC_PROTOCOL_INVALID_CUSTOMER');
       }
-      records.set(value.id, value);
+      records.add(value);
     } else if (isRecord(value)
       && typeof value.id === 'string'
       && value.id.trim() !== ''
       && hasText(value.name)
       && (Object.prototype.hasOwnProperty.call(value, 'credit_limit')
         || Object.prototype.hasOwnProperty.call(value, 'creditLimit'))) {
-      records.set(value.id, value);
+      records.add(value);
     }
 
     if (current.depth >= 32) continue;
@@ -238,6 +241,47 @@ const findCustomerRecords = (payload) => {
   return [...records.values()];
 };
 
+const validateCustomerRecord = (customer) => {
+  const creditLimit = customer.credit_limit ?? customer.creditLimit;
+  if (!hasText(customer.name)
+    || !hasText(customer.created_at || customer.createdAt)
+    || !hasText(customer.updated_at || customer.updatedAt)
+    || !Number.isSafeInteger(customer.server_version ?? customer.serverVersion)
+    || (customer.server_version ?? customer.serverVersion) < 1
+    || moneyToCents(creditLimit) === null
+    || moneyToCents(creditLimit) < 0) {
+    throw new Error('CLOUD_SYNC_PROTOCOL_INVALID_CUSTOMER');
+  }
+};
+
+// A persisted operation result is evidence of past effects, not a fresh debt
+// snapshot. Keep its amounts intact and prevent its customer rows from being
+// applied as current projections. Authorized credit pulls own that state.
+const tagOperationResult = (originalPayload, projections) => {
+  if (projections.length !== 0) throw new Error('CLOUD_SYNC_PROTOCOL_OPERATION_RESULT_PROJECTION');
+  const payload = JSON.parse(JSON.stringify(originalPayload));
+  for (const customer of findCustomerRecords(payload)) {
+    validateCustomerRecord(customer);
+    const cents = customer.debt_cents ?? customer.debtCents;
+    const hasCents = cents !== null && cents !== undefined;
+    if (hasCents && (!Number.isSafeInteger(cents) || cents < 0 || cents > 2147483647)) {
+      throw new Error('CLOUD_SYNC_PROTOCOL_INVALID_PROJECTION');
+    }
+    const amount = customer.debt === null || customer.debt === undefined
+      ? null : requireValidMoney(customer.debt, 'CLOUD_SYNC_PROTOCOL_INVALID_PROJECTION');
+    if (amount !== null && hasCents && amount !== cents) {
+      throw new Error('CLOUD_SYNC_PROTOCOL_PROJECTION_VALUE_MISMATCH');
+    }
+    customer.financialProjectionStatus = 'NOT_INCLUDED';
+    customer.financial_projection = {
+      status: 'NOT_INCLUDED', debt_cents: null, scope: 'OPERATION_RESULT',
+      source: 'persisted_financial_operation_result',
+      projection_version: customer.server_version ?? customer.serverVersion
+    };
+  }
+  return payload;
+};
+
 const attachProjections = (payload, projections) => {
   const customers = findCustomerRecords(payload);
   const ids = new Set(customers.map((customer) => customer.id));
@@ -251,16 +295,7 @@ const attachProjections = (payload, projections) => {
     byId.set(projection.customerId, projection);
   }
   for (const customer of customers) {
-    const creditLimit = customer.credit_limit ?? customer.creditLimit;
-    if (!hasText(customer.name)
-      || !hasText(customer.created_at || customer.createdAt)
-      || !hasText(customer.updated_at || customer.updatedAt)
-      || !Number.isSafeInteger(customer.server_version ?? customer.serverVersion)
-      || (customer.server_version ?? customer.serverVersion) < 1
-      || moneyToCents(creditLimit) === null
-      || moneyToCents(creditLimit) < 0) {
-      throw new Error('CLOUD_SYNC_PROTOCOL_INVALID_CUSTOMER');
-    }
+    validateCustomerRecord(customer);
     const projection = byId.get(customer.id);
     if (!projection) throw new Error('CLOUD_SYNC_PROTOCOL_PROJECTION_MISSING');
     const currentCents = Object.prototype.hasOwnProperty.call(customer, 'debt_cents')
@@ -324,7 +359,17 @@ export const validateCloudSyncV2Envelope = (rawEnvelope, {
   }
 
   validatePayloadCollections(envelope.payload);
-  const payload = attachProjections(envelope.payload, envelope.customer_projections);
+  const operationResult = expectedFamily === 'financial_operations';
+  if (operationResult && envelope.customer_projection_scope !== 'OPERATION_RESULT') {
+    throw makeUpdateRequiredError(expectedFamily);
+  }
+  if (!operationResult && envelope.customer_projection_scope !== undefined
+    && envelope.customer_projection_scope !== 'CURRENT') {
+    throw new Error('CLOUD_SYNC_PROTOCOL_PROJECTION_SCOPE_MISMATCH');
+  }
+  const payload = operationResult
+    ? tagOperationResult(envelope.payload, envelope.customer_projections)
+    : attachProjections(envelope.payload, envelope.customer_projections);
   if (envelope.cursor) {
     const cursor = envelope.cursor;
     const responseSeq = payload.latest_change_seq ?? payload.latestChangeSeq;
@@ -413,6 +458,7 @@ export const validateCloudSyncV2Envelope = (rawEnvelope, {
       tenantId: envelope.tenant_id,
       endpoint: envelope.endpoint,
       family: envelope.family,
+      customerProjectionScope: operationResult ? 'OPERATION_RESULT' : 'CURRENT',
       cursor: envelope.cursor || null,
       operation: envelope.operation || null,
       customerProjections: envelope.customer_projections.map(parseProjection)
@@ -464,7 +510,9 @@ export const callCloudSyncV2Rpc = async ({
     throw new Error('CLOUD_SYNC_PROTOCOL_CLIENT_INVALID');
   }
   actorHandle?.assertCurrent?.();
-  const requestedCapabilities = CLOUD_SYNC_CAPABILITIES;
+  const requestedCapabilities = family === 'financial_operations'
+    ? [...CLOUD_SYNC_CAPABILITIES, CLOUD_FINANCIAL_RESULT_CAPABILITY]
+    : CLOUD_SYNC_CAPABILITIES;
   const { data: discoveryData, error: discoveryError } = await client.rpc(CLOUD_SYNC_CONTRACT_RPC, {
     ...authArgs,
     p_requested_contract: CLOUD_SYNC_CONTRACT_VERSION,
@@ -473,14 +521,20 @@ export const callCloudSyncV2Rpc = async ({
   actorHandle?.assertCurrent?.();
   if (discoveryError) {
     if (isUnavailableRpcError(discoveryError, CLOUD_SYNC_CONTRACT_RPC)
-      || discoveryError?.code === 'CLOUD_CLIENT_UPDATE_REQUIRED') {
+      || isCloudClientUpdateRequired(discoveryError)) {
       reportUpdateRequired(family);
       throw makeUpdateRequiredError(family, discoveryError);
     }
     throw discoveryError;
   }
 
-  const contract = normalizeContract(discoveryData, { family, rpcName, requestedCapabilities });
+  let contract;
+  try {
+    contract = normalizeContract(discoveryData, { family, rpcName, requestedCapabilities });
+  } catch (error) {
+    if (isCloudClientUpdateRequired(error)) reportUpdateRequired(family);
+    throw error;
+  }
   actorHandle?.assertCurrent?.();
   const syncContract = {
     contract_version: CLOUD_SYNC_CONTRACT_VERSION,
@@ -493,7 +547,7 @@ export const callCloudSyncV2Rpc = async ({
   });
   actorHandle?.assertCurrent?.();
   if (error) {
-    if (isUnavailableRpcError(error, rpcName) || error?.code === 'CLOUD_CLIENT_UPDATE_REQUIRED') {
+    if (isUnavailableRpcError(error, rpcName) || isCloudClientUpdateRequired(error)) {
       reportUpdateRequired(family);
       throw makeUpdateRequiredError(family, error);
     }
@@ -535,4 +589,5 @@ export const callCloudSyncV2Rpc = async ({
   }
 };
 
-export const isCloudClientUpdateRequired = (error) => error?.code === 'CLOUD_CLIENT_UPDATE_REQUIRED';
+export const isCloudClientUpdateRequired = (error) => error?.code === 'CLOUD_CLIENT_UPDATE_REQUIRED'
+  || /\bCLOUD_CLIENT_UPDATE_REQUIRED\b/.test(String(error?.message || ''));

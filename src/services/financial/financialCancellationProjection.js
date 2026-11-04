@@ -1,5 +1,6 @@
 import { db, STORES } from '../db/dexie';
 import { registerFinancialProjectionHandler } from './financialProjectionRegistry';
+import { publishCancellationCashUpdate } from './cancellationCashRefreshRoute';
 
 const ensureOpen = async () => {
   if (!db.isOpen()) await db.open();
@@ -59,7 +60,7 @@ export const saveCloudSaleCancellationPatch = async ({ localSale = {}, response 
   return patchedSale;
 };
 
-export const applySaleCancellationFinancialProjection = async ({ responsePayload, actorHandle }) => {
+export const applySaleCancellationFinancialProjection = async ({ responsePayload, actorHandle, executionScope = null }) => {
   actorHandle?.assertCurrent?.();
   const response = responsePayload || {};
   const result = await saveCloudSaleCancellationPatch({
@@ -68,7 +69,9 @@ export const applySaleCancellationFinancialProjection = async ({ responsePayload
   actorHandle?.assertCurrent?.();
   if (typeof window !== 'undefined') {
     ['lanzo:sales-sync-updated', 'lanzo:cash-sync-updated', 'lanzo:products-sync-updated', 'lanzo:customer-credit-sync-updated', 'lanzo:reports-sync-updated']
-      .forEach((eventName) => window.dispatchEvent(new CustomEvent(eventName)));
+      .forEach((eventName) => eventName === 'lanzo:cash-sync-updated'
+        ? publishCancellationCashUpdate(executionScope)
+        : window.dispatchEvent(new CustomEvent(eventName)));
   }
   return result;
 };

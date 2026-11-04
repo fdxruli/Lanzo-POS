@@ -2,20 +2,45 @@
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-const api=vi.hoisted(()=>({preview:vi.fn(),authorizeAndImport:vi.fn(),resumeImport:vi.fn(),status:vi.fn()}));
+const api=vi.hoisted(()=>({preview:vi.fn(),prepareDirectory:vi.fn(),authorizeAndImport:vi.fn(),resumeImport:vi.fn(),status:vi.fn(),fin01Enabled:true}));
 vi.mock('../../../store/useAppStore',()=>({useAppStore:(selector)=>selector({licenseDetails:{license_key:'synthetic'}})}));
-vi.mock('../../../services/sync/syncConstants',()=>({getLicenseKeyFromDetails:()=> 'synthetic',isCloudCustomerCreditSyncEnabled:()=>true}));
+vi.mock('../../../services/sync/syncConstants',()=>({getLicenseKeyFromDetails:()=> 'synthetic',isCloudCustomerCreditSyncEnabled:()=>true,isFin01HistoricalCreditImportEnabled:()=>api.fin01Enabled}));
 vi.mock('../../../services/customerCredit/customerCreditMigrationService',()=>({customerCreditMigrationService:api}));
 import HistoricalCreditImport from '../HistoricalCreditImport';
 afterEach(cleanup);
 beforeEach(()=>{
-  Object.values(api).forEach(fn=>fn.mockReset());
+  [api.preview,api.prepareDirectory,api.authorizeAndImport,api.resumeImport,api.status].forEach(fn=>fn.mockReset());
+  api.fin01Enabled=true;
   api.preview.mockResolvedValue({hash:'reviewed-hash',batch:{manifest:{customer_count:1,total_cents:12501}},names:{a:'Synthetic'},results:[{customer_id:'a',amount_cents:12501,status:'READY',over_limit:true}]});
   api.authorizeAndImport.mockResolvedValue({state:'CONSUMED',results:[{customer_id:'a',amount_cents:12501,status:'IMPORTED'}]});
 });
 describe('explicit owner review UI; presentation boundary only',()=>{
+  it('keeps FIN-01 import hidden unless its separate capability is enabled',()=>{
+    api.fin01Enabled=false;
+    render(<HistoricalCreditImport/>);
+    expect(screen.queryByRole('heading',{name:'Importar saldos históricos'})).not.toBeInTheDocument();
+    expect(api.preview).not.toHaveBeenCalled();
+    expect(api.authorizeAndImport).not.toHaveBeenCalled();
+  });
+
   it('opening the screen never approves or imports',()=>{
     render(<HistoricalCreditImport/>);expect(api.preview).not.toHaveBeenCalled();expect(api.authorizeAndImport).not.toHaveBeenCalled();
+    expect(api.prepareDirectory).not.toHaveBeenCalled();
+  });
+  it('prepares only after its separate explicit action and requires financial confirmation afterward',async()=>{
+    api.preview.mockResolvedValueOnce({hash:'reviewed-hash',batch:{manifest:{customer_count:1,total_cents:1000}},results:[{customer_id:'a',amount_cents:1000,status:'CONFLICT_CUSTOMER_MISSING'}]});
+    api.prepareDirectory.mockResolvedValue({success:true});
+    render(<HistoricalCreditImport/>);
+    fireEvent.click(screen.getByRole('button',{name:'Revisar saldos preservados'}));
+    const prepare=await screen.findByRole('button',{name:'Preparar directorio Cloud faltante'});
+    expect(api.prepareDirectory).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.click(prepare);
+    await waitFor(()=>expect(api.prepareDirectory).toHaveBeenCalledWith({licenseKey:'synthetic',reviewedHash:'reviewed-hash'}));
+    await waitFor(()=>expect(api.preview).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole('button',{name:'Autorizar e importar estos saldos'})).toBeDisabled();
+    expect(screen.getByRole('checkbox')).not.toBeChecked();
+    expect(api.authorizeAndImport).not.toHaveBeenCalled();
   });
   it('shows exact amounts and requires review confirmation before import',async()=>{
     render(<HistoricalCreditImport/>);fireEvent.click(screen.getByRole('button',{name:'Revisar saldos preservados'}));

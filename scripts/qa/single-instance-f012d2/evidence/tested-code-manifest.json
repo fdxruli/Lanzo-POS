@@ -1,0 +1,81 @@
+{
+  "codeCommit": "2765a8a85a8246df2916db76c01f5e94ff22dccb",
+  "candidateCwd": "/workspace/scratch/2a5709f8e222/Lanzo-cash-route-candidate",
+  "files": [
+    {
+      "path": "scripts/qa/single-instance-f012d2/actual-read.test.jsx",
+      "sha256": "cf56383e2cc2d49b3cee92a718a39fba87b569ff6593d2422e69255fde926435",
+      "candidateIdentical": true
+    },
+    {
+      "path": "scripts/qa/single-instance-f012d2/route.test.jsx",
+      "sha256": "f5cf23d766fb404e7b68bbc817da70c2d7dd56e3d22f59b1a8257870d7a72835",
+      "candidateIdentical": true
+    },
+    {
+      "path": "src/hooks/useCaja.js",
+      "sha256": "b4f0db6c165d9c633f4b6477a5fee474b71dfc4ec72f8b3f9777d3e674e489e7",
+      "candidateIdentical": true
+    },
+    {
+      "path": "src/services/financial/cancellationCashRefreshRoute.js",
+      "sha256": "ba55135826767b9202fdad139147b713195dca0b15ee33520057ea5a7d297833",
+      "candidateIdentical": true
+    },
+    {
+      "path": "src/services/financial/financialCancellationProjection.js",
+      "sha256": "3fb0901b5f29bb320e207bcb9395ecbac35e2b8849342707edcd26e173410b9a",
+      "candidateIdentical": true
+    },
+    {
+      "path": "src/services/financial/financialIntentRecoveryCoordinator.js",
+      "sha256": "df474b209801f25f1c7a81b696ed413ae68177ea64bf1b10677dbe34599f4a46",
+      "candidateIdentical": true
+    },
+    {
+      "path": "src/services/financial/financialProjectionRegistry.js",
+      "sha256": "c09585710d6d9a69b5d6cd3aa8af84f19d38f9302363d1782660e0601f4237e8",
+      "candidateIdentical": true
+    },
+    {
+      "path": "scripts/qa/single-instance-f012a/builds.mjs",
+      "sha256": "bcf0475eebcdfb50cd152eb09c7e4f90d87069776f8a0a168a9b19b08d1c1422",
+      "candidateIdentical": true
+    },
+    {
+      "path": "scripts/qa/single-instance-f012a/run-regressions.mjs",
+      "sha256": "eae85e5aefe8838fbc5da501e9d709a92f8fb153f5de4214049c81a0c64a4bbc",
+      "candidateIdentical": true
+    },
+    {
+      "path": "scripts/qa/single-instance-f012a/global.mjs",
+      "sha256": "2f0f85c554084aa9a7d91c5f0148112be80c56758fbdac6c9ba043437726c799",
+      "candidateIdentical": true
+    },
+    {
+      "path": "scripts/qa/single-instance-f012d1/validate.mjs",
+      "sha256": "dd80c40dd0f610cb7599ddb2f7c33cb4095773922f201d3aef1fa528a181e621",
+      "candidateIdentical": true
+    },
+    {
+      "path": "scripts/ci/pr127-global-comparison.mjs",
+      "sha256": "2399871028f77d5f9833c3fa5e6d225be9f6a77fbe656a64e988b0f2d46ad512",
+      "candidateIdentical": true
+    },
+    {
+      "path": "src/services/sync/syncExecutionScope.js",
+      "sha256": "f8636b3c4e36b22f2b7035b215b2c504b5e31d22495e0797bc777ddd46db97eb",
+      "candidateIdentical": true
+    },
+    {
+      "path": "package-lock.json",
+      "sha256": "59e12324df46b964748524051be34760fcc3c1050ef57a8b03deb16c4ae2b581",
+      "candidateIdentical": true
+    },
+    {
+      "path": "vite.config.js",
+      "sha256": "8fdfd0cd87b14fb5a4a49a4a564e12833adb3c059e59fa5de152fd5e427b4ccb",
+      "candidateIdentical": true
+    }
+  ]
+}

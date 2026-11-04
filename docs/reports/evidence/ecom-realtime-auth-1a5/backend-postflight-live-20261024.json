@@ -1,0 +1,60 @@
+{
+  "checked_at": "2026-10-24T13:09:39.789126Z",
+  "project_ref": "odlrhijtfyavryeqivaa",
+  "status": "BACKEND_QA_BLOCKED",
+  "migration_ledger": {
+    "count": 332,
+    "latest": "20261024130558:qa_ecom_bridge_1a4_remove_unused_race_probe"
+  },
+  "qa_backend": {
+    "tables": 8,
+    "tables_with_rls": 8,
+    "public_rpcs": 16,
+    "public_rpcs_executable_by_anon_or_authenticated": 0,
+    "public_rpcs_executable_by_service_role": 16,
+    "acl_guard_closed": true,
+    "allowlist_rows": 0,
+    "kill_switch_active": true,
+    "qa_tenants": 0,
+    "qa_identities": 0,
+    "qa_grants": 0,
+    "tagged_auth_users": 0,
+    "tagged_auth_sessions": 0,
+    "pilot_device_authority": false,
+    "receiver_role_memberships": [
+      {
+        "member": "postgres",
+        "granted_role": "lanzo_ecom_bridge_receiver",
+        "admin_option": true
+      }
+    ],
+    "receiver_role_memberships_from_client_or_service_roles": 0,
+    "qa_receiver_realtime_policy_count": 1,
+    "realtime_messages_policy_count": 4,
+    "qa_race_probe_present": false
+  },
+  "security_advisors": {
+    "observed_at": "2026-10-24T13:09:05.722Z",
+    "rls_enabled_no_policy_total_project_findings": 42,
+    "qa_private_tables_in_that_finding": 8,
+    "qa_table_access_model": "RLS enabled; no direct policies; table privileges revoked from client and service roles; access remains through server-owned SECURITY DEFINER RPCs",
+    "public_security_definer_anon_findings_total_project": 181,
+    "qa_rpcs_in_public_security_definer_anon_findings": 0,
+    "mutable_search_path_findings_total_project": 7,
+    "qa_objects_in_mutable_search_path_findings": 0
+  },
+  "pilot_gates": {
+    "current_cycle_usage_verified": false,
+    "dedicated_secrets_installed": false,
+    "supervised_owner_device_qa_completed": false,
+    "hosted_auth_or_realtime_test_run": false,
+    "qa_edge_function_deployed": false,
+    "vercel_production_deployment_or_promotion": false
+  },
+  "notes": [
+    "The six shared ACL revokes have a separate preflight/postflight evidence pair.",
+    "The only receiver-role membership is the postgres administrative membership; anon, authenticated, service_role, and authenticator are not members.",
+    "The project-wide advisor counts include existing non-pilot findings; no QA RPC is executable by anon or authenticated.",
+    "The saved Usage baseline is historical and is not accepted for the current pilot gate."
+  ]
+}

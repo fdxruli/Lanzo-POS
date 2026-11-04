@@ -1,0 +1,490 @@
+
+> lanzo-pos-react@4.0.0 lint
+> eslint src/**/*.{js,jsx}
+
+[baseline-browser-mapping] The data in this module is over two months old.  To ensure accurate Baseline data, please update: `npm i baseline-browser-mapping@latest -D`
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/components/caja/caja/modals/EditInitialModal.jsx
+  41:6  warning  React Hook useEffect has a missing dependency: 'currentAmount'. Either include it or remove the dependency array. If 'setAmount' needs the current value of 'currentAmount', you can also switch to useReducer instead of useState and read 'currentAmount' in the reducer  react-hooks/exhaustive-deps
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/components/common/AbonoModal.jsx
+  2:8  warning  'React' is defined but never used  no-unused-vars
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/components/common/LazyImage.jsx
+   1:8  warning  'React' is defined but never used                                                                             no-unused-vars
+  62:8  warning  React Hook useEffect has a missing dependency: 'objectUrl'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/components/common/PersistenceWarningBanner.jsx
+  56:14  warning  'e' is defined but never used  no-unused-vars
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/components/common/ScannerModal.jsx
+  102:13  warning  'quantity' is assigned a value but never used      no-unused-vars
+  102:23  warning  'uniqueLineId' is assigned a value but never used  no-unused-vars
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/components/common/SetupModal.jsx
+  44:20  error  Unnecessary escape character: \"  no-useless-escape
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/components/dashboard/ExpirationFefoPanel.jsx
+  1:8  warning  'React' is defined but never used  no-unused-vars
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/components/dashboard/ExpirationWasteHistoryPanel.jsx
+  1:8  warning  'React' is defined but never used  no-unused-vars
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/components/dashboard/TopCustomers.jsx
+  2:8  warning  'React' is defined but never used  no-unused-vars
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/components/debug/DbMigrationTester.jsx
+  1:8  warning  'React' is defined but never used  no-unused-vars
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/components/debug/SystemHealthTester.jsx
+  1:8  warning  'React' is defined but never used  no-unused-vars
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/components/layout/__tests__/Layout.reportAuthorization.test.jsx
+   89:7  error  React Hook "useEffect" is called in function "default" that is neither a React function component nor a custom React Hook function. React component names must start with an uppercase letter. React Hook names must start with the word "use"  react-hooks/rules-of-hooks
+  108:7  error  React Hook "useEffect" is called in function "default" that is neither a React function component nor a custom React Hook function. React component names must start with an uppercase letter. React Hook names must start with the word "use"  react-hooks/rules-of-hooks
+  124:5  error  React Hook "useEffect" is called in function "default" that is neither a React function component nor a custom React Hook function. React component names must start with an uppercase letter. React Hook names must start with the word "use"  react-hooks/rules-of-hooks
+  134:5  error  React Hook "useEffect" is called in function "default" that is neither a React function component nor a custom React Hook function. React component names must start with an uppercase letter. React Hook names must start with the word "use"  react-hooks/rules-of-hooks
+  144:5  error  React Hook "useEffect" is called in function "default" that is neither a React function component nor a custom React Hook function. React component names must start with an uppercase letter. React Hook names must start with the word "use"  react-hooks/rules-of-hooks
+  154:5  error  React Hook "useEffect" is called in function "default" that is neither a React function component nor a custom React Hook function. React component names must start with an uppercase letter. React Hook names must start with the word "use"  react-hooks/rules-of-hooks
+  165:7  error  React Hook "useEffect" is called in function "default" that is neither a React function component nor a custom React Hook function. React component names must start with an uppercase letter. React Hook names must start with the word "use"  react-hooks/rules-of-hooks
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/components/pos/LayawayModal.jsx
+  2:8  warning  'React' is defined but never used   no-unused-vars
+  7:8  warning  'Logger' is defined but never used  no-unused-vars
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/components/pos/PrescriptionModal.jsx
+  1:8  warning  'React' is defined but never used  no-unused-vars
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/components/pos/ProductModifiersModal.jsx
+  1:8  warning  'React' is defined but never used  no-unused-vars
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/components/pos/__tests__/ProductModifiersModal.selectionRules.test.jsx
+  2:8  warning  'React' is defined but never used  no-unused-vars
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/components/pos/__tests__/restaurantMode.bug.test.js
+  19:32  warning  'beforeEach' is defined but never used  no-unused-vars
+  19:44  warning  'vi' is defined but never used          no-unused-vars
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/components/pos/useLayawayFlow.js
+   4:10  warning  'useAppStore' is defined but never used                                                                              no-unused-vars
+  91:8   warning  React Hook useCallback has an unnecessary dependency: 'openModal'. Either exclude it or remove the dependency array  react-hooks/exhaustive-deps
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/components/products/CostCalculatorModal.jsx
+  2:8  warning  'React' is defined but never used  no-unused-vars
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/components/products/DailyPriceModal.jsx
+  1:8  warning  'React' is defined but never used  no-unused-vars
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/components/products/VarianteInvetoryView.jsx
+  2:8  warning  'React' is defined but never used  no-unused-vars
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/components/products/WasteModal.jsx
+  2:8  warning  'React' is defined but never used  no-unused-vars
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/components/products/WholesaleManagerModal.jsx
+  1:8  warning  'React' is defined but never used  no-unused-vars
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/components/products/batch/BatchProductSearch.jsx
+  1:8  warning  'React' is defined but never used  no-unused-vars
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/components/products/batch/fieldsets/FruteriaBatchFields.jsx
+  1:8  warning  'React' is defined but never used  no-unused-vars
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/components/products/batch/fieldsets/PharmacyBatchFields.jsx
+  1:8  warning  'React' is defined but never used  no-unused-vars
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/components/products/batch/fieldsets/RestaurantBatchFields.jsx
+  1:8  warning  'React' is defined but never used                                           no-unused-vars
+  7:3  warning  'features' is defined but never used. Allowed unused args must match /^_/u  no-unused-vars
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/components/products/forms/CategorySelect.jsx
+  2:8  warning  'React' is defined but never used  no-unused-vars
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/components/scanner/UnknownCodesBanner.jsx
+  2:8  warning  'React' is defined but never used  no-unused-vars
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/config/botContext.js
+  381:37  warning  'products' is assigned a value but never used  no-unused-vars
+  458:23  warning  'products' is assigned a value but never used  no-unused-vars
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/debug-cart.js
+    1:9  warning  'create' is assigned a value but never used                                              no-unused-vars
+    2:9  warning  'persist' is assigned a value but never used                                             no-unused-vars
+  114:5  warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  119:1  warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  124:1  warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  126:1  warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  128:1  warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/hooks/dashboard/useAgentPreview.js
+  2:10  warning  'DATE_RANGES' is defined but never used  no-unused-vars
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/hooks/pos/__tests__/restaurantMode.bug.test.js
+  19:32  warning  'beforeEach' is defined but never used  no-unused-vars
+  19:44  warning  'vi' is defined but never used          no-unused-vars
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/hooks/pos/useCheckoutFlow.js
+  12:5  warning  'ECOMMERCE_POS_CHECKOUT_NOT_ENABLED' is defined but never used  no-unused-vars
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/hooks/scanner/useScannerCart.js
+  71:13  warning  'quantity' is assigned a value but never used      no-unused-vars
+  71:23  warning  'uniqueLineId' is assigned a value but never used  no-unused-vars
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/hooks/useDismissibleHistoryLayer.js
+   28:32  warning  '_layer' is assigned a value but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        no-unused-vars
+  201:3   error    Error: Cannot access refs during render
+
+React refs are values that are not needed for rendering. Refs should only be accessed outside of render, such as in event handlers or effects. Accessing a ref value (the `current` property) during render can cause your component not to update as expected (https://react.dev/reference/react/useRef).
+
+  199 |   const isMountedRef = useRef(false);
+  200 |
+> 201 |   onDismissRef.current = onDismiss;
+      |   ^^^^^^^^^^^^^^^^^^^^ Cannot update ref during render
+  202 |   layerIdRef.current = layerId;
+  203 |
+  204 |   useEffect(() => {  react-hooks/refs
+  202:3   error    Error: Cannot access refs during render
+
+React refs are values that are not needed for rendering. Refs should only be accessed outside of render, such as in event handlers or effects. Accessing a ref value (the `current` property) during render can cause your component not to update as expected (https://react.dev/reference/react/useRef).
+
+  200 |
+  201 |   onDismissRef.current = onDismiss;
+> 202 |   layerIdRef.current = layerId;
+      |   ^^^^^^^^^^^^^^^^^^ Cannot update ref during render
+  203 |
+  204 |   useEffect(() => {
+  205 |     isMountedRef.current = true;         react-hooks/refs
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/hooks/usePostDowngradeCashPending.js
+  280:28  error    Compilation Skipped: Existing memoization could not be preserved
+
+React Compiler has skipped optimizing this component because the existing manual memoization could not be preserved. The inferred dependencies did not match the manually specified dependencies, which could cause the value to change more or less frequently than expected. The inferred dependency was `currentAdminUser`, but the source dependencies were [currentAdminUser?.id, currentAdminUser?.username, eligible, licenseKey]. Inferred less specific property than source.
+
+  278 |     !cloudCashEnabled
+  279 |   );
+> 280 |   const scopeKey = useMemo(() => (
+      |                            ^^^^^^^
+> 281 |     eligible
+      | ^^^^^^^^^^^^
+> 282 |       ? buildPostDowngradeCashScopeKey({ licenseKey, adminUser: currentAdminUser })
+      | ^^^^^^^^^^^^
+> 283 |       : null
+      | ^^^^^^^^^^^^
+> 284 |   ), [currentAdminUser?.id, currentAdminUser?.username, eligible, licenseKey]);
+      | ^^^^ Could not preserve existing manual memoization
+  285 |
+  286 |   useEffect(() => {
+  287 |     if (typeof window === 'undefined') return undefined;  react-hooks/preserve-manual-memoization
+  284:6   warning  React Hook useMemo has a missing dependency: 'currentAdminUser'. Either include it or remove the dependency array                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         react-hooks/exhaustive-deps
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/services/Logger.js
+  12:7  warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  24:7  warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  30:7  warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  38:7  warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  44:7  warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  50:7  warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  56:7  warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  62:7  warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  68:7  warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/services/__test__/BackupRiskEvaluator.test.js
+  3:14  warning  'STORES' is defined but never used  no-unused-vars
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/services/backup/backupRestore.js
+   1:8   warning  'Dexie' is defined but never used                    no-unused-vars
+  42:11  warning  'includedTables' is assigned a value but never used  no-unused-vars
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/services/db/__tests__/productUpdates.test.js
+  257:33  error  Do not access Object.prototype method 'hasOwnProperty' from target object  no-prototype-builtins
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/services/db/__tests__/tenantRuntimeRouter.test.js
+  205:41  warning  'directoryState' is assigned a value but never used             no-unused-vars
+  206:39  warning  'directoryLifecycleVersion' is assigned a value but never used  no-unused-vars
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/services/db/customerCreditRepository.js
+  372:25  warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  396:9   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  410:13  warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/services/ecommerce/__tests__/ecommercePosDraftService.test.js
+  39:3  warning  'getEcommercePosDraftId' is defined but never used  no-unused-vars
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/services/sales/__tests__/inventoryFlow.temporal.test.js
+  169:19  warning  'originalBulkPut' is assigned a value but never used                         no-unused-vars
+  171:35  warning  'storeName' is defined but never used. Allowed unused args must match /^_/u  no-unused-vars
+  187:22  warning  'e' is defined but never used                                                no-unused-vars
+  211:22  warning  'e' is defined but never used                                                no-unused-vars
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/services/sales/financialPolicy.js
+  109:7  warning  'getLineCost' is assigned a value but never used  no-unused-vars
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/services/salesCloud/salesCloudRepository.js
+  65:7  warning  'buildCloudCreditArgs' is assigned a value but never used  no-unused-vars
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/services/sync/INTEGRATION_EXAMPLES.js
+   18:38  error    'loadData' is not defined                                                                                      no-undef
+   18:47  error    'STORES' is not defined                                                                                        no-undef
+   19:15  warning  'localSales' is assigned a value but never used                                                                no-unused-vars
+   19:34  error    'loadData' is not defined                                                                                      no-undef
+   19:43  error    'STORES' is not defined                                                                                        no-undef
+   22:69  error    'STORES' is not defined                                                                                        no-undef
+   25:13  error    'Logger' is not defined                                                                                        no-undef
+   35:39  error    'supabaseClient' is not defined                                                                                no-undef
+   42:17  error    'STORES' is not defined                                                                                        no-undef
+   44:17  error    'saveBulk' is not defined                                                                                      no-undef
+   48:13  error    'Logger' is not defined                                                                                        no-undef
+   53:9   error    'Logger' is not defined                                                                                        no-undef
+   71:43  error    'db' is not defined                                                                                            no-undef
+   77:25  warning  Unexpected console statement. Only these console methods are allowed: warn, error, info                        no-console
+   84:25  warning  Unexpected console statement. Only these console methods are allowed: warn, error, info                        no-console
+   87:50  error    'fetchRemoteData' is not defined                                                                               no-undef
+   98:35  error    'db' is not defined                                                                                            no-undef
+  101:35  error    'db' is not defined                                                                                            no-undef
+  107:29  warning  Unexpected console statement. Only these console methods are allowed: warn, error, info                        no-console
+  116:39  error    'db' is not defined                                                                                            no-undef
+  160:21  warning  Unexpected console statement. Only these console methods are allowed: warn, error, info                        no-console
+  165:52  error    'supabaseClient' is not defined                                                                                no-undef
+  168:39  error    'lastSyncTime' is not defined                                                                                  no-undef
+  176:21  error    'STORES' is not defined                                                                                        no-undef
+  178:21  error    'saveBulk' is not defined                                                                                      no-undef
+  182:21  warning  Unexpected console statement. Only these console methods are allowed: warn, error, info                        no-console
+  184:21  error    'useProductStore' is not defined                                                                               no-undef
+  194:8   warning  React Hook useEffect has a missing dependency: 'intervalMs'. Either include it or remove the dependency array  react-hooks/exhaustive-deps
+  210:35  error    'useState' is not defined                                                                                      no-undef
+  211:12  warning  'message' is assigned a value but never used                                                                   no-unused-vars
+  211:35  error    'useState' is not defined                                                                                      no-undef
+  219:65  error    'STORES' is not defined                                                                                        no-undef
+  228:55  error    'supabaseClient' is not defined                                                                                no-undef
+  236:17  error    'STORES' is not defined                                                                                        no-undef
+  238:17  error    'saveBulk' is not defined                                                                                      no-undef
+  271:34  error    'db' is not defined                                                                                            no-undef
+  271:43  error    'STORES' is not defined                                                                                        no-undef
+  281:42  error    'fetchRemoteData' is not defined                                                                               no-undef
+  306:13  error    'Logger' is not defined                                                                                        no-undef
+  309:19  error    'saveData' is not defined                                                                                      no-undef
+  309:28  error    'STORES' is not defined                                                                                        no-undef
+  317:9   error    'Logger' is not defined                                                                                        no-undef
+  349:38  error    'fetchRemoteData' is not defined                                                                               no-undef
+  355:17  error    'saveBulk' is not defined                                                                                      no-undef
+  359:17  error    'Logger' is not defined                                                                                        no-undef
+  364:13  error    'Logger' is not defined                                                                                        no-undef
+  368:13  error    'Logger' is not defined                                                                                        no-undef
+  377:5   error    'Logger' is not defined                                                                                        no-undef
+  391:1   error    'describe' is not defined                                                                                      no-undef
+  392:5   error    'it' is not defined                                                                                            no-undef
+  395:13  error    'STORES' is not defined                                                                                        no-undef
+  402:13  error    'STORES' is not defined                                                                                        no-undef
+  404:13  error    'saveBulk' is not defined                                                                                      no-undef
+  408:9   error    'expect' is not defined                                                                                        no-undef
+  412:5   error    'it' is not defined                                                                                            no-undef
+  415:13  error    'STORES' is not defined                                                                                        no-undef
+  417:13  error    'saveBulk' is not defined                                                                                      no-undef
+  420:9   error    'expect' is not defined                                                                                        no-undef
+  421:9   error    'expect' is not defined                                                                                        no-undef
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/store/useDashboardStore.js
+   30:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  221:7   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  229:7   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  256:7   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  336:7   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  343:11  error    'stats' is never reassigned. Use 'const' instead                                         prefer-const
+  417:14  warning  'e' is defined but never used                                                            no-unused-vars
+  466:17  warning  'type' is assigned a value but never used                                                no-unused-vars
+  466:23  warning  'uniqueId' is assigned a value but never used                                            no-unused-vars
+  466:33  warning  'mainLabel' is assigned a value but never used                                           no-unused-vars
+  466:44  warning  'subLabel' is assigned a value but never used                                            no-unused-vars
+  471:17  warning  'type' is assigned a value but never used                                                no-unused-vars
+  471:23  warning  'uniqueId' is assigned a value but never used                                            no-unused-vars
+  471:33  warning  'mainLabel' is assigned a value but never used                                           no-unused-vars
+  471:44  warning  'subLabel' is assigned a value but never used                                            no-unused-vars
+  476:17  warning  'type' is assigned a value but never used                                                no-unused-vars
+  476:23  warning  'uniqueId' is assigned a value but never used                                            no-unused-vars
+  476:33  warning  'mainLabel' is assigned a value but never used                                           no-unused-vars
+  476:44  warning  'subLabel' is assigned a value but never used                                            no-unused-vars
+  481:17  warning  'type' is assigned a value but never used                                                no-unused-vars
+  481:23  warning  'uniqueId' is assigned a value but never used                                            no-unused-vars
+  481:33  warning  'mainLabel' is assigned a value but never used                                           no-unused-vars
+  481:44  warning  'subLabel' is assigned a value but never used                                            no-unused-vars
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/store/useOrderStore.jsx
+  232:7   warning  'safeStorage' is assigned a value but never used                      no-unused-vars
+  241:14  warning  'parseError' is defined but never used                                no-unused-vars
+  708:29  warning  'id' is defined but never used. Allowed unused args must match /^_/u  no-unused-vars
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/tests/useStoreSync.test.js
+   5:1  error  'describe' is not defined    no-undef
+   6:3  error  'beforeEach' is not defined  no-undef
+  13:3  error  'it' is not defined          no-undef
+  23:5  error  'expect' is not defined      no-undef
+  24:5  error  'expect' is not defined      no-undef
+  27:5  error  'expect' is not defined      no-undef
+  28:5  error  'expect' is not defined      no-undef
+  31:3  error  'it' is not defined          no-undef
+  49:5  error  'expect' is not defined      no-undef
+  50:5  error  'expect' is not defined      no-undef
+  53:5  error  'expect' is not defined      no-undef
+  54:5  error  'expect' is not defined      no-undef
+  57:3  error  'it' is not defined          no-undef
+  70:5  error  'expect' is not defined      no-undef
+  71:5  error  'expect' is not defined      no-undef
+  77:5  error  'expect' is not defined      no-undef
+  78:5  error  'expect' is not defined      no-undef
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/utils/__tests__/dateUtils.test.js
+   19:1   error  'describe' is not defined  no-undef
+   21:5   error  'describe' is not defined  no-undef
+   22:9   error  'it' is not defined        no-undef
+   24:13  error  'expect' is not defined    no-undef
+   25:13  error  'expect' is not defined    no-undef
+   28:9   error  'it' is not defined        no-undef
+   30:13  error  'expect' is not defined    no-undef
+   34:5   error  'describe' is not defined  no-undef
+   35:9   error  'it' is not defined        no-undef
+   45:13  error  'expect' is not defined    no-undef
+   46:13  error  'expect' is not defined    no-undef
+   49:9   error  'it' is not defined        no-undef
+   54:13  error  'expect' is not defined    no-undef
+   55:13  error  'expect' is not defined    no-undef
+   59:5   error  'describe' is not defined  no-undef
+   60:9   error  'it' is not defined        no-undef
+   63:13  error  'expect' is not defined    no-undef
+   64:13  error  'expect' is not defined    no-undef
+   67:9   error  'it' is not defined        no-undef
+   68:13  error  'expect' is not defined    no-undef
+   69:13  error  'expect' is not defined    no-undef
+   70:13  error  'expect' is not defined    no-undef
+   73:9   error  'it' is not defined        no-undef
+   74:13  error  'expect' is not defined    no-undef
+   75:13  error  'expect' is not defined    no-undef
+   76:13  error  'expect' is not defined    no-undef
+   77:13  error  'expect' is not defined    no-undef
+   80:9   error  'it' is not defined        no-undef
+   81:13  error  'expect' is not defined    no-undef
+   82:13  error  'expect' is not defined    no-undef
+   83:13  error  'expect' is not defined    no-undef
+   87:5   error  'describe' is not defined  no-undef
+   88:9   error  'it' is not defined        no-undef
+   90:13  error  'expect' is not defined    no-undef
+   91:13  error  'expect' is not defined    no-undef
+   94:9   error  'it' is not defined        no-undef
+   96:13  error  'expect' is not defined    no-undef
+   97:13  error  'expect' is not defined    no-undef
+  100:9   error  'it' is not defined        no-undef
+  101:13  error  'expect' is not defined    no-undef
+  102:13  error  'expect' is not defined    no-undef
+  103:13  error  'expect' is not defined    no-undef
+  104:13  error  'expect' is not defined    no-undef
+  107:9   error  'it' is not defined        no-undef
+  108:13  error  'expect' is not defined    no-undef
+  111:9   error  'it' is not defined        no-undef
+  114:13  error  'expect' is not defined    no-undef
+  115:13  error  'expect' is not defined    no-undef
+  119:5   error  'describe' is not defined  no-undef
+  120:9   error  'it' is not defined        no-undef
+  134:13  error  'expect' is not defined    no-undef
+  135:13  error  'expect' is not defined    no-undef
+  136:13  error  'expect' is not defined    no-undef
+  139:9   error  'it' is not defined        no-undef
+  154:13  error  'expect' is not defined    no-undef
+  155:13  error  'expect' is not defined    no-undef
+  156:13  error  'expect' is not defined    no-undef
+  160:5   error  'describe' is not defined  no-undef
+  161:9   error  'it' is not defined        no-undef
+  162:13  error  'expect' is not defined    no-undef
+  163:13  error  'expect' is not defined    no-undef
+  166:9   error  'it' is not defined        no-undef
+  167:13  error  'expect' is not defined    no-undef
+  168:13  error  'expect' is not defined    no-undef
+  169:13  error  'expect' is not defined    no-undef
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/utils/botIntelligence.js
+   33:3  warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+   40:3  warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+   46:9  warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+   98:3  warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  101:5  warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  105:3  warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  143:3  warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  343:3  warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/utils/moneyMath.js
+  16:14  warning  'e' is defined but never used  no-unused-vars
+
+/workspace/SECURITY_DEPENDENCY_REMEDIATION_R1/src/utils/storageManager.test.js
+   13:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+   23:5   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+   26:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+   31:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+   39:17  error    'storageManager' is not defined                                                          no-undef
+   40:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+   42:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+   43:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+   44:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+   45:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+   47:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+   52:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+   59:23  error    'storageManager' is not defined                                                          no-undef
+   64:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+   65:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+   66:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+   67:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+   68:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+   75:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+   77:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+   84:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+   88:5   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+   93:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+   94:28  error    'saleGuard' is not defined                                                               no-undef
+   95:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+   96:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+   99:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  100:28  error    'saleGuard' is not defined                                                               no-undef
+  101:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  104:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  105:26  error    'saleGuard' is not defined                                                               no-undef
+  106:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  108:5   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  112:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  113:28  error    'saleGuard' is not defined                                                               no-undef
+  114:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  116:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  122:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  124:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  129:19  error    'storageManager' is not defined                                                          no-undef
+  131:7   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  132:7   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  133:7   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  139:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  142:5   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  143:5   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  145:5   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  148:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  150:5   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  155:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  161:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  164:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  175:7   error    'foundFunctions' is never reassigned. Use 'const' instead                                prefer-const
+  178:7   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  185:5   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  188:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  189:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  190:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  191:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  193:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  199:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  200:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  222:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  241:3   error    'storageManager' is not defined                                                          no-undef
+  249:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  249:35  error    'storageManager' is not defined                                                          no-undef
+  250:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  251:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  263:9   error    'storageManager' is not defined                                                          no-undef
+  264:3   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  264:38  error    'storageManager' is not defined                                                          no-undef
+  269:1   warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+
+✖ 334 problems (158 errors, 176 warnings)
+  2 errors and 0 warnings potentially fixable with the `--fix` option.

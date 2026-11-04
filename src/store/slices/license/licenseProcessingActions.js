@@ -1,3 +1,4 @@
+import { loadBootstrapProfile } from '../../../services/bootstrap/bootstrapLifecycle';
 // src/store/slices/license/licenseProcessingActions.js
 
 import Logger from '../../../services/Logger';
@@ -37,6 +38,8 @@ import {
     lockActorRuntime
 } from '../../../services/auth/actorSessionRuntimeBridge';
 import { assertLocalTenantSyncAccess } from '../../../services/tenant/localTenantGuard';
+import { classifyActorAuthorityError } from '../../../services/auth/actorAuthorityErrors';
+import { getActorAuthorityRecoverySnapshot, reportActorAuthorityError } from '../../../services/auth/actorAuthorityRecovery';
 import { createEffectiveLicenseValidationEvidence } from '../../../utils/licenseStatusPresentation';
 import {
     assertLicenseValidationContextCurrent,
@@ -57,6 +60,7 @@ export const createLicenseProcessingActions = ({
     hasStaffValidationContext
 }) => ({
     _processServerValidation: async (serverValidation, localLicense, options = {}) => {
+        const process = async () => {
         const {
             refreshProfile = false,
             reason = 'server_validation',
@@ -72,6 +76,16 @@ export const createLicenseProcessingActions = ({
                 : operation()
         );
         if (!contextIsCurrent()) return;
+        if (getActorAuthorityRecoverySnapshot()) return;
+        if (classifyActorAuthorityError(serverValidation)?.requiresReauthentication) {
+            if (get()._requireActorAuthorityRecovery) {
+                await get()._requireActorAuthorityRecovery(serverValidation, { operation: reason });
+            } else {
+                reportActorAuthorityError(serverValidation, { operation: reason });
+            }
+            return;
+        }
+        options?.lifecycle?.markUnobservable('background_server_processing_sync_work');
         await assertLocalTenantSyncAccess(
             { ...localLicense, ...serverValidation, license_key: serverValidation?.license_key || localLicense?.license_key },
             { reason }
@@ -156,11 +170,11 @@ export const createLicenseProcessingActions = ({
                 lockActorRuntime('license_renewal_required');
                 const renewalContext = captureLicenseValidationContext(get(), localLicense.license_key);
 
-                await get()._loadProfile(localLicense.license_key, {
+                await loadBootstrapProfile(get()._loadProfile, localLicense.license_key, {
                     refreshProfile: false,
                     profileLoadMode: 'background',
                     reason: `renewal_${reason}`
-                });
+                }, options?.lifecycle, 'background_profile_nested_work');
                 assertLicenseValidationContextCurrent(renewalContext, get());
 
                 const expiredEvidence = createEffectiveLicenseValidationEvidence(
@@ -190,7 +204,8 @@ export const createLicenseProcessingActions = ({
 
             await get()._processOfflineMode(localLicense, {
                 refreshProfile,
-                reason: `server_validation_fallback_${reason}`
+                reason: `server_validation_fallback_${reason}`,
+                lifecycle: options?.lifecycle
             });
             return;
         }
@@ -331,11 +346,11 @@ export const createLicenseProcessingActions = ({
                     });
                     return;
                 }
-                await get()._loadProfile(restored.license_key, {
+                await loadBootstrapProfile(get()._loadProfile, restored.license_key, {
                     refreshProfile,
                     profileLoadMode: 'background',
                     reason: 'hot_pro_upgrade_admin_session'
-                });
+                }, options?.lifecycle, 'background_profile_nested_work');
                 return;
             }
 
@@ -376,14 +391,17 @@ export const createLicenseProcessingActions = ({
         });
 
         if (shouldLoadProfileForLicense(get(), finalLicenseData.license_key, refreshProfile)) {
-            await get()._loadProfile(finalLicenseData.license_key, {
+            await loadBootstrapProfile(get()._loadProfile, finalLicenseData.license_key, {
                 refreshProfile,
                 profileLoadMode: 'background',
                 reason
-            });
+            }, options?.lifecycle, 'background_profile_nested_work');
         }
 
+        if (!contextIsCurrent()) return;
         await get().refreshLicenseSyncMode('server_validation');
+        };
+        return options?.lifecycle ? options.lifecycle.track(process) : process();
     },
 
     _processOfflineMode: async (localLicense, options = {}) => {
@@ -469,11 +487,11 @@ export const createLicenseProcessingActions = ({
         });
 
         if (shouldLoadProfileForLicense(get(), updatedLocalLicense.license_key, refreshProfile)) {
-            await get()._loadProfile(updatedLocalLicense.license_key, {
+            await loadBootstrapProfile(get()._loadProfile, updatedLocalLicense.license_key, {
                 refreshProfile,
                 profileLoadMode: 'background',
                 reason
-            });
+            }, options?.lifecycle, 'bootstrap_offline_preparation_nested_work');
         }
     }
 });

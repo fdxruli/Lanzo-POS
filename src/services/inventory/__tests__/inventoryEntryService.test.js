@@ -5,6 +5,9 @@ import { POS_SYNC_STORES } from '../../sync/syncConstants';
 import { openTestTenantRuntime, closeTestTenantRuntime } from '../../../test/tenantRuntimeTestHarness';
 import { addInventoryEntry } from '../inventoryEntryService';
 vi.mock('../../auth/actorRuntimeController', () => ({
+  ACTOR_RUNTIME_STATUS: {
+    LOCKED: 'locked', AUTHENTICATING: 'authenticating', HANDOFF_CHECK: 'handoff_check', GRANTED: 'granted'
+  },
   ACTOR_RUNTIME_ERROR_CODES: { CONTEXT_STALE: 'ACTOR_CONTEXT_STALE' },
   ActorRuntimeError: class ActorRuntimeError extends Error {
     constructor(code, details = {}) {
@@ -15,6 +18,10 @@ vi.mock('../../auth/actorRuntimeController', () => ({
   },
   actorRuntimeController: {
     subscribe: vi.fn(),
+    getState: vi.fn(() => ({
+      status: 'granted', actorType: 'admin', actorId: 'admin-test',
+      actorKey: 'admin:admin-test', generation: 1
+    })),
     capture: vi.fn(() => ({
       actorType: 'admin',
       actorId: 'admin-test',

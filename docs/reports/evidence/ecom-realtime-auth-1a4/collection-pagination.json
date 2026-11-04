@@ -1,0 +1,12 @@
+{
+  "project": "odlrhijtfyavryeqivaa",
+  "execution": "PostgreSQL Hosted, BEGIN/ROLLBACK, synthetic inventory",
+  "checks": [
+    {"id":"KEYSET-1001","ok":true,"rows":1001,"batches":11},
+    {"id":"ACK-DURABLE","ok":true},
+    {"id":"RETENTION-KEEPS-RECENT","ok":true},
+    {"id":"RETENTION-BOUNDED","ok":true}
+  ],
+  "source":"supabase/candidates/ecom-signal-auth-1a4/collection-rehearsal.sql",
+  "limits":"No 1001 Auth users were created. Retention dates were advanced inside rollback; no 30-day soak is claimed."
+}

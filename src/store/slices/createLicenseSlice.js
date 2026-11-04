@@ -19,11 +19,13 @@ import { createLicenseIntegrityActions } from './license/licenseIntegrityActions
 import { createLicenseBackgroundValidationActions } from './license/licenseBackgroundValidationActions';
 import { createLicenseBootstrapActions } from './license/licenseBootstrapActions';
 import { createLicenseAdminActions } from './license/licenseAdminActions';
+import { createLicenseAuthorityRecoveryActions } from './license/licenseAuthorityRecoveryActions';
 
 const clearLocalLicenseSession = clearLocalLicenseSessionForLicenseSlice;
 
 export const createLicenseSlice = (set, get) => ({
   ...createLicenseInitialState(),
+  ...createLicenseAuthorityRecoveryActions({ set, get }),
 
   isAdminDevice: () => get().currentDeviceRole !== 'staff',
 

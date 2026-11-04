@@ -8,13 +8,19 @@ import '../salesCloud/salesCloudSyncHandler.js';
 import '../restaurant/restaurantOrdersSyncHandler.js';
 import {
   startPosCloudBootstrap,
-  stopPosCloudBootstrap
+  stopPosCloudBootstrap,
+  assertPosCloudBootstrapScopeAvailable,
+  reservePosCloudBootstrapScope
 } from './posSyncBootstrapCoordinator';
 import { getLicenseKeyFromDetails, isCloudPosSyncEnabled } from './syncConstants';
-import { installFinancialIntentRecoveryCoordinator } from '../financial/financialIntentRecoveryCoordinator';
+import { installFinancialIntentRecoveryCoordinator, assertFinancialRecoveryScopeAvailable } from '../financial/financialIntentRecoveryCoordinator';
 
 let unsubscribe = null;
 let lastSignature = null;
+let executionScope = null;
+const canSchedule = () => !executionScope || (
+  executionScope.isContextCurrent() && executionScope.getSnapshot().accepting
+);
 
 const buildSignature = (state) => {
   const details = state?.licenseDetails || {};
@@ -28,54 +34,77 @@ const buildSignature = (state) => {
 };
 
 const reconcilePosSync = (state, reason = 'state_change') => {
+  if (!canSchedule()) return;
   const details = state?.licenseDetails || null;
   const licenseKey = getLicenseKeyFromDetails(details);
   const shouldStart = state?.appStatus === 'ready' && licenseKey && isCloudPosSyncEnabled(details);
 
   if (!shouldStart) {
-    stopPosCloudBootstrap({ preserveSync: false }).catch((error) => {
+    return stopPosCloudBootstrap({ preserveSync: false }).catch((error) => {
       Logger.warn('[PosBootstrap] Auto coordinator stop fallo:', error);
     });
-    return;
   }
 
-  startPosCloudBootstrap({ licenseDetails: details, licenseKey, reason }).catch((error) => {
+  return startPosCloudBootstrap({ licenseDetails: details, licenseKey, reason,
+    ...(executionScope ? { executionScope } : {}) }).catch((error) => {
     Logger.warn('[PosBootstrap] Auto coordinator start fallo sin bloquear la app:', error);
   });
 };
 
-export const startPosSyncAutoBootstrap = () => {
-  if (unsubscribe) return;
+export const startPosSyncAutoBootstrap = ({ executionScope: scope = null } = {}) => {
+  if (unsubscribe) {
+    if (scope && executionScope !== scope) throw new Error('SYNC_EXECUTION_OWNER_MISMATCH');
+    return;
+  }
+  if (executionScope && scope !== executionScope && executionScope.getSnapshot().state !== 'DRAINED') throw new Error('SYNC_EXECUTION_OWNER_MISMATCH');
+  if (scope) {
+    assertPosCloudBootstrapScopeAvailable(scope);
+    assertFinancialRecoveryScopeAvailable(scope);
+    reservePosCloudBootstrapScope(scope);
+  }
+  executionScope = scope;
+  scope?.addSource('pos_auto', () => stopPosSyncAutoBootstrap());
+  const reconcile = (state, reason) => {
+    if (!canSchedule()) return;
+    if (scope) scope.run(`auto:${reason}`, () => reconcilePosSync(state, reason)).catch(error => {
+      Logger.warn('[PosBootstrap] Scoped reconciliation stopped:', error);
+    });
+    else reconcilePosSync(state, reason);
+  };
 
   // This layer is reached only after the ready application runtime activates;
   // recovery remains outside pre-license database preparation.
-  installFinancialIntentRecoveryCoordinator();
+  if (scope) installFinancialIntentRecoveryCoordinator({ executionScope: scope });
+  else installFinancialIntentRecoveryCoordinator();
 
   const initialState = useAppStore.getState();
   lastSignature = buildSignature(initialState);
-  reconcilePosSync(initialState, 'initial_bootstrap');
+  reconcile(initialState, 'initial_bootstrap');
 
   unsubscribe = useAppStore.subscribe((state) => {
+    if (!canSchedule()) return;
     const signature = buildSignature(state);
     if (signature === lastSignature) return;
 
     lastSignature = signature;
-    reconcilePosSync(state, 'store_update');
+    reconcile(state, 'store_update');
   });
 
   Logger.log('[PosBootstrap] Auto coordinator registrado. Realtime/pull siguen activos; snapshots quedan bajo demanda.');
 };
 
 export const stopPosSyncAutoBootstrap = () => {
+  executionScope?.quiesce();
   if (unsubscribe) {
     unsubscribe();
     unsubscribe = null;
   }
 
   lastSignature = null;
-  stopPosCloudBootstrap({ preserveSync: false }).catch((error) => {
+  const cleanup = stopPosCloudBootstrap({ preserveSync: false }).catch((error) => {
     Logger.warn('[PosBootstrap] Auto coordinator cleanup fallo:', error);
   });
+  if (executionScope) return cleanup;
 };
 
 export default startPosSyncAutoBootstrap;

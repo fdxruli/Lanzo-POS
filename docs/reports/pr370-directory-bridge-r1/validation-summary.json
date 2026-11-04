@@ -1,0 +1,226 @@
+{
+  "verdict": "PR370_DIRECTORY_BRIDGE_READY_FOR_PUBLICATION",
+  "date": "2026-11-03",
+  "published": false,
+  "branch": "fix/financial-credit-limit-enforcement-r1",
+  "previousHead": "18d14fc9ae3ce5e619abd5cd948903da7d393622",
+  "integratedMain": "4b688b69a1ceb085042d5287726394019b824b8b",
+  "cloudFinancialEvidence": "SIMULATED; real Dexie over fake-indexeddb, controlled RPC doubles; no Production functional QA",
+  "tests": {
+    "success": true,
+    "total": 164,
+    "passed": 164,
+    "failed": 0,
+    "pending": 0,
+    "exitCode": 0,
+    "files": [
+      {
+        "path": "src/components/customers/__tests__/CustomerForm.phoneRequired.test.jsx",
+        "status": "passed",
+        "cases": 10
+      },
+      {
+        "path": "src/components/customers/__tests__/HistoricalCreditImport.test.jsx",
+        "status": "passed",
+        "cases": 5
+      },
+      {
+        "path": "src/components/common/__tests__/PaymentModal.test.jsx",
+        "status": "passed",
+        "cases": 26
+      },
+      {
+        "path": "src/components/common/__tests__/QuickAddCustomerModal.test.jsx",
+        "status": "passed",
+        "cases": 12
+      },
+      {
+        "path": "src/services/customerCredit/__tests__/historicalCreditCloudApply.test.js",
+        "status": "passed",
+        "cases": 10
+      },
+      {
+        "path": "src/services/customerCredit/__tests__/historicalCreditDirectoryBridge.test.js",
+        "status": "passed",
+        "cases": 14
+      },
+      {
+        "path": "src/services/customerCredit/__tests__/historicalCreditMigration.workflow.test.js",
+        "status": "passed",
+        "cases": 11
+      },
+      {
+        "path": "src/services/customerCredit/__tests__/historicalCreditSnapshot.test.js",
+        "status": "passed",
+        "cases": 6
+      },
+      {
+        "path": "src/services/customers/__tests__/customerCreditLimit.test.js",
+        "status": "passed",
+        "cases": 6
+      },
+      {
+        "path": "src/services/customers/__tests__/customerMapper.test.js",
+        "status": "passed",
+        "cases": 10
+      },
+      {
+        "path": "src/services/customers/__tests__/customerRepository.indexeddb.integration.test.jsx",
+        "status": "passed",
+        "cases": 46
+      },
+      {
+        "path": "src/services/db/__tests__/customerCreditRepository.autoHealLifecycle.test.js",
+        "status": "passed",
+        "cases": 3
+      },
+      {
+        "path": "src/services/db/__tests__/customerCreditRepository.test.js",
+        "status": "passed",
+        "cases": 3
+      },
+      {
+        "path": "src/services/sync/__tests__/syncConstants.fin01Gate.test.js",
+        "status": "passed",
+        "cases": 2
+      }
+    ]
+  },
+  "lint": {
+    "files": 15,
+    "errors": 0,
+    "warnings": 0,
+    "exitCode": 0
+  },
+  "previewBuild": {
+    "exitCode": 0,
+    "precacheExitCode": 0,
+    "startupAssets": 24,
+    "physicalOfflineQa": false
+  },
+  "reactDoctor": {
+    "score": 77,
+    "warnings": 21,
+    "errors": 0,
+    "exitCode": 0,
+    "scope": "changed files"
+  },
+  "production": {
+    "writeCalls": 0,
+    "readScope": "function definitions, table constraints and column metadata only",
+    "sqlFilesChanged": 0,
+    "migrationsApplied": 0,
+    "dbPush": false,
+    "licenseChanges": 0,
+    "capabilityChanges": 0,
+    "deviceChanges": 0
+  },
+  "integrationFiles": [
+    "docs/reports/pr370-directory-bridge-r1/README.md",
+    "docs/reports/pr370-directory-bridge-r1/validation-summary.json",
+    "scripts/ci/pr127-focused-evidence.mjs",
+    "scripts/ci/pr127-global-comparison.node-test.mjs",
+    "scripts/qa/single-instance-f012d1/handlers.test.js",
+    "src/components/common/QuickAddCustomerModal.jsx",
+    "src/components/common/__tests__/PaymentModal.test.jsx",
+    "src/components/common/__tests__/QuickAddCustomerModal.test.jsx",
+    "src/components/customers/CustomerForm.css",
+    "src/components/customers/CustomerForm.jsx",
+    "src/components/customers/HistoricalCreditImport.jsx",
+    "src/components/customers/__tests__/CustomerForm.phoneRequired.test.jsx",
+    "src/components/customers/__tests__/HistoricalCreditImport.test.jsx",
+    "src/components/pos/__tests__/LayawayModal.quickCustomer.test.jsx",
+    "src/pages/CustomersPage.jsx",
+    "src/schemas/customerSchema.js",
+    "src/services/__test__/db/customerPhoneUtils.test.js",
+    "src/services/customerCredit/__tests__/historicalCreditCloudApply.test.js",
+    "src/services/customerCredit/__tests__/historicalCreditDirectoryBridge.test.js",
+    "src/services/customerCredit/__tests__/historicalCreditMigration.workflow.test.js",
+    "src/services/customerCredit/customerCreditLocalRepository.js",
+    "src/services/customerCredit/customerCreditMigrationService.js",
+    "src/services/customerCredit/customerCreditRepository.js",
+    "src/services/customerCredit/customerCreditSyncHandler.js",
+    "src/services/customerCredit/historicalCreditDirectory.js",
+    "src/services/customerCredit/historicalCreditSnapshot.js",
+    "src/services/customers/__tests__/customerCreditLimit.test.js",
+    "src/services/customers/__tests__/customerMapper.test.js",
+    "src/services/customers/__tests__/customerRepository.indexeddb.integration.test.jsx",
+    "src/services/customers/customerCreditLimit.js",
+    "src/services/customers/customerDirectoryReconciliation.js",
+    "src/services/customers/customerLocalRepository.js",
+    "src/services/customers/customerMapper.js",
+    "src/services/customers/customerMigrationService.js",
+    "src/services/customers/customerRepository.js",
+    "src/services/customers/customerSyncHandler.js",
+    "src/services/db/customerPhoneUtils.js",
+    "src/services/db/customerServerVersion.js",
+    "src/services/sync/syncOutboxService.js"
+  ],
+  "localEvidence": [
+    {
+      "path": ".tmp/pr370-directory-bridge/reproduction.log",
+      "bytes": 1012,
+      "sha256": "23a722a93814a0bf4f39d26870d4b7134064cb13e0dfbb34293d70323d585251"
+    },
+    {
+      "path": ".tmp/pr370-directory-bridge/reproduction-direct.log",
+      "bytes": 1012,
+      "sha256": "d9fd7f454da2fdb8a7544939dd10780554fe408a5e5291550c00350b600c3423"
+    },
+    {
+      "path": ".tmp/pr370-directory-bridge/reproduction-threads.log",
+      "bytes": 1010,
+      "sha256": "d7d696129e974bbf2f6edd85d1a341905d72908831f7047008b5371a1e0bd1f4"
+    },
+    {
+      "path": ".tmp/pr370-directory-bridge/reproduction-valid-fixture.log",
+      "bytes": 2667,
+      "sha256": "634982532c6c1be0ecf56f33091fc5cfebc9208ff9f0b5d56adc99f36059c1b2"
+    },
+    {
+      "path": ".tmp/pr370-directory-bridge/focused.log",
+      "bytes": 36784,
+      "sha256": "4d78770492ba512a6cbc303060c7d08bcdfc6ceeaf11320d8eaf517610483b75"
+    },
+    {
+      "path": ".tmp/pr370-directory-bridge/fixture-compatibility.log",
+      "bytes": 8470,
+      "sha256": "7f5d936f4a560ec6b36c2451d136b617aa4bf4a7f6c6fdf5d197ecaa36da55c4"
+    },
+    {
+      "path": ".tmp/pr370-directory-bridge/focused-final.json",
+      "bytes": 62425,
+      "sha256": "547cbb17648aee95023fda1e57ea60e74e427ee4f75f64600f21f676beaa5843"
+    },
+    {
+      "path": ".tmp/pr370-directory-bridge/focused-final.log",
+      "bytes": 97,
+      "sha256": "b8334739b2dfe24efabca1547e99bda486d3fb7d459d9fb51127f1d9b36865b8"
+    },
+    {
+      "path": ".tmp/pr370-directory-bridge/npm-ci.log",
+      "bytes": 822,
+      "sha256": "1e91cc5e20cd10af21ff26fb4725631643437cbd60a26499d580ab0521796040"
+    },
+    {
+      "path": ".tmp/pr370-directory-bridge/lint-final.json",
+      "bytes": 4023,
+      "sha256": "df5b773f7bef883f44875513ff1827b3d38d5695e1e967911cc5970fcfce350b"
+    },
+    {
+      "path": ".tmp/pr370-directory-bridge/build-preview-final.log",
+      "bytes": 15667,
+      "sha256": "f9bddb027f90061657b7473acaac57d2386d28ee94311dfbfb7879da309dc7b9"
+    },
+    {
+      "path": ".tmp/pr370-directory-bridge/precache-final.log",
+      "bytes": 96,
+      "sha256": "80890e36694868af6556ddf03e598a3d2367decc46a722c072e409e8980c4dd3"
+    },
+    {
+      "path": ".tmp/pr370-directory-bridge/react-doctor.log",
+      "bytes": 4469,
+      "sha256": "083386144bc884b248a096bdd6f6e3d031d4608aec8767f2f69699754e01b103"
+    }
+  ]
+}

@@ -3,125 +3,172 @@ name: Canonical Supabase Production Migrations
 on:
   workflow_dispatch:
     inputs:
-      mode:
-        description: DRY_RUN is default and never mutates production; APPLY requires exact confirmation.
+      release_package:
+        description: canonical preserves the normal guard; restaurant_backend_v1 uses the reviewed private historical overlay.
+        type: choice
+        options: [canonical, restaurant_backend_v1]
+        default: canonical
         required: true
-        default: DRY_RUN
+      mode:
+        description: DRY_RUN never applies migrations. APPLY requires exact confirmation.
         type: choice
         options: [DRY_RUN, APPLY]
+        default: DRY_RUN
+        required: true
       expected_git_sha:
-        description: Exact main commit SHA to deploy.
-        required: true
+        description: Exact current main SHA.
         type: string
+        required: true
       expected_versions:
-        description: Comma-separated exact 14-digit pending versions, or NONE for DRY_RUN only.
+        description: Exact comma-separated pending versions. Backend package requires archive then bridge; NONE is canonical DRY_RUN only.
+        type: string
         required: true
-        type: string
       apply_confirmation:
-        description: For APPLY only, enter exactly APPLY <expected_versions>.
-        required: false
-        default: ''
+        description: APPLY <expected_versions>
         type: string
+        default: ''
+        required: false
 
+permissions:
+  contents: read
 concurrency:
   group: supabase-production-migrations
   cancel-in-progress: false
 
-permissions:
-  contents: read
-
 jobs:
   canonical-migration-deploy:
     runs-on: ubuntu-24.04
+    timeout-minutes: 25
     environment: production
     env:
-      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_PRODUCTION_DB_PASSWORD }}
       SUPABASE_PROJECT_REF: odlrhijtfyavryeqivaa
       SUPABASE_CLI_VERSION: 2.79.0
     steps:
-      # actions/checkout v4.2.2
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           fetch-depth: 0
-
-      # supabase/setup-cli v1.5.0
       - uses: supabase/setup-cli@d347ba47d3fb7eeeddbbc793bc8d4779caf773ea
         with:
           version: ${{ env.SUPABASE_CLI_VERSION }}
-
       - name: Verify dispatch and immutable target
         shell: bash
         env:
           EXPECTED_GIT_SHA: ${{ inputs.expected_git_sha }}
+          EXPECTED_VERSIONS: ${{ inputs.expected_versions }}
+          APPLY_MODE: ${{ inputs.mode }}
+          APPLY_CONFIRMATION: ${{ inputs.apply_confirmation }}
         run: |
           set -euo pipefail
-          expected_git_sha="${EXPECTED_GIT_SHA}"
-          test "${GITHUB_REF}" = "refs/heads/main"
-          if ! [[ "${expected_git_sha}" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "CANONICAL_MIGRATION_GUARD: expected_git_sha must be a full lowercase 40-hex SHA" >&2
-            exit 1
+          test "${GITHUB_REF}" = refs/heads/main
+          [[ "${EXPECTED_GIT_SHA}" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "${EXPECTED_GIT_SHA}"
+          test "$(git ls-remote origin refs/heads/main | awk '{print $1}')" = "${EXPECTED_GIT_SHA}"
+          test "${SUPABASE_PROJECT_REF}" = odlrhijtfyavryeqivaa
+          test "$(supabase --version)" = "${SUPABASE_CLI_VERSION}"
+          if [ "${APPLY_MODE}" = APPLY ]; then
+            test "${EXPECTED_VERSIONS}" != NONE
+            test "${APPLY_CONFIRMATION}" = "APPLY ${EXPECTED_VERSIONS}"
           fi
-          checked_out_sha="$(git rev-parse HEAD)"
-          current_main_sha="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
-          if ! [[ "${current_main_sha}" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "CANONICAL_MIGRATION_GUARD: could not resolve current remote main HEAD" >&2
-            exit 1
-          fi
-          if [ "${checked_out_sha}" != "${expected_git_sha}" ] || [ "${current_main_sha}" != "${expected_git_sha}" ]; then
-            echo "EXPECTED MAIN SHA: ${expected_git_sha}" >&2
-            echo "CURRENT REMOTE MAIN SHA: ${current_main_sha}" >&2
-            echo "CHECKED OUT HEAD: ${checked_out_sha}" >&2
-            echo "CANONICAL_MIGRATION_GUARD: expected_git_sha is not current main HEAD" >&2
-            exit 1
-          fi
+      - name: Prepare canonical or private verified release directory
+        shell: bash
+        env:
+          RELEASE_PACKAGE: ${{ inputs.release_package }}
+          EXPECTED_VERSIONS: ${{ inputs.expected_versions }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_PRODUCTION_DB_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
           test -n "${SUPABASE_ACCESS_TOKEN}"
           test -n "${SUPABASE_DB_PASSWORD}"
-          test "${SUPABASE_PROJECT_REF}" = "odlrhijtfyavryeqivaa"
-          if [ "${{ inputs.mode }}" = "APPLY" ] && [ "${{ inputs.expected_versions }}" = "NONE" ]; then
-            echo "NONE is valid only for DRY_RUN" >&2
-            exit 1
+          case "${RELEASE_PACKAGE}" in
+            canonical)
+              release_root="${GITHUB_WORKSPACE}"
+              ;;
+            restaurant_backend_v1)
+              release_root="$(mktemp -d "${RUNNER_TEMP}/pr352-backend.XXXXXX")"
+              ;;
+            *) exit 1 ;;
+          esac
+          echo "RELEASE_ROOT=${release_root}" >> "${GITHUB_ENV}"
+          if [ "${RELEASE_PACKAGE}" = restaurant_backend_v1 ]; then
+            mkdir -p "${release_root}/supabase/migrations"
+            cp supabase/config.toml "${release_root}/supabase/config.toml"
           fi
-          if [ "${{ inputs.mode }}" = "APPLY" ]; then
-            test "${{ inputs.apply_confirmation }}" = "APPLY ${{ inputs.expected_versions }}"
-          fi
-
-      - name: Validate canonical migration filenames
-        shell: bash
-        run: |
-          set -euo pipefail
-          find supabase/migrations -maxdepth 1 -type f -name '*.sql' -printf '%f\n' | sort | \
-            awk 'BEGIN { ok=1 } !/^[0-9]{14}_[A-Za-z0-9][A-Za-z0-9_-]*\.sql$/ { print "invalid migration filename: " $0 > "/dev/stderr"; ok=0 } END { exit ok ? 0 : 1 }'
-
-      - name: Link only the production project
-        shell: bash
-        run: |
-          set -euo pipefail
+          cd "${release_root}"
           supabase link --project-ref "${SUPABASE_PROJECT_REF}" --password "${SUPABASE_DB_PASSWORD}"
-
-      - name: Read canonical migration status
+          if [ "${RELEASE_PACKAGE}" = restaurant_backend_v1 ]; then
+            # Fetch is read-only. Raw historical SQL stays private and is never uploaded.
+            supabase migration fetch --linked > "${release_root}/fetch.private.log" 2>&1
+            node "${GITHUB_WORKSPACE}/scripts/supabase/pr352-prepare-production-ledger-overlay.mjs" prepare \
+              "${GITHUB_WORKSPACE}/docs/fixtures/restaurant-backend-release.json" \
+              "${release_root}/supabase/migrations" "${GITHUB_WORKSPACE}/supabase/migrations" \
+              "${release_root}/snapshot.private.json" "${EXPECTED_VERSIONS}"
+          fi
+      - name: Validate exact pending set and dry-run
         shell: bash
+        env:
+          EXPECTED_VERSIONS: ${{ inputs.expected_versions }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_PRODUCTION_DB_PASSWORD }}
         run: |
           set -euo pipefail
-          supabase migration list --linked | tee migration-list.before.txt
-          node scripts/supabase/verify-canonical-migration-ledger.mjs supabase/migrations "${{ inputs.expected_versions }}" migration-list.before.txt
-          supabase db push --dry-run --linked | tee db-push-dry-run.txt
-          if [ "${{ inputs.expected_versions }}" = "NONE" ] && ! grep -Eqi 'no.*migration|nothing to apply|up to date' db-push-dry-run.txt; then
+          cd "${RELEASE_ROOT}"
+          test "$(cat supabase/.temp/project-ref)" = "${SUPABASE_PROJECT_REF}"
+          supabase migration list --linked > "${RUNNER_TEMP}/migration-list.before.txt"
+          node "${GITHUB_WORKSPACE}/scripts/supabase/verify-canonical-migration-ledger.mjs" \
+            "${RELEASE_ROOT}/supabase/migrations" "${EXPECTED_VERSIONS}" "${RUNNER_TEMP}/migration-list.before.txt"
+          supabase db push --dry-run --linked | tee "${RUNNER_TEMP}/db-push-dry-run.txt"
+          if [ "${EXPECTED_VERSIONS}" = NONE ] && ! grep -Eqi 'no.*migration|nothing to apply|up to date' "${RUNNER_TEMP}/db-push-dry-run.txt"; then
             echo "DRY_RUN NONE did not prove zero migrations to apply" >&2
             exit 1
           fi
-
-      - name: Apply exactly the preflighted set
+      - name: Apply exactly the reviewed set
         if: inputs.mode == 'APPLY'
         shell: bash
+        env:
+          RELEASE_PACKAGE: ${{ inputs.release_package }}
+          EXPECTED_GIT_SHA: ${{ inputs.expected_git_sha }}
+          EXPECTED_VERSIONS: ${{ inputs.expected_versions }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_PRODUCTION_DB_PASSWORD }}
         run: |
           set -euo pipefail
-          supabase db push --linked
-
+          test "$(git ls-remote origin refs/heads/main | awk '{print $1}')" = "${EXPECTED_GIT_SHA}"
+          if [ "${RELEASE_PACKAGE}" = restaurant_backend_v1 ]; then
+            node scripts/supabase/pr352-prepare-production-ledger-overlay.mjs verify \
+              docs/fixtures/restaurant-backend-release.json "${RELEASE_ROOT}/supabase/migrations" \
+              "${GITHUB_WORKSPACE}/supabase/migrations" "${RELEASE_ROOT}/snapshot.private.json"
+          fi
+          cd "${RELEASE_ROOT}"
+          test "$(cat supabase/.temp/project-ref)" = "${SUPABASE_PROJECT_REF}"
+          supabase migration list --linked > "${RUNNER_TEMP}/migration-list.apply.txt"
+          node "${GITHUB_WORKSPACE}/scripts/supabase/verify-canonical-migration-ledger.mjs" \
+            "${RELEASE_ROOT}/supabase/migrations" "${EXPECTED_VERSIONS}" "${RUNNER_TEMP}/migration-list.apply.txt"
+          supabase db push --dry-run --linked
+          supabase migration list --linked > "${RUNNER_TEMP}/migration-list.apply-confirm.txt"
+          node "${GITHUB_WORKSPACE}/scripts/supabase/verify-canonical-migration-ledger.mjs" \
+            "${RELEASE_ROOT}/supabase/migrations" "${EXPECTED_VERSIONS}" "${RUNNER_TEMP}/migration-list.apply-confirm.txt"
+          supabase db push --linked --yes
       - name: Verify final canonical ledger
         if: inputs.mode == 'APPLY'
         shell: bash
+        env:
+          EXPECTED_VERSIONS: ${{ inputs.expected_versions }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_PRODUCTION_DB_PASSWORD }}
         run: |
           set -euo pipefail
-          supabase migration list --linked | tee migration-list.after.txt
-          node scripts/supabase/verify-canonical-migration-ledger.mjs supabase/migrations "${{ inputs.expected_versions }}" migration-list.after.txt after-apply
+          cd "${RELEASE_ROOT}"
+          supabase migration list --linked > "${RUNNER_TEMP}/migration-list.after.txt"
+          node "${GITHUB_WORKSPACE}/scripts/supabase/verify-canonical-migration-ledger.mjs" \
+            "${RELEASE_ROOT}/supabase/migrations" "${EXPECTED_VERSIONS}" "${RUNNER_TEMP}/migration-list.after.txt" after-apply
+      - name: Remove private historical SQL and connection metadata
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${RELEASE_ROOT:-}" == "${RUNNER_TEMP}/pr352-backend."* ]]; then
+            test ! -L "${RELEASE_ROOT}"
+            rm -rf -- "${RELEASE_ROOT}"
+          fi

@@ -7,6 +7,14 @@ const mocks = vi.hoisted(() => ({
   activeState: null,
   splitOpenTableOrder: vi.fn(),
   showMessageModal: vi.fn(),
+  reportAuthority: vi.fn(),
+  actorCapture: vi.fn(),
+  actorHandle: {
+    actorKey: 'admin:owner-a', actorType: 'admin', actorId: 'owner-a',
+    sessionId: 'table-management-session', generation: 1, deviceRef: 'device-a',
+    tenant: { opaqueId: 'tenant-a', databaseName: 'table-management-unit', generation: 1 },
+    assertCurrent: vi.fn()
+  },
   showConfirmModal: vi.fn(),
   showInputPromptModal: vi.fn(),
   cloudStatus: vi.fn(),
@@ -26,6 +34,18 @@ vi.mock('../../../store/useAppStore', () => ({
     (selector) => selector(mocks.appState),
     { getState: () => mocks.appState }
   )
+}));
+vi.mock('../../../services/auth/actorAuthorityRecovery', () => ({
+  reportActorAuthorityError: (...args) => mocks.reportAuthority(...args),
+  getActorAuthorityRecoverySnapshot: () => ({ requiresReauthentication: true })
+}));
+vi.mock('../../../services/auth/actorRuntimeController', async (importOriginal) => ({
+  ...await importOriginal(),
+  actorRuntimeController: {
+    capture: (...args) => mocks.actorCapture(...args),
+    getState: () => ({ status: 'granted', ...mocks.actorHandle }),
+    subscribe: () => () => {}
+  }
 }));
 
 vi.mock('../../../services/salesService', () => ({
@@ -203,6 +223,8 @@ const setActiveOrder = (origin) => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.actorCapture.mockReturnValue(mocks.actorHandle);
+  mocks.actorHandle.assertCurrent.mockReturnValue(mocks.actorHandle);
   mocks.appState = {
     verifySessionIntegrity: vi.fn().mockResolvedValue(true),
     companyProfile: { name: 'Lanzo' },
@@ -226,6 +248,23 @@ beforeEach(() => {
 });
 
 describe('useTableManagement ecommerce guard', () => {
+  it('handles a returned split auth failure without exposing its code or retrying payment', async () => {
+    setActiveOrder(undefined);
+    mocks.splitOpenTableOrder.mockResolvedValue({ success: false, message: 'DEVICE_TOKEN_INVALID' });
+    mocks.reportAuthority.mockReturnValue(true);
+    const { result } = renderHook(() => useTableManagement(makeDeps()));
+    let response;
+    await act(async () => {
+      response = await result.current.handleConfirmSplitBill({ splitIntent: 'equal_payment',
+        tickets: [{ paymentData: { paymentMethod: 'efectivo', amountPaid: '20' } }] });
+    });
+    expect(response).toMatchObject({ success: false, code: 'DEVICE_TOKEN_INVALID', recoveryRequired: true });
+    expect(mocks.reportAuthority).toHaveBeenCalled();
+    expect(mocks.splitOpenTableOrder).toHaveBeenCalledTimes(1);
+    expect(mocks.closeCloudAfterSplit).not.toHaveBeenCalled();
+    expect(mocks.showMessageModal).not.toHaveBeenCalledWith('DEVICE_TOKEN_INVALID', null, expect.anything());
+  });
+
   it('blocks save/open-kitchen flow before table prompts, Dexie and cloud sync', async () => {
     const deps = makeDeps();
     const { result } = renderHook(() => useTableManagement(deps));

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, LogIn, ShieldCheck, WifiOff } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import { classifyDatabaseError } from '../../services/db/databaseRecoveryState';
+import { classifyActorAuthorityError } from '../../services/auth/actorAuthorityErrors';
 import LicenseContextSummary from './LicenseContextSummary';
 import PasswordField from './PasswordField';
 import { markFreeDeviceTakeoverCompleted } from '../../hooks/usePostDowngradeCashPending';
@@ -33,6 +34,8 @@ const describeLoginError = (error, result = null) => {
   if (String(code || '').startsWith('ACTOR_') || code === 'ADMIN_RECOVERY_REJECTED') {
     return 'No pudimos recuperar tu sesión de forma segura. Inicia sesión nuevamente para continuar.';
   }
+  const authority = classifyActorAuthorityError(error || result);
+  if (authority) return authority.message;
   if (code === 'DB_BLOCKED' || classification.code === 'DB_BLOCKED') {
     return 'La base local está abierta en otra pestaña. Cierra las demás pestañas de Lanzo y vuelve a intentarlo.';
   }

@@ -335,7 +335,11 @@ begin
     'family', p_family,
     'client_identity', private.pos_fin01_client_identity_v2(p_context),
     'payload', coalesce(p_payload, '{}'::jsonb),
-    'customer_projections', private.pos_fin01_customer_projections_v2(p_license_id, coalesce(p_payload, '{}'::jsonb))
+    -- Financial payloads contain the immutable result, including historical
+    -- customer amounts. Current debt is obtained through authorized credit pulls.
+    'customer_projection_scope', case when p_family = 'financial_operations' then 'OPERATION_RESULT' else 'CURRENT' end,
+    'customer_projections', case when p_family = 'financial_operations' then '[]'::jsonb
+      else private.pos_fin01_customer_projections_v2(p_license_id, coalesce(p_payload, '{}'::jsonb)) end
   );
   if p_customer_id is not null then
     v_envelope := v_envelope || jsonb_build_object('customer_id', p_customer_id);
@@ -391,7 +395,7 @@ begin
     'contract_version', 2,
     'server_status', 'SUPPORTED',
     'tenant_id', v_license_id,
-    'capabilities', jsonb_build_array('historical_credit_preservation_v1', 'customer_projection_safe_apply_v1'),
+    'capabilities', jsonb_build_array('historical_credit_preservation_v1', 'customer_projection_safe_apply_v1', 'financial_operation_result_v1'),
     'endpoint_families', jsonb_build_array('customer_directory', 'customer_credit', 'financial_operations'),
     'endpoints', jsonb_build_array(
       'pos_upsert_customer_v2', 'pos_delete_customer_v2', 'pos_migrate_local_customers_v2',
@@ -933,6 +937,9 @@ declare
   v_customer_id text;
 begin
   perform private.pos_fin01_validate_sync_contract_v2(p_sync_contract);
+  if not (p_sync_contract->'capabilities' @> '["financial_operation_result_v1"]'::jsonb) then
+    raise exception 'CLOUD_CLIENT_UPDATE_REQUIRED' using errcode = 'P0001';
+  end if;
   v_context := private.validate_pos_sync_context(p_license_key, p_device_fingerprint, p_security_token, p_staff_session_token);
   v_license_id := (v_context->>'license_id')::uuid;
   v_payload := private.pos_execute_financial_operation_core_v2(
@@ -973,6 +980,9 @@ declare
   v_origin_authorized boolean := false;
 begin
   perform private.pos_fin01_validate_sync_contract_v2(p_sync_contract);
+  if not (p_sync_contract->'capabilities' @> '["financial_operation_result_v1"]'::jsonb) then
+    raise exception 'CLOUD_CLIENT_UPDATE_REQUIRED' using errcode = 'P0001';
+  end if;
   v_context := private.validate_pos_sync_context(p_license_key, p_device_fingerprint, p_security_token, p_staff_session_token);
   v_license_id := (v_context->>'license_id')::uuid;
   v_device_id := nullif(v_context->>'device_id', '')::uuid;

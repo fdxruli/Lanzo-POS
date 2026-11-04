@@ -242,7 +242,13 @@ async function main() {
   try {
     temporaryRoot = await mkdtemp(path.join(os.tmpdir(), temporaryPrefix));
     const packageDirectory = temporaryRoot;
-    await cp(distRoot, packageDirectory, { recursive: true, errorOnExist: true, force: false });
+    for (const entry of await readdir(distRoot)) {
+      await cp(
+        path.join(distRoot, entry),
+        path.join(packageDirectory, entry),
+        { recursive: true, errorOnExist: true, force: false }
+      );
+    }
     await writeFile(
       path.join(packageDirectory, 'vercel.json'),
       deploymentConfigBytes(configSource),

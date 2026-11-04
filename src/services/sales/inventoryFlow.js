@@ -126,6 +126,34 @@ const buildIngredientRequirements = (orderItem, product) => {
     };
 };
 
+// New reservations snapshot direct component holds, just as committedBatches
+// already snapshots lot holds. Legacy reservations use their reserved quantity
+// and recipe, subtracting components already represented by batches.
+export const getTableReservationProductQuantities = (item, product) => {
+    const reservation = item?.inventoryReservation;
+    if (reservation?.source !== TABLE_RESERVATION_SOURCE) return [];
+    if (Array.isArray(reservation.committedProducts)) return reservation.committedProducts;
+    const quantity = normalizeStock(reservation.committedQuantity || 0);
+    if (quantity <= 0) return [];
+    if (reservation.productId || reservation.targetProductId) {
+        return [{ productId: reservation.productId || reservation.targetProductId, quantity }];
+    }
+    const reservationProduct = {
+        ...product,
+        recipe: Array.isArray(item.recipe) ? item.recipe : product?.recipe,
+        conversionFactor: { enabled: false }
+    };
+    const { requirements } = buildIngredientRequirements(
+        { ...item, quantity }, reservationProduct
+    );
+    return requirements.map(({ targetId, neededQty }) => ({
+        productId: targetId,
+        quantity: normalizeStock(neededQty - (reservation.committedBatches || [])
+            .filter((batch) => batch.ingredientId === targetId)
+            .reduce((sum, batch) => sum + Number(batch.quantity || 0), 0))
+    })).filter((usage) => usage.quantity > 0);
+};
+
 const assertProductExists = (product, orderItem) => {
     if (!product) {
         throw new Error(
@@ -188,9 +216,10 @@ const sumExpiredStrictAvailable = (batches = [], product, now) => normalizeStock
         .reduce((sum, batch) => sum + getBatchAvailableForSale(batch), 0)
 );
 
-const createInventoryReservation = (orderItem, quantityToDeduct, committedBatches, unifiedTimestamp) => ({
+const createInventoryReservation = (orderItem, quantityToDeduct, committedBatches, committedProducts, unifiedTimestamp) => ({
     source: TABLE_RESERVATION_SOURCE,
     committedQuantity: normalizeStock(quantityToDeduct),
+    committedProducts,
     committedBatches: committedBatches.map((batch) => ({
         batchId: batch.batchId,
         ingredientId: batch.ingredientId,
@@ -526,6 +555,7 @@ export const commitStock = async (items, deps = {}) => {
 
                 const { quantityToDeduct, requirements } = buildIngredientRequirements(orderItem, product);
                 const committedBatches = [];
+                const committedProducts = [];
 
                 for (const component of requirements) {
                     const componentProduct = productMap.get(component.targetId)
@@ -607,6 +637,7 @@ export const commitStock = async (items, deps = {}) => {
                         }
 
                         productState.committedStock = normalizeStock(getCommittedStock(productState) + component.neededQty);
+                        committedProducts.push({ productId: component.targetId, quantity: normalizeStock(component.neededQty) });
                         productState.updatedAt = unifiedTimestamp;
 
                         updatedProducts.set(component.targetId, productState);
@@ -616,7 +647,7 @@ export const commitStock = async (items, deps = {}) => {
 
                 reservedItems.push({
                     ...orderItem,
-                    inventoryReservation: createInventoryReservation(orderItem, quantityToDeduct, committedBatches, unifiedTimestamp)
+                    inventoryReservation: createInventoryReservation(orderItem, quantityToDeduct, committedBatches, committedProducts, unifiedTimestamp)
                 });
             }
 
@@ -697,42 +728,40 @@ export const releaseCommittedStock = async (items, deps = {}) => {
                         const quantityToRelease = normalizeStock(batchUsage.quantity);
 
                         if (committedStock < quantityToRelease) {
-                            console.warn(`[INVENTORY_SYNC_FIX]: El lote ${batch.id} intentó liberar ${quantityToRelease} pero solo tenía ${committedStock}. Se ajustó a 0.`);
+                            throw new Error(`CRITICAL_COMMITTED_UNDERFLOW: El lote ${batch.id} intenta liberar ${quantityToRelease}, pero solo tiene ${committedStock} comprometido.`);
                         }
-                        batch.committedStock = normalizeStock(Math.max(0, committedStock - quantityToRelease));
+                        batch.committedStock = normalizeStock(committedStock - quantityToRelease);
                         batch.updatedAt = unifiedTimestamp;
                         updatedBatches.set(batch.id, batch);
 
                         batchManagedProductIds.add(batch.productId);
                     }
-
-                    continue;
                 }
 
-                const committedQuantity = normalizeStock(committedReservation?.committedQuantity || 0);
-                if (committedQuantity <= 0 || product.trackStock === false) continue;
+                for (const usage of getTableReservationProductQuantities(orderItem, product)) {
+                    const committedQuantity = normalizeStock(usage.quantity);
+                    const currentProduct = updatedProducts.get(usage.productId)
+                        || productMap.get(usage.productId)
+                        || await db.table(STORES.MENU).get(usage.productId);
 
-                const currentProduct = updatedProducts.get(product.id)
-                    || productMap.get(product.id)
-                    || await db.table(STORES.MENU).get(product.id);
+                    if (!currentProduct) {
+                        throw new Error(`CRITICAL_PRODUCT_NOT_FOUND: No existe el producto ${usage.productId}.`);
+                    }
 
-                if (!currentProduct) {
-                    throw new Error(`CRITICAL_PRODUCT_NOT_FOUND: No existe el producto ${product.id}.`);
+                    const currentCommitted = getCommittedStock(currentProduct);
+                    if (currentCommitted < committedQuantity) {
+                        throw new Error(
+                            `CRITICAL_COMMITTED_UNDERFLOW: El producto ${currentProduct.name} intenta liberar ${committedQuantity}, ` +
+                            `pero solo tiene ${currentCommitted} comprometido.`
+                        );
+                    }
+
+                    currentProduct.committedStock = normalizeStock(currentCommitted - committedQuantity);
+                    currentProduct.updatedAt = unifiedTimestamp;
+
+                    updatedProducts.set(currentProduct.id, currentProduct);
+                    productMap.set(currentProduct.id, currentProduct);
                 }
-
-                const currentCommitted = getCommittedStock(currentProduct);
-                if (currentCommitted < committedQuantity) {
-                    throw new Error(
-                        `CRITICAL_COMMITTED_UNDERFLOW: El producto ${currentProduct.name} intenta liberar ${committedQuantity}, ` +
-                        `pero solo tiene ${currentCommitted} comprometido.`
-                    );
-                }
-
-                currentProduct.committedStock = normalizeStock(currentCommitted - committedQuantity);
-                currentProduct.updatedAt = unifiedTimestamp;
-
-                updatedProducts.set(currentProduct.id, currentProduct);
-                productMap.set(currentProduct.id, currentProduct);
             }
 
             if (updatedProducts.size > 0) {

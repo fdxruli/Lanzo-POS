@@ -1,0 +1,120 @@
+{
+  "evidenceCommit": "be65b2aeb6d4a91f030f19233317129d96e5d89c",
+  "tree": "681a299ce706ccad94d18e22b24338577b52ebad",
+  "localTreeEqualsRemote": true,
+  "pr": 373,
+  "url": "https://github.com/fdxruli/Lanzo-POS/pull/373",
+  "state": "open",
+  "draft": true,
+  "mergeable": true,
+  "base": "feat/f01-single-instance-coordinator-r1",
+  "baseSha": "f1d69093ffe3ad180752773c178b7fbaefd92ce1",
+  "main": "52bb573e651529b323b6617e3161cd76ece14a39",
+  "integration": "HOLD_RECOVERY_INTEGRATION; no commercial source changes",
+  "workflowRuns": {
+    "workflow_runs": []
+  },
+  "combinedStatus": {
+    "statuses": [
+      {
+        "context": "Vercel – lanzo-pos",
+        "state": "pending",
+        "target_url": "https://vercel.com/fdxrulis-projects/lanzo-pos/CdLzWYx5HpsesV6Tdqvbwq1UG9x5"
+      }
+    ]
+  },
+  "deployment": {
+    "result": {
+      "deployment": {
+        "id": "dpl_CdLzWYx5HpsesV6Tdqvbwq1UG9x5",
+        "name": "lanzo-pos",
+        "url": "lanzo-9sqbrjwvy-fdxrulis-projects.vercel.app",
+        "type": "LAMBDAS",
+        "state": "BUILDING",
+        "createdAt": 1792795759337,
+        "creator": {
+          "uid": "XGlhqlCwuQNLromG5evpSFlh",
+          "username": "fdxruli"
+        },
+        "project": {
+          "id": "prj_tE5uWn6kLBYdS1eDFWVxRm449RUr",
+          "name": "lanzo-pos",
+          "framework": "vite"
+        },
+        "meta": {
+          "githubCommitRef": "feat/f01-early-admission-recovery-r1",
+          "githubCommitSha": "be65b2aeb6d4a91f030f19233317129d96e5d89c",
+          "githubCommitMessage": "test(pwa): preserve F01-2 recovery integration hold and boundary evidence",
+          "githubRepo": "Lanzo-POS",
+          "githubOrg": "fdxruli"
+        },
+        "alias": [
+          "lanzo-pos-git-feat-f01-early-admission-6431d3-fdxrulis-projects.vercel.app"
+        ],
+        "target": null,
+        "regions": [
+          "iad1"
+        ],
+        "buildingAt": 1792795760476,
+        "ready": 1792795760476,
+        "readyState": "BUILDING",
+        "source": "git"
+      }
+    }
+  },
+  "otherPrs": [
+    {
+      "number": 338,
+      "head": "fef7205f76b173025f503e60d0968f446f741e78",
+      "base": "main",
+      "state": "open",
+      "draft": true,
+      "merged": false
+    },
+    {
+      "number": 352,
+      "head": "d758f69b2119f1bc346eb0ac86ba0a74c0265668",
+      "base": "feat/restaurant-split-flexible-payments-r1",
+      "state": "open",
+      "draft": true,
+      "merged": false
+    },
+    {
+      "number": 368,
+      "head": "a7eb0932906df4348610f275f0f1d4b9180f43cc",
+      "base": "main",
+      "state": "open",
+      "draft": true,
+      "merged": false
+    },
+    {
+      "number": 370,
+      "head": "b31bbd80bf398d956890debced5b20de7b0c928d",
+      "base": "main",
+      "state": "open",
+      "draft": true,
+      "merged": false
+    },
+    {
+      "number": 371,
+      "head": "2f33cea480f3d478f797b495b168feac9aed483f",
+      "base": "fix/financial-credit-limit-enforcement-r1",
+      "state": "open",
+      "draft": true,
+      "merged": false
+    },
+    {
+      "number": 372,
+      "head": "f1d69093ffe3ad180752773c178b7fbaefd92ce1",
+      "base": "main",
+      "state": "open",
+      "draft": true,
+      "merged": false
+    }
+  ],
+  "notice": "Snapshot of evidence commit; following closure commit only adds this snapshot and refreshes manifest. Final HEAD and deployment state are recorded in PR body, not inferred from this snapshot.",
+  "supabaseProductionWrites": "NONE",
+  "migrations": "NONE",
+  "realFinancialOperations": "NONE",
+  "merge": "NOT PERFORMED"
+}

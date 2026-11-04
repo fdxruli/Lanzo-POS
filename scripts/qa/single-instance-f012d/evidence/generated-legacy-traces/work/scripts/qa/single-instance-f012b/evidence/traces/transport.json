@@ -1,0 +1,56 @@
+[
+  {
+    "contract": "BG-41 real revalidateLicense retains raw transport beyond its internal timeout",
+    "initial": {
+      "authority": "not_exercised"
+    },
+    "final": {
+      "authority": "not_exercised"
+    },
+    "metrics": {
+      "rpcStarts": 1
+    },
+    "scopes": [
+      {
+        "registered": 0,
+        "started": 0,
+        "finished": 0,
+        "accepting": false,
+        "pending": 0,
+        "completed": 0,
+        "rejected": 1,
+        "unknown": []
+      }
+    ],
+    "result": "pass",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  },
+  {
+    "contract": "BG-42 shared revalidation owner remains unknown instead of false drain",
+    "initial": {
+      "authority": "not_exercised"
+    },
+    "final": {
+      "authority": "not_exercised"
+    },
+    "metrics": {
+      "rpcStarts": 2
+    },
+    "scopes": [
+      {
+        "registered": 0,
+        "started": 0,
+        "finished": 0,
+        "accepting": true,
+        "pending": 0,
+        "completed": 1,
+        "rejected": 0,
+        "unknown": [
+          "shared_license_revalidation_owner"
+        ]
+      }
+    ],
+    "result": "pass",
+    "limitations": "Synthetic providers and fake timers where declared. No server, physical PWA, real payment or whole-App drainage."
+  }
+]

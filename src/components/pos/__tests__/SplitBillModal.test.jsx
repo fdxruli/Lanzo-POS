@@ -10,6 +10,8 @@ const { loadData, tenantStorage } = vi.hoisted(() => ({
 
 vi.mock('../../../services/database', () => ({
   loadData: (...args) => loadData(...args),
+  saveDataSafe: vi.fn(),
+  DB_ERROR_CODES: { DUPLICATE_CUSTOMER_PHONE: 'DUPLICATE_CUSTOMER_PHONE' },
   STORES: { CUSTOMERS: 'customers' }
 }));
 
@@ -68,6 +70,20 @@ describe('SplitBillModal four-step restaurant split', () => {
 
   afterEach(() => cleanup());
 
+  it('opens for an actively hydrated remote table shadow without a price type crash', () => {
+    renderModal({
+      order: [{ lineId: 'pizza-qa-line', id: 'pizza-qa', name: 'Pizza QA', quantity: 1,
+        price: 300, unitPrice: '300', lineTotal: '300' }],
+      total: 300,
+      orderId: 'hydrated-remote-shadow'
+    });
+
+    goToItems();
+
+    expect(screen.getByText('Pizza QA')).toBeInTheDocument();
+    expect(screen.getByText('$300.00')).toBeInTheDocument();
+  });
+
   it('never processes a sale while advancing from Cobro to Revisar or through an implicit form submit', async () => {
     const { onConfirm } = renderModal({
       order: [
@@ -105,10 +121,10 @@ describe('SplitBillModal four-step restaurant split', () => {
 
   it('submits only once if confirmation is re-entered before the first request settles', async () => {
     let resolveConfirmation;
-    let confirmButton;
+    const confirmButtonRef = { current: null };
     const onConfirm = vi.fn(() => {
       if (onConfirm.mock.calls.length === 1) {
-        confirmButton.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+        confirmButtonRef.current.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
       }
       return new Promise((resolve) => { resolveConfirmation = resolve; });
     });
@@ -126,7 +142,8 @@ describe('SplitBillModal four-step restaurant split', () => {
     goToPayment();
     goToReview();
 
-    confirmButton = screen.getByRole('button', { name: 'Confirmar división y cobro' });
+    const confirmButton = screen.getByRole('button', { name: 'Confirmar división y cobro' });
+    confirmButtonRef.current = confirmButton;
     fireEvent.click(confirmButton);
     expect(onConfirm).toHaveBeenCalledOnce();
     expect(confirmButton).toBeDisabled();
@@ -316,9 +333,89 @@ describe('SplitBillModal four-step restaurant split', () => {
     fireEvent.click(within(getPendingLine('Queso')).getByRole('button', { name: 'Asignar todas las unidades restantes de Queso a Comensal 2 · Comensal 2' }));
     expect(getGuestCard('Comensal 1').querySelector('.split-ticket-items')).toHaveTextContent('× 0.5');
     expect(getGuestCard('Comensal 2').querySelector('.split-ticket-items')).toHaveTextContent('× 1');
-    expect(screen.getByText(/La división del importe estará disponible/)).toBeInTheDocument();
+    expect(screen.getByText(/Elige “Dividir el total en partes iguales”/)).toBeInTheDocument();
     expect(screen.queryByText('SPLIT_INTENT_NOT_SUPPORTED')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Configurar cobro' })).toBeEnabled();
+  });
+
+  it('submits an equal monetary split as two stable payer rows on the original account', async () => {
+    const onConfirm = vi.fn(async () => ({ success: true }));
+    renderModal({
+      order: [{ lineId: 'shared-food', id: 'pizza', name: 'Pizza para compartir', quantity: 1, price: 101 }],
+      total: 101,
+      onConfirm,
+      orderId: 'equal-monetary'
+    });
+    fireEvent.change(screen.getByLabelText('Nombre de Comensal 1 (opcional)'), { target: { value: 'Ana' } });
+    fireEvent.click(screen.getByRole('radio', { name: /Dividir el total en partes iguales/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Distribuir importe' }));
+    expect(screen.getByText('Total distribuido').parentElement).toHaveTextContent('$101.00');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Configurar cobro' }));
+    fireEvent.change(document.getElementById('splitPaid-T1'), { target: { value: '55.00' } });
+    fireEvent.change(document.getElementById('splitPaymentMethod-T2'), { target: { value: 'tarjeta' } });
+    goToReview();
+    expect(screen.getByRole('heading', { name: 'Revisa antes de confirmar' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar división y cobro' }));
+
+    await waitFor(() => expect(onConfirm).toHaveBeenCalledOnce());
+    const payload = onConfirm.mock.calls[0][0];
+    expect(payload.splitIntent).toBe('equal_payment');
+    expect(payload.tickets.map((ticket) => ticket.amountCents)).toEqual([5050, 5050]);
+    expect(payload.tickets.map((ticket) => ticket.lines)).toEqual([[], []]);
+    expect(payload.tickets.map((ticket) => ticket.label)).toEqual(['T1', 'T2']);
+    expect(payload.tickets[0]).not.toHaveProperty('displayName');
+    expect(payload.tickets[0].paymentData).toMatchObject({ paymentMethod: 'efectivo', amountPaid: '55', receivedAmount: '55' });
+    expect(payload.tickets[1].paymentData.paymentMethod).toBe('tarjeta');
+  });
+
+  it('validates custom cents and accepts card and transfer without item allocation', async () => {
+    const onConfirm = vi.fn(async () => ({ success: true }));
+    renderModal({
+      order: [{ lineId: 'shared-pasta', id: 'pasta', name: 'Pasta para compartir', quantity: 1, price: 100.01 }],
+      total: 100.01,
+      onConfirm,
+      orderId: 'custom-monetary'
+    });
+    fireEvent.click(screen.getByRole('radio', { name: /Ingresar montos personalizados/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Ingresar montos' }));
+    fireEvent.change(document.getElementById('splitCustomAmount-T1'), { target: { value: '60.00' } });
+    fireEvent.change(document.getElementById('splitCustomAmount-T2'), { target: { value: '40.01' } });
+    expect(screen.getByRole('button', { name: 'Configurar cobro' })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Configurar cobro' }));
+    fireEvent.change(document.getElementById('splitPaymentMethod-T1'), { target: { value: 'tarjeta' } });
+    fireEvent.change(document.getElementById('splitPaymentMethod-T2'), { target: { value: 'transferencia' } });
+    goToReview();
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar división y cobro' }));
+
+    await waitFor(() => expect(onConfirm).toHaveBeenCalledOnce());
+    const payload = onConfirm.mock.calls[0][0];
+    expect(payload.splitIntent).toBe('custom_payment');
+    expect(payload.tickets.map((ticket) => ticket.amountCents)).toEqual([6000, 4001]);
+    expect(payload.tickets.map((ticket) => ticket.lines)).toEqual([[], []]);
+    expect(payload.tickets.map((ticket) => ticket.paymentData.paymentMethod)).toEqual(['tarjeta', 'transferencia']);
+  });
+
+  it('restores a valid monetary draft with integer-cent custom shares', async () => {
+    const view = renderModal({
+      order: [{ lineId: 'draft-shared', id: 'shared', name: 'Cuenta', quantity: 1, price: 100 }],
+      total: 100,
+      orderId: 'monetary-draft'
+    });
+    fireEvent.click(screen.getByRole('radio', { name: /Ingresar montos personalizados/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Ingresar montos' }));
+    fireEvent.change(document.getElementById('splitCustomAmount-T1'), { target: { value: '30.00' } });
+    fireEvent.change(document.getElementById('splitCustomAmount-T2'), { target: { value: '70.00' } });
+    await waitFor(() => expect([...tenantStorage.values.values()].some((value) => value.includes('custom_payment'))).toBe(true));
+
+    view.setShow(false);
+    view.setShow(true);
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Se restauró el borrador local'));
+    expect(screen.getByRole('heading', { name: 'Ingresa los montos de cada persona' })).toBeInTheDocument();
+    expect(document.getElementById('splitCustomAmount-T1')).toHaveValue('30.00');
+    expect(document.getElementById('splitCustomAmount-T2')).toHaveValue('70.00');
+    expect(screen.getByText('Total distribuido').parentElement).toHaveTextContent('$100.00');
   });
 
   it('returns one or all items to pending and can move a line directly between people', () => {
@@ -437,7 +534,8 @@ describe('SplitBillModal four-step restaurant split', () => {
     expect(screen.getByRole('button', { name: 'Revisar división' })).toBeEnabled();
   });
 
-  it('restores a matching local draft after closing and reopening without restoring payment data', async () => {
+  it('restores safe payment method choices without restoring amounts, references or customers', async () => {
+    loadData.mockResolvedValue([{ id: 'customer-1', name: 'Cliente registrado', phone: '555', debt: 0, creditLimit: 500 }]);
     const order = [
       { lineId: 'a', id: 'product-a', name: 'Producto A', quantity: 1, price: 100 },
       { lineId: 'b', id: 'product-b', name: 'Producto B', quantity: 1, price: 50 }
@@ -447,16 +545,35 @@ describe('SplitBillModal four-step restaurant split', () => {
     goToItems();
     fireEvent.click(within(getPendingLine('Producto A')).getByRole('button', { name: 'Asignar todas las unidades restantes de Producto A a Ana · Comensal 1' }));
     fireEvent.click(within(getPendingLine('Producto B')).getByRole('button', { name: 'Asignar todas las unidades restantes de Producto B a Comensal 2 · Comensal 2' }));
+    goToPayment();
+    const methods = screen.getAllByLabelText('Método de pago');
+    fireEvent.change(methods[0], { target: { value: 'tarjeta' } });
+    fireEvent.change(methods[1], { target: { value: 'fiado' } });
+    fireEvent.change(screen.getByLabelText('Método del abono inicial'), { target: { value: 'transferencia' } });
+    fireEvent.change(screen.getByLabelText('Referencia o folio (opcional)'), { target: { value: 'sensitive-reference' } });
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Cliente registrado (555)' })).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText('Cliente financiero registrado'), { target: { value: 'customer-1' } });
     await waitFor(() => expect([...tenantStorage.values.values()].some((value) => value.includes('Ana'))).toBe(true));
     const serialized = [...tenantStorage.values.values()][0];
+    expect(serialized).toContain('"paymentMethod":"card"');
+    expect(serialized).toContain('"paymentMethod":"credit"');
+    expect(serialized).toContain('"initialPaymentMethod":"transfer"');
     expect(serialized).not.toContain('amountPaid');
     expect(serialized).not.toContain('customerId');
+    expect(serialized).not.toContain('paymentReference');
+    expect(serialized).not.toContain('sensitive-reference');
+    expect(serialized).not.toContain('customer-1');
 
     view.setShow(false);
     view.setShow(true);
-    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Se restauró el reparto local'));
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('Se restauró el borrador local'));
     expect(screen.getByRole('heading', { name: /Ana · Comensal 1/ })).toBeInTheDocument();
-    expect(screen.getByRole('tabpanel', { name: 'Platos pendientes' })).toHaveTextContent('Completamente repartido');
+    const restoredMethods = screen.getAllByLabelText('Método de pago');
+    expect(restoredMethods[0]).toHaveValue('tarjeta');
+    expect(restoredMethods[1]).toHaveValue('fiado');
+    expect(screen.getByLabelText('Método del abono inicial')).toHaveValue('transferencia');
+    expect(screen.getByLabelText('Abono inicial aplicado')).toHaveValue('0');
+    expect(screen.getByLabelText('Cliente financiero registrado')).toHaveValue('');
   });
 
   it('discards a draft when the order snapshot changes, and does not leak it between tenants or tables', async () => {
@@ -492,7 +609,7 @@ describe('SplitBillModal four-step restaurant split', () => {
     fireEvent.click(within(getPendingLine('Producto A')).getByRole('button', { name: 'Asignar todas las unidades restantes de Producto A a Comensal 1 · Comensal 1' }));
     fireEvent.click(within(getPendingLine('Producto B')).getByRole('button', { name: 'Asignar todas las unidades restantes de Producto B a Comensal 2 · Comensal 2' }));
     goToPayment();
-    expect(screen.getByText('Este cobro requiere una sesión de caja activa. Se verificará al confirmar.')).toBeInTheDocument();
+    expect(screen.getByText(/Se verificará la sesión operativa de caja al confirmar/)).toBeInTheDocument();
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(view.onClose).toHaveBeenCalledOnce();
     await waitFor(() => expect(tenantStorage.values.size).toBeGreaterThan(0));

@@ -7,6 +7,7 @@ const runtime = vi.hoisted(() => {
     tenant_id: 'tenant-a',
     endpoint,
     family: 'financial_operations',
+    customer_projection_scope: 'OPERATION_RESULT',
     payload,
     customer_projections: [],
     operation: { idempotency_key: args.p_idempotency_key, request_hash: args.p_request_hash }
@@ -88,7 +89,7 @@ vi.mock('../../supabase', () => ({
         server_status: 'SUPPORTED',
         endpoint_families: ['financial_operations'],
         endpoints: ['pos_execute_financial_operation_v2', 'pos_get_financial_operation_receipt_v2'],
-        capabilities: ['historical_credit_preservation_v1', 'customer_projection_safe_apply_v1']
+        capabilities: ['historical_credit_preservation_v1', 'customer_projection_safe_apply_v1', 'financial_operation_result_v1']
       }, error: null };
       if (name === 'pos_execute_financial_operation_v2') {
         if (runtime.executeError) return { data: null, error: runtime.executeError };
@@ -106,6 +107,7 @@ import {
   executeFinancialIntent,
   executePreparedFinancialIntentForRecovery,
   getFinancialIntent,
+  getFinancialIntentReceiptForRecovery,
   markFinancialIntentProjectionApplied,
   markFinancialIntentProjectionFailed
 } from '../financialIntentLedger';
@@ -146,6 +148,35 @@ describe('financial intent ledger', () => {
       'pos_fin01_sync_contract_v1',
       'pos_execute_financial_operation_v2'
     ]);
+  });
+
+  it('recovers the original credit receipt repeatedly without redispatch or changing its K/H/result', async () => {
+    runtime.stationState = async () => ({ cash_station: { id: 'station-a' }, station_open_cash_session: { id: 'cash-a' } });
+    const intent = await createOpenIntent({ operationType: 'sale.credit', cashSessionId: 'cash-a', request: {
+      cash_session_id: 'cash-a', customer_id: 'customer-1',
+      sale: { id: 'sale-1', total: '10', subtotal: '10', amount_paid: '0', balance_due: '10', payment_method: 'credit' },
+      items: [{ product_id: 'product-1', quantity: '1', unit_price: '10', line_total: '10' }], payments: []
+    } });
+    const original = { success: true, sale: { id: 'sale-1' }, customer: {
+      id: 'customer-1', name: 'Original', credit_limit: 100, debt: 10, debt_cents: 1000,
+      server_version: 1, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z'
+    } };
+    runtime.execute = async () => { throw new TypeError('Failed to fetch'); };
+    runtime.receipt = async () => ({ status: 'COMPLETED', result: structuredClone(original) });
+    const recovered = await executeFinancialIntent({ intent, licenseKey: 'fixture-license-secret', actorHandle: runtime.handle });
+    expect(recovered).toMatchObject({ receiptRecovered: true, response: { customer: { debt: 10, debt_cents: 1000 } } });
+    const completed = await getFinancialIntent(intent.id);
+    for (let i = 0; i < 2; i += 1) {
+      const receipt = await getFinancialIntentReceiptForRecovery({ intent: completed, licenseKey: 'fixture-license-secret', actorHandle: runtime.handle });
+      expect(receipt.result.customer).toMatchObject({ debt: 10, debt_cents: 1000,
+        financial_projection: { scope: 'OPERATION_RESULT', status: 'NOT_INCLUDED' } });
+    }
+    expect(runtime.rows.size).toBe(1);
+    expect(await getFinancialIntent(intent.id)).toMatchObject({ idempotencyKey: intent.idempotencyKey,
+      requestHash: intent.requestHash, dispatchAttemptCount: 1, status: FINANCIAL_INTENT_STATUS.COMPLETED });
+    expect(runtime.rpcCalls.filter(call => call.name === 'pos_execute_financial_operation_v2')).toHaveLength(1);
+    expect(runtime.rpcCalls.filter(call => call.name === 'pos_get_financial_operation_receipt_v2')).toHaveLength(3);
+    expect(original.customer.debt).toBe(10);
   });
 
   it('uses the target station for a remote Admin close while keeping normal closes strict', async () => {

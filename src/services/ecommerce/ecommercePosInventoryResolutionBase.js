@@ -635,7 +635,7 @@ const getRelevantLineSignature = (order = {}) => JSON.stringify((order.items || 
     : null
 })));
 
-const captureOrderExpectation = (order = {}) => ({
+export const captureEcommerceInventoryOrderExpectation = (order = {}) => ({
   expectedRevision: normalizeRevision(order.revision),
   expectedUpdatedAt: order.updatedAt || null,
   expectedLineSignature: getRelevantLineSignature(order)
@@ -647,6 +647,8 @@ const createAttempt = (orderId) => {
   inventoryResolutionAttempts.set(orderId, attemptId);
   return attemptId;
 };
+
+export const beginEcommerceInventoryResolutionAttempt = createAttempt;
 
 const staleResult = () => ({
   success: false,
@@ -686,6 +688,19 @@ const isExpectedOrderCurrent = ({ order, orderId, expectation = {}, attemptId, d
   ) return false;
   return true;
 };
+
+export const isEcommerceInventoryResolutionAttemptCurrent = ({
+  orderId,
+  attemptId,
+  expectation = {},
+  deps = {}
+} = {}) => isExpectedOrderCurrent({
+  order: getActiveOrdersState(deps).activeOrders?.get(orderId),
+  orderId,
+  attemptId,
+  expectation,
+  deps
+});
 
 const comparableResolution = (resolution = null) => resolution ? {
   mode: resolution.mode || null,
@@ -830,10 +845,17 @@ export const markEcommerceInventoryReadFailure = ({
   };
 };
 
-export const revalidateEcommerceDraftInventory = async ({ orderId, now = new Date(), deps = {} } = {}) => {
+export const revalidateEcommerceDraftInventory = async ({
+  orderId,
+  now = new Date(),
+  deps = {},
+  attemptId: providedAttemptId
+} = {}) => {
   const activeOrders = getActiveOrdersState(deps);
   const order = activeOrders.activeOrders?.get(orderId);
-  if (!order) return { success: false, changed: false, code: 'ECOMMERCE_INVENTORY_DRAFT_INVALID' };
+  if (!order) return providedAttemptId
+    ? staleResult()
+    : { success: false, changed: false, code: 'ECOMMERCE_INVENTORY_DRAFT_INVALID' };
   if (
     order.origin !== 'ecommerce'
     || order.ecommerceDraftStatus !== 'prepared'
@@ -843,8 +865,9 @@ export const revalidateEcommerceDraftInventory = async ({ orderId, now = new Dat
     return { success: false, changed: false, code: 'ECOMMERCE_POS_DRAFT_PERMISSION_DENIED' };
   }
 
-  const expectation = captureOrderExpectation(order);
-  const attemptId = createAttempt(orderId);
+  const expectation = captureEcommerceInventoryOrderExpectation(order);
+  const attemptId = providedAttemptId || createAttempt(orderId);
+  if (inventoryResolutionAttempts.get(orderId) !== attemptId) return staleResult();
 
   try {
     const resolution = await resolveEcommerceDraftInventory({ order, now, deps });
@@ -908,7 +931,7 @@ export const getEcommerceDraftBatchOptions = async ({ orderId, lineId, now = new
     return { success: false, changed: false, code: 'ECOMMERCE_INVENTORY_LINE_NOT_FOUND', options: [] };
   }
 
-  const expectation = captureOrderExpectation(order);
+  const expectation = captureEcommerceInventoryOrderExpectation(order);
   const attemptId = createAttempt(orderId);
 
   try {
@@ -1004,7 +1027,7 @@ export const selectEcommerceDraftBatch = async ({
     return { success: false, changed: false, code: 'ECOMMERCE_POS_DRAFT_PERMISSION_DENIED' };
   }
 
-  const expectation = captureOrderExpectation(order);
+  const expectation = captureEcommerceInventoryOrderExpectation(order);
   const attemptId = createAttempt(orderId);
 
   try {

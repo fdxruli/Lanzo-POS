@@ -1,0 +1,84 @@
+{
+  "code_commit": "1bd74b26e0b53ccbe00f335964978a5ac1f9700b",
+  "baseline": "0f1625f46e6fe234e378487bb06f74f4bd1555e9",
+  "files": [
+    {
+      "path": "scripts/qa/single-instance-f012d1/audit.mjs",
+      "sha256": "bfca0c43612d6db295cb084b7b50fb8368f8ac98a66b56d6f99446331fb6781f",
+      "validated_sha256": "bfca0c43612d6db295cb084b7b50fb8368f8ac98a66b56d6f99446331fb6781f"
+    },
+    {
+      "path": "scripts/qa/single-instance-f012d1/browser.mjs",
+      "sha256": "29929d6cf1c413d467a415aa6f9da2131e41333248953a5d49a3c184a22165de",
+      "validated_sha256": "29929d6cf1c413d467a415aa6f9da2131e41333248953a5d49a3c184a22165de"
+    },
+    {
+      "path": "scripts/qa/single-instance-f012d1/compare.mjs",
+      "sha256": "00f3fd2bbaa7a39a55530da982066e0418a148823dce92957e58c2e3dade6ab8",
+      "validated_sha256": "00f3fd2bbaa7a39a55530da982066e0418a148823dce92957e58c2e3dade6ab8"
+    },
+    {
+      "path": "scripts/qa/single-instance-f012d1/handlers.test.js",
+      "sha256": "691b9f96dd02781a7661492e4b7a1b57f68ddabf79596cb55dc14a03859497e8",
+      "validated_sha256": "691b9f96dd02781a7661492e4b7a1b57f68ddabf79596cb55dc14a03859497e8"
+    },
+    {
+      "path": "scripts/qa/single-instance-f012d1/outbox.test.js",
+      "sha256": "bd475e89e6a8d069a03c7a962ad032f369e3353bbffbae8779fd9b0c9b9599bf",
+      "validated_sha256": "bd475e89e6a8d069a03c7a962ad032f369e3353bbffbae8779fd9b0c9b9599bf"
+    },
+    {
+      "path": "scripts/qa/single-instance-f012d1/realtime.test.js",
+      "sha256": "a88cf168b1fcbbae623458b7c6c0483c5dd9a645ca6e247850cbba35c28d9e8f",
+      "validated_sha256": "a88cf168b1fcbbae623458b7c6c0483c5dd9a645ca6e247850cbba35c28d9e8f"
+    },
+    {
+      "path": "scripts/qa/single-instance-f012d1/registry.test.js",
+      "sha256": "10eeb9c60109c7c439592f48c8eb7a21b09ceb778f7a51f21624f086d123642f",
+      "validated_sha256": "10eeb9c60109c7c439592f48c8eb7a21b09ceb778f7a51f21624f086d123642f"
+    },
+    {
+      "path": "scripts/qa/single-instance-f012d1/subscribers.test.jsx",
+      "sha256": "cc95e8b834a1ebe09c7b911cd65594b92060df69c917d3bbc7d6aef447ac2e4b",
+      "validated_sha256": "cc95e8b834a1ebe09c7b911cd65594b92060df69c917d3bbc7d6aef447ac2e4b"
+    },
+    {
+      "path": "scripts/qa/single-instance-f012d1/validate.mjs",
+      "sha256": "dd80c40dd0f610cb7599ddb2f7c33cb4095773922f201d3aef1fa528a181e621",
+      "validated_sha256": "dd80c40dd0f610cb7599ddb2f7c33cb4095773922f201d3aef1fa528a181e621"
+    },
+    {
+      "path": "src/services/customerCredit/customerCreditSyncHandler.js",
+      "sha256": "8be627a2b82ec612c146bf78b3659b65a41b7b4016b240c5ca40d9889761eed9",
+      "validated_sha256": "8be627a2b82ec612c146bf78b3659b65a41b7b4016b240c5ca40d9889761eed9"
+    },
+    {
+      "path": "src/services/posRealtime.js",
+      "sha256": "225c24a78fbb8c3062d0b7307cb6d6ef77594d585e66706edc97efe7baf8e911",
+      "validated_sha256": "225c24a78fbb8c3062d0b7307cb6d6ef77594d585e66706edc97efe7baf8e911"
+    },
+    {
+      "path": "src/services/sync/posSyncBootstrapCoordinator.js",
+      "sha256": "c222946db90768ce44daa1d16ea9a7872fb79baf2fb08e75c38980fa49569a42",
+      "validated_sha256": "c222946db90768ce44daa1d16ea9a7872fb79baf2fb08e75c38980fa49569a42"
+    },
+    {
+      "path": "src/services/sync/posSyncOrchestrator.js",
+      "sha256": "e6a9a79825cc1c2942e3f84b37f8bbd41b9619923895e5dccbafffff74e25ce9",
+      "validated_sha256": "e6a9a79825cc1c2942e3f84b37f8bbd41b9619923895e5dccbafffff74e25ce9"
+    },
+    {
+      "path": "src/services/sync/scopedPosRealtimeListener.js",
+      "sha256": "676d6d335582e29f0125b09fbbdb12ea69178654d61dd98ba87fa7e4c8545cc6",
+      "validated_sha256": "676d6d335582e29f0125b09fbbdb12ea69178654d61dd98ba87fa7e4c8545cc6"
+    },
+    {
+      "path": "src/services/sync/syncExecutionScope.js",
+      "sha256": "f8636b3c4e36b22f2b7035b215b2c504b5e31d22495e0797bc777ddd46db97eb",
+      "validated_sha256": "f8636b3c4e36b22f2b7035b215b2c504b5e31d22495e0797bc777ddd46db97eb"
+    }
+  ],
+  "all_identical": true,
+  "local_code_commit": "51158e00cec0c83e3e0c1600b6e3f50b672a6ed4",
+  "code_tree": "8618a6ce3083da5f3a4880a0e8debe0e6d41417b"
+}

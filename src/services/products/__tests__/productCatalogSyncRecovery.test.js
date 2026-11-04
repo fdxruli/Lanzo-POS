@@ -3,11 +3,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const rows = {
   categories: new Map(),
   menu: new Map(),
-  productBatches: new Map()
+  productBatches: new Map(),
+  sales: new Map()
 };
 let transactionImpl;
 
 const table = (name) => ({
+  toArray: vi.fn(async () => [...rows[name].values()]),
+  bulkPut: vi.fn(async (records) => records.forEach((record) => rows[name].set(record.id, record))),
+  where: vi.fn((field) => ({ equals: (value) => ({
+    toArray: async () => [...rows[name].values()].filter((record) => record[field] === value)
+  }) })),
   get: vi.fn(async (id) => rows[name].get(id) || null),
   put: vi.fn(async (record) => {
     rows[name].set(record.id, record);
@@ -26,6 +32,7 @@ vi.mock('../../db/dexie', () => ({
     CATEGORIES: 'categories',
     MENU: 'menu',
     PRODUCT_BATCHES: 'productBatches',
+    SALES: 'sales',
     DELETED_CATEGORIES: 'deletedCategories',
     DELETED_MENU: 'deletedMenu'
   }

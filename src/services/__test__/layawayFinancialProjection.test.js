@@ -35,6 +35,92 @@ const paymentMovements = pendingLayaway.payments.map((payment) => ({
   referenceId: 'layaway-1', layawayId: 'layaway-1', paymentId: payment.id
 }));
 
+describe('restaurant split cash reconciliation', () => {
+  it('reconciles legacy sale fields when explicit payments are empty or absent', () => {
+    const reconciliation = buildCashReconciliation({
+      cashSession: session,
+      sales: [
+        { id: 'legacy-cash-empty', timestamp: '2026-07-25T09:00:00.000Z', status: 'closed', paymentMethod: 'cash', total: 100, payments: [] },
+        { id: 'legacy-cash-absent', timestamp: '2026-07-25T09:30:00.000Z', status: 'closed', paymentMethod: 'cash', total: 100 },
+        { id: 'legacy-card-empty', timestamp: '2026-07-25T10:00:00.000Z', status: 'closed', paymentMethod: 'card', total: 100, payments: [] },
+        { id: 'legacy-credit-down-payment-empty', timestamp: '2026-07-25T10:30:00.000Z', status: 'closed', paymentMethod: 'fiado', total: 250, abono: 100, payments: [] },
+        { id: 'legacy-credit-no-down-payment', timestamp: '2026-07-25T11:00:00.000Z', status: 'closed', paymentMethod: 'fiado', total: 250, abono: 0, payments: [] }
+      ],
+      layaways: [],
+      cashMovements: []
+    });
+
+    expect(reconciliation.directCashSales).toBe(300);
+  });
+
+  it('uses only explicit cash from a new multi-tender sale during reconciliation', () => {
+    const reconciliation = buildCashReconciliation({
+      cashSession: session,
+      sales: [{
+        id: 'explicit-mixed-tender',
+        timestamp: '2026-07-25T12:00:00.000Z',
+        status: 'closed',
+        paymentMethod: 'mixed',
+        total: 450,
+        payments: [
+          { method: 'cash', amount: 100 },
+          { method: 'card', amount: 200 },
+          { method: 'transfer', amount: 150 }
+        ]
+      }],
+      layaways: [],
+      cashMovements: []
+    });
+
+    expect(reconciliation.directCashSales).toBe(100);
+  });
+
+  it('does not infer legacy cash from an explicit zero payment during reconciliation', () => {
+    const reconciliation = buildCashReconciliation({
+      cashSession: { ...session, entradas_efectivo: 0 },
+      sales: [{
+        id: 'sale-explicit-zero',
+        timestamp: '2026-07-25T12:00:00.000Z',
+        cash_session_id: 'cash-1',
+        status: 'closed',
+        paymentMethod: 'cash',
+        total: 100,
+        payments: [{ method: 'cash', amount: 0 }]
+      }],
+      layaways: [],
+      cashMovements: []
+    });
+
+    expect(reconciliation.directCashSales).toBe(0);
+    expect(reconciliation.theoreticalCash).toBe(0);
+  });
+
+
+  it('uses applied cash rows for physical cash while retaining the one-sale revenue total', () => {
+    const reconciliation = buildCashReconciliation({
+      cashSession: session,
+      sales: [{
+        id: 'sale-shared-table',
+        timestamp: '2026-07-25T10:00:00.000Z',
+        cash_session_id: 'cash-1',
+        status: 'closed',
+        paymentMethod: 'mixed',
+        total: 100,
+        payments: [
+          { method: 'cash', amount: 25, received_amount: 30, change_amount: 5 },
+          { method: 'card', amount: 75, received_amount: 75, change_amount: 0 }
+        ]
+      }],
+      layaways: [],
+      cashMovements: []
+    });
+
+    expect(reconciliation.directCashSales).toBe(25);
+    expect(reconciliation.recognizedSales).toBe(100);
+    expect(reconciliation.theoreticalCash).toBe(25);
+  });
+});
+
 const buildExplicitLinkProjection = ({ payment = {}, movement, layaway = {} } = {}) => {
   const explicitPayment = {
     id: 'payment-explicit',

@@ -1,6 +1,14 @@
 import { supabaseClient } from './supabase';
 import Logger from './Logger';
 import { SYNC_STATUS } from './sync/syncConstants';
+import {
+  createScopedPosRealtimeListener,
+  stopScopedPosRealtimeListener
+} from './sync/scopedPosRealtimeListener';
+
+let scopedListener = null;
+let scopedOwner = null;
+let legacyStarted = false;
 
 let activeChannel = null;
 let reconnectTimer = null;
@@ -37,7 +45,35 @@ const notifyStatus = (callbacks = {}, status, extra = {}) => {
   callbacks.onStatusChange?.({ status, ...extra });
 };
 
-export const startPosRealtimeListener = ({ posTopic, licenseDetails, callbacks = {} } = {}) => {
+export const startPosRealtimeListener = (options = {}) => {
+  const { executionScope: owner, posTopic, licenseDetails, callbacks = {} } = options;
+  if (owner) {
+    owner.assertAdmission();
+    if (legacyStarted) throw new Error('SYNC_EXECUTION_LEGACY_OWNER_ACTIVE');
+    if (scopedOwner && scopedOwner !== owner && scopedOwner.getSnapshot().state !== 'DRAINED') {
+      throw new Error('SYNC_EXECUTION_OWNER_MISMATCH');
+    }
+    if (scopedOwner === owner) {
+      const status = scopedListener.getStatus();
+      if (status.stopped || status.topic !== (posTopic || buildPosRealtimeTopic(licenseDetails))) {
+        throw new Error('POS_REALTIME_GENERATION_RESTART_REQUIRED');
+      }
+      return scopedListener;
+    }
+    scopedOwner = owner;
+    scopedListener = createScopedPosRealtimeListener({
+      client: supabaseClient, topic: posTopic || buildPosRealtimeTopic(licenseDetails), callbacks, owner
+    });
+    return scopedListener;
+  }
+  if (scopedOwner && scopedOwner.getSnapshot().state !== 'DRAINED') {
+    throw new Error('SYNC_EXECUTION_OWNER_MISMATCH');
+  }
+  legacyStarted = true;
+  return startLegacyPosRealtimeListener(options);
+};
+
+const startLegacyPosRealtimeListener = ({ posTopic, licenseDetails, callbacks = {} } = {}) => {
   const resolvedTopic = posTopic || buildPosRealtimeTopic(licenseDetails);
 
   if (!supabaseClient) {
@@ -173,6 +209,11 @@ const scheduleReconnect = (posTopic, callbacks = {}) => {
 };
 
 export const stopPosRealtimeListener = async (channel = activeChannel) => {
+  const ownedStop = stopScopedPosRealtimeListener(channel);
+  if (ownedStop) return ownedStop;
+  if (!channel && scopedListener && scopedOwner?.getSnapshot().state !== 'DRAINED') {
+    return stopScopedPosRealtimeListener(scopedListener);
+  }
   if (reconnectTimer) {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
@@ -198,7 +239,7 @@ export const stopPosRealtimeListener = async (channel = activeChannel) => {
   if (activeChannel === channel) activeChannel = null;
 };
 
-export const getPosRealtimeStatus = () => ({
+export const getPosRealtimeStatus = () => scopedOwner && !legacyStarted ? scopedListener.getStatus() : ({
   isActive: Boolean(activeChannel),
   isConnecting,
   reconnectAttempts

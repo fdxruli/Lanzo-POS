@@ -1,5 +1,10 @@
 import { Money } from '../utils/moneyMath';
 import { isFinanciallyClosedSale } from './sales/financialStats';
+import {
+  getExplicitSalePaymentRows,
+  isRestaurantSplitCashPayment,
+  normalizeRestaurantSplitPaymentMethod
+} from './sales/paymentMethodContract';
 import { STORES } from './db/dexie';
 import { buildCashReconciliation } from './layawayFinancialProjection';
 import {
@@ -149,6 +154,19 @@ export const calculateSessionTotals = (sales = []) => {
 
     const method = sale.paymentMethod?.toLowerCase();
     const paymentAmount = sale.paymentData?.amount;
+    const explicitPayments = getExplicitSalePaymentRows(sale);
+    if (explicitPayments !== null) {
+      const cashApplied = explicitPayments.reduce((sum, payment) => {
+        if (!isRestaurantSplitCashPayment(payment)) return sum;
+        return Money.add(sum, payment?.amount ?? payment?.total ?? 0);
+      }, Money.init(0));
+      if (normalizeRestaurantSplitPaymentMethod(method) === 'credit') {
+        abonosFiado = Money.add(abonosFiado, cashApplied);
+      } else {
+        contado = Money.add(contado, cashApplied);
+      }
+      continue;
+    }
     const isCash = method === 'efectivo' || method === 'cash' ||
       (!method && Number(paymentAmount) > 0);
 
@@ -219,14 +237,22 @@ const saleEffectKey = (sale, movement) => {
   const identity = normalizeIdentity(getSaleIdentityReferences(sale)[0]);
   const effect = saleEffectType(movement);
   const amount = Money.toExactString(Money.init(movement.monto ?? movement.amount ?? 0));
-  return identity && effect ? `${identity}::${effect}::${amount}` : null;
+  const tender = String(movement.tipo || movement.type || '').toLowerCase() === 'venta_tarjeta' ? 'noncash' : 'cash';
+  return identity && effect ? `${identity}::${effect}::${tender}::${amount}` : null;
 };
 
 export const enrichOfficialCashMovements = (cashMovements = [], sales = []) => {
   const saleIndex = buildSaleIdentityIndex(sales);
+  const cashMovementSales = new Map();
+  for (const sale of records(sales)) {
+    const movementIds = [sale.cashMovementId, sale.cash_movement_id,
+      ...(getExplicitSalePaymentRows(sale) || []).filter(isRestaurantSplitCashPayment)
+        .map((payment) => payment.cash_movement_id || payment.cashMovementId)];
+    for (const id of movementIds.filter(Boolean)) cashMovementSales.set(normalizeIdentity(id), sale);
+  }
 
   return records(cashMovements).map((movement) => {
-    const sale = resolveMovementSale(movement, saleIndex);
+    const sale = resolveMovementSale(movement, saleIndex) || cashMovementSales.get(normalizeIdentity(movement.id));
     if (!sale) return movement;
 
     const traceability = normalizeSaleTraceability(sale);
@@ -250,13 +276,86 @@ export const normalizeSaleMovements = (sales = []) => {
 
     const method = sale.paymentMethod?.toLowerCase();
     const paymentAmount = sale.paymentData?.amount;
+    const explicitPayments = getExplicitSalePaymentRows(sale);
     const isCash = method === 'efectivo' || method === 'cash' ||
       (!method && Number(paymentAmount) > 0);
-    const isCredit = method === 'fiado';
     const saleLabel = getSaleDisplayReference(sale) || sale.ticketNumber || sale.id;
     const traceability = normalizeSaleTraceability(sale);
     const secondaryReference = getSaleSecondaryReference(sale);
 
+    if (explicitPayments !== null) {
+      const cashApplied = explicitPayments.reduce((sum, payment) => (
+        isRestaurantSplitCashPayment(payment)
+          ? Money.add(sum, payment?.amount ?? payment?.total ?? 0)
+          : sum
+      ), Money.init(0));
+      const nonCashApplied = explicitPayments.reduce((sum, payment) => (
+        ['card', 'transfer'].includes(normalizeRestaurantSplitPaymentMethod(
+          payment?.method || payment?.paymentMethod || payment?.payment_method
+        ))
+          ? Money.add(sum, payment?.amount ?? payment?.total ?? 0)
+          : sum
+      ), Money.init(0));
+      const isCredit = normalizeRestaurantSplitPaymentMethod(method) === 'credit';
+
+      if (isCredit && cashApplied.gt(0)) {
+        movements.push({
+          id: sale.id || `abono-${sale.timestamp}`,
+          sale,
+          saleId: sale.id || null,
+          sale_id: sale.id || null,
+          referenceType: 'sale',
+          referenceId: sale.id || null,
+          tipo: 'abono',
+          monto: Money.toExactString(cashApplied),
+          concepto: saleLabel,
+          secondaryReference: `Abono fiado · ${secondaryReference}`,
+          ...traceability,
+          fecha: sale.timestamp
+        });
+      } else if (!isCredit && cashApplied.gt(0)) {
+        movements.push({
+          id: sale.id || `venta-${sale.timestamp}`,
+          sale,
+          saleId: sale.id || null,
+          sale_id: sale.id || null,
+          referenceType: 'sale',
+          referenceId: sale.id || null,
+          tipo: 'venta',
+          monto: Money.toExactString(cashApplied),
+          concepto: saleLabel,
+          secondaryReference,
+          ...traceability,
+          fecha: sale.timestamp
+        });
+      }
+      if (nonCashApplied.gt(0)) {
+        const nonCashDetails = ['card', 'transfer'].map((paymentMethod) => {
+          const applied = explicitPayments.reduce((sum, payment) => (
+            normalizeRestaurantSplitPaymentMethod(payment.method || payment.paymentMethod || payment.payment_method) === paymentMethod
+              ? Money.add(sum, payment.amount ?? payment.total ?? 0) : sum
+          ), Money.init(0));
+          return applied.gt(0) ? `${paymentMethod === 'card' ? 'Tarjeta' : 'Transferencia'} $${applied.toFixed(2)}` : null;
+        }).filter(Boolean).join(' · ');
+        movements.push({
+          id: cashApplied.gt(0) ? `${sale.id || sale.timestamp}:noncash` : (sale.id || `venta-${sale.timestamp}`),
+          sale,
+          saleId: sale.id || null,
+          sale_id: sale.id || null,
+          referenceType: 'sale',
+          referenceId: sale.id || null,
+          tipo: 'venta_tarjeta',
+          monto: Money.toExactString(nonCashApplied),
+          concepto: saleLabel,
+          secondaryReference: [secondaryReference, nonCashDetails].filter(Boolean).join(' · '),
+          ...traceability,
+          fecha: sale.timestamp
+        });
+      }
+      continue;
+    }
+
+    const isCredit = method === 'fiado';
     if (isCash) {
       movements.push({
         id: sale.id || `venta-${sale.timestamp}`,

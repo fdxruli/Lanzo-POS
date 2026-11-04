@@ -2,10 +2,14 @@ import { db, STORES } from '../db/dexie';
 import { customerCreditRepository as dexieCustomerCreditRepository } from '../db/customerCreditRepository';
 import { cloudLedgerToLocal } from './customerCreditMapper';
 import { historicalCreditLedgerView } from './historicalCreditLedger';
+import { customerLocalRepository } from '../customers/customerLocalRepository';
+import { POS_SYNC_STORES } from '../sync/syncConstants';
 
 const ensureOpen = async () => {
   if (!db.isOpen()) await db.open();
 };
+const projectionTables = () => [STORES.CUSTOMERS, STORES.SYNC_CACHE, STORES.CUSTOMER_LEDGER, POS_SYNC_STORES.CONFLICTS]
+  .map((name) => db.table(name));
 
 export const customerCreditLocalRepository = {
   async processPayment(...args) {
@@ -24,47 +28,38 @@ export const customerCreditLocalRepository = {
     return dexieCustomerCreditRepository.migrateExistingDebtsToLedger(...args);
   },
 
-  async applyCloudLedger(ledger) {
+  async applyCloudLedger(ledger, { actorHandle = null } = {}) {
     if (!ledger?.id) return null;
     await ensureOpen();
-    const existing = await db.table(STORES.CUSTOMER_LEDGER).get(ledger.id);
-    const local = cloudLedgerToLocal(ledger, existing);
-    if (!local) return null;
-    await db.table(STORES.CUSTOMER_LEDGER).put(local);
-    return local;
-  },
-
-  async applyCloudLedgers(ledgers = []) {
-    await ensureOpen();
-    return this.applyCloudLedgersInCurrentTransaction(ledgers);
-  },
-
-  async applyCloudLedgersInCurrentTransaction(ledgers = [], { actorHandle = null } = {}) {
-    const ids = (ledgers || []).reduce((result, ledger) => {
-      if (ledger?.id) result.push(ledger.id);
-      return result;
-    }, []);
-    if (ids.length === 0) return [];
-
-    if (new Set(ids.map(String)).size !== ids.length) {
-      throw new Error('CLOUD_SYNC_PROTOCOL_DUPLICATE_LEDGER');
-    }
     actorHandle?.assertCurrent?.();
-    const existingRows = await db.table(STORES.CUSTOMER_LEDGER).bulkGet(ids);
-    actorHandle?.assertCurrent?.();
-    const applied = (ledgers || []).reduce((result, ledger, index) => {
-      const local = cloudLedgerToLocal(ledger, existingRows[index]);
-      if (local) result.push(local);
-      return result;
-    }, []);
-
-    if (applied.length > 0) {
+    return db.transaction('rw', projectionTables(), async () => {
+      const history = await customerLocalRepository.protectHistoricalCustomer(ledger.customer_id || ledger.customerId);
       actorHandle?.assertCurrent?.();
-      await db.table(STORES.CUSTOMER_LEDGER).bulkPut(applied);
-    }
+      if (history.blocked) {
+        return null;
+      }
+      const existing = await db.table(STORES.CUSTOMER_LEDGER).get(ledger.id);
+      const local = cloudLedgerToLocal(ledger, existing);
+      if (!local) return null;
+      actorHandle?.assertCurrent?.();
+      await db.table(STORES.CUSTOMER_LEDGER).put(local);
+      actorHandle?.assertCurrent?.();
+      return local;
+    });
+  },
 
-    actorHandle?.assertCurrent?.();
-    return applied;
+  async applyCloudLedgers(ledgers = [], { actorHandle = null } = {}) {
+    await ensureOpen();
+    return db.transaction('rw', projectionTables(), async () => {
+      const applied = [];
+      for (const ledger of ledgers || []) {
+        actorHandle?.assertCurrent?.();
+        const local = await this.applyCloudLedger(ledger, { actorHandle });
+        if (local) applied.push(local);
+      }
+      actorHandle?.assertCurrent?.();
+      return applied;
+    });
   },
 
   async getCustomerLedger(customerId) {

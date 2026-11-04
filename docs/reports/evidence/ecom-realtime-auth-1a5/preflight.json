@@ -1,0 +1,291 @@
+{
+  "captured_at_utc": "2026-10-22T23:41:52Z",
+  "git": {
+    "worktree": "C:/dev/Lanzo-POS-ecom-auth-1a2",
+    "branch": "codex/ecom-realtime-auth-1a2",
+    "head": "3931ff2e3d4415701ab0a80920ca0583a8090eb7",
+    "base_main": "9ca65fc07804f40c2add5e59bee0e6edca940b8f",
+    "worktree_was_clean_before_documentation": true,
+    "head_scope": "PR code SHA observed before documentation-only commit",
+    "documents_added": [
+      "docs/reports/ECOM.FREE.ORDERS.REALTIME.AUTH.PILOT.READINESS.1A.5.md",
+      "docs/reports/ECOM.FREE.ORDERS.REALTIME.AUTH.PILOT.QA.GUIDE.1A.5.md",
+      "docs/reports/evidence/ecom-realtime-auth-1a5/preflight.json"
+    ]
+  },
+  "github": {
+    "pr": 368,
+    "url": "https://github.com/fdxruli/Lanzo-POS/pull/368",
+    "state": "open",
+    "draft": true,
+    "mergeable": true,
+    "changed_files": 193,
+    "insertions": 25316,
+    "checks": {
+      "vercel": "success",
+      "ecommerce_native_bridge_qa": "failure",
+      "pr127_global_comparison": "success"
+    }
+  },
+  "supabase": {
+    "project_ref": "odlrhijtfyavryeqivaa",
+    "status": "ACTIVE_HEALTHY",
+    "region": "us-east-2",
+    "postgres_version": "17.6.1.063",
+    "plan": "Free",
+    "migration_rows": 324,
+    "latest_migration": "20261022184218 qa_ecom_bridge_1a4_cleanup",
+    "roles": 31,
+    "receiver_role_exists": false,
+    "auth_users": 0,
+    "auth_sessions": 0,
+    "qa_relations": 0,
+    "qa_named_functions": 0,
+    "vault_secret_rows": 0,
+    "edge_secret_names_only": [
+      "AI_API_KEY",
+      "AI_API_URL",
+      "AI_MAX_PROMPT_CHARS",
+      "AI_MODEL",
+      "AI_PROVIDER",
+      "SUPABASE_ANON_KEY",
+      "SUPABASE_DB_URL",
+      "SUPABASE_JWKS",
+      "SUPABASE_PUBLISHABLE_KEYS",
+      "SUPABASE_SECRET_KEYS",
+      "SUPABASE_SERVICE_ROLE_KEY",
+      "SUPABASE_URL"
+    ],
+    "edge_functions": [
+      {
+        "name": "lanzo-ai-agent",
+        "status": "ACTIVE",
+        "version": 49,
+        "verify_jwt": false
+      },
+      {
+        "name": "authorize-image-upload",
+        "status": "ACTIVE",
+        "version": 31,
+        "verify_jwt": true
+      }
+    ],
+    "realtime_policies": [
+      "Lanzo private POS broadcast receive",
+      "Lanzo private ecommerce tracking broadcast receive",
+      "Lanzo private license broadcast receive"
+    ],
+    "usage_current_cycle": {
+      "edge_invocations": {
+        "used": 94,
+        "included": 500000
+      },
+      "realtime_messages": {
+        "used": 2726,
+        "included": 2000000
+      },
+      "realtime_peak_connections": {
+        "used": 4,
+        "included": 200
+      },
+      "auth_mau": {
+        "used": 22,
+        "included": 50000
+      },
+      "database_size_mb": {
+        "used": 94,
+        "included": 500
+      },
+      "egress_gb": {
+        "used": 0.12,
+        "included": 5
+      },
+      "storage_average_gb": {
+        "used_display": 0.0,
+        "included": 1
+      },
+      "log_ingestion_gb": {
+        "used": 0.11,
+        "included": 1
+      },
+      "log_query_gb": {
+        "used": 9.94,
+        "included": 100,
+        "directly_billed": false
+      },
+      "overages": 0,
+      "billing_cycle_dates_visible": false
+    },
+    "logs_24h_utc": {
+      "start": "2026-10-21T23:32:10Z",
+      "end": "2026-10-22T23:32:10Z",
+      "auth_logs": {
+        "info": 125,
+        "warning": 13,
+        "error": 0,
+        "total": 138
+      },
+      "realtime_logs": {
+        "info": 36,
+        "error": 18,
+        "total": 54
+      },
+      "attributable_to_bridge": false
+    },
+    "acl_functions_public_execute": [
+      "public.admin_list_staff_users(text,text,text,text)",
+      "public.admin_create_staff_user(text,text,text,text,text,text,jsonb,text,text)",
+      "public.admin_update_staff_user(text,text,text,uuid,text,jsonb,boolean,text,text,text)",
+      "public.pos_get_cash_station_state(text,text,text,text)",
+      "public.pos_admin_close_cash_session(text,text,text,text,text,text,numeric,numeric,text,text,integer,text)",
+      "public.pos_admin_adopt_legacy_cash_session(text,text,text,text,text,integer,text)"
+    ]
+  },
+  "business_candidate_aggregate": {
+    "active_free_licenses": 17,
+    "active_trial_licenses": 1,
+    "business_profiles": 10,
+    "non_deleted_ecommerce_portals": 7,
+    "active_free_eligible_candidates": 2,
+    "active_owner_accounts": 7,
+    "active_devices": 14,
+    "active_staff_accounts": 6,
+    "owner_to_physical_device_mapping_verified": false,
+    "reason": "license_devices.user_id references auth.users.id; auth.users is empty"
+  },
+  "vercel": {
+    "project": "lanzo-pos",
+    "production_url": "https://lanzo-pos.vercel.app",
+    "production_deployment": "dpl_Beeod21Pc9mgeRe3qK6xKm8bc8uu",
+    "production_sha": "9ca65fc07804f40c2add5e59bee0e6edca940b8f",
+    "pr_deployment": "dpl_3x3k7boJopc4L38Qbdc2baXqPgUe",
+    "pr_deployment_state": "READY",
+    "pr_deployment_target": null,
+    "sso_protection": true,
+    "project_environment_variable_names_only": [
+      "VITE_ENABLE_CLOUD_LAYAWAYS",
+      "VITE_ENABLE_CLOUD_SALE_CANCELLATIONS",
+      "VITE_ENABLE_CLOUD_CASHIER_SALES",
+      "VITE_AI_EDGE_FUNCTION",
+      "VITE_AI_PROVIDER",
+      "VITE_ENABLE_LICENSE_REALTIME",
+      "VITE_GOOGLE_CLIENT_ID",
+      "VITE_SUPPORT_EMAIL",
+      "VITE_LICENSE_SALT",
+      "VITE_SUPABASE_PUBLISHABLE_KEY",
+      "VITE_SUPABASE_URL"
+    ],
+    "qa_environment_variable_present": false,
+    "project_environment_variable_metadata": [
+      {
+        "type": "encrypted",
+        "key": "VITE_ENABLE_CLOUD_LAYAWAYS",
+        "target": [
+          "production"
+        ]
+      },
+      {
+        "type": "sensitive",
+        "key": "VITE_ENABLE_CLOUD_SALE_CANCELLATIONS",
+        "target": [
+          "preview",
+          "production"
+        ]
+      },
+      {
+        "type": "sensitive",
+        "key": "VITE_ENABLE_CLOUD_CASHIER_SALES",
+        "target": [
+          "preview",
+          "production"
+        ]
+      },
+      {
+        "type": "sensitive",
+        "key": "VITE_AI_EDGE_FUNCTION",
+        "target": [
+          "preview",
+          "production"
+        ]
+      },
+      {
+        "type": "sensitive",
+        "key": "VITE_AI_PROVIDER",
+        "target": [
+          "preview",
+          "production"
+        ]
+      },
+      {
+        "type": "sensitive",
+        "key": "VITE_ENABLE_LICENSE_REALTIME",
+        "target": [
+          "production",
+          "preview"
+        ]
+      },
+      {
+        "type": "sensitive",
+        "key": "VITE_GOOGLE_CLIENT_ID",
+        "target": [
+          "production",
+          "preview"
+        ]
+      },
+      {
+        "type": "encrypted",
+        "key": "VITE_SUPPORT_EMAIL",
+        "target": [
+          "production",
+          "preview",
+          "development"
+        ]
+      },
+      {
+        "type": "encrypted",
+        "key": "VITE_LICENSE_SALT",
+        "target": [
+          "development",
+          "preview",
+          "production"
+        ]
+      },
+      {
+        "type": "encrypted",
+        "key": "VITE_SUPABASE_PUBLISHABLE_KEY",
+        "target": [
+          "production",
+          "preview",
+          "development"
+        ]
+      },
+      {
+        "type": "encrypted",
+        "key": "VITE_SUPABASE_URL",
+        "target": [
+          "production",
+          "preview",
+          "development"
+        ]
+      }
+    ]
+  },
+  "local_tests": {
+    "node_native_bridge_fixture": "13/13 PASS",
+    "react_actor_adapter_hook_fixture": "17/17 PASS (pool=threads, maxWorkers=1)",
+    "focal_eslint": "PASS (exit 0; stale baseline-browser-mapping warning)",
+    "hosted_production_qa_this_continuation": "NOT RUN / BLOCKED"
+  },
+  "mutations": {
+    "production_database_writes": 0,
+    "edge_function_deploys": 0,
+    "vercel_production_deploys": 0,
+    "merges": 0,
+    "plan_changes": 0
+  },
+  "secret_values_included": false,
+  "capture_window_utc": {
+    "start": "2026-10-22T23:32:10Z",
+    "end": "2026-10-22T23:41:52Z"
+  }
+}

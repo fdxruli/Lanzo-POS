@@ -1,0 +1,45 @@
+{
+  "run": "42f9a16c-c36a-40ba-8fc1-6be4a66dd50f",
+  "tenants": [
+    {
+      "id": "2ad189ef-8335-4dc5-8524-22601f65b809",
+      "device": "6d1798ec-026b-4d57-969b-87746613da10",
+      "device2": "887782e7-d897-4fc1-b38c-782e3afa7fcc",
+      "admin": "abfffafe-ef13-40df-a3c7-cc54b7b27fb7",
+      "session": "7b9248ca-7034-411f-a0df-315fb08ce324",
+      "session2": "30a066d6-9ecd-49db-8782-aef740d78bd7",
+      "staff": "1365ff3e-e169-4486-88b7-b86ddb61e0ca",
+      "staffSession": "ef2a9a7b-5b9c-4106-9131-9118eb758f92",
+      "denied": "a857c4fa-8b49-4ed3-ba81-f8a932833e0b",
+      "deniedSession": "b6a70aad-65fa-4e6d-84a5-811f8c9456d0"
+    },
+    {
+      "id": "1182e81a-d7db-423f-bfdc-34f5bf4310dc",
+      "device": "9e1f337e-7340-4e02-825a-f6b55a1ab104",
+      "device2": "93859688-049c-4e02-a615-31d352b30765",
+      "admin": "d68a514b-76da-462d-9e7e-7b19b48fae96",
+      "session": "c2c1b3f9-bed4-45b7-81e6-1fe69376f033",
+      "session2": "6e0afae8-69e5-4bcf-b699-176697f227e7",
+      "staff": "ec12368b-8f19-4684-80d8-12ff36c44b7a",
+      "staffSession": "51407800-91e8-4a2a-ad29-6888176e394a",
+      "denied": "9bf748d4-cce1-433c-bdee-dc79918d834c",
+      "deniedSession": "460b3abf-fdcf-4079-889c-280b87ac805b"
+    }
+  ],
+  "auth_expiry_id": "a98dfb3c-ff28-4898-84d6-cbafba67fee3",
+  "auth_hardening_observed_ids": [
+    "7f669a7e-c782-437f-9c62-de8431f8ba5d",
+    "7f669a7e-c782-437f-9c62-de8431f8ba5d",
+    "411120ed-2229-41b3-b0e3-801032d51b9e",
+    "7ba1cb6f-a6c7-4bc9-b180-d272ad62c52e"
+  ],
+  "cleanup": "selective migration 20261022135736; all scoped users/role/schema/RPC absent",
+  "qa_secrets": [
+    "LANZO_ECOM_VAULT_KEYS",
+    "LANZO_ECOM_VAULT_KEY_ID",
+    "LANZO_ECOM_PASSWORD_KEY",
+    "LANZO_ECOM_PASSWORD_KEY_ID",
+    "LANZO_ECOM_QA_CONTROL_TOKEN"
+  ],
+  "temporary_endpoint": "lanzo-ecom-bridge-qa (removed)"
+}

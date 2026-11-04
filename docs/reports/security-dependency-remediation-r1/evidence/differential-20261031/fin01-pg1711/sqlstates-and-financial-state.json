@@ -1,0 +1,1020 @@
+{
+  "database": "fin01_cert_success_1711",
+  "postgres_version": "17.11 (Debian 17.11-1.pgdg13+2)",
+  "captured_rejections": 29,
+  "evidence": [
+    {
+      "area": "Authority",
+      "name": "non-owner Admin session is rejected",
+      "sqlstate": "P0001",
+      "expected_error_pattern": "ACTOR_SESSION_INVALID",
+      "message": "ACTOR_SESSION_INVALID\nPL/pgSQL function private.validate_pos_sync_context(text,text,text,text) line 108 at RAISE\nPL/pgSQL function public.pos_historical_credit_batch_v1(text,text,text,text,text,jsonb,uuid,boolean) line 21 at assignment"
+    },
+    {
+      "area": "Authority",
+      "name": "invalid session rejected",
+      "sqlstate": "P0001",
+      "expected_error_pattern": "ACTOR_SESSION_INVALID",
+      "message": "ACTOR_SESSION_INVALID\nPL/pgSQL function private.validate_pos_sync_context(text,text,text,text) line 108 at RAISE\nPL/pgSQL function public.pos_historical_credit_batch_v1(text,text,text,text,text,jsonb,uuid,boolean) line 21 at assignment"
+    },
+    {
+      "area": "Authority",
+      "name": "revoked session rejected",
+      "sqlstate": "P0001",
+      "expected_error_pattern": "ACTOR_SESSION_INVALID",
+      "message": "ACTOR_SESSION_INVALID\nPL/pgSQL function private.validate_pos_sync_context(text,text,text,text) line 108 at RAISE\nPL/pgSQL function public.pos_historical_credit_batch_v1(text,text,text,text,text,jsonb,uuid,boolean) line 21 at assignment"
+    },
+    {
+      "area": "Authority",
+      "name": "expired session rejected",
+      "sqlstate": "P0001",
+      "expected_error_pattern": "ACTOR_SESSION_INVALID",
+      "message": "ACTOR_SESSION_INVALID\nPL/pgSQL function private.validate_pos_sync_context(text,text,text,text) line 108 at RAISE\nPL/pgSQL function public.pos_historical_credit_batch_v1(text,text,text,text,text,jsonb,uuid,boolean) line 21 at assignment"
+    },
+    {
+      "area": "Authority",
+      "name": "wrong tenant manifest rejected",
+      "sqlstate": "P0001",
+      "expected_error_pattern": "HISTORICAL_MANIFEST_INVALID",
+      "message": "HISTORICAL_MANIFEST_INVALID\nPL/pgSQL function private.canonical_historical_credit_manifest_v1(jsonb,uuid) line 14 at RAISE\nPL/pgSQL function public.pos_historical_credit_batch_v1(text,text,text,text,text,jsonb,uuid,boolean) line 40 at assignment"
+    },
+    {
+      "area": "Authority",
+      "name": "direct private tables denied to anon",
+      "sqlstate": "42501",
+      "expected_error_pattern": "permission denied",
+      "message": "permission denied for schema private\n"
+    },
+    {
+      "area": "Authority",
+      "name": "direct private tables denied to authenticated",
+      "sqlstate": "42501",
+      "expected_error_pattern": "permission denied",
+      "message": "permission denied for schema private\n"
+    },
+    {
+      "area": "Manifest",
+      "name": "wrong total",
+      "sqlstate": "P0001",
+      "expected_error_pattern": "TOTAL_MISMATCH",
+      "message": "HISTORICAL_MANIFEST_TOTAL_MISMATCH\nPL/pgSQL function private.canonical_historical_credit_manifest_v1(jsonb,uuid) line 40 at RAISE\nPL/pgSQL function public.pos_historical_credit_batch_v1(text,text,text,text,text,jsonb,uuid,boolean) line 40 at assignment"
+    },
+    {
+      "area": "Manifest",
+      "name": "wrong count",
+      "sqlstate": "P0001",
+      "expected_error_pattern": "TOTAL_MISMATCH",
+      "message": "HISTORICAL_MANIFEST_TOTAL_MISMATCH\nPL/pgSQL function private.canonical_historical_credit_manifest_v1(jsonb,uuid) line 40 at RAISE\nPL/pgSQL function public.pos_historical_credit_batch_v1(text,text,text,text,text,jsonb,uuid,boolean) line 40 at assignment"
+    },
+    {
+      "area": "Manifest",
+      "name": "fractional cents",
+      "sqlstate": "P0001",
+      "expected_error_pattern": "ENTRY_INVALID",
+      "message": "HISTORICAL_MANIFEST_ENTRY_INVALID\nPL/pgSQL function private.canonical_historical_credit_manifest_v1(jsonb,uuid) line 28 at RAISE\nPL/pgSQL function public.pos_historical_credit_batch_v1(text,text,text,text,text,jsonb,uuid,boolean) line 40 at assignment"
+    },
+    {
+      "area": "Manifest",
+      "name": "out of int32 range",
+      "sqlstate": "P0001",
+      "expected_error_pattern": "ENTRY_INVALID",
+      "message": "HISTORICAL_MANIFEST_ENTRY_INVALID\nPL/pgSQL function private.canonical_historical_credit_manifest_v1(jsonb,uuid) line 28 at RAISE\nPL/pgSQL function public.pos_historical_credit_batch_v1(text,text,text,text,text,jsonb,uuid,boolean) line 40 at assignment"
+    },
+    {
+      "area": "Manifest",
+      "name": "duplicate destination",
+      "sqlstate": "P0001",
+      "expected_error_pattern": "DUPLICATE_CUSTOMER",
+      "message": "HISTORICAL_MANIFEST_DUPLICATE_CUSTOMER\nPL/pgSQL function private.canonical_historical_credit_manifest_v1(jsonb,uuid) line 33 at RAISE\nPL/pgSQL function public.pos_historical_credit_batch_v1(text,text,text,text,text,jsonb,uuid,boolean) line 40 at assignment"
+    },
+    {
+      "area": "Manifest",
+      "name": "unknown bypass flag",
+      "sqlstate": "P0001",
+      "expected_error_pattern": "MANIFEST_INVALID",
+      "message": "HISTORICAL_MANIFEST_INVALID\nPL/pgSQL function private.canonical_historical_credit_manifest_v1(jsonb,uuid) line 14 at RAISE\nPL/pgSQL function public.pos_historical_credit_batch_v1(text,text,text,text,text,jsonb,uuid,boolean) line 40 at assignment"
+    },
+    {
+      "area": "Import",
+      "name": "exception rolls back ledger, projection, receipts and consumption",
+      "sqlstate": "P0001",
+      "expected_error_pattern": "FIXTURE_PROJECTION_FAILURE",
+      "message": "FIXTURE_PROJECTION_FAILURE\nPL/pgSQL function public.fixture_fail_import() line 1 at RAISE\nSQL statement \"update public.pos_customers c\n  set debt = v_balance,\n      debt_cents = round(v_balance * 100)::integer,\n      updated_at = now(),\n      server_version = c.server_version + 1,\n      metadata = coalesce(c.metadata, '{}'::jsonb) || jsonb_build_object('debt_projection_source', 'pos_customer_ledger')\n  where c.license_id = p_license_id\n    and c.id = p_customer_id\n  returning *\"\nPL/pgSQL function private.recalculate_pos_customer_debt(uuid,text) line 17 at SQL statement\nPL/pgSQL function public.pos_historical_credit_batch_v1(text,text,text,text,text,jsonb,uuid,boolean) line 121 at assignment"
+    },
+    {
+      "area": "Upsert",
+      "name": "older client with positive or malformed balances fails before overwrite",
+      "sqlstate": "P0001",
+      "expected_error_pattern": "HISTORICAL_DEBT_PRESERVATION_REQUIRED",
+      "message": "HISTORICAL_DEBT_PRESERVATION_REQUIRED\nPL/pgSQL function public.pos_upsert_customer_unlimited(text,text,text,text,jsonb,integer,text) line 106 at RAISE"
+    },
+    {
+      "area": "Upsert",
+      "name": "Staff cannot change credit authority",
+      "sqlstate": "P0001",
+      "expected_error_pattern": "CUSTOMER_CREDIT_LIMIT_AUTHORITY_REQUIRED",
+      "message": "CUSTOMER_CREDIT_LIMIT_AUTHORITY_REQUIRED\nPL/pgSQL function public.pos_upsert_customer_unlimited(text,text,text,text,jsonb,integer,text) line 111 at RAISE"
+    },
+    {
+      "area": "Credit",
+      "name": "C one cent over",
+      "sqlstate": "P0001",
+      "expected_error_pattern": "CREDIT_LIMIT_EXCEEDED",
+      "message": "CREDIT_LIMIT_EXCEEDED\nPL/pgSQL function public.pos_create_cloud_sale_credit_legacy_r2b(text,text,text,text,jsonb,jsonb,jsonb,text,text,text) line 280 at RAISE\nPL/pgSQL function public.pos_create_cloud_sale_credit_unlimited(text,text,text,text,jsonb,jsonb,jsonb,text,text,text) line 21 at assignment"
+    },
+    {
+      "area": "Credit",
+      "name": "D already above",
+      "sqlstate": "P0001",
+      "expected_error_pattern": "CREDIT_LIMIT_EXCEEDED",
+      "message": "CREDIT_LIMIT_EXCEEDED\nPL/pgSQL function public.pos_create_cloud_sale_credit_legacy_r2b(text,text,text,text,jsonb,jsonb,jsonb,text,text,text) line 280 at RAISE\nPL/pgSQL function public.pos_create_cloud_sale_credit_unlimited(text,text,text,text,jsonb,jsonb,jsonb,text,text,text) line 21 at assignment"
+    },
+    {
+      "area": "Credit",
+      "name": "F zero limit",
+      "sqlstate": "P0001",
+      "expected_error_pattern": "CREDIT_LIMIT_EXCEEDED",
+      "message": "CREDIT_LIMIT_EXCEEDED\nPL/pgSQL function public.pos_create_cloud_sale_credit_legacy_r2b(text,text,text,text,jsonb,jsonb,jsonb,text,text,text) line 280 at RAISE\nPL/pgSQL function public.pos_create_cloud_sale_credit_unlimited(text,text,text,text,jsonb,jsonb,jsonb,text,text,text) line 21 at assignment"
+    },
+    {
+      "area": "Credit",
+      "name": "I changed request with same key conflicts in real authorizer",
+      "sqlstate": "P0001",
+      "expected_error_pattern": "IDEMPOTENCY",
+      "message": "IDEMPOTENCY_CONFLICT\nPL/pgSQL function private.r2b_assert_sale_idempotency_v1(uuid,text,text) line 16 at RAISE\nPL/pgSQL function private.r2b_authorize_sale_financial_request_v1(text,text,text,text,text,jsonb,jsonb,jsonb,text,text,text) line 726 at assignment\nPL/pgSQL function public.pos_create_cloud_sale_credit_unlimited(text,text,text,text,jsonb,jsonb,jsonb,text,text,text) line 12 at assignment"
+    },
+    {
+      "area": "Credit",
+      "name": "legacy public wrapper reaches the same SQL guard",
+      "sqlstate": "P0001",
+      "expected_error_pattern": "CREDIT_LIMIT_EXCEEDED",
+      "message": "CREDIT_LIMIT_EXCEEDED\nPL/pgSQL function public.pos_create_cloud_sale_credit_legacy_r2b(text,text,text,text,jsonb,jsonb,jsonb,text,text,text) line 280 at RAISE\nPL/pgSQL function public.pos_create_cloud_sale_credit_unlimited(text,text,text,text,jsonb,jsonb,jsonb,text,text,text) line 21 at assignment\nPL/pgSQL function public.pos_create_cloud_sale_credit(text,text,text,text,jsonb,jsonb,jsonb,text,text,text) line 32 at RETURN"
+    },
+    {
+      "area": "Credit",
+      "name": "N other tenant customer is inaccessible",
+      "sqlstate": "P0001",
+      "expected_error_pattern": "CUSTOMER_NOT_FOUND",
+      "message": "CUSTOMER_NOT_FOUND\nPL/pgSQL function private.r2b_authorize_sale_financial_request_v1(text,text,text,text,text,jsonb,jsonb,jsonb,text,text,text) line 576 at RAISE\nPL/pgSQL function public.pos_create_cloud_sale_credit_unlimited(text,text,text,text,jsonb,jsonb,jsonb,text,text,text) line 12 at assignment"
+    },
+    {
+      "area": "Credit",
+      "name": "S closed Caja rejects with zero partial effects",
+      "sqlstate": "P0001",
+      "expected_error_pattern": "CASH_SESSION_NOT_OPEN",
+      "message": "CASH_SESSION_NOT_OPEN\nPL/pgSQL function public.pos_create_cloud_sale_credit_legacy_r2b(text,text,text,text,jsonb,jsonb,jsonb,text,text,text) line 244 at RAISE\nPL/pgSQL function public.pos_create_cloud_sale_credit_unlimited(text,text,text,text,jsonb,jsonb,jsonb,text,text,text) line 21 at assignment"
+    },
+    {
+      "area": "Atomicity",
+      "name": "two real credit children sharing a customer roll back together",
+      "sqlstate": "P0001",
+      "expected_error_pattern": "CREDIT_LIMIT_EXCEEDED",
+      "message": "CREDIT_LIMIT_EXCEEDED\nPL/pgSQL function public.pos_create_cloud_sale_credit_legacy_r2b(text,text,text,text,jsonb,jsonb,jsonb,text,text,text) line 280 at RAISE\nPL/pgSQL function public.pos_create_cloud_sale_credit_unlimited(text,text,text,text,jsonb,jsonb,jsonb,text,text,text) line 21 at assignment"
+    },
+    {
+      "area": "Concurrency",
+      "name": "inverse ambient Caja and customer locks abort one transaction without partial effects",
+      "sqlstate": "P0001",
+      "expected_error_pattern": "CREDIT_LIMIT_EXCEEDED",
+      "message": "CREDIT_LIMIT_EXCEEDED\nPL/pgSQL function public.pos_create_cloud_sale_credit_legacy_r2b(text,text,text,text,jsonb,jsonb,jsonb,text,text,text) line 280 at RAISE\nPL/pgSQL function public.pos_create_cloud_sale_credit_unlimited(text,text,text,text,jsonb,jsonb,jsonb,text,text,text) line 21 at assignment"
+    },
+    {
+      "area": "Atomicity",
+      "name": "Q fault after inventory work rolls back sales, stock, ledger and Caja",
+      "sqlstate": "P0001",
+      "expected_error_pattern": "FIXTURE_CHARGE_FAILURE",
+      "message": "FIXTURE_CHARGE_FAILURE\nPL/pgSQL function public.fixture_fail_charge() line 1 at RAISE\nSQL statement \"insert into public.pos_customer_ledger (\n    id, license_id, customer_id, type, amount, balance_after, debt_cents_after,\n    payment_method, note, cash_session_id, cash_movement_id,\n    reference_type, reference_id, sale_id, sale_folio, allocation_payload,\n    actor_device_id, actor_staff_user_id, actor_key, actor_name,\n    idempotency_key, metadata\n  ) values (\n    'ldg_' || replace(gen_random_uuid()::text, '-', ''), v_license_id, v_customer_id, 'CHARGE', v_total,\n    v_debt_before + v_total, round((v_debt_before + v_total) * 100)::integer,\n    null, 'Venta fiada ' || v_cloud_folio, null, null,\n    'sale', v_sale.id, v_sale.id, v_cloud_folio, '[]'::jsonb,\n    v_device_id, v_staff_user_id, v_actor_key, v_actor_name,\n    v_idempotency_key || ':ledger_charge',\n    jsonb_build_object('source', 'pos_create_cloud_sale_credit', 'phase', 'fase6d_cloud_sales_credit_ledger', 'sale_id', v_sale.id, 'folio', v_cloud_folio)\n  ) returning *\"\nPL/pgSQL function public.pos_create_cloud_sale_credit_legacy_r2b(text,text,text,text,jsonb,jsonb,jsonb,text,text,text) line 394 at SQL statement\nPL/pgSQL function public.pos_create_cloud_sale_credit_unlimited(text,text,text,text,jsonb,jsonb,jsonb,text,text,text) line 21 at assignment"
+    },
+    {
+      "area": "Credit",
+      "name": "non-finite stored limit cannot bypass enforcement",
+      "sqlstate": "P0001",
+      "expected_error_pattern": "CUSTOMER_CREDIT_LIMIT_INVALID",
+      "message": "CUSTOMER_CREDIT_LIMIT_INVALID\nPL/pgSQL function public.pos_create_cloud_sale_credit_legacy_r2b(text,text,text,text,jsonb,jsonb,jsonb,text,text,text) line 275 at RAISE\nPL/pgSQL function public.pos_create_cloud_sale_credit_unlimited(text,text,text,text,jsonb,jsonb,jsonb,text,text,text) line 21 at assignment"
+    },
+    {
+      "area": "Upsert",
+      "name": "non-finite credit limit is rejected",
+      "sqlstate": "P0001",
+      "expected_error_pattern": "CUSTOMER_CREDIT_LIMIT_INVALID",
+      "message": "CUSTOMER_CREDIT_LIMIT_INVALID\nPL/pgSQL function public.pos_upsert_customer_unlimited(text,text,text,text,jsonb,integer,text) line 56 at RAISE"
+    },
+    {
+      "area": "Authority",
+      "name": "internal financial import remains inaccessible to anon",
+      "sqlstate": "42501",
+      "expected_error_pattern": "permission denied",
+      "message": "permission denied for function pos_migrate_local_customer_credit_unlimited\n"
+    }
+  ],
+  "financial_state_samples": [
+    {
+      "test": {
+        "area": "Import",
+        "name": "legacy financial import requires independent approval"
+      },
+      "kind": "synthetic_financial_table_counts",
+      "state": {
+        "cash": 0,
+        "sales": 0,
+        "ledger": 0,
+        "payments": 0,
+        "receipts": 0,
+        "inventory": 0,
+        "idempotency": 0
+      }
+    },
+    {
+      "test": {
+        "area": "Import",
+        "name": "legacy financial import requires independent approval"
+      },
+      "kind": "synthetic_financial_table_counts",
+      "state": {
+        "cash": 0,
+        "sales": 0,
+        "ledger": 0,
+        "payments": 0,
+        "receipts": 0,
+        "inventory": 0,
+        "idempotency": 0
+      }
+    },
+    {
+      "test": {
+        "area": "Import",
+        "name": "owner approves and imports above limit without Caja or sales"
+      },
+      "kind": "synthetic_financial_table_counts",
+      "state": {
+        "cash": 0,
+        "sales": 0,
+        "ledger": 0,
+        "payments": 0,
+        "receipts": 0,
+        "inventory": 0,
+        "idempotency": 0
+      }
+    },
+    {
+      "test": {
+        "area": "Import",
+        "name": "owner approves and imports above limit without Caja or sales"
+      },
+      "kind": "synthetic_customer_debt_cents",
+      "value": 125001
+    },
+    {
+      "test": {
+        "area": "Import",
+        "name": "owner approves and imports above limit without Caja or sales"
+      },
+      "kind": "synthetic_financial_table_counts",
+      "state": {
+        "cash": 0,
+        "sales": 0,
+        "ledger": 1,
+        "payments": 0,
+        "receipts": 1,
+        "inventory": 0,
+        "idempotency": 0
+      }
+    },
+    {
+      "test": {
+        "area": "Import",
+        "name": "lost response and replay return receipt without duplicates"
+      },
+      "kind": "synthetic_financial_table_counts",
+      "state": {
+        "cash": 0,
+        "sales": 0,
+        "ledger": 1,
+        "payments": 0,
+        "receipts": 1,
+        "inventory": 0,
+        "idempotency": 0
+      }
+    },
+    {
+      "test": {
+        "area": "Import",
+        "name": "lost response and replay return receipt without duplicates"
+      },
+      "kind": "synthetic_financial_table_counts",
+      "state": {
+        "cash": 0,
+        "sales": 0,
+        "ledger": 1,
+        "payments": 0,
+        "receipts": 1,
+        "inventory": 0,
+        "idempotency": 0
+      }
+    },
+    {
+      "test": {
+        "area": "Import",
+        "name": "changing source cannot duplicate target balance"
+      },
+      "kind": "synthetic_financial_table_counts",
+      "state": {
+        "cash": 0,
+        "sales": 0,
+        "ledger": 1,
+        "payments": 0,
+        "receipts": 1,
+        "inventory": 0,
+        "idempotency": 0
+      }
+    },
+    {
+      "test": {
+        "area": "Import",
+        "name": "changing source cannot duplicate target balance"
+      },
+      "kind": "synthetic_financial_table_counts",
+      "state": {
+        "cash": 0,
+        "sales": 0,
+        "ledger": 1,
+        "payments": 0,
+        "receipts": 1,
+        "inventory": 0,
+        "idempotency": 0
+      }
+    },
+    {
+      "test": {
+        "area": "Import",
+        "name": "partial batch reports exact imported and conflicted rows"
+      },
+      "kind": "synthetic_customer_debt_cents",
+      "value": 100
+    },
+    {
+      "test": {
+        "area": "Import",
+        "name": "partial batch reports exact imported and conflicted rows"
+      },
+      "kind": "synthetic_customer_debt_cents",
+      "value": 5000
+    },
+    {
+      "test": {
+        "area": "Import",
+        "name": "two devices same target produce only one initial balance"
+      },
+      "kind": "synthetic_customer_debt_cents",
+      "value": 100
+    },
+    {
+      "test": {
+        "area": "Import",
+        "name": "exception rolls back ledger, projection, receipts and consumption"
+      },
+      "kind": "synthetic_financial_table_counts",
+      "state": {
+        "cash": 0,
+        "sales": 0,
+        "ledger": 5,
+        "payments": 0,
+        "receipts": 3,
+        "inventory": 0,
+        "idempotency": 0
+      }
+    },
+    {
+      "test": {
+        "area": "Import",
+        "name": "exception rolls back ledger, projection, receipts and consumption"
+      },
+      "kind": "synthetic_financial_table_counts",
+      "state": {
+        "cash": 0,
+        "sales": 0,
+        "ledger": 5,
+        "payments": 0,
+        "receipts": 3,
+        "inventory": 0,
+        "idempotency": 0
+      }
+    },
+    {
+      "test": {
+        "area": "Import",
+        "name": "exception rolls back ledger, projection, receipts and consumption"
+      },
+      "kind": "synthetic_customer_debt_cents",
+      "value": 0
+    },
+    {
+      "test": {
+        "area": "Upsert",
+        "name": "older client with positive or malformed balances fails before overwrite"
+      },
+      "kind": "synthetic_financial_table_counts",
+      "state": {
+        "cash": 0,
+        "sales": 0,
+        "ledger": 5,
+        "payments": 0,
+        "receipts": 3,
+        "inventory": 0,
+        "idempotency": 0
+      }
+    },
+    {
+      "test": {
+        "area": "Upsert",
+        "name": "older client with positive or malformed balances fails before overwrite"
+      },
+      "kind": "synthetic_financial_table_counts",
+      "state": {
+        "cash": 0,
+        "sales": 0,
+        "ledger": 5,
+        "payments": 0,
+        "receipts": 3,
+        "inventory": 0,
+        "idempotency": 0
+      }
+    },
+    {
+      "test": {
+        "area": "Upsert",
+        "name": "ordinary directory create starts with zero debt"
+      },
+      "kind": "synthetic_customer_debt_cents",
+      "value": 0
+    },
+    {
+      "test": {
+        "area": "Upsert",
+        "name": "directory edit and lower limit preserve debt"
+      },
+      "kind": "synthetic_customer_debt_cents",
+      "value": 105000
+    },
+    {
+      "test": {
+        "area": "Credit",
+        "name": "A inside limit"
+      },
+      "kind": "synthetic_financial_table_counts",
+      "state": {
+        "cash": 0,
+        "sales": 0,
+        "ledger": 7,
+        "payments": 0,
+        "receipts": 3,
+        "inventory": 0,
+        "idempotency": 2
+      }
+    },
+    {
+      "test": {
+        "area": "Credit",
+        "name": "A inside limit"
+      },
+      "kind": "synthetic_customer_debt_cents",
+      "value": 95000
+    },
+    {
+      "test": {
+        "area": "Credit",
+        "name": "B exact equality"
+      },
+      "kind": "synthetic_financial_table_counts",
+      "state": {
+        "cash": 0,
+        "sales": 1,
+        "ledger": 9,
+        "payments": 0,
+        "receipts": 3,
+        "inventory": 0,
+        "idempotency": 3
+      }
+    },
+    {
+      "test": {
+        "area": "Credit",
+        "name": "B exact equality"
+      },
+      "kind": "synthetic_customer_debt_cents",
+      "value": 100000
+    },
+    {
+      "test": {
+        "area": "Credit",
+        "name": "C one cent over"
+      },
+      "kind": "synthetic_financial_table_counts",
+      "state": {
+        "cash": 0,
+        "sales": 2,
+        "ledger": 11,
+        "payments": 0,
+        "receipts": 3,
+        "inventory": 0,
+        "idempotency": 4
+      }
+    },
+    {
+      "test": {
+        "area": "Credit",
+        "name": "C one cent over"
+      },
+      "kind": "synthetic_financial_table_counts",
+      "state": {
+        "cash": 0,
+        "sales": 2,
+        "ledger": 11,
+        "payments": 0,
+        "receipts": 3,
+        "inventory": 0,
+        "idempotency": 4
+      }
+    },
+    {
+      "test": {
+        "area": "Credit",
+        "name": "C one cent over"
+      },
+      "kind": "synthetic_customer_debt_cents",
+      "value": 80000
+    },
+    {
+      "test": {
+        "area": "Credit",
+        "name": "D already above"
+      },
+      "kind": "synthetic_financial_table_counts",
+      "state": {
+        "cash": 0,
+        "sales": 2,
+        "ledger": 12,
+        "payments": 0,
+        "receipts": 3,
+        "inventory": 0,
+        "idempotency": 4
+      }
+    },
+    {
+      "test": {
+        "area": "Credit",
+        "name": "D already above"
+      },
+      "kind": "synthetic_financial_table_counts",
+      "state": {
+        "cash": 0,
+        "sales": 2,
+        "ledger": 12,
+        "payments": 0,
+        "receipts": 3,
+        "inventory": 0,
+        "idempotency": 4
+      }
+    },
+    {
+      "test": {
+        "area": "Credit",
+        "name": "D already above"
+      },
+      "kind": "synthetic_customer_debt_cents",
+      "value": 105000
+    },
+    {
+      "test": {
+        "area": "Credit",
+        "name": "F zero limit"
+      },
+      "kind": "synthetic_financial_table_counts",
+      "state": {
+        "cash": 0,
+        "sales": 2,
+        "ledger": 12,
+        "payments": 0,
+        "receipts": 3,
+        "inventory": 0,
+        "idempotency": 4
+      }
+    },
+    {
+      "test": {
+        "area": "Credit",
+        "name": "F zero limit"
+      },
+      "kind": "synthetic_financial_table_counts",
+      "state": {
+        "cash": 0,
+        "sales": 2,
+        "ledger": 12,
+        "payments": 0,
+        "receipts": 3,
+        "inventory": 0,
+        "idempotency": 4
+      }
+    },
+    {
+      "test": {
+        "area": "Credit",
+        "name": "F zero limit"
+      },
+      "kind": "synthetic_customer_debt_cents",
+      "value": 0
+    },
+    {
+      "test": {
+        "area": "Credit",
+        "name": "one cent below"
+      },
+      "kind": "synthetic_financial_table_counts",
+      "state": {
+        "cash": 0,
+        "sales": 2,
+        "ledger": 13,
+        "payments": 0,
+        "receipts": 3,
+        "inventory": 0,
+        "idempotency": 4
+      }
+    },
+    {
+      "test": {
+        "area": "Credit",
+        "name": "one cent below"
+      },
+      "kind": "synthetic_customer_debt_cents",
+      "value": 99999
+    },
+    {
+      "test": {
+        "area": "Credit",
+        "name": "H completed replay survives lower limit"
+      },
+      "kind": "synthetic_financial_table_counts",
+      "state": {
+        "cash": 0,
+        "sales": 4,
+        "ledger": 16,
+        "payments": 0,
+        "receipts": 3,
+        "inventory": 0,
+        "idempotency": 6
+      }
+    },
+    {
+      "test": {
+        "area": "Credit",
+        "name": "H completed replay survives lower limit"
+      },
+      "kind": "synthetic_financial_table_counts",
+      "state": {
+        "cash": 0,
+        "sales": 4,
+        "ledger": 16,
+        "payments": 0,
+        "receipts": 3,
+        "inventory": 0,
+        "idempotency": 6
+      }
+    },
+    {
+      "test": {
+        "area": "Credit",
+        "name": "I changed request with same key conflicts in real authorizer"
+      },
+      "kind": "synthetic_financial_table_counts",
+      "state": {
+        "cash": 0,
+        "sales": 5,
+        "ledger": 17,
+        "payments": 0,
+        "receipts": 3,
+        "inventory": 0,
+        "idempotency": 7
+      }
+    },
+    {
+      "test": {
+        "area": "Credit",
+        "name": "I changed request with same key conflicts in real authorizer"
+      },
+      "kind": "synthetic_financial_table_counts",
+      "state": {
+        "cash": 0,
+        "sales": 5,
+        "ledger": 17,
+        "payments": 0,
+        "receipts": 3,
+        "inventory": 0,
+        "idempotency": 7
+      }
+    },
+    {
+      "test": {
+        "area": "Credit",
+        "name": "J partial payment creates only net exposure"
+      },
+      "kind": "synthetic_customer_debt_cents",
+      "value": 80000
+    },
+    {
+      "test": {
+        "area": "Credit",
+        "name": "K cash received and change are not extra applied payments"
+      },
+      "kind": "synthetic_customer_debt_cents",
+      "value": 75000
+    },
+    {
+      "test": {
+        "area": "Concurrency",
+        "name": "G two real sessions admit one 150 credit and end at 950"
+      },
+      "kind": "synthetic_customer_debt_cents",
+      "value": 95000
+    },
+    {
+      "test": {
+        "area": "Credit",
+        "name": "S closed Caja rejects with zero partial effects"
+      },
+      "kind": "synthetic_financial_table_counts",
+      "state": {
+        "cash": 1,
+        "sales": 8,
+        "ledger": 26,
+        "payments": 2,
+        "receipts": 3,
+        "inventory": 0,
+        "idempotency": 10
+      }
+    },
+    {
+      "test": {
+        "area": "Credit",
+        "name": "S closed Caja rejects with zero partial effects"
+      },
+      "kind": "synthetic_financial_table_counts",
+      "state": {
+        "cash": 1,
+        "sales": 8,
+        "ledger": 26,
+        "payments": 2,
+        "receipts": 3,
+        "inventory": 0,
+        "idempotency": 10
+      }
+    },
+    {
+      "test": {
+        "area": "Credit",
+        "name": "E payment remains allowed above the credit limit"
+      },
+      "kind": "synthetic_financial_table_counts",
+      "state": {
+        "cash": 1,
+        "sales": 8,
+        "ledger": 27,
+        "payments": 2,
+        "receipts": 3,
+        "inventory": 0,
+        "idempotency": 10
+      }
+    },
+    {
+      "test": {
+        "area": "Credit",
+        "name": "E payment remains allowed above the credit limit"
+      },
+      "kind": "synthetic_customer_debt_cents",
+      "value": 100000
+    },
+    {
+      "test": {
+        "area": "Credit",
+        "name": "E payment remains allowed above the credit limit"
+      },
+      "kind": "synthetic_financial_table_counts",
+      "state": {
+        "cash": 2,
+        "sales": 8,
+        "ledger": 28,
+        "payments": 2,
+        "receipts": 3,
+        "inventory": 0,
+        "idempotency": 11
+      }
+    },
+    {
+      "test": {
+        "area": "Concurrency",
+        "name": "payment and sale from two real sessions serialize without losing either"
+      },
+      "kind": "synthetic_customer_debt_cents",
+      "value": 95000
+    },
+    {
+      "test": {
+        "area": "Concurrency",
+        "name": "limit update and sale observe an allowed serial ordering"
+      },
+      "kind": "synthetic_customer_debt_cents",
+      "value": 80000
+    },
+    {
+      "test": {
+        "area": "Concurrency",
+        "name": "import and new credit never sum historical debt onto an existing ledger"
+      },
+      "kind": "synthetic_customer_debt_cents",
+      "value": 125000
+    },
+    {
+      "test": {
+        "area": "Atomicity",
+        "name": "two real credit children sharing a customer roll back together"
+      },
+      "kind": "synthetic_financial_table_counts",
+      "state": {
+        "cash": 4,
+        "sales": 9,
+        "ledger": 36,
+        "payments": 2,
+        "receipts": 4,
+        "inventory": 0,
+        "idempotency": 14
+      }
+    },
+    {
+      "test": {
+        "area": "Atomicity",
+        "name": "two real credit children sharing a customer roll back together"
+      },
+      "kind": "synthetic_financial_table_counts",
+      "state": {
+        "cash": 4,
+        "sales": 9,
+        "ledger": 36,
+        "payments": 2,
+        "receipts": 4,
+        "inventory": 0,
+        "idempotency": 14
+      }
+    },
+    {
+      "test": {
+        "area": "Atomicity",
+        "name": "two real credit children sharing a customer roll back together"
+      },
+      "kind": "synthetic_customer_debt_cents",
+      "value": 80000
+    },
+    {
+      "test": {
+        "area": "Concurrency",
+        "name": "inverse ambient Caja and customer locks abort one transaction without partial effects"
+      },
+      "kind": "synthetic_financial_table_counts",
+      "state": {
+        "cash": 4,
+        "sales": 9,
+        "ledger": 37,
+        "payments": 2,
+        "receipts": 4,
+        "inventory": 0,
+        "idempotency": 14
+      }
+    },
+    {
+      "test": {
+        "area": "Concurrency",
+        "name": "inverse ambient Caja and customer locks abort one transaction without partial effects"
+      },
+      "kind": "synthetic_customer_debt_cents",
+      "value": 95000
+    },
+    {
+      "test": {
+        "area": "Concurrency",
+        "name": "inverse ambient Caja and customer locks abort one transaction without partial effects"
+      },
+      "kind": "synthetic_financial_table_counts",
+      "state": {
+        "cash": 4,
+        "sales": 10,
+        "ledger": 38,
+        "payments": 2,
+        "receipts": 4,
+        "inventory": 0,
+        "idempotency": 15
+      }
+    },
+    {
+      "test": {
+        "area": "Concurrency",
+        "name": "inverse ambient Caja and customer locks abort one transaction without partial effects"
+      },
+      "kind": "synthetic_financial_table_counts",
+      "state": {
+        "cash": 4,
+        "sales": 10,
+        "ledger": 38,
+        "payments": 2,
+        "receipts": 4,
+        "inventory": 0,
+        "idempotency": 15
+      }
+    },
+    {
+      "test": {
+        "area": "Inventory",
+        "name": "admitted credit writes real stock and ledger atomically"
+      },
+      "kind": "synthetic_customer_debt_cents",
+      "value": 15000
+    },
+    {
+      "test": {
+        "area": "Atomicity",
+        "name": "Q fault after inventory work rolls back sales, stock, ledger and Caja"
+      },
+      "kind": "synthetic_financial_table_counts",
+      "state": {
+        "cash": 4,
+        "sales": 11,
+        "ledger": 39,
+        "payments": 2,
+        "receipts": 4,
+        "inventory": 1,
+        "idempotency": 16
+      }
+    },
+    {
+      "test": {
+        "area": "Atomicity",
+        "name": "Q fault after inventory work rolls back sales, stock, ledger and Caja"
+      },
+      "kind": "synthetic_financial_table_counts",
+      "state": {
+        "cash": 4,
+        "sales": 11,
+        "ledger": 39,
+        "payments": 2,
+        "receipts": 4,
+        "inventory": 1,
+        "idempotency": 16
+      }
+    },
+    {
+      "test": {
+        "area": "Credit",
+        "name": "P authorized cancellation restores prior debt even after reducing the limit"
+      },
+      "kind": "synthetic_customer_debt_cents",
+      "value": 80000
+    },
+    {
+      "test": {
+        "area": "Credit",
+        "name": "non-finite stored limit cannot bypass enforcement"
+      },
+      "kind": "synthetic_financial_table_counts",
+      "state": {
+        "cash": 4,
+        "sales": 12,
+        "ledger": 42,
+        "payments": 2,
+        "receipts": 4,
+        "inventory": 1,
+        "idempotency": 18
+      }
+    },
+    {
+      "test": {
+        "area": "Credit",
+        "name": "non-finite stored limit cannot bypass enforcement"
+      },
+      "kind": "synthetic_financial_table_counts",
+      "state": {
+        "cash": 4,
+        "sales": 12,
+        "ledger": 42,
+        "payments": 2,
+        "receipts": 4,
+        "inventory": 1,
+        "idempotency": 18
+      }
+    },
+    {
+      "test": {
+        "area": "Import",
+        "name": "explicit owner review can retry after a missing directory customer is synchronized"
+      },
+      "kind": "synthetic_customer_debt_cents",
+      "value": 10000
+    }
+  ]
+}

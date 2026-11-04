@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import '../../../store/installEcommerceOrderStore';
 import { useAppStore } from '../../../store/useAppStore';
@@ -15,6 +15,8 @@ import {
   normalizeEcommerceOrderId
 } from '../../../services/ecommerce/ecommerceOrderRealtimeEvent';
 import { useActiveOrders } from '../../../hooks/pos/useActiveOrders';
+
+const EcommerceOrdersRealtimeQa = lazy(() => import('./EcommerceOrdersRealtimeQa'));
 
 installEcommercePosActiveOrderGuards();
 
@@ -51,6 +53,7 @@ export default function EcommerceOrdersRuntime() {
   const canAccess = canAccessEcommerceOrders(licenseDetails, staffSession);
   const licenseIdentity = getLicenseIdentity(licenseDetails);
   const pageIsOpen = location.pathname.startsWith('/pedidos-online');
+  const ecomRealtimeQaEnabled = import.meta.env.VITE_ENABLE_ECOM_SIGNAL_QA === 'true';
   const posContextState = { licenseDetails, currentDeviceRole, currentStaffUser };
   const posContextIdentity = getEcommercePosContextIdentity(posContextState);
   const canPrepareInPos = canPrepareEcommercePosDraft(posContextState);
@@ -254,5 +257,17 @@ export default function EcommerceOrdersRuntime() {
     scheduleSelectedOrderRefresh
   ]);
 
-  return null;
+  return (
+    <>
+      {pageIsOpen && canAccess && ecomRealtimeQaEnabled && (
+        <Suspense fallback={null}>
+          <EcommerceOrdersRealtimeQa
+            enabled
+            licenseKey={licenseIdentity}
+            adminDiagnostic={currentDeviceRole === 'admin'}
+          />
+        </Suspense>
+      )}
+    </>
+  );
 }

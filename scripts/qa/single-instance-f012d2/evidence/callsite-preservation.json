@@ -1,0 +1,89 @@
+{
+  "baseline": "ce03b04918347898396957c8b7f35eb955896b89",
+  "symbols": [
+    {
+      "symbol": "applyCashState",
+      "identical": true
+    },
+    {
+      "symbol": "buildNetworkFallbackResult",
+      "identical": true
+    },
+    {
+      "symbol": "cargarEstadoCaja",
+      "identical": false
+    },
+    {
+      "symbol": "sincronizarEstadoCaja",
+      "identical": true
+    },
+    {
+      "symbol": "reintentarVerificacion",
+      "identical": true
+    },
+    {
+      "symbol": "ensureMutableCloudCash",
+      "identical": true
+    },
+    {
+      "symbol": "calcularTotalTeorico",
+      "identical": true
+    },
+    {
+      "symbol": "abrirCaja",
+      "identical": true
+    },
+    {
+      "symbol": "asegurarCajaAbierta",
+      "identical": true
+    },
+    {
+      "symbol": "registrarMovimiento",
+      "identical": true
+    },
+    {
+      "symbol": "ajustarMontoInicial",
+      "identical": true
+    },
+    {
+      "symbol": "realizarAuditoriaYCerrar",
+      "identical": true
+    },
+    {
+      "symbol": "registrarAjusteCaja",
+      "identical": true
+    },
+    {
+      "symbol": "obtenerResumenEstadistico",
+      "identical": true
+    },
+    {
+      "symbol": "exportarReporteCajaCSV",
+      "identical": true
+    },
+    {
+      "symbol": "descargarReporteCaja",
+      "identical": true
+    },
+    {
+      "symbol": "verificarExcesoLiquidez",
+      "identical": true
+    },
+    {
+      "symbol": "listCashSessionsForAudit",
+      "identical": true
+    },
+    {
+      "symbol": "getCashSessionDetailForAudit",
+      "identical": true
+    },
+    {
+      "symbol": "cerrarCajaAdministrativamente",
+      "identical": true
+    },
+    {
+      "symbol": "adoptarCajaLegacy",
+      "identical": true
+    }
+  ]
+}

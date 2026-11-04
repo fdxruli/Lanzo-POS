@@ -9,6 +9,7 @@ const runtime = vi.hoisted(() => {
     tenant_id: 'tenant-a',
     endpoint,
     family: 'financial_operations',
+    customer_projection_scope: 'OPERATION_RESULT',
     payload,
     customer_projections: [],
     operation: { idempotency_key: args.p_idempotency_key, request_hash: args.p_request_hash }
@@ -126,7 +127,7 @@ vi.mock('../../supabase', () => ({
           server_status: 'SUPPORTED',
           endpoint_families: ['financial_operations'],
           endpoints: ['pos_execute_financial_operation_v2', 'pos_get_financial_operation_receipt_v2'],
-          capabilities: ['historical_credit_preservation_v1', 'customer_projection_safe_apply_v1']
+          capabilities: ['historical_credit_preservation_v1', 'customer_projection_safe_apply_v1', 'financial_operation_result_v1']
         }, error: null };
       }
       if (name === 'pos_get_cash_station_state') {

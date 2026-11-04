@@ -1,0 +1,12 @@
+{
+  "status": "FAIL_BASELINE",
+  "baseline": {
+    "errors": 159,
+    "warnings": 177
+  },
+  "candidate": {
+    "errors": 159,
+    "warnings": 177
+  },
+  "new_diagnostics": []
+}

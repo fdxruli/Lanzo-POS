@@ -1,9 +1,10 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { syncOutboxService } from '../syncOutboxService';
 import {
   callCloudSyncV2Rpc,
   CLOUD_SYNC_CONTRACT_RPC,
   CLOUD_SYNC_CONTRACT_VERSION,
+  CLOUD_FINANCIAL_RESULT_CAPABILITY,
   validateCloudSyncV2Envelope
 } from '../cloudSyncProtocolV2';
 
@@ -29,6 +30,108 @@ const sampleCustomer = (overrides = {}) => ({
   server_version: 1,
   debt_cents: 4250,
   ...overrides
+});
+
+describe('immutable financial operation results', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  const context = {
+    expectedTenantId: 'tenant-1', expectedEndpoint: 'pos_get_financial_operation_receipt_v2',
+    expectedFamily: 'financial_operations', expectedIdempotencyKey: 'original-key', expectedRequestHash: 'original-hash'
+  };
+  const receipt = (customer = sampleCustomer({ debt: 10, debt_cents: 1000 })) => ({
+    contract_version: 2, tenant_id: 'tenant-1', endpoint: context.expectedEndpoint,
+    family: 'financial_operations', customer_projection_scope: 'OPERATION_RESULT',
+    customer_projections: [], payload: { status: 'COMPLETED', result: { success: true, customer } },
+    operation: { idempotency_key: 'original-key', request_hash: 'original-hash', status: 'COMPLETED' }
+  });
+
+  it('accepts the original $10 receipt independently of a later $5 current projection', () => {
+    const raw = receipt();
+    const unchanged = JSON.parse(JSON.stringify(raw));
+    const result = validateCloudSyncV2Envelope(raw, context);
+    expect(result.result.customer).toMatchObject({ debt: 10, debt_cents: 1000,
+      financial_projection: { status: 'NOT_INCLUDED', debt_cents: null, scope: 'OPERATION_RESULT' } });
+    expect(raw).toEqual(unchanged);
+    const current = validateCloudSyncV2Envelope(envelope({
+      payload: { customers: [sampleCustomer({ debt: 5, debt_cents: 500, server_version: 2 })] },
+      customer_projections: [{ customer_id: 'customer-1', status: 'KNOWN_POSITIVE', debt_cents: 500,
+        source: 'pos_customers.debt_cents', projection_version: 2 }]
+    }), { expectedTenantId: 'tenant-1', expectedEndpoint: 'pos_pull_customer_credit_changes_v2', expectedFamily: 'customer_credit' });
+    expect(current.customers[0].debt).toBe(5);
+    expect(validateCloudSyncV2Envelope(receipt(), context).result.customer.debt).toBe(10);
+  });
+
+  it('keeps missing debt unknown and tags every historical snapshot of the same customer', () => {
+    const raw = receipt(sampleCustomer({ debt_cents: undefined }));
+    raw.payload.result.children = [{ customer: sampleCustomer({ debt: 15, debt_cents: 1500, server_version: 2 }) }];
+    const result = validateCloudSyncV2Envelope(raw, context);
+    expect(result.result.customer).not.toHaveProperty('debt');
+    expect(result.result.customer).not.toHaveProperty('debt_cents');
+    expect(result.result.customer.financial_projection.debt_cents).toBeNull();
+    expect(result.result.children[0].customer.financial_projection.scope).toBe('OPERATION_RESULT');
+    expect(result.result.children[0].customer.debt).toBe(15);
+  });
+
+  it('retains financial validation and rejects mixed projection meanings', () => {
+    expect(() => validateCloudSyncV2Envelope(receipt(sampleCustomer({ debt: 10, debt_cents: 500 })), context))
+      .toThrow('CLOUD_SYNC_PROTOCOL_PROJECTION_VALUE_MISMATCH');
+    expect(() => validateCloudSyncV2Envelope(receipt(sampleCustomer({ debt_cents: -1 })), context))
+      .toThrow('CLOUD_SYNC_PROTOCOL_INVALID_PROJECTION');
+    const raw = receipt();
+    raw.customer_projections = envelope().customer_projections;
+    expect(() => validateCloudSyncV2Envelope(raw, context)).toThrow('CLOUD_SYNC_PROTOCOL_OPERATION_RESULT_PROJECTION');
+    expect(() => validateCloudSyncV2Envelope({ ...receipt(), customer_projection_scope: 'CURRENT' }, context))
+      .toThrow('CLOUD_CLIENT_UPDATE_REQUIRED');
+  });
+
+  it('accepts a real signed payment delta while keeping current balances nonnegative', () => {
+    const raw = envelope({ payload: { ledger_entries: [{ id: 'payment-1', customer_id: 'customer-1',
+      type: 'PAYMENT', created_at: '2026-01-01T00:00:00Z', amount: -5, balance_after: 5, debt_cents_after: 500 }] },
+    customer_projections: [] });
+    const currentContext = { expectedTenantId: 'tenant-1', expectedEndpoint: raw.endpoint, expectedFamily: 'customer_credit' };
+    expect(validateCloudSyncV2Envelope(raw, currentContext).ledger_entries[0].amount).toBe(-5);
+    raw.payload.ledger_entries[0].balance_after = -1;
+    expect(() => validateCloudSyncV2Envelope(raw, currentContext)).toThrow('CLOUD_SYNC_PROTOCOL_INVALID_LEDGER');
+  });
+
+  it('rejects the wrong tenant, original key or hash', () => {
+    expect(() => validateCloudSyncV2Envelope({ ...receipt(), tenant_id: 'tenant-2' }, context))
+      .toThrow('CLOUD_SYNC_PROTOCOL_TENANT_MISMATCH');
+    for (const field of ['idempotency_key', 'request_hash']) {
+      const raw = receipt(); raw.operation[field] = 'wrong';
+      expect(() => validateCloudSyncV2Envelope(raw, context)).toThrow('CLOUD_SYNC_PROTOCOL_OPERATION_MISMATCH');
+    }
+  });
+
+  it('requires result semantics during discovery before a financial write', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: { ...contract, endpoint_families: ['financial_operations'],
+      endpoints: ['pos_execute_financial_operation_v2'] }, error: null });
+    await expect(callCloudSyncV2Rpc({ client: { rpc }, rpcName: 'pos_execute_financial_operation_v2',
+      authArgs: { p_license_key: 'license' }, family: 'financial_operations' }))
+      .rejects.toMatchObject({ code: 'CLOUD_CLIENT_UPDATE_REQUIRED' });
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc.mock.calls[0][1].p_capabilities).toContain(CLOUD_FINANCIAL_RESULT_CAPABILITY);
+  });
+
+  it('emits UPDATE_REQUIRED on incompatible discovery without an outbox row', async () => {
+    const dispatchEvent = vi.fn();
+    vi.stubGlobal('window', { dispatchEvent, CustomEvent: class { constructor(type, init) { this.type = type; this.detail = init.detail; } } });
+    const rpc = vi.fn().mockResolvedValue({ data: { ...contract, server_status: 'UPDATE_REQUIRED' }, error: null });
+    await expect(callCloudSyncV2Rpc({ client: { rpc }, rpcName: 'pos_pull_customer_credit_changes_v2',
+      authArgs: { p_license_key: 'license' }, family: 'customer_credit' }))
+      .rejects.toMatchObject({ code: 'CLOUD_CLIENT_UPDATE_REQUIRED' });
+    expect(dispatchEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'lanzo:cloud-protocol-update-required',
+      detail: { family: 'customer_credit', code: 'CLOUD_CLIENT_UPDATE_REQUIRED' } }));
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it('normalizes the PostgreSQL update-required message', async () => {
+    const rpc = vi.fn().mockResolvedValueOnce({ data: contract, error: null })
+      .mockResolvedValueOnce({ data: null, error: { code: 'P0001', message: 'CLOUD_CLIENT_UPDATE_REQUIRED' } });
+    await expect(callCloudSyncV2Rpc({ client: { rpc }, rpcName: 'pos_pull_customer_credit_changes_v2',
+      authArgs: { p_license_key: 'license' }, family: 'customer_credit' }))
+      .rejects.toMatchObject({ code: 'CLOUD_CLIENT_UPDATE_REQUIRED', retryable: false });
+  });
 });
 
 const envelope = (overrides = {}) => ({

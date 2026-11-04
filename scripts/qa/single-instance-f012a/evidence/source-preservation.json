@@ -1,0 +1,23 @@
+{
+  "base": "7d9f4562a4b12efdcdfb8d5fbb77a4ff9d81ec50",
+  "preserved": 2055,
+  "changedExisting": [
+    {
+      "path": "src/services/financial/financialIntentLedger.js",
+      "before": "56b3a9bb4124efe2667ca5ab9d0c437908d9dfea",
+      "after": "a960d7245f2f2dc98922378b15e14e06f64f0e4e"
+    },
+    {
+      "path": "src/services/financial/financialIntentRecovery.js",
+      "before": "d901a7669782300411973a76e4f7b6c35ee42dfc",
+      "after": "6201a6b5c15698b2c4ea71ab1f3ad3c71acc8caf"
+    },
+    {
+      "path": "src/services/financial/financialTimeout.js",
+      "before": "c6e0bf85f9351d7f356b3a5314a6e48125989a77",
+      "after": "efcee0d2d9b39399024ef04958eeb3132ee0f75f"
+    }
+  ],
+  "newSource": "src/services/financial/financialExecutionLifetime.js",
+  "lockfileSHA256": "59e12324df46b964748524051be34760fcc3c1050ef57a8b03deb16c4ae2b581"
+}

@@ -55,7 +55,8 @@ export const recoverFinancialIntent = async ({
   project = applyFinancialProjection,
   leaseMs,
   explicitRetry = false,
-  candidateIntent = null
+  candidateIntent = null,
+  executionScope = null
 } = {}) => {
   let intent = await getFinancialIntent(intentId);
   if (!intent) throw new Error('FINANCIAL_INTENT_NOT_FOUND');
@@ -112,7 +113,7 @@ export const recoverFinancialIntent = async ({
 
     let receipt;
     try {
-      receipt = await getFinancialIntentReceiptForRecovery({ intent, licenseKey, actorHandle });
+      receipt = await getFinancialIntentReceiptForRecovery({ intent, licenseKey, actorHandle, executionScope });
     } catch (error) {
       // An unavailable receipt never authorizes a dispatch.
       await updateFinancialIntentForRecovery(intentId, {
@@ -135,7 +136,7 @@ export const recoverFinancialIntent = async ({
         return { intentId, outcome: 'receipt_conflict' };
       case FINANCIAL_RECEIPT_CLASSIFICATION.NOT_FOUND:
         if (intent.status === FINANCIAL_INTENT_STATUS.PREPARED && Number(intent.dispatchAttemptCount || 0) === 0) {
-          const execution = await executePreparedFinancialIntentForRecovery({ intentId, licenseKey, actorHandle, recoveryLeaseId: claim.recoveryLeaseId });
+          const execution = await executePreparedFinancialIntentForRecovery({ intentId, licenseKey, actorHandle, recoveryLeaseId: claim.recoveryLeaseId, executionScope });
           const completed = await getFinancialIntent(intentId);
           const projection = await recoverProjectionOnly({ intent: completed, actorHandle, project, recoveryLeaseId: claim.recoveryLeaseId });
           return { ...execution, outcome: 'first_dispatch', projection };
@@ -145,7 +146,8 @@ export const recoverFinancialIntent = async ({
             intentId,
             licenseKey,
             actorHandle,
-            recoveryLeaseId: claim.recoveryLeaseId
+            recoveryLeaseId: claim.recoveryLeaseId,
+            executionScope
           });
           const completed = await getFinancialIntent(intentId);
           const projection = await recoverProjectionOnly({ intent: completed, actorHandle, project, recoveryLeaseId: claim.recoveryLeaseId });
@@ -203,7 +205,8 @@ export const retryExistingFinancialIntentExplicitly = async ({
   licenseKey,
   actorHandle,
   project = applyFinancialProjection,
-  leaseMs
+  leaseMs,
+  executionScope = null
 } = {}) => {
   const initial = await getFinancialIntent(intentId);
   if (!initial) throw new Error('FINANCIAL_INTENT_NOT_FOUND');
@@ -219,7 +222,8 @@ export const retryExistingFinancialIntentExplicitly = async ({
     project,
     leaseMs,
     explicitRetry: true,
-    candidateIntent
+    candidateIntent,
+    executionScope
   });
   const intent = await getFinancialIntent(intentId);
   if (intent?.status === FINANCIAL_INTENT_STATUS.COMPLETED && intent.responsePayload) {

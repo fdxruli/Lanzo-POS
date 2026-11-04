@@ -25,8 +25,18 @@ import {
 import { captureRefundsActorHandle } from '../../services/auth/refundsActorAuthorization';
 import { salesCloudCashierService } from '../../services/salesCloud/salesCloudCashierService';
 import { cashRepository } from '../../services/cash/cashRepository';
+import { actorRuntimeController } from '../../services/auth/actorRuntimeController';
+import { handlePosActorAuthorityError, runPosActorUiOperation } from './posActorAuthorityUi';
+import { hydrateRestaurantCloudOrderToLocalOpenSale } from '../../services/restaurant/restaurantTableHydration';
+import { recoverRestaurantFalseTerminalMarker } from '../../services/restaurant/restaurantTerminalStateRecovery';
+import { getRestaurantCloudTableState } from '../../services/restaurant/restaurantActiveTables';
+import { isRestaurantCloudTableShadow, isRestaurantCloudTableTerminal, restaurantCloudTableBlockedResult, restaurantCloudTableTerminalBlockedResult } from '../../services/restaurant/restaurantCloudTableGuards';
+import { RESTAURANT_CLOUD_STATUS_EVENT } from '../../services/restaurant/restaurantCloudStatusSummary';
 
 const EMPTY_ORDER = [];
+const durableTableCleanupPending = (id, recoveryRequired = false) => ({
+    success: true, id, durableSaveSucceeded: true, cleanupPending: true, recoveryRequired
+});
 
 const SPLIT_BILL_INTEGRITY_OPTIONS = {
     reason: 'split_bill_checkout',
@@ -76,11 +86,24 @@ export function useTableManagement({
         return getEcommercePosBlockedResult();
     }, []);
 
-    const clearSession = useCallback(() => {
-        useActiveOrders.getState().cancelCurrentOrder();
+    const blockRemoteSplit = useCallback(async () => {
+        const liveOrder = selectCurrentOrder(useActiveOrders.getState());
+        let result = isRestaurantCloudTableTerminal(liveOrder)
+            ? restaurantCloudTableTerminalBlockedResult(liveOrder)
+            : null;
+        if (!result && liveOrder?.id) {
+            const splitActor = actorRuntimeController.capture();
+            const durableOrder = await db.table(STORES.SALES).get(liveOrder.id);
+            splitActor.assertCurrent();
+            result = isRestaurantCloudTableTerminal(durableOrder)
+                ? restaurantCloudTableTerminalBlockedResult(durableOrder)
+                : null;
+        }
+        if (result) showMessageModal(result.message, null, { type: 'warning' });
+        return result;
     }, []);
 
-    const syncOpenRestaurantOrderToCloud = useCallback(async (orderId) => {
+    const syncOpenRestaurantOrderToCloud = useCallback(async (orderId, saveActor) => {
         if (!isCloudRestaurantOrdersEnabled || !licenseKey) {
             return { skipped: true };
         }
@@ -90,7 +113,9 @@ export function useTableManagement({
         }
 
         try {
+            saveActor.assertCurrent();
             const sale = await db.table(STORES.SALES).get(orderId);
+            saveActor.assertCurrent();
             if (!sale) {
                 return {
                     success: false,
@@ -98,10 +123,13 @@ export function useTableManagement({
                 };
             }
 
+            saveActor.assertCurrent();
             const response = await restaurantOrdersRepository.upsertRestaurantOrderFromLocalSale({
                 licenseKey,
                 sale
             });
+            saveActor.assertCurrent();
+            window.dispatchEvent(new CustomEvent(RESTAURANT_CLOUD_STATUS_EVENT));
 
             if (response?.success === false) {
                 return {
@@ -115,12 +143,15 @@ export function useTableManagement({
             const remoteUpdatedAt = remoteOrder?.updatedAt || remoteOrder?.updated_at || null;
             if (remoteUpdatedAt) {
                 try {
+                    saveActor.assertCurrent();
                     await db.table(STORES.SALES).update(orderId, {
                         updatedAt: remoteUpdatedAt,
                         cloudRestaurantOrderUpdatedAt: remoteUpdatedAt,
                         cloudRestaurantOrderServerVersion: remoteOrder?.serverVersion ?? remoteOrder?.server_version ?? null
                     });
+                    saveActor.assertCurrent();
                 } catch (localTokenError) {
+                    if (localTokenError?.code?.startsWith('ACTOR_')) throw localTokenError;
                     Logger.warn('[REST.2] La comanda cloud se guardó, pero no se pudo actualizar el token local:', localTokenError);
                 }
             }
@@ -141,131 +172,181 @@ export function useTableManagement({
         if (blocked) return blocked;
         if (!features?.hasTables) return;
 
-        let currentOrderState = selectCurrentOrder(useActiveOrders.getState());
-        const currentTableData = currentOrderState?.tableData;
-        const isUpdating = Boolean(currentOrderState?.isSaved);
+        let durableOrderId = selectCurrentOrder(useActiveOrders.getState())?.id || null;
+        try {
+            const saveActor = actorRuntimeController.capture();
+            const durableBeforeSave = durableOrderId ? await db.table(STORES.SALES).get(durableOrderId) : null;
+            saveActor.assertCurrent();
+            if (durableBeforeSave?.tableTabCleanup?.status === 'pending'
+                && !selectCurrentOrder(useActiveOrders.getState())?.isSaved) {
+                showMessageModal('La mesa ya quedó guardada. Vuelve a cargarla antes de editarla.', null, { type: 'warning' });
+                return durableTableCleanupPending(durableOrderId);
+            }
 
-        if (!currentTableData || currentTableData.trim() === '') {
-            const promptedName = await showInputPromptModal({
-                title: 'Identificador de mesa',
-                message: 'Ingresa un nombre o número para reconocer esta mesa.',
-                placeholder: 'Ej. Mesa 1, Terraza, Cliente Juan',
-                confirmButtonText: 'Guardar mesa',
-                cancelButtonText: 'Cancelar',
-                required: true
-            });
+            let currentOrderState = selectCurrentOrder(useActiveOrders.getState());
+            const currentTableData = currentOrderState?.tableData;
+            const isUpdating = Boolean(currentOrderState?.isSaved);
 
-            if (!promptedName) return;
-            useActiveOrders.getState().updateCurrentOrder({ tableData: promptedName });
-        }
-
-        currentOrderState = selectCurrentOrder(useActiveOrders.getState());
-        if (isEcommercePosEffectBlocked(currentOrderState)) {
-            return blockEcommerceRestaurantEffect();
-        }
-
-        if (isUpdating && isCloudRestaurantOrdersEnabled && currentOrderState?.id) {
-            try {
-                const response = await getRestaurantOrderCloudStatusSnapshot({
-                    licenseDetails,
-                    localOrderId: currentOrderState.id,
-                    force: true
+            if (!currentTableData || currentTableData.trim() === '') {
+                const promptedName = await showInputPromptModal({
+                    title: 'Identificador de mesa',
+                    message: 'Ingresa un nombre o número para reconocer esta mesa.',
+                    placeholder: 'Ej. Mesa 1, Terraza, Cliente Juan',
+                    confirmButtonText: 'Guardar mesa',
+                    cancelButtonText: 'Cancelar',
+                    required: true
                 });
-                const summary = response?.summary || {};
+                saveActor.assertCurrent();
 
-                if (response?.success !== false && response?.order && summary.hasCancelledItems) {
-                    const reconciliation = reconcileCartWithCancelledRestaurantItems(
-                        currentOrderState.items,
-                        summary.items
-                    );
+                if (!promptedName) return;
+                useActiveOrders.getState().updateCurrentOrder({ tableData: promptedName });
+            }
 
-                    if (reconciliation.hasUnmatchedCancelledItems) {
-                        await showConfirmModal(
-                            'Hay items cancelados en cocina que no se pudieron empatar con el carrito. Revisa la cuenta antes de actualizar la mesa.',
-                            {
-                                title: summary.isCancelled ? 'Comanda cancelada en cocina' : 'Items cancelados en cocina',
-                                type: 'warning',
-                                confirmButtonText: 'Entendido',
-                                showCancel: false
-                            }
-                        );
-                        return;
-                    }
+            currentOrderState = selectCurrentOrder(useActiveOrders.getState());
+            if (isEcommercePosEffectBlocked(currentOrderState)) {
+                return blockEcommerceRestaurantEffect();
+            }
 
-                    if (reconciliation.hasRemovableCancelledItems) {
-                        const confirmed = await showConfirmModal(
-                            `Cocina cancelo ${reconciliation.removedCount} item(s). Se retiraran de la cuenta antes de actualizar la mesa.`,
-                            {
-                                title: 'Ajustar cuenta',
-                                type: 'warning',
-                                confirmButtonText: 'Retirar y actualizar',
-                                cancelButtonText: 'Volver'
-                            }
+            if (isUpdating && isCloudRestaurantOrdersEnabled && currentOrderState?.id) {
+                try {
+                    const response = await getRestaurantOrderCloudStatusSnapshot({
+                        licenseDetails,
+                        localOrderId: currentOrderState.id,
+                        force: true
+                    });
+                    saveActor.assertCurrent();
+                    const authorityResult = response?.success === false && handlePosActorAuthorityError(response, 'save_table');
+                    if (authorityResult) return authorityResult;
+                    const summary = response?.summary || {};
+
+                    if (response?.success !== false && response?.order && summary.hasCancelledItems) {
+                        const reconciliation = reconcileCartWithCancelledRestaurantItems(
+                            currentOrderState.items,
+                            summary.items
                         );
 
-                        if (!confirmed) return;
-
-                        if (countSellableItems(reconciliation.kept) === 0) {
-                            showMessageModal(
-                                'No quedan productos activos para actualizar. Anula la venta si cocina cancelo toda la comanda.',
-                                null,
-                                { type: 'warning' }
+                        if (reconciliation.hasUnmatchedCancelledItems) {
+                            await showConfirmModal(
+                                'Hay items cancelados en cocina que no se pudieron empatar con el carrito. Revisa la cuenta antes de actualizar la mesa.',
+                                {
+                                    title: summary.isCancelled ? 'Comanda cancelada en cocina' : 'Items cancelados en cocina',
+                                    type: 'warning',
+                                    confirmButtonText: 'Entendido',
+                                    showCancel: false
+                                }
                             );
                             return;
                         }
 
-                        useActiveOrders.getState().updateOrderItems(currentOrderState.id, reconciliation.kept);
+                        if (reconciliation.hasRemovableCancelledItems) {
+                            const confirmed = await showConfirmModal(
+                                `Cocina cancelo ${reconciliation.removedCount} item(s). Se retiraran de la cuenta antes de actualizar la mesa.`,
+                                {
+                                    title: 'Ajustar cuenta',
+                                    type: 'warning',
+                                    confirmButtonText: 'Retirar y actualizar',
+                                    cancelButtonText: 'Volver'
+                                }
+                            );
+                            saveActor.assertCurrent();
+
+                            if (!confirmed) return;
+
+                            if (countSellableItems(reconciliation.kept) === 0) {
+                                showMessageModal(
+                                    'No quedan productos activos para actualizar. Anula la venta si cocina cancelo toda la comanda.',
+                                    null,
+                                    { type: 'warning' }
+                                );
+                                return;
+                            }
+
+                            useActiveOrders.getState().updateOrderItems(currentOrderState.id, reconciliation.kept);
+                        }
                     }
+                } catch (error) {
+                    const handled = handlePosActorAuthorityError(error, 'save_table');
+                    if (handled) return handled;
+                    Logger.warn('[REST.7] No se pudo verificar cocina antes de actualizar mesa:', error);
                 }
-            } catch (error) {
-                Logger.warn('[REST.7] No se pudo verificar cocina antes de actualizar mesa:', error);
-            }
-        }
-
-        const result = await saveOrderAsOpen();
-        if (result.success) {
-            const orderId = useActiveOrders.getState().currentOrderId || result.id;
-            let cloudSyncResult = { skipped: true };
-
-            try {
-                await db.table(STORES.SALES).update(orderId, {
-                    fulfillmentStatus: 'pending',
-                    updatedAt: new Date().toISOString()
-                });
-            } catch (err) {
-                Logger.error('Error actualizando fulfillmentStatus a pending:', err);
             }
 
-            if (isCloudRestaurantOrdersEnabled) {
-                cloudSyncResult = await syncOpenRestaurantOrderToCloud(orderId);
-            }
+            durableOrderId = currentOrderState?.id || durableOrderId;
+            saveActor.assertCurrent();
+            const result = await saveOrderAsOpen(durableOrderId, currentOrderState, {
+                tableTabCleanup: { status: 'pending', actorKey: saveActor.actorKey, createdAt: new Date().toISOString() }
+            });
+            if (result.success) {
+                const orderId = result.id || durableOrderId;
+                durableOrderId = orderId;
+                let cloudSyncResult = { skipped: true };
 
-            try {
-                await useActiveOrders.getState().removeOrder(orderId);
-            } catch (err) {
-                Logger.error('No se pudo cerrar la pestaña activa:', err);
-            }
+                if (isCloudRestaurantOrdersEnabled) {
+                    saveActor.assertCurrent();
+                    cloudSyncResult = await syncOpenRestaurantOrderToCloud(orderId, saveActor);
+                }
 
-            if (isCloudRestaurantOrdersEnabled) {
-                if (cloudSyncResult?.success) {
-                    showMessageModal(isUpdating ? '✅ Mesa actualizada y enviada a cocina cloud.' : '✅ Pedido guardado y enviado a cocina cloud.');
+                const cloudAuthority = handlePosActorAuthorityError(
+                    cloudSyncResult?.error || cloudSyncResult?.response,
+                    'save_table', { durableSaveSucceeded: true }
+                );
+                try {
+                    saveActor.assertCurrent();
+                    await useActiveOrders.getState().removeOrder(orderId);
+                } catch (err) {
+                    const handled = handlePosActorAuthorityError(err, 'save_table', { durableSaveSucceeded: true });
+                    if (!handled) showMessageModal('La mesa quedó guardada, pero falta cerrar el pedido activo. Vuelve a cargarla antes de editarla.', null, { type: 'warning' });
+                    await fetchActiveTablesCount();
+                    return durableTableCleanupPending(orderId, handled?.recoveryRequired || cloudAuthority?.recoveryRequired);
+                }
+
+                // This is runtime bookkeeping only; the table and its reservation
+                // stay durable even if authority expires before this acknowledgement.
+                try {
+                    saveActor.assertCurrent();
+                    await db.table(STORES.SALES).update(orderId, { tableTabCleanup: null });
+                    saveActor.assertCurrent();
+                } catch (error) {
+                    const handled = handlePosActorAuthorityError(error, 'save_table', { durableSaveSucceeded: true });
+                    if (handled) return durableTableCleanupPending(orderId, handled.recoveryRequired);
+                    Logger.warn('La mesa quedó guardada; se conserva el marcador de limpieza del pedido.');
+                }
+
+                if (isCloudRestaurantOrdersEnabled) {
+                    if (cloudSyncResult?.success) {
+                        showMessageModal(isUpdating ? '✅ Mesa actualizada y enviada a cocina cloud.' : '✅ Pedido guardado y enviado a cocina cloud.');
+                    } else {
+                        showMessageModal(
+                            '⚠️ Pedido guardado localmente, pero no se pudo enviar a cocina cloud.',
+                            null,
+                            { type: 'warning' }
+                        );
+                    }
                 } else {
-                    showMessageModal(
-                        '⚠️ Pedido guardado localmente, pero no se pudo enviar a cocina cloud.',
-                        null,
-                        { type: 'warning' }
-                    );
+                    showMessageModal(isUpdating ? '✅ Mesa actualizada correctamente.' : '✅ Pedido guardado y enviado a cocina.');
                 }
-            } else {
-                showMessageModal(isUpdating ? '✅ Mesa actualizada correctamente.' : '✅ Pedido guardado y enviado a cocina.');
+
+                await fetchActiveTablesCount();
+                return result;
             }
 
-            await fetchActiveTablesCount();
+            const failedSaveAuthority = handlePosActorAuthorityError(result, 'save_table');
+            if (failedSaveAuthority) return failedSaveAuthority;
+            showMessageModal(result.message || 'No se pudo guardar la orden abierta.', null, { type: 'error' });
             return result;
+        } catch (error) {
+            let durableSale = null;
+            try { durableSale = durableOrderId ? await db.table(STORES.SALES).get(durableOrderId) : null; } catch { /* authority may also deny the read */ }
+            const saved = durableSale?.tableTabCleanup?.status === 'pending';
+            const handled = handlePosActorAuthorityError(error, 'save_table', { durableSaveSucceeded: saved });
+            if (saved) {
+                if (!handled) showMessageModal('La mesa quedó guardada, pero falta cerrar el pedido activo. Vuelve a cargarla antes de editarla.', null, { type: 'warning' });
+                return durableTableCleanupPending(durableOrderId, handled?.recoveryRequired);
+            }
+            if (handled) return handled;
+            showMessageModal('No se pudo guardar la mesa. Revisa el pedido y vuelve a intentarlo.', null, { type: 'error' });
+            return { success: false, code: 'TABLE_SAVE_FAILED' };
         }
-
-        showMessageModal(result.message || 'No se pudo guardar la orden abierta.', null, { type: 'error' });
-        return result;
     }, [
         blockEcommerceRestaurantEffect,
         features?.hasTables,
@@ -277,21 +358,73 @@ export function useTableManagement({
     ]);
 
     const executeLoadOpenOrder = useCallback(async (orderId, silent = false) => {
-        const result = await loadOpenOrder(orderId);
-        if (result.success) {
-            if (!silent) {
-                closeModal('tables');
-                showMessageModal('Mesa cargada en el pedido actual.');
+        try {
+            const loadActor = actorRuntimeController.capture();
+            let localSale = await db.table(STORES.SALES).get(orderId);
+            loadActor.assertCurrent();
+            if (localSale?.restaurantCloudTerminalState === 'terminal'
+                && isCloudRestaurantOrdersEnabled && navigator.onLine !== false) {
+                const recovery = await recoverRestaurantFalseTerminalMarker({
+                    licenseKey, localOrderId: orderId, actorHandle: loadActor
+                });
+                loadActor.assertCurrent();
+                if (!recovery.success) {
+                    const authorityResult = handlePosActorAuthorityError(recovery, 'load_table');
+                    if (authorityResult) return authorityResult;
+                    showMessageModal(recovery.message || 'No se pudo verificar esta mesa. Actualiza las mesas.', null, { type: 'warning' });
+                    return recovery;
+                }
+                localSale = await db.table(STORES.SALES).get(orderId);
+                loadActor.assertCurrent();
             }
-            await fetchActiveTablesCount();
-            return result;
-        }
+            if (localSale?.restaurantCloudTerminalState === 'terminal') {
+                const message = localSale.restaurantCloudTerminalPaymentStatus === 'paid'
+                    ? 'La mesa ya fue cobrada.' : 'La mesa ya no está activa. Actualiza las mesas.';
+                showMessageModal(message, null, { type: 'warning' });
+                return { success: false, code: 'CLOUD_TABLE_TERMINAL', message };
+            }
+            if (isCloudRestaurantOrdersEnabled && (!localSale || isRestaurantCloudTableShadow(localSale))) {
+                const hydrated = await hydrateRestaurantCloudOrderToLocalOpenSale({
+                    licenseKey, localOrderId: orderId, actorHandle: loadActor
+                });
+                loadActor.assertCurrent();
+                if (!hydrated.success) {
+                    showMessageModal(hydrated.message, null, { type: 'warning' });
+                    return hydrated;
+                }
+            } else if (isCloudRestaurantOrdersEnabled && navigator.onLine !== false) {
+                const current = await getRestaurantOrderCloudStatusSnapshot({ licenseDetails,
+                    localOrderId: orderId, force: true });
+                loadActor.assertCurrent();
+                if (current?.success !== false && current?.order && getRestaurantCloudTableState(current.order) === 'terminal') {
+                    const message = current.order.paymentStatus === 'paid'
+                        ? 'La mesa ya fue cobrada.' : 'La mesa ya no está activa. Actualiza las mesas.';
+                    showMessageModal(message, null, { type: 'warning' });
+                    return { success: false, code: 'CLOUD_TABLE_TERMINAL', message };
+                }
+            }
+            const result = await loadOpenOrder(orderId);
+            loadActor.assertCurrent();
+            if (result.success) {
+                if (!silent) {
+                    closeModal('tables');
+                    showMessageModal('Mesa cargada en el pedido actual.');
+                }
+                await fetchActiveTablesCount();
+                return result;
+            }
 
-        if (!silent) {
-            showMessageModal(result.message || 'No se pudo cargar la orden abierta.', null, { type: 'error' });
+            if (!silent) {
+                showMessageModal(result.message || 'No se pudo cargar la orden abierta.', null, { type: 'error' });
+            }
+            return result;
+        } catch (error) {
+            const handled = handlePosActorAuthorityError(error, 'load_table');
+            if (handled) return handled;
+            if (!silent) showMessageModal('No se pudo cargar la mesa. Vuelve a intentarlo.', null, { type: 'error' });
+            return { success: false, code: 'TABLE_LOAD_FAILED' };
         }
-        return result;
-    }, [loadOpenOrder, closeModal, fetchActiveTablesCount]);
+    }, [loadOpenOrder, closeModal, fetchActiveTablesCount, isCloudRestaurantOrdersEnabled, licenseDetails, licenseKey]);
 
     const reconcileKitchenCancelledItemsBeforeSplit = useCallback(async () => {
         const blocked = blockEcommerceRestaurantEffect();
@@ -311,6 +444,21 @@ export function useTableManagement({
             localOrderId: targetOrderId,
             force: true
         });
+        const authorityResult = response?.success === false && handlePosActorAuthorityError(response, 'split_checkout');
+        if (authorityResult) return { ...authorityResult, canContinue: false, orderItems: targetItems, removedCount: 0 };
+
+        if (isRestaurantCloudTableShadow(targetOrder)) {
+            if (response?.success === false || response?.found === false || !response?.order
+                || getRestaurantCloudTableState(response.order) !== 'active'
+                || response.order.updatedAt !== targetOrder.cloudUpdatedAt
+                || response.summary?.hasCancelledItems) {
+                const message = 'La mesa cambió en otro dispositivo. Actualízala antes de cobrar.';
+                showMessageModal(message, null, { type: 'warning' });
+                return { success: false, canContinue: false, code: 'RESTAURANT_ORDER_VERSION_CONFLICT',
+                    message, orderItems: targetItems, removedCount: 0 };
+            }
+            return { canContinue: true, orderItems: targetItems, removedCount: 0 };
+        }
 
         if (response?.skipped || response?.found === false || !response?.order) {
             return { canContinue: true, orderItems: targetItems, removedCount: 0 };
@@ -404,6 +552,8 @@ export function useTableManagement({
                 force: true
             });
         } catch (error) {
+            const authorityResult = handlePosActorAuthorityError(error, 'checkout');
+            if (authorityResult) return { ...authorityResult, canContinue: false, orderItems: targetItems, removedCount: 0 };
             Logger.warn('[REST.5.1] No se pudo verificar cocina antes de cobrar mesa:', error);
             showMessageModal(
                 'No se pudo verificar cocina cloud. Revisa la mesa antes de cobrar.',
@@ -417,6 +567,8 @@ export function useTableManagement({
             return { canContinue: false, orderItems: targetItems, removedCount: 0 };
         }
 
+        const authorityResult = response?.success === false && handlePosActorAuthorityError(response, 'checkout');
+        if (authorityResult) return { ...authorityResult, canContinue: false, orderItems: targetItems, removedCount: 0 };
         if (response?.skipped || response?.found === false || !response?.order) {
             return { canContinue: true, orderItems: targetItems, removedCount: 0 };
         }
@@ -516,24 +668,27 @@ export function useTableManagement({
         isCloudRestaurantOrdersEnabled
     ]);
 
-    const handleLoadOpenOrder = useCallback((orderId) => {
+    const handleLoadOpenOrder = useCallback(async (orderId) => {
         if (!features?.hasTables) return;
+        try { actorRuntimeController.capture(); } catch (error) {
+            return handlePosActorAuthorityError(error, 'load_table');
+        }
 
         const hasCurrentOrder = order.some((item) => Number(item?.quantity) > 0);
         if (!hasCurrentOrder) {
-            void executeLoadOpenOrder(orderId);
-            return;
+            return executeLoadOpenOrder(orderId);
         }
 
         showMessageModal(
             'Hay un carrito activo. Deseas reemplazarlo por la mesa seleccionada?',
-            () => void executeLoadOpenOrder(orderId),
+            () => executeLoadOpenOrder(orderId),
             {
                 title: 'Cambiar mesa activa',
                 type: 'warning',
                 confirmButtonText: 'Si, cargar mesa'
             }
         );
+        return { success: false, confirmationRequired: true };
     }, [features?.hasTables, order, executeLoadOpenOrder]);
 
     const handleQuickTableAction = useCallback(async (targetOrder, actionType) => {
@@ -554,6 +709,7 @@ export function useTableManagement({
         try {
             const result = await executeLoadOpenOrder(targetOrder.id, true);
             if (!result?.success) {
+                if (result?.code) return result;
                 showMessageModal(result?.message || 'Error al cargar la mesa para cobro.', null, { type: 'error' });
                 return result;
             }
@@ -579,6 +735,8 @@ export function useTableManagement({
                 console.error('[useTableManagement] handleInitiateCheckout no está disponible.');
                 openModal('payment');
             } else if (actionType === 'split') {
+                const remoteBlocked = await blockRemoteSplit();
+                if (remoteBlocked) return remoteBlocked;
                 const kitchenReview = await reconcileKitchenCancelledItemsBeforeSplit();
                 if (!kitchenReview.canContinue) return kitchenReview;
 
@@ -590,10 +748,13 @@ export function useTableManagement({
                 openModal('split');
             }
         } catch (error) {
+            const handled = handlePosActorAuthorityError(error, 'load_table');
+            if (handled) return handled;
             console.error('Error al cargar la mesa para acción rápida:', error);
         }
     }, [
         blockEcommerceRestaurantEffect,
+        blockRemoteSplit,
         order,
         executeLoadOpenOrder,
         closeModal,
@@ -604,6 +765,11 @@ export function useTableManagement({
     ]);
 
     const handleAnnulKitchenRejectedOrder = useCallback(async (targetOrder) => {
+        if (isRestaurantCloudTableShadow(targetOrder)) {
+            const result = restaurantCloudTableBlockedResult('cancel');
+            showMessageModal(result.message, null, { type: 'warning' });
+            return result;
+        }
         if (!features?.hasTables) return { success: false, message: 'Mesas no disponibles.' };
         if (!targetOrder?.id) return { success: false, message: 'Orden inválida.' };
 
@@ -618,6 +784,8 @@ export function useTableManagement({
                 });
                 isCancelledInKitchen = Boolean(response?.summary?.isCancelled);
             } catch (error) {
+                const handled = handlePosActorAuthorityError(error, 'cancel_order');
+                if (handled) return handled;
                 Logger.warn('[REST.6] No se pudo confirmar cancelacion cloud antes de anular:', error);
             }
         }
@@ -640,6 +808,8 @@ export function useTableManagement({
         try {
             actorHandle = captureRefundsActorHandle();
         } catch (error) {
+            const handled = handlePosActorAuthorityError(error, 'cancel_order');
+            if (handled) return handled;
             return {
                 success: false,
                 code: error?.code || 'ACTOR_PERMISSION_DENIED',
@@ -668,6 +838,8 @@ export function useTableManagement({
             }
             return result;
         } catch (error) {
+            const handled = handlePosActorAuthorityError(error, 'cancel_order');
+            if (handled) return handled;
             Logger.error('Error anulando comanda rechazada en cocina:', error);
             showMessageModal(error?.message || 'Error al anular la venta.', null, { type: 'error' });
             return { success: false, message: error?.message };
@@ -683,6 +855,9 @@ export function useTableManagement({
             return;
         }
 
+        const remoteBlocked = await blockRemoteSplit();
+        if (remoteBlocked) return remoteBlocked;
+
         const kitchenReview = await reconcileKitchenCancelledItemsBeforeSplit();
         if (!kitchenReview.canContinue) return kitchenReview;
 
@@ -692,11 +867,14 @@ export function useTableManagement({
         }
 
         openModal('split');
-    }, [blockEcommerceRestaurantEffect, features?.hasTables, activeOrderId, reconcileKitchenCancelledItemsBeforeSplit, openModal]);
+    }, [blockEcommerceRestaurantEffect, blockRemoteSplit, features?.hasTables, activeOrderId, reconcileKitchenCancelledItemsBeforeSplit, openModal]);
 
     const handleConfirmSplitBill = useCallback(async (splitPayload) => {
         const blocked = blockEcommerceRestaurantEffect();
         if (blocked) return blocked;
+
+        const remoteBlocked = await blockRemoteSplit();
+        if (remoteBlocked) return remoteBlocked;
 
         const isSessionValid = await verifySessionIntegrity(SPLIT_BILL_INTEGRITY_OPTIONS);
         if (!isSessionValid) {
@@ -727,26 +905,7 @@ export function useTableManagement({
 
         const requiresCashSessionCompatibility = splitRequiresCashSessionCompatibility(splitPayload?.tickets);
 
-        // The current cloud sale.split contract still requires an active cash
-        // session for credit-only tickets. Keep that prerequisite temporarily;
-        // fiado remains credit and creates no cash movement from this check.
-        if (requiresCashSessionCompatibility && (!cajaActual || cajaActual.estado !== 'abierta')) {
-            if (typeof asegurarCajaAbierta !== 'function') {
-                showMessageModal('No se pudo abrir la caja automáticamente.', null, { type: 'error' });
-                return;
-            }
-
-            try {
-                await asegurarCajaAbierta();
-            } catch (error) {
-                Logger.error('No se pudo abrir caja para Split Bill:', error);
-                showMessageModal(error?.message || 'No se pudo abrir la caja automáticamente.', null, { type: 'error' });
-                return;
-            }
-        }
-
         let cloudSpecialFlows = false;
-        let resolvedCashSessionId = cajaActual?.id || null;
         if (isCloudRestaurantOrdersEnabled && licenseKey) {
             try {
                 cloudSpecialFlows = await salesCloudCashierService.canUseCloudSplitTableSale({
@@ -754,6 +913,8 @@ export function useTableManagement({
                     licenseDetails
                 });
             } catch (cloudSpecialFlowError) {
+                const authorityResult = handlePosActorAuthorityError(cloudSpecialFlowError, 'split_checkout');
+                if (authorityResult) return authorityResult;
                 Logger.error('[SalesCloud/Cashier] No se pudo verificar la capacidad del split cloud:', cloudSpecialFlowError);
                 showMessageModal(
                     'No se pudo verificar el cobro cloud de la mesa. La cuenta no se cobró; revisa conexión y vuelve a intentarlo.',
@@ -768,21 +929,58 @@ export function useTableManagement({
             }
         }
 
+        let resolvedCashSessionId = cajaActual?.id || null;
         if (cloudSpecialFlows) {
             try {
-                const currentCashState = await cashRepository.getCurrentCashSession({ force: true });
-                const currentCashSession = currentCashState?.cashSession || null;
-                if (currentCashState?.success === false || !currentCashSession || currentCashSession.estado !== 'abierta' || currentCashState.readOnly || currentCashState.stateKnown === false) {
+                const appCashStateNeedsEnsure = !cajaActual || cajaActual.estado !== 'abierta';
+                let ensuredCashSession = false;
+                if (appCashStateNeedsEnsure && typeof asegurarCajaAbierta === 'function') {
+                    await asegurarCajaAbierta();
+                    ensuredCashSession = true;
+                }
+
+                let currentCashState = await cashRepository.getCurrentCashSession({ force: true });
+                const cashAuthority = currentCashState?.success === false && handlePosActorAuthorityError(currentCashState, 'split_checkout');
+                if (cashAuthority) return cashAuthority;
+                let currentCashSession = currentCashState?.cashSession || null;
+                const sessionIsUsable = () => currentCashState?.success !== false
+                    && currentCashSession?.estado === 'abierta'
+                    && !currentCashState?.readOnly
+                    && currentCashState?.stateKnown !== false;
+
+                if (!sessionIsUsable() && !ensuredCashSession && typeof asegurarCajaAbierta === 'function') {
+                    await asegurarCajaAbierta();
+                    currentCashState = await cashRepository.getCurrentCashSession({ force: true });
+                    currentCashSession = currentCashState?.cashSession || null;
+                }
+                if (!sessionIsUsable()) {
                     throw new Error('CASH_SESSION_NOT_OPEN');
                 }
                 resolvedCashSessionId = currentCashSession.id;
             } catch (cashStateError) {
+                const authorityResult = handlePosActorAuthorityError(cashStateError, 'split_checkout');
+                if (authorityResult) return authorityResult;
                 Logger.error('[SalesCloud/Cashier] No se pudo resolver la caja antes del split cloud:', cashStateError);
                 const message = cashStateError?.message === 'CASH_SESSION_NOT_OPEN'
                     ? 'El cobro cloud de una cuenta dividida requiere una caja abierta. Ábrela y vuelve a intentarlo; no se aplicaron cobros.'
                     : 'No se pudo verificar la caja abierta antes de cobrar. No se aplicaron cobros.';
                 showMessageModal(message, null, { type: 'error' });
                 return { success: false, errorType: 'CASH_SESSION_NOT_OPEN', message };
+            }
+        } else if (requiresCashSessionCompatibility && (!cajaActual || cajaActual.estado !== 'abierta')) {
+            if (typeof asegurarCajaAbierta !== 'function') {
+                showMessageModal('No se pudo abrir la caja automáticamente.', null, { type: 'error' });
+                return;
+            }
+
+            try {
+                await asegurarCajaAbierta();
+            } catch (error) {
+                const authorityResult = handlePosActorAuthorityError(error, 'split_checkout');
+                if (authorityResult) return authorityResult;
+                Logger.error('No se pudo abrir caja para Split Bill:', error);
+                showMessageModal(error?.message || 'No se pudo abrir la caja automáticamente.', null, { type: 'error' });
+                return;
             }
         }
 
@@ -799,6 +997,10 @@ export function useTableManagement({
                 cashSessionId: resolvedCashSessionId
             });
 
+            if (!result.success) {
+                const authorityResult = handlePosActorAuthorityError(result, 'split_checkout');
+                if (authorityResult) return authorityResult;
+            }
             if (result.success) {
                 let cloudCloseResult = { success: true, skipped: true };
 
@@ -823,21 +1025,29 @@ export function useTableManagement({
                     }
                 }
 
-                clearSession();
-                closeModal('split');
+                try {
+                    // Settlement already consumed the local reservation or reconciled
+                    // it against Cloud. Runtime cleanup must never cancel that parent.
+                    await useActiveOrders.getState().removeOrder(activeOrderId);
+                    closeModal('split');
 
-                if (isCloudRestaurantOrdersEnabled && cloudCloseResult?.success === false) {
-                    showMessageModal(
-                        '⚠️ La cuenta se cobró, pero no se pudo cerrar cocina cloud. Se reintentará cuando haya conexión.',
-                        null,
-                        { type: 'warning' }
-                    );
-                } else {
-                    showMessageModal('✅ Split bill aplicado y cobro registrado correctamente.');
+                    if (isCloudRestaurantOrdersEnabled && cloudCloseResult?.success === false) {
+                        showMessageModal(
+                            '⚠️ La cuenta se cobró, pero no se pudo cerrar cocina cloud. Se reintentará cuando haya conexión.',
+                            null,
+                            { type: 'warning' }
+                        );
+                    } else {
+                        showMessageModal('✅ Split bill aplicado y cobro registrado correctamente.');
+                    }
+
+                    await refreshData();
+                    await fetchActiveTablesCount();
+                    window.dispatchEvent(new CustomEvent(RESTAURANT_CLOUD_STATUS_EVENT));
+                } catch (postCheckoutError) {
+                    if (!result.cloudCommitted) throw postCheckoutError;
+                    Logger.warn('[REST.SPLIT.1] Cobro cloud confirmado; actualización de UI pendiente:', postCheckoutError);
                 }
-
-                await refreshData();
-                await fetchActiveTablesCount();
                 return result;
             }
 
@@ -850,6 +1060,8 @@ export function useTableManagement({
             showMessageModal(result.message || 'No se pudo dividir/cobrar la mesa.', null, { type: 'error' });
             return result;
         } catch (error) {
+            const handled = handlePosActorAuthorityError(error, 'split_checkout');
+            if (handled) return handled;
             Logger.error('Error crítico en Split Bill:', error);
             showMessageModal(`Error inesperado: ${error.message}`, null, { type: 'error' });
             return { success: false, message: error?.message || 'No se pudo dividir la cuenta.' };
@@ -857,28 +1069,30 @@ export function useTableManagement({
     }, [
         blockEcommerceRestaurantEffect,
         activeOrderId,
+        blockRemoteSplit,
         features,
         companyName,
         verifySessionIntegrity,
         reconcileKitchenCancelledItemsBeforeSplit,
-        clearSession,
         closeModal,
         refreshData,
         fetchActiveTablesCount,
         cajaActual,
         asegurarCajaAbierta,
-        cashRepository,
         isCloudRestaurantOrdersEnabled,
         licenseDetails,
         licenseKey
     ]);
 
+    const safeOpenSplitBill = useCallback((...args) => runPosActorUiOperation('split_checkout', handleOpenSplitBill, ...args), [handleOpenSplitBill]);
+    const safeConfirmSplitBill = useCallback((...args) => runPosActorUiOperation('split_checkout', handleConfirmSplitBill, ...args), [handleConfirmSplitBill]);
+
     return {
         handleSaveAsOpen,
         handleLoadOpenOrder,
         handleQuickTableAction,
-        handleOpenSplitBill,
-        handleConfirmSplitBill,
+        handleOpenSplitBill: safeOpenSplitBill,
+        handleConfirmSplitBill: safeConfirmSplitBill,
         handleAnnulKitchenRejectedOrder
     };
 }

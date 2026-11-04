@@ -11,7 +11,8 @@ const adminState = () => ({
   licenseDetails: { license_key: 'PRO-LICENSE' },
   currentDeviceRole: 'admin',
   currentStaffUser: null,
-  deviceFingerprint: 'device-1'
+  deviceFingerprint: 'device-1',
+  companyProfile: { business_type: ['restaurante'] }
 });
 
 const portalResult = () => ({
@@ -139,7 +140,7 @@ describe('ecommerce catalog consistency', () => {
       sourceState: 'unverified',
       sourceAvailable: null,
       stockSnapshot: null,
-      configurationSourceRevision: 'version:2'
+      configurationSourceRevision: expect.stringMatching(/^configuration:/)
     });
     expect(projection.configuration.availabilityReasonCode).toBe('RECIPE_STOCK_INVALID');
   });
@@ -155,7 +156,8 @@ describe('ecommerce catalog consistency', () => {
     expect(projection.sourceState).toBe('in_stock');
     expect(projection.stockSnapshot).toBe(20);
     expect(projection.sourceRevision).toBe(`version:${Date.parse(fixture.batch.updatedAt)}`);
-    expect(projection.configurationSourceRevision).toBe('version:2');
+    expect(projection.configurationSourceRevision).toMatch(/^configuration:/);
+    expect(projection.configurationSourceRevision).not.toBe(projection.sourceRevision);
   });
 
   it('marks only the missing ingredient snapshot and preserves other ingredient records', () => {

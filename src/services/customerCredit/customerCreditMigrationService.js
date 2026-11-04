@@ -4,6 +4,8 @@ import { actorRuntimeController } from '../auth/actorRuntimeController';
 import { syncMetaService } from '../sync/syncMetaService';
 import { customerCreditCloudRepository } from './customerCreditCloudRepository';
 import { historicalCreditSnapshot } from './historicalCreditSnapshot';
+import { customerLocalRepository } from '../customers/customerLocalRepository';
+import { prepareHistoricalCreditDirectory, verifyPreparedHistoricalCreditDirectory } from './historicalCreditDirectory';
 
 const BATCH_KEY = 'historical-credit:v1:batch';
 const completeStatuses = new Set(['IMPORTED', 'ALREADY_IMPORTED_IDENTICAL', 'CLOUD_PROJECTION']);
@@ -54,15 +56,25 @@ const recordResults = async (batch, response, handle) => {
   return updated;
 };
 
+// Legacy initial-balance writes cannot authorize historical credit. Preserve
+// their Local source and leave authorization/import to the separate FIN-01 flow.
 export const customerCreditMigrationService = {
   async runInitialMigrationIfNeeded({ licenseKey, actorHandle = actorRuntimeController.capture('customers') } = {}) {
     if (!licenseKey) return { skipped: true, reason: 'license_missing' };
     actorHandle.assertCurrent();
     await historicalCreditSnapshot.preserveAll({ actorHandle });
     actorHandle.assertCurrent();
-    const pending = (await historicalCreditSnapshot.list()).filter((row) => !completeStatuses.has(row.status));
-    // Opening the app or reconnecting never grants financial approval.
-    return { success: pending.length === 0, code: pending.length ? 'PENDING_AUTHORIZATION' : null, pending: pending.length };
+    const blockedCustomerIds = [];
+    for (const customer of await customerLocalRepository.getAllActiveCustomers()) {
+      if ((await customerLocalRepository.protectHistoricalCustomer(customer.id)).blocked) {
+        blockedCustomerIds.push(customer.id);
+      }
+    }
+    if (blockedCustomerIds.length) {
+      await syncMetaService.setMeta('customer_credit_migrated_at', null, { licenseKey });
+      return { success: false, blocked: true, code: 'HISTORICAL_DEBT_PRESERVATION_REQUIRED', blockedCustomerIds, inserted: 0 };
+    }
+    return { skipped: true, reason: 'no_pending_local_history', inserted: 0 };
   },
   async preview({ licenseKey }) {
     const handle = ownerHandle();
@@ -105,15 +117,34 @@ export const customerCreditMigrationService = {
     }
     const response = await rpc(licenseKey, 'preview', batch, handle);
     if (!response.hash) throw new Error(response.code || 'HISTORICAL_PREVIEW_FAILED');
+    await verifyPreparedHistoricalCreditDirectory({ licenseKey, batch, handle });
     batch = { ...batch, previewHash: response.hash, preview: response };
     await persist(batch, handle);
     const snapshots = await historicalCreditSnapshot.list();
     return { ...response, batch, names: Object.fromEntries(snapshots.map((row) => [row.customerId, row.originalCustomer.name])) };
   },
+  async prepareDirectory({ licenseKey, reviewedHash }) {
+    const handle = ownerHandle();
+    const batch = await readBatch();
+    if (!batch?.previewHash || batch.previewHash !== reviewedHash || !batch.preview?.results || batch.authorizationId) {
+      throw new Error('HISTORICAL_REVIEW_REQUIRED');
+    }
+    const context = await rpc(licenseKey, 'context', null, handle);
+    if (!context.success) throw new Error(context.code || 'REJECTED_AUTHORITY');
+    if (context.tenant_id !== batch.manifest.tenant_id) throw new Error('HISTORICAL_DIRECTORY_CONTEXT_CHANGED');
+    // A new preview is required after preparation, including an uncertain reply.
+    // This action never grants or consumes a financial authorization.
+    await persist({ ...batch, previewHash: null }, handle);
+    return prepareHistoricalCreditDirectory({ licenseKey, batch, handle });
+  },
   async authorizeAndImport({ licenseKey, reviewedHash }) {
     const handle = ownerHandle();
     let batch = await readBatch();
     if (!batch?.previewHash || batch.previewHash !== reviewedHash) throw new Error('HISTORICAL_REVIEW_REQUIRED');
+    if (batch.preview?.results?.some((row) => row.status === 'CONFLICT_CUSTOMER_MISSING')) {
+      throw new Error('HISTORICAL_DIRECTORY_PREPARATION_REQUIRED');
+    }
+    await verifyPreparedHistoricalCreditDirectory({ licenseKey, batch, handle });
     // Persist the exact pending request before network I/O. A lost response is unknown, never success.
     await persist({ ...batch, state: 'AUTHORIZATION_UNCERTAIN' }, handle);
     const approved = await rpc(licenseKey, 'authorize', batch, handle, true);

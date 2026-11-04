@@ -1,0 +1,8 @@
+src/services/sync/syncExecutionScope.js: OK
+src/services/sync/scopedPosRealtimeListener.js: OK
+src/services/posRealtime.js: OK
+src/services/sync/posSyncOrchestrator.js: OK
+src/services/sync/posSyncBootstrapCoordinator.js: OK
+src/services/customerCredit/customerCreditSyncHandler.js: OK
+package-lock.json: OK
+vite.config.js: OK

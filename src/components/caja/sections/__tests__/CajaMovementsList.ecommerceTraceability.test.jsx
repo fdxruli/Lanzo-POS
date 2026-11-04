@@ -3,6 +3,7 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import CajaMovementsList from '../CajaMovementsList';
+import { normalizeSaleMovements } from '../../../../services/cajaProjection';
 
 afterEach(cleanup);
 
@@ -27,6 +28,20 @@ const ecommerceMovement = {
 };
 
 describe('CajaMovementsList ecommerce traceability', () => {
+  it('renders QA-10 as applied cash and real noncash breakdown for the same folio', () => {
+    const movements = normalizeSaleMovements([{
+      id: 'sale-qa10', status: 'closed', folio: 'FG-01-NEW-QA', total: '100', paymentMethod: 'mixed',
+      payments: [{ method: 'cash', amount: '33.34' }, { method: 'card', amount: '33.33' }, { method: 'transfer', amount: '33.33' }]
+    }]);
+    render(<CajaMovementsList movimientos={movements} isCloudCash />);
+    expect(screen.getAllByText('FG-01-NEW-QA')).toHaveLength(2);
+    expect(screen.getByText('+$33.34')).toBeVisible();
+    expect(screen.getByText('+$66.66')).toBeVisible();
+    expect(screen.getByText(/Tarjeta \$33\.33 · Transferencia \$33\.33/)).toBeVisible();
+    expect(screen.queryByText('+$100.00')).not.toBeInTheDocument();
+    expect(screen.getByText('2 de 2')).toBeVisible();
+  });
+
   it('renders one ecommerce movement with separate EC and V references', () => {
     render(<CajaMovementsList movimientos={[ecommerceMovement]} isCloudCash />);
 

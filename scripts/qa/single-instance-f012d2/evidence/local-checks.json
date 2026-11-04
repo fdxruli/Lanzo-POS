@@ -1,0 +1,45 @@
+[
+  {
+    "name": "lint",
+    "command": [
+      "node",
+      "node_modules/eslint/bin/eslint.js",
+      "src/hooks/useCaja.js",
+      "src/services/financial/cancellationCashRefreshRoute.js",
+      "src/services/financial/financialCancellationProjection.js",
+      "src/services/financial/financialProjectionRegistry.js",
+      "src/services/financial/financialIntentRecoveryCoordinator.js",
+      "scripts/qa/single-instance-f012d2"
+    ],
+    "exitCode": 0
+  },
+  {
+    "name": "diff-check",
+    "command": [
+      "git",
+      "diff",
+      "--check"
+    ],
+    "exitCode": 0
+  },
+  {
+    "name": "frozen-sources",
+    "command": [
+      "sha256sum",
+      "-c",
+      "scripts/qa/single-instance-f012d2/evidence/frozen-sources.sha256"
+    ],
+    "exitCode": 0
+  },
+  {
+    "name": "native-browser",
+    "status": "NOT_EXECUTED",
+    "command": "command -v chromium chromium-browser google-chrome",
+    "detected": {
+      "chromium": null,
+      "chromium-browser": null,
+      "google-chrome": null
+    },
+    "reason": "No browser executable available; no downloads attempted this phase. jsdom does not certify native browser/Web Locks/PWA/physical devices."
+  }
+]

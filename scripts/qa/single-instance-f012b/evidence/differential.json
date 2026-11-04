@@ -1,0 +1,262 @@
+{
+  "regressions.json": {
+    "baseline": "5bfd0693224d92ae8957684bc85bc61ed6cbab90",
+    "base": {
+      "numPassedTests": 1167,
+      "numFailedTests": 4,
+      "numPendingTests": 50,
+      "numTotalTests": 1221
+    },
+    "candidate": {
+      "numPassedTests": 1167,
+      "numFailedTests": 4,
+      "numPendingTests": 50,
+      "numTotalTests": 1221
+    },
+    "changed": [],
+    "added": []
+  },
+  "global.json": {
+    "baseline": "5bfd0693224d92ae8957684bc85bc61ed6cbab90",
+    "base": {
+      "numPassedTests": 5748,
+      "numFailedTests": 88,
+      "numPendingTests": 52,
+      "numTotalTests": 5888
+    },
+    "candidate": {
+      "numPassedTests": 5793,
+      "numFailedTests": 88,
+      "numPendingTests": 52,
+      "numTotalTests": 5933
+    },
+    "changed": [],
+    "added": [
+      {
+        "key": "scripts/qa/single-instance-f012b/background.test.js::BG-31 actual background public timeout retains registered validation and transport",
+        "status": "passed",
+        "firstError": ""
+      },
+      {
+        "key": "scripts/qa/single-instance-f012b/background.test.js::BG-32 actual background observes late rejection after public ready",
+        "status": "passed",
+        "firstError": ""
+      },
+      {
+        "key": "scripts/qa/single-instance-f012b/background.test.js::BG-33 stale health probe cannot write into a new generation",
+        "status": "passed",
+        "firstError": ""
+      },
+      {
+        "key": "scripts/qa/single-instance-f012b/background.test.js::BG-34 profile frontier is expressly unknown and cannot claim drain",
+        "status": "passed",
+        "firstError": ""
+      },
+      {
+        "key": "scripts/qa/single-instance-f012b/background.test.js::BG-35 background admission rejection is observed when callers detach",
+        "status": "passed",
+        "firstError": ""
+      },
+      {
+        "key": "scripts/qa/single-instance-f012b/bootstrap.test.js::F01-2B current-authority reuse (no cached authorization) BG-01 concurrent callers share one flight",
+        "status": "passed",
+        "firstError": ""
+      },
+      {
+        "key": "scripts/qa/single-instance-f012b/bootstrap.test.js::F01-2B current-authority reuse (no cached authorization) BG-02 sequential calls prove and verify current Admin without second restore",
+        "status": "passed",
+        "firstError": ""
+      },
+      {
+        "key": "scripts/qa/single-instance-f012b/bootstrap.test.js::F01-2B current-authority reuse (no cached authorization) BG-03 force uses normal restoration",
+        "status": "passed",
+        "firstError": ""
+      },
+      {
+        "key": "scripts/qa/single-instance-f012b/bootstrap.test.js::F01-2B current-authority reuse (no cached authorization) BG-04 preparation error permits retry",
+        "status": "passed",
+        "firstError": ""
+      },
+      {
+        "key": "scripts/qa/single-instance-f012b/bootstrap.test.js::F01-2B current-authority reuse (no cached authorization) BG-05 logout invalidates existing authority",
+        "status": "passed",
+        "firstError": ""
+      },
+      {
+        "key": "scripts/qa/single-instance-f012b/bootstrap.test.js::F01-2B current-authority reuse (no cached authorization) BG-06 legitimate reauthentication restores after logout",
+        "status": "passed",
+        "firstError": ""
+      },
+      {
+        "key": "scripts/qa/single-instance-f012b/bootstrap.test.js::F01-2B current-authority reuse (no cached authorization) BG-07 actor identity changes are reevaluated",
+        "status": "passed",
+        "firstError": ""
+      },
+      {
+        "key": "scripts/qa/single-instance-f012b/bootstrap.test.js::F01-2B current-authority reuse (no cached authorization) BG-08 license changes are reevaluated",
+        "status": "passed",
+        "firstError": ""
+      },
+      {
+        "key": "scripts/qa/single-instance-f012b/bootstrap.test.js::F01-2B current-authority reuse (no cached authorization) BG-09 plan change does not reuse previous result",
+        "status": "passed",
+        "firstError": ""
+      },
+      {
+        "key": "scripts/qa/single-instance-f012b/bootstrap.test.js::F01-2B current-authority reuse (no cached authorization) BG-10 store factories never share another stores flight",
+        "status": "passed",
+        "firstError": ""
+      },
+      {
+        "key": "scripts/qa/single-instance-f012b/bootstrap.test.js::F01-2B current-authority reuse (no cached authorization) BG-11 Staff still verifies online on sequential calls",
+        "status": "passed",
+        "firstError": ""
+      },
+      {
+        "key": "scripts/qa/single-instance-f012b/bootstrap.test.js::F01-2B current-authority reuse (no cached authorization) BG-12 Staff offline denies reuse",
+        "status": "passed",
+        "firstError": ""
+      },
+      {
+        "key": "scripts/qa/single-instance-f012b/bootstrap.test.js::F01-2B current-authority reuse (no cached authorization) BG-13 Admin offline still calls current authorization proof",
+        "status": "passed",
+        "firstError": ""
+      },
+      {
+        "key": "scripts/qa/single-instance-f012b/bootstrap.test.js::F01-2B current-authority reuse (no cached authorization) BG-14 expired Admin authority is never a reused success",
+        "status": "passed",
+        "firstError": ""
+      },
+      {
+        "key": "scripts/qa/single-instance-f012b/bootstrap.test.js::F01-2B current-authority reuse (no cached authorization) BG-15 a changed session requires normal reevaluation",
+        "status": "passed",
+        "firstError": ""
+      },
+      {
+        "key": "scripts/qa/single-instance-f012b/bootstrap.test.js::F01-2B current-authority reuse (no cached authorization) BG-16 a changed device requires normal reevaluation",
+        "status": "passed",
+        "firstError": ""
+      },
+      {
+        "key": "scripts/qa/single-instance-f012b/bootstrap.test.js::F01-2B current-authority reuse (no cached authorization) BG-17 stale verification cannot overwrite a new actor generation",
+        "status": "passed",
+        "firstError": ""
+      },
+      {
+        "key": "scripts/qa/single-instance-f012b/bootstrap.test.js::F01-2B current-authority reuse (no cached authorization) BG-18 tenant generation change cannot reuse actor",
+        "status": "passed",
+        "firstError": ""
+      },
+      {
+        "key": "scripts/qa/single-instance-f012b/bootstrap.test.js::F01-2B current-authority reuse (no cached authorization) BG-19 remote denial follows existing login-required policy",
+        "status": "passed",
+        "firstError": ""
+      },
+      {
+        "key": "scripts/qa/single-instance-f012b/bootstrap.test.js::F01-2B current-authority reuse (no cached authorization) BG-20 StrictMode repeated invocation shares flight and later proves authority",
+        "status": "passed",
+        "firstError": ""
+      },
+      {
+        "key": "scripts/qa/single-instance-f012b/bootstrap.test.js::registered lifecycle: synthetic exit and local settlement BG-21 registers before a factory starts",
+        "status": "passed",
+        "firstError": ""
+      },
+      {
+        "key": "scripts/qa/single-instance-f012b/bootstrap.test.js::registered lifecycle: synthetic exit and local settlement BG-22 public ready differs from background settled",
+        "status": "passed",
+        "firstError": ""
+      },
+      {
+        "key": "scripts/qa/single-instance-f012b/bootstrap.test.js::registered lifecycle: synthetic exit and local settlement BG-23 quiesce denies new registration",
+        "status": "passed",
+        "firstError": ""
+      },
+      {
+        "key": "scripts/qa/single-instance-f012b/bootstrap.test.js::registered lifecycle: synthetic exit and local settlement BG-24 invalidation before start blocks factory",
+        "status": "passed",
+        "firstError": ""
+      },
+      {
+        "key": "scripts/qa/single-instance-f012b/bootstrap.test.js::registered lifecycle: synthetic exit and local settlement BG-25 guards reject stale continuations after await",
+        "status": "passed",
+        "firstError": ""
+      },
+      {
+        "key": "scripts/qa/single-instance-f012b/bootstrap.test.js::registered lifecycle: synthetic exit and local settlement BG-26 late rejection is observed and removed",
+        "status": "passed",
+        "firstError": ""
+      },
+      {
+        "key": "scripts/qa/single-instance-f012b/bootstrap.test.js::registered lifecycle: synthetic exit and local settlement BG-27 factory throws synchronously without leaking registry",
+        "status": "passed",
+        "firstError": ""
+      },
+      {
+        "key": "scripts/qa/single-instance-f012b/bootstrap.test.js::registered lifecycle: synthetic exit and local settlement BG-28 unknown work never resolves drain by time",
+        "status": "passed",
+        "firstError": ""
+      },
+      {
+        "key": "scripts/qa/single-instance-f012b/bootstrap.test.js::registered lifecycle: synthetic exit and local settlement BG-29 quiesce waits for already started work",
+        "status": "passed",
+        "firstError": ""
+      },
+      {
+        "key": "scripts/qa/single-instance-f012b/bootstrap.test.js::registered lifecycle: synthetic exit and local settlement BG-30 lifecycle rejects post-quiesce bootstrap without locking authority",
+        "status": "passed",
+        "firstError": ""
+      },
+      {
+        "key": "scripts/qa/single-instance-f012b/bootstrap.test.js::BG-43 lifecycle observation cannot grant authority without a stored license",
+        "status": "passed",
+        "firstError": ""
+      },
+      {
+        "key": "scripts/qa/single-instance-f012b/bootstrap.test.js::BG-44 equivalent object key order does not duplicate restoration",
+        "status": "passed",
+        "firstError": ""
+      },
+      {
+        "key": "scripts/qa/single-instance-f012b/bootstrap.test.js::BG-45 quiesce between registration and start clears flight for legitimate retry",
+        "status": "passed",
+        "firstError": ""
+      },
+      {
+        "key": "scripts/qa/single-instance-f012b/boundaries.test.jsx::BG-36 preparation never activates commercial services",
+        "status": "passed",
+        "firstError": ""
+      },
+      {
+        "key": "scripts/qa/single-instance-f012b/boundaries.test.jsx::BG-37 commercial activation follows preparation once",
+        "status": "passed",
+        "firstError": ""
+      },
+      {
+        "key": "scripts/qa/single-instance-f012b/boundaries.test.jsx::BG-38 existing default activation remains enabled",
+        "status": "passed",
+        "firstError": ""
+      },
+      {
+        "key": "scripts/qa/single-instance-f012b/boundaries.test.jsx::BG-39 rejected loading never installs sync or recovery",
+        "status": "passed",
+        "firstError": ""
+      },
+      {
+        "key": "scripts/qa/single-instance-f012b/boundaries.test.jsx::BG-40 DB preflight shares preparation without commercial activation",
+        "status": "passed",
+        "firstError": ""
+      },
+      {
+        "key": "scripts/qa/single-instance-f012b/transport.test.js::BG-41 real revalidateLicense retains raw transport beyond its internal timeout",
+        "status": "passed",
+        "firstError": ""
+      },
+      {
+        "key": "scripts/qa/single-instance-f012b/transport.test.js::BG-42 shared revalidation owner remains unknown instead of false drain",
+        "status": "passed",
+        "firstError": ""
+      }
+    ]
+  }
+}

@@ -1,3 +1,5 @@
+import { getExplicitSalePaymentRows } from '../sales/paymentMethodContract';
+
 const isMissingNumber = (value) => value === undefined || value === null || (typeof value === 'string' && value.trim() === '');
 
 const toNumber = (value, fallback = 0) => {
@@ -176,7 +178,7 @@ const buildSyntheticPayment = (sale = {}, options = {}) => {
 
 const mapPayment = (payment = {}, sale = {}, index = 0) => compactObject({
   id: firstText(payment.id) || `${sale.id}:payment:${index + 1}`,
-  method: normalizePaymentMethod(payment.method || payment.paymentMethod || sale.paymentMethod),
+  method: normalizePaymentMethod(payment.method || payment.paymentMethod || payment.payment_method || sale.paymentMethod),
   amount: toNumber(payment.amount ?? payment.total, 0),
   received_amount: payment.receivedAmount === undefined && payment.received_amount === undefined
     ? null
@@ -196,8 +198,8 @@ const mapPayment = (payment = {}, sale = {}, index = 0) => compactObject({
 });
 
 const extractPayments = (sale = {}, options = {}) => {
-  const explicitPayments = sale.payments || sale.paymentBreakdown || sale.paymentDetails?.payments;
-  if (Array.isArray(explicitPayments) && explicitPayments.length > 0) {
+  const explicitPayments = getExplicitSalePaymentRows(sale);
+  if (explicitPayments !== null) {
     return explicitPayments.map((payment, index) => mapPayment(payment, sale, index));
   }
 

@@ -1,0 +1,328 @@
+{
+  "version": "143.0.7499.0",
+  "origin": "http://127.0.0.1:33323",
+  "results": [
+    {
+      "id": "CE-NATIVE-DRAIN-03-CANDIDATE",
+      "result": "PASS",
+      "atTimeout": {
+        "state": "COORDINATOR_HELD",
+        "instanceId": "dcb703e9ab123a32851fd169a0287f65",
+        "localEpoch": 1,
+        "mode": "web-locks",
+        "nativeHeld": true,
+        "diagnostic": null,
+        "messaging": "available",
+        "observedOwner": null,
+        "pendingExecutors": 1,
+        "capabilities": {
+          "secureContext": true,
+          "randomIdentity": true,
+          "webLocks": true,
+          "broadcastChannel": true
+        },
+        "publicSettled": true,
+        "executionSettled": false,
+        "transportActive": true,
+        "localActive": false,
+        "dispatchCount": 1,
+        "execution": {
+          "started": true,
+          "closed": false,
+          "unobservable": false,
+          "publicStatus": "rejected",
+          "pendingTasks": 1
+        },
+        "durable": {
+          "status": "PENDING_RECEIPT",
+          "key": "f012a-original-key",
+          "hash": "f012a-original-hash",
+          "origin": "synthetic-actor",
+          "attempts": 1
+        }
+      },
+      "beforeTransportCompletion": {
+        "a": {
+          "state": "QUIESCING",
+          "instanceId": "dcb703e9ab123a32851fd169a0287f65",
+          "localEpoch": 2,
+          "mode": "web-locks",
+          "nativeHeld": true,
+          "diagnostic": null,
+          "messaging": "available",
+          "observedOwner": null,
+          "pendingExecutors": 1,
+          "capabilities": {
+            "secureContext": true,
+            "randomIdentity": true,
+            "webLocks": true,
+            "broadcastChannel": true
+          },
+          "publicSettled": true,
+          "executionSettled": false,
+          "transportActive": true,
+          "localActive": false,
+          "dispatchCount": 1,
+          "execution": {
+            "started": true,
+            "closed": false,
+            "unobservable": false,
+            "publicStatus": "rejected",
+            "pendingTasks": 1
+          },
+          "durable": {
+            "status": "PENDING_RECEIPT",
+            "key": "f012a-original-key",
+            "hash": "f012a-original-hash",
+            "origin": "synthetic-actor",
+            "attempts": 1
+          }
+        },
+        "b": {
+          "state": "SECONDARY",
+          "instanceId": "9dbbdadd24f33a1003eeb62946807aa8",
+          "localEpoch": 1,
+          "mode": "web-locks",
+          "nativeHeld": false,
+          "diagnostic": null,
+          "messaging": "available",
+          "observedOwner": {
+            "instanceId": "dcb703e9ab123a32851fd169a0287f65",
+            "epoch": 1
+          },
+          "pendingExecutors": 0,
+          "capabilities": {
+            "secureContext": true,
+            "randomIdentity": true,
+            "webLocks": true,
+            "broadcastChannel": true
+          },
+          "publicSettled": false,
+          "executionSettled": false,
+          "transportActive": false,
+          "localActive": false,
+          "dispatchCount": 0,
+          "durable": {
+            "status": "PENDING_RECEIPT",
+            "key": "f012a-original-key",
+            "hash": "f012a-original-hash",
+            "origin": "synthetic-actor",
+            "attempts": 1
+          }
+        }
+      },
+      "afterTransportCompletion": {
+        "a": {
+          "state": "QUIESCING",
+          "instanceId": "dcb703e9ab123a32851fd169a0287f65",
+          "localEpoch": 2,
+          "mode": "web-locks",
+          "nativeHeld": true,
+          "diagnostic": null,
+          "messaging": "available",
+          "observedOwner": null,
+          "pendingExecutors": 1,
+          "capabilities": {
+            "secureContext": true,
+            "randomIdentity": true,
+            "webLocks": true,
+            "broadcastChannel": true
+          },
+          "publicSettled": true,
+          "executionSettled": false,
+          "transportActive": false,
+          "localActive": true,
+          "dispatchCount": 1,
+          "execution": {
+            "started": true,
+            "closed": false,
+            "unobservable": false,
+            "publicStatus": "rejected",
+            "pendingTasks": 1
+          },
+          "durable": {
+            "status": "PENDING_RECEIPT",
+            "key": "f012a-original-key",
+            "hash": "f012a-original-hash",
+            "origin": "synthetic-actor",
+            "attempts": 1
+          }
+        },
+        "b": {
+          "state": "SECONDARY",
+          "instanceId": "9dbbdadd24f33a1003eeb62946807aa8",
+          "localEpoch": 1,
+          "mode": "web-locks",
+          "nativeHeld": false,
+          "diagnostic": null,
+          "messaging": "available",
+          "observedOwner": {
+            "instanceId": "dcb703e9ab123a32851fd169a0287f65",
+            "epoch": 1
+          },
+          "pendingExecutors": 0,
+          "capabilities": {
+            "secureContext": true,
+            "randomIdentity": true,
+            "webLocks": true,
+            "broadcastChannel": true
+          },
+          "publicSettled": false,
+          "executionSettled": false,
+          "transportActive": false,
+          "localActive": false,
+          "dispatchCount": 0,
+          "durable": {
+            "status": "PENDING_RECEIPT",
+            "key": "f012a-original-key",
+            "hash": "f012a-original-hash",
+            "origin": "synthetic-actor",
+            "attempts": 1
+          }
+        }
+      },
+      "final": {
+        "a": {
+          "state": "RELEASED",
+          "instanceId": "dcb703e9ab123a32851fd169a0287f65",
+          "localEpoch": 2,
+          "mode": "web-locks",
+          "nativeHeld": false,
+          "diagnostic": null,
+          "messaging": "inactive",
+          "observedOwner": null,
+          "pendingExecutors": 0,
+          "capabilities": {
+            "secureContext": true,
+            "randomIdentity": true,
+            "webLocks": true,
+            "broadcastChannel": true
+          },
+          "publicSettled": true,
+          "executionSettled": true,
+          "transportActive": false,
+          "localActive": false,
+          "dispatchCount": 1,
+          "execution": {
+            "started": true,
+            "closed": true,
+            "unobservable": false,
+            "publicStatus": "rejected",
+            "pendingTasks": 0
+          },
+          "durable": {
+            "status": "PENDING_RECEIPT",
+            "key": "f012a-original-key",
+            "hash": "f012a-original-hash",
+            "origin": "synthetic-actor",
+            "attempts": 1
+          }
+        },
+        "b": {
+          "state": "COORDINATOR_HELD",
+          "instanceId": "9dbbdadd24f33a1003eeb62946807aa8",
+          "localEpoch": 1,
+          "mode": "web-locks",
+          "nativeHeld": true,
+          "diagnostic": null,
+          "messaging": "available",
+          "observedOwner": null,
+          "pendingExecutors": 0,
+          "capabilities": {
+            "secureContext": true,
+            "randomIdentity": true,
+            "webLocks": true,
+            "broadcastChannel": true
+          },
+          "publicSettled": false,
+          "executionSettled": false,
+          "transportActive": false,
+          "localActive": false,
+          "dispatchCount": 0,
+          "durable": {
+            "status": "PENDING_RECEIPT",
+            "key": "f012a-original-key",
+            "hash": "f012a-original-hash",
+            "origin": "synthetic-actor",
+            "attempts": 1
+          }
+        }
+      },
+      "scope": "Real financial timeout/observer/coordinator + native Web Locks, synthetic transport and local continuation. No commercial gate, server or payment."
+    },
+    {
+      "id": "LIFE-25-NATIVE-DOCUMENT-CLOSE",
+      "result": "PASS_BOUNDARY",
+      "atTimeout": {
+        "state": "COORDINATOR_HELD",
+        "instanceId": "f80ca322a186c4b314f6f9d671504ce5",
+        "localEpoch": 1,
+        "mode": "web-locks",
+        "nativeHeld": true,
+        "diagnostic": null,
+        "messaging": "available",
+        "observedOwner": null,
+        "pendingExecutors": 1,
+        "capabilities": {
+          "secureContext": true,
+          "randomIdentity": true,
+          "webLocks": true,
+          "broadcastChannel": true
+        },
+        "publicSettled": true,
+        "executionSettled": false,
+        "transportActive": true,
+        "localActive": false,
+        "dispatchCount": 1,
+        "execution": {
+          "started": true,
+          "closed": false,
+          "unobservable": false,
+          "publicStatus": "rejected",
+          "pendingTasks": 1
+        },
+        "durable": {
+          "status": "PENDING_RECEIPT",
+          "key": "f012a-original-key",
+          "hash": "f012a-original-hash",
+          "origin": "synthetic-actor",
+          "attempts": 1
+        }
+      },
+      "afterClose": {
+        "state": "COORDINATOR_HELD",
+        "instanceId": "2fd47c6ad10f1a1f73855001062136d0",
+        "localEpoch": 1,
+        "mode": "web-locks",
+        "nativeHeld": true,
+        "diagnostic": null,
+        "messaging": "available",
+        "observedOwner": {
+          "instanceId": "f80ca322a186c4b314f6f9d671504ce5",
+          "epoch": 1
+        },
+        "pendingExecutors": 0,
+        "capabilities": {
+          "secureContext": true,
+          "randomIdentity": true,
+          "webLocks": true,
+          "broadcastChannel": true
+        },
+        "publicSettled": false,
+        "executionSettled": false,
+        "transportActive": false,
+        "localActive": false,
+        "dispatchCount": 0,
+        "durable": {
+          "status": "PENDING_RECEIPT",
+          "key": "f012a-original-key",
+          "hash": "f012a-original-hash",
+          "origin": "synthetic-actor",
+          "attempts": 1
+        }
+      },
+      "scope": "Real document close releases native lock with synthetic durable ambiguous evidence preserved. Not a server crash/receipt test. Recovery reopen tested separately."
+    }
+  ],
+  "pageErrors": []
+}

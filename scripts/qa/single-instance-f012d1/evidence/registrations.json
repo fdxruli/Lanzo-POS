@@ -1,0 +1,93 @@
+{
+  "entry": "cold posSyncBootstrapAutoCoordinator module graph, no start or activation",
+  "provenance": "Actual registry logs, correlated with synchronous source-module registration groups; registry keys cross-checked directly.",
+  "calls": [
+    {
+      "entity": "cash_session",
+      "handler": "cashSyncHandler"
+    },
+    {
+      "entity": "cash_movement",
+      "handler": "cashSyncHandler"
+    },
+    {
+      "entity": "category",
+      "handler": "productSyncHandler"
+    },
+    {
+      "entity": "product",
+      "handler": "productSyncHandler"
+    },
+    {
+      "entity": "product_batch",
+      "handler": "productSyncHandler"
+    },
+    {
+      "entity": "inventory_movement",
+      "handler": "productSyncHandler"
+    },
+    {
+      "entity": "inventory_entry",
+      "handler": "productSyncHandler"
+    },
+    {
+      "entity": "customer",
+      "handler": "customerSyncHandler"
+    },
+    {
+      "entity": "customer_ledger",
+      "handler": "customerCreditSyncHandler"
+    },
+    {
+      "entity": "customer_credit",
+      "handler": "customerCreditSyncHandler"
+    },
+    {
+      "entity": "sale",
+      "handler": "salesCloudSyncHandler"
+    },
+    {
+      "entity": "sale_item",
+      "handler": "salesCloudSyncHandler"
+    },
+    {
+      "entity": "sale_payment",
+      "handler": "salesCloudSyncHandler"
+    },
+    {
+      "entity": "sale_cancellation",
+      "handler": "salesCloudSyncHandler"
+    },
+    {
+      "entity": "inventory_movement",
+      "handler": "salesCloudSyncHandler"
+    },
+    {
+      "entity": "restaurant_order",
+      "handler": "restaurantOrdersSyncHandler"
+    },
+    {
+      "entity": "restaurant_order_item",
+      "handler": "restaurantOrdersSyncHandler"
+    }
+  ],
+  "effective": {
+    "cash_session": "cashSyncHandler",
+    "cash_movement": "cashSyncHandler",
+    "category": "productSyncHandler",
+    "product": "productSyncHandler",
+    "product_batch": "productSyncHandler",
+    "inventory_movement": "salesCloudSyncHandler",
+    "inventory_entry": "productSyncHandler",
+    "customer": "customerSyncHandler",
+    "customer_ledger": "customerCreditSyncHandler",
+    "customer_credit": "customerCreditSyncHandler",
+    "sale": "salesCloudSyncHandler",
+    "sale_item": "salesCloudSyncHandler",
+    "sale_payment": "salesCloudSyncHandler",
+    "sale_cancellation": "salesCloudSyncHandler",
+    "restaurant_order": "restaurantOrdersSyncHandler",
+    "restaurant_order_item": "restaurantOrdersSyncHandler"
+  },
+  "limit": "Actual auto root cold import order. Other roots or future hot registration can overwrite the shared Map; not a universal order claim."
+}

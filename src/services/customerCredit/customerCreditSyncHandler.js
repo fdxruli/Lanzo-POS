@@ -7,7 +7,8 @@ import {
   isCloudCustomerCreditSyncEnabled,
   shouldDeferPosBootstrapStartHook,
   SYNC_ENTITY_TYPES,
-  SYNC_LIMITS
+  SYNC_LIMITS,
+  POS_SYNC_STORES
 } from '../sync/syncConstants';
 import { cashLocalRepository } from '../cash/cashLocalRepository';
 import { isBrowserOnline } from '../cash/cashActor';
@@ -48,30 +49,33 @@ const applyCreditPayload = async (response = {}, actorHandle) => {
 
   if (!db.isOpen()) await db.open();
   actorHandle.assertCurrent();
-  let applied = 0;
-  await db.transaction('rw', [
-    db.table(STORES.CUSTOMER_LEDGER),
-    db.table(STORES.CUSTOMERS),
-    db.table(STORES.SYNC_CACHE),
-    db.table(STORES.CAJAS),
-    db.table(STORES.MOVIMIENTOS_CAJA)
-  ], async () => {
-    actorHandle.assertCurrent();
-    const appliedLedgers = await customerCreditLocalRepository.applyCloudLedgersInCurrentTransaction(ledgers, { actorHandle });
-    applied += appliedLedgers.length;
-    actorHandle.assertCurrent();
-    const appliedCustomers = await customerLocalRepository.applyCloudCustomersInCurrentTransaction(customers, { actorHandle });
-    applied += appliedCustomers.length;
-    actorHandle.assertCurrent();
-    const appliedMovements = await cashLocalRepository.applyCloudCashMovements(movements, { actorHandle });
-    applied += appliedMovements.length;
-    actorHandle.assertCurrent();
-    const appliedSessions = await cashLocalRepository.applyCloudCashSessions(sessions, { actorHandle });
-    applied += appliedSessions.length;
-    actorHandle.assertCurrent();
-  });
+  return db.transaction('rw', [STORES.CUSTOMER_LEDGER, STORES.CUSTOMERS,
+    STORES.SYNC_CACHE, POS_SYNC_STORES.CONFLICTS, STORES.CAJAS, STORES.MOVIMIENTOS_CAJA]
+    .map(name => db.table(name)), async () => {
+  // A failed projection must not finish the handler while sibling local writes
+  // are still running. Preserve the original operation order and first error;
+  // this waits for local settlement, not remote financial confirmation.
+  let failed = false, firstFailure;
+  const settled = await Promise.allSettled([
+    customerCreditLocalRepository.applyCloudLedgers(ledgers, { actorHandle }),
+    customerLocalRepository.applyCloudCustomers(customers, { source: 'credit_projection', actorHandle }),
+    cashLocalRepository.applyCloudCashMovements(movements, { actorHandle }),
+    cashLocalRepository.applyCloudCashSessions(sessions, { actorHandle })
+  ].map(promise => Promise.resolve(promise).catch(error => {
+    if (!failed) { failed = true; firstFailure = error; }
+    throw error;
+  })));
+  if (failed) throw firstFailure;
+  const [
+    appliedLedgers,
+    appliedCustomers,
+    appliedMovements,
+    appliedSessions
+  ] = settled.map(result => result.value);
+
   actorHandle.assertCurrent();
-  return applied;
+  return appliedLedgers.length + appliedCustomers.length + appliedMovements.length + appliedSessions.length;
+  });
 };
 
 export const customerCreditSyncHandler = {
