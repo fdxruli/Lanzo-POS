@@ -151,6 +151,169 @@ begin
 end;
 $guard$;
 
+-- R5 is deliberately not an existing-tenant migration. A first activation
+-- must be part of the INSERT transaction of a brand-new, still-unused license.
+create table private.pos_fin01_qa_pilots_v2 (
+  license_id uuid primary key references public.licenses(id) on delete cascade,
+  creation_xid xid8 not null,
+  protocol integer not null default 1 check (protocol in (1,2)),
+  generation bigint not null default 1,
+  approval_reference text,
+  change_reference text,
+  activated_at timestamptz,
+  changed_at timestamptz not null default now()
+);
+create table private.pos_fin01_admissions_v2 (
+  transaction_id xid8 not null,
+  license_id uuid not null references public.licenses(id) on delete cascade,
+  depth integer not null check (depth > 0),
+  primary key(transaction_id,license_id)
+);
+alter table private.pos_fin01_qa_pilots_v2 owner to postgres;
+alter table private.pos_fin01_admissions_v2 owner to postgres;
+alter table private.pos_fin01_qa_pilots_v2 enable row level security;
+alter table private.pos_fin01_admissions_v2 enable row level security;
+revoke all on private.pos_fin01_qa_pilots_v2,private.pos_fin01_admissions_v2 from public,anon,authenticated,service_role;
+
+create or replace function private.pos_fin01_register_new_tenant_v2()
+returns trigger language plpgsql security definer set search_path='' as $function$
+begin
+  insert into private.pos_fin01_qa_pilots_v2(license_id,creation_xid) values(new.id,pg_current_xact_id());
+  return new;
+end;
+$function$;
+create trigger pos_fin01_register_new_tenant_v2 after insert on public.licenses
+for each row execute function private.pos_fin01_register_new_tenant_v2();
+
+create or replace function private.pos_fin01_set_clean_qa_protocol_v2(
+  p_license_id uuid,p_protocol integer,p_expected_generation bigint,p_approval_reference text
+)
+returns jsonb language plpgsql set search_path='' as $function$
+declare v_policy private.pos_fin01_qa_pilots_v2;
+begin
+  -- Owner-only administrative SQL, never a public app RPC. The reference is
+  -- audit evidence, not authority; EXECUTE and private-table ACLs are authority.
+  if p_protocol is null or p_protocol not in (1,2) or nullif(btrim(p_approval_reference),'') is null then
+    raise exception 'CLOUD_SYNC_QA_APPROVAL_REQUIRED';
+  end if;
+  perform pg_advisory_xact_lock(hashtextextended('fin01_qa_protocol:'||p_license_id::text,0));
+  select * into v_policy from private.pos_fin01_qa_pilots_v2 where license_id=p_license_id for update;
+  if not found then raise exception 'CLOUD_SYNC_QA_FRESH_TENANT_REQUIRED'; end if;
+  if v_policy.generation is distinct from p_expected_generation then raise exception 'CLOUD_SYNC_QA_GENERATION_CONFLICT'; end if;
+  if p_protocol=2 then
+    if v_policy.creation_xid<>pg_current_xact_id() or v_policy.generation<>1 or v_policy.activated_at is not null then
+      raise exception 'CLOUD_SYNC_QA_FRESH_TENANT_REQUIRED';
+    end if;
+    if exists(select 1 from public.license_devices where license_id=p_license_id)
+      or exists(select 1 from public.pos_customers where license_id=p_license_id)
+      or exists(select 1 from public.pos_customer_ledger where license_id=p_license_id)
+      or exists(select 1 from public.pos_sales where license_id=p_license_id)
+      or exists(select 1 from public.pos_sale_payments where license_id=p_license_id)
+      or exists(select 1 from public.pos_cash_sessions where license_id=p_license_id)
+      or exists(select 1 from public.pos_cash_movements where license_id=p_license_id)
+      or exists(select 1 from public.pos_inventory_movements where license_id=p_license_id)
+      or exists(select 1 from public.pos_financial_operations where license_id=p_license_id)
+      or exists(select 1 from public.pos_idempotency_keys where license_id=p_license_id)
+      or exists(select 1 from public.pos_sync_events where license_id=p_license_id)
+      or exists(select 1 from private.pos_historical_credit_authorizations where license_id=p_license_id)
+      or exists(select 1 from private.pos_historical_credit_receipts where license_id=p_license_id) then
+      raise exception 'CLOUD_SYNC_QA_TENANT_NOT_EMPTY';
+    end if;
+  end if;
+  update private.pos_fin01_qa_pilots_v2 set protocol=p_protocol,generation=generation+1,
+    approval_reference=case when p_protocol=2 then p_approval_reference else approval_reference end,
+    change_reference=p_approval_reference,
+    activated_at=case when p_protocol=2 then now() else activated_at end,changed_at=now()
+    where license_id=p_license_id returning * into v_policy;
+  return jsonb_build_object('protocol',v_policy.protocol,'generation',v_policy.generation);
+end;
+$function$;
+
+create or replace function private.pos_fin01_enter_pilot_v2(
+  p_sync_contract jsonb,p_license_key text,p_device_fingerprint text,p_security_token text,
+  p_staff_session_token text,p_receipt_only boolean default false
+)
+returns void language plpgsql set search_path='' as $function$
+declare v_context jsonb; v_license_id uuid; v_policy private.pos_fin01_qa_pilots_v2;
+begin
+  perform private.pos_fin01_validate_sync_contract_v2(p_sync_contract);
+  v_context:=private.validate_pos_sync_context(p_license_key,p_device_fingerprint,p_security_token,p_staff_session_token);
+  v_license_id:=(v_context->>'license_id')::uuid;
+  perform pg_advisory_xact_lock_shared(hashtextextended('fin01_qa_protocol:'||v_license_id::text,0));
+  select * into v_policy from private.pos_fin01_qa_pilots_v2 where license_id=v_license_id for share;
+  if coalesce(v_policy.protocol,1)<>2 then
+    if p_receipt_only and v_policy.activated_at is not null then return; end if;
+    raise exception 'CLOUD_CLIENT_UPDATE_REQUIRED' using errcode='P0001',detail='QA_PILOT_NOT_ENABLED';
+  end if;
+  -- Only private, authenticated entry code can create this call-scoped witness.
+  -- No request parameter, claimed capability or PostgreSQL setting grants it.
+  insert into private.pos_fin01_admissions_v2(transaction_id,license_id,depth)
+    values(pg_current_xact_id(),v_license_id,1)
+    on conflict(transaction_id,license_id) do update set depth=private.pos_fin01_admissions_v2.depth+1;
+end;
+$function$;
+
+create or replace function private.pos_fin01_leave_pilot_v2(p_license_id uuid)
+returns void language plpgsql set search_path='' as $function$
+begin
+  -- Every v2 return passes through the envelope. An exception rolls the entry
+  -- witness back with its statement/subtransaction; successful calls remove it.
+  delete from private.pos_fin01_admissions_v2 where transaction_id=pg_current_xact_id() and license_id=p_license_id and depth=1;
+  update private.pos_fin01_admissions_v2 set depth=depth-1
+    where transaction_id=pg_current_xact_id() and license_id=p_license_id;
+end;
+$function$;
+
+create or replace function private.pos_fin01_guard_qa_write_v2()
+returns trigger language plpgsql security definer set search_path='' as $function$
+declare v_license_id uuid; v_ids uuid[];
+begin
+  v_ids:=case tg_op when 'INSERT' then array[new.license_id] when 'DELETE' then array[old.license_id]
+    else array[old.license_id,new.license_id] end;
+  for v_license_id in select distinct x from unnest(v_ids) x where x is not null order by x loop
+    perform pg_advisory_xact_lock_shared(hashtextextended('fin01_qa_protocol:'||v_license_id::text,0));
+    if exists(select 1 from private.pos_fin01_qa_pilots_v2 where license_id=v_license_id and protocol=2)
+      and not exists(select 1 from private.pos_fin01_admissions_v2
+        where transaction_id=pg_current_xact_id() and license_id=v_license_id and depth>0) then
+      raise exception 'CLOUD_CLIENT_UPDATE_REQUIRED' using errcode='P0001',detail='QA_PILOT_REQUIRES_V2';
+    end if;
+  end loop;
+  if tg_op='DELETE' then return old; end if;
+  return new;
+end;
+$function$;
+
+-- Intercept the shared write boundary, not individual public aliases. Existing
+-- validations still execute; rejection aborts the financial SQL statement.
+create trigger pos_fin01_guard_qa_write_v2 before insert or update or delete on public.pos_customers
+for each row execute function private.pos_fin01_guard_qa_write_v2();
+create trigger pos_fin01_guard_qa_write_v2 before insert or update or delete on public.pos_customer_ledger
+for each row execute function private.pos_fin01_guard_qa_write_v2();
+create trigger pos_fin01_guard_qa_write_v2 before insert or update or delete on public.pos_sales
+for each row execute function private.pos_fin01_guard_qa_write_v2();
+create trigger pos_fin01_guard_qa_write_v2 before insert or update or delete on public.pos_sale_items
+for each row execute function private.pos_fin01_guard_qa_write_v2();
+create trigger pos_fin01_guard_qa_write_v2 before insert or update or delete on public.pos_sale_payments
+for each row execute function private.pos_fin01_guard_qa_write_v2();
+create trigger pos_fin01_guard_qa_write_v2 before insert or update or delete on public.pos_cash_sessions
+for each row execute function private.pos_fin01_guard_qa_write_v2();
+create trigger pos_fin01_guard_qa_write_v2 before insert or update or delete on public.pos_cash_movements
+for each row execute function private.pos_fin01_guard_qa_write_v2();
+create trigger pos_fin01_guard_qa_write_v2 before insert or update or delete on public.pos_financial_operations
+for each row execute function private.pos_fin01_guard_qa_write_v2();
+
+alter function private.pos_fin01_register_new_tenant_v2() owner to postgres;
+alter function private.pos_fin01_set_clean_qa_protocol_v2(uuid,integer,bigint,text) owner to postgres;
+alter function private.pos_fin01_enter_pilot_v2(jsonb,text,text,text,text,boolean) owner to postgres;
+alter function private.pos_fin01_leave_pilot_v2(uuid) owner to postgres;
+alter function private.pos_fin01_guard_qa_write_v2() owner to postgres;
+revoke all on function private.pos_fin01_register_new_tenant_v2() from public,anon,authenticated,service_role;
+revoke all on function private.pos_fin01_set_clean_qa_protocol_v2(uuid,integer,bigint,text) from public,anon,authenticated,service_role;
+revoke all on function private.pos_fin01_enter_pilot_v2(jsonb,text,text,text,text,boolean) from public,anon,authenticated,service_role;
+revoke all on function private.pos_fin01_leave_pilot_v2(uuid) from public,anon,authenticated,service_role;
+revoke all on function private.pos_fin01_guard_qa_write_v2() from public,anon,authenticated,service_role;
+
+
 create or replace function private.pos_fin01_validate_sync_contract_v2(p_sync_contract jsonb)
 returns void
 language plpgsql
@@ -339,7 +502,6 @@ create or replace function private.pos_fin01_sync_envelope_v2(
 )
 returns jsonb
 language plpgsql
-stable
 set search_path = ''
 as $function$
 declare
@@ -367,6 +529,7 @@ begin
   if p_operation is not null then
     v_envelope := v_envelope || jsonb_build_object('operation', p_operation);
   end if;
+  perform private.pos_fin01_leave_pilot_v2(p_license_id);
   return v_envelope;
 end;
 $function$;
@@ -388,6 +551,7 @@ declare
   v_context jsonb;
   v_license_id uuid;
   v_rate jsonb;
+  v_policy private.pos_fin01_qa_pilots_v2;
 begin
   v_context := private.validate_pos_sync_context(p_license_key, p_device_fingerprint, p_security_token, p_staff_session_token);
   v_license_id := (v_context->>'license_id')::uuid;
@@ -407,6 +571,21 @@ begin
       'requested_contract', p_requested_contract,
       'required_contract', 2
     );
+  end if;
+  perform pg_advisory_xact_lock_shared(hashtextextended('fin01_qa_protocol:'||v_license_id::text,0));
+  select * into v_policy from private.pos_fin01_qa_pilots_v2 where license_id=v_license_id for share;
+  if coalesce(v_policy.protocol,1)<>2 then
+    if v_policy.activated_at is null then
+      return jsonb_build_object('contract_version',2,'server_status','UPDATE_REQUIRED',
+        'tenant_id',v_license_id,'active_protocol',1,'reason','QA_PILOT_NOT_ENABLED');
+    end if;
+    -- A stopped QA pilot may still recover its immutable receipts, but cannot
+    -- negotiate directory/payment/execute endpoints. No new write admission.
+    return jsonb_build_object('contract_version',2,'server_status','SUPPORTED',
+      'tenant_id',v_license_id,'active_protocol',1,'mode','RECOVERY_ONLY',
+      'capabilities',jsonb_build_array('historical_credit_preservation_v1','customer_projection_safe_apply_v1','financial_operation_result_v1'),
+      'endpoint_families',jsonb_build_array('financial_operations'),
+      'endpoints',jsonb_build_array('pos_get_financial_operation_receipt_v2'));
   end if;
   return jsonb_build_object(
     'contract_version', 2,
@@ -443,7 +622,7 @@ declare
   v_payload jsonb;
   v_customer_id text;
 begin
-  perform private.pos_fin01_validate_sync_contract_v2(p_sync_contract);
+  perform private.pos_fin01_enter_pilot_v2(p_sync_contract,p_license_key,p_device_fingerprint,p_security_token,p_staff_session_token);
   v_context := private.validate_pos_sync_context(p_license_key, p_device_fingerprint, p_security_token, p_staff_session_token);
   v_license_id := (v_context->>'license_id')::uuid;
   perform private.assert_cloud_pos_sync_enabled(v_context);
@@ -487,7 +666,7 @@ declare
   v_rate jsonb;
   v_payload jsonb;
 begin
-  perform private.pos_fin01_validate_sync_contract_v2(p_sync_contract);
+  perform private.pos_fin01_enter_pilot_v2(p_sync_contract,p_license_key,p_device_fingerprint,p_security_token,p_staff_session_token);
   v_context := private.validate_pos_sync_context(p_license_key, p_device_fingerprint, p_security_token, p_staff_session_token);
   v_license_id := (v_context->>'license_id')::uuid;
   perform private.assert_cloud_pos_sync_enabled(v_context);
@@ -536,7 +715,7 @@ declare
   v_failed integer := 0;
   v_seen text[] := array[]::text[];
 begin
-  perform private.pos_fin01_validate_sync_contract_v2(p_sync_contract);
+  perform private.pos_fin01_enter_pilot_v2(p_sync_contract,p_license_key,p_device_fingerprint,p_security_token,p_staff_session_token);
   v_context := private.validate_pos_sync_context(p_license_key, p_device_fingerprint, p_security_token, p_staff_session_token);
   v_license_id := (v_context->>'license_id')::uuid;
   perform private.assert_cloud_pos_sync_enabled(v_context);
@@ -610,7 +789,7 @@ declare
   v_offset integer := greatest(coalesce(p_offset, 0), 0);
   v_has_more boolean;
 begin
-  perform private.pos_fin01_validate_sync_contract_v2(p_sync_contract);
+  perform private.pos_fin01_enter_pilot_v2(p_sync_contract,p_license_key,p_device_fingerprint,p_security_token,p_staff_session_token);
   v_context := private.validate_pos_sync_context(p_license_key, p_device_fingerprint, p_security_token, p_staff_session_token);
   v_license_id := (v_context->>'license_id')::uuid;
   perform private.assert_cloud_pos_sync_enabled(v_context);
@@ -653,7 +832,7 @@ declare
   v_change_seq bigint;
   v_has_more boolean;
 begin
-  perform private.pos_fin01_validate_sync_contract_v2(p_sync_contract);
+  perform private.pos_fin01_enter_pilot_v2(p_sync_contract,p_license_key,p_device_fingerprint,p_security_token,p_staff_session_token);
   v_context := private.validate_pos_sync_context(p_license_key, p_device_fingerprint, p_security_token, p_staff_session_token);
   v_license_id := (v_context->>'license_id')::uuid;
   perform private.assert_cloud_pos_sync_enabled(v_context);
@@ -693,7 +872,7 @@ declare
   v_rate jsonb;
   v_payload jsonb;
 begin
-  perform private.pos_fin01_validate_sync_contract_v2(p_sync_contract);
+  perform private.pos_fin01_enter_pilot_v2(p_sync_contract,p_license_key,p_device_fingerprint,p_security_token,p_staff_session_token);
   v_context := private.validate_pos_sync_context(p_license_key, p_device_fingerprint, p_security_token, p_staff_session_token);
   v_license_id := (v_context->>'license_id')::uuid;
   perform private.assert_cloud_customer_credit_sync_enabled(v_context);
@@ -734,7 +913,7 @@ declare
   v_offset integer := greatest(coalesce(p_offset, 0), 0);
   v_has_more boolean;
 begin
-  perform private.pos_fin01_validate_sync_contract_v2(p_sync_contract);
+  perform private.pos_fin01_enter_pilot_v2(p_sync_contract,p_license_key,p_device_fingerprint,p_security_token,p_staff_session_token);
   v_context := private.validate_pos_sync_context(p_license_key, p_device_fingerprint, p_security_token, p_staff_session_token);
   v_license_id := (v_context->>'license_id')::uuid;
   perform private.assert_cloud_customer_credit_sync_enabled(v_context);
@@ -782,7 +961,7 @@ declare
   v_change_seq bigint;
   v_has_more boolean;
 begin
-  perform private.pos_fin01_validate_sync_contract_v2(p_sync_contract);
+  perform private.pos_fin01_enter_pilot_v2(p_sync_contract,p_license_key,p_device_fingerprint,p_security_token,p_staff_session_token);
   v_context := private.validate_pos_sync_context(p_license_key, p_device_fingerprint, p_security_token, p_staff_session_token);
   v_license_id := (v_context->>'license_id')::uuid;
   perform private.assert_cloud_customer_credit_sync_enabled(v_context);
@@ -825,7 +1004,7 @@ declare
   v_rate jsonb;
   v_payload jsonb;
 begin
-  perform private.pos_fin01_validate_sync_contract_v2(p_sync_contract);
+  perform private.pos_fin01_enter_pilot_v2(p_sync_contract,p_license_key,p_device_fingerprint,p_security_token,p_staff_session_token);
   v_context := private.validate_pos_sync_context(p_license_key, p_device_fingerprint, p_security_token, p_staff_session_token);
   v_license_id := (v_context->>'license_id')::uuid;
   perform private.assert_cloud_customer_credit_sync_enabled(v_context);
@@ -956,7 +1135,7 @@ declare
   v_operation public.pos_financial_operations;
   v_customer_id text;
 begin
-  perform private.pos_fin01_validate_sync_contract_v2(p_sync_contract);
+  perform private.pos_fin01_enter_pilot_v2(p_sync_contract,p_license_key,p_device_fingerprint,p_security_token,p_staff_session_token);
   if not (p_sync_contract->'capabilities' @> '["financial_operation_result_v1"]'::jsonb) then
     raise exception 'CLOUD_CLIENT_UPDATE_REQUIRED' using errcode = 'P0001';
   end if;
@@ -999,7 +1178,7 @@ declare
   v_operation_status text := 'NOT_FOUND';
   v_origin_authorized boolean := false;
 begin
-  perform private.pos_fin01_validate_sync_contract_v2(p_sync_contract);
+  perform private.pos_fin01_enter_pilot_v2(p_sync_contract,p_license_key,p_device_fingerprint,p_security_token,p_staff_session_token,true);
   if not (p_sync_contract->'capabilities' @> '["financial_operation_result_v1"]'::jsonb) then
     raise exception 'CLOUD_CLIENT_UPDATE_REQUIRED' using errcode = 'P0001';
   end if;

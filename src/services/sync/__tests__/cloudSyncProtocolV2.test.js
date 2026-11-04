@@ -132,6 +132,33 @@ describe('immutable financial operation results', () => {
       authArgs: { p_license_key: 'license' }, family: 'customer_credit' }))
       .rejects.toMatchObject({ code: 'CLOUD_CLIENT_UPDATE_REQUIRED', retryable: false });
   });
+
+  it('does not write or fall back to v1 when the server has not enabled the QA pilot', async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: { contract_version: 2, tenant_id: 'tenant-1',
+      server_status: 'UPDATE_REQUIRED', active_protocol: 1, reason: 'QA_PILOT_NOT_ENABLED' }, error: null });
+    await expect(callCloudSyncV2Rpc({ client: { rpc }, rpcName: 'pos_execute_financial_operation_v2',
+      authArgs: { p_license_key: 'license' }, family: 'financial_operations' }))
+      .rejects.toMatchObject({ code: 'CLOUD_CLIENT_UPDATE_REQUIRED', retryable: false });
+    expect(rpc.mock.calls.map(([name]) => name)).toEqual([CLOUD_SYNC_CONTRACT_RPC]);
+  });
+
+  it('recovers the same receipt after pilot stop but refuses an execute absent from discovery', async () => {
+    const recoveryContract = { ...contract, mode: 'RECOVERY_ONLY', active_protocol: 1,
+      endpoint_families: ['financial_operations'], endpoints: ['pos_get_financial_operation_receipt_v2'],
+      capabilities: [...contract.capabilities, CLOUD_FINANCIAL_RESULT_CAPABILITY] };
+    const rpc = vi.fn().mockResolvedValueOnce({ data: recoveryContract, error: null })
+      .mockResolvedValueOnce({ data: receipt(), error: null });
+    const response = await callCloudSyncV2Rpc({ client: { rpc }, rpcName: 'pos_get_financial_operation_receipt_v2',
+      authArgs: { p_license_key: 'license' }, params: { p_idempotency_key: 'original-key', p_request_hash: 'original-hash' },
+      family: 'financial_operations', expectedIdempotencyKey: 'original-key', expectedRequestHash: 'original-hash' });
+    expect(response.status).toBe('COMPLETED');
+    expect(rpc.mock.calls[1][1]).toMatchObject({ p_idempotency_key: 'original-key', p_request_hash: 'original-hash' });
+    const blocked = vi.fn().mockResolvedValue({ data: recoveryContract, error: null });
+    await expect(callCloudSyncV2Rpc({ client: { rpc: blocked }, rpcName: 'pos_execute_financial_operation_v2',
+      authArgs: { p_license_key: 'license' }, family: 'financial_operations' }))
+      .rejects.toMatchObject({ code: 'CLOUD_CLIENT_UPDATE_REQUIRED' });
+    expect(blocked).toHaveBeenCalledTimes(1);
+  });
 });
 
 const envelope = (overrides = {}) => ({
