@@ -28,29 +28,36 @@ export const customerCreditLocalRepository = {
     return dexieCustomerCreditRepository.migrateExistingDebtsToLedger(...args);
   },
 
-  async applyCloudLedger(ledger) {
+  async applyCloudLedger(ledger, { actorHandle = null } = {}) {
     if (!ledger?.id) return null;
     await ensureOpen();
+    actorHandle?.assertCurrent?.();
     return db.transaction('rw', projectionTables(), async () => {
-      if ((await customerLocalRepository.protectHistoricalCustomer(ledger.customer_id || ledger.customerId)).blocked) {
+      const history = await customerLocalRepository.protectHistoricalCustomer(ledger.customer_id || ledger.customerId);
+      actorHandle?.assertCurrent?.();
+      if (history.blocked) {
         return null;
       }
       const existing = await db.table(STORES.CUSTOMER_LEDGER).get(ledger.id);
       const local = cloudLedgerToLocal(ledger, existing);
       if (!local) return null;
+      actorHandle?.assertCurrent?.();
       await db.table(STORES.CUSTOMER_LEDGER).put(local);
+      actorHandle?.assertCurrent?.();
       return local;
     });
   },
 
-  async applyCloudLedgers(ledgers = []) {
+  async applyCloudLedgers(ledgers = [], { actorHandle = null } = {}) {
     await ensureOpen();
     return db.transaction('rw', projectionTables(), async () => {
       const applied = [];
       for (const ledger of ledgers || []) {
-        const local = await this.applyCloudLedger(ledger);
+        actorHandle?.assertCurrent?.();
+        const local = await this.applyCloudLedger(ledger, { actorHandle });
         if (local) applied.push(local);
       }
+      actorHandle?.assertCurrent?.();
       return applied;
     });
   },

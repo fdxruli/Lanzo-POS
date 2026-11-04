@@ -16,6 +16,13 @@ vi.mock('../customerCloudRepository', () => ({ customerCloudRepository: mocks.cl
 vi.mock('../../customerCredit/customerCreditCloudRepository', () => ({ customerCreditCloudRepository: mocks.creditCloud }));
 vi.mock('../../sync/posSyncOrchestrator', () => ({ posSyncOrchestrator: mocks.orchestrator }));
 vi.mock('../../sync/actorPermission', () => ({ hasCurrentActorPermission: () => mocks.actorPermission.allowed }));
+vi.mock('../../auth/actorRuntimeController', async (importOriginal) => {
+  const actual = await importOriginal();
+  const { getActiveTenantRuntime } = await import('../../db/tenantRuntimeRouter');
+  return { ...actual, actorRuntimeController: actual.createActorRuntimeController({
+    getTenantAuthority: () => getActiveTenantRuntime()
+  }) };
+});
 vi.mock('../../tenant/localTenantGuard', () => ({
   assertLocalTenantSyncAccess: vi.fn(async () => ({ status: 'pass' })),
   runWithLocalTenantSyncLease: async (_source, _options, operation) => operation(),
@@ -42,6 +49,7 @@ import { customerCreditSyncHandler } from '../../customerCredit/customerCreditSy
 import { customerCreditLocalRepository } from '../../customerCredit/customerCreditLocalRepository';
 import { customerCreditMigrationService } from '../../customerCredit/customerCreditMigrationService';
 import { syncMetaService } from '../../sync/syncMetaService';
+import { actorRuntimeController } from '../../auth/actorRuntimeController';
 
 const TEST_LICENSE_KEY = 'license-key-sha256:test-tenant-runtime-a';
 const TEST_TENANT_IDENTITY = Object.freeze({
@@ -72,6 +80,15 @@ const remoteCustomer = (id, overrides = {}) => ({
 
 const setCloudMode = () => useAppStore.setState({ licenseDetails: CLOUD_LICENSE });
 const setFreeMode = () => useAppStore.setState({ licenseDetails: null });
+// The RPCs are mocked, but v2's actor guards stay real. Give these directory
+// fixtures a current session instead of allowing a handler to run while locked.
+const grantCustomerFixtureActor = () => {
+  actorRuntimeController.lock('customer_fixture_reset');
+  actorRuntimeController.beginAuthentication({ actorType: 'admin', deviceRef: 'customer-fixture-device' });
+  actorRuntimeController.grant({ actorType: 'admin', actorId: 'customer-fixture-admin',
+    sessionId: 'customer-fixture-session', deviceRef: 'customer-fixture-device', permissions: ['customers'],
+    authorizationExpiresAt: new Date(Date.now() + 3600000).toISOString() });
+};
 // These fixtures represent known Cloud projections, rather than unclassified
 // Local history. Keep their financial checkpoint when seeding IndexedDB.
 const knownCloudProjection = (customer) => customer.serverVersion > 0 ? {
@@ -82,6 +99,7 @@ const knownCloudProjection = (customer) => customer.serverVersion > 0 ? {
 beforeEach(async () => {
   await openTestTenantRuntime();
   setFreeMode();
+  grantCustomerFixtureActor();
   Object.defineProperty(navigator, 'onLine', { value: true, configurable: true });
   mocks.cloud.upsertCustomer.mockReset();
   mocks.cloud.deleteCustomer.mockReset();
@@ -98,6 +116,7 @@ beforeEach(async () => {
 afterEach(async () => {
   cleanup();
   setFreeMode();
+  actorRuntimeController.lock('customer_fixture_closed');
   await closeTestTenantRuntime();
   vi.clearAllMocks();
 });
@@ -137,6 +156,7 @@ describe('customerRepository IndexedDB integration', () => {
     });
     await closeTestTenantRuntime();
     await openTenantRuntime(TEST_TENANT_IDENTITY);
+    grantCustomerFixtureActor();
     await customerLocalRepository.applyCloudCustomer({ ...cloud, server_version: 4 });
     await customerMigrationService.runInitialMigrationIfNeeded({ licenseKey: TEST_LICENSE_KEY });
     expect(await customerCreditMigrationService.runInitialMigrationIfNeeded({ licenseKey: TEST_LICENSE_KEY }))

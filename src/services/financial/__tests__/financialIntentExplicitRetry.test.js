@@ -4,6 +4,16 @@ const runtime = vi.hoisted(() => {
   const rows = new Map();
   const rpcCalls = [];
   let transactionTail = Promise.resolve();
+  const envelope = (endpoint, args, payload) => ({
+    contract_version: 2,
+    tenant_id: 'tenant-a',
+    endpoint,
+    family: 'financial_operations',
+    customer_projection_scope: 'OPERATION_RESULT',
+    payload,
+    customer_projections: [],
+    operation: { idempotency_key: args.p_idempotency_key, request_hash: args.p_request_hash }
+  });
 
   const makeHandle = (overrides = {}) => {
     const handle = {
@@ -57,6 +67,7 @@ const runtime = vi.hoisted(() => {
   const state = {
     rows,
     rpcCalls,
+    envelope,
     table,
     handle: null,
     stationId: 'station-a',
@@ -109,6 +120,16 @@ vi.mock('../../supabase', () => ({
   supabaseClient: {
     async rpc(name, args) {
       runtime.rpcCalls.push({ name, args: structuredClone(args) });
+      if (name === 'pos_fin01_sync_contract_v1') {
+        return { data: {
+          contract_version: 2,
+          tenant_id: 'tenant-a',
+          server_status: 'SUPPORTED',
+          endpoint_families: ['financial_operations'],
+          endpoints: ['pos_execute_financial_operation_v2', 'pos_get_financial_operation_receipt_v2'],
+          capabilities: ['historical_credit_preservation_v1', 'customer_projection_safe_apply_v1', 'financial_operation_result_v1']
+        }, error: null };
+      }
       if (name === 'pos_get_cash_station_state') {
         return {
           data: {
@@ -118,16 +139,16 @@ vi.mock('../../supabase', () => ({
           error: null
         };
       }
-      if (name === 'pos_get_financial_operation_receipt') {
+      if (name === 'pos_get_financial_operation_receipt_v2') {
         try {
-          return { data: await runtime.receipt(args), error: null };
+          return { data: runtime.envelope(name, args, await runtime.receipt(args)), error: null };
         } catch (error) {
           return { data: null, error };
         }
       }
-      if (name === 'pos_execute_financial_operation_v1') {
+      if (name === 'pos_execute_financial_operation_v2') {
         try {
-          return { data: await runtime.execute(args), error: null };
+          return { data: runtime.envelope(name, args, await runtime.execute(args)), error: null };
         } catch (error) {
           return { data: null, error };
         }
@@ -172,8 +193,8 @@ const saleRequest = ({ oldNullBatches = false, total = '10' } = {}) => ({
 
 const cashRequest = () => ({ opening_amount: '100', opening_origin: 'manual' });
 
-const executeCalls = () => runtime.rpcCalls.filter(({ name }) => name === 'pos_execute_financial_operation_v1');
-const receiptCalls = () => runtime.rpcCalls.filter(({ name }) => name === 'pos_get_financial_operation_receipt');
+const executeCalls = () => runtime.rpcCalls.filter(({ name }) => name === 'pos_execute_financial_operation_v2');
+const receiptCalls = () => runtime.rpcCalls.filter(({ name }) => name === 'pos_get_financial_operation_receipt_v2');
 
 const seedIntent = async ({
   operationType = SALE_OPERATION,
@@ -206,6 +227,40 @@ const explicitRetry = (intent, options = {}) => retryExistingFinancialIntentExpl
 beforeEach(() => runtime.reset());
 
 describe('explicit retry of an already-owned sale financial intent', () => {
+  it.each([FINANCIAL_INTENT_STATUS.PENDING_RECEIPT, FINANCIAL_INTENT_STATUS.DISPATCHING])(
+    'R4 retains an offline %s intent across a renewed session but NOT_FOUND cannot finish its recovery',
+    async (status) => {
+      // ledgerVersion/requestContractVersion 1 are also the durable v1 shape.
+      // Model an attempted operation retained before an application update;
+      // this is a state-machine test, not a running legacy PWA or pilot gate.
+      const intent = await seedIntent({ changes: { status, dispatchAttemptCount: 1 } });
+      const before = await getFinancialIntent(intent.id);
+      runtime.handle = runtime.makeHandle({ sessionId: 'renewed-session', generation: 9,
+        tenant: { ...runtime.handle.tenant, generation: 9 } });
+      runtime.receipt.mockResolvedValue({ status: 'NOT_FOUND' });
+
+      await expect(explicitRetry(intent)).rejects.toThrow('FINANCIAL_RECOVERY_RECEIPT_PENDING');
+      expect(executeCalls()).toHaveLength(0);
+      expect(runtime.rows.size).toBe(1);
+      expect(await getFinancialIntent(intent.id)).toMatchObject({
+        id: before.id, idempotencyKey: before.idempotencyKey, requestHash: before.requestHash,
+        requestPayload: before.requestPayload, canonicalRequest: before.canonicalRequest,
+        originActorKey: before.originActorKey, originActorSessionId: before.originActorSessionId,
+        originDeviceRef: before.originDeviceRef, originTenantDatabaseName: before.originTenantDatabaseName,
+        status: FINANCIAL_INTENT_STATUS.PENDING_RECEIPT, dispatchAttemptCount: 1,
+        lastRecoveryCode: 'FINANCIAL_RECOVERY_RECEIPT_NOT_FOUND_AFTER_ATTEMPT'
+      });
+
+      // A later authoritative receipt is recoverable without executing again.
+      const response = { success: true, sale: { id: 'r4-original-sale' } };
+      runtime.receipt.mockResolvedValue({ status: 'COMPLETED', result: response });
+      await expect(explicitRetry(intent)).resolves.toMatchObject({ response });
+      expect(executeCalls()).toHaveLength(0);
+      expect(await getFinancialIntent(intent.id)).toMatchObject({ idempotencyKey: before.idempotencyKey,
+        requestHash: before.requestHash, dispatchAttemptCount: 1, status: FINANCIAL_INTENT_STATUS.COMPLETED });
+    }
+  );
+
   it('preserves the strict unique-K allocator with one local owner', async () => {
     await seedIntent();
 

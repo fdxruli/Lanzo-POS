@@ -7,6 +7,7 @@ import Ticker from './Ticker';
 import MessageModal from '../common/MessageModal';
 import DataSafetyModal from '../common/DataSafetyModal';
 import PostDowngradeRecoveryBanner from '../common/PostDowngradeRecoveryBanner';
+import CloudProtocolUpdateNotice from '../common/CloudProtocolUpdateNotice';
 import AdminRouteRecoveryRegion from '../common/AdminRouteRecoveryRegion';
 import EcommerceOrdersRuntime from '../ecommerce/orders/EcommerceOrdersRuntime';
 import EcommercePublishedStockAlertRuntime from '../ecommerce/EcommercePublishedStockAlertRuntime';
@@ -183,6 +184,7 @@ function Layout() {
       <div className={`content-wrapper ${isPosPage ? 'content-wrapper--pos' : ''} ${isNotFoundPage ? 'content-wrapper--not-found' : ''}`.trim()}>
         {shouldShowTicker && <Ticker isSuppressed={isNotFoundPage} />}
         <PostDowngradeRecoveryBanner isSuppressed={isNotFoundPage} />
+        <CloudProtocolUpdateNotice isSuppressed={isNotFoundPage} />
         <div className={`page-container ${isPosPage ? 'page-container-pos' : ''} ${pathname.startsWith('/clientes') ? 'page-container-customers' : ''} ${isNotFoundPage ? 'page-container--not-found' : ''}`.trim()}>
           {isNotFoundPage ? (
             <Outlet />

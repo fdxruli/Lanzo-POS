@@ -59,9 +59,11 @@ const recordResults = async (batch, response, handle) => {
 // Legacy initial-balance writes cannot authorize historical credit. Preserve
 // their Local source and leave authorization/import to the separate FIN-01 flow.
 export const customerCreditMigrationService = {
-  async runInitialMigrationIfNeeded({ licenseKey } = {}) {
+  async runInitialMigrationIfNeeded({ licenseKey, actorHandle = actorRuntimeController.capture('customers') } = {}) {
     if (!licenseKey) return { skipped: true, reason: 'license_missing' };
-    await historicalCreditSnapshot.preserveAll();
+    actorHandle.assertCurrent();
+    await historicalCreditSnapshot.preserveAll({ actorHandle });
+    actorHandle.assertCurrent();
     const blockedCustomerIds = [];
     for (const customer of await customerLocalRepository.getAllActiveCustomers()) {
       if ((await customerLocalRepository.protectHistoricalCustomer(customer.id)).blocked) {

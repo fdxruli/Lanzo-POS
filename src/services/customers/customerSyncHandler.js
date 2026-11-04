@@ -1,3 +1,4 @@
+import { actorRuntimeController } from '../auth/actorRuntimeController';
 import Logger from '../Logger';
 import { useAppStore } from '../../store/useAppStore';
 import { posSyncOrchestrator } from '../sync/posSyncOrchestrator';
@@ -150,7 +151,9 @@ export const customerSyncHandler = {
     }
 
     try {
-      const migrationResult = await customerMigrationService.runInitialMigrationIfNeeded({ licenseKey });
+      const actorHandle = actorRuntimeController.capture('customers');
+      const migrationResult = await customerMigrationService.runInitialMigrationIfNeeded({ licenseKey, actorHandle });
+      actorHandle.assertCurrent();
       if (migrationResult?.blocked) {
         Logger.warn('[Customers/Sync] Migracion inicial bloqueada:', migrationResult);
       }
@@ -166,6 +169,7 @@ export const customerSyncHandler = {
     const licenseKey = capturedLicenseKey || getRuntimeLicenseKey();
     if (!licenseKey || !isOnline()) return { applied: 0, skipped: true };
     if (!canSyncCustomers()) return { applied: 0, skipped: true, reason: 'actor_permission_missing' };
+    const actorHandle = actorRuntimeController.capture('customers');
 
     const hasCustomerEvents = events.some((event) => (event.entity_type || event.entityType) === SYNC_ENTITY_TYPES.CUSTOMER);
     if (events.length > 0 && !hasCustomerEvents) {
@@ -173,6 +177,7 @@ export const customerSyncHandler = {
     }
 
     let sinceChangeSeq = await syncMetaService.getMeta(CUSTOMER_LAST_CHANGE_SEQ_KEY, 0, { licenseKey });
+    actorHandle.assertCurrent();
     sinceChangeSeq = Number(sinceChangeSeq) || 0;
 
     let hasMore = true;
@@ -182,21 +187,25 @@ export const customerSyncHandler = {
       const response = await customerCloudRepository.pullCustomerChanges({
         licenseKey,
         sinceChangeSeq,
-        limit: SYNC_LIMITS.DEFAULT_PULL_LIMIT
+        limit: SYNC_LIMITS.DEFAULT_PULL_LIMIT,
+        actorHandle
       });
+      actorHandle.assertCurrent();
 
       if (response?.success === false) {
         throw new Error(response.message || response.code || 'CUSTOMER_CHANGES_PULL_FAILED');
       }
 
       const customers = Array.isArray(response.customers) ? response.customers : [];
-      const appliedCustomers = await customerLocalRepository.applyCloudCustomers(customers);
+      const appliedCustomers = await customerLocalRepository.applyCloudCustomers(customers, { actorHandle });
       applied += appliedCustomers.length;
 
       const latestChangeSeq = normalizeChangeSeq(response, sinceChangeSeq);
+      actorHandle.assertCurrent();
       if (latestChangeSeq > sinceChangeSeq) {
         sinceChangeSeq = latestChangeSeq;
         await syncMetaService.setMeta(CUSTOMER_LAST_CHANGE_SEQ_KEY, sinceChangeSeq, { licenseKey });
+        actorHandle.assertCurrent();
       }
 
       hasMore = Boolean(response.has_more || response.hasMore) && latestChangeSeq > 0;
@@ -221,6 +230,7 @@ export const customerSyncHandler = {
       throw new Error('CUSTOMER_PERMISSION_REQUIRED');
     }
 
+    const actorHandle = actorRuntimeController.capture('customers');
     let currentOperation = operation;
     let expectedVersion = getExpectedVersion(currentOperation);
     let idempotencyKey = currentOperation?.idempotencyKey || currentOperation?.id;
@@ -233,7 +243,8 @@ export const customerSyncHandler = {
         licenseKey,
         customerId: operation.entityId,
         expectedVersion,
-        idempotencyKey
+        idempotencyKey,
+        actorHandle
       });
     } else {
       const queuedCustomer = operation?.payload?.customer || {};
@@ -275,9 +286,11 @@ export const customerSyncHandler = {
         licenseKey,
         customer: currentOperation?.payload?.customer,
         expectedVersion,
-        idempotencyKey
+        idempotencyKey,
+        actorHandle
       });
     }
+    actorHandle.assertCurrent();
 
     if (response?.success === false) {
       if (CONFLICT_CODES.has(response.code)) {
@@ -398,6 +411,7 @@ export const customerSyncHandler = {
 
     if (response?.customer) {
       await customerLocalRepository.applyCloudCustomer(response.customer, {
+        actorHandle,
         source: 'mutation_ack',
         operationId: currentOperation.id
       });
@@ -406,6 +420,7 @@ export const customerSyncHandler = {
     const latestChangeSeq = Number(response?.change_seq ?? response?.changeSeq);
     if (Number.isFinite(latestChangeSeq) && latestChangeSeq > 0) {
       await syncMetaService.setMeta(CUSTOMER_LAST_CHANGE_SEQ_KEY, latestChangeSeq, { licenseKey });
+      actorHandle.assertCurrent();
     }
 
     notifyCustomersChanged();

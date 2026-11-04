@@ -62,6 +62,43 @@ afterEach(async () => {
 });
 
 describe('syncOutboxService tenant isolation', () => {
+  it('pauses only the affected protocol family without consuming retries and resumes after compatibility', async () => {
+    const customer = {
+      ...row({ id: 'customer-op', licenseKey: 'TENANT-B' }),
+      entityType: 'customer',
+      attempts: 3,
+      idempotencyKey: 'customer-idem',
+      payload: { customer: { id: 'customer-1', debt: '42.50' } }
+    };
+    const unrelated = row({ id: 'product-op', licenseKey: 'TENANT-B' });
+    await database.table('sync_outbox').bulkPut([customer, unrelated]);
+
+    await syncOutboxService.pauseForUpdateRequiredFamily('customer_directory', { licenseKey: 'TENANT-B' });
+
+    const paused = await database.table('sync_outbox').get('customer-op');
+    expect(paused).toMatchObject({
+      status: 'update_required',
+      protocolFamily: 'customer_directory',
+      attempts: 3,
+      idempotencyKey: 'customer-idem',
+      payload: customer.payload,
+      lastError: 'CLOUD_CLIENT_UPDATE_REQUIRED'
+    });
+    expect(await syncOutboxService.getUpdateRequiredSummary({ licenseKey: 'TENANT-B' }))
+      .toEqual([{ family: 'customer_directory', count: 1 }]);
+    expect((await syncOutboxService.getPendingOperations({ licenseKey: 'TENANT-B' })).map(({ id }) => id))
+      .toEqual(['product-op']);
+
+    await syncOutboxService.resumeUpdateRequired('customer_directory', { licenseKey: 'TENANT-B' });
+    expect(await database.table('sync_outbox').get('customer-op')).toMatchObject({
+      status: 'pending',
+      attempts: 3,
+      idempotencyKey: 'customer-idem',
+      payload: customer.payload,
+      protocolFamily: null
+    });
+  });
+
   it('returns only explicitly scoped operations for the active tenant', async () => {
     await database.table('sync_outbox').bulkPut([
       row({ id: 'operation-a', licenseKey: 'TENANT-A' }),

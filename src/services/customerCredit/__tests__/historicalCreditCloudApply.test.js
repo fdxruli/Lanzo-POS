@@ -7,10 +7,52 @@ import { historicalCreditSnapshot } from '../historicalCreditSnapshot';
 import { localCustomerToCloudPayload } from '../../customers/customerMapper';
 import { customerCreditRepository } from '../../db/customerCreditRepository';
 import { customerCreditLocalRepository } from '../customerCreditLocalRepository';
+import { validateCloudSyncV2Envelope } from '../../sync/cloudSyncProtocolV2';
 
 beforeEach(() => openTestTenantRuntime());
 afterEach(() => closeTestTenantRuntime());
 describe('real Cloud apply through tenant Dexie', () => {
+  const historicalReceiptCustomer = () => validateCloudSyncV2Envelope({
+    contract_version: 2, tenant_id: 'qa-tenant', endpoint: 'pos_get_financial_operation_receipt_v2',
+    family: 'financial_operations', customer_projection_scope: 'OPERATION_RESULT', customer_projections: [],
+    operation: { idempotency_key: 'original-key', request_hash: 'original-hash' },
+    payload: { status: 'COMPLETED', result: { customer: { id: 'r2-customer', name: 'Past name',
+      credit_limit: 100, debt: 10, debt_cents: 1000, server_version: 1,
+      created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z' } } }
+  }, { expectedTenantId: 'qa-tenant', expectedEndpoint: 'pos_get_financial_operation_receipt_v2',
+    expectedFamily: 'financial_operations', expectedIdempotencyKey: 'original-key', expectedRequestHash: 'original-hash' }).result.customer;
+
+  it('does not roll current $5 debt back to a completed $10 receipt during repeated recovery', async () => {
+    await customerLocalRepository.applyCloudCustomer({ id: 'r2-customer', name: 'Current name', debt: 5, debt_cents: 500, server_version: 2 });
+    const before = await db.table(STORES.CUSTOMERS).get('r2-customer');
+    for (let i = 0; i < 3; i += 1) await customerLocalRepository.applyCloudCustomer(historicalReceiptCustomer(), { source: 'credit_projection' });
+    expect(await db.table(STORES.CUSTOMERS).get('r2-customer')).toEqual(before);
+    expect(await db.table(STORES.CUSTOMER_LEDGER).count()).toBe(0);
+    expect(await historicalCreditSnapshot.list()).toEqual([]);
+  });
+
+  it('does not create a zero-debt customer from a historical receipt when no projection exists', async () => {
+    expect(await customerLocalRepository.applyCloudCustomer(historicalReceiptCustomer(), { source: 'credit_projection' })).toBeNull();
+    expect(await db.table(STORES.CUSTOMERS).get('r2-customer')).toBeUndefined();
+  });
+
+  it('preserves pending Local history when a completed receipt is recovered', async () => {
+    await db.table(STORES.CUSTOMERS).put({ id: 'r2-customer', name: 'Local name', debt: '22', financialSource: 'local' });
+    await customerLocalRepository.applyCloudCustomer(historicalReceiptCustomer(), { source: 'credit_projection' });
+    expect(await db.table(STORES.CUSTOMERS).get('r2-customer')).toMatchObject({ name: 'Local name', debt: '22',
+      conflictReason: 'HISTORICAL_DEBT_PRESERVATION_REQUIRED' });
+    expect((await historicalCreditSnapshot.list())[0]).toMatchObject({ amountCents: 2200, status: 'PENDING_AUTHORIZATION' });
+  });
+
+  it('rolls back receipt-side Local history changes if the actor changes inside the transaction', async () => {
+    await db.table(STORES.CUSTOMERS).put({ id: 'r2-customer', name: 'Local', debt: '22' });
+    let checks = 0;
+    const actorHandle = { assertCurrent() { if (++checks === 4) throw new Error('ACTOR_CONTEXT_STALE'); } };
+    await expect(customerLocalRepository.applyCloudCustomer(historicalReceiptCustomer(), { actorHandle }))
+      .rejects.toThrow('ACTOR_CONTEXT_STALE');
+    expect(await db.table(STORES.CUSTOMERS).get('r2-customer')).toMatchObject({ debt: '22' });
+    expect(await historicalCreditSnapshot.list()).toEqual([]);
+  });
   it('preserves debt and directory source before applying Cloud zero, pending explicit FIN-01', async () => {
     await db.table(STORES.CUSTOMERS).put({ id:'legacy', name:'Original', debt:'123.45', syncStatus:'local' });
     await customerLocalRepository.applyCloudCustomer({ id:'legacy', name:'Cloud name', phone:'5551234567', debt:0, debt_cents:0, server_version:1 });

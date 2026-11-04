@@ -2,6 +2,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const runtime = vi.hoisted(() => {
   const rows = new Map();
+  const envelope = (endpoint, args, payload) => ({
+    contract_version: 2,
+    tenant_id: 'tenant-a',
+    endpoint,
+    family: 'financial_operations',
+    customer_projection_scope: 'OPERATION_RESULT',
+    payload,
+    customer_projections: [],
+    operation: { idempotency_key: args.p_idempotency_key, request_hash: args.p_request_hash }
+  });
   const table = {
     async add(row) {
       if ([...rows.values()].some((candidate) => candidate.idempotencyKey === row.idempotencyKey)) {
@@ -46,9 +56,11 @@ const runtime = vi.hoisted(() => {
     makeHandle,
     execute: async () => ({ success: true, receipt: 'server-result' }),
     executeError: null,
+    protocol: 2,
     stationState: async () => ({ cash_station: { id: 'station-a' } }),
     receipt: async () => ({ status: 'NOT_FOUND' }),
-    rpcCalls: []
+    rpcCalls: [],
+    envelope
   };
 });
 
@@ -72,11 +84,23 @@ vi.mock('../../supabase', () => ({
     rpc: async (name, args) => {
       runtime.rpcCalls.push({ name, args });
       if (name === 'pos_get_cash_station_state') return { data: await runtime.stationState(args), error: null };
-      if (name === 'pos_execute_financial_operation_v1') {
+      if (name === 'pos_fin01_sync_contract_v1') return { data: runtime.protocol === 1 ? {
+        contract_version: 2, tenant_id: 'tenant-a', server_status: 'UPDATE_REQUIRED',
+        active_protocol: 1, reason: 'QA_PILOT_NOT_ENABLED'
+      } : {
+        contract_version: 2,
+        tenant_id: 'tenant-a',
+        server_status: 'SUPPORTED',
+        endpoint_families: ['financial_operations'],
+        endpoints: ['pos_execute_financial_operation_v2', 'pos_get_financial_operation_receipt_v2'],
+        capabilities: ['historical_credit_preservation_v1', 'customer_projection_safe_apply_v1', 'financial_operation_result_v1']
+      }, error: null };
+      if (name === 'pos_execute_financial_operation_v2' || name === 'pos_execute_financial_operation_v1') {
         if (runtime.executeError) return { data: null, error: runtime.executeError };
-        return { data: await runtime.execute(args), error: null };
+        return { data: runtime.protocol === 1 ? await runtime.execute(args) : runtime.envelope(name, args, await runtime.execute(args)), error: null };
       }
       if (name === 'pos_get_financial_operation_receipt') return { data: await runtime.receipt(args), error: null };
+      if (name === 'pos_get_financial_operation_receipt_v2') return { data: runtime.envelope(name, args, await runtime.receipt(args)), error: null };
       throw new Error(`Unexpected RPC ${name}`);
     }
   }
@@ -88,6 +112,7 @@ import {
   executeFinancialIntent,
   executePreparedFinancialIntentForRecovery,
   getFinancialIntent,
+  getFinancialIntentReceiptForRecovery,
   markFinancialIntentProjectionApplied,
   markFinancialIntentProjectionFailed
 } from '../financialIntentLedger';
@@ -108,6 +133,7 @@ describe('financial intent ledger', () => {
     runtime.handle = runtime.makeHandle();
     runtime.execute = async () => ({ success: true, receipt: 'server-result' });
     runtime.executeError = null;
+    runtime.protocol = 2;
     runtime.stationState = async () => ({ cash_station: { id: 'station-a' } });
     runtime.receipt = async () => ({ status: 'NOT_FOUND' });
   });
@@ -125,8 +151,38 @@ describe('financial intent ledger', () => {
     await executeFinancialIntent({ intent, licenseKey: 'fixture-license-secret', actorHandle: runtime.handle });
     expect(runtime.rpcCalls.map((call) => call.name)).toEqual([
       'pos_get_cash_station_state',
-      'pos_execute_financial_operation_v1'
+      'pos_fin01_sync_contract_v1',
+      'pos_execute_financial_operation_v2'
     ]);
+  });
+
+  it('recovers the original credit receipt repeatedly without redispatch or changing its K/H/result', async () => {
+    runtime.stationState = async () => ({ cash_station: { id: 'station-a' }, station_open_cash_session: { id: 'cash-a' } });
+    const intent = await createOpenIntent({ operationType: 'sale.credit', cashSessionId: 'cash-a', request: {
+      cash_session_id: 'cash-a', customer_id: 'customer-1',
+      sale: { id: 'sale-1', total: '10', subtotal: '10', amount_paid: '0', balance_due: '10', payment_method: 'credit' },
+      items: [{ product_id: 'product-1', quantity: '1', unit_price: '10', line_total: '10' }], payments: []
+    } });
+    const original = { success: true, sale: { id: 'sale-1' }, customer: {
+      id: 'customer-1', name: 'Original', credit_limit: 100, debt: 10, debt_cents: 1000,
+      server_version: 1, created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z'
+    } };
+    runtime.execute = async () => { throw new TypeError('Failed to fetch'); };
+    runtime.receipt = async () => ({ status: 'COMPLETED', result: structuredClone(original) });
+    const recovered = await executeFinancialIntent({ intent, licenseKey: 'fixture-license-secret', actorHandle: runtime.handle });
+    expect(recovered).toMatchObject({ receiptRecovered: true, response: { customer: { debt: 10, debt_cents: 1000 } } });
+    const completed = await getFinancialIntent(intent.id);
+    for (let i = 0; i < 2; i += 1) {
+      const receipt = await getFinancialIntentReceiptForRecovery({ intent: completed, licenseKey: 'fixture-license-secret', actorHandle: runtime.handle });
+      expect(receipt.result.customer).toMatchObject({ debt: 10, debt_cents: 1000,
+        financial_projection: { scope: 'OPERATION_RESULT', status: 'NOT_INCLUDED' } });
+    }
+    expect(runtime.rows.size).toBe(1);
+    expect(await getFinancialIntent(intent.id)).toMatchObject({ idempotencyKey: intent.idempotencyKey,
+      requestHash: intent.requestHash, dispatchAttemptCount: 1, status: FINANCIAL_INTENT_STATUS.COMPLETED });
+    expect(runtime.rpcCalls.filter(call => call.name === 'pos_execute_financial_operation_v2')).toHaveLength(1);
+    expect(runtime.rpcCalls.filter(call => call.name === 'pos_get_financial_operation_receipt_v2')).toHaveLength(3);
+    expect(original.customer.debt).toBe(10);
   });
 
   it('uses the target station for a remote Admin close while keeping normal closes strict', async () => {
@@ -171,7 +227,7 @@ describe('financial intent ledger', () => {
     });
 
     expect(runtime.rows.size).toBe(0);
-    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_execute_financial_operation_v1')).toHaveLength(0);
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_execute_financial_operation_v2')).toHaveLength(0);
   });
 
   it('never stores auth material and rejects secret-bearing request payloads', async () => {
@@ -224,7 +280,7 @@ describe('financial intent ledger', () => {
       status: FINANCIAL_INTENT_STATUS.COMPLETED,
       projectionStatus: 'APPLIED'
     });
-    expect(runtime.rpcCalls.find((call) => call.name === 'pos_execute_financial_operation_v1')?.args.p_request.opening_amount).toBe('100');
+    expect(runtime.rpcCalls.find((call) => call.name === 'pos_execute_financial_operation_v2')?.args.p_request.opening_amount).toBe('100');
     await expect(markFinancialIntentProjectionFailed({ intentId: intent.id, actorHandle: runtime.makeHandle('admin:actor-b') }))
       .rejects.toThrow('FINANCIAL_RECOVERY_ORIGIN_MISMATCH');
   });
@@ -253,7 +309,7 @@ describe('financial intent ledger', () => {
 
     const execution = await executeFinancialIntent({ intent, licenseKey: 'fixture-license-secret', actorHandle: runtime.handle });
 
-    expect(execution.response).toEqual(reviewResponse);
+    expect(execution.response).toMatchObject(reviewResponse);
     expect(await getFinancialIntent(intent.id)).toMatchObject({
       status: FINANCIAL_INTENT_STATUS.COMPLETED,
       dispatchAttemptCount: 1,
@@ -262,8 +318,8 @@ describe('financial intent ledger', () => {
       idempotencyKey: intent.idempotencyKey,
       requestHash: intent.requestHash
     });
-    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_execute_financial_operation_v1')).toHaveLength(1);
-    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt')).toHaveLength(0);
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_execute_financial_operation_v2')).toHaveLength(1);
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt_v2')).toHaveLength(0);
   });
 
   it('preserves an admin review response at the PREPARED zero-attempt recovery dispatch edge', async () => {
@@ -287,7 +343,7 @@ describe('financial intent ledger', () => {
       actorHandle: runtime.handle
     });
 
-    expect(execution.response).toEqual(reviewResponse);
+    expect(execution.response).toMatchObject(reviewResponse);
     expect(await getFinancialIntent(intent.id)).toMatchObject({
       status: FINANCIAL_INTENT_STATUS.COMPLETED,
       dispatchAttemptCount: 1,
@@ -296,7 +352,7 @@ describe('financial intent ledger', () => {
       idempotencyKey: intent.idempotencyKey,
       requestHash: intent.requestHash
     });
-    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_execute_financial_operation_v1')).toHaveLength(1);
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_execute_financial_operation_v2')).toHaveLength(1);
   });
 
   it.each([
@@ -323,7 +379,7 @@ describe('financial intent ledger', () => {
       dispatchAttemptCount: 1,
       responsePayload: null
     });
-    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt')).toHaveLength(0);
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt_v2')).toHaveLength(0);
   });
 
   it('does not grant the admin review exception to another operation at the recovery dispatch edge', async () => {
@@ -364,7 +420,7 @@ describe('financial intent ledger', () => {
       idempotencyKey: intent.idempotencyKey,
       requestHash: intent.requestHash
     });
-    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_execute_financial_operation_v1')).toHaveLength(1);
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_execute_financial_operation_v2')).toHaveLength(1);
   });
 
   it('keeps an explicit network failure receipt-first and pending after NOT_FOUND without resending', async () => {
@@ -382,8 +438,8 @@ describe('financial intent ledger', () => {
       idempotencyKey: intent.idempotencyKey,
       requestHash: intent.requestHash
     });
-    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_execute_financial_operation_v1')).toHaveLength(1);
-    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt')).toHaveLength(1);
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_execute_financial_operation_v2')).toHaveLength(1);
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt_v2')).toHaveLength(1);
   });
 
   it('marks a persisted dispatch timeout as pending and keeps the same idempotency evidence', async () => {
@@ -408,8 +464,8 @@ describe('financial intent ledger', () => {
       idempotencyKey: 'dispatch-timeout-k',
       dispatchAttemptCount: 1
     });
-    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_execute_financial_operation_v1')).toHaveLength(1);
-    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt')).toHaveLength(1);
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_execute_financial_operation_v2')).toHaveLength(1);
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt_v2')).toHaveLength(1);
   });
 
   it('keeps the durable intent pending when the receipt query itself times out', async () => {
@@ -432,7 +488,7 @@ describe('financial intent ledger', () => {
       lastReceiptStatus: FINANCIAL_INTENT_STATUS.PENDING_RECEIPT,
       idempotencyKey: 'receipt-timeout-k'
     });
-    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt')).toHaveLength(1);
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt_v2')).toHaveLength(1);
   });
 
   it('fails closed on a structured PostgreSQL 42703 response without querying a receipt', async () => {
@@ -453,8 +509,8 @@ describe('financial intent ledger', () => {
       idempotencyKey: intent.idempotencyKey,
       requestHash: intent.requestHash
     });
-    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_execute_financial_operation_v1')).toHaveLength(1);
-    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt')).toHaveLength(0);
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_execute_financial_operation_v2')).toHaveLength(1);
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt_v2')).toHaveLength(0);
   });
 
   it.each([
@@ -484,8 +540,8 @@ describe('financial intent ledger', () => {
       dispatchAttemptCount: 1,
       lastProtocolCode: code
     });
-    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_execute_financial_operation_v1')).toHaveLength(1);
-    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt')).toHaveLength(0);
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_execute_financial_operation_v2')).toHaveLength(1);
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt_v2')).toHaveLength(0);
   });
 
   it.each([
@@ -497,15 +553,18 @@ describe('financial intent ledger', () => {
     expect(postgrestError.code).toBe(label);
     runtime.executeError = postgrestError;
 
+    const expectedError = label === 'PGRST202'
+      ? { code: 'CLOUD_CLIENT_UPDATE_REQUIRED', family: 'financial_operations' }
+      : postgrestError;
     await expect(executeFinancialIntent({ intent, licenseKey: 'fixture-license-secret', actorHandle: runtime.handle }))
-      .rejects.toBe(postgrestError);
+      .rejects.toMatchObject(expectedError);
 
     expect(await getFinancialIntent(intent.id)).toMatchObject({
       status: FINANCIAL_INTENT_STATUS.BLOCKED,
       dispatchAttemptCount: 1
     });
-    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_execute_financial_operation_v1')).toHaveLength(1);
-    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt')).toHaveLength(0);
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_execute_financial_operation_v2')).toHaveLength(1);
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt_v2')).toHaveLength(0);
   });
 
   it('gives a deterministic HTTP 4xx response priority over transport-like text', async () => {
@@ -520,8 +579,8 @@ describe('financial intent ledger', () => {
       status: FINANCIAL_INTENT_STATUS.BLOCKED,
       dispatchAttemptCount: 1
     });
-    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_execute_financial_operation_v1')).toHaveLength(1);
-    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt')).toHaveLength(0);
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_execute_financial_operation_v2')).toHaveLength(1);
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt_v2')).toHaveLength(0);
   });
 
   it.each(['ECONNRESET', 'EPIPE'])('treats cause transport code %s as ambiguous without mistaking five-character codes for SQLSTATE', async (transportCode) => {
@@ -540,8 +599,8 @@ describe('financial intent ledger', () => {
       dispatchAttemptCount: 1,
       lastReceiptStatus: 'NOT_FOUND'
     });
-    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_execute_financial_operation_v1')).toHaveLength(1);
-    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt')).toHaveLength(1);
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_execute_financial_operation_v2')).toHaveLength(1);
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt_v2')).toHaveLength(1);
   });
 
   it.each([502, 503, 504])('keeps HTTP %s gateway ambiguity receipt-first after exactly one execute attempt', async (status) => {
@@ -563,8 +622,8 @@ describe('financial intent ledger', () => {
       idempotencyKey: intent.idempotencyKey,
       requestHash: intent.requestHash
     });
-    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_execute_financial_operation_v1')).toHaveLength(1);
-    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt')).toHaveLength(1);
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_execute_financial_operation_v2')).toHaveLength(1);
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt_v2')).toHaveLength(1);
   });
 
   it('lets an explicit gateway status outrank the deterministic success:false response marker', async () => {
@@ -584,8 +643,8 @@ describe('financial intent ledger', () => {
       dispatchAttemptCount: 1,
       lastReceiptStatus: 'NOT_FOUND'
     });
-    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_execute_financial_operation_v1')).toHaveLength(1);
-    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt')).toHaveLength(1);
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_execute_financial_operation_v2')).toHaveLength(1);
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt_v2')).toHaveLength(1);
   });
 
   it('fails closed on a generic deterministic application exception', async () => {
@@ -599,7 +658,7 @@ describe('financial intent ledger', () => {
       status: FINANCIAL_INTENT_STATUS.BLOCKED,
       dispatchAttemptCount: 1
     });
-    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt')).toHaveLength(0);
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt_v2')).toHaveLength(0);
   });
 
   it('does not treat a locally aborted business operation as transport ambiguity', async () => {
@@ -613,7 +672,7 @@ describe('financial intent ledger', () => {
       status: FINANCIAL_INTENT_STATUS.BLOCKED,
       dispatchAttemptCount: 1
     });
-    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt')).toHaveLength(0);
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt_v2')).toHaveLength(0);
   });
 
   it.each([
@@ -632,7 +691,7 @@ describe('financial intent ledger', () => {
       dispatchAttemptCount: 1,
       lastProtocolCode: code
     });
-    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt')).toHaveLength(0);
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt_v2')).toHaveLength(0);
   });
 
   it('also fails closed on structured errors at the PREPARED zero-attempt recovery dispatch edge', async () => {
@@ -680,7 +739,7 @@ describe('financial intent ledger', () => {
       licenseKey: 'fixture-license-secret',
       actorHandle: runtime.handle
     })).rejects.toThrow('FINANCIAL_RECOVERY_INCONSISTENT_PREPARED_STATE');
-    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_execute_financial_operation_v1')).toHaveLength(1);
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_execute_financial_operation_v2')).toHaveLength(1);
   });
 
   it('does not use a stale actor to query a receipt or mutate the old intent', async () => {
@@ -690,7 +749,37 @@ describe('financial intent ledger', () => {
       throw new TypeError('network timeout');
     };
     await expect(executeFinancialIntent({ intent, licenseKey: 'fixture-license-secret', actorHandle: runtime.handle })).rejects.toThrow('ACTOR_CONTEXT_STALE');
-    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt')).toHaveLength(0);
+    expect(runtime.rpcCalls.filter((call) => call.name === 'pos_get_financial_operation_receipt_v2')).toHaveLength(0);
     expect((await getFinancialIntent(intent.id)).status).toBe(FINANCIAL_INTENT_STATUS.DISPATCHING);
   });
+  it.each(['COMPLETED', 'NOT_FOUND'])('preserves v1 receipt recovery for an ambiguous dispatch: %s', async (receiptStatus) => {
+    runtime.protocol = 1;
+    const intent = await createOpenIntent();
+    const original = { success: true, receipt: 'original-result' };
+    runtime.execute = async () => { throw new TypeError('Failed to fetch'); };
+    runtime.receipt = async () => ({ status: receiptStatus, result: receiptStatus === 'COMPLETED' ? original : undefined });
+    const execution = executeFinancialIntent({ intent, licenseKey: 'fixture-license-secret', actorHandle: runtime.handle });
+    if (receiptStatus === 'COMPLETED') await expect(execution).resolves.toMatchObject({ response: original, receiptRecovered: true });
+    else await expect(execution).rejects.toMatchObject({ isFinancialOperationAmbiguous: true });
+    const persisted = await getFinancialIntent(intent.id);
+    expect(persisted).toMatchObject({ idempotencyKey: intent.idempotencyKey, requestHash: intent.requestHash,
+      dispatchAttemptCount: 1, status: receiptStatus === 'COMPLETED' ? FINANCIAL_INTENT_STATUS.COMPLETED : FINANCIAL_INTENT_STATUS.PENDING_RECEIPT });
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const receipt = await getFinancialIntentReceiptForRecovery({ intent: persisted, licenseKey: 'fixture-license-secret', actorHandle: runtime.handle });
+      expect(receipt.status).toBe(receiptStatus);
+      if (receiptStatus === 'COMPLETED') expect(receipt.result).toEqual(original);
+    }
+    const financialCalls = runtime.rpcCalls.filter(({ name }) => name === 'pos_execute_financial_operation_v1'
+      || name === 'pos_get_financial_operation_receipt');
+    expect(financialCalls.map(({ name }) => name)).toEqual(['pos_execute_financial_operation_v1',
+      'pos_get_financial_operation_receipt', 'pos_get_financial_operation_receipt', 'pos_get_financial_operation_receipt']);
+    for (const { args } of financialCalls) expect(args).toMatchObject({ p_idempotency_key: intent.idempotencyKey,
+      p_request_hash: intent.requestHash, p_license_key: 'fixture-license-secret', p_device_fingerprint: 'fixture-device',
+      p_staff_session_token: 'fixture-staff-secret' });
+    await expect(executePreparedFinancialIntentForRecovery({ intentId: intent.id,
+      licenseKey: 'fixture-license-secret', actorHandle: runtime.handle })).rejects.toThrow('FINANCIAL_RECOVERY_INCONSISTENT_PREPARED_STATE');
+    expect(runtime.rpcCalls.filter(({ name }) => name === 'pos_execute_financial_operation_v1')).toHaveLength(1);
+    expect(runtime.rpcCalls.some(({ name }) => name.endsWith('_v2'))).toBe(false);
+  });
+
 });
