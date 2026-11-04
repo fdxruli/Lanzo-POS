@@ -79,6 +79,16 @@ const invalidateAfterCreditSuccess = (licenseKey, response) => {
 };
 
 export const customerCreditCloudRepository = {
+  async historicalCreditBatch({ licenseKey, action, manifest = null, authorizationId = null, confirm = false }) {
+    assertSupabase();
+    const baseArgs = await buildBaseRpcArgs(licenseKey);
+    const { data, error } = await supabaseClient.rpc('pos_historical_credit_batch_v1', {
+      ...baseArgs, p_action: action, p_manifest: manifest,
+      p_authorization_id: authorizationId, p_confirm: confirm
+    });
+    if (error) throw error;
+    return invalidateAfterCreditSuccess(licenseKey, parseRpcPayload(data));
+  },
   // IMPORTANTE: abonos y migraciones de crédito son críticos y NO deben pasar por CloudRequestManager.
   async recordCustomerPayment({
     licenseKey,

@@ -1,6 +1,7 @@
 import { db, STORES } from '../db/dexie';
 import { customerCreditRepository as dexieCustomerCreditRepository } from '../db/customerCreditRepository';
 import { cloudLedgerToLocal } from './customerCreditMapper';
+import { historicalCreditLedgerView } from './historicalCreditLedger';
 import { customerLocalRepository } from '../customers/customerLocalRepository';
 import { POS_SYNC_STORES } from '../sync/syncConstants';
 
@@ -62,7 +63,9 @@ export const customerCreditLocalRepository = {
       .equals(customerId)
       .toArray();
 
-    return entries.sort((a, b) => Date.parse(b.timestamp || 0) - Date.parse(a.timestamp || 0));
+    const snapshot = (await db.table(STORES.SYNC_CACHE).get(`historical-credit:v1:customer:${customerId}`))?.value;
+    return historicalCreditLedgerView(entries, snapshot).active
+      .sort((a, b) => Date.parse(b.timestamp || 0) - Date.parse(a.timestamp || 0));
   },
 
   async getCustomersWithDebt() {

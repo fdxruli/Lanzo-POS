@@ -6,6 +6,7 @@ import { buildPhoneBuckets, summarizePhoneConflictGroups, toIndexedPhoneKey } fr
 import { customerCloudRepository } from './customerCloudRepository';
 import { customerLocalRepository } from './customerLocalRepository';
 import { localCustomerToLegacyMigrationPayload } from './customerMapper';
+import { historicalCreditSnapshot } from '../customerCredit/historicalCreditSnapshot';
 
 const MIGRATED_KEY = 'customers_cloud_migrated';
 const MIGRATED_AT_KEY = 'customers_cloud_migrated_at';
@@ -90,6 +91,7 @@ export const customerMigrationService = {
     if (!licenseKey) return { skipped: true, reason: 'missing_license' };
     if (!isOnline()) return { skipped: true, reason: 'offline' };
 
+    await historicalCreditSnapshot.preserveAll();
     const localCustomers = await customerLocalRepository.getAllActiveCustomers();
     const blockedCustomerIds = [];
     for (const customer of localCustomers) {

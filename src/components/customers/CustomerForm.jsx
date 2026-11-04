@@ -19,9 +19,15 @@ export default function CustomerForm({ onSave, onCancel, customerToEdit, latestC
   const [resolutionChoices, setResolutionChoices] = useState({});
   const [needsConflictReview, setNeedsConflictReview] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [limitConfirmed, setLimitConfirmed] = useState(false);
+  const reducesBelowDebt = Boolean(customerToEdit)
+    && Number(creditLimit) < Number(latestCustomer?.debt ?? customerToEdit.debt ?? 0)
+    && Number(creditLimit) !== Number((conflictBase || customerToEdit).creditLimit || 0);
   const isSavingRef = useRef(false);
   const phoneInputRef = useRef(null);
   const creditLimitInputRef = useRef(null);
+
+  useEffect(() => { setLimitConfirmed(false); }, [latestCustomer?.debt, latestCustomer?.creditLimit]);
 
   useEffect(() => {
     if (customerToEdit) {
@@ -48,6 +54,7 @@ export default function CustomerForm({ onSave, onCancel, customerToEdit, latestC
     setResolutionChoices({});
     setNeedsConflictReview(false);
     setIsSaving(false);
+    setLimitConfirmed(false);
   }, [customerToEdit, globalCreditLimit]);
 
   const handlePhoneChange = (e) => {
@@ -72,6 +79,7 @@ export default function CustomerForm({ onSave, onCancel, customerToEdit, latestC
   };
 
   const resolveFieldConflict = (conflict, choice) => {
+    setLimitConfirmed(false);
     setDirectoryField(conflict.field, choice === 'current' ? conflict.currentValue : conflict.proposedValue);
     setResolutionChoices((current) => ({ ...current, [conflict.field]: choice }));
     setFormError('');
@@ -105,6 +113,7 @@ export default function CustomerForm({ onSave, onCancel, customerToEdit, latestC
       creditLimitInputRef.current?.focus();
       return;
     }
+    if (reducesBelowDebt && !limitConfirmed) return;
 
     if (fieldConflicts.some((conflict) => !resolutionChoices[conflict.field])
       || (needsConflictReview && fieldConflicts.length === 0 && !resolutionChoices.__retry)) {
@@ -200,7 +209,11 @@ export default function CustomerForm({ onSave, onCancel, customerToEdit, latestC
           )}
         </section>
       )}
-      <form id="customer-form" onSubmit={handleSubmit} noValidate>
+      <form id="customer-form" onSubmit={handleSubmit} noValidate onChange={() => setLimitConfirmed(false)}>
+        {reducesBelowDebt && <label className="ui-alert ui-alert--warning">
+          <input type="checkbox" checked={limitConfirmed} onChange={(event) => { event.stopPropagation(); setLimitConfirmed(event.target.checked); }} />
+          Confirmo reducir el límite por debajo de la deuda actual. La deuda se conserva y se bloquearán nuevos cargos.
+        </label>}
 
         {/* --- Seccion de Datos Basicos --- */}
         <div className="form-group">

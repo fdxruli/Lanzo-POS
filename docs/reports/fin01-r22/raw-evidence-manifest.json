@@ -1,0 +1,295 @@
+{
+  "archive": "raw-evidence.zip",
+  "files": [
+    {
+      "name": "build-preview-final.log",
+      "bytes": 14610,
+      "sha256": "8726831539e5bc7d18590badb3d91213b3a59fe9db008edf468c747a3badcca9"
+    },
+    {
+      "name": "build-preview-release.log",
+      "bytes": 14610,
+      "sha256": "aac24a135f4c77b90c180444e9c90756f434dc9fc6f486fe1f7c53284673c53b"
+    },
+    {
+      "name": "build-production-final.executor-interrupted.log",
+      "bytes": 189,
+      "sha256": "5fbb3e2f8743d66a6dac55f9bd8e3fbcd4283be857676ea3a4dc5b9352c49d12"
+    },
+    {
+      "name": "build-production-final.log",
+      "bytes": 15371,
+      "sha256": "3bcace16c6cf9e0b44c6fe39a61f3aeb9595013ac50151dfe4e566c6c488ab92"
+    },
+    {
+      "name": "build-production-release.log",
+      "bytes": 15370,
+      "sha256": "d5ab2f6e30af646fe353d9ad0bc47f41f3c78f2af59a6917953723a234eac873"
+    },
+    {
+      "name": "build-production.log",
+      "bytes": 15370,
+      "sha256": "f46e16fc580349639f15ca0cc909b81d13cbf17a39da002c8ddef2948f832d4b"
+    },
+    {
+      "name": "build-store-final.log",
+      "bytes": 1282,
+      "sha256": "1a211cd37cddada6bb915b864478e49f24fe3e2e1e588572891b8defaf18566d"
+    },
+    {
+      "name": "extra-functions.sql",
+      "bytes": 20449,
+      "sha256": "f5759abdf3d8e88c01a16c44f36fcb89352f7503b16c919272b226fa78be6680"
+    },
+    {
+      "name": "FIN01A-T-original.md",
+      "bytes": 6025,
+      "sha256": "4a1c24bc930e5e101f3854887adf89149e6b4789f29b470c6007d50093ec6b69"
+    },
+    {
+      "name": "final-schema-install.log",
+      "bytes": 11618,
+      "sha256": "53ca83cc907e06f4054f9cf3ec4206b80ff3803fd622720940c857133bee912c"
+    },
+    {
+      "name": "fixture-defaults.sql",
+      "bytes": 793,
+      "sha256": "5b6b5a12e6b862a0b6e85b0ef233e2d2fcb2eaf1385eb2d8282e81c5d11f1579"
+    },
+    {
+      "name": "focused-baseline.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "focused-regression-final.executor-interrupted.log",
+      "bytes": 13684,
+      "sha256": "a4e7083d71a637d08e54f0a76538e9c16af2cc959363ddf3c97c05317e7e51b6"
+    },
+    {
+      "name": "focused-regression-final.fork-stalled.log",
+      "bytes": 45,
+      "sha256": "f9a1f56781aa3f47f48d2a47cabb9cb268ef3f710c1bbddc848716cbfa635db0"
+    },
+    {
+      "name": "focused-regression-final.log",
+      "bytes": 23393,
+      "sha256": "ef6f777fbe21b35b076bbdc983d6627fa7a9873ead6c4bde973c81bd48afa4a9"
+    },
+    {
+      "name": "focused-regression-release.log",
+      "bytes": 23262,
+      "sha256": "a5d57b669fdfc118cbeb05f44b9141c967c19c177bcaefade7b91c9c7bf26316"
+    },
+    {
+      "name": "focused-regression.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "inventory-baseline-final.log",
+      "bytes": 1700,
+      "sha256": "bea068cb8db0a301857f034029ce810213b087010a9df5287b5659f74771adaa"
+    },
+    {
+      "name": "isolated-cancel-payment.sql",
+      "bytes": 65084,
+      "sha256": "fd74f08a411e7668cbdc3123ece4aa7927aea190dcb50bd281ca2742fe4495fa"
+    },
+    {
+      "name": "isolated-schema.sql",
+      "bytes": 328743,
+      "sha256": "63fa871e8ff2fb8bcf728112ccef16c774d20f1afc1762cb69c0463a8341badf"
+    },
+    {
+      "name": "ledger-preservation-final.log",
+      "bytes": 4911,
+      "sha256": "f80b79af6cddc1ef70b344777665d4867258c90bd37161000076ed7baa82851f"
+    },
+    {
+      "name": "ledger-view-final.log",
+      "bytes": 1798,
+      "sha256": "1b11065299f95a9013c96f3309a017255655e638c3b1580cc6a13d45b7486266"
+    },
+    {
+      "name": "lint-baseline-final.log",
+      "bytes": 168,
+      "sha256": "4b26e86573abb5abbed064058ad9ba1b377a4eadbd38d84469a6bcecf2160deb"
+    },
+    {
+      "name": "lint-final.executor-interrupted.log",
+      "bytes": 168,
+      "sha256": "4b26e86573abb5abbed064058ad9ba1b377a4eadbd38d84469a6bcecf2160deb"
+    },
+    {
+      "name": "lint-final.log",
+      "bytes": 169,
+      "sha256": "a7eb4f03f2cf37c8bc6f5499675d02dc958df51aa73b6801dfa74c8039d4dbd2"
+    },
+    {
+      "name": "lint-focused-release.log",
+      "bytes": 169,
+      "sha256": "a7eb4f03f2cf37c8bc6f5499675d02dc958df51aa73b6801dfa74c8039d4dbd2"
+    },
+    {
+      "name": "local-integration.log",
+      "bytes": 96,
+      "sha256": "5d23167cf9425dd626dcca3013d14f71b782ac45dce84f3a1090979d02dfbf52"
+    },
+    {
+      "name": "new-feature-final.log",
+      "bytes": 5223,
+      "sha256": "f049d456a368faf9c2c18a507f57ea031509586c3eae0a379f46d0fdc99c6239"
+    },
+    {
+      "name": "new-feature-tests.log",
+      "bytes": 96,
+      "sha256": "593f66dcbba33bd8340b6ea0bf0a280d458126d0dc8722a5efcd3c6e5d39fa97"
+    },
+    {
+      "name": "npm-ci.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "name": "pg-migration.log",
+      "bytes": 185,
+      "sha256": "e6bd4b169a9d4167e4c4978ff55fe1bdc34cc08011243c7f7351504a8b1eec8d"
+    },
+    {
+      "name": "pg-schema.log",
+      "bytes": 8822,
+      "sha256": "aa52aa6a25a6f7317844f7f9c94d48ad12b7ca780dcfa93a59b781759100f369"
+    },
+    {
+      "name": "pg-seed.log",
+      "bytes": 2267,
+      "sha256": "2e37b7ffa5af31aa8ae5d567afdcab7b98e8dead8c2959f964f9e827c75d92a1"
+    },
+    {
+      "name": "postbuild-final.log",
+      "bytes": 96,
+      "sha256": "80890e36694868af6556ddf03e598a3d2367decc46a722c072e409e8980c4dd3"
+    },
+    {
+      "name": "postbuild-preview-final.log",
+      "bytes": 96,
+      "sha256": "8334496e253c4a9c53ca992a496950302478b4acc9725d1746ffd061c97f7731"
+    },
+    {
+      "name": "postbuild-preview-release.log",
+      "bytes": 96,
+      "sha256": "8334496e253c4a9c53ca992a496950302478b4acc9725d1746ffd061c97f7731"
+    },
+    {
+      "name": "postbuild-production-release.log",
+      "bytes": 96,
+      "sha256": "80890e36694868af6556ddf03e598a3d2367decc46a722c072e409e8980c4dd3"
+    },
+    {
+      "name": "postbuild.log",
+      "bytes": 96,
+      "sha256": "80890e36694868af6556ddf03e598a3d2367decc46a722c072e409e8980c4dd3"
+    },
+    {
+      "name": "postgres-critical-retry.log",
+      "bytes": 440,
+      "sha256": "91417245b3bb3c0483714fbecdd89f616d752b05797f1a0601a1c67aab10c7d5"
+    },
+    {
+      "name": "postgres-final.log",
+      "bytes": 3670,
+      "sha256": "a8add121dd98555eb9b4f4945846c0050da3d1beed8b17ad1b2d5a8af02fb33e"
+    },
+    {
+      "name": "postgres-lock-inversion.log",
+      "bytes": 322,
+      "sha256": "b3ed586c8fdd3c800c10286f09eff6750971338314c68b0c5cd3a32968c89b8f"
+    },
+    {
+      "name": "postgres-release.log",
+      "bytes": 3670,
+      "sha256": "a8add121dd98555eb9b4f4945846c0050da3d1beed8b17ad1b2d5a8af02fb33e"
+    },
+    {
+      "name": "postgres-tests.initial.log",
+      "bytes": 2557,
+      "sha256": "b075de63540473b5073b2f5224f4c05b1597720c6bb7c7988a248df20df44a99"
+    },
+    {
+      "name": "postgres-tests.log",
+      "bytes": 3282,
+      "sha256": "de10947aa86cd4e2bf0b7ce44a5b08628bedf9a76889a5bdbda79aa887872edc"
+    },
+    {
+      "name": "postgres-tests.psql-stage.log",
+      "bytes": 1908,
+      "sha256": "005ec3ee4c8f1d652009c2c352eba749aa82a0c920ee19ade5a7ce100e55ec55"
+    },
+    {
+      "name": "preservation-integration.log",
+      "bytes": 103,
+      "sha256": "8cadcd0d5a1b0b0793bd6cdbc70ec080e73262d7984fccbe7bb7bd7d80bd9a5f"
+    },
+    {
+      "name": "pwa-before-store-build.log",
+      "bytes": 2665,
+      "sha256": "44c8c7b4c26c5425601906ef53b53696f1c1b376fb577f6fb5f01f7c1a5f92c0"
+    },
+    {
+      "name": "pwa-final.log",
+      "bytes": 390,
+      "sha256": "de51510141a7b7cd7ab5281a39676fe2bd470c2ffdc2880afb2a441cf7771423"
+    },
+    {
+      "name": "pwa-release.log",
+      "bytes": 392,
+      "sha256": "e360cd94d14896ffbe9fcb6f600f589d3e124ee5ac03ec21241a070614177a55"
+    },
+    {
+      "name": "react-doctor-final.log",
+      "bytes": 2629,
+      "sha256": "8af1a13bcc56716980d9ba8567a645595816e00c4fbdebe1c22c44d57a1c9544"
+    },
+    {
+      "name": "react-doctor-release.log",
+      "bytes": 2903,
+      "sha256": "d5abb72f5a0334e00a000ec302894640668b5a72c2b6872eb43963fe1bdb1e9f"
+    },
+    {
+      "name": "react-doctor-reviewed.log",
+      "bytes": 1045,
+      "sha256": "e45fb9ae8038edcd4e363bb959074e6d2f2eca6ec8ac21ac61756d4396d98b8f"
+    },
+    {
+      "name": "react-doctor.log",
+      "bytes": 3125,
+      "sha256": "a00043f518adbf26f1978a6784aa4d06f9796773026d01077f6145ce5a116955"
+    },
+    {
+      "name": "release-fresh-install.log",
+      "bytes": 11650,
+      "sha256": "f539e3408bfbd2067297c8dfea662db6f70feba6e93f5d0759023b7fed13ac91"
+    },
+    {
+      "name": "snapshot-tests.log",
+      "bytes": 93,
+      "sha256": "10d902aebeb408fc7cf296705a6c576fbcedd55ba4c300fe76dc328c0fb14da2"
+    },
+    {
+      "name": "workflow-final.executor-interrupted.log",
+      "bytes": 81,
+      "sha256": "0048ddc633c849e05af5cd079995ab03210f419dab5870002df6ea6d6eef67e5"
+    },
+    {
+      "name": "workflow-final.log",
+      "bytes": 1593,
+      "sha256": "19c85ee5900c490d42af69d6faf551a72a59cd86443539f9eb1d557473030d23"
+    },
+    {
+      "name": "workflow-tests.log",
+      "bytes": 93,
+      "sha256": "26819a140914b9c02247aa54d6afe4fb1f453f79e23bd14a180146f225ac8898"
+    }
+  ]
+}

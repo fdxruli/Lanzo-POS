@@ -19,7 +19,9 @@ export const createHistoricalCreditSnapshotRepository = (database, tenantIdentit
     const represented = new Set(['IMPORTED', 'ALREADY_IMPORTED_IDENTICAL'].includes(previous?.value.status)
       ? (previous.value.originalLedgerEntries || []).map((row) => row.id) : []);
     const hasLocalEntries = entries.some((row) => row.syncStatus !== 'synced' && !represented.has(row.id));
-    const localActivity = customer.financialSource === 'local'
+    const confirmedUnchanged = ['IMPORTED', 'ALREADY_IMPORTED_IDENTICAL'].includes(previous?.value.status)
+      && previous.value.result?.ledger_id && currentCents === previous.value.amountCents && !hasLocalEntries;
+    const localActivity = (customer.financialSource === 'local' && !confirmedUnchanged)
       || hasLocalEntries
       || (customer.financialSource === 'cloud' && customer.lastCloudDebtCents !== undefined && customer.lastCloudDebtCents !== currentCents);
     if (previous) {

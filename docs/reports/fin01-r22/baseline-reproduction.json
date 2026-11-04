@@ -1,0 +1,8 @@
+{
+  "route": "pos_create_cloud_sale_credit_unlimited -> real R2B authorizer -> real credit leaf",
+  "limit": 1000,
+  "before": 800,
+  "newCredit": 300,
+  "after": 1100,
+  "expectedDefect": true
+}

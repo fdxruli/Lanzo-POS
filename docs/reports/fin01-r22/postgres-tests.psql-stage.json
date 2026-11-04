@@ -1,0 +1,177 @@
+[
+  {
+    "area": "Authority",
+    "name": "real owner context",
+    "status": "PASS"
+  },
+  {
+    "area": "Authority",
+    "name": "Staff customers permission cannot authorize",
+    "status": "PASS"
+  },
+  {
+    "area": "Authority",
+    "name": "non-owner Admin session is rejected",
+    "status": "PASS"
+  },
+  {
+    "area": "Authority",
+    "name": "invalid session rejected",
+    "status": "PASS"
+  },
+  {
+    "area": "Authority",
+    "name": "revoked session rejected",
+    "status": "PASS"
+  },
+  {
+    "area": "Authority",
+    "name": "expired session rejected",
+    "status": "PASS"
+  },
+  {
+    "area": "Authority",
+    "name": "wrong tenant manifest rejected",
+    "status": "PASS"
+  },
+  {
+    "area": "Authority",
+    "name": "direct private tables denied to anon",
+    "status": "PASS"
+  },
+  {
+    "area": "Authority",
+    "name": "direct private tables denied to authenticated",
+    "status": "PASS"
+  },
+  {
+    "area": "Manifest",
+    "name": "canonical hash independent of entry order and batch ID",
+    "status": "PASS"
+  },
+  {
+    "area": "Manifest",
+    "name": "wrong total",
+    "status": "PASS"
+  },
+  {
+    "area": "Manifest",
+    "name": "wrong count",
+    "status": "PASS"
+  },
+  {
+    "area": "Manifest",
+    "name": "fractional cents",
+    "status": "PASS"
+  },
+  {
+    "area": "Manifest",
+    "name": "out of int32 range",
+    "status": "PASS"
+  },
+  {
+    "area": "Manifest",
+    "name": "duplicate destination",
+    "status": "PASS"
+  },
+  {
+    "area": "Manifest",
+    "name": "unknown bypass flag",
+    "status": "PASS"
+  },
+  {
+    "area": "Import",
+    "name": "legacy financial import requires independent approval",
+    "status": "PASS"
+  },
+  {
+    "area": "Import",
+    "name": "owner approves and imports above limit without Caja or sales",
+    "status": "PASS"
+  },
+  {
+    "area": "Import",
+    "name": "lost response and replay return receipt without duplicates",
+    "status": "PASS"
+  },
+  {
+    "area": "Import",
+    "name": "same content different batch returns original authorization",
+    "status": "PASS"
+  },
+  {
+    "area": "Import",
+    "name": "same batch modified content conflicts",
+    "status": "PASS"
+  },
+  {
+    "area": "Import",
+    "name": "same historical identity different amount conflicts",
+    "status": "PASS"
+  },
+  {
+    "area": "Import",
+    "name": "changing source cannot duplicate target balance",
+    "status": "PASS"
+  },
+  {
+    "area": "Import",
+    "name": "existing ledger never becomes silent success",
+    "status": "PASS"
+  },
+  {
+    "area": "Import",
+    "name": "partial batch reports exact imported and conflicted rows",
+    "status": "PASS"
+  },
+  {
+    "area": "Import",
+    "name": "expired approval requires a new explicit approval",
+    "status": "PASS"
+  },
+  {
+    "area": "Import",
+    "name": "changed actor session invalidates pending approval",
+    "status": "PASS"
+  },
+  {
+    "area": "Import",
+    "name": "two devices same target produce only one initial balance",
+    "status": "PASS"
+  },
+  {
+    "area": "Import",
+    "name": "exception rolls back ledger, projection, receipts and consumption",
+    "status": "PASS"
+  },
+  {
+    "area": "Upsert",
+    "name": "older client with positive or malformed balances fails before overwrite",
+    "status": "PASS"
+  },
+  {
+    "area": "Upsert",
+    "name": "ordinary directory create starts with zero debt",
+    "status": "PASS"
+  },
+  {
+    "area": "Upsert",
+    "name": "directory edit and lower limit preserve debt",
+    "status": "PASS"
+  },
+  {
+    "area": "Upsert",
+    "name": "Staff cannot change credit authority",
+    "status": "PASS"
+  },
+  {
+    "area": "Credit",
+    "name": "A inside limit",
+    "status": "PASS"
+  },
+  {
+    "area": "Credit",
+    "name": "B exact equality",
+    "status": "PASS"
+  }
+]

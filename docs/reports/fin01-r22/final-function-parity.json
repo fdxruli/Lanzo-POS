@@ -1,0 +1,90 @@
+{
+  "parity": [
+    {
+      "name": "public.pos_historical_credit_batch_v1",
+      "bodyMatches": true
+    },
+    {
+      "name": "public.pos_upsert_customer_unlimited",
+      "bodyMatches": true
+    },
+    {
+      "name": "public.pos_create_cloud_sale_credit_legacy_r2b",
+      "bodyMatches": true
+    },
+    {
+      "name": "private.canonical_historical_credit_manifest_v1",
+      "bodyMatches": true
+    },
+    {
+      "name": "public.pos_migrate_local_customer_credit_unlimited",
+      "bodyMatches": true
+    }
+  ],
+  "catalog": [
+    {
+      "acl": [
+        "postgres=X/postgres",
+        "anon=X/postgres",
+        "authenticated=X/postgres"
+      ],
+      "name": "public.pos_historical_credit_batch_v1",
+      "config": [
+        "search_path=\"\"",
+        "statement_timeout=45s",
+        "lock_timeout=20s"
+      ],
+      "anon_execute": true,
+      "security_definer": true,
+      "authenticated_execute": true
+    },
+    {
+      "acl": [
+        "postgres=X/postgres"
+      ],
+      "name": "public.pos_upsert_customer_unlimited",
+      "config": [
+        "search_path=\"\""
+      ],
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": [
+        "postgres=X/postgres"
+      ],
+      "name": "public.pos_create_cloud_sale_credit_legacy_r2b",
+      "config": [
+        "search_path=\"\""
+      ],
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    },
+    {
+      "acl": [
+        "postgres=X/postgres"
+      ],
+      "name": "private.canonical_historical_credit_manifest_v1",
+      "config": [
+        "search_path=\"\""
+      ],
+      "anon_execute": false,
+      "security_definer": false,
+      "authenticated_execute": false
+    },
+    {
+      "acl": [
+        "postgres=X/postgres"
+      ],
+      "name": "public.pos_migrate_local_customer_credit_unlimited",
+      "config": [
+        "search_path=\"\""
+      ],
+      "anon_execute": false,
+      "security_definer": true,
+      "authenticated_execute": false
+    }
+  ]
+}

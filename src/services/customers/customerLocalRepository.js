@@ -193,12 +193,18 @@ export const customerLocalRepository = {
         (existing?.pendingOperationId && operationId === existing.pendingOperationId)
         || (existing?.syncStatus === CUSTOMER_SYNC_STATUS.CONFLICT && operationId === 'customer_repository_direct_ack')
       );
+      const confirmedHistoricalProjection = source === 'credit_projection'
+        && existing?.conflictReason === HISTORY_BLOCKED
+        && !existing.pendingOperationId && !existing.conflictBaseSnapshot && !existing.conflictFields?.length
+        && ['IMPORTED', 'ALREADY_IMPORTED_IDENTICAL'].includes(history.snapshot?.status)
+        && history.snapshot.result?.ledger_id;
 
       if (existing && incomingVersion < existingVersion) return existing;
       if (existing && source !== 'mutation_ack' && incomingVersion < latestObservedVersion) return existing;
 
       if (existing
         && !acknowledgedPendingOperation
+        && !confirmedHistoricalProjection
         && [CUSTOMER_SYNC_STATUS.PENDING, CUSTOMER_SYNC_STATUS.CONFLICT].includes(existing.syncStatus)) {
         if (incoming.deletedAt || incoming.deletedTimestamp) {
           const deletedConflict = normalizeCustomerForLocal({
@@ -260,6 +266,11 @@ export const customerLocalRepository = {
       }
 
       const localCustomer = incoming;
+      if (confirmedHistoricalProjection) {
+        localCustomer.creditMigrationStatus = history.snapshot.status;
+        localCustomer.conflictReason = null;
+        await syncConflictService.markResolved(`historical-credit-conflict:${existing.id}`, history.snapshot.result);
+      }
       localCustomer.financialSource = 'cloud';
       localCustomer.lastCloudDebtCents = normalizeCustomerDebtCents(localCustomer.debt);
 

@@ -1,0 +1,129 @@
+{
+  "createdAt": "2026-10-22T14:49:15.985Z",
+  "baseline": "9ca65fc07804f40c2add5e59bee0e6edca940b8f",
+  "postgres": "17.11",
+  "productionVersionObserved": "17.6",
+  "node": "24.18.1",
+  "vitest": "4.0.14",
+  "vite": "7.2.2",
+  "matchingPackageLock": true,
+  "dependencies": "Reused complete node_modules installation through junction. Fresh npm ci attempt was interrupted and is not certified.",
+  "files": [
+    {
+      "path": "scripts/fin01/README.md",
+      "sha256": "eff5882fa3e2b7fae413db4a9073ec741433efd9fad72847487e9926932c3cd6"
+    },
+    {
+      "path": "scripts/fin01/build-isolated-fixture.mjs",
+      "sha256": "1d7d2841dae7e7fea54c4d9a17af52e5b1dd4ed2a32817adbe120b82845f9f22"
+    },
+    {
+      "path": "scripts/fin01/loopback-postgres-client.mjs",
+      "sha256": "75c282ec2569281761fee173d13d5ba2053fc2465897e5f5c4b192c55571745c"
+    },
+    {
+      "path": "scripts/fin01/run-postgres-tests.mjs",
+      "sha256": "0d83f00af1995d0acfe4a7c36f4ad95a8ee1cc3c8a9f45cccc716a0732937ccc"
+    },
+    {
+      "path": "scripts/fin01/seed.sql",
+      "sha256": "f3de6239a5de6da344cec4ea3eacabbace74d88ff03565746ecd8c875afb1832"
+    },
+    {
+      "path": "src/components/common/PaymentModal.jsx",
+      "sha256": "6e1e9e0b55fe847f70fc5350ad0f7b2b555690a423ca0356d39438dd5a3fdd34"
+    },
+    {
+      "path": "src/components/common/__tests__/PaymentModal.test.jsx",
+      "sha256": "a3ad8a69deb81ae40e63713c0b304a9ea64ada18301968a413ab6a24f6d3bbcd"
+    },
+    {
+      "path": "src/components/customers/CustomerCard.jsx",
+      "sha256": "2b9c073573243de3e43a97f2c6940f105f1dcbd2eedb1d9bffef0c91a234851b"
+    },
+    {
+      "path": "src/components/customers/CustomerForm.jsx",
+      "sha256": "42c58ce3704271f84127bb8201ddda9bd2413f8838cdacd708fe0a24a7d7705c"
+    },
+    {
+      "path": "src/components/customers/CustomerList.jsx",
+      "sha256": "cc81f8e930f2dab927d751956021348bfe11ec7c8b743341c9696e23c40a3d64"
+    },
+    {
+      "path": "src/components/customers/HistoricalCreditImport.css",
+      "sha256": "6244fb703ef2b02131dd3abe066a8ffa83dd32cf70d7015cf531269fec0ee9ef"
+    },
+    {
+      "path": "src/components/customers/HistoricalCreditImport.jsx",
+      "sha256": "bbd6b7474a7fd2fca5da0ceb35d17886e209f29a02235535493a064f08a52a75"
+    },
+    {
+      "path": "src/components/customers/__tests__/HistoricalCreditImport.test.jsx",
+      "sha256": "44161d7672f389d19decf4d3d39a07037677f576b4653f6870abd19e91ba27df"
+    },
+    {
+      "path": "src/pages/CustomersPage.jsx",
+      "sha256": "1db17420c62c2220a1a85fd99c3c575b8ae8929a6dc4f2b6ba9bdf12ab96d368"
+    },
+    {
+      "path": "src/services/customerCredit/__tests__/historicalCreditCloudApply.test.js",
+      "sha256": "c789f3f97a5e6cad799b2b746e1d1b98b892987bd41d958c9e4ea049f7888c63"
+    },
+    {
+      "path": "src/services/customerCredit/__tests__/historicalCreditMigration.workflow.test.js",
+      "sha256": "1f66c9b3c4a9661a9dcfaf28e0543c3f7a5ff0faa165cf2cc5feb6ed94fd8b94"
+    },
+    {
+      "path": "src/services/customerCredit/__tests__/historicalCreditSnapshot.test.js",
+      "sha256": "ca07d9d6400a2a488fd2ea53caadb08b1b03409c2b2bba2fdf292ba6f5c61025"
+    },
+    {
+      "path": "src/services/customerCredit/customerCreditCloudRepository.js",
+      "sha256": "11a77792f4d8020571a962768bb39a6a74b12c7d609b31e38b0ad03d76715e68"
+    },
+    {
+      "path": "src/services/customerCredit/customerCreditLocalRepository.js",
+      "sha256": "c11908137d89b3c84da8adc23cc6e15d53a30153eb206d1dc11ae03493d15c06"
+    },
+    {
+      "path": "src/services/customerCredit/customerCreditMigrationService.js",
+      "sha256": "f3fa783cce27b198bdcddfbb8ec6428076ba6fcff8e653c1983ce9ce7fbddb21"
+    },
+    {
+      "path": "src/services/customerCredit/historicalCreditLedger.js",
+      "sha256": "abb365cf3db92e54e60cbe24546914f1cf88197c0f17bcd9c3cba9d4d24a1b02"
+    },
+    {
+      "path": "src/services/customerCredit/historicalCreditSnapshot.js",
+      "sha256": "e57cfea9e4d754f587d96c47a5fda935e542476a554502c20dc537106634f8e9"
+    },
+    {
+      "path": "src/services/customers/customerLocalRepository.js",
+      "sha256": "64e8372e0407b38584207e2244c0d6967dabb2d931cf71ff90ad20bf76c5e0ed"
+    },
+    {
+      "path": "src/services/customers/customerMapper.js",
+      "sha256": "7467feb3b38fe572e2a70bfb168d645bdecf2a9010356ba9120253b6307b1bc4"
+    },
+    {
+      "path": "src/services/customers/customerMigrationService.js",
+      "sha256": "c968f36523630ef6e5a0906186f549132416fc7fd6617bd30a39feb93738e67b"
+    },
+    {
+      "path": "src/services/db/customerCreditRepository.js",
+      "sha256": "4b1a14147482437601dcfe6eeb1ffd0d443ab762f61400bccb5fc4ccabd4679d"
+    },
+    {
+      "path": "src/services/db/sales.js",
+      "sha256": "cfd5cb9b6e70078b130f51ca42be31b1fc34a65aac912d741e9b36aa892b1173"
+    },
+    {
+      "path": "src/services/salesCloud/salesCloudCashierService.js",
+      "sha256": "a100aaa47e695d62bc54beac7679addc207c69d8646906b0d7735816ef1ee5d3"
+    },
+    {
+      "path": "supabase/migrations/20261022135915_fin01_historical_credit_owner_authorization.sql",
+      "sha256": "855a25f313741d4181be90dede4925cbfdce59fce23a1ff34a5fff463eff5e9e"
+    }
+  ]
+}

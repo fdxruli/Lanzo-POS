@@ -1,0 +1,47 @@
+[
+  {
+    "area": "Import",
+    "name": "two devices same target produce only one initial balance",
+    "status": "PASS"
+  },
+  {
+    "area": "Credit",
+    "name": "A inside limit",
+    "status": "PASS"
+  },
+  {
+    "area": "Credit",
+    "name": "B exact equality",
+    "status": "PASS"
+  },
+  {
+    "area": "Credit",
+    "name": "C one cent over",
+    "status": "PASS"
+  },
+  {
+    "area": "Credit",
+    "name": "D already above",
+    "status": "PASS"
+  },
+  {
+    "area": "Credit",
+    "name": "one cent below",
+    "status": "PASS"
+  },
+  {
+    "area": "Credit",
+    "name": "non-finite stored limit cannot bypass enforcement",
+    "status": "PASS"
+  },
+  {
+    "area": "Upsert",
+    "name": "non-finite credit limit is rejected",
+    "status": "PASS"
+  },
+  {
+    "area": "Authority",
+    "name": "internal financial import remains inaccessible to anon",
+    "status": "PASS"
+  }
+]

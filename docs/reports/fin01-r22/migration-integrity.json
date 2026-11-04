@@ -1,0 +1,8 @@
+{
+  "file": "supabase/migrations/20261022135915_fin01_historical_credit_owner_authorization.sql",
+  "sha256": "855a25f313741d4181be90dede4925cbfdce59fce23a1ff34a5fff463eff5e9e",
+  "cli": "2.51.0",
+  "majorCertified": "PostgreSQL 17",
+  "productionApplied": false,
+  "productionWritesByThisTask": 0
+}

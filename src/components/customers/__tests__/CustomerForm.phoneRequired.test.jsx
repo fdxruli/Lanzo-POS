@@ -20,6 +20,20 @@ const fillName = async (user, name = 'Cliente de prueba') => {
 };
 
 describe('CustomerForm required phone', () => {
+  it('requires confirmation for a lower limit while preserving current customer validation', async () => {
+    const customer = { id: 'debt', name: 'Cliente', phone: '5551234567', creditLimit: 200, debt: 100 };
+    const onSave = vi.fn().mockResolvedValue({ success: true });
+    const { rerender } = render(<CustomerForm customerToEdit={customer} latestCustomer={customer} onSave={onSave} onCancel={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText('Limite de Credito ($)'), { target: { value: '50' } });
+    fireEvent.submit(document.getElementById('customer-form'));
+    expect(onSave).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('checkbox'));
+    rerender(<CustomerForm customerToEdit={customer} latestCustomer={{ ...customer, debt: 150 }} onSave={onSave} onCancel={vi.fn()} />);
+    expect(screen.getByRole('checkbox')).not.toBeChecked();
+    fireEvent.click(screen.getByRole('checkbox'));
+    fireEvent.submit(document.getElementById('customer-form'));
+    await waitFor(() => expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ phone: customer.phone, creditLimit: 50 })));
+  });
   it('blocks an empty phone and focuses the required field', async () => {
     const user = userEvent.setup();
     const onSave = vi.fn();

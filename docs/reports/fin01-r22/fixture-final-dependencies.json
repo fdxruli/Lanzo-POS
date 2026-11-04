@@ -1,0 +1,22 @@
+[
+  {
+    "schema_name": "private",
+    "proname": "pos_cad6_normalize_text",
+    "definition": "CREATE OR REPLACE FUNCTION private.pos_cad6_normalize_text(p_value text)\n RETURNS text\n LANGUAGE sql\n IMMUTABLE\n SET search_path TO ''\nAS $function$\n  select lower(coalesce(p_value, ''));\n$function$\n"
+  },
+  {
+    "schema_name": "private",
+    "proname": "pos_cad6_product_is_perishable_blocking",
+    "definition": "CREATE OR REPLACE FUNCTION private.pos_cad6_product_is_perishable_blocking(p_product pos_products)\n RETURNS boolean\n LANGUAGE plpgsql\n STABLE\n SET search_path TO ''\nAS $function$\ndeclare\n  v_context_text text;\nbegin\n  if coalesce(p_product.expiration_mode, 'NONE') <> 'SHELF_LIFE' then\n    return false;\n  end if;\n\n  if private.pos_cad6_truthy(p_product.metadata->>'perishableBlocking')\n    or private.pos_cad6_truthy(p_product.metadata->>'perishable_blocking')\n    or private.pos_cad6_truthy(p_product.metadata->>'isPerishable')\n    or private.pos_cad6_truthy(p_product.metadata->>'is_perishable')\n    or private.pos_cad6_truthy(p_product.batch_management->>'perishableBlocking')\n    or private.pos_cad6_truthy(p_product.batch_management->>'perishable_blocking') then\n    return true;\n  end if;\n\n  v_context_text := private.pos_cad6_product_context_text(p_product);\n  return private.pos_cad6_text_matches_perishable(v_context_text);\nend;\n$function$\n"
+  },
+  {
+    "schema_name": "private",
+    "proname": "rest_inv5_modifier_inventory_quantity",
+    "definition": "CREATE OR REPLACE FUNCTION private.rest_inv5_modifier_inventory_quantity(p_modifier jsonb)\n RETURNS numeric\n LANGUAGE plpgsql\n IMMUTABLE\nAS $function$\ndeclare\n  v_has_explicit boolean;\n  v_quantity numeric;\nbegin\n  if p_modifier is null or jsonb_typeof(p_modifier) <> 'object' then\n    return null;\n  end if;\n\n  v_has_explicit := (p_modifier ? 'ingredientQuantity') or (p_modifier ? 'ingredient_quantity');\n\n  if v_has_explicit then\n    v_quantity := private.pos_sale_jsonb_numeric(p_modifier, array['ingredientQuantity','ingredient_quantity'], null);\n    if v_quantity is not null and v_quantity > 0 then\n      return v_quantity;\n    end if;\n    return null;\n  end if;\n\n  if p_modifier ? 'quantity' then\n    v_quantity := private.pos_sale_jsonb_numeric(p_modifier, array['quantity'], null);\n    if v_quantity is not null and v_quantity > 0 then\n      return v_quantity;\n    end if;\n  end if;\n\n  return null;\nend;\n$function$\n"
+  },
+  {
+    "schema_name": "private",
+    "proname": "rest_inv5_modifier_tracks_inventory",
+    "definition": "CREATE OR REPLACE FUNCTION private.rest_inv5_modifier_tracks_inventory(p_modifier jsonb)\n RETURNS boolean\n LANGUAGE plpgsql\n IMMUTABLE\nAS $function$\ndeclare\n  v_ingredient_id text;\n  v_quantity numeric;\nbegin\n  if p_modifier is null or jsonb_typeof(p_modifier) <> 'object' then\n    return false;\n  end if;\n\n  v_ingredient_id := private.pos_sale_jsonb_text(\n    p_modifier,\n    array['ingredientId','ingredient_id'],\n    null\n  );\n  v_quantity := private.rest_inv5_modifier_inventory_quantity(p_modifier);\n\n  return v_ingredient_id is not null\n    and v_quantity is not null\n    and v_quantity > 0;\nend;\n$function$\n"
+  }
+]
