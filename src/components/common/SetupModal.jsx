@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import './SetupModal.css';
 import Logger from '../../services/Logger';
-import { fetchLegalTerms, acceptLegalTerms } from '../../services/supabase';
+import { fetchLegalTerms, acceptLegalTerms, fetchLegalPolicyState } from '../../services/supabase';
 
 const logoPlaceholder = 'https://placehold.co/150x150/FFFFFF/4A5568?text=L';
 
@@ -41,7 +41,7 @@ const normalizeCandidateTypes = (candidate) => {
   if (Array.isArray(types)) return types.filter(Boolean);
   if (typeof types === 'string') {
     return types
-      .replace(/[{}\"]/g, '')
+      .replace(/[{}"]/g, '')
       .split(',')
       .flatMap((item) => {
         const trimmedItem = item.trim();
@@ -76,6 +76,30 @@ export default function SetupModal() {
   const [error, setError] = useState('');
   const [activeSection, setActiveSection] = useState('info');
   const [showTerms, setShowTerms] = useState(false);
+  const [readingType, setReadingType] = useState('terms_of_use');
+  const [legalDocuments, setLegalDocuments] = useState([]);
+  const [legalConsents, setLegalConsents] = useState({});
+  const [legalLoading, setLegalLoading] = useState(false);
+  const [legalLoadAttempt, setLegalLoadAttempt] = useState(0);
+  const submittingRef = useRef(false);
+
+  useEffect(() => {
+    if (activeSection !== 'complete') return;
+    let cancelled = false;
+    setLegalLoading(true);
+    Promise.all(LEGAL_DOCUMENT_TYPES.map(async (document) => ({
+      ...document, data: await fetchLegalTerms(document.fetchType)
+    }))).then((documents) => {
+      if (cancelled) return;
+      setLegalDocuments(documents);
+      if (documents.some(({ data }) => !data?.id || !data?.version)) {
+        setError('No se pudieron cargar todos los documentos legales. Revisa tu conexión y reintenta.');
+      }
+    }).catch(() => {
+      if (!cancelled) setError('No se pudieron cargar los documentos legales. Reintenta.');
+    }).finally(() => { if (!cancelled) setLegalLoading(false); });
+    return () => { cancelled = true; };
+  }, [activeSection, legalLoadAttempt]);
   const nameInputRef = useRef(null);
 
   const licenseFeatures = licenseDetails?.features || {};
@@ -170,6 +194,7 @@ export default function SetupModal() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (submittingRef.current) return;
 
     if (!isStep1Complete || !isStep2Complete) {
       setError('Debes seleccionar al menos un rubro.');
@@ -181,16 +206,30 @@ export default function SetupModal() {
       return;
     }
 
+    if (legalLoading || legalDocuments.length !== LEGAL_DOCUMENT_TYPES.length
+      || legalDocuments.some(({ type, data }) => !data?.id || !data?.version
+        || (type !== 'terms_of_use' && legalConsents[type] !== data.id))) {
+      setError('Consulta y acepta cada documento legal antes de crear el negocio.');
+      return;
+    }
+
+    submittingRef.current = true;
     setIsSubmitting(true);
     setError('');
 
     try {
       const actorHandle = actorRuntimeController.capture('settings');
-      const terms = await fetchLegalTerms('terms_of_use');
+      const documents = await Promise.all(LEGAL_DOCUMENT_TYPES.map(async (document) => ({
+        ...document, data: await fetchLegalTerms(document.fetchType)
+      })));
       actorHandle.assertCurrent('settings');
-
-      if (!terms || !terms.id) {
-        throw new Error('No se pudieron verificar los términos y condiciones. Revisa tu conexión.');
+      if (documents.some(({ data }) => !data?.id || !data?.version)) {
+        throw new Error('No se pudieron verificar los documentos legales. Revisa tu conexión e intenta de nuevo.');
+      }
+      if (documents.some(({ type, data }) => legalDocuments.find((item) => item.type === type)?.data?.id !== data.id)) {
+        setLegalDocuments(documents);
+        setLegalConsents({});
+        throw new Error('Los documentos legales cambiaron. Revisa las nuevas versiones y vuelve a aceptarlas.');
       }
 
       const currentLicenseKey = licenseDetails?.license_key;
@@ -199,22 +238,36 @@ export default function SetupModal() {
         throw new Error('No hay una licencia activa para finalizar la configuracion.');
       }
 
-      const acceptResult = await acceptLegalTerms(currentLicenseKey, terms.id);
-      if (!acceptResult.success && acceptResult.message !== 'ALREADY_ACCEPTED') {
-        const reason = acceptResult.message || acceptResult.error;
+      const policyState = await fetchLegalPolicyState(currentLicenseKey);
+      actorHandle.assertCurrent('settings');
+      if (!policyState?.success || !Array.isArray(policyState.accepted_documents)) {
+        throw new Error('No se pudieron verificar las aceptaciones guardadas. Revisa tu conexión e intenta de nuevo.');
+      }
+      const acceptedIds = new Set(policyState.accepted_documents.map((item) => item.term_id || item.id));
+      for (const document of documents) {
+        actorHandle.assertCurrent('settings');
+        if (useAppStore.getState().licenseDetails?.license_key !== currentLicenseKey) {
+          throw new Error('La licencia cambió. Vuelve a iniciar la configuración.');
+        }
+        if (acceptedIds.has(document.data.id)) continue;
+        const acceptResult = await acceptLegalTerms(currentLicenseKey, document.data.id);
+        if (!acceptResult?.success && acceptResult?.message !== 'ALREADY_ACCEPTED') {
+          const reason = acceptResult?.message || acceptResult?.error;
 
-        if (reason === 'LICENSE_NOT_FOUND_OR_INACTIVE' || reason === 'DEVICE_NOT_AUTHORIZED') {
-          await logout();
-          throw new Error(
-            'La licencia local ya no existe o este dispositivo no esta autorizado. Ingresa una licencia valida para continuar.'
-          );
+          if (reason === 'LICENSE_NOT_FOUND_OR_INACTIVE' || reason === 'DEVICE_NOT_AUTHORIZED') {
+            await logout();
+            throw new Error(
+              'La licencia local ya no existe o este dispositivo no esta autorizado. Ingresa una licencia valida para continuar.'
+            );
+          }
+
+          if (reason === 'TERM_NOT_FOUND') {
+            throw new Error('No se encontro la version actual de terminos. Intenta de nuevo.');
+          }
+
+          throw new Error(`No se pudo registrar la aceptación de ${document.data.title || document.label}. Intenta de nuevo.`);
         }
 
-        if (reason === 'TERM_NOT_FOUND') {
-          throw new Error('No se encontro la version actual de terminos. Intenta de nuevo.');
-        }
-
-        throw new Error('Error registrando la aceptacion de terminos.');
       }
 
       actorHandle.assertCurrent('settings');
@@ -233,6 +286,7 @@ export default function SetupModal() {
       Logger.error('Error en setup:', err);
       setError(err.message || 'Ocurrió un error al procesar. Intenta de nuevo.');
     } finally {
+      submittingRef.current = false;
       setIsSubmitting(false);
     }
   };
@@ -287,7 +341,7 @@ export default function SetupModal() {
               )}
               {activeSection === 'complete' && (
                 <p className="fade-in-text">
-                  Revisa la información final. Al crear el negocio registraremos la versión vigente de los términos y guardaremos tu configuración.
+                  Revisa la información final. Al crear el negocio registraremos las aceptaciones de los documentos legales y guardaremos tu configuración.
                 </p>
               )}
             </div>
@@ -560,12 +614,37 @@ export default function SetupModal() {
                         </div>
                       </div>
 
+                      <fieldset className="setup-legal-documents" disabled={isBusy || legalLoading}>
+                        <legend>Documentos legales</legend>
+                        <p>Revisa los documentos vigentes y marca cada aceptación.</p>
+                        {legalLoading && <p role="status">Cargando documentos legales...</p>}
+                        {legalDocuments.map(({ type, label, data }) => (
+                          <div className="setup-legal-document" key={type}>
+                            <div>
+                              <strong>{data?.title || label}</strong>
+                              <span> {data?.version ? `· Versión ${data.version}` : '· No disponible'}</span>
+                            </div>
+                            <button type="button" className="terms-link" onClick={() => {
+                              setReadingType(type);
+                              setShowTerms(true);
+                            }} aria-label={`Leer ${data?.title || label}`}>Leer documento</button>
+                            {type !== 'terms_of_use' && (
+                              <label className="setup-legal-consent">
+                                <input type="checkbox" disabled={!data?.id} checked={Boolean(data?.id && legalConsents[type] === data.id)}
+                                  onChange={(event) => setLegalConsents((current) => ({
+                                    ...current, [type]: event.target.checked ? data.id : null
+                                  }))} />
+                                Acepto {data?.title || label}
+                              </label>
+                            )}
+                          </div>
+                        ))}
+                        {!legalLoading && (legalDocuments.length !== LEGAL_DOCUMENT_TYPES.length || legalDocuments.some(({ data }) => !data?.id || !data?.version)) && (
+                          <button type="button" className="terms-link" onClick={() => setLegalLoadAttempt((value) => value + 1)}>Reintentar carga</button>
+                        )}
+                      </fieldset>
                       <p className="terms-agreement-text">
-                        Al hacer clic en <strong>Crear negocio</strong>, aceptas los Términos de uso y puedes consultar los avisos de Lanzo.
-                        {' '}
-                        <button type="button" className="terms-link" onClick={() => setShowTerms(true)}>
-                          Ver políticas y avisos
-                        </button>
+                        Al hacer clic en <strong>Crear negocio</strong>, aceptas los Términos de uso de la versión indicada y confirmas las cinco aceptaciones marcadas.
                       </p>
 
                       {error && <div className="error-message" role="alert">{error}</div>}
@@ -598,6 +677,7 @@ export default function SetupModal() {
 
       <TermsAndConditionsModal
         isOpen={showTerms}
+        initialDocumentType={readingType}
         onClose={() => setShowTerms(false)}
         readOnly={true}
         showDocumentIndex={true}
