@@ -13,7 +13,7 @@ import { buildPosSyncAuthContext } from '../sync/posSyncClient';
 import { SYNC_LIMITS } from '../sync/syncConstants';
 import { localAllocationsToCloud } from './customerCreditMapper';
 import { actorRuntimeController } from '../auth/actorRuntimeController';
-import { callCloudSyncV2Rpc } from '../sync/cloudSyncProtocolV2';
+import { callCloudSyncRpc } from '../sync/cloudSyncProtocolV2';
 
 const parseRpcPayload = (data) => {
   if (typeof data === 'string') return JSON.parse(data);
@@ -108,7 +108,7 @@ export const customerCreditCloudRepository = {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
     actorHandle.assertCurrent();
-    const response = await callCloudSyncV2Rpc({
+    const response = await callCloudSyncRpc({
       client: supabaseClient,
       rpcName: 'pos_record_customer_payment_v2',
       authArgs: baseArgs,
@@ -145,7 +145,7 @@ export const customerCreditCloudRepository = {
       cooldownMs: CLOUD_REQUEST_COOLDOWN.SHORT,
       force,
       fn: async () => {
-        const response = await callCloudSyncV2Rpc({
+        const response = await callCloudSyncRpc({
           client: supabaseClient,
           rpcName: 'pos_get_customer_credit_summary_v2',
           authArgs: baseArgs,
@@ -180,7 +180,7 @@ export const customerCreditCloudRepository = {
       cacheScope: { actorKey: actorHandle.actorKey, generation: actorHandle.generation },
       force,
       fn: async () => {
-        const response = await callCloudSyncV2Rpc({
+        const response = await callCloudSyncRpc({
           client: supabaseClient,
           rpcName: 'pos_pull_customer_credit_snapshot_v2',
           authArgs: baseArgs,
@@ -203,7 +203,7 @@ export const customerCreditCloudRepository = {
     assertSupabase();
     const baseArgs = await buildBaseRpcArgs(licenseKey);
     actorHandle.assertCurrent();
-    const response = await callCloudSyncV2Rpc({
+    const response = await callCloudSyncRpc({
       client: supabaseClient,
       rpcName: 'pos_pull_customer_credit_changes_v2',
       authArgs: baseArgs,

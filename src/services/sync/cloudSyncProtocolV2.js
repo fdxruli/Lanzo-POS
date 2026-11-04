@@ -140,12 +140,12 @@ const reportUpdateRequired = (family) => {
   }));
 };
 
-const reportCompatible = (family) => {
+const reportCompatible = (family, contractVersion = CLOUD_SYNC_CONTRACT_VERSION) => {
   if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') return;
   const EventConstructor = window.CustomEvent || globalThis.CustomEvent;
   if (typeof EventConstructor !== 'function') return;
   window.dispatchEvent(new EventConstructor('lanzo:cloud-protocol-compatible', {
-    detail: { family, contractVersion: CLOUD_SYNC_CONTRACT_VERSION }
+    detail: { family, contractVersion }
   }));
 };
 
@@ -469,13 +469,21 @@ export const validateCloudSyncV2Envelope = (rawEnvelope, {
 const normalizeContract = (rawContract, { family, rpcName, requestedCapabilities }) => {
   const contract = parseJson(rawContract, 'CLOUD_SYNC_PROTOCOL_INVALID_DISCOVERY');
   if (!isRecord(contract)) throw makeUpdateRequiredError(family);
-  if (contract.success === false && contract.code === 'CLOUD_CLIENT_UPDATE_REQUIRED') {
+  if (contract.success === false) {
     throw makeUpdateRequiredError(family);
   }
   if (contract.contract_version !== CLOUD_SYNC_CONTRACT_VERSION
     || contract.server_status !== 'SUPPORTED'
     || typeof contract.tenant_id !== 'string'
     || contract.tenant_id.trim() === '') {
+    throw makeUpdateRequiredError(family);
+  }
+
+  if (contract.mode === 'RECOVERY_ONLY') {
+    if (contract.active_protocol !== 1 || family !== 'financial_operations'
+      || rpcName !== 'pos_get_financial_operation_receipt_v2') throw makeUpdateRequiredError(family);
+  } else if (contract.mode !== undefined
+    || (contract.active_protocol !== undefined && contract.active_protocol !== 2)) {
     throw makeUpdateRequiredError(family);
   }
 
@@ -491,7 +499,7 @@ const normalizeContract = (rawContract, { family, rpcName, requestedCapabilities
   return contract;
 };
 
-export const callCloudSyncV2Rpc = async ({
+const callNegotiatedRpc = async ({
   client,
   rpcName,
   authArgs,
@@ -505,10 +513,13 @@ export const callCloudSyncV2Rpc = async ({
   expectedOffset = null,
   expectedChangeSeq = null,
   actorHandle = null
-}) => {
+}, allowLegacy = false) => {
   if (!client?.rpc || typeof rpcName !== 'string' || !isRecord(authArgs)) {
     throw new Error('CLOUD_SYNC_PROTOCOL_CLIENT_INVALID');
   }
+  // Bind discovery and dispatch to this captured license, without protocol caching.
+  authArgs = { ...authArgs };
+  if (!hasText(authArgs.p_license_key)) throw new Error('POS_SYNC_AUTH_CONTEXT_INCOMPLETE');
   actorHandle?.assertCurrent?.();
   const requestedCapabilities = family === 'financial_operations'
     ? [...CLOUD_SYNC_CAPABILITIES, CLOUD_FINANCIAL_RESULT_CAPABILITY]
@@ -530,7 +541,24 @@ export const callCloudSyncV2Rpc = async ({
 
   let contract;
   try {
-    contract = normalizeContract(discoveryData, { family, rpcName, requestedCapabilities });
+    const discovery = parseJson(discoveryData, 'CLOUD_SYNC_PROTOCOL_INVALID_DISCOVERY');
+    // This exact authenticated server response is the v1 selection contract.
+    // Errors, stopped pilots and partial/contradictory responses never admit v1.
+    const legacy = allowLegacy && Object.hasOwn(LEGACY_RPC_NAMES, rpcName)
+      && isRecord(discovery) && discovery.contract_version === 2
+      && discovery.server_status === 'UPDATE_REQUIRED'
+      && discovery.reason === 'QA_PILOT_NOT_ENABLED' && discovery.active_protocol === 1
+      && hasText(discovery.tenant_id) && discovery.mode === undefined
+      && discovery.success !== false;
+    if (legacy) {
+      const { data, error } = await client.rpc(LEGACY_RPC_NAMES[rpcName], { ...params, ...authArgs });
+      actorHandle?.assertCurrent?.();
+      if (error) throw error;
+      const payload = parseJson(data, 'CLOUD_SYNC_PROTOCOL_INVALID_JSON') || {};
+      await resumeCompatibleFamily(family, authArgs.p_license_key, actorHandle, 1);
+      return payload;
+    }
+    contract = normalizeContract(discovery, { family, rpcName, requestedCapabilities });
   } catch (error) {
     if (isCloudClientUpdateRequired(error)) reportUpdateRequired(family);
     throw error;
@@ -541,8 +569,8 @@ export const callCloudSyncV2Rpc = async ({
     capabilities: requestedCapabilities
   };
   const { data, error } = await client.rpc(rpcName, {
-    ...authArgs,
     ...params,
+    ...authArgs,
     p_sync_contract: syncContract
   });
   actorHandle?.assertCurrent?.();
@@ -568,20 +596,7 @@ export const callCloudSyncV2Rpc = async ({
       expectedChangeSeq
     });
     actorHandle?.assertCurrent?.();
-    const licenseKey = authArgs.p_license_key;
-    let outboxResumed = true;
-    if (licenseKey) {
-      try {
-        await syncOutboxService.resumeUpdateRequired(family, { licenseKey });
-      } catch {
-        // A confirmed contract remains valid even if local queue maintenance is
-        // temporarily unavailable. Keep paused rows intact and retry recovery
-        // on the next successful v2 request.
-        outboxResumed = false;
-      }
-      actorHandle?.assertCurrent?.();
-    }
-    if (outboxResumed) reportCompatible(family);
+    await resumeCompatibleFamily(family, authArgs.p_license_key, actorHandle, 2);
     return validated;
   } catch (errorValidation) {
     if (errorValidation?.code === 'CLOUD_CLIENT_UPDATE_REQUIRED') reportUpdateRequired(family);
@@ -591,3 +606,33 @@ export const callCloudSyncV2Rpc = async ({
 
 export const isCloudClientUpdateRequired = (error) => error?.code === 'CLOUD_CLIENT_UPDATE_REQUIRED'
   || /\bCLOUD_CLIENT_UPDATE_REQUIRED\b/.test(String(error?.message || ''));
+
+// Explicit counterparts preserve the deployed v1 signatures (most have no suffix).
+const LEGACY_RPC_NAMES = Object.freeze({
+  pos_upsert_customer_v2: 'pos_upsert_customer',
+  pos_delete_customer_v2: 'pos_delete_customer',
+  pos_migrate_local_customers_v2: 'pos_migrate_local_customers',
+  pos_pull_customers_snapshot_v2: 'pos_pull_customers_snapshot',
+  pos_pull_customer_changes_v2: 'pos_pull_customer_changes',
+  pos_get_customer_credit_summary_v2: 'pos_get_customer_credit_summary',
+  pos_pull_customer_credit_snapshot_v2: 'pos_pull_customer_credit_snapshot',
+  pos_pull_customer_credit_changes_v2: 'pos_pull_customer_credit_changes',
+  pos_record_customer_payment_v2: 'pos_record_customer_payment',
+  pos_execute_financial_operation_v2: 'pos_execute_financial_operation_v1',
+  pos_get_financial_operation_receipt_v2: 'pos_get_financial_operation_receipt'
+});
+
+const resumeCompatibleFamily = async (family, licenseKey, actorHandle, contractVersion) => {
+  let resumed = true;
+  try {
+    await syncOutboxService.resumeUpdateRequired(family, { licenseKey });
+  } catch {
+    // Preserve paused rows if local maintenance is unavailable.
+    resumed = false;
+  }
+  actorHandle?.assertCurrent?.();
+  if (resumed) reportCompatible(family, contractVersion);
+};
+
+export const callCloudSyncV2Rpc = (options) => callNegotiatedRpc(options);
+export const callCloudSyncRpc = (options) => callNegotiatedRpc(options, true);

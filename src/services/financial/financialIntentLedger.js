@@ -2,7 +2,7 @@ import { db, STORES } from '../db/dexie';
 import { actorRuntimeController } from '../auth/actorRuntimeController';
 import { supabaseClient } from '../supabase';
 import { buildPosSyncAuthContext } from '../sync/posSyncClient';
-import { callCloudSyncV2Rpc } from '../sync/cloudSyncProtocolV2';
+import { callCloudSyncRpc } from '../sync/cloudSyncProtocolV2';
 import {
   canonicalFinancialRequestV1,
   canonicalJsonV1,
@@ -719,7 +719,7 @@ const receiptForCurrentOrigin = async ({ intent, licenseKey, handle, timeouts = 
   handle.assertCurrent();
   const auth = await buildAuth(licenseKey);
   handle.assertCurrent();
-  const response = await callCloudSyncV2Rpc({
+  const response = await callCloudSyncRpc({
     client: supabaseClient,
     rpcName: 'pos_get_financial_operation_receipt_v2',
     authArgs: auth,
@@ -1029,7 +1029,7 @@ const executeDurableFinancialIntentForRecovery = async ({
       async () => {
         const auth = await buildAuth(licenseKey);
         handle.assertCurrent();
-        return callCloudSyncV2Rpc({
+        return callCloudSyncRpc({
           client: supabaseClient,
           rpcName: 'pos_execute_financial_operation_v2',
           authArgs: auth,

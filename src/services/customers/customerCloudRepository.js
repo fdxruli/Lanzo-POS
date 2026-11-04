@@ -12,7 +12,7 @@ import {
 import { buildPosSyncAuthContext } from '../sync/posSyncClient';
 import { SYNC_LIMITS } from '../sync/syncConstants';
 import { actorRuntimeController } from '../auth/actorRuntimeController';
-import { callCloudSyncV2Rpc } from '../sync/cloudSyncProtocolV2';
+import { callCloudSyncRpc } from '../sync/cloudSyncProtocolV2';
 
 const assertSupabase = () => {
   if (!supabaseClient) {
@@ -72,7 +72,7 @@ export const customerCloudRepository = {
     const baseArgs = await buildBaseRpcArgs(licenseKey);
     actorHandle.assertCurrent();
 
-    const response = await callCloudSyncV2Rpc({
+    const response = await callCloudSyncRpc({
       client: supabaseClient,
       rpcName: 'pos_upsert_customer_v2',
       authArgs: baseArgs,
@@ -95,7 +95,7 @@ export const customerCloudRepository = {
     const baseArgs = await buildBaseRpcArgs(licenseKey);
     actorHandle.assertCurrent();
 
-    const response = await callCloudSyncV2Rpc({
+    const response = await callCloudSyncRpc({
       client: supabaseClient,
       rpcName: 'pos_delete_customer_v2',
       authArgs: baseArgs,
@@ -131,7 +131,7 @@ export const customerCloudRepository = {
       cacheScope: { actorKey: actorHandle.actorKey, generation: actorHandle.generation },
       force,
       fn: async () => {
-        const response = await callCloudSyncV2Rpc({
+        const response = await callCloudSyncRpc({
           client: supabaseClient,
           rpcName: 'pos_pull_customers_snapshot_v2',
           authArgs: baseArgs,
@@ -154,7 +154,7 @@ export const customerCloudRepository = {
     const baseArgs = await buildBaseRpcArgs(licenseKey);
     actorHandle.assertCurrent();
 
-    const response = await callCloudSyncV2Rpc({
+    const response = await callCloudSyncRpc({
       client: supabaseClient,
       rpcName: 'pos_pull_customer_changes_v2',
       authArgs: baseArgs,
@@ -176,7 +176,7 @@ export const customerCloudRepository = {
     const baseArgs = await buildBaseRpcArgs(licenseKey);
     actorHandle.assertCurrent();
 
-    const response = await callCloudSyncV2Rpc({
+    const response = await callCloudSyncRpc({
       client: supabaseClient,
       rpcName: 'pos_migrate_local_customers_v2',
       authArgs: baseArgs,
