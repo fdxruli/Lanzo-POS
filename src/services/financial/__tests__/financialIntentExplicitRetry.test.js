@@ -227,6 +227,40 @@ const explicitRetry = (intent, options = {}) => retryExistingFinancialIntentExpl
 beforeEach(() => runtime.reset());
 
 describe('explicit retry of an already-owned sale financial intent', () => {
+  it.each([FINANCIAL_INTENT_STATUS.PENDING_RECEIPT, FINANCIAL_INTENT_STATUS.DISPATCHING])(
+    'R4 retains an offline %s intent across a renewed session but NOT_FOUND cannot finish its recovery',
+    async (status) => {
+      // ledgerVersion/requestContractVersion 1 are also the durable v1 shape.
+      // Model an attempted operation retained before an application update;
+      // this is a state-machine test, not a running legacy PWA or pilot gate.
+      const intent = await seedIntent({ changes: { status, dispatchAttemptCount: 1 } });
+      const before = await getFinancialIntent(intent.id);
+      runtime.handle = runtime.makeHandle({ sessionId: 'renewed-session', generation: 9,
+        tenant: { ...runtime.handle.tenant, generation: 9 } });
+      runtime.receipt.mockResolvedValue({ status: 'NOT_FOUND' });
+
+      await expect(explicitRetry(intent)).rejects.toThrow('FINANCIAL_RECOVERY_RECEIPT_PENDING');
+      expect(executeCalls()).toHaveLength(0);
+      expect(runtime.rows.size).toBe(1);
+      expect(await getFinancialIntent(intent.id)).toMatchObject({
+        id: before.id, idempotencyKey: before.idempotencyKey, requestHash: before.requestHash,
+        requestPayload: before.requestPayload, canonicalRequest: before.canonicalRequest,
+        originActorKey: before.originActorKey, originActorSessionId: before.originActorSessionId,
+        originDeviceRef: before.originDeviceRef, originTenantDatabaseName: before.originTenantDatabaseName,
+        status: FINANCIAL_INTENT_STATUS.PENDING_RECEIPT, dispatchAttemptCount: 1,
+        lastRecoveryCode: 'FINANCIAL_RECOVERY_RECEIPT_NOT_FOUND_AFTER_ATTEMPT'
+      });
+
+      // A later authoritative receipt is recoverable without executing again.
+      const response = { success: true, sale: { id: 'r4-original-sale' } };
+      runtime.receipt.mockResolvedValue({ status: 'COMPLETED', result: response });
+      await expect(explicitRetry(intent)).resolves.toMatchObject({ response });
+      expect(executeCalls()).toHaveLength(0);
+      expect(await getFinancialIntent(intent.id)).toMatchObject({ idempotencyKey: before.idempotencyKey,
+        requestHash: before.requestHash, dispatchAttemptCount: 1, status: FINANCIAL_INTENT_STATUS.COMPLETED });
+    }
+  );
+
   it('preserves the strict unique-K allocator with one local owner', async () => {
     await seedIntent();
 
