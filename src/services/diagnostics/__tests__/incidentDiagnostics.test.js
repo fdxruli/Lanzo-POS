@@ -218,6 +218,9 @@ describe('console diagnostic normalization', () => {
     [{ code: '23505', message: 'private key', details: '', hint: '' }, 'Servicio remoto', '23505'],
     [{ code: '42501', message: 'private policy', details: '', hint: null }, 'Autorización o sesión', '42501'],
     [new DOMException('private storage content', 'QuotaExceededError'), 'Almacenamiento local', 'INCIDENT_INDEXEDDB'],
+    [new Error('IndexedDB blocked'), 'Almacenamiento local', 'INCIDENT_INDEXEDDB'],
+    [new Error('service worker update failed'), 'Aplicación instalada', 'INCIDENT_PWA'],
+    [new TypeError('Failed to fetch dynamically imported module: https://private.invalid/?token=private'), 'Navegación o carga de recursos', 'INCIDENT_NAVIGATION_RESOURCE'],
     [{ code: 'DB_BROWSER_STORAGE_UNAVAILABLE' }, 'Almacenamiento local', 'DB_BROWSER_STORAGE_UNAVAILABLE'],
     [getSafeIncidentMetadata({ code: 'SYNC_REQUEST_FAILED', category: 'synchronization' }), 'Sincronización', 'SYNC_REQUEST_FAILED']
   ])('retains only recognized technical evidence %#', (error, category, code) => {

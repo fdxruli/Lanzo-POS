@@ -556,12 +556,16 @@ const normalizeConsoleError = (value) => {
   const safeCode = knownCode || normalized ? code : consoleMessageCode(message);
   const storage = ['QuotaExceededError', 'DatabaseClosedError', 'DatabaseOpenTimeoutError'].includes(name);
   const status = consoleField(value, 'status');
+  // Preserve the existing native-Error classifier. Its message is inspected
+  // transiently; only the resulting category enters the console projection.
+  const nativeCategory = native ? classifyIncident({ name, message }).category : CATEGORIES.UNKNOWN;
   return {
     code: safeCode,
     name: SAFE_ERROR_NAMES.has(name) ? name : 'Error',
     category: consoleCodeCategory(safeCode) || (normalized ? category : undefined)
       || (storage ? CATEGORIES.INDEXEDDB : undefined)
       || (name === 'NetworkError' || name === 'TimeoutError' ? CATEGORIES.CONNECTIVITY : undefined)
+      || (nativeCategory !== CATEGORIES.UNKNOWN ? nativeCategory : undefined)
       || (postgrest ? ([401, 403].includes(status) ? CATEGORIES.AUTHORIZATION_SESSION : CATEGORIES.SUPABASE_RPC) : undefined),
     module: normalized && consoleField(value, 'schema_version') === 1
       ? CONSOLE_MODULES.get(consoleField(value, 'module')) : undefined,
