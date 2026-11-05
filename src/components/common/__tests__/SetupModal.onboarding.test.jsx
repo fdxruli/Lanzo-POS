@@ -55,7 +55,7 @@ vi.mock('../../../services/auth/actorRuntimeController', async (importOriginal) 
     getState: () => ({ status: mocks.actorGranted ? 'granted' : 'locked', generation: 0 }),
     capture: () => {
       if (!mocks.actorGranted) throw new Error('ACTOR_CONTEXT_LOCKED');
-      return { actorType: 'admin', assertCurrent: mocks.assertCurrent };
+      return { actorType: 'admin', actorId: 'owner-1', assertCurrent: mocks.assertCurrent };
     }
   } };
 });
@@ -236,6 +236,39 @@ describe('integrated owner onboarding', () => {
     expect(useAppStore.getState().companyProfile.name).toBe('Mi negocio');
     expect(useAppStore.getState().ownerEnrollmentContext).toBeNull();
     expect(mocks.configureBackup).not.toHaveBeenCalled();
+  });
+
+  it('recovers after closing before creation and accepts current legal versions only on the final action', async () => {
+    await start(); business(); await continueIntegratedOwner();
+    expect(mocks.createFreeTrial).toHaveBeenCalledTimes(1);
+    expect(mocks.enrollAdminOwnerOnDevice).toHaveBeenCalledTimes(1);
+    expect(mocks.acceptLegalTerms).not.toHaveBeenCalled();
+    // Unmounting destroys the form draft. Recreate the slices with no transient
+    // enrollment context, as a reload does after restoring the existing actor.
+    cleanup();
+    useAppStore.setState({
+      appStatus: 'loading', ownerEnrollmentContext: null,
+      ...createLicenseAdminActions({ set: useAppStore.setState, get: useAppStore.getState }),
+      ...createProfileSlice(useAppStore.setState, useAppStore.getState)
+    });
+    await useAppStore.getState()._completeRestoredAdminPreparation('FREE-ONBOARDING');
+    expect(useAppStore.getState().appStatus).toBe('setup_required');
+    render(<Flow />);
+    expect(screen.getByLabelText('Nombre del Negocio *')).toHaveValue('');
+    business();
+    await screen.findByRole('button', { name: 'Crear negocio' });
+    expect(screen.queryByLabelText('Confirmar contraseña')).not.toBeInTheDocument();
+    await waitForLegalDocuments();
+    expect(mocks.acceptLegalTerms).not.toHaveBeenCalled();
+    expect(mocks.saveBusinessProfile).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Crear negocio' }));
+    await screen.findByText('ready');
+    expect(mocks.acceptLegalTerms.mock.calls).toEqual(
+      LEGAL_DOCUMENT_TYPES.map(({ type }) => ['FREE-ONBOARDING', `${type}-current`])
+    );
+    expect(mocks.saveBusinessProfile).toHaveBeenCalledTimes(1);
+    expect(mocks.createFreeTrial).toHaveBeenCalledTimes(1);
+    expect(mocks.enrollAdminOwnerOnDevice).toHaveBeenCalledTimes(1);
   });
 
   it('opens the read-only document index from the text and accepts only when creating the business', async () => {

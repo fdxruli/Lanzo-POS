@@ -195,11 +195,12 @@ const completeAdminSession = async (set, get, licenseKey, result, reason, attemp
     let preparedStatus = null;
     const profileOptions = {
       forceRemote: true, reason, assertCurrent: () => attempt.assertCurrent(),
+      // Authority was checked above for this Admin, device and tenant. Recovery
+      // must not depend on the ephemeral enrollment navigation context: the
+      // profile loader still requires an explicit remote PROFILE_NOT_FOUND.
+      allowSetupTransition: true,
       onPrepared: (status) => { preparedStatus = status; }
     };
-    if (['new_license_setup', 'existing_license'].includes(get().ownerEnrollmentContext)) {
-      profileOptions.allowSetupTransition = true;
-    }
     traceAuth('PROFILE_LOAD_PENDING');
     await runTimedAuthOperation('admin_profile_load', () => loadBootstrapProfile(get()._loadProfile, licenseKey, profileOptions, lifecycle, 'admin_profile_preparation_nested_work'));
     attempt.assertCurrent();

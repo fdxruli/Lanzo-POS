@@ -3,13 +3,18 @@ import { classifySessionVerificationResponse } from '../../../../services/auth/s
 import { evaluateAdminOfflineAuthorization } from '../../../../services/auth/adminOfflineAuthorization';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const runtimeMocks = vi.hoisted(() => ({ prepareLocalDatabase: vi.fn() }));
+const runtimeMocks = vi.hoisted(() => ({ prepareLocalDatabase: vi.fn(), ensureLocalDatabaseReady: vi.fn(async () => undefined) }));
 const storageMocks = vi.hoisted(() => ({
   getLicenseFromStorage: vi.fn(),
   saveLicenseToStorage: vi.fn()
 }));
 const supabaseMocks = vi.hoisted(() => ({
+  activateLicense: vi.fn(),
   revalidateLicense: vi.fn(),
+  getBusinessProfile: vi.fn(),
+  saveBusinessProfile: vi.fn(),
+  adminLoginOnDevice: vi.fn(),
+  enrollAdminOwnerOnDevice: vi.fn(),
   clearStaffSessionCache: vi.fn(),
   clearAdminSessionCache: vi.fn(),
   hasStaffSessionToken: vi.fn(),
@@ -22,7 +27,21 @@ const actorMocks = vi.hoisted(() => ({
   ACTOR_SESSION_AMBIGUOUS: 'ACTOR_SESSION_AMBIGUOUS',
   beginActorRuntimeAuthentication: vi.fn(),
   restoreActorRuntimeFromCurrentSessionCache: vi.fn(),
-  lockActorRuntime: vi.fn()
+  lockActorRuntime: vi.fn(),
+  assertAuthenticatedActorSessionCurrent: vi.fn(async () => true),
+  refreshAuthenticatedAdminSessionAuthorization: vi.fn(async () => true),
+  grantAuthenticatedActorRuntime: vi.fn()
+}));
+
+const profileStorage = vi.hoisted(() => ({
+  loadData: vi.fn(async () => null),
+  saveData: vi.fn(async () => undefined)
+}));
+vi.mock('../../../../services/database', () => ({
+  ...profileStorage, STORES: { COMPANY: 'company' }
+}));
+vi.mock('../../../../services/storage/imageUploadService', () => ({
+  IMAGE_UPLOAD_PURPOSES: { BUSINESS_LOGO: 'business-logo' }, uploadImageFile: vi.fn()
 }));
 
 vi.mock('../../../../services/db/databaseRuntime', () => runtimeMocks);
@@ -39,6 +58,10 @@ vi.mock('../../../../services/tenant/localTenantGuard', () => ({
 }));
 
 import { createLicenseBootstrapActions, getInitializeAppCoordinatorState } from '../licenseBootstrapActions';
+import { createLicenseAdminActions } from '../licenseAdminActions';
+import { createProfileSlice } from '../../createProfileSlice';
+import * as tenantGuard from '../../../../services/tenant/localTenantGuard';
+import * as tenantRouter from '../../../../services/db/tenantRuntimeRouter';
 import { actorRuntimeController } from '../../../../services/auth/actorRuntimeController';
 
 const deferred = () => {
@@ -607,3 +630,141 @@ describe('initializeApp coordinator', () => {
 });
 
 afterEach(() => vi.restoreAllMocks());
+
+
+describe('interrupted owner onboarding through real bootstrap and profile preparation', () => {
+  const license = {
+    license_key: 'ONBOARDING-FIXTURE', device_role: 'admin',
+    admin_identity_required: true, plan_code: 'pro', max_devices: 2,
+    device_id: 'fixture-device', admin_user: { id: 'fixture-owner' }
+  };
+  let state;
+  beforeEach(() => {
+    vi.clearAllMocks();
+    actorMocks.assertAuthenticatedActorSessionCurrent.mockResolvedValue(true);
+    tenantGuard.assertLocalTenantAccess.mockResolvedValue({ status: 'pass' });
+    actorRuntimeController.lock('onboarding_test_reset');
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
+    const runtime = { opaqueId: 'fixture-tenant', databaseName: 'fixture-db', generation: 1 };
+    vi.spyOn(tenantRouter, 'getTenantRuntimeReadiness').mockReturnValue({ ready: true, runtime });
+    vi.spyOn(actorRuntimeController, 'capture').mockImplementation(() => ({
+      actorType: 'admin', actorId: 'fixture-owner', assertCurrent: vi.fn()
+    }));
+    storageMocks.getLicenseFromStorage.mockResolvedValue(license);
+    supabaseMocks.hasStaffSessionToken.mockResolvedValue(false);
+    supabaseMocks.hasAdminSessionToken.mockResolvedValue(true);
+    supabaseMocks.getAdminOfflineAuthorization.mockResolvedValue({ eligible: false });
+    supabaseMocks.verifyAdminSession.mockResolvedValue({ valid: true, admin_user: license.admin_user, details: license });
+    actorMocks.restoreActorRuntimeFromCurrentSessionCache.mockImplementation(async () => ({
+      generation: actorRuntimeController.getState().generation
+    }));
+    runtimeMocks.prepareLocalDatabase.mockResolvedValue({ ready: true });
+    profileStorage.loadData.mockResolvedValue(null);
+    supabaseMocks.getBusinessProfile.mockResolvedValue({ success: false, code: 'PROFILE_NOT_FOUND' });
+    supabaseMocks.saveBusinessProfile.mockResolvedValue({ success: true });
+    supabaseMocks.revalidateLicense.mockResolvedValue({ valid: true, ...license, features: {} });
+    // A fresh store represents reopening the browser: only the allowed stored
+    // license/session adapters survive; the enrollment navigation context does not.
+    state = createState({ ownerEnrollmentContext: null });
+    const set = (patch) => Object.assign(state, patch);
+    const get = () => state;
+    Object.assign(state, createProfileSlice(set, get), createLicenseAdminActions({ set, get }));
+  });
+
+  it('restores the existing owner, confirms absence, saves and reloads the same business', async () => {
+    await expect(state.initializeApp({ force: true })).resolves.toEqual({ status: 'setup_required' });
+    expect(actorMocks.assertAuthenticatedActorSessionCurrent).toHaveBeenCalled();
+    expect(supabaseMocks.getBusinessProfile).toHaveBeenCalledWith(license.license_key);
+    expect(supabaseMocks.saveBusinessProfile).not.toHaveBeenCalled();
+    expect(profileStorage.saveData).not.toHaveBeenCalled();
+    expect(supabaseMocks.enrollAdminOwnerOnDevice).not.toHaveBeenCalled();
+    expect(supabaseMocks.activateLicense).not.toHaveBeenCalled();
+    expect(supabaseMocks.adminLoginOnDevice).not.toHaveBeenCalled();
+    await state.handleSetup({ name: 'Fixture business', business_type: ['abarrotes'] });
+    expect(state.appStatus).toBe('ready');
+    expect(state.companyProfile.license_key).toBe(license.license_key);
+    expect(supabaseMocks.saveBusinessProfile).toHaveBeenCalledTimes(1);
+    supabaseMocks.getBusinessProfile.mockResolvedValue({ success: true, data: state.companyProfile });
+    await expect(state.initializeApp({ force: true })).resolves.toEqual({ status: 'ready' });
+    expect(supabaseMocks.enrollAdminOwnerOnDevice).not.toHaveBeenCalled();
+  });
+
+  it('continues normally when the business already exists', async () => {
+    supabaseMocks.getBusinessProfile.mockResolvedValue({ success: true, data: {
+      license_key: license.license_key, name: 'Existing business', business_type: ['abarrotes']
+    } });
+    await expect(state.initializeApp({ force: true })).resolves.toEqual({ status: 'ready' });
+  });
+
+  it.each([
+    ['transport', { success: false, message: 'Failed to fetch' }],
+    ['timeout', { success: false, message: 'Profile query timed out' }],
+    ['empty result', null],
+    ['unknown license', { success: false, code: 'LICENSE_NOT_FOUND' }]
+  ])('does not infer absence from %s', async (_label, result) => {
+    supabaseMocks.getBusinessProfile.mockResolvedValue(result);
+    await state.initializeApp({ force: true });
+    expect(state.appStatus).toBe('admin_login_required');
+    expect(supabaseMocks.saveBusinessProfile).not.toHaveBeenCalled();
+  });
+
+  it('does not enter Setup after storage failure even with remote absence', async () => {
+    profileStorage.loadData.mockRejectedValue(new Error('fixture storage unavailable'));
+    await state.initializeApp({ force: true });
+    expect(state.appStatus).toBe('admin_login_required');
+  });
+
+  it('requires authentication for a revoked session before reading the profile', async () => {
+    supabaseMocks.verifyAdminSession.mockResolvedValue({ valid: false, code: 'ADMIN_SESSION_REVOKED' });
+    await state.initializeApp({ force: true });
+    expect(state.appStatus).not.toBe('setup_required');
+    expect(supabaseMocks.getBusinessProfile).not.toHaveBeenCalled();
+  });
+
+  it('keeps an unauthorized device blocked before loading a profile', async () => {
+    supabaseMocks.verifyAdminSession.mockResolvedValue({ valid: false, code: 'DEVICE_NOT_AUTHORIZED' });
+    await state.initializeApp({ force: true });
+    expect(state.appStatus).not.toBe('setup_required');
+    expect(supabaseMocks.getBusinessProfile).not.toHaveBeenCalled();
+  });
+
+  it('rejects a tenant mismatch at the preparation boundary', async () => {
+    vi.spyOn(tenantGuard, 'assertLocalTenantAccess').mockImplementation(async () => {
+      throw Object.assign(new Error('fixture tenant mismatch'), { code: 'ACTOR_TENANT_MISMATCH' });
+    });
+    await state.initializeApp({ force: true });
+    expect(state.appStatus).not.toBe('setup_required');
+    expect(supabaseMocks.getBusinessProfile).not.toHaveBeenCalled();
+  });
+
+  it('does not read a profile when the restored actor session loses authorization', async () => {
+    actorMocks.assertAuthenticatedActorSessionCurrent.mockRejectedValueOnce(
+      Object.assign(new Error('fixture session invalid'), { code: 'ACTOR_SESSION_REQUIRED' })
+    );
+    await state.initializeApp({ force: true });
+    expect(state.appStatus).toBe('admin_login_required');
+    expect(supabaseMocks.getBusinessProfile).not.toHaveBeenCalled();
+  });
+
+  it('does not infer a missing business offline', async () => {
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+    await state.initializeApp({ force: true });
+    expect(state.appStatus).not.toBe('setup_required');
+    expect(supabaseMocks.getBusinessProfile).not.toHaveBeenCalled();
+  });
+
+  it('ignores a late absence response after the license context changes', async () => {
+    const response = deferred();
+    const started = deferred();
+    supabaseMocks.getBusinessProfile.mockImplementation(() => { started.resolve(); return response.promise; });
+    const bootstrap = state.initializeApp({ force: true });
+    await started.promise;
+    state.licenseDetails = { license_key: 'OTHER-FIXTURE' };
+    state.appStatus = 'license_access_required';
+    response.resolve({ success: false, code: 'PROFILE_NOT_FOUND' });
+    await bootstrap;
+    expect(state.appStatus).toBe('license_access_required');
+    expect(state.licenseDetails.license_key).toBe('OTHER-FIXTURE');
+    expect(state.companyProfile).toBeNull();
+  });
+});
