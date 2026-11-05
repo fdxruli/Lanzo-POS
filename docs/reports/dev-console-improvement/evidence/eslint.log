@@ -11,4 +11,3 @@
   78:7  warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
 
 ✖ 9 problems (0 errors, 9 warnings)
-
