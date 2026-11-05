@@ -50,6 +50,7 @@ import { customerCreditLocalRepository } from '../../customerCredit/customerCred
 import { customerCreditMigrationService } from '../../customerCredit/customerCreditMigrationService';
 import { syncMetaService } from '../../sync/syncMetaService';
 import { actorRuntimeController } from '../../auth/actorRuntimeController';
+import { CUSTOMER_DEBT_SORT_INDEX } from '../../db/customerDebtIndex';
 
 const TEST_LICENSE_KEY = 'license-key-sha256:test-tenant-runtime-a';
 const TEST_TENANT_IDENTITY = Object.freeze({
@@ -95,6 +96,148 @@ const knownCloudProjection = (customer) => customer.serverVersion > 0 ? {
   ...customer, financialSource: 'cloud',
   lastCloudDebtCents: customer.debtCents ?? Math.round(Number(customer.debt || 0) * 100)
 } : customer;
+
+describe('customer directory visibility', () => {
+  beforeEach(() => {
+    setCloudMode();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-11-05T08:00:00.000Z'));
+  });
+
+  afterEach(() => vi.useRealTimers());
+
+  it('lists the same new zero-debt, zero-limit Cloud customer found by Fiado despite a future update', async () => {
+    const cloud = remoteCustomer('qa-v2-zero', {
+      name: 'CLIENTE QA V2 001',
+      created_at: '2026-11-05T06:54:20.000Z',
+      updated_at: '2026-11-05T08:20:29.000Z'
+    });
+    mocks.cloud.upsertCustomer.mockResolvedValueOnce({ success: true, customer: cloud });
+    expect(await customerRepository.saveCustomer({
+      id: cloud.id, name: cloud.name, phone: cloud.phone, creditLimit: 0
+    })).toMatchObject({ success: true });
+
+    const search = await customerRepository.searchCustomers(cloud.name);
+    expect(search).toHaveLength(1);
+    expect(search[0]).toMatchObject({ id: cloud.id, debt: 0, debtCents: 0, creditLimit: 0 });
+    expect((await customerRepository.listCustomersPage()).data).toEqual(search);
+
+    await closeTestTenantRuntime();
+    await openTenantRuntime(TEST_TENANT_IDENTITY);
+    grantCustomerFixtureActor();
+    await customerLocalRepository.applyCloudCustomer(cloud);
+    await customerLocalRepository.applyCloudCustomer(cloud);
+    expect((await customerRepository.listCustomersPage()).data.map(row => row.id)).toEqual([cloud.id]);
+    expect(await db.table(STORES.CUSTOMERS).count()).toBe(1);
+    expect(await db.table(STORES.SALES).count()).toBe(0);
+    expect(await db.table(STORES.CUSTOMER_LEDGER).count()).toBe(0);
+    expect(await db.table(POS_SYNC_STORES.CONFLICTS).count()).toBe(0);
+  });
+
+  it('keeps active customers visible even when server creation and update are both ahead of the browser', async () => {
+    await customerLocalRepository.applyCloudCustomer(remoteCustomer('future-created', {
+      created_at: '2026-11-05T08:20:29.000Z', updated_at: '2026-11-05T08:20:29.000Z'
+    }));
+    expect(await customerRepository.searchCustomers('Cliente Cloud')).toHaveLength(1);
+    expect((await customerRepository.listCustomersPage()).data.map(row => row.id)).toEqual(['future-created']);
+  });
+
+  it('does not drop an existing customer on later pages after a server timestamp update', async () => {
+    await customerLocalRepository.applyCloudCustomer(remoteCustomer('page-first', { phone: '5551110001', phone_key: '5551110001', debt: 20, debt_cents: 2000 }));
+    await customerLocalRepository.applyCloudCustomer(remoteCustomer('page-second', { phone: '5551110002', phone_key: '5551110002', debt: 10, debt_cents: 1000 }));
+    const first = await customerRepository.listCustomersPage({ limit: 1 });
+    expect(first.data.map(row => row.id)).toEqual(['page-first']);
+    await customerLocalRepository.applyCloudCustomer(remoteCustomer('page-second', {
+      phone: '5551110002', phone_key: '5551110002', debt: 10, debt_cents: 1000,
+      updated_at: '2026-11-05T08:20:29.000Z', server_version: 2
+    }));
+    const second = await customerRepository.listCustomersPage({ limit: 1, offset: first.nextOffset, snapshotAt: first.snapshotAt });
+    expect(second.data.map(row => row.id)).toEqual(['page-second']);
+    expect(second.hasMore).toBe(false);
+    expect(second.nextOffset).toBeNull();
+  });
+
+  it('includes rows omitted by the compound index without changing unknown debt or missing fields', async () => {
+    await db.table(STORES.CUSTOMERS).bulkPut([
+      { id: 'unknown-debt', name: 'Desconocido', debt: null, createdAt: '2026-10-01T10:00:00.000Z', financialProjectionStatus: 'NOT_INCLUDED' },
+      { id: 'missing-created', name: 'Sin fecha', debt: 15 },
+      { id: 'missing-cents', name: 'Sin centavos', debt: 5, createdAt: '2026-10-01T10:00:00.000Z' }
+    ]);
+    // Seed the incomplete persisted shapes explicitly: operational write hooks
+    // normally derive cents when debt itself is written.
+    await db.table(STORES.CUSTOMERS).update('unknown-debt', { debtCents: null });
+    await db.table(STORES.CUSTOMERS).update('missing-cents', { debtCents: undefined });
+    const before = await db.table(STORES.CUSTOMERS).toArray();
+    expect(await db.table(STORES.CUSTOMERS).orderBy(CUSTOMER_DEBT_SORT_INDEX).count()).toBe(0);
+    expect(await customerRepository.searchCustomers()).toHaveLength(3);
+    const page = await customerRepository.listCustomersPage();
+    expect(new Set(page.data.map(row => row.id))).toEqual(new Set(before.map(row => row.id)));
+    expect(page.data.map(row => row.id)).toEqual(['missing-created', 'missing-cents', 'unknown-debt']);
+    expect(page.data.find(row => row.id === 'unknown-debt')).toMatchObject({ debt: null, debtCents: null, financialProjectionStatus: 'NOT_INCLUDED' });
+    expect(await db.table(STORES.CUSTOMERS).toArray()).toEqual(before);
+  });
+
+  it.each([false, true])('orders positive debts and ties across pages without duplicates (incomplete index: %s)', async (incomplete) => {
+    const rows = [
+      { id: 'zero', debt: 0, createdAt: '2026-10-01T10:00:00.000Z' },
+      { id: 'low', debt: 5, createdAt: '2026-10-01T10:00:00.000Z' },
+      { id: 'high-old', debt: 20, createdAt: '2026-09-01T10:00:00.000Z' },
+      { id: 'high-a', debt: 20, createdAt: '2026-10-01T10:00:00.000Z' },
+      { id: 'high-z', debt: 20, createdAt: '2026-10-01T10:00:00.000Z' }
+    ];
+    await db.table(STORES.CUSTOMERS).bulkPut(rows);
+    if (incomplete) {
+      await db.table(STORES.CUSTOMERS).put({ id: 'unknown', name: 'Unknown', debt: null });
+      await db.table(STORES.CUSTOMERS).update('unknown', { debtCents: null });
+    }
+    const before = await db.table(STORES.CUSTOMERS).toArray();
+    const ids = [];
+    let offset = 0;
+    let snapshotAt = null;
+    for (let pageNumber = 0; pageNumber < 5; pageNumber += 1) {
+      const page = await customerRepository.listCustomersPage({ limit: 2, offset, snapshotAt });
+      ids.push(...page.data.map(row => row.id));
+      snapshotAt = page.snapshotAt;
+      if (!page.hasMore) { expect(page.nextOffset).toBeNull(); break; }
+      offset = page.nextOffset;
+    }
+    expect(ids).toEqual(['high-z', 'high-a', 'high-old', 'low', 'zero', ...(incomplete ? ['unknown'] : [])]);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(await db.table(STORES.CUSTOMERS).toArray()).toEqual(before);
+  });
+
+  it('excludes inactive customers and both deletion markers just like Fiado search', async () => {
+    await db.table(STORES.CUSTOMERS).bulkPut([
+      { id: 'active', isActive: true },
+      { id: 'inactive', isActive: false },
+      { id: 'deleted-at', isActive: true, deletedAt: '2026-10-01T10:00:00.000Z' },
+      { id: 'deleted-timestamp', isActive: true, deletedTimestamp: '2026-10-01T10:00:00.000Z' }
+    ].map(row => ({ ...row, debt: 0, createdAt: '2026-10-01T10:00:00.000Z' })));
+    const search = await customerRepository.searchCustomers();
+    expect(search.map(row => row.id)).toEqual(['active']);
+    expect((await customerRepository.listCustomersPage()).data).toEqual(search);
+  });
+
+  it('keeps list and search scoped to each license even for the same customer ID', async () => {
+    const identityA = { primary: 'license-id:directory-a', aliases: ['license-id:directory-a'], authority: 'license_id' };
+    const identityB = { primary: 'license-id:directory-b', aliases: ['license-id:directory-b'], authority: 'license_id' };
+    for (const [identity, name] of [[identityA, 'Negocio A'], [identityB, 'Negocio B']]) {
+      await closeTestTenantRuntime();
+      await openTenantRuntime(identity);
+      await db.table('local_tenant_binding').put({ key: 'primary', tenantIdentity: identity.primary, tenantAliases: identity.aliases, bindingVersion: 1 });
+      await db.table(STORES.CUSTOMERS).put({ id: 'shared-id', name, debt: 0, createdAt: '2026-10-01T10:00:00.000Z' });
+    }
+    for (const [identity, name] of [[identityA, 'Negocio A'], [identityB, 'Negocio B']]) {
+      await closeTestTenantRuntime();
+      await openTenantRuntime(identity);
+      const page = await customerRepository.listCustomersPage();
+      expect(page.data).toHaveLength(1);
+      expect(page.data[0]).toMatchObject({ id: 'shared-id', name });
+      expect(await customerRepository.searchCustomers(name)).toEqual(page.data);
+      expect(await customerRepository.searchCustomers(name === 'Negocio A' ? 'Negocio B' : 'Negocio A')).toHaveLength(0);
+    }
+  });
+});
 
 beforeEach(async () => {
   await openTestTenantRuntime();

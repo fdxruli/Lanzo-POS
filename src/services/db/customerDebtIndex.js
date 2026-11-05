@@ -1,3 +1,4 @@
+import Dexie from 'dexie';
 import { Money } from '../../utils/moneyMath';
 
 export const CUSTOMER_DEBT_SORT_INDEX = '[debtCents+createdAt+id]';
@@ -12,11 +13,22 @@ export const normalizeCustomerDebtCents = (debt = 0) => {
   }
 };
 
-export const getCustomerOrderingAnchor = (customer = {}) => {
-  return customer.updatedAt || customer.createdAt || DEFAULT_CUSTOMER_TIMESTAMP;
+const getCustomerSortDebtCents = (customer = {}) => {
+  if (Number.isFinite(customer.debtCents)) return customer.debtCents;
+  if (customer.debt !== null && customer.debt !== undefined && customer.debt !== '') {
+    try {
+      return Money.toCents(customer.debt);
+    } catch { /* An unreadable balance stays unknown. */ }
+  }
+  // Sort unknown balances last; never persist a substitute financial value.
+  return Number.NEGATIVE_INFINITY;
 };
 
-export const matchesCustomerSnapshot = (customer = {}, snapshotAt = null) => {
-  if (!snapshotAt) return true;
-  return getCustomerOrderingAnchor(customer) <= snapshotAt;
+export const compareCustomersByDebt = (a, b) => {
+  const key = (customer) => [
+    getCustomerSortDebtCents(customer),
+    customer.createdAt || DEFAULT_CUSTOMER_TIMESTAMP,
+    customer.id
+  ];
+  return Dexie.cmp(key(b), key(a));
 };
