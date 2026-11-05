@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import {
   Mail,
@@ -14,7 +14,7 @@ import './WelcomeModal.css';
 import Logger from '../../services/Logger';
 import { showMessageModal } from '../../services/utils';
 import { buildSupportMailtoUrl, copyTextToClipboard, getSupportEmail } from '../../services/support/supportContact';
-import { mapLicenseActivationResult } from './licenseActivationErrorMapper';
+import { mapLicenseActivationResult, mapFreeLicenseCreationResult } from './licenseActivationErrorMapper';
 
 
 export default function WelcomeModal() {
@@ -23,6 +23,7 @@ export default function WelcomeModal() {
   const [errorMessage, setErrorMessage] = useState('');
   const [errorTitle, setErrorTitle] = useState('');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const actionInFlight = useRef(false);
   const isLoading = loadingAction !== null;
 
   const handleLogin = useAppStore((state) => state.handleLogin);
@@ -73,6 +74,8 @@ export default function WelcomeModal() {
       return;
     }
 
+    if (actionInFlight.current) return;
+    actionInFlight.current = true;
     setLoadingAction('license');
     clearError();
 
@@ -93,34 +96,36 @@ export default function WelcomeModal() {
       const feedback = mapLicenseActivationResult(error, { isOnline });
       showError(feedback.message, feedback.title);
     } finally {
+      actionInFlight.current = false;
       setLoadingAction(null);
     }
   };
 
   const handleTrialClick = async () => {
+    if (actionInFlight.current) return;
     if (!isOnline) {
       showError('Se requiere conexión a internet para crear tu licencia gratuita.');
       return;
     }
 
+    actionInFlight.current = true;
     setLoadingAction('free');
     clearError();
 
     try {
       const result = await handleFreeTrial();
 
-      if (!result.success) {
-        showError(result.message || 'No se pudo crear la licencia Lanzo Local.');
+      if (!result?.success) {
+        const feedback = mapFreeLicenseCreationResult(result, { isOnline });
+        showError(feedback.message, feedback.title);
       }
     } catch (error) {
       Logger.error("Error al crear licencia Lanzo Local:", error);
 
-      if (error.message?.includes('fetch') || error.message?.includes('Network')) {
-        showError('Error de red. Verifica tu conexión.');
-      } else {
-        showError(`Error: ${error.message || 'Intenta nuevamente'}`);
-      }
+      const feedback = mapFreeLicenseCreationResult(error, { isOnline });
+      showError(feedback.message, feedback.title);
     } finally {
+      actionInFlight.current = false;
       setLoadingAction(null);
     }
   };

@@ -29,6 +29,7 @@ describe('WelcomeModal loading feedback', () => {
     render(<WelcomeModal />);
     fireEvent.click(screen.getByRole('button', { name: 'Crear licencia Lanzo Local' }));
 
+    fireEvent.click(screen.getByRole('button', { name: 'Creando licencia...' }));
     expect(handleFreeTrial).toHaveBeenCalledTimes(1);
     expect(screen.getByRole('button', { name: 'Creando licencia...' })).toBeDisabled();
     expect(screen.getByRole('button', { name: /Acceder con Licencia/ })).toHaveTextContent('Acceder con Licencia');
@@ -37,6 +38,17 @@ describe('WelcomeModal loading feedback', () => {
 
     resolveTrial({ success: true });
     await waitFor(() => expect(screen.getByRole('button', { name: 'Crear licencia Lanzo Local' })).toBeEnabled());
+  });
+
+  it('shows an uncertain creation safely and releases the button', async () => {
+    const handleFreeTrial = vi.fn().mockResolvedValue({ success: false, error: 'TypeError: Failed to fetch', outcome: 'unknown' });
+    useAppStore.setState({ handleFreeTrial });
+    render(<WelcomeModal />);
+    fireEvent.click(screen.getByRole('button', { name: 'Crear licencia Lanzo Local' }));
+    await screen.findByText('No pudimos confirmar la creación');
+    expect(screen.queryByText(/TypeError|Failed to fetch/)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Crear licencia Lanzo Local' })).toBeEnabled();
+    expect(handleFreeTrial).toHaveBeenCalledTimes(1);
   });
 
   it('shows verification progress only on the existing-license CTA', async () => {

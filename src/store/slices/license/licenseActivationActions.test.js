@@ -331,7 +331,7 @@ describe('createLicenseActivationActions.handleLogin', () => {
         expect(mocks.saveLicenseToStorage).toHaveBeenCalledWith(expect.objectContaining({
             license_key: 'LANZO-FREE-ACTOR',
             valid: true
-        }));
+        }), { required: true });
         expect(state).toMatchObject({
             appStatus: 'admin_enrollment_required',
             currentDeviceRole: 'admin',
@@ -347,6 +347,23 @@ describe('createLicenseActivationActions.handleLogin', () => {
             device_role: 'admin'
         });
         expect(state._loadProfile).not.toHaveBeenCalled();
+    });
+
+    it('preserves RPC rejection metadata and never announces enrollment', async () => {
+        const { state } = createActionState();
+        const failure = { success: false, code: 'LICENSE_ACTIVATION_RATE_LIMITED', retry_after_seconds: 86400 };
+        mocks.createFreeTrial.mockResolvedValueOnce(failure);
+        await expect(state.handleFreeTrial()).resolves.toEqual(failure);
+        expect(state.appStatus).toBe('unauthenticated');
+        expect(mocks.saveLicenseToStorage).not.toHaveBeenCalled();
+    });
+
+    it('reports a post-creation local save failure as created', async () => {
+        const { state } = createActionState();
+        mocks.createFreeTrial.mockResolvedValueOnce({ success: true, details: { license_key: 'FREE-CREATED' } });
+        mocks.saveLicenseToStorage.mockRejectedValueOnce(new Error('storage failed'));
+        await expect(state.handleFreeTrial()).resolves.toMatchObject({ success: false, outcome: 'created' });
+        expect(state.appStatus).toBe('unauthenticated');
     });
 
     it('preserves a typed browser-storage failure from free-license creation', async () => {

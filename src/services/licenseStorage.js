@@ -45,8 +45,12 @@ export const generateSignature = (data) => {
   return hash.toString(16);
 };
 
-export const saveLicenseToStorage = async (licenseData) => {
-  if (!isLocalStorageEnabled()) return;
+export const saveLicenseToStorage = async (licenseData, { required = false } = {}) => {
+  const storageFailure = () => Object.assign(new Error('License storage unavailable'), { code: 'DB_BROWSER_STORAGE_UNAVAILABLE' });
+  if (!isLocalStorageEnabled()) {
+    if (required) throw storageFailure();
+    return;
+  }
   const dataToStore = { ...licenseData };
 
   if (!dataToStore.localExpiry) {
@@ -57,7 +61,22 @@ export const saveLicenseToStorage = async (licenseData) => {
 
   const signature = generateSignature(dataToStore);
   const packageToStore = { data: dataToStore, signature };
-  const saved = safeLocalStorageSet('lanzo_license', JSON.stringify(packageToStore));
+  const serialized = JSON.stringify(packageToStore);
+  let saved;
+  if (required) {
+    try {
+      localStorage.setItem('lanzo_license', serialized);
+      saved = localStorage.getItem('lanzo_license') === serialized;
+    } catch {
+      throw storageFailure();
+    }
+  } else {
+    saved = safeLocalStorageSet('lanzo_license', serialized);
+  }
+
+  if (required && !saved) {
+    throw storageFailure();
+  }
 
   if (!saved) {
     Logger.warn('No se pudo persistir la licencia por falta de espacio.');

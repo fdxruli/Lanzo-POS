@@ -302,6 +302,7 @@ export const createLicenseActivationActions = ({
 
     handleFreeTrial: async () => {
         initializeLocalTenantGuard('free_trial');
+        let creationConfirmed = false;
         try {
             const result = await createFreeTrial({
                 beforeLocalPersistence: (resolvedDetails = {}) => assertLocalTenantAccess(
@@ -311,6 +312,7 @@ export const createLicenseActivationActions = ({
             });
 
             if (result.success) {
+                creationConfirmed = true;
                 const rawData = result.details || result;
 
                 await assertLocalTenantAccess(rawData, { reason: 'free_trial_response' });
@@ -322,7 +324,7 @@ export const createLicenseActivationActions = ({
                     max_devices: rawData.max_devices || 1
                 };
 
-                await saveLicenseToStorage(licenseDataToSave);
+                await saveLicenseToStorage(licenseDataToSave, { required: true });
 
                 set({
                     ownerEnrollmentContext: 'new_license_setup',
@@ -346,12 +348,11 @@ export const createLicenseActivationActions = ({
                 return { success: true, adminEnrollmentRequired: true };
             }
 
-            return {
-                success: false,
-                ...(result.code ? { code: result.code } : {}),
-                message: result.message || result.error || 'No se pudo crear la licencia Lanzo Local.'
-            };
+            return { ...result, success: false };
         } catch (error) {
+            if (creationConfirmed && !isLocalTenantAccessError(error)) {
+                return { success: false, code: 'FREE_LICENSE_LOCAL_SAVE_FAILED', outcome: 'created' };
+            }
             if (isBrowserStorageUnavailableError(error)) {
                 return {
                     success: false,

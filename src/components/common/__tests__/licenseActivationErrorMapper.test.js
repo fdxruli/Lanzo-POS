@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mapLicenseActivationResult } from '../licenseActivationErrorMapper';
+import { mapLicenseActivationResult, mapFreeLicenseCreationResult } from '../licenseActivationErrorMapper';
 
 const userFacingText = (feedback) => [feedback.title, feedback.message, feedback.action]
   .filter(Boolean)
@@ -157,5 +157,24 @@ describe('mapLicenseActivationResult', () => {
       kind: 'transition',
       action: 'continue'
     });
+  });
+});
+
+
+describe('free-license creation feedback', () => {
+  it('classifies Failed to fetch as unconfirmed without technical text', () => {
+    const feedback = mapFreeLicenseCreationResult(new TypeError('Failed to fetch'));
+    expect(feedback.title).toBe('No pudimos confirmar la creación');
+    expect(feedback.message).toContain('podría haberse creado');
+    expect(userFacingText(feedback)).not.toMatch(/TypeError|fetch|SQL|PGRST/);
+  });
+  it('uses the full server wait instead of capping a 24-hour block to one hour', () => {
+    expect(mapFreeLicenseCreationResult({ code: 'LICENSE_ACTIVATION_RATE_LIMITED', retry_after_seconds: 86400 }).message).toContain('1440 minutos');
+  });
+  it('offers original-key access or support for an already registered device', () => {
+    expect(mapFreeLicenseCreationResult({ code: 'FREE_LICENSE_DEVICE_REGISTERED' }).message).toContain('clave original');
+  });
+  it('does not leak SQL or raw RPC errors', () => {
+    expect(userFacingText(mapFreeLicenseCreationResult({ code: 'PGRST000', message: 'SQL failure' }))).not.toMatch(/PGRST|SQL/);
   });
 });
