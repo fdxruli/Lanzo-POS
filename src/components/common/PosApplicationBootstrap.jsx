@@ -112,6 +112,9 @@ export const loadPosReadyRuntime = async () => {
     { installProductStoreRecoveryGuard },
     { installMobileZoomGuard },
     { installDevConsoleCapture },
+    { installDevConsolePreferences },
+    { useAppStore },
+    { evaluateSettingsAccess },
     { default: DevConsole },
     { storageManager },
     { setAdminServiceWorkerReloadGuard },
@@ -125,6 +128,9 @@ export const loadPosReadyRuntime = async () => {
     import('../../store/productStoreRecoveryGuard'),
     import('../../services/mobileZoomGuard'),
     import('../../services/devConsoleCapture'),
+    import('../../services/devConsolePreferences'),
+    import('../../store/useAppStore'),
+    import('../../services/auth/settingsAccessPolicy'),
     import('../debug/DevConsole'),
     import('../../services/storageManager'),
     import('../../pwa/adminServiceWorker'),
@@ -187,6 +193,12 @@ export const loadPosReadyRuntime = async () => {
         && getPendingActorOperations().length === 0
       ));
       installDevConsoleCapture();
+      installDevConsolePreferences({
+        canAccessSettings: runtimeSnapshot => evaluateSettingsAccess({
+          runtimeSnapshot, ...useAppStore.getState()
+        }).canAccessSection('controls'),
+        subscribeSettings: useAppStore.subscribe
+      });
       installMobileZoomGuard();
       installProductStoreRecoveryGuard();
       startPosSyncAutoBootstrap();

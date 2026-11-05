@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
   AlertTriangle,
   Bug,
@@ -13,8 +13,11 @@ import {
 import {
   clearDevConsoleEntries,
   getDevConsoleEntries,
+  formatDevConsoleEntries,
   subscribeDevConsole,
 } from '../../services/devConsoleCapture';
+import { getDevConsolePreference, subscribeDevConsolePreference, isDevConsoleVisibleNow } from '../../services/devConsolePreferences';
+import { copyTextToClipboard } from '../../services/support/supportContact';
 import './DevConsole.css';
 
 const LEVELS = ['all', 'error', 'warn', 'info', 'log', 'debug', 'trace', 'table'];
@@ -22,12 +25,11 @@ const FAB_POSITION_STORAGE_KEY = 'lanzo_dev_console_fab_position';
 const FAB_LONG_PRESS_MS = 800;
 const FAB_DRAG_MARGIN = 8;
 const FAB_DRAG_CANCEL_DISTANCE = 8;
-const MOBILE_MEDIA_QUERY = '(max-width: 767px), (hover: none) and (pointer: coarse)';
 
 const levelLabel = {
   all: 'Todo',
   error: 'Errores',
-  warn: 'Warnings',
+  warn: 'Advertencias',
   info: 'Info',
   log: 'Logs',
   debug: 'Debug',
@@ -45,7 +47,7 @@ const levelClassName = {
   table: 'dev-console-entry--table',
 };
 
-const countByLevel = (entries, level) => entries.filter((entry) => entry.level === level).length;
+const countByLevel = (entries, level) => entries.reduce((count, entry) => count + (entry.level === level ? entry.count || 1 : 0), 0);
 
 const readStoredFabPosition = () => {
   if (typeof window === 'undefined') return null;
@@ -77,20 +79,19 @@ const clampFabPosition = (position, width, height) => {
 
 const persistFabPosition = (position) => {
   if (typeof window === 'undefined') return;
-  window.localStorage.setItem(FAB_POSITION_STORAGE_KEY, JSON.stringify(position));
+  try { window.localStorage.setItem(FAB_POSITION_STORAGE_KEY, JSON.stringify(position)); } catch { /* Moving the launcher works without storage. */ }
 };
 
-const isMobileViewport = () => (
-  typeof window !== 'undefined' &&
-  window.matchMedia(MOBILE_MEDIA_QUERY).matches
-);
-
-function DevConsole({ isSuppressed = false } = {}) {
+export function DevConsolePanel({ canCopy = isDevConsoleVisibleNow } = {}) {
   const [entries, setEntries] = useState(() => getDevConsoleEntries());
   const [isOpen, setIsOpen] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
-  const [isMobile, setIsMobile] = useState(isMobileViewport);
+  const [selectedCategory, setSelectedCategory] = useState('all');
+  const [copyStatus, setCopyStatus] = useState('');
+  const [inspectedId, setInspectedId] = useState(null);
+  const followTailRef = useRef(true);
+  const wasOpenRef = useRef(false);
   const [selectedLevel, setSelectedLevel] = useState('all');
   const [query, setQuery] = useState('');
   const [fabPosition, setFabPosition] = useState(readStoredFabPosition);
@@ -108,35 +109,27 @@ function DevConsole({ isSuppressed = false } = {}) {
   }
 
   useEffect(() => {
-    if (!isMobile) return undefined;
-    if (isPaused) return undefined;
-    return subscribeDevConsole(setEntries);
-  }, [isMobile, isPaused]);
+    if (!isOpen && wasOpenRef.current) fabRef.current?.focus();
+    wasOpenRef.current = isOpen;
+  }, [isOpen]);
 
   useEffect(() => {
-    if (!isOpen || isPaused) return;
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+    if (isPaused) return undefined;
+    setEntries(getDevConsoleEntries());
+    return subscribeDevConsole(setEntries);
+  }, [isPaused]);
+
+  useEffect(() => {
+    if (!isOpen || isPaused || !followTailRef.current) return;
+    scrollRef.current?.scrollTo?.({ top: scrollRef.current.scrollHeight });
   }, [entries, isOpen, isPaused]);
 
   useEffect(() => {
-    const mediaQuery = window.matchMedia(MOBILE_MEDIA_QUERY);
-    const handleMediaChange = (event) => {
-      setIsMobile(event.matches);
-      if (!event.matches) {
-        setIsOpen(false);
-        setIsFabDragging(false);
-        clearLongPressTimer();
-        dragStateRef.current = null;
-      }
-    };
-
-    setIsMobile(mediaQuery.matches);
-    mediaQuery.addEventListener('change', handleMediaChange);
-
-    return () => {
-      mediaQuery.removeEventListener('change', handleMediaChange);
-    };
-  }, []);
+    if (!isOpen) return undefined;
+    const handleEscape = event => { if (event.key === 'Escape') setIsOpen(false); };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [isOpen]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -150,6 +143,7 @@ function DevConsole({ isSuppressed = false } = {}) {
       });
     };
 
+    handleResize();
     window.addEventListener('resize', handleResize);
     window.addEventListener('orientationchange', handleResize);
 
@@ -163,21 +157,24 @@ function DevConsole({ isSuppressed = false } = {}) {
     const normalizedQuery = query.trim().toLowerCase();
     return entries.filter((entry) => {
       const matchesLevel = selectedLevel === 'all' || entry.level === selectedLevel;
-      const matchesQuery = !normalizedQuery || entry.text.toLowerCase().includes(normalizedQuery);
-      return matchesLevel && matchesQuery;
+      const matchesQuery = !normalizedQuery
+        || `${entry.text} ${entry.evidence || ''} ${entry.severity}`.toLowerCase().includes(normalizedQuery);
+      const matchesCategory = selectedCategory === 'all' || entry.category === selectedCategory;
+      return matchesLevel && matchesQuery && matchesCategory;
     });
-  }, [entries, query, selectedLevel]);
+  }, [entries, query, selectedLevel, selectedCategory]);
 
   const errorsCount = countByLevel(entries, 'error');
   const warningsCount = countByLevel(entries, 'warn');
 
   const handleCopy = async () => {
-    const text = visibleEntries
-      .map((entry) => `[${entry.timestamp || entry.time}] ${entry.level.toUpperCase()} ${entry.source}: ${entry.text}`)
-      .join('\n\n');
-
-    if (!text) return;
-    await navigator.clipboard?.writeText(text);
+    if (!canCopy()) return;
+    const text = formatDevConsoleEntries(visibleEntries);
+    if (!text) { setCopyStatus('No hay registros para copiar.'); return; }
+    try {
+      const copied = await copyTextToClipboard(text);
+      setCopyStatus(copied ? 'Diagnóstico copiado.' : 'No se pudo copiar. Puedes seleccionar el texto.');
+    } catch { setCopyStatus('No se pudo copiar. Puedes seleccionar el texto.'); }
   };
 
   const handleRefreshWhilePaused = () => {
@@ -282,8 +279,6 @@ function DevConsole({ isSuppressed = false } = {}) {
     setIsOpen(true);
   };
 
-  if (isSuppressed || !isMobile) return null;
-
   if (!isOpen) {
     const fabStyle = fabPosition
       ? {
@@ -306,7 +301,7 @@ function DevConsole({ isSuppressed = false } = {}) {
         onPointerUp={finishFabDrag}
         onPointerCancel={finishFabDrag}
         onContextMenu={(event) => event.preventDefault()}
-        aria-label="Abrir consola de desarrollo"
+        aria-label="Abrir consola de diagnóstico" aria-expanded="false"
         title="Toque para abrir. Mantener presionado para mover."
       >
         {errorsCount > 0 ? <AlertTriangle size={18} /> : <Bug size={18} />}
@@ -317,30 +312,30 @@ function DevConsole({ isSuppressed = false } = {}) {
   }
 
   return (
-    <section className={`dev-console ${isExpanded ? 'dev-console--expanded' : ''}`} aria-label="Consola de desarrollo">
+    <section className={`dev-console ${isExpanded ? 'dev-console--expanded' : ''}`} aria-label="Consola de diagnóstico">
       <header className="dev-console-header">
         <div className="dev-console-title">
           <Bug size={18} />
           <div>
-            <strong>Consola DEV</strong>
-            <span>{entries.length} eventos | {errorsCount} errores | {warningsCount} warnings</span>
+            <strong>Diagnóstico LANZO POS</strong>
+            <span>{entries.length} registros | {errorsCount} errores | {warningsCount} advertencias</span>
           </div>
         </div>
 
         <div className="dev-console-actions">
-          <button type="button" onClick={() => setIsPaused((value) => !value)} title={isPaused ? 'Reanudar captura visual' : 'Pausar captura visual'}>
+          <button type="button" onClick={() => setIsPaused((value) => !value)} aria-pressed={isPaused} title={isPaused ? 'Reanudar captura visual' : 'Pausar captura visual'}>
             {isPaused ? <Play size={16} /> : <Pause size={16} />}
           </button>
           <button type="button" onClick={handleCopy} title="Copiar logs visibles">
             <Clipboard size={16} />
           </button>
-          <button type="button" onClick={clearDevConsoleEntries} title="Limpiar consola">
+          <button type="button" onClick={() => { clearDevConsoleEntries(); setEntries([]); }} title="Limpiar consola">
             <Trash2 size={16} />
           </button>
           <button type="button" onClick={() => setIsExpanded((value) => !value)} title={isExpanded ? 'Reducir panel' : 'Expandir panel'}>
             {isExpanded ? <Minimize2 size={16} /> : <ChevronDown size={16} />}
           </button>
-          <button type="button" onClick={() => setIsOpen(false)} title="Cerrar consola">
+          <button type="button" autoFocus onClick={() => setIsOpen(false)} title="Cerrar consola">
             <X size={16} />
           </button>
         </div>
@@ -351,6 +346,19 @@ function DevConsole({ isSuppressed = false } = {}) {
           {LEVELS.map((level) => (
             <option key={level} value={level}>{levelLabel[level]}</option>
           ))}
+        </select>
+        <select value={selectedCategory} onChange={event => setSelectedCategory(event.target.value)} aria-label="Filtrar por categoría">
+          <option value="all">Todas las categorías</option>
+          <option value="unclassified">Eventos sin clasificar</option>
+          <option value="unknown">Errores sin contexto</option>
+          <option value="indexeddb">Almacenamiento local</option>
+          <option value="synchronization">Sincronización</option>
+          <option value="supabase_rpc">Servicio remoto</option>
+          <option value="authorization_session">Sesión</option>
+          <option value="financial_operation">Operación financiera</option>
+          <option value="connectivity">Conectividad</option>
+          <option value="navigation_resource">Recursos</option>
+          <option value="pwa">Aplicación instalada</option>
         </select>
         <input
           value={query}
@@ -365,7 +373,13 @@ function DevConsole({ isSuppressed = false } = {}) {
         )}
       </div>
 
-      <div className="dev-console-list" ref={scrollRef}>
+      <div className="dev-console-status" role="status">
+        {copyStatus || (isPaused ? 'Vista pausada; la captura y los avisos operativos continúan.' : 'Hasta 300 registros locales. Solo se conserva información técnica permitida.')}
+      </div>
+      <div className="dev-console-list" ref={scrollRef} onScroll={event => {
+        const list = event.currentTarget;
+        followTailRef.current = list.scrollHeight - list.scrollTop - list.clientHeight < 60;
+      }}>
         {visibleEntries.length === 0 ? (
           <div className="dev-console-empty">
             No hay registros para este filtro.
@@ -378,7 +392,16 @@ function DevConsole({ isSuppressed = false } = {}) {
                 <strong>{entry.level}</strong>
                 <em>{entry.source}</em>
               </div>
+              {entry.count > 1 && <span className="dev-console-repeat">{entry.count} eventos equivalentes · {entry.firstTimestamp} → {entry.timestamp}</span>}
               <pre>{entry.text}</pre>
+              {entry.evidence && <pre>Dato técnico: {entry.evidence}</pre>}
+              {entry.level === 'error' || entry.errorType ? <span className="dev-console-impact">
+                Impacto: {entry.severity === 'critical_blocker' ? 'Bloqueante; verificar resultado antes de reintentar'
+                  : entry.severity === 'recoverable' ? 'Recuperable' : 'No determinado; requiere revisión'}
+              </span> : null}
+              <button className="dev-console-inspect" type="button" aria-expanded={inspectedId === entry.id}
+                onClick={() => setInspectedId(current => current === entry.id ? null : entry.id)}>Examinar registro</button>
+              {inspectedId === entry.id && <pre>{formatDevConsoleEntries([entry])}</pre>}
             </article>
           ))
         )}
@@ -387,4 +410,8 @@ function DevConsole({ isSuppressed = false } = {}) {
   );
 }
 
-export default DevConsole;
+export default function DevConsole({ isSuppressed = false } = {}) {
+  const preference = useSyncExternalStore(subscribeDevConsolePreference, getDevConsolePreference, getDevConsolePreference);
+  if (isSuppressed || !preference.enabled) return null;
+  return <DevConsolePanel key={preference.revision} />;
+}

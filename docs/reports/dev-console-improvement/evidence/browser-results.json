@@ -1,0 +1,18 @@
+[
+  {
+    "viewport": "mobile",
+    "width": 390,
+    "height": 844,
+    "result": "PASS",
+    "pageErrors": [],
+    "scope": "isolated synthetic component fixture; no license/POS/network operations"
+  },
+  {
+    "viewport": "desktop",
+    "width": 1440,
+    "height": 900,
+    "result": "PASS",
+    "pageErrors": [],
+    "scope": "isolated synthetic component fixture; no license/POS/network operations"
+  }
+]

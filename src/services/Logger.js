@@ -1,3 +1,5 @@
+import { emitDiagnosticConsoleEvent } from './diagnostics/consoleEventBus';
+
 // src/services/Logger.js
 
 /**
@@ -10,24 +12,32 @@ const Logger = {
   log: (...args) => {
     if (!import.meta.env.PROD) {
       console.log(...args);
+    } else {
+      emitDiagnosticConsoleEvent('log', args);
     }
   },
   
   info: (...args) => {
     if (!import.meta.env.PROD) {
       console.info(...args);
+    } else {
+      emitDiagnosticConsoleEvent('info', args);
     }
   },
 
   debug: (...args) => {
     if (!import.meta.env.PROD) {
       console.debug(...args);
+    } else {
+      emitDiagnosticConsoleEvent('debug', args);
     }
   },
 
   table: (...args) => {
     if (!import.meta.env.PROD) {
       console.table(...args);
+    } else {
+      emitDiagnosticConsoleEvent('table', args);
     }
   },
 
@@ -66,6 +76,8 @@ const Logger = {
   trace: (...args) => {
     if (!import.meta.env.PROD) {
       console.trace(...args);
+    } else {
+      emitDiagnosticConsoleEvent('trace', args);
     }
   },
 

@@ -85,11 +85,17 @@ export function handleDexieError(error, context = '') {
     userMessage = 'La operacion tardo demasiado.';
   }
 
-  Logger.error(`[DB_ERROR:${errorCode}] ${context}`, {
-    originalError: error,
-    message: errMsg,
-    stack: error.stack
-  });
+  const diagnosticCodes = {
+    QUOTA_EXCEEDED: 'DB_QUOTA_EXCEEDED', VERSION_ERROR: 'DB_VERSION_ERROR',
+    CONSTRAINT_VIOLATION: 'DB_CONSTRAINT_VIOLATION',
+    TRANSACTION_INACTIVE: 'DB_TRANSACTION_INACTIVE', TIMEOUT: 'DB_TIMEOUT'
+  };
+  // Pass the technical error itself, not a wrapper containing a private stack
+  // and payload. Context remains available to the caller's business handler.
+  Logger.error({
+    diagnosticOperation: 'db.operation',
+    code: diagnosticCodes[errorCode] || 'DB_OPERATION_FAILED'
+  }, error);
 
   return new DatabaseError(errorCode, userMessage, {
     context,

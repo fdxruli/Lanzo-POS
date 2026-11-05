@@ -1,12 +1,14 @@
 // @vitest-environment jsdom
 // Controlled diagnostic events, no POS operations.
-import { afterEach, expect, it, vi } from 'vitest';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import DevConsole from '../DevConsole';
-import { clearDevConsoleEntries, installDevConsoleCapture } from '../../../services/devConsoleCapture';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { DevConsolePanel } from '../DevConsole';
+import { emitDiagnosticConsoleEvent } from '../../../services/diagnostics/consoleEventBus';
+import { clearDevConsoleEntries, installDevConsoleCapture, setDevConsoleRecording } from '../../../services/devConsoleCapture';
 
 vi.mock('../../../services/diagnostics/incidentEventCenter', () => ({ captureAsyncIncidentNotice: vi.fn() }));
-afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+beforeEach(() => { setDevConsoleRecording(true); });
+afterEach(() => { cleanup(); clearDevConsoleEntries(); vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 it('renders and copies the same useful sanitized diagnosis on mobile', async () => {
   vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({
@@ -27,8 +29,8 @@ it('renders and copies the same useful sanitized diagnosis on mobile', async () 
     body: { rpc: 'rpc-private' }, deviceFingerprint: 'device-private',
     url: 'https://private.invalid/?access_token=private', state: { balance: 'state-private' }
   });
-  render(<DevConsole />);
-  fireEvent.click(screen.getByRole('button', { name: 'Abrir consola de desarrollo' }));
+  render(<DevConsolePanel canCopy={() => true} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Abrir consola de diagnóstico' }));
   expect(screen.getByText(/Conectividad · Diagnóstico técnico · FREE_LICENSE_TRANSPORT_ERROR/)).toBeVisible();
   expect(screen.getByText(/Módulo: Licencias · Operación: Crear licencia FREE/)).toBeVisible();
   fireEvent.click(screen.getByTitle('Copiar logs visibles'));
@@ -40,4 +42,60 @@ it('renders and copies the same useful sanitized diagnosis on mobile', async () 
   expect(document.body.textContent + copied).not.toMatch(/PRIVATE|private|Ana|5551234567|9876|access_token/);
   fireEvent.change(screen.getByRole('textbox', { name: 'Buscar en logs' }), { target: { value: 'PGRST202' } });
   expect(screen.getByText('No hay registros para este filtro.')).toBeVisible();
+});
+
+
+it.each([390, 1440])('supports filters, inspection, pause/resume and clearing at viewport %s', async width => {
+  Object.defineProperty(window, 'innerWidth', { configurable: true, value: width });
+  vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({ matches: width < 768 }));
+  installDevConsoleCapture();
+  emitDiagnosticConsoleEvent('info', [{ diagnosticOperation: 'sync.status', diagnosticState: 'online' }]);
+  emitDiagnosticConsoleEvent('warn', [{ code: 'NETWORK_TIMEOUT' }, { diagnosticOperation: 'sync.pull' }]);
+  render(<DevConsolePanel canCopy={() => true} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Abrir consola de diagnóstico' }));
+  expect(screen.getByRole('region', { name: 'Consola de diagnóstico' })).toBeVisible();
+  fireEvent.change(screen.getByLabelText('Filtrar por nivel'), { target: { value: 'warn' } });
+  expect(screen.getByText(/Tiempo de espera agotado/)).toBeVisible();
+  expect(screen.queryByText(/Estado: Conectado/)).toBeNull();
+  fireEvent.change(screen.getByLabelText('Filtrar por categoría'), { target: { value: 'indexeddb' } });
+  expect(screen.getByText('No hay registros para este filtro.')).toBeVisible();
+  fireEvent.change(screen.getByLabelText('Filtrar por categoría'), { target: { value: 'all' } });
+  fireEvent.click(screen.getByText('Examinar registro'));
+  expect(screen.getByText(/Impacto: recoverable/)).toBeVisible();
+  fireEvent.change(screen.getByLabelText('Filtrar por nivel'), { target: { value: 'all' } });
+  fireEvent.click(screen.getByTitle('Pausar captura visual'));
+  emitDiagnosticConsoleEvent('error', [{ code: 'DB_OPEN_TIMEOUT', diagnosticOperation: 'db.open' }]);
+  expect(screen.queryByText(/DB_OPEN_TIMEOUT/)).toBeNull();
+  fireEvent.click(screen.getByTitle('Reanudar captura visual'));
+  expect(screen.getByText(/DB_OPEN_TIMEOUT/)).toBeVisible();
+  fireEvent.click(screen.getByTitle('Limpiar consola'));
+  expect(screen.getByText('No hay registros para este filtro.')).toBeVisible();
+  fireEvent.keyDown(window, { key: 'Escape' });
+  expect(screen.getByRole('button', { name: 'Abrir consola de diagnóstico' })).toBeVisible();
+});
+
+it('keeps the panel usable when clipboard and launcher persistence fail', async () => {
+  const writeText = vi.fn().mockRejectedValue(new Error('permission denied'));
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } });
+  installDevConsoleCapture();
+  emitDiagnosticConsoleEvent('info', [{ diagnosticOperation: 'sync.status' }]);
+  render(<DevConsolePanel canCopy={() => true} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Abrir consola de diagnóstico' }));
+  fireEvent.click(screen.getByTitle('Copiar logs visibles'));
+  expect(await screen.findByText('No se pudo copiar. Puedes seleccionar el texto.')).toBeVisible();
+  expect(screen.getByRole('region', { name: 'Consola de diagnóstico' })).toBeVisible();
+});
+
+it('batches a large stream without freezing the view and shows repetitions', async () => {
+  vi.useFakeTimers(); installDevConsoleCapture();
+  render(<DevConsolePanel canCopy={() => true} />);
+  fireEvent.click(screen.getByRole('button', { name: 'Abrir consola de diagnóstico' }));
+  act(() => {
+    for (let index = 0; index < 1000; index++) emitDiagnosticConsoleEvent('warn', [
+      { code: 'NETWORK_TIMEOUT' }, { diagnosticOperation: 'sync.pull' }
+    ]);
+  });
+  await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+  expect(screen.getByText(/1000 eventos equivalentes/)).toBeVisible();
+  expect(document.querySelectorAll('.dev-console-entry')).toHaveLength(1);
 });

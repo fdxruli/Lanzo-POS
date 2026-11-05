@@ -1,0 +1,13 @@
+
+/workspace/Lanzo-POS/src/services/Logger.js
+  14:7  warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  30:7  warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  38:7  warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  48:7  warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  54:7  warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  60:7  warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  66:7  warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  72:7  warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+  78:7  warning  Unexpected console statement. Only these console methods are allowed: warn, error, info  no-console
+
+✖ 9 problems (0 errors, 9 warnings)
