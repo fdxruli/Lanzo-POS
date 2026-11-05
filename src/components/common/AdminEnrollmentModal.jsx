@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ShieldPlus } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import PasswordField from './PasswordField';
+import PreloginSupportAccess from './PreloginSupportAccess';
 import './AdminAuthModal.css';
 import './SetupModal.onboarding.css';
 
@@ -125,9 +126,11 @@ export default function AdminEnrollmentModal({
           </button>
         </form>
         {!embedded && (
-          <button type="button" className="ui-button ui-button--ghost" onClick={logout} disabled={loading}>
-            Cambiar licencia
-          </button>
+          <PreloginSupportAccess screen="Registro de cuenta propietaria">
+            <button type="button" className="ui-button ui-button--ghost" onClick={logout} disabled={loading}>
+              Cambiar licencia
+            </button>
+          </PreloginSupportAccess>
         )}
       </section>
     </div>

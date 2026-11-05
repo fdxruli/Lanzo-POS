@@ -1,0 +1,71 @@
+.prelogin-support {
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+}
+
+.prelogin-support__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.prelogin-support__panel {
+  margin-top: 0.75rem;
+  padding: 1rem;
+  border: 1px solid var(--ui-border-color, #cbd5e1);
+  border-radius: 12px;
+  background: var(--ui-bg-surface, #f8fafc);
+  color: var(--ui-text, #1e293b);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.prelogin-support__panel[hidden] {
+  display: none;
+}
+
+.prelogin-support__panel p {
+  margin: 0 0 0.75rem;
+}
+
+.prelogin-support__channels {
+  display: grid;
+  gap: 1rem;
+}
+
+.prelogin-support__channels h2 {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+  color: inherit;
+}
+
+.prelogin-support .ui-button {
+  min-height: 44px;
+  white-space: normal;
+  text-align: center;
+}
+
+.prelogin-support__email {
+  user-select: text;
+  font-weight: 600;
+}
+
+.prelogin-support__preview {
+  white-space: pre-wrap;
+}
+
+.prelogin-support__panel summary {
+  cursor: pointer;
+  padding: 0.5rem 0;
+}
+
+.prelogin-support :is(button, a, summary):focus-visible {
+  outline: 2px solid var(--ui-focus-color, #2563eb);
+  outline-offset: 3px;
+}

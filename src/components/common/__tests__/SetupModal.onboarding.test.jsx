@@ -197,6 +197,25 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('integrated owner onboarding', () => {
+  it('keeps one support entry and preserves business and integrated owner drafts without mutations', async () => {
+    await start();
+    expect(screen.getAllByRole('button', { name: 'Soporte' })).toHaveLength(1);
+    business();
+    credentials();
+    fireEvent.click(screen.getByRole('button', { name: 'Soporte' }));
+    expect(screen.getByRole('region', { name: 'Soporte oficial de LANZO' })).toBeVisible();
+    expect(decodeURIComponent(screen.getByRole('link', { name: 'Abrir borrador de correo' }).href))
+      .not.toMatch(/FREE-ONBOARDING|FixturePass123|owner_test|Mi negocio/);
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar soporte' }));
+    expect(screen.getByLabelText('Usuario')).toHaveValue('owner_test');
+    expect(screen.getByLabelText('Contraseña')).toHaveValue('FixturePass123');
+    expect(mocks.enrollAdminOwnerOnDevice).not.toHaveBeenCalled();
+    expect(mocks.acceptLegalTerms).not.toHaveBeenCalled();
+    expect(mocks.saveBusinessProfile).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: /1Tu negocio/ }));
+    expect(screen.getByLabelText('Nombre del Negocio *')).toHaveValue('Mi negocio');
+  });
+
   it.each(['free_trial', 'pro'])('%s uses an explicit review step before legal acceptance and profile persistence', async (plan) => {
     await start();
     act(() => useAppStore.setState({
@@ -549,6 +568,12 @@ describe('integrated owner onboarding', () => {
     expect(screen.getByRole('button', { name: /1Tu negocio/ })).toBeDisabled();
     expect(screen.getByRole('button', { name: /2Giro del Negocio/ })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Cambiar licencia' })).toBeDisabled();
+    expect(screen.getAllByRole('button', { name: 'Soporte' })).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Soporte' }));
+    expect(screen.getByRole('region', { name: 'Soporte oficial de LANZO' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar soporte' }));
+    expect(mocks.enrollAdminOwnerOnDevice).toHaveBeenCalledTimes(1);
+
 
     await act(async () => resolve({ success: false, message: 'Reintenta' }));
     expect(screen.getByRole('button', { name: 'Cambiar licencia' })).toBeEnabled();
