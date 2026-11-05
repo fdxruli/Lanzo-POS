@@ -76,9 +76,7 @@ export default function SetupModal() {
   const [error, setError] = useState('');
   const [activeSection, setActiveSection] = useState('info');
   const [showTerms, setShowTerms] = useState(false);
-  const [readingType, setReadingType] = useState('terms_of_use');
   const [legalDocuments, setLegalDocuments] = useState([]);
-  const [legalConsents, setLegalConsents] = useState({});
   const [legalLoading, setLegalLoading] = useState(false);
   const [legalLoadAttempt, setLegalLoadAttempt] = useState(0);
   const submittingRef = useRef(false);
@@ -207,9 +205,8 @@ export default function SetupModal() {
     }
 
     if (legalLoading || legalDocuments.length !== LEGAL_DOCUMENT_TYPES.length
-      || legalDocuments.some(({ type, data }) => !data?.id || !data?.version
-        || (type !== 'terms_of_use' && legalConsents[type] !== data.id))) {
-      setError('Consulta y acepta cada documento legal antes de crear el negocio.');
+      || legalDocuments.some(({ data }) => !data?.id || !data?.version)) {
+      setError('Espera a que se verifiquen los documentos legales o reintenta su carga.');
       return;
     }
 
@@ -228,7 +225,6 @@ export default function SetupModal() {
       }
       if (documents.some(({ type, data }) => legalDocuments.find((item) => item.type === type)?.data?.id !== data.id)) {
         setLegalDocuments(documents);
-        setLegalConsents({});
         throw new Error('Los documentos legales cambiaron. Revisa las nuevas versiones y vuelve a aceptarlas.');
       }
 
@@ -614,38 +610,17 @@ export default function SetupModal() {
                         </div>
                       </div>
 
-                      <fieldset className="setup-legal-documents" disabled={isBusy || legalLoading}>
-                        <legend>Documentos legales</legend>
-                        <p>Revisa los documentos vigentes y marca cada aceptación.</p>
-                        {legalLoading && <p role="status">Cargando documentos legales...</p>}
-                        {legalDocuments.map(({ type, label, data }) => (
-                          <div className="setup-legal-document" key={type}>
-                            <div>
-                              <strong>{data?.title || label}</strong>
-                              <span> {data?.version ? `· Versión ${data.version}` : '· No disponible'}</span>
-                            </div>
-                            <button type="button" className="terms-link" onClick={() => {
-                              setReadingType(type);
-                              setShowTerms(true);
-                            }} aria-label={`Leer ${data?.title || label}`}>Leer documento</button>
-                            {type !== 'terms_of_use' && (
-                              <label className="setup-legal-consent">
-                                <input type="checkbox" disabled={!data?.id} checked={Boolean(data?.id && legalConsents[type] === data.id)}
-                                  onChange={(event) => setLegalConsents((current) => ({
-                                    ...current, [type]: event.target.checked ? data.id : null
-                                  }))} />
-                                Acepto {data?.title || label}
-                              </label>
-                            )}
-                          </div>
-                        ))}
-                        {!legalLoading && (legalDocuments.length !== LEGAL_DOCUMENT_TYPES.length || legalDocuments.some(({ data }) => !data?.id || !data?.version)) && (
-                          <button type="button" className="terms-link" onClick={() => setLegalLoadAttempt((value) => value + 1)}>Reintentar carga</button>
-                        )}
-                      </fieldset>
                       <p className="terms-agreement-text">
-                        Al hacer clic en <strong>Crear negocio</strong>, aceptas los Términos de uso de la versión indicada y confirmas las cinco aceptaciones marcadas.
+                        Al hacer clic en <strong>Crear negocio</strong>, aceptas los{' '}
+                        <a href="#setup-legal-documents" className="terms-link" aria-haspopup="dialog" onClick={(event) => {
+                          event.preventDefault();
+                          setShowTerms(true);
+                        }}>Términos de uso y demás documentos legales de Lanzo POS</a>, en sus versiones vigentes indicadas en cada documento.
                       </p>
+                      {legalLoading && <p role="status">Verificando documentos legales...</p>}
+                      {!legalLoading && (legalDocuments.length !== LEGAL_DOCUMENT_TYPES.length || legalDocuments.some(({ data }) => !data?.id || !data?.version)) && (
+                        <button type="button" className="terms-link" disabled={isBusy} onClick={() => setLegalLoadAttempt((value) => value + 1)}>Reintentar carga</button>
+                      )}
 
                       {error && <div className="error-message" role="alert">{error}</div>}
 
@@ -677,7 +652,6 @@ export default function SetupModal() {
 
       <TermsAndConditionsModal
         isOpen={showTerms}
-        initialDocumentType={readingType}
         onClose={() => setShowTerms(false)}
         readOnly={true}
         showDocumentIndex={true}

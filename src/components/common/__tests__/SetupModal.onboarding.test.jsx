@@ -64,10 +64,6 @@ vi.mock('../../../services/storage/imageUploadService', () => ({
 }));
 vi.mock('../../../services/utils', () => ({ compressImage: vi.fn(), showMessageModal: vi.fn() }));
 vi.mock('../../../services/backup/backupManager', () => ({ backupManager: { configure: mocks.configureBackup } }));
-vi.mock('../TermsAndConditionsModal', async (importOriginal) => {
-  const actual = await importOriginal();
-  return { ...actual, default: () => null };
-});
 vi.mock('../LazyImage', () => ({ default: () => null }));
 
 import { useAppStore } from '../../../store/useAppStore';
@@ -112,12 +108,9 @@ const continueIntegratedOwner = async () => {
   await screen.findByRole('button', { name: 'Crear negocio' });
 };
 
-const acceptDocuments = async () => {
-  await waitFor(() => expect(screen.getAllByRole('checkbox')).toHaveLength(5));
-  await waitFor(() => expect(screen.queryByText('Cargando documentos legales...')).not.toBeInTheDocument());
-  screen.getAllByRole('checkbox').forEach((checkbox) => {
-    if (!checkbox.checked) fireEvent.click(checkbox);
-  });
+const waitForLegalDocuments = async () => {
+  await waitFor(() => expect(mocks.fetchLegalTerms).toHaveBeenCalledWith('legal_notice'));
+  await waitFor(() => expect(screen.queryByText('Verificando documentos legales...')).not.toBeInTheDocument());
 };
 
 const submitStandaloneOwnerEnrollment = () => {
@@ -230,12 +223,12 @@ describe('integrated owner onboarding', () => {
     expect(screen.getByText('Abarrotes / Tienda')).toBeInTheDocument();
     expect(screen.getByText('Propietario creado')).toBeInTheDocument();
     expect(screen.getByText(/Al hacer clic en/)).toHaveTextContent('Crear negocio');
-    expect(await screen.findAllByRole('button', { name: /^Leer / })).toHaveLength(6);
+    expect(screen.getByRole('link', { name: /Términos de uso y demás documentos legales/ })).toBeInTheDocument();
 
     const changeLicense = screen.getByRole('button', { name: 'Cambiar licencia' });
     expect(changeLicense.closest('.accordion-item')).toBeNull();
 
-    await acceptDocuments();
+    await waitForLegalDocuments();
     fireEvent.click(screen.getByRole('button', { name: 'Crear negocio' }));
     await screen.findByText('ready');
 
@@ -245,15 +238,19 @@ describe('integrated owner onboarding', () => {
     expect(mocks.configureBackup).not.toHaveBeenCalled();
   });
 
-  it('requires five explicit consents and registers all current documents without pending items', async () => {
-    await start(); business(); await continueIntegratedOwner();
-    await waitFor(() => expect(screen.getAllByRole('checkbox')).toHaveLength(5));
-    screen.getAllByRole('checkbox').forEach((checkbox) => expect(checkbox).not.toBeChecked());
+  it('opens the read-only document index from the text and accepts only when creating the business', async () => {
+    await start(); business(); await continueIntegratedOwner(); await waitForLegalDocuments();
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
     expect(mocks.acceptLegalTerms).not.toHaveBeenCalled();
-    fireEvent.click(screen.getByRole('button', { name: 'Crear negocio' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('acepta cada documento');
+    fireEvent.click(screen.getByRole('link', { name: /Términos de uso y demás documentos legales/ }));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    for (const { label } of LEGAL_DOCUMENT_TYPES) {
+      expect(screen.getByRole('button', { name: new RegExp(label) })).toBeInTheDocument();
+    }
+    expect(screen.queryByRole('button', { name: 'Aceptar términos de uso' })).not.toBeInTheDocument();
     expect(mocks.acceptLegalTerms).not.toHaveBeenCalled();
-    await acceptDocuments();
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar' }));
+    expect(mocks.acceptLegalTerms).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'Crear negocio' }));
     await screen.findByText('ready');
     expect(mocks.acceptLegalTerms.mock.calls).toEqual(LEGAL_DOCUMENT_TYPES.map(({ type }) => ['FREE-ONBOARDING', `${type}-current`]));
@@ -267,7 +264,7 @@ describe('integrated owner onboarding', () => {
       if (id === 'ai_policy-current' && !failed) { failed = true; return { success: false }; }
       return normalAccept(license, id);
     });
-    await start(); business(); await continueIntegratedOwner(); await acceptDocuments();
+    await start(); business(); await continueIntegratedOwner(); await waitForLegalDocuments();
     fireEvent.click(screen.getByRole('button', { name: 'Crear negocio' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo registrar');
     expect(mocks.saveBusinessProfile).not.toHaveBeenCalled();
@@ -278,7 +275,7 @@ describe('integrated owner onboarding', () => {
   });
 
   it('prevents concurrent submissions even if the form is submitted repeatedly', async () => {
-    await start(); business(); await continueIntegratedOwner(); await acceptDocuments();
+    await start(); business(); await continueIntegratedOwner(); await waitForLegalDocuments();
     let resolve;
     mocks.acceptLegalTerms.mockReturnValueOnce(new Promise((done) => { resolve = done; }));
     const form = screen.getByRole('button', { name: 'Crear negocio' }).closest('form');
@@ -291,13 +288,13 @@ describe('integrated owner onboarding', () => {
   });
 
   it('requires renewed consent when an active version changes', async () => {
-    await start(); business(); await continueIntegratedOwner(); await acceptDocuments();
+    await start(); business(); await continueIntegratedOwner(); await waitForLegalDocuments();
     mocks.fetchLegalTerms.mockImplementation(async (type) => ({ id: `${type}-new`, version: '2026.12' }));
     fireEvent.click(screen.getByRole('button', { name: 'Crear negocio' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('documentos legales cambiaron');
     expect(mocks.acceptLegalTerms).not.toHaveBeenCalled();
-    screen.getAllByRole('checkbox').forEach((checkbox) => expect(checkbox).not.toBeChecked());
-    await acceptDocuments();
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    await waitForLegalDocuments();
     fireEvent.click(screen.getByRole('button', { name: 'Crear negocio' }));
     await screen.findByText('ready');
     expect(mocks.acceptLegalTerms.mock.calls.every(([, id]) => id.endsWith('-new'))).toBe(true);
@@ -317,7 +314,7 @@ describe('integrated owner onboarding', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Continuar' }));
     await screen.findByRole('button', { name: 'Crear negocio' });
-    await acceptDocuments();
+    await waitForLegalDocuments();
     fireEvent.click(screen.getByRole('button', { name: 'Crear negocio' }));
     await screen.findByText('ready');
 
@@ -331,14 +328,14 @@ describe('integrated owner onboarding', () => {
     business();
     await continueIntegratedOwner();
 
-    await acceptDocuments();
+    await waitForLegalDocuments();
     fireEvent.click(screen.getByRole('button', { name: 'Crear negocio' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo guardar');
     expect(useAppStore.getState().currentAdminUser.id).toBe('owner-1');
     expect(mocks.actorGranted).toBe(true);
     expect(screen.queryByLabelText('Confirmar contraseña')).not.toBeInTheDocument();
 
-    await acceptDocuments();
+    await waitForLegalDocuments();
     fireEvent.click(screen.getByRole('button', { name: 'Crear negocio' }));
     await screen.findByText('ready');
 
@@ -352,13 +349,13 @@ describe('integrated owner onboarding', () => {
     business();
     await continueIntegratedOwner();
 
-    await acceptDocuments();
+    await waitForLegalDocuments();
     fireEvent.click(screen.getByRole('button', { name: 'Crear negocio' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('No se pudo registrar la aceptación');
     expect(mocks.saveBusinessProfile).not.toHaveBeenCalled();
     expect(useAppStore.getState().currentAdminUser.id).toBe('owner-1');
 
-    await acceptDocuments();
+    await waitForLegalDocuments();
     fireEvent.click(screen.getByRole('button', { name: 'Crear negocio' }));
     await screen.findByText('ready');
 
@@ -372,7 +369,7 @@ describe('integrated owner onboarding', () => {
     await continueIntegratedOwner();
     mocks.actorGranted = false;
 
-    await acceptDocuments();
+    await waitForLegalDocuments();
     fireEvent.click(screen.getByRole('button', { name: 'Crear negocio' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('ACTOR_CONTEXT_LOCKED');
     expect(mocks.acceptLegalTerms).not.toHaveBeenCalled();
@@ -392,7 +389,7 @@ describe('integrated owner onboarding', () => {
 
     expect(screen.queryByLabelText('Confirmar contraseña')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Crear negocio' })).toBeInTheDocument();
-    await acceptDocuments();
+    await waitForLegalDocuments();
     fireEvent.click(screen.getByRole('button', { name: 'Crear negocio' }));
     await screen.findByText('ready');
     expect(mocks.enrollAdminOwnerOnDevice).not.toHaveBeenCalled();
@@ -452,7 +449,7 @@ describe('integrated owner onboarding', () => {
     business();
     expect(screen.getByRole('button', { name: 'Crear negocio' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /3Todo listo/ })).toBeInTheDocument();
-    await acceptDocuments();
+    await waitForLegalDocuments();
     fireEvent.click(screen.getByRole('button', { name: 'Crear negocio' }));
     await screen.findByText('ready');
 
