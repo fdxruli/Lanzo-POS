@@ -109,7 +109,7 @@ describe('license admin actions', () => {
     expect(state.appStatus).toBe('ready');
     expect(state._loadProfile).toHaveBeenCalledWith(
       'LANZO-ADMIN-TEST',
-      { forceRemote: true, reason: 'admin_login', assertCurrent: expect.any(Function), onPrepared: expect.any(Function) }
+      { forceRemote: true, reason: 'admin_login', allowSetupTransition: true, assertCurrent: expect.any(Function), onPrepared: expect.any(Function) }
     );
     expect(state.pendingAdminSessionResult).toBeNull();
   });
@@ -240,7 +240,7 @@ describe('license admin actions', () => {
     expect(state.appStatus).toBe('ready');
     expect(state._loadProfile).toHaveBeenCalledWith(
       'LANZO-ADMIN-TEST',
-      { forceRemote: true, reason: 'admin_free_device_takeover', assertCurrent: expect.any(Function), onPrepared: expect.any(Function) }
+      { forceRemote: true, reason: 'admin_free_device_takeover', allowSetupTransition: true, assertCurrent: expect.any(Function), onPrepared: expect.any(Function) }
     );
   });
 
