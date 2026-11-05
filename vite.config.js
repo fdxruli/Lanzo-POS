@@ -53,6 +53,8 @@ const ADMIN_SHELL_GLOB_PATTERNS = Object.freeze([
   'assets/productStoreRecoveryGuard-*.js',
   'assets/devServiceWorkerCleanup-*.js',
   'assets/devConsoleCapture-*.js',
+  'assets/devConsolePreferences-*.js',
+  'assets/settingsAccessPolicy-*.js',
   'assets/incidentEventCenter-*.js',
   'assets/incidentCapture-*.js',
   'assets/IncidentReportEntry-*.js',

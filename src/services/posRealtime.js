@@ -141,7 +141,7 @@ const startLegacyPosRealtimeListener = ({ posTopic, licenseDetails, callbacks = 
       }
 
       if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-        Logger.warn('[PosRealtime] Error de canal POS:', error || status);
+        Logger.warn('[PosRealtime] Error de canal POS:', error, { diagnosticOperation: 'sync.realtime', diagnosticState: status });
         isConnecting = false;
         if (activeChannel === channel) activeChannel = null;
         handledClosedChannels.add(channel);

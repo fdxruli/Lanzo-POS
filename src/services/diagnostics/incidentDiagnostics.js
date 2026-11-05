@@ -1,3 +1,5 @@
+import { CONSOLE_OPERATION_CATALOG, CONSOLE_STATE_LABELS, getConsoleOperation, readConsoleField } from './consoleOperations';
+
 const SEVERITIES = Object.freeze({
   RECOVERABLE: 'recoverable',
   SECTION_FAILURE: 'section_failure',
@@ -27,7 +29,9 @@ const SAFE_ERROR_NAMES = new Set([
   'URIError', 'EvalError', 'AggregateError', 'QuotaExceededError',
   'InvalidStateError', 'AbortError', 'NetworkError', 'NotAllowedError',
   'SecurityError', 'DataError', 'ConstraintError', 'ActorRuntimeError',
-  'TenantRuntimeError', 'ChunkLoadError'
+  'TenantRuntimeError', 'ChunkLoadError', 'DatabaseError', 'DatabaseClosedError',
+  'DatabaseOpenTimeoutError', 'OpenFailedError', 'VersionError',
+  'TransactionInactiveError', 'ReadOnlyError', 'TimeoutError'
 ]);
 
 const SAFE_CODE_PREFIXES = Object.freeze([
@@ -455,7 +459,9 @@ const CONSOLE_CODE_GROUPS = {
     'DB_OPEN_TIMEOUT', 'DB_BLOCKED', 'DB_PRIMARY_KEY_MISMATCH',
     'DB_CLOSED_AFTER_STRUCTURAL_ERROR', 'DB_UNSUPPORTED_NATIVE_VERSION',
     'DB_NOT_INSPECTABLE', 'DB_MIGRATION_ID_COLLISION', 'DB_MIGRATION_FAILED',
-    'DB_BROWSER_STORAGE_UNAVAILABLE', 'DB_UNAVAILABLE', 'FREE_LICENSE_LOCAL_SAVE_FAILED'
+    'DB_BROWSER_STORAGE_UNAVAILABLE', 'DB_UNAVAILABLE', 'FREE_LICENSE_LOCAL_SAVE_FAILED',
+    'DB_QUOTA_EXCEEDED', 'DB_VERSION_ERROR', 'DB_CONSTRAINT_VIOLATION',
+    'DB_TRANSACTION_INACTIVE', 'DB_TIMEOUT', 'DB_OPERATION_FAILED'
   ],
   [CATEGORIES.CONNECTIVITY]: [
     'NETWORK_REQUEST_FAILED', 'NETWORK_TIMEOUT', 'NETWORK_ERROR', 'ERR_NETWORK',
@@ -484,6 +490,26 @@ const CONSOLE_CODE_GROUPS = {
 };
 const CONSOLE_CODE_CATEGORIES = new Map(Object.entries(CONSOLE_CODE_GROUPS)
   .flatMap(([category, codes]) => codes.map((code) => [code, category])));
+// Meanings of exact technical codes, not guesses about the root cause.
+// PostgREST meanings: Supabase Data API error-code reference.
+const CONSOLE_CODE_EXPLANATIONS = new Map([
+  ['PGRST003', 'Se agotó la espera por una conexión del pool de PostgREST.'],
+  ['PGRST202', 'La función o su firma no está disponible en la caché del servicio.'],
+  ['PGRST301', 'El servicio rechazó la credencial de autorización.'],
+  ['PGRST303', 'El servicio no pudo validar la autorización recibida.'],
+  ['57014', 'La consulta fue cancelada. El código no confirma por sí solo un timeout.'],
+  ['23505', 'La escritura incumple una restricción de unicidad.'],
+  ['23503', 'La escritura incumple una restricción de referencia.'],
+  ['42501', 'El servicio rechazó la operación por permisos insuficientes.'],
+  ['DB_OPEN_TIMEOUT', 'La apertura de la base local excedió el tiempo permitido.'],
+  ['DB_BLOCKED', 'La apertura o actualización de la base local está bloqueada.'],
+  ['DB_QUOTA_EXCEEDED', 'El navegador rechazó la escritura por cuota de almacenamiento.'],
+  ['DB_VERSION_ERROR', 'La versión de la base local no es compatible con la apertura solicitada.'],
+  ['DB_CONSTRAINT_VIOLATION', 'El almacenamiento local rechazó una restricción de datos.'],
+  ['DB_TRANSACTION_INACTIVE', 'La transacción local ya no estaba activa.'],
+  ['DB_TIMEOUT', 'La operación local excedió el tiempo permitido.'],
+  ['DB_OPERATION_FAILED', 'Falló una operación local; no hay evidencia suficiente para identificar la causa.']
+]);
 const CONSOLE_FALLBACK_CODES = new Set(Object.values(CATEGORIES).map((category) => `INCIDENT_${category.toUpperCase()}`));
 const consoleCodeCategory = (code) => (
   ['PGRST301', 'PGRST302', 'PGRST303'].includes(code) ? CATEGORIES.AUTHORIZATION_SESSION
@@ -499,7 +525,15 @@ const CONSOLE_OPERATIONS = new Map([
   ['Error revisando licencia:', 'Módulo: Licencias · Operación: Revisar licencia'],
   ['Error leyendo licencia local:', 'Módulo: Licencias · Operación: Leer licencia local'],
   ['[PosSync] Pull incremental fallo:', 'Módulo: Sincronización · Operación: Pull incremental'],
-  ['[PosSync] Outbox al reconectar fallo:', 'Módulo: Sincronización · Operación: Enviar pendientes al reconectar']
+  ['[PosSync] Outbox al reconectar fallo:', 'Módulo: Sincronización · Operación: Enviar pendientes al reconectar'],
+  ['[PosSync] Pull por realtime fallo:', 'Módulo: Sincronización · Operación: Pull por Realtime'],
+  ['[PosSync] Pull al reconectar fallo:', 'Módulo: Sincronización · Operación: Pull al reconectar'],
+  ['[PosSync] Pull incremental programado fallo:', 'Módulo: Sincronización · Operación: Pull programado'],
+  ['[PosSync] Pull tras recuperar realtime fallo:', 'Módulo: Sincronización · Operación: Pull tras recuperar Realtime'],
+  ['[PosRealtime] Error de canal POS:', 'Módulo: Realtime · Operación: Suscripción POS'],
+  ['[updateProductSafe] Error:', 'Módulo: Inventario · Operación: Actualizar producto'],
+  ['Error crítico en UI:', 'Módulo: Ventas · Operación: Actualizar UI tras cobro'],
+  ['Error buscando en POS:', 'Módulo: Ventas · Operación: Buscar productos']
 ]);
 const CONSOLE_MODULES = new Map([
   ['licencia', 'Licencias'], ['configuracion', 'Configuración'], ['productos', 'Inventario'],
@@ -510,9 +544,7 @@ const CONSOLE_OUTCOMES = new Map([
 ]);
 
 // Do not invoke getters, coerce objects, traverse payloads, causes or stacks.
-const consoleField = (value, key) => {
-  try { return Object.getOwnPropertyDescriptor(value, key)?.value; } catch { return undefined; }
-};
+const consoleField = readConsoleField;
 const consoleMessageCode = (message) => {
   if (typeof message !== 'string') return undefined;
   if (/^(?:TypeError: )?(?:Failed to fetch|fetch failed|NetworkError when attempting to fetch resource\.|Load failed)$/.test(message)) {
@@ -554,7 +586,9 @@ const normalizeConsoleError = (value) => {
   const knownCode = consoleCodeCategory(code);
   if (!native && !postgrest && !normalized && !knownCode) return null;
   const safeCode = knownCode || normalized ? code : consoleMessageCode(message);
-  const storage = ['QuotaExceededError', 'DatabaseClosedError', 'DatabaseOpenTimeoutError'].includes(name);
+  const storage = ['QuotaExceededError', 'DatabaseClosedError', 'DatabaseOpenTimeoutError',
+    'OpenFailedError', 'VersionError', 'TransactionInactiveError', 'ReadOnlyError',
+    'ConstraintError', 'DataError'].includes(name);
   const status = consoleField(value, 'status');
   // Preserve the existing native-Error classifier. Its message is inspected
   // transiently; only the resulting category enters the console projection.
@@ -567,6 +601,7 @@ const normalizeConsoleError = (value) => {
       || (name === 'NetworkError' || name === 'TimeoutError' ? CATEGORIES.CONNECTIVITY : undefined)
       || (nativeCategory !== CATEGORIES.UNKNOWN ? nativeCategory : undefined)
       || (postgrest ? ([401, 403].includes(status) ? CATEGORIES.AUTHORIZATION_SESSION : CATEGORIES.SUPABASE_RPC) : undefined),
+    severity: normalized ? severity : undefined,
     module: normalized && consoleField(value, 'schema_version') === 1
       ? CONSOLE_MODULES.get(consoleField(value, 'module')) : undefined,
     outcome: ['FREE_LICENSE_UNCONFIRMED', 'FREE_LICENSE_TRANSPORT_ERROR', 'FREE_LICENSE_INVALID_RESPONSE'].includes(safeCode)
@@ -575,24 +610,60 @@ const normalizeConsoleError = (value) => {
   };
 };
 
-/** Display and clipboard share this allowlisted summary. No raw values survive. */
-export const summarizeDiagnosticEvent = (level, args = [], _source = 'console') => {
-  const candidates = args.slice(0, 30).map(normalizeConsoleError).filter(Boolean);
-  // A leading generic Error must not hide a later structured diagnostic.
+/** Projection shared by storage, UI, search and clipboard; no raw values survive. */
+export const projectDiagnosticEvent = (level, args = [], source = 'console') => {
+  const values = args.slice(0, 30);
+  const candidates = values.map(normalizeConsoleError).filter(Boolean);
   const error = candidates.find((candidate) => candidate.code || candidate.category) || candidates[0];
-  const incident = classifyIncident(error, { category: error?.category });
-  const code = error?.code || incident.code;
+  const incident = classifyIncident(error, { category: error?.category, severity: error?.severity });
+  const operationKey = values.map(getConsoleOperation).find(Boolean);
+  const operation = operationKey ? CONSOLE_OPERATION_CATALOG[operationKey] : null;
+  const legacyContext = values.filter(value => typeof value === 'string')
+    .map(value => CONSOLE_OPERATIONS.get(value)).find(Boolean);
+  const context = operation ? `Módulo: ${operation.module} · Operación: ${operation.operation}`
+    : legacyContext || (error?.module ? `Módulo: ${error.module}` : '');
+  const stateValue = operationKey ? values.find(value => getConsoleOperation(value) === operationKey) : null;
+  const stateKey = consoleField(stateValue, 'diagnosticState');
+  const state = typeof stateKey === 'string' && Object.hasOwn(CONSOLE_STATE_LABELS, stateKey)
+    ? CONSOLE_STATE_LABELS[stateKey] : '';
+  const isIncident = Boolean(error) || level === 'error' || source !== 'console';
+  const code = isIncident ? error?.code || incident.code
+    : level === 'warn' ? 'CONSOLE_WARNING_UNCLASSIFIED'
+      : operation ? 'CONSOLE_OPERATION_EVENT' : 'CONSOLE_EVENT_UNCLASSIFIED';
   const detail = code === 'NETWORK_REQUEST_FAILED' ? 'Solicitud al servicio no confirmada'
     : code === 'NETWORK_TIMEOUT' ? 'Tiempo de espera agotado'
-      : incident.category === CATEGORIES.UNKNOWN ? (level === 'error' || error ? 'Causa no identificada' : 'Evento sin diagnóstico técnico')
+      : incident.category === CATEGORIES.UNKNOWN ? (isIncident ? 'Causa no identificada' : operation ? 'Evento operativo' : 'Evento sin diagnóstico técnico')
         : 'Diagnóstico técnico';
-  const context = args.slice(0, 30).map((value) => CONSOLE_OPERATIONS.get(value)).find(Boolean);
-  return [
-    `${incident.categoryLabel} · ${detail} · ${code} · ${incident.errorType}`,
-    context || (error?.module ? `Módulo: ${error.module}` : ''),
-    error?.outcome ? `Resultado: ${error.outcome}` : ''
-  ].filter(Boolean).join('\n');
+  const categoryLabel = isIncident ? incident.categoryLabel
+    : level === 'warn' ? 'Advertencia sin clasificar' : 'Evento del sistema';
+  // Unknown and category-only events must NEVER be merged on a fallback code.
+  // A known code plus a known operation identifies equivalent technical events,
+  // not proof that separate business incidents have the same underlying cause.
+  const groupable = Boolean(error?.code && error.code !== 'DB_OPERATION_FAILED' && incident.category !== CATEGORIES.UNKNOWN
+    && incident.category !== CATEGORIES.FINANCIAL_OPERATION
+    && consoleCodeCategory(error.code) && context);
+  return Object.freeze({
+    category: isIncident ? incident.category : 'unclassified',
+    code,
+    severity: isIncident ? incident.severity : 'unspecified',
+    errorType: isIncident ? incident.errorType : null,
+    operation: operationKey || '',
+    state,
+    evidence: CONSOLE_CODE_EXPLANATIONS.get(code) || '',
+    groupable,
+    text: [
+      isIncident ? `${categoryLabel} · ${detail} · ${code} · ${incident.errorType}`
+        : `${categoryLabel} · ${detail} · ${code}`,
+      context,
+      state ? `Estado: ${state}` : '',
+      error?.outcome ? `Resultado: ${error.outcome}` : ''
+    ].filter(Boolean).join('\n')
+  });
 };
+
+export const summarizeDiagnosticEvent = (level, args = [], source = 'console') => (
+  projectDiagnosticEvent(level, args, source).text
+);
 
 const SAFE_RECOVERY_STATUSES = new Set([
   'detected',

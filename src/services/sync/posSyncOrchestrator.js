@@ -85,7 +85,7 @@ const applyRuntimeStatus = async (
   // An unauthenticated stop has no tenant namespace in which metadata can be
   // written. Keeping this state in memory avoids creating ambiguous legacy rows.
   if (!licenseKey) {
-    if (reason) Logger.log(`[PosSync] Estado ${status}: ${reason}`);
+    if (reason) Logger.log({ diagnosticOperation: 'sync.status', diagnosticState: status });
     return;
   }
 
@@ -101,7 +101,7 @@ const applyRuntimeStatus = async (
   if (generation !== null && generation !== undefined && !isRuntimeGenerationCurrent(generation, licenseKey)) return false;
 
   if (reason) {
-    Logger.log(`[PosSync] Estado ${status}: ${reason}`);
+    Logger.log({ diagnosticOperation: 'sync.status', diagnosticState: status });
   }
   return true;
 };
@@ -211,7 +211,7 @@ const startRealtimeChannel = ({ posTopic, licenseKey, generation }) => {
         });
 
         return posSyncOrchestrator.schedulePullIncremental('realtime').catch((error) => {
-          Logger.warn('[PosSync] Pull por realtime fallo:', error);
+          Logger.warn('[PosSync] Pull por realtime fallo:', error, { diagnosticOperation: 'sync.pull' });
         });
       },
       onStatusChange: ({ status, reason: statusReason }) => {
@@ -228,7 +228,7 @@ const startRealtimeChannel = ({ posTopic, licenseKey, generation }) => {
       onConnectionRestored: () => {
         if (!isRuntimeGenerationCurrent(generation, licenseKey) || !runtime.started || !canSchedule()) return;
         return posSyncOrchestrator.schedulePullIncremental('realtime_restored').catch((error) => {
-          Logger.warn('[PosSync] Pull tras recuperar realtime fallo:', error);
+          Logger.warn('[PosSync] Pull tras recuperar realtime fallo:', error, { diagnosticOperation: 'sync.pull' });
         });
       }
     }
@@ -263,7 +263,7 @@ const attachOnlineListener = () => {
     try {
       await posSyncOrchestrator.processOutbox('online');
     } catch (error) {
-      Logger.warn('[PosSync] Outbox al reconectar fallo:', error);
+      Logger.warn('[PosSync] Outbox al reconectar fallo:', error, { diagnosticOperation: 'sync.outbox' });
     }
 
     if (!canSchedule(owner)) return;
@@ -712,7 +712,7 @@ export const posSyncOrchestrator = {
     } catch (error) {
       if (isLocalTenantAccessError(error)) throw error;
       if (executionScope && !isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey)) return null;
-      Logger.warn('[PosSync] Pull incremental fallo:', error);
+      Logger.warn('[PosSync] Pull incremental fallo:', error, { diagnosticOperation: 'sync.pull' });
       await assertLocalTenantSyncAccess(
         { license_key: operationLicenseKey },
         { reason: `pos_sync_pull_error_${reason}` }
@@ -838,7 +838,7 @@ export const posSyncOrchestrator = {
         } catch (error) {
           if (isLocalTenantAccessError(error)) throw error;
           if (executionScope && !isRuntimeGenerationCurrent(operationGeneration, operationLicenseKey)) throw error;
-          Logger.warn(`[PosSync] Outbox ${operation.entityType}/${operation.operation} fallo (${reason}):`, error);
+          Logger.warn('[PosSync] Enviar pendientes falló:', error, { diagnosticOperation: 'sync.outbox' });
           if (isCloudClientUpdateRequired(error)) {
             const family = error.family || protocolFamily;
             if (family) updateRequiredFamilies.add(family);

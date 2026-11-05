@@ -1,5 +1,6 @@
-import { fireEvent, render, screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+// @vitest-environment jsdom
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import OperationalSettings from '../OperationalSettings.jsx';
 import { CASH_OPENING_POLICY } from '../../../services/cashOpeningPolicyService.js';
 
@@ -30,6 +31,8 @@ vi.mock('../../../hooks/pos/useActiveOrders', () => ({
 vi.mock('../../../hooks/useFeatureConfig', () => ({
   useFeatureConfig: () => ({ hasTables: false })
 }));
+
+afterEach(cleanup);
 
 describe('OperationalSettings cash opening control', () => {
   beforeEach(() => {

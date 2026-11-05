@@ -1,0 +1,28 @@
+{
+  "baseMain": "9c26743b4ffe64d93db4e573981aaa032310b2ea",
+  "branch": "feat/dev-console-diagnostics-controls",
+  "sourceSha256": {
+    "scripts/qa/dev-console/fixture.html": "1f4ebd5073b2648b17435ee0253ddd50ce1fb8f46901e3c7f4b8e63b099509dc",
+    "scripts/qa/dev-console/fixture.jsx": "da5cac4c8b797745b7a1cbb2eadc3f1f3617210da183de2e6871681778899712",
+    "scripts/qa/dev-console/smoke.py": "f397c43eb6400fc2c85456ec0155556209d17940d438e7ce1cd189e87db53e11",
+    "src/components/common/PosApplicationBootstrap.jsx": "9bafd8d540fd727e582e68bb729a9c6956ffb89ba2431ebbfba45f53799d572e",
+    "src/components/debug/DevConsole.css": "ab53ba2912d9c29d8e562e053210d8cb496c24238fbe855c9d229b484f8975ab",
+    "src/components/debug/DevConsole.jsx": "69409435d3a8bf8cac3702d346c51adc38b53b18d053b5bed477c88de794d240",
+    "src/components/debug/__tests__/DevConsole.test.jsx": "1ca1fcf98f07db990c6bae3b19fc404900092cb99078816184a5fcd26c0e04f1",
+    "src/components/settings/OperationalSettings.jsx": "99432158fd5aead477abadd15459d851a28505ed6bb59de9e62a392edb769122",
+    "src/components/settings/__tests__/OperationalSettings.cashOpening.test.jsx": "16bddcaa774083c8bf46cd886be12b885f109e4211aab607c4799ff36be364da",
+    "src/services/Logger.js": "9125839a8be0e5df6bc816ead366dfbc3ba2afb62aafbd4e7a87dd146b4afcfe",
+    "src/services/__tests__/devConsoleCapture.test.js": "5677cce941f36dea159b0bdaa688060de7f162497a2919f20e0d0c87bccbe3da",
+    "src/services/__tests__/devConsolePreferences.test.jsx": "5c9fa74ce56758db54dc00ac747d170d2b805bcaf88bab684bca134885c0195c",
+    "src/services/db/utils.js": "77f60a7dc088eb849e1a1642b2ee78e55c55095ee931dea3f64471ca4d7621bb",
+    "src/services/devConsoleCapture.js": "cde86b7815830f9f26eb83d0e8aef654bc1e1b4832a9f4040077ab8278a5ce1f",
+    "src/services/devConsolePreferences.js": "1fca0b2aec96b2b4129d0ee480dba823223c3c4f892af413e5896081d190772a",
+    "src/services/diagnostics/__tests__/consoleProjection.test.js": "2159ed800bb2db25da00530a48849d3afb0b8f7eb7f0237f580b7b322b53e40a",
+    "src/services/diagnostics/consoleEventBus.js": "15fc5a7a16eaded1bf64684a45c6a44747da6c2cecd73199f446838a3211d12e",
+    "src/services/diagnostics/consoleOperations.js": "f30eb8d713efd05bf262b7a46b0f49854f7513b27e60db51e9345740b3d92f54",
+    "src/services/diagnostics/incidentDiagnostics.js": "80a79ce457697343cb76d5ec1d531207c38a1b82a70e9379194b701166ce6409",
+    "src/services/posRealtime.js": "7efea3f11629193680b939ffff86ccc849538a7aa66745ed09d0515b103daf16",
+    "src/services/sync/posSyncOrchestrator.js": "efef5eee2c3db464ff9cfcd0633449bac4f5ff767c86f02061e73e458a9cd29b",
+    "vite.config.js": "03d4971f2d27ba64537b6d852ad59b46071c103e20bf529c6109fe234c4aae87"
+  }
+}

@@ -25,11 +25,14 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  if (window[STATE_KEY]?.timer) window.clearTimeout(window[STATE_KEY].timer);
   installedListeners.forEach((args) => window.removeEventListener(...args));
   CONSOLE_METHODS.forEach((method) => { console[method] = originalConsoleMethods[method]; });
   if (previousStateDescriptor) Object.defineProperty(window, STATE_KEY, previousStateDescriptor);
   else delete window[STATE_KEY];
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
+  vi.useRealTimers();
 });
 
 describe('development console capture privacy', () => {
@@ -107,5 +110,85 @@ describe('development console capture privacy', () => {
     expect(captureAsyncIncidentNotice).toHaveBeenCalledTimes(3);
     expect(captureAsyncIncidentNotice.mock.calls[0][0]).toBe(error);
     expect(Object.getOwnPropertyDescriptors(error)).toEqual(before);
+  });
+
+  it('groups only adjacent known-code operations and retains distinct unknown events and first/last times', async () => {
+    CONSOLE_METHODS.forEach(method => { console[method] = vi.fn(); });
+    vi.resetModules(); vi.useFakeTimers();
+    const { installDevConsoleCapture, getDevConsoleEntries, formatDevConsoleEntries } = await import('../devConsoleCapture');
+    installDevConsoleCapture();
+    const operation = { diagnosticOperation: 'sync.pull' };
+    console.warn(operation, { code: 'NETWORK_TIMEOUT' });
+    await vi.advanceTimersByTimeAsync(1000);
+    console.warn(operation, { code: 'NETWORK_TIMEOUT' });
+    console.warn(operation, { code: 'PGRST202' });
+    console.warn({ diagnosticOperation: 'sync.outbox' }, { code: 'PGRST202' });
+    console.error(new Error('unknown one'));
+    console.error(new Error('unknown two'));
+    const entries = getDevConsoleEntries();
+    expect(entries).toHaveLength(5);
+    expect(entries[0].count).toBe(2);
+    expect(Date.parse(entries[0].timestamp) - Date.parse(entries[0].firstTimestamp)).toBe(1000);
+    expect(entries.slice(1).every(entry => entry.count === 1)).toBe(true);
+    const copied = formatDevConsoleEntries(entries);
+    expect(copied).toContain('Eventos equivalentes: 2');
+    expect(copied).not.toMatch(/unknown one|unknown two/);
+    expect(Object.isFrozen(entries[0])).toBe(true);
+    await vi.advanceTimersByTimeAsync(31_000);
+    console.warn(operation, { code: 'NETWORK_TIMEOUT' });
+    expect(getDevConsoleEntries().at(-1).count).toBe(1);
+  });
+
+  it('bounds storage, batches visual updates and isolates reentrant subscribers', async () => {
+    CONSOLE_METHODS.forEach(method => { console[method] = vi.fn(); });
+    vi.resetModules(); vi.useFakeTimers();
+    const { installDevConsoleCapture, getDevConsoleEntries, subscribeDevConsole } = await import('../devConsoleCapture');
+    installDevConsoleCapture();
+    const listener = vi.fn(() => { console.warn('subscriber feedback'); });
+    const unsubscribe = subscribeDevConsole(listener);
+    for (let index = 0; index < 1000; index++) console.info('private unclassified input');
+    expect(getDevConsoleEntries()).toHaveLength(300);
+    expect(getDevConsoleEntries().every(entry => entry.level === 'info' && entry.errorType === null)).toBe(true);
+    expect(listener).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(listener).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(listener).toHaveBeenCalledTimes(1);
+    unsubscribe();
+  });
+
+  it('retains production Logger info safely without raw console output or duplicate events', async () => {
+    const originals = Object.fromEntries(CONSOLE_METHODS.map(method => [method, vi.fn()]));
+    Object.assign(console, originals);
+    vi.resetModules(); vi.stubEnv('PROD', true);
+    const { installDevConsoleCapture, getDevConsoleEntries } = await import('../devConsoleCapture');
+    const { default: Logger } = await import('../Logger');
+    installDevConsoleCapture();
+    Logger.info({ diagnosticOperation: 'sync.status', diagnosticState: 'online', token: 'private-token' });
+    Logger.debug('unstructured production noise');
+    expect(originals.info).not.toHaveBeenCalled();
+    expect(getDevConsoleEntries()).toHaveLength(1);
+    expect(getDevConsoleEntries()[0].text).toContain('Estado: Conectado');
+    expect(JSON.stringify(getDevConsoleEntries())).not.toContain('private-token');
+    Logger.warn({ code: 'DB_OPEN_TIMEOUT' });
+    expect(getDevConsoleEntries()).toHaveLength(2);
+    expect(originals.warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves operational recovery while the visual recording is suspended', async () => {
+    CONSOLE_METHODS.forEach(method => { console[method] = vi.fn(); });
+    vi.resetModules();
+    const { installDevConsoleCapture, getDevConsoleEntries, setDevConsoleRecording } = await import('../devConsoleCapture');
+    const { captureAsyncIncidentNotice } = await import('../diagnostics/incidentEventCenter');
+    captureAsyncIncidentNotice.mockReset();
+    installDevConsoleCapture(); setDevConsoleRecording(false);
+    const error = Object.assign(new Error('private'), { code: 'FINANCIAL_RESULT_UNKNOWN' });
+    window.dispatchEvent(new ErrorEvent('error', { error }));
+    const rejection = new Event('unhandledrejection');
+    Object.defineProperty(rejection, 'reason', { value: error });
+    window.dispatchEvent(rejection);
+    expect(getDevConsoleEntries()).toEqual([]);
+    expect(captureAsyncIncidentNotice).toHaveBeenCalledTimes(2);
+    expect(captureAsyncIncidentNotice.mock.calls[0][0]).toBe(error);
   });
 });

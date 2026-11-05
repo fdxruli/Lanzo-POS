@@ -1,4 +1,6 @@
-import { Bell, Bot, FileText, ShieldCheck } from 'lucide-react';
+import { useSyncExternalStore } from 'react';
+import { getDevConsolePreference, subscribeDevConsolePreference, setDevConsoleVisible } from '../../services/devConsolePreferences';
+import { Bell, Bot, Bug, FileText, ShieldCheck } from 'lucide-react';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 import { CASH_OPENING_POLICY } from '../../services/cashOpeningPolicyService.js';
@@ -24,6 +26,7 @@ function SettingsSwitch({ checked, disabled = false, warning = false, onChange, 
 }
 
 export default function OperationalSettings() {
+  const consolePreference = useSyncExternalStore(subscribeDevConsolePreference, getDevConsolePreference, getDevConsolePreference);
   const showTicker = useAppStore((state) => state.showTicker);
   const setShowTicker = useAppStore((state) => state.setShowTicker);
   const showAssistantBot = useAppStore((state) => state.showAssistantBot);
@@ -116,6 +119,26 @@ export default function OperationalSettings() {
             checked={!!showAssistantBot}
             onChange={(event) => setShowAssistantBot(event.target.checked)}
             ariaLabel="Activar Lanzo Bot"
+          />
+        </div>
+
+        <div className="settings-option-row settings-control-card">
+          <div className="settings-option-main">
+            <div className={`settings-icon-bubble ${consolePreference.enabled ? 'settings-icon-bubble--info' : 'settings-icon-bubble--muted'}`}>
+              <Bug size={22} />
+            </div>
+            <div className="settings-option-copy">
+              <span className="settings-option-title">Consola de diagnóstico</span>
+              <p>Muestra la consola técnica de LANZO POS para consultar errores, advertencias y eventos del sistema.</p>
+              <span className="settings-option-meta">Preferencia local para este usuario y negocio en este dispositivo. Los avisos operativos siguen activos.</span>
+              {consolePreference.persistenceError && <span role="status" className="settings-warning-text">No se pudo guardar la preferencia local. Revisa el almacenamiento del navegador.</span>}
+            </div>
+          </div>
+          <SettingsSwitch
+            checked={consolePreference.enabled}
+            disabled={!consolePreference.authorized}
+            onChange={event => setDevConsoleVisible(event.target.checked)}
+            ariaLabel="Activar consola de diagnóstico"
           />
         </div>
 
