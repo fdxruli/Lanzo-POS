@@ -7,7 +7,8 @@ import { DatabaseError, DB_ERROR_CODES } from './utils';
 import { fixStockInconsistencies, rebuildDailyStats } from '../maintenance';
 import { layawayRepository } from './layaways';
 import { handleDexieError } from './utils';
-import { CUSTOMER_DEBT_SORT_INDEX, matchesCustomerSnapshot } from './customerDebtIndex';
+import { CUSTOMER_DEBT_SORT_INDEX, compareCustomersByDebt } from './customerDebtIndex';
+import { isCustomerVisible } from '../customers/customerMapper';
 import { evaluator } from '../BackupRiskEvaluator';
 import { updateProduct, updateProductSafe, bulkUpdateProducts } from './productUpdates';
 import { layawayFinancialService } from '../layawayFinancialService';
@@ -351,18 +352,30 @@ export const loadCustomersByDebtPaginated = async (options = {}) => {
         const normalizedOffset = Math.max(0, Number(offset) || 0);
         const effectiveSnapshotAt = snapshotAt || new Date().toISOString();
 
-        const query = db.table(STORES.CUSTOMERS)
-            .orderBy(CUSTOMER_DEBT_SORT_INDEX)
-            .reverse()
-            .filter(customer =>
-                customer?.isActive !== false &&
-                matchesCustomerSnapshot(customer, effectiveSnapshotAt)
-            );
+        const table = db.table(STORES.CUSTOMERS);
+        // Server timestamps can be ahead of this browser. snapshotAt is kept
+        // as response metadata, never as a visibility boundary for active rows.
+        const rows = await db.transaction('r', table, async () => {
+            const [totalCount, indexedCount] = await Promise.all([
+                table.count(),
+                table.orderBy(CUSTOMER_DEBT_SORT_INDEX).count()
+            ]);
 
-        const rows = await query
-            .offset(normalizedOffset)
-            .limit(normalizedLimit + 1)
-            .toArray();
+            // IndexedDB omits compound keys containing null/undefined. Read
+            // those customers too, without repairing or zeroing their debt.
+            if (totalCount !== indexedCount) {
+                const customers = await table.filter(isCustomerVisible).toArray();
+                return customers.sort(compareCustomersByDebt)
+                    .slice(normalizedOffset, normalizedOffset + normalizedLimit + 1);
+            }
+
+            return table.orderBy(CUSTOMER_DEBT_SORT_INDEX)
+                .reverse()
+                .filter(isCustomerVisible)
+                .offset(normalizedOffset)
+                .limit(normalizedLimit + 1)
+                .toArray();
+        });
 
         const hasMore = rows.length > normalizedLimit;
         const data = hasMore ? rows.slice(0, normalizedLimit) : rows;
