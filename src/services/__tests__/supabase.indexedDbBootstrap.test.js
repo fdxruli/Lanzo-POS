@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   readDeviceRegistryValue: vi.fn(),
   writeDeviceRegistryValue: vi.fn(),
   getLicenseFromStorage: vi.fn(),
+  saveLicenseToStorage: vi.fn(),
   getLocalTenantBinding: vi.fn()
 }));
 
@@ -47,7 +48,8 @@ vi.mock('../db/tenantRuntimeRouter', () => ({
 }));
 
 vi.mock('../licenseStorage', () => ({
-  getLicenseFromStorage: mocks.getLicenseFromStorage
+  getLicenseFromStorage: mocks.getLicenseFromStorage,
+  saveLicenseToStorage: mocks.saveLicenseToStorage
 }));
 
 vi.mock('../utils', () => ({
@@ -95,11 +97,18 @@ describe('activation storage boundary', () => {
     expect(mocks.writeDeviceRegistryValue).not.toHaveBeenCalled();
   });
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.resetModules();
     vi.clearAllMocks();
     mocks.loadData.mockReset();
     mocks.saveData.mockReset();
+    const credentials = new Map();
+    mocks.saveData.mockImplementation(async (_store, record) => credentials.set(record.key, record));
+    mocks.loadData.mockImplementation(async (_store, key) => credentials.get(key));
+    mocks.saveLicenseToStorage.mockReset();
+    mocks.getLicenseFromStorage.mockResolvedValue(null);
+    const { runWithLocalTenantSyncLease } = await import('../tenant/localTenantGuard');
+    vi.mocked(runWithLocalTenantSyncLease).mockImplementation(async (_source, _options, operation) => operation());
     localStorage.clear();
     vi.stubEnv('VITE_SUPABASE_URL', 'https://example.supabase.co');
     vi.stubEnv('VITE_SUPABASE_PUBLISHABLE_KEY', 'test-publishable-key');
@@ -177,6 +186,86 @@ describe('activation storage boundary', () => {
 
     await expect(createFreeTrial()).resolves.toMatchObject({ success: true });
     expect(events).toEqual(['preflight', 'rate-limit', 'stable-id', 'rpc']);
+  });
+
+  it.each([0, 503, 504])('does not retry an uncertain HTTP %s creation, even on another click', async (status) => {
+    const { createClient } = await vi.importActual('@supabase/supabase-js');
+    const fetch = vi.fn(async () => {
+      if (!status) throw new TypeError('Failed to fetch');
+      return new Response(JSON.stringify({ code: 'PGRST000', message: 'fixture failure' }), { status });
+    });
+    const client = createClient('https://transport-fixture.invalid', 'fixture-key', {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }, global: { fetch }
+    });
+    mocks.rpc.mockImplementation((...args) => client.rpc(...args));
+    const { createFreeLicense } = await import('../supabase');
+    const first = await createFreeLicense();
+    expect(first).toMatchObject({ success: false, outcome: 'unknown', status });
+    expect(await createFreeLicense()).toEqual(first);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+    expect(mocks.saveLicenseToStorage).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { success: false, code: 'LICENSE_ACTIVATION_RATE_LIMITED', message: 'limited', retry_after_seconds: 86400 },
+    { success: false, error: 'FREE_PLAN_NOT_AVAILABLE' },
+    { success: false, error: 'Este dispositivo ya ha utilizado una licencia anteriormente.' }
+  ])('preserves a definitive RPC rejection: $code $error', async (failure) => {
+    mocks.rpc.mockResolvedValue({ data: failure, error: null, status: 200 });
+    const { createFreeLicense } = await import('../supabase');
+    expect(await createFreeLicense()).toMatchObject(failure);
+    expect(mocks.saveData).not.toHaveBeenCalled();
+  });
+
+  it('shares a concurrent creation and retries only persistence after a confirmed response', async () => {
+    const response = { success: true, details: { license_key: 'FREE-ONE', security_token: 'token-one' } };
+    mocks.rpc.mockResolvedValue({ data: response, error: null, status: 200 });
+    mocks.saveData.mockRejectedValueOnce(new Error('QuotaExceededError'));
+    const { createFreeLicense } = await import('../supabase');
+    const first = createFreeLicense();
+    const second = createFreeLicense();
+    expect(second).toBe(first);
+    expect(await first).toMatchObject({ success: false, outcome: 'created' });
+    expect(await createFreeLicense()).toMatchObject({ success: true, details: response.details });
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+    expect(mocks.loadData).toHaveBeenCalledWith('sync_cache', 'device_security_token');
+  });
+
+  it('checks tenant access before persisting the confirmed license or its credentials', async () => {
+    mocks.rpc.mockResolvedValue({ data: { success: true, details: { license_key: 'FREE-TENANT', security_token: 'token' } }, error: null });
+    const beforeLocalPersistence = vi.fn().mockRejectedValue(new Error('tenant access denied'));
+    const { createFreeLicense } = await import('../supabase');
+    expect(await createFreeLicense({ beforeLocalPersistence })).toMatchObject({ success: false, outcome: 'created' });
+    expect(beforeLocalPersistence).toHaveBeenCalledWith(expect.objectContaining({ license_key: 'FREE-TENANT' }));
+    expect(mocks.saveLicenseToStorage).not.toHaveBeenCalled();
+    expect(mocks.saveData).not.toHaveBeenCalled();
+  });
+
+  it('retains the uncertain guard across a page reload without another RPC', async () => {
+    mocks.rpc.mockRejectedValue(new TypeError('Failed to fetch'));
+    const firstPage = await import('../supabase');
+    expect(await firstPage.createFreeLicense()).toMatchObject({ outcome: 'unknown' });
+    vi.resetModules();
+    const reloadedPage = await import('../supabase');
+    expect(await reloadedPage.createFreeLicense()).toMatchObject({ outcome: 'unknown' });
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it('releases the creation guard after a definitive rejection', async () => {
+    mocks.rpc.mockResolvedValue({ data: { success: false, error: 'FREE_PLAN_NOT_AVAILABLE' }, error: null, status: 200 });
+    const { createFreeLicense } = await import('../supabase');
+    await createFreeLicense();
+    await createFreeLicense();
+    expect(mocks.rpc).toHaveBeenCalledTimes(2);
+    expect(localStorage.getItem('lanzo_free_license_pending')).toBeNull();
+  });
+
+  it('does not mutate when localStorage is blocked', async () => {
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new DOMException('denied', 'SecurityError'); });
+    const { createFreeLicense } = await import('../supabase');
+    expect(await createFreeLicense()).toMatchObject({ success: false, code: 'DB_BROWSER_STORAGE_UNAVAILABLE' });
+    expect(mocks.rpc).not.toHaveBeenCalled();
   });
 
   it('keeps free-license creation available when persistence is denied but IndexedDB works', async () => {

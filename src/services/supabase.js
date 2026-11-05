@@ -18,7 +18,7 @@ import {
     runWithLocalTenantSyncLease
 } from './tenant/localTenantGuard';
 import { getActiveTenantRuntime } from './db/tenantRuntimeRouter';
-import { getLicenseFromStorage } from './licenseStorage';
+import { getLicenseFromStorage, saveLicenseToStorage } from './licenseStorage';
 import { deriveLocalGracePeriodEnd } from '../store/slices/license/licenseGuards';
 import {
     actorRuntimeController,
@@ -673,7 +673,9 @@ async function checkRateLimit() {
 
     if (lockedUntil && now < lockedUntil) {
         const remainingSeconds = Math.ceil((lockedUntil - now) / 1000);
-        throw new Error(`Demasiados intentos. Por favor espera ${Math.ceil(remainingSeconds / 60)} minutos.`);
+        throw Object.assign(new Error(`Demasiados intentos. Por favor espera ${Math.ceil(remainingSeconds / 60)} minutos.`), {
+            code: 'LICENSE_ACTIVATION_RATE_LIMITED', retry_after_seconds: remainingSeconds
+        });
     }
 
     if (lockedUntil && now > lockedUntil) {
@@ -761,7 +763,7 @@ export const activateLicense = async function (licenseKey, options = {}) {
                 beforeLocalPersistence: options.beforeLocalPersistence,
                 operation: async () => {
                     resetRateLimit();
-                    safeLocalStorageSet('fp', deviceFingerprint);
+                    localStorage.setItem('fp', deviceFingerprint);
                     if (initialToken) {
                         await setSecureCredentials(initialToken);
                     } else {
@@ -881,7 +883,7 @@ export const activateLicenseLegacy = async function (licenseKey) {
                 reason: 'legacy_license_activation_credentials',
                 operation: async () => {
                     resetRateLimit();
-                    safeLocalStorageSet('fp', deviceFingerprint);
+                    localStorage.setItem('fp', deviceFingerprint);
                     if (initialToken) {
                         await setSecureCredentials(initialToken);
                     } else {
@@ -986,7 +988,7 @@ export const staffLoginOnDevice = async function ({
                 }
                 await clearAdminSessionCache();
                 await setStaffSessionCredentials(data.staff_session_token, data.staff_session_id);
-                safeLocalStorageSet('fp', deviceFingerprint);
+                localStorage.setItem('fp', deviceFingerprint);
             }
         });
 
@@ -1761,71 +1763,124 @@ export const deactivateCurrentDevice = async (licenseKey) => {
     }
 };
 
-export const createFreeLicense = async function (options = {}) {
+// Only one mutation per page at a time. A lost response is terminal for this
+// page; a confirmed response can retry local persistence without another RPC.
+const FREE_LICENSE_PENDING_KEY = 'lanzo_free_license_pending';
+let freeLicenseInFlight = null;
+let confirmedFreeLicense = null;
+let uncertainFreeLicense = null;
+
+const createFreeLicenseOnce = async (options) => {
+    let requestStarted = false;
     try {
-        // Free-license creation also needs the minimum local IndexedDB
-        // capability required by the tenant runtime before any device-owned
-        // state or remote license mutation is touched.
         await preflightIndexedDbCapability();
-        await checkRateLimit();
-
-        const deviceFingerprint = await getStableDeviceId();
-        const friendlyName = getFriendlyDeviceName(navigator.userAgent);
-        const deviceInfo = {
-            userAgent: navigator.userAgent,
-            platform: navigator.platform,
-            language: navigator.language
-        };
-
-        const { data, error } = await supabaseClient.rpc(
-            'create_free_license', {
-            device_fingerprint_param: deviceFingerprint,
-            device_name_param: friendlyName,
-            device_info_param: deviceInfo
-        });
-
-        if (error) throw error;
-
-        if (data && data.success) {
-            const licenseData = data.details || data;
-            const securityToken =
-                data.device_security_token ||
-                data.security_token ||
-                licenseData.security_token ||
-                licenseData.token ||
-                null;
-
-            await runAuthenticatedLocalPersistence({
-                tenantSource: licenseData,
-                reason: 'free_license_credentials',
-                beforeLocalPersistence: options.beforeLocalPersistence,
-                operation: async () => {
-                    safeLocalStorageSet('fp', deviceFingerprint);
-                    if (securityToken) {
-                        await setSecureCredentials(securityToken);
-                        Logger.log('🔐 Token inicial de licencia gratuita guardado correctamente.');
-                    } else {
-                        Logger.warn('⚠️ Licencia gratuita creada, pero el servidor no devolvió token de seguridad.');
-                    }
-                }
-            });
-
-            return { success: true, details: licenseData };
-        } else {
-            await registerFailedAttempt();
-            return { success: false, error: data.error || 'No se pudo crear la licencia.' };
-        }
-
+        // Fail before a remote mutation when localStorage cannot retain context.
+        const probeKey = 'lanzo_free_license_storage_probe';
+        localStorage.setItem(probeKey, '1');
+        if (localStorage.getItem(probeKey) !== '1') throw new Error('Storage probe failed');
+        localStorage.removeItem(probeKey);
     } catch (error) {
-        if (String(error?.code || '').startsWith('LOCAL_TENANT_')
-            || isBrowserStorageUnavailableError(error)) throw error;
-        const isRateLimit = typeof error?.message === 'string' && error.message.includes('Demasiados intentos');
-        if (!isRateLimit) {
-            Logger.error('❌ Error creando licencia gratuita:', error);
-            await registerFailedAttempt();
-        }
-        return { success: false, error: error.message };
+        if (!confirmedFreeLicense && isBrowserStorageUnavailableError(error)) throw error;
+        return { success: false, code: confirmedFreeLicense ? 'FREE_LICENSE_LOCAL_SAVE_FAILED' : 'DB_BROWSER_STORAGE_UNAVAILABLE',
+            ...(confirmedFreeLicense ? { outcome: 'created' } : {}) };
     }
+
+    try {
+        if (uncertainFreeLicense) return uncertainFreeLicense;
+        if (!confirmedFreeLicense) {
+            // This contains no credentials. Survive reloads without repeating an
+            // operation whose response may have been lost after a commit.
+            if (localStorage.getItem(FREE_LICENSE_PENDING_KEY)) {
+                return { success: false, code: 'FREE_LICENSE_UNCONFIRMED', outcome: 'unknown' };
+            }
+            if (!supabaseClient) return { success: false, code: 'FREE_LICENSE_CONFIGURATION_ERROR' };
+            if (await getLicenseFromStorage()) return { success: false, code: 'FREE_LICENSE_DEVICE_REGISTERED' };
+            await checkRateLimit();
+            const deviceFingerprint = await getStableDeviceId();
+            const deviceInfo = {
+                userAgent: navigator.userAgent,
+                platform: navigator.platform,
+                language: navigator.language
+            };
+            localStorage.setItem(FREE_LICENSE_PENDING_KEY, 'pending');
+            requestStarted = true;
+            const { data, error, status } = await supabaseClient.rpc('create_free_license', {
+                device_fingerprint_param: deviceFingerprint,
+                device_name_param: getFriendlyDeviceName(navigator.userAgent),
+                device_info_param: deviceInfo
+            });
+            if (error) {
+                // Gateway/transport errors do not prove whether the transaction committed.
+                const uncertain = !status || status >= 500 || status === 408;
+                const failure = {
+                    success: false,
+                    code: status === 429 ? 'LICENSE_ACTIVATION_RATE_LIMITED' : error.code || 'FREE_LICENSE_HTTP_ERROR',
+                    message: error.message,
+                    status,
+                    outcome: uncertain ? 'unknown' : 'rejected'
+                };
+                await registerFailedAttempt();
+                if (uncertain) uncertainFreeLicense = failure;
+                else localStorage.removeItem(FREE_LICENSE_PENDING_KEY);
+                return failure;
+            }
+            if (data?.success === false) {
+                localStorage.removeItem(FREE_LICENSE_PENDING_KEY);
+                await registerFailedAttempt();
+                return {
+                    ...data,
+                    code: data.code || (/este dispositivo ya ha utilizado/i.test(data.error || '')
+                        ? 'FREE_LICENSE_DEVICE_REGISTERED' : data.error || 'FREE_LICENSE_REJECTED')
+                };
+            }
+            const licenseData = data?.details || data;
+            const securityToken = data?.device_security_token || data?.security_token
+                || licenseData?.security_token || licenseData?.token;
+            if (data?.success !== true || !licenseData?.license_key || !securityToken) {
+                uncertainFreeLicense = { success: false, code: 'FREE_LICENSE_INVALID_RESPONSE', outcome: 'unknown' };
+                return uncertainFreeLicense;
+            }
+            confirmedFreeLicense = { licenseData, securityToken, deviceFingerprint };
+        }
+
+        const { licenseData, securityToken, deviceFingerprint } = confirmedFreeLicense;
+        await runAuthenticatedLocalPersistence({
+            tenantSource: licenseData,
+            reason: 'free_license_credentials',
+            beforeLocalPersistence: options.beforeLocalPersistence,
+            operation: async () => {
+                // Keep the confirmed license context before writing its tenant credentials.
+                await saveLicenseToStorage(licenseData, { required: true });
+                localStorage.setItem('fp', deviceFingerprint);
+                if (localStorage.getItem('fp') !== deviceFingerprint) throw new Error('Device storage failed');
+                await saveData(STORES.SYNC_CACHE, { key: 'device_security_token', value: securityToken });
+                const stored = await loadData(STORES.SYNC_CACHE, 'device_security_token');
+                if (stored?.value !== securityToken) throw new Error('Credential storage failed');
+            }
+        });
+        localStorage.removeItem(FREE_LICENSE_PENDING_KEY);
+        return { success: true, details: licenseData };
+    } catch (error) {
+        if (isLocalTenantAccessError(error)) throw error;
+        if (confirmedFreeLicense) {
+            return { success: false, code: 'FREE_LICENSE_LOCAL_SAVE_FAILED', outcome: 'created' };
+        }
+        if (requestStarted) {
+            uncertainFreeLicense = { success: false, code: 'FREE_LICENSE_TRANSPORT_ERROR', outcome: 'unknown' };
+            await registerFailedAttempt();
+            return uncertainFreeLicense;
+        }
+        if (isBrowserStorageUnavailableError(error)) throw error;
+        return { success: false, code: /Demasiados intentos/i.test(error?.message || '')
+            ? 'LICENSE_ACTIVATION_RATE_LIMITED' : 'FREE_LICENSE_PRECHECK_FAILED',
+            ...(error?.retry_after_seconds ? { retry_after_seconds: error.retry_after_seconds } : {}) };
+    }
+};
+
+export const createFreeLicense = (options = {}) => {
+    if (freeLicenseInFlight) return freeLicenseInFlight;
+    freeLicenseInFlight = createFreeLicenseOnce(options).finally(() => { freeLicenseInFlight = null; });
+    return freeLicenseInFlight;
 };
 
 // Compatibility alias for callers/tests that still use the historical name.

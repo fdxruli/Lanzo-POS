@@ -220,3 +220,44 @@ export const mapLicenseActivationResult = (source = {}, { isOnline } = {}) => {
     supportRecommended: true
   });
 };
+
+// Creation has different retry semantics from validating an existing license.
+export const mapFreeLicenseCreationResult = (source = {}, { isOnline } = {}) => {
+  const code = normalizeCode(source);
+  const rawMessage = readMessage(source);
+  if (source.outcome === 'created' || code === 'FREE_LICENSE_LOCAL_SAVE_FAILED') {
+    return {
+      title: 'Licencia creada, guardado pendiente',
+      message: 'La licencia se creó, pero no pudimos completar el guardado local. Mantén esta pestaña abierta, libera almacenamiento y vuelve a pulsar el botón para completar el guardado sin crear otra licencia.'
+    };
+  }
+  if (source.outcome === 'unknown' || NETWORK_MESSAGE_PATTERN.test(rawMessage)
+    || code === 'FREE_LICENSE_TRANSPORT_ERROR' || code === 'FREE_LICENSE_INVALID_RESPONSE') {
+    return {
+      title: 'No pudimos confirmar la creación',
+      message: 'Se perdió la respuesta del servidor y la licencia podría haberse creado. Verifica tu conexión y contacta a soporte antes de intentar crear otra licencia. No borres los datos del navegador.'
+    };
+  }
+  if (code === 'FREE_LICENSE_DEVICE_REGISTERED' || /este dispositivo ya ha utilizado/i.test(rawMessage)) {
+    return {
+      title: 'Este dispositivo ya tiene una licencia',
+      message: 'Usa la clave original en «Acceder con Licencia». Si no la conservas o perdiste la respuesta al crearla, contacta a soporte. No borres los datos del navegador.'
+    };
+  }
+  if (code.includes('RATE_LIMIT') || RATE_LIMIT_MESSAGE_PATTERN.test(rawMessage) || readStatus(source) === 429) {
+    const seconds = Number(readFirstDefined(source, ['retry_after_seconds', 'retryAfterSeconds']));
+    return {
+      title: 'Demasiados intentos',
+      message: Number.isFinite(seconds) && seconds > 0
+        ? `Espera al menos ${Math.ceil(seconds / 60)} minutos antes de volver a intentarlo.`
+        : 'Se alcanzó el límite de solicitudes. Espera el plazo indicado por el servicio o contacta a soporte.'
+    };
+  }
+  if (code === 'OFFLINE_PRECHECK' || code.startsWith('DB_') || code.startsWith('LOCAL_TENANT_')) {
+    return mapLicenseActivationResult(source, { isOnline });
+  }
+  return {
+    title: 'No pudimos crear la licencia',
+    message: 'El servicio no pudo completar la solicitud. Inténtalo más tarde. Si el problema continúa, contacta a soporte.'
+  };
+};
