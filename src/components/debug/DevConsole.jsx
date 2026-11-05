@@ -173,7 +173,7 @@ function DevConsole({ isSuppressed = false } = {}) {
 
   const handleCopy = async () => {
     const text = visibleEntries
-      .map((entry) => `[${entry.time}] ${entry.level.toUpperCase()} ${entry.source}: ${entry.text}`)
+      .map((entry) => `[${entry.timestamp || entry.time}] ${entry.level.toUpperCase()} ${entry.source}: ${entry.text}`)
       .join('\n\n');
 
     if (!text) return;

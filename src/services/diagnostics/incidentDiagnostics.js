@@ -448,13 +448,146 @@ export const buildSafeIncidentReport = (error, context = {}, environment = {}) =
   ].join('\n');
 };
 
-/** Conservative summary for the in-app development console. */
-export const summarizeDiagnosticEvent = (level, args = [], source = 'console') => {
-  const error = args.find((value) => value instanceof Error) || null;
-  const incident = classifyIncident(error, { source: source === 'window.error' ? 'react' : undefined });
-  const sourceLabel = source === 'console' ? '' : ` ${source}`;
-  return `Detalle omitido por privacidad · ${incident.category} · ${incident.code}${sourceLabel}`
-    .slice(0, 240);
+// Console output has a closed code vocabulary: a prefix alone is not enough
+// to make an arbitrary suffix (possibly a credential or identifier) safe.
+const CONSOLE_CODE_GROUPS = {
+  [CATEGORIES.INDEXEDDB]: [
+    'DB_OPEN_TIMEOUT', 'DB_BLOCKED', 'DB_PRIMARY_KEY_MISMATCH',
+    'DB_CLOSED_AFTER_STRUCTURAL_ERROR', 'DB_UNSUPPORTED_NATIVE_VERSION',
+    'DB_NOT_INSPECTABLE', 'DB_MIGRATION_ID_COLLISION', 'DB_MIGRATION_FAILED',
+    'DB_BROWSER_STORAGE_UNAVAILABLE', 'DB_UNAVAILABLE', 'FREE_LICENSE_LOCAL_SAVE_FAILED'
+  ],
+  [CATEGORIES.CONNECTIVITY]: [
+    'NETWORK_REQUEST_FAILED', 'NETWORK_TIMEOUT', 'NETWORK_ERROR', 'ERR_NETWORK',
+    'FETCH_ERROR', 'FAILED_TO_FETCH', 'OFFLINE', 'OFFLINE_PRECHECK',
+    'FREE_LICENSE_TRANSPORT_ERROR'
+  ],
+  [CATEGORIES.AUTHORIZATION_SESSION]: [
+    'ACTOR_CONTEXT_STALE', 'ACTOR_SESSION_REQUIRED', 'AUTH_DENIED',
+    'SESSION_EXPIRED', 'LICENSE_NOT_FOUND', 'LICENSE_NOT_ACTIVE',
+    'FREE_LICENSE_DEVICE_REGISTERED', 'session_not_found', 'session_expired', 'refresh_token_not_found'
+  ],
+  [CATEGORIES.SUPABASE_RPC]: [
+    '23505', '23503', '22P02', '57014', 'SUPABASE_TEMPORARY', 'SUPABASE_SERVER',
+    'FREE_LICENSE_CONFIGURATION_ERROR', 'FREE_LICENSE_HTTP_ERROR',
+    'FREE_LICENSE_INVALID_RESPONSE', 'LICENSE_ACTIVATION_RATE_LIMITED'
+  ],
+  [CATEGORIES.SYNCHRONIZATION]: [
+    'SYNC_REQUEST_FAILED', 'LOCAL_TENANT_SYNC_BLOCKED', 'CLOUD_CLIENT_UPDATE_REQUIRED'
+  ],
+  [CATEGORIES.FINANCIAL_OPERATION]: [
+    'FINANCIAL_RESULT_UNKNOWN', 'FINANCIAL_RESULT_PENDING',
+    'PAYMENT_OUTCOME_UNKNOWN', 'SALE_OUTCOME_UNKNOWN'
+  ],
+  [CATEGORIES.NAVIGATION_RESOURCE]: ['CHUNK_LOAD_FAILED'],
+  [CATEGORIES.UNKNOWN]: ['FREE_LICENSE_UNCONFIRMED']
+};
+const CONSOLE_CODE_CATEGORIES = new Map(Object.entries(CONSOLE_CODE_GROUPS)
+  .flatMap(([category, codes]) => codes.map((code) => [code, category])));
+const CONSOLE_FALLBACK_CODES = new Set(Object.values(CATEGORIES).map((category) => `INCIDENT_${category.toUpperCase()}`));
+const consoleCodeCategory = (code) => (
+  ['PGRST301', 'PGRST302', 'PGRST303'].includes(code) ? CATEGORIES.AUTHORIZATION_SESSION
+    : typeof code === 'string' && /^PGRST\d{3}$/.test(code)
+    ? CATEGORIES.SUPABASE_RPC
+    : code === '42501' ? CATEGORIES.AUTHORIZATION_SESSION : CONSOLE_CODE_CATEGORIES.get(code)
+);
+
+// Exact existing Logger labels, never substring matching or arbitrary context.
+const CONSOLE_OPERATIONS = new Map([
+  ['Error al crear licencia Lanzo Local:', 'Módulo: Licencias · Operación: Crear licencia FREE'],
+  ['Error crítico al validar licencia:', 'Módulo: Licencias · Operación: Validar licencia'],
+  ['Error revisando licencia:', 'Módulo: Licencias · Operación: Revisar licencia'],
+  ['Error leyendo licencia local:', 'Módulo: Licencias · Operación: Leer licencia local'],
+  ['[PosSync] Pull incremental fallo:', 'Módulo: Sincronización · Operación: Pull incremental'],
+  ['[PosSync] Outbox al reconectar fallo:', 'Módulo: Sincronización · Operación: Enviar pendientes al reconectar']
+]);
+const CONSOLE_MODULES = new Map([
+  ['licencia', 'Licencias'], ['configuracion', 'Configuración'], ['productos', 'Inventario'],
+  ['ventas', 'Ventas'], ['caja', 'Caja'], ['clientes', 'Clientes'], ['pedidos', 'Pedidos']
+]);
+const CONSOLE_OUTCOMES = new Map([
+  ['unknown', 'No confirmado'], ['created', 'Creación confirmada; guardado local fallido']
+]);
+
+// Do not invoke getters, coerce objects, traverse payloads, causes or stacks.
+const consoleField = (value, key) => {
+  try { return Object.getOwnPropertyDescriptor(value, key)?.value; } catch { return undefined; }
+};
+const consoleMessageCode = (message) => {
+  if (typeof message !== 'string') return undefined;
+  if (/^(?:TypeError: )?(?:Failed to fetch|fetch failed|NetworkError when attempting to fetch resource\.|Load failed)$/.test(message)) {
+    return 'NETWORK_REQUEST_FAILED';
+  }
+  if (message === 'The operation timed out.' || message === 'connection timeout') return 'NETWORK_TIMEOUT';
+  return undefined;
+};
+
+const normalizeConsoleError = (value) => {
+  if (typeof value === 'string') {
+    const code = consoleCodeCategory(value) ? value : consoleMessageCode(value);
+    return code ? normalizeConsoleError({ code }) : null;
+  }
+  if (!value || typeof value !== 'object') return null;
+  const category = normalizeCategory(consoleField(value, 'category'));
+  const severity = normalizeSeverity(consoleField(value, 'severity'));
+  const code = consoleField(value, 'code') ?? consoleField(value, 'safeCode') ?? consoleField(value, 'safe_code');
+  const normalized = category && severity && (consoleCodeCategory(code) || CONSOLE_FALLBACK_CODES.has(code));
+  const message = consoleField(value, 'message');
+  // Native Errors, known codes, normalized incident records, and the actual
+  // PostgREST error shape are supported; application objects are not errors.
+  const postgrest = typeof message === 'string' && typeof consoleField(value, 'code') === 'string'
+    && ['details', 'hint'].every((key) => {
+      const field = consoleField(value, key);
+      return field === null || typeof field === 'string';
+    });
+  let native = false;
+  let name = consoleField(value, 'name') ?? (normalized ? consoleField(value, 'errorType') : undefined);
+  try {
+    native = value instanceof Error;
+    if (native && !name) name = consoleField(Object.getPrototypeOf(value), 'name');
+    // Use the platform getter directly, never a getter supplied by the input.
+    if (typeof DOMException !== 'undefined' && value instanceof DOMException) {
+      name = Object.getOwnPropertyDescriptor(DOMException.prototype, 'name').get.call(value);
+      native = true;
+    }
+  } catch { /* Hostile proxies are not allowed to break console capture. */ }
+  const knownCode = consoleCodeCategory(code);
+  if (!native && !postgrest && !normalized && !knownCode) return null;
+  const safeCode = knownCode || normalized ? code : consoleMessageCode(message);
+  const storage = ['QuotaExceededError', 'DatabaseClosedError', 'DatabaseOpenTimeoutError'].includes(name);
+  const status = consoleField(value, 'status');
+  return {
+    code: safeCode,
+    name: SAFE_ERROR_NAMES.has(name) ? name : 'Error',
+    category: consoleCodeCategory(safeCode) || (normalized ? category : undefined)
+      || (storage ? CATEGORIES.INDEXEDDB : undefined)
+      || (name === 'NetworkError' || name === 'TimeoutError' ? CATEGORIES.CONNECTIVITY : undefined)
+      || (postgrest ? ([401, 403].includes(status) ? CATEGORIES.AUTHORIZATION_SESSION : CATEGORIES.SUPABASE_RPC) : undefined),
+    module: normalized && consoleField(value, 'schema_version') === 1
+      ? CONSOLE_MODULES.get(consoleField(value, 'module')) : undefined,
+    outcome: ['FREE_LICENSE_UNCONFIRMED', 'FREE_LICENSE_TRANSPORT_ERROR', 'FREE_LICENSE_INVALID_RESPONSE'].includes(safeCode)
+      ? CONSOLE_OUTCOMES.get('unknown')
+      : safeCode === 'FREE_LICENSE_LOCAL_SAVE_FAILED' ? CONSOLE_OUTCOMES.get('created') : undefined
+  };
+};
+
+/** Display and clipboard share this allowlisted summary. No raw values survive. */
+export const summarizeDiagnosticEvent = (level, args = [], _source = 'console') => {
+  const candidates = args.slice(0, 30).map(normalizeConsoleError).filter(Boolean);
+  // A leading generic Error must not hide a later structured diagnostic.
+  const error = candidates.find((candidate) => candidate.code || candidate.category) || candidates[0];
+  const incident = classifyIncident(error, { category: error?.category });
+  const code = error?.code || incident.code;
+  const detail = code === 'NETWORK_REQUEST_FAILED' ? 'Solicitud al servicio no confirmada'
+    : code === 'NETWORK_TIMEOUT' ? 'Tiempo de espera agotado'
+      : incident.category === CATEGORIES.UNKNOWN ? (level === 'error' || error ? 'Causa no identificada' : 'Evento sin diagnóstico técnico')
+        : 'Diagnóstico técnico';
+  const context = args.slice(0, 30).map((value) => CONSOLE_OPERATIONS.get(value)).find(Boolean);
+  return [
+    `${incident.categoryLabel} · ${detail} · ${code} · ${incident.errorType}`,
+    context || (error?.module ? `Módulo: ${error.module}` : ''),
+    error?.outcome ? `Resultado: ${error.outcome}` : ''
+  ].filter(Boolean).join('\n');
 };
 
 const SAFE_RECOVERY_STATUSES = new Set([
