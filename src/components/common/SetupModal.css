@@ -585,10 +585,4 @@
 #business-setup-modal .step-actions { gap: 12px; }
 #business-setup-modal .terms-link { background: none; border: 0; font: inherit; }
 
-/* Legal review in the final setup step. */
-#business-setup-modal .setup-legal-documents { min-width: 0; margin: 1rem 0; padding: 1rem; border: 1px solid var(--border-color, #cbd5e1); border-radius: 8px; }
-#business-setup-modal .setup-legal-document { padding: .75rem 0; border-bottom: 1px solid var(--border-color, #cbd5e1); overflow-wrap: anywhere; }
-#business-setup-modal .setup-legal-document:last-child { border-bottom: 0; }
-#business-setup-modal .setup-legal-consent { display: flex; align-items: center; gap: .6rem; min-height: 44px; cursor: pointer; }
-#business-setup-modal .setup-legal-consent input { flex-shrink: 0; width: 20px; height: 20px; }
-#business-setup-modal .setup-legal-document .terms-link { min-height: 44px; }
+#business-setup-modal a.terms-link:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; border-radius: 2px; }
