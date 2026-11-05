@@ -320,7 +320,9 @@ export const customerLocalRepository = {
     await ensureOpen();
     const { actorHandle = null } = options;
     actorHandle?.assertCurrent?.();
-    const result = await db.transaction('rw', historyTables(), () => this.applyCloudCustomersInCurrentTransaction(customers, options));
+    // Dexie must see an async scope to track native awaits in the batch and
+    // its history/conflict guards until all IndexedDB work has completed.
+    const result = await db.transaction('rw', historyTables(), async () => this.applyCloudCustomersInCurrentTransaction(customers, options));
     actorHandle?.assertCurrent?.();
     return result;
   },

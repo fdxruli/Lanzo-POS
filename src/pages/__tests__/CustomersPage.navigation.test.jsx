@@ -33,7 +33,7 @@ vi.mock('../../components/customers/CustomerForm', () => ({
 }));
 
 vi.mock('../../components/customers/CustomerList', () => ({
-  default: () => <div data-testid="customer-list">Directorio de clientes</div>
+  default: ({ customers }) => <div data-testid="customer-list">Directorio de clientes {customers.map(customer => <span key={customer.id}>{customer.phone}</span>)}</div>
 }));
 
 vi.mock('../../components/settings/CustomerMessageTemplatesSettings', () => ({
@@ -156,6 +156,7 @@ vi.mock('../../services/utils', () => ({
 }));
 
 import CustomersPage from '../CustomersPage';
+import { customerRepository } from '../../services/customers/customerRepository';
 
 function HistoryControls() {
   const navigate = useNavigate();
@@ -209,6 +210,22 @@ describe('CustomersPage navigation', () => {
     expect(document.querySelector('.customers-hero')).not.toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Clientes' })).not.toBeInTheDocument();
     expect(screen.queryByText('Directorio, crédito y mensajería en un solo lugar.')).not.toBeInTheDocument();
+  });
+
+  it('refreshes the phone in the open list when synchronization commits customer changes', async () => {
+    customerRepository.listCustomersPage.mockResolvedValueOnce({
+      data: [{ id: 'phone-sync', name: 'Cliente', phone: '5551112222', debt: 0, creditLimit: 0 }], hasMore: false
+    });
+    renderPage('/clientes');
+    expect(await screen.findByText('5551112222')).toBeInTheDocument();
+    const callsBeforeSync = customerRepository.listCustomersPage.mock.calls.length;
+    customerRepository.listCustomersPage.mockResolvedValueOnce({
+      data: [{ id: 'phone-sync', name: 'Cliente', phone: '5559998888', debt: 0, creditLimit: 0 }], hasMore: false
+    });
+    fireEvent(window, new CustomEvent('lanzo:customers-sync-updated'));
+    expect(await screen.findByText('5559998888')).toBeInTheDocument();
+    expect(screen.queryByText('5551112222')).not.toBeInTheDocument();
+    expect(customerRepository.listCustomersPage).toHaveBeenCalledTimes(callsBeforeSync + 1);
   });
 
   it('uses the shared pill navigation without page overflow or tab icons', () => {
