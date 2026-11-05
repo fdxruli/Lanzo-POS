@@ -3,6 +3,7 @@ import {
   buildSafeIncidentAdvancedDetails,
   buildSafeIncidentReport,
   classifyIncident,
+  getSafeIncidentMetadata,
   getIncidentRecoverySurfaceForPath,
   getSafeIncidentLocation,
   INCIDENT_CATEGORY,
@@ -196,9 +197,108 @@ describe('incident diagnostics', () => {
       Object.assign(new Error('token=secret total=1000'), { code: 'FINANCIAL_RESULT_UNKNOWN' })
     ]);
 
-    expect(summary).toContain('Detalle omitido por privacidad');
+    expect(summary).toContain('Operación financiera');
+    expect(summary).toContain('FINANCIAL_RESULT_UNKNOWN');
     expect(summary).not.toContain('[Caja]');
     expect(summary).not.toContain('token=secret');
     expect(summary).not.toContain('1000');
+  });
+});
+
+describe('console diagnostic normalization', () => {
+  it.each([
+    [new TypeError('Failed to fetch'), 'Conectividad', 'NETWORK_REQUEST_FAILED'],
+    ['TypeError: Failed to fetch', 'Conectividad', 'NETWORK_REQUEST_FAILED'],
+    ['NETWORK_TIMEOUT', 'Conectividad', 'NETWORK_TIMEOUT'],
+    [{ code: 'PGRST202', message: 'private server detail', details: null, hint: '' }, 'Servicio remoto', 'PGRST202'],
+    [{ code: '', message: 'TypeError: Failed to fetch', details: '', hint: '' }, 'Conectividad', 'NETWORK_REQUEST_FAILED'],
+    [{ code: 'XX000', message: 'private internal error', details: '', hint: '' }, 'Servicio remoto', 'INCIDENT_SUPABASE_RPC'],
+    [{ code: 'PGRST301' }, 'Autorización o sesión', 'PGRST301'],
+    [{ code: 'refresh_token_not_found', message: 'private token' }, 'Autorización o sesión', 'refresh_token_not_found'],
+    [{ code: '23505', message: 'private key', details: '', hint: '' }, 'Servicio remoto', '23505'],
+    [{ code: '42501', message: 'private policy', details: '', hint: null }, 'Autorización o sesión', '42501'],
+    [new DOMException('private storage content', 'QuotaExceededError'), 'Almacenamiento local', 'INCIDENT_INDEXEDDB'],
+    [new Error('IndexedDB blocked'), 'Almacenamiento local', 'INCIDENT_INDEXEDDB'],
+    [new Error('service worker update failed'), 'Aplicación instalada', 'INCIDENT_PWA'],
+    [new TypeError('Failed to fetch dynamically imported module: https://private.invalid/?token=private'), 'Navegación o carga de recursos', 'INCIDENT_NAVIGATION_RESOURCE'],
+    [{ code: 'DB_BROWSER_STORAGE_UNAVAILABLE' }, 'Almacenamiento local', 'DB_BROWSER_STORAGE_UNAVAILABLE'],
+    [getSafeIncidentMetadata({ code: 'SYNC_REQUEST_FAILED', category: 'synchronization' }), 'Sincronización', 'SYNC_REQUEST_FAILED']
+  ])('retains only recognized technical evidence %#', (error, category, code) => {
+    const text = summarizeDiagnosticEvent('error', [new Error('unmapped'), error]);
+    expect(text).toContain(category);
+    expect(text).toContain(code);
+    expect(text).not.toContain('private');
+  });
+
+  it('uses exact existing operation labels and fixed license codes without copying keys', () => {
+    const text = summarizeDiagnosticEvent('error', ['Error al crear licencia Lanzo Local:', {
+      code: 'FREE_LICENSE_TRANSPORT_ERROR', licenseKey: 'LNZ-FULL-PRIVATE', outcome: 'created'
+    }]);
+    expect(text).toContain('Conectividad');
+    expect(text).toContain('FREE_LICENSE_TRANSPORT_ERROR');
+    expect(text).toContain('Módulo: Licencias · Operación: Crear licencia FREE');
+    expect(text).toContain('Resultado: No confirmado');
+    expect(text).not.toContain('LNZ-FULL-PRIVATE');
+    expect(text).not.toContain('Creación confirmada');
+    expect(summarizeDiagnosticEvent('error', [{ code: 'FREE_LICENSE_INVALID_RESPONSE' }]))
+      .toContain('Servicio remoto');
+    expect(summarizeDiagnosticEvent('error', [{ code: 'FREE_LICENSE_UNCONFIRMED' }]))
+      .toContain('Causa no identificada');
+    expect(summarizeDiagnosticEvent('error', [{ code: 'FREE_LICENSE_LOCAL_SAVE_FAILED' }]))
+      .toContain('Creación confirmada; guardado local fallido');
+  });
+
+  it('supports normalized backend and capture records without trusting their free fields', () => {
+    expect(summarizeDiagnosticEvent('error', [{
+      category: 'authorization_session', severity: 'section_failure', safeCode: 'INCIDENT_AUTHORIZATION_SESSION',
+      errorType: 'TypeError', categoryLabel: 'private label'
+    }])).toContain('Autorización o sesión · Diagnóstico técnico · INCIDENT_AUTHORIZATION_SESSION · TypeError');
+    const text = summarizeDiagnosticEvent('error', [{
+      schema_version: 1, category: 'indexeddb', severity: 'section_failure', safe_code: 'DB_OPEN_TIMEOUT',
+      module: 'configuracion', incident_id: 'private-id', navigation_path: '/private-route'
+    }]);
+    expect(text).toContain('Módulo: Configuración');
+    expect(text).not.toContain('private');
+  });
+
+  it.each([
+    'unclassified private message',
+    'customer says network timeout while paying',
+    { message: 'Failed to fetch', amount: 200 },
+    { category: 'connectivity', message: 'private' },
+    Object.assign(new Error('email=private@example.invalid'), { code: 'NETWORK_ABC123PRIVATE' }),
+    { code: 'PGRST202_PRIVATE' }, { code: 'DB_OPEN_TIMEOUT_PRIVATE' },
+    { code: 'FREE_LICENSE_ABC123PRIVATE' }, { name: 'UnknownError', message: 'unknown' }
+  ])('does not invent a cause from malformed or arbitrary input %#', (error) => {
+    const text = summarizeDiagnosticEvent('error', [error], 'window.error');
+    expect(text).toBe('Error inesperado · Causa no identificada · INCIDENT_UNKNOWN · Error');
+  });
+
+  it('never invokes getters or serialization hooks and tolerates revoked proxies', () => {
+    let accesses = 0;
+    const hostile = Object.defineProperties({}, Object.fromEntries(
+      ['code', 'message', 'name', 'category', 'severity', 'details', 'hint', 'status', 'toJSON', 'toString']
+        .map((key) => [key, { get() { accesses += 1; throw new Error('private getter'); } }])
+    ));
+    const { proxy, revoke } = Proxy.revocable({}, {});
+    revoke();
+    expect(() => summarizeDiagnosticEvent('error', [hostile, proxy])).not.toThrow();
+    expect(accesses).toBe(0);
+  });
+
+  it('drops all extra data even when the diagnostic is recognized', () => {
+    const secrets = {
+      licenseKey: 'LNZ-FULL-PRIVATE', jwt: 'eyJhbGciOiJIUzI1NiJ9.private.signature', password: 'hunter-private',
+      email: 'ana@example.invalid', phone: '5551234567', customer: 'Ana Private', amount: 9876.50,
+      body: { p_license_key: 'rpc-private-body' }, url: 'https://private.invalid/?access_token=url-private',
+      deviceFingerprint: 'device-private', state: { balance: 'state-private' }
+    };
+    const text = summarizeDiagnosticEvent('error', [
+      JSON.stringify(secrets), { ...secrets, code: 'PGRST202', message: JSON.stringify(secrets),
+        details: JSON.stringify(secrets), hint: JSON.stringify(secrets), stack: 'private stack' }
+    ]);
+    expect(text).toBe('Servicio remoto · Diagnóstico técnico · PGRST202 · Error');
+    expect(summarizeDiagnosticEvent('error', ['Error revisando licencia: private', { code: 'PGRST202' }]))
+      .not.toContain('Módulo:');
   });
 });

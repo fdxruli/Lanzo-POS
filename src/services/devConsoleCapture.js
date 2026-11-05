@@ -28,7 +28,9 @@ const truncate = (text) => {
 
 const notify = () => {
   const snapshot = getDevConsoleEntries();
-  state.listeners.forEach((listener) => listener(snapshot));
+  state.listeners.forEach((listener) => {
+    try { listener(snapshot); } catch { /* A diagnostic subscriber must not interrupt the POS. */ }
+  });
 };
 
 const addEntry = (level, args, source = 'console') => {
@@ -38,6 +40,7 @@ const addEntry = (level, args, source = 'console') => {
     id: `${now.getTime()}-${state.sequence += 1}`,
     level,
     source,
+    timestamp: now.toISOString(),
     time: now.toLocaleTimeString('es-MX', {
       hour: '2-digit',
       minute: '2-digit',
