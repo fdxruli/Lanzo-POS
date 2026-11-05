@@ -54,6 +54,7 @@ const runtime = {
   lastPullFinishedAt: 0,
   lastForegroundPullAt: 0,
   realtimeChannel: null,
+  realtimeStatus: SYNC_STATUS.DISABLED,
   realtimeTopic: null,
   onlineListener: null
 };
@@ -131,6 +132,7 @@ const clearRealtimePullTimer = () => {
 const stopRealtimeChannel = async () => {
   const channelToStop = runtime.realtimeChannel;
   runtime.realtimeChannel = null;
+  runtime.realtimeStatus = SYNC_STATUS.DISABLED;
   runtime.realtimeTopic = null;
   if (!channelToStop) {
     return;
@@ -192,12 +194,70 @@ const dispatchPulledEvents = async (events = [], licenseKey = runtime.licenseKey
   }
 };
 
+// Shared by startup and the first online event after an offline start.
+// The existing provider owns subscription, retries and teardown in both cases.
+const startRealtimeChannel = ({ posTopic, licenseKey, generation }) => {
+  if (!isRuntimeGenerationCurrent(generation, licenseKey) || !runtime.started || !canSchedule() || runtime.realtimeChannel) return;
+  runtime.realtimeChannel = startPosRealtimeListener({
+    posTopic,
+    executionScope,
+    callbacks: {
+      onPosChangeAvailable: ({ eventType, entity, changeSeq } = {}) => {
+        if (!isRuntimeGenerationCurrent(generation, licenseKey) || !runtime.started || !canSchedule()) return;
+        Logger.log('[POS Sync] Realtime avisó cambios; programando pull incremental.', {
+          eventType,
+          entity,
+          changeSeq
+        });
+
+        return posSyncOrchestrator.schedulePullIncremental('realtime').catch((error) => {
+          Logger.warn('[PosSync] Pull por realtime fallo:', error);
+        });
+      },
+      onStatusChange: ({ status, reason: statusReason }) => {
+        if (!isRuntimeGenerationCurrent(generation, licenseKey) || !runtime.started || !canSchedule()) return;
+        runtime.realtimeStatus = status;
+        return observeJob('realtime_status', () => setRuntimeStatus(status, {
+          licenseKey,
+          generation,
+          reason: statusReason
+        })).catch((error) => {
+          Logger.warn('[PosSync] Cambio de estado realtime bloqueado:', error);
+        });
+      },
+      onConnectionRestored: () => {
+        if (!isRuntimeGenerationCurrent(generation, licenseKey) || !runtime.started || !canSchedule()) return;
+        return posSyncOrchestrator.schedulePullIncremental('realtime_restored').catch((error) => {
+          Logger.warn('[PosSync] Pull tras recuperar realtime fallo:', error);
+        });
+      }
+    }
+  });
+
+  if (executionScope && !ownsScopedPosRealtimeListener(runtime.realtimeChannel, executionScope)) {
+    executionScope.markUnobservable('pos_realtime_internal_reconnect_lifetime');
+  }
+
+  runtime.realtimeTopic = posTopic;
+};
+
 const attachOnlineListener = () => {
   if (runtime.onlineListener || typeof window === 'undefined') return;
 
   const owner = executionScope;
   runtime.onlineListener = async () => {
-    if (!canSchedule(owner)) return;
+    if (!canSchedule(owner) || !runtime.started) return;
+    const generation = runtime.generation;
+    const licenseKey = runtime.licenseKey;
+    const posTopic = runtime.realtimeTopic;
+    if (!runtime.realtimeChannel && posTopic) {
+      try {
+        await observeJob('online_realtime', () => startRealtimeChannel({ posTopic, licenseKey, generation }));
+      } catch (error) {
+        Logger.warn('[PosSync] Inicio de realtime al reconectar fallo:', error);
+      }
+    }
+    if (!isRuntimeGenerationCurrent(generation, licenseKey) || !runtime.started || !canSchedule(owner)) return;
     Logger.log('[POS Sync] Procesando outbox online.');
 
     try {
@@ -323,7 +383,11 @@ export const posSyncOrchestrator = {
       );
       if (!isRuntimeGenerationCurrent(startGeneration, licenseKey)) return { started: false, status: runtime.status };
 
+      runtime.realtimeStatus = SYNC_STATUS.DEGRADED;
       if (!isBrowserOnline()) {
+        // Keep the topic so the existing online source can install the listener.
+        runtime.realtimeTopic = posTopic;
+        runtime.realtimeStatus = SYNC_STATUS.OFFLINE;
         await setRuntimeStatus(SYNC_STATUS.OFFLINE, {
           licenseKey,
           generation: startGeneration,
@@ -340,7 +404,7 @@ export const posSyncOrchestrator = {
         };
       }
 
-      await setRuntimeStatus(SYNC_STATUS.ONLINE, { licenseKey, reason, generation: startGeneration });
+      await setRuntimeStatus(SYNC_STATUS.DEGRADED, { licenseKey, reason, generation: startGeneration });
       if (!isRuntimeGenerationCurrent(startGeneration, licenseKey) || !canSchedule()) return { started: false, stale: true };
       await runEntityStartHooks({ licenseDetails, licenseKey, reason });
       if (!isRuntimeGenerationCurrent(startGeneration, licenseKey)) return { started: false, status: runtime.status };
@@ -362,46 +426,7 @@ export const posSyncOrchestrator = {
             return { started: false, status: runtime.status };
           }
 
-          runtime.realtimeChannel = startPosRealtimeListener({
-            posTopic,
-            executionScope,
-            callbacks: {
-              onPosChangeAvailable: ({ eventType, entity, changeSeq } = {}) => {
-                if (!isRuntimeGenerationCurrent(startGeneration, licenseKey) || !runtime.started || !canSchedule()) return;
-                Logger.log('[POS Sync] Realtime avisó cambios; programando pull incremental.', {
-                  eventType,
-                  entity,
-                  changeSeq
-                });
-
-                return this.schedulePullIncremental('realtime').catch((error) => {
-                  Logger.warn('[PosSync] Pull por realtime fallo:', error);
-                });
-              },
-              onStatusChange: ({ status, reason: statusReason }) => {
-                if (!isRuntimeGenerationCurrent(startGeneration, licenseKey) || !runtime.started || !canSchedule()) return;
-                return observeJob('realtime_status', () => setRuntimeStatus(status, {
-                  licenseKey,
-                  generation: startGeneration,
-                  reason: statusReason
-                })).catch((error) => {
-                  Logger.warn('[PosSync] Cambio de estado realtime bloqueado:', error);
-                });
-              },
-              onConnectionRestored: () => {
-                if (!isRuntimeGenerationCurrent(startGeneration, licenseKey) || !runtime.started || !canSchedule()) return;
-                return this.schedulePullIncremental('realtime_restored').catch((error) => {
-                  Logger.warn('[PosSync] Pull tras recuperar realtime fallo:', error);
-                });
-              }
-            }
-          });
-
-          if (executionScope && !ownsScopedPosRealtimeListener(runtime.realtimeChannel, executionScope)) {
-            executionScope.markUnobservable('pos_realtime_internal_reconnect_lifetime');
-          }
-
-          runtime.realtimeTopic = posTopic;
+          startRealtimeChannel({ posTopic, licenseKey, generation: startGeneration });
         }
       } else {
         await setRuntimeStatus(SYNC_STATUS.DEGRADED, {
@@ -526,7 +551,7 @@ export const posSyncOrchestrator = {
     const elapsedSinceLastForegroundPull = now - runtime.lastForegroundPullAt;
 
     if (
-      runtime.realtimeChannel &&
+      runtime.realtimeStatus === SYNC_STATUS.ONLINE &&
       runtime.lastForegroundPullAt > 0 &&
       elapsedSinceLastForegroundPull < POS_SYNC_FOCUS_PULL_COOLDOWN_MS
     ) {
@@ -670,7 +695,10 @@ export const posSyncOrchestrator = {
       await syncMetaService.setLastPullAt(operationLicenseKey);
       await syncMetaService.setLastPullError(null, operationLicenseKey);
 
-      await setRuntimeStatus(SYNC_STATUS.ONLINE, {
+      // A completed HTTP pull does not establish a live Realtime subscription.
+      await setRuntimeStatus(isBrowserOnline()
+        ? (runtime.realtimeStatus === SYNC_STATUS.ONLINE ? SYNC_STATUS.ONLINE : SYNC_STATUS.DEGRADED)
+        : SYNC_STATUS.OFFLINE, {
         licenseKey: operationLicenseKey,
         generation: operationGeneration,
         reason: `pull_${reason}`
