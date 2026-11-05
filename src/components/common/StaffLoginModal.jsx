@@ -4,6 +4,7 @@ import { useAppStore } from '../../store/useAppStore';
 import LicenseContextSummary from './LicenseContextSummary';
 import PasswordField from './PasswordField';
 import { classifyActorAuthorityError } from '../../services/auth/actorAuthorityErrors';
+import PreloginSupportAccess from './PreloginSupportAccess';
 import './StaffLoginModal.css';
 
 const SAFE_LOGIN_MESSAGES = Object.freeze({
@@ -240,22 +241,24 @@ export default function StaffLoginModal() {
         )}
 
         <div className="staff-login-footer">
-          <div className="staff-login-footer-actions">
-            {canSwitchAccess && (
-              <button
-                type="button"
-                className="auth-mode-back-button"
-                onClick={returnToLicenseAccessChoice}
-                disabled={isLoading}
-              >
-                <ArrowLeft size={16} aria-hidden="true" />
-                Elegir otro perfil
+          <PreloginSupportAccess screen="Acceso Staff">
+            <div className="staff-login-footer-actions">
+              {canSwitchAccess && (
+                <button
+                  type="button"
+                  className="auth-mode-back-button"
+                  onClick={returnToLicenseAccessChoice}
+                  disabled={isLoading}
+                >
+                  <ArrowLeft size={16} aria-hidden="true" />
+                  Elegir otro perfil
+                </button>
+              )}
+              <button type="button" className="ui-button ui-button--ghost" onClick={logout} disabled={isLoading}>
+                Cambiar licencia
               </button>
-            )}
-            <button type="button" className="ui-button ui-button--ghost" onClick={logout} disabled={isLoading}>
-              Cambiar licencia
-            </button>
-          </div>
+            </div>
+          </PreloginSupportAccess>
         </div>
       </section>
     </div>

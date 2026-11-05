@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import {
-  Mail,
   Wifi,
   WifiOff,
   Package,
@@ -12,8 +11,7 @@ import {
 } from 'lucide-react';
 import './WelcomeModal.css';
 import Logger from '../../services/Logger';
-import { showMessageModal } from '../../services/utils';
-import { buildSupportMailtoUrl, copyTextToClipboard, getSupportEmail } from '../../services/support/supportContact';
+import PreloginSupportAccess from './PreloginSupportAccess';
 import { mapLicenseActivationResult, mapFreeLicenseCreationResult } from './licenseActivationErrorMapper';
 
 
@@ -128,46 +126,6 @@ export default function WelcomeModal() {
       actionInFlight.current = false;
       setLoadingAction(null);
     }
-  };
-
-  const handleSupportClick = () => {
-    const supportEmail = getSupportEmail();
-
-    const deviceInfo = `
-Dispositivo: ${navigator.userAgent}
-Sistema: ${navigator.platform}
-Idioma: ${navigator.language}
-Fecha: ${new Date().toLocaleString()}
-    `.trim();
-
-    const subject = 'Ayuda - No puedo acceder a Lanzo POS';
-    const body = `Hola equipo de Lanzo,
-
-Necesito ayuda para acceder a la aplicación.
-
-INFORMACIÓN DE MI DISPOSITIVO:
-${deviceInfo}
-
-DESCRIBE TU PROBLEMA:
-[Escribe aquí qué está pasando]
-
-¡Gracias por su ayuda!`;
-
-    copyTextToClipboard(supportEmail).then((copied) => {
-      if (copied === true) {
-        showMessageModal(`📧 Correo de soporte copiado: ${supportEmail}\n\nSi no se abre tu aplicación de correo, puedes escribirnos manualmente.`);
-        return;
-      }
-      showMessageModal(`No pudimos copiar el correo automáticamente. Si tu aplicación de correo no se abre, escribe a: ${supportEmail}`);
-    }).catch((error) => {
-      Logger.warn('No se pudo copiar el correo de soporte:', error);
-      showMessageModal(`No pudimos copiar el correo automáticamente. Si tu aplicación de correo no se abre, escribe a: ${supportEmail}`);
-    });
-
-    const mailtoUrl = buildSupportMailtoUrl({ to: supportEmail, subject, body });
-    setTimeout(() => {
-      window.location.href = mailtoUrl;
-    }, 500);
   };
 
   return (
@@ -328,14 +286,7 @@ DESCRIBE TU PROBLEMA:
           )}
 
           <div className="support-footer">
-            <button
-              type="button"
-              className="btn-support"
-              onClick={handleSupportClick}
-            >
-              <Mail size={16} aria-hidden="true" />
-              ¿Necesitas ayuda? Contáctanos
-            </button>
+            <PreloginSupportAccess screen="Bienvenida" />
           </div>
         </div>
 

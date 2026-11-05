@@ -21,6 +21,7 @@ import {
   Shirt,
   Hammer
 } from 'lucide-react';
+import PreloginSupportAccess from './PreloginSupportAccess';
 import './SetupModal.css';
 import Logger from '../../services/Logger';
 import { fetchLegalTerms, acceptLegalTerms, fetchLegalPolicyState } from '../../services/supabase';
@@ -643,9 +644,11 @@ export default function SetupModal() {
           </div>
 
           <div className="setup-external-actions">
-            <button type="button" className="ui-button ui-button--ghost setup-change-license" onClick={logout} disabled={isBusy}>
-              Cambiar licencia
-            </button>
+            <PreloginSupportAccess screen="Configuración del negocio">
+              <button type="button" className="ui-button ui-button--ghost setup-change-license" onClick={logout} disabled={isBusy}>
+                Cambiar licencia
+              </button>
+            </PreloginSupportAccess>
           </div>
         </div>
       </div>

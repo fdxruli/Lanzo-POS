@@ -3,6 +3,7 @@ import { ArrowLeft, ArrowRight, BadgeCheck, ShieldCheck, Users } from 'lucide-re
 import { useAppStore } from '../../store/useAppStore';
 import { getBusinessProfile } from '../../services/supabase';
 import LicenseContextSummary from './LicenseContextSummary';
+import PreloginSupportAccess from './PreloginSupportAccess';
 import './AdminAuthModal.css';
 
 export default function LicenseAccessChooser() {
@@ -124,10 +125,12 @@ export default function LicenseAccessChooser() {
         </div>
 
         <footer className="access-choice-footer">
-          <button type="button" className="ui-button ui-button--ghost" onClick={logout}>
-            <ArrowLeft size={17} aria-hidden="true" />
-            Cambiar licencia
-          </button>
+          <PreloginSupportAccess screen="Selección de Administrador / Staff">
+            <button type="button" className="ui-button ui-button--ghost" onClick={logout}>
+              <ArrowLeft size={17} aria-hidden="true" />
+              Cambiar licencia
+            </button>
+          </PreloginSupportAccess>
           <span className="access-choice-security">
             <ShieldCheck size={16} aria-hidden="true" />
             Acceso protegido

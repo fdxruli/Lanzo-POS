@@ -6,6 +6,7 @@ import { classifyActorAuthorityError } from '../../services/auth/actorAuthorityE
 import LicenseContextSummary from './LicenseContextSummary';
 import PasswordField from './PasswordField';
 import { markFreeDeviceTakeoverCompleted } from '../../hooks/usePostDowngradeCashPending';
+import PreloginSupportAccess from './PreloginSupportAccess';
 import './AdminAuthModal.css';
 
 const SAFE_AUTH_ERROR_MESSAGES = Object.freeze({
@@ -385,24 +386,26 @@ export default function AdminLoginModal() {
           </form>
         )}
 
-        {!takeoverRequired && (
-          <div className="auth-modal-actions">
-          {canSwitchAccess && (
-            <button
-              type="button"
-              className="auth-mode-back-button"
-              onClick={returnToLicenseAccessChoice}
-              disabled={loading}
-            >
-              <ArrowLeft size={16} aria-hidden="true" />
-              Elegir otro perfil
+        <PreloginSupportAccess screen="Acceso administrador">
+          {!takeoverRequired && (
+            <div className="auth-modal-actions">
+            {canSwitchAccess && (
+              <button
+                type="button"
+                className="auth-mode-back-button"
+                onClick={returnToLicenseAccessChoice}
+                disabled={loading}
+              >
+                <ArrowLeft size={16} aria-hidden="true" />
+                Elegir otro perfil
+              </button>
+            )}
+            <button type="button" className="ui-button ui-button--ghost" onClick={logout} disabled={loading}>
+              Cambiar licencia
             </button>
+            </div>
           )}
-          <button type="button" className="ui-button ui-button--ghost" onClick={logout} disabled={loading}>
-            Cambiar licencia
-          </button>
-          </div>
-        )}
+        </PreloginSupportAccess>
       </section>
     </div>
   );
