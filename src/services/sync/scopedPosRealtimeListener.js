@@ -115,10 +115,15 @@ export const createScopedPosRealtimeListener = ({ client, topic, callbacks, owne
           connecting = false; current = null;
           // Reconnect cannot overtake retirement. If stop arrives while removal
           // is pending, this task remains observed and reconnect is fenced.
-          await retire(channel);
+          const retirement = retire(channel);
+          try {
+            // Loss of the subscription is effective before cleanup finishes.
+            await notify('onStatusChange', { status: 'degraded', reason: status });
+          } finally {
+            await retirement;
+          }
           if (!allowed()) return;
           reconnect();
-          await notify('onStatusChange', { status: 'degraded', reason: status });
         }
       });
     });
