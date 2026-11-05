@@ -172,6 +172,7 @@ const dispatchPulledEvents = async (events = [], licenseKey = runtime.licenseKey
     return acc;
   }, new Map());
 
+  let handlerError = null;
   for (const [entityType, entityEvents] of grouped.entries()) {
     const handler = entityHandlers.get(entityType);
     if (!handler?.onEvents) continue;
@@ -190,8 +191,12 @@ const dispatchPulledEvents = async (events = [], licenseKey = runtime.licenseKey
     } catch (error) {
       if (isLocalTenantAccessError(error)) throw error;
       Logger.warn(`[PosSync] Handler ${entityType} fallo al consumir eventos:`, error);
+      handlerError ||= error;
     }
   }
+  // Let independent entity cursors progress, but acknowledge the POS page only
+  // when every handler succeeded. A retry resumes each entity at its own cursor.
+  if (handlerError) throw handlerError;
 };
 
 // Shared by startup and the first online event after an offline start.

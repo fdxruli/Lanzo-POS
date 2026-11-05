@@ -29,7 +29,7 @@ vi.mock('../../tenant/localTenantGuard', () => ({
 
 const details = { license_key: 'SYNTHETIC', realtime_topic: 'license:synthetic', features: { cloud_pos_sync: true } };
 const flush = async () => { for (let i = 0; i < 100; i++) await Promise.resolve(); };
-let orchestrator, channels, online, scope;
+let orchestrator, channels, online, scope, syncMetaService;
 beforeEach(async () => {
   vi.resetModules(); vi.clearAllMocks(); vi.useFakeTimers();
   online = true; channels = []; scope = null; mocks.cursor = 0;
@@ -47,6 +47,7 @@ beforeEach(async () => {
     success: true, events: [], latestChangeSeq: sinceChangeSeq, hasMore: false
   }));
   ({ posSyncOrchestrator: orchestrator } = await import('../posSyncOrchestrator'));
+  ({ syncMetaService } = await import('../syncMetaService'));
 });
 afterEach(async () => {
   await orchestrator.stop({ preserveStatus: true });
@@ -105,6 +106,40 @@ describe.each(['legacy', 'scoped'])('existing %s POS Realtime recovery', mode =>
     expect(orchestrator.getStatus().status).toBe('online');
   });
 
+  it('keeps a failed page pending, lets other entity cursors progress, and recovers on the next notice', async () => {
+    await start();
+    const failure = new Error('CUSTOMER_APPLY_FAILED');
+    const customer = vi.fn().mockRejectedValueOnce(failure).mockResolvedValue({ applied: 1 });
+    let productCursor = 0;
+    let productApplications = 0;
+    const product = vi.fn(async () => {
+      if (productCursor < 2) { productApplications += 1; productCursor = 2; }
+    });
+    orchestrator.registerEntitySyncHandler('customer', { onEvents: customer });
+    orchestrator.registerEntitySyncHandler('product', { onEvents: product });
+    const events = [{ entity_type: 'customer', change_seq: 1 }, { entity_type: 'product', change_seq: 2 }];
+    mocks.pull.mockImplementation(async ({ sinceChangeSeq }) => ({
+      success: true, events: sinceChangeSeq < 2 ? events : [], latestChangeSeq: 2, hasMore: false
+    }));
+    syncMetaService.setLastPullAt.mockClear();
+    await orchestrator.pullIncremental('first_notice');
+    expect(mocks.cursor).toBe(0);
+    expect(syncMetaService.setLastPullAt).not.toHaveBeenCalled();
+    expect(syncMetaService.setLastPullError).toHaveBeenLastCalledWith(failure, details.license_key);
+    expect(orchestrator.getStatus()).toMatchObject({ pullInProgress: false, status: 'degraded' });
+    expect(productCursor).toBe(2);
+
+    channels[0].broadcast({ payload: { entity_type: 'customer', change_seq: 1 } });
+    await flush(); await vi.advanceTimersByTimeAsync(1000);
+    expect(mocks.pull).toHaveBeenLastCalledWith(expect.objectContaining({ sinceChangeSeq: 0 }));
+    expect(customer).toHaveBeenCalledTimes(2);
+    expect(customer).toHaveBeenLastCalledWith([events[0]], { licenseKey: details.license_key });
+    expect(productApplications).toBe(1);
+    expect(mocks.cursor).toBe(2);
+    expect(syncMetaService.setLastPullError).toHaveBeenLastCalledWith(null, details.license_key);
+    expect(orchestrator.getStatus().pullInProgress).toBe(false);
+  });
+
   it('coalesces duplicate notices and fences callbacks after stop', async () => {
     await start(); channels[0].status('SUBSCRIBED'); await flush();
     await vi.advanceTimersByTimeAsync(1000); mocks.pull.mockClear();
@@ -119,6 +154,47 @@ describe.each(['legacy', 'scoped'])('existing %s POS Realtime recovery', mode =>
     await vi.advanceTimersByTimeAsync(10000);
     expect(mocks.pull).not.toHaveBeenCalled();
     expect(channels).toHaveLength(1);
+  });
+
+  it('retains earlier committed POS pages when a later handler fails', async () => {
+    await start();
+    const onEvents = vi.fn().mockResolvedValueOnce({ applied: 1 }).mockRejectedValueOnce(new Error('SECOND_PAGE_FAILED'))
+      .mockResolvedValue({ applied: 1 });
+    orchestrator.registerEntitySyncHandler('customer', { onEvents });
+    mocks.pull.mockImplementation(async ({ sinceChangeSeq }) => ({
+      success: true,
+      events: [{ entity_type: 'customer', change_seq: sinceChangeSeq + 1 }],
+      latestChangeSeq: sinceChangeSeq + 1,
+      hasMore: sinceChangeSeq === 0
+    }));
+    await orchestrator.pullIncremental('two_pages');
+    expect(mocks.cursor).toBe(1);
+    expect(onEvents).toHaveBeenCalledTimes(2);
+    await orchestrator.pullIncremental('retry_second_page');
+    expect(mocks.pull).toHaveBeenLastCalledWith(expect.objectContaining({ sinceChangeSeq: 1 }));
+    expect(onEvents).toHaveBeenCalledTimes(3);
+    expect(mocks.cursor).toBe(2);
+  });
+
+  it('runs an already-pending pull after a handler failure without locking or acknowledging the failed attempt', async () => {
+    await start();
+    let rejectFirstApply;
+    const onEvents = vi.fn().mockImplementationOnce(() => new Promise((_resolve, reject) => { rejectFirstApply = reject; }))
+      .mockImplementationOnce(async () => {
+        expect(mocks.cursor).toBe(0);
+        return { applied: 1 };
+      });
+    orchestrator.registerEntitySyncHandler('customer', { onEvents });
+    mocks.pull.mockResolvedValue({ success: true, events: [{ entity_type: 'customer', change_seq: 1 }], latestChangeSeq: 1, hasMore: false });
+    const firstPull = orchestrator.pullIncremental('first_notice');
+    await flush();
+    expect(rejectFirstApply).toEqual(expect.any(Function));
+    await expect(orchestrator.pullIncremental('notice_during_apply')).resolves.toMatchObject({ reason: 'pull_in_progress_pending' });
+    rejectFirstApply(new Error('LOCAL_APPLY_FAILED'));
+    await firstPull;
+    expect(onEvents).toHaveBeenCalledTimes(2);
+    expect(mocks.cursor).toBe(1);
+    expect(orchestrator.getStatus()).toMatchObject({ pullInProgress: false, pendingPull: false });
   });
 
   it('does not suppress foreground recovery using a disconnected channel handle', async () => {

@@ -6,7 +6,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
-  cloud: { upsertCustomer: vi.fn(), deleteCustomer: vi.fn(), migrateLocalCustomers: vi.fn(), pullCustomerSnapshot: vi.fn() },
+  cloud: { upsertCustomer: vi.fn(), deleteCustomer: vi.fn(), migrateLocalCustomers: vi.fn(), pullCustomerSnapshot: vi.fn(), pullCustomerChanges: vi.fn() },
   creditCloud: { pullCreditChanges: vi.fn(), migrateLocalCredit: vi.fn() },
   orchestrator: { registerEntitySyncHandler: vi.fn(), pullIncremental: vi.fn() },
   actorPermission: { allowed: true, actorType: 'admin' }
@@ -248,6 +248,7 @@ beforeEach(async () => {
   mocks.cloud.deleteCustomer.mockReset();
   mocks.cloud.migrateLocalCustomers.mockReset();
   mocks.cloud.pullCustomerSnapshot.mockReset();
+  mocks.cloud.pullCustomerChanges.mockReset();
   mocks.creditCloud.pullCreditChanges.mockReset();
   mocks.creditCloud.migrateLocalCredit.mockReset();
   mocks.orchestrator.registerEntitySyncHandler.mockClear();
@@ -265,6 +266,111 @@ afterEach(async () => {
 });
 
 describe('customerRepository IndexedDB integration', () => {
+  it('keeps the customer cursor pending on a failed batch and retries from that cursor', async () => {
+    setCloudMode();
+    const original = remoteCustomer('retry-phone');
+    await customerLocalRepository.applyCloudCustomer(original);
+    await syncMetaService.setMeta('customers_last_change_seq', 4, { licenseKey: TEST_LICENSE_KEY });
+    const changed = remoteCustomer(original.id, { phone: '5557654321', phone_key: '5557654321', server_version: 2 });
+    mocks.cloud.pullCustomerChanges.mockResolvedValue({ success: true, customers: [changed], latest_change_seq: 7 });
+    const failure = new Error('LOCAL_APPLY_FAILED');
+    const apply = vi.spyOn(customerLocalRepository, 'applyCloudCustomerInCurrentTransaction')
+      .mockRejectedValueOnce(failure);
+    const onUpdate = vi.fn();
+    window.addEventListener('lanzo:customers-sync-updated', onUpdate);
+    try {
+      await expect(customerSyncHandler.onEvents([{ entity_type: 'customer' }], { licenseKey: TEST_LICENSE_KEY })).rejects.toBe(failure);
+      expect(await syncMetaService.getMeta('customers_last_change_seq', 0, { licenseKey: TEST_LICENSE_KEY })).toBe(4);
+      expect(onUpdate).not.toHaveBeenCalled();
+      expect(await db.table(STORES.CUSTOMERS).get(original.id)).toMatchObject({ phone: original.phone, serverVersion: 1 });
+
+      await expect(customerSyncHandler.onEvents([{ entity_type: 'customer' }], { licenseKey: TEST_LICENSE_KEY }))
+        .resolves.toMatchObject({ applied: 1, latestChangeSeq: 7 });
+      expect(mocks.cloud.pullCustomerChanges.mock.calls.map(([request]) => request.sinceChangeSeq)).toEqual([4, 4]);
+      expect(onUpdate).toHaveBeenCalledTimes(1);
+      expect(await syncMetaService.getMeta('customers_last_change_seq', 0, { licenseKey: TEST_LICENSE_KEY })).toBe(7);
+      expect(await db.table(STORES.CUSTOMERS).get(original.id)).toMatchObject({ phone: changed.phone, serverVersion: 2 });
+    } finally {
+      apply.mockRestore();
+      window.removeEventListener('lanzo:customers-sync-updated', onUpdate);
+    }
+  });
+
+  it('preserves Local financial history and its conflict atomically inside a customer batch', async () => {
+    setCloudMode();
+    const local = { id: 'batch-history', name: 'Historia Local', phone: '5553334497', debt: 22, debtCents: 2200, creditLimit: 100, syncStatus: 'local', financialSource: 'local' };
+    const movement = { id: 'batch-history-entry', customerId: local.id, type: 'INITIAL_BALANCE', amount: '22', balanceAfter: '22' };
+    await db.table(STORES.CUSTOMERS).put(local);
+    await db.table(STORES.CUSTOMER_LEDGER).put(movement);
+    const before = await db.table(STORES.CUSTOMERS).get(local.id);
+    const incoming = remoteCustomer(local.id, { phone: '5559998888', phone_key: '5559998888', server_version: 2 });
+    const applyOriginal = customerLocalRepository.applyCloudCustomerInCurrentTransaction.bind(customerLocalRepository);
+    const apply = vi.spyOn(customerLocalRepository, 'applyCloudCustomerInCurrentTransaction').mockImplementation(async (row, options) => {
+      if (row.id === 'fail-after-history') throw new Error('BATCH_ROLLBACK');
+      return applyOriginal(row, options);
+    });
+    try {
+      await expect(customerLocalRepository.applyCloudCustomers([incoming, remoteCustomer('fail-after-history')])).rejects.toThrow('BATCH_ROLLBACK');
+      expect(await db.table(STORES.CUSTOMERS).get(local.id)).toEqual(before);
+      expect(await db.table(STORES.SYNC_CACHE).count()).toBe(0);
+      expect(await db.table(POS_SYNC_STORES.CONFLICTS).count()).toBe(0);
+      expect(await db.table(STORES.CUSTOMER_LEDGER).toArray()).toEqual([movement]);
+    } finally {
+      apply.mockRestore();
+    }
+    const [protectedCustomer] = await customerLocalRepository.applyCloudCustomers([incoming]);
+    expect(protectedCustomer).toMatchObject({ debt: 22, debtCents: 2200, creditLimit: 100, syncStatus: 'conflict', conflictReason: 'HISTORICAL_DEBT_PRESERVATION_REQUIRED' });
+    expect((await db.table(STORES.SYNC_CACHE).get(`historical-credit:v1:customer:${local.id}`)).value)
+      .toMatchObject({ originalCustomer: before, originalLedgerEntries: [movement] });
+    expect(await db.table(POS_SYNC_STORES.CONFLICTS).count()).toBe(1);
+    await customerLocalRepository.applyCloudCustomers([incoming]);
+    expect(await db.table(POS_SYNC_STORES.CONFLICTS).count()).toBe(1);
+    expect(await db.table(STORES.CUSTOMER_LEDGER).toArray()).toEqual([movement]);
+  });
+
+  it('notifies committed customer pages even when a later page fails and retries at the individual cursor', async () => {
+    setCloudMode();
+    mocks.cloud.pullCustomerChanges
+      .mockResolvedValueOnce({ success: true, customers: [remoteCustomer('committed-page')], latest_change_seq: 7, has_more: true })
+      .mockRejectedValueOnce(new Error('NEXT_PAGE_FAILED'))
+      .mockResolvedValueOnce({ success: true, customers: [], latest_change_seq: 7 });
+    const onUpdate = vi.fn();
+    window.addEventListener('lanzo:customers-sync-updated', onUpdate);
+    try {
+      await expect(customerSyncHandler.onEvents([{ entity_type: 'customer' }], { licenseKey: TEST_LICENSE_KEY })).rejects.toThrow('NEXT_PAGE_FAILED');
+      expect(await syncMetaService.getMeta('customers_last_change_seq', 0, { licenseKey: TEST_LICENSE_KEY })).toBe(7);
+      expect(onUpdate).toHaveBeenCalledTimes(1);
+      await expect(customerSyncHandler.onEvents([{ entity_type: 'customer' }], { licenseKey: TEST_LICENSE_KEY })).resolves.toMatchObject({ applied: 0 });
+      expect(mocks.cloud.pullCustomerChanges.mock.calls.map(([request]) => request.sinceChangeSeq)).toEqual([0, 7, 7]);
+      expect(onUpdate).toHaveBeenCalledTimes(1);
+    } finally {
+      window.removeEventListener('lanzo:customers-sync-updated', onUpdate);
+    }
+  });
+
+  it('applies an incremental customer batch through the real handler and notifies after commit', async () => {
+    setCloudMode();
+    const original = remoteCustomer('incremental-phone');
+    await customerLocalRepository.applyCloudCustomer(original);
+    const changed = remoteCustomer(original.id, { phone: '5557654321', phone_key: '5557654321', server_version: 2 });
+    mocks.cloud.pullCustomerChanges.mockResolvedValueOnce({
+      success: true, customers: [changed], latest_change_seq: 7, has_more: false
+    });
+    const observed = [];
+    const onUpdate = () => observed.push(db.table(STORES.CUSTOMERS).get(original.id));
+    window.addEventListener('lanzo:customers-sync-updated', onUpdate);
+    try {
+      await expect(customerSyncHandler.onEvents([{ entity_type: 'customer', change_seq: 7 }], {
+        licenseKey: TEST_LICENSE_KEY
+      })).resolves.toMatchObject({ applied: 1, latestChangeSeq: 7 });
+      expect(await db.table(STORES.CUSTOMERS).get(original.id)).toMatchObject({ phone: changed.phone, serverVersion: 2 });
+      expect(await syncMetaService.getMeta('customers_last_change_seq', 0, { licenseKey: TEST_LICENSE_KEY })).toBe(7);
+      expect(await Promise.all(observed)).toMatchObject([{ phone: changed.phone, serverVersion: 2 }]);
+    } finally {
+      window.removeEventListener('lanzo:customers-sync-updated', onUpdate);
+    }
+  });
+
   it('HDG preserves $22 and its Local movements after a rejected migration, Cloud zero, delayed ack and restart', async () => {
     setCloudMode();
     const local = {

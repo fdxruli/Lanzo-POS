@@ -202,6 +202,9 @@ export const customerSyncHandler = {
 
       const latestChangeSeq = normalizeChangeSeq(response, sinceChangeSeq);
       actorHandle.assertCurrent();
+      // This page is committed. A later page may fail, so notify before its
+      // cursor makes a retry skip these already-applied customers.
+      if (appliedCustomers.length > 0) notifyCustomersChanged();
       if (latestChangeSeq > sinceChangeSeq) {
         sinceChangeSeq = latestChangeSeq;
         await syncMetaService.setMeta(CUSTOMER_LAST_CHANGE_SEQ_KEY, sinceChangeSeq, { licenseKey });
@@ -212,10 +215,6 @@ export const customerSyncHandler = {
       if (customers.length === 0 && latestChangeSeq === sinceChangeSeq) {
         hasMore = false;
       }
-    }
-
-    if (applied > 0) {
-      notifyCustomersChanged();
     }
 
     return { applied, latestChangeSeq: sinceChangeSeq };
