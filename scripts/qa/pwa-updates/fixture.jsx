@@ -5,6 +5,7 @@ import { useAppStore } from './store';
 import * as worker from '../../../src/pwa/adminServiceWorker';
 import * as monitor from '../../../src/pwa/adminServiceWorkerUpdateMonitor';
 import { APP_BUILD_ID } from '../../../src/config/appVersion';
+import '../../../src/index.css';
 import '../../../src/styles/design-tokens.css';
 import '../../../src/styles/buttons.css';
 import '../../../src/styles/ui-card.css';
