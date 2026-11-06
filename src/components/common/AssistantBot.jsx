@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { X, Send, Sparkles, Lightbulb, MapPin } from 'lucide-react';
+import { X, Send, Sparkles, Lightbulb, MapPin, ArrowUpRight, LayoutGrid, MessageCircle } from 'lucide-react';
 import { GLOBAL_ALERT, acknowledgeGlobalAlert } from '../../config/botContext';
 import { BOT_RUBROS } from '../../config/botContextByRubro';
 import { normalizeBusinessTypes } from '../../utils/businessType';
@@ -28,6 +28,8 @@ const AssistantBot = ({ enabled = true, globalAlertEligible = false, isSuppresse
   const cloud = isCloudPosSyncEnabled(license);
   const [online, setOnline] = useState(() => navigator.onLine !== false);
   const [open, setOpen] = useState(false);
+  const [showResources, setShowResources] = useState(false);
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
   const [dismissed, setDismissed] = useState(false);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
@@ -41,7 +43,8 @@ const AssistantBot = ({ enabled = true, globalAlertEligible = false, isSuppresse
   const pending = useRef(null);
   const sequence = useRef(0);
   const lastSubmission = useRef(null);
-  const endRef = useRef(null);
+  const historyRef = useRef(null);
+  const containerRef = useRef(null);
   const launcherRef = useRef(null);
   const panelRef = useRef(null);
   const panelOpen = open || showAlert;
@@ -60,9 +63,13 @@ const AssistantBot = ({ enabled = true, globalAlertEligible = false, isSuppresse
     setMessages([]);
     setInput('');
     setBusy(false);
+    setShowResources(false);
   }, [contextKey, motorEnabled]);
   useEffect(() => () => { pending.current = null; }, []);
-  useEffect(() => { endRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' }); }, [messages, busy]);
+  useEffect(() => {
+    const history = historyRef.current;
+    if (history && !showResources) history.scrollTop = history.scrollHeight;
+  }, [messages, busy, showResources]);
   useEffect(() => {
     // Focus the panel without summoning the phone keyboard automatically.
     if (panelOpen) panelRef.current?.focus();
@@ -71,8 +78,11 @@ const AssistantBot = ({ enabled = true, globalAlertEligible = false, isSuppresse
   useEffect(() => {
     if (!panelOpen || !window.visualViewport) return;
     const updateViewport = () => {
-      panelRef.current?.style.setProperty('--bot-viewport-height', `${window.visualViewport.height}px`);
-      panelRef.current?.style.setProperty('--bot-viewport-top', `${window.visualViewport.offsetTop}px`);
+      const viewport = window.visualViewport;
+      const inset = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop);
+      containerRef.current?.style.setProperty('--bot-viewport-height', `${viewport.height}px`);
+      containerRef.current?.style.setProperty('--bot-keyboard-inset', `${inset}px`);
+      setKeyboardOpen(inset > 120);
     };
     updateViewport();
     window.visualViewport.addEventListener('resize', updateViewport);
@@ -106,6 +116,7 @@ const AssistantBot = ({ enabled = true, globalAlertEligible = false, isSuppresse
     add({ type: 'user', message: text });
     setInput('');
     setBusy(true);
+    setShowResources(false);
     try {
       const response = await askBot(text, { pathname: location.pathname, search: location.search, tab: localTab, businessType, actorType: actor.actorType, cloud, online });
       if (isCurrent()) add({ type: 'bot', ...response, retry: response.retryable ? text : undefined });
@@ -126,10 +137,13 @@ const AssistantBot = ({ enabled = true, globalAlertEligible = false, isSuppresse
   };
   if (isSuppressed || (!enabled && !showAlert)) return null;
   const suggestions = screen.guides.slice(0, 3);
+  const quickActions = [...new Map((screen.actions || [])
+    .filter(action => actionAllowed(action.path) && action.path !== location.pathname + location.search)
+    .map(action => [action.path, action])).values()].slice(0, 4);
   return (
-    <div className={`lanzo-bot-container ${panelOpen ? 'open' : 'closed'} ${hasItems && location.pathname === '/' ? 'has-items' : ''}`}>
+    <div ref={containerRef} className={`lanzo-bot-container ${panelOpen ? 'open' : 'closed'} ${hasItems && location.pathname === '/' ? 'has-items' : ''} ${keyboardOpen && panelOpen ? 'keyboard-open' : ''} ${showAlert ? 'alert-active' : ''}`}>
       {panelOpen && (
-        <section ref={panelRef} tabIndex={-1} className="lanzo-bot-card" role="region" aria-label="Lanzó Bot" onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); close(); } }}>
+        <section id="lanzo-bot-panel" ref={panelRef} tabIndex={-1} className="lanzo-bot-card" role="region" aria-label="Lanzó Bot" onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); close(); } }}>
           <div className="bot-header">
             <div className="bot-heading">
               <h2 className="bot-title"><Sparkles size={17} />{showAlert ? GLOBAL_ALERT.title : 'Lanzó Bot'}</h2>
@@ -145,28 +159,48 @@ const AssistantBot = ({ enabled = true, globalAlertEligible = false, isSuppresse
             </div> : <>
               <p className="chat-context-note">{businessLabel} · {cloud ? 'Nube' : 'Free / Local'} · {online ? 'Con conexión' : 'Sin conexión'}</p>
               <div className="chat-container">
-                {workerError && <p role="status">{workerError}</p>}
-                <div className="chat-messages" role="log" aria-label="Conversación con Lanzó Bot" aria-live="polite" aria-relevant="additions" aria-busy={busy}>
-                  {messages.length === 0 && <div className="chat-welcome"><p>Te guío paso a paso en {screen.label}. La ayuda operativa funciona sin internet.</p></div>}
-                  {messages.map(message => {
-                    const actions = (message.actions || []).filter(action => actionAllowed(action.path));
-                    return <div key={message.id} className={`chat-message ${message.type}`}><div className="message-bubble">
-                      {message.title && <strong className="bot-response-title">{message.title}</strong>}
-                      <p className="bot-response-text">{message.message}</p>
-                      {message.tips?.length > 0 && <ul className="message-tips">{message.tips.map(tip => <li key={tip}>{tip}</li>)}</ul>}
-                      {actions.map(action => <button type="button" key={action.path} className="inline-action-btn" onClick={() => navigateAction(action)}>{action.label}</button>)}
-                      {message.actions?.length > 0 && actions.length === 0 && <p className="chat-context-note">El atajo no está disponible para los permisos o las funciones de tu sesión. Puedes consultar los pasos con un administrador.</p>}
-                      {message.options?.map(option => <button type="button" key={option.query} className="option-btn" disabled={busy} onClick={() => send(option.query)}>{option.label}</button>)}
-                      {message.retry && <button type="button" className="inline-action-btn" disabled={busy} onClick={() => send(message.retry, { retry: true })}>Reintentar pregunta</button>}
-                    </div></div>;
-                  })}
-                  <div ref={endRef} />
-                </div>
+                {workerError && <p className="bot-warning" role="status">{workerError}</p>}
+                {(messages.length === 0 || showResources) ? (
+                  <div className="bot-resources" aria-label="Ayuda de la pantalla">
+                    <section className="bot-context-block">
+                      <h3><Sparkles size={15} aria-hidden="true" /> ¿Qué puedes hacer aquí?</h3>
+                      <p>{screen.description || 'Preparando la ayuda de esta pantalla…'}</p>
+                    </section>
+                    {quickActions.length > 0 && <section className="bot-resource-group" aria-label="Accesos rápidos">
+                      <h3><LayoutGrid size={15} aria-hidden="true" /> Accesos rápidos</h3>
+                      <div className="bot-quick-actions">
+                        {quickActions.map(action => (
+                          <button type="button" key={action.path} onClick={() => navigateAction(action)} aria-label={'Ir a ' + action.label}>
+                            <span>{action.label}</span><ArrowUpRight size={15} aria-hidden="true" />
+                          </button>
+                        ))}
+                      </div>
+                    </section>}
+                    {suggestions.length > 0 && <section className="bot-resource-group" aria-label="Preguntas sugeridas">
+                      <h3><Lightbulb size={15} aria-hidden="true" /> Preguntas sugeridas</h3>
+                      <div className="suggested-questions">{suggestions.map(guide => <button key={guide.id} type="button" disabled={busy} onClick={() => send(guide.question)}>{guide.question}</button>)}</div>
+                    </section>}
+                  </div>
+                ) : (
+                  <div ref={historyRef} className="chat-messages" role="log" aria-label="Conversación con Lanzó Bot" aria-live="polite" aria-relevant="additions" aria-busy={busy}>
+                    {messages.map(message => {
+                      const actions = (message.actions || []).filter(action => actionAllowed(action.path));
+                      return <div key={message.id} className={'chat-message ' + message.type}><div className="message-bubble">
+                        {message.title && <strong className="bot-response-title">{message.title}</strong>}
+                        <p className="bot-response-text">{message.message}</p>
+                        {message.tips?.length > 0 && <ul className="message-tips">{message.tips.map(tip => <li key={tip}>{tip}</li>)}</ul>}
+                        {actions.map(action => <button type="button" key={action.path} className="inline-action-btn" onClick={() => navigateAction(action)}>{action.label}</button>)}
+                        {message.actions?.length > 0 && actions.length === 0 && <p className="chat-context-note">El atajo no está disponible para los permisos o las funciones de tu sesión. Puedes consultar los pasos con un administrador.</p>}
+                        {message.options?.map(option => <button type="button" key={option.query} className="option-btn" disabled={busy} onClick={() => send(option.query)}>{option.label}</button>)}
+                        {message.retry && <button type="button" className="inline-action-btn" disabled={busy} onClick={() => send(message.retry, { retry: true })}>Reintentar pregunta</button>}
+                      </div></div>;
+                    })}
+                  </div>
+                )}
                 {busy && <p role="status" className="bot-processing">Procesando pregunta…</p>}
-                <details className="bot-suggestions" open={messages.length === 0}>
-                  <summary><Lightbulb size={14} /> Preguntas de esta pantalla</summary>
-                  <div className="suggested-questions">{suggestions.map(guide => <button key={guide.id} type="button" disabled={busy} onClick={() => send(guide.question)}>{guide.question}</button>)}</div>
-                </details>
+                {messages.length > 0 && <button type="button" className="bot-switch-view" onClick={() => setShowResources(value => !value)} aria-pressed={showResources}>
+                  <MessageCircle size={15} aria-hidden="true" />{showResources ? 'Volver a la conversación' : 'Ver accesos y preguntas'}
+                </button>}
                 <form className="chat-input-wrapper" onSubmit={event => { event.preventDefault(); send(); }}>
                   <input className="chat-input" aria-label="Pregunta para el asistente" placeholder="Escribe tu pregunta…" value={input} maxLength={500} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && event.nativeEvent.isComposing) event.preventDefault(); }} />
                   <button type="submit" className="send-btn" aria-label="Enviar pregunta" disabled={busy || !input.trim()}><Send size={18} /></button>
@@ -176,7 +210,7 @@ const AssistantBot = ({ enabled = true, globalAlertEligible = false, isSuppresse
           </div>
         </section>
       )}
-      {!panelOpen && <button ref={launcherRef} type="button" className="lanzo-bot-fab" title="Abrir asistente" aria-label="Abrir Lanzó Bot" aria-expanded={panelOpen} onClick={() => setOpen(true)}><img src="/boticon.svg" alt="" width="28" height="28" /></button>}
+      {!showAlert && <button ref={launcherRef} type="button" className="lanzo-bot-fab" title={open ? 'Cerrar asistente' : 'Abrir asistente'} aria-label={open ? 'Cerrar Lanzó Bot' : 'Abrir Lanzó Bot'} aria-controls={panelOpen ? 'lanzo-bot-panel' : undefined} aria-expanded={panelOpen} onClick={() => open ? close() : setOpen(true)}>{open ? <X size={22} aria-hidden="true" /> : <img src="/boticon.svg" alt="" width="28" height="28" />}</button>}
     </div>
   );
 };

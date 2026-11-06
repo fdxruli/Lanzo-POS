@@ -34,6 +34,41 @@ beforeEach(() => { workerCreations = 0; vi.stubGlobal('Worker', TestWorker); moc
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe('AssistantBot question path', () => {
+  it('shows compact contextual help and authorized navigation without requesting data', async () => {
+    mount(); openBot();
+    expect(await screen.findByText(/Desde aquí puedes buscar o escanear productos/)).toBeVisible();
+    expect(screen.getByText('¿Qué puedes hacer aquí?')).toBeVisible();
+    expect(screen.getByText('Accesos rápidos')).toBeVisible();
+    expect(screen.getByText('Preguntas sugeridas')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Ir a Crear un producto' })).toBeVisible();
+    expect(workerCreations).toBe(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Ir a Crear un producto' }));
+    expect(screen.getByTestId('path')).toHaveTextContent('/productos?tab=add');
+    expect(screen.getByRole('button', { name: 'Abrir Lanzó Bot' })).toBeVisible();
+  });
+  it('does not show quick actions when the current actor lacks navigation permission', async () => {
+    mocks.role = 'staff'; mocks.allowed = false;
+    mount(); openBot();
+    expect(await screen.findByText(/Desde aquí puedes buscar o escanear productos/)).toBeVisible();
+    expect(screen.queryByText('Accesos rápidos')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '¿Cómo hago una venta rápida?' })).toBeVisible();
+  });
+  it('prioritizes conversation while allowing users to return to the contextual tools', async () => {
+    mount(); openBot();
+    fireEvent.click(await screen.findByRole('button', { name: '¿Cómo hago una venta rápida?' }));
+    expect(await screen.findByText('Venta rápida')).toBeVisible();
+    expect(screen.queryByText('Accesos rápidos')).not.toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Pregunta para el asistente' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Ver accesos y preguntas' }));
+    expect(screen.getByText('Accesos rápidos')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Volver a la conversación' }));
+    expect(screen.getByText('Venta rápida')).toBeVisible();
+  });
+  it('uses a specific contextual description when the route has a tab', async () => {
+    mount('/productos?tab=batches'); openBot();
+    expect(await screen.findByText(/Gestionar lotes, busca y selecciona el producto/)).toBeVisible();
+    expect(screen.getByText('Productos e inventario · Gestionar lotes')).toBeVisible();
+  });
   it('does not create an engine while disabled, including global safety notices', () => {
     render(<MemoryRouter><AssistantBot enabled={false} globalAlertEligible /></MemoryRouter>);
     expect(screen.getByRole('button', { name: 'Entendido' })).toBeVisible();

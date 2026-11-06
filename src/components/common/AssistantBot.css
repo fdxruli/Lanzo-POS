@@ -1,69 +1,177 @@
-/* Scoped to the assistant: no generic .close-btn or .action-btn rules escape. */
+/* Lanzó Bot: floating, content-sized, and scoped to the POS design tokens. */
 .lanzo-bot-container {
+  --bot-bottom-offset: max(20px, env(safe-area-inset-bottom, 0px));
   position: fixed;
-  bottom: max(20px, env(safe-area-inset-bottom, 0px));
+  bottom: var(--bot-bottom-offset);
   right: max(20px, env(safe-area-inset-right, 0px));
-  z-index: var(--z-floating-ui, 900);
+  z-index: var(--z-floating-ui, 500);
   font-family: var(--font-family, system-ui);
   color: var(--text-dark);
 }
 .lanzo-bot-container *, .lanzo-bot-container *::before, .lanzo-bot-container *::after { box-sizing: border-box; }
-.lanzo-bot-container button { cursor: pointer; font: inherit; }
-.lanzo-bot-container button:disabled { cursor: wait; opacity: .6; }
-.lanzo-bot-container :is(button, input, summary):focus-visible { outline: 3px solid var(--primary-color); outline-offset: 3px; }
+.lanzo-bot-container button { font: inherit; cursor: pointer; }
+.lanzo-bot-container button:disabled { cursor: not-allowed; opacity: .6; }
+.lanzo-bot-container :is(button, input):focus-visible { outline: 3px solid var(--primary-color); outline-offset: 2px; }
 .lanzo-bot-card {
   position: absolute;
-  bottom: 0;
+  bottom: 66px;
   right: 0;
   display: flex;
   flex-direction: column;
-  width: min(410px, calc(100vw - 32px));
-  height: min(640px, calc(100dvh - 40px));
-  background: var(--card-background-color);
+  width: min(380px, calc(100vw - 24px));
+  max-height: min(560px, calc(100dvh - var(--bot-bottom-offset) - 78px));
+  min-height: 0;
+  overflow: hidden;
   border: 1px solid var(--border-color);
   border-radius: 16px;
+  background: var(--card-background-color);
   box-shadow: var(--box-shadow-lg);
-  overflow: hidden;
 }
 .lanzo-bot-container .bot-header {
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 16px; background: var(--ui-action-primary-bg, var(--primary-color)); color: var(--ui-action-primary-text, white);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex: 0 0 auto;
+  padding: 9px 12px;
+  color: var(--ui-action-primary-text, white);
+  background: var(--ui-action-primary-bg, var(--primary-color));
 }
 .lanzo-bot-container .bot-heading { flex: 1; min-width: 0; }
-.lanzo-bot-container .bot-title { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 17px; color: inherit; }
-.lanzo-bot-container .bot-subtitle { display: flex; align-items: center; gap: 4px; margin-top: 4px; font-size: 12px; overflow-wrap: anywhere; }
-.lanzo-bot-container .close-btn { display: grid; place-items: center; flex-shrink: 0; width: 44px; height: 44px; border: 1px solid currentColor; border-radius: 12px; background: transparent; color: inherit; }
-.lanzo-bot-container .bot-body { display: flex; flex: 1; flex-direction: column; min-height: 0; padding: 12px; gap: 8px; background: var(--background-color); overflow: auto; }
-.lanzo-bot-container .chat-context-note { margin: 0; font-size: 12px; color: var(--text-light); line-height: 1.5; }
-.lanzo-bot-container .chat-container { display: flex; flex: 1; min-height: 0; flex-direction: column; gap: 8px; }
-.lanzo-bot-container .chat-messages { flex: 1; min-height: 80px; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 12px; padding: 4px; }
-.lanzo-bot-container .chat-welcome { font-size: 14px; line-height: 1.5; }
-.lanzo-bot-container .chat-message { display: flex; min-width: 0; }
-.lanzo-bot-container .chat-message.user { justify-content: flex-end; }
-.lanzo-bot-container .message-bubble { padding: 12px; border: 1px solid var(--border-color); border-radius: 12px; background: var(--card-background-color); max-width: 96%; font-size: 14px; line-height: 1.55; overflow-wrap: anywhere; }
-.lanzo-bot-container .user .message-bubble { background: var(--ui-action-primary-bg); color: var(--ui-action-primary-text); max-width: 88%; }
-.lanzo-bot-container .bot-response-title { display: block; margin-bottom: 8px; }
-.lanzo-bot-container .bot-response-text { margin: 0; white-space: pre-line; }
-.lanzo-bot-container .message-tips { margin: 10px 0 0; padding-left: 18px; font-size: 12px; }
-.lanzo-bot-container .message-tips li + li { margin-top: 6px; }
-.lanzo-bot-container :is(.inline-action-btn, .option-btn, .suggested-questions button, .action-btn) { padding: 10px; min-height: 44px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--card-background-color); color: var(--text-dark); font-size: 13px; text-align: left; line-height: 1.4; overflow-wrap: anywhere; }
-.lanzo-bot-container :is(.inline-action-btn, .option-btn) { margin-top: 8px; width: 100%; }
-.lanzo-bot-container .bot-suggestions { flex-shrink: 0; max-height: 35%; overflow: auto; }
-.lanzo-bot-container .bot-suggestions summary { padding: 8px 4px; cursor: pointer; font-size: 13px; }
-.lanzo-bot-container .bot-suggestions summary svg { vertical-align: middle; }
-.lanzo-bot-container .suggested-questions { display: grid; gap: 6px; }
-.lanzo-bot-container .bot-processing { margin: 0; font-size: 13px; color: var(--text-light); }
-.lanzo-bot-container .chat-input-wrapper { display: flex; flex-shrink: 0; gap: 8px; margin: 0; padding-top: 8px; border-top: 1px solid var(--border-color); }
-.lanzo-bot-container .chat-input { flex: 1; min-width: 0; padding: 10px; min-height: 44px; border: 1px solid var(--border-color); border-radius: 8px; background: var(--card-background-color); color: var(--text-dark); font-size: 16px; }
-.lanzo-bot-container .send-btn { display: grid; place-items: center; flex-shrink: 0; width: 44px; height: 44px; border: 0; border-radius: 8px; background: var(--ui-action-primary-bg); color: var(--ui-action-primary-text); }
-.lanzo-bot-container .alert-content { display: grid; gap: 12px; font-size: 14px; line-height: 1.6; }
-.lanzo-bot-fab { display: grid; place-items: center; width: 54px; height: 54px; border: 1px solid var(--border-color); border-radius: 50%; background: var(--card-background-color); box-shadow: var(--box-shadow-lg); }
-@media (max-width: 1024px) {
-  .lanzo-bot-container { bottom: calc(85px + env(safe-area-inset-bottom, 0px)); right: 12px; }
-  .lanzo-bot-container.has-items { bottom: calc(150px + env(safe-area-inset-bottom, 0px)); }
-  .lanzo-bot-card { position: fixed; top: calc(var(--bot-viewport-top, 0px) + env(safe-area-inset-top, 0px) + 8px); right: max(8px, env(safe-area-inset-right, 0px)); bottom: auto; width: min(410px, calc(100vw - 16px)); height: min(640px, calc(var(--bot-viewport-height, 100dvh) - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 16px)); }
+.lanzo-bot-container .bot-title { display: flex; align-items: center; gap: 7px; margin: 0; font-size: 16px; color: inherit; }
+.lanzo-bot-container .bot-subtitle { display: flex; align-items: center; gap: 4px; margin-top: 2px; font-size: 12px; overflow-wrap: anywhere; }
+.lanzo-bot-container .close-btn {
+  display: grid; place-items: center; flex: 0 0 auto; padding: 0;
+  width: 44px; height: 44px; border: 1px solid currentColor;
+  border-radius: 11px; background: transparent; color: inherit;
 }
-@media (prefers-reduced-motion: reduce) { .lanzo-bot-container * { scroll-behavior: auto; } }
-
-.lanzo-bot-container :is(.close-btn, .send-btn) { padding: 0; }
-.lanzo-bot-container :is(.close-btn, .send-btn) svg { width: 20px; height: 20px; flex-shrink: 0; }
+.lanzo-bot-container .bot-body {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-height: 0;
+  padding: 11px 12px 12px;
+  overflow: hidden;
+  background: var(--background-color);
+}
+.lanzo-bot-container .chat-context-note { margin: 0; font-size: 12px; color: var(--text-light); line-height: 1.45; }
+.lanzo-bot-container .chat-container { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+.lanzo-bot-container .bot-resources {
+  display: flex; flex-direction: column; gap: 11px;
+  min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.lanzo-bot-container .bot-context-block {
+  border: 1px solid var(--border-color);
+  border-radius: 11px;
+  background: var(--card-background-color);
+  padding: 10px 11px;
+}
+.lanzo-bot-container :is(.bot-context-block, .bot-resource-group) h3 {
+  display: flex; align-items: center; gap: 6px;
+  margin: 0 0 6px; font-size: 12px; font-weight: 700;
+  color: var(--text-dark);
+}
+.lanzo-bot-container .bot-context-block p { margin: 0; font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+.lanzo-bot-container .bot-resource-group { min-width: 0; }
+.lanzo-bot-container .bot-quick-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.lanzo-bot-container .bot-quick-actions button {
+  display: flex; align-items: center; justify-content: space-between; gap: 4px;
+  padding: 7px 9px; min-height: 44px; min-width: 0;
+  border: 1px solid var(--border-color); border-radius: 9px;
+  background: var(--card-background-color); color: var(--text-dark);
+  font-size: 13px; line-height: 1.3; text-align: left;
+}
+.lanzo-bot-container .bot-quick-actions button span { min-width: 0; overflow-wrap: anywhere; }
+.lanzo-bot-container .bot-quick-actions button svg { flex: 0 0 auto; color: var(--primary-color); }
+.lanzo-bot-container .suggested-questions { display: grid; gap: 5px; }
+.lanzo-bot-container .suggested-questions button {
+  min-height: 44px; padding: 7px 9px; border: 1px solid var(--border-color);
+  border-radius: 9px; background: var(--card-background-color);
+  color: var(--text-dark); text-align: left; font-size: 13px; line-height: 1.35;
+}
+.lanzo-bot-container .chat-messages {
+  display: flex; flex-direction: column; gap: 9px;
+  flex: 0 1 auto; min-height: 0; max-height: 350px;
+  overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin;
+  padding: 2px 2px 5px;
+}
+.lanzo-bot-container .chat-message { display: flex; min-width: 0; flex: 0 0 auto; }
+.lanzo-bot-container .chat-message.user { justify-content: flex-end; }
+.lanzo-bot-container .message-bubble {
+  padding: 10px 11px; max-width: 96%;
+  border: 1px solid var(--border-color); border-radius: 11px;
+  background: var(--card-background-color);
+  font-size: 14px; line-height: 1.5; overflow-wrap: anywhere;
+}
+.lanzo-bot-container .user .message-bubble {
+  max-width: 88%; color: var(--ui-action-primary-text);
+  background: var(--ui-action-primary-bg);
+}
+.lanzo-bot-container .bot-response-title { display: block; margin-bottom: 6px; }
+.lanzo-bot-container .bot-response-text { margin: 0; white-space: pre-line; }
+.lanzo-bot-container .message-tips { margin: 8px 0 0; padding-left: 18px; font-size: 12px; }
+.lanzo-bot-container .message-tips li + li { margin-top: 5px; }
+.lanzo-bot-container :is(.inline-action-btn, .option-btn, .action-btn) {
+  min-height: 44px; padding: 9px 10px; border: 1px solid var(--border-color);
+  border-radius: 8px; background: var(--card-background-color);
+  color: var(--text-dark); font-size: 12px; text-align: left;
+  line-height: 1.4; overflow-wrap: anywhere;
+}
+.lanzo-bot-container :is(.inline-action-btn, .option-btn) { display: block; margin-top: 7px; width: 100%; }
+.lanzo-bot-container .bot-switch-view {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  min-height: 44px; width: 100%; padding: 7px 9px;
+  border: 1px solid var(--border-color); border-radius: 8px;
+  background: var(--card-background-color); color: var(--text-dark);
+  font-size: 12px; font-weight: 600;
+}
+.lanzo-bot-container .bot-processing, .lanzo-bot-container .bot-warning { margin: 0; color: var(--text-light); font-size: 12px; line-height: 1.4; }
+.lanzo-bot-container .chat-input-wrapper {
+  display: flex; flex: 0 0 auto; gap: 7px;
+  margin: 0; padding-top: 8px; border-top: 1px solid var(--border-color);
+}
+.lanzo-bot-container .chat-input {
+  flex: 1; min-width: 0; min-height: 44px; padding: 9px 10px;
+  border: 1px solid var(--border-color); border-radius: 9px;
+  background: var(--card-background-color); color: var(--text-dark);
+  font-size: 16px;
+}
+.lanzo-bot-container .send-btn {
+  display: grid; place-items: center; flex: 0 0 auto; padding: 0;
+  width: 44px; height: 44px; border: 0; border-radius: 9px;
+  background: var(--ui-action-primary-bg); color: var(--ui-action-primary-text);
+}
+.lanzo-bot-container .alert-content { display: grid; gap: 9px; font-size: 13px; line-height: 1.5; }
+.lanzo-bot-container .lanzo-bot-fab {
+  display: grid; place-items: center; width: 54px; height: 54px; padding: 0;
+  border: 1px solid var(--border-color); border-radius: 50%;
+  background: var(--card-background-color); color: var(--text-dark);
+  box-shadow: var(--box-shadow-lg);
+}
+.lanzo-bot-container.alert-active .lanzo-bot-card { bottom: 0; }
+@media (max-width: 1023px) {
+  .lanzo-bot-container {
+    --bot-bottom-offset: calc(var(--mobile-bottom-nav-height, 65px) + var(--safe-area-bottom, env(safe-area-inset-bottom, 0px)) + 16px);
+    right: max(12px, env(safe-area-inset-right, 0px));
+  }
+  .lanzo-bot-container.has-items {
+    --bot-bottom-offset: calc(var(--mobile-bottom-nav-height, 65px) + var(--safe-area-bottom, env(safe-area-inset-bottom, 0px)) + 81px);
+  }
+  .lanzo-bot-card { width: min(380px, calc(100vw - 24px)); }
+  .lanzo-bot-container.keyboard-open {
+    --bot-bottom-offset: calc(var(--bot-keyboard-inset, 0px) + 8px);
+  }
+  .lanzo-bot-container.keyboard-open .lanzo-bot-card {
+    bottom: 0;
+    max-height: calc(var(--bot-viewport-height, 100dvh) - 16px);
+  }
+  .lanzo-bot-container.keyboard-open .lanzo-bot-fab { visibility: hidden; pointer-events: none; }
+}
+@media (max-width: 360px) {
+  .lanzo-bot-container .bot-header { padding-inline: 10px; }
+  .lanzo-bot-container .bot-body { padding-inline: 10px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .lanzo-bot-container * { scroll-behavior: auto; transition: none; }
+}
