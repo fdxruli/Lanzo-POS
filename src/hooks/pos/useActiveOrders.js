@@ -1232,6 +1232,15 @@ export const useActiveOrders = create(
       const state = get();
       const order = state.activeOrders.get(orderId);
       if (!order) return { success: false, reason: 'La orden no existe en sesión.' };
+      const provisionalBlock = validateCartCheckoutPriority({
+        state, orderId, catalog: usePosCatalogStore.getState().items || []
+      });
+      if (provisionalBlock) {
+        return {
+          success: false, code: provisionalBlock.code,
+          reason: `La venta ${provisionalBlock.origin} tiene prioridad provisional de estas unidades.`
+        };
+      }
       const actorHandle = actorRuntimeController.getState?.()?.status === 'granted'
         ? actorRuntimeController.capture() : null;
 
@@ -1245,6 +1254,14 @@ export const useActiveOrders = create(
         await db.transaction('rw', db.table(STORES.SALES), async () => {
           const existing = await db.table(STORES.SALES).get(orderId);
           actorHandle?.assertCurrent();
+          const latestState = get();
+          const latestBlock = validateCartCheckoutPriority({
+            state: latestState, orderId, catalog: usePosCatalogStore.getState().items || []
+          });
+          if (latestBlock || latestState.activeOrders.get(orderId) !== order) {
+            lockAcquired = false;
+            return;
+          }
 
           // La orden puede no estar en DB todavía (borrador en memoria)
           if (existing && existing.isLockedForCheckout === true) {
