@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const dbState = vi.hoisted(() => ({
   sales: new Map(),
@@ -72,6 +72,10 @@ vi.mock('../../../services/db/dexie', () => ({
 
       return {
         toArray: vi.fn(async () => dbState.batches),
+        bulkGet: vi.fn(async (ids) => {
+          const batches = dbState.batchLoadPromise ? await dbState.batchLoadPromise : dbState.batches;
+          return ids.map((id) => batches.find((batch) => batch.id === id));
+        }),
         where: vi.fn(() => ({
           equals: vi.fn(() => ({
             filter: vi.fn(() => ({
@@ -116,7 +120,9 @@ const makeOrder = (id, items = []) => ({
 });
 
 describe('useActiveOrders unified store', () => {
+  afterEach(() => vi.restoreAllMocks());
   beforeEach(() => {
+    vi.spyOn(actorRuntimeController, 'capture').mockReturnValue({ actorKey: 'staff:one', assertCurrent: vi.fn() });
     dbState.sales.clear();
     dbState.products.clear();
     dbState.batches = [];
@@ -669,7 +675,7 @@ describe('useActiveOrders unified store', () => {
     expect(releaseCommittedStock).not.toHaveBeenCalled();
   });
 
-  it('identifies a single named source and opens it only on explicit, authorized action', () => {
+  it('identifies a single named source and opens it only on explicit, authorized action', async () => {
     const actor = vi.spyOn(actorRuntimeController, 'getState')
       .mockReturnValue({ status: 'granted', actorKey: 'staff:one' });
     const capture = vi.spyOn(actorRuntimeController, 'capture')
@@ -683,16 +689,17 @@ describe('useActiveOrders unified store', () => {
         tableData: 'Venta A', actorKey: 'staff:one' };
       const b = { ...makeOrder('B'), actorKey: 'staff:one' };
       useActiveOrders.setState({ activeOrders: new Map([['A', a], ['B', b]]), currentOrderId: 'B' });
-      const blocked = useActiveOrders.getState().addItem(item, 'B');
+      dbState.batches = [{ id: 'lot-1', productId: 'X', stock: 2, committedStock: 0, isActive: true }];
+      const blocked = await useActiveOrders.getState().addItem(item, 'B');
       expect(blocked.code).toBe('LOCAL_INVENTORY_NOT_TRANSFERABLE');
       const notice = useActiveOrders.getState().inventoryConflictNotice;
       expect(notice).toMatchObject({
         productName: 'Producto X', sourceCount: 1, singleSourceLabel: 'Venta A',
         sourceOrderId: 'A', provisionalInOtherCarts: 2,
-        availableBeforeCarts: null, freeInThisCart: null
+        availableBeforeCarts: 2, freeInThisCart: 0
       });
       expect(useActiveOrders.getState().currentOrderId).toBe('B');
-      expect(capture).not.toHaveBeenCalled();
+      expect(capture).toHaveBeenCalledOnce(); // Inventory read checks authority; navigation still awaits the tap.
       expect(useActiveOrders.getState().openInventoryConflictSource()).toBe(true);
       expect(capture).toHaveBeenCalledWith('pos');
       expect(useActiveOrders.getState().currentOrderId).toBe('A');
@@ -705,7 +712,7 @@ describe('useActiveOrders unified store', () => {
     }
   });
 
-  it('does not invent a source when multiple carts use the same batch', () => {
+  it('does not invent a source when multiple carts use the same batch', async () => {
     const item = {
       id: 'X', name: 'Producto X', price: 10, saleType: 'unit',
       batchId: 'lot-1', trackStock: true, stock: 2, committedStock: 0
@@ -716,11 +723,12 @@ describe('useActiveOrders unified store', () => {
     useActiveOrders.setState({
       activeOrders: new Map([['A', a], ['C', c], ['B', b]]), currentOrderId: 'B'
     });
-    const blocked = useActiveOrders.getState().addItem(item, 'B');
+    dbState.batches = [{ id: 'lot-1', productId: 'X', stock: 2, committedStock: 0, isActive: true }];
+    const blocked = await useActiveOrders.getState().addItem(item, 'B');
     expect(blocked.code).toBe('LOCAL_INVENTORY_NOT_TRANSFERABLE');
     expect(useActiveOrders.getState().inventoryConflictNotice).toMatchObject({
       sourceCount: 2, sourceOrderId: null, singleSourceLabel: null,
-      availableBeforeCarts: null, provisionalInOtherCarts: 2, freeInThisCart: null
+      availableBeforeCarts: 2, provisionalInOtherCarts: 2, freeInThisCart: 0
     });
     expect(useActiveOrders.getState().openInventoryConflictSource()).toBe(false);
     expect(useActiveOrders.getState().activeOrders.get('A')).toBe(a);
@@ -739,8 +747,8 @@ describe('useActiveOrders unified store', () => {
     };
     expect(useActiveOrders.getState().addItem(item, 'B').code).toBe('LOCAL_INVENTORY_NOT_TRANSFERABLE');
     expect(useActiveOrders.getState().inventoryConflictNotice).toMatchObject({
-      availableBeforeCarts: 0, provisionalInOtherCarts: 0,
-      freeInThisCart: 0, sourceCount: 0, sourceOrderId: null
+      availableBeforeCarts: null, provisionalInOtherCarts: 0,
+      freeInThisCart: null, sourceCount: 0, sourceOrderId: null
     });
     useActiveOrders.getState().dismissInventoryConflictNotice();
     expect(useActiveOrders.getState().inventoryConflictNotice).toBeNull();
@@ -937,7 +945,7 @@ describe('useActiveOrders unified store', () => {
     ]);
   });
 
-  it('stores explicit productId for catalog, variant, modifier, and scanner lines', () => {
+  it('stores explicit productId for catalog, variant, modifier, and scanner lines', async () => {
     useActiveOrders.setState({
       activeOrders: new Map([['one', makeOrder('one')]]),
       currentOrderId: 'one'
@@ -952,7 +960,8 @@ describe('useActiveOrders unified store', () => {
       saleType: 'unit',
       trackStock: false
     });
-    useActiveOrders.getState().addItem({
+    dbState.batches = [{ id: 'batch-2', productId: 'product-2', stock: 2, committedStock: 0, isActive: true }];
+    await useActiveOrders.getState().addItem({
       id: 'product-2',
       parentId: 'product-2',
       lineId: 'line-2',

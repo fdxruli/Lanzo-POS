@@ -1,10 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { BarcodeFormat, DecodeHintType } from '@zxing/library';
 import { useZxingScanner } from '../../hooks/scanner/useZxingScanner';
-import {
-  useOrderStore,
-  summarizeScannedProducts,
-} from '../../store/useOrderStore';
+import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
+import { summarizeScannedProducts } from '../../store/orderActions';
 import { resolveWithCache } from '../../services/barcodeCache';
 import { playBeep, playErrorBeep } from '../../services/audioBeep';
 import { createCartLineId, getCartLineId } from '../../utils/cartLineIdentity';
@@ -39,7 +37,7 @@ const buildScanLineId = (product) =>
   createCartLineId(product);
 
 export default function ScannerModal({ show, onClose, onScanSuccess }) {
-  const addMultipleScannedProducts = useOrderStore(
+  const addMultipleScannedProducts = useActiveOrders(
     (state) => state.addMultipleScannedProducts
   );
 
@@ -201,7 +199,7 @@ export default function ScannerModal({ show, onClose, onScanSuccess }) {
     processingRef.current = true;
 
     try {
-      const result = addMultipleScannedProducts(scannedItems);
+      const result = await addMultipleScannedProducts(scannedItems);
 
       if (!result?.success || result.failedCount > 0) {
         playErrorBeep();

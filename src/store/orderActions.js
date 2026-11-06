@@ -31,9 +31,6 @@ import {
   restaurantCloudTableBlockedResult
 } from '../services/restaurant/restaurantCloudTableGuards';
 
-// Presentation-only hint. A symbol never serializes into sale/customer payloads.
-export const INVENTORY_NOTICE_NET_AVAILABILITY = Symbol('inventory-notice-net-availability');
-
 const OPEN_FULFILLMENT_STATUS = 'open';
 const TABLE_ORDER_TYPE = 'table';
 
@@ -134,6 +131,9 @@ export const getInventoryReservationKey = (item) => {
   return productId ? `product:${productId}` : null;
 };
 
+// Zero/negative legacy lines are not sellable and cannot offset real claims.
+export const getInventoryClaimQuantity = (value) => Math.max(0, Number(value) || 0);
+
 const getSessionReservedQuantity = (activeOrders = new Map(), candidate, excludeOrderId = null) => {
   const reservationKey = getInventoryReservationKey(candidate);
   if (!reservationKey) return 0;
@@ -145,17 +145,32 @@ const getSessionReservedQuantity = (activeOrders = new Map(), candidate, exclude
 
     (order?.items || []).forEach((item) => {
       if (getInventoryReservationKey(item) !== reservationKey) return;
-      reserved += Number(item.quantity) || 0;
+      reserved += getInventoryClaimQuantity(item.quantity);
     });
   });
 
   return normalizeStock(reserved);
 };
 
-export const getSessionAvailableStock = (state, product, orderId) => {
+// Batch cart stock is net display data; only a freshly read selected batch
+// can establish authority. Never interpret parent committedStock as a batch's.
+export const getCartAvailableStock = (product, batch = null) => {
+  if (product?.batchId && (!batch || batch.id !== product.batchId
+    || batch.productId !== (getCartProductId(product) || product.id)
+    || batch.isActive !== true || batch.status === 'inactive'
+    || batch.deletedAt || batch.deletedTimestamp)) return null;
+  if (!product?.batchId && product?.batchManagement?.enabled) return null;
+  const snapshot = getOperationalStockSnapshot(product?.batchId ? batch : product);
+  return snapshot.valid && snapshot.physicalStock >= 0
+    && snapshot.physicalStock >= snapshot.committedStock
+    ? snapshot.availableStock : null;
+};
+
+export const getSessionAvailableStock = (state, product, orderId, batch = null) => {
   if (!product?.trackStock && !product?.batchId) return product?.stock;
 
-  const baseAvailableStock = getAvailableStock(product);
+  const baseAvailableStock = getCartAvailableStock(product, batch);
+  if (baseAvailableStock === null) return null;
   const reservedInOtherOrders = getSessionReservedQuantity(state.activeOrders, product, orderId);
 
   return normalizeStock(Math.max(0, baseAvailableStock - reservedInOtherOrders));
@@ -301,6 +316,7 @@ export const createOrderActions = (set, get) => ({
           return get().addItem({ ...product }, orderId);
         }
 
+        const actorHandle = actorRuntimeController.capture('pos');
         set((state) => {
           const pendingInventoryResolutions = new Map(state.pendingInventoryResolutions || []);
           const pendingCount = pendingInventoryResolutions.get(orderId) || 0;
@@ -335,11 +351,6 @@ export const createOrderActions = (set, get) => ({
           const salePrice = isCommercialVariant
             ? toFiniteNumber(validBatch?.price)
             : toFiniteNumber(product.price);
-          const batchStockSnapshot = validBatch ? getOperationalStockSnapshot(validBatch) : null;
-          const verifiedBatchAvailability = batchStockSnapshot?.valid
-            && batchStockSnapshot.physicalStock >= batchStockSnapshot.committedStock
-            && batchStockSnapshot.physicalStock >= 0
-            ? batchStockSnapshot.availableStock : null;
           const productToAdd = validBatch
             ? {
                 ...product,
@@ -347,26 +358,26 @@ export const createOrderActions = (set, get) => ({
                 price: salePrice,
                 cost: validBatch.cost,
                 stock: getAvailableStock(validBatch),
-                // Informational snapshot only. The selected line's stock is
-                // already net of batch commitments; parent's committedStock
-                // must never be subtracted from it again in the notice.
-                [INVENTORY_NOTICE_NET_AVAILABILITY]: verifiedBatchAvailability,
                 isVariant: isCommercialVariant,
                 skuDetected: validBatch.sku || product.sku,
                 originalPrice: salePrice
               }
             : { ...product };
 
-          return get().addItem(productToAdd, orderId);
+          actorHandle.assertCurrent();
+          return await get().addItem(productToAdd, orderId);
         } catch (error) {
           // An isolation failure is never a valid reason to add the parent
           // product: doing so would turn a blocked tenant operation into a
           // cross-context business mutation.
+          actorHandle.assertCurrent();
           if (isLocalTenantAccessError(error) || isTenantRuntimeError(error)) throw error;
           console.warn("Fallo al resolver el lote antes de agregar el producto:", error);
-          return get().addItem({ ...product }, orderId);
+          return { success: false, code: 'LOCAL_INVENTORY_NOT_TRANSFERABLE' };
         } finally {
-          set((state) => {
+          let contextCurrent = true;
+          try { actorHandle.assertCurrent(); } catch { contextCurrent = false; }
+          if (contextCurrent) set((state) => {
             const pendingInventoryResolutions = new Map(state.pendingInventoryResolutions || []);
             const pendingCount = pendingInventoryResolutions.get(orderId) || 0;
 
@@ -392,7 +403,7 @@ export const createOrderActions = (set, get) => ({
                 if (product.isVariant && product.batchId) {
                   return item.batchId === product.batchId;
                 }
-                return item.id === product.id;
+                return item.id === product.id && (item.batchId || null) === (product.batchId || null);
               })
             : -1;
 
@@ -540,7 +551,8 @@ export const createOrderActions = (set, get) => ({
             if (resolvedProduct.isVariant && resolvedProduct.batchId) {
               return item.batchId === resolvedProduct.batchId;
             }
-            return item.id === resolvedProduct.id;
+            return item.id === resolvedProduct.id
+              && (item.batchId || null) === (resolvedProduct.batchId || null);
           });
 
           if (existingItemIndex >= 0) {
@@ -603,10 +615,10 @@ export const createOrderActions = (set, get) => ({
           }
         });
 
-        if (updateResult?.success !== true) {
-          return { success: false, action: null, item: null, code: updateResult?.code || 'SCAN_ADD_REJECTED' };
-        }
-        return result;
+        const finish = (update) => update?.success === true ? result : {
+          success: false, action: null, item: null, code: update?.code || 'SCAN_ADD_REJECTED'
+        };
+        return updateResult?.then ? updateResult.then(finish) : finish(updateResult);
       },
 
       addMultipleScannedProducts: (itemsArray = [], orderId = get().currentOrderId) => {
@@ -635,11 +647,11 @@ export const createOrderActions = (set, get) => ({
           return nextOrder;
         });
 
-        if (updateResult?.success !== true) {
-          return { success: false, addedCount: 0, incrementedCount: 0,
-            failedCount: itemsArray.length, items: [], code: updateResult?.code || 'SCAN_ADD_REJECTED' };
-        }
-        return actionResult;
+        const finish = (update) => update?.success === true ? actionResult : {
+          success: false, addedCount: 0, incrementedCount: 0,
+          failedCount: itemsArray.length, items: [], code: update?.code || 'SCAN_ADD_REJECTED'
+        };
+        return updateResult?.then ? updateResult.then(finish) : finish(updateResult);
       },
 
       updateItemQuantity: (lineId, newQuantity, orderId = get().currentOrderId) => {

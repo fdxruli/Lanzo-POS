@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { actorRuntimeController, createActorRuntimeController } from '../../../services/auth/actorRuntimeController';
+import { getActiveTenantRuntime } from '../../../services/db/tenantRuntimeRouter';
 import { db, STORES } from '../../../services/db/dexie';
 import { openTestTenantRuntime, closeTestTenantRuntime } from '../../../test/tenantRuntimeTestHarness';
 import { useActiveOrders } from '../../../hooks/pos/useActiveOrders';
@@ -107,6 +109,11 @@ const ready = async (props) => {
 
 beforeEach(async () => {
   await openTestTenantRuntime();
+  const actor = createActorRuntimeController({ getTenantAuthority: getActiveTenantRuntime });
+  actor.beginAuthentication({ actorType: 'staff' });
+  actor.grant({ actorType: 'staff', actorId: 'one', sessionId: 's1',
+    tenantOpaqueId: getActiveTenantRuntime().opaqueId, permissions: ['pos'] });
+  vi.spyOn(actorRuntimeController, 'capture').mockImplementation((permission) => actor.capture(permission));
   clearCache();
   useMessageStore.getState().hide();
   useActiveOrders.setState({ activeOrders: new Map(['order-a', 'order-b'].map(id => [id, makeOrder(id)])), currentOrderId: 'order-a', isCurrentOrderLocked: false });

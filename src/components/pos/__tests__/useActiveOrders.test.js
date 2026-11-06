@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { actorRuntimeController } from '../../../services/auth/actorRuntimeController';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const dbState = vi.hoisted(() => ({
   sales: new Map(),
@@ -107,7 +108,9 @@ const makeOrder = (id, items = []) => ({
 });
 
 describe('useActiveOrders unified store', () => {
+  afterEach(() => vi.restoreAllMocks());
   beforeEach(() => {
+    vi.spyOn(actorRuntimeController, 'capture').mockReturnValue({ assertCurrent: vi.fn() });
     dbState.sales.clear();
     dbState.products.clear();
     dbState.batches = [];
