@@ -65,8 +65,13 @@ export function usePosPage() {
     const processBarcode = useCallback(async (code) => {
         const product = await scanProductFast(code);
         if (product) {
+            const orderIdAtScan = useActiveOrders.getState().currentOrderId;
+            const result = await useActiveOrders.getState().addSmartItem(product, orderIdAtScan);
+            if (result?.success !== true) {
+                playErrorBeep();
+                return;
+            }
             playBeep(1000, 'sine');
-            useActiveOrders.getState().addSmartItem(product);
             if (product.saleType === 'bulk') {
                 showMessageModal(`Producto a Granel: ${product.name}`, null, { type: 'warning', duration: 4000 });
                 playBulkProductBeep();
