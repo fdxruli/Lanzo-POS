@@ -1,5 +1,7 @@
 # LANZO_BOT_IMPLEMENTATION_REPORT
 
+> Informe histórico de la primera implementación. La arquitectura vigente y sus mediciones se describen en [LANZO_BOT_INDEPENDENT_WORKER_REPORT](LANZO_BOT_INDEPENDENT_WORKER_REPORT.md).
+
 ## 1. Entrega y alcance
 
 - Repositorio: `fdxruli/Lanzo-POS`.

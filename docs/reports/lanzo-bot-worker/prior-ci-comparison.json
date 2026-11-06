@@ -1,0 +1,31 @@
+{
+  "run": "https://github.com/fdxruli/Lanzo-POS/actions/runs/42153078695",
+  "candidate": "c11f82c362b8ddd5b9b91a811cef26be05ae4937",
+  "main": "5e1b4303e942657c406d91237ffa7ff44db91cec",
+  "shared_exact_failures": 95,
+  "own_regressions": [
+    {
+      "file": "src/architecture/__tests__/adminPwaArchitecture.test.js",
+      "test": "ECOM.PUBLIC.PWA.1 architecture fails the production build when the generated startup closure is not completely precached",
+      "candidate_failure_count": 20,
+      "base_pass_count": 20
+    }
+  ],
+  "shared_examples": [
+    {
+      "file": "scripts/oss/release-boundary.test.mjs",
+      "test": "__FILE_FAILURE__",
+      "diagnostic": "No test suite found in file /home/runner/work/Lanzo-POS/Lanzo-POS/main/scripts/oss/release-boundary.test.mjs"
+    },
+    {
+      "file": "src/tests/useStoreSync.test.js",
+      "test": "__FILE_FAILURE__",
+      "diagnostic": "Cannot find package '@testing-library/react-hooks' imported from /home/runner/work/Lanzo-POS/Lanzo-POS/main/src/tests/useStoreSync.test.js"
+    },
+    {
+      "file": "src/services/__test__/sales/financialStats.test.js",
+      "test": "financialStats solo agrega ventas con status closed en daily stats",
+      "diagnostic": "AssertionError: expected [ { id: '2026-03-12', …(14) } ] to deeply equal [ { id: '2026-03-12', …(7) } ]"
+    }
+  ]
+}
