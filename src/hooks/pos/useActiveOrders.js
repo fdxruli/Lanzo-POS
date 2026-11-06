@@ -1549,13 +1549,14 @@ localTenantAccessController.subscribe((tenantState) => {
     currentOrderId: null,
     isLoading: false,
     pendingInventoryResolutions: new Map(),
-    isCurrentOrderLocked: false
+    isCurrentOrderLocked: false,
+    inventoryConflictNotice: null
   });
 });
 
 export const resetAndHydrateActiveOrdersForTenant = async () => {
   suspendTenantStorageWrites();
-  setActiveOrdersStateUnsafe({ activeOrders: new Map(), currentOrderId: null, isLoading: false, pendingInventoryResolutions: new Map(), isCurrentOrderLocked: false });
+  setActiveOrdersStateUnsafe({ activeOrders: new Map(), currentOrderId: null, isLoading: false, pendingInventoryResolutions: new Map(), isCurrentOrderLocked: false, inventoryConflictNotice: null });
   await useActiveOrders.persist.rehydrate();
   // Initial tenant hydration happens before its DB policy is granted. Actor
   // handoff rehydrates again after tenant authorization and before actor GRANTED.
