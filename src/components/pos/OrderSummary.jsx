@@ -20,6 +20,7 @@ import { useState, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useFeatureConfig } from '../../hooks/useFeatureConfig';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
+import { getSessionAvailableStock } from '../../store/orderActions';
 import {
   buildRestaurantCloudStatusSummary,
   RESTAURANT_CLOUD_STATUS_EVENT,
@@ -111,6 +112,7 @@ export default function OrderSummary({
     state.currentOrderId ? state.activeOrders.get(state.currentOrderId)?.items : undefined
   ));
   const order = useMemo(() => currentOrderItems || [], [currentOrderItems]);
+  const activeOrders = useActiveOrders((state) => state.activeOrders);
   const tableData = useActiveOrders((state) => (
     state.currentOrderId ? state.activeOrders.get(state.currentOrderId)?.tableData || '' : ''
   ));
@@ -578,6 +580,14 @@ export default function OrderSummary({
               const saleUnitLabel = getProductUnitShortLabel(saleUnit);
               const displayQuantity = usesDirectQuantityInput ? Number(quantity).toFixed(3) : quantity;
               const isFractioned = item.conversionFactor?.enabled === true;
+              // A line can carry a historical exceedsStock flag. The physical
+              // stock printed on the line is NOT the stock free in this session.
+              const localStock = item.exceedsStock
+                ? Number(getSessionAvailableStock({ activeOrders }, item, currentOrderId))
+                : null;
+              const safeAdjustmentQuantity = Number.isFinite(localStock)
+                ? Math.max(0, Math.floor(localStock))
+                : 0;
 
               return (
                 <div key={lineId} className={`${itemClasses}${isKitchenCancelled ? ' order-item--kitchen-cancelled' : ''}`}>
@@ -640,16 +650,29 @@ export default function OrderSummary({
                             <AlertTriangle size={15} aria-hidden="true" />
                             Stock insuficiente
                           </strong>
-                          <span>Solo quedan <b>{item.stock}</b> disponibles.</span>
+                          <span>Solo quedan <b>{safeAdjustmentQuantity}</b> unidades libres en esta sesión.</span>
                         </div>
                         <button
                           type="button"
                           className="btn-fix-stock"
-                          onClick={() => updateItemQuantity(lineId, item.stock)}
+                          onClick={() => {
+                            const result = safeAdjustmentQuantity > 0
+                              ? updateItemQuantity(lineId, safeAdjustmentQuantity)
+                              : removeItem(lineId);
+                            if (result?.success === false) {
+                              showMessageModal(
+                                'No se pudo ajustar esta venta. Revisa las cantidades y vuelve a intentarlo.',
+                                null, { type: 'warning' }
+                              );
+                            }
+                          }}
                           disabled={isRemoteTableReview}
-                          title={isRemoteTableReview ? 'Mesa en modo solo lectura' : 'Ajustar cantidad al máximo disponible'}
+                          title={isRemoteTableReview ? 'Mesa en modo solo lectura'
+                            : safeAdjustmentQuantity > 0 ? 'Reducir a las unidades disponibles' : 'Retirar producto sin unidades libres'}
                         >
-                          Ajustar a {item.stock}
+                          {safeAdjustmentQuantity > 0
+                            ? `Ajustar a ${safeAdjustmentQuantity}`
+                            : 'Quitar de esta venta'}
                         </button>
                       </div>
                     )}
