@@ -287,6 +287,35 @@ export const useActiveOrders = create(
       return id;
     },
 
+    /** Remove only the named tab, even if the Multiple Sales toggle changed. */
+    detachOrderFromSession: (orderId, expectedOrder = null) => {
+      const state = get();
+      const order = state.activeOrders.get(orderId);
+      if (!order) return { success: true };
+      if (expectedOrder && order !== expectedOrder) {
+        return { success: false, message: 'La orden cambió durante la operación.' };
+      }
+      const actorKey = actorRuntimeController.getState().actorKey;
+      if (order.actorKey && order.actorKey !== actorKey) {
+        return { success: false, message: 'Esta venta pertenece a otro operador.' };
+      }
+      const nextOrders = new Map(state.activeOrders);
+      nextOrders.delete(orderId);
+      const nextCurrentOrderId = state.currentOrderId === orderId
+        ? (nextOrders.keys().next().value || null) : state.currentOrderId;
+      set({
+        activeOrders: nextOrders,
+        currentOrderId: nextCurrentOrderId,
+        isCurrentOrderLocked: nextCurrentOrderId
+          ? Boolean(nextOrders.get(nextCurrentOrderId)?.isLockedForCheckout) : false
+      });
+      if (get().activeOrders.has(orderId)) {
+        return { success: false, message: 'La sesión impidió cerrar la pestaña.' };
+      }
+      if (nextOrders.size === 0) get().createOrder();
+      return { success: true };
+    },
+
     /**
      * Establish the immutable creation timestamp for an active order once.
      * Checkout snapshots consume this value even when the order has never
@@ -805,27 +834,10 @@ export const useActiveOrders = create(
           });
         }
 
-        // 1. Eliminar de la sesión activa y UI
+        // Conservar todas las demás ventas, aun con el toggle desactivado.
         try {
-          const nextOrders = new Map(get().activeOrders);
-          nextOrders.delete(orderId);
-
-          const enableMultipleOrders = useAppStore.getState().enableMultipleOrders;
-          if (!enableMultipleOrders) {
-            nextOrders.clear();
-            set({ activeOrders: nextOrders, currentOrderId: null });
-
-            get().createOrder();
-          } else {
-            set({ activeOrders: nextOrders });
-
-            if (nextOrders.size > 0) {
-              get().switchOrder(Array.from(nextOrders.keys())[0]);
-            } else {
-              set({ currentOrderId: null });
-              get().createOrder();
-            }
-          }
+          const detached = get().detachOrderFromSession(orderId);
+          if (!detached.success) throw new Error(detached.message);
         } catch (uiErr) {
           console.error("Error actualizando UI en cancelCurrentOrder:", uiErr);
         }
@@ -862,30 +874,10 @@ export const useActiveOrders = create(
           });
         }
 
-        // 1. Actualizar UI inmediatamente
+        // Solo se elimina la orden cancelada.
         try {
-          const nextOrders = new Map(get().activeOrders);
-          nextOrders.delete(orderId);
-
-          const enableMultipleOrders = useAppStore.getState().enableMultipleOrders;
-          if (!enableMultipleOrders) {
-            nextOrders.clear();
-            set({ activeOrders: nextOrders, currentOrderId: null });
-
-            get().createOrder();
-          } else {
-            set({ activeOrders: nextOrders });
-
-            if (state.currentOrderId === orderId) {
-
-              if (nextOrders.size > 0) {
-                get().switchOrder(Array.from(nextOrders.keys())[0]);
-              } else {
-                set({ currentOrderId: null });
-                get().createOrder();
-              }
-            }
-          }
+          const detached = get().detachOrderFromSession(orderId);
+          if (!detached.success) throw new Error(detached.message);
         } catch (uiErr) {
           console.error("Error actualizando UI en cancelOrder:", uiErr);
         }
@@ -921,31 +913,8 @@ export const useActiveOrders = create(
         assertRestaurantCloudTableEditable(existing, 'cancel');
         await cleanupPersistedOrder(orderId, actorHandle, 'Sistema: Venta anulada desde modal de mesas (POS).');
 
-        const state = get();
-        const nextOrders = new Map(state.activeOrders);
-        if (nextOrders.has(orderId)) {
-          nextOrders.delete(orderId);
-        }
-
-        const enableMultipleOrders = useAppStore.getState().enableMultipleOrders;
-        if (!enableMultipleOrders) {
-          nextOrders.clear();
-          set({ activeOrders: nextOrders, currentOrderId: null });
-
-          get().createOrder();
-        } else {
-          set({ activeOrders: nextOrders });
-
-          if (state.currentOrderId === orderId) {
-
-            if (nextOrders.size > 0) {
-              get().switchOrder(Array.from(nextOrders.keys())[0]);
-            } else {
-              set({ currentOrderId: null });
-              get().createOrder();
-            }
-          }
-        }
+        const detached = get().detachOrderFromSession(orderId);
+        if (!detached.success) return detached;
 
         return { success: true };
       } catch (error) {
@@ -1105,28 +1074,8 @@ export const useActiveOrders = create(
 
         await db.table(STORES.SALES).put(closedRecord);
 
-        const nextOrders = new Map(get().activeOrders);
-        nextOrders.delete(orderId);
-
-        const enableMultipleOrders = useAppStore.getState().enableMultipleOrders;
-        if (!enableMultipleOrders) {
-          nextOrders.clear();
-          set({ activeOrders: nextOrders, currentOrderId: null });
-
-          get().createOrder();
-        } else {
-          set({ activeOrders: nextOrders });
-
-          if (state.currentOrderId === orderId) {
-
-            if (nextOrders.size > 0) {
-              get().switchOrder(Array.from(nextOrders.keys())[0]);
-            } else {
-              set({ currentOrderId: null });
-              get().createOrder(); // <-- Aseguramos la creación de una orden si el carrito queda vacío
-            }
-          }
-        }
+        const detached = get().detachOrderFromSession(orderId);
+        if (!detached.success) throw new Error(detached.message);
 
       } catch (error) {
         console.error("Error al cerrar la orden:", error);
