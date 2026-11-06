@@ -41,6 +41,7 @@ import { canReadSalesReports } from '../../services/auth/salesPermissionPolicy';
 import { useActorRuntimeSnapshot } from '../../services/auth/useActorRuntimeSnapshot';
 import { getLicenseStatusPresentation } from '../../utils/licenseStatusPresentation';
 import { createOptionalAdminLazy } from '../../pwa/adminOptionalLazy';
+import { BotScreenProvider } from '../../hooks/useBotScreenContext';
 import './Layout.css';
 
 registerActorOperationalActiveOrders({ useActiveOrders, db, STORES });
@@ -59,7 +60,7 @@ const AssistantBot = createOptionalAdminLazy(
   { surfaceName: 'AssistantBot' }
 );
 
-function Layout() {
+function LayoutContent() {
   const loadStats = useStatsStore((state) => state.loadStats);
   const loadProducts = useInventoryCatalogStore((state) => state.loadInitialProducts);
   const loadSales = useSalesStore((state) => state.loadRecentSales);
@@ -199,10 +200,11 @@ function Layout() {
       <MessageModal />
       <DataSafetyModal />
 
-      {((canReadReports && showAssistantBot) || globalAlertEligible) && (
+      {((actorRuntime.status === 'granted' && showAssistantBot) || globalAlertEligible) && (
         <Suspense fallback={null}>
           <AssistantBot
             key={actorRuntime.generation}
+            enabled={showAssistantBot}
             reportsAllowed={canReadReports}
             globalAlertEligible={globalAlertEligible}
             isSuppressed={isNotFoundPage}
@@ -213,4 +215,6 @@ function Layout() {
   );
 }
 
-export default Layout;
+export default function Layout() {
+  return <BotScreenProvider><LayoutContent /></BotScreenProvider>;
+}

@@ -1,191 +1,50 @@
-/**
- * BOT WEB WORKER
- * Procesamiento de NLP e inteligencia del bot fuera del hilo principal
- * @module workers/bot.worker
- */
+import { BOT_COMPUTATIONS } from './botProtocol';
+import { getInventoryOperationalState, INVENTORY_OPERATIONAL_TYPES } from '../services/inventoryOperationalAlerts';
+import { createFinancialSalesAccumulator } from '../services/sales/financialPolicy';
+import { accumulateProductStats } from '../services/reports/productStats';
+import { processBotMessage } from '../utils/botIntelligence';
+import { getBotScreen } from '../config/botKnowledge';
 
-import {
-  detectIntent,
-  extractEntities,
-  generateResponse,
-  getProactiveSuggestions
-} from '../utils/botIntelligence.js';
-
-// botIntelligence imports services/db, which also imports BackupRiskEvaluator.
-// Keep that chain worker-safe: no UI/browser-only work should run at import time.
-
-/**
- * @typedef {Object} BotRequestPayload
- * @property {string} messageId - UUID único para rastrear la solicitud
- * @property {string} text - Texto de entrada del usuario
- * @property {Object} [context] - Datos contextuales opcionales
- * @property {number} [context.cartCount]
- * @property {number} [context.cartTotal]
- * @property {number} [context.lowStockCount]
- * @property {number} [context.licenseDays]
- * @property {Object} [context.license]
- * @property {string[]} [context.businessType]
- * @property {Object} [context.stats]
- */
-
-/**
- * @typedef {Object} BotResponsePayload
- * @property {string} messageId - UUID que coincide con la solicitud
- * @property {boolean} success - Indica si el procesamiento fue exitoso
- * @property {Object} [response] - Respuesta del bot (si success=true)
- * @property {string} response.title
- * @property {string} response.message
- * @property {string[]} [response.tips]
- * @property {Array<{label:string,path:string,icon?:string}>} [response.actions]
- * @property {Object} [error] - Error details (si success=false)
- * @property {string} error.code
- * @property {string} error.message
- */
-
-/**
- * @typedef {Object} BotErrorPayload
- * @property {string} messageId
- * @property {boolean} success - false
- * @property {Object} error
- * @property {string} error.code
- * @property {string} error.message
- * @property {string} [error.stack]
- */
-
-// ============================================================
-// MANEJO DE MENSAJES
-// ============================================================
-
-/**
- * Procesa una solicitud de procesamiento de mensaje del bot
- * @param {BotRequestPayload} payload
- * @returns {Promise<BotResponsePayload>}
- */
-const processBotMessage = async (payload) => {
-  const { messageId, text, context = {} } = payload;
-
-  if (!messageId || typeof messageId !== 'string') {
-    throw new Error('INVALID_MESSAGE_ID: messageId es requerido y debe ser string');
-  }
-
-  if (!text || typeof text !== 'string') {
-    throw new Error('INVALID_INPUT: text es requerido y debe ser string');
-  }
-
-  // Ejecutar procesamiento de intención
-  const intent = detectIntent(text);
-  
-  // Extraer entidades
-  const entities = extractEntities(text);
-  entities.originalMessage = text;
-
-  // Generar respuesta
-  const response = await generateResponse(intent, entities, context);
-
-  return {
-    messageId,
-    success: true,
-    response
-  };
-};
-
-/**
- * Obtiene sugerencias proactivas del bot
- * @param {Object} payload
- * @param {string} payload.messageId
- * @param {Object} [payload.context]
- * @param {string|null} [payload.context.lastBackupDate]
- * @returns {Promise<{messageId:string,success:true,suggestions:Array}>}
- */
-const processProactiveSuggestions = async (payload) => {
-  const { messageId, context = {} } = payload;
-
-  if (!messageId) {
-    throw new Error('INVALID_MESSAGE_ID: messageId es requerido');
-  }
-
-  const options = {};
-  if (context.lastBackupDate !== undefined) {
-    options.lastBackupDate = context.lastBackupDate;
-  }
-
-  const suggestion = await getProactiveSuggestions(options);
-
-  return {
-    messageId,
-    success: true,
-    suggestions: suggestion ? [suggestion] : []
-  };
-};
-
-// ============================================================
-// EVENT LISTENER PRINCIPAL
-// ============================================================
-
-self.onmessage = async (event) => {
-  const { type, payload } = event.data;
-
-  // Manejo de tipos de mensaje
+let computation = null;
+self.onmessage = async ({ data }) => {
+  const { id, type, payload } = data || {};
+  if (!id) return;
   try {
-    switch (type) {
-      case 'PROCESS_MESSAGE': {
-        const result = await processBotMessage(payload);
-        self.postMessage(result);
-        break;
-      }
-
-      case 'GET_PROACTIVE_SUGGESTIONS': {
-        const result = await processProactiveSuggestions(payload);
-        self.postMessage(result);
-        break;
-      }
-
-      case 'PING': {
-        // Health check para verificar que el worker está activo
-        self.postMessage({
-          messageId: payload?.messageId,
-          success: true,
-          type: 'PONG'
-        });
-        break;
-      }
-
-      default: {
-        self.postMessage({
-          messageId: payload?.messageId,
-          success: false,
-          error: {
-            code: 'UNKNOWN_MESSAGE_TYPE',
-            message: `Tipo de mensaje no soportado: ${type}`
+    if (type === 'CONTEXT') {
+      const screen = getBotScreen(payload.pathname, payload.search, payload.tab, payload.businessType);
+      self.postMessage({ id, type: 'RESULT', value: { label: screen.label, description: screen.description, actions: screen.actions.slice(0, 4), guides: screen.guides.slice(0, 3).map(({ id, question }) => ({ id, question })) } });
+    } else if (type === 'QUESTION') {
+      const value = await processBotMessage(payload.text, payload.context);
+      self.postMessage(value.kind === 'read' ? { id, type: 'READ', intent: value.intent, timeframe: value.timeframe } : { id, type: 'RESULT', value });
+    } else if (type === 'COMPUTE_START' && BOT_COMPUTATIONS.includes(payload.operation)) {
+      computation = { operation: payload.operation, accumulator: payload.operation === 'financial' ? createFinancialSalesAccumulator() : payload.operation === 'stock' ? [] : new Map(), incomplete: false };
+      self.postMessage({ id, type: 'RESULT', value: true });
+    } else if (type === 'COMPUTE_CHUNK' && computation && Array.isArray(payload.sales)) {
+      if (computation.operation === 'financial') {
+        computation.accumulator.add(payload.sales);
+        computation.incomplete ||= payload.sales.some(sale => !sale.items?.length);
+      } else if (computation.operation === 'stock') {
+        for (const product of payload.sales) {
+          const stock = getInventoryOperationalState({ product }).stock;
+          if ([INVENTORY_OPERATIONAL_TYPES.LOW_STOCK, INVENTORY_OPERATIONAL_TYPES.OUT_OF_STOCK].includes(stock.type)) {
+            computation.accumulator.push({ name: product.name || product.productName, currentStock: stock.availableStock, urgency: stock.minStock > 0 ? stock.availableStock / stock.minStock : stock.availableStock <= 0 ? 0 : 1 });
           }
-        });
-      }
+        }
+        computation.accumulator.sort((a, b) => a.urgency - b.urgency);
+        computation.accumulator.length = Math.min(5, computation.accumulator.length);
+      } else accumulateProductStats(payload.sales, computation.accumulator);
+      self.postMessage({ id, type: 'RESULT', value: true });
+    } else if (type === 'COMPUTE_END' && computation) {
+      const value = computation.operation === 'financial'
+        ? { ...computation.accumulator.result(), hasIncompleteItems: computation.incomplete }
+        : computation.operation === 'stock' ? computation.accumulator : [...computation.accumulator.values()].sort((a, b) => b.quantity - a.quantity).slice(0, 5);
+      computation = null;
+      self.postMessage({ id, type: 'RESULT', value });
+    } else {
+      throw new Error('BOT_INVALID_MESSAGE');
     }
-  } catch (error) {
-    // Captura cualquier error no manejado y lo envía al hilo principal
-    self.postMessage({
-      messageId: payload?.messageId,
-      success: false,
-      error: {
-        code: error.name || 'WORKER_PROCESSING_ERROR',
-        message: error.message,
-        stack: error.stack
-      }
-    });
+  } catch {
+    computation = null;
+    self.postMessage({ id, type: 'ERROR', code: 'BOT_PROCESSING_FAILED' });
   }
-};
-
-// Manejo de errores no capturados
-self.onerror = (error) => {
-   
-  console.error('[BotWorker] Error no capturado:', error);
-  // No podemos enviar un postMessage aquí sin messageId context
-  return false;
-};
-
-// Manejo de rechazo de promesas no capturadas
-self.onunhandledrejection = (event) => {
-   
-  console.error('[BotWorker] Promesa rechazada no manejada:', event.reason);
-  event.preventDefault();
 };

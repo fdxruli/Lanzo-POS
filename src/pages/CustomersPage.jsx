@@ -1,3 +1,4 @@
+import { usePublishBotScreen } from '../hooks/useBotScreenContext';
 // src/pages/CustomersPage.jsx
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { AlertTriangle } from 'lucide-react';
@@ -205,6 +206,7 @@ export default function CustomersPage() {
     && customerActorAuthorized
     && settingsAccess.isAdmin;
   const activeTab = resolveCustomerTab(searchParams.get('tab'), customerMessagingTabsAvailable);
+  usePublishBotScreen('/clientes', activeTab);
   const visibleCustomerTabs = CUSTOMER_TABS.filter((tab) => !tab.proFeature || customerMessagingTabsAvailable);
   const customerTabButtonsRef = useRef({});
 

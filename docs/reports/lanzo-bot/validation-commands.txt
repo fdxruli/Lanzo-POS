@@ -1,0 +1,13 @@
+Executed from the repository root. No external business requests or financial operations.
+
+npx vitest run src/components/common/__tests__/AssistantBot.test.jsx src/hooks/__tests__/useBotAssistant.test.jsx src/components/layout/__tests__/Layout.reportAuthorization.test.jsx src/utils/__tests__/botIntelligence.test.js src/services/__tests__/botReadService.test.js src/services/__tests__/botInventoryReads.test.js src/services/reports/__tests__/productStats.test.js src/services/db/__tests__/tenantRuntimeRouter.test.js src/services/__test__/inventoryAnalysis.test.js src/components/ecommerce/__tests__/EcommercePortalSettings.test.jsx src/pages/__tests__/CajaPage.progressiveDisclosure.test.jsx src/pages/__tests__/CajaPage.cashCloseRouting.test.jsx src/config/__tests__/globalAlertEligibility.test.js src/pages/__tests__/SettingsPage.isolation.test.jsx src/pages/__tests__/CustomersPage.navigation.test.jsx src/pwa/__tests__/adminOptionalLazy.test.jsx src/components/pos/__tests__/PosPageContent.physicalScanner.test.jsx src/components/pos/__tests__/PosPageContent.ecommerce.test.jsx --maxWorkers=2
+
+npm run build
+node scripts/admin-startup-precache-audit.mjs
+node scripts/audit-bot-precache.mjs
+
+npm run dev -- --host 127.0.0.1
+python3 scripts/qa/lanzo-bot/smoke.py
+
+python3 -m http.server 4173 --bind 127.0.0.1 --directory dist
+python3 scripts/qa/lanzo-bot/precache.py

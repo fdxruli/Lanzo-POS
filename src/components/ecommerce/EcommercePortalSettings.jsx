@@ -1,3 +1,4 @@
+import { usePublishBotScreen } from '../../hooks/useBotScreenContext';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
@@ -330,6 +331,7 @@ export default function EcommercePortalSettings({ requestedSection = null }) {
   const [customization, setCustomization] = useState(() => portalCustomization(null));
   const [customizationBusy, setCustomizationBusy] = useState(false);
   const [activeSection, setActiveSection] = useState('information');
+  usePublishBotScreen('/portal-online', activeSection);
   const [productSearch, setProductSearch] = useState('');
   const nubeBenefitsHeadingRef = useRef(null);
   const focusNubeBenefitsAfterNavigationRef = useRef(false);

@@ -106,18 +106,12 @@ export const getFinancialQuality = (confirmedRevenue, unconfirmedRevenue) => {
   };
 };
 
-const getLineCost = (item = {}) => {
-  const quantity = normalizeFinancialNumber(item.quantity, 0);
-  const unitCost = normalizeFinancialNumber(item.cost ?? item.unitCost, 0);
-  return Money.multiply(unitCost, quantity);
-};
-
 const getSaleDiscount = (sale = {}) => normalizeFinancialNumber(
   sale.discountTotal ?? sale.discount_total ?? sale.discount,
   0
 );
 
-export const summarizeFinancialSales = (sales = [], productCostMap = new Map()) => {
+export const createFinancialSalesAccumulator = (productCostMap = new Map()) => {
   const totals = {
     totalSales: 0,
     totalRevenue: Money.init(0),
@@ -134,77 +128,87 @@ export const summarizeFinancialSales = (sales = [], productCostMap = new Map()) 
     missingCostItems: Money.init(0)
   };
 
-  (sales || []).forEach((sale = {}) => {
-    if (!isClosedSale(sale) || isCancelledSale(sale)) return;
+  const add = (sales) => {
+    (sales || []).forEach((sale = {}) => {
+      if (!isClosedSale(sale) || isCancelledSale(sale)) return;
 
-    totals.totalSales += 1;
-    const items = Array.isArray(sale.items) ? sale.items : [];
-    const saleGross = sale.subtotal !== undefined && sale.subtotal !== null
-      ? Money.init(normalizeFinancialNumber(sale.subtotal))
-      : items.reduce((sum, item) => Money.add(sum, getLineSubtotal(item)), Money.init(0));
-    const saleNet = Money.init(normalizeFinancialNumber(
-      sale.total,
-      items.reduce((sum, item) => Money.toNumber(Money.add(sum, getLineRevenue(item))), 0)
-    ));
-    const saleDiscount = Money.init(getSaleDiscount(sale));
+      totals.totalSales += 1;
+      const items = Array.isArray(sale.items) ? sale.items : [];
+      const saleGross = sale.subtotal !== undefined && sale.subtotal !== null
+        ? Money.init(normalizeFinancialNumber(sale.subtotal))
+        : items.reduce((sum, item) => Money.add(sum, getLineSubtotal(item)), Money.init(0));
+      const saleNet = Money.init(normalizeFinancialNumber(
+        sale.total,
+        items.reduce((sum, item) => Money.toNumber(Money.add(sum, getLineRevenue(item))), 0)
+      ));
+      const saleDiscount = Money.init(getSaleDiscount(sale));
 
-    totals.totalRevenue = Money.add(totals.totalRevenue, saleNet);
-    totals.grossRevenue = Money.add(totals.grossRevenue, saleGross);
-    totals.totalDiscounts = Money.add(totals.totalDiscounts, saleDiscount);
+      totals.totalRevenue = Money.add(totals.totalRevenue, saleNet);
+      totals.grossRevenue = Money.add(totals.grossRevenue, saleGross);
+      totals.totalDiscounts = Money.add(totals.totalDiscounts, saleDiscount);
 
-    items.forEach((item = {}) => {
-      const qty = Money.init(normalizeFinancialNumber(item.quantity || 0));
-      const lineRevenue = getLineRevenue(item);
-      const realId = item.parentId || item.id;
-      const rawCost = item.cost ?? productCostMap.get(realId);
-      const unitCost = normalizeFinancialNumber(rawCost, 0);
+      items.forEach((item = {}) => {
+        const qty = Money.init(normalizeFinancialNumber(item.quantity || 0));
+        const lineRevenue = getLineRevenue(item);
+        const realId = item.parentId || item.id;
+        const rawCost = item.cost ?? productCostMap.get(realId);
+        const unitCost = normalizeFinancialNumber(rawCost, 0);
 
-      totals.itemsSold = Money.add(totals.itemsSold, qty);
+        totals.itemsSold = Money.add(totals.itemsSold, qty);
 
-      if (isMissingUnitCost(rawCost)) {
-        totals.unconfirmedRevenue = Money.add(totals.unconfirmedRevenue, lineRevenue);
-        totals.unreliableProfitDueToMissingCosts = Money.add(
-          totals.unreliableProfitDueToMissingCosts,
-          lineRevenue
-        );
-        totals.missingCostItems = Money.add(totals.missingCostItems, qty);
-        return;
-      }
+        if (isMissingUnitCost(rawCost)) {
+          totals.unconfirmedRevenue = Money.add(totals.unconfirmedRevenue, lineRevenue);
+          totals.unreliableProfitDueToMissingCosts = Money.add(
+            totals.unreliableProfitDueToMissingCosts,
+            lineRevenue
+          );
+          totals.missingCostItems = Money.add(totals.missingCostItems, qty);
+          return;
+        }
 
-      const lineCost = Money.multiply(unitCost, qty);
-      totals.confirmedRevenue = Money.add(totals.confirmedRevenue, lineRevenue);
-      totals.confirmedCost = Money.add(totals.confirmedCost, lineCost);
-      totals.confirmedProfit = Money.add(totals.confirmedProfit, Money.subtract(lineRevenue, lineCost));
-      totals.totalCost = Money.add(totals.totalCost, lineCost);
+        const lineCost = Money.multiply(unitCost, qty);
+        totals.confirmedRevenue = Money.add(totals.confirmedRevenue, lineRevenue);
+        totals.confirmedCost = Money.add(totals.confirmedCost, lineCost);
+        totals.confirmedProfit = Money.add(totals.confirmedProfit, Money.subtract(lineRevenue, lineCost));
+        totals.totalCost = Money.add(totals.totalCost, lineCost);
+      });
     });
-  });
-
-  const confirmedRevenue = Money.toNumber(totals.confirmedRevenue);
-  const unconfirmedRevenue = Money.toNumber(totals.unconfirmedRevenue);
-  const quality = getFinancialQuality(confirmedRevenue, unconfirmedRevenue);
-  const totalRevenue = Money.toNumber(totals.totalRevenue);
-  const totalCost = Money.toNumber(totals.totalCost);
-  const confirmedMarginPct = confirmedRevenue > 0
-    ? (Money.toNumber(totals.confirmedProfit) / confirmedRevenue) * 100
-    : 0;
-
-  return {
-    totalSales: totals.totalSales,
-    totalRevenue,
-    grossRevenue: Money.toNumber(totals.grossRevenue),
-    totalDiscounts: Money.toNumber(totals.totalDiscounts),
-    totalCost,
-    grossProfit: Money.toNumber(Money.subtract(totalRevenue, totalCost)),
-    confirmedRevenue,
-    unconfirmedRevenue,
-    confirmedCost: Money.toNumber(totals.confirmedCost),
-    confirmedProfit: Money.toNumber(totals.confirmedProfit),
-    unreliableProfitDueToMissingCosts: Money.toNumber(totals.unreliableProfitDueToMissingCosts),
-    confirmedMarginPct,
-    itemsSold: Number(totals.itemsSold.round(3).toString()),
-    missingCostItems: Number(totals.missingCostItems.round(3).toString()),
-    ...quality
   };
+  const result = () => {
+    const confirmedRevenue = Money.toNumber(totals.confirmedRevenue);
+    const unconfirmedRevenue = Money.toNumber(totals.unconfirmedRevenue);
+    const quality = getFinancialQuality(confirmedRevenue, unconfirmedRevenue);
+    const totalRevenue = Money.toNumber(totals.totalRevenue);
+    const totalCost = Money.toNumber(totals.totalCost);
+    const confirmedMarginPct = confirmedRevenue > 0
+      ? (Money.toNumber(totals.confirmedProfit) / confirmedRevenue) * 100
+      : 0;
+
+    return {
+      totalSales: totals.totalSales,
+      totalRevenue,
+      grossRevenue: Money.toNumber(totals.grossRevenue),
+      totalDiscounts: Money.toNumber(totals.totalDiscounts),
+      totalCost,
+      grossProfit: Money.toNumber(Money.subtract(totalRevenue, totalCost)),
+      confirmedRevenue,
+      unconfirmedRevenue,
+      confirmedCost: Money.toNumber(totals.confirmedCost),
+      confirmedProfit: Money.toNumber(totals.confirmedProfit),
+      unreliableProfitDueToMissingCosts: Money.toNumber(totals.unreliableProfitDueToMissingCosts),
+      confirmedMarginPct,
+      itemsSold: Number(totals.itemsSold.round(3).toString()),
+      missingCostItems: Number(totals.missingCostItems.round(3).toString()),
+      ...quality
+    };
+  };
+  return { add, result };
+};
+
+export const summarizeFinancialSales = (sales = [], productCostMap = new Map()) => {
+  const accumulator = createFinancialSalesAccumulator(productCostMap);
+  accumulator.add(sales);
+  return accumulator.result();
 };
 
 export default {

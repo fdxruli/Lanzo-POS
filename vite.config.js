@@ -7,6 +7,9 @@ import { incidentLabBuildPlugin, incidentLabInputs } from './scripts/incident-la
 import { serializeAdminManifest } from './src/pwa/adminManifest';
 
 const ADMIN_LOCAL_OFFLINE_GLOB_PATTERNS = Object.freeze([
+  'assets/{AssistantBot,botIntelligence,botReadService,botWorkerClient,inventoryAnalysis,productStats,aiAgentAuthorization}-*.{js,css}',
+  'boticon.svg',
+  'assets/bot.worker-*.js',
   'assets/{PosPage,CajaPage,OrderPage,ProductsPage,CustomersPage,DashboardPage,SettingsPage,AboutPage}-*.{js,css}',
   'assets/{useDismissibleHistoryLayer,usePhysicalBarcodeScanner,Encoder,InputPromptModal,customerUtils,customerCloudRepository,useCaja,useInventoryMovement,inventoryMovement,restaurantModifierDisplay,CajaModals,useConfirmDiscard,googleDriveService,AbonoModal,usePreparationStations,productRepository,planDisplay,reportsRepository,useActorRuntimeSnapshot,useFeatureConfig,vendor_charts}-*.{js,css}',
 ]);
@@ -140,6 +143,8 @@ export default defineConfig(() => ({
     'import.meta.env.VITE_BUILD_COMMIT': JSON.stringify(buildCommit),
     'import.meta.env.VITE_INCIDENT_QA_PREVIEW': JSON.stringify(process.env.VERCEL_ENV === 'preview'),
   },
+
+  worker: { format: 'es' },
 
   build: {
     target: 'esnext',

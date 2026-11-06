@@ -1,0 +1,225 @@
+{
+  "status": "PASS",
+  "first_offline_fetch": [
+    {
+      "path": "App-DeQajRLy.js",
+      "status": 200,
+      "bytes": 747841
+    },
+    {
+      "path": "AssistantBot-B6ahmOKI.css",
+      "status": 200,
+      "bytes": 5302
+    },
+    {
+      "path": "AssistantBot-CfChHoPm.js",
+      "status": 200,
+      "bytes": 36833
+    },
+    {
+      "path": "IncidentErrorBoundary-SlKNYtky.js",
+      "status": 200,
+      "bytes": 25394
+    },
+    {
+      "path": "PosApplicationBootstrap-BzvzFGI2.js",
+      "status": 200,
+      "bytes": 91984
+    },
+    {
+      "path": "aiAgentAuthorization-C60p3Q03.js",
+      "status": 200,
+      "bytes": 1469
+    },
+    {
+      "path": "botReadService-CiU14HjR.js",
+      "status": 200,
+      "bytes": 8610
+    },
+    {
+      "path": "customerCreditSyncHandler-CSB80EYw.js",
+      "status": 200,
+      "bytes": 51741
+    },
+    {
+      "path": "databaseRuntime-CU877xd_.js",
+      "status": 200,
+      "bytes": 1115
+    },
+    {
+      "path": "devConsoleCapture-oP05erXD.js",
+      "status": 200,
+      "bytes": 3864
+    },
+    {
+      "path": "incidentCapture-C2LI84Vd.js",
+      "status": 200,
+      "bytes": 5696
+    },
+    {
+      "path": "index-DweEcHnF.js",
+      "status": 200,
+      "bytes": 555141
+    },
+    {
+      "path": "index.esm-DAEuQ1Xh.js",
+      "status": 200,
+      "bytes": 5679
+    },
+    {
+      "path": "inventoryAnalysis-BQCik9Da.js",
+      "status": 200,
+      "bytes": 6350
+    },
+    {
+      "path": "productStats-GmI2tdV6.js",
+      "status": 200,
+      "bytes": 948
+    },
+    {
+      "path": "settingsAccessPolicy-Cx5bXqzR.js",
+      "status": 200,
+      "bytes": 2948
+    },
+    {
+      "path": "storageManager-Cww8_2UC.js",
+      "status": 200,
+      "bytes": 5981
+    },
+    {
+      "path": "telegramContact-BMLGPHus.js",
+      "status": 200,
+      "bytes": 1758
+    },
+    {
+      "path": "useAppStore-Be3PJCYs.js",
+      "status": 200,
+      "bytes": 737897
+    },
+    {
+      "path": "useInventoryCatalogStore-BoasE9WQ.js",
+      "status": 200,
+      "bytes": 24424
+    },
+    {
+      "path": "useMessageStore-D-yjKlmE.js",
+      "status": 200,
+      "bytes": 766
+    },
+    {
+      "path": "vendor_icons-DdjJviVF.js",
+      "status": 200,
+      "bytes": 33879
+    },
+    {
+      "path": "vendor_react-DgBHsnsQ.js",
+      "status": 200,
+      "bytes": 212851
+    },
+    {
+      "path": "vendor_utils-gbdVjlmZ.js",
+      "status": 200,
+      "bytes": 659
+    }
+  ],
+  "responses": [
+    {
+      "path": "assets/App-DeQajRLy.js",
+      "service_worker": true
+    },
+    {
+      "path": "assets/AssistantBot-B6ahmOKI.css",
+      "service_worker": true
+    },
+    {
+      "path": "assets/AssistantBot-CfChHoPm.js",
+      "service_worker": true
+    },
+    {
+      "path": "assets/IncidentErrorBoundary-SlKNYtky.js",
+      "service_worker": true
+    },
+    {
+      "path": "assets/PosApplicationBootstrap-BzvzFGI2.js",
+      "service_worker": true
+    },
+    {
+      "path": "assets/aiAgentAuthorization-C60p3Q03.js",
+      "service_worker": true
+    },
+    {
+      "path": "assets/botReadService-CiU14HjR.js",
+      "service_worker": true
+    },
+    {
+      "path": "assets/customerCreditSyncHandler-CSB80EYw.js",
+      "service_worker": true
+    },
+    {
+      "path": "assets/databaseRuntime-CU877xd_.js",
+      "service_worker": true
+    },
+    {
+      "path": "assets/devConsoleCapture-oP05erXD.js",
+      "service_worker": true
+    },
+    {
+      "path": "assets/incidentCapture-C2LI84Vd.js",
+      "service_worker": true
+    },
+    {
+      "path": "assets/index-DweEcHnF.js",
+      "service_worker": true
+    },
+    {
+      "path": "assets/index.esm-DAEuQ1Xh.js",
+      "service_worker": true
+    },
+    {
+      "path": "assets/inventoryAnalysis-BQCik9Da.js",
+      "service_worker": true
+    },
+    {
+      "path": "assets/productStats-GmI2tdV6.js",
+      "service_worker": true
+    },
+    {
+      "path": "assets/settingsAccessPolicy-Cx5bXqzR.js",
+      "service_worker": true
+    },
+    {
+      "path": "assets/storageManager-Cww8_2UC.js",
+      "service_worker": true
+    },
+    {
+      "path": "assets/telegramContact-BMLGPHus.js",
+      "service_worker": true
+    },
+    {
+      "path": "assets/useAppStore-Be3PJCYs.js",
+      "service_worker": true
+    },
+    {
+      "path": "assets/useInventoryCatalogStore-BoasE9WQ.js",
+      "service_worker": true
+    },
+    {
+      "path": "assets/useMessageStore-D-yjKlmE.js",
+      "service_worker": true
+    },
+    {
+      "path": "assets/vendor_icons-DdjJviVF.js",
+      "service_worker": true
+    },
+    {
+      "path": "assets/vendor_react-DgBHsnsQ.js",
+      "service_worker": true
+    },
+    {
+      "path": "assets/vendor_utils-gbdVjlmZ.js",
+      "service_worker": true
+    }
+  ],
+  "http_cache_disabled": true,
+  "account_session": "none"
+}

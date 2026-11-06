@@ -1,3 +1,4 @@
+import { usePublishBotScreen } from '../hooks/useBotScreenContext';
 import './SettingsPage.css';
 import GeneralSettings from '../components/settings/GeneralSettings';
 import OperationalSettings from '../components/settings/OperationalSettings';
@@ -26,6 +27,8 @@ export default function SettingsPage() {
   const isCloudLicense = isCloudPosSyncEnabled(licenseDetails);
   const visibleTabs = getVisibleSettingsTabs(settingsAccess.visibleTabs);
   const requestedTab = searchParams.get('tab') || 'general';
+  const activeTab = resolveAllowedSettingsTab({ requestedTab, visibleTabs });
+  usePublishBotScreen('/configuracion', activeTab);
 
   if (requestedTab === 'messages') {
     return (
@@ -36,7 +39,6 @@ export default function SettingsPage() {
     );
   }
 
-  const activeTab = resolveAllowedSettingsTab({ requestedTab, visibleTabs });
 
   const handleTabChange = (tabKey) => {
     const param = tabKey === 'general' ? {} : { tab: tabKey };
