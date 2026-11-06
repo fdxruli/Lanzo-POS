@@ -123,7 +123,7 @@ const buildScannedLineId = (product, existingItems = []) => {
     : createCartLineId(product);
 };
 
-const getInventoryReservationKey = (item) => {
+export const getInventoryReservationKey = (item) => {
   if (!item) return null;
   if (item.batchId) return `batch:${item.batchId}`;
   const productId = item.parentId || item.id;
@@ -148,7 +148,7 @@ const getSessionReservedQuantity = (activeOrders = new Map(), candidate, exclude
   return normalizeStock(reserved);
 };
 
-const getSessionAvailableStock = (state, product, orderId) => {
+export const getSessionAvailableStock = (state, product, orderId) => {
   if (!product?.trackStock && !product?.batchId) return product?.stock;
 
   const baseAvailableStock = getAvailableStock(product);
