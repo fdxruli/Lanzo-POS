@@ -351,6 +351,113 @@ describe('initializeApp coordinator', () => {
     Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
   });
 
+  const legacyFreeLicense = () => ({
+    license_key: 'LEGACY-FREE-BOOT-TEST',
+    device_role: 'admin',
+    plan_code: 'free_trial',
+    max_devices: 1,
+    features: { staff_roles: false },
+    valid: true
+  });
+
+  it('requires online owner discovery instead of marking legacy Free ready', async () => {
+    const license = legacyFreeLicense();
+    storageMocks.getLicenseFromStorage.mockResolvedValue(license);
+    const state = createState({ discoverAdminAccess: vi.fn() });
+    state.discoverAdminAccess.mockImplementation(async () => {
+      state.appStatus = 'admin_enrollment_required';
+      return { success: false, enrollmentRequired: true };
+    });
+
+    await expect(state.initializeApp({ force: true }))
+      .resolves.toEqual({ status: 'admin_enrollment_required' });
+    expect(state.discoverAdminAccess).toHaveBeenCalledWith(license.license_key);
+    expect(state._processOfflineMode).not.toHaveBeenCalled();
+    expect(state.currentAdminUser).toBeNull();
+    expect(actorRuntimeController.getState().status).toBe('locked');
+  });
+
+  it('keeps unidentified legacy Free blocked offline with a visible retry state', async () => {
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+    storageMocks.getLicenseFromStorage.mockResolvedValue(legacyFreeLicense());
+    const state = createState({ discoverAdminAccess: vi.fn() });
+
+    await expect(state.initializeApp({ force: true }))
+      .resolves.toEqual({ status: 'admin_login_required' });
+    expect(state.adminLoginError).toMatchObject({
+      code: 'SESSION_VERIFICATION_INCONCLUSIVE',
+      verificationStatus: 'transport_unavailable'
+    });
+    expect(state.currentAdminUser).toBeNull();
+    expect(state._processOfflineMode).not.toHaveBeenCalled();
+    expect(state.discoverAdminAccess).not.toHaveBeenCalled();
+    expect(actorRuntimeController.getState().status).toBe('locked');
+  });
+
+  it('can retry owner discovery online without deleting local license data', async () => {
+    const license = legacyFreeLicense();
+    storageMocks.getLicenseFromStorage.mockResolvedValue(license);
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+    const state = createState({ discoverAdminAccess: vi.fn() });
+    await state.initializeApp({ force: true });
+    expect(state.appStatus).toBe('admin_login_required');
+
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
+    state.discoverAdminAccess.mockImplementation(async () => {
+      state.appStatus = 'admin_enrollment_required';
+      return { success: false, enrollmentRequired: true };
+    });
+    await expect(state.initializeApp({ force: true }))
+      .resolves.toEqual({ status: 'admin_enrollment_required' });
+    expect(state.discoverAdminAccess).toHaveBeenCalledTimes(1);
+    expect(storageMocks.saveLicenseToStorage).not.toHaveBeenCalled();
+    expect(state._processOfflineMode).not.toHaveBeenCalled();
+  });
+
+  it('uses existing owner enrollment with the original local license context', async () => {
+    const license = legacyFreeLicense();
+    const state = createState({ licenseDetails: license });
+    const set = (patch) => Object.assign(state, patch);
+    state.discoverAdminAccess = createLicenseAdminActions({ set, get: () => state }).discoverAdminAccess;
+    supabaseMocks.activateLicense.mockResolvedValue({
+      valid: false,
+      admin_enrollment_required: true,
+      code: 'ADMIN_ENROLLMENT_REQUIRED',
+      details: { license_key: license.license_key, device_role: 'admin', plan_code: 'free_trial' }
+    });
+
+    await expect(state.discoverAdminAccess(license.license_key))
+      .resolves.toMatchObject({ enrollmentRequired: true });
+    expect(state.appStatus).toBe('admin_enrollment_required');
+    expect(state.ownerEnrollmentContext).toBe('existing_license');
+    expect(state.licenseDetails).toMatchObject({
+      license_key: license.license_key, admin_identity_required: true,
+      max_devices: 1
+    });
+    expect(state._processOfflineMode).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['legacy positive device response', { valid: true, details: legacyFreeLicense() }, 'ADMIN_IDENTITY_REQUIRED'],
+    ['device not eligible for enrollment', {
+      valid: false, code: 'ADMIN_ENROLLMENT_NOT_ALLOWED'
+    }, 'ADMIN_ENROLLMENT_NOT_ALLOWED']
+  ])('never grants Admin for %s', async (_label, result, expectedCode) => {
+    const license = legacyFreeLicense();
+    const state = createState({ licenseDetails: license });
+    const set = (patch) => Object.assign(state, patch);
+    state.discoverAdminAccess = createLicenseAdminActions({ set, get: () => state }).discoverAdminAccess;
+    supabaseMocks.activateLicense.mockResolvedValue(result);
+
+    await expect(state.discoverAdminAccess(license.license_key))
+      .resolves.toMatchObject({ success: false, supportRequired: true });
+    expect(state._requireAdminLogin).toHaveBeenCalledWith(
+      expect.objectContaining({ license_key: license.license_key }),
+      expect.objectContaining({ code: expectedCode })
+    );
+    expect(state._processOfflineMode).not.toHaveBeenCalled();
+  });
+
   it('shares one promise between concurrent StrictMode-style calls', async () => {
     const gate = deferred();
     runtimeMocks.prepareLocalDatabase.mockReturnValueOnce(gate.promise);
