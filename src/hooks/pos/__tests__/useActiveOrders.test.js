@@ -102,7 +102,7 @@ import {
   useActiveOrders
 } from '../useActiveOrders';
 import { showConfirmModal, showMessageModal } from '../../../services/utils';
-import { actorRuntimeController } from '../../../services/auth/actorRuntimeController';
+import { actorRuntimeController, createActorRuntimeController } from '../../../services/auth/actorRuntimeController';
 import { commitStock, releaseCommittedStock } from '../../../services/sales/inventoryFlow';
 
 const makeOrder = (id, items = []) => ({
@@ -588,6 +588,64 @@ describe('useActiveOrders unified store', () => {
         expect(useActiveOrders.getState().activeOrders.get('B')).toBe(b);
       }
       expect(showConfirmModal).toHaveBeenCalledOnce();
+    } finally {
+      capture.mockRestore();
+    }
+  });
+
+  it.each([
+    { permissions: ['pos'], authorized: true },
+    { permissions: ['reports'], authorized: false }
+  ])('Staff permissions $permissions: confirm reassignment authorized=$authorized', async ({ permissions, authorized }) => {
+    const scopedActor = createActorRuntimeController({
+      getTenantAuthority: () => ({
+        opaqueId: 'tenant-test', databaseName: 'LanzoDB_t_tenant-test', generation: 1
+      })
+    });
+    scopedActor.beginAuthentication({ actorType: 'staff' });
+    scopedActor.grant({
+      actorType: 'staff', actorId: 'one', sessionId: 'session-one',
+      tenantOpaqueId: 'tenant-test', permissions
+    });
+    const capture = vi.spyOn(actorRuntimeController, 'capture')
+      .mockImplementation((permission) => scopedActor.capture(permission));
+
+    const item = {
+      id: 'X', productId: 'X', lineId: 'A-X', name: 'X', price: 10,
+      quantity: 2, trackStock: true, saleType: 'unit',
+      stock: 2, committedStock: 0,
+      provisionalAddedAt: '2026-11-06T00:00:00.000Z'
+    };
+    const a = { ...makeOrder('A', [item]), actorKey: 'staff:one' };
+    const b = { ...makeOrder('B'), actorKey: 'staff:one' };
+    dbState.products.set('X', {
+      id: 'X', name: 'X', price: 10,
+      stock: 2, committedStock: 0, trackStock: true
+    });
+    useActiveOrders.setState({
+      activeOrders: new Map([['A', a], ['B', b]]),
+      currentOrderId: 'B'
+    });
+    showConfirmModal.mockResolvedValueOnce(true);
+    try {
+      const result = useActiveOrders.getState().addItem({
+        id: 'X', name: 'X', price: 10, saleType: 'unit',
+        trackStock: true, stock: 2, committedStock: 0
+      }, 'B');
+      expect(result).toMatchObject({ success: false, code: 'LOCAL_PRIORITY_CONFLICT' });
+      expect(capture).toHaveBeenCalledWith('pos');
+      if (authorized) {
+        await vi.waitFor(() => {
+          const updated = useActiveOrders.getState().activeOrders;
+          expect(updated.get('A').items[0].quantity).toBe(1);
+          expect(updated.get('B').items[0].quantity).toBe(1);
+        });
+        expect(showConfirmModal).toHaveBeenCalledOnce();
+      } else {
+        expect(showConfirmModal).not.toHaveBeenCalled();
+        expect(useActiveOrders.getState().activeOrders.get('A')).toBe(a);
+        expect(useActiveOrders.getState().activeOrders.get('B')).toBe(b);
+      }
     } finally {
       capture.mockRestore();
     }
