@@ -14,7 +14,7 @@ import {
   activateAdminUpgradeBridge,
   requestAdminUpgradeBridgeInstall,
 } from './adminUpgradeBridge';
-import { PUBLIC_NAVIGATION_DENYLIST, isPublicNavigationRequest } from './publicNavigationPolicy';
+import { PUBLIC_NAVIGATION_DENYLIST, isPublicNavigationPath, isPublicNavigationRequest } from './publicNavigationPolicy';
 
 const WORKER_BUILD_ID = import.meta.env.VITE_BUILD_COMMIT
   || import.meta.env.VITE_APP_VERSION
@@ -22,6 +22,12 @@ const WORKER_BUILD_ID = import.meta.env.VITE_BUILD_COMMIT
 
 precacheAndRoute(self.__WB_MANIFEST);
 cleanupOutdatedCaches();
+
+registerRoute(
+  ({ url }) => url.origin === self.location.origin && url.pathname === '/build-info.json',
+  new NetworkOnly(),
+  'GET',
+);
 
 registerRoute(
   ({ request, url }) => isPublicNavigationRequest({
@@ -84,6 +90,7 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil(Promise.all([
     cleanupObsoleteAdminRuntimeCaches(self.caches),
+    self.clients.claim(),
     activateAdminUpgradeBridge({
       clients: self.clients,
       cacheStorage: self.caches,
@@ -97,7 +104,23 @@ self.addEventListener('activate', (event) => {
 
 let skipWaitingRequested = false;
 self.addEventListener('message', (event) => {
+  if (event.data?.type === 'ADMIN_BUILD_INFO') {
+    event.ports?.[0]?.postMessage({ buildId: import.meta.env.VITE_BUILD_ID });
+    return;
+  }
   if (event.data?.type !== 'SKIP_WAITING' || skipWaitingRequested) return;
-  skipWaitingRequested = true;
-  event.waitUntil(self.skipWaiting());
+  event.waitUntil((async () => {
+    // Workbox cleans superseded precache entries on activation. Do not replace
+    // another administrative document's resources, even if it is suspended.
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    const otherAdminWindows = windows.filter(client => (
+      client.id !== event.source?.id && !isPublicNavigationPath(new URL(client.url).pathname)
+    ));
+    if (otherAdminWindows.length) {
+      event.source?.postMessage({ type: 'ADMIN_UPDATE_BLOCKED' });
+      return;
+    }
+    skipWaitingRequested = true;
+    await self.skipWaiting();
+  })());
 });

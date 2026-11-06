@@ -291,6 +291,9 @@ const detachOnlineListener = () => {
 const shouldUseRealtimeDebounce = (reason = '') => String(reason || '').toLowerCase().includes('realtime');
 
 export const posSyncOrchestrator = {
+  getUpdateActivity() {
+    return runtime.startInProgress || runtime.pullInProgress || runtime.outboxInProgress;
+  },
   registerEntitySyncHandler(entityType, handler) {
     if (!entityType || !handler) {
       throw new Error('ENTITY_SYNC_HANDLER_INVALID');

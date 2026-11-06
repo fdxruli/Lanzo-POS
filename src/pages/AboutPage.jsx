@@ -1,3 +1,4 @@
+import UpdateControls from '../components/common/UpdateControls';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
@@ -22,7 +23,7 @@ import { getCommercialAIAgentAccessState } from '../services/auth/aiAgentAuthori
 import { evaluateEcommercePortalAccess } from './settingsPageAccess';
 import ContactModal from '../components/common/ContactModal';
 import Logo from '../components/common/Logo';
-import { APP_BUILD_DATE_LABEL, APP_VERSION, APP_VERSION_LABEL } from '../config/appVersion';
+import { APP_BUILD_DATE_LABEL, APP_BUILD_COMMIT, APP_BUILD_ID, APP_VERSION, APP_VERSION_LABEL } from '../config/appVersion';
 import {
   getPlanFeaturesFromLicenseDetails,
   isCloudPosSyncEnabled,
@@ -547,6 +548,19 @@ export default function AboutPage() {
         </article>
       </section>
 
+      <section className="about-redesign__help" aria-label="Versión y actualizaciones">
+        <div>
+          <h2>Versión y actualizaciones</h2>
+          <p>Versión comercial: {APP_VERSION}</p>
+          <p style={{ overflowWrap: 'anywhere' }}>Compilación: {APP_BUILD_COMMIT}</p>
+          <p>Fecha de compilación: {APP_BUILD_DATE_LABEL}</p>
+          <details>
+            <summary>Ver identificador completo</summary>
+            <p style={{ overflowWrap: 'anywhere' }}>{APP_BUILD_ID}</p>
+          </details>
+          <UpdateControls showApply />
+        </div>
+      </section>
       <footer className="about-redesign__footer">
         <span>Lanzo POS · {APP_VERSION_LABEL}</span>
         <span>Build {APP_BUILD_DATE_LABEL}</span>

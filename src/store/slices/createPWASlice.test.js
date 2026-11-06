@@ -49,3 +49,24 @@ describe('createPWASlice update deferral', () => {
     });
   });
 });
+
+it('does not forget a pending update when reload was requested but canceled', async () => {
+  const harness = createSliceHarness();
+  harness.actions.setUpdateAvailable(true, 'build-b');
+  harness.actions.setTriggerUpdate(async () => true);
+  await harness.actions.runUpdate();
+  expect(harness.state()).toMatchObject({ updateAvailable: true, updateError: 'Actualización pendiente de completar.' });
+});
+
+it('preserves a postponement for the same build and shows the next build', () => {
+  const harness = createSliceHarness();
+  harness.actions.setUpdateAvailable(true, 'build-b');
+  harness.actions.closeUpdateModal();
+  harness.actions.setUpdateAvailable(true, 'build-b');
+  expect(harness.state().showUpdateModal).toBe(false);
+  harness.actions.openUpdateModal();
+  expect(harness.state().showUpdateModal).toBe(true);
+  harness.actions.closeUpdateModal();
+  harness.actions.setUpdateAvailable(true, 'build-c');
+  expect(harness.state().showUpdateModal).toBe(true);
+});

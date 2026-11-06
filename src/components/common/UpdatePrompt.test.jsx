@@ -19,6 +19,7 @@ const worker = vi.hoisted(() => ({
 
 vi.mock('../../pwa/adminServiceWorker', () => ({
   activateAdminServiceWorkerUpdate: worker.activate,
+  reloadAdminWebUpdate: worker.activate,
   getAdminServiceWorkerState: () => worker.state,
   subscribeAdminServiceWorker: (listener) => {
     worker.listener = listener;
@@ -42,6 +43,8 @@ describe('UpdatePrompt controlled activation', () => {
       updateAvailable: false,
       showUpdateModal: false,
       isUpdating: false,
+      updateError: null,
+      updateId: null,
     });
   });
 
@@ -57,9 +60,9 @@ describe('UpdatePrompt controlled activation', () => {
       error: false,
     }));
 
-    expect(screen.queryByText('Nueva version disponible')).not.toBeInTheDocument();
+    expect(screen.queryByText('Nueva actualización disponible')).not.toBeInTheDocument();
     view.rerender(<UpdatePrompt />);
-    expect(screen.getByText('Nueva version disponible')).toBeInTheDocument();
+    expect(screen.getByText('Nueva actualización disponible')).toBeInTheDocument();
     expect(useAppStore.getState().updateAvailable).toBe(true);
   });
 
@@ -74,7 +77,7 @@ describe('UpdatePrompt controlled activation', () => {
       error: false,
     }));
 
-    expect(screen.getByText('Nueva version disponible')).toBeInTheDocument();
+    expect(screen.getByText('Nueva actualización disponible')).toBeInTheDocument();
   });
 
   it('keeps the prompt available when a worker activated in another tab but reload was deferred', () => {
@@ -89,7 +92,7 @@ describe('UpdatePrompt controlled activation', () => {
       reloadDeferred: true,
     }));
 
-    expect(screen.getByText('Nueva version disponible')).toBeInTheDocument();
+    expect(screen.getByText('Nueva actualización disponible')).toBeInTheDocument();
     expect(useAppStore.getState().updateAvailable).toBe(true);
   });
 
@@ -117,7 +120,7 @@ describe('UpdatePrompt controlled activation', () => {
       active: true,
       error: false,
     }));
-    expect(screen.getByText('Nueva version disponible')).toBeInTheDocument();
+    expect(screen.getByText('Nueva actualización disponible')).toBeInTheDocument();
 
     act(() => worker.listener({
       registered: true,
@@ -128,23 +131,30 @@ describe('UpdatePrompt controlled activation', () => {
     }));
 
     expect(useAppStore.getState().updateAvailable).toBe(false);
-    expect(screen.queryByText('Nueva version disponible')).not.toBeInTheDocument();
+    expect(screen.queryByText('Nueva actualización disponible')).not.toBeInTheDocument();
   });
 
-  it('dismisses the UI for the current session without activating the worker', () => {
+  it('postpones only the current notice, permits reopening and notifies a new build', () => {
     render(<UpdatePrompt />);
     act(() => worker.listener({
       registered: true,
       installing: false,
       waiting: true,
+      updateId: 'current-build',
       active: true,
       error: false,
     }));
 
-    fireEvent.click(screen.getByRole('button', { name: /cerrar notificacion/i }));
+    fireEvent.click(screen.getByRole('button', { name: /posponer actualización/i }));
 
-    expect(sessionStorage.getItem('lanzo_update_dismissed')).toBe('true');
+    expect(useAppStore.getState().updateAvailable).toBe(true);
     expect(worker.activate).not.toHaveBeenCalled();
-    expect(screen.queryByText('Nueva version disponible')).not.toBeInTheDocument();
+    expect(screen.queryByText('Nueva actualización disponible')).not.toBeInTheDocument();
+    act(() => useAppStore.getState().openUpdateModal());
+    expect(screen.getByText('Nueva actualización disponible')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /más tarde/i }));
+    act(() => worker.listener({ waiting: true, updateId: 'next-build' }));
+    expect(screen.getByText('Nueva actualización disponible')).toBeInTheDocument();
+
   });
 });

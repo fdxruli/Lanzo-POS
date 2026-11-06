@@ -205,3 +205,32 @@ describe('administrative Service Worker coordinator', () => {
     expect(getAdminServiceWorkerState()).toMatchObject({ registered: false, error: true });
   });
 });
+
+it('never reloads an idle tab merely because another tab activated a worker', async () => {
+  const harness = createHarness({ controlled: true });
+  setAdminServiceWorkerReloadGuard(() => true);
+  await startAdminServiceWorker(harness);
+  harness.serviceWorker.controller = { scriptURL: '/sw-new.js' };
+  harness.serviceWorker.dispatch('controllerchange');
+  expect(harness.windowTarget.location.reload).not.toHaveBeenCalled();
+  expect(getAdminServiceWorkerState().reloadDeferred).toBe(true);
+  resetAdminServiceWorkerForTests();
+});
+
+it('permits retry after the worker refuses activation because other windows are open', async () => {
+  const harness = createHarness({ controlled: true });
+  const waiting = { state: 'installed', postMessage: vi.fn() };
+  harness.registration.waiting = waiting;
+  setAdminServiceWorkerReloadGuard(() => true);
+  await startAdminServiceWorker(harness);
+  const activation = activateAdminServiceWorkerUpdate();
+  harness.serviceWorker.listeners.get('message')[0]({ data: { type: 'ADMIN_UPDATE_BLOCKED' } });
+  await expect(activation).rejects.toMatchObject({ code: 'ADMIN_UPDATE_OTHER_WINDOWS' });
+  expect(getAdminServiceWorkerState().waiting).toBe(true);
+  const retry = activateAdminServiceWorkerUpdate();
+  expect(waiting.postMessage).toHaveBeenCalledTimes(2);
+  harness.serviceWorker.controller = waiting;
+  harness.serviceWorker.dispatch('controllerchange');
+  await expect(retry).resolves.toBe(true);
+  resetAdminServiceWorkerForTests();
+});

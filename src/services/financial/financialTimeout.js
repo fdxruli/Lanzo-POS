@@ -1,3 +1,5 @@
+import { registerAdminUpdateBlocker } from '../../pwa/adminUpdateSafety';
+
 export const FINANCIAL_TIMEOUTS = Object.freeze({
   STATION_RESOLUTION_MS: 10_000,
   PREFLIGHT_MS: 15_000,
@@ -27,11 +29,21 @@ export const withFinancialTimeout = (
 ) => {
   // Only the opt-in path requires a factory: an already-started promise cannot
   // prove registration before dispatch. Legacy consumers retain their contract.
-  const task = executionScope
-    ? executionScope.track(operation)
-    : typeof operation === 'function'
-      ? Promise.resolve().then(operation)
-      : Promise.resolve(operation);
+  const release = registerAdminUpdateBlocker('Estamos confirmando una operación financiera. Espera antes de actualizar.');
+  let task;
+  try {
+    task = executionScope
+      ? executionScope.track(operation)
+      : typeof operation === 'function'
+        ? Promise.resolve().then(operation)
+        : Promise.resolve(operation);
+  } catch (error) {
+    release();
+    throw error;
+  }
+  // A UI timeout does not cancel the underlying RPC. Keep reload protected
+  // until its real lifetime ends, including a late receipt or rejection.
+  Promise.resolve(task).then(release, release);
   const duration = Number(timeoutMs);
 
   if (!Number.isFinite(duration) || duration <= 0) return task;

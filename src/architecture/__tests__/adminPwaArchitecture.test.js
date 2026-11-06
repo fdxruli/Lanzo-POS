@@ -313,6 +313,7 @@ describe('ECOM.PUBLIC.PWA.1 architecture', () => {
 
     expect(joined).not.toMatch(/EcommerceOrdersPage|CommercialAIAgentsPage|EcommercePortalPage/);
     expect(joined).not.toMatch(/ScannerModal/);
+    expect(inventory.uniqueUrls).not.toContain('build-info.json');
     const botWorkers = inventory.uniqueUrls.filter(url => /bot\.worker-.*\.js$/.test(url));
     expect(botWorkers).toHaveLength(1);
     expect(inventory.uniqueUrls.filter(url => /\.worker-/.test(url))).toEqual(botWorkers);

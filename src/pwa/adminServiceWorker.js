@@ -1,11 +1,10 @@
-const CHECK_INTERVAL_MS = 60 * 60 * 1000;
+import { APP_BUILD_ID } from '../config/appVersion';
 const ACTIVATION_TIMEOUT_MS = 20_000;
 
 const listeners = new Set();
 
 let registration = null;
 let startPromise = null;
-let updateInterval = null;
 let waitingWorker = null;
 let activationPromise = null;
 let resolveActivation = null;
@@ -16,7 +15,6 @@ let controllerAtActivationStart = null;
 let skipWaitingSent = false;
 let currentController = null;
 let activatedUpdateObserved = false;
-let reloadRequested = false;
 let reloadGuard = null;
 let navigatorRef = null;
 let windowRef = null;
@@ -28,6 +26,8 @@ let state = {
   active: false,
   error: false,
   reloadDeferred: false,
+  publishedBuild: null,
+  updateId: null,
 };
 
 const publish = (patch) => {
@@ -36,6 +36,53 @@ const publish = (patch) => {
 };
 
 export const getAdminServiceWorkerState = () => ({ ...state });
+
+// A differing deployment remains pending until this document actually runs it.
+export function setAdminPublishedBuild(build, runningBuildId) {
+  const differs = build.buildId !== runningBuildId;
+  publish({ publishedBuild: build, updateId: differs ? build.buildId : null });
+}
+
+export function reloadAdminWebUpdate() {
+  if (navigatorRef?.serviceWorker?.controller) {
+    return Promise.reject(new Error('Actualización pendiente de completar. Vuelve a buscar actualizaciones.'));
+  }
+  if (navigatorRef?.onLine === false) {
+    return Promise.reject(new Error('Conéctate a Internet para descargar la actualización.'));
+  }
+  if (!canReloadNow()) {
+    return Promise.reject(new Error(getReloadBlockReason()));
+  }
+  return Promise.resolve(requestSafeReload());
+}
+
+export function refreshAdminServiceWorkerBuild() {
+  const worker = registration?.waiting || navigatorRef?.serviceWorker?.controller;
+  if (!worker || !windowRef?.MessageChannel) return Promise.resolve(null);
+  return new Promise(resolve => {
+    const channel = new windowRef.MessageChannel();
+    const finish = buildId => {
+      windowRef.clearTimeout(timer);
+      channel.port1.close();
+      channel.port2.close();
+      if (buildId && buildId !== APP_BUILD_ID) {
+        publish({ updateId: buildId, reloadDeferred: !registration?.waiting || state.reloadDeferred });
+      }
+      resolve(buildId);
+    };
+    const timer = windowRef.setTimeout(() => finish(null), 1500);
+    channel.port1.onmessage = event => finish(event.data?.buildId || null);
+    try { worker.postMessage({ type: 'ADMIN_BUILD_INFO' }, [channel.port2]); }
+    catch { finish(null); }
+  });
+}
+
+function handleWorkerMessage(event) {
+  if (event.data?.type !== 'ADMIN_UPDATE_BLOCKED' || !activationPromise) return;
+  rejectCurrentActivation(Object.assign(new Error(
+    'Cierra las otras pestañas o ventanas de LANZO POS para actualizar. Puedes seguir trabajando.'
+  ), { code: 'ADMIN_UPDATE_OTHER_WINDOWS' }));
+}
 
 export function subscribeAdminServiceWorker(listener) {
   listeners.add(listener);
@@ -46,13 +93,15 @@ export function setAdminServiceWorkerReloadGuard(guard) {
   reloadGuard = typeof guard === 'function' ? guard : null;
 }
 
-const canReloadNow = () => {
+const getReloadBlockReason = () => {
   try {
-    return reloadGuard?.() === true;
+    const result = reloadGuard?.();
+    return result === true ? null : typeof result === 'string' ? result : 'Termina la operación en curso antes de actualizar.';
   } catch {
-    return false;
+    return 'No pudimos comprobar si es seguro actualizar. Inténtalo de nuevo.';
   }
 };
+const canReloadNow = () => getReloadBlockReason() === null;
 
 function clearActivationTimer() {
   if (activationTimeout === null || activationTimeout === undefined || !windowRef) return;
@@ -83,14 +132,13 @@ function rejectCurrentActivation(error) {
   reject?.(error);
 }
 
-function reloadOnce() {
-  if (reloadRequested) return true;
+function requestSafeReload() {
   if (!windowRef?.location?.reload) return false;
   if (!canReloadNow()) {
     publish({ reloadDeferred: true });
     return false;
   }
-  reloadRequested = true;
+  try { windowRef.sessionStorage?.setItem('lanzo:update-target', state.updateId || ''); } catch { /* optional receipt */ }
   publish({ reloadDeferred: false });
   windowRef.location.reload();
   return true;
@@ -109,42 +157,49 @@ function watchInstallingWorker(worker) {
 
   const handleStateChange = () => {
     if (worker.state === 'installed') {
-      const isUpdate = Boolean(navigatorRef.serviceWorker.controller);
+      const isUpdate = Boolean(navigatorRef.serviceWorker.controller)
+        || Boolean(registration.active && registration.active !== worker);
       waitingWorker = isUpdate ? (registration.waiting || worker) : null;
       publish({
         installing: false,
         waiting: Boolean(waitingWorker),
         active: !isUpdate && Boolean(registration.active),
       });
+      if (isUpdate) refreshAdminServiceWorkerBuild();
     } else if (worker.state === 'activated') {
       if (waitingWorker === worker) waitingWorker = null;
       publish({ installing: false, waiting: false, active: true, error: false });
     } else if (worker.state === 'redundant') {
       if (waitingWorker === worker) waitingWorker = null;
-      publish({ installing: false, waiting: Boolean(registration?.waiting) });
+      publish({ installing: false, waiting: Boolean(registration?.waiting), error: true });
     }
   };
 
   worker.addEventListener('statechange', handleStateChange);
+  handleStateChange();
 }
 
 function handleControllerChange() {
   const previousController = currentController;
   currentController = navigatorRef?.serviceWorker?.controller || null;
-  const isUpdate = Boolean(previousController) || skipWaitingSent || Boolean(waitingWorker);
+  const isUpdate = previousController !== currentController
+    && (Boolean(previousController) || skipWaitingSent || Boolean(waitingWorker));
 
   waitingWorker = null;
   publish({
     installing: false,
     waiting: false,
     active: Boolean(currentController || registration?.active),
+    reloadDeferred: isUpdate || state.reloadDeferred,
     error: false,
   });
 
   if (!isUpdate) return;
 
   activatedUpdateObserved = true;
-  resolveCurrentActivation(reloadOnce());
+  // Only the tab whose user requested the update may reload automatically.
+  if (activationPromise) resolveCurrentActivation(requestSafeReload());
+  else publish({ reloadDeferred: true });
 }
 
 export function startAdminServiceWorker({
@@ -163,6 +218,7 @@ export function startAdminServiceWorker({
   }
 
   navigatorRef.serviceWorker.addEventListener('controllerchange', handleControllerChange);
+  navigatorRef.serviceWorker.addEventListener('message', handleWorkerMessage);
 
   startPromise = navigatorRef.serviceWorker.register('/sw.js', {
     scope: '/',
@@ -177,17 +233,16 @@ export function startAdminServiceWorker({
       error: false,
     });
 
+    refreshAdminServiceWorkerBuild();
     registration.addEventListener('updatefound', () => watchInstallingWorker(registration.installing));
     watchInstallingWorker(registration.installing);
-
-    updateInterval = windowRef.setInterval(() => {
-      if (navigatorRef.onLine === false) return;
-      registration.update().catch(() => publish({ error: true }));
-    }, CHECK_INTERVAL_MS);
 
     return registration;
   }).catch(() => {
     publish({ error: true });
+    startPromise = null;
+    navigatorRef.serviceWorker.removeEventListener?.('controllerchange', handleControllerChange);
+    navigatorRef.serviceWorker.removeEventListener?.('message', handleWorkerMessage);
     return null;
   });
 
@@ -198,7 +253,7 @@ export function activateAdminServiceWorkerUpdate() {
   if (activationPromise) return activationPromise;
   if (!canReloadNow()) {
     return Promise.reject(Object.assign(
-      new Error('Termina la operación en curso antes de actualizar.'),
+      new Error(getReloadBlockReason()),
       { code: 'ADMIN_UPDATE_OPERATION_ACTIVE' }
     ));
   }
@@ -220,7 +275,7 @@ export function activateAdminServiceWorkerUpdate() {
     if (activationAlreadyCompleted) {
       waitingWorker = null;
       publish({ waiting: false, active: true, error: false });
-      return Promise.resolve(reloadOnce());
+      return Promise.resolve(requestSafeReload());
     }
     return Promise.reject(new Error('No hay un Service Worker en espera.'));
   }
@@ -243,7 +298,7 @@ export function activateAdminServiceWorkerUpdate() {
         activatedUpdateObserved = true;
         waitingWorker = null;
         publish({ waiting: false, active: true, error: false });
-        resolveCurrentActivation(reloadOnce());
+        resolveCurrentActivation(requestSafeReload());
         return;
       }
 
@@ -265,13 +320,12 @@ export function activateAdminServiceWorkerUpdate() {
 }
 
 export function resetAdminServiceWorkerForTests() {
-  if (updateInterval && windowRef) windowRef.clearInterval(updateInterval);
   clearActivationTimer();
   navigatorRef?.serviceWorker?.removeEventListener?.('controllerchange', handleControllerChange);
+  navigatorRef?.serviceWorker?.removeEventListener?.('message', handleWorkerMessage);
   listeners.clear();
   registration = null;
   startPromise = null;
-  updateInterval = null;
   waitingWorker = null;
   activationPromise = null;
   resolveActivation = null;
@@ -282,9 +336,8 @@ export function resetAdminServiceWorkerForTests() {
   skipWaitingSent = false;
   currentController = null;
   activatedUpdateObserved = false;
-  reloadRequested = false;
   navigatorRef = null;
   windowRef = null;
   reloadGuard = null;
-  state = { registered: false, installing: false, waiting: false, active: false, error: false, reloadDeferred: false };
+  state = { registered: false, installing: false, waiting: false, active: false, error: false, reloadDeferred: false, publishedBuild: null, updateId: null };
 }

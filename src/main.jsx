@@ -107,8 +107,7 @@ if (isPublicStorePath(window.location.pathname)) {
   }
   startAdminInstallPromptCapture();
   if (!import.meta.env.DEV) {
-    startAdminServiceWorker();
-    startAdminServiceWorkerUpdateMonitor();
+    startAdminServiceWorker().then(() => startAdminServiceWorkerUpdateMonitor());
   }
   renderPosApplication().catch(handlePosStartupFailure);
 }

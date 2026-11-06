@@ -1,3 +1,4 @@
+import { registerAdminUpdateBlocker } from '../pwa/adminUpdateSafety';
 import { useCallback, useEffect, useRef } from 'react';
 import { useBlocker } from 'react-router-dom';
 import { showMessageModal } from '../services/utils';
@@ -33,8 +34,9 @@ export function useNavigationGuard({
       event.returnValue = '';
     };
 
+    const release = registerAdminUpdateBlocker('Guarda o descarta los cambios que estás editando antes de actualizar.');
     window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+    return () => { release(); window.removeEventListener('beforeunload', handleBeforeUnload); };
   }, [enabled]);
 
   useEffect(() => {
