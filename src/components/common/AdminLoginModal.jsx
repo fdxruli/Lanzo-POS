@@ -7,6 +7,7 @@ import LicenseContextSummary from './LicenseContextSummary';
 import PasswordField from './PasswordField';
 import { markFreeDeviceTakeoverCompleted } from '../../hooks/usePostDowngradeCashPending';
 import PreloginSupportAccess from './PreloginSupportAccess';
+import AdminAccountRecovery from './AdminAccountRecovery';
 import './AdminAuthModal.css';
 
 const SAFE_AUTH_ERROR_MESSAGES = Object.freeze({
@@ -65,6 +66,7 @@ export default function AdminLoginModal() {
   const [loading, setLoading] = useState(false);
   const [online, setOnline] = useState(navigator.onLine);
   const [error, setError] = useState('');
+  const [accountRecovery, setAccountRecovery] = useState(false);
   const [takeoverRequired, setTakeoverRequired] = useState(false);
   const usernameRef = useRef(null);
   const takeoverButtonRef = useRef(null);
@@ -238,8 +240,8 @@ export default function AdminLoginModal() {
       className="admin-auth-overlay admin-auth-overlay--login"
       role="dialog"
       aria-modal="true"
-      aria-labelledby="admin-login-title"
-      aria-describedby="admin-login-description"
+      aria-labelledby={accountRecovery ? 'account-recovery-title' : 'admin-login-title'}
+      aria-describedby={accountRecovery ? undefined : 'admin-login-description'}
     >
       <section className="admin-auth-panel admin-auth-panel--login">
         <div className="auth-login-topline">
@@ -252,6 +254,12 @@ export default function AdminLoginModal() {
 
         <LicenseContextSummary licenseDetails={licenseDetails} licenseKey={licenseKey} />
 
+        {accountRecovery ? <AdminAccountRecovery key={licenseKey} licenseKey={licenseKey} online={online}
+          onBack={() => setAccountRecovery(false)}
+          onRecovered={(recoveredUsername) => {
+            setUsername(recoveredUsername); setPassword(''); setError(''); setAccountRecovery(false);
+            if (window.requestAnimationFrame) window.requestAnimationFrame(() => usernameRef.current?.focus());
+          }} /> : <>
         <div className="admin-auth-heading">
           <span className="admin-auth-heading__icon" aria-hidden="true">
             <ShieldCheck size={27} strokeWidth={2.2} />
@@ -374,6 +382,10 @@ export default function AdminLoginModal() {
               disabled={loading || !online}
               fieldClassName="admin-auth-field"
             />
+            <button type="button" className="ui-button ui-button--ghost" disabled={loading}
+              onClick={() => { setAccountRecovery(true); setPassword(''); setError(''); }}>
+              ¿Olvidaste tus datos de acceso?
+            </button>
             {error && <div className="ui-alert ui-alert--danger" role="alert">{error}</div>}
             <button
               type="submit"
@@ -406,6 +418,7 @@ export default function AdminLoginModal() {
             </div>
           )}
         </PreloginSupportAccess>
+        </>}
       </section>
     </div>
   );

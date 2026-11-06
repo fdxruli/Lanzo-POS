@@ -4,7 +4,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 const recoveryRuntime = vi.hoisted(() => ({
-  markTakeoverCompleted: vi.fn()
+  markTakeoverCompleted: vi.fn(),
+  redeem: vi.fn()
+}));
+
+vi.mock('../../../services/auth/adminRecoveryService', async (original) => ({
+  ...await original(), redeemPasswordRecovery: recoveryRuntime.redeem
 }));
 
 const storeState = vi.hoisted(() => ({
@@ -46,6 +51,7 @@ beforeEach(() => {
   storeState.logout.mockReset();
   storeState.returnToLicenseAccessChoice.mockReset();
   recoveryRuntime.markTakeoverCompleted.mockReset();
+  recoveryRuntime.redeem.mockReset();
   storeState.adminLoginMessage = null;
   storeState.currentDeviceRole = null;
   storeState.currentAdminUser = null;
@@ -57,6 +63,24 @@ afterEach(() => {
 });
 
 describe('AdminLoginModal local database recovery', () => {
+  it('opens credential recovery without a username and returns the recovered username to login', async () => {
+    recoveryRuntime.redeem.mockResolvedValue({ success: true, username: 'original-owner' });
+    render(<AdminLoginModal />);
+    fireEvent.click(screen.getByRole('button', { name: '¿Olvidaste tus datos de acceso?' }));
+    expect(screen.getByRole('dialog')).toHaveAccessibleName('Recuperar acceso');
+    expect(screen.queryByLabelText('Usuario')).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText('Código recibido de soporte'), { target: { value: 'received-code' } });
+    fireEvent.change(screen.getByLabelText('Nueva contraseña'), { target: { value: 'Newpass123' } });
+    fireEvent.change(screen.getByLabelText('Confirmar nueva contraseña'), { target: { value: 'Newpass123' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Guardar nueva contraseña' }));
+    expect(await screen.findByText('original-owner')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Volver al inicio de sesión' }));
+    expect(screen.getByLabelText('Usuario')).toHaveValue('original-owner');
+    expect(screen.getByLabelText('Contraseña')).toHaveValue('');
+    expect(storeState.handleAdminLogin).not.toHaveBeenCalled();
+    expect(storeState.logout).not.toHaveBeenCalled();
+  });
+
   it('releases Verificando when UpgradeError rejects', async () => {
     const error = new Error('Not yet support for changing primary key');
     error.name = 'UpgradeError';

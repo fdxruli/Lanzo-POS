@@ -1,0 +1,8 @@
+.admin-account-recovery { display: grid; gap: 1rem; min-width: 0; }
+.admin-account-recovery h2, .admin-account-recovery p { margin: 0; }
+.admin-account-recovery p { line-height: 1.5; }
+.admin-account-recovery input { min-width: 0; width: 100%; box-sizing: border-box; font-size: 1rem; }
+.admin-account-recovery .recovery-code-input { font-family: monospace; }
+.admin-account-recovery .recovery-request-reference { overflow-wrap: anywhere; user-select: all; }
+.admin-account-recovery form { display: grid; gap: .75rem; }
+.admin-account-recovery button, .admin-account-recovery a { min-height: 44px; }

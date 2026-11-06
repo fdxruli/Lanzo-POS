@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useAppStore } from '../../store/useAppStore';
 import StaffUsersSettings from './StaffUsersSettings';
+import RecoveryContactSettings from './RecoveryContactSettings';
 import { showConfirmModal, showMessageModal } from '../../services/utils';
 import { getCommercialPlanName, getCommercialPlanShortName } from '../../utils/planDisplay';
 import {
@@ -525,6 +526,7 @@ export default function LicenseSettings() {
 
     const internalSections = useMemo(() => {
         const sections = [{ key: 'summary', label: 'Resumen' }];
+        if (settingsAccess.isAdmin) sections.push({ key: 'recovery', label: 'Recuperación' });
 
         if (canEditBusinessProfile) sections.push({ key: 'rubros', label: 'Rubros' });
         if (canManageStaff && licenseDetails?.valid) {
@@ -537,7 +539,7 @@ export default function LicenseSettings() {
         }
 
         return sections;
-    }, [canDiscoverCloudCapabilities, canDiscoverLocalTeam, canEditBusinessProfile, canManageStaff, licenseDetails?.valid]);
+    }, [canDiscoverCloudCapabilities, canDiscoverLocalTeam, canEditBusinessProfile, canManageStaff, licenseDetails?.valid, settingsAccess.isAdmin]);
     const [activeSection, setActiveSection] = useState('summary');
     const activeSectionIsValid = internalSections.some(({ key }) => key === activeSection);
     const effectiveActiveSection = activeSectionIsValid
@@ -788,6 +790,12 @@ export default function LicenseSettings() {
                         activeRubroLabels={activeRubroLabels}
                         onToggle={handleRubroToggle}
                     />
+                </div>
+            )}
+
+            {effectiveActiveSection === 'recovery' && settingsAccess.isAdmin && (
+                <div id="license-panel-recovery" role="tabpanel" aria-labelledby="license-tab-recovery" className="license-section-panel">
+                    <RecoveryContactSettings key={staffContextKey} licenseKey={licenseDetails.license_key} />
                 </div>
             )}
 

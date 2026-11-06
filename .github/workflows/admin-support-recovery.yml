@@ -1,0 +1,61 @@
+name: Admin support recovery
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/services/auth/adminRecoveryService.js'
+      - 'src/services/auth/__tests__/adminRecoveryService.test.js'
+      - 'src/components/common/AdminAccountRecovery*'
+      - 'src/components/common/__tests__/AdminAccountRecovery.test.jsx'
+      - 'src/components/common/AdminLoginModal.jsx'
+      - 'src/components/settings/RecoveryContactSettings.jsx'
+      - 'src/components/settings/__tests__/RecoveryContactSettings.test.jsx'
+      - 'src/components/settings/LicenseSettings.jsx'
+      - 'supabase/migrations/20261106201326_admin_support_account_recovery_v1.sql'
+      - 'supabase/tests/fixtures/admin-support-recovery.sql'
+      - 'scripts/supabase/admin-support-recovery.node-test.mjs'
+      - '.github/workflows/admin-support-recovery.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  recovery:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17.6
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ['55432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.19.0'
+          cache: npm
+      - run: npm ci
+      - name: PostgreSQL recovery, concurrency and login regression
+        run: node --test scripts/supabase/admin-support-recovery.node-test.mjs
+      - name: UI, transport, authority and offline regression
+        run: >-
+          npx vitest run --maxWorkers=2
+          src/services/auth/__tests__/adminRecoveryService.test.js
+          src/components/common/__tests__/AdminAccountRecovery.test.jsx
+          src/components/settings/__tests__/RecoveryContactSettings.test.jsx
+          src/components/common/__tests__/AdminLoginModal.recovery.test.jsx
+          src/components/common/__tests__/AdminLoginModal.preparation.test.jsx
+          src/components/settings/__tests__/LicenseSettings.access.test.jsx
+          src/services/auth/__tests__/adminOfflineAuthorization.test.js
+          src/services/auth/__tests__/sessionVerification.test.js
+          src/services/auth/__tests__/actorAuthorityRecovery.integration.test.js
+      - name: Frontend build and offline precache checks
+        run: npm run build
+        env:
+          VITE_SUPABASE_URL: https://recovery-qa.invalid
+          VITE_SUPABASE_PUBLISHABLE_KEY: synthetic-public-key

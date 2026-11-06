@@ -1,0 +1,37 @@
+{
+  "date_utc": "2026-11-06",
+  "base_main": "3edf5198085207162466db388423e72f16d665ed",
+  "supabase_project": "odlrhijtfyavryeqivaa",
+  "migration_version": "20261106201326",
+  "migration_sha256": "3a7eb520c926562e9d8c20b009da426d1307eae17255cc1766cad0de5cd56f3f",
+  "local_validation": {
+    "vitest_files": 9,
+    "vitest_tests_passed": 163,
+    "postgres_version": "17.6",
+    "postgres_tests_passed": 13,
+    "postgres_boundary": "Disposable local fixture; canonical auth/login functions; fixture entitlement and tables. Not Production application QA.",
+    "canonical_auth_bodies_match_production": [
+      "private.require_active_admin_session",
+      "private.create_admin_session",
+      "private.generate_license_realtime_topic",
+      "public.admin_login_on_device",
+      "public.enforce_pos_rpc_rate_limit_v2",
+      "public.build_pos_rpc_rate_limited_response"
+    ],
+    "changed_javascript_eslint": "passed",
+    "frontend_build": "passed",
+    "pwa_startup_precache_audit": "passed",
+    "pwa_bot_precache_audit": "passed"
+  },
+  "production_preflight": {
+    "latest_ledger_version": "20261106025114",
+    "recovery_tables_existing": 0,
+    "el_balon_plan": "pro_monthly",
+    "el_balon_active_devices": 3,
+    "el_balon_max_devices": 5
+  },
+  "production_migration": "not installed; exact authorization pending",
+  "manual_application_qa": "not executed; owner participation pending",
+  "frontend_production": "not deployed",
+  "functional_acceptance": "pending real recovery in Preview and final authorized Production validation"
+}
