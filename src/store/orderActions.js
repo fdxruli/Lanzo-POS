@@ -709,7 +709,7 @@ export const createOrderActions = (set, get) => ({
       },
 
       removeItem: (lineId, orderId = get().currentOrderId) => {
-        get().updateOrderItems(orderId, (prevOrder) => (
+        return get().updateOrderItems(orderId, (prevOrder) => (
           (prevOrder || []).filter((item, index) => !isCartLineMatch(item, lineId, index))
         ));
       },
