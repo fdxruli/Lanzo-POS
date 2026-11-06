@@ -1,4 +1,29 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const updates = vi.hoisted(() => ({
+  orders: new Map(),
+  checkouts: [],
+  confirm: vi.fn(async () => true),
+  message: vi.fn()
+}));
+
+vi.mock('../../hooks/pos/useActiveOrders', () => ({
+  useActiveOrders: { getState: () => ({ activeOrders: updates.orders }) }
+}));
+vi.mock('../../services/auth/actorOperationalHandoff', () => ({
+  getActorCheckoutOwnerships: () => updates.checkouts
+}));
+vi.mock('../../services/utils', () => ({
+  showConfirmModal: updates.confirm,
+  showMessageModal: updates.message
+}));
+
+beforeEach(() => {
+  updates.orders = new Map();
+  updates.checkouts = [];
+  updates.confirm.mockReset().mockResolvedValue(true);
+  updates.message.mockClear();
+});
 import { createPWASlice } from './createPWASlice';
 
 const createSliceHarness = () => {
@@ -69,4 +94,65 @@ it('preserves a postponement for the same build and shows the next build', () =>
   harness.actions.closeUpdateModal();
   harness.actions.setUpdateAvailable(true, 'build-c');
   expect(harness.state().showUpdateModal).toBe(true);
+});
+
+
+describe('createPWASlice update safety feedback', () => {
+  it('asks before reloading a normal cart with items', async () => {
+    const harness = createSliceHarness();
+    const trigger = vi.fn(async () => true);
+    updates.orders.set('sale-1', { items: [{ quantity: 2 }], isLockedForCheckout: false });
+    harness.actions.setUpdateAvailable(true);
+    harness.actions.setTriggerUpdate(trigger);
+
+    await harness.actions.runUpdate();
+
+    expect(updates.confirm).toHaveBeenCalledOnce();
+    expect(trigger).toHaveBeenCalledOnce();
+  });
+
+  it('does not update when the user postpones a cart warning', async () => {
+    const harness = createSliceHarness();
+    const trigger = vi.fn(async () => true);
+    updates.orders.set('sale-1', { items: [{ quantity: 1 }] });
+    updates.confirm.mockResolvedValueOnce(false);
+    harness.actions.setUpdateAvailable(true);
+    harness.actions.setTriggerUpdate(trigger);
+
+    await harness.actions.runUpdate();
+
+    expect(trigger).not.toHaveBeenCalled();
+    expect(harness.state().isUpdating).toBe(false);
+    expect(harness.state().updateAvailable).toBe(true);
+  });
+
+  it('never bypasses a checkout lock, even if the order is persisted', async () => {
+    const harness = createSliceHarness();
+    const trigger = vi.fn(async () => true);
+    updates.checkouts = [{ orderId: 'sale-1', persisted: true }];
+    updates.orders.set('sale-1', { items: [{ quantity: 1 }], isLockedForCheckout: true });
+    harness.actions.setUpdateAvailable(true);
+    harness.actions.setTriggerUpdate(trigger);
+
+    await harness.actions.runUpdate();
+
+    expect(updates.confirm).not.toHaveBeenCalled();
+    expect(trigger).not.toHaveBeenCalled();
+    expect(updates.message).toHaveBeenCalledOnce();
+    expect(harness.state().updateError).toMatch(/Termina o cancela el cobro/);
+  });
+
+  it('shows a visible warning if a critical operation becomes active after confirmation', async () => {
+    const harness = createSliceHarness();
+    const trigger = vi.fn(async () => { throw new Error('Espera a que termine la sincronización.'); });
+    updates.orders.set('sale-1', { items: [{ quantity: 1 }] });
+    harness.actions.setUpdateAvailable(true);
+    harness.actions.setTriggerUpdate(trigger);
+
+    await harness.actions.runUpdate();
+
+    expect(trigger).toHaveBeenCalledOnce();
+    expect(updates.message).toHaveBeenCalledWith(expect.stringContaining('sincronización'), null, { type: 'warning' });
+    expect(harness.state().updateAvailable).toBe(true);
+  });
 });
