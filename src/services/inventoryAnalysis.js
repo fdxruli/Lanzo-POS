@@ -360,6 +360,13 @@ export const buildExpiringProductsReport = ({
 
 export const getLowStockProductsReport = async (options = {}) => {
   try {
+    // The bot displays operational stock only, not purchasing/demand forecasts.
+    // Avoid loading all sales, waste and batches for that small read-only result.
+    if (options.operationalOnly) {
+      const products = await loadData(STORES.MENU);
+      if (!Array.isArray(products) || typeof options.compute !== 'function') throw new Error('INVENTORY_READ_INCOMPLETE');
+      return await options.compute(products);
+    }
     // Corrección: Cargar tanto el MENU como los lotes en paralelo.
     const [products, batches, sales, wasteLogs] = await Promise.all([
       loadData(STORES.MENU),

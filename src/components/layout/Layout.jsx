@@ -204,6 +204,7 @@ function LayoutContent() {
         <Suspense fallback={null}>
           <AssistantBot
             key={actorRuntime.generation}
+            enabled={showAssistantBot}
             reportsAllowed={canReadReports}
             globalAlertEligible={globalAlertEligible}
             isSuppressed={isNotFoundPage}

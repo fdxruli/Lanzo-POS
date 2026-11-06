@@ -28,6 +28,8 @@ with sync_playwright() as p:
         context.route('**/*', route_request)
         page = context.new_page()
         errors = []
+        workers = []
+        page.on('worker', lambda worker: workers.append(worker))
         page.on('pageerror', lambda error: errors.append(str(error)))
         page.goto(base + '/scripts/qa/lanzo-bot/fixture.html')
         if name == 'android-dark':
@@ -35,6 +37,8 @@ with sync_playwright() as p:
         page.get_by_role('button', name='Abrir Lanzó Bot').click()
         panel = page.get_by_role('region', name='Lanzó Bot')
         expect(panel).to_be_visible()
+        page.wait_for_function("document.querySelector('.suggested-questions button') !== null")
+        assert len(workers) == 1 and workers[0].evaluate('self.constructor.name') == 'DedicatedWorkerGlobalScope'
         assert page.locator('.close-btn svg').bounding_box()['width'] >= 18
         page.get_by_role('button', name='¿Cómo hago una venta rápida?', exact=True).click()
         expect(page.get_by_text('Venta rápida', exact=True)).to_be_visible()
@@ -62,7 +66,7 @@ with sync_playwright() as p:
         expect(panel).not_to_be_visible()
         expect(page.get_by_role('button', name='Abrir Lanzó Bot')).to_be_focused()
         assert not errors, errors
-        results.append({'viewport': name, 'size': [width, height], 'suggested_manual_navigation_warm_offline_reconnect_escape': 'PASS', 'page_errors': errors, 'identity_and_stores': 'mocked'})
+        results.append({'viewport': name, 'size': [width, height], 'suggested_manual_navigation_warm_offline_reconnect_escape': 'PASS', 'page_errors': errors, 'identity_and_stores': 'mocked', 'worker': 'real DedicatedWorkerGlobalScope', 'worker_creations': len(workers)})
         context.close()
     browser.close()
 (out / 'results.json').write_text(json.dumps(results, ensure_ascii=False, indent=2))

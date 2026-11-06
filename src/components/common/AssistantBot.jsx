@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { X, Send, Sparkles, Lightbulb, MapPin } from 'lucide-react';
 import { GLOBAL_ALERT, acknowledgeGlobalAlert } from '../../config/botContext';
-import { getBotScreen } from '../../config/botKnowledge';
 import { BOT_RUBROS } from '../../config/botContextByRubro';
 import { normalizeBusinessTypes } from '../../utils/businessType';
 import { canOpenBotAction } from '../../utils/botNavigation';
@@ -14,7 +13,7 @@ import { useBotScreenContext } from '../../hooks/useBotScreenContext';
 import { useActiveOrders } from '../../hooks/pos/useActiveOrders';
 import './AssistantBot.css';
 
-const AssistantBot = ({ globalAlertEligible = false, isSuppressed = false }) => {
+const AssistantBot = ({ enabled = true, globalAlertEligible = false, isSuppressed = false }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const actor = useActorRuntimeSnapshot();
@@ -24,7 +23,6 @@ const AssistantBot = ({ globalAlertEligible = false, isSuppressed = false }) => 
   const canAccess = useAppStore(state => state.canAccess);
   const publishedScreen = useBotScreenContext();
   const localTab = publishedScreen?.pathname === location.pathname ? publishedScreen.tab : '';
-  const screen = useMemo(() => getBotScreen(location.pathname, location.search, localTab), [location.pathname, location.search, localTab]);
   const businessType = normalizeBusinessTypes(profile?.business_type, 'abarrotes')[0];
   const businessLabel = BOT_RUBROS[businessType]?.label || 'Negocio';
   const cloud = isCloudPosSyncEnabled(license);
@@ -34,8 +32,10 @@ const AssistantBot = ({ globalAlertEligible = false, isSuppressed = false }) => 
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
-  const contextKey = `${location.pathname}${location.search}:${localTab}:${actor.generation}:${actor.tenant?.generation}:${actor.tenant?.opaqueId}`;
-  const { askBot } = useBotAssistant(contextKey);
+  const contextKey = `${location.pathname}${location.search}:${localTab}:${actor.generation}:${actor.tenant?.generation}:${actor.tenant?.opaqueId}:${enabled}`;
+  const showAlert = globalAlertEligible && !dismissed;
+  const motorEnabled = enabled && open && !showAlert && !isSuppressed;
+  const { askBot, screen, error: workerError } = useBotAssistant(contextKey, motorEnabled, { pathname: location.pathname, search: location.search, tab: localTab, businessType, actorType: actor.actorType, cloud, online });
   const currentKey = useRef(contextKey);
   currentKey.current = contextKey;
   const pending = useRef(null);
@@ -44,21 +44,23 @@ const AssistantBot = ({ globalAlertEligible = false, isSuppressed = false }) => 
   const endRef = useRef(null);
   const launcherRef = useRef(null);
   const panelRef = useRef(null);
-  const showAlert = globalAlertEligible && !dismissed;
   const panelOpen = open || showAlert;
 
   useEffect(() => {
+    if (!motorEnabled) return;
     const update = () => setOnline(navigator.onLine !== false);
+    update();
     window.addEventListener('online', update);
     window.addEventListener('offline', update);
     return () => { window.removeEventListener('online', update); window.removeEventListener('offline', update); };
-  }, []);
+  }, [motorEnabled]);
   useEffect(() => {
     pending.current = null;
+    lastSubmission.current = null;
     setMessages([]);
     setInput('');
     setBusy(false);
-  }, [contextKey]);
+  }, [contextKey, motorEnabled]);
   useEffect(() => () => { pending.current = null; }, []);
   useEffect(() => { endRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' }); }, [messages, busy]);
   useEffect(() => {
@@ -87,6 +89,7 @@ const AssistantBot = ({ globalAlertEligible = false, isSuppressed = false }) => 
       acknowledgeGlobalAlert(GLOBAL_ALERT);
       setDismissed(true);
     }
+    pending.current = null;
     setOpen(false);
     requestAnimationFrame(() => launcherRef.current?.focus());
   };
@@ -110,7 +113,7 @@ const AssistantBot = ({ globalAlertEligible = false, isSuppressed = false }) => 
       if (!isCurrent() || error.code === 'BOT_CANCELLED') return;
       add({ type: 'bot', title: 'No pude completar la pregunta', message: error.code === 'BOT_TIMEOUT'
         ? 'La consulta tardó demasiado. Puedes reintentar o continuar con otra pregunta.'
-        : 'No pude cargar o procesar la ayuda. Reintenta; si falta un archivo de la aplicación, vuelve a abrirla con conexión.', retry: text });
+        : 'No pude iniciar o procesar la pregunta en el motor independiente. Reintenta; si tu navegador bloquea Workers, revisa su configuración.', retry: text });
     } finally {
       if (isCurrent()) { pending.current = null; setBusy(false); }
     }
@@ -121,7 +124,7 @@ const AssistantBot = ({ globalAlertEligible = false, isSuppressed = false }) => 
     setOpen(false);
     navigate(action.path);
   };
-  if (isSuppressed) return null;
+  if (isSuppressed || (!enabled && !showAlert)) return null;
   const suggestions = screen.guides.slice(0, 3);
   return (
     <div className={`lanzo-bot-container ${panelOpen ? 'open' : 'closed'} ${hasItems && location.pathname === '/' ? 'has-items' : ''}`}>
@@ -142,6 +145,7 @@ const AssistantBot = ({ globalAlertEligible = false, isSuppressed = false }) => 
             </div> : <>
               <p className="chat-context-note">{businessLabel} · {cloud ? 'Nube' : 'Free / Local'} · {online ? 'Con conexión' : 'Sin conexión'}</p>
               <div className="chat-container">
+                {workerError && <p role="status">{workerError}</p>}
                 <div className="chat-messages" role="log" aria-label="Conversación con Lanzó Bot" aria-live="polite" aria-relevant="additions" aria-busy={busy}>
                   {messages.length === 0 && <div className="chat-welcome"><p>Te guío paso a paso en {screen.label}. La ayuda operativa funciona sin internet.</p></div>}
                   {messages.map(message => {

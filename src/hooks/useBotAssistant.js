@@ -1,43 +1,36 @@
-import { useCallback, useEffect, useRef } from 'react';
-import { processBotMessage } from '../utils/botIntelligence';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createBotWorkerClient } from '../services/botWorkerClient';
+export { BOT_TIMEOUT_MS } from '../services/botWorkerClient';
 
-export const BOT_TIMEOUT_MS = 15000;
-const loadEngine = () => ({ processBotMessage });
-const botError = (code) => Object.assign(new Error(code), { code });
-
-/** One engine loaded with the lazy assistant in the application's tenant runtime. No business data crosses a worker. */
-export const useBotAssistant = (contextKey, loader = loadEngine) => {
-  const active = useRef(null);
-  useEffect(() => () => {
-    active.current?.cancel();
-  }, [contextKey]);
-
-  const askBot = useCallback((text, context = {}) => {
-    if (active.current) return Promise.reject(botError('BOT_BUSY'));
-    const controller = new AbortController();
-    const request = {};
-    const result = new Promise((resolve, reject) => {
-      let settled = false;
-      const finish = (error, response) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        controller.abort();
-        if (active.current === request) active.current = null;
-        if (error) reject(error); else resolve(response);
-      };
-      const timer = setTimeout(() => finish(botError('BOT_TIMEOUT')), BOT_TIMEOUT_MS);
-      request.cancel = () => finish(botError('BOT_CANCELLED'));
-      active.current = request;
-      Promise.resolve().then(loader).then(async (engine) => {
-        if (controller.signal.aborted) throw botError('BOT_CANCELLED');
-        const response = await engine.processBotMessage(text, context, { signal: controller.signal });
-        if (!response?.title || typeof response.message !== 'string') throw botError('BOT_INVALID_RESPONSE');
-        finish(null, response);
-      }).catch((error) => finish(error));
-    });
-    return result;
-  }, [loader]);
-
-  return { askBot };
+export const useBotAssistant = (contextKey, enabled = false, context = {}, factory = createBotWorkerClient) => {
+  const client = useRef(null);
+  const contextRef = useRef(context);
+  const enabledRef = useRef(enabled);
+  useLayoutEffect(() => { contextRef.current = context; enabledRef.current = enabled; }, [context, enabled]);
+  const [screen, setScreen] = useState({ label: 'LANZO POS', guides: [] });
+  const [error, setError] = useState(null);
+  const ensureClient = useCallback(() => {
+    if (!enabledRef.current) throw Object.assign(new Error('BOT_CANCELLED'), { code: 'BOT_CANCELLED' });
+    if (!client.current || client.current.closed) {
+      const instance = factory(contextRef.current);
+      client.current = instance;
+      setScreen({ label: 'LANZO POS', guides: [] });
+      instance.ready.then(value => {
+        if (enabledRef.current && client.current === instance) { setScreen(value); setError(null); }
+      }, () => {
+        if (enabledRef.current && client.current === instance) setError('No pude iniciar el motor. Reintenta la pregunta para recuperarlo.');
+      });
+    }
+    return client.current;
+  }, [factory]);
+  useEffect(() => {
+    if (!enabled) return;
+    let mounted = true;
+    const instance = ensureClient();
+    setError(null);
+    instance.ready.then(value => { if (mounted) setScreen(value); }, () => { if (mounted) setError('No pude iniciar el motor. Reintenta la pregunta para recuperarlo.'); });
+    return () => { mounted = false; instance.stop(); client.current?.stop(); client.current = null; };
+  }, [contextKey, enabled, ensureClient]);
+  const askBot = useCallback((text, questionContext) => ensureClient().ask(text, questionContext), [ensureClient]);
+  return { askBot, screen, error };
 };

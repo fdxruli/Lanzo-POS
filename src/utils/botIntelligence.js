@@ -16,14 +16,12 @@ export const detectIntent = (text) => {
   return BOT_GUIDES.find(guide => guide.patterns.some(pattern => pattern.test(normalized)))?.id || 'unknown';
 };
 
-export const processBotMessage = async (text, context = {}, { signal } = {}) => {
+export const processBotMessage = async (text, context = {}) => {
   const intent = detectIntent(text);
   if (Object.hasOwn(INTENT_PATTERNS, intent)) {
     const timeframe = extractTimeframe(text);
     if (!timeframe) return { title: 'Elige un período', message: 'Puedo consultar hoy, ayer, esta semana, semana pasada, este mes, mes pasado o los últimos 1 a 366 días. Indica uno de esos períodos para evitar una cifra de fechas incorrectas.' };
-    const { readBotBusinessData } = await import('../services/botReadService');
-    if (signal?.aborted) throw Object.assign(new Error('BOT_CANCELLED'), { code: 'BOT_CANCELLED' });
-    return readBotBusinessData(intent, timeframe, { signal });
+    return { kind: 'read', intent, timeframe };
   }
   const screen = getBotScreen(context.pathname, context.search, context.tab);
   const guide = BOT_GUIDES.find(item => item.id === intent);

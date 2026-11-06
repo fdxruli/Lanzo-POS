@@ -95,7 +95,7 @@ describe('ECOM.PUBLIC.PWA.1 architecture', () => {
 
     expect(config).not.toContain('createAdminStartupPrecacheAuditPlugin');
     expect(packageJson.scripts.build).toBe('vite build');
-    expect(packageJson.scripts.postbuild).toBe('node scripts/admin-startup-precache-audit.mjs');
+    expect(packageJson.scripts.postbuild.split(' && ')).toEqual(['node scripts/admin-startup-precache-audit.mjs', 'node scripts/audit-bot-precache.mjs']);
     expect(audit).toContain('findMissingStartupPrecacheAssets');
     expect(audit).toContain('findMissingCoreLocalRoutePrecacheAssets');
     expect(audit).toContain('Administrative startup assets are missing from the Service Worker precache');
@@ -312,7 +312,13 @@ describe('ECOM.PUBLIC.PWA.1 architecture', () => {
     }
 
     expect(joined).not.toMatch(/EcommerceOrdersPage|CommercialAIAgentsPage|EcommercePortalPage/);
-    expect(joined).not.toMatch(/\.worker-|AssistantBot|ScannerModal/);
+    expect(joined).not.toMatch(/ScannerModal/);
+    const botWorkers = inventory.uniqueUrls.filter(url => /bot\.worker-.*\.js$/.test(url));
+    expect(botWorkers).toHaveLength(1);
+    expect(inventory.uniqueUrls.filter(url => /\.worker-/.test(url))).toEqual(botWorkers);
+    expect(joined).toMatch(/AssistantBot/); // optional execution, intentional offline availability
+    const botWorker = await readProjectFile(`dist/${botWorkers[0]}`);
+    expect(botWorker).not.toMatch(/tenantRuntimeRouter|LanzoTenantDirectory|supabaseClient/);
   });
 
   it('defines bounded versioned runtime caches and status-200-only writes', async () => {

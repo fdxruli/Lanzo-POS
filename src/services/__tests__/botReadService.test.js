@@ -1,12 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createActorRuntimeController } from '../auth/actorRuntimeController';
-import { readBotBusinessData } from '../botReadService';
+import { summarizeFinancialSales } from '../sales/financialPolicy';
+import { aggregateProductStats } from '../reports/productStats';
+import { readBotBusinessData as readOriginal } from '../botReadService';
 
 const mocks = vi.hoisted(() => ({ controller: null, overview: vi.fn(), credit: vi.fn(), lowStock: vi.fn(), expiration: vi.fn() }));
 vi.mock('../auth/actorRuntimeController', async original => ({ ...(await original()), actorRuntimeController: { capture: (...args) => mocks.controller.capture(...args) } }));
 vi.mock('../reports/reportsRepository', () => ({ reportsRepository: { getOverviewReport: mocks.overview, getCustomerCreditReport: mocks.credit } }));
 vi.mock('../inventoryAnalysis', () => ({ getLowStockProductsReport: mocks.lowStock, getExpiringProductsReport: mocks.expiration }));
 
+const readBotBusinessData = (intent, timeframe, options = {}) => readOriginal(intent, timeframe, { ...options, compute: async (operation, sales, check) => { check(); return operation === 'products' ? aggregateProductStats(sales) : { ...summarizeFinancialSales(sales), hasIncompleteItems: sales.some(sale => !sale.items?.length) }; } });
 const timeframe = { label: 'hoy', dateFrom: '2026-11-06T00:00:00.000Z', dateTo: '2026-11-06T23:59:59.999Z', start: new Date('2026-11-06'), end: new Date('2026-11-07') };
 let tenant;
 const grant = (actorType = 'admin', permissions = []) => {
@@ -79,7 +82,7 @@ describe('Bot authorized business reads', () => {
   it('uses strict inventory reads and distinguishes failure from no matches', async () => {
     mocks.lowStock.mockRejectedValueOnce(new Error('IndexedDB unavailable')).mockResolvedValueOnce([]);
     expect((await readBotBusinessData('low_stock', timeframe)).retryable).toBe(true);
-    expect(mocks.lowStock).toHaveBeenCalledWith({ limit: 5, throwOnError: true });
+    expect(mocks.lowStock).toHaveBeenCalledWith(expect.objectContaining({ limit: 5, throwOnError: true, operationalOnly: true }));
     expect((await readBotBusinessData('low_stock', timeframe)).message).toContain('no encontró');
   });
   it('reuses the existing local product aggregation for a complete local period', async () => {

@@ -7,8 +7,7 @@ const isCancelledSale = (sale = {}) => {
 };
 
 // Shared by the dashboard and Lanzó Bot; monetary rules remain in financialPolicy.
-export const aggregateProductStats = (sales = []) => {
-    const productMap = new Map();
+export const accumulateProductStats = (sales, productMap) => {
 
     sales.forEach(sale => {
       if (isCancelledSale(sale) || !Array.isArray(sale.items)) return;
@@ -45,6 +44,11 @@ export const aggregateProductStats = (sales = []) => {
       });
     });
 
+};
+
+export const aggregateProductStats = (sales = []) => {
+    const productMap = new Map();
+    accumulateProductStats(sales, productMap);
     return Array.from(productMap.values()).map(product => ({
       ...product,
       marginPct: product.confirmedRevenue > 0

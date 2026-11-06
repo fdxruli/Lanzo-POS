@@ -12,7 +12,7 @@ const warningsFor = (report) => [...new Set([
 ].map(item => typeof item === 'string' ? item : item?.message).filter(Boolean))];
 
 /** Read-only adapter. Authority is captured before loading services and checked at every await. */
-export const readBotBusinessData = async (intent, timeframe, { signal } = {}) => {
+export const readBotBusinessData = async (intent, timeframe, { signal, compute } = {}) => {
   let handle;
   try {
     handle = actorRuntimeController.capture('reports');
@@ -35,7 +35,7 @@ export const readBotBusinessData = async (intent, timeframe, { signal } = {}) =>
     if (['low_stock', 'expiration_alert'].includes(intent)) {
       const inventory = await read(() => import('./inventoryAnalysis'));
       const rows = await read(() => intent === 'low_stock'
-        ? inventory.getLowStockProductsReport({ limit: 5, throwOnError: true })
+        ? inventory.getLowStockProductsReport({ limit: 5, throwOnError: true, operationalOnly: true, compute: products => compute('stock', products, check) })
         : inventory.getExpiringProductsReport({ daysThreshold: 7, throwOnError: true }));
       if (!Array.isArray(rows)) throw new Error('BOT_READ_FAILED');
       return {
@@ -75,18 +75,18 @@ export const readBotBusinessData = async (intent, timeframe, { signal } = {}) =>
     }
     if (intent === 'top_products') {
       if (!local || !Array.isArray(report.sales)) return { ...unavailable('Este reporte Nube no entrega un ranking completo de productos. No puedo calcular los más vendidos a partir de una página parcial. Revisa los análisis disponibles en Reportes o Lía.'), actions };
-      const { aggregateProductStats } = await read(() => import('./reports/productStats'));
-      const rows = aggregateProductStats(report.sales).sort((a, b) => b.quantity - a.quantity).slice(0, 5);
+      if (!compute) throw new Error('BOT_COMPUTATION_REQUIRED');
+      const rows = await read(() => compute('products', report.sales, check));
       return { title: `Productos por unidades · ${timeframe.label}`, message: rows.length ? rows.map(item => `• ${item.name}: ${item.quantity} unidades`).join('\n') : 'No hay productos vendidos en el período consultado.', tips, actions };
     }
     let value;
     let profitStatus;
     if (local) {
       if (!Array.isArray(report.sales)) return unavailable('El reporte no entregó ventas locales para confirmar la cifra.');
-      const { summarizeFinancialSales } = await read(() => import('./sales/financialPolicy'));
-      const summary = summarizeFinancialSales(report.sales);
+      if (!compute) throw new Error('BOT_COMPUTATION_REQUIRED');
+      const summary = await read(() => compute('financial', report.sales, check));
       if (!report.sales.length) return { title: `Sin ventas · ${timeframe.label}`, message: 'No hay ventas cerradas en el período consultado en este dispositivo.', tips, actions };
-      if (intent === 'profit_report' && (summary.hasMissingCosts || report.sales.some(sale => !Array.isArray(sale.items) || sale.items.length === 0))) return { ...unavailable('Faltan costos o detalles de artículos. No puedo confirmar una ganancia total para este período. Revisa costos y calidad de datos en Reportes.'), tips, actions };
+      if (intent === 'profit_report' && (summary.hasMissingCosts || summary.hasIncompleteItems)) return { ...unavailable('Faltan costos o detalles de artículos. No puedo confirmar una ganancia total para este período. Revisa costos y calidad de datos en Reportes.'), tips, actions };
       value = intent === 'profit_report' ? summary.confirmedProfit : summary.totalRevenue;
       profitStatus = 'estimated';
     } else {
