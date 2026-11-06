@@ -1,15 +1,38 @@
 // src/components/customers/AbonoModal.jsx
-import { useCallback, useState, useEffect, useRef } from 'react';
-import { Wallet, X, CheckCircle, MessageCircle, AlertTriangle, List } from 'lucide-react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import {
+  Wallet,
+  X,
+  CheckCircle,
+  MessageCircle,
+  AlertTriangle,
+  List,
+  ChevronDown,
+  LoaderCircle
+} from 'lucide-react';
 import { db } from '../../services/db/dexie';
 import { Money } from '../../utils/moneyMath';
 import { useDismissibleHistoryLayer } from '../../hooks/useDismissibleHistoryLayer';
-import {
-  formatMoneyValue,
-  isCreditPaymentMethod,
-  normalizeMoney
-} from '../../services/customerMessaging';
+import { formatMoneyValue, isCreditPaymentMethod, normalizeMoney } from '../../services/customerMessaging';
 import './AbonoModal.css';
+
+// Input feedback only. The existing repository/server still validates and applies money.
+const inputError = (value, maximum, allowZero = false) => {
+  if (value === '') return '';
+  const amount = normalizeMoney(value);
+  if (!amount.ok || amount.amount.lt(0) || (!allowZero && amount.amount.eq(0)))
+    return 'Ingresa un importe mayor a cero.';
+  if (!amount.amount.eq(amount.amount.round(2))) return 'Usa un importe con hasta dos decimales.';
+  if (amount.amount.gt(Money.init(maximum)))
+    return `El importe supera el disponible de ${formatMoneyValue(Money.toExactString(maximum))}.`;
+  return '';
+};
+const noteDate = (value) => {
+  const date = new Date(value || '');
+  return Number.isNaN(date.getTime())
+    ? 'Fecha no disponible'
+    : date.toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' });
+};
 
 export default function AbonoModal({
   show,
@@ -22,424 +45,596 @@ export default function AbonoModal({
   cashSession = null,
   cashActor = null,
   authoritativePendingSales = null,
-  cloudAllocationStatus = 'unavailable'
+  cloudAllocationStatus = 'unavailable',
+  onReloadPendingSales = null
 }) {
   const [monto, setMonto] = useState('');
   const [error, setError] = useState('');
   const [sendReceipt, setSendReceipt] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
-
-  // Nuevos estados para asignación manual
-  const [advancedMode, setAdvancedMode] = useState(false);
-  const [pendingSales, setPendingSales] = useState([]);
+  const [mode, setMode] = useState('general');
   const [allocations, setAllocations] = useState({});
-
+  const [localSales, setLocalSales] = useState([]);
+  const [localNotesStatus, setLocalNotesStatus] = useState('loading');
   const isSubmittingRef = useRef(false);
   const isMountedRef = useRef(false);
-  const isModalOpenRef = useRef(false);
-
-  const normalizedDebt = normalizeMoney(customer?.debt ?? 0);
-  const deudaActualExact = normalizedDebt.ok ? normalizedDebt.exact : '0';
-  const deudaActualDecimal = normalizedDebt.ok ? normalizedDebt.decimal : '0.00';
+  const dialogRef = useRef(null);
+  const amountRef = useRef(null);
+  const id = useId();
+  const specific = mode === 'specific';
+  const debt = normalizeMoney(customer?.debt ?? 0);
+  const debtExact = debt.ok ? debt.exact : '0';
 
   useEffect(() => {
     isMountedRef.current = true;
-
     return () => {
       isMountedRef.current = false;
     };
   }, []);
 
   useEffect(() => {
-    isModalOpenRef.current = Boolean(show);
-
     if (!show) {
-      isSubmittingRef.current = false;
-      setIsSubmitting(false);
       setMonto('');
       setError('');
-      setAdvancedMode(false);
+      setMode('general');
       setAllocations({});
-      setPendingSales([]);
+      setLocalSales([]);
+      // A parent-driven close must not release an operation that is still pending.
+      if (!isSubmittingRef.current) setIsSubmitting(false);
     }
   }, [show]);
 
-  const handleClose = useCallback(() => {
-    if (isSubmitting) return;
-    onClose();
-  }, [isSubmitting, onClose]);
+  useEffect(() => {
+    if (isCloudCredit && cloudAllocationStatus !== 'reconciled') setAllocations({});
+  }, [isCloudCredit, cloudAllocationStatus]);
 
+  useEffect(() => {
+    if (!show || !specific || isCloudCredit || Array.isArray(authoritativePendingSales) || !customer?.id)
+      return;
+    let active = true;
+    setLocalNotesStatus('loading');
+    db.sales
+      .where('customerId')
+      .equals(customer.id)
+      .and(
+        (sale) =>
+          isCreditPaymentMethod(sale.paymentMethod ?? sale.payment_method) &&
+          !sale.cancelledAt &&
+          !sale.cancelled_at &&
+          sale.status !== 'cancelled'
+      )
+      .sortBy('timestamp')
+      .then((sales) => {
+        if (active) {
+          setLocalSales(sales);
+          setLocalNotesStatus('ready');
+        }
+      })
+      .catch(() => {
+        if (active) setLocalNotesStatus('error');
+      });
+    return () => {
+      active = false;
+    };
+  }, [show, specific, isCloudCredit, authoritativePendingSales, customer?.id]);
+
+  const sourceSales = useMemo(
+    () =>
+      Array.isArray(authoritativePendingSales) ? authoritativePendingSales : isCloudCredit ? [] : localSales,
+    [authoritativePendingSales, isCloudCredit, localSales]
+  );
+  const notes = useMemo(() => {
+    const seen = new Set();
+    return sourceSales.filter((sale) => {
+      if (
+        !sale?.id ||
+        seen.has(sale.id) ||
+        (isCloudCredit && sale.status !== 'closed') ||
+        sale.status === 'cancelled' ||
+        sale.deleted_at ||
+        sale.cancelled_at ||
+        sale.cancelledAt
+      )
+        return false;
+      const owner = sale.customer_id ?? sale.customerId;
+      if (owner && owner !== customer?.id) return false;
+      // Never substitute a cached/original balance for a Cloud live balance.
+      const value = isCloudCredit ? sale.current_balance_due : sale.saldoPendiente;
+      const balance = normalizeMoney(value);
+      if (
+        (isCloudCredit &&
+          (sale.credit_allocation_status !== 'reconciled' || value === null || value === undefined)) ||
+        !balance.ok ||
+        balance.amount.lte(0)
+      )
+        return false;
+      seen.add(sale.id);
+      return true;
+    });
+  }, [sourceSales, isCloudCredit, customer?.id]);
+  const notesStatus = isCloudCredit
+    ? cloudAllocationStatus === 'reconciled'
+      ? Array.isArray(authoritativePendingSales) && notes.length === sourceSales.length
+        ? 'ready'
+        : 'unavailable'
+      : cloudAllocationStatus
+    : Array.isArray(authoritativePendingSales)
+      ? 'ready'
+      : localNotesStatus;
+  const canAssign = notesStatus === 'ready';
+  const balanceOf = (sale) => (isCloudCredit ? sale.current_balance_due : sale.saldoPendiente);
+  const allocationTotal = Object.values(allocations).reduce((sum, value) => {
+    const parsed = normalizeMoney(value);
+    return parsed.ok && parsed.amount.gt(0) ? Money.add(sum, parsed.amount) : sum;
+  }, Money.init(0));
+  const selectedCount = Object.values(allocations).filter((value) => {
+    const parsed = normalizeMoney(value);
+    return parsed.ok && parsed.amount.gt(0);
+  }).length;
+  const invalidAllocation = Object.entries(allocations).some(([saleId, value]) => {
+    const sale = notes.find((note) => note.id === saleId);
+    return !sale || Boolean(inputError(value, balanceOf(sale), true));
+  });
+  const amount = specific ? normalizeMoney(Money.toExactString(allocationTotal)) : normalizeMoney(monto);
+  const validation = specific
+    ? allocationTotal.gt(Money.init(debtExact))
+      ? `El total asignado supera la deuda disponible de ${formatMoneyValue(debtExact)}.`
+      : ''
+    : inputError(monto, debtExact);
+  const confirmDisabled =
+    isBlocked ||
+    isSubmitting ||
+    !debt.ok ||
+    !amount.ok ||
+    amount.amount.lte(0) ||
+    Boolean(validation) ||
+    (specific && (!canAssign || invalidAllocation || !selectedCount));
+
+  const handleClose = useCallback(() => {
+    if (!isSubmittingRef.current) onClose();
+  }, [onClose]);
   const dismissModal = useDismissibleHistoryLayer({
     isOpen: Boolean(show && customer),
     onDismiss: handleClose,
     layerId: 'customer-abono-modal'
   });
 
-  // Cargar notas pendientes si se activa el modo avanzado
   useEffect(() => {
-    if (show && advancedMode && customer) {
-      const fetchSales = async () => {
-        try {
-          if (Array.isArray(authoritativePendingSales)) {
-            setPendingSales(authoritativePendingSales);
-            return;
-          }
+    if (!show || !customer?.id) return;
+    const previous = document.activeElement;
+    const dialog = dialogRef.current;
+    const initial =
+      amountRef.current && !amountRef.current.disabled
+        ? amountRef.current
+        : dialog?.querySelector('button:not(:disabled)');
+    (initial || dialog)?.focus({ preventScroll: true });
+    return () => {
+      if (
+        previous?.isConnected &&
+        (document.activeElement === document.body || dialog?.contains(document.activeElement))
+      )
+        previous.focus({ preventScroll: true });
+    };
+  }, [show, customer?.id]);
 
-          if (isCloudCredit) {
-            setPendingSales([]);
-            return;
-          }
-          const sales = await db.sales
-            .where('customerId').equals(customer.id)
-            .and((sale) => {
-              const balance = normalizeMoney(sale.saldoPendiente ?? sale.balanceDue ?? sale.balance_due);
-              return isCreditPaymentMethod(sale.paymentMethod ?? sale.payment_method) && balance.ok && balance.amount.gt(0);
-            })
-            .sortBy('timestamp');
-
-          // Directamente establecer las notas pendientes. El saneamiento global se encarga de las discrepancias.
-          setPendingSales(sales);
-
-        } catch (err) {
-          console.error("Error al cargar ventas pendientes:", err);
-        }
-      };
-      fetchSales();
-    }
-  }, [show, advancedMode, customer, authoritativePendingSales, isCloudCredit]);
-
-  // Recalcular el monto total cuando cambian las asignaciones en modo avanzado
   useEffect(() => {
-    if (advancedMode) {
-      let sum = Money.init(0);
-      Object.values(allocations).forEach(val => {
-        const allocation = normalizeMoney(val);
-        if (allocation.ok && allocation.amount.gt(0)) {
-          sum = Money.add(sum, allocation.amount);
-        }
-      });
-      const totalStr = sum.gt(0) ? Money.toExactString(sum) : '';
-      setMonto(totalStr);
+    // Disabled controls lose focus. Keep keyboard events inside the pending dialog.
+    if (isSubmitting) dialogRef.current?.focus({ preventScroll: true });
+  }, [isSubmitting]);
 
-      if (sum.gt(Money.init(deudaActualExact))) {
-        setError('El abono no puede ser mayor que la deuda actual.');
-      } else {
-        setError('');
-      }
+  const handleKeyboard = (event) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      if (!isSubmittingRef.current) dismissModal();
     }
-  }, [allocations, advancedMode, deudaActualExact]);
-
-  const handleMontoChange = (e) => {
-    if (advancedMode || isSubmitting) return; // Bloquear edición manual en modo avanzado o durante envío
-    const value = e.target.value;
+    if (event.key !== 'Tab') return;
+    const focusable = [
+      ...dialogRef.current.querySelectorAll(
+        'button:not(:disabled), input:not(:disabled), summary:not([tabindex="-1"]), [tabindex="0"]'
+      )
+    ].filter((element) => element.getClientRects().length > 0);
+    const first = focusable[0],
+      last = focusable.at(-1);
+    if (!first) {
+      event.preventDefault();
+      dialogRef.current.focus();
+    } else if (
+      event.shiftKey &&
+      (document.activeElement === first || document.activeElement === dialogRef.current)
+    ) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+  const chooseMode = (value) => {
+    if (isSubmittingRef.current) return;
+    setMode(value);
     setError('');
-    const enteredAmount = normalizeMoney(value);
-    if (enteredAmount.ok && enteredAmount.amount.gt(Money.init(deudaActualExact))) {
-      setError('El abono no puede ser mayor que la deuda actual.');
-    }
-    setMonto(value);
+    if (value === 'general') setAllocations({});
   };
-
-  const handleSaldarCuenta = () => {
-    if (advancedMode || isSubmitting) return;
-    setMonto(deudaActualDecimal);
+  const changeAllocation = (saleId, value) => {
     setError('');
+    setAllocations((previous) => ({ ...previous, [saleId]: value }));
   };
 
-  const handleAllocationChange = (saleId, value, maxSaldo) => {
-    if (isSubmitting) return;
-
-    let valStr = value;
-    const allocation = normalizeMoney(value);
-    const maximum = normalizeMoney(maxSaldo);
-
-    if (allocation.ok && maximum.ok && allocation.amount.gt(maximum.amount)) {
-      valStr = maximum.exact;
-    } else if (allocation.ok && allocation.amount.lt(0)) {
-      valStr = '0';
-    }
-
-    setAllocations(prev => ({
-      ...prev,
-      [saleId]: valStr
-    }));
-  };
-
-  const handleToggleFullAllocation = (sale) => {
-    if (isSubmitting) return;
-
-    const currentAlloc = normalizeMoney(allocations[sale.id]);
-    const maxSaldo = normalizeMoney(sale.saldoPendiente);
-    const isFullyAllocated = currentAlloc.ok && maxSaldo.ok && currentAlloc.amount.eq(maxSaldo.amount);
-
-    setAllocations(prev => ({
-      ...prev,
-      [sale.id]: isFullyAllocated ? '' : (maxSaldo.ok ? maxSaldo.exact : '')
-    }));
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-
-    if (isSubmittingRef.current || isSubmitting) return;
-
-    if (isBlocked) {
-      setError(blockedReason || 'No se puede registrar el abono en este momento.');
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    if (isSubmittingRef.current) return;
+    if (confirmDisabled) {
+      setError(
+        validation ||
+          (specific && !canAssign
+            ? 'Cloud todavía no confirma los saldos para asignar este abono.'
+            : 'Revisa los importes antes de confirmar.')
+      );
       return;
     }
-
-    const montoAbono = normalizeMoney(monto);
-
-    if (!montoAbono.ok || montoAbono.amount.lte(0)) {
-      setError('Ingresa un monto válido.');
-      return;
-    }
-    if (montoAbono.amount.gt(Money.init(deudaActualExact))) {
-      setError('El abono no puede ser mayor que la deuda actual.');
-      return;
-    }
-
-    let finalAllocations = null;
-    if (advancedMode) {
-      finalAllocations = Object.entries(allocations)
-        .map(([saleId, amount]) => {
-          const normalizedAmount = normalizeMoney(amount);
-          return normalizedAmount.ok && normalizedAmount.amount.gt(0)
-            ? { saleId, amountApplied: normalizedAmount.exact }
-            : null;
-        })
-        .filter(Boolean);
-
-      if (finalAllocations.length === 0) {
-        setError('No has asignado ningún monto a las notas.');
-        return;
-      }
-    }
-
+    const finalAllocations = specific
+      ? Object.entries(allocations)
+          .filter(([, value]) => {
+            const parsed = normalizeMoney(value);
+            return parsed.ok && parsed.amount.gt(0);
+          })
+          .map(([saleId, value]) => ({ saleId, amountApplied: normalizeMoney(value).exact }))
+      : null;
     isSubmittingRef.current = true;
     setIsSubmitting(true);
     setError('');
-
     try {
-      // El Modal pasa la información al componente PADRE y espera a que termine.
-      await onConfirmAbono(customer, montoAbono.exact, sendReceipt, finalAllocations);
+      await onConfirmAbono(customer, amount.exact, sendReceipt, finalAllocations);
     } catch (submitError) {
-      console.error('Error al confirmar abono:', submitError);
-
-      if (isMountedRef.current && isModalOpenRef.current) {
-        setError(submitError?.message || 'No se pudo registrar el abono. Intenta de nuevo.');
-      }
+      if (isMountedRef.current)
+        setError(
+          submitError?.message || 'No se pudo confirmar el abono. Revisa el estado antes de reintentar.'
+        );
     } finally {
       isSubmittingRef.current = false;
-
-      // Si el padre cerró el modal por éxito, no forzamos estado visual sobre un modal cerrado.
-      if (isMountedRef.current && isModalOpenRef.current) {
-        setIsSubmitting(false);
-      }
+      if (isMountedRef.current) setIsSubmitting(false);
     }
   };
 
   if (!show || !customer) return null;
+  const modeHelp = specific
+    ? 'Abre una o varias notas e indica cuánto deseas abonar a cada una.'
+    : isCloudCredit && notesStatus === 'historical_unallocated'
+      ? 'Reduce la deuda general. En esta cuenta el pago no se asignará a una venta porque existen abonos sin conciliar.'
+      : 'En cuentas conciliadas, el abono se aplica a las notas pendientes empezando por la más antigua.';
 
   return (
-    <div className="ui-modal ui-modal--high abono-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="abono-modal-title">
-      <div className={`ui-modal__content abono-modal-content ${advancedMode ? 'abono-modal-content--wide' : ''}`}>
+    <div
+      className="ui-modal ui-modal--high abono-modal-overlay"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={`${id}-title`}
+      aria-describedby={`${id}-help`}
+      onKeyDown={handleKeyboard}
+    >
+      <div className="ui-modal__content abono-modal-content" ref={dialogRef} tabIndex={-1}>
         <header className="ui-modal__header abono-header">
-          <h2 className="ui-modal__title modal-title" id="abono-modal-title">
-            <Wallet size={24} className="text-primary" />
-            Abonar a Deuda
+          <h2 className="ui-modal__title" id={`${id}-title`}>
+            <Wallet size={23} aria-hidden="true" /> Registrar abono
           </h2>
-          <button type="button" className="ui-button ui-button--ghost ui-button--sm btn-icon-close" onClick={dismissModal} aria-label="Cerrar" disabled={isSubmitting}>
-            <X size={24} />
+          <button
+            type="button"
+            className="ui-button ui-button--ghost abono-close"
+            onClick={() => dismissModal()}
+            aria-label="Cerrar abono"
+            disabled={isSubmitting}
+          >
+            <X size={22} aria-hidden="true" />
           </button>
         </header>
-
-        <form onSubmit={handleSubmit} className="ui-modal__body abono-form" aria-busy={isSubmitting}>
-          <div className="abono-desktop-split">
-
-            {/* COLUMNA IZQUIERDA */}
-            <div className="abono-left-col">
-              <div className="ui-card abono-summary-card">
-                <div className="cliente-info">
-                  <span className="cliente-label">Cliente:</span>
-                  <span className="cliente-name">{customer.name}</span>
-                </div>
-                <div className="deuda-row">
-                  <span className="deuda-label">Deuda Actual:</span>
-                  <span className="deuda-total">{formatMoneyValue(deudaActualExact)}</span>
-                </div>
-                {isCloudCredit && (
-                  <div className="deuda-row">
-                    <span className="deuda-label">Caja Nube:</span>
-                    <span className="cliente-name">
-                      {cashSession?.id
-                        ? (cashActor?.displayName || cashActor?.responsibleName || cashSession.responsable_apertura || 'Responsable')
-                        : 'Sin caja abierta'}
-                    </span>
-                  </div>
-                )}
+        <form onSubmit={handleSubmit} className="abono-form" aria-busy={isSubmitting} noValidate>
+          <div className="ui-modal__body abono-scroll-body">
+            <div className="abono-summary-card">
+              <div>
+                <span className="abono-eyebrow">Cliente</span>
+                <strong className="abono-customer-name">{customer.name}</strong>
               </div>
-
-              {isCloudCredit && isBlocked && (
-                <p className="ui-alert ui-alert--danger abono-alert">
-                  <AlertTriangle size={14} /> {blockedReason || 'Abonos cloud requieren caja abierta y conexion.'}
+              <div className="abono-debt">
+                <span>Deuda disponible</span>
+                <strong>{formatMoneyValue(debt.ok ? debtExact : null)}</strong>
+              </div>
+              {isCloudCredit && (
+                <p className="abono-cash">
+                  Caja Cloud ·{' '}
+                  {cashSession?.id
+                    ? cashActor?.displayName ||
+                      cashActor?.responsibleName ||
+                      cashSession.responsable_apertura ||
+                      'Responsable'
+                    : 'Sin caja abierta'}
                 </p>
               )}
-
-              {isCloudCredit && cloudAllocationStatus !== 'reconciled' && (
-                <p className="ui-alert abono-alert">
-                  {cloudAllocationStatus === 'historical_unallocated'
-                    ? 'Hay abonos históricos sin conciliar por nota. El abono general reduce la deuda del cliente; no se asignará a ventas.'
-                    : 'Saldos por nota no disponibles. La asignación específica requiere confirmación del servidor.'}
-                </p>
-              )}
-              <div className="abono-mode-toggle">
-                <label className={`abono-mode-label ${isSubmitting ? 'is-disabled' : ''}`}>
+            </div>
+            {isBlocked && (
+              <p className="ui-alert ui-alert--danger abono-alert" role="alert">
+                <AlertTriangle size={18} aria-hidden="true" />
+                {blockedReason || 'Debes tener una caja abierta y conexión para registrar el abono.'}
+              </p>
+            )}
+            <fieldset className="abono-modes" disabled={isSubmitting}>
+              <legend className="abono-sr-only">Modalidad del abono</legend>
+              {[
+                ['general', 'Abono general', Wallet],
+                ['specific', 'Abonar por venta / nota', List]
+              ].map(([value, label, Icon]) => (
+                <label className={`abono-mode ${mode === value ? 'is-selected' : ''}`} key={value}>
                   <input
-                    type="checkbox"
-                    checked={advancedMode}
-                    disabled={isBlocked || isSubmitting || (isCloudCredit && cloudAllocationStatus !== 'reconciled')}
-                    onChange={(e) => {
-                      setAdvancedMode(e.target.checked);
-                      if (!e.target.checked) setAllocations({});
-                    }}
+                    type="radio"
+                    name={`${id}-mode`}
+                    value={value}
+                    checked={mode === value}
+                    onChange={() => chooseMode(value)}
+                    aria-controls={`${id}-panel`}
                   />
-                  <List size={16} />
-                  Asignar a notas específicas
+                  <Icon size={19} aria-hidden="true" />
+                  <span>{label}</span>
                 </label>
-              </div>
-
-              <div className="form-group abono-input-group">
-                <div className="abono-input-header">
-                  <label className="form-label" htmlFor="abono-monto">Monto a Abonar ($):</label>
-                  {!advancedMode && (
+              ))}
+            </fieldset>
+            <section
+              id={`${id}-panel`}
+              className="abono-mode-panel"
+              aria-label={specific ? 'Abonar por venta / nota' : 'Abono general'}
+            >
+              <p className="abono-mode-help" id={`${id}-help`}>
+                {modeHelp}
+              </p>
+              {!specific ? (
+                <div className="abono-amount-group">
+                  <div className="abono-input-heading">
+                    <label htmlFor={`${id}-amount`}>Monto del abono</label>
                     <button
                       type="button"
-                      className="btn-saldar-quick"
-                      onClick={handleSaldarCuenta}
-                      title="Liquidar toda la deuda"
-                      disabled={isBlocked || isSubmitting}
+                      className="ui-button ui-button--ghost abono-pay-all"
+                      disabled={isBlocked || isSubmitting || !debt.ok}
+                      onClick={() => {
+                        setMonto(debtExact);
+                        setError('');
+                      }}
                     >
-                      Saldar {formatMoneyValue(deudaActualExact)}
+                      Saldar {formatMoneyValue(debtExact)}
+                    </button>
+                  </div>
+                  <div className="abono-currency-input">
+                    <span aria-hidden="true">$</span>
+                    <input
+                      ref={amountRef}
+                      id={`${id}-amount`}
+                      type="number"
+                      inputMode="decimal"
+                      step="0.01"
+                      min="0.01"
+                      max={debtExact}
+                      value={monto}
+                      onChange={(event) => {
+                        setMonto(event.target.value);
+                        setError('');
+                      }}
+                      placeholder="0.00"
+                      disabled={isBlocked || isSubmitting}
+                      aria-invalid={Boolean(validation)}
+                      aria-describedby={validation ? `${id}-validation` : `${id}-help`}
+                    />
+                  </div>
+                  {isCloudCredit && (
+                    <p className="abono-field-help">Cloud validará la deuda disponible al confirmar.</p>
+                  )}
+                </div>
+              ) : notesStatus === 'loading' ? (
+                <div className="abono-note-state" role="status">
+                  <LoaderCircle size={24} className="abono-spinner" aria-hidden="true" />
+                  <strong>
+                    {isCloudCredit ? 'Consultando notas en Cloud…' : 'Cargando notas pendientes…'}
+                  </strong>
+                  <p>Espera a que se confirmen los saldos. También puedes elegir abono general.</p>
+                </div>
+              ) : !canAssign ? (
+                <div className="abono-note-state abono-note-state--warning" role="status">
+                  <AlertTriangle size={25} aria-hidden="true" />
+                  <strong>
+                    {notesStatus === 'historical_unallocated'
+                      ? 'Estas notas aún no están conciliadas'
+                      : notesStatus === 'error'
+                        ? 'No pudimos cargar las notas'
+                        : 'No hay saldos por nota verificados'}
+                  </strong>
+                  <p>
+                    {notesStatus === 'historical_unallocated'
+                      ? 'Los abonos generales anteriores redujeron la deuda del cliente, pero no tienen una asignación verificable por venta. Cloud no puede confirmar el saldo de cada nota.'
+                      : notesStatus === 'error'
+                        ? 'La consulta no se completó. Para proteger tu cuenta, la asignación por nota está bloqueada hasta obtener saldos verificados.'
+                        : 'La asignación específica requiere saldos confirmados por Cloud. No se usarán saldos locales ni importes estimados.'}
+                  </p>
+                  <p>Puedes continuar con un abono general.</p>
+                  {onReloadPendingSales && (
+                    <button
+                      type="button"
+                      className="ui-button ui-button--ghost"
+                      disabled={isSubmitting || isBlocked}
+                      onClick={onReloadPendingSales}
+                    >
+                      Volver a consultar notas
                     </button>
                   )}
                 </div>
-
-                <div className="input-with-currency">
-                  <span className="currency-symbol">$</span>
-                  <input
-                    className={`form-input abono-monto-input ${error ? 'invalid' : ''}`}
-                    id="abono-monto"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    max={deudaActualDecimal}
-                    value={monto}
-                    onChange={handleMontoChange}
-                    placeholder="0.00"
-                    required
-                    autoFocus
-                    readOnly={advancedMode}
-                    disabled={isBlocked || isSubmitting}
-                  />
-                </div>
-                {error && (
-                  <p className="ui-alert ui-alert--danger abono-alert">
-                    <AlertTriangle size={14} /> {error}
+              ) : notes.length === 0 ? (
+                <div className="abono-note-state" role="status">
+                  <CheckCircle size={24} aria-hidden="true" />
+                  <strong>No hay notas pendientes</strong>
+                  <p>
+                    {isCloudCredit
+                      ? 'Cloud no reporta notas con saldo vigente disponible.'
+                      : 'No hay ventas fiadas pendientes para este cliente.'}{' '}
+                    Puedes registrar un abono general si todavía hay deuda disponible.
                   </p>
-                )}
-              </div>
-            </div>
-
-            {/* COLUMNA DERECHA (Solo en modo avanzado) */}
-            {advancedMode && (
-              <div className="abono-right-col">
-                <div className="ui-card allocations-container">
-                  {pendingSales.length === 0 ? (
-                    <p className="allocations-empty">No hay notas pendientes.</p>
-                  ) : (
-                    pendingSales.map(sale => (
-                      <div key={sale.id} className="allocation-row">
-                        <div className="sale-info">
-                          <span className="sale-folio">Folio: {sale.folio || sale.id.substring(0, 6)}</span>
-                          <span className="sale-date">
-                            Fecha: {new Date(sale.timestamp).toLocaleDateString()}
-                          </span>
-                          <span className="sale-pending">
-                            Pendiente: {formatMoneyValue(sale.saldoPendiente)}
-                          </span>
-                        </div>
-                        <div className="sale-actions">
-                          <div className="input-with-currency allocation-input-wrap">
-                            <span className="currency-symbol allocation-currency-symbol">$</span>
-                            <input
-                              type="number"
-                              className="form-input allocation-input"
-                              placeholder="0.00"
-                              step="0.01"
-                              min="0"
-                              max={sale.saldoPendiente}
-                              value={allocations[sale.id] || ''}
-                              onChange={(e) => handleAllocationChange(sale.id, e.target.value, sale.saldoPendiente)}
-                              disabled={isBlocked || isSubmitting}
-                            />
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => handleToggleFullAllocation(sale)}
-                            className="ui-button ui-button--ghost ui-icon-button ui-icon-button--sm btn btn-icon allocation-full-button"
-                            title="Asignar total de esta nota"
-                            disabled={isBlocked || isSubmitting}
-                          >
-                            <CheckCircle size={16} className={(() => {
-                              const selected = normalizeMoney(allocations[sale.id]);
-                              const maximum = normalizeMoney(sale.saldoPendiente);
-                              return selected.ok && maximum.ok && selected.amount.eq(maximum.amount)
-                                ? 'allocation-check-icon allocation-check-icon--active'
-                                : 'allocation-check-icon';
-                            })()} />
-                          </button>
-                        </div>
-                      </div>
-                    ))
-                  )}
                 </div>
-              </div>
+              ) : (
+                <div className="abono-notes">
+                  <p className="abono-notes-caption">
+                    <CheckCircle size={15} aria-hidden="true" />
+                    {isCloudCredit ? 'Saldos verificados por Cloud' : 'Notas pendientes locales'}
+                  </p>
+                  {notes.map((sale, index) => {
+                    const folio =
+                      sale.folio || sale.pos_folio || sale.cloud_folio || String(sale.id).slice(-6);
+                    const value = allocations[sale.id] || '';
+                    const issue = inputError(value, balanceOf(sale), true);
+                    const selected = normalizeMoney(value);
+                    const assigned = selected.ok && selected.amount.gt(0);
+                    const otherTotal = Money.subtract(allocationTotal, assigned ? selected.amount : 0);
+                    const remaining = Money.subtract(debtExact, otherTotal);
+                    const maximum = remaining.lt(0)
+                      ? Money.init(0)
+                      : remaining.lt(Money.init(balanceOf(sale)))
+                        ? remaining
+                        : Money.init(balanceOf(sale));
+                    return (
+                      <details key={sale.id} className={`abono-note-card ${assigned ? 'is-selected' : ''}`}>
+                        <summary
+                          tabIndex={isSubmitting ? -1 : 0}
+                          onClick={(event) => {
+                            if (isSubmitting) event.preventDefault();
+                          }}
+                        >
+                          <span className="abono-note-identity">
+                            <strong>Nota {folio}</strong>
+                            <span>{noteDate(sale.timestamp || sale.sold_at)}</span>
+                          </span>
+                          <span className="abono-note-summary">
+                            <span>
+                              Saldo vigente <strong>{formatMoneyValue(balanceOf(sale))}</strong>
+                            </span>
+                            <span className={assigned ? 'abono-assigned-badge' : 'abono-expand-label'}>
+                              {assigned ? `Abono ${formatMoneyValue(value)}` : 'Elegir nota'}
+                            </span>
+                          </span>
+                          <ChevronDown size={18} aria-hidden="true" />
+                        </summary>
+                        <div className="abono-note-body">
+                          <dl className="abono-note-values">
+                            <div>
+                              <dt>Importe original</dt>
+                              <dd>{formatMoneyValue(sale.total)}</dd>
+                            </div>
+                            <div>
+                              <dt>Saldo vigente</dt>
+                              <dd>{formatMoneyValue(balanceOf(sale))}</dd>
+                            </div>
+                          </dl>
+                          <label htmlFor={`${id}-note-${index}`}>Abono a la nota {folio}</label>
+                          <div className="abono-note-input-row">
+                            <div className="abono-currency-input">
+                              <span aria-hidden="true">$</span>
+                              <input
+                                id={`${id}-note-${index}`}
+                                className="allocation-input"
+                                type="number"
+                                inputMode="decimal"
+                                step="0.01"
+                                min="0"
+                                max={balanceOf(sale)}
+                                placeholder="0.00"
+                                value={value}
+                                onChange={(event) => changeAllocation(sale.id, event.target.value)}
+                                disabled={isBlocked || isSubmitting}
+                                aria-invalid={Boolean(issue)}
+                                aria-describedby={`${id}-note-help-${index}`}
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              className="ui-button ui-button--ghost"
+                              disabled={isBlocked || isSubmitting || maximum.lte(0)}
+                              onClick={() => changeAllocation(sale.id, Money.toExactString(maximum))}
+                            >
+                              Usar {formatMoneyValue(Money.toExactString(maximum))}
+                            </button>
+                          </div>
+                          <p
+                            className={`abono-field-help ${issue ? 'abono-field-error' : ''}`}
+                            id={`${id}-note-help-${index}`}
+                          >
+                            {issue ||
+                              `Hasta ${formatMoneyValue(balanceOf(sale))} en esta nota, sujeto a la deuda del cliente.`}
+                          </p>
+                          {assigned && (
+                            <button
+                              type="button"
+                              className="ui-button ui-button--ghost abono-remove"
+                              disabled={isSubmitting || isBlocked}
+                              onClick={() => changeAllocation(sale.id, '')}
+                            >
+                              Quitar abono de esta nota
+                            </button>
+                          )}
+                        </div>
+                      </details>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+            {(validation || error) && (
+              <p className="ui-alert ui-alert--danger abono-alert" role="alert" id={`${id}-validation`}>
+                <AlertTriangle size={18} aria-hidden="true" />
+                {validation || error}
+              </p>
             )}
           </div>
-
-          {/* FOOTER */}
-          <div className="abono-footer">
-            <label className={`abono-whatsapp-toggle ${isSubmitting ? 'is-disabled' : ''}`}>
-              <div className="toggle-info">
-                <MessageCircle size={20} className="icon-whatsapp" />
-                <span>Ofrecer comprobante como imagen al terminar</span>
+          <footer className="abono-footer">
+            <div className="abono-totals" aria-live="polite">
+              {specific && (
+                <div>
+                  <span>
+                    Total asignado · {selectedCount} {selectedCount === 1 ? 'nota' : 'notas'}
+                  </span>
+                  <strong>{formatMoneyValue(Money.toExactString(allocationTotal))}</strong>
+                </div>
+              )}
+              <div className="abono-confirm-total">
+                <span>Total a confirmar</span>
+                <output aria-label="Total a confirmar">
+                  {formatMoneyValue(specific && !canAssign ? '0' : amount.ok ? amount.exact : '0')}
+                </output>
               </div>
+            </div>
+            <label className="abono-receipt">
+              <MessageCircle size={18} aria-hidden="true" />
+              <span>Ofrecer comprobante como imagen al terminar</span>
               <input
-                id="send-receipt-abono"
                 type="checkbox"
                 checked={sendReceipt}
-                onChange={(e) => setSendReceipt(e.target.checked)}
+                onChange={(event) => setSendReceipt(event.target.checked)}
                 disabled={isBlocked || isSubmitting}
               />
             </label>
-
             {isSubmitting && (
-              <p className="form-help-text abono-submit-help">
-                Registrando abono, por favor espera...
+              <p className="abono-pending" role="status">
+                <LoaderCircle size={17} className="abono-spinner" aria-hidden="true" />
+                Confirmando el abono. Espera antes de realizar otra operación.
               </p>
             )}
-
-            <footer className="ui-modal__actions abono-actions">
-              <button type="submit" className="ui-button ui-button--primary btn btn-save" disabled={isBlocked || isSubmitting || !!error || !monto}>
-                <CheckCircle size={18} />
-                {isSubmitting ? 'Registrando abono...' : 'Confirmar Abono'}
+            <div className="ui-modal__actions abono-actions">
+              <button type="submit" className="ui-button ui-button--primary" disabled={confirmDisabled}>
+                <CheckCircle size={18} aria-hidden="true" />
+                {isSubmitting ? 'Registrando abono…' : 'Confirmar abono'}
               </button>
-              <button type="button" className="ui-button ui-button--ghost btn btn-cancel" onClick={dismissModal} disabled={isSubmitting}>
+              <button
+                type="button"
+                className="ui-button ui-button--ghost"
+                onClick={() => dismissModal()}
+                disabled={isSubmitting}
+              >
                 Cancelar
               </button>
-            </footer>
-          </div>
+            </div>
+          </footer>
         </form>
       </div>
     </div>

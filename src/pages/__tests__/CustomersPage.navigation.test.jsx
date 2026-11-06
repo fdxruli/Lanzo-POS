@@ -10,6 +10,8 @@ const customersPageStyles = readSource('../CustomersPage.css');
 const sharedTabsStyles = readSource('../../styles/ui-tabs.css');
 
 const state = vi.hoisted(() => ({
+  paymentTest: false,
+  cashSession: { id: 'cash-controlled', estado: 'abierta' },
   cloud: true,
   cloudEligible: true,
   actorAuthorized: true,
@@ -33,7 +35,7 @@ vi.mock('../../components/customers/CustomerForm', () => ({
 }));
 
 vi.mock('../../components/customers/CustomerList', () => ({
-  default: ({ customers }) => <div data-testid="customer-list">Directorio de clientes {customers.map(customer => <span key={customer.id}>{customer.phone}</span>)}</div>
+  default: ({ customers, onAbonar }) => <div data-testid="customer-list">Directorio de clientes {customers.map(customer => <span key={customer.id}>{customer.phone}</span>)}{state.paymentTest && customers[0] && <button onClick={() => onAbonar(customers[0])}>Abonar controlado</button>}</div>
 }));
 
 vi.mock('../../components/settings/CustomerMessageTemplatesSettings', () => ({
@@ -51,12 +53,21 @@ vi.mock('../../components/settings/CustomerMessageAutomationSettings', () => ({
 }));
 
 vi.mock('../../components/customers/PurchaseHistoryModal', () => ({ default: () => null }));
-vi.mock('../../components/customers/AbonoModal', () => ({ default: () => null }));
+vi.mock('../../components/customers/AbonoModal', () => ({
+  default: ({ show, cloudAllocationStatus, authoritativePendingSales, customer, onReloadPendingSales }) => state.paymentTest && show ? (
+    <div data-testid="abono-read-state">
+      <output data-testid="abono-allocation-status">{cloudAllocationStatus}</output>
+      <output data-testid="abono-verified-notes">{JSON.stringify(authoritativePendingSales)}</output>
+      <output data-testid="abono-debt">{customer.debt}</output>
+      <button onClick={onReloadPendingSales}>Reconsultar notas controladas</button>
+    </div>
+  ) : null
+}));
 vi.mock('../../components/customers/LayawayModal', () => ({ default: () => null }));
 
 vi.mock('../../hooks/useCaja', () => ({
   useCaja: () => ({
-    cajaActual: null,
+    cajaActual: state.paymentTest ? state.cashSession : null,
     sincronizarEstadoCaja: vi.fn(),
     isCloudCash: false,
     cashActor: null,
@@ -109,7 +120,7 @@ vi.mock('../../services/customers/customerRepository', () => ({
 vi.mock('../../services/customerCredit/customerCreditRepository', () => ({
   CUSTOMER_CREDIT_CLOUD_OFFLINE_MESSAGE: 'Caja cloud sin conexión.',
   customerCreditRepository: {
-    getMode: () => ({ cloudEnabled: false }),
+    getMode: () => ({ cloudEnabled: state.paymentTest }),
     getCustomerCreditSummary: vi.fn(),
     processPayment: vi.fn()
   }
@@ -157,6 +168,9 @@ vi.mock('../../services/utils', () => ({
 
 import CustomersPage from '../CustomersPage';
 import { customerRepository } from '../../services/customers/customerRepository';
+import { customerCreditRepository } from '../../services/customerCredit/customerCreditRepository';
+import { db } from '../../services/db/dexie';
+import { selectCreditNotes } from '../../services/customerMessaging';
 
 function HistoryControls() {
   const navigate = useNavigate();
@@ -181,6 +195,7 @@ describe('CustomersPage navigation', () => {
   afterEach(cleanup);
 
   beforeEach(() => {
+    state.paymentTest = false;
     state.cloud = true;
     state.cloudEligible = true;
     state.actorAuthorized = true;
@@ -433,4 +448,48 @@ describe('CustomersPage navigation', () => {
     expect(screen.getByRole('link', { name: /Conocer Lanzo Nube/ })).toHaveAttribute('href', '/acerca-de');
     expect(state.licenseDetails).toBe(licenseBefore);
   });
+
+  it('keeps Cloud loading visible, then reports a failed query and retries without cached sales', async () => {
+    state.paymentTest = true;
+    let rejectSummary;
+    customerCreditRepository.getCustomerCreditSummary.mockReturnValueOnce(new Promise((_, reject) => { rejectSummary = reject; }));
+    renderPage('/clientes');
+    fireEvent.click(await screen.findByRole('button', { name: 'Abonar controlado' }));
+    expect(await screen.findByTestId('abono-allocation-status')).toHaveTextContent('loading');
+    rejectSummary(new Error('Controlled server error'));
+    await waitFor(() => expect(screen.getByTestId('abono-allocation-status')).toHaveTextContent('error'));
+    expect(screen.getByTestId('abono-verified-notes')).toHaveTextContent('[]');
+    const verified = [{ id: 'verified-sale', current_balance_due: '20' }];
+    selectCreditNotes.mockReturnValueOnce(verified);
+    customerCreditRepository.getCustomerCreditSummary.mockResolvedValueOnce({
+      success: true, customer: { debt: '30' }, sale_allocation_version: 1,
+      sale_balances_authoritative: true, sale_allocation_status: 'reconciled', pending_credit_sales: verified
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Reconsultar notas controladas' }));
+    await waitFor(() => expect(screen.getByTestId('abono-allocation-status')).toHaveTextContent('reconciled'));
+    expect(screen.getByTestId('abono-debt')).toHaveTextContent('30');
+    expect(screen.getByTestId('abono-verified-notes')).toHaveTextContent('verified-sale');
+    expect(customerCreditRepository.getCustomerCreditSummary).toHaveBeenLastCalledWith('ruly', { force: true });
+    expect(db.table).not.toHaveBeenCalled();
+    expect(customerCreditRepository.processPayment).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['historical_unallocated', true, 'historical_unallocated'],
+    ['reconciled', false, 'unavailable']
+  ])('keeps the Cloud authority boundary for %s / authoritative=%s', async (status, authoritative, expected) => {
+    state.paymentTest = true;
+    selectCreditNotes.mockReturnValue([]);
+    customerCreditRepository.getCustomerCreditSummary.mockResolvedValueOnce({
+      success: true, customer: { debt: '30' }, sale_allocation_version: 1,
+      sale_balances_authoritative: authoritative, sale_allocation_status: status, pending_credit_sales: []
+    });
+    renderPage('/clientes');
+    fireEvent.click(await screen.findByRole('button', { name: 'Abonar controlado' }));
+    await waitFor(() => expect(screen.getByTestId('abono-allocation-status')).toHaveTextContent(expected));
+    expect(screen.getByTestId('abono-verified-notes')).toHaveTextContent('[]');
+    expect(db.table).not.toHaveBeenCalled();
+    expect(customerCreditRepository.processPayment).not.toHaveBeenCalled();
+  });
+
 });

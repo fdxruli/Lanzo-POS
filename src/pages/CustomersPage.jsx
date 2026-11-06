@@ -781,6 +781,39 @@ export default function CustomersPage() {
     setIsHistoryModalOpen(true);
   };
 
+  const loadAbonoPendingNotes = (customer) => {
+    if (!customer?.id) return;
+    // Read-only enrichment/retry. Cloud assignment never falls back to cached sales.
+    setAbonoPendingNotes(null);
+    setAbonoAllocationStatus('loading');
+    const abonoNotesRequestId = ++abonoNotesRequestRef.current;
+    Promise.all([
+      customerCreditRepository.getCustomerCreditSummary(customer.id, { force: true }).catch((error) => {
+        Logger.warn('[CustomersPage] No se pudo cargar el resumen cloud de crédito:', error);
+        return null;
+      }),
+      (isCloudCredit ? Promise.resolve([]) : db.table(STORES.SALES).where('customerId').equals(customer.id).toArray()).catch((error) => {
+        Logger.warn('[CustomersPage] No se pudieron leer las notas locales:', error);
+        return [];
+      })
+    ]).then(([summary, localSales]) => {
+      if (abonoNotesRequestId !== abonoNotesRequestRef.current) return;
+      if (summary?.success === true && summary?.customer?.debt !== undefined) {
+        setSelectedCustomer(current => current?.id === customer.id ? { ...current, debt: summary.customer.debt } : current);
+      }
+      const authoritative = summary?.sale_allocation_version === 1 && summary?.sale_balances_authoritative === true;
+      setAbonoAllocationStatus(!summary || summary.success === false ? 'error' : (authoritative ? summary.sale_allocation_status : 'unavailable'));
+      setAbonoPendingNotes(isCloudCredit && !authoritative ? [] : selectCreditNotes({
+        customerId: customer.id, cloudSummary: summary, localSales
+      }));
+    }).catch((error) => {
+      if (abonoNotesRequestId !== abonoNotesRequestRef.current) return;
+      setAbonoAllocationStatus('error');
+      setAbonoPendingNotes([]);
+      Logger.warn('[CustomersPage] No se pudieron preparar notas para abono:', error);
+    });
+  };
+
   const handleOpenAbono = async (customer) => {
     let cajaVigente = null;
 
@@ -805,36 +838,9 @@ export default function CustomersPage() {
       await sincronizarEstadoCaja();
     }
 
-    // Read-only enrichment: a cloud summary is authoritative whenever it is
-    // available, but opening the payment modal never depends on this request.
-    setAbonoPendingNotes(null);
-    setAbonoAllocationStatus('loading');
     setSelectedCustomer(customer);
     setIsAbonoModalOpen(true);
-
-    const abonoNotesRequestId = ++abonoNotesRequestRef.current;
-    Promise.all([
-      customerCreditRepository.getCustomerCreditSummary(customer.id, { force: true }).catch((error) => {
-        Logger.warn('[CustomersPage] No se pudo cargar el resumen cloud de crédito:', error);
-        return null;
-      }),
-      db.table(STORES.SALES).where('customerId').equals(customer.id).toArray().catch((error) => {
-        Logger.warn('[CustomersPage] No se pudieron leer las notas locales:', error);
-        return [];
-      })
-    ]).then(([summary, localSales]) => {
-      if (abonoNotesRequestId !== abonoNotesRequestRef.current) return;
-      if (summary?.success === true && summary?.customer?.debt !== undefined) {
-        setSelectedCustomer(current => current?.id === customer.id ? { ...current, debt: summary.customer.debt } : current);
-      }
-      const authoritative = summary?.sale_allocation_version === 1 && summary?.sale_balances_authoritative === true;
-      setAbonoAllocationStatus(authoritative ? summary.sale_allocation_status : 'unavailable');
-      setAbonoPendingNotes(isCloudCredit && !authoritative ? [] : selectCreditNotes({
-        customerId: customer.id, cloudSummary: summary, localSales
-      }));
-    }).catch((error) => {
-      Logger.warn('[CustomersPage] No se pudieron preparar notas para abono:', error);
-    });
+    loadAbonoPendingNotes(customer);
   };
 
   const handleOpenLayaways = (customer) => {
@@ -1231,6 +1237,7 @@ export default function CustomersPage() {
         cashActor={cashActor}
         authoritativePendingSales={abonoPendingNotes}
         cloudAllocationStatus={abonoAllocationStatus}
+        onReloadPendingSales={() => loadAbonoPendingNotes(selectedCustomer)}
       />
 
       <LayawayModal

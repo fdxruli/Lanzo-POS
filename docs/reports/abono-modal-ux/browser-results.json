@@ -1,0 +1,20 @@
+{
+  "scope": "Controlled local UI only; no Production financial certification",
+  "checks": [
+    "General: existing callback, exact amount, receipt, no explicit allocations",
+    "Specific: only selected verified note submitted",
+    "Pending: duplicate submit suppressed; close, Escape and mode changes locked",
+    "Mobile keyboard: native radio arrows, Enter on notes, input Tab, focus trap, Escape, focus restored",
+    "Layout 320x568, dark=False: no horizontal overflow; actions visible; invalid amount blocked",
+    "Layout 390x844, dark=False: no horizontal overflow; actions visible; invalid amount blocked",
+    "Layout 390x520, dark=False: no horizontal overflow; actions visible; invalid amount blocked",
+    "Layout 390x844, dark=True: no horizontal overflow; actions visible; invalid amount blocked",
+    "historical_unallocated: distinct visible state and specific submission blocked",
+    "loading: distinct visible state and specific submission blocked",
+    "error: distinct visible state and specific submission blocked",
+    "empty: distinct visible state and specific submission blocked",
+    "No browser exceptions, external requests, IndexedDB reads or real payments"
+  ],
+  "page_errors": [],
+  "external_requests": []
+}
