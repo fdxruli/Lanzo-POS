@@ -1,0 +1,38 @@
+[
+  {
+    "jsonb_build_object": {
+      "all_ok": true,
+      "functions": [
+        {
+          "present": true,
+          "signature": "private.pos_sale_to_jsonb(pos_sales)",
+          "body_matches": true,
+          "attributes_match": true,
+          "permissions_match": true
+        },
+        {
+          "present": true,
+          "signature": "public.pos_cancel_cloud_sale_unlimited(text,text,text,text,text,text,text)",
+          "body_matches": true,
+          "attributes_match": true,
+          "permissions_match": true
+        },
+        {
+          "present": true,
+          "signature": "public.pos_get_customer_credit_summary_unlimited(text,text,text,text,text)",
+          "body_matches": true,
+          "attributes_match": true,
+          "permissions_match": true
+        },
+        {
+          "present": true,
+          "signature": "public.pos_record_customer_payment_unlimited(text,text,text,text,text,numeric,text,text,text,jsonb,text)",
+          "body_matches": true,
+          "attributes_match": true,
+          "permissions_match": true
+        }
+      ],
+      "ledger_matches": true
+    }
+  }
+]

@@ -4,7 +4,7 @@ Resultado vigente: **V1 PASS (16/16), V2 PASS (19/19)** en PostgreSQL 17.6 real.
 
 1. Identificación y conservación.
 
-Rama: `fix/customer-payment-sale-allocations-v1`. Base `main`: `5e1b4303e942657c406d91237ffa7ff44db91cec`. Se actualizó por fast-forward sin conflictos ni cambios ajenos. El candidato inicial se conservaba exactamente con SHA-256 `a9ef3aa0add6f4f799b5185f09c88266f1892d674243a832eeff071eba7055fc`. Se preservan el SQL original como evidencia `.sql.txt`, su informe y su manifest en `compatibility/`; los 20 casos PostgreSQL, 104 pruebas de aplicación y 7 checks V2 anteriores se mantienen como evidencia histórica y no se suman a esta matriz.
+Rama: `fix/customer-payment-sale-allocations-v1`. Base `main` final: `d87bfae3556878e0c78cc97cfed0a1f71cba1ac4`. Se integró el avance de main mediante merge normal, sin conflictos ni cambios ajenos en el diff del PR. La auditoría SQL se realizó sobre la base inicial `5e1b4303e942657c406d91237ffa7ff44db91cec`; el canónico y su paquete permanecen idénticos. El candidato inicial se conservaba exactamente con SHA-256 `a9ef3aa0add6f4f799b5185f09c88266f1892d674243a832eeff071eba7055fc`. Se preservan el SQL original como evidencia `.sql.txt`, su informe y su manifest en `compatibility/`; los 20 casos PostgreSQL, 104 pruebas de aplicación y 7 checks V2 anteriores se mantienen como evidencia histórica y no se suman a esta matriz.
 
 2. Defectos demostrados y única iteración de corrección.
 
@@ -47,7 +47,7 @@ La instalación sólo cambia definiciones de esas funciones y registra una fila 
 - `compatibility/installed-production-parity.json`: fuentes, atributos y permisos restaurados en el laboratorio.
 - `compatibility/production-final-preflight.json`: Production todavía conserva los cuatro cuerpos originales y sus atributos/permisos; versión candidata ausente.
 - `compatibility/installation-results.json`: postflight negativo revierte DDL y registro; registro exacto de versión; rechazo de instalación duplicada; ledger financiero intacto.
-- Aplicación después de actualizar `main`: **29/29** en cuatro suites focalizadas. Contrato estático V2 **7/7**, ESLint y build aprobados. Se conservan advertencias glob del precache; no son fallos financieros.
+- Aplicación en la base inicial de la auditoría: **29/29** en cuatro suites focalizadas. Tras integrar el avance final de `main`: **69/69** en seis suites afectadas, ESLint y build aprobados; evidencia en `compatibility/main-refresh/`. No se repitió la matriz PostgreSQL porque el SQL no cambió y el preflight de Production volvió a aprobar en sólo lectura. Contrato estático V2 **7/7**, ESLint y build aprobados. Se conservan advertencias glob del precache; no son fallos financieros.
 
 Desde un PostgreSQL 17 nuevo y desechable, sólo `127.0.0.1:55847`, usuario `postgres` con trust local y base vacía `fin01_cert_compatibility`:
 

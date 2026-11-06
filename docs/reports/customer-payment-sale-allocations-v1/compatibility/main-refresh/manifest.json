@@ -1,0 +1,31 @@
+{
+  "base_main": "d87bfae3556878e0c78cc97cfed0a1f71cba1ac4",
+  "merge_commit": "a2fc84303bb2431d8680df054d3d61e7e5b319b8",
+  "application": {
+    "suites": 6,
+    "passed": 69,
+    "failed": 0
+  },
+  "eslint": "PASS",
+  "build": "PASS",
+  "sql_changed": false,
+  "sql_sha256": "f358cd97ef3463c7fb210f1c7ad6844cf56ee558d42d53d9e2f3df1e57deab62",
+  "production_preflight": "PASS_READ_ONLY_VERSION_ABSENT",
+  "log_encodings": [
+    {
+      "file": "application.log",
+      "raw_sha256": "8cb25dcb88918545272511ec75cd873159b3fb048c61eddc3daab9187cdcf2bb",
+      "normalized_sha256": "93e97c1d1cf03a696d76f7881c8514e8857536e1c883f7f64de89101a8abf0cb"
+    },
+    {
+      "file": "build.log",
+      "raw_sha256": "dbc45ca586d735ea940763fe858ec6ed36b9836817a269146dad8345a2cc6077",
+      "normalized_sha256": "da741bb7da3803ffaa88c63eba953f79389c26f7daaaa07d9a00b09555f3d518"
+    },
+    {
+      "file": "eslint.log",
+      "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "normalized_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ]
+}
