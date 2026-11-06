@@ -148,6 +148,22 @@ beforeEach(() => {
 });
 
 describe('Navbar Settings shell access', () => {
+  it('keeps manual update checks out of the menu and retains pending-update actions', () => {
+    state.app = createAppState({ updateAvailable: true });
+    renderNavbar();
+    openMobileDrawer();
+
+    expect(screen.queryByRole('button', { name: /Buscar actualizaciones/i })).not.toBeInTheDocument();
+    expect(document.querySelector('.drawer-system-action--update')).toBeInTheDocument();
+    expect(document.querySelector('.desktop-sidebar [aria-label="Actualizar sistema"]')).toBeInTheDocument();
+  });
+
+  it('does not show a pending-action indicator when there is no update or install', () => {
+    renderNavbar();
+    expect(document.querySelector('.drawer-system-actions')).not.toBeInTheDocument();
+    expect(screen.queryByText('Hay acciones pendientes en el menú')).not.toBeInTheDocument();
+  });
+
   it('suppresses mobile and desktop navigation only when the route requests it', () => {
     renderNavbar('/', true);
 
@@ -324,7 +340,9 @@ describe('Navbar mobile menu', () => {
     expect(screen.getByRole('dialog', { name: 'Menú principal' }))
       .toHaveAttribute('aria-hidden', 'false');
     const closeButton = screen.getByRole('button', { name: 'Cerrar menú' });
-    const lastAction = within(drawer).getByRole('button', { name: /Buscar actualizaciones/i });
+    const lastAction = [...drawer.querySelectorAll('a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])')].at(-1);
+    expect(lastAction).toBeTruthy();
+    expect(within(drawer).queryByRole('button', { name: /Buscar actualizaciones/i })).not.toBeInTheDocument();
 
     expect(document.activeElement).toBe(closeButton);
 
