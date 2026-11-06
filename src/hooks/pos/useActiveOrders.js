@@ -199,7 +199,7 @@ export const useActiveOrders = create(
               }
               const lines = groupedDonors.get(donor.orderId);
               const source = lines[donor.lineIndex];
-              lines[donor.lineIndex] = { ...source, quantity: source.quantity - donor.units };
+              lines[donor.lineIndex] = { ...source, quantity: source.quantity - donor.units, exceedsStock: false };
             }
             for (const [donorId, lines] of groupedDonors) {
               const sourceOrder = live.activeOrders.get(donorId);
@@ -208,8 +208,14 @@ export const useActiveOrders = create(
                 ...sourceOrder, items: remaining, ...touchOrderVersion(sourceOrder)
               }));
             }
+            const transferredItems = proposedItems.map((item) => (
+              isDirectUnitCartItem(item)
+              && String(getCartProductId(item) || item.id) === String(initialConflict.productKey)
+                ? { ...item, exceedsStock: false }
+                : item
+            ));
             activeOrders.set(orderId, withOrderTotals({
-              ...originalTarget, items: proposedItems, ...touchOrderVersion(originalTarget)
+              ...originalTarget, items: transferredItems, ...touchOrderVersion(originalTarget)
             }));
             applied = true;
             return { activeOrders };
