@@ -29,6 +29,7 @@ vi.mock('../../../services/utils', () => ({
   generateID: vi.fn(() => 'sal-generated'),
   safeLocalStorageSet: vi.fn(),
   showMessageModal: vi.fn(),
+  showConfirmModal: vi.fn(async () => false),
   roundCurrency: vi.fn((value) => Math.round(Number(value) * 100) / 100)
 }));
 
@@ -60,6 +61,7 @@ vi.mock('../../../services/db/dexie', () => ({
 
       if (storeName === 'menu') {
         return {
+          get: vi.fn(async (id) => dbState.products.get(id) || null),
           toArray: vi.fn(async () => Array.from(dbState.products.values())),
           bulkPut: vi.fn(async (products) => {
             products.forEach((product) => dbState.products.set(product.id, product));
@@ -99,7 +101,8 @@ import {
   selectCurrentOrderTableData,
   useActiveOrders
 } from '../useActiveOrders';
-import { showMessageModal } from '../../../services/utils';
+import { showConfirmModal, showMessageModal } from '../../../services/utils';
+import { actorRuntimeController } from '../../../services/auth/actorRuntimeController';
 import { commitStock, releaseCommittedStock } from '../../../services/sales/inventoryFlow';
 
 const makeOrder = (id, items = []) => ({
@@ -526,41 +529,68 @@ describe('useActiveOrders unified store', () => {
     expect(state.activeOrders.get('two')?.deviceId).toEqual(expect.any(String));
   });
 
-  it('marks stock as exceeded when another active order already uses the remaining stock', async () => {
+  it('blocks claiming the final unit twice in two active orders', async () => {
     useActiveOrders.setState({
-      activeOrders: new Map([
-        ['one', makeOrder('one')],
-        ['two', makeOrder('two')]
-      ]),
+      activeOrders: new Map([['one', makeOrder('one')], ['two', makeOrder('two')]]),
       currentOrderId: 'one'
     });
-
     const product = {
-      id: 'product-1',
-      name: 'Product',
-      price: 25,
-      saleType: 'unit',
-      trackStock: true,
-      stock: 1,
-      committedStock: 0
+      id: 'product-1', name: 'Product', price: 25,
+      saleType: 'unit', trackStock: true, stock: 1, committedStock: 0
     };
-
     await useActiveOrders.getState().addItemToOrder('one', product);
-    await useActiveOrders.getState().addItemToOrder('two', product);
-
+    const blocked = await useActiveOrders.getState().addItemToOrder('two', product);
     const state = useActiveOrders.getState();
-    expect(state.activeOrders.get('one')?.items[0]).toMatchObject({
-      id: 'product-1',
-      quantity: 1,
-      stock: 1,
-      exceedsStock: false
+    expect(state.activeOrders.get('one').items[0].quantity).toBe(1);
+    expect(state.activeOrders.get('two').items).toEqual([]);
+    expect(blocked).toMatchObject({ success: false });
+  });
+
+  it.each([false, true])('two-unit conflict %s: a single operator confirmation keeps both carts coherent', async (confirm) => {
+    const a = { ...makeOrder('A', [{
+      id: 'X', productId: 'X', lineId: 'A-line', name: 'X', quantity: 2,
+      saleType: 'unit', trackStock: true, price: 10, stock: 2,
+      committedStock: 0, provisionalAddedAt: '2026-11-06T00:00:00.000Z'
+    }]), actorKey: 'staff:one' };
+    const b = { ...makeOrder('B'), actorKey: 'staff:one' };
+    dbState.products.set('X', {
+      id: 'X', name: 'X', price: 10, stock: 2, committedStock: 0,
+      trackStock: true, saleType: 'unit'
     });
-    expect(state.activeOrders.get('two')?.items[0]).toMatchObject({
-      id: 'product-1',
-      quantity: 1,
-      stock: 0,
-      exceedsStock: true
+    useActiveOrders.setState({
+      activeOrders: new Map([['A', a], ['B', b]]), currentOrderId: 'B'
     });
+    showConfirmModal.mockResolvedValueOnce(confirm);
+    const capture = vi.spyOn(actorRuntimeController, 'capture')
+      .mockReturnValue({ actorKey: 'staff:one', assertCurrent: vi.fn() });
+    try {
+      const attempt = useActiveOrders.getState().addItem({
+        id: 'X', name: 'X', price: 10, trackStock: true, saleType: 'unit',
+        stock: 2, committedStock: 0
+      }, 'B');
+      expect(attempt).toMatchObject({ success: false, code: 'LOCAL_PRIORITY_CONFLICT' });
+      expect(useActiveOrders.getState().activeOrders.get('A').items[0].quantity).toBe(2);
+      expect(useActiveOrders.getState().activeOrders.get('B').items).toEqual([]);
+      if (confirm) {
+        await vi.waitFor(() => {
+          const state = useActiveOrders.getState();
+          expect(state.activeOrders.get('A').items[0].quantity).toBe(1);
+          expect(state.activeOrders.get('B').items[0]).toMatchObject({
+            quantity: 1, exceedsStock: false
+          });
+          expect(state.activeOrders.get('A').total).toBe(10);
+          expect(state.activeOrders.get('B').total).toBe(10);
+        });
+      } else {
+        await vi.waitFor(() => expect(showConfirmModal).toHaveBeenCalledOnce());
+        await new Promise((resolve) => setTimeout(resolve, 0));
+        expect(useActiveOrders.getState().activeOrders.get('A')).toBe(a);
+        expect(useActiveOrders.getState().activeOrders.get('B')).toBe(b);
+      }
+      expect(showConfirmModal).toHaveBeenCalledOnce();
+    } finally {
+      capture.mockRestore();
+    }
   });
 
   it('resolves batch data before mutating the order', async () => {
