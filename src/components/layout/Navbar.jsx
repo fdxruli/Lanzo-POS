@@ -1,4 +1,3 @@
-import UpdateControls from '../common/UpdateControls';
 import { Fragment, useEffect, useRef, useState } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { useAppStore } from '../../store/useAppStore';
@@ -247,7 +246,7 @@ function Navbar({ isSuppressed = false } = {}) {
   const isCloudLicense = isCloudPosSyncEnabled(licenseDetails);
   const showLocalBackupIndicators = !isCloudLicense;
   const effectiveBackupRiskLevel = showLocalBackupIndicators ? backupRiskLevel : 0;
-  const hasMenuAction = true;
+  const hasMenuAction = updateAvailable || isInstallable;
   const installButtonLabel = isIOS ? 'Instalar App (iOS)' : 'Instalar App';
 
   const getDesktopClass = ({ isActive }) => (
@@ -521,7 +520,6 @@ function Navbar({ isSuppressed = false } = {}) {
                 <span>Aplicación</span>
               </div>
 
-              <UpdateControls />
               {updateAvailable && (
                 <button
                   type="button"
@@ -779,7 +777,6 @@ function Navbar({ isSuppressed = false } = {}) {
                 marginTop: '6px'
               }}
             >
-              <UpdateControls />
               {updateAvailable && (
                 <button
                   type="button"
