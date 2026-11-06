@@ -29,7 +29,7 @@ describe('Múltiples ventas: aviso contextual de stock compartido', () => {
     expect(notice).toHaveTextContent('Producto X');
     expect(notice).toHaveTextContent('Disponibles para vender según inventario local, antes de otras ventas: 2');
     expect(notice).toHaveTextContent('Utilizadas provisionalmente en Venta A: 2');
-    expect(notice).toHaveTextContent('Libres para esta venta: 0');
+    expect(notice).toHaveTextContent('Unidades adicionales libres para esta venta: 0');
     expect(notice).not.toHaveTextContent('stock físico');
     expect(notice).toHaveTextContent('No se agregó el producto ni se modificó el inventario.');
     expect(props.onOpenInventorySource).not.toHaveBeenCalled();
@@ -50,7 +50,7 @@ describe('Múltiples ventas: aviso contextual de stock compartido', () => {
     const notice = screen.getByRole('alert');
     expect(notice).toHaveTextContent('otras ventas abiertas: 2');
     expect(notice).not.toHaveTextContent('Disponibles para vender según inventario local');
-    expect(notice).not.toHaveTextContent('Libres para esta venta');
+    expect(notice).not.toHaveTextContent('Unidades adicionales libres para esta venta');
     expect(screen.queryByRole('button', { name: /Abrir/ })).not.toBeInTheDocument();
   });
 
