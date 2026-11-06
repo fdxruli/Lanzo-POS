@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { X, Send, Sparkles, Lightbulb, MapPin, ArrowUpRight, LayoutGrid, MessageCircle } from 'lucide-react';
+import { X, Send, Sparkles, Lightbulb, ArrowUpRight, LayoutGrid, MessageCircle } from 'lucide-react';
 import { GLOBAL_ALERT, acknowledgeGlobalAlert } from '../../config/botContext';
 import { BOT_RUBROS } from '../../config/botContextByRubro';
 import { normalizeBusinessTypes } from '../../utils/businessType';
@@ -146,10 +146,19 @@ const AssistantBot = ({ enabled = true, globalAlertEligible = false, isSuppresse
         <section id="lanzo-bot-panel" ref={panelRef} tabIndex={-1} className="lanzo-bot-card" role="region" aria-label="Lanzó Bot" onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); close(); } }}>
           <div className="bot-header">
             <div className="bot-heading">
-              <h2 className="bot-title"><Sparkles size={17} />{showAlert ? GLOBAL_ALERT.title : 'Lanzó Bot'}</h2>
-              {!showAlert && <span className="bot-subtitle"><MapPin size={12} />{screen.label}</span>}
+              {showAlert ? (
+                <h2 className="bot-title"><Sparkles size={17} aria-hidden="true" />{GLOBAL_ALERT.title}</h2>
+              ) : (
+                <div className="bot-heading-line">
+                  <h2 className="bot-title"><Sparkles size={17} aria-hidden="true" />Lanzó Bot</h2>
+                  <span className="bot-heading-separator" aria-hidden="true">·</span>
+                  <span className="bot-subtitle" title={screen.label}>{screen.label}</span>
+                </div>
+              )}
             </div>
-            <button type="button" className="close-btn" onClick={close} aria-label="Cerrar asistente" disabled={showAlert && (GLOBAL_ALERT.isDismissible === false || GLOBAL_ALERT.severity === 'critical')}><X size={20} /></button>
+            {(showAlert || keyboardOpen) && (
+              <button type="button" className="close-btn" onClick={close} aria-label="Cerrar asistente" disabled={showAlert && (GLOBAL_ALERT.isDismissible === false || GLOBAL_ALERT.severity === 'critical')}><X size={20} aria-hidden="true" /></button>
+            )}
           </div>
           <div className="bot-body">
             {showAlert ? <div className="alert-content">

@@ -33,13 +33,26 @@
   justify-content: space-between;
   gap: 10px;
   flex: 0 0 auto;
-  padding: 9px 12px;
+  min-height: 44px;
+  padding: 8px 12px;
   color: var(--ui-action-primary-text, white);
   background: var(--ui-action-primary-bg, var(--primary-color));
 }
 .lanzo-bot-container .bot-heading { flex: 1; min-width: 0; }
-.lanzo-bot-container .bot-title { display: flex; align-items: center; gap: 7px; margin: 0; font-size: 16px; color: inherit; }
-.lanzo-bot-container .bot-subtitle { display: flex; align-items: center; gap: 4px; margin-top: 2px; font-size: 12px; overflow-wrap: anywhere; }
+.lanzo-bot-container .bot-heading-line { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.lanzo-bot-container .bot-title { display: flex; align-items: center; flex: 0 0 auto; gap: 7px; margin: 0; font-size: 16px; color: inherit; white-space: nowrap; }
+.lanzo-bot-container .bot-heading-separator { flex: 0 0 auto; opacity: .8; }
+.lanzo-bot-container .bot-subtitle {
+  display: -webkit-box;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font-size: 12px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
 .lanzo-bot-container .close-btn {
   display: grid; place-items: center; flex: 0 0 auto; padding: 0;
   width: 44px; height: 44px; border: 1px solid currentColor;
