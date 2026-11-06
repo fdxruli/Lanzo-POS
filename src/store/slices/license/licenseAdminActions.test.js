@@ -386,7 +386,7 @@ describe('license admin actions', () => {
     }));
   });
 
-  it('preserves the legacy FREE local-owner fallback for a true pre-cutover license', async () => {
+  it('rejects a pre-cutover FREE device-only response without an owner session', async () => {
     const state = setup();
     state.licenseDetails = {
       license_key: 'LANZO-ADMIN-TEST',
@@ -407,23 +407,22 @@ describe('license admin actions', () => {
     });
 
     await expect(state.discoverAdminAccess('LANZO-ADMIN-TEST')).resolves.toEqual({
-      success: true,
-      legacyBackendFallback: true
+      success: false,
+      adminLoginRequired: true,
+      supportRequired: true
     });
 
-    expect(mocks.lockActorRuntime).toHaveBeenCalledWith('legacy_admin_without_actor_session');
-    expect(mocks.lockActorRuntime).not.toHaveBeenCalledWith('admin_login_required');
+    expect(mocks.lockActorRuntime).toHaveBeenCalledWith('admin_login_required');
+    expect(mocks.lockActorRuntime).not.toHaveBeenCalledWith('legacy_admin_without_actor_session');
     expect(mocks.grantAuthenticatedActorRuntime).not.toHaveBeenCalled();
-    expect(state._processOfflineMode).toHaveBeenCalledWith(
-      expect.objectContaining({
-        license_key: 'LANZO-ADMIN-TEST',
-        plan_code: 'free_trial',
-        device_role: 'admin'
-      }),
-      { reason: 'legacy_admin_auth_compatibility' }
-    );
+    expect(state._processOfflineMode).not.toHaveBeenCalled();
     expect(state.currentAdminUser).toBeNull();
-    expect(state.appStatus).toBe('ready');
+    expect(state.appStatus).toBe('admin_login_required');
+    expect(state.licenseDetails).toMatchObject({
+      license_key: 'LANZO-ADMIN-TEST',
+      admin_identity_required: true,
+      admin_user: null
+    });
   });
 
   it('never accepts a legacy valid response as local-owner authority for PRO', async () => {
