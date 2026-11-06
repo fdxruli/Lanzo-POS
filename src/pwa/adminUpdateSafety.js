@@ -1,6 +1,25 @@
 // Neutral registry: no database, tenant or network imports in the startup shell.
 const blockers = new Set();
 let activeWrites = 0;
+let readCartState = null;
+
+// POS registers the reader only when loaded. The PWA startup shell must
+// not directly import the cart, Dexie or checkout dependencies.
+export function setAdminUpdateCartStateReader(reader) {
+  readCartState = typeof reader === 'function' ? reader : null;
+}
+export function getAdminUpdateCartState() {
+  if (!readCartState) return { hasOpenCart: false, checkoutLocked: false };
+  try {
+    const value = readCartState();
+    return {
+      hasOpenCart: value?.hasOpenCart === true,
+      checkoutLocked: value?.checkoutLocked === true
+    };
+  } catch {
+    return { hasOpenCart: false, checkoutLocked: true };
+  }
+}
 export function registerAdminUpdateBlocker(reason) {
   const blocker = { reason };
   blockers.add(blocker);

@@ -17,6 +17,24 @@ const planRegion = () => screen.getByRole('region', { name: 'Lanzo Local' });
 const capabilities = () => screen.getByRole('region', { name: 'Todo lo que puedes hacer con Lanzo' });
 
 describe('AboutPage confirmed Local experience', () => {
+  it('keeps version, build and date, and links to the authorized maintenance tab', () => {
+    renderPage();
+    const section = screen.getByRole('region', { name: 'Versión y actualizaciones' });
+    expect(section).toHaveTextContent('Versión comercial:');
+    expect(section).toHaveTextContent('Compilación:');
+    expect(section).toHaveTextContent('Fecha de compilación:');
+    expect(within(section).getByRole('link', { name: 'Buscar actualización' }))
+      .toHaveAttribute('href', '/configuracion?tab=maintenance');
+    expect(within(section).queryByRole('button', { name: /Buscar actualizaciones/i })).not.toBeInTheDocument();
+  });
+
+  it('does not offer the maintenance link when the actor lacks section access', () => {
+    state.settings.canAccessSection = () => false;
+    renderPage();
+    const section = screen.getByRole('region', { name: 'Versión y actualizaciones' });
+    expect(within(section).queryByRole('link', { name: 'Buscar actualización' })).not.toBeInTheDocument();
+  });
+
   beforeEach(() => {
     state.store = {
       licenseDetails: {
@@ -32,7 +50,7 @@ describe('AboutPage confirmed Local experience', () => {
       canAccess: () => true, currentDeviceRole: 'admin'
     };
     state.actor = { status: 'granted', actorType: 'admin', actorId: 'qa', sessionId: 'qa-session', permissions: ['*'] };
-    state.settings = { isAuthorizedActor: true, isAdmin: true, actorType: 'admin', canEnterSettings: true };
+    state.settings = { isAuthorizedActor: true, isAdmin: true, actorType: 'admin', canEnterSettings: true, canAccessSection: () => true };
   });
   afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 

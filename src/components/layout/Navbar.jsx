@@ -295,8 +295,9 @@ function Navbar({ isSuppressed = false } = {}) {
   };
 
   const handleUpdateClick = async () => {
-    await runUpdate();
+    // Cerrar drawer antes de abrir la advertencia/confirmación.
     closeMenu();
+    await runUpdate();
   };
 
   const handleInstallClick = async () => {
