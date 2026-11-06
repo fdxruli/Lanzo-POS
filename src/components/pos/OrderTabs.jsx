@@ -6,6 +6,9 @@ const OrderTabs = ({
   activeOrders,
   currentOrderId,
   onSwitchOrder,
+  inventoryConflictNotice = null,
+  onDismissInventoryNotice,
+  onOpenInventorySource,
   onCreateOrder,
   canCreateOrder = true,
   isPausing
@@ -102,6 +105,47 @@ const OrderTabs = ({
           </form>
         ))}
       </div>
+      {inventoryConflictNotice && (
+        <div className="order-tabs-inventory-notice" role="alert">
+          <div className="order-tabs-inventory-notice__heading">
+            <strong>Sin unidades disponibles para esta venta</strong>
+            <button
+              type="button"
+              className="order-tabs-inventory-notice__close"
+              onClick={onDismissInventoryNotice}
+              aria-label="Cerrar aviso de inventario"
+            >×</button>
+          </div>
+          <p><strong>{inventoryConflictNotice.productName}</strong></p>
+          {inventoryConflictNotice.availableBeforeCarts !== null && (
+            <p>Disponibles para vender según inventario local, antes de otras ventas: <strong>{inventoryConflictNotice.availableBeforeCarts}</strong>.</p>
+          )}
+          {inventoryConflictNotice.sourceCount > 0 && inventoryConflictNotice.provisionalInOtherCarts !== null && (
+            <p>
+              Utilizadas provisionalmente en {inventoryConflictNotice.singleSourceLabel
+                ? inventoryConflictNotice.singleSourceLabel
+                : inventoryConflictNotice.sourceCount === 1 ? 'otra venta abierta' : 'otras ventas abiertas'}:
+              {' '}<strong>{inventoryConflictNotice.provisionalInOtherCarts}</strong>.
+            </p>
+          )}
+          {inventoryConflictNotice.freeInThisCart !== null && (
+            <p>Libres para esta venta: <strong>{inventoryConflictNotice.freeInThisCart}</strong>.</p>
+          )}
+          <p>
+            {inventoryConflictNotice.sourceCount > 0
+              ? 'Para continuar, abre la otra venta desde las pestañas, reduce o elimina allí el producto y vuelve a agregarlo en esta venta.'
+              : 'No hay disponibilidad suficiente según el inventario local. Revisa existencias, lotes y reservas formales antes de volver a intentarlo.'}
+          </p>
+          <div className="order-tabs-inventory-notice__actions">
+            {inventoryConflictNotice.sourceOrderId && (
+              <button type="button" onClick={onOpenInventorySource} className="order-tabs-inventory-notice__open">
+                Abrir {inventoryConflictNotice.singleSourceLabel || 'la otra venta'}
+              </button>
+            )}
+            <span>No se agregó el producto ni se modificó el inventario.</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
