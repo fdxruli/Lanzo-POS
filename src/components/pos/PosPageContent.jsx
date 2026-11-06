@@ -154,7 +154,15 @@ const PosPageContent = ({ data, ui, actions, features }) => {
             return;
         }
 
-        const result = addMultipleScannedProducts?.([product], orderIdAtScan);
+        let result;
+        try {
+            result = await addMultipleScannedProducts?.([product], orderIdAtScan);
+        } catch {
+            if (!isScanCurrent()) return;
+            void playErrorBeep();
+            return;
+        }
+        if (!isScanCurrent()) return;
         if (!result?.success) {
             void playErrorBeep();
             if (!String(result?.code || '').startsWith('LOCAL_')) {

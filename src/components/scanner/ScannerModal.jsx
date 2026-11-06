@@ -307,7 +307,7 @@ function ScannerModalContent({ show, onClose, onScanSuccess }) {
         }))
       );
 
-      const result = addMultipleScannedProducts(flatItems);
+      const result = await addMultipleScannedProducts(flatItems);
 
       if (!isMountedRef.current) return;
 

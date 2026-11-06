@@ -2,13 +2,12 @@ import { create } from 'zustand';
 import { setAdminUpdateCartStateReader } from '../../pwa/adminUpdateSafety';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { useAppStore } from '../../store/useAppStore';
-import { createOrderActions, getInventoryReservationKey, getSessionAvailableStock, INVENTORY_NOTICE_NET_AVAILABILITY } from '../../store/orderActions';
+import { createOrderActions, getInventoryReservationKey, getSessionAvailableStock, getCartAvailableStock } from '../../store/orderActions';
 import { generateID, showConfirmModal, showMessageModal } from '../../services/utils';
 import { usePosCatalogStore } from '../../store/usePosCatalogStore';
 import { evaluateProvisionalCartChange, isDirectUnitCartItem, validateCartCheckoutPriority } from '../../services/sales/localCartPriority';
 import { db, STORES } from '../../services/db/dexie';
 import { normalizeStock } from '../../services/db/utils';
-import { getOperationalStockSnapshot } from '../../services/inventoryStock';
 import { SALE_STATUS } from '../../services/sales/financialStats';
 import { Money } from '../../utils/moneyMath';
 import { withOrderTotals } from '../../services/sales/orderTotals';
@@ -805,129 +804,169 @@ export const useActiveOrders = create(
       }
 
       const nextValue = typeof updater === 'function' ? updater(order.items) : updater;
-      const normalized = normalizeCartItems(nextValue);
-      const now = new Date().toISOString();
-      const previous = order.items || [];
-      const nextItems = normalized.map((item, index) => {
-        if (!isDirectUnitCartItem(item) || !(Number(item.quantity) > 0)) return item;
-        const oldItem = previous.find((candidate, oldIndex) =>
-          getCartLineId(candidate, oldIndex) === getCartLineId(item, index)
-        ) || previous.find((candidate) =>
-          getCartProductId(candidate) === getCartProductId(item)
-          && candidate.id === item.id && isDirectUnitCartItem(candidate)
-        );
-        const provisionalAddedAt = item.provisionalAddedAt || oldItem?.provisionalAddedAt
-          || (oldItem && Number(oldItem.quantity) > 0
-            ? (order.createdAt || order.updatedAt || now) : now);
-        return { ...item, provisionalAddedAt };
-      });
+      const commit = (batchRecords = new Map()) => {
+        const state = get();
+        if (state.activeOrders.get(orderId) !== order) {
+          return typeof updater === 'function'
+            ? get().updateOrderItems(orderId, updater)
+            : { success: false, code: 'ORDER_CHANGED' };
+        }
+        if (!canAccessTenantOwnedRuntimeCache()) return { success: false, code: 'TENANT_NOT_READY' };
+        const normalized = normalizeCartItems(nextValue);
+        const now = new Date().toISOString();
+        const previous = order.items || [];
+        let nextItems = normalized.map((item, index) => {
+          if (!isDirectUnitCartItem(item) || !(Number(item.quantity) > 0)) return item;
+          const oldItem = previous.find((candidate, oldIndex) =>
+            getCartLineId(candidate, oldIndex) === getCartLineId(item, index)
+          ) || previous.find((candidate) =>
+            getCartProductId(candidate) === getCartProductId(item)
+            && candidate.id === item.id && isDirectUnitCartItem(candidate)
+          );
+          const provisionalAddedAt = item.provisionalAddedAt || oldItem?.provisionalAddedAt
+            || (oldItem && Number(oldItem.quantity) > 0
+              ? (order.createdAt || order.updatedAt || now) : now);
+          return { ...item, provisionalAddedAt };
+        });
 
-      // Stock tracked through batches, variants or other non-R1 inventory
-      // cannot be reassigned. Do not persist an oversubscribed line merely
-      // with exceedsStock=true: that creates the misleading "Ajustar a 2" UI.
-      if (!order.isSaved && order.origin !== 'ecommerce') {
-        const checkedKeys = new Set();
-        for (const item of nextItems) {
-          if ((!item?.trackStock && !item?.batchId) || isDirectUnitCartItem(item)) continue;
-          const key = getInventoryReservationKey(item);
-          if (!key || checkedKeys.has(key)) continue;
-          checkedKeys.add(key);
-          const quantityFor = (lines) => lines.reduce((sum, line) => (
-            getInventoryReservationKey(line) === key ? sum + (Number(line.quantity) || 0) : sum
-          ), 0);
-          const nextQuantity = quantityFor(nextItems);
-          if (nextQuantity <= quantityFor(previous)) continue;
-          const localAvailable = Number(getSessionAvailableStock(state, item, orderId));
-          if (!Number.isFinite(localAvailable) || nextQuantity > localAvailable) {
-            const claims = Array.from(state.activeOrders, ([id, other]) => ({
-              id, order: other,
-              units: (other?.items || []).reduce((sum, line) => (
-                getInventoryReservationKey(line) === key
-                  ? sum + (Number(line.quantity) || 0) : sum
-              ), 0)
-            })).filter(({ id, order: other, units }) => (
-              id !== orderId && !other?.isSaved && other?.origin !== 'ecommerce' && units > 0
-            ));
-            const batchNet = item[INVENTORY_NOTICE_NET_AVAILABILITY];
-            const verifiedBatchNet = item.batchId
-              && typeof batchNet === 'number' && Number.isFinite(batchNet)
-              && batchNet >= 0 && typeof item.stock === 'number'
-              && normalizeStock(item.stock) === normalizeStock(batchNet);
-            const parentSnapshot = !item.batchId
-              ? getOperationalStockSnapshot(item) : null;
-            const provisionalUnits = claims.every(({ units }) => Number.isFinite(units))
-              ? normalizeStock(claims.reduce((sum, claim) => sum + claim.units, 0))
-              : null;
-            // Only show an availability whose source is unambiguous.
-            // addSmartItem already stored net batch stock: the committedStock
-            // left on this cart item belongs to the parent and must NOT be
-            // subtracted again. For older/unresolved batch lines, omit the
-            // number rather than guessing whether stock is gross or net.
-            const beforeOtherSales = item.batchId
-              ? (verifiedBatchNet ? normalizeStock(batchNet) : null)
-              : parentSnapshot?.valid && parentSnapshot.physicalStock >= parentSnapshot.committedStock
-                && parentSnapshot.physicalStock >= 0
-                ? parentSnapshot.availableStock : null;
-            const source = claims.length === 1 ? claims[0] : null;
-            const actorKey = actorRuntimeController.getState().actorKey;
-            const canOpenSource = Boolean(source?.order?.actorKey && order.actorKey
-              && source.order.actorKey === order.actorKey && actorKey === order.actorKey
-              && !source.order.isLockedForCheckout);
-            const rawName = typeof source?.order?.tableData === 'string'
-              ? source.order.tableData.trim() : '';
-            const uniqueName = rawName && Array.from(state.activeOrders.values())
-              .filter((candidate) => candidate?.tableData?.trim?.() === rawName).length === 1
-              ? rawName : null;
-            set({ inventoryConflictNotice: {
-              orderId, reservationKey: key,
-              productName: String(item.name || 'Producto sin nombre'),
-              availableBeforeCarts: beforeOtherSales,
-              provisionalInOtherCarts: provisionalUnits,
-              // The local allowance already includes units present in B.
-              // Only the remainder is free for an additional item.
-              freeInThisCart: beforeOtherSales === null || provisionalUnits === null
-                ? null : normalizeStock(Math.max(0,
-                  beforeOtherSales - provisionalUnits - quantityFor(previous))),
-              sourceOrderId: canOpenSource ? source.id : null,
-              sourceLabel: uniqueName || null,
-              sourceCount: claims.length,
-              singleSourceLabel: claims.length === 1 && canOpenSource ? uniqueName : null
-            } });
-            return {
-              success: false,
-              code: 'LOCAL_INVENTORY_NOT_TRANSFERABLE',
-              message: 'No hay unidades libres para este producto en la sesión.'
-            };
+        // Stock tracked through batches, variants or other non-R1 inventory
+        // cannot be reassigned. Do not persist an oversubscribed line merely
+        // with exceedsStock=true: that creates the misleading "Ajustar a 2" UI.
+        if (!order.isSaved && order.origin !== 'ecommerce') {
+          const checkedKeys = new Set();
+          for (const item of nextItems) {
+            if ((!item?.trackStock && !item?.batchId) || isDirectUnitCartItem(item)) continue;
+            const key = getInventoryReservationKey(item);
+            if (!key || checkedKeys.has(key)) continue;
+            checkedKeys.add(key);
+            const quantityFor = (lines) => lines.reduce((sum, line) => (
+              getInventoryReservationKey(line) === key ? sum + (Number(line.quantity) || 0) : sum
+            ), 0);
+            const nextQuantity = quantityFor(nextItems);
+            if (nextQuantity <= quantityFor(previous)) continue;
+            const selectedBatch = batchRecords.get(item.batchId);
+            const localAvailable = getSessionAvailableStock(state, item, orderId, selectedBatch);
+            if (localAvailable === null || !Number.isFinite(localAvailable) || nextQuantity > localAvailable) {
+              const claims = Array.from(state.activeOrders, ([id, other]) => ({
+                id, order: other,
+                units: (other?.items || []).reduce((sum, line) => (
+                  getInventoryReservationKey(line) === key
+                    ? sum + (Number(line.quantity) || 0) : sum
+                ), 0)
+              })).filter(({ id, order: other, units }) => (
+                id !== orderId && !other?.isSaved && other?.origin !== 'ecommerce' && units > 0
+              ));
+              const provisionalUnits = claims.every(({ units }) => Number.isFinite(units))
+                ? normalizeStock(claims.reduce((sum, claim) => sum + claim.units, 0))
+                : null;
+              const beforeOtherSales = getCartAvailableStock(item, selectedBatch);
+              const source = claims.length === 1 ? claims[0] : null;
+              const actorKey = actorRuntimeController.getState().actorKey;
+              const canOpenSource = Boolean(source?.order?.actorKey && order.actorKey
+                && source.order.actorKey === order.actorKey && actorKey === order.actorKey
+                && !source.order.isLockedForCheckout);
+              const rawName = typeof source?.order?.tableData === 'string'
+                ? source.order.tableData.trim() : '';
+              const uniqueName = rawName && Array.from(state.activeOrders.values())
+                .filter((candidate) => candidate?.tableData?.trim?.() === rawName).length === 1
+                ? rawName : null;
+              set({ inventoryConflictNotice: {
+                orderId, reservationKey: key,
+                productName: String(item.name || 'Producto sin nombre'),
+                availableBeforeCarts: beforeOtherSales,
+                provisionalInOtherCarts: provisionalUnits,
+                // The local allowance already includes units present in B.
+                // Only the remainder is free for an additional item.
+                freeInThisCart: beforeOtherSales === null || provisionalUnits === null
+                  ? null : normalizeStock(Math.max(0,
+                    beforeOtherSales - provisionalUnits - quantityFor(previous))),
+                sourceOrderId: canOpenSource ? source.id : null,
+                sourceLabel: uniqueName || null,
+                sourceCount: claims.length,
+                singleSourceLabel: claims.length === 1 && canOpenSource ? uniqueName : null
+              } });
+              return {
+                success: false,
+                code: 'LOCAL_INVENTORY_NOT_TRANSFERABLE',
+                message: 'No hay unidades libres para este producto en la sesión.'
+              };
+            }
           }
         }
-      }
 
-      const conflict = evaluateProvisionalCartChange({
-        state, orderId, nextItems, catalog: usePosCatalogStore.getState().items || []
-      });
-      if (conflict) {
-        if (conflict.code === 'LOCAL_PRIORITY_CONFLICT') {
-          get().requestLocalCartReassignment(orderId, nextItems, conflict);
-        } else {
-          const messages = {
-            LOCAL_NO_PHYSICAL_STOCK: 'No hay suficientes unidades físicas del producto.',
-            LOCAL_FORMAL_RESERVATION: 'El inventario está comprometido en reservas formales.',
-            LOCAL_STOCK_UNKNOWN: 'No se pudo comprobar el inventario de este producto.',
-            LOCAL_SOURCE_CHECKOUT_LOCKED: 'La otra venta está bloqueada para cobro.',
-            LOCAL_SOURCE_NOT_TRANSFERABLE: 'La otra venta no puede ceder unidades (otro operador, pedido guardado o precio especial).'
-          };
-          showMessageModal(messages[conflict.code] || 'No hay unidades libres para esta venta.', null, { type: 'warning' });
+        const conflict = evaluateProvisionalCartChange({
+          state, orderId, nextItems, catalog: usePosCatalogStore.getState().items || []
+        });
+        if (conflict) {
+          if (conflict.code === 'LOCAL_PRIORITY_CONFLICT') {
+            get().requestLocalCartReassignment(orderId, nextItems, conflict);
+          } else {
+            const messages = {
+              LOCAL_NO_PHYSICAL_STOCK: 'No hay suficientes unidades físicas del producto.',
+              LOCAL_FORMAL_RESERVATION: 'El inventario está comprometido en reservas formales.',
+              LOCAL_STOCK_UNKNOWN: 'No se pudo comprobar el inventario de este producto.',
+              LOCAL_SOURCE_CHECKOUT_LOCKED: 'La otra venta está bloqueada para cobro.',
+              LOCAL_SOURCE_NOT_TRANSFERABLE: 'La otra venta no puede ceder unidades (otro operador, pedido guardado o precio especial).'
+            };
+            showMessageModal(messages[conflict.code] || 'No hay unidades libres para esta venta.', null, { type: 'warning' });
+          }
+          return { success: false, code: conflict.code, message: 'Producto no agregado por conflicto de inventario local.' };
         }
-        return { success: false, code: conflict.code, message: 'Producto no agregado por conflicto de inventario local.' };
-      }
 
-      const nextOrders = new Map(state.activeOrders);
-      nextOrders.set(orderId, {
-        ...order, items: nextItems, total: calculateOrderTotalExact(nextItems),
-        ...touchOrderVersion(order)
+        // Keep stock as the existing net display contract. Authority came from
+        // the fresh batch, never from stock/committedStock inherited by the line.
+        nextItems = nextItems.map((item) => {
+          const batch = batchRecords.get(item.batchId);
+          const available = batch && getCartAvailableStock(item, batch);
+          return typeof available === 'number'
+            ? { ...item, stock: available, exceedsStock: Number(item.quantity) > available }
+            : item;
+        });
+        const nextOrders = new Map(state.activeOrders);
+        nextOrders.set(orderId, {
+          ...order, items: nextItems, total: calculateOrderTotalExact(nextItems),
+          ...touchOrderVersion(order)
+        });
+        set({ activeOrders: nextOrders, inventoryConflictNotice: null });
+        return { success: get().activeOrders.get(orderId) !== order ? true : false };
+      };
+      const quantityForBatch = (lines, batchId) => (lines || []).reduce((sum, item) => (
+        item.batchId === batchId ? sum + (Number(item.quantity) || 0) : sum
+      ), 0);
+      const batchIds = [...new Set((nextValue || []).map((item) => item.batchId).filter(Boolean))]
+        .filter((batchId) => !order.isSaved && order.origin !== 'ecommerce'
+          && quantityForBatch(nextValue, batchId) > quantityForBatch(order.items, batchId));
+      if (!batchIds.length) return commit();
+
+      // Reads are local Dexie only. Recheck actor/tenant and all other cart
+      // claims after awaiting; the final validation and cart write are synchronous.
+      const actorHandle = actorRuntimeController.capture('pos');
+      set((current) => {
+        const pendingInventoryResolutions = new Map(current.pendingInventoryResolutions);
+        pendingInventoryResolutions.set(orderId, (pendingInventoryResolutions.get(orderId) || 0) + 1);
+        return { pendingInventoryResolutions };
       });
-      set({ activeOrders: nextOrders, inventoryConflictNotice: null });
-      return { success: get().activeOrders.get(orderId) !== order ? true : false };
+      return Promise.resolve().then(() => {
+        actorHandle.assertCurrent();
+        return db.table(STORES.PRODUCT_BATCHES).bulkGet(batchIds);
+      })
+        .catch(() => []) // Unknown stock is rejected by the same contextual guard.
+        .then((batches) => {
+          try { actorHandle.assertCurrent(); } catch (error) {
+            return { success: false, code: error.code || 'CART_CONTEXT_CHANGED' };
+          }
+          return commit(new Map(batches.filter(Boolean).map((batch) => [batch.id, batch])));
+        })
+        .finally(() => {
+          try { actorHandle.assertCurrent(); } catch { return; }
+          set((current) => {
+            const pendingInventoryResolutions = new Map(current.pendingInventoryResolutions);
+            const count = pendingInventoryResolutions.get(orderId) || 0;
+            if (count <= 1) pendingInventoryResolutions.delete(orderId);
+            else pendingInventoryResolutions.set(orderId, count - 1);
+            return { pendingInventoryResolutions };
+          });
+        });
     },
 
     updateCurrentOrderItems: (updater) => get().updateOrderItems(get().currentOrderId, updater),

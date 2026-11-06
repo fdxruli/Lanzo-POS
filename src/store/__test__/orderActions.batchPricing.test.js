@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createOrderActions } from '../orderActions';
 import { db } from '../../services/db/dexie';
+import { actorRuntimeController } from '../../services/auth/actorRuntimeController';
 
 vi.mock('../../services/db/dexie', () => ({
   STORES: { PRODUCT_BATCHES: 'product_batches' },
@@ -40,7 +41,10 @@ const addWithBatches = async (product, batches) => {
   return added.mock.calls[0][0];
 };
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.spyOn(actorRuntimeController, 'capture').mockReturnValue({ assertCurrent: vi.fn() });
+});
 
 describe('addSmartItem batch pricing', () => {
   it('uses parent price and selected FEFO batch cost for a physical pharmacy batch', async () => {
