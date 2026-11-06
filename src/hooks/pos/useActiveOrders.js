@@ -974,31 +974,13 @@ export const useActiveOrders = create(
               updatedAt: new Date().toISOString()
             });
           }
-        } else if (orderId === state.currentOrderId) {
+        } else {
+          // The same Dexie stock reservation transaction for active and inactive
+          // tabs. Persisted OPEN is a formal reservation, not a provisional claim.
           const result = await get().saveOrderAsOpen(orderId, order);
           if (!result?.success) return {
             success: false, message: result?.message || 'No se pudo guardar la venta.'
           };
-        } else {
-          // Keep the existing inactive-tab persistence contract; do not
-          // re-commit reservations that the active checkout engine owns.
-          const existingSale = await db.table(STORES.SALES).get(order.id);
-          actorHandle?.assertCurrent();
-          if (existingSale && selectNewestOrder(order, existingSale).source === 'db') {
-            return { success: false, message: 'Existe una versión más reciente guardada.' };
-          }
-          const persistedVersion = getNextPersistedOrderVersion(order, existingSale);
-          await db.table(STORES.SALES).put({
-            ...(existingSale || {}),
-            id: order.id,
-            timestamp: resolveImmutableOrderCreatedAt({
-              durableOrder: existingSale, activeOrder: order
-            }),
-            ...persistedVersion,
-            items: order.items, total: order.total,
-            status: SALE_STATUS.OPEN,
-            tableData: order.tableData
-          });
         }
 
         actorHandle?.assertCurrent();
