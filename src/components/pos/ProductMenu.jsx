@@ -401,8 +401,8 @@ export default function ProductMenu({
       return false;
     }
     try {
-      await addSmartItem(product);
-      return true;
+      const result = await addSmartItem(product);
+      return result?.success !== false;
     } catch (error) {
       showMessageModal(error?.message || 'No se pudo agregar el producto a la orden.', null, { type: 'warning' });
       return false;
