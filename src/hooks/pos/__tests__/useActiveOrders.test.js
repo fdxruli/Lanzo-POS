@@ -546,6 +546,49 @@ describe('useActiveOrders unified store', () => {
     expect(blocked).toMatchObject({ success: false });
   });
 
+  it('blocks the old stock-2 lot conflict before B acquires a misleading line', async () => {
+    const product = {
+      id: 'X', productId: 'X', name: 'X', price: 10, stock: 2,
+      committedStock: 0, saleType: 'unit', trackStock: true,
+      batchManagement: { enabled: true }
+    };
+    dbState.products.set('X', product);
+    dbState.batches = [{
+      id: 'lot-1', productId: 'X', stock: 2, committedStock: 0,
+      isActive: true, price: 10, cost: 5
+    }];
+    const a = { ...makeOrder('A', [{
+      ...product, lineId: 'a-X', quantity: 2, batchId: 'lot-1',
+      provisionalAddedAt: '2026-11-06T00:00:00.000Z'
+    }]), actorKey: 'staff:one' };
+    const b = { ...makeOrder('B'), actorKey: 'staff:one' };
+    useActiveOrders.setState({
+      activeOrders: new Map([['A', a], ['B', b]]),
+      currentOrderId: 'B'
+    });
+    const blocked = await useActiveOrders.getState().addSmartItem(product, 'B');
+    expect(blocked).toMatchObject({
+      success: false, code: 'LOCAL_INVENTORY_NOT_TRANSFERABLE'
+    });
+    expect(showMessageModal).toHaveBeenCalledWith(
+      expect.stringContaining('No se pueden reasignar'), null,
+      expect.objectContaining({ type: 'warning' })
+    );
+    expect(showConfirmModal).not.toHaveBeenCalled();
+    expect(useActiveOrders.getState().activeOrders.get('A').items[0].quantity).toBe(2);
+    expect(useActiveOrders.getState().activeOrders.get('B').items).toEqual([]);
+
+    // A releases one unit explicitly, then B can use that same batch.
+    expect(useActiveOrders.getState().updateItemQuantity('a-X', 1, 'A')).toMatchObject({ success: true });
+    const allowed = await useActiveOrders.getState().addSmartItem(product, 'B');
+    expect(allowed).toMatchObject({ success: true });
+    const orders = useActiveOrders.getState().activeOrders;
+    expect(orders.get('A').items[0].quantity).toBe(1);
+    expect(orders.get('B').items[0]).toMatchObject({
+      quantity: 1, batchId: 'lot-1', exceedsStock: false
+    });
+  });
+
   it.each([false, true])('two-unit conflict %s: a single operator confirmation keeps both carts coherent', async (confirm) => {
     const a = { ...makeOrder('A', [{
       id: 'X', productId: 'X', lineId: 'A-line', name: 'X', quantity: 2,
