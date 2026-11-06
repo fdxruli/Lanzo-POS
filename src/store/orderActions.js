@@ -225,7 +225,7 @@ const applyScannedProductsToOrder = (order = [], items = []) => {
         uniqueLineId: groupedItem.uniqueLineId && lineId === groupedItem.lineId
           ? groupedItem.uniqueLineId
           : lineId,
-        exceedsStock: groupedItem.trackStock && 1 > (groupedItem.stock || 99999),
+        exceedsStock: groupedItem.trackStock && 1 > (groupedItem.stock ?? 99999),
       };
 
       nextOrder.push(newItem);
@@ -244,7 +244,7 @@ const applyScannedProductsToOrder = (order = [], items = []) => {
         ...existingItem,
         productId: getCartProductId(existingItem) ?? groupedItem.productId,
         quantity: newQuantity,
-        exceedsStock: existingItem.trackStock && newQuantity > (existingItem.stock || 99999),
+        exceedsStock: existingItem.trackStock && newQuantity > (existingItem.stock ?? 99999),
       };
 
       touchedItems.push(nextOrder[existingItemIndex]);
@@ -261,7 +261,7 @@ const applyScannedProductsToOrder = (order = [], items = []) => {
       uniqueLineId: groupedItem.uniqueLineId && lineId === groupedItem.lineId
         ? groupedItem.uniqueLineId
         : lineId,
-      exceedsStock: groupedItem.trackStock && quantity > (groupedItem.stock || 99999),
+      exceedsStock: groupedItem.trackStock && quantity > (groupedItem.stock ?? 99999),
     };
 
     nextOrder.push(newItem);
@@ -292,8 +292,7 @@ export const createOrderActions = (set, get) => ({
         );
 
         if (!requiresBatchResolution) {
-          get().addItem({ ...product }, orderId);
-          return;
+          return get().addItem({ ...product }, orderId);
         }
 
         set((state) => {
@@ -343,14 +342,14 @@ export const createOrderActions = (set, get) => ({
               }
             : { ...product };
 
-          get().addItem(productToAdd, orderId);
+          return get().addItem(productToAdd, orderId);
         } catch (error) {
           // An isolation failure is never a valid reason to add the parent
           // product: doing so would turn a blocked tenant operation into a
           // cross-context business mutation.
           if (isLocalTenantAccessError(error) || isTenantRuntimeError(error)) throw error;
           console.warn("Fallo al resolver el lote antes de agregar el producto:", error);
-          get().addItem({ ...product }, orderId);
+          return get().addItem({ ...product }, orderId);
         } finally {
           set((state) => {
             const pendingInventoryResolutions = new Map(state.pendingInventoryResolutions || []);
@@ -369,7 +368,7 @@ export const createOrderActions = (set, get) => ({
 
       addItem: (product, orderId = get().currentOrderId) => {
         const productForCart = ensureCartProductReference(product, { allowIdFallback: true });
-        get().updateOrderItems(orderId, (prevOrder) => {
+        return get().updateOrderItems(orderId, (prevOrder) => {
           const order = prevOrder || [];
           const canAggregateProduct = !shouldCreateSeparateCartLine(product);
           const existingItemIndex = canAggregateProduct
@@ -483,7 +482,7 @@ export const createOrderActions = (set, get) => ({
               productId: getCartProductId(currentItem) ?? productForCart.productId,
               quantity: newQuantity,
               price: finalPrice,
-              exceedsStock: currentItem.trackStock && newQuantity > (currentItem.stock || 99999),
+              exceedsStock: currentItem.trackStock && newQuantity > (currentItem.stock ?? 99999),
               priceWarning: isPriceWarning,
               forceWholesale: validation.status === 'conflict' ? (currentItem.forceWholesale || false) : false,
               forceSafePrice: validation.status === 'conflict' ? (currentItem.forceSafePrice || false) : false,
@@ -500,7 +499,7 @@ export const createOrderActions = (set, get) => ({
               quantity: 1,
               price: initialPrice,
               originalPrice: product.originalPrice ?? product.price,
-              stock: sessionAvailableStock,
+              stock: product.stock,
               exceedsStock: product.trackStock && 1 > sessionAvailableStock,
               priceWarning: isPriceWarning,
               forceWholesale: false,
@@ -520,7 +519,7 @@ export const createOrderActions = (set, get) => ({
         const productForCart = ensureCartProductReference(resolvedProduct, { allowIdFallback: true });
         const result = { success: false, action: null, item: null };
 
-        get().updateOrderItems(orderId, (prevOrder) => {
+        const updateResult = get().updateOrderItems(orderId, (prevOrder) => {
           const order = prevOrder || [];
           const existingItemIndex = order.findIndex((item) => {
             if (resolvedProduct.isVariant && resolvedProduct.batchId) {
@@ -539,7 +538,7 @@ export const createOrderActions = (set, get) => ({
                 ...existingItem,
                 productId: getCartProductId(existingItem) ?? productForCart.productId,
                 quantity: newQuantity,
-                exceedsStock: existingItem.trackStock && newQuantity > (existingItem.stock || 99999)
+                exceedsStock: existingItem.trackStock && newQuantity > (existingItem.stock ?? 99999)
               };
 
               result.success = true;
@@ -559,7 +558,7 @@ export const createOrderActions = (set, get) => ({
                   ? productForCart.uniqueLineId
                   : lineId,
                 quantity: 1,
-                stock: sessionAvailableStock,
+                stock: resolvedProduct.stock,
                 exceedsStock: resolvedProduct.trackStock && 1 > sessionAvailableStock
               };
 
@@ -578,7 +577,7 @@ export const createOrderActions = (set, get) => ({
               productId: productForCart.productId,
               lineId,
               quantity: 1,
-              stock: sessionAvailableStock,
+              stock: resolvedProduct.stock,
               exceedsStock: resolvedProduct.trackStock && 1 > sessionAvailableStock
             };
 
@@ -589,6 +588,9 @@ export const createOrderActions = (set, get) => ({
           }
         });
 
+        if (updateResult?.success !== true) {
+          return { success: false, action: null, item: null, code: updateResult?.code || 'SCAN_ADD_REJECTED' };
+        }
         return result;
       },
 
@@ -599,7 +601,7 @@ export const createOrderActions = (set, get) => ({
 
         let actionResult = { success: false, addedCount: 0, incrementedCount: 0, failedCount: 0, items: [] };
 
-        get().updateOrderItems(orderId, (prevOrder) => {
+        const updateResult = get().updateOrderItems(orderId, (prevOrder) => {
           const order = prevOrder || [];
           const { nextOrder, touchedItems, addedCount, incrementedCount, failedCount } =
             applyScannedProductsToOrder(order, itemsArray);
@@ -618,11 +620,15 @@ export const createOrderActions = (set, get) => ({
           return nextOrder;
         });
 
+        if (updateResult?.success !== true) {
+          return { success: false, addedCount: 0, incrementedCount: 0,
+            failedCount: itemsArray.length, items: [], code: updateResult?.code || 'SCAN_ADD_REJECTED' };
+        }
         return actionResult;
       },
 
       updateItemQuantity: (lineId, newQuantity, orderId = get().currentOrderId) => {
-        get().updateOrderItems(orderId, (prevOrder) => {
+        return get().updateOrderItems(orderId, (prevOrder) => {
           const order = prevOrder || [];
           return order.map((item, index) => {
             if (isCartLineMatch(item, lineId, index)) {
