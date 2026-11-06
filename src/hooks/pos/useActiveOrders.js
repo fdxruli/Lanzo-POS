@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { useAppStore } from '../../store/useAppStore';
-import { createOrderActions } from '../../store/orderActions';
+import { createOrderActions, getInventoryReservationKey, getSessionAvailableStock } from '../../store/orderActions';
 import { generateID, showConfirmModal, showMessageModal } from '../../services/utils';
 import { usePosCatalogStore } from '../../store/usePosCatalogStore';
 import { evaluateProvisionalCartChange, isDirectUnitCartItem, validateCartCheckoutPriority } from '../../services/sales/localCartPriority';
@@ -789,6 +789,38 @@ export const useActiveOrders = create(
             ? (order.createdAt || order.updatedAt || now) : now);
         return { ...item, provisionalAddedAt };
       });
+
+      // Stock tracked through batches, variants or other non-R1 inventory
+      // cannot be reassigned. Do not persist an oversubscribed line merely
+      // with exceedsStock=true: that creates the misleading "Ajustar a 2" UI.
+      if (!order.isSaved && order.origin !== 'ecommerce') {
+        const checkedKeys = new Set();
+        for (const item of nextItems) {
+          if ((!item?.trackStock && !item?.batchId) || isDirectUnitCartItem(item)) continue;
+          const key = getInventoryReservationKey(item);
+          if (!key || checkedKeys.has(key)) continue;
+          checkedKeys.add(key);
+          const quantityFor = (lines) => lines.reduce((sum, line) => (
+            getInventoryReservationKey(line) === key ? sum + (Number(line.quantity) || 0) : sum
+          ), 0);
+          const nextQuantity = quantityFor(nextItems);
+          if (nextQuantity <= quantityFor(previous)) continue;
+          const localAvailable = Number(getSessionAvailableStock(state, item, orderId));
+          if (!Number.isFinite(localAvailable) || nextQuantity > localAvailable) {
+            showMessageModal(
+              'Este producto utiliza lotes, variantes u otra gestión de inventario. ' +
+              'No se pueden reasignar sus unidades entre ventas automáticamente. ' +
+              'Reduce primero la otra venta o selecciona un lote con unidades libres.',
+              null, { type: 'warning' }
+            );
+            return {
+              success: false,
+              code: 'LOCAL_INVENTORY_NOT_TRANSFERABLE',
+              message: 'No hay unidades libres para este producto en la sesión.'
+            };
+          }
+        }
+      }
 
       const conflict = evaluateProvisionalCartChange({
         state, orderId, nextItems, catalog: usePosCatalogStore.getState().items || []
