@@ -296,8 +296,10 @@ test('UI and route matrix exposes products and inventory independently', () => {
   const list = readProjectFile('src/components/products/ProductList.jsx');
   const expiration = readProjectFile('src/components/dashboard/ExpirationAlert.jsx');
 
-  assert.match(app, /PermissionRoute permission=\{\['products', 'inventory'\]\}/u);
-  assert.match(navbar, /'\/productos': \['products', 'inventory'\]/u);
+  const routePermissions = readProjectFile('src/services/auth/routePermissions.js');
+  assert.match(routePermissions, /'\/productos': Object\.freeze\(\['products', 'inventory'\]\)/u);
+  assert.match(app, /PermissionRoute permission=\{ROUTE_PERMISSIONS\['\/productos'\]\}/u);
+  assert.match(navbar, /const requiredPermissions = ROUTE_PERMISSIONS\[path\]/u);
   assert.match(page, /canManageProducts = canAccess\('products'\)/u);
   assert.match(page, /canManageInventory = canAccess\('inventory'\)/u);
   assert.match(page, /activeTab === 'batches' && canManageInventory/u);
