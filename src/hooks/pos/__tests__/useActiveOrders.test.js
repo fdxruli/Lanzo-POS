@@ -595,7 +595,7 @@ describe('useActiveOrders unified store', () => {
     const third = await useActiveOrders.getState().addSmartItem(product, 'B');
     expect(third).toMatchObject({ success: false, code: 'LOCAL_INVENTORY_NOT_TRANSFERABLE' });
     expect(useActiveOrders.getState().inventoryConflictNotice).toMatchObject({
-      availableBeforeCarts: 2, provisionalInOtherCarts: 1, freeInThisCart: 1
+      availableBeforeCarts: 2, provisionalInOtherCarts: 1, freeInThisCart: 0
     });
     expect(orders.get('A').items[0].quantity).toBe(1);
     expect(orders.get('B').items[0].quantity).toBe(1);
