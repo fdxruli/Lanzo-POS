@@ -1,0 +1,392 @@
+{
+  "builds": {
+    "A": {
+      "app": "lanzo-pos",
+      "version": "4.0.0",
+      "commit": "e15b6dafb91e7827a738474499232f6c56eb1967",
+      "builtAt": "2026-11-06T14:36:57.443Z",
+      "buildId": "e15b6dafb91e7827a738474499232f6c56eb1967:2026-11-06T14:36:57.443Z"
+    },
+    "B": {
+      "app": "lanzo-pos",
+      "version": "4.0.0",
+      "commit": "e15b6dafb91e7827a738474499232f6c56eb1967",
+      "builtAt": "2026-11-06T14:37:01.027Z",
+      "buildId": "e15b6dafb91e7827a738474499232f6c56eb1967:2026-11-06T14:37:01.027Z"
+    }
+  },
+  "results": [
+    {
+      "scenario": "C: protected operation (synthetic guard)",
+      "evidence": {
+        "blocked": true,
+        "recordPreserved": true
+      }
+    },
+    {
+      "scenario": "A/E: browser same-origin build replacement",
+      "evidence": {
+        "from": {
+          "app": "lanzo-pos",
+          "version": "4.0.0",
+          "commit": "e15b6dafb91e7827a738474499232f6c56eb1967",
+          "builtAt": "2026-11-06T14:36:57.443Z",
+          "buildId": "e15b6dafb91e7827a738474499232f6c56eb1967:2026-11-06T14:36:57.443Z"
+        },
+        "to": {
+          "app": "lanzo-pos",
+          "version": "4.0.0",
+          "commit": "e15b6dafb91e7827a738474499232f6c56eb1967",
+          "builtAt": "2026-11-06T14:37:01.027Z",
+          "buildId": "e15b6dafb91e7827a738474499232f6c56eb1967:2026-11-06T14:37:01.027Z"
+        },
+        "current": true,
+        "recordPreserved": true,
+        "appliedFromDownloadedCacheWhileOffline": true
+      }
+    },
+    {
+      "scenario": "D: offline cached fixture shell and local record",
+      "evidence": {
+        "offline": true,
+        "recordPreserved": true
+      }
+    },
+    {
+      "scenario": "F: other window prevents activation",
+      "evidence": {
+        "otherWindowStayedOnA": true,
+        "appliedAfterClosingOtherWindow": true
+      }
+    },
+    {
+      "scenario": "B-partial: close/reopen browser lifecycle",
+      "evidence": {
+        "runningB": true,
+        "androidInstallationTested": false
+      }
+    }
+  ],
+  "requests": [
+    {
+      "deployed": "A",
+      "pathname": "/"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/assets/index-CCwCU6ug.js"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/assets/index-BNzJC2O7.css"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/assets/vendor_icons-BC_EvOJj.js"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/assets/vendor_react-CXT-lAs2.js"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/assets/vendor_utils-WOlwKq0W.js"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/sw.js"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/index.html"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/manifest.webmanifest"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/pwa-192x192.png"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/pwa-512x512.png"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/logIcon.svg"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/assets/index-CCwCU6ug.js"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/assets/index-BNzJC2O7.css"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/assets/vendor_react-CXT-lAs2.js"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/assets/vendor_icons-BC_EvOJj.js"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/assets/vendor_supabase-l0sNRNKZ.js"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/assets/vendor_utils-WOlwKq0W.js"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/boticon.svg"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/assets/vendor_charts-CqefaYG1.js"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/build-info.json"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/sw.js"
+    },
+    {
+      "deployed": "B",
+      "pathname": "/build-info.json"
+    },
+    {
+      "deployed": "B",
+      "pathname": "/sw.js"
+    },
+    {
+      "deployed": "B",
+      "pathname": "/index.html"
+    },
+    {
+      "deployed": "B",
+      "pathname": "/assets/index-CM7BfiwN.js"
+    },
+    {
+      "deployed": "B",
+      "pathname": "/build-info.json"
+    },
+    {
+      "deployed": "B",
+      "pathname": "/sw.js"
+    },
+    {
+      "deployed": "B",
+      "pathname": "/build-info.json"
+    },
+    {
+      "deployed": "B",
+      "pathname": "/sw.js"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/assets/index-CCwCU6ug.js"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/assets/index-BNzJC2O7.css"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/assets/vendor_icons-BC_EvOJj.js"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/assets/vendor_react-CXT-lAs2.js"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/assets/vendor_utils-WOlwKq0W.js"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/sw.js"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/index.html"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/manifest.webmanifest"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/pwa-192x192.png"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/pwa-512x512.png"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/logIcon.svg"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/assets/index-CCwCU6ug.js"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/assets/index-BNzJC2O7.css"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/assets/vendor_react-CXT-lAs2.js"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/assets/vendor_icons-BC_EvOJj.js"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/assets/vendor_supabase-l0sNRNKZ.js"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/assets/vendor_utils-WOlwKq0W.js"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/boticon.svg"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/assets/vendor_charts-CqefaYG1.js"
+    },
+    {
+      "deployed": "B",
+      "pathname": "/build-info.json"
+    },
+    {
+      "deployed": "B",
+      "pathname": "/sw.js"
+    },
+    {
+      "deployed": "B",
+      "pathname": "/index.html"
+    },
+    {
+      "deployed": "B",
+      "pathname": "/assets/index-CM7BfiwN.js"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/assets/index-CCwCU6ug.js"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/assets/index-BNzJC2O7.css"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/assets/vendor_icons-BC_EvOJj.js"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/assets/vendor_react-CXT-lAs2.js"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/assets/vendor_utils-WOlwKq0W.js"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/sw.js"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/index.html"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/manifest.webmanifest"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/pwa-192x192.png"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/pwa-512x512.png"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/logIcon.svg"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/assets/index-CCwCU6ug.js"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/assets/index-BNzJC2O7.css"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/assets/vendor_react-CXT-lAs2.js"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/assets/vendor_icons-BC_EvOJj.js"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/assets/vendor_supabase-l0sNRNKZ.js"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/assets/vendor_utils-WOlwKq0W.js"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/boticon.svg"
+    },
+    {
+      "deployed": "A",
+      "pathname": "/assets/vendor_charts-CqefaYG1.js"
+    },
+    {
+      "deployed": "B",
+      "pathname": "/build-info.json"
+    },
+    {
+      "deployed": "B",
+      "pathname": "/sw.js"
+    },
+    {
+      "deployed": "B",
+      "pathname": "/index.html"
+    },
+    {
+      "deployed": "B",
+      "pathname": "/assets/index-CM7BfiwN.js"
+    },
+    {
+      "deployed": "B",
+      "pathname": "/build-info.json"
+    },
+    {
+      "deployed": "B",
+      "pathname": "/sw.js"
+    }
+  ]
+}

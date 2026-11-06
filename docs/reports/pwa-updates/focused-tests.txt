@@ -1,0 +1,9 @@
+
+ RUN  v4.1.12 /workspace/Lanzo-POS
+
+
+ Test Files  49 passed (49)
+      Tests  513 passed (513)
+   Start at  14:35:16
+   Duration  54.16s (transform 13.35s, setup 8.86s, import 36.35s, tests 66.00s, environment 32.33s)
+
