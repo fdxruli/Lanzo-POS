@@ -128,7 +128,8 @@ describe('useActiveOrders unified store', () => {
       currentOrderId: null,
       isLoading: false,
       isCurrentOrderLocked: false,
-      pendingInventoryResolutions: new Map()
+      pendingInventoryResolutions: new Map(),
+      inventoryConflictNotice: null
     });
   });
 
