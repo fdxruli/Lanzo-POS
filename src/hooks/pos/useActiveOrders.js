@@ -880,8 +880,8 @@ export const useActiveOrders = create(
                 ? null : normalizeStock(Math.max(0, beforeOtherSales - provisionalUnits)),
               sourceOrderId: canOpenSource ? source.id : null,
               sourceLabel: uniqueName || null,
-              hasOtherCarts: claims.length > 0,
-              singleSourceLabel: claims.length === 1 ? uniqueName : null
+              sourceCount: claims.length,
+              singleSourceLabel: claims.length === 1 && canOpenSource ? uniqueName : null
             } });
             return {
               success: false,
