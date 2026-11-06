@@ -1,11 +1,13 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { useAppStore } from '../../store/useAppStore';
-import { createOrderActions, getInventoryReservationKey, getSessionAvailableStock } from '../../store/orderActions';
+import { createOrderActions, getInventoryReservationKey, getSessionAvailableStock, INVENTORY_NOTICE_NET_AVAILABILITY } from '../../store/orderActions';
 import { generateID, showConfirmModal, showMessageModal } from '../../services/utils';
 import { usePosCatalogStore } from '../../store/usePosCatalogStore';
 import { evaluateProvisionalCartChange, isDirectUnitCartItem, validateCartCheckoutPriority } from '../../services/sales/localCartPriority';
 import { db, STORES } from '../../services/db/dexie';
+import { normalizeStock } from '../../services/db/utils';
+import { getOperationalStockSnapshot } from '../../services/inventoryStock';
 import { SALE_STATUS } from '../../services/sales/financialStats';
 import { Money } from '../../utils/moneyMath';
 import { withOrderTotals } from '../../services/sales/orderTotals';
@@ -127,6 +129,34 @@ export const useActiveOrders = create(
     currentOrderId: null,
     isLoading: false,
     pendingInventoryResolutions: new Map(),
+    // Aviso contextual efímero: nunca se guarda con los carritos.
+    inventoryConflictNotice: null,
+    dismissInventoryConflictNotice: () => set({ inventoryConflictNotice: null }),
+    openInventoryConflictSource: () => {
+      const state = get();
+      const notice = state.inventoryConflictNotice;
+      if (!notice?.sourceOrderId || state.currentOrderId !== notice.orderId) return false;
+      const source = state.activeOrders.get(notice.sourceOrderId);
+      const target = state.activeOrders.get(notice.orderId);
+      if (!source || !target || source.isSaved || source.isLockedForCheckout
+        || target.isLockedForCheckout || source.origin === 'ecommerce'
+        || !source.items?.some((item) =>
+          getInventoryReservationKey(item) === notice.reservationKey
+          && Number(item.quantity) > 0)) {
+        set({ inventoryConflictNotice: null });
+        return false;
+      }
+      try {
+        const actor = actorRuntimeController.capture('pos');
+        actor.assertCurrent();
+        if (!actor.actorKey || actor.actorKey !== source.actorKey
+          || actor.actorKey !== target.actorKey) return false;
+        get().switchOrder(notice.sourceOrderId);
+        return get().currentOrderId === notice.sourceOrderId;
+      } catch {
+        return false;
+      }
+    },
     ...createOrderActions(set, get),
     requestLocalCartReassignment: (orderId, proposedItems, initialConflict) => {
       if (priorityConfirmationPending) return;
@@ -480,6 +510,7 @@ export const useActiveOrders = create(
 
       set({
         currentOrderId: orderId,
+        inventoryConflictNotice: null,
         isCurrentOrderLocked: Boolean(order.isLockedForCheckout)
       });
     },
@@ -807,12 +838,60 @@ export const useActiveOrders = create(
           if (nextQuantity <= quantityFor(previous)) continue;
           const localAvailable = Number(getSessionAvailableStock(state, item, orderId));
           if (!Number.isFinite(localAvailable) || nextQuantity > localAvailable) {
-            showMessageModal(
-              'Este producto utiliza lotes, variantes u otra gestión de inventario. ' +
-              'No se pueden reasignar sus unidades entre ventas automáticamente. ' +
-              'Reduce primero la otra venta o selecciona un lote con unidades libres.',
-              null, { type: 'warning' }
-            );
+            const claims = Array.from(state.activeOrders, ([id, other]) => ({
+              id, order: other,
+              units: (other?.items || []).reduce((sum, line) => (
+                getInventoryReservationKey(line) === key
+                  ? sum + (Number(line.quantity) || 0) : sum
+              ), 0)
+            })).filter(({ id, order: other, units }) => (
+              id !== orderId && !other?.isSaved && other?.origin !== 'ecommerce' && units > 0
+            ));
+            const batchNet = item[INVENTORY_NOTICE_NET_AVAILABILITY];
+            const verifiedBatchNet = item.batchId
+              && typeof batchNet === 'number' && Number.isFinite(batchNet)
+              && batchNet >= 0 && typeof item.stock === 'number'
+              && normalizeStock(item.stock) === normalizeStock(batchNet);
+            const parentSnapshot = !item.batchId
+              ? getOperationalStockSnapshot(item) : null;
+            const provisionalUnits = claims.every(({ units }) => Number.isFinite(units))
+              ? normalizeStock(claims.reduce((sum, claim) => sum + claim.units, 0))
+              : null;
+            // Only show an availability whose source is unambiguous.
+            // addSmartItem already stored net batch stock: the committedStock
+            // left on this cart item belongs to the parent and must NOT be
+            // subtracted again. For older/unresolved batch lines, omit the
+            // number rather than guessing whether stock is gross or net.
+            const beforeOtherSales = item.batchId
+              ? (verifiedBatchNet ? normalizeStock(batchNet) : null)
+              : parentSnapshot?.valid && parentSnapshot.physicalStock >= parentSnapshot.committedStock
+                && parentSnapshot.physicalStock >= 0
+                ? parentSnapshot.availableStock : null;
+            const source = claims.length === 1 ? claims[0] : null;
+            const actorKey = actorRuntimeController.getState().actorKey;
+            const canOpenSource = Boolean(source?.order?.actorKey && order.actorKey
+              && source.order.actorKey === order.actorKey && actorKey === order.actorKey
+              && !source.order.isLockedForCheckout);
+            const rawName = typeof source?.order?.tableData === 'string'
+              ? source.order.tableData.trim() : '';
+            const uniqueName = rawName && Array.from(state.activeOrders.values())
+              .filter((candidate) => candidate?.tableData?.trim?.() === rawName).length === 1
+              ? rawName : null;
+            set({ inventoryConflictNotice: {
+              orderId, reservationKey: key,
+              productName: String(item.name || 'Producto sin nombre'),
+              availableBeforeCarts: beforeOtherSales,
+              provisionalInOtherCarts: provisionalUnits,
+              // The local allowance already includes units present in B.
+              // Only the remainder is free for an additional item.
+              freeInThisCart: beforeOtherSales === null || provisionalUnits === null
+                ? null : normalizeStock(Math.max(0,
+                  beforeOtherSales - provisionalUnits - quantityFor(previous))),
+              sourceOrderId: canOpenSource ? source.id : null,
+              sourceLabel: uniqueName || null,
+              sourceCount: claims.length,
+              singleSourceLabel: claims.length === 1 && canOpenSource ? uniqueName : null
+            } });
             return {
               success: false,
               code: 'LOCAL_INVENTORY_NOT_TRANSFERABLE',
@@ -846,7 +925,7 @@ export const useActiveOrders = create(
         ...order, items: nextItems, total: calculateOrderTotalExact(nextItems),
         ...touchOrderVersion(order)
       });
-      set({ activeOrders: nextOrders });
+      set({ activeOrders: nextOrders, inventoryConflictNotice: null });
       return { success: get().activeOrders.get(orderId) !== order ? true : false };
     },
 
@@ -1476,13 +1555,14 @@ localTenantAccessController.subscribe((tenantState) => {
     currentOrderId: null,
     isLoading: false,
     pendingInventoryResolutions: new Map(),
-    isCurrentOrderLocked: false
+    isCurrentOrderLocked: false,
+    inventoryConflictNotice: null
   });
 });
 
 export const resetAndHydrateActiveOrdersForTenant = async () => {
   suspendTenantStorageWrites();
-  setActiveOrdersStateUnsafe({ activeOrders: new Map(), currentOrderId: null, isLoading: false, pendingInventoryResolutions: new Map(), isCurrentOrderLocked: false });
+  setActiveOrdersStateUnsafe({ activeOrders: new Map(), currentOrderId: null, isLoading: false, pendingInventoryResolutions: new Map(), isCurrentOrderLocked: false, inventoryConflictNotice: null });
   await useActiveOrders.persist.rehydrate();
   // Initial tenant hydration happens before its DB policy is granted. Actor
   // handoff rehydrates again after tenant authorization and before actor GRANTED.

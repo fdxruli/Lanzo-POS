@@ -2,6 +2,7 @@ import { calculateCompositePrice, validateWholesaleCondition } from '../services
 import { showMessageModal, generateID } from '../services/utils';
 import { db, STORES } from '../services/db/dexie';
 import { getAvailableStock, getCommittedStock, normalizeStock } from '../services/db/utils';
+import { getOperationalStockSnapshot } from '../services/inventoryStock';
 import { commitStock, releaseCommittedStock, getSortedBatchesForProduct } from '../services/sales/inventoryFlow';
 import { SALE_STATUS } from '../services/sales/financialStats';
 import { Money } from '../utils/moneyMath';
@@ -29,6 +30,9 @@ import {
   isRestaurantCloudTableShadow,
   restaurantCloudTableBlockedResult
 } from '../services/restaurant/restaurantCloudTableGuards';
+
+// Presentation-only hint. A symbol never serializes into sale/customer payloads.
+export const INVENTORY_NOTICE_NET_AVAILABILITY = Symbol('inventory-notice-net-availability');
 
 const OPEN_FULFILLMENT_STATUS = 'open';
 const TABLE_ORDER_TYPE = 'table';
@@ -331,6 +335,11 @@ export const createOrderActions = (set, get) => ({
           const salePrice = isCommercialVariant
             ? toFiniteNumber(validBatch?.price)
             : toFiniteNumber(product.price);
+          const batchStockSnapshot = validBatch ? getOperationalStockSnapshot(validBatch) : null;
+          const verifiedBatchAvailability = batchStockSnapshot?.valid
+            && batchStockSnapshot.physicalStock >= batchStockSnapshot.committedStock
+            && batchStockSnapshot.physicalStock >= 0
+            ? batchStockSnapshot.availableStock : null;
           const productToAdd = validBatch
             ? {
                 ...product,
@@ -338,6 +347,10 @@ export const createOrderActions = (set, get) => ({
                 price: salePrice,
                 cost: validBatch.cost,
                 stock: getAvailableStock(validBatch),
+                // Informational snapshot only. The selected line's stock is
+                // already net of batch commitments; parent's committedStock
+                // must never be subtracted from it again in the notice.
+                [INVENTORY_NOTICE_NET_AVAILABILITY]: verifiedBatchAvailability,
                 isVariant: isCommercialVariant,
                 skuDetected: validBatch.sku || product.sku,
                 originalPrice: salePrice

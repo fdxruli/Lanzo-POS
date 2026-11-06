@@ -286,3 +286,64 @@
     padding: 12px 32px 0 32px; 
   }
 }
+
+
+/* Aviso de inventario exclusivo de las pestañas del POS, sin toast ni modal. */
+.order-tabs-inventory-notice {
+  margin: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--ui-color-warning, #b7791f);
+  border-radius: 10px;
+  background: var(--ui-bg-warning-soft, #fff9ec);
+  color: var(--ui-text-strong, #292929);
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+.order-tabs-inventory-notice p {
+  margin: 5px 0;
+}
+.order-tabs-inventory-notice__heading,
+.order-tabs-inventory-notice__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.order-tabs-inventory-notice__heading strong {
+  font-size: 0.9rem;
+}
+.order-tabs-inventory-notice__close,
+.order-tabs-inventory-notice__open {
+  font: inherit;
+  min-height: 40px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.order-tabs-inventory-notice__close {
+  min-width: 40px;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 1.25rem;
+}
+.order-tabs-inventory-notice__open {
+  border: 1px solid var(--ui-border-control, #777);
+  background: var(--ui-bg-surface, #fff);
+  color: var(--ui-text-strong, #292929);
+  padding: 8px 12px;
+  font-weight: 600;
+}
+.order-tabs-inventory-notice__close:focus-visible,
+.order-tabs-inventory-notice__open:focus-visible {
+  outline: 2px solid var(--ui-focus-color, #1d4ed8);
+  outline-offset: 2px;
+}
+.order-tabs-inventory-notice__actions {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  margin-top: 8px;
+}
+.order-tabs-inventory-notice__actions span {
+  font-size: 0.78rem;
+}
