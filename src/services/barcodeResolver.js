@@ -2,6 +2,8 @@ import { db, STORES } from './db/dexie';
 import { getAvailableStock } from './db/utils';
 import Logger from './Logger';
 import { isCommercialVariantProduct } from './products/commercialVariants';
+import { isBatchActiveForFefo, isBatchExpiredForSale } from './products/fefoUtils';
+import { getStrictExpirySaleGuard } from './products/strictExpirySaleGuards';
 
 const BULK_BATCH_THRESHOLD = 0.02;
 
@@ -17,6 +19,14 @@ const parseStrictPrice = (value) => {
 };
 
 const isActiveProduct = (product) => product?.isActive !== false;
+const isSellableBatch = (batch, product) => Boolean(
+  batch
+    && isBatchActiveForFefo(batch)
+    && batch.status !== 'inactive'
+    && getAvailableStock(batch) > 0
+    && !isBatchExpiredForSale(batch, product)
+    && !getStrictExpirySaleGuard({ product, batches: [batch] }).blocked
+);
 
 const normalizeCode = (code) => {
   if (!code || typeof code !== 'string') {
@@ -50,6 +60,7 @@ const findProductMatchByCode = async (code) => {
     const product = await menuTable.get(batch.productId);
 
     if (product && isActiveProduct(product)) {
+      if (!isSellableBatch(batch, product)) return null;
       return {
         product,
         batch,
@@ -89,7 +100,7 @@ const selectFifoBatch = async (productId, product) => {
       .table(STORES.PRODUCT_BATCHES)
       .where('productId')
       .equals(productId)
-      .filter((batch) => batch.isActive && getAvailableStock(batch) > 0)
+      .filter((batch) => isSellableBatch(batch, product))
       .sortBy('createdAt');
 
     if (!activeBatches || activeBatches.length === 0) {
@@ -186,6 +197,8 @@ const resolveBarcodeInTransaction = async (code) => {
     ? await selectFifoBatch(match.product.id, match.product)
     : null;
 
+  if (match.product.batchManagement?.enabled && !fifoBatch) return null;
+
   return buildResolvedProduct({
     ...match,
     batch: fifoBatch,
@@ -224,6 +237,7 @@ export const resolveBarcodeByStaticReference = async (reference, code = null) =>
 
         if (
           !batch ||
+          !isSellableBatch(batch, product) ||
           batch.productId !== product.id ||
           (code && normalizeComparableCode(batch.sku) !== normalizeComparableCode(code))
         ) {
@@ -243,6 +257,8 @@ export const resolveBarcodeByStaticReference = async (reference, code = null) =>
       const fifoBatch = product.batchManagement?.enabled
         ? await selectFifoBatch(product.id, product)
         : null;
+
+      if (product.batchManagement?.enabled && !fifoBatch) return null;
 
       if (
         code &&

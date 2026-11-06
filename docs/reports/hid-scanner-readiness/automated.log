@@ -1,0 +1,26 @@
+Node v24.19.0
+Base: f554b3f2e844784f93cc58d64393560ac81afd71
+
+$ npx vitest run src/components/pos/__tests__/PosPageContent.hidLocal.integration.test.jsx src/components/pos/__tests__/PosPageContent.physicalScanner.test.jsx src/components/pos/__tests__/PosPageContent.ecommerce.test.jsx src/components/pos/__tests__/ProductMenu.pagination.test.jsx src/components/pos/__tests__/useActiveOrders.test.js src/components/pos/__tests__/useActiveOrders.session.test.js src/components/products/form-v2/__tests__/ProductFormV2.test.jsx src/components/scanner/__tests__ src/hooks/scanner/__tests__ src/services/scanner/__tests__ src/services/__test__/barcodeResolver.test.js src/store/__test__/orderActions.batchPricing.test.js src/store/__test__/orderActions.stableTimestamp.test.js src/services/products/__tests__/strictExpirySaleGuards.test.js --maxWorkers=2
+
+ RUN  v4.1.12 /workspace/Lanzo-POS
+
+
+ Test Files  22 passed (22)
+      Tests  232 passed (232)
+   Start at  01:13:58
+   Duration  15.43s (transform 3.57s, setup 1.74s, import 6.18s, tests 14.49s, environment 5.31s)
+
+Exit: 0
+
+$ npx eslint src/components/pos/PosPageContent.jsx src/components/pos/ProductMenu.jsx src/hooks/scanner/usePhysicalBarcodeScanner.js src/services/barcodeResolver.js src/components/pos/__tests__/PosPageContent.hidLocal.integration.test.jsx src/components/pos/__tests__/PosPageContent.physicalScanner.test.jsx src/hooks/scanner/__tests__/usePhysicalBarcodeScanner.test.jsx src/components/scanner/__tests__/PhysicalScannerFoundation.contract.test.js
+Exit: 0 (sin diagnósticos)
+
+$ git diff --check
+Exit: 0
+
+$ npm run build
+Exit: 0
+Vite: built in 12.00s
+Workbox: avisos de patrones glob sin coincidencias.
+postbuild: [lanzo-admin-startup-precache-audit] Verified 25 startup assets and 0 core Local route assets.
