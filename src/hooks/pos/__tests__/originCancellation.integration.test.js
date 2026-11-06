@@ -11,7 +11,8 @@ vi.mock('../../../services/db/dexie', () => ({
 vi.mock('../../../store/useAppStore', () => ({ useAppStore: {
   getState: () => ({ enableMultipleOrders: true, licenseDetails: { valid: true, license_key: 'license-a' } }), subscribe: () => () => {}
 } }));
-vi.mock('../../../services/sync/syncConstants', () => ({
+vi.mock('../../../services/sync/syncConstants', async (importOriginal) => ({
+  ...await importOriginal(),
   getLicenseKeyFromDetails: () => 'license-a', isRestaurantOrdersCloudEnabled: () => runtime.cloud
 }));
 vi.mock('../../../services/sync/idempotency', () => ({ generateIdempotencyKey: () => 'cancel-key' }));
