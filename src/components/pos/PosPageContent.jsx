@@ -32,6 +32,9 @@ const ActiveOrderControls = () => {
     const currentOrderId = useActiveOrders((state) => state.currentOrderId);
     const createOrder = useActiveOrders((state) => state.createOrder);
     const switchOrder = useActiveOrders((state) => state.switchOrder);
+    const inventoryConflictNotice = useActiveOrders((state) => state.inventoryConflictNotice);
+    const dismissInventoryConflictNotice = useActiveOrders((state) => state.dismissInventoryConflictNotice);
+    const openInventoryConflictSource = useActiveOrders((state) => state.openInventoryConflictSource);
     const cancelOrder = useActiveOrders((state) => state.cancelOrder);
     const enableMultipleOrders = useAppStore((state) => state.enableMultipleOrders);
     const [isPausing, setIsPausing] = useState(false);
@@ -69,6 +72,10 @@ const ActiveOrderControls = () => {
                     isPausing={isPausing}
                     canCreateOrder={enableMultipleOrders}
                     onSwitchOrder={switchOrder}
+                    inventoryConflictNotice={inventoryConflictNotice?.orderId === currentOrderId
+                        ? inventoryConflictNotice : null}
+                    onDismissInventoryNotice={dismissInventoryConflictNotice}
+                    onOpenInventorySource={openInventoryConflictSource}
                     onCreateOrder={handleCreateOrder}
                     onDeleteOrder={handleDeleteOrder}
                 />
