@@ -23,6 +23,7 @@ import { isLocalTenantAccessError } from '../services/tenant/localTenantGuard';
 import { isTenantRuntimeError } from '../services/db/tenantRuntimeRouter';
 import { resolveImmutableOrderCreatedAt } from '../services/sales/stableSaleTimestamp';
 import { actorRuntimeController } from '../services/auth/actorRuntimeController';
+import { isDirectUnitCartItem, validateCartCheckoutPriority } from '../services/sales/localCartPriority';
 import {
   assertRestaurantCloudTableEditable,
   isRestaurantCloudTableShadow,
@@ -780,6 +781,49 @@ export const createOrderActions = (set, get) => ({
                 if (previousReservedItems.length > 0) {
                   assertActorCurrent();
                   await releaseCommittedStock(previousReservedItems, { db, STORES, assertActorCurrent });
+                }
+              }
+
+              // Pausing is a formal stock reservation. A later provisional cart
+              // must not reserve units already claimed by an earlier local cart.
+              if (!isSavedOrder && activeOrderId) {
+                const directIds = [...new Set(currentItems
+                  .filter(isDirectUnitCartItem)
+                  .map((item) => getCartProductId(item) ?? item.id))];
+                if (directIds.length > 0) {
+                  const currentProducts = await Promise.all(directIds.map(
+                    (id) => db.table(STORES.MENU).get(id)
+                  ));
+                  assertActorCurrent();
+                  if (currentProducts.some((product) => !product || product.trackStock !== true
+                    || !Number.isFinite(Number(product.stock)))) {
+                    const error = new Error('No se pudo confirmar el inventario al guardar esta venta.');
+                    error.code = 'LOCAL_STOCK_UNKNOWN';
+                    throw error;
+                  }
+
+                  const liveState = get();
+                  const liveOrder = liveState.activeOrders.get(activeOrderId);
+                  if (!liveOrder || liveOrder.isSaved || liveOrder.isLockedForCheckout
+                    || (orderSnapshot && liveOrder.revision !== currentOrder.revision)) {
+                    const error = new Error('El carrito cambió antes de guardarse. Revisa las ventas.');
+                    error.code = 'LOCAL_CART_STALE';
+                    throw error;
+                  }
+                  const activeOrders = new Map(liveState.activeOrders);
+                  activeOrders.set(activeOrderId, { ...liveOrder, items: currentItems });
+                  const conflict = validateCartCheckoutPriority({
+                    state: { ...liveState, activeOrders },
+                    orderId: activeOrderId,
+                    catalog: currentProducts
+                  });
+                  if (conflict) {
+                    const error = new Error(
+                      `No se puede guardar: la venta ${conflict.origin} tiene prioridad provisional de estas unidades.`
+                    );
+                    error.code = conflict.code;
+                    throw error;
+                  }
                 }
               }
 
