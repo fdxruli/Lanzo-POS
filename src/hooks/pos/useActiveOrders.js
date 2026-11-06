@@ -876,8 +876,11 @@ export const useActiveOrders = create(
               productName: String(item.name || 'Producto sin nombre'),
               availableBeforeCarts: beforeOtherSales,
               provisionalInOtherCarts: provisionalUnits,
+              // The local allowance already includes units present in B.
+              // Only the remainder is free for an additional item.
               freeInThisCart: beforeOtherSales === null || provisionalUnits === null
-                ? null : normalizeStock(Math.max(0, beforeOtherSales - provisionalUnits)),
+                ? null : normalizeStock(Math.max(0,
+                  beforeOtherSales - provisionalUnits - quantityFor(previous))),
               sourceOrderId: canOpenSource ? source.id : null,
               sourceLabel: uniqueName || null,
               sourceCount: claims.length,
