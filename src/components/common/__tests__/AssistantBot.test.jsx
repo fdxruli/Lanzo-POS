@@ -7,6 +7,7 @@ import { ShoppingCart } from 'lucide-react';
 import AssistantBot from '../AssistantBot';
 import { getBotScreen } from '../../../config/botKnowledge';
 import * as engine from '../../../utils/botIntelligence';
+import { GLOBAL_ALERT } from '../../../config/botContext';
 import { BotScreenProvider, usePublishBotScreen } from '../../../hooks/useBotScreenContext';
 
 const mocks = vi.hoisted(() => ({ role: 'admin', allowed: true }));
@@ -17,12 +18,13 @@ const Location = () => { const location = useLocation(); const navigate = useNav
 const openBot = () => fireEvent.click(screen.getByRole('button', { name: 'Abrir Lanzó Bot' }));
 const mount = (path = '/') => render(<MemoryRouter initialEntries={[path]}><Location /><AssistantBot /></MemoryRouter>);
 let workerCreations = 0;
+let workerInstances = [];
 class TestWorker {
-  constructor() { workerCreations += 1; }
+  constructor() { workerCreations += 1; workerInstances.push(this); }
   listeners = new Map();
   addEventListener(type, fn) { this.listeners.set(type, fn); }
   removeEventListener(type) { this.listeners.delete(type); }
-  terminate() { this.listeners.clear(); }
+  terminate() { this.terminated = true; this.listeners.clear(); }
   postMessage(data) {
     Promise.resolve().then(async () => {
       const value = data.type === 'CONTEXT' ? getBotScreen(data.payload.pathname, data.payload.search, data.payload.tab) : await engine.processBotMessage(data.payload.text, data.payload.context);
@@ -30,10 +32,90 @@ class TestWorker {
     }).catch(() => this.listeners.get('error')?.({}));
   }
 }
-beforeEach(() => { workerCreations = 0; vi.stubGlobal('Worker', TestWorker); mocks.role = 'admin'; mocks.allowed = true; Element.prototype.scrollIntoView = vi.fn(); });
+beforeEach(() => { workerCreations = 0; workerInstances = []; vi.stubGlobal('Worker', TestWorker); mocks.role = 'admin'; mocks.allowed = true; Element.prototype.scrollIntoView = vi.fn(); });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe('AssistantBot question path', () => {
+  it('uses the floating launcher as the only normal close and restores focus after Escape', async () => {
+    vi.stubGlobal('requestAnimationFrame', callback => setTimeout(callback, 0));
+    mount(); openBot();
+    expect(screen.getByRole('heading', { name: 'Lanzó Bot' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Cerrar asistente' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Cerrar Lanzó Bot' })).toBeVisible();
+    const panel = screen.getByRole('region', { name: 'Lanzó Bot' });
+    fireEvent.keyDown(panel, { key: 'Escape', code: 'Escape' });
+    const launcher = screen.getByRole('button', { name: 'Abrir Lanzó Bot' });
+    expect(launcher).toBeVisible();
+    await waitFor(() => expect(launcher).toHaveFocus());
+    await waitFor(() => expect(workerInstances[0].terminated).toBe(true));
+    fireEvent.click(launcher);
+    expect(screen.getByRole('button', { name: 'Cerrar Lanzó Bot' })).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar Lanzó Bot' }));
+    expect(screen.getByRole('button', { name: 'Abrir Lanzó Bot' })).toBeVisible();
+    await waitFor(() => expect(workerInstances[1].terminated).toBe(true));
+  });
+
+  it('offers a temporary header close only when the Android visual viewport indicates keyboard', async () => {
+    vi.stubGlobal('requestAnimationFrame', callback => setTimeout(callback, 0));
+    vi.stubGlobal('innerHeight', 844);
+    const handlers = new Map();
+    const viewport = {
+      height: 844, offsetTop: 0,
+      addEventListener(type, callback) { handlers.set(type, callback); },
+      removeEventListener(type) { handlers.delete(type); }
+    };
+    vi.stubGlobal('visualViewport', viewport);
+    mount('/productos?tab=batches'); openBot();
+    expect(await screen.findByText('Productos e inventario · Gestionar lotes')).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Cerrar asistente' })).not.toBeInTheDocument();
+    act(() => { viewport.height = 480; handlers.get('resize')(); });
+    expect(document.querySelector('.lanzo-bot-container')).toHaveClass('keyboard-open');
+    expect(document.querySelector('.lanzo-bot-container').style.getPropertyValue('--bot-keyboard-inset')).toBe('364px');
+    expect(screen.getByRole('button', { name: 'Cerrar asistente' })).toBeVisible();
+    expect(screen.getByRole('textbox', { name: 'Pregunta para el asistente' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Enviar pregunta' })).toBeInTheDocument();
+    act(() => { viewport.height = 844; handlers.get('resize')(); });
+    expect(screen.queryByRole('button', { name: 'Cerrar asistente' })).not.toBeInTheDocument();
+    act(() => { viewport.height = 480; handlers.get('resize')(); });
+    fireEvent.click(screen.getByRole('button', { name: 'Cerrar asistente' }));
+    expect(screen.getByRole('button', { name: 'Abrir Lanzó Bot' })).toBeVisible();
+    await waitFor(() => expect(workerInstances[0].terminated).toBe(true));
+  });
+
+  it('keeps the full long section title available in the compact header', async () => {
+    mount('/productos?tab=batches'); openBot();
+    const context = await screen.findByText('Productos e inventario · Gestionar lotes');
+    expect(context).toHaveAttribute('title', 'Productos e inventario · Gestionar lotes');
+    expect(context).toHaveClass('bot-subtitle');
+    expect(screen.queryByRole('button', { name: 'Cerrar asistente' })).not.toBeInTheDocument();
+  });
+
+  it('keeps the legacy close for a dismissible global notice without a floating launcher', () => {
+    render(<MemoryRouter><AssistantBot enabled={false} globalAlertEligible /></MemoryRouter>);
+    expect(workerCreations).toBe(0);
+    expect(screen.queryByRole('button', { name: 'Abrir Lanzó Bot' })).not.toBeInTheDocument();
+    const close = screen.getByRole('button', { name: 'Cerrar asistente' });
+    expect(close).toBeEnabled();
+    fireEvent.click(close);
+    expect(screen.queryByRole('region', { name: 'Lanzó Bot' })).not.toBeInTheDocument();
+    expect(workerCreations).toBe(0);
+  });
+
+  it('blocks Escape and the header close for critical notices', () => {
+    const before = { severity: GLOBAL_ALERT.severity, isDismissible: GLOBAL_ALERT.isDismissible };
+    try {
+      GLOBAL_ALERT.severity = 'critical';
+      GLOBAL_ALERT.isDismissible = false;
+      render(<MemoryRouter><AssistantBot enabled={false} globalAlertEligible /></MemoryRouter>);
+      expect(screen.queryByRole('button', { name: 'Abrir Lanzó Bot' })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Cerrar asistente' })).toBeDisabled();
+      fireEvent.keyDown(screen.getByRole('region', { name: 'Lanzó Bot' }), { key: 'Escape', code: 'Escape' });
+      expect(screen.getByRole('region', { name: 'Lanzó Bot' })).toBeVisible();
+      expect(workerCreations).toBe(0);
+    } finally {
+      Object.assign(GLOBAL_ALERT, before);
+    }
+  });
   it('shows compact contextual help and authorized navigation without requesting data', async () => {
     mount(); openBot();
     expect(await screen.findByText(/Desde aquí puedes buscar o escanear productos/)).toBeVisible();
