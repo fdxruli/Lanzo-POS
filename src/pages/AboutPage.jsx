@@ -22,7 +22,7 @@ import { getCommercialAIAgentAccessState } from '../services/auth/aiAgentAuthori
 import { evaluateEcommercePortalAccess } from './settingsPageAccess';
 import ContactModal from '../components/common/ContactModal';
 import Logo from '../components/common/Logo';
-import { APP_BUILD_DATE_LABEL, APP_VERSION_LABEL } from '../config/appVersion';
+import { APP_BUILD_DATE_LABEL, APP_VERSION, APP_VERSION_LABEL } from '../config/appVersion';
 import {
   getPlanFeaturesFromLicenseDetails,
   isCloudPosSyncEnabled,
