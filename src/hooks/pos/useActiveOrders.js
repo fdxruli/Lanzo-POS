@@ -6,6 +6,7 @@ import { generateID, showConfirmModal, showMessageModal } from '../../services/u
 import { usePosCatalogStore } from '../../store/usePosCatalogStore';
 import { evaluateProvisionalCartChange, isDirectUnitCartItem, validateCartCheckoutPriority } from '../../services/sales/localCartPriority';
 import { db, STORES } from '../../services/db/dexie';
+import { normalizeStock } from '../../services/db/utils';
 import { SALE_STATUS } from '../../services/sales/financialStats';
 import { Money } from '../../utils/moneyMath';
 import { withOrderTotals } from '../../services/sales/orderTotals';
@@ -127,6 +128,34 @@ export const useActiveOrders = create(
     currentOrderId: null,
     isLoading: false,
     pendingInventoryResolutions: new Map(),
+    // Aviso contextual efímero: nunca se guarda con los carritos.
+    inventoryConflictNotice: null,
+    dismissInventoryConflictNotice: () => set({ inventoryConflictNotice: null }),
+    openInventoryConflictSource: () => {
+      const state = get();
+      const notice = state.inventoryConflictNotice;
+      if (!notice?.sourceOrderId || state.currentOrderId !== notice.orderId) return false;
+      const source = state.activeOrders.get(notice.sourceOrderId);
+      const target = state.activeOrders.get(notice.orderId);
+      if (!source || !target || source.isSaved || source.isLockedForCheckout
+        || target.isLockedForCheckout || source.origin === 'ecommerce'
+        || !source.items?.some((item) =>
+          getInventoryReservationKey(item) === notice.reservationKey
+          && Number(item.quantity) > 0)) {
+        set({ inventoryConflictNotice: null });
+        return false;
+      }
+      try {
+        const actor = actorRuntimeController.capture('pos');
+        actor.assertCurrent();
+        if (!actor.actorKey || actor.actorKey !== source.actorKey
+          || actor.actorKey !== target.actorKey) return false;
+        get().switchOrder(notice.sourceOrderId);
+        return get().currentOrderId === notice.sourceOrderId;
+      } catch {
+        return false;
+      }
+    },
     ...createOrderActions(set, get),
     requestLocalCartReassignment: (orderId, proposedItems, initialConflict) => {
       if (priorityConfirmationPending) return;
@@ -480,6 +509,7 @@ export const useActiveOrders = create(
 
       set({
         currentOrderId: orderId,
+        inventoryConflictNotice: null,
         isCurrentOrderLocked: Boolean(order.isLockedForCheckout)
       });
     },
@@ -807,12 +837,52 @@ export const useActiveOrders = create(
           if (nextQuantity <= quantityFor(previous)) continue;
           const localAvailable = Number(getSessionAvailableStock(state, item, orderId));
           if (!Number.isFinite(localAvailable) || nextQuantity > localAvailable) {
-            showMessageModal(
-              'Este producto utiliza lotes, variantes u otra gestión de inventario. ' +
-              'No se pueden reasignar sus unidades entre ventas automáticamente. ' +
-              'Reduce primero la otra venta o selecciona un lote con unidades libres.',
-              null, { type: 'warning' }
-            );
+            const claims = Array.from(state.activeOrders, ([id, other]) => ({
+              id, order: other,
+              units: (other?.items || []).reduce((sum, line) => (
+                getInventoryReservationKey(line) === key
+                  ? sum + (Number(line.quantity) || 0) : sum
+              ), 0)
+            })).filter(({ id, order: other, units }) => (
+              id !== orderId && !other?.isSaved && other?.origin !== 'ecommerce' && units > 0
+            ));
+            const rawStock = item.stock;
+            const rawCommitted = item.committedStock ?? item.committed_stock ?? 0;
+            const validStock = rawStock !== null && rawStock !== undefined && rawStock !== ''
+              && Number.isFinite(Number(rawStock))
+              && rawCommitted !== null && rawCommitted !== ''
+              && Number.isFinite(Number(rawCommitted)) && Number(rawCommitted) >= 0;
+            const provisionalUnits = claims.every(({ units }) => Number.isFinite(units))
+              ? normalizeStock(claims.reduce((sum, claim) => sum + claim.units, 0))
+              : null;
+            // These are the SAME availability inputs as the existing guard.
+            // In a selected batch, item.stock can already be net of reservations:
+            // never present it as physical stock or invent a formal-reserve figure.
+            const beforeOtherSales = validStock
+              ? normalizeStock(Math.max(0, Number(rawStock) - Number(rawCommitted)))
+              : null;
+            const source = claims.length === 1 ? claims[0] : null;
+            const actorKey = actorRuntimeController.getState().actorKey;
+            const canOpenSource = Boolean(source?.order?.actorKey && order.actorKey
+              && source.order.actorKey === order.actorKey && actorKey === order.actorKey
+              && !source.order.isLockedForCheckout);
+            const rawName = typeof source?.order?.tableData === 'string'
+              ? source.order.tableData.trim() : '';
+            const uniqueName = rawName && Array.from(state.activeOrders.values())
+              .filter((candidate) => candidate?.tableData?.trim?.() === rawName).length === 1
+              ? rawName : null;
+            set({ inventoryConflictNotice: {
+              orderId, reservationKey: key,
+              productName: String(item.name || 'Producto sin nombre'),
+              availableBeforeCarts: beforeOtherSales,
+              provisionalInOtherCarts: provisionalUnits,
+              freeInThisCart: beforeOtherSales === null || provisionalUnits === null
+                ? null : normalizeStock(Math.max(0, beforeOtherSales - provisionalUnits)),
+              sourceOrderId: canOpenSource ? source.id : null,
+              sourceLabel: uniqueName || null,
+              hasOtherCarts: claims.length > 0,
+              singleSourceLabel: claims.length === 1 ? uniqueName : null
+            } });
             return {
               success: false,
               code: 'LOCAL_INVENTORY_NOT_TRANSFERABLE',
@@ -846,7 +916,7 @@ export const useActiveOrders = create(
         ...order, items: nextItems, total: calculateOrderTotalExact(nextItems),
         ...touchOrderVersion(order)
       });
-      set({ activeOrders: nextOrders });
+      set({ activeOrders: nextOrders, inventoryConflictNotice: null });
       return { success: get().activeOrders.get(orderId) !== order ? true : false };
     },
 
