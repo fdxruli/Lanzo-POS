@@ -148,6 +148,16 @@ beforeEach(() => {
 });
 
 describe('Navbar Settings shell access', () => {
+  it('closes the mobile menu when applying a pending update', async () => {
+    const runUpdate = vi.fn(async () => true);
+    state.app = createAppState({ updateAvailable: true, runUpdate });
+    renderNavbar();
+    const { drawer } = openMobileDrawer();
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Actualizar sistema' }));
+    expect(screen.getByRole('button', { name: 'Abrir menú principal' })).toHaveAttribute('aria-expanded', 'false');
+    expect(runUpdate).toHaveBeenCalledOnce();
+  });
+
   it('keeps manual update checks out of the menu and retains pending-update actions', () => {
     state.app = createAppState({ updateAvailable: true });
     renderNavbar();
