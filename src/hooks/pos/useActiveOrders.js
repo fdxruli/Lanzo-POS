@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { useAppStore } from '../../store/useAppStore';
-import { createOrderActions, getInventoryReservationKey, getSessionAvailableStock } from '../../store/orderActions';
+import { createOrderActions, getInventoryReservationKey, getSessionAvailableStock, INVENTORY_NOTICE_NET_AVAILABILITY } from '../../store/orderActions';
 import { generateID, showConfirmModal, showMessageModal } from '../../services/utils';
 import { usePosCatalogStore } from '../../store/usePosCatalogStore';
 import { evaluateProvisionalCartChange, isDirectUnitCartItem, validateCartCheckoutPriority } from '../../services/sales/localCartPriority';
@@ -847,7 +847,7 @@ export const useActiveOrders = create(
             })).filter(({ id, order: other, units }) => (
               id !== orderId && !other?.isSaved && other?.origin !== 'ecommerce' && units > 0
             ));
-            const batchNet = item.inventoryNoticeNetAvailable;
+            const batchNet = item[INVENTORY_NOTICE_NET_AVAILABILITY];
             const verifiedBatchNet = item.batchId
               && typeof batchNet === 'number' && Number.isFinite(batchNet)
               && batchNet >= 0 && typeof item.stock === 'number'
