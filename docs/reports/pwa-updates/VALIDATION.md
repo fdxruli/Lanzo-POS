@@ -59,3 +59,32 @@ No se hizo merge, despliegue manual de Production, SQL, modificación de Supabas
 
 
 La primera ejecución remota de la workflow dedicada pasó regresiones, build completo y arquitectura; falló al instalar Playwright 1.56.1 porque `ubuntu-latest` ya corresponde a Ubuntu 26.04, no soportado por esa versión. Se fijó el runner en `ubuntu-24.04` y se incluyó también el build de tienda para ejecutar todos los contratos de arquitectura. No se alteró código del producto por este ajuste. El resultado del nuevo run se informa en el PR.
+
+
+## Corrección de las dos regresiones del PR #399
+
+HEAD de partida: `9f64f430512894e5e835683a484fdb7ff73734eb`. `main` verificado: `9d36e133aae04e00daf00b4c5725bc03832ea36f` (PR #395), posterior a la base original `e7a85fcb96d00f57d1414af8b8908785a7e50fbe`.
+
+Los dos archivos reportados se ejecutaron sin mocks adicionales ni omisiones:
+
+| Árbol probado | Resultado focal |
+| --- | --- |
+| Candidato inicial `9f64f430…` | 28/30; fallan reescritura Vercel e importación fría |
+| Base original `e7a85fcb…` | 30/30 |
+| `main` vigente `9d36e133…`, sin parche | 30/30 |
+| Candidato corregido | 30/30 |
+
+**Reescrituras:** el test conservaba literalmente el contrato anterior. Se actualizó su expectativa para incluir `build-info.json` junto con las exclusiones existentes. No se cambió `vercel.json` ni se revirtió esa exclusión. El fallback SPA, assets/worker/manifest y la independencia del target de tienda mantienen sus contratos.
+
+**Importación fría:** el nuevo import paralelo de `posSyncOrchestrator` iniciaba otra raíz de evaluación que entra en este ciclo estático: coordinador → posRealtime → supabase → database → db/index → layawayFinancialService → cashRepository → cashSyncHandler → coordinador. El handler de Caja intentaba registrar sus entidades antes de inicializarse el export del coordinador (`TypeError: ... registerEntitySyncHandler`). Ahora se obtiene ese módulo después de terminar la evaluación del grafo existente App/bootstrap. No se omiten handlers, se capturan errores para ocultarlos ni se abre el acceso al negocio; el guard de sincronización permanece.
+
+El test frío comprueba también `indexedDB.open` nativo, además de `Dexie.open`, y vuelve a exigir `TENANT_RUNTIME_NOT_READY` al acceder a `sales` después de cargar el POS. Ambos casos focales se incorporaron a la workflow dedicada existente. Al ejecutar estas regresiones juntas se observó una carrera del test de aborto de IndexedDB: `setTimeout(0)` podía adelantarse al evento nativo. Se sustituyó esa espera por el propio evento `abort`, sin modificar el guard del producto.
+
+Validación relacionada, sin repetir una auditoría general:
+
+- Rama corregida: **204/204** pruebas, 21 archivos (los casos focales están incluidos).
+- Copia temporal de `main` vigente + parche completo del candidato aplicado sin conflictos: **204/204** en la misma selección; **37/37** focales de importación/IndexedDB e integración de pagos del `main` nuevo; **49/49** de arquitectura PWA, recuperación y despliegue prebuilt.
+- Builds admin y tienda de esa combinación: correctos, con valores públicos sintéticos y sin backend. Postbuild verifica 27 recursos startup y el cierre del bot; 39 entradas / 5763.08 KiB de precache.
+- ESLint focal y comparación de whitespace: correctos. La compatibilidad se comprobó en una copia separada; no se hizo merge, rebase ni cambio de historia de la rama.
+
+Los resultados remotos del nuevo SHA se enlazan en el PR y en la entrega. No se ejecutó QA manual nuevo de Android, ventas, cobros o instalación PWA, ni se modificó Production.

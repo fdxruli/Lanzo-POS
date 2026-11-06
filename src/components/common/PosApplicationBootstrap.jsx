@@ -120,8 +120,7 @@ export const loadPosReadyRuntime = async () => {
     { default: DevConsole },
     { storageManager },
     { setAdminServiceWorkerReloadGuard },
-    { getActorCheckoutOwnerships, getPendingActorOperations },
-    { posSyncOrchestrator }
+    { getActorCheckoutOwnerships, getPendingActorOperations }
   ] = await Promise.all([
     import('../../App.jsx'),
     import('@react-oauth/google'),
@@ -137,9 +136,13 @@ export const loadPosReadyRuntime = async () => {
     import('../debug/DevConsole'),
     import('../../services/storageManager'),
     import('../../pwa/adminServiceWorker'),
-    import('../../services/auth/actorOperationalHandoff'),
-    import('../../services/sync/posSyncOrchestrator')
+    import('../../services/auth/actorOperationalHandoff')
   ]);
+
+  // The App/bootstrap graph initializes sync handlers at import time. Read
+  // its coordinator only after that graph has finished evaluating; starting
+  // it as another concurrent root can expose an uninitialized cyclic export.
+  const { posSyncOrchestrator } = await import('../../services/sync/posSyncOrchestrator');
 
   function Thrower({ error }) {
     throw error;

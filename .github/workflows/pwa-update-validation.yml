@@ -6,6 +6,8 @@ on:
       - 'src/pwa/**'
       - 'src/components/common/Update*'
       - 'src/components/common/PosApplicationBootstrap.jsx'
+      - 'src/components/common/__tests__/PosApplicationBootstrap.coldAppImport.test.jsx'
+      - 'src/architecture/__tests__/vercelPrebuiltDeployment.test.js'
       - 'src/store/slices/createPWASlice*'
       - 'src/config/appVersion.js'
       - 'src/services/financial/financialTimeout.js'
@@ -30,6 +32,8 @@ jobs:
         run: >-
           npx vitest run src/pwa/__tests__ src/store/slices/createPWASlice.test.js
           src/components/common/UpdatePrompt.test.jsx src/components/common/UpdateControls.test.jsx
+          src/components/common/__tests__/PosApplicationBootstrap.coldAppImport.test.jsx
+          src/architecture/__tests__/vercelPrebuiltDeployment.test.js
           src/services/financial/__tests__ src/services/db/__tests__/databaseSchemaRegistration.test.js
           --maxWorkers=3
       - run: npm run build

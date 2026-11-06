@@ -24,15 +24,20 @@ describe('update protection around native IndexedDB commits', () => {
 
   it('releases protection only when an aborted native transaction settles', async () => {
     const db = new Dexie('qa-update-abort');
+    let nativeAbort;
     db.version(1).stores({ sales: 'id' });
     installAdminUpdateWriteTracking(db);
     try {
       await expect(db.transaction('rw', db.sales, async () => {
         await db.sales.put({ id: 'uncommitted' });
         expect(hasAdminUpdateWrites()).toBe(true);
+        nativeAbort = new Promise(resolve => {
+          Dexie.currentTransaction.idbtrans.addEventListener('abort', resolve, { once: true });
+        });
         throw new Error('abort-fixture');
       })).rejects.toThrow('abort-fixture');
-      await new Promise(resolve => setTimeout(resolve, 0));
+      // Dexie's public rejection can precede the native abort event.
+      await nativeAbort;
       expect(hasAdminUpdateWrites()).toBe(false);
       expect(await db.sales.get('uncommitted')).toBeUndefined();
     } finally { await db.delete(); }
