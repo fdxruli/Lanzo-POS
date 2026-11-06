@@ -8,6 +8,7 @@ import { evaluateProvisionalCartChange, isDirectUnitCartItem, validateCartChecko
 import { db, STORES } from '../../services/db/dexie';
 import { SALE_STATUS } from '../../services/sales/financialStats';
 import { Money } from '../../utils/moneyMath';
+import { withOrderTotals } from '../../services/sales/orderTotals';
 import { releaseCommittedStock } from '../../services/sales/inventoryFlow';
 import {
   assertRestaurantCloudTableEditable,
@@ -131,7 +132,7 @@ export const useActiveOrders = create(
       if (priorityConfirmationPending) return;
       let actorHandle;
       try {
-        actorHandle = actorRuntimeController.capture();
+        actorHandle = actorRuntimeController.capture('sales.create');
       } catch {
         showMessageModal('Inicia sesión con un operador autorizado antes de reasignar productos.', null, { type: 'warning' });
         return;
@@ -200,15 +201,13 @@ export const useActiveOrders = create(
             for (const [donorId, lines] of groupedDonors) {
               const sourceOrder = live.activeOrders.get(donorId);
               const remaining = lines.filter((line) => Number(line.quantity) > 0);
-              activeOrders.set(donorId, {
-                ...sourceOrder, items: remaining, total: calculateOrderTotalExact(remaining),
-                ...touchOrderVersion(sourceOrder)
-              });
+              activeOrders.set(donorId, withOrderTotals({
+                ...sourceOrder, items: remaining, ...touchOrderVersion(sourceOrder)
+              }));
             }
-            activeOrders.set(orderId, {
-              ...originalTarget, items: proposedItems,
-              total: calculateOrderTotalExact(proposedItems), ...touchOrderVersion(originalTarget)
-            });
+            activeOrders.set(orderId, withOrderTotals({
+              ...originalTarget, items: proposedItems, ...touchOrderVersion(originalTarget)
+            }));
             applied = true;
             return { activeOrders };
           });
