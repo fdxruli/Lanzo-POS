@@ -1,0 +1,3118 @@
+[
+  {
+    "schema_name": "public",
+    "relname": "pos_cash_movements",
+    "relrowsecurity": true,
+    "relforcerowsecurity": false,
+    "columns": [
+      {
+        "name": "id",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "license_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "cash_session_id",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "device_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "staff_user_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "actor_key",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "type",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "amount",
+        "type": "numeric",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "concept",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "source",
+        "type": "text",
+        "default": "'manual'::text",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "reference_type",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "reference_id",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "created_by_device_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "created_by_staff_user_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "actor_name",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "server_version",
+        "type": "integer",
+        "default": "1",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "idempotency_key",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "metadata",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "deleted_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "sale_id",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "customer_ledger_id",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "cash_station_id",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "performed_by_actor_key",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "pos_cash_movements_actor_key_chk",
+        "type": "c",
+        "definition": "CHECK ((length(btrim(actor_key)) > 0))"
+      },
+      {
+        "name": "pos_cash_movements_actor_name_chk",
+        "type": "c",
+        "definition": "CHECK ((length(btrim(actor_name)) > 0))"
+      },
+      {
+        "name": "pos_cash_movements_amount_chk",
+        "type": "c",
+        "definition": "CHECK ((amount > (0)::numeric))"
+      },
+      {
+        "name": "pos_cash_movements_cash_session_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (cash_session_id) REFERENCES pos_cash_sessions(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "pos_cash_movements_concept_chk",
+        "type": "c",
+        "definition": "CHECK ((length(btrim(concept)) > 0))"
+      },
+      {
+        "name": "pos_cash_movements_created_by_device_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (created_by_device_id) REFERENCES license_devices(id)"
+      },
+      {
+        "name": "pos_cash_movements_created_by_staff_user_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (created_by_staff_user_id) REFERENCES license_staff_users(id)"
+      },
+      {
+        "name": "pos_cash_movements_device_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (device_id) REFERENCES license_devices(id)"
+      },
+      {
+        "name": "pos_cash_movements_license_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "pos_cash_movements_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "pos_cash_movements_server_version_chk",
+        "type": "c",
+        "definition": "CHECK ((server_version >= 1))"
+      },
+      {
+        "name": "pos_cash_movements_staff_user_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (staff_user_id) REFERENCES license_staff_users(id)"
+      },
+      {
+        "name": "pos_cash_movements_station_fk",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id, cash_station_id) REFERENCES pos_cash_stations(license_id, id)"
+      },
+      {
+        "name": "pos_cash_movements_type_check",
+        "type": "c",
+        "definition": "CHECK ((type = ANY (ARRAY['entrada'::text, 'salida'::text, 'ajuste_entrada'::text, 'ajuste_salida'::text, 'fondo_inicial_ajuste'::text, 'venta'::text, 'venta_efectivo'::text, 'abono_cliente'::text, 'cancelacion'::text, 'cancelacion_venta'::text, 'cancelacion_abono_inicial'::text])))"
+      }
+    ],
+    "triggers": [
+      {
+        "name": "pos_cash_movements_station_guard",
+        "enabled": "O",
+        "function": "private.pos_cash_movement_station_guard()",
+        "definition": "CREATE TRIGGER pos_cash_movements_station_guard BEFORE INSERT OR UPDATE ON public.pos_cash_movements FOR EACH ROW EXECUTE FUNCTION private.pos_cash_movement_station_guard()"
+      },
+      {
+        "name": "pos_fin01_guard_qa_write_v2",
+        "enabled": "O",
+        "function": "private.pos_fin01_guard_qa_write_v2()",
+        "definition": "CREATE TRIGGER pos_fin01_guard_qa_write_v2 BEFORE INSERT OR DELETE OR UPDATE ON public.pos_cash_movements FOR EACH ROW EXECUTE FUNCTION private.pos_fin01_guard_qa_write_v2()"
+      }
+    ]
+  },
+  {
+    "schema_name": "public",
+    "relname": "pos_cash_sessions",
+    "relrowsecurity": true,
+    "relforcerowsecurity": false,
+    "columns": [
+      {
+        "name": "id",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "license_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "device_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "staff_user_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "device_role",
+        "type": "text",
+        "default": "'admin'::text",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "scope",
+        "type": "text",
+        "default": "'actor'::text",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "actor_key",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "default": "'open'::text",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "opened_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "closed_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "opening_amount",
+        "type": "numeric",
+        "default": "0",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "opening_counted_amount",
+        "type": "numeric",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "opening_suggested_amount",
+        "type": "numeric",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "opening_difference",
+        "type": "numeric",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "opening_policy",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "opening_origin",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "is_auto_opening",
+        "type": "boolean",
+        "default": "false",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "closing_counted_amount",
+        "type": "numeric",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "next_shift_fund",
+        "type": "numeric",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "cash_sales_total",
+        "type": "numeric",
+        "default": "0",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "customer_payments_total",
+        "type": "numeric",
+        "default": "0",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "cash_entries_total",
+        "type": "numeric",
+        "default": "0",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "cash_exits_total",
+        "type": "numeric",
+        "default": "0",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "expected_cash_total",
+        "type": "numeric",
+        "default": "0",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "cash_difference",
+        "type": "numeric",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "responsible_name",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "opened_by_device_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "opened_by_staff_user_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "closed_by_device_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "closed_by_staff_user_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "audit_comments",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "close_detail",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "metadata",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "server_version",
+        "type": "integer",
+        "default": "1",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "last_idempotency_key",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "deleted_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "sales_total",
+        "type": "numeric",
+        "default": "0",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "non_cash_sales_total",
+        "type": "numeric",
+        "default": "0",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "sales_count",
+        "type": "integer",
+        "default": "0",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "closing_mode",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "reconciliation_status",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "closure_reason_code",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "closed_by_admin_user_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "admin_user_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "cash_station_id",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "opened_by_actor_key",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "closed_by_actor_key",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "pos_cash_sessions_actor_key_not_empty_chk",
+        "type": "c",
+        "definition": "CHECK ((length(btrim(actor_key)) > 0))"
+      },
+      {
+        "name": "pos_cash_sessions_admin_closure_integrity_chk",
+        "type": "c",
+        "definition": "CHECK (((closing_mode IS NULL) OR ((status = 'closed'::text) AND (closed_at IS NOT NULL) AND (closed_by_admin_user_id IS NOT NULL) AND (closed_by_device_id IS NOT NULL) AND (closure_reason_code IS NOT NULL) AND (close_detail @> jsonb_build_object('closing_mode', closing_mode)) AND (close_detail ? 'expected_cash_total'::text) AND (((closing_mode = 'admin_audited'::text) AND (closing_counted_amount IS NOT NULL) AND (closing_counted_amount >= (0)::numeric) AND (cash_difference IS NOT NULL) AND (next_shift_fund >= (0)::numeric) AND (next_shift_fund <= closing_counted_amount) AND (reconciliation_status = ANY (ARRAY['verified'::text, 'verified_with_difference'::text]))) OR ((closing_mode = 'admin_unverified'::text) AND (closing_counted_amount IS NULL) AND (cash_difference IS NULL) AND (next_shift_fund = (0)::numeric) AND (reconciliation_status = 'unverified'::text) AND (NULLIF(btrim(audit_comments), ''::text) IS NOT NULL))))))"
+      },
+      {
+        "name": "pos_cash_sessions_admin_user_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (admin_user_id) REFERENCES license_admin_users(id)"
+      },
+      {
+        "name": "pos_cash_sessions_amounts_chk",
+        "type": "c",
+        "definition": "CHECK (((opening_amount >= (0)::numeric) AND (COALESCE(opening_counted_amount, (0)::numeric) >= (0)::numeric) AND (COALESCE(opening_suggested_amount, (0)::numeric) >= (0)::numeric) AND (COALESCE(closing_counted_amount, (0)::numeric) >= (0)::numeric) AND (COALESCE(next_shift_fund, (0)::numeric) >= (0)::numeric) AND (cash_sales_total >= (0)::numeric) AND (customer_payments_total >= (0)::numeric) AND (cash_entries_total >= (0)::numeric) AND (cash_exits_total >= (0)::numeric) AND (expected_cash_total >= (0)::numeric)))"
+      },
+      {
+        "name": "pos_cash_sessions_closed_by_admin_user_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (closed_by_admin_user_id) REFERENCES license_admin_users(id)"
+      },
+      {
+        "name": "pos_cash_sessions_closed_by_device_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (closed_by_device_id) REFERENCES license_devices(id)"
+      },
+      {
+        "name": "pos_cash_sessions_closed_by_staff_user_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (closed_by_staff_user_id) REFERENCES license_staff_users(id)"
+      },
+      {
+        "name": "pos_cash_sessions_closing_mode_chk",
+        "type": "c",
+        "definition": "CHECK (((closing_mode IS NULL) OR (closing_mode = ANY (ARRAY['normal'::text, 'admin_audited'::text, 'admin_unverified'::text]))))"
+      },
+      {
+        "name": "pos_cash_sessions_closure_reason_code_chk",
+        "type": "c",
+        "definition": "CHECK (((closure_reason_code IS NULL) OR (closure_reason_code = ANY (ARRAY['historical_test'::text, 'device_replaced'::text, 'device_lost'::text, 'abandoned_session'::text, 'operational_error'::text, 'other'::text]))))"
+      },
+      {
+        "name": "pos_cash_sessions_device_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (device_id) REFERENCES license_devices(id)"
+      },
+      {
+        "name": "pos_cash_sessions_device_role_chk",
+        "type": "c",
+        "definition": "CHECK ((device_role = ANY (ARRAY['admin'::text, 'staff'::text])))"
+      },
+      {
+        "name": "pos_cash_sessions_license_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "pos_cash_sessions_license_id_id_uk",
+        "type": "u",
+        "definition": "UNIQUE (license_id, id)"
+      },
+      {
+        "name": "pos_cash_sessions_opened_by_device_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (opened_by_device_id) REFERENCES license_devices(id)"
+      },
+      {
+        "name": "pos_cash_sessions_opened_by_staff_user_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (opened_by_staff_user_id) REFERENCES license_staff_users(id)"
+      },
+      {
+        "name": "pos_cash_sessions_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "pos_cash_sessions_reconciliation_status_chk",
+        "type": "c",
+        "definition": "CHECK (((reconciliation_status IS NULL) OR (reconciliation_status = ANY (ARRAY['verified'::text, 'verified_with_difference'::text, 'unverified'::text]))))"
+      },
+      {
+        "name": "pos_cash_sessions_responsible_not_empty_chk",
+        "type": "c",
+        "definition": "CHECK ((length(btrim(responsible_name)) > 0))"
+      },
+      {
+        "name": "pos_cash_sessions_scope_chk",
+        "type": "c",
+        "definition": "CHECK ((scope = ANY (ARRAY['actor'::text, 'device'::text, 'staff'::text])))"
+      },
+      {
+        "name": "pos_cash_sessions_server_version_chk",
+        "type": "c",
+        "definition": "CHECK ((server_version >= 1))"
+      },
+      {
+        "name": "pos_cash_sessions_staff_user_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (staff_user_id) REFERENCES license_staff_users(id)"
+      },
+      {
+        "name": "pos_cash_sessions_station_fk",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id, cash_station_id) REFERENCES pos_cash_stations(license_id, id)"
+      },
+      {
+        "name": "pos_cash_sessions_status_chk",
+        "type": "c",
+        "definition": "CHECK ((status = ANY (ARRAY['open'::text, 'closed'::text, 'cancelled'::text])))"
+      }
+    ],
+    "triggers": [
+      {
+        "name": "pos_fin01_guard_qa_write_v2",
+        "enabled": "O",
+        "function": "private.pos_fin01_guard_qa_write_v2()",
+        "definition": "CREATE TRIGGER pos_fin01_guard_qa_write_v2 BEFORE INSERT OR DELETE OR UPDATE ON public.pos_cash_sessions FOR EACH ROW EXECUTE FUNCTION private.pos_fin01_guard_qa_write_v2()"
+      }
+    ]
+  },
+  {
+    "schema_name": "public",
+    "relname": "pos_customer_ledger",
+    "relrowsecurity": true,
+    "relforcerowsecurity": false,
+    "columns": [
+      {
+        "name": "id",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "license_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "customer_id",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "type",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "amount",
+        "type": "numeric",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "balance_after",
+        "type": "numeric",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "debt_cents_after",
+        "type": "integer",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "payment_method",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "note",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "cash_session_id",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "cash_movement_id",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "reference_type",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "reference_id",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "sale_id",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "allocation_payload",
+        "type": "jsonb",
+        "default": "'[]'::jsonb",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "actor_device_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "actor_staff_user_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "actor_name",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "idempotency_key",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "metadata",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "server_version",
+        "type": "integer",
+        "default": "1",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "deleted_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "sale_folio",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "actor_key",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "pos_customer_ledger_actor_device_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (actor_device_id) REFERENCES license_devices(id)"
+      },
+      {
+        "name": "pos_customer_ledger_actor_name_chk",
+        "type": "c",
+        "definition": "CHECK ((length(btrim(actor_name)) > 0))"
+      },
+      {
+        "name": "pos_customer_ledger_actor_staff_user_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (actor_staff_user_id) REFERENCES license_staff_users(id)"
+      },
+      {
+        "name": "pos_customer_ledger_amount_nonzero_chk",
+        "type": "c",
+        "definition": "CHECK ((amount <> (0)::numeric))"
+      },
+      {
+        "name": "pos_customer_ledger_balance_non_negative_chk",
+        "type": "c",
+        "definition": "CHECK ((balance_after >= (0)::numeric))"
+      },
+      {
+        "name": "pos_customer_ledger_cash_movement_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (cash_movement_id) REFERENCES pos_cash_movements(id)"
+      },
+      {
+        "name": "pos_customer_ledger_cash_session_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (cash_session_id) REFERENCES pos_cash_sessions(id)"
+      },
+      {
+        "name": "pos_customer_ledger_customer_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (customer_id) REFERENCES pos_customers(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "pos_customer_ledger_debt_cents_non_negative_chk",
+        "type": "c",
+        "definition": "CHECK ((debt_cents_after >= 0))"
+      },
+      {
+        "name": "pos_customer_ledger_license_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "pos_customer_ledger_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "pos_customer_ledger_server_version_chk",
+        "type": "c",
+        "definition": "CHECK ((server_version >= 1))"
+      },
+      {
+        "name": "pos_customer_ledger_type_chk",
+        "type": "c",
+        "definition": "CHECK ((type = ANY (ARRAY['INITIAL_BALANCE'::text, 'CHARGE'::text, 'PAYMENT'::text, 'ADJUSTMENT'::text, 'CANCEL_CHARGE'::text, 'CANCEL_PAYMENT'::text, 'MIGRATION'::text])))"
+      }
+    ],
+    "triggers": [
+      {
+        "name": "pos_fin01_guard_qa_write_v2",
+        "enabled": "O",
+        "function": "private.pos_fin01_guard_qa_write_v2()",
+        "definition": "CREATE TRIGGER pos_fin01_guard_qa_write_v2 BEFORE INSERT OR DELETE OR UPDATE ON public.pos_customer_ledger FOR EACH ROW EXECUTE FUNCTION private.pos_fin01_guard_qa_write_v2()"
+      }
+    ]
+  },
+  {
+    "schema_name": "public",
+    "relname": "pos_customers",
+    "relrowsecurity": true,
+    "relforcerowsecurity": false,
+    "columns": [
+      {
+        "name": "id",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "license_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "name",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "phone",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "phone_key",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "address",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "debt",
+        "type": "numeric",
+        "default": "0",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "debt_cents",
+        "type": "integer",
+        "default": "0",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "credit_limit",
+        "type": "numeric",
+        "default": "0",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "deleted_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "server_version",
+        "type": "integer",
+        "default": "1",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "created_by_device_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "updated_by_device_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "created_by_staff_user_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "updated_by_staff_user_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "last_idempotency_key",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "metadata",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "pos_customers_created_by_device_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (created_by_device_id) REFERENCES license_devices(id)"
+      },
+      {
+        "name": "pos_customers_created_by_staff_user_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (created_by_staff_user_id) REFERENCES license_staff_users(id)"
+      },
+      {
+        "name": "pos_customers_credit_limit_non_negative",
+        "type": "c",
+        "definition": "CHECK ((credit_limit >= (0)::numeric))"
+      },
+      {
+        "name": "pos_customers_debt_cents_non_negative",
+        "type": "c",
+        "definition": "CHECK ((debt_cents >= 0))"
+      },
+      {
+        "name": "pos_customers_debt_non_negative",
+        "type": "c",
+        "definition": "CHECK ((debt >= (0)::numeric))"
+      },
+      {
+        "name": "pos_customers_license_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "pos_customers_name_not_blank",
+        "type": "c",
+        "definition": "CHECK ((length(btrim(name)) > 0))"
+      },
+      {
+        "name": "pos_customers_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "pos_customers_server_version_positive",
+        "type": "c",
+        "definition": "CHECK ((server_version >= 1))"
+      },
+      {
+        "name": "pos_customers_updated_by_device_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (updated_by_device_id) REFERENCES license_devices(id)"
+      },
+      {
+        "name": "pos_customers_updated_by_staff_user_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (updated_by_staff_user_id) REFERENCES license_staff_users(id)"
+      }
+    ],
+    "triggers": [
+      {
+        "name": "pos_fin01_guard_qa_write_v2",
+        "enabled": "O",
+        "function": "private.pos_fin01_guard_qa_write_v2()",
+        "definition": "CREATE TRIGGER pos_fin01_guard_qa_write_v2 BEFORE INSERT OR DELETE OR UPDATE ON public.pos_customers FOR EACH ROW EXECUTE FUNCTION private.pos_fin01_guard_qa_write_v2()"
+      }
+    ]
+  },
+  {
+    "schema_name": "public",
+    "relname": "pos_folio_sequences",
+    "relrowsecurity": true,
+    "relforcerowsecurity": false,
+    "columns": [
+      {
+        "name": "license_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "sequence_name",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "current_value",
+        "type": "bigint",
+        "default": "0",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "prefix",
+        "type": "text",
+        "default": "'V'::text",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "padding",
+        "type": "integer",
+        "default": "6",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "operational_prefix",
+        "type": "text",
+        "default": "'LZ'::text",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "operational_terminal",
+        "type": "text",
+        "default": "'01'::text",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "pos_folio_sequences_current_value_check",
+        "type": "c",
+        "definition": "CHECK ((current_value >= 0))"
+      },
+      {
+        "name": "pos_folio_sequences_license_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "pos_folio_sequences_operational_prefix_check",
+        "type": "c",
+        "definition": "CHECK (((length(btrim(operational_prefix)) >= 1) AND (length(btrim(operational_prefix)) <= 12)))"
+      },
+      {
+        "name": "pos_folio_sequences_operational_terminal_check",
+        "type": "c",
+        "definition": "CHECK (((length(btrim(operational_terminal)) >= 1) AND (length(btrim(operational_terminal)) <= 4)))"
+      },
+      {
+        "name": "pos_folio_sequences_padding_check",
+        "type": "c",
+        "definition": "CHECK (((padding >= 1) AND (padding <= 12)))"
+      },
+      {
+        "name": "pos_folio_sequences_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (license_id, sequence_name)"
+      },
+      {
+        "name": "pos_folio_sequences_prefix_check",
+        "type": "c",
+        "definition": "CHECK ((length(btrim(prefix)) > 0))"
+      }
+    ],
+    "triggers": []
+  },
+  {
+    "schema_name": "public",
+    "relname": "pos_idempotency_keys",
+    "relrowsecurity": true,
+    "relforcerowsecurity": false,
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "license_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "idempotency_key",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "operation_type",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "entity_type",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "entity_id",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "request_hash",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "response_payload",
+        "type": "jsonb",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "default": "'completed'::text",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "expires_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "pos_idempotency_keys_license_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "pos_idempotency_keys_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "pos_idempotency_keys_status_check",
+        "type": "c",
+        "definition": "CHECK ((status = ANY (ARRAY['processing'::text, 'completed'::text, 'failed'::text])))"
+      }
+    ],
+    "triggers": [
+      {
+        "name": "restaurant_upsert_insert_witness_v1",
+        "enabled": "O",
+        "function": "private.observe_restaurant_upsert_insert_v1()",
+        "definition": "CREATE TRIGGER restaurant_upsert_insert_witness_v1 AFTER INSERT ON public.pos_idempotency_keys FOR EACH ROW EXECUTE FUNCTION private.observe_restaurant_upsert_insert_v1()"
+      }
+    ]
+  },
+  {
+    "schema_name": "public",
+    "relname": "pos_sale_audit_events",
+    "relrowsecurity": true,
+    "relforcerowsecurity": false,
+    "columns": [
+      {
+        "name": "id",
+        "type": "bigint",
+        "default": "nextval('pos_sale_audit_events_id_seq'::regclass)",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "license_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "sale_id",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "event_type",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "actor_device_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "actor_staff_user_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "actor_name",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "payload",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "pos_sale_audit_events_license_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "pos_sale_audit_events_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      }
+    ],
+    "triggers": []
+  },
+  {
+    "schema_name": "public",
+    "relname": "pos_sale_cancellations",
+    "relrowsecurity": true,
+    "relforcerowsecurity": false,
+    "columns": [
+      {
+        "name": "id",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "license_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "sale_id",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "sale_folio",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "reason",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "default": "'completed'::text",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "cash_reversal_status",
+        "type": "text",
+        "default": "'not_required'::text",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "inventory_reversal_status",
+        "type": "text",
+        "default": "'not_required'::text",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "credit_reversal_status",
+        "type": "text",
+        "default": "'not_required'::text",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "original_total",
+        "type": "numeric",
+        "default": "0",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "cash_reversal_amount",
+        "type": "numeric",
+        "default": "0",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "inventory_reversal_quantity",
+        "type": "numeric",
+        "default": "0",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "credit_reversal_amount",
+        "type": "numeric",
+        "default": "0",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "actor_device_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "actor_staff_user_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "actor_key",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "actor_name",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "idempotency_key",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "metadata",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "server_version",
+        "type": "bigint",
+        "default": "1",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "pos_sale_cancellations_actor_device_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (actor_device_id) REFERENCES license_devices(id) ON DELETE SET NULL"
+      },
+      {
+        "name": "pos_sale_cancellations_actor_staff_user_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (actor_staff_user_id) REFERENCES license_staff_users(id) ON DELETE SET NULL"
+      },
+      {
+        "name": "pos_sale_cancellations_license_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "pos_sale_cancellations_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "pos_sale_cancellations_sale_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (sale_id) REFERENCES pos_sales(id) ON DELETE CASCADE"
+      }
+    ],
+    "triggers": []
+  },
+  {
+    "schema_name": "public",
+    "relname": "pos_sale_items",
+    "relrowsecurity": true,
+    "relforcerowsecurity": false,
+    "columns": [
+      {
+        "name": "id",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "license_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "sale_id",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "product_id",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "product_name",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "product_sku",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "barcode",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "category_id",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "category_name",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "quantity",
+        "type": "numeric",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "unit_price",
+        "type": "numeric",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "unit_cost",
+        "type": "numeric",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "discount_amount",
+        "type": "numeric",
+        "default": "0",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "tax_amount",
+        "type": "numeric",
+        "default": "0",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "line_total",
+        "type": "numeric",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "batch_id",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "batch_sku",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "batch_expiry_date",
+        "type": "date",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "rubro",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "metadata",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "server_version",
+        "type": "bigint",
+        "default": "1",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "inventory_effect_status",
+        "type": "text",
+        "default": "'not_applied'::text",
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "inventory_movement_id",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "stock_source",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "stock_before",
+        "type": "numeric",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "stock_after",
+        "type": "numeric",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "batch_stock_before",
+        "type": "numeric",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "batch_stock_after",
+        "type": "numeric",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "inventory_reversal_status",
+        "type": "text",
+        "default": "'not_required'::text",
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "pos_sale_items_discount_nonnegative_chk",
+        "type": "c",
+        "definition": "CHECK ((discount_amount >= (0)::numeric))"
+      },
+      {
+        "name": "pos_sale_items_license_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "pos_sale_items_line_total_nonnegative_chk",
+        "type": "c",
+        "definition": "CHECK ((line_total >= (0)::numeric))"
+      },
+      {
+        "name": "pos_sale_items_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "pos_sale_items_quantity_positive_chk",
+        "type": "c",
+        "definition": "CHECK ((quantity > (0)::numeric))"
+      },
+      {
+        "name": "pos_sale_items_sale_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (sale_id) REFERENCES pos_sales(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "pos_sale_items_tax_nonnegative_chk",
+        "type": "c",
+        "definition": "CHECK ((tax_amount >= (0)::numeric))"
+      },
+      {
+        "name": "pos_sale_items_unit_cost_nonnegative_chk",
+        "type": "c",
+        "definition": "CHECK (((unit_cost IS NULL) OR (unit_cost >= (0)::numeric)))"
+      },
+      {
+        "name": "pos_sale_items_unit_price_nonnegative_chk",
+        "type": "c",
+        "definition": "CHECK ((unit_price >= (0)::numeric))"
+      }
+    ],
+    "triggers": [
+      {
+        "name": "pos_fin01_guard_qa_write_v2",
+        "enabled": "O",
+        "function": "private.pos_fin01_guard_qa_write_v2()",
+        "definition": "CREATE TRIGGER pos_fin01_guard_qa_write_v2 BEFORE INSERT OR DELETE OR UPDATE ON public.pos_sale_items FOR EACH ROW EXECUTE FUNCTION private.pos_fin01_guard_qa_write_v2()"
+      },
+      {
+        "name": "trg_pos_sale_items_fill_batch_snapshot",
+        "enabled": "O",
+        "function": "private.fill_pos_sale_item_batch_snapshot()",
+        "definition": "CREATE TRIGGER trg_pos_sale_items_fill_batch_snapshot BEFORE INSERT OR UPDATE OF batch_id ON public.pos_sale_items FOR EACH ROW EXECUTE FUNCTION private.fill_pos_sale_item_batch_snapshot()"
+      }
+    ]
+  },
+  {
+    "schema_name": "public",
+    "relname": "pos_sale_payments",
+    "relrowsecurity": true,
+    "relforcerowsecurity": false,
+    "columns": [
+      {
+        "name": "id",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "license_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "sale_id",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "method",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "amount",
+        "type": "numeric",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "received_amount",
+        "type": "numeric",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "change_amount",
+        "type": "numeric",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "reference",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "cash_session_id",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "cash_movement_id",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "customer_ledger_id",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "metadata",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "server_version",
+        "type": "bigint",
+        "default": "1",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "reversal_status",
+        "type": "text",
+        "default": "'not_required'::text",
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "pos_sale_payments_amount_nonnegative_chk",
+        "type": "c",
+        "definition": "CHECK ((amount >= (0)::numeric))"
+      },
+      {
+        "name": "pos_sale_payments_change_nonnegative_chk",
+        "type": "c",
+        "definition": "CHECK (((change_amount IS NULL) OR (change_amount >= (0)::numeric)))"
+      },
+      {
+        "name": "pos_sale_payments_license_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "pos_sale_payments_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "pos_sale_payments_received_nonnegative_chk",
+        "type": "c",
+        "definition": "CHECK (((received_amount IS NULL) OR (received_amount >= (0)::numeric)))"
+      },
+      {
+        "name": "pos_sale_payments_sale_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (sale_id) REFERENCES pos_sales(id) ON DELETE CASCADE"
+      }
+    ],
+    "triggers": [
+      {
+        "name": "pos_fin01_guard_qa_write_v2",
+        "enabled": "O",
+        "function": "private.pos_fin01_guard_qa_write_v2()",
+        "definition": "CREATE TRIGGER pos_fin01_guard_qa_write_v2 BEFORE INSERT OR DELETE OR UPDATE ON public.pos_sale_payments FOR EACH ROW EXECUTE FUNCTION private.pos_fin01_guard_qa_write_v2()"
+      }
+    ]
+  },
+  {
+    "schema_name": "public",
+    "relname": "pos_sales",
+    "relrowsecurity": true,
+    "relforcerowsecurity": false,
+    "columns": [
+      {
+        "name": "id",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "license_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "local_sale_id",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "device_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "staff_user_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "device_role",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "actor_key",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "actor_name",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "origin",
+        "type": "text",
+        "default": "'local_device'::text",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "source_mode",
+        "type": "text",
+        "default": "'shadow'::text",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "effects_status",
+        "type": "text",
+        "default": "'local_applied'::text",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "default": "'closed'::text",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "fulfillment_status",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "payment_method",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "payment_status",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "folio",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "local_folio",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "sale_number",
+        "type": "bigint",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "customer_id",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "customer_name",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "customer_phone",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "subtotal",
+        "type": "numeric",
+        "default": "0",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "discount_total",
+        "type": "numeric",
+        "default": "0",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "tax_total",
+        "type": "numeric",
+        "default": "0",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "total",
+        "type": "numeric",
+        "default": "0",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "amount_paid",
+        "type": "numeric",
+        "default": "0",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "change_amount",
+        "type": "numeric",
+        "default": "0",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "balance_due",
+        "type": "numeric",
+        "default": "0",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "currency",
+        "type": "text",
+        "default": "'MXN'::text",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "sold_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "deleted_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "cancelled_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "cancel_reason",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "cash_session_id",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "cash_movement_id",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "customer_ledger_id",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "local_payload",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "metadata",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "idempotency_key",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "server_version",
+        "type": "bigint",
+        "default": "1",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "cloud_folio",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "folio_sequence",
+        "type": "bigint",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "cash_effect_status",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "inventory_effect_status",
+        "type": "text",
+        "default": "'not_applied'::text",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "credit_effect_status",
+        "type": "text",
+        "default": "'not_applied'::text",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "committed_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "credit_ledger_charge_id",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "credit_ledger_payment_id",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "credit_customer_debt_before",
+        "type": "numeric",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "credit_customer_debt_after",
+        "type": "numeric",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "cancelled_by_device_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "cancelled_by_staff_user_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "cancellation_id",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "cancellation_status",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "reversal_status",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "cash_reversal_status",
+        "type": "text",
+        "default": "'not_required'::text",
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "inventory_reversal_status",
+        "type": "text",
+        "default": "'not_required'::text",
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "credit_reversal_status",
+        "type": "text",
+        "default": "'not_required'::text",
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "sales_channel",
+        "type": "text",
+        "default": "'local'::text",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "ecommerce_order_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "ecommerce_order_code",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "pos_folio",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "layaway_id",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "pos_sales_amount_paid_nonnegative_chk",
+        "type": "c",
+        "definition": "CHECK ((amount_paid >= (0)::numeric))"
+      },
+      {
+        "name": "pos_sales_balance_due_nonnegative_chk",
+        "type": "c",
+        "definition": "CHECK ((balance_due >= (0)::numeric))"
+      },
+      {
+        "name": "pos_sales_cancelled_by_device_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (cancelled_by_device_id) REFERENCES license_devices(id) ON DELETE SET NULL"
+      },
+      {
+        "name": "pos_sales_cancelled_by_staff_user_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (cancelled_by_staff_user_id) REFERENCES license_staff_users(id) ON DELETE SET NULL"
+      },
+      {
+        "name": "pos_sales_change_nonnegative_chk",
+        "type": "c",
+        "definition": "CHECK ((change_amount >= (0)::numeric))"
+      },
+      {
+        "name": "pos_sales_device_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (device_id) REFERENCES license_devices(id) ON DELETE SET NULL"
+      },
+      {
+        "name": "pos_sales_discount_nonnegative_chk",
+        "type": "c",
+        "definition": "CHECK ((discount_total >= (0)::numeric))"
+      },
+      {
+        "name": "pos_sales_ecommerce_order_fk",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id, ecommerce_order_id) REFERENCES ecommerce_orders(license_id, id)"
+      },
+      {
+        "name": "pos_sales_ecommerce_traceability_coherence_check",
+        "type": "c",
+        "definition": "CHECK ((((sales_channel = 'local'::text) AND (ecommerce_order_id IS NULL) AND (ecommerce_order_code IS NULL)) OR ((sales_channel = 'ecommerce'::text) AND (ecommerce_order_id IS NOT NULL) AND (NULLIF(btrim(ecommerce_order_code), ''::text) IS NOT NULL))))"
+      },
+      {
+        "name": "pos_sales_effects_status_check",
+        "type": "c",
+        "definition": "CHECK ((effects_status = ANY (ARRAY['local_applied'::text, 'cloud_pending'::text, 'cloud_applied'::text, 'cash_applied'::text, 'payment_recorded'::text, 'inventory_applied'::text, 'cash_inventory_applied'::text, 'credit_applied'::text, 'cash_credit_applied'::text, 'cash_inventory_credit_applied'::text, 'failed'::text])))"
+      },
+      {
+        "name": "pos_sales_license_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "pos_sales_origin_chk",
+        "type": "c",
+        "definition": "CHECK ((origin = ANY (ARRAY['local_device'::text, 'cloud'::text])))"
+      },
+      {
+        "name": "pos_sales_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "pos_sales_sales_channel_check",
+        "type": "c",
+        "definition": "CHECK ((sales_channel = ANY (ARRAY['local'::text, 'ecommerce'::text])))"
+      },
+      {
+        "name": "pos_sales_shadow_no_cloud_effects_chk",
+        "type": "c",
+        "definition": "CHECK (((source_mode <> 'shadow'::text) OR ((origin = 'local_device'::text) AND (effects_status = 'local_applied'::text))))"
+      },
+      {
+        "name": "pos_sales_source_mode_chk",
+        "type": "c",
+        "definition": "CHECK ((source_mode = ANY (ARRAY['shadow'::text, 'cloud_draft'::text, 'cloud_committed'::text])))"
+      },
+      {
+        "name": "pos_sales_staff_user_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (staff_user_id) REFERENCES license_staff_users(id) ON DELETE SET NULL"
+      },
+      {
+        "name": "pos_sales_status_chk",
+        "type": "c",
+        "definition": "CHECK ((status = ANY (ARRAY['open'::text, 'closed'::text, 'cancelled'::text, 'voided'::text, 'draft'::text])))"
+      },
+      {
+        "name": "pos_sales_subtotal_nonnegative_chk",
+        "type": "c",
+        "definition": "CHECK ((subtotal >= (0)::numeric))"
+      },
+      {
+        "name": "pos_sales_tax_nonnegative_chk",
+        "type": "c",
+        "definition": "CHECK ((tax_total >= (0)::numeric))"
+      },
+      {
+        "name": "pos_sales_total_nonnegative_chk",
+        "type": "c",
+        "definition": "CHECK ((total >= (0)::numeric))"
+      }
+    ],
+    "triggers": [
+      {
+        "name": "pos_fin01_guard_qa_write_v2",
+        "enabled": "O",
+        "function": "private.pos_fin01_guard_qa_write_v2()",
+        "definition": "CREATE TRIGGER pos_fin01_guard_qa_write_v2 BEFORE INSERT OR DELETE OR UPDATE ON public.pos_sales FOR EACH ROW EXECUTE FUNCTION private.pos_fin01_guard_qa_write_v2()"
+      },
+      {
+        "name": "trg_pos_sales_assign_operational_folio",
+        "enabled": "O",
+        "function": "private.assign_pos_sale_operational_folio_v1()",
+        "definition": "CREATE TRIGGER trg_pos_sales_assign_operational_folio BEFORE INSERT ON public.pos_sales FOR EACH ROW EXECUTE FUNCTION private.assign_pos_sale_operational_folio_v1()"
+      },
+      {
+        "name": "trg_pos_sales_normalize_ecommerce_traceability",
+        "enabled": "O",
+        "function": "private.pos_sales_normalize_ecommerce_traceability()",
+        "definition": "CREATE TRIGGER trg_pos_sales_normalize_ecommerce_traceability BEFORE INSERT OR UPDATE OF license_id, sales_channel, ecommerce_order_id, ecommerce_order_code, metadata, idempotency_key ON public.pos_sales FOR EACH ROW EXECUTE FUNCTION private.pos_sales_normalize_ecommerce_traceability()"
+      }
+    ]
+  },
+  {
+    "schema_name": "public",
+    "relname": "pos_sync_events",
+    "relrowsecurity": true,
+    "relforcerowsecurity": false,
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "license_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "entity_type",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "entity_id",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "operation",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "change_seq",
+        "type": "bigint",
+        "default": "nextval('pos_change_seq'::regclass)",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "server_version",
+        "type": "integer",
+        "default": "1",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "actor_device_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "actor_staff_user_id",
+        "type": "uuid",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "idempotency_key",
+        "type": "text",
+        "default": null,
+        "identity": "",
+        "not_null": false,
+        "generated": ""
+      },
+      {
+        "name": "metadata",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "identity": "",
+        "not_null": true,
+        "generated": ""
+      }
+    ],
+    "constraints": [
+      {
+        "name": "pos_sync_events_actor_device_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (actor_device_id) REFERENCES license_devices(id)"
+      },
+      {
+        "name": "pos_sync_events_actor_staff_user_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (actor_staff_user_id) REFERENCES license_staff_users(id)"
+      },
+      {
+        "name": "pos_sync_events_license_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "pos_sync_events_operation_check",
+        "type": "c",
+        "definition": "CHECK ((operation = ANY (ARRAY['create'::text, 'update'::text, 'delete'::text, 'restore'::text, 'upsert'::text, 'upsert_shadow'::text, 'cloud_commit'::text, 'cancel'::text, 'toggle_status'::text, 'status_update'::text, 'status_recalculate'::text, 'sync_checkpoint'::text, 'open'::text, 'close'::text, 'movement'::text, 'adjust'::text, 'identity_adopt'::text, 'unknown'::text, 'archive'::text])))"
+      },
+      {
+        "name": "pos_sync_events_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "pos_sync_events_server_version_check",
+        "type": "c",
+        "definition": "CHECK ((server_version > 0))"
+      }
+    ],
+    "triggers": []
+  }
+]

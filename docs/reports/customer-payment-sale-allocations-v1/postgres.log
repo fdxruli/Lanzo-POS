@@ -1,0 +1,21 @@
+PASS $20 sale + $5 general payment, original amounts unchanged
+PASS checkout deposit stays historical; later assigned payment reduces only live balance
+PASS FIFO oldest first, deterministic distribution across two sales
+PASS specific sale, forged browser balances ignored, other sale unchanged
+PASS same key sequential and concurrent retries produce one payment
+PASS two concurrent payments cannot overpay or overallocate
+PASS two admissible concurrent payments serialize their balances
+PASS concurrent specific payments cannot overallocate one sale even with enough global debt
+PASS a projection failure rolls back ledger, idempotency, debt, sales and cash together
+PASS invalid, foreign tenant/customer, cancelled and duplicate sale rejection is atomic
+PASS an inconsistent sale ledger base cannot be presented or assigned as a live balance
+PASS non-finite stored debt cannot admit a financial payment
+PASS cancellation of an allocated sale rejects repeatedly without refund or debt change
+PASS ordinary cancellation with checkout deposit reverses exactly original effects once
+PASS payment versus cancellation has a safe serial outcome
+PASS historical unallocated payment unchanged; new general payment stays explicitly unallocated
+PASS second device pulls updated live balance through existing sale events
+PASS public roles cannot bypass V2 through internal payment core
+PASS real V2 payment envelope delegates once, projects debt and preserves receipt on retry
+PASS actual V2 summary enrichment query provides original, assigned and live amounts
+{"passed":20,"failed":0}

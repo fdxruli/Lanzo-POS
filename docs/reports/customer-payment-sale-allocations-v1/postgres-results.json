@@ -1,0 +1,82 @@
+[
+  {
+    "name": "$20 sale + $5 general payment, original amounts unchanged",
+    "status": "PASS"
+  },
+  {
+    "name": "checkout deposit stays historical; later assigned payment reduces only live balance",
+    "status": "PASS"
+  },
+  {
+    "name": "FIFO oldest first, deterministic distribution across two sales",
+    "status": "PASS"
+  },
+  {
+    "name": "specific sale, forged browser balances ignored, other sale unchanged",
+    "status": "PASS"
+  },
+  {
+    "name": "same key sequential and concurrent retries produce one payment",
+    "status": "PASS"
+  },
+  {
+    "name": "two concurrent payments cannot overpay or overallocate",
+    "status": "PASS"
+  },
+  {
+    "name": "two admissible concurrent payments serialize their balances",
+    "status": "PASS"
+  },
+  {
+    "name": "concurrent specific payments cannot overallocate one sale even with enough global debt",
+    "status": "PASS"
+  },
+  {
+    "name": "a projection failure rolls back ledger, idempotency, debt, sales and cash together",
+    "status": "PASS"
+  },
+  {
+    "name": "invalid, foreign tenant/customer, cancelled and duplicate sale rejection is atomic",
+    "status": "PASS"
+  },
+  {
+    "name": "an inconsistent sale ledger base cannot be presented or assigned as a live balance",
+    "status": "PASS"
+  },
+  {
+    "name": "non-finite stored debt cannot admit a financial payment",
+    "status": "PASS"
+  },
+  {
+    "name": "cancellation of an allocated sale rejects repeatedly without refund or debt change",
+    "status": "PASS"
+  },
+  {
+    "name": "ordinary cancellation with checkout deposit reverses exactly original effects once",
+    "status": "PASS"
+  },
+  {
+    "name": "payment versus cancellation has a safe serial outcome",
+    "status": "PASS"
+  },
+  {
+    "name": "historical unallocated payment unchanged; new general payment stays explicitly unallocated",
+    "status": "PASS"
+  },
+  {
+    "name": "second device pulls updated live balance through existing sale events",
+    "status": "PASS"
+  },
+  {
+    "name": "public roles cannot bypass V2 through internal payment core",
+    "status": "PASS"
+  },
+  {
+    "name": "real V2 payment envelope delegates once, projects debt and preserves receipt on retry",
+    "status": "PASS"
+  },
+  {
+    "name": "actual V2 summary enrichment query provides original, assigned and live amounts",
+    "status": "PASS"
+  }
+]

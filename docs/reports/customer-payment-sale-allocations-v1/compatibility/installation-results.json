@@ -1,0 +1,6 @@
+{
+  "negative_postflight_rollback": "PASS",
+  "exact_version_registration": "PASS",
+  "duplicate_install_rejected": "PASS",
+  "historical_ledger_unchanged": "PASS"
+}

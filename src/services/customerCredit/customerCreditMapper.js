@@ -62,23 +62,13 @@ export const cloudLedgerToLocal = (ledger = {}, existing = null) => {
 };
 
 export const localAllocationsToCloud = (allocations = []) => {
-  if (!Array.isArray(allocations)) return [];
-
-  return allocations.reduce((result, allocation) => {
-    const mapped = {
-      sale_id: allocation.saleId || allocation.sale_id,
-      amount_applied: asStringAmount(allocation.amountApplied ?? allocation.amount_applied ?? 0),
-      previous_sale_balance: allocation.previousSaleBalance ?? allocation.previous_sale_balance ?? null,
-      new_sale_balance: allocation.newSaleBalance ?? allocation.new_sale_balance ?? null,
-      metadata: allocation.metadata || {}
-    };
-
-    if (mapped.sale_id && Number(mapped.amount_applied) > 0) {
-      result.push(mapped);
-    }
-
-    return result;
-  }, []);
+  if (!Array.isArray(allocations)) throw new Error('CUSTOMER_PAYMENT_ALLOCATIONS_INVALID');
+  // Preserve invalid entries for server rejection; dropping them could turn a
+  // specific payment into an unintended general FIFO payment.
+  return allocations.map(allocation => ({
+    sale_id: allocation?.saleId || allocation?.sale_id || null,
+    amount_applied: asStringAmount(allocation?.amountApplied ?? allocation?.amount_applied ?? 0)
+  }));
 };
 
 export const receiptPayloadToLocal = (receipt = {}) => ({

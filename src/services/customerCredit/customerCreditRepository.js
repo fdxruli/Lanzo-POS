@@ -15,6 +15,7 @@ import { cashLocalRepository } from '../cash/cashLocalRepository';
 import { getCashMode } from '../cash/cashActor';
 import { customerCreditCloudRepository } from './customerCreditCloudRepository';
 import { customerCreditLocalRepository } from './customerCreditLocalRepository';
+import { salesCloudLocalRepository } from '../salesCloud/salesCloudLocalRepository';
 import { receiptPayloadToLocal } from './customerCreditMapper';
 
 import './customerCreditSyncHandler';
@@ -98,6 +99,10 @@ const applyCreditCloudResponse = async (response = {}) => {
     applied.cashSessions = await cashLocalRepository.applyCloudCashSessions(sessions);
   }
 
+  if (Array.isArray(response.sales)) {
+    try { await salesCloudLocalRepository.applyCloudSalesPayload(response); }
+    catch (error) { Logger.warn('[CustomerCredit] El saldo se confirmo; la cache de ventas requiere sincronizacion:', error); }
+  }
   return applied;
 };
 
@@ -133,6 +138,16 @@ export const customerCreditRepository = {
     });
 
     try {
+      if (allocations?.length > 0) {
+        const summary = await customerCreditCloudRepository.getCustomerCreditSummary({
+          licenseKey: mode.licenseKey, customerId, force: true
+        });
+        if (summary?.sale_allocation_version !== 1 || summary?.sale_balances_authoritative !== true
+            || summary?.sale_allocation_status !== 'reconciled') {
+          return fail('No hay saldos por nota conciliados en el servidor. Puedes registrar un abono general.',
+            'CUSTOMER_SALE_BALANCES_UNRECONCILED');
+        }
+      }
       const response = await customerCreditCloudRepository.recordCustomerPayment({
         licenseKey: mode.licenseKey,
         customerId,
@@ -159,6 +174,11 @@ export const customerCreditRepository = {
         customer: applied.customer,
         cashSession: applied.cashSession,
         cashMovement: applied.cashMovement,
+        allocationStatus: response.sale_allocation_status || 'unconfirmed',
+        confirmedAllocations: response.sale_allocation_version === 1
+          ? (response.ledger_entry?.allocation_payload || []).map(row => ({ saleId: row.sale_id, amountApplied: String(row.amount_applied) }))
+          : [],
+        unallocatedAmount: response.unallocated_amount ?? amountSafe,
         response
       };
     } catch (error) {
@@ -167,7 +187,7 @@ export const customerCreditRepository = {
     }
   },
 
-  async getCustomerCreditSummary(customerId) {
+  async getCustomerCreditSummary(customerId, { force = false } = {}) {
     const mode = getMode();
     if (!mode.cloudEnabled || !mode.online) {
       const ledgerEntries = await customerCreditLocalRepository.getCustomerLedger(customerId);
@@ -176,7 +196,7 @@ export const customerCreditRepository = {
 
     const response = await customerCreditCloudRepository.getCustomerCreditSummary({
       licenseKey: mode.licenseKey,
-      customerId
+      customerId, force
     });
 
     if (response?.success === false) {

@@ -437,7 +437,13 @@ export default function SalesHistory({
             const itemsCount = Number(sale.itemsCount || sale.items_count || items.length || 0);
             const itemsQuantity = Number(sale.itemsQuantity || sale.items_quantity || 0);
             const amountPaid = Number(sale.amountPaid || sale.amount_paid || 0);
-            const balanceDue = Number(sale.balanceDue || sale.balance_due || 0);
+            const allocationStatus = sale.credit_allocation_status ?? sale.creditAllocationStatus;
+            const hasLiveBalance = Object.hasOwn(sale, 'current_balance_due')
+              || allocationStatus === 'reconciled' || allocationStatus === 'historical_unallocated';
+            const liveBalance = Object.hasOwn(sale, 'current_balance_due') ? sale.current_balance_due : sale.saldoPendiente;
+            const balanceUnknown = hasLiveBalance ? (liveBalance === null || liveBalance === undefined)
+              : (sale.credit_effect_status ?? sale.creditEffectStatus) === 'applied';
+            const balanceDue = Number(hasLiveBalance ? liveBalance : (sale.balanceDue ?? sale.balance_due ?? sale.saldoPendiente ?? 0));
             const ecommerce = isEcommerceSale(sale);
 
             return (
@@ -505,7 +511,8 @@ export default function SalesHistory({
                         {getCustomerLabel(sale) && <span className="ui-badge ui-badge--neutral mini-stat-pill">Cliente: {getCustomerLabel(sale)}</span>}
                         {getPaymentLabel(sale) && <span className="ui-badge ui-badge--neutral mini-stat-pill">Pago: {getPaymentLabel(sale)}</span>}
                         {amountPaid > 0 && <span className="ui-badge ui-badge--success mini-stat-pill">Pagado: ${amountPaid.toFixed(2)}</span>}
-                        {balanceDue > 0 && <span className="ui-badge ui-badge--warning mini-stat-pill">Saldo: ${balanceDue.toFixed(2)}</span>}
+                        {balanceUnknown && <span className="ui-badge ui-badge--warning mini-stat-pill">Saldo por nota sin conciliar</span>}
+                        {!balanceUnknown && balanceDue > 0 && <span className="ui-badge ui-badge--warning mini-stat-pill">Saldo: ${balanceDue.toFixed(2)}</span>}
                         {sale.actorName && <span className="ui-badge ui-badge--neutral mini-stat-pill">Actor: {sale.actorName}</span>}
                       </div>
                     )}

@@ -189,3 +189,20 @@ describe('customer messaging financial adapters', () => {
     }, '2026-09-17')).toBe(false);
   });
 });
+
+describe('authoritative Cloud sale balances', () => {
+  const stale = [{id:'stale',customerId:'c',paymentMethod:'fiado',saldoPendiente:20}];
+  it('does not fall back to stale local sales for an empty authoritative list', () => {
+    expect(selectCreditNotes({customerId:'c',localSales:stale,cloudSummary:{
+      sale_balances_authoritative:true,pending_credit_sales:[]
+    }})).toEqual([]);
+  });
+  it('uses the live balance and excludes unknown or cancelled notes', () => {
+    const row={id:'live',customer_id:'c',status:'closed',credit_allocation_status:'reconciled',
+      current_balance_due:15,balance_due:20,payment_method:'credit'};
+    expect(selectCreditNotes({customerId:'c',localSales:stale,cloudSummary:{
+      sale_balances_authoritative:true,pending_credit_sales:[row,
+        {...row,id:'unknown',current_balance_due:null}, {...row,id:'cancelled',status:'cancelled'}]
+    }})).toEqual([expect.objectContaining({id:'live',saldoPendiente:15,balance_due:20})]);
+  });
+});

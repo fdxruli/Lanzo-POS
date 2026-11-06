@@ -1,0 +1,781 @@
+{
+  "sales": {
+    "items": [
+      {
+        "id": "compat-sale-a2f1cdb8-4dcc-4d37-9c97-f3eb6e50821c:item:1",
+        "rubro": null,
+        "barcode": null,
+        "sale_id": "compat-sale-a2f1cdb8-4dcc-4d37-9c97-f3eb6e50821c",
+        "batch_id": null,
+        "metadata": {
+          "phase": "fase6d_cloud_sales_credit_ledger",
+          "r2bCostAuthority": "pos_product_or_batch",
+          "r2bPriceAuthority": "pos_product_catalog",
+          "creditEffectStatus": "applied",
+          "inventoryEffectStatus": "not_applied",
+          "r2bClientUnitCostIgnored": true
+        },
+        "quantity": 1,
+        "batch_sku": null,
+        "unit_cost": 1,
+        "created_at": "2026-11-06T03:46:59.764679+00:00",
+        "license_id": "10000000-0000-0000-0000-000000000001",
+        "line_total": 20,
+        "product_id": "compat-product-d0fca7b1-6aa1-4779-a6bc-1622aae130ce",
+        "tax_amount": 0,
+        "unit_price": 20,
+        "category_id": null,
+        "product_sku": null,
+        "stock_after": null,
+        "product_name": "Synthetic",
+        "stock_before": null,
+        "stock_source": null,
+        "category_name": null,
+        "server_version": 1,
+        "discount_amount": 0,
+        "batch_expiry_date": null,
+        "batch_stock_after": null,
+        "batch_stock_before": null,
+        "inventory_movement_id": null,
+        "inventory_effect_status": "not_applied"
+      }
+    ],
+    "sales": [
+      {
+        "id": "compat-sale-a2f1cdb8-4dcc-4d37-9c97-f3eb6e50821c",
+        "folio": "V-000024",
+        "total": 20,
+        "origin": "cloud",
+        "status": "closed",
+        "sold_at": "2026-01-01T00:00:00+00:00",
+        "currency": "MXN",
+        "metadata": {
+          "phase": "fase6d_cloud_sales_credit_ledger",
+          "cashSessionId": "cash-a",
+          "credit_summary": {
+            "debt_after": 20,
+            "customer_id": "compat-customer-9856754b-56c0-4b35-baa5-c51f37faeccc",
+            "debt_before": 0
+          },
+          "cloud_committed": true,
+          "payment_summary": {
+            "balance_due": 20,
+            "cash_change": 0,
+            "cash_received": 0,
+            "cash_component": 0,
+            "non_cash_component": 0,
+            "initial_payment_total": 0
+          },
+          "r2bTaxAuthority": "none",
+          "cashEffectStatus": "not_required",
+          "customerDebtAfter": 20,
+          "r2bPriceAuthority": "pos_products_and_batches",
+          "cloudCreditEffects": true,
+          "creditEffectStatus": "applied",
+          "customerDebtBefore": 0,
+          "creditLedgerChargeId": "ldg_16671c6ba0d0415db01b98f6939a6432",
+          "noCloudCreditEffects": false,
+          "r2bDiscountAuthority": "server_discount_semantics",
+          "cloudInventoryEffects": false,
+          "inventoryEffectStatus": "not_applied",
+          "r2bFinancialAuthority": true
+        },
+        "subtotal": 20,
+        "actor_key": "admin:30000000-0000-0000-0000-000000000001",
+        "device_id": "20000000-0000-0000-0000-000000000001",
+        "pos_folio": "LZ-01-000024",
+        "tax_total": 0,
+        "actor_name": "Synthetic Owner",
+        "created_at": "2026-11-06T03:46:59.764679+00:00",
+        "license_id": "10000000-0000-0000-0000-000000000001",
+        "updated_at": "2026-11-06T03:46:59.852355+00:00",
+        "amount_paid": 0,
+        "balance_due": 20,
+        "cloud_folio": "V-000024",
+        "customer_id": "compat-customer-9856754b-56c0-4b35-baa5-c51f37faeccc",
+        "device_role": "admin",
+        "sale_number": 24,
+        "source_mode": "cloud_committed",
+        "committed_at": "2026-11-06T03:46:59.764679+00:00",
+        "change_amount": 0,
+        "customer_name": "Synthetic compatibility customer",
+        "local_payload": {
+          "id": "compat-sale-a2f1cdb8-4dcc-4d37-9c97-f3eb6e50821c",
+          "total": 20,
+          "sold_at": "2026-01-01T00:00:00Z",
+          "metadata": {
+            "r2bTaxAuthority": "none",
+            "r2bPriceAuthority": "pos_products_and_batches",
+            "r2bDiscountAuthority": "server_discount_semantics",
+            "r2bFinancialAuthority": true
+          },
+          "subtotal": 20,
+          "tax_total": 0,
+          "amount_paid": 0,
+          "balance_due": 20,
+          "customer_id": "compat-customer-9856754b-56c0-4b35-baa5-c51f37faeccc",
+          "delivery_fee": 0,
+          "change_amount": 0,
+          "customer_name": "Synthetic compatibility customer",
+          "local_sale_id": "compat-sale-a2f1cdb8-4dcc-4d37-9c97-f3eb6e50821c",
+          "discount_total": 0,
+          "payment_method": "credit",
+          "cash_session_id": "cash-a"
+        },
+        "local_sale_id": "compat-sale-a2f1cdb8-4dcc-4d37-9c97-f3eb6e50821c",
+        "sales_channel": "local",
+        "discount_total": 0,
+        "effects_status": "credit_applied",
+        "folio_sequence": 24,
+        "payment_method": "credit",
+        "payment_status": "credit_pending",
+        "server_version": 3,
+        "cash_session_id": "cash-a",
+        "idempotency_key": "1622a444-8e55-4fb7-8f35-7074b25804e1",
+        "cash_effect_status": "not_required",
+        "customer_ledger_id": "ldg_16671c6ba0d0415db01b98f6939a6432",
+        "current_balance_due": 15,
+        "cash_reversal_status": "not_required",
+        "credit_effect_status": "applied",
+        "original_balance_due": 20,
+        "credit_reversal_status": "not_required",
+        "assigned_payments_total": 5,
+        "credit_ledger_charge_id": "ldg_16671c6ba0d0415db01b98f6939a6432",
+        "inventory_effect_status": "not_applied",
+        "credit_allocation_status": "reconciled",
+        "inventory_reversal_status": "not_required",
+        "credit_customer_debt_after": 20,
+        "credit_customer_debt_before": 0
+      }
+    ],
+    "events": [
+      {
+        "id": "5edb95b9-ae59-43f3-969b-8d16a7218368",
+        "sale_id": "compat-sale-a2f1cdb8-4dcc-4d37-9c97-f3eb6e50821c",
+        "metadata": {
+          "reason": "customer_payment_allocation",
+          "ledger_id": "ldg_3ae4286c39084d2f87f93e3233527386",
+          "customer_id": "compat-customer-9856754b-56c0-4b35-baa5-c51f37faeccc"
+        },
+        "entity_id": "compat-sale-a2f1cdb8-4dcc-4d37-9c97-f3eb6e50821c",
+        "operation": "update",
+        "change_seq": 435,
+        "created_at": "2026-11-06T03:46:59.852355+00:00",
+        "license_id": "10000000-0000-0000-0000-000000000001",
+        "entity_type": "sale",
+        "server_version": 3,
+        "actor_device_id": "20000000-0000-0000-0000-000000000001",
+        "idempotency_key": "ad046a91-28c9-4f3f-aec8-cbc0a83acba5",
+        "actor_staff_user_id": null
+      }
+    ],
+    "success": true,
+    "has_more": false,
+    "payments": [],
+    "latest_change_seq": 435,
+    "server_latest_change_seq": 435
+  },
+  "credit": {
+    "cursor": {
+      "has_more": false,
+      "change_seq": 439
+    },
+    "family": "customer_credit",
+    "payload": {
+      "events": [
+        {
+          "id": "8eb61759-1ed8-43ee-9ea4-3e46239ed88d",
+          "metadata": {
+            "customer_id": "compat-customer-9856754b-56c0-4b35-baa5-c51f37faeccc",
+            "cash_session_id": "cash-a",
+            "credit_operation": "payment"
+          },
+          "entity_id": "ldg_3ae4286c39084d2f87f93e3233527386",
+          "operation": "create",
+          "change_seq": 436,
+          "created_at": "2026-11-06T03:46:59.852355+00:00",
+          "license_id": "10000000-0000-0000-0000-000000000001",
+          "entity_type": "customer_ledger",
+          "server_version": 1,
+          "actor_device_id": "20000000-0000-0000-0000-000000000001",
+          "idempotency_key": "ad046a91-28c9-4f3f-aec8-cbc0a83acba5",
+          "actor_staff_user_id": null
+        },
+        {
+          "id": "70e1f9a9-c587-40d4-b6d3-4cb85ee05853",
+          "metadata": {
+            "reason": "customer_payment",
+            "customer_id": "compat-customer-9856754b-56c0-4b35-baa5-c51f37faeccc",
+            "credit_operation": "credit_update"
+          },
+          "entity_id": "compat-customer-9856754b-56c0-4b35-baa5-c51f37faeccc",
+          "operation": "update",
+          "change_seq": 437,
+          "created_at": "2026-11-06T03:46:59.852355+00:00",
+          "license_id": "10000000-0000-0000-0000-000000000001",
+          "entity_type": "customer",
+          "server_version": 3,
+          "actor_device_id": "20000000-0000-0000-0000-000000000001",
+          "idempotency_key": "ad046a91-28c9-4f3f-aec8-cbc0a83acba5",
+          "actor_staff_user_id": null
+        },
+        {
+          "id": "6f904b15-b087-4002-8b0e-116e506b7ced",
+          "metadata": {
+            "actor_key": "admin:30000000-0000-0000-0000-000000000001",
+            "movement_type": "abono_cliente",
+            "cash_session_id": "cash-a",
+            "credit_operation": "customer_payment"
+          },
+          "entity_id": "mov_9a8aeb276b1b43a4848f343600eff4db",
+          "operation": "movement",
+          "change_seq": 438,
+          "created_at": "2026-11-06T03:46:59.852355+00:00",
+          "license_id": "10000000-0000-0000-0000-000000000001",
+          "entity_type": "cash_movement",
+          "server_version": 1,
+          "actor_device_id": "20000000-0000-0000-0000-000000000001",
+          "idempotency_key": "ad046a91-28c9-4f3f-aec8-cbc0a83acba5",
+          "actor_staff_user_id": null
+        },
+        {
+          "id": "ea617d4b-8cb8-4ac1-b269-56403733861e",
+          "metadata": {
+            "reason": "customer_payment",
+            "cash_session_id": "cash-a"
+          },
+          "entity_id": "cash-a",
+          "operation": "update",
+          "change_seq": 439,
+          "created_at": "2026-11-06T03:46:59.852355+00:00",
+          "license_id": "10000000-0000-0000-0000-000000000001",
+          "entity_type": "cash_session",
+          "server_version": 39,
+          "actor_device_id": "20000000-0000-0000-0000-000000000001",
+          "idempotency_key": "ad046a91-28c9-4f3f-aec8-cbc0a83acba5",
+          "actor_staff_user_id": null
+        }
+      ],
+      "success": true,
+      "has_more": false,
+      "customers": [
+        {
+          "id": "compat-customer-9856754b-56c0-4b35-baa5-c51f37faeccc",
+          "debt": 15,
+          "name": "Synthetic compatibility customer",
+          "metadata": {
+            "debt_projection_source": "pos_customer_ledger"
+          },
+          "created_at": "2026-11-06T03:46:59.732947+00:00",
+          "debt_cents": 1500,
+          "license_id": "10000000-0000-0000-0000-000000000001",
+          "updated_at": "2026-11-06T03:46:59.852355+00:00",
+          "credit_limit": 1000,
+          "server_version": 3
+        }
+      ],
+      "movements": [
+        {
+          "id": "mov_9a8aeb276b1b43a4848f343600eff4db",
+          "type": "abono_cliente",
+          "amount": 5,
+          "source": "customer_payment",
+          "concept": "Abono de cliente: Synthetic compatibility customer",
+          "metadata": {
+            "ledger_id": "ldg_3ae4286c39084d2f87f93e3233527386",
+            "customer_id": "compat-customer-9856754b-56c0-4b35-baa5-c51f37faeccc",
+            "customer_name": "Synthetic compatibility customer"
+          },
+          "actor_key": "admin:30000000-0000-0000-0000-000000000001",
+          "device_id": "20000000-0000-0000-0000-000000000001",
+          "actor_name": "Synthetic Owner",
+          "created_at": "2026-11-06T03:46:59.852355+00:00",
+          "license_id": "10000000-0000-0000-0000-000000000001",
+          "reference_id": "ldg_3ae4286c39084d2f87f93e3233527386",
+          "reference_type": "customer_ledger",
+          "server_version": 1,
+          "cash_session_id": "cash-a",
+          "cash_station_id": "cash_station_device_20000000-0000-0000-0000-000000000001",
+          "idempotency_key": "ad046a91-28c9-4f3f-aec8-cbc0a83acba5",
+          "created_by_device_id": "20000000-0000-0000-0000-000000000001",
+          "performed_by_actor_key": "admin:30000000-0000-0000-0000-000000000001"
+        }
+      ],
+      "cash_sessions": [
+        {
+          "id": "cash-a",
+          "scope": "actor",
+          "status": "open",
+          "metadata": {},
+          "actor_key": "admin:30000000-0000-0000-0000-000000000001",
+          "device_id": "20000000-0000-0000-0000-000000000001",
+          "opened_at": "2026-11-06T03:46:48.281135+00:00",
+          "created_at": "2026-11-06T03:46:48.281135+00:00",
+          "license_id": "10000000-0000-0000-0000-000000000001",
+          "updated_at": "2026-11-06T03:46:59.852355+00:00",
+          "device_role": "admin",
+          "sales_count": 24,
+          "sales_total": 470,
+          "close_detail": {},
+          "opening_amount": 0,
+          "server_version": 39,
+          "cash_station_id": "cash_station_device_20000000-0000-0000-0000-000000000001",
+          "is_auto_opening": false,
+          "cash_exits_total": 0,
+          "cash_sales_total": 0,
+          "responsible_name": "Synthetic",
+          "cash_entries_total": 0,
+          "cash_identity_state": "legacy",
+          "expected_cash_total": 84,
+          "last_idempotency_key": "1622a444-8e55-4fb7-8f35-7074b25804e1",
+          "non_cash_sales_total": 0,
+          "customer_payments_total": 84
+        }
+      ],
+      "cash_movements": [
+        {
+          "id": "mov_9a8aeb276b1b43a4848f343600eff4db",
+          "type": "abono_cliente",
+          "amount": 5,
+          "source": "customer_payment",
+          "concept": "Abono de cliente: Synthetic compatibility customer",
+          "metadata": {
+            "ledger_id": "ldg_3ae4286c39084d2f87f93e3233527386",
+            "customer_id": "compat-customer-9856754b-56c0-4b35-baa5-c51f37faeccc",
+            "customer_name": "Synthetic compatibility customer"
+          },
+          "actor_key": "admin:30000000-0000-0000-0000-000000000001",
+          "device_id": "20000000-0000-0000-0000-000000000001",
+          "actor_name": "Synthetic Owner",
+          "created_at": "2026-11-06T03:46:59.852355+00:00",
+          "license_id": "10000000-0000-0000-0000-000000000001",
+          "reference_id": "ldg_3ae4286c39084d2f87f93e3233527386",
+          "reference_type": "customer_ledger",
+          "server_version": 1,
+          "cash_session_id": "cash-a",
+          "cash_station_id": "cash_station_device_20000000-0000-0000-0000-000000000001",
+          "idempotency_key": "ad046a91-28c9-4f3f-aec8-cbc0a83acba5",
+          "created_by_device_id": "20000000-0000-0000-0000-000000000001",
+          "performed_by_actor_key": "admin:30000000-0000-0000-0000-000000000001"
+        }
+      ],
+      "ledger_entries": [
+        {
+          "id": "ldg_3ae4286c39084d2f87f93e3233527386",
+          "note": "Synthetic compatibility payment",
+          "type": "PAYMENT",
+          "amount": -5,
+          "metadata": {
+            "source": "pos_record_customer_payment",
+            "unallocated_amount": 0,
+            "sale_allocation_status": "applied",
+            "sale_allocation_version": 1
+          },
+          "actor_name": "Synthetic Owner",
+          "created_at": "2026-11-06T03:46:59.852355+00:00",
+          "license_id": "10000000-0000-0000-0000-000000000001",
+          "customer_id": "compat-customer-9856754b-56c0-4b35-baa5-c51f37faeccc",
+          "reference_id": "compat-customer-9856754b-56c0-4b35-baa5-c51f37faeccc",
+          "balance_after": 15,
+          "payment_method": "efectivo",
+          "reference_type": "customer",
+          "server_version": 1,
+          "actor_device_id": "20000000-0000-0000-0000-000000000001",
+          "cash_session_id": "cash-a",
+          "idempotency_key": "ad046a91-28c9-4f3f-aec8-cbc0a83acba5",
+          "cash_movement_id": "mov_9a8aeb276b1b43a4848f343600eff4db",
+          "debt_cents_after": 1500,
+          "allocation_payload": [
+            {
+              "sale_id": "compat-sale-a2f1cdb8-4dcc-4d37-9c97-f3eb6e50821c",
+              "amount_applied": 5,
+              "new_sale_balance": 15,
+              "previous_sale_balance": 20
+            }
+          ]
+        }
+      ],
+      "latest_change_seq": 439,
+      "server_latest_change_seq": 439,
+      "ledger_reconciliation_complete": false
+    },
+    "endpoint": "pos_pull_customer_credit_changes_v2",
+    "tenant_id": "10000000-0000-0000-0000-000000000001",
+    "client_identity": {
+      "device_id": "20000000-0000-0000-0000-000000000002",
+      "actor_type": "admin",
+      "device_role": "admin"
+    },
+    "contract_version": 2,
+    "customer_projections": [
+      {
+        "source": "pos_customers.debt_cents",
+        "status": "KNOWN_POSITIVE",
+        "debt_cents": 1500,
+        "customer_id": "compat-customer-9856754b-56c0-4b35-baa5-c51f37faeccc",
+        "projection_version": 3
+      }
+    ],
+    "customer_projection_scope": "CURRENT"
+  },
+  "summary": {
+    "family": "customer_credit",
+    "payload": {
+      "debt": 15,
+      "success": true,
+      "customer": {
+        "id": "compat-customer-9856754b-56c0-4b35-baa5-c51f37faeccc",
+        "debt": 15,
+        "name": "Synthetic compatibility customer",
+        "metadata": {
+          "debt_projection_source": "pos_customer_ledger"
+        },
+        "created_at": "2026-11-06T03:46:59.732947+00:00",
+        "debt_cents": 1500,
+        "license_id": "10000000-0000-0000-0000-000000000001",
+        "updated_at": "2026-11-06T03:46:59.852355+00:00",
+        "credit_limit": 1000,
+        "server_version": 3
+      },
+      "debt_cents": 1500,
+      "total_paid": 5,
+      "credit_sales": [
+        {
+          "id": "compat-sale-a2f1cdb8-4dcc-4d37-9c97-f3eb6e50821c",
+          "folio": "V-000024",
+          "total": 20,
+          "origin": "cloud",
+          "status": "closed",
+          "sold_at": "2026-01-01T00:00:00+00:00",
+          "currency": "MXN",
+          "metadata": {
+            "phase": "fase6d_cloud_sales_credit_ledger",
+            "cashSessionId": "cash-a",
+            "credit_summary": {
+              "debt_after": 20,
+              "customer_id": "compat-customer-9856754b-56c0-4b35-baa5-c51f37faeccc",
+              "debt_before": 0
+            },
+            "cloud_committed": true,
+            "payment_summary": {
+              "balance_due": 20,
+              "cash_change": 0,
+              "cash_received": 0,
+              "cash_component": 0,
+              "non_cash_component": 0,
+              "initial_payment_total": 0
+            },
+            "r2bTaxAuthority": "none",
+            "cashEffectStatus": "not_required",
+            "customerDebtAfter": 20,
+            "r2bPriceAuthority": "pos_products_and_batches",
+            "cloudCreditEffects": true,
+            "creditEffectStatus": "applied",
+            "customerDebtBefore": 0,
+            "creditLedgerChargeId": "ldg_16671c6ba0d0415db01b98f6939a6432",
+            "noCloudCreditEffects": false,
+            "r2bDiscountAuthority": "server_discount_semantics",
+            "cloudInventoryEffects": false,
+            "inventoryEffectStatus": "not_applied",
+            "r2bFinancialAuthority": true
+          },
+          "subtotal": 20,
+          "actor_key": "admin:30000000-0000-0000-0000-000000000001",
+          "device_id": "20000000-0000-0000-0000-000000000001",
+          "pos_folio": "LZ-01-000024",
+          "tax_total": 0,
+          "actor_name": "Synthetic Owner",
+          "created_at": "2026-11-06T03:46:59.764679+00:00",
+          "license_id": "10000000-0000-0000-0000-000000000001",
+          "updated_at": "2026-11-06T03:46:59.852355+00:00",
+          "amount_paid": 0,
+          "balance_due": 20,
+          "cloud_folio": "V-000024",
+          "customer_id": "compat-customer-9856754b-56c0-4b35-baa5-c51f37faeccc",
+          "device_role": "admin",
+          "sale_number": 24,
+          "source_mode": "cloud_committed",
+          "committed_at": "2026-11-06T03:46:59.764679+00:00",
+          "change_amount": 0,
+          "customer_name": "Synthetic compatibility customer",
+          "local_payload": {
+            "id": "compat-sale-a2f1cdb8-4dcc-4d37-9c97-f3eb6e50821c",
+            "total": 20,
+            "sold_at": "2026-01-01T00:00:00Z",
+            "metadata": {
+              "r2bTaxAuthority": "none",
+              "r2bPriceAuthority": "pos_products_and_batches",
+              "r2bDiscountAuthority": "server_discount_semantics",
+              "r2bFinancialAuthority": true
+            },
+            "subtotal": 20,
+            "tax_total": 0,
+            "amount_paid": 0,
+            "balance_due": 20,
+            "customer_id": "compat-customer-9856754b-56c0-4b35-baa5-c51f37faeccc",
+            "delivery_fee": 0,
+            "change_amount": 0,
+            "customer_name": "Synthetic compatibility customer",
+            "local_sale_id": "compat-sale-a2f1cdb8-4dcc-4d37-9c97-f3eb6e50821c",
+            "discount_total": 0,
+            "payment_method": "credit",
+            "cash_session_id": "cash-a"
+          },
+          "local_sale_id": "compat-sale-a2f1cdb8-4dcc-4d37-9c97-f3eb6e50821c",
+          "sales_channel": "local",
+          "discount_total": 0,
+          "effects_status": "credit_applied",
+          "folio_sequence": 24,
+          "payment_method": "credit",
+          "payment_status": "credit_pending",
+          "server_version": 3,
+          "cash_session_id": "cash-a",
+          "idempotency_key": "1622a444-8e55-4fb7-8f35-7074b25804e1",
+          "cash_effect_status": "not_required",
+          "customer_ledger_id": "ldg_16671c6ba0d0415db01b98f6939a6432",
+          "current_balance_due": 15,
+          "cash_reversal_status": "not_required",
+          "credit_effect_status": "applied",
+          "original_balance_due": 20,
+          "credit_reversal_status": "not_required",
+          "assigned_payments_total": 5,
+          "credit_ledger_charge_id": "ldg_16671c6ba0d0415db01b98f6939a6432",
+          "inventory_effect_status": "not_applied",
+          "credit_allocation_status": "reconciled",
+          "inventory_reversal_status": "not_required",
+          "credit_customer_debt_after": 20,
+          "credit_customer_debt_before": 0
+        }
+      ],
+      "last_payment": {
+        "id": "ldg_3ae4286c39084d2f87f93e3233527386",
+        "note": "Synthetic compatibility payment",
+        "type": "PAYMENT",
+        "amount": -5,
+        "metadata": {
+          "source": "pos_record_customer_payment",
+          "unallocated_amount": 0,
+          "sale_allocation_status": "applied",
+          "sale_allocation_version": 1
+        },
+        "actor_name": "Synthetic Owner",
+        "created_at": "2026-11-06T03:46:59.852355+00:00",
+        "license_id": "10000000-0000-0000-0000-000000000001",
+        "customer_id": "compat-customer-9856754b-56c0-4b35-baa5-c51f37faeccc",
+        "reference_id": "compat-customer-9856754b-56c0-4b35-baa5-c51f37faeccc",
+        "balance_after": 15,
+        "payment_method": "efectivo",
+        "reference_type": "customer",
+        "server_version": 1,
+        "actor_device_id": "20000000-0000-0000-0000-000000000001",
+        "cash_session_id": "cash-a",
+        "idempotency_key": "ad046a91-28c9-4f3f-aec8-cbc0a83acba5",
+        "cash_movement_id": "mov_9a8aeb276b1b43a4848f343600eff4db",
+        "debt_cents_after": 1500,
+        "allocation_payload": [
+          {
+            "sale_id": "compat-sale-a2f1cdb8-4dcc-4d37-9c97-f3eb6e50821c",
+            "amount_applied": 5,
+            "new_sale_balance": 15,
+            "previous_sale_balance": 20
+          }
+        ]
+      },
+      "total_charged": 20,
+      "ledger_entries": [
+        {
+          "id": "ldg_3ae4286c39084d2f87f93e3233527386",
+          "note": "Synthetic compatibility payment",
+          "type": "PAYMENT",
+          "amount": -5,
+          "metadata": {
+            "source": "pos_record_customer_payment",
+            "unallocated_amount": 0,
+            "sale_allocation_status": "applied",
+            "sale_allocation_version": 1
+          },
+          "actor_name": "Synthetic Owner",
+          "created_at": "2026-11-06T03:46:59.852355+00:00",
+          "license_id": "10000000-0000-0000-0000-000000000001",
+          "customer_id": "compat-customer-9856754b-56c0-4b35-baa5-c51f37faeccc",
+          "reference_id": "compat-customer-9856754b-56c0-4b35-baa5-c51f37faeccc",
+          "balance_after": 15,
+          "payment_method": "efectivo",
+          "reference_type": "customer",
+          "server_version": 1,
+          "actor_device_id": "20000000-0000-0000-0000-000000000001",
+          "cash_session_id": "cash-a",
+          "idempotency_key": "ad046a91-28c9-4f3f-aec8-cbc0a83acba5",
+          "cash_movement_id": "mov_9a8aeb276b1b43a4848f343600eff4db",
+          "debt_cents_after": 1500,
+          "allocation_payload": [
+            {
+              "sale_id": "compat-sale-a2f1cdb8-4dcc-4d37-9c97-f3eb6e50821c",
+              "amount_applied": 5,
+              "new_sale_balance": 15,
+              "previous_sale_balance": 20
+            }
+          ]
+        },
+        {
+          "id": "ldg_16671c6ba0d0415db01b98f6939a6432",
+          "note": "Venta fiada V-000024",
+          "type": "CHARGE",
+          "amount": 20,
+          "sale_id": "compat-sale-a2f1cdb8-4dcc-4d37-9c97-f3eb6e50821c",
+          "metadata": {
+            "folio": "V-000024",
+            "phase": "fase6d_cloud_sales_credit_ledger",
+            "source": "pos_create_cloud_sale_credit",
+            "sale_id": "compat-sale-a2f1cdb8-4dcc-4d37-9c97-f3eb6e50821c"
+          },
+          "actor_key": "admin:30000000-0000-0000-0000-000000000001",
+          "actor_name": "Synthetic Owner",
+          "created_at": "2026-11-06T03:46:59.764679+00:00",
+          "license_id": "10000000-0000-0000-0000-000000000001",
+          "sale_folio": "V-000024",
+          "customer_id": "compat-customer-9856754b-56c0-4b35-baa5-c51f37faeccc",
+          "reference_id": "compat-sale-a2f1cdb8-4dcc-4d37-9c97-f3eb6e50821c",
+          "balance_after": 20,
+          "reference_type": "sale",
+          "server_version": 1,
+          "actor_device_id": "20000000-0000-0000-0000-000000000001",
+          "idempotency_key": "1622a444-8e55-4fb7-8f35-7074b25804e1:ledger_charge",
+          "debt_cents_after": 2000,
+          "allocation_payload": []
+        }
+      ],
+      "pending_credit_sales": [
+        {
+          "id": "compat-sale-a2f1cdb8-4dcc-4d37-9c97-f3eb6e50821c",
+          "folio": "V-000024",
+          "total": 20,
+          "origin": "cloud",
+          "status": "closed",
+          "sold_at": "2026-01-01T00:00:00+00:00",
+          "currency": "MXN",
+          "metadata": {
+            "phase": "fase6d_cloud_sales_credit_ledger",
+            "cashSessionId": "cash-a",
+            "credit_summary": {
+              "debt_after": 20,
+              "customer_id": "compat-customer-9856754b-56c0-4b35-baa5-c51f37faeccc",
+              "debt_before": 0
+            },
+            "cloud_committed": true,
+            "payment_summary": {
+              "balance_due": 20,
+              "cash_change": 0,
+              "cash_received": 0,
+              "cash_component": 0,
+              "non_cash_component": 0,
+              "initial_payment_total": 0
+            },
+            "r2bTaxAuthority": "none",
+            "cashEffectStatus": "not_required",
+            "customerDebtAfter": 20,
+            "r2bPriceAuthority": "pos_products_and_batches",
+            "cloudCreditEffects": true,
+            "creditEffectStatus": "applied",
+            "customerDebtBefore": 0,
+            "creditLedgerChargeId": "ldg_16671c6ba0d0415db01b98f6939a6432",
+            "noCloudCreditEffects": false,
+            "r2bDiscountAuthority": "server_discount_semantics",
+            "cloudInventoryEffects": false,
+            "inventoryEffectStatus": "not_applied",
+            "r2bFinancialAuthority": true
+          },
+          "subtotal": 20,
+          "actor_key": "admin:30000000-0000-0000-0000-000000000001",
+          "device_id": "20000000-0000-0000-0000-000000000001",
+          "pos_folio": "LZ-01-000024",
+          "tax_total": 0,
+          "actor_name": "Synthetic Owner",
+          "created_at": "2026-11-06T03:46:59.764679+00:00",
+          "license_id": "10000000-0000-0000-0000-000000000001",
+          "updated_at": "2026-11-06T03:46:59.852355+00:00",
+          "amount_paid": 0,
+          "balance_due": 20,
+          "cloud_folio": "V-000024",
+          "customer_id": "compat-customer-9856754b-56c0-4b35-baa5-c51f37faeccc",
+          "device_role": "admin",
+          "sale_number": 24,
+          "source_mode": "cloud_committed",
+          "committed_at": "2026-11-06T03:46:59.764679+00:00",
+          "change_amount": 0,
+          "customer_name": "Synthetic compatibility customer",
+          "local_payload": {
+            "id": "compat-sale-a2f1cdb8-4dcc-4d37-9c97-f3eb6e50821c",
+            "total": 20,
+            "sold_at": "2026-01-01T00:00:00Z",
+            "metadata": {
+              "r2bTaxAuthority": "none",
+              "r2bPriceAuthority": "pos_products_and_batches",
+              "r2bDiscountAuthority": "server_discount_semantics",
+              "r2bFinancialAuthority": true
+            },
+            "subtotal": 20,
+            "tax_total": 0,
+            "amount_paid": 0,
+            "balance_due": 20,
+            "customer_id": "compat-customer-9856754b-56c0-4b35-baa5-c51f37faeccc",
+            "delivery_fee": 0,
+            "change_amount": 0,
+            "customer_name": "Synthetic compatibility customer",
+            "local_sale_id": "compat-sale-a2f1cdb8-4dcc-4d37-9c97-f3eb6e50821c",
+            "discount_total": 0,
+            "payment_method": "credit",
+            "cash_session_id": "cash-a"
+          },
+          "local_sale_id": "compat-sale-a2f1cdb8-4dcc-4d37-9c97-f3eb6e50821c",
+          "sales_channel": "local",
+          "discount_total": 0,
+          "effects_status": "credit_applied",
+          "folio_sequence": 24,
+          "payment_method": "credit",
+          "payment_status": "credit_pending",
+          "server_version": 3,
+          "cash_session_id": "cash-a",
+          "idempotency_key": "1622a444-8e55-4fb7-8f35-7074b25804e1",
+          "cash_effect_status": "not_required",
+          "customer_ledger_id": "ldg_16671c6ba0d0415db01b98f6939a6432",
+          "current_balance_due": 15,
+          "cash_reversal_status": "not_required",
+          "credit_effect_status": "applied",
+          "original_balance_due": 20,
+          "credit_reversal_status": "not_required",
+          "assigned_payments_total": 5,
+          "credit_ledger_charge_id": "ldg_16671c6ba0d0415db01b98f6939a6432",
+          "inventory_effect_status": "not_applied",
+          "credit_allocation_status": "reconciled",
+          "inventory_reversal_status": "not_required",
+          "credit_customer_debt_after": 20,
+          "credit_customer_debt_before": 0
+        }
+      ],
+      "sale_allocation_status": "reconciled",
+      "sale_allocation_version": 1,
+      "sale_balances_authoritative": true,
+      "ledger_reconciliation_complete": false
+    },
+    "endpoint": "pos_get_customer_credit_summary_v2",
+    "tenant_id": "10000000-0000-0000-0000-000000000001",
+    "customer_id": "compat-customer-9856754b-56c0-4b35-baa5-c51f37faeccc",
+    "client_identity": {
+      "device_id": "20000000-0000-0000-0000-000000000002",
+      "actor_type": "admin",
+      "device_role": "admin"
+    },
+    "contract_version": 2,
+    "customer_projections": [
+      {
+        "source": "pos_customers.debt_cents",
+        "status": "KNOWN_POSITIVE",
+        "debt_cents": 1500,
+        "customer_id": "compat-customer-9856754b-56c0-4b35-baa5-c51f37faeccc",
+        "projection_version": 3
+      }
+    ],
+    "customer_projection_scope": "CURRENT"
+  }
+}

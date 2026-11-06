@@ -1,0 +1,15 @@
+✔ FIN01 V is a selective, fail-closed transaction tied to exact F and dependency hashes (1.475696ms)
+✔ discovery and all 11 RPCs are advertised with the exact frontend contract (1.079038ms)
+✔ customer migration and financial replay use restricted shared cores, not public legacy dispatchers (0.338ms)
+✔ v2 envelopes preserve explicit debt states, tenant identity, cursors, and operation identity (0.334365ms)
+✔ private functions remain closed and public RPCs have only explicit caller grants (1.101472ms)
+✔ frontend discovers v2 only and recursively projects nested financial customers (0.219711ms)
+✔ financial results are immutable evidence, without a current-debt projection or legacy-capability write (0.314735ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 7
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 71.455577

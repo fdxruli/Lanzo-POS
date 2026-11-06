@@ -1,0 +1,511 @@
+[
+  {
+    "schema_name": "private",
+    "relname": "restaurant_cloud_contract_state",
+    "columns": [
+      {
+        "name": "singleton",
+        "type": "boolean",
+        "default": "true",
+        "not_null": true
+      },
+      {
+        "name": "contract_version",
+        "type": "integer",
+        "default": "1",
+        "not_null": true
+      },
+      {
+        "name": "writes_paused",
+        "type": "boolean",
+        "default": "false",
+        "not_null": true
+      },
+      {
+        "name": "generation",
+        "type": "bigint",
+        "default": "1",
+        "not_null": true
+      }
+    ],
+    "constraints": [
+      {
+        "name": "restaurant_cloud_contract_state_contract_version_check",
+        "type": "c",
+        "definition": "CHECK ((contract_version = ANY (ARRAY[1, 2])))"
+      },
+      {
+        "name": "restaurant_cloud_contract_state_generation_check",
+        "type": "c",
+        "definition": "CHECK ((generation > 0))"
+      },
+      {
+        "name": "restaurant_cloud_contract_state_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (singleton)"
+      },
+      {
+        "name": "restaurant_cloud_contract_state_singleton_check",
+        "type": "c",
+        "definition": "CHECK (singleton)"
+      }
+    ]
+  },
+  {
+    "schema_name": "public",
+    "relname": "pos_financial_operations",
+    "columns": [
+      {
+        "name": "id",
+        "type": "uuid",
+        "default": "gen_random_uuid()",
+        "not_null": true
+      },
+      {
+        "name": "license_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "idempotency_key",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "legacy_idempotency_key",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "request_hash",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "request_contract_version",
+        "type": "integer",
+        "default": "1",
+        "not_null": true
+      },
+      {
+        "name": "operation_type",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "verified_actor_key",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "verified_device_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "verified_cash_session_id",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "verified_cash_station_id",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "canonical_request",
+        "type": "jsonb",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "default": "'processing'::text",
+        "not_null": true
+      },
+      {
+        "name": "response_payload",
+        "type": "jsonb",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      },
+      {
+        "name": "completed_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": false
+      }
+    ],
+    "constraints": [
+      {
+        "name": "pos_financial_operations_completed_chk",
+        "type": "c",
+        "definition": "CHECK (((status = 'completed'::text) = (completed_at IS NOT NULL)))"
+      },
+      {
+        "name": "pos_financial_operations_contract_chk",
+        "type": "c",
+        "definition": "CHECK ((request_contract_version = 1))"
+      },
+      {
+        "name": "pos_financial_operations_hash_chk",
+        "type": "c",
+        "definition": "CHECK ((request_hash ~ '^sha256:[0-9a-f]{64}$'::text))"
+      },
+      {
+        "name": "pos_financial_operations_license_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "pos_financial_operations_license_key_uk",
+        "type": "u",
+        "definition": "UNIQUE (license_id, idempotency_key)"
+      },
+      {
+        "name": "pos_financial_operations_license_legacy_key_uk",
+        "type": "u",
+        "definition": "UNIQUE (license_id, legacy_idempotency_key)"
+      },
+      {
+        "name": "pos_financial_operations_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "pos_financial_operations_session_fk",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id, verified_cash_session_id) REFERENCES pos_cash_sessions(license_id, id)"
+      },
+      {
+        "name": "pos_financial_operations_station_fk",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id, verified_cash_station_id) REFERENCES pos_cash_stations(license_id, id)"
+      },
+      {
+        "name": "pos_financial_operations_status_chk",
+        "type": "c",
+        "definition": "CHECK ((status = ANY (ARRAY['processing'::text, 'completed'::text])))"
+      },
+      {
+        "name": "pos_financial_operations_verified_device_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (verified_device_id) REFERENCES license_devices(id)"
+      }
+    ]
+  },
+  {
+    "schema_name": "public",
+    "relname": "pos_restaurant_orders",
+    "columns": [
+      {
+        "name": "id",
+        "type": "text",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "license_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": true
+      },
+      {
+        "name": "local_order_id",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "sale_id",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "table_label",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "customer_id",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "customer_name",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "status",
+        "type": "text",
+        "default": "'pending'::text",
+        "not_null": true
+      },
+      {
+        "name": "fulfillment_status",
+        "type": "text",
+        "default": "'pending'::text",
+        "not_null": true
+      },
+      {
+        "name": "source",
+        "type": "text",
+        "default": "'pos'::text",
+        "not_null": true
+      },
+      {
+        "name": "notes",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "subtotal",
+        "type": "numeric",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "name": "total",
+        "type": "numeric",
+        "default": "0",
+        "not_null": true
+      },
+      {
+        "name": "currency",
+        "type": "text",
+        "default": "'MXN'::text",
+        "not_null": true
+      },
+      {
+        "name": "created_by_device_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "updated_by_device_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "created_by_staff_user_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "updated_by_staff_user_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      },
+      {
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "default": "now()",
+        "not_null": true
+      },
+      {
+        "name": "sent_to_kitchen_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "ready_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "delivered_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "cancelled_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "deleted_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "server_version",
+        "type": "integer",
+        "default": "1",
+        "not_null": true
+      },
+      {
+        "name": "last_idempotency_key",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "metadata",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "not_null": true
+      },
+      {
+        "name": "payment_status",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "paid_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "paid_sale_id",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "paid_sale_folio",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "paid_total",
+        "type": "numeric",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "checkout_closed_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "checkout_close_metadata",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "not_null": true
+      },
+      {
+        "name": "archived_at",
+        "type": "timestamp with time zone",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "archive_reason",
+        "type": "text",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "archive_metadata",
+        "type": "jsonb",
+        "default": "'{}'::jsonb",
+        "not_null": true
+      },
+      {
+        "name": "archived_by_device_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      },
+      {
+        "name": "archived_by_staff_user_id",
+        "type": "uuid",
+        "default": null,
+        "not_null": false
+      }
+    ],
+    "constraints": [
+      {
+        "name": "pos_restaurant_orders_created_by_device_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (created_by_device_id) REFERENCES license_devices(id) ON DELETE SET NULL"
+      },
+      {
+        "name": "pos_restaurant_orders_created_by_staff_user_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (created_by_staff_user_id) REFERENCES license_staff_users(id) ON DELETE SET NULL"
+      },
+      {
+        "name": "pos_restaurant_orders_fulfillment_status_check",
+        "type": "c",
+        "definition": "CHECK ((fulfillment_status = ANY (ARRAY['pending'::text, 'preparing'::text, 'ready'::text, 'delivered'::text, 'cancelled'::text])))"
+      },
+      {
+        "name": "pos_restaurant_orders_license_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE CASCADE"
+      },
+      {
+        "name": "pos_restaurant_orders_local_or_sale_required",
+        "type": "c",
+        "definition": "CHECK (((length(btrim(COALESCE(local_order_id, ''::text))) > 0) OR (length(btrim(COALESCE(sale_id, ''::text))) > 0)))"
+      },
+      {
+        "name": "pos_restaurant_orders_payment_status_chk",
+        "type": "c",
+        "definition": "CHECK (((payment_status IS NULL) OR private.is_restaurant_order_payment_status(payment_status)))"
+      },
+      {
+        "name": "pos_restaurant_orders_pkey",
+        "type": "p",
+        "definition": "PRIMARY KEY (id)"
+      },
+      {
+        "name": "pos_restaurant_orders_status_check",
+        "type": "c",
+        "definition": "CHECK ((status = ANY (ARRAY['pending'::text, 'preparing'::text, 'ready'::text, 'delivered'::text, 'cancelled'::text])))"
+      },
+      {
+        "name": "pos_restaurant_orders_updated_by_device_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (updated_by_device_id) REFERENCES license_devices(id) ON DELETE SET NULL"
+      },
+      {
+        "name": "pos_restaurant_orders_updated_by_staff_user_id_fkey",
+        "type": "f",
+        "definition": "FOREIGN KEY (updated_by_staff_user_id) REFERENCES license_staff_users(id) ON DELETE SET NULL"
+      }
+    ]
+  }
+]

@@ -1,0 +1,5 @@
+FAIL V1 general payment and actual legacy summary read
+FAIL V1 legacy partial specific allocation preserves the unallocated remainder explicitly
+PASS V2 general payment and actual legacy summary read
+FAIL V2 legacy partial specific allocation preserves the unallocated remainder explicitly
+{"executed":4,"passed":1,"failed":3}
