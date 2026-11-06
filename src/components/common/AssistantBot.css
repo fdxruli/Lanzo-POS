@@ -40,7 +40,8 @@
 }
 .lanzo-bot-container .bot-heading { flex: 1; min-width: 0; }
 .lanzo-bot-container .bot-heading-line { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.lanzo-bot-container .bot-title { display: flex; align-items: center; flex: 0 0 auto; gap: 7px; margin: 0; font-size: 16px; color: inherit; white-space: nowrap; }
+.lanzo-bot-container .bot-title { display: flex; align-items: center; flex: 0 1 auto; min-width: 0; gap: 7px; margin: 0; font-size: 16px; color: inherit; overflow-wrap: anywhere; }
+.lanzo-bot-container .bot-heading-line .bot-title { flex: 0 0 auto; white-space: nowrap; }
 .lanzo-bot-container .bot-heading-separator { flex: 0 0 auto; opacity: .8; }
 .lanzo-bot-container .bot-subtitle {
   display: -webkit-box;
