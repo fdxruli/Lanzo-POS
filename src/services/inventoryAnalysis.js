@@ -367,6 +367,7 @@ export const getLowStockProductsReport = async (options = {}) => {
       loadData(STORES.SALES),
       loadData(STORES.WASTE)
     ]);
+    if (options.throwOnError && [products, batches, sales, wasteLogs].some(rows => !Array.isArray(rows))) throw new Error('INVENTORY_READ_INCOMPLETE');
     // Pasamos los lotes a la función constructora
     return buildLowStockProductsReport(products || [], batches || [], {
       ...options,
@@ -375,11 +376,12 @@ export const getLowStockProductsReport = async (options = {}) => {
     });
   } catch (error) {
     Logger.error('Error calculando reporte de stock bajo:', error);
+    if (options.throwOnError) throw error;
     return [];
   }
 };
 
-export const getExpiringProductsReport = async ({ daysThreshold = 30 } = {}) => {
+export const getExpiringProductsReport = async ({ daysThreshold = 30, throwOnError = false } = {}) => {
   try {
     const today = startOfDay(new Date());
     const thresholdDate = new Date(today);
@@ -391,6 +393,7 @@ export const getExpiringProductsReport = async ({ daysThreshold = 30 } = {}) => 
       loadData(STORES.MENU)
     ]);
 
+    if (throwOnError && (!Array.isArray(riskBatches) || !Array.isArray(allProducts))) throw new Error('INVENTORY_READ_INCOMPLETE');
     return buildExpiringProductsReport({
       products: allProducts || [],
       riskBatches: riskBatches || [],
@@ -399,6 +402,7 @@ export const getExpiringProductsReport = async ({ daysThreshold = 30 } = {}) => 
     });
   } catch (error) {
     Logger.error('Error calculando reporte de caducidad:', error);
+    if (throwOnError) throw error;
     return [];
   }
 };

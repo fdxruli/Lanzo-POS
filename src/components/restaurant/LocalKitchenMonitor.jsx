@@ -1,3 +1,4 @@
+import { usePublishBotScreen } from '../../hooks/useBotScreenContext';
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Clock, Flame, CheckCircle, History, RefreshCw, ChefHat, UtensilsCrossed, User, Store, AlertTriangle, StickyNote, X } from 'lucide-react';
 import { saveDataSafe, STORES, getOrdersSince } from '../../services/database';
@@ -113,6 +114,7 @@ const TicketTimer = ({ timestamp, status }) => {
 export default function LocalKitchenMonitor() {
   const [orders, setOrders] = useState([]);
   const [filter, setFilter] = useState('pending');
+  usePublishBotScreen('/pedidos', filter);
   const [isLoading, setIsLoading] = useState(true);
   const prevOrdersLength = useRef(0);
   const audioPlayer = useRef(null);

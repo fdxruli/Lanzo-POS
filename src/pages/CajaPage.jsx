@@ -1,3 +1,4 @@
+import { usePublishBotScreen } from '../hooks/useBotScreenContext';
 // src/pages/CajaPage.jsx
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { LockKeyhole } from 'lucide-react';
@@ -240,6 +241,7 @@ export default function CajaPage() {
   const activeCajaSection = hasSectionContextChanged
     ? 'turno'
     : cajaSections.some((section) => section.id === activeSection) ? activeSection : 'turno';
+  usePublishBotScreen('/caja', activeCajaSection);
 
   useEffect(() => {
     if (!hasSectionContextChanged) return;
