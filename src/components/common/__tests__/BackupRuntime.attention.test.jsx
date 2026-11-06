@@ -24,6 +24,12 @@ vi.mock('../../../services/auth/actorRuntimeController', () => ({
   ACTOR_RUNTIME_ERROR_CODES: { PERMISSION_DENIED: 'DENIED', CONTEXT_STALE: 'STALE' },
   actorRuntimeController: {
   getState: () => mocks.runtime,
+  // The access policy must validate the current authenticated runtime.
+  // Device role and store identity alone must never make this test authorized.
+  assertCurrent: (snapshot) => {
+    if (snapshot !== mocks.runtime || snapshot?.status !== 'granted') throw new Error('STALE');
+    return snapshot;
+  },
   subscribe: (listener) => { mocks.actors.add(listener); return () => mocks.actors.delete(listener); },
   capture: () => {
     const saved = mocks.runtime;
