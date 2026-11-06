@@ -1,4 +1,5 @@
 // Labels, procedures and links verified against the mounted pages. No data reads here.
+import { BOT_RUBROS } from './botContextByRubro';
 const guide = (id, question, title, path, patterns, steps) => ({ id, question, title, path, patterns, steps });
 export const BOT_GUIDES = [
   guide('scan', '¿Cómo busco o escaneo productos?', 'Buscar y escanear', '/', [/escan|codigo.*barras|lector|buscar.*producto/], [
@@ -81,23 +82,34 @@ export const BOT_GUIDES = [
 ];
 
 export const BOT_SCREENS = {
-  '/': { label: 'Punto de venta', guides: ['sale', 'scan', 'cart', 'tables'] },
-  '/productos': { label: 'Productos e inventario', guides: ['product', 'batches', 'product_edit'], tabs: { add: ['Agregar Producto', 'product'], list: ['Productos (Venta)', 'product_edit'], batches: ['Gestionar lotes', 'batches'], ingredients: ['Ingredientes', 'ingredients'], categories: ['Categorías', 'categories'], variants: ['Inventario de variantes', 'variants'], restaurant: ['Restaurante', 'ingredients'] } },
-  '/clientes': { label: 'Clientes', guides: ['customer', 'customer_payment', 'customer_history'], tabs: { add: ['Agregar cliente', 'customer'], list: ['Lista de clientes', 'customer_history'], 'message-config': ['Configuración de mensajes', 'reminders'], reminders: ['Recordatorios y sincronización', 'reminders'] } },
-  '/caja': { label: 'Caja', guides: ['cash_open', 'cash_close', 'cash_movements'], tabs: { turno: ['Turno', 'cash_open'], movimientos: ['Movimientos', 'cash_movements'], historial: ['Historial', 'cash_history'], negocio: ['Negocio', 'cash_history'] } },
-  '/pedidos': { label: 'Pedidos y cocina', guides: ['kitchen', 'tables', 'ingredients'], tabs: { active: ['Pedidos', 'kitchen'], paid_pending: ['Pagados', 'kitchen'], pending: ['Cocina', 'kitchen'], ready: ['Entrega', 'kitchen'], history: ['Historial', 'kitchen'] } },
-  '/ventas': { label: 'Reportes', guides: ['report', 'batches', 'expiration_help'], tabs: { stats: ['Estadísticas Clave', 'report'], tips: ['Consejos Lan', 'report'], restock: ['Reabastecimiento', 'batches'], history: ['Historial y Papelera', 'cancel'], expiration: ['Caducidad', 'expiration_help'], waste: ['Mermas', 'waste'] } },
-  '/configuracion': { label: 'Configuración', guides: ['settings', 'backup', 'sync'], tabs: { general: ['Datos y Apariencia', 'settings'], controls: ['Controles', 'settings'], license: ['Licencia y Rubros', 'license'], devices: ['Dispositivos', 'permissions'], maintenance: ['Datos y Mantenimiento', 'sync'], backup: ['Respaldos', 'backup'] } },
-  '/portal-online': { label: 'Portal online', guides: ['portal', 'portal_catalog', 'online_orders'], tabs: { information: ['Información', 'portal'], catalog: ['Catálogo', 'portal_catalog'], operation: ['Operación', 'portal'], design: ['Diseño', 'portal'], nube: ['Lanzo Nube', 'license'] } },
-  '/pedidos-online': { label: 'Pedidos online', guides: ['online_orders', 'portal_catalog', 'portal'] },
-  '/agentes-ia': { label: 'Lía', guides: ['lia', 'report', 'cost'] },
-  '/acerca-de': { label: 'Acerca de', guides: ['support', 'license', 'backup'] }
+  '/': { description: "Desde aquí puedes buscar o escanear productos, preparar una venta, asignar un cliente y cobrar según tus permisos.", shortcuts: ["product","customer","cash_open","report"], label: 'Punto de venta', guides: ['sale', 'scan', 'cart', 'tables'] },
+  '/productos': { description: "Gestiona tu catálogo, precios, categorías y existencias. El control por lotes y variantes depende del rubro.", shortcuts: ["product","batches","categories","variants"], label: 'Productos e inventario', guides: ['product', 'batches', 'product_edit'], tabs: { add: ['Agregar Producto', 'product'], list: ['Productos (Venta)', 'product_edit'], batches: ['Gestionar lotes', 'batches'], ingredients: ['Ingredientes', 'ingredients'], categories: ['Categorías', 'categories'], variants: ['Inventario de variantes', 'variants'], restaurant: ['Restaurante', 'ingredients'] } },
+  '/clientes': { description: "Registra clientes, consulta sus compras y revisa opciones de crédito o abonos disponibles.", shortcuts: ["customer","customer_history","cash_open","report"], label: 'Clientes', guides: ['customer', 'customer_payment', 'customer_history'], tabs: { add: ['Agregar cliente', 'customer'], list: ['Lista de clientes', 'customer_history'], 'message-config': ['Configuración de mensajes', 'reminders'], reminders: ['Recordatorios y sincronización', 'reminders'] } },
+  '/caja': { description: "Consulta tu turno, movimientos e historial de caja según los permisos de tu sesión.", shortcuts: ["cash_history","sale","report","customer_history"], label: 'Caja', guides: ['cash_open', 'cash_close', 'cash_movements'], tabs: { turno: ['Turno', 'cash_open'], movimientos: ['Movimientos', 'cash_movements'], historial: ['Historial', 'cash_history'], negocio: ['Negocio', 'cash_history'] } },
+  '/pedidos': { description: "Revisa las comandas y su estado de preparación o entrega cuando la cocina esté habilitada.", shortcuts: ["ingredients","sale","batches","report"], label: 'Pedidos y cocina', guides: ['kitchen', 'tables', 'ingredients'], tabs: { active: ['Pedidos', 'kitchen'], paid_pending: ['Pagados', 'kitchen'], pending: ['Cocina', 'kitchen'], ready: ['Entrega', 'kitchen'], history: ['Historial', 'kitchen'] } },
+  '/ventas': { description: "Consulta indicadores e historial y revisa apartados de caducidad o mermas cuando estén disponibles.", shortcuts: ["cash_history","batches","customer_history","sale"], label: 'Reportes', guides: ['report', 'batches', 'expiration_help'], tabs: { stats: ['Estadísticas Clave', 'report'], tips: ['Consejos Lan', 'report'], restock: ['Reabastecimiento', 'batches'], history: ['Historial y Papelera', 'cancel'], expiration: ['Caducidad', 'expiration_help'], waste: ['Mermas', 'waste'] } },
+  '/configuracion': { description: "Revisa los controles del negocio, dispositivos, licencia y herramientas de mantenimiento autorizadas.", shortcuts: ["license","permissions","backup","support"], label: 'Configuración', guides: ['settings', 'backup', 'sync'], tabs: { general: ['Datos y Apariencia', 'settings'], controls: ['Controles', 'settings'], license: ['Licencia y Rubros', 'license'], devices: ['Dispositivos', 'permissions'], maintenance: ['Datos y Mantenimiento', 'sync'], backup: ['Respaldos', 'backup'] } },
+  '/portal-online': { description: "Configura la información y el catálogo público de tu tienda según tu plan y permisos.", shortcuts: ["portal_catalog","online_orders","license","support"], label: 'Portal online', guides: ['portal', 'portal_catalog', 'online_orders'], tabs: { information: ['Información', 'portal'], catalog: ['Catálogo', 'portal_catalog'], operation: ['Operación', 'portal'], design: ['Diseño', 'portal'], nube: ['Lanzo Nube', 'license'] } },
+  '/pedidos-online': { description: "Consulta los pedidos recibidos por la tienda y su estado cuando el servicio esté habilitado.", shortcuts: ["portal_catalog","portal","customer_history","support"], label: 'Pedidos online', guides: ['online_orders', 'portal_catalog', 'portal'] },
+  '/agentes-ia': { description: "Conoce las herramientas de análisis de Lía y sus requisitos de acceso; Lanzó Bot ofrece guías operativas.", shortcuts: ["report","customer_history","settings","support"], label: 'Lía', guides: ['lia', 'report', 'cost'] },
+  '/acerca-de': { description: "Encuentra información del sistema, soporte y orientación para instalar o actualizar la aplicación.", shortcuts: ["settings","license","backup","report"], label: 'Acerca de', guides: ['support', 'license', 'backup'] }
 };
-export const getBotScreen = (pathname, search = '', localTab = '') => {
+export const getBotScreen = (pathname, search = '', localTab = '', businessType = '') => {
   const screen = BOT_SCREENS[pathname] || { label: 'LANZO POS', guides: ['sale', 'support'] };
   const params = new URLSearchParams(search);
   const tab = localTab || params.get('tab') || (params.get('focus') === 'products' ? 'catalog' : '');
   const tabInfo = screen.tabs?.[tab];
   const ids = [...new Set([tabInfo?.[1], ...screen.guides].filter(Boolean))];
-  return { pathname, tab, label: screen.label + (tabInfo ? ` · ${tabInfo[0]}` : ''), guides: ids.map(id => BOT_GUIDES.find(item => item.id === id)) };
+  const tabGuide = BOT_GUIDES.find(item => item.id === tabInfo?.[1]);
+  const rubroTip = pathname === '/' ? BOT_RUBROS[businessType]?.tip : '';
+  const shortcuts = [...(screen.shortcuts || [])];
+  if (pathname === '/' && businessType === 'food_service') shortcuts.splice(2, 0, 'kitchen');
+  const actions = [...new Map(shortcuts.map(id => BOT_GUIDES.find(item => item.id === id))
+    .filter(Boolean).map(item => [item.path, { id: item.id, label: item.title, path: item.path }])).values()].slice(0, 5);
+  return {
+    pathname, tab, label: screen.label + (tabInfo ? ` · ${tabInfo[0]}` : ''),
+    description: tabGuide?.steps?.[0] || [screen.description, rubroTip].filter(Boolean).join(' '),
+    actions,
+    guides: ids.map(id => BOT_GUIDES.find(item => item.id === id))
+  };
 };

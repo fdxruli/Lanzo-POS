@@ -11,8 +11,8 @@ self.onmessage = async ({ data }) => {
   if (!id) return;
   try {
     if (type === 'CONTEXT') {
-      const screen = getBotScreen(payload.pathname, payload.search, payload.tab);
-      self.postMessage({ id, type: 'RESULT', value: { label: screen.label, guides: screen.guides.slice(0, 3).map(({ id, question }) => ({ id, question })) } });
+      const screen = getBotScreen(payload.pathname, payload.search, payload.tab, payload.businessType);
+      self.postMessage({ id, type: 'RESULT', value: { label: screen.label, description: screen.description, actions: screen.actions.slice(0, 4), guides: screen.guides.slice(0, 3).map(({ id, question }) => ({ id, question })) } });
     } else if (type === 'QUESTION') {
       const value = await processBotMessage(payload.text, payload.context);
       self.postMessage(value.kind === 'read' ? { id, type: 'READ', intent: value.intent, timeframe: value.timeframe } : { id, type: 'RESULT', value });
