@@ -131,6 +131,9 @@ export const getInventoryReservationKey = (item) => {
   return productId ? `product:${productId}` : null;
 };
 
+// Zero/negative legacy lines are not sellable and cannot offset real claims.
+export const getInventoryClaimQuantity = (value) => Math.max(0, Number(value) || 0);
+
 const getSessionReservedQuantity = (activeOrders = new Map(), candidate, excludeOrderId = null) => {
   const reservationKey = getInventoryReservationKey(candidate);
   if (!reservationKey) return 0;
@@ -142,7 +145,7 @@ const getSessionReservedQuantity = (activeOrders = new Map(), candidate, exclude
 
     (order?.items || []).forEach((item) => {
       if (getInventoryReservationKey(item) !== reservationKey) return;
-      reserved += Number(item.quantity) || 0;
+      reserved += getInventoryClaimQuantity(item.quantity);
     });
   });
 

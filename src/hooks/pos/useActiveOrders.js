@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { setAdminUpdateCartStateReader } from '../../pwa/adminUpdateSafety';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { useAppStore } from '../../store/useAppStore';
-import { createOrderActions, getInventoryReservationKey, getSessionAvailableStock, getCartAvailableStock } from '../../store/orderActions';
+import { createOrderActions, getInventoryReservationKey, getSessionAvailableStock, getCartAvailableStock, getInventoryClaimQuantity } from '../../store/orderActions';
 import { generateID, showConfirmModal, showMessageModal } from '../../services/utils';
 import { usePosCatalogStore } from '../../store/usePosCatalogStore';
 import { evaluateProvisionalCartChange, isDirectUnitCartItem, validateCartCheckoutPriority } from '../../services/sales/localCartPriority';
@@ -840,7 +840,7 @@ export const useActiveOrders = create(
             if (!key || checkedKeys.has(key)) continue;
             checkedKeys.add(key);
             const quantityFor = (lines) => lines.reduce((sum, line) => (
-              getInventoryReservationKey(line) === key ? sum + (Number(line.quantity) || 0) : sum
+              getInventoryReservationKey(line) === key ? sum + getInventoryClaimQuantity(line.quantity) : sum
             ), 0);
             const nextQuantity = quantityFor(nextItems);
             if (nextQuantity <= quantityFor(previous)) continue;
@@ -851,7 +851,7 @@ export const useActiveOrders = create(
                 id, order: other,
                 units: (other?.items || []).reduce((sum, line) => (
                   getInventoryReservationKey(line) === key
-                    ? sum + (Number(line.quantity) || 0) : sum
+                    ? sum + getInventoryClaimQuantity(line.quantity) : sum
                 ), 0)
               })).filter(({ id, order: other, units }) => (
                 id !== orderId && !other?.isSaved && other?.origin !== 'ecommerce' && units > 0
@@ -931,7 +931,7 @@ export const useActiveOrders = create(
         return { success: get().activeOrders.get(orderId) !== order ? true : false };
       };
       const quantityForBatch = (lines, batchId) => (lines || []).reduce((sum, item) => (
-        item.batchId === batchId ? sum + (Number(item.quantity) || 0) : sum
+        item.batchId === batchId ? sum + getInventoryClaimQuantity(item.quantity) : sum
       ), 0);
       const batchIds = [...new Set((nextValue || []).map((item) => item.batchId).filter(Boolean))]
         .filter((batchId) => !order.isSaved && order.origin !== 'ecommerce'

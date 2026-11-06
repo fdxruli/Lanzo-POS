@@ -234,6 +234,25 @@ describe('selected-batch availability through real cart actions and Dexie', () =
     expect(items('B')).toEqual([]);
   });
 
+  it('never treats a negative restored line as extra capacity in another cart or the target', async () => {
+    await state().addSmartItem(product, 'A');
+    await state().updateItemQuantity(items('A')[0].lineId, 2, 'A');
+    // Non-sellable legacy quantities must not offset positive claims.
+    const corruptLine = { ...items('A')[0], quantity: -1, lineId: 'legacy-negative' };
+    useActiveOrders.setState({ activeOrders: new Map([...state().activeOrders,
+      ['legacy', { ...order('legacy'), items: [corruptLine] }]]) });
+    await state().addSmartItem(product, 'B');
+    const before = state().activeOrders;
+    expect(await state().addSmartItem(product, 'B')).toMatchObject({ success: false });
+    expect(state().activeOrders).toBe(before);
+    expect(state().inventoryConflictNotice).toMatchObject({ provisionalInOtherCarts: 2, freeInThisCart: 0 });
+    useActiveOrders.setState({ activeOrders: new Map([...state().activeOrders,
+      ['B', { ...state().activeOrders.get('B'), items: [...items('B'), corruptLine] }]]) });
+    const beforeOwn = state().activeOrders;
+    expect(await state().addSmartItem(product, 'B')).toMatchObject({ success: false });
+    expect(state().activeOrders).toBe(beforeOwn);
+  });
+
   it('revalidates competing asynchronous adds instead of oversubscribing or losing an increment', async () => {
     const results = await Promise.all(Array.from({ length: 4 }, (_, index) =>
       state().addSmartItem(product, index % 2 ? 'B' : 'A')));
