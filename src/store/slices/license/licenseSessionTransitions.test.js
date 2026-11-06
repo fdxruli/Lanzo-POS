@@ -387,19 +387,27 @@ describe('canonical actor session transitions', () => {
     expect(mocks.clearAdminSessionCache).toHaveBeenCalledTimes(1);
   });
 
-  it('preserves FREE legacy local-owner bootstrap without creating or verifying an Admin actor', async () => {
+  it('routes legacy FREE bootstrap to existing owner enrollment without granting Admin', async () => {
     const state = createStore();
     const free = legacyFreeLicense();
     mocks.getLicenseFromStorage.mockResolvedValue(free);
+    mocks.activateLicense.mockResolvedValue({
+      valid: false,
+      admin_enrollment_required: true,
+      code: 'ADMIN_ENROLLMENT_REQUIRED',
+      details: { license_key: free.license_key, device_role: 'admin', plan_code: 'free_trial' }
+    });
 
-    await state.initializeApp();
+    await expect(state.initializeApp()).resolves.toEqual({ status: 'admin_enrollment_required' });
 
-    expect(state._processOfflineMode).toHaveBeenCalledWith(free);
+    expect(mocks.activateLicense).toHaveBeenCalledWith(free.license_key, expect.any(Object));
+    expect(state.appStatus).toBe('admin_enrollment_required');
+    expect(state.ownerEnrollmentContext).toBe('existing_license');
+    expect(state.currentAdminUser).toBeNull();
+    expect(state._processOfflineMode).not.toHaveBeenCalled();
     expect(mocks.verifyAdminSession).not.toHaveBeenCalled();
     expect(mocks.restoreActorRuntimeFromCurrentSessionCache).not.toHaveBeenCalled();
-    expect(mocks.saveLicenseToStorage).not.toHaveBeenCalledWith(expect.objectContaining({
-      admin_identity_required: true
-    }));
+    expect(mocks.grantAuthenticatedActorRuntime).not.toHaveBeenCalled();
   });
 
   it('moves a trusted admin from FREE to enrollment immediately without a reload', async () => {
