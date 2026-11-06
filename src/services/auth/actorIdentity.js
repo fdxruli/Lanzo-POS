@@ -22,4 +22,3 @@ export const getExplicitActorPermissions = (actorType, actor = null) => {
     typeof permission === 'string' && permission.trim().length > 0
   )).map((permission) => permission.trim()))];
 };
-
