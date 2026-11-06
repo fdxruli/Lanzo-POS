@@ -164,8 +164,11 @@ export const useActiveOrders = create(
           const latestProduct = await db.table(STORES.MENU).get(initialConflict.productKey);
           actorHandle.assertCurrent();
           const snapshot = get();
-          if (snapshot.activeOrders.get(orderId) !== originalTarget || !latestProduct) {
-            throw new Error('La venta o el inventario cambió. No se reasignó nada.');
+          if (snapshot.currentOrderId !== orderId
+            || snapshot.activeOrders.get(orderId) !== originalTarget
+            || latestProduct?.trackStock !== true
+            || !Number.isFinite(Number(latestProduct?.stock))) {
+            throw new Error('La venta activa o el inventario cambió. No se reasignó nada.');
           }
           const newConflict = evaluateProvisionalCartChange({
             state: snapshot, orderId, nextItems: proposedItems, catalog: [latestProduct]
