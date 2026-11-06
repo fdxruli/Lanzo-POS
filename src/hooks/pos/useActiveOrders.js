@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { setAdminUpdateCartStateReader } from '../../pwa/adminUpdateSafety';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { useAppStore } from '../../store/useAppStore';
 import { createOrderActions, getInventoryReservationKey, getSessionAvailableStock, INVENTORY_NOTICE_NET_AVAILABILITY } from '../../store/orderActions';
@@ -1537,6 +1538,17 @@ export const useActiveOrders = create(
     }
   })
 );
+
+// Consultar siempre el estado vigente; no cargar el runtime POS por una actualización.
+setAdminUpdateCartStateReader(() => {
+  const orders = Array.from(useActiveOrders.getState().activeOrders.values());
+  return {
+    checkoutLocked: orders.some((order) => order?.isLockedForCheckout === true),
+    hasOpenCart: orders.some((order) =>
+      Array.isArray(order?.items)
+      && order.items.some((item) => Number(item?.quantity) > 0))
+  };
+});
 
 const setActiveOrdersStateUnsafe = useActiveOrders.setState;
 useActiveOrders.setState = (...args) => {
