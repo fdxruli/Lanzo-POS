@@ -20,6 +20,7 @@ import { evaluator } from '../../services/BackupRiskEvaluator';
 import { showConfirmModal, showMessageModal } from '../../services/utils';
 import { showInputPromptModal } from '../common/InputPromptModal';
 import NoPermission from '../common/NoPermission';
+import UpdateControls from '../common/UpdateControls';
 import {
   useSettingsAccess,
   useSettingsActionGuard
@@ -378,6 +379,19 @@ export default function MaintenanceSettings() {
             <span>Para acciones destructivas, el sistema pedira confirmacion antes de continuar.</span>
           </div>
         </aside>}
+      </section>
+
+      <section className="maintenance-data-card" aria-labelledby="maintenance-app-updates-title">
+        <div className="maintenance-panel-heading">
+          <span className="settings-section-icon" aria-hidden="true">
+            <Wrench size={18} />
+          </span>
+          <div>
+            <h3 id="maintenance-app-updates-title" className="subtitle">Actualizaciones de la aplicación</h3>
+            <p>Consulta si hay una nueva compilación sin interrumpir tu trabajo.</p>
+          </div>
+        </div>
+        <UpdateControls showApply />
       </section>
 
       <DataTransferModal
