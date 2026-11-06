@@ -1,6 +1,6 @@
 import { db, STORES } from '../db/dexie';
 import { getCommittedStock, normalizeStock } from '../db/utils';
-import { cloudSaleToLocalSyncPatch } from './salesCloudMapper';
+import { cloudSaleToLocalSyncPatch, cloudSaleCreditBalancePatch } from './salesCloudMapper';
 import { getTableReservationProductQuantities } from '../sales/inventoryFlow';
 import { isRestaurantCloudTableShadow } from '../restaurant/restaurantCloudTableGuards';
 import { cloudSalePaymentSnapshot, normalizeCloudSalePaymentRows } from './salesCloudPaymentSnapshot';
@@ -168,6 +168,7 @@ const upsertCloudSaleCache = async ({ sale, items = [], payments = [] }) => {
   const key = `${CLOUD_SALE_CACHE_PREFIX}${sale.id}`;
   const existing = await db.table(STORES.SYNC_CACHE).get(key);
 
+  if (Number(existing?.value?.sale?.server_version || 0) > Number(sale.server_version || 0)) return null;
   const row = {
     key,
     value: {
@@ -199,7 +200,7 @@ const buildLocalCloudCommittedSale = ({ localSale = {}, cloudSale = {}, items = 
   paymentMethod: cloudSale.payment_method || localSale.paymentMethod,
   paymentStatus: cloudSale.payment_status || localSale.paymentStatus || null,
   abono: String(cloudSale.amount_paid ?? localSale.abono ?? cloudSale.total ?? 0),
-  saldoPendiente: String(cloudSale.balance_due ?? 0),
+  ...cloudSaleCreditBalancePatch(cloudSale),
   status: cloudSale.status || localSale.status || 'closed',
   folio: cloudSale.cloud_folio || cloudSale.folio || localSale.folio,
   posFolio: cloudSale.pos_folio || cloudSale.posFolio || localSale.posFolio || localSale.pos_folio || null,
@@ -310,6 +311,11 @@ export const salesCloudLocalRepository = {
       [db.table(STORES.SALES), db.table(STORES.TRANSACTION_LOG)],
       async () => {
         const existing = await db.table(STORES.SALES).get(saleId);
+        if (existing?.sourceMode === 'cloud_committed'
+            && Number(existing.cloudServerVersion || 0) > Number(cloudSale.server_version || 0)) {
+          localSnapshot = existing;
+          return;
+        }
         localSnapshot = buildLocalCloudCommittedSale({
           localSale: { ...existing, ...localSale }, cloudSale, items, response
         });
@@ -447,14 +453,17 @@ export const salesCloudLocalRepository = {
       const localSale = await db.table(STORES.SALES).get(localSaleId);
       if (!localSale) continue;
 
+      if (Number(localSale.cloudServerVersion || 0) > Number(sale.server_version || 0)) continue;
       const saleIsCancelled = isCancelledCloudSale(sale);
 
       // Preserve committed commercial/inventory fields, but refresh the payment
       // projection so a normal Cloud pull repairs older snapshots too.
       if (localSale.sourceMode === 'cloud_committed' && isCloudCommitted(sale) && !saleIsCancelled) {
-        if (salePayments.length > 0) {
+        if (salePayments.length > 0 || Object.hasOwn(sale, 'current_balance_due')) {
           await db.table(STORES.SALES).update(localSaleId, {
-            payments: salePayments,
+            ...(Object.hasOwn(sale, 'current_balance_due') ? cloudSaleCreditBalancePatch(sale) : {}),
+            cloudServerVersion: Number(sale.server_version || 0),
+            ...(salePayments.length > 0 ? { payments: salePayments } : {}),
             cash_session_id: sale.cash_session_id || localSale.cash_session_id || localSale.cashSessionId || null
           });
           patchedLocal += 1;

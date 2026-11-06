@@ -1,0 +1,30 @@
+[
+  {
+    "path": "application.log",
+    "raw_sha256": "0c1d190a4c9d7784133e0586e480125cf33186052fc357271fe24895299bc540",
+    "normalized_sha256": "2adf8f7c9a031e953705bbb0944962e23f8846ceb73bcb9b087ac799931f3079",
+    "raw_archive": "application.log.gz",
+    "normalization": "trailing whitespace and excess blank EOF lines only"
+  },
+  {
+    "path": "build.log",
+    "raw_sha256": "2a8b1a3f182c78e661b10e68a7ea0e0820db60b921c0e38111ac2de83deabda7",
+    "normalized_sha256": "254cf910fb7c15c187f5f440115bc22196529050e90308e609238b01eebbba49",
+    "raw_archive": "build.log.gz",
+    "normalization": "trailing whitespace and excess blank EOF lines only"
+  },
+  {
+    "path": "compatibility/application.log",
+    "raw_sha256": "a2a9dada17ffc34a1c3b9323beba84acad3c10bb5139538b3049b2ca5157cba6",
+    "normalized_sha256": "b3914ee1513321e72aaa03650da94e50d83199c74380a01ad0858cd0852ae900",
+    "raw_archive": "compatibility/application.log.gz",
+    "normalization": "trailing whitespace and excess blank EOF lines only"
+  },
+  {
+    "path": "compatibility/build.log",
+    "raw_sha256": "5b47eb924d77a35064f11c4bc1688651c785750de9ff3796082897dbf1de0036",
+    "normalized_sha256": "0fcb4fc12a0ab4c4d688b2d8e8982ac426432c90731dded220bf65bf7b58a222",
+    "raw_archive": "compatibility/build.log.gz",
+    "normalization": "trailing whitespace and excess blank EOF lines only"
+  }
+]

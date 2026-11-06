@@ -1,0 +1,25 @@
+[
+  {
+    "protocol": "V1",
+    "name": "general payment and actual legacy summary read",
+    "status": "FAIL",
+    "error": "summary must return a financially backed pending note\n\n0 !== 1\n"
+  },
+  {
+    "protocol": "V1",
+    "name": "legacy partial specific allocation preserves the unallocated remainder explicitly",
+    "status": "FAIL",
+    "error": "CUSTOMER_PAYMENT_ALLOCATION_SUM_MISMATCH\nPL/pgSQL function public.pos_record_customer_payment_unlimited(text,text,text,text,text,numeric,text,text,text,jsonb,text) line 261 at RAISE\nPL/pgSQL function public.pos_record_customer_payment(text,text,text,text,text,numeric,text,text,text,jsonb,text) line 22 at RETURN"
+  },
+  {
+    "protocol": "V2",
+    "name": "general payment and actual legacy summary read",
+    "status": "PASS"
+  },
+  {
+    "protocol": "V2",
+    "name": "legacy partial specific allocation preserves the unallocated remainder explicitly",
+    "status": "FAIL",
+    "error": "CUSTOMER_PAYMENT_ALLOCATION_SUM_MISMATCH\nPL/pgSQL function public.pos_record_customer_payment_unlimited(text,text,text,text,text,numeric,text,text,text,jsonb,text) line 261 at RAISE\nPL/pgSQL function public.pos_record_customer_payment_v2(text,text,text,text,text,numeric,text,text,text,jsonb,text,jsonb) line 23 at assignment"
+  }
+]

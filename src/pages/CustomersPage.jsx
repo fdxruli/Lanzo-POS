@@ -134,7 +134,9 @@ export default function CustomersPage() {
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [isAbonoModalOpen, setIsAbonoModalOpen] = useState(false);
   const [abonoCashSession, setAbonoCashSession] = useState(null);
+  const isCloudCredit = customerCreditRepository.getMode().cloudEnabled;
   const [abonoPendingNotes, setAbonoPendingNotes] = useState(null);
+  const [abonoAllocationStatus, setAbonoAllocationStatus] = useState('unavailable');
   const [imageShareLoading, setImageShareLoading] = useState(null);
   const [isLayawayModalOpen, setIsLayawayModalOpen] = useState(false);
   const [customerReminders, setCustomerReminders] = useState([]);
@@ -804,12 +806,13 @@ export default function CustomersPage() {
     // Read-only enrichment: a cloud summary is authoritative whenever it is
     // available, but opening the payment modal never depends on this request.
     setAbonoPendingNotes(null);
+    setAbonoAllocationStatus('loading');
     setSelectedCustomer(customer);
     setIsAbonoModalOpen(true);
 
     const abonoNotesRequestId = ++abonoNotesRequestRef.current;
     Promise.all([
-      customerCreditRepository.getCustomerCreditSummary(customer.id).catch((error) => {
+      customerCreditRepository.getCustomerCreditSummary(customer.id, { force: true }).catch((error) => {
         Logger.warn('[CustomersPage] No se pudo cargar el resumen cloud de crédito:', error);
         return null;
       }),
@@ -819,10 +822,13 @@ export default function CustomersPage() {
       })
     ]).then(([summary, localSales]) => {
       if (abonoNotesRequestId !== abonoNotesRequestRef.current) return;
-      setAbonoPendingNotes(selectCreditNotes({
-        customerId: customer.id,
-        cloudSummary: summary,
-        localSales
+      if (summary?.success === true && summary?.customer?.debt !== undefined) {
+        setSelectedCustomer(current => current?.id === customer.id ? { ...current, debt: summary.customer.debt } : current);
+      }
+      const authoritative = summary?.sale_allocation_version === 1 && summary?.sale_balances_authoritative === true;
+      setAbonoAllocationStatus(authoritative ? summary.sale_allocation_status : 'unavailable');
+      setAbonoPendingNotes(isCloudCredit && !authoritative ? [] : selectCreditNotes({
+        customerId: customer.id, cloudSummary: summary, localSales
       }));
     }).catch((error) => {
       Logger.warn('[CustomersPage] No se pudieron preparar notas para abono:', error);
@@ -942,7 +948,10 @@ export default function CustomersPage() {
 
     // Refreshing UI state happens after the payment is committed. A refresh
     // failure must never make a successful financial operation look aborted.
-    showMessageModal('¡Abono registrado exitosamente!');
+    const unallocated = isCloudCredit && result.allocationStatus !== 'applied';
+    showMessageModal(unallocated
+      ? 'Abono general registrado. La deuda del cliente se redujo; la conciliación por nota no está confirmada.'
+      : '¡Abono registrado exitosamente!');
     handleCloseModals();
     try {
       await Promise.all([loadInitialCustomers(), sincronizarEstadoCaja()]);
@@ -973,7 +982,7 @@ export default function CustomersPage() {
           receipt: confirmedReceipt,
           previousBalance: customer.debt,
           occurredAt: localLedger?.timestamp || null,
-          allocations: allocations || []
+          allocations: isCloudCredit ? (result.confirmedAllocations || []) : (allocations || [])
         });
         notificationResult = payloadResult.ok
           ? await preparePayloadOutbox(
@@ -1219,6 +1228,7 @@ export default function CustomersPage() {
         cashSession={effectiveAbonoCashSession}
         cashActor={cashActor}
         authoritativePendingSales={abonoPendingNotes}
+        cloudAllocationStatus={abonoAllocationStatus}
       />
 
       <LayawayModal

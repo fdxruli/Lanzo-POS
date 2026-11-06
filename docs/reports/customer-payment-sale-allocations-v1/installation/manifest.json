@@ -1,0 +1,115 @@
+{
+  "project": "odlrhijtfyavryeqivaa",
+  "version": "20261106025114",
+  "name": "customer_payment_sale_allocations_v1",
+  "canonical_sha256": "f358cd97ef3463c7fb210f1c7ad6844cf56ee558d42d53d9e2f3df1e57deab62",
+  "packet_sha256": "37744fd2159589340d9627e1aa7365a91fe4c3aa61f40b81d917dc15a0d3a8c5",
+  "functions": [
+    "private.pos_sale_to_jsonb",
+    "public.pos_record_customer_payment_unlimited",
+    "public.pos_cancel_cloud_sale_unlimited",
+    "public.pos_get_customer_credit_summary_unlimited"
+  ],
+  "expected_before": [
+    {
+      "signature": "private.pos_sale_to_jsonb(pos_sales)",
+      "sha256": "6395afe3312283501b60a4cebb2d7f2425951843dc89b7007503259e133c2ce9",
+      "owner": "postgres",
+      "security_definer": false,
+      "config": [
+        "search_path=\"\""
+      ],
+      "anon": false,
+      "authenticated": false,
+      "service_role": false
+    },
+    {
+      "signature": "public.pos_record_customer_payment_unlimited(text,text,text,text,text,numeric,text,text,text,jsonb,text)",
+      "sha256": "73ce2f73f985eada337800b1ed18b9242c1f57948a23c48a57542f522ead8bf4",
+      "owner": "postgres",
+      "security_definer": true,
+      "config": [
+        "search_path=\"\""
+      ],
+      "anon": false,
+      "authenticated": false,
+      "service_role": true
+    },
+    {
+      "signature": "public.pos_cancel_cloud_sale_unlimited(text,text,text,text,text,text,text)",
+      "sha256": "988743703fbf74423dc308871667582f3f4517f3e0ea2da9ca0099012da90320",
+      "owner": "postgres",
+      "security_definer": true,
+      "config": [
+        "search_path=\"\""
+      ],
+      "anon": false,
+      "authenticated": false,
+      "service_role": true
+    },
+    {
+      "signature": "public.pos_get_customer_credit_summary_unlimited(text,text,text,text,text)",
+      "sha256": "fd1278d820f6a0ea481534b2ffd7a411a94c54edcac4b46ce166eeb309c19745",
+      "owner": "postgres",
+      "security_definer": true,
+      "config": [
+        "search_path=\"\""
+      ],
+      "anon": false,
+      "authenticated": false,
+      "service_role": true
+    }
+  ],
+  "expected_after": [
+    {
+      "anon": false,
+      "owner": "postgres",
+      "config": [
+        "search_path=\"\""
+      ],
+      "sha256": "4f27ea03d31326b4c256b38f24f3f2dd1f555ea81e64db675c1dda7efb5aa43c",
+      "signature": "private.pos_sale_to_jsonb(pos_sales)",
+      "service_role": false,
+      "authenticated": false,
+      "security_definer": false
+    },
+    {
+      "anon": false,
+      "owner": "postgres",
+      "config": [
+        "search_path=\"\""
+      ],
+      "sha256": "d27598d86ea58a94cd1d86aa3e8e30a183fc760e7773d0da790a484a456388bd",
+      "signature": "public.pos_record_customer_payment_unlimited(text,text,text,text,text,numeric,text,text,text,jsonb,text)",
+      "service_role": true,
+      "authenticated": false,
+      "security_definer": true
+    },
+    {
+      "anon": false,
+      "owner": "postgres",
+      "config": [
+        "search_path=\"\""
+      ],
+      "sha256": "7fb8c9717949e8754c686bddfbbfb649908813cecdafcc0799cd95072419f260",
+      "signature": "public.pos_cancel_cloud_sale_unlimited(text,text,text,text,text,text,text)",
+      "service_role": true,
+      "authenticated": false,
+      "security_definer": true
+    },
+    {
+      "anon": false,
+      "owner": "postgres",
+      "config": [
+        "search_path=\"\""
+      ],
+      "sha256": "eca3d439715f9fd18cae4471ed61f036da8fe5c855bd541884630c2f8fb76b9f",
+      "signature": "public.pos_get_customer_credit_summary_unlimited(text,text,text,text,text)",
+      "service_role": true,
+      "authenticated": false,
+      "security_definer": true
+    }
+  ],
+  "production_installed": false,
+  "manual_qa": "NOT_RUN"
+}

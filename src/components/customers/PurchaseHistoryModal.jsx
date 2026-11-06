@@ -20,6 +20,7 @@ const ChevronIcon = ({ expanded }) => (
 export default function PurchaseHistoryModal({ show, onClose, customer, isCloudCredit = false }) {
   const [sales, setSales] = useState([]);
   const [ledgerEntries, setLedgerEntries] = useState([]);
+  const [currentDebt, setCurrentDebt] = useState(null);
   const [loading, setLoading] = useState(false);
 
   // Novedades: Filtros y Acordeón
@@ -30,6 +31,7 @@ export default function PurchaseHistoryModal({ show, onClose, customer, isCloudC
     if (!customer?.id) return;
 
     setLoading(true);
+    setCurrentDebt(null);
     try {
       const customerSales = await queryByIndex(STORES.SALES, 'customerId', customer.id);
       // Orden descendente (más reciente primero)
@@ -37,6 +39,26 @@ export default function PurchaseHistoryModal({ show, onClose, customer, isCloudC
       setSales(sortedSales);
 
       const summary = await customerCreditRepository.getCustomerCreditSummary(customer.id);
+      if (isCloudCredit && summary?.sale_balances_authoritative === true) {
+        const localById = new Map(sortedSales.map(sale => [sale.id, sale]));
+        const cloudRows = (summary.credit_sales || []).map(cloud => {
+          const id = cloud.local_sale_id || cloud.id;
+          const local = localById.get(id) || {};
+          localById.delete(id);
+          return { ...local, id, total: cloud.total, abono: cloud.amount_paid,
+            paymentMethod: cloud.payment_method, timestamp: cloud.sold_at,
+            status: cloud.status, items: local.items || [],
+            originalBalanceDue: cloud.original_balance_due,
+            assignedPaymentsTotal: cloud.assigned_payments_total,
+            saldoPendiente: cloud.current_balance_due,
+            creditAllocationStatus: cloud.credit_allocation_status };
+        });
+        setSales([...cloudRows, ...Array.from(localById.values(), sale => ({ ...sale, saldoPendiente: null }))]
+          .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)));
+      } else if (isCloudCredit) {
+        setSales(sortedSales.map(sale => ({ ...sale, saldoPendiente: null })));
+      }
+      if (summary?.success === true && summary?.customer?.debt !== undefined) setCurrentDebt(summary.customer.debt);
       const entries = summary?.ledger_entries || summary?.ledgerEntries || [];
       setLedgerEntries(Array.isArray(entries) ? entries : []);
     } catch (error) {
@@ -44,7 +66,7 @@ export default function PurchaseHistoryModal({ show, onClose, customer, isCloudC
     } finally {
       setLoading(false);
     }
-  }, [customer?.id]);
+  }, [customer?.id, isCloudCredit]);
 
   useEffect(() => {
     if (show && customer) {
@@ -105,9 +127,9 @@ export default function PurchaseHistoryModal({ show, onClose, customer, isCloudC
             <span className="stat-label">Ticket Promedio</span>
             <span className="stat-value">${stats.averageTicket.toLocaleString('es-MX', { minimumFractionDigits: 2 })}</span>
           </div>
-          <div className={`stat-card ${getSafeCustomerDebt(customer.debt) > 0 ? 'debt-warning' : 'debt-clean'}`}>
+          <div className={`stat-card ${getSafeCustomerDebt(currentDebt ?? customer.debt) > 0 ? 'debt-warning' : 'debt-clean'}`}>
             <span className="stat-label">Deuda Actual</span>
-            <span className="stat-value">${formatCustomerDebt(customer.debt)}</span>
+            <span className="stat-value">${formatCustomerDebt(currentDebt ?? customer.debt)}</span>
           </div>
         </div>
 
@@ -249,9 +271,16 @@ export default function PurchaseHistoryModal({ show, onClose, customer, isCloudC
                             <span>Abono Inicial:</span>
                             <span>- {formatMoneyValue(sale.abono)}</span>
                           </div>
+                          {isCloudCredit && (
+                            <>
+                              <div className="breakdown-row"><span>Fiado original:</span><span>{formatMoneyValue(sale.originalBalanceDue)}</span></div>
+                              <div className="breakdown-row"><span>Abonos asignados:</span><span>{formatMoneyValue(sale.assignedPaymentsTotal)}</span></div>
+                            </>
+                          )}
                           <div className="breakdown-row total-debt">
-                            <span>Quedó a deber:</span>
-                            <span>{formatMoneyValue(sale.saldoPendiente)}</span>
+                            <span>{isCloudCredit ? 'Saldo vigente:' : 'Quedó a deber:'}</span>
+                            <span>{isCloudCredit && (sale.saldoPendiente === null || sale.saldoPendiente === undefined)
+                              ? 'Sin conciliar por nota' : formatMoneyValue(sale.saldoPendiente)}</span>
                           </div>
                         </div>
                       )}

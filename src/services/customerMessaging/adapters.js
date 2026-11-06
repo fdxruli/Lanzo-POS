@@ -30,6 +30,7 @@ const buildLayawayDisplayReference = (layaway = {}, occurredAt = null) => {
 
 const noteBalance = (note = {}) => read(
   note,
+  'current_balance_due',
   'currentOwed',
   'current_owed',
   'balanceDue',
@@ -46,6 +47,19 @@ const noteBalance = (note = {}) => read(
  * mutate sales, allocations, ledger entries, or cached debt projections.
  */
 export const selectCreditNotes = ({ customerId = null, cloudSummary = null, localSales = [] } = {}) => {
+  // The new server collection is authoritative even when it is empty.
+  // Never replace an unknown or settled Cloud balance with a local estimate.
+  if (cloudSummary?.sale_balances_authoritative === true) {
+    return (cloudSummary.pending_credit_sales || []).filter(note =>
+      (!customerId || note.customer_id === customerId)
+      && note.credit_allocation_status === 'reconciled'
+      && note.status === 'closed' && !note.cancelled_at && !note.deleted_at
+      && positiveMoney(note.current_balance_due)
+    ).map(note => ({ ...note, paymentMethod: note.payment_method || 'credit',
+      saldoPendiente: note.current_balance_due, timestamp: note.sold_at,
+      folio: note.pos_folio || note.cloud_folio || note.folio || null,
+      items: Array.isArray(note.items) ? note.items : [] }));
+  }
   const cloudNoteCollections = [
     cloudSummary?.noteDetails,
     cloudSummary?.note_details,

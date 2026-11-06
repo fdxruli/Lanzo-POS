@@ -1,0 +1,36 @@
+PASS V1 general payment and actual legacy summary read
+PASS V1 FIFO distributes across two sales
+PASS V1 specific payment preserves other notes and accepts existing camelCase fields
+PASS V1 legacy partial specific allocation preserves the unallocated remainder explicitly
+PASS V1 retry keeps one payment and never replays a receipt as current debt
+PASS V1 unpaid sale cancellation is idempotent
+PASS V1 allocated sale cancellation safely rejects without refund
+PASS V1 historical debt without sales remains payable
+PASS V1 unverified historical assignments are preserved byte for byte
+PASS V1 concurrent specific payments cannot overallocate despite sufficient global debt
+PASS V1 concurrent retry with the same key creates one cash/ledger payment
+PASS V1 invalid, cancelled, missing and other-tenant sale IDs reject atomically
+PASS V1 all original serializer fields retain exactly their previous meanings
+PASS V1 an allocation projection error rolls back payment, cash, debt and idempotency
+PASS V1 partial allocation invalidates every affected note without assigning the remainder
+PASS V1 invalid actor and foreign customer cannot create financial effects
+PASS V2 general payment and actual legacy summary read
+PASS V2 FIFO distributes across two sales
+PASS V2 specific payment preserves other notes and accepts existing camelCase fields
+PASS V2 legacy partial specific allocation preserves the unallocated remainder explicitly
+PASS V2 retry keeps one payment and never replays a receipt as current debt
+PASS V2 unpaid sale cancellation is idempotent
+PASS V2 allocated sale cancellation safely rejects without refund
+PASS V2 historical debt without sales remains payable
+PASS V2 unverified historical assignments are preserved byte for byte
+PASS V2 concurrent specific payments cannot overallocate despite sufficient global debt
+PASS V2 concurrent retry with the same key creates one cash/ledger payment
+PASS V2 invalid, cancelled, missing and other-tenant sale IDs reject atomically
+PASS V2 all original serializer fields retain exactly their previous meanings
+PASS V2 an allocation projection error rolls back payment, cash, debt and idempotency
+PASS V2 partial allocation invalidates every affected note without assigning the remainder
+PASS V2 invalid actor and foreign customer cannot create financial effects
+PASS V2 second V2 device reads live notes, customer projection, events and cursors
+PASS V2 V2 protocol admission rejects invalid contracts and V1 mutation bypasses
+PASS V2 staff customers permission is checked before payment effects
+{"executed":35,"passed":35,"failed":0}

@@ -327,3 +327,31 @@ describe('Cloud split payments persisted through Dexie into Caja', () => {
     expect(stored.payments[0]).toMatchObject({ method: 'cash', amount: '100', received_amount: '150', change_amount: '50', sale_id: sale.id });
   });
 });
+
+describe('Cloud allocated credit balance projection', () => {
+  it('refreshes a committed sale on another device and ignores an older response', async () => {
+    const original = { id: 'credit-local', total:'20',abono:'0',saldoPendiente:'20',
+      sourceMode:'cloud_committed',cloudServerVersion:1,items:[{id:'original-item'}] };
+    await runtime.database.table(STORES.SALES).put(original);
+    const sale={id:'credit-cloud',local_sale_id:'credit-local',source_mode:'cloud_committed',status:'closed',
+      credit_effect_status:'applied',total:20,amount_paid:0,balance_due:20,
+      original_balance_due:20,current_balance_due:15,assigned_payments_total:5,
+      credit_allocation_status:'reconciled',server_version:2};
+    await salesCloudLocalRepository.applyCloudSalesPayload({sales:[sale]});
+    expect(await runtime.database.table(STORES.SALES).get(original.id)).toMatchObject({
+      total:'20',abono:'0',saldoPendiente:'15',originalBalanceDue:20,assignedPaymentsTotal:'5',
+      items:original.items,cloudServerVersion:2
+    });
+    await salesCloudLocalRepository.applyCloudSalesPayload({sales:[{...sale,current_balance_due:20,server_version:1}]});
+    await salesCloudLocalRepository.saveCloudCommittedSaleSnapshot({localSale:original,response:{sale:{...sale,server_version:1,current_balance_due:20}}});
+    expect((await runtime.database.table(STORES.SALES).get(original.id)).saldoPendiente).toBe('15');
+    expect((await runtime.database.table(STORES.SYNC_CACHE).get('cloud_sale:credit-cloud')).value.sale.current_balance_due).toBe(15);
+  });
+  it('retains an explicit unknown balance instead of substituting the original amount', async () => {
+    await runtime.database.table(STORES.SALES).put({id:'unknown-local',total:'20',saldoPendiente:'20',sourceMode:'cloud_committed'});
+    await salesCloudLocalRepository.applyCloudSalesPayload({sales:[{id:'unknown-cloud',local_sale_id:'unknown-local',
+      source_mode:'cloud_committed',credit_effect_status:'applied',balance_due:20,
+      current_balance_due:null,credit_allocation_status:'historical_unallocated',server_version:2}]});
+    expect(await runtime.database.table(STORES.SALES).get('unknown-local')).toMatchObject({total:'20',saldoPendiente:null,creditAllocationStatus:'historical_unallocated'});
+  });
+});

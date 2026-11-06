@@ -1,0 +1,40 @@
+{
+  "status": "READY_FOR_SQL_AUTHORIZATION",
+  "repository": "fdxruli/Lanzo-POS",
+  "project": "odlrhijtfyavryeqivaa",
+  "branch": "fix/customer-payment-sale-allocations-v1",
+  "base_main": "5e1b4303e942657c406d91237ffa7ff44db91cec",
+  "migration": "supabase/migrations/20261106025114_customer_payment_sale_allocations_v1.sql",
+  "version": "20261106025114",
+  "sha256": "f358cd97ef3463c7fb210f1c7ad6844cf56ee558d42d53d9e2f3df1e57deab62",
+  "original_sha256": "a9ef3aa0add6f4f799b5185f09c88266f1892d674243a832eeff071eba7055fc",
+  "candidate_correction_iterations": 1,
+  "v1": {
+    "status": "PASS",
+    "cases": 16
+  },
+  "v2": {
+    "status": "PASS",
+    "cases": 19
+  },
+  "production_definitions_restored_and_verified": 96,
+  "financial_row_types_verified": 12,
+  "prior_evidence": {
+    "postgres": 20,
+    "application": 104,
+    "v2_static": 7
+  },
+  "new_validation": {
+    "compatibility_postgres": 35,
+    "installation_guards": 4,
+    "focused_application": 29,
+    "v2_static": 7,
+    "eslint": "PASS",
+    "build": "PASS"
+  },
+  "production_reads_only": true,
+  "production_installed": false,
+  "manual_realtime": "NOT_RUN",
+  "manual_vercel_desktop_android": "NOT_RUN",
+  "install_packet_sha256": "37744fd2159589340d9627e1aa7365a91fe4c3aa61f40b81d917dc15a0d3a8c5"
+}

@@ -1,0 +1,26 @@
+{
+  "private.pos_sale_to_jsonb(pos_sales)": {
+    "acl": "{postgres=X/postgres}",
+    "owner": "postgres",
+    "sha256": "9ff8e122f905e0596bdb0379a74e3b37d4eeadddcb1329997c111f4ed358d578",
+    "security_definer": false
+  },
+  "pos_get_customer_credit_summary_v2(text,text,text,text,text,jsonb)": {
+    "acl": "{postgres=X/postgres,anon=X/postgres,authenticated=X/postgres}",
+    "owner": "postgres",
+    "sha256": "76ea33cacbf904bb4d6db536f5dbc2435796de0dc4c4d7cb6b7cce34c14061c9",
+    "security_definer": true
+  },
+  "pos_cancel_cloud_sale_unlimited(text,text,text,text,text,text,text)": {
+    "acl": "{postgres=X/postgres,service_role=X/postgres}",
+    "owner": "postgres",
+    "sha256": "7fb8c9717949e8754c686bddfbbfb649908813cecdafcc0799cd95072419f260",
+    "security_definer": true
+  },
+  "pos_record_customer_payment_unlimited(text,text,text,text,text,numeric,text,text,text,jsonb,text)": {
+    "acl": "{postgres=X/postgres,service_role=X/postgres}",
+    "owner": "postgres",
+    "sha256": "0b413a017babaafddf1ab08d5c1a7672d859f3fb0a12df8969156233af066bbb",
+    "security_definer": true
+  }
+}

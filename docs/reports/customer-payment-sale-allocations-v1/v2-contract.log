@@ -1,0 +1,19 @@
+
+> lanzo-pos-react@4.0.0 test:fin01-cloud-sync-v2-contract
+> node --test scripts/supabase/fin01-cloud-sync-protocol-v2-contract.node-test.mjs
+
+✔ FIN01 V is a selective, fail-closed transaction tied to exact F and dependency hashes (6.664574ms)
+✔ discovery and all 11 RPCs are advertised with the exact frontend contract (1.822609ms)
+✔ customer migration and financial replay use restricted shared cores, not public legacy dispatchers (0.492954ms)
+✔ v2 envelopes preserve explicit debt states, tenant identity, cursors, and operation identity (0.501126ms)
+✔ private functions remain closed and public RPCs have only explicit caller grants (2.246559ms)
+✔ frontend discovers v2 only and recursively projects nested financial customers (0.19919ms)
+✔ financial results are immutable evidence, without a current-debt projection or legacy-capability write (0.334134ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 7
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 183.935104

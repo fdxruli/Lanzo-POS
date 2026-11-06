@@ -21,7 +21,8 @@ export default function AbonoModal({
   blockedReason = '',
   cashSession = null,
   cashActor = null,
-  authoritativePendingSales = null
+  authoritativePendingSales = null,
+  cloudAllocationStatus = 'unavailable'
 }) {
   const [monto, setMonto] = useState('');
   const [error, setError] = useState('');
@@ -84,6 +85,10 @@ export default function AbonoModal({
             return;
           }
 
+          if (isCloudCredit) {
+            setPendingSales([]);
+            return;
+          }
           const sales = await db.sales
             .where('customerId').equals(customer.id)
             .and((sale) => {
@@ -101,7 +106,7 @@ export default function AbonoModal({
       };
       fetchSales();
     }
-  }, [show, advancedMode, customer, authoritativePendingSales]);
+  }, [show, advancedMode, customer, authoritativePendingSales, isCloudCredit]);
 
   // Recalcular el monto total cuando cambian las asignaciones en modo avanzado
   useEffect(() => {
@@ -281,12 +286,19 @@ export default function AbonoModal({
                 </p>
               )}
 
+              {isCloudCredit && cloudAllocationStatus !== 'reconciled' && (
+                <p className="ui-alert abono-alert">
+                  {cloudAllocationStatus === 'historical_unallocated'
+                    ? 'Hay abonos históricos sin conciliar por nota. El abono general reduce la deuda del cliente; no se asignará a ventas.'
+                    : 'Saldos por nota no disponibles. La asignación específica requiere confirmación del servidor.'}
+                </p>
+              )}
               <div className="abono-mode-toggle">
                 <label className={`abono-mode-label ${isSubmitting ? 'is-disabled' : ''}`}>
                   <input
                     type="checkbox"
                     checked={advancedMode}
-                    disabled={isBlocked || isSubmitting}
+                    disabled={isBlocked || isSubmitting || (isCloudCredit && cloudAllocationStatus !== 'reconciled')}
                     onChange={(e) => {
                       setAdvancedMode(e.target.checked);
                       if (!e.target.checked) setAllocations({});

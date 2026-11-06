@@ -261,6 +261,18 @@ export const localSaleToCloudShadowPayload = (localSale = {}, options = {}) => {
   };
 };
 
+export const cloudSaleCreditBalancePatch = (sale = {}) => {
+  const hasLiveBalance = Object.hasOwn(sale, 'current_balance_due');
+  return {
+    originalBalanceDue: sale.original_balance_due ?? sale.balance_due,
+    assignedPaymentsTotal: (sale.assigned_payments_total === null || sale.assigned_payments_total === undefined) ? null : String(sale.assigned_payments_total),
+    creditAllocationStatus: sale.credit_allocation_status || 'unavailable',
+    saldoPendiente: hasLiveBalance
+      ? ((sale.current_balance_due === null || sale.current_balance_due === undefined) ? null : String(sale.current_balance_due))
+      : String(sale.balance_due ?? 0)
+  };
+};
+
 export const cloudSaleToLocalSyncPatch = (cloudSale = {}, response = {}) => ({
   cloudSaleId: cloudSale.id || cloudSale.local_sale_id || response.sale?.id || null,
   cloudSalesSyncStatus: 'synced',
@@ -280,7 +292,7 @@ export const cloudSaleToLocalSyncPatch = (cloudSale = {}, response = {}) => ({
   ecommerceOrderCode: cloudSale.ecommerce_order_code || cloudSale.ecommerceOrderCode
     || cloudSale.metadata?.ecommerceOrderCode || cloudSale.metadata?.ecommerce_order_code || undefined,
   abono: cloudSale.amount_paid === undefined ? undefined : String(cloudSale.amount_paid),
-  saldoPendiente: cloudSale.balance_due === undefined ? undefined : String(cloudSale.balance_due),
+  ...cloudSaleCreditBalancePatch(cloudSale),
   discountTotal: cloudSale.discount_total === undefined ? undefined : String(cloudSale.discount_total),
   subtotal: cloudSale.subtotal === undefined ? undefined : String(cloudSale.subtotal),
   cashSessionId: cloudSale.cash_session_id || response.cash_session?.id || undefined,

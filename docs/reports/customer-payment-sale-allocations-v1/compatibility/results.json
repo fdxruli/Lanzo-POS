@@ -1,0 +1,177 @@
+[
+  {
+    "protocol": "V1",
+    "name": "general payment and actual legacy summary read",
+    "status": "PASS"
+  },
+  {
+    "protocol": "V1",
+    "name": "FIFO distributes across two sales",
+    "status": "PASS"
+  },
+  {
+    "protocol": "V1",
+    "name": "specific payment preserves other notes and accepts existing camelCase fields",
+    "status": "PASS"
+  },
+  {
+    "protocol": "V1",
+    "name": "legacy partial specific allocation preserves the unallocated remainder explicitly",
+    "status": "PASS"
+  },
+  {
+    "protocol": "V1",
+    "name": "retry keeps one payment and never replays a receipt as current debt",
+    "status": "PASS"
+  },
+  {
+    "protocol": "V1",
+    "name": "unpaid sale cancellation is idempotent",
+    "status": "PASS"
+  },
+  {
+    "protocol": "V1",
+    "name": "allocated sale cancellation safely rejects without refund",
+    "status": "PASS"
+  },
+  {
+    "protocol": "V1",
+    "name": "historical debt without sales remains payable",
+    "status": "PASS"
+  },
+  {
+    "protocol": "V1",
+    "name": "unverified historical assignments are preserved byte for byte",
+    "status": "PASS"
+  },
+  {
+    "protocol": "V1",
+    "name": "concurrent specific payments cannot overallocate despite sufficient global debt",
+    "status": "PASS"
+  },
+  {
+    "protocol": "V1",
+    "name": "concurrent retry with the same key creates one cash/ledger payment",
+    "status": "PASS"
+  },
+  {
+    "protocol": "V1",
+    "name": "invalid, cancelled, missing and other-tenant sale IDs reject atomically",
+    "status": "PASS"
+  },
+  {
+    "protocol": "V1",
+    "name": "all original serializer fields retain exactly their previous meanings",
+    "status": "PASS"
+  },
+  {
+    "protocol": "V1",
+    "name": "an allocation projection error rolls back payment, cash, debt and idempotency",
+    "status": "PASS"
+  },
+  {
+    "protocol": "V1",
+    "name": "partial allocation invalidates every affected note without assigning the remainder",
+    "status": "PASS"
+  },
+  {
+    "protocol": "V1",
+    "name": "invalid actor and foreign customer cannot create financial effects",
+    "status": "PASS"
+  },
+  {
+    "protocol": "V2",
+    "name": "general payment and actual legacy summary read",
+    "status": "PASS"
+  },
+  {
+    "protocol": "V2",
+    "name": "FIFO distributes across two sales",
+    "status": "PASS"
+  },
+  {
+    "protocol": "V2",
+    "name": "specific payment preserves other notes and accepts existing camelCase fields",
+    "status": "PASS"
+  },
+  {
+    "protocol": "V2",
+    "name": "legacy partial specific allocation preserves the unallocated remainder explicitly",
+    "status": "PASS"
+  },
+  {
+    "protocol": "V2",
+    "name": "retry keeps one payment and never replays a receipt as current debt",
+    "status": "PASS"
+  },
+  {
+    "protocol": "V2",
+    "name": "unpaid sale cancellation is idempotent",
+    "status": "PASS"
+  },
+  {
+    "protocol": "V2",
+    "name": "allocated sale cancellation safely rejects without refund",
+    "status": "PASS"
+  },
+  {
+    "protocol": "V2",
+    "name": "historical debt without sales remains payable",
+    "status": "PASS"
+  },
+  {
+    "protocol": "V2",
+    "name": "unverified historical assignments are preserved byte for byte",
+    "status": "PASS"
+  },
+  {
+    "protocol": "V2",
+    "name": "concurrent specific payments cannot overallocate despite sufficient global debt",
+    "status": "PASS"
+  },
+  {
+    "protocol": "V2",
+    "name": "concurrent retry with the same key creates one cash/ledger payment",
+    "status": "PASS"
+  },
+  {
+    "protocol": "V2",
+    "name": "invalid, cancelled, missing and other-tenant sale IDs reject atomically",
+    "status": "PASS"
+  },
+  {
+    "protocol": "V2",
+    "name": "all original serializer fields retain exactly their previous meanings",
+    "status": "PASS"
+  },
+  {
+    "protocol": "V2",
+    "name": "an allocation projection error rolls back payment, cash, debt and idempotency",
+    "status": "PASS"
+  },
+  {
+    "protocol": "V2",
+    "name": "partial allocation invalidates every affected note without assigning the remainder",
+    "status": "PASS"
+  },
+  {
+    "protocol": "V2",
+    "name": "invalid actor and foreign customer cannot create financial effects",
+    "status": "PASS"
+  },
+  {
+    "protocol": "V2",
+    "name": "second V2 device reads live notes, customer projection, events and cursors",
+    "status": "PASS"
+  },
+  {
+    "protocol": "V2",
+    "name": "V2 protocol admission rejects invalid contracts and V1 mutation bypasses",
+    "status": "PASS"
+  },
+  {
+    "protocol": "V2",
+    "name": "staff customers permission is checked before payment effects",
+    "status": "PASS"
+  }
+]
