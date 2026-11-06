@@ -291,6 +291,37 @@ describe('OrderSummary ecommerce discount slots', () => {
     expect(mocks.activeState.updateItemQuantity).toHaveBeenCalledWith(lineId, expectedQuantity);
   });
 
+  it('reproduces stock 2 / A=2 / B=1 without the bogus Ajustar a 2 action', () => {
+    setOrder(undefined);
+    const product = {
+      id: 'X', productId: 'X', name: 'X', price: 10, trackStock: true,
+      saleType: 'unit', stock: 2, committedStock: 0,
+      batchId: 'lot-1', batchManagement: { enabled: true }
+    };
+    const a = { id: 'A', items: [{ ...product, lineId: 'A-X', quantity: 2 }] };
+    // This is the legacy B line previously accepted with the wrong warning.
+    const b = {
+      id: 'B',
+      items: [{ ...product, lineId: 'B-X', quantity: 1, exceedsStock: true }]
+    };
+    mocks.activeState.currentOrderId = 'B';
+    mocks.activeState.activeOrders = new Map([['A', a], ['B', b]]);
+    mocks.activeState.getTotalPrice.mockReturnValue(10);
+    mocks.activeState.removeItem.mockImplementation((lineId) => {
+      b.items = b.items.filter((item) => item.lineId !== lineId);
+      return { success: true };
+    });
+
+    render(<OrderSummary {...props} />);
+    expect(screen.getByText('Stock insuficiente')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Ajustar a 2' })).not.toBeInTheDocument();
+    expect(screen.getByText(/Solo quedan.*unidades libres en esta sesión/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Quitar de esta venta' }));
+    expect(mocks.activeState.removeItem).toHaveBeenCalledWith('B-X');
+    expect(b.items).toEqual([]);
+    expect(a.items[0].quantity).toBe(2);
+  });
+
   it('keeps piece sales on integer increment and decrement controls', () => {
     setOrderItems([{
       id: 'piece-product',
