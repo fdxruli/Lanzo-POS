@@ -1,3 +1,5 @@
+import { getAdminUpdateCartState } from '../../pwa/adminUpdateSafety';
+
 export const createPWASlice = (set, get) => {
   // Mantener fuera del estado evita no-serializables en Zustand.
   let triggerUpdateRef = null;
@@ -123,11 +125,7 @@ export const createPWASlice = (set, get) => {
       try {
         // Distinguir carritos normales de una orden retenida para cobro.
         // Nunca liberar un checkout lock para forzar una actualización.
-        const { getActorCheckoutOwnerships } = await import('../../services/auth/actorOperationalHandoff');
-        const { useActiveOrders } = await import('../../hooks/pos/useActiveOrders');
-        const orders = Array.from(useActiveOrders.getState().activeOrders?.values?.() || []);
-        const lockedCheckout = getActorCheckoutOwnerships().length > 0
-          || orders.some((order) => order?.isLockedForCheckout === true);
+        const { hasOpenCart, checkoutLocked: lockedCheckout } = getAdminUpdateCartState();
 
         if (lockedCheckout) {
           const message = 'Hay un cobro abierto. Termina o cancela el cobro antes de actualizar; el carrito seguirá disponible.';
@@ -137,10 +135,6 @@ export const createPWASlice = (set, get) => {
           return false;
         }
 
-        const hasOpenCart = orders.some((order) => (
-          Array.isArray(order?.items)
-          && order.items.some((item) => Number(item?.quantity) > 0)
-        ));
         if (hasOpenCart) {
           const { showConfirmModal } = await import('../../services/utils');
           const confirmed = await showConfirmModal(
