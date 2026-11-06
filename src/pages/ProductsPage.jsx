@@ -1,3 +1,4 @@
+import { usePublishBotScreen } from '../hooks/useBotScreenContext';
 // src/pages/ProductsPage.jsx
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { showConfirmModal, showMessageModal } from '../services/utils';
@@ -46,6 +47,7 @@ export default function ProductsPage() {
     const [showDailyPrice, setShowDailyPrice] = useState(false);
     const [activeTab, setActiveTab] = useState('view-products');
     const [searchParams, setSearchParams] = useSearchParams();
+  usePublishBotScreen('/productos', ({ 'add-product': 'add', 'view-products': 'list', 'variants-view': 'variants' })[activeTab] || activeTab);
     const features = useFeatureConfig();
     const companyProfile = useAppStore(state => state.companyProfile);
     const licenseDetails = useAppStore(state => state.licenseDetails);

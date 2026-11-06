@@ -111,7 +111,7 @@ export default function OperationalSettings() {
               <span className="settings-option-title">Lanzo Bot</span>
               <p>Habilita el asistente para sugerencias y ayuda operativa dentro del sistema.</p>
               <span className="settings-option-meta">
-                {showAssistantBot ? 'Activo: el asistente puede aparecer con sugerencias.' : 'Desactivado: el asistente queda oculto.'}
+                {showAssistantBot ? 'Activo: el motor inicia al abrir el chat y se libera al cerrarlo.' : 'Desactivado: el asistente queda oculto y su motor detenido.'}
               </span>
             </div>
           </div>

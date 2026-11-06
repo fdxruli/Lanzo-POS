@@ -1,0 +1,50 @@
+[
+  {
+    "viewport": "small-mobile",
+    "size": [
+      320,
+      568
+    ],
+    "suggested_manual_navigation_warm_offline_reconnect_escape": "PASS",
+    "page_errors": [],
+    "identity_and_stores": "mocked",
+    "worker": "real DedicatedWorkerGlobalScope",
+    "worker_creations": 2
+  },
+  {
+    "viewport": "android-size",
+    "size": [
+      390,
+      844
+    ],
+    "suggested_manual_navigation_warm_offline_reconnect_escape": "PASS",
+    "page_errors": [],
+    "identity_and_stores": "mocked",
+    "worker": "real DedicatedWorkerGlobalScope",
+    "worker_creations": 2
+  },
+  {
+    "viewport": "windows-size",
+    "size": [
+      1440,
+      900
+    ],
+    "suggested_manual_navigation_warm_offline_reconnect_escape": "PASS",
+    "page_errors": [],
+    "identity_and_stores": "mocked",
+    "worker": "real DedicatedWorkerGlobalScope",
+    "worker_creations": 2
+  },
+  {
+    "viewport": "android-dark",
+    "size": [
+      390,
+      844
+    ],
+    "suggested_manual_navigation_warm_offline_reconnect_escape": "PASS",
+    "page_errors": [],
+    "identity_and_stores": "mocked",
+    "worker": "real DedicatedWorkerGlobalScope",
+    "worker_creations": 2
+  }
+]

@@ -1,3 +1,4 @@
+import { usePublishBotScreen } from '../hooks/useBotScreenContext';
 // src/pages/DashboardPage.jsx
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
@@ -75,6 +76,7 @@ export default function DashboardPage() {
     refreshKey: 0
   });
   const [activeTab, setActiveTab] = useState(() => readAIReportUiState().activeTab || 'stats');
+  usePublishBotScreen('/ventas', activeTab);
   const [hasCompletedInitialStatsLoad, setHasCompletedInitialStatsLoad] = useState(false);
   const [saleToCancel, setSaleToCancel] = useState(null);
   const [salesFinalHistoryPageIndex, setSalesFinalHistoryPageIndex] = useState(0);

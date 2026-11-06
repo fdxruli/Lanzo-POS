@@ -1,7 +1,7 @@
 // src/components/dashboard/TopProducts.jsx
 import { useMemo, useState } from 'react';
 import { Package, TrendingUp, Crown, DollarSign, AlertTriangle } from 'lucide-react';
-import { getLineRevenue, isMissingUnitCost, normalizeFinancialNumber } from '../../services/sales/financialPolicy';
+import { aggregateProductStats } from '../../services/reports/productStats';
 import './TopProducts.css';
 
 const PRODUCT_VIEWS = {
@@ -34,60 +34,10 @@ const formatQuantity = (value) => {
   return Number.isInteger(qty) ? String(qty) : qty.toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
 };
 
-const isCancelledSale = (sale = {}) => {
-  const status = String(sale.status || '').toLowerCase();
-  const fulfillmentStatus = String(sale.fulfillmentStatus || '').toLowerCase();
-  return status === 'cancelled' || fulfillmentStatus === 'cancelled';
-};
-
 export default function TopProducts({ sales = [], limit = 5 }) {
   const [activeView, setActiveView] = useState('quantity');
 
-  const productStats = useMemo(() => {
-    const productMap = new Map();
-
-    sales.forEach(sale => {
-      if (isCancelledSale(sale) || !Array.isArray(sale.items)) return;
-
-      sale.items.forEach(item => {
-        const id = item.parentId || item.id;
-        const quantity = normalizeFinancialNumber(item.quantity || 0);
-        const lineRevenue = Number(getLineRevenue(item).round(2).toString());
-        const rawCost = item.cost;
-        const hasMissingCost = isMissingUnitCost(rawCost);
-        const unitCost = normalizeFinancialNumber(rawCost);
-        const existing = productMap.get(id) || {
-          id,
-          name: item.name,
-          quantity: 0,
-          revenue: 0,
-          confirmedRevenue: 0,
-          confirmedProfit: 0,
-          missingRevenue: 0,
-          image: item.image
-        };
-
-        existing.quantity += quantity;
-        existing.revenue += lineRevenue;
-
-        if (hasMissingCost) {
-          existing.missingRevenue += lineRevenue;
-        } else {
-          existing.confirmedRevenue += lineRevenue;
-          existing.confirmedProfit += lineRevenue - (unitCost * quantity);
-        }
-
-        productMap.set(id, existing);
-      });
-    });
-
-    return Array.from(productMap.values()).map(product => ({
-      ...product,
-      marginPct: product.confirmedRevenue > 0
-        ? (product.confirmedProfit / product.confirmedRevenue) * 100
-        : null
-    }));
-  }, [sales]);
+  const productStats = useMemo(() => aggregateProductStats(sales), [sales]);
 
   const topProducts = useMemo(() => {
     if (activeView === 'profit') {

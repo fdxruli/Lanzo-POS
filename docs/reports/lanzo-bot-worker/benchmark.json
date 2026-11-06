@@ -1,0 +1,130 @@
+{
+  "browser": "154.0.8037.57",
+  "platform": "Chromium Linux headless",
+  "cpu_throttle": 4,
+  "viewport": [
+    390,
+    844
+  ],
+  "metric": "Main renderer JavaScript used heap after forced GC; excludes Worker heap and total process RAM",
+  "synthetic_data": true,
+  "application_QA": false,
+  "initialization_ms": 308.20000000018626,
+  "states": [
+    {
+      "state": "disabled",
+      "main_js_heap_bytes": 13095836,
+      "active_workers": 0,
+      "worker_creations": 0,
+      "worker_download_bytes": 0
+    },
+    {
+      "state": "enabled_closed",
+      "main_js_heap_bytes": 14197300,
+      "active_workers": 0,
+      "worker_creations": 0,
+      "worker_download_bytes": 0
+    },
+    {
+      "state": "open_idle",
+      "main_js_heap_bytes": 15196968,
+      "active_workers": 1,
+      "worker_creations": 1,
+      "worker_download_bytes": 17145
+    },
+    {
+      "state": "processing",
+      "main_js_heap_bytes": 15545712,
+      "active_workers": 1,
+      "worker_creations": 1,
+      "worker_download_bytes": 17145
+    },
+    {
+      "state": "closed_after_use",
+      "main_js_heap_bytes": 16191948,
+      "active_workers": 0,
+      "worker_creations": 1,
+      "worker_download_bytes": 17145
+    },
+    {
+      "state": "disabled_after_use",
+      "main_js_heap_bytes": 16136228,
+      "active_workers": 0,
+      "worker_creations": 1,
+      "worker_download_bytes": 17145
+    },
+    {
+      "state": "after_5_reopens",
+      "main_js_heap_bytes": 16333608,
+      "active_workers": 0,
+      "worker_creations": 6,
+      "worker_download_bytes": 102870
+    },
+    {
+      "state": "disabled_during_query",
+      "main_js_heap_bytes": 16366444,
+      "active_workers": 0,
+      "worker_creations": 7,
+      "worker_download_bytes": 120015
+    },
+    {
+      "state": "after_actor_and_navigation_cancel",
+      "main_js_heap_bytes": 16452772,
+      "active_workers": 0,
+      "worker_creations": 10,
+      "worker_download_bytes": 171450
+    }
+  ],
+  "queries": [
+    {
+      "scenario": "history_20000",
+      "latency_ms": 938.7999999998137,
+      "long_tasks": [],
+      "frames": 58,
+      "max_frame_gap_ms": 33.30000000000109
+    },
+    {
+      "scenario": "catalog_20000",
+      "latency_ms": 334.19999999925494,
+      "long_tasks": [],
+      "frames": 25,
+      "max_frame_gap_ms": 16.799999999999272
+    },
+    {
+      "scenario": "catalog_50",
+      "latency_ms": 74.6000000005588,
+      "long_tasks": [],
+      "frames": 8,
+      "max_frame_gap_ms": 16.799999999999272
+    },
+    {
+      "scenario": "consecutive_0",
+      "latency_ms": 76.1000000005588,
+      "long_tasks": [],
+      "frames": 7,
+      "max_frame_gap_ms": 16.700000000000728
+    },
+    {
+      "scenario": "consecutive_1",
+      "latency_ms": 94.20000000018626,
+      "long_tasks": [],
+      "frames": 8,
+      "max_frame_gap_ms": 16.700000000000728
+    },
+    {
+      "scenario": "consecutive_2",
+      "latency_ms": 58.39999999944121,
+      "long_tasks": [],
+      "frames": 6,
+      "max_frame_gap_ms": 16.80000000000291
+    }
+  ],
+  "same_financial_algorithm_on_main_ms": 1094.699999999255,
+  "baseline_responsiveness": {
+    "long_tasks": [],
+    "max_frame_gap_ms": 1083.300000000001
+  },
+  "constant_retained_datasets": "20000 sales (60000 lines) + 20000 products + 50 product references throughout all states",
+  "financial_equivalence": true,
+  "page_errors": []
+}

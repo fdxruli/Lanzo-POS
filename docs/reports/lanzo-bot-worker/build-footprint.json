@@ -1,0 +1,18 @@
+{
+  "previous_workspace_snapshot": {
+    "uncompressed_precache_bytes": 3562366,
+    "js_files": 33,
+    "entries": 44
+  },
+  "candidate": {
+    "uncompressed_precache_bytes": 3580967,
+    "js_files": 33,
+    "entries": 44
+  },
+  "worker": [
+    {
+      "file": "bot.worker-COY7nj9u.js",
+      "bytes": 44225
+    }
+  ]
+}

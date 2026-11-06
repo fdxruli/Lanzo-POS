@@ -1,3 +1,4 @@
+import { usePublishBotScreen } from '../../hooks/useBotScreenContext';
 import { showConfirmModal, showMessageModal } from '../../services/utils';
 import CloudKitchenMonitorRest8 from './CloudKitchenMonitorRest8';
 
@@ -41,6 +42,7 @@ const shouldAdvanceItem = (item, nextStatus) => {
 };
 
 export default function CloudKitchenMonitorRest8Container({ kitchenCloud }) {
+  usePublishBotScreen('/pedidos', kitchenCloud.statusFilter);
   const handleAdvanceStatus = async (order) => {
     const action = getOrderAction(order);
     if (!action) return;

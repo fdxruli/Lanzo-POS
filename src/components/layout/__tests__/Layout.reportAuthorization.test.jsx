@@ -85,7 +85,7 @@ vi.mock('../../../config/botContext', () => ({
 vi.mock('../Navbar', async () => {
   const { useEffect } = await import('react');
   return {
-    default: ({ isSuppressed }) => {
+    default: function MockSurface({ isSuppressed }) {
       useEffect(() => {
         mocks.runtimeMounts.navbar += 1;
         return () => { mocks.runtimeUnmounts.navbar += 1; };
@@ -104,7 +104,7 @@ vi.mock('../Navbar', async () => {
 vi.mock('../Ticker', async () => {
   const { useEffect } = await import('react');
   return {
-    default: ({ isSuppressed }) => {
+    default: function MockSurface({ isSuppressed }) {
       useEffect(() => {
         mocks.runtimeMounts.ticker += 1;
         return () => { mocks.runtimeUnmounts.ticker += 1; };
@@ -120,7 +120,7 @@ vi.mock('../../common/PostDowngradeRecoveryBanner', () => ({
 vi.mock('../../common/DataSafetyModal', () => ({ default: () => null }));
 vi.mock('../../inventory/LocalInventoryOperationalAlertsRuntime', async () => {
   const { useEffect } = await import('react');
-  return { default: () => {
+  return { default: function MockSurface() {
     useEffect(() => {
       mocks.runtimeMounts.localAlerts += 1;
       return () => { mocks.runtimeUnmounts.localAlerts += 1; };
@@ -130,7 +130,7 @@ vi.mock('../../inventory/LocalInventoryOperationalAlertsRuntime', async () => {
 });
 vi.mock('../../ecommerce/orders/EcommerceOrdersRuntime', async () => {
   const { useEffect } = await import('react');
-  return { default: () => {
+  return { default: function MockSurface() {
     useEffect(() => {
       mocks.runtimeMounts.orders += 1;
       return () => { mocks.runtimeUnmounts.orders += 1; };
@@ -140,7 +140,7 @@ vi.mock('../../ecommerce/orders/EcommerceOrdersRuntime', async () => {
 });
 vi.mock('../../ecommerce/EcommercePublishedStockAlertRuntime', async () => {
   const { useEffect } = await import('react');
-  return { default: () => {
+  return { default: function MockSurface() {
     useEffect(() => {
       mocks.runtimeMounts.stock += 1;
       return () => { mocks.runtimeUnmounts.stock += 1; };
@@ -150,7 +150,7 @@ vi.mock('../../ecommerce/EcommercePublishedStockAlertRuntime', async () => {
 });
 vi.mock('../../ecommerce/EcommerceCatalogSyncRuntime', async () => {
   const { useEffect } = await import('react');
-  return { default: () => {
+  return { default: function MockSurface() {
     useEffect(() => {
       mocks.runtimeMounts.catalog += 1;
       return () => { mocks.runtimeUnmounts.catalog += 1; };
@@ -161,7 +161,7 @@ vi.mock('../../ecommerce/EcommerceCatalogSyncRuntime', async () => {
 vi.mock('../../common/AssistantBot', async () => {
   const { useEffect } = await import('react');
   return {
-    default: ({ reportsAllowed, globalAlertEligible, isSuppressed }) => {
+    default: function MockSurface({ reportsAllowed, globalAlertEligible, isSuppressed }) {
       useEffect(() => {
         mocks.runtimeMounts.assistant += 1;
         return () => { mocks.runtimeUnmounts.assistant += 1; };
@@ -306,15 +306,14 @@ describe('Layout report authorization', () => {
     expect(mocks.loadProducts).toHaveBeenCalledTimes(1);
   });
 
-  it('OFFLINE-LAZY-08 does not load AssistantBot for Staff without report permission or an eligible global alert', async () => {
+  it('loads operational help for Staff without loading report data', async () => {
     mocks.runtime = staffRuntime(['refunds']);
     renderLayout();
 
     await waitFor(() => expect(mocks.loadProducts).toHaveBeenCalledTimes(1));
     expect(mocks.loadStats).not.toHaveBeenCalled();
     expect(mocks.loadSales).not.toHaveBeenCalled();
-    expect(screen.queryByTestId('assistant')).not.toBeInTheDocument();
-    expect(mocks.assistantImporter).not.toHaveBeenCalled();
+    expect(await screen.findByTestId('assistant')).toHaveAttribute('data-reports-allowed', 'false');
   });
 
   it('does not infer reports from refunds and recomputes after an actor switch', async () => {
@@ -332,7 +331,7 @@ describe('Layout report authorization', () => {
       </MemoryRouter>
     );
 
-    await waitFor(() => expect(screen.queryByTestId('assistant')).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTestId('assistant')).toHaveAttribute('data-reports-allowed', 'false'));
   });
 
   it('allows a current Staff actor with reports to load and view report surfaces', async () => {

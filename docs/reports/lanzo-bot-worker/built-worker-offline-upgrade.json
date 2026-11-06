@@ -1,0 +1,48 @@
+{
+  "status": "PASS",
+  "old_architecture_resource_upgrade": true,
+  "explicit_activation": true,
+  "offline": true,
+  "http_cache_disabled": true,
+  "real_built_worker": "bot.worker-COY7nj9u.js",
+  "result": {
+    "screen": {
+      "id": 1,
+      "type": "RESULT",
+      "value": {
+        "label": "Productos e inventario · Gestionar lotes",
+        "guides": [
+          {
+            "id": "batches",
+            "question": "¿Cómo agrego stock o un lote?"
+          },
+          {
+            "id": "product",
+            "question": "¿Cómo agrego un producto correctamente?"
+          },
+          {
+            "id": "product_edit",
+            "question": "¿Cómo edito o desactivo un producto?"
+          }
+        ]
+      }
+    },
+    "answer": {
+      "id": 2,
+      "type": "RESULT",
+      "value": {
+        "title": "Entradas de inventario",
+        "message": "1. En Productos → Gestionar lotes, busca y selecciona el producto.\n\n2. Abre el registro de lote y captura existencias, costo de compra y los datos físicos o de caducidad que solicite tu rubro.\n\n3. Revisa proveedor y cantidad. Si eliges pagar desde Caja, comprueba el importe y la caja antes de guardar: esa opción registra una salida de efectivo.\n\n4. Guarda y comprueba el lote y el stock total del producto.",
+        "tips": [],
+        "actions": [
+          {
+            "label": "Abrir Entradas de inventario",
+            "path": "/productos?tab=batches"
+          }
+        ]
+      }
+    }
+  },
+  "application_QA": false,
+  "account_session": "none"
+}
