@@ -121,6 +121,44 @@ export const createPWASlice = (set, get) => {
       set({ isUpdating: true, updateError: null });
 
       try {
+        // Distinguir carritos normales de una orden retenida para cobro.
+        // Nunca liberar un checkout lock para forzar una actualización.
+        const { getActorCheckoutOwnerships } = await import('../../services/auth/actorOperationalHandoff');
+        const { useActiveOrders } = await import('../../hooks/pos/useActiveOrders');
+        const orders = Array.from(useActiveOrders.getState().activeOrders?.values?.() || []);
+        const lockedCheckout = getActorCheckoutOwnerships().length > 0
+          || orders.some((order) => order?.isLockedForCheckout === true);
+
+        if (lockedCheckout) {
+          const message = 'Hay un cobro abierto. Termina o cancela el cobro antes de actualizar; el carrito seguirá disponible.';
+          const { showMessageModal } = await import('../../services/utils');
+          set({ isUpdating: false, updateAvailable: true, showUpdateModal: true, updateError: message });
+          showMessageModal(message, null, { type: 'warning' });
+          return false;
+        }
+
+        const hasOpenCart = orders.some((order) => (
+          Array.isArray(order?.items)
+          && order.items.some((item) => Number(item?.quantity) > 0)
+        ));
+        if (hasOpenCart) {
+          const { showConfirmModal } = await import('../../services/utils');
+          const confirmed = await showConfirmModal(
+            'Precaución: tienes carritos abiertos. LANZO recargará la aplicación; los carritos guardados en este dispositivo se recuperarán al volver a entrar. Asegúrate de haber guardado los cambios antes de continuar.',
+            {
+              title: 'Actualizar con carritos abiertos',
+              confirmButtonText: 'Actualizar ahora',
+              cancelButtonText: 'Más tarde'
+            }
+          );
+          if (!confirmed) {
+            set({ isUpdating: false });
+            return false;
+          }
+        }
+
+        // El coordinador volverá a comprobar los bloqueos críticos justo
+        // antes de activar el Service Worker o recargar.
         const reloaded = await triggerUpdateRef(true);
         if (reloaded === false) {
           set({ updateAvailable: true, showUpdateModal: true, isUpdating: false });
@@ -130,9 +168,14 @@ export const createPWASlice = (set, get) => {
         // Only a document running the target build may report completion.
         set({ isUpdating: false, updateAvailable: true, updateError: 'Actualización pendiente de completar.' });
       } catch (error) {
-        console.error('Error aplicando actualizacion del Service Worker:', error);
-        set({ isUpdating: false, updateAvailable: true, showUpdateModal: true,
-          updateError: error?.message || 'No pudimos aplicar la actualización. Inténtalo de nuevo.' });
+        const message = error?.message || 'No pudimos aplicar la actualización. Inténtalo de nuevo.';
+        set({ isUpdating: false, updateAvailable: true, showUpdateModal: true, updateError: message });
+        try {
+          const { showMessageModal } = await import('../../services/utils');
+          showMessageModal(message, null, { type: 'warning' });
+        } catch {
+          // El aviso persistente de actualización mantiene el motivo visible.
+        }
       }
     }
   };
