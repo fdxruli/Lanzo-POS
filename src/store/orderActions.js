@@ -135,7 +135,8 @@ const getSessionReservedQuantity = (activeOrders = new Map(), candidate, exclude
 
   let reserved = 0;
   activeOrders.forEach((order, orderId) => {
-    if (orderId === excludeOrderId) return;
+    // OPEN persisted orders already consume committedStock; never count twice.
+    if (orderId === excludeOrderId || order?.isSaved || order?.origin === 'ecommerce') return;
 
     (order?.items || []).forEach((item) => {
       if (getInventoryReservationKey(item) !== reservationKey) return;
