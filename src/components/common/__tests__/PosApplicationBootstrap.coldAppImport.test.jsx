@@ -19,6 +19,7 @@ describe('PosApplicationBootstrap cold administrative import', () => {
   it('loads the production App path while READY is locked before tenant identity, without opening a database', async () => {
     vi.resetModules();
     const open = vi.spyOn(Dexie.prototype, 'open');
+    const nativeOpen = vi.spyOn(indexedDB, 'open');
     const { initializeLocalTenantGuard, getLocalTenantGuardState } = await import('../../../services/tenant/localTenantGuard');
     const { DATABASE_RECOVERY_STATUS, setDatabaseRecoveryState } = await import('../../../services/db/databaseRecoveryState');
     const router = await import('../../../services/db/tenantRuntimeRouter');
@@ -33,6 +34,8 @@ describe('PosApplicationBootstrap cold administrative import', () => {
 
     expect(router.getActiveTenantRuntime()).toBeNull();
     expect(open).not.toHaveBeenCalled();
+    expect(nativeOpen).not.toHaveBeenCalled();
+    expect(() => router.db.table('sales')).toThrow('TENANT_RUNTIME_NOT_READY');
     expect(getLocalTenantGuardState()).toMatchObject({ status: 'locked' });
   }, 90_000);
 

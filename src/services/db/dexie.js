@@ -1,3 +1,4 @@
+import { installAdminUpdateWriteTracking } from '../../pwa/adminUpdateSafety';
 import Dexie from 'dexie';
 import { DB_NAME } from '../../config/dbConfig'; // Usamos tu config existente
 import { buildPhoneBuckets, toIndexedPhoneKey } from './customerPhoneUtils';
@@ -570,6 +571,7 @@ export const installLanzoOperationalHooks = (database) => {
   database.table(STORES.MENU).hook('updating', (mods, key, row) => { const next = { ...row, ...mods }; const status = next.isActive !== false && Number(next.stock) > 0 ? 1 : 0; mods.activeStockStatus = status; mods.lowStockAlertStatus = getLowStockAlertStatus(next); Object.assign(mods, buildProductSearchFields(next)); return mods; });
   database.table(STORES.PRODUCT_BATCHES).hook('creating', (_key, row) => { const active = row.isActive !== false && Number(row.stock) > 0; row.activeStockStatus = active ? 1 : 0; if (row.status === undefined || row.status === null) row.status = row.isActive !== false ? 'active' : 'inactive'; if (row.expiryDate && !row.alertTargetDate) row.alertTargetDate = row.expiryDate; });
   database.table(STORES.PRODUCT_BATCHES).hook('updating', (mods, key, row) => { const next = { ...row, ...mods }; const status = next.isActive !== false && Number(next.stock) > 0 ? 1 : 0; mods.activeStockStatus = status; if (mods.isActive !== undefined && mods.status === undefined) mods.status = mods.isActive ? 'active' : 'inactive'; if (mods.expiryDate !== undefined && mods.alertTargetDate === undefined) mods.alertTargetDate = mods.expiryDate; return mods; });
+  installAdminUpdateWriteTracking(database);
   operationalDatabases.add(database); return database;
 };
 export const createOperationalLanzoDatabase = (databaseName) => installLanzoOperationalHooks(installLocalTenantDbMiddleware(createCanonicalLanzoDatabase(databaseName)));

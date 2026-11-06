@@ -47,3 +47,6 @@
     width: auto;
   }
 }
+
+.update-prompt__close { min-width: 44px; min-height: 44px; }
+.update-prompt { bottom: max(20px, env(safe-area-inset-bottom)); max-height: 50dvh; overflow: auto; }

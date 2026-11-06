@@ -81,7 +81,7 @@ const adminManifestPlugin = () => ({
 
 const getGitCommit = () => {
   try {
-    return execSync('git rev-parse --short HEAD', { stdio: ['ignore', 'pipe', 'ignore'] })
+    return execSync('git rev-parse HEAD', { stdio: ['ignore', 'pipe', 'ignore'] })
       .toString()
       .trim();
   } catch {
@@ -90,13 +90,28 @@ const getGitCommit = () => {
 };
 
 const buildDate = new Date().toISOString();
-const buildCommit = getGitCommit();
+const buildCommit = process.env.VERCEL_GIT_COMMIT_SHA || getGitCommit();
+const buildInfo = {
+  app: 'lanzo-pos',
+  version: packageJson.version,
+  commit: buildCommit,
+  builtAt: buildDate,
+  buildId: `${buildCommit}:${buildDate}`,
+};
+const buildInfoPlugin = () => ({
+  name: 'lanzo-build-info',
+  apply: 'build',
+  generateBundle() {
+    this.emitFile({ type: 'asset', fileName: 'build-info.json', source: JSON.stringify(buildInfo) });
+  },
+});
 
 export default defineConfig(() => ({
   plugins: [
     react(),
     incidentLabBuildPlugin(process.env),
     adminManifestPlugin(),
+    buildInfoPlugin(),
     VitePWA({
       strategies: 'injectManifest',
       srcDir: 'src/pwa',
@@ -139,6 +154,7 @@ export default defineConfig(() => ({
 
   define: {
     'import.meta.env.VITE_APP_VERSION': JSON.stringify(packageJson.version),
+    'import.meta.env.VITE_BUILD_ID': JSON.stringify(buildInfo.buildId),
     'import.meta.env.VITE_BUILD_DATE': JSON.stringify(buildDate),
     'import.meta.env.VITE_BUILD_COMMIT': JSON.stringify(buildCommit),
     'import.meta.env.VITE_INCIDENT_QA_PREVIEW': JSON.stringify(process.env.VERCEL_ENV === 'preview'),

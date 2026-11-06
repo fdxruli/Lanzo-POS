@@ -1,0 +1,5 @@
+.update-controls { display: grid; gap: var(--ui-space-xs, 6px); min-width: 0; }
+.update-controls p { margin: 0; font-size: .9rem; }
+.update-controls p:empty { display: none; }
+.update-controls small { overflow-wrap: anywhere; color: var(--ui-text); }
+.update-controls button { min-height: 44px; white-space: normal; }

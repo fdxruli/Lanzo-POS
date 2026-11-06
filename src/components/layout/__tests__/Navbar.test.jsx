@@ -324,17 +324,17 @@ describe('Navbar mobile menu', () => {
     expect(screen.getByRole('dialog', { name: 'Menú principal' }))
       .toHaveAttribute('aria-hidden', 'false');
     const closeButton = screen.getByRole('button', { name: 'Cerrar menú' });
-    const aboutLink = within(drawer).getByRole('link', { name: /Acerca de/i });
+    const lastAction = within(drawer).getByRole('button', { name: /Buscar actualizaciones/i });
 
     expect(document.activeElement).toBe(closeButton);
 
-    aboutLink.focus();
+    lastAction.focus();
     fireEvent.keyDown(document, { key: 'Tab' });
     expect(document.activeElement).toBe(closeButton);
 
     closeButton.focus();
     fireEvent.keyDown(document, { key: 'Tab', shiftKey: true });
-    expect(document.activeElement).toBe(aboutLink);
+    expect(document.activeElement).toBe(lastAction);
 
     fireEvent.keyDown(document, { key: 'Escape' });
 

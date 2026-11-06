@@ -12,6 +12,8 @@ export const createPWASlice = (set, get) => {
     showUpdateModal: false,
     isInstalling: false,
     isUpdating: false,
+    updateError: null,
+    updateId: null,
 
   setInstallContext: ({ isIOS = false, isStandalone = false }) =>
     set((state) => {
@@ -89,12 +91,15 @@ export const createPWASlice = (set, get) => {
     }
   },
 
-  setUpdateAvailable: (available) => {
+  setUpdateAvailable: (available, updateId = null) => {
+    const current = get();
     if (available) {
-      set({ updateAvailable: true, showUpdateModal: true });
+      const isNew = !current.updateAvailable || (updateId && current.updateId && current.updateId !== updateId);
+      set({ updateAvailable: true, updateId: updateId || current.updateId,
+        showUpdateModal: isNew || current.showUpdateModal });
       return;
     }
-    set({ updateAvailable: false, showUpdateModal: false });
+    set({ updateAvailable: false, showUpdateModal: false, updateId: null });
   },
 
     setTriggerUpdate: (fn) => {
@@ -113,7 +118,7 @@ export const createPWASlice = (set, get) => {
 
       if (!triggerUpdateRef || isUpdating) return;
 
-      set({ isUpdating: true });
+      set({ isUpdating: true, updateError: null });
 
       try {
         const reloaded = await triggerUpdateRef(true);
@@ -121,10 +126,13 @@ export const createPWASlice = (set, get) => {
           set({ updateAvailable: true, showUpdateModal: true, isUpdating: false });
           return;
         }
-        set({ updateAvailable: false, showUpdateModal: false, isUpdating: false });
+        // Reload requested is not proof of completion (beforeunload can cancel).
+        // Only a document running the target build may report completion.
+        set({ isUpdating: false, updateAvailable: true, updateError: 'Actualización pendiente de completar.' });
       } catch (error) {
         console.error('Error aplicando actualizacion del Service Worker:', error);
-        set({ isUpdating: false });
+        set({ isUpdating: false, updateAvailable: true, showUpdateModal: true,
+          updateError: error?.message || 'No pudimos aplicar la actualización. Inténtalo de nuevo.' });
       }
     }
   };

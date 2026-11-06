@@ -1,3 +1,4 @@
+import { registerAdminUpdateBlocker } from '../pwa/adminUpdateSafety';
 import { usePublishBotScreen } from '../hooks/useBotScreenContext';
 // src/pages/CajaPage.jsx
 import { useState, useEffect, useMemo, useCallback } from 'react';
@@ -181,6 +182,14 @@ export default function CajaPage() {
 
   // Estado para modal de resumen (no usa useModal porque tiene data asociada)
   const [showResumen, setShowResumen] = useState(false);
+  const financialFormOpen = editInitialModal.isOpen || cashEntryModal.isOpen
+    || cashExitModal.isOpen || cashAdjustmentModal.isOpen || isAuditOpen
+    || (Boolean(reviewCashSessionId) && !isCloudCashReadOnly);
+  useEffect(() => {
+    if (!financialFormOpen) return undefined;
+    return registerAdminUpdateBlocker('Completa o cierra el formulario de Caja antes de actualizar.');
+  }, [financialFormOpen]);
+
 
   // ============================================================
   // ESTADOS PARA CÁLCULOS DERIVADOS

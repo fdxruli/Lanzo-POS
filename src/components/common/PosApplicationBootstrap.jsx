@@ -1,3 +1,5 @@
+import { getAdminUpdateDraftBlockReason, hasAdminUpdateWrites } from '../../pwa/adminUpdateSafety';
+import { getLocalDatabaseActivitySnapshot } from '../../services/db/databaseRuntime';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Check, Copy, Mail, RotateCw } from 'lucide-react';
 import DatabaseRecoveryGate from './DatabaseRecoveryGate';
@@ -137,6 +139,11 @@ export const loadPosReadyRuntime = async () => {
     import('../../services/auth/actorOperationalHandoff')
   ]);
 
+  // The App/bootstrap graph initializes sync handlers at import time. Read
+  // its coordinator only after that graph has finished evaluating; starting
+  // it as another concurrent root can expose an uninitialized cyclic export.
+  const { posSyncOrchestrator } = await import('../../services/sync/posSyncOrchestrator');
+
   function Thrower({ error }) {
     throw error;
   }
@@ -188,10 +195,16 @@ export const loadPosReadyRuntime = async () => {
   return {
     ReadyApplication: PosReadyApplication,
     activate: () => {
-      setAdminServiceWorkerReloadGuard(() => (
-        getActorCheckoutOwnerships().length === 0
-        && getPendingActorOperations().length === 0
-      ));
+      setAdminServiceWorkerReloadGuard(() => {
+        if (getActorCheckoutOwnerships().length) return 'Termina o cancela el cobro en curso antes de actualizar.';
+        if (getPendingActorOperations().length) return 'Espera a que termine la operación en curso antes de actualizar.';
+        if (useAppStore.getState().isBackupLoading) return 'Espera a que termine el respaldo o la restauración antes de actualizar.';
+        if (hasAdminUpdateWrites()) return 'Estamos guardando información. Intenta actualizar en unos momentos.';
+        const activity = getLocalDatabaseActivitySnapshot();
+        if (activity.hasActiveNativeRequest || activity.preflightActive) return 'Espera a que termine la preparación de los datos locales.';
+        if (posSyncOrchestrator.getUpdateActivity()) return 'Espera a que termine la sincronización antes de actualizar.';
+        return getAdminUpdateDraftBlockReason() || true;
+      });
       installDevConsoleCapture();
       installDevConsolePreferences({
         canAccessSettings: runtimeSnapshot => evaluateSettingsAccess({

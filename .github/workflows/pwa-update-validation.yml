@@ -1,0 +1,62 @@
+name: PWA update validation
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/pwa/**'
+      - 'src/components/common/Update*'
+      - 'src/components/common/PosApplicationBootstrap.jsx'
+      - 'src/components/common/__tests__/PosApplicationBootstrap.coldAppImport.test.jsx'
+      - 'src/architecture/__tests__/vercelPrebuiltDeployment.test.js'
+      - 'src/store/slices/createPWASlice*'
+      - 'src/config/appVersion.js'
+      - 'src/services/financial/financialTimeout.js'
+      - 'scripts/qa/pwa-updates/**'
+      - 'vite.config.js'
+      - 'vercel.json'
+      - '.github/workflows/pwa-update-validation.yml'
+permissions:
+  contents: read
+jobs:
+  updater:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Updater and persistence regressions
+        run: >-
+          npx vitest run src/pwa/__tests__ src/store/slices/createPWASlice.test.js
+          src/components/common/UpdatePrompt.test.jsx src/components/common/UpdateControls.test.jsx
+          src/components/common/__tests__/PosApplicationBootstrap.coldAppImport.test.jsx
+          src/architecture/__tests__/vercelPrebuiltDeployment.test.js
+          src/services/financial/__tests__ src/services/db/__tests__/databaseSchemaRegistration.test.js
+          --maxWorkers=3
+      - run: npm run build
+        env:
+          # Keep the complete app graph without connecting to a real backend.
+          VITE_SUPABASE_URL: https://update-qa.invalid
+          VITE_SUPABASE_PUBLISHABLE_KEY: synthetic-update-qa-public-key
+      - run: npm run build:store
+      - run: npx vitest run src/architecture/__tests__/adminPwaArchitecture.test.js src/architecture/__tests__/adminLazyRouteRecoveryArchitecture.test.js --maxWorkers=2
+      - name: Install isolated browser runner
+        run: |
+          npm install --prefix "$RUNNER_TEMP/lanzo-update-qa" playwright@1.56.1
+          "$RUNNER_TEMP/lanzo-update-qa/node_modules/.bin/playwright" install --with-deps chromium
+      - name: Two builds on one real browser origin
+        run: node scripts/qa/pwa-updates/browser.mjs
+        env:
+          UPDATE_QA_PLAYWRIGHT: ${{ runner.temp }}/lanzo-update-qa/node_modules/playwright/index.mjs
+          UPDATE_QA_OUTPUT: ${{ runner.temp }}/lanzo-update-browser
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: updater-browser-evidence
+          path: |
+            ${{ runner.temp }}/lanzo-update-browser/evidence.json
+            ${{ runner.temp }}/lanzo-update-browser/*.png
+          if-no-files-found: ignore

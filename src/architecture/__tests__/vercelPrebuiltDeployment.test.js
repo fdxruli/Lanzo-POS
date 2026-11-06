@@ -598,7 +598,7 @@ describe('ECOM.PUBLIC.SOCIAL.PREVIEW prebuilt deployment architecture', () => {
     const adminConfig = JSON.parse(adminConfigSource);
     expect(adminConfig.rewrites).not.toContainEqual({ source: '/(.*)', destination: '/index.html' });
     expect(adminConfig.rewrites).toContainEqual({
-      source: '/((?!assets/|sw\\.js$|workbox-[^/]+\\.js$|manifest\\.webmanifest$|registerSW\\.js$|pwa-192x192\\.png$|pwa-512x512\\.png$|logIcon\\.svg$).*)',
+      source: '/((?!assets/|build-info\\.json$|sw\\.js$|workbox-[^/]+\\.js$|manifest\\.webmanifest$|registerSW\\.js$|pwa-192x192\\.png$|pwa-512x512\\.png$|logIcon\\.svg$).*)',
       destination: '/index.html',
     });
     expect(outputAudit).toContain('adminPwaPresent');

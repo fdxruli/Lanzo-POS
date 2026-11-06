@@ -1,3 +1,4 @@
+import { registerAdminUpdateBlocker } from '../../pwa/adminUpdateSafety';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Eye, RefreshCw, Save, Send } from 'lucide-react';
 import { toast } from 'react-hot-toast';
@@ -165,8 +166,9 @@ export default function EcommerceSiteBuilderFoundation({ isPro, portal, licenseK
   useEffect(() => {
     if (!hasLocalChanges) return undefined;
     const warn = (event) => { event.preventDefault(); event.returnValue = ''; };
+    const release = registerAdminUpdateBlocker('Guarda o descarta los cambios del portal antes de actualizar.');
     window.addEventListener('beforeunload', warn);
-    return () => window.removeEventListener('beforeunload', warn);
+    return () => { release(); window.removeEventListener('beforeunload', warn); };
   }, [hasLocalChanges]);
 
   if (!isPro) return null;

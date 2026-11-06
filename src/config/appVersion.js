@@ -5,8 +5,10 @@ export const APP_VERSION_NUMBER = rawVersion.replace(/^v/, '');
 export const APP_BUILD_DATE = import.meta.env.VITE_BUILD_DATE || '';
 export const APP_BUILD_COMMIT = import.meta.env.VITE_BUILD_COMMIT || 'local';
 
+export const APP_BUILD_ID = import.meta.env.VITE_BUILD_ID || `${APP_BUILD_COMMIT}:${APP_BUILD_DATE}`;
+
 export const APP_BUILD_DATE_LABEL = APP_BUILD_DATE
   ? new Date(APP_BUILD_DATE).toLocaleString()
   : 'Build local';
 
-export const APP_VERSION_LABEL = `${APP_VERSION}${APP_BUILD_COMMIT ? ` (${APP_BUILD_COMMIT})` : ''}`;
+export const APP_VERSION_LABEL = `${APP_VERSION}${APP_BUILD_COMMIT ? ` (${APP_BUILD_COMMIT.slice(0, 12)})` : ''}`;

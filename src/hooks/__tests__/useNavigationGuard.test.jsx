@@ -1,5 +1,6 @@
+// @vitest-environment jsdom
 import { useState } from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import '@testing-library/jest-dom/vitest';
 import {
@@ -9,10 +10,12 @@ import {
   useLocation,
   useNavigate
 } from 'react-router-dom';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import MessageModal from '../../components/common/MessageModal';
 import { useMessageStore } from '../../store/useMessageStore';
 import { useNavigationGuard } from '../useNavigationGuard';
+
+afterEach(() => cleanup());
 
 function GuardHarness({ enabled = true, onDiscard = vi.fn() }) {
   const [name, setName] = useState('');
