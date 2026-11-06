@@ -40,6 +40,22 @@ describe('Múltiples ventas: aviso contextual de stock compartido', () => {
     expect(props.onDismissInventoryNotice).toHaveBeenCalledOnce();
   });
 
+  it('shows the committed-batch net 3/3/0, never subtracting formal reservations twice', () => {
+    render(<OrderTabs {...props} inventoryConflictNotice={{
+      orderId: 'B', productName: 'Lote con reservas',
+      availableBeforeCarts: 3, provisionalInOtherCarts: 3,
+      freeInThisCart: 0, sourceCount: 1,
+      sourceOrderId: null, singleSourceLabel: null
+    }} />);
+    const notice = screen.getByRole('alert');
+    expect(notice).toHaveTextContent('Lote con reservas');
+    expect(notice).toHaveTextContent('Disponibles para vender según inventario local, antes de otras ventas: 3');
+    expect(notice).toHaveTextContent('Utilizadas provisionalmente en otra venta abierta: 3');
+    expect(notice).toHaveTextContent('Unidades adicionales libres para esta venta: 0');
+    expect(notice).not.toHaveTextContent('NaN');
+    expect(notice).not.toHaveTextContent('-1');
+  });
+
   it('does not invent the source of multiple carts or missing stock data', () => {
     render(<OrderTabs {...props} inventoryConflictNotice={{
       orderId: 'B', productName: 'Producto X',
