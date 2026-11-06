@@ -31,6 +31,9 @@ import {
   restaurantCloudTableBlockedResult
 } from '../services/restaurant/restaurantCloudTableGuards';
 
+// Presentation-only hint. A symbol never serializes into sale/customer payloads.
+export const INVENTORY_NOTICE_NET_AVAILABILITY = Symbol('inventory-notice-net-availability');
+
 const OPEN_FULFILLMENT_STATUS = 'open';
 const TABLE_ORDER_TYPE = 'table';
 
@@ -347,7 +350,7 @@ export const createOrderActions = (set, get) => ({
                 // Informational snapshot only. The selected line's stock is
                 // already net of batch commitments; parent's committedStock
                 // must never be subtracted from it again in the notice.
-                inventoryNoticeNetAvailable: verifiedBatchAvailability,
+                [INVENTORY_NOTICE_NET_AVAILABILITY]: verifiedBatchAvailability,
                 isVariant: isCommercialVariant,
                 skuDetected: validBatch.sku || product.sku,
                 originalPrice: salePrice
