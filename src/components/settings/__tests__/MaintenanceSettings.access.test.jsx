@@ -72,6 +72,10 @@ vi.mock('../../products/DataTransferModal', () => ({
     : null
 }));
 
+vi.mock('../../common/UpdateControls', () => ({
+  default: ({ showApply }) => <div data-testid="maintenance-update-controls" data-show-apply={String(showApply)}>Buscar actualizaciones</div>
+}));
+
 import MaintenanceSettings from '../MaintenanceSettings';
 
 const renderSettings = () => render(
@@ -97,6 +101,7 @@ describe('MaintenanceSettings action isolation', () => {
     renderSettings();
 
     expect(screen.getByText('Reconstruir desde historial')).toBeInTheDocument();
+    expect(screen.getByTestId('maintenance-update-controls')).toHaveAttribute('data-show-apply', 'true');
     expect(screen.getByText('Archivar ventas antiguas')).toBeInTheDocument();
     expect(screen.queryByText('Sincronizar stock')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Gestionar datos/i })).not.toBeInTheDocument();
@@ -115,6 +120,7 @@ describe('MaintenanceSettings action isolation', () => {
   it('fails closed when neither maintenance permission is present', () => {
     renderSettings();
     expect(screen.getByRole('alert')).toHaveTextContent('No tienes permiso');
+    expect(screen.queryByTestId('maintenance-update-controls')).not.toBeInTheDocument();
   });
 
   it('does not execute a sync action after its actor handle becomes stale', async () => {
