@@ -2,21 +2,13 @@ import { isEcommercePortalEnabled } from '../services/ecommerce/ecommerceOrderCa
 
 export const evaluateEcommercePortalAccess = ({
   canAccess,
-  currentDeviceRole,
   licenseDetails = {}
-}) => {
-  if (typeof canAccess !== 'function' || canAccess('settings') !== true) {
-    return false;
-  }
-
-  if (!isEcommercePortalEnabled(licenseDetails)) return false;
-
-  if (currentDeviceRole === 'admin') {
-    return true;
-  }
-
-  return currentDeviceRole === 'staff' && canAccess('ecommerce') === true;
-};
+}) => (
+  typeof canAccess === 'function'
+  && canAccess('settings') === true
+  && canAccess('ecommerce') === true
+  && isEcommercePortalEnabled(licenseDetails)
+);
 
 export const canManageEcommercePortal = evaluateEcommercePortalAccess;
 

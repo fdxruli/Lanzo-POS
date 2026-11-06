@@ -6,32 +6,22 @@ import {
   actorRuntimeController
 } from './actorRuntimeController';
 import { evaluateSettingsAccess } from './settingsAccessPolicy';
-import { useActorRuntimeSnapshot } from './useActorRuntimeSnapshot';
+import { readActorAccess } from './actorAccessPolicy';
+import { useActorAccess } from './useActorAccess';
 
-const readCurrentSettingsAccess = (isDev) => {
-  const state = useAppStore.getState();
-  return evaluateSettingsAccess({
-    runtimeSnapshot: actorRuntimeController.getState(),
-    currentDeviceRole: state.currentDeviceRole,
-    currentAdminUser: state.currentAdminUser,
-    currentStaffUser: state.currentStaffUser,
-    isDev
-  });
-};
+const settingsForActor = (access, isDev) => evaluateSettingsAccess({
+  runtimeSnapshot: access.runtimeSnapshot,
+  actorAccess: access,
+  isDev
+});
+
+const readCurrentSettingsAccess = (isDev) => (
+  settingsForActor(readActorAccess(useAppStore.getState()), isDev)
+);
 
 export const useSettingsAccess = () => {
-  const runtimeSnapshot = useActorRuntimeSnapshot();
-  const currentDeviceRole = useAppStore((state) => state.currentDeviceRole);
-  const currentAdminUser = useAppStore((state) => state.currentAdminUser);
-  const currentStaffUser = useAppStore((state) => state.currentStaffUser);
-
-  return useMemo(() => evaluateSettingsAccess({
-    runtimeSnapshot,
-    currentDeviceRole,
-    currentAdminUser,
-    currentStaffUser,
-    isDev: import.meta.env.DEV
-  }), [currentAdminUser, currentDeviceRole, currentStaffUser, runtimeSnapshot]);
+  const access = useActorAccess();
+  return useMemo(() => settingsForActor(access, import.meta.env.DEV), [access]);
 };
 
 /**

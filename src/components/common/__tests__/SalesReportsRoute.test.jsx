@@ -1,10 +1,18 @@
 // @vitest-environment jsdom
+import { grantTestActor } from '../../../services/auth/__tests__/actorAccessTestHarness';
 import '@testing-library/jest-dom/vitest';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const state = vi.hoisted(() => ({ runtime: null }));
+
+vi.mock('../../../store/useAppStore', () => ({
+  useAppStore: (selector) => selector({
+    currentDeviceRole: 'staff',
+    currentStaffUser: { id: 'staff-1', permissions: state.runtime?.permissions }
+  })
+}));
 
 vi.mock('../../../services/auth/useActorRuntimeSnapshot', () => ({
   useActorRuntimeSnapshot: () => state.runtime
@@ -17,11 +25,7 @@ vi.mock('../NoPermission', () => ({
 import SalesReportsRoute from '../SalesReportsRoute';
 
 const staffRuntime = (permissions, status = 'granted') => ({
-  status,
-  actorType: 'staff',
-  actorId: 'staff-1',
-  sessionId: 'staff-session-1',
-  permissions
+  ...grantTestActor({ actorId: 'staff-1', permissions }), status
 });
 
 function HistoryControls() {

@@ -9,7 +9,8 @@ import { isCloudPosSyncEnabled } from '../../services/sync/syncConstants';
 import { evaluateEcommercePortalAccess } from '../../pages/settingsPageAccess';
 import { useSettingsAccess } from '../../services/auth/useSettingsAccess';
 import { canReadSalesReports } from '../../services/auth/salesPermissionPolicy';
-import { useActorRuntimeSnapshot } from '../../services/auth/useActorRuntimeSnapshot';
+import { useActorAccess } from '../../services/auth/useActorAccess';
+import { ROUTE_PERMISSIONS } from '../../services/auth/routePermissions';
 import { getCommercialAIAgentAccessState } from '../../services/auth/aiAgentAuthorization';
 import usePostDowngradeCashPending from '../../hooks/usePostDowngradeCashPending';
 import Logo from '../common/Logo';
@@ -36,14 +37,6 @@ import {
 import './Navbar.css';
 import './NavbarEcommerce.css';
 
-const ROUTE_PERMISSIONS = Object.freeze({
-  '/': 'pos',
-  '/caja': 'cash_register',
-  '/pedidos': 'orders',
-  '/productos': ['products', 'inventory'],
-  '/clientes': 'customers'
-});
-
 function Navbar({ isSuppressed = false } = {}) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const menuButtonRef = useRef(null);
@@ -65,15 +58,14 @@ function Navbar({ isSuppressed = false } = {}) {
   const isBackupLoading = useAppStore((state) => state.isBackupLoading);
   const runUpdate = useAppStore((state) => state.runUpdate);
   const requestInstall = useAppStore((state) => state.requestInstall);
-  const canAccess = useAppStore((state) => state.canAccess);
   const licenseDetails = useAppStore((state) => state.licenseDetails);
-  const currentDeviceRole = useAppStore((state) => state.currentDeviceRole);
-  const currentStaffUser = useAppStore((state) => state.currentStaffUser);
   const ecommerceNewCount = useAppStore((state) => state.ecommerceOrderCounts?.new || 0);
   const settingsAccess = useSettingsAccess();
-  const actorRuntime = useActorRuntimeSnapshot();
+  const actorAccess = useActorAccess();
+  const canAccess = actorAccess.canAccessPermission;
+  const actorRuntime = actorAccess.runtimeSnapshot;
   const postDowngradeCash = usePostDowngradeCashPending();
-  const canReadReports = canReadSalesReports(actorRuntime);
+  const canReadReports = canReadSalesReports(actorRuntime || {});
   const commercialAIAgentAccess = getCommercialAIAgentAccessState({
     licenseDetails,
     actorSnapshot: actorRuntime
@@ -81,13 +73,9 @@ function Navbar({ isSuppressed = false } = {}) {
 
   const location = useLocation();
   const isAboutPage = location.pathname === '/acerca-de';
-  const canAccessOnlineOrders = canAccessEcommerceOrders(licenseDetails, {
-    currentDeviceRole,
-    currentStaffUser
-  });
+  const canAccessOnlineOrders = canAccessEcommerceOrders(licenseDetails, actorAccess.ecommerceSession);
   const canManageEcommercePortal = evaluateEcommercePortalAccess({
     canAccess,
-    currentDeviceRole,
     licenseDetails
   });
   const isPortalOnlineActive = location.pathname === '/portal-online';

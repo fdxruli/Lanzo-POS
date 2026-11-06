@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { grantTestActor } from '../../../services/auth/__tests__/actorAccessTestHarness';
+import { actorRuntimeController } from '../../../services/auth/actorRuntimeController';
 import { act, cleanup, fireEvent, render as rtlRender, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -107,7 +109,12 @@ const setStoreState = ({
     features: DEFAULT_LICENSE_FEATURES
   }
 }) => {
+  actorRuntimeController.lock('test_session_reset');
+  if (['admin', 'staff'].includes(role) && !initializing) {
+    grantTestActor({ actorType: role, actorId: `${role}-fixture`, permissions: { settings, ecommerce } });
+  }
   useAppStore.setState({
+    currentAdminUser: role === 'admin' ? { id: 'admin-fixture' } : null,
     companyProfile: { name: 'Negocio de prueba' },
     currentDeviceRole: role,
     currentStaffUser: role === 'staff'

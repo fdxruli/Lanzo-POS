@@ -1,10 +1,14 @@
 // @vitest-environment jsdom
+import { grantTestActor } from '../../../../services/auth/__tests__/actorAccessTestHarness';
 import '@testing-library/jest-dom/vitest';
 import { cleanup, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const store = vi.hoisted(() => ({ state: null }));
+const store = vi.hoisted(() => ({ state: null, runtime: null }));
+vi.mock('../../../../services/auth/useActorRuntimeSnapshot', () => ({
+  useActorRuntimeSnapshot: () => store.runtime
+}));
 
 vi.mock('../../../../store/useAppStore', () => ({
   useAppStore: (selector) => selector(store.state)
@@ -25,6 +29,7 @@ const renderRoute = () => render(routeTree());
 const baseState = () => ({
   licenseDetails: { features: { ecommerce_order_inbox: true } },
   currentDeviceRole: 'admin',
+  currentAdminUser: { id: 'admin-a' },
   currentStaffUser: null,
   _isInitializing: false
 });
@@ -35,10 +40,16 @@ afterEach(() => {
 
 beforeEach(() => {
   store.state = baseState();
+  store.runtime = grantTestActor({ actorType: 'admin', actorId: 'admin-a' });
 });
 
 describe('EcommerceOrdersRoute', () => {
   it('allows an admin with the inbox feature', () => {
+    store.runtime = grantTestActor({
+      actorType: store.state.currentDeviceRole,
+      actorId: store.state.currentDeviceRole === 'staff' ? 'staff-a' : 'admin-a',
+      permissions: store.state.currentStaffUser?.permissions || []
+    });
     renderRoute();
     expect(screen.getByText('Bandeja autorizada')).toBeInTheDocument();
   });
@@ -48,6 +59,7 @@ describe('EcommerceOrdersRoute', () => {
       ...baseState(),
       currentDeviceRole: 'staff',
       currentStaffUser: {
+        id: 'staff-a',
         permissions: {
           ecommerce: true,
           settings: false,
@@ -56,6 +68,11 @@ describe('EcommerceOrdersRoute', () => {
       }
     };
 
+    store.runtime = grantTestActor({
+      actorType: store.state.currentDeviceRole,
+      actorId: store.state.currentDeviceRole === 'staff' ? 'staff-a' : 'admin-a',
+      permissions: store.state.currentStaffUser?.permissions || []
+    });
     renderRoute();
     expect(screen.getByText('Bandeja autorizada')).toBeInTheDocument();
   });
@@ -65,6 +82,7 @@ describe('EcommerceOrdersRoute', () => {
       ...baseState(),
       currentDeviceRole: 'staff',
       currentStaffUser: {
+        id: 'staff-a',
         permissions: {
           ecommerce: false,
           settings: true,
@@ -127,6 +145,11 @@ describe('EcommerceOrdersRoute', () => {
       currentDeviceRole: 'admin',
       _isInitializing: false
     };
+    store.runtime = grantTestActor({
+      actorType: store.state.currentDeviceRole,
+      actorId: store.state.currentDeviceRole === 'staff' ? 'staff-a' : 'admin-a',
+      permissions: store.state.currentStaffUser?.permissions || []
+    });
     view.rerender(routeTree());
 
     expect(screen.getByText('Bandeja autorizada')).toBeInTheDocument();
@@ -143,9 +166,14 @@ describe('EcommerceOrdersRoute', () => {
     store.state = {
       ...baseState(),
       currentDeviceRole: 'staff',
-      currentStaffUser: { permissions: { ecommerce: true, settings: false } },
+      currentStaffUser: { id: 'staff-a', permissions: { ecommerce: true, settings: false } },
       _isInitializing: false
     };
+    store.runtime = grantTestActor({
+      actorType: store.state.currentDeviceRole,
+      actorId: store.state.currentDeviceRole === 'staff' ? 'staff-a' : 'admin-a',
+      permissions: store.state.currentStaffUser?.permissions || []
+    });
     view.rerender(routeTree());
 
     expect(screen.getByText('Bandeja autorizada')).toBeInTheDocument();
@@ -162,9 +190,14 @@ describe('EcommerceOrdersRoute', () => {
     store.state = {
       ...baseState(),
       currentDeviceRole: 'staff',
-      currentStaffUser: { permissions: { ecommerce: false, settings: true } },
+      currentStaffUser: { id: 'staff-a', permissions: { ecommerce: false, settings: true } },
       _isInitializing: false
     };
+    store.runtime = grantTestActor({
+      actorType: store.state.currentDeviceRole,
+      actorId: store.state.currentDeviceRole === 'staff' ? 'staff-a' : 'admin-a',
+      permissions: store.state.currentStaffUser?.permissions || []
+    });
     view.rerender(routeTree());
 
     expect(screen.getByRole('alert')).toBeInTheDocument();

@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { grantTestActor } from './actorAccessTestHarness';
 import { cleanup, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -17,17 +18,11 @@ vi.mock('../useActorRuntimeSnapshot', () => ({
   useActorRuntimeSnapshot: () => state.runtime
 }));
 
-import { useSettingsAccess } from '../useSettingsAccess';
+import { useSettingsAccess, useSettingsActionGuard } from '../useSettingsAccess';
 
-const runtimeFor = (actorType, actorId, permissions, generation) => ({
-  status: 'granted',
-  actorType,
-  actorId,
-  actorKey: `${actorType}:${actorId}`,
-  sessionId: `${actorId}-session`,
-  permissions,
-  generation
-});
+const runtimeFor = (actorType, actorId, permissions) => (
+  grantTestActor({ actorType, actorId, permissions })
+);
 
 describe('useSettingsAccess actor transitions', () => {
   afterEach(cleanup);
@@ -115,5 +110,31 @@ describe('useSettingsAccess actor transitions', () => {
 
     expect(hook.result.current.canEnterSettings).toBe(false);
     expect(hook.result.current.isAuthorizedActor).toBe(false);
+  });
+});
+
+
+describe('Settings action boundary', () => {
+  afterEach(cleanup);
+
+  it('rejects an already captured Admin callback after another actor signs in', () => {
+    state.app = { currentDeviceRole: 'admin', currentAdminUser: { id: 'admin-a' } };
+    state.runtime = runtimeFor('admin', 'admin-a', ['*']);
+    const hook = renderHook(() => useSettingsActionGuard());
+    const handle = hook.result.current('devices');
+    state.app = { currentDeviceRole: 'staff', currentStaffUser: { id: 'staff-a', permissions: { pos: true } } };
+    state.runtime = runtimeFor('staff', 'staff-a', ['pos']);
+    expect(() => handle.assertCurrent()).toThrow('ACTOR_CONTEXT_STALE');
+    hook.rerender();
+    expect(() => hook.result.current('devices')).toThrow('ACTOR_PERMISSION_DENIED');
+  });
+
+  it('rejects a captured Staff action after the store revokes its permission', () => {
+    state.app = { currentDeviceRole: 'staff', currentStaffUser: { id: 'staff-a', permissions: { devices: true } } };
+    state.runtime = runtimeFor('staff', 'staff-a', ['devices']);
+    const hook = renderHook(() => useSettingsActionGuard());
+    const handle = hook.result.current('devices');
+    state.app.currentStaffUser = { id: 'staff-a', permissions: { devices: false } };
+    expect(() => handle.assertCurrent()).toThrow('ACTOR_CONTEXT_STALE');
   });
 });

@@ -1,3 +1,4 @@
+import { useActorAccess } from '../../../services/auth/useActorAccess';
 import { useAppStore } from '../../../store/useAppStore';
 import {
   canAccessEcommerceOrders,
@@ -7,17 +8,12 @@ import NoPermission from '../../common/NoPermission';
 
 export default function EcommerceOrdersRoute({ children }) {
   const licenseDetails = useAppStore((state) => state.licenseDetails);
+  const { ecommerceSession } = useActorAccess();
   const currentDeviceRole = useAppStore((state) => state.currentDeviceRole);
-  const currentStaffUser = useAppStore((state) => state.currentStaffUser);
   const isInitializing = useAppStore((state) => state._isInitializing);
+  const staffSession = { ...ecommerceSession, _isInitializing: isInitializing };
 
-  const staffSession = {
-    currentDeviceRole,
-    currentStaffUser,
-    _isInitializing: isInitializing
-  };
-
-  if (isEcommerceOrderRoleResolving(staffSession)) {
+  if (isEcommerceOrderRoleResolving({ currentDeviceRole, _isInitializing: isInitializing })) {
     return <div role="status" aria-live="polite">Cargando permisos…</div>;
   }
 

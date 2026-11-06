@@ -1,3 +1,5 @@
+import { evaluateActorAccess } from './actorAccessPolicy';
+
 export const SETTINGS_SHELL_PERMISSIONS = Object.freeze([
   'settings',
   'license',
@@ -27,28 +29,6 @@ export const SETTINGS_TAB_DEFINITIONS = Object.freeze([
   Object.freeze({ key: 'debug', developmentOnly: true }),
   Object.freeze({ key: 'test-ventas', developmentOnly: true })
 ]);
-
-const normalizeIdentity = (actorType, actor) => {
-  if (!actor || typeof actor !== 'object') return null;
-  const candidates = actorType === 'admin'
-    ? [actor.id, actor.admin_user_id, actor.user_id]
-    : [actor.id, actor.staff_user_id, actor.user_id];
-  const value = candidates.find((candidate) => (
-    (typeof candidate === 'string' && candidate.trim().length > 0)
-    || (typeof candidate === 'number' && Number.isFinite(candidate))
-  ));
-  return value === undefined ? null : String(value).trim();
-};
-
-const normalizePermissions = (permissions) => {
-  if (Array.isArray(permissions)) {
-    return new Set(permissions.filter((permission) => typeof permission === 'string'));
-  }
-
-  return new Set(Object.entries(permissions || {})
-    .filter(([, granted]) => granted === true)
-    .map(([permission]) => permission));
-};
 
 const deniedAccess = ({ runtimeSnapshot = null, isDev = false } = {}) => {
   const canAccessPermission = () => false;
@@ -80,37 +60,14 @@ export const evaluateSettingsAccess = ({
   currentDeviceRole = null,
   currentAdminUser = null,
   currentStaffUser = null,
-  isDev = false
+  isDev = false,
+  actorAccess: validatedAccess = null
 } = {}) => {
-  if (
-    runtimeSnapshot?.status !== 'granted'
-    || !runtimeSnapshot.actorId
-    || !runtimeSnapshot.sessionId
-    || !['admin', 'staff'].includes(runtimeSnapshot.actorType)
-  ) {
-    return deniedAccess({ runtimeSnapshot, isDev });
-  }
-
-  const actorType = runtimeSnapshot.actorType;
-  const storeActor = actorType === 'admin' ? currentAdminUser : currentStaffUser;
-  const storeActorId = normalizeIdentity(actorType, storeActor);
-  const runtimeActorId = String(runtimeSnapshot.actorId).trim();
-
-  if (currentDeviceRole !== actorType || !storeActorId || storeActorId !== runtimeActorId) {
-    return deniedAccess({ runtimeSnapshot, isDev });
-  }
-
-  const runtimePermissions = normalizePermissions(runtimeSnapshot.permissions);
-  const storePermissions = normalizePermissions(storeActor?.permissions);
-  const isAdmin = actorType === 'admin';
-  const canAccessPermission = (permission) => (
-    isAdmin
-    || (
-      actorType === 'staff'
-      && runtimePermissions.has(permission)
-      && storePermissions.has(permission)
-    )
-  );
+  const actorAccess = validatedAccess || evaluateActorAccess({
+    runtimeSnapshot, currentDeviceRole, currentAdminUser, currentStaffUser
+  });
+  if (!actorAccess.isAuthorizedActor) return deniedAccess({ runtimeSnapshot, isDev });
+  const { actorType, actorId: runtimeActorId, isAdmin, canAccessPermission } = actorAccess;
   const canEnterSettings = isAdmin
     || SETTINGS_SHELL_PERMISSIONS.some(canAccessPermission);
   const canAccessSection = (section) => {

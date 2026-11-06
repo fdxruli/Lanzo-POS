@@ -2,7 +2,7 @@ import NoPermission from '../common/NoPermission';
 import ProFeatureShowcase from '../plans/ProFeatureShowcase';
 import { useAppStore } from '../../store/useAppStore';
 import { getCommercialAIAgentAccessState } from '../../services/auth/aiAgentAuthorization';
-import { useActorRuntimeSnapshot } from '../../services/auth/useActorRuntimeSnapshot';
+import { useActorAccess } from '../../services/auth/useActorAccess';
 import {
   BarChart3,
   ChartNoAxesCombined,
@@ -41,7 +41,7 @@ const AI_SHOWCASE_BENEFITS = [
 
 export default function CommercialAIAgentsRoute({ children }) {
   const licenseDetails = useAppStore((state) => state.licenseDetails);
-  const actorSnapshot = useActorRuntimeSnapshot();
+  const { runtimeSnapshot: actorSnapshot } = useActorAccess();
   const access = getCommercialAIAgentAccessState({ licenseDetails, actorSnapshot });
 
   if (!access.canSeeEntry) return <NoPermission />;
