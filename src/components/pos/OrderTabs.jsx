@@ -133,7 +133,9 @@ const OrderTabs = ({
           )}
           <p>
             {inventoryConflictNotice.sourceCount > 0
-              ? 'Para continuar, abre la otra venta desde las pestañas, reduce o elimina allí el producto y vuelve a agregarlo en esta venta.'
+              ? inventoryConflictNotice.sourceCount === 1
+                ? 'Para continuar, abre la otra venta, reduce o elimina allí el producto y vuelve a agregarlo en esta venta.'
+                : 'Para continuar, revisa las otras ventas abiertas, libera las unidades necesarias y vuelve a agregarlas aquí.'
               : 'No hay disponibilidad suficiente según el inventario local. Revisa existencias, lotes y reservas formales antes de volver a intentarlo.'}
           </p>
           <div className="order-tabs-inventory-notice__actions">
