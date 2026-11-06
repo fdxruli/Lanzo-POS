@@ -129,7 +129,7 @@ const OrderTabs = ({
             </p>
           )}
           {inventoryConflictNotice.freeInThisCart !== null && (
-            <p>Libres para esta venta: <strong>{inventoryConflictNotice.freeInThisCart}</strong>.</p>
+            <p>Unidades adicionales libres para esta venta: <strong>{inventoryConflictNotice.freeInThisCart}</strong>.</p>
           )}
           <p>
             {inventoryConflictNotice.sourceCount > 0
