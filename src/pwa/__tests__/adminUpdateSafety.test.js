@@ -2,9 +2,22 @@
 import 'fake-indexeddb/auto';
 import Dexie from 'dexie';
 import { describe, expect, it } from 'vitest';
-import { getAdminUpdateDraftBlockReason, hasAdminUpdateWrites, installAdminUpdateWriteTracking, registerAdminUpdateBlocker } from '../adminUpdateSafety';
+import { getAdminUpdateCartState, getAdminUpdateDraftBlockReason, hasAdminUpdateWrites, installAdminUpdateWriteTracking, registerAdminUpdateBlocker, setAdminUpdateCartStateReader } from '../adminUpdateSafety';
 
 describe('update protection around native IndexedDB commits', () => {
+  it('reads a fresh cart snapshot without POS imports and fails closed on reader errors', () => {
+    setAdminUpdateCartStateReader(null);
+    expect(getAdminUpdateCartState()).toEqual({ hasOpenCart: false, checkoutLocked: false });
+    const state = { hasOpenCart: true, checkoutLocked: false };
+    setAdminUpdateCartStateReader(() => state);
+    expect(getAdminUpdateCartState()).toEqual(state);
+    state.checkoutLocked = true;
+    expect(getAdminUpdateCartState().checkoutLocked).toBe(true);
+    setAdminUpdateCartStateReader(() => { throw new Error('unavailable'); });
+    expect(getAdminUpdateCartState().checkoutLocked).toBe(true);
+    setAdminUpdateCartStateReader(null);
+  });
+
   it('tracks complete write transactions and preserves committed records', async () => {
     const db = new Dexie('qa-update-writes');
     db.version(1).stores({ sales: 'id' });
