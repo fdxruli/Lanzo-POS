@@ -6,7 +6,7 @@
 - Rama: `fix/lanzo-bot-contextual`.
 - Base `main` verificada con `git fetch origin main` al inicio y al cierre: `5e1b4303e942657c406d91237ffa7ff44db91cec`.
 - HEAD del código validado: `57e8178a4b492cf94dfda4f87917aa4eb8587cf2`. Los commits posteriores de esta entrega documentan evidencia y resultados del Preview.
-- PR Draft único contra `main`: pendiente de creación al preparar este informe.
+- PR Draft único contra `main`: [#394](https://github.com/fdxruli/Lanzo-POS/pull/394), abierto y sin merge.
 - Se revisaron los PR abiertos antes de crear la rama: no había uno abierto que atendiera Lanzó Bot. El PR abierto devuelto era #374, sobre migraciones FIN01 y ajeno al asistente.
 
 | Estado separado | Resultado |
@@ -142,7 +142,14 @@ Reproducción de navegador: iniciar `npm run dev -- --host 127.0.0.1`, ejecutar 
 
 ## 9. Vercel Preview
 
-Pendiente de observar el despliegue automático asociado al PR. No se ejecuta un despliegue manual, promoción ni cambio de configuración de Vercel. Se informará aquí el SHA y el estado observado, sin equiparar READY con QA del asistente.
+- Proyecto/equipo: `lanzo-pos` / `team_buvft2mAJErTNR8gDhXcZGfS`.
+- Preview automático observado: **READY**, `dpl_Dx23bMN7FoHBXv8bxpFtYkgeVMmA`.
+- SHA desplegado: `7acd41197a45de794407c9673b8c94111be303cf` (código `57e8178a` más informe/evidencia).
+- URL: https://lanzo-nsezp1po5-fdxrulis-projects.vercel.app
+- GitHub registra `Vercel – lanzo-pos: success` para ese SHA. Esto no es el resultado de la suite completa de CI.
+- Acceso HTTP directo observado: **302 a Vercel SSO**. No hay sesión de aplicación de un negocio de prueba ni identidad CLI local disponible para recorrer el POS en ese Preview.
+- **QA funcional autenticado en Preview: NO EJECUTADO.** READY no certifica el bot, sus cifras ni los dispositivos.
+- No se ejecutó despliegue manual, promoción ni cambio de protección de Vercel. Los commits documentales posteriores no cambian el código validado.
 
 ## 10. Límites pendientes y problemas conocidos
 
