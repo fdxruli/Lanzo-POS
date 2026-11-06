@@ -150,7 +150,9 @@ const PosPageContent = ({ data, ui, actions, features }) => {
         const result = addMultipleScannedProducts?.([product], orderIdAtScan);
         if (!result?.success) {
             void playErrorBeep();
-            showMessageModal('No se pudo agregar el producto escaneado.', null, { type: 'error', duration: 1500 });
+            if (!String(result?.code || '').startsWith('LOCAL_')) {
+                showMessageModal('No se pudo agregar el producto escaneado.', null, { type: 'error', duration: 1500 });
+            }
             return;
         }
 

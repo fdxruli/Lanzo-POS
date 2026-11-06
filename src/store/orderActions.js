@@ -23,6 +23,7 @@ import { isLocalTenantAccessError } from '../services/tenant/localTenantGuard';
 import { isTenantRuntimeError } from '../services/db/tenantRuntimeRouter';
 import { resolveImmutableOrderCreatedAt } from '../services/sales/stableSaleTimestamp';
 import { actorRuntimeController } from '../services/auth/actorRuntimeController';
+import { isDirectUnitCartItem, validateCartCheckoutPriority } from '../services/sales/localCartPriority';
 import {
   assertRestaurantCloudTableEditable,
   isRestaurantCloudTableShadow,
@@ -135,7 +136,8 @@ const getSessionReservedQuantity = (activeOrders = new Map(), candidate, exclude
 
   let reserved = 0;
   activeOrders.forEach((order, orderId) => {
-    if (orderId === excludeOrderId) return;
+    // OPEN persisted orders already consume committedStock; never count twice.
+    if (orderId === excludeOrderId || order?.isSaved || order?.origin === 'ecommerce') return;
 
     (order?.items || []).forEach((item) => {
       if (getInventoryReservationKey(item) !== reservationKey) return;
@@ -225,7 +227,7 @@ const applyScannedProductsToOrder = (order = [], items = []) => {
         uniqueLineId: groupedItem.uniqueLineId && lineId === groupedItem.lineId
           ? groupedItem.uniqueLineId
           : lineId,
-        exceedsStock: groupedItem.trackStock && 1 > (groupedItem.stock || 99999),
+        exceedsStock: groupedItem.trackStock && 1 > (groupedItem.stock ?? 99999),
       };
 
       nextOrder.push(newItem);
@@ -244,7 +246,7 @@ const applyScannedProductsToOrder = (order = [], items = []) => {
         ...existingItem,
         productId: getCartProductId(existingItem) ?? groupedItem.productId,
         quantity: newQuantity,
-        exceedsStock: existingItem.trackStock && newQuantity > (existingItem.stock || 99999),
+        exceedsStock: existingItem.trackStock && newQuantity > (existingItem.stock ?? 99999),
       };
 
       touchedItems.push(nextOrder[existingItemIndex]);
@@ -261,7 +263,7 @@ const applyScannedProductsToOrder = (order = [], items = []) => {
       uniqueLineId: groupedItem.uniqueLineId && lineId === groupedItem.lineId
         ? groupedItem.uniqueLineId
         : lineId,
-      exceedsStock: groupedItem.trackStock && quantity > (groupedItem.stock || 99999),
+      exceedsStock: groupedItem.trackStock && quantity > (groupedItem.stock ?? 99999),
     };
 
     nextOrder.push(newItem);
@@ -292,8 +294,7 @@ export const createOrderActions = (set, get) => ({
         );
 
         if (!requiresBatchResolution) {
-          get().addItem({ ...product }, orderId);
-          return;
+          return get().addItem({ ...product }, orderId);
         }
 
         set((state) => {
@@ -343,14 +344,14 @@ export const createOrderActions = (set, get) => ({
               }
             : { ...product };
 
-          get().addItem(productToAdd, orderId);
+          return get().addItem(productToAdd, orderId);
         } catch (error) {
           // An isolation failure is never a valid reason to add the parent
           // product: doing so would turn a blocked tenant operation into a
           // cross-context business mutation.
           if (isLocalTenantAccessError(error) || isTenantRuntimeError(error)) throw error;
           console.warn("Fallo al resolver el lote antes de agregar el producto:", error);
-          get().addItem({ ...product }, orderId);
+          return get().addItem({ ...product }, orderId);
         } finally {
           set((state) => {
             const pendingInventoryResolutions = new Map(state.pendingInventoryResolutions || []);
@@ -369,7 +370,7 @@ export const createOrderActions = (set, get) => ({
 
       addItem: (product, orderId = get().currentOrderId) => {
         const productForCart = ensureCartProductReference(product, { allowIdFallback: true });
-        get().updateOrderItems(orderId, (prevOrder) => {
+        return get().updateOrderItems(orderId, (prevOrder) => {
           const order = prevOrder || [];
           const canAggregateProduct = !shouldCreateSeparateCartLine(product);
           const existingItemIndex = canAggregateProduct
@@ -483,7 +484,7 @@ export const createOrderActions = (set, get) => ({
               productId: getCartProductId(currentItem) ?? productForCart.productId,
               quantity: newQuantity,
               price: finalPrice,
-              exceedsStock: currentItem.trackStock && newQuantity > (currentItem.stock || 99999),
+              exceedsStock: currentItem.trackStock && newQuantity > (currentItem.stock ?? 99999),
               priceWarning: isPriceWarning,
               forceWholesale: validation.status === 'conflict' ? (currentItem.forceWholesale || false) : false,
               forceSafePrice: validation.status === 'conflict' ? (currentItem.forceSafePrice || false) : false,
@@ -500,7 +501,7 @@ export const createOrderActions = (set, get) => ({
               quantity: 1,
               price: initialPrice,
               originalPrice: product.originalPrice ?? product.price,
-              stock: sessionAvailableStock,
+              stock: product.stock,
               exceedsStock: product.trackStock && 1 > sessionAvailableStock,
               priceWarning: isPriceWarning,
               forceWholesale: false,
@@ -520,7 +521,7 @@ export const createOrderActions = (set, get) => ({
         const productForCart = ensureCartProductReference(resolvedProduct, { allowIdFallback: true });
         const result = { success: false, action: null, item: null };
 
-        get().updateOrderItems(orderId, (prevOrder) => {
+        const updateResult = get().updateOrderItems(orderId, (prevOrder) => {
           const order = prevOrder || [];
           const existingItemIndex = order.findIndex((item) => {
             if (resolvedProduct.isVariant && resolvedProduct.batchId) {
@@ -539,7 +540,7 @@ export const createOrderActions = (set, get) => ({
                 ...existingItem,
                 productId: getCartProductId(existingItem) ?? productForCart.productId,
                 quantity: newQuantity,
-                exceedsStock: existingItem.trackStock && newQuantity > (existingItem.stock || 99999)
+                exceedsStock: existingItem.trackStock && newQuantity > (existingItem.stock ?? 99999)
               };
 
               result.success = true;
@@ -559,7 +560,7 @@ export const createOrderActions = (set, get) => ({
                   ? productForCart.uniqueLineId
                   : lineId,
                 quantity: 1,
-                stock: sessionAvailableStock,
+                stock: resolvedProduct.stock,
                 exceedsStock: resolvedProduct.trackStock && 1 > sessionAvailableStock
               };
 
@@ -578,7 +579,7 @@ export const createOrderActions = (set, get) => ({
               productId: productForCart.productId,
               lineId,
               quantity: 1,
-              stock: sessionAvailableStock,
+              stock: resolvedProduct.stock,
               exceedsStock: resolvedProduct.trackStock && 1 > sessionAvailableStock
             };
 
@@ -589,6 +590,9 @@ export const createOrderActions = (set, get) => ({
           }
         });
 
+        if (updateResult?.success !== true) {
+          return { success: false, action: null, item: null, code: updateResult?.code || 'SCAN_ADD_REJECTED' };
+        }
         return result;
       },
 
@@ -599,7 +603,7 @@ export const createOrderActions = (set, get) => ({
 
         let actionResult = { success: false, addedCount: 0, incrementedCount: 0, failedCount: 0, items: [] };
 
-        get().updateOrderItems(orderId, (prevOrder) => {
+        const updateResult = get().updateOrderItems(orderId, (prevOrder) => {
           const order = prevOrder || [];
           const { nextOrder, touchedItems, addedCount, incrementedCount, failedCount } =
             applyScannedProductsToOrder(order, itemsArray);
@@ -618,11 +622,15 @@ export const createOrderActions = (set, get) => ({
           return nextOrder;
         });
 
+        if (updateResult?.success !== true) {
+          return { success: false, addedCount: 0, incrementedCount: 0,
+            failedCount: itemsArray.length, items: [], code: updateResult?.code || 'SCAN_ADD_REJECTED' };
+        }
         return actionResult;
       },
 
       updateItemQuantity: (lineId, newQuantity, orderId = get().currentOrderId) => {
-        get().updateOrderItems(orderId, (prevOrder) => {
+        return get().updateOrderItems(orderId, (prevOrder) => {
           const order = prevOrder || [];
           return order.map((item, index) => {
             if (isCartLineMatch(item, lineId, index)) {
@@ -773,6 +781,49 @@ export const createOrderActions = (set, get) => ({
                 if (previousReservedItems.length > 0) {
                   assertActorCurrent();
                   await releaseCommittedStock(previousReservedItems, { db, STORES, assertActorCurrent });
+                }
+              }
+
+              // Pausing is a formal stock reservation. A later provisional cart
+              // must not reserve units already claimed by an earlier local cart.
+              if (!isSavedOrder && activeOrderId) {
+                const directIds = [...new Set(currentItems
+                  .filter(isDirectUnitCartItem)
+                  .map((item) => getCartProductId(item) ?? item.id))];
+                if (directIds.length > 0) {
+                  const currentProducts = await Promise.all(directIds.map(
+                    (id) => db.table(STORES.MENU).get(id)
+                  ));
+                  assertActorCurrent();
+                  if (currentProducts.some((product) => !product || product.trackStock !== true
+                    || !Number.isFinite(Number(product.stock)))) {
+                    const error = new Error('No se pudo confirmar el inventario al guardar esta venta.');
+                    error.code = 'LOCAL_STOCK_UNKNOWN';
+                    throw error;
+                  }
+
+                  const liveState = get();
+                  const liveOrder = liveState.activeOrders.get(activeOrderId);
+                  if (!liveOrder || liveOrder.isSaved || liveOrder.isLockedForCheckout
+                    || (orderSnapshot && liveOrder.revision !== currentOrder.revision)) {
+                    const error = new Error('El carrito cambió antes de guardarse. Revisa las ventas.');
+                    error.code = 'LOCAL_CART_STALE';
+                    throw error;
+                  }
+                  const activeOrders = new Map(liveState.activeOrders);
+                  activeOrders.set(activeOrderId, { ...liveOrder, items: currentItems });
+                  const conflict = validateCartCheckoutPriority({
+                    state: { ...liveState, activeOrders },
+                    orderId: activeOrderId,
+                    catalog: currentProducts
+                  });
+                  if (conflict) {
+                    const error = new Error(
+                      `No se puede guardar: la venta ${conflict.origin} tiene prioridad provisional de estas unidades.`
+                    );
+                    error.code = conflict.code;
+                    throw error;
+                  }
                 }
               }
 

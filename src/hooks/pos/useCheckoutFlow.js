@@ -5,6 +5,7 @@ import { usePosCatalogStore } from '../../store/usePosCatalogStore';
 import { broadcastDBChange } from '../../services/products/productCatalogEvents';
 import { selectCurrentOrder, useActiveOrders } from './useActiveOrders';
 import { processSale } from '../../services/salesService';
+import { validateCartCheckoutPriority } from '../../services/sales/localCartPriority';
 import Logger from '../../services/Logger';
 import { showMessageModal } from '../../services/utils';
 import {
@@ -165,6 +166,19 @@ export function useCheckoutFlow({
                     { type: 'warning' }
                 );
                 return { success: false, code: 'SALE_TIMESTAMP_REQUIRED' };
+            }
+
+            const provisionalBlock = validateCartCheckoutPriority({
+                state: useActiveOrders.getState(),
+                orderId: activeOrderId,
+                catalog: usePosCatalogStore.getState().items || []
+            });
+            if (provisionalBlock) {
+                showMessageModal(
+                    `No se puede cobrar: la venta ${provisionalBlock.origin} tiene prioridad provisional de estas unidades.`,
+                    null, { type: 'warning' }
+                );
+                return provisionalBlock;
             }
 
             const result = await processSale({

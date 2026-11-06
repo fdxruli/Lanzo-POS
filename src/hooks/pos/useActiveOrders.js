@@ -2,10 +2,13 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import { useAppStore } from '../../store/useAppStore';
 import { createOrderActions } from '../../store/orderActions';
-import { generateID } from '../../services/utils';
+import { generateID, showConfirmModal, showMessageModal } from '../../services/utils';
+import { usePosCatalogStore } from '../../store/usePosCatalogStore';
+import { evaluateProvisionalCartChange, isDirectUnitCartItem, validateCartCheckoutPriority } from '../../services/sales/localCartPriority';
 import { db, STORES } from '../../services/db/dexie';
 import { SALE_STATUS } from '../../services/sales/financialStats';
 import { Money } from '../../utils/moneyMath';
+import { withOrderTotals } from '../../services/sales/orderTotals';
 import { releaseCommittedStock } from '../../services/sales/inventoryFlow';
 import {
   assertRestaurantCloudTableEditable,
@@ -13,7 +16,7 @@ import {
   isRestaurantCloudTableTerminal
 } from '../../services/restaurant/restaurantCloudTableGuards';
 import { reconcileActiveTableReservations } from '../../services/sales/tableReservationReconciliation';
-import { normalizeCartItems } from '../../utils/cartLineIdentity';
+import { getCartLineId, getCartProductId, normalizeCartItems } from '../../utils/cartLineIdentity';
 import { releaseEcommerceOrderPosDraft } from '../../services/ecommerce/ecommerceOrderService';
 import {
   getOrderDeviceId,
@@ -109,6 +112,7 @@ export const useActiveOrders = create(
       if (!canAccessTenantOwnedRuntimeCache()) return;
       unsafeSet(...args);
     };
+    let priorityConfirmationPending = false;
     const rememberCancellationReceipt = (orderId, receipt) => set((state) => {
       const order = state.activeOrders.get(orderId);
       if (!order || isRestaurantCloudTableShadow(order)) return state;
@@ -124,6 +128,108 @@ export const useActiveOrders = create(
     isLoading: false,
     pendingInventoryResolutions: new Map(),
     ...createOrderActions(set, get),
+    requestLocalCartReassignment: (orderId, proposedItems, initialConflict) => {
+      if (priorityConfirmationPending) return;
+      let actorHandle;
+      try {
+        actorHandle = actorRuntimeController.capture('pos');
+      } catch {
+        showMessageModal('Inicia sesión con un operador autorizado antes de reasignar productos.', null, { type: 'warning' });
+        return;
+      }
+      const originalState = get();
+      const originalTarget = originalState.activeOrders.get(orderId);
+      const initialDonors = initialConflict.donors;
+      if (!originalTarget || initialDonors.length === 0) return;
+      const donorDescriptions = initialDonors.map((donor) =>
+        `• ${donor.name}: ${donor.units} unidad(es)`
+      ).join('\n');
+      const productName = initialConflict.product?.name || initialConflict.productKey;
+      const confirmationText = `¿Reasignar ${initialConflict.shortfall} unidad(es) de ${productName}?\n` +
+        `Solicitadas: ${initialConflict.requested}. Físicas: ${initialConflict.physical}. ` +
+        `Reserva formal: ${initialConflict.committed}. Disponibles: ${initialConflict.available}.\n` +
+        `Se retirarán de:\n${donorDescriptions}\n` +
+        'Esta prioridad es solo de los carritos de esta sesión, no una reserva entre dispositivos.';
+      priorityConfirmationPending = true;
+      void (async () => {
+        try {
+          const confirmed = await showConfirmModal(confirmationText, {
+            title: 'Reasignar unidades entre ventas',
+            confirmButtonText: 'Sí, reasignar',
+            cancelButtonText: 'Conservar ventas'
+          });
+          if (!confirmed) return;
+          actorHandle.assertCurrent();
+          // Stock and formal reservations are reread before any irreversible local mutation.
+          const latestProduct = await db.table(STORES.MENU).get(initialConflict.productKey);
+          actorHandle.assertCurrent();
+          const snapshot = get();
+          if (snapshot.currentOrderId !== orderId
+            || snapshot.activeOrders.get(orderId) !== originalTarget
+            || latestProduct?.trackStock !== true
+            || !Number.isFinite(Number(latestProduct?.stock))) {
+            throw new Error('La venta activa o el inventario cambió. No se reasignó nada.');
+          }
+          const newConflict = evaluateProvisionalCartChange({
+            state: snapshot, orderId, nextItems: proposedItems, catalog: [latestProduct]
+          });
+          if (newConflict?.code !== 'LOCAL_PRIORITY_CONFLICT'
+            || newConflict.shortfall !== initialConflict.shortfall
+            || newConflict.donors.length !== initialDonors.length
+            || newConflict.donors.some((donor, i) => (
+              donor.orderId !== initialDonors[i].orderId
+              || donor.lineIndex !== initialDonors[i].lineIndex
+              || donor.units !== initialDonors[i].units
+              || snapshot.activeOrders.get(donor.orderId) !== initialDonors[i].order
+            ))) {
+            throw new Error('La disponibilidad o las ventas cambiaron. Repite la operación.');
+          }
+          let applied = false;
+          set((live) => {
+            actorHandle.assertCurrent();
+            if (live.activeOrders.get(orderId) !== originalTarget
+              || newConflict.donors.some((donor) => live.activeOrders.get(donor.orderId) !== donor.order)) {
+              return live;
+            }
+            const activeOrders = new Map(live.activeOrders);
+            const groupedDonors = new Map();
+            for (const donor of newConflict.donors) {
+              if (!groupedDonors.has(donor.orderId)) {
+                groupedDonors.set(donor.orderId, [...donor.order.items]);
+              }
+              const lines = groupedDonors.get(donor.orderId);
+              const source = lines[donor.lineIndex];
+              lines[donor.lineIndex] = { ...source, quantity: source.quantity - donor.units, exceedsStock: false };
+            }
+            for (const [donorId, lines] of groupedDonors) {
+              const sourceOrder = live.activeOrders.get(donorId);
+              const remaining = lines.filter((line) => Number(line.quantity) > 0);
+              activeOrders.set(donorId, withOrderTotals({
+                ...sourceOrder, items: remaining, ...touchOrderVersion(sourceOrder)
+              }));
+            }
+            const transferredItems = proposedItems.map((item) => (
+              isDirectUnitCartItem(item)
+              && String(getCartProductId(item) || item.id) === String(initialConflict.productKey)
+                ? { ...item, exceedsStock: false }
+                : item
+            ));
+            activeOrders.set(orderId, withOrderTotals({
+              ...originalTarget, items: transferredItems, ...touchOrderVersion(originalTarget)
+            }));
+            applied = true;
+            return { activeOrders };
+          });
+          if (!applied || get().activeOrders.get(orderId) === originalTarget) {
+            throw new Error('No se pudo actualizar la sesión. Las ventas se conservaron.');
+          }
+        } catch (error) {
+          showMessageModal(error?.message || 'No se reasignó el inventario.', null, { type: 'warning' });
+        } finally {
+          priorityConfirmationPending = false;
+        }
+      })();
+    },
     /** Flag local: true mientras la orden activa está en proceso de cobro */
     isCurrentOrderLocked: false,
 
@@ -175,6 +281,7 @@ export const useActiveOrders = create(
         updatedAt: now,
         revision: 0,
         deviceId: getOrderDeviceId(),
+        actorKey: actorRuntimeController.getState().actorKey || null,
         total: 0,
         folio: null
       };
@@ -186,6 +293,35 @@ export const useActiveOrders = create(
       get().switchOrder(id);
 
       return id;
+    },
+
+    /** Remove only the named tab, even if the Multiple Sales toggle changed. */
+    detachOrderFromSession: (orderId, expectedOrder = null) => {
+      const state = get();
+      const order = state.activeOrders.get(orderId);
+      if (!order) return { success: true };
+      if (expectedOrder && order !== expectedOrder) {
+        return { success: false, message: 'La orden cambió durante la operación.' };
+      }
+      const actorKey = actorRuntimeController.getState().actorKey;
+      if (order.actorKey && order.actorKey !== actorKey) {
+        return { success: false, message: 'Esta venta pertenece a otro operador.' };
+      }
+      const nextOrders = new Map(state.activeOrders);
+      nextOrders.delete(orderId);
+      const nextCurrentOrderId = state.currentOrderId === orderId
+        ? (nextOrders.keys().next().value || null) : state.currentOrderId;
+      set({
+        activeOrders: nextOrders,
+        currentOrderId: nextCurrentOrderId,
+        isCurrentOrderLocked: nextCurrentOrderId
+          ? Boolean(nextOrders.get(nextCurrentOrderId)?.isLockedForCheckout) : false
+      });
+      if (get().activeOrders.has(orderId)) {
+        return { success: false, message: 'La sesión impidió cerrar la pestaña.' };
+      }
+      if (nextOrders.size === 0) get().createOrder();
+      return { success: true };
     },
 
     /**
@@ -498,8 +634,8 @@ export const useActiveOrders = create(
     // Agrega item a una orden especifica.
     addItemToOrder: async (orderId, product) => {
       const state = get();
-      if (!state.activeOrders.has(orderId)) return;
-      await get().addSmartItem(product, orderId);
+      if (!state.activeOrders.has(orderId)) return { success: false, code: 'ORDER_NOT_FOUND' };
+      return get().addSmartItem(product, orderId);
     },
 
     /**
@@ -626,30 +762,60 @@ export const useActiveOrders = create(
      * @param {Array|Function} updater - Nueva lista de productos o función
      */
     updateOrderItems: (orderId, updater) => {
-      set((state) => {
-        if (!orderId || !state.activeOrders.has(orderId)) return state;
+      if (!canAccessTenantOwnedRuntimeCache()) return { success: false, code: 'TENANT_NOT_READY' };
+      const state = get();
+      const order = state.activeOrders.get(orderId);
+      if (!order) return { success: false, code: 'ORDER_NOT_FOUND' };
 
-        const order = state.activeOrders.get(orderId);
+      assertRestaurantCloudTableEditable(order);
+      if (order.isLockedForCheckout) {
+        return { success: false, code: 'ORDER_CHECKOUT_LOCKED' };
+      }
 
-        assertRestaurantCloudTableEditable(order);
-        if (order.isLockedForCheckout) {
-          console.warn('[useActiveOrders] Intento de mutación rechazado: Orden en proceso de pago.');
-          return state;
-        }
-
-        const updatedItems = typeof updater === 'function' ? updater(order.items) : updater;
-        const newItems = normalizeCartItems(updatedItems);
-        const nextOrders = new Map(state.activeOrders);
-        
-        nextOrders.set(orderId, {
-          ...order,
-          items: newItems,
-          total: calculateOrderTotalExact(newItems),
-          ...touchOrderVersion(order)
-        });
-
-        return { activeOrders: nextOrders };
+      const nextValue = typeof updater === 'function' ? updater(order.items) : updater;
+      const normalized = normalizeCartItems(nextValue);
+      const now = new Date().toISOString();
+      const previous = order.items || [];
+      const nextItems = normalized.map((item, index) => {
+        if (!isDirectUnitCartItem(item) || !(Number(item.quantity) > 0)) return item;
+        const oldItem = previous.find((candidate, oldIndex) =>
+          getCartLineId(candidate, oldIndex) === getCartLineId(item, index)
+        ) || previous.find((candidate) =>
+          getCartProductId(candidate) === getCartProductId(item)
+          && candidate.id === item.id && isDirectUnitCartItem(candidate)
+        );
+        const provisionalAddedAt = item.provisionalAddedAt || oldItem?.provisionalAddedAt
+          || (oldItem && Number(oldItem.quantity) > 0
+            ? (order.createdAt || order.updatedAt || now) : now);
+        return { ...item, provisionalAddedAt };
       });
+
+      const conflict = evaluateProvisionalCartChange({
+        state, orderId, nextItems, catalog: usePosCatalogStore.getState().items || []
+      });
+      if (conflict) {
+        if (conflict.code === 'LOCAL_PRIORITY_CONFLICT') {
+          get().requestLocalCartReassignment(orderId, nextItems, conflict);
+        } else {
+          const messages = {
+            LOCAL_NO_PHYSICAL_STOCK: 'No hay suficientes unidades físicas del producto.',
+            LOCAL_FORMAL_RESERVATION: 'El inventario está comprometido en reservas formales.',
+            LOCAL_STOCK_UNKNOWN: 'No se pudo comprobar el inventario de este producto.',
+            LOCAL_SOURCE_CHECKOUT_LOCKED: 'La otra venta está bloqueada para cobro.',
+            LOCAL_SOURCE_NOT_TRANSFERABLE: 'La otra venta no puede ceder unidades (otro operador, pedido guardado o precio especial).'
+          };
+          showMessageModal(messages[conflict.code] || 'No hay unidades libres para esta venta.', null, { type: 'warning' });
+        }
+        return { success: false, code: conflict.code, message: 'Producto no agregado por conflicto de inventario local.' };
+      }
+
+      const nextOrders = new Map(state.activeOrders);
+      nextOrders.set(orderId, {
+        ...order, items: nextItems, total: calculateOrderTotalExact(nextItems),
+        ...touchOrderVersion(order)
+      });
+      set({ activeOrders: nextOrders });
+      return { success: get().activeOrders.get(orderId) !== order ? true : false };
     },
 
     updateCurrentOrderItems: (updater) => get().updateOrderItems(get().currentOrderId, updater),
@@ -676,27 +842,10 @@ export const useActiveOrders = create(
           });
         }
 
-        // 1. Eliminar de la sesión activa y UI
+        // Conservar todas las demás ventas, aun con el toggle desactivado.
         try {
-          const nextOrders = new Map(get().activeOrders);
-          nextOrders.delete(orderId);
-
-          const enableMultipleOrders = useAppStore.getState().enableMultipleOrders;
-          if (!enableMultipleOrders) {
-            nextOrders.clear();
-            set({ activeOrders: nextOrders, currentOrderId: null });
-
-            get().createOrder();
-          } else {
-            set({ activeOrders: nextOrders });
-
-            if (nextOrders.size > 0) {
-              get().switchOrder(Array.from(nextOrders.keys())[0]);
-            } else {
-              set({ currentOrderId: null });
-              get().createOrder();
-            }
-          }
+          const detached = get().detachOrderFromSession(orderId);
+          if (!detached.success) throw new Error(detached.message);
         } catch (uiErr) {
           console.error("Error actualizando UI en cancelCurrentOrder:", uiErr);
         }
@@ -733,30 +882,10 @@ export const useActiveOrders = create(
           });
         }
 
-        // 1. Actualizar UI inmediatamente
+        // Solo se elimina la orden cancelada.
         try {
-          const nextOrders = new Map(get().activeOrders);
-          nextOrders.delete(orderId);
-
-          const enableMultipleOrders = useAppStore.getState().enableMultipleOrders;
-          if (!enableMultipleOrders) {
-            nextOrders.clear();
-            set({ activeOrders: nextOrders, currentOrderId: null });
-
-            get().createOrder();
-          } else {
-            set({ activeOrders: nextOrders });
-
-            if (state.currentOrderId === orderId) {
-
-              if (nextOrders.size > 0) {
-                get().switchOrder(Array.from(nextOrders.keys())[0]);
-              } else {
-                set({ currentOrderId: null });
-                get().createOrder();
-              }
-            }
-          }
+          const detached = get().detachOrderFromSession(orderId);
+          if (!detached.success) throw new Error(detached.message);
         } catch (uiErr) {
           console.error("Error actualizando UI en cancelOrder:", uiErr);
         }
@@ -792,31 +921,8 @@ export const useActiveOrders = create(
         assertRestaurantCloudTableEditable(existing, 'cancel');
         await cleanupPersistedOrder(orderId, actorHandle, 'Sistema: Venta anulada desde modal de mesas (POS).');
 
-        const state = get();
-        const nextOrders = new Map(state.activeOrders);
-        if (nextOrders.has(orderId)) {
-          nextOrders.delete(orderId);
-        }
-
-        const enableMultipleOrders = useAppStore.getState().enableMultipleOrders;
-        if (!enableMultipleOrders) {
-          nextOrders.clear();
-          set({ activeOrders: nextOrders, currentOrderId: null });
-
-          get().createOrder();
-        } else {
-          set({ activeOrders: nextOrders });
-
-          if (state.currentOrderId === orderId) {
-
-            if (nextOrders.size > 0) {
-              get().switchOrder(Array.from(nextOrders.keys())[0]);
-            } else {
-              set({ currentOrderId: null });
-              get().createOrder();
-            }
-          }
-        }
+        const detached = get().detachOrderFromSession(orderId);
+        if (!detached.success) return detached;
 
         return { success: true };
       } catch (error) {
@@ -835,109 +941,63 @@ export const useActiveOrders = create(
       try {
         const state = get();
         const order = state.activeOrders.get(orderId);
+        if (!order) return { success: false, message: 'La orden no existe en sesión.' };
 
-        if (!order) throw new Error("La orden no existe en sesión.");
+        const actorHandle = actorRuntimeController.getState()?.status === 'granted'
+          ? actorRuntimeController.capture() : null;
+        if (order.actorKey && order.actorKey !== actorHandle?.actorKey) {
+          return { success: false, message: 'Esta venta pertenece a otro operador.' };
+        }
+        if (order.isLockedForCheckout) {
+          return { success: false, message: 'La venta está bloqueada para cobro.' };
+        }
 
         if (order.isSaved && (order.tableData || order.orderType === 'table')
           && !isRestaurantCloudTableShadow(order) && getSellableItems(order.items).length === 0) {
           return await get().discardTableEditSession(orderId, order);
         }
-
         const sellable = getSellableItems(order.items);
 
-        // --- 1. ACTUALIZACIÓN UI INMEDIATA ---
-        // Removemos la orden de la sesión para que el usuario tenga feedback instantáneo
-        const nextOrders = new Map(state.activeOrders);
-        nextOrders.delete(orderId);
-
-        const enableMultipleOrders = useAppStore.getState().enableMultipleOrders;
-        if (!enableMultipleOrders) {
-          nextOrders.clear();
-          set({ activeOrders: nextOrders, currentOrderId: null });
-
-          get().createOrder();
-        } else {
-          set({ activeOrders: nextOrders });
-
-          // Si era la activa, cambiamos a otra
-          if (state.currentOrderId === orderId) {
-
-            if (nextOrders.size > 0) {
-              const firstAvailable = Array.from(nextOrders.keys())[0];
-              get().switchOrder(firstAvailable);
-            } else {
-              set({ currentOrderId: null });
-              get().createOrder();
-            }
-          }
+        // Shadow/terminal tabs are read-only views. They never reserve stock.
+        if (isRestaurantCloudTableShadow(order) || isRestaurantCloudTableTerminal(order)) {
+          const detached = get().detachOrderFromSession(orderId, order);
+          return detached.success ? { success: true, detached: true } : detached;
         }
 
-        // Closing a remote snapshot's tab only detaches this device's view.
-        if (isRestaurantCloudTableShadow(order) || isRestaurantCloudTableTerminal(order)) return { success: true, detached: true };
-
-        // --- 2. OPERACIONES DB (Background) ---
+        // Persist BEFORE detaching. A failed write must leave the draft
+        // in memory and in tenant-scoped Zustand persistence.
         if (sellable.length === 0) {
-          // Si la orden está vacía pero antes estaba guardada en BD, debemos cancelarla
-          try {
-            const existing = await db.table(STORES.SALES).get(orderId);
-            if (existing && existing.status === SALE_STATUS.OPEN) {
-              const itemsToRelease = getSellableItems(existing.items);
-              if (itemsToRelease.length > 0) {
-                try {
-                  await releaseCommittedStock(itemsToRelease, { db, STORES });
-                } catch (stockErr) {
-                  console.error("Error al liberar stock en pauseOrder:", stockErr);
-                }
-              }
-              await db.table(STORES.SALES).update(orderId, {
-                status: SALE_STATUS.CANCELLED || 'cancelled',
-                fulfillmentStatus: 'cancelled',
-                notes: 'Sistema: Orden vaciada y cerrada por el usuario.',
-                updatedAt: new Date().toISOString()
-              });
+          const existing = await db.table(STORES.SALES).get(orderId);
+          actorHandle?.assertCurrent();
+          if (existing && existing.status === SALE_STATUS.OPEN) {
+            const itemsToRelease = getSellableItems(existing.items);
+            if (itemsToRelease.length > 0) {
+              await releaseCommittedStock(itemsToRelease, { db, STORES });
+              actorHandle?.assertCurrent();
             }
-          } catch (err) {
-            console.error("Error al limpiar orden en DB:", err);
+            await db.table(STORES.SALES).update(orderId, {
+              status: SALE_STATUS.CANCELLED,
+              fulfillmentStatus: 'cancelled',
+              notes: 'Sistema: Orden vaciada y cerrada por el usuario.',
+              updatedAt: new Date().toISOString()
+            });
           }
-          return;
+        } else {
+          // The same Dexie stock reservation transaction for active and inactive
+          // tabs. Persisted OPEN is a formal reservation, not a provisional claim.
+          const result = await get().saveOrderAsOpen(orderId, order);
+          if (!result?.success) return {
+            success: false, message: result?.message || 'No se pudo guardar la venta.'
+          };
         }
 
-        // Si es la activa, usamos la función oficial que maneja inventario
-        try {
-          if (orderId === state.currentOrderId) {
-            const result = await get().saveOrderAsOpen(orderId, order);
-            if (!result.success) console.error("Error en saveOrderAsOpen:", result.message);
-          } else {
-            const existingSale = await db.table(STORES.SALES).get(order.id);
-            if (existingSale && selectNewestOrder(order, existingSale).source === 'db') {
-              console.warn(
-                `[pauseOrder] Se preservó la versión más reciente de DB para ${order.id}.`
-              );
-              return;
-            }
-            const persistedVersion = getNextPersistedOrderVersion(order, existingSale);
-            const openSaleRecord = {
-              ...(existingSale || {}),
-              id: order.id,
-              timestamp: resolveImmutableOrderCreatedAt({
-                durableOrder: existingSale,
-                activeOrder: order
-              }),
-              ...persistedVersion,
-              items: order.items,
-              total: order.total,
-              status: SALE_STATUS.OPEN || 'open',
-              tableData: order.tableData
-            };
-            await db.table(STORES.SALES).put(openSaleRecord);
-          }
-        } catch (saveErr) {
-          console.error("Error guardando orden en DB al pausar:", saveErr);
-        }
-
+        actorHandle?.assertCurrent();
+        const detached = get().detachOrderFromSession(orderId, order);
+        return detached.success ? { success: true } : detached;
       } catch (error) {
-        console.error("Error al pausar la orden:", error);
-        throw error;
+        console.error('Error al pausar la orden:', error);
+        return { success: false, code: error?.code || 'PAUSE_FAILED',
+          message: error?.message || 'No se pudo pausar la venta. El carrito se conserva.' };
       } finally {
         set({ isLoading: false });
       }
@@ -976,28 +1036,8 @@ export const useActiveOrders = create(
 
         await db.table(STORES.SALES).put(closedRecord);
 
-        const nextOrders = new Map(get().activeOrders);
-        nextOrders.delete(orderId);
-
-        const enableMultipleOrders = useAppStore.getState().enableMultipleOrders;
-        if (!enableMultipleOrders) {
-          nextOrders.clear();
-          set({ activeOrders: nextOrders, currentOrderId: null });
-
-          get().createOrder();
-        } else {
-          set({ activeOrders: nextOrders });
-
-          if (state.currentOrderId === orderId) {
-
-            if (nextOrders.size > 0) {
-              get().switchOrder(Array.from(nextOrders.keys())[0]);
-            } else {
-              set({ currentOrderId: null });
-              get().createOrder(); // <-- Aseguramos la creación de una orden si el carrito queda vacío
-            }
-          }
-        }
+        const detached = get().detachOrderFromSession(orderId);
+        if (!detached.success) throw new Error(detached.message);
 
       } catch (error) {
         console.error("Error al cerrar la orden:", error);
@@ -1182,6 +1222,15 @@ export const useActiveOrders = create(
       const state = get();
       const order = state.activeOrders.get(orderId);
       if (!order) return { success: false, reason: 'La orden no existe en sesión.' };
+      const provisionalBlock = validateCartCheckoutPriority({
+        state, orderId, catalog: usePosCatalogStore.getState().items || []
+      });
+      if (provisionalBlock) {
+        return {
+          success: false, code: provisionalBlock.code,
+          reason: `La venta ${provisionalBlock.origin} tiene prioridad provisional de estas unidades.`
+        };
+      }
       const actorHandle = actorRuntimeController.getState?.()?.status === 'granted'
         ? actorRuntimeController.capture() : null;
 
@@ -1195,6 +1244,14 @@ export const useActiveOrders = create(
         await db.transaction('rw', db.table(STORES.SALES), async () => {
           const existing = await db.table(STORES.SALES).get(orderId);
           actorHandle?.assertCurrent();
+          const latestState = get();
+          const latestBlock = validateCartCheckoutPriority({
+            state: latestState, orderId, catalog: usePosCatalogStore.getState().items || []
+          });
+          if (latestBlock || latestState.activeOrders.get(orderId) !== order) {
+            lockAcquired = false;
+            return;
+          }
 
           // La orden puede no estar en DB todavía (borrador en memoria)
           if (existing && existing.isLockedForCheckout === true) {

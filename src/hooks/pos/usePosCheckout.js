@@ -5,6 +5,7 @@ import { broadcastDBChange } from '../../services/products/productCatalogEvents'
 import { showConfirmModal, showMessageModal } from '../../services/utils';
 import { db, STORES } from '../../services/db/dexie';
 import { useActiveOrders } from './useActiveOrders';
+import { validateCartCheckoutPriority } from '../../services/sales/localCartPriority';
 import { handlePosActorAuthorityError, runPosActorUiOperation } from './posActorAuthorityUi';
 import { Money } from '../../utils/moneyMath';
 import { normalizeRestaurantSplitPaymentMethod } from '../../services/sales/paymentMethodContract';
@@ -1262,6 +1263,20 @@ export function usePosCheckout({
             const { processSale } = await import('../../services/salesService');
             const finalSnapshotError = await validateLiveCheckoutSnapshot(snapshot);
             if (finalSnapshotError) return finalSnapshotError;
+
+            // Independent of ignoreStock / Sí, Vender Igual.
+            const provisionalBlock = validateCartCheckoutPriority({
+                state: useActiveOrders.getState(),
+                orderId: snapshot.orderId,
+                catalog: posSearch.menuVisual
+            });
+            if (provisionalBlock) {
+                showMessageModal(
+                    `No se puede cobrar: la venta ${provisionalBlock.origin} tiene prioridad provisional de estas unidades.`,
+                    null, { type: 'warning' }
+                );
+                return provisionalBlock;
+            }
 
             const closeResult = closeModalIfOwned('payment', snapshot);
             if (closeResult.staleAttempt) return closeResult;

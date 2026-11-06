@@ -128,7 +128,7 @@ const patchActiveOrders = () => {
       if (isRestaurantCloudTableShadow(order)) return Number(order.total);
       return orderTotalsForSave(order).total || 0;
     },
-    updateOrderItems: (orderId, updater) => { originalUpdateOrderItems(orderId, updater); setOrderTotalsInState(orderId); },
+    updateOrderItems: (orderId, updater) => { const result = originalUpdateOrderItems(orderId, updater); if (result?.success !== false) setOrderTotalsInState(orderId); return result; },
     updateOrder: (orderId, updates) => { originalUpdateOrder(orderId, updates); setOrderTotalsInState(orderId); },
     applyLineDiscount: (lineId, input, orderId = useActiveOrders.getState().currentOrderId) => {
       assertDiscountPermission();

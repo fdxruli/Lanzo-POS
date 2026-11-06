@@ -11,7 +11,8 @@ vi.mock('../../../services/db/dexie', () => ({
 vi.mock('../../../store/useAppStore', () => ({ useAppStore: {
   getState: () => ({ enableMultipleOrders: true, licenseDetails: { valid: true, license_key: 'license-a' } }), subscribe: () => () => {}
 } }));
-vi.mock('../../../services/sync/syncConstants', () => ({
+vi.mock('../../../services/sync/syncConstants', async (importOriginal) => ({
+  ...await importOriginal(),
   getLicenseKeyFromDetails: () => 'license-a', isRestaurantOrdersCloudEnabled: () => runtime.cloud
 }));
 vi.mock('../../../services/sync/idempotency', () => ({ generateIdempotencyKey: () => 'cancel-key' }));
@@ -206,6 +207,58 @@ describe('3D.1.3 origin cancellation and discard', () => {
     expect((await db.table('menu').get('pizza')).committedStock).toBe(0);
     expect(runtime.cancel).not.toHaveBeenCalled();
   });
+  it('cannot turn a later conflicting cart into committed stock via save or pause', async () => {
+    // Recovered/legacy carts may predate the new add-time guard. Saving B
+    // must not displace two units already claimed provisionally by A.
+    await db.table('menu').update('pizza', {
+      stock: 2, committedStock: 0, trackStock: true
+    });
+    const line = (quantity, firstAdded) => ({
+      id: 'pizza', productId: 'pizza', lineId: `pizza-${firstAdded}`,
+      name: 'Pizza', price: 50, saleType: 'unit', trackStock: true,
+      quantity, stock: 2, committedStock: 0,
+      provisionalAddedAt: firstAdded
+    });
+    const first = {
+      id: 'A', items: [line(2, '2026-11-06T00:00:00.000Z')],
+      isSaved: false, total: 100,
+      createdAt: '2026-11-06T00:00:00.000Z', revision: 0
+    };
+    const second = {
+      id: 'B', items: [line(1, '2026-11-06T00:01:00.000Z')],
+      isSaved: false, total: 50,
+      createdAt: '2026-11-06T00:01:00.000Z', revision: 0
+    };
+    useActiveOrders.setState({
+      activeOrders: new Map([['A', first], ['B', second]]),
+      currentOrderId: 'B'
+    });
+
+    const save = await useActiveOrders.getState().saveOrderAsOpen('B');
+    expect(save).toMatchObject({ success: false, code: 'LOCAL_PRIORITY_CHECKOUT_BLOCKED' });
+    const pause = await useActiveOrders.getState().pauseOrder('B');
+    expect(pause).toMatchObject({ success: false });
+    expect(await db.table('sales').get('B')).toBeUndefined();
+    expect((await db.table('menu').get('pizza')).committedStock).toBe(0);
+    expect(useActiveOrders.getState().activeOrders.get('A')).toBe(first);
+    expect(useActiveOrders.getState().activeOrders.get('B')).toBe(second);
+
+    // After an explicit reassignment A=1, B=1, the same stock authority
+    // is allowed to persist B as one formal reservation.
+    const aAfterTransfer = {
+      ...first, items: [line(1, '2026-11-06T00:00:00.000Z')],
+      total: 50, revision: 1
+    };
+    useActiveOrders.setState({
+      activeOrders: new Map([['A', aAfterTransfer], ['B', second]]),
+      currentOrderId: 'B'
+    });
+    const permitted = await useActiveOrders.getState().saveOrderAsOpen('B');
+    expect(permitted).toMatchObject({ success: true, id: 'B' });
+    expect((await db.table('menu').get('pizza')).committedStock).toBe(1);
+    expect((await db.table('sales').get('B')).status).toBe('open');
+  });
+
   it('keeps Free cancellation independent of connectivity', async () => {
     runtime.cloud = false;
     navigator.onLine = false;
