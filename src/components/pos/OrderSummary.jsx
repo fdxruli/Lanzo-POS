@@ -586,7 +586,9 @@ export default function OrderSummary({
                 ? Number(getSessionAvailableStock({ activeOrders }, item, currentOrderId))
                 : null;
               const safeAdjustmentQuantity = Number.isFinite(localStock)
-                ? Math.max(0, Math.floor(localStock))
+                ? Math.max(0, usesDirectQuantityInput
+                  ? Number(localStock.toFixed(3))
+                  : Math.floor(localStock))
                 : 0;
 
               return (
