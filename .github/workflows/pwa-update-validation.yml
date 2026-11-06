@@ -17,7 +17,7 @@ permissions:
   contents: read
 jobs:
   updater:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -37,6 +37,7 @@ jobs:
           # Keep the complete app graph without connecting to a real backend.
           VITE_SUPABASE_URL: https://update-qa.invalid
           VITE_SUPABASE_PUBLISHABLE_KEY: synthetic-update-qa-public-key
+      - run: npm run build:store
       - run: npx vitest run src/architecture/__tests__/adminPwaArchitecture.test.js src/architecture/__tests__/adminLazyRouteRecoveryArchitecture.test.js --maxWorkers=2
       - name: Install isolated browser runner
         run: |

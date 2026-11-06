@@ -56,3 +56,6 @@ Por defecto genera builds, `evidence.json` y capturas en `/tmp/lanzo-update-brow
 El PR debe permanecer **Draft**. Los estados de CI y Preview del SHA publicado se consultan al entregar el PR; READY no prueba los recorridos de Android ni operaciones comerciales. El checklist Android/Chrome/migración legacy está en [README.md](README.md#qa-manual-antes-de-production).
 
 No se hizo merge, despliegue manual de Production, SQL, modificación de Supabase, ni venta/cobro real. La aceptación completa en Production **no se declara cumplida**.
+
+
+La primera ejecución remota de la workflow dedicada pasó regresiones, build completo y arquitectura; falló al instalar Playwright 1.56.1 porque `ubuntu-latest` ya corresponde a Ubuntu 26.04, no soportado por esa versión. Se fijó el runner en `ubuntu-24.04` y se incluyó también el build de tienda para ejecutar todos los contratos de arquitectura. No se alteró código del producto por este ajuste. El resultado del nuevo run se informa en el PR.
