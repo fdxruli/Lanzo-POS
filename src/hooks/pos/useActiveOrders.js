@@ -132,7 +132,7 @@ export const useActiveOrders = create(
       if (priorityConfirmationPending) return;
       let actorHandle;
       try {
-        actorHandle = actorRuntimeController.capture('sales.create');
+        actorHandle = actorRuntimeController.capture('pos');
       } catch {
         showMessageModal('Inicia sesión con un operador autorizado antes de reasignar productos.', null, { type: 'warning' });
         return;
