@@ -20,6 +20,13 @@ import { isRestaurantCloudTableShadow } from '../../services/restaurant/restaura
 import './RestaurantCloudStatus.css';
 import './EcommercePosConversionPanel.css';
 
+// Includes catalog-owned dialogs and the global message dialog, whose state
+// does not live in ui.activeModal. These layers are mounted only while open.
+const hasBlockingScannerDialog = () => Boolean(
+    document.querySelector('[role="dialog"], [aria-modal="true"], .ui-modal, .modal')
+);
+const isPosSearchCaptureTarget = (target) => target?.dataset?.posPhysicalCapture === 'true';
+
 const ActiveOrderControls = () => {
     const activeOrders = useActiveOrders((state) => state.activeOrders);
     const currentOrderId = useActiveOrders((state) => state.currentOrderId);
@@ -94,24 +101,45 @@ const PosPageContent = ({ data, ui, actions, features }) => {
     );
     const physicalScannerEnabledRef = useRef(false);
     const activeOrderIdRef = useRef(null);
+    const scannerContextRef = useRef(0);
     physicalScannerEnabledRef.current = physicalScannerEnabled;
     activeOrderIdRef.current = currentOrder?.id || null;
+
+    useEffect(() => {
+        physicalScannerEnabledRef.current = physicalScannerEnabled;
+        return () => {
+            physicalScannerEnabledRef.current = false;
+            scannerContextRef.current += 1;
+        };
+    }, [physicalScannerEnabled, currentOrder?.id]);
 
     const handlePhysicalScan = useCallback(async (scanEvent) => {
         if (!physicalScannerEnabledRef.current) return;
         const orderIdAtScan = activeOrderIdRef.current;
+        const contextAtScan = scannerContextRef.current;
+        const isScanCurrent = () => {
+            const state = useActiveOrders.getState();
+            const order = state.activeOrders.get(orderIdAtScan);
+            return physicalScannerEnabledRef.current
+                && scannerContextRef.current === contextAtScan
+                && state.currentOrderId === orderIdAtScan
+                && order && !state.isCurrentOrderLocked && !order.isLockedForCheckout
+                && !isRestaurantCloudTableShadow(order)
+                && !hasBlockingScannerDialog();
+        };
+        if (!isScanCurrent()) return;
 
         let product;
         try {
             product = await resolveWithCache(scanEvent.code);
         } catch {
-            if (!physicalScannerEnabledRef.current || activeOrderIdRef.current !== orderIdAtScan) return;
+            if (!isScanCurrent()) return;
             void playErrorBeep();
             showMessageModal('No se pudo resolver el código escaneado.', null, { type: 'error', duration: 1500 });
             return;
         }
 
-        if (!physicalScannerEnabledRef.current || activeOrderIdRef.current !== orderIdAtScan) return;
+        if (!isScanCurrent()) return;
 
         if (!product) {
             void playErrorBeep();
@@ -119,7 +147,7 @@ const PosPageContent = ({ data, ui, actions, features }) => {
             return;
         }
 
-        const result = addMultipleScannedProducts?.([product]);
+        const result = addMultipleScannedProducts?.([product], orderIdAtScan);
         if (!result?.success) {
             void playErrorBeep();
             showMessageModal('No se pudo agregar el producto escaneado.', null, { type: 'error', duration: 1500 });
@@ -129,10 +157,21 @@ const PosPageContent = ({ data, ui, actions, features }) => {
         void playBeep(1000, 'sine');
     }, [addMultipleScannedProducts]);
 
-    usePhysicalBarcodeScanner({
+    const { reset: resetPhysicalScanner } = usePhysicalBarcodeScanner({
         enabled: physicalScannerEnabled,
-        onScan: handlePhysicalScan
+        onScan: (scanEvent) => {
+            // Printable characters remain native input. Clear the search only
+            // after a complete high-confidence scan, leaving manual typing intact.
+            if (isPosSearchCaptureTarget(document.activeElement)) ui.setSearchTerm('');
+            void handlePhysicalScan(scanEvent);
+        },
+        isExplicitCaptureTarget: isPosSearchCaptureTarget,
+        isBlocked: hasBlockingScannerDialog
     });
+
+    useEffect(() => {
+        resetPhysicalScanner();
+    }, [currentOrder?.id, resetPhysicalScanner]);
 
     useEffect(() => {
         const initializeOrders = async () => {

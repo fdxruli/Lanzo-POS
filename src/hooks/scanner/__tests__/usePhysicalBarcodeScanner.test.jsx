@@ -176,17 +176,33 @@ describe('usePhysicalBarcodeScanner', () => {
     expect(onScan).not.toHaveBeenCalled();
   });
 
-  it('suppresses a technical duplicate but allows a legitimate repeated scan after the window', () => {
+  it('accepts two complete reads inside the duplicate window and suppresses only extra terminators', () => {
     const onScan = vi.fn();
     renderHook(() => usePhysicalBarcodeScanner({ enabled: true, onScan }));
 
     sendScan(document.body, 'ABC9');
+    expect(fireEvent.keyDown(document.body, { key: 'Enter' })).toBe(false);
+    expect(fireEvent.keyDown(document.body, { key: 'NumpadEnter' })).toBe(false);
     sendScan(document.body, 'ABC9');
-    expect(onScan).toHaveBeenCalledTimes(1);
+    expect(onScan).toHaveBeenCalledTimes(2);
 
     vi.advanceTimersByTime(126);
     sendScan(document.body, 'ABC9');
-    expect(onScan).toHaveBeenCalledTimes(2);
+    expect(onScan).toHaveBeenCalledTimes(3);
+  });
+
+  it.each(['focusin', 'blur'])('discards an incomplete burst on %s even between eligible targets', (eventName) => {
+    const onScan = vi.fn();
+    renderHook(() => usePhysicalBarcodeScanner({ enabled: true, onScan }));
+    press(document.body, 'A');
+    press(document.body, 'B');
+    fireEvent(document.body, new Event(eventName, { bubbles: true }));
+    press(document.body, 'C');
+    press(document.body, '9');
+    press(document.body, 'Enter');
+    expect(onScan).not.toHaveBeenCalled();
+    sendScan(document.body, 'ABC9');
+    expect(onScan).toHaveBeenCalledTimes(1);
   });
 
   it('does not emit a rejected short or over-limit burst', () => {

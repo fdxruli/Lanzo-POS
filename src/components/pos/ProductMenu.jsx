@@ -624,6 +624,7 @@ export default function ProductMenu({
             <input
               type="search"
               id="pos-product-search"
+              data-pos-physical-capture="true"
               placeholder="Buscar por nombre, código o SKU"
               value={searchTerm}
               onChange={handleSearchChange}

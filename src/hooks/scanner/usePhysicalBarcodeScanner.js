@@ -9,7 +9,6 @@ import {
 } from '../../services/scanner/keyboardWedgeClassifier';
 import {
   createBarcodeScanEvent,
-  isTechnicalDuplicateScan,
   TECHNICAL_DUPLICATE_WINDOW_MS
 } from '../../services/scanner/barcodeScanEvent';
 
@@ -50,6 +49,7 @@ const defaultFocusPolicy = (target, isExplicitCaptureTarget, requireExplicitCapt
 export function usePhysicalBarcodeScanner({
   enabled = false,
   onScan,
+  isBlocked,
   isExplicitCaptureTarget,
   requireExplicitCaptureTarget = false,
   allowTabTerminator = false,
@@ -61,12 +61,17 @@ export function usePhysicalBarcodeScanner({
   duplicateWindowMs = TECHNICAL_DUPLICATE_WINDOW_MS
 } = {}) {
   const callbackRef = useRef(onScan);
+  const blockedRef = useRef(isBlocked);
   const explicitTargetRef = useRef(isExplicitCaptureTarget);
   const lastEventRef = useRef(null);
 
   useEffect(() => {
     callbackRef.current = onScan;
   }, [onScan]);
+
+  useEffect(() => {
+    blockedRef.current = isBlocked;
+  }, [isBlocked]);
 
   useEffect(() => {
     explicitTargetRef.current = isExplicitCaptureTarget;
@@ -112,11 +117,22 @@ export function usePhysicalBarcodeScanner({
     };
 
     const handleKeyDown = (event) => {
-      const focusEligible = defaultFocusPolicy(
+      const focusEligible = !blockedRef.current?.() && defaultFocusPolicy(
         event.target,
         explicitTargetRef.current,
         requireExplicitCaptureTarget
       );
+      const now = Date.now();
+      const isEnter = event.key === 'Enter' || event.key === 'NumpadEnter';
+      // A second terminator carries no new barcode. A second complete burst
+      // does, even when the same code is read inside the duplicate window.
+      if (focusEligible && isEnter && lastEventRef.current
+        && now - lastEventRef.current.timestamp >= 0
+        && now - lastEventRef.current.timestamp <= duplicateWindowMs) {
+        event.preventDefault();
+        return;
+      }
+      lastEventRef.current = null;
       const result = classifier.handleKeyDown({
         key: event.key,
         ctrlKey: event.ctrlKey === true,
@@ -125,7 +141,7 @@ export function usePhysicalBarcodeScanner({
         isComposing: event.isComposing === true,
         repeat: event.repeat === true,
         focusEligible
-      }, Date.now());
+      }, now);
 
       const classifierState = classifier.getState();
       if (result.status === 'collecting' || classifierState.phase === 'DISCARDING') {
@@ -149,13 +165,7 @@ export function usePhysicalBarcodeScanner({
       // A duplicate terminator can otherwise submit a form or move focus even
       // though the scan itself is correctly suppressed.
       event.preventDefault();
-      const isDuplicate = isTechnicalDuplicateScan(
-        lastEventRef.current,
-        scanEvent,
-        duplicateWindowMs
-      );
       lastEventRef.current = scanEvent;
-      if (isDuplicate) return;
 
       callbackRef.current?.(scanEvent);
     };
@@ -163,14 +173,19 @@ export function usePhysicalBarcodeScanner({
     const handlePaste = () => {
       clearTimer(timeoutRef);
       classifier.reset();
+      lastEventRef.current = null;
     };
 
     window.addEventListener('keydown', handleKeyDown, true);
     window.addEventListener('paste', handlePaste, true);
+    window.addEventListener('focusin', handlePaste, true);
+    window.addEventListener('blur', handlePaste, true);
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown, true);
       window.removeEventListener('paste', handlePaste, true);
+      window.removeEventListener('focusin', handlePaste, true);
+      window.removeEventListener('blur', handlePaste, true);
       clearTimer(timeoutRef);
       classifier.reset();
       lastEventRef.current = null;

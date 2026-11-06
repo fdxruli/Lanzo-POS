@@ -1,0 +1,15 @@
+PASS focused search resolves leading-zero barcode to real order
+PASS duplicate Enter adds no unit
+PAGEERROR ACTOR_CONTEXT_LOCKED
+PAGEERROR ACTOR_CONTEXT_LOCKED
+PASS same and different consecutive scans aggregate correctly
+PASS manual search stays editable
+PASS manual typing creates no sale
+PASS dialog blocks scanning while focus remains in search
+PASS unknown code creates no addition
+PAGEERROR ACTOR_CONTEXT_LOCKED
+PASS offline local SKU scan adds to real order
+PASS ProductForm captures barcode
+PASS duplicate terminator does not submit ProductForm
+PASS ProductForm does not sell
+{"browser":"154.0.8037.57","pageErrors":["ACTOR_CONTEXT_LOCKED","ACTOR_CONTEXT_LOCKED","ACTOR_CONTEXT_LOCKED"],"externalRequests":[]}

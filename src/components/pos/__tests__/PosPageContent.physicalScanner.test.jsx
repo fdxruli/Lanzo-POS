@@ -28,7 +28,9 @@ const createDeterministicScannerClock = (start = 1000, gapMs = 5) => {
 };
 
 vi.mock('../../../hooks/pos/useActiveOrders', () => ({
-  useActiveOrders: (selector) => selector(mocks.activeState)
+  useActiveOrders: Object.assign((selector) => selector(mocks.activeState), {
+    getState: () => mocks.activeState
+  })
 }));
 
 vi.mock('../../../store/useAppStore', () => ({
@@ -165,7 +167,7 @@ describe('POS physical scanner integration', () => {
 
     await waitFor(() => expect(mocks.activeState.addMultipleScannedProducts).toHaveBeenCalledWith([
       { id: 'product-1', name: 'Producto', price: 12 }
-    ]));
+    ], 'active-order'));
     expect(mocks.resolveWithCache).toHaveBeenCalledWith('7501234567890');
   });
 
