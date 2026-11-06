@@ -933,109 +933,81 @@ export const useActiveOrders = create(
       try {
         const state = get();
         const order = state.activeOrders.get(orderId);
+        if (!order) return { success: false, message: 'La orden no existe en sesión.' };
 
-        if (!order) throw new Error("La orden no existe en sesión.");
+        const actorHandle = actorRuntimeController.getState()?.status === 'granted'
+          ? actorRuntimeController.capture() : null;
+        if (order.actorKey && order.actorKey !== actorHandle?.actorKey) {
+          return { success: false, message: 'Esta venta pertenece a otro operador.' };
+        }
+        if (order.isLockedForCheckout) {
+          return { success: false, message: 'La venta está bloqueada para cobro.' };
+        }
 
         if (order.isSaved && (order.tableData || order.orderType === 'table')
           && !isRestaurantCloudTableShadow(order) && getSellableItems(order.items).length === 0) {
           return await get().discardTableEditSession(orderId, order);
         }
-
         const sellable = getSellableItems(order.items);
 
-        // --- 1. ACTUALIZACIÓN UI INMEDIATA ---
-        // Removemos la orden de la sesión para que el usuario tenga feedback instantáneo
-        const nextOrders = new Map(state.activeOrders);
-        nextOrders.delete(orderId);
-
-        const enableMultipleOrders = useAppStore.getState().enableMultipleOrders;
-        if (!enableMultipleOrders) {
-          nextOrders.clear();
-          set({ activeOrders: nextOrders, currentOrderId: null });
-
-          get().createOrder();
-        } else {
-          set({ activeOrders: nextOrders });
-
-          // Si era la activa, cambiamos a otra
-          if (state.currentOrderId === orderId) {
-
-            if (nextOrders.size > 0) {
-              const firstAvailable = Array.from(nextOrders.keys())[0];
-              get().switchOrder(firstAvailable);
-            } else {
-              set({ currentOrderId: null });
-              get().createOrder();
-            }
-          }
+        // Shadow/terminal tabs are read-only views. They never reserve stock.
+        if (isRestaurantCloudTableShadow(order) || isRestaurantCloudTableTerminal(order)) {
+          const detached = get().detachOrderFromSession(orderId, order);
+          return detached.success ? { success: true, detached: true } : detached;
         }
 
-        // Closing a remote snapshot's tab only detaches this device's view.
-        if (isRestaurantCloudTableShadow(order) || isRestaurantCloudTableTerminal(order)) return { success: true, detached: true };
-
-        // --- 2. OPERACIONES DB (Background) ---
+        // Persist BEFORE detaching. A failed write must leave the draft
+        // in memory and in tenant-scoped Zustand persistence.
         if (sellable.length === 0) {
-          // Si la orden está vacía pero antes estaba guardada en BD, debemos cancelarla
-          try {
-            const existing = await db.table(STORES.SALES).get(orderId);
-            if (existing && existing.status === SALE_STATUS.OPEN) {
-              const itemsToRelease = getSellableItems(existing.items);
-              if (itemsToRelease.length > 0) {
-                try {
-                  await releaseCommittedStock(itemsToRelease, { db, STORES });
-                } catch (stockErr) {
-                  console.error("Error al liberar stock en pauseOrder:", stockErr);
-                }
-              }
-              await db.table(STORES.SALES).update(orderId, {
-                status: SALE_STATUS.CANCELLED || 'cancelled',
-                fulfillmentStatus: 'cancelled',
-                notes: 'Sistema: Orden vaciada y cerrada por el usuario.',
-                updatedAt: new Date().toISOString()
-              });
+          const existing = await db.table(STORES.SALES).get(orderId);
+          actorHandle?.assertCurrent();
+          if (existing && existing.status === SALE_STATUS.OPEN) {
+            const itemsToRelease = getSellableItems(existing.items);
+            if (itemsToRelease.length > 0) {
+              await releaseCommittedStock(itemsToRelease, { db, STORES });
+              actorHandle?.assertCurrent();
             }
-          } catch (err) {
-            console.error("Error al limpiar orden en DB:", err);
+            await db.table(STORES.SALES).update(orderId, {
+              status: SALE_STATUS.CANCELLED,
+              fulfillmentStatus: 'cancelled',
+              notes: 'Sistema: Orden vaciada y cerrada por el usuario.',
+              updatedAt: new Date().toISOString()
+            });
           }
-          return;
+        } else if (orderId === state.currentOrderId) {
+          const result = await get().saveOrderAsOpen(orderId, order);
+          if (!result?.success) return {
+            success: false, message: result?.message || 'No se pudo guardar la venta.'
+          };
+        } else {
+          // Keep the existing inactive-tab persistence contract; do not
+          // re-commit reservations that the active checkout engine owns.
+          const existingSale = await db.table(STORES.SALES).get(order.id);
+          actorHandle?.assertCurrent();
+          if (existingSale && selectNewestOrder(order, existingSale).source === 'db') {
+            return { success: false, message: 'Existe una versión más reciente guardada.' };
+          }
+          const persistedVersion = getNextPersistedOrderVersion(order, existingSale);
+          await db.table(STORES.SALES).put({
+            ...(existingSale || {}),
+            id: order.id,
+            timestamp: resolveImmutableOrderCreatedAt({
+              durableOrder: existingSale, activeOrder: order
+            }),
+            ...persistedVersion,
+            items: order.items, total: order.total,
+            status: SALE_STATUS.OPEN,
+            tableData: order.tableData
+          });
         }
 
-        // Si es la activa, usamos la función oficial que maneja inventario
-        try {
-          if (orderId === state.currentOrderId) {
-            const result = await get().saveOrderAsOpen(orderId, order);
-            if (!result.success) console.error("Error en saveOrderAsOpen:", result.message);
-          } else {
-            const existingSale = await db.table(STORES.SALES).get(order.id);
-            if (existingSale && selectNewestOrder(order, existingSale).source === 'db') {
-              console.warn(
-                `[pauseOrder] Se preservó la versión más reciente de DB para ${order.id}.`
-              );
-              return;
-            }
-            const persistedVersion = getNextPersistedOrderVersion(order, existingSale);
-            const openSaleRecord = {
-              ...(existingSale || {}),
-              id: order.id,
-              timestamp: resolveImmutableOrderCreatedAt({
-                durableOrder: existingSale,
-                activeOrder: order
-              }),
-              ...persistedVersion,
-              items: order.items,
-              total: order.total,
-              status: SALE_STATUS.OPEN || 'open',
-              tableData: order.tableData
-            };
-            await db.table(STORES.SALES).put(openSaleRecord);
-          }
-        } catch (saveErr) {
-          console.error("Error guardando orden en DB al pausar:", saveErr);
-        }
-
+        actorHandle?.assertCurrent();
+        const detached = get().detachOrderFromSession(orderId, order);
+        return detached.success ? { success: true } : detached;
       } catch (error) {
-        console.error("Error al pausar la orden:", error);
-        throw error;
+        console.error('Error al pausar la orden:', error);
+        return { success: false, code: error?.code || 'PAUSE_FAILED',
+          message: error?.message || 'No se pudo pausar la venta. El carrito se conserva.' };
       } finally {
         set({ isLoading: false });
       }
