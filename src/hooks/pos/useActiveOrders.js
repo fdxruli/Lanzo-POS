@@ -634,8 +634,8 @@ export const useActiveOrders = create(
     // Agrega item a una orden especifica.
     addItemToOrder: async (orderId, product) => {
       const state = get();
-      if (!state.activeOrders.has(orderId)) return;
-      await get().addSmartItem(product, orderId);
+      if (!state.activeOrders.has(orderId)) return { success: false, code: 'ORDER_NOT_FOUND' };
+      return get().addSmartItem(product, orderId);
     },
 
     /**
