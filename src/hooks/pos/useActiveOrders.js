@@ -7,6 +7,7 @@ import { usePosCatalogStore } from '../../store/usePosCatalogStore';
 import { evaluateProvisionalCartChange, isDirectUnitCartItem, validateCartCheckoutPriority } from '../../services/sales/localCartPriority';
 import { db, STORES } from '../../services/db/dexie';
 import { normalizeStock } from '../../services/db/utils';
+import { getOperationalStockSnapshot } from '../../services/inventoryStock';
 import { SALE_STATUS } from '../../services/sales/financialStats';
 import { Money } from '../../utils/moneyMath';
 import { withOrderTotals } from '../../services/sales/orderTotals';
@@ -846,21 +847,26 @@ export const useActiveOrders = create(
             })).filter(({ id, order: other, units }) => (
               id !== orderId && !other?.isSaved && other?.origin !== 'ecommerce' && units > 0
             ));
-            const rawStock = item.stock;
-            const rawCommitted = item.committedStock ?? item.committed_stock ?? 0;
-            const validStock = rawStock !== null && rawStock !== undefined && rawStock !== ''
-              && Number.isFinite(Number(rawStock))
-              && rawCommitted !== null && rawCommitted !== ''
-              && Number.isFinite(Number(rawCommitted)) && Number(rawCommitted) >= 0;
+            const batchNet = item.inventoryNoticeNetAvailable;
+            const verifiedBatchNet = item.batchId
+              && typeof batchNet === 'number' && Number.isFinite(batchNet)
+              && batchNet >= 0 && typeof item.stock === 'number'
+              && normalizeStock(item.stock) === normalizeStock(batchNet);
+            const parentSnapshot = !item.batchId
+              ? getOperationalStockSnapshot(item) : null;
             const provisionalUnits = claims.every(({ units }) => Number.isFinite(units))
               ? normalizeStock(claims.reduce((sum, claim) => sum + claim.units, 0))
               : null;
-            // These are the SAME availability inputs as the existing guard.
-            // In a selected batch, item.stock can already be net of reservations:
-            // never present it as physical stock or invent a formal-reserve figure.
-            const beforeOtherSales = validStock
-              ? normalizeStock(Math.max(0, Number(rawStock) - Number(rawCommitted)))
-              : null;
+            // Only show an availability whose source is unambiguous.
+            // addSmartItem already stored net batch stock: the committedStock
+            // left on this cart item belongs to the parent and must NOT be
+            // subtracted again. For older/unresolved batch lines, omit the
+            // number rather than guessing whether stock is gross or net.
+            const beforeOtherSales = item.batchId
+              ? (verifiedBatchNet ? normalizeStock(batchNet) : null)
+              : parentSnapshot?.valid && parentSnapshot.physicalStock >= parentSnapshot.committedStock
+                && parentSnapshot.physicalStock >= 0
+                ? parentSnapshot.availableStock : null;
             const source = claims.length === 1 ? claims[0] : null;
             const actorKey = actorRuntimeController.getState().actorKey;
             const canOpenSource = Boolean(source?.order?.actorKey && order.actorKey
