@@ -11,20 +11,26 @@ export default function SingleInstanceBlockedScreen({
       aria-labelledby="single-instance-title"
       aria-describedby="single-instance-description"
     >
-      <section className="single-instance-screen__card">
+      <div className="single-instance-screen__layout">
         <header className="single-instance-screen__brand">
-          <span className="single-instance-screen__logo" aria-hidden="true">
-            <img src="/logIcon.svg" alt="" />
-          </span>
-          <div className="single-instance-screen__brand-copy">
-            <strong>Lanzo POS</strong>
-            <span>Tu negocio, bajo control</span>
+          <div className="single-instance-screen__brand-lockup">
+            <span className="single-instance-screen__logo" aria-hidden="true">
+              <img src="/logIcon.svg" alt="" />
+            </span>
+            <div className="single-instance-screen__brand-copy">
+              <strong>Lanzo POS</strong>
+              <span>Tu negocio, bajo control</span>
+            </div>
+          </div>
+          <div className="single-instance-screen__brand-message">
+            <span className="single-instance-screen__brand-line" aria-hidden="true" />
+            <p>Un espacio seguro para tus operaciones.</p>
           </div>
         </header>
 
-        <div className="single-instance-screen__content">
+        <section className="single-instance-screen__content">
           <span className="single-instance-screen__icon" aria-hidden="true">
-            <AppWindow size={28} strokeWidth={1.8} />
+            <AppWindow size={27} strokeWidth={1.8} />
           </span>
           <p className="single-instance-screen__eyebrow">Acceso protegido</p>
           <h1 id="single-instance-title">Aplicación ya abierta</h1>
@@ -55,8 +61,8 @@ export default function SingleInstanceBlockedScreen({
           <p className="single-instance-screen__note">
             Esta pantalla no cierra otras ventanas ni borra datos del dispositivo.
           </p>
-        </div>
-      </section>
+        </section>
+      </div>
     </main>
   );
 }

@@ -1,47 +1,44 @@
+/* Mobile-first: full-page state, not a centered modal/card. */
 .single-instance-screen,
 .single-instance-screen * {
   box-sizing: border-box;
 }
 
 .single-instance-screen {
-  display: grid;
   flex: 1 1 auto;
   min-height: 0;
   width: 100%;
-  place-items: center;
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior-y: contain;
-  padding:
-    max(1.25rem, env(safe-area-inset-top, 0px))
-    max(1rem, env(safe-area-inset-right, 0px))
-    max(1.25rem, env(safe-area-inset-bottom, 0px))
-    max(1rem, env(safe-area-inset-left, 0px));
-  background:
-    radial-gradient(circle at 50% -5%, var(--brand-accent-soft), transparent 58%),
-    var(--background-color);
+  background: var(--background-color);
   color: var(--text-color);
 }
 
-.single-instance-screen__card {
-  width: min(100%, 34rem);
-  margin: auto;
-  overflow: hidden;
-  border: 1px solid var(--border-color);
-  border-radius: 1.25rem;
-  background: var(--card-background-color);
-  box-shadow: var(--box-shadow-lg);
+.single-instance-screen__layout {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  padding:
+    max(1.5rem, env(safe-area-inset-top, 0px))
+    max(1.25rem, env(safe-area-inset-right, 0px))
+    max(1.75rem, env(safe-area-inset-bottom, 0px))
+    max(1.25rem, env(safe-area-inset-left, 0px));
+  background:
+    radial-gradient(ellipse at 100% 0, var(--brand-accent-soft), transparent 46%),
+    var(--background-color);
 }
 
 .single-instance-screen__brand {
   display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.single-instance-screen__brand-lockup {
+  display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 1.05rem clamp(1.25rem, 5vw, 2rem);
-  color: #fff;
-  background:
-    radial-gradient(circle at 100% 0, rgb(6 182 212 / 18%), transparent 48%),
-    linear-gradient(135deg, #102a43, #173f63);
 }
 
 .single-instance-screen__logo {
@@ -50,9 +47,9 @@
   height: 2.75rem;
   flex: 0 0 auto;
   place-items: center;
-  border: 1px solid rgb(255 255 255 / 18%);
+  border: 1px solid var(--brand-accent-border);
   border-radius: 0.75rem;
-  background: rgb(255 255 255 / 10%);
+  background: var(--brand-accent-soft);
 }
 
 .single-instance-screen__logo img {
@@ -69,27 +66,34 @@
 }
 
 .single-instance-screen__brand-copy strong {
-  color: #fff;
+  color: var(--text-dark);
   font-size: 1.1rem;
   letter-spacing: -0.02em;
 }
 
 .single-instance-screen__brand-copy span {
-  margin-top: 0.15rem;
-  color: rgb(255 255 255 / 73%);
-  font-size: 0.76rem;
+  margin-top: 0.2rem;
+  color: var(--text-light);
+  font-size: 0.77rem;
+}
+
+.single-instance-screen__brand-message {
+  display: none;
 }
 
 .single-instance-screen__content {
-  padding: clamp(1.35rem, 5vw, 2.25rem);
+  width: 100%;
+  max-width: 39rem;
+  margin: auto;
+  padding-block: clamp(2.5rem, 7vh, 5rem) 1.5rem;
 }
 
 .single-instance-screen__icon {
   display: grid;
-  width: 3.5rem;
-  height: 3.5rem;
+  width: 3.25rem;
+  height: 3.25rem;
   place-items: center;
-  margin-bottom: 1.15rem;
+  margin-bottom: 1.4rem;
   border: 1px solid var(--brand-accent-border);
   border-radius: 1rem;
   background: var(--brand-accent-soft);
@@ -97,80 +101,161 @@
 }
 
 .single-instance-screen__eyebrow {
-  margin: 0 0 0.35rem;
+  margin: 0 0 0.4rem;
   color: var(--brand-accent-text);
   font-size: 0.76rem;
   font-weight: 800;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.085em;
   text-transform: uppercase;
 }
 
 .single-instance-screen h1 {
   margin: 0;
   color: var(--text-dark);
-  font-size: clamp(1.7rem, 5vw, 2.1rem);
-  line-height: 1.18;
+  font-size: clamp(1.85rem, 7.5vw, 2.8rem);
+  line-height: 1.12;
   letter-spacing: -0.035em;
 }
 
 .single-instance-screen__description {
-  margin: 0.9rem 0 0;
+  margin: 1.05rem 0 0;
   color: var(--text-color);
-  font-size: 0.96rem;
+  font-size: 0.97rem;
   line-height: 1.6;
 }
 
 .single-instance-screen__guidance {
   display: flex;
-  gap: 0.85rem;
-  margin-top: 1.45rem;
-  padding: 1rem;
-  border: 1px solid var(--border-color);
-  border-radius: 0.875rem;
-  background: var(--light-background);
+  gap: 0.8rem;
+  margin-top: 2rem;
+  padding: 0 0 0 1rem;
+  border-inline-start: 2px solid var(--brand-accent-border);
 }
 
 .single-instance-screen__guidance > svg {
   flex: 0 0 auto;
-  margin-top: 0.125rem;
+  margin-top: 0.1rem;
   color: var(--brand-accent-text);
 }
 
 .single-instance-screen__guidance h2 {
-  margin: 0 0 0.25rem;
+  margin: 0 0 0.3rem;
   color: var(--text-dark);
-  font-size: 0.92rem;
+  font-size: 0.95rem;
   line-height: 1.35;
 }
 
 .single-instance-screen__guidance p {
   margin: 0;
   color: var(--text-color);
-  font-size: 0.87rem;
-  line-height: 1.55;
+  font-size: 0.88rem;
+  line-height: 1.6;
 }
 
 .single-instance-screen__action {
   width: 100%;
   min-height: 3rem;
-  margin-top: 1.4rem;
+  margin-top: 2rem;
   white-space: normal;
 }
 
 .single-instance-screen__note {
-  margin: 0.9rem 0 0;
+  max-width: 34rem;
+  margin: 1rem 0 0;
   color: var(--text-light);
-  font-size: 0.77rem;
+  font-size: 0.78rem;
   line-height: 1.5;
   text-align: center;
 }
 
-@media (max-width: 400px) {
-  .single-instance-screen__brand {
-    padding-block: 0.9rem;
+@media (min-width: 900px) {
+  .single-instance-screen__layout {
+    display: grid;
+    grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+    padding: 0;
+    background: var(--background-color);
   }
 
-  .single-instance-screen__guidance {
-    padding: 0.85rem;
+  .single-instance-screen__brand {
+    min-height: 100%;
+    justify-content: space-between;
+    padding:
+      max(3rem, env(safe-area-inset-top, 0px))
+      clamp(2.5rem, 5vw, 6rem)
+      max(3rem, env(safe-area-inset-bottom, 0px));
+    border-inline-end: 1px solid var(--border-color);
+    background:
+      radial-gradient(ellipse at 0 80%, var(--brand-accent-soft), transparent 64%),
+      var(--light-background);
+  }
+
+  .single-instance-screen__brand-lockup {
+    gap: 1rem;
+  }
+
+  .single-instance-screen__logo {
+    width: 3.4rem;
+    height: 3.4rem;
+  }
+
+  .single-instance-screen__logo img {
+    width: 2.4rem;
+    height: 2.4rem;
+  }
+
+  .single-instance-screen__brand-copy strong {
+    font-size: 1.3rem;
+  }
+
+  .single-instance-screen__brand-message {
+    display: block;
+    max-width: 33rem;
+    margin-block: auto;
+    padding-block: 2.5rem;
+  }
+
+  .single-instance-screen__brand-line {
+    display: block;
+    width: 3.5rem;
+    height: 0.25rem;
+    margin-bottom: 1.5rem;
+    border-radius: 999px;
+    background: var(--brand-accent);
+  }
+
+  .single-instance-screen__brand-message p {
+    margin: 0;
+    color: var(--text-dark);
+    font-size: clamp(2.5rem, 3.9vw, 4.25rem);
+    font-weight: 750;
+    letter-spacing: -0.05em;
+    line-height: 1.08;
+  }
+
+  .single-instance-screen__content {
+    max-width: 49rem;
+    align-self: center;
+    margin: 0;
+    padding:
+      max(3rem, env(safe-area-inset-top, 0px))
+      clamp(2.75rem, 5.5vw, 7rem)
+      max(3rem, env(safe-area-inset-bottom, 0px));
+  }
+
+  .single-instance-screen h1 {
+    font-size: clamp(2.25rem, 3.25vw, 3.25rem);
+  }
+
+  .single-instance-screen__description {
+    font-size: 1rem;
+  }
+
+  .single-instance-screen__action {
+    width: min(100%, 26rem);
+  }
+
+  .single-instance-screen__note {
+    max-width: 26rem;
+    text-align: left;
   }
 }
