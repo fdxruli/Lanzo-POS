@@ -41,6 +41,7 @@ import { assertLocalTenantSyncAccess } from '../../../services/tenant/localTenan
 import { classifyActorAuthorityError } from '../../../services/auth/actorAuthorityErrors';
 import { getActorAuthorityRecoverySnapshot, reportActorAuthorityError } from '../../../services/auth/actorAuthorityRecovery';
 import { createEffectiveLicenseValidationEvidence } from '../../../utils/licenseStatusPresentation';
+import { reconcileLicenseSessionIdentity } from './licenseActorReconciliation';
 import {
     assertLicenseValidationContextCurrent,
     captureLicenseValidationContext,
@@ -247,6 +248,7 @@ export const createLicenseProcessingActions = ({
         const finalLicenseData = {
             ...localLicense,
             ...serverValidation,
+            ...reconcileLicenseSessionIdentity(get(), localLicense, serverValidation),
             valid: true,
             status: finalStatus,
             grace_period_ends: derivedGracePeriodEnd,
@@ -383,7 +385,7 @@ export const createLicenseProcessingActions = ({
             licenseDetails: finalLicenseData,
             licenseStatus: finalStatus,
             gracePeriodEnds: derivedGracePeriodEnd,
-            currentDeviceRole: finalLicenseData.device_role || 'admin',
+            currentDeviceRole: finalLicenseData.device_role || null,
             currentStaffUser: finalLicenseData.device_role === 'staff'
                 ? finalLicenseData.staff_user || null
                 : null,
