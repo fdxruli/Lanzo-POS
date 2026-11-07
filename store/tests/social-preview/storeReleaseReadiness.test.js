@@ -90,11 +90,15 @@ const artifact = {
   routing: {
     checks: allTrue([
       'dynamicStoreRoute',
+      'legacyStoreRedirect',
       'dynamicDestination',
       'pathSlugExactlyOnce',
       'trackingStatic',
+      'legacyTrackingStatic',
       'assetsNotIntercepted',
       'apiNotIntercepted',
+      'assetsNotRewrittenAsStore',
+      'knownLandingPreserved',
       'immutableAssets',
       'htmlNeverImmutable',
     ]),
@@ -239,8 +243,8 @@ const realisticRemoteAudit = {
     canonicalHost: previewHost,
     ogImageHost: previewHost,
     effectiveSlug: 'tienda-fixture',
-    canonicalPath: '/tienda/tienda-fixture',
-    ogUrlPath: '/tienda/tienda-fixture',
+    canonicalPath: '/tienda-fixture',
+    ogUrlPath: '/tienda-fixture',
   },
   ogImage: {
     png: true,

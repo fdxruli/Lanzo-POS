@@ -5,7 +5,9 @@ import {
   appendPublicTrackingToWhatsappUrl,
   buildAdminWelcomeUrl,
   buildPublicLandingUrl,
+  buildPublicStorePath,
   buildPublicStoreUrl,
+  buildPublicTrackingPath,
   buildPublicTrackingUrl,
   isPublicStoreOrigin,
   normalizePublicOrigin
@@ -95,22 +97,25 @@ describe('public application origins', () => {
 describe('public URL builders', () => {
   it('builds the canonical public store URL', () => {
     expect(buildPublicStoreUrl('negocio-ejemplo'))
-      .toBe('https://lanzo-store.vercel.app/tienda/negocio-ejemplo');
+      .toBe('https://lanzo-store.vercel.app/negocio-ejemplo');
+    expect(buildPublicStorePath('negocio-ejemplo')).toBe('/negocio-ejemplo');
   });
 
   it('encodes the slug as one path segment', () => {
     expect(buildPublicStoreUrl('//otro host?x=1'))
-      .toBe('https://lanzo-store.vercel.app/tienda/%2F%2Fotro%20host%3Fx%3D1');
+      .toBe('https://lanzo-store.vercel.app/%2F%2Fotro%20host%3Fx%3D1');
   });
 
   it('builds the canonical public tracking URL', () => {
     expect(buildPublicTrackingUrl('negocio-ejemplo', 'token-seguro'))
-      .toBe('https://lanzo-store.vercel.app/tienda/negocio-ejemplo/pedido/token-seguro');
+      .toBe('https://lanzo-store.vercel.app/negocio-ejemplo/pedido/token-seguro');
+    expect(buildPublicTrackingPath('negocio-ejemplo', 'token-seguro'))
+      .toBe('/negocio-ejemplo/pedido/token-seguro');
   });
 
   it('encodes the tracking token without changing it', () => {
     expect(buildPublicTrackingUrl('negocio', 'token/?# exacto'))
-      .toBe('https://lanzo-store.vercel.app/tienda/negocio/pedido/token%2F%3F%23%20exacto');
+      .toBe('https://lanzo-store.vercel.app/negocio/pedido/token%2F%3F%23%20exacto');
   });
 
   it('builds the public landing without a trailing slash', () => {
@@ -129,15 +134,15 @@ describe('public URL builders', () => {
   it('never generates double or final slashes', () => {
     const store = buildPublicStoreUrl('negocio');
     const tracking = buildPublicTrackingUrl('negocio', 'token');
-    expect(new URL(store).pathname).toBe('/tienda/negocio');
-    expect(new URL(tracking).pathname).toBe('/tienda/negocio/pedido/token');
+    expect(new URL(store).pathname).toBe('/negocio');
+    expect(new URL(tracking).pathname).toBe('/negocio/pedido/token');
     expect(store.endsWith('/')).toBe(false);
     expect(tracking.endsWith('/')).toBe(false);
   });
 
   it('recognizes only the configured public store origin', () => {
-    expect(isPublicStoreOrigin('https://lanzo-store.vercel.app/tienda/demo')).toBe(true);
-    expect(isPublicStoreOrigin('https://lanzo-pos.vercel.app/tienda/demo')).toBe(false);
+    expect(isPublicStoreOrigin('https://lanzo-store.vercel.app/demo')).toBe(true);
+    expect(isPublicStoreOrigin('https://lanzo-pos.vercel.app/demo')).toBe(false);
     expect(isPublicStoreOrigin('not a URL')).toBe(false);
   });
 

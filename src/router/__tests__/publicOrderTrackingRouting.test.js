@@ -9,4 +9,8 @@ describe('public order tracking routing', () => {
   it('does not classify arbitrary nested store paths as public tracking', () => {
     expect(isPublicStorePath('/tienda/mi-tienda/admin/secreto')).toBe(false);
   });
+
+  it('keeps the short tracking path on the standalone public deployment only', () => {
+    expect(isPublicStorePath(`/mi-tienda/pedido/trk1_${'A'.repeat(43)}`)).toBe(false);
+  });
 });

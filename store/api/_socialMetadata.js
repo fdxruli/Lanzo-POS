@@ -303,7 +303,7 @@ export function buildSocialDescription({ name, headline, description } = {}) {
 export function buildCanonicalUrl({ publicOrigin, slug }) {
   const origin = normalizePublicOrigin(publicOrigin);
   const validSlug = validateStoreSlug(slug);
-  return new URL(`/tienda/${validSlug}`, `${origin}/`).toString();
+  return new URL(`/${validSlug}`, `${origin}/`).toString();
 }
 
 export function buildOpenGraphImageUrl({

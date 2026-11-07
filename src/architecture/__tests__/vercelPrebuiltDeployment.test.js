@@ -138,6 +138,11 @@ async function writeFunction(functionsRoot, relativeRoute, {
 function validCompiledRoutes() {
   return [
     {
+      src: '^/tienda/([a-z0-9][a-z0-9-]{1,62}[a-z0-9])/$',
+      status: 308,
+      headers: { Location: '/$1', 'X-Robots-Tag': NOINDEX },
+    },
+    {
       src: '^/(.*)/$',
       status: 308,
       headers: { Location: '/$1', 'X-Robots-Tag': NOINDEX },
@@ -145,15 +150,28 @@ function validCompiledRoutes() {
     { src: '^/(.*)$', headers: { 'X-Robots-Tag': NOINDEX }, continue: true },
     { src: '^/assets/(.*)$', headers: { 'Cache-Control': IMMUTABLE_CACHE }, continue: true },
     {
-      src: '^/(?:index\\.html)?$',
+      src: '^/(?:|home\\.html|index\\.html|tienda|conoce-lanzo|tienda/[^/]+/pedido/[^/]+|(?!(?:api|assets|src|_src|home\\.html|index\\.html|robots[^/]*\\.txt|sw\\.js|manifest\\.webmanifest|registerSW\\.js|workbox-[^/]+\\.js|\\.env(?:\\..*)?|package(?:-lock)?\\.json|vite\\.store\\.config\\.js|vercel\\.json|conoce-lanzo|tienda)(?:/|$))[^/]+/pedido/[^/]+)$',
       headers: { 'Cache-Control': STATIC_CACHE },
       continue: true,
     },
+    { src: '^/$', dest: '/home.html' },
     { handle: 'filesystem' },
     { src: '^/tienda/([^/]+)/pedido/([^/]+)$', dest: '/index.html' },
-    { src: '^/tienda/([^/]+)$', dest: '/api/store-page?slug=$1' },
-    { src: '^/tienda/[^/]+/.+$', dest: '/index.html' },
+    {
+      src: '^/tienda/([a-z0-9][a-z0-9-]{1,62}[a-z0-9])$',
+      status: 308,
+      headers: { Location: '/$1' },
+    },
+    {
+      src: '^/(?!(?:api|assets|src|_src|home\\.html|index\\.html|robots[^/]*\\.txt|sw\\.js|manifest\\.webmanifest|registerSW\\.js|workbox-[^/]+\\.js|\\.env(?:\\..*)?|package(?:-lock)?\\.json|vite\\.store\\.config\\.js|vercel\\.json|conoce-lanzo|tienda)(?:/|$))([^/]+)/pedido/([^/]+)$',
+      dest: '/index.html',
+    },
+    {
+      src: '^/(?!(?:api|assets|src|_src|home\\.html|index\\.html|robots[^/]*\\.txt|sw\\.js|manifest\\.webmanifest|registerSW\\.js|workbox-[^/]+\\.js|\\.env(?:\\..*)?|package(?:-lock)?\\.json|vite\\.store\\.config\\.js|vercel\\.json|conoce-lanzo|tienda)(?:/|$))([^/]+)$',
+      dest: '/api/store-page?slug=$1',
+    },
     { src: '^/(?:|tienda|conoce-lanzo)$', dest: '/index.html' },
+    { src: '^/(?!(?:api|assets)(?:/|$)|src(?:/|$)|_src(?:/|$))(.*)$', dest: '/index.html' },
     { handle: 'error' },
   ];
 }
@@ -519,13 +537,17 @@ describe('ECOM.PUBLIC.SOCIAL.PREVIEW prebuilt deployment architecture', () => {
     expect(routing.checks).toMatchObject({
       configVersion3: true,
       dynamicStoreRoute: true,
+      legacyStoreRedirect: true,
       dynamicAfterFilesystem: true,
       dynamicDestination: true,
       pathSlugExactlyOnce: true,
       trackingStatic: true,
+      legacyTrackingStatic: true,
       nestedStoreStatic: true,
       assetsNotIntercepted: true,
       apiNotIntercepted: true,
+      assetsNotRewrittenAsStore: true,
+      knownLandingPreserved: true,
     });
     expect(routing.cases.every(({ slugValues }) => (
       slugValues.length === 1 && slugValues[0] === 'mi-tienda'

@@ -49,7 +49,7 @@ const staticHtml = `<!doctype html><html lang="es-MX"><head>
 </head><body><div id="root"></div></body></html>`;
 
 function socialHtml(name = 'Tienda pública', effectiveSlug = slug) {
-  const canonical = `${preview}/tienda/${effectiveSlug}`;
+  const canonical = `${preview}/${effectiveSlug}`;
   const image = `${preview}/api/og/store?slug=${effectiveSlug}&v=1`;
   return `<!doctype html><html lang="es-MX"><head>
 <title>${name} | Tienda en línea</title>
@@ -342,20 +342,27 @@ async function fixtureFetch(input, options = {}) {
     const contentType = url.pathname.startsWith('/api/og/') ? 'image/png' : 'text/html; charset=utf-8';
     const cacheControl = url.pathname.startsWith('/assets/')
       ? 'public, max-age=31536000, immutable'
-      : (url.pathname.startsWith('/tienda/') && !url.pathname.includes('/pedido/')
+      : (url.pathname === `/${slug}`
           ? 'public, max-age=0, s-maxage=300, stale-while-revalidate=86400'
           : 'public, max-age=0, must-revalidate');
     return response(null, { contentType, cacheControl });
   }
-  if (url.pathname === `/tienda/${slug}/`) {
+  if (url.pathname === `/tienda/${slug}/` || url.pathname === `/tienda/${slug}`) {
     return response(null, {
       status: 308,
-      location: `/tienda/${slug}`,
+      location: `/${slug}${url.search}`,
       cacheControl: 'public, max-age=0, s-maxage=300',
     });
   }
+  if (url.pathname === `/${slug}/`) {
+    return response(null, {
+      status: 308,
+      location: `/${slug}${url.search}`,
+      cacheControl: 'public, max-age=0, must-revalidate',
+    });
+  }
   if (
-    url.pathname === `/tienda/${slug}`
+    url.pathname === `/${slug}`
     || (url.pathname === '/api/store-page' && url.searchParams.get('slug') === slug)
   ) {
     return response(socialHtml(), {
@@ -363,12 +370,13 @@ async function fixtureFetch(input, options = {}) {
     });
   }
   if (url.pathname === `/tienda/${slug}/pedido/token-ficticio`
-    || url.pathname === `/tienda/${slug}/ruta-desconocida`
+    || url.pathname === `/${slug}/pedido/token-ficticio`
+    || url.pathname === `/${slug}/ruta-desconocida`
     || url.pathname === '/'
     || url.pathname === '/tienda') {
     return response(staticHtml);
   }
-  if (url.pathname === `/tienda/${'slug-inexistente-controlado'}`
+  if (url.pathname === `/${'slug-inexistente-controlado'}`
     || (url.pathname === '/api/store-page' && url.searchParams.get('slug') === 'slug-inexistente-controlado')) {
     return response(genericHtml(), { cacheControl: 'public, max-age=0, s-maxage=300' });
   }
@@ -418,7 +426,7 @@ function withFixtureOverride(overrides = {}) {
     }
     if (
       overrides.poisonHostileQuery
-      && url.pathname === `/tienda/${slug}`
+      && url.pathname === `/${slug}`
       && url.searchParams.has('slug')
     ) {
       return response(socialHtml('Tienda pública', 'externo'), {
@@ -428,7 +436,7 @@ function withFixtureOverride(overrides = {}) {
     const original = await fixtureFetch(input, options);
     const cacheKey = url.pathname === '/api/og/store'
       ? (url.searchParams.has('v') ? 'ogVersioned' : 'ogUnversioned')
-      : (url.pathname === `/tienda/${slug}` ? 'dynamicHtml'
+      : (url.pathname === `/${slug}` ? 'dynamicHtml'
           : (url.pathname === assetPath ? 'asset' : null));
     if (cacheKey && (overrides.duplicateContentType || overrides.duplicateCacheControl)) {
       const bytes = new Uint8Array(await original.arrayBuffer());
@@ -893,8 +901,8 @@ describe('validación remota saneada de lanzo-store', () => {
   it('cuenta metadata única, canonical e imagen sin persistir HTML', () => {
     const inspection = inspectSocialHtml(socialHtml());
     expect(Object.values(inspection.counts).every((count) => count === 1)).toBe(true);
-    expect(inspection.canonicalPath).toBe(`/tienda/${slug}`);
-    expect(inspection.ogUrlPath).toBe(`/tienda/${slug}`);
+    expect(inspection.canonicalPath).toBe(`/${slug}`);
+    expect(inspection.ogUrlPath).toBe(`/${slug}`);
     expect(inspection.fullHtml).toBeUndefined();
     expect(JSON.stringify(inspection)).not.toContain('<!doctype');
   });
@@ -956,7 +964,7 @@ describe('validación remota saneada de lanzo-store', () => {
     expect(result.hostileQueries.slice(1).every((item) => (
       JSON.stringify(item.slugValues) === JSON.stringify([slug])
     ))).toBe(true);
-    expect(result.metadata.canonicalPath).toBe(`/tienda/${slug}`);
+    expect(result.metadata.canonicalPath).toBe(`/${slug}`);
     expect(result.ogImage).toMatchObject({ png: true, width: 1200, height: 630 });
     expect(result.security).toMatchObject({ passed: true, findings: [] });
     expect(result).toMatchObject({

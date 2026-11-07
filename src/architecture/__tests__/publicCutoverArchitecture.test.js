@@ -60,6 +60,8 @@ describe('ECOM.PUBLIC.CUTOVER.1 architecture', () => {
 
   it('preserves all public route registrations', async () => {
     const source = await readProjectFile('src/router/publicStoreRoutes.jsx');
+    expect(source).toContain("path: '/:slug/pedido/:trackingToken'");
+    expect(source).toContain("path: '/:slug'");
     expect(source).toContain("path: '/tienda/:slug/pedido/:trackingToken'");
     expect(source).toContain("path: '/tienda/:slug'");
     expect(source).toContain("path: '/tienda'");
@@ -91,11 +93,17 @@ describe('ECOM.PUBLIC.CUTOVER.1 architecture', () => {
 
     const filesystem = config.routes.findIndex((route) => route.handle === 'filesystem');
     const root = config.routes.findIndex((route) => route.src === '^/$' && route.dest === '/home.html');
-    const tracking = config.routes.findIndex(
+    const legacyTracking = config.routes.findIndex(
       (route) => route.src === '^/tienda/([^/]+)/pedido/([^/]+)$' && route.dest === '/index.html'
     );
+    const shortTracking = config.routes.findIndex(
+      (route) => route.dest === '/index.html' && route.src.includes('/pedido/([^/]+)$')
+    );
+    const legacyStore = config.routes.findIndex(
+      (route) => route.src === '^/tienda/([a-z0-9][a-z0-9-]{1,62}[a-z0-9])$' && route.status === 308
+    );
     const dynamicStore = config.routes.findIndex(
-      (route) => route.src === '^/tienda/([^/]+)$' && route.dest === '/api/store-page?slug=$1'
+      (route) => route.dest === '/api/store-page?slug=$1' && route.src.includes('([^/]+)$')
     );
     const knownPublicRoutes = config.routes.findIndex(
       (route) => route.src === '^/(?:tienda|conoce-lanzo)$' && route.dest === '/index.html'
@@ -106,8 +114,10 @@ describe('ECOM.PUBLIC.CUTOVER.1 architecture', () => {
 
     expect(root).toBeGreaterThanOrEqual(0);
     expect(filesystem).toBeGreaterThan(root);
-    expect(tracking).toBeGreaterThan(filesystem);
-    expect(dynamicStore).toBeGreaterThan(tracking);
+    expect(legacyTracking).toBeGreaterThan(filesystem);
+    expect(shortTracking).toBeGreaterThan(filesystem);
+    expect(legacyStore).toBeGreaterThan(legacyTracking);
+    expect(dynamicStore).toBeGreaterThan(legacyStore);
     expect(knownPublicRoutes).toBeGreaterThan(dynamicStore);
     expect(fallback).toBeGreaterThan(knownPublicRoutes);
 
@@ -128,6 +138,8 @@ describe('ECOM.PUBLIC.CUTOVER.1 architecture', () => {
     ]) {
       expect(fallbackSource).toContain(reserved);
     }
+    expect(config.routes[dynamicStore].src).toContain('conoce-lanzo');
+    expect(config.routes[dynamicStore].src).toContain('tienda');
   });
 
   it('keeps public paths in the administrative Service Worker denylist', async () => {

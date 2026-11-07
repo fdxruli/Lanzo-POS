@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import LogoMark from '../components/common/LogoMark';
-import { buildAdminWelcomeUrl } from '../config/publicOrigins';
+import { buildAdminWelcomeUrl, buildPublicStorePath } from '../config/publicOrigins';
 import './PublicLanzoLandingPage.css';
 
 const CAPABILITIES = [
@@ -91,7 +91,7 @@ const STEPS = [
 
 const getStoreReturnPath = (searchParams) => {
   const slug = searchParams.get('tienda') || '';
-  return /^[^/?#]+$/.test(slug) ? `/tienda/${encodeURIComponent(slug)}` : '/tienda';
+  return /^[^/?#]+$/.test(slug) ? buildPublicStorePath(slug) : '/tienda';
 };
 
 function PlanCard({ type, title, description, features, featured = false }) {

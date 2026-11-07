@@ -60,8 +60,8 @@ const remote = Object.freeze({
     },
     canonicalHost: previewHost,
     ogImageHost: previewHost,
-    canonicalPath: `/tienda/${slug}`,
-    ogUrlPath: `/tienda/${slug}`,
+    canonicalPath: `/${slug}`,
+    ogUrlPath: `/${slug}`,
     effectiveSlug: slug,
   },
   ogImage: {

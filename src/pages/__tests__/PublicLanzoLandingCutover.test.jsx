@@ -31,7 +31,7 @@ describe('PublicLanzoLandingPage administrative CTA cutover', () => {
       </MemoryRouter>
     );
     expect(screen.getByRole('link', { name: 'Volver a la tienda' }))
-      .toHaveAttribute('href', '/tienda/negocio-ejemplo');
+      .toHaveAttribute('href', '/negocio-ejemplo');
   });
 });
 

@@ -53,9 +53,9 @@ afterEach(() => {
 
 describe('PublicOrderTrackingPage unpublished portal', () => {
   const renderTracking = (tokenCharacter = 'A') => render(
-    <MemoryRouter initialEntries={[`/tienda/mi-negocio/pedido/trk1_${tokenCharacter.repeat(43)}`]}>
+    <MemoryRouter initialEntries={[`/mi-negocio/pedido/trk1_${tokenCharacter.repeat(43)}`]}>
       <Routes>
-        <Route path="/tienda/:slug/pedido/:trackingToken" element={<PublicOrderTrackingPage />} />
+        <Route path="/:slug/pedido/:trackingToken" element={<PublicOrderTrackingPage />} />
       </Routes>
     </MemoryRouter>
   );
@@ -161,7 +161,7 @@ describe('PublicOrderTrackingPage unpublished portal', () => {
       </MemoryRouter>
     );
 
-    expect(await screen.findByRole('link', { name: 'Volver a la tienda' })).toHaveAttribute('href', '/tienda/mi-negocio');
+    expect(await screen.findByRole('link', { name: 'Volver a la tienda' })).toHaveAttribute('href', '/mi-negocio');
   });
 
   it('shows the same not-found message for the uniform public tracking failure contract', async () => {

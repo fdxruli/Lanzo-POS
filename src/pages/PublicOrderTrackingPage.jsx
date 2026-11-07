@@ -24,6 +24,7 @@ import {
   writeTrackingCache
 } from '../services/ecommerce/ecommerceOrderTrackingService';
 import { buildEcommercePortalThemeStyle } from '../utils/ecommercePortalTheme';
+import { buildPublicStorePath } from '../config/publicOrigins';
 import PublicSafeImage from '../components/ecommerce/public/PublicSafeImage';
 import './PublicOrderTrackingPage.css';
 
@@ -87,6 +88,7 @@ const STATUS_ICONS = Object.freeze({
 
 export default function PublicOrderTrackingPage() {
   const { slug = '', trackingToken = '' } = useParams();
+  const storePath = buildPublicStorePath(slug);
   const requestEpochRef = useRef(0);
   const trackingRef = useRef(null);
   const [tracking, setTracking] = useState(null);
@@ -197,7 +199,7 @@ export default function PublicOrderTrackingPage() {
   );
 
   if (networkState === 'loading' && !tracking) return <main className="public-tracking-shell public-tracking-shell--centered" aria-busy="true"><section className="public-tracking-card public-tracking-loading"><div className="public-tracking-skeleton public-tracking-skeleton--title" /><div className="public-tracking-skeleton" /><div className="public-tracking-skeleton" /></section></main>;
-  if (networkState === 'not_found' || (!tracking && networkState === 'offline')) return <main className="public-tracking-shell public-tracking-shell--centered"><section className="public-tracking-card public-tracking-empty" role="alert"><h1>No se encontró el seguimiento</h1><p>{message || 'No se pudo encontrar este seguimiento.'}</p><Link className="ui-button ui-button--secondary" to={`/tienda/${slug}`}>Volver a la tienda</Link></section></main>;
+  if (networkState === 'not_found' || (!tracking && networkState === 'offline')) return <main className="public-tracking-shell public-tracking-shell--centered"><section className="public-tracking-card public-tracking-empty" role="alert"><h1>No se encontró el seguimiento</h1><p>{message || 'No se pudo encontrar este seguimiento.'}</p><Link className="ui-button ui-button--secondary" to={storePath}>Volver a la tienda</Link></section></main>;
   if (!tracking) return <main className="public-tracking-shell public-tracking-shell--centered"><section className="public-tracking-card public-tracking-empty" role="alert"><h1>No se pudo cargar el seguimiento</h1><p>{message}</p><button type="button" className="ui-button ui-button--primary" onClick={() => refresh()}><RefreshCw aria-hidden="true" size={18} /> Reintentar</button></section></main>;
 
   return (
@@ -231,7 +233,7 @@ export default function PublicOrderTrackingPage() {
           <section className="public-tracking-items" aria-labelledby="public-tracking-items-title"><div className="public-tracking-section-title"><ShoppingBag aria-hidden="true" size={19} /><h2 id="public-tracking-items-title">Resumen de productos</h2></div><ul>{tracking.items.map((item, index) => <li key={`${item.name}-${index}`}><span>{item.name}</span><strong>× {item.quantity}</strong></li>)}</ul></section>
         </div>
 
-        <footer className="public-tracking-footer">{tracking.storefrontAvailable ? <Link className="public-tracking-back-link" to={`/tienda/${slug}`}><ArrowLeft aria-hidden="true" size={17} />Volver a la tienda</Link> : <span className="public-tracking-storefront-unavailable">La tienda no está recibiendo pedidos en este momento.</span>}<small>Versión del estado: {tracking.version}</small></footer>
+        <footer className="public-tracking-footer">{tracking.storefrontAvailable ? <Link className="public-tracking-back-link" to={storePath}><ArrowLeft aria-hidden="true" size={17} />Volver a la tienda</Link> : <span className="public-tracking-storefront-unavailable">La tienda no está recibiendo pedidos en este momento.</span>}<small>Versión del estado: {tracking.version}</small></footer>
       </section>
     </main>
   );

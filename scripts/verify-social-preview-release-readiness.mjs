@@ -40,11 +40,15 @@ const REQUIRED_ARTIFACT_CHECKS = Object.freeze([
 ]);
 const REQUIRED_ROUTING_CHECKS = Object.freeze([
   'dynamicStoreRoute',
+  'legacyStoreRedirect',
   'dynamicDestination',
   'pathSlugExactlyOnce',
   'trackingStatic',
+  'legacyTrackingStatic',
   'assetsNotIntercepted',
   'apiNotIntercepted',
+  'assetsNotRewrittenAsStore',
+  'knownLandingPreserved',
   'immutableAssets',
   'htmlNeverImmutable',
 ]);

@@ -865,7 +865,7 @@ export function inspectSocialHtml(html) {
     ...html.matchAll(/(?:src|href)=["'](\/assets\/[^"']+\.(?:js|css))["']/giu),
   ].map((match) => match[1]);
   const canonicalPath = metadata.canonical ? new URL(metadata.canonical).pathname : null;
-  const canonicalSlug = /^\/tienda\/([^/]+)$/u.exec(canonicalPath || '')?.[1] || null;
+  const canonicalSlug = /^\/([^/]+)$/u.exec(canonicalPath || '')?.[1] || null;
   return Object.freeze({
     bytes: Buffer.byteLength(html),
     sha256: sha256(html),
@@ -1014,8 +1014,8 @@ function metadataPass(inspection, slug) {
     && inspection.langEsMx
     && inspection.rootCount === 1
     && Object.values(inspection.counts).every((count) => count === 1)
-    && inspection.canonicalPath === `/tienda/${slug}`
-    && inspection.ogUrlPath === `/tienda/${slug}`
+    && inspection.canonicalPath === `/${slug}`
+    && inspection.ogUrlPath === `/${slug}`
     && inspection.canonicalHost
     && inspection.canonicalHost === inspection.ogImageHost
     && inspection.assetPaths.some((item) => item.endsWith('.js'))
@@ -1046,18 +1046,22 @@ export async function auditRemoteStoreDeployment({
   const paths = Object.freeze({
     root: '/',
     tienda: '/tienda',
-    store: `/tienda/${slug}`,
-    storeSlash: `/tienda/${slug}/`,
-    storeUtm: `/tienda/${slug}?utm_source=whatsapp`,
-    hostileSingle: `/tienda/${slug}?slug=externo`,
-    hostileMultiple: `/tienda/${slug}?slug=externo&slug=otro`,
-    tracking: `/tienda/${slug}/pedido/${TRACKING_TOKEN}`,
-    nested: `/tienda/${slug}/ruta-desconocida`,
+    store: `/${slug}`,
+    storeSlash: `/${slug}/`,
+    storeUtm: `/${slug}?utm_source=whatsapp`,
+    hostileSingle: `/${slug}?slug=externo`,
+    hostileMultiple: `/${slug}?slug=externo&slug=otro`,
+    legacyStore: `/tienda/${slug}`,
+    legacyStoreSlash: `/tienda/${slug}/`,
+    legacyStoreUtm: `/tienda/${slug}?utm_source=whatsapp`,
+    tracking: `/${slug}/pedido/${TRACKING_TOKEN}`,
+    legacyTracking: `/tienda/${slug}/pedido/${TRACKING_TOKEN}`,
+    nested: `/${slug}/ruta-desconocida`,
     apiStore: `/api/store-page?slug=${encodeURIComponent(slug)}`,
     og: `/api/og/store?slug=${encodeURIComponent(slug)}`,
     ogVersioned: `/api/og/store?slug=${encodeURIComponent(slug)}&v=1`,
     asset: assetPath,
-    missingStore: `/tienda/${MISSING_SLUG}`,
+    missingStore: `/${MISSING_SLUG}`,
     missingApi: `/api/store-page?slug=${MISSING_SLUG}`,
     invalidApi: `/api/store-page?slug=${INVALID_SLUG}`,
   });
@@ -1114,7 +1118,20 @@ export async function auditRemoteStoreDeployment({
 
   const storeSlash = await request('store-slash', paths.storeSlash);
   addCheck(checks, 'store:trailing-slash', storeSlash.status === 308
-    && storeSlash.headers.locationPath === `/tienda/${slug}`);
+    && storeSlash.headers.locationPath === `/${slug}`
+    && !storeSlash.headers.locationHost);
+
+  for (const [name, requestPath, locationPath] of [
+    ['legacy-store', paths.legacyStore, `/${slug}`],
+    ['legacy-store-slash', paths.legacyStoreSlash, `/${slug}`],
+    ['legacy-store-utm', paths.legacyStoreUtm, `/${slug}?utm_source=whatsapp`],
+  ]) {
+    const item = await request(name, requestPath);
+    addCheck(checks, `${name}:redirect`, item.status === 308
+      && item.headers.locationPath === locationPath
+      && !item.headers.locationHost
+      && item.headers.xRobotsTag === NOINDEX);
+  }
 
   const queryResults = [];
   for (const [name, requestPath] of [
@@ -1137,7 +1154,11 @@ export async function auditRemoteStoreDeployment({
       && JSON.stringify(inspection.slugValues) === JSON.stringify([slug]));
   }
 
-  for (const [name, requestPath] of [['tracking', paths.tracking], ['nested', paths.nested]]) {
+  for (const [name, requestPath] of [
+    ['tracking', paths.tracking],
+    ['legacy-tracking', paths.legacyTracking],
+    ['nested', paths.nested],
+  ]) {
     const item = await request(name, requestPath);
     const inspection = inspectSocialHtml(item.text || '');
     addCheck(checks, `${name}:static-fallback`, item.status === 200
@@ -1399,7 +1420,7 @@ export function buildEvidenceReport({
     && Object.values(remote.metadata?.counts || {}).length > 0
     && Object.values(remote.metadata.counts).every((count) => count === 1)
     && typeof remote.metadata.effectiveSlug === 'string'
-    && remote.metadata.canonicalPath === `/tienda/${remote.metadata.effectiveSlug}`
+    && remote.metadata.canonicalPath === `/${remote.metadata.effectiveSlug}`
     && remote.metadata.ogUrlPath === remote.metadata.canonicalPath;
   const ogImagePassed = passed('og:png', 'og-versioned:png', 'og:head')
     && remote.ogImage?.png === true

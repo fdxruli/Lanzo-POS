@@ -43,6 +43,16 @@ export const publicStoreRoutes = [
     errorElement: withPublicBoundary(<PublicStoreRouteErrorPage />)
   },
   {
+    path: '/:slug/pedido/:trackingToken',
+    element: withPublicBoundary(<PublicOrderTrackingPage />),
+    errorElement: withPublicBoundary(<PublicStoreRouteErrorPage />)
+  },
+  {
+    path: '/:slug',
+    element: withPublicBoundary(<PublicStorePage />),
+    errorElement: withPublicBoundary(<PublicStoreRouteErrorPage />)
+  },
+  {
     path: '/tienda/:slug/pedido/:trackingToken',
     element: withPublicBoundary(<PublicOrderTrackingPage />),
     errorElement: withPublicBoundary(<PublicStoreRouteErrorPage />)

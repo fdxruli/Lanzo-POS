@@ -50,7 +50,7 @@ vi.mock('../../../services/products/productRepository', () => ({
 
 vi.mock('../EcommerceProductPublishModal', () => ({ default: () => null }));
 
-const publicStoreUrl = 'https://lanzo-store.vercel.app/tienda/negocio-ejemplo';
+const publicStoreUrl = 'https://lanzo-store.vercel.app/negocio-ejemplo';
 const AUTHORIZED_ECOMMERCE_LICENSE = {
   license_key: 'license-fixture',
   features: { ecommerce_portal_enabled: true }

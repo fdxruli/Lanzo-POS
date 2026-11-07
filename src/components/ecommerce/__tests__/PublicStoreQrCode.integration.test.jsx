@@ -5,7 +5,7 @@ import { BarcodeFormat, QRCodeWriter } from '@zxing/library';
 import { describe, expect, it } from 'vitest';
 import PublicStoreQrCode from '../PublicStoreQrCode';
 
-const publicStoreUrl = 'https://lanzo-store.vercel.app/tienda/negocio-ejemplo';
+const publicStoreUrl = 'https://lanzo-store.vercel.app/negocio-ejemplo';
 
 const matrixPath = (matrix) => {
   const commands = [];
