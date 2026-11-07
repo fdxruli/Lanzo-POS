@@ -1,3 +1,4 @@
+import { actorRuntimeController } from '../auth/actorRuntimeController';
 import { validateStockBeforeSale } from './stockValidation';
 import { normalizeAndValidatePricing } from './priceSecurity';
 import {
@@ -34,6 +35,23 @@ const withFinancialFailure = (result = {}) => ({
         }
     })
 });
+
+// A closed local row is the receipt. Reconciliation never executes effects.
+const localCommitResult = (sale) => ({
+    success: true, saleId: sale.id, timestamp: sale.timestamp, folio: sale.folio,
+    ...createFinancialNotificationResult({ financialResult: {
+        status: 'success', sourceMode: 'local_committed', saleId: sale.id, cloudCommitted: false
+    } })
+});
+const uncertainLocalCommit = (saleId) => ({
+    success: false, saleId, code: 'LOCAL_COMMIT_UNCERTAIN', retryable: false,
+    financialResult: { status: 'unknown', sourceMode: 'local_uncertain', saleId }
+});
+const sameLocalCommit = (sale, binding, attemptId) => Boolean(
+    binding && sale?.localCommitBinding && sale?.status === SALE_STATUS.CLOSED &&
+    sale.localCheckoutAttemptId === attemptId &&
+    JSON.stringify(sale.localCommitBinding) === JSON.stringify(binding)
+);
 
 const requiresPrescriptionControl = (product = {}) => (
     product?.requiresPrescription === true ||
@@ -245,6 +263,10 @@ export const processSaleCore = async ({
     Logger
 }) => {
     Logger.time('Service:ProcessSale');
+    const localBinding = actorContext ? {
+        actorKey: actorContext.actorKey, sessionId: actorContext.sessionId,
+        deviceRef: actorContext.deviceRef, tenant: actorContext.tenant
+    } : null;
 
     try {
         let persistedOrder;
@@ -254,6 +276,12 @@ export const processSaleCore = async ({
                 return withFinancialFailure(restaurantCloudTableTerminalBlockedResult(persistedOrder));
             }
         }
+        const attemptId = persistedOrder?.checkoutAttemptId || persistedOrder?.localCheckoutAttemptId || null;
+        if (sameLocalCommit(persistedOrder, localBinding, attemptId)) return localCommitResult(persistedOrder);
+        if (persistedOrder?.localCommitBinding && persistedOrder.status === SALE_STATUS.CLOSED) {
+            throw new Error('LOCAL_COMMIT_ORIGIN_MISMATCH');
+        }
+        actorContext?.assertCurrent?.('pos');
         const itemsToProcess = order.filter(item => item.quantity && item.quantity > 0);
         // Preserve the exact checkout lines before pricing/stock enrichment.
         const restaurantCheckoutOrder = persistedOrder ? {
@@ -588,9 +616,40 @@ export const processSaleCore = async ({
             };
         }
 
-        actorContext?.assertCurrent?.();
-        const transactionResult = await executeSaleTransactionSafe(sale, batchesToDeduct);
-        actorContext?.assertCurrent?.();
+        actorContext?.assertCurrent?.('pos');
+        if (localBinding && !activeOrderId) throw new Error('LOCAL_CHECKOUT_ID_REQUIRED');
+        if (localBinding) {
+            sale.isLockedForCheckout = false;
+            sale.localCommitBinding = localBinding;
+            sale.localCheckoutAttemptId = attemptId;
+        }
+        let transactionResult;
+        try {
+            transactionResult = actorContext
+                ? await executeSaleTransactionSafe(sale, batchesToDeduct, {
+                    assertAuthorized: () => actorContext.assertCurrent('pos'),
+                    subscribeAuthority: actorRuntimeController.subscribe
+                })
+                : await executeSaleTransactionSafe(sale, batchesToDeduct);
+        } catch (error) {
+            // Lost responses must be resolved by the existing sale ID, never
+            // by issuing a second financial transaction.
+            let persisted;
+            try { persisted = await loadData(STORES.SALES, sale.id); }
+            catch { return uncertainLocalCommit(sale.id); }
+            if (sameLocalCommit(persisted, localBinding, attemptId)) return localCommitResult(persisted);
+            throw error;
+        }
+        if (!transactionResult.success && localBinding) {
+            let persisted;
+            try { persisted = await loadData(STORES.SALES, sale.id); }
+            catch { return uncertainLocalCommit(sale.id); }
+            if (sameLocalCommit(persisted, localBinding, attemptId)) return localCommitResult(persisted);
+        }
+        if (transactionResult.success && actorContext) {
+            try { actorContext.assertCurrent('pos'); }
+            catch { return localCommitResult(sale); }
+        }
 
         if (!transactionResult.success) {
             if (transactionResult.isConcurrencyError) {

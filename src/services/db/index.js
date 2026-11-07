@@ -129,8 +129,8 @@ export const createProductWithInitialInventorySafe = (productData, initialBatche
 export const processBatchDeductions = (deductions, options = {}) =>
     safeExecute(() => productsRepository.processBatchDeductions(deductions, options));
 
-export const executeSaleTransactionSafe = (sale, deductions) =>
-    safeExecute(() => salesRepository.executeSaleTransaction(sale, deductions));
+export const executeSaleTransactionSafe = (sale, deductions, options) =>
+    safeExecute(() => salesRepository.executeSaleTransaction(sale, deductions, options));
 
 export const executeSplitOpenTableOrderTransactionSafe = (payload) =>
     safeExecute(() => salesRepository.executeSplitOpenTableOrderTransaction(payload));

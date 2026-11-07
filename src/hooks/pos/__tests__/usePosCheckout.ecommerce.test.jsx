@@ -877,3 +877,21 @@ describe('usePosCheckout ecommerce and stale lock ownership', () => {
     expect(deps.modal.closeModal).not.toHaveBeenCalled();
   });
 });
+
+
+it('retains the checkout lock when the local commit receipt cannot be read', async () => {
+  setOrders([makeOrder()]);
+  const deps = makeDeps();
+  mocks.processSale.mockResolvedValue({ success: false, code: 'LOCAL_COMMIT_UNCERTAIN', retryable: false });
+  const hook = renderHook(() => usePosCheckout(deps.args));
+  await initiateCheckout(hook.result);
+  await act(async () => {
+    expect(await hook.result.current.handleProcessOrder({ paymentMethod: 'tarjeta' }))
+      .toMatchObject({ code: 'LOCAL_COMMIT_UNCERTAIN' });
+    expect(await hook.result.current.handlePaymentModalClose())
+      .toMatchObject({ code: 'LOCAL_COMMIT_UNCERTAIN', released: false });
+  });
+  expect(mocks.activeState.unlockOrder).not.toHaveBeenCalled();
+  expect(mocks.activeState.activeOrders.get('order-a').isLockedForCheckout).toBe(true);
+  hook.unmount();
+});

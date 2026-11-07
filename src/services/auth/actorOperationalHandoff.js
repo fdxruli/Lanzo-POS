@@ -226,19 +226,39 @@ export const runTrackedActorOperationIfGranted = async (label, operation, permis
 export const runCheckoutActorOperation = async ({
   orderId,
   label = 'checkout.operation',
+  recognizeLocalCommit = false,
   operation
 } = {}) => {
-  const ownership = orderId ? checkoutOwnership.get(orderId) : null;
-  if (ownership) {
-    if (!ownership.handle) {
-      throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.CONTEXT_STALE, {
-        reason: ownership.actorKey ? 'checkout_owner_not_reauthenticated' : 'checkout_owner_unresolved',
-        orderId
-      });
+  let localOutcome = null;
+  const trackedOperation = async (context) => {
+    if (recognizeLocalCommit) context.handle.assertCurrent('pos');
+    const result = await operation(context);
+    if (recognizeLocalCommit && result?.saleId === orderId && (
+      (result.success === true && result.financialResult?.status === 'success' &&
+        result.financialResult?.sourceMode === 'local_committed') ||
+      (result.code === 'LOCAL_COMMIT_UNCERTAIN' && result.retryable === false &&
+        result.financialResult?.sourceMode === 'local_uncertain')
+    )) {
+      localOutcome = result;
     }
-    return runTrackedActorOperationWithHandle(ownership.handle, label, operation);
+    return result;
+  };
+  try {
+    const ownership = orderId ? checkoutOwnership.get(orderId) : null;
+    if (ownership) {
+      if (!ownership.handle) {
+        throw new ActorRuntimeError(ACTOR_RUNTIME_ERROR_CODES.CONTEXT_STALE, {
+          reason: ownership.actorKey ? 'checkout_owner_not_reauthenticated' : 'checkout_owner_unresolved',
+          orderId
+        });
+      }
+      return await runTrackedActorOperationWithHandle(ownership.handle, label, trackedOperation);
+    }
+    return await runTrackedActorOperationIfGranted(label, trackedOperation);
+  } catch (error) {
+    if (localOutcome && String(error?.code || '').startsWith('ACTOR_')) return localOutcome;
+    throw error;
   }
-  return runTrackedActorOperationIfGranted(label, operation);
 };
 
 // Only the identity needed to cancel an unpaid modal survives its component.

@@ -371,6 +371,7 @@ export function usePosCheckout({
             return buildStaleCheckoutAttemptResult();
         }
 
+        if (snapshot?.localCommitUncertain) return { success: false, code: 'LOCAL_COMMIT_UNCERTAIN', released: false };
         if (!snapshot?.orderId) {
             return { success: true, released: false, reason: 'missing_order_id' };
         }
@@ -1347,6 +1348,10 @@ export function usePosCheckout({
                 createdAt: snapshot.createdAt
             });
 
+            if (result.code === 'LOCAL_COMMIT_UNCERTAIN') {
+                snapshot.localCommitUncertain = true;
+                return result;
+            }
             if (!result.success) {
                 const authorityResult = handlePosActorAuthorityError(result, 'checkout');
                 if (authorityResult) return authorityResult;
@@ -1516,7 +1521,7 @@ export function usePosCheckout({
             showMessageModal(`Error inesperado: ${error.message}`);
             return { success: false, message: error.message };
         } finally {
-            if (!isSuccess && !isStockWarning) {
+            if (!isSuccess && !isStockWarning && !snapshot.localCommitUncertain) {
                 const releaseResult = await releaseCheckoutSnapshotLock(snapshot, {
                     reason: 'process_failed',
                     expectedOrderId: snapshot.orderId,

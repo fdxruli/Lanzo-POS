@@ -206,6 +206,7 @@ export const processSale = async (params, maxRetries = 3) => (
     runCheckoutActorOperation({
         orderId: params?.activeOrderId || null,
         label: 'sales.processSale',
+        recognizeLocalCommit: true,
         operation: async ({ handle }) => {
             Logger.info('Iniciando proceso de venta (Safe Mode)...');
             const actorScopedParams = {
